@@ -34,9 +34,9 @@
       {
         "path": "functions[0].code",
         "op": "matches",
-        "value": "VirtualAlloc\\(0x40,GetModuleHandleA\\(0\\)\\)"
+        "value": "VirtualAlloc\\(0x40,GetModuleHandleA\\((0|NULL)\\)\\)"
       }
     ]
   },
-  "notes": "Default Win32 declarations must not force unbacked arguments onto a late indirect call. This synthetic two-argument call keeps both IAT names and the two arguments established by its instructions."
+  "notes": "Default Win32 declarations must not force unbacked arguments onto a late indirect call. This synthetic two-argument call keeps both IAT names and the two arguments established by its instructions; GetModuleHandleA's one push backs its declaration, so its argument may read NULL."
 }

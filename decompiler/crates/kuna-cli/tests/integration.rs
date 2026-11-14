@@ -178,6 +178,9 @@ mod dos_mz_cli;
 #[path = "dos_exit_cli.rs"]
 mod dos_exit_cli;
 
+#[path = "dos_extent_cli.rs"]
+mod dos_extent_cli;
+
 #[path = "decompile_cli.rs"]
 mod decompile_cli;
 
@@ -798,6 +801,9 @@ mod scalar_call_results;
 
 #[path = "call_argument_extensions.rs"]
 mod call_argument_extensions;
+
+#[path = "calleereginputs_custom.rs"]
+mod calleereginputs_custom;
 
 #[path = "rust_store_value.rs"]
 mod rust_store_value;

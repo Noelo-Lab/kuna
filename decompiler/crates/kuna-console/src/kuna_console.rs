@@ -208,6 +208,17 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         // (kuna `callbacktype`) A mode over an enum field like its two
         // neighbours, so it reports its own token rather than a `live_field`.
         "callbacktype" => conf.callbacktype.as_str(),
+        // (kuna `calleereginputs`) Three-valued (off|on|custom), reported from
+        // its two engine flags.
+        "calleereginputs" => {
+            if conf.callee_reginputs_custom {
+                "custom"
+            } else if conf.callee_reginputs {
+                "on"
+            } else {
+                "off"
+            }
+        }
         // (kuna `castwiden`) Three-valued, so it reports its own token.
         "castwiden" => conf.cast_widen.as_str(),
         // (kuna `narrowext`) Three-valued, so it reports its own token.
@@ -1466,8 +1477,9 @@ impl IfaceCommandAction for IfcKunaFunctionSymbol {
 /// `function containing <selector>`: name the inventory entry whose extent
 /// holds the function `selector` resolves to, when that is not itself an
 /// entry, so `kuna decompile` can say it is decompiling from inside another
-/// function. Silent otherwise: a selector that does not resolve is the `load`
-/// command's to report.
+/// function, or (kuna #1288) the function whose flow ended before it
+/// (`ConsoleProgram::flow_ended_before`). Silent otherwise: a selector that
+/// does not resolve is the `load` command's to report.
 pub struct IfcKunaFunctionContaining;
 
 impl IfaceCommandAction for IfcKunaFunctionContaining {
@@ -1488,7 +1500,20 @@ impl IfaceCommandAction for IfcKunaFunctionContaining {
             selector => selector,
         };
         let Some(vma) = prog.selection_address(&selector) else { return Ok(()) };
-        let Some(Some(owner)) = prog.entries_containing(&[vma]).pop() else { return Ok(()) };
+        let Some(Some(owner)) = prog.entries_containing(&[vma]).pop() else {
+            let line = prog.flow_ended_before(vma).map(|(owner, end)| {
+                format!(
+                    "{:#x} is past the end of {} at {:#x}\n",
+                    prog.output_code_offset(vma),
+                    owner.name,
+                    prog.output_code_offset(end)
+                )
+            });
+            if let Some(line) = line {
+                status.out(&line);
+            }
+            return Ok(());
+        };
         let at = prog.output_code_offset(vma);
         let entry = prog.output_code_offset(owner.addr.get_offset());
         status.out(&format!(

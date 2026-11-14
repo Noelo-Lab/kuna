@@ -23,8 +23,8 @@
       "eq": 0
     },
     "stdout_matches": [
-      "ReadFile\\([^;]*,&(v\\d+),4,&v\\d+,0\\);",
-      "wsprintfA\\([^;]*\\(v\\d+ >> 8 & 0xff\\)"
+      "ReadFile\\([^;]*,&(Buffer),4,&NumberOfBytesRead,(0|NULL)\\);",
+      "wsprintfA\\([^;]*\\(Buffer >> 8 & 0xff\\)"
     ],
     "stdout_absent": [
       "&Stack[fF0-9a-f]+"

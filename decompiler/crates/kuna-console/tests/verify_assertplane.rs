@@ -12,7 +12,8 @@
 //! and inert is worse than one that errors, because an agent cannot tell.
 //!
 //! Fixture: `kuna-analysis/tests/fixtures/fauxware` — a small unstripped x86-64
-//! ELF whose `authenticate` has an 8-byte stack buffer (`v2`), two pointer
+//! ELF whose `authenticate` has an 8-byte stack buffer (`v2`, printed as
+//! read's `buf` and reached by either name), two pointer
 //! parameters and a call to a named global (`sneaky`), so every directive has
 //! something observable to move.  It is decompiled with `foldcallret off`:
 //! the register-local cases target `int v1; // eax`, the `strcmp(a1,sneaky)`
@@ -112,7 +113,7 @@ fn all_applied(report: &[Outcome]) {
 fn the_baseline_names_nothing_the_directives_name() {
     let (code, report) = decompile_with(Vec::new());
     assert!(report.is_empty(), "no directives ⇒ no report rows");
-    assert!(code.contains("char v2 [8]"), "baseline lost its 8-byte buffer:\n{code}");
+    assert!(code.contains("char buf [8]"), "baseline lost its 8-byte buffer:\n{code}");
     assert!(!code.contains("credbuf"), "baseline already names credbuf:\n{code}");
     assert!(code.contains("sneaky"), "baseline lost the named global:\n{code}");
 }
@@ -291,8 +292,8 @@ fn a_typedef_is_nameable_by_a_later_type_directive() {
         ),
     ]);
     all_applied(&report);
-    assert!(code.contains("creds v2;"), "the interned struct did not type the local:\n{code}");
-    assert!(code.contains("v2.raw"), "the struct fields did not render:\n{code}");
+    assert!(code.contains("creds buf;"), "the interned struct did not type the local:\n{code}");
+    assert!(code.contains("buf.raw"), "the struct fields did not render:\n{code}");
 }
 
 /// `data` — a named, typed global (`map address`), observable at the call that
@@ -483,7 +484,7 @@ fn standard_c_scalar_types_reach_the_emitted_c() {
         "the C return type did not reach the C:\n{code}"
     );
     assert!(
-        code.contains("uint1 v2 [8];") || code.contains("unsigned char v2 [8];"),
+        code.contains("uint1 s2 [8];") || code.contains("unsigned char s2 [8];"),
         "a multi-word scalar did not survive as a `type` base:\n{code}"
     );
 }

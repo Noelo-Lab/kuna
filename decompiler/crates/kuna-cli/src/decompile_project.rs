@@ -341,6 +341,7 @@ pub(crate) fn decompile_project(
         );
         (funcs, None)
     } else {
+        crate::decompile_all::note_custom_inert(&prog, targets.len());
         (decompile_export_targets_watched(&mut prog, targets, &mut landed), None)
     };
     if let Some(watch) = watch {

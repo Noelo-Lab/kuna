@@ -70,6 +70,16 @@ const EDX: u8 = 1 << 2;
 /// EAX and the callee-saved registers.
 const FOREIGN: u8 = 1 | (1 << 3) | (1 << 4) | (1 << 5);
 
+/// The shipped default of the `custom` extension (option `calleereginputs
+/// custom`): callee-saved EBX/ESI/EDI custom arguments. Opt-in — the default
+/// `on` stays byte-identical to what #1575 shipped.
+pub const CUSTOM_DEFAULT: bool = false;
+
+/// The callee-saved registers the `custom` extension recovers, with the bit it
+/// takes in [`Architecture::kuna_custom_reg_callers`]'s per-callee mask, in the
+/// deterministic order they are printed (register-space order).
+pub const CUSTOM: [(&str, u8); 3] = [("EBX", 1), ("ESI", 2), ("EDI", 4)];
+
 /// The spec model a callee's register inputs select.
 pub(crate) fn model_name(inputs: u8) -> Option<&'static str> {
     if inputs & ECX == 0 || inputs & FOREIGN != 0 {
@@ -177,12 +187,152 @@ const VIRTUAL_SCAN: usize = 64;
 /// The model the inputs of the direct call target `entry` select, when option
 /// `calleereginputs` is on and the language is x86-32 under a default model that
 /// leaves extrapop unknown.
+///
+/// With `calleereginputs custom`, a callee-saved register (EBX/ESI/EDI) every
+/// direct call site in the image sets and whose entry value the callee genuinely
+/// reads ([`Architecture::kuna_custom_reg_callers`], built once by the
+/// callee-first driver) becomes a leading custom argument — a synthesized model
+/// is returned instead of the spec's `__thiscall`/`__fastcall`.
 pub fn callee_register_model(arch: &Architecture, entry: &Address) -> Option<Rc<ProtoModel>> {
+    register_model_for(arch, entry)
+}
+
+/// The model `entry`'s own evaluation should use so its decompiled parameters
+/// match what its callers pass: the synthesized custom-register model the
+/// whole-image rule decided, or `None` (the default evaluation is left alone,
+/// byte-identical to before) when it decided nothing.
+pub fn own_register_model(ctx: &crate::context::ArchContext, entry: &Address) -> Option<Rc<ProtoModel>> {
+    custom_model(&ctx.kuna_custom_reg_callers, &ctx.kuna_custom_reg_models, entry)
+}
+
+/// The model `entry` takes: the synthesized custom-register model the
+/// whole-image rule decided, else the spec's `__thiscall`/`__fastcall` from the
+/// register straight-line walk (exactly as #1575).
+fn register_model_for(arch: &Architecture, entry: &Address) -> Option<Rc<ProtoModel>> {
     if !arch.callee_reginputs {
         return None;
     }
+    if let Some(m) = custom_model(&arch.kuna_custom_reg_callers, &arch.kuna_custom_reg_models, entry) {
+        return Some(m);
+    }
     let name = model_name(callee_register_inputs(arch, entry)?)?;
     arch.get_model(name).cloned()
+}
+
+/// Look up the synthesized model the whole-image rule decided for `entry` in the
+/// prebuilt per-callee maps.
+fn custom_model(
+    callers: &std::collections::HashMap<uintb, u16>,
+    models: &std::collections::HashMap<u16, Rc<ProtoModel>>,
+    entry: &Address,
+) -> Option<Rc<ProtoModel>> {
+    let key = *callers.get(&entry.get_offset())?;
+    models.get(&key).cloned()
+}
+
+/// Model-key bits (shared by the driver that builds the maps and
+/// [`Architecture::kuna_build_reginput_model`] via the driver).
+pub const KEY_ECX: u16 = 1;
+pub const KEY_EDX: u16 = 1 << 1;
+/// The custom (EBX/ESI/EDI) mask shifts into key bits 2..5.
+pub const KEY_CUSTOM_SHIFT: u16 = 2;
+
+/// Can the `custom` extension act on this image at all: x86-32 Windows under a
+/// default model whose extrapop is unknown, with the `custom` value on? The
+/// whole-image caller scan is skipped where this is false, so the extension
+/// costs nothing off its target.
+pub fn custom_applies(arch: &Architecture) -> bool {
+    arch.callee_reginputs
+        && arch.callee_reginputs_custom
+        && arch.archid.starts_with("x86:LE:32:")
+        && crate::kuna_fastfailnoreturn::archid_is_windows(&arch.archid)
+        && arch.default_fp().map(|m| m.get_extra_pop()) == Some(EXTRAPOP_UNKNOWN)
+}
+
+/// The register names an input-register key names, in printed (ECX, EDX, then
+/// register-space) order, and whether it is the `__thiscall` shape (ECX only).
+pub fn key_registers(key: u16) -> (Vec<&'static str>, bool) {
+    let mut regs = Vec::new();
+    if key & KEY_ECX != 0 {
+        regs.push("ECX");
+    }
+    if key & KEY_EDX != 0 {
+        regs.push("EDX");
+    }
+    for (name, bit) in CUSTOM {
+        if key & ((bit as u16) << KEY_CUSTOM_SHIFT) != 0 {
+            regs.push(name);
+        }
+    }
+    (regs, key & KEY_ECX != 0 && key & KEY_EDX == 0)
+}
+
+/// The ECX/EDX part of a callee's input-register key, from the #1575 straight-line
+/// walk's raw read bits. Unlike [`model_name`] this does not bail when a
+/// callee-saved register is also read: a `custom` callee that reads ECX (or ECX
+/// and EDX) beside EBX/ESI/EDI must carry all of them, or the unmodelled ECX/EDX
+/// stays a phantom read and the recovery misaligns.
+pub fn ecx_edx_key(arch: &Architecture, entry: &Address) -> u16 {
+    let Some(raw) = callee_register_inputs(arch, entry) else { return 0 };
+    let mut key = 0;
+    if raw & ECX != 0 {
+        key |= KEY_ECX;
+    }
+    if raw & EDX != 0 {
+        key |= KEY_EDX;
+    }
+    key
+}
+
+/// The bit [`record`] files beside the [`CUSTOM`] bits when the body also reads
+/// ECX or EDX on entry: such a callee keeps the ordinary `__thiscall` /
+/// `__fastcall` resolution and takes no custom model.
+pub const READS_ECX_EDX: u8 = 1 << 3;
+
+/// Record the callee-saved registers `entry`'s own body read on entry (the
+/// post-heritage entry reads), as [`CUSTOM`] bits plus [`READS_ECX_EDX`], and
+/// every direct call its decompile printed, for the two-sided decision after
+/// the pass. Unlike the straight-line walk the reads see a register used past
+/// the first branch or call (passed to a sub-call, then compared), which is the
+/// shape the `custom` rule exists for.
+pub fn record(arch: &mut Architecture, entry: &Address, data: &Funcdata) {
+    for i in 0..data.num_calls() {
+        let fc = data.get_call_specs(i);
+        let callee = fc.get_entry_address();
+        if callee.is_invalid() {
+            continue;
+        }
+        if let Some(site) = data.obank().get(fc.get_op()).map(|o| o.get_addr().get_offset()) {
+            arch.kuna_custom_reg_calls.entry(callee.get_offset()).or_default().insert((entry.get_offset(), site));
+        }
+    }
+    let Some(reads) = data.kuna_entry_reads() else { return };
+    let Some(space) = arch.manage().get_space_by_name("register").cloned() else { return };
+    let reg_idx = space.get_index();
+    let regs: Vec<(u64, u64, u8)> = CUSTOM
+        .iter()
+        .copied()
+        .chain([("ECX", READS_ECX_EDX), ("EDX", READS_ECX_EDX)])
+        .filter_map(|(name, bit)| {
+            let v = arch.translate().get_register_data(name).ok()?;
+            Some((v.offset, v.offset + v.size as u64, bit))
+        })
+        .collect();
+    let mut mask = 0u8;
+    for (addr, _) in reads.read.iter().chain(&reads.declared) {
+        if addr.get_space().map(|s| s.get_index()) != Some(reg_idx) {
+            continue;
+        }
+        let at = addr.get_offset();
+        for &(lo, hi, bit) in &regs {
+            if (lo..hi).contains(&at) {
+                mask |= bit;
+            }
+        }
+    }
+    if mask != 0 {
+        arch.kuna_custom_reg_reads.insert(entry.get_offset(), mask);
+    }
 }
 
 /// Is the register `addr`/`size` a parameter of the model the callee's reads

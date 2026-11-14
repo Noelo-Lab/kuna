@@ -458,6 +458,11 @@ and an object's `.text+0xOFF` answer the same way, and so do `decompile-all` and
 note per record. With `--json` the record of such a
 target carries it as `interior_to`: `{name,address,address_hex,offset}`. No other
 record has the key, so every other document is byte-for-byte what it was.
+On a DOS program, where a function's extent ends with its flow (see `size` under
+`kuna functions`), an address after that end and short of the next function is
+in no function: it has no `interior_to`, and stderr says whose flow ended before
+it (`note: 0x3a880 is past the end of sub_3a856 at 0x3a872, after the last
+instruction its flow reaches, and in no function kuna discovered; ...`).
 
 **`--define-function <start[-end][=name] | @file>`** (repeatable) tells kuna where a
 function starts and ends. Every boundary kuna knows is otherwise *derived* —
@@ -1545,6 +1550,11 @@ outside it states nothing. An explicit `--option protoorder` is refused alongsid
 `--jobs N` (a statement is per-load state that does not cross a worker process);
 a `--jobs` run that does not ask for it states nothing and says so on stderr, so
 its output can differ from the serial run's (see the `--jobs` contract below).
+`--option calleereginputs custom` (a callee-saved register argument on 32-bit
+Windows, decided over every caller and callee of the image) rides the same
+whole-binary run: it is refused alongside `--jobs N`, a narrowed or
+single-function run says on stderr that it decides nothing, and
+`decompile-project --stream` and `decompile-graph` warn that it has no effect.
 
 `decompile-project` takes the same order, under the same conditions. It has to:
 both surfaces keep a `structsynth` ledger, which numbers `struct_N` in the order
@@ -1823,7 +1833,18 @@ sectionless ELF; a corrupt one the loader recovers from the program headers) is 
 against its executable load segments instead, so the last entry of a segment runs to
 the end of that segment rather than to the end of a `.text` — looser, but still an
 upper bound, where every entry used to report `0` and `--min-size 1` discarded the
-whole binary. A caller needing the exact body must still decompile.
+whole binary. An MS-DOS executable or a `--raw-image` x86 real-mode program has no
+section table, and its one CODE range is the whole load module, data segments
+included, so there the extent ends where the function's flow does: from the entry to
+the end of the last instruction reached from it before the next entry, calls not
+entered, a call to a no-return function or a DOS exit ending its path, a fall-through
+or jump into another entry ending it too (a conditional branch into one is followed,
+as the decompiler follows it), and a `cs:` switch table followed to its cases. The
+span is still contiguous from the entry and never longer than the clip: a switch
+table between reached instructions counts, one laid out after the last instruction
+(as Turbo C and Borland C place theirs) does not. An entry whose flow meets a
+computed branch nothing resolves keeps the clip, and an address past the end of its
+function's flow reports `0`. A caller needing the exact body must still decompile.
 
 Per-function `code` can include whole-batch inference and pointer-argument casts
 that standalone `kuna decompile` cannot derive (elsewhere, see the injected
@@ -2812,7 +2833,7 @@ The target is a **name**, an **address**, or a **range**:
 
 | Target | What is listed |
 |---|---|
-| `main` | The function's extent — the same clip `kuna functions` reports as `size`. A name is resolved as a symbol first, so a function really called `abc` is never read as `0xabc`. |
+| `main` | The function's extent — the same extent `kuna functions` reports as `size`. On a DOS program that is where the function's flow ends, and a note names the range holding the bytes up to the next function. A name is resolved as a symbol first, so a function really called `abc` is never read as `0xabc`. |
 | `0x8049850` (`--addr` for bare hex) | That function's extent if the address is a discovered entry; otherwise 64 bytes from exactly there. |
 | `0x1140-0x11a0`, `0x1140..0x11a0` | Exactly that half-open span — the direct replacement for `objdump -d --start-address=.. --stop-address=..`. |
 
@@ -3219,8 +3240,16 @@ A listing whose length nobody asked for is capped at 1024 instructions, flagged
 `truncated` and marked in the header. The extent is only an upper bound — clipped
 at the next discovered entry or the end of the CODE section — so where discovery
 is thin one "function" can run to the end of `.text` (`main` in one unpacked
-crackme clips to 19,106 instructions). An explicit `--count`, `--bytes` or range
-is honored however long.
+crackme clips to 19,106 instructions). On a DOS program, whose code range holds its
+data too, the listing stops where the function's flow ends and says so:
+
+```
+$ kuna disassemble dazzle.exe sub_3a856
+note: sub_3a856 ends at 0x3a872, after the last instruction its flow reaches; its flow reaches none of the 12146 bytes from there to 0x3d7e4 (the range 0x3a872-0x3d7e4 lists them)
+# 13 instructions at sub_3a856 @ 0x3a856 (0x3a856..0x3a872, 28 bytes)
+```
+
+An explicit `--count`, `--bytes` or range is honored however long.
 
 This is a query, not an engine change, and it reinvents nothing: the binary is
 loaded once through the same in-process seam `decompile-all` uses
@@ -3756,7 +3785,9 @@ binary and attempt recompilation:
   the decompiler did not recover and would break the header/definition identity.
 - `<name>.asm` — labeled linear disassembly of every CODE section: labels match the `.c`
   function names, per-function `; arg:`/`; stack:` comments map decompiled variables to
-  storage, undecodable bytes as `db` lines, and a `; --- data ---` tail labeling named
+  storage, undecodable bytes as `db` lines (on a DOS program, a `; end of <name>` line
+  where a function's flow ends short of the next label, as its `size` does; the bytes
+  after it are still decoded), and a `; --- data ---` tail labeling named
   globals plus every `dat_<hex>` the `.c` references, with raw bytes. Data-tail addresses
   use their source address space's units; a `dat_<hex>` label retains the coordinate
   printed in C, and aliases a named symbol only in the same address space at the same

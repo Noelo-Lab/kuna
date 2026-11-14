@@ -1145,7 +1145,7 @@ impl Funcdata {
     /// takes.  Shared by [`link_symbol_reference`] (the attach) and
     /// [`name_undefined_spacebase_symbols`] (the namerec rename pre-pass) so the two
     /// passes resolve the identical address.
-    fn resolve_spacebase_ref_addr(&mut self, off_vn: VarnodeId) -> Option<Address> {
+    pub(crate) fn resolve_spacebase_ref_addr(&self, off_vn: VarnodeId) -> Option<Address> {
         // The PTRSUB this constant feeds.
         let op = self.lone_descend(off_vn)?;
         // The spacebase varnode.

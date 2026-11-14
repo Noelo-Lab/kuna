@@ -581,6 +581,9 @@ struct DecompileOutcome {
     name: String,
     /// The function an `--addr` selection lands inside, when not at an entry.
     interior: Option<crate::interior::Interior>,
+    /// (kuna #1288) The note for a selection past the end of the flow of the
+    /// function in front of it.
+    past_flow: Option<String>,
 }
 
 /// Run the decompile and return its [`DecompileOutcome`].
@@ -766,6 +769,7 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
                     assertions: assertion_outcomes(&stdout_text, &args.assertions, selected),
                     name: args.target.clone(),
                     interior: None,
+                    past_flow: None,
                 });
             }
             if let Some(reason) = print_command_failure(&stdout_text) {
@@ -818,6 +822,7 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
             assertions: assertion_outcomes(&stdout_text, &args.assertions, selected),
             name: decompiling_name(&stdout_text).unwrap_or_else(|| args.target.clone()),
             interior: crate::interior::from_transcript(&stdout_text),
+            past_flow: crate::interior::past_flow_from_transcript(&stdout_text),
         })
     };
 
@@ -863,6 +868,9 @@ pub fn run(args: &DecompileArgs) -> i32 {
             let written = crate::output::emit(&text);
             if let Some(interior) = &out.interior {
                 eprintln!("{}", crate::interior::note(interior));
+            }
+            if let Some(note) = &out.past_flow {
+                eprintln!("{note}");
             }
             // (kuna outlang) The Rust back-end's unrepresentable gotos, counted
             // off the rendered text: this surface drives `decomp_dbg` as a
