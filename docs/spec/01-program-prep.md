@@ -5277,6 +5277,17 @@ every other binary's pass list is byte-identical to before the pass existed):
   their even address in a scoped context. Unsized symbols still use the next
   entry. Rebuilding a pre-change database can change records when the old
   extent included trailing padding; existing databases remain readable.
+  The next-entry clip folded the alignment padding GCC emits after a function
+  (`data16 cs nopw`, which the x86 skipper does not skip) into most glibc
+  records, and a Listing-based query never decodes that padding after a
+  return. Rebuilt from glibc 2.35's `libc.a`, the database gives the right
+  single candidate for 396 instead of 216 of the 1,060 sized functions of a
+  static test program, and no wrong single candidate instead of 5: code-identical
+  twins whose padding differed now share an ambiguous bucket. Built from the
+  Thumb-2 armhf `libc.a`, it went from 9 records to 3,078. A function that ends
+  in a call the Listing does not know never returns can lose its match,
+  because the Listing decodes the padding after that call and the bounded
+  record does not.
   `kuna fid query` exposes full-hash candidates as a read-only lookup. It
   reports whether the entry was discovered or supplied by the caller, the
   Listing's instruction-boundary classification, and that identity is unverified;

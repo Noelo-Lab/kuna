@@ -123,8 +123,8 @@ pub fn build_records(
         if name.is_empty() {
             continue;
         }
-        // The exclusive upper bound: the next function entry strictly after this
-        // one (the `[entry, next)` clip). `None` ⇒ decode until a terminal / error.
+        // The exclusive upper bound: the nearer of the next function entry and
+        // the symbol end. `None` ⇒ decode until a terminal / error.
         let address = if arm32 { *entry & !1 } else { *entry };
         let next = funcs.get(idx + 1).map(|(a, _)| if arm32 { *a & !1 } else { *a });
         let symbol_end = sizes.get(entry).and_then(|size| address.checked_add(*size));

@@ -27,7 +27,7 @@ fn archive_members_keep_the_vendored_database_and_leave_no_staging_files() {
     let staging = scratch.path().join("staging");
     std::fs::create_dir(&staging).unwrap();
     let object = std::fs::read(common::fixture("fid_lib_x86_64.o")).unwrap();
-
+    let expected = std::fs::read(common::fixture("fid_lib_x86_64.fid")).unwrap();
     let mut archive = b"!<arch>\n".to_vec();
     archive_member(&mut archive, "first.o/", &object);
     archive_member(&mut archive, "second.o/", &object);
@@ -55,6 +55,7 @@ fn archive_members_keep_the_vendored_database_and_leave_no_staging_files() {
     );
     assert!(result.stdout.is_empty());
     assert!(String::from_utf8_lossy(&result.stderr).contains("6 record(s)"));
+    assert_eq!(std::fs::read(&output).unwrap(), expected);
     let query = Command::new(env!("CARGO_BIN_EXE_kuna"))
         .args(["fid", "query"]).arg(common::repo_root().join("tests/fixtures/fid/prog"))
         .arg("--db").arg(&output).args(["--addr", "0x401810", "--json"])
