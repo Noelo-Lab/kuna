@@ -268,7 +268,7 @@ flag, and exit 1 instead of spinning on.
 
 `--json` emits the `decompile-all` document for the one selected function (see
 *The JSON documents* under `decompile-all`), and takes the same record
-selection: `--no-vars` and `--omit line_mappings,variables,types` behave as they
+selection: `--no-vars` and `--omit aliases,line_mappings,variables,types` behave as they
 do there. Without `--json` both are refused, since the C text carries none of
 those collections.
 
@@ -1826,24 +1826,27 @@ what `--omit variables` below is for.
 **`--omit KEY[,KEY]...`** (repeatable, `decompile-all --json` and
 `decompile --json`) leaves whole collections out of every record, for a caller
 that wants the function's identity, `code` and `error` and not the rest. The keys
-are `line_mappings`, `variables` and `types`; `variables` also withholds
-`stack_objects`, which `--no-vars` already ties to it. An omitted key is absent
-from every record, not emptied, and the document says which ones in a top-level
+are `aliases`, `line_mappings`, `variables` and `types`; `variables` also withholds
+`stack_objects`, which `--no-vars` already ties to it. `aliases` is for an entry
+exported under many names: the record keeps its primary `name` and address, and
+`kuna functions --json` (which takes no `--omit`) still lists every alias. An
+omitted key is absent from every record, not emptied, and the document says which
+ones in a top-level
 `omitted` array, in record order. `variables: []` therefore still means a function
 whose variables were examined and none reported, and an absent `stack_objects`
 with no `omitted` still means none were recovered. A document that omits nothing
 has no `omitted` key, so the default document is unchanged. The run-level
 `language`, `count`, `error` and `assertions` and each record's `name`,
-`address`, `address_hex`, `aliases`, `object_location`, `size`, `code`, `error`
-and `unstructured_gotos` (and `interior_to` and `declared`, where they apply) are
+`address`, `address_hex`, `object_location`, `size`, `code`, `error` and
+`unstructured_gotos` (and `interior_to` and `declared`, where they apply) are
 always present;
 `code` and the exit status are what they are without the flag. An unknown key
 exits 2.
 
 ```bash
-kuna decompile ./fixture audit_many --json --omit line_mappings,variables,types
+kuna decompile ./fixture audit_many --json --omit aliases,line_mappings,variables,types
 #   {"binary": "./fixture", "language": "c-language",
-#    "omitted": ["line_mappings", "variables", "types", "stack_objects"],
+#    "omitted": ["aliases", "line_mappings", "variables", "types", "stack_objects"],
 #    "count": 1, "error": null,
 #    "functions": [{"name": "audit_many", ..., "code": "void audit_many(void) ...",
 #                   "error": null, "unstructured_gotos": 0}],
@@ -1855,10 +1858,12 @@ The line mappings and the variables' `line_numbers`/`addresses` come from a seco
 markup render of each function, which runs unless both `line_mappings` and the
 variables (`--omit variables` or `--no-vars`) are left out; `--omit variables`
 skips the variable and stack-object extraction, as `--no-vars` does. For one
-x86-64 function of 500 volatile stores, omitting all three takes the document
-from 75,234 bytes to 22,603 (its C is 21,623). Over 24 decbench binaries
-(3,830 functions) the whole-binary document shrinks to 18% of its default size,
-and a whole-binary run of `cmp` or `ln` takes 3-6% less time.
+x86-64 function of 500 volatile stores, omitting `line_mappings`, `variables` and
+`types` takes the document from 75,234 bytes to 22,603 (its C is 21,623). Over 24
+decbench binaries (3,830 functions) the whole-binary document shrinks to 18% of its
+default size, and a whole-binary run of `cmp` or `ln` takes 3-6% less time. For a
+two-instruction function exported under 600 names of 177 bytes each, those three
+leave 114,080 bytes, and adding `aliases` takes it to 836 (its C is 217).
 
 `types` is the layout side of the same record: one object per composite, enum or
 typedef the function's C names, carrying its name, its definition text (the same
