@@ -21,8 +21,10 @@
 //! a call (`va_start`, `lea ecx,[esp+8]` for a by-value `this`) states nothing.
 //! A pointer into the callee's locals, however it is indexed, is taken to stay
 //! among them while the walk sees it; one the walk loses (loaded back from a
-//! stack slot, returned by a call) may not be dereferenced, and a stack address
-//! may not leave the general registers. A callee the walk cannot read is taken
+//! stack slot, left by a call) may not be dereferenced, and a stack address may
+//! not leave the general registers except for a slot the walk follows or a
+//! pointer it cannot place, through which a local's address is taken to stay a
+//! local's. A callee the walk cannot read is taken
 //! to read only the arguments pushed for it, unless it is one that moves its
 //! caller's stack.
 //!

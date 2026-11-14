@@ -223,7 +223,8 @@ pub struct Summary {
     /// The most any reached return adds to the stack pointer, whether or not
     /// the stack pointer was back at its entry value there.
     pub ret_pops: Option<int4>,
-    /// (`calleeargs`) A return leaves a stack address in `EAX` or `EDX`.
+    /// (`calleeargs`) A return leaves a stack address in a caller-saved
+    /// register.
     pub returns_stack: bool,
 }
 
@@ -239,6 +240,9 @@ const DECODED: usize = 1 << 12;
 /// The walks already taken, on the architecture.
 #[derive(Default)]
 pub struct Cache {
+    /// Whether the walks kept were taken with `calleeargs` on, which follows
+    /// the stack addresses a walk loses.
+    tracked: bool,
     /// Instructions the walks decoded, emptied when full.
     decoded: HashMap<uintb, Decoded>,
     /// Walks whose nested calls all fit within the depth asked, with the
@@ -260,9 +264,15 @@ pub(crate) fn summary(arch: &Architecture, entry: &Address, depth: u8) -> Summar
 
 /// [`summary`] and the depth it needed. A walk is reused at any depth it fits
 /// within and otherwise cached per depth, so the answer never depends on which
-/// function asked first.
+/// function asked first; the walks are dropped when `calleeargs` changes.
 fn summary_at(arch: &Architecture, entry: &Address, depth: u8) -> (Summary, u8) {
     let off = entry.get_offset();
+    if arch.kuna_callee_purge.borrow().tracked != arch.kuna_calleeargs {
+        let mut cache = arch.kuna_callee_purge.borrow_mut();
+        cache.tracked = arch.kuna_calleeargs;
+        cache.whole.clear();
+        cache.cut.clear();
+    }
     {
         let cache = arch.kuna_callee_purge.borrow();
         if let Some(&(hit, need)) = cache.whole.get(&off).filter(|(_, need)| *need <= depth) {
@@ -481,6 +491,19 @@ pub(crate) fn slot_bit(o: i64) -> Option<u64> {
     ((-256..0).contains(&o) && o % 4 == 0).then(|| 1u64 << (-o / 4 - 1))
 }
 
+/// The bits of the slots an access of `size` bytes at `at` may overlap.
+fn slots_in(at: Option<Val>, size: u32) -> u64 {
+    let Some(Val::Stack { lo, hi, .. }) = at else { return 0 };
+    let end = bound(hi, size as i64).min(0);
+    let mut o = lo.max(-256).div_euclid(4) * 4;
+    let mut bits = 0;
+    while o < end {
+        bits |= slot_bit(o).unwrap_or(0);
+        o += 4;
+    }
+    bits
+}
+
 /// The general registers as the walk recognizes them.
 pub(crate) struct Regs {
     pub space: i32,
@@ -680,7 +703,7 @@ pub(crate) fn step_with(
                 let at = vals.get(1).copied().flatten();
                 touch(at, size, &mut s.arg_end, &mut s.unplaced);
                 s.unplaced |= lost_at(1);
-                out_lost = track && at.and_then(Val::as_exact).and_then(slot_bit).is_some_and(|b| s.state.2 & b != 0);
+                out_lost = track && s.state.2 & slots_in(at, size) != 0;
                 None
             }
             OpCode::CPUI_STORE => {
@@ -692,12 +715,9 @@ pub(crate) fn step_with(
                 if track {
                     s.unplaced |= lost_at(1);
                     let carries = value.is_some() || lost_at(2);
-                    match (at, at.and_then(Val::as_exact)) {
-                        (_, Some(o)) => match slot_bit(o).filter(|_| size == 4) {
-                            Some(b) if carries => s.state.2 |= b,
-                            Some(b) => s.state.2 &= !b,
-                            None => s.unplaced |= carries && o < 0,
-                        },
+                    match (at, at.and_then(Val::as_exact).and_then(slot_bit).filter(|_| size == 4)) {
+                        (_, Some(b)) if carries => s.state.2 |= b,
+                        (_, Some(b)) => s.state.2 &= !b,
                         (Some(Val::Stack { .. }), None) => s.unplaced |= carries,
                         _ => {}
                     }
@@ -879,7 +899,7 @@ fn walk(arch: &Architecture, entry: &Address, depth: u8) -> Option<(Summary, u8)
         }
         if let Some((pre, post)) = s.ret {
             returns = true;
-            returns_stack |= [0, 2].iter().any(|&r| s.state.0[r].is_some() || s.state.lost(r));
+            returns_stack |= CALLER_SAVED.iter().any(|&r| s.state.0[r].is_some() || s.state.lost(r));
             match (pre.as_exact(), post.as_exact()) {
                 (Some(0), Some(ep)) => {
                     let ep = ep as int4;
@@ -923,7 +943,7 @@ fn walk(arch: &Architecture, entry: &Address, depth: u8) -> Option<(Summary, u8)
             }
             clobber(&mut s.state);
             if track && effect.returns_stack {
-                s.state.1 |= (1 << 0) | (1 << 2);
+                s.state.1 |= CALLER_SAVED.iter().fold(0, |m, &r| m | 1 << r);
             }
             match effect.effect {
                 Effect::Balanced(ep) => s.state.0[SP] = Some(sp.shift(ep as i64)),

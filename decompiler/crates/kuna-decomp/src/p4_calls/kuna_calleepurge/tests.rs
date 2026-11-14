@@ -323,3 +323,29 @@ fn a_stack_address_parked_outside_the_general_registers_is_unplaced() {
     assert!(f.extent_tracked(&[vec![f.add(0, SP, 8)], park.clone()]).1);
     assert!(!f.extent_tracked(&[vec![(OpCode::CPUI_COPY, Some(f.r(0)), vec![f.c(5)])], park]).1, "a plain value");
 }
+
+impl Fx {
+    fn store_at(&self, base: usize, off: i64, src: usize) -> Vec<Op> {
+        let t = vn(&self.tmp, 0x200, 4);
+        vec![
+            (OpCode::CPUI_INT_ADD, Some(t.clone()), vec![self.r(base), self.c(off)]),
+            (OpCode::CPUI_STORE, None, vec![vn(&self.cst, 3, 8), t, self.r(src)]),
+        ]
+    }
+}
+
+#[test]
+fn a_stack_address_parked_in_an_argument_slot_is_unplaced() {
+    let f = fx();
+    let shape = [vec![f.add(SP, SP, -8)], vec![f.copy(0, SP)], f.store_at(SP, 0xc, 0), f.load(SP, 0xc), f.load(0, 0x10)];
+    assert!(f.extent_tracked(&shape).1, "a local's address stored over the first argument, loaded back, read past");
+}
+
+#[test]
+fn a_wide_load_over_a_parked_stack_address_is_lost() {
+    let f = fx();
+    let xmm0 = vn(&f.reg, 0x1200, 8);
+    let wide = vec![(OpCode::CPUI_LOAD, Some(xmm0), vec![vn(&f.cst, 3, 8), f.r(SP)])];
+    let shape = [vec![f.add(SP, SP, -0x10)], vec![f.copy(0, SP)], f.store_at(SP, 4, 0), wide];
+    assert!(f.extent_tracked(&shape).1, "an 8-byte load covering the slot that holds the address");
+}

@@ -17,6 +17,17 @@
 ;                       keep_one(a0) and pass_on(7): keep_one is bounded, and
 ;                       the local it no longer takes must not move to pass_on.
 ;
+; After entry, more __cdecl(a, b) readers of b, each with a caller like the
+; ones above:
+;   read_argslot        stores a local's address over its first argument,
+;                       loads it back and reads past it.
+;   read_movq           stores a local's address in a slot, copies the slot
+;                       with an 8-byte movq, loads it back and reads past it.
+;   get_sp_ecx / read_ecx  read_ecx reads b through the stack address
+;                       get_sp_ecx leaves in ECX (`lea ecx,[esp+4]; ret`).
+;   read_ret2           read_ret again, for a session that turns the option on
+;                       after walking it with the option off.
+;
 ; Build: nasm -f bin -I . -o calleelost_pe_i386.exe calleelost_pe_i386.asm
 
 %define IMAGE_DLL 0
@@ -124,6 +135,63 @@ entry:
     call cookie_caller
     add esp, 4
     ret
+
+    align 16, db 0xcc
+read_argslot:
+    sub esp, 8
+    mov eax, esp
+    mov [esp+0xc], eax
+    mov ecx, [esp+0xc]
+    mov eax, [ecx+0x10]
+    add esp, 8
+    ret
+
+    align 16, db 0xcc
+read_movq:
+    sub esp, 0x10
+    mov eax, esp
+    mov [esp+4], eax
+    movq xmm0, [esp]
+    movq [esp+8], xmm0
+    mov ecx, [esp+0xc]
+    mov eax, [ecx+0x18]
+    add esp, 0x10
+    ret
+
+    align 16, db 0xcc
+get_sp_ecx:
+    lea ecx, [esp+4]
+    ret
+
+    align 16, db 0xcc
+read_ecx:
+    call get_sp_ecx
+    mov eax, [ecx+8]
+    ret
+
+    align 16, db 0xcc
+read_ret2:
+    call get_sp
+    mov eax, [eax+8]
+    ret
+
+%macro CALLER 1
+    align 16, db 0xcc
+call_%1:
+    push ebp
+    mov ebp, esp
+    sub esp, 8
+    mov dword [esp], 0x11
+    mov dword [esp+4], 0x22
+    call read_%1
+    leave
+    ret
+%endmacro
+
+CALLER argslot
+CALLER movq
+CALLER ecx
+CALLER ret2
 
 section .rdata
     align 4, db 0

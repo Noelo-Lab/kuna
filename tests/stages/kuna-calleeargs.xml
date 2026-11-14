@@ -52,6 +52,13 @@
     keep_one and pass_on, whose callee states no extent: the local is not
     dropped from keep_one where pass_on would take it, so pass_on keeps its one
     argument.
+    call_argslot (0x401190), call_movq (0x4011b0) and call_ecx (0x4011d0), both
+    passes, pass (0x11, 0x22) to callees that read the second argument through a
+    local's address stored over their first argument, one copied by an 8-byte
+    movq, or a stack address a call leaves in ECX; each call keeps both. The
+    option-off session ends by turning the option on and decompiling call_ret2
+    (0x4011f0), a second caller of the get_sp reader, whose callee was already
+    walked with the option off: it keeps both too.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -161,6 +168,26 @@ c3
   <com>load function cookie_caller</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>function bounds 0x401190 as call_argslot</com>
+  <com>load function call_argslot</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x4011b0 as call_movq</com>
+  <com>load function call_movq</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x4011d0 as call_ecx</com>
+  <com>load function call_ecx</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x4011f0 as call_ret2</com>
+  <com>load function call_ret2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option calleeargs on</com>
+  <com>load function call_ret2</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/calleelost_pe_i386.exe</com>
   <com>read symbols</com>
@@ -178,6 +205,18 @@ c3
   <com>print C</com>
   <com>function bounds 0x4010d0 as cookie_caller</com>
   <com>load function cookie_caller</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x401190 as call_argslot</com>
+  <com>load function call_argslot</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x4011b0 as call_movq</com>
+  <com>load function call_movq</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x4011d0 as call_ecx</com>
+  <com>load function call_ecx</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
@@ -207,4 +246,8 @@ c3
 <stringmatch name="CALLEEARGS #23: the callee reading through an address stored and loaded back keeps both" min="2" max="2">sub_401040\(0x11,0x22\);</stringmatch>
 <stringmatch name="CALLEEARGS #24: a call whose callee states no extent does not take the local a bounded call frees" min="2" max="2">sub_4010c0\(7\);</stringmatch>
 <stringmatch name="CALLEEARGS #25: known gap, only the off pass keeps the -12 GetStdHandle push" min="1" max="1">0xfffffff4</stringmatch>
+<stringmatch name="CALLEEARGS #26: the callee reading through an address stored over its first argument keeps both" min="2" max="2">sub_401120\(0x11,0x22\);</stringmatch>
+<stringmatch name="CALLEEARGS #27: the callee reading through an address copied by an 8-byte move keeps both" min="2" max="2">sub_401140\(0x11,0x22\);</stringmatch>
+<stringmatch name="CALLEEARGS #28: the callee reading through a stack address a call leaves in ECX keeps both" min="2" max="2">sub_401170\(0x11,0x22\);</stringmatch>
+<stringmatch name="CALLEEARGS #29: turning the option on after a walk with it off still keeps both" min="2" max="2">sub_401180\(0x11,0x22\);</stringmatch>
 </decompilertest>

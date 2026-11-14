@@ -1619,15 +1619,20 @@ classified:
   A pointer into the callee's locals, however it is indexed or stepped, is
   taken to stay among them while the walk can see it. A stack address the
   walk loses sight of is followed as lost: one stored in a stack slot and
-  loaded back (`push esp; pop eax`), and one a nested call returns in `EAX`
-  or `EDX` (a helper that hands back `lea eax,[esp+4]`); a load or store
-  through a lost address leaves the extent unstated, and so does a stack
-  address written outside the general registers (parked in `xmm0`) or into
-  part of one. Slots are followed flow-sensitively for the 64 below the return
-  address, so a plain value stored over a slot clears it, and a lost address
-  that is never dereferenced (the `pop ecx` that cleans a pushed local's
-  address) costs nothing. This bookkeeping runs only with the option on and
-  never changes a value the pop proof reads. A nested call to a function recorded as
+  loaded back by any access that overlaps the slot (`push esp; pop eax`, a
+  `movq` copy), and one a nested call leaves in a caller-saved register (a
+  helper that hands back `lea eax,[esp+4]`); a load or store through a lost
+  address leaves the extent unstated, and so does a stack address written
+  outside the general registers (parked in `xmm0`), into part of one, or to a
+  stack location whose slot is not followed (an argument's own slot, a slot
+  deeper than the 64 below the return address). Slots are followed
+  flow-sensitively, so a plain value stored over a slot clears it, and a lost
+  address that is never dereferenced (the `pop ecx` that cleans a pushed
+  local's address) costs nothing. A local's address stored through a pointer
+  the walk cannot place, or handed to a call, is still taken to stay among
+  the locals. This bookkeeping runs only with the option on and never changes
+  a value the pop proof reads; turning the option on or off drops the walks
+  already taken, so a walk is never reused with the other setting. A nested call to a function recorded as
   stack-moving (above) whose own extent is not stated leaves the extent
   unstated: it can read anywhere in its caller's frame. The extent is stated only when the walk saw every
   path and placed every access: an indirect jump, a budget overrun, an access

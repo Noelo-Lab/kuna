@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4082,
-    4082
+    4086,
+    4086
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -219,6 +219,10 @@
     "data:CALLEEARGS #23: the callee reading through an address stored and loaded back keeps both",
     "data:CALLEEARGS #24: a call whose callee states no extent does not take the local a bounded call frees",
     "data:CALLEEARGS #25: known gap, only the off pass keeps the -12 GetStdHandle push",
+    "data:CALLEEARGS #26: the callee reading through an address stored over its first argument keeps both",
+    "data:CALLEEARGS #27: the callee reading through an address copied by an 8-byte move keeps both",
+    "data:CALLEEARGS #28: the callee reading through a stack address a call leaves in ECX keeps both",
+    "data:CALLEEARGS #29: turning the option on after a walk with it off still keeps both",
     "data:CALLEEARGS #2: on, the method takes no stack argument",
     "data:CALLEEARGS #3: on, the virtual call gets its fourth argument",
     "data:CALLEEARGS #4: off, the call before the by-value copy has no arguments",
