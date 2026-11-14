@@ -6003,9 +6003,10 @@ is m=0 & b_3030=0 & s=0 & b_2428=0x1e & ftype=3 & b_2121=1 & fpDpOpcode=0x4 & b_
 
 # C7.2.63 FCVTAS (vector) page C7-1136 line 65961 KEEPWITH
 
-# Rounding to an integral value in a mode p-code has no operator for: ties to even, and the
-# current FPCR mode with (rint) and without (nearbyint) the Inexact exception.
+# Rounding to an integral value in a mode p-code has no operator for: ties to even, toward
+# zero, and the current FPCR mode with (rint) and without (nearbyint) the Inexact exception.
 define pcodeop FLOAT_ROUNDEVEN;
+define pcodeop FLOAT_TRUNC;
 define pcodeop FLOAT_RINT;
 define pcodeop FLOAT_NEARBYINT;
 
@@ -10809,14 +10810,10 @@ frint_vlanes4H: is b_29=1 & b_23=0 & b_12=1 & Rd_VPR64.4H & Rn_VPR64.4H
 }
 frint_vlanes4H: is b_29=0 & b_23=1 & b_12=1 & Rd_VPR64.4H & Rn_VPR64.4H
 {
-	local t0:4 = trunc(Rn_VPR64.4H[0,16]);
-	Rd_VPR64.4H[0,16] = int2float(t0);
-	local t1:4 = trunc(Rn_VPR64.4H[16,16]);
-	Rd_VPR64.4H[16,16] = int2float(t1);
-	local t2:4 = trunc(Rn_VPR64.4H[32,16]);
-	Rd_VPR64.4H[32,16] = int2float(t2);
-	local t3:4 = trunc(Rn_VPR64.4H[48,16]);
-	Rd_VPR64.4H[48,16] = int2float(t3);
+	Rd_VPR64.4H[0,16] = FLOAT_TRUNC(Rn_VPR64.4H[0,16]);
+	Rd_VPR64.4H[16,16] = FLOAT_TRUNC(Rn_VPR64.4H[16,16]);
+	Rd_VPR64.4H[32,16] = FLOAT_TRUNC(Rn_VPR64.4H[32,16]);
+	Rd_VPR64.4H[48,16] = FLOAT_TRUNC(Rn_VPR64.4H[48,16]);
 }
 
 # C7.2.155 FRINTA (vector) page C7-2369 line 138408 MATCH x2e798800/mask=xbffffc00
@@ -10908,22 +10905,14 @@ frint_vlanes8H: is b_29=1 & b_23=0 & b_12=1 & Rd_VPR128.8H & Rn_VPR128.8H
 }
 frint_vlanes8H: is b_29=0 & b_23=1 & b_12=1 & Rd_VPR128.8H & Rn_VPR128.8H
 {
-	local t0:4 = trunc(Rn_VPR128.8H[0,16]);
-	Rd_VPR128.8H[0,16] = int2float(t0);
-	local t1:4 = trunc(Rn_VPR128.8H[16,16]);
-	Rd_VPR128.8H[16,16] = int2float(t1);
-	local t2:4 = trunc(Rn_VPR128.8H[32,16]);
-	Rd_VPR128.8H[32,16] = int2float(t2);
-	local t3:4 = trunc(Rn_VPR128.8H[48,16]);
-	Rd_VPR128.8H[48,16] = int2float(t3);
-	local t4:4 = trunc(Rn_VPR128.8H[64,16]);
-	Rd_VPR128.8H[64,16] = int2float(t4);
-	local t5:4 = trunc(Rn_VPR128.8H[80,16]);
-	Rd_VPR128.8H[80,16] = int2float(t5);
-	local t6:4 = trunc(Rn_VPR128.8H[96,16]);
-	Rd_VPR128.8H[96,16] = int2float(t6);
-	local t7:4 = trunc(Rn_VPR128.8H[112,16]);
-	Rd_VPR128.8H[112,16] = int2float(t7);
+	Rd_VPR128.8H[0,16] = FLOAT_TRUNC(Rn_VPR128.8H[0,16]);
+	Rd_VPR128.8H[16,16] = FLOAT_TRUNC(Rn_VPR128.8H[16,16]);
+	Rd_VPR128.8H[32,16] = FLOAT_TRUNC(Rn_VPR128.8H[32,16]);
+	Rd_VPR128.8H[48,16] = FLOAT_TRUNC(Rn_VPR128.8H[48,16]);
+	Rd_VPR128.8H[64,16] = FLOAT_TRUNC(Rn_VPR128.8H[64,16]);
+	Rd_VPR128.8H[80,16] = FLOAT_TRUNC(Rn_VPR128.8H[80,16]);
+	Rd_VPR128.8H[96,16] = FLOAT_TRUNC(Rn_VPR128.8H[96,16]);
+	Rd_VPR128.8H[112,16] = FLOAT_TRUNC(Rn_VPR128.8H[112,16]);
 }
 
 # C7.2.155 FRINTA (vector) page C7-2369 line 138408 MATCH x2e798800/mask=xbffffc00
@@ -10979,10 +10968,8 @@ frint_vlanes2S: is b_29=1 & b_23=0 & b_12=1 & Rd_VPR64.2S & Rn_VPR64.2S
 }
 frint_vlanes2S: is b_29=0 & b_23=1 & b_12=1 & Rd_VPR64.2S & Rn_VPR64.2S
 {
-	local t0:8 = trunc(Rn_VPR64.2S[0,32]);
-	Rd_VPR64.2S[0,32] = int2float(t0);
-	local t1:8 = trunc(Rn_VPR64.2S[32,32]);
-	Rd_VPR64.2S[32,32] = int2float(t1);
+	Rd_VPR64.2S[0,32] = FLOAT_TRUNC(Rn_VPR64.2S[0,32]);
+	Rd_VPR64.2S[32,32] = FLOAT_TRUNC(Rn_VPR64.2S[32,32]);
 }
 
 # C7.2.155 FRINTA (vector) page C7-2369 line 138408 MATCH x2e218800/mask=xbfbffc00
@@ -11050,14 +11037,10 @@ frint_vlanes4S: is b_29=1 & b_23=0 & b_12=1 & Rd_VPR128.4S & Rn_VPR128.4S
 }
 frint_vlanes4S: is b_29=0 & b_23=1 & b_12=1 & Rd_VPR128.4S & Rn_VPR128.4S
 {
-	local t0:8 = trunc(Rn_VPR128.4S[0,32]);
-	Rd_VPR128.4S[0,32] = int2float(t0);
-	local t1:8 = trunc(Rn_VPR128.4S[32,32]);
-	Rd_VPR128.4S[32,32] = int2float(t1);
-	local t2:8 = trunc(Rn_VPR128.4S[64,32]);
-	Rd_VPR128.4S[64,32] = int2float(t2);
-	local t3:8 = trunc(Rn_VPR128.4S[96,32]);
-	Rd_VPR128.4S[96,32] = int2float(t3);
+	Rd_VPR128.4S[0,32] = FLOAT_TRUNC(Rn_VPR128.4S[0,32]);
+	Rd_VPR128.4S[32,32] = FLOAT_TRUNC(Rn_VPR128.4S[32,32]);
+	Rd_VPR128.4S[64,32] = FLOAT_TRUNC(Rn_VPR128.4S[64,32]);
+	Rd_VPR128.4S[96,32] = FLOAT_TRUNC(Rn_VPR128.4S[96,32]);
 }
 
 # C7.2.155 FRINTA (vector) page C7-2369 line 138408 MATCH x2e218800/mask=xbfbffc00
@@ -11113,10 +11096,8 @@ frint_vlanes2D: is b_29=1 & b_23=0 & b_12=1 & Rd_VPR128.2D & Rn_VPR128.2D
 }
 frint_vlanes2D: is b_29=0 & b_23=1 & b_12=1 & Rd_VPR128.2D & Rn_VPR128.2D
 {
-	local t0:8 = trunc(Rn_VPR128.2D[0,64]);
-	Rd_VPR128.2D[0,64] = int2float(t0);
-	local t1:8 = trunc(Rn_VPR128.2D[64,64]);
-	Rd_VPR128.2D[64,64] = int2float(t1);
+	Rd_VPR128.2D[0,64] = FLOAT_TRUNC(Rn_VPR128.2D[0,64]);
+	Rd_VPR128.2D[64,64] = FLOAT_TRUNC(Rn_VPR128.2D[64,64]);
 }
 
 # C7.2.155 FRINTA (vector) page C7-2369 line 138408 MATCH x2e218800/mask=xbfbffc00
@@ -11156,7 +11137,7 @@ frint_s16: is b_1517=0b010 & Rd_FPR16 & Rn_FPR16 { Rd_FPR16 = floor(Rn_FPR16); }
 frint_s16: is b_1517=0b000 & Rd_FPR16 & Rn_FPR16 { Rd_FPR16 = FLOAT_ROUNDEVEN(Rn_FPR16); }
 frint_s16: is b_1517=0b001 & Rd_FPR16 & Rn_FPR16 { Rd_FPR16 = ceil(Rn_FPR16); }
 frint_s16: is b_1517=0b110 & Rd_FPR16 & Rn_FPR16 { Rd_FPR16 = FLOAT_RINT(Rn_FPR16); }
-frint_s16: is b_1517=0b011 & Rd_FPR16 & Rn_FPR16 { local t:4 = trunc(Rn_FPR16); Rd_FPR16 = int2float(t); }
+frint_s16: is b_1517=0b011 & Rd_FPR16 & Rn_FPR16 { Rd_FPR16 = FLOAT_TRUNC(Rn_FPR16); }
 
 # C7.2.156 FRINTA (scalar) page C7-2371 line 138539 MATCH x1e264000/mask=xff3ffc00
 # C7.2.158 FRINTI (scalar) page C7-2375 line 138773 MATCH x1e27c000/mask=xff3ffc00
@@ -11185,7 +11166,7 @@ frint_s32: is b_1517=0b010 & Rd_FPR32 & Rn_FPR32 { Rd_FPR32 = floor(Rn_FPR32); }
 frint_s32: is b_1517=0b000 & Rd_FPR32 & Rn_FPR32 { Rd_FPR32 = FLOAT_ROUNDEVEN(Rn_FPR32); }
 frint_s32: is b_1517=0b001 & Rd_FPR32 & Rn_FPR32 { Rd_FPR32 = ceil(Rn_FPR32); }
 frint_s32: is b_1517=0b110 & Rd_FPR32 & Rn_FPR32 { Rd_FPR32 = FLOAT_RINT(Rn_FPR32); }
-frint_s32: is b_1517=0b011 & Rd_FPR32 & Rn_FPR32 { local t:8 = trunc(Rn_FPR32); Rd_FPR32 = int2float(t); }
+frint_s32: is b_1517=0b011 & Rd_FPR32 & Rn_FPR32 { Rd_FPR32 = FLOAT_TRUNC(Rn_FPR32); }
 
 # C7.2.156 FRINTA (scalar) page C7-2371 line 138539 MATCH x1e264000/mask=xff3ffc00
 # C7.2.158 FRINTI (scalar) page C7-2375 line 138773 MATCH x1e27c000/mask=xff3ffc00
@@ -11214,7 +11195,7 @@ frint_s64: is b_1517=0b010 & Rd_FPR64 & Rn_FPR64 { Rd_FPR64 = floor(Rn_FPR64); }
 frint_s64: is b_1517=0b000 & Rd_FPR64 & Rn_FPR64 { Rd_FPR64 = FLOAT_ROUNDEVEN(Rn_FPR64); }
 frint_s64: is b_1517=0b001 & Rd_FPR64 & Rn_FPR64 { Rd_FPR64 = ceil(Rn_FPR64); }
 frint_s64: is b_1517=0b110 & Rd_FPR64 & Rn_FPR64 { Rd_FPR64 = FLOAT_RINT(Rn_FPR64); }
-frint_s64: is b_1517=0b011 & Rd_FPR64 & Rn_FPR64 { local t:8 = trunc(Rn_FPR64); Rd_FPR64 = int2float(t); }
+frint_s64: is b_1517=0b011 & Rd_FPR64 & Rn_FPR64 { Rd_FPR64 = FLOAT_TRUNC(Rn_FPR64); }
 
 # C7.2.156 FRINTA (scalar) page C7-2371 line 138539 MATCH x1e264000/mask=xff3ffc00
 # C7.2.158 FRINTI (scalar) page C7-2375 line 138773 MATCH x1e27c000/mask=xff3ffc00
@@ -31791,7 +31772,7 @@ is b_2131=0b01101110010 & Rm_VPR128.8H & b_1015=0b111011 & Rn_VPR128.8H & Rd_VPR
 # b_0031=0.1011100.100001111010..........
 
 :frint32x Rd_VPR64.2S, Rn_VPR64.2S
-is b_3131=0b0 & Q=0 & b_2329=0b1011100 & b_22=0 & b_1021=0b100001111010 & Rn_VPR64.2S & Rd_VPR64.2S
+is b_3131=0b0 & Q=0 & b_2329=0b1011100 & b_22=0 & b_1021=0b100001111010 & Rn_VPR64.2S & Rd_VPR64.2S & Zd
 {
 	local r0:4 = FLOAT_RINT(Rn_VPR64.2S[0,32]);
 	local t0:4 = trunc(r0);
@@ -31799,10 +31780,11 @@ is b_3131=0b0 & Q=0 & b_2329=0b1011100 & b_22=0 & b_1021=0b100001111010 & Rn_VPR
 	local r1:4 = FLOAT_RINT(Rn_VPR64.2S[32,32]);
 	local t1:4 = trunc(r1);
 	Rd_VPR64.2S[32,32] = int2float(t1);
+	zext_zd(Zd); # zero upper 24 bytes of Zd
 }
 
 :frint32x Rd_VPR128.4S, Rn_VPR128.4S
-is b_3131=0b0 & Q=1 & b_2329=0b1011100 & b_22=0 & b_1021=0b100001111010 & Rn_VPR128.4S & Rd_VPR128.4S
+is b_3131=0b0 & Q=1 & b_2329=0b1011100 & b_22=0 & b_1021=0b100001111010 & Rn_VPR128.4S & Rd_VPR128.4S & Zd
 {
 	local r0:4 = FLOAT_RINT(Rn_VPR128.4S[0,32]);
 	local t0:4 = trunc(r0);
@@ -31816,10 +31798,11 @@ is b_3131=0b0 & Q=1 & b_2329=0b1011100 & b_22=0 & b_1021=0b100001111010 & Rn_VPR
 	local r3:4 = FLOAT_RINT(Rn_VPR128.4S[96,32]);
 	local t3:4 = trunc(r3);
 	Rd_VPR128.4S[96,32] = int2float(t3);
+	zext_zq(Zd); # zero upper 16 bytes of Zd
 }
 
 :frint32x Rd_VPR128.2D, Rn_VPR128.2D
-is b_3131=0b0 & Q=1 & b_2329=0b1011100 & b_22=1 & b_1021=0b100001111010 & Rn_VPR128.2D & Rd_VPR128.2D
+is b_3131=0b0 & Q=1 & b_2329=0b1011100 & b_22=1 & b_1021=0b100001111010 & Rn_VPR128.2D & Rd_VPR128.2D & Zd
 {
 	local r0:8 = FLOAT_RINT(Rn_VPR128.2D[0,64]);
 	local t0:4 = trunc(r0);
@@ -31827,6 +31810,7 @@ is b_3131=0b0 & Q=1 & b_2329=0b1011100 & b_22=1 & b_1021=0b100001111010 & Rn_VPR
 	local r1:8 = FLOAT_RINT(Rn_VPR128.2D[64,64]);
 	local t1:4 = trunc(r1);
 	Rd_VPR128.2D[64,64] = int2float(t1);
+	zext_zq(Zd); # zero upper 16 bytes of Zd
 }
 
 # C7.2.148 FRINT32X (scalar) page C7-2355 line 137767 MATCH x1e28c000/mask=xffbffc00
@@ -31835,19 +31819,21 @@ is b_3131=0b0 & Q=1 & b_2329=0b1011100 & b_22=1 & b_1021=0b100001111010 & Rn_VPR
 # b_0031=000111100.101000110000..........
 
 :frint32x Rd_FPR32, Rn_FPR32
-is b_2331=0b000111100 & b_22=0 & b_1021=0b101000110000 & Rn_FPR32 & Rd_FPR32
+is b_2331=0b000111100 & b_22=0 & b_1021=0b101000110000 & Rn_FPR32 & Rd_FPR32 & Zd
 {
 	local r0:4 = FLOAT_RINT(Rn_FPR32);
 	local t0:4 = trunc(r0);
 	Rd_FPR32 = int2float(t0);
+	zext_zs(Zd); # zero upper 28 bytes of Zd
 }
 
 :frint32x Rd_FPR64, Rn_FPR64
-is b_2331=0b000111100 & b_22=1 & b_1021=0b101000110000 & Rn_FPR64 & Rd_FPR64
+is b_2331=0b000111100 & b_22=1 & b_1021=0b101000110000 & Rn_FPR64 & Rd_FPR64 & Zd
 {
 	local r0:8 = FLOAT_RINT(Rn_FPR64);
 	local t0:4 = trunc(r0);
 	Rd_FPR64 = int2float(t0);
+	zext_zd(Zd); # zero upper 24 bytes of Zd
 }
 
 # C7.2.149 FRINT32Z (vector) page C7-2357 line 137862 MATCH x0e21e800/mask=xbfbffc00
@@ -31856,16 +31842,17 @@ is b_2331=0b000111100 & b_22=1 & b_1021=0b101000110000 & Rn_FPR64 & Rd_FPR64
 # b_0031=0.0011100.100001111010..........
 
 :frint32z Rd_VPR64.2S, Rn_VPR64.2S
-is b_3131=0b0 & Q=0 & b_2329=0b0011100 & b_22=0 & b_1021=0b100001111010 & Rn_VPR64.2S & Rd_VPR64.2S
+is b_3131=0b0 & Q=0 & b_2329=0b0011100 & b_22=0 & b_1021=0b100001111010 & Rn_VPR64.2S & Rd_VPR64.2S & Zd
 {
 	local t0:4 = trunc(Rn_VPR64.2S[0,32]);
 	Rd_VPR64.2S[0,32] = int2float(t0);
 	local t1:4 = trunc(Rn_VPR64.2S[32,32]);
 	Rd_VPR64.2S[32,32] = int2float(t1);
+	zext_zd(Zd); # zero upper 24 bytes of Zd
 }
 
 :frint32z Rd_VPR128.4S, Rn_VPR128.4S
-is b_3131=0b0 & Q=1 & b_2329=0b0011100 & b_22=0 & b_1021=0b100001111010 & Rn_VPR128.4S & Rd_VPR128.4S
+is b_3131=0b0 & Q=1 & b_2329=0b0011100 & b_22=0 & b_1021=0b100001111010 & Rn_VPR128.4S & Rd_VPR128.4S & Zd
 {
 	local t0:4 = trunc(Rn_VPR128.4S[0,32]);
 	Rd_VPR128.4S[0,32] = int2float(t0);
@@ -31875,15 +31862,17 @@ is b_3131=0b0 & Q=1 & b_2329=0b0011100 & b_22=0 & b_1021=0b100001111010 & Rn_VPR
 	Rd_VPR128.4S[64,32] = int2float(t2);
 	local t3:4 = trunc(Rn_VPR128.4S[96,32]);
 	Rd_VPR128.4S[96,32] = int2float(t3);
+	zext_zq(Zd); # zero upper 16 bytes of Zd
 }
 
 :frint32z Rd_VPR128.2D, Rn_VPR128.2D
-is b_3131=0b0 & Q=1 & b_2329=0b0011100 & b_22=1 & b_1021=0b100001111010 & Rn_VPR128.2D & Rd_VPR128.2D
+is b_3131=0b0 & Q=1 & b_2329=0b0011100 & b_22=1 & b_1021=0b100001111010 & Rn_VPR128.2D & Rd_VPR128.2D & Zd
 {
 	local t0:4 = trunc(Rn_VPR128.2D[0,64]);
 	Rd_VPR128.2D[0,64] = int2float(t0);
 	local t1:4 = trunc(Rn_VPR128.2D[64,64]);
 	Rd_VPR128.2D[64,64] = int2float(t1);
+	zext_zq(Zd); # zero upper 16 bytes of Zd
 }
 
 # C7.2.150 FRINT32Z (scalar) page C7-2359 line 137950 MATCH x1e284000/mask=xffbffc00
@@ -31892,17 +31881,19 @@ is b_3131=0b0 & Q=1 & b_2329=0b0011100 & b_22=1 & b_1021=0b100001111010 & Rn_VPR
 # b_0031=000111100.101000010000..........
 
 :frint32z Rd_FPR32, Rn_FPR32
-is b_2331=0b000111100 & b_22=0 & b_1021=0b101000010000 & Rn_FPR32 & Rd_FPR32
+is b_2331=0b000111100 & b_22=0 & b_1021=0b101000010000 & Rn_FPR32 & Rd_FPR32 & Zd
 {
 	local t0:4 = trunc(Rn_FPR32);
 	Rd_FPR32 = int2float(t0);
+	zext_zs(Zd); # zero upper 28 bytes of Zd
 }
 
 :frint32z Rd_FPR64, Rn_FPR64
-is b_2331=0b000111100 & b_22=1 & b_1021=0b101000010000 & Rn_FPR64 & Rd_FPR64
+is b_2331=0b000111100 & b_22=1 & b_1021=0b101000010000 & Rn_FPR64 & Rd_FPR64 & Zd
 {
 	local t0:4 = trunc(Rn_FPR64);
 	Rd_FPR64 = int2float(t0);
+	zext_zd(Zd); # zero upper 24 bytes of Zd
 }
 
 # C7.2.151 FRINT64X (vector) page C7-2361 line 138043 MATCH x2e21f800/mask=xbfbffc00
@@ -31911,7 +31902,7 @@ is b_2331=0b000111100 & b_22=1 & b_1021=0b101000010000 & Rn_FPR64 & Rd_FPR64
 # b_0031=0.1011100.100001111110..........
 
 :frint64x Rd_VPR64.2S, Rn_VPR64.2S
-is b_3131=0b0 & Q=0 & b_2329=0b1011100 & b_22=0 & b_1021=0b100001111110 & Rn_VPR64.2S & Rd_VPR64.2S
+is b_3131=0b0 & Q=0 & b_2329=0b1011100 & b_22=0 & b_1021=0b100001111110 & Rn_VPR64.2S & Rd_VPR64.2S & Zd
 {
 	local r0:4 = FLOAT_RINT(Rn_VPR64.2S[0,32]);
 	local t0:8 = trunc(r0);
@@ -31919,10 +31910,11 @@ is b_3131=0b0 & Q=0 & b_2329=0b1011100 & b_22=0 & b_1021=0b100001111110 & Rn_VPR
 	local r1:4 = FLOAT_RINT(Rn_VPR64.2S[32,32]);
 	local t1:8 = trunc(r1);
 	Rd_VPR64.2S[32,32] = int2float(t1);
+	zext_zd(Zd); # zero upper 24 bytes of Zd
 }
 
 :frint64x Rd_VPR128.4S, Rn_VPR128.4S
-is b_3131=0b0 & Q=1 & b_2329=0b1011100 & b_22=0 & b_1021=0b100001111110 & Rn_VPR128.4S & Rd_VPR128.4S
+is b_3131=0b0 & Q=1 & b_2329=0b1011100 & b_22=0 & b_1021=0b100001111110 & Rn_VPR128.4S & Rd_VPR128.4S & Zd
 {
 	local r0:4 = FLOAT_RINT(Rn_VPR128.4S[0,32]);
 	local t0:8 = trunc(r0);
@@ -31936,10 +31928,11 @@ is b_3131=0b0 & Q=1 & b_2329=0b1011100 & b_22=0 & b_1021=0b100001111110 & Rn_VPR
 	local r3:4 = FLOAT_RINT(Rn_VPR128.4S[96,32]);
 	local t3:8 = trunc(r3);
 	Rd_VPR128.4S[96,32] = int2float(t3);
+	zext_zq(Zd); # zero upper 16 bytes of Zd
 }
 
 :frint64x Rd_VPR128.2D, Rn_VPR128.2D
-is b_3131=0b0 & Q=1 & b_2329=0b1011100 & b_22=1 & b_1021=0b100001111110 & Rn_VPR128.2D & Rd_VPR128.2D
+is b_3131=0b0 & Q=1 & b_2329=0b1011100 & b_22=1 & b_1021=0b100001111110 & Rn_VPR128.2D & Rd_VPR128.2D & Zd
 {
 	local r0:8 = FLOAT_RINT(Rn_VPR128.2D[0,64]);
 	local t0:8 = trunc(r0);
@@ -31947,6 +31940,7 @@ is b_3131=0b0 & Q=1 & b_2329=0b1011100 & b_22=1 & b_1021=0b100001111110 & Rn_VPR
 	local r1:8 = FLOAT_RINT(Rn_VPR128.2D[64,64]);
 	local t1:8 = trunc(r1);
 	Rd_VPR128.2D[64,64] = int2float(t1);
+	zext_zq(Zd); # zero upper 16 bytes of Zd
 }
 
 # C7.2.152 FRINT64X (scalar) page C7-2363 line 138132 MATCH x1e29c000/mask=xffbffc00
@@ -31955,19 +31949,21 @@ is b_3131=0b0 & Q=1 & b_2329=0b1011100 & b_22=1 & b_1021=0b100001111110 & Rn_VPR
 # b_0031=000111100.101001110000..........
 
 :frint64x Rd_FPR32, Rn_FPR32
-is b_2331=0b000111100 & b_22=0 & b_1021=0b101001110000 & Rn_FPR32 & Rd_FPR32
+is b_2331=0b000111100 & b_22=0 & b_1021=0b101001110000 & Rn_FPR32 & Rd_FPR32 & Zd
 {
 	local r0:4 = FLOAT_RINT(Rn_FPR32);
 	local t0:8 = trunc(r0);
 	Rd_FPR32 = int2float(t0);
+	zext_zs(Zd); # zero upper 28 bytes of Zd
 }
 
 :frint64x Rd_FPR64, Rn_FPR64
-is b_2331=0b000111100 & b_22=1 & b_1021=0b101001110000 & Rn_FPR64 & Rd_FPR64
+is b_2331=0b000111100 & b_22=1 & b_1021=0b101001110000 & Rn_FPR64 & Rd_FPR64 & Zd
 {
 	local r0:8 = FLOAT_RINT(Rn_FPR64);
 	local t0:8 = trunc(r0);
 	Rd_FPR64 = int2float(t0);
+	zext_zd(Zd); # zero upper 24 bytes of Zd
 }
 
 # C7.2.153 FRINT64Z (vector) page C7-2365 line 138227 MATCH x0e21f800/mask=xbfbffc00
@@ -31976,16 +31972,17 @@ is b_2331=0b000111100 & b_22=1 & b_1021=0b101001110000 & Rn_FPR64 & Rd_FPR64
 # b_0031=0.0011100.100001111110..........
 
 :frint64z Rd_VPR64.2S, Rn_VPR64.2S
-is b_3131=0b0 & Q=0 & b_2329=0b0011100 & b_22=0 & b_1021=0b100001111110 & Rn_VPR64.2S & Rd_VPR64.2S
+is b_3131=0b0 & Q=0 & b_2329=0b0011100 & b_22=0 & b_1021=0b100001111110 & Rn_VPR64.2S & Rd_VPR64.2S & Zd
 {
 	local t0:8 = trunc(Rn_VPR64.2S[0,32]);
 	Rd_VPR64.2S[0,32] = int2float(t0);
 	local t1:8 = trunc(Rn_VPR64.2S[32,32]);
 	Rd_VPR64.2S[32,32] = int2float(t1);
+	zext_zd(Zd); # zero upper 24 bytes of Zd
 }
 
 :frint64z Rd_VPR128.4S, Rn_VPR128.4S
-is b_3131=0b0 & Q=1 & b_2329=0b0011100 & b_22=0 & b_1021=0b100001111110 & Rn_VPR128.4S & Rd_VPR128.4S
+is b_3131=0b0 & Q=1 & b_2329=0b0011100 & b_22=0 & b_1021=0b100001111110 & Rn_VPR128.4S & Rd_VPR128.4S & Zd
 {
 	local t0:8 = trunc(Rn_VPR128.4S[0,32]);
 	Rd_VPR128.4S[0,32] = int2float(t0);
@@ -31995,15 +31992,17 @@ is b_3131=0b0 & Q=1 & b_2329=0b0011100 & b_22=0 & b_1021=0b100001111110 & Rn_VPR
 	Rd_VPR128.4S[64,32] = int2float(t2);
 	local t3:8 = trunc(Rn_VPR128.4S[96,32]);
 	Rd_VPR128.4S[96,32] = int2float(t3);
+	zext_zq(Zd); # zero upper 16 bytes of Zd
 }
 
 :frint64z Rd_VPR128.2D, Rn_VPR128.2D
-is b_3131=0b0 & Q=1 & b_2329=0b0011100 & b_22=1 & b_1021=0b100001111110 & Rn_VPR128.2D & Rd_VPR128.2D
+is b_3131=0b0 & Q=1 & b_2329=0b0011100 & b_22=1 & b_1021=0b100001111110 & Rn_VPR128.2D & Rd_VPR128.2D & Zd
 {
 	local t0:8 = trunc(Rn_VPR128.2D[0,64]);
 	Rd_VPR128.2D[0,64] = int2float(t0);
 	local t1:8 = trunc(Rn_VPR128.2D[64,64]);
 	Rd_VPR128.2D[64,64] = int2float(t1);
+	zext_zq(Zd); # zero upper 16 bytes of Zd
 }
 
 # C7.2.154 FRINT64Z (scalar) page C7-2367 line 138315 MATCH x1e294000/mask=xffbffc00
@@ -32012,17 +32011,19 @@ is b_3131=0b0 & Q=1 & b_2329=0b0011100 & b_22=1 & b_1021=0b100001111110 & Rn_VPR
 # b_0031=000111100.101001010000..........
 
 :frint64z Rd_FPR32, Rn_FPR32
-is b_2331=0b000111100 & b_22=0 & b_1021=0b101001010000 & Rn_FPR32 & Rd_FPR32
+is b_2331=0b000111100 & b_22=0 & b_1021=0b101001010000 & Rn_FPR32 & Rd_FPR32 & Zd
 {
 	local t0:8 = trunc(Rn_FPR32);
 	Rd_FPR32 = int2float(t0);
+	zext_zs(Zd); # zero upper 28 bytes of Zd
 }
 
 :frint64z Rd_FPR64, Rn_FPR64
-is b_2331=0b000111100 & b_22=1 & b_1021=0b101001010000 & Rn_FPR64 & Rd_FPR64
+is b_2331=0b000111100 & b_22=1 & b_1021=0b101001010000 & Rn_FPR64 & Rd_FPR64 & Zd
 {
 	local t0:8 = trunc(Rn_FPR64);
 	Rd_FPR64 = int2float(t0);
+	zext_zd(Zd); # zero upper 24 bytes of Zd
 }
 
 # C7.2.278 SMMLA (vector) page C7-2634 line 153703 MATCH x4e80a400/mask=xffe0fc00

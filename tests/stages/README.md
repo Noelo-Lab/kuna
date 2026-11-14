@@ -129,7 +129,7 @@ writeup, not here.
 
 | `gh7451-riscvzfaflis.xml` | [GH-7451](https://github.com/NationalSecurityAgency/ghidra/issues/7451) | S1 decode-table (RISCV spec-fix, no option) | SLEIGH adds Zfa `fli.s` (constant table + `fli` pcodeop) |
 | `gh831-riscv-fpmove.xml`, `gh831-riscv32-fpmove.xml` | [Kuna #831](https://github.com/Noelo-Lab/kuna/issues/831) | P2 p-code lift (RISCV spec-fix, no option) | `fmv.x.d`/`fmv.x.w` read the FP register itself, and `fmv.x.w`/`fcvt.w*` write the integer register (sign-extended on RV64) |
-| `kuna-fcvtround-a64.xml` | [Kuna #1535](https://github.com/Noelo-Lab/kuna/issues/1535) | P2 p-code lift (AArch64 spec-fix, no option) + P5 typing of its rounding user ops (`p5_types/kuna_roundingops.rs`) | `fcvt{a,m,n,p}{s,u}` and `frint*` round in their own mode (`FLOAT_FLOOR`/`FLOAT_CEIL`/`FLOAT_ROUND`, typed `FLOAT_ROUNDEVEN`/`FLOAT_RINT`/`FLOAT_NEARBYINT`), so the issue's floor/ceil interpolation branch survives |
+| `kuna-fcvtround-a64.xml` | [Kuna #1535](https://github.com/Noelo-Lab/kuna/issues/1535) | P2 p-code lift (AArch64 spec-fix, no option) + P5 typing of its rounding user ops (`p5_types/kuna_roundingops.rs`) | `fcvt{a,m,n,p}{s,u}` and `frint*` round in their own mode (`FLOAT_FLOOR`/`FLOAT_CEIL`/`FLOAT_ROUND`, typed `FLOAT_ROUNDEVEN`/`FLOAT_TRUNC`/`FLOAT_RINT`/`FLOAT_NEARBYINT`), so the issue's floor/ceil interpolation branch survives; `frint32/64*` zero the register bits above the result |
 
 | `gh6904-ppc-e500-concat44.xml` | [GH-6904](https://github.com/NationalSecurityAgency/ghidra/issues/6904) | P-code lift (PowerPC e500 spec-fix, no option) | `or`/`or.` (`mr`/`mr.`) zero-extend their 32-bit result on the 64-bit-register e500, killing spurious CONCAT44 at function boundaries (partial) |
 

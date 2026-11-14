@@ -6,13 +6,14 @@
 //! (`FLOAT_FLOOR`), toward plus infinity (`FLOAT_CEIL`) and to nearest with ties
 //! away from zero (`FLOAT_ROUND`). A spec lifts the other modes to user ops named
 //! after their C library functions: `FLOAT_ROUNDEVEN` (ties to even, `roundeven`),
-//! and the current rounding mode with (`FLOAT_RINT`, `rint`) and without
-//! (`FLOAT_NEARBYINT`, `nearbyint`) the inexact exception. A CALLOTHER carries no
-//! type, so `double g(double x, double y) { return rint(x) * y; }` printed its
-//! parameter as `unsigned long` and the product through a bit-reinterpreting
-//! union. [`output_type`] and [`input_type`] give such an op's result and operand
-//! the float type of their width, as `FLOAT_ROUND`'s are, wherever the processor
-//! has a float format of that width.
+//! `FLOAT_TRUNC` (toward zero, `trunc`), and the current rounding mode with
+//! (`FLOAT_RINT`, `rint`) and without (`FLOAT_NEARBYINT`, `nearbyint`) the inexact
+//! exception. A CALLOTHER carries no type, so
+//! `double g(double x, double y) { return rint(x) * y; }` printed its parameter
+//! as `unsigned long` and the product through a bit-reinterpreting union.
+//! [`output_type`] and [`input_type`] give such an op's result and operand the
+//! float type of their width, as `FLOAT_ROUND`'s are, wherever the processor has
+//! a float format of that width.
 
 use std::rc::Rc;
 
@@ -24,10 +25,10 @@ use crate::dtype::{type_metatype, Datatype};
 use crate::funcdata::Funcdata;
 
 /// The user-op names a spec gives the float-to-float roundings p-code lacks.
-pub const USEROP_NAMES: [&[u8]; 3] = [b"FLOAT_ROUNDEVEN", b"FLOAT_RINT", b"FLOAT_NEARBYINT"];
+pub const USEROP_NAMES: [&[u8]; 4] = [b"FLOAT_ROUNDEVEN", b"FLOAT_TRUNC", b"FLOAT_RINT", b"FLOAT_NEARBYINT"];
 
-/// The float type of a `size`-byte value at a rounding user op `op`.
-fn float_of(data: &Funcdata, op: OpId, size: int4) -> Option<Rc<Datatype>> {
+/// Whether `op` is a CALLOTHER of one of the rounding user ops.
+fn is_rounding_op(data: &Funcdata, op: OpId) -> Option<()> {
     let arch = data.get_arch();
     if arch.float_rounding_userops.is_empty() {
         return None;
@@ -37,9 +38,20 @@ fn float_of(data: &Funcdata, op: OpId, size: int4) -> Option<Rc<Datatype>> {
         return None;
     }
     let id = data.vbank().get(o.get_in(0)?)?.get_offset();
-    if !arch.float_rounding_userops.iter().any(|&u| u64::from(u) == id) {
-        return None;
-    }
+    arch.float_rounding_userops.iter().any(|&u| u64::from(u) == id).then_some(())
+}
+
+/// Whether `op` is a rounding user op, a pure function of its operand that
+/// dead-code removal deletes, rather than keeps as a call, once its result is
+/// unused.
+pub(crate) fn is_pure_call(data: &Funcdata, op: OpId) -> bool {
+    is_rounding_op(data, op).is_some()
+}
+
+/// The float type of a `size`-byte value at a rounding user op `op`.
+fn float_of(data: &Funcdata, op: OpId, size: int4) -> Option<Rc<Datatype>> {
+    is_rounding_op(data, op)?;
+    let arch = data.get_arch();
     arch.get_float_format(size)?;
     arch.types()?.get_base(size, type_metatype::TYPE_FLOAT).ok()
 }

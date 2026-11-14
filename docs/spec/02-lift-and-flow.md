@@ -100,22 +100,28 @@ against the ceil of one value folded away (Kuna #1535; upstream master is
 unchanged as of 2026-11-10). A conversion now truncates `FLOAT_FLOOR(x)`
 (`M`), `FLOAT_CEIL(x)` (`P`), `FLOAT_ROUND(x)` (`A`: ties away from zero,
 which is what p-code's `ROUND` does), the `FLOAT_ROUNDEVEN(x)` user op (`N`),
-or `x` itself (`Z`, unchanged). `FRINTM`, `FRINTP` and `FRINTA` are
-`FLOAT_FLOOR`, `FLOAT_CEIL` and `FLOAT_ROUND`; `FRINTN` is `FLOAT_ROUNDEVEN`;
-`FRINTX` and `FRINTI`, which round in the FPCR mode with and without the
-inexact exception, are the `FLOAT_RINT` and `FLOAT_NEARBYINT` user ops.
-Chapter 05 types the three user ops as floats. `FRINTZ` keeps its result in
-floating point through a 64-bit integer, `INT2FLOAT(TRUNC(x))` (32-bit for
-half precision): exact below 2^63 in magnitude, except that a negative
-fraction rounds to +0.0 rather than -0.0. `FRINT32Z` and `FRINT64Z` are
-`INT2FLOAT` of a 32- or 64-bit `TRUNC(x)`, and `FRINT32X` and `FRINT64X` the
-same of `FLOAT_RINT(x)`. Unsigned conversions keep the signed `TRUNC` of the
-destination width, exact below 2^31 (2^63 for a 64-bit destination): the
-only unsigned spelling p-code has, a wider `TRUNC` narrowed to the
-destination, prints `(long)x & 0xffffffff` and widens every variable that
-holds the result. The SVE forms stay user ops. Subtables beside the mnemonic
-tables decode the mode (`fcvt_srnd`, `fcvt_vrnd`, `fcvt_vlanes`, `frint_s`
-and `frint_vlanes` in
+or `x` itself (`Z`, unchanged). The conversions do not saturate: an input
+whose rounded value is outside the destination's range converts as `TRUNC`
+does. `FRINTM`, `FRINTP` and `FRINTA` are `FLOAT_FLOOR`, `FLOAT_CEIL` and
+`FLOAT_ROUND`; `FRINTN` and `FRINTZ` are the `FLOAT_ROUNDEVEN` and
+`FLOAT_TRUNC` user ops; `FRINTX` and `FRINTI`, which round in the FPCR mode
+with and without the inexact exception, are the `FLOAT_RINT` and
+`FLOAT_NEARBYINT` user ops. Each of these is exact for every input,
+including values too large for any integer, infinities, NaNs and negative
+zero. Chapter 05 types the four user ops as floats. `FRINT32Z` and
+`FRINT64Z` are `INT2FLOAT` of a 32- or 64-bit `TRUNC(x)`, and `FRINT32X` and
+`FRINT64X` the same of `FLOAT_RINT(x)`: exact while the rounded value fits
+the integer, except that a result of zero is +0.0 even for a negative input;
+like the other scalar and 64-bit vector writes they now zero the bits of the
+vector register above the result. Unsigned conversions keep the signed
+`TRUNC` of the destination width, exact when the rounded value is at least
+zero and below 2^31 (2^63 for a 64-bit destination); a negative one, which
+the instruction saturates to zero, converts as a signed value. The only
+unsigned spelling p-code has, a wider `TRUNC` narrowed to the destination,
+prints `(long)x & 0xffffffff` and widens every variable that holds the
+result. The SVE forms stay user ops. Subtables beside the mnemonic tables
+decode the mode (`fcvt_srnd`, `fcvt_vrnd`, `fcvt_vlanes`, `frint_s` and
+`frint_vlanes` in
 `specs/Ghidra/Processors/AARCH64/data/languages/AARCH64neon.sinc`); every
 encoding decodes and disassembles as before, and `FCVTZS` and `FCVTZU` lift
 to the same p-code. This is a SLEIGH correctness repair, without an inference

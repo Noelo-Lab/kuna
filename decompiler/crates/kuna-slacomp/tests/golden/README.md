@@ -69,8 +69,9 @@ text outside 16-bit x86, and the table's `with` block is under `@ifdef IA16`),
 so the `x86.slaspec` and `x86-64.slaspec` digests are again unchanged.
 
 The AArch64 entry includes kuna's rounding-mode corrections for the
-`FCVT{A,M,N,P}{S,U}`, `FRINT*` and `FRINT32/64*` constructors and their three
-rounding user ops. Its digest was regenerated with the recorded C++ compiler,
+`FCVT{A,M,N,P}{S,U}`, `FRINT*` and `FRINT32/64*` constructors, their four
+rounding user ops, and the `FRINT32/64*` zeroing of the register bits above
+the result. Its digest was regenerated with the recorded C++ compiler,
 which reproduces the previous AArch64 digest on the unmodified sources;
 `slacomp` produces the same digest.
 
