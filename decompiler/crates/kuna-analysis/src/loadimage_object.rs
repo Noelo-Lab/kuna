@@ -577,6 +577,7 @@ pub struct ObjectLoadImage {
     /// a whole-binary enumeration needs to keep them out of the decompile set.
     /// Empty for every non-PE image and for a relocatable object.
     import_slots: Vec<(u64, u64)>,
+    function_address_aliases: Vec<(u64, u64)>,
     /// (kuna `pltlocal`) `(stub, definition)` for each PLT stub the image's own
     /// dynamic relocations bind to a function it defines, ascending by stub. See
     /// [`crate::loader::kuna_pltlocal`].
@@ -1181,6 +1182,7 @@ impl ObjectLoadImage {
             const_ranges,
             dynreloc_const,
             import_slots,
+            function_address_aliases: Vec::new(),
             plt_local,
             mips_linkage,
             elfv1,
@@ -1213,6 +1215,7 @@ impl ObjectLoadImage {
         let layout = reloc_object::layout_relocatable(file, fmt);
         let got_range = layout.got_range;
         let import_slots = layout.import_slots.clone();
+        let function_address_aliases = layout.function_address_aliases.clone();
         let elfv1 = crate::loader::elfv1::Descriptors(
             layout
                 .opd
@@ -1371,6 +1374,7 @@ impl ObjectLoadImage {
             // are relocations, resolved by the layout pass. A MIPS object's
             // undefined weak symbols keep GOT entries the run-time loader fills.
             import_slots,
+            function_address_aliases,
             plt_local: Vec::new(),
             mips_linkage: crate::loader::kuna_mipsstubs::class_linkage(&file),
             elfv1,
@@ -1486,6 +1490,10 @@ impl ObjectLoadImage {
     /// holds a pointer the run-time loader writes. The engine reports these
     /// ranges so its whole-binary enumeration can decompile the image's code
     /// without inventing a body for every import.
+    pub fn function_address_aliases(&self) -> &[(u64, u64)] {
+        &self.function_address_aliases
+    }
+
     pub fn import_slot_ranges(&self) -> &[(u64, u64)] {
         &self.import_slots
     }
@@ -1799,6 +1807,10 @@ impl LoadImage for ObjectLoadImage {
             r.1 = r.1.wadd(badjust);
         }
         for r in &mut self.dynreloc_const {
+            r.0 = r.0.wadd(badjust);
+            r.1 = r.1.wadd(badjust);
+        }
+        for r in self.function_address_aliases.iter_mut().chain(&mut self.import_slots) {
             r.0 = r.0.wadd(badjust);
             r.1 = r.1.wadd(badjust);
         }
@@ -3081,6 +3093,22 @@ mod tests {
     /// selection can rely on while keeping the slot's function symbol.
     /// A MIPS object's foldable GOT pieces exclude its import slots, which
     /// may sit at either end or in the middle.
+    #[test]
+    fn adjusting_a_weak_import_moves_its_slots_and_all_function_addresses() {
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../..")
+            .join("tests/fixtures/mips-weak-imports/identity-64-be-mixed.o");
+        let mut image = ObjectLoadImage::open(path.to_str().unwrap()).unwrap();
+        let slots = image.import_slot_ranges().to_vec();
+        let aliases = image.function_address_aliases().to_vec();
+        assert_eq!(slots.len(), 1);
+        assert_eq!(aliases.len(), 1);
+        image.attach_to_space(Rc::clone(manager().get_default_code_space().unwrap()));
+        image.adjust_vma(0x2000);
+        assert_eq!(image.import_slot_ranges(), slots.iter().map(|&(lo, hi)| (lo + 0x2000, hi + 0x2000)).collect::<Vec<_>>());
+        assert_eq!(image.function_address_aliases(), aliases.iter().map(|&(a, c)| (a + 0x2000, c + 0x2000)).collect::<Vec<_>>());
+    }
+
     #[test]
     fn got_ranges_leave_out_import_slots() {
         assert_eq!(outside((0x100, 0x120), &[]), [(0x100, 0x11f)]);

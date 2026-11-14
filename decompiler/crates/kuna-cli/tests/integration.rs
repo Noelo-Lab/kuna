@@ -846,3 +846,6 @@ mod e500_arguments;
 
 #[path = "cvf_trace.rs"]
 mod cvf_trace;
+
+#[path = "mips_weak_imports.rs"]
+mod mips_weak_imports;

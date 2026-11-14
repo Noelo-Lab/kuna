@@ -745,3 +745,29 @@ fn a_weak_functions_got_entry_is_a_named_import_slot() {
         assert!(got_lo <= lo && hi <= got_hi, "{stem}");
     }
 }
+
+
+#[test]
+fn mixed_weak_references_share_one_function_without_changing_relocation_values() {
+    for abi in ["n32", "64"] {
+        for endian in ["be", "le"] {
+            let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+            let bytes = std::fs::read(root.join(format!("tests/fixtures/mips-weak-imports/identity-{abi}-{endian}-mixed.o"))).unwrap();
+            let layout = layout(&bytes);
+            assert!(layout.diagnostics.is_empty());
+            let names: Vec<_> = layout.funcsyms.iter().filter(|(_, name)| name == b"optional").collect();
+            assert_eq!(names.len(), 1);
+            let [(alias, canonical)] = layout.function_address_aliases[..] else { panic!("one direct-address alias") };
+            assert_ne!(alias, canonical);
+            assert_eq!(names[0].0, canonical);
+            assert_eq!(layout.import_slots, [(canonical, canonical + if abi == "64" { 8 } else { 4 })]);
+            let file = object::File::parse(&*bytes).unwrap();
+            let sym = file.symbols().find(|s| s.name().ok() == Some("optional")).unwrap();
+            assert_eq!(layout.extern_addr[&sym.index()], alias);
+            let rodata = file.section_by_name(".rodata").unwrap();
+            let base = layout.section_vma[&rodata.index()];
+            let data = &layout.segments.iter().find(|(addr, _)| *addr == base).unwrap().1;
+            assert_eq!(read_at(data, 0, if abi == "64" { 8 } else { 4 }, endian == "le"), alias);
+        }
+    }
+}

@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4350,
-    4350
+    4352,
+    4352
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -3496,6 +3496,8 @@
     "data:mipsgot-weak #1: the weak function's address is tested",
     "data:mipsgot-weak #2: the call binds to optional",
     "data:mipsgot-weak #3: no unconditional call",
+    "data:mipsgot-weak #4: mixed direct and GOT references retain one import name",
+    "data:mipsgot-weak #5: a declared import is never ambiguous",
     "data:mipsreloc-chains #10: N32 REL R32 then LO16 keep the other half in both byte orders",
     "data:mipsreloc-chains #11: REL GPREL16, SUB, HI16 compose in both byte orders",
     "data:mipsreloc-chains #1: N32 PIC read_global reads global_value",

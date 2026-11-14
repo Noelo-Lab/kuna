@@ -262,6 +262,8 @@ pub struct RelocLayout {
     /// Half-open import slots in the GOT: an undefined weak symbol's entry,
     /// which the run-time loader fills and which therefore does not fold.
     pub import_slots: Vec<(u64, u64)>,
+    /// Additional addresses of the same logical import: `(alias, canonical)`.
+    pub function_address_aliases: Vec<(u64, u64)>,
     /// A PowerPC64 ELFv1 object's function descriptors: `(descriptor, entry,
     /// TOC)`, sorted by descriptor address.
     pub opd: Vec<(u64, u64, Option<u64>)>,
@@ -692,6 +694,8 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
     // an Import Address Table slot is, so `(*slot)(x)` calls the import while a
     // test of the slot still reads it.
     let mut import_slots = Vec::new();
+    let mut import_functions = HashMap::new();
+    let mut function_address_aliases = Vec::new();
     if let Some(g) = &gp {
         for (idx, slot) in g.imports() {
             import_slots.push((slot, slot + g.entry()));
@@ -711,6 +715,7 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
                         undefined: true,
                     });
                     funcsyms.push((slot, n));
+                    import_functions.insert(idx, slot);
                 }
             }
         }
@@ -723,6 +728,10 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
     // `stdout`, referenced by PC32 to an `STT_OBJECT`) are addressed but
     // deliberately left unnamed here.
     for (sym_idx, addr) in &extern_order {
+        if let Some(&canonical) = import_functions.get(sym_idx) {
+            function_address_aliases.push((*addr, canonical));
+            continue;
+        }
         let Ok(sym) = file.symbol_by_index(*sym_idx) else {
             continue;
         };
@@ -784,6 +793,7 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
         got_range,
         gp: gp.as_ref().map(kuna_mipsreloc::Gp::gp),
         import_slots,
+        function_address_aliases,
         opd: {
             opd_descriptors.sort_unstable();
             opd_descriptors.dedup();

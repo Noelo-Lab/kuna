@@ -10214,3 +10214,23 @@ Without a callee prototype, a preserved incoming argument register cannot
 establish import arity: calls with and without that argument can have identical
 instructions. A declared prototype supplies that missing contract
 (`kuna_gotimportproto.rs`, §4).
+
+
+### Weak import identity and slot membership
+
+An undefined weak MIPS import has one FunctionSymbol, anchored at its GOT slot.
+A direct relocation keeps its original synthetic extern address and is recorded
+as another address of that same symbol. The loader carries the SymbolIndex-based
+association through bootstrap; the database maps both addresses to one symbol,
+so name selection, renamed imports and edited prototypes do not split between
+two independent functions. Distinct ELF symbols are not merged by their spelling.
+The canonical inventory contains the import once; explicit alias-address lookup
+resolves the same entry. Import pointer storage remains bodyless unless a caller
+explicitly declares a function there.
+
+Import storage extents are normalized once at bootstrap: empty extents are
+removed and overlapping/adjacent half-open ranges are merged in address order.
+Membership queries use a binary search, including interior and missing addresses.
+Executable-function enumeration therefore avoids a full slot-vector scan per
+candidate, while preserving PE/Mach-O import slots inside executable sections and
+caller-declared-entry precedence.
