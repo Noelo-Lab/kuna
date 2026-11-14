@@ -1270,10 +1270,11 @@ kuna decodes them as the x87 instructions they stand for (`--option fpuemu
 off` keeps the interrupts, `on` forces the decode, for example on a
 `--raw-image` `.COM` program).
 Each function starts with DS holding the data segment the startup code loads
-into it (the linker's DGROUP, read off the entry code up to its first call), so
-a near data access prints as the global at its linear address (`dat_3dfbe`)
-instead of a DS offset (`*(short *)0x308e`); the entry point itself starts with
-the PSP in DS. `--option mzdgroup off` leaves DS unknown, for a program that
+into it (the linker's DGROUP, read off the entry code at its first call, when
+the rest of the startup keeps it there), so a near data access prints as the
+global at its linear address (`dat_3dfbe`) instead of a DS offset
+(`*(short *)0x308e`); the entry point itself starts with the PSP in DS, and a
+routine the startup calls with another segment in DS starts with DS unknown. `--option mzdgroup off` leaves DS unknown, for a program that
 runs functions with other segments in DS.
 `decompile`, `decompile-all`, `functions`, `disassemble`/`read`,
 `decompile-project` and the console support MZ input; `strings`, `xrefs`,
