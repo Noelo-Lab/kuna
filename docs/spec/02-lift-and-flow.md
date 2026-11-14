@@ -1368,6 +1368,26 @@ a Linux syscall (`option linuxsyscall`) and `int1`/`int3`/`into` carry a
 compiler-spec component of the resolved language id, since `int 0x29` is
 `__fastfail` by Windows convention alone.
 
+**(kuna) DOS exits are no-returns — always on (#1288),
+`decompiler/crates/kuna-decomp/src/p2_lift/flow.rs (FlowEnvironment::is_dos_exit_callind)`.**
+An interrupt that ends an MS-DOS program (`INT 20h`, `INT 27h`, `INT 21h` with
+AH = 00h, 31h or 4Ch) lowers to the same falling-through `swi` call, so flow
+used to run past `mov ah,4ch; int 21h` into whatever follows it, typically zero
+fill decoding as `ADD [BX+SI],AL` until a `funcboundflow` warning stopped it at
+the next function. Which interrupts exit is decided once, for the whole image,
+by the raw discovery (chapter [01](01-program-prep.md), *A DOS program exit
+ends the flow*): AH is a value the code sets before the interrupt, which only
+the Listing's program-wide view of branch targets can prove reaches it on every
+path. The decision rule here is a lookup: a CALLIND at an address in the
+architecture's `dos_exit_sites` has its call spec marked no-return and goes
+through `check_for_flow_modification` like a call to a no-return function, so
+the halt is planted after it and the `Subroutine does not return` warning is
+buffered (printed `// no-return`). Unlike `__fastfail` the warning is kept: the
+service an `INT 21h` asks for is in AH, which the C does not show, so the
+annotation is the only thing on the line that says the program ends there. The
+list is empty unless a real-mode raw or MZ image was discovered, so every other
+input, the XML corpus included, is byte-identical.
+
 **(kuna) The `int3` pad control ran into — `option int3pad`, default `warn`
 (DIV-128), `decompiler/crates/kuna-decomp/src/p2_lift/kuna_int3pad.rs
 (is_int3_callind)`.** `INT3` lowers the same way (`intloc = swi(3); call
