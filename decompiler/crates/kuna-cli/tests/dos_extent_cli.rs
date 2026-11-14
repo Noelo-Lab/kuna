@@ -108,11 +108,13 @@ fn a_dos_function_ends_where_its_flow_does() {
     assert!(listing.starts_with("# 2 instructions at sub_10010 @ 0x10010 (0x10010..0x10014, 4 bytes)"), "{listing}");
     assert!(
         notes.contains(
-            "note: sub_10010 ends at 0x10014, after the last instruction its flow reaches; no path from its entry \
-             reaches the 44 bytes from there to 0x10040 (the range 0x10014-0x10040 lists them)"
+            "note: sub_10010 ends at 0x10014, after the last instruction its flow reaches; its flow reaches none \
+             of the 44 bytes from there to 0x10040 (the range 0x10014-0x10040 lists them)"
         ),
         "{notes}"
     );
+    let (_, notes) = run(&["disassemble", exe, "0x10013"]);
+    assert!(notes.contains("note: 0x10013 is in sub_10010, which ends at 0x10014, after"), "{notes}");
     let (range, _) = run(&["disassemble", exe, "0x10010-0x10040"]);
     assert!(
         range.contains("\n0x10014 ") && range.contains("\n0x10039 "),
@@ -123,8 +125,54 @@ fn a_dos_function_ends_where_its_flow_does() {
 
     let (_, past) = run(&["decompile", exe, "0x10020", "--addr"]);
     assert!(!past.contains("interior to"), "text after a function's end is not its interior: {past}");
+    assert!(
+        past.contains(
+            "note: 0x10020 is past the end of sub_10010 at 0x10014, after the last instruction its flow reaches, \
+             and in no function kuna discovered"
+        ),
+        "{past}"
+    );
     let (_, inside) = run(&["decompile", exe, "0x10013", "--addr"]);
     assert!(inside.contains("0x10013 is interior to sub_10010 (0x10010+0x3)"), "{inside}");
+
+    let project = common::scratch_file("dos-extent-project", "d");
+    run(&["decompile-project", exe, "-o", project.to_str().unwrap()]);
+    let asm_name = format!("{}.asm", path.file_name().unwrap().to_str().unwrap());
+    let asm = std::fs::read_to_string(project.join(asm_name)).unwrap();
+    let tail = asm.split("\nsub_10010:").nth(1).expect("sub_10010 label");
+    let end = "  ; end of sub_10010: its flow reaches none of the 44 bytes from here to 0x10040\n";
+    assert!(tail.contains(&format!("RET\n{end}")), "the .asm marks where sub_10010's flow ends: {tail}");
+    std::fs::remove_dir_all(&project).unwrap();
+    std::fs::remove_file(&path).unwrap();
+}
+
+/// org 0: the entry calls `e1` (0x10: `mov ax,1; jmp tail`) and `e2` (0x20:
+/// `test ax,ax; jnz e1; ret`, three bytes of text, `tail: inc ax; ret`).
+/// `tail` is in `e2`'s span and reached from it only through `e1`'s entry.
+fn branch_into_entry_module() -> Vec<u8> {
+    let mut module = vec![0u8; 0x40];
+    let code: [(usize, &[u8]); 4] = [
+        (0x00, &[0xe8, 0x0d, 0x00, 0xe8, 0x1a, 0x00, 0xb8, 0x00, 0x4c, 0xcd, 0x21]),
+        (0x10, &[0xb8, 0x01, 0x00, 0xeb, 0x13]),
+        (0x20, &[0x85, 0xc0, 0x75, 0xec, 0xc3, b'g', b'a', b'p', 0x40, 0xc3]),
+        (0x2a, b"trailing text"),
+    ];
+    for (at, bytes) in code {
+        module[at..at + bytes.len()].copy_from_slice(bytes);
+    }
+    module
+}
+
+#[test]
+fn a_conditional_branch_into_another_entry_is_followed_as_the_decompiler_follows_it() {
+    let path = written("dos-extent-cbranch", "exe", &dos_image(&branch_into_entry_module()));
+    let exe = path.to_str().unwrap();
+    let (inventory, _) = run(&["functions", exe, "--json"]);
+    let expected: Vec<(String, u64)> =
+        [("sub_10000", 11), ("sub_10010", 5), ("sub_10020", 10)].iter().map(|&(n, s)| (n.to_string(), s)).collect();
+    assert_eq!(sizes(&inventory), expected, "{inventory}");
+    let (c, _) = run(&["decompile", exe, "sub_10020", "--raw"]);
+    assert!(c.contains("\n0x00010028:"), "the decompiler's flow reaches the tail too: {c}");
     std::fs::remove_file(&path).unwrap();
 }
 

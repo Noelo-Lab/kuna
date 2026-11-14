@@ -2568,8 +2568,14 @@ instructions, and an address in DGROUP was reported `interior_to` it. Over the
 descent the raw discovery already decoded (§1.6), each entry's flow is followed
 along branches and fall-throughs wherever it goes short of another entry, since
 a path can leave the span and come back into it; only what it reaches between
-the entry and the next entry counts. A call is not entered and falls through
-unless its callee is no-return, and a DOS exit (§1.6) has no successor. A
+the entry and the next entry counts. A fall-through or jump into another entry
+ends the path, where the decompiler's flow bounds the fall-through
+(`funcboundflow`) and prints the jump as a tail call (`tailcalljump`); a
+conditional branch into one is followed on, as the decompiler's flow follows it
+(MS-DOS 4.0 C1L.EXE's `sub_1d56e`, a fragment of the routine at `sub_1d47a`,
+reaches the rest of its span only through the loop head `sub_1d514`). A call is
+not entered and falls through unless its callee is no-return, and a DOS exit
+(§1.6) has no successor. A
 computed branch the descent left unresolved is read from its p-code: a `cs:`
 table that lies in the span (`jmp cs:[bx+table]`) reaches its words that name an
 address in the span, decoded there when the descent did not decode them; a
@@ -2579,20 +2585,22 @@ pointer that a value search leaves in BX) has targets nothing names, so that
 entry keeps the clip, as does one whose entry the descent never decoded. The
 extent is the span from the entry to the end of the last instruction reached,
 so bytes between reached instructions (a table in the body) stay in and a table
-after the last instruction does not; it is never longer than the clip. An
-address that is not an entry is bounded by its owner's flow, and one past it, or
-below every entry, is in no function and has no extent: `disassemble` lists its
-64-byte window there, and `interior_to` no longer names the function in front of
-it. The rule only bounds what the inventory reports: the `size` of every
-inventory surface (`functions`, `decompile-all --json`, the project index),
-`disassemble`'s default window (with a note naming the range it left out) and
-`interior_to`. The decompiler's flow is not bounded by it, so the C is
-unchanged. Over 72 DOS
-executables (MS-DOS 1.25 to 4.0 tools, FreeDOS, DAZZLE) 3,113 of 7,956 functions
-shrink, none grows, and 965,987 bytes are no longer attributed to a function no
-path of which reaches them; the decompiler's own flow reaches past the new end
-in one function, a fragment of a multi-entry routine whose remaining code lies
-behind another entry. It is x86 real mode only: an image with a section table
+after the last instruction (where Turbo C and Borland C lay theirs out) does
+not; it is never longer than the clip. An address that is not an entry is
+bounded by its owner's flow, and one past it, or below every entry, is in no
+function and has no extent: `disassemble` lists its 64-byte window there, and
+`interior_to` no longer names the function in front of it; a selection there
+gets a note naming the function whose flow ended before it instead. The rule
+only bounds what the inventory reports: the `size` of every inventory surface
+(`functions`, `decompile-all --json`, the project index), `disassemble`'s
+default window (with a note naming the range it left out), `interior_to`, and
+the `decompile-project` `.asm`, which prints a `; end of <name>` line where the
+flow ends and still decodes the bytes after it. The decompiler's flow is not
+bounded by it, so the C is unchanged. Over 72 DOS executables (MS-DOS 1.25 to
+4.0 tools, FreeDOS, DAZZLE) 3,112 of 7,956 functions shrink, none grows, and
+965,898 bytes are no longer attributed to a function whose flow reaches none of
+them; for every shrunk function, no address of the decompiler's own p-code for
+it lies between the new end and the clip. It is x86 real mode only: an image with a section table
 already says which bytes are code (over stripped x86-64 ELF the clip's overshoot
 is alignment padding, 694 of 1,093 functions; MSVC lays a switch table out after
 its function in `.text`, and ARM a literal pool, both bytes of the function), and

@@ -458,6 +458,11 @@ and an object's `.text+0xOFF` answer the same way, and so do `decompile-all` and
 note per record. With `--json` the record of such a
 target carries it as `interior_to`: `{name,address,address_hex,offset}`. No other
 record has the key, so every other document is byte-for-byte what it was.
+On a DOS program, where a function's extent ends with its flow (see `size` under
+`kuna functions`), an address after that end and short of the next function is
+in no function: it has no `interior_to`, and stderr says whose flow ended before
+it (`note: 0x3a880 is past the end of sub_3a856 at 0x3a872, after the last
+instruction its flow reaches, and in no function kuna discovered; ...`).
 
 **`--define-function <start[-end][=name] | @file>`** (repeatable) tells kuna where a
 function starts and ends. Every boundary kuna knows is otherwise *derived* —
@@ -1827,12 +1832,14 @@ whole binary. An MS-DOS executable or a `--raw-image` x86 real-mode program has 
 section table, and its one CODE range is the whole load module, data segments
 included, so there the extent ends where the function's flow does: from the entry to
 the end of the last instruction reached from it before the next entry, calls not
-entered, a call to a no-return function or a DOS exit ending its path, and a `cs:`
-switch table followed to its cases. The span is still contiguous from the entry
-(a table inside the body counts) and never longer than the clip; an entry whose flow
-meets a computed branch nothing resolves keeps the clip, and an address past the end
-of its function's flow reports `0`. A caller needing the exact body must still
-decompile.
+entered, a call to a no-return function or a DOS exit ending its path, a fall-through
+or jump into another entry ending it too (a conditional branch into one is followed,
+as the decompiler follows it), and a `cs:` switch table followed to its cases. The
+span is still contiguous from the entry and never longer than the clip: a switch
+table between reached instructions counts, one laid out after the last instruction
+(as Turbo C and Borland C place theirs) does not. An entry whose flow meets a
+computed branch nothing resolves keeps the clip, and an address past the end of its
+function's flow reports `0`. A caller needing the exact body must still decompile.
 
 Per-function `code` can include whole-batch inference and pointer-argument casts
 that standalone `kuna decompile` cannot derive (elsewhere, see the injected
@@ -3233,7 +3240,7 @@ data too, the listing stops where the function's flow ends and says so:
 
 ```
 $ kuna disassemble dazzle.exe sub_3a856
-note: sub_3a856 ends at 0x3a872, after the last instruction its flow reaches; no path from its entry reaches the 12146 bytes from there to 0x3d7e4 (the range 0x3a872-0x3d7e4 lists them)
+note: sub_3a856 ends at 0x3a872, after the last instruction its flow reaches; its flow reaches none of the 12146 bytes from there to 0x3d7e4 (the range 0x3a872-0x3d7e4 lists them)
 # 13 instructions at sub_3a856 @ 0x3a856 (0x3a856..0x3a872, 28 bytes)
 ```
 
@@ -3773,7 +3780,9 @@ binary and attempt recompilation:
   the decompiler did not recover and would break the header/definition identity.
 - `<name>.asm` — labeled linear disassembly of every CODE section: labels match the `.c`
   function names, per-function `; arg:`/`; stack:` comments map decompiled variables to
-  storage, undecodable bytes as `db` lines, and a `; --- data ---` tail labeling named
+  storage, undecodable bytes as `db` lines (on a DOS program, a `; end of <name>` line
+  where a function's flow ends short of the next label, as its `size` does; the bytes
+  after it are still decoded), and a `; --- data ---` tail labeling named
   globals plus every `dat_<hex>` the `.c` references, with raw bytes. Data-tail addresses
   use their source address space's units; a `dat_<hex>` label retains the coordinate
   printed in C, and aliases a named symbol only in the same address space at the same

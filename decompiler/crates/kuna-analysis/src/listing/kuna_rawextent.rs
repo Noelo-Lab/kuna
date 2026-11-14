@@ -16,7 +16,10 @@
 //! contiguous from the entry and can only be shorter than the clip. The flow
 //! is followed wherever it goes short of another entry, since a path can leave
 //! the span and come back into it, and only what it reaches in the span
-//! counts. Calls are not entered (the callee is another function) and fall
+//! counts. A fall-through or jump into another entry ends the path, where the
+//! decompiler bounds the fall-through and prints the jump as a tail call, but
+//! a conditional branch into one is followed on, as the decompiler's flow
+//! follows it. Calls are not entered (the callee is another function) and fall
 //! through unless the callee is no-return; a DOS exit
 //! ([`super::kuna_dosexit`]) has no successor. A branch through a `cs:` table
 //! that lies in the span, which the descent leaves unresolved, reaches the
@@ -113,6 +116,7 @@ struct Walk<'a> {
 struct Step<'a> {
     len: u32,
     is_call: bool,
+    is_conditional: bool,
     unresolved_jump: bool,
     flows: Cow<'a, [u64]>,
     fall_through: Option<u64>,
@@ -139,15 +143,16 @@ impl Walk<'_> {
         bound: u64,
         range: (u64, u64),
         seen: &mut FxHashSet<u64>,
-        stack: &mut Vec<u64>,
+        stack: &mut Vec<(u64, bool)>,
     ) -> Option<u64> {
         self.listing.instruction_at(entry)?;
         seen.clear();
         stack.clear();
-        stack.push(entry);
+        stack.push((entry, false));
         let mut end = entry;
-        while let Some(vma) = stack.pop() {
-            if vma < range.0 || vma >= range.1 || (vma != entry && self.entries.binary_search(&vma).is_ok()) {
+        while let Some((vma, branched)) = stack.pop() {
+            let foreign = vma != entry && !branched && self.entries.binary_search(&vma).is_ok();
+            if vma < range.0 || vma >= range.1 || foreign {
                 continue;
             }
             if !seen.insert(vma) {
@@ -171,15 +176,18 @@ impl Walk<'_> {
             }
             if step.is_call {
                 if !step.flows.iter().any(|target| self.noreturn.contains(target)) {
-                    stack.extend(step.fall_through);
+                    stack.extend(step.fall_through.map(|next| (next, false)));
                 }
                 continue;
             }
-            stack.extend(step.flows.iter().copied());
-            stack.extend(step.fall_through);
+            stack.extend(step.flows.iter().map(|&target| (target, step.is_conditional)));
+            stack.extend(step.fall_through.map(|next| (next, false)));
             if step.unresolved_jump {
                 match self.through(vma) {
-                    Through::Table(offset) => stack.extend(self.table(vma, offset, entry, bound, range)?),
+                    Through::Table(offset) => {
+                        let cases = self.table(vma, offset, entry, bound, range)?;
+                        stack.extend(cases.into_iter().map(|case| (case, false)));
+                    }
                     Through::Word => {}
                     Through::Unknown => return None,
                 }
@@ -193,6 +201,7 @@ impl Walk<'_> {
             return Some(Step {
                 len: insn.len,
                 is_call: insn.flow.is_call,
+                is_conditional: insn.flow.is_conditional,
                 unresolved_jump: insn.flow.is_computed && insn.flow.is_jump && insn.flows.is_empty(),
                 flows: Cow::Borrowed(&insn.flows),
                 fall_through: insn.fall_through,
@@ -206,6 +215,7 @@ impl Walk<'_> {
         Some(Step {
             len: decoded.len,
             is_call: c.flow.is_call,
+            is_conditional: c.flow.is_conditional,
             unresolved_jump: c.flow.is_computed && c.flow.is_jump && c.flows.is_empty(),
             flows: Cow::Owned(c.flows),
             fall_through: c.fall_through,

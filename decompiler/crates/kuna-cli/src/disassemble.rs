@@ -738,7 +738,8 @@ fn image_bound_note(prog: &ConsoleProgram, region: &Region) -> String {
 
 /// (kuna #1288) Say that the function's flow, not the next entry, ended a
 /// listing whose length came from the extent, and name the range that lists
-/// the bytes it left out (`ConsoleProgram::extent_cut_by_flow`).
+/// the bytes it left out (`ConsoleProgram::extent_cut_by_flow`). A listing
+/// from inside a function names the function.
 fn flow_end_note(prog: &ConsoleProgram, region: &Region) -> Option<String> {
     if !region.derived {
         return None;
@@ -748,10 +749,13 @@ fn flow_end_note(prog: &ConsoleProgram, region: &Region) -> Option<String> {
         return None;
     }
     let (end, stop) = (region.start + extent, region.start + clip);
-    let name = region.name.clone().unwrap_or_else(|| format!("0x{:x}", region.start));
+    let subject = match prog.entries_containing(&[region.start]).pop().flatten() {
+        Some(owner) => format!("0x{:x} is in {}, which", region.start, owner.name),
+        None => region.name.clone().unwrap_or_else(|| format!("0x{:x}", region.start)),
+    };
     Some(format!(
-        "{name} ends at 0x{end:x}, after the last instruction its flow reaches; no path from its \
-         entry reaches the {} bytes from there to 0x{stop:x} (the range 0x{end:x}-0x{stop:x} lists them)",
+        "{subject} ends at 0x{end:x}, after the last instruction its flow reaches; its flow reaches \
+         none of the {} bytes from there to 0x{stop:x} (the range 0x{end:x}-0x{stop:x} lists them)",
         clip - extent
     ))
 }

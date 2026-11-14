@@ -1109,6 +1109,43 @@ impl ConsoleProgram {
         (extent < clip).then_some((extent, clip))
     }
 
+    /// (kuna #1288) The function in front of `vma` when `vma` lies past the end
+    /// of that function's flow but short of the next function: the entry and
+    /// where its flow ends. `None` everywhere else, and on every image that
+    /// measured no flow ends.
+    pub fn flow_ended_before(&self, vma: u64) -> Option<(FunctionEntry, u64)> {
+        self.flow_ends.as_ref()?;
+        let vma = self.thumb_normalized(vma);
+        let starts = self.entry_offsets();
+        let owner = starts[..starts.partition_point(|&start| start <= vma)].last().copied()?;
+        let (extent, clip) = self.extent_cut_by_flow(owner)?;
+        let end = owner + extent;
+        if owner == vma || vma < end || vma >= owner + clip {
+            return None;
+        }
+        Some((self.find_entry_at(owner)?, end))
+    }
+
+    /// [`Self::extent_cut_by_flow`] of every entry the flow shortened, entry
+    /// VMA -> `(extent, clip)`, measured in one pass; empty on an image that
+    /// measured no flow ends.
+    pub fn extents_cut_by_flow(&self) -> BTreeMap<u64, (u64, u64)> {
+        let Some(ends) = &self.flow_ends else { return BTreeMap::new() };
+        if !self.anonymous_entries.is_empty() {
+            return ends.keys().filter_map(|&entry| Some((entry, self.extent_cut_by_flow(entry)?))).collect();
+        }
+        let entries = self.entry_offsets();
+        let spans = crate::funcextent::spans(&self.sections(), &self.segments());
+        ends.keys()
+            .filter(|&&entry| self.declared_extent(entry) == 0 && entries.binary_search(&entry).is_ok())
+            .filter_map(|&entry| {
+                let clip = crate::funcextent::extent_at(entry, &entries, &spans);
+                let extent = crate::funcextent::bound_by_flow(entry, clip, Some(entry), ends);
+                (extent < clip).then_some((entry, (extent, clip)))
+            })
+            .collect()
+    }
+
     /// `clip` bounded by the measured flow ends (`flow_ends`), unchanged on an
     /// image that measured none.
     fn bound_by_flow(&self, vma: u64, clip: u64) -> u64 {
