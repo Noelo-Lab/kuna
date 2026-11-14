@@ -1777,8 +1777,9 @@ classified:
   outer call from an inner call's: an argument pushed for a virtual call before
   an inner `this`-only method call is not the method's. The second keeps the
   flow-insensitive alias test from refusing every pushed argument of a function
-  whose by-value struct copy (`sub esp,0x20; mov edi,esp; rep movsd`) keeps a
-  bottom-of-frame pointer alive. Upstream marks the stack range of every
+  whose by-value struct copy (`sub esp,0x80; mov edi,esp; rep movsd`, one too
+  large for chapter 03's `rep movs` expansion) keeps a bottom-of-frame pointer
+  alive. Upstream marks the stack range of every
   argument a call takes as unmapped, so a store to that range that no call
   takes is dead; a call whose extent is not stated (an import, an indirect
   call, a callee framed by `__SEH_prolog4`) keeps the upstream test, and stores
