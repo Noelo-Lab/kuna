@@ -268,7 +268,7 @@ flag, and exit 1 instead of spinning on.
 
 `--json` emits the `decompile-all` document for the one selected function (see
 *The JSON documents* under `decompile-all`), and takes the same record
-selection: `--no-vars` and `--omit line_mappings,variables,types` behave as they
+selection: `--no-vars` and `--omit aliases,line_mappings,variables,types` behave as they
 do there. Without `--json` both are refused, since the C text carries none of
 those collections.
 
@@ -1828,24 +1828,27 @@ what `--omit variables` below is for.
 **`--omit KEY[,KEY]...`** (repeatable, `decompile-all --json` and
 `decompile --json`) leaves whole collections out of every record, for a caller
 that wants the function's identity, `code` and `error` and not the rest. The keys
-are `line_mappings`, `variables` and `types`; `variables` also withholds
-`stack_objects`, which `--no-vars` already ties to it. An omitted key is absent
-from every record, not emptied, and the document says which ones in a top-level
+are `aliases`, `line_mappings`, `variables` and `types`; `variables` also withholds
+`stack_objects`, which `--no-vars` already ties to it. `aliases` is for an entry
+exported under many names: the record keeps its primary `name` and address, and
+`kuna functions --json` (which takes no `--omit`) still lists every alias. An
+omitted key is absent from every record, not emptied, and the document says which
+ones in a top-level
 `omitted` array, in record order. `variables: []` therefore still means a function
 whose variables were examined and none reported, and an absent `stack_objects`
 with no `omitted` still means none were recovered. A document that omits nothing
 has no `omitted` key, so the default document is unchanged. The run-level
 `language`, `count`, `error` and `assertions` and each record's `name`,
-`address`, `address_hex`, `aliases`, `object_location`, `size`, `code`, `error`
-and `unstructured_gotos` (and `interior_to` and `declared`, where they apply) are
+`address`, `address_hex`, `object_location`, `size`, `code`, `error` and
+`unstructured_gotos` (and `interior_to` and `declared`, where they apply) are
 always present;
 `code` and the exit status are what they are without the flag. An unknown key
 exits 2.
 
 ```bash
-kuna decompile ./fixture audit_many --json --omit line_mappings,variables,types
+kuna decompile ./fixture audit_many --json --omit aliases,line_mappings,variables,types
 #   {"binary": "./fixture", "language": "c-language",
-#    "omitted": ["line_mappings", "variables", "types", "stack_objects"],
+#    "omitted": ["aliases", "line_mappings", "variables", "types", "stack_objects"],
 #    "count": 1, "error": null,
 #    "functions": [{"name": "audit_many", ..., "code": "void audit_many(void) ...",
 #                   "error": null, "unstructured_gotos": 0}],
@@ -1857,10 +1860,12 @@ The line mappings and the variables' `line_numbers`/`addresses` come from a seco
 markup render of each function, which runs unless both `line_mappings` and the
 variables (`--omit variables` or `--no-vars`) are left out; `--omit variables`
 skips the variable and stack-object extraction, as `--no-vars` does. For one
-x86-64 function of 500 volatile stores, omitting all three takes the document
-from 75,234 bytes to 22,603 (its C is 21,623). Over 24 decbench binaries
-(3,830 functions) the whole-binary document shrinks to 18% of its default size,
-and a whole-binary run of `cmp` or `ln` takes 3-6% less time.
+x86-64 function of 500 volatile stores, omitting `line_mappings`, `variables` and
+`types` takes the document from 75,234 bytes to 22,603 (its C is 21,623). Over 24
+decbench binaries (3,830 functions) the whole-binary document shrinks to 18% of its
+default size, and a whole-binary run of `cmp` or `ln` takes 3-6% less time. For a
+two-instruction function exported under 600 names of 177 bytes each, those three
+leave 114,080 bytes, and adding `aliases` takes it to 836 (its C is 217).
 
 `types` is the layout side of the same record: one object per composite, enum or
 typedef the function's C names, carrying its name, its definition text (the same
@@ -2643,7 +2648,7 @@ no such gap.
 | `code_section` | That section is marked as code, so every walk decodes it. |
 | `executable` | The image maps that memory executable. `null` when it is in no section, or for a relocatable object. |
 | `unwalked` | The targets of decoded direct calls and branches that lie in executable memory not marked as code, that a symbol names, and that the walk did not decode. The references they make are in no answer; `--from` one decodes it. |
-| `notes` | The sentences also printed on stderr as `note:`. A `--from` answer gets one unless it is code decoded in a code section; a `--to` answer gets one while `unwalked` is not empty. |
+| `notes` | The sentences also printed on stderr as `note:`. A `--from` answer gets one unless it is code decoded in a code section; a `--to` answer gets one while `unwalked` is not empty, and when the image is one entry of a kernel collection and the address is in another entry or in none ([`--option kernelcache`](#--option-kernelcache-id--one-entry-of-an-apple-kernel-collection)). |
 
 ```
 $ kuna xrefs unflagged_macho_arm64 --to _goal
@@ -4313,6 +4318,37 @@ island addresses instead. `--image` is global: it applies to every subcommand
 and is passed to the `decomp_dbg` subprocess through `KUNA_DYLD_IMAGE`. The
 console spells it `option dyldimage NAME`, given before `load file`; it is
 accepted before any image is loaded.
+
+## `--option kernelcache ID` — one entry of an Apple kernel collection
+
+An iOS or macOS kernelcache is an `MH_FILESET`: the kernel and every kext, each
+with its own Mach-O header, in one file (raw, or inside an IMG4 / IM4P
+container). kuna loads one entry: the kernel by default, or the entry
+`--option kernelcache <bundle-id>` names, by full id or a unique dotted suffix
+(`--option kernelcache list` prints them all). Like `--image`, the choice
+applies to the whole invocation: `functions`, `decompile`, `disassemble`,
+`xrefs`, `strings`, `crypto`, `decompile-all`, `decompile-graph` and
+`decompile-project` all read the same entry. So does `--option dyldimage NAME`,
+the option spelling of `--image`. Given more than once, the last one wins. The
+option overrides `KUNA_KERNELCACHE` (or `KUNA_DYLD_IMAGE`) set in the
+environment, and `--option dyldimage` overrides `--image`.
+
+```
+$ kuna xrefs fileset_calls.macho --to pmgr_wait_pending --option kernelcache com.example.driver.PMGR
+# 5 references to pmgr_wait_pending @ 0xfffffe0007007840
+0xfffffe0007007808	call	pmgr_set_perf_state+0x8	bl 0xfffffe0007007840
+...
+0xfffffe0007007868	call	pmgr_idle_enter+0x8	bl 0xfffffe0007007840
+```
+
+The reference walk decodes only the loaded entry. An address another entry
+holds is not decoded, and `xrefs` says which entry it is in. For `--to`, the
+rows are the loaded entry's own references to it. `coverage.notes` carries the
+explanation, also printed as a `note:` line:
+
+```
+note: 0xfffffe0007007000 is in the MH_FILESET entry com.apple.kernel, not in com.example.driver.PMGR, the entry loaded: only references made from com.example.driver.PMGR are listed; `--option kernelcache com.apple.kernel` loads that entry
+```
 
 ## `kuna fid` — function identification by fingerprint
 

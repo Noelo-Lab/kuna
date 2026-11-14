@@ -1153,7 +1153,7 @@ pub fn main(argv: &[String]) -> Result<i32, String> {
 fn usage() {
     eprintln!(
         "usage: kuna decompile <binary> <name|0xaddr> [--addr] [--json] [--raw] [--regions] \\\n\
-         \x20                     [--no-vars] [--omit line_mappings,variables,types] \\\n\
+         \x20                     [--no-vars] [--omit aliases,line_mappings,variables,types] \\\n\
          \x20                     [--language auto|c|rust|go] [--mode auto|reliable|aggressive|fast] \\\n\
          \x20                     [--option N V].. [--kassert ARGS].. \\\n\
          \x20                     [--define-function S[-E][=N]|@FILE].. \\\n\
@@ -1168,9 +1168,10 @@ fn usage() {
          decompile-all record for that one function\n\
          ({{binary,count,functions:[{{name,address,code,variables,..}}]}});\n\
          without it, the C text alone.  With --json, --omit KEY[,KEY].. leaves those\n\
-         record collections out (line_mappings, variables -- with stack_objects --\n\
-         and types) and lists them in a top-level `omitted` array; --no-vars skips\n\
-         the variable extraction and leaves `variables` empty, as on decompile-all.\n\
+         record collections out (aliases, line_mappings, variables -- with\n\
+         stack_objects -- and types) and lists them in a top-level `omitted` array;\n\
+         name and address always stay.  --no-vars skips the variable extraction\n\
+         and leaves `variables` empty, as on decompile-all.\n\
          \n\
          --option NAME VALUE (repeatable) flips one phase-model decision for this run;\n\
          `kuna catalog` lists them and `kuna docs options` explains the tiers.\n\

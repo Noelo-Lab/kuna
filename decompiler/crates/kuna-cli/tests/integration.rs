@@ -534,6 +534,9 @@ mod xrefs_cli;
 #[path = "xrefs_data_refs_cli.rs"]
 mod xrefs_data_refs_cli;
 
+#[path = "xrefs_fileset_entry.rs"]
+mod xrefs_fileset_entry;
+
 #[path = "xrefs_got_call.rs"]
 mod xrefs_got_call;
 

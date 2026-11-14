@@ -9,10 +9,11 @@
 use crate::jsonfmt::Json;
 
 /// The collections a caller can withhold, spelled as their record keys.
-pub(crate) const KEYS: [&str; 3] = ["line_mappings", "variables", "types"];
+pub(crate) const KEYS: [&str; 4] = ["aliases", "line_mappings", "variables", "types"];
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct Omit {
+    pub(crate) aliases: bool,
     pub(crate) line_mappings: bool,
     /// Also withholds `stack_objects`, which `--no-vars` ties to the variables.
     pub(crate) variables: bool,
@@ -25,6 +26,7 @@ impl Omit {
         let mut named = false;
         for key in value.split(',').map(str::trim).filter(|key| !key.is_empty()) {
             match key {
+                "aliases" => self.aliases = true,
                 "line_mappings" => self.line_mappings = true,
                 "variables" => self.variables = true,
                 "types" => self.types = true,
@@ -51,6 +53,7 @@ impl Omit {
     /// The record keys this selection withholds, in record order.
     pub(crate) fn withheld(self) -> Vec<&'static str> {
         [
+            (self.aliases, "aliases"),
             (self.line_mappings, "line_mappings"),
             (self.variables, "variables"),
             (self.types, "types"),
@@ -79,12 +82,18 @@ mod tests {
         omit.add("types").unwrap();
         omit.add(" variables , line_mappings").unwrap();
         assert_eq!(omit.withheld(), ["line_mappings", "variables", "types", "stack_objects"]);
+        omit.add("aliases").unwrap();
+        assert_eq!(
+            omit.withheld(),
+            ["aliases", "line_mappings", "variables", "types", "stack_objects"]
+        );
     }
 
     #[test]
     fn unknown_and_empty_values_are_refused() {
         let err = Omit::default().add("variables,lines").unwrap_err();
         assert!(err.contains("\"lines\"") && err.contains("line_mappings"), "{err}");
+        assert!(err.contains("aliases, line_mappings, variables, types"), "{err}");
         assert!(Omit::default().add(" , ").is_err());
     }
 
