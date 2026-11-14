@@ -2496,16 +2496,16 @@ entry) is a different fact, and no instruction makes it, so it is reported apart
 the image's own rebase/relocation metadata lists every such word, and `--to`
 answers each word holding the target's address, `--from` each word inside a data
 target. The source is the image's: Mach-O chained-fixup rebases or classic rebase
-opcodes, ELF dynamic relocations (`SHT_RELR` included; x86, ARM, AArch64, RISC-V
-and PowerPC), PE base relocations. `data_refs_coverage` says how much of it the
+opcodes, ELF dynamic relocations (`SHT_RELR` and Android's `SHT_ANDROID_RELR`
+included; x86, ARM, AArch64, RISC-V and PowerPC), PE base relocations. `data_refs_coverage` says how much of it the
 rows cover, and `data_refs_reason` why not all of it:
 
 | `data_refs_coverage` | Meaning |
 |---|---|
 | `chained-fixups`, `rebase-opcodes`, `dynamic-relocations`, `base-relocations` | kuna read all of that metadata; `data_refs_reason` is `null`. An empty `data_refs` means no stored pointer holds the address. |
-| `partial` | Some of the metadata could not be read (a relocation section whose `sh_link` is not the dynamic symbol table, a table the dynamic section declares that no section covers, a PE base-relocation directory outside every section, an Android-packed table); the rows are what was read, and each row's `source` names the metadata. |
+| `partial` | Some of the metadata could not be read (a relocation section whose `sh_link` is not the dynamic symbol table or whose size is not a whole number of entries, a table the dynamic section declares that no section covers, a PE base-relocation directory outside every section, an Android-packed table, a Mach-O fixup chain the walk could not follow to its end); the rows are what was read, and each row's `source` names the metadata. |
 | `unsupported` | The image keeps metadata kuna does not read: a MIPS or SPARC image's dynamic relocations, a relocatable object's relocations, an `--emit-relocs` executable's static ones. |
-| `none` | The image keeps no pointer-relocation metadata (a non-PIE ELF executable, a PE without `.reloc`): its pointers are plain words. |
+| `none` | The image keeps no pointer-relocation metadata (a non-PIE ELF executable, a PE without `.reloc` or whose base-relocation directory has size 0): its pointers are plain words. |
 
 Under anything but a complete source, an empty `data_refs` means "not
 enumerated", not "none stored". A word bound to an import is not listed; it holds
@@ -3063,9 +3063,10 @@ at run time. So every fixup slot the span overlaps is listed whole in `fixups`:
 `fixups_coverage` names the metadata the list came from — `chained-fixups`
 (Mach-O `LC_DYLD_CHAINED_FIXUPS`), `dynamic-relocations` (a linked ELF's
 dynamic relocation tables, `SHT_RELR` included), `partial` (some of an ELF's
-tables could not be read, and `fixups_reason` says which; the slots they
-relocate are missing from `fixups` and hold the file's bytes), or `none`, where
-`fixups` is empty. `fixups_reason` is `null` otherwise. `none` is a PE at its preferred base or a classic Mach-O, whose rebased
+tables, or of a Mach-O's fixup chains, could not be read, and `fixups_reason`
+says which; the slots they relocate are missing from `fixups` and hold the
+file's bytes), or `none`, where `fixups` is empty. `fixups_reason` is `null`
+otherwise. `none` is a PE at its preferred base or a classic Mach-O, whose rebased
 words are already the unslid pointers and whose bytes are the file's wherever
 `provenance` below says `file`, and a relocatable object (`.o`, `.obj`), whose
 bytes are kuna's own layout of it with the relocations it supports applied,

@@ -2073,7 +2073,8 @@ funcsym stream:
   position-independent ELF carries a dynamic relocation for each, and a PE lists
   them in `.reloc`. The ELF list is read here, not through `dynrelocs` (whose
   writes are an option of the loaded image): a `RELATIVE` word holds `B + A`, and
-  so does every packed `SHT_RELR` slot, whose addend is the word it holds; an
+  so does every packed `SHT_RELR` slot (Android's `SHT_ANDROID_RELR` is the same
+  encoding under other constants), whose addend is the word it holds; an
   absolute word, `GLOB_DAT` or `JUMP_SLOT` against a symbol the image defines
   holds `S + A`. The absolute kind is how a shared object stores its own exported
   functions, which are preemptible (`R_X86_64_64 audit_target` for the first entry
@@ -2084,7 +2085,11 @@ funcsym stream:
   absolute `R_RISCV_64` / `R_RISCV_32`; PowerPC64's `JMP_SLOT` is a word only
   under ELFv2 (`e_flags` ABI 2), an ELFv1 PLT slot being a copied function
   descriptor; and a 32-bit PowerPC `JMP_SLOT` is a word only under the secure PLT
-  (`DT_PPC_GOT`), the BSS PLT patching code instead. A machine with no entry is
+  (`DT_PPC_GOT`), the BSS PLT patching code instead. PowerPC also has an
+  unaligned absolute word, `UADDR32` / `UADDR64`, which GNU ld emits for a
+  pointer at an unaligned offset (a packed struct); a 32-bit one against a local
+  symbol stores `B + A`, binutils having folded the symbol's value into the
+  addend, which is what glibc's loader adds. A machine with no entry is
   not guessed at: MIPS relocates its local GOT entries without a relocation, so
   its relocations would be a partial list presented as a whole one, and SPARC's
   could not be verified. The list keeps each word whose target is in an
@@ -2093,20 +2098,29 @@ funcsym stream:
   read in full. `Complete` names the source. `Partial` names it too, plus
   what was not read: an allocated `SHT_REL`/`SHT_RELA` section whose `sh_link` is
   not the dynamic symbol table (the generic relocation walk skips it, and so does
-  `resolve`), a table section whose bytes lie outside the file, a table the
-  dynamic section declares (`DT_RELA`, `DT_REL`, `DT_JMPREL`, `DT_RELR`) that no
-  readable section covers (an image without section headers), an Android-packed
-  table (`DT_ANDROID_RELA`), a PE base-relocation directory outside every
+  `resolve`), a table section whose bytes lie outside the file or are not a
+  whole number of entries (skipped the same way), a table the dynamic section
+  declares (`DT_RELA`, `DT_REL`, `DT_JMPREL`, `DT_RELR`, `DT_ANDROID_RELR`) that
+  no readable section covers (an image without section headers), an
+  Android-packed table (`DT_ANDROID_RELA`), `SHT_RELR` entries that name more
+  slots than the file has words (a valid table names distinct aligned words the
+  file holds, so decoding stops there and a crafted table cannot multiply
+  memory), a PE base-relocation directory outside every
   section or a block that does not fit in it (the blocks are walked here, a
   zero-size one ending the walk as it ends the loader's), a Mach-O
-  `LC_DYLD_CHAINED_FIXUPS` blob outside the file, a rebase-opcode stream that
+  `LC_DYLD_CHAINED_FIXUPS` blob outside the file, a chain walk that stopped
+  short (`ChainedFixups::damage`: a truncated header or start table, a pointer
+  format the walk does not decode, a chain that leaves the segments' file data,
+  kernel-collection rebases whose own collection level is unknown), a
+  rebase-opcode stream that
   ends in an operand or names a segment the image lacks, and slots with no file
   data to read (`kuna_dynrelocs.rs (unread_tables)`). `Unsupported` is metadata
   kuna does not read: a machine above without an entry, a relocatable object's
   relocations, a Mach-O image's `LC_DYSYMTAB` local relocations, and the static
   relocation sections an `--emit-relocs` executable keeps. `None` is an image
   with no pointer-relocation metadata at all (a non-PIE ELF executable, whose own
-  pointers carry no relocation, a PE without a base-relocation directory, a
+  pointers carry no relocation, a PE without a base-relocation directory or with
+  one of size 0, which the loader treats as none, a
   non-PIE Mach-O executable without rebase opcodes): its pointers are plain
   words no metadata tells from integers, and guessing would make an empty answer
   mean two things. Metadata that exists and lists nothing is complete with no
@@ -2144,7 +2158,8 @@ funcsym stream:
   the valued rebases and binds, as before. The list is read regardless, so a
   reader compares the loaded bytes with the file's
   to learn what was applied. The coverage is `Partial` when some of an ELF's
-  tables were not read, by the same `unread_tables` account the data-held
+  tables, or of a Mach-O's chains, were not read, by the same accounts
+  (`unread_tables`, the `SHT_RELR` bound, `ChainedFixups::damage`) the data-held
   pointers use: their slots are absent from the list and hold the file's bytes,
   since `resolve` did not read them either. That account is of the tables a
   dynamic loader applies, so an image without a dynamic section (a static

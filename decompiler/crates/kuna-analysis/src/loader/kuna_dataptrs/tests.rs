@@ -187,3 +187,88 @@ fn metadata_that_lists_nothing_is_complete() {
     assert_eq!(classic.coverage, Coverage::Complete(Source::RebaseOpcodes));
     assert!(classic.pointers.is_empty());
 }
+
+/// GH #1502: GNU ld stores a pointer at an unaligned offset under PowerPC's
+/// `UADDR` relocations, the 32-bit one against a local section symbol whose
+/// value binutils folds into the addend; Android's `SHT_ANDROID_RELR` packs
+/// `RELATIVE` slots as `SHT_RELR` does (`dataptrs_arch.provenance`).
+#[test]
+fn unaligned_and_android_packed_relocations_are_data_pointers() {
+    let ppc32 = pointers("dataptrs_arch_ppc32_uaddr.so");
+    assert_eq!(ppc32.coverage, Coverage::Complete(Source::DynamicRelocations));
+    assert_eq!(ppc32.pointers, vec![word(0x2001, 0x190, 4), word(0x2008, 0x190, 4)]);
+    let ppc64 = pointers("dataptrs_arch_ppc64_uaddr.so");
+    assert_eq!(ppc64.pointers, vec![word(0x1ee8, 0x278, 8), word(0x2001, 0x1ee8, 8), word(0x2010, 0x1ee8, 8)]);
+    let android = pointers("dataptrs_arch_x86_64_androidrelr.so");
+    assert_eq!(android.coverage, Coverage::Complete(Source::DynamicRelocations));
+    assert_eq!(
+        android.pointers,
+        vec![word(0x2620, 0x3648, 8), word(0x2640, 0x14a0, 8), word(0x3650, 0x1490, 8), word(0x3658, 0x14a0, 8)]
+    );
+}
+
+fn patched(name: &str, patch: impl FnOnce(&mut Vec<u8>)) -> DataPointers {
+    let mut bytes = load(name);
+    patch(&mut bytes);
+    let file = object::File::parse(&bytes[..]).expect("parse");
+    data_pointers(&file, &bytes)
+}
+
+fn u32_at(bytes: &[u8], at: usize) -> usize {
+    u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap()) as usize
+}
+
+/// A relocation section whose size is not a whole number of entries is one
+/// the relocation walk skips, so the list is partial. A PE base-relocation
+/// directory of size 0 is none, and an image base at the top of the address
+/// space wraps its slots as it wraps its sections' addresses instead of
+/// overflowing.
+#[test]
+fn ragged_and_empty_tables_are_never_complete() {
+    let ragged = patched("dataptrs_so_x86_64.so", |bytes| {
+        let header = u64::from_le_bytes(bytes[0x28..0x30].try_into().unwrap()) as usize + 4 * 0x40;
+        assert_eq!(u32_at(bytes, header + 0x28), 2, "section 4 is .rela.dyn, linked to .dynsym");
+        let size = u64::from_le_bytes(bytes[header + 0x20..header + 0x28].try_into().unwrap());
+        bytes[header + 0x20..header + 0x28].copy_from_slice(&(size + 1).to_le_bytes());
+    });
+    assert_eq!(ragged.coverage, Coverage::Partial(Source::DynamicRelocations));
+    assert!(ragged.reason.as_deref().unwrap_or_default().contains("is not a whole number of entries"), "{ragged:?}");
+    let pe_directory = |bytes: &[u8]| {
+        let optional = u32_at(bytes, 0x3c) + 24;
+        (optional, optional + if bytes[optional..optional + 2] == [0x0b, 0x02] { 112 } else { 96 })
+    };
+    let empty = patched("dataptrs_textptr_i386.exe", |bytes| {
+        let (_, directories) = pe_directory(bytes);
+        bytes[directories + 5 * 8 + 4..directories + 5 * 8 + 8].copy_from_slice(&0u32.to_le_bytes());
+    });
+    assert_eq!(empty.coverage, Coverage::None, "{empty:?}");
+    let top = patched("msvc_rtti_x64.exe", |bytes| {
+        let (optional, _) = pe_directory(bytes);
+        bytes[optional + 24..optional + 32].copy_from_slice(&0xffff_ffff_ffff_f000u64.to_le_bytes());
+    });
+    assert_eq!(top.coverage, Coverage::Complete(Source::BaseRelocations), "{:?}", top.reason);
+}
+
+/// A chained-fixup image whose chains use a pointer format the walk does not
+/// decode lists what it read, as partial, never as complete.
+#[test]
+fn an_unread_chain_makes_the_list_partial() {
+    let got = patched("macho_ptrslots_arm64", |bytes| {
+        let mut at = 32;
+        for _ in 0..u32_at(bytes, 16) {
+            if u32_at(bytes, at) == 0x8000_0034 {
+                let blob = u32_at(bytes, at + 8);
+                let starts = blob + u32_at(bytes, blob + 4);
+                let first = (0..u32_at(bytes, starts)).map(|i| u32_at(bytes, starts + 4 + 4 * i)).find(|&o| o != 0);
+                let format = starts + first.expect("a segment with chains") + 6;
+                bytes[format..format + 2].copy_from_slice(&13u16.to_le_bytes());
+                return;
+            }
+            at += u32_at(bytes, at + 4);
+        }
+        panic!("no LC_DYLD_CHAINED_FIXUPS");
+    });
+    assert_eq!(got.coverage, Coverage::Partial(Source::ChainedFixups));
+    let why = "the chained fixups were not all read: chained pointer format 13 is not decoded";
+    assert_eq!(got.reason.as_deref(), Some(why));
+}

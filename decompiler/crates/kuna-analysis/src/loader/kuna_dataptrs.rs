@@ -228,13 +228,17 @@ fn allocated(flags: object::SectionFlags) -> bool {
 
 /// A Mach-O image's chained-fixup rebases, else its classic rebase opcodes.
 /// A bind-only chained image lists none, completely, and so does a slid image
-/// whose `LC_DYLD_INFO` rebases nothing.
+/// whose `LC_DYLD_INFO` rebases nothing. A chain walk that stopped short
+/// ([`ChainedFixups::damage`]) leaves the list partial.
+///
+/// [`ChainedFixups::damage`]: crate::loader::format::macho::chained::ChainedFixups::damage
 fn macho(file: &object::File, bytes: &[u8]) -> DataPointers {
     let fixups = crate::loader::format::macho::resolve_chained_fixups(file, bytes);
     if fixups.is_chained() {
         let width = fixups.slot_width();
         let pointers = fixups.rebases().map(|(slot, target)| DataPointer { slot, target, width }).collect();
-        return DataPointers::listed(Source::ChainedFixups, pointers, Vec::new());
+        let unread = fixups.damage().map(|why| format!("the chained fixups were not all read: {why}"));
+        return DataPointers::listed(Source::ChainedFixups, pointers, unread.into_iter().collect());
     }
     let commands = match FileKind::parse(bytes) {
         Ok(FileKind::MachO64) => macho_commands::<object::macho::MachHeader64<object::Endianness>>(bytes),
@@ -448,21 +452,33 @@ fn interpret_rebase(ops: &[u8], segments: &[u64], ptr: u64) -> (Vec<u64>, Option
 
 /// The dynamic relocation types that store an address of this image in a
 /// word, on one machine: `RELATIVE` (`B + A`), the pointer-width absolute word
-/// (`S + A`), and `GLOB_DAT` / `JUMP_SLOT` where the machine has them and they
-/// store a word. A RISC-V GOT slot is an absolute word, and so is an ELFv1
-/// PowerPC64 (`e_flags` ABI 1) or a BSS-PLT PowerPC (no `DT_PPC_GOT`) PLT slot
-/// not: the first is a copied function descriptor, the second patched code.
+/// (`S + A`) and its unaligned twin where the machine has one (PowerPC's
+/// `UADDR`, which GNU ld emits for a pointer at an unaligned offset), and
+/// `GLOB_DAT` / `JUMP_SLOT` where the machine has them and they store a word.
+/// A RISC-V GOT slot is an absolute word, and an ELFv1 PowerPC64 (`e_flags`
+/// ABI 1) or a BSS-PLT PowerPC (no `DT_PPC_GOT`) PLT slot is not a word at all:
+/// the first is a copied function descriptor, the second patched code.
+/// `local_addend`: a relocation against a local symbol stores `B + A`, as on
+/// 32-bit PowerPC, where binutils folds the symbol's value into the addend and
+/// glibc's loader adds only the load bias.
 struct PointerRelocs {
     relative: u32,
     absolute: u32,
+    unaligned: Option<u32>,
     glob_dat: Option<u32>,
     jump_slot: Option<u32>,
+    local_addend: bool,
 }
 
 impl PointerRelocs {
+    /// Does `r_type` store `S + A` in a word whose addend may be implicit?
+    fn word(&self, r_type: u32) -> bool {
+        r_type == self.absolute || Some(r_type) == self.unaligned
+    }
+
     /// Does `r_type` store a symbol's address, `S + A`?
     fn symbolic(&self, r_type: u32) -> bool {
-        r_type == self.absolute || Some(r_type) == self.glob_dat || Some(r_type) == self.jump_slot
+        self.word(r_type) || Some(r_type) == self.glob_dat || Some(r_type) == self.jump_slot
     }
 }
 
@@ -479,7 +495,14 @@ fn pointer_relocs(file: &object::File) -> Result<PointerRelocs, String> {
             A::I386 => elf::R_386_32,
             _ => elf::R_ARM_ABS32,
         };
-        return Ok(PointerRelocs { relative, absolute, glob_dat: Some(glob_dat), jump_slot: Some(jump_slot) });
+        return Ok(PointerRelocs {
+            relative,
+            absolute,
+            unaligned: None,
+            glob_dat: Some(glob_dat),
+            jump_slot: Some(jump_slot),
+            local_addend: false,
+        });
     }
     let e_flags = match file.flags() {
         object::FileFlags::Elf { e_flags, .. } => e_flags,
@@ -489,14 +512,18 @@ fn pointer_relocs(file: &object::File) -> Result<PointerRelocs, String> {
         A::Riscv64 | A::Riscv32 => PointerRelocs {
             relative: elf::R_RISCV_RELATIVE,
             absolute: if arch == A::Riscv64 { elf::R_RISCV_64 } else { elf::R_RISCV_32 },
+            unaligned: None,
             glob_dat: None,
             jump_slot: Some(elf::R_RISCV_JUMP_SLOT),
+            local_addend: false,
         },
         A::PowerPc64 => PointerRelocs {
             relative: elf::R_PPC64_RELATIVE,
             absolute: elf::R_PPC64_ADDR64,
+            unaligned: Some(elf::R_PPC64_UADDR64),
             glob_dat: Some(elf::R_PPC64_GLOB_DAT),
             jump_slot: (e_flags & elf::EF_PPC64_ABI == 2).then_some(elf::R_PPC64_JMP_SLOT),
+            local_addend: false,
         },
         A::PowerPc => {
             let secure_plt = crate::loader::kuna_dynrelocs::dynamic_entries(file)
@@ -505,8 +532,10 @@ fn pointer_relocs(file: &object::File) -> Result<PointerRelocs, String> {
             PointerRelocs {
                 relative: elf::R_PPC_RELATIVE,
                 absolute: elf::R_PPC_ADDR32,
+                unaligned: Some(elf::R_PPC_UADDR32),
                 glob_dat: Some(elf::R_PPC_GLOB_DAT),
                 jump_slot: secure_plt.then_some(elf::R_PPC_JMP_SLOT),
+                local_addend: true,
             }
         }
         A::Mips | A::Mips64 | A::Mips64_N32 => {
@@ -533,10 +562,10 @@ fn elf(file: &object::File) -> DataPointers {
     };
     let width: u8 = if file.is_64() { 8 } else { 4 };
     let mask = if width == 8 { u64::MAX } else { u64::from(u32::MAX) };
-    let defined: std::collections::HashMap<usize, u64> = file
+    let defined: std::collections::HashMap<usize, (u64, bool)> = file
         .dynamic_symbols()
         .filter(|sym| !sym.is_undefined())
-        .map(|sym| (sym.index().0, sym.address()))
+        .map(|sym| (sym.index().0, (sym.address(), sym.is_local())))
         .collect();
     let mut pointers = Vec::new();
     let mut missing = 0usize;
@@ -549,12 +578,12 @@ fn elf(file: &object::File) -> DataPointers {
             0
         } else {
             let RelocationTarget::Symbol(index) = reloc.target() else { continue };
-            let Some(&symbol) = defined.get(&index.0) else { continue };
-            symbol
+            let Some(&(address, local)) = defined.get(&index.0) else { continue };
+            if local && kinds.local_addend { 0 } else { address }
         };
         let addend = if !reloc.has_implicit_addend() {
             reloc.addend() as u64
-        } else if r_type == kinds.relative || r_type == kinds.absolute {
+        } else if r_type == kinds.relative || kinds.word(r_type) {
             let Some(word) = read_word(file, slot, width as usize) else {
                 missing += 1;
                 continue;
@@ -565,13 +594,15 @@ fn elf(file: &object::File) -> DataPointers {
         };
         pointers.push(DataPointer { slot, target: symbol.wrapping_add(addend) & mask, width });
     }
-    for slot in crate::loader::kuna_dynrelocs::elf_relr_slots(file, width as usize) {
+    let (relr, relr_unread) = crate::loader::kuna_dynrelocs::elf_relr_slots(file, width as usize);
+    for slot in relr {
         match read_word(file, slot, width as usize) {
             Some(word) => pointers.push(DataPointer { slot, target: word & mask, width }),
             None => missing += 1,
         }
     }
     let mut unread = crate::loader::kuna_dynrelocs::unread_tables(file);
+    unread.extend(relr_unread);
     if missing != 0 {
         unread.push(format!("{missing} relocated slots have no file data to read the addend from"));
     }
@@ -584,9 +615,14 @@ fn elf(file: &object::File) -> DataPointers {
 /// as the Windows loader walks them: every block whose header starts inside the
 /// directory, its entries read from the section even past the directory's
 /// end, until a zero-size block. A block that does not fit in the section
-/// leaves the list partial.
+/// leaves the list partial. A directory of size 0 is no directory, to the
+/// loader as here.
 fn pe_relocated<Pe: ImageNtHeaders>(file: &object::File, pe: &PeFile<'_, Pe>) -> DataPointers {
-    let Some(dir) = pe.data_directories().get(object::pe::IMAGE_DIRECTORY_ENTRY_BASERELOC) else {
+    let Some(dir) = pe
+        .data_directories()
+        .get(object::pe::IMAGE_DIRECTORY_ENTRY_BASERELOC)
+        .filter(|dir| dir.size.get(object::LittleEndian) != 0)
+    else {
         return DataPointers::empty(
             Coverage::None,
             "a PE without a base-relocation directory loads only at its preferred base",
@@ -625,7 +661,7 @@ fn pe_relocated<Pe: ImageNtHeaders>(file: &object::File, pe: &PeFile<'_, Pe>) ->
                 IMAGE_REL_BASED_HIGHLOW => 4,
                 _ => continue,
             };
-            let slot = base + page + u64::from(entry & 0xfff);
+            let slot = base.wrapping_add(page).wrapping_add(u64::from(entry & 0xfff));
             match read_word(file, slot, width as usize) {
                 Some(target) => pointers.push(DataPointer { slot, target, width }),
                 None => missing += 1,
