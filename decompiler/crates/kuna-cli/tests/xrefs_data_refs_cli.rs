@@ -226,17 +226,22 @@ fn relr_relocations_are_pointer_rows() {
     assert_eq!(doc["data_refs"][0]["from_address_hex"], "0x4038", "exported_tab[1]: {doc}");
 }
 
-/// An `MH_FILESET` entry's pointers are relocated by the collection's chained
-/// fixups, which kuna applies when it cuts the entry out: they are
-/// `unsupported`, not `none`, whichever entry is loaded.
+/// An image of a kernel collection or dyld shared cache (`MH_DYLIB_IN_CACHE`)
+/// keeps none of its own rebases: the collection's chained fixups or the
+/// cache's slide info relocate its pointers. Its list is `unsupported`, not
+/// `none` or an empty complete one, whichever entry or image is loaded.
 #[test]
-fn a_fileset_entrys_pointers_are_unsupported_not_none() {
+fn a_cache_images_pointers_are_unsupported_not_none() {
     let collection = fixture("kernelcache/fileset_calls.macho");
-    for entry in [&[][..], &["--option", "kernelcache", "com.example.driver.PMGR"][..]] {
-        let mut args = vec![collection.as_str(), "--to", "0xfffffe0007007840"];
-        args.extend_from_slice(entry);
-        let doc = json(&args);
-        assert_eq!(doc["data_refs_coverage"], "unsupported", "{entry:?}: {doc}");
-        assert!(doc["data_refs_reason"].as_str().unwrap_or_default().contains("MH_FILESET"), "{doc}");
+    let cache = fixture("dyld_cache_arm64e/dyld_shared_cache_arm64e");
+    let queries: [&[&str]; 3] = [
+        &[&collection, "--to", "0xfffffe0007007840"],
+        &[&collection, "--to", "0xfffffe0007007840", "--option", "kernelcache", "com.example.driver.PMGR"],
+        &[&cache, "--to", "0x180002800", "--option", "dyldimage", "libcaller.dylib"],
+    ];
+    for args in queries {
+        let doc = json(args);
+        assert_eq!(doc["data_refs_coverage"], "unsupported", "{args:?}: {doc}");
+        assert!(doc["data_refs_reason"].as_str().unwrap_or_default().contains("MH_DYLIB_IN_CACHE"), "{doc}");
     }
 }

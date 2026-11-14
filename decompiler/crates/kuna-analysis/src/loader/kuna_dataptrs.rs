@@ -229,7 +229,9 @@ fn allocated(flags: object::SectionFlags) -> bool {
 /// A Mach-O image's chained-fixup rebases, else its classic rebase opcodes.
 /// A bind-only chained image lists none, completely, and so does a slid image
 /// whose `LC_DYLD_INFO` rebases nothing. A chain walk that stopped short
-/// ([`ChainedFixups::damage`]) leaves the list partial.
+/// ([`ChainedFixups::damage`]) leaves the list partial. An image of a dyld
+/// shared cache or kernel collection carries none of its own rebases (an empty
+/// `LC_DYLD_INFO`, or none at all), so it is unsupported, not complete.
 ///
 /// [`ChainedFixups::damage`]: crate::loader::format::macho::chained::ChainedFixups::damage
 fn macho(file: &object::File, bytes: &[u8]) -> DataPointers {
@@ -248,6 +250,13 @@ fn macho(file: &object::File, bytes: &[u8]) -> DataPointers {
     let Some(commands) = commands else {
         return DataPointers::empty(Coverage::Unsupported, "a Mach-O image whose load commands cannot be read");
     };
+    if commands.in_cache {
+        return DataPointers::empty(
+            Coverage::Unsupported,
+            "an image built into a dyld shared cache or kernel collection (MH_DYLIB_IN_CACHE): the cache's slide \
+             info or the collection's chained fixups relocate its pointers, and kuna does not list them",
+        );
+    }
     if commands.chained {
         let why = "the LC_DYLD_CHAINED_FIXUPS data lies outside the file or its segments".to_string();
         return DataPointers::listed(Source::ChainedFixups, Vec::new(), vec![why]);
@@ -288,6 +297,9 @@ fn macho(file: &object::File, bytes: &[u8]) -> DataPointers {
 struct MachoCommands {
     /// dyld slides the image: a PIE executable, a dylib, a bundle.
     slid: bool,
+    /// `MH_DYLIB_IN_CACHE`: an image of a dyld shared cache or kernel
+    /// collection, whose rebases the cache keeps, not the image.
+    in_cache: bool,
     /// The image carries `LC_DYLD_INFO`, its rebase opcodes empty or not.
     dyld_info: bool,
     /// Every segment's `vmaddr`, in load-command order.
@@ -311,6 +323,7 @@ where
         || matches!(header.filetype(endian), object::macho::MH_DYLIB | object::macho::MH_BUNDLE);
     let mut out = MachoCommands {
         slid,
+        in_cache: header.flags(endian) & object::macho::MH_DYLIB_IN_CACHE != 0,
         dyld_info: false,
         segments: Vec::new(),
         rebase: None,

@@ -2134,8 +2134,12 @@ funcsym stream:
   ends in an operand or names a segment the image lacks, and slots with no file
   data to read (`kuna_dynrelocs.rs (unread_tables)`). `Unsupported` is metadata
   kuna does not read: a machine above without an entry, a relocatable object's
-  relocations, a Mach-O image's `LC_DYSYMTAB` local relocations, and the static
-  relocation sections an `--emit-relocs` executable keeps. `None` is an image
+  relocations, a Mach-O image's `LC_DYSYMTAB` local relocations, the static
+  relocation sections an `--emit-relocs` executable keeps, and the rebases of an
+  image built into a dyld shared cache or kernel collection (`MH_DYLIB_IN_CACHE`:
+  the cache's slide info or the collection's chained fixups hold them, and the
+  image's own `LC_DYLD_INFO` is empty or absent, which would otherwise read as
+  complete). `None` is an image
   with no pointer-relocation metadata at all (a non-PIE ELF executable, whose own
   pointers carry no relocation, a PE without a base-relocation directory or with
   one of size 0, which the loader treats as none, a
@@ -2147,9 +2151,7 @@ funcsym stream:
   rebases nothing, a PE directory of only padding. Each non-complete coverage
   carries its reason. A bound slot is not
   listed, since it holds an address of another image. `kuna xrefs` reports these
-  as separate `pointer` rows with that coverage, `Unsupported` for an
-  `MH_FILESET` entry (whose own load commands carry no fixups: the collection's
-  chained fixups relocate it, applied when the entry is cut out), never merged into the
+  as separate `pointer` rows with that coverage, never merged into the
   instruction rows or the call graph (`docs/cli.md`). On x86 an instruction can
   embed an absolute address, so a 32-bit PE's `.reloc` also lists every
   `push offset f` and `jmp [slot]` operand in `.text`; a word that lies inside a

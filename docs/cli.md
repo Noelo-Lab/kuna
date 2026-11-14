@@ -2512,7 +2512,7 @@ why not all of it:
 |---|---|
 | `chained-fixups`, `rebase-opcodes`, `dynamic-relocations`, `base-relocations` | kuna read all of that metadata; `data_refs_reason` is `null`. An empty `data_refs` means no stored pointer holds the address. |
 | `partial` | Some of the metadata could not be read (a relocation section whose `sh_link` is not the dynamic symbol table or whose size is not a whole number of entries, a table the dynamic section declares that no section covers, a PE base-relocation directory outside every section, an Android-packed table, a Mach-O fixup chain the walk could not follow to its end); the rows are what was read, and each row's `source` names the metadata. |
-| `unsupported` | The image keeps metadata kuna does not read: a MIPS or SPARC image's dynamic relocations, a relocatable object's relocations, an `--emit-relocs` executable's static ones, the chained fixups of the `MH_FILESET` collection an entry was cut from (kuna applies them to the entry, but does not list them). |
+| `unsupported` | The image keeps metadata kuna does not read: a MIPS or SPARC image's dynamic relocations, a relocatable object's relocations, an `--emit-relocs` executable's static ones, an image of a kernel collection or dyld shared cache (`MH_DYLIB_IN_CACHE`), whose rebases the collection's chained fixups or the cache's slide info keep (kuna applies them, but does not list them). |
 | `none` | The image keeps no pointer-relocation metadata (a non-PIE ELF executable, a PE without `.reloc` or whose base-relocation directory has size 0): its pointers are plain words. |
 
 Under anything but a complete source, an empty `data_refs` means "not
