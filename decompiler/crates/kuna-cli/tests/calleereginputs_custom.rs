@@ -94,6 +94,11 @@ fn custom_keeps_the_virtual_call_receiver() {
     }
     assert!(custom["0x401040"].contains("(*a0 + 0x10))(5);"), "C table call:\n{}", custom["0x401040"]);
     assert!(custom["0x401050"].contains("(*a0 + 0x14))(a0,7);"), "COM copy:\n{}", custom["0x401050"]);
+    // comesi and crosscall hold the object in ESI, copied from ECX before a call
+    // that clobbers ECX: the COM calls keep one interface and the C call no receiver.
+    for (k, call) in [("0x401060", "(*v1 + 0x18))(v1,v2);"), ("0x4010a0", "(*v1 + 8))(5);")] {
+        assert!(custom[k].contains(call) && off[k] == custom[k], "{k}:\n{}", custom[k]);
+    }
 }
 
 #[test]

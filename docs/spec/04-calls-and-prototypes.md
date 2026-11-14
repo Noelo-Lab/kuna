@@ -1646,9 +1646,14 @@ that machinery.
   loaded from a slot of a table that is itself loaded from where ECX points
   (`mov eax,[ecx]; call [eax+k]`, through copies and a zero offset), and
   neither a write to ECX nor another call comes between that load and the
-  call. A COM method has the same dispatch but is `__stdcall` with the
-  interface as its first stack argument, so a call whose last push before it
-  stores the object (ECX, or the register ECX was copied from) keeps the
+  call. The object, the pushes and EAX are compared as values over the ops
+  since the previous call in the block (at most 128), carried forward through
+  copies (`Values`): a call clobbers ECX, so a register copied from ECX
+  before it (`mov esi,ecx; call f; mov eax,[esi]; push esi; call [eax+k]`)
+  is not the object, and such a call keeps the default. A COM method has the
+  same dispatch but is `__stdcall` with the interface as its first stack
+  argument, so a call whose last push before it stores the object (ECX, or a
+  register holding the same value) keeps the
   default; a `push ecx` that only reserves a slot a later store fills
   (`push ecx; fstp [esp]`) is not that push. A `__thiscall` callee removes its
   own stack arguments, so a call the caller cleans up after (the

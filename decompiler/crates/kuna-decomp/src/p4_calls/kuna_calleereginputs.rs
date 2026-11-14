@@ -41,9 +41,10 @@
 //! loaded into a register first) calls through the vtable of the object in
 //! ECX, and a virtual member function is `__thiscall` with that object as
 //! `this`. Such a call takes the `__thiscall` model when ECX is not written
-//! between the vtable load and the call ([`virtual_call`]). A COM method is
-//! `__stdcall` and takes the interface as its first pushed argument instead, so a
-//! call whose last push stores ECX keeps the default.
+//! between the vtable load and the call, judged over the ops since the previous
+//! call ([`virtual_call`]). A COM method is `__stdcall` and takes the interface
+//! as its first pushed argument instead, so a call whose last push stores the
+//! object keeps the default.
 
 use std::rc::Rc;
 
@@ -112,12 +113,15 @@ pub fn virtual_this(arch: &Architecture) -> Option<(Rc<ProtoModel>, Address, int
 /// in ECX: the target is loaded from a slot of a table that is itself loaded
 /// from where ECX points, and ECX is not written between that load and the call.
 /// A COM method is `__stdcall` with the interface pushed as its first argument,
-/// so a call whose last push before it stores the object (ECX, or the value ECX
-/// was copied from) keeps the default model (a `push ecx` that only reserves a
-/// slot a later store fills is not that push). A `__thiscall` callee removes its
-/// own stack arguments, so a call the caller cleans up after (`add esp,4`, a C
-/// table of `__cdecl` function pointers) keeps it too, as does one that also
-/// holds the object in EAX (Delphi's `register` convention passes it there).
+/// so a call whose last push before it stores the object (ECX, or a register
+/// holding the same value) keeps the default model (a `push ecx` that only
+/// reserves a slot a later store fills is not that push). A `__thiscall` callee
+/// removes its own stack arguments, so a call the caller cleans up after
+/// (`add esp,4`, a C table of `__cdecl` function pointers) keeps it too, as does
+/// one that also holds the object in EAX (Delphi's `register` convention passes
+/// it there). Values are compared over the ops since the previous call only
+/// ([`Values`]): a call clobbers ECX, so a register copied from ECX before it
+/// is not the object.
 pub fn virtual_call(data: &Funcdata, call: OpId) -> Option<Rc<ProtoModel>> {
     use crate::kuna_swiftcall::defining_op;
     let (model, ecx, ecx_size, eax) = data.get_arch().virtual_this.as_ref()?;
@@ -133,85 +137,103 @@ pub fn virtual_call(data: &Funcdata, call: OpId) -> Option<Rc<ProtoModel>> {
         slot_ptr.get_size(),
         &[OpCode::CPUI_COPY, OpCode::CPUI_INT_ADD],
     )?;
-    let table = data.obank().get(table_load).filter(|o| o.code() == OpCode::CPUI_LOAD)?;
-    let mut object = data.vbank().get(table.get_in(1)?)?;
-    let mut from = table_load;
-    while object.get_addr() != ecx {
-        let Some(step) = defining_op(data, from, object.get_addr().clone(), object.get_size(), &[]) else { break };
-        let o = data.obank().get(step)?;
+    data.obank().get(table_load).filter(|o| o.code() == OpCode::CPUI_LOAD)?;
+    let sp = data.get_arch().manage().get_stack_space().and_then(|s| s.get_spacebase(0).ok())?;
+    let sp_addr = Address::new(sp.space.clone()?, sp.offset);
+    let mut window = Vec::new();
+    let mut cur = data.op_previous_op(call);
+    while let Some(id) = cur.filter(|_| window.len() < VIRTUAL_SCAN) {
+        if matches!(data.obank().get(id)?.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND) {
+            break;
+        }
+        window.push(id);
+        cur = data.op_previous_op(id);
+    }
+    window.reverse();
+    let mut values = Values::default();
+    let (mut object, mut after_table, mut last_push) = (None, false, None);
+    for &id in &window {
+        let o = data.obank().get(id)?;
+        if id == table_load {
+            object = Some(values.read(data, o.get_in(1)?, id));
+        }
+        if o.code() == OpCode::CPUI_STORE
+            && o.get_addr() != op.get_addr()
+            && values.at(&sp_addr, sp.size as int4) == Some(values.read(data, o.get_in(1)?, id))
+        {
+            last_push = Some(values.read(data, o.get_in(2)?, id));
+        }
+        let out = o.get_out().and_then(|v| data.vbank().get(v));
+        if after_table && out.is_some_and(|v| overlaps(v.get_addr(), v.get_size(), ecx, *ecx_size)) {
+            return None;
+        }
+        after_table |= id == table_load;
+        values.write(data, id);
+    }
+    let receiver = values.at(ecx, *ecx_size)?;
+    if object? != receiver || last_push == Some(receiver) || values.at(eax, *ecx_size) == Some(receiver) {
+        return None;
+    }
+    let cleaned = data.get_call_specs_index(call).is_some_and(|i| data.get_call_specs(i).callind_cleanup() > 0);
+    (!cleaned).then(|| Rc::clone(model))
+}
+
+/// Do `(a, asize)` and `(b, bsize)` share a byte?
+fn overlaps(a: &Address, asize: int4, b: &Address, bsize: int4) -> bool {
+    a.get_space().map(|s| s.get_index()) == b.get_space().map(|s| s.get_index())
+        && a.get_offset() < b.get_offset().wrapping_add(bsize as u64)
+        && b.get_offset() < a.get_offset().wrapping_add(asize as u64)
+}
+
+/// A value [`Values`] tells apart: a storage location as it stood when the run
+/// began, a constant, the output of an op, or a read of a location only partly
+/// written in the run.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Value {
+    Entry(Option<i32>, u64, int4),
+    Constant(u64, int4),
+    Output(OpId),
+    Partial(OpId, VarnodeId),
+}
+
+/// The values of the storage locations written in a run of ops, carried forward
+/// through copies (`mov esi,ecx`, `lea eax,[ecx]`), so two registers holding
+/// the same value compare equal.
+#[derive(Default)]
+struct Values(Vec<(Address, int4, Value)>);
+
+impl Values {
+    /// The value of `(addr, size)`, or `None` when the run wrote only part of it.
+    fn at(&self, addr: &Address, size: int4) -> Option<Value> {
+        match self.0.iter().rev().find(|(a, s, _)| overlaps(a, *s, addr, size)) {
+            Some((a, s, v)) => (a == addr && *s == size).then_some(*v),
+            None => Some(Value::Entry(addr.get_space().map(|s| s.get_index()), addr.get_offset(), size)),
+        }
+    }
+
+    fn read(&self, data: &Funcdata, vn: VarnodeId, op: OpId) -> Value {
+        let Some(v) = data.vbank().get(vn) else { return Value::Partial(op, vn) };
+        if v.is_constant() {
+            return Value::Constant(v.get_offset(), v.get_size());
+        }
+        self.at(v.get_addr(), v.get_size()).unwrap_or(Value::Partial(op, vn))
+    }
+
+    fn write(&mut self, data: &Funcdata, id: OpId) {
+        let Some(o) = data.obank().get(id) else { return };
+        let Some(out) = o.get_out().and_then(|v| data.vbank().get(v)) else { return };
         let zero = |k| o.get_in(k).and_then(|v| data.vbank().get(v)).is_some_and(|v| v.is_constant() && v.get_offset() == 0);
         let source = match o.code() {
             OpCode::CPUI_COPY => o.get_in(0),
             OpCode::CPUI_INT_ADD if zero(1) => o.get_in(0),
             OpCode::CPUI_INT_ADD if zero(0) => o.get_in(1),
-            _ => break,
+            _ => None,
         };
-        object = data.vbank().get(source?)?;
-        from = step;
+        let value = source.map_or(Value::Output(id), |s| self.read(data, s, id));
+        let (addr, size) = (out.get_addr().clone(), out.get_size());
+        self.0.retain(|(a, s, _)| !overlaps(a, *s, &addr, size));
+        self.0.push((addr, size, value));
     }
-    if object.get_addr() != ecx || object.get_size() != *ecx_size {
-        return None;
-    }
-    let sp = data.get_arch().manage().get_stack_space().and_then(|s| s.get_spacebase(0).ok())?;
-    let is = |v: crate::context::VarnodeId, at: OpId, reg: &Address| {
-        data.vbank().get(v).is_some_and(|v| {
-            v.get_addr() == reg
-                || defining_op(data, at, v.get_addr().clone(), v.get_size(), &[])
-                    .and_then(|d| data.obank().get(d))
-                    .filter(|d| d.code() == OpCode::CPUI_COPY)
-                    .and_then(|d| d.get_in(0))
-                    .and_then(|src| data.vbank().get(src))
-                    .is_some_and(|src| src.get_addr() == reg)
-        })
-    };
-    let root = |mut addr: Address, mut size: int4, mut at: OpId| -> Option<Result<OpId, Address>> {
-        for _ in 0..8 {
-            let Some(d) = defining_op(data, at, addr.clone(), size, &[]) else { return Some(Err(addr)) };
-            let o = data.obank().get(d)?;
-            let src = o.get_in(0).and_then(|v| data.vbank().get(v)).filter(|v| !v.is_constant());
-            match src {
-                Some(src) if o.code() == OpCode::CPUI_COPY => {
-                    (addr, size, at) = (src.get_addr().clone(), src.get_size(), d);
-                }
-                _ => return Some(Ok(d)),
-            }
-        }
-        None
-    };
-    let object_at = |v: crate::context::VarnodeId, at: OpId| {
-        is(v, at, ecx)
-            || data.vbank().get(v).is_some_and(|v| {
-                let r = root(v.get_addr().clone(), v.get_size(), at);
-                r.is_some() && r == root(ecx.clone(), *ecx_size, at)
-            })
-    };
-    let sp_addr = Address::new(sp.space.clone()?, sp.offset);
-    let mut cur = data.op_previous_op(call);
-    let (mut loaded, mut last_push_seen) = (false, false);
-    for _ in 0..VIRTUAL_SCAN {
-        let Some(id) = cur else { break };
-        loaded |= id == table_load;
-        let o = data.obank().get(id)?;
-        let writes_ecx = o.get_out().and_then(|v| data.vbank().get(v)).is_some_and(|v| v.get_addr() == ecx);
-        if writes_ecx || matches!(o.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND) {
-            break;
-        }
-        let stack_store = !last_push_seen
-            && o.code() == OpCode::CPUI_STORE
-            && o.get_addr() != op.get_addr()
-            && o.get_in(1).is_some_and(|p| is(p, id, &sp_addr));
-        if stack_store {
-            last_push_seen = true;
-            if o.get_in(2).is_some_and(|v| object_at(v, id)) {
-                return None;
-            }
-        }
-        cur = data.op_previous_op(id);
-    }
-    let cleaned = data.get_call_specs_index(call).is_some_and(|i| data.get_call_specs(i).callind_cleanup() > 0);
-    let receiver = root(ecx.clone(), *ecx_size, call);
-    let in_eax = receiver.is_some() && receiver == root(eax.clone(), *ecx_size, call);
-    (loaded && !cleaned && !in_eax).then(|| Rc::clone(model))
 }
 
 /// The stack bytes the caller removes right after the indirect call at
@@ -224,7 +246,7 @@ pub fn callind_cleanup(arch: &Architecture, call_at: &Address) -> u32 {
 }
 
 /// Ops [`virtual_call`] reads back from the call.
-const VIRTUAL_SCAN: usize = 64;
+const VIRTUAL_SCAN: usize = 128;
 
 /// The model the inputs of the direct call target `entry` select, when option
 /// `calleereginputs` is on and the language is x86-32 under a default model that
