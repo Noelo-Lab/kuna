@@ -169,8 +169,14 @@ mod dos_dgroup_cli;
 #[path = "dos_fpuemu_cli.rs"]
 mod dos_fpuemu_cli;
 
+#[path = "dos_pcmemory_cli.rs"]
+mod dos_pcmemory_cli;
+
 #[path = "dos_mz_cli.rs"]
 mod dos_mz_cli;
+
+#[path = "dos_exit_cli.rs"]
+mod dos_exit_cli;
 
 #[path = "decompile_cli.rs"]
 mod decompile_cli;

@@ -101,6 +101,8 @@ pub mod kuna_authptrcall;
 pub(crate) mod kuna_rexthunk;
 // (kuna) `peordinal`: name a PE import-by-ordinal from a built-in export table.
 pub(crate) mod kuna_peordinal;
+// (kuna #1288) the PC memory a DOS program shares with the machine, volatile.
+pub mod kuna_pcmemory;
 // (kuna `kernelcache`) IMG4/IM4P/LZFSE/complzss unwrapping and MH_FILESET entry
 // selection for Apple kernelcaches.
 pub mod kuna_kernelcache;

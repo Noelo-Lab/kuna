@@ -2709,6 +2709,20 @@ impl ConsoleProgram {
         }
     }
 
+    /// Flag each installed function a no-return fact names.
+    fn mark_no_return(&mut self, facts: &[kuna_analysis::pass::NoReturnFact]) {
+        let Some(code_space) = self.analysis_code_space.clone() else {
+            return;
+        };
+        for fact in facts {
+            let addr = Address::new(Rc::clone(&code_space), fact.addr);
+            let sid = self.arch().symboltab.find_function_across_scopes(&addr).map(|(sid, _)| sid);
+            if let Some(sid) = sid {
+                self.arch_mut().symboltab.set_function_no_return(sid, true);
+            }
+        }
+    }
+
     /// (kuna `rawdiscover`) Extend [`Self::pending_synthetic_entries`] with every
     /// function the headerless-image discovery finds: the targets of every direct
     /// call in the executable bytes, plus the direct-call closure of those and
@@ -2718,9 +2732,13 @@ impl ConsoleProgram {
     /// `--entry` addresses, and the synthetic `CODE` section it publishes for
     /// the whole file. A seed is never dropped, so the inventory can only grow;
     /// an image whose bytes hold no direct call returns unchanged.
-    fn discover_raw_entries(&mut self) {
+    ///
+    /// (kuna #1288) The DOS exits of a real-mode image are parked for the flow,
+    /// and the functions they make no-return are returned for the caller to
+    /// mark once the entries are installed.
+    fn discover_raw_entries(&mut self) -> Vec<kuna_analysis::pass::NoReturnFact> {
         let Some(code_space) = self.analysis_code_space.clone() else {
-            return;
+            return Vec::new();
         };
         let exec: Vec<(u64, u64)> = self
             .sections()
@@ -2743,12 +2761,14 @@ impl ConsoleProgram {
                 mz,
             )
         };
-        for vma in found {
+        for &vma in &found.entries {
             if known.contains(&vma) {
                 continue;
             }
             self.pending_synthetic_entries.push(Address::new(Rc::clone(&code_space), vma));
         }
+        self.arch_mut().dos_exit_sites = found.dos_exits.sites;
+        found.dos_exits.noreturn
     }
 
     /// (kuna) Commit the stashed per-pass analysis facts, gated by the per-pass
@@ -2781,9 +2801,11 @@ impl ConsoleProgram {
             // object-file discovery tier below declines without an
             // `object::File`. Discover the rest first, so the entries it finds
             // are named and installed by the same loop.
-            if self.container == ProgramContainer::Raw {
-                self.discover_raw_entries();
-            }
+            let dos_noreturn = if self.container == ProgramContainer::Raw {
+                self.discover_raw_entries()
+            } else {
+                Vec::new()
+            };
             let entries = std::mem::take(&mut self.pending_synthetic_entries);
             let symbols = entries
                 .into_iter()
@@ -2800,6 +2822,7 @@ impl ConsoleProgram {
                 self.symbols.push(symbol);
             }
             self.read_loader_symbols()?;
+            self.mark_no_return(&dos_noreturn);
         }
         // (kuna `entrythumbflow`) The entry-reachable Thumb walk, taken out of
         // the pending slot BEFORE it runs so a failure cannot leave it armed for
@@ -4252,6 +4275,10 @@ pub fn bootstrap_from_mz_bytes(
     kuna_decomp::kuna_fpuemu::apply(program.arch());
     program.image_metadata = Some(ProgramImageMetadata { entry: Some(entry), sections: Vec::new() });
     program.mz_evidence = Some(evidence);
+    let mapped = program.sections();
+    if let Some(space) = program.analysis_code_space.clone() {
+        kuna_analysis::loader::kuna_pcmemory::paint_volatile(program.arch_mut(), &space, &mapped);
+    }
     Ok(program)
 }
 

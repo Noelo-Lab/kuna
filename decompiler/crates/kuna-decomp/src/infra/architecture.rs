@@ -1697,6 +1697,11 @@ pub struct Architecture {
     /// with a nonzero status never returns, so without the prune the flow-follower walks
     /// past the call into the next function and absorbs it. Sorted/deduped.
     pub error_noreturn_callsites: Vec<u64>,
+    /// (kuna #1288) The MS-DOS exit interrupts (`INT 20h`, `INT 27h`, `INT 21h`
+    /// with AH 00h/31h/4Ch) of a real-mode raw or MZ load, sorted. The raw
+    /// discovery finds them (`kuna_analysis::listing::kuna_dosexit`); flow ends
+    /// at each ([`FlowEnvironment::is_dos_exit_callind`](crate::flow::FlowEnvironment::is_dos_exit_callind)).
+    pub dos_exit_sites: Vec<u64>,
     /// (kuna) Gate the FID fingerprint matcher (`fid`), a Listing/xref consumer;
     /// default **off**. The kuna analog of Ghidra's FID identification analyzer:
     /// over the built Listing it fingerprints each function with the byte-exact
@@ -2503,6 +2508,7 @@ impl Architecture {
             analysis_noreturn_propagate: false,
             analysis_noreturn_reach: false,
             error_noreturn_callsites: Vec::new(),
+            dos_exit_sites: Vec::new(),
             analysis_fid: false,
             analysis_fid_strict: false,
             analysis_flirt: false,
