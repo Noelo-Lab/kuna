@@ -881,7 +881,10 @@ of the register file with a written register behind it keeps the upstream fill.
 And it only stops a trial from being marked active, never marks one — an argument
 list can lose an invented tail, never gain a member. A variadic call site reaches
 none of it, because the variadic split has already cut its stack tail into its own
-section and the register prefix is never scored against it.
+section and the register prefix is never scored against it. Nor does a register
+the callee is known to read (`calleereginputs`): its trial is active before the
+chain is scored, an unreferenced one included, because the callee receives the
+caller's own value.
 
 ### `build_input_from_trials` — writing the argument list
 
@@ -1431,7 +1434,45 @@ that machinery.
   A CALLIND through a literal global slot has one additional early
   source: when input 0 is either the unwritten memory Varnode at that exact
   address or the result of exactly `LOAD(constant-space, constant-address)`,
-  the slot is queried before generic recovery. An exact data symbol contributes
+  the slot is queried before generic recovery. (kuna) Input 0 may also be the
+  temporary the call's own instruction fills from the slot, by a `COPY` of the
+  memory word or a `LOAD` through a constant pointer
+  (`decompiler/crates/kuna-decomp/src/p2_lift/kuna_msvcimportcall.rs
+  (loaded_slot)`): that is x86's `call [abs32]` and `call [rip+disp]` before
+  heritage links the temporary, so an IAT call (or an ELF `-fno-plt` or Mach-O
+  GOT call) reaches the import's parked `win32sigs` or libc pieces here.
+  Before, it reached them only on a restart some other change forced, so one
+  import was declared in one function and guessed in the next, and on x86-64
+  never (`LoadLibraryW()` lost its argument). Two limits keep that declaration
+  to what the caller's code shows
+  (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_slotargs.rs`). Only the
+  parameters are locked: the pieces are seeded input-only, so the result stays
+  the one the caller's use recovers. A locked result made a function returning
+  `al` beside a pointer-returning import's value in the rest of `rax` return
+  all of `rax` (`CONCAT71`), and a 4-byte one left the upper half of a
+  returned `rax` an unwritten register. A declared pointer result still types
+  a recovered register result of its width, as the call output's local type
+  (`declared_result_type`, the vote `TypeOpCall::getOutputLocal` otherwise
+  casts only for a locked output), so `hModule = LoadLibraryW(a0)` needs no
+  cast. And every declared stack parameter has to be a slot
+  the caller wrote for this call (`backed`): a walk back from the call over the
+  raw p-code, through blocks entered from a single predecessor, tracks the
+  stack pointer; a push or a store through the stack pointer writes a slot, a
+  call whose pop is stated (or a direct callee whose own returns pop only the
+  return address, which is also the solver's guess for it) moves the pointer by
+  that pop and owns the slots it pops, a cleanup owns the slots it frees, and a
+  call whose pop is only a guess, any other write of the stack pointer or a
+  join ends the walk. A walk that reaches the entry also knows the slots from
+  the return address up are the caller's, and that a callee-saved register
+  pushed there before anything wrote it is a save. A declaration a walk cannot
+  back is not given to the call, which keeps the default-model recovery: a
+  synthetic `call [VirtualAlloc]` after two pushes keeps its two arguments
+  rather than reading the saved frame pointer and the return address as the
+  other two, and MSVC's `CompareStringW(LocaleNameToLCID(name,0),...)`, whose
+  five trailing arguments are pushed before the internal `__stdcall` helper
+  whose pop the solver only guesses, does not read the helper's two arguments
+  as its own. A jump to the slot passes the function's own arguments and is
+  not walked; register parameters need no walk. An exact data symbol contributes
   a prototype only when its full storage is a pointer to a prototype-bearing
   code type. Otherwise a loader FunctionSymbol at that exact address may supply
   its address-keyed parked pieces (its synthetic code-symbol size is one byte,
@@ -1474,8 +1515,8 @@ that machinery.
   slot, which a model cannot state; it does not matter because MSVC calls them
   with only their two operands on the x87 stack, spilling anything else first,
   so no value the caller keeps there sits below the popped slot.
-  (kuna `calleereginputs`, default off) On x86-32 under a compiler spec whose
-  default model leaves extrapop unknown (`x86win.cspec`), a direct call with no
+  (kuna `calleereginputs`, default on) On x86-32 Windows, under a compiler spec
+  whose default model leaves extrapop unknown (`x86win.cspec`), a direct call with no
   declared prototype takes the spec's own `__thiscall` model instead of the
   default when its callee reads ECX before writing it, and `__fastcall` when it
   reads ECX and EDX
@@ -1489,7 +1530,10 @@ that machinery.
   along the straight line its first instructions run, through direct `jmp`s
   (so an incremental-link stub reaches the body), until a conditional branch,
   a call, a return, an indirect jump or 64 instructions. A register read before
-  it is written is an input, except a register a `push` saves (SLEIGH lifts it
+  any part of it is written is an input; once `mov cx,[eax+0xa]` has set its low
+  half, a read of all of ECX takes upper bytes no caller sets (the CRT's float
+  formatter masks them off), and counting it gave such a callee a `this` its
+  callers never load. The exceptions are a register a `push` saves (SLEIGH lifts it
   as a copy into a temporary that only the stack store reads), a copy of a
   register onto itself (the `mov edi,edi` hot-patch prologue, the
   `lea ecx,[ecx]` padding nop), and a result the old value cannot change
@@ -1500,12 +1544,50 @@ that machinery.
   `_invoke_watson`), and an ECX parameter would steal a value the call does not
   take. The import table is never walked, and the answer is cached per callee
   on the architecture. Arguments in other registers (a static function MSVC
-  passes a count in EDI) are not recovered. The option ships off: on real
-  MSVC images the newly live ECX operands feed the unknown-extrapop stack
-  solver, which re-solves some frames worse (an AutoIt-compiled image loses
-  stack arguments at about 2,100 calls, Win32 APIs included), and a call whose
-  ECX holds a register the caller only inherited drops the stack arguments
-  behind it, even where every model choice is right.
+  passes a count in EDI) are not recovered: reading EBX, ESI or EDI on entry is
+  as often a frame or funclet convention as an argument, and no spec model
+  states one.
+
+  A register the callee reads is an argument whatever the caller's own data
+  flow says, and the trial scoring that would let it veto the stack slots
+  behind it is told so (`kuna_calleereginputs.rs (reads_register)`). Taken
+  from the upstream rules alone, the model's register would head the argument
+  list and decide the stack's fate: a caller that never wrote ECX (it passes
+  its own `this` through) leaves an unreferenced trial, which the `stackarggap`
+  veto reads as the end of the list; an ECX copied from a callee-saved register
+  the caller only inherited (an EH funclet's ESI) has no realistic ancestor, and
+  `forceNoUse` then marks every stack trial behind the definitely-unused one
+  inactive; and a value pushed for one call and passed as another call's
+  `this` fails `onlyOpUse`, since `checkCallDoubleUse` gives it to the call
+  whose register trial is active. So in `checkInputTrialUse` a read register's
+  trial is active with a realistic, solid ancestor; in `fillinMap` an
+  unreferenced trial of a read register is active, and one with no trial at all
+  is registered active, so the call reads the caller's own value
+  (`fspec.rs (activate_register_entries)`); and `checkCallDoubleUse` treats the
+  other call's read register as a legitimate double use. The last effect is on
+  aliasing: a `this` the caller forms with `lea ecx,[esp+N]` is an escaping
+  stack address, and the call-site alias test (`hasLocalAlias`, chapter 06)
+  takes every slot at or above the lowest such address as a local. Where the
+  function's stack solution is exact (every call's pop is stated or proven,
+  `kuna_calleepurge.rs (every_pop_settled)`), that is the evidence that keeps a
+  constructed local's field stores from being read as the next call's stack
+  arguments. Where it rests on a guessed pop, offsets on the two sides of the
+  guess are not comparable (an internal `__thiscall` callee guessed to pop
+  nothing drifts every later offset down by its arguments), so the call-site
+  alias scan passes over the read register operands, as it did while they were
+  dead (`kuna_calleereginputs.rs (skips_read_operands, is_read_operand)`).
+  Measured base vs default over 224 i386 PEs (MSVC 6 to 2019, MinGW, Delphi,
+  packed and AutoIt images), call by call: about 41,700 calls gain `this` and
+  2,400 gain ECX and EDX, every one at a callee whose opening code reads them
+  (each callee's opening code read again from its disassembly); no call loses a
+  stack argument, and the one call whose stack arguments shrink is the
+  fixture's constructor, no longer handed a neighbouring local's fields. Two
+  limits remain. A caller whose earlier call the model says clobbers ECX, but
+  which the compiler knew keeps it (`_chkstk`, a leaf in MSVC whole-program
+  code), passes the clobbered value, printed as an uninitialized `// ecx`
+  variable. A Delphi image, also read under `x86win.cspec`, passes EAX, EDX and
+  ECX; a callee that reads EAX on its opening line keeps the default, and one
+  that does not shows only the ECX (and EDX) it reads, in `__fastcall` order.
 - **`ActionExtraPopSetup`** (`coreaction_protos.rs (ActionExtraPopSetup)`)
   models the stack pointer across each call: a known extrapop becomes an
   explicit `INT_ADD sp, #extrapop` after the call; an unknown one becomes an
@@ -1733,8 +1815,9 @@ classified:
   outer call from an inner call's: an argument pushed for a virtual call before
   an inner `this`-only method call is not the method's. The second keeps the
   flow-insensitive alias test from refusing every pushed argument of a function
-  whose by-value struct copy (`sub esp,0x20; mov edi,esp; rep movsd`) keeps a
-  bottom-of-frame pointer alive. Upstream marks the stack range of every
+  whose by-value struct copy (`sub esp,0x80; mov edi,esp; rep movsd`, one too
+  large for chapter 03's `rep movs` expansion) keeps a bottom-of-frame pointer
+  alive. Upstream marks the stack range of every
   argument a call takes as unmapped, so a store to that range that no call
   takes is dead; a call whose extent is not stated (an import, an indirect
   call, a callee framed by `__SEH_prolog4`) keeps the upstream test, and stores
@@ -3774,7 +3857,11 @@ persists the lesson into P0:
 (Override::insert_indirect_override)` keyed by the site address, so a restart
 re-lifts the site as a direct call from the start
 (`FlowInfo::setup_callind_specs` consults the override before building specs).
-Then it tries to merge the discovered callee prototype **in place**:
+(kuna) The discovered prototype is the callee symbol's, and a symbol whose
+declaration is parked only as pieces holds an unlocked one; a call whose inputs
+the early slot query above already locked keeps its own declaration as the
+prototype to merge, so de-indirection never trades a declared parameter list
+for a recovered one. Then it tries to merge the discovered callee prototype **in place**:
 `FuncCallSpecs::late_restriction` accepts when the site has no model yet, or
 when the models are compatible (same or aliased `ProtoModel`, `is_compatible`),
 varargs only while input recovery is still active, and — for locked callee
@@ -8018,7 +8105,9 @@ onto its `Funcdata` at the two seams `protoorder` seeds from; a function never
 reads its own. `call_output_type_local` (the locked-output arm of
 `TypeOpCall::getOutputLocal`) then answers for an unlocked CALL whose output
 sits in exactly the storage and width the callee returns in
-(`stated_return_type`), after `passthrough`'s tail-call arm. That one type is
+(`stated_return_type`), after `passthrough`'s tail-call arm and the declared
+pointer result of an import-slot call that took only its declaration's
+parameters (`kuna_slotargs::declared_result_type`, §4.1). That one type is
 the def-side vote of `Varnode::getLocalType`'s fold, so the caller's readers
 still outrank it where their type is more specific, and it is the output token
 `ActionSetCasts` compares the result's variable with: a caller that keeps the
