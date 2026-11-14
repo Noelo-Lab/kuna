@@ -1490,12 +1490,14 @@ impl ObjectLoadImage {
     /// holds a pointer the run-time loader writes. The engine reports these
     /// ranges so its whole-binary enumeration can decompile the image's code
     /// without inventing a body for every import.
-    pub fn function_address_aliases(&self) -> &[(u64, u64)] {
-        &self.function_address_aliases
-    }
-
     pub fn import_slot_ranges(&self) -> &[(u64, u64)] {
         &self.import_slots
+    }
+
+    /// (kuna) `(alias, canonical)` VMA pairs for one function the image names
+    /// at two addresses, such as a weak import's direct address and its slot.
+    pub fn function_address_aliases(&self) -> &[(u64, u64)] {
+        &self.function_address_aliases
     }
 
     /// The loader's function symbols as `(load_vma, name)` pairs — the SAME list
@@ -3088,11 +3090,6 @@ mod tests {
         }
     }
 
-    /// PE import slots retain their loader identity independently of section
-    /// permissions. The side table, not CODE versus DATA, is what body
-    /// selection can rely on while keeping the slot's function symbol.
-    /// A MIPS object's foldable GOT pieces exclude its import slots, which
-    /// may sit at either end or in the middle.
     #[test]
     fn adjusting_a_weak_import_moves_its_slots_and_all_function_addresses() {
         let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -3109,6 +3106,8 @@ mod tests {
         assert_eq!(image.function_address_aliases(), aliases.iter().map(|&(a, c)| (a + 0x2000, c + 0x2000)).collect::<Vec<_>>());
     }
 
+    /// A MIPS object's foldable GOT pieces exclude its import slots, which
+    /// may sit at either end or in the middle.
     #[test]
     fn got_ranges_leave_out_import_slots() {
         assert_eq!(outside((0x100, 0x120), &[]), [(0x100, 0x11f)]);
@@ -3118,6 +3117,9 @@ mod tests {
         assert_eq!(outside((0x100, 0x108), &[(0x200, 0x208)]), [(0x100, 0x107)]);
     }
 
+    /// PE import slots retain their loader identity independently of section
+    /// permissions. The side table, not CODE versus DATA, is what body
+    /// selection can rely on while keeping the slot's function symbol.
     #[test]
     fn pe_import_slots_are_reported_in_code_and_data_sections() {
         for (fixture, slot, name, executable) in [

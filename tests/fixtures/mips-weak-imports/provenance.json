@@ -1,6 +1,8 @@
 {
   "source": "identity.S",
   "source_sha256": "24123e1abe538f4c489c9d0c12d1da8af19621bfbcc16d86b06a54dc3e248432",
+  "page_source": "page.S",
+  "page_source_sha256": "309521b0710a3254ca8ed636f76af956e7080d142ee3d6b3009f468c5ead5821",
   "assembler_version": "GNU assembler (GNU Binutils) 2.30",
   "assembler_sha256": "96b3d7b45a26a3b53aba77e56a372d30c8fa92f06092a2ca78a39d1e97ad465a",
   "records": [
@@ -41,6 +43,21 @@
     {
       "command": [
         "mips64-octeon-linux-gnu-as",
+        "-EB",
+        "-march=octeon",
+        "-mabi=n32",
+        "--defsym",
+        "ABI64=0",
+        "-o",
+        "page-n32-be.o",
+        "page.S"
+      ],
+      "output": "page-n32-be.o",
+      "sha256": "5e73212fb6196c279b53338ae580e050b75060a0fb4fb5f0f30f9efdc219dcd5"
+    },
+    {
+      "command": [
+        "mips64-octeon-linux-gnu-as",
         "-EL",
         "-march=octeon",
         "-mabi=n32",
@@ -71,6 +88,21 @@
       ],
       "output": "identity-n32-le-mixed.o",
       "sha256": "386583815a9563c8a29129503fbc9ad65f1ad9c3b88b945e01232ed4c74d4196"
+    },
+    {
+      "command": [
+        "mips64-octeon-linux-gnu-as",
+        "-EL",
+        "-march=octeon",
+        "-mabi=n32",
+        "--defsym",
+        "ABI64=0",
+        "-o",
+        "page-n32-le.o",
+        "page.S"
+      ],
+      "output": "page-n32-le.o",
+      "sha256": "69103fb1d50c1f32869358654bf3243efbde7403f76cec935cf773ad54774704"
     },
     {
       "command": [
@@ -109,6 +141,21 @@
     {
       "command": [
         "mips64-octeon-linux-gnu-as",
+        "-EB",
+        "-march=octeon",
+        "-mabi=64",
+        "--defsym",
+        "ABI64=1",
+        "-o",
+        "page-64-be.o",
+        "page.S"
+      ],
+      "output": "page-64-be.o",
+      "sha256": "facec478f64a46d40a8a2f4128d4c094f1daf27ae63f6c0791c29370e47b437b"
+    },
+    {
+      "command": [
+        "mips64-octeon-linux-gnu-as",
         "-EL",
         "-march=octeon",
         "-mabi=64",
@@ -139,6 +186,21 @@
       ],
       "output": "identity-64-le-mixed.o",
       "sha256": "4b41e62ea540d5acc022992beeeaea5780b0319a5a83ccf6bdeb97ee19d60ef3"
+    },
+    {
+      "command": [
+        "mips64-octeon-linux-gnu-as",
+        "-EL",
+        "-march=octeon",
+        "-mabi=64",
+        "--defsym",
+        "ABI64=1",
+        "-o",
+        "page-64-le.o",
+        "page.S"
+      ],
+      "output": "page-64-le.o",
+      "sha256": "446e42a7c833c3ef01ef0fb7393bd0706af4f4e18f750dd62708a6920d0ed527"
     }
   ]
 }

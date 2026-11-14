@@ -38,7 +38,9 @@
 //! `lw $t9, %call16(f)($gp); jalr $t9` calls `f`. The exception is the entry of
 //! an undefined weak symbol: the run-time loader fills it, with 0 when nothing
 //! defines the symbol, so it is an import slot that holds 0 and is not folded,
-//! and `if (f) f(x);` keeps its test.
+//! and `if (f) f(x);` keeps its test. A `GOT_PAGE` against such a symbol
+//! reaches the same slot and its `GOT_OFST` is the addend alone, as GNU ld
+//! decays the pair for a symbol that does not bind locally.
 //!
 //! `R_MIPS_JALR` only says which function a `jalr` calls and is not applied.
 //! microMIPS, MIPS16, R6 PC-relative and TLS relocations are unsupported.
@@ -390,7 +392,7 @@ impl Gp {
         let place = input.base.wrapping_add(offset as u64);
         let first = &records[expression[0].record].1;
         let import_of = |op: &Op, reloc: &Relocation| {
-            Some(reloc.target()).filter(|&t| op.special.is_none() && got_entry(op.op, false) == Some(true) && (input.weak)(t))
+            Some(reloc.target()).filter(|&t| op.special.is_none() && (got_entry(op.op, false).is_some() || op.op == GOT_OFST) && (input.weak)(t))
         };
         let first_import = import_of(&expression[0], first);
         let first_target = match first_import {
@@ -542,6 +544,7 @@ impl Gp {
             GOT16 | CALL16 | GOT_DISP => checked(got(self, sum)?, 16)?,
             GOT_HI16 | CALL_HI16 => got(self, sum)?.wrapping_add(0x8000) >> 16 & 0xffff,
             GOT_LO16 | CALL_LO16 => got(self, sum)? & 0xffff,
+            GOT_OFST if import.is_some() => checked(a, 16)?,
             GOT_OFST => checked(sum.wrapping_sub(page(sum)), 16)?,
             _ => return Err(RelocationFailure::Unsupported),
         })

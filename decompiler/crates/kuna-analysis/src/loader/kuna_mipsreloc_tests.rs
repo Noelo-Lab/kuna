@@ -747,6 +747,53 @@ fn a_weak_functions_got_entry_is_a_named_import_slot() {
 }
 
 
+/// A weak function reached through `GOT_PAGE`/`GOT_OFST` takes the import slot
+/// GNU ld's global GOT entry is, with a zero offset; a local symbol's page
+/// entry stays in the foldable GOT.
+#[test]
+fn a_weak_got_page_reaches_the_import_slot_with_a_zero_offset() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    for abi in ["n32", "64"] {
+        for endian in ["be", "le"] {
+            let le = endian == "le";
+            let width = if abi == "64" { 8 } else { 4 };
+            for (stem, weak_pages) in [(format!("page-{abi}-{endian}"), 1), (format!("identity-{abi}-{endian}-mixed"), 0)] {
+                let bytes = std::fs::read(root.join(format!("tests/fixtures/mips-weak-imports/{stem}.o"))).unwrap();
+                let file = object::File::parse(&*bytes).unwrap();
+                let layout = layout(&bytes);
+                assert!(layout.diagnostics.is_empty(), "{stem}: {:?}", layout.diagnostics.report_lines());
+                let [(lo, hi)] = layout.import_slots[..] else { panic!("{stem}: {:?}", layout.import_slots) };
+                assert_eq!(hi - lo, width, "{stem}");
+                let gp = layout.got_range.unwrap().0 + GP_BIAS;
+                let text = file.section_by_name(".text").unwrap();
+                let base = layout.section_vma[&text.index()];
+                let laid = &layout.segments.iter().find(|(a, _)| *a == base).unwrap().1;
+                let mut seen = 0;
+                for (offset, reloc) in text.relocations() {
+                    let RelocationFlags::Elf { r_type } = reloc.flags() else { unreachable!() };
+                    let weak = match reloc.target() {
+                        RelocationTarget::Symbol(i) => file.symbol_by_index(i).is_ok_and(|s| s.is_undefined() && s.is_weak()),
+                        _ => false,
+                    };
+                    let field = read_at(laid, offset, 4, le) as u16;
+                    match r_type & 0xff {
+                        GOT_PAGE => {
+                            let slot = gp.wrapping_add(field as i16 as i64 as u64);
+                            assert_eq!(slot == lo, weak, "{stem} at {offset:#x}");
+                            seen += usize::from(weak);
+                        }
+                        GOT_OFST if weak => assert_eq!(field, 0, "{stem} at {offset:#x}"),
+                        _ => {}
+                    }
+                }
+                assert_eq!(seen, weak_pages, "{stem}");
+                let (segment, data) = layout.segments.iter().find(|(b, d)| lo >= *b && hi <= b + d.len() as u64).unwrap();
+                assert!(data[(lo - segment) as usize..(hi - segment) as usize].iter().all(|&b| b == 0), "{stem}");
+            }
+        }
+    }
+}
+
 #[test]
 fn mixed_weak_references_share_one_function_without_changing_relocation_values() {
     for abi in ["n32", "64"] {

@@ -9,22 +9,34 @@ fn declared_weak_calls_preserve_null_guards_arguments_and_results() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;
     }
+    let mut images = Vec::new();
     for compiler in ["47", "73"] {
         for abi in ["n32", "64"] {
-            let image = common::repo_root().join(format!(
-                "tests/fixtures/octeon-relocations/pic-gcc{compiler}-{abi}.o"
-            ));
-            let out =
-                common::process::required_output(Command::new(env!("CARGO_BIN_EXE_kuna")).args([
-                    "decompile",
-                    image.to_str().unwrap(),
-                    "call_optional",
-                    "--assert-strict",
-                    "--assert",
-                    "prototype call_optional unsigned int call_optional(unsigned int x)",
-                    "--assert",
-                    "prototype optional unsigned int optional(unsigned int x)",
-                ]));
+            images.push((format!("octeon-relocations/pic-gcc{compiler}-{abi}.o"), None));
+        }
+    }
+    for (abi, little) in [("n32", "MIPS:LE:64:64-32addr"), ("64", "MIPS:LE:64:default")] {
+        images.push((format!("mips-weak-imports/page-{abi}-be.o"), None));
+        images.push((format!("mips-weak-imports/page-{abi}-le.o"), Some(little)));
+    }
+    {
+        for (name, target) in images {
+            let image = common::repo_root().join("tests/fixtures").join(name);
+            let mut command = Command::new(env!("CARGO_BIN_EXE_kuna"));
+            command.args([
+                "decompile",
+                image.to_str().unwrap(),
+                "call_optional",
+                "--assert-strict",
+                "--assert",
+                "prototype call_optional unsigned int call_optional(unsigned int x)",
+                "--assert",
+                "prototype optional unsigned int optional(unsigned int x)",
+            ]);
+            if let Some(target) = target {
+                command.args(["--target", target]);
+            }
+            let out = common::process::required_output(&mut command);
             let code = String::from_utf8(out.stdout).unwrap();
             let slots: BTreeSet<_> = code
                 .split(|c: char| !c.is_ascii_alphanumeric() && c != '_')

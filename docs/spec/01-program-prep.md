@@ -898,7 +898,9 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   symbol's address, or 0 when nothing defines it: each such symbol gets its own
   entry holding 0, reported as an import slot outside the foldable range and,
   when a call reaches it, named after the symbol as an Import Address Table
-  slot is, so `if (f) f(x);` keeps its test. A direct call or address
+  slot is, so `if (f) f(x);` keeps its test. A `GOT_PAGE` against the symbol
+  reaches that same entry and its `GOT_OFST` is the addend alone, the decay GNU
+  ld applies to a symbol that does not bind locally. A direct call or address
   relocation against the symbol still resolves to its synthetic extern. Otherwise
   `lw $t9, %call16(f)($gp); jalr $t9` decompiles to a call of `f` wherever `$t9`
   is seeded with the entry. `R_MIPS_JALR`, a hint naming the function a `jalr`
