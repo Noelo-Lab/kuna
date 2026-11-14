@@ -176,7 +176,7 @@ impl FidDb {
         let magic = r.take(4)?;
         if magic != FID_DB_MAGIC {
             return Err(KunaError::bad_data(format!(
-                "fid: bad magic {magic:02x?} (expected {FID_DB_MAGIC:?})"
+                "fid: bad magic {magic:02x?} (expected {FID_DB_MAGIC:02x?})"
             )));
         }
         let version = r.u32()?;

@@ -59,17 +59,37 @@ pub fn read_image_sliced_repaired(
     path: &str,
     pref: super::macho_fat::SlicePref,
 ) -> std::io::Result<(Vec<u8>, bool)> {
+    read_image_selected(path, pref).map(|image| (image.bytes, image.repaired))
+}
+
+/// What [`read_image_selected`] read.
+pub struct SelectedImage {
+    pub bytes: Vec<u8>,
+    /// Whether one of the header repairs rewrote the slice.
+    pub repaired: bool,
+    /// The kernel collection's entry map, when the image is an `MH_FILESET`
+    /// entry cut out per the `kernelcache` choice.
+    pub fileset: Option<super::kuna_kernelcache::FilesetMap>,
+}
+
+/// [`read_image_sliced_repaired`], and the entry map of the kernel collection
+/// the image was cut from.
+pub fn read_image_selected(
+    path: &str,
+    pref: super::macho_fat::SlicePref,
+) -> std::io::Result<SelectedImage> {
     let bytes = match super::kuna_dyldcache::read_selected_image(std::path::Path::new(path)) {
         Some(image) => image.map_err(std::io::Error::other)?,
         None => std::fs::read(path)?,
     };
     let choice = kuna_decomp::kuna_kernelcache::KernelcacheChoice::from_env();
-    let bytes = super::kuna_kernelcache::peel(bytes, &choice).map_err(std::io::Error::other)?.bytes;
-    let bytes = super::macho_fat::peel_fat_image(bytes, pref);
+    let peeled = super::kuna_kernelcache::peel(bytes, &choice).map_err(std::io::Error::other)?;
+    let bytes = super::macho_fat::peel_fat_image(peeled.bytes, pref);
     let (bytes, shdr) = tolerate_unusable_section_table(bytes);
     let (bytes, magic) = super::pe_dosmagic::tolerate_corrupt_dos_magic(bytes);
     let (bytes, dirs) = super::pe_datadirs::tolerate_oversized_data_directories(bytes);
-    Ok((bytes, shdr.is_some() || magic.is_some() || dirs.is_some()))
+    let repaired = shdr.is_some() || magic.is_some() || dirs.is_some();
+    Ok(SelectedImage { bytes, repaired, fileset: peeled.fileset })
 }
 
 /// ELF header field offsets, by class. `object` reads these through typed
