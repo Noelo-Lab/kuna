@@ -3371,6 +3371,10 @@ impl Architecture {
                 self.userops.get_op_by_name(name).map(|u| (u.get_index() as kuna_base::types::uint4, width))
             })
             .collect();
+        ctx.float_rounding_userops = crate::kuna_roundingops::USEROP_NAMES
+            .iter()
+            .filter_map(|nm| self.userops.get_op_by_name(nm).map(|u| u.get_index() as kuna_base::types::uint4))
+            .collect();
         ctx.recover_array_stride = self.recover_array_stride; // GH-8724 arraystride
         ctx.memset_recover = self.memset_recover; // GH-9230/1537 memsetrecover
         ctx.rodata_string = self.rodata_string; // (kuna) rodatastring
