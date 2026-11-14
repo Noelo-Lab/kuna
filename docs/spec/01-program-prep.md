@@ -5269,7 +5269,11 @@ every other binary's pass list is byte-identical to before the pass existed):
   full hash over a function's instruction stream (mask via the SLEIGH
   `instruction_mask`, x86 NOP padding skipped) — looked up in a kuna `.fid`
   database built by `kuna fid build`. Only a bucket that collapses to exactly one
-  name renames (never guess on a tie), and only through the placeholder label
+  name renames (never guess on a tie). With `fid strict`, at least one record
+  for that unique name must also match both the specific hash and code-unit
+  count; a mismatch declines the rename even when the name is correct. This
+  gate does not prove identity and never resolves a multi-name bucket. `fid on`
+  retains the full-hash-only behavior. Renames are only through the placeholder label
   gate: the stripped-static-library recovery (`sub_4017c0` → `kuna_crc32`) with no
   way to clobber a real name.
   `kuna fid query` exposes full-hash candidates as a read-only lookup. It

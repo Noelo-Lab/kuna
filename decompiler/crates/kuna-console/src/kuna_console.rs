@@ -302,6 +302,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "cppsig" => conf.analysis_cppsig.as_str(),
         "addrtable" => on_off(conf.analysis_addrtable),
         "listing" => on_off(conf.analysis_listing),
+        "fid" => if !conf.analysis_fid { "off" } else if conf.analysis_fid_strict { "strict" } else { "on" },
         "armframes" => if !conf.analysis_armframes { "off" }
             else if conf.analysis_armframes_full { "on" } else { "inventory" },
         "x86listingswitch" => on_off(conf.analysis_x86listingswitch),

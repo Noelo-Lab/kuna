@@ -862,7 +862,17 @@ kuna_options! { self, p1;
     "noreturn_reach" => {
         on_off!(analysis_noreturn_reach, "CFG-reachability no-return rule (Ghidra targetOnlyCallsNoReturn)")
     },
-    "fid" => on_off!(analysis_fid, "FID fingerprint matcher Listing consumer"),
+    "fid" => {
+        let (enabled, strict) = match p1 {
+            "off" => (false, false),
+            "" | "on" => (true, false),
+            "strict" => (true, true),
+            _ => return Err(KunaError::parse("fid expects on, off, or strict")),
+        };
+        self.analysis_fid = enabled;
+        self.analysis_fid_strict = strict;
+        Ok(format!("FID fingerprint matcher set to {p1}"))
+    },
     "flirt" => on_off!(analysis_flirt, "FLIRT signature matcher Listing consumer"),
     "rtti" => on_off!(analysis_rtti, "MSVC RTTI / vftable class-name recovery pass"),
     "itaniumrtti" => {

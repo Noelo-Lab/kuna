@@ -4317,7 +4317,10 @@ accepted before any image is loaded.
 `kuna fid build <lib.a|*.o ...> -o <out.fid> --lang <id> --cspec <id>` writes a kuna
 `.fid` database of FID fingerprints; `--option listing on --option fid on` with the
 `kuna_fid_db` environment variable naming it renames matching stripped functions
-(see `docs/options.md`, option `fid`).
+(see `docs/options.md`, option `fid`). Use `--option fid strict` to require
+the same record to match the specific hash and code-unit count as well. Strict
+mode can reject correct matches, and both modes leave multi-name buckets
+unresolved.
 
 ### `kuna fid query` — candidates for an address, without renaming
 
