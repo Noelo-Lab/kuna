@@ -1764,6 +1764,8 @@ otherwise, so the plain listing never pays for the walk). A record whose entry a
 not wholly mapped carries a top-level `notes` array of the stderr `warning:` sentences
 (see `--define-function` above; the `--summary` document puts them in its `warnings`).
 Neither key appears in a run that declared nothing.
+A run whose FID pass was given a database (`kuna_fid_db`) also carries a top-level
+`fid_databases` array saying whether it was loaded or why not (see `kuna fid` below).
 `object_location` is `null` for linked images and undefined imports; for a relocatable
 definition it is `{section_index,section,offset,offset_hex}`. A record selected (`--addr` or `--functions`)
 inside another function's extent also carries `interior_to` (see `kuna decompile`
