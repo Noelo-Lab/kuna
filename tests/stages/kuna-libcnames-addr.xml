@@ -29,7 +29,10 @@
     structure, `stat_loc` for waitpid's status, `endptr` for strtol's end
     pointer, `tv` for the timeval explicit_bzero clears before
     gettimeofday fills it; fread's structure and the array passed to the
-    program's own `keep` keep `v1`.  On Windows the buffer is `Buffer` and
+    program's own `keep` keep `v1`, and so does `reuse`'s int, which read
+    takes as its `buf` and waitpid then as its `stat_loc`: a scalar named
+    two ways is two values its stack slot holds in turn.  On Windows the
+    buffer is `Buffer` and
     the counts `NumberOfBytesRead` and `NumberOfBytesWritten`.  Then two
     console renames against `echo`: `buf` to `block` leaves `n` as it was,
     and `v2` to `chunk` reaches the same buffer by its number.
@@ -69,6 +72,9 @@ c3
   <com>lo fu stash</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu reuse</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>lo fu echo</com>
   <com>decompile</com>
   <com>rename buf block</com>
@@ -106,6 +112,7 @@ c3
 <stringmatch name="libcnames-addr #9: explicit_bzero is no evidence, gettimeofday names tv" min="1" max="1">^  explicit_bzero\(&amp;tv,0x10\);
 ^  gettimeofday\(&amp;tv,NULL\);$</stringmatch>
 <stringmatch name="libcnames-addr #10: an array passed to the program's own function keeps its number" min="1" max="1">^  keep\(v1\);$</stringmatch>
+<stringmatch name="libcnames-addr #17: a scalar that read and waitpid name two ways keeps its number" min="1" max="1">^    waitpid\(v1,&amp;v1,0\);$</stringmatch>
 <stringmatch name="libcnames-addr #11: renaming buf renames the buffer alone" min="1" max="1">^  char block \[256\]; // stack - 0x108
 ^  int8 n; // rax
 ^  

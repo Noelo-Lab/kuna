@@ -978,7 +978,15 @@ in-buffer count alike, since either way the parameter says what the object is.
 A call that only fills the object (`memset`, `bzero`, `explicit_bzero` and
 their `_`-prefixed and FORTIFY spellings) is no evidence, so
 `memset(&sa,0,sizeof sa); sigaction(2,&sa,NULL);` names the structure `act`,
-not `s`, and a function of the program (`keep(v1)`) is none either. The name is
+not `s`, and a function of the program (`keep(v1)`) is none either. A scalar
+object (not an array or a structure) is one value, so argument names that
+disagree on it name it no more than disagreeing role names do (`decide`): an
+`int` that `read(fd,&v,4)` fills as its `buf` and `waitpid(v,&v,0)` then as its
+`stat_loc`, or a stack slot the compiler gives first to a `socklen_t` passed
+to `getsockopt` and later to a length passed to `send`, holds two values in
+turn and keeps its number. An array or a structure the calls name differently
+is one buffer they all use (`snprintf(s,...)` then `unlink(s)`) and takes the
+earliest name. The name is
 the same second name as above, printed at every reference to the object (its
 declaration, `&buf`, `buf[i]`, `buf.field`): the Symbol keeps its number, which
 a replay records and a directive may use (`name v2 chunk` and `name buf chunk`
@@ -990,16 +998,24 @@ the Symbol already holds it), and an object competes with the locals for spellin
 in the order of its evidence. When a register local and the object hold the
 same storage, the earlier of their evidence names both. Over 117 stripped
 decbench images (39 programs at O0, O2 and O2-noinline, the four Windows ones
-among them), 1,593 stack objects print a library name and every changed
+among them), 1,529 stack objects print a library name and every changed
 function differs from the previous output only in names. Matched to the DWARF
-variable at the same frame offset of the unstripped twin, 123 carry the
-source's own name, 1,231 a name for the same kind of object (`buf` for a
+variable at the same frame offset of the unstripped twin, most carry the
+source's own name or a name for the same kind of object (`buf` for a
 `struct stat st`, `stat_loc` for `status`, `timer` for `t`, `NumberOfBytesRead`
-for `readbytes`, `StartupInfo` for `si`), 65 name a member of a DWARF structure
-that kuna splits into its own object, and 14 a slot gcc shares between two
-DWARF variables, named for the one the call reads; 160 have no DWARF variable
-at their offset. None is a misleading name. The names are the same in a
-whole-binary `decompile-all`, a `--jobs` run and a single-function
+for `readbytes`, `StartupInfo` for `si`), and some name a member of a DWARF
+structure that kuna splits into its own object. The name is the call's, so it
+fits only part of an object that is several variables: a slot a compiler
+reuses for variables of disjoint scopes, which the variable merge makes one
+object (a `struct timeval` that a `struct addrinfo *` later occupies, an
+`fd_set` whose slot later holds a format buffer), or a scalar the program also
+assigns an unrelated value (`buf_3 = util_strlen(...); send(fd,&buf_3,1,0)`).
+In a random sample of 220 named objects checked against DWARF, 5 were such
+names; the scalar rule above removes one of them (a `char *` slot that also
+holds a `struct vt_stat` and two `int`s, which `strsep` names `stringp` and
+`asprintf` names `ptr`), and over the 117 images it leaves 8 objects their
+number, 7 of them slots shared by several variables. The names are the same in
+a whole-binary `decompile-all`, a `--jobs` run and a single-function
 `decompile`, since the evidence is the function's own calls.
 
 **The function's own parameters keep their `aN` names.** Naming a parameter
@@ -1007,9 +1023,9 @@ that flows unchanged into a library call after that call's parameter (`a0` as
 `file` for `open(a0,0)`) is deliberately not done. A parameter's name is the
 function's interface, printed in the signature every caller, the
 `decompile-project` header, `--json` and the Ghidra and web front-ends read,
-while the evidence would be one callee's use of it; IDA, Binary Ninja and
-Ghidra likewise name locals after callee parameters and leave a function's own
-arguments `a1`, `arg1`, `param_1` unless a declared type names them. Over the
+while the evidence would be one callee's use of it; IDA likewise names locals
+after callee parameters but leaves a function's own arguments `a1`, `a2`
+unless a declared type names them. Over the
 117 images above, 4,099 parameters of 2,820 functions pass straight to a
 library call and are never reassigned; 806 of the 3,606 the DWARF twins name
 would carry the twin's name, and 69% of all of them would be a name that says

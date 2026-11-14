@@ -18,7 +18,9 @@
 //! n)`, `ReadFile(h, Buffer, n, &NumberOfBytesRead, 0)`) has the evidence of
 //! 2. and 3. under the name of the object the parameter points at
 //! ([`pointee_name`]), except from a call that only fills it ([`FILLERS`]),
-//! and prints that name at every reference to it.
+//! and prints that name at every reference to it. A scalar object (not an
+//! array or a structure) is one value, so arguments that name it two ways are
+//! two variables its stack slot holds in turn, and name it not.
 //!
 //! Evidence follows a value through the copies and casts the printer folds
 //! into the statement, and through nothing else. Within a kind the earliest
@@ -186,12 +188,21 @@ fn fills(callee: &str) -> bool {
     FILLERS.binary_search(&base).is_ok()
 }
 
+/// What [`addressed_object`] finds: the object's Symbol, the reference's
+/// local, whether the object is a pointer (or an array of them), and whether
+/// it is a scalar (neither an array nor a structure).
+struct Addressed {
+    sym: SymbolId,
+    high: HighVariableId,
+    pointer: bool,
+    scalar: bool,
+}
+
 /// The stack object `vn` is the address of, when the naming pass would number
 /// it: `vn` is a `PTRSUB` of the frame's spacebase addressing the first byte
 /// of a local Symbol that has no name yet and is not a parameter, and the
-/// pointer is not to a field of it (`&h.size`). With the reference's local and
-/// whether the object is a pointer (or an array of them).
-fn addressed_object(fd: &Funcdata, vn: VarnodeId) -> Option<(SymbolId, HighVariableId, bool)> {
+/// pointer is not to a field of it (`&h.size`).
+fn addressed_object(fd: &Funcdata, vn: VarnodeId) -> Option<Addressed> {
     let v = fd.vbank().get(vn)?;
     let op = fd.obank().get(v.get_def()?)?;
     if op.code() != OpCode::CPUI_PTRSUB {
@@ -220,15 +231,17 @@ fn addressed_object(fd: &Funcdata, vn: VarnodeId) -> Option<(SymbolId, HighVaria
     }
     let pointer = ct.get_metatype() == type_metatype::TYPE_PTR
         || ct.get_array_base().is_some_and(|at| at.get_metatype() == type_metatype::TYPE_PTR);
-    Some((entry.symbol, fd.vbank().get(off)?.get_high()?, pointer))
+    let scalar = !composite && ct.get_metatype() != type_metatype::TYPE_ARRAY;
+    Some(Addressed { sym: entry.symbol, high: fd.vbank().get(off)?.get_high()?, pointer, scalar })
 }
 
 /// Every piece of library evidence in `fd`, by local or stack object, with the
-/// local each object's first reference is.
-fn evidence(fd: &mut Funcdata) -> BTreeMap<Target, (HighVariableId, Vec<Evidence>)> {
-    let mut found: BTreeMap<Target, (HighVariableId, Vec<Evidence>)> = BTreeMap::new();
-    let mut note = |target: Target, high: HighVariableId, e: Evidence| {
-        found.entry(target).or_insert_with(|| (high, Vec::new())).1.push(e);
+/// local each object's first reference is and whether the target is a scalar
+/// object.
+fn evidence(fd: &mut Funcdata) -> BTreeMap<Target, (HighVariableId, bool, Vec<Evidence>)> {
+    let mut found: BTreeMap<Target, (HighVariableId, bool, Vec<Evidence>)> = BTreeMap::new();
+    let mut note = |target: Target, high: HighVariableId, scalar: bool, e: Evidence| {
+        found.entry(target).or_insert_with(|| (high, scalar, Vec::new())).2.push(e);
     };
     for i in 0..fd.num_calls() {
         let fc = fd.get_call_specs(i);
@@ -247,7 +260,7 @@ fn evidence(fd: &mut Funcdata) -> BTreeMap<Target, (HighVariableId, Vec<Evidence
         if let (Some(ret), Some(out)) = (names.ret, out) {
             let vn = folded_into(fd, out);
             if let Some(high) = local_of(fd, vn) {
-                note(Target::Local(high), high, (0, at.clone(), -1, ret));
+                note(Target::Local(high), high, false, (0, at.clone(), -1, ret));
             }
         }
         for (j, name) in names.params.iter().enumerate() {
@@ -258,10 +271,10 @@ fn evidence(fd: &mut Funcdata) -> BTreeMap<Target, (HighVariableId, Vec<Evidence
             let kind = if is_role(name) { 2 } else { 1 };
             let vn = folded_from(fd, *arg);
             if let Some(high) = local_of(fd, vn) {
-                note(Target::Local(high), high, (kind, at.clone(), j as i32, name));
-            } else if let Some((sym, high, pointer)) = addressed_object(fd, vn).filter(|_| !filler) {
-                if let Some(name) = pointee_name(name, pointer) {
-                    note(Target::Object(sym), high, (kind, at.clone(), j as i32, name));
+                note(Target::Local(high), high, false, (kind, at.clone(), j as i32, name));
+            } else if let Some(obj) = addressed_object(fd, vn).filter(|_| !filler) {
+                if let Some(name) = pointee_name(name, obj.pointer) {
+                    note(Target::Object(obj.sym), obj.high, obj.scalar, (kind, at.clone(), j as i32, name));
                 }
             }
         }
@@ -271,11 +284,13 @@ fn evidence(fd: &mut Funcdata) -> BTreeMap<Target, (HighVariableId, Vec<Evidence
 
 /// The evidence that names a local: the strongest kind, then the earliest
 /// call, then the lowest slot. Results that disagree name nothing, and nor do
-/// role names that disagree; `usable` drops a name the printed code cannot
-/// hold (a type name, a keyword).
-fn decide(mut found: Vec<Evidence>, usable: &dyn Fn(&str) -> bool) -> Option<Evidence> {
+/// role names that disagree, nor, on a `scalar` object, argument names that
+/// disagree; `usable` drops a name the printed code cannot hold (a type name,
+/// a keyword).
+fn decide(mut found: Vec<Evidence>, scalar: bool, usable: &dyn Fn(&str) -> bool) -> Option<Evidence> {
     found.retain(|e| usable(e.3));
-    for kind in [0, 2] {
+    let agree: &[u8] = if scalar { &[0, 1, 2] } else { &[0, 2] };
+    for &kind in agree {
         let names: BTreeSet<&str> = found.iter().filter(|e| e.0 == kind).map(|e| e.3).collect();
         if names.len() > 1 {
             found.retain(|e| e.0 != kind);
@@ -351,8 +366,9 @@ pub fn candidates(fd: &mut Funcdata) -> Vec<Candidate> {
     let found = evidence(fd);
     let mut out: Vec<Candidate> = found
         .into_iter()
-        .filter_map(|(target, (high, found))| {
-            decide(found, &|name| usable(fd, name)).map(|(_, at, slot, base)| Candidate { target, high, base, at, slot })
+        .filter_map(|(target, (high, scalar, found))| {
+            decide(found, scalar, &|name| usable(fd, name))
+                .map(|(_, at, slot, base)| Candidate { target, high, base, at, slot })
         })
         .collect();
     out.sort_by(|a, b| a.at.cmp(&b.at).then(a.slot.cmp(&b.slot)).then(a.high.cmp(&b.high)));
@@ -522,9 +538,9 @@ mod tests {
     fn a_return_value_outranks_an_argument_and_the_earliest_call_wins() {
         let at = |o: u64| (Address::new_invalid(), o as u32);
         let any = |_: &str| true;
-        let e = decide(vec![(1, at(1), 0, "size"), (0, at(5), -1, "len")], &any).unwrap();
+        let e = decide(vec![(1, at(1), 0, "size"), (0, at(5), -1, "len")], false, &any).unwrap();
         assert_eq!(e.3, "len");
-        let e = decide(vec![(1, at(7), 0, "fd"), (1, at(3), 2, "stream")], &any).unwrap();
+        let e = decide(vec![(1, at(7), 0, "fd"), (1, at(3), 2, "stream")], false, &any).unwrap();
         assert_eq!(e.3, "stream");
     }
 
@@ -532,22 +548,35 @@ mod tests {
     fn disagreeing_role_names_or_results_name_nothing() {
         let at = |o: u64| (Address::new_invalid(), o as u32);
         let any = |_: &str| true;
-        assert!(decide(vec![(2, at(1), 0, "dest"), (2, at(2), 1, "src")], &any).is_none());
-        let e = decide(vec![(2, at(1), 0, "s1"), (2, at(2), 1, "s2"), (1, at(3), 0, "s")], &any).unwrap();
+        assert!(decide(vec![(2, at(1), 0, "dest"), (2, at(2), 1, "src")], false, &any).is_none());
+        let e = decide(vec![(2, at(1), 0, "s1"), (2, at(2), 1, "s2"), (1, at(3), 0, "s")], false, &any).unwrap();
         assert_eq!(e.3, "s");
-        let e = decide(vec![(2, at(1), 0, "dest"), (2, at(4), 0, "dest")], &any).unwrap();
+        let e = decide(vec![(2, at(1), 0, "dest"), (2, at(4), 0, "dest")], false, &any).unwrap();
         assert_eq!(e.3, "dest");
-        assert!(decide(vec![(0, at(1), -1, "len"), (0, at(2), -1, "pid")], &any).is_none());
-        let e = decide(vec![(0, at(1), -1, "len"), (0, at(2), -1, "pid"), (1, at(3), 0, "n")], &any).unwrap();
+        assert!(decide(vec![(0, at(1), -1, "len"), (0, at(2), -1, "pid")], false, &any).is_none());
+        let e = decide(vec![(0, at(1), -1, "len"), (0, at(2), -1, "pid"), (1, at(3), 0, "n")], false, &any).unwrap();
         assert_eq!(e.3, "n");
+    }
+
+    #[test]
+    fn a_scalar_object_two_arguments_name_two_ways_is_not_named_by_them() {
+        let at = |o: u64| (Address::new_invalid(), o as u32);
+        let any = |_: &str| true;
+        let shared = vec![(1, at(1), 1, "buf"), (1, at(2), 4, "optlen")];
+        assert_eq!(decide(shared.clone(), false, &any).unwrap().3, "buf");
+        assert!(decide(shared, true, &any).is_none());
+        let e = decide(vec![(1, at(1), 1, "stat_loc"), (1, at(2), 0, "stat_loc")], true, &any).unwrap();
+        assert_eq!(e.3, "stat_loc");
+        let e = decide(vec![(1, at(1), 1, "buf"), (1, at(2), 4, "optlen"), (2, at(3), 0, "dest")], true, &any).unwrap();
+        assert_eq!(e.3, "dest");
     }
 
     #[test]
     fn an_unusable_name_gives_way_to_the_next_evidence() {
         let at = |o: u64| (Address::new_invalid(), o as u32);
         let not_tm = |name: &str| name != "tm";
-        let e = decide(vec![(0, at(1), -1, "tm"), (1, at(2), 0, "tp")], &not_tm).unwrap();
+        let e = decide(vec![(0, at(1), -1, "tm"), (1, at(2), 0, "tp")], false, &not_tm).unwrap();
         assert_eq!(e.3, "tp");
-        assert!(decide(vec![(0, at(1), -1, "tm")], &not_tm).is_none());
+        assert!(decide(vec![(0, at(1), -1, "tm")], false, &not_tm).is_none());
     }
 }

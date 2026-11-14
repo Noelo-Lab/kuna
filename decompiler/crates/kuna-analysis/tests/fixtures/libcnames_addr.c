@@ -79,11 +79,20 @@ int stash(void)
     return keep(scratch);
 }
 
+int reuse(int fd)
+{
+    int v;
+    if (read(fd, &v, sizeof v) != sizeof v)
+        return -1;
+    waitpid(v, &v, 0);
+    return v;
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2)
         return 2;
-    printf("%ld %ld %d %ld %d %d %d\n", echo(0), file_size(argv[1]), child(), parse(argv[1]), read_hdr(stdin),
-           (int)when(), stash());
+    printf("%ld %ld %d %ld %d %d %d %d\n", echo(0), file_size(argv[1]), child(), parse(argv[1]), read_hdr(stdin),
+           (int)when(), stash(), reuse(0));
     return 0;
 }

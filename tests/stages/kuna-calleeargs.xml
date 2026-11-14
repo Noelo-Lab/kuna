@@ -262,9 +262,9 @@ c3
 <stringmatch name="CALLEEARGS #4: the call before the by-value copy never loses its arguments" min="0" max="0">sub_401050\(\)</stringmatch>
 <stringmatch name="CALLEEARGS #5: it keeps all three in both passes" min="2" max="2">sub_401050\(a0,a1,3\)</stringmatch>
 <stringmatch name="CALLEEARGS #6: off, strcpy of the program-name fallback has no arguments" min="2" max="2">sub_402c30\(\);</stringmatch>
-<stringmatch name="CALLEEARGS #7: on, both strcpy calls get destination and source" min="1" max="1">sub_402c30\(\w+,"&lt;program name unknown&gt;"\);</stringmatch>
+<stringmatch name="CALLEEARGS #7: on, both strcpy calls get destination and source" min="1" max="1">sub_402c30\(Filename,"&lt;program name unknown&gt;"\);</stringmatch>
 <stringmatch name="CALLEEARGS #8: on, the Runtime Error banner is strcpy's source" min="1" max="1">sub_402c30\(v[0-9]+,"Runtime Error!</stringmatch>
-<stringmatch name="CALLEEARGS #9: on, strlen takes the message buffer" min="2" max="2">sub_402de0\(\w+\)</stringmatch>
+<stringmatch name="CALLEEARGS #9: on, strlen takes the message buffer" min="2" max="2">sub_402de0\(Filename\)</stringmatch>
 <stringmatch name="CALLEEARGS #10: strlen never takes two" min="0" max="0">sub_402de0\([^()]*,</stringmatch>
 <stringmatch name="CALLEEARGS #11: GetStdHandle takes nothing staged for WriteFile before strlen" min="0" max="0">GetStdHandle\([^()]*,</stringmatch>
 <stringmatch name="CALLEEARGS #12: WriteFile is not given one argument" min="0" max="0">WriteFile\([^,()]+\)</stringmatch>
