@@ -218,3 +218,134 @@ fn a_walked_local_pointer_stays_below_the_return_address() {
     assert_eq!(widen(old, moved, false), Some(Val::Stack { lo: -0x30, hi: -1, own: true }));
     assert_eq!(widen(old, moved, true), Some(Val::Stack { lo: -0x30, hi: INF, own: true }));
 }
+
+impl Fx {
+    fn load(&self, base: usize, off: i64) -> Vec<Op> {
+        let t = vn(&self.tmp, 0x100, 4);
+        vec![
+            (OpCode::CPUI_INT_ADD, Some(t.clone()), vec![self.r(base), self.c(off)]),
+            (OpCode::CPUI_LOAD, Some(self.r(0)), vec![vn(&self.cst, 3, 8), t]),
+        ]
+    }
+    fn extent(&self, insns: &[Vec<Op>]) -> (i64, bool) {
+        let steps = self.run(insns);
+        (steps.iter().map(|s| s.arg_end).max().unwrap_or(4), steps.iter().any(|s| s.unplaced))
+    }
+}
+
+#[test]
+fn reading_the_first_argument_touches_it() {
+    let f = fx();
+    assert_eq!(f.extent(&[f.load(SP, 4)]), (8, false));
+    assert_eq!(f.extent(&[f.load(SP, 0)]), (4, false), "the return address is not an argument");
+    assert_eq!(f.extent(&[f.load(SP, 0xc)]), (0x10, false), "the third argument ends at sixteen");
+}
+
+#[test]
+fn a_push_moves_the_frame_and_a_frame_pointer_follows_it() {
+    let f = fx();
+    assert_eq!(f.extent(&[f.push(BP), f.load(SP, 8)]), (8, false));
+    assert_eq!(f.extent(&[f.push(BP), vec![f.copy(BP, SP)], f.load(BP, 8)]), (8, false), "[ebp+8] is the first argument");
+}
+
+#[test]
+fn the_callers_frame_pointer_is_unplaced() {
+    let f = fx();
+    assert!(f.extent(&[f.load(BP, 8)]).1);
+}
+
+#[test]
+fn a_copy_of_the_stack_pointer_is_followed() {
+    let f = fx();
+    let esi = 6;
+    assert_eq!(f.extent(&[f.push(esi), vec![f.copy(esi, SP)], f.load(esi, 0xc)]), (0xc, false));
+}
+
+#[test]
+fn an_argument_address_handed_on_is_unplaced_and_a_locals_is_not() {
+    let f = fx();
+    let lea = |off| vec![f.add(0, SP, off)];
+    assert!(f.extent(&[lea(8), f.push(0)]).1, "va_start's address stored");
+    assert!(!f.extent(&[vec![f.add(SP, SP, -0x10)], lea(4), f.push(0)]).1, "a local's address stored");
+}
+
+#[test]
+fn a_local_pointer_indexed_at_run_time_stays_a_local() {
+    let f = fx();
+    let ecx = 1;
+    let index = vec![(OpCode::CPUI_INT_ADD, Some(f.r(0)), vec![f.r(0), f.r(ecx)])];
+    assert_eq!(f.extent(&[vec![f.add(SP, SP, -0x20)], vec![f.add(0, SP, 0)], index.clone(), f.load(0, 0)]), (4, false));
+    assert!(f.extent(&[vec![f.add(0, SP, 4)], index, f.load(0, 0)]).1, "an argument indexed at run time");
+}
+
+impl Fx {
+    fn extent_tracked(&self, insns: &[Vec<Op>]) -> (i64, bool) {
+        let (mut state, mut end, mut unplaced) = (State::at_entry(), 4, false);
+        for ops in insns {
+            let s = step_with(ops, &self.regs, state, true);
+            state = s.state;
+            end = end.max(s.arg_end);
+            unplaced |= s.unplaced;
+        }
+        (end, unplaced)
+    }
+}
+
+#[test]
+fn a_stack_address_loaded_back_from_a_slot_is_lost() {
+    let f = fx();
+    let shape = [vec![f.add(SP, SP, -8)], f.push(SP), f.pop(0), f.load(0, 0x10)];
+    assert!(f.extent_tracked(&shape).1, "`push esp; pop eax; mov eax,[eax+0x10]` reads an argument");
+    assert!(!f.extent(&shape).1, "untracked, the read is not seen at all");
+}
+
+#[test]
+fn a_reloaded_local_address_that_is_not_dereferenced_costs_nothing() {
+    let f = fx();
+    let lea = vec![f.add(0, SP, -0x10)];
+    assert_eq!(f.extent_tracked(&[vec![f.add(SP, SP, -0x10)], lea, f.push(0), f.pop(1), f.load(SP, 0x14)]), (8, false));
+}
+
+#[test]
+fn a_slot_overwritten_with_a_plain_value_is_no_longer_lost() {
+    let f = fx();
+    let lea = vec![f.add(0, SP, -0x10)];
+    let plain = (OpCode::CPUI_STORE, None, vec![vn(&f.cst, 3, 8), f.r(SP), f.c(7)]);
+    let shape = [vec![f.add(SP, SP, -0x10)], lea, f.push(0), vec![plain], f.pop(0), f.load(0, 0)];
+    assert!(!f.extent_tracked(&shape).1);
+}
+
+#[test]
+fn a_stack_address_parked_outside_the_general_registers_is_unplaced() {
+    let f = fx();
+    let xmm0 = vn(&f.reg, 0x1200, 16);
+    let park = vec![(OpCode::CPUI_INT_ZEXT, Some(xmm0), vec![f.r(0)])];
+    assert!(f.extent_tracked(&[vec![f.add(0, SP, 8)], park.clone()]).1);
+    assert!(!f.extent_tracked(&[vec![(OpCode::CPUI_COPY, Some(f.r(0)), vec![f.c(5)])], park]).1, "a plain value");
+}
+
+impl Fx {
+    fn store_at(&self, base: usize, off: i64, src: usize) -> Vec<Op> {
+        let t = vn(&self.tmp, 0x200, 4);
+        vec![
+            (OpCode::CPUI_INT_ADD, Some(t.clone()), vec![self.r(base), self.c(off)]),
+            (OpCode::CPUI_STORE, None, vec![vn(&self.cst, 3, 8), t, self.r(src)]),
+        ]
+    }
+}
+
+#[test]
+fn a_stack_address_parked_in_an_argument_slot_is_unplaced() {
+    let f = fx();
+    let shape = [vec![f.add(SP, SP, -8)], vec![f.copy(0, SP)], f.store_at(SP, 0xc, 0), f.load(SP, 0xc), f.load(0, 0x10)];
+    assert!(f.extent_tracked(&shape).1, "a local's address stored over the first argument, loaded back, read past");
+}
+
+#[test]
+fn a_wide_load_over_a_parked_stack_address_is_lost() {
+    let f = fx();
+    let xmm0 = vn(&f.reg, 0x1200, 8);
+    let wide = vec![(OpCode::CPUI_LOAD, Some(xmm0), vec![vn(&f.cst, 3, 8), f.r(SP)])];
+    let shape = [vec![f.add(SP, SP, -0x10)], vec![f.copy(0, SP)], f.store_at(SP, 4, 0), wide];
+    assert!(f.extent_tracked(&shape).1, "an 8-byte load covering the slot that holds the address");
+}
