@@ -1749,7 +1749,16 @@ current Varnodes) and fills a `varmap.rs (MapState)` with typed hints — one
 
 The parameter range from the prototype is subtracted from the analyzed range
 up front (`varmap.rs (MapState::new)`), so parameter recovery (chapter 04)
-owns that region.
+owns that region. **Unused hidden-return slot** (always on, kuna): a
+`storage="hiddenret"` stack entry is left out of that range when nothing says
+the function takes a hidden return pointer
+(`funcdata_spacebase.rs (local_param_range)`): no recorded hidden-return
+input, no output in indirect storage, no input Varnode read from the slot,
+and no ordinary stack entry sharing it. SPARC V9's 64-bit cspecs place the
+entry at stack `0x7ef..0x7f6`, inside every function's own frame, and
+upstream's clearing drops the locals there: a buffer at `fp+0x7f5` passed to
+a call prints as an undeclared `&Stack…` and its reload reads the value from
+before the call.
 
 **The layout decision** (`varmap.rs (ScopeLocal::restructure)`). Hints are
 sorted by the *output-determining* comparator — signed start, then size
