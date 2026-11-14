@@ -1800,7 +1800,18 @@ asks the ledger which names have been superseded and decompiles again, once,
 exactly the results that spell one. The default callee-first order
 (`protoorder`, chapter [04](04-calls-and-prototypes.md)) runs the same sweep at
 its end, in its own plan order
-(`decompiler/crates/kuna-cli/src/decompile_all/callee_first.rs (converge_callee_first)`).
+(`decompiler/crates/kuna-cli/src/decompile_all/callee_first.rs (converge_callee_first)`),
+and within a budget: a redo costs what the function's first decompile cost, so
+the redos are admitted shortest first, charged the lines each first body
+printed, up to 5% of what the whole first pass printed or 2,000 lines,
+whichever is more
+(`decompiler/crates/kuna-cli/src/decompile_all/callee_first.rs (STRUCT_SWEEP_BUDGET_PCT)`),
+and a body of at most 32 lines is always admitted. A function the budget does
+not reach keeps its first body, whose superseded structure is still defined and
+still answers for it. Every other binary measured redoes under 2,000 lines, so
+the budget reaches only outliers: an AutoIt-compiled 1.2 MB image names
+superseded `this` records in 37 bodies of about 1,500 lines, the interior
+entries of one interpreter routine, and redoing them took a fifth of its run.
 
 (kuna) **A result read from a `void` function.** After each function of the
 callee-first plan, the driver decompiles again every function recovered `void`
