@@ -1506,6 +1506,15 @@ that machinery.
   stack arguments at about 2,100 calls, Win32 APIs included), and a call whose
   ECX holds a register the caller only inherited drops the stack arguments
   behind it, even where every model choice is right.
+  A register trial of such a call whose value is a frame address (a
+  constructor run on a local through `lea ecx,[esp+N]`) is an argument even
+  when that value has other uses
+  (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_stackaddrargtrial.rs
+  (is_stack_address)`): the callee's own code reads the register, so the address
+  is the one it was given. Without this, a callee that leaves ECX alone, whose
+  caller then reuses ECX after the call (MSVC `/GL` code), failed the only-use
+  test and lost `this`. Elsewhere a stack address in a register stays opt-in
+  (`stackaddrargtrial`).
 - **`ActionExtraPopSetup`** (`coreaction_protos.rs (ActionExtraPopSetup)`)
   models the stack pointer across each call: a known extrapop becomes an
   explicit `INT_ADD sp, #extrapop` after the call; an unknown one becomes an

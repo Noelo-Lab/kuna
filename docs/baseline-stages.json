@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4235,
-    4235
+    4238,
+    4238
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -275,6 +275,9 @@
     "data:CALLEEPURGE #7: both LCMapStringW calls around the alloca helper keep six arguments",
     "data:CALLEEPURGE #8: freea keeps the buffer the alloca helper made room for",
     "data:CALLEEPURGE #9: the call inside the SEH-framed function keeps both arguments",
+    "data:CALLEEREGINPUTS #11: off, the constructor on a reused local gets no this",
+    "data:CALLEEREGINPUTS #12: on, it gets the local's address as this",
+    "data:CALLEEREGINPUTS #13: both passes hand the same local on to the next call",
     "data:CALLEEREGINPUTS #1: off, the constructor is handed v's fields",
     "data:CALLEEREGINPUTS #2: off, the method reached through a stub gets nothing",
     "data:CALLEEREGINPUTS #3: on, the constructor gets this and nothing else",

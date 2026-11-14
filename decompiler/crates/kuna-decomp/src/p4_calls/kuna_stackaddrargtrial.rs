@@ -5,7 +5,12 @@ use super::kuna_spillargtrial::{frame_slot, stack_pointer_storage};
 /// A same-width copy/displacement chain must reach a particular stack pointer.
 /// Unknown inputs, phi merges, and values killed by another call are declined.
 pub(crate) fn carries_stack_address(data: &Funcdata, vn: VarnodeId) -> bool {
-    if !data.get_arch().stack_addr_arg_trial { return false; }
+    data.get_arch().stack_addr_arg_trial && is_stack_address(data, vn)
+}
+
+/// [`carries_stack_address`] without the option: the value is a particular
+/// stack pointer value or a constant displacement of one.
+pub(crate) fn is_stack_address(data: &Funcdata, vn: VarnodeId) -> bool {
     let Some(sp) = stack_pointer_storage(data) else { return false; };
     let Some(v) = data.vbank().get(vn) else { return false; };
     if v.get_size() != sp.size as i32 || !v.is_written() { return false; }

@@ -281,7 +281,11 @@ pub fn check_input_trial_use(
             trial.set_ancestor_realistic();
             trial.set_ancestor_solid();
             trial.mark_active();
-        } else if crate::p4_calls::kuna_stackaddrargtrial::carries_stack_address(data, vn) {
+        } else if crate::p4_calls::kuna_stackaddrargtrial::carries_stack_address(data, vn)
+            || (!is_spacebase
+                && data.get_call_specs(idx).callee_reg_model().is_some()
+                && crate::p4_calls::kuna_stackaddrargtrial::is_stack_address(data, vn))
+        {
             let trial = data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i);
             trial.set_ancestor_realistic();
             trial.set_ancestor_solid();

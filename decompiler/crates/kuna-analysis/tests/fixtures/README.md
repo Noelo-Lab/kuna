@@ -1972,6 +1972,15 @@ calls `__ftol2_sse` twice. The `.s` reassembles the VS2005 `libcmt` `ftol2.obj`
 CodeView record carries the path it was compiled at. Recipe (clang + lld-link) in the
 `.s`. Used by `tests/stages/kuna-msvcftolsig.xml`.
 
+### A constructor on a local whose address is reused
+
+`ctorthis_pe_i386.exe` (2,560 bytes, PE32/i386, SHA-256
+`89699a5342a8a16269043c438f0251f6cbe4e9abb9e662074d48a12755ba1cb9`) is clean-room:
+`place`@`0x401000` runs `Grid::Grid`@`0x401030` on a local through `lea ecx,[esp+8]`;
+the constructor reads ECX and leaves it alone, and the caller reuses ECX after the call
+as an argument of `grid_fill`@`0x401060`. Source and recipe (clang + lld-link) in
+`ctorthis_pe_i386.s`. Used by `tests/stages/kuna-calleereginputs.xml` (#11-#13).
+
 ### AIF fragment of a known function
 
 `aifbracket_pe_i386.exe` (2,048 bytes, PE32/i386, SHA-256
