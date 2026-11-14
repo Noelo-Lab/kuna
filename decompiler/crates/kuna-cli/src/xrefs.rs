@@ -48,7 +48,7 @@ use kuna_analysis::listing::kuna_unflaggedcode::{
     declared_data, declared_function, named_at, placement, Placement, UnflaggedSection,
 };
 use kuna_analysis::listing::xrefs::{Xref, XrefIndex, XrefKind};
-use kuna_analysis::loader::kuna_dataptrs::Coverage as PointerCoverage;
+use kuna_analysis::loader::kuna_dataptrs::{Coverage as PointerCoverage, DataPointers};
 use kuna_analysis::loader::kuna_kernelcache::FilesetMap;
 use kuna_console::engine::{ConsoleProgram, EntryLookupError, EntrySelector};
 
@@ -330,7 +330,7 @@ fn query(args: &XrefArgs) -> Result<String, String> {
         .into_iter()
         .filter(|r| args.instructions && (args.kinds.is_empty() || args.kinds.contains(&r.kind)))
         .collect();
-    let data = kuna_analysis::loader::kuna_dataptrs::data_pointers(&file, &bytes);
+    let data = data_pointers(&file, &bytes, fileset.is_some());
     let operands = matches!(
         object::Object::architecture(&file),
         object::Architecture::I386 | object::Architecture::X86_64 | object::Architecture::X86_64_X32
@@ -682,6 +682,24 @@ fn coverage_json(prog: &ConsoleProgram, index: &XrefIndex, names: &EntryNames, c
 }
 
 // --- data-held pointers -----------------------------------------------------
+
+/// The image's data pointers ([`kuna_analysis::loader::kuna_dataptrs`]). An
+/// `MH_FILESET` entry's own load commands carry no fixups: the collection's
+/// chained fixups relocate its pointers, and kuna applies them when it cuts
+/// the entry out without listing them, so the entry's are `unsupported`, not
+/// `none`.
+fn data_pointers(file: &object::File, bytes: &[u8], fileset_entry: bool) -> DataPointers {
+    let mut data = kuna_analysis::loader::kuna_dataptrs::data_pointers(file, bytes);
+    if fileset_entry && data.coverage == PointerCoverage::None {
+        data.coverage = PointerCoverage::Unsupported;
+        data.reason = Some(
+            "the MH_FILESET collection's chained fixups relocate this entry's pointers; kuna applies them when it \
+             cuts the entry out but does not list them"
+                .into(),
+        );
+    }
+    data
+}
 
 /// The data-held pointers the query answers, how much of the image's metadata
 /// they cover, and why not all of it when they do not.

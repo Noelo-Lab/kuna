@@ -225,3 +225,18 @@ fn relr_relocations_are_pointer_rows() {
     assert_eq!(doc["data_refs_count"], 1, "{doc}");
     assert_eq!(doc["data_refs"][0]["from_address_hex"], "0x4038", "exported_tab[1]: {doc}");
 }
+
+/// An `MH_FILESET` entry's pointers are relocated by the collection's chained
+/// fixups, which kuna applies when it cuts the entry out: they are
+/// `unsupported`, not `none`, whichever entry is loaded.
+#[test]
+fn a_fileset_entrys_pointers_are_unsupported_not_none() {
+    let collection = fixture("kernelcache/fileset_calls.macho");
+    for entry in [&[][..], &["--option", "kernelcache", "com.example.driver.PMGR"][..]] {
+        let mut args = vec![collection.as_str(), "--to", "0xfffffe0007007840"];
+        args.extend_from_slice(entry);
+        let doc = json(&args);
+        assert_eq!(doc["data_refs_coverage"], "unsupported", "{entry:?}: {doc}");
+        assert!(doc["data_refs_reason"].as_str().unwrap_or_default().contains("MH_FILESET"), "{doc}");
+    }
+}

@@ -2147,7 +2147,9 @@ funcsym stream:
   rebases nothing, a PE directory of only padding. Each non-complete coverage
   carries its reason. A bound slot is not
   listed, since it holds an address of another image. `kuna xrefs` reports these
-  as separate `pointer` rows with that coverage, never merged into the
+  as separate `pointer` rows with that coverage, `Unsupported` for an
+  `MH_FILESET` entry (whose own load commands carry no fixups: the collection's
+  chained fixups relocate it, applied when the entry is cut out), never merged into the
   instruction rows or the call graph (`docs/cli.md`). On x86 an instruction can
   embed an absolute address, so a 32-bit PE's `.reloc` also lists every
   `push offset f` and `jmp [slot]` operand in `.text`; a word that lies inside a
