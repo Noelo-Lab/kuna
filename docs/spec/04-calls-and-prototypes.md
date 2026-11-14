@@ -1492,7 +1492,10 @@ that machinery.
   along the straight line its first instructions run, through direct `jmp`s
   (so an incremental-link stub reaches the body), until a conditional branch,
   a call, a return, an indirect jump or 64 instructions. A register read before
-  it is written is an input, except a register a `push` saves (SLEIGH lifts it
+  any part of it is written is an input; once `mov cx,[eax+0xa]` has set its low
+  half, a read of all of ECX takes upper bytes no caller sets (the CRT's float
+  formatter masks them off), and counting it gave such a callee a `this` its
+  callers never load. The exceptions are a register a `push` saves (SLEIGH lifts it
   as a copy into a temporary that only the stack store reads), a copy of a
   register onto itself (the `mov edi,edi` hot-patch prologue, the
   `lea ecx,[ecx]` padding nop), and a result the old value cannot change
@@ -1535,12 +1538,18 @@ that machinery.
   nothing drifts every later offset down by its arguments), so the call-site
   alias scan passes over the read register operands, as it did while they were
   dead (`kuna_calleereginputs.rs (skips_read_operands, is_read_operand)`).
-  Measured base vs default over 140 i386 PEs, call by call: 35,955 calls gain
-  `this` and 1,068 gain ECX and EDX, every one at a callee whose opening code
-  reads them (a 100-callee sample checked against IDA's calling conventions
-  and disassembly); no call loses a stack argument, and the one call whose
-  stack arguments shrink is the fixture's constructor, no longer handed a
-  neighbouring local's fields.
+  Measured base vs default over 224 i386 PEs (MSVC 6 to 2019, MinGW, Delphi,
+  packed and AutoIt images), call by call: about 41,700 calls gain `this` and
+  2,400 gain ECX and EDX, every one at a callee whose opening code reads them
+  (each callee's opening code read again from its disassembly); no call loses a
+  stack argument, and the one call whose stack arguments shrink is the
+  fixture's constructor, no longer handed a neighbouring local's fields. Two
+  limits remain. A caller whose earlier call the model says clobbers ECX, but
+  which the compiler knew keeps it (`_chkstk`, a leaf in MSVC whole-program
+  code), passes the clobbered value, printed as an uninitialized `// ecx`
+  variable. A Delphi image, also read under `x86win.cspec`, passes EAX, EDX and
+  ECX; a callee that reads EAX on its opening line keeps the default, and one
+  that does not shows only the ECX (and EDX) it reads, in `__fastcall` order.
 - **`ActionExtraPopSetup`** (`coreaction_protos.rs (ActionExtraPopSetup)`)
   models the stack pointer across each call: a known extrapop becomes an
   explicit `INT_ADD sp, #extrapop` after the call; an unknown one becomes an

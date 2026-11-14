@@ -10,7 +10,9 @@
 //! The callee's p-code is read from its entry along the straight line its first
 //! instructions run, following direct `jmp`s, until a conditional branch, a call,
 //! a return, an indirect jump or [`BUDGET`] instructions. A register the line
-//! reads before writing it is an input. Some readings are not uses: storing a
+//! reads before writing any part of it is an input: once `mov cx,[eax+0xa]` has
+//! set the low half, a read of all of ECX takes upper bytes no caller sets (the
+//! CRT's float formatter masks them off). Some readings are not uses: storing a
 //! register through the stack pointer (a `push` that saves it), a copy of a
 //! register onto itself (the `mov edi,edi` hot-patch prologue, the `lea ecx,[ecx]`
 //! padding nop) and a result the old value cannot change (`xor ecx,ecx`,
@@ -219,8 +221,7 @@ pub(crate) fn step(
     };
     let read_bits = |v: &VarnodeData, done: &[u8; 6]| {
         regs.tracked.iter().enumerate().fold(0u8, |acc, (k, r)| {
-            let bytes = byte_mask(v, r);
-            if bytes & !done[k] != 0 { acc | (1 << k) } else { acc }
+            if byte_mask(v, r) != 0 && done[k] == 0 { acc | (1 << k) } else { acc }
         })
     };
     // A register copied into a temporary that is then only pushed is saved, not used.

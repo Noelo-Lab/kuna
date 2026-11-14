@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4246,
-    4246
+    4247,
+    4247
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -282,6 +282,7 @@
     "data:CALLEEREGINPUTS #14: default, drift passes the local to obj_init",
     "data:CALLEEREGINPUTS #15: default, fastcaller passes ECX and EDX",
     "data:CALLEEREGINPUTS #16: no call loses its stack arguments to a register the callee reads",
+    "data:CALLEEREGINPUTS #17: both, a callee that sets CX before reading ECX takes no register",
     "data:CALLEEREGINPUTS #1: off, the constructor is handed v's fields",
     "data:CALLEEREGINPUTS #2: off, the method reached through a stub gets nothing",
     "data:CALLEEREGINPUTS #3: default, the constructor gets this and nothing else",

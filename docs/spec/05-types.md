@@ -2356,7 +2356,10 @@ batch, asks the ledger which structures were superseded
 (`ledger::superseded_names`), and decompiles again exactly the results whose C,
 prototype line, exported variable rows or `types` array spell one of those names
 as a whole identifier. The lookup now answers each with the survivor where the
-survivor is in reach.
+survivor is in reach. The callee-first driver's sweep admits its redos within a
+share of the first pass's printed lines, shortest first (chapter
+[00](00-overview.md)); a body it does not reach keeps the superseded name, as a
+reader out of the survivor's reach does.
 
 It is one sweep, not a fixpoint, and it does not always leave one name per
 record, because the growth bounds are not transitive. Take `fb` claiming four

@@ -23,7 +23,10 @@
     pushed slot back as the next call's `this`; drift's stack solution rests on
     guessed pops (an import, a callee whose pop is not applied), and a `this`
     formed past the guess must not alias the import's argument slot;
-    fastcaller passes ECX and EDX to a __fastcall callee.
+    fastcaller passes ECX and EDX to a __fastcall callee. partial calls
+    low_word after a call that clobbers ECX; low_word sets CX before it copies
+    all of ECX, so it reads no register and the call takes only its stack
+    argument (#17), not the ECX the earlier call left behind.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -70,6 +73,10 @@ c3
   <com>load function fastcaller</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>function bounds 0x401130 as partial</com>
+  <com>load function partial</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/calleereginputs_pe_i386.exe</com>
   <com>read symbols</com>
@@ -93,6 +100,10 @@ c3
   <com>load function fastcaller</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>function bounds 0x401130 as partial</com>
+  <com>load function partial</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="CALLEEREGINPUTS #1: off, the constructor is handed v's fields" min="1" max="1">sub_401020\(a0,a1,0\);</stringmatch>
@@ -110,5 +121,6 @@ c3
 <stringmatch name="CALLEEREGINPUTS #13: both, drift keeps the import argument" min="2" max="2">^  FooBar\(3\);</stringmatch>
 <stringmatch name="CALLEEREGINPUTS #14: default, drift passes the local to obj_init" min="1" max="1">^  sub_401010\(&amp;[A-Za-z0-9_]+\);</stringmatch>
 <stringmatch name="CALLEEREGINPUTS #15: default, fastcaller passes ECX and EDX" min="1" max="1">= sub_401020\(1,2\);</stringmatch>
-<stringmatch name="CALLEEREGINPUTS #16: no call loses its stack arguments to a register the callee reads" min="0" max="0">sub_401000\(\);|sub_4010e0\(\);|FooBar\(\);</stringmatch>
+<stringmatch name="CALLEEREGINPUTS #16: no call loses its stack arguments to a register the callee reads" min="0" max="0">sub_401000\(\);|sub_4010e0\(\);|FooBar\(\);|sub_401110\(\);</stringmatch>
+<stringmatch name="CALLEEREGINPUTS #17: both, a callee that sets CX before reading ECX takes no register" min="2" max="2">^  sub_401110\(a0\);</stringmatch>
 </decompilertest>

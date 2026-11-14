@@ -8,6 +8,9 @@
 ;   plain(x)            __stdcall, `ret 4`; no register input.
 ;   cdecl_one(x)        __cdecl, `ret`; no register input.
 ;   two_args(a, b)      __stdcall, `ret 8`; no register input.
+;   low_word(p)         __stdcall, `ret 4`: sets CX, then copies all of ECX
+;                       and masks the upper half it never set; no register
+;                       input.
 ;
 ;   forward(x)          a method forwarding its own `this`: it never touches
 ;                       ECX before `call obj_set`.
@@ -22,6 +25,7 @@
 ;                       is a guess too, then obj_init on a local at the frame's
 ;                       bottom.
 ;   fastcaller()        stores fast2(1, 2).
+;   partial(p)          plain(p), whose call clobbers ECX, then low_word(p).
 ;
 ; Build: nasm -f bin -I . -o calleereginputs_pe_i386.exe calleereginputs_pe_i386.asm
 
@@ -128,6 +132,23 @@ reload:                                 ; 0x4010f0
     ret 4
 
     align 16, db 0xcc
+low_word:                               ; 0x401110
+    mov eax, [esp+4]
+    mov cx, [eax+2]
+    mov edx, ecx
+    and edx, 0x7fff
+    mov eax, edx
+    ret 4
+
+    align 16, db 0xcc
+partial:                                ; 0x401130
+    push dword [esp+4]
+    call plain
+    push dword [esp+4]
+    call low_word
+    ret 4
+
+    align 16, db 0xcc
 entry:
     push 0x40
     mov ecx, buf
@@ -139,6 +160,8 @@ entry:
     call fastcaller
     push buf
     call reload
+    push buf
+    call partial
     ret
 
 section .rdata
