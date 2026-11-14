@@ -1274,8 +1274,9 @@ into it (the linker's DGROUP, read off the entry code at its first call, when
 the rest of the startup keeps it there), so a near data access prints as the
 global at its linear address (`dat_3dfbe`) instead of a DS offset
 (`*(short *)0x308e`); the entry point itself starts with the PSP in DS, and a
-routine the startup calls with another segment in DS starts with DS unknown. `--option mzdgroup off` leaves DS unknown, for a program that
-runs functions with other segments in DS.
+routine the startup calls with another segment in DS starts with DS unknown.
+`--option mzdgroup off` leaves DS unknown, for a program that runs functions
+with other segments in DS.
 `decompile`, `decompile-all`, `functions`, `disassemble`/`read`,
 `decompile-project` and the console support MZ input; `strings`, `xrefs`,
 `decompile-graph` and the graph-backed `--summary`/`--reachable-from` need an
