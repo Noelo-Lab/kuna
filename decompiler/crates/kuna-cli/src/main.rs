@@ -82,6 +82,7 @@ fn main() -> ExitCode {
         return ExitCode::from(2);
     }
     let rest = rest.as_slice();
+    loadtime::export_image_selection(rest);
     runtime_hints::note_for_invocation(sub, rest);
     let code = match sub {
         "-V" | "--version" | "version" => {
