@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4277,
-    4277
+    4292,
+    4292
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -238,9 +238,11 @@
     "data:CALLEEARGS #29: turning the option on after a walk with it off still keeps both",
     "data:CALLEEARGS #2: on, the method takes no stack argument",
     "data:CALLEEARGS #30: the callee reading through a stack address it stored through a pointer keeps both",
+    "data:CALLEEARGS #31: off, the call before a by-value copy too large to expand has no arguments",
+    "data:CALLEEARGS #32: on, it keeps all three",
     "data:CALLEEARGS #3: on, the virtual call gets its fourth argument",
-    "data:CALLEEARGS #4: off, the call before the by-value copy has no arguments",
-    "data:CALLEEARGS #5: on, it keeps all three",
+    "data:CALLEEARGS #4: the call before the by-value copy never loses its arguments",
+    "data:CALLEEARGS #5: it keeps all three in both passes",
     "data:CALLEEARGS #6: off, strcpy of the program-name fallback has no arguments",
     "data:CALLEEARGS #7: on, both strcpy calls get destination and source",
     "data:CALLEEARGS #8: on, the Runtime Error banner is strcpy's source",
@@ -1878,6 +1880,19 @@
     "data:REGNARROW-X86 #3: off keeps the 64-bit register",
     "data:REGPIECE #1: the upper half of rax is a declared local",
     "data:REGPIECE #2: no global-looking register piece",
+    "data:REPFRAMECOPY #10: an overlapping move at the stack pointer shifts the slots down",
+    "data:REPFRAMECOPY #11: the virtual calls after a bottom-of-frame local take no stack argument",
+    "data:REPFRAMECOPY #12: both virtual calls are kept",
+    "data:REPFRAMECOPY #13: the register-argument call takes no stack argument after either local",
+    "data:REPFRAMECOPY #1: fill takes the copied struct and b",
+    "data:REPFRAMECOPY #2: paint keeps its three arguments",
+    "data:REPFRAMECOPY #3: no pushed return address is printed as a value",
+    "data:REPFRAMECOPY #4: src's eight dwords and b reach fill8 through a frame pointer",
+    "data:REPFRAMECOPY #5: a by-value parameter is passed on whole",
+    "data:REPFRAMECOPY #6: a global table passed by value",
+    "data:REPFRAMECOPY #7: the entry's other calls keep their pushed arguments",
+    "data:REPFRAMECOPY #8: the eight moves left alone (big_pass, copy_global, zero_pass stosd and movsd, loop_fill, d_virtual, d_ptr, d_direct) stay loops, and only those",
+    "data:REPFRAMECOPY #9: the indexed fill stays a loop",
     "data:RETCALLHALF #1: the caller hands back the callee's whole result",
     "data:RETCALLHALF #2: every caller that changes only the high word returns eight bytes",
     "data:RETCALLHALF #3: a sign-extended call result is a long long",

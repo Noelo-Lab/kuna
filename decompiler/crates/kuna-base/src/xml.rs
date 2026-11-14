@@ -2202,8 +2202,9 @@ mod tests {
         // and kuna-calleepurge / an x86-32 callee's stack purge read off its own returns
         // and kuna-calleeargs / an x86-32 callee's own code bounds its stack arguments
         // and kuna-fcvtround-a64 / AArch64 FCVT and FRINT round in their own mode
+        // and kuna-repframecopy / a by-value argument copied with rep movs reaches its call
         // and kuna-libcnames-win32 / a local takes the name of the Win32 call it meets
-        assert_eq!(count, 754, "corpus file count drifted");
+        assert_eq!(count, 755, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
