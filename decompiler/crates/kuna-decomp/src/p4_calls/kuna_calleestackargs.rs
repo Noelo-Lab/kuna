@@ -52,6 +52,7 @@ use kuna_num::opcodes::OpCode;
 use crate::architecture::Architecture;
 use crate::context::VarnodeId;
 use crate::funcdata::Funcdata;
+use crate::kuna_fasthash::FxHashMap as HashMap;
 
 /// `option calleeargs on|off` (default on).
 pub struct OptionCalleeArgs;
@@ -105,34 +106,88 @@ pub fn callee_moves_stack(arch: &Architecture, entry: &Address) -> bool {
 /// frees would move to it as a stray argument (a pushed cookie, a pushed local);
 /// the trial then stays with `idx` and the upstream test. A call that could
 /// take the value as an argument (an indirect call, one whose window covers the
-/// slot) does not hold it back: there the freed push is its argument. `held`
-/// caches the qualifying stack inputs for one `idx`.
-pub(crate) fn contested(
-    data: &Funcdata,
-    idx: int4,
-    vn: VarnodeId,
-    held: &mut Option<Vec<(uintb, VarnodeId)>>,
-) -> bool {
+/// slot) does not hold it back: there the freed push is its argument.
+pub(crate) fn contested(data: &Funcdata, idx: int4, vn: VarnodeId, held: &mut Contenders) -> bool {
     let Some(off) = data.vbank().get(vn).map(|v| v.get_offset()) else { return false };
-    let held = held.get_or_insert_with(|| unbounded_stack_inputs(data, idx));
-    let mut root = None;
-    held.iter().any(|&(o, other)| {
-        o == off && {
-            let root = *root.get_or_insert_with(|| stored(data, vn));
-            reaches(data, other, root)
-        }
-    })
+    let slots = held.slots.get_or_insert_with(|| unbounded_stack_inputs(data));
+    let Some(slot) = slots.get_mut(&off) else { return false };
+    let Slot { inputs, reach } = slot;
+    let reach = reach.get_or_insert_with(|| reached_from(data, inputs));
+    let root = stored(data, vn);
+    reach.get(&root).is_some_and(|ins| ins.iter().any(|&i| inputs[i].holds(data, idx)))
 }
 
-/// Does the stack value `vn` carry the store `root` on some path, through the
-/// INDIRECTs calls put on it and the MULTIEQUALs where paths meet?
-fn reaches(data: &Funcdata, vn: VarnodeId, root: VarnodeId) -> bool {
+/// What [`contested`] reads, gathered once per pass of the active-parameter
+/// action rather than once per bounded call: the stack inputs of the calls
+/// whose callee states no extent but a window, by slot, and, per slot asked
+/// about, which of them carries each value. Within one pass a call only stops
+/// scoring its trials or has an input freed, so each input is checked again
+/// where it is used.
+#[derive(Default)]
+pub(crate) struct Contenders {
+    slots: Option<HashMap<uintb, Slot>>,
+}
+
+/// The stack inputs at one slot, and which of them carries each value.
+#[derive(Default)]
+struct Slot {
+    inputs: Vec<Held>,
+    reach: Option<HashMap<VarnodeId, Vec<usize>>>,
+}
+
+/// A stack input past the window of the call `call`, at its trial `trial`.
+struct Held {
+    call: int4,
+    trial: int4,
+    slot: int4,
+    window: u32,
+    vn: VarnodeId,
+}
+
+impl Held {
+    /// Is this still a stack input past the window of a call other than `idx`
+    /// that scores its trials?
+    fn holds(&self, data: &Funcdata, idx: int4) -> bool {
+        if self.call == idx || self.call >= data.num_calls() {
+            return false;
+        }
+        let fc = data.get_call_specs(self.call);
+        if !fc.is_input_active() || fc.callee_stack_arg_bytes().is_some() || fc.callee_stack_window() != Some(self.window) {
+            return false;
+        }
+        if self.trial >= fc.active_input().get_num_trials() {
+            return false;
+        }
+        let trial = fc.active_input().get_trial(self.trial);
+        trial.get_slot() == self.slot
+            && trial.get_address().get_offset() as i64 >= 4 + self.window as i64
+            && data.obank().get(fc.get_op()).and_then(|op| op.get_in(self.slot)) == Some(self.vn)
+    }
+}
+
+/// For each value one of `inputs` carries on some path, through the INDIRECTs
+/// calls put on it and the MULTIEQUALs where paths meet, the inputs that carry it.
+fn reached_from(data: &Funcdata, inputs: &[Held]) -> HashMap<VarnodeId, Vec<usize>> {
+    let mut reach: HashMap<VarnodeId, Vec<usize>> = HashMap::default();
+    for (i, input) in inputs.iter().enumerate() {
+        for v in reached(data, input.vn) {
+            let ins = reach.entry(v).or_default();
+            if ins.last() != Some(&i) {
+                ins.push(i);
+            }
+        }
+    }
+    reach
+}
+
+/// The values the stack value `vn` carries: every one met walking back from it
+/// through INDIRECT and MULTIEQUAL inputs, following at most 64.
+fn reached(data: &Funcdata, vn: VarnodeId) -> Vec<VarnodeId> {
     let mut work = vec![vn];
     let mut seen: Vec<VarnodeId> = Vec::new();
+    let mut met = Vec::new();
     while let Some(v) = work.pop() {
-        if v == root {
-            return true;
-        }
+        met.push(v);
         if seen.contains(&v) || seen.len() >= 64 {
             continue;
         }
@@ -144,16 +199,16 @@ fn reaches(data: &Funcdata, vn: VarnodeId, root: VarnodeId) -> bool {
             _ => {}
         }
     }
-    false
+    met
 }
 
-/// The stack inputs past the window of every call but `idx` that still scores
-/// its trials and whose callee states no extent but a window, by stack offset.
-fn unbounded_stack_inputs(data: &Funcdata, idx: int4) -> Vec<(uintb, VarnodeId)> {
-    let mut held = Vec::new();
+/// The stack inputs past the window of every call that still scores its
+/// trials and whose callee states no extent but a window, by slot.
+fn unbounded_stack_inputs(data: &Funcdata) -> HashMap<uintb, Slot> {
+    let mut slots: HashMap<uintb, Slot> = HashMap::default();
     for j in 0..data.num_calls() {
         let fc = data.get_call_specs(j);
-        if j == idx || !fc.is_input_active() || fc.callee_stack_arg_bytes().is_some() {
+        if !fc.is_input_active() || fc.callee_stack_arg_bytes().is_some() {
             continue;
         }
         let Some(window) = fc.callee_stack_window() else { continue };
@@ -166,11 +221,12 @@ fn unbounded_stack_inputs(data: &Funcdata, idx: int4) -> Vec<(uintb, VarnodeId)>
             let Some(vn) = op.get_in(trial.get_slot()) else { continue };
             let Some(v) = data.vbank().get(vn) else { continue };
             if v.get_space().get_type() == spacetype::IPTR_SPACEBASE {
-                held.push((v.get_offset(), vn));
+                let held = Held { call: j, trial: t, slot: trial.get_slot(), window, vn };
+                slots.entry(v.get_offset()).or_default().inputs.push(held);
             }
         }
     }
-    held
+    slots
 }
 
 /// The stored value `vn` carries, past the INDIRECTs calls put on it.
