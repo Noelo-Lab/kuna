@@ -1213,6 +1213,24 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   kernelcache (21 MB IMG4, 72 MB decoded, 233 entries, 445,860 fixups), the
   peel costs about 0.15 s per read and `kuna functions` on the kernel takes
   3.7 s and 429 MB.
+  The choice is read live from `KUNA_KERNELCACHE`, and the `kuna` CLI exports
+  it from `--option kernelcache` for the whole invocation, with `dyldimage`,
+  the other option that chooses which image of a file is read
+  (`decompiler/crates/kuna-cli/src/loadtime.rs (export_image_selection)`).
+  Exporting it only around the engine's load left every surface that reads
+  the image itself on the default entry: the `xrefs` reference walk then
+  decoded the kernel's bytes from a kext's function list and answered
+  `count: 0` for a kext function with five callers, while `strings`, `crypto`,
+  the `disassemble --as data` provenance and the call graph behind
+  `decompile-all` and `decompile-graph` described the kernel. The peel also
+  returns the collection's entry map, every entry's segment ranges by bundle
+  id, with each distinct header read once, the loaded entry first, within the
+  same work budget
+  (`decompiler/crates/kuna-analysis/src/loader/kuna_kernelcache/fileset.rs (fileset_map)`).
+  The walk decodes only the loaded entry, so `xrefs` uses the map to say when
+  the address it was asked about is in another entry, naming it, or in none:
+  for `--to` the rows are only the loaded entry's references to it, and for
+  `--from` nothing was decoded there.
 
 (kuna) **dyld shared cache.** A cache file is not an object file: it is a main
 file starting `dyld_v1`, sub-caches beside it (`.01`, `.27.dylddata`,
@@ -2073,15 +2091,65 @@ funcsym stream:
   position-independent ELF carries a dynamic relocation for each, and a PE lists
   them in `.reloc`. The ELF list is read here, not through `dynrelocs` (whose
   writes are an option of the loaded image): a `RELATIVE` word holds `B + A`, and
-  an absolute word, `GLOB_DAT` or `JUMP_SLOT` against a symbol the image defines
+  so does every packed `SHT_RELR` slot (Android's `SHT_ANDROID_RELR` is the same
+  encoding under other constants), whose addend is the word it holds; an
+  absolute word, `GLOB_DAT` or `JUMP_SLOT` against a symbol the image defines
   holds `S + A`. The absolute kind is how a shared object stores its own exported
   functions, which are preemptible (`R_X86_64_64 audit_target` for the first entry
-  of a callback table). The list keeps
-  each word whose target is in an allocated section, and says which metadata it
-  came from. An image that lists none (a non-PIE ELF, whose own pointers carry no
-  relocation, a PE without base relocations, a relocatable object) reports
-  coverage `none`: its pointers are plain words no metadata tells from integers,
-  and guessing would make an empty answer mean two things. A bound slot is not
+  of a callback table). The relocation numbers are per machine
+  (`kuna_dataptrs.rs (pointer_relocs)`), each checked against `llvm-readelf -r`
+  on a shared object linked for it: x86-64, i386, AArch64 and ARM share
+  `dynrelocs`' triple; RISC-V has no `GLOB_DAT` and fills its GOT with the
+  absolute `R_RISCV_64` / `R_RISCV_32`; PowerPC64's `JMP_SLOT` is a word only
+  under ELFv2 (`e_flags` ABI 2), an ELFv1 PLT slot being a copied function
+  descriptor; and a 32-bit PowerPC `JMP_SLOT` is a word only under the secure PLT
+  (`DT_PPC_GOT`), the BSS PLT patching code instead. PowerPC also has an
+  unaligned absolute word, `UADDR32` / `UADDR64`, which GNU ld emits for a
+  pointer at an unaligned offset (a packed struct); a 32-bit one against a local
+  symbol stores `B + A`, binutils having folded the symbol's value into the
+  addend, which is what glibc's loader adds. A machine with no entry is
+  not guessed at: MIPS relocates its local GOT entries without a relocation, so
+  its relocations would be a partial list presented as a whole one, and SPARC's
+  could not be verified. The list keeps each word whose target is in an
+  allocated section, and says how much of the metadata it covers
+  (`Coverage`), because an empty list is only an answer when that metadata was
+  read in full. `Complete` names the source. `Partial` names it too, plus
+  what was not read: an allocated `SHT_REL`/`SHT_RELA` section whose `sh_link` is
+  not the dynamic symbol table (the generic relocation walk skips it, and so does
+  `resolve`), a table section whose bytes lie outside the file or are not a
+  whole number of entries (skipped the same way), a table the dynamic section
+  declares (`DT_RELA`, `DT_REL`, `DT_JMPREL`, `DT_RELR`, `DT_ANDROID_RELR`) that
+  no readable section covers (an image without section headers), an
+  Android-packed table (`DT_ANDROID_RELA`), `SHT_RELR` entries that name more
+  slots than the file has words (a valid table names distinct aligned words the
+  file holds, so decoding stops there and a crafted table cannot multiply
+  memory), a PE base-relocation directory outside every
+  section or a block that does not fit in it (the blocks are walked here, a
+  zero-size one ending the walk as it ends the loader's), a Mach-O
+  `LC_DYLD_CHAINED_FIXUPS` blob outside the file, a chain walk that stopped
+  short (`ChainedFixups::damage`: a truncated header or start table, a pointer
+  format the walk does not decode, a chain that leaves the segments' file data,
+  kernel-collection rebases whose own collection level is unknown), a
+  rebase-opcode stream that
+  ends in an operand or names a segment the image lacks, and slots with no file
+  data to read (`kuna_dynrelocs.rs (unread_tables)`). `Unsupported` is metadata
+  kuna does not read: a machine above without an entry, a relocatable object's
+  relocations, a Mach-O image's `LC_DYSYMTAB` local relocations, the static
+  relocation sections an `--emit-relocs` executable keeps, and the rebases of an
+  image built into a dyld shared cache or kernel collection (`MH_DYLIB_IN_CACHE`:
+  the cache's slide info or the collection's chained fixups hold them, and the
+  image's own `LC_DYLD_INFO` is empty or absent, which would otherwise read as
+  complete). `None` is an image
+  with no pointer-relocation metadata at all (a non-PIE ELF executable, whose own
+  pointers carry no relocation, a PE without a base-relocation directory or with
+  one of size 0, which the loader treats as none, a
+  non-PIE Mach-O executable without rebase opcodes): its pointers are plain
+  words no metadata tells from integers, and guessing would make an empty answer
+  mean two things. Metadata that exists and lists nothing is complete with no
+  rows: an ELF PIE without a pointer relocation, a chained-fixup image that only
+  binds, a slid Mach-O (`MH_PIE`, a dylib or bundle) whose `LC_DYLD_INFO`
+  rebases nothing, a PE directory of only padding. Each non-complete coverage
+  carries its reason. A bound slot is not
   listed, since it holds an address of another image. `kuna xrefs` reports these
   as separate `pointer` rows with that coverage, never merged into the
   instruction rows or the call graph (`docs/cli.md`). On x86 an instruction can
@@ -2111,7 +2179,15 @@ funcsym stream:
   per-relocation classifier (`ElfTable::classify`), and `resolve` writes exactly
   the valued rebases and binds, as before. The list is read regardless, so a
   reader compares the loaded bytes with the file's
-  to learn what was applied. Any other image lists none, under coverage `none`.
+  to learn what was applied. The coverage is `Partial` when some of an ELF's
+  tables, or of a Mach-O's chains, were not read, by the same accounts
+  (`unread_tables`, the `SHT_RELR` bound, `ChainedFixups::damage`) the data-held
+  pointers use: their slots are absent from the list and hold the file's bytes,
+  since `resolve` did not read them either. That account is of the tables a
+  dynamic loader applies, so an image without a dynamic section (a static
+  executable, whose `.rela.plt` of `IRELATIVE` entries links `.symtab` and is
+  applied by its own startup code) has none to miss. Any other image lists
+  none, under coverage `none`.
 - **ELF GOT data imports** (kuna, `elfgotimports`, committed under `importdata`,
   default on; `decompiler/crates/kuna-analysis/src/loader/kuna_elfgotimports.rs`):
   the complement of the `dynrelocs` walk above. A `GLOB_DAT` slot whose symbol is *undefined*
@@ -5329,7 +5405,40 @@ every other binary's pass list is byte-identical to before the pass existed):
   initial Listing gets a separate walk. It exposes whether any candidate's
   specific hash matches and whether each candidate's code-unit size matches.
   These are evidence, not identity proof. Specific hashes do not select a winner;
-  a database with a mismatched language or malformed bytes is an error.
+  a database that does not apply to the binary or has malformed bytes is an error.
+  (kuna) **Which database applies**
+  (`decompiler/crates/kuna-analysis/src/analyzers/fid/kuna_fidapply.rs (applies)`):
+  a database is matched against an image only when its header language has the
+  image language's processor, address size and instruction byte order, the rule
+  of Ghidra's `FidFile.canProcessLanguage`. Those facts are read from the
+  `.ldefs` entries the bootstrap scanned
+  (`decompiler/crates/kuna-decomp/src/p1_partition/kuna_langfamily.rs (families)`,
+  with the `instructionEndian` attribute the C++ decoder ignores), not from the
+  id's fields, which differ for some languages: `MIPS:BE:64:64-32addr` is 32-bit,
+  and BE8 ARM (`ARM:LEBE:32:*`) and big-endian AArch64 have little-endian
+  instructions. The variant and the compiler spec take no part, because the hash
+  covers only instruction bytes and operand masks; a header language no scanned
+  `.ldefs` defines applies to nothing, as Ghidra ignores a library whose language
+  it cannot find. An architecture built without an `.ldefs` scan falls back to
+  exact language-id equality. Before this, the pass matched any database whatever
+  its header said, so a database labeled `AARCH64:LE:64:v8A` named functions in
+  an x86-64 image. `kuna fid build` applies the same rule to each input: an object
+  whose own language the `--lang` label does not apply to is refused (a member of
+  an archive is skipped, and an archive none of whose object members the label
+  applies to is refused), since its hashes were computed with the object's
+  decoder and the label would send them to other images. **Status.** The pass
+  reports what became of the database `kuna_fid_db` names on
+  `AnalysisOutput::fid_databases` — `loaded`, `missing`, `unreadable`, `invalid`
+  (the bytes do not parse) or `incompatible` — with the header's record count,
+  language and compiler spec when it was read. The engine keeps the last commit's
+  reports (`decompiler/crates/kuna-console/src/engine.rs (fid_databases)`), and the
+  CLI prints a stderr warning for every status but `loaded`, once per run (not in
+  `--jobs` workers), and lists the reports as `fid_databases` in its JSON
+  documents. The console's `read symbols` prints the same `warning:` line
+  (`decompiler/crates/kuna-console/src/ifacedecomp.rs (IfcReadSymbols)`), which
+  the text `decompile` surface relays from its `decomp_dbg` session. A configured database that is not matched does not change the exit
+  status: it only ever adds names, and a database set for a batch of
+  mixed-architecture images is expected not to apply to some of them.
 - **FLIRT** (`flirt`, default-off, Listing-gated, signatures via `KUNA_FLIRT_SIGS`;
   `decompiler/crates/kuna-analysis/src/analyzers/flirt/mod.rs (FlirtPass)`): names
   library functions from IDA FLIRT `.sig` files (versions 5 to 11; raw, deflate,

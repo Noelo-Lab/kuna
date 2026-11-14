@@ -2049,6 +2049,10 @@ pub struct Architecture {
     /// where `modify_spaces` applies them. `None` until that bootstrap step has
     /// run; an empty list is a valid, complete recipe for most languages.
     decode_truncations: Option<Arc<[(String, u32)]>>,
+    /// (kuna) Every language the bootstrap's `.ldefs` scan found, by id: what
+    /// decides whether a FID database built for another language applies here.
+    /// Empty for an `Architecture` that was not bootstrapped from `.ldefs`.
+    language_families: Arc<[(String, crate::kuna_langfamily::LanguageFamily)]>,
 }
 
 /// One active decompile drive, from [`Architecture::kuna_drive_scope`].
@@ -2078,6 +2082,25 @@ impl Architecture {
     /// `modify_spaces` applies them.
     pub fn set_decode_truncations(&mut self, truncations: Vec<(String, u32)>) {
         self.decode_truncations = Some(Arc::from(truncations));
+    }
+
+    /// (kuna) Record the `.ldefs` languages the bootstrap scanned.
+    pub fn set_language_families(
+        &mut self,
+        families: Arc<[(String, crate::kuna_langfamily::LanguageFamily)]>,
+    ) {
+        self.language_families = families;
+    }
+
+    /// (kuna) The scanned `.ldefs` facts for language `id`, `None` when no
+    /// scanned `.ldefs` defines it.
+    pub fn language_family(&self, id: &str) -> Option<&crate::kuna_langfamily::LanguageFamily> {
+        self.language_families.iter().find(|(known, _)| known == id).map(|(_, family)| family)
+    }
+
+    /// (kuna) Whether the bootstrap recorded any `.ldefs` languages.
+    pub fn has_language_families(&self) -> bool {
+        !self.language_families.is_empty()
     }
 
     /// (kuna) The instructions for rebuilding a decode-equivalent engine on
@@ -2181,6 +2204,7 @@ impl Architecture {
 
             decode_sla: None,
             decode_truncations: None,
+            language_families: Arc::from([]),
 
             trim_recurse_max: 0,
             max_implied_ref: 0,
@@ -3346,6 +3370,10 @@ impl Architecture {
             .filter_map(|(name, width)| {
                 self.userops.get_op_by_name(name).map(|u| (u.get_index() as kuna_base::types::uint4, width))
             })
+            .collect();
+        ctx.float_rounding_userops = crate::kuna_roundingops::USEROP_NAMES
+            .iter()
+            .filter_map(|nm| self.userops.get_op_by_name(nm).map(|u| u.get_index() as kuna_base::types::uint4))
             .collect();
         ctx.recover_array_stride = self.recover_array_stride; // GH-8724 arraystride
         ctx.memset_recover = self.memset_recover; // GH-9230/1537 memsetrecover
