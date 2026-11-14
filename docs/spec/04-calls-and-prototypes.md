@@ -2795,11 +2795,12 @@ discards such a local and returns at once (`lw $3,..; lw $2,..; jr $ra`) has
 the bytes of `return t;` and reads as the `long long`, as the volatile read of
 memory above does. Built with gcc and clang for all four targets at -O0 to
 -Os (gcc 10, 12 and 13, clang 14; PowerPC, MIPS, SPARC, ARM and Thumb big-endian),
-no `int` or `void` among 60 look-alikes (a spilled argument or a 64-bit
-temporary's high half shifted, stored, passed on, widened into a local first,
-kept in an array or a struct, read through a pointer, stored on one path,
-read after `setjmp` or `va_arg`, copied to another local) is newly proven
-but that `void`; the measurements are with the defaults' summary below.
+the reloads newly prove none of 75 `int`, pointer and `void` look-alikes (a
+spilled argument or a 64-bit temporary's high half shifted, stored, passed
+on, widened into a local first, kept in an array or a struct, read through a
+pointer, stored on one path, read after `setjmp` or `va_arg`, copied to
+another local) but that `void`; the measurements are with the defaults'
+summary below.
 
 A call's two-register output joins in the ABI's order when its callee
 is proven (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin.rs
@@ -3274,7 +3275,19 @@ whose caller hands its value to `__umoddi3`, which now also reads its
 argument high word first); over 64 authored objects (the shapes above and
 their `int` look-alikes, gcc and clang, -O0 to -Os, all four targets) the 53
 functions that change return eight bytes; and 90 big-endian and 400
-little-endian and 64-bit test fixtures print byte-identically.
+little-endian and 64-bit test fixtures print byte-identically. With the
+register-pair store and the discarded load counted, SQLite's SPARC -O0
+`sqlite3_memory_alarm` and `sqlite3_enable_load_extension`, both `int`, which
+main proved through an unseen `std`, keep the first-register-low join; over
+Lua 5.3 built for the same targets (gcc 10 and 13, clang 14, ARM and Thumb,
+-O0, -O2 and -Os, 24 objects) only `luaL_len` changes, from `void` to its
+eight-byte DWARF return; and over 300 authored objects of 156 shapes and
+look-alikes for PowerPC (gcc 12 and 13, clang 14), MIPS (gcc 10 and 12, clang
+14), SPARC (clang 14) and ARM and Thumb big-endian (gcc 12, clang 14) at -O0 to
+-Os, every function newly proven returns eight bytes by DWARF except the `u32
+hi()` wrappers, which `whole` already printed as the whole value, and the
+`void` that discards a `volatile long long` local (two of the three shapes
+above).
 
 With `bejoin on`, the pair joins in the ABI's order only when its second
 register holds a low word the function returns on purpose.
