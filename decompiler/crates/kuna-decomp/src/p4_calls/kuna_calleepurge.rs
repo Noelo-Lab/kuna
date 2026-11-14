@@ -154,8 +154,10 @@ pub struct StackArgs {
 /// (`pop ecx`, `add esp,8`, or one MSVC defers past later calls) before a
 /// branch or a return. A later call is taken to pop what its callee's returns
 /// prove, or else only its return address, so a cleanup is never credited
-/// with more than the caller pushed; a pop into a callee-saved register is the
-/// epilogue restoring it, not a cleanup.
+/// with more than the caller pushed. A pop into a callee-saved register is the
+/// epilogue restoring it and ends the scan: the frame teardown after it is not
+/// a cleanup, however far a later call's unproven pop has left the scan's
+/// stack pointer from the real one.
 fn caller_cleanup(arch: &Architecture, call_at: &Address) -> u32 {
     let (Some(space), Some(regs)) = (call_at.get_space().cloned(), registers(arch)) else { return 0 };
     let Some(call) = decode(arch, &space, call_at.get_offset()) else { return 0 };
@@ -180,7 +182,10 @@ fn caller_cleanup(arch: &Architecture, call_at: &Address) -> u32 {
             },
             Some(Call::Indirect(_)) => 4,
         };
-        if s.call.is_none() && after > sp && s.writes == 0 {
+        if s.call.is_none() && after > sp {
+            if s.writes != 0 {
+                break;
+            }
             high = high.max(after);
         }
         sp = after + pops;

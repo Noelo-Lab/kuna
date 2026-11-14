@@ -1719,7 +1719,12 @@ classified:
   site uses widens the extent to what the callee's returns pop (`ret 8` takes
   two slots whether or not both are read) and to what the caller removes in the
   run of instructions right after the call (`pop ecx`, `add esp,8`: a `__cdecl`
-  cleanup covers the arguments pushed for that call). Where the extent is
+  cleanup covers the arguments pushed for that call). The run ends at the
+  first pop into a callee-saved register: that is the epilogue, and a frame
+  teardown after it is not a cleanup. Counting it went wrong whenever a later
+  call in the run pops more than the scan takes it to (a virtual `__thiscall`,
+  taken to pop only its return address), since the scan's stack pointer then
+  sits low by those bytes and the teardown seems to lift it above the call. Where the extent is
   stated, a stack trial starting at or past the bound (or past what the callee
   pops, if that is more) is no-use, and a trial within the touched extent
   skips the local-alias test, because the callee reads that slot whatever a

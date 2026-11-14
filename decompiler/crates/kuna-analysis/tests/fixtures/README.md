@@ -1972,6 +1972,16 @@ calls `__ftol2_sse` twice. The `.s` reassembles the VS2005 `libcmt` `ftol2.obj`
 CodeView record carries the path it was compiled at. Recipe (clang + lld-link) in the
 `.s`. Used by `tests/stages/kuna-msvcftolsig.xml`.
 
+### A this-only call inside a framed virtual call
+
+`epilogcleanup_pe_i386.exe` (2,560 bytes, PE32/i386, SHA-256
+`388af2b376ef4c8b0abeeba5979d1faebdf4d07b75d5e8ff85ef718cd1991bea`) is clean-room:
+`steer`@`0x401000` reserves a 16-byte frame, pushes `extra` for the virtual
+`Obj::message` (`ret 0x10`), calls the this-only `angle`@`0x401040` (`fld [ecx]; ret`),
+pushes the remaining arguments, calls through the vtable, and ends `pop edi; pop esi;
+add esp,0x10; ret 0xc`. Source and recipe (clang + lld-link) in
+`epilogcleanup_pe_i386.s`. Used by `tests/stages/kuna-calleeargs.xml` (#31-#33).
+
 ### AIF fragment of a known function
 
 `aifbracket_pe_i386.exe` (2,048 bytes, PE32/i386, SHA-256
