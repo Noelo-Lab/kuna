@@ -321,11 +321,11 @@ fn evaluate(op: &Op, temps: &[(VarnodeData, u64)]) -> Option<u64> {
     }
 }
 
-fn is_const(v: &VarnodeData) -> bool {
+pub(super) fn is_const(v: &VarnodeData) -> bool {
     v.space.as_ref().is_some_and(|s| s.get_type() == kuna_base::space::spacetype::IPTR_CONSTANT)
 }
 
-fn is_unique(v: &VarnodeData) -> bool {
+pub(super) fn is_unique(v: &VarnodeData) -> bool {
     v.space.as_ref().is_some_and(|s| s.get_type() == kuna_base::space::spacetype::IPTR_INTERNAL)
 }
 
@@ -336,7 +336,7 @@ fn same_space(a: &VarnodeData, b: &VarnodeData) -> bool {
     }
 }
 
-fn same(a: &VarnodeData, b: &VarnodeData) -> bool {
+pub(super) fn same(a: &VarnodeData, b: &VarnodeData) -> bool {
     same_space(a, b) && a.offset == b.offset && a.size == b.size
 }
 
@@ -347,10 +347,10 @@ fn overlaps(a: &VarnodeData, b: &VarnodeData) -> bool {
 }
 
 /// One p-code op with its output, which the Listing's capture does not keep.
-struct Op {
-    opcode: OpCode,
-    out: Option<VarnodeData>,
-    ins: Vec<VarnodeData>,
+pub(super) struct Op {
+    pub(super) opcode: OpCode,
+    pub(super) out: Option<VarnodeData>,
+    pub(super) ins: Vec<VarnodeData>,
 }
 
 #[derive(Default)]
@@ -364,7 +364,7 @@ impl PcodeEmit for Capture {
     }
 }
 
-fn decode(translate: &dyn Translate, code_space: &Rc<AddrSpace>, vma: u64) -> Option<Vec<Op>> {
+pub(super) fn decode(translate: &dyn Translate, code_space: &Rc<AddrSpace>, vma: u64) -> Option<Vec<Op>> {
     let addr = Address::new(Rc::clone(code_space), vma);
     let mut cap = Capture::default();
     let decoded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {

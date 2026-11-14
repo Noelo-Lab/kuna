@@ -94,6 +94,9 @@ pub fn asm_labels_from_entries(prog: &ConsoleProgram, entries: &[FunctionEntry])
 pub struct AsmSweep {
     header: String,
     labels: BTreeMap<u64, Vec<AsmLabel>>,
+    /// (kuna #1288) Where a function's flow ends short of the next label, with
+    /// the line that says so ([`flow_ends`]).
+    ends: BTreeMap<u64, String>,
     code_secs: Vec<(u64, u64)>,
     section: usize,
     addr: u64,
@@ -106,6 +109,7 @@ pub struct AsmSweep {
 impl AsmSweep {
     pub fn new(prog: &ConsoleProgram, file_name: &str, labels: Vec<AsmLabel>) -> Self {
         let arm = is_arm(prog);
+        let ends = flow_ends(prog, &labels);
         let mut map: BTreeMap<u64, Vec<AsmLabel>> = BTreeMap::new();
         for label in labels {
             map.entry(normalize(arm, label.byte_address)).or_default().push(label);
@@ -124,6 +128,7 @@ impl AsmSweep {
                 prog.description()
             ),
             labels: map,
+            ends,
             code_secs,
             section: 0,
             addr: 0,
@@ -181,6 +186,7 @@ impl AsmSweep {
                 let consumed = sweep_one(
                     prog,
                     &self.labels,
+                    &self.ends,
                     self.addr,
                     end,
                     &mut self.scratch,
@@ -214,6 +220,7 @@ impl AsmSweep {
 fn sweep_one(
     prog: &ConsoleProgram,
     labels: &BTreeMap<u64, Vec<AsmLabel>>,
+    ends: &BTreeMap<u64, String>,
     addr: u64,
     end: u64,
     scratch: &mut AssemblyScratch,
@@ -227,9 +234,16 @@ fn sweep_one(
             out.push_str(&label.header);
         }
     }
+    if let Some(line) = ends.get(&addr) {
+        scratch.flush_db(out);
+        out.push_str(line);
+    }
     // Never decode across the next label (a mis-sync would otherwise swallow a
-    // function label into an instruction's byte extent) or the section end.
-    let next_stop = labels.range(addr + 1..).next().map(|(&a, _)| a.min(end)).unwrap_or(end);
+    // function label into an instruction's byte extent), a function's end or
+    // the section end.
+    let next_label = labels.range(addr + 1..).next().map(|(&a, _)| a);
+    let next_end = ends.range(addr + 1..).next().map(|(&a, _)| a);
+    let next_stop = next_label.into_iter().chain(next_end).fold(end, u64::min);
     match prog.disassemble_at_into(addr, &mut scratch.mnem, &mut scratch.body) {
         Ok(len) if len > 0 && addr + len as u64 <= next_stop => {
             scratch.flush_db(out);
@@ -281,6 +295,32 @@ pub fn render_data_tail(prog: &ConsoleProgram, dat_addrs: &BTreeSet<u64>) -> Str
     let mut out = String::new();
     project::emit_data_tail(prog, &prog.sections(), dat_addrs, &mut out);
     out
+}
+
+/// (kuna #1288) The end of each labeled function whose flow stops short of
+/// the bytes up to the next function (an MS-DOS program's data after its
+/// code, `ConsoleProgram::extent_cut_by_flow`), keyed by the byte address the
+/// sweep reaches it at, with the comment line the `.asm` prints there. Empty
+/// on every image that measured no flow ends.
+fn flow_ends(prog: &ConsoleProgram, labels: &[AsmLabel]) -> BTreeMap<u64, String> {
+    let cuts = prog.extents_cut_by_flow();
+    let arm = is_arm(prog);
+    let mut ends = BTreeMap::new();
+    for label in labels {
+        let Some(&(extent, clip)) = cuts.get(&label.byte_address) else { continue };
+        if extent == 0 {
+            continue;
+        }
+        let stop = prog.output_code_offset(label.byte_address + clip);
+        ends.entry(normalize(arm, label.byte_address + extent)).or_insert_with(|| {
+            format!(
+                "  ; end of {}: its flow reaches none of the {} bytes from here to 0x{stop:x}\n",
+                label.name,
+                clip - extent
+            )
+        });
+    }
+    ends
 }
 
 /// On ARM-family specs a Thumb function's entry VMA carries the mode bit; the

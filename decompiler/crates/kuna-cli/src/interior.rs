@@ -42,7 +42,12 @@ pub(crate) fn selections(prog: &ConsoleProgram, args: &Args, targets: &[Function
     }
     let bytes: Vec<u64> = targets.iter().map(|t| t.addr.get_offset()).collect();
     for (byte, owner) in bytes.iter().zip(prog.entries_containing(&bytes)) {
-        let Some(owner) = owner else { continue };
+        let Some(owner) = owner else {
+            if let Some(note) = past_flow_note(prog, *byte) {
+                eprintln!("{note}");
+            }
+            continue;
+        };
         let interior = Interior {
             addr: prog.output_code_offset(*byte),
             owner: owner.name,
@@ -66,6 +71,35 @@ pub(crate) fn note(i: &Interior) -> String {
         i.addr,
         i.addr
     )
+}
+
+/// (kuna #1288) The stderr line for a selection past the end of the flow of
+/// the function in front of it (`ConsoleProgram::flow_ended_before`): an
+/// MS-DOS program's data after a function's code is in no function.
+fn past_flow_note(prog: &ConsoleProgram, byte: u64) -> Option<String> {
+    let (owner, end) = prog.flow_ended_before(byte)?;
+    Some(past_flow_line(prog.output_code_offset(byte), &owner.name, prog.output_code_offset(end)))
+}
+
+fn past_flow_line(at: u64, owner: &str, end: u64) -> String {
+    format!(
+        "note: {at:#x} is past the end of {owner} at {end:#x}, after the last instruction its flow \
+         reaches, and in no function kuna discovered; decompiled from {at:#x} as asked \
+         (--define-function {at:#x} declares a function there)"
+    )
+}
+
+/// The `function containing` answer for a selection past the end of the flow
+/// of the function in front of it, as [`past_flow_note`] words it:
+/// `<addr> is past the end of <name> at <end>`.
+pub(crate) fn past_flow_from_transcript(transcript: &str) -> Option<String> {
+    transcript.lines().find_map(|line| {
+        let line = line.trim();
+        let line = line.strip_prefix("[decomp]>").unwrap_or(line).trim();
+        let (addr, rest) = line.split_once(" is past the end of ")?;
+        let (owner, end) = rest.rsplit_once(" at ")?;
+        Some(past_flow_line(hex(addr)?, owner, hex(end)?))
+    })
 }
 
 /// The record field: the containing function and the offset into it.
