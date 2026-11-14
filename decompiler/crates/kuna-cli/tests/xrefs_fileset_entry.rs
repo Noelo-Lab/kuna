@@ -117,6 +117,16 @@ fn image_scans_read_the_selected_entry() {
     assert!(edges.contains(&(0xfffffe00_07007860, WAIT)), "pmgr_idle_enter -> pmgr_wait_pending: {edges:?}");
 }
 
+/// `kernelcache off` reads the bare collection on every surface. Its code is in
+/// segments no section describes, so finding no function there is an error.
+#[test]
+fn kernelcache_off_finding_no_functions_is_an_error() {
+    let fixture = common::fixture("kernelcache/fileset_calls.macho");
+    let (_, stderr, rc) = common::run_kuna(&["functions", &fixture, "--option", "kernelcache", "off"]);
+    assert_eq!(rc, 1, "{stderr}");
+    assert!(stderr.contains("no functions discovered"), "{stderr}");
+}
+
 /// The dyld shared cache's image choice travels the same way.
 #[test]
 fn a_dyldimage_option_selects_the_image_xrefs_reads() {
