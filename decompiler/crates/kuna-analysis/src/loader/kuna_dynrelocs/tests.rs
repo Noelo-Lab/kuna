@@ -301,11 +301,11 @@ fn unhandled_machine_is_inert() {
 /// alone included, with what the loader stores where the image says it.
 #[test]
 fn fixup_sites_list_every_slot_with_its_kind() {
-    use crate::loader::kuna_dataptrs::Coverage;
+    use crate::loader::kuna_dataptrs::{Coverage, Source};
     let bytes = image64(62, 8, 6, 7);
     let file = object::File::parse(&*bytes).unwrap();
     let listed = fixup_sites(&file, &bytes);
-    assert_eq!(listed.coverage, Coverage::DynamicRelocations);
+    assert_eq!(listed.coverage, Coverage::Complete(Source::DynamicRelocations));
     let site = |vma, kind, symbol: Option<&str>, addend, target| FixupSite {
         vma,
         width: 8,

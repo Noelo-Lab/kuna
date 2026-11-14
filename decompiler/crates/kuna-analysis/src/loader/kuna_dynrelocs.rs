@@ -370,10 +370,12 @@ pub struct FixupSite {
 }
 
 /// Every load-time fixup slot of an image, sorted by address, and the metadata
-/// that listed them.
+/// that listed them. `reason` says what was not read when the coverage is
+/// partial.
 #[derive(Debug, Clone)]
 pub struct FixupSites {
     pub coverage: crate::loader::kuna_dataptrs::Coverage,
+    pub reason: Option<String>,
     pub sites: Vec<FixupSite>,
 }
 
@@ -382,12 +384,14 @@ pub struct FixupSites {
 /// relocations, its `SHT_RELR` ones included. These are the slots whose loaded
 /// bytes [`resolve`] may have rewritten (rebase targets, a zero for each bind),
 /// so a reader of the load image can say which of its bytes are the file's.
-/// Empty, with [`Coverage::None`], for any other image.
+/// Empty, with [`Coverage::None`], for any other image; partial, with the
+/// reason, when some of an ELF's tables could not be read ([`unread_tables`]).
 ///
 /// [`Coverage::None`]: crate::loader::kuna_dataptrs::Coverage::None
 pub fn fixup_sites(file: &object::File, bytes: &[u8]) -> FixupSites {
-    use crate::loader::kuna_dataptrs::Coverage;
+    use crate::loader::kuna_dataptrs::{Coverage, Source};
     let mut sites = Vec::new();
+    let mut reason = None;
     let coverage = if file.format() == object::BinaryFormat::MachO {
         let fixups = crate::loader::format::macho::resolve_chained_fixups(file, bytes);
         let width = fixups.slot_width();
@@ -407,7 +411,7 @@ pub fn fixup_sites(file: &object::File, bytes: &[u8]) -> FixupSites {
             addend: Some(bind.addend),
             target: None,
         }));
-        if sites.is_empty() { Coverage::None } else { Coverage::ChainedFixups }
+        if sites.is_empty() { Coverage::None } else { Coverage::Complete(Source::ChainedFixups) }
     } else if let Some(table) = ElfTable::new(file) {
         let symbols = file.dynamic_symbol_table();
         let name = |idx: object::SymbolIndex| {
@@ -426,12 +430,144 @@ pub fn fixup_sites(file: &object::File, bytes: &[u8]) -> FixupSites {
             });
         }
         sites.extend(relr_sites(file, &table));
-        Coverage::DynamicRelocations
+        let unread = unread_tables(file);
+        if unread.is_empty() {
+            Coverage::Complete(Source::DynamicRelocations)
+        } else {
+            reason = Some(unread.join("; "));
+            Coverage::Partial(Source::DynamicRelocations)
+        }
     } else {
         Coverage::None
     };
     sites.sort_by_key(|site| site.vma);
-    FixupSites { coverage, sites }
+    FixupSites { coverage, reason, sites }
+}
+
+/// The `(d_tag, d_val)` entries of a linked ELF's `PT_DYNAMIC` segment, empty
+/// when it has none or it cannot be read.
+pub(crate) fn dynamic_entries(file: &object::File) -> Vec<(i64, u64)> {
+    match file {
+        object::File::Elf32(elf) => elf_dynamic_entries(elf),
+        object::File::Elf64(elf) => elf_dynamic_entries(elf),
+        _ => Vec::new(),
+    }
+}
+
+fn elf_dynamic_entries<'data, Elf, R>(elf: &object::read::elf::ElfFile<'data, Elf, R>) -> Vec<(i64, u64)>
+where
+    Elf: object::read::elf::FileHeader,
+    R: object::ReadRef<'data>,
+{
+    use object::read::elf::{Dyn, ProgramHeader};
+    let endian = elf.endian();
+    elf.elf_program_headers()
+        .iter()
+        .find_map(|ph| ph.dynamic(endian, elf.data()).ok().flatten())
+        .map(|entries| entries.iter().map(|d| (d.tag(endian), d.val(endian))).collect())
+        .unwrap_or_default()
+}
+
+/// The dynamic relocation tables of a linked ELF that the walk above does not
+/// read, one line each: an allocated `SHT_REL` / `SHT_RELA` section whose
+/// `sh_link` is not the dynamic symbol table (the generic walk skips it), a
+/// table section whose bytes lie outside the file, and a table the dynamic
+/// section declares (`DT_RELA`, `DT_REL`, `DT_JMPREL`, `DT_RELR`, Android's
+/// packed `DT_ANDROID_RELA` / `DT_ANDROID_REL`) that no readable section covers,
+/// as in an image without section headers. Empty when every table was read.
+pub(crate) fn unread_tables(file: &object::File) -> Vec<String> {
+    match file {
+        object::File::Elf32(elf) => elf_unread_tables(elf),
+        object::File::Elf64(elf) => elf_unread_tables(elf),
+        _ => Vec::new(),
+    }
+}
+
+fn elf_unread_tables<'data, Elf, R>(elf: &object::read::elf::ElfFile<'data, Elf, R>) -> Vec<String>
+where
+    Elf: object::read::elf::FileHeader,
+    R: object::ReadRef<'data>,
+{
+    use object::elf::{
+        DT_JMPREL, DT_PLTRELSZ, DT_REL, DT_RELA, DT_RELASZ, DT_RELR, DT_RELRSZ, DT_RELSZ, SHF_ALLOC, SHT_DYNSYM,
+        SHT_REL, SHT_RELA, SHT_RELR,
+    };
+    use object::read::elf::SectionHeader;
+    const DT_ANDROID_REL: i64 = 0x6000_000f;
+    const DT_ANDROID_RELSZ: i64 = 0x6000_0010;
+    const DT_ANDROID_RELA: i64 = 0x6000_0011;
+    const DT_ANDROID_RELASZ: i64 = 0x6000_0012;
+    let endian = elf.endian();
+    let sections = elf.elf_section_table();
+    let dynsym = sections.iter().position(|s| s.sh_type(endian) == SHT_DYNSYM).unwrap_or(0);
+    let mut out = Vec::new();
+    let mut spans: Vec<(u64, u64)> = Vec::new();
+    for (index, section) in sections.iter().enumerate() {
+        let kind = section.sh_type(endian);
+        let flags: u64 = section.sh_flags(endian).into();
+        if !matches!(kind, SHT_REL | SHT_RELA | SHT_RELR) || flags & u64::from(SHF_ALLOC) == 0 {
+            continue;
+        }
+        let addr: u64 = section.sh_addr(endian).into();
+        let size: u64 = section.sh_size(endian).into();
+        spans.push((addr, addr.saturating_add(size)));
+        let link = section.sh_link(endian);
+        let why = if kind != SHT_RELR && link as usize != dynsym {
+            format!("sh_link {link} is not the dynamic symbol table")
+        } else if section.data(endian, elf.data()).is_err() {
+            "its entries lie outside the file".to_string()
+        } else {
+            continue;
+        };
+        let name = sections
+            .section_name(endian, section)
+            .ok()
+            .filter(|n| !n.is_empty())
+            .map_or_else(|| "a relocation section".to_string(), |n| String::from_utf8_lossy(n).into_owned());
+        out.push(format!("{name} (section {index}): {why}"));
+    }
+    spans.sort_unstable();
+    let covered = |start: u64, end: u64| {
+        let mut at = start;
+        for &(lo, hi) in &spans {
+            if lo <= at && at < hi {
+                at = hi;
+            }
+        }
+        at >= end
+    };
+    let entries = elf_dynamic_entries(elf);
+    let value = |tag: i64| entries.iter().find(|&&(t, _)| t == tag).map(|&(_, v)| v);
+    let tables = [
+        ("DT_RELA", DT_RELA, DT_RELASZ, false),
+        ("DT_REL", DT_REL, DT_RELSZ, false),
+        ("DT_JMPREL", DT_JMPREL, DT_PLTRELSZ, false),
+        ("DT_RELR", DT_RELR, DT_RELRSZ, false),
+        ("DT_ANDROID_RELA", DT_ANDROID_RELA, DT_ANDROID_RELASZ, true),
+        ("DT_ANDROID_REL", DT_ANDROID_REL, DT_ANDROID_RELSZ, true),
+    ];
+    for (name, at, size, packed) in tables {
+        let (Some(start), Some(size)) = (value(at), value(size)) else { continue };
+        if size == 0 {
+            continue;
+        }
+        if packed {
+            out.push(format!("the {name} table at 0x{start:x} ({size} bytes) is Android-packed, which kuna does not decode"));
+        } else if !covered(start, start.saturating_add(size)) {
+            out.push(format!("the {name} table at 0x{start:x} ({size} bytes) is in no relocation section"));
+        }
+    }
+    out
+}
+
+/// Every slot the `SHT_RELR` sections of a linked ELF rebase, `width` bytes
+/// apart.
+pub(crate) fn elf_relr_slots(file: &object::File, width: usize) -> Vec<u64> {
+    match file {
+        object::File::Elf32(elf) => relr_slots(elf, width),
+        object::File::Elf64(elf) => relr_slots(elf, width),
+        _ => Vec::new(),
+    }
 }
 
 /// The slots an ELF's `SHT_RELR` tables rebase (`-z pack-relative-relocs`), on
@@ -439,12 +575,7 @@ pub fn fixup_sites(file: &object::File, bytes: &[u8]) -> FixupSites {
 /// already holds. [`resolve`] writes none of them, since at the image's own
 /// vaddrs that word is the target.
 fn relr_sites(file: &object::File, table: &ElfTable) -> Vec<FixupSite> {
-    let slots = match file {
-        object::File::Elf32(elf) => relr_slots(elf, table.width),
-        object::File::Elf64(elf) => relr_slots(elf, table.width),
-        _ => Vec::new(),
-    };
-    slots
+    elf_relr_slots(file, table.width)
         .into_iter()
         .map(|vma| FixupSite {
             vma,
