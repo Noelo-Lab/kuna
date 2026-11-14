@@ -1269,6 +1269,14 @@ instructions as `INT 34h`-`3Dh`; when the load module holds emulator code,
 kuna decodes them as the x87 instructions they stand for (`--option fpuemu
 off` keeps the interrupts, `on` forces the decode, for example on a
 `--raw-image` `.COM` program).
+Each function starts with DS holding the data segment the startup code loads
+into it (the linker's DGROUP, read off the entry code at its first call, when
+the rest of the startup keeps it there), so a near data access prints as the
+global at its linear address (`dat_3dfbe`) instead of a DS offset
+(`*(short *)0x308e`); the entry point itself starts with the PSP in DS, and a
+routine the startup calls with another segment in DS starts with DS unknown.
+`--option mzdgroup off` leaves DS unknown, for a program that runs functions
+with other segments in DS.
 `decompile`, `decompile-all`, `functions`, `disassemble`/`read`,
 `decompile-project` and the console support MZ input; `strings`, `xrefs`,
 `decompile-graph` and the graph-backed `--summary`/`--reachable-from` need an
@@ -2503,9 +2511,19 @@ entry) is a different fact, and no instruction makes it, so it is reported apart
 the image's own rebase/relocation metadata lists every such word, and `--to`
 answers each word holding the target's address, `--from` each word inside a data
 target. The source is the image's: Mach-O chained-fixup rebases or classic rebase
-opcodes, ELF dynamic relocations, PE base relocations. `data_refs_coverage` names
-it, and is `none` when the image lists no pointer relocations (a non-PIE ELF, a PE
-without `.reloc`, a relocatable object): there an empty `data_refs` means "not
+opcodes, ELF dynamic relocations (`SHT_RELR` and Android's `SHT_ANDROID_RELR`
+included; x86, ARM, AArch64, RISC-V and PowerPC), PE base relocations.
+`data_refs_coverage` says how much of it the rows cover, and `data_refs_reason`
+why not all of it:
+
+| `data_refs_coverage` | Meaning |
+|---|---|
+| `chained-fixups`, `rebase-opcodes`, `dynamic-relocations`, `base-relocations` | kuna read all of that metadata; `data_refs_reason` is `null`. An empty `data_refs` means no stored pointer holds the address. |
+| `partial` | Some of the metadata could not be read (a relocation section whose `sh_link` is not the dynamic symbol table or whose size is not a whole number of entries, a table the dynamic section declares that no section covers, a PE base-relocation directory outside every section, an Android-packed table, a Mach-O fixup chain the walk could not follow to its end); the rows are what was read, and each row's `source` names the metadata. |
+| `unsupported` | The image keeps metadata kuna does not read: a MIPS or SPARC image's dynamic relocations, a relocatable object's relocations, an `--emit-relocs` executable's static ones, an image of a kernel collection or dyld shared cache (`MH_DYLIB_IN_CACHE`), whose rebases the collection's chained fixups or the cache's slide info keep (kuna applies them, but does not list them). |
+| `none` | The image keeps no pointer-relocation metadata (a non-PIE ELF executable, a PE without `.reloc` or whose base-relocation directory has size 0): its pointers are plain words. |
+
+Under anything but a complete source, an empty `data_refs` means "not
 enumerated", not "none stored". A word bound to an import is not listed; it holds
 an address of another image. On x86 a relocated word inside a decoded instruction
 that references the same address (a 32-bit PE's `push offset f`) is that
@@ -2518,6 +2536,14 @@ kuna xrefs fixture --to _audit_target
 0x1000003e4	call	_audit_direct_call+0x8	bl 0x1000003c8
 # 1 data-held pointer to _audit_target @ 0x1000003c8 (chained-fixups)
 0x100004008	pointer	_audit_func_ptr
+```
+
+Without `--json`, a `partial` or `unsupported` coverage gets its own `#` line
+with the reason, so the text answer never reads as complete when it is not:
+
+```
+# 0 data-held pointers to audit_target @ 0x1370 (dynamic-relocations, partial: .rela.dyn (section 5): sh_link 999 is not the dynamic symbol table)
+# data-held pointers to say @ 0x494 not listed (unsupported: MIPS dynamic relocations are not read: its local GOT entries are relocated without one)
 ```
 
 `--kind` filters these rows too: `--kind pointer` gives only them, any other
@@ -2538,7 +2564,8 @@ kuna xrefs fixture --to _audit_target
             "from_function": {"name","address","address_hex"},
             "to_function":   {"name","address","address_hex"},
             "instruction": "CALL 0x1030"}],
- "data_refs_coverage": "chained-fixups|rebase-opcodes|dynamic-relocations|base-relocations|none",
+ "data_refs_coverage": "chained-fixups|rebase-opcodes|dynamic-relocations|base-relocations|partial|unsupported|none",
+ "data_refs_reason": "... or null",
  "data_refs_count": N,
  "data_refs": [{"kind": "pointer", "from_address","from_address_hex","from_name",
                 "to_address","to_address_hex","to_name","width","source"}]}
@@ -3020,7 +3047,7 @@ with kuna's own address column, so the two are diffable. `--json` replaces
  "count": N, "bytes": N, "truncated": false, "notes": ["..."],
  "hex": "000102030405060708090a0b0c0d0e0f",
  "rows": [{"address","address_hex","size","bytes","ascii"}],
- "fixups_coverage": "chained-fixups",
+ "fixups_coverage": "chained-fixups", "fixups_reason": null,
  "fixups": [{"address","address_hex","size","kind","symbol","addend",
              "target","target_hex","file_bytes","image_bytes","returned"}],
  "provenance": [{"start","start_hex","end","end_hex","size","source",
@@ -3051,8 +3078,11 @@ at run time. So every fixup slot the span overlaps is listed whole in `fixups`:
 
 `fixups_coverage` names the metadata the list came from — `chained-fixups`
 (Mach-O `LC_DYLD_CHAINED_FIXUPS`), `dynamic-relocations` (a linked ELF's
-dynamic relocation tables, `SHT_RELR` included), or `none`, where `fixups` is
-empty. `none` is a PE at its preferred base or a classic Mach-O, whose rebased
+dynamic relocation tables, `SHT_RELR` included), `partial` (some of an ELF's
+tables, or of a Mach-O's fixup chains, could not be read, and `fixups_reason`
+says which; the slots they relocate are missing from `fixups` and hold the
+file's bytes), or `none`, where `fixups` is empty. `fixups_reason` is `null`
+otherwise. `none` is a PE at its preferred base or a classic Mach-O, whose rebased
 words are already the unslid pointers and whose bytes are the file's wherever
 `provenance` below says `file`, and a relocatable object (`.o`, `.obj`), whose
 bytes are kuna's own layout of it with the relocations it supports applied,
