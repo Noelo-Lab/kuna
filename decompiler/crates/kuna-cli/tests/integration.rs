@@ -166,6 +166,9 @@ mod decompile_budget_cli;
 #[path = "dos_fpuemu_cli.rs"]
 mod dos_fpuemu_cli;
 
+#[path = "dos_pcmemory_cli.rs"]
+mod dos_pcmemory_cli;
+
 #[path = "dos_mz_cli.rs"]
 mod dos_mz_cli;
 
