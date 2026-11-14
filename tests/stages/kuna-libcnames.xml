@@ -20,7 +20,8 @@
     Pass 1 sets the option off: every local of `copy_file` is a `vN`.  Pass 2
     turns it back on, the shipped default: the two
     descriptors are `fd` and `fd_2` (a clash takes `_2` in call order), the
-    count is `n`, and the buffer and the total keep `v4` and `v5`.  `joined`'s
+    count is `n`, the stack buffer whose address `read` and `write` take is
+    `buf`, and the total keeps `v5`.  `joined`'s
     lengths are `len`/`len_2` and its buffer `p`, `first_line`'s stream `fp`,
     and `emit`'s width, which only reaches `write`, takes write's parameter
     name `n`.  `ordered` passes one local to `strcmp` as `s2` and then as `s1`:
@@ -76,8 +77,9 @@ c3
 <stringmatch name="libcnames #2: and read's count and descriptor are vNs too" min="1" max="1">^    v3 = read\(v1,v4,0x200\);$</stringmatch>
 <stringmatch name="libcnames #3: with the option on the first descriptor is fd" min="1" max="1">^  int4 fd; // eax \| ebp$</stringmatch>
 <stringmatch name="libcnames #4: the second open is fd_2, also after every rename" min="4" max="4">^  fd_2 = open\(a1,0x241,0x1a4\);$</stringmatch>
-<stringmatch name="libcnames #5: read's result is n and it reads from fd" min="1" max="1">^    n = read\(fd,v4,0x200\);$</stringmatch>
-<stringmatch name="libcnames #6: the buffer keeps the number it has with the option off, in every pass" min="5" max="5">^  char v4 \[512\]; // stack - 0x228$</stringmatch>
+<stringmatch name="libcnames #5: read's result is n and it reads from fd" min="1" max="1">^    n = read\(fd,buf,0x200\);$</stringmatch>
+<stringmatch name="libcnames #6: the stack buffer read and write take by address is v4 with the option off" min="1" max="1">^  char v4 \[512\]; // stack - 0x228$</stringmatch>
+<stringmatch name="libcnames #17: and buf in every pass with the option on" min="4" max="4">^  char buf \[512\]; // stack - 0x228$</stringmatch>
 <stringmatch name="libcnames #7: strlen's results are len and len_2 and malloc's is p" min="1" max="1">^  len = strlen\(a0\);
 ^  len_2 = strlen\(a1\);
 ^  p = malloc\(len \+ 1 \+ len_2\);$</stringmatch>
@@ -87,10 +89,10 @@ c3
 ^  if \(write\(a0,a1,n\) &lt;= -1\)$</stringmatch>
 <stringmatch name="libcnames #11: strcmp's s1 and s2 on one local disagree, so it keeps its vN" min="1" max="1">^  if \(1 &lt;= strcmp\(a3,v1\)\)$</stringmatch>
 <stringmatch name="libcnames #12: the rename names the first descriptor src" min="3" max="3">^  src = open\(a0,0\);$</stringmatch>
-<stringmatch name="libcnames #13: and no local takes the freed fd" min="1" max="1">^    n = read\(src,v4,0x200\);$</stringmatch>
+<stringmatch name="libcnames #13: and no local takes the freed fd" min="1" max="1">^    n = read\(src,buf,0x200\);$</stringmatch>
 <stringmatch name="libcnames #14: renaming v5 to read's library name leaves that local its number" min="1" max="1">^  int8 n; // r12
 ^  int4 src; // eax \| ebp
 ^  int8 v3; // rax$</stringmatch>
-<stringmatch name="libcnames #15: and the next rename reaches it by that number" min="1" max="1">^    got = read\(src,v4,0x200\);$</stringmatch>
+<stringmatch name="libcnames #15: and the next rename reaches it by that number" min="1" max="1">^    got = read\(src,buf,0x200\);$</stringmatch>
 <stringmatch name="libcnames #16: fd_2 is declared under the same spelling through every rename" min="4" max="4">^  int4 fd_2; // eax \| r13d$</stringmatch>
 </decompilertest>
