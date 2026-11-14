@@ -1940,6 +1940,25 @@ tier = "core"
 symptoms = "a DOS program's float code decompiles as calls through swi(0x35) and other INT 34h-3Dh vectors|Control flow encountered bad instruction data in a DOS function that does float math|a phantom function starts inside an INT 35h instruction's operand bytes|swi(0x3d) calls where the program waits for the coprocessor"
 
 [[settable]]
+option = "mzdgroup"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P1"
+subphase = "environment-binding"
+strength = "HARD"
+rewind = "P1"
+issue = "kuna-1288-mzdgroup"
+summary = "On an MS-DOS executable, start every function with DS holding the data segment the program's startup code loads into it (the linker's DGROUP), so near data pointers name the program's globals. DOS starts a program with DS holding its PSP; a compiled program's startup code loads DGROUP into DS before it calls into the program, and every function keeps DS there, restoring it when it borrows the register. Without that value DS is an unknown input, so each global read `mov ax, [0x308e]` printed as `*(int *)0x308e` (a pointer constant resolved against DS 0) and no two functions shared a global. The MZ loader decodes forward from the entry CS:IP to the first call (or a DOS exit) and reads the segment DS then holds: a register loaded from an immediate the relocation table names (`mov dx, DGROUP`), CS at the entry, or a relocated word read through `CS:`, carried by register moves, segment moves and an adjacent push/pop; any other write forgets the register, an INT 21h forgets every register the function in AH can return in (DS too for the services that return a pointer in it or an unknown function; any other interrupt, every register), and at a branch target a register keeps its segment only when every path into the target brings the same one. The segment must start inside the load module, and the program must keep it: the walk reads on past that call through the rest of the startup and decodes each direct callee entered with a known DS, and a callee that returns with another known segment in DS, or a startup path that ends with another known segment still in DS, states nothing. That value becomes DS's tracked value over the whole load module except the entry point itself and each routine the startup calls with another known segment in DS (Borland's StartExit, run with the `_INIT_` segment), so ActionConstbase starts each function with it and a constant near pointer resolves against it; a function that loads another segment into DS is read with that segment from the load on. Startup code that loads DS only on a path that exits, from an unrelocated immediate, or after a return, an indirect jump or 512 instructions states nothing, and DS stays unknown. Raw images and every non-MZ input never reach it."
+use_when = "Leave on: an MS-DOS program compiled by Turbo C, Microsoft C, MASM or a similar toolchain (anything that sets DS to its data segment at startup and keeps it there) prints its globals as named `dat_` globals at their linear address. Turn off for a program whose functions run with different data segments in DS (hand-written assembly that switches DS between segments around its calls, interrupt handlers entered with the interrupted program's DS), where a function entered with another DS would name the wrong bytes; off prints each near access as the raw DS offset."
+example = "kuna decompile-all dazzle.exe --option mzdgroup off"
+source_decompiler = "kuna"
+inspiration = "Ghidra and IDA both let the user state DS per segment (IDA's 'Change segment register value', Ghidra's Set Register Values) and resolve near pointers against it; kuna #1288 (DOS program Dazzle) printed every DGROUP global as a bare DS offset"
+change_kind = "analysis-enablement"
+tier = "analysis"
+symptoms = "a DOS program's globals print as *(short *)0x308e near-pointer dereferences instead of named globals|every function of an MS-DOS executable declares an unsigned short local commented // ds|the same DOS global gets no shared name across functions|a near string pointer in a DOS program resolves to a low address instead of its data segment"
+
+[[settable]]
 option = "switchmodbound"
 values = "on|off"
 default = "off"

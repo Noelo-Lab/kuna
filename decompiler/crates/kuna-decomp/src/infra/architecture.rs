@@ -487,6 +487,13 @@ pub struct Architecture {
     /// (kuna `fpuemu`) The loader found 8087-emulator code in the image, which
     /// `auto` decodes by.
     pub fpu_emu_evidence: bool,
+    /// (kuna `mzdgroup`) `option mzdgroup`: state the data segment an MS-DOS
+    /// executable's startup code loads into DS as DS's value at every function
+    /// entry.  Default on.  See [`kuna_mzdgroup`](crate::kuna_mzdgroup).
+    pub mz_dgroup_on: bool,
+    /// (kuna `mzdgroup`) The data segment the MS-DOS loader read off the startup
+    /// code, when it could.
+    pub mz_dgroup: Option<crate::kuna_mzdgroup::MzDataSegment>,
     /// (kuna `syscallregs`) When the ARM/AArch64/RISC-V/MIPS/PowerPC system-call
     /// user-op writes its result register and reads the registers the function
     /// sets up for it: `off`, `auto` (the default: only on an image the loader
@@ -2268,6 +2275,8 @@ impl Architecture {
             x64_syscall: crate::kuna_x64syscall::X64SyscallMode::Off, // (kuna) option x64syscall; reset_defaults sets the shipped default
             fpu_emu: 0, // (kuna) option fpuemu; reset_defaults sets the shipped default (auto)
             fpu_emu_evidence: false,
+            mz_dgroup_on: true,
+            mz_dgroup: None,
             segment_defs: Vec::new(),
             syscall_regs: crate::kuna_syscallregs::SyscallRegsMode::Off, // (kuna) option syscallregs; reset_defaults sets the shipped default
             image_os_userland: false, // (kuna) a load-time fact; set by the console's `load file`
@@ -2599,6 +2608,8 @@ impl Architecture {
         self.apply_segmentize();
         self.fpu_emu = crate::kuna_fpuemu::FpuEmuMode::Auto.as_u8(); // (kuna #1288) decode the 8087 emulator's INT 34h-3Dh as x87 where the loader found emulator code (MS-DOS executables); only x86-16.sla has the fpuEmu context bit, so every other input and every datatest is unchanged; `option fpuemu off` keeps the interrupts
         crate::kuna_fpuemu::apply(self);
+        self.mz_dgroup_on = true; // (kuna #1288) an MS-DOS executable's functions start with DS holding the data segment its startup code loads; only the MZ loader states one, so every other input and every datatest is unchanged; `option mzdgroup off` leaves DS unknown
+        crate::kuna_mzdgroup::apply(self);
         self.peb_names = crate::kuna_pebnames::PebNamesMode::Auto; // (kuna) DIV-175 default `auto`: TYPES ONLY. Types the Windows TEB segment base (`GS_OFFSET`/`FS_OFFSET`) as `TEB *teb` so PEB/TEB field reads render by name. Gated on a Windows compiler spec AND the loader's user-mode-PE fact, which the XML bootstrap never sets, so it is structurally inert on the datatest corpus (0/675); `option pebnames on` trusts the compiler spec alone, `off` restores the untyped register
         self.struct_synth = crate::kuna_structsynth::StructSynthMode::Locals; // (kuna) structsynth default `locals`: a pointer parameter, or a pointer a call returned, read at two or more constant offsets is declared `struct_N *` and the reads render as fields. Moves 0/675 datatest assertions; `option structsynth param` restores parameters only, `off` the raw offset arithmetic
         self.struct_merge = crate::kuna_structmerge::StructMergeMode::Off; // (kuna) structmerge default `off`: a freshly measured layout that agrees with a held record is answered with the union of the two, so a field one reader proved is kept for the others. Off because at the agreement floor two records that merely begin alike are indistinguishable; `option structmerge siblings` turns it on
