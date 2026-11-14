@@ -631,6 +631,11 @@ pub struct ConsoleProgram {
     /// (kuna `mzsweep`) An MS-DOS executable's relocated module and relocation
     /// words, the evidence its raw-image call sweep reads.
     mz_evidence: Option<kuna_analysis::listing::kuna_mzsweep::MzEvidence>,
+    /// (kuna #1288) An x86 real-mode raw image's flow ends, entry VMA ->
+    /// exclusive end (`kuna_rawextent`): what bounds [`crate::funcextent`]'s
+    /// clip where the one CODE range holds the program's data too. `None` on
+    /// every other image.
+    flow_ends: Option<BTreeMap<u64, u64>>,
     data_name_aliases: HashMap<String, u64>,
     /// (kuna) **Caller-declared function extents**, entry VMA → byte size — what
     /// the console `function bounds <start> <end>` and the CLI
@@ -1034,6 +1039,7 @@ impl ConsoleProgram {
             &mut entries,
             &crate::funcextent::spans(&self.sections(), &self.segments()),
         );
+        self.bound_entries_by_flow(&mut entries);
         // A caller-declared extent is an assertion, not a guess: it outranks the
         // clip everywhere the clip is reported (`declared_extents`).
         if self.has_declared_extents() {
@@ -1071,14 +1077,54 @@ impl ConsoleProgram {
             return declared as u64;
         }
         if !self.anonymous_entries.is_empty() {
-            return self.compact_extent_at(entry);
+            return self.bound_by_flow(entry, self.compact_extent_at(entry));
         }
         let entries = self.entry_offsets();
-        crate::funcextent::extent_at(
+        let clip = crate::funcextent::extent_at(
             entry,
             &entries,
             &crate::funcextent::spans(&self.sections(), &self.segments()),
-        )
+        );
+        self.bound_by_flow(entry, clip)
+    }
+
+    /// (kuna #1288) The clip [`Self::function_extent_at`] reports for `vma`
+    /// when the entry's flow ends before it, with the flow-bounded extent
+    /// first: `(extent, clip)`. `None` when the flow did not shorten it.
+    pub fn extent_cut_by_flow(&self, vma: u64) -> Option<(u64, u64)> {
+        let entry = self.thumb_normalized(vma);
+        if self.flow_ends.is_none() || self.declared_extent(entry) > 0 {
+            return None;
+        }
+        let clip = if self.anonymous_entries.is_empty() {
+            crate::funcextent::extent_at(
+                entry,
+                &self.entry_offsets(),
+                &crate::funcextent::spans(&self.sections(), &self.segments()),
+            )
+        } else {
+            self.compact_extent_at(entry)
+        };
+        let extent = self.bound_by_flow(entry, clip);
+        (extent < clip).then_some((extent, clip))
+    }
+
+    /// `clip` bounded by the measured flow ends (`flow_ends`), unchanged on an
+    /// image that measured none.
+    fn bound_by_flow(&self, vma: u64, clip: u64) -> u64 {
+        let Some(ends) = &self.flow_ends else { return clip };
+        let starts = self.entry_offsets();
+        let owner = starts.partition_point(|&start| start <= vma).checked_sub(1).map(|i| starts[i]);
+        crate::funcextent::bound_by_flow(vma, clip, owner, ends)
+    }
+
+    /// [`Self::bound_by_flow`] over an ascending entry list, each its own owner.
+    pub(crate) fn bound_entries_by_flow(&self, entries: &mut [FunctionEntry]) {
+        let Some(ends) = &self.flow_ends else { return };
+        for entry in entries {
+            let vma = entry.addr.get_offset();
+            entry.size = crate::funcextent::bound_by_flow(vma, entry.size, Some(vma), ends);
+        }
     }
 
     /// The canonical entries eligible for automatic whole-binary decompilation.
@@ -2767,6 +2813,7 @@ impl ConsoleProgram {
             }
             self.pending_synthetic_entries.push(Address::new(Rc::clone(&code_space), vma));
         }
+        self.flow_ends = found.flow_ends;
         self.arch_mut().dos_exit_sites = found.dos_exits.sites;
         found.dos_exits.noreturn
     }
@@ -3976,6 +4023,7 @@ fn empty_program(
         loader_data_objects: Vec::new(),
         loader_data_exports: Vec::new(),
         mz_evidence: None,
+        flow_ends: None,
         data_name_aliases: HashMap::new(),
         declared_extents: BTreeMap::new(),
         declared_entries: BTreeSet::new(),

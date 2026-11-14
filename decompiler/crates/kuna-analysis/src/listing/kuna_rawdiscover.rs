@@ -32,6 +32,7 @@
 //! sweep its relocations ([`super::kuna_mzsweep`]). `--define-function`
 //! remains the way to assert a boundary neither oracle found.
 
+use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use kuna_base::space::AddrSpace;
@@ -42,6 +43,7 @@ use crate::listing::classify::classify;
 use crate::listing::decode::decode_one;
 use crate::listing::kuna_dosexit::{self, DosExits};
 use crate::listing::kuna_mzsweep::{self, MzEvidence, SweepRun};
+use crate::listing::kuna_rawextent;
 use crate::listing::{Listing, ListingDetail};
 
 /// What [`discover`] finds in a raw image.
@@ -50,11 +52,14 @@ pub struct RawDiscovery {
     pub entries: Vec<u64>,
     /// The DOS exits of the code the descent decoded ([`kuna_dosexit`]).
     pub dos_exits: DosExits,
+    /// Where each entry's flow ends ([`kuna_rawextent`]), on x86 real mode.
+    pub flow_ends: Option<BTreeMap<u64, u64>>,
 }
 
 /// Every function entry a raw image yields: the seeds, the targets of every
 /// direct call in the executable bytes, and the direct-call closure of both,
-/// with the DOS exits of the code the descent decoded.
+/// with the DOS exits of the code the descent decoded and, on x86 real mode,
+/// where each entry's flow ends.
 ///
 /// A seed is never dropped, so the inventory can only grow; an image whose
 /// seeds reach no call and whose gaps hold no code returns exactly what the
@@ -74,7 +79,7 @@ pub fn discover(
     mz: Option<&MzEvidence>,
 ) -> RawDiscovery {
     if seeds.is_empty() || exec_ranges.is_empty() {
-        return RawDiscovery { entries: seeds.to_vec(), dos_exits: DosExits::default() };
+        return RawDiscovery { entries: seeds.to_vec(), dos_exits: DosExits::default(), flow_ends: None };
     }
     let mut roots: Vec<u64> = seeds.to_vec();
     roots.extend(crate::loader::kuna_realmodecs::without_commits(arch, translate, || {
@@ -110,7 +115,8 @@ pub fn discover(
     out.sort_unstable();
     out.dedup();
     let dos_exits = kuna_dosexit::analyze(arch, translate, code_space, &listing);
-    RawDiscovery { entries: out, dos_exits }
+    let flow_ends = kuna_rawextent::measure(arch, translate, code_space, &listing, &out, &dos_exits);
+    RawDiscovery { entries: out, dos_exits, flow_ends }
 }
 
 /// Decode `exec_ranges` end to end and return the target of every direct call.

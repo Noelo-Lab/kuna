@@ -1823,7 +1823,16 @@ sectionless ELF; a corrupt one the loader recovers from the program headers) is 
 against its executable load segments instead, so the last entry of a segment runs to
 the end of that segment rather than to the end of a `.text` — looser, but still an
 upper bound, where every entry used to report `0` and `--min-size 1` discarded the
-whole binary. A caller needing the exact body must still decompile.
+whole binary. An MS-DOS executable or a `--raw-image` x86 real-mode program has no
+section table, and its one CODE range is the whole load module, data segments
+included, so there the extent ends where the function's flow does: from the entry to
+the end of the last instruction reached from it before the next entry, calls not
+entered, a call to a no-return function or a DOS exit ending its path, and a `cs:`
+switch table followed to its cases. The span is still contiguous from the entry
+(a table inside the body counts) and never longer than the clip; an entry whose flow
+meets a computed branch nothing resolves keeps the clip, and an address past the end
+of its function's flow reports `0`. A caller needing the exact body must still
+decompile.
 
 Per-function `code` can include whole-batch inference and pointer-argument casts
 that standalone `kuna decompile` cannot derive (elsewhere, see the injected
@@ -2812,7 +2821,7 @@ The target is a **name**, an **address**, or a **range**:
 
 | Target | What is listed |
 |---|---|
-| `main` | The function's extent — the same clip `kuna functions` reports as `size`. A name is resolved as a symbol first, so a function really called `abc` is never read as `0xabc`. |
+| `main` | The function's extent — the same extent `kuna functions` reports as `size`. On a DOS program that is where the function's flow ends, and a note names the range holding the bytes up to the next function. A name is resolved as a symbol first, so a function really called `abc` is never read as `0xabc`. |
 | `0x8049850` (`--addr` for bare hex) | That function's extent if the address is a discovered entry; otherwise 64 bytes from exactly there. |
 | `0x1140-0x11a0`, `0x1140..0x11a0` | Exactly that half-open span — the direct replacement for `objdump -d --start-address=.. --stop-address=..`. |
 
@@ -3219,8 +3228,16 @@ A listing whose length nobody asked for is capped at 1024 instructions, flagged
 `truncated` and marked in the header. The extent is only an upper bound — clipped
 at the next discovered entry or the end of the CODE section — so where discovery
 is thin one "function" can run to the end of `.text` (`main` in one unpacked
-crackme clips to 19,106 instructions). An explicit `--count`, `--bytes` or range
-is honored however long.
+crackme clips to 19,106 instructions). On a DOS program, whose code range holds its
+data too, the listing stops where the function's flow ends and says so:
+
+```
+$ kuna disassemble dazzle.exe sub_3a856
+note: sub_3a856 ends at 0x3a872, after the last instruction its flow reaches; no path from its entry reaches the 12146 bytes from there to 0x3d7e4 (the range 0x3a872-0x3d7e4 lists them)
+# 13 instructions at sub_3a856 @ 0x3a856 (0x3a856..0x3a872, 28 bytes)
+```
+
+An explicit `--count`, `--bytes` or range is honored however long.
 
 This is a query, not an engine change, and it reinvents nothing: the binary is
 loaded once through the same in-process seam `decompile-all` uses

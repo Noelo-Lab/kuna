@@ -379,6 +379,7 @@ fn listing_for(args: &DisArgs, prog: &ConsoleProgram, region: Region) -> Result<
             if cut_short_by_image(&region, args.count, rows.len(), end) {
                 notes.push(image_bound_note(prog, &region));
             }
+            notes.extend(flow_end_note(prog, &region));
             if args.json {
                 let doc_notes = crate::funcdecl::json_notes(prog, &notes);
                 format!("{}\n", dumps_indent2(&result_json(args, &region, &rows, truncated, &doc_notes)))
@@ -733,6 +734,26 @@ fn image_bound_note(prog: &ConsoleProgram, region: &Region) -> String {
          0x{:x} ends -- the bytes above it are not in the image{resume}",
         region.start
     )
+}
+
+/// (kuna #1288) Say that the function's flow, not the next entry, ended a
+/// listing whose length came from the extent, and name the range that lists
+/// the bytes it left out (`ConsoleProgram::extent_cut_by_flow`).
+fn flow_end_note(prog: &ConsoleProgram, region: &Region) -> Option<String> {
+    if !region.derived {
+        return None;
+    }
+    let (extent, clip) = prog.extent_cut_by_flow(region.start)?;
+    if extent == 0 || region.end != Some(region.start.saturating_add(extent)) {
+        return None;
+    }
+    let (end, stop) = (region.start + extent, region.start + clip);
+    let name = region.name.clone().unwrap_or_else(|| format!("0x{:x}", region.start));
+    Some(format!(
+        "{name} ends at 0x{end:x}, after the last instruction its flow reaches; no path from its \
+         entry reaches the {} bytes from there to 0x{stop:x} (the range 0x{end:x}-0x{stop:x} lists them)",
+        clip - extent
+    ))
 }
 
 /// Split an explicit `start-end` / `start..end` range operand.
