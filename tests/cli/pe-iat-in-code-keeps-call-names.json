@@ -29,7 +29,7 @@
       {
         "path": "functions[0].code",
         "op": "matches",
-        "value": "VirtualAlloc\\([^;]*GetModuleHandleA\\("
+        "value": "VirtualAlloc\\(0x40,GetModuleHandleA\\((0|NULL)\\)\\)"
       }
     ]
   },

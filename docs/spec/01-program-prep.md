@@ -4261,8 +4261,8 @@ moves.
   `ActionDefaultParams` sees the target of a `call [abs32]` as a temporary its
   flow has not linked to the slot yet, and `ActionDeindirect` later merges the
   prototype `query_function` reads off the symbol, so a prototype parked only as
-  pieces is not seen there (`ActionDefaultParams` gives such a call its parked
-  pieces through the slot query of 04 §4.1 instead). The commit also records each locked address, and the
+  pieces is not seen there (`ActionDefaultParams` gives such a call the
+  parameters of its parked pieces through the slot query of 04 §4.1 instead). The commit also records each locked address, and the
   flow makes a call through one of those slots direct before the spec is built
   (02 §2.1), so the locked prototype is copied in at flow instead of costing the
   function a restart. Measured on the local RE-challenge corpus, 175 distinct

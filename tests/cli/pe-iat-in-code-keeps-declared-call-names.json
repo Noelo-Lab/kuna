@@ -34,9 +34,9 @@
       {
         "path": "functions[0].code",
         "op": "matches",
-        "value": "VirtualAlloc\\(\\(void \\*\\)0x40,\\(unsigned int\\)GetModuleHandleA\\(NULL\\),"
+        "value": "VirtualAlloc\\(0x40,GetModuleHandleA\\((0|NULL)\\)\\)"
       }
     ]
   },
-  "notes": "Both IAT names survive, and the call through each slot takes the win32sigs declaration parked there on the first pass: GetModuleHandleA(NULL), and VirtualAlloc with its two pushed arguments in the declared slots. The synthetic call pushes two of VirtualAlloc's four arguments, so the other two read the caller's stack, as the callee would."
+  "notes": "Default Win32 declarations must not force unbacked arguments onto a late indirect call. This synthetic two-argument call keeps both IAT names and the two arguments established by its instructions; GetModuleHandleA's one push backs its declaration, so its argument may read NULL."
 }

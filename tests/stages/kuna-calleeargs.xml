@@ -37,10 +37,13 @@
     address to vsprintf; pick reads its second argument through a copy of ESP.
     Every call keeps every argument it is passed.
     The _NMSG_WRITE tail: GetStdHandle and WriteFile are called through the
-    import table, and the win32sigs prototypes parked at their slots state
-    their arguments in both passes, so the push of -12 is GetStdHandle's one
+    import table, and the win32sigs parameters parked at their slots reach
+    both calls in both passes, because the caller's pushes back every declared
+    slot: WriteFile's last three arguments are pushed before strlen (whose own
+    return pops only its return address) and GetStdHandle (whose declaration
+    states its pop) are called. So the push of -12 is GetStdHandle's one
     argument and WriteFile takes it and its other four (#25). Before those
-    prototypes reached a call through the slot, GetStdHandle was unprototyped
+    parameters reached a call through the slot, GetStdHandle was unprototyped
     and refused every stack trial by the upstream local-alias test (the
     function takes its own parameter's address): off, the push stayed a local
     store; on, it was dead and the constant was gone.
@@ -256,7 +259,7 @@ c3
 <stringmatch name="CALLEEARGS #22: the callee reading through an address parked in xmm0 keeps both" min="2" max="2">sub_401020\(0x11,0x22\);</stringmatch>
 <stringmatch name="CALLEEARGS #23: the callee reading through an address stored and loaded back keeps both" min="2" max="2">sub_401040\(0x11,0x22\);</stringmatch>
 <stringmatch name="CALLEEARGS #24: a call whose callee states no extent does not take the local a bounded call frees" min="2" max="2">sub_4010c0\(7\);</stringmatch>
-<stringmatch name="CALLEEARGS #25: the -12 push is GetStdHandle's argument in both passes" min="2" max="2">WriteFile\(GetStdHandle\(0xfffffff4\),</stringmatch>
+<stringmatch name="CALLEEARGS #25: the -12 push is GetStdHandle's argument in both passes" min="2" max="2">WriteFile\(\(void \*\)GetStdHandle\(0xfffffff4\),</stringmatch>
 <stringmatch name="CALLEEARGS #26: the callee reading through an address stored over its first argument keeps both" min="2" max="2">sub_401120\(0x11,0x22\);</stringmatch>
 <stringmatch name="CALLEEARGS #27: the callee reading through an address copied by an 8-byte move keeps both" min="2" max="2">sub_401140\(0x11,0x22\);</stringmatch>
 <stringmatch name="CALLEEARGS #28: the callee reading through a stack address a call leaves in ECX keeps both" min="2" max="2">sub_401170\(0x11,0x22\);</stringmatch>

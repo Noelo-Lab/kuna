@@ -12,7 +12,7 @@ use kuna_console::ifaceterm::ConsoleCommands;
 
 const FIXTURE: &str = "pe_iatincode_readonly_i386.exe";
 const ENTRY: u64 = 0x401010;
-const NAMED_CALL: &str = "VirtualAlloc((void *)0x40,(uint4)GetModuleHandleA(NULL),";
+const NAMED_CALL: &str = "VirtualAlloc(0x40,GetModuleHandleA(NULL));";
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))

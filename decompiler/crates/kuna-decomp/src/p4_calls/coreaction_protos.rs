@@ -97,6 +97,14 @@ use kuna_num::opcodes::OpCode;
 use crate::action::{ruleflags, Action, ActionBase, ActionContext, ActionGroupList, ApplyResult};
 use crate::funcdata::Funcdata;
 
+#[cfg(test)]
+fn exact_indirect_target_slot(
+    data: &Funcdata,
+    call_op: crate::context::OpId,
+) -> Option<(Address, int4)> {
+    indirect_target_slot(data, call_op).map(|(slot, size, _)| (slot, size))
+}
+
 /// Resolve only a literal memory slot feeding `CALLIND`.
 ///
 /// SLEIGH may spell the dereference either as `LOAD(slot) -> CALLIND` or as an
@@ -106,10 +114,13 @@ use crate::funcdata::Funcdata;
 /// need type recovery and the later de-indirection restart contract.  This
 /// early query exists for import veneers whose complete body is one exact
 /// load+jump, and for calls through an import slot.
-fn exact_indirect_target_slot(
+///
+/// The flag says the slot was read through the call's own instruction
+/// ([`crate::p4_calls::kuna_slotargs`]).
+fn indirect_target_slot(
     data: &Funcdata,
     call_op: crate::context::OpId,
-) -> Option<(Address, int4)> {
+) -> Option<(Address, int4, bool)> {
     let call = data.obank().get(call_op)?;
     if call.code() != OpCode::CPUI_CALLIND {
         return None;
@@ -122,9 +133,9 @@ fn exact_indirect_target_slot(
         }
         if target_vn.get_space().get_type() == kuna_base::space::spacetype::IPTR_INTERNAL {
             let slot = crate::kuna_msvcimportcall::loaded_slot(data, call_op, target_vn.get_addr().clone(), target_vn.get_size())?;
-            return Some((slot, target_vn.get_size()));
+            return Some((slot, target_vn.get_size(), true));
         }
-        return Some((target_vn.get_addr().clone(), target_vn.get_size()));
+        return Some((target_vn.get_addr().clone(), target_vn.get_size(), false));
     };
     let load = data.obank().get(load_id)?;
     if load.code() != OpCode::CPUI_LOAD || load.get_out() != Some(target) {
@@ -142,7 +153,7 @@ fn exact_indirect_target_slot(
     }
     let space = Rc::clone(manager.get_space(index as int4)?);
     let offset = space.wrap_offset(pointer.get_offset());
-    Some((Address::new(space, offset), target_vn.get_size()))
+    Some((Address::new(space, offset), target_vn.get_size(), false))
 }
 
 // =============================================================================
@@ -494,27 +505,28 @@ impl Action for ActionDefaultParams {
                     None
                 } else {
                     let op = data.get_call_specs(i).get_op();
-                    exact_indirect_target_slot(data, op).and_then(|(slot, size)| {
+                    indirect_target_slot(data, op).and_then(|(slot, size, own)| {
                         let usepoint = data
                             .obank()
                             .get(op)
                             .map(|call| call.get_addr().clone())
                             .unwrap_or_default();
                         arch.query_indirect_slot_type(&slot, size, &usepoint)
-                            .map(|slot_type| (slot, slot_type))
+                            .map(|slot_type| (slot, slot_type, own))
                     })
                 };
                 let slot_proto = match &indirect_slot {
-                    Some((_, crate::context::IndirectSlotType::Prototype(proto))) => {
+                    Some((_, crate::context::IndirectSlotType::Prototype(proto), false)) => {
                         Some(Rc::clone(proto))
                     }
                     _ => None,
                 };
+                let own_slot = matches!(indirect_slot, Some((_, crate::context::IndirectSlotType::FunctionCode, true)));
                 let pieces_entry = if has_funcdata {
                     Some(data.get_call_specs(i).get_entry_address().clone())
                 } else {
                     match &indirect_slot {
-                        Some((slot, crate::context::IndirectSlotType::FunctionCode)) => {
+                        Some((slot, crate::context::IndirectSlotType::FunctionCode, _)) => {
                             Some(slot.clone())
                         }
                         _ => None,
@@ -524,8 +536,9 @@ impl Action for ActionDefaultParams {
                     // (kuna, Phase 3) A host-declared prototype model rides the
                     // locked pieces (ghidra-mode `<prototype model=…>`); `None`
                     // on the standalone path, keeping the default-model seed.
+                    let pieces = arch.callee_proto_pieces(&entry);
                     (
-                        arch.callee_proto_pieces(&entry),
+                        if own_slot { pieces.map(crate::p4_calls::kuna_slotargs::input_only) } else { pieces },
                         arch.callee_proto_model(&entry),
                         arch.bound_proto_model(&entry),
                     )
@@ -583,7 +596,9 @@ impl Action for ActionDefaultParams {
                                     crate::p4_calls::kuna_calleeprotostack::resolve_declared_extra_pop(
                                         &mut fp,
                                     );
-                                    Some(Rc::new(fp))
+                                    let op = data.get_call_specs(i).get_op();
+                                    (!own_slot || crate::p4_calls::kuna_slotargs::backed(data, op, &fp))
+                                        .then(|| Rc::new(fp))
                                 }
                                 // The callee storage assignment hit an un-ported boundary: fall
                                 // back to the default-model recovery for this call site.

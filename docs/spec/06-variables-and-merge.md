@@ -913,8 +913,10 @@ on (`dest`/`src`, `s1`/`s2`, `haystack`/`needle`, ...; on Windows
 `DuplicateHandle`'s source and target handles), which counts only when
 every such name the local receives is the same one, so a pointer that is one
 `strcmp`'s `s2` and the next one's `s1` keeps its `vN`. A PE reads the same
-way under the SDK's names: `hFile = CreateFileW(a0,...)`, `ReadFile(hFile,...)`,
-`hModule = LoadLibraryW(a0)` and `HeapFree(hHeap,0,lpMem)`. Within a kind the
+way under the SDK's names: `hFile = (void *)CreateFileW(a0,...)`,
+`ReadFile(hFile,...)`, `hModule = (void *)LoadLibraryW(a0)` and
+`HeapFree(hHeap,0,lpMem)` (the declaration gives an import call through its
+slot its parameters only, so the result keeps the type its uses give it). Within a kind the
 earliest call decides, then the lowest slot, and a name equal to a type the
 printed code can mention (`tm`, `FILE`, a DWARF typedef: anything the type
 factory knows by that name) or to a C or Rust keyword is passed over for the

@@ -11,11 +11,14 @@
     `LoadLibraryW`, `hFile` for `CreateFileW`, `hHeap` for `GetProcessHeap`,
     `lpMem` for `HeapAlloc`).  The names ride on the prototype the table parks
     at the import's IAT slot, so they reach a local only through a call whose
-    inputs that prototype locked.  A `call [slot]` reaches it from
+    inputs that prototype locked.  A `call [slot]` reaches its parameters from
     `ActionDefaultParams`, which reads the slot the call's own instruction
-    loads, and `ActionDeindirect` keeps that locked prototype when it makes
-    the call direct.  Without that, the prototype reached such a call only
-    after a restart: on x86-64 never, and `LoadLibraryW` lost its argument.
+    loads (where the caller's own pushes back every declared stack slot), and
+    `ActionDeindirect` keeps that locked declaration when it makes the call
+    direct.  The result stays the one the caller's use recovers, so the handle
+    reads `(void *)LoadLibraryW(a0)` through its declared uses.  Without that,
+    the prototype reached such a call only after a restart: on x86-64 never,
+    and `LoadLibraryW` lost its argument.
 
     The fixtures are
     decompiler/crates/kuna-analysis/tests/fixtures/libcnames_win32_{i386,x86_64}.exe
@@ -66,11 +69,11 @@ c3
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="libcnames-win32 #1: with the option off LoadLibraryW's result is a vN" min="1" max="1">^  v1 = LoadLibraryW\(a0\);$</stringmatch>
-<stringmatch name="libcnames-win32 #2: with the option on it is hModule, on i386 and x86-64" min="2" max="2">^  hModule = LoadLibraryW\(a0\);$</stringmatch>
+<stringmatch name="libcnames-win32 #1: with the option off LoadLibraryW's result is a vN" min="1" max="1">^  v1 = \(void \*\)LoadLibraryW\(a0\);$</stringmatch>
+<stringmatch name="libcnames-win32 #2: with the option on it is hModule, on i386 and x86-64" min="2" max="2">^  hModule = \(void \*\)LoadLibraryW\(a0\);$</stringmatch>
 <stringmatch name="libcnames-win32 #3: GetProcAddress takes hModule and its result keeps v2" min="2" max="2">^  v2 = GetProcAddress\(hModule,a1\);$</stringmatch>
 <stringmatch name="libcnames-win32 #4: the module handle is declared void * under its SDK name" min="2" max="2">^  void \*hModule; // </stringmatch>
-<stringmatch name="libcnames-win32 #5: CreateFileW's result is hFile, its pointer slots NULL" min="2" max="2">^  hFile = CreateFileW\(a0,0x80000000,1,NULL,3,0x80,NULL\);$</stringmatch>
+<stringmatch name="libcnames-win32 #5: CreateFileW's result is hFile, its pointer slots NULL" min="2" max="2">^  hFile = \(void \*\)CreateFileW\(a0,0x80000000,1,NULL,3,0x80,NULL\);$</stringmatch>
 <stringmatch name="libcnames-win32 #6: CloseHandle reads hFile" min="2" max="2">^ +CloseHandle\(hFile\);$</stringmatch>
 <stringmatch name="libcnames-win32 #7: renaming hModule renames it alone" min="1" max="1">^  v2 = GetProcAddress\(mod,a1\);$</stringmatch>
 <stringmatch name="libcnames-win32 #8: no LoadLibraryW call loses its argument" min="0" max="0">LoadLibraryW\(\)</stringmatch>
