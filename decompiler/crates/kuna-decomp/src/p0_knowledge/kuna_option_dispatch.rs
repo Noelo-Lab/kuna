@@ -130,6 +130,11 @@ kuna_options! { self, p1;
         crate::kuna_fpuemu::apply(self);
         Ok(msg)
     },
+    "mzdgroup" => {
+        let msg = on_off!(mz_dgroup_on, "MS-DOS data segment in DS");
+        crate::kuna_mzdgroup::apply(self);
+        msg
+    },
     "syscallregs" => {
         let (mode, msg) = crate::kuna_syscallregs::OptionSyscallRegs.apply(p1)?;
         self.syscall_regs = mode;
@@ -198,6 +203,9 @@ kuna_options! { self, p1;
     },
     "bejoinpass" => {
         let (mode, msg) = crate::kuna_bejoinpass::BeJoinPassMode::parse(p1)?;
+        if mode != self.be_join_pass {
+            self.kuna_wide.forget_verdicts();
+        }
         self.be_join_pass = mode;
         Ok(msg)
     },

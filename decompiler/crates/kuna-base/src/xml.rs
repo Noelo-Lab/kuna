@@ -2176,6 +2176,7 @@ mod tests {
         // and kuna-stubtailcall / a loader-proven lazy-binding stub flowed as a tail call
         // and kuna-gotimportproto / a type-only declaration bound at a MIPS GOT import call
         // and kuna-aggregatefields / declared records kept whole until their fields are named
+        // and kuna-bejoin-residue / -O0 reloads, a pair passed to a 64-bit runtime routine, a whole wrapper's sign test (option bejoin)
         // and kuna-armderef / the ARM pointer-access xref rule is inert on the console path
         // and kuna-copywaves / copy propagations seed rule-pool waves
         // and kuna-deadcascade / dead-op removal takes a dead chain out at once (option deadcascade)
@@ -2200,7 +2201,9 @@ mod tests {
         // and kuna-brktrap / an AArch64 compiler trap ends the flow
         // and kuna-calleepurge / an x86-32 callee's stack purge read off its own returns
         // and kuna-calleeargs / an x86-32 callee's own code bounds its stack arguments
-        assert_eq!(count, 751, "corpus file count drifted");
+        // and kuna-fcvtround-a64 / AArch64 FCVT and FRINT round in their own mode
+        // and kuna-repframecopy / a by-value argument copied with rep movs reaches its call
+        assert_eq!(count, 754, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
