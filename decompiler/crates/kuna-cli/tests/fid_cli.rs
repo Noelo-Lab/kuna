@@ -71,6 +71,32 @@ fn archive_members_keep_the_vendored_database_and_leave_no_staging_files() {
 }
 
 #[test]
+fn an_archive_no_member_of_which_the_language_describes_is_refused() {
+    let scratch = tempfile::tempdir().unwrap();
+    let object = std::fs::read(common::fixture("fid_lib_x86_64.o")).unwrap();
+    let mut archive = b"!<arch>\n".to_vec();
+    archive_member(&mut archive, "first.o/", &object);
+    archive_member(&mut archive, "second.o/", &object);
+    let input = scratch.path().join("library.a");
+    let output = scratch.path().join("library.fid");
+    std::fs::write(&input, archive).unwrap();
+    let result = Command::new(env!("CARGO_BIN_EXE_kuna"))
+        .args(["fid", "build"])
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .args(["--lang", "AARCH64:LE:64:v8A", "--cspec", "default"])
+        .env("SLEIGHHOME", common::repo_root().join("specs"))
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert_eq!(result.status.code(), Some(1), "{stderr}");
+    assert_eq!(stderr.matches("skipped: --lang AARCH64:LE:64:v8A does not describe this object").count(), 2, "{stderr}");
+    assert!(stderr.contains("--lang AARCH64:LE:64:v8A describes none of its object members (2 refused)"), "{stderr}");
+    assert!(!output.exists());
+}
+
+#[test]
 fn query_reports_candidates_collisions_and_invalid_databases() {
     use kuna_analysis::fid::db::FidDb;
     let root = common::repo_root();

@@ -1131,6 +1131,11 @@ impl ParamTrial {
     pub fn is_ind_create_formed(&self) -> bool {
         (self.flags & param_trial_flags::INDCREATE_FORMED) != 0
     }
+    /// (kuna) Take a trial formed by indirect creation as a value of its own:
+    /// the half of a callee's proven pair the function hands back.
+    pub fn clear_ind_create_formed(&mut self) {
+        self.flags &= !param_trial_flags::INDCREATE_FORMED;
+    }
     /// Mark this trial as possibly affected by conditional execution (C++
     /// `setCondExeEffect`).
     pub fn set_cond_exe_effect(&mut self) {

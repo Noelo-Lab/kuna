@@ -163,6 +163,9 @@ mod ctypes_per_arch;
 #[path = "decompile_budget_cli.rs"]
 mod decompile_budget_cli;
 
+#[path = "dos_dgroup_cli.rs"]
+mod dos_dgroup_cli;
+
 #[path = "dos_fpuemu_cli.rs"]
 mod dos_fpuemu_cli;
 
@@ -225,6 +228,9 @@ mod explicit_branch_assertion_cli;
 
 #[path = "fid_cli.rs"]
 mod fid_cli;
+
+#[path = "fid_db_status_cli.rs"]
+mod fid_db_status_cli;
 
 #[path = "float_unordered_compare.rs"]
 mod float_unordered_compare;
@@ -530,6 +536,9 @@ mod xrefs_cli;
 
 #[path = "xrefs_data_refs_cli.rs"]
 mod xrefs_data_refs_cli;
+
+#[path = "xrefs_fileset_entry.rs"]
+mod xrefs_fileset_entry;
 
 #[path = "xrefs_got_call.rs"]
 mod xrefs_got_call;

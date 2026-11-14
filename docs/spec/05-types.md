@@ -2869,6 +2869,33 @@ member access from pointer types, and `ruleaction_6.rs (RulePtraddUndo,
 RulePtrsubUndo)` in the main pool reverts them when the types they were built
 from degrade — the visible ping that the 7-pass ceiling exists to bound.
 
+### A rounding user op takes and returns a float (`kuna_roundingops.rs`)
+
+p-code rounds a float to an integral float only toward minus infinity
+(`FLOAT_FLOOR`), toward plus infinity (`FLOAT_CEIL`) and to nearest with ties
+away from zero (`FLOAT_ROUND`). A processor spec lifts the other roundings to
+user ops named after the C library functions they compute: `FLOAT_ROUNDEVEN`
+(ties to even, `roundeven`), `FLOAT_TRUNC` (toward zero, `trunc`), and
+`FLOAT_RINT` and `FLOAT_NEARBYINT` (the current rounding mode, with and
+without the inexact exception); chapter 02 gives the AArch64 instructions
+that use them. A CALLOTHER carries no type, so
+`double g(double x, double y) { return rint(x) * y; }` printed its parameter
+as `unsigned long` and the product through a bit-reinterpreting union.
+Type inference and the cast pass's local type queries give the result and the
+one operand of a CALLOTHER whose user op has one of these names the float of
+the Varnode's width, as they do for `FLOAT_ROUND`
+(`decompiler/crates/kuna-decomp/src/p5_types/kuna_roundingops.rs
+(output_type, input_type)`). The user-op ids are resolved by name once per
+program, and a width the processor has no float format for (AArch64 half
+precision) keeps the untyped default. Such a CALLOTHER is a pure function of
+its operand, so dead-code removal deletes it once its result is unused
+instead of keeping it as a call statement (`is_pure_call`, read by
+`decompiler/crates/kuna-decomp/src/p9_emit/coreaction_render.rs
+(ActionDeadCode)`): a vector rounding whose other lanes the function never
+reads prints only the lanes it uses. Two such ops are never merged, and a
+constant operand is not folded. This is a correction, not an option: the ops
+compute on floats by definition.
+
 ### A value returned in a float register is a float (`kuna_floatreg.rs`)
 
 A calling convention that reserves registers for floating point makes the

@@ -1,5 +1,6 @@
 //! Shared object-file view, including Mach-O slice selection and TE/MZ refusal.
 
+use kuna_analysis::loader::kuna_kernelcache::FilesetMap;
 use kuna_analysis::loader::macho_fat::SlicePref;
 
 /// Inspect a thin Mach-O through its mapping; retain legacy reads for other inputs.
@@ -17,9 +18,18 @@ pub(crate) fn inspect<T>(binary: &str, inspect: impl FnOnce(&[u8]) -> Option<T>)
 /// Read the loader's selected image slice for an object-file consumer.
 /// TE inputs are loadable but cannot be represented by `object::File`.
 pub(crate) fn image_bytes(binary: &str, pref: SlicePref) -> Result<Vec<u8>, String> {
-    let bytes = kuna_analysis::loader::elf_shdr::read_image_sliced(binary, pref)
+    image_bytes_and_fileset(binary, pref).map(|(bytes, _)| bytes)
+}
+
+/// [`image_bytes`], and the entry map of the `MH_FILESET` kernel collection
+/// the image is one entry of.
+pub(crate) fn image_bytes_and_fileset(
+    binary: &str,
+    pref: SlicePref,
+) -> Result<(Vec<u8>, Option<FilesetMap>), String> {
+    let image = kuna_analysis::loader::elf_shdr::read_image_selected(binary, pref)
         .map_err(|e| format!("{binary}: {e}"))?;
-    object_view(binary, bytes)
+    Ok((object_view(binary, image.bytes)?, image.fileset))
 }
 
 /// `[start, end)` offsets into an image slice whose bytes are not the file's.

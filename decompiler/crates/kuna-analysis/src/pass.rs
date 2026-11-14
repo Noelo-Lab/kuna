@@ -616,6 +616,10 @@ pub struct AnalysisOutput {
     /// [`FidMatch::by_signature`] guesses at the same address and are never
     /// committed on their own.
     pub signature_vetoes: Vec<FidMatch>,
+    /// What became of each `.fid` database the FID pass was configured with
+    /// (loaded, missing, unreadable, invalid, incompatible). Produced only by
+    /// [`crate::fid::FidPass`] when `kuna_fid_db` names a database.
+    pub fid_databases: Vec<crate::fid::kuna_fidapply::FidDbReport>,
     /// Lowest-priority function names, committed after every other name stream:
     /// only an existing `sub_`/`FUN_` placeholder function takes the name, and
     /// only when no function, data symbol or alias anywhere already uses it. No
@@ -854,6 +858,7 @@ impl AnalysisOutput {
         self.comments.extend(other.comments);
         self.fid_names.extend(other.fid_names);
         self.signature_vetoes.extend(other.signature_vetoes);
+        self.fid_databases.extend(other.fid_databases);
         self.fallback_names.extend(other.fallback_names);
         self.cpp_dwarf.symbols.extend(other.cpp_dwarf.symbols);
         self.cpp_dwarf.locals.extend(other.cpp_dwarf.locals);

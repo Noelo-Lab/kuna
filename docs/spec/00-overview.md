@@ -303,16 +303,20 @@ Four front-ends drive one engine assembly:
   which renders its one function through the same serializer
   (`decompiler/crates/kuna-cli/src/decompile_all.rs (result_json)`). A caller can
   narrow it with `--omit` (`decompiler/crates/kuna-cli/src/decompile_all/omit.rs`):
-  each named collection (`line_mappings`, `variables` with `stack_objects`,
-  `types`) is absent from every record and listed in a top-level `omitted`, so
-  absence is never read as an examined empty collection; a document that omits
+  each named collection (`aliases`, `line_mappings`, `variables` with
+  `stack_objects`, `types`) is absent from every record and listed in a
+  top-level `omitted`, so absence is never read as an examined empty
+  collection; a document that omits
   nothing carries no `omitted` key and is byte-identical to one rendered without
   the flag. The omission reaches the decompile loop, not just the serializer:
   `--omit variables` skips the variable and stack-object extraction exactly as
   `--no-vars` does, and the markup render behind the line mappings and the
   variables' line evidence (`print_c_with_provenance`) runs only when one of the
   two is still wanted (`decompile_all.rs (Args::wants_provenance)`). `code` is
-  the plain render in every case, so it does not change.
+  the plain render in every case, so it does not change. `aliases` names no
+  decompile work: the list is an inventory fact gathered at load time, so
+  omitting it only shrinks the record of an entry exporting hundreds of names,
+  which keeps its primary `name` and address.
 
   The full callable-symbol inventory these surfaces share is
   `decompiler/crates/kuna-console/src/engine.rs (ConsoleProgram::function_entries_canonical)`,
