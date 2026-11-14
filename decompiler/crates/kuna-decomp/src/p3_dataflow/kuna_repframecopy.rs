@@ -11,8 +11,9 @@
 //! pointer to the bottom of the frame makes every frame slot look aliased, so
 //! earlier calls lose their pushed arguments too.
 //!
-//! Right after the first heritage pass, which links the registers but not yet
-//! the stack, such a loop is replaced by that many copies of its body, in
+//! On x86-32 (a 4-byte stack pointer), right after the first heritage pass,
+//! which links the registers but not yet the stack, such a loop is replaced by
+//! that many copies of its body, in
 //! order, so the expansion is exact, overlapping moves included. A move
 //! qualifies when its count enters as the same constant on every path, it
 //! copies at most [`MAX_ELEMENTS`] elements and [`MAX_BYTES`] bytes, and its
@@ -37,6 +38,11 @@ pub(crate) const MAX_ELEMENTS: u64 = 16;
 
 /// The most bytes a move may copy and still be expanded.
 pub(crate) const MAX_BYTES: u64 = 64;
+
+/// The stack pointer width of the one target, x86-32. On x86-64 the copy
+/// leaves `RCX` zero and `RSI` at the source's end, which the System V
+/// register trials of a call that follows read as arguments.
+const STACK_POINTER_BYTES: i32 = 4;
 
 /// One `rep movs` loop: `head` tests the count and leaves when it is zero,
 /// `body` moves one element and branches back.
@@ -458,6 +464,9 @@ pub(crate) fn expand_all(fd: &mut Funcdata) -> i32 {
     }
     let Some(stack) = fd.get_arch().manage().get_stack_space().cloned() else { return 0 };
     let Some(sp) = fd.find_spacebase_input(&stack) else { return 0 };
+    if fd.vbank().get(sp).map_or(true, |v| v.get_size() != STACK_POINTER_BYTES) {
+        return 0;
+    }
     let found: Vec<RepMove> =
         (0..fd.bblocks_get_size()).filter_map(|i| rep_move(fd, sp, fd.bblocks_get_block(i))).collect();
     if !found.iter().any(|m| m.to_arguments) {

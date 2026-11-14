@@ -24,6 +24,11 @@
 ;   loop_fill()           fills a local Rect with an indexed loop (r[i] = 3*i)
 ;                         and passes it by value to fill8(r, 1): the copy reads
 ;                         slots the indexed store writes, so it stays a loop.
+;   paint3(a, b, c)       __stdcall, reads all three, `ret 0xc` (after entry).
+;   big_draw(a, b, src)   calls paint3(a, b, 3), then passes a 32-dword struct
+;                         by value: the copy stays a loop and its bottom-of-frame
+;                         pointer is what `calleeargs` keeps from costing paint3
+;                         its pushed arguments (tests/stages/kuna-calleeargs.xml).
 ;
 ; Build: nasm -f bin -I . -o repframecopy_pe_i386.exe repframecopy_pe_i386.asm
 
@@ -206,6 +211,37 @@ entry:
     rep movsd
     call forward
     call loop_fill
+    push table
+    push 2
+    push 1
+    call big_draw
+    add esp, 0xc
+    ret
+
+    align 16, db 0xcc
+paint3:
+    mov eax, [esp+4]
+    add eax, [esp+8]
+    imul eax, [esp+0xc]
+    mov [sink], eax
+    ret 0xc
+
+    align 16, db 0xcc
+big_draw:
+    push esi
+    push edi
+    push 3
+    push dword [esp+0x14]
+    push dword [esp+0x14]
+    call paint3
+    sub esp, 0x80
+    mov edi, esp
+    mov esi, [esp+0x94]
+    mov ecx, 0x20
+    rep movsd
+    call take_big
+    pop edi
+    pop esi
     ret
 
 section .rdata

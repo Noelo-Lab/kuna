@@ -1270,7 +1270,10 @@ earlier pass guarded the frame, the guard is withdrawn for the whole function
 Right after the first heritage pass, which links the registers but not yet the
 stack, `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_repframecopy.rs
 (expand_all)` expands a `rep movs` that builds a by-value argument block
-(called from `ActionHeritage`). SLEIGH lifts the instruction as a head that
+(called from `ActionHeritage`). It runs on x86-32 only, where the stack pointer
+is 4 bytes: on x86-64 the copy leaves `RCX` zero and `RSI` at the source's end,
+and the System V register trials of the call that follows would read both as
+arguments. SLEIGH lifts the instruction as a head that
 leaves when the count register is zero and a body that steps the count down by
 one, moves one element through `ESI`/`EDI` and branches back. A move into the
 outgoing area (`sub esp,0x20; mov edi,esp; rep movsd; call fill`) walks a

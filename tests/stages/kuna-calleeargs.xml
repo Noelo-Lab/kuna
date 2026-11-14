@@ -21,6 +21,9 @@
     before a `mov edi,esp; rep movsd` by-value copy. The copy is expanded
     before the stack is heritaged (kuna-repframecopy.xml), so paint keeps all
     three in both passes.
+    repframecopy_pe_i386.exe, big_draw (0x401210): paint3(a, b, 3) before a
+    32-dword by-value copy, too large to expand. Off, paint3 prints with no
+    arguments; on, with all three.
     stdcallpop_pe_i386.exe, the CRT _NMSG_WRITE (0x40264d): off, strcpy, strcat
     and strlen print with no arguments; on, each with its own, and strlen with
     exactly one. Both passes pin that the unprototyped GetStdHandle and
@@ -97,6 +100,23 @@ c3
   <com>read symbols</com>
   <com>function bounds 0x401000 as draw</com>
   <com>load function draw</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/repframecopy_pe_i386.exe</com>
+  <com>option calleeargs off</com>
+  <com>read symbols</com>
+  <com>function bounds 0x4011f0 as paint3</com>
+  <com>function bounds 0x401210 as big_draw</com>
+  <com>load function big_draw</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/repframecopy_pe_i386.exe</com>
+  <com>read symbols</com>
+  <com>function bounds 0x4011f0 as paint3</com>
+  <com>function bounds 0x401210 as big_draw</com>
+  <com>load function big_draw</com>
   <com>decompile</com>
   <com>print C</com>
   <com>clear architecture</com>
@@ -262,4 +282,6 @@ c3
 <stringmatch name="CALLEEARGS #28: the callee reading through a stack address a call leaves in ECX keeps both" min="2" max="2">sub_401170\(0x11,0x22\);</stringmatch>
 <stringmatch name="CALLEEARGS #29: turning the option on after a walk with it off still keeps both" min="2" max="2">sub_401180\(0x11,0x22\);</stringmatch>
 <stringmatch name="CALLEEARGS #30: the callee reading through a stack address it stored through a pointer keeps both" min="2" max="2">sub_401210\(0x11,0x22\);</stringmatch>
+<stringmatch name="CALLEEARGS #31: off, the call before a by-value copy too large to expand has no arguments" min="1" max="1">paint3\(\);</stringmatch>
+<stringmatch name="CALLEEARGS #32: on, it keeps all three" min="1" max="1">paint3\(a0,a1,3\);</stringmatch>
 </decompilertest>
