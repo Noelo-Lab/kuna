@@ -6809,6 +6809,9 @@ pub struct FuncCallSpecs {
     /// (kuna) The model the direct callee's register inputs select. See
     /// [`crate::p4_calls::kuna_calleereginputs`].
     callee_reg_model: Option<Rc<ProtoModel>>,
+    /// (kuna) The extrapop the direct callee's own returns state. See
+    /// [`crate::p4_calls::kuna_calleepurge`].
+    callee_purge: Option<int4>,
 }
 
 impl FuncCallSpecs {
@@ -6846,6 +6849,7 @@ impl FuncCallSpecs {
             jump_target_storage: None,       // (kuna) tailcalljump
             plt_stub: None,                  // (kuna) pltlocal
             callee_reg_model: None,
+            callee_purge: None,
         }
     }
 
@@ -6879,6 +6883,7 @@ impl FuncCallSpecs {
         res.jump_target_storage = self.jump_target_storage.clone();
         res.plt_stub = self.plt_stub.clone();
         res.callee_reg_model = self.callee_reg_model.clone();
+        res.callee_purge = self.callee_purge;
         res
     }
 
@@ -7243,6 +7248,16 @@ impl FuncCallSpecs {
     /// Record the model the direct callee's register inputs select.
     pub fn set_callee_reg_model(&mut self, model: Option<Rc<ProtoModel>>) {
         self.callee_reg_model = model;
+    }
+
+    /// The extrapop the direct callee's own returns state, if read.
+    pub fn callee_purge(&self) -> Option<int4> {
+        self.callee_purge
+    }
+
+    /// Record the extrapop the direct callee's own returns state.
+    pub fn set_callee_purge(&mut self, extrapop: Option<int4>) {
+        self.callee_purge = extrapop;
     }
 
     /// (kuna `tailcalljump`) Record the register that carried this tail call's

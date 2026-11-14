@@ -1296,6 +1296,9 @@ pub struct Architecture {
     /// (kuna) Each x86-32 callee's register inputs read off its own entry, keyed
     /// by entry offset; see [`crate::kuna_calleereginputs`].
     pub kuna_callee_reginputs: RefCell<std::collections::HashMap<uintb, Option<u8>>>,
+    /// (kuna) Each x86-32 callee's stack effect read off its own code; see
+    /// [`crate::kuna_calleepurge`].
+    pub kuna_callee_purge: RefCell<crate::kuna_calleepurge::Cache>,
     /// (kuna `callbacktype`) The whole-binary run's record of the constants
     /// declared callback slots carried.
     pub kuna_callbacktype: crate::kuna_callbacktype::Ledger,
@@ -2389,6 +2392,7 @@ impl Architecture {
             kuna_protoorder_types: std::collections::HashMap::new(),
             kuna_vfp_variadic: RefCell::new(None),
             kuna_callee_reginputs: RefCell::new(std::collections::HashMap::new()),
+            kuna_callee_purge: RefCell::new(crate::kuna_calleepurge::Cache::default()),
             kuna_callbacktype: crate::kuna_callbacktype::Ledger::default(),
             kuna_calleevote: crate::kuna_calleevote::Ledger::default(),
             kuna_callerargs: crate::kuna_callerargs::Ledger::default(),

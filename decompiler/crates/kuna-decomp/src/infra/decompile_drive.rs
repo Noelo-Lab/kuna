@@ -150,6 +150,9 @@ impl FlowEnvironment for ArchFlowEnv {
     fn query_call_register_model(&self, entry: &Address) -> Option<Rc<crate::fspec::ProtoModel>> {
         crate::p4_calls::kuna_calleereginputs::callee_register_model(self.arch(), entry)
     }
+    fn query_call_extra_pop(&self, entry: &Address) -> Option<int4> {
+        crate::p4_calls::kuna_calleepurge::callee_extra_pop(self.arch(), entry)
+    }
     fn query_call_no_return(&self, entry: &Address) -> bool {
         crate::p4_calls::kuna_calleenoreturn::is_no_return(self.arch(), entry)
     }
