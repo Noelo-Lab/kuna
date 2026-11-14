@@ -4039,18 +4039,16 @@ fn input_isa_stash(
     vec![("input_isa", explicit)]
 }
 
-/// (kuna) An ELF image's import slots, which only a MIPS relocatable object
-/// has (the GOT entry of an undefined weak function, which the run-time loader
-/// fills). No pass reports them, so they are stashed under the PE/Mach-O
-/// import-binding pass's id (`peimportcall`) and committed with its facts.
-fn elf_import_slot_stash(
-    bytes: &[u8],
+/// (kuna) A relocatable object's import slots: the GOT entry of each undefined
+/// weak symbol of a MIPS object, which the run-time loader fills. No pass
+/// reports them, so they are stashed under the PE/Mach-O import-binding pass's
+/// id (`peimportcall`) and committed with its facts. A linked image's slots
+/// belong to its own passes and their options.
+fn object_import_slot_stash(
+    relocatable: bool,
     slots: &[(u64, u64)],
 ) -> Option<(&'static str, kuna_analysis::pass::AnalysisOutput)> {
-    use object::Object as _;
-    let elf = kuna_analysis::loadimage_object::parse_object(bytes)
-        .is_ok_and(|file| file.format() == object::BinaryFormat::Elf);
-    (elf && !slots.is_empty()).then(|| {
+    (relocatable && !slots.is_empty()).then(|| {
         let mut output = kuna_analysis::pass::AnalysisOutput::default();
         output.externref = slots.to_vec();
         ("peimportcall", output)
@@ -4766,7 +4764,10 @@ pub fn bootstrap_from_object_with_isa(
         sleigh.base().unwrap().translate(),
     );
     pending_analysis.extend(input_isa_stash(input_context_paints));
-    pending_analysis.extend(elf_import_slot_stash(&bytes, loader.import_slot_ranges()));
+    pending_analysis.extend(object_import_slot_stash(
+        !loader.reloc_sections().is_empty(),
+        loader.import_slot_ranges(),
+    ));
 
     // (kuna `dynrelocs`) The PT_GNU_RELRO-frozen dynamic-relocation slots, read
     // off the same loader while it is still in hand. `readonly_ranges` above
@@ -6526,6 +6527,29 @@ mod tests {
     use kuna_num::pcoderaw::VarnodeData;
 
     use super::{entry_name_rank, is_vtable_slot_name, FixedRefs, WholeOp};
+
+    /// A linked ELF reports its GOT import slots too; only a relocatable
+    /// object's are committed outside the passes that own a linked image's.
+    #[test]
+    fn only_a_relocatable_objects_import_slots_are_stashed() {
+        let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../../..");
+        let linked = format!("{root}/decompiler/crates/kuna-analysis/tests/fixtures/elf_gotdata_x86_64.so");
+        let object = format!("{root}/tests/fixtures/mips-weak-imports/page-64-be.o");
+        for (path, relocatable) in [(linked, false), (object, true)] {
+            let image = kuna_analysis::loadimage_object::ObjectLoadImage::open(&path).unwrap();
+            assert!(!image.import_slot_ranges().is_empty(), "{path}");
+            assert_eq!(!image.reloc_sections().is_empty(), relocatable, "{path}");
+            let stash = super::object_import_slot_stash(
+                !image.reloc_sections().is_empty(),
+                image.import_slot_ranges(),
+            );
+            assert_eq!(stash.is_some(), relocatable, "{path}");
+            if let Some((pass, output)) = stash {
+                assert_eq!(pass, "peimportcall");
+                assert_eq!(output.externref, image.import_slot_ranges());
+            }
+        }
+    }
 
     /// A throwaway `(ram, constant)` space pair; `ram` stands in for the default
     /// data space, exactly as `listing::xrefs`'s own tests build it.
