@@ -812,6 +812,26 @@ impl AliasChecker {
         vn_offset >= self.alias_boundary
     }
 
+    /// (kuna) [`Self::has_local_alias`]'s boundary drawn from only the gathered
+    /// pointers `keep` accepts. Call after `has_local_alias` gathered them.
+    pub fn has_local_alias_among(&self, offset: uintb, keep: impl Fn(&AddBase) -> bool) -> bool {
+        if self.direction == -1 {
+            return false;
+        }
+        if self.alias.len() != self.add_base.len() {
+            return offset >= self.alias_boundary;
+        }
+        let mut boundary = self.local_extreme;
+        for (&alias, base) in self.alias.iter().zip(&self.add_base) {
+            let parameter =
+                if self.direction == 1 { alias < self.local_boundary } else { alias > self.local_boundary };
+            if !parameter && keep(base) {
+                boundary = boundary.min(alias);
+            }
+        }
+        offset >= boundary
+    }
+
     /// (kuna) Whether a pointer formed into the parameter area could reach the
     /// slot at `offset`: an address taken there at or below it.  `hasLocalAlias`
     /// answers only for locals, so a caller slot above the return address whose

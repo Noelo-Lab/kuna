@@ -1850,6 +1850,17 @@ classified:
   argument. That is visible as deleted basic blocks, not merely as a shorter
   argument list. (kuna) The caller-relative Varnode address is the one probed
   (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_callsitestackargs.rs`, always on).
+
+  **Direct accesses alias only their bytes** (always on, kuna): a gathered
+  pointer that is the stack-pointer input plus constants, through copies and
+  frame slots only, and is used solely as the address of `LOAD`s and `STORE`s
+  (`kuna_directalias.rs (aliases)`) aliases a trial only when the bytes it
+  touches overlap the trial; every other pointer keeps the boundary above
+  (`varmap.rs (AliasChecker::has_local_alias_among)`). Such a pointer is an
+  access heritage has not converted yet: a stack pointer restored from the
+  frame slot it was saved in after an `alloca` is still one when call inputs
+  are scored, and the call after the restore storing its argument at -0x2c
+  dropped an earlier call's argument at -0x28 (`reg(1)` for `reg(1, n)`).
 - (kuna `calleeargs`, default on) **Callee stack-argument extent.** On
   x86-32 under a model that leaves extrapop unknown (`x86win.cspec`), a direct
   call whose callee's own code can be read takes its stack arguments from what
