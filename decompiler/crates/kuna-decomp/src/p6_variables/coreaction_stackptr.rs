@@ -241,7 +241,8 @@ impl StackSolver {
                     // PTRADD's third input is its element size, not an amount.
                     let amounts = if opc == OpCode::CPUI_PTRADD { 2 } else { o.num_input() };
                     (0..o.num_input()).any(|j| Self::addr_is(data, o.get_in(j), &spacebase))
-                        && (0..amounts).any(|j| !Self::addr_is(data, o.get_in(j), &spacebase) && !Self::is_const(data, o.get_in(j)))
+                        && (0..amounts).any(|j| !Self::addr_is(data, o.get_in(j), &spacebase)
+                            && o.get_in(j).and_then(|v| crate::kuna_bejoin::literal_value(data, v, 8)).is_none())
                 })
             {
                 self.dynamic[i] = true;
