@@ -1834,6 +1834,20 @@ classified:
   trials below it are active, at-or-above it no-use. Otherwise fall through
   to ancestor analysis.
 
+  (kuna) Before any of these, a stack trial whose value is the frame cookie
+  is no-use at every call
+  (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_stackcookie.rs
+  (holds_cookie)`): on every path its value is an `INT_XOR` of a value read
+  from a fixed address of the default data space with the stack pointer or
+  an offset from it, reached back through copies, the INDIRECTs of earlier
+  calls and joins. MSVC's `/GS` and EH frames store it so
+  (`mov eax,[___security_cookie]; xor eax,esp; push eax`, or `xor eax,ebp;
+  mov [ebp-4],eax`), and only the epilogue reads it back, in ECX for
+  `__security_check_cookie`. Pushed in an SEH prologue it sits right below
+  the frame's other slots, so the first call that takes more than its own
+  pushes (a function pointer, a `this`-only method, a callee whose extent is
+  not stated) was handed it as a trailing stack argument.
+
   The local-range test probes **two different addresses for two different
   questions**, and the distinction decides whether stack-passed arguments are
   recovered at all. `guard_calls` registers the trial at the *callee*-relative
