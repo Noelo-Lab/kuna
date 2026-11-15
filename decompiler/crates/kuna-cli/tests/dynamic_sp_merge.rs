@@ -30,7 +30,12 @@ fn conditional_runtime_reservation_keeps_its_amount() {
         let lines: Vec<&str> = code.lines().collect();
         let arm = lines.iter().position(|line| line.trim() == "else {")
             .unwrap_or_else(|| panic!("{fixture}: no reservation arm\n{code}"));
-        assert!(lines[arm + 1..].iter().take_while(|line| line.trim() != "}").any(|line| line.contains('-')),
+        // The arm's pointer must be computed from the amount `(n + 1) & ~1`,
+        // directly or through the variable that holds it.
+        let amount = lines.iter().find_map(|line| line.trim().strip_suffix(" = n + 1 & 0xfffe;"))
+            .unwrap_or("n + 1");
+        assert!(lines[arm + 1..].iter().take_while(|line| line.trim() != "}")
+                .any(|line| line.contains(&format!("-{amount}")) || line.contains("-(n + 1")),
             "{fixture}: the reservation lost its runtime amount\n{code}");
     }
 }

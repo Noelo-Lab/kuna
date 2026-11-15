@@ -241,8 +241,7 @@ impl StackSolver {
                     // PTRADD's third input is its element size, not an amount.
                     let amounts = if opc == OpCode::CPUI_PTRADD { 2 } else { o.num_input() };
                     (0..o.num_input()).any(|j| Self::addr_is(data, o.get_in(j), &spacebase))
-                        && (0..amounts).any(|j| !Self::addr_is(data, o.get_in(j), &spacebase)
-                            && o.get_in(j).and_then(|v| crate::kuna_bejoin::literal_value(data, v, 8)).is_none())
+                        && (0..amounts).any(|j| !Self::addr_is(data, o.get_in(j), &spacebase) && !Self::is_const(data, o.get_in(j)))
                 })
             {
                 self.dynamic[i] = true;
@@ -450,7 +449,10 @@ impl StackSolver {
     /// not yet seen (`add sp,si` with `si == 2` on that path, popping a pushed
     /// argument): there the upstream solve implies a nonzero move, a real
     /// adjustment. Only an adjustment whose solved move is zero, i.e. one the
-    /// merge equation erased, or that stays unsolved, is runtime-sized.
+    /// merge equation erased, or that stays unsolved, is runtime-sized. This is
+    /// evidence, not proof: a runtime amount the merge equates with another
+    /// path's nonzero constant (`alloca(c ? n : 8)`) keeps upstream's answer,
+    /// as before this change.
     fn confirm_dynamic(&mut self, seeds: &[(usize, Option<int4>)]) {
         if seeds.is_empty() {
             return;
@@ -507,12 +509,14 @@ impl StackSolver {
         self.guess.retain(|e| dynamic[e.var1 as usize] == dynamic[e.var2 as usize]);
     }
 
+    /// (kuna) A literal, or a value that evaluates to one (`mov ax,8;
+    /// sub sp,ax`): the adjustment then has its exact equation.
     fn is_const(data: &Funcdata, vn: Option<VarnodeId>) -> bool {
-        vn.and_then(|v| data.vbank().get(v).map(|x| x.is_constant())).unwrap_or(false)
+        vn.and_then(|v| crate::kuna_bejoin::literal_value(data, v, 8)).is_some()
     }
 
     fn const_off(data: &Funcdata, vn: Option<VarnodeId>) -> uintb {
-        vn.and_then(|v| data.vbank().get(v).map(|x| x.get_offset())).unwrap_or(0)
+        vn.and_then(|v| crate::kuna_bejoin::literal_value(data, v, 8)).unwrap_or(0) as uintb
     }
 
     fn addr_is(data: &Funcdata, vn: Option<VarnodeId>, addr: &Address) -> bool {
