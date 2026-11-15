@@ -22,7 +22,10 @@
 //! callee reads into it or its pop releases it. A callee whose stack effect the
 //! walk cannot settle still releases it when its reached returns pop the block
 //! (`ret 0x20`) or the caller removes it right after the call (the call's
-//! `calleeargs` window). A record copied into a
+//! `calleeargs` window). That pop is then stated on the call, and an earlier
+//! call whose pushes the block reuses (MSVC builds it over a deferred
+//! `__cdecl` cleanup) is stated to pop only its return address, so the stack
+//! pointer solver places the block where the copy put it. A record copied into a
 //! bottom-of-frame local before a register-argument or virtual call (Delphi's
 //! `lea edi,[esp]; rep movsd`) stays a loop; expanded, its slots would read as
 //! that call's stack arguments. When such a move reads the frame, the moves
@@ -394,7 +397,8 @@ fn argument_block(fd: &Funcdata, sp: VarnodeId, rep: &RepMove, moves: &[RepMove]
     }
     let stated = fc.get_extra_pop();
     let pop = if stated != crate::fspec::EXTRAPOP_UNKNOWN { Some(stated) } else { fc.callee_purge() };
-    let Some(pop) = pop.map(|p| i64::from(p) - 4).or_else(|| fc.callee_stack_window().map(i64::from)) else { return false };
+    let window = pop.is_none().then(|| fc.callee_stack_window()).flatten();
+    let Some(pop) = pop.map(|p| i64::from(p) - 4).or_else(|| window.map(i64::from)) else { return false };
     if pop >= pushed + bytes {
         return true;
     }
@@ -417,6 +421,69 @@ fn argument_block(fd: &Funcdata, sp: VarnodeId, rep: &RepMove, moves: &[RepMove]
     let Some(until) = until else { return false };
     let window = path.iter().flat_map(|&b| fd.bb_ops(b)).chain(ops[..until].iter().copied());
     !window.into_iter().any(|id| reads_block(fd, sp, id, start, bytes))
+}
+
+/// The pop to state on the call an argument block feeds, when only its
+/// `calleeargs` window releases the block: the solver would otherwise guess
+/// it, and an earlier call whose pushes the block reuses with it.
+fn window_pop(fd: &Funcdata, rep: &RepMove, moves: &[RepMove]) -> Option<(kuna_base::types::int4, i32)> {
+    let (_, call, _) = next_call(fd, rep, moves)?;
+    let i = (0..fd.num_calls()).find(|&i| fd.get_call_specs(i).get_op() == call)?;
+    let fc = fd.get_call_specs(i);
+    if fc.get_extra_pop() != crate::fspec::EXTRAPOP_UNKNOWN || fc.callee_purge().is_some() {
+        return None;
+    }
+    if fc.callee_stack_arg_bytes().is_some() {
+        return None;
+    }
+    let window = fc.callee_stack_window()?;
+    (u64::from(window) >= rep.bytes).then(|| (i, window as i32 + 4))
+}
+
+/// The earlier call whose pushes the argument block of `rep` reuses (MSVC
+/// defers a `__cdecl` cleanup and builds the block over it: `call memcpy;
+/// sub esp,0x14; rep movsd` for 32 bytes), when its prototype states no pop:
+/// it pops only its return address. A purge its returns prove is applied only
+/// once every call in the function has one, so it is stated here too, when
+/// it agrees.
+fn reused_call(fd: &Funcdata, rep: &RepMove) -> Option<kuna_base::types::int4> {
+    let (base, _) = rep.base.as_ref()?;
+    let (i, offset) = after_call(fd, *base)?;
+    let fc = fd.get_call_specs(i);
+    let unstated = fc.get_extra_pop() == crate::fspec::EXTRAPOP_UNKNOWN && fc.callee_purge().is_none_or(|p| p == 4);
+    (unstated && offset < 0 && -offset < rep.bytes as i64).then_some(i)
+}
+
+/// The call whose unsettled pop the stack pointer `vn` was last adjusted by,
+/// and how far below that call's stack pointer `vn` lies.
+fn after_call(fd: &Funcdata, mut vn: VarnodeId) -> Option<(kuna_base::types::int4, i64)> {
+    let mut offset = 0i64;
+    for _ in 0..16 {
+        let op = defining(fd, vn)?;
+        let constant = |k| op.get_in(k).and_then(|c| fd.vbank().get(c)).filter(|c| c.is_constant()).map(|c| c.get_offset() as u32 as i32 as i64);
+        match op.code() {
+            OpCode::CPUI_COPY => vn = op.get_in(0)?,
+            OpCode::CPUI_INT_ADD => {
+                offset += constant(1)?;
+                vn = op.get_in(0)?;
+            }
+            OpCode::CPUI_INT_SUB => {
+                offset -= constant(1)?;
+                vn = op.get_in(0)?;
+            }
+            OpCode::CPUI_INDIRECT => {
+                let iop = fd.vbank().get(op.get_in(1)?)?;
+                if iop.get_space().get_type() != kuna_base::space::spacetype::IPTR_IOP {
+                    return None;
+                }
+                let call = crate::funcdata_varnode::op_iop_decode(iop.get_offset());
+                let i = (0..fd.num_calls()).find(|&i| fd.get_call_specs(i).get_op() == call)?;
+                return Some((i, offset));
+            }
+            _ => return None,
+        }
+    }
+    None
 }
 
 /// Is `id` a LOAD the frame places at a byte of the `bytes` at frame offset
@@ -775,12 +842,23 @@ pub(crate) fn expand_all(fd: &mut Funcdata) -> i32 {
             moves.retain(|m| m.to_arguments);
         }
     }
+    let stated: Vec<(kuna_base::types::int4, i32)> = moves
+        .iter()
+        .filter(|m| m.to_arguments)
+        .filter_map(|m| window_pop(fd, m, &moves).map(|pop| (m, pop)))
+        .flat_map(|(m, pop)| std::iter::once(pop).chain(reused_call(fd, m).map(|i| (i, 4))))
+        .collect();
     let mut expanded = 0;
     for rep in &moves {
         if expand(fd, rep).is_err() {
             break;
         }
         expanded += 1;
+    }
+    if expanded as usize == moves.len() {
+        for (i, pop) in stated {
+            fd.get_call_specs_mut(i).proto_mut().set_extra_pop(pop);
+        }
     }
     if expanded > 0 {
         fd.structure_reset();

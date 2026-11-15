@@ -1302,7 +1302,14 @@ pop: what the callee's reached returns pop (`ret 0x20`) or what the caller
 removes right after the call. MSVC builds such a block partly from an earlier
 `__cdecl` call's pushes whose cleanup it deferred (`push 0x20; push eax; push
 ecx; call memcpy; sub esp,0x14; mov edi,esp; rep movsd`), so the 32-byte
-struct sits 12 bytes above where the `sub` leaves the stack. Under a model whose pop is
+struct sits 12 bytes above where the `sub` leaves the stack. An expansion that
+relies on the window states that pop on the call, and states that the earlier
+call whose pushes the block reuses (found by walking the copy's stack pointer
+back to that call's INDIRECT) pops only its return address, when its
+prototype states no pop and any purge its returns prove agrees. The solver
+applies proven purges only when every call in the function has one, and
+otherwise guesses that such a call pops its pushes, which places the whole
+block, and the copy's reads, 12 bytes too high. Under a model whose pop is
 stated (gcc's cdecl), a release of the whole block by the caller before the
 next call or branch counts too, when nothing reads the block between the copy
 and that release. A record copied into a local at the bottom of the frame
