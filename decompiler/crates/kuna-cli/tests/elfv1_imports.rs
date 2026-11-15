@@ -12,7 +12,7 @@ fn put64(b: &mut [u8], p: usize, n: u64) { b[p..p+8].copy_from_slice(&n.to_be_by
 enum AliasToc { Conflicting, Symbolic, LocalDescriptor, HiddenLocalDescriptor }
 
 #[derive(Clone, Copy, PartialEq)]
-enum Transfer { Lazy, Full, Fallback, OtherImport, ReturningResolver }
+enum Transfer { Lazy, Full, SmallEnvironment, SmallEnvironmentLazy, Fallback, OtherImport, ReturningResolver }
 
 /// Synthetic linked ELFv1 with a descriptor-call stub and optional TOC aliases.
 fn image(abi: u32, import: &str, alias_toc: Option<AliasToc>, import_addend: i64, transfer: Transfer) -> Vec<u8> {
@@ -33,11 +33,14 @@ fn image(abi: u32, import: &str, alias_toc: Option<AliasToc>, import_addend: i64
         code[0x70..0x74].copy_from_slice(&0x48000091u32.to_be_bytes());
     }
     code.resize(0x100,0);
-    let stub=if transfer==Transfer::Full {
-        vec![0xf8410028u32,0x3d620000,0xe98b0000,0x7d8903a6,0xe84b0008,0xe96b0010,0x4e800420]
-    } else {
-        let branch=match transfer {Transfer::Fallback=>0x48000004,Transfer::OtherImport=>0x48000058,_=>0x48000050};
-        vec![0xf8410028,0x3d620000,0xe98b0000,0x7d8903a6,0xe84b0008,0x28220000,0x4ce20420,branch]
+    let stub=match transfer {
+        Transfer::Full=>vec![0xf8410028u32,0x3d620000,0xe98b0000,0x7d8903a6,0xe84b0008,0xe96b0010,0x4e800420],
+        Transfer::SmallEnvironment=>vec![0xf8410028,0xe9620000,0x7d6903a6,0xe9620010,0xe8420008,0x4e800420],
+        Transfer::SmallEnvironmentLazy=>vec![0xf8410028,0xe9820000,0x7d8903a6,0xe9620010,0xe8420008,0x28220000,0x4ce20420,0x48000050],
+        _=>{
+            let branch=match transfer {Transfer::Fallback=>0x48000004,Transfer::OtherImport=>0x48000058,_=>0x48000050};
+            vec![0xf8410028,0x3d620000,0xe98b0000,0x7d8903a6,0xe84b0008,0x28220000,0x4ce20420,branch]
+        }
     };
     for word in stub {code.extend(word.to_be_bytes());}
     code.resize(0x120,0);
@@ -146,7 +149,7 @@ fn image(abi: u32, import: &str, alias_toc: Option<AliasToc>, import_addend: i64
 fn descriptor_definition_wins_over_its_import_stub() {
     let specs = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../specs");
     for abi in [0, 1] {
-        for transfer in [Transfer::Lazy, Transfer::Full] {
+        for transfer in [Transfer::Lazy, Transfer::Full, Transfer::SmallEnvironment, Transfer::SmallEnvironmentLazy] {
             let bytes = image(abi, "get_byte", None, 0, transfer);
             let path = common::scratch_file("elfv1-definition-and-import", "elf");
             std::fs::write(&path, bytes).unwrap();
@@ -182,12 +185,19 @@ fn descriptor_import_names_and_noreturn_require_unambiguous_targets() {
         ("__stack_chk_fail",Some(AliasToc::HiddenLocalDescriptor),0,Transfer::Lazy),
         ("__stack_chk_fail",None,24,Transfer::Lazy),("__stack_chk_fail",None,-24,Transfer::Lazy),
         ("__stack_chk_fail",None,0,Transfer::Full),
+        ("__stack_chk_fail",None,0,Transfer::SmallEnvironment),
+        ("returning_import",None,0,Transfer::SmallEnvironment),
+        ("__stack_chk_fail",None,0,Transfer::SmallEnvironmentLazy),
+        ("__stack_chk_fail",Some(AliasToc::Conflicting),0,Transfer::SmallEnvironment),
+        ("__stack_chk_fail",Some(AliasToc::LocalDescriptor),0,Transfer::SmallEnvironment),
+        ("__stack_chk_fail",None,24,Transfer::SmallEnvironment),
         ("__stack_chk_fail",None,0,Transfer::Fallback),
         ("__stack_chk_fail",None,0,Transfer::OtherImport),
         ("__stack_chk_fail",None,0,Transfer::ReturningResolver),
     ] {
         let conflicts=alias_toc.is_some();
-        let named=!conflicts && addend==0 && matches!(transfer,Transfer::Lazy|Transfer::Full);
+        let named=!conflicts && addend==0 && matches!(transfer,
+            Transfer::Lazy|Transfer::Full|Transfer::SmallEnvironment|Transfer::SmallEnvironmentLazy);
         let bytes=image(1,import,alias_toc,addend,transfer);
         let file=object::File::parse(&*bytes).unwrap();
         assert!(file.dynamic_relocations().unwrap().any(|(slot,r)|

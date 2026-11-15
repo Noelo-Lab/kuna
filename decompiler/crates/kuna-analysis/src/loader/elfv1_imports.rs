@@ -55,6 +55,7 @@ fn ld(word: u32, rt: u32, ra: u32) -> Option<i64> {
 fn mtctr(reg: u32) -> u32 { 0x7c0903a6 | (reg<<21) }
 
 /// Return the TOC displacement and optional lazy-branch offset from the stub start.
+/// An environment load from r2 itself must precede the TOC load that replaces r2.
 fn stub_displacement(w: &[u32]) -> Option<(i64,Option<i64>)> {
     if w.first()!=Some(&0xf8410028) {return None;}
     let mut i=1;
@@ -72,10 +73,13 @@ fn stub_displacement(w: &[u32]) -> Option<(i64,Option<i64>)> {
     let low=ld(*w.get(i)?,target,base)?;i+=1;
     let early_ctr=*w.get(i)?==mtctr(target);
     if early_ctr {i+=1;}
+    let early_env=early_ctr && base==2 && ld(*w.get(i)?,11,2)==Some(low+16);
+    if early_env {i+=1;}
     if ld(*w.get(i)?,2,base)!=Some(low+8) {return None;}i+=1;
     if !early_ctr {
         if *w.get(i)?!=mtctr(target) {return None;}i+=1;
     }
+    if early_env && *w.get(i)?==0x4e800420 {return Some((low,None));}
     if base!=2 && ld(*w.get(i)?,11,base)==Some(low+16) {
         i+=1;
         return (*w.get(i)?==0x4e800420).then_some((high+low,None));
@@ -188,5 +192,36 @@ mod tests {
         assert_eq!(stub_displacement(&full),Some((0x40,None)));
         let small=[0xf8410028,0xe9820040,0x7d8903a6,0xe8420048,0x28220000,0x4ca20420,0x48000004];
         assert_eq!(stub_displacement(&small),Some((0x40,Some(28))));
+    }
+    #[test]
+    fn small_toc_environment_form_loads_the_environment_before_the_toc() {
+        const R11: [u32;6]=[0xf8410028,0xe9628118,0x7d6903a6,0xe9628128,0xe8428120,0x4e800420];
+        const R12: [u32;6]=[0xf8410028,0xe9828118,0x7d8903a6,0xe9628128,0xe8428120,0x4e800420];
+        for stub in [R11,R12] {
+            assert_eq!(stub_displacement(&stub),Some((-32488,None)));
+            let mut lazy=stub[..5].to_vec();lazy.extend([0x28220000,0x4ce20420,0x480000b8]);
+            assert_eq!(stub_displacement(&lazy),Some((-32488,Some(28+0xb8))));
+            for i in 0..lazy.len() {assert_eq!(stub_displacement(&lazy[..i]),None,"{i} words");}
+            for (i,value,why) in [
+                (0,0xf8410018,"TOC save slot"),(2,stub[2]^0x00200000,"CTR source"),
+                (3,0xe9628120,"environment at +8"),(3,0xe9628130,"environment at +24"),
+                (3,0xe9828128,"environment in r12"),(3,0xe96b8128,"environment from r11"),
+                (3,0xe9628129,"environment load with update"),
+                (4,0xe8428128,"TOC at +16"),(4,0xe8428118,"TOC at +0"),(4,0xe84b8120,"TOC from r11"),
+                (4,0xe9628120,"TOC in r11"),(5,0x4e800020,"return"),(5,0x4e800421,"linking branch"),
+            ] {
+                let mut bad=stub;bad[i]=value;assert_eq!(stub_displacement(&bad),None,"{why}");
+            }
+            let swapped=[stub[0],stub[1],stub[2],stub[4],stub[3],stub[5]];
+            assert_eq!(stub_displacement(&swapped),None,"environment read through the callee TOC");
+            let late_ctr=[stub[0],stub[1],stub[3],stub[2],stub[4],stub[5]];
+            assert_eq!(stub_displacement(&late_ctr),None,"environment load before the CTR move");
+            let last_ctr=[stub[0],stub[1],stub[3],stub[4],stub[2],stub[5]];
+            assert_eq!(stub_displacement(&last_ctr),None,"CTR move after both loads");
+        }
+        let full_base=[0xf8410028,0x3d620000,0xe98b0040,0x7d8903a6,0xe96b0050,0xe84b0048,0x4e800420];
+        assert_eq!(stub_displacement(&full_base),None,"environment overwrites the high-adjusted base");
+        let mixed_base=[0xf8410028,0x3d820001,0xe96c0040,0x7d6903a6,0xe9620050,0xe84c0048,0x4e800420];
+        assert_eq!(stub_displacement(&mixed_base),None,"environment from r2 beside a high-adjusted base");
     }
 }
