@@ -2650,9 +2650,34 @@ extra upstream Win32 no-return-name list remains on the PE/COFF arm only. An ELF
 image runs no such pass, but a MIPS relocatable object's loader makes import
 slots, the GOT entry of each undefined weak function: the engine stashes the
 loader's ranges under this pass's id
-(`decompiler/crates/kuna-console/src/engine.rs (elf_import_slot_stash)`), so
+(`decompiler/crates/kuna-console/src/engine.rs (object_import_slot_stash)`), so
 they commit with that pass's facts and the call in `if (f) f(x);` binds to `f`.
 Other images are unaffected.
+Undefined weak MIPS and x86-64 code-address operands in relocatable ELF objects
+also retain their nullable identity before SSA. The relocation walker
+`decompiler/crates/kuna-analysis/src/loader/kuna_nullable_reloc.rs (references)`
+records exact instruction fields and one canonical dynamic slot per symbol.
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_nullable_reloc.rs (materialize)`
+replaces only a uniquely matched supported operand with a slot load and the
+relocation's arithmetic. MIPS HI16/LO16/HIGHER/HIGHEST preserve rounding and
+signed immediates; x86-64 absolute and PC-relative address forms preserve addends
+and instruction-end bias. Mixed GOT and ordinary forms share the binding.
+Full-pointer weak relocations in read-only data retain the same binding and
+addend when `RuleLoadVarnode` materializes the read, so read-only folding cannot
+turn a genuine weak pointer into an unrelated numeric literal. Writable data,
+partial pointer reads, other architectures and relocation families outside these
+forms are not covered. Unmatched or unsupported code operands diagnose.
+The binding represents the linker's weak-symbol choice, not arbitrary concurrent
+mutation of an import slot.
+
+Synthetic display addresses are not proof that an unrelated integer names the
+import. A per-varnode literal marker protects coincidentally equal constants
+through construction and cloning from pointer/name inference. Exact relocated
+code operands explicitly clear it, and internal slot loads use their real slot
+address. This keeps fixed numeric addresses and real imported calls distinct.
+The nullable-relocations fixtures cover zero and bound imports, addends across
+signed-low boundaries, mixed forms, defined functions and unrelated literals.
+
 The `externref` mark also protects the slot until that resolution: P3 read-only
 folding cannot replace it with an on-disk thunk/name RVA, even if a hostile or
 single-section PE mapped the IAT executable and non-writable.

@@ -262,6 +262,7 @@ pub struct RelocLayout {
     /// Half-open import slots in the GOT: an undefined weak symbol's entry,
     /// which the run-time loader fills and which therefore does not fold.
     pub import_slots: Vec<(u64, u64)>,
+    pub nullable_relocations: Vec<kuna_decomp::kuna_nullable_reloc::NullableRelocation>,
     /// Additional addresses of the same logical import: `(alias, canonical)`.
     pub function_address_aliases: Vec<(u64, u64)>,
     /// A PowerPC64 ELFv1 object's function descriptors: `(descriptor, entry,
@@ -720,6 +721,24 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
             }
         }
     }
+    let weak_storage_start = extern_cursor;
+    let mut nullable_slots: HashMap<_, _> = gp.as_ref()
+        .map(|g| g.imports().collect()).unwrap_or_default();
+    let (nullable_relocations, allocated) = super::kuna_nullable_reloc::references(
+        file, &vma_of, &extern_of, &mut nullable_slots, &mut extern_cursor);
+    for (idx, slot) in allocated {
+        let Ok(sym) = file.symbol_by_index(idx) else { continue };
+        import_slots.push((slot, slot + if file.is_64() { 8 } else { 4 }));
+        if !code_externs.contains(&idx) && sym.kind() != SymbolKind::Text { continue; }
+        let Ok(name) = sym.name_bytes() else { continue };
+        symbol_info.push(RelocSymbolInfo {
+            name: String::from_utf8_lossy(name).into_owned(), vma: slot,
+            section_index: None, section_name: None, section_offset: None,
+            binding: symbol_binding(&sym), undefined: true,
+        });
+        funcsyms.push((slot, name.to_vec()));
+        import_functions.insert(idx, slot);
+    }
     // Extern functions: name each external *code target* at its synthetic slot
     // so `call ext` renders by name instead of a bare address. A code target is
     // an undefined symbol reached through a PLT-relative reloc (reliable even for
@@ -757,6 +776,13 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
 
     let mut segments: Vec<(u64, Vec<u8>)> = laid.iter().map(|l| (l.vma, l.data.clone())).collect();
     let mut sections: Vec<(u64, u64, u32)> = laid.iter().map(|l| (l.vma, l.size, l.flags)).collect();
+    if extern_cursor > weak_storage_start {
+        segments.push((weak_storage_start, vec![0; (extern_cursor - weak_storage_start) as usize]));
+        sections.push((weak_storage_start, extern_cursor - weak_storage_start,
+            fmt.section_bits(".kuna.weak", SectionKind::Data, object::SectionFlags::Elf {
+                sh_flags: u64::from(object::elf::SHF_ALLOC | object::elf::SHF_WRITE),
+            })));
+    }
     let got_range = match (&gp, got_base) {
         (Some(g), Some(base)) if g.size() != 0 => {
             segments.push((base, g.bytes()));
@@ -793,6 +819,7 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
         got_range,
         gp: gp.as_ref().map(kuna_mipsreloc::Gp::gp),
         import_slots,
+        nullable_relocations,
         function_address_aliases,
         opd: {
             opd_descriptors.sort_unstable();

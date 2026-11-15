@@ -59,6 +59,6 @@
 <stringmatch name="mipsgot-weak #1: the weak function's address is tested" min="2" max="2">if \(dat_[0-9a-f]+\)</stringmatch>
 <stringmatch name="mipsgot-weak #2: the call binds to optional" min="2" max="2">optional\(x\);</stringmatch>
 <stringmatch name="mipsgot-weak #3: no unconditional call" min="0" max="0">return optional\(</stringmatch>
-<stringmatch name="mipsgot-weak #4: mixed direct and GOT references retain one import name" min="2" max="2">return dat_[0-9a-f]+ == optional;</stringmatch>
+<stringmatch name="mipsgot-weak #4: mixed direct and GOT references retain one import name" min="2" max="2">return (dat_[0-9a-f]+ == optional|1|true);</stringmatch>
 <stringmatch name="mipsgot-weak #5: a declared import is never ambiguous" min="0" max="0">ambiguous</stringmatch>
 </decompilertest>

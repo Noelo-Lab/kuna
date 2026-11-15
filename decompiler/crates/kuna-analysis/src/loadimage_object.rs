@@ -577,6 +577,7 @@ pub struct ObjectLoadImage {
     /// a whole-binary enumeration needs to keep them out of the decompile set.
     /// Empty for every non-PE image and for a relocatable object.
     import_slots: Vec<(u64, u64)>,
+    nullable_relocations: Vec<kuna_decomp::kuna_nullable_reloc::NullableRelocation>,
     function_address_aliases: Vec<(u64, u64)>,
     /// (kuna `pltlocal`) `(stub, definition)` for each PLT stub the image's own
     /// dynamic relocations bind to a function it defines, ascending by stub. See
@@ -1182,6 +1183,7 @@ impl ObjectLoadImage {
             const_ranges,
             dynreloc_const,
             import_slots,
+            nullable_relocations: Vec::new(),
             function_address_aliases: Vec::new(),
             plt_local,
             mips_linkage,
@@ -1215,6 +1217,7 @@ impl ObjectLoadImage {
         let layout = reloc_object::layout_relocatable(file, fmt);
         let got_range = layout.got_range;
         let import_slots = layout.import_slots.clone();
+        let nullable_relocations = layout.nullable_relocations.clone();
         let function_address_aliases = layout.function_address_aliases.clone();
         let elfv1 = crate::loader::elfv1::Descriptors(
             layout
@@ -1374,6 +1377,7 @@ impl ObjectLoadImage {
             // are relocations, resolved by the layout pass. A MIPS object's
             // undefined weak symbols keep GOT entries the run-time loader fills.
             import_slots,
+            nullable_relocations,
             function_address_aliases,
             plt_local: Vec::new(),
             mips_linkage: crate::loader::kuna_mipsstubs::class_linkage(&file),
@@ -1490,6 +1494,10 @@ impl ObjectLoadImage {
     /// holds a pointer the run-time loader writes. The engine reports these
     /// ranges so its whole-binary enumeration can decompile the image's code
     /// without inventing a body for every import.
+    pub fn nullable_relocations(&self) -> &[kuna_decomp::kuna_nullable_reloc::NullableRelocation] {
+        &self.nullable_relocations
+    }
+
     pub fn import_slot_ranges(&self) -> &[(u64, u64)] {
         &self.import_slots
     }
@@ -1811,6 +1819,11 @@ impl LoadImage for ObjectLoadImage {
         for r in &mut self.dynreloc_const {
             r.0 = r.0.wadd(badjust);
             r.1 = r.1.wadd(badjust);
+        }
+        for r in &mut self.nullable_relocations {
+            r.field = r.field.wadd(badjust);
+            r.symbol = r.symbol.wadd(badjust);
+            if r.slot != 0 { r.slot = r.slot.wadd(badjust); }
         }
         for r in self.function_address_aliases.iter_mut().chain(&mut self.import_slots) {
             r.0 = r.0.wadd(badjust);

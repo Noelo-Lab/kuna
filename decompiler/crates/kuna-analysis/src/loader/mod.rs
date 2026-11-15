@@ -134,3 +134,5 @@ pub mod kuna_realmodecs;
 pub mod kuna_mzdgroup;
 
 pub mod kuna_mipsstubs;
+
+mod kuna_nullable_reloc;

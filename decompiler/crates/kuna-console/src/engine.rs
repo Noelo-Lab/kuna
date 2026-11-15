@@ -4764,6 +4764,24 @@ pub fn bootstrap_from_object_with_isa(
         sleigh.base().unwrap().translate(),
     );
     pending_analysis.extend(input_isa_stash(input_context_paints));
+    let mut nullable = std::collections::BTreeMap::<u64, Vec<_>>::new();
+    for record in loader.nullable_relocations() {
+        nullable.entry(record.field).or_default().push(record.clone());
+    }
+    let mut literals = std::collections::BTreeSet::new();
+    for record in loader.nullable_relocations() {
+        literals.extend((0..16).map(|byte| record.symbol.wrapping_add(byte)));
+        if record.slot != 0 { literals.extend((0..record.pointer_size as u64).map(|byte| record.slot + byte)); }
+    }
+    if !loader.reloc_sections().is_empty() {
+        for &(lo, hi) in loader.import_slot_ranges() { literals.extend(lo..hi); }
+        for &(alias, slot) in loader.function_address_aliases() {
+            literals.extend((0..16).map(|byte| alias.wrapping_add(byte)));
+            literals.extend((0..8).map(|byte| slot.wrapping_add(byte)));
+        }
+    }
+    sleigh.base_mut().unwrap().nullable_literal_values = std::rc::Rc::new(literals);
+    sleigh.base_mut().unwrap().nullable_relocations = std::rc::Rc::new(nullable);
     pending_analysis.extend(object_import_slot_stash(
         !loader.reloc_sections().is_empty(),
         loader.import_slot_ranges(),
