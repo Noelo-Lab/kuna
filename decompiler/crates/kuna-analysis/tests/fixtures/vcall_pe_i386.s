@@ -24,6 +24,8 @@
 #              a frame slot with `pop ecx`, which is no cleanup of either.
 #   vouter   : o->child()->take(1, 2): MSVC pushes take's arguments before
 #              the virtual child() that yields its object; take pops them.
+#   vseh     : a virtual member under an SEH frame, whose epilogue unlinks it
+#              (mov fs:[0],ecx) and frees a slot with `pop ecx` right after.
 #
 # Build:
 #   clang --target=i686-pc-windows-msvc -c vcall_pe_i386.s -o v.obj
@@ -266,6 +268,29 @@ _vouter:                        # void vouter(Obj *o) { o->child()->take(1, 2); 
     call _take
     pop ecx
     pop esi
+    ret
+
+    .p2align 4, 0xcc
+_vseh:                          # void vseh(Holder *h) { try { h->obj->set(7); } ... }
+    push -1
+    push 0
+    mov eax, dword ptr fs:[0]
+    push eax
+    push esi
+    push 0
+    lea eax, [esp + 8]
+    mov dword ptr fs:[0], eax
+    mov esi, dword ptr [esp + 0x18]
+    mov ecx, dword ptr [esi + 0x1c]
+    mov edx, dword ptr [ecx]
+    mov edx, dword ptr [edx + 0x3c]
+    push 7
+    call edx
+    mov ecx, dword ptr [esp + 8]
+    mov dword ptr fs:[0], ecx
+    pop ecx
+    pop esi
+    add esp, 0xc
     ret
 
     .p2align 4, 0xcc

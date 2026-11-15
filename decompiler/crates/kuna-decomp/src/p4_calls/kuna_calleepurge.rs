@@ -158,7 +158,9 @@ pub struct StackArgs {
 /// epilogue restoring it and ends the scan: the frame teardown after it is not
 /// a cleanup, however far a later call's unproven pop has left the scan's
 /// stack pointer from the real one. One right after a push is a move
-/// (`push 3; pop ebx`), which the scan passes over.
+/// (`push 3; pop ebx`), which the scan passes over. A store through FS ends the
+/// scan too: it unlinks the SEH frame (`mov fs:[0],ecx`), and the `pop ecx`
+/// after it frees the frame's own slot.
 pub(crate) fn caller_cleanup(arch: &Architecture, call_at: &Address) -> u32 {
     cleanup_scan(arch, call_at, false)
 }
@@ -172,11 +174,15 @@ pub(crate) fn immediate_cleanup(arch: &Architecture, call_at: &Address) -> u32 {
 fn cleanup_scan(arch: &Architecture, call_at: &Address, before_call: bool) -> u32 {
     let (Some(space), Some(regs)) = (call_at.get_space().cloned(), registers(arch)) else { return 0 };
     let Some(call) = decode(arch, &space, call_at.get_offset()) else { return 0 };
+    let fs = arch.translate().get_register_data("FS_OFFSET").ok();
     let mut at = call_at.get_offset().wrapping_add(call.1);
     let (mut sp, mut high, mut pushed) = (0i64, 0i64, false);
     for _ in 0..CLEANUP_SCAN {
         let Some(insn) = decode(arch, &space, at) else { break };
         let (ops, len) = (&insn.0, insn.1);
+        if fs.as_ref().is_some_and(|fs| stores_through(ops, fs)) {
+            break;
+        }
         let mut state = State::at_entry();
         state.0[SP] = Some(Val::exact(sp));
         let s = step(ops, &regs, state);
@@ -208,6 +214,21 @@ fn cleanup_scan(arch: &Architecture, call_at: &Address, before_call: bool) -> u3
         at = at.wrapping_add(len);
     }
     high.min(MAX_EXTRAPOP as i64) as u32
+}
+
+/// Does an instruction store through an address formed from `base`?
+fn stores_through(ops: &[(OpCode, Option<VarnodeData>, Vec<VarnodeData>)], base: &VarnodeData) -> bool {
+    let mut derived: Vec<&VarnodeData> = vec![base];
+    for (code, out, ins) in ops {
+        if *code == OpCode::CPUI_STORE {
+            if ins.get(1).is_some_and(|p| derived.contains(&p)) {
+                return true;
+            }
+        } else if let Some(out) = out.as_ref().filter(|_| ins.iter().any(|i| derived.contains(&i))) {
+            derived.push(out);
+        }
+    }
+    false
 }
 
 /// x86-32 under a default model whose extrapop is unknown.

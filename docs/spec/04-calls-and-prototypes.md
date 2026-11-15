@@ -1908,7 +1908,12 @@ classified:
   taken to pop only its return address), since the scan's stack pointer then
   sits low by those bytes and the teardown seems to lift it above the call. A
   pop right after a push is a move (`push 3; pop ebx`, MSVC `/O1`'s
-  `mov ebx,3`), not the epilogue, and the run goes on past it. A frame torn
+  `mov ebx,3`), not the epilogue, and the run goes on past it. A store
+  through FS ends the run as well
+  (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleepurge.rs
+  (stores_through)`): `mov fs:[0],ecx` unlinks an MSVC SEH frame, and the
+  `pop ecx` that follows it frees the frame's own slot (the `/GS` cookie or
+  a local) before the callee-saved registers are restored. A frame torn
   down with no callee-saved register restored first (`sub esp,0x10` and no
   pushes) still reads as a cleanup. Where the extent is
   stated, a stack trial starting at or past the bound (or past what the callee

@@ -47,7 +47,9 @@
     from EBX and then a second object into ECX; vepilog (0x401230) a virtual
     member followed by another call, after which the epilogue frees a frame
     slot with `pop ecx`; vouter (0x401250) o->child()->take(1, 2), whose
-    pushes for take precede the virtual child() call. By default
+    pushes for take precede the virtual child() call; vseh (0x401270) a
+    virtual member under an SEH frame, whose epilogue unlinks it and frees a
+    slot with `pop ecx` right after the call. By default
     the virtual members get their receiver (#29); the COM methods keep their
     pushed interface, once; the C calls and the GCC member get no receiver
     (#26, #27, #30). A last pass with C types (`ctypes`,
@@ -55,7 +57,8 @@
     whose first parameter is `this` (#25). latecopy gets its receiver by
     default (#31, #32); lateother gets none in either pass (#33). A pop
     after a later call is no cleanup of the virtual call: vepilog and vouter
-    get their receiver by default (#34-#37).
+    get their receiver by default (#34-#37), and so does vseh: the SEH unlink
+    ends the cleanup scan (#38, #39).
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -189,6 +192,10 @@ c3
   <com>load function vouter</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>function bounds 0x401270 as vseh</com>
+  <com>load function vseh</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/vcall_pe_i386.exe</com>
   <com>read symbols</com>
@@ -244,6 +251,10 @@ c3
   <com>load function vouter</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>function bounds 0x401270 as vseh</com>
+  <com>load function vseh</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>option ctypes on</com>
   <com>option calltargettype on</com>
   <com>function bounds 0x401000 as vcall_c</com>
@@ -291,4 +302,6 @@ c3
 <stringmatch name="CALLEEREGINPUTS #35: default, a frame pop after a later call does not hide this" min="1" max="1">\(\*a0 \+ 0x34\)\)\(a0,7\);</stringmatch>
 <stringmatch name="CALLEEREGINPUTS #36: off, the virtual call yielding the next call's object gets no receiver" min="1" max="1">\(\*a0 \+ 0x38\)\)\(1</stringmatch>
 <stringmatch name="CALLEEREGINPUTS #37: default, a later callee popping the earlier pushes does not hide this" min="1" max="1">\(\*a0 \+ 0x38\)\)\(a0,</stringmatch>
+<stringmatch name="CALLEEREGINPUTS #38: off, the virtual call under an SEH frame gets no receiver" min="1" max="1">\[7\] \+ 0x3c\)\)\(7</stringmatch>
+<stringmatch name="CALLEEREGINPUTS #39: default, the pop after the SEH unlink does not hide this" min="1" max="1">\[7\] \+ 0x3c\)\)\(\(\(int4 \*\*\)a0\)\[7\],7</stringmatch>
 </decompilertest>
