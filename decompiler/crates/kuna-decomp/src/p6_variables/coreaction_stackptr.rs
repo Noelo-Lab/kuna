@@ -83,6 +83,11 @@ struct StackSolver {
     missedvariables: int4,
     /// (kuna) The pops settled so far, by INDIRECT output.
     settled: crate::kuna_calleepopslot::SettledPops,
+    /// (kuna) Variables whose value depends on a runtime amount: the stack
+    /// pointer moved by a non-constant (`sub sp,ax`), and every merge such a
+    /// value reaches. They have no constant solution, so no equation may
+    /// assign one through a merge, and they are never rewritten.
+    dynamic: Vec<bool>,
 }
 
 impl StackSolver {
@@ -95,6 +100,7 @@ impl StackSolver {
             soln: Vec::new(),
             missedvariables: 0,
             settled: crate::kuna_calleepopslot::SettledPops::new(),
+            dynamic: Vec::new(),
         }
     }
 
@@ -201,6 +207,7 @@ impl StackSolver {
             self.companion.push(-1);
         }
         self.missedvariables = 0;
+        self.dynamic = vec![false; self.vnlist.len()];
         if self.vnlist.is_empty() {
             return Ok(());
         }
@@ -225,6 +232,15 @@ impl StackSolver {
                     continue;
                 }
             };
+            // (kuna) Arithmetic moving the stack pointer by a non-constant
+            // amount: a runtime reservation.
+            if matches!(opc, OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB | OpCode::CPUI_INT_AND
+                | OpCode::CPUI_PTRADD | OpCode::CPUI_PTRSUB)
+                && data.obank().get(op).is_some_and(|o| (0..o.num_input()).all(|j| !Self::is_const(data, o.get_in(j)))
+                    && (0..o.num_input()).any(|j| Self::addr_is(data, o.get_in(j), &spacebase)))
+            {
+                self.dynamic[i] = true;
+            }
             match opc {
                 OpCode::CPUI_INT_ADD => {
                     let mut othervn = data.obank().get(op).and_then(|o| o.get_in(0));
@@ -401,7 +417,40 @@ impl StackSolver {
                 }
             }
         }
+        self.spread_dynamic(data);
         Ok(())
+    }
+
+    /// (kuna) A merge with a dynamic input is dynamic, transitively; then drop
+    /// every equation touching a dynamic variable. Upstream's merge equation
+    /// would otherwise equate `sp - n` on one path with the constant frame of
+    /// another and rewrite the runtime reservation away.
+    fn spread_dynamic(&mut self, data: &Funcdata) {
+        if !self.dynamic.iter().any(|&d| d) {
+            return;
+        }
+        loop {
+            let mut changed = false;
+            for i in 1..self.vnlist.len() {
+                if self.dynamic[i] {
+                    continue;
+                }
+                let Some(op) = data.vbank().get(self.vnlist[i]).and_then(|v| v.get_def()).and_then(|o| data.obank().get(o)) else { continue };
+                if op.code() != OpCode::CPUI_MULTIEQUAL {
+                    continue;
+                }
+                if (0..op.num_input()).any(|j| op.get_in(j).and_then(|v| self.index_of(v)).is_some_and(|x| self.dynamic[x as usize])) {
+                    self.dynamic[i] = true;
+                    changed = true;
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+        let dynamic = &self.dynamic;
+        self.eqs.retain(|e| !dynamic[e.var1 as usize] && !dynamic[e.var2 as usize]);
+        self.guess.retain(|e| !dynamic[e.var1 as usize] && !dynamic[e.var2 as usize]);
     }
 
     fn is_const(data: &Funcdata, vn: Option<VarnodeId>) -> bool {
@@ -736,6 +785,9 @@ pub(crate) fn analyze_extra_pop(
     let mut changed: int4 = 0;
     for i in 1..solver.vnlist.len() {
         let vn = solver.vnlist[i];
+        if solver.dynamic[i] {
+            continue;
+        }
         let Some(soln) = solver.soln[i] else {
             // C++ warns "Unable to track spacebase fully" once here; omitted
             // (cosmetic, see above) — the variable is simply left unsolved.
