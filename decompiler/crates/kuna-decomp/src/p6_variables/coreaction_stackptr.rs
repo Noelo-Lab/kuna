@@ -216,6 +216,7 @@ impl StackSolver {
             return Err(());
         }
 
+        let mut seeds: Vec<(usize, Option<int4>)> = Vec::new();
         for i in 1..self.vnlist.len() {
             let vn = self.vnlist[i];
             let op = match data.vbank().get(vn).and_then(|v| v.get_def()) {
@@ -244,6 +245,9 @@ impl StackSolver {
                 })
             {
                 self.dynamic[i] = true;
+                seeds.push((i, data.obank().get(op).and_then(|o| (0..o.num_input())
+                    .find_map(|j| o.get_in(j).filter(|&v| Self::addr_is(data, Some(v), &spacebase)))
+                    .and_then(|v| self.index_of(v)))));
             }
             match opc {
                 OpCode::CPUI_INT_ADD => {
@@ -436,8 +440,30 @@ impl StackSolver {
                 }
             }
         }
+        self.confirm_dynamic(&seeds);
         self.spread_dynamic(data);
         Ok(())
+    }
+
+    /// (kuna) A non-constant SP adjustment is often a constant the solver has
+    /// not yet seen (`add sp,si` with `si == 2` on that path, popping a pushed
+    /// argument): there the upstream solve implies a nonzero move, a real
+    /// adjustment. Only an adjustment whose solved move is zero, i.e. one the
+    /// merge equation erased, or that stays unsolved, is runtime-sized.
+    fn confirm_dynamic(&mut self, seeds: &[(usize, Option<int4>)]) {
+        if seeds.is_empty() {
+            return;
+        }
+        let (eqs, guess) = (self.eqs.clone(), self.guess.clone());
+        self.solve();
+        let soln = std::mem::take(&mut self.soln);
+        (self.eqs, self.guess) = (eqs, guess);
+        for &(i, input) in seeds {
+            let moved = input.and_then(|j| soln[j as usize]).zip(soln[i]).is_some_and(|(before, after)| before != after);
+            if moved {
+                self.dynamic[i] = false;
+            }
+        }
     }
 
     /// (kuna) A value computed from a dynamic one is dynamic, transitively;
