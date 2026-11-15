@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4342,
-    4342
+    4344,
+    4344
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -3701,6 +3701,8 @@
     "data:pointer-arguments #2: no declaration leaks between standalone renders",
     "data:positive displacement stays symbolic",
     "data:post(y) runs once per pass",
+    "data:ppc64be-elfv2-stack-args #1: the callee reads its ninth argument",
+    "data:ppc64be-elfv2-stack-args #2: the caller passes n + 9 as the ninth",
     "data:ppc64le-elfv2-stack-args #1: the callee reads its ninth argument",
     "data:ppc64le-elfv2-stack-args #2: the caller passes n + 9 as the ninth",
     "data:preloaded SPARC stack read: capture stays before branch",
