@@ -2205,7 +2205,8 @@ mod tests {
         // and kuna-repframecopy / a by-value argument copied with rep movs reaches its call
         // and kuna-libcnames-win32 / a local takes the name of the Win32 call it meets
         // and kuna-libcnames-addr / a stack object takes the name of the library parameter its address meets
-        assert_eq!(count, 756, "corpus file count drifted");
+        // and kuna-ppc64le-elfv2-stack-args / an ELFv2 stack argument follows the 32-byte header
+        assert_eq!(count, 757, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
