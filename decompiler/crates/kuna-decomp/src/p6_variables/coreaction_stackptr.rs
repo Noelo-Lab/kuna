@@ -236,8 +236,12 @@ impl StackSolver {
             // amount: a runtime reservation.
             if matches!(opc, OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB | OpCode::CPUI_INT_AND
                 | OpCode::CPUI_PTRADD | OpCode::CPUI_PTRSUB)
-                && data.obank().get(op).is_some_and(|o| (0..o.num_input()).all(|j| !Self::is_const(data, o.get_in(j)))
-                    && (0..o.num_input()).any(|j| Self::addr_is(data, o.get_in(j), &spacebase)))
+                && data.obank().get(op).is_some_and(|o| {
+                    // PTRADD's third input is its element size, not an amount.
+                    let amounts = if opc == OpCode::CPUI_PTRADD { 2 } else { o.num_input() };
+                    (0..o.num_input()).any(|j| Self::addr_is(data, o.get_in(j), &spacebase))
+                        && (0..amounts).any(|j| !Self::addr_is(data, o.get_in(j), &spacebase) && !Self::is_const(data, o.get_in(j)))
+                })
             {
                 self.dynamic[i] = true;
             }
@@ -265,6 +269,21 @@ impl StackSolver {
                         }
                     };
                     let rhs = Self::const_off(data, constvn) as int4;
+                    self.eqs.push(StackEqn { var1: i as int4, var2: idx, rhs });
+                }
+                // (kuna) `sub sp,c` is `add sp,-c`: give it its equation, so a
+                // constant reservation on one path of a merge is solved, not
+                // equated with the other path.
+                OpCode::CPUI_INT_SUB
+                    if Self::is_const(data, data.obank().get(op).and_then(|o| o.get_in(1)))
+                        && Self::addr_is(data, data.obank().get(op).and_then(|o| o.get_in(0)), &spacebase) =>
+                {
+                    let othervn = data.obank().get(op).and_then(|o| o.get_in(0));
+                    let Some(idx) = othervn.and_then(|o| self.index_of(o)) else {
+                        self.missedvariables += 1;
+                        continue;
+                    };
+                    let rhs = (Self::const_off(data, data.obank().get(op).and_then(|o| o.get_in(1))) as int4).wrapping_neg();
                     self.eqs.push(StackEqn { var1: i as int4, var2: idx, rhs });
                 }
                 OpCode::CPUI_COPY => {
@@ -421,8 +440,8 @@ impl StackSolver {
         Ok(())
     }
 
-    /// (kuna) A merge with a dynamic input is dynamic, transitively; then drop
-    /// every equation touching a dynamic variable. Upstream's merge equation
+    /// (kuna) A value computed from a dynamic one is dynamic, transitively;
+    /// then drop every equation equating a dynamic variable with a fixed one. Upstream's merge equation
     /// would otherwise equate `sp - n` on one path with the constant frame of
     /// another and rewrite the runtime reservation away.
     fn spread_dynamic(&mut self, data: &Funcdata) {
@@ -436,10 +455,16 @@ impl StackSolver {
                     continue;
                 }
                 let Some(op) = data.vbank().get(self.vnlist[i]).and_then(|v| v.get_def()).and_then(|o| data.obank().get(o)) else { continue };
-                if op.code() != OpCode::CPUI_MULTIEQUAL {
-                    continue;
-                }
-                if (0..op.num_input()).any(|j| op.get_in(j).and_then(|v| self.index_of(v)).is_some_and(|x| self.dynamic[x as usize])) {
+                // The value follows its input forward: merges, copies,
+                // constant adjustments and call effects all carry the amount.
+                let forwarded = match op.code() {
+                    OpCode::CPUI_MULTIEQUAL | OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB | OpCode::CPUI_INT_AND
+                        | OpCode::CPUI_PTRSUB => op.num_input(),
+                    OpCode::CPUI_PTRADD => 2,
+                    OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_INDIRECT => 1,
+                    _ => continue,
+                };
+                if (0..forwarded).any(|j| op.get_in(j).and_then(|v| self.index_of(v)).is_some_and(|x| self.dynamic[x as usize])) {
                     self.dynamic[i] = true;
                     changed = true;
                 }
@@ -448,9 +473,11 @@ impl StackSolver {
                 break;
             }
         }
+        // Only an equation joining a dynamic value to a fixed one is false;
+        // relations among dynamic values stay, unanchored to entry SP.
         let dynamic = &self.dynamic;
-        self.eqs.retain(|e| !dynamic[e.var1 as usize] && !dynamic[e.var2 as usize]);
-        self.guess.retain(|e| !dynamic[e.var1 as usize] && !dynamic[e.var2 as usize]);
+        self.eqs.retain(|e| dynamic[e.var1 as usize] == dynamic[e.var2 as usize]);
+        self.guess.retain(|e| dynamic[e.var1 as usize] == dynamic[e.var2 as usize]);
     }
 
     fn is_const(data: &Funcdata, vn: Option<VarnodeId>) -> bool {
