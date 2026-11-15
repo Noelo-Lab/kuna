@@ -25,8 +25,10 @@ const R12: &str = "r12";
 /// One `r12 = entry` fact per PPC64 function symbol with a distinct local entry.
 fn scan_global_entries(file: &object::File) -> AnalysisOutput {
     let mut out = AnalysisOutput::default();
+    // An image whose e_flags declare ELFv1 (1) gives st_other no entry meaning.
     if file.architecture() != object::Architecture::PowerPc64
         || !matches!(file.format(), object::BinaryFormat::Elf)
+        || matches!(file.flags(), object::FileFlags::Elf { e_flags, .. } if e_flags & 3 == 1)
     {
         return out;
     }
