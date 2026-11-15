@@ -1295,7 +1295,14 @@ reaches nothing but frame loads and stores, the stack pointer and the move's
 own pointers (`block_escapes`, so a local handed to a call in `ECX` or `EDX`
 is not one), and that call's direct callee reads into the block as its own
 code shows (chapter 04's `calleeargs` measure), or the pop its prototype
-states or its returns prove releases all of it. Under a model whose pop is
+states or its returns prove releases all of it. When the walk cannot settle
+the callee's stack effect (a call it cannot read, such as a string helper
+handed the argument's address), the call's `calleeargs` window counts as that
+pop: what the callee's reached returns pop (`ret 0x20`) or what the caller
+removes right after the call. MSVC builds such a block partly from an earlier
+`__cdecl` call's pushes whose cleanup it deferred (`push 0x20; push eax; push
+ecx; call memcpy; sub esp,0x14; mov edi,esp; rep movsd`), so the 32-byte
+struct sits 12 bytes above where the `sub` leaves the stack. Under a model whose pop is
 stated (gcc's cdecl), a release of the whole block by the caller before the
 next call or branch counts too, when nothing reads the block between the copy
 and that release. A record copied into a local at the bottom of the frame

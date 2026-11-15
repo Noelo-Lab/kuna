@@ -2458,3 +2458,14 @@ llvm-objcopy --strip-all hookfix swift_call_hook_elf
 whose `movq (%rdi),%rax; movq %rdi,%r13; callq *0x40(%rax)` dispatches `area()`.
 With `swiftmetadata on` the first call keeps the C model and the second takes
 `__swiftcall`.
+
+### `byvalreuse_pe_i386.exe` — a by-value block reusing an earlier call's pushes
+
+`byvalreuse_pe_i386.exe` (2,560 bytes, PE32/i386, SHA-256
+`288102072c3ba68bcbf0d6f6ef9368e1d76e6b541bd4c4214f8f28d10968e76b`) is clean-room:
+`byval`@`0x401000` copies a 32-byte struct with `rep movsd` into an outgoing block that
+reuses the 12 bytes an earlier `__cdecl` call's pushes left on the stack (`sub esp,0x14`),
+then calls the `__thiscall` method `take`@`0x401040`, which ends in `ret 0x20` and hands
+its argument's address to a helper called through a pointer, so the purge walk cannot
+settle its stack effect. Source and recipe (clang + lld-link) in `byvalreuse_pe_i386.s`.
+Used by `tests/stages/kuna-repframecopy.xml` (#14).

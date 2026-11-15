@@ -19,7 +19,10 @@
 //! [`MAX_BYTES`] bytes upward, its destination is the stack pointer itself, and
 //! the block is the outgoing arguments of the first call after it
 //! ([`argument_block`]): nothing else takes the block's address, and that
-//! callee reads into it or its pop releases it. A record copied into a
+//! callee reads into it or its pop releases it. A callee whose stack effect the
+//! walk cannot settle still releases it when its reached returns pop the block
+//! (`ret 0x20`) or the caller removes it right after the call (the call's
+//! `calleeargs` window). A record copied into a
 //! bottom-of-frame local before a register-argument or virtual call (Delphi's
 //! `lea edi,[esp]; rep movsd`) stays a loop; expanded, its slots would read as
 //! that call's stack arguments. When such a move reads the frame, the moves
@@ -391,7 +394,7 @@ fn argument_block(fd: &Funcdata, sp: VarnodeId, rep: &RepMove, moves: &[RepMove]
     }
     let stated = fc.get_extra_pop();
     let pop = if stated != crate::fspec::EXTRAPOP_UNKNOWN { Some(stated) } else { fc.callee_purge() };
-    let Some(pop) = pop.map(|p| i64::from(p) - 4) else { return false };
+    let Some(pop) = pop.map(|p| i64::from(p) - 4).or_else(|| fc.callee_stack_window().map(i64::from)) else { return false };
     if pop >= pushed + bytes {
         return true;
     }

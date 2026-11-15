@@ -34,6 +34,12 @@
     d_ptr (0x401340) and d_direct (0x401370) copy a record into a local at the
     bottom of the frame: no call takes it, so each move stays a loop and no
     call gains a stack argument.
+    byvalreuse_pe_i386.exe (clean-room, source and recipe in
+    byvalreuse_pe_i386.s): byval (0x401000) copies a 32-byte struct into an
+    outgoing block that reuses an earlier __cdecl call's 12 bytes of pushes
+    (`sub esp,0x14`) and calls a __thiscall method ending in `ret 0x20` whose
+    stack effect the purge walk cannot settle: the method takes the eight
+    dwords (#14).
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -83,6 +89,12 @@ c3
   <com>load addr 0x401370</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/byvalreuse_pe_i386.exe</com>
+  <com>read symbols</com>
+  <com>load addr 0x401000</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="REPFRAMECOPY #1: fill takes the copied struct and b" min="1" max="1">sub_401070\(v[0-9]+ \+ v[0-9]+,v[0-9]+,v[0-9]+,v[0-9]+,v[0-9]+,v[0-9]+,v[0-9]+,v[0-9]+,v[0-9]+\)</stringmatch>
@@ -98,4 +110,5 @@ c3
 <stringmatch name="REPFRAMECOPY #11: the virtual calls after a bottom-of-frame local take no stack argument" min="0" max="0">0x58\)\)\([^)]</stringmatch>
 <stringmatch name="REPFRAMECOPY #12: both virtual calls are kept" min="2" max="2">\(code \*\*\)\(\*v[0-9]+ \+ 0x58\)</stringmatch>
 <stringmatch name="REPFRAMECOPY #13: the register-argument call takes no stack argument after either local" min="2" max="2">sub_4012e0\(\);</stringmatch>
+<stringmatch name="REPFRAMECOPY #14: a block reusing an earlier call's pushes reaches a method whose pop the walk cannot settle" min="1" max="1">sub_401040\(v[0-9]+,v[0-9]+,v[0-9]+,v[0-9]+,v[0-9]+,v[0-9]+,v[0-9]+,v[0-9]+\);</stringmatch>
 </decompilertest>
