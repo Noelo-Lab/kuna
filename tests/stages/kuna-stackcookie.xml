@@ -4,7 +4,7 @@
     kuna issue testcase: the frame cookie MSVC stores on the stack is no
     argument of a call made below it.
 
-    Issue:      kuna GH-ISSUE - the /GS cookie pushed in an SEH prologue
+    Issue:      kuna GH-1593 - the /GS cookie pushed in an SEH prologue
                 (`mov eax,[___security_cookie]; xor eax,esp; push eax`) is
                 printed as a stack argument of calls in the body.
     Stage:      P4 calls - checkInputTrialUse's stack trials
