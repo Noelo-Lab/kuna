@@ -280,6 +280,8 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         Box::new(crate::loader::mips_markers::MipsIsaModePass),
         // PPC32 ELF relocation metadata; self-gated like the register passes.
         Box::new(crate::loader::kuna_ppc32_imports::PicSlotsPass),
+        // PPC64 ELFv2 `r12 = entry` at global entries; self-gated like mips_gp.
+        Box::new(crate::loader::kuna_ppc64r12::Ppc64GlobalEntryPass),
         // S1 DWARF: recover function/global names and TYPED function signatures
         // from `.debug_*` sections (the kuna analog of Ghidra's `DWARFAnalyzer`).
         // Registered AFTER LibProtoPass so for any name both emit, the DWARF
