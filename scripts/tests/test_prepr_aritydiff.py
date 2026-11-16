@@ -60,6 +60,13 @@ class CompareTests(unittest.TestCase):
         report = aritydiff.compare("x.exe", before, dict(before))
         self.assertEqual((report.changed, report.blocking), (0, False))
 
+    def test_each_build_finds_its_own_specs(self):
+        done = unittest.mock.Mock(returncode=0, stdout='{"functions": []}', stderr="")
+        with unittest.mock.patch.dict("os.environ", clear=True), \
+                unittest.mock.patch("subprocess.run", return_value=done) as run:
+            aritydiff.decompile("kuna", Path("x.exe"), [], 30)
+        self.assertNotIn("KUNA_SPECS", run.call_args.kwargs.get("env") or {})
+
 
 class CorpusTests(unittest.TestCase):
     def setUp(self):

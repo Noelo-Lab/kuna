@@ -17,7 +17,6 @@ measured before it ships.
 import argparse
 import collections
 import json
-import os
 import re
 import subprocess
 import sys
@@ -25,7 +24,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from scripts.paths import specs_dir
 from scripts.prepr import corpus
 
 NOT_CALLS = {"if", "while", "for", "switch", "return", "sizeof", "do", "else",
@@ -161,11 +159,9 @@ def compare(binary: str, before: dict[str, dict], after: dict[str, dict]) -> Bin
 
 
 def decompile(kuna: str, binary: Path, options: list[str], max_fn_seconds: int) -> dict[str, dict]:
-    env = dict(os.environ)
-    env.setdefault("KUNA_SPECS", str(specs_dir()))
     result = subprocess.run(
         [kuna, "decompile-all", str(binary), "--json", "--max-fn-seconds", str(max_fn_seconds), *options],
-        capture_output=True, text=True, errors="replace", env=env,
+        capture_output=True, text=True, errors="replace",
     )
     if result.returncode != 0 or not result.stdout.strip():
         raise RuntimeError(f"{kuna} decompile-all {binary} failed: {result.stderr.strip()[:400]}")

@@ -36,7 +36,9 @@ python -m scripts.prepr.aritydiff BASE_KUNA HEAD_KUNA --corpus msvc32 --option N
 Both builds run `decompile-all` over every binary; each call whose argument
 count changed is reported per binary, with `-v` listing them. Build `BASE_KUNA`
 from the merge base (`git worktree add`, a separate `CARGO_TARGET_DIR`).
-`--option` applies to the head only, so a default-off option can be measured.
+Each build reads the specs it finds itself; export `KUNA_SPECS` to give both
+the same tree. `--option` applies to the head only, so a default-off option can
+be measured.
 
 The run fails when a call loses an argument, a function stops decompiling, or
 a binary prints fewer calls. A failure is not a verdict: classify every lost
