@@ -61,7 +61,9 @@
 //! Per recovered class: `<C>::typeinfo`, `<C>::typeinfo_name`, `<C>::vtable`, and
 //! for a secondary sub-vtable — named from the inheritance displacement the vmi/si
 //! base list carries — `<C>::vtable_for_<Base>`; per virtual slot a **function**
-//! symbol `<C>::vtable_<i>`, and the slot array marked read-only. An inherited slot
+//! symbol `<C>::vfunc_<i>` (`<C>::vfunc_for_<Base>_<i>` in a secondary sub-vtable),
+//! and the slot array marked read-only. The stem is `vfunc_`, as in the MSVC sibling
+//! pass: a routine is not named after the data object that points at it. An inherited slot
 //! claimed by several classes' vtables is attributed to the **defining base**, not
 //! to whichever vtable the scan reached first, using the recovered inheritance
 //! graph — so `Shape::perimeter`, present in `Shape`'s, `Circle`'s and `Square`'s
@@ -465,7 +467,7 @@ fn recover_subvtables(
 ///
 /// A slot reading 0 with a dynamic relocation covering it is an imported virtual
 /// method — the file simply does not carry its value. Recording it as `None` keeps
-/// the slot INDEX faithful (so `<C>::vtable_<i>` matches the ABI's numbering) and
+/// the slot INDEX faithful (so `<C>::vfunc_<i>` matches the ABI's numbering) and
 /// lets the walk continue to the locally-defined methods after it, which is what
 /// gives an abstract interface's vtable its true extent.
 fn walk_slots(
@@ -607,22 +609,22 @@ fn base_tag(ti: &TypeInfo, base: &TypeInfo, by_addr: &HashMap<u64, &TypeInfo>) -
     }
 }
 
-/// Name every virtual-method slot `<sub-vtable label>_<slot index>`, attributing an
+/// Name every virtual-method slot `<C>::vfunc[_for_<Base>]_<slot index>`, attributing an
 /// inherited slot to the class that **defines** it rather than to whichever vtable
 /// the scan reached first.
 ///
 /// A derived class's vtable repeats its bases' slots verbatim, so one function
 /// address is claimed by every class in its inheritance chain. Attributing by scan
 /// order would call `Shape::perimeter` — inherited unchanged by `Circle` and
-/// `Square` — `Square::vtable_3`. The recovered base graph resolves it: among the
+/// `Square` — `Square::vfunc_3`. The recovered base graph resolves it: among the
 /// claimants, the one whose class is an ancestor of all the others wins; a tie
 /// (unrelated classes sharing a thunk) falls back to the lowest typeinfo address so
 /// the result is deterministic.
 ///
-/// The label rather than the class name carries the prefix because a
-/// multiple-inheritance class has SEVERAL sub-vtables, whose slot indices both start
-/// at 0: `Widget::vtable_0` and `Widget::vtable_for_Drawable_0` are different
-/// functions (the second is the `this`-adjusting thunk).
+/// The sub-vtable's suffix rather than the class name alone carries the prefix
+/// because a multiple-inheritance class has SEVERAL sub-vtables, whose slot indices
+/// both start at 0: `Widget::vfunc_0` and `Widget::vfunc_for_Drawable_0` are
+/// different functions (the second is the `this`-adjusting thunk).
 fn attribute_slots(
     typeinfos: &[TypeInfo],
     subs: &[(&SubVtable, &str, String)],
@@ -659,7 +661,8 @@ fn attribute_slots(
             .copied()
             .or_else(|| cs.first().copied());
         if let Some((_, class, suffix, idx)) = best {
-            out.push((target, format!("{class}::{suffix}_{idx}")));
+            let stem = suffix.replacen("vtable", "vfunc", 1);
+            out.push((target, format!("{class}::{stem}_{idx}")));
         }
     }
     out.sort();
@@ -845,10 +848,10 @@ mod tests {
             .collect();
         let named: HashMap<u64, String> =
             attribute_slots(&tis, &labelled).into_iter().collect();
-        assert_eq!(named[&0x1000], "Shape::vtable_0");
-        assert_eq!(named[&0x1020], "Circle::vtable_0");
+        assert_eq!(named[&0x1000], "Shape::vfunc_0");
+        assert_eq!(named[&0x1020], "Circle::vfunc_0");
         // 0x1010 is slot 1 of BOTH vtables; Shape defines it, Circle inherits it.
-        assert_eq!(named[&0x1010], "Shape::vtable_1");
+        assert_eq!(named[&0x1010], "Shape::vfunc_1");
     }
 
     /// A secondary sub-vtable takes the NAME of the base subobject its

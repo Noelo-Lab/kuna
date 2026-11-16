@@ -3600,8 +3600,9 @@ fn is_structural_entry_name(name: &str) -> bool {
 }
 
 /// (kuna, `pe-function-inventory-labels`) Is `name` a virtual method the RTTI passes
-/// could only name by its vtable SLOT INDEX — `<Class>::vfunc_<i>` (MSVC `rtti`) or
-/// `<Class>::vtable_<i>` (Itanium `itaniumrtti`)?
+/// could only name by its vtable SLOT INDEX — `<Class>::vfunc_<i>` (MSVC `rtti` and
+/// Itanium `itaniumrtti`), or `<Class>::vfunc_for_<Base>_<i>` for a slot of an Itanium
+/// secondary sub-vtable?
 ///
 /// Neither metadata graph records per-method names, only the class name, so the slot
 /// index is all those passes have. That makes the name structural in exactly the sense
@@ -3611,9 +3612,8 @@ fn is_structural_entry_name(name: &str) -> bool {
 /// tie-break alone decided it, so `showmanyc` reported as `std::basic_stringbuf::vfunc_5`
 /// while its one-byte-shorter neighbour `uflow` kept its real name.
 ///
-/// The unindexed `<Class>::vftable` / `<Class>::vtable` labels are DATA symbols and never
-/// reach this ranking; the digit test excludes descriptive suffixes such as
-/// `Widget::vtable_for_Drawable` as well.
+/// The vtable DATA labels (`<Class>::vftable`, `<Class>_vtable`) never reach this
+/// ranking; the trailing digit test excludes an unindexed `vfunc_for_<Base>` as well.
 fn is_vtable_slot_name(name: &str) -> bool {
     let Some((class, slot)) = name.rsplit_once("::") else {
         return false;
@@ -3621,9 +3621,11 @@ fn is_vtable_slot_name(name: &str) -> bool {
     if class.is_empty() {
         return false;
     }
-    slot.strip_prefix("vfunc_")
-        .or_else(|| slot.strip_prefix("vtable_"))
-        .is_some_and(|i| !i.is_empty() && i.bytes().all(|b| b.is_ascii_digit()))
+    let Some(rest) = slot.strip_prefix("vfunc_") else {
+        return false;
+    };
+    let index = rest.rsplit_once('_').map_or(rest, |(_, i)| i);
+    !index.is_empty() && index.bytes().all(|b| b.is_ascii_digit())
 }
 
 /// (kuna, issue #197) How informative is `name`?  Smaller sorts first when
@@ -6875,7 +6877,8 @@ mod tests {
         for (real, slot) in [
             ("std::basic_streambuf::showmanyc", "std::basic_stringbuf::vfunc_5"),
             ("std::basic_streambuf::uflow", "std::basic_stringbuf::vfunc_7"),
-            ("Shape::perimeter", "Circle::vtable_2"),
+            ("Shape::perimeter", "Circle::vfunc_2"),
+            ("Widget::render", "Widget::vfunc_for_Drawable_2"),
             // The real name being much the longer of the two is the whole point.
             ("Widget::an_extremely_long_method_name", "Widget::vfunc_0"),
         ] {
@@ -6891,16 +6894,20 @@ mod tests {
         }
     }
 
-    /// Only `<Class>::v{func,table}_<digits>` is a slot name. The unindexed labels are
-    /// DATA symbols, and a descriptive suffix names a base subobject, not a slot.
+    /// Only `<Class>::vfunc[_for_<Base>]_<digits>` is a slot name. The unindexed labels
+    /// are DATA symbols, and a suffix without an index names a base subobject, not a slot.
     #[test]
     fn only_an_indexed_slot_name_is_structural() {
         assert!(is_vtable_slot_name("Box::vfunc_0"));
-        assert!(is_vtable_slot_name("std::basic_stringbuf::vtable_11"));
+        assert!(is_vtable_slot_name("std::basic_stringbuf::vfunc_11"));
+        assert!(is_vtable_slot_name("shapes::Widget::vfunc_for_Drawable_2"));
+        assert!(is_vtable_slot_name("Widget::vfunc_at_20_0"));
         for not_a_slot in [
             "Box::vftable",
             "Box::vtable",
-            "Widget::vtable_for_Drawable",
+            "Box::vtable_3",
+            "Widget::vfunc_for_Drawable",
+            "Widget::vfunc_for_Drawable_",
             "Box::vfunc_",
             "Box::vfunc_1a",
             "vfunc_0",
