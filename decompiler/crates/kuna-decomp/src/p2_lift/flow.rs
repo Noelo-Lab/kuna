@@ -503,6 +503,13 @@ pub trait FlowEnvironment {
         None
     }
 
+    /// The stack bytes the reached returns of the function at the direct-call
+    /// `entry` pop above the return address, when it states no stack extent.
+    /// See [`crate::p4_calls::kuna_calleestackargs`].
+    fn query_call_return_pop(&self, _entry: &Address) -> Option<u32> {
+        None
+    }
+
     /// Does the function at the direct-call `entry` move its caller's stack
     /// pointer (`_chkstk`, `__SEH_prolog4`)? See
     /// [`crate::p4_calls::kuna_calleestackargs`].
@@ -3099,6 +3106,7 @@ truncating the fall-through here"
                 fc.set_callee_stack_arg_bytes(args);
                 if args.is_none() {
                     fc.set_callee_stack_window(self.env.query_call_stack_window(&callee, &call_at));
+                    fc.set_callee_return_pop(self.env.query_call_return_pop(&callee));
                 }
             }
             fc.set_callee_moves_stack(self.env.query_call_moves_stack(&callee));

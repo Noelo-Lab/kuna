@@ -131,6 +131,20 @@ pub fn callee_window(arch: &Architecture, entry: &Address, call_at: &Address) ->
     }
 }
 
+/// (`calleeargs`) What the reached returns of the direct callee `entry` pop
+/// above the return address (`ret 0x20`), when the walk reaches one and the
+/// callee does not move its caller's stack.
+pub fn callee_return_pop(arch: &Architecture, entry: &Address) -> Option<u32> {
+    if !applies(arch) || entry.is_invalid() {
+        return None;
+    }
+    let s = summary(arch, entry, DEPTH);
+    if s.effect == Effect::Unbalanced {
+        return None;
+    }
+    s.ret_pops.map(|ep| (ep - 4).max(0) as u32)
+}
+
 /// Does the direct call target `entry` return with its caller's stack pointer
 /// moved by its own code (a stack-moving helper)?
 pub fn moves_stack(arch: &Architecture, entry: &Address) -> bool {

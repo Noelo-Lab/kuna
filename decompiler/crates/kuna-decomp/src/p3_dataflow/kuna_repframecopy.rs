@@ -21,11 +21,12 @@
 //! ([`argument_block`]): nothing else takes the block's address, and that
 //! callee reads into it or its pop releases it. A callee whose stack effect the
 //! walk cannot settle still releases it when its reached returns pop the block
-//! (`ret 0x20`) or the caller removes it right after the call (the call's
-//! `calleeargs` window). That pop is then stated on the call, and an earlier
-//! call whose pushes the block reuses (MSVC builds it over a deferred
-//! `__cdecl` cleanup) is stated to pop only its return address, so the stack
-//! pointer solver places the block where the copy put it. A record copied into a
+//! (`ret 0x20`); what the caller removes after the call does not count, since
+//! it can be the caller's own locals or a later call's arguments. That pop is
+//! then stated on the call, and an earlier call whose pushes the block reuses
+//! (MSVC builds it over a deferred `__cdecl` cleanup) is stated to pop only its
+//! return address, so the stack pointer solver places the block where the copy
+//! put it. A record copied into a
 //! bottom-of-frame local before a register-argument or virtual call (Delphi's
 //! `lea edi,[esp]; rep movsd`) stays a loop; expanded, its slots would read as
 //! that call's stack arguments. When such a move reads the frame, the moves
@@ -397,8 +398,8 @@ fn argument_block(fd: &Funcdata, sp: VarnodeId, rep: &RepMove, moves: &[RepMove]
     }
     let stated = fc.get_extra_pop();
     let pop = if stated != crate::fspec::EXTRAPOP_UNKNOWN { Some(stated) } else { fc.callee_purge() };
-    let window = pop.is_none().then(|| fc.callee_stack_window()).flatten();
-    let Some(pop) = pop.map(|p| i64::from(p) - 4).or_else(|| window.map(i64::from)) else { return false };
+    let returned = pop.is_none().then(|| fc.callee_return_pop()).flatten();
+    let Some(pop) = pop.map(|p| i64::from(p) - 4).or_else(|| returned.map(i64::from)) else { return false };
     if pop >= pushed + bytes {
         return true;
     }
@@ -424,9 +425,9 @@ fn argument_block(fd: &Funcdata, sp: VarnodeId, rep: &RepMove, moves: &[RepMove]
 }
 
 /// The pop to state on the call an argument block feeds, when only its
-/// `calleeargs` window releases the block: the solver would otherwise guess
-/// it, and an earlier call whose pushes the block reuses with it.
-fn window_pop(fd: &Funcdata, rep: &RepMove, moves: &[RepMove]) -> Option<(kuna_base::types::int4, i32)> {
+/// callee's reached returns release the block: the solver would otherwise
+/// guess it, and an earlier call whose pushes the block reuses with it.
+fn returns_pop(fd: &Funcdata, rep: &RepMove, moves: &[RepMove]) -> Option<(kuna_base::types::int4, i32)> {
     let (_, call, _) = next_call(fd, rep, moves)?;
     let i = (0..fd.num_calls()).find(|&i| fd.get_call_specs(i).get_op() == call)?;
     let fc = fd.get_call_specs(i);
@@ -436,8 +437,8 @@ fn window_pop(fd: &Funcdata, rep: &RepMove, moves: &[RepMove]) -> Option<(kuna_b
     if fc.callee_stack_arg_bytes().is_some() {
         return None;
     }
-    let window = fc.callee_stack_window()?;
-    (u64::from(window) >= rep.bytes).then(|| (i, window as i32 + 4))
+    let pop = fc.callee_return_pop()?;
+    (u64::from(pop) >= rep.bytes).then(|| (i, pop as i32 + 4))
 }
 
 /// The earlier call whose pushes the argument block of `rep` reuses (MSVC
@@ -845,7 +846,7 @@ pub(crate) fn expand_all(fd: &mut Funcdata) -> i32 {
     let stated: Vec<(kuna_base::types::int4, i32)> = moves
         .iter()
         .filter(|m| m.to_arguments)
-        .filter_map(|m| window_pop(fd, m, &moves).map(|pop| (m, pop)))
+        .filter_map(|m| returns_pop(fd, m, &moves).map(|pop| (m, pop)))
         .flat_map(|(m, pop)| std::iter::once(pop).chain(reused_call(fd, m).map(|i| (i, 4))))
         .collect();
     let mut expanded = 0;

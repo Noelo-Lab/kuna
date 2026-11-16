@@ -1297,16 +1297,22 @@ is not one), and that call's direct callee reads into the block as its own
 code shows (chapter 04's `calleeargs` measure), or the pop its prototype
 states or its returns prove releases all of it. When the walk cannot settle
 the callee's stack effect (a call it cannot read, such as a string helper
-handed the argument's address), the call's `calleeargs` window counts as that
-pop: what the callee's reached returns pop (`ret 0x20`) or what the caller
-removes right after the call. MSVC builds such a block partly from an earlier
-`__cdecl` call's pushes whose cleanup it deferred (`push 0x20; push eax; push
-ecx; call memcpy; sub esp,0x14; mov edi,esp; rep movsd`), so the 32-byte
-struct sits 12 bytes above where the `sub` leaves the stack. An expansion that
-relies on the window states that pop on the call, and states that the earlier
-call whose pushes the block reuses (found by walking the copy's stack pointer
-back to that call's INDIRECT) pops only its return address, when its
-prototype states no pop and any purge its returns prove agrees. The solver
+handed the argument's address), what the callee's own reached returns pop
+(`ret 0x20`) counts as that pop. What the caller removes after the call (the
+rest of the call's `calleeargs` window) does not: a `__cdecl` callee pops only
+its return address, and the scan that reads the cleanup also credits an `add
+esp` that releases the caller's own locals before its epilogue, so it would
+place a bottom-of-frame local, or the block of a later call (`f(g(0), t)`
+copies `t` before calling `g`), in the next call's arguments, and stating that
+cleanup as the call's pop would move every stack slot after the call. MSVC
+builds such a block partly from an earlier `__cdecl` call's pushes whose
+cleanup it deferred (`push 0x20; push eax; push ecx; call memcpy; sub
+esp,0x14; mov edi,esp; rep movsd`), so the 32-byte struct sits 12 bytes above
+where the `sub` leaves the stack. An expansion that relies on the returns' pop
+states that pop on the call, and states that the earlier call whose pushes
+the block reuses (found by walking the copy's stack pointer back to that
+call's INDIRECT) pops only its return address, when its prototype states no
+pop and any purge its returns prove agrees. The solver
 applies proven purges only when every call in the function has one, and
 otherwise guesses that such a call pops its pushes, which places the whole
 block, and the copy's reads, 12 bytes too high. Under a model whose pop is
