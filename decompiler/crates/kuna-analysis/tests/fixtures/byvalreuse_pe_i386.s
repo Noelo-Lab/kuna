@@ -17,6 +17,10 @@
 #                     return (through a pointer, so the walk cannot tell),
 #                     and its walk runs on through the int3 padding into the
 #                     __stdcall neighbour ng's ret 0x20.
+#   quit:             a __stdcall callee qtake (ret 0x20) whose other path ends
+#                     in exit: its pop is proven only while exit is known not
+#                     to return (`noreturn_known`), and the walk is taken again
+#                     when that option changes.
 #
 # Build (clang 17 + lld-link 17, e.g. in the swift:6.0-jammy Docker image;
 # clang 14 does not reproduce the bytes):
@@ -211,6 +215,38 @@ _nf:                            # int nf(Rec t), __cdecl: if (!t.x[0]) fatal(); 
 _ng:                            # int __stdcall ng(Rec t), the next function
     mov eax, dword ptr [esp + 4]
     ret 0x20
+
+    .p2align 4, 0xcc
+_exit:                          # the test names it exit
+    ret
+
+    .p2align 4, 0xcc
+_quit:                          # int quit(const Rec *r) { return qtake(*r); }
+    push esi
+    push edi
+    sub esp, 0x20
+    mov edi, esp
+    mov ecx, 8
+    mov esi, dword ptr [esp + 0x2c]
+    rep movsd
+    call _qtake
+    pop edi
+    pop esi
+    ret
+
+    .p2align 4, 0xcc
+_qtake:                         # int __stdcall qtake(Rec t) { if (!*sink(&t)) exit(1); return t.x[7]; }
+    lea eax, [esp + 4]
+    push eax
+    call dword ptr [_sink_ptr]
+    add esp, 4
+    test eax, eax
+    je 1f
+    mov eax, dword ptr [esp + 0x20]
+    ret 0x20
+1:
+    push 1
+    call _exit
 
     .data
 _obj:

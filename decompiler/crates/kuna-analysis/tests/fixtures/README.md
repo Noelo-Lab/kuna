@@ -2462,7 +2462,7 @@ With `swiftmetadata on` the first call keeps the C model and the second takes
 ### `byvalreuse_pe_i386.exe` — a by-value block reusing an earlier call's pushes
 
 `byvalreuse_pe_i386.exe` (3,072 bytes, PE32/i386, SHA-256
-`4271d1c19ba1581c647a85040abab79154c2b8910d41a3d4ca5cd614c964c980`) is clean-room:
+`ea2b6eeac8e3534108996b6e448d27fd22da8660bbf9ba0f383365dbd35263d8`) is clean-room:
 `byval`@`0x401000` copies a 32-byte struct with `rep movsd` into an outgoing block that
 reuses the 12 bytes an earlier `__cdecl` call's pushes left on the stack (`sub esp,0x14`),
 then calls the `__thiscall` method `take`@`0x401040`, which ends in `ret 0x20` and hands
@@ -2473,6 +2473,8 @@ whose callee's own returns pop nothing (a `__cdecl` callee the caller cleans up 
 unrelated call after a bottom-of-frame local, `g(0)` inside `f(g(0), t)`). `stray`@`0x4011d0`
 does the same for a `__cdecl` callee `nf`@`0x401200` whose cold path ends in a call that
 does not return, so its walk runs on through the `int3` padding into the `__stdcall`
-neighbour's `ret 0x20`. Source and recipe in `byvalreuse_pe_i386.s`: clang 17 and
-lld-link 17 (the `swift:6.0-jammy` Docker image ships both) reproduce it byte for byte;
-Ubuntu's clang 14 does not. Used by `tests/stages/kuna-repframecopy.xml` (#14-#18).
+neighbour's `ret 0x20`; `quit`@`0x401240` passes one to the `__stdcall` `qtake`@`0x401260`
+(`ret 0x20`), whose other path ends in a call to `exit`@`0x401230` (named by the test).
+Source and recipe in `byvalreuse_pe_i386.s`: clang 17 and lld-link 17 (the
+`swift:6.0-jammy` Docker image ships both) reproduce it byte for byte; Ubuntu's clang 14
+does not. Used by `tests/stages/kuna-repframecopy.xml` (#14-#19).

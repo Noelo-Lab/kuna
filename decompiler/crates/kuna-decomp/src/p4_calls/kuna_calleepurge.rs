@@ -276,9 +276,8 @@ const DECODED: usize = 1 << 12;
 /// The walks already taken, on the architecture.
 #[derive(Default)]
 pub struct Cache {
-    /// Whether the walks kept were taken with `calleeargs` on, which follows
-    /// the stack addresses a walk loses.
-    tracked: bool,
+    /// The options the walks kept were taken under ([`walk_options`]).
+    tracked: Option<u8>,
     /// Instructions the walks decoded, emptied when full.
     decoded: HashMap<uintb, Decoded>,
     /// Walks whose nested calls all fit within the depth asked, with the
@@ -298,14 +297,25 @@ pub(crate) fn summary(arch: &Architecture, entry: &Address, depth: u8) -> Summar
     summary_at(arch, entry, depth).0
 }
 
+/// The options a walk reads: `calleeargs`, which follows the stack addresses a
+/// walk loses, and the gates of the no-return names that end its paths.
+fn walk_options(arch: &Architecture) -> u8 {
+    u8::from(arch.kuna_calleeargs)
+        | u8::from(arch.analysis_noreturn_known) << 1
+        | u8::from(arch.go_bounds) << 2
+        | u8::from(arch.strip_security_check) << 3
+}
+
 /// [`summary`] and the depth it needed. A walk is reused at any depth it fits
 /// within and otherwise cached per depth, so the answer never depends on which
-/// function asked first; the walks are dropped when `calleeargs` changes.
+/// function asked first; the walks are dropped when an option they read
+/// changes.
 fn summary_at(arch: &Architecture, entry: &Address, depth: u8) -> (Summary, u8) {
     let off = entry.get_offset();
-    if arch.kuna_callee_purge.borrow().tracked != arch.kuna_calleeargs {
+    let options = walk_options(arch);
+    if arch.kuna_callee_purge.borrow().tracked != Some(options) {
         let mut cache = arch.kuna_callee_purge.borrow_mut();
-        cache.tracked = arch.kuna_calleeargs;
+        cache.tracked = Some(options);
         cache.whole.clear();
         cache.cut.clear();
     }
