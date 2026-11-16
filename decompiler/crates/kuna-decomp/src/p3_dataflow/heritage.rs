@@ -5543,6 +5543,26 @@ impl Heritage {
                             );
                         }
                     }
+                    OpCode::CPUI_INT_OR => {
+                        // (kuna) `p | c` with constant `c` lies in `[p, p+c]` (absent
+                        // wraparound): GCC reads a spilled int's low byte through
+                        // `(fp+off)|3` on SPARC64. Which byte depends on the runtime low
+                        // bits of `p`, so it is an indexed access at `p`'s offset, and the
+                        // LOAD/STORE it reaches needs a guard. An unrefined guard covers
+                        // `[p, p+0x1000)` (`LoadGuard::establish_range`), so a larger `c`
+                        // could only guard slots it cannot reach.
+                        let small_const = fd
+                            .obank()
+                            .get(op)
+                            .and_then(|o| o.get_in(1 - o.get_slot(cur_vn)))
+                            .and_then(|v| fd.vbank().get(v))
+                            .is_some_and(|v| v.is_constant() && v.get_offset() < 0x1000);
+                        let ov = match out_vn {
+                            Some(v) if small_const => v,
+                            _ => continue,
+                        };
+                        descend_into!(ov, cur_offset, cur_traversals | stacknode_flags::nonconstant_index);
+                    }
                     OpCode::CPUI_SEGMENTOP => {
                         // Check that the stackpointer comes in as the inner pointer.
                         let in2 = fd.obank().get(op).and_then(|o| o.get_in(2));
