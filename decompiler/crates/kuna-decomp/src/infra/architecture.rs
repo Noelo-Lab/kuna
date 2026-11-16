@@ -270,6 +270,8 @@ pub struct Architecture {
     pub loader_transfer_sites: Rc<std::collections::BTreeSet<Address>>,
     /// MIPS GOT import entries identified by the loader, never ordinary definitions.
     pub loader_mips_imports: Rc<std::collections::BTreeSet<Address>>,
+    pub nullable_relocations: Rc<std::collections::BTreeMap<u64, Vec<crate::kuna_nullable_reloc::NullableRelocation>>>,
+    pub nullable_literal_values: Rc<std::collections::BTreeSet<u64>>,
 
     // --- Configuration data (architecture.hh:170-208) ---------------------
     /// How many levels to let parameter trims recurse (C++ `trim_recurse_max`).
@@ -2243,6 +2245,8 @@ impl Architecture {
             loader_mips_t9: None,
             loader_transfer_sites: Rc::default(),
             loader_mips_imports: Rc::default(),
+            nullable_relocations: Rc::default(),
+            nullable_literal_values: Rc::default(),
 
             symbol_snapshots: RefCell::new(SymbolSnapshots::default()),
             kuna_snapshot_cache: std::env::var_os("KUNA_NO_SYMBOL_SNAPSHOT_CACHE").is_none(),
@@ -3145,11 +3149,14 @@ impl Architecture {
     /// cache (+ its property-map rollback), the non-core data-types, the
     /// comment database, and the decoded-string cache.  kuna has no live
     /// sub-scopes to delete (namespaces are cached path strings inside the
-    /// RemoteScope, cleared with it) and no wired constant pool yet.
+    /// RemoteScope, cleared with it) and no wired constant pool yet.  The
+    /// x86-32 callee walks read the host's names and no-return facts, so they
+    /// go too ([`crate::kuna_calleepurge`]).
     pub fn flush_remote_caches(&mut self) {
         if let Some(remote) = &self.remote_scope {
             remote.clear();
         }
+        self.kuna_callee_purge.get_mut().forget_walks();
         self.types.clear_noncore();
         self.commentdb.clear();
         self.string_manager.borrow_mut().base.clear();
@@ -3644,6 +3651,8 @@ impl Architecture {
         ctx.callee_protos = callee_protos;
         ctx.loader_transfer_sites = Rc::clone(&self.loader_transfer_sites);
         ctx.loader_mips_imports = Rc::clone(&self.loader_mips_imports);
+        ctx.nullable_relocations = Rc::clone(&self.nullable_relocations);
+        ctx.nullable_literal_values = Rc::clone(&self.nullable_literal_values);
         // (kuna) The convention each of those callees was DECLARED under, keyed
         // the same way the pieces are (entry address).  The declaration names the
         // function, the parked pieces carry that name, and the read side

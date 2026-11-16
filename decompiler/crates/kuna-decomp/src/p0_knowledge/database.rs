@@ -2252,6 +2252,20 @@ impl Database {
         Ok(sid)
     }
 
+    /// Map another address to the same function identity and declared prototype.
+    pub fn add_function_alias(&mut self, entry: &Address, alias: &Address) -> KunaResult<()> {
+        self.kuna_gen += 1;
+        let (symbol, scope) = self.find_function_across_scopes(entry)
+            .ok_or_else(|| KunaError::lowlevel("Function alias has no canonical function"))?;
+        if let Some((other, _)) = self.find_function_across_scopes(alias) {
+            return if other == symbol { Ok(()) } else {
+                Err(KunaError::lowlevel("Function alias overlaps a different function"))
+            };
+        }
+        self.add_map_point(scope, symbol, alias, &Address::new_invalid())?;
+        Ok(())
+    }
+
     /// C++ `ScopeInternal::setAttribute` (`database.cc:2228-2235`): OR the
     /// lockable boolean attributes onto a symbol (the rest are masked out), then
     /// recompute its `size_typelock`.  The console `map` commands lock the symbols
@@ -5667,6 +5681,30 @@ mod tests {
     /// The per-function inline / noreturn / inject-id flags round-trip through the
     /// FunctionSymbol kind (the parked-FuncProto facts `OptionInline` /
     /// `OptionNoReturn` / `IfcFixupApply` set and `FlowInfo::queryCall` reads).
+    #[test]
+    fn function_aliases_share_identity_without_merging_distinct_same_named_functions() {
+        let m=build_manager();
+        let (mut db,g)=db_with_global(m.num_spaces());
+        let a=Address::new(space(&m,2),0x1000);
+        let b=Address::new(space(&m,2),0x2000);
+        let alias=Address::new(space(&m,2),0x3000);
+        let first=db.add_function(g,&a,"optional",1,dt(1)).unwrap();
+        let second=db.add_function(g,&b,"optional",1,dt(1)).unwrap();
+        let generation=db.kuna_generation();
+        db.add_function_alias(&a,&alias).unwrap();
+        assert!(db.kuna_generation()>generation);
+        assert_eq!(db.find_by_name(g,"optional").len(),2);
+        assert_eq!(db.find_function_across_scopes(&alias),Some((first,g)));
+        assert!(db.add_function_alias(&a,&b).is_err());
+        assert_eq!(db.find_function_across_scopes(&b),Some((second,g)));
+        let mut pieces=crate::fspec::PrototypePieces::default();
+        pieces.name="optional".into();
+        pieces.intypes=vec![dt(4)];
+        db.set_function_proto_pieces(first,pieces);
+        assert_eq!(db.function_proto_pieces(g,&alias).unwrap().intypes.len(),1);
+        assert!(db.function_proto_pieces(g,&b).is_none());
+    }
+
     #[test]
     fn function_inline_noreturn_injectid_roundtrip() {
         let m = build_manager();

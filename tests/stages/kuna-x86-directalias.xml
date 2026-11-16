@@ -1,0 +1,40 @@
+<decompilertest>
+<binaryimage arch="x86:LE:32:default:gcc">
+<!--
+    Two calls pass stack arguments through a copy of %esp (clang -O0), then a
+    variable-size allocation saves %esp in a frame slot, and after it %esp is
+    restored from that slot before a third call:
+
+        static_frame(n): reg(1, n); reg(0, n); reg(n);
+        later_vla(n):    reg(1, n); reg(0, n); { char a[n]; a[0] = 7; } reg(n);
+
+    When call inputs are scored, the third call's argument store still goes
+    through the restored stack pointer, so the alias gather recorded it as a
+    pointer at -0x2c and every slot above it as aliased: later_vla printed
+    reg(1) for reg(1, n). That pointer is the stack pointer plus constants
+    through the frame slot, used only as the store's address, so it touches
+    only its own four bytes. Hand-assembled; reg is a ret stub.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+5589e583ec188b4d0883ec1089e0894804c70001000000e8e400000083c4108b4d0883ec3089e0894804c7402008000000c70000000000e8c400000083c4308b4d0883ec10890c24e8b300000083c41089ec5dc390909090909090909090909090909090909090909090909090909090909090909090909090909090909090905589e583ec188b4d0883ec1089e0894804c70001000000e86400000083c4108b4d0883ec3089e0894804c7402008000000c70000000000e84400000083c43089e1894df48b550829d489e0c600078b45f489c48b4d0883ec10890c24e81f00000083c41089ec5dc3909090909090909090909090909090909090909090909090c3909090909090909090909090909090
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="static_frame"/>
+<symbol space="ram" offset="0x100080" name="later_vla"/>
+<symbol space="ram" offset="0x100100" name="reg"/>
+</binaryimage>
+<script>
+  <com>parse line extern uint4 reg(uint4 count, ...);</com>
+  <com>parse line extern void static_frame(uint4 n);</com>
+  <com>parse line extern void later_vla(uint4 n);</com>
+  <com>lo fu static_frame</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu later_vla</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="x86-directalias #1: both functions pass n to the first call" min="2" max="2">reg\(1,n\);</stringmatch>
+<stringmatch name="x86-directalias #2: no first call loses its argument" min="0" max="0">reg\(1\);</stringmatch>
+<stringmatch name="x86-directalias #3: the call after the restore keeps its argument" min="2" max="2">reg\(n\);</stringmatch>
+</decompilertest>

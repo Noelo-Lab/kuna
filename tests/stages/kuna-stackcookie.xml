@@ -1,0 +1,85 @@
+<decompilertest>
+<binaryimage arch="x86:LE:32:default:windows">
+<!--
+    kuna issue testcase: the frame cookie MSVC stores on the stack is no
+    argument of a call made below it.
+
+    Issue:      kuna GH-1593 - the /GS cookie pushed in an SEH prologue
+                (`mov eax,[___security_cookie]; xor eax,esp; push eax`) is
+                printed as a stack argument of calls in the body.
+    Stage:      P4 calls - checkInputTrialUse's stack trials
+                (`p4_calls/kuna_stackcookie.rs`, `funcdata_callsite.rs`).
+
+    stackcookie_pe_i386.exe (clean-room, source and recipe in
+    stackcookie_pe_i386.s): gsseh (0x401000) pushes the cookie below an SEH
+    frame and calls lookup("NAME") through a pointer, cleaning up after it;
+    gsthis (0x401050) calls a method on this+8 with no stack argument under
+    the same frame; gsebp (0x401090) keeps the cookie at [ebp-4] and checks it
+    before returning. No call takes the cookie (#1-#3), and the check still
+    gets it in ECX (#4). Three real arguments look like the cookie and stay:
+    keyarg (0x401130) pushes key ^ esp with no SEH frame (#5); keyread
+    (0x401150) pushes it under an SEH frame to a callee that reads it, and
+    loses only the cookie above it (#6, #7); copyarg (0x4011a0) pushes a copy
+    read back from the cookie's slot, which is an argument, while the call
+    before it loses the cookie (#8, #9). Two more push such a value in the
+    body of an SEH function, through a pointer: sehkey (0x4011f0) passes
+    key ^ esp and 7 under a frame with a cookie, and keeps both while the
+    cookie leaves (#10); sehebp (0x401240) passes key ^ ebp under an EBP
+    frame with no cookie (#11). Only a value the prologue stores before it
+    links the frame into fs:[0] is the cookie.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/stackcookie_pe_i386.exe</com>
+  <com>read symbols</com>
+  <com>function bounds 0x401000 as gsseh</com>
+  <com>load function gsseh</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x401050 as gsthis</com>
+  <com>load function gsthis</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x401090 as gsebp</com>
+  <com>load function gsebp</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x401130 as keyarg</com>
+  <com>load function keyarg</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x401150 as keyread</com>
+  <com>load function keyread</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x4011a0 as copyarg</com>
+  <com>load function copyarg</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x4011f0 as sehkey</com>
+  <com>load function sehkey</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x401240 as sehebp</com>
+  <com>load function sehebp</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="STACKCOOKIE #1: the call under an SEH frame takes only its pushed name" min="1" max="1">= \(\*dat_403004\)\(s_40301c\);</stringmatch>
+<stringmatch name="STACKCOOKIE #2: the method under an SEH frame takes only this" min="1" max="1">^  sub_4010c0\(a0 \+ 8\);</stringmatch>
+<stringmatch name="STACKCOOKIE #3: the call in an EBP frame takes only its argument" min="1" max="1">\(\*dat_403008\)\(a0\);</stringmatch>
+<stringmatch name="STACKCOOKIE #4: the epilogue check still receives the cookie in ECX" min="1" max="1">sub_4010f0\(v[0-9]+ \^ \(uint4\)&amp;Stack</stringmatch>
+<stringmatch name="STACKCOOKIE #5: without an SEH frame a pushed key ^ esp is the call's argument" min="1" max="1">= \(\*dat_403004\)\(dat_403021 \^ \(uint4\)&amp;Stack00000000\);</stringmatch>
+<stringmatch name="STACKCOOKIE #6: the callee that reads it keeps its one argument" min="1" max="1">= sub_4010d0\(v[0-9]+\);</stringmatch>
+<stringmatch name="STACKCOOKIE #7: and that argument is the key, not the cookie" min="1" max="1">v[0-9]+ = dat_403021 \^ \(uint4\)&amp;(Stackffffffec|v[0-9]+);</stringmatch>
+<stringmatch name="STACKCOOKIE #8: a copy read back from the cookie's slot is the call's argument" min="1" max="1">= \(\*dat_403004\)\(v[0-9]+\);</stringmatch>
+<stringmatch name="STACKCOOKIE #9: the call before it takes only its receiver" min="1" max="1">^  sub_4010c0\(0x403010\);</stringmatch>
+<stringmatch name="STACKCOOKIE #10: key ^ esp pushed in an SEH body is an argument, and so is the 7 above it" min="1" max="1">= \(\*dat_403028\)\(dat_403021 \^ \(uint4\)&amp;Stackffffffe8,7\);</stringmatch>
+<stringmatch name="STACKCOOKIE #11: key ^ ebp pushed under an EBP SEH frame is an argument" min="1" max="1">= \(\*dat_403004\)\(dat_403021 \^ \(uint4\)&amp;Stackfffffffc\);</stringmatch>
+</decompilertest>

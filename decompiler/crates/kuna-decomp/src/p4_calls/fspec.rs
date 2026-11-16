@@ -6881,6 +6881,9 @@ pub struct FuncCallSpecs {
     /// (kuna `calleeargs`) For a direct callee with no stated extent, the stack
     /// bytes its returns pop or the caller removes after the call.
     callee_stack_window: Option<u32>,
+    /// (kuna `calleeargs`) For a direct callee with no stated extent, the stack
+    /// bytes its own reached returns pop above the return address.
+    callee_return_pop: Option<u32>,
     /// (kuna `calleereginputs`) The stack bytes the caller removes right after
     /// this indirect call. See [`crate::p4_calls::kuna_calleereginputs`].
     callind_cleanup: u32,
@@ -6925,6 +6928,7 @@ impl FuncCallSpecs {
             callee_stack_arg_bytes: None,
             callee_moves_stack: false,
             callee_stack_window: None,
+            callee_return_pop: None,
             callind_cleanup: 0,
         }
     }
@@ -6963,6 +6967,7 @@ impl FuncCallSpecs {
         res.callee_stack_arg_bytes = self.callee_stack_arg_bytes;
         res.callee_moves_stack = self.callee_moves_stack;
         res.callee_stack_window = self.callee_stack_window;
+        res.callee_return_pop = self.callee_return_pop;
         res.callind_cleanup = self.callind_cleanup;
         res
     }
@@ -7370,6 +7375,18 @@ impl FuncCallSpecs {
     /// caller removes after the call.
     pub fn set_callee_stack_window(&mut self, window: Option<u32>) {
         self.callee_stack_window = window;
+    }
+
+    /// The stack bytes the reached returns of a direct callee with no stated
+    /// extent pop above the return address (`ret 0x20`), if any is reached.
+    pub fn callee_return_pop(&self) -> Option<u32> {
+        self.callee_return_pop
+    }
+
+    /// Record what the reached returns of a direct callee with no stated
+    /// extent pop above the return address.
+    pub fn set_callee_return_pop(&mut self, pop: Option<u32>) {
+        self.callee_return_pop = pop;
     }
 
     /// The stack bytes the caller removes right after this indirect call.

@@ -1646,6 +1646,7 @@ fn lost_result(t: &TargetSpec, reason: &str) -> FuncResult {
         callee_hints: Vec::new(),
         synth: None,
         pointerargs: None,
+        warnings: Vec::new(),
         detail: None,
     }
 }
@@ -2162,6 +2163,7 @@ mod tests {
             callee_hints: vec![0x401200, 0x401340, 0xffff_ffff_ffff_fff0],
             synth: None,
             pointerargs: None,
+            warnings: Vec::new(),
             detail: None,
         }
     }
@@ -2182,6 +2184,7 @@ mod tests {
             && a.callee_hints == b.callee_hints
             && a.field_calls == b.field_calls
             && a.pointerargs == b.pointerargs
+            && a.warnings == b.warnings
             && a.synth == b.synth
             && a.line_mappings == b.line_mappings
             && a.globals == b.globals
@@ -2240,6 +2243,14 @@ mod tests {
                 expression: "&v1".into(),
             }],
         });
+        let warning = |address, text: &str, line| {
+            kuna_decomp::kuna_functionwarnings::Warning { address, text: text.into(), line }
+        };
+        a.warnings = vec![
+            warning(Some(0x401000), "WARNING: Subroutine does not return", 2),
+            warning(Some(0x401234), "WARNING: Bad instruction", 7),
+            warning(None, "WARNING: structured blocks unavailable", 5),
+        ];
         let b = FuncResult {
             name: "sub_1234".into(),
             address: 0x1234,
@@ -2262,6 +2273,7 @@ mod tests {
             callee_hints: Vec::new(),
             synth: None,
             pointerargs: None,
+            warnings: Vec::new(),
             detail: None,
         };
         {
@@ -2292,7 +2304,7 @@ mod tests {
     }
 
     #[test]
-    fn result_encoding_matches_the_version_eleven_wire_layout() {
+    fn result_encoding_matches_the_version_twelve_wire_layout() {
         let dir = ScratchDir::create().unwrap();
         let path = dir.path().join("wire.bin").to_string_lossy().into_owned();
         let result = FuncResult {
@@ -2317,10 +2329,11 @@ mod tests {
             callee_hints: Vec::new(),
             synth: None,
             pointerargs: None,
+            warnings: Vec::new(),
             detail: None,
         };
         let expected = [
-            b"KUNAJOBRES11\x01\x51\0\0\0".as_slice(),
+            b"KUNAJOBRES12\x01\x55\0\0\0".as_slice(),
             b"\x10\0\0\0\0\0\0\0\x20\0\0\0\0\0\0\0",
             b"\xff\xff\xff\xff\xff\xff\xff\xff",
             b"\x01\0\0\0f\0\x01\x01\0\0\0e\0\0",
@@ -2334,6 +2347,7 @@ mod tests {
             b"\0\0\0\0", // field calls
             b"\0\0\0\0", // callee hints
             b"\0\0", // synth and pointer arguments
+            b"\0\0\0\0", // warnings
             b"\0\0\0\0", // call declarations
             b"\0\0\0\0", // callwide prototypes
         ]
@@ -2363,6 +2377,80 @@ mod tests {
         record.callwide_prototypes[0].inputs = vec![false; 33];
         ResultWriter::create(&path).unwrap().push(&record).unwrap();
         assert!(decode_results(&std::fs::read(&path).unwrap()).unwrap().results.is_empty());
+    }
+
+    #[test]
+    fn a_malformed_warnings_block_does_not_cross_the_worker_boundary() {
+        use kuna_decomp::kuna_functionwarnings::Warning;
+        let at = Warning {
+            address: Some(0x8877_6655_4433_2211),
+            text: "WARNING: Bad instruction".into(),
+            line: 0x0a09_0807_0605_0403,
+        };
+        let shell = Warning {
+            address: None,
+            text: "WARNING: blocks \u{e9}".into(),
+            line: 0x1c1b_1a19_1817_1615,
+        };
+        let at_bytes = [
+            b"\x01\x11\x22\x33\x44\x55\x66\x77\x88".as_slice(),
+            b"\x18\0\0\0WARNING: Bad instruction",
+            b"\x03\x04\x05\x06\x07\x08\x09\x0a",
+        ]
+        .concat();
+        let shell_bytes =
+            [b"\0\x12\0\0\0WARNING: blocks \xc3\xa9".as_slice(), b"\x15\x16\x17\x18\x19\x1a\x1b\x1c"].concat();
+        let pointerargs = kuna_decomp::kuna_pointerargs::Record {
+            entry: ("ram".into(), 0x401000),
+            parameters: vec![Some(kuna_decomp::kuna_pointerargs::Parameter {
+                storage: (("register".into(), 0x38), 8),
+                spelling: "unsigned char *".into(),
+            })],
+            calls: Vec::new(),
+        };
+        for (before, warnings, records) in [
+            (None, vec![at.clone(), shell.clone()], [at_bytes.as_slice(), &shell_bytes]),
+            (Some(pointerargs), vec![shell.clone(), at.clone()], [shell_bytes.as_slice(), &at_bytes]),
+        ] {
+            let mut record = sample_result();
+            record.pointerargs = before;
+            record.warnings = warnings;
+            let body = encode_result(&record);
+            let after = record.call_declarations[0].as_bytes();
+            let end = body.windows(after.len()).position(|w| w == after).unwrap() - 8;
+            let block = [b"\x02\0\0\0".as_slice(), records[0], records[1]].concat();
+            let start = end - block.len();
+            assert_eq!(body[start..end], block[..]);
+            assert_eq!(body[end..end + 8], *b"\x01\0\0\0\x1e\0\0\0");
+            let decoded = decode_result(&body).unwrap();
+            assert!(same(&decoded, &record));
+            assert_eq!(decoded.pointerargs, record.pointerargs);
+            assert_eq!(decoded.call_declarations, record.call_declarations);
+
+            let patched = |offset: usize, bytes: &[u8]| {
+                let mut bad = body.clone();
+                bad[offset..offset + bytes.len()].copy_from_slice(bytes);
+                decode_result(&bad)
+            };
+            for count in [0u32, 1, 3, u32::MAX] {
+                assert!(patched(start, &count.to_le_bytes()).is_none(), "count {count}");
+            }
+            let mut tag = start + 4;
+            for bytes in records {
+                for invalid in [2u8, 0xff] {
+                    assert!(patched(tag, &[invalid]).is_none(), "address tag {invalid}");
+                }
+                let length = tag + if bytes[0] == 1 { 9 } else { 1 };
+                for oversized in [(body.len() - length - 3) as u32, u32::MAX] {
+                    assert!(patched(length, &oversized.to_le_bytes()).is_none(), "text length {oversized}");
+                }
+                assert!(patched(bytes.len() + tag - 9, &[0xff]).is_none(), "text that is not UTF-8");
+                tag += bytes.len();
+            }
+            for cut in start..end {
+                assert!(decode_result(&body[..cut]).is_none(), "cut at {cut}");
+            }
+        }
     }
 
     /// The dynamic source is the only thing `--stream` changes about the pool:
@@ -2793,6 +2881,7 @@ mod tests {
             callee_hints: Vec::new(),
             synth: None,
             pointerargs: None,
+            warnings: Vec::new(),
             detail: None,
         };
         let results = vec![
