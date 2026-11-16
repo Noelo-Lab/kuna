@@ -21,7 +21,12 @@
     (0x401150) pushes it under an SEH frame to a callee that reads it, and
     loses only the cookie above it (#6, #7); copyarg (0x4011a0) pushes a copy
     read back from the cookie's slot, which is an argument, while the call
-    before it loses the cookie (#8, #9).
+    before it loses the cookie (#8, #9). Two more push such a value in the
+    body of an SEH function, through a pointer: sehkey (0x4011f0) passes
+    key ^ esp and 7 under a frame with a cookie, and keeps both while the
+    cookie leaves (#10); sehebp (0x401240) passes key ^ ebp under an EBP
+    frame with no cookie (#11). Only a value the prologue stores before it
+    links the frame into fs:[0] is the cookie.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -56,6 +61,14 @@ c3
   <com>load function copyarg</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>function bounds 0x4011f0 as sehkey</com>
+  <com>load function sehkey</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x401240 as sehebp</com>
+  <com>load function sehebp</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="STACKCOOKIE #1: the call under an SEH frame takes only its pushed name" min="1" max="1">= \(\*dat_403004\)\(s_40301c\);</stringmatch>
@@ -64,7 +77,9 @@ c3
 <stringmatch name="STACKCOOKIE #4: the epilogue check still receives the cookie in ECX" min="1" max="1">sub_4010f0\(v[0-9]+ \^ \(uint4\)&amp;Stack</stringmatch>
 <stringmatch name="STACKCOOKIE #5: without an SEH frame a pushed key ^ esp is the call's argument" min="1" max="1">= \(\*dat_403004\)\(dat_403021 \^ \(uint4\)&amp;Stack00000000\);</stringmatch>
 <stringmatch name="STACKCOOKIE #6: the callee that reads it keeps its one argument" min="1" max="1">= sub_4010d0\(v[0-9]+\);</stringmatch>
-<stringmatch name="STACKCOOKIE #7: and that argument is the key, not the cookie" min="1" max="1">v[0-9]+ = dat_403021 \^ \(uint4\)&amp;Stackffffffec;</stringmatch>
+<stringmatch name="STACKCOOKIE #7: and that argument is the key, not the cookie" min="1" max="1">v[0-9]+ = dat_403021 \^ \(uint4\)&amp;(Stackffffffec|v[0-9]+);</stringmatch>
 <stringmatch name="STACKCOOKIE #8: a copy read back from the cookie's slot is the call's argument" min="1" max="1">= \(\*dat_403004\)\(v[0-9]+\);</stringmatch>
 <stringmatch name="STACKCOOKIE #9: the call before it takes only its receiver" min="1" max="1">^  sub_4010c0\(0x403010\);</stringmatch>
+<stringmatch name="STACKCOOKIE #10: key ^ esp pushed in an SEH body is an argument, and so is the 7 above it" min="1" max="1">= \(\*dat_403028\)\(dat_403021 \^ \(uint4\)&amp;Stackffffffe8,7\);</stringmatch>
+<stringmatch name="STACKCOOKIE #11: key ^ ebp pushed under an EBP SEH frame is an argument" min="1" max="1">= \(\*dat_403004\)\(dat_403021 \^ \(uint4\)&amp;Stackfffffffc\);</stringmatch>
 </decompilertest>

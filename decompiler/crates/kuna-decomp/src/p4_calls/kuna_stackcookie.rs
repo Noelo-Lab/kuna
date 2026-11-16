@@ -13,13 +13,15 @@
 //! above it leave the call: a call only ever loses frame slots. The argument
 //! must hold the cookie on every path, stored into its slot directly (a value
 //! copied in from another stack slot is a pushed argument, whatever it was
-//! read as), the function must register an SEH frame, and the callee's own
-//! code must neither read nor pop the slot.
+//! read as) by the prologue: in the block that links the registration record
+//! into `fs:[0]`, before the link. A value of the same shape pushed in the
+//! body is an argument. The callee's own code must neither read nor pop the
+//! slot.
 
 use kuna_base::types::int4;
 use kuna_num::opcodes::OpCode;
 
-use crate::context::VarnodeId;
+use crate::context::{OpId, VarnodeId};
 use crate::fspec::FuncCallSpecs;
 use crate::funcdata::Funcdata;
 use kuna_base::space::spacetype;
@@ -61,9 +63,8 @@ pub fn shed_frame_cookies(data: &mut Funcdata) -> int4 {
 }
 
 /// The callee-relative offset of the lowest stack argument of `fc` that holds
-/// the frame cookie, when the function registers an SEH frame and the callee
-/// neither reads nor pops it.
-fn cookie_slot(fc: &FuncCallSpecs, data: &Funcdata, seh: &mut Option<bool>) -> Option<i64> {
+/// the frame cookie, when the callee neither reads nor pops it.
+fn cookie_slot(fc: &FuncCallSpecs, data: &Funcdata, seh: &mut Option<Vec<OpId>>) -> Option<i64> {
     let op = data.obank().get(fc.get_op())?;
     let storage = fc.final_input_storage();
     if storage.len() as int4 + 1 != op.num_input() {
@@ -79,7 +80,7 @@ fn cookie_slot(fc: &FuncCallSpecs, data: &Funcdata, seh: &mut Option<bool>) -> O
             continue;
         }
         let Some(vn) = op.get_in(k as int4 + 1) else { continue };
-        if holds_cookie(data, vn) && *seh.get_or_insert_with(|| registers_seh_frame(data)) {
+        if holds_cookie(data, vn, seh) {
             cut = Some(start);
         }
     }
@@ -92,13 +93,20 @@ fn on_stack(addr: &kuna_base::address::Address) -> bool {
 
 /// Does the stack value `vn` reaching a call hold the frame cookie on every
 /// path: a value of the default data space XORed with the stack pointer,
-/// stored into this slot and kept there through calls and joins?
-pub fn holds_cookie(data: &Funcdata, vn: VarnodeId) -> bool {
+/// stored into this slot before an SEH link of `links` and kept there through
+/// calls and joins?
+fn holds_cookie(data: &Funcdata, vn: VarnodeId, links: &mut Option<Vec<OpId>>) -> bool {
     let mut seen = Vec::new();
-    cookie(data, vn, &mut seen, DEPTH)
+    cookie(data, vn, &mut seen, links, DEPTH)
 }
 
-fn cookie(data: &Funcdata, vn: VarnodeId, seen: &mut Vec<VarnodeId>, depth: u32) -> bool {
+fn cookie(
+    data: &Funcdata,
+    vn: VarnodeId,
+    seen: &mut Vec<VarnodeId>,
+    links: &mut Option<Vec<OpId>>,
+    depth: u32,
+) -> bool {
     if seen.contains(&vn) {
         return true;
     }
@@ -109,12 +117,14 @@ fn cookie(data: &Funcdata, vn: VarnodeId, seen: &mut Vec<VarnodeId>, depth: u32)
     let input = |k| op.get_in(k);
     let in_frame =
         |v: VarnodeId| data.vbank().get(v).is_some_and(|v| v.get_space().get_type() == spacetype::IPTR_SPACEBASE);
-    match op.code() {
+    let joins = matches!(op.code(), OpCode::CPUI_INDIRECT | OpCode::CPUI_MULTIEQUAL);
+    let shaped = match op.code() {
         _ if depth == 0 => false,
-        OpCode::CPUI_COPY => input(0).is_some_and(|v| !in_frame(v) && cookie(data, v, seen, depth - 1)),
-        OpCode::CPUI_INDIRECT => input(0).is_some_and(|v| cookie(data, v, seen, depth - 1)),
+        OpCode::CPUI_COPY => input(0).is_some_and(|v| !in_frame(v) && cookie(data, v, seen, links, depth - 1)),
+        OpCode::CPUI_INDIRECT => input(0).is_some_and(|v| cookie(data, v, seen, links, depth - 1)),
         OpCode::CPUI_MULTIEQUAL => {
-            op.num_input() > 0 && (0..op.num_input()).all(|k| input(k).is_some_and(|v| cookie(data, v, seen, depth - 1)))
+            op.num_input() > 0
+                && (0..op.num_input()).all(|k| input(k).is_some_and(|v| cookie(data, v, seen, links, depth - 1)))
         }
         OpCode::CPUI_INT_XOR => match (input(0), input(1)) {
             (Some(a), Some(b)) => {
@@ -123,7 +133,18 @@ fn cookie(data: &Funcdata, vn: VarnodeId, seen: &mut Vec<VarnodeId>, depth: u32)
             _ => false,
         },
         _ => false,
-    }
+    };
+    shaped && (joins || !in_frame(vn) || before_link(data, op, links))
+}
+
+/// Is `op` in the block of an SEH link of `links`, and before it?
+fn before_link(data: &Funcdata, op: &crate::op::PcodeOp, links: &mut Option<Vec<OpId>>) -> bool {
+    let links = links.get_or_insert_with(|| seh_links(data));
+    links.iter().filter_map(|&l| data.obank().get(l)).any(|l| {
+        op.get_parent().is_some()
+            && l.get_parent() == op.get_parent()
+            && op.get_seq_num().get_order() < l.get_seq_num().get_order()
+    })
 }
 
 /// Is `vn` a value read from a fixed address of the default data space?
@@ -162,12 +183,13 @@ fn stack(data: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
     }
 }
 
-/// Does the function link an SEH registration record: a store to `fs:[0]`?
-fn registers_seh_frame(data: &Funcdata) -> bool {
+/// The stores that link an SEH registration record: a stack address stored to
+/// `fs:[0]`.
+fn seh_links(data: &Funcdata) -> Vec<OpId> {
     let Some(fs) = data.get_arch().manage().register_lookup().and_then(|l| l.probe_register("FS_OFFSET")) else {
-        return false;
+        return Vec::new();
     };
-    let Some(space) = fs.space else { return false };
+    let Some(space) = fs.space else { return Vec::new() };
     let at_base = |mut vn: VarnodeId| {
         for _ in 0..4 {
             let Some(v) = data.vbank().get(vn) else { return false };
@@ -186,6 +208,10 @@ fn registers_seh_frame(data: &Funcdata) -> bool {
     };
     data.obank()
         .iter_code(OpCode::CPUI_STORE)
-        .filter_map(|o| data.obank().get(o))
-        .any(|o| !o.is_dead() && o.get_in(1).is_some_and(at_base))
+        .filter(|&o| {
+            data.obank().get(o).is_some_and(|o| {
+                !o.is_dead() && o.get_in(1).is_some_and(at_base) && o.get_in(2).is_some_and(|v| stack(data, v, DEPTH))
+            })
+        })
+        .collect()
 }

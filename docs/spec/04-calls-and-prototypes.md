@@ -1862,10 +1862,12 @@ classified:
   with the stack pointer or an offset from it, reached back through register
   copies, the INDIRECTs of earlier calls and joins, and never through a copy
   of another stack slot (`push dword ptr [esp+k]` of a slot the model maps
-  onto the cookie is a pushed argument). The function must store to `fs:[0]`
-  (`holds_cookie`, `registers_seh_frame`), so `key ^ esp` pushed outside an
-  SEH frame stays an argument, and an argument the direct callee reads or
-  its proven `RET n` pops stays too. A cookie in a function without an EH
+  onto the cookie is a pushed argument). The op that stores it into the slot
+  must be the prologue's: in the block of a store of a stack address to
+  `fs:[0]` (the link of the registration record), before it (`holds_cookie`,
+  `seh_links`). So `key ^ esp` pushed outside an SEH frame, or in the body of
+  one (after the link), stays an argument, and an argument the direct callee
+  reads or its proven `RET n` pops stays too. A cookie in a function without an EH
   frame (`/GS` alone keeps it at `[ebp-4]`, above the locals) is not touched.
 
   The local-range test probes **two different addresses for two different
