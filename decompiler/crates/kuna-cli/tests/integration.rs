@@ -426,6 +426,9 @@ mod sse_minss_cli;
 #[path = "stack_alias_preservation.rs"]
 mod stack_alias_preservation;
 
+#[path = "stack_chk_fail_local.rs"]
+mod stack_chk_fail_local;
+
 #[path = "stack_float_snapshot.rs"]
 mod stack_float_snapshot;
 
