@@ -1842,6 +1842,37 @@ classified:
   trials below it are active, at-or-above it no-use. Otherwise fall through
   to ancestor analysis.
 
+  (kuna) The MSVC frame cookie is scored like any other stack trial and
+  leaves the argument lists afterwards
+  (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_stackcookie.rs
+  (shed_frame_cookies)`). An x86-32 MSVC function with an EH frame pushes the
+  cookie below its saved registers (`mov eax,[___security_cookie]; xor
+  eax,esp; push eax`) and links the registration record above it into
+  `fs:[0]`; only the epilogue pops the slot. Sitting right below the frame,
+  it was handed as a trailing stack argument to the first call that takes
+  more than its own pushes (a function pointer, a `this`-only method, a
+  callee whose extent is not stated), with the frame slots above it. Marking
+  the trial no-use while scoring is not the fix: the slot is the active trial
+  that `fillinMap` fills the holes below up to, so a push the upstream test
+  refused on its own (the stack model is off after a callee whose pop is not
+  known) was lost, and a slot the call that took it no longer holds becomes
+  free for the next call, whose stale slots it then anchors. So the trials
+  are scored as before, and at the end of the `ActionActiveParam` pass that
+  finalizes the last call, every call loses its lowest stack argument that
+  holds the cookie and every stack argument above it: a call only ever loses
+  frame slots. An argument holds the cookie when, on every path, it is an
+  `INT_XOR` of a value read from a fixed address of the default data space
+  with the stack pointer or an offset from it, reached back through register
+  copies, the INDIRECTs of earlier calls and joins, and never through a copy
+  of another stack slot (`push dword ptr [esp+k]` of a slot the model maps
+  onto the cookie is a pushed argument). The op that stores it into the slot
+  must be the prologue's: in the block of a store of a stack address to
+  `fs:[0]` (the link of the registration record), before it (`holds_cookie`,
+  `seh_links`). So `key ^ esp` pushed outside an SEH frame, or in the body of
+  one (after the link), stays an argument, and an argument the direct callee
+  reads or its proven `RET n` pops stays too. A cookie in a function without an EH
+  frame (`/GS` alone keeps it at `[ebp-4]`, above the locals) is not touched.
+
   The local-range test probes **two different addresses for two different
   questions**, and the distinction decides whether stack-passed arguments are
   recovered at all. `guard_calls` registers the trial at the *callee*-relative

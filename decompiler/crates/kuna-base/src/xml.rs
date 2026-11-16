@@ -2210,7 +2210,8 @@ mod tests {
         // and kuna-ppc64le-elfv2-stack-args / an ELFv2 stack argument follows the 32-byte header
         // and kuna-stackchklocal / __stack_chk_fail_local takes no arguments and never returns
         // and kuna-mipsgot-weak / unresolved weak GOT entries retain import-slot identity
-        assert_eq!(count, 763, "corpus file count drifted");
+        // and kuna-stackcookie / the MSVC frame cookie is no call's argument
+        assert_eq!(count, 764, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

@@ -2462,3 +2462,21 @@ llvm-objcopy --strip-all hookfix swift_call_hook_elf
 whose `movq (%rdi),%rax; movq %rdi,%r13; callq *0x40(%rax)` dispatches `area()`.
 With `swiftmetadata on` the first call keeps the C model and the second takes
 `__swiftcall`.
+
+### `stackcookie_pe_i386.exe` — MSVC frame cookies below a call
+
+`stackcookie_pe_i386.exe` (3,072 bytes, PE32/i386, SHA-256
+`79dcafcff03c495a9097c0ad099a2fec38ae2afff009e5082c47c4fdb65cf2a6`) is clean-room:
+`gsseh`@`0x401000` pushes a `/GS` cookie (`mov eax,[___security_cookie]; xor eax,esp;
+push eax`) below an SEH frame and calls a function pointer with one pushed argument,
+cleaned up after it; `gsthis`@`0x401050` calls a method on `this+8` with no stack
+argument under the same frame; `gsebp`@`0x401090` stores the cookie at `[ebp-4]`
+(`xor eax,ebp`) and checks it in ECX before returning. Three functions push a real
+argument shaped like the cookie: `keyarg`@`0x401130` (`key ^ esp` through a pointer,
+no SEH frame), `keyread`@`0x401150` (the same to a direct callee that reads it, under
+an SEH frame with a cookie) and `copyarg`@`0x4011a0` (a copy read back from the
+cookie's slot after a call, under the same frame). Two more push one in the body
+of an SEH function, through a pointer: `sehkey`@`0x4011f0` (`key ^ esp` and `7`,
+under a frame with a cookie) and `sehebp`@`0x401240` (`key ^ ebp`, under an EBP
+frame with no cookie). Source and recipe (clang +
+lld-link) in `stackcookie_pe_i386.s`. Used by `tests/stages/kuna-stackcookie.xml`.

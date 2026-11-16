@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4368,
-    4368
+    4379,
+    4379
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2144,6 +2144,17 @@
     "data:STACK WORD #1: default loses the pointer",
     "data:STACK WORD #2: enabled retains all four arguments",
     "data:STACK WORD #3: enabled preserves the output-dependent condition",
+    "data:STACKCOOKIE #10: key ^ esp pushed in an SEH body is an argument, and so is the 7 above it",
+    "data:STACKCOOKIE #11: key ^ ebp pushed under an EBP SEH frame is an argument",
+    "data:STACKCOOKIE #1: the call under an SEH frame takes only its pushed name",
+    "data:STACKCOOKIE #2: the method under an SEH frame takes only this",
+    "data:STACKCOOKIE #3: the call in an EBP frame takes only its argument",
+    "data:STACKCOOKIE #4: the epilogue check still receives the cookie in ECX",
+    "data:STACKCOOKIE #5: without an SEH frame a pushed key ^ esp is the call's argument",
+    "data:STACKCOOKIE #6: the callee that reads it keeps its one argument",
+    "data:STACKCOOKIE #7: and that argument is the key, not the cookie",
+    "data:STACKCOOKIE #8: a copy read back from the cookie's slot is the call's argument",
+    "data:STACKCOOKIE #9: the call before it takes only its receiver",
     "data:STACKGUARD-TAILCALL #10: no canary, h7 keeps t.b = 2 in both passes",
     "data:STACKGUARD-TAILCALL #11: no canary, h7 passes the address of t to consume in both passes",
     "data:STACKGUARD-TAILCALL #1: the fs_offset input is declared only with option stackguard off, once per function",
