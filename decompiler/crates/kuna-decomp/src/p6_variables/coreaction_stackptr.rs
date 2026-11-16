@@ -83,6 +83,11 @@ struct StackSolver {
     missedvariables: int4,
     /// (kuna) The pops settled so far, by INDIRECT output.
     settled: crate::kuna_calleepopslot::SettledPops,
+    /// (kuna) Variables whose value depends on a runtime amount: the stack
+    /// pointer moved by a non-constant (`sub sp,ax`), and every merge such a
+    /// value reaches. They have no constant solution, so no equation may
+    /// assign one through a merge, and they are never rewritten.
+    dynamic: Vec<bool>,
 }
 
 impl StackSolver {
@@ -95,6 +100,7 @@ impl StackSolver {
             soln: Vec::new(),
             missedvariables: 0,
             settled: crate::kuna_calleepopslot::SettledPops::new(),
+            dynamic: Vec::new(),
         }
     }
 
@@ -201,6 +207,7 @@ impl StackSolver {
             self.companion.push(-1);
         }
         self.missedvariables = 0;
+        self.dynamic = vec![false; self.vnlist.len()];
         if self.vnlist.is_empty() {
             return Ok(());
         }
@@ -209,6 +216,7 @@ impl StackSolver {
             return Err(());
         }
 
+        let mut seeds: Vec<(usize, Option<int4>)> = Vec::new();
         for i in 1..self.vnlist.len() {
             let vn = self.vnlist[i];
             let op = match data.vbank().get(vn).and_then(|v| v.get_def()) {
@@ -225,6 +233,22 @@ impl StackSolver {
                     continue;
                 }
             };
+            // (kuna) Arithmetic moving the stack pointer by a non-constant
+            // amount: a runtime reservation.
+            if matches!(opc, OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB | OpCode::CPUI_INT_AND
+                | OpCode::CPUI_PTRADD | OpCode::CPUI_PTRSUB)
+                && data.obank().get(op).is_some_and(|o| {
+                    // PTRADD's third input is its element size, not an amount.
+                    let amounts = if opc == OpCode::CPUI_PTRADD { 2 } else { o.num_input() };
+                    (0..o.num_input()).any(|j| Self::addr_is(data, o.get_in(j), &spacebase))
+                        && (0..amounts).any(|j| !Self::addr_is(data, o.get_in(j), &spacebase) && !Self::is_const(data, o.get_in(j)))
+                })
+            {
+                self.dynamic[i] = true;
+                seeds.push((i, data.obank().get(op).and_then(|o| (0..o.num_input())
+                    .find_map(|j| o.get_in(j).filter(|&v| Self::addr_is(data, Some(v), &spacebase)))
+                    .and_then(|v| self.index_of(v)))));
+            }
             match opc {
                 OpCode::CPUI_INT_ADD => {
                     let mut othervn = data.obank().get(op).and_then(|o| o.get_in(0));
@@ -249,6 +273,21 @@ impl StackSolver {
                         }
                     };
                     let rhs = Self::const_off(data, constvn) as int4;
+                    self.eqs.push(StackEqn { var1: i as int4, var2: idx, rhs });
+                }
+                // (kuna) `sub sp,c` is `add sp,-c`: give it its equation, so a
+                // constant reservation on one path of a merge is solved, not
+                // equated with the other path.
+                OpCode::CPUI_INT_SUB
+                    if Self::is_const(data, data.obank().get(op).and_then(|o| o.get_in(1)))
+                        && Self::addr_is(data, data.obank().get(op).and_then(|o| o.get_in(0)), &spacebase) =>
+                {
+                    let othervn = data.obank().get(op).and_then(|o| o.get_in(0));
+                    let Some(idx) = othervn.and_then(|o| self.index_of(o)) else {
+                        self.missedvariables += 1;
+                        continue;
+                    };
+                    let rhs = (Self::const_off(data, data.obank().get(op).and_then(|o| o.get_in(1))) as int4).wrapping_neg();
                     self.eqs.push(StackEqn { var1: i as int4, var2: idx, rhs });
                 }
                 OpCode::CPUI_COPY => {
@@ -401,15 +440,83 @@ impl StackSolver {
                 }
             }
         }
+        self.confirm_dynamic(&seeds);
+        self.spread_dynamic(data);
         Ok(())
     }
 
+    /// (kuna) A non-constant SP adjustment is often a constant the solver has
+    /// not yet seen (`add sp,si` with `si == 2` on that path, popping a pushed
+    /// argument): there the upstream solve implies a nonzero move, a real
+    /// adjustment. Only an adjustment whose solved move is zero, i.e. one the
+    /// merge equation erased, or that stays unsolved, is runtime-sized. This is
+    /// evidence, not proof: a runtime amount the merge equates with another
+    /// path's nonzero constant (`alloca(c ? n : 8)`) keeps upstream's answer,
+    /// as before this change.
+    fn confirm_dynamic(&mut self, seeds: &[(usize, Option<int4>)]) {
+        if seeds.is_empty() {
+            return;
+        }
+        let (eqs, guess) = (self.eqs.clone(), self.guess.clone());
+        self.solve();
+        let soln = std::mem::take(&mut self.soln);
+        (self.eqs, self.guess) = (eqs, guess);
+        for &(i, input) in seeds {
+            let moved = input.and_then(|j| soln[j as usize]).zip(soln[i]).is_some_and(|(before, after)| before != after);
+            if moved {
+                self.dynamic[i] = false;
+            }
+        }
+    }
+
+    /// (kuna) A value computed from a dynamic one is dynamic, transitively;
+    /// then drop every equation equating a dynamic variable with a fixed one. Upstream's merge equation
+    /// would otherwise equate `sp - n` on one path with the constant frame of
+    /// another and rewrite the runtime reservation away.
+    fn spread_dynamic(&mut self, data: &Funcdata) {
+        if !self.dynamic.iter().any(|&d| d) {
+            return;
+        }
+        loop {
+            let mut changed = false;
+            for i in 1..self.vnlist.len() {
+                if self.dynamic[i] {
+                    continue;
+                }
+                let Some(op) = data.vbank().get(self.vnlist[i]).and_then(|v| v.get_def()).and_then(|o| data.obank().get(o)) else { continue };
+                // The value follows its input forward: merges, copies,
+                // constant adjustments and call effects all carry the amount.
+                let forwarded = match op.code() {
+                    OpCode::CPUI_MULTIEQUAL | OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB | OpCode::CPUI_INT_AND
+                        | OpCode::CPUI_PTRSUB => op.num_input(),
+                    OpCode::CPUI_PTRADD => 2,
+                    OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_INDIRECT => 1,
+                    _ => continue,
+                };
+                if (0..forwarded).any(|j| op.get_in(j).and_then(|v| self.index_of(v)).is_some_and(|x| self.dynamic[x as usize])) {
+                    self.dynamic[i] = true;
+                    changed = true;
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+        // Only an equation joining a dynamic value to a fixed one is false;
+        // relations among dynamic values stay, unanchored to entry SP.
+        let dynamic = &self.dynamic;
+        self.eqs.retain(|e| dynamic[e.var1 as usize] == dynamic[e.var2 as usize]);
+        self.guess.retain(|e| dynamic[e.var1 as usize] == dynamic[e.var2 as usize]);
+    }
+
+    /// (kuna) A literal, or a value that evaluates to one (`mov ax,8;
+    /// sub sp,ax`): the adjustment then has its exact equation.
     fn is_const(data: &Funcdata, vn: Option<VarnodeId>) -> bool {
-        vn.and_then(|v| data.vbank().get(v).map(|x| x.is_constant())).unwrap_or(false)
+        vn.and_then(|v| crate::kuna_bejoin::literal_value(data, v, 8)).is_some()
     }
 
     fn const_off(data: &Funcdata, vn: Option<VarnodeId>) -> uintb {
-        vn.and_then(|v| data.vbank().get(v).map(|x| x.get_offset())).unwrap_or(0)
+        vn.and_then(|v| crate::kuna_bejoin::literal_value(data, v, 8)).unwrap_or(0) as uintb
     }
 
     fn addr_is(data: &Funcdata, vn: Option<VarnodeId>, addr: &Address) -> bool {
@@ -736,6 +843,9 @@ pub(crate) fn analyze_extra_pop(
     let mut changed: int4 = 0;
     for i in 1..solver.vnlist.len() {
         let vn = solver.vnlist[i];
+        if solver.dynamic[i] {
+            continue;
+        }
         let Some(soln) = solver.soln[i] else {
             // C++ warns "Unable to track spacebase fully" once here; omitted
             // (cosmetic, see above) — the variable is simply left unsolved.
