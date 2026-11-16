@@ -2206,8 +2206,9 @@ mod tests {
         // and kuna-libcnames-win32 / a local takes the name of the Win32 call it meets
         // and kuna-libcnames-addr / a stack object takes the name of the library parameter its address meets
         // and kuna-sparc64-or-masked-spill / a spill read through an OR-masked frame address is kept
+        // and kuna-sparc64-hiddenret-slot-locals / a SPARC64 local in the unused hidden-return slot keeps its symbol
         // and kuna-stackchklocal / __stack_chk_fail_local takes no arguments and never returns
-        assert_eq!(count, 758, "corpus file count drifted");
+        assert_eq!(count, 759, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

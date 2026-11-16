@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4345,
-    4345
+    4351,
+    4351
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -3955,6 +3955,12 @@
     "data:sparc64-double-abs #2 has no numeric high-word conversion",
     "data:sparc64-double-sign #1 restores unary negation",
     "data:sparc64-double-sign #2 has no numeric high-word conversion",
+    "data:sparc64-hiddenret-slot-locals #1: the argument is stored into the buffer",
+    "data:sparc64-hiddenret-slot-locals #2: the call receives the declared buffer",
+    "data:sparc64-hiddenret-slot-locals #3: the result is reloaded after the call",
+    "data:sparc64-hiddenret-slot-locals #4: no undeclared stack location",
+    "data:sparc64-hiddenret-slot-locals #5: fill_raw stores through its incoming hidden pointer",
+    "data:sparc64-hiddenret-slot-locals #6: fill_raw returns that pointer",
     "data:sparc64-or-masked-spill #1: the argument spill is kept",
     "data:sparc64-or-masked-spill #2: the byte is read back through the spilled local",
     "data:spill and CTR effects acquire no terminal contract",
