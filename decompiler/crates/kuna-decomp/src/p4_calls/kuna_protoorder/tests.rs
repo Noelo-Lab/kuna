@@ -502,6 +502,86 @@ fn strides_combine_by_their_common_divisor() {
     assert_eq!(gcd(0, 0), 0);
 }
 
+#[test]
+fn mutable_byte_cursors_refuse_wider_votes_without_retyping_word_views_or_copies() {
+    use kuna_base::space::{addrspace_flags, ConstantSpace, UniqueSpace};
+    use crate::context::{ArchContext, TypeOp};
+
+    fn operation(fd: &mut Funcdata, code: OpCode, inputs: &[VarnodeId], off: u64, size: int4) -> Option<VarnodeId> {
+        let ram = Rc::clone(fd.get_arch().manage().get_space_by_name("ram").unwrap());
+        let op = fd.new_op(inputs.len() as int4, Address::new(Rc::clone(&ram), off));
+        fd.op_set_opcode(op, TypeOp::new(code, 0, format!("{code:?}")));
+        for (slot, &input) in inputs.iter().enumerate() {
+            fd.op_set_input(op, input, slot as int4).unwrap();
+        }
+        let root = fd.bblocks_ref().root.unwrap();
+        let block = if fd.bblocks_ref().block(root).get_size() == 0 {
+            fd.bblocks_mut().new_block_basic(root)
+        } else {
+            fd.bblocks_ref().block(root).get_block(0)
+        };
+        fd.op_insert(op, block, None);
+        (size != 0).then(|| fd.new_varnode_out(size, &Address::new(ram, off + 0x1000), op).unwrap())
+    }
+
+    for pointee in [prim(2, type_metatype::TYPE_UINT), prim(4, type_metatype::TYPE_UINT), ptr_to(int8())] {
+        let width = pointee.get_size();
+        for ((label, read, write, whole, stride, refuse), form) in [
+            ("mutable bytes", true, true, None, 1, true),
+            ("read-only byte view", true, false, None, 1, false),
+            ("write-only byte copy", false, true, None, 1, false),
+            ("whole element and mutable bytes", true, true, Some((0i64, 0)), 1, false),
+            ("one byte per element", true, true, None, width, false),
+            ("whole-element cursor", true, true, Some((0, width)), 1, false),
+            ("word-sized byte cursor", true, true, Some((0, 1)), 1, true),
+            ("misaligned word", true, true, Some((1, 0)), 1, true),
+            ("negative misaligned word", true, true, Some((-1, 0)), 1, true),
+            ("positive whole-element offset", true, true, Some((i64::from(width), 0)), 1, false),
+            ("negative whole-element offset", true, true, Some((-i64::from(width), 0)), 1, false),
+        ].into_iter().flat_map(|case| {
+            [OpCode::CPUI_INT_ADD, OpCode::CPUI_COPY, OpCode::CPUI_CAST, OpCode::CPUI_INT_MULT, OpCode::CPUI_INT_SUB, OpCode::CPUI_PTRSUB]
+                .into_iter().map(move |form| (case, form))
+        }) {
+            let mut manager = AddrSpaceManager::new();
+            manager.insert_space(Rc::new(ConstantSpace::new())).unwrap();
+            manager.insert_space(Rc::new(UniqueSpace::new(1, 0, false))).unwrap();
+            let ram = Rc::new(AddrSpace::new(spacetype::IPTR_PROCESSOR, "ram", false, 8, 1, 2, addrspace_flags::hasphysical, 1, 1));
+            manager.insert_space(Rc::clone(&ram)).unwrap();
+            let context = Rc::new(ArchContext::new(manager));
+            let mut fd = Funcdata::new("cursor", "cursor", context, Address::new(Rc::clone(&ram), 0x1000), 0x1000_0000, 0x40).unwrap();
+            let base = fd.new_varnode(8, &Address::new(Rc::clone(&ram), 0x10), None);
+            let base = fd.set_input_varnode(base).unwrap();
+            let index = fd.new_varnode(8, &Address::new(ram, 0x20), None);
+            let iteration = fd.set_input_varnode(index).unwrap();
+            let step = fd.new_constant(8, stride as u64);
+            let index = operation(&mut fd, OpCode::CPUI_INT_MULT, &[iteration, step], 0x1000, 8).unwrap();
+            let address = operation(&mut fd, OpCode::CPUI_INT_ADD, &[base, index], 0x1004, 8).unwrap();
+            let space = fd.new_constant(8, 2);
+            let mut value = fd.new_constant(1, 0x20);
+            if read {
+                value = operation(&mut fd, OpCode::CPUI_LOAD, &[space, address], 0x1008, 1).unwrap();
+            }
+            if write {
+                operation(&mut fd, OpCode::CPUI_STORE, &[space, address, value], 0x100c, 0);
+            }
+            if let Some((offset, stride)) = whole {
+                let step = fd.new_constant(8, stride as u64);
+                let inputs = if form == OpCode::CPUI_INT_MULT { [step, iteration] } else { [iteration, step] };
+                let mut index = operation(&mut fd, OpCode::CPUI_INT_MULT, &inputs, 0x1010, 8).unwrap();
+                if matches!(form, OpCode::CPUI_COPY | OpCode::CPUI_CAST) {
+                    index = operation(&mut fd, form, &[index], 0x1012, 8).unwrap();
+                }
+                let code = if matches!(form, OpCode::CPUI_INT_SUB | OpCode::CPUI_PTRSUB) { form } else { OpCode::CPUI_INT_ADD };
+                let address = operation(&mut fd, code, &[base, index], 0x1014, 8).unwrap();
+                let offset = fd.new_constant(8, offset as u64);
+                let address = operation(&mut fd, OpCode::CPUI_INT_ADD, &[address, offset], 0x1018, 8).unwrap();
+                operation(&mut fd, OpCode::CPUI_LOAD, &[space, address], 0x101c, width);
+            }
+            assert_eq!(input_refuses(&fd, base, &ptr_to(Rc::clone(&pointee))), refuse, "{label}, element width {width}, index form {form:?}");
+        }
+    }
+}
+
 fn named_struct(name: &str) -> Rc<Datatype> {
     let mut t = Datatype::new(0x28, type_metatype::TYPE_STRUCT);
     t.name = name.to_string();

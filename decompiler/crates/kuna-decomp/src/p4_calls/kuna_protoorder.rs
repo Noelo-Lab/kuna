@@ -846,13 +846,19 @@ pub(crate) fn accesses_through(data: &Funcdata, family: &[VarnodeId]) -> Option<
             ((n.get_offset() << shift) as i64) >> shift
         })
     };
-    let step_of = |v: Option<VarnodeId>| {
-        let def = v.and_then(|v| data.vbank().get(v)).and_then(|n| n.get_def()).and_then(|d| data.obank().get(d));
-        match def.map(|o| (o.code(), constant(o.get_in(1)))) {
-            Some((OpCode::CPUI_INT_MULT, Some(k))) => k,
-            Some((OpCode::CPUI_INT_LEFT, Some(k))) if (0..32).contains(&k) => 1 << k,
-            _ => 1,
+    let step_of = |mut v: Option<VarnodeId>| {
+        for _ in 0..32 {
+            let Some(def) = v.and_then(|v| data.vbank().get(v)).and_then(|n| n.get_def()).and_then(|d| data.obank().get(d)) else {
+                return 1;
+            };
+            match def.code() {
+                OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_INT_ZEXT | OpCode::CPUI_INT_SEXT => v = def.get_in(0),
+                OpCode::CPUI_INT_MULT => return constant(def.get_in(1)).or_else(|| constant(def.get_in(0))).unwrap_or(1),
+                OpCode::CPUI_INT_LEFT => return constant(def.get_in(1)).filter(|k| (0..32).contains(k)).map_or(1, |k| 1 << k),
+                _ => return 1,
+            }
         }
+        1
     };
     let mut pointers: Vec<(OpId, VarnodeId, VarnodeId, bool)> = Vec::new();
     while let Some(v) = work.pop() {
@@ -886,10 +892,10 @@ pub(crate) fn accesses_through(data: &Funcdata, family: &[VarnodeId]) -> Option<
                     }
                 }
                 OpCode::CPUI_INT_SUB if o.get_in(0) == Some(v) => {
-                    constant(o.get_in(1)).map(|k| (c.wrapping_sub(k), stride)).or(Some((c, 1)))
+                    constant(o.get_in(1)).map(|k| (c.wrapping_sub(k), stride)).or_else(|| Some((c, gcd(stride, step_of(o.get_in(1))))))
                 }
                 OpCode::CPUI_PTRSUB if o.get_in(0) == Some(v) => {
-                    constant(o.get_in(1)).map(|k| (c.wrapping_add(k), stride)).or(Some((c, 1)))
+                    constant(o.get_in(1)).map(|k| (c.wrapping_add(k), stride)).or_else(|| Some((c, gcd(stride, step_of(o.get_in(1))))))
                 }
                 OpCode::CPUI_PTRADD if o.get_in(0) == Some(v) => {
                     let elsize = constant(o.get_in(2)).unwrap_or(1);
@@ -1009,9 +1015,25 @@ fn pointee_refuses(data: &Funcdata, family: &[VarnodeId], ct: &Datatype, depth: 
         let width = pointee.get_align_size() as i64;
         let family = with_sibling_loads(data, family);
         let Some((accesses, _)) = accesses_through(data, &family) else { return true };
-        return accesses.iter().any(|a| {
+        if accesses.iter().any(|a| {
             a.store && a.size as i64 > width && data.vbank().get(a.value).is_some_and(|n| n.is_constant())
-        });
+        }) {
+            return true;
+        }
+        if width <= 1 {
+            return false;
+        }
+        let byte_cursor = |a: &Access| a.size == 1 && a.stride.rem_euclid(width) != 0;
+        // Reading an object's byte view or copying bytes into it does not
+        // establish its element type. Require a mutable byte cursor, with no
+        // whole-element access, before refusing the wider callee vote.
+        return accesses.iter().any(|a| !a.store && byte_cursor(a))
+            && accesses.iter().any(|a| a.store && byte_cursor(a))
+            && !accesses.iter().any(|a| {
+                a.size as i64 == width
+                    && a.at.wrapping_add(base).rem_euclid(width) == 0
+                    && a.stride.rem_euclid(width) == 0
+            });
     }
     let float = pointee.get_metatype() == type_metatype::TYPE_FLOAT;
     if !float

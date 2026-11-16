@@ -6385,6 +6385,13 @@ is refused outright wherever the caller holds evidence the fold cannot weigh
   the same fixture stores 520 eight-byte constants, and a vote let through
   there printed 4,160 byte stores.
 
+  A wider non-character integer, boolean, or pointer-element vote is also
+  refused when the caller both reads and writes bytes through a cursor whose stride is not a multiple of
+  that element's width, without an on-grid access exactly one element wide.
+  Read-only byte views, write-only byte copies and these whole-element accesses keep the vote:
+  inspecting or copying an object's representation does not establish a
+  smaller element type.
+
 The callee's recovered RETURN type is not stated. It has no competing evidence at
 the caller — the call's result is a new value — so a wrong one spreads through
 every comparison it meets into the caller's own parameters: expr's `mbslen`
