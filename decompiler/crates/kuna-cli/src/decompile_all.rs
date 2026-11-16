@@ -3264,7 +3264,7 @@ fn usage_decompile_all() {
          decompile-many).  --json emits {{binary,count,functions:[{{name,address,code,error,warnings,variables,..}}]}};\n\
          without it, concatenated C with `// Function:` headers.  A record's\n\
          `warnings` lists the engine warnings its code carries as comments, as\n\
-         {{kind,message,line,address}}, each at the instruction it was recorded\n\
+         {{kind,message,line,address}}, each at the address it was recorded\n\
          at (a header warning at the entry); `error` is set only for a failed\n\
          function.\n\
          --omit KEY[,KEY].. (with --json) leaves those record collections out of\n\

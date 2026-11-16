@@ -1810,16 +1810,18 @@ above the prototype) is never listed. `message` is the engine's text less its
 `WARNING: ` marker (`Subroutine does not return`, `Bad instruction - Truncating
 control flow here`), the same under both `warnstyle` values, though `inline`
 prints it as a slug; `line` is the 1-based line of `code` carrying its comment,
-which joins to `line_mappings`. `address` is the instruction the engine
-recorded a body warning at (the bad instruction, the truncated or out-of-bounds
-flow, the unresolved indirect jump), and the function's `address` for a header
-warning; it is `null` only for `structuring-declined`, the printer's own note on
-a body it has no structure for. `kind` is a stable code: `bad-instruction` and
+which joins to `line_mappings`. `address` is where the engine recorded a body
+warning: the bad instruction, the unresolved indirect jump, or the address a
+flow cut at the budget, out of bounds or into unmapped memory went to (for
+`unmapped-flow` no instruction is there; its `message` names the one that
+flowed there). A header warning carries the function's `address`; `address`
+is `null` only for `structuring-declined`, the printer's own note on a body it
+has no structure for. `kind` is a stable code: `bad-instruction` and
 `unimplemented-instruction` for decode failures; `instruction-limit` for a flow
 cut at the instruction budget; `jump-as-call`, `jump-as-return` and `jumptable`
-for an indirect jump left unresolved; `out-of-bounds`, `unmapped-flow` and
-`funcboundflow` for flow that left the function's extent or the mapped image;
-`structuring-declined` for a body the printer could not structure; the slug
+for an indirect jump left unresolved or a jump table only partly recovered;
+`out-of-bounds`, `unmapped-flow` and `funcboundflow` for flow that left the
+function's extent or the mapped image; `structuring-declined` for a body the printer could not structure; the slug
 `warnstyle inline` prints for any other warning it abbreviates (`no-return`,
 `tail-call`, `branch-flip`, `return-dupe`, `inlined`, ...), less its ` xN`
 count; the producer tag of a kuna warning (`calltrampoline`, `overlapbranch`,
