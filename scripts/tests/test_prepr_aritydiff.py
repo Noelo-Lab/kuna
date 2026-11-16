@@ -25,6 +25,11 @@ class CallParsingTests(unittest.TestCase):
     def test_ignores_the_signature_before_the_body(self):
         self.assertEqual(aritydiff.calls("void f(int a0,int a1)\n{\n  g(a0);\n}"), [("g", 1)])
 
+    def test_a_quote_character_or_a_comment_hides_no_call_and_adds_none(self):
+        code = ("{\n  int *v1; // eax\n  \n  ((int *)a0)[9] = 0;\n  if (c == '\\\"') { // branch-flip\n"
+                "    (v1)[0] = 1;\n  }\n  g(1,\"x\");\n  /* h(1) */\n}")
+        self.assertEqual(aritydiff.calls(code), [("g", 2)])
+
 
 class CompareTests(unittest.TestCase):
     def test_a_lost_argument_blocks(self):

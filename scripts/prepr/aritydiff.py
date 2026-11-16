@@ -32,8 +32,12 @@ NOT_CALLS = {"if", "while", "for", "switch", "return", "sizeof", "do", "else",
              "void", "char", "short", "int", "long", "float", "double", "unsigned", "signed", "bool", "code"}
 NOT_CALL_PREFIXES = ("CONCAT", "SUB", "ZEXT", "SEXT", "SBORROW", "SCARRY", "CARRY")
 NAMED_CALL = re.compile(r"\b([A-Za-z_][A-Za-z0-9_:.$@?]*)\s*\(")
-STRING = re.compile(r'"(\\.|[^"\\])*"')
-CHAR = re.compile(r"'(\\.|[^'\\])*'")
+LEXEME = re.compile(r'"(?:\\.|[^"\\\n])*"|\'(?:\\.|[^\'\\\n])*\'|/\*.*?\*/|//[^\n]*', re.S)
+
+
+def _blank(m: re.Match) -> str:
+    """A string literal as `""`, a character literal as `0`, a comment as a space."""
+    return {'"': '""', "'": "0"}.get(m.group()[0], " ")
 
 
 def _argument_count(body: str, start: int) -> tuple[int, int]:
@@ -71,9 +75,9 @@ def calls(code: str) -> list[tuple[str, int]]:
 
     A call through a pointer, `(*expr)(...)`, is named `(*)`.
     """
+    code = LEXEME.sub(_blank, code)
     brace = code.find("{")
     body = code[brace:] if brace >= 0 else code
-    body = CHAR.sub("0", STRING.sub('""', body))
     found = []
     for m in NAMED_CALL.finditer(body):
         name = m.group(1)
