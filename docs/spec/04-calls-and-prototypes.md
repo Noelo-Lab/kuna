@@ -384,6 +384,11 @@ printed as a store to one variable and a call on `&Stack0000000000000018`;
 with the spec's ranges it is the local array the stock decompiler prints. MIPS
 o32 says the same of its 0..15 register backup area, so a spill there that
 nothing reads is dead and no longer makes an unused argument a parameter.
+SparcV9_64.cspec spelled its below-the-frame local range in 32 bits
+(`0xfff0bdc1..0xffffffff`), which in a 64-bit stack space is a range near
+4 GiB, so the frame's only local range ended at the window save area and an
+open array there ran on through the parameter range. kuna's copy sign-extends
+it, as x86-64-gcc.cspec does; an array at `fp+0x7fb` now ends at the frame.
 
 The spec's **named** models are registered alongside it, in document order
 (`decompiler/crates/kuna-decomp/src/infra/architecture.rs (decode_named_protos,
@@ -9049,12 +9054,12 @@ call through a pointer is typed by the listing itself (an import stub's
 The value's type is whatever it is: the callee's stated return through `callrettype`, a float for a float
 register (chapter 05). A forced function whose RETURN carries no value once the
 returns are built is made `void` (`kuna_voidret.rs (void_unless_returned)`),
-as upstream's `updateOutputTypes` would. The port's restart keeps the output an
-earlier pass recovered, and `ActionOutputPrototype` leaves the output alone
-when the RETURN has no value: a MinGW `-O0` function whose `mov eax,[iat];
-call eax` resolves to `ExitProcess` restarts, the pass before the restart
-returns `eax` joined with what the unresolved call left, the pass after it
-refuses the bare handle where the returning path also loads through it, and the
+as upstream's `updateOutputTypes` would. `ActionOutputPrototype` leaves the
+output alone when the RETURN has no value. Before restarts cleared the
+unlocked output (chapter 03), a MinGW `-O0` function whose `mov eax,[iat];
+call eax` resolves to `ExitProcess` restarted, the pass before the restart
+returned `eax` joined with what the unresolved call left, the pass after it
+refused the bare handle where the returning path also loads through it, and the
 function printed `int f(..)` around a bare `return;`.
 
 A redone wrapper reads its own callee's result in turn, so each settling
