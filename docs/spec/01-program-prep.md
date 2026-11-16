@@ -333,6 +333,19 @@ The SPE compiler models join 64-bit integer arguments from aligned pairs of
 no aligned pair remains. Following arguments use the remaining register or
 stack slots, and struct/union arguments are passed indirectly.
 
+(kuna) A PowerPC64 ELF image's compiler spec follows the ABI version in its
+`e_flags` (`decompiler/crates/kuna-analysis/src/loader/kuna_ppc64elfv2target.rs`).
+The ABIs differ in the frame header below the parameter save area: ELFv1's is
+48 bytes (back chain, CR, LR, two reserved doublewords, TOC), ELFv2's is 32
+(back chain, CR, LR, TOC). The first stack argument, the ninth doubleword of
+the save area, is therefore at SP+112 under ELFv1 and at SP+96 under ELFv2. A
+big-endian image that declares ABI version 2 (musl, `-mabi=elfv2`) selects
+`PowerPC:BE:64:default:elfv2` (`ppc_64_be_elfv2.cspec`); version 1 and an
+unspecified version keep the ELFv1 default model. The little-endian default
+model is ELFv2, so a little-endian image that declares ELFv1 is read with
+ELFv2 offsets. Explicit `--target` takes precedence, and the explicit
+`PowerPC:BE:64:A2ALT` language offers only the ELFv1 model.
+
 
 (kuna) **A Go image composes the `:golang` compiler field instead**
 (`decompiler/crates/kuna-analysis/src/loadimage_object.rs (language_id_for)`,
@@ -373,10 +386,14 @@ carrying exactly the fields whose offsets the runtime source states for the
 register-ABI era, and the layouts are **versioned off the image's own
 toolchain**: the build-info blob's version string
 (`decompiler/crates/kuna-analysis/src/loader/gobuildinfo.rs
-(go_toolchain_version)`) travels as the `KUNA_GOVERSION` loadtime variable —
-set by the object bootstrap before the sleigh build, because the shells are
-interned inside the cspec decode, upstream of every per-image fact write —
-and selects the release's layout
+(go_toolchain_version)`) travels on the load options
+(`decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_loadoptions.rs
+(go_version)`) — set by the object bootstrap from the image's bytes before the
+loader parses them and the sleigh build runs, because the shells are interned
+inside the cspec decode, upstream of every per-image fact write. The image's
+own version wins over a release the caller stated; a load without explicit
+options publishes it as `KUNA_GOVERSION`, and clears that variable for an image
+with no version, so a stale value from an earlier load cannot leak in. It selects the release's layout
 (`decompiler/crates/kuna-decomp/src/p1_partition/kuna_goreg.rs (GoLayout)`):
 go1.23 inserted `g.syscallbp`, go1.25 dropped `gobuf.ret`, and with both
 perturbations the liblink-stable anchors (`stackguard0` 0x10, `_panic` 0x20,
@@ -391,7 +408,7 @@ own goroutine pointers stay `void *` (a pointer taken to a still-incomplete
 composite would survive the factory's clone-and-re-key completion pointing at
 the stale type). An access past a modeled prefix renders as an offset off the
 shell — still anchored. An image with no parsable build-info version takes
-the go1.22 baseline. A golang target with no pinned register (x86-32 reaches
+the release its explicit load options state, else the go1.22 baseline. A golang target with no pinned register (x86-32 reaches
 `g` through TLS) is untouched. Measured on the stripped
 go1.22 hello-world: functions declaring a phantom `// r14` local 267 → 23,
 functions reading named `g->` fields 7 → 297, the preemption-request store
@@ -2789,14 +2806,33 @@ tracked values take precedence over this entry default; raw and XML images do
 not acquire the ELF convention. N32 participates in MIPS ISA, entry, floating
 ABI and GOT dispatch despite the object reader's separate architecture tag.
 
+(kuna) `decompiler/crates/kuna-analysis/src/loader/kuna_ppc64r12.rs`
+(`ppc64r12`) is the PowerPC64 ELFv2 counterpart of the `t9` seed. The ELFv2 ABI
+requires a caller entering a function at its global entry to pass that entry's
+address in `r12`, and the global entry derives the TOC pointer from it
+(`addis r2,r12,hi; addi r2,r2,lo`) before falling into the local entry. The pass
+seeds `r12 = entry` at each defined PowerPC64 function symbol whose `st_other`
+declares a separate local entry (field values 2 to 6, 4 to 64 bytes in), so
+the prologue's `r2` folds to the TOC and TOC-relative globals resolve by
+address. The seed is committed as a per-entry loader seed, as the ELFv1 TOC
+is, not as a context-database range like `t9`: each function's snapshot of
+that database would otherwise grow with the number of seeded functions. Only
+the global entry address is seeded: a function decompiled from its local entry
+keeps `r2` as an input. An
+image whose `e_flags` declare ELFv1 is skipped, and a symbol without a local
+entry gets no seed, so a stripped image seeds only the functions its dynamic
+symbol table still names.
+
 (kuna) **A PowerPC64 ELFv1 function symbol names a descriptor, not code**
 (`decompiler/crates/kuna-analysis/src/loader/elfv1.rs (Descriptors::read)`, the
 `.opd` half of Ghidra's `PowerPC64_ElfExtension`). Under ABI v1 a function symbol
 and the image entry both point at a 24-byte `.opd` record — code address, TOC base,
 environment — so selecting a function by name used to decode the record as
 instructions. For a linked (`ET_EXEC`/`ET_DYN`) PowerPC64 ELF whose `e_flags` ABI
-field is 0 or 1 and whose `.opd` is file-backed, the image entry and every
-8-aligned function symbol defined in `.opd` are read as descriptors. A descriptor
+field is 0 or 1 and whose `.opd` is file-backed, the image entry, every
+8-aligned function symbol defined in `.opd` and every `.dynamic` function pointer
+(`DT_INIT`, `DT_FINI` and the `DT_INIT_ARRAY`/`DT_FINI_ARRAY` elements) are read as
+descriptors. A descriptor
 is used only when its code word is 4-aligned and lands on file-backed bytes of an
 `SHF_ALLOC|SHF_EXECINSTR` section; the loader's symbol stream and image entry then
 carry that code address, and every name at it is kept as an alias, so `answer`,
@@ -2829,18 +2865,29 @@ the following TOC word without requiring an environment word; an unavailable
 TOC is ambiguous. Unresolved potential code words also decline all these names
 because they cannot exclude a descriptor. This conservative scan supplies only
 import ambiguity, while symbol normalization and register seeding use the
-validated image-entry and symbol-derived descriptors described above. Possible
+validated image-entry, symbol and `.dynamic` descriptors described above. Possible
 TOCs include aliases that disagree and cannot seed their shared code entry.
 This resolver declines all descriptor-stub names if any validated descriptor's
 TOC remains unresolved: without a caller-specific TOC, the unknown value could
 select a different import and invalidate a no-return fact.
-Both full environment-word and GNU lazy-resolution forms are supported. A lazy
+A stub addresses the descriptor from `r2` itself or from a base that `addis`
+forms from `r2`, and it ends in `bctr` or in the GNU lazy-resolution tail.
+The entry goes through `r11` or `r12`, an `addis` base is the other of the
+two, and the move to CTR directly follows the entry load or the TOC load.
+Loading the environment word into `r11` is optional. From an `addis` base it
+is the last instruction before the ending. From `r2` it must directly follow
+an early CTR move and precede the TOC load, which replaces `r2`. An environment
+load in any other position is declined, as is a stub that does not load the
+TOC. GNU ld's rarer forms also stay unnamed: an `addi` that moves the base when
+the TOC or environment offset would cross into the next 64 KiB, the `xor`/`add`
+pair that replaces the lazy tail when the resolver is out of branch range, and a
+stub without the TOC save. A lazy
 stub's zero-TOC branch must reach the matching import's resolver entry: its
 relocation index, branch to the common glink code, and the common code's load of
 `DT_PLTGOT` are validated against `DT_PPC64_GLINK` and `DT_JMPREL`. Returning
 fallbacks, entries for another slot, and unknown resolver code or metadata are
 declined. Currently only the two-instruction resolver entries with indices below
-32768 qualify. The full environment-word form needs no lazy resolver.
+32768 qualify. A stub that ends in `bctr` needs no lazy resolver.
 The existing known-no-return pass consumes these names, so a guard failure
 import no longer introduces false fall-through or consumes the normal return.
 ELFv2 decoding and ordinary returning imports retain their existing behavior.
@@ -3117,7 +3164,7 @@ moves.
   (stale i386 `-O0` outgoing stack slots, the AArch64 `x8` result register), and
   in an i386 PIC object, whose `GOTOFF` addresses the loader leaves unresolved,
   a `char *` parameter renders such a garbage address as a string literal.
-- **(kuna) libgcc DI-mode contracts** (`libgccsigs`, off by default,
+- **(kuna) Compiler-runtime contracts** (`libgccsigs`, off by default,
   `decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_libgcc.rs (LibgccSigsPass)`):
   seeds the reserved compiler-runtime name `__divdi3` on SPARC32 big-endian ELF
   under `sparc:BE:32:default:default`. Its DI-mode contract is a signed
@@ -3127,14 +3174,34 @@ moves.
   word of the computed quotient instead of reading an unassigned local. Other
   names and targets retain their existing inference. Existing import-address
   and name-ambiguity rules apply, and DWARF or explicit prototype assertions
-  retain precedence over the built-in signature. The pass's facts are computed
+  retain precedence over the built-in signature. On any ELF the same option
+  gives a `__stack_chk_fail_local` the image defines the `void (void)` row
+  `libcsigs` gives the import (below), keyed by its address and only where no
+  other function name holds that address: GCC's `-fPIC` stack protector on
+  32-bit PowerPC and x86 links the hidden helper into each PIE and shared
+  object, where a PowerPC caller that set its return value in `r3` before the
+  canary test otherwise passes it (`__stack_chk_fail_local(a0 * 3)`), while
+  static glibc aliases it to `__stack_chk_fail`, whose address keeps its
+  inferred contract (`__gconv_transform_ascii_internal` stays `unsigned long`).
+  The defined helper is no-return only when its body shows it, as for any
+  defined function. Over the shared-object twins of the objects measured below
+  (447) the option removes every invented argument (391 calls on the default
+  target, 234 on e500) and gives 240 functions on the default target the return
+  value their source declares, but 43 PLT call stubs (32 on e500) lose an
+  inferred return the argument was the only use of, and at `-Os` 4 functions
+  lose a parameter whose only use was the argument (`void gather(int a0,unsigned
+  char *a1)` becomes `void gather(int a0)`; on e500 `void main(unsigned int a0)`
+  becomes `void main(void)`); on an i386 PIE that defines the helper, one
+  function in 141 (`xstrtoimax`) splits a 64-bit local into two 32-bit halves.
+  With the option off the output is unchanged. The pass's facts are computed
   at load and committed only when the option is on. It ships off because the
   locked eight-byte result still costs a caller that returns arithmetic on the
   quotient: §4's whole-pair proof keeps both return words only when each is a
   bare slice of the call result or a literal and nothing else reads the
   quotient, so `return a / b + 1;`,
   `return -(a / b);` and `return f ? a / b : c;` keep only the high word or
-  return nothing, where the off output returns every word.
+  return nothing, where the off output returns every word, and the helper's
+  stub and `-Os` parameter losses above keep it off as well.
 - **(kuna) Measured libc signatures** (`libcsigs`,
   `decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_libcsigs.rs (LibcSigsPass)`):
   the second, larger half of the same table, closing most of the LOSS above. Which
@@ -3206,7 +3273,33 @@ moves.
   prototype. Independently, every provenance-confirmed import receives an
   address-keyed copy at each resolver address. Thus an IAT slot and veneer remain
   typed even when a same-spelled export suppresses the global key; the export
-  itself remains untouched. Two complex-valued rows, `cexpf` and `cexp`, are
+  itself remains untouched. `__stack_chk_fail_local`, the hidden helper GCC's
+  `-fPIC` stack protector calls on 32-bit PowerPC and x86, is `void (void)` like
+  `__stack_chk_fail` (glibc `debug/stack_chk_fail_local.c`, libssp
+  `ssp-local.c`), so a PowerPC function's return value, set in `r3` before the
+  canary test, stays out of the call: `__stack_chk_fail_local()`, not
+  `__stack_chk_fail_local(a0 * 3)`. Only an import spelled exactly so matches,
+  which in practice is a relocatable object's call relocation to the undefined
+  symbol, and the known-names pass (§1.7) ends the flow at the same import. An
+  i386 object reaches the helper through an `R_386_PC32` relocation, which the
+  loader does not register as a code extern, so there the call stays an unnamed
+  `sub_` callee and is unchanged. A
+  linked PIE or shared object defines the helper hidden in its own text, where
+  `libgccsigs` (above) types it when that option is on; static glibc aliases it
+  to `__stack_chk_fail`, so a by-name match there would retype that address for
+  the callers of both names, and neither path touches it. Over GCC 15 `-fPIC
+  -fstack-protector-strong` PowerPC32 objects (447, at `-O1` to `-O3` and
+  `-Os`, default target and e500) the row and the no-return leave no helper call
+  with an argument and end the flow at all 770. At `-O1` to `-O3` GCC
+  places the call after the function's last return, and flow running past it
+  decoded what followed (279 `halt_baddata`, now none). At `-Os` the call falls
+  through into the shared epilogue, where the `void` call's clobbered `r3` met
+  the return value: with the no-return 76 functions (72 on e500) return the
+  value their source declares and 5 (7) have parameter lists closer to it, and
+  no signature gets worse. A function that returns through a `_restgpr_N_x` tail
+  branch, which the return recovery reads as an opaque call, stays `void` (89),
+  and in 18 the value now shows as that tail call's argument.
+  Two complex-valued rows, `cexpf` and `cexp`, are
   seeded with the DWARF pass's complex pair types (below), and only where that
   layout applies to the value's width, so a call passes and returns the value
   in the target's own registers or hidden buffer.
@@ -6856,7 +6949,20 @@ descriptor resolution of §1.3 and the ARM Thumb-bit fold, as
 and every reporting surface reads it from the loaded program's image metadata
 instead of parsing the file again: `kuna functions --summary`'s
 `entry`/`reachable_from_entry`, `kuna decompile-graph`'s `isEntryPoint`, and the
-`kuna decompile-project` README's entry row.
+`kuna decompile-project` README's entry row. Entry discovery's `e_entry` oracle seeds
+the same code address through
+`decompiler/crates/kuna-analysis/src/analyzers/entry/mod.rs (image_code_entry)`, because
+under ELFv1 the raw field names a descriptor in `.opd`, which no executable section
+contains. A stripped ELFv1 executable whose section table and `.opd` survive has
+its `_start` found this way. The `.dynamic` oracle's `DT_INIT`, `DT_FINI` and array
+pointers name descriptors too, and each is replaced by the code word of the descriptor
+validated at that address, so the function and its `_DT_INIT`, `_DT_FINI`,
+`_INIT_<i>` or `_FINI_<i>` name land on code and the function's TOC seeds `r2`. A
+pointer that does not validate stays as it is and the executable-section check drops
+it. On PowerPC64 an array element is the value its dynamic relocation leaves, an
+`R_PPC64_RELATIVE` addend at kuna's zero load bias, and not the word stored in the
+file, which a linker may leave zero or stale; an element that any other relocation
+writes is left out.
 
 **Address tables** (`addrtable`,
 `decompiler/crates/kuna-analysis/src/analyzers/addrtable/mod.rs (AddrTablePass)`)
@@ -9939,7 +10045,13 @@ or replaced by the PE/Mach-O list (`__fastfail`, `_invoke_watson`, the same GNU
 Fortran block, plus the shared C names) off-ELF. The scan mirrors the exact symbol
 streams the loader installs and emits the *install* address — for a UND import, the
 PLT-stub address, since the `.dynsym` entry is address 0 and demangling means a
-raw-name lookup would miss.
+raw-name lookup would miss. One name is matched only as an import and only as
+spelled: `__stack_chk_fail_local`, which glibc `debug/stack_chk_fail_local.c`
+declares `noreturn`, at each import resolver address and each relocatable
+object's undefined code extern, so its call prints `// no-return` and nothing
+after it. Neither `_stack_chk_fail_local`, `stack_chk_fail_local` nor a helper
+the image defines matches: a linked image's own helper is no-return only when
+its body shows it.
 Name-based: free, exact, and useless on stripped custom wrappers.
 
 **Pclntab names** (the `gonoreturn` pass,
@@ -10151,7 +10263,18 @@ the C++ inheritance chain modeled by composition:
   `.pspec`/`.cspec`/`.sla` files, build the SLEIGH translator, and run the
   `Architecture::init` tail (type factory, prototype models, print language). The
   upstream translator-reuse cache is deliberately not ported — it affects build
-  speed only — and is the recorded loss here.
+  speed only — and is the recorded loss here. (kuna) A spec root is a
+  directory or a tree held in memory
+  (`decompiler/crates/kuna-decomp/src/p1_partition/kuna_memoryspecs.rs
+  (MemorySpecs)`): a table of `/`-separated relative paths and their contents.
+  The table need not follow Ghidra's layout; one language's `.ldefs`, `.sla`,
+  `.pspec` and `.cspec`, flat, form a complete root. The database mounts each
+  table under an internal `kuna-memory://<n>` root and answers every listing,
+  lookup and read under it from the table alone, never from the filesystem.
+  `decompiler/crates/kuna-console/src/engine.rs (language_database)` scans a
+  list of roots once. A bootstrap over the result skips the `.ldefs` scan and
+  reads only its own language's `.sla`, `.pspec` and `.cspec`
+  (`LanguageDatabase::read_spec`), so threads may share one database.
 - `decompiler/crates/kuna-decomp/src/p1_partition/xml_arch.rs (XmlArchitecture)`
   binds the decompiler's XML `<binaryimage>` container — the datatest corpus's
   entire load path, and the reason the analysis tier can be default-on without

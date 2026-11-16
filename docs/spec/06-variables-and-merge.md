@@ -2497,9 +2497,9 @@ copies and PIECEs into the range, and SUBPIECEs above the low end, which print
 as the bytes (`v1._6_2_`), do not. `decompile_drive.rs
 (decompile_func_full_with_override_dyn_prefollowed)` analyzes a spoiled
 function (`Funcdata::spoil_stack_store_guard`) again from a freshly built copy
-with the guard off for it, not by a restart in place: kuna's `clear()` keeps
-the first analysis's local symbols (upstream's `clearUnlocked` is not ported),
-which could survive into the second. The second analysis therefore prints
+with the guard off for it, not by a restart in place, so nothing the guarded
+analysis recovered (its pending comments, its Override entries) seeds the
+second. The second analysis therefore prints
 the unguarded analysis. Another example is a buffer written only by a walk through a
 pointer kept in memory, which no guard covers, while the guard keeps its
 initializer (clang `-O0` `p = (j & 1) ? u.b : v.b; *p++ = j;`).

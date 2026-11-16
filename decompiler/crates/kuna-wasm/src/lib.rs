@@ -719,6 +719,18 @@ fn list_json(
     s
 }
 
+/// A function's `warnings`, each `{kind,message,line,address}`.
+pub(crate) fn warnings_json(warnings: &[kuna_decomp::kuna_functionwarnings::Warning]) -> String {
+    arr(warnings.iter().map(|w| {
+        Obj::new()
+            .str("kind", &w.kind())
+            .str("message", &w.message())
+            .num("line", w.line)
+            .opt_num("address", w.address)
+            .end()
+    }))
+}
+
 /// The `decompile` document (`decompile_all.rs::result_json`'s fields with
 /// `kind` after `address_hex`). `kinds` is parallel to `funcs`.
 fn result_json(
@@ -750,6 +762,7 @@ fn result_json(
         s.push_str(&format!("      \"code\": {},\n", json_opt_str(f.code.as_deref())));
         s.push_str(&format!("      \"error\": {},\n", json_opt_str(f.error.as_deref())));
         s.push_str(&format!("      \"unstructured_gotos\": {},\n", f.unstructured_gotos()));
+        s.push_str(&format!("      \"warnings\": {},\n", warnings_json(&f.warnings)));
         s.push_str(&format!(
             "      \"line_mappings\": {},\n",
             arr(f.line_mappings.iter().map(|m| {

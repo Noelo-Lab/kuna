@@ -1,0 +1,79 @@
+<decompilertest>
+<binaryimage arch="PowerPC:BE:32:default">
+<!--
+    A PowerPC function sets its return value in r3 before the branch that calls
+    __stack_chk_fail_local, which takes no arguments and never returns. P1
+    program prep, options noreturn_known (default on) and libgccsigs (default
+    off). The script loads a relocatable object that imports the helper and a
+    shared object that defines it hidden, each in both byte orders.
+
+    Assert #1 is the linked default pass: r3 is passed to the defined helper.
+    Assert #2 is the object's noreturn_known off pass, where the call falls
+    through to return 0, and the linked libgccsigs on pass, where the defined
+    helper takes no argument and, its body not ending the flow, falls through.
+    Assert #3 is the object's default pass: the imported helper ends the flow.
+-->
+  <bytechunk space="ram" offset="0x1000" readonly="true">4e800020</bytechunk>
+  <symbol space="ram" offset="0x1000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/ppc32_stack_chk_local_be.o</com>
+  <com>option noreturn_known off</com>
+  <com>read symbols</com>
+  <com>load function r6</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/ppc32_stack_chk_local_be.o</com>
+  <com>read symbols</com>
+  <com>load function r6</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/ppc32_stack_chk_local_le.o</com>
+  <com>option noreturn_known off</com>
+  <com>read symbols</com>
+  <com>load function r6</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/ppc32_stack_chk_local_le.o</com>
+  <com>read symbols</com>
+  <com>load function r6</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/ppc32_stack_chk_local_linked_be.so</com>
+  <com>read symbols</com>
+  <com>load function r6</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/ppc32_stack_chk_local_linked_be.so</com>
+  <com>option libgccsigs on</com>
+  <com>read symbols</com>
+  <com>load function r6</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/ppc32_stack_chk_local_linked_le.so</com>
+  <com>read symbols</com>
+  <com>load function r6</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/ppc32_stack_chk_local_linked_le.so</com>
+  <com>option libgccsigs on</com>
+  <com>read symbols</com>
+  <com>load function r6</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="kuna-stackchklocal #1: the linked default pass hands the return value to the helper" min="2" max="2">__stack_chk_fail_local\(a0 \* 3\);</stringmatch>
+<stringmatch name="kuna-stackchklocal #2: noreturn_known off falls through and libgccsigs on drops the argument" min="4" max="4">__stack_chk_fail_local\(\);
+  return 0;</stringmatch>
+<stringmatch name="kuna-stackchklocal #3: the imported helper ends the flow" min="2" max="2">__stack_chk_fail_local\(\); // no-return
+\}</stringmatch>
+</decompilertest>

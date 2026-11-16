@@ -131,6 +131,10 @@ pub struct FuncResult {
     pub synth: Option<kuna_decomp::kuna_structsynth::shard::FunctionRecord>,
     /// Internal facts from this render, reconciled only by buffered drivers.
     pub pointerargs: Option<kuna_decomp::kuna_pointerargs::Record>,
+    /// The analysis warnings `code` carries as comments, each at the address
+    /// the engine recorded it at (in the target's address units). Empty on
+    /// every error record.
+    pub warnings: Vec<kuna_decomp::kuna_functionwarnings::Warning>,
     /// The token source map, captured only when the caller asked for it
     /// ([`DecompileOptions::want_tokens`]).
     pub detail: Option<Box<crate::inspect::FuncDetail>>,
@@ -600,6 +604,7 @@ pub fn decompile_pulled(
                 callee_hints: Vec::new(),
                 synth: None,
                 pointerargs: None,
+                warnings: Vec::new(),
                 detail: None,
             });
             continue;
@@ -639,6 +644,7 @@ pub fn decompile_pulled(
                 callee_hints: Vec::new(),
                 synth: None,
                 pointerargs: None,
+                warnings: Vec::new(),
                 detail: None,
             });
             continue;
@@ -666,6 +672,7 @@ pub fn decompile_pulled(
                 callee_hints: Vec::new(),
                 synth: None,
                 pointerargs: None,
+                warnings: Vec::new(),
                 detail: None,
             });
             continue;
@@ -887,6 +894,10 @@ pub fn decompile_pulled(
                         (print_c(prog.arch_mut(), &fd), Default::default(), Vec::new())
                     };
                     let pointerargs = prog.arch_mut().print_mut().take_pointer_arguments(&untrimmed);
+                    let mut warnings = prog.arch_mut().print_mut().take_warnings(&untrimmed);
+                    for address in warnings.iter_mut().filter_map(|w| w.address.as_mut()) {
+                        *address = prog.output_code_offset(*address);
+                    }
                     if let Some(err) = budget.error() {
                         return Err(err.explain().to_string());
                     }
@@ -947,7 +958,7 @@ pub fn decompile_pulled(
                     if budget.spent_in("extracting variables") {
                         return Err(budget.error().map(|e| e.explain().to_string()).unwrap_or_default());
                     }
-                    Ok::<_, String>((code, variables, types, (globals, field_calls, call_declarations, callwide_prototypes), proto, line_mappings, callee_hints, detail, pointerargs, stack_objects))
+                    Ok::<_, String>((code, variables, types, (globals, field_calls, call_declarations, callwide_prototypes), proto, line_mappings, callee_hints, detail, (pointerargs, warnings), stack_objects))
                 })).unwrap_or_else(|_| {
                     Err(budget.error().map_or_else(
                         || "panic while rendering C / extracting variables".to_string(),
@@ -957,7 +968,7 @@ pub fn decompile_pulled(
                 drop(budget);
                 fd.set_display_name(&original_display);
                 match rendered {
-                    Ok((code, variables, types, (globals, field_calls, call_declarations, callwide_prototypes), proto, line_mappings, callee_hints, detail, pointerargs, stack_objects)) => {
+                    Ok((code, variables, types, (globals, field_calls, call_declarations, callwide_prototypes), proto, line_mappings, callee_hints, detail, (pointerargs, warnings), stack_objects)) => {
                     crate::assertions::verify_printed(prog, &fd, &code, &replayed);
                     sink(FuncResult {
                         name,
@@ -981,6 +992,7 @@ pub fn decompile_pulled(
                         callee_hints,
                         synth: None,
                         pointerargs,
+                        warnings,
                         detail,
                     })
                     }
@@ -1006,6 +1018,7 @@ pub fn decompile_pulled(
                         callee_hints: Vec::new(),
                         synth: None,
                         pointerargs: None,
+                        warnings: Vec::new(),
                         detail: None,
                     }),
                 }
@@ -1032,6 +1045,7 @@ pub fn decompile_pulled(
                 callee_hints: Vec::new(),
                 synth: None,
                 pointerargs: None,
+                warnings: Vec::new(),
                 detail: None,
             }),
         }
@@ -2299,6 +2313,7 @@ mod tests {
             callee_hints: vec![],
             synth: None,
             pointerargs: None,
+            warnings: Vec::new(),
             detail: None,
         }
     }

@@ -1460,13 +1460,12 @@ context abandons the pass as on an expired deadline and requests the re-flow,
 and the drive skips the stack-store-guard layout check for the stopped pass
 (`decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (run_pipeline)`).
 The restarted run is the one that is printed in both orders, but it is not
-independent of the first. Upstream's `Funcdata::clear` also drops the local
-scope's unlocked symbols and the prototype's unlocked output (inputs go with
-the scope), and `clearAnalysis` drops the warning comments; kuna's
+independent of the first. Like upstream's `Funcdata::clear`, kuna's
 (`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs (Funcdata::clear)`)
-does neither yet, so the parameter and local symbols, the prototype inputs and
-the pending comments the first run recovered seed the restarted one, as does
-any Override. A stopped pass has recovered fewer of them: a duplicated
+drops the local scope's unlocked symbols (`Database::clear_unlocked`), resets
+the local window and clears the prototype's unlocked output and inputs. The
+pending comments the first run recovered still seed the restarted one (upstream's
+`clearAnalysis` drops them), as does any Override. A stopped pass has recovered fewer of them: a duplicated
 `// return-dupe` tag is gone, and the restarted run can merge and type some
 variables differently. Over 29,103 functions (decbench O0/O2/O2-noinline
 binaries, three ARM firmware images, CrashLogger.dll, python314.dll) 31 take a
