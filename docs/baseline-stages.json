@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4397,
-    4397
+    4402,
+    4402
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -4366,6 +4366,11 @@
     "data:x86 callee stack: all second words survive",
     "data:x86 callee stack: first writes survive off and real observers",
     "data:x86 callee stack: stack-passed const writer does not fold stale bytes",
+    "data:x86-directalias #1: both functions pass n to the first call",
+    "data:x86-directalias #2: no first call loses its argument",
+    "data:x86-directalias #3: the call after the restore keeps its argument",
+    "data:x86-directalias-freed #1: the call after the freed pointer keeps its stack arguments",
+    "data:x86-directalias-freed #2: no stack argument of the later call is dropped",
     "data:x86_64 callee stack: all later overwrites survive",
     "data:x86_64 callee stack: all second words survive",
     "data:x86_64 callee stack: first writes survive off and real observers",

@@ -1911,6 +1911,30 @@ classified:
   argument. That is visible as deleted basic blocks, not merely as a shorter
   argument list. (kuna) The caller-relative Varnode address is the one probed
   (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_callsitestackargs.rs`, always on).
+
+  **Direct accesses alias only their bytes** (always on, kuna): a gathered
+  pointer that is the stack-pointer input plus constants, through copies and
+  frame slots only, and is used solely as the address of `LOAD`s and `STORE`s
+  (`kuna_directalias.rs (aliases)`) aliases a trial only when the bytes it
+  touches overlap the trial; every other pointer keeps the boundary above
+  (`varmap.rs (AliasChecker::split_direct)`, which classifies the gathered
+  pointers once per gather, and again when the pass drops or adds one of them
+  as a call input and that changes its class,
+  `varmap.rs (AliasChecker::refresh_split_for)`: a pointer a call stops taking
+  may be left only a store's address). Until its last trial is scored, the
+  only uses the pass adds are new `SUBPIECE`/`PIECE` reads of values that
+  already had a non-address use (the arity fixups that restore dropped inputs
+  run after that), so a pointer can only turn direct, never back, and a change
+  the refresh missed keeps the boundary. Such a pointer is an
+  access heritage has not converted yet: a stack pointer restored from the
+  frame slot it was saved in after an `alloca` is still one when call inputs
+  are scored, and the call after the restore storing its argument at -0x2c
+  dropped an earlier call's argument at -0x28 (`reg(1)` for `reg(1, n)`).
+  The rule is not specific to x86; it applies wherever stack trials are
+  scored. A pointer that is also the base of a further offset
+  (`mov [esp],a; mov [esp+4],b`) is not direct, and a later store that
+  overlaps an earlier call's slot still aliases it, so those shapes keep the
+  upstream verdict.
 - (kuna `calleeargs`, default on) **Callee stack-argument extent.** On
   x86-32 under a model that leaves extrapop unknown (`x86win.cspec`), a direct
   call whose callee's own code can be read takes its stack arguments from what

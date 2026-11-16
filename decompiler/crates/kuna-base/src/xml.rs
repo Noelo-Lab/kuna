@@ -2211,7 +2211,9 @@ mod tests {
         // and kuna-stackchklocal / __stack_chk_fail_local takes no arguments and never returns
         // and kuna-mipsgot-weak / unresolved weak GOT entries retain import-slot identity
         // and kuna-stackcookie / the MSVC frame cookie is no call's argument
-        assert_eq!(count, 764, "corpus file count drifted");
+        // and kuna-x86-directalias / a call keeps an argument a later direct stack store sits below
+        // and kuna-x86-directalias-freed / and does so after an earlier call stops taking that pointer
+        assert_eq!(count, 766, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

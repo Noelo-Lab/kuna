@@ -38,6 +38,7 @@ pub mod kuna_retcallhalf; // (kuna) a call's result handed back beside a compute
 pub mod kuna_retsysreg; // (kuna) a register set for a system register is not the high word of the return
 pub mod kuna_retpushedhalf;
 pub mod kuna_reloadarg; // (kuna) a register reloaded from the caller's frame is re-scored once the frame is heritaged
+pub mod kuna_directalias; // (kuna) a direct access at a known stack offset aliases only the bytes it touches
 pub mod kuna_returnuncomputed;
 pub mod kuna_spillargtrial;
 pub mod kuna_stackaddrargtrial;
