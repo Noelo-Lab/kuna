@@ -28,8 +28,9 @@
 //! then stated on the call, and an earlier call whose pushes the block reuses
 //! (MSVC builds it over a deferred `__cdecl` cleanup) is stated to pop only its
 //! return address, so the stack pointer solver places the block where the copy
-//! put it. When that leaves every call with a stated or proven pop, the proven
-//! ones are stated too. A record copied into a
+//! put it, and the proven pops of the other calls are stated too. Such a block
+//! is expanded only when that leaves every call with a stated or proven pop: a
+//! pop the solver guesses for another call moves the block. A record copied into a
 //! bottom-of-frame local before a register-argument or virtual call (Delphi's
 //! `lea edi,[esp]; rep movsd`) stays a loop; expanded, its slots would read as
 //! that call's stack arguments. When such a move reads the frame, the moves
@@ -366,9 +367,10 @@ fn next_call(fd: &Funcdata, rep: &RepMove, moves: &[RepMove]) -> Option<(BlockId
 
 /// Is the block `rep` writes at the stack pointer the outgoing arguments of the
 /// first call that follows it? The callee must read into the block, or pop
-/// all of it; under a model whose pop is stated, so may the caller's cleanup
-/// right after the call. Every move in `moves` is passed through on the way.
-fn argument_block(fd: &Funcdata, sp: VarnodeId, rep: &RepMove, moves: &[RepMove]) -> bool {
+/// all of it (by its reached returns too, when `returned`); under a model
+/// whose pop is stated, so may the caller's cleanup right after the call.
+/// Every move in `moves` is passed through on the way.
+fn argument_block(fd: &Funcdata, sp: VarnodeId, rep: &RepMove, moves: &[RepMove], returned: bool) -> bool {
     let Some((base, chain)) = rep.base.as_ref() else { return false };
     let bytes = rep.bytes as i64;
     let allowed: Vec<VarnodeId> = chain.iter().chain(rep.entering.iter()).copied().collect();
@@ -401,7 +403,7 @@ fn argument_block(fd: &Funcdata, sp: VarnodeId, rep: &RepMove, moves: &[RepMove]
     }
     let stated = fc.get_extra_pop();
     let pop = if stated != crate::fspec::EXTRAPOP_UNKNOWN { Some(stated) } else { fc.callee_purge() };
-    let returned = pop.is_none().then(|| fc.callee_return_pop()).flatten();
+    let returned = (returned && pop.is_none()).then(|| fc.callee_return_pop()).flatten();
     let Some(pop) = pop.map(|p| i64::from(p) - 4).or_else(|| returned.map(i64::from)) else { return false };
     if pop >= pushed + bytes {
         return true;
@@ -444,14 +446,22 @@ fn returns_pop(fd: &Funcdata, rep: &RepMove, moves: &[RepMove]) -> Option<(kuna_
     (u64::from(pop) >= rep.bytes).then(|| (i, pop as i32 + 4))
 }
 
+/// Does every call have a pop its prototype states, its returns prove, or
+/// `stated` gives it?
+fn settles(fd: &Funcdata, stated: &[(kuna_base::types::int4, i32)]) -> bool {
+    (0..fd.num_calls()).all(|i| {
+        let fc = fd.get_call_specs(i);
+        stated.iter().any(|&(j, _)| j == i)
+            || fc.get_extra_pop() != crate::fspec::EXTRAPOP_UNKNOWN
+            || fc.callee_purge().is_some()
+    })
+}
+
 /// Once the pops stated for argument blocks leave every call with a pop its
 /// prototype states or its returns prove, state the proven ones too: they were
 /// held back only while some call's pop was a guess, and the solver's guess
 /// for an internal callee (it pops nothing) would move every slot after it.
 fn settle_proven_pops(fd: &mut Funcdata) {
-    if !crate::p4_calls::kuna_calleepurge::every_pop_settled(fd) {
-        return;
-    }
     for i in 0..fd.num_calls() {
         let fc = fd.get_call_specs(i);
         if fc.get_extra_pop() != crate::fspec::EXTRAPOP_UNKNOWN {
@@ -821,6 +831,13 @@ fn expand(fd: &mut Funcdata, rep: &RepMove) -> kuna_base::error::KunaResult<()> 
 /// Expand every frame `rep movs` with a small known count, right after the
 /// first heritage pass; the number expanded.
 pub(crate) fn expand_all(fd: &mut Funcdata) -> i32 {
+    expand_with(fd, true)
+}
+
+/// [`expand_all`], taking a block its callee's reached returns pop as that
+/// call's arguments when `returned`, unless the pops that states leave another
+/// call's pop a guess.
+fn expand_with(fd: &mut Funcdata, returned: bool) -> i32 {
     if fd.get_heritage_pass() != 1
         || !fd.stack_store_guard()
         || fd.get_arch().index_alias_guard == super::kuna_indexaliasguard::LEVEL_OFF
@@ -837,7 +854,8 @@ pub(crate) fn expand_all(fd: &mut Funcdata) -> i32 {
     if !found.iter().any(|m| m.to_arguments) {
         return 0;
     }
-    let blocks: Vec<bool> = found.iter().map(|m| m.to_arguments && argument_block(fd, sp, m, &found)).collect();
+    let blocks: Vec<bool> =
+        found.iter().map(|m| m.to_arguments && argument_block(fd, sp, m, &found, returned)).collect();
     for (m, keep) in found.iter_mut().zip(blocks) {
         m.to_arguments = keep;
     }
@@ -871,6 +889,9 @@ pub(crate) fn expand_all(fd: &mut Funcdata) -> i32 {
         .filter_map(|m| returns_pop(fd, m, &moves).map(|pop| (m, pop)))
         .flat_map(|(m, pop)| std::iter::once(pop).chain(reused_call(fd, m).map(|i| (i, 4))))
         .collect();
+    if returned && !stated.is_empty() && !settles(fd, &stated) {
+        return expand_with(fd, false);
+    }
     let mut expanded = 0;
     for rep in &moves {
         if expand(fd, rep).is_err() {

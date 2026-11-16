@@ -24,6 +24,11 @@
 #   settle:           an earlier call to the __stdcall note (ret 4, proven)
 #                     before the block for take: once take's pop is stated,
 #                     every call has one, so note's proven pop is stated too.
+#   unsettled:        an earlier __stdcall guess (ret 4, but it calls through a
+#                     pointer, so the walk cannot settle it) before the block
+#                     for take: stating take's pop would leave guess's pop to
+#                     the solver, whose guess (it pops nothing) moves the
+#                     block, so it stays a loop.
 #
 # Build (clang 17 + lld-link 17, e.g. in the swift:6.0-jammy Docker image;
 # clang 14 does not reproduce the bytes):
@@ -273,6 +278,31 @@ _settle:                        # int *settle(Rec *r) { note(r); take(*r); retur
 _note:                          # void __stdcall note(Rec *r), ret 4
     mov eax, dword ptr [esp + 4]
     inc dword ptr [eax]
+    ret 4
+
+    .p2align 4, 0xcc
+_unsettled:                     # int unsettled(Rec *r, int k) { guess(r); return take(*r) + k; }
+    push esi
+    push edi
+    mov eax, dword ptr [esp + 0xc]
+    push eax
+    call _guess
+    sub esp, 0x20
+    mov edi, esp
+    mov ecx, 8
+    mov esi, dword ptr [esp + 0x2c]
+    rep movsd
+    call _take
+    add eax, dword ptr [esp + 0x10]
+    pop edi
+    pop esi
+    ret
+
+    .p2align 4, 0xcc
+_guess:                         # void __stdcall guess(Rec *r), ret 4, through a pointer
+    push dword ptr [esp + 4]
+    call dword ptr [_sink_ptr]
+    add esp, 4
     ret 4
 
     .data
