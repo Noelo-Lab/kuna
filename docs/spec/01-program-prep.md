@@ -373,10 +373,14 @@ carrying exactly the fields whose offsets the runtime source states for the
 register-ABI era, and the layouts are **versioned off the image's own
 toolchain**: the build-info blob's version string
 (`decompiler/crates/kuna-analysis/src/loader/gobuildinfo.rs
-(go_toolchain_version)`) travels as the `KUNA_GOVERSION` loadtime variable —
-set by the object bootstrap before the sleigh build, because the shells are
-interned inside the cspec decode, upstream of every per-image fact write —
-and selects the release's layout
+(go_toolchain_version)`) travels on the load options
+(`decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_loadoptions.rs
+(go_version)`) — set by the object bootstrap before the image is opened,
+because the shells are interned inside the cspec decode, upstream of every
+per-image fact write. The image's own version wins over a release the caller
+stated; a load without explicit options publishes it as `KUNA_GOVERSION`, and
+clears that variable for an image with no version, so a stale value from an
+earlier load cannot leak in. It selects the release's layout
 (`decompiler/crates/kuna-decomp/src/p1_partition/kuna_goreg.rs (GoLayout)`):
 go1.23 inserted `g.syscallbp`, go1.25 dropped `gobuf.ret`, and with both
 perturbations the liblink-stable anchors (`stackguard0` 0x10, `_panic` 0x20,
@@ -391,7 +395,7 @@ own goroutine pointers stay `void *` (a pointer taken to a still-incomplete
 composite would survive the factory's clone-and-re-key completion pointing at
 the stale type). An access past a modeled prefix renders as an offset off the
 shell — still anchored. An image with no parsable build-info version takes
-the go1.22 baseline. A golang target with no pinned register (x86-32 reaches
+the release its explicit load options state, else the go1.22 baseline. A golang target with no pinned register (x86-32 reaches
 `g` through TLS) is untouched. Measured on the stripped
 go1.22 hello-world: functions declaring a phantom `// r14` local 267 → 23,
 functions reading named `g->` fields 7 → 297, the preemption-request store
@@ -10102,7 +10106,18 @@ the C++ inheritance chain modeled by composition:
   `.pspec`/`.cspec`/`.sla` files, build the SLEIGH translator, and run the
   `Architecture::init` tail (type factory, prototype models, print language). The
   upstream translator-reuse cache is deliberately not ported — it affects build
-  speed only — and is the recorded loss here.
+  speed only — and is the recorded loss here. (kuna) A spec root is a
+  directory or a tree held in memory
+  (`decompiler/crates/kuna-decomp/src/p1_partition/kuna_memoryspecs.rs
+  (MemorySpecs)`): a table of `/`-separated relative paths and their contents.
+  The table need not follow Ghidra's layout; one language's `.ldefs`, `.sla`,
+  `.pspec` and `.cspec`, flat, form a complete root. The database mounts each
+  table under an internal `kuna-memory://<n>` root and answers every listing,
+  lookup and read under it from the table alone, never from the filesystem.
+  `decompiler/crates/kuna-console/src/engine.rs (language_database)` scans a
+  list of roots once. A bootstrap over the result skips the `.ldefs` scan and
+  reads only its own language's `.sla`, `.pspec` and `.cspec`
+  (`LanguageDatabase::read_spec`), so threads may share one database.
 - `decompiler/crates/kuna-decomp/src/p1_partition/xml_arch.rs (XmlArchitecture)`
   binds the decompiler's XML `<binaryimage>` container — the datatest corpus's
   entire load path, and the reason the analysis tier can be default-on without

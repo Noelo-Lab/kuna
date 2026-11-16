@@ -3043,6 +3043,35 @@ runtime `on_or_off` parser.
 The matching `option` is still applied afterwards so the run's configuration
 record is honest.
 
+(kuna) **Explicit load options.** The environment is the CLI's channel, not
+the only one.
+`decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_loadoptions.rs (LoadOptions)`
+holds every load-time setting: the load-time catalog options, the fat slice,
+the `.pdb`, `.fid` and FLIRT paths, the Go release, and the `KUNA_LOAD_OBJC`,
+`KUNA_LOAD_STRINGS` and `KUNA_LOAD_MMAP` switches. A library caller passes it
+through `decompiler/crates/kuna-console/src/kuna_bootstrap.rs (Bootstrap)`.
+Each gate first reads the options in force on its thread (`scoped`) and falls
+back to its environment variable only when no options are in force.
+Precedence is per load and never a merge. A load with explicit options reads
+and writes no environment variable: a field left at its default means the
+shipped default, not the environment's value, and an unset ARM ISA leaves the
+image's own evidence to decide instead of reading `KUNA_ARM_ISA`. A load
+without options puts the environment in force on its thread for the whole
+load, whatever another program has in force there, so the CLI and the
+`bootstrap_*` entry points read exactly the variables they read before. The
+built `Architecture` remembers which kind of load built it. An explicit
+program keeps a copy of its options and re-enters them
+(`Architecture::load_scope`) around its analysis commit, decompiles, name
+lookups, assertions and console commands, so a later load with other options
+on the same thread cannot leak into it. An environment program keeps reading
+the variables live. A load-time `option` line updates both the program's copy
+and the environment variable, so a later `load file` in the session still sees
+it. Scopes belong to one thread and nest: the most recently entered live scope
+is in force, and releasing a scope out of order removes only its own options.
+Kuna enters and leaves its scopes inside each synchronous call; a caller that
+enters one itself must not hold it across an `.await` on a shared executor
+thread.
+
 ## 0.3 The IR substrate
 
 Code-type identity distinguishes indirect value parameters from ordinary
