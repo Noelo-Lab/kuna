@@ -375,12 +375,12 @@ toolchain**: the build-info blob's version string
 (`decompiler/crates/kuna-analysis/src/loader/gobuildinfo.rs
 (go_toolchain_version)`) travels on the load options
 (`decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_loadoptions.rs
-(go_version)`) — set by the object bootstrap before the image is opened,
-because the shells are interned inside the cspec decode, upstream of every
-per-image fact write. The image's own version wins over a release the caller
-stated; a load without explicit options publishes it as `KUNA_GOVERSION`, and
-clears that variable for an image with no version, so a stale value from an
-earlier load cannot leak in. It selects the release's layout
+(go_version)`) — set by the object bootstrap from the image's bytes before the
+loader parses them and the sleigh build runs, because the shells are interned
+inside the cspec decode, upstream of every per-image fact write. The image's
+own version wins over a release the caller stated; a load without explicit
+options publishes it as `KUNA_GOVERSION`, and clears that variable for an image
+with no version, so a stale value from an earlier load cannot leak in. It selects the release's layout
 (`decompiler/crates/kuna-decomp/src/p1_partition/kuna_goreg.rs (GoLayout)`):
 go1.23 inserted `g.syscallbp`, go1.25 dropped `gobuf.ret`, and with both
 perturbations the liblink-stable anchors (`stackguard0` 0x10, `_panic` 0x20,
