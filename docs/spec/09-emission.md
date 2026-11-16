@@ -3315,6 +3315,39 @@ deliberately outside this count: it is a different lossy construct, and naming
 one number `unstructured_gotos` that meant two things would be worse than
 reporting the one.
 
+**A function's warnings are recorded as the printer writes them.** Each
+per-function JSON record carries `warnings`, taken from the engine's warning
+store rather than read back out of `code`. `p9_emit/kuna_functionwarnings.rs`
+holds one record per warning a render wrote: the address the engine indexed
+it at, its stored text, and the line of the render holding its comment. The printer records one wherever it writes a
+warning: `printc.rs (PrintC::emit_comment_func_header)` for a `warningheader`
+comment, at the function's entry; `printc.rs (PrintC::emit_comment_group)` for a
+comment whose type is exactly `WARNING`, the type `Funcdata::warning` stamps, at
+the instruction it was indexed at; `printc.rs (PrintC::flush_eol_warnings)`,
+which gives every warning collected under `warnstyle inline` the line it
+appends them to, so the warnings joined into one `// a, b` comment keep an
+address each; and the shell a body without structured blocks prints
+(`structured blocks unavailable`, or `decompilation failed` on the console's
+text surface), which has no address. A comment of any other type never reaches
+a record, whatever it spells: an `--assert comment` (its type carries the user
+bit), a declaration's storage comment, a DWARF line, the original name a Rust or
+Go render keeps above the prototype. Only a plain render records; a markup pass
+over the same function keeps the plain render's records, and
+`printc.rs (PrintC::take_warnings)` rebases their lines onto the trimmed `code`
+as `take_pointer_arguments` does. The edits made after printing (the cookie
+return rewrite, pointer-argument casts, the `--jobs` structure renames) keep
+every line where it was, so each record's `line` holds its comment. The
+records ride `FuncResult::warnings` across the `--jobs` wire and the result
+store, and each address is mapped to the target's address units as
+`line_mappings` is. `kind` is the kind of an engine stem the slugs leave whole
+(`STEMS`: decode failures, flow truncation, out-of-bounds and unmapped flow,
+unrecovered jump tables, declined structuring), else the slug
+`printc.rs (warning_slug)` gives the text, less its ` xN` count, so a slug added
+there is a kind at once; else a kuna warning's producer tag, else `other`.
+`message` is the stored text less its `WARNING: ` marker. Both warning styles
+give the same records but for `line`. The verdict does not move here either;
+`error` stays reserved for a failed function.
+
 Go integer stores use `p9_emit/kuna_gostorevalue.rs` to match the rendered
 pointer's pointee type. When both source and destination are signed or unsigned
 integers of the same one-, two-, four- or eight-byte width with different

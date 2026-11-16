@@ -190,6 +190,9 @@ mod decompile_graph_cli;
 #[path = "decompile_json_cli.rs"]
 mod decompile_json_cli;
 
+#[path = "function_warnings_cli.rs"]
+mod function_warnings_cli;
+
 #[path = "decompile_project_cli.rs"]
 mod decompile_project_cli;
 
