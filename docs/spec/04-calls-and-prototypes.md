@@ -6332,8 +6332,15 @@ is refused outright wherever the caller holds evidence the fold cannot weigh
 - **What the caller does through a pointer disagrees with the pointee.** A
   pointer vote whose pointee is a float, a structure, an array or a union is
   checked against every load and store the caller makes through the value's
-  family, following constant offsets, indexing (the stride of a multiply, a
-  shift or a `PTRADD`), a pointer stepped around a loop and copies. An access
+  family, following constant offsets, indexing (multiply, shift, `PTRADD`,
+  subtraction or `PTRSUB`), a pointer stepped around a loop and copies.
+  Index displacement and stride are tracked together through distributed sums,
+  transparent constant operands and negation, with a shared 32-node expression
+  budget. Scalar merges are unconstrained index leaves, like scalar inputs.
+  Unknown index operations or an exhausted expression budget do not
+  establish the absence of a whole-element access and cannot activate the
+  mutable-byte-cursor refusal. Arithmetic narrower than an address includes its
+  wraparound in the stride. An access
   outside a composite pointee refuses the vote, and so does an address the
   caller derives outside it: a callee's `struct_N` is only the part of the
   object that callee touched, and a caller that reads offset 0x19c of it printed
@@ -6387,7 +6394,7 @@ is refused outright wherever the caller holds evidence the fold cannot weigh
 
   A wider non-character integer, boolean, or pointer-element vote is also
   refused when the caller both reads and writes bytes through a cursor whose stride is not a multiple of
-  that element's width, without an on-grid access exactly one element wide.
+  that element's width, without an on-grid access spanning whole elements.
   Read-only byte views, write-only byte copies and these whole-element accesses keep the vote:
   inspecting or copying an object's representation does not establish a
   smaller element type.

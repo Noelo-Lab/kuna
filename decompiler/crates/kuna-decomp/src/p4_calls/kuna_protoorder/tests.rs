@@ -523,24 +523,65 @@ fn mutable_byte_cursors_refuse_wider_votes_without_retyping_word_views_or_copies
         fd.op_insert(op, block, None);
         (size != 0).then(|| fd.new_varnode_out(size, &Address::new(ram, off + 0x1000), op).unwrap())
     }
+    #[derive(Clone, Copy, Debug)]
+    enum Shape { Plain, Distributed, WrappedFactor, WrappedDisplacement, Negated, UnknownScale }
+    fn indexed(fd: &mut Funcdata, iteration: VarnodeId, other: VarnodeId, stride: int4, form: OpCode, shape: Shape, off: u64) -> VarnodeId {
+        let iteration = if form == OpCode::CPUI_MULTIEQUAL {
+            operation(fd, OpCode::CPUI_MULTIEQUAL, &[iteration, other], off + 6, 8).unwrap()
+        } else { iteration };
+        let step = fd.new_constant(8, stride as u64);
+        let step = if matches!(shape, Shape::WrappedFactor) {
+            operation(fd, OpCode::CPUI_COPY, &[step], off, 8).unwrap()
+        } else { step };
+        let inputs = if form == OpCode::CPUI_INT_MULT { [step, iteration] } else { [iteration, step] };
+        let mut index = operation(fd, OpCode::CPUI_INT_MULT, &inputs, off + 1, 8).unwrap();
+        if matches!(shape, Shape::Distributed) {
+            let second = operation(fd, OpCode::CPUI_INT_MULT, &[other, step], off + 2, 8).unwrap();
+            index = operation(fd, OpCode::CPUI_INT_ADD, &[index, second], off + 3, 8).unwrap();
+        }
+        if matches!(shape, Shape::Negated) {
+            index = operation(fd, OpCode::CPUI_INT_2COMP, &[index], off + 4, 8).unwrap();
+        }
+        if matches!(form, OpCode::CPUI_COPY | OpCode::CPUI_CAST) {
+            index = operation(fd, form, &[index], off + 5, 8).unwrap();
+        }
+        index
+    }
 
     for pointee in [prim(2, type_metatype::TYPE_UINT), prim(4, type_metatype::TYPE_UINT), ptr_to(int8())] {
         let width = pointee.get_size();
-        for ((label, read, write, whole, stride, refuse), form) in [
+        for ((label, read, write, whole, stride, refuse), (form, inside, shape)) in [
             ("mutable bytes", true, true, None, 1, true),
             ("read-only byte view", true, false, None, 1, false),
             ("write-only byte copy", false, true, None, 1, false),
-            ("whole element and mutable bytes", true, true, Some((0i64, 0)), 1, false),
+            ("whole element and mutable bytes", true, true, Some((0i64, 0, width)), 1, false),
             ("one byte per element", true, true, None, width, false),
-            ("whole-element cursor", true, true, Some((0, width)), 1, false),
-            ("word-sized byte cursor", true, true, Some((0, 1)), 1, true),
-            ("misaligned word", true, true, Some((1, 0)), 1, true),
-            ("negative misaligned word", true, true, Some((-1, 0)), 1, true),
-            ("positive whole-element offset", true, true, Some((i64::from(width), 0)), 1, false),
-            ("negative whole-element offset", true, true, Some((-i64::from(width), 0)), 1, false),
+            ("whole-element cursor", true, true, Some((0, width, width)), 1, false),
+            ("word-sized byte cursor", true, true, Some((0, 1, width)), 1, true),
+            ("misaligned word", true, true, Some((1, 0, width)), 1, true),
+            ("negative misaligned word", true, true, Some((-1, 0, width)), 1, true),
+            ("positive whole-element offset", true, true, Some((i64::from(width), 0, width)), 1, false),
+            ("negative whole-element offset", true, true, Some((-i64::from(width), 0, width)), 1, false),
+            ("two-element copy", true, true, Some((0, 2 * width, 2 * width)), 1, false),
+            ("two-element fixed copy", true, true, Some((0, 0, 2 * width)), 1, false),
+            ("two-element sliding copy", true, true, Some((0, width, 2 * width)), 1, false),
+            ("misaligned two-element copy", true, true, Some((1, 2 * width, 2 * width)), 1, true),
+            ("off-grid two-element copy", true, true, Some((0, 1, 2 * width)), 1, true),
+            ("odd wider access", true, true, Some((0, 0, width + 1)), 1, true),
         ].into_iter().flat_map(|case| {
-            [OpCode::CPUI_INT_ADD, OpCode::CPUI_COPY, OpCode::CPUI_CAST, OpCode::CPUI_INT_MULT, OpCode::CPUI_INT_SUB, OpCode::CPUI_PTRSUB]
-                .into_iter().map(move |form| (case, form))
+            [(OpCode::CPUI_INT_ADD, 0i64), (OpCode::CPUI_COPY, 0), (OpCode::CPUI_CAST, 0),
+             (OpCode::CPUI_INT_MULT, 0), (OpCode::CPUI_INT_SUB, 0), (OpCode::CPUI_PTRSUB, 0),
+             (OpCode::CPUI_INT_ADD, 1), (OpCode::CPUI_INT_SUB, 1), (OpCode::CPUI_PTRSUB, 1)]
+                .into_iter().map(|(form, inside)| (form, inside, Shape::Plain))
+                .chain([
+                    (OpCode::CPUI_INT_ADD, 0, Shape::Distributed),
+                    (OpCode::CPUI_INT_ADD, 1, Shape::Distributed),
+                    (OpCode::CPUI_INT_MULT, 0, Shape::WrappedFactor),
+                    (OpCode::CPUI_INT_ADD, 1, Shape::WrappedDisplacement),
+                    (OpCode::CPUI_INT_ADD, 0, Shape::Negated),
+                    (OpCode::CPUI_MULTIEQUAL, 0, Shape::Plain),
+                    (OpCode::CPUI_PTRADD, 0, Shape::UnknownScale),
+                ]).map(move |form| (case, form))
         }) {
             let mut manager = AddrSpaceManager::new();
             manager.insert_space(Rc::new(ConstantSpace::new())).unwrap();
@@ -551,11 +592,24 @@ fn mutable_byte_cursors_refuse_wider_votes_without_retyping_word_views_or_copies
             let mut fd = Funcdata::new("cursor", "cursor", context, Address::new(Rc::clone(&ram), 0x1000), 0x1000_0000, 0x40).unwrap();
             let base = fd.new_varnode(8, &Address::new(Rc::clone(&ram), 0x10), None);
             let base = fd.set_input_varnode(base).unwrap();
-            let index = fd.new_varnode(8, &Address::new(ram, 0x20), None);
+            let index = fd.new_varnode(8, &Address::new(Rc::clone(&ram), 0x20), None);
             let iteration = fd.set_input_varnode(index).unwrap();
-            let step = fd.new_constant(8, stride as u64);
-            let index = operation(&mut fd, OpCode::CPUI_INT_MULT, &[iteration, step], 0x1000, 8).unwrap();
-            let address = operation(&mut fd, OpCode::CPUI_INT_ADD, &[base, index], 0x1004, 8).unwrap();
+            let other = fd.new_varnode(8, &Address::new(ram, 0x28), None);
+            let other = fd.set_input_varnode(other).unwrap();
+            let mut index = indexed(&mut fd, iteration, other, stride, form, shape, 0x1020);
+            if inside != 0 {
+                let offset = if matches!(shape, Shape::WrappedDisplacement) {
+                    let literal = fd.new_constant(4, inside as u64);
+                    operation(&mut fd, OpCode::CPUI_INT_ZEXT, &[literal], 0x1030, 8).unwrap()
+                } else { fd.new_constant(8, inside as u64) };
+                index = operation(&mut fd, OpCode::CPUI_INT_ADD, &[index, offset], 0x1003, 8).unwrap();
+            }
+            let code = if matches!(form, OpCode::CPUI_INT_SUB | OpCode::CPUI_PTRSUB) { form } else { OpCode::CPUI_INT_ADD };
+            let address = if matches!(shape, Shape::UnknownScale) {
+                operation(&mut fd, OpCode::CPUI_PTRADD, &[base, index, other], 0x1004, 8).unwrap()
+            } else {
+                operation(&mut fd, code, &[base, index], 0x1004, 8).unwrap()
+            };
             let space = fd.new_constant(8, 2);
             let mut value = fd.new_constant(1, 0x20);
             if read {
@@ -564,21 +618,57 @@ fn mutable_byte_cursors_refuse_wider_votes_without_retyping_word_views_or_copies
             if write {
                 operation(&mut fd, OpCode::CPUI_STORE, &[space, address, value], 0x100c, 0);
             }
-            if let Some((offset, stride)) = whole {
-                let step = fd.new_constant(8, stride as u64);
-                let inputs = if form == OpCode::CPUI_INT_MULT { [step, iteration] } else { [iteration, step] };
-                let mut index = operation(&mut fd, OpCode::CPUI_INT_MULT, &inputs, 0x1010, 8).unwrap();
-                if matches!(form, OpCode::CPUI_COPY | OpCode::CPUI_CAST) {
-                    index = operation(&mut fd, form, &[index], 0x1012, 8).unwrap();
+            if let Some((offset, stride, whole_width)) = whole {
+                let mut index = indexed(&mut fd, other, iteration, stride, form, shape, 0x1040);
+                if inside != 0 {
+                    let offset = if matches!(shape, Shape::WrappedDisplacement) {
+                        let literal = fd.new_constant(4, inside as u64);
+                        operation(&mut fd, OpCode::CPUI_INT_ZEXT, &[literal], 0x1050, 8).unwrap()
+                    } else { fd.new_constant(8, inside as u64) };
+                    index = operation(&mut fd, OpCode::CPUI_INT_ADD, &[index, offset], 0x1013, 8).unwrap();
                 }
                 let code = if matches!(form, OpCode::CPUI_INT_SUB | OpCode::CPUI_PTRSUB) { form } else { OpCode::CPUI_INT_ADD };
                 let address = operation(&mut fd, code, &[base, index], 0x1014, 8).unwrap();
+                let offset = if code == OpCode::CPUI_INT_SUB { offset + inside } else { offset - inside };
                 let offset = fd.new_constant(8, offset as u64);
                 let address = operation(&mut fd, OpCode::CPUI_INT_ADD, &[address, offset], 0x1018, 8).unwrap();
-                operation(&mut fd, OpCode::CPUI_LOAD, &[space, address], 0x101c, width);
+                operation(&mut fd, OpCode::CPUI_LOAD, &[space, address], 0x101c, whole_width);
             }
-            assert_eq!(input_refuses(&fd, base, &ptr_to(Rc::clone(&pointee))), refuse, "{label}, element width {width}, index form {form:?}");
+            let refuse = refuse && !matches!(shape, Shape::UnknownScale);
+            let candidate = ptr_to(Rc::clone(&pointee));
+            assert_eq!(input_refuses(&fd, base, &candidate), refuse, "{label}, element width {width}, index form {form:?}, inner offset {inside}, shape {shape:?}");
+            assert_eq!(input_refuses_declared(&fd, base, &candidate), refuse, "declared vote: {label}, element width {width}, index form {form:?}, inner offset {inside}, shape {shape:?}");
         }
+    }
+    for (label, index_bytes, step, code, refuse) in [
+        ("narrow offset wraps inside a record", 4, 12u64, OpCode::CPUI_INT_MULT, true),
+        ("native record stride", 8, 12, OpCode::CPUI_INT_MULT, false),
+        ("high-bit stride is not a record walk", 8, 1u64 << 63, OpCode::CPUI_INT_MULT, true),
+        ("unmodeled aligned index keeps the word vote", 8, !3u64, OpCode::CPUI_INT_AND, false),
+    ] {
+        let mut manager = AddrSpaceManager::new();
+        manager.insert_space(Rc::new(ConstantSpace::new())).unwrap();
+        manager.insert_space(Rc::new(UniqueSpace::new(1, 0, false))).unwrap();
+        let ram = Rc::new(AddrSpace::new(spacetype::IPTR_PROCESSOR, "ram", false, 8, 1, 2, addrspace_flags::hasphysical, 1, 1));
+        manager.insert_space(Rc::clone(&ram)).unwrap();
+        let context = Rc::new(ArchContext::new(manager));
+        let mut fd = Funcdata::new("records", "records", context, Address::new(Rc::clone(&ram), 0x1000), 0x1000_0000, 0x40).unwrap();
+        let base = fd.new_varnode(8, &Address::new(Rc::clone(&ram), 0x10), None);
+        let base = fd.set_input_varnode(base).unwrap();
+        let index = fd.new_varnode(index_bytes, &Address::new(ram, 0x20), None);
+        let index = fd.set_input_varnode(index).unwrap();
+        let step = fd.new_constant(index_bytes, step);
+        let index = operation(&mut fd, code, &[index, step], 0x1000, index_bytes).unwrap();
+        let index = if index_bytes == 8 { index } else {
+            operation(&mut fd, OpCode::CPUI_INT_ZEXT, &[index], 0x1004, 8).unwrap()
+        };
+        let address = operation(&mut fd, OpCode::CPUI_INT_ADD, &[base, index], 0x1008, 8).unwrap();
+        let space = fd.new_constant(8, 2);
+        let value = operation(&mut fd, OpCode::CPUI_LOAD, &[space, address], 0x100c, 1).unwrap();
+        operation(&mut fd, OpCode::CPUI_STORE, &[space, address, value], 0x1010, 0);
+        let pointee = if code == OpCode::CPUI_INT_AND { prim(4, type_metatype::TYPE_UINT) }
+            else { Rc::new(Datatype::new(12, type_metatype::TYPE_STRUCT)) };
+        assert_eq!(input_refuses(&fd, base, &ptr_to(pointee)), refuse, "{label}");
     }
 }
 

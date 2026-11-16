@@ -551,7 +551,7 @@ pub(crate) fn handed_to_a_declared_pointer(data: &Funcdata, vn: VarnodeId) -> bo
 /// anywhere but the one pointee of `ct` at offset zero?
 pub(crate) fn reaches_past_the_pointee(data: &Funcdata, vn: VarnodeId, ct: &Datatype) -> bool {
     let Some(pointee) = ct.get_ptr_to() else { return false };
-    let Some((accesses, _)) = accesses_through(data, &value_family(data, vn)) else { return true };
+    let Some((accesses, _, _)) = accesses_through(data, &value_family(data, vn)) else { return true };
     accesses.iter().any(|a| a.stride != 0 || a.at < 0 || a.at + a.size as i64 > pointee.get_size() as i64)
 }
 
@@ -567,7 +567,7 @@ fn splits_a_wide_constant(data: &Funcdata, family: &[VarnodeId], ct: &Datatype, 
         return false;
     }
     let family = with_sibling_loads(data, family);
-    let Some((accesses, _)) = accesses_through(data, &family) else { return true };
+    let Some((accesses, _, _)) = accesses_through(data, &family) else { return true };
     if character {
         return accesses
             .iter()
@@ -834,8 +834,9 @@ fn gcd(a: i64, b: i64) -> i64 {
 
 /// Every load and store the caller makes through the pointer `family` holds,
 /// following constant offsets, indexing and copies, and where every address it
-/// derives points.  `None` when there are too many to follow.
-pub(crate) fn accesses_through(data: &Funcdata, family: &[VarnodeId]) -> Option<(Vec<Access>, Vec<(i64, i64)>)> {
+/// derives points. `None` when there are too many to follow. The final flag
+/// says every index was modeled; unknown grids cannot rule out a whole access.
+pub(crate) fn accesses_through(data: &Funcdata, family: &[VarnodeId]) -> Option<(Vec<Access>, Vec<(i64, i64)>, bool)> {
     let mut place: crate::kuna_fasthash::FxHashMap<VarnodeId, (i64, i64)> =
         family.iter().map(|&v| (v, (0, 0))).collect();
     let mut work: Vec<VarnodeId> = family.to_vec();
@@ -846,20 +847,61 @@ pub(crate) fn accesses_through(data: &Funcdata, family: &[VarnodeId]) -> Option<
             ((n.get_offset() << shift) as i64) >> shift
         })
     };
-    let step_of = |mut v: Option<VarnodeId>| {
-        for _ in 0..32 {
-            let Some(def) = v.and_then(|v| data.vbank().get(v)).and_then(|n| n.get_def()).and_then(|d| data.obank().get(d)) else {
-                return 1;
-            };
-            match def.code() {
-                OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_INT_ZEXT | OpCode::CPUI_INT_SEXT => v = def.get_in(0),
-                OpCode::CPUI_INT_MULT => return constant(def.get_in(1)).or_else(|| constant(def.get_in(0))).unwrap_or(1),
-                OpCode::CPUI_INT_LEFT => return constant(def.get_in(1)).filter(|k| (0..32).contains(k)).map_or(1, |k| 1 << k),
-                _ => return 1,
+    // Keep a displacement and a divisor across distributed arithmetic. One
+    // shared budget bounds the entire expression, not each side of an ADD.
+    fn grid(data: &Funcdata, value: Option<VarnodeId>, width: int4, budget: &mut usize) -> (i64, i64, bool) {
+        let Some(left) = budget.checked_sub(1) else { return (0, 1, false) };
+        *budget = left;
+        let Some(node) = value.and_then(|value| data.vbank().get(value)) else { return (0, 1, false) };
+        let bytes = node.get_size().clamp(1, 8);
+        let shift = 64 - 8 * bytes as u32;
+        let signed = |value: i64| (value << shift) >> shift;
+        if node.is_constant() { return (signed(node.get_offset() as i64), 0, true); }
+        let Some(op) = node.get_def().and_then(|id| data.obank().get(id)) else { return (0, 1, true) };
+        let result = match op.code() {
+            OpCode::CPUI_MULTIEQUAL => (0, 1, true),
+            OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_INT_SEXT | OpCode::CPUI_INT_ZEXT => {
+                let result = grid(data, op.get_in(0), width, budget);
+                if result.1 == 0 && op.code() == OpCode::CPUI_INT_ZEXT {
+                    let size = op.get_in(0).and_then(|value| data.vbank().get(value))
+                        .map_or(8, |node| node.get_size().clamp(1, 8));
+                    let shift = 64 - 8 * size as u32;
+                    (((result.0 as u64) << shift >> shift) as i64, 0, result.2)
+                } else { result }
             }
-        }
-        1
-    };
+            OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB => {
+                let (a, sa, ka) = grid(data, op.get_in(0), width, budget);
+                let (b, sb, kb) = grid(data, op.get_in(1), width, budget);
+                (if op.code() == OpCode::CPUI_INT_ADD { a.wrapping_add(b) } else { a.wrapping_sub(b) }, gcd(sa, sb), ka && kb)
+            }
+            OpCode::CPUI_INT_MULT => {
+                let (a, sa, ka) = grid(data, op.get_in(0), width, budget);
+                let (b, sb, kb) = grid(data, op.get_in(1), width, budget);
+                if sa == 0 { (a.wrapping_mul(b), a.wrapping_mul(sb), ka && kb) }
+                else if sb == 0 { (a.wrapping_mul(b), b.wrapping_mul(sa), ka && kb) }
+                else { (0, 1, false) }
+            }
+            OpCode::CPUI_INT_LEFT => {
+                let (amount, step, known) = grid(data, op.get_in(1), width, budget);
+                if step != 0 || !(0..8 * bytes as i64).contains(&amount) { return (0, 1, false); }
+                let (offset, stride, input_known) = grid(data, op.get_in(0), width, budget);
+                (offset.wrapping_shl(amount as u32), stride.wrapping_shl(amount as u32), known && input_known)
+            }
+            OpCode::CPUI_INT_2COMP | OpCode::CPUI_INT_NEGATE => {
+                let (offset, stride, known) = grid(data, op.get_in(0), width, budget);
+                let offset = offset.wrapping_neg();
+                (if op.code() == OpCode::CPUI_INT_NEGATE { offset.wrapping_sub(1) } else { offset }, stride, known)
+            }
+            _ => return (0, 1, false),
+        };
+        if result.1 == 0 { return (signed(result.0), 0, result.2); }
+        // Narrow arithmetic can wrap before it is widened to an address.
+        if bytes < width && bytes < 8 {
+            (result.0, gcd(result.1, 1i64 << (8 * bytes)), result.2)
+        } else { result }
+    }
+    let width = family.first().and_then(|value| data.vbank().get(*value)).map_or(8, |node| node.get_size());
+    let mut complete = true;
     let mut pointers: Vec<(OpId, VarnodeId, VarnodeId, bool)> = Vec::new();
     while let Some(v) = work.pop() {
         budget -= 1;
@@ -886,23 +928,27 @@ pub(crate) fn accesses_through(data: &Funcdata, family: &[VarnodeId]) -> Option<
                 }
                 OpCode::CPUI_INT_ADD => {
                     let other = if o.get_in(0) == Some(v) { o.get_in(1) } else { o.get_in(0) };
-                    match constant(other) {
-                        Some(k) => Some((c.wrapping_add(k), stride)),
-                        None => Some((c, gcd(stride, step_of(other)))),
-                    }
+                    let (offset, step, known) = grid(data, other, width, &mut 32);
+                    complete &= known;
+                    Some((c.wrapping_add(offset), gcd(stride, step)))
                 }
                 OpCode::CPUI_INT_SUB if o.get_in(0) == Some(v) => {
-                    constant(o.get_in(1)).map(|k| (c.wrapping_sub(k), stride)).or_else(|| Some((c, gcd(stride, step_of(o.get_in(1))))))
+                    let (offset, step, known) = grid(data, o.get_in(1), width, &mut 32);
+                    complete &= known;
+                    Some((c.wrapping_sub(offset), gcd(stride, step)))
                 }
                 OpCode::CPUI_PTRSUB if o.get_in(0) == Some(v) => {
-                    constant(o.get_in(1)).map(|k| (c.wrapping_add(k), stride)).or_else(|| Some((c, gcd(stride, step_of(o.get_in(1))))))
+                    let (offset, step, known) = grid(data, o.get_in(1), width, &mut 32);
+                    complete &= known;
+                    Some((c.wrapping_add(offset), gcd(stride, step)))
                 }
                 OpCode::CPUI_PTRADD if o.get_in(0) == Some(v) => {
-                    let elsize = constant(o.get_in(2)).unwrap_or(1);
-                    match constant(o.get_in(1)) {
-                        Some(k) => Some((c.wrapping_add(k.wrapping_mul(elsize)), stride)),
-                        None => Some((c, gcd(stride, elsize))),
-                    }
+                    let elsize = constant(o.get_in(2));
+                    complete &= elsize.is_some();
+                    let elsize = elsize.unwrap_or(1);
+                    let (offset, step, known) = grid(data, o.get_in(1), width, &mut 32);
+                    complete &= known;
+                    Some((c.wrapping_add(offset.wrapping_mul(elsize)), gcd(stride, step.wrapping_mul(elsize))))
                 }
                 OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_MULTIEQUAL => Some((c, stride)),
                 OpCode::CPUI_INDIRECT if o.get_in(0) == Some(v) => Some((c, stride)),
@@ -932,7 +978,7 @@ pub(crate) fn accesses_through(data: &Funcdata, family: &[VarnodeId]) -> Option<
             Some(Access { op, value, at, stride, size, store })
         })
         .collect();
-    Some((accesses, place.into_values().collect()))
+    Some((accesses, place.into_values().collect(), complete))
 }
 
 enum Member {
@@ -1014,13 +1060,13 @@ fn pointee_refuses(data: &Funcdata, family: &[VarnodeId], ct: &Datatype, depth: 
     {
         let width = pointee.get_align_size() as i64;
         let family = with_sibling_loads(data, family);
-        let Some((accesses, _)) = accesses_through(data, &family) else { return true };
+        let Some((accesses, _, complete)) = accesses_through(data, &family) else { return true };
         if accesses.iter().any(|a| {
             a.store && a.size as i64 > width && data.vbank().get(a.value).is_some_and(|n| n.is_constant())
         }) {
             return true;
         }
-        if width <= 1 {
+        if width <= 1 || !complete {
             return false;
         }
         let byte_cursor = |a: &Access| a.size == 1 && a.stride.rem_euclid(width) != 0;
@@ -1030,7 +1076,7 @@ fn pointee_refuses(data: &Funcdata, family: &[VarnodeId], ct: &Datatype, depth: 
         return accesses.iter().any(|a| !a.store && byte_cursor(a))
             && accesses.iter().any(|a| a.store && byte_cursor(a))
             && !accesses.iter().any(|a| {
-                a.size as i64 == width
+                a.size > 0 && a.size as i64 % width == 0
                     && a.at.wrapping_add(base).rem_euclid(width) == 0
                     && a.stride.rem_euclid(width) == 0
             });
@@ -1050,13 +1096,13 @@ fn pointee_refuses(data: &Funcdata, family: &[VarnodeId], ct: &Datatype, depth: 
     }
     let size = pointee.get_size() as i64;
     let family = with_sibling_loads(data, family);
-    let Some((accesses, places)) = accesses_through(data, &family) else { return true };
+    let Some((accesses, places, _)) = accesses_through(data, &family) else { return true };
     if size <= 0 {
         return !accesses.is_empty();
     }
     if !float
         && places.iter().any(|&(c, stride)| {
-            if stride == 0 { !(0..=size).contains(&c.wrapping_add(base)) } else { stride.abs() != size }
+            if stride == 0 { !(0..=size).contains(&c.wrapping_add(base)) } else { stride.unsigned_abs() != size as u64 }
         })
     {
         return true;
@@ -1064,7 +1110,7 @@ fn pointee_refuses(data: &Funcdata, family: &[VarnodeId], ct: &Datatype, depth: 
     let mut floats: Vec<(&Access, Rc<Datatype>)> = Vec::new();
     for a in &accesses {
         let at = a.at.wrapping_add(base);
-        if a.stride % size != 0 || (!float && a.stride != 0 && a.stride.abs() != size) {
+        if a.stride % size != 0 || (!float && a.stride != 0 && a.stride.unsigned_abs() != size as u64) {
             return true;
         }
         let off = if float || a.stride != 0 { at.rem_euclid(size) } else { at };
@@ -1085,7 +1131,7 @@ fn pointee_refuses(data: &Funcdata, family: &[VarnodeId], ct: &Datatype, depth: 
             Member::Exact(t)
                 if !a.store
                     && crate::kuna_structheadless::types_a_pointer_as_a_word(data, ct, &t)
-                    && accesses_through(data, &value_family(data, a.value)).is_some_and(|(acc, _)| !acc.is_empty()) =>
+                    && accesses_through(data, &value_family(data, a.value)).is_some_and(|(acc, _, _)| !acc.is_empty()) =>
             {
                 return true;
             }
@@ -1203,7 +1249,7 @@ pub(crate) fn moves_integers_beside(data: &Funcdata, load: OpId, size: int4) -> 
             _ => break,
         }
     }
-    let Some((accesses, _)) = accesses_through(data, &value_family(data, base)) else { return true };
+    let Some((accesses, _, _)) = accesses_through(data, &value_family(data, base)) else { return true };
     accesses.iter().filter(|a| a.op != load && a.size == size).any(|a| carries_an_integer(data, a.value))
 }
 
