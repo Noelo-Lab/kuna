@@ -2793,7 +2793,10 @@ Loading the environment word into `r11` is optional. From an `addis` base it
 is the last instruction before the ending. From `r2` it must directly follow
 an early CTR move and precede the TOC load, which replaces `r2`. An environment
 load in any other position is declined, as is a stub that does not load the
-TOC. A lazy
+TOC. GNU ld's rarer forms also stay unnamed: an `addi` that moves the base when
+the TOC or environment offset would cross into the next 64 KiB, the `xor`/`add`
+pair that replaces the lazy tail when the resolver is out of branch range, and a
+stub without the TOC save. A lazy
 stub's zero-TOC branch must reach the matching import's resolver entry: its
 relocation index, branch to the common glink code, and the common code's load of
 `DT_PLTGOT` are validated against `DT_PPC64_GLINK` and `DT_JMPREL`. Returning

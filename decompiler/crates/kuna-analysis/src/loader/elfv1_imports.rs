@@ -273,5 +273,9 @@ mod tests {
                 assert_eq!(stub_displacement(&stub),None,"{why}");
             }
         }
+        for (stub,why) in [
+            (&[0xf8410028u32,0x3d620002,0xe98b7ff8,0x396b7ff8,0x7d8903a6,0xe84b0008,0xe96b0010,0x4e800420][..],"addi-adjusted base"),
+            (&[0xf8410028,0xe9828118,0x7d8903a6,0x7d8b6278,0x7c425a14,0xe8428120,0x4e800420][..],"xor/add dependency"),
+        ] {assert_eq!(stub_displacement(stub),None,"{why}");}
     }
 }

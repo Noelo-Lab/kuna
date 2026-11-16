@@ -42,15 +42,13 @@ fn image(abi: u32, import: &str, alias_toc: Option<AliasToc>, import_addend: i64
         Transfer::SmallDirect=>vec![0xf8410028,0xe9820000,0x7d8903a6,0xe8420008,0x4e800420],
         Transfer::LargeDirect=>vec![0xf8410028,0x3d620000,0xe98b0000,0x7d8903a6,0xe84b0008,0x4e800420],
         _=>{
-            let branch=match transfer {Transfer::Fallback=>0x48000004,Transfer::OtherImport=>0x48000058,_=>0x48000050};
+            let branch=match transfer {Transfer::Fallback=>0x4800000c,Transfer::OtherImport=>0x48000058,_=>0x48000050};
             vec![0xf8410028,0x3d620000,0xe98b0000,0x7d8903a6,0xe84b0008,0x28220000,0x4ce20420,branch]
         }
     };
     for word in stub {code.extend(word.to_be_bytes());}
-    if code.len()<=0x120 {
-        code.resize(0x120,0);
-        for word in [0xe8410028u32,0x4e800020] {code.extend(word.to_be_bytes());}
-    }
+    code.resize(0x128,0);
+    for word in [0xe8410028u32,0x4e800020] {code.extend(word.to_be_bytes());}
     code.resize(0x138,0);
     code.extend((0x2fe8u64-0x1148).to_be_bytes());
     for word in [0x7d8802a6u32,0x429f0005,0x7d6802a6,0xe84bfff0,0x7d8803a6,0x7d625a14,
