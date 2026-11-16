@@ -41,7 +41,7 @@ fn scan_global_entries(file: &object::File) -> AnalysisOutput {
         if !matches!((st_other >> 5) & 7, 2..=6) {
             continue;
         }
-        out.tracked_regs.push(TrackedRegFact { func_addr: sym.address(), reg: R12, value: sym.address() });
+        out.entry_tracks.push(TrackedRegFact { func_addr: sym.address(), reg: R12, value: sym.address() });
     }
     out
 }

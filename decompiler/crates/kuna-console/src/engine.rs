@@ -6099,6 +6099,17 @@ fn commit_analysis_output(
             track.push(kuna_sleigh::globalcontext::TrackedContext { loc, val });
         });
     }
+    for fact in &out.entry_tracks {
+        let Ok(loc) = prog.arch().get_register_varnode(fact.reg.as_bytes()) else {
+            continue;
+        };
+        let val = fact.value & kuna_base::address::calc_mask(loc.size as i32);
+        let begin = Address::new(Rc::clone(code_space), fact.func_addr);
+        let track = prog.arch_mut().loader_entry_tracks.entry(begin).or_default();
+        if !track.iter().any(|seed| seed.loc == loc) {
+            track.push(kuna_sleigh::globalcontext::TrackedContext { loc, val });
+        }
+    }
 
     // 7a. A function bound to a named prototype model without a signature: its
     //     parameters, and those of every direct call to it, are recovered under
