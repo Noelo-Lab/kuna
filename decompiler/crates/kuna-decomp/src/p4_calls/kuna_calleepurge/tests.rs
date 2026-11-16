@@ -349,3 +349,37 @@ fn a_wide_load_over_a_parked_stack_address_is_lost() {
     let shape = [vec![f.add(SP, SP, -0x10)], vec![f.copy(0, SP)], f.store_at(SP, 4, 0), wide];
     assert!(f.extent_tracked(&shape).1, "an 8-byte load covering the slot that holds the address");
 }
+
+struct NoImage;
+
+impl kuna_sleigh::loadimage::LoadImage for NoImage {
+    fn get_file_name(&self) -> &str {
+        "none"
+    }
+    fn load_fill(&mut self, _ptr: &mut [u8], _addr: &Address) -> kuna_base::error::KunaResult<()> {
+        Err(kuna_base::error::KunaError::data_unavail("none"))
+    }
+    fn get_arch_type(&self) -> Vec<u8> {
+        Vec::new()
+    }
+    fn adjust_vma(&mut self, _adjust: i64) {}
+}
+
+#[test]
+fn a_host_flush_drops_the_walks_and_keeps_the_decoded_instructions() {
+    let sleigh = kuna_sleigh::sleigh::Sleigh::new(
+        Box::new(NoImage),
+        Box::new(kuna_sleigh::globalcontext::ContextInternal::new()),
+    );
+    let mut arch = Architecture::new("t", sleigh);
+    {
+        let mut cache = arch.kuna_callee_purge.borrow_mut();
+        cache.whole.insert(0x1000, (UNKNOWN, 0));
+        cache.cut.insert((0x2000, CUT), UNKNOWN);
+        cache.decoded.insert(0x1000, Rc::new((Vec::new(), 1)));
+    }
+    arch.flush_remote_caches();
+    let cache = arch.kuna_callee_purge.borrow();
+    assert!(cache.whole.is_empty() && cache.cut.is_empty(), "a walk read names a flush may have changed");
+    assert_eq!(cache.decoded.len(), 1);
+}

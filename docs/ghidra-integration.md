@@ -289,7 +289,8 @@ relocated the lazy model to the seams the kuna pipeline actually reads
 - **flushNative** clears everything in the upstream order
   (`Architecture::flush_remote_caches`): the lazy symbol cache + property rollback
   + the per-address tracked-register cache, the non-core types, the comment
-  database, the decoded strings.
+  database, the decoded strings, and the x86-32 callee stack walks (they read
+  the host's names and no-return facts).
 
 ## 6. Response contracts that make the GUI work
 

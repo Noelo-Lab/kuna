@@ -288,6 +288,15 @@ pub struct Cache {
     cut: HashMap<(uintb, u8), Summary>,
 }
 
+impl Cache {
+    /// Drop the walks, which read the no-return facts and names a host
+    /// front-end supplies, when it flushes them; decoded instructions stay.
+    pub fn forget_walks(&mut self) {
+        self.whole.clear();
+        self.cut.clear();
+    }
+}
+
 /// A depth no walk reaches: the walk was cut short.
 const CUT: u8 = u8::MAX;
 
@@ -302,7 +311,7 @@ pub(crate) fn summary(arch: &Architecture, entry: &Address, depth: u8) -> Summar
 fn walk_options(arch: &Architecture) -> u8 {
     u8::from(arch.kuna_calleeargs)
         | u8::from(arch.analysis_noreturn_known) << 1
-        | u8::from(arch.go_bounds) << 2
+        | u8::from(arch.go_bounds && arch.source_lang().is_go()) << 2
         | u8::from(arch.strip_security_check) << 3
 }
 

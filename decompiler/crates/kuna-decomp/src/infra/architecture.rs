@@ -3130,11 +3130,14 @@ impl Architecture {
     /// cache (+ its property-map rollback), the non-core data-types, the
     /// comment database, and the decoded-string cache.  kuna has no live
     /// sub-scopes to delete (namespaces are cached path strings inside the
-    /// RemoteScope, cleared with it) and no wired constant pool yet.
+    /// RemoteScope, cleared with it) and no wired constant pool yet.  The
+    /// x86-32 callee walks read the host's names and no-return facts, so they
+    /// go too ([`crate::kuna_calleepurge`]).
     pub fn flush_remote_caches(&mut self) {
         if let Some(remote) = &self.remote_scope {
             remote.clear();
         }
+        self.kuna_callee_purge.get_mut().forget_walks();
         self.types.clear_noncore();
         self.commentdb.clear();
         self.string_manager.borrow_mut().base.clear();
