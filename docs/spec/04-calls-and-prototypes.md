@@ -1747,8 +1747,16 @@ that machinery.
   its path. Walks are cached on the architecture: one whose nested calls fit
   within the depth it was asked for is the answer at every greater depth, and
   one the depth limit cut short is kept per depth, so the answer never depends
-  on which function asked first. Decoded instructions are shared between
-  walks in a bounded cache.
+  on which function asked first. The walks are dropped when an option they
+  read changes (`calleeargs`, and the gates of the no-return names that end a
+  path: `noreturn_known`, `gobounds` with `sourcelang`, `securitycheck`), so a decompile after a
+  toggle in one session reads what a fresh session would, and when a host
+  front-end flushes the names and no-return facts they read (Ghidra's
+  `flushNative`, sent after every function), so a rename or a no-return mark
+  made in Ghidra reaches the next decompile. The console does not watch its
+  symbol table: a `map function` after a decompile is read by a walk only after
+  `clear architecture`. Decoded instructions are shared between walks in a
+  bounded cache, which a flush keeps.
 
   A proven extrapop is applied only in a function where every call then has
   one, stated by its prototype or proven by its callee
