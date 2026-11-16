@@ -694,7 +694,7 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "noreturn_known" => on_off!(analysis_noreturn_known, "No-return-known analysis pass"),
-    "libgccsigs" => on_off!(analysis_libgccsigs, "libgcc __divdi3 DI-mode contract"),
+    "libgccsigs" => on_off!(analysis_libgccsigs, "libgcc __divdi3 and __stack_chk_fail_local contracts"),
     "gotypeglobals" => on_off!(analysis_go_type_globals, "Go type-descriptor globals"),
     "libctypes" => {
         use crate::kuna_libctypes::LibcTypesLayout;

@@ -3098,7 +3098,7 @@ moves.
   (stale i386 `-O0` outgoing stack slots, the AArch64 `x8` result register), and
   in an i386 PIC object, whose `GOTOFF` addresses the loader leaves unresolved,
   a `char *` parameter renders such a garbage address as a string literal.
-- **(kuna) libgcc DI-mode contracts** (`libgccsigs`, off by default,
+- **(kuna) Compiler-runtime contracts** (`libgccsigs`, off by default,
   `decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_libgcc.rs (LibgccSigsPass)`):
   seeds the reserved compiler-runtime name `__divdi3` on SPARC32 big-endian ELF
   under `sparc:BE:32:default:default`. Its DI-mode contract is a signed
@@ -3108,14 +3108,34 @@ moves.
   word of the computed quotient instead of reading an unassigned local. Other
   names and targets retain their existing inference. Existing import-address
   and name-ambiguity rules apply, and DWARF or explicit prototype assertions
-  retain precedence over the built-in signature. The pass's facts are computed
+  retain precedence over the built-in signature. On any ELF the same option
+  gives a `__stack_chk_fail_local` the image defines the `void (void)` row
+  `libcsigs` gives the import (below), keyed by its address and only where no
+  other function name holds that address: GCC's `-fPIC` stack protector on
+  32-bit PowerPC and x86 links the hidden helper into each PIE and shared
+  object, where a PowerPC caller that set its return value in `r3` before the
+  canary test otherwise passes it (`__stack_chk_fail_local(a0 * 3)`), while
+  static glibc aliases it to `__stack_chk_fail`, whose address keeps its
+  inferred contract (`__gconv_transform_ascii_internal` stays `unsigned long`).
+  The defined helper is no-return only when its body shows it, as for any
+  defined function. Over the shared-object twins of the objects measured below
+  (447) the option removes every invented argument (391 calls on the default
+  target, 234 on e500) and gives 240 functions on the default target the return
+  value their source declares, but 43 PLT call stubs (32 on e500) lose an
+  inferred return the argument was the only use of, and at `-Os` 4 functions
+  lose a parameter whose only use was the argument (`void gather(int a0,unsigned
+  char *a1)` becomes `void gather(int a0)`; on e500 `void main(unsigned int a0)`
+  becomes `void main(void)`); on an i386 PIE that defines the helper, one
+  function in 141 (`xstrtoimax`) splits a 64-bit local into two 32-bit halves.
+  With the option off the output is unchanged. The pass's facts are computed
   at load and committed only when the option is on. It ships off because the
   locked eight-byte result still costs a caller that returns arithmetic on the
   quotient: §4's whole-pair proof keeps both return words only when each is a
   bare slice of the call result or a literal and nothing else reads the
   quotient, so `return a / b + 1;`,
   `return -(a / b);` and `return f ? a / b : c;` keep only the high word or
-  return nothing, where the off output returns every word.
+  return nothing, where the off output returns every word, and the helper's
+  stub and `-Os` parameter losses above keep it off as well.
 - **(kuna) Measured libc signatures** (`libcsigs`,
   `decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_libcsigs.rs (LibcSigsPass)`):
   the second, larger half of the same table, closing most of the LOSS above. Which
@@ -3187,7 +3207,33 @@ moves.
   prototype. Independently, every provenance-confirmed import receives an
   address-keyed copy at each resolver address. Thus an IAT slot and veneer remain
   typed even when a same-spelled export suppresses the global key; the export
-  itself remains untouched. Two complex-valued rows, `cexpf` and `cexp`, are
+  itself remains untouched. `__stack_chk_fail_local`, the hidden helper GCC's
+  `-fPIC` stack protector calls on 32-bit PowerPC and x86, is `void (void)` like
+  `__stack_chk_fail` (glibc `debug/stack_chk_fail_local.c`, libssp
+  `ssp-local.c`), so a PowerPC function's return value, set in `r3` before the
+  canary test, stays out of the call: `__stack_chk_fail_local()`, not
+  `__stack_chk_fail_local(a0 * 3)`. Only an import spelled exactly so matches,
+  which in practice is a relocatable object's call relocation to the undefined
+  symbol, and the known-names pass (§1.7) ends the flow at the same import. An
+  i386 object reaches the helper through an `R_386_PC32` relocation, which the
+  loader does not register as a code extern, so there the call stays an unnamed
+  `sub_` callee and is unchanged. A
+  linked PIE or shared object defines the helper hidden in its own text, where
+  `libgccsigs` (above) types it when that option is on; static glibc aliases it
+  to `__stack_chk_fail`, so a by-name match there would retype that address for
+  the callers of both names, and neither path touches it. Over GCC 15 `-fPIC
+  -fstack-protector-strong` PowerPC32 objects (447, at `-O1` to `-O3` and
+  `-Os`, default target and e500) the row and the no-return leave no helper call
+  with an argument and end the flow at all 770. At `-O1` to `-O3` GCC
+  places the call after the function's last return, and flow running past it
+  decoded what followed (279 `halt_baddata`, now none). At `-Os` the call falls
+  through into the shared epilogue, where the `void` call's clobbered `r3` met
+  the return value: with the no-return 76 functions (72 on e500) return the
+  value their source declares and 5 (7) have parameter lists closer to it, and
+  no signature gets worse. A function that returns through a `_restgpr_N_x` tail
+  branch, which the return recovery reads as an opaque call, stays `void` (89),
+  and in 18 the value now shows as that tail call's argument.
+  Two complex-valued rows, `cexpf` and `cexp`, are
   seeded with the DWARF pass's complex pair types (below), and only where that
   layout applies to the value's width, so a call passes and returns the value
   in the target's own registers or hidden buffer.
@@ -9933,7 +9979,13 @@ or replaced by the PE/Mach-O list (`__fastfail`, `_invoke_watson`, the same GNU
 Fortran block, plus the shared C names) off-ELF. The scan mirrors the exact symbol
 streams the loader installs and emits the *install* address — for a UND import, the
 PLT-stub address, since the `.dynsym` entry is address 0 and demangling means a
-raw-name lookup would miss.
+raw-name lookup would miss. One name is matched only as an import and only as
+spelled: `__stack_chk_fail_local`, which glibc `debug/stack_chk_fail_local.c`
+declares `noreturn`, at each import resolver address and each relocatable
+object's undefined code extern, so its call prints `// no-return` and nothing
+after it. Neither `_stack_chk_fail_local`, `stack_chk_fail_local` nor a helper
+the image defines matches: a linked image's own helper is no-return only when
+its body shows it.
 Name-based: free, exact, and useless on stripped custom wrappers.
 
 **Pclntab names** (the `gonoreturn` pass,
