@@ -554,6 +554,7 @@ fn chain_of(
     max_sites: usize,
     max_insns: usize,
 ) -> Vec<Address> {
+    let _context = trans.decode_context_scope();
     let mut sites: Vec<Address> = Vec::new();
     let mut provenance = ReturnProvenance::default();
     let mut seen: BTreeSet<uintb> = BTreeSet::new();
@@ -623,6 +624,7 @@ pub fn kuna_push_immediate_ret(
     entry: &Address,
     max_insns: usize,
 ) -> Option<(Address, uintb)> {
+    let _context = trans.decode_context_scope();
     let mut provenance = ReturnProvenance::default();
     let mut seen: BTreeSet<uintb> = BTreeSet::new();
     let mut cur = entry.clone();
