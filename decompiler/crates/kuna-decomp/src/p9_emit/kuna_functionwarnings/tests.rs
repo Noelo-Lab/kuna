@@ -67,6 +67,11 @@ fn a_stem_is_one_the_slugs_leave_whole() {
         ("WARNING: Exceeded the 1 instruction budget: some flow is truncated", "instruction-limit"),
         ("WARNING (jumptable): Could not recover jumptable at 0x10. Too many branches", "jumptable"),
         ("WARNING: structured blocks unavailable (structuring declined)", "structuring-declined"),
+        ("WARNING: Nullable weak code relocation could not be modeled", "weak-relocation"),
+        (
+            "WARNING: Nullable weak relocation operand could not be modeled; address guards may be incomplete",
+            "weak-relocation",
+        ),
         ("WARNING: funcboundflow: fall-through reached the next function entry", "funcboundflow"),
         ("WARNING: calltrampoline: 0x0044a677 discards the return address", "calltrampoline"),
         ("WARNING: ptrarith problems", "other"),
