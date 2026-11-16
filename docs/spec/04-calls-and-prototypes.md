@@ -1856,11 +1856,17 @@ classified:
   frame slots only, and is used solely as the address of `LOAD`s and `STORE`s
   (`kuna_directalias.rs (aliases)`) aliases a trial only when the bytes it
   touches overlap the trial; every other pointer keeps the boundary above
-  (`varmap.rs (AliasChecker::has_local_alias_among)`). Such a pointer is an
+  (`varmap.rs (AliasChecker::split_direct)`, which classifies the gathered
+  pointers once per gather). Such a pointer is an
   access heritage has not converted yet: a stack pointer restored from the
   frame slot it was saved in after an `alloca` is still one when call inputs
   are scored, and the call after the restore storing its argument at -0x2c
   dropped an earlier call's argument at -0x28 (`reg(1)` for `reg(1, n)`).
+  The rule is not specific to x86; it applies wherever stack trials are
+  scored. A pointer that is also the base of a further offset
+  (`mov [esp],a; mov [esp+4],b`) is not direct, and a later store that
+  overlaps an earlier call's slot still aliases it, so those shapes keep the
+  upstream verdict.
 - (kuna `calleeargs`, default on) **Callee stack-argument extent.** On
   x86-32 under a model that leaves extrapop unknown (`x86win.cspec`), a direct
   call whose callee's own code can be read takes its stack arguments from what

@@ -667,6 +667,8 @@ pub struct AliasChecker {
     alias_boundary: uintb,
     /// 1 = stack grows negative, -1 = positive (C++ `direction`).
     direction: int4,
+    /// (kuna) [`Self::split_direct`]'s answer for the current gather.
+    direct_split: Option<(uintb, Vec<(uintb, uintb)>)>,
 }
 
 impl Default for AliasChecker {
@@ -687,6 +689,7 @@ impl AliasChecker {
             local_boundary: 0,
             alias_boundary: 0,
             direction: 0,
+            direct_split: None,
         }
     }
 
@@ -734,6 +737,7 @@ impl AliasChecker {
         self.calculated = false; // Defer calculation
         self.add_base.clear();
         self.alias.clear();
+        self.direct_split = None;
         self.direction = dir; // direction == 1 for normal negative stack growth
         self.derive_boundaries(bounds);
         if !defer {
@@ -750,6 +754,7 @@ impl AliasChecker {
     /// exactly.
     fn gather_internal(&mut self, access: &mut dyn AliasGatherAccess) {
         self.calculated = true;
+        self.direct_split = None;
         self.alias_boundary = self.local_extreme;
         let space = match &self.space {
             Some(s) => Rc::clone(s),
@@ -812,24 +817,29 @@ impl AliasChecker {
         vn_offset >= self.alias_boundary
     }
 
-    /// (kuna) [`Self::has_local_alias`]'s boundary drawn from only the gathered
-    /// pointers `keep` accepts. Call after `has_local_alias` gathered them.
-    pub fn has_local_alias_among(&self, offset: uintb, keep: impl Fn(&AddBase) -> bool) -> bool {
-        if self.direction == -1 {
-            return false;
-        }
-        if self.alias.len() != self.add_base.len() {
-            return offset >= self.alias_boundary;
-        }
-        let mut boundary = self.local_extreme;
-        for (&alias, base) in self.alias.iter().zip(&self.add_base) {
-            let parameter =
-                if self.direction == 1 { alias < self.local_boundary } else { alias > self.local_boundary };
-            if !parameter && keep(base) {
-                boundary = boundary.min(alias);
+    /// (kuna) The gathered pointers split by `direct`: [`Self::has_local_alias`]'s
+    /// boundary drawn from the local ones it rejects, and `(start, bytes)` for
+    /// each it accepts. Computed once per gather; call after `has_local_alias`
+    /// gathered them.
+    pub fn split_direct(&mut self, direct: impl Fn(&AddBase) -> Option<uintb>) -> &(uintb, Vec<(uintb, uintb)>) {
+        let (alias, add_base, direction) = (&self.alias, &self.add_base, self.direction);
+        let (local_boundary, local_extreme, alias_boundary) =
+            (self.local_boundary, self.local_extreme, self.alias_boundary);
+        self.direct_split.get_or_insert_with(|| {
+            if alias.len() != add_base.len() {
+                return (alias_boundary, Vec::new());
             }
-        }
-        offset >= boundary
+            let mut boundary = local_extreme;
+            let mut ranges = Vec::new();
+            for (&start, base) in alias.iter().zip(add_base) {
+                if let Some(bytes) = direct(base) {
+                    ranges.push((start, bytes));
+                } else if if direction == 1 { start >= local_boundary } else { start <= local_boundary } {
+                    boundary = boundary.min(start);
+                }
+            }
+            (boundary, ranges)
+        })
     }
 
     /// (kuna) Whether a pointer formed into the parameter area could reach the

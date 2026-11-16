@@ -28,15 +28,11 @@ const MAX_STEPS: usize = 16;
 
 /// Does a gathered pointer reach the trial at `[offset, offset + size)`?
 /// Call after `has_local_alias` answered `true` for it.
-pub fn aliases(data: &Funcdata, aliascheck: &AliasChecker, offset: uintb, size: int4) -> bool {
-    let direct = |base: &AddBase| direct_bytes(data, base.base).is_some();
-    if aliascheck.has_local_alias_among(offset, |base| !direct(base)) {
-        return true;
-    }
-    let end = offset.wrapping_add(size.max(1) as uintb);
-    aliascheck.get_alias().iter().zip(aliascheck.get_add_base()).any(|(&start, base)| {
-        direct_bytes(data, base.base).is_some_and(|bytes| start < end && offset < start.wrapping_add(bytes))
-    })
+pub fn aliases(data: &Funcdata, aliascheck: &mut AliasChecker, offset: uintb, size: int4) -> bool {
+    let (boundary, direct) = aliascheck.split_direct(|base: &AddBase| direct_bytes(data, base.base));
+    let end = offset as u128 + size.max(1) as u128;
+    offset >= *boundary
+        || direct.iter().any(|&(start, bytes)| (start as u128) < end && (offset as u128) < start as u128 + bytes as u128)
 }
 
 /// The widest access through `vn` when it is only ever the address of a
