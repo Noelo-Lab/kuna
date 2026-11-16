@@ -985,7 +985,14 @@ the stack-pointer input's descendant tree — accumulating constant `INT_ADD`
 offsets, passing through COPY/INDIRECT/SEGMENTOP, and flagging any traversal of
 a *non-constant* add or a MULTIEQUAL — and records a guard
 (`heritage.rs (LoadGuard)`) for every LOAD/STORE reached on a flagged path,
-marking the op `spacebase_ptr`. A guard is born covering the **entire space**
+marking the op `spacebase_ptr`. **OR-masked pointers** (always on, kuna): an
+`INT_OR` of the path with a constant below `0x1000` (the window an unrefined
+guard covers) is flagged the same way. GCC reads a spilled `int`'s low byte
+through `(fp+0x7fb)|3` on SPARC64; which byte depends on the pointer's
+runtime low bits, so it is an indexed access at the pointer's offset.
+Upstream stops at the OR: the LOAD gets no guard, the spill
+looks dead and is deleted, and the result reads a slot nothing wrote. A guard
+is born covering the **entire space**
 (`LoadGuard::set`: minimum 0, maximum the space's highest offset). A STORE
 whose pointer is still a free varnode cannot be classified yet: it is
 conservatively marked and queued (`heritage.rs (Heritage::protect_free_stores)`),

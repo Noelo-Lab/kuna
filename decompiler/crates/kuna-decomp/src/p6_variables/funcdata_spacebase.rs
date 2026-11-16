@@ -590,7 +590,7 @@ impl Funcdata {
             // MapState clears the proto's param range out of the analysis range;
             // restructureVarnode passes (getRangeTree, proto.getParamRange()).
             let rangetree = lm.range_tree_clone();
-            let param_range = self.get_func_proto().get_param_range().clone();
+            let param_range = local_param_range(self, &space);
             let types = match self.get_arch().types() {
                 Some(t) => t,
                 None => return 0,
@@ -1487,6 +1487,47 @@ fn addr_eq(a: &Address, b: &Address) -> bool {
     let sa = a.get_space().map(|s| s.get_index());
     let sb = b.get_space().map(|s| s.get_index());
     sa == sb && a.get_offset() == b.get_offset()
+}
+
+/// The stack parameter range `restructure_varnode` clears out of the local
+/// analysis range (C++ `proto.getParamRange()`).
+///
+/// (kuna) A `storage="hiddenret"` entry only holds a parameter when this
+/// function takes a hidden return pointer. Otherwise its storage is ordinary
+/// local frame memory: SPARC V9's 64-bit models place the entry at stack
+/// `0x7ef`, inside every function's own frame, and clearing it there dropped
+/// the locals at `0x7ef..0x7f6` from symbol recovery. The slot stays a
+/// parameter while anything says it may be one: a recorded hidden-return
+/// input, an output returned through indirect storage, an input Varnode the
+/// function reads from the slot (an unrecovered prototype has no store yet,
+/// so the entry read is the only evidence there), or an ordinary stack entry
+/// sharing its storage.
+fn local_param_range(fd: &Funcdata, space: &Rc<kuna_base::space::AddrSpace>) -> kuna_base::address::RangeList {
+    use crate::dtype::type_class::TYPECLASS_HIDDENRET;
+    let proto = fd.get_func_proto();
+    let mut range = proto.get_param_range().clone();
+    let declared = proto.has_store()
+        && (proto.get_output().is_indirect_storage()
+            || (0..proto.num_params()).any(|i| proto.get_param(i).is_some_and(|p| p.is_hidden_return())));
+    if declared || !proto.has_model() {
+        return range;
+    }
+    let entries = proto.model().input().get_entry();
+    let stack = |entry: &&crate::fspec::ParamEntry| entry.get_space().get_index() == space.get_index();
+    for slot in entries.iter().filter(stack).filter(|e| e.get_type() == TYPECLASS_HIDDENRET) {
+        let (first, size) = (slot.get_base(), slot.get_size());
+        let last = first.wrapping_add((size - 1) as u64);
+        let shared = entries.iter().filter(stack).any(|e| {
+            e.get_type() != TYPECLASS_HIDDENRET
+                && e.get_base() <= last
+                && first <= e.get_base().wrapping_add((e.get_size() - 1) as u64)
+        });
+        let read = fd.has_input_intersection(size, &Address::new(Rc::clone(space), first)).unwrap_or(true);
+        if !shared && !read {
+            range.remove_range(Rc::clone(space), first, last);
+        }
+    }
+    range
 }
 
 /// Extract the four `deriveBoundaries` inputs from a function prototype (C++
