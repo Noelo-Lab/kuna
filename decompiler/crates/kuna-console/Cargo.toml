@@ -85,6 +85,10 @@ name = "verify_msvcfpconst"
 path = "tests/verify_msvcfpconst.rs"
 
 [[test]]
+name = "verify_loadoptions"
+path = "tests/verify_loadoptions.rs"
+
+[[test]]
 name = "verify_pdatachained"
 path = "tests/verify_pdatachained.rs"
 

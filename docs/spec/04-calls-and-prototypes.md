@@ -9057,12 +9057,12 @@ call through a pointer is typed by the listing itself (an import stub's
 The value's type is whatever it is: the callee's stated return through `callrettype`, a float for a float
 register (chapter 05). A forced function whose RETURN carries no value once the
 returns are built is made `void` (`kuna_voidret.rs (void_unless_returned)`),
-as upstream's `updateOutputTypes` would. The port's restart keeps the output an
-earlier pass recovered, and `ActionOutputPrototype` leaves the output alone
-when the RETURN has no value: a MinGW `-O0` function whose `mov eax,[iat];
-call eax` resolves to `ExitProcess` restarts, the pass before the restart
-returns `eax` joined with what the unresolved call left, the pass after it
-refuses the bare handle where the returning path also loads through it, and the
+as upstream's `updateOutputTypes` would. `ActionOutputPrototype` leaves the
+output alone when the RETURN has no value. Before restarts cleared the
+unlocked output (chapter 03), a MinGW `-O0` function whose `mov eax,[iat];
+call eax` resolves to `ExitProcess` restarted, the pass before the restart
+returned `eax` joined with what the unresolved call left, the pass after it
+refused the bare handle where the returning path also loads through it, and the
 function printed `int f(..)` around a bare `return;`.
 
 A redone wrapper reads its own callee's result in turn, so each settling

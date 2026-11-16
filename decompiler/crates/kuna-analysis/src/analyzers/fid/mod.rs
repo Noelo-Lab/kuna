@@ -68,7 +68,7 @@ use crate::fid::skipper::{InstructionSkipper, X86InstructionSkipper};
 /// kept out of the per-decompilation `--option` surface in v1 (a real `--fidb
 /// <path>` flag is deferred, `docs/history/fid-design.md` §7.2). Absent / empty ⇒ the pass
 /// is inert (no DB to match against).
-pub const FID_DB_ENV: &str = "kuna_fid_db";
+pub const FID_DB_ENV: &str = kuna_decomp::kuna_loadoptions::FID_DB_ENV;
 
 /// The FID matching consumer pass — the kuna analog of Ghidra's FID identification
 /// analyzer (`FidServiceImpl` over the function-id query service), the third
@@ -101,10 +101,10 @@ impl AnalysisPass for FidPass {
         let Some(listing) = ctx.listing else {
             return out;
         };
-        let Some(path) = std::env::var_os(FID_DB_ENV).filter(|p| !p.is_empty()) else {
+        let Some(path) = fid_db_path() else {
             return out;
         };
-        let (report, db) = kuna_fidapply::open(std::path::Path::new(&path), ctx.arch);
+        let (report, db) = kuna_fidapply::open(&path, ctx.arch);
         out.fid_databases.push(report);
         let Some(db) = db else {
             return out;
@@ -128,6 +128,13 @@ impl AnalysisPass for FidPass {
 
         out
     }
+}
+
+/// The `.fid` database the load names: `LoadOptions::fid_db`, else
+/// [`FID_DB_ENV`]. `None` when neither names one.
+fn fid_db_path() -> Option<std::path::PathBuf> {
+    use kuna_decomp::kuna_loadoptions::{env, scoped};
+    scoped(|o| o.fid_db.clone()).unwrap_or_else(env::fid_db)
 }
 
 /// Fingerprint a discovered function using the same extent and masks as the FID pass.
