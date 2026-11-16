@@ -5095,11 +5095,18 @@ every other binary's pass list is byte-identical to before the pass existed):
   owner is the most-derived class whose primary vptr is stored at offset 0, and
   every stored vptr must belong to it or to a base. A function in the owner's own
   primary vtable is one of its virtual destructors, `C::~C` (the name a symbol
-  table gives the complete-object and the deleting destructor alike). The ABI puts
+  table gives the complete-object and the deleting destructor alike), counting only
+  the stores made before the walk's first call or conditional branch: a destructor
+  sets its vptr before anything else, while a virtual method that inlined one — a
+  COM-style `Release` that tests its count before `delete this`, a `reset` that
+  destroys and rebuilds `*this` — stores only after a test or a call. The ABI puts
   the deleting destructor in the slot after the complete one, but which of the two
   stores the vptr depends on the optimizer — at `-O2` the deleting one can inline
   the other and be the only store — so the next slot is also named only when it
-  calls the function found. A function in no vtable is a constructor
+  calls the function found. More than two such slots in one class, or two that are
+  not neighbours, mean a method carrying a destructor's code with nothing before it
+  (`delete this` in a final class compiles to the deleting destructor's body), and
+  none of that class's slots is named. A function in no vtable is a constructor
   `C::C`, but only when `C` or a base has such a virtual destructor, because a
   non-virtual destructor stores the vptr exactly as a constructor does, and only
   when every vptr store goes through `this` read back from a frame slot the
@@ -5109,6 +5116,14 @@ every other binary's pass list is byte-identical to before the pass existed):
   constructor does (a by-value factory's return slot, a placement-new helper, the
   constructor of a class whose first member is a `C`, a `delete p` wrapper), so an
   optimized constructor is left unnamed rather than risk naming one of those. A
+  `this` the function stores to a second frame slot is an inlined callee's
+  parameter home (an always_inline constructor inlined into the function) until a
+  call follows, which makes it the compiler's own spill across that call; a store
+  through it is not a store through `this`. A `this` passed in memory is never
+  spilled by the function itself, so on such an ABI no constructor is named. And
+  when `C` has a base, every store must follow a call: a constructor runs its base
+  constructors before it sets its own vptr, while a destructor sets it first — the
+  shape of a pure virtual destructor, which no vtable slot holds. A
   fact for a function the symbol table already names (anything but a placeholder,
   an entry-table slot or a slot index) is dropped, so a recovered name never joins
   a real one as a second name the call-site lookup could prefer. A

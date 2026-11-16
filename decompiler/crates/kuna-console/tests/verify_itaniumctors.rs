@@ -133,3 +133,37 @@ fn a_symbol_table_name_gets_no_recovered_name_beside_it() {
         "kit::Holder::Holder's own symbol must stay its only name"
     );
 }
+
+/// `itaniumctors_impostor_O0_x86_64.so`: `imp::Mid::~Mid`, a pure virtual
+/// destructor no vtable slot holds, and `imp::Holder::Holder`, the always_inline
+/// `Gadget` constructor inlined into it, both store a vptr through `this`.
+const IMPOSTOR_NOT_CTORS_O0: [u64; 2] = [0x11ce, 0x1342];
+/// `imp::Mid::Mid`, which calls `Base::Base` before it stores Mid's vptr.
+const IMPOSTOR_MID_CTOR_O0: u64 = 0x171a;
+/// `itaniumctors_impostor_O2_x86_64.so`: `Obj::Release`, `Cell::reset` and
+/// `Once::Release` store their class's vptr from a vtable slot, and `Once`'s own
+/// destructors (slots 2 and 3) share `Once::Release`'s code.
+const IMPOSTOR_NOT_DTORS_O2: [u64; 5] = [0x14b0, 0x1310, 0x13e0, 0x1250, 0x13a0];
+const IMPOSTOR_OBJ_DTORS_O2: [u64; 2] = [0x1220, 0x1360];
+
+#[test]
+fn a_destructor_or_an_inlined_constructor_is_not_a_constructor() {
+    let prog = bootstrap("itaniumctors_impostor_O0_x86_64.so", true);
+    assert_eq!(name_at(&prog, IMPOSTOR_MID_CTOR_O0), "Mid");
+    for vma in IMPOSTOR_NOT_CTORS_O0 {
+        let name = name_at(&prog, vma);
+        assert!(name.starts_with("sub_"), "{vma:#x} must stay unnamed, got {name}");
+    }
+}
+
+#[test]
+fn a_method_that_inlined_a_destructor_is_not_one() {
+    let prog = bootstrap("itaniumctors_impostor_O2_x86_64.so", true);
+    for vma in IMPOSTOR_OBJ_DTORS_O2 {
+        assert_eq!(name_at(&prog, vma), "~Obj", "{vma:#x} is imp::Obj::~Obj");
+    }
+    for vma in IMPOSTOR_NOT_DTORS_O2 {
+        let name = name_at(&prog, vma);
+        assert!(!name.starts_with('~'), "{vma:#x} must keep its slot name, got {name}");
+    }
+}

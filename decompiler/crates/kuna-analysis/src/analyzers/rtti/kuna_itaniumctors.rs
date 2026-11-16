@@ -16,13 +16,18 @@
 //!
 //! # Which name
 //!
-//! * A function in `C`'s own primary sub-vtable that stores `C`'s vptr is one of
-//!   its virtual destructors, `C::~C` — the name a symbol table gives both the
-//!   complete-object (`D1`) and the deleting (`D0`) one — and it replaces
-//!   its slot-index name. The ABI puts `D0` in the slot after `D1`, but which of the
+//! * A function in `C`'s own primary sub-vtable that stores `C`'s vptr before
+//!   any call or conditional branch is one of its virtual destructors, `C::~C` —
+//!   the name a symbol table gives both the complete-object (`D1`) and the
+//!   deleting (`D0`) one — and it replaces its slot-index name. A virtual method
+//!   that inlined a destructor (a `Release` testing its count before `delete
+//!   this`, a `reset` that destroys and rebuilds `*this`) stores only after one.
+//!   The ABI puts `D0` in the slot after `D1`, but which of the
 //!   two stores the vptr depends on the optimizer (at `-O2` the deleting one may
 //!   inline the other and be the only one that stores), so the next slot is named
-//!   too only when it calls the one found.
+//!   too only when it calls the one found. More than two such slots, or two that
+//!   are not neighbours, mean a method with a destructor's code (`delete this` in
+//!   a final class), and the class's destructors are left alone.
 //! * A function in no vtable that stores `C`'s vptr is a constructor `C::C` —
 //!   but only once `C`, or a base of `C`, is known to have a virtual destructor.
 //!   Without one, the same store is what a non-virtual destructor does, and
@@ -33,7 +38,11 @@
 //!   a constructor or a helper a constructor or destructor was inlined into (a
 //!   by-value factory's return slot, a placement-new helper, the constructor of a
 //!   class whose first member is a `C`, a `delete p` wrapper), and the stores are
-//!   the same, so it is left alone.
+//!   the same, so it is left alone. A `this` stored to a second frame slot is an
+//!   inlined callee's parameter (an always_inline constructor) unless a call
+//!   follows, which makes it the compiler's own spill across that call. When `C`
+//!   has a base, every store must also follow a call, the base constructor's: a
+//!   destructor stores first, and a pure virtual one sits in no slot.
 //! * A function the symbol table already names keeps that name: the pass never
 //!   adds a second name beside it, which the call-site lookup could prefer.
 //! * A function storing vptrs of classes that are not one inheritance chain, or a
@@ -157,19 +166,29 @@ fn destructor_slots(walker: &Walker, classes: &[ClassVtables]) -> (Vec<SymFact>,
             .entry(f)
             .or_insert_with(|| {
                 let w = walker.walk(f, &owner_of, MAX_DTOR_INSNS);
-                let stores: Vec<(u64, i64)> = w.stores.iter().map(|s| (s.0, s.1)).collect();
-                (owning_class(&stores, &owner_of, classes), w.calls)
+                let first = pairs(w.stores.iter().filter(|s| !s.after_branch));
+                (owning_class(&first, &owner_of, classes), w.calls)
             })
             .clone()
     };
     let mut out: Vec<SymFact> = Vec::new();
     let mut has_virtual_dtor: HashSet<usize> = HashSet::new();
     for (c, cls) in classes.iter().enumerate() {
+        let mut shaped: Vec<(usize, u64)> = Vec::new();
         for (i, slot) in cls.primary_slots.iter().enumerate() {
-            let Some(f) = *slot else { continue };
-            if walk(f).0 != Some(c) {
-                continue;
+            if let Some(f) = *slot {
+                if !shaped.iter().any(|s| s.1 == f) && walk(f).0 == Some(c) {
+                    shaped.push((i, f));
+                }
             }
+        }
+        // D1 and D0 are neighbouring slots. A third, or a second two apart, is
+        // a method that inlined one (`delete this` in a final class), and nothing
+        // in its stores says which.
+        if shaped.len() > 2 || (shaped.len() == 2 && shaped[1].0 != shaped[0].0 + 1) {
+            continue;
+        }
+        for (i, f) in shaped {
             has_virtual_dtor.insert(c);
             let name = dtor_name(&cls.name);
             out.push(SymFact {
@@ -219,13 +238,17 @@ fn constructors(
             continue;
         }
         let walked = walker.walk(entry, &owner_of, MAX_INSNS).stores;
-        if walked.iter().any(|s| !s.2) {
+        if walked.iter().any(|s| !s.spilled) {
             continue;
         }
-        let stores: Vec<(u64, i64)> = walked.iter().map(|s| (s.0, s.1)).collect();
-        let Some(c) = owning_class(&stores, &owner_of, classes) else {
+        let Some(c) = owning_class(&pairs(walked.iter()), &owner_of, classes) else {
             continue;
         };
+        // A constructor calls its bases' constructors before it stores its own
+        // vptr; a destructor stores first, and a pure virtual one has no slot.
+        if !classes[c].ancestors.is_empty() && walked.iter().any(|s| !s.after_call) {
+            continue;
+        }
         let virtual_dtor = has_virtual_dtor.contains(&c)
             || classes[c]
                 .ancestors
@@ -360,12 +383,28 @@ type Key = (usize, u64, u32);
 /// One lifted instruction: its p-code and its length.
 type Ops = Vec<(OpCode, Option<VarnodeData>, Vec<VarnodeData>)>;
 
-/// What one walk saw: every `(vptr, offset, through a spill)` stored through
-/// `this`, and every direct call target.
+/// What one walk saw: every vptr stored through `this`, and every direct call
+/// target.
 #[derive(Default)]
 struct Walk {
-    stores: Vec<(u64, i64, bool)>,
+    stores: Vec<Store>,
     calls: Vec<u64>,
+}
+
+/// One vptr constant stored at `this + off`.
+struct Store {
+    vptr: u64,
+    off: i64,
+    /// `this` was read back from the frame slot the function spilled it to.
+    spilled: bool,
+    /// A call came before the store on the walk.
+    after_call: bool,
+    /// A call or a conditional branch came before the store on the walk.
+    after_branch: bool,
+}
+
+fn pairs<'s>(stores: impl Iterator<Item = &'s Store>) -> Vec<(u64, i64)> {
+    stores.map(|s| (s.vptr, s.off)).collect()
 }
 
 /// What the walk knows a register or frame slot holds.
@@ -377,6 +416,10 @@ enum Val {
     /// `this` plus a byte offset, read back from a frame slot the function stored
     /// it to.
     Spilled(i64),
+    /// A spilled `this` stored to a second frame slot: an inlined callee's
+    /// parameter home, not `this`, until a call shows it was the compiler's own
+    /// spill across that call.
+    Respilled(i64),
     /// The stack pointer at entry plus a byte offset.
     Sp(i64),
 }
@@ -470,6 +513,7 @@ impl<'a> Walker<'a> {
             st.frame.insert(slot, Val::This(0));
         }
         let mut walk = Walk::default();
+        let (mut called, mut branched) = (false, false);
         let mut at = entry;
         for _ in 0..limit {
             let Some((ops, len)) = self.lift(at) else {
@@ -479,7 +523,10 @@ impl<'a> Walker<'a> {
             let mut leaves = false;
             for (opc, out, ins) in &ops {
                 match opc {
-                    OpCode::CPUI_CBRANCH => conditional = true,
+                    OpCode::CPUI_CBRANCH => {
+                        conditional = true;
+                        branched = true;
+                    }
                     OpCode::CPUI_BRANCH | OpCode::CPUI_BRANCHIND | OpCode::CPUI_RETURN => {
                         leaves = !conditional;
                         conditional = true;
@@ -489,9 +536,16 @@ impl<'a> Walker<'a> {
                             walk.calls.push(target.offset);
                         }
                         self.after_call(&mut st);
+                        called = true;
                     }
-                    OpCode::CPUI_CALLIND => self.after_call(&mut st),
-                    OpCode::CPUI_STORE => self.store(&mut st, ins, owner_of, &mut walk.stores),
+                    OpCode::CPUI_CALLIND => {
+                        self.after_call(&mut st);
+                        called = true;
+                    }
+                    OpCode::CPUI_STORE => {
+                        let order = (called, called || branched);
+                        self.store(&mut st, ins, owner_of, &mut walk.stores, order)
+                    }
                     _ => self.step(&mut st, *opc, out.as_ref(), ins, conditional),
                 }
             }
@@ -534,14 +588,23 @@ impl<'a> Walker<'a> {
         if let Some(Val::Sp(o)) = sp {
             st.regs.insert(self.sp, Val::Sp(o + self.extrapop));
         }
+        for v in st.frame.values_mut() {
+            if let Val::Respilled(t) = *v {
+                *v = Val::Spilled(t);
+            }
+        }
     }
 
+    /// A store to the frame records what it holds: a register `this` becomes
+    /// [`Val::Spilled`], a spilled one [`Val::Respilled`]; a `this` passed in
+    /// memory is never spilled by the function itself, so it stays `This`.
     fn store(
         &self,
         st: &mut State,
         ins: &[VarnodeData],
         owner_of: &HashMap<u64, (usize, bool)>,
-        found: &mut Vec<(u64, i64, bool)>,
+        found: &mut Vec<Store>,
+        (after_call, after_branch): (bool, bool),
     ) {
         let (Some(addr), Some(value)) = (ins.get(1), ins.get(2)) else {
             return;
@@ -552,18 +615,25 @@ impl<'a> Walker<'a> {
                 let size = value.size;
                 st.frame
                     .retain(|&(fo, fs), _| fo + i64::from(fs) <= o || o + i64::from(size) <= fo);
-                if let Some(v) = stored {
-                    let v = match v {
-                        Val::This(t) => Val::Spilled(t),
-                        v => v,
-                    };
+                let kept = match stored {
+                    Some(Val::This(t)) if self.this_reg.is_some() => Some(Val::Spilled(t)),
+                    Some(Val::Spilled(t)) => Some(Val::Respilled(t)),
+                    v => v,
+                };
+                if let Some(v) = kept {
                     st.frame.insert((o, size), v);
                 }
             }
             Some(at @ (Val::This(o) | Val::Spilled(o))) => {
                 if let Some(Val::Const(v)) = stored {
                     if owner_of.contains_key(&v) {
-                        found.push((v, o, matches!(at, Val::Spilled(_))));
+                        found.push(Store {
+                            vptr: v,
+                            off: o,
+                            spilled: matches!(at, Val::Spilled(_)),
+                            after_call,
+                            after_branch,
+                        });
                     }
                 }
             }
@@ -588,7 +658,11 @@ impl<'a> Walker<'a> {
             OpCode::CPUI_INT_ADD | OpCode::CPUI_PTRADD => self.add(st, ins, false),
             OpCode::CPUI_INT_SUB => self.add(st, ins, true),
             OpCode::CPUI_LOAD => match ins.get(1).and_then(|a| self.value(st, a)) {
-                Some(Val::Sp(o)) => st.frame.get(&(o, out.map_or(0, |o| o.size))).copied(),
+                Some(Val::Sp(o)) => st
+                    .frame
+                    .get(&(o, out.map_or(0, |o| o.size)))
+                    .copied()
+                    .filter(|v| !matches!(v, Val::Respilled(_))),
                 _ => None,
             },
             _ => None,
