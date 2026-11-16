@@ -937,7 +937,10 @@ impl ObjectLoadImage {
         }
         sections.extend(header);
         let arm32_decoder = is_arm32_language(&String::from_utf8_lossy(&archtype));
-        let elfv1 = crate::loader::elfv1::Descriptors::read(&file);
+        let dynamic_pointers = if file.architecture() == object::Architecture::PowerPc64 {
+            crate::analyzers::entry::dynamic_function_pointers(&file)
+        } else { Vec::new() };
+        let elfv1 = crate::loader::elfv1::Descriptors::read_at(&file, &dynamic_pointers);
         let image_entry = crate::analyzers::entry::image_entry_vma(&file, bytes)
             .map(|vma| elfv1.code_address(vma))
             .map(|vma| if arm32_decoder { vma & !1 } else { vma });
@@ -1856,6 +1859,9 @@ fn language_id_for(
     if let Some(id) = crate::loader::kuna_ppcaputarget::language_id(file) {
         return Ok(id.into_bytes());
     }
+    if let Some(id) = crate::loader::kuna_ppc64elfv2target::language_id(file) {
+        return Ok(id.into_bytes());
+    }
     if let Some(id) = crate::loader::kuna_mipstarget::language_id(file)? {
         return Ok(id.into_bytes());
     }
@@ -2163,6 +2169,7 @@ pub fn elf_language_ids() -> Vec<String> {
         }
     }
     out.extend(crate::loader::kuna_ppcaputarget::language_ids());
+    out.extend(crate::loader::kuna_ppc64elfv2target::language_ids());
     out.extend(crate::loader::kuna_mipstarget::language_ids());
     out.extend(crate::loader::kuna_mipsocteon::language_ids());
     out.sort();

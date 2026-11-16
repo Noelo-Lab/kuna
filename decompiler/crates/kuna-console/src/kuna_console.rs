@@ -159,16 +159,17 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
     // (kuna `dyldimage`) The valued live reader whose value is not a fixed
     // token owns its string; every other arm borrows.
     if option == "dyldimage" {
+        let _load = conf.load_scope();
         return Some(
-            std::env::var(kuna_decomp::kuna_dyldcache::DYLDIMAGE_ENV)
-                .ok()
-                .filter(|v| !v.trim().is_empty())
+            kuna_decomp::kuna_dyldcache::selected_image()
                 .map_or(Cow::Borrowed("none"), Cow::Owned),
         );
     }
     if option == "kernelcache" {
-        // The loader reads the env bridge, which the `option` command also sets.
-        let choice = kuna_decomp::kuna_kernelcache::KernelcacheChoice::from_env();
+        // The program's load options, or for a program loaded from the
+        // environment the env bridge, which the `option` command also sets.
+        let _load = conf.load_scope();
+        let choice = kuna_decomp::kuna_kernelcache::KernelcacheChoice::in_force();
         return Some(Cow::Owned(choice.as_str().to_string()));
     }
     Some(Cow::Borrowed(match option {
