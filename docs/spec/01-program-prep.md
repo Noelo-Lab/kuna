@@ -2785,11 +2785,15 @@ TOCs include aliases that disagree and cannot seed their shared code entry.
 This resolver declines all descriptor-stub names if any validated descriptor's
 TOC remains unresolved: without a caller-specific TOC, the unknown value could
 select a different import and invalidate a no-return fact.
-Both full environment-word and GNU lazy-resolution forms are supported. A stub
-that addresses the descriptor from `r2` itself may also load the environment
-word. It must do so after moving the entry to CTR and before the TOC load
-replaces `r2`, and it then transfers directly or through the lazy-resolution
-tail; an environment load in any other position is declined. A lazy
+A stub addresses the descriptor from `r2` itself or from a base that `addis`
+forms from `r2`, and it ends in `bctr` or in the GNU lazy-resolution tail.
+The entry goes through `r11` or `r12`, an `addis` base is the other of the
+two, and the move to CTR directly follows the entry load or the TOC load.
+Loading the environment word into `r11` is optional. From an `addis` base it
+is the last instruction before the ending. From `r2` it must directly follow
+an early CTR move and precede the TOC load, which replaces `r2`. An environment
+load in any other position is declined, as is a stub that does not load the
+TOC. A lazy
 stub's zero-TOC branch must reach the matching import's resolver entry: its
 relocation index, branch to the common glink code, and the common code's load of
 `DT_PLTGOT` are validated against `DT_PPC64_GLINK` and `DT_JMPREL`. Returning

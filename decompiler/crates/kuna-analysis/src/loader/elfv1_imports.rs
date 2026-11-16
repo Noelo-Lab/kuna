@@ -55,7 +55,7 @@ fn ld(word: u32, rt: u32, ra: u32) -> Option<i64> {
 fn mtctr(reg: u32) -> u32 { 0x7c0903a6 | (reg<<21) }
 
 /// Return the TOC displacement and optional lazy-branch offset from the stub start.
-/// An environment load from r2 itself must precede the TOC load that replaces r2.
+/// The environment load is optional; from r2 itself it must precede the TOC load.
 fn stub_displacement(w: &[u32]) -> Option<(i64,Option<i64>)> {
     if w.first()!=Some(&0xf8410028) {return None;}
     let mut i=1;
@@ -73,17 +73,13 @@ fn stub_displacement(w: &[u32]) -> Option<(i64,Option<i64>)> {
     let low=ld(*w.get(i)?,target,base)?;i+=1;
     let early_ctr=*w.get(i)?==mtctr(target);
     if early_ctr {i+=1;}
-    let early_env=early_ctr && base==2 && ld(*w.get(i)?,11,2)==Some(low+16);
-    if early_env {i+=1;}
+    if early_ctr && base==2 && ld(*w.get(i)?,11,2)==Some(low+16) {i+=1;}
     if ld(*w.get(i)?,2,base)!=Some(low+8) {return None;}i+=1;
     if !early_ctr {
         if *w.get(i)?!=mtctr(target) {return None;}i+=1;
     }
-    if early_env && *w.get(i)?==0x4e800420 {return Some((low,None));}
-    if base!=2 && ld(*w.get(i)?,11,base)==Some(low+16) {
-        i+=1;
-        return (*w.get(i)?==0x4e800420).then_some((high+low,None));
-    }
+    if base!=2 && ld(*w.get(i)?,11,base)==Some(low+16) {i+=1;}
+    if *w.get(i)?==0x4e800420 {return Some((high+low,None));}
     if *w.get(i)?!=0x28220000 {return None;}i+=1;
     if *w.get(i)? & !0x00600000 != 0x4c820420 {return None;}i+=1;
     Some((high+low,Some(i as i64*4+branch_displacement(*w.get(i)?)?)))
@@ -223,5 +219,59 @@ mod tests {
         assert_eq!(stub_displacement(&full_base),None,"environment overwrites the high-adjusted base");
         let mixed_base=[0xf8410028,0x3d820001,0xe96c0040,0x7d6903a6,0xe9620050,0xe84c0048,0x4e800420];
         assert_eq!(stub_displacement(&mixed_base),None,"environment from r2 beside a high-adjusted base");
+    }
+    #[test]
+    fn either_ending_follows_every_base_and_environment_choice() {
+        const TAIL: [u32;3]=[0x28220000,0x4ce20420,0x480000b8];
+        let near=[0xf8410028u32,0xe9828118,0x7d8903a6,0xe8428120];
+        let near_env=[0xf8410028,0xe9828118,0x7d8903a6,0xe9628128,0xe8428120];
+        let far=[0xf8410028,0x3d620001,0xe98b8118,0x7d8903a6,0xe84b8120];
+        let far_env=[0xf8410028,0x3d620001,0xe98b8118,0x7d8903a6,0xe84b8120,0xe96b8128];
+        let far_r12=[0xf8410028,0x3d820001,0xe96c8118,0x7d6903a6,0xe84c8120];
+        let late_ctr=[0xf8410028,0xe9628118,0xe8428120,0x7d6903a6];
+        for (body,toc,delta) in [(&near[..],3,-32488),(&near_env[..],4,-32488),(&far[..],4,33048),
+            (&far_env[..],4,33048),(&far_r12[..],4,33048),(&late_ctr[..],2,-32488)] {
+            let direct=[body,&[0x4e800420][..]].concat();
+            let lazy=[body,&TAIL[..]].concat();
+            assert_eq!(stub_displacement(&direct),Some((delta,None)),"{body:x?}");
+            assert_eq!(stub_displacement(&lazy),Some((delta,Some(body.len() as i64*4+8+0xb8))),"{body:x?}");
+            for stub in [&direct,&lazy] {
+                for i in 0..stub.len() {assert_eq!(stub_displacement(&stub[..i]),None,"{i} of {stub:x?}");}
+                for (i,value,why) in [
+                    (0,0xf8410018,"TOC save slot"),(toc,0x60000000,"no TOC load"),
+                    (toc,stub[toc]+8,"TOC at +16"),(toc,stub[toc]^0x00010000,"TOC from another base"),
+                    (body.len(),0x4e800020,"return"),(body.len(),0x4e800421,"linking branch"),
+                    (body.len(),0x4c820420,"conditional branch without its compare"),
+                    (body.len(),0x2c220000,"signed compare"),
+                ] {
+                    let mut bad=stub.to_vec();bad[i]=value;assert_eq!(stub_displacement(&bad),None,"{why} in {stub:x?}");
+                }
+            }
+            for (i,value,why) in [(1,0x4ce20421,"linking conditional branch"),(2,0x480000b9,"linking resolver branch"),
+                (2,0x480000ba,"absolute resolver branch")] {
+                let mut bad=lazy.clone();bad[body.len()+i]=value;assert_eq!(stub_displacement(&bad),None,"{why} in {lazy:x?}");
+            }
+        }
+        for (value,why) in [(0xe96b8130,"environment at +24"),(0xe96b8120,"environment at +8"),
+            (0xe98b8128,"environment in r12"),(0xe9628128,"environment through the new TOC"),(0xe96c8128,"environment from r12")] {
+            for ending in [&[0x4e800420][..],&TAIL[..]] {
+                let mut bad=far_env.to_vec();bad[5]=value;bad.extend(ending);
+                assert_eq!(stub_displacement(&bad),None,"{why}");
+            }
+        }
+        let twice=[&far_env[..],&[0xe96b8128,0x4e800420][..]].concat();
+        assert_eq!(stub_displacement(&twice),None,"second environment load");
+        let same_register=[0xf8410028,0x3d820001,0xe98c8118,0x7d8903a6,0xe84c8120,0x4e800420];
+        assert_eq!(stub_displacement(&same_register),None,"entry loaded over its own base");
+        let other_base=[0xf8410028,0x3d220001,0xe9898118,0x7d8903a6,0xe8498120,0x4e800420];
+        assert_eq!(stub_displacement(&other_base),None,"base outside r11 and r12");
+        let late_wrong=[0xf8410028,0xe9628118,0xe8428120,0x7d8903a6,0x4e800420];
+        assert_eq!(stub_displacement(&late_wrong),None,"late CTR move from another register");
+        for (entry,ctr,why) in [(0xe8628118,0x7c6903a6,"entry through r3"),(0xe8028118,0x7c0903a6,"entry through r0")] {
+            for ending in [&[0x4e800420][..],&TAIL[..]] {
+                let stub=[&[0xf8410028,entry,ctr,0xe8428120][..],ending].concat();
+                assert_eq!(stub_displacement(&stub),None,"{why}");
+            }
+        }
     }
 }
