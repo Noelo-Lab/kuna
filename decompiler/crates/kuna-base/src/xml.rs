@@ -2207,7 +2207,8 @@ mod tests {
         // and kuna-libcnames-addr / a stack object takes the name of the library parameter its address meets
         // and kuna-sparc64-or-masked-spill / a spill read through an OR-masked frame address is kept
         // and kuna-sparc64-hiddenret-slot-locals / a SPARC64 local in the unused hidden-return slot keeps its symbol
-        assert_eq!(count, 758, "corpus file count drifted");
+        // and kuna-ppc64le-elfv2-stack-args / an ELFv2 stack argument follows the 32-byte header
+        assert_eq!(count, 760, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
