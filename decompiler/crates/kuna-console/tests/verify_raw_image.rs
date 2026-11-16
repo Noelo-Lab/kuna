@@ -355,6 +355,64 @@ fn raw_real_mode_images_decode_near_calls_in_their_code_segment() {
 }
 
 #[test]
+fn ret_transfer_probes_do_not_change_another_functions_return_ip() {
+    use kuna_num::{opcodes::OpCode, pcoderaw::VarnodeData};
+    use kuna_sleigh::translate::PcodeEmit;
+
+    #[derive(Default)]
+    struct PushedIp {
+        saved: Option<(Address, u64)>,
+        pushed: Option<u64>,
+    }
+    impl PcodeEmit for PushedIp {
+        fn dump(&mut self, _: &Address, code: OpCode, out: Option<&VarnodeData>, inputs: &[VarnodeData]) {
+            if code == OpCode::CPUI_COPY {
+                if let (Some(out), Some(value)) = (out, inputs.first().filter(|v| v.get_addr().is_constant() && v.size == 2)) {
+                    self.saved = Some((out.get_addr(), value.offset));
+                }
+            }
+            if code == OpCode::CPUI_STORE {
+                if let Some(value) = inputs.get(2) {
+                    self.pushed = self.saved.as_ref().filter(|(at, _)| *at == value.get_addr()).map(|(_, n)| *n);
+                }
+            }
+        }
+    }
+
+    let mut bytes = vec![0u8; 0x18900];
+    bytes[0x100..0x105].copy_from_slice(&[0xea, 0x00, 0x01, 0x79, 0x18]);
+    bytes[0x18890..0x18894].copy_from_slice(&[0xe8, 0x0d, 0x00, 0xc3]);
+    bytes[0x188a0] = 0xc3;
+    let fixture = RawFixture::new("raw-ret-probe-realcs", &bytes);
+    let program = bootstrap_from_raw(
+        &fixture.0.to_string_lossy(),
+        "x86:LE:16:Real Mode:default",
+        0,
+        &[0x18890],
+        None,
+        &specs(),
+    ).unwrap();
+    let arch = program.arch();
+    let space = arch.manage().get_default_code_space().cloned().unwrap();
+    let probe = Address::new(space.clone(), 0x100);
+    let caller = Address::new(space, 0x18890);
+    let pushed = || {
+        let mut emit = PushedIp::default();
+        arch.translate().one_instruction(&mut emit, &caller).unwrap();
+        emit.pushed
+    };
+    assert_eq!(pushed(), Some(0x8893));
+    kuna_console::kuna_retcallchain::kuna_entry_chain_sites(arch.translate(), &probe, 8, 16);
+    assert_eq!(pushed(), Some(0x8893), "an advisory chain walk changed the caller's IP");
+    kuna_console::kuna_retcallchain::kuna_push_immediate_ret(arch.translate(), &probe, 16);
+    assert_eq!(pushed(), Some(0x8893), "an advisory tail walk changed the caller's IP");
+
+    // A real far transfer must still teach the decoder the destination's CS.
+    arch.translate().one_instruction(&mut PushedIp::default(), &probe).unwrap();
+    assert_eq!(pushed(), Some(0x103));
+}
+
+#[test]
 fn raw_input_rejects_missing_metadata_and_unmapped_entries() {
     let fixture = RawFixture::thumb_return_7();
     let path = fixture.0.to_string_lossy();

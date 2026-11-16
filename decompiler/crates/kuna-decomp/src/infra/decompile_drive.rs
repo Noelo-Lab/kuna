@@ -769,6 +769,7 @@ fn decode_raw_run(
     max_ops: usize,
 ) -> Option<Vec<crate::kuna_calltrampoline::RawOp>> {
     let translate = arch.translate();
+    let _context = translate.decode_context_scope();
     let mut collector = RawOpCollector { ops: Vec::new(), ended: false };
     let mut at = entry.clone();
     for _ in 0..max_instrs {

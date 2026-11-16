@@ -310,9 +310,9 @@ Thumb IT state, retain their normal effects. Direct and indirect branches retain
 their existing target-mode selection. This strict correctness repair applies
 without Listing or frame discovery and adds no option.
 
-ARM return-dispatch probes preceding flow run in a decode context scope with
-`TMode` writes masked. Rejected probe chains cannot change the entry mode before
-the real walk establishes its boundary; local IT state remains active in a probe.
+Return-dispatch recognizers own their decode context scopes. Segment and mode
+commits remain visible within each probe, including ARM `TMode` and local IT
+state, but cannot repaint the real walk's entry mode when the probe ends.
 The scope journals only touched context partitions, restoring their values and
 explicit-set masks and removing new split points on exit. Opening a scope does
 not copy the image's context database.
@@ -1375,6 +1375,14 @@ explicit flow fact at the RET owns the site, including an explicit RETURN veto.
 The flow override changes only the current function's graph: it never registers
 or decodes the constant target as a function, because an unpacker destination
 can still be encrypted in the static image.
+
+The RET-transfer walks and the out-of-band trampoline decoder use a private
+decode-context transaction. Segment or mode commits remain visible within the
+probe, but are rolled back when it ends, even when no transfer is recognized.
+An advisory walk can pass a no-return call or a flow override that the real
+flow follower respects; its speculative far branches must not change another
+function's real-mode return IP. Normal flow decoding still publishes its
+segment discoveries.
 
 **(kuna) `__fastfail` is a no-return — always on (DIV-120),
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_fastfailnoreturn.rs
