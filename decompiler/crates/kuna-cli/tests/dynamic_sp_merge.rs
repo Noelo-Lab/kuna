@@ -1,8 +1,9 @@
 //! A runtime stack reservation on one path of a merge keeps its amount.
 //!
-//! Open Watcom's `alloca` (`watcom_dos_alloca.c`, `wcl -bt=dos -ms -s -ecc`
-//! at `-od` and `-ox`) lowers SP by `(n + 1) & ~1` only when `stackavail()`
-//! says there is room, and returns NULL otherwise. The x86-16 default model
+//! Open Watcom's `alloca` (`watcom_dos_alloca.c`, Open Watcom 2.0,
+//! `wcl -bt=dos -ms -s -ecc -od|-ox -fe=watcom_dos_alloca_od|ox.exe`) lowers
+//! SP by `(n + 1) & ~1` only when `stackavail()` says there is room, and
+//! returns NULL otherwise. The x86-16 default model
 //! has unknown extrapop, so the stack-pointer solver runs; its merge equation
 //! used to hand `sp - amount` the other path's constant and rewrite the
 //! reservation away, so the pointer printed as a fixed frame local.
@@ -37,5 +38,7 @@ fn conditional_runtime_reservation_keeps_its_amount() {
         assert!(lines[arm + 1..].iter().take_while(|line| line.trim() != "}")
                 .any(|line| line.contains(&format!("-{amount}")) || line.contains("-(n + 1")),
             "{fixture}: the reservation lost its runtime amount\n{code}");
+        assert!(lines.iter().any(|line| line.trim().ends_with(" = 7;")),
+            "{fixture}: the store into the reservation was dropped\n{code}");
     }
 }

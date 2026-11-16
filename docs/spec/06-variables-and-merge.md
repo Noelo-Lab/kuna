@@ -3437,6 +3437,41 @@ M16C/60 `PUSH.B` lowers the stack pointer by one, so a byte push at a
 function's entry is ordinary compiled code, and with a loop after it upstream
 never finished.
 
+A runtime-sized reservation has no constant solution, and kuna keeps the solve
+from inventing one
+(`decompiler/crates/kuna-decomp/src/p6_variables/coreaction_stackptr.rs
+(StackSolver::confirm_dynamic, StackSolver::spread_dynamic)`, always on).
+Upstream's MULTIEQUAL equation equates every input of a stack-pointer merge, so
+where one path lowers the stack pointer by a register (`sub sp,ax`: Open
+Watcom's `alloca`, which reserves only when `stackavail()` says there is room
+and returns NULL on the other path) the reservation inherits the other path's
+constant, the rewrite turns `sp - ax` into `sp_in + c`, and the allocated
+pointer prints as a fixed frame local; two allocations then share one address
+and the writes into them overflow it. An adjustment whose amount is neither the stack pointer nor a
+value that evaluates to a constant
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin.rs (literal_value)`; a
+PTRADD's element size is not an amount) is a candidate. A trial solve with the
+upstream equations keeps a candidate the solve gives a nonzero move as an
+ordinary adjustment, because such a register often holds a constant on that
+path (`add sp,si` with `si == 2` popping a pushed argument, in FreeDOS ARJ and
+GZIP). A candidate the trial leaves unsolved or moves by zero (the merge erased
+it) is runtime-sized. That mark spreads forward through MULTIEQUAL, COPY, CAST,
+INDIRECT, INT_ADD/SUB/AND and PTRADD/PTRSUB; every equation joining a marked
+value to an unmarked one is dropped, relations among marked values stay but
+are never anchored to the entry value, and no marked value is rewritten. The
+reservation's pointer keeps its amount (`&local[-(n + 1 & 0xfffe)]`). Stack
+traffic addressed from a marked stack pointer stays raw pointer arithmetic: the
+pushes of a later call's arguments and the call's own return-address store print
+as stores, and an unlocked callee there takes no stack arguments, as on any
+runtime reservation that never meets a merge. The trial is evidence, not proof:
+a runtime amount the merge equates with a sibling path's nonzero constant
+(`alloca(c ? n : 8)` compiled as two reservations), or one whose input the
+guessed pop of an earlier call already displaced, keeps upstream's rewrite. A
+reservation made inside a helper call is a call effect, not an adjustment, and
+is untouched. Constant adjustments get their exact equation: `INT_SUB sp, #c`
+is `INT_ADD sp, #-c`, and an amount that evaluates to a constant (`mov ax,8;
+sub sp,ax`) is that constant, instead of being left to the merge equalities.
+
 The guessed equation is where kuna diverges (`kuna_calleepop.rs`, always on).
 Upstream's constant `extrapop = 4` states that the callee pops none of its
 arguments, and under a compiler spec whose `<default_proto>` carries
