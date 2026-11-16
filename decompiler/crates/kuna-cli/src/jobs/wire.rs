@@ -14,7 +14,7 @@ use kuna_decomp::kuna_structsynth::shard::FunctionRecord;
 use super::TargetSpec;
 
 const SPEC_MAGIC: &[u8; 12] = b"KUNAJOBSPEC3";
-pub(super) const RESULT_MAGIC: &[u8; 12] = b"KUNAJOBRES11";
+pub(super) const RESULT_MAGIC: &[u8; 12] = b"KUNAJOBRES12";
 
 /// Result-stream frame kinds.  The envelope is what lets a truncated tail be
 /// dropped rather than guessed.
@@ -389,6 +389,7 @@ pub(crate) fn encode_result(r: &FuncResult) -> Vec<u8> {
         None => body.push(0),
     }
     put_pointerargs(&mut body, r.pointerargs.as_ref());
+    put_warnings(&mut body, &r.warnings);
     put_u32(&mut body, r.call_declarations.len() as u32);
     for declaration in &r.call_declarations { put_str(&mut body, declaration); }
     put_u32(&mut body, r.callwide_prototypes.len() as u32);
@@ -574,6 +575,7 @@ pub(crate) fn decode_result(body: &[u8]) -> Option<FuncResult> {
         _ => return None,
     };
     let pointerargs = read_pointerargs(&mut r)?;
+    let warnings = read_warnings(&mut r)?;
     let count = r.u32()? as usize;
     let mut call_declarations = r.sized(count);
     for _ in 0..count { call_declarations.push(r.string()?); }
@@ -618,6 +620,7 @@ pub(crate) fn decode_result(body: &[u8]) -> Option<FuncResult> {
         callee_hints,
         synth,
         pointerargs,
+        warnings,
         detail: None,
     })
 }
@@ -657,6 +660,33 @@ fn put_pointerargs(out: &mut Vec<u8>, record: Option<&kuna_decomp::kuna_pointera
         put_u64(out, call.position.column as u64);
         put_str(out, &call.expression);
     }
+}
+
+fn put_warnings(out: &mut Vec<u8>, warnings: &[kuna_decomp::kuna_functionwarnings::Warning]) {
+    put_u32(out, warnings.len() as u32);
+    for warning in warnings {
+        match warning.address {
+            Some(address) => {
+                out.push(1);
+                put_u64(out, address);
+            }
+            None => out.push(0),
+        }
+        put_str(out, &warning.text);
+        put_u64(out, warning.line as u64);
+    }
+}
+
+fn read_warnings(r: &mut Reader<'_>) -> Option<Vec<kuna_decomp::kuna_functionwarnings::Warning>> {
+    let n = r.u32()? as usize;
+    let mut warnings = r.sized(n);
+    for _ in 0..n {
+        let address = match r.u8()? { 0 => None, 1 => Some(r.u64()?), _ => return None };
+        let text = r.string()?;
+        let line = r.u64()?.try_into().ok()?;
+        warnings.push(kuna_decomp::kuna_functionwarnings::Warning { address, text, line });
+    }
+    Some(warnings)
 }
 
 fn read_entry(r: &mut Reader<'_>) -> Option<kuna_decomp::kuna_pointerargs::Entry> {

@@ -94,8 +94,10 @@
         <pentry minsize="1" maxsize="8" extension="inttype">
           <register name="r10"/>
         </pentry>
+        <!-- ELFv2: the parameter save area follows the 32-byte header
+             (back chain, CR, LR, TOC), so the ninth doubleword is at 96. -->
         <pentry minsize="1" maxsize="500" align="8">
-          <addr offset="112" space="stack"/>
+          <addr offset="96" space="stack"/>
         </pentry>
         <rule>
           <datatype name="homogeneous-float-aggregate" maxprimitives="1"/>

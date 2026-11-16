@@ -12,10 +12,8 @@ pub const OBJCIVARS_ENV: &str = "KUNA_OBJCIVARS";
 
 /// Whether the pass builds the instance layouts.
 pub fn objcivars_enabled() -> bool {
-    match std::env::var(OBJCIVARS_ENV) {
-        Ok(v) => !matches!(v.trim().to_ascii_lowercase().as_str(), "off" | "0" | "false" | "no"),
-        Err(_) => true,
-    }
+    crate::kuna_loadoptions::scoped(|o| o.objcivars)
+        .unwrap_or_else(crate::kuna_loadoptions::env::objcivars)
 }
 
 /// Bridge a `set_kuna_option("objcivars", val)` choice to [`OBJCIVARS_ENV`] so

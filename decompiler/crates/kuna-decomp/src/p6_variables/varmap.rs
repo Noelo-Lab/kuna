@@ -1853,6 +1853,13 @@ impl ScopeLocal {
         self.db.clear_unlocked_category_negative(self.scope)
     }
 
+    /// C++ `localmap->clearUnlocked()` (`Funcdata::clear`, `funcdata.cc:95`):
+    /// drop the symbols the analysis recovered (see
+    /// [`crate::database::Database::clear_unlocked`]).
+    pub fn clear_unlocked(&mut self, types: Option<&dyn TypeFactory>) -> KunaResult<()> {
+        self.db.clear_unlocked(self.scope, types)
+    }
+
     /// A clone of this scope's range tree (C++ `getRangeTree()`), the analysis
     /// range `MapState` clears the param range out of (`restructureVarnode`).
     pub fn range_tree_clone(&self) -> kuna_base::address::RangeList {
