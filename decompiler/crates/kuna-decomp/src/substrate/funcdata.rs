@@ -4327,12 +4327,12 @@ impl Funcdata {
     /// Clear everything associated with decompilation analysis
     /// (C++ `Funcdata::clear`, `funcdata.cc:84`).
     ///
-    /// The W4+ subsystem clears (`localmap->clearUnlocked`, `funcp`,
-    /// `clearActiveOutput`, `unionMap`, `clearCallSpecs`, `clearJumpTables`,
-    /// `heritage.clear`, `covermerge.clear`) are seam-noted; the W3 IR clears
-    /// (`clearBlocks`, `obank.clear`, `vbank.clear`) and the flag/index reset are
-    /// faithful. Buffered comments survive, as C++ comments already in the
-    /// database survive a restart.
+    /// Like upstream, the local scope keeps only the symbols the function was
+    /// given (type-locked, equates, asserted identities) and the prototype only
+    /// its locked parts, so a restarted analysis starts where a fresh decompile
+    /// does. The W3 IR clears (`clearBlocks`, `obank.clear`, `vbank.clear`) and
+    /// the flag/index reset are faithful. Buffered comments survive, as C++
+    /// comments already in the database survive a restart.
     pub fn clear(&mut self) {
         self.ppc32_pic_calls.clear();
         self.kuna_regnarrow_runs = 0;
@@ -4360,10 +4360,25 @@ impl Funcdata {
         self.kuna_condstmts_hits.clear();
         self.kuna_restart_now = false;
 
-        // localmap->clearUnlocked(); localmap->resetLocalWindow();  -- STUB(W4)
+        // localmap->clearUnlocked(); localmap->resetLocalWindow() (funcdata.cc:95):
+        // a restart re-derives every symbol the analysis recovered, as a fresh
+        // decompile does, instead of finding the previous pass's symbols mapped.
+        let glb = std::rc::Rc::clone(&self.glb);
+        if let Some(lm) = self.localmap.as_mut() {
+            let _ = lm.clear_unlocked(glb.types());
+        }
+        self.reset_local_window();
         // clearActiveOutput() (funcdata.cc): drop the output-trial state.
         self.clear_active_output();
-        // funcp.clearUnlockedOutput();                               -- STUB(W4)
+        // funcp.clearUnlockedOutput() (funcdata.cc:99). Upstream's unlocked
+        // inputs are symbols of the localmap; the port keeps them in the
+        // prototype's own store, so they are cleared here.
+        if self.funcp.has_store() {
+            if let Some(types) = glb.types() {
+                let _ = self.funcp.clear_unlocked_output(types);
+            }
+            self.funcp.clear_unlocked_input();
+        }
         // unionMap.clear() (funcdata.cc:90): drop the union-field resolution cache.
         self.union_map.clear();
         self.stack_write_views.clear();

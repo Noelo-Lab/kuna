@@ -35,7 +35,7 @@ use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, FidMatch, Phase};
 use flirt_sig::{Endian, Matcher, Module, Signature, FLAG_STARTUP};
 
 /// The environment variable that lists the `.sig` files.
-pub const FLIRT_SIGS_ENV: &str = "KUNA_FLIRT_SIGS";
+pub const FLIRT_SIGS_ENV: &str = kuna_decomp::kuna_loadoptions::FLIRT_SIGS_ENV;
 
 /// Matching rounds: a module whose reference names a function another module
 /// names is accepted in the round after that name exists.
@@ -75,12 +75,17 @@ impl AnalysisPass for FlirtPass {
     }
 }
 
-/// Parse the signature files `KUNA_FLIRT_SIGS` names (files, or directories
+/// Parse the signature files the load names (`LoadOptions::flirt_sigs`, else
+/// `KUNA_FLIRT_SIGS`: files, or directories
 /// whose `*.sig` files are all taken) that apply to a binary of `format`:
 /// startup signatures and those whose header excludes the file type are left
 /// out. Unreadable or malformed files are skipped.
 pub fn load_sigs(format: object::BinaryFormat) -> Vec<Signature> {
-    let Some(list) = std::env::var_os(FLIRT_SIGS_ENV) else { return Vec::new() };
+    use kuna_decomp::kuna_loadoptions::{env, scoped};
+    let list = scoped(|o| o.flirt_sigs.clone()).unwrap_or_else(env::flirt_sigs);
+    if list.is_empty() {
+        return Vec::new();
+    }
     let ft = match format {
         object::BinaryFormat::Elf => Some(18),
         object::BinaryFormat::Pe => Some(11),
@@ -89,7 +94,7 @@ pub fn load_sigs(format: object::BinaryFormat) -> Vec<Signature> {
         _ => None,
     };
     let mut paths: Vec<std::path::PathBuf> = Vec::new();
-    for p in std::env::split_paths(&list) {
+    for p in list {
         match std::fs::read_dir(&p) {
             Ok(dir) => {
                 let mut sigs: Vec<_> = dir

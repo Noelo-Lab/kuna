@@ -1,0 +1,41 @@
+<decompilertest>
+<binaryimage arch="PowerPC:BE:64:default:elfv2">
+<!--
+    clang -O1, target powerpc64-linux-gnu, -mabi=elfv2 (big-endian ELFv2,
+    e.g. musl). The ninth integer argument's doubleword is at SP+96, after the
+    32-byte ELFv2 frame header; big-endian, the 32-bit value is its low word:
+
+        unsigned f9(unsigned a, ..., unsigned h, unsigned i) { return a + i; }
+        unsigned caller(unsigned n) { return f9(n,2,3,4,5,6,7,8,n+9); }
+
+        f9:     lwz   r4,100(r1)         caller: addi  r4,r3,9
+                add   r3,r4,r3                   clrldi r11,r4,32
+                clrldi r3,r3,32                  std   r11,96(r1)
+                blr                              bl    f9
+
+    (f9 and caller are separate translation units, so every argument is set.)
+
+    The loader picks the `elfv2` compiler spec for a big-endian image whose
+    e_flags declare ABI version 2; the default big-endian spec is ELFv1's,
+    with stack parameters at SP+112.
+-->
+<bytechunk space="ram" offset="0x10000000" readonly="true">
+808100647c641a14786300204e800020000000000000000000000000000000003c4c0000384200007c0802a6f821ff91f80100803883000938a00003788b002038800002f961006038c0000438e000053900000639200007394000084bffffa56000000038210070e80100107c0803a64e800020000000000000000000000000
+</bytechunk>
+<symbol space="ram" offset="0x10000000" name="f9"/>
+<symbol space="ram" offset="0x10000020" name="caller"/>
+</binaryimage>
+<script>
+  <com>map prototype f9 uint4 f9(uint4 a,uint4 b,uint4 c,uint4 d,uint4 e,uint4 f,uint4 g,uint4 h,uint4 i);</com>
+  <com>map prototype caller uint4 caller(uint4 n);</com>
+  <com>lo fu f9</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu caller</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="ppc64be-elfv2-stack-args #1: the callee reads its ninth argument" min="1" max="1">return i \+ a;</stringmatch>
+<stringmatch name="ppc64be-elfv2-stack-args #2: the caller passes n + 9 as the ninth" min="1" max="1">f9\(n,2,3,4,5,6,7,8,n \+ 9\)</stringmatch>
+</decompilertest>

@@ -17,10 +17,11 @@ impl ImageBytes {
     /// Mapping requires the input file to remain unchanged while it is analyzed.
     /// A kernel collection (`MH_FILESET`) declines: its entry is selected into an
     /// owned copy.
+    /// The load's `load_mmap` option (`KUNA_LOAD_MMAP=off` outside a load)
+    /// selects the owned path.
     pub fn map_thin_macho(path: &str) -> KunaResult<Option<Self>> {
-        if std::env::var("KUNA_LOAD_MMAP")
-            .is_ok_and(|value| matches!(value.as_str(), "off" | "0" | "false"))
-        {
+        use kuna_decomp::kuna_loadoptions::{env, scoped};
+        if !scoped(|o| o.load_mmap).unwrap_or_else(env::load_mmap) {
             return Ok(None);
         }
         let file = File::open(path).map_err(|error| {
@@ -86,5 +87,16 @@ mod tests {
         assert!(thin.is_some_and(|bytes| bytes.starts_with(&[0xcf, 0xfa, 0xed, 0xfe])));
         let fileset = format!("{fixtures}/kernelcache/fileset.macho");
         assert!(ImageBytes::map_thin_macho(&fileset).unwrap().is_none(), "MH_FILESET entry selection");
+    }
+
+    #[test]
+    fn a_load_without_mmap_keeps_the_owned_path() {
+        use kuna_decomp::kuna_loadoptions::LoadOptions;
+        let thin = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/macho_objc_arm64");
+        let owned = LoadOptions { load_mmap: false, ..LoadOptions::default() };
+        let _load = owned.enter();
+        assert!(ImageBytes::map_thin_macho(thin).unwrap().is_none());
+        let _load = LoadOptions::default().enter();
+        assert!(ImageBytes::map_thin_macho(thin).unwrap().is_some());
     }
 }
