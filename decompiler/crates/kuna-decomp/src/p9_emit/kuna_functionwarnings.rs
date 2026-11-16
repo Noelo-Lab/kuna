@@ -15,7 +15,7 @@ use crate::kuna_decodehalt::{
 use crate::printc::warning_slug;
 
 /// Engine warning stems `warning_slug` keeps unabbreviated, with their kinds.
-pub const STEMS: [(&str, &str); 18] = [
+pub const STEMS: [(&str, &str); 19] = [
     (BAD_INSTRUCTION_WARNING, "bad-instruction"),
     (BAD_INSTRUCTION_HEADER, "bad-instruction"),
     (UNIMPLEMENTED_WARNING, "unimplemented-instruction"),
@@ -32,6 +32,7 @@ pub const STEMS: [(&str, &str); 18] = [
     ("Ignoring partial resolution of indirect", "jumptable"),
     ("Second-stage recovery error", "jumptable"),
     ("Sanity check requires truncation of jumptable", "jumptable"),
+    ("Nullable weak ", "weak-relocation"),
     ("structured blocks unavailable", "structuring-declined"),
     ("decompilation failed", "decompilation-failed"),
 ];

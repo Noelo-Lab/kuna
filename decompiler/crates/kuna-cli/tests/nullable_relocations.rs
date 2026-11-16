@@ -200,6 +200,22 @@ fn unmatched_weak_operands_report_the_missing_model() {
         code.contains("Nullable weak relocation operand could not be modeled"),
         "{code}"
     );
+    let (json, error, rc) = common::run_kuna(&[
+        "decompile",
+        root.join("weak-x86-64-pic.elf").to_str().unwrap(),
+        "guard",
+        "--json",
+    ]);
+    assert_eq!(rc, 0, "{error}");
+    let doc: serde_json::Value = serde_json::from_str(&json).unwrap();
+    let kinds: Vec<&str> = doc["functions"][0]["warnings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|w| w["kind"].as_str().unwrap())
+        .collect();
+    assert!(kinds.contains(&"weak-relocation"), "{kinds:?}");
+    assert!(!kinds.contains(&"other"), "{kinds:?}");
 }
 
 #[test]
