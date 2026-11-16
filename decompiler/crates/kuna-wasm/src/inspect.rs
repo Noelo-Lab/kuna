@@ -228,6 +228,7 @@ fn function_json(prog: &ConsoleProgram, f: &FuncResult, kind: &str, sections: &[
         .opt_str("error", f.error.as_deref())
         .opt_str("proto", f.proto.as_deref())
         .num("unstructured_gotos", f.unstructured_gotos())
+        .raw("warnings", &crate::warnings_json(&f.warnings))
         .raw("line_mappings", &line_mappings)
         .raw("variables", &variables)
         .raw("types", &types)

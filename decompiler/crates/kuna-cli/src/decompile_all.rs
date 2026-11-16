@@ -2450,6 +2450,7 @@ fn function_json(
             "unstructured_gotos".into(),
             Json::Number(f.unstructured_gotos().to_string()),
         ),
+        ("warnings".into(), Json::Array(f.warnings.iter().map(warning_json).collect())),
     ]);
     if !omit.line_mappings {
         record.push((
@@ -2499,6 +2500,15 @@ fn assertions_json(outcomes: &[kuna_console::assertions::Outcome]) -> Json {
             })
             .collect(),
     )
+}
+
+fn warning_json(warning: &kuna_decomp::kuna_functionwarnings::Warning) -> Json {
+    Json::Object(vec![
+        ("kind".into(), Json::Str(warning.kind())),
+        ("message".into(), Json::Str(warning.message())),
+        ("line".into(), Json::Number(warning.line.to_string())),
+        ("address".into(), warning.address.map_or(Json::Null, |a| Json::Number(a.to_string()))),
+    ])
 }
 
 fn line_mapping_json(mapping: &LineMapping) -> Json {
@@ -2640,6 +2650,7 @@ mod provenance_json_tests {
             callee_hints: Vec::new(),
             synth: None,
             pointerargs: None,
+            warnings: Vec::new(),
             detail: None,
         }
     }
@@ -2689,7 +2700,7 @@ mod provenance_json_tests {
         let record = doc["functions"][0].as_object().unwrap();
         assert!(!record.contains_key("line_mappings") && !record.contains_key("types"));
         assert_eq!(record["variables"][0]["line_numbers"], serde_json::json!([3]));
-        for key in ["name", "address", "code", "error", "unstructured_gotos"] {
+        for key in ["name", "address", "code", "error", "unstructured_gotos", "warnings"] {
             assert!(record.contains_key(key), "{key} must survive --omit");
         }
         assert_eq!(doc["language"], "c-language");
@@ -2701,6 +2712,33 @@ mod provenance_json_tests {
             serde_json::json!(["line_mappings", "variables", "types", "stack_objects"])
         );
         assert!(!doc["functions"][0].as_object().unwrap().contains_key("variables"));
+    }
+
+    #[test]
+    fn a_record_lists_its_warnings_and_a_failed_one_none() {
+        use kuna_decomp::kuna_functionwarnings::Warning;
+        let warned = FuncResult {
+            warnings: vec![
+                Warning { address: Some(0x401000), text: "WARNING: Subroutine does not return".into(), line: 1 },
+                Warning { address: Some(0x401010), text: "WARNING: Function flows out of bounds".into(), line: 4 },
+                Warning { address: None, text: "WARNING: structured blocks unavailable".into(), line: 5 },
+            ],
+            ..function()
+        };
+        let failed = FuncResult { code: None, error: Some("boom".into()), ..function() };
+        let text = dumps_indent2(&result_json(
+            "fixture", &[warned, failed], "c-language", None, None, &[], &Default::default(), Omit::default(),
+        ));
+        let doc: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(
+            doc["functions"][0]["warnings"],
+            serde_json::json!([
+                {"kind": "no-return", "message": "Subroutine does not return", "line": 1, "address": 0x401000},
+                {"kind": "out-of-bounds", "message": "Function flows out of bounds", "line": 4, "address": 0x401010},
+                {"kind": "structuring-declined", "message": "structured blocks unavailable", "line": 5, "address": null},
+            ])
+        );
+        assert_eq!(doc["functions"][1]["warnings"], serde_json::json!([]));
     }
 
     #[test]
@@ -3223,8 +3261,12 @@ fn usage_decompile_all() {
          \x20                   [--raw-image --target T --base VMA (--entry|--addr VMA)..]\n\
          \n\
          Decompile every CODE-backed function in one in-process load (load-once,\n\
-         decompile-many).  --json emits {{binary,count,functions:[{{name,address,code,variables,..}}]}};\n\
-         without it, concatenated C with `// Function:` headers.\n\
+         decompile-many).  --json emits {{binary,count,functions:[{{name,address,code,error,warnings,variables,..}}]}};\n\
+         without it, concatenated C with `// Function:` headers.  A record's\n\
+         `warnings` lists the engine warnings its code carries as comments, as\n\
+         {{kind,message,line,address}}, each at the instruction it was recorded\n\
+         at (a header warning at the entry); `error` is set only for a failed\n\
+         function.\n\
          --omit KEY[,KEY].. (with --json) leaves those record collections out of\n\
          every record -- aliases, line_mappings, variables (with stack_objects),\n\
          types -- and lists them in a top-level `omitted` array, so an omitted\n\
