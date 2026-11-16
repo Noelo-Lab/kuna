@@ -2209,7 +2209,8 @@ mod tests {
         // and kuna-sparc64-hiddenret-slot-locals / a SPARC64 local in the unused hidden-return slot keeps its symbol
         // and kuna-ppc64le-elfv2-stack-args / an ELFv2 stack argument follows the 32-byte header
         // and kuna-stackchklocal / __stack_chk_fail_local takes no arguments and never returns
-        assert_eq!(count, 761, "corpus file count drifted");
+        // and kuna-mipsgot-weak / unresolved weak GOT entries retain import-slot identity
+        assert_eq!(count, 763, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

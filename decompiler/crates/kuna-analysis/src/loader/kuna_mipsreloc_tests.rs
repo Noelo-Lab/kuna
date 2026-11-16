@@ -57,7 +57,7 @@ fn apply_one(
     lo: Option<i64>,
 ) -> Result<(), RelocationFailure> {
     let records = [(0u64, reloc)];
-    let applied = gp.apply_section(arch, field, place, &records, &[lo], Ok(0), &mut |_| Some(t));
+    let applied = gp.apply_section(arch, field, place, &records, &[lo], Ok(0), &|_| false, &mut |_| Some(t));
     applied.failures.first().map_or(Ok(()), |&(_, reason)| Err(reason))
 }
 
@@ -384,7 +384,7 @@ fn same_offset_records_chain_across_rel_and_rela_as_gnu_ld() {
         let mut gp = Gp::new(0x40_0000, 4, 0, le);
         let applied = gp.apply_section(
             Architecture::Mips64_N32, &mut field, 0x40_0000, &records, &[None; 3],
-            Ok(0), &mut |_| Some(target(0x100)),
+            Ok(0), &|_| false, &mut |_| Some(target(0x100)),
         );
         assert_eq!(read(&field, le), 0x307);
         assert!(applied.failures.is_empty());
@@ -429,7 +429,8 @@ fn relocated_text_matches_the_gnu_linked_originals() {
 }
 
 /// Each GOT load reaches a slot holding what the GNU-linked GOT's slot holds;
-/// the slots may be ordered differently, and every other bit matches.
+/// the slots may be ordered differently, and every other bit matches. An
+/// undefined weak symbol's slot holds 0, as GNU's does, and is an import slot.
 #[test]
 fn got_loads_reach_the_values_gnu_linked() {
     let mut stems = vec!["got-32-be".to_string()];
@@ -463,6 +464,7 @@ fn got_loads_reach_the_values_gnu_linked() {
             read_at(data, address - base, width as usize, le)
         };
         let mut slots = 0;
+        let mut weak_slots = 0;
         for (offset, reloc) in file.section_by_name(".text").unwrap().relocations() {
             let RelocationFlags::Elf { r_type } = reloc.flags() else { unreachable!() };
             let weak = match reloc.target() {
@@ -471,7 +473,7 @@ fn got_loads_reach_the_values_gnu_linked() {
             };
             // A split offset's high half is 0 in both small GOTs, so its low half
             // alone locates the slot; the `lui` halves are compared as other bits.
-            if weak || !matches!(r_type & 0xff, GOT16 | CALL16 | GOT_DISP | GOT_PAGE | GOT_LO16 | CALL_LO16) {
+            if !matches!(r_type & 0xff, GOT16 | CALL16 | GOT_DISP | GOT_PAGE | GOT_LO16 | CALL_LO16) {
                 continue;
             }
             let ours = read_at(&actual, offset, 4, le);
@@ -480,6 +482,9 @@ fn got_loads_reach_the_values_gnu_linked() {
             let gnu_slot = gnu_gp.wrapping_add(gnu as u16 as i16 as i64 as u64);
             let gnu_value = read_at(gnu_got.data().unwrap(), gnu_slot - gnu_got.address(), width as usize, le);
             assert_eq!(value(slot), gnu_value, "{stem} at {offset:#x}");
+            let import = layout.import_slots.iter().any(|&(lo, hi)| slot >= lo && slot < hi);
+            assert_eq!(import, weak, "{stem} at {offset:#x}: only a weak symbol's slot is an import");
+            weak_slots += usize::from(weak);
             for word in [&mut actual, &mut expected] {
                 let at = offset as usize;
                 let masked = read_at(word, offset, 4, le) & !0xffff;
@@ -488,6 +493,8 @@ fn got_loads_reach_the_values_gnu_linked() {
             slots += 1;
         }
         assert!(slots >= 5, "{stem}");
+        assert_eq!(weak_slots, 1, "{stem}: the weak `optional` slot");
+        assert_eq!(layout.import_slots.len(), 1, "{stem}");
         assert_eq!(actual, expected, "{stem}: bits outside the GOT offsets");
     }
 }
@@ -714,5 +721,105 @@ fn only_a_global_gp_is_the_linker_gp() {
         assert!(layout.diagnostics.is_empty(), "{:?}", layout.diagnostics.report_lines());
         let expected = if scope == SymbolScope::Compilation { 0x60_0088 } else { layout.gp.unwrap() };
         assert_eq!(read_at(&layout.segments[0].1, 0, 4, false), expected, "{scope:?}");
+    }
+}
+
+/// A GCC PIC object's weak function keeps one import slot, inside the GOT, for
+/// both the test of its address and the call through it, holding 0. The
+/// function is named once, at its synthetic extern address, and the slot is
+/// another address of it.
+#[test]
+fn a_weak_functions_got_entry_is_an_import_slot_of_its_extern() {
+    for stem in ["pic-gcc47-n32", "pic-gcc47-64", "pic-gcc73-n32", "pic-gcc73-64"] {
+        let bytes = fixture(&format!("{stem}.o"));
+        let file = object::File::parse(&*bytes).unwrap();
+        let layout = layout(&bytes);
+        assert!(layout.diagnostics.is_empty(), "{stem}: {:?}", layout.diagnostics.report_lines());
+        let [(lo, hi)] = layout.import_slots[..] else { panic!("{stem}: {:?}", layout.import_slots) };
+        assert_eq!(hi - lo, if file.is_64() { 8 } else { 4 });
+        let symbol = file.symbols().find(|s| s.name().ok() == Some("optional")).unwrap();
+        let entry = layout.extern_addr[&symbol.index()];
+        let (extern_lo, extern_hi) = layout.extern_range.unwrap();
+        assert!(extern_lo <= entry && entry < extern_hi, "{stem}");
+        let named: Vec<_> = layout.funcsyms.iter().filter(|(_, n)| n == b"optional").map(|(a, _)| *a).collect();
+        assert_eq!(named, [entry], "{stem}: one name, at the extern address");
+        assert_eq!(layout.function_address_aliases, [(lo, entry)], "{stem}");
+        let (base, data) = layout.segments.iter().find(|(b, d)| lo >= *b && hi <= b + d.len() as u64).unwrap();
+        assert!(data[(lo - base) as usize..(hi - base) as usize].iter().all(|&b| b == 0), "{stem}");
+        let (got_lo, got_hi) = layout.got_range.unwrap();
+        assert!(got_lo <= lo && hi <= got_hi, "{stem}");
+    }
+}
+
+
+/// A weak function reached through `GOT_PAGE`/`GOT_OFST` takes the import slot
+/// GNU ld's global GOT entry is, with a zero offset; a local symbol's page
+/// entry stays in the foldable GOT.
+#[test]
+fn a_weak_got_page_reaches_the_import_slot_with_a_zero_offset() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    for abi in ["n32", "64"] {
+        for endian in ["be", "le"] {
+            let le = endian == "le";
+            let width = if abi == "64" { 8 } else { 4 };
+            for (stem, weak_pages) in [(format!("page-{abi}-{endian}"), 1), (format!("identity-{abi}-{endian}-mixed"), 0)] {
+                let bytes = std::fs::read(root.join(format!("tests/fixtures/mips-weak-imports/{stem}.o"))).unwrap();
+                let file = object::File::parse(&*bytes).unwrap();
+                let layout = layout(&bytes);
+                assert!(layout.diagnostics.is_empty(), "{stem}: {:?}", layout.diagnostics.report_lines());
+                let [(lo, hi)] = layout.import_slots[..] else { panic!("{stem}: {:?}", layout.import_slots) };
+                assert_eq!(hi - lo, width, "{stem}");
+                let gp = layout.got_range.unwrap().0 + GP_BIAS;
+                let text = file.section_by_name(".text").unwrap();
+                let base = layout.section_vma[&text.index()];
+                let laid = &layout.segments.iter().find(|(a, _)| *a == base).unwrap().1;
+                let mut seen = 0;
+                for (offset, reloc) in text.relocations() {
+                    let RelocationFlags::Elf { r_type } = reloc.flags() else { unreachable!() };
+                    let weak = match reloc.target() {
+                        RelocationTarget::Symbol(i) => file.symbol_by_index(i).is_ok_and(|s| s.is_undefined() && s.is_weak()),
+                        _ => false,
+                    };
+                    let field = read_at(laid, offset, 4, le) as u16;
+                    match r_type & 0xff {
+                        GOT_PAGE => {
+                            let slot = gp.wrapping_add(field as i16 as i64 as u64);
+                            assert_eq!(slot == lo, weak, "{stem} at {offset:#x}");
+                            seen += usize::from(weak);
+                        }
+                        GOT_OFST if weak => assert_eq!(field, 0, "{stem} at {offset:#x}"),
+                        _ => {}
+                    }
+                }
+                assert_eq!(seen, weak_pages, "{stem}");
+                let (segment, data) = layout.segments.iter().find(|(b, d)| lo >= *b && hi <= b + d.len() as u64).unwrap();
+                assert!(data[(lo - segment) as usize..(hi - segment) as usize].iter().all(|&b| b == 0), "{stem}");
+            }
+        }
+    }
+}
+
+#[test]
+fn mixed_weak_references_share_one_function_without_changing_relocation_values() {
+    for abi in ["n32", "64"] {
+        for endian in ["be", "le"] {
+            let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+            let bytes = std::fs::read(root.join(format!("tests/fixtures/mips-weak-imports/identity-{abi}-{endian}-mixed.o"))).unwrap();
+            let layout = layout(&bytes);
+            assert!(layout.diagnostics.is_empty());
+            let names: Vec<_> = layout.funcsyms.iter().filter(|(_, name)| name == b"optional").collect();
+            assert_eq!(names.len(), 1);
+            let [(slot, entry)] = layout.function_address_aliases[..] else { panic!("one import-slot alias") };
+            assert_ne!(slot, entry);
+            assert_eq!(names[0].0, entry);
+            assert_eq!(layout.import_slots, [(slot, slot + if abi == "64" { 8 } else { 4 })]);
+            let file = object::File::parse(&*bytes).unwrap();
+            let sym = file.symbols().find(|s| s.name().ok() == Some("optional")).unwrap();
+            assert_eq!(layout.extern_addr[&sym.index()], entry);
+            let rodata = file.section_by_name(".rodata").unwrap();
+            let base = layout.section_vma[&rodata.index()];
+            let data = &layout.segments.iter().find(|(addr, _)| *addr == base).unwrap().1;
+            assert_eq!(read_at(data, 0, if abi == "64" { 8 } else { 4 }, endian == "le"), entry);
+        }
     }
 }

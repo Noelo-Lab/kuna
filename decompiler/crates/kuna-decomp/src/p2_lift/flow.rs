@@ -2016,6 +2016,14 @@ truncating the fall-through here"
             self.maxaddr = endaddr.clone();
         }
 
+        if !self.data.get_arch().nullable_relocations.is_empty() {
+            let first = if emptyflag { self.dead_head() } else { marker.and_then(|op| self.dead_next(op)) };
+            let mut ops = Vec::new();
+            let mut cursor = first;
+            while let Some(op) = cursor { ops.push(op); cursor = self.dead_next(op); }
+            crate::kuna_nullable_reloc::materialize(&mut self.data, curaddr, step, &ops);
+        }
+
         // oiter points at first new op: beginDead() if was empty, else ++marker.
         let first_new: Option<OpId> = if emptyflag {
             self.dead_head()
@@ -2892,6 +2900,14 @@ truncating the fall-through here"
             if let Some(info) = kuna_base::space::fspec_lookup(entry.get_offset()) {
                 entry = info.entry;
             }
+        }
+        let numeric = self.data.obank().get(op).and_then(|o| o.get_in(0))
+            .and_then(|vn| self.data.vbank().get(vn)).is_some_and(|v| v.is_synthetic_literal());
+        if numeric {
+            let target = self.data.new_constant(entry.get_addr_size() as i32, entry.get_offset());
+            self.data.op_set_input(op, target, 0)?;
+            self.data.op_set_opcode_code(op, OpCode::CPUI_CALLIND);
+            return self.setup_callind_specs(op);
         }
         self.build_call_specs(op, entry.clone(), false)?;
         self.qlst_count += 1;

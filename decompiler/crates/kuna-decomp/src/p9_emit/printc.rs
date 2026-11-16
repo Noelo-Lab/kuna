@@ -10621,7 +10621,7 @@ impl PrintC {
             if matches!(ct.get_metatype(), TYPE_PTR | TYPE_PTRREL) {
                 // (kuna `elemptr`) A pointer the rule gave `char *` says the bytes
                 // are indexed, never that they end at a zero byte.
-                if off != 0 && !crate::kuna_elemptr::reaches_element_pointer(fd, vn) {
+                if !v.is_synthetic_literal() && off != 0 && !crate::kuna_elemptr::reaches_element_pointer(fd, vn) {
                     if let Some(sub) = ct.get_ptr_to() {
                         // (kuna `cfstrings`) An entry reads as its string whatever its type.
                         let sub = if sub.is_char_print() { Some(sub) } else { cfstring_char(arch, off) };
@@ -10678,7 +10678,7 @@ impl PrintC {
                     ));
                     return;
                 }
-                if self.out_lang == crate::kuna_lang::OutLang::C
+                if !v.is_synthetic_literal() && self.out_lang == crate::kuna_lang::OutLang::C
                     && self.options.global_ref
                     && ct.get_metatype() == crate::dtype::type_metatype::TYPE_PTR
                     && ct.get_word_size() == Some(1)
@@ -10701,7 +10701,7 @@ impl PrintC {
                         return;
                     }
                 }
-                if let Some(addr) = self.globalref.decide(fd, arch, vn, op, off, &ct) {
+                if let Some(addr) = (!v.is_synthetic_literal()).then(|| self.globalref.decide(fd, arch, vn, op, off, &ct)).flatten() {
                     self.push_global_ref_ir(arch, addr, op, vn);
                     return;
                 }

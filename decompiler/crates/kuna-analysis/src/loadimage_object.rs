@@ -577,6 +577,8 @@ pub struct ObjectLoadImage {
     /// a whole-binary enumeration needs to keep them out of the decompile set.
     /// Empty for every non-PE image and for a relocatable object.
     import_slots: Vec<(u64, u64)>,
+    nullable_relocations: Vec<kuna_decomp::kuna_nullable_reloc::NullableRelocation>,
+    function_address_aliases: Vec<(u64, u64)>,
     /// (kuna `pltlocal`) `(stub, definition)` for each PLT stub the image's own
     /// dynamic relocations bind to a function it defines, ascending by stub. See
     /// [`crate::loader::kuna_pltlocal`].
@@ -1184,6 +1186,8 @@ impl ObjectLoadImage {
             const_ranges,
             dynreloc_const,
             import_slots,
+            nullable_relocations: Vec::new(),
+            function_address_aliases: Vec::new(),
             plt_local,
             mips_linkage,
             elfv1,
@@ -1215,6 +1219,9 @@ impl ObjectLoadImage {
 
         let layout = reloc_object::layout_relocatable(file, fmt);
         let got_range = layout.got_range;
+        let import_slots = layout.import_slots.clone();
+        let nullable_relocations = layout.nullable_relocations.clone();
+        let function_address_aliases = layout.function_address_aliases.clone();
         let elfv1 = crate::loader::elfv1::Descriptors(
             layout
                 .opd
@@ -1367,11 +1374,14 @@ impl ObjectLoadImage {
             dynreloc_const: fpconst
                 .const_ranges
                 .into_iter()
-                .chain(got_range.map(|(lo, hi)| (lo, hi - 1)))
+                .chain(got_range.into_iter().flat_map(|range| outside(range, &import_slots)))
                 .collect(),
             // A pre-link object has no Import Address Table: its external calls
-            // are relocations, resolved by the layout pass.
-            import_slots: Vec::new(),
+            // are relocations, resolved by the layout pass. A MIPS object's
+            // undefined weak symbols keep GOT entries the run-time loader fills.
+            import_slots,
+            nullable_relocations,
+            function_address_aliases,
             plt_local: Vec::new(),
             mips_linkage: crate::loader::kuna_mipsstubs::class_linkage(&file),
             elfv1,
@@ -1487,8 +1497,18 @@ impl ObjectLoadImage {
     /// holds a pointer the run-time loader writes. The engine reports these
     /// ranges so its whole-binary enumeration can decompile the image's code
     /// without inventing a body for every import.
+    pub fn nullable_relocations(&self) -> &[kuna_decomp::kuna_nullable_reloc::NullableRelocation] {
+        &self.nullable_relocations
+    }
+
     pub fn import_slot_ranges(&self) -> &[(u64, u64)] {
         &self.import_slots
+    }
+
+    /// (kuna) `(alias, canonical)` VMA pairs for one function the image names
+    /// at two addresses, such as a weak import's direct address and its slot.
+    pub fn function_address_aliases(&self) -> &[(u64, u64)] {
+        &self.function_address_aliases
     }
 
     /// The loader's function symbols as `(load_vma, name)` pairs — the SAME list
@@ -1800,6 +1820,15 @@ impl LoadImage for ObjectLoadImage {
             r.1 = r.1.wadd(badjust);
         }
         for r in &mut self.dynreloc_const {
+            r.0 = r.0.wadd(badjust);
+            r.1 = r.1.wadd(badjust);
+        }
+        for r in &mut self.nullable_relocations {
+            r.field = r.field.wadd(badjust);
+            r.symbol = r.symbol.wadd(badjust);
+            if r.slot != 0 { r.slot = r.slot.wadd(badjust); }
+        }
+        for r in self.function_address_aliases.iter_mut().chain(&mut self.import_slots) {
             r.0 = r.0.wadd(badjust);
             r.1 = r.1.wadd(badjust);
         }
@@ -2119,6 +2148,25 @@ pub(crate) fn compose_language_id(arch: Architecture, endian: &str, model: Optio
         Architecture::Sparc64 => format!("sparc:{endian}:64:default:{}", model.unwrap_or("default")),
         _ => return None,
     })
+}
+
+/// The inclusive pieces of the half-open `range` that none of the half-open
+/// `holes` covers.
+fn outside((lo, hi): (u64, u64), holes: &[(u64, u64)]) -> Vec<(u64, u64)> {
+    let mut holes: Vec<_> = holes.iter().copied().filter(|&(a, b)| a < hi && b > lo).collect();
+    holes.sort_unstable();
+    let mut out = Vec::new();
+    let mut at = lo;
+    for (a, b) in holes {
+        if a > at {
+            out.push((at, a - 1));
+        }
+        at = at.max(b);
+    }
+    if at < hi {
+        out.push((at, hi - 1));
+    }
+    out
 }
 
 /// Every SLEIGH language id the **ELF** loader (`ElfFormat` + [`language_id_for`])
@@ -3060,6 +3108,33 @@ mod tests {
             }
             assert!(vma >= hvma + hsize, "section 0x{vma:x}+0x{size:x} overlaps the header page");
         }
+    }
+
+    #[test]
+    fn adjusting_a_weak_import_moves_its_slots_and_all_function_addresses() {
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../..")
+            .join("tests/fixtures/mips-weak-imports/identity-64-be-mixed.o");
+        let mut image = ObjectLoadImage::open(path.to_str().unwrap()).unwrap();
+        let slots = image.import_slot_ranges().to_vec();
+        let aliases = image.function_address_aliases().to_vec();
+        assert_eq!(slots.len(), 1);
+        assert_eq!(aliases.len(), 1);
+        image.attach_to_space(Rc::clone(manager().get_default_code_space().unwrap()));
+        image.adjust_vma(0x2000);
+        assert_eq!(image.import_slot_ranges(), slots.iter().map(|&(lo, hi)| (lo + 0x2000, hi + 0x2000)).collect::<Vec<_>>());
+        assert_eq!(image.function_address_aliases(), aliases.iter().map(|&(a, c)| (a + 0x2000, c + 0x2000)).collect::<Vec<_>>());
+    }
+
+    /// A MIPS object's foldable GOT pieces exclude its import slots, which
+    /// may sit at either end or in the middle.
+    #[test]
+    fn got_ranges_leave_out_import_slots() {
+        assert_eq!(outside((0x100, 0x120), &[]), [(0x100, 0x11f)]);
+        assert_eq!(outside((0x100, 0x120), &[(0x108, 0x10c)]), [(0x100, 0x107), (0x10c, 0x11f)]);
+        assert_eq!(outside((0x100, 0x120), &[(0x11c, 0x120), (0x100, 0x104)]), [(0x104, 0x11b)]);
+        assert_eq!(outside((0x100, 0x108), &[(0x100, 0x104), (0x104, 0x108)]), []);
+        assert_eq!(outside((0x100, 0x108), &[(0x200, 0x208)]), [(0x100, 0x107)]);
     }
 
     /// PE import slots retain their loader identity independently of section

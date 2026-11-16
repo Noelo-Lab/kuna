@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4355,
-    4355
+    4368,
+    4368
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -3489,6 +3489,11 @@
     "data:mipsgot-local #2: c_calls bumps counter",
     "data:mipsgot-local #2b: c_calls calls wfn and reads gdata",
     "data:mipsgot-local #3: no call through a GOT slot",
+    "data:mipsgot-weak #1: the weak function's address is tested",
+    "data:mipsgot-weak #2: the call binds to optional",
+    "data:mipsgot-weak #3: no unconditional call",
+    "data:mipsgot-weak #4: mixed direct and GOT references retain one import name",
+    "data:mipsgot-weak #5: a declared import is never ambiguous",
     "data:mipsreloc-chains #10: N32 REL R32 then LO16 keep the other half in both byte orders",
     "data:mipsreloc-chains #11: REL GPREL16, SUB, HI16 compose in both byte orders",
     "data:mipsreloc-chains #1: N32 PIC read_global reads global_value",
@@ -3561,6 +3566,14 @@
     "data:noreturn_extern #1: neighbour call leaks past the no-return call (pass 1 off only)",
     "data:noreturn_extern #3: __stack_chk_fail is the bounding call (both passes)",
     "data:null syntax is not a recovered identifier",
+    "data:nullable-relocations #1: weak binding is tested",
+    "data:nullable-relocations #2: imported call keeps its argument",
+    "data:nullable-relocations #3: unrelated literal stays numeric",
+    "data:nullable-relocations #4: every tested operand is supported",
+    "data:nullable-relocations #5: a COMMON object written beside a weak slot keeps its name",
+    "data:nullable-relocations #6: a COMMON object read beside a weak slot keeps its name",
+    "data:nullable-relocations #7: no COMMON object is read as the slot",
+    "data:nullable-relocations #8: a compared weak address reads the slot",
     "data:octeoneffects #10: only off forwards a neighboring stack value across zeroing",
     "data:octeoneffects #11: both zero operations retain neighboring stores in both guarded modes",
     "data:octeoneffects #12: zeroing through an incoming pointer keeps a spill in the frame's top cache block",

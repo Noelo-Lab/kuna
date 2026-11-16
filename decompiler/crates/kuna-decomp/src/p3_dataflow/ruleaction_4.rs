@@ -279,10 +279,23 @@ impl Rule for RuleLoadVarnode {
         };
         let size = size_of(data, out_vn(data, op));
         let offoff = kuna_base::space::AddrSpace::address_to_byte(offoff, baseoff.get_word_size());
-        let newvn = data.new_varnode_space_off(size, Rc::clone(&baseoff), offoff);
+        // A read-only relocated pointer is the weak binding plus its addend,
+        // not the synthetic display address stored in its pre-link bytes.
+        let nullable = data.get_arch().nullable_relocations.get(&offoff)
+            .filter(|_| data.get_address().get_space().is_some_and(|s| s.get_index() == baseoff.get_index()))
+            .and_then(|records| records.iter().find(|r| r.pointer_size == size
+                && matches!(r.operand, crate::kuna_nullable_reloc::Operand::DataPointer))).cloned();
+        let offset = nullable.as_ref().map_or(offoff, |r| r.slot);
+        let newvn = data.new_varnode_space_off(size, Rc::clone(&baseoff), offset);
         data.op_set_input(op, newvn, 0).expect("RuleLoadVarnode: opSetInput");
-        data.op_remove_input(op, 1);
-        set_opcode(data, op, OpCode::CPUI_COPY);
+        if let Some(record) = nullable.filter(|r| r.addend != 0) {
+            let addend = data.new_constant(size, record.addend as u64);
+            data.op_set_input(op, addend, 1).expect("weak pointer addend");
+            set_opcode(data, op, OpCode::CPUI_INT_ADD);
+        } else {
+            data.op_remove_input(op, 1);
+            set_opcode(data, op, OpCode::CPUI_COPY);
+        }
         crate::p3_dataflow::kuna_stackreadscope::mark_stack_read(data, op);
         // C++ ruleaction.cc:4316-4324 — the spacebase-placeholder tail.  When the
         // converted COPY output is the stack-pointer placeholder the call set up,

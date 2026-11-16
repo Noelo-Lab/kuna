@@ -712,7 +712,8 @@ pub struct ConsoleProgram {
     /// point of them; the slot is still a pointer word rather than a function
     /// entry, which is what [`Self::function_entries_executable`] reads this for.
     /// Empty on the XML datatest path and for every non-PE image.
-    import_slots: Vec<(u64, u64)>,
+    import_slots: crate::kuna_importslots::ImportSlots,
+    function_address_aliases: BTreeMap<u64, u64>,
     /// (kuna, issue #666) Does this container decorate a C identifier with a
     /// leading `_` in its symbol table?
     ///
@@ -1242,7 +1243,7 @@ impl ConsoleProgram {
     /// (`ObjectLoadImage::import_slot_ranges`). Always false on the XML datatest
     /// path and for a raw image.
     pub fn is_import_slot(&self, vma: u64) -> bool {
-        self.import_slots.iter().any(|&(lo, hi)| vma >= lo && vma < hi)
+        self.import_slots.contains(vma)
     }
 
     /// Whether `vma` may be treated as the start of a function body.
@@ -1358,6 +1359,9 @@ impl ConsoleProgram {
     /// already knows, so an address that is not a discovered function start is
     /// still `None` and the caller keeps decompiling exactly where it was asked.
     pub fn find_entry_at(&self, vma: u64) -> Option<FunctionEntry> {
+        let vma = if self.is_declared_entry(vma) { vma } else {
+            self.function_address_aliases.get(&vma).copied().unwrap_or(vma)
+        };
         let want = self.thumb_normalized(vma);
         if !self.anonymous_entries.is_empty() {
             return self.find_compact_entry_at(want);
@@ -2384,6 +2388,7 @@ impl ConsoleProgram {
         // does not overlap `self.symbols`.
         let records: Vec<(String, Address)> =
             self.symbols.iter().map(|s| (s.name.clone(), s.addr.clone())).collect();
+        let aliases = self.function_address_aliases.clone();
         let arch = self.arch_mut();
         for (name, addr) in records {
             let (scope, basename) = arch
@@ -2394,6 +2399,10 @@ impl ConsoleProgram {
                 continue;
             }
             arch.symboltab.add_function(scope, &addr, &basename, min_size, type_code.clone())?;
+        }
+        let code = arch.manage().get_default_code_space().expect("loaded code space").clone();
+        for (alias, canonical) in aliases {
+            arch.symboltab.add_function_alias(&Address::new(code.clone(), canonical), &Address::new(code.clone(), alias))?;
         }
         Ok(())
     }
@@ -4108,6 +4117,22 @@ fn input_isa_stash(
     vec![("input_isa", explicit)]
 }
 
+/// (kuna) A relocatable object's import slots: the GOT entry of each undefined
+/// weak symbol of a MIPS object, which the run-time loader fills. No pass
+/// reports them, so they are stashed under the PE/Mach-O import-binding pass's
+/// id (`peimportcall`) and committed with its facts. A linked image's slots
+/// belong to its own passes and their options.
+fn object_import_slot_stash(
+    relocatable: bool,
+    slots: &[(u64, u64)],
+) -> Option<(&'static str, kuna_analysis::pass::AnalysisOutput)> {
+    (relocatable && !slots.is_empty()).then(|| {
+        let mut output = kuna_analysis::pass::AnalysisOutput::default();
+        output.externref = slots.to_vec();
+        ("peimportcall", output)
+    })
+}
+
 /// A program with nothing loaded beyond the engine: every stash empty, every
 /// declaration absent. Each bootstrap fills in what its loader supplies.
 fn empty_program(
@@ -4152,7 +4177,8 @@ fn empty_program(
         assertion_outcomes: Vec::new(),
         pending_prototypes: BTreeMap::new(),
         raw_address_units: None,
-        import_slots: Vec::new(),
+        import_slots: Default::default(),
+        function_address_aliases: BTreeMap::new(),
         symbol_underscore_prefix: false,
         load_notes: Vec::new(),
         elf_functions: Default::default(),
@@ -4887,6 +4913,28 @@ pub(crate) fn bootstrap_object(
         sleigh.base().unwrap().translate(),
     );
     pending_analysis.extend(input_isa_stash(input_context_paints));
+    let mut nullable = std::collections::BTreeMap::<u64, Vec<_>>::new();
+    for record in loader.nullable_relocations() {
+        nullable.entry(record.field).or_default().push(record.clone());
+    }
+    let mut literals = std::collections::BTreeSet::new();
+    for record in loader.nullable_relocations() {
+        literals.extend((0..16).map(|byte| record.symbol.wrapping_add(byte)));
+        if record.slot != 0 { literals.extend((0..record.pointer_size as u64).map(|byte| record.slot + byte)); }
+    }
+    if !loader.reloc_sections().is_empty() {
+        for &(lo, hi) in loader.import_slot_ranges() { literals.extend(lo..hi); }
+        for &(slot, entry) in loader.function_address_aliases() {
+            literals.extend((0..16).map(|byte| entry.wrapping_add(byte)));
+            literals.extend((0..8).map(|byte| slot.wrapping_add(byte)));
+        }
+    }
+    sleigh.base_mut().unwrap().nullable_literal_values = std::rc::Rc::new(literals);
+    sleigh.base_mut().unwrap().nullable_relocations = std::rc::Rc::new(nullable);
+    pending_analysis.extend(object_import_slot_stash(
+        !loader.reloc_sections().is_empty(),
+        loader.import_slot_ranges(),
+    ));
 
     // (kuna `dynrelocs`) The PT_GNU_RELRO-frozen dynamic-relocation slots, read
     // off the same loader while it is still in hand. `readonly_ranges` above
@@ -4901,6 +4949,7 @@ pub(crate) fn bootstrap_object(
     // FunctionSymbol at each of them for call naming, and the whole-binary
     // enumeration needs to know those addresses hold a pointer, not a body.
     let import_slots: Vec<(u64, u64)> = loader.import_slot_ranges().to_vec();
+    let function_address_aliases = loader.function_address_aliases().to_vec();
     // (kuna `pltlocal`) The PLT stubs the image's own relocations bind to a
     // function it defines, so a call through one is built at the definition.
     let plt_local: Vec<(u64, u64)> = loader.plt_local_targets().to_vec();
@@ -5098,7 +5147,8 @@ pub(crate) fn bootstrap_object(
     prog.analysis_image = Some((path.to_string(), bytes, proof_memo));
     prog.loader_data_objects = loader_data_objects;
     prog.loader_data_exports = loader_data_exports;
-    prog.import_slots = import_slots;
+    prog.import_slots = crate::kuna_importslots::ImportSlots::new(import_slots);
+    prog.function_address_aliases = function_address_aliases.into_iter().collect();
     prog.symbol_underscore_prefix = symbol_underscore_prefix;
     if let Ok(loc) = prog.arch().get_register_varnode(b"r2") {
         if loc.size == 8 {
@@ -6669,6 +6719,29 @@ mod tests {
     use kuna_num::pcoderaw::VarnodeData;
 
     use super::{entry_name_rank, is_vtable_slot_name, FixedRefs, WholeOp};
+
+    /// A linked ELF reports its GOT import slots too; only a relocatable
+    /// object's are committed outside the passes that own a linked image's.
+    #[test]
+    fn only_a_relocatable_objects_import_slots_are_stashed() {
+        let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../../..");
+        let linked = format!("{root}/decompiler/crates/kuna-analysis/tests/fixtures/elf_gotdata_x86_64.so");
+        let object = format!("{root}/tests/fixtures/mips-weak-imports/page-64-be.o");
+        for (path, relocatable) in [(linked, false), (object, true)] {
+            let image = kuna_analysis::loadimage_object::ObjectLoadImage::open(&path).unwrap();
+            assert!(!image.import_slot_ranges().is_empty(), "{path}");
+            assert_eq!(!image.reloc_sections().is_empty(), relocatable, "{path}");
+            let stash = super::object_import_slot_stash(
+                !image.reloc_sections().is_empty(),
+                image.import_slot_ranges(),
+            );
+            assert_eq!(stash.is_some(), relocatable, "{path}");
+            if let Some((pass, output)) = stash {
+                assert_eq!(pass, "peimportcall");
+                assert_eq!(output.externref, image.import_slot_ranges());
+            }
+        }
+    }
 
     /// A throwaway `(ram, constant)` space pair; `ram` stands in for the default
     /// data space, exactly as `listing::xrefs`'s own tests build it.

@@ -857,3 +857,9 @@ mod cvf_trace;
 
 #[path = "dynamic_sp_merge.rs"]
 mod dynamic_sp_merge;
+
+#[path = "mips_weak_imports.rs"]
+mod mips_weak_imports;
+
+#[path = "nullable_relocations.rs"]
+mod nullable_relocations;

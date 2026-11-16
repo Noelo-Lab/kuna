@@ -910,7 +910,16 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   resolves to `_gp` less the place (the PIC prologue adds `$t9`, the function's
   entry) and a global `_gp` or an undefined `__gnu_local_gp` to `_gp`. The GOT's entries hold what the relocations put in
   them and nothing writes them, so the loader reports its range foldable
-  (`dynreloc_const`, beside the MSVC FP constants), and
+  (`dynreloc_const`, beside the MSVC FP constants). The exception is the entry
+  of an undefined weak symbol, which the run-time loader fills with the
+  symbol's address, or 0 when nothing defines it: each such symbol gets its own
+  entry holding 0, reported as an import slot outside the foldable range and,
+  when a call reaches it, named after the symbol as an Import Address Table
+  slot is, so `if (f) f(x);` keeps its test. A `GOT_PAGE` against the symbol
+  reaches that same entry and its `GOT_OFST` is the addend alone, the decay GNU
+  ld applies to a symbol that does not bind locally. A direct call or address
+  relocation against the symbol still resolves to its synthetic extern, the
+  address the function is entered at. Otherwise
   `lw $t9, %call16(f)($gp); jalr $t9` decompiles to a call of `f` wherever `$t9`
   is seeded with the entry. `R_MIPS_JALR`, a hint naming the function a `jalr`
   calls, is not applied; microMIPS, MIPS16, R6 PC-relative and TLS relocations
@@ -2655,9 +2664,49 @@ the resolved callee's no-return flag onto the prototype it hands `ActionDeindire
 `decompiler/crates/kuna-decomp/src/p0_knowledge/database.rs (Database::build_global_query)`
 dropped it, where upstream returns the callee's live `Funcdata`), which is what makes
 the deindirect schedule the restart whose re-flow plants the artificial halt. The
-extra upstream Win32 no-return-name list remains on the PE/COFF arm only. Off, PE
-and Mach-O import-slot calls render byte for byte as before; other formats are
-unaffected either way.
+extra upstream Win32 no-return-name list remains on the PE/COFF arm only. An ELF
+image runs no such pass, but a MIPS relocatable object's loader makes import
+slots, the GOT entry of each undefined weak function: the engine stashes the
+loader's ranges under this pass's id
+(`decompiler/crates/kuna-console/src/engine.rs (object_import_slot_stash)`), so
+they commit with that pass's facts and the call in `if (f) f(x);` binds to `f`.
+Other images are unaffected.
+Undefined weak MIPS and x86-64 code-address operands in relocatable ELF objects
+also retain their nullable identity before SSA. The relocation walker
+`decompiler/crates/kuna-analysis/src/loader/kuna_nullable_reloc.rs (references)`
+records exact instruction fields and one canonical dynamic slot per symbol.
+The layout keeps one pointer per undefined weak symbol clear between the
+synthetic extern slots and ELF COMMON storage, and a slot is allocated only
+inside that reservation, so a slot never shares an address with a COMMON object
+or an extern; a field address or slot that cannot be represented is skipped or
+diagnosed, never wrapped. Other architectures reserve nothing and keep their
+COMMON addresses.
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_nullable_reloc.rs (materialize)`
+replaces only a uniquely matched supported operand with a slot load and the
+relocation's arithmetic. MIPS HI16/LO16/HIGHER/HIGHEST preserve rounding and
+signed immediates; x86-64 absolute and PC-relative address forms preserve addends
+and instruction-end bias. An x86-64 absolute field is one operand wherever its
+value appears in its instruction, provided the instruction has no other weak
+field and the value is not the instruction's own address or end: a register
+displacement takes the slot read in place, and an immediate that reaches several
+operations, as a compare's subtraction and flags do, takes one read made before
+the instruction. Mixed GOT and ordinary forms share the binding.
+Full-pointer weak relocations in read-only data retain the same binding and
+addend when `RuleLoadVarnode` materializes the read, so read-only folding cannot
+turn a genuine weak pointer into an unrelated numeric literal. Writable data,
+partial pointer reads, other architectures and relocation families outside these
+forms are not covered. Unmatched or unsupported code operands diagnose.
+The binding represents the linker's weak-symbol choice, not arbitrary concurrent
+mutation of an import slot.
+
+Synthetic display addresses are not proof that an unrelated integer names the
+import. A per-varnode literal marker protects coincidentally equal constants
+through construction and cloning from pointer/name inference. Exact relocated
+code operands explicitly clear it, and internal slot loads use their real slot
+address. This keeps fixed numeric addresses and real imported calls distinct.
+The nullable-relocations fixtures cover zero and bound imports, addends across
+signed-low boundaries, mixed forms, defined functions and unrelated literals.
+
 The `externref` mark also protects the slot until that resolution: P3 read-only
 folding cannot replace it with an on-disk thunk/name RVA, even if a hostile or
 single-section PE mapped the IAT executable and non-writable.
@@ -10327,3 +10376,28 @@ Without a callee prototype, a preserved incoming argument register cannot
 establish import arity: calls with and without that argument can have identical
 instructions. A declared prototype supplies that missing contract
 (`kuna_gotimportproto.rs`, §4).
+
+
+### Weak import identity and slot membership
+
+An undefined weak import has one FunctionSymbol, entered at its synthetic extern
+address: the address every undefined function has, which direct calls and
+address relocations reach and which a GOT relocation against the symbol
+allocates as it does for any other symbol. Its import slot, the GOT entry or the
+word allocated for its other address forms, is recorded as another address of
+that same symbol. The function inventory, a cross-reference query by name and
+the call graph therefore find the import and its direct references where they
+would without a slot. The loader carries the SymbolIndex-based association
+through bootstrap; the database maps both addresses to one symbol, so name
+selection, renamed imports and edited prototypes do not split between two
+independent functions. Distinct ELF symbols are not merged by their spelling.
+The canonical inventory contains the import once; a lookup at the slot address
+resolves the same entry. Import pointer storage remains bodyless unless a caller
+explicitly declares a function there.
+
+Import storage extents are normalized once at bootstrap: empty extents are
+removed and overlapping/adjacent half-open ranges are merged in address order.
+Membership queries use a binary search, including interior and missing addresses.
+Executable-function enumeration therefore avoids a full slot-vector scan per
+candidate, while preserving PE/Mach-O import slots inside executable sections and
+caller-declared-entry precedence.
