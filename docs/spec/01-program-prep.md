@@ -2746,8 +2746,10 @@ ABI and GOT dispatch despite the object reader's separate architecture tag.
 and the image entry both point at a 24-byte `.opd` record — code address, TOC base,
 environment — so selecting a function by name used to decode the record as
 instructions. For a linked (`ET_EXEC`/`ET_DYN`) PowerPC64 ELF whose `e_flags` ABI
-field is 0 or 1 and whose `.opd` is file-backed, the image entry and every
-8-aligned function symbol defined in `.opd` are read as descriptors. A descriptor
+field is 0 or 1 and whose `.opd` is file-backed, the image entry, every
+8-aligned function symbol defined in `.opd` and every `.dynamic` function pointer
+(`DT_INIT`, `DT_FINI` and the `DT_INIT_ARRAY`/`DT_FINI_ARRAY` elements) are read as
+descriptors. A descriptor
 is used only when its code word is 4-aligned and lands on file-backed bytes of an
 `SHF_ALLOC|SHF_EXECINSTR` section; the loader's symbol stream and image entry then
 carry that code address, and every name at it is kept as an alias, so `answer`,
@@ -2780,7 +2782,7 @@ the following TOC word without requiring an environment word; an unavailable
 TOC is ambiguous. Unresolved potential code words also decline all these names
 because they cannot exclude a descriptor. This conservative scan supplies only
 import ambiguity, while symbol normalization and register seeding use the
-validated image-entry and symbol-derived descriptors described above. Possible
+validated image-entry, symbol and `.dynamic` descriptors described above. Possible
 TOCs include aliases that disagree and cannot seed their shared code entry.
 This resolver declines all descriptor-stub names if any validated descriptor's
 TOC remains unresolved: without a caller-specific TOC, the unknown value could
@@ -6812,7 +6814,12 @@ the same code address through
 `decompiler/crates/kuna-analysis/src/analyzers/entry/mod.rs (image_code_entry)`, because
 under ELFv1 the raw field names a descriptor in `.opd`, which no executable section
 contains. A stripped ELFv1 executable whose section table and `.opd` survive has
-its `_start` found this way.
+its `_start` found this way. The `.dynamic` oracle's `DT_INIT`, `DT_FINI` and array
+pointers name descriptors too, and each is replaced by the code word of the descriptor
+validated at that address, so the function and its `_DT_INIT`, `_DT_FINI`,
+`_INIT_<i>` or `_FINI_<i>` name land on code and the function's TOC seeds `r2`. A
+pointer that does not validate stays as it is and the executable-section check drops
+it.
 
 **Address tables** (`addrtable`,
 `decompiler/crates/kuna-analysis/src/analyzers/addrtable/mod.rs (AddrTablePass)`)

@@ -15,15 +15,20 @@ pub struct Descriptors(pub Vec<Descriptor>);
 impl Descriptors {
     /// Only an ABI-v1/unspecified linked ELF with a file-backed .opd qualifies.
     pub fn read(file: &object::File<'_>) -> Self {
-        Self::read_candidates(file, false)
+        Self::read_candidates(file, false, &[])
+    }
+
+    /// Also validate descriptors at `extra` addresses, such as `.dynamic` function pointers.
+    pub fn read_at(file: &object::File<'_>, extra: &[u64]) -> Self {
+        Self::read_candidates(file, false, extra)
     }
 
     /// Scan aligned .opd words conservatively for import ambiguity, without supplying loader seeds.
     pub(super) fn read_for_imports(file: &object::File<'_>) -> Self {
-        Self::read_candidates(file, true)
+        Self::read_candidates(file, true, &[])
     }
 
-    fn read_candidates(file: &object::File<'_>, scan: bool) -> Self {
+    fn read_candidates(file: &object::File<'_>, scan: bool, extra: &[u64]) -> Self {
         if file.format() != BinaryFormat::Elf || file.architecture() != Architecture::PowerPc64
             || !matches!(file.kind(), ObjectKind::Executable | ObjectKind::Dynamic)
             || !matches!(file.flags(), FileFlags::Elf { e_flags, .. } if e_flags & 3 <= 1)
@@ -32,6 +37,7 @@ impl Descriptors {
         let Ok(bytes) = opd.data() else { return Self::default(); };
         let Some(opd_end) = opd.address().checked_add(bytes.len() as u64) else { return Self::default(); };
         let mut addresses = vec![file.entry()];
+        addresses.extend(extra);
         addresses.extend(file.symbols().chain(file.dynamic_symbols())
             .filter(|s| s.kind() == SymbolKind::Text && !s.is_undefined() && s.section_index() == Some(opd.index()))
             .map(|s| s.address()));

@@ -864,8 +864,24 @@ fn dynamic_entry_names(file: &object::File) -> Vec<(u64, String)> {
 /// The dynamic table is read from the `.dynamic` section bytes as `Elf{32,64}_Dyn`
 /// (tag/val) pairs; the array bytes come from whichever section contains the array
 /// vma (the static-image base-0 assumption: a PIE array pointer is already the
-/// file vma, no load bias).
+/// file vma, no load bias). A PowerPC64 ELFv1 pointer names a function descriptor
+/// and is replaced by its validated code word.
 fn dynamic_entry_points_named(file: &object::File) -> Vec<(u64, Option<String>)> {
+    let mut out = dynamic_pointers_named(file);
+    let pointers: Vec<u64> = out.iter().map(|(addr, _)| *addr).collect();
+    let descriptors = crate::loader::elfv1::Descriptors::read_at(file, &pointers);
+    for (addr, _) in &mut out {
+        *addr = descriptors.code_address(*addr);
+    }
+    out
+}
+
+/// The raw `.dynamic` function pointers, before ELFv1 descriptor resolution.
+pub(crate) fn dynamic_function_pointers(file: &object::File) -> Vec<u64> {
+    dynamic_pointers_named(file).into_iter().map(|(addr, _)| addr).collect()
+}
+
+fn dynamic_pointers_named(file: &object::File) -> Vec<(u64, Option<String>)> {
     let mut out: Vec<(u64, Option<String>)> = Vec::new();
 
     let Some(dynsec) = file.section_by_name(".dynamic") else {
@@ -2787,6 +2803,24 @@ mod tests {
         // INIT_ARRAY (1 ptr @0x3d78 → 0x1240 frame_dummy), FINI_ARRAY (→ 0x1200).
         assert!(eps.contains(&0x1240), "INIT_ARRAY ptr 0x1240 missing from {eps:#x?}");
         assert!(eps.contains(&0x1200), "FINI_ARRAY ptr 0x1200 missing from {eps:#x?}");
+    }
+
+    /// Every function of this stripped ELFv1 PIE is reached through a descriptor:
+    /// the entry, DT_INIT/DT_FINI and one INIT_ARRAY/FINI_ARRAY slot each.
+    #[test]
+    fn elfv1_descriptor_pointers_seed_their_code_in_both_byte_orders() {
+        for name in ["elfv1_initfini_be", "elfv1_initfini_le"] {
+            let bytes = fixture(name);
+            let file = object::File::parse(bytes.as_slice()).expect("parse elfv1_initfini");
+            let entries = collect_entries(&file, &bytes);
+            assert_eq!(entries, [0x350, 0x370, 0x390, 0x3b0, 0x3d0], "{name}: {entries:#x?}");
+            let names = collect_entry_names(&file, &entries);
+            assert_eq!(names, [(0x350, "_FINI_0".to_string()), (0x370, "_INIT_0".to_string()),
+                (0x390, "_DT_INIT".to_string()), (0x3b0, "_DT_FINI".to_string())], "{name}");
+            let image = crate::loadimage_object::ObjectLoadImage::from_bytes_silent(name, &bytes).unwrap();
+            let tocs: Vec<_> = image.elfv1_descriptors().entry_tocs().into_iter().collect();
+            assert_eq!(tocs, entries.iter().map(|&e| (e, 0x9f00)).collect::<Vec<_>>(), "{name}");
+        }
     }
 
     // -- Oracle 2 naming overlay: Ghidra `_INIT_<i>`/`_FINI_<i>`/`_DT_INIT` --------
