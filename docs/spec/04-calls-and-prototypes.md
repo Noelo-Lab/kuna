@@ -1860,7 +1860,11 @@ classified:
   pointers once per gather, and again when the pass drops or adds one of them
   as a call input and that changes its class,
   `varmap.rs (AliasChecker::refresh_split_for)`: a pointer a call stops taking
-  may be left only a store's address). Such a pointer is an
+  may be left only a store's address). Until its last trial is scored, the
+  only uses the pass adds are new `SUBPIECE`/`PIECE` reads of values that
+  already had a non-address use (the arity fixups that restore dropped inputs
+  run after that), so a pointer can only turn direct, never back, and a change
+  the refresh missed keeps the boundary. Such a pointer is an
   access heritage has not converted yet: a stack pointer restored from the
   frame slot it was saved in after an `alloca` is still one when call inputs
   are scored, and the call after the restore storing its argument at -0x2c
