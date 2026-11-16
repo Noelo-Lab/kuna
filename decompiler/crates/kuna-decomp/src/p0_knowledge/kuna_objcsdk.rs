@@ -13,7 +13,15 @@ use std::path::PathBuf;
 /// Unset, empty or `off` means no headers are read.
 pub const OBJCSDK_ENV: &str = "KUNA_OBJCSDK";
 
-/// The configured header root, if any.
+/// The header root the load in progress names (`LoadOptions::objcsdk`, else
+/// [`OBJCSDK_ENV`]), if any.
+pub fn sdk_path() -> Option<PathBuf> {
+    crate::kuna_loadoptions::scoped(|o| o.objcsdk.clone())
+        .unwrap_or_else(crate::kuna_loadoptions::env::objcsdk)
+}
+
+/// The header root [`OBJCSDK_ENV`] names, if any. Reads only the environment;
+/// a load in progress reads [`sdk_path`].
 pub fn sdk_path_from_env() -> Option<PathBuf> {
     let v = std::env::var(OBJCSDK_ENV).ok()?;
     parse_option_value(&v).ok().flatten()
