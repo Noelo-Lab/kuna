@@ -429,6 +429,9 @@ mod sse_minss_cli;
 #[path = "stack_alias_preservation.rs"]
 mod stack_alias_preservation;
 
+#[path = "stack_chk_fail_local.rs"]
+mod stack_chk_fail_local;
+
 #[path = "stack_float_snapshot.rs"]
 mod stack_float_snapshot;
 
@@ -649,6 +652,8 @@ mod x87_free_operands;
 
 #[path = "prototype_call_mechanisms.rs"]
 mod prototype_call_mechanisms;
+#[path = "ppc64_global_entry_toc.rs"]
+mod ppc64_global_entry_toc;
 #[path = "qualified_storage_addresses.rs"]
 mod qualified_storage_addresses;
 #[path = "qualified_import_storage.rs"]
@@ -849,3 +854,6 @@ mod e500_arguments;
 
 #[path = "cvf_trace.rs"]
 mod cvf_trace;
+
+#[path = "dynamic_sp_merge.rs"]
+mod dynamic_sp_merge;

@@ -247,11 +247,11 @@ impl Compiler {
     }
 }
 
-/// The compiler verdict every consumer should act on: the `KUNA_SOURCELANG`
-/// override when the environment carries one (`option sourcelang`, set by the
-/// CLI before `load file` so it reaches pass selection), else detection.
+/// The compiler verdict every consumer should act on: the load's forced
+/// `sourcelang` when it has one (`LoadOptions::sourcelang`, or the
+/// `KUNA_SOURCELANG` the CLI sets before `load file`), else detection.
 pub fn effective_compiler(file: &object::File, bytes: &[u8]) -> Compiler {
-    match kuna_decomp::kuna_sourcelang::forced_from_env() {
+    match kuna_decomp::kuna_sourcelang::forced() {
         Some(lang) => Compiler::from_forced_lang(lang),
         None => detect_compiler(file, bytes),
     }
@@ -259,7 +259,7 @@ pub fn effective_compiler(file: &object::File, bytes: &[u8]) -> Compiler {
 
 /// [`effective_compiler`] over raw image bytes (the `load file` entry point).
 pub fn effective_compiler_bytes(bytes: &[u8]) -> Compiler {
-    match kuna_decomp::kuna_sourcelang::forced_from_env() {
+    match kuna_decomp::kuna_sourcelang::forced() {
         Some(lang) => Compiler::from_forced_lang(lang),
         None => detect_compiler_bytes(bytes),
     }

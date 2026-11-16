@@ -114,7 +114,7 @@ impl AnalysisPass for ObjcMetadataPass {
         // The type-mapping context for IMP/ivar prototypes (PR-O2).
         let (ptr_size, word_size) = ctx.arch.data_org();
         let tctx = TypeCtx::new(ctx.arch.types(), ptr_size, word_size);
-        let sdk = match kuna_decomp::kuna_objcsdk::sdk_path_from_env() {
+        let sdk = match kuna_decomp::kuna_objcsdk::sdk_path() {
             Some(root) => kuna_objcsdk::signatures(&root, &kuna_objcsdk::linked_frameworks(ctx.file, ctx.bytes)),
             None => HashMap::new(),
         };

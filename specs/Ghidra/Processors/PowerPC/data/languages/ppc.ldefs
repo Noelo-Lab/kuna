@@ -47,6 +47,7 @@
     <description>PowerPC 64-bit big endian w/Altivec, G2</description>
     <compiler name="default" spec="ppc_64_be.cspec" id="default"/>
     <compiler name="Mac OS X" spec="ppc_64_be_Mac.cspec" id="macosx"/>
+    <compiler name="ELFv2" spec="ppc_64_be_elfv2.cspec" id="elfv2"/>
     <external_name tool="gnu" name="powerpc:common64"/>
     <external_name tool="IDA-PRO" name="ppc"/>
     <external_name tool="DWARF.register.mapping.file" name="ppc.dwarf"/>

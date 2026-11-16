@@ -136,7 +136,8 @@ pub fn decompile_one(
 ///
 /// Only the first drive can adopt it: the format-string re-decompile installs
 /// new per-call-site prototype overrides, which are consumed AT FLOW TIME, so
-/// that second pass always re-follows.
+/// that second pass always re-follows. Both drives, and the callee
+/// materialization between them, run under the program's load-time options.
 pub fn decompile_one_prefollowed(
     arch: &mut Architecture,
     name: &str,
@@ -146,6 +147,7 @@ pub fn decompile_one_prefollowed(
     proto_overrides: &[(Address, PrototypePieces)],
     prefollowed: Option<Funcdata>,
 ) -> DecompileStep {
+    let _load = arch.load_scope();
     let mut first = decompile_one_prefollowed_once(
         arch,
         name,
