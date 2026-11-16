@@ -4941,11 +4941,13 @@ every other binary's pass list is byte-identical to before the pass existed):
   The pass emits `<C>_typeinfo`, `<C>_typeinfo_name`, `<C>_vtable` and `<C>_vptr`
   data labels — the last being the value an object's vptr actually holds, two words
   past the header, which is the constant a constructor stores — plus one
-  `<C>::vtable_<i>` function symbol per virtual slot, and marks the slot arrays
-  read-only. A secondary sub-vtable takes the name of the base subobject its
-  displacement identifies (`Widget_vtable_for_Drawable`), and its slot names are
-  prefixed accordingly, because a multiple-inheritance class has several sub-vtables
-  whose indices all restart at 0. An inherited slot claimed by several classes'
+  `<C>::vfunc_<i>` function symbol per virtual slot, and marks the slot arrays
+  read-only. The slot stem is `vfunc_`, as in the MSVC pass above: a routine is named
+  after what it is, not after the data object that points at it. A secondary
+  sub-vtable takes the name of the base subobject its displacement identifies
+  (`Widget_vtable_for_Drawable`), and its slot names are prefixed accordingly
+  (`Widget::vfunc_for_Drawable_<i>`), because a multiple-inheritance class has several
+  sub-vtables whose indices all restart at 0. An inherited slot claimed by several classes'
   tables is attributed to the class that **defines** it, using the recovered base
   graph, so `Shape::perimeter` — repeated verbatim in `Circle`'s and `Square`'s
   tables — is named once, for `Shape`. Data labels join the class to the kind with

@@ -390,7 +390,7 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
     // name, read the inheritance graph, and walk the `_ZTV…` sub-vtables the
     // typeinfo objects are pointed at from — emitting `<C>::typeinfo` /
     // `<C>::typeinfo_name` / `<C>::vtable` / `<C>::vtable_for_<Base>` labels and one
-    // `<C>::vtable_<i>` function symbol per virtual slot. Ghidra has NO Itanium RTTI
+    // `<C>::vfunc_<i>` function symbol per virtual slot. Ghidra has NO Itanium RTTI
     // analyzer (its `RttiAnalyzer` is MSVC-only and its GCC class recovery is
     // script-tier), so this is a kuna capability rather than a port. ELF-only:
     // registered ONLY for `BinaryFormat::Elf`, so every other target's pass set is

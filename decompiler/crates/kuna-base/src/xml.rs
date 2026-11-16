@@ -2208,7 +2208,8 @@ mod tests {
         // and kuna-sparc64-or-masked-spill / a spill read through an OR-masked frame address is kept
         // and kuna-sparc64-hiddenret-slot-locals / a SPARC64 local in the unused hidden-return slot keeps its symbol
         // and kuna-ppc64le-elfv2-stack-args / an ELFv2 stack argument follows the 32-byte header
-        assert_eq!(count, 760, "corpus file count drifted");
+        // and kuna-itaniumvfunc / an Itanium virtual method named after the function, not its vtable
+        assert_eq!(count, 761, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
