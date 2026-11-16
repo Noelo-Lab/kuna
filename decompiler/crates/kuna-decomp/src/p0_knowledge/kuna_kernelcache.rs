@@ -39,7 +39,16 @@ impl KernelcacheChoice {
         }
     }
 
-    /// The choice in force for this process; an unset or unparsable value is `auto`.
+    /// The choice of the load in progress (`LoadOptions::kernelcache`, else
+    /// [`KERNELCACHE_ENV`]).
+    pub fn in_force() -> Self {
+        crate::kuna_loadoptions::scoped(|o| o.kernelcache.clone())
+            .unwrap_or_else(crate::kuna_loadoptions::env::kernelcache)
+    }
+
+    /// The choice [`KERNELCACHE_ENV`] states; an unset or unparsable value is
+    /// `auto`. Reads only the environment; a load in progress reads
+    /// [`Self::in_force`].
     pub fn from_env() -> Self {
         std::env::var(KERNELCACHE_ENV).ok().and_then(|v| Self::parse(&v)).unwrap_or_default()
     }

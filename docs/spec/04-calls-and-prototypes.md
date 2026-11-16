@@ -342,7 +342,10 @@ short-circuit `a() && b()` from forming. `auto` treats every other image as
 `off` does. Every little-endian PPC64 binary, and some
 big-endian ones, use ELFv2, where the TOC is saved at `0x18(r1)` and
 `0x28(r1)` is ordinary frame storage, so the store would replace a local the
-function keeps there with the TOC pointer after each call. When it fires,
+function keeps there with the TOC pointer after each call. The big-endian
+ELFv2 model (`elfv2`, selected by the image's ABI version) stores `r2Save` to
+`0x18(r1)` instead; the little-endian default model still uses `0x28(r1)`.
+When it fires,
 `ActionDefaultParams` installs return-boundary effects after each modeled call;
 `ActionConstbase` installs entry-boundary effects before the entry block's first
 operation. A per-function ledger prevents duplicate insertion and is discarded
@@ -1852,6 +1855,37 @@ classified:
   slot, > 4), the popped byte range is *hard evidence*:
   trials below it are active, at-or-above it no-use. Otherwise fall through
   to ancestor analysis.
+
+  (kuna) The MSVC frame cookie is scored like any other stack trial and
+  leaves the argument lists afterwards
+  (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_stackcookie.rs
+  (shed_frame_cookies)`). An x86-32 MSVC function with an EH frame pushes the
+  cookie below its saved registers (`mov eax,[___security_cookie]; xor
+  eax,esp; push eax`) and links the registration record above it into
+  `fs:[0]`; only the epilogue pops the slot. Sitting right below the frame,
+  it was handed as a trailing stack argument to the first call that takes
+  more than its own pushes (a function pointer, a `this`-only method, a
+  callee whose extent is not stated), with the frame slots above it. Marking
+  the trial no-use while scoring is not the fix: the slot is the active trial
+  that `fillinMap` fills the holes below up to, so a push the upstream test
+  refused on its own (the stack model is off after a callee whose pop is not
+  known) was lost, and a slot the call that took it no longer holds becomes
+  free for the next call, whose stale slots it then anchors. So the trials
+  are scored as before, and at the end of the `ActionActiveParam` pass that
+  finalizes the last call, every call loses its lowest stack argument that
+  holds the cookie and every stack argument above it: a call only ever loses
+  frame slots. An argument holds the cookie when, on every path, it is an
+  `INT_XOR` of a value read from a fixed address of the default data space
+  with the stack pointer or an offset from it, reached back through register
+  copies, the INDIRECTs of earlier calls and joins, and never through a copy
+  of another stack slot (`push dword ptr [esp+k]` of a slot the model maps
+  onto the cookie is a pushed argument). The op that stores it into the slot
+  must be the prologue's: in the block of a store of a stack address to
+  `fs:[0]` (the link of the registration record), before it (`holds_cookie`,
+  `seh_links`). So `key ^ esp` pushed outside an SEH frame, or in the body of
+  one (after the link), stays an argument, and an argument the direct callee
+  reads or its proven `RET n` pops stays too. A cookie in a function without an EH
+  frame (`/GS` alone keeps it at `[ebp-4]`, above the locals) is not touched.
 
   The local-range test probes **two different addresses for two different
   questions**, and the distinction decides whether stack-passed arguments are
@@ -9075,12 +9109,12 @@ call through a pointer is typed by the listing itself (an import stub's
 The value's type is whatever it is: the callee's stated return through `callrettype`, a float for a float
 register (chapter 05). A forced function whose RETURN carries no value once the
 returns are built is made `void` (`kuna_voidret.rs (void_unless_returned)`),
-as upstream's `updateOutputTypes` would. The port's restart keeps the output an
-earlier pass recovered, and `ActionOutputPrototype` leaves the output alone
-when the RETURN has no value: a MinGW `-O0` function whose `mov eax,[iat];
-call eax` resolves to `ExitProcess` restarts, the pass before the restart
-returns `eax` joined with what the unresolved call left, the pass after it
-refuses the bare handle where the returning path also loads through it, and the
+as upstream's `updateOutputTypes` would. `ActionOutputPrototype` leaves the
+output alone when the RETURN has no value. Before restarts cleared the
+unlocked output (chapter 03), a MinGW `-O0` function whose `mov eax,[iat];
+call eax` resolves to `ExitProcess` restarted, the pass before the restart
+returned `eax` joined with what the unresolved call left, the pass after it
+refused the bare handle where the returning path also loads through it, and the
 function printed `int f(..)` around a bare `return;`.
 
 A redone wrapper reads its own callee's result in turn, so each settling

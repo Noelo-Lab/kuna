@@ -1174,7 +1174,7 @@ fn usage() {
          (a `0x`-prefixed target implies it); an address inside another function is\n\
          decompiled as asked, with a note naming that function.  --json emits the\n\
          decompile-all record for that one function\n\
-         ({{binary,count,functions:[{{name,address,code,variables,..}}]}});\n\
+         ({{binary,count,functions:[{{name,address,code,error,warnings,variables,..}}]}});\n\
          without it, the C text alone.  With --json, --omit KEY[,KEY].. leaves those\n\
          record collections out (aliases, line_mappings, variables -- with\n\
          stack_objects -- and types) and lists them in a top-level `omitted` array;\n\

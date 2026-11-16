@@ -1,0 +1,452 @@
+{
+  "objects": [
+    {
+      "file": "weak-n32.elf",
+      "abi": "n32",
+      "kind": "weak",
+      "source": "weak.c",
+      "sha256": "df4301a7ac4f5a5fbe0a742a5d32f280c93b0323f77f4d2ee336696a95820b72",
+      "commands": [
+        [
+          "mips64-octeon-linux-gnu-gcc",
+          "-O2",
+          "-fno-stack-protector",
+          "-c",
+          "weak.c",
+          "-o",
+          "weak-n32.elf",
+          "-mabi=n32",
+          "-march=octeon",
+          "-mno-abicalls",
+          "-fno-pic",
+          "-G0"
+        ]
+      ],
+      "source_sha256": "5f373e2b102ae3a6dbcfb0815615926ad05e1dd0b9ffe33fae5d306c34824008"
+    },
+    {
+      "file": "address-n32.elf",
+      "abi": "n32",
+      "kind": "address",
+      "source": "address.c",
+      "sha256": "18acdb6927c40abc33f67d89d70a80dd9eab667885ac9147ad5015267dbc926c",
+      "commands": [
+        [
+          "mips64-octeon-linux-gnu-gcc",
+          "-O2",
+          "-fno-stack-protector",
+          "-c",
+          "address.c",
+          "-o",
+          "address-n32.elf",
+          "-mabi=n32",
+          "-march=octeon",
+          "-mno-abicalls",
+          "-fno-pic",
+          "-G0"
+        ]
+      ],
+      "source_sha256": "dfe3ae46200121b4324b2342b5d6b1a38ebc258daab294e33bc5bb8e2e16a84c"
+    },
+    {
+      "file": "readonly-n32.elf",
+      "abi": "n32",
+      "kind": "address",
+      "source": "readonly-mips.S",
+      "sha256": "4fd353a2526a70ab7de6d6a2ad28055e73a68b0135622cb2c055e098b58d7834",
+      "commands": [
+        [
+          "mips64-octeon-linux-gnu-gcc",
+          "-c",
+          "readonly-mips.S",
+          "-o",
+          "readonly-n32.elf",
+          "-mabi=n32",
+          "-march=octeon",
+          "-mabicalls",
+          "-fPIC",
+          "-DABI64=0"
+        ]
+      ],
+      "source_sha256": "90f4191c2613f0870dbfa6f6512799d31eb11159dbb699a311217ba77a9baec8"
+    },
+    {
+      "file": "mixed-n32.elf",
+      "abi": "n32",
+      "kind": "mixed",
+      "source": "weak.c",
+      "sha256": "f3ed167ffffaf081faca95b69b1649bd3218882141a3dee5285ea5860293e36b",
+      "commands": [
+        [
+          "mips64-octeon-linux-gnu-gcc",
+          "-O2",
+          "-fno-stack-protector",
+          "-c",
+          "weak.c",
+          "-o",
+          "pic-n32.o",
+          "-mabi=n32",
+          "-march=octeon",
+          "-mabicalls",
+          "-fPIC",
+          "-G0",
+          "-Dguard=pic_guard",
+          "-Doffset_guard=pic_offset_guard",
+          "-Dpresent=pic_present",
+          "-Ddefined_guard=pic_defined_guard"
+        ],
+        [
+          "ld",
+          "-r",
+          "-m",
+          "elf32btsmipn32",
+          "-o",
+          "mixed-n32.elf",
+          "weak-n32.elf",
+          "pic-n32.o"
+        ]
+      ],
+      "link_diagnostics": "ld: pic-n32.o: warning: linking abicalls files with non-abicalls files\n",
+      "source_sha256": "5f373e2b102ae3a6dbcfb0815615926ad05e1dd0b9ffe33fae5d306c34824008"
+    },
+    {
+      "file": "weak-64.elf",
+      "abi": "64",
+      "kind": "weak",
+      "source": "weak.c",
+      "sha256": "95747def5397668fe0854fae084dacfd98660198df445f7b8a27a1b1f8d59868",
+      "commands": [
+        [
+          "mips64-octeon-linux-gnu-gcc",
+          "-O2",
+          "-fno-stack-protector",
+          "-c",
+          "weak.c",
+          "-o",
+          "weak-64.elf",
+          "-mabi=64",
+          "-march=octeon",
+          "-mno-abicalls",
+          "-fno-pic",
+          "-G0"
+        ]
+      ],
+      "source_sha256": "5f373e2b102ae3a6dbcfb0815615926ad05e1dd0b9ffe33fae5d306c34824008"
+    },
+    {
+      "file": "address-64.elf",
+      "abi": "64",
+      "kind": "address",
+      "source": "address.c",
+      "sha256": "c57b9f8c6f504072b5a0c403e5ef4378ecf058b1d153af9c04e603c6a11dd14d",
+      "commands": [
+        [
+          "mips64-octeon-linux-gnu-gcc",
+          "-O2",
+          "-fno-stack-protector",
+          "-c",
+          "address.c",
+          "-o",
+          "address-64.elf",
+          "-mabi=64",
+          "-march=octeon",
+          "-mno-abicalls",
+          "-fno-pic",
+          "-G0"
+        ]
+      ],
+      "source_sha256": "dfe3ae46200121b4324b2342b5d6b1a38ebc258daab294e33bc5bb8e2e16a84c"
+    },
+    {
+      "file": "readonly-64.elf",
+      "abi": "64",
+      "kind": "address",
+      "source": "readonly-mips.S",
+      "sha256": "c14490a05bb990daa6c5ff095642b854135268829059a5b24bc275344a26fc04",
+      "commands": [
+        [
+          "mips64-octeon-linux-gnu-gcc",
+          "-c",
+          "readonly-mips.S",
+          "-o",
+          "readonly-64.elf",
+          "-mabi=64",
+          "-march=octeon",
+          "-mabicalls",
+          "-fPIC",
+          "-DABI64=1"
+        ]
+      ],
+      "source_sha256": "90f4191c2613f0870dbfa6f6512799d31eb11159dbb699a311217ba77a9baec8"
+    },
+    {
+      "file": "mixed-64.elf",
+      "abi": "64",
+      "kind": "mixed",
+      "source": "weak.c",
+      "sha256": "0b953d0b7c57d44d9f03b98bc876fb41df3e17a340b3a17d644687356fad6787",
+      "commands": [
+        [
+          "mips64-octeon-linux-gnu-gcc",
+          "-O2",
+          "-fno-stack-protector",
+          "-c",
+          "weak.c",
+          "-o",
+          "pic-64.o",
+          "-mabi=64",
+          "-march=octeon",
+          "-mabicalls",
+          "-fPIC",
+          "-G0",
+          "-Dguard=pic_guard",
+          "-Doffset_guard=pic_offset_guard",
+          "-Dpresent=pic_present",
+          "-Ddefined_guard=pic_defined_guard"
+        ],
+        [
+          "ld",
+          "-r",
+          "-m",
+          "elf64btsmip",
+          "-o",
+          "mixed-64.elf",
+          "weak-64.elf",
+          "pic-64.o"
+        ]
+      ],
+      "link_diagnostics": "ld: pic-64.o: warning: linking abicalls files with non-abicalls files\n",
+      "source_sha256": "5f373e2b102ae3a6dbcfb0815615926ad05e1dd0b9ffe33fae5d306c34824008"
+    },
+    {
+      "file": "weak-x86-64.elf",
+      "abi": "x86-64",
+      "kind": "weak",
+      "source": "weak.c",
+      "sha256": "8bba3c940ed26a4b15a0ae4f93196e30f7348078d28eb435a152136b3e574ef7",
+      "commands": [
+        [
+          "cc",
+          "-O2",
+          "-fno-stack-protector",
+          "-c",
+          "weak.c",
+          "-o",
+          "weak-x86-64.elf",
+          "-fno-pic",
+          "-fno-pie"
+        ]
+      ],
+      "source_sha256": "5f373e2b102ae3a6dbcfb0815615926ad05e1dd0b9ffe33fae5d306c34824008"
+    },
+    {
+      "file": "address-x86-64.elf",
+      "abi": "x86-64",
+      "kind": "address",
+      "source": "address.c",
+      "sha256": "8c5d628ca6d7692f175ea424951c29f20a75b6d97b093592927b8439f63f3aab",
+      "commands": [
+        [
+          "cc",
+          "-O2",
+          "-fno-stack-protector",
+          "-c",
+          "address.c",
+          "-o",
+          "address-x86-64.elf",
+          "-fno-pic",
+          "-fno-pie"
+        ]
+      ],
+      "source_sha256": "dfe3ae46200121b4324b2342b5d6b1a38ebc258daab294e33bc5bb8e2e16a84c"
+    },
+    {
+      "file": "weak-x86-64-large.elf",
+      "abi": "x86-64-large",
+      "kind": "weak",
+      "source": "weak.c",
+      "sha256": "26821cea0f6830eed10ac63a617d6eb51fad8ad9e38ec23acda4efc3c0f75a81",
+      "commands": [
+        [
+          "cc",
+          "-O2",
+          "-fno-stack-protector",
+          "-c",
+          "weak.c",
+          "-o",
+          "weak-x86-64-large.elf",
+          "-fno-pic",
+          "-fno-pie",
+          "-mcmodel=large",
+          "-DTYPE_HINT"
+        ]
+      ],
+      "source_sha256": "5f373e2b102ae3a6dbcfb0815615926ad05e1dd0b9ffe33fae5d306c34824008"
+    },
+    {
+      "file": "address-x86-64-large.elf",
+      "abi": "x86-64-large",
+      "kind": "address",
+      "source": "address.c",
+      "sha256": "03c6d747e2ed91aace5014d13899d12ad22df6b437454dbb4f71b1aab85bf7ee",
+      "commands": [
+        [
+          "cc",
+          "-O2",
+          "-fno-stack-protector",
+          "-c",
+          "address.c",
+          "-o",
+          "address-x86-64-large.elf",
+          "-fno-pic",
+          "-fno-pie",
+          "-mcmodel=large"
+        ]
+      ],
+      "source_sha256": "dfe3ae46200121b4324b2342b5d6b1a38ebc258daab294e33bc5bb8e2e16a84c"
+    },
+    {
+      "file": "common-n32.elf",
+      "abi": "n32",
+      "kind": "common",
+      "source": "common.c",
+      "sha256": "85b8e2e5d8ec3bc5d2cfa1ce469935b24ef13516a597daf8b285e8bb6b8a9d12",
+      "commands": [
+        [
+          "mips64-octeon-linux-gnu-gcc",
+          "-O2",
+          "-fno-stack-protector",
+          "-fcommon",
+          "-c",
+          "common.c",
+          "-o",
+          "common-n32.elf",
+          "-mabi=n32",
+          "-march=octeon",
+          "-mno-abicalls",
+          "-fno-pic",
+          "-G0"
+        ]
+      ],
+      "source_sha256": "0182d41a2219e26628d3c564e3abe4c272b048c85d6b8bc770f5a8da74e4c2bf"
+    },
+    {
+      "file": "common-64.elf",
+      "abi": "64",
+      "kind": "common",
+      "source": "common.c",
+      "sha256": "dcfb90c721bf907d47b099d357b661873d84cc4db65b15148e95173431302039",
+      "commands": [
+        [
+          "mips64-octeon-linux-gnu-gcc",
+          "-O2",
+          "-fno-stack-protector",
+          "-fcommon",
+          "-c",
+          "common.c",
+          "-o",
+          "common-64.elf",
+          "-mabi=64",
+          "-march=octeon",
+          "-mno-abicalls",
+          "-fno-pic",
+          "-G0"
+        ]
+      ],
+      "source_sha256": "0182d41a2219e26628d3c564e3abe4c272b048c85d6b8bc770f5a8da74e4c2bf"
+    },
+    {
+      "file": "common-x86-64.elf",
+      "abi": "x86-64",
+      "kind": "common",
+      "source": "common.c",
+      "sha256": "624cf27f8ca8932b83a7c2221a890dc6a44114e08c19320cb287d4e9dca85ec1",
+      "commands": [
+        [
+          "cc",
+          "-O2",
+          "-fno-stack-protector",
+          "-fcommon",
+          "-c",
+          "common.c",
+          "-o",
+          "common-x86-64.elf",
+          "-fno-pic",
+          "-fno-pie"
+        ]
+      ],
+      "source_sha256": "0182d41a2219e26628d3c564e3abe4c272b048c85d6b8bc770f5a8da74e4c2bf"
+    },
+    {
+      "file": "weak-x86-64-pic.elf",
+      "abi": "x86-64-pic",
+      "kind": "diagnosed",
+      "source": "weak.c",
+      "sha256": "ae34639381fa33c46d9d915170b6cbcd20211ec601282eed52ec6c383351630a",
+      "commands": [
+        [
+          "cc",
+          "-O2",
+          "-fno-stack-protector",
+          "-fPIC",
+          "-c",
+          "weak.c",
+          "-o",
+          "weak-x86-64-pic.elf"
+        ]
+      ],
+      "source_sha256": "5f373e2b102ae3a6dbcfb0815615926ad05e1dd0b9ffe33fae5d306c34824008"
+    },
+    {
+      "file": "rip-x86-64.elf",
+      "abi": "x86-64-rip",
+      "kind": "address",
+      "source": "rip.S",
+      "sha256": "a875a0aab1fdd54a880900527a11cf2dfc19e8b53bc13824bd1cd8338a9cc6a0",
+      "commands": [
+        [
+          "cc",
+          "-c",
+          "rip.S",
+          "-o",
+          "rip-x86-64.elf"
+        ]
+      ],
+      "source_sha256": "71a4f1ff355fd8c8cc66fdabc88c593113435abd305b36bb8cf361ced3aacb88"
+    },
+    {
+      "file": "readonly-x86-64.elf",
+      "abi": "x86-64-rodata",
+      "kind": "address",
+      "source": "readonly.S",
+      "sha256": "f7a8fbde35c1d38bd5fdd52998584b431ae6150ebd2911d3fe5db45db328f035",
+      "commands": [
+        [
+          "cc",
+          "-c",
+          "readonly.S",
+          "-o",
+          "readonly-x86-64.elf"
+        ]
+      ],
+      "source_sha256": "a16aee10bc233a318d8095aa9b2a0e8043fcfea5bd82c7188c4dc899d99c0f40"
+    }
+  ],
+  "tools": {
+    "cc": {
+      "name": "cc",
+      "sha256": "b5f1b773a7c733738352000c92a077dc5852a1a2fc6d836b1e411be1e9ec5f88",
+      "version": "cc (Ubuntu 15.2.0-16ubuntu1) 15.2.0"
+    },
+    "mips_cc": {
+      "name": "mips64-octeon-linux-gnu-gcc",
+      "sha256": "5d26f5ed013593e77d0237dac6f3179f68cdbb681f8c20d7948444b7ff3e0b49",
+      "version": "mips64-octeon-linux-gnu-gcc (GCC) 7.3.0"
+    },
+    "linker": {
+      "name": "ld",
+      "sha256": "2865846ece2642439cfae404ef930bfc5494c4babd2347757878b8f0f8f761cf",
+      "version": "GNU ld (GNU Binutils) 2.47.20260726"
+    }
+  }
+}

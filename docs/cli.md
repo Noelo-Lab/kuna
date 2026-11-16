@@ -1771,7 +1771,8 @@ numbers a caller orients by are the ones `kuna functions` reports.
 
 `--json` emits
 `{binary,count,functions:[{name,address,address_hex,aliases,object_location,size,code,error,
-unstructured_gotos,line_mappings:[{line_number,addresses}],variables:[{name,type,kind,arg_index,
+unstructured_gotos,warnings:[{kind,message,line,address}],
+line_mappings:[{line_number,addresses}],variables:[{name,type,kind,arg_index,
 stack_offset,size,line_numbers,addresses}],types:[{name,definition,size}]}]}` (`kuna functions --json` emits
 `name`/`address`/`address_hex`/`aliases`/`object_location`/`size` per function; with
 `--reachable-from`, which already walks the image, it also carries a top-level `limits`
@@ -1798,6 +1799,35 @@ translation; it is `0` on every C render, and a non-zero one is also spoken as a
 `note:` on stderr. It does not change the run's verdict — a record with a
 `null` `error` and a non-zero `unstructured_gotos` is usable output with named
 lossy sites, which is what makes it worth filtering or re-running on.
+`warnings` lists the analysis warnings the engine wrote into `code` as
+comments, one `{kind,message,line,address}` per warning in the order it wrote
+them, so a consumer can tell a truncated body from a clean one without parsing
+the C. It is always present, `[]` for a function with none and for a failed
+one. The entries come from the engine's own warning records, not from the text:
+a comment that only spells a warning (an `--assert comment` reading
+`WARNING: ...`, a storage comment, the original name a Rust or Go render keeps
+above the prototype) is never listed. `message` is the engine's text less its
+`WARNING: ` marker (`Subroutine does not return`, `Bad instruction - Truncating
+control flow here`), the same under both `warnstyle` values, though `inline`
+prints it as a slug; `line` is the 1-based line of `code` carrying its comment,
+which joins to `line_mappings`. `address` is where the engine recorded a body
+warning: the bad instruction, the unresolved indirect jump, or the address a
+flow cut at the budget, out of bounds or into unmapped memory went to (for
+`unmapped-flow` no instruction is there; its `message` names the one that
+flowed there). A header warning carries the function's `address`; `address`
+is `null` only for `structuring-declined`, the printer's own note on a body it
+has no structure for. `kind` is a stable code: `bad-instruction` and
+`unimplemented-instruction` for decode failures; `instruction-limit` for a flow
+cut at the instruction budget; `jump-as-call`, `jump-as-return` and `jumptable`
+for an indirect jump left unresolved or a jump table only partly recovered;
+`out-of-bounds`, `unmapped-flow` and `funcboundflow` for flow that left the
+function's extent or the mapped image; `structuring-declined` for a body the printer could not structure; the slug
+`warnstyle inline` prints for any other warning it abbreviates (`no-return`,
+`tail-call`, `branch-flip`, `return-dupe`, `inlined`, ...), less its ` xN`
+count; the producer tag of a kuna warning (`calltrampoline`, `overlapbranch`,
+`tailcallframe`, ...); and `other` for the rest. Like `unstructured_gotos`, a
+warning does not change the verdict: `error` stays reserved for a function that
+failed to decompile, and the exit status is the same with or without warnings.
 A variable's `kind` is `arg` for a parameter, `stack` for a local with a frame
 offset, and `register` for a local the C declares outside the stack frame (a register,
 a temporary, or a value with no storage of its own). A `register` row carries the
@@ -1868,9 +1898,9 @@ whose variables were examined and none reported, and an absent `stack_objects`
 with no `omitted` still means none were recovered. A document that omits nothing
 has no `omitted` key, so the default document is unchanged. The run-level
 `language`, `count`, `error` and `assertions` and each record's `name`,
-`address`, `address_hex`, `object_location`, `size`, `code`, `error` and
-`unstructured_gotos` (and `interior_to` and `declared`, where they apply) are
-always present;
+`address`, `address_hex`, `object_location`, `size`, `code`, `error`,
+`unstructured_gotos` and `warnings` (and `interior_to` and `declared`, where
+they apply) are always present;
 `code` and the exit status are what they are without the flag. An unknown key
 exits 2.
 
@@ -1880,7 +1910,7 @@ kuna decompile ./fixture audit_many --json --omit aliases,line_mappings,variable
 #    "omitted": ["aliases", "line_mappings", "variables", "types", "stack_objects"],
 #    "count": 1, "error": null,
 #    "functions": [{"name": "audit_many", ..., "code": "void audit_many(void) ...",
-#                   "error": null, "unstructured_gotos": 0}],
+#                   "error": null, "unstructured_gotos": 0, "warnings": []}],
 #    "assertions": []}
 ```
 

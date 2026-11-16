@@ -792,7 +792,7 @@ impl Action for ActionConstantPtr {
             if offset == 0 {
                 continue; // Never make constant 0 into spacebase
             }
-            if is_ptr_check {
+            if is_ptr_check || data.vbank().get(vn).unwrap().is_synthetic_literal() {
                 continue; // Have we checked this variable before
             }
             if has_no_descend {
@@ -1312,6 +1312,7 @@ impl Action for ActionDeindirect {
                 }
             }
 
+            if data.vbank().get(vn).is_some_and(|v| v.is_synthetic_literal()) { continue; }
             let v = match data.vbank().get(vn) {
                 Some(v) => v,
                 None => continue,

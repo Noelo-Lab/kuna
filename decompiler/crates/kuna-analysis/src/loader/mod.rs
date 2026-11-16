@@ -32,6 +32,7 @@
 
 pub mod arm_markers;
 pub(crate) mod kuna_ppcaputarget;
+pub(crate) mod kuna_ppc64elfv2target;
 #[cfg(test)]
 mod powerpc_apu_tests;
 pub(crate) mod kuna_mipstarget;
@@ -47,6 +48,7 @@ pub mod kuna_globalref;
 pub mod elfv1;
 mod elfv1_imports;
 pub mod kuna_ppc32_imports;
+pub mod kuna_ppc64r12;
 mod kuna_ppc32picimports;
 pub use kuna_ppc32picimports::{ImportProofMemo, ImportProofScope};
 // (kuna) ELF section-table tolerance: an image whose section headers are
@@ -134,3 +136,5 @@ pub mod kuna_realmodecs;
 pub mod kuna_mzdgroup;
 
 pub mod kuna_mipsstubs;
+
+mod kuna_nullable_reloc;
