@@ -28,9 +28,9 @@ unrelated_literal:
 .section .note.GNU-stack,"",@progbits
 
 .text
-.globl unsupported_offset
-.type unsupported_offset,@function
-unsupported_offset:
+.globl register_offset
+.type register_offset,@function
+register_offset:
   leaq optional(%rdi),%rax
   ret
-.size unsupported_offset,.-unsupported_offset
+.size register_offset,.-register_offset

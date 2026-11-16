@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4349,
-    4349
+    4353,
+    4353
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -3567,6 +3567,10 @@
     "data:nullable-relocations #2: imported call keeps its argument",
     "data:nullable-relocations #3: unrelated literal stays numeric",
     "data:nullable-relocations #4: every tested operand is supported",
+    "data:nullable-relocations #5: a COMMON object written beside a weak slot keeps its name",
+    "data:nullable-relocations #6: a COMMON object read beside a weak slot keeps its name",
+    "data:nullable-relocations #7: no COMMON object is read as the slot",
+    "data:nullable-relocations #8: a compared weak address reads the slot",
     "data:octeoneffects #10: only off forwards a neighboring stack value across zeroing",
     "data:octeoneffects #11: both zero operations retain neighboring stores in both guarded modes",
     "data:octeoneffects #12: zeroing through an incoming pointer keeps a spill in the frame's top cache block",

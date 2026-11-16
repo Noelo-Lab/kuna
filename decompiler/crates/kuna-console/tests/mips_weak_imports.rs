@@ -1,4 +1,5 @@
-//! One weak import keeps one logical symbol across GOT and direct relocations.
+//! One weak import keeps one logical symbol, entered at its synthetic extern
+//! address, across its import slot and direct relocations.
 use kuna_analysis::loadimage_object::ObjectLoadImage;
 use kuna_base::address::Address;
 use kuna_console::{
@@ -26,7 +27,7 @@ fn mixed_and_got_only_imports_keep_one_identity_and_share_edited_prototypes() {
                     ObjectLoadImage::from_bytes_with_target(path.to_str().unwrap(), &bytes, target)
                         .unwrap();
                 let aliases = image.function_address_aliases().to_vec();
-                assert_eq!(aliases.len(), usize::from(form == "mixed"));
+                assert_eq!(aliases.len(), 1, "{path:?}: the import slot");
                 let mut prog = bootstrap_from_object(
                     path.to_str().unwrap(),
                     target,
@@ -43,7 +44,8 @@ fn mixed_and_got_only_imports_keep_one_identity_and_share_edited_prototypes() {
                 let entry = prog
                     .resolve_entry(&EntrySelector::Name("optional".into()))
                     .unwrap();
-                assert!(prog.is_import_slot(entry.addr.get_offset()));
+                assert!(!prog.is_import_slot(entry.addr.get_offset()));
+                assert!(!prog.vma_bytes_mapped(entry.addr.get_offset()));
                 assert!(!prog
                     .function_entries_executable()
                     .iter()
@@ -51,6 +53,7 @@ fn mixed_and_got_only_imports_keep_one_identity_and_share_edited_prototypes() {
                 let mut addresses = vec![entry.addr.clone()];
                 for &(alias, canonical) in &aliases {
                     assert_eq!(canonical, entry.addr.get_offset());
+                    assert!(prog.is_import_slot(alias));
                     assert_eq!(
                         prog.resolve_entry(&EntrySelector::Numeric(alias))
                             .unwrap()

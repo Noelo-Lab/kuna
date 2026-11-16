@@ -259,11 +259,14 @@ pub struct RelocLayout {
     pub got_range: Option<(u64, u64)>,
     /// A MIPS object's synthetic `$gp`.
     pub gp: Option<u64>,
-    /// Half-open import slots in the GOT: an undefined weak symbol's entry,
-    /// which the run-time loader fills and which therefore does not fold.
+    /// Half-open import slots: an undefined weak symbol's GOT entry or the
+    /// word allocated for its other address forms, which the run-time loader
+    /// fills and which therefore does not fold. Disjoint from the extern slots
+    /// and from [`Self::common_range`].
     pub import_slots: Vec<(u64, u64)>,
     pub nullable_relocations: Vec<kuna_decomp::kuna_nullable_reloc::NullableRelocation>,
-    /// Additional addresses of the same logical import: `(alias, canonical)`.
+    /// Additional addresses of the same logical import, `(alias, canonical)`:
+    /// its import slot, beside the synthetic extern address it is entered at.
     pub function_address_aliases: Vec<(u64, u64)>,
     /// A PowerPC64 ELFv1 object's function descriptors: `(descriptor, entry,
     /// TOC)`, sorted by descriptor address.
@@ -400,6 +403,9 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
         file.symbols().filter(|symbol| symbol.section() == SymbolSection::Undefined).count(),
         file.is_64(),
     );
+    let weak_limit = common_allocator
+        .reserve(super::kuna_nullable_reloc::reserved_bytes(file))
+        .unwrap_or(0);
     // Externs reached through a PLT-relative relocation (`R_X86_64_PLT32`) or a
     // branch/call instruction field are *code targets* — even when the undefined
     // symbol is `STT_NOTYPE` (object `SymbolKind::Unknown`), which gcc emits for
@@ -690,54 +696,52 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
     }
     funcsizes.sort_unstable_by(|a, b| a.0.cmp(&b.0).then(b.1.cmp(&a.1)));
     funcsizes.dedup_by_key(|s| s.0);
-    // A MIPS object's import slots: the GOT entry of each undefined weak symbol,
-    // which the run-time loader fills. One a call reaches is named after it, as
-    // an Import Address Table slot is, so `(*slot)(x)` calls the import while a
-    // test of the slot still reads it.
+    // An undefined weak symbol's import slot: its MIPS GOT entry, or the word
+    // allocated here for its other address forms, which the run-time loader
+    // fills. The function stays at its synthetic extern address, where direct
+    // references reach it, and the slot is another address of that function, so
+    // `(*slot)(x)` calls the import while a test of the slot still reads it.
     let mut import_slots = Vec::new();
-    let mut import_functions = HashMap::new();
     let mut function_address_aliases = Vec::new();
-    if let Some(g) = &gp {
-        for (idx, slot) in g.imports() {
-            import_slots.push((slot, slot + g.entry()));
-            let Ok(sym) = file.symbol_by_index(idx) else { continue };
-            if !code_externs.contains(&idx) && sym.kind() != SymbolKind::Text {
-                continue;
-            }
-            if let Ok(n) = sym.name_bytes().map(<[u8]>::to_vec) {
-                if !n.is_empty() {
-                    symbol_info.push(RelocSymbolInfo {
-                        name: String::from_utf8_lossy(&n).into_owned(),
-                        vma: slot,
-                        section_index: None,
-                        section_name: None,
-                        section_offset: None,
-                        binding: symbol_binding(&sym),
-                        undefined: true,
-                    });
-                    funcsyms.push((slot, n));
-                    import_functions.insert(idx, slot);
-                }
-            }
-        }
-    }
     let weak_storage_start = extern_cursor;
     let mut nullable_slots: HashMap<_, _> = gp.as_ref()
         .map(|g| g.imports().collect()).unwrap_or_default();
+    let mut function_slots: Vec<(SymbolIndex, u64)> = Vec::new();
+    if let Some(g) = &gp {
+        for (idx, slot) in g.imports() {
+            import_slots.push((slot, slot + g.entry()));
+            function_slots.push((idx, slot));
+        }
+    }
     let (nullable_relocations, allocated) = super::kuna_nullable_reloc::references(
-        file, &vma_of, &extern_of, &mut nullable_slots, &mut extern_cursor);
+        file, &vma_of, &extern_of, &mut nullable_slots, &mut extern_cursor, weak_limit);
     for (idx, slot) in allocated {
-        let Ok(sym) = file.symbol_by_index(idx) else { continue };
         import_slots.push((slot, slot + if file.is_64() { 8 } else { 4 }));
-        if !code_externs.contains(&idx) && sym.kind() != SymbolKind::Text { continue; }
+        function_slots.push((idx, slot));
+    }
+    for (idx, slot) in function_slots {
+        let Ok(sym) = file.symbol_by_index(idx) else { continue };
+        if !code_externs.contains(&idx) && sym.kind() != SymbolKind::Text {
+            continue;
+        }
         let Ok(name) = sym.name_bytes() else { continue };
+        if name.is_empty() {
+            continue;
+        }
+        if let Some(&entry) = extern_of.get(&idx) {
+            function_address_aliases.push((slot, entry));
+            continue;
+        }
         symbol_info.push(RelocSymbolInfo {
-            name: String::from_utf8_lossy(name).into_owned(), vma: slot,
-            section_index: None, section_name: None, section_offset: None,
-            binding: symbol_binding(&sym), undefined: true,
+            name: String::from_utf8_lossy(name).into_owned(),
+            vma: slot,
+            section_index: None,
+            section_name: None,
+            section_offset: None,
+            binding: symbol_binding(&sym),
+            undefined: true,
         });
         funcsyms.push((slot, name.to_vec()));
-        import_functions.insert(idx, slot);
     }
     // Extern functions: name each external *code target* at its synthetic slot
     // so `call ext` renders by name instead of a bare address. A code target is
@@ -747,10 +751,6 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
     // `stdout`, referenced by PC32 to an `STT_OBJECT`) are addressed but
     // deliberately left unnamed here.
     for (sym_idx, addr) in &extern_order {
-        if let Some(&canonical) = import_functions.get(sym_idx) {
-            function_address_aliases.push((*addr, canonical));
-            continue;
-        }
         let Ok(sym) = file.symbol_by_index(*sym_idx) else {
             continue;
         };

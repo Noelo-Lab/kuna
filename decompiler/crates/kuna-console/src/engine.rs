@@ -4775,8 +4775,8 @@ pub fn bootstrap_from_object_with_isa(
     }
     if !loader.reloc_sections().is_empty() {
         for &(lo, hi) in loader.import_slot_ranges() { literals.extend(lo..hi); }
-        for &(alias, slot) in loader.function_address_aliases() {
-            literals.extend((0..16).map(|byte| alias.wrapping_add(byte)));
+        for &(slot, entry) in loader.function_address_aliases() {
+            literals.extend((0..16).map(|byte| entry.wrapping_add(byte)));
             literals.extend((0..8).map(|byte| slot.wrapping_add(byte)));
         }
     }

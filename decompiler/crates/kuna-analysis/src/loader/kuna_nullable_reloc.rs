@@ -4,20 +4,64 @@ use kuna_decomp::kuna_nullable_reloc::{NullableRelocation, Operand};
 use object::{Object, ObjectSection, ObjectSymbol, RelocationTarget, SectionIndex, SymbolIndex};
 use std::collections::HashMap;
 
+fn is_mips(arch: object::Architecture) -> bool {
+    matches!(
+        arch,
+        object::Architecture::Mips
+            | object::Architecture::Mips64
+            | object::Architecture::Mips64_N32
+    )
+}
+
+/// The most storage [`references`] can take: one pointer per undefined weak
+/// symbol. The layout keeps this much clear of every other synthetic address.
+pub(super) fn reserved_bytes(file: &object::File<'_>) -> u64 {
+    let arch = file.architecture();
+    if !is_mips(arch) && arch != object::Architecture::X86_64 {
+        return 0;
+    }
+    let weak = file.symbols().filter(|s| s.is_undefined() && s.is_weak()).count() as u64;
+    weak.saturating_mul(if file.is_64() { 8 } else { 4 })
+}
+
+/// `symbol`'s slot, made on first use inside `cursor..limit`.
+fn slot_for(
+    slots: &mut HashMap<SymbolIndex, u64>,
+    allocated: &mut Vec<(SymbolIndex, u64)>,
+    symbol: SymbolIndex,
+    cursor: &mut u64,
+    limit: u64,
+    pointer_size: u64,
+) -> Option<u64> {
+    if let Some(&slot) = slots.get(&symbol) {
+        return Some(slot);
+    }
+    let slot = cursor.checked_add(pointer_size - 1)? & !(pointer_size - 1);
+    let end = slot.checked_add(pointer_size).filter(|&end| end <= limit)?;
+    *cursor = end;
+    slots.insert(symbol, slot);
+    allocated.push((symbol, slot));
+    Some(slot)
+}
+
+fn bytes_at(data: &[u8], offset: u64, len: usize) -> Option<&[u8]> {
+    let start = usize::try_from(offset).ok()?;
+    data.get(start..start.checked_add(len)?)
+}
+
+/// Each weak relocation the engine keeps nullable, and each slot allocated for
+/// one in `cursor..limit`. A field or slot that cannot be represented is skipped
+/// or left unsupported, never wrapped.
 pub(super) fn references(
     file: &object::File<'_>,
     vmas: &HashMap<SectionIndex, u64>,
     externs: &HashMap<SymbolIndex, u64>,
     slots: &mut HashMap<SymbolIndex, u64>,
     cursor: &mut u64,
+    limit: u64,
 ) -> (Vec<NullableRelocation>, Vec<(SymbolIndex, u64)>) {
     let arch = file.architecture();
-    let mips = matches!(
-        arch,
-        object::Architecture::Mips
-            | object::Architecture::Mips64
-            | object::Architecture::Mips64_N32
-    );
+    let mips = is_mips(arch);
     if !mips && arch != object::Architecture::X86_64 {
         return (Vec::new(), Vec::new());
     }
@@ -56,6 +100,9 @@ pub(super) fn references(
             let Some(kind) = kuna_mipsreloc::r_type_of(reloc) else {
                 continue;
             };
+            let Some(field) = base.checked_add(*offset) else {
+                continue;
+            };
             let mut addend = reloc.addend();
             if !text {
                 let pointer = if mips {
@@ -67,9 +114,7 @@ pub(super) fn references(
                     continue;
                 }
                 if reloc.has_implicit_addend() {
-                    let Some(bytes) =
-                        data.get(*offset as usize..*offset as usize + pointer_size as usize)
-                    else {
+                    let Some(bytes) = bytes_at(data, *offset, pointer_size as usize) else {
                         continue;
                     };
                     addend = if file.is_little_endian() {
@@ -78,15 +123,13 @@ pub(super) fn references(
                         bytes.iter().fold(0u64, |a, &b| (a << 8) | b as u64)
                     } as i64;
                 }
-                let slot = *slots.entry(idx).or_insert_with(|| {
-                    *cursor = (*cursor + pointer_size as u64 - 1) & !(pointer_size as u64 - 1);
-                    let slot = *cursor;
-                    *cursor += pointer_size as u64;
-                    allocated.push((idx, slot));
-                    slot
-                });
+                let Some(slot) =
+                    slot_for(slots, &mut allocated, idx, cursor, limit, pointer_size as u64)
+                else {
+                    continue;
+                };
                 out.push(NullableRelocation {
-                    field: base + offset,
+                    field,
                     slot,
                     symbol: value,
                     addend,
@@ -100,7 +143,7 @@ pub(super) fn references(
             }
             let (operand, shift, bias, patched) = if mips {
                 if matches!(kind, 4 | 10) {
-                    let mut reference = unsupported(base + offset, value, pointer_size);
+                    let mut reference = unsupported(field, value, pointer_size);
                     reference.operand = Operand::CodeReference;
                     out.push(reference);
                     continue;
@@ -110,8 +153,7 @@ pub(super) fn references(
                 {
                     continue;
                 }
-                let word = data
-                    .get(*offset as usize..*offset as usize + 4)
+                let word = bytes_at(data, *offset, 4)
                     .map(|bytes| {
                         let bytes: [u8; 4] = bytes.try_into().unwrap();
                         if file.is_little_endian() {
@@ -127,7 +169,7 @@ pub(super) fn references(
                     28 if pointer_size == 8 => (32, 0x80008000),
                     29 if pointer_size == 8 => (48, 0x800080008000),
                     _ => {
-                        out.push(unsupported(base + offset, value, pointer_size));
+                        out.push(unsupported(field, value, pointer_size));
                         continue;
                     }
                 };
@@ -136,7 +178,7 @@ pub(super) fn references(
                         5 => ((word as u16 as i64) << 16) + lows[i].unwrap_or(0),
                         6 => word as u16 as i16 as i64,
                         _ => {
-                            out.push(unsupported(base + offset, value, pointer_size));
+                            out.push(unsupported(field, value, pointer_size));
                             continue;
                         }
                     };
@@ -155,36 +197,35 @@ pub(super) fn references(
                     || (kind == 2
                         && offset
                             .checked_sub(1)
-                            .and_then(|p| data.get(p as usize))
-                            .is_some_and(|&b| matches!(b, 0xe8 | 0xe9)))
+                            .and_then(|p| bytes_at(data, p, 1))
+                            .is_some_and(|b| matches!(b[0], 0xe8 | 0xe9)))
                 {
-                    let mut reference = unsupported(base + offset, value, pointer_size);
+                    let mut reference = unsupported(field, value, pointer_size);
                     reference.operand = Operand::CodeReference;
                     out.push(reference);
                     continue;
                 }
                 if reloc.has_implicit_addend() {
-                    out.push(unsupported(base + offset, value, pointer_size));
+                    out.push(unsupported(field, value, pointer_size));
                     continue;
                 }
                 match kind {
                     1 | 10 | 11 => (Operand::Absolute, 0, 0, 0),
                     2 => (Operand::PcRelative, 0, 0, 0),
                     _ => {
-                        out.push(unsupported(base + offset, value, pointer_size));
+                        out.push(unsupported(field, value, pointer_size));
                         continue;
                     }
                 }
             };
-            let slot = *slots.entry(idx).or_insert_with(|| {
-                *cursor = (*cursor + pointer_size as u64 - 1) & !(pointer_size as u64 - 1);
-                let slot = *cursor;
-                *cursor += pointer_size as u64;
-                allocated.push((idx, slot));
-                slot
-            });
+            let Some(slot) =
+                slot_for(slots, &mut allocated, idx, cursor, limit, pointer_size as u64)
+            else {
+                out.push(unsupported(field, value, pointer_size));
+                continue;
+            };
             out.push(NullableRelocation {
-                field: base + offset,
+                field,
                 slot,
                 symbol: value,
                 addend,

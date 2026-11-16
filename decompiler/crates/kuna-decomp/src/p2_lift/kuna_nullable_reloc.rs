@@ -100,6 +100,7 @@ pub(crate) fn materialize(data: &mut Funcdata, address: &Address, step: i32, ops
         .range(address.get_offset()..end)
         .flat_map(|(_, refs)| refs.iter().cloned())
         .collect();
+    let alone = records.len() == 1;
     for record in records {
         if matches!(record.operand, Operand::CodeReference) {
             let mut found = false;
@@ -173,8 +174,14 @@ pub(crate) fn materialize(data: &mut Funcdata, address: &Address, step: i32, ops
                     {
                         Some(record.patched)
                     }
-                    Operand::Absolute if op.code() == OpCode::CPUI_COPY && slot == 0 => {
-                        Some(record.symbol.wrapping_add(record.addend as u64))
+                    Operand::Absolute
+                        if op.code() == OpCode::CPUI_COPY && slot == 0
+                            || alone && vn.get_size() >= 4 =>
+                    {
+                        let value = record.symbol.wrapping_add(record.addend as u64);
+                        (op.code() == OpCode::CPUI_COPY
+                            || value != end && value != address.get_offset())
+                        .then_some(value)
                     }
                     Operand::PcRelative
                         if slot == 0 && op.code() == OpCode::CPUI_COPY
@@ -198,11 +205,19 @@ pub(crate) fn materialize(data: &mut Funcdata, address: &Address, step: i32, ops
                 }
             }
         }
-        if matches.len() != 1 {
+        // An instruction's one immediate can reach several p-code operations
+        // (a compare's subtraction and flags). With no other weak field in the
+        // instruction they are that one operand, read once before all of them.
+        let shared = matches.len() > 1
+            && alone
+            && matches!(record.operand, Operand::Absolute)
+            && matches.iter().all(|m| m.2 == matches[0].2);
+        if matches.len() != 1 && !shared {
             data.warning("Nullable weak relocation operand could not be modeled; address guards may be incomplete", address);
             continue;
         }
         let (before, slot, size) = matches[0];
+        let before = if shared { ops[0] } else { before };
         let space = address.get_space().unwrap().clone();
         let space_id = data.new_varnode_space(&space);
         let location = data.new_constant(space.get_addr_size() as i32, record.slot);
@@ -261,6 +276,12 @@ pub(crate) fn materialize(data: &mut Funcdata, address: &Address, step: i32, ops
             value = emit(data, before, OpCode::CPUI_SUBPIECE, size, &[value, zero]);
         } else if size > record.pointer_size {
             value = emit(data, before, OpCode::CPUI_INT_ZEXT, size, &[value]);
+        }
+        if shared {
+            for &(id, slot, _) in &matches {
+                data.op_set_input(id, value, slot).expect("relocation operand");
+            }
+            continue;
         }
         data.op_set_input(before, value, slot)
             .expect("relocation operand");

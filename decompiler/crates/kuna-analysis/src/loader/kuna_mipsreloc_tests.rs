@@ -725,10 +725,11 @@ fn only_a_global_gp_is_the_linker_gp() {
 }
 
 /// A GCC PIC object's weak function keeps one import slot, inside the GOT, for
-/// both the test of its address and the call through it, named after the
-/// function and holding 0.
+/// both the test of its address and the call through it, holding 0. The
+/// function is named once, at its synthetic extern address, and the slot is
+/// another address of it.
 #[test]
-fn a_weak_functions_got_entry_is_a_named_import_slot() {
+fn a_weak_functions_got_entry_is_an_import_slot_of_its_extern() {
     for stem in ["pic-gcc47-n32", "pic-gcc47-64", "pic-gcc73-n32", "pic-gcc73-64"] {
         let bytes = fixture(&format!("{stem}.o"));
         let file = object::File::parse(&*bytes).unwrap();
@@ -736,9 +737,13 @@ fn a_weak_functions_got_entry_is_a_named_import_slot() {
         assert!(layout.diagnostics.is_empty(), "{stem}: {:?}", layout.diagnostics.report_lines());
         let [(lo, hi)] = layout.import_slots[..] else { panic!("{stem}: {:?}", layout.import_slots) };
         assert_eq!(hi - lo, if file.is_64() { 8 } else { 4 });
-        let named: Vec<_> = layout.funcsyms.iter().filter(|(a, _)| *a == lo).map(|(_, n)| n.as_slice()).collect();
-        assert_eq!(named, [b"optional".as_slice()], "{stem}");
-        assert!(!layout.funcsyms.iter().any(|(a, n)| n == b"optional" && *a != lo), "{stem}: one name");
+        let symbol = file.symbols().find(|s| s.name().ok() == Some("optional")).unwrap();
+        let entry = layout.extern_addr[&symbol.index()];
+        let (extern_lo, extern_hi) = layout.extern_range.unwrap();
+        assert!(extern_lo <= entry && entry < extern_hi, "{stem}");
+        let named: Vec<_> = layout.funcsyms.iter().filter(|(_, n)| n == b"optional").map(|(a, _)| *a).collect();
+        assert_eq!(named, [entry], "{stem}: one name, at the extern address");
+        assert_eq!(layout.function_address_aliases, [(lo, entry)], "{stem}");
         let (base, data) = layout.segments.iter().find(|(b, d)| lo >= *b && hi <= b + d.len() as u64).unwrap();
         assert!(data[(lo - base) as usize..(hi - base) as usize].iter().all(|&b| b == 0), "{stem}");
         let (got_lo, got_hi) = layout.got_range.unwrap();
@@ -804,17 +809,17 @@ fn mixed_weak_references_share_one_function_without_changing_relocation_values()
             assert!(layout.diagnostics.is_empty());
             let names: Vec<_> = layout.funcsyms.iter().filter(|(_, name)| name == b"optional").collect();
             assert_eq!(names.len(), 1);
-            let [(alias, canonical)] = layout.function_address_aliases[..] else { panic!("one direct-address alias") };
-            assert_ne!(alias, canonical);
-            assert_eq!(names[0].0, canonical);
-            assert_eq!(layout.import_slots, [(canonical, canonical + if abi == "64" { 8 } else { 4 })]);
+            let [(slot, entry)] = layout.function_address_aliases[..] else { panic!("one import-slot alias") };
+            assert_ne!(slot, entry);
+            assert_eq!(names[0].0, entry);
+            assert_eq!(layout.import_slots, [(slot, slot + if abi == "64" { 8 } else { 4 })]);
             let file = object::File::parse(&*bytes).unwrap();
             let sym = file.symbols().find(|s| s.name().ok() == Some("optional")).unwrap();
-            assert_eq!(layout.extern_addr[&sym.index()], alias);
+            assert_eq!(layout.extern_addr[&sym.index()], entry);
             let rodata = file.section_by_name(".rodata").unwrap();
             let base = layout.section_vma[&rodata.index()];
             let data = &layout.segments.iter().find(|(addr, _)| *addr == base).unwrap().1;
-            assert_eq!(read_at(data, 0, if abi == "64" { 8 } else { 4 }, endian == "le"), alias);
+            assert_eq!(read_at(data, 0, if abi == "64" { 8 } else { 4 }, endian == "le"), entry);
         }
     }
 }

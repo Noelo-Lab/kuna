@@ -40,7 +40,9 @@
 //! defines the symbol, so it is an import slot that holds 0 and is not folded,
 //! and `if (f) f(x);` keeps its test. A `GOT_PAGE` against such a symbol
 //! reaches the same slot and its `GOT_OFST` is the addend alone, as GNU ld
-//! decays the pair for a symbol that does not bind locally.
+//! decays the pair for a symbol that does not bind locally. The symbol is still
+//! resolved, so it takes the synthetic extern address every undefined symbol
+//! has and the function stays entered there.
 //!
 //! `R_MIPS_JALR` only says which function a `jalr` calls and is not applied.
 //! microMIPS, MIPS16, R6 PC-relative and TLS relocations are unsupported.
@@ -396,7 +398,10 @@ impl Gp {
         };
         let first_import = import_of(&expression[0], first);
         let first_target = match first_import {
-            Some(_) => Target { address: 0, local: false, gp_disp: false },
+            Some(import) => {
+                resolve(import);
+                Target { address: 0, local: false, gp_disp: false }
+            }
             None => resolve(first.target()).ok_or(RelocationFailure::UnresolvedTarget)?,
         };
         let mut value = if first.has_implicit_addend() {
@@ -410,7 +415,10 @@ impl Gp {
             let reloc = &records[op.record].1;
             let import = if index == 0 { first_import } else { import_of(op, reloc) };
             let (mut target, named) = match (index, op.special) {
-                (_, None) if import.is_some() => (Target { address: 0, local: false, gp_disp: false }, import),
+                (_, None) if import.is_some() => {
+                    import.and_then(&mut *resolve);
+                    (Target { address: 0, local: false, gp_disp: false }, import)
+                }
                 (0, _) => (first_target, Some(first.target())),
                 (_, None) => (resolve(reloc.target()).ok_or(RelocationFailure::UnresolvedTarget)?, Some(reloc.target())),
                 (_, Some(ssym)) => (self.special(ssym, place, input)?, None),

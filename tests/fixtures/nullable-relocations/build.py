@@ -48,6 +48,19 @@ for abi in ['n32', '64', 'x86-64', 'x86-64-large']:
         result = subprocess.run(link, check=True, capture_output=True, text=True)
         rows.append({'file': name, 'abi': abi, 'kind': 'mixed', 'source': 'weak.c',
                      'sha256': sha(r / name), 'commands': [command, link], 'link_diagnostics': result.stderr})
+for abi in ['n32', '64', 'x86-64']:
+    mips = abi != 'x86-64'
+    cc = a.mips_cc if mips else a.cc
+    flags = ['-mabi=' + abi, '-march=octeon', '-mno-abicalls', '-fno-pic', '-G0'] if mips else ['-fno-pic', '-fno-pie']
+    name = 'common-' + abi + '.elf'
+    command = [cc, '-O2', '-fno-stack-protector', '-fcommon', '-c', 'common.c', '-o', name, *flags]
+    subprocess.run(command, cwd=r, check=True)
+    rows.append({'file': name, 'abi': abi, 'kind': 'common', 'source': 'common.c',
+                 'sha256': sha(r / name), 'commands': [[Path(cc).name, *command[1:]]]})
+command = [a.cc, '-O2', '-fno-stack-protector', '-fPIC', '-c', 'weak.c', '-o', 'weak-x86-64-pic.elf']
+subprocess.run(command, cwd=r, check=True)
+rows.append({'file': 'weak-x86-64-pic.elf', 'abi': 'x86-64-pic', 'kind': 'diagnosed', 'source': 'weak.c',
+             'sha256': sha(r / 'weak-x86-64-pic.elf'), 'commands': [[Path(a.cc).name, *command[1:]]]})
 for source, name, abi in [('rip.S', 'rip-x86-64.elf', 'x86-64-rip'),
                           ('readonly.S', 'readonly-x86-64.elf', 'x86-64-rodata')]:
     command = [a.cc, '-c', source, '-o', name]

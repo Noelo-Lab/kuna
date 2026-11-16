@@ -5,10 +5,14 @@ Original C and x86-64 assembly, with sources and compiler/tool identities in
 objects. `weak.c` covers null guards, imported calls, argument preservation, and
 defined-symbol controls. `address.c` returns weak addresses with zero/positive/
 negative addends, and an unrelated fixed literal equal to a synthetic extern
-address. `rip.S` covers x86 RIP-relative address fields. `readonly.S` and `readonly-mips.S` check full-width read-only weak pointer fields
-and their addends. `rip.S:unsupported_offset` is a diagnosed operand near miss.
-Mixed N32/N64 objects
-combine PIC and ordinary address spellings of the same symbol.
+address. `rip.S` covers x86 RIP-relative address fields and, in
+`register_offset`, an absolute displacement on a register. `readonly.S` and
+`readonly-mips.S` check full-width read-only weak pointer fields and their
+addends. Mixed N32/N64 objects combine PIC and ordinary address spellings of the
+same symbol. `common.c` puts two COMMON objects and direct calls beside the weak
+function, and compares an argument with its address through one immediate.
+`weak-x86-64-pic.elf` is `weak.c` built `-fPIC`: its `GOTPCREL` operands are not
+modeled and must diagnose.
 
 Build with `build.py --cc ... --mips-cc ... --linker ... --artifacts ...`.
 The CLI regression replays emitted C at O0/O2 with UBSan. Guard inputs are in
