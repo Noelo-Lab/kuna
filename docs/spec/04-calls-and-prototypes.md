@@ -342,7 +342,10 @@ short-circuit `a() && b()` from forming. `auto` treats every other image as
 `off` does. Every little-endian PPC64 binary, and some
 big-endian ones, use ELFv2, where the TOC is saved at `0x18(r1)` and
 `0x28(r1)` is ordinary frame storage, so the store would replace a local the
-function keeps there with the TOC pointer after each call. When it fires,
+function keeps there with the TOC pointer after each call. The big-endian
+ELFv2 model (`elfv2`, selected by the image's ABI version) stores `r2Save` to
+`0x18(r1)` instead; the little-endian default model still uses `0x28(r1)`.
+When it fires,
 `ActionDefaultParams` installs return-boundary effects after each modeled call;
 `ActionConstbase` installs entry-boundary effects before the entry block's first
 operation. A per-function ledger prevents duplicate insertion and is discarded

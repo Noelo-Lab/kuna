@@ -333,6 +333,19 @@ The SPE compiler models join 64-bit integer arguments from aligned pairs of
 no aligned pair remains. Following arguments use the remaining register or
 stack slots, and struct/union arguments are passed indirectly.
 
+(kuna) A PowerPC64 ELF image's compiler spec follows the ABI version in its
+`e_flags` (`decompiler/crates/kuna-analysis/src/loader/kuna_ppc64elfv2target.rs`).
+The ABIs differ in the frame header below the parameter save area: ELFv1's is
+48 bytes (back chain, CR, LR, two reserved doublewords, TOC), ELFv2's is 32
+(back chain, CR, LR, TOC). The first stack argument, the ninth doubleword of
+the save area, is therefore at SP+112 under ELFv1 and at SP+96 under ELFv2. A
+big-endian image that declares ABI version 2 (musl, `-mabi=elfv2`) selects
+`PowerPC:BE:64:default:elfv2` (`ppc_64_be_elfv2.cspec`); version 1 and an
+unspecified version keep the ELFv1 default model. The little-endian default
+model is ELFv2, so a little-endian image that declares ELFv1 is read with
+ELFv2 offsets. Explicit `--target` takes precedence, and the explicit
+`PowerPC:BE:64:A2ALT` language offers only the ELFv1 model.
+
 
 (kuna) **A Go image composes the `:golang` compiler field instead**
 (`decompiler/crates/kuna-analysis/src/loadimage_object.rs (language_id_for)`,
