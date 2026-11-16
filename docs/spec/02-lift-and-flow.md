@@ -1376,7 +1376,9 @@ The flow override changes only the current function's graph: it never registers
 or decodes the constant target as a function, because an unpacker destination
 can still be encrypted in the static image.
 
-The RET-transfer walks and the out-of-band trampoline decoder use a private
+The RET-transfer walks, including the chain extension of an `override flow`
+call, and the bounded out-of-band raw decoder shared by `calltrampoline`,
+`callpopret` and the `funcboundflow` entry and padding checks use a private
 decode-context transaction. Segment or mode commits remain visible within the
 probe, but are rolled back when it ends, even when no transfer is recognized.
 An advisory walk can pass a no-return call or a flow override that the real
