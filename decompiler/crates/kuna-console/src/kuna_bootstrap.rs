@@ -7,7 +7,7 @@ use std::rc::Rc;
 
 use kuna_base::error::KunaResult;
 use kuna_base::xml::Element;
-use kuna_decomp::kuna_loadoptions::LoadOptions;
+use kuna_decomp::kuna_loadoptions::{self, LoadOptions, LoadScope};
 
 use crate::engine::{
     arm_isa_from_env, bootstrap_image, bootstrap_mz_bytes, bootstrap_object,
@@ -42,16 +42,13 @@ impl<L: Languages + ?Sized> LanguageSource for L {}
 ///
 /// - **target**: empty, so the input chooses its language. A raw image has no
 ///   header to choose from and needs one.
-/// - **options**: none, so the load reads the process environment. An object
-///   or image load puts the environment in force on the calling thread for
-///   the load, and
-///   the program it builds keeps reading the environment live; an object
-///   load (or an image load that reaches the object loader) also writes the
-///   image's Go version to
-///   [`GOVERSION_ENV`](kuna_decomp::kuna_goreg::GOVERSION_ENV), or clears it.
-///   The other inputs keep whatever options the calling thread already has in
-///   force, so they can differ from thread to thread. With
-///   [`Bootstrap::options`], nothing on the load reads or writes the
+/// - **options**: none, so the load reads the process environment. Every
+///   input puts the environment in force on the calling thread for the load,
+///   even when another program's options are in force there, and the program
+///   it builds keeps reading the environment live; an object load (or an image
+///   load that reaches the object loader) also writes the image's Go version
+///   to [`GOVERSION_ENV`](kuna_decomp::kuna_goreg::GOVERSION_ENV), or clears
+///   it. With [`Bootstrap::options`], nothing on the load reads or writes the
 ///   environment, and the program keeps the options for its analysis commit
 ///   and decompiles.
 /// - **arm_isa**: unset. Without options, an unset ISA comes from
@@ -155,7 +152,7 @@ impl<'a, L: LanguageSource + ?Sized> Bootstrap<'a, L> {
     /// [`bootstrap_from_file`](crate::engine::bootstrap_from_file) does.
     pub fn file(&self, path: &str) -> KunaResult<ConsoleProgram> {
         let input = {
-            let _load = self.options.map(LoadOptions::enter);
+            let _load = self.enter();
             classify_file(path)?
         };
         match input {
@@ -171,14 +168,14 @@ impl<'a, L: LanguageSource + ?Sized> Bootstrap<'a, L> {
     /// does. Needs a target.
     pub fn raw(&self, path: &str, base: u64, entries: &[u64]) -> KunaResult<ConsoleProgram> {
         let isa = self.resolved_isa()?;
-        let _load = self.options.map(LoadOptions::enter);
+        let _load = self.enter();
         bootstrap_raw_image(path, self.target, base, entries, isa, self.languages, None)
     }
 
     /// Load a UEFI TE image, as [`bootstrap_from_te`](crate::engine::bootstrap_from_te) does.
     pub fn te(&self, path: &str) -> KunaResult<ConsoleProgram> {
         let isa = self.resolved_isa()?;
-        let _load = self.options.map(LoadOptions::enter);
+        let _load = self.enter();
         bootstrap_te(path, self.target, self.languages, isa)
     }
 
@@ -186,7 +183,7 @@ impl<'a, L: LanguageSource + ?Sized> Bootstrap<'a, L> {
     /// [`bootstrap_from_te_bytes`](crate::engine::bootstrap_from_te_bytes) does.
     pub fn te_bytes(&self, path: &str, bytes: &[u8]) -> KunaResult<ConsoleProgram> {
         let isa = self.resolved_isa()?;
-        let _load = self.options.map(LoadOptions::enter);
+        let _load = self.enter();
         bootstrap_te_bytes(path, bytes, self.target, self.languages, isa)
     }
 
@@ -194,14 +191,14 @@ impl<'a, L: LanguageSource + ?Sized> Bootstrap<'a, L> {
     /// [`bootstrap_from_mz_bytes`](crate::engine::bootstrap_from_mz_bytes) does.
     pub fn mz_bytes(&self, path: &str, bytes: &[u8]) -> KunaResult<ConsoleProgram> {
         let isa = self.resolved_isa()?;
-        let _load = self.options.map(LoadOptions::enter);
+        let _load = self.enter();
         bootstrap_mz_bytes(path, bytes, self.target, self.languages, isa)
     }
 
     /// Load a `<binaryimage>` element as language `arch_id`, as
     /// [`bootstrap_program`](crate::engine::bootstrap_program) does.
     pub fn xml_image(&self, binaryimage: Rc<Element>, arch_id: &str) -> KunaResult<ConsoleProgram> {
-        let _load = self.options.map(LoadOptions::enter);
+        let _load = self.enter();
         bootstrap_xml_image(binaryimage, arch_id, self.languages)
     }
 
@@ -211,6 +208,13 @@ impl<'a, L: LanguageSource + ?Sized> Bootstrap<'a, L> {
     pub fn xml_root(&self, root: &Rc<Element>) -> KunaResult<ConsoleProgram> {
         let (binaryimage, arch_id) = xml_root_image(root)?;
         self.xml_image(binaryimage, &arch_id)
+    }
+
+    fn enter(&self) -> LoadScope {
+        match self.options {
+            Some(options) => options.enter(),
+            None => kuna_loadoptions::enter_environment(),
+        }
     }
 
     fn resolved_isa(&self) -> KunaResult<Option<ArmIsa>> {

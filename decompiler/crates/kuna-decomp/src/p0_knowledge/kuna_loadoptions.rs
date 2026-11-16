@@ -1,8 +1,8 @@
 //! (kuna) Load-time options: the settings the loader, the analysis tier and the
 //! architecture build read before any `option` command can run.
 //!
-//! A caller fills a [`LoadOptions`] and passes it to a bootstrap that
-//! takes one (`kuna_console::engine::bootstrap_from_object_with_options`). The
+//! A caller fills a [`LoadOptions`] and passes it to a bootstrap
+//! (`kuna_console::engine::Bootstrap::options`). The
 //! bootstrap enters a [`LoadScope`] on the loading thread, the gates read the
 //! options through [`scoped`], and the new `Architecture` keeps a copy, so the
 //! analysis commit and every later decompile of that program read the same
@@ -15,6 +15,7 @@
 //! gate read outside any scope falls back to its environment variable.
 
 use std::cell::{Cell, RefCell};
+use std::marker::PhantomData;
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -153,8 +154,8 @@ impl LoadOptions {
     /// The options in force on this thread: the innermost scope's, else the
     /// environment's.
     pub fn in_force() -> Rc<LoadOptions> {
-        CURRENT
-            .with(|current| current.borrow().clone())
+        SCOPES
+            .with(|scopes| scopes.borrow().last().and_then(|(_, options)| options.clone()))
             .unwrap_or_else(|| {
                 FALLBACKS.with(|count| count.set(count.get() + 1));
                 Rc::new(LoadOptions::from_env())
@@ -204,14 +205,27 @@ impl LoadOptions {
 }
 
 thread_local! {
-    static CURRENT: RefCell<Option<Rc<LoadOptions>>> = const { RefCell::new(None) };
+    /// The live scopes on this thread, oldest first; the last one is in force.
+    static SCOPES: RefCell<Vec<(u64, Option<Rc<LoadOptions>>)>> = const { RefCell::new(Vec::new()) };
+    static NEXT_SCOPE: Cell<u64> = const { Cell::new(0) };
     static FALLBACKS: Cell<u64> = const { Cell::new(0) };
+}
+
+fn push(options: Option<Rc<LoadOptions>>) -> LoadScope {
+    let id = NEXT_SCOPE.with(|next| next.replace(next.get().wrapping_add(1)));
+    SCOPES.with(|scopes| scopes.borrow_mut().push((id, options)));
+    LoadScope { id, _thread: PhantomData }
+}
+
+/// The options of the innermost live scope, or `None` when there is none or it
+/// defers to the environment.
+fn current<T>(read: impl FnOnce(Option<&LoadOptions>) -> T) -> T {
+    SCOPES.with(|scopes| read(scopes.borrow().last().and_then(|(_, options)| options.as_deref())))
 }
 
 /// Make `options` the options in force on this thread until the scope drops.
 pub fn enter(options: Rc<LoadOptions>) -> LoadScope {
-    let previous = CURRENT.with(|current| current.replace(Some(options)));
-    LoadScope { previous }
+    push(Some(options))
 }
 
 /// Hand this thread back to the environment until the scope drops: every gate
@@ -219,20 +233,19 @@ pub fn enter(options: Rc<LoadOptions>) -> LoadScope {
 /// scope keeps reading the environment through
 /// [`crate::infra::architecture::Architecture::load_scope`].
 pub fn enter_environment() -> LoadScope {
-    let previous = CURRENT.with(|current| current.replace(None));
-    LoadScope { previous }
+    push(None)
 }
 
 /// Whether some options are in force on this thread. Unlike [`scoped`], asking
 /// does not count as an environment read.
 pub(crate) fn options_in_force() -> bool {
-    CURRENT.with(|current| current.borrow().is_some())
+    current(|options| options.is_some())
 }
 
 /// `read` applied to the options in force on this thread, or `None` outside
 /// every scope (the caller then reads its environment variable).
 pub fn scoped<T>(read: impl FnOnce(&LoadOptions) -> T) -> Option<T> {
-    let read = CURRENT.with(|current| current.borrow().as_deref().map(read));
+    let read = current(|options| options.map(read));
     if read.is_none() {
         FALLBACKS.with(|count| count.set(count.get() + 1));
     }
@@ -240,23 +253,31 @@ pub fn scoped<T>(read: impl FnOnce(&LoadOptions) -> T) -> Option<T> {
 }
 
 /// How many reads of the options on this thread found no scope in force and
-/// fell back to the environment. A caller that loads with explicit options can
-/// check that its calls leave this unchanged.
+/// fell back to the environment. Test instrumentation: a test that loads with
+/// explicit options checks that its calls leave this unchanged.
+#[doc(hidden)]
 pub fn environment_fallbacks() -> u64 {
     FALLBACKS.with(Cell::get)
 }
 
-/// Restores the enclosing options when dropped. Scopes nest, and each belongs
-/// to the thread that entered it.
+/// Keeps its options in force on the thread that entered it until dropped.
+/// Scopes nest: the most recently entered live scope is in force. Dropping a
+/// scope out of order removes only its own options, so the scopes still alive
+/// keep theirs.
 #[must_use = "the options leave force when the scope drops"]
 pub struct LoadScope {
-    previous: Option<Rc<LoadOptions>>,
+    id: u64,
+    _thread: PhantomData<Rc<()>>,
 }
 
 impl Drop for LoadScope {
     fn drop(&mut self) {
-        let previous = self.previous.take();
-        CURRENT.with(|current| *current.borrow_mut() = previous);
+        let _ = SCOPES.try_with(|scopes| {
+            let mut scopes = scopes.borrow_mut();
+            if let Some(at) = scopes.iter().rposition(|(id, _)| *id == self.id) {
+                scopes.remove(at);
+            }
+        });
     }
 }
 
@@ -430,6 +451,23 @@ mod tests {
         });
         assert!(unwound.is_err());
         assert_eq!(scoped(|o| o.dyldcrossrefs), Some(false));
+    }
+
+    #[test]
+    fn a_scope_dropped_out_of_order_leaves_the_live_ones_in_force() {
+        let first = LoadOptions { goabi: false, ..LoadOptions::default() }.enter();
+        let second = LoadOptions { ppcapu: true, ..LoadOptions::default() }.enter();
+        let environment = enter_environment();
+        drop(second);
+        assert_eq!(scoped(|o| o.goabi), None, "the environment scope is still innermost");
+        drop(first);
+        assert_eq!(scoped(|o| o.goabi), None);
+        let third = LoadOptions { ppcapu: true, ..LoadOptions::default() }.enter();
+        drop(environment);
+        assert_eq!(scoped(|o| o.ppcapu), Some(true));
+        drop(third);
+        assert_eq!(scoped(|o| o.goabi), None, "no scope outlives its guard");
+        assert!(!options_in_force());
     }
 
     #[test]

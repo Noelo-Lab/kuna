@@ -197,3 +197,96 @@ fn one_builder_loads_on_several_threads() {
         }
     });
 }
+
+/// One thread loads A, then B with other options, then analyses and
+/// decompiles A: A's own options, not B's, are back in force for all of it.
+#[test]
+fn a_program_reenters_its_own_options_after_another_load() {
+    use kuna_console::engine::ArmIsa;
+    use kuna_decomp::kuna_kernelcache::KernelcacheChoice;
+    use kuna_decomp::kuna_loadoptions::scoped;
+    use kuna_decomp::kuna_symbolnamechars::NameChars;
+
+    let specs = specs();
+    let db = language_database(&specs).unwrap();
+    let thumb_then_a32 = [0x07, 0x20, 0x70, 0x47, 0x1e, 0xff, 0x2f, 0xe1];
+    let te = Scratch::new("bootstrap-reenter-te", "te", &TeImage::arm(&thumb_then_a32).build());
+    let fauxware = fixture("fauxware");
+    let a_options = LoadOptions {
+        kernelcache: KernelcacheChoice::Off,
+        symbolnamechars: NameChars::Ident,
+        dyldimage: Some("libA.dylib".into()),
+        macho_slice: Some("arm64".into()),
+        pdb_path: Some("/a.pdb".into()),
+        objcsdk: Some("/sdk-a".into()),
+        go_version: Some((1, 22)),
+        ..LoadOptions::default()
+    };
+    let b_options = LoadOptions {
+        go_version: Some((1, 25)),
+        dyldimage: Some("libB.dylib".into()),
+        macho_slice: Some("x86_64".into()),
+        pdb_path: Some("/b.pdb".into()),
+        ..LoadOptions::default()
+    };
+    let a_load = Bootstrap::new(&db).options(&a_options);
+    let b_load = Bootstrap::new(&db).options(&b_options);
+    let alone = fingerprint(a_load.object(&fauxware));
+    let thumb_alone = fingerprint(a_load.arm_isa(Some(ArmIsa::Thumb)).te(te.path()));
+
+    let a = a_load.object(&fauxware).unwrap();
+    let thumb = a_load.arm_isa(Some(ArmIsa::Thumb)).te(te.path()).unwrap();
+    let _b = b_load.object(&fauxware).unwrap();
+    let _b_arm = b_load.arm_isa(Some(ArmIsa::Arm)).te(te.path()).unwrap();
+
+    {
+        let _a = a.arch().load_scope();
+        assert_eq!(KernelcacheChoice::in_force(), KernelcacheChoice::Off);
+        assert_eq!(
+            kuna_decomp::kuna_symbolnamechars::symbolnamechars_mode(),
+            NameChars::Ident
+        );
+        assert_eq!(
+            kuna_decomp::kuna_dyldcache::selected_image().as_deref(),
+            Some("libA.dylib")
+        );
+        assert_eq!(scoped(|o| o.macho_slice.clone()), Some(Some("arm64".into())));
+        assert_eq!(
+            kuna_analysis::pdb::locate::explicit_pdb_path(),
+            Some(PathBuf::from("/a.pdb"))
+        );
+        assert_eq!(kuna_decomp::kuna_objcsdk::sdk_path(), Some(PathBuf::from("/sdk-a")));
+    }
+    assert_eq!(a.arch().load_options().go_version, Some((1, 22)));
+    let before = environment_fallbacks();
+    assert_eq!(fingerprint(Ok(a)), alone);
+    assert_eq!(fingerprint(Ok(thumb)), thumb_alone);
+    assert!(thumb_alone.contains("return 7"), "{thumb_alone}");
+    assert_eq!(environment_fallbacks(), before, "A's analysis read the environment");
+}
+
+/// A load that fails, before or after its options are in force, leaves the
+/// thread with no options in force.
+#[test]
+fn a_failed_load_leaves_no_options_in_force() {
+    use kuna_decomp::kuna_loadoptions::scoped;
+
+    let specs = specs();
+    let db = language_database(&specs).unwrap();
+    let options = LoadOptions::default();
+    let load = Bootstrap::new(&db).options(&options);
+    let junk = Scratch::new("bootstrap-failed-junk", "bin", &[0u8; 64]);
+    let raw = Scratch::new("bootstrap-failed-raw", "bin", &X86_ADD);
+    let failures: Vec<(&str, KunaResult<ConsoleProgram>)> = vec![
+        ("missing object", load.object("/nonexistent/kuna/image")),
+        ("unknown format", load.object(junk.path())),
+        ("missing file", load.file("/nonexistent/kuna/image")),
+        ("raw without a language", load.target("nosuch:LE:64:default").raw(raw.path(), 0x1000, &[0x1000])),
+        ("raw without a target", load.raw(raw.path(), 0x1000, &[0x1000])),
+        ("te of junk", load.te(junk.path())),
+    ];
+    for (input, result) in failures {
+        assert!(result.is_err(), "{input} loaded");
+        assert_eq!(scoped(|_| ()), None, "{input} left options in force");
+    }
+}

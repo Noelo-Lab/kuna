@@ -9,8 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Barrier, Mutex};
 
 use kuna_console::engine::{
-    bootstrap_from_object, bootstrap_from_object_with_options, ArmIsa, Bootstrap,
-    ConsoleProgram, ARM_ISA_ENV,
+    bootstrap_from_object, ArmIsa, Bootstrap, ConsoleProgram, ARM_ISA_ENV,
 };
 use kuna_decomp::kuna_loadoptions::LoadOptions;
 use kuna_decomp::kuna_sourcelang::SourceLang;
@@ -66,9 +65,10 @@ fn go_object(version: &str) -> Vec<u8> {
 }
 
 fn load(path: &Path, options: &LoadOptions) -> ConsoleProgram {
-    let mut prog =
-        bootstrap_from_object_with_options(path.to_str().unwrap(), "", &[specs()], None, options)
-            .expect("bootstrap with built processor specs");
+    let mut prog = Bootstrap::new(&[specs()])
+        .options(options)
+        .object(path.to_str().unwrap())
+        .expect("bootstrap with built processor specs");
     prog.commit_pending_analysis()
         .expect("analysis commit succeeds");
     prog
@@ -228,8 +228,7 @@ fn explicit_options_neither_read_nor_write_the_environment() {
         ("golang".into(), SourceLang::Go, Some((1, 25)))
     );
     let explicit = load_pass_facts(|path| {
-        bootstrap_from_object_with_options(path, "", &[specs()], None, &LoadOptions::default())
-            .unwrap()
+        Bootstrap::new(&[specs()]).options(&LoadOptions::default()).object(path).unwrap()
     });
     assert_eq!(explicit, (true, true), "an explicit load runs the passes the environment skips");
     assert_eq!(
@@ -430,4 +429,121 @@ fn a_bootstrap_without_options_reads_the_environment() {
     prog.commit_pending_analysis().unwrap();
     assert_eq!(compiler(&prog), "golang");
     std::fs::remove_file(go).unwrap();
+}
+
+/// A load without options reads the environment even while another
+/// program's options are in force on the thread: every input builds a program
+/// that keeps reading the environment, never the held program's options.
+#[test]
+fn a_load_without_options_ignores_options_held_on_the_thread() {
+    use kuna_analysis::loadimage_te::synthetic::TeImage;
+    use kuna_base::xml::DocumentStorage;
+    use kuna_console::kuna_console::kuna_live_value;
+    use kuna_decomp::kuna_kernelcache::KernelcacheChoice;
+
+    let _env = ENVIRONMENT.lock().unwrap_or_else(|e| e.into_inner());
+    std::env::remove_var("KUNA_KERNELCACHE");
+    std::env::remove_var(ARM_ISA_ENV);
+    let held = load(
+        &fauxware(),
+        &LoadOptions {
+            kernelcache: KernelcacheChoice::Off,
+            ..LoadOptions::default()
+        },
+    );
+    let te = common::scratch_file("loadoptions-held-te", "te");
+    let te_bytes = TeImage::thumb(&[0x07, 0x20, 0x70, 0x47]).build();
+    std::fs::write(&te, &te_bytes).unwrap();
+    let raw = common::scratch_file("loadoptions-held-raw", "bin");
+    std::fs::write(&raw, [0x48, 0x8d, 0x04, 0x1f, 0xc3]).unwrap();
+    let xml = DocumentStorage::new()
+        .parse_document(
+            br#"<binaryimage arch="x86:LE:64:default"><bytechunk space="ram" offset="0x1000">488d041fc3</bytechunk></binaryimage>"#,
+        )
+        .unwrap()
+        .get_root()
+        .clone();
+    let specs = [specs()];
+    let roots = Bootstrap::new(&specs);
+    let (te_path, raw_path) = (te.to_str().unwrap(), raw.to_str().unwrap());
+
+    let _held = held.arch().load_scope();
+    let loads = [
+        ("te", roots.te(te_path)),
+        ("te bytes", roots.te_bytes(te_path, &te_bytes)),
+        ("image", roots.image(te_path)),
+        ("file", roots.file(te_path)),
+        ("raw", roots.target("x86:LE:64:default").raw(raw_path, 0x1000, &[0x1000])),
+        ("xml root", roots.xml_root(&xml)),
+    ];
+    for (input, prog) in loads {
+        let prog = prog.unwrap_or_else(|err| panic!("{input}: {err}"));
+        assert_eq!(
+            prog.arch().load_options().kernelcache,
+            KernelcacheChoice::default(),
+            "{input} took the held program's options"
+        );
+        std::env::set_var("KUNA_KERNELCACHE", "off");
+        let live = kuna_live_value(prog.arch(), "kernelcache").unwrap().into_owned();
+        std::env::remove_var("KUNA_KERNELCACHE");
+        assert_eq!(live, "off", "{input} reads the environment live");
+    }
+    std::fs::remove_file(te).unwrap();
+    std::fs::remove_file(raw).unwrap();
+}
+
+/// The console loads a second image only after `clear architecture`, which
+/// drops the first program, so `load file` reads the environment.
+#[test]
+fn the_console_loads_the_next_image_from_the_environment() {
+    use kuna_analysis::loadimage_te::synthetic::TeImage;
+    use kuna_console::ifacedecomp::{
+        execute, register_console_commands, register_decomp_commands, IfaceDecompData,
+        DECOMPILE_MODULE,
+    };
+    use kuna_console::ifaceterm::ConsoleCommands;
+    use kuna_decomp::kuna_kernelcache::KernelcacheChoice;
+
+    let _env = ENVIRONMENT.lock().unwrap_or_else(|e| e.into_inner());
+    std::env::remove_var("KUNA_KERNELCACHE");
+    std::env::remove_var(ARM_ISA_ENV);
+    let te = common::scratch_file("loadoptions-console-te", "te");
+    std::fs::write(&te, TeImage::thumb(&[0x07, 0x20, 0x70, 0x47]).build()).unwrap();
+    let held = load(
+        &fauxware(),
+        &LoadOptions {
+            kernelcache: KernelcacheChoice::Off,
+            ..LoadOptions::default()
+        },
+    );
+    let cmds: Vec<String> = vec![
+        format!("load file {}", te.display()),
+        "clear architecture".into(),
+        format!("load file {}", te.display()),
+    ];
+    let count = cmds.len();
+    let mut status = ConsoleCommands::into_status(cmds);
+    register_decomp_commands(&mut status);
+    register_console_commands(&mut status);
+    let dcp = |status: &mut kuna_console::interface::IfaceStatus| {
+        status
+            .get_data_mut(DECOMPILE_MODULE)
+            .unwrap()
+            .as_any_mut()
+            .downcast_mut::<IfaceDecompData>()
+            .unwrap()
+            .conf
+            .take()
+    };
+    let data = status.get_data_mut(DECOMPILE_MODULE).unwrap();
+    let decomp = data.as_any_mut().downcast_mut::<IfaceDecompData>().unwrap();
+    decomp.spec_roots = vec![specs()];
+    decomp.conf = Some(held);
+    for _ in 0..count {
+        execute(&mut status);
+    }
+    assert!(status.optr.contains("Load image already present"), "{}", status.optr);
+    let next = dcp(&mut status).expect("the second load file built a program");
+    assert_eq!(next.arch().load_options().kernelcache, KernelcacheChoice::default());
+    std::fs::remove_file(te).unwrap();
 }
