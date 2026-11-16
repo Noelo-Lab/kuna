@@ -28,7 +28,8 @@
 //! then stated on the call, and an earlier call whose pushes the block reuses
 //! (MSVC builds it over a deferred `__cdecl` cleanup) is stated to pop only its
 //! return address, so the stack pointer solver places the block where the copy
-//! put it. A record copied into a
+//! put it. When that leaves every call with a stated or proven pop, the proven
+//! ones are stated too. A record copied into a
 //! bottom-of-frame local before a register-argument or virtual call (Delphi's
 //! `lea edi,[esp]; rep movsd`) stays a loop; expanded, its slots would read as
 //! that call's stack arguments. When such a move reads the frame, the moves
@@ -441,6 +442,25 @@ fn returns_pop(fd: &Funcdata, rep: &RepMove, moves: &[RepMove]) -> Option<(kuna_
     }
     let pop = fc.callee_return_pop()?;
     (u64::from(pop) >= rep.bytes).then(|| (i, pop as i32 + 4))
+}
+
+/// Once the pops stated for argument blocks leave every call with a pop its
+/// prototype states or its returns prove, state the proven ones too: they were
+/// held back only while some call's pop was a guess, and the solver's guess
+/// for an internal callee (it pops nothing) would move every slot after it.
+fn settle_proven_pops(fd: &mut Funcdata) {
+    if !crate::p4_calls::kuna_calleepurge::every_pop_settled(fd) {
+        return;
+    }
+    for i in 0..fd.num_calls() {
+        let fc = fd.get_call_specs(i);
+        if fc.get_extra_pop() != crate::fspec::EXTRAPOP_UNKNOWN {
+            continue;
+        }
+        if let Some(ep) = fc.callee_purge() {
+            fd.get_call_specs_mut(i).proto_mut().set_extra_pop(ep);
+        }
+    }
 }
 
 /// The earlier call whose pushes the argument block of `rep` reuses (MSVC
@@ -858,10 +878,11 @@ pub(crate) fn expand_all(fd: &mut Funcdata) -> i32 {
         }
         expanded += 1;
     }
-    if expanded as usize == moves.len() {
+    if expanded as usize == moves.len() && !stated.is_empty() {
         for (i, pop) in stated {
             fd.get_call_specs_mut(i).proto_mut().set_extra_pop(pop);
         }
+        settle_proven_pops(fd);
     }
     if expanded > 0 {
         fd.structure_reset();

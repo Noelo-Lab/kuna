@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4346,
-    4346
+    4347,
+    4347
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1921,6 +1921,7 @@
     "data:REPFRAMECOPY #18: a ret the walk reaches past a call that does not return is not the callee's pop",
     "data:REPFRAMECOPY #19: a pop proven by a no-return name holds only while noreturn_known is on",
     "data:REPFRAMECOPY #1: fill takes the copied struct and b",
+    "data:REPFRAMECOPY #20: once a stated pop settles every call, an earlier call's proven pop is stated too",
     "data:REPFRAMECOPY #2: paint keeps its three arguments",
     "data:REPFRAMECOPY #3: no pushed return address is printed as a value",
     "data:REPFRAMECOPY #4: src's eight dwords and b reach fill8 through a frame pointer",

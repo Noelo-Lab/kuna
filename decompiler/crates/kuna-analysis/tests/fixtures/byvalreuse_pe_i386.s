@@ -21,6 +21,9 @@
 #                     in exit: its pop is proven only while exit is known not
 #                     to return (`noreturn_known`), and the walk is taken again
 #                     when that option changes.
+#   settle:           an earlier call to the __stdcall note (ret 4, proven)
+#                     before the block for take: once take's pop is stated,
+#                     every call has one, so note's proven pop is stated too.
 #
 # Build (clang 17 + lld-link 17, e.g. in the swift:6.0-jammy Docker image;
 # clang 14 does not reproduce the bytes):
@@ -247,6 +250,30 @@ _qtake:                         # int __stdcall qtake(Rec t) { if (!*sink(&t)) e
 1:
     push 1
     call _exit
+
+    .p2align 4, 0xcc
+_settle:                        # int *settle(Rec *r) { note(r); take(*r); return r; }
+    push esi
+    push edi
+    mov eax, dword ptr [esp + 0xc]
+    push eax
+    call _note
+    sub esp, 0x20
+    mov edi, esp
+    mov ecx, 8
+    mov esi, dword ptr [esp + 0x2c]
+    rep movsd
+    call _take
+    mov eax, dword ptr [esp + 0xc]
+    pop edi
+    pop esi
+    ret
+
+    .p2align 4, 0xcc
+_note:                          # void __stdcall note(Rec *r), ret 4
+    mov eax, dword ptr [esp + 4]
+    inc dword ptr [eax]
+    ret 4
 
     .data
 _obj:

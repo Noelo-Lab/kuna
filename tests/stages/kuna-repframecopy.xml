@@ -50,7 +50,11 @@
     `ret 0x20`, and keeps reading its second parameter (#18); quit (0x401240)
     passes a block to a __stdcall callee (ret 0x20) whose other path ends in
     exit, which takes it while exit is known not to return, and the walk is
-    taken again once `noreturn_known` is turned off: it no longer does (#19).
+    taken again once `noreturn_known` is turned off: it no longer does (#19);
+    settle (0x401280) calls the __stdcall note (ret 4, which the walk proves)
+    before the block for take: once take's pop is stated every call has one,
+    so note's is stated too and the block is read from settle's parameter
+    (#20).
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -118,6 +122,9 @@ c3
   <com>load addr 0x4011d0</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>load addr 0x401280</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>map function r0x401230 exit</com>
   <com>load addr 0x401240</com>
   <com>decompile</com>
@@ -147,4 +154,5 @@ c3
 <stringmatch name="REPFRAMECOPY #17: the call between a block's copy and its call takes only its own push" min="1" max="1">sub_401190\(0\)\)</stringmatch>
 <stringmatch name="REPFRAMECOPY #18: a ret the walk reaches past a call that does not return is not the callee's pop" min="1" max="1">sub_401200\([^)]*\) \+ a1;</stringmatch>
 <stringmatch name="REPFRAMECOPY #19: a pop proven by a no-return name holds only while noreturn_known is on" min="1" max="1">sub_401260\(\*a0,a0\[1\],a0\[2\],a0\[3\],a0\[4\],a0\[5\],a0\[6\],a0\[7\]\);</stringmatch>
+<stringmatch name="REPFRAMECOPY #20: once a stated pop settles every call, an earlier call's proven pop is stated too" min="1" max="1">sub_401040\(\*a0,a0\[1\],a0\[2\],a0\[3\],a0\[4\],a0\[5\],a0\[6\],a0\[7\]\);</stringmatch>
 </decompilertest>

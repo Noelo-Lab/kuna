@@ -1322,7 +1322,15 @@ call's INDIRECT) pops only its return address, when its prototype states no
 pop and any purge its returns prove agrees. The solver
 applies proven purges only when every call in the function has one, and
 otherwise guesses that such a call pops its pushes, which places the whole
-block, and the copy's reads, 12 bytes too high. Under a model whose pop is
+block, and the copy's reads, 12 bytes too high. When the stated pops leave
+every call in the function with a pop its prototype states or its returns
+prove, the proven pops of the other calls are stated too: they were held
+back only while some call's pop was a guess, and left to the solver an
+earlier `__thiscall` call that pops its one argument (`ret 4`) can be guessed
+to pop nothing, which moves every slot after it, so the block is read from the
+wrong slot and a local whose address the block's call takes (an out
+parameter MSVC keeps in a dead parameter slot) is named wrongly and folds to
+the constant stored before the call. Under a model whose pop is
 stated (gcc's cdecl), a release of the whole block by the caller before the
 next call or branch counts too, when nothing reads the block between the copy
 and that release. A record copied into a local at the bottom of the frame
