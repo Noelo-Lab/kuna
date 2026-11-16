@@ -6819,7 +6819,10 @@ pointers name descriptors too, and each is replaced by the code word of the desc
 validated at that address, so the function and its `_DT_INIT`, `_DT_FINI`,
 `_INIT_<i>` or `_FINI_<i>` name land on code and the function's TOC seeds `r2`. A
 pointer that does not validate stays as it is and the executable-section check drops
-it.
+it. On PowerPC64 an array element is the value its dynamic relocation leaves, an
+`R_PPC64_RELATIVE` addend at kuna's zero load bias, and not the word stored in the
+file, which a linker may leave zero or stale; an element that any other relocation
+writes is left out.
 
 **Address tables** (`addrtable`,
 `decompiler/crates/kuna-analysis/src/analyzers/addrtable/mod.rs (AddrTablePass)`)

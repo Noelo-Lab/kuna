@@ -55,15 +55,8 @@ impl Descriptors {
             if !scan && record.len() < 24 { continue; }
             let word = |start| {
                 let b: [u8;8] = record.get(start..start+8)?.try_into().unwrap();
-                let mut value = if file.is_little_endian() { u64::from_le_bytes(b) } else { u64::from_be_bytes(b) };
-                let begin = address.checked_add(start as u64)?;
-                let end = begin.checked_add(8)?;
-                for (&slot, &(width, resolved)) in relocations.range(begin.saturating_sub(23)..end) {
-                    if slot.checked_add(width)? <= begin { continue; }
-                    if slot != begin || width != 8 { return None; }
-                    value = resolved?;
-                }
-                Some(value)
+                let value = if file.is_little_endian() { u64::from_le_bytes(b) } else { u64::from_be_bytes(b) };
+                relocated_word(&relocations, address.checked_add(start as u64)?, value)
             };
             let Some(entry) = word(0) else {
                 if scan { return Self::default(); }
@@ -101,6 +94,24 @@ impl Descriptors {
         }
         self.0.sort_by_key(|d| d.address);
     }
+}
+
+/// The 8-byte words at `begin` as the dynamic linker leaves them at kuna's zero load bias:
+/// `None` where a relocation other than one exact RELA relative writes them.
+pub(crate) fn relocated_words(file: &object::File<'_>, begin: u64, stored: &[u64]) -> Vec<Option<u64>> {
+    let end = begin.saturating_add(8 * stored.len() as u64);
+    let relocations = descriptor_relocations(file, begin, end);
+    stored.iter().enumerate().map(|(i, &value)| relocated_word(&relocations, begin.checked_add(8 * i as u64)?, value)).collect()
+}
+
+fn relocated_word(relocations: &BTreeMap<u64, (u64, Option<u64>)>, begin: u64, mut value: u64) -> Option<u64> {
+    let end = begin.checked_add(8)?;
+    for (&slot, &(width, resolved)) in relocations.range(begin.saturating_sub(23)..end) {
+        if slot.checked_add(width)? <= begin { continue; }
+        if slot != begin || width != 8 { return None; }
+        value = resolved?;
+    }
+    Some(value)
 }
 
 /// Resolve RELA relative words at kuna's initial zero load bias; uncertain writes invalidate affected words.

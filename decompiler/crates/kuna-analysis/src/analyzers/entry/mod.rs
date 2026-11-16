@@ -946,6 +946,8 @@ fn dynamic_pointers_named(file: &object::File) -> Vec<(u64, Option<String>)> {
 /// where `i` is the element's index in the array — note Ghidra increments `i` over
 /// ALL array slots, but a zero pointer is `continue`d, so the named survivors carry
 /// their original array index, which we mirror).
+/// On PowerPC64 an element is the value its dynamic relocation leaves at zero load
+/// bias, and an element that any other relocation writes is left out.
 fn read_pointer_table(
     file: &object::File,
     base: u64,
@@ -960,13 +962,21 @@ fn read_pointer_table(
     };
     let start = (base - sec_addr) as usize;
     let n = (sz as usize) / ptr;
+    let mut stored = Vec::new();
     for i in 0..n {
         let o = start + i * ptr;
         if o + ptr > data.len() {
             break;
         }
-        let p = if ptr == 8 { read_u64(&data[o..], le) } else { read_u32(&data[o..], le) as u64 };
-        if p != 0 {
+        stored.push(if ptr == 8 { read_u64(&data[o..], le) } else { read_u32(&data[o..], le) as u64 });
+    }
+    let values = if file.architecture() == object::Architecture::PowerPc64 && ptr == 8 {
+        crate::loader::elfv1::relocated_words(file, base, &stored)
+    } else {
+        stored.into_iter().map(Some).collect()
+    };
+    for (i, p) in values.into_iter().enumerate() {
+        if let Some(p) = p.filter(|&p| p != 0) {
             // Ghidra names the element by its array index `i` (`baseName + i`).
             out.push((p, Some(format!("{base_name}{i}"))));
         }
@@ -2820,6 +2830,54 @@ mod tests {
             let image = crate::loadimage_object::ObjectLoadImage::from_bytes_silent(name, &bytes).unwrap();
             let tocs: Vec<_> = image.elfv1_descriptors().entry_tocs().into_iter().collect();
             assert_eq!(tocs, entries.iter().map(|&e| (e, 0x9f00)).collect::<Vec<_>>(), "{name}");
+        }
+    }
+
+    /// The array slots carry RELA relative relocations, so the stored words decide nothing,
+    /// and a slot that another relocation writes is left out.
+    #[test]
+    fn elfv1_array_slots_follow_their_relocations_not_their_stored_words() {
+        for name in ["elfv1_initfini_be", "elfv1_initfini_le"] {
+            let original = fixture(name);
+            let file = object::File::parse(original.as_slice()).expect("parse elfv1_initfini");
+            let le = file.is_little_endian();
+            let get = |b: &[u8], at: usize| {
+                let w: [u8; 8] = b[at..at + 8].try_into().unwrap();
+                if le { u64::from_le_bytes(w) } else { u64::from_be_bytes(w) }
+            };
+            let put = |b: &mut [u8], at: usize, v: u64| {
+                b[at..at + 8].copy_from_slice(&if le { v.to_le_bytes() } else { v.to_be_bytes() });
+            };
+            let at = |section: &str| file.section_by_name(section).unwrap().file_range().unwrap().0 as usize;
+            let (init, fini) = (at(".init_array"), at(".fini_array"));
+            let mut swapped = original.clone();
+            put(&mut swapped, init, get(&original, fini));
+            put(&mut swapped, fini, get(&original, init));
+            let mut zeroed = original.clone();
+            put(&mut zeroed, init, 0);
+            put(&mut zeroed, fini, 0);
+            let (rela, size) = file.section_by_name(".rela.dyn").unwrap().file_range().unwrap();
+            let init_vma = file.section_by_name(".init_array").unwrap().address();
+            let record = (rela as usize..(rela + size) as usize).step_by(24)
+                .find(|&r| get(&original, r) == init_vma).expect("init_array relocation");
+            let mut uncertain = original.clone();
+            put(&mut uncertain, record + 8, u64::from(object::elf::R_PPC64_ADDR64));
+            let all = [(0x350, Some("_FINI_0")), (0x370, Some("_INIT_0")), (0x390, Some("_DT_INIT")),
+                (0x3b0, Some("_DT_FINI")), (0x3d0, None)];
+            for (variant, bytes, missing) in [("swapped", swapped, None), ("zeroed", zeroed, None),
+                ("uncertain", uncertain, Some(0x370))] {
+                let expected: Vec<_> = all.iter().filter(|e| Some(e.0) != missing).collect();
+                let file = object::File::parse(bytes.as_slice()).expect("parse variant");
+                let entries = collect_entries(&file, &bytes);
+                assert_eq!(entries, expected.iter().map(|e| e.0).collect::<Vec<_>>(), "{name} {variant}");
+                let names: Vec<_> = collect_entry_names(&file, &entries).into_iter()
+                    .map(|(a, n)| (a, Some(n))).collect();
+                assert_eq!(names, expected.iter().filter(|e| e.1.is_some())
+                    .map(|e| (e.0, e.1.map(str::to_string))).collect::<Vec<_>>(), "{name} {variant}");
+                let image = crate::loadimage_object::ObjectLoadImage::from_bytes_silent(name, &bytes).unwrap();
+                let tocs: Vec<_> = image.elfv1_descriptors().entry_tocs().into_keys().collect();
+                assert_eq!(tocs, entries, "{name} {variant}");
+            }
         }
     }
 
