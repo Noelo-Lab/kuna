@@ -16,6 +16,19 @@
 #                        vtable is loaded from ESI.
 #   gccsret  (0x4010d0): GCC before 4.7: a __cdecl member returning a class,
 #                        this stored at [esp+4] behind the hidden pointer.
+#   latecopy : a virtual member, the vtable loaded from EBX and ECX copied
+#              from EBX after the pushes.
+#   lateother: the vtable loaded from EBX, ECX then loaded with a second
+#              object: not a call on the object the table belongs to.
+#   vepilog  : a virtual member followed by another call; the epilogue frees
+#              a frame slot with `pop ecx`, which is no cleanup of either.
+#   vouter   : o->child()->take(1, 2): MSVC pushes take's arguments before
+#              the virtual child() that yields its object; take pops them.
+#   vseh     : a virtual member under an SEH frame, whose epilogue unlinks it
+#              (mov fs:[0],ecx) and frees a slot with `pop ecx` right after.
+#   vdefer   : C, not C++: a __cdecl function pointer in a table reached
+#              through ECX, its cleanup deferred past the next __cdecl call
+#              into one `add esp,8`.
 #
 # Build:
 #   clang --target=i686-pc-windows-msvc -c vcall_pe_i386.s -o v.obj
@@ -205,6 +218,99 @@ _start:
     .p2align 4, 0xcc
 _cfn:
     mov eax, dword ptr [esp + 4]
+    ret
+
+    .p2align 4, 0xcc
+_latecopy:                      # int latecopy(Obj *o) { return o->put(6); }
+    push ebx
+    mov ebx, dword ptr [esp + 8]
+    mov eax, dword ptr [ebx]
+    mov eax, dword ptr [eax + 0x30]
+    push 6
+    mov ecx, ebx
+    call eax
+    pop ebx
+    ret
+
+    .p2align 4, 0xcc
+_lateother:                     # int lateother(Obj *o, Obj *p)
+    push ebx
+    mov ebx, dword ptr [esp + 8]
+    mov eax, dword ptr [ebx]
+    push 6
+    mov ecx, dword ptr [esp + 0x10]
+    call dword ptr [eax + 0x2c]
+    pop ebx
+    ret
+
+    .p2align 4, 0xcc
+_vepilog:                       # int vepilog(Obj *o) { o->put(7); return leaf(); }
+    push esi
+    sub esp, 4
+    mov esi, dword ptr [esp + 0xc]
+    mov eax, dword ptr [esi]
+    push 7
+    mov ecx, esi
+    call dword ptr [eax + 0x34]
+    call _leaf
+    pop ecx
+    pop esi
+    ret
+
+    .p2align 4, 0xcc
+_vouter:                        # void vouter(Obj *o) { o->child()->take(1, 2); }
+    push esi
+    sub esp, 4
+    mov esi, dword ptr [esp + 0xc]
+    push 2
+    push 1
+    mov eax, dword ptr [esi]
+    mov ecx, esi
+    call dword ptr [eax + 0x38]
+    mov ecx, eax
+    call _take
+    pop ecx
+    pop esi
+    ret
+
+    .p2align 4, 0xcc
+_vseh:                          # void vseh(Holder *h) { try { h->obj->set(7); } ... }
+    push -1
+    push 0
+    mov eax, dword ptr fs:[0]
+    push eax
+    push esi
+    push 0
+    lea eax, [esp + 8]
+    mov dword ptr fs:[0], eax
+    mov esi, dword ptr [esp + 0x18]
+    mov ecx, dword ptr [esi + 0x1c]
+    mov edx, dword ptr [ecx]
+    mov edx, dword ptr [edx + 0x3c]
+    push 7
+    call edx
+    mov ecx, dword ptr [esp + 8]
+    mov dword ptr fs:[0], ecx
+    pop ecx
+    pop esi
+    add esp, 0xc
+    ret
+
+    .p2align 4, 0xcc
+_take:
+    mov eax, dword ptr [esp + 4]
+    add eax, dword ptr [esp + 8]
+    ret 8
+
+    .p2align 4, 0xcc
+_vdefer:                        # int vdefer(Ctx *c) { c->ops->fn(5); return cfn(6); }
+    mov ecx, dword ptr [esp + 4]
+    mov eax, dword ptr [ecx]
+    push 5
+    call dword ptr [eax + 0x40]
+    push 6
+    call _cfn
+    add esp, 8
     ret
 
     .data

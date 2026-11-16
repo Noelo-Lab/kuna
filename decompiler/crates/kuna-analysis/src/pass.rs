@@ -580,6 +580,11 @@ pub struct AnalysisOutput {
     /// MIPS PIC `$gp`-relative load resolves). Produced only on the MIPS path (see
     /// [`crate::loader::mips_markers`]); empty otherwise.
     pub tracked_regs: Vec<TrackedRegFact>,
+    /// Register values seeded at one function entry through the architecture's
+    /// per-entry loader seeds, as the ELFv1 TOC is, rather than as a context-database
+    /// range: every function's snapshot of that database would otherwise grow with
+    /// their number. Produced by [`crate::loader::kuna_ppc64r12`]; empty otherwise.
+    pub entry_tracks: Vec<TrackedRegFact>,
     /// Functions whose names matched a cspec call-fixup `<target>` (e.g. the `-pg`
     /// `mcount`/`__fentry__` profiling stubs). The commit boundary tags each with the
     /// matched fixup's inject id so the engine replaces the CALL with the fixup
@@ -852,6 +857,7 @@ impl AnalysisOutput {
         self.context_paints.extend(other.context_paints);
         self.inventory_context_paints.extend(other.inventory_context_paints);
         self.tracked_regs.extend(other.tracked_regs);
+        self.entry_tracks.extend(other.entry_tracks);
         self.call_fixups.extend(other.call_fixups);
         self.models.extend(other.models);
         self.locals.extend(other.locals);

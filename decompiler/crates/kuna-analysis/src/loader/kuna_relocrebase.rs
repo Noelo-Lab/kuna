@@ -467,6 +467,7 @@ pub fn retain_in_image(out: &mut AnalysisOutput, view: &RebasedView) {
     out.wide_strings32.retain(|s| keep(s.addr));
     out.context_paints.retain(|p| keep(p.addr));
     out.tracked_regs.retain(|t| keep(t.func_addr));
+    out.entry_tracks.retain(|t| keep(t.func_addr));
     out.locals.retain(|l| keep(l.func_addr));
     out.comments.retain(|c| keep(c.func_addr) && keep(c.addr));
     out.fid_names.retain(|f| keep(f.addr));

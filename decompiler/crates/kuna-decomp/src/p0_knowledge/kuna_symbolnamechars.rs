@@ -157,13 +157,11 @@ impl NameChars {
 /// a large image carries a few hundred thousand names and `std::env::var` is not
 /// free.
 pub fn symbolnamechars_mode() -> NameChars {
-    match std::env::var(SYMBOLNAMECHARS_ENV) {
-        Ok(v) => NameChars::parse(&v).unwrap_or_default(),
-        Err(_) => NameChars::default(),
-    }
+    crate::kuna_loadoptions::scoped(|o| o.symbolnamechars)
+        .unwrap_or_else(crate::kuna_loadoptions::env::symbolnamechars)
 }
 
-/// Bridge a `set_kuna_option("symbolnamechars", val)` choice to
+/// Export a `set_kuna_option("symbolnamechars", val)` choice to
 /// [`SYMBOLNAMECHARS_ENV`] so a later `load file` in the *same* process sees it
 /// (the interactive `option symbolnamechars … ` before `load file` path, and the
 /// in-process CLI drivers).

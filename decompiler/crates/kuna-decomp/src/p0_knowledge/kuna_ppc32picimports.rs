@@ -55,17 +55,25 @@ impl Mode {
     }
 
     pub fn from_env() -> Self {
-        std::env::var(ENV).map_or(Self::Off, |value| Self::from_env_value(&value))
+        crate::kuna_loadoptions::env::ppc32picimports()
     }
 
     /// The mode a new `Architecture` starts in.
     pub fn loaded() -> Self {
         if abi_enabled() { Self::Abi } else { Self::Off }
     }
+
+    /// The mode a new `Architecture` loaded with `load` starts in.
+    pub fn loaded_with(load: Self) -> Self {
+        if load == Self::Abi { Self::Abi } else { Self::Off }
+    }
 }
 
+/// Whether the load in progress asks for `abi`.
 pub fn abi_enabled() -> bool {
-    Mode::from_env() == Mode::Abi
+    crate::kuna_loadoptions::scoped(|o| o.ppc32picimports)
+        .unwrap_or_else(crate::kuna_loadoptions::env::ppc32picimports)
+        == Mode::Abi
 }
 
 #[cfg(test)]

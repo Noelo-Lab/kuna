@@ -24,6 +24,11 @@ mod n32_stack;
 #[path = "setup_commands.rs"]
 mod setup_commands;
 
+#[path = "verify_language_database.rs"]
+mod verify_language_database;
+#[path = "verify_memoryspecs.rs"]
+mod verify_memoryspecs;
+
 #[path = "verify_aarch64_plt.rs"]
 mod verify_aarch64_plt;
 
@@ -543,3 +548,9 @@ mod verify_rustfmtio;
 
 #[path = "verify_rustprobestack.rs"]
 mod verify_rustprobestack;
+
+#[path = "verify_bootstrap.rs"]
+mod verify_bootstrap;
+
+#[path = "mips_weak_imports.rs"]
+mod mips_weak_imports;

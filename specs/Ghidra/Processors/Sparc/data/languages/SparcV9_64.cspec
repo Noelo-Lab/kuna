@@ -146,7 +146,7 @@
         <register name="fd2"/>
       </killedbycall>
       <localrange>
-        <range space="stack" first="0xfff0bdc1" last="0xffffffff"/>
+        <range space="stack" first="0xfffffffffff0bdc1" last="0xffffffffffffffff"/>   <!-- (kuna) 64-bit stack: sign-extend, as x86-64 does -->
         <range space="stack" first="0x0" last="0x8ae"/>   <!-- Stack bias of 7FF + 0xb0 window size -->
       </localrange>
     </prototype>
@@ -219,7 +219,7 @@
         <register name="didrestore"/>
       </unaffected>
       <localrange>
-        <range space="stack" first="0xfff0bdc1" last="0xffffffff"/>
+        <range space="stack" first="0xfffffffffff0bdc1" last="0xffffffffffffffff"/>   <!-- (kuna) 64-bit stack: sign-extend, as x86-64 does -->
         <range space="stack" first="0x0" last="0x8ae"/>   <!-- Stack bias of 7FF + 0xb0 window size -->
       </localrange>
     </prototype>

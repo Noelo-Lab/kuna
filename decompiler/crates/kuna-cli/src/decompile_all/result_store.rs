@@ -153,12 +153,16 @@ mod tests {
             callee_hints: Vec::new(),
             synth: None,
             pointerargs: None,
+            warnings: Vec::new(),
             detail: None,
         }
     }
 
     fn check(mut store: ResultStore) {
-        store.put(2, result("c", Some("int c(void)\n{\n}")));
+        let warning = kuna_decomp::kuna_functionwarnings::Warning {
+            address: Some(0x1004), text: "WARNING: Bad instruction".into(), line: 2,
+        };
+        store.put(2, FuncResult { warnings: vec![warning.clone()], ..result("c", Some("int c(void)\n{\n}")) });
         store.put(0, result("a", None));
         store.put(0, result("a2", Some("void a(void)")));
         let mut tokens = result("d", Some("void d(void)"));
@@ -171,6 +175,7 @@ mod tests {
         assert_eq!(all.iter().map(|r| r.name.as_str()).collect::<Vec<_>>(), ["a2", "c", "d"]);
         assert_eq!(all[1].code.as_deref(), Some("int c(void)\n{\n}"));
         assert_eq!(all[1].aliases, ["alias"]);
+        assert_eq!(all[1].warnings, [warning]);
         assert!(all[2].detail.is_some());
     }
 

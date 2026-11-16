@@ -111,7 +111,9 @@ pub fn virtual_this(arch: &Architecture) -> Option<(Rc<ProtoModel>, Address, int
 
 /// The `__thiscall` model for an indirect call through the vtable of the object
 /// in ECX: the target is loaded from a slot of a table that is itself loaded
-/// from where ECX points, and ECX is not written between that load and the call.
+/// from where ECX points, and ECX holds that object from the load to the call: a
+/// write to ECX in between must copy the object back (`mov eax,[ebx]; push 6;
+/// mov ecx,ebx`).
 /// A COM method is `__stdcall` with the interface pushed as its first argument,
 /// so a call whose last push before it stores the object (ECX, or a register
 /// holding the same value) keeps the default model (a `push ecx` that only
@@ -120,8 +122,8 @@ pub fn virtual_this(arch: &Architecture) -> Option<(Rc<ProtoModel>, Address, int
 /// `this` on the stack, behind the hidden pointer of a returned class
 /// (`mov [esp+4],ecx; mov [esp],edx`). A `__thiscall` callee
 /// removes its own stack arguments, so a call the caller cleans up after
-/// (`add esp,4`, a C table of `__cdecl` function pointers) keeps it too, as does
-/// one that also holds the object in EAX (Delphi's `register` convention passes
+/// (`add esp,4`, a C table of `__cdecl` function pointers; `own_cleanup`) keeps
+/// it too, as does one that also holds the object in EAX (Delphi's `register` convention passes
 /// it there). Values are compared over the ops since the previous call only
 /// ([`Values`]): a call clobbers ECX, so a register copied from ECX before it
 /// is not the object.
@@ -181,11 +183,12 @@ pub fn virtual_call(data: &Funcdata, call: OpId) -> Option<Rc<ProtoModel>> {
             }
         }
         let out = o.get_out().and_then(|v| data.vbank().get(v));
-        if after_table && out.is_some_and(|v| overlaps(v.get_addr(), v.get_size(), ecx, *ecx_size)) {
-            return None;
-        }
+        let sets_ecx = after_table && out.is_some_and(|v| overlaps(v.get_addr(), v.get_size(), ecx, *ecx_size));
         after_table |= id == table_load;
         values.write(data, id);
+        if sets_ecx && values.at(ecx, *ecx_size) != object {
+            return None;
+        }
     }
     let receiver = values.at(ecx, *ecx_size)?;
     let call_esp = call_esp.unwrap_or_else(|| values.at(&sp_addr, sp.size as int4));
@@ -261,7 +264,7 @@ pub fn callind_cleanup(arch: &Architecture, call_at: &Address) -> u32 {
     if virtual_this(arch).is_none() {
         return 0;
     }
-    crate::p4_calls::kuna_calleepurge::caller_cleanup(arch, call_at)
+    crate::p4_calls::kuna_calleepurge::own_cleanup(arch, call_at)
 }
 
 /// Ops [`virtual_call`] reads back from the call.
