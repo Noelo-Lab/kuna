@@ -1,0 +1,34 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    x86-64: a stack pointer is saved in a frame slot, restored, moved below
+    the outgoing-argument area and used both as a store's address and as the
+    %rdi of a call to nouse, which never reads %rdi:
+
+        freed_call: w7(1,2,3,4,5,6, 7);
+                    p = restored - 48; *p = 0x55; nouse(p);
+                    y8(1,2,3,4,5,6, 7,8);
+
+    Scoring nouse drops its %rdi, after which the pointer is only a store's
+    address and touches only its own four bytes. The direct/indirect split of
+    the gathered pointers was drawn before that and not redrawn, so y8's stack
+    arguments above the pointer were taken as aliased: y8(1,2,3,4,5,6).
+    Source: fixtures/x86-directalias-freed.s.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+554889e54883ec3048c7042407000000bf01000000be02000000ba03000000b90400000041b80500000041b906000000e8eb000000488d442420488945f0488b7df04883ef30c70755000000e8af00000048c74424080800000048c7042407000000bf01000000be02000000ba03000000b90400000041b80500000041b906000000e8b9000000c9c3909090909090909090909090909090909090909090909090909090909090909090909090909090909090909090909090909090909090909090909090909090909090909090909090909090909090909090909090909090909090909090909090909090909090909090909090909090909090909090909031c0c390909090909090909090909090909090909090909090909090909090908d043701d001c84401c04401c803442408c390909090909090909090909090908d043701d001c84401c04401c80344240803442410c390909090909090909090
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="freed_call"/>
+<symbol space="ram" offset="0x100100" name="nouse"/>
+<symbol space="ram" offset="0x100120" name="w7"/>
+<symbol space="ram" offset="0x100140" name="y8"/>
+</binaryimage>
+<script>
+  <com>lo fu freed_call</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="x86-directalias-freed #1: the call after the freed pointer keeps its stack arguments" min="1" max="1">y8\(1,2,3,4,5,6,7,8\);</stringmatch>
+<stringmatch name="x86-directalias-freed #2: no stack argument of the later call is dropped" min="0" max="0">y8\(1,2,3,4,5,6\);</stringmatch>
+</decompilertest>

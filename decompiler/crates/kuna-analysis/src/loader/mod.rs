@@ -48,6 +48,7 @@ pub mod kuna_globalref;
 pub mod elfv1;
 mod elfv1_imports;
 pub mod kuna_ppc32_imports;
+pub mod kuna_ppc64r12;
 mod kuna_ppc32picimports;
 pub use kuna_ppc32picimports::{ImportProofMemo, ImportProofScope};
 // (kuna) ELF section-table tolerance: an image whose section headers are
@@ -135,3 +136,5 @@ pub mod kuna_realmodecs;
 pub mod kuna_mzdgroup;
 
 pub mod kuna_mipsstubs;
+
+mod kuna_nullable_reloc;

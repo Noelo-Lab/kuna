@@ -92,6 +92,16 @@ pub fn callee_stack_window(arch: &Architecture, entry: &Address, call_at: &Addre
     crate::p4_calls::kuna_calleepurge::callee_window(arch, entry, call_at)
 }
 
+/// For a direct callee `entry` that states no extent, the stack bytes its
+/// reached returns pop above the return address: the part of its window the
+/// callee releases itself.
+pub fn callee_return_pop(arch: &Architecture, entry: &Address) -> Option<u32> {
+    if !arch.kuna_calleeargs {
+        return None;
+    }
+    crate::p4_calls::kuna_calleepurge::callee_return_pop(arch, entry)
+}
+
 /// Does the direct callee `entry` move its caller's stack pointer? The solver
 /// cannot follow such a call, so the stack offsets of every call in its caller
 /// are guesses, and no extent is applied there.

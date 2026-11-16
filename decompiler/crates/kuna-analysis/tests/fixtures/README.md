@@ -14,6 +14,9 @@ real ELF parser.
 
 | File | What | Exercises |
 |---|---|---|
+| `ppc32_stack_chk_local_be.o` | built from `ppc32_stack_chk_local_be.s` (`llvm-mc -triple=powerpc-unknown-linux-gnu -filetype=obj ppc32_stack_chk_local_be.s -o ppc32_stack_chk_local_be.o`, Ubuntu LLVM version 21.1.8), SHA-256 `e34a6ba278a540f2100f335c2867c14f32dba1d873f9f09cb35f2d4bc3bd870c` | ELF32 big-endian PowerPC relocatable object; defines global function r6; has an R_PPC_REL24 relocation against undefined symbol __stack_chk_fail_local; r3 is set (mulli 3,3,3) before the branch to the call; read by `kuna-cli/tests/stack_chk_fail_local.rs` and `tests/stages/kuna-stackchklocal.xml` |
+| `ppc32_stack_chk_local_le.o` | built from `ppc32_stack_chk_local_le.s` (`llvm-mc -triple=powerpcle-unknown-linux-gnu -filetype=obj ppc32_stack_chk_local_le.s -o ppc32_stack_chk_local_le.o`, Ubuntu LLVM version 21.1.8), SHA-256 `a944a1c90b2f535ec424c48d3c8a49680c657530e65b521c1309080ad4393cf8` | ELF32 little-endian PowerPC relocatable object; defines global function r6; has an R_PPC_REL24 relocation against undefined symbol __stack_chk_fail_local; r3 is set (mulli 3,3,3) before the branch to the call; read by `kuna-cli/tests/stack_chk_fail_local.rs` and `tests/stages/kuna-stackchklocal.xml` |
+| `ppc32_stack_chk_local_linked_be.so`, `ppc32_stack_chk_local_linked_le.so` | built from `ppc32_stack_chk_local_linked.s` (`llvm-mc -triple=powerpc-unknown-linux-gnu -filetype=obj ppc32_stack_chk_local_linked.s -o p.o`; `ld.lld -shared -z max-page-size=0x1000 p.o -o ppc32_stack_chk_local_linked_be.so`, and the same with `-triple=powerpcle-unknown-linux-gnu` for `_le.so`, Ubuntu LLVM version 21.1.8), SHA-256 `4b6d867f6ecfd2a62083ed9ff0e2ec1688148f99b27c5b6702b1b0b5d1d49533` (BE) and `9e19f6d135cc8aa73e697bb5d557d7cd9bd2c463c151eca45190a2f7c79ae7e3` (LE) | linked ELF32 PowerPC shared objects, 1696 bytes each; readelf -s: r6 at 0x11c4 with size 52 (GLOBAL), the same body as `ppc32_stack_chk_local_*.o`, its `bl` resolved to __stack_chk_fail_local at 0x11f8 with size 16 (LOCAL HIDDEN, in .symtab only), whose body ends in `bl` to the `__stack_chk_fail` PLT call stub at 0x1208; __stack_chk_fail is the only .dynsym import; read by `kuna-cli/tests/stack_chk_fail_local.rs` and `tests/stages/kuna-stackchklocal.xml`; that cargo test also rebuilds both from `ppc32_stack_chk_local_linked.s` when `llvm-mc` and `ld.lld` are installed and checks the rebuilt images the same way |
 | `prefixed_noreturn_aarch64` | built from `prefixed_noreturn_aarch64.s` (`llvm-mc -triple=aarch64 -filetype=obj prefixed_noreturn_aarch64.s -o p.o`; `ld.lld --image-base=0x8000 -z max-page-size=0x1000 -Ttext=0x10000 -e probe p.o -o prefixed_noreturn_aarch64`, Ubuntu LLVM version 21.1.8), SHA-256 `e9445cf6d2489b9ea65a2de7e8baa44b97e6b85a3bad858adbfa390d1b92b4fb` | linked AArch64 ELF, about 5 KB; readelf -s: probe at 0x10000 with size 28, plain at 0x10020 with size 28; the last instruction of probe is `bl stub___stack_chk_fail` at 0x10018, followed by 4 zero bytes outside the symbol; the last instruction of plain is `bl __stack_chk_fail`; keeps_count and keeps_exit call mystack_chk_fail_count and handle_exit, then return 9; all four callees are defined FUNC symbols whose body is a bare ret; read by `kuna decompile-all` when checking the `<prefix>__` proxy rule in `p2_lift/kuna_noreturn_externmatch.rs`, and by `tests/stages/kuna-prefixed-noreturn.xml` |
 | `prefixed_noreturn_x86_64` | built from `prefixed_noreturn_x86_64.s` (`llvm-mc -triple=x86_64 -filetype=obj prefixed_noreturn_x86_64.s -o p.o`; `ld.lld --image-base=0x8000 -z max-page-size=0x1000 -Ttext=0x10000 -e probe p.o -o prefixed_noreturn_x86_64`, Ubuntu LLVM version 21.1.8), SHA-256 `d5f4ac84405e3477912a680d046da42c76950c566204cb1895a3f66c6bd0028d` | linked x86_64 ELF, about 5 KB; readelf -s: probe at 0x10000 with size 20, plain at 0x10018 with size 20; the last instruction of probe is `call stub___stack_chk_fail`, followed by 4 zero bytes outside the symbol; the last instruction of plain is `call __stack_chk_fail`; keeps_count and keeps_exit call mystack_chk_fail_count and handle_exit, then return 9; all four callees are defined FUNC symbols whose body is a bare ret; read by `kuna decompile-all` when checking the `<prefix>__` proxy rule in `p2_lift/kuna_noreturn_externmatch.rs`, and by `tests/stages/kuna-prefixed-noreturn.xml` |
 | `rust_minimal_dwarf_names_x86_64` | Rust minimal DWARF plus a genuine imported libc `write`; reproduction in `rust_minimal_dwarf.build.sh` | Rust's namespaced four-argument `write` retains its identity and all four arguments. |
@@ -128,6 +131,7 @@ real ELF parser.
 | `switch_maprow_signbit_x86_64` | 9,128-byte static x86-64 executable built from `switch_maprow_signbit_x86_64.c` under that name (`clang -O2 -fno-pic -fno-asynchronous-unwind-tables -c`, Ubuntu clang 14.0.0, then `ld -e pick`, GNU ld 2.38; SHA-256 `27a3106778f80ac03392699afd94a5dc0f2c32c76d951b5fd69abc147e193837`) | `switch (map[mode])` over the byte map `{240, 1, 241, 241, 241}`; mode 1's value is sent away by the table guard. A switch over the map value would print labels such as 0xf0 against a signed `char`, which never match, so the switch must stay over `mode` (`kuna-cli/tests/compact_switch_cli.rs` `map_value_at_the_sign_bit_keeps_the_index_switch`) |
 | `switch_maprow_signbit_gcc_x86_64` | 9,200-byte static x86-64 executable built from `switch_maprow_signbit_gcc_x86_64.c` under that name, with the same recipe as `switch_maprow_reload_x86_64` (SHA-256 `4387586de8499ccfd70d17baf7ae49993f976ee62891a33a4692d464b9099573`) | GCC's shape for the byte map `{208, 204, 203, 213, 217, 206}`: mode 4's value is sent away and cuts the table, which still loses mode 5's row. The switch must stay over `mode` so that modes 0 to 4 keep their cases (`kuna-cli/tests/compact_switch_cli.rs` `reloaded_map_value_at_the_sign_bit_keeps_the_index_switch`) |
 | `plt_ppc64le` | dynamically-linked PowerPC64 **ELFv2** (little-endian) PIE, not stripped (source `plt_ppc64le.c`) | PowerPC64 PLT/import-name resolution end-to-end (`elf_plt::decode_ppc_text` / `decode_ppc64_stubs`): ELFv2 has **no `.plt` code section** — `.plt` is a NOBITS data table (the runtime GOT) and the linker synthesizes the call stubs inline in `.text`. `main`=`0x8bc` `bl`s the `puts@plt` stub `0x680` and the `printf@plt` stub `0x660`; each stub is `std r2,24(r1); addis r12,r2,off@ha; ld r12,off@l(r12); mtctr r12; bctr`, loading a `.plt` slot `TOC_base(.got+0x8000=0x27f00) + (off@ha<<16) + off@l` = `0x1fef0` (puts) / `0x1fef8` (printf), both `R_PPC64_JMP_SLOT` relocs in `.rela.plt`. The console e2e (`kuna-console/tests/verify_ppc64_plt.rs`) decompiles `main` to `puts(...); printf(...)` not `sub_680`/`sub_660` — the `.text`-synthesized PLT stubs (previously a documented seam) **are** statically resolvable. **Linked ET_DYN/PIE with PT_LOAD** |
+| `elfv1_initfini_be`, `elfv1_initfini_le` | built from `elfv1_initfini.c` with GCC 15.3.0 and GNU ld 2.43.1 (`powerpc64-e5500-linux-gnu-gcc` for big-endian; `powerpc64le-power8-linux-gnu-gcc -mabi=elfv1` for little-endian), each with `-O2 -fPIE -pie -nostdlib -fno-asynchronous-unwind-tables -Wl,-e,start -Wl,-init,at_init -Wl,-fini,at_fini -Wl,-z,max-page-size=0x1000 -Wl,-z,noseparate-code -Wl,--build-id=none` and then `strip`; SHA-256 `506dde8503d0ef005342f565786e56227f54d2eb1d2b90d0731186a06d7c772f` and `0a3ed234e45b7cf192c385278fe2e69ee76d6e9c836fee59eed8ce2999044704` | stripped PowerPC64 ELFv1 PIEs, 5,088 bytes each, whose five functions are reachable only through `.opd` descriptors: `e_entry` (`start`, 0x3d0), `DT_INIT` (0x390), `DT_FINI` (0x3b0), `DT_INIT_ARRAY[0]` (0x370) and `DT_FINI_ARRAY[0]` (0x350); no `.eh_frame` FDEs and no function symbols. Entry discovery must seed each code word (`analyzers/entry`) |
 | `entrymain_aarch64` | stripped DYNAMIC PIE AArch64 (`int main(int,char**){return c;}`), no unwind tables, `-fvisibility=hidden` (source `entrymain.c`) | cross-arch `_start`→`main` idiom (`s1_entry` oracle 4, Increment 23): `main` is in **no** symbol table — recovered only via `_start`@`0x600`'s `adrp x0,0x10000; ldr x0,[x0,#4080]` → GOT slot `0x10ff0` whose `R_AARCH64_RELATIVE` addend is `main`@`0x714`. The `.eh_frame` FDEs (still present from crt1) do NOT cover `0x714` — oracle 4 is the sole source. e2e: `sub_714` decompiles to `unsigned int sub_714(unsigned int a0){return a0;}` |
 | `entrymain_arm` | stripped DYNAMIC PIE ARM/Thumb (same source), no unwind tables, `-fvisibility=hidden` | cross-arch `_start`→`main` idiom + Thumb decode-mode paint (`s1_entry` oracle 4): `.eh_frame` is empty (just the terminator), `main` in no symbol table. `_start`@`0x3dd` (Thumb) loads `r0` GOT-relatively (`.got`@`0x10fd0` + `0x28` = slot `0x10ff8`, `R_ARM_RELATIVE` in-place value `0x4d9` = `main`@`0x4d8` with the Thumb LSB). The discovery pass masks the LSB for the entry AND emits a `TMode=1` `ContextPaint` at `0x4d8` (no `$t` survives stripping), so the body decodes as Thumb. e2e: `sub_4d8` → `unsigned int sub_4d8(unsigned int a0){return a0;}` (a `void {return;}` stub means the Thumb paint regressed) |
 | `entrymain_riscv64` | stripped DYNAMIC PIE RISC-V RV64GC (same source), no unwind tables, `-fvisibility=hidden` | cross-arch `_start`→`main` idiom (`s1_entry` oracle 4): `main` in no symbol table (hidden visibility — a plain build leaves `main` a `.dynsym` GLOBAL FUNC that strip cannot remove). `_start`@`0x550` loads `a0` via `auipc a0,0x2; ld a0,-1318(a0)` → GOT slot `0x2030` whose `R_RISCV_RELATIVE` addend is `main`@`0x608`. e2e: `sub_608` → `int8 sub_608(int4 a0){return (int8)a0;}` |
@@ -1988,8 +1992,8 @@ add esp,0x10; ret 0xc`. `consts`@`0x401060` defers a `__cdecl` cleanup past
 
 ### Calls through the vtable of the object in ECX
 
-`vcall_pe_i386.exe` (2,560 bytes, PE32/i386, SHA-256
-`fca8c39d626479635bb785c0cec4678258899d7d135043fcb0d785dee8509354`) is clean-room:
+`vcall_pe_i386.exe` (3,072 bytes, PE32/i386, SHA-256
+`64e715fcf394071e1e4c9b019c1b055293c1d8ce13842e39336617b42ae3ff1b`) is clean-room:
 `vcall`@`0x401000` calls a virtual member (`mov eax,[ecx]; push 5; call [eax+8]`),
 `comcall`@`0x401010` a COM method that pushes the interface last,
 `reserve`@`0x401020` a virtual member whose `push ecx` only reserves the slot
@@ -1999,10 +2003,20 @@ pushed from the register ECX was copied from, `comesi`@`0x401060` five COM calls
 through ESI copied from ECX before the first of them, `crosscall`@`0x4010a0` a C
 table call through ESI copied from ECX before a call that clobbers ECX,
 `ecxcopy`@`0x4010c0` a virtual member whose ECX is copied from ESI before the vtable
-is loaded from ESI, and `gccsret`@`0x4010d0` a GCC (before 4.7) `__cdecl` member
-returning a class, `this` stored at `[esp+4]` behind the hidden return pointer.
+is loaded from ESI, `gccsret`@`0x4010d0` a GCC (before 4.7) `__cdecl` member
+returning a class, `this` stored at `[esp+4]` behind the hidden return pointer,
+`latecopy`@`0x4011f0` a virtual member whose ECX is copied from EBX after the
+vtable is loaded from EBX and the argument pushed, `lateother`@`0x401210` a call
+through EBX's vtable with a second object loaded into ECX, `vepilog`@`0x401230` a
+virtual member followed by another call and an epilogue that frees a frame slot
+with `pop ecx`, `vouter`@`0x401250` `o->child()->take(1, 2)`, whose pushes
+for `take` precede the virtual `child()` call, `vseh`@`0x401270` a virtual
+member under an SEH frame whose epilogue unlinks it (`mov fs:[0],ecx`) and pops
+a slot into ECX right after the call, and `vdefer`@`0x4012c0` a C `__cdecl` table
+call whose cleanup is deferred past the next `__cdecl` call (`push 6; call cfn;
+add esp,8`).
 Source and recipe (clang + lld-link) in `vcall_pe_i386.s`. Used by
-`tests/stages/kuna-calleereginputs.xml` (#18-#30) and
+`tests/stages/kuna-calleereginputs.xml` (#18-#40) and
 `decompiler/crates/kuna-cli/tests/calleereginputs_custom.rs`.
 
 ### AIF fragment of a known function
@@ -2458,3 +2472,44 @@ llvm-objcopy --strip-all hookfix swift_call_hook_elf
 whose `movq (%rdi),%rax; movq %rdi,%r13; callq *0x40(%rax)` dispatches `area()`.
 With `swiftmetadata on` the first call keeps the C model and the second takes
 `__swiftcall`.
+
+### `stackcookie_pe_i386.exe` — MSVC frame cookies below a call
+
+`stackcookie_pe_i386.exe` (3,072 bytes, PE32/i386, SHA-256
+`79dcafcff03c495a9097c0ad099a2fec38ae2afff009e5082c47c4fdb65cf2a6`) is clean-room:
+`gsseh`@`0x401000` pushes a `/GS` cookie (`mov eax,[___security_cookie]; xor eax,esp;
+push eax`) below an SEH frame and calls a function pointer with one pushed argument,
+cleaned up after it; `gsthis`@`0x401050` calls a method on `this+8` with no stack
+argument under the same frame; `gsebp`@`0x401090` stores the cookie at `[ebp-4]`
+(`xor eax,ebp`) and checks it in ECX before returning. Three functions push a real
+argument shaped like the cookie: `keyarg`@`0x401130` (`key ^ esp` through a pointer,
+no SEH frame), `keyread`@`0x401150` (the same to a direct callee that reads it, under
+an SEH frame with a cookie) and `copyarg`@`0x4011a0` (a copy read back from the
+cookie's slot after a call, under the same frame). Two more push one in the body
+of an SEH function, through a pointer: `sehkey`@`0x4011f0` (`key ^ esp` and `7`,
+under a frame with a cookie) and `sehebp`@`0x401240` (`key ^ ebp`, under an EBP
+frame with no cookie). Source and recipe (clang +
+lld-link) in `stackcookie_pe_i386.s`. Used by `tests/stages/kuna-stackcookie.xml`.
+
+### `byvalreuse_pe_i386.exe` — a by-value block reusing an earlier call's pushes
+
+`byvalreuse_pe_i386.exe` (3,072 bytes, PE32/i386, SHA-256
+`ab97c60f4da5d68072681c34334fff46e3bd0a60a1274984f4c84112631ab249`) is clean-room:
+`byval`@`0x401000` copies a 32-byte struct with `rep movsd` into an outgoing block that
+reuses the 12 bytes an earlier `__cdecl` call's pushes left on the stack (`sub esp,0x14`),
+then calls the `__thiscall` method `take`@`0x401040`, which ends in `ret 0x20` and hands
+its argument's address to a helper called through a pointer, so the purge walk cannot
+settle its stack effect. `cleanup`@`0x4010d0`, `local`@`0x401100` and
+`nested`@`0x401130` copy a struct with `rep movsd` at the stack pointer before a call
+whose callee's own returns pop nothing (a `__cdecl` callee the caller cleans up after, an
+unrelated call after a bottom-of-frame local, `g(0)` inside `f(g(0), t)`). `stray`@`0x4011d0`
+does the same for a `__cdecl` callee `nf`@`0x401200` whose cold path ends in a call that
+does not return, so its walk runs on through the `int3` padding into the `__stdcall`
+neighbour's `ret 0x20`; `quit`@`0x401240` passes one to the `__stdcall` `qtake`@`0x401260`
+(`ret 0x20`), whose other path ends in a call to `exit`@`0x401230` (named by the test);
+`settle`@`0x401280` calls the `__stdcall` `note`@`0x4012b0` (`ret 4`, which the walk proves)
+before its block for `take`, and `unsettled`@`0x4012c0` calls the `__stdcall`
+`guess`@`0x4012f0` (`ret 4`, through a pointer, which the walk cannot settle) before its
+block for `take`. Source and recipe in `byvalreuse_pe_i386.s`: clang 17 and lld-link 17 (the
+`swift:6.0-jammy` Docker image ships both) reproduce it byte for byte; Ubuntu's clang 14
+does not. Used by `tests/stages/kuna-repframecopy.xml` (#14-#21).

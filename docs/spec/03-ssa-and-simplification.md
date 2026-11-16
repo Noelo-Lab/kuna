@@ -1302,7 +1302,46 @@ reaches nothing but frame loads and stores, the stack pointer and the move's
 own pointers (`block_escapes`, so a local handed to a call in `ECX` or `EDX`
 is not one), and that call's direct callee reads into the block as its own
 code shows (chapter 04's `calleeargs` measure), or the pop its prototype
-states or its returns prove releases all of it. Under a model whose pop is
+states or its returns prove releases all of it. When the walk cannot settle
+the callee's stack effect (a call it cannot read, such as a string helper
+handed the argument's address), what the callee's own reached returns pop
+(`ret 0x20`) counts as that pop, but only when every return the walk reaches
+pops the same, the walk followed every path (no indirect jump, undecodable
+instruction or budget overrun), and no path ran into a software interrupt
+(`int3` padding) or fell through into another function the symbol table or
+the lazy entry set knows. A path that ends in a call the walk cannot read,
+which does not return, otherwise runs on into the next function, whose `ret
+0x20` would be stated as a `__cdecl` callee's pop. What the caller removes
+after the call (the rest of the call's `calleeargs` window) does not: a
+`__cdecl` callee pops only its return address, and the scan that reads the
+cleanup also credits an `add esp` that releases the caller's own locals
+before its epilogue, so it would place a bottom-of-frame local, or the block of
+a later call (`f(g(0), t)` copies `t` before calling `g`), in the next call's
+arguments, and stating that cleanup as the call's pop would move every stack
+slot after the call. MSVC
+builds such a block partly from an earlier `__cdecl` call's pushes whose
+cleanup it deferred (`push 0x20; push eax; push ecx; call memcpy; sub
+esp,0x14; mov edi,esp; rep movsd`), so the 32-byte struct sits 12 bytes above
+where the `sub` leaves the stack. An expansion that relies on the returns' pop
+states that pop on the call, and states that the earlier call whose pushes
+the block reuses (found by walking the copy's stack pointer back to that
+call's INDIRECT) pops only its return address, when its prototype states no
+pop and any purge its returns prove agrees. The solver
+applies proven purges only when every call in the function has one, and
+otherwise guesses that such a call pops its pushes, which places the whole
+block, and the copy's reads, 12 bytes too high. Such an expansion is made
+only when the stated pops leave every call in the function with a pop its
+prototype states or its returns prove, and the proven pops of the other calls
+are then stated too: they were held back only while some call's pop was a
+guess, and left to the solver an earlier `__thiscall` call that pops its one
+argument (`ret 4`) can be guessed to pop nothing, which moves every slot after
+it, so the block is read from the wrong slot and a local whose address the
+block's call takes (an out parameter MSVC keeps in a dead parameter slot) is
+named wrongly and folds to the constant stored before the call. An earlier
+call whose pop nothing proves (a `__stdcall` callee that calls through a
+pointer) would keep the solver's guess, the block would be read through the
+return address and the caller's parameters shifted by a slot, so then the
+block stays a loop, as it does without the returns' pop. Under a model whose pop is
 stated (gcc's cdecl), a release of the whole block by the caller before the
 next call or branch counts too, when nothing reads the block between the copy
 and that release. A record copied into a local at the bottom of the frame

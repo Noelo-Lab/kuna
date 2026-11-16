@@ -177,9 +177,10 @@ fn a_function_that_writes_through_the_base_stays_untyped_at_the_shipped_default(
     assert!(!auto.contains("teb"), "a function linking an SEH record must stay untyped:\n{auto}");
     assert!(
         auto.lines().any(|line| {
-            line.trim().strip_prefix("int4 v2 [3]; // ").is_some_and(|sources| {
-                sources.split(" | ").any(|source| source == "stack - 0xc")
-            })
+            line.trim()
+                .strip_prefix("int4 v")
+                .and_then(|rest| rest.trim_start_matches(|c: char| c.is_ascii_digit()).strip_prefix(" [3]; // "))
+                .is_some_and(|sources| sources.split(" | ").any(|source| source == "stack - 0xc"))
         }),
         "the registration record keeps its extent and stack home:\n{auto}"
     );

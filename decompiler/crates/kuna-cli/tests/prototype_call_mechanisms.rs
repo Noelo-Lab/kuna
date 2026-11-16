@@ -392,12 +392,18 @@ fn default_keeps_a_local_in_the_elfv1_toc_slot_of_an_elfv2_frame() {
         let kept = code
             .lines()
             .any(|line| line.trim().starts_with("return ") && line.contains(product.as_str()));
-        (kept, code)
+        (kept, code, product)
     };
-    let (kept, off) = returned(Some("off"));
+    let (kept, off, _) = returned(Some("off"));
     assert!(kept && !off.contains("r2save"), "{off}");
-    let (kept, code) = returned(Some("on"));
-    assert!(!kept && code.contains("r2save"), "{code}");
+    let (kept, code, product) = returned(Some("on"));
+    // `on` stores the TOC over the local; the global entry's `r12` resolves
+    // that TOC to a constant, so the store prints as that constant (not
+    // `r2save`) and the return reads it back.
+    assert!(!kept, "{code}");
+    let toc = code.lines().find_map(|line| line.trim().strip_prefix(&format!("{product} = 0x")))
+        .and_then(|rest| rest.strip_suffix(';')).unwrap_or_else(|| panic!("{code}"));
+    assert!(code.contains(&format!("+ 0x{toc};")) && !code.contains("r2save"), "{code}");
     for value in [None, Some("auto")] {
         assert_eq!(returned(value).1, off, "{value:?}");
     }

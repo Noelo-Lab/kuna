@@ -34,6 +34,30 @@
     d_ptr (0x401340) and d_direct (0x401370) copy a record into a local at the
     bottom of the frame: no call takes it, so each move stays a loop and no
     call gains a stack argument.
+    byvalreuse_pe_i386.exe (clean-room, source and recipe in
+    byvalreuse_pe_i386.s): byval (0x401000) copies a 32-byte struct into an
+    outgoing block that reuses an earlier __cdecl call's 12 bytes of pushes
+    (`sub esp,0x14`) and calls a __thiscall method ending in `ret 0x20` whose
+    stack effect the purge walk cannot settle: the method takes the eight
+    dwords (#14). Three copies whose callee's own returns do not pop the block
+    stay loops: cleanup (0x4010d0) calls a __cdecl callee and removes the block
+    itself, and keeps reading its second parameter after the call (#15); local
+    (0x401100) copies a local at the bottom of the frame before an unrelated
+    __cdecl call and reads it back (#16); nested (0x401130) copies f's struct
+    and then calls g(0) first, and g takes only its 0 (#17); stray (0x4011d0)
+    calls a __cdecl callee whose cold path ends in a call that does not return,
+    where the walk runs on through the int3 padding into the next function's
+    `ret 0x20`, and keeps reading its second parameter (#18); quit (0x401240)
+    passes a block to a __stdcall callee (ret 0x20) whose other path ends in
+    exit, which takes it while exit is known not to return, and the walk is
+    taken again once `noreturn_known` is turned off: it no longer does (#19);
+    settle (0x401280) calls the __stdcall note (ret 4, which the walk proves)
+    before the block for take: once take's pop is stated every call has one,
+    so note's is stated too and the block is read from settle's parameter
+    (#20); unsettled (0x4012c0) calls the __stdcall guess first (ret 4, but
+    it calls through a pointer, so the walk cannot settle it): stating take's
+    pop would leave guess's pop to the solver, whose guess moves the block,
+    so it stays a loop (#21).
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -83,6 +107,38 @@ c3
   <com>load addr 0x401370</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/byvalreuse_pe_i386.exe</com>
+  <com>read symbols</com>
+  <com>load addr 0x401000</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x4010d0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x401100</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x401130</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x4011d0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x401280</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x4012c0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>map function r0x401230 exit</com>
+  <com>load addr 0x401240</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option noreturn_known off</com>
+  <com>load addr 0x401240</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="REPFRAMECOPY #1: fill takes the copied struct and b" min="1" max="1">sub_401070\(v[0-9]+ \+ v[0-9]+,v[0-9]+,v[0-9]+,v[0-9]+,v[0-9]+,v[0-9]+,v[0-9]+,v[0-9]+,v[0-9]+\)</stringmatch>
@@ -92,10 +148,18 @@ c3
 <stringmatch name="REPFRAMECOPY #5: a by-value parameter is passed on whole" min="1" max="1">sub_401000\(a0,a1,a2,a3,a4,a5,a6,a7,7\);</stringmatch>
 <stringmatch name="REPFRAMECOPY #6: a global table passed by value" min="1" max="1">sub_401130\(dat_402000,dat_402004,dat_402008,dat_40200c,dat_402010,dat_402014,dat_402018,dat_40201c\);</stringmatch>
 <stringmatch name="REPFRAMECOPY #7: the entry's other calls keep their pushed arguments" min="1" max="1">sub_401070\(0x402000,2,0\);</stringmatch>
-<stringmatch name="REPFRAMECOPY #8: the eight moves left alone (big_pass, copy_global, zero_pass stosd and movsd, loop_fill, d_virtual, d_ptr, d_direct) stay loops, and only those" min="8" max="8">while \(v[0-9]+\) \{</stringmatch>
+<stringmatch name="REPFRAMECOPY #8: the fourteen moves left alone (big_pass, copy_global, zero_pass stosd and movsd, loop_fill, d_virtual, d_ptr, d_direct, cleanup, local, nested, stray, unsettled, quit without noreturn_known) stay loops, and only those" min="14" max="14">while \(v[0-9]+\) \{</stringmatch>
 <stringmatch name="REPFRAMECOPY #9: the indexed fill stays a loop" min="1" max="1">\} while \(v[0-9]+ &lt; 8\);</stringmatch>
 <stringmatch name="REPFRAMECOPY #10: an overlapping move at the stack pointer shifts the slots down" min="1" max="1">sub_401000\(1,2,3,4,5,6,7,8,8\);</stringmatch>
 <stringmatch name="REPFRAMECOPY #11: the virtual calls after a bottom-of-frame local take no stack argument" min="0" max="0">0x58\)\)\([^)]</stringmatch>
 <stringmatch name="REPFRAMECOPY #12: both virtual calls are kept" min="2" max="2">\(code \*\*\)\(\*v[0-9]+ \+ 0x58\)</stringmatch>
 <stringmatch name="REPFRAMECOPY #13: the register-argument call takes no stack argument after either local" min="2" max="2">sub_4012e0\(\);</stringmatch>
+<stringmatch name="REPFRAMECOPY #14: a block reusing an earlier call's pushes reaches a method whose pop the walk cannot settle" min="1" max="1">sub_401040\(v[0-9]+,v[0-9]+,v[0-9]+,v[0-9]+,v[0-9]+,v[0-9]+,v[0-9]+,v[0-9]+\);</stringmatch>
+<stringmatch name="REPFRAMECOPY #15: a caller's cleanup is not a __cdecl callee's pop, so the caller still reads its own parameter" min="1" max="1">sub_401170\([^)]*\) \+ a1;</stringmatch>
+<stringmatch name="REPFRAMECOPY #16: a local copied before an unrelated call is read back as the local" min="1" max="1">sub_401190\(1\) \+ v[0-9]+\[1\];</stringmatch>
+<stringmatch name="REPFRAMECOPY #17: the call between a block's copy and its call takes only its own push" min="1" max="1">sub_401190\(0\)\)</stringmatch>
+<stringmatch name="REPFRAMECOPY #18: a ret the walk reaches past a call that does not return is not the callee's pop" min="1" max="1">sub_401200\([^)]*\) \+ a1;</stringmatch>
+<stringmatch name="REPFRAMECOPY #19: a pop proven by a no-return name holds only while noreturn_known is on" min="1" max="1">sub_401260\(\*a0,a0\[1\],a0\[2\],a0\[3\],a0\[4\],a0\[5\],a0\[6\],a0\[7\]\);</stringmatch>
+<stringmatch name="REPFRAMECOPY #20: once a stated pop settles every call, an earlier call's proven pop is stated too" min="1" max="1">sub_401040\(\*a0,a0\[1\],a0\[2\],a0\[3\],a0\[4\],a0\[5\],a0\[6\],a0\[7\]\);</stringmatch>
+<stringmatch name="REPFRAMECOPY #21: a block whose stated pop would leave an earlier call's pop a guess is not expanded through the misplaced frame" min="0" max="0">sub_401040\(v[0-9]+,v[0-9]+,v[0-9]+,v[0-9]+,v[0-9]+,v[0-9]+,v[0-9]+,v[0-9]+\) \+ a0;</stringmatch>
 </decompilertest>

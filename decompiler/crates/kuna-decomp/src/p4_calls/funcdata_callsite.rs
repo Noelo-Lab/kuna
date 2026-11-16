@@ -157,7 +157,7 @@ pub fn check_input_trial_use(
             let has_alias = !read_end.is_some_and(|end| trial_end <= end) && {
                 let mut access = data.alias_gather_access();
                 aliascheck.has_local_alias(Some((vn_space.clone(), vn_offset)), &mut access)
-            };
+            } && crate::p4_calls::kuna_directalias::aliases(data, aliascheck, vn_offset, vn_size);
             // C++ keeps these two no-use conditions as separate branches
             // (fspec.cc:5616-5619): a stack alias, OR a stack location outside the
             // CALLER's local range, both mean "not a parameter".  The range test is
@@ -358,6 +358,7 @@ pub fn check_input_trial_use(
         if data.get_call_specs_mut(idx).get_active_input().get_trial(i).is_definitely_not_used() {
             let c = data.new_constant(vn_size, 0);
             let _ = data.op_set_input(op, c, slot);
+            crate::p4_calls::kuna_directalias::refresh(data, aliascheck, vn);
         }
     }
 }

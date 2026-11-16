@@ -1652,9 +1652,11 @@ that machinery.
   virtual dispatch (`kuna_calleereginputs.rs (virtual_call)`, chosen in
   `ActionDefaultParams` beside the Swift indirect-call hook): the target is
   loaded from a slot of a table that is itself loaded from where ECX points
-  (`mov eax,[ecx]; call [eax+k]`, through copies and a zero offset), and
-  neither a write to ECX nor another call comes between that load and the
-  call. The object, the pushes and EAX are compared as values over the ops
+  (`mov eax,[ecx]; call [eax+k]`, through copies and a zero offset), no other
+  call comes between that load and the call, and ECX holds the object from the
+  load to the call: a write to ECX in between must copy the object back, as
+  MSVC sets ECX last (`mov eax,[ebx]; mov eax,[eax+k]; push 6; mov ecx,ebx;
+  call eax`), and one that loads anything else keeps the default. The object, the pushes and EAX are compared as values over the ops
   since the previous call in the block (at most 128), carried forward through
   copies (`Values`): a call clobbers ECX, so a register copied from ECX
   before it (`mov esi,ecx; call f; mov eax,[esi]; push esi; call [eax+k]`)
@@ -1672,11 +1674,23 @@ that machinery.
   (`mov ecx,[ebp+0xc]; mov eax,[ecx]; mov [esp+4],ecx; mov [esp],edx;
   call [eax+k]`), and ECX only held it on the way. A `__thiscall` callee removes its
   own stack arguments, so a call the caller cleans up after (the
-  `kuna_calleepurge.rs (caller_cleanup)` scan, read at flow time:
+  `kuna_calleepurge.rs (own_cleanup)` scan, read at flow time:
   `add esp,4`, a C table of `__cdecl` function pointers reached through ECX)
   keeps the default too, and so does one that also holds the object in EAX
   (Delphi's `register` convention, also read under `x86win.cspec`, passes
-  it there). The chosen model is recorded as the call's read-register model,
+  it there). Past a later call, that scan counts only a run of pops that
+  starts below where the virtual call returns, one that removes the later
+  call's pushes and the virtual call's together (`push 6; call f; add esp,8`,
+  MSVC deferring both cleanups). The `calleeargs` scan credits more, which is
+  not evidence here: it takes the virtual call to pop only its return
+  address, so after a later call the frame teardown (`pop ecx` freeing a slot
+  before `pop edi`) can read as a cleanup, and a later callee that pops
+  pushes made before the virtual call (`o->child()->take(1, 2)`: MSVC pushes
+  `take`'s arguments, then calls `child()` for its object) lifts the scan
+  above the call. A deferred cleanup whose run starts where the virtual call
+  returns, after a later call that leaves no pushes of its own
+  (`push 5; call [eax+8]; call g; pop ecx`), reads as the frame teardown, so
+  such a C table call still gets ECX as its receiver. The chosen model is recorded as the call's read-register model,
   so ECX is an argument with the same standing as a direct callee's read
   register: a receiver whose definition the caller's data flow cannot see
   (ECX set in an earlier block) no longer ends the argument list and costs
@@ -1684,10 +1698,10 @@ that machinery.
   Windows, under `on` and `custom` alike: `custom` decides its registers only
   for direct callees, and a function reached through a vtable has its address
   stored in the image, so it states none. Not
-  recognized: the common MSVC shape that loads the vtable from the register
-  ECX is then copied from (`mov eax,[esi]; mov ecx,esi; call [eax+k]`), and a
-  COM interface pushed by reloading it from memory (`push dword ptr [esp+8]`),
-  which still prints it twice.
+  recognized: a COM interface pushed by reloading it from memory
+  (`push dword ptr [esp+8]`), which still prints it twice. The stack arguments
+  of `o->child()->take(1, 2)` are still offered to `child()`, which has no way
+  to say it takes none.
 - **`ActionExtraPopSetup`** (`coreaction_protos.rs (ActionExtraPopSetup)`)
   models the stack pointer across each call: a known extrapop becomes an
   explicit `INT_ADD sp, #extrapop` after the call; an unknown one becomes an
@@ -1733,8 +1747,16 @@ that machinery.
   its path. Walks are cached on the architecture: one whose nested calls fit
   within the depth it was asked for is the answer at every greater depth, and
   one the depth limit cut short is kept per depth, so the answer never depends
-  on which function asked first. Decoded instructions are shared between
-  walks in a bounded cache.
+  on which function asked first. The walks are dropped when an option they
+  read changes (`calleeargs`, and the gates of the no-return names that end a
+  path: `noreturn_known`, `gobounds` with `sourcelang`, `securitycheck`), so a decompile after a
+  toggle in one session reads what a fresh session would, and when a host
+  front-end flushes the names and no-return facts they read (Ghidra's
+  `flushNative`, sent after every function), so a rename or a no-return mark
+  made in Ghidra reaches the next decompile. The console does not watch its
+  symbol table: a `map function` after a decompile is read by a walk only after
+  `clear architecture`. Decoded instructions are shared between walks in a
+  bounded cache, which a flush keeps.
 
   A proven extrapop is applied only in a function where every call then has
   one, stated by its prototype or proven by its callee
@@ -1842,6 +1864,37 @@ classified:
   trials below it are active, at-or-above it no-use. Otherwise fall through
   to ancestor analysis.
 
+  (kuna) The MSVC frame cookie is scored like any other stack trial and
+  leaves the argument lists afterwards
+  (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_stackcookie.rs
+  (shed_frame_cookies)`). An x86-32 MSVC function with an EH frame pushes the
+  cookie below its saved registers (`mov eax,[___security_cookie]; xor
+  eax,esp; push eax`) and links the registration record above it into
+  `fs:[0]`; only the epilogue pops the slot. Sitting right below the frame,
+  it was handed as a trailing stack argument to the first call that takes
+  more than its own pushes (a function pointer, a `this`-only method, a
+  callee whose extent is not stated), with the frame slots above it. Marking
+  the trial no-use while scoring is not the fix: the slot is the active trial
+  that `fillinMap` fills the holes below up to, so a push the upstream test
+  refused on its own (the stack model is off after a callee whose pop is not
+  known) was lost, and a slot the call that took it no longer holds becomes
+  free for the next call, whose stale slots it then anchors. So the trials
+  are scored as before, and at the end of the `ActionActiveParam` pass that
+  finalizes the last call, every call loses its lowest stack argument that
+  holds the cookie and every stack argument above it: a call only ever loses
+  frame slots. An argument holds the cookie when, on every path, it is an
+  `INT_XOR` of a value read from a fixed address of the default data space
+  with the stack pointer or an offset from it, reached back through register
+  copies, the INDIRECTs of earlier calls and joins, and never through a copy
+  of another stack slot (`push dword ptr [esp+k]` of a slot the model maps
+  onto the cookie is a pushed argument). The op that stores it into the slot
+  must be the prologue's: in the block of a store of a stack address to
+  `fs:[0]` (the link of the registration record), before it (`holds_cookie`,
+  `seh_links`). So `key ^ esp` pushed outside an SEH frame, or in the body of
+  one (after the link), stays an argument, and an argument the direct callee
+  reads or its proven `RET n` pops stays too. A cookie in a function without an EH
+  frame (`/GS` alone keeps it at `[ebp-4]`, above the locals) is not touched.
+
   The local-range test probes **two different addresses for two different
   questions**, and the distinction decides whether stack-passed arguments are
   recovered at all. `guard_calls` registers the trial at the *callee*-relative
@@ -1858,6 +1911,30 @@ classified:
   argument. That is visible as deleted basic blocks, not merely as a shorter
   argument list. (kuna) The caller-relative Varnode address is the one probed
   (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_callsitestackargs.rs`, always on).
+
+  **Direct accesses alias only their bytes** (always on, kuna): a gathered
+  pointer that is the stack-pointer input plus constants, through copies and
+  frame slots only, and is used solely as the address of `LOAD`s and `STORE`s
+  (`kuna_directalias.rs (aliases)`) aliases a trial only when the bytes it
+  touches overlap the trial; every other pointer keeps the boundary above
+  (`varmap.rs (AliasChecker::split_direct)`, which classifies the gathered
+  pointers once per gather, and again when the pass drops or adds one of them
+  as a call input and that changes its class,
+  `varmap.rs (AliasChecker::refresh_split_for)`: a pointer a call stops taking
+  may be left only a store's address). Until its last trial is scored, the
+  only uses the pass adds are new `SUBPIECE`/`PIECE` reads of values that
+  already had a non-address use (the arity fixups that restore dropped inputs
+  run after that), so a pointer can only turn direct, never back, and a change
+  the refresh missed keeps the boundary. Such a pointer is an
+  access heritage has not converted yet: a stack pointer restored from the
+  frame slot it was saved in after an `alloca` is still one when call inputs
+  are scored, and the call after the restore storing its argument at -0x2c
+  dropped an earlier call's argument at -0x28 (`reg(1)` for `reg(1, n)`).
+  The rule is not specific to x86; it applies wherever stack trials are
+  scored. A pointer that is also the base of a further offset
+  (`mov [esp],a; mov [esp+4],b`) is not direct, and a later store that
+  overlaps an earlier call's slot still aliases it, so those shapes keep the
+  upstream verdict.
 - (kuna `calleeargs`, default on) **Callee stack-argument extent.** On
   x86-32 under a model that leaves extrapop unknown (`x86win.cspec`), a direct
   call whose callee's own code can be read takes its stack arguments from what
@@ -1908,7 +1985,14 @@ classified:
   taken to pop only its return address), since the scan's stack pointer then
   sits low by those bytes and the teardown seems to lift it above the call. A
   pop right after a push is a move (`push 3; pop ebx`, MSVC `/O1`'s
-  `mov ebx,3`), not the epilogue, and the run goes on past it. A frame torn
+  `mov ebx,3`), not the epilogue, and the run goes on past it. A move into
+  FS memory ends the run as well
+  (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleepurge.rs
+  (stores_through)`): `mov fs:[0],ecx` unlinks an MSVC SEH frame, and the
+  `pop ecx` that follows it frees the frame's own slot (the `/GS` cookie or
+  a local) before the callee-saved registers are restored. A pop into FS
+  memory (Delphi's constructor epilogue, `pop dword ptr fs:[0]; add esp,0xc`)
+  does not end it and still reads as a cleanup. A frame torn
   down with no callee-saved register restored first (`sub esp,0x10` and no
   pushes) still reads as a cleanup. Where the extent is
   stated, a stack trial starting at or past the bound (or past what the callee
