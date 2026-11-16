@@ -2462,10 +2462,14 @@ With `swiftmetadata on` the first call keeps the C model and the second takes
 ### `stackcookie_pe_i386.exe` — MSVC frame cookies below a call
 
 `stackcookie_pe_i386.exe` (2,560 bytes, PE32/i386, SHA-256
-`1c2da035e9a543cdd438f114f0f05b395217b3110b1ac4cc3497394cd41d881c`) is clean-room:
+`c14de9a9b995f3b74b0223e8e21c58b27c49031ae7fbc30260cbf8e8169ab322`) is clean-room:
 `gsseh`@`0x401000` pushes a `/GS` cookie (`mov eax,[___security_cookie]; xor eax,esp;
 push eax`) below an SEH frame and calls a function pointer with one pushed argument,
 cleaned up after it; `gsthis`@`0x401050` calls a method on `this+8` with no stack
 argument under the same frame; `gsebp`@`0x401090` stores the cookie at `[ebp-4]`
-(`xor eax,ebp`) and checks it in ECX before returning. Source and recipe (clang +
+(`xor eax,ebp`) and checks it in ECX before returning. Three functions push a real
+argument shaped like the cookie: `keyarg`@`0x401130` (`key ^ esp` through a pointer,
+no SEH frame), `keyread`@`0x401150` (the same to a direct callee that reads it, under
+an SEH frame with a cookie) and `copyarg`@`0x4011a0` (a copy read back from the
+cookie's slot after a call, under the same frame). Source and recipe (clang +
 lld-link) in `stackcookie_pe_i386.s`. Used by `tests/stages/kuna-stackcookie.xml`.

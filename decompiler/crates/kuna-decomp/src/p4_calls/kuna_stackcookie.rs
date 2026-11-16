@@ -1,21 +1,98 @@
-//! (kuna) The frame cookie MSVC stores on the stack is no argument.
+//! (kuna) The frame cookie MSVC pushes in an SEH prologue is no argument.
 //!
-//! `/GS` and the EH frame store a global XORed with the stack or frame pointer
-//! (`mov eax,[___security_cookie]; xor eax,esp; push eax`). The slot belongs to
-//! the frame: only the epilogue's check reads it back. A call below it would
-//! otherwise be offered the slot as a stack argument nothing else claims.
+//! An x86-32 MSVC function with an EH frame pushes a cookie below its saved
+//! registers (`mov eax,[___security_cookie]; xor eax,esp; push eax`) and links
+//! the registration record above it into `fs:[0]`. The slot belongs to the
+//! frame: only the epilogue pops it. A call below it whose extent is not
+//! stated was otherwise handed the slot, and the frame slots above it, as
+//! trailing stack arguments.
+//!
+//! The trials are scored as before, so the slot still anchors the pushes below
+//! it and is still claimed by the call that took it. Once every call's list is
+//! final, the lowest argument that holds the cookie and every stack argument
+//! above it leave the call: a call only ever loses frame slots. The argument
+//! must hold the cookie on every path, stored into its slot directly (a value
+//! copied in from another stack slot is a pushed argument, whatever it was
+//! read as), the function must register an SEH frame, and the callee's own
+//! code must neither read nor pop the slot.
 
+use kuna_base::types::int4;
 use kuna_num::opcodes::OpCode;
 
 use crate::context::VarnodeId;
+use crate::fspec::FuncCallSpecs;
 use crate::funcdata::Funcdata;
+use kuna_base::space::spacetype;
 
 /// Ops [`holds_cookie`] follows back from the trial's value.
 const DEPTH: u32 = 32;
 
+/// Once no live call scores trials, drop the frame cookie and the stack
+/// arguments above it from every call. Returns how many calls changed.
+pub fn shed_frame_cookies(data: &mut Funcdata) -> int4 {
+    let mut seh = None;
+    let mut pending = Vec::new();
+    for idx in 0..data.num_calls() {
+        let fc = data.get_call_specs(idx);
+        let Some(op) = data.obank().get(fc.get_op()).filter(|o| !o.is_dead()) else { continue };
+        if !matches!(op.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND) {
+            continue;
+        }
+        if fc.is_input_active() {
+            return 0;
+        }
+        if let Some(cut) = cookie_slot(fc, data, &mut seh) {
+            pending.push((idx, cut));
+        }
+    }
+    for &(idx, cut) in &pending {
+        let op = data.get_call_specs(idx).get_op();
+        let mut storage = data.get_call_specs(idx).final_input_storage().to_vec();
+        for k in (0..storage.len()).rev() {
+            let (addr, _) = &storage[k];
+            if on_stack(addr) && addr.get_offset() as i64 >= cut {
+                data.op_remove_input(op, k as int4 + 1);
+                storage.remove(k);
+            }
+        }
+        data.get_call_specs_mut(idx).set_final_input_storage(storage);
+    }
+    pending.len() as int4
+}
+
+/// The callee-relative offset of the lowest stack argument of `fc` that holds
+/// the frame cookie, when the function registers an SEH frame and the callee
+/// neither reads nor pops it.
+fn cookie_slot(fc: &FuncCallSpecs, data: &Funcdata, seh: &mut Option<bool>) -> Option<i64> {
+    let op = data.obank().get(fc.get_op())?;
+    let storage = fc.final_input_storage();
+    if storage.len() as int4 + 1 != op.num_input() {
+        return None;
+    }
+    let read_end = fc.callee_stack_arg_bytes().map_or(0, |a| 4 + a.read as i64);
+    let popped = fc.callee_purge().map_or(0, i64::from);
+    let mut cut: Option<i64> = None;
+    for (k, (addr, size)) in storage.iter().enumerate() {
+        let start = addr.get_offset() as i64;
+        let end = start + *size as i64;
+        if !on_stack(addr) || end <= read_end || end <= popped || cut.is_some_and(|c| c <= start) {
+            continue;
+        }
+        let Some(vn) = op.get_in(k as int4 + 1) else { continue };
+        if holds_cookie(data, vn) && *seh.get_or_insert_with(|| registers_seh_frame(data)) {
+            cut = Some(start);
+        }
+    }
+    cut
+}
+
+fn on_stack(addr: &kuna_base::address::Address) -> bool {
+    addr.get_space().is_some_and(|s| s.get_type() == spacetype::IPTR_SPACEBASE)
+}
+
 /// Does the stack value `vn` reaching a call hold the frame cookie on every
 /// path: a value of the default data space XORed with the stack pointer,
-/// reached through copies, the indirect effects of calls and joins?
+/// stored into this slot and kept there through calls and joins?
 pub fn holds_cookie(data: &Funcdata, vn: VarnodeId) -> bool {
     let mut seen = Vec::new();
     cookie(data, vn, &mut seen, DEPTH)
@@ -30,9 +107,12 @@ fn cookie(data: &Funcdata, vn: VarnodeId, seen: &mut Vec<VarnodeId>, depth: u32)
         return false;
     };
     let input = |k| op.get_in(k);
+    let in_frame =
+        |v: VarnodeId| data.vbank().get(v).is_some_and(|v| v.get_space().get_type() == spacetype::IPTR_SPACEBASE);
     match op.code() {
         _ if depth == 0 => false,
-        OpCode::CPUI_COPY | OpCode::CPUI_INDIRECT => input(0).is_some_and(|v| cookie(data, v, seen, depth - 1)),
+        OpCode::CPUI_COPY => input(0).is_some_and(|v| !in_frame(v) && cookie(data, v, seen, depth - 1)),
+        OpCode::CPUI_INDIRECT => input(0).is_some_and(|v| cookie(data, v, seen, depth - 1)),
         OpCode::CPUI_MULTIEQUAL => {
             op.num_input() > 0 && (0..op.num_input()).all(|k| input(k).is_some_and(|v| cookie(data, v, seen, depth - 1)))
         }
@@ -80,4 +160,32 @@ fn stack(data: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
         }
         _ => false,
     }
+}
+
+/// Does the function link an SEH registration record: a store to `fs:[0]`?
+fn registers_seh_frame(data: &Funcdata) -> bool {
+    let Some(fs) = data.get_arch().manage().register_lookup().and_then(|l| l.probe_register("FS_OFFSET")) else {
+        return false;
+    };
+    let Some(space) = fs.space else { return false };
+    let at_base = |mut vn: VarnodeId| {
+        for _ in 0..4 {
+            let Some(v) = data.vbank().get(vn) else { return false };
+            if v.get_space().get_index() == space.get_index() && v.get_offset() == fs.offset {
+                return true;
+            }
+            let Some(op) = v.get_def().and_then(|d| data.obank().get(d)) else { return false };
+            let zero = op.get_in(1).and_then(|i| data.vbank().get(i)).is_some_and(|i| i.is_constant() && i.get_offset() == 0);
+            match (op.code(), op.get_in(0)) {
+                (OpCode::CPUI_COPY, Some(i)) => vn = i,
+                (OpCode::CPUI_INT_ADD, Some(i)) if zero => vn = i,
+                _ => return false,
+            }
+        }
+        false
+    };
+    data.obank()
+        .iter_code(OpCode::CPUI_STORE)
+        .filter_map(|o| data.obank().get(o))
+        .any(|o| !o.is_dead() && o.get_in(1).is_some_and(at_base))
 }

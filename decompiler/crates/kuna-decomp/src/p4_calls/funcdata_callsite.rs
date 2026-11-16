@@ -147,9 +147,7 @@ pub fn check_input_trial_use(
             let start = t.get_address().get_offset() as i64;
             (start, start + t.get_size() as i64)
         };
-        if is_spacebase && crate::p4_calls::kuna_stackcookie::holds_cookie(data, vn) {
-            data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_no_use();
-        } else if is_spacebase
+        if is_spacebase
             && arg_bound.is_some_and(|bound| trial_start >= bound)
             && !crate::p4_calls::kuna_calleestackargs::contested(data, idx, vn, held)
         {

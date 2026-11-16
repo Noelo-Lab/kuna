@@ -7,6 +7,13 @@
 #                       (`lea ecx,[esi+8]; call`) and no stack argument.
 #   gsebp   (0x401090): an EBP frame storing the cookie at [ebp-4] and
 #                       checking it before the return; one call in between.
+#   keyarg  (0x401130): no SEH frame; g = lookup(key ^ esp) through a pointer,
+#                       a real argument shaped like the cookie.
+#   keyread (0x401150): an SEH frame with a cookie; g = lookup(key ^ esp) to
+#                       the direct lookup, which reads that argument.
+#   copyarg (0x4011a0): an SEH frame with a cookie; after a call it pushes a
+#                       copy read back from the cookie's slot and calls
+#                       lookup through a pointer: the copy is the argument.
 #
 # Build:
 #   clang --target=i686-pc-windows-msvc -c stackcookie_pe_i386.s -o s.obj
@@ -112,6 +119,69 @@ _start:
     push 3
     call _gsebp
     add esp, 4
+    call _keyarg
+    call _keyread
+    call _copyarg
+    ret
+
+    .p2align 4, 0xcc
+_keyarg:
+    mov eax, dword ptr [_key]
+    xor eax, esp
+    push eax
+    call dword ptr [_lookup_ptr]
+    add esp, 4
+    mov dword ptr [_g], eax
+    ret
+
+    .p2align 4, 0xcc
+_keyread:
+    push -1
+    push 0
+    mov eax, dword ptr fs:[0]
+    push eax
+    push esi
+    mov eax, dword ptr [___security_cookie]
+    xor eax, esp
+    push eax
+    lea eax, [esp + 8]
+    mov dword ptr fs:[0], eax
+    mov eax, dword ptr [_key]
+    xor eax, esp
+    push eax
+    call _lookup
+    add esp, 4
+    mov dword ptr [_g], eax
+    mov ecx, dword ptr [esp + 8]
+    mov dword ptr fs:[0], ecx
+    pop ecx
+    pop esi
+    add esp, 0xc
+    ret
+
+    .p2align 4, 0xcc
+_copyarg:
+    push -1
+    push 0
+    mov eax, dword ptr fs:[0]
+    push eax
+    push esi
+    mov eax, dword ptr [___security_cookie]
+    xor eax, esp
+    push eax
+    lea eax, [esp + 8]
+    mov dword ptr fs:[0], eax
+    lea ecx, [_obj]
+    call _reset
+    push dword ptr [esp]
+    call dword ptr [_lookup_ptr]
+    add esp, 4
+    mov dword ptr [_g], eax
+    mov ecx, dword ptr [esp + 8]
+    mov dword ptr fs:[0], ecx
+    pop ecx
+    pop esi
+    add esp, 0xc
     ret
 
     .data
@@ -127,3 +197,5 @@ _obj:
     .long 0, 0, 0
 _name:
     .asciz "NAME"
+_key:
+    .long 0x5a5a1234
