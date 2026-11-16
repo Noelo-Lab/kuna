@@ -3082,7 +3082,7 @@ moves.
   gives a `__stack_chk_fail_local` the image defines the `void (void)` row
   `libcsigs` gives the import (below), keyed by its address and only where no
   other function name holds that address: GCC's `-fPIC` stack protector on
-  32-bit PowerPC, x86 and SPARC links the hidden helper into each PIE and shared
+  32-bit PowerPC and x86 links the hidden helper into each PIE and shared
   object, where a PowerPC caller that set its return value in `r3` before the
   canary test otherwise passes it (`__stack_chk_fail_local(a0 * 3)`), while
   static glibc aliases it to `__stack_chk_fail`, whose address keeps its
@@ -3178,13 +3178,16 @@ moves.
   address-keyed copy at each resolver address. Thus an IAT slot and veneer remain
   typed even when a same-spelled export suppresses the global key; the export
   itself remains untouched. `__stack_chk_fail_local`, the hidden helper GCC's
-  `-fPIC` stack protector calls on 32-bit targets, is `void (void)` like
+  `-fPIC` stack protector calls on 32-bit PowerPC and x86, is `void (void)` like
   `__stack_chk_fail` (glibc `debug/stack_chk_fail_local.c`, libssp
   `ssp-local.c`), so a PowerPC function's return value, set in `r3` before the
   canary test, stays out of the call: `__stack_chk_fail_local()`, not
   `__stack_chk_fail_local(a0 * 3)`. Only an import spelled exactly so matches,
   which in practice is a relocatable object's call relocation to the undefined
-  symbol, and the known-names pass (§1.7) ends the flow at the same import. A
+  symbol, and the known-names pass (§1.7) ends the flow at the same import. An
+  i386 object reaches the helper through an `R_386_PC32` relocation, which the
+  loader does not register as a code extern, so there the call stays an unnamed
+  `sub_` callee and is unchanged. A
   linked PIE or shared object defines the helper hidden in its own text, where
   `libgccsigs` (above) types it when that option is on; static glibc aliases it
   to `__stack_chk_fail`, so a by-name match there would retype that address for
