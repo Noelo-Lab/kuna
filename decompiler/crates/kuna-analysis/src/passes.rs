@@ -18,18 +18,17 @@ use crate::loadimage_object::ObjectLoadImage;
 use crate::pass::{run_analyses, AnalysisCtx, AnalysisOutput, AnalysisPass};
 use crate::sourcelang::Compiler;
 
-pub const LOAD_OBJC_ENV: &str = "KUNA_LOAD_OBJC";
-pub const LOAD_STRINGS_ENV: &str = "KUNA_LOAD_STRINGS";
+pub use kuna_decomp::kuna_loadoptions::{LOAD_OBJC_ENV, LOAD_STRINGS_ENV};
 
+/// Whether the load runs pass `id`: the `objc` and `strings` passes can be
+/// skipped by the load's options.
 fn load_pass_enabled(id: &str) -> bool {
-    let env = match id {
-        "objc" => LOAD_OBJC_ENV,
-        "strings" => LOAD_STRINGS_ENV,
-        _ => return true,
-    };
-    !std::env::var(env).is_ok_and(|value| {
-        matches!(value.trim().to_ascii_lowercase().as_str(), "off" | "0" | "false")
-    })
+    use kuna_decomp::kuna_loadoptions::{env, scoped};
+    match id {
+        "objc" => scoped(|o| o.load_objc).unwrap_or_else(env::load_objc),
+        "strings" => scoped(|o| o.load_strings).unwrap_or_else(env::load_strings),
+        _ => true,
+    }
 }
 
 /// The default program-prep passes, in stage order.

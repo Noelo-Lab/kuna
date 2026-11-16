@@ -32,6 +32,7 @@
 
 mod lazy_inventory;
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::Path;
 use std::rc::Rc;
@@ -46,6 +47,8 @@ use kuna_base::xml::{DocumentStorage, Element};
 use kuna_decomp::architecture::Architecture;
 use kuna_decomp::options::register_option_elements;
 use kuna_decomp::raw_arch::RawBinaryArchitectureCapability;
+use kuna_decomp::kuna_memoryspecs::IntoSpecRoot;
+use kuna_decomp::kuna_loadoptions::LoadOptions;
 use kuna_decomp::sleigh_arch::{register_sleigh_arch_ids, LanguageDatabase, SleighArchitecture};
 use kuna_decomp::xml_arch::XmlArchitectureCapability;
 
@@ -61,6 +64,7 @@ use kuna_sleigh::loadimage_xml::register_loadimage_xml_ids;
 use kuna_sleigh::translate::register_translate_ids;
 
 use crate::entry_selector::ObjectSectionLocation;
+pub use crate::kuna_bootstrap::{Bootstrap, LanguageSource};
 pub use crate::entry_selector::{
     DataName, EntryLookupError, EntryProvenance, EntrySelector, FunctionEntry, NameSuggestion,
     ObjectLocation,
@@ -877,6 +881,7 @@ impl ConsoleProgram {
     /// hook): scan the binaryimage symbols read at load.  `None` if no symbol of
     /// that name exists.
     pub fn lookup_symbol(&self, name: &str) -> Option<Address> {
+        let _load = self.arch().load_scope();
         // (kuna `symbolnamebound`) `self.symbols` carries the bounded spelling,
         // so bound the query too: `load function <name>` must accept both the
         // binary's ORIGINAL name and the one the listing renders. Idempotent, and
@@ -962,6 +967,7 @@ impl ConsoleProgram {
     /// Whether any symbol or loader alias is spelled exactly `name` (the
     /// spelling a name selector would match first). O(1) on the name index.
     pub(crate) fn has_symbol_spelled(&self, name: &str) -> bool {
+        let _load = self.arch().load_scope();
         let name = &*kuna_decomp::kuna_symbolnamebound::bound_scope_path(name, "::");
         (self.symbols.lookup(name).is_some() || self.anonymous_address(name).is_some())
             || self.loader_aliases.values().any(|names| names.iter().any(|alias| alias == name))
@@ -1269,6 +1275,7 @@ impl ConsoleProgram {
     /// to the raw symbol table when it declines, which on a PE import pair is
     /// the pointer slot rather than the thunk `decompile` would have picked.
     pub fn find_entry_by_name(&self, want: &str) -> Option<FunctionEntry> {
+        let _load = self.arch().load_scope();
         // (kuna `symbolnamebound`) The enumeration reports the bounded spelling,
         // so bound the query too -- a caller holding the binary's ORIGINAL name
         // must still resolve. Idempotent, so the bounded spelling resolves as
@@ -1403,6 +1410,7 @@ impl ConsoleProgram {
         &self,
         selector: &EntrySelector,
     ) -> Result<FunctionEntry, EntryLookupError> {
+        let _load = self.arch().load_scope();
         match selector {
             EntrySelector::Name(want) => {
                 // (kuna `symbolnamebound`) The enumeration reports the bounded
@@ -2263,6 +2271,7 @@ impl ConsoleProgram {
     /// `<Class>::RTTI_*` labels the `rtti` pass emits). The verification hook for
     /// the gated MSVC-RTTI recovery e2e.
     pub fn has_symbol_named(&self, full_name: &str) -> bool {
+        let _load = self.arch().load_scope();
         let db = &self.arch().symboltab;
         let (scope, base) = db.resolve_scope_from_symbol_name(full_name, "::", None);
         match scope {
@@ -2320,6 +2329,7 @@ impl ConsoleProgram {
         &mut self,
         entries: &[(String, Address)],
     ) -> KunaResult<usize> {
+        let _load = self.arch().load_scope();
         self.callwide_changed();
         self.anonymous_symbols.take();
         let taken: std::collections::HashSet<String> =
@@ -2365,6 +2375,7 @@ impl ConsoleProgram {
     /// the table is skipped (the C++ `addFunction` no-ops on an existing match via
     /// `queryFunction`).
     pub fn read_loader_symbols(&mut self) -> KunaResult<()> {
+        let _load = self.arch().load_scope();
         self.callwide_changed();
         let type_code = self.arch().types().get_type_code()?;
         let min_size = self.arch().min_funcsymbol_size;
@@ -2411,6 +2422,7 @@ impl ConsoleProgram {
     }
 
     fn register_symbol_record(&mut self, name: &str, addr: Address, sole: bool) {
+        let _load = self.arch().load_scope();
         self.callwide_changed();
         self.anonymous_symbols.take();
         if let Some(prior) = self.anonymous_address(name) {
@@ -2587,6 +2599,7 @@ impl ConsoleProgram {
         name: Option<&str>,
         size: int4,
     ) -> KunaResult<String> {
+        let _load = self.arch().load_scope();
         let addr = match addr.get_space() {
             Some(space) => Address::new(
                 std::rc::Rc::clone(space),
@@ -2647,6 +2660,7 @@ impl ConsoleProgram {
     /// address has a body. Used by an addressed CLI run that needs a symbol for
     /// prototype directives before selection.
     pub fn ensure_function_symbol(&mut self, addr: Address) -> KunaResult<String> {
+        let _load = self.arch().load_scope();
         let addr = match addr.get_space() {
             Some(space) => Address::new(
                 std::rc::Rc::clone(space),
@@ -2879,6 +2893,7 @@ impl ConsoleProgram {
     /// defensively re-gated facts merge into the same `merged` output committed
     /// below. With Listing off, this whole block is skipped.
     pub fn commit_pending_analysis(&mut self) -> KunaResult<()> {
+        let _load = self.arch().load_scope();
         if !self.pending_synthetic_entries.is_empty() {
             // (kuna `rawdiscover`) A headerless image reaches this point holding
             // only the `--entry` addresses the caller typed, because the
@@ -3645,14 +3660,68 @@ fn build_registry() -> IdRegistry {
 /// The Python tools pass `-s <specs>` and set `SLEIGHHOME=<specs>`; the bin's
 /// arg parser records the spec roots and hands them here.  The first existing
 /// root wins (mirroring the C++ `scanForSleighDirectories` over the recorded
-/// roots).
-fn scan_language_database(spec_roots: &[String], registry: &IdRegistry) -> KunaResult<LanguageDatabase> {
+/// roots).  A root may also be a tree held in memory
+/// ([`kuna_decomp::kuna_memoryspecs::MemorySpecs`]).
+fn scan_language_database(spec_roots: &[impl IntoSpecRoot], registry: &IdRegistry) -> KunaResult<LanguageDatabase> {
     let mut db = LanguageDatabase::new();
     for root in spec_roots {
-        db.scan_for_sleigh_directories(root);
+        db.add_spec_root(&root.to_spec_root());
     }
     db.get_descriptions(registry)?;
     Ok(db)
+}
+
+/// Scan `spec_roots` into a [`LanguageDatabase`] once, for [`Bootstrap`]s to
+/// share. A bootstrap over spec roots scans them again at each load: it lists
+/// their `.ldefs` and parses every one, whichever language the image needs. A
+/// bootstrap over the database builds what the same bootstrap over the roots
+/// builds.
+///
+/// A bootstrap only reads the database, and the database is `Send + Sync`, so
+/// threads may share one (behind an `Arc` or a `&'static`) and load images at
+/// once. It holds the language descriptions and the roots, not the `.sla`,
+/// `.pspec` and `.cspec` contents, which each bootstrap reads and decodes for
+/// its own language.
+pub fn language_database(spec_roots: &[impl IntoSpecRoot]) -> KunaResult<LanguageDatabase> {
+    scan_language_database(spec_roots, &build_registry())
+}
+
+pub(crate) use languages::Languages;
+
+mod languages {
+    use super::*;
+
+    /// Where a bootstrap finds its languages: spec roots it scans when it
+    /// first needs a language, or a database a caller scanned once. Public in
+    /// a private module, so [`crate::engine::LanguageSource`] can name it as a
+    /// supertrait that callers cannot implement.
+    pub trait Languages {
+        fn database(&self, registry: &IdRegistry) -> KunaResult<Cow<'_, LanguageDatabase>>;
+    }
+
+    impl<R: IntoSpecRoot> Languages for [R] {
+        fn database(&self, registry: &IdRegistry) -> KunaResult<Cow<'_, LanguageDatabase>> {
+            scan_language_database(self, registry).map(Cow::Owned)
+        }
+    }
+
+    impl<R: IntoSpecRoot, const N: usize> Languages for [R; N] {
+        fn database(&self, registry: &IdRegistry) -> KunaResult<Cow<'_, LanguageDatabase>> {
+            self.as_slice().database(registry)
+        }
+    }
+
+    impl<R: IntoSpecRoot> Languages for Vec<R> {
+        fn database(&self, registry: &IdRegistry) -> KunaResult<Cow<'_, LanguageDatabase>> {
+            self.as_slice().database(registry)
+        }
+    }
+
+    impl Languages for LanguageDatabase {
+        fn database(&self, _registry: &IdRegistry) -> KunaResult<Cow<'_, LanguageDatabase>> {
+            Ok(Cow::Borrowed(self))
+        }
+    }
 }
 
 /// Find the `<binaryimage>` element inside a parsed document root (which may be a
@@ -3691,7 +3760,7 @@ fn build_engine_and_init(sleigh: &mut SleighArchitecture, db: &LanguageDatabase)
     let resolved_sla = specs
         .slafile
         .ok_or_else(|| KunaError::lowlevel("build_spec_file resolved no .sla"))?;
-    let sla = std::fs::read(&resolved_sla)
+    let sla = db.read_spec(&resolved_sla)
         .map_err(|e| KunaError::lowlevel(format!("read sla {resolved_sla}: {e}")))?;
 
     // The loader is handed to the translator as a dummy first; the real opened
@@ -3723,11 +3792,11 @@ fn build_engine_and_init(sleigh: &mut SleighArchitecture, db: &LanguageDatabase)
     // A read failure is non-fatal: the architecture falls back to the name-only
     // default model (proto recovery simply won't fire).
     if !specs.compilerfile.is_empty() {
-        if let Ok(cspec) = std::fs::read(&specs.compilerfile) {
+        if let Ok(cspec) = db.read_spec(&specs.compilerfile) {
             sleigh
                 .base_mut()
                 .ok_or_else(|| KunaError::lowlevel("no Architecture base after build_translator"))?
-                .set_cspec_xml(cspec);
+                .set_cspec_xml(cspec.into_owned());
         }
     }
 
@@ -3738,11 +3807,11 @@ fn build_engine_and_init(sleigh: &mut SleighArchitecture, db: &LanguageDatabase)
     // without it x86-64 lifts as 16-bit real mode.  A read failure is non-fatal
     // (the engine keeps the zero-default context).
     if !specs.processorfile.is_empty() {
-        if let Ok(pspec) = std::fs::read(&specs.processorfile) {
+        if let Ok(pspec) = db.read_spec(&specs.processorfile) {
             sleigh
                 .base_mut()
                 .ok_or_else(|| KunaError::lowlevel("no Architecture base after build_translator"))?
-                .set_pspec_xml(pspec);
+                .set_pspec_xml(pspec.into_owned());
         }
     }
 
@@ -3781,6 +3850,15 @@ pub fn bootstrap_program(
     arch_id: &str,
     spec_roots: &[String],
 ) -> KunaResult<ConsoleProgram> {
+    Bootstrap::new(spec_roots).xml_image(binaryimage, arch_id)
+}
+
+/// The XML bootstrap behind [`bootstrap_program`].
+pub(crate) fn bootstrap_xml_image(
+    binaryimage: Rc<Element>,
+    arch_id: &str,
+    languages: &(impl Languages + ?Sized),
+) -> KunaResult<ConsoleProgram> {
     let registry = build_registry();
 
     // capa->buildArchitecture(filename,target,...)
@@ -3791,7 +3869,7 @@ pub fn bootstrap_program(
     arch.build_loader(Rc::clone(&binaryimage))?;
 
     // collectSpecFiles + resolveArchitecture (language-id normalization/index).
-    let db = scan_language_database(spec_roots, &registry)?;
+    let db = languages.database(&registry)?;
     arch.sleigh_mut().set_archid(arch_id);
     arch.sleigh_mut().resolve_architecture(&db, arch_id)?;
     if arch.sleigh().language_index() < 0 {
@@ -3944,12 +4022,12 @@ fn input_isa_paints_for_ranges(
 fn build_sleigh_for_loader(
     path: &str,
     target: &str,
-    spec_roots: &[String],
+    languages: &(impl Languages + ?Sized),
     registry: &IdRegistry,
     arch_type: &str,
     fallback_arch_id: Option<&[u8]>,
 ) -> KunaResult<SleighArchitecture> {
-    let db = scan_language_database(spec_roots, registry)?;
+    let db = languages.database(registry)?;
     let mut sleigh = SleighArchitecture::new(path, target);
     sleigh.resolve_architecture(&db, arch_type)?;
     if sleigh.language_index() < 0 && target.is_empty() {
@@ -4104,17 +4182,17 @@ pub fn bootstrap_from_raw(
     isa: Option<ArmIsa>,
     spec_roots: &[String],
 ) -> KunaResult<ConsoleProgram> {
-    bootstrap_raw_image(path, target, base, entries, isa, spec_roots, None)
+    Bootstrap::new(spec_roots).target(target).arm_isa(isa).raw(path, base, entries)
 }
 
 /// [`bootstrap_from_raw`] over the file, or over `bytes` built in memory.
-fn bootstrap_raw_image(
+pub(crate) fn bootstrap_raw_image(
     path: &str,
     target: &str,
     base: u64,
     entries: &[u64],
     isa: Option<ArmIsa>,
-    spec_roots: &[String],
+    languages: &(impl Languages + ?Sized),
     bytes: Option<Vec<u8>>,
 ) -> KunaResult<ConsoleProgram> {
     if target.trim().is_empty() {
@@ -4131,7 +4209,7 @@ fn bootstrap_raw_image(
     let registry = build_registry();
     let capability = RawBinaryArchitectureCapability::new();
     let mut raw = capability.build_architecture(path, target);
-    let db = scan_language_database(spec_roots, &registry)?;
+    let db = languages.database(&registry)?;
     raw.resolve_architecture(&db)?;
     if raw.sleigh().language_index() < 0 {
         return Err(KunaError::lowlevel(format!(
@@ -4254,12 +4332,39 @@ pub fn bootstrap_from_image_with_isa(
     spec_roots: &[String],
     isa: Option<ArmIsa>,
 ) -> KunaResult<ConsoleProgram> {
+    Bootstrap::new(spec_roots).target(target).arm_isa(isa).image(path)
+}
+
+/// The image dispatch behind every image bootstrap; `from_env` as in
+/// [`bootstrap_object`].
+pub(crate) fn bootstrap_image(
+    path: &str,
+    target: &str,
+    languages: &(impl Languages + ?Sized),
+    isa: Option<ArmIsa>,
+    options: &LoadOptions,
+    from_env: bool,
+) -> KunaResult<ConsoleProgram> {
     if file_is_te_image(path) {
-        bootstrap_from_te(path, target, spec_roots, isa)
+        let _load = enter_load(options, from_env);
+        bootstrap_te(path, target, languages, isa)
     } else if let Some(bytes) = file_mz_dos_image(path) {
-        bootstrap_from_mz_bytes(path, &bytes, target, spec_roots, isa)
+        let _load = enter_load(options, from_env);
+        bootstrap_mz_bytes(path, &bytes, target, languages, isa)
     } else {
-        bootstrap_from_object_with_isa(path, target, spec_roots, isa)
+        bootstrap_object(path, target, languages, isa, options, from_env)
+    }
+}
+
+/// Put a load's options in force on this thread: `options` for an
+/// explicit-options load, the live environment for an entry point that takes
+/// none (`options` is then [`LoadOptions::from_env`], read for the bootstrap's
+/// own decisions). The program built under the scope keeps that choice.
+fn enter_load(options: &LoadOptions, from_env: bool) -> kuna_decomp::kuna_loadoptions::LoadScope {
+    if from_env {
+        kuna_decomp::kuna_loadoptions::enter_environment()
+    } else {
+        options.enter()
     }
 }
 
@@ -4300,6 +4405,16 @@ pub fn bootstrap_from_mz_bytes(
     spec_roots: &[String],
     isa: Option<ArmIsa>,
 ) -> KunaResult<ConsoleProgram> {
+    Bootstrap::new(spec_roots).target(target).arm_isa(isa).mz_bytes(path, bytes)
+}
+
+pub(crate) fn bootstrap_mz_bytes(
+    path: &str,
+    bytes: &[u8],
+    target: &str,
+    languages: &(impl Languages + ?Sized),
+    isa: Option<ArmIsa>,
+) -> KunaResult<ConsoleProgram> {
     let image = MzImage::parse(bytes)
         .map_err(|error| KunaError::lowlevel(format!("{}; {MZ_RAW_IMAGE_HINT}", error.explain())))?;
     if let Some(packer) = image.packer {
@@ -4338,7 +4453,7 @@ pub fn bootstrap_from_mz_bytes(
         image.base,
         &[entry],
         isa,
-        spec_roots,
+        languages,
         Some(image.module.clone()),
     )?;
     if let Some(space) = program.analysis_code_space.clone() {
@@ -4374,13 +4489,7 @@ pub fn bootstrap_from_image(
     target: &str,
     spec_roots: &[String],
 ) -> KunaResult<ConsoleProgram> {
-    let isa = std::env::var(ARM_ISA_ENV)
-        .ok()
-        .map(|value| ArmIsa::parse(&value))
-        .transpose()
-        .map_err(KunaError::lowlevel)?
-        .flatten();
-    bootstrap_from_image_with_isa(path, target, spec_roots, isa)
+    Bootstrap::new(spec_roots).target(target).image(path)
 }
 
 /// Whether the file at `path` opens as a UEFI TE, reading only the bytes the
@@ -4415,10 +4524,19 @@ pub fn bootstrap_from_te(
     spec_roots: &[String],
     isa: Option<ArmIsa>,
 ) -> KunaResult<ConsoleProgram> {
+    Bootstrap::new(spec_roots).target(target).arm_isa(isa).te(path)
+}
+
+pub(crate) fn bootstrap_te(
+    path: &str,
+    target: &str,
+    languages: &(impl Languages + ?Sized),
+    isa: Option<ArmIsa>,
+) -> KunaResult<ConsoleProgram> {
     let bytes = std::fs::read(path).map_err(|error| {
         KunaError::lowlevel(format!("Unable to open TE image file: {path}: {error}"))
     })?;
-    bootstrap_from_te_bytes(path, &bytes, target, spec_roots, isa)
+    bootstrap_te_bytes(path, &bytes, target, languages, isa)
 }
 
 /// [`bootstrap_from_te`] over bytes a caller has already read.
@@ -4429,6 +4547,16 @@ pub fn bootstrap_from_te_bytes(
     spec_roots: &[String],
     isa: Option<ArmIsa>,
 ) -> KunaResult<ConsoleProgram> {
+    Bootstrap::new(spec_roots).target(target).arm_isa(isa).te_bytes(path, bytes)
+}
+
+pub(crate) fn bootstrap_te_bytes(
+    path: &str,
+    bytes: &[u8],
+    target: &str,
+    languages: &(impl Languages + ?Sized),
+    isa: Option<ArmIsa>,
+) -> KunaResult<ConsoleProgram> {
     let target = kuna_analysis::loadimage_object::explicit_language_target(target).unwrap_or("");
     let registry = build_registry();
     let mut loader = TeLoadImage::from_bytes_with_target(path, bytes, target)?;
@@ -4436,7 +4564,7 @@ pub fn bootstrap_from_te_bytes(
     let mut sleigh = build_sleigh_for_loader(
         path,
         target,
-        spec_roots,
+        languages,
         &registry,
         &arch_type,
         loader.fallback_arch_id(),
@@ -4526,13 +4654,7 @@ pub fn bootstrap_from_object(
     target: &str,
     spec_roots: &[String],
 ) -> KunaResult<ConsoleProgram> {
-    let isa = std::env::var(ARM_ISA_ENV)
-        .ok()
-        .map(|value| ArmIsa::parse(&value))
-        .transpose()
-        .map_err(KunaError::lowlevel)?
-        .flatten();
-    bootstrap_from_object_with_isa(path, target, spec_roots, isa)
+    Bootstrap::new(spec_roots).target(target).object(path)
 }
 
 /// The MIPS t9 entry probe: the PIC-setup seed for `entry`, truncated to the
@@ -4555,15 +4677,33 @@ fn mips_t9_probe(
     })
 }
 
-/// Explicit-input-context form of [`bootstrap_from_object`]. Front-ends use
-/// this to avoid process-global state; the interactive console wrapper above
-/// retains the environment bridge used by `load file`.
+/// Explicit-input-context form of [`bootstrap_from_object`]: the ARM decode
+/// mode comes from `isa`, the load-time options from the environment.
+/// [`Bootstrap`] takes both explicitly.
 pub fn bootstrap_from_object_with_isa(
     path: &str,
     target: &str,
     spec_roots: &[String],
     isa: Option<ArmIsa>,
 ) -> KunaResult<ConsoleProgram> {
+    Bootstrap::new(spec_roots).target(target).arm_isa(isa).object(path)
+}
+
+/// The object bootstrap. `from_env` is set by the entry points that take no
+/// options: their load and the program it builds read the environment live, and
+/// they publish the image's Go toolchain version in
+/// [`GOVERSION_ENV`](kuna_decomp::kuna_goreg::GOVERSION_ENV) (cleared for a
+/// non-Go image). An explicit-options load leaves the environment alone and
+/// never reads it. The options are in force from the first byte read.
+pub(crate) fn bootstrap_object(
+    path: &str,
+    target: &str,
+    languages: &(impl Languages + ?Sized),
+    isa: Option<ArmIsa>,
+    options: &LoadOptions,
+    from_env: bool,
+) -> KunaResult<ConsoleProgram> {
+    let _caller = enter_load(options, from_env);
     let target = kuna_analysis::loadimage_object::explicit_language_target(target).unwrap_or("");
     let registry = build_registry();
 
@@ -4579,7 +4719,7 @@ pub fn bootstrap_from_object_with_isa(
             };
             // (kuna `kernelcache`) IMG4 / IM4P / LZFSE / complzss unwrapping and MH_FILESET
             // entry selection, ahead of every other normalization.
-            let choice = kuna_decomp::kuna_kernelcache::KernelcacheChoice::from_env();
+            let choice = kuna_decomp::kuna_kernelcache::KernelcacheChoice::in_force();
             let peeled = kuna_analysis::loader::kuna_kernelcache::peel(bytes, &choice)
                 .map_err(KunaError::lowlevel)?;
             if let Some(note) = &peeled.note {
@@ -4594,7 +4734,7 @@ pub fn bootstrap_from_object_with_isa(
             // exactly as for a thin Mach-O. The slice preference is `--slice` (env
             // `KUNA_MACHO_SLICE`) or the `--target` stem, else x86-64 → arm64 → first.
             // Non-fat input is untouched (the peel returns the bytes verbatim).
-            let bytes = select_macho_slice(bytes, target);
+            let bytes = select_macho_slice(bytes, options.macho_slice.as_deref(), target);
             // (kuna) ELF section-table tolerance: the second normalization at this same
             // canonical point. An ELF's section table is link-time metadata, but `object`
             // validates it eagerly, so one corrupt half-word rejected an image whose
@@ -4624,6 +4764,27 @@ pub fn bootstrap_from_object_with_isa(
     for note in &load_notes {
         kuna_base::notes::say_once(path, &format!("[kuna] {note}"));
     }
+    // (kuna goreg) The Go toolchain version is a BUILD-TIME fact: the goreg
+    // shells are interned inside the cspec decode during the sleigh build
+    // below, upstream of every per-image fact write, and their layouts drift
+    // by release (go1.23's g.syscallbp, go1.25's dropped gobuf.ret). It travels
+    // on the load options, which every gate below reads; this scope replaces the
+    // caller's until the load returns.
+    // An environment-reading load takes the version from the image alone: a
+    // stale `KUNA_GOVERSION` must not outlive a non-Go image.
+    let mut options = options.clone();
+    let stated = if from_env { None } else { options.go_version };
+    options.go_version =
+        kuna_analysis::loader::gobuildinfo::go_toolchain_version(&bytes).or(stated);
+    if from_env {
+        match options.go_version {
+            Some((maj, min)) => {
+                std::env::set_var(kuna_decomp::kuna_goreg::GOVERSION_ENV, format!("{maj}.{min}"))
+            }
+            None => std::env::remove_var(kuna_decomp::kuna_goreg::GOVERSION_ENV),
+        }
+    }
+    let _load = enter_load(&options, from_env);
     let explicit_isa = isa.is_some();
     let import_proofs = kuna_analysis::loader::ImportProofScope::enter(&bytes);
     // LoadImageBfd(filename) + open(): parse the ELF (machine, segments, symbols).
@@ -4634,22 +4795,10 @@ pub fn bootstrap_from_object_with_isa(
     // machine → SLEIGH language id), unless an explicit target overrides it;
     // buildSpecFile -> buildTranslator -> the Architecture::init tail follow.
     let arch_type = String::from_utf8_lossy(&loader.get_arch_type()).into_owned();
-    // (kuna goreg) The Go toolchain version is a BUILD-TIME fact: the goreg
-    // shells are interned inside the cspec decode during the sleigh build
-    // below, upstream of every per-image fact write, and their layouts drift
-    // by release (go1.23's g.syscallbp, go1.25's dropped gobuf.ret). Carry it
-    // on the loadtime-env tier; a non-Go image clears the variable so a stale
-    // value from an earlier load in this process cannot leak in.
-    match kuna_analysis::loader::gobuildinfo::go_toolchain_version(&bytes) {
-        Some((maj, min)) => {
-            std::env::set_var(kuna_decomp::kuna_goreg::GOVERSION_ENV, format!("{maj}.{min}"))
-        }
-        None => std::env::remove_var(kuna_decomp::kuna_goreg::GOVERSION_ENV),
-    }
     let mut sleigh = build_sleigh_for_loader(
         path,
         target,
-        spec_roots,
+        languages,
         &registry,
         &arch_type,
         loader.fallback_arch_id(),
@@ -6251,11 +6400,16 @@ fn commit_analysis_output(
 /// `<decompilertest>` wrapping one), reading the arch id off the
 /// `<binaryimage>` element.  Used by `load file` (path → parse → bootstrap).
 pub fn bootstrap_from_root(root: &Rc<Element>, spec_roots: &[String]) -> KunaResult<ConsoleProgram> {
+    Bootstrap::new(spec_roots).xml_root(root)
+}
+
+/// The arch id and `<binaryimage>` a parsed XML document root names.
+pub(crate) fn xml_root_image(root: &Rc<Element>) -> KunaResult<(Rc<Element>, String)> {
     let binaryimage = find_binaryimage(root)
         .ok_or_else(|| KunaError::lowlevel("Could not find binaryimage tag"))?;
     let arch_id = attr(&binaryimage, "arch")
         .ok_or_else(|| KunaError::lowlevel("<binaryimage> has no arch attribute"))?;
-    bootstrap_program(binaryimage, &arch_id, spec_roots)
+    Ok((binaryimage, arch_id))
 }
 
 /// The ELF magic (`\x7fELF`), used to route `load file` to the object path.
@@ -6318,14 +6472,14 @@ fn is_object_binary(bytes: &[u8]) -> bool {
 /// A fat header that cannot be peeled (unparsable, or no usable slice) is left
 /// untouched, so the downstream `object::File::parse` produces the existing
 /// "Unsupported file format" error rather than this silently mis-loading.
-fn select_macho_slice(bytes: Vec<u8>, target: &str) -> Vec<u8> {
+fn select_macho_slice(bytes: Vec<u8>, slice: Option<&str>, target: &str) -> Vec<u8> {
     use kuna_analysis::loader::macho_fat::{peel_fat_image, slice_pref};
-    peel_fat_image(bytes, slice_pref(None, Some(target)))
+    peel_fat_image(bytes, slice_pref(slice, Some(target)))
 }
 
 /// An IMG4 / IM4P / compressed kernelcache, admitted while `kernelcache` is not off.
 fn is_apple_container(bytes: &[u8]) -> bool {
-    kuna_decomp::kuna_kernelcache::KernelcacheChoice::from_env()
+    kuna_decomp::kuna_kernelcache::KernelcacheChoice::in_force()
         != kuna_decomp::kuna_kernelcache::KernelcacheChoice::Off
         && kuna_analysis::loader::kuna_kernelcache::is_container(bytes)
 }
@@ -6354,36 +6508,34 @@ pub fn bootstrap_from_file(
     target: &str,
     spec_roots: &[String],
 ) -> KunaResult<ConsoleProgram> {
+    Bootstrap::new(spec_roots).target(target).file(path)
+}
+
+/// What [`bootstrap_from_file`] found at a path, by its leading bytes.
+pub(crate) enum FileInput {
+    Mz(Vec<u8>),
+    Te(Vec<u8>),
+    Object,
+    Xml(Rc<Element>),
+}
+
+/// Read and classify the file [`bootstrap_from_file`] loads.
+pub(crate) fn classify_file(path: &str) -> KunaResult<FileInput> {
     if kuna_analysis::loader::kuna_dyldcache::is_dyld_cache_file(Path::new(path))
         || kuna_analysis::image_bytes::ImageBytes::map_thin_macho(path).ok().flatten().is_some()
     {
-        return bootstrap_from_object(path, target, spec_roots);
+        return Ok(FileInput::Object);
     }
     let bytes = std::fs::read(path)
         .map_err(|e| KunaError::lowlevel(format!("Unable to recognize imagefile {path}: {e}")))?;
     if is_mz_dos_image(&bytes) {
-        let isa = std::env::var(ARM_ISA_ENV)
-            .ok()
-            .map(|value| ArmIsa::parse(&value))
-            .transpose()
-            .map_err(KunaError::lowlevel)?
-            .flatten();
-        return bootstrap_from_mz_bytes(path, &bytes, target, spec_roots, isa);
+        return Ok(FileInput::Mz(bytes));
     }
     if is_te_image(&bytes) {
-        let isa = std::env::var(ARM_ISA_ENV)
-            .ok()
-            .map(|value| ArmIsa::parse(&value))
-            .transpose()
-            .map_err(KunaError::lowlevel)?
-            .flatten();
-        return bootstrap_from_te_bytes(path, &bytes, target, spec_roots, isa);
+        return Ok(FileInput::Te(bytes));
     }
     if is_object_binary(&bytes) || is_apple_container(&bytes) {
-        // Real object-format binary (ELF / PE / Mach-O / COFF): drive the
-        // object-crate loader.
-        drop(bytes);
-        return bootstrap_from_object(path, target, spec_roots);
+        return Ok(FileInput::Object);
     }
     if !bytes
         .iter()
@@ -6404,7 +6556,18 @@ pub fn bootstrap_from_file(
     if find_binaryimage(&root).is_none() {
         return Err(KunaError::lowlevel(RAW_IMAGE_INPUT_HINT));
     }
-    bootstrap_from_root(&root, spec_roots)
+    Ok(FileInput::Xml(root))
+}
+
+/// The ARM decode mode named by [`ARM_ISA_ENV`], for the entry points that
+/// take none.
+pub(crate) fn arm_isa_from_env() -> KunaResult<Option<ArmIsa>> {
+    std::env::var(ARM_ISA_ENV)
+        .ok()
+        .map(|value| ArmIsa::parse(&value))
+        .transpose()
+        .map_err(KunaError::lowlevel)
+        .map(Option::flatten)
 }
 
 /// Iterate the opened [`LoadImageXml`]'s symbol records (name → address) into a

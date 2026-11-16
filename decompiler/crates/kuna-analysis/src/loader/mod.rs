@@ -32,6 +32,7 @@
 
 pub mod arm_markers;
 pub(crate) mod kuna_ppcaputarget;
+pub(crate) mod kuna_ppc64elfv2target;
 #[cfg(test)]
 mod powerpc_apu_tests;
 pub(crate) mod kuna_mipstarget;

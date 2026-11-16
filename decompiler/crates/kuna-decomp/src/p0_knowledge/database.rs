@@ -4214,6 +4214,56 @@ impl Database {
         Ok(())
     }
 
+    /// C++ `ScopeInternal::clearUnlocked` (`database.cc:2191-2218`), the head of
+    /// `Funcdata::clear`: drop every symbol of `scope` the analysis recovered, so
+    /// a restarted analysis starts from the symbols the function was given. A
+    /// type-locked symbol is kept, with an unlocked recovered name reset and a
+    /// size-locked type the analysis refined reset to undefined of its size; an
+    /// equate is kept too. As in [`Self::clear_unlocked_category_negative`], a
+    /// name-locked isolated symbol (an asserted identity) is also kept. Every
+    /// kept symbol loses the `nolocalalias` the analysis computed for it.
+    pub fn clear_unlocked(
+        &mut self,
+        scope: ScopeId,
+        types: Option<&dyn crate::dtype::TypeFactory>,
+    ) -> KunaResult<()> {
+        self.kuna_gen += 1;
+        let candidates: Vec<SymbolId> = self.scopes[scope].nametree.values().copied().collect();
+        for sid in candidates {
+            let (type_locked, name_locked, size_locked, keep) = {
+                let sym = &self.symbols[sid];
+                (
+                    sym.is_type_locked(),
+                    sym.is_name_locked(),
+                    // Read before anything recomputes it: a refined type would
+                    // clear the bit and hide the lock.
+                    sym.is_size_type_locked(),
+                    sym.get_category() == symbol_category::EQUATE || (sym.is_name_locked() && sym.is_isolated()),
+                )
+            };
+            if !type_locked && !keep {
+                self.remove_symbol(sid);
+                continue;
+            }
+            if type_locked && !name_locked && !self.symbols[sid].is_name_undefined() {
+                let newname = self.build_undefined_name(scope)?;
+                self.rename_symbol(sid, &newname)?;
+            }
+            let sym = &mut self.symbols[sid];
+            sym.flags &= !varnode_flags::nolocalalias;
+            let refined = sym
+                .dtype
+                .as_ref()
+                .filter(|t| size_locked && t.get_metatype() != type_metatype::TYPE_UNKNOWN)
+                .map(|t| t.get_size());
+            if let (Some(size), Some(types)) = (refined, types) {
+                sym.dtype = Some(types.get_base(size, type_metatype::TYPE_UNKNOWN)?);
+            }
+            sym.check_size_type_lock();
+        }
+        Ok(())
+    }
+
     /// C++ `ScopeLocal::markUnaliased` (`varmap.cc:1290-1340`): mark every local
     /// stack Symbol whose storage is NOT crossed by an alias as `nolocalalias` (so
     /// `RuleIndirectCollapse` can drop the per-call INDIRECT guarding it).  `alias`
@@ -5336,6 +5386,53 @@ mod tests {
         // The mapping of the removed local is gone too (no stale EntryMap range).
         assert!(db.find_overlap(g, &a_addr, 4).is_none());
         assert!(db.find_overlap(g, &b_addr, 4).is_some());
+    }
+
+    /// C++ `ScopeInternal::clearUnlocked` (database.cc:2191-2218), run by
+    /// `Funcdata::clear` before a restart: only what the function was given
+    /// survives, and nothing the previous pass computed rides along.
+    #[test]
+    fn clear_unlocked_keeps_given_symbols_and_drops_what_the_pass_computed() {
+        let m = build_manager();
+        let ram = space(&m, 2);
+        let (mut db, g) = db_with_global(m.num_spaces());
+        use crate::dtype::TypeFactory;
+        let types = crate::dtype::TypeFactoryImpl::new();
+        types.set_default_alignment_map();
+        types.set_core_type("undefined", 1, type_metatype::TYPE_UNKNOWN, false).unwrap();
+        types.set_core_type("char", 1, type_metatype::TYPE_INT, true).unwrap();
+        types.set_core_type("undefined4", 4, type_metatype::TYPE_UNKNOWN, false).unwrap();
+        types.cache_core_types().unwrap();
+        let int4 = || Rc::new(Datatype::new(4, type_metatype::TYPE_INT));
+        let at = |off| Address::new(Rc::clone(&ram), off);
+
+        // A local the previous pass recovered: removed.
+        let (recovered, _) = db.add_symbol_mapped(g, "v3", int4(), &at(0x100), &Address::new_invalid()).unwrap();
+        // A size-only lock (type-locked while undefined) whose type the pass
+        // refined to `int`: kept, back to undefined of its size.
+        let (sized, _) = db.add_symbol_mapped(g, "sized", dt(4), &at(0x200), &Address::new_invalid()).unwrap();
+        db.set_attribute(sized, varnode_flags::typelock | varnode_flags::namelock);
+        assert!(db.symbols[sized].is_size_type_locked());
+        db.symbols[sized].dtype = Some(int4());
+        // An asserted `int`: kept as `int`. The `nolocalalias` the pass marked
+        // on it is cleared.
+        let (typed, _) = db.add_symbol_mapped(g, "typed", int4(), &at(0x300), &Address::new_invalid()).unwrap();
+        db.set_attribute(typed, varnode_flags::typelock | varnode_flags::namelock | varnode_flags::nolocalalias);
+        assert!(!db.symbols[typed].is_size_type_locked());
+        // An equate: kept although not type-locked.
+        let (equate, _) = db.add_symbol_mapped(g, "eq", dt(4), &at(0x400), &Address::new_invalid()).unwrap();
+        db.set_category(g, equate, symbol_category::EQUATE, 0);
+
+        db.clear_unlocked(g, Some(&types)).unwrap();
+
+        assert!(!db.symbols.contains_key(recovered), "a recovered local must not seed the restart");
+        let sized = &db.symbols[sized];
+        assert_eq!(sized.dtype.as_ref().map(|t| (t.get_size(), t.get_metatype())), Some((4, type_metatype::TYPE_UNKNOWN)));
+        assert!(sized.is_type_locked() && sized.is_size_type_locked() && sized.get_name() == "sized");
+        let typed = &db.symbols[typed];
+        assert_eq!(typed.dtype.as_ref().map(|t| t.get_metatype()), Some(type_metatype::TYPE_INT));
+        assert_eq!(typed.get_flags() & varnode_flags::nolocalalias, 0, "alias facts are recomputed each pass");
+        assert!(db.symbols.contains_key(equate));
     }
 
     // VERIFIER adversarial (w10-sized-stackvn): clearUnlockedCategory(-1) C++
