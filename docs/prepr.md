@@ -1,8 +1,10 @@
 # Before opening a PR: `aritydiff` and `difflint`
 
-Two checks for what review most often sends back: call arguments lost on real
-binaries, and diff hygiene. Run both before opening a PR that changes engine
-output; the results go in the PR body.
+Two optional helpers for what review most often sends back: call arguments lost
+on real binaries, and diff hygiene. Neither is a gate and CI does not run them;
+the four gates in `docs/agents.md` are unchanged. They are worth running before
+opening a PR that changes call recovery. What goes in the PR body is still
+decided by `docs/pr-bodies.md`: a line or two of what they showed, not their output.
 
 ## `difflint`: the diff itself
 
@@ -44,8 +46,8 @@ The run fails when a call loses an argument, a function stops decompiling, or
 a binary prints fewer calls. A failure is not a verdict: classify every lost
 argument against the disassembly (a stray slot that should go, or a real
 argument that must not), and do the same for gained ones, which pass the gate
-but are as often a stray slot as a recovered argument. The classification goes
-in the PR body.
+but are as often a stray slot as a recovered argument. Summarize the
+classification in the PR body.
 
 `--corpus msvc32` is five public 32-bit MSVC executables, downloaded on first
 use and pinned by SHA-256 (`scripts/prepr/corpus.py`): setuptools 59.6.0
