@@ -4965,6 +4965,34 @@ every other binary's pass list is byte-identical to before the pass existed):
   symbols keep the `::` form, whose qualification *is* rendered at a call site
   (§9, `cppcallnames`).
 
+  Where the Listing is built, the same option also names constructors and
+  destructors (`decompiler/crates/kuna-analysis/src/analyzers/rtti/kuna_itaniumctors.rs`,
+  a Listing consumer, because the decoder and the Listing's operand text are not
+  available when the vtable recovery runs at load). A constructor or destructor of
+  `C` is the function that stores `C`'s vptr into the object it was called on. A
+  function becomes a candidate when a decoded operand names a vptr value or its
+  4 KiB page; each candidate is lifted to p-code and walked along its fall-through
+  path with a small symbolic state in which the first parameter (from the default
+  prototype model) is `this`, the stack pointer is the frame base, spills to the
+  frame are followed, and a call keeps only the registers the model leaves
+  unaffected. Only a STORE of a vptr constant through `this + off` is evidence, so
+  a factory that inlines `new C` (it stores through `operator new`'s result) or a
+  caller that builds a `C` in its frame is not mistaken for a constructor. The
+  owner is the most-derived class whose primary vptr is stored at offset 0, and
+  every stored vptr must belong to it or to a base. A function in the owner's own
+  primary vtable is one of its virtual destructors, `C::~C` (the name a symbol
+  table gives the complete-object and the deleting destructor alike). The ABI puts
+  the deleting destructor in the slot after the complete one, but which of the two
+  stores the vptr depends on the optimizer — at `-O2` the deleting one can inline
+  the other and be the only store — so the next slot is also named only when it
+  calls the function found. A function in no vtable is a constructor
+  `C::C`, but only when `C` or a base has such a virtual destructor, because a
+  non-virtual destructor stores the vptr exactly as a constructor does. A
+  destructor's slot already carries its slot-index name from the load-time commit;
+  the commit of a Function fact replaces a slot-index name (the kind the function
+  inventory already ranks as structural) in the same scope with a real,
+  non-placeholder name.
+
   The pass is blind to a `-fno-rtti` build by construction: no typeinfo is emitted,
   so no anchor exists and the output is empty. Independent code-pointer-run scanning
   — which would find such vtables heuristically — is deliberately **not** part of

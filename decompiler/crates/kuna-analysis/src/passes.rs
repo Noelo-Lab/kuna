@@ -689,6 +689,12 @@ fn listing_consumer_passes(arch: &Architecture) -> Vec<(bool, Box<dyn AnalysisPa
             Box::new(crate::noreturn_propagate::NoReturnPropagatePass),
         ),
         (arch.analysis_fid, Box::new(crate::fid::FidPass)),
+        // (kuna `itaniumrtti`) Constructor/destructor names from vptr stores: the
+        // vtable half runs at load, this half needs the Listing's data edges.
+        (
+            arch.analysis_itaniumrtti,
+            Box::new(crate::rtti::kuna_itaniumctors::ItaniumCtorsPass),
+        ),
         (arch.analysis_flirt, Box::new(crate::flirt::FlirtPass)),
         // (kuna `formatstring static`) The load-time format-string resolver: a
         // Listing consumer like the rest, because the call edges are what it
@@ -1720,6 +1726,7 @@ mod tests {
         arch.analysis_noreturn_disc = false;
         arch.analysis_noreturn_propagate = true;
         arch.analysis_fid = false;
+        arch.analysis_itaniumrtti = true;
         arch.analysis_formatstring = kuna_decomp::kuna_formatstring::FormatStringMode::Off;
 
         let schedule: Vec<(&str, bool)> = listing_consumer_passes(&arch)
@@ -1733,6 +1740,7 @@ mod tests {
                 ("noreturn_disc", false),
                 ("noreturn_propagate", true),
                 ("fid", false),
+                ("itaniumrtti", true),
                 ("flirt", false),
                 ("formatstring", false)
             ]
