@@ -3608,13 +3608,15 @@ fn a_float_return_beside_a_global_read_stays_an_integer() {
 /// The entry hands `f`'s `eax` to `ExitProcess`, so `f` is decompiled again to
 /// return it, and that decompile restarts once its second indirect call
 /// resolves to `ExitProcess`. On its one returning path `f` returns the handle
-/// the comparison also reads: `return -1;`. Patched to also load through the
-/// handle on that path (`je` to a `mov ecx,[eax]` the `ExitProcess` path jumps
-/// over), the pass before the restart returned `eax`, joined with what the
-/// unresolved call left, and the pass after it refused the handle; the first
-/// pass's output survived as `int sub_401020(..)` around a bare `return;`, and
-/// the function must be `void` again. No function that declares a return type
-/// prints a bare `return;`.
+/// the comparison also reads, the `INVALID_HANDLE_VALUE` bits `0xffffffff`.
+/// The restart starts from the prototype the function was given, as upstream's
+/// `Funcdata::clear` does, so the return type is what the restarted pass
+/// recovers (`unsigned int`), not the first pass's. Patched to also load
+/// through the handle on that path (`je` to a `mov ecx,[eax]` the
+/// `ExitProcess` path jumps over), the pass before the restart returned `eax`,
+/// joined with what the unresolved call left, and the pass after it refused
+/// the handle: the function must be `void`. No function that declares a return
+/// type prints a bare `return;`.
 #[test]
 fn a_return_refused_after_a_restart_leaves_the_function_void() {
     let fixture = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/floatret_restart_pe_i386.exe");
@@ -3632,7 +3634,10 @@ fn a_return_refused_after_a_restart_leaves_the_function_void() {
         printed_functions(&stdout, &["sub_401020 "])
     };
     let printed = decompile(fixture.to_str().unwrap());
-    assert!(printed.contains("int sub_401020(unsigned int a0)") && printed.contains("return -1;"), "{printed}");
+    assert!(
+        printed.contains("unsigned int sub_401020(unsigned int a0)") && printed.contains("return 0xffffffff;"),
+        "{printed}"
+    );
 
     let mut image = std::fs::read(&fixture).unwrap();
     let at = |image: &[u8], pattern: &[u8]| image.windows(pattern.len()).position(|w| w == pattern).unwrap();

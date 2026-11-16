@@ -333,6 +333,19 @@ The SPE compiler models join 64-bit integer arguments from aligned pairs of
 no aligned pair remains. Following arguments use the remaining register or
 stack slots, and struct/union arguments are passed indirectly.
 
+(kuna) A PowerPC64 ELF image's compiler spec follows the ABI version in its
+`e_flags` (`decompiler/crates/kuna-analysis/src/loader/kuna_ppc64elfv2target.rs`).
+The ABIs differ in the frame header below the parameter save area: ELFv1's is
+48 bytes (back chain, CR, LR, two reserved doublewords, TOC), ELFv2's is 32
+(back chain, CR, LR, TOC). The first stack argument, the ninth doubleword of
+the save area, is therefore at SP+112 under ELFv1 and at SP+96 under ELFv2. A
+big-endian image that declares ABI version 2 (musl, `-mabi=elfv2`) selects
+`PowerPC:BE:64:default:elfv2` (`ppc_64_be_elfv2.cspec`); version 1 and an
+unspecified version keep the ELFv1 default model. The little-endian default
+model is ELFv2, so a little-endian image that declares ELFv1 is read with
+ELFv2 offsets. Explicit `--target` takes precedence, and the explicit
+`PowerPC:BE:64:A2ALT` language offers only the ELFv1 model.
+
 
 (kuna) **A Go image composes the `:golang` compiler field instead**
 (`decompiler/crates/kuna-analysis/src/loadimage_object.rs (language_id_for)`,
@@ -373,10 +386,14 @@ carrying exactly the fields whose offsets the runtime source states for the
 register-ABI era, and the layouts are **versioned off the image's own
 toolchain**: the build-info blob's version string
 (`decompiler/crates/kuna-analysis/src/loader/gobuildinfo.rs
-(go_toolchain_version)`) travels as the `KUNA_GOVERSION` loadtime variable —
-set by the object bootstrap before the sleigh build, because the shells are
-interned inside the cspec decode, upstream of every per-image fact write —
-and selects the release's layout
+(go_toolchain_version)`) travels on the load options
+(`decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_loadoptions.rs
+(go_version)`) — set by the object bootstrap from the image's bytes before the
+loader parses them and the sleigh build runs, because the shells are interned
+inside the cspec decode, upstream of every per-image fact write. The image's
+own version wins over a release the caller stated; a load without explicit
+options publishes it as `KUNA_GOVERSION`, and clears that variable for an image
+with no version, so a stale value from an earlier load cannot leak in. It selects the release's layout
 (`decompiler/crates/kuna-decomp/src/p1_partition/kuna_goreg.rs (GoLayout)`):
 go1.23 inserted `g.syscallbp`, go1.25 dropped `gobuf.ret`, and with both
 perturbations the liblink-stable anchors (`stackguard0` 0x10, `_panic` 0x20,
@@ -391,7 +408,7 @@ own goroutine pointers stay `void *` (a pointer taken to a still-incomplete
 composite would survive the factory's clone-and-re-key completion pointing at
 the stale type). An access past a modeled prefix renders as an offset off the
 shell — still anchored. An image with no parsable build-info version takes
-the go1.22 baseline. A golang target with no pinned register (x86-32 reaches
+the release its explicit load options state, else the go1.22 baseline. A golang target with no pinned register (x86-32 reaches
 `g` through TLS) is untouched. Measured on the stripped
 go1.22 hello-world: functions declaring a phantom `// r14` local 267 → 23,
 functions reading named `g->` fields 7 → 297, the preemption-request store
@@ -2787,13 +2804,24 @@ TOCs include aliases that disagree and cannot seed their shared code entry.
 This resolver declines all descriptor-stub names if any validated descriptor's
 TOC remains unresolved: without a caller-specific TOC, the unknown value could
 select a different import and invalidate a no-return fact.
-Both full environment-word and GNU lazy-resolution forms are supported. A lazy
+A stub addresses the descriptor from `r2` itself or from a base that `addis`
+forms from `r2`, and it ends in `bctr` or in the GNU lazy-resolution tail.
+The entry goes through `r11` or `r12`, an `addis` base is the other of the
+two, and the move to CTR directly follows the entry load or the TOC load.
+Loading the environment word into `r11` is optional. From an `addis` base it
+is the last instruction before the ending. From `r2` it must directly follow
+an early CTR move and precede the TOC load, which replaces `r2`. An environment
+load in any other position is declined, as is a stub that does not load the
+TOC. GNU ld's rarer forms also stay unnamed: an `addi` that moves the base when
+the TOC or environment offset would cross into the next 64 KiB, the `xor`/`add`
+pair that replaces the lazy tail when the resolver is out of branch range, and a
+stub without the TOC save. A lazy
 stub's zero-TOC branch must reach the matching import's resolver entry: its
 relocation index, branch to the common glink code, and the common code's load of
 `DT_PLTGOT` are validated against `DT_PPC64_GLINK` and `DT_JMPREL`. Returning
 fallbacks, entries for another slot, and unknown resolver code or metadata are
 declined. Currently only the two-instruction resolver entries with indices below
-32768 qualify. The full environment-word form needs no lazy resolver.
+32768 qualify. A stub that ends in `bctr` needs no lazy resolver.
 The existing known-no-return pass consumes these names, so a guard failure
 import no longer introduces false fall-through or consumes the normal return.
 ELFv2 decoding and ordinary returning imports retain their existing behavior.
@@ -10117,7 +10145,18 @@ the C++ inheritance chain modeled by composition:
   `.pspec`/`.cspec`/`.sla` files, build the SLEIGH translator, and run the
   `Architecture::init` tail (type factory, prototype models, print language). The
   upstream translator-reuse cache is deliberately not ported — it affects build
-  speed only — and is the recorded loss here.
+  speed only — and is the recorded loss here. (kuna) A spec root is a
+  directory or a tree held in memory
+  (`decompiler/crates/kuna-decomp/src/p1_partition/kuna_memoryspecs.rs
+  (MemorySpecs)`): a table of `/`-separated relative paths and their contents.
+  The table need not follow Ghidra's layout; one language's `.ldefs`, `.sla`,
+  `.pspec` and `.cspec`, flat, form a complete root. The database mounts each
+  table under an internal `kuna-memory://<n>` root and answers every listing,
+  lookup and read under it from the table alone, never from the filesystem.
+  `decompiler/crates/kuna-console/src/engine.rs (language_database)` scans a
+  list of roots once. A bootstrap over the result skips the `.ldefs` scan and
+  reads only its own language's `.sla`, `.pspec` and `.cspec`
+  (`LanguageDatabase::read_spec`), so threads may share one database.
 - `decompiler/crates/kuna-decomp/src/p1_partition/xml_arch.rs (XmlArchitecture)`
   binds the decompiler's XML `<binaryimage>` container — the datatest corpus's
   entire load path, and the reason the analysis tier can be default-on without

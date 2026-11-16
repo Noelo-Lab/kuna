@@ -1,0 +1,43 @@
+<decompilertest>
+<binaryimage arch="PowerPC:LE:64:default">
+<!--
+    clang -O1 for powerpc64le (ELFv2). The ninth integer argument travels on
+    the stack, in the parameter save area that follows the 32-byte ELFv2 frame
+    header (back chain, CR, LR, TOC), so it is at SP+96:
+
+        unsigned f9(unsigned a, ..., unsigned h, unsigned i) { return a + i; }
+        unsigned caller(unsigned n) { return f9(n,2,3,4,5,6,7,8,n+9); }
+
+        f9:     lwz   r4,96(r1)          caller: addi  r4,r3,9
+                add   r3,r4,r3                   li    r5..r10,3..8
+                clrldi r3,r3,32                  clrldi r4,r4,32
+                blr                              std   r4,96(r1)
+                                                 li    r4,2
+                                                 bl    f9
+
+    (f9 and caller are separate translation units, so every argument is set.)
+
+    ppc_64_le.cspec placed the first stack parameter at 112, the ELFv1 offset
+    (a 48-byte header), so the callee read an unwritten slot and the caller
+    passed an uninitialised value instead of n + 9.
+-->
+<bytechunk space="ram" offset="0x10000000" readonly="true">
+60008180141a647c200063782000804e0000000000000000000000000800e07f02004c3c60804238a602087c91ff21f809008338800001f80300a0380400c0380500e03806000039070020390800403920008478600081f802008038a5ffff4b0000006070002138100001e8a603087c2000804e000000000000000000000000
+</bytechunk>
+<symbol space="ram" offset="0x10000000" name="f9"/>
+<symbol space="ram" offset="0x10000020" name="caller"/>
+</binaryimage>
+<script>
+  <com>map prototype f9 uint4 f9(uint4 a,uint4 b,uint4 c,uint4 d,uint4 e,uint4 f,uint4 g,uint4 h,uint4 i);</com>
+  <com>map prototype caller uint4 caller(uint4 n);</com>
+  <com>lo fu f9</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu caller</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="ppc64le-elfv2-stack-args #1: the callee reads its ninth argument" min="1" max="1">return i \+ a;</stringmatch>
+<stringmatch name="ppc64le-elfv2-stack-args #2: the caller passes n + 9 as the ninth" min="1" max="1">f9\(n,2,3,4,5,6,7,8,n \+ 9\)</stringmatch>
+</decompilertest>
