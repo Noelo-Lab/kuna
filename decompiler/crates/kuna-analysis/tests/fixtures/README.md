@@ -1989,7 +1989,7 @@ add esp,0x10; ret 0xc`. `consts`@`0x401060` defers a `__cdecl` cleanup past
 ### Calls through the vtable of the object in ECX
 
 `vcall_pe_i386.exe` (3,072 bytes, PE32/i386, SHA-256
-`6af1e3e45f66b435e8f13473d5261efa9b19f63238f3da93179d63ef38b01300`) is clean-room:
+`64e715fcf394071e1e4c9b019c1b055293c1d8ce13842e39336617b42ae3ff1b`) is clean-room:
 `vcall`@`0x401000` calls a virtual member (`mov eax,[ecx]; push 5; call [eax+8]`),
 `comcall`@`0x401010` a COM method that pushes the interface last,
 `reserve`@`0x401020` a virtual member whose `push ecx` only reserves the slot
@@ -2006,11 +2006,13 @@ vtable is loaded from EBX and the argument pushed, `lateother`@`0x401210` a call
 through EBX's vtable with a second object loaded into ECX, `vepilog`@`0x401230` a
 virtual member followed by another call and an epilogue that frees a frame slot
 with `pop ecx`, `vouter`@`0x401250` `o->child()->take(1, 2)`, whose pushes
-for `take` precede the virtual `child()` call, and `vseh`@`0x401270` a virtual
+for `take` precede the virtual `child()` call, `vseh`@`0x401270` a virtual
 member under an SEH frame whose epilogue unlinks it (`mov fs:[0],ecx`) and pops
-a slot into ECX right after the call.
+a slot into ECX right after the call, and `vdefer`@`0x4012c0` a C `__cdecl` table
+call whose cleanup is deferred past the next `__cdecl` call (`push 6; call cfn;
+add esp,8`).
 Source and recipe (clang + lld-link) in `vcall_pe_i386.s`. Used by
-`tests/stages/kuna-calleereginputs.xml` (#18-#39) and
+`tests/stages/kuna-calleereginputs.xml` (#18-#40) and
 `decompiler/crates/kuna-cli/tests/calleereginputs_custom.rs`.
 
 ### AIF fragment of a known function

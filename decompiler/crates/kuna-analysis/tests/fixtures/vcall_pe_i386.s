@@ -26,6 +26,9 @@
 #              the virtual child() that yields its object; take pops them.
 #   vseh     : a virtual member under an SEH frame, whose epilogue unlinks it
 #              (mov fs:[0],ecx) and frees a slot with `pop ecx` right after.
+#   vdefer   : C, not C++: a __cdecl function pointer in a table reached
+#              through ECX, its cleanup deferred past the next __cdecl call
+#              into one `add esp,8`.
 #
 # Build:
 #   clang --target=i686-pc-windows-msvc -c vcall_pe_i386.s -o v.obj
@@ -298,6 +301,17 @@ _take:
     mov eax, dword ptr [esp + 4]
     add eax, dword ptr [esp + 8]
     ret 8
+
+    .p2align 4, 0xcc
+_vdefer:                        # int vdefer(Ctx *c) { c->ops->fn(5); return cfn(6); }
+    mov ecx, dword ptr [esp + 4]
+    mov eax, dword ptr [ecx]
+    push 5
+    call dword ptr [eax + 0x40]
+    push 6
+    call _cfn
+    add esp, 8
+    ret
 
     .data
 _vtable:

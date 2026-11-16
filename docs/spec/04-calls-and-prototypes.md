@@ -1665,18 +1665,24 @@ that machinery.
   `__cdecl` argument, second behind the hidden pointer of a returned class
   (`mov ecx,[ebp+0xc]; mov eax,[ecx]; mov [esp+4],ecx; mov [esp],edx;
   call [eax+k]`), and ECX only held it on the way. A `__thiscall` callee removes its
-  own stack arguments, so a call the caller cleans up after before its next
-  call (the `kuna_calleepurge.rs (immediate_cleanup)` scan, read at flow time:
+  own stack arguments, so a call the caller cleans up after (the
+  `kuna_calleepurge.rs (own_cleanup)` scan, read at flow time:
   `add esp,4`, a C table of `__cdecl` function pointers reached through ECX)
   keeps the default too, and so does one that also holds the object in EAX
   (Delphi's `register` convention, also read under `x86win.cspec`, passes
-  it there). A cleanup `calleeargs` credits past a later call is not
-  evidence here: that scan takes the virtual call to pop only its return
+  it there). Past a later call, that scan counts only a run of pops that
+  starts below where the virtual call returns, one that removes the later
+  call's pushes and the virtual call's together (`push 6; call f; add esp,8`,
+  MSVC deferring both cleanups). The `calleeargs` scan credits more, which is
+  not evidence here: it takes the virtual call to pop only its return
   address, so after a later call the frame teardown (`pop ecx` freeing a slot
   before `pop edi`) can read as a cleanup, and a later callee that pops
   pushes made before the virtual call (`o->child()->take(1, 2)`: MSVC pushes
   `take`'s arguments, then calls `child()` for its object) lifts the scan
-  above the call. The chosen model is recorded as the call's read-register model,
+  above the call. A deferred cleanup whose run starts where the virtual call
+  returns, after a later call that leaves no pushes of its own
+  (`push 5; call [eax+8]; call g; pop ecx`), reads as the frame teardown, so
+  such a C table call still gets ECX as its receiver. The chosen model is recorded as the call's read-register model,
   so ECX is an argument with the same standing as a direct callee's read
   register: a receiver whose definition the caller's data flow cannot see
   (ECX set in an earlier block) no longer ends the argument list and costs
@@ -1908,12 +1914,14 @@ classified:
   taken to pop only its return address), since the scan's stack pointer then
   sits low by those bytes and the teardown seems to lift it above the call. A
   pop right after a push is a move (`push 3; pop ebx`, MSVC `/O1`'s
-  `mov ebx,3`), not the epilogue, and the run goes on past it. A store
-  through FS ends the run as well
+  `mov ebx,3`), not the epilogue, and the run goes on past it. A move into
+  FS memory ends the run as well
   (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleepurge.rs
   (stores_through)`): `mov fs:[0],ecx` unlinks an MSVC SEH frame, and the
   `pop ecx` that follows it frees the frame's own slot (the `/GS` cookie or
-  a local) before the callee-saved registers are restored. A frame torn
+  a local) before the callee-saved registers are restored. A pop into FS
+  memory (Delphi's constructor epilogue, `pop dword ptr fs:[0]; add esp,0xc`)
+  does not end it and still reads as a cleanup. A frame torn
   down with no callee-saved register restored first (`sub esp,0x10` and no
   pushes) still reads as a cleanup. Where the extent is
   stated, a stack trial starting at or past the bound (or past what the callee

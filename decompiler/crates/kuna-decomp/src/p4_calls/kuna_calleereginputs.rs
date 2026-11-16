@@ -121,10 +121,9 @@ pub fn virtual_this(arch: &Architecture) -> Option<(Rc<ProtoModel>, Address, int
 /// stores the object at `[esp+4]`: GCC before 4.7 passes a member function's
 /// `this` on the stack, behind the hidden pointer of a returned class
 /// (`mov [esp+4],ecx; mov [esp],edx`). A `__thiscall` callee
-/// removes its own stack arguments, so a call the caller cleans up after before
-/// its next call (`add esp,4`, a C table of `__cdecl` function pointers) keeps it
-/// too, as does
-/// one that also holds the object in EAX (Delphi's `register` convention passes
+/// removes its own stack arguments, so a call the caller cleans up after
+/// (`add esp,4`, a C table of `__cdecl` function pointers; `own_cleanup`) keeps
+/// it too, as does one that also holds the object in EAX (Delphi's `register` convention passes
 /// it there). Values are compared over the ops since the previous call only
 /// ([`Values`]): a call clobbers ECX, so a register copied from ECX before it
 /// is not the object.
@@ -265,7 +264,7 @@ pub fn callind_cleanup(arch: &Architecture, call_at: &Address) -> u32 {
     if virtual_this(arch).is_none() {
         return 0;
     }
-    crate::p4_calls::kuna_calleepurge::immediate_cleanup(arch, call_at)
+    crate::p4_calls::kuna_calleepurge::own_cleanup(arch, call_at)
 }
 
 /// Ops [`virtual_call`] reads back from the call.

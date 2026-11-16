@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4349,
-    4349
+    4350,
+    4350
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -315,6 +315,7 @@
     "data:CALLEEREGINPUTS #38: off, the virtual call under an SEH frame gets no receiver",
     "data:CALLEEREGINPUTS #39: default, the pop after the SEH unlink does not hide this",
     "data:CALLEEREGINPUTS #3: default, the constructor gets this and nothing else",
+    "data:CALLEEREGINPUTS #40: both, a C table call whose cleanup is deferred past the next call gets no receiver",
     "data:CALLEEREGINPUTS #4: default, the method reached through a stub gets this",
     "data:CALLEEREGINPUTS #5: default, the constructed field is read back",
     "data:CALLEEREGINPUTS #6: off, forward hands obj_set only the stack argument",
