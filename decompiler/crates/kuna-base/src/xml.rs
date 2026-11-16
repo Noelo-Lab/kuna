@@ -2205,8 +2205,9 @@ mod tests {
         // and kuna-repframecopy / a by-value argument copied with rep movs reaches its call
         // and kuna-libcnames-win32 / a local takes the name of the Win32 call it meets
         // and kuna-libcnames-addr / a stack object takes the name of the library parameter its address meets
+        // and kuna-sparc64-or-masked-spill / a spill read through an OR-masked frame address is kept
         // and kuna-stackchklocal / __stack_chk_fail_local takes no arguments and never returns
-        assert_eq!(count, 757, "corpus file count drifted");
+        assert_eq!(count, 758, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

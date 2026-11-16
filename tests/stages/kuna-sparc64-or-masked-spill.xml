@@ -1,0 +1,39 @@
+<decompilertest>
+<binaryimage arch="sparc:BE:64:default:default">
+<!--
+    GCC -O0 on SPARC V9 64-bit spills an int argument and reads its low byte
+    back through an OR-masked frame address (sample_branch's `n` spill):
+
+        int flag(int n) { return n & 1; }
+
+        save    %sp, -0xb0, %sp
+        stw     %i0, [%fp+0x7fb]
+        add     %fp, 0x7fb, %i0
+        or      %i0, 3, %i0          ! low byte of the big-endian int
+        ldub    [%i0], %i0
+        and     %i0, 1, %i0
+        ret
+        restore
+
+    Two defects removed the spill, so the result read a slot nothing wrote:
+    the indexed-stack-pointer walk did not follow INT_OR, so the LOAD got no
+    guard; and SparcV9_64.cspec spelled its negative local range in 32 bits,
+    so the open array at 0x7fb ran past the frame into the parameter range,
+    markUnaliased called it unaliased, and the guard's address force on the
+    spill was cleared. Hand-assembled.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+9de3bf50f027a7fbb007a7fbb0162003f00e0000b00e200181c7e00881e80000
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="flag"/>
+</binaryimage>
+<script>
+  <com>map prototype flag int flag(int n);</com>
+  <com>lo fu flag</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="sparc64-or-masked-spill #1: the argument spill is kept" min="1" max="1">v1\[0\] = n;</stringmatch>
+<stringmatch name="sparc64-or-masked-spill #2: the byte is read back through the spilled local" min="1" max="1">return \*\(uint1 \*\)\(\(uint8\)v1 \| 3\) &amp; 1;</stringmatch>
+</decompilertest>
