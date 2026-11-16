@@ -166,6 +166,9 @@ impl FlowEnvironment for ArchFlowEnv {
     fn query_call_stack_window(&self, entry: &Address, call_at: &Address) -> Option<u32> {
         crate::p4_calls::kuna_calleestackargs::callee_stack_window(self.arch(), entry, call_at)
     }
+    fn query_call_return_pop(&self, entry: &Address) -> Option<u32> {
+        crate::p4_calls::kuna_calleestackargs::callee_return_pop(self.arch(), entry)
+    }
     fn query_call_moves_stack(&self, entry: &Address) -> bool {
         crate::p4_calls::kuna_calleestackargs::callee_moves_stack(self.arch(), entry)
     }

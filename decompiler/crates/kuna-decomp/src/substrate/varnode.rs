@@ -161,6 +161,8 @@ pub mod addl_flags {
     /// Varnode's HighVariable turns out to span foreign members
     /// (`p5_types/kuna_sitetypelock.rs`).
     pub const site_locked: uint2 = 0x4000;
+    /// A program literal that coincides with a synthetic extern display address.
+    pub const synthetic_literal: uint2 = 0x8000;
 }
 
 /// Number of inline `OpId` slots a `descend` list keeps before spilling to the
@@ -975,6 +977,13 @@ impl Varnode {
     /// C++ `isPtrCheck`.
     pub fn is_ptr_check(&self) -> bool {
         (self.addlflags & addl_flags::ptrcheck) != 0
+    }
+    pub(crate) fn is_synthetic_literal(&self) -> bool {
+        self.addlflags & addl_flags::synthetic_literal != 0
+    }
+    pub(crate) fn set_synthetic_literal(&mut self, value: bool) {
+        if value { self.addlflags |= addl_flags::synthetic_literal; }
+        else { self.addlflags &= !addl_flags::synthetic_literal; }
     }
     /// C++ `isPtrFlow`.
     pub fn is_ptr_flow(&self) -> bool {

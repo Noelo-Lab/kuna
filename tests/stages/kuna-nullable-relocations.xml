@@ -1,0 +1,111 @@
+<decompilertest>
+<binaryimage arch="MIPS:BE:64:default">
+<bytechunk space="ram" offset="0x100000" readonly="true">03e0000800000000</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<!-- P1/P2 strict weak-address materialization before folding, with non-PIC,
+large-model and mixed PIC forms. CLI replay checks zero/bound identities,
+addends, independent fixed literals and exact call counts at O0/O2.
+
+The common-* objects (common.c) hold two COMMON objects beside the weak
+function. The slot allocated for the weak address once started where COMMON
+storage starts, so `counter += value` printed as a write of the slot and the
+test read both objects; slot space is now reserved ahead of COMMON storage.
+`same` compares its argument with the weak address through one immediate that
+reaches the compare's subtraction and flags, which reads the slot once. -->
+<script>
+<com>clear architecture</com>
+<com>load file tests/fixtures/nullable-relocations/weak-n32.elf</com>
+<com>read symbols</com>
+<com>map prototype guard int guard(int value);</com>
+<com>map prototype optional int optional(int value);</com>
+<com>lo fu guard</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/nullable-relocations/weak-64.elf</com>
+<com>read symbols</com>
+<com>map prototype guard int guard(int value);</com>
+<com>map prototype optional int optional(int value);</com>
+<com>lo fu guard</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/nullable-relocations/weak-x86-64.elf</com>
+<com>read symbols</com>
+<com>map prototype guard int guard(int value);</com>
+<com>map prototype optional int optional(int value);</com>
+<com>lo fu guard</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/nullable-relocations/weak-x86-64-large.elf</com>
+<com>read symbols</com>
+<com>map prototype guard int guard(int value);</com>
+<com>map prototype optional int optional(int value);</com>
+<com>lo fu guard</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/nullable-relocations/address-n32.elf</com>
+<com>read symbols</com>
+<com>lo fu unrelated_literal</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/nullable-relocations/address-64.elf</com>
+<com>read symbols</com>
+<com>lo fu unrelated_literal</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/nullable-relocations/address-x86-64.elf</com>
+<com>read symbols</com>
+<com>lo fu unrelated_literal</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/nullable-relocations/address-x86-64-large.elf</com>
+<com>read symbols</com>
+<com>lo fu unrelated_literal</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/nullable-relocations/common-n32.elf</com>
+<com>read symbols</com>
+<com>map prototype guard int guard(int value);</com>
+<com>map prototype optional int optional(int value);</com>
+<com>lo fu guard</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/nullable-relocations/common-64.elf</com>
+<com>read symbols</com>
+<com>map prototype guard int guard(int value);</com>
+<com>map prototype optional int optional(int value);</com>
+<com>lo fu guard</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/nullable-relocations/common-x86-64.elf</com>
+<com>read symbols</com>
+<com>map prototype guard int guard(int value);</com>
+<com>map prototype optional int optional(int value);</com>
+<com>lo fu guard</com>
+<com>decompile</com>
+<com>print C</com>
+<com>map prototype same int same(unsigned long candidate);</com>
+<com>lo fu same</com>
+<com>decompile</com>
+<com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="nullable-relocations #1: weak binding is tested" min="7" max="7">if [^\n]*dat_[0-9a-f]+</stringmatch>
+<stringmatch name="nullable-relocations #2: imported call keeps its argument" min="7" max="7">optional\(value\)</stringmatch>
+<stringmatch name="nullable-relocations #3: unrelated literal stays numeric" min="4" max="4">return 0x402000;</stringmatch>
+<stringmatch name="nullable-relocations #4: every tested operand is supported" min="0" max="0">Nullable weak.*could not be modeled</stringmatch>
+<stringmatch name="nullable-relocations #5: a COMMON object written beside a weak slot keeps its name" min="3" max="3">counter \+= value;</stringmatch>
+<stringmatch name="nullable-relocations #6: a COMMON object read beside a weak slot keeps its name" min="3" max="3">return limit \+ 7;</stringmatch>
+<stringmatch name="nullable-relocations #7: no COMMON object is read as the slot" min="0" max="0">CONCAT|dat_[0-9a-f]+ \+= </stringmatch>
+<stringmatch name="nullable-relocations #8: a compared weak address reads the slot" min="1" max="1">candidate == dat_[0-9a-f]+;</stringmatch>
+</decompilertest>

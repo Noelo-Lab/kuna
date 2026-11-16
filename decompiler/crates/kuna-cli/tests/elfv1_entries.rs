@@ -235,6 +235,36 @@ fn invalid_descriptors_and_other_abis_keep_literal_addresses() {
     assert!(Descriptors::read(&file).0.is_empty());
 }
 
+/// With no symbol table, the entry descriptor is all that names `_start`.
+#[test]
+fn a_stripped_entry_descriptor_seeds_discovery_at_its_code() {
+    let code = [0x48,0,0,9,0x4e,0x80,0,0x20]; // bl 0x1008; blr
+    for (abi, relocated, expected) in [(0,false,&[0x1000,0x1008][..]),(1,false,&[0x1000,0x1008]),
+        (1,true,&[0x1008]),(2,false,&[])] {
+        let mut bytes = if relocated {
+            let mut b = image_with_relocations(abi, &code, &[(0x2000, object::elf::R_PPC64_RELATIVE, 0x1008)]);
+            b[16..18].copy_from_slice(&3u16.to_be_bytes());
+            b
+        } else { image_with_code(abi, &code) };
+        let shoff = get64(&bytes,40) as usize;
+        let shnum = u16::from_be_bytes(bytes[60..62].try_into().unwrap()) as usize;
+        for sh in (1..shnum).map(|i| shoff+i*64) {
+            if get32(&bytes,sh+4) == object::elf::SHT_SYMTAB {bytes[sh+4..sh+8].copy_from_slice(&object::elf::SHT_PROGBITS.to_be_bytes());}
+        }
+        let path = common::scratch_file("elfv1-stripped-entry", "elf");
+        std::fs::write(&path, &bytes).unwrap();
+        let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
+            .args(["functions", path.to_str().unwrap(), "--json"]).output().unwrap();
+        let text = String::from_utf8_lossy(&out.stdout);
+        let found: Vec<u64> = text.split("\"address\": ").skip(1)
+            .map(|n| n.split(|c: char| !c.is_ascii_digit()).next().unwrap().parse().unwrap()).collect();
+        assert_eq!(found, expected, "ABI {abi}, relocated {relocated}: {text}\n{}", String::from_utf8_lossy(&out.stderr));
+        assert_eq!(out.status.success(), !expected.is_empty(), "{text}");
+        assert!(!expected.is_empty() || text.contains("no functions discovered"), "{text}");
+        std::fs::remove_file(path).unwrap();
+    }
+}
+
 #[test]
 fn entry_reports_use_normalized_code_and_reachability() {
     for abi in [0, 1] {

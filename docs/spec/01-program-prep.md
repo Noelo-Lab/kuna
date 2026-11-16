@@ -910,7 +910,16 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   resolves to `_gp` less the place (the PIC prologue adds `$t9`, the function's
   entry) and a global `_gp` or an undefined `__gnu_local_gp` to `_gp`. The GOT's entries hold what the relocations put in
   them and nothing writes them, so the loader reports its range foldable
-  (`dynreloc_const`, beside the MSVC FP constants), and
+  (`dynreloc_const`, beside the MSVC FP constants). The exception is the entry
+  of an undefined weak symbol, which the run-time loader fills with the
+  symbol's address, or 0 when nothing defines it: each such symbol gets its own
+  entry holding 0, reported as an import slot outside the foldable range and,
+  when a call reaches it, named after the symbol as an Import Address Table
+  slot is, so `if (f) f(x);` keeps its test. A `GOT_PAGE` against the symbol
+  reaches that same entry and its `GOT_OFST` is the addend alone, the decay GNU
+  ld applies to a symbol that does not bind locally. A direct call or address
+  relocation against the symbol still resolves to its synthetic extern, the
+  address the function is entered at. Otherwise
   `lw $t9, %call16(f)($gp); jalr $t9` decompiles to a call of `f` wherever `$t9`
   is seeded with the entry. `R_MIPS_JALR`, a hint naming the function a `jalr`
   calls, is not applied; microMIPS, MIPS16, R6 PC-relative and TLS relocations
@@ -2655,9 +2664,49 @@ the resolved callee's no-return flag onto the prototype it hands `ActionDeindire
 `decompiler/crates/kuna-decomp/src/p0_knowledge/database.rs (Database::build_global_query)`
 dropped it, where upstream returns the callee's live `Funcdata`), which is what makes
 the deindirect schedule the restart whose re-flow plants the artificial halt. The
-extra upstream Win32 no-return-name list remains on the PE/COFF arm only. Off, PE
-and Mach-O import-slot calls render byte for byte as before; other formats are
-unaffected either way.
+extra upstream Win32 no-return-name list remains on the PE/COFF arm only. An ELF
+image runs no such pass, but a MIPS relocatable object's loader makes import
+slots, the GOT entry of each undefined weak function: the engine stashes the
+loader's ranges under this pass's id
+(`decompiler/crates/kuna-console/src/engine.rs (object_import_slot_stash)`), so
+they commit with that pass's facts and the call in `if (f) f(x);` binds to `f`.
+Other images are unaffected.
+Undefined weak MIPS and x86-64 code-address operands in relocatable ELF objects
+also retain their nullable identity before SSA. The relocation walker
+`decompiler/crates/kuna-analysis/src/loader/kuna_nullable_reloc.rs (references)`
+records exact instruction fields and one canonical dynamic slot per symbol.
+The layout keeps one pointer per undefined weak symbol clear between the
+synthetic extern slots and ELF COMMON storage, and a slot is allocated only
+inside that reservation, so a slot never shares an address with a COMMON object
+or an extern; a field address or slot that cannot be represented is skipped or
+diagnosed, never wrapped. Other architectures reserve nothing and keep their
+COMMON addresses.
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_nullable_reloc.rs (materialize)`
+replaces only a uniquely matched supported operand with a slot load and the
+relocation's arithmetic. MIPS HI16/LO16/HIGHER/HIGHEST preserve rounding and
+signed immediates; x86-64 absolute and PC-relative address forms preserve addends
+and instruction-end bias. An x86-64 absolute field is one operand wherever its
+value appears in its instruction, provided the instruction has no other weak
+field and the value is not the instruction's own address or end: a register
+displacement takes the slot read in place, and an immediate that reaches several
+operations, as a compare's subtraction and flags do, takes one read made before
+the instruction. Mixed GOT and ordinary forms share the binding.
+Full-pointer weak relocations in read-only data retain the same binding and
+addend when `RuleLoadVarnode` materializes the read, so read-only folding cannot
+turn a genuine weak pointer into an unrelated numeric literal. Writable data,
+partial pointer reads, other architectures and relocation families outside these
+forms are not covered. Unmatched or unsupported code operands diagnose.
+The binding represents the linker's weak-symbol choice, not arbitrary concurrent
+mutation of an import slot.
+
+Synthetic display addresses are not proof that an unrelated integer names the
+import. A per-varnode literal marker protects coincidentally equal constants
+through construction and cloning from pointer/name inference. Exact relocated
+code operands explicitly clear it, and internal slot loads use their real slot
+address. This keeps fixed numeric addresses and real imported calls distinct.
+The nullable-relocations fixtures cover zero and bound imports, addends across
+signed-low boundaries, mixed forms, defined functions and unrelated literals.
+
 The `externref` mark also protects the slot until that resolution: P3 read-only
 folding cannot replace it with an on-disk thunk/name RVA, even if a hostile or
 single-section PE mapped the IAT executable and non-writable.
@@ -2757,14 +2806,33 @@ tracked values take precedence over this entry default; raw and XML images do
 not acquire the ELF convention. N32 participates in MIPS ISA, entry, floating
 ABI and GOT dispatch despite the object reader's separate architecture tag.
 
+(kuna) `decompiler/crates/kuna-analysis/src/loader/kuna_ppc64r12.rs`
+(`ppc64r12`) is the PowerPC64 ELFv2 counterpart of the `t9` seed. The ELFv2 ABI
+requires a caller entering a function at its global entry to pass that entry's
+address in `r12`, and the global entry derives the TOC pointer from it
+(`addis r2,r12,hi; addi r2,r2,lo`) before falling into the local entry. The pass
+seeds `r12 = entry` at each defined PowerPC64 function symbol whose `st_other`
+declares a separate local entry (field values 2 to 6, 4 to 64 bytes in), so
+the prologue's `r2` folds to the TOC and TOC-relative globals resolve by
+address. The seed is committed as a per-entry loader seed, as the ELFv1 TOC
+is, not as a context-database range like `t9`: each function's snapshot of
+that database would otherwise grow with the number of seeded functions. Only
+the global entry address is seeded: a function decompiled from its local entry
+keeps `r2` as an input. An
+image whose `e_flags` declare ELFv1 is skipped, and a symbol without a local
+entry gets no seed, so a stripped image seeds only the functions its dynamic
+symbol table still names.
+
 (kuna) **A PowerPC64 ELFv1 function symbol names a descriptor, not code**
 (`decompiler/crates/kuna-analysis/src/loader/elfv1.rs (Descriptors::read)`, the
 `.opd` half of Ghidra's `PowerPC64_ElfExtension`). Under ABI v1 a function symbol
 and the image entry both point at a 24-byte `.opd` record — code address, TOC base,
 environment — so selecting a function by name used to decode the record as
 instructions. For a linked (`ET_EXEC`/`ET_DYN`) PowerPC64 ELF whose `e_flags` ABI
-field is 0 or 1 and whose `.opd` is file-backed, the image entry and every
-8-aligned function symbol defined in `.opd` are read as descriptors. A descriptor
+field is 0 or 1 and whose `.opd` is file-backed, the image entry, every
+8-aligned function symbol defined in `.opd` and every `.dynamic` function pointer
+(`DT_INIT`, `DT_FINI` and the `DT_INIT_ARRAY`/`DT_FINI_ARRAY` elements) are read as
+descriptors. A descriptor
 is used only when its code word is 4-aligned and lands on file-backed bytes of an
 `SHF_ALLOC|SHF_EXECINSTR` section; the loader's symbol stream and image entry then
 carry that code address, and every name at it is kept as an alias, so `answer`,
@@ -2797,7 +2865,7 @@ the following TOC word without requiring an environment word; an unavailable
 TOC is ambiguous. Unresolved potential code words also decline all these names
 because they cannot exclude a descriptor. This conservative scan supplies only
 import ambiguity, while symbol normalization and register seeding use the
-validated image-entry and symbol-derived descriptors described above. Possible
+validated image-entry, symbol and `.dynamic` descriptors described above. Possible
 TOCs include aliases that disagree and cannot seed their shared code entry.
 This resolver declines all descriptor-stub names if any validated descriptor's
 TOC remains unresolved: without a caller-specific TOC, the unknown value could
@@ -3096,7 +3164,7 @@ moves.
   (stale i386 `-O0` outgoing stack slots, the AArch64 `x8` result register), and
   in an i386 PIC object, whose `GOTOFF` addresses the loader leaves unresolved,
   a `char *` parameter renders such a garbage address as a string literal.
-- **(kuna) libgcc DI-mode contracts** (`libgccsigs`, off by default,
+- **(kuna) Compiler-runtime contracts** (`libgccsigs`, off by default,
   `decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_libgcc.rs (LibgccSigsPass)`):
   seeds the reserved compiler-runtime name `__divdi3` on SPARC32 big-endian ELF
   under `sparc:BE:32:default:default`. Its DI-mode contract is a signed
@@ -3106,14 +3174,34 @@ moves.
   word of the computed quotient instead of reading an unassigned local. Other
   names and targets retain their existing inference. Existing import-address
   and name-ambiguity rules apply, and DWARF or explicit prototype assertions
-  retain precedence over the built-in signature. The pass's facts are computed
+  retain precedence over the built-in signature. On any ELF the same option
+  gives a `__stack_chk_fail_local` the image defines the `void (void)` row
+  `libcsigs` gives the import (below), keyed by its address and only where no
+  other function name holds that address: GCC's `-fPIC` stack protector on
+  32-bit PowerPC and x86 links the hidden helper into each PIE and shared
+  object, where a PowerPC caller that set its return value in `r3` before the
+  canary test otherwise passes it (`__stack_chk_fail_local(a0 * 3)`), while
+  static glibc aliases it to `__stack_chk_fail`, whose address keeps its
+  inferred contract (`__gconv_transform_ascii_internal` stays `unsigned long`).
+  The defined helper is no-return only when its body shows it, as for any
+  defined function. Over the shared-object twins of the objects measured below
+  (447) the option removes every invented argument (391 calls on the default
+  target, 234 on e500) and gives 240 functions on the default target the return
+  value their source declares, but 43 PLT call stubs (32 on e500) lose an
+  inferred return the argument was the only use of, and at `-Os` 4 functions
+  lose a parameter whose only use was the argument (`void gather(int a0,unsigned
+  char *a1)` becomes `void gather(int a0)`; on e500 `void main(unsigned int a0)`
+  becomes `void main(void)`); on an i386 PIE that defines the helper, one
+  function in 141 (`xstrtoimax`) splits a 64-bit local into two 32-bit halves.
+  With the option off the output is unchanged. The pass's facts are computed
   at load and committed only when the option is on. It ships off because the
   locked eight-byte result still costs a caller that returns arithmetic on the
   quotient: §4's whole-pair proof keeps both return words only when each is a
   bare slice of the call result or a literal and nothing else reads the
   quotient, so `return a / b + 1;`,
   `return -(a / b);` and `return f ? a / b : c;` keep only the high word or
-  return nothing, where the off output returns every word.
+  return nothing, where the off output returns every word, and the helper's
+  stub and `-Os` parameter losses above keep it off as well.
 - **(kuna) Measured libc signatures** (`libcsigs`,
   `decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_libcsigs.rs (LibcSigsPass)`):
   the second, larger half of the same table, closing most of the LOSS above. Which
@@ -3185,7 +3273,33 @@ moves.
   prototype. Independently, every provenance-confirmed import receives an
   address-keyed copy at each resolver address. Thus an IAT slot and veneer remain
   typed even when a same-spelled export suppresses the global key; the export
-  itself remains untouched. Two complex-valued rows, `cexpf` and `cexp`, are
+  itself remains untouched. `__stack_chk_fail_local`, the hidden helper GCC's
+  `-fPIC` stack protector calls on 32-bit PowerPC and x86, is `void (void)` like
+  `__stack_chk_fail` (glibc `debug/stack_chk_fail_local.c`, libssp
+  `ssp-local.c`), so a PowerPC function's return value, set in `r3` before the
+  canary test, stays out of the call: `__stack_chk_fail_local()`, not
+  `__stack_chk_fail_local(a0 * 3)`. Only an import spelled exactly so matches,
+  which in practice is a relocatable object's call relocation to the undefined
+  symbol, and the known-names pass (§1.7) ends the flow at the same import. An
+  i386 object reaches the helper through an `R_386_PC32` relocation, which the
+  loader does not register as a code extern, so there the call stays an unnamed
+  `sub_` callee and is unchanged. A
+  linked PIE or shared object defines the helper hidden in its own text, where
+  `libgccsigs` (above) types it when that option is on; static glibc aliases it
+  to `__stack_chk_fail`, so a by-name match there would retype that address for
+  the callers of both names, and neither path touches it. Over GCC 15 `-fPIC
+  -fstack-protector-strong` PowerPC32 objects (447, at `-O1` to `-O3` and
+  `-Os`, default target and e500) the row and the no-return leave no helper call
+  with an argument and end the flow at all 770. At `-O1` to `-O3` GCC
+  places the call after the function's last return, and flow running past it
+  decoded what followed (279 `halt_baddata`, now none). At `-Os` the call falls
+  through into the shared epilogue, where the `void` call's clobbered `r3` met
+  the return value: with the no-return 76 functions (72 on e500) return the
+  value their source declares and 5 (7) have parameter lists closer to it, and
+  no signature gets worse. A function that returns through a `_restgpr_N_x` tail
+  branch, which the return recovery reads as an opaque call, stays `void` (89),
+  and in 18 the value now shows as that tail call's argument.
+  Two complex-valued rows, `cexpf` and `cexp`, are
   seeded with the DWARF pass's complex pair types (below), and only where that
   layout applies to the value's width, so a call passes and returns the value
   in the target's own registers or hidden buffer.
@@ -6863,7 +6977,20 @@ descriptor resolution of §1.3 and the ARM Thumb-bit fold, as
 and every reporting surface reads it from the loaded program's image metadata
 instead of parsing the file again: `kuna functions --summary`'s
 `entry`/`reachable_from_entry`, `kuna decompile-graph`'s `isEntryPoint`, and the
-`kuna decompile-project` README's entry row.
+`kuna decompile-project` README's entry row. Entry discovery's `e_entry` oracle seeds
+the same code address through
+`decompiler/crates/kuna-analysis/src/analyzers/entry/mod.rs (image_code_entry)`, because
+under ELFv1 the raw field names a descriptor in `.opd`, which no executable section
+contains. A stripped ELFv1 executable whose section table and `.opd` survive has
+its `_start` found this way. The `.dynamic` oracle's `DT_INIT`, `DT_FINI` and array
+pointers name descriptors too, and each is replaced by the code word of the descriptor
+validated at that address, so the function and its `_DT_INIT`, `_DT_FINI`,
+`_INIT_<i>` or `_FINI_<i>` name land on code and the function's TOC seeds `r2`. A
+pointer that does not validate stays as it is and the executable-section check drops
+it. On PowerPC64 an array element is the value its dynamic relocation leaves, an
+`R_PPC64_RELATIVE` addend at kuna's zero load bias, and not the word stored in the
+file, which a linker may leave zero or stale; an element that any other relocation
+writes is left out.
 
 **Address tables** (`addrtable`,
 `decompiler/crates/kuna-analysis/src/analyzers/addrtable/mod.rs (AddrTablePass)`)
@@ -9946,7 +10073,13 @@ or replaced by the PE/Mach-O list (`__fastfail`, `_invoke_watson`, the same GNU
 Fortran block, plus the shared C names) off-ELF. The scan mirrors the exact symbol
 streams the loader installs and emits the *install* address — for a UND import, the
 PLT-stub address, since the `.dynsym` entry is address 0 and demangling means a
-raw-name lookup would miss.
+raw-name lookup would miss. One name is matched only as an import and only as
+spelled: `__stack_chk_fail_local`, which glibc `debug/stack_chk_fail_local.c`
+declares `noreturn`, at each import resolver address and each relocatable
+object's undefined code extern, so its call prints `// no-return` and nothing
+after it. Neither `_stack_chk_fail_local`, `stack_chk_fail_local` nor a helper
+the image defines matches: a linked image's own helper is no-return only when
+its body shows it.
 Name-based: free, exact, and useless on stripped custom wrappers.
 
 **Pclntab names** (the `gonoreturn` pass,
@@ -10271,3 +10404,28 @@ Without a callee prototype, a preserved incoming argument register cannot
 establish import arity: calls with and without that argument can have identical
 instructions. A declared prototype supplies that missing contract
 (`kuna_gotimportproto.rs`, §4).
+
+
+### Weak import identity and slot membership
+
+An undefined weak import has one FunctionSymbol, entered at its synthetic extern
+address: the address every undefined function has, which direct calls and
+address relocations reach and which a GOT relocation against the symbol
+allocates as it does for any other symbol. Its import slot, the GOT entry or the
+word allocated for its other address forms, is recorded as another address of
+that same symbol. The function inventory, a cross-reference query by name and
+the call graph therefore find the import and its direct references where they
+would without a slot. The loader carries the SymbolIndex-based association
+through bootstrap; the database maps both addresses to one symbol, so name
+selection, renamed imports and edited prototypes do not split between two
+independent functions. Distinct ELF symbols are not merged by their spelling.
+The canonical inventory contains the import once; a lookup at the slot address
+resolves the same entry. Import pointer storage remains bodyless unless a caller
+explicitly declares a function there.
+
+Import storage extents are normalized once at bootstrap: empty extents are
+removed and overlapping/adjacent half-open ranges are merged in address order.
+Membership queries use a binary search, including interior and missing addresses.
+Executable-function enumeration therefore avoids a full slot-vector scan per
+candidate, while preserving PE/Mach-O import slots inside executable sections and
+caller-declared-entry precedence.

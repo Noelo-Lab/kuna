@@ -554,3 +554,6 @@ mod verify_rustprobestack;
 
 #[path = "verify_bootstrap.rs"]
 mod verify_bootstrap;
+
+#[path = "mips_weak_imports.rs"]
+mod mips_weak_imports;
