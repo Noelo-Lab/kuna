@@ -13,8 +13,9 @@ python -m scripts.prepr.difflint upstream/main
 
 Seconds. Errors fail the run:
 
-- a binary added under `tests/fixtures/` that the fixtures README does not list
-  (each row gives the recipe and the SHA-256);
+- a binary added under `tests/fixtures/` that no README, note or source beside
+  it (or in a directory above it, up to `fixtures/`) names: that is where its
+  recipe and SHA-256 are recorded;
 - a local path (`/home/<user>/`, `C:\Users\`, `.claude/jobs/`) inside an added
   binary or an added test line;
 - an added `.obj`/`.o`/`.lib` that no test or script names;

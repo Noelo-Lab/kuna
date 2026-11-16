@@ -49,10 +49,19 @@ class DiffLintTests(unittest.TestCase):
     def test_an_unlisted_fixture_binary_is_an_error(self):
         self.write(FIXTURES / "new.exe", b"MZ\0\0binary")
         self.commit("fixture")
-        self.assertEqual(self.checks(), [("error", "fixture-readme", "new.exe")])
+        self.assertEqual(self.checks(), [("error", "fixture-recipe", "new.exe")])
         self.write(FIXTURES / "README.md", "| `old.exe` | recipe |\n| `new.exe` | recipe, SHA-256 |\n")
         self.commit("readme")
         self.assertEqual(self.checks(), [])
+
+    def test_a_recipe_beside_the_fixture_or_in_a_subdirectory_note_counts(self):
+        self.write(FIXTURES / "x.asm", "; Build: nasm -f bin -o x.exe x.asm\n")
+        self.write(FIXTURES / "x.exe", b"MZ\0\0binary")
+        self.write(FIXTURES / "group" / "README.md", "`y.elf`: clang -c y.c\n")
+        self.write(FIXTURES / "group" / "y.elf", b"\x7fELF\0\0")
+        self.write(FIXTURES / "group" / "z.elf", b"\x7fELF\0\0")
+        self.commit("fixtures")
+        self.assertEqual(self.checks(), [("error", "fixture-recipe", "z.elf")])
 
     def test_a_local_path_in_an_added_binary_or_test_line_is_an_error(self):
         self.write(FIXTURES / "README.md", "| `old.exe` |\n| `a.exe` |\n")
@@ -69,6 +78,13 @@ class DiffLintTests(unittest.TestCase):
         self.write("tests/stages/kuna-x.xml", "<com>load file fixtures/x_c.obj</com>\n")
         self.commit("used by a stage test")
         self.assertNotIn(("error", "intermediate", "x_c.obj"), self.checks())
+
+    def test_a_file_name_is_never_read_as_a_git_option(self):
+        self.write(FIXTURES / "README.md", "| `old.exe` |\n| `-e.o` |\n")
+        self.write(FIXTURES / "-e.o", b"\x4c\x01\0\0object")
+        self.write("scripts/tool.py", "print('a.o')\n")
+        self.commit("obj")
+        self.assertEqual(self.checks(), [("error", "intermediate", "-e.o")])
 
     def test_an_edited_assertion_needs_a_trailer(self):
         self.write("tests/stages/kuna-old.xml", STAGE.replace("(2,1\\)", "(2\\)"))

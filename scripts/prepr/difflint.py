@@ -5,9 +5,10 @@
 Checks the changes from the merge base of BASE and HEAD to the working tree
 (committed or not). Errors fail the run (exit status 1); warnings only print.
 
-* error `fixture-readme`: a binary added under a crate's `tests/fixtures/`
-  whose name the fixtures README does not mention (each row gives the recipe and
-  the SHA-256).
+* error `fixture-recipe`: a binary added under a `tests/fixtures/` whose name no
+  text file beside it, or in a directory above it up to `fixtures/`, mentions:
+  the fixtures README row, a note such as `byval_pe_i386.txt`, or the source's
+  `Build:` line is where the recipe and the SHA-256 are recorded.
 * error `local-path`: an added binary, or an added line under a `tests/`
   directory, carrying a local path (`/home/<user>/`, `/Users/<user>/`,
   `C:\\Users\\`, `.claude/jobs/`): build intermediates and recorded output leak
@@ -61,10 +62,10 @@ def changed_files(root: Path, base: str) -> dict[str, str]:
     """Each path changed since the merge base, mapped to its status letter (A, M, D, R...)."""
     merge_base = git(root, "merge-base", base, "HEAD").strip()
     out = {}
-    for line in git(root, "diff", "--name-status", "--no-renames", merge_base).splitlines():
-        status, path = line.split("\t", 1)
+    fields = git(root, "diff", "--name-status", "-z", "--no-renames", merge_base).split("\0")
+    for status, path in zip(fields[0::2], fields[1::2]):
         out[path] = status[0]
-    for path in git(root, "ls-files", "--others", "--exclude-standard").splitlines():
+    for path in filter(None, git(root, "ls-files", "-z", "--others", "--exclude-standard").split("\0")):
         out[path] = "A"
     return out
 
@@ -79,15 +80,36 @@ def added_lines(root: Path, base: str, path: str) -> list[str]:
     merge_base = git(root, "merge-base", base, "HEAD").strip()
     diff = git(root, "diff", "-U0", merge_base, "--", path)
     lines = [line[1:] for line in diff.splitlines() if line.startswith("+") and not line.startswith("+++")]
-    if not lines and (root / path).is_file() and not git(root, "ls-files", path).strip():
+    if not lines and (root / path).is_file() and not git(root, "ls-files", "--", path).strip():
         lines = (root / path).read_text(errors="replace").splitlines()
     return lines
+
+
+def notes(root: Path, directory: PurePosixPath, cache: dict[PurePosixPath, str]) -> str:
+    """The text of every non-binary file directly in `directory`: READMEs, notes, sources, build scripts."""
+    if directory not in cache:
+        texts = []
+        folder = root / directory
+        for entry in sorted(folder.iterdir()) if folder.is_dir() else []:
+            if entry.is_file():
+                data = entry.read_bytes()
+                if not is_binary(data):
+                    texts.append(data.decode(errors="replace"))
+        cache[directory] = "\n".join(texts)
+    return cache[directory]
+
+
+def recipe_recorded(root: Path, posix: PurePosixPath, cache: dict[PurePosixPath, str]) -> bool:
+    """Whether a text file beside the fixture, or in a directory above it up to `fixtures/`, names it."""
+    top = posix.parts.index("fixtures")
+    return any(posix.name in notes(root, PurePosixPath(*posix.parts[:end]), cache)
+               for end in range(len(posix.parts) - 1, top, -1))
 
 
 def referenced(root: Path, name: str) -> bool:
     """Whether a test, stage test or script mentions `name`."""
     hits = subprocess.run(
-        ["git", "-C", str(root), "grep", "-l", "--untracked", "-F", name, "--",
+        ["git", "-C", str(root), "grep", "-l", "--untracked", "-F", "-e", name, "--",
          "tests", "*.rs", "*.py", "*.xml", "*.s", "*.asm"],
         capture_output=True, text=True,
     ).stdout.split()
@@ -99,7 +121,7 @@ def lint(root: Path, base: str) -> list[Finding]:
     changes = changed_files(root, base)
     commit_messages = git(root, "log", "--format=%B", f"{git(root, 'merge-base', base, 'HEAD').strip()}..HEAD")
     justified = TRAILER.findall(commit_messages)
-    readme_cache: dict[Path, str] = {}
+    notes_cache: dict[PurePosixPath, str] = {}
 
     for path, status in sorted(changes.items()):
         file = root / path
@@ -107,14 +129,12 @@ def lint(root: Path, base: str) -> list[Finding]:
         if status == "A" and file.is_file():
             data = file.read_bytes()
             binary = is_binary(data)
-            if binary and "fixtures" in posix.parts and "tests" in posix.parts:
-                fixtures = Path(*posix.parts[: posix.parts.index("fixtures") + 1])
-                readme = root / fixtures / "README.md"
-                if readme not in readme_cache:
-                    readme_cache[readme] = readme.read_text(errors="replace") if readme.is_file() else ""
-                if posix.name not in readme_cache[readme]:
-                    findings.append(Finding("error", "fixture-readme", path,
-                                            f"not listed in {fixtures}/README.md (recipe and SHA-256)"))
+            if binary and "fixtures" in posix.parts and "tests" in posix.parts \
+                    and not recipe_recorded(root, posix, notes_cache):
+                fixtures = PurePosixPath(*posix.parts[: posix.parts.index("fixtures") + 1])
+                findings.append(Finding("error", "fixture-recipe", path,
+                                        f"no README, note or source under {fixtures}/ names it "
+                                        "(record the recipe and SHA-256)"))
             if binary and LOCAL_PATH.search(data):
                 findings.append(Finding("error", "local-path", path,
                                         f"embeds {LOCAL_PATH.search(data).group().decode(errors='replace')!r}"))
