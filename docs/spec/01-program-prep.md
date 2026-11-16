@@ -2757,6 +2757,23 @@ tracked values take precedence over this entry default; raw and XML images do
 not acquire the ELF convention. N32 participates in MIPS ISA, entry, floating
 ABI and GOT dispatch despite the object reader's separate architecture tag.
 
+(kuna) `decompiler/crates/kuna-analysis/src/loader/kuna_ppc64r12.rs`
+(`ppc64r12`) is the PowerPC64 ELFv2 counterpart of the `t9` seed. The ELFv2 ABI
+requires a caller entering a function at its global entry to pass that entry's
+address in `r12`, and the global entry derives the TOC pointer from it
+(`addis r2,r12,hi; addi r2,r2,lo`) before falling into the local entry. The pass
+seeds `r12 = entry` at each defined PowerPC64 function symbol whose `st_other`
+declares a separate local entry (field values 2 to 6, 4 to 64 bytes in), so
+the prologue's `r2` folds to the TOC and TOC-relative globals resolve by
+address. The seed is committed as a per-entry loader seed, as the ELFv1 TOC
+is, not as a context-database range like `t9`: each function's snapshot of
+that database would otherwise grow with the number of seeded functions. Only
+the global entry address is seeded: a function decompiled from its local entry
+keeps `r2` as an input. An
+image whose `e_flags` declare ELFv1 is skipped, and a symbol without a local
+entry gets no seed, so a stripped image seeds only the functions its dynamic
+symbol table still names.
+
 (kuna) **A PowerPC64 ELFv1 function symbol names a descriptor, not code**
 (`decompiler/crates/kuna-analysis/src/loader/elfv1.rs (Descriptors::read)`, the
 `.opd` half of Ghidra's `PowerPC64_ElfExtension`). Under ABI v1 a function symbol
