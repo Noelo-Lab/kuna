@@ -133,11 +133,13 @@ pub fn image_entry_vma(file: &object::File, bytes: &[u8]) -> Option<u64> {
 
 /// The container's entry as a CODE address: on 32-bit ARM the low bit is
 /// Thumb state, not part of the address, so it is folded off and reported
-/// separately. This container-derived hint uses the effective architecture,
-/// because the neutral parser leaves the ARM PE machine words `Unknown`.
-/// Discovery with a selected decoder uses `collect_entries_for_language`.
+/// separately, and a PowerPC64 ELFv1 entry names a function descriptor, so
+/// its validated code word is used. This container-derived hint uses the
+/// effective architecture, because the neutral parser leaves the ARM PE
+/// machine words `Unknown`. Discovery with a selected decoder uses
+/// `collect_entries_for_language`.
 pub fn image_code_entry(file: &object::File, bytes: &[u8]) -> Option<(u64, bool)> {
-    let vma = image_entry_vma(file, bytes)?;
+    let vma = crate::loader::elfv1::Descriptors::read(file).code_address(image_entry_vma(file, bytes)?);
     let arm = crate::loadimage_object::effective_architecture(file, bytes)
         == object::Architecture::Arm;
     Some(if arm { (vma & !1, vma & 1 != 0) } else { (vma, false) })

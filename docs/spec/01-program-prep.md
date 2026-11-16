@@ -6807,7 +6807,12 @@ descriptor resolution of §1.3 and the ARM Thumb-bit fold, as
 and every reporting surface reads it from the loaded program's image metadata
 instead of parsing the file again: `kuna functions --summary`'s
 `entry`/`reachable_from_entry`, `kuna decompile-graph`'s `isEntryPoint`, and the
-`kuna decompile-project` README's entry row.
+`kuna decompile-project` README's entry row. Entry discovery's `e_entry` oracle seeds
+the same code address through
+`decompiler/crates/kuna-analysis/src/analyzers/entry/mod.rs (image_code_entry)`, because
+under ELFv1 the raw field names a descriptor in `.opd`, which no executable section
+contains. A stripped ELFv1 executable whose section table and `.opd` survive has
+its `_start` found this way.
 
 **Address tables** (`addrtable`,
 `decompiler/crates/kuna-analysis/src/analyzers/addrtable/mod.rs (AddrTablePass)`)
