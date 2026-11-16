@@ -166,6 +166,9 @@ impl FlowEnvironment for ArchFlowEnv {
     fn query_call_stack_window(&self, entry: &Address, call_at: &Address) -> Option<u32> {
         crate::p4_calls::kuna_calleestackargs::callee_stack_window(self.arch(), entry, call_at)
     }
+    fn query_call_return_pop(&self, entry: &Address) -> Option<u32> {
+        crate::p4_calls::kuna_calleestackargs::callee_return_pop(self.arch(), entry)
+    }
     fn query_call_moves_stack(&self, entry: &Address) -> bool {
         crate::p4_calls::kuna_calleestackargs::callee_moves_stack(self.arch(), entry)
     }
@@ -977,6 +980,7 @@ fn follow_flow_on_fd(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcda
 /// publishing the flow's buffered comments.
 #[allow(clippy::mutable_key_type)]
 fn generate_flow(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcdata> {
+    let _load = arch.load_scope();
     crate::kuna_mipsunaligned::paint(arch);
     // C++ Funcdata::followFlow(baddr, eaddr): a function carrying a declared byte
     // extent restricts flow to it; size 0 keeps the unbounded default the whole
@@ -1172,6 +1176,7 @@ fn run_jumptable_pipeline(
 /// already ported in `action.rs`); this drives it through the engine-side
 /// [`ActionContext`] so the warning-emission points are observable.
 fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> {
+    let _load = arch.load_scope();
     // C++ allacts.setCurrent("decompile") derives the filtered decompile root
     // (idempotent if already current).
     arch.allacts.set_current("decompile")?;

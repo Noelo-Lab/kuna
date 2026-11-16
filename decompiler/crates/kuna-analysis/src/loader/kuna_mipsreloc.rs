@@ -35,7 +35,14 @@
 //! adds back the input `$gp` a partial link recorded in `.reginfo` or
 //! `.MIPS.options`. The GOT holds what the relocations put in it and nothing
 //! writes it, so the loader reports it foldable, and
-//! `lw $t9, %call16(f)($gp); jalr $t9` calls `f`.
+//! `lw $t9, %call16(f)($gp); jalr $t9` calls `f`. The exception is the entry of
+//! an undefined weak symbol: the run-time loader fills it, with 0 when nothing
+//! defines the symbol, so it is an import slot that holds 0 and is not folded,
+//! and `if (f) f(x);` keeps its test. A `GOT_PAGE` against such a symbol
+//! reaches the same slot and its `GOT_OFST` is the addend alone, as GNU ld
+//! decays the pair for a symbol that does not bind locally. The symbol is still
+//! resolved, so it takes the synthetic extern address every undefined symbol
+//! has and the function stays entered there.
 //!
 //! `R_MIPS_JALR` only says which function a `jalr` calls and is not applied.
 //! microMIPS, MIPS16, R6 PC-relative and TLS relocations are unsupported.
@@ -44,7 +51,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
 
 use object::read::{Object, ObjectSection, ObjectSymbol};
-use object::{Relocation, RelocationFlags, RelocationTarget, SectionIndex};
+use object::{Relocation, RelocationFlags, RelocationTarget, SectionIndex, SymbolIndex};
 
 use super::reloc_apply::RelocationFailure;
 
@@ -237,13 +244,16 @@ pub(super) struct Gp {
     capacity: u64,
     entries: BTreeMap<u64, u64>,
     little_endian: bool,
+    /// The slot of each undefined weak symbol a GOT relocation names: the
+    /// run-time loader fills it, with 0 when nothing defines the symbol.
+    imports: BTreeMap<usize, u64>,
 }
 
 impl Gp {
     /// A GOT of `entries` entries of `entry` bytes at `base`.
     pub(super) fn new(base: u64, entry: u64, entries: usize, little_endian: bool) -> Gp {
         let capacity = (entries as u64).min(GOT_WINDOW / entry);
-        Gp { base, entry, capacity, entries: BTreeMap::new(), little_endian }
+        Gp { base, entry, capacity, entries: BTreeMap::new(), little_endian, imports: BTreeMap::new() }
     }
 
     pub(super) fn gp(&self) -> u64 {
@@ -253,6 +263,17 @@ impl Gp {
     /// Where the GOT starts.
     pub(super) fn base(&self) -> u64 {
         self.base
+    }
+
+    /// Each import slot `(symbol, slot)`: an undefined weak symbol's GOT entry,
+    /// which holds 0 until the run-time loader binds the symbol.
+    pub(super) fn imports(&self) -> impl Iterator<Item = (SymbolIndex, u64)> + '_ {
+        self.imports.iter().map(|(&symbol, &slot)| (SymbolIndex(symbol), slot))
+    }
+
+    /// How many bytes one GOT entry spans.
+    pub(super) fn entry(&self) -> u64 {
+        self.entry
     }
 
     /// How many bytes the GOT spans.
@@ -276,23 +297,41 @@ impl Gp {
     fn slot(&mut self, value: i128) -> Result<i128, RelocationFailure> {
         let mask = if self.entry == 8 { u64::MAX } else { 0xffff_ffff };
         let value = (value as u64) & mask;
-        let next = self.entries.len() as u64;
         if let Some(&slot) = self.entries.get(&value) {
             return Ok(slot as i128 - self.gp() as i128);
         }
+        let slot = self.next_slot()?;
+        self.entries.insert(value, slot);
+        Ok(slot as i128 - self.gp() as i128)
+    }
+
+    /// The `$gp` offset of `symbol`'s import slot, made on first use.
+    fn import(&mut self, symbol: SymbolIndex) -> Result<i128, RelocationFailure> {
+        let slot = match self.imports.get(&symbol.0) {
+            Some(&slot) => slot,
+            None => {
+                let slot = self.next_slot()?;
+                self.imports.insert(symbol.0, slot);
+                slot
+            }
+        };
+        Ok(slot as i128 - self.gp() as i128)
+    }
+
+    fn next_slot(&self) -> Result<u64, RelocationFailure> {
+        let next = (self.entries.len() + self.imports.len()) as u64;
         if next >= self.capacity {
             return Err(RelocationFailure::OutOfRange);
         }
-        let slot = self.base + next * self.entry;
-        self.entries.insert(value, slot);
-        Ok(slot as i128 - self.gp() as i128)
+        Ok(self.base + next * self.entry)
     }
 
     /// Apply a section's relocations to its bytes `data` laid at `base`: each
     /// expression in record order, reading an implicit addend from the bytes
     /// earlier expressions wrote. `lo_halves` is [`lo_halves`]'s, per record,
-    /// and `input_gp` the object's own recorded `$gp` ([`input_gp`]). A failed
-    /// expression writes nothing and reports each of its records.
+    /// `input_gp` the object's own recorded `$gp` ([`input_gp`]), and `weak`
+    /// tells an undefined weak symbol, whose GOT entry is an import slot. A
+    /// failed expression writes nothing and reports each of its records.
     pub(super) fn apply_section(
         &mut self,
         arch: object::Architecture,
@@ -301,10 +340,11 @@ impl Gp {
         records: &[(u64, Relocation)],
         lo_halves: &[Option<i64>],
         input_gp: Result<u64, RelocationFailure>,
+        weak: &dyn Fn(RelocationTarget) -> bool,
         resolve: &mut dyn FnMut(RelocationTarget) -> Option<Target>,
     ) -> Applied {
         let mut applied = Applied::default();
-        let input = Inputs { arch, base, input_gp };
+        let input = Inputs { arch, base, input_gp, weak };
         let (ops, bounds) = expressions(arch, records);
         for bound in bounds {
             let expression = &ops[bound];
@@ -353,7 +393,17 @@ impl Gp {
         let old = read(field, le);
         let place = input.base.wrapping_add(offset as u64);
         let first = &records[expression[0].record].1;
-        let first_target = resolve(first.target()).ok_or(RelocationFailure::UnresolvedTarget)?;
+        let import_of = |op: &Op, reloc: &Relocation| {
+            Some(reloc.target()).filter(|&t| op.special.is_none() && (got_entry(op.op, false).is_some() || op.op == GOT_OFST) && (input.weak)(t))
+        };
+        let first_import = import_of(&expression[0], first);
+        let first_target = match first_import {
+            Some(import) => {
+                resolve(import);
+                Target { address: 0, local: false, gp_disp: false }
+            }
+            None => resolve(first.target()).ok_or(RelocationFailure::UnresolvedTarget)?,
+        };
         let mut value = if first.has_implicit_addend() {
             self.implicit(expression[0].op, old, first_target.local, lo_half)? as u64
         } else {
@@ -363,7 +413,12 @@ impl Gp {
         let mut callee = None;
         for (index, op) in expression.iter().enumerate() {
             let reloc = &records[op.record].1;
+            let import = if index == 0 { first_import } else { import_of(op, reloc) };
             let (mut target, named) = match (index, op.special) {
+                (_, None) if import.is_some() => {
+                    import.and_then(&mut *resolve);
+                    (Target { address: 0, local: false, gp_disp: false }, import)
+                }
                 (0, _) => (first_target, Some(first.target())),
                 (_, None) => (resolve(reloc.target()).ok_or(RelocationFailure::UnresolvedTarget)?, Some(reloc.target())),
                 (_, Some(ssym)) => (self.special(ssym, place, input)?, None),
@@ -372,7 +427,7 @@ impl Gp {
                 target.address = target.address as u32 as i32 as i64 as u64;
             }
             let last = index + 1 == expression.len();
-            let next = self.operate(op.op, target, value, place, input, last)?;
+            let next = self.operate(op.op, target, import, value, place, input, last)?;
             let symbol = match named {
                 Some(t @ RelocationTarget::Symbol(_)) if !target.gp_disp => Origin::Symbol(t, 1),
                 _ => Origin::Constant,
@@ -428,8 +483,19 @@ impl Gp {
     /// The result of operation `op` on symbol `t` and addend `a`, as the field
     /// bits it would write; a later operation of the expression takes it as its
     /// addend. Range checks apply only to the last operation; PC32 always
-    /// keeps the low 32 bits of the displacement.
-    fn operate(&mut self, op: u32, t: Target, a: u64, place: u64, input: &Inputs, last: bool) -> Result<u64, RelocationFailure> {
+    /// keeps the low 32 bits of the displacement. A symbol's
+    /// GOT entry for `import`, an undefined weak symbol, is its import slot.
+    #[allow(clippy::too_many_arguments)]
+    fn operate(
+        &mut self,
+        op: u32,
+        t: Target,
+        import: Option<RelocationTarget>,
+        a: u64,
+        place: u64,
+        input: &Inputs,
+        last: bool,
+    ) -> Result<u64, RelocationFailure> {
         let gp = self.gp();
         let s = t.address;
         let sum = s.wrapping_add(a);
@@ -439,7 +505,10 @@ impl Gp {
             return Err(RelocationFailure::UnresolvedTarget);
         }
         let page = |x: u64| x.wrapping_add(0x8000) & !0xffff;
-        let got = |this: &mut Self, value: u64| this.slot(i128::from(value as i64)).map(|v| v as u64);
+        let got = |this: &mut Self, value: u64| match import {
+            Some(RelocationTarget::Symbol(symbol)) => this.import(symbol).map(|v| v as u64),
+            _ => this.slot(i128::from(value as i64)).map(|v| v as u64),
+        };
         Ok(match op {
             R16 => checked(sum, 16)?,
             R32 => sum & 0xffff_ffff,
@@ -483,6 +552,7 @@ impl Gp {
             GOT16 | CALL16 | GOT_DISP => checked(got(self, sum)?, 16)?,
             GOT_HI16 | CALL_HI16 => got(self, sum)?.wrapping_add(0x8000) >> 16 & 0xffff,
             GOT_LO16 | CALL_LO16 => got(self, sum)? & 0xffff,
+            GOT_OFST if import.is_some() => checked(a, 16)?,
             GOT_OFST => checked(sum.wrapping_sub(page(sum)), 16)?,
             _ => return Err(RelocationFailure::Unsupported),
         })
@@ -490,10 +560,13 @@ impl Gp {
 }
 
 /// What a section's expressions read besides their records.
-struct Inputs {
+struct Inputs<'a> {
     arch: object::Architecture,
     base: u64,
     input_gp: Result<u64, RelocationFailure>,
+    /// Whether a target is an undefined weak symbol, whose GOT entry is an
+    /// import slot rather than the address the layout gave it.
+    weak: &'a dyn Fn(RelocationTarget) -> bool,
 }
 
 /// One operation of an expression: its type, the record it came from, and

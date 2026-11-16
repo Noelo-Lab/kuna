@@ -34,6 +34,9 @@
 //! a Rust binary this additionally elides the dead code after a tail
 //! `core::panicking::panic` / `handle_alloc_error` / `rust_begin_unwind`; for a Go
 //! binary, after a tail `runtime.gopanic` / `runtime.throw` / `runtime.goexit`.
+//!
+//! [`IMPORT_NORETURN`] names the no-return helpers matched only as IMPORTS and
+//! only by exact spelling, never against a function the image defines.
 
 use object::read::{Object, ObjectSymbol};
 use object::SymbolKind;
@@ -52,6 +55,10 @@ const ELF_NORETURN_LIST: &str = include_str!("../../data/ElfFunctionsThatDoNotRe
 /// duplicated here so a PE still flags `exit`), plus the Windows-CRT specifics
 /// (`__fastfail`/`_invoke_watson`/`quick_exit`/…) the ELF list does not name.
 const PE_MAC_NORETURN_LIST: &str = include_str!("../../data/PeMacFunctionsThatDoNotReturn");
+
+/// No-return helpers matched by exact name on import addresses only: glibc
+/// `debug/stack_chk_fail_local.c` declares `__stack_chk_fail_local` `noreturn`.
+const IMPORT_NORETURN: &[&str] = &["__stack_chk_fail_local"];
 
 /// Port of `NoReturnFunctionAnalyzer` ("Known"): flag every imported/defined
 /// function whose name matches the shipped ELF no-return list.
@@ -275,7 +282,17 @@ impl AnalysisPass for NoReturnKnownPass {
     }
 
     fn run(&self, ctx: &AnalysisCtx) -> AnalysisOutput {
-        scan_noreturn(ctx.file, ctx.bytes, self.compiler)
+        let mut out = scan_noreturn(ctx.file, ctx.bytes, self.compiler);
+        if let Some(image) = ctx.image {
+            let (imports, _) = crate::protos::loaded_import_addrs(ctx.file, ctx.bytes, image);
+            out.noreturn.extend(
+                imports
+                    .into_iter()
+                    .filter(|(name, _)| IMPORT_NORETURN.contains(&name.as_str()))
+                    .map(|(name, addr)| NoReturnFact { addr, name }),
+            );
+        }
+        out
     }
 }
 

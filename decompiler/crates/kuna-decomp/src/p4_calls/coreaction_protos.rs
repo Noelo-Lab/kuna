@@ -1440,6 +1440,7 @@ impl Action for ActionActiveParam {
         };
         let count = if bootstrap { ready_calls.len() } else { data.num_calls() as usize };
         let mut ready = ready_calls.into_iter();
+        let mut finalized = false;
         for position in 0..count {
             let idx = if bootstrap { ready.next().expect("checked call") } else { position as int4 };
             if !bootstrap && !self.check_call_trials(data, &mut aliascheck, &mut held, idx) {
@@ -1508,6 +1509,7 @@ impl Action for ActionActiveParam {
                     crate::p4_calls::kuna_directalias::refresh_rewritten(data, ac, call_op, &before);
                 }
                 self.base.count += 1;
+                finalized = true;
             }
         }
         // (kuna `formatstring`) Once no call has trials left, a resolved format
@@ -1526,6 +1528,11 @@ impl Action for ActionActiveParam {
         crate::p4_calls::kuna_calleereadarg::extend_pending(data, &pending_read);
         // (kuna) `passthrough`: last of all, so it only ever adds to a final list.
         crate::p4_calls::kuna_passthrough::extend_pending(data, &pending_pass);
+        // (kuna) The MSVC frame cookie and the frame slots above it leave every
+        // call once no call scores trials any more.
+        if finalized {
+            self.base.count += crate::p4_calls::kuna_stackcookie::shed_frame_cookies(data);
+        }
         0
     }
 }

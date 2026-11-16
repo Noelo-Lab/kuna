@@ -545,7 +545,7 @@ fn unambiguous_defined_function_names(
 }
 
 /// Extend resolver addresses with proven ELF code externs retained by `reloc_symbols`.
-fn loaded_import_addrs(
+pub(crate) fn loaded_import_addrs(
     file: &object::File,
     bytes: &[u8],
     image: &crate::loadimage_object::ObjectLoadImage,

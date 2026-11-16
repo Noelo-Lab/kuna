@@ -270,6 +270,8 @@ pub struct Architecture {
     pub loader_transfer_sites: Rc<std::collections::BTreeSet<Address>>,
     /// MIPS GOT import entries identified by the loader, never ordinary definitions.
     pub loader_mips_imports: Rc<std::collections::BTreeSet<Address>>,
+    pub nullable_relocations: Rc<std::collections::BTreeMap<u64, Vec<crate::kuna_nullable_reloc::NullableRelocation>>>,
+    pub nullable_literal_values: Rc<std::collections::BTreeSet<u64>>,
 
     // --- Configuration data (architecture.hh:170-208) ---------------------
     /// How many levels to let parameter trims recurse (C++ `trim_recurse_max`).
@@ -1549,6 +1551,13 @@ pub struct Architecture {
     pub analysis_armwalkmode: bool,
     /// Caller-local PPC32 PIC import proof, applied during flow following.
     pub analysis_ppc32picimports: crate::kuna_ppc32picimports::Mode,
+    /// (kuna) The load-time options this program was loaded with: the ones in
+    /// force when it was built, updated by a load-time `option` command.
+    /// [`Self::load_scope`] puts them back in force for later analysis.
+    load_options: Rc<crate::kuna_loadoptions::LoadOptions>,
+    /// (kuna) Built with no options in force: an entry point that takes none
+    /// loaded this program, so its gates keep reading the environment live.
+    load_options_from_env: bool,
     /// Validated import slots. Never registered as executable FunctionSymbols.
     pub ppc32_pic_imports: std::collections::BTreeMap<u64, crate::kuna_ppc32piccalls::ImportSlot>,
     /// (kuna) Gate the x86-64 IFUNC (`R_X86_64_IRELATIVE`) `.plt.sec`/`.iplt`
@@ -2236,9 +2245,13 @@ impl Architecture {
             loader_mips_t9: None,
             loader_transfer_sites: Rc::default(),
             loader_mips_imports: Rc::default(),
+            nullable_relocations: Rc::default(),
+            nullable_literal_values: Rc::default(),
 
             symbol_snapshots: RefCell::new(SymbolSnapshots::default()),
             kuna_snapshot_cache: std::env::var_os("KUNA_NO_SYMBOL_SNAPSHOT_CACHE").is_none(),
+            load_options: crate::kuna_loadoptions::LoadOptions::in_force(),
+            load_options_from_env: !crate::kuna_loadoptions::options_in_force(),
 
             decode_sla: None,
             decode_truncations: None,
@@ -2850,7 +2863,11 @@ impl Architecture {
         self.analysis_ptrentry = true; // (kuna) pointer-referenced ARM entries (ARM-only, needs listing)
         self.analysis_poolentry = true; // (kuna) ARM literal-pool inference (ARM-only, needs listing + aif)
         self.analysis_armwalkmode = true; // (kuna) ARM walk decodes in the mode its control flow carries
-        self.analysis_ppc32picimports = crate::kuna_ppc32picimports::Mode::loaded(); // (kuna) abi when the loader applied it, else off
+        self.analysis_ppc32picimports = if self.load_options_from_env {
+            crate::kuna_ppc32picimports::Mode::loaded()
+        } else {
+            crate::kuna_ppc32picimports::Mode::loaded_with(self.load_options.ppc32picimports)
+        }; // (kuna) abi when the loader applied it, else off
         self.analysis_goabi = true; // (kuna) option goabi default auto: a Go image takes the vendored golang cspec
         self.analysis_symbolnamechars = crate::kuna_symbolnamechars::NameChars::Safe; // (kuna) DIV-94: symbol-name sanitizing defaults to `safe` -- the structural set only, a measured no-op on every name a real toolchain emits
         self.analysis_dwarf = true;
@@ -2978,7 +2995,9 @@ impl Architecture {
     /// `maxlinewidth`/`commentstyle`, which are recorded-no-op printer stubs
     /// with no state to reset.
     pub fn reset_wire_defaults(&mut self) {
-        // The env-backed PPC32 PIC mode is process state, so a wire reset clears it too.
+        // The load-time PPC32 PIC mode is program and process state, so a wire
+        // reset clears both.
+        self.load_options_mut().ppc32picimports = crate::kuna_ppc32picimports::Mode::Off;
         crate::kuna_ppc32picimports::Mode::Off.set_env();
         self.reset_defaults();
         self.print.context = crate::printlanguage::PrintContext::new();
@@ -3130,11 +3149,14 @@ impl Architecture {
     /// cache (+ its property-map rollback), the non-core data-types, the
     /// comment database, and the decoded-string cache.  kuna has no live
     /// sub-scopes to delete (namespaces are cached path strings inside the
-    /// RemoteScope, cleared with it) and no wired constant pool yet.
+    /// RemoteScope, cleared with it) and no wired constant pool yet.  The
+    /// x86-32 callee walks read the host's names and no-return facts, so they
+    /// go too ([`crate::kuna_calleepurge`]).
     pub fn flush_remote_caches(&mut self) {
         if let Some(remote) = &self.remote_scope {
             remote.clear();
         }
+        self.kuna_callee_purge.get_mut().forget_walks();
         self.types.clear_noncore();
         self.commentdb.clear();
         self.string_manager.borrow_mut().base.clear();
@@ -3629,6 +3651,8 @@ impl Architecture {
         ctx.callee_protos = callee_protos;
         ctx.loader_transfer_sites = Rc::clone(&self.loader_transfer_sites);
         ctx.loader_mips_imports = Rc::clone(&self.loader_mips_imports);
+        ctx.nullable_relocations = Rc::clone(&self.nullable_relocations);
+        ctx.nullable_literal_values = Rc::clone(&self.nullable_literal_values);
         // (kuna) The convention each of those callees was DECLARED under, keyed
         // the same way the pieces are (entry address).  The declaration names the
         // function, the parked pieces carry that name, and the read side
@@ -4154,7 +4178,7 @@ impl Architecture {
         self.infer_ptr_spaces.push(Rc::clone(&spc));
         self.symboltab.add_range(scope, Rc::clone(&spc), first, last);
         let gptr =
-            crate::kuna_goreg::g_pointer_type(self.types(), crate::kuna_goreg::GoLayout::from_env())?;
+            crate::kuna_goreg::g_pointer_type(self.types(), self.go_layout())?;
         let addr = Address::new(spc, first);
         let (sid, _eref) =
             self.symboltab.add_symbol_mapped(scope, "g", gptr, &addr, &Address::new_invalid())?;
@@ -4637,6 +4661,39 @@ impl Architecture {
     // Owned-subsystem accessors (the `glb->types`/`glb->print`/… surface the
     // ifacedecomp porter confirmed were absent — w9x-arch-engine-glue)
     // -----------------------------------------------------------------------
+
+    /// (kuna) The load-time options this program was loaded with.
+    pub fn load_options(&self) -> &crate::kuna_loadoptions::LoadOptions {
+        &self.load_options
+    }
+
+    /// (kuna) Change a load-time option for this program's later analysis.
+    pub fn load_options_mut(&mut self) -> &mut crate::kuna_loadoptions::LoadOptions {
+        Rc::make_mut(&mut self.load_options)
+    }
+
+    /// (kuna) Put this program's load-time options in force on this thread until
+    /// the scope drops, so the gates that run after the load read them. A
+    /// program loaded with no options defers to the environment instead, so its
+    /// gates read their variables live.
+    pub fn load_scope(&self) -> crate::kuna_loadoptions::LoadScope {
+        if self.load_options_from_env {
+            crate::kuna_loadoptions::enter_environment()
+        } else {
+            crate::kuna_loadoptions::enter(Rc::clone(&self.load_options))
+        }
+    }
+
+    /// (kuna `goreg`) The runtime layouts of the image's Go toolchain release.
+    fn go_layout(&self) -> crate::kuna_goreg::GoLayout {
+        if self.load_options_from_env {
+            return crate::kuna_goreg::GoLayout::from_env();
+        }
+        match self.load_options.go_version {
+            Some((major, minor)) => crate::kuna_goreg::GoLayout::from_version(major, minor),
+            None => crate::kuna_goreg::GoLayout::baseline(),
+        }
+    }
 
     /// Borrow the data-type factory (C++ `glb->types`).
     pub fn types(&self) -> &dyn TypeFactory {

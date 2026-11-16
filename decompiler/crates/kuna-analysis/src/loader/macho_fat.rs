@@ -123,22 +123,24 @@ pub fn fat_slice_offset(bytes: &[u8], pref: SlicePref) -> Option<u64> {
     Some((slice.as_ptr() as usize - bytes.as_ptr() as usize) as u64) // cast: a sub-slice's index
 }
 
-/// The environment variable carrying a `--slice <arch>` fat-slice override.
-/// Read live (per image read) so a test — and the in-process CLI surfaces — can
-/// set it without threading a token; empty/unset selects the default slice.
-pub const SLICE_ENV: &str = "KUNA_MACHO_SLICE";
+/// The environment variable carrying a `--slice <arch>` fat-slice override to
+/// the `decomp_dbg` subprocess and the in-process CLI surfaces; empty/unset
+/// selects the default slice.
+pub const SLICE_ENV: &str = kuna_decomp::kuna_loadoptions::MACHO_SLICE_ENV;
 
 /// The slice preference a run asks for, in precedence order: an explicit
-/// `--slice` token, else [`SLICE_ENV`], else the `--target` token's leading arch
+/// `--slice` token, else the load's slice (`LoadOptions::macho_slice`, or
+/// [`SLICE_ENV`] outside a load scope), else the `--target` token's leading arch
 /// stem, else the deterministic default. An explicit slice that names nothing
 /// recognizable stays the default rather than falling through to `--target`, so
 /// a typo'd `--slice` cannot be silently answered by the language override.
 pub fn slice_pref(slice: Option<&str>, target: Option<&str>) -> SlicePref {
+    use kuna_decomp::kuna_loadoptions::{env, scoped};
     let explicit = slice
         .map(str::trim)
         .filter(|token| !token.is_empty())
         .map(str::to_string)
-        .or_else(|| std::env::var(SLICE_ENV).ok().filter(|t| !t.trim().is_empty()));
+        .or_else(|| scoped(|o| o.macho_slice.clone()).unwrap_or_else(env::macho_slice));
     if let Some(token) = explicit {
         return SlicePref::parse(&token);
     }
@@ -234,29 +236,25 @@ mod tests {
         assert!(select_fat_slice(&[0x7f, b'E', b'L', b'F'], SlicePref::default()).is_none());
     }
 
-    /// The preference order the CLI and the dispatch share. The environment
-    /// override is asserted through an explicit token rather than by setting the
-    /// var, because `std::env` is process-global and cargo runs these in
-    /// parallel.
+    /// The preference order the CLI and the dispatch share. A load scope stands
+    /// in for the environment, so the ambient `KUNA_MACHO_SLICE` cannot reach
+    /// these assertions.
     #[test]
     fn slice_pref_prefers_an_explicit_slice_over_a_target_stem() {
+        let _load = kuna_decomp::kuna_loadoptions::LoadOptions::default().enter();
         assert_eq!(
             slice_pref(Some("arm64"), Some("x86:LE:64:default:gcc")).0,
             Some(Architecture::Aarch64),
             "--slice wins over the --target stem"
         );
-        // The `--target`-only fallbacks read the environment first, so they are
-        // only meaningful with no ambient override set.
-        if std::env::var_os(SLICE_ENV).is_none() {
-            assert_eq!(
-                slice_pref(None, Some("x86:LE:64:default:gcc")).0,
-                Some(Architecture::X86_64),
-                "--target alone still steers the slice"
-            );
-            // A blank token is not an override.
-            assert_eq!(slice_pref(Some("  "), Some("arm64")).0, Some(Architecture::Aarch64));
-            assert_eq!(slice_pref(None, None).0, None);
-        }
+        assert_eq!(
+            slice_pref(None, Some("x86:LE:64:default:gcc")).0,
+            Some(Architecture::X86_64),
+            "--target alone still steers the slice"
+        );
+        // A blank token is not an override.
+        assert_eq!(slice_pref(Some("  "), Some("arm64")).0, Some(Architecture::Aarch64));
+        assert_eq!(slice_pref(None, None).0, None);
         // An unrecognized --slice stays the DEFAULT rather than falling through
         // to --target: a typo must not be answered by the language override.
         assert_eq!(slice_pref(Some("riscv-banana"), Some("arm64")).0, None);

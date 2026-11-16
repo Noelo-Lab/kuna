@@ -67,3 +67,5 @@ pub(crate) mod kuna_highslice_guard;
 pub mod kuna_stubtailcall; // (kuna) a loader-proven lazy-binding stub flows as a tail call
 
 pub mod kuna_ppcpcread;
+
+pub mod kuna_nullable_reloc;
