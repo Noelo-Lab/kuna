@@ -1,0 +1,101 @@
+<decompilertest>
+<binaryimage arch="x86:LE:32:default:windows">
+<!--
+    kuna issue testcase: a `rep movsd` that copies a by-value struct into the
+    outgoing argument area with a known count is expanded before the stack is
+    heritaged (`p3_dataflow/kuna_repframecopy.rs`, always on; `indexaliasguard
+    off` turns it off with the other stack guards).
+
+    Issue:      kuna GH-1562 - x86-32 MSVC: a by-value struct argument copied
+                with `rep movsd` makes the call that takes it print with no
+                arguments, and a pushed return address prints as a value.
+    Stage:      P3 dataflow - right after the first heritage pass, before the
+                stack's first heritage (`ActionHeritage`).
+    P0 assert:  none (a strict fix); one pass.
+
+    byval_pe_i386.exe (VC8 /O2, notes in byval_pe_i386.txt), draw (0x401000):
+    paint(a, b, 3), then `Rect r = *src` (rep movsd into a local) and
+    `fill(r, b)` (`sub esp,0x20; mov edi,esp; rep movsd` into the outgoing
+    area). Before: `v9 = 0x401018;` (paint's pushed return address), two
+    `while` copy loops and `sub_401070()`. Now fill takes r's eight dwords and
+    b, paint keeps its three arguments, and neither the loops nor the return
+    address are left.
+    repframecopy_pe_i386.exe (clean-room asm, notes in repframecopy_pe_i386.asm):
+    ebp_draw (0x401070, frame pointer, a branch before the copies) passes src's
+    eight dwords and b to fill8; forward (0x401130) passes its own by-value
+    parameter on; the entry (0x401180) passes a global table by value, and its
+    other calls keep their pushed arguments. Left as loops: big_pass (0x4010b0,
+    32 dwords, too large), copy_global (0x4010d0, no frame slot), zero_pass
+    (0x4010f0, the copy reads a local a `rep stosd` walks) and loop_fill
+    (0x401150, the copy reads a local an indexed loop writes). shift_pass
+    (0x401270) moves nine slots at the stack pointer down by one with an
+    overlapping copy: fill8 takes 1..8 and 8 (on main the copied slots kept
+    their old values). The register-argument callers d_virtual (0x401300),
+    d_ptr (0x401340) and d_direct (0x401370) copy a record into a local at the
+    bottom of the frame: no call takes it, so each move stays a loop and no
+    call gains a stack argument.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/byval_pe_i386.exe</com>
+  <com>read symbols</com>
+  <com>load addr 0x401000</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/repframecopy_pe_i386.exe</com>
+  <com>read symbols</com>
+  <com>load addr 0x401070</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x401130</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x401180</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x4010b0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x4010d0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x4010f0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x401150</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x401270</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x401300</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x401340</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x401370</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="REPFRAMECOPY #1: fill takes the copied struct and b" min="1" max="1">sub_401070\(v[0-9]+ \+ v[0-9]+,v[0-9]+,v[0-9]+,v[0-9]+,v[0-9]+,v[0-9]+,v[0-9]+,v[0-9]+,v[0-9]+\)</stringmatch>
+<stringmatch name="REPFRAMECOPY #2: paint keeps its three arguments" min="1" max="1">sub_401050\(a0,a1,3\)</stringmatch>
+<stringmatch name="REPFRAMECOPY #3: no pushed return address is printed as a value" min="0" max="0">= 0x4010(18|85|8e|9b|a8|b2);</stringmatch>
+<stringmatch name="REPFRAMECOPY #4: src's eight dwords and b reach fill8 through a frame pointer" min="1" max="1">sub_401000\(\*a0,a0\[1\],a0\[2\],a0\[3\],a0\[4\],a0\[5\],a0\[6\],a0\[7\],a1\);</stringmatch>
+<stringmatch name="REPFRAMECOPY #5: a by-value parameter is passed on whole" min="1" max="1">sub_401000\(a0,a1,a2,a3,a4,a5,a6,a7,7\);</stringmatch>
+<stringmatch name="REPFRAMECOPY #6: a global table passed by value" min="1" max="1">sub_401130\(dat_402000,dat_402004,dat_402008,dat_40200c,dat_402010,dat_402014,dat_402018,dat_40201c\);</stringmatch>
+<stringmatch name="REPFRAMECOPY #7: the entry's other calls keep their pushed arguments" min="1" max="1">sub_401070\(0x402000,2,0\);</stringmatch>
+<stringmatch name="REPFRAMECOPY #8: the eight moves left alone (big_pass, copy_global, zero_pass stosd and movsd, loop_fill, d_virtual, d_ptr, d_direct) stay loops, and only those" min="8" max="8">while \(v[0-9]+\) \{</stringmatch>
+<stringmatch name="REPFRAMECOPY #9: the indexed fill stays a loop" min="1" max="1">\} while \(v[0-9]+ &lt; 8\);</stringmatch>
+<stringmatch name="REPFRAMECOPY #10: an overlapping move at the stack pointer shifts the slots down" min="1" max="1">sub_401000\(1,2,3,4,5,6,7,8,8\);</stringmatch>
+<stringmatch name="REPFRAMECOPY #11: the virtual calls after a bottom-of-frame local take no stack argument" min="0" max="0">0x58\)\)\([^)]</stringmatch>
+<stringmatch name="REPFRAMECOPY #12: both virtual calls are kept" min="2" max="2">\(code \*\*\)\(\*v[0-9]+ \+ 0x58\)</stringmatch>
+<stringmatch name="REPFRAMECOPY #13: the register-argument call takes no stack argument after either local" min="2" max="2">sub_4012e0\(\);</stringmatch>
+</decompilertest>

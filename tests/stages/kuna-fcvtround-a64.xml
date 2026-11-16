@@ -1,0 +1,138 @@
+<decompilertest>
+<!--
+    Kuna #1535: AArch64 FCVTMS/FCVTPS were lifted as truncation, so
+    (int)floorf(x) and (int)ceilf(x) both printed (int)x and table_lerp's
+    lo != hi branch was folded away.  Every scalar, SIMD-scalar and vector
+    FCVT{A,M,N,P,Z}{S,U} lifted as TRUNC(x), and FRINT{A,I,M,N,P,X,Z} and
+    FRINT32/64{X,Z} stored TRUNC's integer bits in the float register;
+    FRINT32/64{X,Z} also left the bits of the vector register above the
+    result unchanged.
+
+    First chunk: the issue's exact clang -O2 bytes (floor_i, ceil_i,
+    table_lerp).  Second chunk: hand-assembled functions, one per rounding
+    mode and width (clang -target aarch64-linux-gnu
+    -march=armv8.2-a+fp16):
+      round_i   fcvtas w0,s0       rne_i     fcvtns w0,s0
+      floor_l   fcvtms x0,d0       ceil_simd fcvtps s0,s0; fmov w0,s0
+      floor_f   frintm s0,s0       ceil_d    frintp d0,d0
+      round_d   frinta d0,d0       rne_f     frintn s0,s0
+      rint_d    frintx d0,d0       nearby_d  frinti d0,d0
+      trunc_d   frintz d0,d0       has_frac  frintm/frintp/fcmp/cset ne
+      ufloor    fcvtmu w0,s0       vfloor    ldr q0; fcvtms v0.4s; str q0
+      uceil_l   fcvtpu x0,d0       floor_h   fcvtms w0,h0
+    Third chunk (-march=armv8.5-a):
+      f32z_hi   movi v2.2d,#-1; dup v1.2s,v0.s[0]; frint32z v2.2s,v1.2s;
+                mov x0,v2.d[1]
+      f64x_s    frint64x s1,s0; fmov x0,d1
+
+    Strict SLEIGH fix, no option: M/P/A round with FLOAT_FLOOR/FLOAT_CEIL/
+    FLOAT_ROUND (ties away), FCVTZ* truncates, and the float-to-float modes
+    p-code has no operator for are the user ops FLOAT_ROUNDEVEN (N),
+    FLOAT_TRUNC (FRINTZ), FLOAT_RINT (X) and FLOAT_NEARBYINT (I), typed
+    float in and out.  FRINT32/64{X,Z} convert through a 32/64-bit integer
+    and zero the register bits above the result.
+-->
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<bytechunk space="ram" offset="0x10294" readonly="true">
+0000301ec0035fd60000281ec0035fd60900281e0800301e01e4002f3f1d0071
+08d9407a840000541f01096b81000054015868bc2040201ec0035fd60101231e
+02d869bc0038211e01102e1e2138201e0008221e025868bc4000011fc0035fd6
+</bytechunk>
+<bytechunk space="ram" offset="0x10400" readonly="true">
+0000241ec0035fd60000201ec0035fd60000709ec0035fd600a8a15e0000261e
+c0035fd60040251ec0035fd600c0641ec0035fd60040661ec0035fd60040241e
+c0035fd60040671ec0035fd600c0671ec0035fd600c0651ec0035fd60140251e
+00c0241e2020201ee0079f1ac0035fd60000311ec0035fd62000c03d00b8214e
+0000803dc0035fd60000699ec0035fd60000f01ec0035fd6
+</bytechunk>
+<bytechunk space="ram" offset="0x10500" readonly="true">
+e2e7076f0104040e22e8210e403c184ec0035fd601c0291e2000669ec0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x10294" name="floor_i"/>
+<symbol space="ram" offset="0x1029c" name="ceil_i"/>
+<symbol space="ram" offset="0x102a4" name="table_lerp"/>
+<symbol space="ram" offset="0x10400" name="round_i"/>
+<symbol space="ram" offset="0x10408" name="rne_i"/>
+<symbol space="ram" offset="0x10410" name="floor_l"/>
+<symbol space="ram" offset="0x10418" name="ceil_simd"/>
+<symbol space="ram" offset="0x10424" name="floor_f"/>
+<symbol space="ram" offset="0x1042c" name="ceil_d"/>
+<symbol space="ram" offset="0x10434" name="round_d"/>
+<symbol space="ram" offset="0x1043c" name="rne_f"/>
+<symbol space="ram" offset="0x10444" name="rint_d"/>
+<symbol space="ram" offset="0x1044c" name="nearby_d"/>
+<symbol space="ram" offset="0x10454" name="trunc_d"/>
+<symbol space="ram" offset="0x1045c" name="has_frac"/>
+<symbol space="ram" offset="0x10470" name="ufloor"/>
+<symbol space="ram" offset="0x10478" name="vfloor"/>
+<symbol space="ram" offset="0x10488" name="uceil_l"/>
+<symbol space="ram" offset="0x10490" name="floor_h"/>
+<symbol space="ram" offset="0x10500" name="f32z_hi"/>
+<symbol space="ram" offset="0x10514" name="f64x_s"/>
+</binaryimage>
+<script>
+  <com>parse line extern int4 floor_i(float4 x);</com>
+  <com>parse line extern int4 ceil_i(float4 x);</com>
+  <com>parse line extern float4 table_lerp(float4 x,float4 *t);</com>
+  <com>parse line extern int4 round_i(float4 x);</com>
+  <com>parse line extern int4 rne_i(float4 x);</com>
+  <com>parse line extern int8 floor_l(float8 x);</com>
+  <com>parse line extern int4 ceil_simd(float4 x);</com>
+  <com>parse line extern float4 floor_f(float4 x);</com>
+  <com>parse line extern float8 ceil_d(float8 x);</com>
+  <com>parse line extern float8 round_d(float8 x);</com>
+  <com>parse line extern float4 rne_f(float4 x);</com>
+  <com>parse line extern float8 rint_d(float8 x);</com>
+  <com>parse line extern float8 nearby_d(float8 x);</com>
+  <com>parse line extern float8 trunc_d(float8 x);</com>
+  <com>parse line extern int4 has_frac(float4 x);</com>
+  <com>parse line extern uint4 ufloor(float4 x);</com>
+  <com>parse line extern void vfloor(int4 *d,float4 *s);</com>
+  <com>parse line extern uint8 uceil_l(float8 x);</com>
+  <com>parse line extern uint8 f32z_hi(float4 x);</com>
+  <com>parse line extern uint8 f64x_s(float4 x);</com>
+  <com>lo fu floor_i</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu ceil_i</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu table_lerp</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu round_i</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu rne_i</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu floor_l</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu ceil_simd</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu floor_f</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu ceil_d</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu round_d</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu rne_f</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu rint_d</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu nearby_d</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu trunc_d</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu has_frac</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu ufloor</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu vfloor</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu uceil_l</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu floor_h</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu f32z_hi</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu f64x_s</com>  <com>decompile</com>  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="FCVTROUND control: table_lerp keeps its declared prototype" min="1" max="1">float4 table_lerp\(float4 x,float4 \*t\)</stringmatch>
+<stringmatch name="FCVTROUND #1: no float to int conversion of x is a plain truncation" min="0" max="0">\(u?int4\)x\b</stringmatch>
+<stringmatch name="FCVTROUND #2: fcvtms rounds down (floor_i, ufloor)" min="2" max="2">^\s*return \(int4\)FLOAT_FLOOR\(x\);$</stringmatch>
+<stringmatch name="FCVTROUND #3: fcvtps rounds up (ceil_i, SIMD-scalar ceil_simd)" min="2" max="2">^\s*return \(int4\)FLOAT_CEIL\(x\);$</stringmatch>
+<stringmatch name="FCVTROUND #4: table_lerp computes both the floor and the ceil of x" min="2" max="2">^\s*\w+ = \(uint4\)\(int4\)FLOAT_(FLOOR|CEIL)\(x\);$</stringmatch>
+<stringmatch name="FCVTROUND #5: the lo != hi branch survives" min="1" max="1">^\s*if \(\w+ != \w+\)$</stringmatch>
+<stringmatch name="FCVTROUND #6: the interpolation weight 1.0 - w survives" min="1" max="1">1\.0f - </stringmatch>
+<stringmatch name="FCVTROUND #7: fcvtas rounds ties away from zero" min="1" max="1">^\s*return \(int4\)FLOAT_ROUND\(x\);$</stringmatch>
+<stringmatch name="FCVTROUND #8: fcvtns rounds ties to even" min="1" max="1">^\s*return \(int4\)FLOAT_ROUNDEVEN\(x\);$</stringmatch>
+<stringmatch name="FCVTROUND #9: fcvtms of a double into a 64-bit register" min="1" max="1">^\s*return \(int8\)FLOAT_FLOOR\(x\);$</stringmatch>
+<stringmatch name="FCVTROUND #10: fcvtpu of a double into a 64-bit register" min="1" max="1">^\s*return \(int8\)FLOAT_CEIL\(x\);$</stringmatch>
+<stringmatch name="FCVTROUND #11: frintm, frintp and frinta stay floats" min="3" max="3">^\s*return FLOAT_(FLOOR|CEIL|ROUND)\(x\);$</stringmatch>
+<stringmatch name="FCVTROUND #12: frintn, frintx and frinti are the typed rounding user ops" min="3" max="3">^\s*return FLOAT_(ROUNDEVEN|RINT|NEARBYINT)\(x\);$</stringmatch>
+<stringmatch name="FCVTROUND #13: frintz truncates toward zero and stays a double" min="1" max="1">^\s*return FLOAT_TRUNC\(x\);$</stringmatch>
+<stringmatch name="FCVTROUND #14: floor(x) != ceil(x) is not folded" min="1" max="1">^\s*return FLOAT_FLOOR\(x\) != FLOAT_CEIL\(x\);$</stringmatch>
+<stringmatch name="FCVTROUND #15: vector fcvtms floors every lane" min="2" max="2">CONCAT44\(\(int4\)FLOAT_FLOOR\(.*\),\(int4\)FLOAT_FLOOR\(</stringmatch>
+<stringmatch name="FCVTROUND #16: half-precision fcvtms floors" min="1" max="1">^\s*return \(int4\)FLOAT_FLOOR\(a0\);$</stringmatch>
+<stringmatch name="FCVTROUND #17: no rounded value is reinterpreted as integer bits" min="0" max="0">from = v\d+ \}</stringmatch>
+<stringmatch name="FCVTROUND #18: frint32z of a 2S vector zeroes the upper half of the register" min="1" max="1">^\s*return 0;$</stringmatch>
+<stringmatch name="FCVTROUND #19: frint64x rounds in the current mode through a 64-bit integer" min="1" max="1">^\s*return .*\(float4\)\(int8\)FLOAT_RINT\(x\)</stringmatch>
+<stringmatch name="FCVTROUND #20: frint64x zeroes the register bits above its single" min="0" max="0">CONCAT44\(\w</stringmatch>
+</decompilertest>

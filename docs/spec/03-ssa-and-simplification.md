@@ -985,7 +985,14 @@ the stack-pointer input's descendant tree — accumulating constant `INT_ADD`
 offsets, passing through COPY/INDIRECT/SEGMENTOP, and flagging any traversal of
 a *non-constant* add or a MULTIEQUAL — and records a guard
 (`heritage.rs (LoadGuard)`) for every LOAD/STORE reached on a flagged path,
-marking the op `spacebase_ptr`. A guard is born covering the **entire space**
+marking the op `spacebase_ptr`. **OR-masked pointers** (always on, kuna): an
+`INT_OR` of the path with a constant below `0x1000` (the window an unrefined
+guard covers) is flagged the same way. GCC reads a spilled `int`'s low byte
+through `(fp+0x7fb)|3` on SPARC64; which byte depends on the pointer's
+runtime low bits, so it is an indexed access at the pointer's offset.
+Upstream stops at the OR: the LOAD gets no guard, the spill
+looks dead and is deleted, and the result reads a slot nothing wrote. A guard
+is born covering the **entire space**
 (`LoadGuard::set`: minimum 0, maximum the space's highest offset). A STORE
 whose pointer is still a free varnode cannot be classified yet: it is
 conservatively marked and queued (`heritage.rs (Heritage::protect_free_stores)`),
@@ -1267,6 +1274,60 @@ address (`(&v1 | 4) + i`) and a pointer walk with a variable step. When no
 earlier pass guarded the frame, the guard is withdrawn for the whole function
 (`heritage.rs (store_frame_resolves)`), which then decompiles unguarded.
 
+Right after the first heritage pass, which links the registers but not yet the
+stack, `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_repframecopy.rs
+(expand_all)` expands a `rep movs` that builds a by-value argument block
+(called from `ActionHeritage`). It runs on x86-32 only, where the stack pointer
+is 4 bytes: on x86-64 the copy leaves `RCX` zero and `RSI` at the source's end,
+and the System V register trials of the call that follows would read both as
+arguments. SLEIGH lifts the instruction as a head that
+leaves when the count register is zero and a body that steps the count down by
+one, moves one element through `ESI`/`EDI` and branches back. A move into the
+outgoing area (`sub esp,0x20; mov edi,esp; rep movsd; call fill`) walks a
+pointer that starts at the stack pointer, so heritage sees none of the slots it
+writes: the call it feeds is left with placeholder slots in front of the
+argument the code pushed directly, the parameter chain rule turns every trial
+after them inactive, and the call prints with no arguments; the slots the move
+overwrites keep an earlier call's arguments and pushed return address; and the
+pointer to the bottom of the frame puts every frame slot above the alias
+boundary, so the local-alias test refuses an earlier call's pushes. The
+expansion applies when the head's count phi enters as the same constant on
+every path into the loop, the body holds one LOAD, one STORE of the same width
+and otherwise only pure operations of the one instruction, the move copies at
+most 16 elements and 64 bytes, and the STORE's pointer enters the loop as the
+stack pointer register itself and steps upward (the direction flag is known
+clear; `rep_move`). The block must also be the outgoing arguments of the first
+call that follows it along straight-line code (`argument_block`): its address
+reaches nothing but frame loads and stores, the stack pointer and the move's
+own pointers (`block_escapes`, so a local handed to a call in `ECX` or `EDX`
+is not one), and that call's direct callee reads into the block as its own
+code shows (chapter 04's `calleeargs` measure), or the pop its prototype
+states or its returns prove releases all of it. Under a model whose pop is
+stated (gcc's cdecl), a release of the whole block by the caller before the
+next call or branch counts too, when nothing reads the block between the copy
+and that release. A record copied into a local at the bottom of the frame
+before a register-argument or virtual call (Delphi's `lea edi,[esp]; rep
+movsd; call [edx+0x58]`) fails every one of these and stays a loop; expanded,
+its slots would read as that call's stack arguments. When such a move reads the frame,
+every other qualifying move that writes the frame (the copy that built the
+struct) is expanded with it, so its reads see their writes, one whose
+destination is the stack pointer itself only when its next call is the one
+the argument block feeds; it is declined
+while any other STORE reaches the frame through a pointer that is not the stack
+pointer plus a constant (`walks_frame`: a `rep stosd` walk or an indexed loop),
+because that STORE's guards may not cover the slots a direct read would then
+see unwritten. A stack pointer adjusted by a call whose purge is not yet solved
+counts as the stack pointer plus a constant there. The rewrite removes the
+back edge and the count test, appends that many copies of the body to the head
+in order, each reading the previous copy's values, and gives every use after
+the loop the last copy's values; the copies are exact, overlapping moves
+included, and their frame accesses become stack slots in the same rule pass as
+the pushes, before the stack's first heritage. `fill(r, b)` then prints its
+nine argument slots, as a cdecl struct push does, and `indexaliasguard off`
+turns the expansion off with the other stack guards. A larger move, a move
+whose destination is not the stack pointer, one whose count is not a constant,
+and one no call takes as its arguments stay loops.
+
 The guard's second family guards a slot the function writes with any value,
 against indexed STOREs of any width. A stack range whose writes include one
 that is not an `INDIRECT` or `MULTIEQUAL` (`kuna_stackstoreguard.rs
@@ -1399,13 +1460,12 @@ context abandons the pass as on an expired deadline and requests the re-flow,
 and the drive skips the stack-store-guard layout check for the stopped pass
 (`decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (run_pipeline)`).
 The restarted run is the one that is printed in both orders, but it is not
-independent of the first. Upstream's `Funcdata::clear` also drops the local
-scope's unlocked symbols and the prototype's unlocked output (inputs go with
-the scope), and `clearAnalysis` drops the warning comments; kuna's
+independent of the first. Like upstream's `Funcdata::clear`, kuna's
 (`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs (Funcdata::clear)`)
-does neither yet, so the parameter and local symbols, the prototype inputs and
-the pending comments the first run recovered seed the restarted one, as does
-any Override. A stopped pass has recovered fewer of them: a duplicated
+drops the local scope's unlocked symbols (`Database::clear_unlocked`), resets
+the local window and clears the prototype's unlocked output and inputs. The
+pending comments the first run recovered still seed the restarted one (upstream's
+`clearAnalysis` drops them), as does any Override. A stopped pass has recovered fewer of them: a duplicated
 `// return-dupe` tag is gone, and the restarted run can merge and type some
 variables differently. Over 29,103 functions (decbench O0/O2/O2-noinline
 binaries, three ARM firmware images, CrashLogger.dll, python314.dll) 31 take a

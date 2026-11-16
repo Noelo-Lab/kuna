@@ -130,6 +130,11 @@ kuna_options! { self, p1;
         crate::kuna_fpuemu::apply(self);
         Ok(msg)
     },
+    "mzdgroup" => {
+        let msg = on_off!(mz_dgroup_on, "MS-DOS data segment in DS");
+        crate::kuna_mzdgroup::apply(self);
+        msg
+    },
     "syscallregs" => {
         let (mode, msg) = crate::kuna_syscallregs::OptionSyscallRegs.apply(p1)?;
         self.syscall_regs = mode;
@@ -198,6 +203,9 @@ kuna_options! { self, p1;
     },
     "bejoinpass" => {
         let (mode, msg) = crate::kuna_bejoinpass::BeJoinPassMode::parse(p1)?;
+        if mode != self.be_join_pass {
+            self.kuna_wide.forget_verdicts();
+        }
         self.be_join_pass = mode;
         Ok(msg)
     },
@@ -229,6 +237,7 @@ kuna_options! { self, p1;
     },
     "goabi" => {
         let on = crate::kuna_goabi::parse_goabi(p1).map_err(KunaError::parse)?;
+        self.load_options_mut().goabi = on;
         crate::kuna_goabi::set_goabi_env(on);
         self.analysis_goabi = on;
         Ok(format!("Golang compiler-spec selection turned {}", if on { "auto" } else { "off" }))
@@ -240,6 +249,7 @@ kuna_options! { self, p1;
     },
     "sourcelang" => {
         let forced = crate::kuna_sourcelang::parse_option_value(p1).map_err(KunaError::parse)?;
+        self.load_options_mut().sourcelang = forced;
         crate::kuna_sourcelang::set_sourcelang_env(forced);
         self.source_lang_forced = forced;
         Ok(match forced {
@@ -658,7 +668,20 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "callerptr" => on_off!(caller_ptr, "Caller pointer-class parameter typing"),
-    "calleereginputs" => on_off!(callee_reginputs, "Callee register-input call models"),
+    "calleereginputs" => {
+        let (on, custom) = match p1.trim().to_ascii_lowercase().as_str() {
+            "custom" => (true, true),
+            "" | "on" => (true, false),
+            "off" => (false, false),
+            _ => return Err(KunaError::parse("Must specify off, on or custom")),
+        };
+        self.callee_reginputs = on;
+        self.callee_reginputs_custom = custom;
+        Ok(format!(
+            "Callee register-input call models set to {}",
+            if custom { "custom" } else if on { "on" } else { "off" }
+        ))
+    },
     "callbacktype" => {
         let (mode, msg) = crate::kuna_callbacktype::OptionCallbackType.apply(p1)?;
         self.callbacktype = mode;
@@ -687,6 +710,7 @@ kuna_options! { self, p1;
         };
         self.analysis_libctypes = layout != LibcTypesLayout::Off;
         self.analysis_libctypes_glibc = layout == LibcTypesLayout::Glibc;
+        self.load_options_mut().libctypes = layout;
         crate::kuna_libctypes::set_libctypes_env_layout(layout);
         Ok(format!(
             "Named libc aggregate types turned {}",
@@ -773,12 +797,14 @@ kuna_options! { self, p1;
         let mode = crate::kuna_ppc32picimports::Mode::parse(p1)
             .ok_or_else(|| KunaError::parse("Expected ppc32picimports off|on|abi"))?;
         self.analysis_ppc32picimports = mode;
+        self.load_options_mut().ppc32picimports = mode;
         mode.set_env();
         Ok(format!("PPC32 PIC import recovery {}", mode.as_str()))
     },
     "ppcapu" => {
         let val = on_or_off(p1)?;
         self.analysis_ppcapu = val;
+        self.load_options_mut().ppcapu = val;
         crate::kuna_ppcapu::set_ppcapu_env(val);
         Ok(format!(
             "PowerPC APU-note language selection turned {}",
@@ -788,6 +814,7 @@ kuna_options! { self, p1;
     "ifuncfpret" => {
         let val = on_or_off(p1)?;
         self.analysis_ifuncfpret = val;
+        self.load_options_mut().ifuncfpret = val;
         crate::kuna_ifuncfpret::set_ifuncfpret_env(val);
         Ok(format!(
             "IFUNC PLT-stub naming turned {}",
@@ -797,10 +824,19 @@ kuna_options! { self, p1;
     "kernelcache" => {
         let (choice, msg) = crate::kuna_kernelcache::parse_kernelcache(p1)?;
         crate::kuna_kernelcache::set_kernelcache_env(&choice);
+        self.load_options_mut().kernelcache = choice;
         Ok(msg)
     },
-    "dyldimage" => Ok(crate::kuna_dyldcache::set_dyldimage(p1)),
-    "dyldcrossrefs" => crate::kuna_dyldcache::set_dyldcrossrefs(p1),
+    "dyldimage" => {
+        self.load_options_mut().dyldimage =
+            crate::kuna_dyldcache::image_name(p1).map(str::to_string);
+        Ok(crate::kuna_dyldcache::set_dyldimage(p1))
+    },
+    "dyldcrossrefs" => {
+        let msg = crate::kuna_dyldcache::set_dyldcrossrefs(p1)?;
+        self.load_options_mut().dyldcrossrefs = crate::options::on_or_off(p1)?;
+        Ok(msg)
+    },
     "symbolnamechars" => {
         let mode = crate::kuna_symbolnamechars::NameChars::parse(p1).ok_or_else(|| {
             KunaError::lowlevel(format!(
@@ -808,6 +844,7 @@ kuna_options! { self, p1;
             ))
         })?;
         self.analysis_symbolnamechars = mode;
+        self.load_options_mut().symbolnamechars = mode;
         crate::kuna_symbolnamechars::set_symbolnamechars_env(mode);
         Ok(format!("symbol-name character sanitizing set to {}", mode.as_str()))
     },
@@ -911,6 +948,7 @@ kuna_options! { self, p1;
     "objcivars" => {
         let val = on_or_off(p1)?;
         self.analysis_objcivars = val;
+        self.load_options_mut().objcivars = val;
         crate::kuna_objcivars::set_objcivars_env(val);
         Ok(format!("Objective-C instance layouts turned {}", if val { "on" } else { "off" }))
     },
@@ -918,6 +956,7 @@ kuna_options! { self, p1;
     "objcsdk" => {
         let path = crate::kuna_objcsdk::parse_option_value(p1).map_err(KunaError::parse)?;
         crate::kuna_objcsdk::set_objcsdk_env(path.as_deref().and_then(|p| p.to_str()));
+        self.load_options_mut().objcsdk = path.clone();
         Ok(match path {
             Some(p) => format!("Objective-C signatures read from {}", p.display()),
             None => "Objective-C SDK headers off".to_string(),
@@ -927,6 +966,7 @@ kuna_options! { self, p1;
     "macho-arm64e" => {
         let val = on_or_off(p1)?;
         self.macho_arm64e = val;
+        self.load_options_mut().macho_arm64e = val;
         crate::kuna_macho_arm64e::set_macho_arm64e_env(val);
         Ok(format!(
             "Mach-O arm64e Apple-Silicon spec selection turned {}",

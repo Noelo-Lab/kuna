@@ -44,6 +44,15 @@
 //! spans an image *does* publish is the import pointer slot the sentinel exists
 //! for, and widening it there would hand a body to exactly those.
 //!
+//! # Where the code range holds data too
+//!
+//! An MS-DOS executable or a `--raw-image` x86 real-mode program has no section
+//! table: its one CODE range is the whole load module, DGROUP and far data
+//! segments included, so the clip ran a function that data follows on to the
+//! next entry. There the raw discovery measures where each entry's flow ends
+//! (`kuna_analysis::listing::kuna_rawextent`) and [`bound_by_flow`] cuts the
+//! clip there; an address past its function's flow has no extent.
+//!
 //! # LOSS
 //!
 //! Address-contiguous, not flow-reachable: an outlined or interleaved body (a
@@ -115,6 +124,27 @@ pub(crate) fn spans(sections: &[(u64, u64, u32)], segments: &[(u64, u64, u32)]) 
 pub(crate) fn extent_at(entry: u64, ascending_entries: &[u64], code: &[CodeSpan]) -> u64 {
     let next = ascending_entries.iter().copied().find(|&e| e > entry);
     clip(entry, next, code)
+}
+
+/// (kuna #1288) The extent of `vma` on an image that measured its functions'
+/// flow ends (`kuna_analysis::listing::kuna_rawextent`): `clip` cut at the end
+/// of the flow of `owner`, the greatest entry at or below `vma`.
+///
+/// An owner whose flow was not measured keeps the clip. An address past its
+/// owner's flow, or below every entry, is in no function's body and has no
+/// extent (`0`), which is what keeps a data address from being listed as the
+/// tail of the function in front of it.
+pub(crate) fn bound_by_flow(
+    vma: u64,
+    clip: u64,
+    owner: Option<u64>,
+    ends: &std::collections::BTreeMap<u64, u64>,
+) -> u64 {
+    let Some(owner) = owner else { return 0 };
+    match ends.get(&owner) {
+        Some(&end) => clip.min(end.saturating_sub(vma)),
+        None => clip,
+    }
 }
 
 /// Fill each entry's extent in one pass over an **address-ascending** entry list
@@ -223,6 +253,19 @@ mod tests {
     #[test]
     fn no_segments_either_leaves_the_extent_unrecovered() {
         assert_eq!(spans(&[], &[]), Vec::<CodeSpan>::new());
+    }
+
+    #[test]
+    fn a_measured_flow_cuts_the_clip_and_nothing_past_it_has_a_body() {
+        let ends = std::collections::BTreeMap::from([(0x1000, 0x101c)]);
+        assert_eq!(bound_by_flow(0x1000, 0x2f8e, Some(0x1000), &ends), 0x1c);
+        assert_eq!(bound_by_flow(0x1010, 0x2f7e, Some(0x1000), &ends), 0xc);
+        assert_eq!(bound_by_flow(0x1020, 0x2f6e, Some(0x1000), &ends), 0);
+        assert_eq!(bound_by_flow(0x0f00, 0x100, None, &ends), 0);
+        // The flow is a bound on the clip, never a widening of it.
+        assert_eq!(bound_by_flow(0x1000, 0x10, Some(0x1000), &ends), 0x10);
+        // An entry whose flow was not measured keeps its clip.
+        assert_eq!(bound_by_flow(0x3000, 0x40, Some(0x3000), &ends), 0x40);
     }
 
     #[test]

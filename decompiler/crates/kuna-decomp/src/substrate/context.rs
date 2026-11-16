@@ -236,6 +236,13 @@ impl GlobalSpaceIndex {
         }
     }
 
+    /// The entries that start exactly at `start`, in their original order.
+    fn starting_at<'a>(&'a self, entries: &'a [GlobalEntry], start: u64) -> impl Iterator<Item = &'a GlobalEntry> + 'a {
+        let lo = self.interval_order.partition_point(|&entry_index| entries[entry_index].first < start);
+        let hi = self.interval_order.partition_point(|&entry_index| entries[entry_index].first <= start);
+        self.interval_order[lo..hi].iter().map(move |&entry_index| &entries[entry_index])
+    }
+
     fn for_each_candidate(
         &self,
         entries: &[GlobalEntry],
@@ -495,16 +502,13 @@ impl GlobalQuery {
             }
         }
 
-        let entries = self.entries_for_space(space_index);
+        let index = self.index_for_space(space_index);
+        let starting_at = || index.into_iter().flat_map(|index| index.starting_at(&self.entries, start));
         let active = |entry: &GlobalEntry| {
             entry.addrtied
                 || (!usepoint.is_invalid() && entry.uselimit.in_range(usepoint, 1))
         };
-        if let Some(entry) = entries
-            .iter()
-            .rev()
-            .find(|entry| entry.first == start && !entry.is_function && active(entry))
-        {
+        if let Some(entry) = starting_at().filter(|entry| !entry.is_function && active(entry)).last() {
             return Some(classify_data(entry));
         }
 
@@ -516,9 +520,8 @@ impl GlobalQuery {
             return Some(IndirectSlotType::Untyped);
         }
 
-        let entry = entries.iter().find(|entry| {
-            entry.first == start
-                && entry.symbol_offset == 0
+        let entry = starting_at().find(|entry| {
+            entry.symbol_offset == 0
                 && entry.is_function
                 && active(entry)
                 && entry
@@ -808,6 +811,10 @@ pub struct ArchContext {
     /// SLEIGH FIST/FISTP conversion userops and their signed output widths.
     /// Resolved by name once when building the architecture snapshot.
     pub x87_integer_userops: Vec<(kuna_base::types::uint4, int4)>,
+    /// (kuna) CALLOTHER ids of the float roundings p-code has no operator for
+    /// ([`USEROP_NAMES`](crate::kuna_roundingops::USEROP_NAMES)), typed float in
+    /// and out by [`kuna_roundingops`](crate::kuna_roundingops).
+    pub float_rounding_userops: Vec<kuna_base::types::uint4>,
     /// (kuna) GH-8724: re-express a strided-induction offset as counter*stride
     /// (C++ `recover_array_stride`, DIV-3 default-on).  Read by
     /// [`RuleArrayStride`](crate::kuna_arraystride::RuleArrayStride).
@@ -982,6 +989,12 @@ pub struct ArchContext {
     /// which a pass guards a persistent global only next to its accesses, `None`
     /// when off.
     pub persist_calls: Option<u64>,
+    /// (kuna `calleereginputs custom`) Per-callee-entry input-register key, and
+    /// the model for each key: so a function's own evaluation prints the same
+    /// custom register parameters its callers pass. Copied from the global
+    /// architecture per function; empty unless the whole-image rule decided one.
+    pub kuna_custom_reg_callers: Rc<std::collections::HashMap<u64, u16>>,
+    pub kuna_custom_reg_models: Rc<std::collections::HashMap<u16, Rc<crate::fspec::ProtoModel>>>,
     /// (kuna) narrow a register parameter to the low part its uses consume
     /// (`narrowargs`). Read by [`crate::kuna_narrowargs`].
     pub narrow_args: bool,
@@ -1469,6 +1482,9 @@ pub struct ArchContext {
     /// (kuna `swiftcall`) The Swift registers and the throwing model, when the
     /// image binds the Swift convention ([`crate::kuna_swiftcall`]).
     pub swift_abi: Option<Rc<crate::kuna_swiftcall::SwiftAbi>>,
+    /// (kuna `calleereginputs`) The `__thiscall` model, the ECX storage a
+    /// virtual call reads its `this` from and EAX's, when the option applies.
+    pub virtual_this: Option<(Rc<crate::fspec::ProtoModel>, kuna_base::address::Address, int4, kuna_base::address::Address)>,
     /// Snapshot of the engine's tracked-register database (C++ `glb->context`'s
     /// track base, populated by `set track <reg> <val> [start end]`).  The
     /// per-function `glb` skeleton does not hold the `ContextDatabase`, so
@@ -1508,6 +1524,7 @@ impl ArchContext {
             callee_proto_models: Vec::new(),
             bound_proto_models: Rc::default(),
             swift_abi: None,
+            virtual_this: None,
             defaultfp: None,
             evalfp_current: None,
             default_return_addr: None,
@@ -1565,6 +1582,7 @@ impl ArchContext {
             simd_shuffle_userops: Vec::new(),
             x87_float_to_int_userops: Vec::new(),
             x87_integer_userops: Vec::new(),
+            float_rounding_userops: Vec::new(),
             recover_array_stride: false, // GH-8724 arraystride
             memset_recover: false,       // GH-9230/1537 memsetrecover
             rodata_string: false,        // (kuna) rodatastring
@@ -1622,6 +1640,8 @@ impl ArchContext {
             mixed_tail_ret: false, // (kuna) option mixedtailret (default off)
             readonly_calls: Some(crate::p3_dataflow::heritage::READONLY_CROSS_PRODUCT),
             persist_calls: Some(crate::p3_dataflow::heritage::PERSIST_CROSS_PRODUCT),
+            kuna_custom_reg_callers: Rc::default(),
+            kuna_custom_reg_models: Rc::default(),
             narrow_args: true,
             narrow_locals: true,
             narrow_ret: true,

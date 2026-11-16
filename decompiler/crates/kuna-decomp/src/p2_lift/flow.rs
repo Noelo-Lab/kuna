@@ -358,6 +358,14 @@ pub trait FlowEnvironment {
         false
     }
 
+    /// (kuna #1288) Is `op` the CALLIND half of an interrupt that ends an MS-DOS
+    /// program (`INT 20h`, `INT 27h`, `INT 21h` with AH 00h/31h/4Ch)?  Flow ends
+    /// there as after a call to a no-return function.  The default shell reports
+    /// `false`.
+    fn is_dos_exit_callind(&self, _fd: &Funcdata, _op: OpId) -> bool {
+        false
+    }
+
     /// (kuna `msvcsig`) The import slot the CALLIND `op` calls through, when that
     /// slot carries a locked MSVC prototype, so the call is direct from the flow
     /// on. See [`kuna_msvcimportcall`](crate::kuna_msvcimportcall). The default
@@ -470,6 +478,12 @@ pub trait FlowEnvironment {
     /// state. See [`crate::p4_calls::kuna_calleepurge`].
     fn query_call_extra_pop(&self, _entry: &Address) -> Option<int4> {
         None
+    }
+
+    /// The stack bytes the caller removes right after the indirect call at
+    /// `call_at`. See [`crate::p4_calls::kuna_calleereginputs`].
+    fn query_callind_cleanup(&self, _call_at: &Address) -> u32 {
+        0
     }
 
     /// The stack-argument bytes the function at the direct-call `entry` can
@@ -3023,6 +3037,15 @@ truncating the fall-through here"
             self.data.op_dead_insert_after(haltop, op);
             return Ok(true);
         }
+        // (kuna #1288) An interrupt that ends an MS-DOS program is a no-return
+        // call. The warning is kept: which service an `INT 21h` asks for is in
+        // AH, which the C does not show.
+        if self.env.is_dos_exit_callind(&self.data, op) {
+            if let Some(idx) = self.data.get_call_specs_index(op) {
+                self.data.get_call_specs_mut(idx).proto_mut().set_no_return(true);
+            }
+            return self.check_for_flow_modification(op, &Address::default());
+        }
         // (kuna `int3pad`) The same lowering over vector 3 is a decoded `int3`:
         // control ran into a breakpoint byte, which the printer otherwise renders
         // as an ordinary call through a pointer.  Name it, and under `int3pad
@@ -3079,6 +3102,11 @@ truncating the fall-through here"
                 }
             }
             fc.set_callee_moves_stack(self.env.query_call_moves_stack(&callee));
+        }
+        if indirect {
+            if let Some(call_at) = self.data.obank().get(op).map(|o| o.get_addr().clone()) {
+                fc.set_callind_cleanup(self.env.query_callind_cleanup(&call_at));
+            }
         }
         // C++ `data.getOverride().applyPrototype(data, *res)` (flow.cc:706 direct /
         // flow.cc:732 indirect, BEFORE `queryCall`): an `override prototype <addr>

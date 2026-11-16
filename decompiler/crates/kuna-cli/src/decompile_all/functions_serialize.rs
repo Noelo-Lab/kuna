@@ -22,12 +22,14 @@ pub(super) fn write(
     display_address: &dyn Fn(u64) -> u64,
     declared: &Declared,
 ) -> io::Result<()> {
+    let fid_databases = declared.fid_databases_field().map(|(_, value)| value);
     let document = Document {
         binary,
         count: entries.len(),
         total,
         error,
         notes: declared.notes(),
+        fid_databases: fid_databases.as_ref().map(JsonView),
         functions: Entries {
             entries,
             display_address,
@@ -53,6 +55,8 @@ struct Document<'a> {
     error: Option<&'a str>,
     #[serde(skip_serializing_if = "<[String]>::is_empty")]
     notes: &'a [String],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    fid_databases: Option<JsonView<'a>>,
     functions: Entries<'a>,
     #[serde(skip_serializing_if = "Option::is_none")]
     limits: Option<JsonView<'a>>,

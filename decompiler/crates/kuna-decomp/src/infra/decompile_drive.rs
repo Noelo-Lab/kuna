@@ -153,6 +153,9 @@ impl FlowEnvironment for ArchFlowEnv {
     fn query_call_extra_pop(&self, entry: &Address) -> Option<int4> {
         crate::p4_calls::kuna_calleepurge::callee_extra_pop(self.arch(), entry)
     }
+    fn query_callind_cleanup(&self, call_at: &Address) -> u32 {
+        crate::p4_calls::kuna_calleereginputs::callind_cleanup(self.arch(), call_at)
+    }
     fn query_call_stack_arg_bytes(
         &self,
         entry: &Address,
@@ -514,6 +517,15 @@ impl FlowEnvironment for ArchFlowEnv {
         crate::kuna_fastfailnoreturn::is_fastfail_callind(fd, op, |id| {
             arch.userops.get_op(id).map(|uo| String::from_utf8_lossy(uo.get_name()).into_owned())
         })
+    }
+
+    fn is_dos_exit_callind(&self, fd: &Funcdata, op: crate::context::OpId) -> bool {
+        let sites = &self.arch().dos_exit_sites;
+        !sites.is_empty()
+            && fd
+                .obank()
+                .get(op)
+                .is_some_and(|o| sites.binary_search(&o.get_addr().get_offset()).is_ok())
     }
 
     fn int3_pad_site(
@@ -965,6 +977,7 @@ fn follow_flow_on_fd(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcda
 /// publishing the flow's buffered comments.
 #[allow(clippy::mutable_key_type)]
 fn generate_flow(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcdata> {
+    let _load = arch.load_scope();
     crate::kuna_mipsunaligned::paint(arch);
     // C++ Funcdata::followFlow(baddr, eaddr): a function carrying a declared byte
     // extent restricts flow to it; size 0 keeps the unbounded default the whole
@@ -1160,6 +1173,7 @@ fn run_jumptable_pipeline(
 /// already ported in `action.rs`); this drives it through the engine-side
 /// [`ActionContext`] so the warning-emission points are observable.
 fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> {
+    let _load = arch.load_scope();
     // C++ allacts.setCurrent("decompile") derives the filtered decompile root
     // (idempotent if already current).
     arch.allacts.set_current("decompile")?;

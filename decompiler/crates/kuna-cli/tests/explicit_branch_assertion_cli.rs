@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use std::process::Command;
 
 const NEAR_MISS_ENTRY: &str = "0x401090";
-const NEAR_MISS_TAIL_CALL: &str = "sub_407b20(); // tail-call";
+const NEAR_MISS_TAIL_CALL: &str = "sub_407b20(dat_40f068 + 0x138); // tail-call";
 
 struct Run {
     success: bool,

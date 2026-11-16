@@ -215,6 +215,15 @@ pub fn check_input_trial_use(
                 }
             }
         } else if {
+            // (kuna `calleereginputs`) The callee's own code reads it.
+            let t = data.get_call_specs(idx).active_input().get_trial(i);
+            crate::p4_calls::kuna_calleereginputs::reads_register(data.get_call_specs(idx), t.get_address(), t.get_size())
+        } {
+            let trial = data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i);
+            trial.set_ancestor_realistic();
+            trial.set_ancestor_solid();
+            trial.mark_active();
+        } else if {
             let t = data.get_call_specs(idx).active_input().get_trial(i);
             data.get_call_specs(idx).carries_jump_target(t.get_address(), t.get_size())
         } {

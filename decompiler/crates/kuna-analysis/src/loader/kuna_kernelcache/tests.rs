@@ -156,6 +156,21 @@ fn fileset_entry_selection() {
     assert!(list.ends_with("(2):\ncom.apple.kernel\ncom.example.driver.Widget"), "{list}");
 }
 
+/// The entry map names the entry that maps an address, the loaded one first
+/// for the `__LINKEDIT` every entry shares.
+#[test]
+fn fileset_map_names_the_owning_entry() {
+    let base = 0xffff_fff0_0700_4000u64;
+    let kext = peel(fixture("fileset.macho"), &KernelcacheChoice::Entry("Widget".into())).unwrap();
+    let map = kext.fileset.unwrap();
+    assert_eq!(map.loaded, "com.example.driver.Widget");
+    assert_eq!(map.owner(base + 0x3800), Some("com.example.driver.Widget"), "widget_start");
+    assert_eq!(map.owner(base + 0x3000), Some("com.apple.kernel"), "kernel_add");
+    assert_eq!(map.owner(base + 0x5000), Some("com.example.driver.Widget"), "shared __LINKEDIT");
+    assert_eq!(map.owner(base + 0x6000), None, "__PRELINK_INFO is the collection's own");
+    assert!(peel(fixture("text.bin"), &KernelcacheChoice::Auto).unwrap().fileset.is_none());
+}
+
 /// The kext's authenticated `__got` slot and the kernel's function table read as
 /// real addresses once the collection's chained fixups are applied.
 #[test]

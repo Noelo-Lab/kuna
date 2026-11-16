@@ -90,6 +90,37 @@ pub(crate) fn is_loadtime_gate(name: &str) -> bool {
     binding(name).is_some()
 }
 
+/// The load-time gates that choose which image of a file is read: the
+/// `MH_FILESET` entry and the dyld shared cache image.
+const IMAGE_SELECTION: [&str; 2] = ["kernelcache", "dyldimage"];
+
+/// Export the image-selection gates `argv` sets with `--option NAME VALUE` for
+/// the whole invocation, as the global `--image` is: every surface that reads
+/// the image itself (the reference walk, the string and constant scans, the
+/// call graph) then reads the image the engine loads. The last value wins.
+pub(crate) fn export_image_selection(argv: &[String]) {
+    for (key, value) in image_selection(argv) {
+        std::env::set_var(key, value);
+    }
+}
+
+fn image_selection(argv: &[String]) -> BTreeMap<&'static str, String> {
+    let mut values = BTreeMap::new();
+    let mut i = 0;
+    while i < argv.len() {
+        if argv[i] != "--option" || i + 2 >= argv.len() {
+            i += 1;
+            continue;
+        }
+        let name = argv[i + 1].as_str();
+        if let Some((key, encoding)) = binding(name).filter(|_| IMAGE_SELECTION.contains(&name)) {
+            values.extend(encoding.encode(&argv[i + 2]).map(|value| (key, value)));
+        }
+        i += 3;
+    }
+    values
+}
+
 pub(crate) fn last_option_value<'a>(
     options: &'a [(String, String)],
     name: &str,
@@ -295,6 +326,24 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn image_selection_takes_the_last_entry_and_image_options_only() {
+        let argv: Vec<String> = [
+            "bin", "--option", "kernelcache", "A", "--option", "dyldimage", " libfoo.dylib ",
+            "--option", "objc", "off", "--option", "kernelcache", "PMGR", "--option", "kernelcache",
+        ]
+        .map(String::from)
+        .to_vec();
+        assert_eq!(
+            image_selection(&argv),
+            BTreeMap::from([
+                (kuna_kernelcache::KERNELCACHE_ENV, "PMGR".to_string()),
+                (kuna_dyldcache::DYLDIMAGE_ENV, "libfoo.dylib".to_string()),
+            ])
+        );
+        assert!(image_selection(&["--option".into(), "kernelcache".into()]).is_empty());
     }
 
     #[test]

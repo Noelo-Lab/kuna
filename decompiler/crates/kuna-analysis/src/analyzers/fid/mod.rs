@@ -42,22 +42,24 @@
 //!
 //! The database path is read from the `kuna_fid_db` environment variable; a real `--fidb
 //! <path>` flag is a deferred follow-on (`docs/history/fid-design.md` §7.2). Absent / empty
-//! / unreadable ⇒ the pass is a no-op.
+//! ⇒ the pass is a no-op. A configured database is matched only when it loads and its
+//! header language applies to the image ([`kuna_fidapply`]); either way the pass
+//! reports what became of it on [`AnalysisOutput::fid_databases`].
 
 pub mod build;
 pub mod db;
 pub mod extent;
 pub mod hash;
+pub mod kuna_fidapply;
 pub mod skipper;
 mod kuna_fidstrict;
 
-use std::path::PathBuf;
 use std::rc::Rc;
 
 use kuna_base::address::Address;
 
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, FidMatch, Phase};
-use crate::fid::db::{FidDatabase, FidDb, FidRecord};
+use crate::fid::db::{FidDatabase, FidRecord};
 use crate::fid::hash::{FidHashQuad, FidHasher, InsnFingerprint, NoRelocations};
 use crate::fid::skipper::{InstructionSkipper, X86InstructionSkipper};
 
@@ -66,7 +68,7 @@ use crate::fid::skipper::{InstructionSkipper, X86InstructionSkipper};
 /// kept out of the per-decompilation `--option` surface in v1 (a real `--fidb
 /// <path>` flag is deferred, `docs/history/fid-design.md` §7.2). Absent / empty ⇒ the pass
 /// is inert (no DB to match against).
-pub const FID_DB_ENV: &str = "kuna_fid_db";
+pub const FID_DB_ENV: &str = kuna_decomp::kuna_loadoptions::FID_DB_ENV;
 
 /// The FID matching consumer pass — the kuna analog of Ghidra's FID identification
 /// analyzer (`FidServiceImpl` over the function-id query service), the third
@@ -75,7 +77,8 @@ pub const FID_DB_ENV: &str = "kuna_fid_db";
 /// Default-OFF (gate id `fid`). Doubly inert by default: it short-circuits to an
 /// empty output when no Listing is built (`ctx.listing.is_none()`, the
 /// `--option listing on` flag is off) AND when no `.fid` database is configured
-/// (`FID_DB_ENV` unset / empty / unreadable). Every emitted [`FidMatch`] is a
+/// (`FID_DB_ENV` unset / empty). A configured database that does not load or
+/// does not apply to the image is reported and not matched. Every emitted [`FidMatch`] is a
 /// *rename* fact the engine commit seam applies only to an engine `FUN_*`/`sub_*`
 /// placeholder (the label gate) — a real `.symtab`/DWARF name is never overwritten.
 #[derive(Default)]
@@ -98,12 +101,12 @@ impl AnalysisPass for FidPass {
         let Some(listing) = ctx.listing else {
             return out;
         };
-        // DB-dependent: a no-op without a configured, loadable `.fid` database
-        // (`kuna_fid_db` unset / empty / unreadable / bad bytes). The DB carries the
-        // language id the hashes were computed for; matching across languages is not
-        // meaningful, so the absence of a DB is the inert path (faithful to Ghidra,
-        // which only queries a language-matched FID DB).
-        let Some(db) = load_fid_db(ctx) else {
+        let Some(path) = fid_db_path() else {
+            return out;
+        };
+        let (report, db) = kuna_fidapply::open(&path, ctx.arch);
+        out.fid_databases.push(report);
+        let Some(db) = db else {
             return out;
         };
 
@@ -125,6 +128,13 @@ impl AnalysisPass for FidPass {
 
         out
     }
+}
+
+/// The `.fid` database the load names: `LoadOptions::fid_db`, else
+/// [`FID_DB_ENV`]. `None` when neither names one.
+fn fid_db_path() -> Option<std::path::PathBuf> {
+    use kuna_decomp::kuna_loadoptions::{env, scoped};
+    scoped(|o| o.fid_db.clone()).unwrap_or_else(env::fid_db)
 }
 
 /// Fingerprint a discovered function using the same extent and masks as the FID pass.
@@ -152,19 +162,6 @@ pub fn fingerprint_function(
         vec![]
     };
     FidHasher::new(skippers).hash(&fps, &NoRelocations).ok_or("too_short")
-}
-
-/// Resolve + load the `.fid` database named by [`FID_DB_ENV`]. `None` (the inert
-/// path) when the variable is unset / empty, the file is unreadable, or its bytes
-/// are not a valid `.fid` — every failure is a silent no-op (FID never fails a
-/// decompilation, faithful to the analysis-pass contract).
-fn load_fid_db(_ctx: &AnalysisCtx) -> Option<FidDb> {
-    let path = std::env::var_os(FID_DB_ENV)?;
-    if path.is_empty() {
-        return None;
-    }
-    let bytes = std::fs::read(PathBuf::from(path)).ok()?;
-    FidDb::load(&bytes).ok()
 }
 
 /// §6.1 — exact full-hash match → a unique name.

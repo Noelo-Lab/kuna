@@ -1437,7 +1437,9 @@ decomp_command!(
 // --- read symbols / clear architecture (ifacedecomp.cc:529, 518) -----------
 
 decomp_command!(
-    /// C++ `IfcReadSymbols`: read symbols from the load image.
+    /// C++ `IfcReadSymbols`: read symbols from the load image. (kuna) Prints a
+    /// `warning:` line for each configured `.fid` database the commit did not
+    /// match against.
     IfcReadSymbols,
     fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
         let dcp = dcp_mut(status)?;
@@ -1460,6 +1462,11 @@ decomp_command!(
         let prog = dcp.conf.as_mut().expect("conf checked non-None above");
         prog.commit_pending_analysis()
             .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+        let fid_warnings: Vec<String> =
+            prog.fid_databases().iter().filter_map(|report| report.warning()).collect();
+        for warning in fid_warnings {
+            status.out(&format!("warning: {warning}\n"));
+        }
         Ok(())
     }
 );
@@ -4358,8 +4365,15 @@ pub fn register_console_commands(status: &mut IfaceStatus) {
 /// lands and real `KunaError`s flow out of the command bodies; the catch
 /// placement (which frame catches which) is preserved (ADR 0004).
 ///
+/// The command runs under the loaded program's load-time options.
+///
 /// Returns after writing the diagnostic and calling [`IfaceStatus::evaluate_error`].
 pub fn execute(status: &mut IfaceStatus) {
+    let _load = status
+        .get_data(DECOMPILE_MODULE)
+        .and_then(|data| data.as_any().downcast_ref::<IfaceDecompData>())
+        .and_then(|dcp| dcp.conf.as_ref())
+        .map(|prog| prog.arch().load_scope());
     match status.run_command() {
         Ok(_) => return,
         Err(err) => {

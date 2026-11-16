@@ -108,6 +108,7 @@ impl ConsoleProgram {
             entries,
             &crate::funcextent::spans(&self.sections(), &self.segments()),
         );
+        self.bound_entries_by_flow(entries);
         for entry in entries {
             let declared = self.declared_extent(entry.addr.get_offset());
             if declared > 0 {

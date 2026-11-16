@@ -163,11 +163,23 @@ mod ctypes_per_arch;
 #[path = "decompile_budget_cli.rs"]
 mod decompile_budget_cli;
 
+#[path = "dos_dgroup_cli.rs"]
+mod dos_dgroup_cli;
+
 #[path = "dos_fpuemu_cli.rs"]
 mod dos_fpuemu_cli;
 
+#[path = "dos_pcmemory_cli.rs"]
+mod dos_pcmemory_cli;
+
 #[path = "dos_mz_cli.rs"]
 mod dos_mz_cli;
+
+#[path = "dos_exit_cli.rs"]
+mod dos_exit_cli;
+
+#[path = "dos_extent_cli.rs"]
+mod dos_extent_cli;
 
 #[path = "decompile_cli.rs"]
 mod decompile_cli;
@@ -225,6 +237,9 @@ mod explicit_branch_assertion_cli;
 
 #[path = "fid_cli.rs"]
 mod fid_cli;
+
+#[path = "fid_db_status_cli.rs"]
+mod fid_db_status_cli;
 
 #[path = "float_unordered_compare.rs"]
 mod float_unordered_compare;
@@ -531,6 +546,9 @@ mod xrefs_cli;
 #[path = "xrefs_data_refs_cli.rs"]
 mod xrefs_data_refs_cli;
 
+#[path = "xrefs_fileset_entry.rs"]
+mod xrefs_fileset_entry;
+
 #[path = "xrefs_got_call.rs"]
 mod xrefs_got_call;
 
@@ -784,6 +802,9 @@ mod scalar_call_results;
 #[path = "call_argument_extensions.rs"]
 mod call_argument_extensions;
 
+#[path = "calleereginputs_custom.rs"]
+mod calleereginputs_custom;
+
 #[path = "rust_store_value.rs"]
 mod rust_store_value;
 
@@ -825,3 +846,6 @@ mod e500_arguments;
 
 #[path = "cvf_trace.rs"]
 mod cvf_trace;
+
+#[path = "dynamic_sp_merge.rs"]
+mod dynamic_sp_merge;

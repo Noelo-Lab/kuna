@@ -20,6 +20,7 @@ pub mod kuna_x87intrinsic; // (kuna) the MSVC x87 one-operand intrinsics' ST0 mo
 pub mod kuna_calleereginputs; // (kuna) an x86-32 callee's register inputs choose its model
 pub mod kuna_calleestackargs; // (kuna `calleeargs`) the stack-argument bytes an x86-32 callee reads
 pub mod kuna_calleepurge; // (kuna) an x86-32 callee's stack purge read off its RET
+pub mod kuna_slotargs; // (kuna) a call through an import slot takes the declared parameters its caller's writes back
 pub mod kuna_calleeprotostack; // (kuna) a declared callee's prototype states its stack contract
 pub mod kuna_msvcbyval; // (kuna) an MSVC __cdecl import's by-value class argument sized at the call site
 pub(crate) mod kuna_calleenoreturn;

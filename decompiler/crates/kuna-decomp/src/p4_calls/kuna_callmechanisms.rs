@@ -160,6 +160,15 @@ pub fn evaluation_model(data: &crate::funcdata::Funcdata) -> Option<Rc<crate::fs
             .has_model()
             .then(|| data.get_func_proto().model().clone());
     }
+    // (kuna `calleereginputs custom`) A function the whole-image rule decided
+    // takes a callee-saved register as a custom argument evaluates its own
+    // prototype under the synthesized model, so its printed parameters are the
+    // ones its callers pass.
+    if let Some(model) =
+        crate::p4_calls::kuna_calleereginputs::own_register_model(data.get_arch(), &data.get_address().clone())
+    {
+        return Some(model);
+    }
     data.get_arch().eval_fp_current().cloned().or_else(|| {
         data.get_func_proto()
             .has_model()

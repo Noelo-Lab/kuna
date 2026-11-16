@@ -168,16 +168,23 @@ pub(crate) fn json_notes(prog: &ConsoleProgram, notes: &[String]) -> Vec<String>
 
 /// What a run's declarations add to its JSON: a `declared` marker on each
 /// declared entry's record and the run-level `notes` [`warn_unmapped`] prints.
-/// Empty when nothing was declared, so such a document gains no key.
+/// Empty when nothing was declared, so such a document gains no key. It also
+/// carries the run's `fid_databases` reports, the other run-level fact every
+/// document that prints `notes` reports.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Declared {
     bytes: BTreeMap<u64, DeclaredBytes>,
     notes: Vec<String>,
+    fid_databases: Vec<kuna_analysis::fid::kuna_fidapply::FidDbReport>,
 }
 
 impl Declared {
     pub(crate) fn of(prog: &ConsoleProgram) -> Declared {
-        Declared { bytes: prog.declarations().collect(), notes: prog.declaration_notes() }
+        Declared {
+            bytes: prog.declarations().collect(),
+            notes: prog.declaration_notes(),
+            fid_databases: prog.fid_databases().to_vec(),
+        }
     }
 
     pub(crate) fn bytes_label(&self, byte_address: u64) -> Option<&'static str> {
@@ -202,6 +209,15 @@ impl Declared {
 
     pub(crate) fn notes(&self) -> &[String] {
         &self.notes
+    }
+
+    /// The document's `fid_databases` field, when a database was configured.
+    pub(crate) fn fid_databases_field(&self) -> Option<(String, Json)> {
+        crate::fid::report::field(&self.fid_databases)
+    }
+
+    pub(crate) fn fid_databases(&self) -> &[kuna_analysis::fid::kuna_fidapply::FidDbReport] {
+        &self.fid_databases
     }
 }
 

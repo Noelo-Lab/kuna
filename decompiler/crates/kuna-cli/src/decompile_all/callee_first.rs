@@ -102,6 +102,12 @@ pub(crate) fn decompile_callee_first(
         }
         _ => None,
     };
+    // (kuna `calleereginputs custom`) Each eligible callee's call sites, listed
+    // while the graph is alive; decided after the first pass.
+    let custom_plan = match &graph {
+        Ok(graph) => super::custom_reg_callers::analyze(prog, graph, &args.binary, args.slice_pref()),
+        _ => super::custom_reg_callers::CustomRegPlan::empty(),
+    };
     drop(graph);
     crate::kuna_allocrelease::after_analysis();
     {
@@ -131,6 +137,9 @@ pub(crate) fn decompile_callee_first(
     }
     if prog.arch().kuna_callerargs.recording {
         caller_args_round(prog, &targets, &plan, &base, &mut slots);
+    }
+    if !custom_plan.is_empty() {
+        custom_reg_round(prog, &custom_plan, &targets, &plan, &base, &mut slots);
     }
     converge_callee_first(prog, &targets, &plan, &base, &mut slots);
     prog.arch_mut().kuna_callbacktype.recording = false;
@@ -333,6 +342,67 @@ fn caller_args_round(
     prog.arch_mut().kuna_callerargs.recording = false;
 }
 
+/// (kuna `calleereginputs custom`) Join the caller side listed before the pass
+/// with the callee reads the first pass recorded, and decompile again every
+/// function the decision changes: each decided callee (now a parameter) together
+/// with all its callers (now an argument). A callee is admitted with its whole
+/// group, shortest first, within [`CALLER_ARGS_BUDGET_PCT`] of what the first
+/// pass printed (bodies of at most [`CALLEE_VOTE_MAX_LINES`] lines are free); a
+/// callee whose group does not fit states nothing, so a callee and its callers
+/// never disagree about the argument.
+fn custom_reg_round(
+    prog: &mut ConsoleProgram,
+    custom_plan: &super::custom_reg_callers::CustomRegPlan,
+    targets: &[FunctionEntry],
+    plan: &[(usize, bool)],
+    base: &kuna_console::project::DecompileOptions,
+    slots: &mut ResultStore,
+) {
+    let decision = super::custom_reg_callers::decide(prog, custom_plan);
+    if decision.is_empty() {
+        return;
+    }
+    let lines: BTreeMap<u64, usize> = plan
+        .iter()
+        .filter_map(|&(index, _)| vote_key(&targets[index]).map(|k| (k.1, slots.lines(index))))
+        .collect();
+    let charge = |members: &BTreeSet<u64>, admitted: &BTreeSet<u64>| -> usize {
+        members
+            .iter()
+            .filter(|m| !admitted.contains(m))
+            .filter_map(|m| lines.get(m).copied())
+            .filter(|&l| l > CALLEE_VOTE_MAX_LINES)
+            .sum()
+    };
+    let mut groups: Vec<(usize, u64, BTreeSet<u64>)> = decision
+        .groups()
+        .map(|(callee, members)| (charge(&members, &BTreeSet::new()), callee, members))
+        .collect();
+    groups.sort_unstable();
+    let mut budget = slots.printed() * CALLER_ARGS_BUDGET_PCT / 100;
+    let mut admitted = BTreeSet::new();
+    let mut kept = BTreeSet::new();
+    for (_, callee, members) in groups {
+        let cost = charge(&members, &admitted);
+        if cost <= budget {
+            budget -= cost;
+            admitted.extend(members);
+            kept.insert(callee);
+        }
+    }
+    decision.install(prog, &kept);
+    for &(index, park) in plan {
+        if !vote_key(&targets[index]).is_some_and(|k| admitted.contains(&k.1)) {
+            continue;
+        }
+        let again = decompile_planned(prog, &targets[index], park, base);
+        match slots.get(index) {
+            Some(first) if !kuna_console::project::redo_replaces(&first, &again) => {}
+            _ => slots.put(index, again),
+        }
+    }
+}
+
 /// (kuna `calleevote`) How many times the callers' statements are decided and
 /// the functions they name decompiled again: a forwarding wrapper passes on the
 /// type its own callers gave it only once it has been decompiled with it.
@@ -357,6 +427,21 @@ const CALLEE_VOTE_MAX_LINES: usize = 32;
 /// functions already fill it buys no long ones, and one that barely uses the
 /// vote redoes every candidate it has.
 const CALLEE_VOTE_BUDGET_PCT: usize = 5;
+
+/// (kuna `structsynth`) What the callee-first convergence sweep may reprint, as a
+/// share of what the first pass printed. A redo costs what the first decompile
+/// of that function cost, and a binary whose superseded structures reach its
+/// longest bodies would otherwise pay for them twice: an AutoIt-compiled 1.2 MB
+/// image names superseded `this` records in 37 bodies of about 1,500 lines that
+/// are interior entries of one interpreter routine, and redoing them spent a
+/// fifth of the run. Every other binary measured redoes under
+/// [`STRUCT_SWEEP_MIN_LINES`], so the budget only reaches such outliers.
+const STRUCT_SWEEP_BUDGET_PCT: usize = 5;
+
+/// (kuna `structsynth`) The convergence sweep's budget on a binary whose
+/// [`STRUCT_SWEEP_BUDGET_PCT`] is less: a small binary's sweep costs
+/// milliseconds, and cutting it would only leave a record with two names.
+const STRUCT_SWEEP_MIN_LINES: usize = 2_000;
 
 /// (kuna `callerptr`) The share of the first pass's printed lines a statement
 /// made of pointer-class votes alone may spend on redos, apart from
@@ -610,10 +695,7 @@ fn callee_vote_rounds(
 }
 
 #[expect(clippy::disallowed_types, reason = "Admitted membership is unordered; declined charges retain sorted order.")]
-type BudgetAdmission = (
-    std::collections::HashSet<(i32, u64)>,
-    Vec<(usize, (i32, u64))>,
-);
+type BudgetAdmission<K> = (std::collections::HashSet<K>, Vec<(usize, K)>);
 
 /// (kuna `calleevote`) Split this round's candidates -- one `(charge, key)` pair
 /// per function the decision changed, charged the lines its first decompile
@@ -627,11 +709,11 @@ type BudgetAdmission = (
 ///
 /// Ties go to the lower (space, address) key, so admission is a function of the
 /// program and not of the order the plan visits it.
-fn admit_within_budget(
-    mut queue: Vec<(usize, (i32, u64))>,
+fn admit_within_budget<K: Ord + std::hash::Hash>(
+    mut queue: Vec<(usize, K)>,
     budget: &mut usize,
     spent: &mut usize,
-) -> BudgetAdmission {
+) -> BudgetAdmission<K> {
     queue.sort_unstable();
     #[expect(clippy::disallowed_types, reason = "Membership only; queue sorting determines admission and decline order.")]
     let mut admitted = std::collections::HashSet::new();
@@ -689,6 +771,13 @@ fn same_arity(first: &FuncResult, again: &FuncResult) -> bool {
 /// one: not a recursive function's own, and not a cycle partner planned after it.
 /// Not under `lock`, where a parked prototype is declared and a second decompile
 /// would read its own.
+///
+/// The redos are admitted shortest first within [`STRUCT_SWEEP_BUDGET_PCT`] of
+/// what the first pass printed (at least [`STRUCT_SWEEP_MIN_LINES`]), and a
+/// function of at most [`CALLEE_VOTE_MAX_LINES`] lines is always admitted. A
+/// function the budget cannot reach keeps its first body, which names a
+/// superseded structure that is still defined and still answers for it, as a
+/// function out of the survivor's reach does.
 fn converge_callee_first(
     prog: &mut ConsoleProgram,
     targets: &[FunctionEntry],
@@ -703,14 +792,25 @@ fn converge_callee_first(
     if stale.is_empty() {
         return;
     }
+    let naming: BTreeSet<usize> = plan
+        .iter()
+        .map(|&(index, _)| index)
+        .filter(|&index| slots.get(index).is_some_and(|r| kuna_console::project::names_any_type(&r, &stale)))
+        .collect();
+    let queue = naming
+        .iter()
+        .filter_map(|&index| Some((slots.lines(index), vote_key(&targets[index])?)))
+        .collect();
+    let mut budget = (slots.printed() * STRUCT_SWEEP_BUDGET_PCT / 100).max(STRUCT_SWEEP_MIN_LINES);
+    let (admitted, _) = admit_within_budget(queue, &mut budget, &mut 0);
     kuna_decomp::kuna_protoorder::forget_statements_naming(prog.arch_mut(), &stale);
     kuna_decomp::kuna_calleevote::forget_statements_naming(prog.arch_mut(), &stale);
     kuna_decomp::kuna_callrettype::forget_statements_naming(prog.arch_mut(), &stale);
     for &(index, park) in plan {
-        if !slots.get(index).is_some_and(|r| kuna_console::project::names_any_type(&r, &stale)) {
+        let key = vote_key(&targets[index]);
+        if !naming.contains(&index) || key.is_some_and(|k| !admitted.contains(&k)) {
             continue;
         }
-        let key = vote_key(&targets[index]);
         let stated = key.and_then(|k| kuna_decomp::kuna_callrettype::statement(prog.arch(), k));
         let narrow = key.and_then(|k| kuna_decomp::kuna_narrowret::statement(prog.arch(), k));
         let again = decompile_planned(prog, &targets[index], park, base);
@@ -822,6 +922,19 @@ mod calleevote_stored_tests {
         let budgeted = spend(1_000, &[60, 40]);
         assert_eq!(budgeted, (vec![40], vec![60], 10, 40));
         assert_eq!(spend(1_000, &[40, 60]), budgeted);
+    }
+
+    /// (kuna `structsynth`) The convergence sweep redoes what its share of the
+    /// first pass covers, shortest first, and declines the long bodies past it.
+    #[test]
+    fn the_struct_sweep_declines_long_bodies_past_its_share() {
+        let mut budget = (40_000 * STRUCT_SWEEP_BUDGET_PCT / 100).max(STRUCT_SWEEP_MIN_LINES);
+        let queue = vec![(1_500, (1, 0x4000)), (12, (1, 0x1000)), (1_500, (1, 0x3000)), (300, (1, 0x2000))];
+        let (admitted, declined) = admit_within_budget(queue, &mut budget, &mut 0);
+        let mut admitted: Vec<u64> = admitted.into_iter().map(|k| k.1).collect();
+        admitted.sort_unstable();
+        assert_eq!(admitted, [0x1000, 0x2000, 0x3000]);
+        assert_eq!(declined, [(1_500, (1, 0x4000))]);
     }
 
     /// (kuna `calleevote`) The budget is one pass-wide allowance: what an early

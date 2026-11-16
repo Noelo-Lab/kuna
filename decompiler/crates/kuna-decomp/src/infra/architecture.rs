@@ -460,6 +460,11 @@ pub struct Architecture {
     /// (kuna `calleereginputs`) Does an x86-32 call take `__thiscall` or
     /// `__fastcall` from the registers its callee reads?
     pub callee_reginputs: bool,
+    /// (kuna `calleereginputs custom`) Also recover a callee-saved register
+    /// (EBX, ESI, EDI) as a custom argument where the callee reads it and
+    /// every direct call site in the image sets it; see
+    /// [`crate::p4_calls::kuna_calleereginputs`].
+    pub callee_reginputs_custom: bool,
     /// (kuna GH-8817) Reclassify V850 `jmp [reg]` CALLIND to BRANCHIND
     /// (C++ `v850_indirect_branch`).
     pub v850_indirect_branch: bool,
@@ -487,6 +492,13 @@ pub struct Architecture {
     /// (kuna `fpuemu`) The loader found 8087-emulator code in the image, which
     /// `auto` decodes by.
     pub fpu_emu_evidence: bool,
+    /// (kuna `mzdgroup`) `option mzdgroup`: state the data segment an MS-DOS
+    /// executable's startup code loads into DS as DS's value at every function
+    /// entry.  Default on.  See [`kuna_mzdgroup`](crate::kuna_mzdgroup).
+    pub mz_dgroup_on: bool,
+    /// (kuna `mzdgroup`) The data segment the MS-DOS loader read off the startup
+    /// code, when it could.
+    pub mz_dgroup: Option<crate::kuna_mzdgroup::MzDataSegment>,
     /// (kuna `syscallregs`) When the ARM/AArch64/RISC-V/MIPS/PowerPC system-call
     /// user-op writes its result register and reads the registers the function
     /// sets up for it: `off`, `auto` (the default: only on an image the loader
@@ -1296,6 +1308,27 @@ pub struct Architecture {
     /// (kuna) Each x86-32 callee's register inputs read off its own entry, keyed
     /// by entry offset; see [`crate::kuna_calleereginputs`].
     pub kuna_callee_reginputs: RefCell<std::collections::HashMap<uintb, Option<u8>>>,
+    /// (kuna `calleereginputs custom`) Per-callee-entry input-register key (the
+    /// ECX/EDX/EBX/ESI/EDI set the whole-image two-sided rule decided): bit 0
+    /// ECX, 1 EDX, 2 EBX, 3 ESI, 4 EDI. Built once over the whole image by the
+    /// callee-first driver ([`crate::p4_calls::kuna_calleereginputs`]); empty in
+    /// single-function mode (then no custom register is an argument, consistently
+    /// on both sides) and empty with the `custom` extension off.
+    pub kuna_custom_reg_callers: Rc<std::collections::HashMap<uintb, u16>>,
+    /// (kuna `calleereginputs custom`) The synthesized model for each input-register
+    /// key, built once beside the map so the caller call site and the callee's
+    /// own evaluation share one model instance.
+    pub kuna_custom_reg_models: Rc<std::collections::HashMap<u16, Rc<ProtoModel>>>,
+    /// (kuna `calleereginputs custom`) Per-callee-entry mask of the callee-saved
+    /// registers (EBX 1, ESI 2, EDI 4) the function's own body read on entry,
+    /// plus 8 when it also read ECX or EDX, recorded after each decompile from
+    /// the post-heritage entry reads. The callee half of the two-sided decision.
+    pub kuna_custom_reg_reads: std::collections::HashMap<uintb, u8>,
+    /// (kuna `calleereginputs custom`) Per callee entry, every `(caller entry,
+    /// call instruction)` a decompile printed a direct call to it from: a callee
+    /// some decompile reaches from a site the call graph does not attribute to
+    /// that caller states nothing.
+    pub kuna_custom_reg_calls: std::collections::HashMap<uintb, std::collections::BTreeSet<(uintb, uintb)>>,
     /// (kuna) Each x86-32 callee's stack effect read off its own code; see
     /// [`crate::kuna_calleepurge`].
     pub kuna_callee_purge: RefCell<crate::kuna_calleepurge::Cache>,
@@ -1516,6 +1549,13 @@ pub struct Architecture {
     pub analysis_armwalkmode: bool,
     /// Caller-local PPC32 PIC import proof, applied during flow following.
     pub analysis_ppc32picimports: crate::kuna_ppc32picimports::Mode,
+    /// (kuna) The load-time options this program was loaded with: the ones in
+    /// force when it was built, updated by a load-time `option` command.
+    /// [`Self::load_scope`] puts them back in force for later analysis.
+    load_options: Rc<crate::kuna_loadoptions::LoadOptions>,
+    /// (kuna) Built with no options in force: an entry point that takes none
+    /// loaded this program, so its gates keep reading the environment live.
+    load_options_from_env: bool,
     /// Validated import slots. Never registered as executable FunctionSymbols.
     pub ppc32_pic_imports: std::collections::BTreeMap<u64, crate::kuna_ppc32piccalls::ImportSlot>,
     /// (kuna) Gate the x86-64 IFUNC (`R_X86_64_IRELATIVE`) `.plt.sec`/`.iplt`
@@ -1690,6 +1730,11 @@ pub struct Architecture {
     /// with a nonzero status never returns, so without the prune the flow-follower walks
     /// past the call into the next function and absorbs it. Sorted/deduped.
     pub error_noreturn_callsites: Vec<u64>,
+    /// (kuna #1288) The MS-DOS exit interrupts (`INT 20h`, `INT 27h`, `INT 21h`
+    /// with AH 00h/31h/4Ch) of a real-mode raw or MZ load, sorted. The raw
+    /// discovery finds them (`kuna_analysis::listing::kuna_dosexit`); flow ends
+    /// at each ([`FlowEnvironment::is_dos_exit_callind`](crate::flow::FlowEnvironment::is_dos_exit_callind)).
+    pub dos_exit_sites: Vec<u64>,
     /// (kuna) Gate the FID fingerprint matcher (`fid`), a Listing/xref consumer;
     /// default **off**. The kuna analog of Ghidra's FID identification analyzer:
     /// over the built Listing it fingerprints each function with the byte-exact
@@ -2049,6 +2094,10 @@ pub struct Architecture {
     /// where `modify_spaces` applies them. `None` until that bootstrap step has
     /// run; an empty list is a valid, complete recipe for most languages.
     decode_truncations: Option<Arc<[(String, u32)]>>,
+    /// (kuna) Every language the bootstrap's `.ldefs` scan found, by id: what
+    /// decides whether a FID database built for another language applies here.
+    /// Empty for an `Architecture` that was not bootstrapped from `.ldefs`.
+    language_families: Arc<[(String, crate::kuna_langfamily::LanguageFamily)]>,
 }
 
 /// One active decompile drive, from [`Architecture::kuna_drive_scope`].
@@ -2078,6 +2127,25 @@ impl Architecture {
     /// `modify_spaces` applies them.
     pub fn set_decode_truncations(&mut self, truncations: Vec<(String, u32)>) {
         self.decode_truncations = Some(Arc::from(truncations));
+    }
+
+    /// (kuna) Record the `.ldefs` languages the bootstrap scanned.
+    pub fn set_language_families(
+        &mut self,
+        families: Arc<[(String, crate::kuna_langfamily::LanguageFamily)]>,
+    ) {
+        self.language_families = families;
+    }
+
+    /// (kuna) The scanned `.ldefs` facts for language `id`, `None` when no
+    /// scanned `.ldefs` defines it.
+    pub fn language_family(&self, id: &str) -> Option<&crate::kuna_langfamily::LanguageFamily> {
+        self.language_families.iter().find(|(known, _)| known == id).map(|(_, family)| family)
+    }
+
+    /// (kuna) Whether the bootstrap recorded any `.ldefs` languages.
+    pub fn has_language_families(&self) -> bool {
+        !self.language_families.is_empty()
     }
 
     /// (kuna) The instructions for rebuilding a decode-equivalent engine on
@@ -2178,9 +2246,12 @@ impl Architecture {
 
             symbol_snapshots: RefCell::new(SymbolSnapshots::default()),
             kuna_snapshot_cache: std::env::var_os("KUNA_NO_SYMBOL_SNAPSHOT_CACHE").is_none(),
+            load_options: crate::kuna_loadoptions::LoadOptions::in_force(),
+            load_options_from_env: !crate::kuna_loadoptions::options_in_force(),
 
             decode_sla: None,
             decode_truncations: None,
+            language_families: Arc::from([]),
 
             trim_recurse_max: 0,
             max_implied_ref: 0,
@@ -2233,12 +2304,15 @@ impl Architecture {
             callbacktype: crate::kuna_callbacktype::CallbackTypeMode::Off, // (kuna) option callbacktype
             calleevote: crate::kuna_calleevote::CalleeVoteMode::Off, // (kuna) option calleevote
             caller_ptr: false, // (kuna) option callerptr
-            callee_reginputs: false, // (kuna) option calleereginputs; shipped off
+            callee_reginputs: true, // (kuna) option calleereginputs; default on, inert off x86-32 Windows
+            callee_reginputs_custom: false, // (kuna) option calleereginputs `custom`; reset_defaults sets the shipped default
             v850_indirect_branch: false,
             int3_pad: crate::kuna_int3pad::Int3PadMode::Off, // (kuna) option int3pad; reset_defaults sets the shipped default
             x64_syscall: crate::kuna_x64syscall::X64SyscallMode::Off, // (kuna) option x64syscall; reset_defaults sets the shipped default
             fpu_emu: 0, // (kuna) option fpuemu; reset_defaults sets the shipped default (auto)
             fpu_emu_evidence: false,
+            mz_dgroup_on: true,
+            mz_dgroup: None,
             segment_defs: Vec::new(),
             syscall_regs: crate::kuna_syscallregs::SyscallRegsMode::Off, // (kuna) option syscallregs; reset_defaults sets the shipped default
             image_os_userland: false, // (kuna) a load-time fact; set by the console's `load file`
@@ -2397,6 +2471,10 @@ impl Architecture {
             kuna_protoorder_types: std::collections::HashMap::new(),
             kuna_vfp_variadic: RefCell::new(None),
             kuna_callee_reginputs: RefCell::new(std::collections::HashMap::new()),
+            kuna_custom_reg_callers: Rc::new(std::collections::HashMap::new()),
+            kuna_custom_reg_models: Rc::new(std::collections::HashMap::new()),
+            kuna_custom_reg_reads: std::collections::HashMap::new(),
+            kuna_custom_reg_calls: std::collections::HashMap::new(),
             kuna_callee_purge: RefCell::new(crate::kuna_calleepurge::Cache::default()),
             kuna_calleeargs: true,
             kuna_callbacktype: crate::kuna_callbacktype::Ledger::default(),
@@ -2470,6 +2548,7 @@ impl Architecture {
             analysis_noreturn_propagate: false,
             analysis_noreturn_reach: false,
             error_noreturn_callsites: Vec::new(),
+            dos_exit_sites: Vec::new(),
             analysis_fid: false,
             analysis_fid_strict: false,
             analysis_flirt: false,
@@ -2569,6 +2648,8 @@ impl Architecture {
         self.apply_segmentize();
         self.fpu_emu = crate::kuna_fpuemu::FpuEmuMode::Auto.as_u8(); // (kuna #1288) decode the 8087 emulator's INT 34h-3Dh as x87 where the loader found emulator code (MS-DOS executables); only x86-16.sla has the fpuEmu context bit, so every other input and every datatest is unchanged; `option fpuemu off` keeps the interrupts
         crate::kuna_fpuemu::apply(self);
+        self.mz_dgroup_on = true; // (kuna #1288) an MS-DOS executable's functions start with DS holding the data segment its startup code loads; only the MZ loader states one, so every other input and every datatest is unchanged; `option mzdgroup off` leaves DS unknown
+        crate::kuna_mzdgroup::apply(self);
         self.peb_names = crate::kuna_pebnames::PebNamesMode::Auto; // (kuna) DIV-175 default `auto`: TYPES ONLY. Types the Windows TEB segment base (`GS_OFFSET`/`FS_OFFSET`) as `TEB *teb` so PEB/TEB field reads render by name. Gated on a Windows compiler spec AND the loader's user-mode-PE fact, which the XML bootstrap never sets, so it is structurally inert on the datatest corpus (0/675); `option pebnames on` trusts the compiler spec alone, `off` restores the untyped register
         self.struct_synth = crate::kuna_structsynth::StructSynthMode::Locals; // (kuna) structsynth default `locals`: a pointer parameter, or a pointer a call returned, read at two or more constant offsets is declared `struct_N *` and the reads render as fields. Moves 0/675 datatest assertions; `option structsynth param` restores parameters only, `off` the raw offset arithmetic
         self.struct_merge = crate::kuna_structmerge::StructMergeMode::Off; // (kuna) structmerge default `off`: a freshly measured layout that agrees with a held record is answered with the union of the two, so a field one reader proved is kept for the others. Off because at the agreement floor two records that merely begin alike are indistinguishable; `option structmerge siblings` turns it on
@@ -2695,7 +2776,8 @@ impl Architecture {
         self.char_ptr = false; // (kuna) option charptr; shipped off -- the flip is held on `make test-cli`, see docs/features/charptr/default-on-evaluation.md
         self.ptr_from_use = crate::p5_types::kuna_ptrfromuse::PtrFromUseMode::Void; // (kuna) option ptrfromuse default void: 0/675 datatests, stages PARITY OK, type_match 0 worse over 10,748 decbench functions; evidence in docs/features/ptrfromuse/default-on-evaluation.md
         self.callbacktype = crate::kuna_callbacktype::CallbackTypeMode::On; // (kuna) option callbacktype default `on`: a function whose address reaches exactly one kind of declared callback slot takes that slot's prototype; evidence in docs/features/callbacktype/default-on-evaluation.md
-        self.callee_reginputs = false; // (kuna) option calleereginputs; shipped off
+        self.callee_reginputs = true; // (kuna) option calleereginputs default-on: only x86-32 Windows (x86win.cspec) decodes a callee; 0/675 datatest assertions move
+        self.callee_reginputs_custom = crate::p4_calls::kuna_calleereginputs::CUSTOM_DEFAULT; // (kuna) option calleereginputs `custom`: callee-saved EBX/ESI/EDI custom args; see the module and docs/spec chapter 04
         self.caller_ptr = true; // (kuna) option callerptr default-on: inert without a callee-first pass, so 0/675 datatest assertions move; on the 444-slice decbench sweep 244 decisions gain and 1 is lost
         self.calleevote = crate::kuna_calleevote::CalleeVoteMode::Fields; // (kuna) option calleevote default `fields`: on a whole-binary run a parameter every known caller passes the same committed pointer to takes it, and a closed function's lone field is a record field; inert without a callee-first pass
         self.protoorder = crate::kuna_protoorder::ProtoOrderMode::Cycles; // (kuna) option protoorder default `cycles`: the callee's recovered parameter types reach its call sites as a vote, with no lock and no arity change, and a function in a recursive component states its types too (`types` is the same without them); `lock` also states the arity and stays opt-in
@@ -2777,7 +2859,11 @@ impl Architecture {
         self.analysis_ptrentry = true; // (kuna) pointer-referenced ARM entries (ARM-only, needs listing)
         self.analysis_poolentry = true; // (kuna) ARM literal-pool inference (ARM-only, needs listing + aif)
         self.analysis_armwalkmode = true; // (kuna) ARM walk decodes in the mode its control flow carries
-        self.analysis_ppc32picimports = crate::kuna_ppc32picimports::Mode::loaded(); // (kuna) abi when the loader applied it, else off
+        self.analysis_ppc32picimports = if self.load_options_from_env {
+            crate::kuna_ppc32picimports::Mode::loaded()
+        } else {
+            crate::kuna_ppc32picimports::Mode::loaded_with(self.load_options.ppc32picimports)
+        }; // (kuna) abi when the loader applied it, else off
         self.analysis_goabi = true; // (kuna) option goabi default auto: a Go image takes the vendored golang cspec
         self.analysis_symbolnamechars = crate::kuna_symbolnamechars::NameChars::Safe; // (kuna) DIV-94: symbol-name sanitizing defaults to `safe` -- the structural set only, a measured no-op on every name a real toolchain emits
         self.analysis_dwarf = true;
@@ -2905,7 +2991,9 @@ impl Architecture {
     /// `maxlinewidth`/`commentstyle`, which are recorded-no-op printer stubs
     /// with no state to reset.
     pub fn reset_wire_defaults(&mut self) {
-        // The env-backed PPC32 PIC mode is process state, so a wire reset clears it too.
+        // The load-time PPC32 PIC mode is program and process state, so a wire
+        // reset clears both.
+        self.load_options_mut().ppc32picimports = crate::kuna_ppc32picimports::Mode::Off;
         crate::kuna_ppc32picimports::Mode::Off.set_env();
         self.reset_defaults();
         self.print.context = crate::printlanguage::PrintContext::new();
@@ -3347,6 +3435,10 @@ impl Architecture {
                 self.userops.get_op_by_name(name).map(|u| (u.get_index() as kuna_base::types::uint4, width))
             })
             .collect();
+        ctx.float_rounding_userops = crate::kuna_roundingops::USEROP_NAMES
+            .iter()
+            .filter_map(|nm| self.userops.get_op_by_name(nm).map(|u| u.get_index() as kuna_base::types::uint4))
+            .collect();
         ctx.recover_array_stride = self.recover_array_stride; // GH-8724 arraystride
         ctx.memset_recover = self.memset_recover; // GH-9230/1537 memsetrecover
         ctx.rodata_string = self.rodata_string; // (kuna) rodatastring
@@ -3382,6 +3474,10 @@ impl Architecture {
         ctx.mixed_tail_ret = self.mixed_tail_ret; // mixedtailret
         ctx.readonly_calls = self.readonly_calls;
         ctx.persist_calls = self.persist_calls;
+        // (kuna `calleereginputs custom`) a function's own evaluation sees the
+        // same per-callee models its callers' flow does.
+        ctx.kuna_custom_reg_callers = Rc::clone(&self.kuna_custom_reg_callers);
+        ctx.kuna_custom_reg_models = Rc::clone(&self.kuna_custom_reg_models);
         ctx.narrow_args = self.narrow_args; // narrowargs
         ctx.narrow_locals = self.narrow_locals; // regnarrow
         ctx.narrow_ret = self.narrow_ret; // narrowret
@@ -3569,6 +3665,7 @@ impl Architecture {
             };
         ctx.bound_proto_models = Rc::clone(&self.loader_proto_models);
         ctx.swift_abi = self.loader_swift_abi.clone();
+        ctx.virtual_this = crate::p4_calls::kuna_calleereginputs::virtual_this(self);
         // Carry the constant-pointer-inference config (C++ `glb->infer_pointers`)
         // and the ordered inferable-pointer spaces (C++ `glb->inferPtrSpaces`,
         // built by cacheAddrSpaceProperties) so `ActionConstantPtr` (run via
@@ -4072,7 +4169,7 @@ impl Architecture {
         self.infer_ptr_spaces.push(Rc::clone(&spc));
         self.symboltab.add_range(scope, Rc::clone(&spc), first, last);
         let gptr =
-            crate::kuna_goreg::g_pointer_type(self.types(), crate::kuna_goreg::GoLayout::from_env())?;
+            crate::kuna_goreg::g_pointer_type(self.types(), self.go_layout())?;
         let addr = Address::new(spc, first);
         let (sid, _eref) =
             self.symboltab.add_symbol_mapped(scope, "g", gptr, &addr, &Address::new_invalid())?;
@@ -4555,6 +4652,39 @@ impl Architecture {
     // Owned-subsystem accessors (the `glb->types`/`glb->print`/… surface the
     // ifacedecomp porter confirmed were absent — w9x-arch-engine-glue)
     // -----------------------------------------------------------------------
+
+    /// (kuna) The load-time options this program was loaded with.
+    pub fn load_options(&self) -> &crate::kuna_loadoptions::LoadOptions {
+        &self.load_options
+    }
+
+    /// (kuna) Change a load-time option for this program's later analysis.
+    pub fn load_options_mut(&mut self) -> &mut crate::kuna_loadoptions::LoadOptions {
+        Rc::make_mut(&mut self.load_options)
+    }
+
+    /// (kuna) Put this program's load-time options in force on this thread until
+    /// the scope drops, so the gates that run after the load read them. A
+    /// program loaded with no options defers to the environment instead, so its
+    /// gates read their variables live.
+    pub fn load_scope(&self) -> crate::kuna_loadoptions::LoadScope {
+        if self.load_options_from_env {
+            crate::kuna_loadoptions::enter_environment()
+        } else {
+            crate::kuna_loadoptions::enter(Rc::clone(&self.load_options))
+        }
+    }
+
+    /// (kuna `goreg`) The runtime layouts of the image's Go toolchain release.
+    fn go_layout(&self) -> crate::kuna_goreg::GoLayout {
+        if self.load_options_from_env {
+            return crate::kuna_goreg::GoLayout::from_env();
+        }
+        match self.load_options.go_version {
+            Some((major, minor)) => crate::kuna_goreg::GoLayout::from_version(major, minor),
+            None => crate::kuna_goreg::GoLayout::baseline(),
+        }
+    }
 
     /// Borrow the data-type factory (C++ `glb->types`).
     pub fn types(&self) -> &dyn TypeFactory {
@@ -5613,6 +5743,57 @@ impl Architecture {
             out.push(crate::p5_types::prefersplit::PreferSplitRecord { storage, splitoffset });
         }
         out
+    }
+
+    /// (kuna `calleereginputs custom`) Build a synthesized `x86win.cspec`-shaped
+    /// prototype model whose input is the given registers (`ECX`/`EDX` first, in
+    /// the spec's `__fastcall` order, then the callee-saved customs `EBX`,`ESI`,
+    /// `EDI` in register order) followed by the ordinary stack argument slot. A
+    /// register that is an input is NOT in the `<unaffected>` list (a value the
+    /// callee consumes as an argument is not one it leaves untouched, just as
+    /// `__thiscall`'s `ECX` is not unaffected); the remaining callee-saved
+    /// registers stay unaffected. Decoded through the same path as the spec's own
+    /// models, so it carries identical storage/effect fidelity. `None` on a spec
+    /// whose `__stdcall` cannot be found/parsed.
+    pub fn kuna_build_reginput_model(&self, name: &str, regs: &[&str], thisptr: bool) -> Option<ProtoModel> {
+        let pentry = |r: &str| {
+            format!("<pentry minsize=\"1\" maxsize=\"4\"><register name=\"{r}\"/></pentry>")
+        };
+        let inputs: String = regs.iter().map(|r| pentry(r)).collect();
+        let this_attr = if thisptr { " thisbeforeretpointer=\"true\"" } else { "" };
+        // A register taken as an input is removed from the default `<unaffected>`
+        // set: the callee consumes its incoming value, so the caller cannot treat
+        // it as preserved for the argument-recovery to score.
+        let unaffected: String = ["ESI", "EDI", "EBX"]
+            .iter()
+            .filter(|r| !regs.contains(r))
+            .map(|r| format!("<register name=\"{r}\"/>"))
+            .collect();
+        let xml = format!(
+            "<compiler_spec>\
+<returnaddress><varnode space=\"stack\" offset=\"0\" size=\"4\"/></returnaddress>\
+<prototype name=\"{name}\" extrapop=\"unknown\" stackshift=\"4\">\
+<input{this_attr}>{inputs}\
+<pentry minsize=\"1\" maxsize=\"500\" align=\"4\" stackalign=\"false\"><addr offset=\"4\" space=\"stack\"/></pentry>\
+</input>\
+<output killedbycall=\"true\">\
+<pentry minsize=\"4\" maxsize=\"10\" metatype=\"float\" extension=\"float\"><register name=\"ST0\"/></pentry>\
+<pentry minsize=\"1\" maxsize=\"4\"><register name=\"EAX\"/></pentry>\
+<pentry minsize=\"5\" maxsize=\"8\"><addr space=\"join\" piece1=\"EDX\" piece2=\"EAX\"/></pentry>\
+</output>\
+<unaffected>\
+<varnode space=\"ram\" offset=\"0\" size=\"4\"/>\
+<register name=\"ESP\"/><register name=\"EBP\"/>{unaffected}<register name=\"DF\"/><register name=\"FS_OFFSET\"/>\
+</unaffected>\
+<killedbycall><register name=\"ECX\"/><register name=\"EDX\"/><register name=\"ST0\"/><register name=\"ST1\"/></killedbycall>\
+</prototype></compiler_spec>"
+        );
+        let root = {
+            let mut store = kuna_base::xml::DocumentStorage::new();
+            store.parse_document(xml.as_bytes()).map(|d| d.get_root().clone()).ok()?
+        };
+        let proto = find_child(&root, "prototype")?;
+        self.decode_proto_model(&proto, &root).ok()
     }
 
     /// Locate the cspec's `<default_proto><prototype>` and decode it (C++

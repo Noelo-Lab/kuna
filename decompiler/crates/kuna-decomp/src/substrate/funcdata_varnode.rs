@@ -1145,7 +1145,7 @@ impl Funcdata {
     /// takes.  Shared by [`link_symbol_reference`] (the attach) and
     /// [`name_undefined_spacebase_symbols`] (the namerec rename pre-pass) so the two
     /// passes resolve the identical address.
-    fn resolve_spacebase_ref_addr(&mut self, off_vn: VarnodeId) -> Option<Address> {
+    pub(crate) fn resolve_spacebase_ref_addr(&self, off_vn: VarnodeId) -> Option<Address> {
         // The PTRSUB this constant feeds.
         let op = self.lone_descend(off_vn)?;
         // The spacebase varnode.
@@ -2177,6 +2177,11 @@ impl Funcdata {
 
         if fc.is_input_active() {
             let curtrial = fc.active_input().get_trial_for_input_varnode(j);
+            // (kuna `calleereginputs`) A register the other callee reads is that
+            // call's own argument, so this use is not explained away by it.
+            if crate::p4_calls::kuna_calleereginputs::reads_register(fc, curtrial.get_address(), curtrial.get_size()) {
+                return true;
+            }
             if curtrial.is_checked() {
                 if curtrial.is_active() {
                     // (kuna) `varargsharedfloat`: see

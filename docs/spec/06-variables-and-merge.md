@@ -892,8 +892,8 @@ well as the scope (`decompiler/crates/kuna-decomp/src/p6_variables/varmap.rs
 name through their shared Symbol, never through a recommendation.
 
 **A library call names the locals it meets (`libcnames`, default on;
-`option libcnames off` keeps every `vN`).** A prototype a built-in libc table parks carries
-the library's names for its parameters and result (chapter 01), which the
+`option libcnames off` keeps every `vN`).** A prototype a built-in libc or Win32 table parks
+carries the library's names for its parameters and result (chapter 01), which the
 recommendation above never sees: they are not `innames` and lock nothing. The
 library name is a second name for a numbered local, never a replacement for
 its number. `decompiler/crates/kuna-decomp/src/p6_variables/kuna_libcnames.rs
@@ -908,9 +908,13 @@ not renumber. The evidence, strongest first: the value a library call returns
 has the same name; a library argument the local is passed whole as, when the
 name says what the value is (`read(fd,...)` names `fd`, `write(a0,a1,n)` names
 `n`); and the same for a name that only says which side of one call a value is
-on (`dest`/`src`, `s1`/`s2`, `haystack`/`needle`, ...), which counts only when
+on (`dest`/`src`, `s1`/`s2`, `haystack`/`needle`, ...; on Windows
+`lpSrcStr`/`lpDestStr`, `lpString1`/`lpString2`, `pvargDest`/`pvargSrc` and
+`DuplicateHandle`'s source and target handles), which counts only when
 every such name the local receives is the same one, so a pointer that is one
-`strcmp`'s `s2` and the next one's `s1` keeps its `vN`. Within a kind the
+`strcmp`'s `s2` and the next one's `s1` keeps its `vN`. A PE reads the same
+way under the SDK's names: `hFile = CreateFileW(a0,...)`, `ReadFile(hFile,...)`,
+`hModule = LoadLibraryW(a0)` and `HeapFree(hHeap,0,lpMem)`. Within a kind the
 earliest call decides, then the lowest slot, and a name equal to a type the
 printed code can mention (`tm`, `FILE`, a DWARF typedef: anything the type
 factory knows by that name) or to a C or Rust keyword is passed over for the
@@ -946,6 +950,88 @@ another local printed, goes to no one else, and a local whose spelling a
 rename took prints its number. After `name fd src` the second descriptor is
 still `fd_2` and no local becomes `fd`; after `name v5 n`, read's result prints
 `v3` and `name v3 got` reaches it.
+
+**The address of a stack object is library evidence too.** A local array,
+structure or scalar whose own address is a library argument
+(`read(a0,buf,0x100)`, `stat(a0,&buf)`, `waitpid(pid,&stat_loc,0)`,
+`ReadFile(hFile,Buffer,0x200,&NumberOfBytesRead,NULL)`) is not a value the
+argument evidence above can reach: the argument is a `PTRSUB` of the frame's
+spacebase, and the object is the stack Symbol it addresses.
+`decompiler/crates/kuna-decomp/src/p6_variables/kuna_libcnames.rs
+(addressed_object)` reads that Symbol at the address the naming walk links the
+reference to (`Funcdata::resolve_spacebase_ref_addr`), and takes it only when
+the reference addresses its first byte, its name is still undefined (a DWARF,
+user or directive name is defined, so it stays), it is not a parameter, and the
+pointer is not to a member of a structure (a typed pointer narrower than the
+structure). Its evidence is the argument evidence above, kind for kind and with
+the same ranking, under the name of the object the parameter points at
+(`kuna_libcnames.rs (pointee_name)`): glibc's name as it is (`buf`,
+`stat_loc`, `timer`, `tv`), a Windows SDK name less its pointer prefix (an `lp`
+or `p` before a Hungarian name: `lpBuffer` names the buffer `Buffer`,
+`lpNumberOfBytesRead` the count `NumberOfBytesRead`, `lpflOldProtect` the
+protection `flOldProtect`, `phModule` the handle `hModule`), so no array or
+count is named as if it were a pointer, and nothing for a name that says only
+that the argument is a pointer (`fread`'s `ptr`, `modf`'s `iptr`, `termios_p`)
+unless the object is itself a pointer (`asprintf(&ptr,...)`,
+`strtol(a0,&endptr,10)`, `getline(&lineptr,&n,fp)`). An out-parameter and an
+in-buffer count alike, since either way the parameter says what the object is.
+A call that only fills the object (`memset`, `bzero`, `explicit_bzero` and
+their `_`-prefixed and FORTIFY spellings) is no evidence, so
+`memset(&sa,0,sizeof sa); sigaction(2,&sa,NULL);` names the structure `act`,
+not `s`, and a function of the program (`keep(v1)`) is none either. A scalar
+object (not an array or a structure) is one value, so argument names that
+disagree on it name it no more than disagreeing role names do (`decide`): an
+`int` that `read(fd,&v,4)` fills as its `buf` and `waitpid(v,&v,0)` then as its
+`stat_loc`, or a stack slot the compiler gives first to a `socklen_t` passed
+to `getsockopt` and later to a length passed to `send`, holds two values in
+turn and keeps its number. An array or a structure the calls name differently
+is one buffer they all use (`snprintf(s,...)` then `unlink(s)`) and takes the
+earliest name. The name is
+the same second name as above, printed at every reference to the object (its
+declaration, `&buf`, `buf[i]`, `buf.field`): the Symbol keeps its number, which
+a replay records and a directive may use (`name v2 chunk` and `name buf chunk`
+rename the same buffer; a retype keeps `buf`, and a retype that names the
+object by its number (`type v1 unsigned char v1` on a one-byte `read`
+buffer) gives it that name, which
+`kuna-console/src/kuna_hightarget.rs (apply_local)` locks as a rename although
+the Symbol already holds it), and an object competes with the locals for spellings
+in the order of its evidence. When a register local and the object hold the
+same storage, the earlier of their evidence names both. Over 117 stripped
+decbench images (39 programs at O0, O2 and O2-noinline, the four Windows ones
+among them), 1,529 stack objects print a library name and every changed
+function differs from the previous output only in names. Matched to the DWARF
+variable at the same frame offset of the unstripped twin, most carry the
+source's own name or a name for the same kind of object (`buf` for a
+`struct stat st`, `stat_loc` for `status`, `timer` for `t`, `NumberOfBytesRead`
+for `readbytes`, `StartupInfo` for `si`), and some name a member of a DWARF
+structure that kuna splits into its own object. The name is the call's, so it
+fits only part of an object that is several variables: a slot a compiler
+reuses for variables of disjoint scopes, which the variable merge makes one
+object (a `struct timeval` that a `struct addrinfo *` later occupies, an
+`fd_set` whose slot later holds a format buffer), or a scalar the program also
+assigns an unrelated value (`buf_3 = util_strlen(...); send(fd,&buf_3,1,0)`).
+In a random sample of 220 named objects checked against DWARF, 5 were such
+names; the scalar rule above removes one of them (a `char *` slot that also
+holds a `struct vt_stat` and two `int`s, which `strsep` names `stringp` and
+`asprintf` names `ptr`), and over the 117 images it leaves 8 objects their
+number, 7 of them slots shared by several variables. The names are the same in
+a whole-binary `decompile-all`, a `--jobs` run and a single-function
+`decompile`, since the evidence is the function's own calls.
+
+**The function's own parameters keep their `aN` names.** Naming a parameter
+that flows unchanged into a library call after that call's parameter (`a0` as
+`file` for `open(a0,0)`) is deliberately not done. A parameter's name is the
+function's interface, printed in the signature every caller, the
+`decompile-project` header, `--json` and the Ghidra and web front-ends read,
+while the evidence would be one callee's use of it; IDA likewise names locals
+after callee parameters but leaves a function's own arguments `a1`, `a2`
+unless a declared type names them. Over the
+117 images above, 4,099 parameters of 2,820 functions pass straight to a
+library call and are never reassigned; 806 of the 3,606 the DWARF twins name
+would carry the twin's name, and 69% of all of them would be a name that says
+only how one callee uses its argument (`s` 565, `ptr` 385, `size` 375, `n` 307,
+`stream` 299, `src` 227, `nmemb` 188), so most of those signatures would trade
+`a0` for a callee's generic name.
 
 **A register piece no register name covers is a local.** The `vN` allocator
 routes a high with no covering Symbol to `dat_<addr>` when its storage is global
@@ -1663,7 +1749,16 @@ current Varnodes) and fills a `varmap.rs (MapState)` with typed hints — one
 
 The parameter range from the prototype is subtracted from the analyzed range
 up front (`varmap.rs (MapState::new)`), so parameter recovery (chapter 04)
-owns that region.
+owns that region. **Unused hidden-return slot** (always on, kuna): a
+`storage="hiddenret"` stack entry is left out of that range when nothing says
+the function takes a hidden return pointer
+(`funcdata_spacebase.rs (local_param_range)`): no recorded hidden-return
+input, no output in indirect storage, no input Varnode read from the slot,
+and no ordinary stack entry sharing it. SPARC V9's 64-bit cspecs place the
+entry at stack `0x7ef..0x7f6`, inside every function's own frame, and
+upstream's clearing drops the locals there: a buffer at `fp+0x7f5` passed to
+a call prints as an undeclared `&Stack…` and its reload reads the value from
+before the call.
 
 **The layout decision** (`varmap.rs (ScopeLocal::restructure)`). Hints are
 sorted by the *output-determining* comparator — signed start, then size
@@ -2402,9 +2497,9 @@ copies and PIECEs into the range, and SUBPIECEs above the low end, which print
 as the bytes (`v1._6_2_`), do not. `decompile_drive.rs
 (decompile_func_full_with_override_dyn_prefollowed)` analyzes a spoiled
 function (`Funcdata::spoil_stack_store_guard`) again from a freshly built copy
-with the guard off for it, not by a restart in place: kuna's `clear()` keeps
-the first analysis's local symbols (upstream's `clearUnlocked` is not ported),
-which could survive into the second. The second analysis therefore prints
+with the guard off for it, not by a restart in place, so nothing the guarded
+analysis recovered (its pending comments, its Override entries) seeds the
+second. The second analysis therefore prints
 the unguarded analysis. Another example is a buffer written only by a walk through a
 pointer kept in memory, which no guard covers, while the guard keeps its
 initializer (clang `-O0` `p = (j & 1) ? u.b : v.b; *p++ = j;`).
@@ -2534,6 +2629,19 @@ the cookie is loaded or has been folded to an immediate is a property of the
 optimizer, not of the aliasing — and its cost is a deliberately masked pointer
 (`p ^ mask`, dereferenced after a second `^ mask`), whose base stops counting
 as escaped.
+
+The same call-site checker passes over one more use, and only in a function
+whose stack-pointer solution rests on a guessed pop (some call's pop is neither
+stated nor proven): a stack address the call hands a register its direct
+callee reads (`calleereginputs`, the `this` of `lea ecx,[esp+N]`; chapter 04)
+is not an escape site there (`funcdata_spacebase.rs (gather_additive_base)`,
+`p4_calls/kuna_calleereginputs.rs (skips_read_operands)`). A pop the solver
+guesses short moves every later offset, so such a `this` can land below the
+outgoing-argument slots of calls on the other side of the guess and take their
+stack arguments with it; before the callee's reads were known the operand was
+dead and recorded nothing. Where every pop is settled the operand counts like
+any other escape, which is what keeps a constructed local's fields from being
+read as the next call's stack arguments.
 
 **Name recommendations.** A namelocked-but-NOT-typelocked local never
 survives restructure — `clearUnlockedCategory(-1)` removes every non-typelocked
@@ -3337,6 +3445,41 @@ x86-16, M16C/60 and 32-bit Windows, Borland and Delphi x86 specs among them. On
 M16C/60 `PUSH.B` lowers the stack pointer by one, so a byte push at a
 function's entry is ordinary compiled code, and with a loop after it upstream
 never finished.
+
+A runtime-sized reservation has no constant solution, and kuna keeps the solve
+from inventing one
+(`decompiler/crates/kuna-decomp/src/p6_variables/coreaction_stackptr.rs
+(StackSolver::confirm_dynamic, StackSolver::spread_dynamic)`, always on).
+Upstream's MULTIEQUAL equation equates every input of a stack-pointer merge, so
+where one path lowers the stack pointer by a register (`sub sp,ax`: Open
+Watcom's `alloca`, which reserves only when `stackavail()` says there is room
+and returns NULL on the other path) the reservation inherits the other path's
+constant, the rewrite turns `sp - ax` into `sp_in + c`, and the allocated
+pointer prints as a fixed frame local; two allocations then share one address
+and the writes into them overflow it. An adjustment whose amount is neither the stack pointer nor a
+value that evaluates to a constant
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin.rs (literal_value)`; a
+PTRADD's element size is not an amount) is a candidate. A trial solve with the
+upstream equations keeps a candidate the solve gives a nonzero move as an
+ordinary adjustment, because such a register often holds a constant on that
+path (`add sp,si` with `si == 2` popping a pushed argument, in FreeDOS ARJ and
+GZIP). A candidate the trial leaves unsolved or moves by zero (the merge erased
+it) is runtime-sized. That mark spreads forward through MULTIEQUAL, COPY, CAST,
+INDIRECT, INT_ADD/SUB/AND and PTRADD/PTRSUB; every equation joining a marked
+value to an unmarked one is dropped, relations among marked values stay but
+are never anchored to the entry value, and no marked value is rewritten. The
+reservation's pointer keeps its amount (`&local[-(n + 1 & 0xfffe)]`). Stack
+traffic addressed from a marked stack pointer stays raw pointer arithmetic: the
+pushes of a later call's arguments and the call's own return-address store print
+as stores, and an unlocked callee there takes no stack arguments, as on any
+runtime reservation that never meets a merge. The trial is evidence, not proof:
+a runtime amount the merge equates with a sibling path's nonzero constant
+(`alloca(c ? n : 8)` compiled as two reservations), or one whose input the
+guessed pop of an earlier call already displaced, keeps upstream's rewrite. A
+reservation made inside a helper call is a call effect, not an adjustment, and
+is untouched. Constant adjustments get their exact equation: `INT_SUB sp, #c`
+is `INT_ADD sp, #-c`, and an amount that evaluates to a constant (`mov ax,8;
+sub sp,ax`) is that constant, instead of being left to the merge equalities.
 
 The guessed equation is where kuna diverges (`kuna_calleepop.rs`, always on).
 Upstream's constant `extrapop = 4` states that the callee pops none of its

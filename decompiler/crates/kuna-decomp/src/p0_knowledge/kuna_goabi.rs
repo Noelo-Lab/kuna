@@ -19,11 +19,12 @@
 //! other architecture and every non-Go image is untouched, and the engine's
 //! existing default-model retry covers a missing spec.
 //!
-//! ## Why the override is an env-var bridge
+//! ## Why the override is a load-time option
 //!
 //! The language id is composed inside `load file`, upstream of every
-//! per-function `option` command — the same seam as `sourcelang`, and the
-//! same [`GOABI_ENV`] bridge pattern.
+//! per-function `option` command — the same seam as `sourcelang` — so it
+//! reads `LoadOptions::goabi` ([`crate::kuna_loadoptions`]), which the CLI
+//! carries in [`GOABI_ENV`].
 //!
 //! ## The `.abi0` binding that is deliberately NOT here
 //!
@@ -38,18 +39,16 @@
 //! a Go image takes the cspec default (`abi-internal`), which is also what
 //! Ghidra does.
 
-use crate::options::env_toggle;
-
 /// Environment variable carrying the `goabi` choice into the load path.
 /// Absent or any value other than the off-tokens means **enabled** (`auto`).
 pub const GOABI_ENV: &str = "KUNA_GOABI";
 
-/// Whether golang-cspec auto-selection is enabled for this process.
+/// Whether golang-cspec auto-selection is enabled for the load in progress.
 pub fn goabi_env_enabled() -> bool {
-    env_toggle(GOABI_ENV, true)
+    crate::kuna_loadoptions::scoped(|o| o.goabi).unwrap_or_else(crate::kuna_loadoptions::env::goabi)
 }
 
-/// Bridge a `set_kuna_option("goabi", val)` toggle to [`GOABI_ENV`] so a later
+/// Export a `set_kuna_option("goabi", val)` toggle to [`GOABI_ENV`] so a later
 /// `load file` in the same process sees the choice.
 pub fn set_goabi_env(on: bool) {
     std::env::set_var(GOABI_ENV, if on { "auto" } else { "off" });
