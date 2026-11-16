@@ -13,8 +13,13 @@
 #                     __cdecl call whose caller's cleanup, with the local's
 #                     release in the epilogue, spans the local.
 #   nested:           f(g(0), t): t is copied first, but the next call is g.
+#   stray:            the __cdecl callee nf ends in a call that does not
+#                     return (through a pointer, so the walk cannot tell),
+#                     and its walk runs on through the int3 padding into the
+#                     __stdcall neighbour ng's ret 0x20.
 #
-# Build:
+# Build (clang 17 + lld-link 17, e.g. in the swift:6.0-jammy Docker image;
+# clang 14 does not reproduce the bytes):
 #   clang --target=i686-pc-windows-msvc -c byvalreuse_pe_i386.s -o b.obj
 #   lld-link /nologo /entry:start /subsystem:console /nodefaultlib /base:0x400000 \
 #     /fixed /safeseh:no /opt:noref /Brepro /out:byvalreuse_pe_i386.exe b.obj
@@ -175,6 +180,37 @@ _take9:                         # int __stdcall take9(int x, Rec t)
     mov eax, dword ptr [eax]
     add eax, dword ptr [esp + 0x24]
     ret 0x24
+
+    .p2align 4, 0xcc
+_stray:                         # int stray(const Rec *r, int k) { return nf(*r) + k; }
+    push esi
+    push edi
+    sub esp, 0x20
+    mov edi, esp
+    mov ecx, 8
+    mov esi, dword ptr [esp + 0x2c]
+    rep movsd
+    call _nf
+    add esp, 0x20
+    add eax, dword ptr [esp + 0x10]
+    pop edi
+    pop esi
+    ret
+
+    .p2align 4, 0xcc
+_nf:                            # int nf(Rec t), __cdecl: if (!t.x[0]) fatal(); return t.x[7];
+    cmp dword ptr [esp + 4], 0
+    je 1f
+    mov eax, dword ptr [esp + 0x20]
+    ret
+1:
+    push 1
+    call dword ptr [_sink_ptr]
+
+    .p2align 4, 0xcc
+_ng:                            # int __stdcall ng(Rec t), the next function
+    mov eax, dword ptr [esp + 4]
+    ret 0x20
 
     .data
 _obj:

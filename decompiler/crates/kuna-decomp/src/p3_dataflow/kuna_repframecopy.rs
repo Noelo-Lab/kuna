@@ -21,7 +21,9 @@
 //! ([`argument_block`]): nothing else takes the block's address, and that
 //! callee reads into it or its pop releases it. A callee whose stack effect the
 //! walk cannot settle still releases it when its reached returns pop the block
-//! (`ret 0x20`); what the caller removes after the call does not count, since
+//! (`ret 0x20`), every one alike and none past the callee's own code (see
+//! [`crate::p4_calls::kuna_calleepurge::callee_return_pop`]); what the caller
+//! removes after the call does not count, since
 //! it can be the caller's own locals or a later call's arguments. That pop is
 //! then stated on the call, and an earlier call whose pushes the block reuses
 //! (MSVC builds it over a deferred `__cdecl` cleanup) is stated to pop only its

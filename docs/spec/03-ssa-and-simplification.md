@@ -1298,13 +1298,20 @@ code shows (chapter 04's `calleeargs` measure), or the pop its prototype
 states or its returns prove releases all of it. When the walk cannot settle
 the callee's stack effect (a call it cannot read, such as a string helper
 handed the argument's address), what the callee's own reached returns pop
-(`ret 0x20`) counts as that pop. What the caller removes after the call (the
-rest of the call's `calleeargs` window) does not: a `__cdecl` callee pops only
-its return address, and the scan that reads the cleanup also credits an `add
-esp` that releases the caller's own locals before its epilogue, so it would
-place a bottom-of-frame local, or the block of a later call (`f(g(0), t)`
-copies `t` before calling `g`), in the next call's arguments, and stating that
-cleanup as the call's pop would move every stack slot after the call. MSVC
+(`ret 0x20`) counts as that pop, but only when every return the walk reaches
+pops the same, the walk followed every path (no indirect jump, undecodable
+instruction or budget overrun), and no path ran into a software interrupt
+(`int3` padding) or fell through into another function the symbol table or
+the lazy entry set knows. A path that ends in a call the walk cannot read,
+which does not return, otherwise runs on into the next function, whose `ret
+0x20` would be stated as a `__cdecl` callee's pop. What the caller removes
+after the call (the rest of the call's `calleeargs` window) does not: a
+`__cdecl` callee pops only its return address, and the scan that reads the
+cleanup also credits an `add esp` that releases the caller's own locals
+before its epilogue, so it would place a bottom-of-frame local, or the block of
+a later call (`f(g(0), t)` copies `t` before calling `g`), in the next call's
+arguments, and stating that cleanup as the call's pop would move every stack
+slot after the call. MSVC
 builds such a block partly from an earlier `__cdecl` call's pushes whose
 cleanup it deferred (`push 0x20; push eax; push ecx; call memcpy; sub
 esp,0x14; mov edi,esp; rep movsd`), so the 32-byte struct sits 12 bytes above

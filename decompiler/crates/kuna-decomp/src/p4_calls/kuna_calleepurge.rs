@@ -132,8 +132,10 @@ pub fn callee_window(arch: &Architecture, entry: &Address, call_at: &Address) ->
 }
 
 /// (`calleeargs`) What the reached returns of the direct callee `entry` pop
-/// above the return address (`ret 0x20`), when the walk reaches one and the
-/// callee does not move its caller's stack.
+/// above the return address (`ret 0x20`), when every one the walk reaches pops
+/// the same, the walk followed every path, no path ran into a software
+/// interrupt (`int3` padding) or fell through into another known function, and
+/// the callee does not move its caller's stack.
 pub fn callee_return_pop(arch: &Architecture, entry: &Address) -> Option<u32> {
     if !applies(arch) || entry.is_invalid() {
         return None;
@@ -142,7 +144,7 @@ pub fn callee_return_pop(arch: &Architecture, entry: &Address) -> Option<u32> {
     if s.effect == Effect::Unbalanced {
         return None;
     }
-    s.ret_pops.map(|ep| (ep - 4).max(0) as u32)
+    s.own_pop.map(|ep| (ep - 4) as u32)
 }
 
 /// Does the direct call target `entry` return with its caller's stack pointer
@@ -245,13 +247,25 @@ pub struct Summary {
     /// The most any reached return adds to the stack pointer, whether or not
     /// the stack pointer was back at its entry value there.
     pub ret_pops: Option<int4>,
+    /// (`calleeargs`) What every reached return adds to the stack pointer, when
+    /// they agree and no path may have left the callee's own code: the walk
+    /// followed every path, reached no software interrupt (`int3` padding
+    /// after a call that does not return) and fell through into no other known
+    /// function.
+    pub own_pop: Option<int4>,
     /// (`calleeargs`) A return leaves a stack address in a caller-saved
     /// register.
     pub returns_stack: bool,
 }
 
-const UNKNOWN: Summary =
-    Summary { effect: Effect::Unknown, writes: 0, arg_bytes: None, ret_pops: None, returns_stack: false };
+const UNKNOWN: Summary = Summary {
+    effect: Effect::Unknown,
+    writes: 0,
+    arg_bytes: None,
+    ret_pops: None,
+    own_pop: None,
+    returns_stack: false,
+};
 
 /// One instruction's p-code and length.
 type Decoded = Rc<(Vec<(OpCode, Option<VarnodeData>, Vec<VarnodeData>)>, uintb)>;
@@ -351,6 +365,11 @@ fn decode(arch: &Architecture, space: &Rc<AddrSpace>, at: uintb) -> Option<Decod
     }
     cache.decoded.insert(at, found.clone());
     Some(found)
+}
+
+/// Does a function the symbol table or the lazy entry set knows start at `at`?
+fn is_entry(arch: &Architecture, space: &Rc<AddrSpace>, at: uintb) -> bool {
+    arch.is_lazy_entry(at) || arch.symboltab.find_function_across_scopes(&Address::new(space.clone(), at)).is_some()
 }
 
 /// An import's address-table slot, which a resolved `call [slot]` targets:
@@ -585,6 +604,8 @@ pub(crate) struct Step {
     pub call: Option<Call>,
     /// An indirect jump: the walk cannot follow it.
     pub unknown: bool,
+    /// A software interrupt (`int3`, `int 0x29`).
+    pub interrupt: bool,
     /// The callee-saved registers ([`CALLEE_SAVED`] bits) the instruction writes.
     pub writes: u8,
     /// The end (entry-relative) of the highest argument byte touched, 4 if none.
@@ -650,6 +671,7 @@ pub(crate) fn step_with(
         ret_pop: None,
         call: None,
         unknown: false,
+        interrupt: false,
         writes: 0,
         arg_end: 4,
         unplaced: false,
@@ -775,6 +797,7 @@ pub(crate) fn step_with(
             OpCode::CPUI_BRANCHIND => {
                 let trap = ins.first().is_some_and(|d| unique(d) && trapped.contains(&d.offset));
                 s.unknown |= !trap;
+                s.interrupt |= trap;
                 s.falls_through = false;
                 None
             }
@@ -787,6 +810,7 @@ pub(crate) fn step_with(
             OpCode::CPUI_CALLIND => {
                 let target = ins.first();
                 let interrupt = target.is_some_and(|d| unique(d) && trapped.contains(&d.offset));
+                s.interrupt |= interrupt;
                 if !interrupt {
                     let slot = target
                         .filter(|d| unique(d))
@@ -874,6 +898,7 @@ fn walk(arch: &Architecture, entry: &Address, depth: u8) -> Option<(Summary, u8)
     let (mut unknown, mut unbalanced, mut incomplete, mut unplaced) = (false, false, false, false);
     let mut arg_end: i64 = 4;
     let mut ret_pops: Option<int4> = None;
+    let (mut mixed, mut strayed) = (false, false);
     let mut need = 0u8;
     let mut writes = 0u8;
     let mut extrapop: Option<int4> = None;
@@ -915,9 +940,15 @@ fn walk(arch: &Architecture, entry: &Address, depth: u8) -> Option<(Summary, u8)
                 }
             }
         }
-        if let Some(p) = s.ret_pop.filter(|p| (4..=MAX_EXTRAPOP as i64).contains(p)) {
-            ret_pops = Some(ret_pops.map_or(p as int4, |q| q.max(p as int4)));
+        if let Some(p) = s.ret_pop {
+            if (4..=MAX_EXTRAPOP as i64).contains(&p) {
+                mixed |= ret_pops.is_some_and(|q| q != p as int4);
+                ret_pops = Some(ret_pops.map_or(p as int4, |q| q.max(p as int4)));
+            } else {
+                mixed = true;
+            }
         }
+        strayed |= s.interrupt;
         if s.ret.is_none() && s.state.0[SP].and_then(Val::as_exact).is_some_and(|sp| sp > 0) {
             unbalanced = true;
         }
@@ -985,11 +1016,16 @@ fn walk(arch: &Architecture, entry: &Address, depth: u8) -> Option<(Summary, u8)
             }
         }
         if s.falls_through {
-            work.push((at.wrapping_add(*len), s.state));
+            let next = at.wrapping_add(*len);
+            if track && !strayed && !seen.contains_key(&next) {
+                strayed = next != entry.get_offset() && is_entry(arch, &space, next);
+            }
+            work.push((next, s.state));
         }
         work.extend(s.targets.iter().map(|&t| (t, s.state)));
     }
     let arg_bytes = (!incomplete && !unplaced).then(|| (((arg_end + 3) & !3) - 4) as u32);
+    let own_pop = ret_pops.filter(|_| !incomplete && !mixed && !strayed);
     unknown |= incomplete;
     let effect = if unbalanced {
         Effect::Unbalanced
@@ -1002,7 +1038,7 @@ fn walk(arch: &Architecture, entry: &Address, depth: u8) -> Option<(Summary, u8)
     } else {
         Effect::NoReturn
     };
-    Some((Summary { effect, writes, arg_bytes, ret_pops, returns_stack }, need))
+    Some((Summary { effect, writes, arg_bytes, ret_pops, own_pop, returns_stack }, need))
 }
 
 #[cfg(test)]
