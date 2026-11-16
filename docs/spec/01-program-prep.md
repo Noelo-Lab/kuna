@@ -2802,13 +2802,24 @@ TOCs include aliases that disagree and cannot seed their shared code entry.
 This resolver declines all descriptor-stub names if any validated descriptor's
 TOC remains unresolved: without a caller-specific TOC, the unknown value could
 select a different import and invalidate a no-return fact.
-Both full environment-word and GNU lazy-resolution forms are supported. A lazy
+A stub addresses the descriptor from `r2` itself or from a base that `addis`
+forms from `r2`, and it ends in `bctr` or in the GNU lazy-resolution tail.
+The entry goes through `r11` or `r12`, an `addis` base is the other of the
+two, and the move to CTR directly follows the entry load or the TOC load.
+Loading the environment word into `r11` is optional. From an `addis` base it
+is the last instruction before the ending. From `r2` it must directly follow
+an early CTR move and precede the TOC load, which replaces `r2`. An environment
+load in any other position is declined, as is a stub that does not load the
+TOC. GNU ld's rarer forms also stay unnamed: an `addi` that moves the base when
+the TOC or environment offset would cross into the next 64 KiB, the `xor`/`add`
+pair that replaces the lazy tail when the resolver is out of branch range, and a
+stub without the TOC save. A lazy
 stub's zero-TOC branch must reach the matching import's resolver entry: its
 relocation index, branch to the common glink code, and the common code's load of
 `DT_PLTGOT` are validated against `DT_PPC64_GLINK` and `DT_JMPREL`. Returning
 fallbacks, entries for another slot, and unknown resolver code or metadata are
 declined. Currently only the two-instruction resolver entries with indices below
-32768 qualify. The full environment-word form needs no lazy resolver.
+32768 qualify. A stub that ends in `bctr` needs no lazy resolver.
 The existing known-no-return pass consumes these names, so a guard failure
 import no longer introduces false fall-through or consumes the normal return.
 ELFv2 decoding and ordinary returning imports retain their existing behavior.
