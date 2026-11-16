@@ -1857,7 +1857,10 @@ classified:
   (`kuna_directalias.rs (aliases)`) aliases a trial only when the bytes it
   touches overlap the trial; every other pointer keeps the boundary above
   (`varmap.rs (AliasChecker::split_direct)`, which classifies the gathered
-  pointers once per gather). Such a pointer is an
+  pointers once per gather, and again when the pass drops or adds one of them
+  as a call input and that changes its class,
+  `varmap.rs (AliasChecker::refresh_split_for)`: a pointer a call stops taking
+  may be left only a store's address). Such a pointer is an
   access heritage has not converted yet: a stack pointer restored from the
   frame slot it was saved in after an `alloca` is still one when call inputs
   are scored, and the call after the restore storing its argument at -0x2c

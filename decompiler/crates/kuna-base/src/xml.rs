@@ -2206,7 +2206,8 @@ mod tests {
         // and kuna-libcnames-win32 / a local takes the name of the Win32 call it meets
         // and kuna-libcnames-addr / a stack object takes the name of the library parameter its address meets
         // and kuna-x86-directalias / a call keeps an argument a later direct stack store sits below
-        assert_eq!(count, 757, "corpus file count drifted");
+        // and kuna-x86-directalias-freed / and does so after an earlier call stops taking that pointer
+        assert_eq!(count, 758, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

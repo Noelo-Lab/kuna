@@ -1451,6 +1451,11 @@ impl Action for ActionActiveParam {
                 // can hold `&mut FuncCallSpecs` and `&mut Funcdata` at once, then
                 // put it back at the same index so the qlst stays index-stable for
                 // the remaining iterations.
+                let call_op = data.get_call_specs(idx).get_op();
+                let before = aliascheck
+                    .as_ref()
+                    .filter(|ac| ac.split_drawn())
+                    .map(|_| crate::p4_calls::kuna_directalias::call_inputs(data, call_op));
                 if data.get_call_specs(idx).active_input().needs_final_check() {
                     crate::p4_calls::kuna_reloadarg::recheck(data, idx, aliascheck.as_mut());
                 }
@@ -1499,6 +1504,9 @@ impl Action for ActionActiveParam {
                 }
                 fc.clear_active_input();
                 data.restore_call_specs_at(idx, fc);
+                if let (Some(ac), Some(before)) = (aliascheck.as_mut(), before) {
+                    crate::p4_calls::kuna_directalias::refresh_rewritten(data, ac, call_op, &before);
+                }
                 self.base.count += 1;
             }
         }

@@ -358,6 +358,7 @@ pub fn check_input_trial_use(
         if data.get_call_specs_mut(idx).get_active_input().get_trial(i).is_definitely_not_used() {
             let c = data.new_constant(vn_size, 0);
             let _ = data.op_set_input(op, c, slot);
+            crate::p4_calls::kuna_directalias::refresh(data, aliascheck, vn);
         }
     }
 }

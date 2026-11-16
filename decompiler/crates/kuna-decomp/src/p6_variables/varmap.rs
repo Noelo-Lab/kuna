@@ -669,6 +669,8 @@ pub struct AliasChecker {
     direction: int4,
     /// (kuna) [`Self::split_direct`]'s answer for the current gather.
     direct_split: Option<(uintb, Vec<(uintb, uintb)>)>,
+    /// (kuna) The `(pointer, bytes)` of each gathered pointer `direct_split` took as direct.
+    direct_bases: Vec<(crate::context::VarnodeId, uintb)>,
 }
 
 impl Default for AliasChecker {
@@ -690,6 +692,7 @@ impl AliasChecker {
             alias_boundary: 0,
             direction: 0,
             direct_split: None,
+            direct_bases: Vec::new(),
         }
     }
 
@@ -819,13 +822,16 @@ impl AliasChecker {
 
     /// (kuna) The gathered pointers split by `direct`: [`Self::has_local_alias`]'s
     /// boundary drawn from the local ones it rejects, and `(start, bytes)` for
-    /// each it accepts. Computed once per gather; call after `has_local_alias`
-    /// gathered them.
+    /// each it accepts. Computed once per gather, and again after
+    /// [`Self::refresh_split_for`] finds a pointer's answer changed; call after
+    /// `has_local_alias` gathered them.
     pub fn split_direct(&mut self, direct: impl Fn(&AddBase) -> Option<uintb>) -> &(uintb, Vec<(uintb, uintb)>) {
         let (alias, add_base, direction) = (&self.alias, &self.add_base, self.direction);
         let (local_boundary, local_extreme, alias_boundary) =
             (self.local_boundary, self.local_extreme, self.alias_boundary);
+        let direct_bases = &mut self.direct_bases;
         self.direct_split.get_or_insert_with(|| {
+            direct_bases.clear();
             if alias.len() != add_base.len() {
                 return (alias_boundary, Vec::new());
             }
@@ -833,6 +839,7 @@ impl AliasChecker {
             let mut ranges = Vec::new();
             for (&start, base) in alias.iter().zip(add_base) {
                 if let Some(bytes) = direct(base) {
+                    direct_bases.push((base.base, bytes));
                     ranges.push((start, bytes));
                 } else if if direction == 1 { start >= local_boundary } else { start <= local_boundary } {
                     boundary = boundary.min(start);
@@ -840,6 +847,24 @@ impl AliasChecker {
             }
             (boundary, ranges)
         })
+    }
+
+    /// (kuna) Is [`Self::split_direct`]'s answer cached?
+    pub fn split_drawn(&self) -> bool {
+        self.direct_split.is_some()
+    }
+
+    /// (kuna) `vn` gained or lost a use: drop [`Self::split_direct`]'s answer
+    /// when `vn` is a gathered pointer whose `direct` answer, `now`, is no
+    /// longer the one the split was drawn with.
+    pub fn refresh_split_for(&mut self, vn: crate::context::VarnodeId, now: impl FnOnce() -> Option<uintb>) {
+        if self.direct_split.is_none() {
+            return;
+        }
+        let was = self.direct_bases.iter().find(|&&(id, _)| id == vn).map(|&(_, bytes)| bytes);
+        if was != now() && (was.is_some() || self.add_base.iter().any(|b| b.base == vn)) {
+            self.direct_split = None;
+        }
     }
 
     /// (kuna) Whether a pointer formed into the parameter area could reach the

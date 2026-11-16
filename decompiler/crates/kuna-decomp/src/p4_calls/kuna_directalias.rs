@@ -17,7 +17,7 @@
 //! trial only when those bytes overlap it; every other pointer keeps the
 //! upstream boundary. Always on.
 
-use crate::context::VarnodeId;
+use crate::context::{OpId, VarnodeId};
 use crate::funcdata::Funcdata;
 use crate::varmap::{AddBase, AliasChecker};
 use kuna_base::types::{int4, uintb};
@@ -35,12 +35,29 @@ pub fn aliases(data: &Funcdata, aliascheck: &mut AliasChecker, offset: uintb, si
         || direct.iter().any(|&(start, bytes)| (start as u128) < end && (offset as u128) < start as u128 + bytes as u128)
 }
 
+/// `vn` stopped or started being a call input: redraw the cached split if
+/// that changed whether it is direct.
+pub fn refresh(data: &Funcdata, aliascheck: &mut AliasChecker, vn: VarnodeId) {
+    aliascheck.refresh_split_for(vn, || direct_bytes(data, vn));
+}
+
+/// The inputs of call `op`, taken before its argument list is rewritten and
+/// handed to [`refresh_rewritten`] after.
+pub fn call_inputs(data: &Funcdata, op: OpId) -> Vec<VarnodeId> {
+    data.obank().get(op).map(|o| (0..o.num_input()).filter_map(|i| o.get_in(i)).collect()).unwrap_or_default()
+}
+
+/// [`refresh`] every input the rewrite of call `op` from `before` dropped or added.
+pub fn refresh_rewritten(data: &Funcdata, aliascheck: &mut AliasChecker, op: OpId, before: &[VarnodeId]) {
+    let after = call_inputs(data, op);
+    for &vn in before.iter().filter(|v| !after.contains(v)).chain(after.iter().filter(|v| !before.contains(v))) {
+        refresh(data, aliascheck, vn);
+    }
+}
+
 /// The widest access through `vn` when it is only ever the address of a
 /// `LOAD`/`STORE` and a fixed offset from the stack pointer.
 fn direct_bytes(data: &Funcdata, vn: VarnodeId) -> Option<uintb> {
-    if !fixed_offset(data, vn) {
-        return None;
-    }
     let mut widest = 0;
     for id in data.vbank().get(vn)?.descend_iter() {
         let op = data.obank().get(id)?;
@@ -51,7 +68,7 @@ fn direct_bytes(data: &Funcdata, vn: VarnodeId) -> Option<uintb> {
         };
         widest = widest.max(data.vbank().get(accessed)?.get_size().max(0) as uintb);
     }
-    (widest > 0).then_some(widest)
+    (widest > 0 && fixed_offset(data, vn)).then_some(widest)
 }
 
 /// Is `vn` the stack-pointer input plus constants, through copies only?
