@@ -3671,12 +3671,11 @@ fn scan_language_database(spec_roots: &[impl IntoSpecRoot], registry: &IdRegistr
     Ok(db)
 }
 
-/// Scan `spec_roots` into a [`LanguageDatabase`] once, for a [`Bootstrap`]
-/// or the `*_with_db` bootstraps ([`bootstrap_from_object_with_db`],
-/// [`bootstrap_from_image_with_db`]) to share. Every other bootstrap scans its
-/// spec roots again: it lists their `.ldefs` and parses every one, whichever
-/// language the image needs. A bootstrap over the database builds what the
-/// same bootstrap over the roots builds.
+/// Scan `spec_roots` into a [`LanguageDatabase`] once, for [`Bootstrap`]s to
+/// share. A bootstrap over spec roots scans them again at each load: it lists
+/// their `.ldefs` and parses every one, whichever language the image needs. A
+/// bootstrap over the database builds what the same bootstrap over the roots
+/// builds.
 ///
 /// A bootstrap only reads the database, and the database is `Send + Sync`, so
 /// threads may share one (behind an `Arc` or a `&'static`) and load images at
@@ -3850,16 +3849,6 @@ pub fn bootstrap_program(
     binaryimage: Rc<Element>,
     arch_id: &str,
     spec_roots: &[String],
-) -> KunaResult<ConsoleProgram> {
-    Bootstrap::new(spec_roots).xml_image(binaryimage, arch_id)
-}
-
-/// [`bootstrap_program`] over any spec roots: directories, in-memory
-/// [`MemorySpecs`](kuna_decomp::kuna_memoryspecs::MemorySpecs) trees, or a mix.
-pub fn bootstrap_program_with_specs(
-    binaryimage: Rc<Element>,
-    arch_id: &str,
-    spec_roots: &[impl IntoSpecRoot],
 ) -> KunaResult<ConsoleProgram> {
     Bootstrap::new(spec_roots).xml_image(binaryimage, arch_id)
 }
@@ -4196,19 +4185,6 @@ pub fn bootstrap_from_raw(
     Bootstrap::new(spec_roots).target(target).arm_isa(isa).raw(path, base, entries)
 }
 
-/// [`bootstrap_from_raw`] over any spec roots: directories, in-memory
-/// [`MemorySpecs`](kuna_decomp::kuna_memoryspecs::MemorySpecs) trees, or a mix.
-pub fn bootstrap_from_raw_with_specs(
-    path: &str,
-    target: &str,
-    base: u64,
-    entries: &[u64],
-    isa: Option<ArmIsa>,
-    spec_roots: &[impl IntoSpecRoot],
-) -> KunaResult<ConsoleProgram> {
-    Bootstrap::new(spec_roots).target(target).arm_isa(isa).raw(path, base, entries)
-}
-
 /// [`bootstrap_from_raw`] over the file, or over `bytes` built in memory.
 pub(crate) fn bootstrap_raw_image(
     path: &str,
@@ -4359,41 +4335,6 @@ pub fn bootstrap_from_image_with_isa(
     Bootstrap::new(spec_roots).target(target).arm_isa(isa).image(path)
 }
 
-/// [`bootstrap_from_image_with_isa`] over any spec roots: directories, in-memory
-/// [`MemorySpecs`](kuna_decomp::kuna_memoryspecs::MemorySpecs) trees, or a mix.
-pub fn bootstrap_from_image_with_isa_with_specs(
-    path: &str,
-    target: &str,
-    spec_roots: &[impl IntoSpecRoot],
-    isa: Option<ArmIsa>,
-) -> KunaResult<ConsoleProgram> {
-    Bootstrap::new(spec_roots).target(target).arm_isa(isa).image(path)
-}
-
-/// [`bootstrap_from_image_with_isa`] with the load-time options explicit, as
-/// [`bootstrap_from_object_with_options`] takes them.
-pub fn bootstrap_from_image_with_options(
-    path: &str,
-    target: &str,
-    spec_roots: &[impl IntoSpecRoot],
-    isa: Option<ArmIsa>,
-    options: &LoadOptions,
-) -> KunaResult<ConsoleProgram> {
-    Bootstrap::new(spec_roots).target(target).arm_isa(isa).options(options).image(path)
-}
-
-/// [`bootstrap_from_image_with_options`] over a language database a caller
-/// scanned once ([`language_database`]) instead of spec roots it scans again.
-pub fn bootstrap_from_image_with_db(
-    path: &str,
-    target: &str,
-    db: &LanguageDatabase,
-    isa: Option<ArmIsa>,
-    options: &LoadOptions,
-) -> KunaResult<ConsoleProgram> {
-    Bootstrap::new(db).target(target).arm_isa(isa).options(options).image(path)
-}
-
 /// The image dispatch behind every image bootstrap; `from_env` as in
 /// [`bootstrap_object`].
 pub(crate) fn bootstrap_image(
@@ -4462,18 +4403,6 @@ pub fn bootstrap_from_mz_bytes(
     bytes: &[u8],
     target: &str,
     spec_roots: &[String],
-    isa: Option<ArmIsa>,
-) -> KunaResult<ConsoleProgram> {
-    Bootstrap::new(spec_roots).target(target).arm_isa(isa).mz_bytes(path, bytes)
-}
-
-/// [`bootstrap_from_mz_bytes`] over any spec roots: directories, in-memory
-/// [`MemorySpecs`](kuna_decomp::kuna_memoryspecs::MemorySpecs) trees, or a mix.
-pub fn bootstrap_from_mz_bytes_with_specs(
-    path: &str,
-    bytes: &[u8],
-    target: &str,
-    spec_roots: &[impl IntoSpecRoot],
     isa: Option<ArmIsa>,
 ) -> KunaResult<ConsoleProgram> {
     Bootstrap::new(spec_roots).target(target).arm_isa(isa).mz_bytes(path, bytes)
@@ -4563,16 +4492,6 @@ pub fn bootstrap_from_image(
     Bootstrap::new(spec_roots).target(target).image(path)
 }
 
-/// [`bootstrap_from_image`] over any spec roots: directories, in-memory
-/// [`MemorySpecs`](kuna_decomp::kuna_memoryspecs::MemorySpecs) trees, or a mix.
-pub fn bootstrap_from_image_with_specs(
-    path: &str,
-    target: &str,
-    spec_roots: &[impl IntoSpecRoot],
-) -> KunaResult<ConsoleProgram> {
-    Bootstrap::new(spec_roots).target(target).image(path)
-}
-
 /// Whether the file at `path` opens as a UEFI TE, reading only the bytes the
 /// format probe needs. An unreadable file is not a TE; the loader that then
 /// opens it reports why.
@@ -4608,17 +4527,6 @@ pub fn bootstrap_from_te(
     Bootstrap::new(spec_roots).target(target).arm_isa(isa).te(path)
 }
 
-/// [`bootstrap_from_te`] over any spec roots: directories, in-memory
-/// [`MemorySpecs`](kuna_decomp::kuna_memoryspecs::MemorySpecs) trees, or a mix.
-pub fn bootstrap_from_te_with_specs(
-    path: &str,
-    target: &str,
-    spec_roots: &[impl IntoSpecRoot],
-    isa: Option<ArmIsa>,
-) -> KunaResult<ConsoleProgram> {
-    Bootstrap::new(spec_roots).target(target).arm_isa(isa).te(path)
-}
-
 pub(crate) fn bootstrap_te(
     path: &str,
     target: &str,
@@ -4637,18 +4545,6 @@ pub fn bootstrap_from_te_bytes(
     bytes: &[u8],
     target: &str,
     spec_roots: &[String],
-    isa: Option<ArmIsa>,
-) -> KunaResult<ConsoleProgram> {
-    Bootstrap::new(spec_roots).target(target).arm_isa(isa).te_bytes(path, bytes)
-}
-
-/// [`bootstrap_from_te_bytes`] over any spec roots: directories, in-memory
-/// [`MemorySpecs`](kuna_decomp::kuna_memoryspecs::MemorySpecs) trees, or a mix.
-pub fn bootstrap_from_te_bytes_with_specs(
-    path: &str,
-    bytes: &[u8],
-    target: &str,
-    spec_roots: &[impl IntoSpecRoot],
     isa: Option<ArmIsa>,
 ) -> KunaResult<ConsoleProgram> {
     Bootstrap::new(spec_roots).target(target).arm_isa(isa).te_bytes(path, bytes)
@@ -4761,16 +4657,6 @@ pub fn bootstrap_from_object(
     Bootstrap::new(spec_roots).target(target).object(path)
 }
 
-/// [`bootstrap_from_object`] over any spec roots: directories, in-memory
-/// [`MemorySpecs`](kuna_decomp::kuna_memoryspecs::MemorySpecs) trees, or a mix.
-pub fn bootstrap_from_object_with_specs(
-    path: &str,
-    target: &str,
-    spec_roots: &[impl IntoSpecRoot],
-) -> KunaResult<ConsoleProgram> {
-    Bootstrap::new(spec_roots).target(target).object(path)
-}
-
 /// The MIPS t9 entry probe: the PIC-setup seed for `entry`, truncated to the
 /// `register_bytes`-wide t9. It reads the loader's live bytes on each call
 /// rather than holding them, because `adjust_vma` must own them exclusively to
@@ -4793,7 +4679,7 @@ fn mips_t9_probe(
 
 /// Explicit-input-context form of [`bootstrap_from_object`]: the ARM decode
 /// mode comes from `isa`, the load-time options from the environment.
-/// [`bootstrap_from_object_with_options`] takes both explicitly.
+/// [`Bootstrap`] takes both explicitly.
 pub fn bootstrap_from_object_with_isa(
     path: &str,
     target: &str,
@@ -4803,50 +4689,12 @@ pub fn bootstrap_from_object_with_isa(
     Bootstrap::new(spec_roots).target(target).arm_isa(isa).object(path)
 }
 
-/// [`bootstrap_from_object_with_isa`] over any spec roots: directories, in-memory
-/// [`MemorySpecs`](kuna_decomp::kuna_memoryspecs::MemorySpecs) trees, or a mix.
-pub fn bootstrap_from_object_with_isa_with_specs(
-    path: &str,
-    target: &str,
-    spec_roots: &[impl IntoSpecRoot],
-    isa: Option<ArmIsa>,
-) -> KunaResult<ConsoleProgram> {
-    Bootstrap::new(spec_roots).target(target).arm_isa(isa).object(path)
-}
-
-/// [`bootstrap_from_object`] with every setting explicit: the ARM decode mode
-/// and the load-time options. Nothing on this path reads or writes the process
-/// environment, so threads may load images at once with different options. The
-/// program keeps `options`, and its analysis commit and decompiles read them.
-pub fn bootstrap_from_object_with_options(
-    path: &str,
-    target: &str,
-    spec_roots: &[impl IntoSpecRoot],
-    isa: Option<ArmIsa>,
-    options: &LoadOptions,
-) -> KunaResult<ConsoleProgram> {
-    Bootstrap::new(spec_roots).target(target).arm_isa(isa).options(options).object(path)
-}
-
-/// [`bootstrap_from_object_with_options`] over a language database a caller
-/// scanned once ([`language_database`]) instead of spec roots it scans again.
-/// Threads may share the database and load images at once.
-pub fn bootstrap_from_object_with_db(
-    path: &str,
-    target: &str,
-    db: &LanguageDatabase,
-    isa: Option<ArmIsa>,
-    options: &LoadOptions,
-) -> KunaResult<ConsoleProgram> {
-    Bootstrap::new(db).target(target).arm_isa(isa).options(options).object(path)
-}
-
 /// The object bootstrap. `from_env` is set by the entry points that take no
 /// options: their load and the program it builds read the environment live, and
 /// they publish the image's Go toolchain version in
 /// [`GOVERSION_ENV`](kuna_decomp::kuna_goreg::GOVERSION_ENV) (cleared for a
 /// non-Go image). An explicit-options load leaves the environment alone and
-/// never reads it.
+/// never reads it. The options are in force from the first byte read.
 pub(crate) fn bootstrap_object(
     path: &str,
     target: &str,
@@ -4855,9 +4703,6 @@ pub(crate) fn bootstrap_object(
     options: &LoadOptions,
     from_env: bool,
 ) -> KunaResult<ConsoleProgram> {
-    // The caller's options are in force from the first byte read: a gate read
-    // outside every scope falls back to the environment, which an explicit
-    // load must never consult.
     let _caller = enter_load(options, from_env);
     let target = kuna_analysis::loadimage_object::explicit_language_target(target).unwrap_or("");
     let registry = build_registry();
@@ -6547,12 +6392,6 @@ pub fn bootstrap_from_root(root: &Rc<Element>, spec_roots: &[String]) -> KunaRes
     Bootstrap::new(spec_roots).xml_root(root)
 }
 
-/// [`bootstrap_from_root`] over any spec roots: directories, in-memory
-/// [`MemorySpecs`](kuna_decomp::kuna_memoryspecs::MemorySpecs) trees, or a mix.
-pub fn bootstrap_from_root_with_specs(root: &Rc<Element>, spec_roots: &[impl IntoSpecRoot]) -> KunaResult<ConsoleProgram> {
-    Bootstrap::new(spec_roots).xml_root(root)
-}
-
 /// The arch id and `<binaryimage>` a parsed XML document root names.
 pub(crate) fn xml_root_image(root: &Rc<Element>) -> KunaResult<(Rc<Element>, String)> {
     let binaryimage = find_binaryimage(root)
@@ -6657,16 +6496,6 @@ pub fn bootstrap_from_file(
     path: &str,
     target: &str,
     spec_roots: &[String],
-) -> KunaResult<ConsoleProgram> {
-    Bootstrap::new(spec_roots).target(target).file(path)
-}
-
-/// [`bootstrap_from_file`] over any spec roots: directories, in-memory
-/// [`MemorySpecs`](kuna_decomp::kuna_memoryspecs::MemorySpecs) trees, or a mix.
-pub fn bootstrap_from_file_with_specs(
-    path: &str,
-    target: &str,
-    spec_roots: &[impl IntoSpecRoot],
 ) -> KunaResult<ConsoleProgram> {
     Bootstrap::new(spec_roots).target(target).file(path)
 }

@@ -6,7 +6,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
-use kuna_console::engine::{bootstrap_from_object_with_specs, ConsoleProgram};
+use kuna_console::engine::{Bootstrap, ConsoleProgram};
 use kuna_console::project::{decompile_entry, DecompileOptions};
 use kuna_decomp::kuna_memoryspecs::{MemorySpecs, SpecRoot};
 
@@ -67,7 +67,7 @@ fn embedded() -> &'static [(String, Vec<u8>)] {
 }
 
 fn bootstrap(roots: &[SpecRoot]) -> ConsoleProgram {
-    let mut prog = bootstrap_from_object_with_specs(&fixture(), "", roots).expect("bootstrap fauxware");
+    let mut prog = Bootstrap::new(roots).object(&fixture()).expect("bootstrap fauxware");
     prog.commit_pending_analysis()
         .expect("analysis commit succeeds");
     prog
@@ -101,7 +101,7 @@ fn memory_specs_decompile_as_the_specs_directory_does() {
 #[test]
 fn memory_specs_never_fall_back_to_the_filesystem() {
     let memory = MemorySpecs::from_files(embedded().iter().filter(|(rel, _)| rel != X86_64_SLA).cloned());
-    let err = match bootstrap_from_object_with_specs(&fixture(), "", &[memory]) {
+    let err = match Bootstrap::new(&[memory]).object(&fixture()) {
         Ok(_) => panic!("bootstrapped without {X86_64_SLA}"),
         Err(err) => err.to_string(),
     };

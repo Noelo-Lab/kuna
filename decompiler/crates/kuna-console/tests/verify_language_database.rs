@@ -6,10 +6,7 @@
 use std::path::PathBuf;
 
 use kuna_base::error::KunaResult;
-use kuna_console::engine::{
-    bootstrap_from_image_with_db, bootstrap_from_image_with_options, bootstrap_from_object_with_db,
-    bootstrap_from_object_with_options, language_database, ConsoleProgram,
-};
+use kuna_console::engine::{language_database, Bootstrap, ConsoleProgram};
 use kuna_console::project::{decompile_entry, DecompileOptions};
 use kuna_decomp::kuna_loadoptions::LoadOptions;
 use kuna_decomp::kuna_memoryspecs::SpecRoot;
@@ -68,9 +65,8 @@ fn each_image(
 fn one_database_serves_images_of_two_languages() {
     let db = language_database(&specs()).expect("scan specs");
     let options = LoadOptions::default();
-    let shared = each_image(|path| bootstrap_from_object_with_db(path, "", &db, None, &options));
-    let rescanned =
-        each_image(|path| bootstrap_from_object_with_options(path, "", &specs(), None, &options));
+    let shared = each_image(|path| Bootstrap::new(&db).options(&options).object(path));
+    let rescanned = each_image(|path| Bootstrap::new(&specs()).options(&options).object(path));
     for ((name, language, _), (archid, _)) in IMAGES.iter().zip(&shared) {
         assert!(archid.starts_with(language), "{name} loaded as {archid}");
     }
@@ -82,9 +78,8 @@ fn one_database_serves_images_of_two_languages() {
 fn the_image_dispatch_takes_a_database() {
     let db = language_database(&specs()).expect("scan specs");
     let options = LoadOptions::default();
-    let shared = each_image(|path| bootstrap_from_image_with_db(path, "", &db, None, &options));
-    let rescanned =
-        each_image(|path| bootstrap_from_image_with_options(path, "", &specs(), None, &options));
+    let shared = each_image(|path| Bootstrap::new(&db).options(&options).image(path));
+    let rescanned = each_image(|path| Bootstrap::new(&specs()).options(&options).image(path));
     assert_eq!(shared, rescanned);
 }
 
@@ -92,7 +87,7 @@ fn the_image_dispatch_takes_a_database() {
 fn a_database_without_the_language_refuses_the_image() {
     let db = language_database(&[repo_root().join("no-such-specs")]).expect("an empty root scans");
     let path = fixture("fauxware");
-    let err = match bootstrap_from_object_with_db(&path, "", &db, None, &LoadOptions::default()) {
+    let err = match Bootstrap::new(&db).options(&LoadOptions::default()).object(&path) {
         Ok(_) => panic!("bootstrapped from an empty database"),
         Err(err) => err.to_string(),
     };
@@ -108,7 +103,7 @@ fn a_bootstrap_over_a_database_does_not_rescan_the_roots() {
     std::fs::create_dir_all(&copy).unwrap();
     for entry in std::fs::read_dir(repo_root().join("specs").join(languages)).unwrap() {
         let entry = entry.unwrap();
-        if entry.file_type().unwrap().is_file() {
+        if entry.path().is_file() {
             std::fs::copy(entry.path(), copy.join(entry.file_name())).unwrap();
         }
     }
@@ -118,8 +113,8 @@ fn a_bootstrap_over_a_database_does_not_rescan_the_roots() {
 
     let path = fixture("fauxware");
     let options = LoadOptions::default();
-    let loaded = bootstrap_from_object_with_db(&path, "", &db, None, &options);
-    let rescanned = bootstrap_from_object_with_options(&path, "", &roots, None, &options);
+    let loaded = Bootstrap::new(&db).options(&options).object(&path);
+    let rescanned = Bootstrap::new(&roots).options(&options).object(&path);
     std::fs::remove_dir_all(&root).unwrap();
     let archid = loaded.expect("bootstrap over the database").arch().archid.clone();
     assert!(archid.starts_with("x86:LE:64:default"), "{archid}");

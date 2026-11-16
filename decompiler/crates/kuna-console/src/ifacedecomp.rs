@@ -4365,10 +4365,10 @@ pub fn register_console_commands(status: &mut IfaceStatus) {
 /// lands and real `KunaError`s flow out of the command bodies; the catch
 /// placement (which frame catches which) is preserved (ADR 0004).
 ///
+/// The command runs under the loaded program's load-time options.
+///
 /// Returns after writing the diagnostic and calling [`IfaceStatus::evaluate_error`].
 pub fn execute(status: &mut IfaceStatus) {
-    // A command runs under the loaded program's load-time options, so a
-    // program bootstrapped with explicit options keeps them in the console.
     let _load = status
         .get_data(DECOMPILE_MODULE)
         .and_then(|data| data.as_any().downcast_ref::<IfaceDecompData>())
