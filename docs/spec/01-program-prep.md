@@ -5101,7 +5101,17 @@ every other binary's pass list is byte-identical to before the pass existed):
   the other and be the only store — so the next slot is also named only when it
   calls the function found. A function in no vtable is a constructor
   `C::C`, but only when `C` or a base has such a virtual destructor, because a
-  non-virtual destructor stores the vptr exactly as a constructor does. A
+  non-virtual destructor stores the vptr exactly as a constructor does, and only
+  when every vptr store goes through `this` read back from a frame slot the
+  function itself spilled it to. That is the shape of unoptimized code, which
+  inlines nothing; in optimized code a helper that a constructor or destructor was
+  inlined into stores the vptr through its first parameter exactly as a
+  constructor does (a by-value factory's return slot, a placement-new helper, the
+  constructor of a class whose first member is a `C`, a `delete p` wrapper), so an
+  optimized constructor is left unnamed rather than risk naming one of those. A
+  fact for a function the symbol table already names (anything but a placeholder,
+  an entry-table slot or a slot index) is dropped, so a recovered name never joins
+  a real one as a second name the call-site lookup could prefer. A
   destructor's slot already carries its slot-index name from the load-time commit;
   the commit of a Function fact replaces a slot-index name (the kind the function
   inventory already ranks as structural) in the same scope with a real,

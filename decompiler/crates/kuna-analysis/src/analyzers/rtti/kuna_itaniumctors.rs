@@ -27,6 +27,15 @@
 //!   but only once `C`, or a base of `C`, is known to have a virtual destructor.
 //!   Without one, the same store is what a non-virtual destructor does, and
 //!   nothing in the store tells the two apart, so the function is left alone.
+//!   And only when every such store goes through `this` read back from a slot the
+//!   function itself spilled it to, the shape of code that inlines nothing. An
+//!   optimized function that stores the vptr through its first parameter may be
+//!   a constructor or a helper a constructor or destructor was inlined into (a
+//!   by-value factory's return slot, a placement-new helper, the constructor of a
+//!   class whose first member is a `C`, a `delete p` wrapper), and the stores are
+//!   the same, so it is left alone.
+//! * A function the symbol table already names keeps that name: the pass never
+//!   adds a second name beside it, which the call-site lookup could prefer.
 //! * A function storing vptrs of classes that are not one inheritance chain, or a
 //!   vtable slot of another class that stores `C`'s vptr (an inlined `clone`), is
 //!   left alone.
@@ -79,13 +88,51 @@ impl AnalysisPass for ItaniumCtorsPass {
             return out;
         };
         let classes = super::kuna_itaniumrtti::recovered_classes(ctx);
+        if classes.is_empty() {
+            return out;
+        }
         if let Some(walker) = Walker::new(ctx) {
             let (mut symbols, has_virtual_dtor) = destructor_slots(&walker, &classes);
             symbols.extend(constructors(&walker, listing, &classes, &has_virtual_dtor));
+            symbols.retain(|s| !named_already(ctx, s.addr));
             out.symbols = symbols;
         }
         out
     }
+}
+
+/// Does the symbol table already give the function at `addr` a name other than a
+/// placeholder, an entry-table slot or a vtable slot index?
+fn named_already(ctx: &AnalysisCtx, addr: u64) -> bool {
+    let Some(space) = ctx.arch.manage().get_default_code_space() else {
+        return false;
+    };
+    let at = Address::new(Rc::clone(space), addr);
+    ctx.arch
+        .symboltab
+        .function_display_name_across_scopes(&at)
+        .is_some_and(|name| !is_structural_name(&name))
+}
+
+fn is_structural_name(name: &str) -> bool {
+    let base = name.rsplit_once("::").map_or(name, |(_, b)| b);
+    let indexed = |rest: &str| {
+        let index = rest.rsplit_once('_').map_or(rest, |(_, i)| i);
+        !index.is_empty() && index.bytes().all(|b| b.is_ascii_digit())
+    };
+    ["sub_", "func_", "FUN_", "LAB_"]
+        .iter()
+        .any(|p| base.starts_with(p))
+        || matches!(base, "_DT_INIT" | "_DT_FINI")
+        || base
+            .strip_prefix("_INIT_")
+            .or_else(|| base.strip_prefix("_FINI_"))
+            .is_some_and(indexed)
+        || (name.contains("::")
+            && base
+                .strip_prefix("vtable_")
+                .or_else(|| base.strip_prefix("vfunc_"))
+                .is_some_and(indexed))
 }
 
 /// One polymorphic class, as the vtable recovery left it.
@@ -110,7 +157,8 @@ fn destructor_slots(walker: &Walker, classes: &[ClassVtables]) -> (Vec<SymFact>,
             .entry(f)
             .or_insert_with(|| {
                 let w = walker.walk(f, &owner_of, MAX_DTOR_INSNS);
-                (owning_class(&w.stores, &owner_of, classes), w.calls)
+                let stores: Vec<(u64, i64)> = w.stores.iter().map(|s| (s.0, s.1)).collect();
+                (owning_class(&stores, &owner_of, classes), w.calls)
             })
             .clone()
     };
@@ -170,7 +218,11 @@ fn constructors(
         if in_a_vtable.contains(&entry) {
             continue;
         }
-        let stores = walker.walk(entry, &owner_of, MAX_INSNS).stores;
+        let walked = walker.walk(entry, &owner_of, MAX_INSNS).stores;
+        if walked.iter().any(|s| !s.2) {
+            continue;
+        }
+        let stores: Vec<(u64, i64)> = walked.iter().map(|s| (s.0, s.1)).collect();
         let Some(c) = owning_class(&stores, &owner_of, classes) else {
             continue;
         };
@@ -308,11 +360,11 @@ type Key = (usize, u64, u32);
 /// One lifted instruction: its p-code and its length.
 type Ops = Vec<(OpCode, Option<VarnodeData>, Vec<VarnodeData>)>;
 
-/// What one walk saw: every `(vptr, offset)` stored through `this`, and every
-/// direct call target.
+/// What one walk saw: every `(vptr, offset, through a spill)` stored through
+/// `this`, and every direct call target.
 #[derive(Default)]
 struct Walk {
-    stores: Vec<(u64, i64)>,
+    stores: Vec<(u64, i64, bool)>,
     calls: Vec<u64>,
 }
 
@@ -322,6 +374,9 @@ enum Val {
     Const(u64),
     /// `this` plus a byte offset.
     This(i64),
+    /// `this` plus a byte offset, read back from a frame slot the function stored
+    /// it to.
+    Spilled(i64),
     /// The stack pointer at entry plus a byte offset.
     Sp(i64),
 }
@@ -486,7 +541,7 @@ impl<'a> Walker<'a> {
         st: &mut State,
         ins: &[VarnodeData],
         owner_of: &HashMap<u64, (usize, bool)>,
-        found: &mut Vec<(u64, i64)>,
+        found: &mut Vec<(u64, i64, bool)>,
     ) {
         let (Some(addr), Some(value)) = (ins.get(1), ins.get(2)) else {
             return;
@@ -498,13 +553,17 @@ impl<'a> Walker<'a> {
                 st.frame
                     .retain(|&(fo, fs), _| fo + i64::from(fs) <= o || o + i64::from(size) <= fo);
                 if let Some(v) = stored {
+                    let v = match v {
+                        Val::This(t) => Val::Spilled(t),
+                        v => v,
+                    };
                     st.frame.insert((o, size), v);
                 }
             }
-            Some(Val::This(o)) => {
+            Some(at @ (Val::This(o) | Val::Spilled(o))) => {
                 if let Some(Val::Const(v)) = stored {
                     if owner_of.contains_key(&v) {
-                        found.push((v, o));
+                        found.push((v, o, matches!(at, Val::Spilled(_))));
                     }
                 }
             }
@@ -567,8 +626,12 @@ impl<'a> Walker<'a> {
                 Some(Val::Const(truncate(r, bits)))
             }
             (Val::This(o), Val::Const(c)) => Some(Val::This(o.wrapping_add(delta(c)))),
+            (Val::Spilled(o), Val::Const(c)) => Some(Val::Spilled(o.wrapping_add(delta(c)))),
             (Val::Sp(o), Val::Const(c)) => Some(Val::Sp(o.wrapping_add(delta(c)))),
             (Val::Const(c), Val::This(o)) if !sub => Some(Val::This(o.wrapping_add(delta(c)))),
+            (Val::Const(c), Val::Spilled(o)) if !sub => {
+                Some(Val::Spilled(o.wrapping_add(delta(c))))
+            }
             (Val::Const(c), Val::Sp(o)) if !sub => Some(Val::Sp(o.wrapping_add(delta(c)))),
             _ => None,
         }
@@ -690,6 +753,31 @@ mod tests {
             vec![8]
         );
         assert_eq!(hex_literals("EAX,EDX").count(), 0);
+    }
+
+    #[test]
+    fn only_a_placeholder_or_slot_name_gives_way() {
+        for structural in [
+            "sub_14ea",
+            "FUN_00101234",
+            "_INIT_0",
+            "_DT_FINI",
+            "shapes::Circle::vtable_0",
+            "shapes::Circle::vfunc_0",
+            "shapes::Widget::vtable_for_Drawable_2",
+            "shapes::Widget::vfunc_for_Drawable_2",
+        ] {
+            assert!(is_structural_name(structural), "{structural}");
+        }
+        for real in [
+            "make_dog",
+            "ce::Opt0::emplace",
+            "zoo::Dog::Dog",
+            "vtable_0",
+            "Box::vtable",
+        ] {
+            assert!(!is_structural_name(real), "{real}");
+        }
     }
 
     #[test]

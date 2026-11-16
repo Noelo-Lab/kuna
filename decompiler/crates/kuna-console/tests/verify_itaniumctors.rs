@@ -100,3 +100,36 @@ fn nothing_is_named_with_the_option_off() {
         assert!(!name.contains("Dog"), "{vma:#x} is named {name} with itaniumrtti off");
     }
 }
+
+/// `itaniumctors_wrap_O2_x86_64.so`: helpers a constructor or destructor was
+/// inlined into, which store the vptr through their first parameter exactly as a
+/// constructor does (`make_gadget`, `place_gadget`, `Holder::Holder`,
+/// `drop_widget`), while `kit::Gadget`'s destructor still stores it.
+const WRAP_HELPERS: [u64; 4] = [0x1160, 0x1180, 0x1190, 0x11b0];
+const WRAP_GADGET_DTORS: [u64; 2] = [0x12c0, 0x1300];
+/// `kit::Holder::Holder(int)` in the unstripped `-O0` build, where the
+/// always_inline `Gadget` constructor is inlined into it.
+const WRAP_HOLDER_CTOR_O0: u64 = 0x1222;
+
+#[test]
+fn an_optimized_helper_that_stores_a_vptr_is_not_a_constructor() {
+    let prog = bootstrap("itaniumctors_wrap_O2_x86_64.so", true);
+    for vma in WRAP_GADGET_DTORS {
+        assert_eq!(name_at(&prog, vma), "~Gadget", "{vma:#x} is kit::Gadget::~Gadget");
+    }
+    for vma in WRAP_HELPERS {
+        let name = name_at(&prog, vma);
+        assert!(name.starts_with("sub_"), "{vma:#x} must stay unnamed, got {name}");
+    }
+    assert!(!prog.has_symbol_named("kit::Gadget::Gadget"));
+}
+
+#[test]
+fn a_symbol_table_name_gets_no_recovered_name_beside_it() {
+    let prog = bootstrap("itaniumctors_wrap_O0sym_x86_64.so", true);
+    assert_eq!(name_at(&prog, WRAP_HOLDER_CTOR_O0), "Holder");
+    assert!(
+        !prog.has_symbol_named("kit::Gadget::Gadget"),
+        "kit::Holder::Holder's own symbol must stay its only name"
+    );
+}
