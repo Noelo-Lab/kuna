@@ -1,29 +1,14 @@
-//! (kuna) `arrayextent` -- an indexed stack array covers the slots its index
-//! reaches past the four elements upstream assumes.
+//! (kuna) `arrayextent` recovers indexed and escaped frame-storage extents.
 //!
-//! `MapState::gatherOpen` gives the open range at an indexed stack base room
-//! for four elements, and `RangeHint::attempt_join` refuses a fixed hint past
-//! that, so an element the index reaches beyond the fourth is laid out as its
-//! own scalar and the printed subscript runs off the declared array.
+//! `bound` extends indexed storage using known index bits. `on` also includes
+//! contiguous, unlocked, same-width slots only observed through a pointer.
+//! An escaped unindexed base starts with one element, not the indexed base's
+//! four-element assumption. Separately addressed or directly read slots stop
+//! extension; element types, locked guards and frame limits remain authoritative.
 //!
-//! At `bound`, an indexed base whose pointer is the stack base plus constants
-//! plus indices whose known bits bound them (`kuna_storereach.rs
-//! (pointer_pieces)`), and which the function only dereferences, gets room for
-//! every element those dereferences may touch.
-//!
-//! At `on`, an indexed base with no such bound and no range-locked guard over
-//! it also takes each following slot of its element size while that slot
-//! starts exactly where the elements it covers end, starts no other open range,
-//! holds only unlocked hints of its element size and of a type `attempt_join`
-//! accepts, and is never read except through a pointer. A slot the function
-//! writes and never reads directly is only observable through the index, so it
-//! is an element of the array rather than a scalar of its own. When
-//! upstream's merge (`ScopeLocal::restructure`), run over the same sorted hints
-//! with the array at its old length, ends the array at or before the last slot
-//! taken, that slot loses its constant-copy mark, so upstream's constant
-//! absorption (`RangeHint::absorb`) cannot raise the array one element past it
-//! and from there over each following constant-initialised local. Where
-//! upstream's merge reaches further on its own, the array is upstream's.
+//! Unindexed inferred storage becomes a fixed-size array hint before layout,
+//! so neither constant absorption nor padding can enlarge the witnessed extent.
+//! Indexed bases retain a wider extent already produced by upstream layout.
 
 use std::rc::Rc;
 
@@ -42,7 +27,7 @@ use crate::varmap::{MapState, RangeHint, RangeType, COPY_CONSTANT};
 pub const LEVEL_OFF: int4 = 0;
 /// Also size an indexed base from the known bits of its indices.
 pub const LEVEL_BOUND: int4 = 1;
-/// Also extend an unbounded indexed base over contiguous write-only slots.
+/// Also extend unbounded or escaped bases over contiguous write-only slots.
 pub const LEVEL_ON: int4 = 2;
 
 /// Most slots one unbounded base takes past the elements its layout pass
@@ -74,8 +59,7 @@ impl OptionArrayExtent {
     }
 }
 
-/// An indexed base `extend_unbounded` may lengthen: its open hint's start and
-/// element size.
+/// An open base `extend_unbounded` may lengthen: its start and element size.
 #[derive(Clone, Copy)]
 pub(crate) struct OpenBase {
     pub(crate) start: uintb,
@@ -167,8 +151,7 @@ pub(crate) struct Extended {
     to: int4,
 }
 
-/// Lengthen the open hint of each unbounded indexed base over the contiguous
-/// write-only slots that follow its elements, and record each array lengthened
+/// Lengthen open hints over contiguous write-only slots, recording their extent
 /// for [`settle`].
 pub(crate) fn extend_unbounded(
     fd: &Funcdata,
@@ -197,7 +180,7 @@ pub(crate) fn extend_unbounded(
         let hints = state.hints_mut();
         let Some(open) = hints
             .iter()
-            .filter(|h| is_indexed_open(h, base))
+            .filter(|h| is_open(h, base))
             .max_by_key(|h| h.highind)
         else {
             continue;
@@ -205,22 +188,23 @@ pub(crate) fn extend_unbounded(
         let (sstart, highind, ty) = (open.sstart, open.highind, Rc::clone(&open.type_));
         let elem = base.elem as intb;
         let same = |e: &Extended| e.start == base.start && e.elem == base.elem;
-        let first = extended.iter().find(|e| same(e)).map_or(highind, |e| e.from);
-        let mut reach = highind;
+        let first = extended.iter().find(|e| same(e)).map_or(highind.max(0), |e| e.from.max(0));
+        let unindexed = extended.iter().find(|e| same(e)).map_or(highind < 0, |e| e.from < 0);
+        let mut reach = highind.max(0);
         while reach < first + MAX_FOLLOW {
             let slot = sstart + (reach as intb + 1) * elem;
             if slot + elem > end
                 || crosses(hints, &order, sstart, slot)
-                || !takes_slot(fd, space, hints, &order, sstart, slot, elem, &ty)
+                || !takes_slot(fd, space, hints, &order, sstart, slot, elem, &ty, unindexed)
             {
                 break;
             }
             reach += 1;
         }
-        if reach == highind {
+        if reach == highind.max(0) {
             continue;
         }
-        for h in hints.iter_mut().filter(|h| is_indexed_open(h, base)) {
+        for h in hints.iter_mut().filter(|h| is_open(h, base)) {
             h.highind = h.highind.max(reach);
         }
         match extended.iter_mut().find(|e| same(e)) {
@@ -231,17 +215,40 @@ pub(crate) fn extend_unbounded(
     state.set_extended(extended);
 }
 
-/// Before `ScopeLocal::restructure` merges the sorted hints, clear
-/// `COPY_CONSTANT` on the last slot each lengthened array took, unless
-/// upstream's merge of the same hints, with the arrays at their old length,
-/// carries the array past that slot anyway. A constant there would otherwise
-/// let `RangeHint::absorb` raise the array one element past it and from there
-/// over each following constant-initialised local.
+/// Fix unindexed arrays at their witnessed extent; indexed bases retain wider
+/// extents already produced by the original layout.
 pub(crate) fn settle(state: &mut MapState, space: &Rc<AddrSpace>, types: &dyn TypeFactory) {
-    let extended = state.take_extended();
+    let mut extended = state.take_extended();
     if extended.is_empty() {
         return;
     }
+    let mut fixed = false;
+    for e in extended.iter().filter(|e| e.from < 0) {
+        let end = e.sstart + (e.to as intb + 1) * e.elem as intb;
+        let hints = state.hints_mut();
+        let ty = hints.iter().find(|h| is_lengthened(h, e)).map(|h| Rc::clone(&h.type_));
+        let valid = hints.iter().filter(|h| h.sstart < end && e.sstart < h.sstart + (h.size as intb)).all(|h| {
+            !h.is_type_lock() && h.sstart >= e.sstart && h.sstart + (h.size as intb) <= end
+                && (match h.range_type {
+                    RangeType::Open => (h.start == e.start && h.highind < 0) || is_lengthened(h, e),
+                    RangeType::Fixed => h.size == e.elem && ty.as_ref().is_some_and(|ty| joinable(ty, &h.type_)),
+                    RangeType::Endpoint => false,
+                })
+        });
+        let array = ty.filter(|_| valid).and_then(|ty| types.get_type_array(e.to + 1, ty).ok());
+        if array.is_none() {
+            for h in hints.iter_mut().filter(|h| is_lengthened(h, e)) { h.highind = e.from; }
+            continue;
+        }
+        hints.retain(|h| h.sstart >= end || h.sstart + (h.size as intb) <= e.sstart);
+        state.add_range_pub(e.start, array, 0, RangeType::Fixed, -1);
+        fixed = true;
+    }
+    if fixed {
+        state.hints_mut().sort_by(RangeHint::compare_ranges);
+    }
+    extended.retain(|e| e.from >= 0);
+    if extended.is_empty() { return; }
     let mut list = state.hints_mut().clone();
     for h in list.iter_mut() {
         if let Some(e) = extended.iter().find(|e| is_lengthened(h, e)) {
@@ -335,10 +342,9 @@ fn bases_at<'a>(extended: &'a [Extended], h: &'a RangeHint) -> impl Iterator<Ite
         .filter(move |&e| h.range_type == RangeType::Open && h.start == extended[e].start)
 }
 
-/// Is `h` an open hint with index evidence at `base`'s start and element size?
-fn is_indexed_open(h: &RangeHint, base: &OpenBase) -> bool {
+/// Is `h` an unlocked open hint at `base`'s start and element size?
+fn is_open(h: &RangeHint, base: &OpenBase) -> bool {
     h.range_type == RangeType::Open
-        && h.highind >= 0
         && h.start == base.start
         && !h.is_type_lock()
         && h.type_.get_align_size() == base.elem
@@ -378,6 +384,7 @@ fn takes_slot(
     slot: intb,
     elem: intb,
     ty: &Rc<Datatype>,
+    unindexed: bool,
 ) -> bool {
     let first = order.partition_point(|&(s, _)| s < slot);
     let inside: Vec<&RangeHint> = order[first..]
@@ -394,6 +401,7 @@ fn takes_slot(
             && !h.is_type_lock()
             && h.size as intb == elem
             && joinable(ty, &h.type_)
+            && (!unindexed || (h.flags & COPY_CONSTANT != 0 && h.type_.get_metatype() == ty.get_metatype()))
     }) && !observed(fd, space, start, slot, elem)
 }
 
@@ -487,5 +495,105 @@ mod tests {
         assert_eq!(OptionArrayExtent.apply("on").unwrap().0, LEVEL_ON);
         assert_eq!(OptionArrayExtent.apply("").unwrap().0, LEVEL_ON);
         assert!(OptionArrayExtent.apply("full").is_err());
+    }
+
+    #[test]
+    fn escaped_pair_layout_preserves_extent_and_independent_neighbour() {
+        use kuna_base::address::RangeList;
+        use kuna_base::space::{addrspace_flags, spacetype, AddrSpaceManager, ConstantSpace, UniqueSpace};
+        use crate::context::ArchContext;
+        use crate::dtype::TypeFactoryImpl;
+        use crate::varmap::ScopeLocal;
+
+        for width in [1, 4, 8] {
+            for control in ["pair", "gap", "read-constant", "read", "address", "locked", "different-width", "runtime", "opposite-sign"] {
+                let mut manager = AddrSpaceManager::new();
+                manager.insert_space(Rc::new(ConstantSpace::new())).unwrap();
+                manager.insert_space(Rc::new(UniqueSpace::new(1, 0, false))).unwrap();
+                let ram = Rc::new(AddrSpace::new(
+                    spacetype::IPTR_PROCESSOR, "ram", false, 8, 1, 2, addrspace_flags::hasphysical, 1, 1,
+                ));
+                manager.insert_space(Rc::clone(&ram)).unwrap();
+                let stack = Rc::new(AddrSpace::new(
+                    spacetype::IPTR_PROCESSOR, "stack", false, 8, 1, 3, addrspace_flags::hasphysical, 1, 1,
+                ));
+                manager.insert_space(Rc::clone(&stack)).unwrap();
+                let arch = Rc::new(ArchContext::new(manager));
+                let mut fd = Funcdata::new("pair", "pair", arch, Address::new(ram, 0x1000), 0x10000000, 0x40).unwrap();
+                let root = fd.bblocks_ref().root.unwrap();
+                let block = fd.bblocks_mut().new_block_basic(root);
+                let start = 0x10;
+                let following = start + width as u64;
+                let neighbour = following + width as u64 + if control == "gap" { 8 } else { 0 };
+                for offset in [following, neighbour] {
+                    let value = fd.new_varnode(width, &Address::new(Rc::clone(&stack), offset), None);
+                    if offset == neighbour || control == "read" {
+                        let read = fd.new_op(2, fd.get_address().clone());
+                        fd.op_set_opcode(read, crate::context::TypeOp::new(OpCode::CPUI_INT_ADD, 0, "INT_ADD".to_string()));
+                        fd.op_set_input(read, value, 0).unwrap();
+                        let one = fd.new_constant(width, 1);
+                        fd.op_set_input(read, one, 1).unwrap();
+                        fd.new_unique_out(width, read).unwrap();
+                        fd.op_insert_end(read, block);
+                    }
+                }
+                let types = TypeFactoryImpl::new();
+                types.set_default_alignment_map();
+                types.set_max_basetype_size(8);
+                let ty = Rc::new(Datatype::new_with_align(width, width, type_metatype::TYPE_UINT));
+                let mut range = RangeList::new();
+                range.insert_range(Rc::clone(&stack), 0, 0x3f);
+                let params = RangeList::new();
+                let mut state = MapState::new(Rc::clone(&stack), &range, &params, Rc::clone(&ty));
+                state.add_range_pub(start, Some(Rc::clone(&ty)), 0, RangeType::Open, -1);
+                for offset in [start, following, neighbour] {
+                    let slot_type = if offset == following && control == "different-width" {
+                        let other_width = if width == 1 { 2 } else { 1 };
+                        Rc::new(Datatype::new_with_align(other_width, other_width, type_metatype::TYPE_UINT))
+                    } else if offset == following && control == "opposite-sign" {
+                        Rc::new(Datatype::new_with_align(width, width, type_metatype::TYPE_INT))
+                    } else {
+                        Rc::clone(&ty)
+                    };
+                    let flags = if offset == following && control == "locked" {
+                        crate::varmap::TYPELOCK
+                    } else if (offset != neighbour && !(offset == following && control == "runtime")) || control == "read-constant" {
+                        COPY_CONSTANT
+                    } else {
+                        0
+                    };
+                    state.add_range_pub(offset, Some(slot_type), flags, RangeType::Fixed, -1);
+                }
+                if control == "address" {
+                    state.add_range_pub(following, Some(Rc::clone(&ty)), 0, RangeType::Open, -1);
+                }
+                let layout = |mut state: MapState| {
+                    let mut scope = ScopeLocal::new(1, Rc::clone(&stack), "pair", 4).unwrap();
+                    scope.reset_local_window(&range, &params, false);
+                    scope.restructure(&mut state, &types).unwrap();
+                    let id = scope.scope_id();
+                    let origins = [start, following, neighbour].map(|offset| {
+                        let at = Address::new(Rc::clone(&stack), offset);
+                        scope.database().find_overlap(id, &at, 1)
+                            .map(|entry| scope.database().entry(id, entry).get_addr().get_offset())
+                    });
+                    let at = Address::new(Rc::clone(&stack), start);
+                    let size = scope.database().find_overlap(id, &at, 1)
+                        .map(|entry| scope.database().entry(id, entry).get_size());
+                    (origins, size)
+                };
+                let mut baseline = MapState::new(Rc::clone(&stack), &range, &params, Rc::clone(&ty));
+                baseline.hints_mut().extend(state.hints_mut().iter().cloned());
+                let before = layout(baseline);
+                extend_unbounded(&fd, &mut state, &stack, &[OpenBase { start, elem: width }]);
+                let after = layout(state);
+                if matches!(control, "pair" | "gap" | "read-constant") {
+                    assert_eq!(after.0, [Some(start), Some(start), Some(neighbour)], "width={width}");
+                    assert_eq!(after.1, Some(2 * width), "{control}, width={width}: object absorbed padding");
+                } else {
+                    assert_eq!(after, before, "{control}, width={width}: independent storage layout changed");
+                }
+            }
+        }
     }
 }
