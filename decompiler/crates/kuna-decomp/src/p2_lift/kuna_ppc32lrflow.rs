@@ -73,6 +73,7 @@ enum Value {
 struct State {
     values: BTreeMap<Key, Value>,
     stack: BTreeMap<(u32, i32), Value>,
+    image_unmodified: bool,
 }
 
 fn key(data: &Funcdata, id: VarnodeId) -> Key {
@@ -210,11 +211,44 @@ fn stack_address(data: &Funcdata, op: OpId, state: &State) -> Option<u32> {
     }
 }
 
+fn image_value(data: &Funcdata, op: OpId, state: &State) -> Option<Value> {
+    if !state.image_unmodified {
+        return None;
+    }
+    let o = data.obank().get(op)?;
+    let space = data.get_address().get_space()?;
+    if value(data, o.get_in(0)?, state)? != Value::Constant(space.get_index() as u64) {
+        return None;
+    }
+    let Value::Constant(offset) = value(data, o.get_in(1)?, state)? else {
+        return None;
+    };
+    let size = key(data, o.get_out()?).2;
+    if !(1..=8).contains(&size) || offset.checked_add(size as u64 - 1)? > u32::MAX as u64 {
+        return None;
+    }
+    let usepoint = Address::new_invalid();
+    for at in offset..offset + size as u64 {
+        let addr = Address::new(space.clone(), at);
+        let flags = data.get_arch().query_global_properties(&addr, 1, &usepoint);
+        if flags & crate::varnode::varnode_flags::readonly == 0
+            || flags & crate::varnode::varnode_flags::volatil != 0
+        {
+            return None;
+        }
+    }
+    data.get_arch()
+        .get_load_image_value(&Address::new(space.clone(), offset), size)
+        .ok()
+        .map(Value::Constant)
+}
+
 fn transfer(data: &Funcdata, op: OpId, state: &mut State) {
     let o = data.obank().get(op).expect("raw flow op");
     match o.code() {
         OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
             state.stack.clear();
+            state.image_unmodified = false;
             let proto = data
                 .get_call_specs_index(op)
                 .map(|i| data.get_call_specs(i).proto());
@@ -242,6 +276,7 @@ fn transfer(data: &Funcdata, op: OpId, state: &mut State) {
                 }
             } else {
                 state.stack.clear();
+                state.image_unmodified = false;
             }
         }
         _ => {
@@ -250,11 +285,7 @@ fn transfer(data: &Funcdata, op: OpId, state: &mut State) {
                     if let Some(at) = stack_address(data, op, state) {
                         state.stack.get(&(at, key(data, out).2)).copied()
                     } else {
-                        o.get_in(1)
-                            .and_then(|v| value(data, v, state))
-                            .and_then(|v| {
-                                matches!(v, Value::Constant(_)).then_some(Value::Computed)
-                            })
+                        image_value(data, op, state)
                     }
                 } else {
                     pure(data, op, state)
@@ -279,6 +310,7 @@ fn merge_value(a: Value, b: Value) -> Option<Value> {
 
 fn merge(prior: &mut State, incoming: &State) -> bool {
     let old = prior.clone();
+    prior.image_unmodified &= incoming.image_unmodified;
     prior.values.retain(|k, v| {
         if let Some(joined) = incoming
             .values
@@ -333,7 +365,10 @@ fn sites(data: &Funcdata, arch: &Architecture) -> Option<Vec<Address>> {
     }
     let blocks: Vec<_> = (0..n).map(|i| data.bblocks_get_block(i as i32)).collect();
     let indices: BTreeMap<_, _> = blocks.iter().enumerate().map(|(i, b)| (*b, i)).collect();
-    let mut initial = State::default();
+    let mut initial = State {
+        image_unmodified: true,
+        ..State::default()
+    };
     for r in 0..32 {
         initial
             .values

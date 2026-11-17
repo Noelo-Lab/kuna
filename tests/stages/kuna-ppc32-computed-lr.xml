@@ -10,13 +10,26 @@
     7c0803a6 4e800020
   </bytechunk>
   <symbol space="ram" offset="0x1000" name="dispatch"/>
+  <bytechunk space="ram" offset="0x1100" readonly="true">
+    7c0802a6 38802000 90040000 3860000b
+    80040000 7c0803a6 4e800020
+  </bytechunk>
+  <bytechunk space="ram" offset="0x2000" readonly="false">
+    00000000 00000000
+  </bytechunk>
+  <symbol space="ram" offset="0x1100" name="saved_lr"/>
 </binaryimage>
 <script>
   <com>load addr 0x1000</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x1100</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="computed LR reaches the common epilogue" min="1" max="2">return 7;</stringmatch>
 <stringmatch name="computed LR does not return the input" min="0" max="0">return a0;</stringmatch>
+<stringmatch name="fixed-address saved LR preserves its return value" min="1" max="1">return 0xb;</stringmatch>
+<stringmatch name="fixed-address saved LR is not a dispatch" min="0" max="0">jump-as-call</stringmatch>
 </decompilertest>

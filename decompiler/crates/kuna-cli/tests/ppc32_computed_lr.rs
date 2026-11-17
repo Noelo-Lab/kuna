@@ -191,8 +191,87 @@ fn memory_loaded_code_address_is_a_transfer() {
         0x60000000, 0x00001024, 0x38600007, 0x7d8803a6, 0x4e800020,
     ];
     for little in [false, true] {
-        let c = decompile(little, code.clone());
-        check_runtime(&c, "7");
+        for model in ["default", "e500"] {
+            let target = format!("PowerPC:{}:32:{model}", if little { "LE" } else { "BE" });
+            let output = run_decompile(little, code.clone(), &["--target", &target]);
+            assert!(output.status.success(), "{output:?}");
+            check_runtime(&String::from_utf8(output.stdout).unwrap(), "7");
+        }
+    }
+}
+
+#[test]
+fn fixed_address_saved_lr_returns_stay_returns() {
+    let code = vec![
+        0x7c0802a6, 0x38802804, 0x90040000, 0x38600007, 0x80040000, 0x7c0803a6, 0x4e800020,
+    ];
+    for little in [false, true] {
+        for model in ["default", "e500"] {
+            let target = format!("PowerPC:{}:32:{model}", if little { "LE" } else { "BE" });
+            let output = run_decompile(little, code.clone(), &["--target", &target]);
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let c = String::from_utf8(output.stdout).unwrap();
+            assert!(c.contains("return 7;"), "{target}: {c}");
+            assert!(
+                !c.contains("jump-as-call") && !c.contains("switch"),
+                "{target}: {c}"
+            );
+            check_runtime(&format!("unsigned int dat_2804;\n{c}"), "7");
+        }
+    }
+}
+
+#[test]
+fn mutable_or_volatile_image_loads_stay_unproved() {
+    let writable = vec![0x39602804, 0x800b0000, 0x7c0803a6, 0x4e800020];
+    let modified = vec![
+        0x7c0802a6, 0x39601020, 0x900b0000, 0x800b0000, 0x7c0803a6, 0x4e800020, 0x60000000,
+        0x60000000, 0x00001024, 0x38600007, 0x4e800020,
+    ];
+    let mut aliased = modified.clone();
+    aliased[2] = 0x90040000;
+    let mut called = modified.clone();
+    called[1] = 0x480007fd;
+    called[2] = 0x39601020;
+    let joined = vec![
+        0x7d8802a6, 0x2c030000, 0x41820008, 0x91840000, 0x39601030, 0x800b0000, 0x7c0803a6,
+        0x4e800020, 0x60000000, 0x60000000, 0x60000000, 0x60000000, 0x00001034, 0x38600007,
+        0x7d8803a6, 0x4e800020,
+    ];
+    let literal = vec![
+        0x7d8802a6, 0x39601020, 0x800b0000, 0x7c0803a6, 0x4e800020, 0x60000000, 0x60000000,
+        0x60000000, 0x00001024, 0x38600007, 0x7d8803a6, 0x4e800020,
+    ];
+    for little in [false, true] {
+        for model in ["default", "e500"] {
+            let target = format!("PowerPC:{}:32:{model}", if little { "LE" } else { "BE" });
+            for code in [&writable, &modified, &aliased, &called, &joined] {
+                let output = run_decompile(little, code.clone(), &["--target", &target]);
+                assert!(output.status.success(), "{target}: {output:?}");
+                let c = String::from_utf8(output.stdout).unwrap();
+                assert!(
+                    !c.contains("jump-as-call") && !c.contains("switch"),
+                    "{target}: {c}"
+                );
+                assert!(!c.contains("return 7;"), "{target}: {c}");
+            }
+            let output = run_decompile(
+                little,
+                literal.clone(),
+                &["--target", &target, "--assert", "volatile 0x1023+1"],
+            );
+            assert!(output.status.success(), "{target}: {output:?}");
+            let c = String::from_utf8(output.stdout).unwrap();
+            assert!(
+                !c.contains("jump-as-call") && !c.contains("switch"),
+                "{target}: {c}"
+            );
+            assert!(!c.contains("return 7;"), "{target}: {c}");
+        }
     }
 }
 
