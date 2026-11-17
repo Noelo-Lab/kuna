@@ -668,6 +668,14 @@ the SPARC libc dev package, so the cross-link needs `libc6-dev-sparc64-cross`
 && sparc64-linux-gnu-gcc -O0 decompiler/crates/kuna-analysis/tests/fixtures/plt_sparc64.c
 -o decompiler/crates/kuna-analysis/tests/fixtures/plt_sparc64'`.
 
+`sparc32_plt_synth.rs` constructs a deterministic ELF32/BE executable in memory,
+without an assembler, linker or cross toolchain. Its SPARC or SPARC32Plus `main`
+calls `puts` and `printf` through consecutive 12-byte PLT slots at `0x10230` and
+`0x1023c`. `.plt` has `sh_entsize=0`, as in GNU-linked SPARC32 images;
+`R_SPARC_JMP_SLOT` relocations supply both names. The console test above pins the
+printed calls and verifies that absent relocations, invalid slot heads and a
+truncated final slot do not invent imports.
+
 `entrymain_aarch64` / `entrymain_arm` / `entrymain_riscv64` (each <7 KB, shared
 source `entrymain.c` = `int main(int c,char**v){return c;}`): the cross-arch
 `_start`→`main` idiom fixtures (Increment 23). Built in the `kuna-dev` container
