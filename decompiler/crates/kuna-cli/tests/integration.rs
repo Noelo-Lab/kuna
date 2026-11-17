@@ -2,6 +2,8 @@
 #[path = "mips_elf_selection.rs"]
 mod mips_elf_selection;
 mod common;
+#[path = "sparc_prologue_start.rs"]
+mod sparc_prologue_start;
 
 #[path = "rust_empty_match.rs"]
 mod rust_empty_match;
