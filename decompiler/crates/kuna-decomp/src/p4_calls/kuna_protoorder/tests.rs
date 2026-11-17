@@ -520,3 +520,46 @@ fn a_statement_naming_a_superseded_structure_is_recognised_through_pointers() {
     assert!(!names_type(&int8(), &stale));
     assert!(!names_type(&ptr_to(named_struct("struct_1")), &[]));
 }
+
+#[test]
+fn overflowing_pointee_access_is_not_a_one_object_access() {
+    use kuna_base::space::{addrspace_flags, ConstantSpace, UniqueSpace};
+    use crate::context::{ArchContext, TypeOp};
+
+    fn operation(fd: &mut Funcdata, code: OpCode, inputs: &[VarnodeId], off: u64, size: int4) -> VarnodeId {
+        let ram = Rc::clone(fd.get_arch().manage().get_space_by_name("ram").unwrap());
+        let op = fd.new_op(inputs.len() as int4, Address::new(Rc::clone(&ram), off));
+        fd.op_set_opcode(op, TypeOp::new(code, 0, format!("{code:?}")));
+        fd.op_set_all_input(op, inputs).unwrap();
+        let root = fd.bblocks_ref().root.unwrap();
+        let block = if fd.bblocks_ref().block(root).get_size() == 0 {
+            fd.bblocks_mut().new_block_basic(root)
+        } else {
+            fd.bblocks_ref().block(root).get_block(0)
+        };
+        fd.op_insert(op, block, None);
+        fd.new_varnode_out(size, &Address::new(ram, off + 0x1000), op).unwrap()
+    }
+
+    for (offset, size, outside) in [
+        (0, 8, false), (4, 4, false), (7, 1, false), (7, 8, true),
+        (-4, 8, true), (0, 16, true), (i64::MAX, 8, true),
+    ] {
+        let mut manager = AddrSpaceManager::new();
+        manager.insert_space(Rc::new(ConstantSpace::new())).unwrap();
+        manager.insert_space(Rc::new(UniqueSpace::new(1, 0, false))).unwrap();
+        let ram = Rc::new(AddrSpace::new(spacetype::IPTR_PROCESSOR, "ram", false, 8, 1, 2, addrspace_flags::hasphysical, 1, 1));
+        manager.insert_space(Rc::clone(&ram)).unwrap();
+        let context = Rc::new(ArchContext::new(manager));
+        let mut fd = Funcdata::new("bounds", "bounds", context, Address::new(Rc::clone(&ram), 0x1000), 0x1000_0000, 0x40).unwrap();
+        let base = fd.new_varnode(8, &Address::new(ram, 0x10), None);
+        let base = fd.set_input_varnode(base).unwrap();
+        let offset_node = fd.new_constant(8, offset as u64);
+        let address = operation(&mut fd, OpCode::CPUI_INT_ADD, &[base, offset_node], 0x1004, 8);
+        let space = fd.new_constant(8, 2);
+        operation(&mut fd, OpCode::CPUI_LOAD, &[space, address], 0x1008, size);
+        let record = ptr_to(Rc::new(Datatype::new(8, type_metatype::TYPE_STRUCT)));
+        assert_eq!(input_refuses(&fd, base, &record), outside, "record, offset={offset}");
+        assert_eq!(reaches_past_the_pointee(&fd, base, &ptr_to(int8())), outside, "single pointee, offset={offset}");
+    }
+}

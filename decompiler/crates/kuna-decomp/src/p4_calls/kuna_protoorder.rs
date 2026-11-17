@@ -547,12 +547,12 @@ pub(crate) fn handed_to_a_declared_pointer(data: &Funcdata, vn: VarnodeId) -> bo
     })
 }
 
-/// (kuna `calleevote`) Does the function load or store through its input `vn`
-/// anywhere but the one pointee of `ct` at offset zero?
+/// (kuna `calleevote`) Does the function load or store outside the one pointee
+/// of `ct`, or step through more than that one object?
 pub(crate) fn reaches_past_the_pointee(data: &Funcdata, vn: VarnodeId, ct: &Datatype) -> bool {
     let Some(pointee) = ct.get_ptr_to() else { return false };
     let Some((accesses, _)) = accesses_through(data, &value_family(data, vn)) else { return true };
-    accesses.iter().any(|a| a.stride != 0 || a.at < 0 || a.at + a.size as i64 > pointee.get_size() as i64)
+    accesses.iter().any(|a| a.stride != 0 || a.at < 0 || a.at > pointee.get_size() as i64 - a.size as i64)
 }
 
 /// Would `ct` on the values in `family` make the printer spell a constant
