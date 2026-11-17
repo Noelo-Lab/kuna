@@ -1,0 +1,49 @@
+<!--
+  Kuna: an Itanium virtual method is named after the function, not its vtable.
+  P1 external-refinement (itaniumrtti); P0 assertion: option itaniumrtti off|on.
+
+  The fixture is the stripped, hidden-visibility g++ shared object whose only
+  type information is the Itanium RTTI graph. Widget : Loggable, Drawable puts
+  Drawable at +16, so its secondary sub-vtable holds this-adjusting thunks.
+
+  Asserts #1-#2 are the off pass: the thunk, its target and the destructor slot
+  probe_shapes calls are all bare sub_ names. Asserts #3-#5 are the on pass: the
+  thunk is <C>::vfunc_for_<Base>_<i>, it tail-calls the primary slot
+  <C>::vfunc_<i>, and the destructor call names Circle's slot. Assert #6 proves
+  no slot function is called <C>::vtable_<i>, a name that read as "the class's
+  i-th vtable" for what is a routine.
+-->
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/itaniumrtti_x86_64.so</com>
+  <com>option itaniumrtti off</com>
+  <com>read symbols</com>
+  <com>load function 0x182b</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function probe_shapes</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/itaniumrtti_x86_64.so</com>
+  <com>option itaniumrtti on</com>
+  <com>read symbols</com>
+  <com>load function 0x182b</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function probe_shapes</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="itaniumvfunc #1: off: the Drawable thunk and its target are unnamed" min="1" max="1">sub_1802\(a0 \+ -0x10\); // tail-call</stringmatch>
+<stringmatch name="itaniumvfunc #2: off: the destructor slot call is unnamed" min="1" max="1">^\s*sub_152c\(v3\);</stringmatch>
+<stringmatch name="itaniumvfunc #3: on: the thunk is named for its sub-vtable slot" min="1" max="1">void shapes::Widget::vfunc_for_Drawable_2\(int8 a0\)</stringmatch>
+<stringmatch name="itaniumvfunc #4: on: the thunk tail-calls the primary slot" min="1" max="1">shapes::Widget::vfunc_3\(a0 \+ -0x10\); // tail-call</stringmatch>
+<stringmatch name="itaniumvfunc #5: on: the destructor slot call names the class" min="1" max="1">shapes::Circle::vfunc_0\(v3\);</stringmatch>
+<stringmatch name="itaniumvfunc #6: no slot function is named after its vtable" min="0" max="0">::vtable_(for_\w+_)?[0-9]</stringmatch>
+</decompilertest>

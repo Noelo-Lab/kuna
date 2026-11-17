@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4417,
-    4417
+    4423,
+    4423
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -3416,6 +3416,12 @@
     "data:itaniumctors #7: on: it calls the base constructor by name",
     "data:itaniumctors #8: no virtual destructor: the constructor stays unnamed",
     "data:itaniumctors #9: no virtual destructor: the destructor stays unnamed",
+    "data:itaniumvfunc #1: off: the Drawable thunk and its target are unnamed",
+    "data:itaniumvfunc #2: off: the destructor slot call is unnamed",
+    "data:itaniumvfunc #3: on: the thunk is named for its sub-vtable slot",
+    "data:itaniumvfunc #4: on: the thunk tail-calls the primary slot",
+    "data:itaniumvfunc #5: on: the destructor slot call names the class",
+    "data:itaniumvfunc #6: no slot function is named after its vtable",
     "data:iteboolean #1: option off leaves the explicit 0/1 constant diamond (gap reproduced)",
     "data:iteboolean #2: option off emits the else arm storing the 0 constant",
     "data:iteboolean #3: option on re-rolls it into one boolean assignment, short-circuit condition intact",

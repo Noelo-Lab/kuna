@@ -1821,7 +1821,9 @@ has no structure for. `kind` is a stable code: `bad-instruction` and
 cut at the instruction budget; `jump-as-call`, `jump-as-return` and `jumptable`
 for an indirect jump left unresolved or a jump table only partly recovered;
 `out-of-bounds`, `unmapped-flow` and `funcboundflow` for flow that left the
-function's extent or the mapped image; `structuring-declined` for a body the printer could not structure; the slug
+function's extent or the mapped image; `weak-relocation` for a reference to an
+undefined weak symbol in a relocatable object whose null check could not be
+modeled; `structuring-declined` for a body the printer could not structure; the slug
 `warnstyle inline` prints for any other warning it abbreviates (`no-return`,
 `tail-call`, `branch-flip`, `return-dupe`, `inlined`, ...), less its ` xN`
 count; the producer tag of a kuna warning (`calltrampoline`, `overlapbranch`,

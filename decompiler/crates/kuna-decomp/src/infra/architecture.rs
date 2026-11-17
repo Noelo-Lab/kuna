@@ -1775,7 +1775,7 @@ pub struct Architecture {
     /// string is demangled to the class name, its base list gives the inheritance
     /// displacements, and every `_ZTV…` sub-vtable pointing back at it is walked.
     /// Emits `<C>::typeinfo` / `<C>::typeinfo_name` / `<C>::vtable` /
-    /// `<C>::vtable_for_<Base>` data labels plus one `<C>::vtable_<i>` function
+    /// `<C>::vtable_for_<Base>` data labels plus one `<C>::vfunc_<i>` function
     /// symbol per virtual slot. ELF-only (registered in `passes_for` only for
     /// `BinaryFormat::Elf`, and the pass also self-gates on ELF in `run`), real-ELF
     /// path only ⇒ every XML parity gate is byte-identical. Default-off
