@@ -30,6 +30,11 @@
 
 use std::path::PathBuf;
 
+use crate::common;
+
+#[path = "../../kuna-analysis/tests/fixtures/sparc32_plt_synth.rs"]
+mod sparc32;
+
 use kuna_console::engine::bootstrap_from_object;
 use kuna_console::ifacedecomp::{execute, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE};
 use kuna_console::ifaceterm::ConsoleCommands;
@@ -100,4 +105,69 @@ fn sparc_plt_calls_are_named_in_decompiled_c() {
         !out.contains("sub_2021c0") && !out.contains("sub_2021a0"),
         "SPARC PLT stubs should no longer render as sub_<addr>, got:\n{out}"
     );
+}
+
+fn decompile_sparc32(machine: u16) -> String {
+    let path = common::scratch_file("sparc32-plt", "elf");
+    std::fs::write(&path, sparc32::elf(machine)).unwrap();
+    let roots = vec![repo_root().join("specs").to_string_lossy().into_owned()];
+    let result = bootstrap_from_object(path.to_str().unwrap(), "", &roots);
+    std::fs::remove_file(path).unwrap();
+    let prog = result.expect("bootstrap deterministic SPARC32 ELF");
+    let mut status = ConsoleCommands::into_status(
+        ["load function main", "decompile", "print C"].map(String::from).to_vec(),
+    );
+    register_decomp_commands(&mut status);
+    status.get_data_mut(DECOMPILE_MODULE).unwrap()
+        .as_any_mut().downcast_mut::<IfaceDecompData>().unwrap().conf = Some(prog);
+    for _ in 0..3 {
+        execute(&mut status);
+    }
+    status.optr.clone()
+}
+
+fn assert_sparc32_calls(machine: u16) {
+    let out = decompile_sparc32(machine);
+    assert!(out.contains("main"), "expected a decoded function:\n{out}");
+    assert!(out.contains("puts(") && out.contains("printf("), "expected both imports:\n{out}");
+    assert!(!out.contains("sub_10230") && !out.contains("sub_1023c"), "{out}");
+}
+
+#[test]
+fn sparc32_12_byte_plt_calls_are_named_in_c() {
+    assert_sparc32_calls(2);
+}
+
+#[test]
+fn sparc32plus_12_byte_plt_calls_are_named_in_c() {
+    assert_sparc32_calls(18);
+}
+
+#[test]
+fn sparc32_plt_requires_a_relocation_and_a_complete_valid_slot() {
+    use kuna_analysis::loadimage_object::ObjectLoadImage;
+    use sparc32::{elf, put32, PLT_OFFSET, PLT_VMA, SECTION_HEADERS};
+
+    for machine in [2, 18] {
+        for case in ["valid", "no relocations", "bad opcode", "truncated slot"] {
+            let mut bytes = elf(machine);
+            match case {
+                "no relocations" => put32(&mut bytes, SECTION_HEADERS + 6 * 40 + 20, 0),
+                "bad opcode" => put32(&mut bytes, PLT_OFFSET + 60, 0x01000000),
+                "truncated slot" => put32(&mut bytes, SECTION_HEADERS + 3 * 40 + 20, 64),
+                _ => {}
+            }
+            let image = ObjectLoadImage::from_bytes("synthetic-sparc32-plt", &bytes).unwrap();
+            let imports: Vec<_> = image.func_symbols().into_iter()
+                .filter(|(_, name)| name == "puts" || name == "printf")
+                .collect();
+            let expected = match case {
+                "no relocations" => vec![],
+                "valid" => vec![(u64::from(PLT_VMA + 48), "puts".to_string()),
+                    (u64::from(PLT_VMA + 60), "printf".to_string())],
+                _ => vec![(u64::from(PLT_VMA + 48), "puts".to_string())],
+            };
+            assert_eq!(imports, expected, "machine {machine}, {case}");
+        }
+    }
 }
