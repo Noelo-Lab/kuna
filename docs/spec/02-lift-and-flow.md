@@ -35,9 +35,9 @@ live implementation is
 
 PPC32 `blr` and its conditional forms are not necessarily ABI returns: LR can
 hold a locally computed code address. Before return processing discards that
-target, `decompiler/crates/kuna-decomp/src/p2_lift/kuna_ppc32lrflow.rs (computed_sites)`
+target, `decompiler/crates/kuna-decomp/src/p2_lift/kuna_ppc32lrflow.rs (classify)`
 propagates raw p-code values over the function's blocks to a fixed point.
-Constants, argument-derived targets and loads from immutable image data are
+Constants, combinations of proven values and loads from immutable image data are
 re-followed as indirect branches;
 ordinary incoming LR values, saved copies and unproved reloads remain returns.
 An image load requires readable bytes in the code address space, read-only and
@@ -53,6 +53,26 @@ caller-local import proof runs. Reclassified LR targets discard the low two bits
 and use the 32-bit instruction address, including with eight-byte registers;
 QEMU confirms a target with a low bit set reaches the same instruction. This
 classification repair has no option.
+
+Automatic branch overrides are temporary discovery decisions. Each expanded
+graph revalidates them before publication, and a restart derives them again
+without changing explicit caller assertions. If one incoming edge proves an LR
+restore while another proves a computed transfer, the returning edge receives
+a closed copy of the shared block, including its work before the transfer.
+Calls, further branches and other contexts that cannot be copied safely cause
+a diagnostic instead of publishing an unproved branch. Incoming-return-address
+inspection beyond transparent copies, or loss of its provenance across calls
+and untracked storage, also invalidates later computed-target
+proofs: equality constraints can make an apparent input target the caller's
+return address. This conservatively retains such returns without attempting a
+general path-constraint solver. Proof work is bounded across discovery and
+revalidation together; exhaustion cannot validate a temporary decision.
+Entry registers begin unproved: an input register can already contain the
+return address. A move from an input into LR alone is not evidence of a
+computed branch. An explicit flow assertion remains available when the caller
+knows that an otherwise unproved target is a branch.
+Idempotent bitwise copies and the e500 zero extension of a four-byte address
+preserve its stack or incoming-return identity in an eight-byte register.
 
 In 64-bit code spaces, SLEIGH display operands marked as code addresses retain
 that interpretation through their nested display subtables. Their evaluated bit patterns

@@ -18,9 +18,25 @@
     00000000 00000000
   </bytechunk>
   <symbol space="ram" offset="0x1100" name="saved_lr"/>
+  <bytechunk space="ram" offset="0x1200" readonly="true">
+    7d8802a6 38600005 38001214 7c0803a6
+    4e800020 7d8803a6 4bfffff8
+  </bytechunk>
+  <symbol space="ram" offset="0x1200" name="shared_lr"/>
+  <bytechunk space="ram" offset="0x1300" readonly="true">
+    7d8802a6 38600009 7c006000 4c820020
+    7c0803a6 4e800020
+  </bytechunk>
+  <symbol space="ram" offset="0x1300" name="guarded_lr"/>
 </binaryimage>
 <script>
   <com>load addr 0x1000</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x1200</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x1300</com>
   <com>decompile</com>
   <com>print C</com>
   <com>load addr 0x1100</com>
@@ -32,4 +48,6 @@
 <stringmatch name="computed LR does not return the input" min="0" max="0">return a0;</stringmatch>
 <stringmatch name="fixed-address saved LR preserves its return value" min="1" max="1">return 0xb;</stringmatch>
 <stringmatch name="fixed-address saved LR is not a dispatch" min="0" max="0">jump-as-call</stringmatch>
+<stringmatch name="shared LR transfer preserves its return value" min="1" max="2">return 5;</stringmatch>
+<stringmatch name="guarded LR restore preserves its return value" min="1" max="2">return 9;</stringmatch>
 </decompilertest>
