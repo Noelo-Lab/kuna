@@ -37,9 +37,13 @@ PPC32 `blr` and its conditional forms are not necessarily ABI returns: LR can
 hold a locally computed code address. Before return processing discards that
 target, `decompiler/crates/kuna-decomp/src/p2_lift/kuna_ppc32lrflow.rs (computed_sites)`
 propagates raw p-code values over the function's blocks to a fixed point.
-Constants, argument-derived targets and loads through fixed addresses are
+Constants, argument-derived targets and loads from immutable image data are
 re-followed as indirect branches;
 ordinary incoming LR values, saved copies and unproved reloads remain returns.
+An image load requires readable bytes in the code address space, read-only and
+nonvolatile properties across its full width, and no preceding untracked store
+or call on any incoming path. A fixed address alone is not proof of a code
+pointer: writable slots can hold a saved incoming LR and remain unproved.
 The proof tracks exact stack stores and reloads, invalidates overlapping writes,
 projects known constants into narrow register views in either byte order,
 forgets memory across calls and respects each callee's preserved registers. It

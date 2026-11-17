@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4918,
-    4918
+    4920,
+    4920
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -3531,6 +3531,8 @@
     "data:first cursor snapshot is explicit",
     "data:first index uses first snapshot",
     "data:first object name selects the wider parameter slot local",
+    "data:fixed-address saved LR is not a dispatch",
+    "data:fixed-address saved LR preserves its return value",
     "data:flat record pointee recovers field names",
     "data:float and integer register banks stay independent",
     "data:float load retains its raw bits",
