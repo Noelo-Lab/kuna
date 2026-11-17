@@ -86,6 +86,7 @@ use object::{BinaryFormat, RelocationTarget};
 use crate::demangle::demangle_typeinfo_name;
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase, SymFact, SymKind};
 
+use super::kuna_itaniumctors::ClassVtables;
 use super::models::ImageBytes;
 use super::refkind::{End, RefKind};
 use super::vftable::TextRanges;
@@ -196,38 +197,83 @@ impl AnalysisPass for ItaniumRttiPass {
 
     fn run(&self, ctx: &AnalysisCtx) -> AnalysisOutput {
         let mut out = AnalysisOutput::default();
-
-        // ELF gate (belt-and-suspenders on top of the passes_for registration gate):
-        // the MSVC ABI owns PE, and Mach-O's chained-fixup relocation model does not
-        // expose the anchor this pass reads.
-        if ctx.file.format() != BinaryFormat::Elf {
-            return out;
+        if let Some((typeinfos, subs, rk)) = recover_graph(ctx) {
+            emit(&typeinfos, &subs, &rk, &mut out);
         }
-
-        let rk = RefKind::new(
-            ctx.file.is_64(),
-            0,
-            if ctx.file.is_little_endian() { End::Little } else { End::Big },
-        );
-        // Discovery first, and bail before building anything else: a plain-C binary
-        // and a `-fno-rtti` C++ build both have no typeinfo, and that is the common
-        // case this pass must stay nearly free on.
-        let candidates = discover_typeinfos(ctx.file, rk.ptr_size() as u64);
-        if candidates.is_empty() {
-            return out;
-        }
-        let img = ImageBytes::new(ctx.file);
-        let typeinfos = decode_typeinfos(&img, &rk, &candidates);
-        if typeinfos.is_empty() {
-            return out;
-        }
-
-        let text = TextRanges::new(ctx.file);
-        let relocated = relocated_slots(ctx.file);
-        let subs = recover_subvtables(&img, &rk, &text, &relocated, &typeinfos);
-        emit(&typeinfos, &subs, &rk, &mut out);
         out
     }
+}
+
+/// Recover the typeinfo graph and its sub-vtables, or `None` on an image that has
+/// none.
+fn recover_graph(ctx: &AnalysisCtx) -> Option<(Vec<TypeInfo>, Vec<SubVtable>, RefKind)> {
+    // ELF gate (belt-and-suspenders on top of the passes_for registration gate):
+    // the MSVC ABI owns PE, and Mach-O's chained-fixup relocation model does not
+    // expose the anchor this pass reads.
+    if ctx.file.format() != BinaryFormat::Elf {
+        return None;
+    }
+
+    let rk = RefKind::new(
+        ctx.file.is_64(),
+        0,
+        if ctx.file.is_little_endian() { End::Little } else { End::Big },
+    );
+    // Discovery first, and bail before building anything else: a plain-C binary
+    // and a `-fno-rtti` C++ build both have no typeinfo, and that is the common
+    // case this pass must stay nearly free on.
+    let candidates = discover_typeinfos(ctx.file, rk.ptr_size() as u64);
+    if candidates.is_empty() {
+        return None;
+    }
+    let img = ImageBytes::new(ctx.file);
+    let typeinfos = decode_typeinfos(&img, &rk, &candidates);
+    if typeinfos.is_empty() {
+        return None;
+    }
+
+    let text = TextRanges::new(ctx.file);
+    let relocated = relocated_slots(ctx.file);
+    let subs = recover_subvtables(&img, &rk, &text, &relocated, &typeinfos);
+    Some((typeinfos, subs, rk))
+}
+
+/// The recovered classes' vtables, as the constructor/destructor recovery
+/// ([`super::kuna_itaniumctors`]) reads them; empty on an image without the
+/// Itanium graph.
+pub(super) fn recovered_classes(ctx: &AnalysisCtx) -> Vec<ClassVtables> {
+    recover_graph(ctx)
+        .map_or_else(Vec::new, |(typeinfos, subs, _)| class_vtables(&typeinfos, &subs))
+}
+
+/// Each recovered class's vptr values and primary slot targets, with its bases as
+/// indices into the same list — the input the constructor/destructor recovery
+/// reads.
+fn class_vtables(typeinfos: &[TypeInfo], subs: &[SubVtable]) -> Vec<ClassVtables> {
+    let by_addr: HashMap<u64, &TypeInfo> = typeinfos.iter().map(|t| (t.addr, t)).collect();
+    let index: HashMap<u64, usize> =
+        typeinfos.iter().enumerate().map(|(i, t)| (t.addr, i)).collect();
+    typeinfos
+        .iter()
+        .map(|ti| {
+            let mut own: Vec<&SubVtable> = subs.iter().filter(|s| s.typeinfo == ti.addr).collect();
+            own.sort_by_key(|s| (s.offset_to_top != 0, s.header));
+            let primary_slots = own
+                .first()
+                .filter(|s| s.offset_to_top == 0)
+                .map(|s| s.slots.clone())
+                .unwrap_or_default();
+            ClassVtables {
+                name: ti.class.clone(),
+                ancestors: ancestors_of(ti.addr, &by_addr)
+                    .iter()
+                    .filter_map(|a| index.get(a).copied())
+                    .collect(),
+                primary_slots,
+                vptrs: own.iter().map(|s| s.first_slot).collect(),
+            }
+        })
+        .collect()
 }
 
 /// The address of every slot a dynamic relocation writes. A vtable slot whose file

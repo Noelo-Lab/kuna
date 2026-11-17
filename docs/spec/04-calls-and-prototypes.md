@@ -8049,9 +8049,10 @@ for every vote the input fold takes, `callerptr`'s included.
 A pointer to a pointer that some caller passes as the address of one of its
 own frame objects (`&v4`) types that one object, not what follows it in the
 frame: a caller keeping a record whose first member is a `char *` passes
-`&cfg` as a `char **`. Such a vote is refused when the callee loads or stores
-through the value anywhere but that one pointer at offset zero
-(`reaches_past_the_pointee`), so `drop(&cfg)` reading `cfg->head` keeps its
+`&cfg` as a `char **`. Such a vote is refused when a callee load or store
+through the value is not wholly inside that one pointer, or is stepped.
+The bound compares offset to pointee size minus access width, so an overflowing endpoint
+cannot fit (`reaches_past_the_pointee`); `drop(&cfg)` reading `cfg->head` keeps its
 own type, and `advance(&cursor)`, which only reads and writes `*cursor`, takes
 `char **`; refusing every frame address instead was measured to lose 17
 functions whose out-parameter is a real `char **` (`parse_line (char **keyword,

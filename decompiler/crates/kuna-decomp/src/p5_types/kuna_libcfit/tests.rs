@@ -1,8 +1,8 @@
 //! Tests for the libc-aggregate fit rule (kuna `libctypes`, `kuna_libcfit`).
 //!
 //! The walk needs a decompiled function and is covered end to end by
-//! `tests/stages/kuna-libctypes.xml` (the `kwset`-shaped container passes). What
-//! is pinned here is which declared types the rule speaks about at all.
+//! `tests/stages/kuna-libctypes.xml` (the `kwset`-shaped container passes).
+//! These pin which declared types and access ranges can refuse the vote.
 
 use super::*;
 
@@ -68,4 +68,16 @@ fn a_step_must_be_a_whole_number_of_aggregates() {
     assert!(fits(0x2c, 1, 1, 60), "an unknown index proves nothing");
     assert!(fits(0, 8, 8, 144), "a word-at-a-time copy of a stat");
     assert!(fits(0x10, 8, 4, 60), "a phi between two termios fields");
+}
+
+#[test]
+fn a_high_bit_stride_is_larger_than_a_libc_aggregate() {
+    assert!(!fits(0, i64::MIN, 8, 88), "a high-bit stride is larger than an obstack");
+    assert!(!fits(0, i64::MIN, 1, 40), "a high-bit stride is larger than a mutex");
+}
+
+#[test]
+fn a_wrapped_access_endpoint_is_not_inside_a_libc_aggregate() {
+    assert!(fits(80, 0, 8, 88), "the last word of an obstack fits exactly");
+    assert!(!fits(i64::MAX, 0, 8, 88), "a wrapped endpoint is not inside an obstack");
 }

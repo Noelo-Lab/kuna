@@ -4230,7 +4230,7 @@ fn jobs_names_synthesized_structs_as_the_serial_run_does() {
 /// the frame it writes as each function starts is all the parent sees of it. A
 /// function that stalls there is the one blamed, not the chunk's first
 /// function, and the window is the warm one: the run does not wait out a
-/// program load on top of it. `sub_14ea` stalls the second time it starts,
+/// program load on top of it. `shapes::Circle::Circle` (`0x14ea`) stalls the second time it starts,
 /// which is in the ordered chunk.
 #[test]
 fn jobs_a_stall_in_the_ordered_structsynth_worker_blames_the_function_that_stalled() {
@@ -4259,8 +4259,8 @@ fn jobs_a_stall_in_the_ordered_structsynth_worker_blames_the_function_that_stall
         .filter(|r| r.contains("\"error\": \""))
         .map(|r| record_name(r))
         .collect();
-    assert_eq!(failed, ["sub_14ea"], "only the function that stalled is lost:\n{stderr}");
-    let lost = records.iter().find(|r| record_name(r) == "sub_14ea").unwrap();
+    assert_eq!(failed, ["shapes::Circle::Circle"], "only the function that stalled is lost:\n{stderr}");
+    let lost = records.iter().find(|r| record_name(r) == "shapes::Circle::Circle").unwrap();
     assert!(lost.contains("\"error\": \"worker stalled past the per-function watchdog (1s)"), "{lost}");
     assert!(recovered_count(&stderr).is_some_and(|n| n >= 1), "{stderr}");
 }

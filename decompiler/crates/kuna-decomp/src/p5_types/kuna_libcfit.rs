@@ -106,10 +106,10 @@ fn reached_outside(data: &Funcdata, vn: VarnodeId, size: i64) -> bool {
 /// that large is a record the aggregate sits inside (libselinux indexes 120-byte
 /// records holding a 40-byte mutex at +0x38).
 fn fits(at: i64, stride: i64, width: i64, size: i64) -> bool {
-    match stride.abs() {
-        0 => at >= 0 && at + width <= size,
-        s if s < size => true,
-        s if s == size => at.rem_euclid(size) + width <= size,
+    match stride.unsigned_abs() {
+        0 => at >= 0 && at.checked_add(width).is_some_and(|end| end <= size),
+        s if s < size as u64 => true,
+        s if s == size as u64 => at.rem_euclid(size) + width <= size,
         _ => false,
     }
 }

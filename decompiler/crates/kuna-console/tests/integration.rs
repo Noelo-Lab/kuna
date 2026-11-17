@@ -238,6 +238,9 @@ mod verify_iatcall;
 #[path = "verify_indirect_callers.rs"]
 mod verify_indirect_callers;
 
+#[path = "verify_itaniumctors.rs"]
+mod verify_itaniumctors;
+
 #[path = "verify_itaniumrtti.rs"]
 mod verify_itaniumrtti;
 
