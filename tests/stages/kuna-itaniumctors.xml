@@ -1,0 +1,87 @@
+<!--
+  Kuna: Itanium constructors and destructors named from the vptr stores.
+  P1 external-refinement (itaniumrtti); P0 assertion: option itaniumrtti off|on.
+
+  The fixtures are one C++ source built stripped and hidden at -O0 and -O2, so
+  only the Itanium RTTI graph names anything. The Listing is on in both passes.
+
+  Asserts #1-#3 are the off pass: on_stack calls Dog's constructor and its
+  destructor as bare sub_ names, and the copy constructor is a sub_ storing a
+  raw vptr constant. Asserts #4-#7 are the on pass: on_stack calls
+  zoo::Dog::Dog and zoo::Dog::~Dog (the destructor replaces its slot-index
+  name), and the copy constructor is zoo::Dog::Dog calling zoo::Animal::Animal.
+  Asserts #8-#9: Counter has no virtual destructor, so its constructor and its
+  destructor, which store the vptr the same way, both stay sub_ in both passes.
+  Assert #10: at -O2 make_dog inlines the constructor and stores the vptr
+  through operator new's result, not through `this`, so it keeps its name.
+  Asserts #11-#15 load a clang -O2 build in which Gadget's destructor stores
+  its vptr, so constructors could be named, and four helpers store a vptr
+  through their first parameter as a constructor does: a by-value factory, a
+  placement-new helper, the constructor of a class whose first member is a
+  Gadget, and a `delete p` wrapper. None spilled `this` to its frame, so all
+  four stay sub_, while the destructor is still named.
+-->
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/itaniumctors_O0_x86_64.so</com>
+  <com>option listing on</com>
+  <com>option itaniumrtti off</com>
+  <com>read symbols</com>
+  <com>load function on_stack</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function 0x151c</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/itaniumctors_O0_x86_64.so</com>
+  <com>option listing on</com>
+  <com>option itaniumrtti on</com>
+  <com>read symbols</com>
+  <com>load function on_stack</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function 0x151c</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/itaniumctors_O2_x86_64.so</com>
+  <com>option listing on</com>
+  <com>option itaniumrtti on</com>
+  <com>read symbols</com>
+  <com>load function make_dog</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/itaniumctors_wrap_O2_x86_64.so</com>
+  <com>option listing on</com>
+  <com>option itaniumrtti on</com>
+  <com>read symbols</com>
+  <com>load function use_gadgets</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function 0x1300</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="itaniumctors #1: off: Dog's constructor call is unnamed" min="1" max="1">sub_145c\(v3,3,a0\);</stringmatch>
+<stringmatch name="itaniumctors #2: off: Dog's destructor call is unnamed" min="1" max="1">sub_14b4\(v3\);</stringmatch>
+<stringmatch name="itaniumctors #3: off: the copy constructor is unnamed" min="1" max="1">void sub_151c\(</stringmatch>
+<stringmatch name="itaniumctors #4: on: on_stack calls the constructor by name" min="1" max="1">zoo::Dog::Dog\(v3,3,a0\);</stringmatch>
+<stringmatch name="itaniumctors #5: on: the destructor replaces its slot-index name" min="1" max="1">zoo::Dog::~Dog\(v3\);</stringmatch>
+<stringmatch name="itaniumctors #6: on: the copy constructor is named" min="1" max="1">void zoo::Dog::Dog\(</stringmatch>
+<stringmatch name="itaniumctors #7: on: it calls the base constructor by name" min="1" max="1">zoo::Animal::Animal\(a0,a1\);</stringmatch>
+<stringmatch name="itaniumctors #8: no virtual destructor: the constructor stays unnamed" min="2" max="2">sub_1598\(v4,a0\);</stringmatch>
+<stringmatch name="itaniumctors #9: no virtual destructor: the destructor stays unnamed" min="2" max="2">sub_15c2\(v4\);</stringmatch>
+<stringmatch name="itaniumctors #10: an inlining factory keeps its own name" min="1" max="1">void make_dog\(</stringmatch>
+<stringmatch name="itaniumctors #11: a by-value factory is not a constructor" min="1" max="1">sub_1160\(v3,a0\);</stringmatch>
+<stringmatch name="itaniumctors #12: a placement-new helper is not a constructor" min="1" max="1">sub_1180\(v4,a0\);</stringmatch>
+<stringmatch name="itaniumctors #13: a holder's constructor is not its member's" min="1" max="1">sub_1190\(v5,a0\);</stringmatch>
+<stringmatch name="itaniumctors #14: a delete wrapper is not a constructor" min="1" max="1">sub_11b0\(v2\);</stringmatch>
+<stringmatch name="itaniumctors #15: the optimized destructor is still named" min="1" max="1">void kit::Gadget::~Gadget\(</stringmatch>
+</decompilertest>

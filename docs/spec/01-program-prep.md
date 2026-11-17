@@ -5081,6 +5081,89 @@ every other binary's pass list is byte-identical to before the pass existed):
   symbols keep the `::` form, whose qualification *is* rendered at a call site
   (§9, `cppcallnames`).
 
+  Where the Listing is built, the same option also names constructors and
+  destructors (`decompiler/crates/kuna-analysis/src/analyzers/rtti/kuna_itaniumctors.rs`,
+  a Listing consumer, because the decoder and the Listing's operand text are not
+  available when the vtable recovery runs at load). A constructor or destructor of
+  `C` is the function that stores `C`'s vptr into the object it was called on. A
+  function becomes a candidate when a decoded operand names a vptr value or its
+  4 KiB page; each candidate is lifted to p-code and walked along its fall-through
+  path with a small symbolic state in which the first parameter (from the default
+  prototype model) is `this`, the stack pointer is the frame base, spills to the
+  frame are followed, and a call keeps only the registers the model leaves
+  unaffected. Only a STORE of a vptr constant through `this + off` is evidence, so
+  a factory that inlines `new C` (it stores through `operator new`'s result) or a
+  caller that builds a `C` in its frame is not mistaken for a constructor. The
+  owner is the most-derived class whose primary vptr is stored at offset 0, and
+  every stored vptr must belong to it or to a base. A function in `C`'s own
+  primary vtable is shaped like one of its virtual destructors, `C::~C` (the name
+  a symbol table gives the complete-object and the deleting destructor alike), when
+  its stores make `C` the owner twice over: all of them, and also the ones made
+  before the walk's first call or conditional branch. A destructor sets its vptr
+  before anything else; a virtual method that inlined one behind a test (a
+  COM-style `Release` checking its count before `delete this`) stores only after
+  it, and one that rebuilds `*this` by placement new and goes on to build a
+  polymorphic member or a derived class in place also stores that other vptr.
+  The ABI puts the deleting destructor in the slot after the complete one, and the
+  deleting one either stores too (at `-O2` it may inline the other), calls the
+  complete one (a direct call, or an indirect call through a constant, which
+  AArch64 clang emits at `-O0`), or, for an abstract class built by clang, only
+  traps (a raised exception jumped through). So a class's destructors are named
+  from two neighbouring shaped slots, or from a single one whose next slot calls it
+  or only traps; that next slot is also named when it calls it. Any other shaped
+  slot is a virtual method carrying a constructor's or destructor's code with
+  nothing before it — a lone one whose neighbour is an ordinary method
+  (`reinit() { new (this) C(); }`, `destroy() { delete this; }` with a non-virtual
+  destructor), one beside a complete destructor its own neighbour calls, a third,
+  or two that are not neighbours — and none of that class's slots is named. A
+  deleting destructor that only tail-calls `operator delete` (clang drops a
+  complete destructor's dead stores from it) cannot be told from an ordinary method,
+  so such a class keeps its slot names. A destructor takes only `this`, while a
+  virtual method returning its own class by value builds the result in a return
+  slot passed as its first parameter, reads its own `this` from the second, and
+  hands the slot's address back, so its first store is the class's vptr through
+  "`this`" (`virtual Color darker() const`, `virtual Vec scaled(int) const`). A
+  slot whose walk loads or stores through the second parameter (its register, or
+  its stack slot on i386), or returns with `this` in a pointer return register
+  that is not `this`'s own (x86-64's `RAX`), is not shaped like a destructor. A
+  function in no vtable is a constructor `C::C`, but only when `C` or a base has such a virtual destructor, because a
+  non-virtual destructor stores the vptr exactly as a constructor does, and only
+  when every vptr store goes through `this` read back from a frame slot the
+  function itself spilled it to. That is the shape of unoptimized code, which
+  inlines nothing; in optimized code a helper that a constructor or destructor was
+  inlined into stores the vptr through its first parameter exactly as a
+  constructor does (a by-value factory's return slot, a placement-new helper, the
+  constructor of a class whose first member is a `C`, a `delete p` wrapper), so an
+  optimized constructor is left unnamed rather than risk naming one of those. A
+  `this` the function stores to a second frame slot is an inlined callee's
+  parameter home (an always_inline constructor inlined into the function) until a
+  call follows, which makes it the compiler's own spill across that call; a store
+  through it is not a store through `this`. A `this` passed in memory is never
+  spilled by the function itself, so on such an ABI no constructor is named. An
+  unoptimized constructor calls nothing before its vptr store but its bases'
+  constructors, each passed `this`; an optimized function returning a class by
+  value can spill its return slot across calls it does not pass it to and store
+  through the reloaded slot exactly as unoptimized code does (TagLib's
+  `Ogg::Page::paginate`, returning a `List<Page*>`), so a store preceded by calls
+  none of which was passed `this` names nothing. And
+  when `C` has a base, every store must follow a call: a constructor runs its base
+  constructors before it sets its own vptr, while a destructor sets it first — the
+  shape of a pure virtual destructor, which no vtable slot holds. A
+  fact for a function the symbol table already names (anything but a placeholder,
+  an entry-table slot or a slot index) is dropped, so a recovered name never joins
+  a real one as a second name the call-site lookup could prefer. A
+  destructor's slot already carries its slot-index name from the load-time commit;
+  the commit of a Function fact replaces a slot-index name (the kind the function
+  inventory already ranks as structural) in the same scope with a real,
+  non-placeholder name.
+
+  Still named wrongly, all from optimized code: a virtual method that rebuilds
+  `*this` (placement new, or an explicit destructor call) when its next slot only
+  traps or calls it directly, or when two such methods are neighbours; and, on
+  i386, where `this` arrives on the stack, a virtual method returning its own
+  class by value without reading `*this` (`virtual Vec zero() const`) beside
+  another such method.
+
   The pass is blind to a `-fno-rtti` build by construction: no typeinfo is emitted,
   so no anchor exists and the output is empty. Independent code-pointer-run scanning
   — which would find such vtables heuristically — is deliberately **not** part of
