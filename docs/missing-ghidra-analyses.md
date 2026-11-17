@@ -109,10 +109,13 @@ reconstructs `got_slot → name` from the dynamic relocations and decodes each
 RISC-V, SPARC; classic, CET `.plt.sec`, PIE, and stripped layouts). SPARC is the
 one decoder where the stub address and the name-map key coincide: its
 `R_SPARC_JMP_SLOT` `r_offset` is the PLT entry itself (the linker rewrites the
-in-place stub at resolution time), so `decode_sparc` uses the ELF class to
-stride complete 12-byte ELF32 or 32-byte ELF64 entries and records any
-`sethi %g1`-headed entry that is a known relocation. A zero `.plt` `sh_entsize`
-does not override the ABI stride. Toolchain-free ELF32 fixtures cover SPARC and
+in-place stub at resolution time), so `decode_sparc` visits every word of the
+window and records any `sethi %g1`-headed word that is a known relocation and
+has a complete entry behind it: 12 bytes for ELF32 (SPARC, SPARC32Plus), 32 for
+ELF64, chosen by the ELF class (a zero `.plt` `sh_entsize` does not override it).
+The relocation, not a stride, fixes the entry boundary, so the sectionless
+`PT_LOAD` scan, whose window starts with the segment rather than at `.plt`, finds
+every entry too. Toolchain-free ELF32 fixtures cover SPARC and
 SPARC32Plus call names, absent relocations, invalid heads and truncated entries;
 `plt_sparc64` preserves the native ELF64 behavior. PowerPC64 ELFv2 has no `.plt`
 *code* section, so its TOC-relative call stubs (synthesized inline in `.text`)

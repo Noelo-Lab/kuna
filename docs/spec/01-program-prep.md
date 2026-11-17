@@ -1897,6 +1897,10 @@ funcsym stream:
   and match the *decoded* GOT target against the map — self-correcting, since PLT0
   and IRELATIVE/IFUNC stubs jump to non-symbol-bearing slots and fall out
   automatically. `.plt.sec`/`.plt.got` outrank `.plt` so the CET call target wins.
+  On SPARC the stub and the key coincide (`R_SPARC_JMP_SLOT`'s offset is the PLT
+  entry itself), so a `sethi %g1`-headed word that is a relocation key is named
+  when a complete entry fits behind it: 12 bytes for ELF32 (SPARC, SPARC32Plus),
+  32 for ELF64, whatever the word's offset from the start of the scanned window.
   `option ifuncfpret` (on by default, x86-64) adds a second pass that DOES name those
   IRELATIVE IFUNC stubs — `ifunc_<resolver>`, keyed off the `R_X86_64_IRELATIVE`
   resolver-address map — so a tail `jmp` to a glibc math/mem/str dispatcher's stub

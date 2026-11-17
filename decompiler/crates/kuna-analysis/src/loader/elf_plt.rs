@@ -880,10 +880,13 @@ fn decode_ppc64_stubs(
 /// `r_offset` **is the PLT entry address itself** (the linker rewrites the
 /// in-place stub at resolution time — see Ghidra's `SPARC*_ElfRelocationHandler`),
 /// not a separate `.got` slot.  So the "got_slot → name" map ([`build_got_name_map`])
-/// is already keyed on the call target the decompiler sees: the decoder just walks
-/// the section in ABI-sized strides and records complete entries whose address
-/// is a known symbol-bearing relocation. Reserved PLT0 entries and non-symbol
-/// relocations fall out of the map automatically (here `stub == got`).
+/// is already keyed on the call target the decompiler sees, and the relocation,
+/// not a stride, fixes each entry boundary: the decoder visits every word and
+/// records a `sethi %g1`-headed word whose address is a known symbol-bearing
+/// relocation and which has a complete ABI-sized entry behind it. A window that
+/// starts mid-table (the sectionless `PT_LOAD` scan) therefore finds the same
+/// entries as `.plt`. Reserved PLT0 entries and non-symbol relocations fall out
+/// of the map automatically (here `stub == got`).
 fn decode_sparc(
     vma: u64,
     data: &[u8],
@@ -892,12 +895,12 @@ fn decode_sparc(
     out: &mut Vec<PltSym>,
     named_got: &mut HashSet<u64>,
 ) {
-    for (index, entry) in data.chunks_exact(entry_size).enumerate() {
+    for (index, entry) in data.windows(entry_size).step_by(4).enumerate() {
         // `sethi %hi(...),%g1`: op=00, rd=1, op2=100.
         let w0 = u32::from_be_bytes([entry[0], entry[1], entry[2], entry[3]]);
         let is_sethi_g1 = (w0 >> 30) == 0b00 && ((w0 >> 25) & 0x1f) == 1 && ((w0 >> 22) & 0x7) == 0b100;
         if is_sethi_g1 {
-            let addr = vma.wrapping_add((index * entry_size) as u64);
+            let addr = vma.wrapping_add((index * 4) as u64);
             record(addr, addr, map, out, named_got);
         }
     }
@@ -1421,6 +1424,25 @@ mod tests {
         let mut got: Vec<(u64, Vec<u8>)> = out.iter().map(|p| (p.addr, p.name.clone())).collect();
         got.sort();
         assert_eq!(got, vec![(entry(1), b"printf".to_vec()), (entry(2), b"puts".to_vec())]);
+    }
+
+    #[test]
+    fn sparc32_plt_decode_ignores_window_phase() {
+        // A sectionless PT_LOAD window starts with its segment, 164 bytes before
+        // `.plt` here, so the 12-byte entries do not sit at multiples of 12.
+        let (vma, plt) = (0x2ff60u64, 0x30004u64);
+        let mut data = vec![0u8; (plt - vma) as usize + 48];
+        for (i, hi) in [0x03000030u32, 0x0300003c].into_iter().enumerate() {
+            data.extend_from_slice(&hi.to_be_bytes());
+            data.extend_from_slice(&(0x30bffff3 - 3 * i as u32).to_be_bytes());
+            data.extend_from_slice(&0x01000000u32.to_be_bytes());
+        }
+        let map: HashMap<u64, Vec<u8>> =
+            [(plt + 48, b"puts".to_vec()), (plt + 60, b"printf".to_vec())].into();
+        let mut out: Vec<PltSym> = Vec::new();
+        decode_sparc(vma, &data, 12, &map, &mut out, &mut HashSet::new());
+        let got: Vec<(u64, Vec<u8>)> = out.iter().map(|p| (p.addr, p.name.clone())).collect();
+        assert_eq!(got, vec![(plt + 48, b"puts".to_vec()), (plt + 60, b"printf".to_vec())]);
     }
 }
 
