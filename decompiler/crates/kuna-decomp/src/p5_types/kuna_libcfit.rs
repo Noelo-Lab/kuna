@@ -89,7 +89,7 @@ fn libc_pointee_size(ct: &Datatype) -> Option<i64> {
 }
 
 fn reached_outside(data: &Funcdata, vn: VarnodeId, size: i64) -> bool {
-    let Some((accesses, places)) = crate::kuna_protoorder::accesses_through(data, &[vn]) else {
+    let Some((accesses, places, _)) = crate::kuna_protoorder::accesses_through(data, &[vn]) else {
         return false;
     };
     places.iter().any(|&(at, stride)| !fits(at, stride, 1, size))

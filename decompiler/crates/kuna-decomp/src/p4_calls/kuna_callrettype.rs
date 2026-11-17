@@ -791,7 +791,7 @@ fn accesses_disagree(data: &Funcdata, outvn: VarnodeId, ct: &Datatype) -> bool {
         _ => return false,
     };
     let family = with_returned_values(data, crate::kuna_protoorder::value_family(data, outvn));
-    let Some((accesses, places)) = crate::kuna_protoorder::accesses_through(data, &family) else { return true };
+    let Some((accesses, places, _)) = crate::kuna_protoorder::accesses_through(data, &family) else { return true };
     if accesses.iter().any(|a| family.contains(&a.value)) {
         return true;
     }
