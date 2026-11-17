@@ -266,40 +266,41 @@
 0259                  prefercomplement
 0260                  structuretransform
 0261        !         armfloatargs
-0262        !         assignhigh
-0263        !         mergerequired
-0264        !         markexplicit
-0265        !         markimplied
-0266        !         mergemultientry
-0267        !         mergecopy
-0268        !         dominantcopy
-0269        !         dynamicsymbols
-0270        !         markindirectonly
-0271        !         mergeadjacent
-0272        !         mergetype
-0273        !         hideshadow
-0274        !         copymarker
-0275                  latedonothing
-0276                  blockstructure
-0277                  prefercomplement
-0278                  structuretransform
-0279                  branchflip
-0280                  presentcompareform
-0281        !         outputprototype
-0282        !         inputprototype
-0283        !         mapglobals
-0284        !         dynamicsymbols
-0285        !         namevars
-0286                  calltargettype
-0287        !         setcasts
-0288                  finalstructure
-0289                  gotoreduce
-0290                  taildup
-0291                  ifelseflatten
-0292                  crossjumprevert
-0293                  dedupitetail
-0294                  iteregion
-0295                  iteboolean
-0296                  paramcopyhoist
-0297        !         prototypewarnings
-0298                  stop
+0262                  returnselector
+0263        !         assignhigh
+0264        !         mergerequired
+0265        !         markexplicit
+0266        !         markimplied
+0267        !         mergemultientry
+0268        !         mergecopy
+0269        !         dominantcopy
+0270        !         dynamicsymbols
+0271        !         markindirectonly
+0272        !         mergeadjacent
+0273        !         mergetype
+0274        !         hideshadow
+0275        !         copymarker
+0276                  latedonothing
+0277                  blockstructure
+0278                  prefercomplement
+0279                  structuretransform
+0280                  branchflip
+0281                  presentcompareform
+0282        !         outputprototype
+0283        !         inputprototype
+0284        !         mapglobals
+0285        !         dynamicsymbols
+0286        !         namevars
+0287                  calltargettype
+0288        !         setcasts
+0289                  finalstructure
+0290                  gotoreduce
+0291                  taildup
+0292                  ifelseflatten
+0293                  crossjumprevert
+0294                  dedupitetail
+0295                  iteregion
+0296                  iteboolean
+0297                  paramcopyhoist
+0298        !         prototypewarnings
+0299                  stop

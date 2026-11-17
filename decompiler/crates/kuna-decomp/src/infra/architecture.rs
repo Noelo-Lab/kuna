@@ -709,9 +709,9 @@ pub struct Architecture {
     /// (kuna GH-9191) Bound a modulo/and-mask LOAD-table jumptable index
     /// (C++ `switch_modulo_bound`).
     pub switch_modulo_bound: bool,
-    /// (kuna) Recover a `BRANCHIND` whose destination is a select over constant
-    /// addresses (`p2_lift/kuna_constselectjump.rs`).
-    pub const_select_jump: bool,
+    /// (kuna) When a `BRANCHIND` whose destination is a select over constant
+    /// addresses is recovered (`p2_lift/kuna_constselectjump.rs`).
+    pub const_select_jump: crate::kuna_constselectjump::ConstSelectMode,
     /// (kuna, angr `test_decompiling_missing_function_call`) Bound a LOAD-table
     /// jumptable index by an out-of-band CBRANCH range guard the basic model's
     /// guard analysis could not turn into a bound (C++ `switch_guard_bound`).
@@ -2389,7 +2389,7 @@ impl Architecture {
             go_new_type: false, // (kuna) option gonewtype; reset_defaults sets the shipped default (on)
             ptrauth_trap: false, // (kuna) option ptrauthtrap; reset_defaults sets the shipped default (on)
             switch_modulo_bound: false,
-            const_select_jump: false,
+            const_select_jump: crate::kuna_constselectjump::ConstSelectMode::Off,
             highslice_guard: false,
             switch_guard_bound: false,
             switch_shared_case: false,
@@ -2707,7 +2707,7 @@ impl Architecture {
         self.go_new_type = true; // (kuna) type runtime.newobject results from their descriptors on Go images
         self.ptrauth_trap = true; // (kuna) drop arm64e pointer-auth failure checks; inert unless a brk #0xc47x trap's guard is the return-address bit test, 0/675 datatests
         self.switch_modulo_bound = false; // (kuna) default: upstream byte-identical (GH-9191)
-        self.const_select_jump = false; // (kuna) default: upstream byte-identical (constant-select indirect branch)
+        self.const_select_jump = crate::kuna_constselectjump::ConstSelectMode::Reentry; // (kuna) option constselectjump default `reentry`: only a single-target jump its own target code re-enters with another local constant; 0/675 datatest assertions move
         self.highslice_guard = false;
         self.switch_guard_bound = false; // (kuna) default: upstream byte-identical (angr opt-in)
         self.switch_shared_case = true; // (kuna) DIV-14 default-on (angr loop-carried-guard PIC switch recovery; slower on the functions it recovers, kept on for quality; 0/675 byte-identical)

@@ -2224,7 +2224,9 @@ mod tests {
         // and gh1627-x86-senduipi-gatherpf / SENDUIPI is not RDRAND and VGATHERPF indexes with a ZMM register
         // and gh1628-x86-vmx-decode-flags / VMREAD/VMWRITE decode without REX.W and VMX instructions set CF/ZF
         // and kuna-kernelbug / a Linux kernel __bug_table trap prints as __WARN(file,line) or BUG()
-        assert_eq!(count, 778, "corpus file count drifted");
+        // and kuna-reentereddispatch / a re-entered dispatch keeps every step's store
+        // and kuna-dispatch-values / dispatcher return values survive narrowing and copies
+        assert_eq!(count, 780, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

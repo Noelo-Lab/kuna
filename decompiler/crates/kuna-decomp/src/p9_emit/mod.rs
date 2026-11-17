@@ -117,3 +117,5 @@ pub mod kuna_callprototypes;
 pub(crate) mod kuna_gostorevalue;
 
 pub(crate) mod kuna_constantshift;
+
+pub mod kuna_returnselector;

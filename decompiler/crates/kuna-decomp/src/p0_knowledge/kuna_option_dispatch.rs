@@ -315,7 +315,11 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "switchmodbound" => on_off!(switch_modulo_bound, "Switch modulo/and-mask index bound"),
-    "constselectjump" => on_off!(const_select_jump, "Constant-select indirect branch recovery"),
+    "constselectjump" => {
+        let (mode, msg) = crate::kuna_constselectjump::OptionConstSelectJump.apply(p1)?;
+        self.const_select_jump = mode;
+        Ok(msg)
+    },
     "switchguardbound" => on_off!(switch_guard_bound, "Switch CBRANCH-guard index bound"),
     "highsliceguard" => on_off!(highslice_guard, "High-byte slice jump-table guard"),
     "switchsharedcase" => on_off!(switch_shared_case, "Switch loop-carried-guard table"),

@@ -132,11 +132,12 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     // transform-tier default-off recovery/structuring passes.
     ("switchmodbound", "on"),
     // (kuna) Recover a CMOV/predicated indirect dispatch over constant code
-    // addresses. Default OFF because a conditional tail call between two nearby
-    // function entries has the same shape and recovering it splices both callee
-    // bodies into the caller; preset membership is the delivery route, since the
-    // only alternative on a real dispatch is losing the whole body behind the
-    // branch to a `(*v)()` call.
+    // addresses. The default `reentry` recovers only re-entered dispatcher loops,
+    // because a conditional tail call between two nearby function entries has the
+    // same shape and recovering it splices both callee bodies into the caller;
+    // preset membership is the delivery route for `on`, since the only
+    // alternative on a real dispatch is losing the whole body behind the branch
+    // to a `(*v)()` call.
     ("constselectjump", "on"),
     ("switchguardbound", "on"), // speed-expensive
     ("unrolledguard", "on"),    // speed-expensive

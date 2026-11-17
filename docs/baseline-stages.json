@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4498,
-    4498
+    4507,
+    4507
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -3126,6 +3126,10 @@
     "data:devectorize effects #2: both passes keep the early return's store of 1",
     "data:disabled anchor or pointer inference retains folded literal",
     "data:disabled retains biased literal",
+    "data:dispatch-values #1: narrowing keeps every dispatch increment",
+    "data:dispatch-values #2: foreign source update is retained",
+    "data:dispatch-values #3: indirect re-entry reaches the second store",
+    "data:dispatch-values #4: no incomplete recovery",
     "data:double is stored in its declared field",
     "data:dyldcrossrefs #1: off leaves the island call unnamed",
     "data:dyldcrossrefs #2: off leaves the GOT slot call unnamed",
@@ -3900,6 +3904,11 @@
     "data:realtypes-pointee #7: the off path shows the same width the relabel now preserves",
     "data:recurrence keeps its previous value",
     "data:recurrence starts at seed",
+    "data:reentereddispatch #1: both passes keep the first store",
+    "data:reentereddispatch #2: only reentry keeps the second store",
+    "data:reentereddispatch #3: reentry reaches the third and fourth stores",
+    "data:reentereddispatch #4: the caller return is a defined default case",
+    "data:reentereddispatch #5: no dispatch is left incomplete or undefined",
     "data:regionstructure #1: the if/else diamond is structured (true clause), both passes",
     "data:regionstructure #2: the else clause is structured, both passes",
     "data:regionstructure #3: the join sequence + tail return is recovered, both passes",
