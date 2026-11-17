@@ -3990,6 +3990,37 @@ fn a_byte_pointee_vote_keeps_word_fills_and_long_callers_whole() {
     }
 }
 
+/// `sum_words` reads words, so its recovered parameter is `int *`. `scramble`
+/// reads and writes its buffer a byte at a time and refuses that vote, so its
+/// byte accesses print without a cast; `xor_words` walks words over a
+/// loop-carried offset before a byte tail and keeps a pointer, where a refusal
+/// printed its buffer as a `long` handed to `sum_words`.
+#[test]
+fn a_byte_cursor_refuses_a_word_vote_unless_it_walks_whole_words() {
+    let bin = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/protoorder_bytecursor_x86_64")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let sp = specs();
+    let (stdout, stderr, ok) = run_kuna(&["decompile-all", bin.as_str(), "--sleighpath", &sp]);
+    assert!(ok, "kuna decompile-all failed: {stderr}");
+    let body = |name: &str| {
+        stdout
+            .split("// Function: ")
+            .find(|c| c.starts_with(&format!("{name} ")))
+            .unwrap_or_else(|| panic!("{name} is printed"))
+    };
+    let signature = |name: &str| {
+        body(name).lines().find(|l| l.contains(&format!(" {name}("))).unwrap_or_default().to_string()
+    };
+    let scramble = body("scramble");
+    assert!(signature("scramble").contains("char *a0,"), "scramble took the word vote:\n{scramble}");
+    assert!(!scramble.contains("char *)a0"), "scramble's byte accesses are cast:\n{scramble}");
+    let xor_words = body("xor_words");
+    assert!(signature("xor_words").contains(" *a0,"), "xor_words lost its pointer:\n{xor_words}");
+}
+
 /// `--jobs-full-load` gives every worker the parent's own load instead of the
 /// inventory hand-off.  It exists as the paranoid option, so it has to agree with
 /// the hand-off, not merely with itself.
