@@ -1256,9 +1256,12 @@ impl<'a> RegionStructurer<'a> {
         // externalizes it to the loop head), so the enclosing loop still folds.
         // Parity-safe: an acyclic datatest switch has no back-edge case, so this
         // branch is dead off-loop and the 675-assertion corpus is byte-identical.
+        // A backedge to this switch itself is internal to the folded region, not
+        // a continue: it must be the exit so new_block_switch restores the loop,
+        // and beside a case leaving elsewhere the fold declines rather than drop it.
         let is_continue_case = |s: &Self, c: BlockId| -> bool {
             let cb = s.graph.block(c);
-            cb.size_out() == 1 && cb.is_back_edge_out(0)
+            cb.size_out() == 1 && cb.is_back_edge_out(0) && cb.get_out(0) != bl
         };
 
         // --- Find the "obvious" exit block (ruleBlockSwitch first loop) ---------
@@ -3306,6 +3309,59 @@ mod tests {
             g.add_edge(b[s], b[d]);
         }
         (g, root, b)
+    }
+
+    fn switch_graph(n: usize, edges: &[(usize, usize)], back: usize) -> (BlockGraph, BlockId, Vec<BlockId>) {
+        let (mut g, root, b) = graph(n, edges);
+        for &block in &b[2..] {
+            let original = g.arena.insert(FlowBlock::new_kind(BlockKind::Graph));
+            *g.block_mut(block).kind_mut() = BlockKind::Copy { copy: Some(original) };
+        }
+        g.block_mut(b[2]).set_flag(crate::block::block_flags::f_switch_out);
+        let flags = crate::block::edge_flags::f_back_edge | crate::block::edge_flags::f_loop_edge;
+        g.set_out_edge_flag(b[back], 0, flags);
+        (g, root, b)
+    }
+
+    fn fold_switch(g: &mut BlockGraph, root: BlockId, b: &[BlockId]) -> Option<BlockId> {
+        let copy = |g: &BlockGraph, id: BlockId| match g.block(id).kind() {
+            BlockKind::Copy { copy } => copy.unwrap(),
+            _ => unreachable!(),
+        };
+        let head = copy(g, b[2]);
+        let maps = (3..b.len()).map(|i| ((head, copy(g, b[i])), (i as int4 - 3, false))).collect();
+        let mut st = RegionStructurer::new(g, root).with_switch_maps([(head, 0)].into_iter().collect(), maps);
+        assert!(st.graph.block(b[3]).is_back_edge_out(0));
+        if !st.try_switch_cases(b[2]).unwrap() {
+            return None;
+        }
+        (0..g.block(root).get_size())
+            .map(|i| g.block(root).get_block(i))
+            .find(|&id| g.block(id).get_type() == crate::block::BlockType::Switch)
+    }
+
+    #[test]
+    fn switch_case_backedges_keep_their_actual_loop_header() {
+        for returns_to_switch in [true, false] {
+            let destination = if returns_to_switch { 2 } else { 1 };
+            let (mut g, root, b) = switch_graph(5, &[(0, 1), (1, 2), (2, 3), (2, 4), (3, destination)], 3);
+            let sw = fold_switch(&mut g, root, &b).unwrap();
+            assert_eq!(g.block(sw).size_out(), 1, "{returns_to_switch}");
+            assert_eq!(g.block(sw).get_out(0), if returns_to_switch { sw } else { b[1] });
+        }
+    }
+
+    #[test]
+    fn a_switch_backedge_beside_another_exit_is_not_folded_away() {
+        let edges = [(0, 1), (1, 2), (1, 5), (2, 3), (2, 4), (2, 5), (3, 2)];
+        let (mut g, root, b) = switch_graph(6, &edges, 3);
+        assert!(fold_switch(&mut g, root, &b).is_none());
+        assert_eq!(g.block(b[3]).get_out(0), b[2]);
+        let enclosing = [(0, 1), (1, 2), (1, 5), (2, 3), (2, 4), (2, 5), (3, 1)];
+        let (mut g, root, b) = switch_graph(6, &enclosing, 3);
+        let sw = fold_switch(&mut g, root, &b).unwrap();
+        let outs: Vec<_> = (0..g.block(sw).size_out()).map(|i| g.block(sw).get_out(i)).collect();
+        assert!(outs.contains(&b[1]) && outs.contains(&b[5]), "{outs:?}");
     }
 
     #[test]

@@ -1524,3 +1524,20 @@ little real optimized code. Widening it — multi-exit regions returning a value
 a caller-side branch, and a purity allowlist so compiler intrinsics such as
 `__addvsi3` under `-ftrapv` stop blocking otherwise-clean regions — is the work that
 would make the transform generally applicable.
+
+A switch can itself be a loop header. In `RegionStructurer::try_switch_cases`, a
+case backedge to that same switch is an internal loop edge, not a terminal
+continue to an enclosing loop. It nominates the switch as the exit so
+`BlockGraph::new_block_switch` restores a self-edge after collapsing its cases;
+the loop schema can then wrap the switch. Backedges to a distinct enclosing loop
+head retain their existing continue treatment. Treating both forms alike drops
+the internal edge and emits a one-shot switch that loses later iterations.
+GCC and Clang emit this shape for `for (;;) switch (f(x)) { ... }`: one jump
+table at the loop head, with every case but the default jumping straight back.
+The rule is shared by every architecture. When such a switch also has a case
+leaving to a different exit block, one switch exit cannot carry both edges, so
+the schema declines and the ordinary collapse structures the loop. Folding it
+anyway dropped the backedge as well. An x86-64 compact switch with a retry
+case therefore prints its biased selector inline (`switch(mode - 5)`), exactly
+as it does with `regionstructure off`; its earlier `switch(mode)` came from
+that lossy fold, rescued only when the structurer later stranded.
