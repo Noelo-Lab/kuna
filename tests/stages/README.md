@@ -1,5 +1,10 @@
 # Stage-model issue testcases
 
+`kuna-ppc32-computed-lr.xml` follows a local target stored in LR rather than
+returning the input argument. Its CLI companion covers both byte orders,
+conditional transfers, joins, stack reloads and ordinary ABI returns, and
+compiles and executes the emitted C at O0/O2.
+
 `kuna-narrowed-call-input.xml` checks a call through a typed field whose
 argument was narrowed to two bytes before the field's prototype was forced on
 the call: the function decompiles and passes the sum widened to the parameter.

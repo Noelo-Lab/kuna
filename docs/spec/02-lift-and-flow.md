@@ -33,6 +33,23 @@ reaches the architecture only through the
 live implementation is
 `decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (ArchFlowEnv)`.
 
+PPC32 `blr` and its conditional forms are not necessarily ABI returns: LR can
+hold a locally computed code address. Before return processing discards that
+target, `decompiler/crates/kuna-decomp/src/p2_lift/kuna_ppc32lrflow.rs (computed_sites)`
+propagates raw p-code values over the function's blocks to a fixed point.
+Constants, argument-derived targets and loads through fixed addresses are
+re-followed as indirect branches;
+ordinary incoming LR values, saved copies and unproved reloads remain returns.
+The proof tracks exact stack stores and reloads, invalidates overlapping writes,
+projects known constants into narrow register views in either byte order,
+forgets memory across calls and respects each callee's preserved registers. It
+makes no claim when the bounded analysis runs out of work or loses provenance.
+Explicit flow assertions win. Newly reached code is checked again before the
+caller-local import proof runs. Reclassified LR targets discard the low two bits
+and use the 32-bit instruction address, including with eight-byte registers;
+QEMU confirms a target with a low bit set reaches the same instruction. This
+classification repair has no option.
+
 In 64-bit code spaces, SLEIGH display operands marked as code addresses retain
 that interpretation through their nested display subtables. Their evaluated bit patterns
 print as unsigned hexadecimal addresses even when bit 63 is set; ordinary

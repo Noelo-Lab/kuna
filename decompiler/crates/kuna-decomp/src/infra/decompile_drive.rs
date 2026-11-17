@@ -453,6 +453,10 @@ impl FlowEnvironment for ArchFlowEnv {
             |dest| self.query_call(dest).is_some())
     }
 
+    fn prepare_flow_override(&self, fd: &mut Funcdata, site: &Address, kind: u32) -> KunaResult<()> {
+        crate::p2_lift::kuna_ppc32lrflow::align_target(fd, self.arch(), site, kind)
+    }
+
     fn is_v850_indirect_jmp(&self, fd: &Funcdata, op: crate::context::OpId) -> bool {
         // (kuna) GH-8817: wire the ported `kunaIsV850IndirectJmp` predicate.  The
         // gate is `kuna_v850indbranch::applies` (the `v850indirectbranch` flag on
@@ -1009,6 +1013,16 @@ pub fn build_and_follow_flow_with_override_and_protos(
 fn follow_flow_on_fd(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcdata> {
     let comments = fd.pending_comment_count();
     let mut data = generate_flow(arch, fd)?;
+    loop {
+        let sites = crate::p2_lift::kuna_ppc32lrflow::computed_sites(&data, arch);
+        if sites.is_empty() { break; }
+        for site in sites {
+            data.get_override_mut().insert_flow_override(site, crate::overrides::flow_type::BRANCH);
+        }
+        data.clear();
+        data.truncate_pending_comments(comments);
+        data = generate_flow(arch, data)?;
+    }
     let bindings = crate::kuna_ppc32piccalls::prove(&data, arch);
     if !bindings.is_empty() {
         // The discarded flow ran past calls the proof ends; nothing it buffered
