@@ -1012,17 +1012,7 @@ pub fn build_and_follow_flow_with_override_and_protos(
 #[allow(clippy::mutable_key_type)]
 fn follow_flow_on_fd(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcdata> {
     let comments = fd.pending_comment_count();
-    let mut data = generate_flow(arch, fd)?;
-    loop {
-        let sites = crate::p2_lift::kuna_ppc32lrflow::computed_sites(&data, arch);
-        if sites.is_empty() { break; }
-        for site in sites {
-            data.get_override_mut().insert_flow_override(site, crate::overrides::flow_type::BRANCH);
-        }
-        data.clear();
-        data.truncate_pending_comments(comments);
-        data = generate_flow(arch, data)?;
-    }
+    let mut data = follow_lr_flow(arch, fd)?;
     let bindings = crate::kuna_ppc32piccalls::prove(&data, arch);
     if !bindings.is_empty() {
         // The discarded flow ran past calls the proof ends; nothing it buffered
@@ -1030,9 +1020,44 @@ fn follow_flow_on_fd(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcda
         data.clear();
         data.truncate_pending_comments(comments);
         data.ppc32_pic_calls = bindings;
-        data = generate_flow(arch, data)?;
+        data = follow_lr_flow(arch, data)?;
     }
     publish_flow(arch, data)
+}
+
+#[allow(clippy::mutable_key_type)]
+fn follow_lr_flow(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcdata> {
+    use crate::p2_lift::kuna_ppc32lrflow::Classification;
+    let comments = fd.pending_comment_count();
+    let mut data = generate_flow(arch, fd)?;
+    let mut automatic = std::collections::BTreeSet::new();
+    let mut work = 0usize;
+    let mut rounds = 0usize;
+    loop {
+        rounds += 1;
+        if rounds > 4096 {
+            return Err(KunaError::lowlevel("PPC32 LR flow did not converge"));
+        }
+        match crate::p2_lift::kuna_ppc32lrflow::classify(&mut data, arch, &automatic, &mut work)? {
+            Classification::Changed => continue,
+            Classification::Sites(sites) => {
+                if sites.is_empty() { break; }
+                for site in sites {
+                    debug_assert_eq!(data.get_override().get_flow_override(&site), crate::overrides::flow_type::NONE);
+                    automatic.insert(site.clone());
+                    data.get_override_mut().insert_flow_override(site, crate::overrides::flow_type::BRANCH);
+                }
+                data.clear();
+                data.truncate_pending_comments(comments);
+                data = generate_flow(arch, data)?;
+            }
+        }
+    }
+    for site in automatic {
+        debug_assert_eq!(data.get_override().get_flow_override(&site), crate::overrides::flow_type::BRANCH);
+        data.get_override_mut().remove_flow_override(&site);
+    }
+    Ok(data)
 }
 
 /// C++ `Funcdata::followFlow` through `startProcessing`'s sorting, without

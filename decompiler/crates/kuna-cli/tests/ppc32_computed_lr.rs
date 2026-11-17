@@ -86,11 +86,15 @@ fn check_runtime(c: &str, expected: &str) {
     }
     let source = common::scratch_file("ppc32-lr-output", "c");
     let executable = common::scratch_file("ppc32-lr-output", "bin");
-    let source_text = format!("typedef unsigned int undefined4; typedef unsigned int uint;\n{c}\nint main(void) {{ for (int i = -4; i <= 4; ++i) if (check(i) != ({expected})) return 1; return 0; }}\n");
+    let source_text = format!("typedef unsigned int undefined4; typedef unsigned int uint; typedef int int4;\n{c}\nint main(void) {{ for (int i = -4; i <= 4; ++i) if (check(i) != ({expected})) return 1; return 0; }}\n");
     std::fs::write(&source, source_text).unwrap();
     for optimization in ["-O0", "-O2"] {
         let build = Command::new("cc")
-            .args([optimization, "-Werror=implicit-function-declaration"])
+            .args([
+                optimization,
+                "-Werror=implicit-function-declaration",
+                "-Werror=return-type",
+            ])
             .arg(&source)
             .arg("-o")
             .arg(&executable)
@@ -126,6 +130,101 @@ fn local_and_conditional_lr_transfers_execute_their_targets() {
 }
 
 #[test]
+fn shared_lr_transfer_keeps_its_computed_and_returning_contexts() {
+    let shared = vec![
+        0x7d8802a6, 0x38600007, 0x38001014, 0x7c0803a6, 0x4e800020, 0x7d8803a6, 0x4bfffff8,
+    ];
+    let common_work = vec![
+        0x7d8802a6, 0x38600005, 0x38001018, 0x7c0803a6, 0x38630001, 0x4e800020, 0x3863000a,
+        0x7d8803a6, 0x4bfffff0,
+    ];
+    for little in [false, true] {
+        for model in ["default", "e500"] {
+            let target = format!("PowerPC:{}:32:{model}", if little { "LE" } else { "BE" });
+            for (code, expected) in [(&shared, "7"), (&common_work, "17")] {
+                for mode in ["fast", "reliable"] {
+                    let output =
+                        run_decompile(little, code.clone(), &["--target", &target, "--mode", mode]);
+                    assert!(output.status.success(), "{target} {mode}: {output:?}");
+                    let c = String::from_utf8(output.stdout).unwrap();
+                    assert!(!c.contains("jump-as-call"), "{target} {mode}: {c}");
+                    check_runtime(&c, expected);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn compared_incoming_lr_values_do_not_become_dispatches() {
+    let guarded = vec![
+        0x7d8802a6, 0x38600007, 0x7c006000, 0x4c820020, 0x7c0803a6, 0x4e800020,
+    ];
+    let mut argument = guarded.clone();
+    argument[2] = 0x7c046000;
+    argument[4] = 0x7c8803a6;
+    let difference = vec![
+        0x7d8802a6, 0x38600007, 0x7c806278, 0x2c000000, 0x4c820020, 0x7c8803a6, 0x4e800020,
+    ];
+    let escaped = vec![
+        0x7d8802a6, 0x39602804, 0x918b0000, 0x818b0000, 0x38600007, 0x38805004, 0x7c046000,
+        0x4c820020, 0x7c8803a6, 0x4e800020,
+    ];
+    let joined = vec![
+        0x7d8802a6, 0x7c651b78, 0x2c050000, 0x41820008, 0x7c8c2378, 0x38600007, 0x38805004,
+        0x2c050000, 0x4c820020, 0x7c046000, 0x4c820020, 0x7c8803a6, 0x4e800020,
+    ];
+    let constant = vec![
+        0x7d8802a6, 0x38600007, 0x38805004, 0x7c046000, 0x4c820020, 0x7c8803a6, 0x4e800020,
+    ];
+    for little in [false, true] {
+        for model in ["default", "e500"] {
+            let target = format!("PowerPC:{}:32:{model}", if little { "LE" } else { "BE" });
+            let plain_restore = vec![0x38600007, 0x7c0803a6, 0x4e800020];
+            for code in [
+                &guarded,
+                &argument,
+                &difference,
+                &escaped,
+                &joined,
+                &constant,
+                &plain_restore,
+            ] {
+                let output = run_decompile(little, code.clone(), &["--target", &target]);
+                assert!(output.status.success(), "{target}: {output:?}");
+                let c = String::from_utf8(output.stdout).unwrap();
+                assert!(
+                    !c.contains("jump-as-call") && !c.contains("switch"),
+                    "{target}: {c}"
+                );
+                check_runtime(&format!("unsigned int dat_2804;\n{c}"), "7");
+            }
+        }
+    }
+}
+
+#[test]
+fn unproved_late_lr_context_is_reported() {
+    let code = vec![
+        0x7d8802a6, 0x38600007, 0x38001014, 0x7c0803a6, 0x4e800020, 0x80040000, 0x7c0803a6,
+        0x4bfffff4,
+    ];
+    for little in [false, true] {
+        for model in ["default", "e500"] {
+            let target = format!("PowerPC:{}:32:{model}", if little { "LE" } else { "BE" });
+            let output = run_decompile(little, code.clone(), &["--target", &target]);
+            assert!(!output.status.success(), "{target}: {output:?}");
+            let stderr = String::from_utf8(output.stderr).unwrap();
+            assert!(
+                stderr.contains("Cannot revalidate PPC32 LR"),
+                "{target}: {stderr}"
+            );
+            assert!(!stderr.contains("panicked"), "{target}: {stderr}");
+        }
+    }
+}
+
+#[test]
 fn joins_and_stack_reloads_keep_computed_lr_targets() {
     let joined = vec![
         0x7d8802a6, 0x2c030000, 0x4182000c, 0x38001020, 0x48000008, 0x38001020, 0x7c0803a6,
@@ -135,10 +234,21 @@ fn joins_and_stack_reloads_keep_computed_lr_targets() {
         0x7d8802a6, 0x9421fff0, 0x38001024, 0x90010008, 0x38000000, 0x80010008, 0x7c0803a6,
         0x4e800020, 0x60000000, 0x38600007, 0x38210010, 0x7d8803a6, 0x4e800020,
     ];
+    let frame_alias = vec![
+        0x9421ffe0, 0x7c0802a6, 0x90010024, 0x93e1001c, 0x7c3f0b78, 0x907f000c, 0x3d200000,
+        0x39291030, 0x7d2803a6, 0x4e800020, 0x3920ff9d, 0x4800000c, 0x813f000c, 0x39290007,
+        0x7d234b78, 0x397f0020, 0x800b0004, 0x7c0803a6, 0x83ebfffc, 0x7d615b78, 0x4e800020,
+    ];
     for little in [false, true] {
         for words in [&joined, &reloaded] {
             let c = decompile(little, words.clone());
             check_runtime(&c, "7");
+        }
+        for model in ["default", "e500"] {
+            let target = format!("PowerPC:{}:32:{model}", if little { "LE" } else { "BE" });
+            let output = run_decompile(little, frame_alias.clone(), &["--target", &target]);
+            assert!(output.status.success(), "{target}: {output:?}");
+            check_runtime(&String::from_utf8(output.stdout).unwrap(), "i + 7");
         }
     }
 }
@@ -176,11 +286,30 @@ fn frame_restore_helper_keeps_the_unproved_lr_return() {
 }
 
 #[test]
-fn unresolved_register_dispatch_is_not_an_abi_return() {
+fn unproved_input_lr_requires_a_branch_assertion() {
     for little in [false, true] {
-        let c = decompile(little, vec![0x7c6803a6, 0x4e800020]);
-        assert!(c.contains("jump-as-call") || c.contains("switch"), "{c}");
-        assert!(!c.contains("return a0;"), "{c}");
+        for model in ["default", "e500"] {
+            let target = format!("PowerPC:{}:32:{model}", if little { "LE" } else { "BE" });
+            let code = vec![0x7c6803a6, 0x4e800020];
+            let output = run_decompile(little, code.clone(), &["--target", &target]);
+            assert!(output.status.success(), "{target}: {output:?}");
+            let c = String::from_utf8(output.stdout).unwrap();
+            assert!(
+                !c.contains("jump-as-call") && !c.contains("switch"),
+                "{target}: {c}"
+            );
+            let output = run_decompile(
+                little,
+                code,
+                &["--target", &target, "--assert", "flow check::0x1004 branch"],
+            );
+            assert!(output.status.success(), "{target}: {output:?}");
+            let c = String::from_utf8(output.stdout).unwrap();
+            assert!(
+                c.contains("jump-as-call") || c.contains("switch"),
+                "{target}: {c}"
+            );
+        }
     }
 }
 
