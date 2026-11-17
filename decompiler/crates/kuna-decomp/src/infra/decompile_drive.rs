@@ -73,6 +73,12 @@ impl ArchFlowEnv {
 }
 
 impl FlowEnvironment for ArchFlowEnv {
+    fn is_mips_mode_switch(&self, index: u64) -> bool {
+        let arch = self.arch();
+        arch.archid.starts_with("MIPS:")
+            && arch.userops.get_op(index as u32).is_some_and(|op| op.get_name() == b"setISAMode")
+    }
+
     fn mapped_flow_image(&self) -> Option<&dyn ImageBytes> {
         self.mapped_image.as_deref()
     }

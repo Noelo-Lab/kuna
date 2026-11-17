@@ -467,6 +467,9 @@ pub struct Architecture {
     /// every direct call site in the image sets it; see
     /// [`crate::p4_calls::kuna_calleereginputs`].
     pub callee_reginputs_custom: bool,
+    /// (kuna `returnbranch`) Flow a RETURN with a proven constant target as an
+    /// indirect branch; see [`crate::context::ArchContext::return_branch`].
+    pub return_branch: bool,
     /// (kuna GH-8817) Reclassify V850 `jmp [reg]` CALLIND to BRANCHIND
     /// (C++ `v850_indirect_branch`).
     pub v850_indirect_branch: bool,
@@ -2310,6 +2313,7 @@ impl Architecture {
             caller_ptr: false, // (kuna) option callerptr
             callee_reginputs: true, // (kuna) option calleereginputs; default on, inert off x86-32 Windows
             callee_reginputs_custom: false, // (kuna) option calleereginputs `custom`; reset_defaults sets the shipped default
+            return_branch: false, // (kuna) option returnbranch; reset_defaults sets the shipped default
             v850_indirect_branch: false,
             int3_pad: crate::kuna_int3pad::Int3PadMode::Off, // (kuna) option int3pad; reset_defaults sets the shipped default
             x64_syscall: crate::kuna_x64syscall::X64SyscallMode::Off, // (kuna) option x64syscall; reset_defaults sets the shipped default
@@ -2785,6 +2789,7 @@ impl Architecture {
         self.caller_ptr = true; // (kuna) option callerptr default-on: inert without a callee-first pass, so 0/675 datatest assertions move; on the 444-slice decbench sweep 244 decisions gain and 1 is lost
         self.calleevote = crate::kuna_calleevote::CalleeVoteMode::Fields; // (kuna) option calleevote default `fields`: on a whole-binary run a parameter every known caller passes the same committed pointer to takes it, and a closed function's lone field is a record field; inert without a callee-first pass
         self.protoorder = crate::kuna_protoorder::ProtoOrderMode::Cycles; // (kuna) option protoorder default `cycles`: the callee's recovered parameter types reach its call sites as a vote, with no lock and no arity change, and a function in a recursive component states its types too (`types` is the same without them); `lock` also states the arity and stays opt-in
+        self.return_branch = true; // (kuna) option returnbranch default-on: 0/675 datatest assertions move; restore the spec's RETURN with `option returnbranch off`
         self.analyze_for_loops = true;
         self.present_lessequal = true; // (kuna) DIV-2 default-on (GH-558)
         self.readonlypropagate = false;
@@ -3371,6 +3376,9 @@ impl Architecture {
         // BRANCHIND that is really a tail return through the return-address
         // register (the Switch-return jump-table failure mode `fail_return`).
         ctx.default_return_addr = self.default_return_addr.clone();
+        ctx.indirect_return_addr = self.default_return_addr.clone().or_else(|| {
+            self.archid.starts_with("MIPS:").then(|| self.get_register_varnode(b"ra").ok()).flatten()
+        });
         ctx.trim_recurse_max = self.trim_recurse_max;
         ctx.max_implied_ref = self.max_implied_ref;
         ctx.max_term_duplication = self.max_term_duplication;
@@ -3446,6 +3454,7 @@ impl Architecture {
             .iter()
             .filter_map(|nm| self.userops.get_op_by_name(nm).map(|u| u.get_index() as kuna_base::types::uint4))
             .collect();
+        ctx.return_branch = self.return_branch; // returnbranch
         ctx.recover_array_stride = self.recover_array_stride; // GH-8724 arraystride
         ctx.memset_recover = self.memset_recover; // GH-9230/1537 memsetrecover
         ctx.rodata_string = self.rodata_string; // (kuna) rodatastring

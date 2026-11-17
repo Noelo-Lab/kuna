@@ -94,6 +94,7 @@ kuna_options! { self, p1;
         self.return_single = form.return_single();
         Ok(msg)
     },
+    "returnbranch" => on_off!(return_branch, "Computed jumps through the return register"),
     "globalarrayanchor" => on_off!(global_array_anchor, "Global array anchor preservation"),
     "signedness" => {
         let (val, msg) = crate::kuna_typeround::OptionSignedness.apply(p1)?;
