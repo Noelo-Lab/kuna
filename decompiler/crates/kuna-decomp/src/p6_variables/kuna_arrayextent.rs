@@ -149,6 +149,7 @@ pub(crate) struct Extended {
     elem: int4,
     from: int4,
     to: int4,
+    coalescible: bool,
 }
 
 /// Lengthen open hints over contiguous write-only slots, recording their extent
@@ -209,7 +210,7 @@ pub(crate) fn extend_unbounded(
         }
         match extended.iter_mut().find(|e| same(e)) {
             Some(e) => e.to = reach,
-            None => extended.push(Extended { start: base.start, sstart, elem: base.elem, from: highind, to: reach }),
+            None => extended.push(Extended { start: base.start, sstart, elem: base.elem, from: highind, to: reach, coalescible: true }),
         }
     }
     state.set_extended(extended);
@@ -244,17 +245,17 @@ pub(crate) fn coalesce_unindexed(state: &mut MapState, types: &dyn TypeFactory) 
                     RangeType::Endpoint => false,
                 })
         });
-        if !mapped || shared || !valid { e.to = -1; }
+        e.coalescible = mapped && !shared && valid;
     }
     for e in extended.iter().filter(|e| e.from < 0) {
         let hints = state.hints_mut();
-        let array = if e.to < 0 { None } else {
+        let array = if !e.coalescible { None } else {
             hints.iter().find(|h| is_lengthened(h, e))
                 .and_then(|h| types.get_type_array(e.to + 1, Rc::clone(&h.type_)).ok())
         };
         if array.is_none() {
-            let base = OpenBase { start: e.start, elem: e.elem };
-            for h in hints.iter_mut().filter(|h| is_open(h, &base)) { h.highind = e.from; }
+            // A later producer may have replaced or widened this Open.
+            for h in hints.iter_mut().filter(|h| is_lengthened(h, e)) { h.highind = e.from; }
             continue;
         }
         let end = e.sstart + (e.to as intb + 1) * e.elem as intb;
@@ -526,7 +527,7 @@ mod tests {
         use crate::varmap::ScopeLocal;
 
         for width in [1, 4, 8] {
-            for control in ["pair", "gap", "three-gap", "runtime-base", "read-constant", "read", "address", "locked", "different-width", "runtime", "opposite-sign", "interior-indexed", "interior-unindexed", "base-open-other", "base-fixed-other", "base-locked", "base-opposite-sign"] {
+            for control in ["pair", "gap", "three-gap", "runtime-base", "read-constant", "read", "address", "locked", "different-width", "runtime", "opposite-sign", "interior-indexed", "interior-unindexed", "base-open-other", "base-fixed-other", "base-locked", "base-opposite-sign", "later-raised", "later-replaced"] {
                 let mut manager = AddrSpaceManager::new();
                 manager.insert_space(Rc::new(ConstantSpace::new())).unwrap();
                 manager.insert_space(Rc::new(UniqueSpace::new(1, 0, false))).unwrap();
@@ -619,11 +620,31 @@ mod tests {
                 };
                 let mut baseline = MapState::new(Rc::clone(&stack), &range, &params, Rc::clone(&ty));
                 baseline.hints_mut().extend(state.hints_mut().iter().cloned());
-                let before = layout(baseline);
+                let mut before = layout(baseline);
                 if interior {
                     extend_unbounded(&fd, &mut state, &stack, &[OpenBase { start, elem: width }, OpenBase { start: following, elem: width }]);
                 } else {
                     extend_unbounded(&fd, &mut state, &stack, &[OpenBase { start, elem: width }]);
+                }
+                if matches!(control, "later-raised" | "later-replaced") {
+                    state.hints_mut().retain(|h| h.range_type != RangeType::Fixed || h.start != start);
+                    if control == "later-raised" {
+                        for h in state.hints_mut().iter_mut().filter(|h| h.range_type == RangeType::Open && h.start == start) {
+                            h.highind = 3;
+                        }
+                    } else {
+                        state.hints_mut().retain(|h| h.range_type != RangeType::Open || h.start != start);
+                        state.add_range_pub(start, Some(Rc::clone(&ty)), 0, RangeType::Open, 5);
+                    }
+                    let mut baseline = MapState::new(Rc::clone(&stack), &range, &params, Rc::clone(&ty));
+                    baseline.hints_mut().extend(state.hints_mut().iter().cloned());
+                    before = layout(baseline);
+                    coalesce_unindexed(&mut state, &types);
+                    let bound = state.hints_mut().iter()
+                        .find(|h| h.range_type == RangeType::Open && h.start == start)
+                        .map(|h| h.highind);
+                    assert_eq!(bound, Some(if control == "later-raised" { 3 } else { 5 }),
+                        "{control}, width={width}: later producer's bound was lost");
                 }
                 let after = layout(state);
                 if matches!(control, "pair" | "gap" | "three-gap" | "runtime-base" | "read-constant") {

@@ -2041,7 +2041,10 @@ still match the array element. Before datatype reconciliation, the witnessed
 span becomes one fixed-size array hint, using the same representation as
 call-escaped array storage. The span must fit the mapped range and cannot absorb
 padding. Another Open that can share its extent leaves the original layout
-unchanged, including interior pointers into indexed arrays. The indexed-array
+unchanged, including interior pointers into indexed arrays. A differing bound
+established by a later hint producer is retained on decline; rollback only
+recognizes a hint still at the recorded extended bound. An equal later bound
+is indistinguishable without additional provenance. The indexed-array
 preservation rule above remains unchanged.
 
 
