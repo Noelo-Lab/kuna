@@ -6397,7 +6397,12 @@ is refused outright wherever the caller holds evidence the fold cannot weigh
   that element's width, without an on-grid access spanning whole elements.
   Read-only byte views, write-only byte copies and these whole-element accesses keep the vote:
   inspecting or copying an object's representation does not establish a
-  smaller element type.
+  smaller element type. A scalar merge's step is not modeled, so it shows a byte
+  cursor but never places a wide access off-grid: an element-multiple access
+  whose index includes a merge counts as whole when its displacement is on the
+  grid the merge's scale leaves. A word loop over a loop-carried offset followed
+  by a byte tail (`*(uint64_t *)(b + i) ^= k` stepping `i` by 8, then `b[i] ^= 1`)
+  keeps the vote; refusing it printed the buffer as a `long`.
 
 The callee's recovered RETURN type is not stated. It has no competing evidence at
 the caller — the call's result is a new value — so a wrong one spreads through

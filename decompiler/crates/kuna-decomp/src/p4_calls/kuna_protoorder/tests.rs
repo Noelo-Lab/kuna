@@ -634,7 +634,8 @@ fn mutable_byte_cursors_refuse_wider_votes_without_retyping_word_views_or_copies
                 let address = operation(&mut fd, OpCode::CPUI_INT_ADD, &[address, offset], 0x1018, 8).unwrap();
                 operation(&mut fd, OpCode::CPUI_LOAD, &[space, address], 0x101c, whole_width);
             }
-            let refuse = refuse && !matches!(shape, Shape::UnknownScale);
+            let merged_word_step = form == OpCode::CPUI_MULTIEQUAL && whole.is_some_and(|(_, stride, _)| stride == 1);
+            let refuse = refuse && !matches!(shape, Shape::UnknownScale) && !merged_word_step;
             let candidate = ptr_to(Rc::clone(&pointee));
             assert_eq!(input_refuses(&fd, base, &candidate), refuse, "{label}, element width {width}, index form {form:?}, inner offset {inside}, shape {shape:?}");
             assert_eq!(input_refuses_declared(&fd, base, &candidate), refuse, "declared vote: {label}, element width {width}, index form {form:?}, inner offset {inside}, shape {shape:?}");
@@ -669,6 +670,67 @@ fn mutable_byte_cursors_refuse_wider_votes_without_retyping_word_views_or_copies
         let pointee = if code == OpCode::CPUI_INT_AND { prim(4, type_metatype::TYPE_UINT) }
             else { Rc::new(Datatype::new(12, type_metatype::TYPE_STRUCT)) };
         assert_eq!(input_refuses(&fd, base, &ptr_to(pointee)), refuse, "{label}");
+    }
+}
+
+#[test]
+fn a_word_walk_over_a_merged_offset_keeps_the_vote_beside_a_byte_cursor() {
+    use kuna_base::space::{addrspace_flags, ConstantSpace, UniqueSpace};
+    use crate::context::{ArchContext, TypeOp};
+
+    fn operation(fd: &mut Funcdata, code: OpCode, inputs: &[VarnodeId], off: u64, size: int4) -> Option<VarnodeId> {
+        let ram = Rc::clone(fd.get_arch().manage().get_space_by_name("ram").unwrap());
+        let op = fd.new_op(inputs.len() as int4, Address::new(Rc::clone(&ram), off));
+        fd.op_set_opcode(op, TypeOp::new(code, 0, format!("{code:?}")));
+        for (slot, &input) in inputs.iter().enumerate() {
+            fd.op_set_input(op, input, slot as int4).unwrap();
+        }
+        let root = fd.bblocks_ref().root.unwrap();
+        let block = if fd.bblocks_ref().block(root).get_size() == 0 {
+            fd.bblocks_mut().new_block_basic(root)
+        } else {
+            fd.bblocks_ref().block(root).get_block(0)
+        };
+        fd.op_insert(op, block, None);
+        (size != 0).then(|| fd.new_varnode_out(size, &Address::new(ram, off + 0x1000), op).unwrap())
+    }
+
+    for (label, merged, refuse) in [
+        ("an offset stepped around a loop", true, false),
+        ("an unconstrained word cursor", false, true),
+    ] {
+        let mut manager = AddrSpaceManager::new();
+        manager.insert_space(Rc::new(ConstantSpace::new())).unwrap();
+        manager.insert_space(Rc::new(UniqueSpace::new(1, 0, false))).unwrap();
+        let ram = Rc::new(AddrSpace::new(spacetype::IPTR_PROCESSOR, "ram", false, 8, 1, 2, addrspace_flags::hasphysical, 1, 1));
+        manager.insert_space(Rc::clone(&ram)).unwrap();
+        let context = Rc::new(ArchContext::new(manager));
+        let mut fd = Funcdata::new("walk", "walk", context, Address::new(Rc::clone(&ram), 0x1000), 0x1000_0000, 0x40).unwrap();
+        let input = |fd: &mut Funcdata, at: u64| {
+            let v = fd.new_varnode(8, &Address::new(Rc::clone(&ram), at), None);
+            fd.set_input_varnode(v).unwrap()
+        };
+        let base = input(&mut fd, 0x10);
+        let byte = input(&mut fd, 0x20);
+        let start = input(&mut fd, 0x28);
+        let space = fd.new_constant(8, 2);
+        let offset = if merged {
+            let offset = operation(&mut fd, OpCode::CPUI_MULTIEQUAL, &[start, start], 0x1000, 8).unwrap();
+            let step = fd.new_constant(8, 8);
+            let next = operation(&mut fd, OpCode::CPUI_INT_ADD, &[offset, step], 0x1004, 8).unwrap();
+            let phi = fd.vbank().get(offset).unwrap().get_def().unwrap();
+            fd.op_set_input(phi, next, 1).unwrap();
+            offset
+        } else {
+            start
+        };
+        let word = operation(&mut fd, OpCode::CPUI_INT_ADD, &[base, offset], 0x1008, 8).unwrap();
+        let value = operation(&mut fd, OpCode::CPUI_LOAD, &[space, word], 0x100c, 8).unwrap();
+        operation(&mut fd, OpCode::CPUI_STORE, &[space, word, value], 0x1010, 0);
+        let address = operation(&mut fd, OpCode::CPUI_INT_ADD, &[base, byte], 0x1014, 8).unwrap();
+        let value = operation(&mut fd, OpCode::CPUI_LOAD, &[space, address], 0x1018, 1).unwrap();
+        operation(&mut fd, OpCode::CPUI_STORE, &[space, address, value], 0x101c, 0);
+        assert_eq!(input_refuses(&fd, base, &ptr_to(prim(4, type_metatype::TYPE_UINT))), refuse, "{label}");
     }
 }
 

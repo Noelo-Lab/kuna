@@ -822,6 +822,8 @@ pub(crate) struct Access {
     pub(crate) stride: i64,
     pub(crate) size: int4,
     pub(crate) store: bool,
+    /// The stride includes a scalar merge's unmodeled step.
+    pub(crate) loose: bool,
 }
 
 fn gcd(a: i64, b: i64) -> i64 {
@@ -848,10 +850,11 @@ pub(crate) fn accesses_through(data: &Funcdata, family: &[VarnodeId]) -> Option<
         })
     };
     // Keep a displacement and a divisor across distributed arithmetic. One
-    // shared budget bounds the entire expression, not each side of an ADD.
-    fn grid(data: &Funcdata, value: Option<VarnodeId>, width: int4, budget: &mut usize) -> (i64, i64, bool) {
-        let Some(left) = budget.checked_sub(1) else { return (0, 1, false) };
-        *budget = left;
+    // shared budget bounds the entire expression, not each side of an ADD;
+    // `walk.1` records that a scalar merge contributed its unmodeled step.
+    fn grid(data: &Funcdata, value: Option<VarnodeId>, width: int4, walk: &mut (usize, bool)) -> (i64, i64, bool) {
+        let Some(left) = walk.0.checked_sub(1) else { return (0, 1, false) };
+        walk.0 = left;
         let Some(node) = value.and_then(|value| data.vbank().get(value)) else { return (0, 1, false) };
         let bytes = node.get_size().clamp(1, 8);
         let shift = 64 - 8 * bytes as u32;
@@ -859,9 +862,12 @@ pub(crate) fn accesses_through(data: &Funcdata, family: &[VarnodeId]) -> Option<
         if node.is_constant() { return (signed(node.get_offset() as i64), 0, true); }
         let Some(op) = node.get_def().and_then(|id| data.obank().get(id)) else { return (0, 1, true) };
         let result = match op.code() {
-            OpCode::CPUI_MULTIEQUAL => (0, 1, true),
+            OpCode::CPUI_MULTIEQUAL => {
+                walk.1 = true;
+                (0, 1, true)
+            }
             OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_INT_SEXT | OpCode::CPUI_INT_ZEXT => {
-                let result = grid(data, op.get_in(0), width, budget);
+                let result = grid(data, op.get_in(0), width, walk);
                 if result.1 == 0 && op.code() == OpCode::CPUI_INT_ZEXT {
                     let size = op.get_in(0).and_then(|value| data.vbank().get(value))
                         .map_or(8, |node| node.get_size().clamp(1, 8));
@@ -870,25 +876,25 @@ pub(crate) fn accesses_through(data: &Funcdata, family: &[VarnodeId]) -> Option<
                 } else { result }
             }
             OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB => {
-                let (a, sa, ka) = grid(data, op.get_in(0), width, budget);
-                let (b, sb, kb) = grid(data, op.get_in(1), width, budget);
+                let (a, sa, ka) = grid(data, op.get_in(0), width, walk);
+                let (b, sb, kb) = grid(data, op.get_in(1), width, walk);
                 (if op.code() == OpCode::CPUI_INT_ADD { a.wrapping_add(b) } else { a.wrapping_sub(b) }, gcd(sa, sb), ka && kb)
             }
             OpCode::CPUI_INT_MULT => {
-                let (a, sa, ka) = grid(data, op.get_in(0), width, budget);
-                let (b, sb, kb) = grid(data, op.get_in(1), width, budget);
+                let (a, sa, ka) = grid(data, op.get_in(0), width, walk);
+                let (b, sb, kb) = grid(data, op.get_in(1), width, walk);
                 if sa == 0 { (a.wrapping_mul(b), a.wrapping_mul(sb), ka && kb) }
                 else if sb == 0 { (a.wrapping_mul(b), b.wrapping_mul(sa), ka && kb) }
                 else { (0, 1, false) }
             }
             OpCode::CPUI_INT_LEFT => {
-                let (amount, step, known) = grid(data, op.get_in(1), width, budget);
+                let (amount, step, known) = grid(data, op.get_in(1), width, walk);
                 if step != 0 || !(0..8 * bytes as i64).contains(&amount) { return (0, 1, false); }
-                let (offset, stride, input_known) = grid(data, op.get_in(0), width, budget);
+                let (offset, stride, input_known) = grid(data, op.get_in(0), width, walk);
                 (offset.wrapping_shl(amount as u32), stride.wrapping_shl(amount as u32), known && input_known)
             }
             OpCode::CPUI_INT_2COMP | OpCode::CPUI_INT_NEGATE => {
-                let (offset, stride, known) = grid(data, op.get_in(0), width, budget);
+                let (offset, stride, known) = grid(data, op.get_in(0), width, walk);
                 let offset = offset.wrapping_neg();
                 (if op.code() == OpCode::CPUI_INT_NEGATE { offset.wrapping_sub(1) } else { offset }, stride, known)
             }
@@ -902,6 +908,8 @@ pub(crate) fn accesses_through(data: &Funcdata, family: &[VarnodeId]) -> Option<
     }
     let width = family.first().and_then(|value| data.vbank().get(*value)).map_or(8, |node| node.get_size());
     let mut complete = true;
+    let mut loose: crate::kuna_fasthash::FxHashSet<VarnodeId> = Default::default();
+    let mut edges: Vec<(VarnodeId, VarnodeId)> = Vec::new();
     let mut pointers: Vec<(OpId, VarnodeId, VarnodeId, bool)> = Vec::new();
     while let Some(v) = work.pop() {
         budget -= 1;
@@ -913,6 +921,7 @@ pub(crate) fn accesses_through(data: &Funcdata, family: &[VarnodeId]) -> Option<
         for r in node.descend_iter() {
             let Some(o) = data.obank().get(r) else { continue };
             let out = o.get_out();
+            let mut via = (32, false);
             let next = match o.code() {
                 OpCode::CPUI_LOAD if o.get_in(1) == Some(v) => {
                     if let Some(out) = out {
@@ -928,17 +937,17 @@ pub(crate) fn accesses_through(data: &Funcdata, family: &[VarnodeId]) -> Option<
                 }
                 OpCode::CPUI_INT_ADD => {
                     let other = if o.get_in(0) == Some(v) { o.get_in(1) } else { o.get_in(0) };
-                    let (offset, step, known) = grid(data, other, width, &mut 32);
+                    let (offset, step, known) = grid(data, other, width, &mut via);
                     complete &= known;
                     Some((c.wrapping_add(offset), gcd(stride, step)))
                 }
                 OpCode::CPUI_INT_SUB if o.get_in(0) == Some(v) => {
-                    let (offset, step, known) = grid(data, o.get_in(1), width, &mut 32);
+                    let (offset, step, known) = grid(data, o.get_in(1), width, &mut via);
                     complete &= known;
                     Some((c.wrapping_sub(offset), gcd(stride, step)))
                 }
                 OpCode::CPUI_PTRSUB if o.get_in(0) == Some(v) => {
-                    let (offset, step, known) = grid(data, o.get_in(1), width, &mut 32);
+                    let (offset, step, known) = grid(data, o.get_in(1), width, &mut via);
                     complete &= known;
                     Some((c.wrapping_add(offset), gcd(stride, step)))
                 }
@@ -946,7 +955,7 @@ pub(crate) fn accesses_through(data: &Funcdata, family: &[VarnodeId]) -> Option<
                     let elsize = constant(o.get_in(2));
                     complete &= elsize.is_some();
                     let elsize = elsize.unwrap_or(1);
-                    let (offset, step, known) = grid(data, o.get_in(1), width, &mut 32);
+                    let (offset, step, known) = grid(data, o.get_in(1), width, &mut via);
                     complete &= known;
                     Some((c.wrapping_add(offset.wrapping_mul(elsize)), gcd(stride, step.wrapping_mul(elsize))))
                 }
@@ -955,6 +964,10 @@ pub(crate) fn accesses_through(data: &Funcdata, family: &[VarnodeId]) -> Option<
                 _ => None,
             };
             let (Some((nc, ns)), Some(out)) = (next, out) else { continue };
+            if via.1 {
+                loose.insert(out);
+            }
+            edges.push((v, out));
             match place.get(&out).copied() {
                 None => {
                     place.insert(out, (nc, ns));
@@ -970,12 +983,24 @@ pub(crate) fn accesses_through(data: &Funcdata, family: &[VarnodeId]) -> Option<
             }
         }
     }
+    if !loose.is_empty() {
+        edges.sort_unstable();
+        let mut stack: Vec<VarnodeId> = loose.iter().copied().collect();
+        while let Some(v) = stack.pop() {
+            let at = edges.partition_point(|e| e.0 < v);
+            for &(_, to) in edges[at..].iter().take_while(|e| e.0 == v) {
+                if loose.insert(to) {
+                    stack.push(to);
+                }
+            }
+        }
+    }
     let accesses = pointers
         .into_iter()
         .filter_map(|(op, ptr, value, store)| {
             let (at, stride) = place[&ptr];
             let size = data.vbank().get(value)?.get_size();
-            Some(Access { op, value, at, stride, size, store })
+            Some(Access { op, value, at, stride, size, store, loose: loose.contains(&ptr) })
         })
         .collect();
     Some((accesses, place.into_values().collect(), complete))
@@ -1070,15 +1095,17 @@ fn pointee_refuses(data: &Funcdata, family: &[VarnodeId], ct: &Datatype, depth: 
             return false;
         }
         let byte_cursor = |a: &Access| a.size == 1 && a.stride.rem_euclid(width) != 0;
+        let grid = |a: &Access| if a.loose { gcd(a.stride, width) } else { width };
         // Reading an object's byte view or copying bytes into it does not
         // establish its element type. Require a mutable byte cursor, with no
-        // whole-element access, before refusing the wider callee vote.
+        // whole-element access, before refusing the wider callee vote. A
+        // scalar merge's unmodeled step cannot place a wide access off-grid.
         return accesses.iter().any(|a| !a.store && byte_cursor(a))
             && accesses.iter().any(|a| a.store && byte_cursor(a))
             && !accesses.iter().any(|a| {
                 a.size > 0 && a.size as i64 % width == 0
-                    && a.at.wrapping_add(base).rem_euclid(width) == 0
-                    && a.stride.rem_euclid(width) == 0
+                    && a.at.wrapping_add(base).rem_euclid(grid(a)) == 0
+                    && (a.loose || a.stride.rem_euclid(width) == 0)
             });
     }
     let float = pointee.get_metatype() == type_metatype::TYPE_FLOAT;
