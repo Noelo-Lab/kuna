@@ -3599,6 +3599,18 @@ fn is_structural_entry_name(name: &str) -> bool {
         || is_vtable_slot_name(name)
 }
 
+/// Does the function-symbol fact `name` replace `existing`, the basename the same
+/// scope already gives that address? Only a slot-index name gives way, and only to a
+/// real one.
+fn replaces_slot_name(name: &str, existing: &str) -> bool {
+    let Some((scope, base)) = name.rsplit_once("::") else {
+        return false;
+    };
+    is_vtable_slot_name(&format!("{scope}::{existing}"))
+        && !is_vtable_slot_name(name)
+        && !is_generic_placeholder_name(base)
+}
+
 /// (kuna, `pe-function-inventory-labels`) Is `name` a virtual method the RTTI passes
 /// could only name by its vtable SLOT INDEX — `<Class>::vfunc_<i>` (MSVC `rtti` and
 /// Itanium `itaniumrtti`), or `<Class>::vfunc_for_<Base>_<i>` for a slot of an Itanium
@@ -5389,8 +5401,16 @@ fn commit_analysis_output(
                     let (scope, base) = arch
                         .symboltab
                         .find_create_scope_from_symbol_name(&s.name, "::", None, num_spaces)?;
-                    if arch.symboltab.find_function(scope, &addr).is_none() {
-                        arch.symboltab.add_function(scope, &addr, &base, min_size, type_code)?;
+                    match arch.symboltab.find_function(scope, &addr) {
+                        None => {
+                            arch.symboltab.add_function(scope, &addr, &base, min_size, type_code)?;
+                        }
+                        // A slot-index name only says which vtable slot the function
+                        // fills; a real name a later pass recovers replaces it.
+                        Some(sym) if replaces_slot_name(&s.name, &arch.symboltab.symbol(sym).name) => {
+                            arch.symboltab.rename_symbol(sym, &base)?;
+                        }
+                        Some(_) => {}
                     }
                 }
                 prog.register_overload(&s.name, addr);
@@ -6720,7 +6740,22 @@ mod tests {
     use kuna_num::opcodes::OpCode;
     use kuna_num::pcoderaw::VarnodeData;
 
-    use super::{entry_name_rank, is_vtable_slot_name, FixedRefs, WholeOp};
+    use super::{entry_name_rank, is_vtable_slot_name, replaces_slot_name, FixedRefs, WholeOp};
+
+    /// The analysis commit replaces a slot-index name with a real one, and nothing else.
+    #[test]
+    fn a_real_name_replaces_only_a_slot_index_name() {
+        assert!(replaces_slot_name("shapes::Circle::~Circle", "vfunc_0"));
+        assert!(replaces_slot_name("Box::Box", "vfunc_1"));
+        for (name, existing) in [
+            ("Box::vfunc_2", "vfunc_1"),
+            ("Box::area", "draw"),
+            ("Box::sub_1234", "vfunc_1"),
+            ("area", "vfunc_1"),
+        ] {
+            assert!(!replaces_slot_name(name, existing), "{name} must not replace {existing}");
+        }
+    }
 
     /// A linked ELF reports its GOT import slots too; only a relocatable
     /// object's are committed outside the passes that own a linked image's.
