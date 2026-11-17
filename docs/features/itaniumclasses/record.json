@@ -1,0 +1,31 @@
+{
+  "opportunity": "itaniumrtti_x86_64.so::probe_shapes",
+  "test_name": "itaniumrtti_x86_64.so",
+  "binary": "decompiler/crates/kuna-analysis/tests/fixtures/itaniumrtti_x86_64.so",
+  "selector": "probe_shapes",
+  "func_addr": "0x11ea",
+  "option": "itaniumrtti",
+  "change_kind": "proposal",
+  "source_decompiler": "kuna",
+  "inspiration": "Itanium C++ ABI 2.5 (vtable layout) and 2.9.5 (type_info); the class structures Ghidra's RecoverClassesFromRTTIScript and IDA's GCC RTTI reconstruction build",
+  "default_on": false,
+  "status": "proposal",
+  "decisions": [
+    "No new option: a third value on itaniumrtti (on|names|off).",
+    "Slot fields are code pointers without a signature: a guessed arity drops arguments at the call site.",
+    "A class type is emitted only with size evidence that covers every observed access through this: a too-small struct prints worse than none.",
+    "The receiver is an unlocked input hint, not a locked prototype: locking one parameter fixes the arity.",
+    "Flat class layouts; no base embedding in the first step."
+  ],
+  "measurements": {
+    "libapt-pkg.so.6.0.0": {
+      "functions": 4497,
+      "vptr_arithmetic_call_sites_approx": 495,
+      "functions_with_such_a_call": 278,
+      "functions_named_only_by_slot_index": 359,
+      "of_those_with_untyped_receiver": 290,
+      "classes_with_a_named_slot_function": 173,
+      "method": "regular expressions over decompile-all output, main plus #1606"
+    }
+  }
+}
