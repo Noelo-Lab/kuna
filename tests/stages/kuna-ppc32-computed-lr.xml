@@ -1,0 +1,22 @@
+<!-- Authored PPC32 computed-LR transfer, P2 flow classification. Always-on
+     correctness fix: the nonzero arm branches to the common epilogue, rather
+     than returning its input. No option changes the instruction's meaning. -->
+<decompilertest>
+<binaryimage arch="PowerPC:BE:32:default">
+  <bytechunk space="ram" offset="0x1000" readonly="true">
+    7c0802a6 9421fff0 90010014 2c030000
+    41820010 38001024 7c0803a6 4e800020
+    38600007 38600007 80010014 38210010
+    7c0803a6 4e800020
+  </bytechunk>
+  <symbol space="ram" offset="0x1000" name="dispatch"/>
+</binaryimage>
+<script>
+  <com>load addr 0x1000</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="computed LR reaches the common epilogue" min="1" max="2">return 7;</stringmatch>
+<stringmatch name="computed LR does not return the input" min="0" max="0">return a0;</stringmatch>
+</decompilertest>

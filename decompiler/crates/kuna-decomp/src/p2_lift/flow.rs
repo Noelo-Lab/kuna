@@ -190,6 +190,10 @@ pub type JtPipelineFn<'a> = dyn FnMut(&mut Funcdata, &VisitedMap) -> KunaResult<
 /// `Architecture`/`Override`-backed implementor; the algorithm bodies in this
 /// module never change.
 pub trait FlowEnvironment {
+    /// Preserve target-specific address semantics before changing a raw transfer.
+    fn prepare_flow_override(&self, _data: &mut Funcdata, _site: &Address, _kind: uint4) -> KunaResult<()> {
+        Ok(())
+    }
     /// A flow-lifetime snapshot of the live map, available only for eligible images.
     fn mapped_flow_image(&self) -> Option<&dyn kuna_sleigh::loadimage::ImageBytes> {
         None
@@ -2096,6 +2100,10 @@ truncating the fall-through here"
             let mut cursor = first;
             while let Some(op) = cursor { ops.push(op); cursor = self.dead_next(op); }
             crate::kuna_nullable_reloc::materialize(&mut self.data, curaddr, step, &ops);
+        }
+
+        if flowoverride != crate::overrides::flow_type::NONE {
+            self.env.prepare_flow_override(&mut self.data, curaddr, flowoverride)?;
         }
 
         // oiter points at first new op: beginDead() if was empty, else ++marker.
