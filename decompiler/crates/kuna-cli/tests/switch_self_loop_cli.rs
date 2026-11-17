@@ -1,11 +1,11 @@
 //! A switch that is its own loop header keeps every iteration, whether or not
-//! some of its cases leave the loop.
+//! some of its cases leave the loop or restart an enclosing one.
 use crate::common;
 use common::process;
 
 use std::process::Command;
 
-const FUNCTIONS: [&str; 2] = ["self_loop", "self_loop_exit"];
+const FUNCTIONS: [&str; 5] = ["self_loop", "self_loop_exit", "mixed_loop", "direct_mixed", "direct_loop"];
 const OBJECTS: [&str; 2] = ["switch_self_loop_gcc_x86_64.o", "switch_self_loop_clang_x86_64.o"];
 
 fn kuna() -> Command {
@@ -23,17 +23,18 @@ fn decompile(object: &str, function: &str) -> String {
     String::from_utf8(process::required_output(&mut command).stdout).unwrap()
 }
 
-/// Each row feeds selectors until a default (9) or a leaving case returns;
+/// Each row feeds selectors until a default (7) or a leaving case returns;
 /// the driver prints how many selectors were read and which callees ran.
 fn driver(function: &str) -> String {
     format!(
         r#"#include <stdio.h>
 void {function}(int x);
 static const int rows[][12] = {{
-  {{0, 3, 3, 5, 1, 0, 1, 4, 9, 9, 9, 9}}, {{2, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9}},
-  {{4, 0, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9}}, {{5, 5, 5, 3, 1, 9, 9, 9, 9, 9, 9, 9}},
-  {{9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9}}, {{1, 3, 0, 5, 2, 0, 9, 9, 9, 9, 9, 9}},
-  {{-1, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9}}, {{3, 1, 1, 0, 4, 2, 9, 9, 9, 9, 9, 9}},
+  {{0, 3, 3, 5, 1, 0, 1, 4, 7, 7, 7, 7}}, {{2, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7}},
+  {{4, 0, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7}}, {{5, 5, 5, 3, 1, 7, 7, 7, 7, 7, 7, 7}},
+  {{7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7}}, {{1, 3, 0, 5, 2, 0, 7, 7, 7, 7, 7, 7}},
+  {{-1, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7}}, {{3, 1, 1, 0, 4, 2, 7, 7, 7, 7, 7, 7}},
+  {{0, 6, 4, 0, 6, 2, 6, 7, 7, 7, 7, 7}},
 }};
 static int row, at, count, calls[64];
 int next_selector(int x) {{ return rows[row][at++] + x; }}
@@ -44,7 +45,7 @@ void t3(void) {{ calls[count++] = 3; }}
 void t4(void) {{ calls[count++] = 4; }}
 void t5(void) {{ calls[count++] = 5; }}
 int main(void) {{
-  for (row = 0; row < 8; row++) {{
+  for (row = 0; row < 9; row++) {{
     at = count = 0;
     {function}(0);
     printf("%d:", at);
@@ -112,7 +113,7 @@ fn a_switch_that_heads_its_own_loop_keeps_every_iteration() {
             let original = std::path::PathBuf::from(common::fixture(object));
             for cc in compilers() {
                 let want = run(cc, "-O0", &[&original, &harness]);
-                assert_eq!(want.lines().count(), 8, "{want}");
+                assert_eq!(want.lines().count(), 9, "{want}");
                 for level in ["-O0", "-O2"] {
                     assert_eq!(
                         run(cc, level, &[&source, &harness]),

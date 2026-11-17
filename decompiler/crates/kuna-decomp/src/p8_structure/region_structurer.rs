@@ -1257,8 +1257,9 @@ impl<'a> RegionStructurer<'a> {
         // Parity-safe: an acyclic datatest switch has no back-edge case, so this
         // branch is dead off-loop and the 675-assertion corpus is byte-identical.
         // A backedge to this switch itself is internal to the folded region, not
-        // a continue: it must be the exit so new_block_switch restores the loop,
-        // and beside a case leaving elsewhere the fold declines rather than drop it.
+        // a continue: it must be the exit so new_block_switch restores the loop.
+        // That restoration needs every other output gone, so beside a case
+        // leaving elsewhere or continuing an outer loop the fold declines.
         let is_continue_case = |s: &Self, c: BlockId| -> bool {
             let cb = s.graph.block(c);
             cb.size_out() == 1 && cb.is_back_edge_out(0) && cb.get_out(0) != bl
@@ -1353,6 +1354,11 @@ impl<'a> RegionStructurer<'a> {
                     return Ok(false); // nested switch first
                 }
             }
+        }
+        if exitblock == Some(bl)
+            && (0..sizeout).any(|i| is_continue_case(self, self.graph.block(bl).get_out(i)))
+        {
+            return Ok(false);
         }
 
         // --- Skip-to-exit handling (checkSwitchSkips) ---------------------------
@@ -3311,7 +3317,7 @@ mod tests {
         (g, root, b)
     }
 
-    fn switch_graph(n: usize, edges: &[(usize, usize)], back: usize) -> (BlockGraph, BlockId, Vec<BlockId>) {
+    fn switch_graph(n: usize, edges: &[(usize, usize)], back: &[usize]) -> (BlockGraph, BlockId, Vec<BlockId>) {
         let (mut g, root, b) = graph(n, edges);
         for &block in &b[2..] {
             let original = g.arena.insert(FlowBlock::new_kind(BlockKind::Graph));
@@ -3319,7 +3325,9 @@ mod tests {
         }
         g.block_mut(b[2]).set_flag(crate::block::block_flags::f_switch_out);
         let flags = crate::block::edge_flags::f_back_edge | crate::block::edge_flags::f_loop_edge;
-        g.set_out_edge_flag(b[back], 0, flags);
+        for &block in back {
+            g.set_out_edge_flag(b[block], 0, flags);
+        }
         (g, root, b)
     }
 
@@ -3344,7 +3352,7 @@ mod tests {
     fn switch_case_backedges_keep_their_actual_loop_header() {
         for returns_to_switch in [true, false] {
             let destination = if returns_to_switch { 2 } else { 1 };
-            let (mut g, root, b) = switch_graph(5, &[(0, 1), (1, 2), (2, 3), (2, 4), (3, destination)], 3);
+            let (mut g, root, b) = switch_graph(5, &[(0, 1), (1, 2), (2, 3), (2, 4), (3, destination)], &[3]);
             let sw = fold_switch(&mut g, root, &b).unwrap();
             assert_eq!(g.block(sw).size_out(), 1, "{returns_to_switch}");
             assert_eq!(g.block(sw).get_out(0), if returns_to_switch { sw } else { b[1] });
@@ -3354,14 +3362,38 @@ mod tests {
     #[test]
     fn a_switch_backedge_beside_another_exit_is_not_folded_away() {
         let edges = [(0, 1), (1, 2), (1, 5), (2, 3), (2, 4), (2, 5), (3, 2)];
-        let (mut g, root, b) = switch_graph(6, &edges, 3);
+        let (mut g, root, b) = switch_graph(6, &edges, &[3]);
         assert!(fold_switch(&mut g, root, &b).is_none());
         assert_eq!(g.block(b[3]).get_out(0), b[2]);
         let enclosing = [(0, 1), (1, 2), (1, 5), (2, 3), (2, 4), (2, 5), (3, 1)];
-        let (mut g, root, b) = switch_graph(6, &enclosing, 3);
+        let (mut g, root, b) = switch_graph(6, &enclosing, &[3]);
         let sw = fold_switch(&mut g, root, &b).unwrap();
         let outs: Vec<_> = (0..g.block(sw).size_out()).map(|i| g.block(sw).get_out(i)).collect();
         assert!(outs.contains(&b[1]) && outs.contains(&b[5]), "{outs:?}");
+    }
+
+    #[test]
+    fn a_switch_that_is_its_own_exit_declines_beside_an_outer_continue() {
+        let edges = [(0, 1), (1, 2), (2, 3), (2, 4), (2, 5), (3, 2), (4, 1)];
+        let (mut g, root, b) = switch_graph(6, &edges, &[3, 4]);
+        assert!(fold_switch(&mut g, root, &b).is_none());
+        assert_eq!((g.block(b[3]).get_out(0), g.block(b[4]).get_out(0)), (b[2], b[1]));
+    }
+
+    #[test]
+    fn a_direct_switch_self_edge_folds_only_without_an_outer_continue() {
+        for outer in [false, true] {
+            let edges = [(0, 1), (1, 2), (2, 2), (2, 3), (2, 4), (3, if outer { 1 } else { 2 })];
+            let (mut g, root, b) = switch_graph(5, &edges, &[2, 3]);
+            let sw = fold_switch(&mut g, root, &b);
+            if outer {
+                assert!(sw.is_none());
+                assert_eq!((g.block(b[2]).get_out(0), g.block(b[3]).get_out(0)), (b[2], b[1]));
+            } else {
+                let sw = sw.unwrap();
+                assert_eq!((g.block(sw).size_out(), g.block(sw).get_out(0)), (1, sw));
+            }
+        }
     }
 
     #[test]

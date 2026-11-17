@@ -1537,7 +1537,12 @@ table at the loop head, with every case but the default jumping straight back.
 The rule is shared by every architecture. When such a switch also has a case
 leaving to a different exit block, one switch exit cannot carry both edges, so
 the schema declines and the ordinary collapse structures the loop. Folding it
-anyway dropped the backedge as well. An x86-64 compact switch with a retry
+anyway dropped the backedge as well. The same holds beside a case that
+continues an enclosing loop: that edge survives the collapse, so
+`new_block_switch` would restore no self-edge, and a switch that is its own
+exit folds only when no such continue case remains. A direct edge from the
+switch to itself makes it its exit in the same way; Clang emits one for an
+empty case when no range check precedes the table. An x86-64 compact switch with a retry
 case therefore prints its biased selector inline (`switch(mode - 5)`), exactly
 as it does with `regionstructure off`; its earlier `switch(mode)` came from
 that lossy fold, rescued only when the structurer later stranded.
