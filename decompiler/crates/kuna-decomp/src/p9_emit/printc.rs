@@ -6002,6 +6002,8 @@ impl PrintC {
         {
             return false;
         }
+        if self.out_lang == crate::kuna_lang::OutLang::C
+            && self.widened_add_plan(fd, arch, op).is_some() { return false; }
         // (kuna) `x += -c` reads poorly: when the INT_ADD addend is a plain
         // negative signed constant (no equate/display override, not char-typed,
         // not the unnegatable type minimum), render `x -= c` with the negated
@@ -6462,6 +6464,16 @@ impl PrintC {
                 self.emit_arm_register_lsl(fd, arch, op, plan);
                 return;
             }
+            if let Some(plan) = self.widened_add_plan(fd, arch, op) {
+                if let Some(ty) = &plan.signed { self.push_cast_open(ty, op); }
+                self.push_op(tok, Some(op_key(op)));
+                self.push_cast_open(&plan.unsigned, op);
+                self.push_vn_ir(fd, arch, plan.lhs, op);
+                self.push_cast_close(&plan.unsigned);
+                self.push_vn_ir(fd, arch, plan.rhs, op);
+                if let Some(ty) = &plan.signed { self.push_cast_close(ty); }
+                return;
+            }
             if tok.print1 == "<<" {
                 if let Some(plan) = crate::p9_emit::kuna_armconstantshift::plan_arm_constant_lsl(fd, arch, op)
                     .or_else(|| self.fixed64_shift_plan(fd, arch, op)) {
@@ -6619,6 +6631,13 @@ impl PrintC {
         -> Option<crate::p9_emit::kuna_constantshift::ConstantLslPlan>
     {
         crate::p9_emit::kuna_constantshift::plan_fixed64_lsl(fd, arch, op,
+            |vn| self.printed_operand_type(fd, vn, op))
+    }
+
+    fn widened_add_plan(&self, fd: &Funcdata, arch: &Architecture, op: OpId)
+        -> Option<crate::p9_emit::kuna_widenedadd::WidenedAddPlan>
+    {
+        crate::p9_emit::kuna_widenedadd::plan(fd, arch, op,
             |vn| self.printed_operand_type(fd, vn, op))
     }
 
