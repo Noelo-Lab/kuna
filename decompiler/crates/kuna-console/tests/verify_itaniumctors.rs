@@ -199,3 +199,48 @@ fn a_method_that_rebuilds_this_is_not_a_destructor() {
     let prog = bootstrap("itaniumctors_rebuild_clang_O2_x86_64.so", true);
     assert_eq!(name_at(&prog, REBUILD_IFACE_DTOR_CLANG), "~Iface");
 }
+
+/// `itaniumctors_byvalue_O2_x86_64.so` and `..._i386.so`: virtual methods that
+/// return their own class by value build it in the return slot, the first
+/// parameter, and read `this` from the second: `Vec::scaled`, `Vec::shifted`,
+/// `Num::twice`, `Num::half`, `Color::darker`, `Color::brighter`, `Copy::copy`.
+const BYVALUE_NOT_DTORS_X64: [u64; 7] = [0x11f0, 0x1220, 0x1250, 0x1270, 0x12b0, 0x12f0, 0x1320];
+const BYVALUE_NOT_DTORS_I386: [u64; 7] = [0x1000, 0x1030, 0x1070, 0x1090, 0x10d0, 0x1120, 0x1150];
+/// `Zero::zero` and `Zero::unit` never read `*this`; on x86-64 they return the
+/// slot's address.
+const BYVALUE_ZERO_X64: [u64; 2] = [0x1340, 0x1360];
+/// `bv::Pair`'s complete and deleting destructors, beside two by-value methods.
+const BYVALUE_PAIR_DTORS_X64: [u64; 2] = [0x13e0, 0x1400];
+const BYVALUE_PAIR_DTORS_I386: [u64; 2] = [0x11d0, 0x11e0];
+/// `bv::Pager::collect`, which returns a `List` through a slot spilled across
+/// calls it was not passed to.
+const BYVALUE_COLLECT_X64: u64 = 0x1430;
+
+#[test]
+fn a_method_returning_its_class_by_value_is_not_a_destructor() {
+    for (fixture, not_dtors, pair) in [
+        ("itaniumctors_byvalue_O2_x86_64.so", &BYVALUE_NOT_DTORS_X64[..], BYVALUE_PAIR_DTORS_X64),
+        ("itaniumctors_byvalue_O2_i386.so", &BYVALUE_NOT_DTORS_I386[..], BYVALUE_PAIR_DTORS_I386),
+    ] {
+        let prog = bootstrap(fixture, true);
+        for &vma in not_dtors {
+            let name = name_at(&prog, vma);
+            assert!(!name.starts_with('~'), "{fixture} {vma:#x} must keep its slot name, got {name}");
+        }
+        for vma in pair {
+            assert_eq!(name_at(&prog, vma), "~Pair", "{fixture} {vma:#x} is bv::Pair::~Pair");
+        }
+    }
+    let prog = bootstrap("itaniumctors_byvalue_O2_x86_64.so", true);
+    for vma in BYVALUE_ZERO_X64 {
+        let name = name_at(&prog, vma);
+        assert!(!name.starts_with('~'), "{vma:#x} must keep its slot name, got {name}");
+    }
+}
+
+#[test]
+fn a_by_value_return_slot_is_not_a_constructor() {
+    let prog = bootstrap("itaniumctors_byvalue_O2_x86_64.so", true);
+    let name = name_at(&prog, BYVALUE_COLLECT_X64);
+    assert!(name.starts_with("sub_"), "bv::Pager::collect must stay unnamed, got {name}");
+}

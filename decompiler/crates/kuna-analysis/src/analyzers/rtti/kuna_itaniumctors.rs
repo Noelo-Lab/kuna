@@ -31,7 +31,11 @@
 //!   it calls it. Any other shaped slot — alone, beside a `D1` its own neighbour
 //!   calls, a third, or two apart — is a method carrying a constructor's or
 //!   destructor's code (`reinit() { new (this) C(); }`, `delete this`), and the
-//!   class's destructors are left alone.
+//!   class's destructors are left alone. A destructor takes only `this`; a
+//!   virtual method returning `C` by value builds it in the return slot it is
+//!   passed first, reads its own `this` from the second parameter, and returns
+//!   the slot's address, so a slot that reads or writes through a second
+//!   parameter, or returns `this` in a return register of its own, is not shaped.
 //! * A function in no vtable that stores `C`'s vptr is a constructor `C::C` —
 //!   but only once `C`, or a base of `C`, is known to have a virtual destructor.
 //!   Without one, the same store is what a non-virtual destructor does, and
@@ -44,9 +48,12 @@
 //!   class whose first member is a `C`, a `delete p` wrapper), and the stores are
 //!   the same, so it is left alone. A `this` stored to a second frame slot is an
 //!   inlined callee's parameter (an always_inline constructor) unless a call
-//!   follows, which makes it the compiler's own spill across that call. When `C`
-//!   has a base, every store must also follow a call, the base constructor's: a
-//!   destructor stores first, and a pure virtual one sits in no slot.
+//!   follows, which makes it the compiler's own spill across that call. A
+//!   constructor calls nothing before its stores but its bases' constructors,
+//!   each passed `this`; a store after calls none of which was is an optimized
+//!   by-value return slot spilled across them. When `C` has a base, every store
+//!   must also follow a call, the base constructor's: a destructor stores first,
+//!   and a pure virtual one sits in no slot.
 //! * A function the symbol table already names keeps that name: the pass never
 //!   adds a second name beside it, which the call-site lookup could prefer.
 //! * A function storing vptrs of classes that are not one inheritance chain, or a
@@ -162,7 +169,8 @@ pub struct ClassVtables {
 
 /// Every `(D1 or D0 entry, class)` pair, as facts, plus the classes found to have
 /// a virtual destructor. A slot is shaped like `C`'s destructor when its stores
-/// make it `C`'s, all of them and also those before its first call or branch.
+/// make it `C`'s, all of them and also those before its first call or branch, and
+/// it shows no by-value return slot.
 fn destructor_slots(walker: &Walker, classes: &[ClassVtables]) -> (Vec<SymFact>, HashSet<usize>) {
     let owner_of = owners(classes);
     let mut walked: HashMap<u64, (Option<usize>, Vec<u64>, bool)> = HashMap::new();
@@ -174,7 +182,7 @@ fn destructor_slots(walker: &Walker, classes: &[ClassVtables]) -> (Vec<SymFact>,
                 let all = owning_class(&pairs(w.stores.iter()), &owner_of, classes);
                 let first = pairs(w.stores.iter().filter(|s| !s.after_branch));
                 let first = owning_class(&first, &owner_of, classes);
-                (all.filter(|_| first == all), w.calls, w.trap)
+                (all.filter(|_| first == all && !w.second), w.calls, w.trap)
             })
             .clone()
     };
@@ -263,7 +271,13 @@ fn constructors(
             continue;
         }
         let walked = walker.walk(entry, &owner_of, MAX_INSNS).stores;
-        if walked.iter().any(|s| !s.spilled) {
+        // An unoptimized constructor calls nothing before it stores but its
+        // bases' constructors, each passed `this`; a by-value return slot spilled
+        // across other calls is stored through the same way.
+        if walked
+            .iter()
+            .any(|s| !s.spilled || (s.after_call && !s.after_build))
+        {
             continue;
         }
         let Some(c) = owning_class(&pairs(walked.iter()), &owner_of, classes) else {
@@ -409,12 +423,15 @@ type Key = (usize, u64, u32);
 type Ops = Vec<(OpCode, Option<VarnodeData>, Vec<VarnodeData>)>;
 
 /// What one walk saw: every vptr stored through `this`, every call target it can
-/// name, and whether it ended in a trap (an exception raised and jumped through).
+/// name, whether it ended in a trap (an exception raised and jumped through), and
+/// whether `this` was a by-value return slot (memory reached through the second
+/// parameter, or `this` returned).
 #[derive(Default)]
 struct Walk {
     stores: Vec<Store>,
     calls: Vec<u64>,
     trap: bool,
+    second: bool,
 }
 
 /// One vptr constant stored at `this + off`.
@@ -427,6 +444,8 @@ struct Store {
     after_call: bool,
     /// A call or a conditional branch came before the store on the walk.
     after_branch: bool,
+    /// A call that was passed `this` came before the store on the walk.
+    after_build: bool,
 }
 
 fn pairs<'s>(stores: impl Iterator<Item = &'s Store>) -> Vec<(u64, i64)> {
@@ -446,6 +465,8 @@ enum Val {
     /// parameter home, not `this`, until a call shows it was the compiler's own
     /// spill across that call.
     Respilled(i64),
+    /// The second parameter plus a byte offset.
+    Second(i64),
     /// The stack pointer at entry plus a byte offset.
     Sp(i64),
 }
@@ -464,6 +485,13 @@ struct Walker<'a> {
     this_reg: Option<Key>,
     /// `this` passed in memory: its frame offset from the entry stack pointer.
     this_slot: Option<(i64, u32)>,
+    /// Where a second pointer parameter arrives. A destructor has none; a method
+    /// returning its class by value finds its `this` there, behind the return slot.
+    second_reg: Option<Key>,
+    second_slot: Option<(i64, u32)>,
+    /// The pointer return register, when `this` arrives in another register: a
+    /// method returning its class by value returns the slot's address in it.
+    ret_reg: Option<Key>,
     extrapop: i64,
 }
 
@@ -485,9 +513,9 @@ impl<'a> Walker<'a> {
             .ok()?;
         let pieces = PrototypePieces {
             name: String::new(),
-            outtype: Some(types.get_type_void().ok()?),
-            intypes: vec![ptr],
-            innames: vec!["this".to_string()],
+            outtype: Some(Rc::clone(&ptr)),
+            intypes: vec![Rc::clone(&ptr), ptr],
+            innames: vec!["this".to_string(), "second".to_string()],
             first_var_arg_slot: -1,
             output_storage: None,
             input_storage: Vec::new(),
@@ -497,21 +525,25 @@ impl<'a> Walker<'a> {
         model
             .assign_parameter_storage(&pieces, &mut assigned, false, types, ctx.arch.manage())
             .ok()?;
-        let this = assigned.get(1)?;
-        let space = this.addr.get_space()?;
-        let size = this.type_.as_ref()?.get_size() as u32;
-        let (this_reg, this_slot) = if space.get_index() == stack.get_index() {
-            let bits = size.saturating_mul(8).min(64);
-            (
-                None,
-                Some((sign_extend(this.addr.get_offset(), bits), size)),
-            )
-        } else {
-            (
-                Some((space.get_index() as usize, this.addr.get_offset(), size)),
-                None,
-            )
+        let home = |k: usize| -> Option<(Option<Key>, Option<(i64, u32)>)> {
+            let p = assigned.get(k)?;
+            let space = p.addr.get_space()?;
+            let size = p.type_.as_ref()?.get_size() as u32;
+            Some(if space.get_index() == stack.get_index() {
+                let bits = size.saturating_mul(8).min(64);
+                (None, Some((sign_extend(p.addr.get_offset(), bits), size)))
+            } else {
+                (
+                    Some((space.get_index() as usize, p.addr.get_offset(), size)),
+                    None,
+                )
+            })
         };
+        let (this_reg, this_slot) = home(1)?;
+        let (second_reg, second_slot) = home(2).unwrap_or_default();
+        let ret_reg = home(0)
+            .and_then(|(r, _)| r)
+            .filter(|r| this_reg.is_some_and(|t| t != *r));
         let extrapop = model.get_extra_pop();
         let extrapop = if extrapop == EXTRAPOP_UNKNOWN {
             0
@@ -523,6 +555,9 @@ impl<'a> Walker<'a> {
             sp,
             this_reg,
             this_slot,
+            second_reg,
+            second_slot,
+            ret_reg,
             extrapop,
         })
     }
@@ -538,8 +573,14 @@ impl<'a> Walker<'a> {
         if let Some(slot) = self.this_slot {
             st.frame.insert(slot, Val::This(0));
         }
+        if let Some(k) = self.second_reg {
+            st.regs.insert(k, Val::Second(0));
+        }
+        if let Some(slot) = self.second_slot {
+            st.frame.insert(slot, Val::Second(0));
+        }
         let mut walk = Walk::default();
-        let (mut called, mut branched) = (false, false);
+        let (mut called, mut branched, mut built) = (false, false, false);
         let mut at = entry;
         for _ in 0..limit {
             let Some((ops, len)) = self.lift(at) else {
@@ -558,6 +599,8 @@ impl<'a> Walker<'a> {
                         walk.trap |= *opc == OpCode::CPUI_BRANCHIND
                             && raised.is_some()
                             && ins.first().and_then(key_of) == raised;
+                        walk.second |= *opc == OpCode::CPUI_RETURN
+                            && self.ret_reg.and_then(|k| st.regs.get(&k)) == Some(&Val::This(0));
                         leaves = !conditional;
                         conditional = true;
                     }
@@ -565,6 +608,7 @@ impl<'a> Walker<'a> {
                         if let Some(target) = ins.first().filter(|t| !is_constant(t)) {
                             walk.calls.push(target.offset);
                         }
+                        built |= self.passes_this(&st);
                         self.after_call(&mut st);
                         called = true;
                     }
@@ -572,14 +616,19 @@ impl<'a> Walker<'a> {
                         if let Some(Val::Const(t)) = ins.first().and_then(|t| self.value(&st, t)) {
                             walk.calls.push(t);
                         }
+                        built |= self.passes_this(&st);
                         self.after_call(&mut st);
                         called = true;
                     }
                     OpCode::CPUI_STORE => {
-                        let order = (called, called || branched);
+                        walk.second |= self.through_second(&st, ins);
+                        let order = (called, called || branched, built);
                         self.store(&mut st, ins, owner_of, &mut walk.stores, order)
                     }
                     _ => {
+                        if *opc == OpCode::CPUI_LOAD {
+                            walk.second |= self.through_second(&st, ins);
+                        }
                         if *opc == OpCode::CPUI_CALLOTHER {
                             raised = out.as_ref().and_then(key_of);
                         }
@@ -593,6 +642,22 @@ impl<'a> Walker<'a> {
             at += len;
         }
         walk
+    }
+
+    /// Does this LOAD or STORE go through the second parameter?
+    fn through_second(&self, st: &State, ins: &[VarnodeData]) -> bool {
+        matches!(
+            ins.get(1).and_then(|a| self.value(st, a)),
+            Some(Val::Second(_))
+        )
+    }
+
+    /// Is the call about to be made passed `this` (plus an offset, or spilled)?
+    fn passes_this(&self, st: &State) -> bool {
+        matches!(
+            self.this_reg.and_then(|k| st.regs.get(&k)),
+            Some(Val::This(_) | Val::Spilled(_))
+        )
     }
 
     fn lift(&self, vma: u64) -> Option<(Ops, u64)> {
@@ -642,7 +707,7 @@ impl<'a> Walker<'a> {
         ins: &[VarnodeData],
         owner_of: &HashMap<u64, (usize, bool)>,
         found: &mut Vec<Store>,
-        (after_call, after_branch): (bool, bool),
+        (after_call, after_branch, after_build): (bool, bool, bool),
     ) {
         let (Some(addr), Some(value)) = (ins.get(1), ins.get(2)) else {
             return;
@@ -671,6 +736,7 @@ impl<'a> Walker<'a> {
                             spilled: matches!(at, Val::Spilled(_)),
                             after_call,
                             after_branch,
+                            after_build,
                         });
                     }
                 }
@@ -740,6 +806,8 @@ impl<'a> Walker<'a> {
             (Val::This(o), Val::Const(c)) => Some(Val::This(o.wrapping_add(delta(c)))),
             (Val::Spilled(o), Val::Const(c)) => Some(Val::Spilled(o.wrapping_add(delta(c)))),
             (Val::Sp(o), Val::Const(c)) => Some(Val::Sp(o.wrapping_add(delta(c)))),
+            (Val::Second(o), Val::Const(c)) => Some(Val::Second(o.wrapping_add(delta(c)))),
+            (Val::Const(c), Val::Second(o)) if !sub => Some(Val::Second(o.wrapping_add(delta(c)))),
             (Val::Const(c), Val::This(o)) if !sub => Some(Val::This(o.wrapping_add(delta(c)))),
             (Val::Const(c), Val::Spilled(o)) if !sub => {
                 Some(Val::Spilled(o.wrapping_add(delta(c))))

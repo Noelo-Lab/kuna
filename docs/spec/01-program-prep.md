@@ -5118,8 +5118,15 @@ every other binary's pass list is byte-identical to before the pass existed):
   or two that are not neighbours — and none of that class's slots is named. A
   deleting destructor that only tail-calls `operator delete` (clang drops a
   complete destructor's dead stores from it) cannot be told from an ordinary method,
-  so such a class keeps its slot names. A function in no vtable is a constructor
-  `C::C`, but only when `C` or a base has such a virtual destructor, because a
+  so such a class keeps its slot names. A destructor takes only `this`, while a
+  virtual method returning its own class by value builds the result in a return
+  slot passed as its first parameter, reads its own `this` from the second, and
+  hands the slot's address back, so its first store is the class's vptr through
+  "`this`" (`virtual Color darker() const`, `virtual Vec scaled(int) const`). A
+  slot whose walk loads or stores through the second parameter (its register, or
+  its stack slot on i386), or returns with `this` in a pointer return register
+  that is not `this`'s own (x86-64's `RAX`), is not shaped like a destructor. A
+  function in no vtable is a constructor `C::C`, but only when `C` or a base has such a virtual destructor, because a
   non-virtual destructor stores the vptr exactly as a constructor does, and only
   when every vptr store goes through `this` read back from a frame slot the
   function itself spilled it to. That is the shape of unoptimized code, which
@@ -5132,7 +5139,13 @@ every other binary's pass list is byte-identical to before the pass existed):
   parameter home (an always_inline constructor inlined into the function) until a
   call follows, which makes it the compiler's own spill across that call; a store
   through it is not a store through `this`. A `this` passed in memory is never
-  spilled by the function itself, so on such an ABI no constructor is named. And
+  spilled by the function itself, so on such an ABI no constructor is named. An
+  unoptimized constructor calls nothing before its vptr store but its bases'
+  constructors, each passed `this`; an optimized function returning a class by
+  value can spill its return slot across calls it does not pass it to and store
+  through the reloaded slot exactly as unoptimized code does (TagLib's
+  `Ogg::Page::paginate`, returning a `List<Page*>`), so a store preceded by calls
+  none of which was passed `this` names nothing. And
   when `C` has a base, every store must follow a call: a constructor runs its base
   constructors before it sets its own vptr, while a destructor sets it first — the
   shape of a pure virtual destructor, which no vtable slot holds. A
@@ -5143,6 +5156,13 @@ every other binary's pass list is byte-identical to before the pass existed):
   the commit of a Function fact replaces a slot-index name (the kind the function
   inventory already ranks as structural) in the same scope with a real,
   non-placeholder name.
+
+  Still named wrongly, all from optimized code: a virtual method that rebuilds
+  `*this` (placement new, or an explicit destructor call) when its next slot only
+  traps or calls it directly, or when two such methods are neighbours; and, on
+  i386, where `this` arrives on the stack, a virtual method returning its own
+  class by value without reading `*this` (`virtual Vec zero() const`) beside
+  another such method.
 
   The pass is blind to a `-fno-rtti` build by construction: no typeinfo is emitted,
   so no anchor exists and the output is empty. Independent code-pointer-run scanning
