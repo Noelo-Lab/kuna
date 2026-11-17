@@ -604,7 +604,9 @@ step at least as large as the aggregate that is not exactly its size. coreutils
 `wc` is the stepped case: it walks `&fstatus[i].st`, a `stat` 8 bytes into a
 152-byte record, and reads `failed` at -8; libselinux indexes 120-byte records
 that hold a 40-byte mutex at +0x38, and 120 being three mutexes does not make
-them an array of mutexes. The same question guards propagation
+them an array of mutexes. Stride magnitude is unsigned, including the high-bit
+stride, and an overflowing constant access endpoint is outside the aggregate
+rather than wrapping into it. The same question guards propagation
 (`kuna_libcfit::refuses`, called from `propagate_type_edge` just before a type is
 adopted): a libc aggregate pointer is not carried onto a Varnode whose own
 descendants reach past the end, whichever call it came from. A declined vote
