@@ -16,18 +16,22 @@
 //!
 //! # Which name
 //!
-//! * A function in `C`'s own primary sub-vtable that stores `C`'s vptr before
-//!   any call or conditional branch is one of its virtual destructors, `C::~C` —
-//!   the name a symbol table gives both the complete-object (`D1`) and the
-//!   deleting (`D0`) one — and it replaces its slot-index name. A virtual method
-//!   that inlined a destructor (a `Release` testing its count before `delete
-//!   this`, a `reset` that destroys and rebuilds `*this`) stores only after one.
-//!   The ABI puts `D0` in the slot after `D1`, but which of the
-//!   two stores the vptr depends on the optimizer (at `-O2` the deleting one may
-//!   inline the other and be the only one that stores), so the next slot is named
-//!   too only when it calls the one found. More than two such slots, or two that
-//!   are not neighbours, mean a method with a destructor's code (`delete this` in
-//!   a final class), and the class's destructors are left alone.
+//! * A function in `C`'s own primary sub-vtable whose stores make it `C`'s —
+//!   all of them, and also those before its first call or conditional branch —
+//!   is shaped like one of its virtual destructors, `C::~C`, the name a symbol
+//!   table gives both the complete-object (`D1`) and the deleting (`D0`) one,
+//!   which replaces its slot-index name. A virtual method that inlined a
+//!   destructor behind a test (a `Release` checking its count before `delete
+//!   this`) stores only after it, and one that rebuilds `*this` by placement new
+//!   and goes on to build a polymorphic member, or a derived class, stores that
+//!   vptr too. The ABI puts `D0` in the slot after `D1`, and `D0` stores too (it
+//!   inlined `D1`), calls `D1`, or, for clang's abstract class, only traps. So a
+//!   class's destructors are named from two neighbouring shaped slots, or from
+//!   one whose next slot calls it or traps, and that next slot is named too when
+//!   it calls it. Any other shaped slot — alone, beside a `D1` its own neighbour
+//!   calls, a third, or two apart — is a method carrying a constructor's or
+//!   destructor's code (`reinit() { new (this) C(); }`, `delete this`), and the
+//!   class's destructors are left alone.
 //! * A function in no vtable that stores `C`'s vptr is a constructor `C::C` —
 //!   but only once `C`, or a base of `C`, is known to have a virtual destructor.
 //!   Without one, the same store is what a non-virtual destructor does, and
@@ -157,54 +161,75 @@ pub struct ClassVtables {
 }
 
 /// Every `(D1 or D0 entry, class)` pair, as facts, plus the classes found to have
-/// a virtual destructor.
+/// a virtual destructor. A slot is shaped like `C`'s destructor when its stores
+/// make it `C`'s, all of them and also those before its first call or branch.
 fn destructor_slots(walker: &Walker, classes: &[ClassVtables]) -> (Vec<SymFact>, HashSet<usize>) {
     let owner_of = owners(classes);
-    let mut walked: HashMap<u64, (Option<usize>, Vec<u64>)> = HashMap::new();
-    let mut walk = |f: u64| -> (Option<usize>, Vec<u64>) {
+    let mut walked: HashMap<u64, (Option<usize>, Vec<u64>, bool)> = HashMap::new();
+    let mut walk = |f: u64| -> (Option<usize>, Vec<u64>, bool) {
         walked
             .entry(f)
             .or_insert_with(|| {
                 let w = walker.walk(f, &owner_of, MAX_DTOR_INSNS);
+                let all = owning_class(&pairs(w.stores.iter()), &owner_of, classes);
                 let first = pairs(w.stores.iter().filter(|s| !s.after_branch));
-                (owning_class(&first, &owner_of, classes), w.calls)
+                let first = owning_class(&first, &owner_of, classes);
+                (all.filter(|_| first == all), w.calls, w.trap)
             })
             .clone()
     };
     let mut out: Vec<SymFact> = Vec::new();
     let mut has_virtual_dtor: HashSet<usize> = HashSet::new();
     for (c, cls) in classes.iter().enumerate() {
+        let slots = &cls.primary_slots;
         let mut shaped: Vec<(usize, u64)> = Vec::new();
-        for (i, slot) in cls.primary_slots.iter().enumerate() {
+        for (i, slot) in slots.iter().enumerate() {
             if let Some(f) = *slot {
                 if !shaped.iter().any(|s| s.1 == f) && walk(f).0 == Some(c) {
                     shaped.push((i, f));
                 }
             }
         }
-        // D1 and D0 are neighbouring slots. A third, or a second two apart, is
-        // a method that inlined one (`delete this` in a final class), and nothing
-        // in its stores says which.
-        if shaped.len() > 2 || (shaped.len() == 2 && shaped[1].0 != shaped[0].0 + 1) {
+        // Whether the slot after `i` calls `f`, and whether it only traps.
+        let mut next = |i: usize, f: u64| match slots.get(i + 1) {
+            Some(Some(n)) if *n != f => {
+                let (_, calls, trap) = walk(*n);
+                (calls.contains(&f), trap && calls.is_empty())
+            }
+            _ => (false, false),
+        };
+        // D1 and D0 are neighbouring slots, and D0 stores too (it inlined D1),
+        // calls D1, or only traps (an abstract class's). A lone store whose
+        // neighbour does neither, a pair whose second one the next slot calls, a
+        // third, or two apart is a method that inlined a constructor or
+        // destructor (a rebuild by placement new, `delete this`), and nothing in
+        // its stores says which.
+        let paired = match shaped[..] {
+            [(i, f)] => {
+                let (calls, trap) = next(i, f);
+                calls || trap
+            }
+            [(i, _), (j, g)] => j == i + 1 && !next(j, g).0,
+            _ => false,
+        };
+        if !paired {
             continue;
         }
+        has_virtual_dtor.insert(c);
+        let name = dtor_name(&cls.name);
         for (i, f) in shaped {
-            has_virtual_dtor.insert(c);
-            let name = dtor_name(&cls.name);
             out.push(SymFact {
                 addr: f,
                 name: name.clone(),
                 kind: SymKind::Function,
             });
             // The deleting destructor follows the complete one, and at `-O0` it
-            // calls it rather than storing the vptr itself. Which of the two `f`
-            // is cannot be read off the store (at `-O2` only the deleting one may
-            // store), so the neighbour is named only when it calls `f`.
-            if let Some(Some(next)) = cls.primary_slots.get(i + 1) {
-                if *next != f && walk(*next).1.contains(&f) {
+            // calls it rather than storing the vptr itself.
+            if next(i, f).0 {
+                if let Some(Some(n)) = slots.get(i + 1) {
                     out.push(SymFact {
-                        addr: *next,
-                        name,
+                        addr: *n,
+                        name: name.clone(),
                         kind: SymKind::Function,
                     });
                 }
@@ -383,12 +408,13 @@ type Key = (usize, u64, u32);
 /// One lifted instruction: its p-code and its length.
 type Ops = Vec<(OpCode, Option<VarnodeData>, Vec<VarnodeData>)>;
 
-/// What one walk saw: every vptr stored through `this`, and every direct call
-/// target.
+/// What one walk saw: every vptr stored through `this`, every call target it can
+/// name, and whether it ended in a trap (an exception raised and jumped through).
 #[derive(Default)]
 struct Walk {
     stores: Vec<Store>,
     calls: Vec<u64>,
+    trap: bool,
 }
 
 /// One vptr constant stored at `this + off`.
@@ -521,6 +547,7 @@ impl<'a> Walker<'a> {
             };
             let mut conditional = false;
             let mut leaves = false;
+            let mut raised = None;
             for (opc, out, ins) in &ops {
                 match opc {
                     OpCode::CPUI_CBRANCH => {
@@ -528,6 +555,9 @@ impl<'a> Walker<'a> {
                         branched = true;
                     }
                     OpCode::CPUI_BRANCH | OpCode::CPUI_BRANCHIND | OpCode::CPUI_RETURN => {
+                        walk.trap |= *opc == OpCode::CPUI_BRANCHIND
+                            && raised.is_some()
+                            && ins.first().and_then(key_of) == raised;
                         leaves = !conditional;
                         conditional = true;
                     }
@@ -539,6 +569,9 @@ impl<'a> Walker<'a> {
                         called = true;
                     }
                     OpCode::CPUI_CALLIND => {
+                        if let Some(Val::Const(t)) = ins.first().and_then(|t| self.value(&st, t)) {
+                            walk.calls.push(t);
+                        }
                         self.after_call(&mut st);
                         called = true;
                     }
@@ -546,7 +579,12 @@ impl<'a> Walker<'a> {
                         let order = (called, called || branched);
                         self.store(&mut st, ins, owner_of, &mut walk.stores, order)
                     }
-                    _ => self.step(&mut st, *opc, out.as_ref(), ins, conditional),
+                    _ => {
+                        if *opc == OpCode::CPUI_CALLOTHER {
+                            raised = out.as_ref().and_then(key_of);
+                        }
+                        self.step(&mut st, *opc, out.as_ref(), ins, conditional)
+                    }
                 }
             }
             if leaves || len == 0 {

@@ -167,3 +167,35 @@ fn a_method_that_inlined_a_destructor_is_not_one() {
         assert!(!name.starts_with('~'), "{vma:#x} must keep its slot name, got {name}");
     }
 }
+
+/// `itaniumctors_rebuild_O2_x86_64.so` (g++) and `..._clang_O2_x86_64.so`: each
+/// virtual method here stores its class's vptr first, from its class's vtable,
+/// because it rebuilds `*this` by placement new or deletes it: `Again::reinit`,
+/// `Fresh::reinit`, `Redo::reset`, `Self::destroy`, `Fill::reinit`,
+/// `Grow::reset` and `Base::morph`.
+const REBUILD_NOT_DTORS_GCC: [u64; 7] = [0x1240, 0x1310, 0x1330, 0x1380, 0x13b0, 0x13f0, 0x1440];
+const REBUILD_NOT_DTORS_CLANG: [u64; 7] = [0x1190, 0x11e0, 0x1230, 0x1280, 0x1420, 0x1350, 0x1500];
+/// `rb::Base`'s complete and deleting destructors.
+const REBUILD_BASE_DTORS_GCC: [u64; 2] = [0x12f0, 0x1350];
+const REBUILD_BASE_DTORS_CLANG: [u64; 2] = [0x1760, 0x1490];
+/// `rb::Iface::~Iface`: the abstract class's deleting destructor is clang's trap.
+const REBUILD_IFACE_DTOR_CLANG: u64 = 0x1780;
+
+#[test]
+fn a_method_that_rebuilds_this_is_not_a_destructor() {
+    for (fixture, not_dtors, base) in [
+        ("itaniumctors_rebuild_O2_x86_64.so", REBUILD_NOT_DTORS_GCC, REBUILD_BASE_DTORS_GCC),
+        ("itaniumctors_rebuild_clang_O2_x86_64.so", REBUILD_NOT_DTORS_CLANG, REBUILD_BASE_DTORS_CLANG),
+    ] {
+        let prog = bootstrap(fixture, true);
+        for vma in not_dtors {
+            let name = name_at(&prog, vma);
+            assert!(!name.starts_with('~'), "{fixture} {vma:#x} must keep its slot name, got {name}");
+        }
+        for vma in base {
+            assert_eq!(name_at(&prog, vma), "~Base", "{fixture} {vma:#x} is rb::Base::~Base");
+        }
+    }
+    let prog = bootstrap("itaniumctors_rebuild_clang_O2_x86_64.so", true);
+    assert_eq!(name_at(&prog, REBUILD_IFACE_DTOR_CLANG), "~Iface");
+}

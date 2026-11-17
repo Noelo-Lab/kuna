@@ -5095,20 +5095,30 @@ every other binary's pass list is byte-identical to before the pass existed):
   a factory that inlines `new C` (it stores through `operator new`'s result) or a
   caller that builds a `C` in its frame is not mistaken for a constructor. The
   owner is the most-derived class whose primary vptr is stored at offset 0, and
-  every stored vptr must belong to it or to a base. A function in the owner's own
-  primary vtable is one of its virtual destructors, `C::~C` (the name a symbol
-  table gives the complete-object and the deleting destructor alike), counting only
-  the stores made before the walk's first call or conditional branch: a destructor
-  sets its vptr before anything else, while a virtual method that inlined one — a
-  COM-style `Release` that tests its count before `delete this`, a `reset` that
-  destroys and rebuilds `*this` — stores only after a test or a call. The ABI puts
-  the deleting destructor in the slot after the complete one, but which of the two
-  stores the vptr depends on the optimizer — at `-O2` the deleting one can inline
-  the other and be the only store — so the next slot is also named only when it
-  calls the function found. More than two such slots in one class, or two that are
-  not neighbours, mean a method carrying a destructor's code with nothing before it
-  (`delete this` in a final class compiles to the deleting destructor's body), and
-  none of that class's slots is named. A function in no vtable is a constructor
+  every stored vptr must belong to it or to a base. A function in `C`'s own
+  primary vtable is shaped like one of its virtual destructors, `C::~C` (the name
+  a symbol table gives the complete-object and the deleting destructor alike), when
+  its stores make `C` the owner twice over: all of them, and also the ones made
+  before the walk's first call or conditional branch. A destructor sets its vptr
+  before anything else; a virtual method that inlined one behind a test (a
+  COM-style `Release` checking its count before `delete this`) stores only after
+  it, and one that rebuilds `*this` by placement new and goes on to build a
+  polymorphic member or a derived class in place also stores that other vptr.
+  The ABI puts the deleting destructor in the slot after the complete one, and the
+  deleting one either stores too (at `-O2` it may inline the other), calls the
+  complete one (a direct call, or an indirect call through a constant, which
+  AArch64 clang emits at `-O0`), or, for an abstract class built by clang, only
+  traps (a raised exception jumped through). So a class's destructors are named
+  from two neighbouring shaped slots, or from a single one whose next slot calls it
+  or only traps; that next slot is also named when it calls it. Any other shaped
+  slot is a virtual method carrying a constructor's or destructor's code with
+  nothing before it — a lone one whose neighbour is an ordinary method
+  (`reinit() { new (this) C(); }`, `destroy() { delete this; }` with a non-virtual
+  destructor), one beside a complete destructor its own neighbour calls, a third,
+  or two that are not neighbours — and none of that class's slots is named. A
+  deleting destructor that only tail-calls `operator delete` (clang drops a
+  complete destructor's dead stores from it) cannot be told from an ordinary method,
+  so such a class keeps its slot names. A function in no vtable is a constructor
   `C::C`, but only when `C` or a base has such a virtual destructor, because a
   non-virtual destructor stores the vptr exactly as a constructor does, and only
   when every vptr store goes through `this` read back from a frame slot the
