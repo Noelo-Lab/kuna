@@ -1820,6 +1820,7 @@ impl ScopeLocal {
     /// overlaps that could not be reconciled.
     pub fn restructure(&mut self, state: &mut MapState, types: &dyn TypeFactory) -> KunaResult<bool> {
         let mut overlap_problems = false;
+        crate::p6_variables::kuna_arrayextent::coalesce_unindexed(state, types);
         if !state.initialize()? {
             return Ok(overlap_problems); // No references to stack at all
         }

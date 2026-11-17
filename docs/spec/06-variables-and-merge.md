@@ -2036,9 +2036,12 @@ extend this unindexed storage, so signed reads retain their interpretation.
 This preserves a zero-initialized two-word object passed through one pointer
 instead of declaring its words as unrelated scalars. Independently read,
 separately addressed, locked, runtime-initialized or differently sized neighbours
-do not extend it. Before layout, the witnessed unindexed span becomes one
-fixed-size array hint, using the same representation as call-escaped array
-storage. It cannot absorb padding up to the next object. The indexed-array
+do not extend it. The first element may be runtime-initialized; its metatype must
+still match the array element. Before datatype reconciliation, the witnessed
+span becomes one fixed-size array hint, using the same representation as
+call-escaped array storage. The span must fit the mapped range and cannot absorb
+padding. Another Open that can share its extent leaves the original layout
+unchanged, including interior pointers into indexed arrays. The indexed-array
 preservation rule above remains unchanged.
 
 

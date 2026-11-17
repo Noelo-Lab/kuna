@@ -215,39 +215,59 @@ pub(crate) fn extend_unbounded(
     state.set_extended(extended);
 }
 
-/// Fix unindexed arrays at their witnessed extent; indexed bases retain wider
-/// extents already produced by the original layout.
-pub(crate) fn settle(state: &mut MapState, space: &Rc<AddrSpace>, types: &dyn TypeFactory) {
+/// Fix witnessed unindexed extents before datatype reconciliation changes hints.
+pub(crate) fn coalesce_unindexed(state: &mut MapState, types: &dyn TypeFactory) {
     let mut extended = state.take_extended();
     if extended.is_empty() {
         return;
     }
-    let mut fixed = false;
-    for e in extended.iter().filter(|e| e.from < 0) {
+    // Decide all spans before removing any Open or restoring its original bound.
+    for e in extended.iter_mut().filter(|e| e.from < 0) {
         let end = e.sstart + (e.to as intb + 1) * e.elem as intb;
+        let mapped = e.elem.checked_mul(e.to + 1).is_some_and(|size| state.covers(e.start, size));
         let hints = state.hints_mut();
-        let ty = hints.iter().find(|h| is_lengthened(h, e)).map(|h| Rc::clone(&h.type_));
+        let ty = hints.iter().find(|h| is_lengthened(h, e)).map(|h| &h.type_);
+        let shared = hints.iter().any(|h| {
+            if h.range_type != RangeType::Open || h.start == e.start { return false; }
+            if h.sstart > e.sstart { return h.sstart <= end; }
+            let width = h.type_.get_align_size().max(h.size).max(1) as intb;
+            let reach = (h.highind.max(0) as intb + 1) * width;
+            e.sstart.checked_sub(h.sstart).is_none_or(|distance| distance <= reach)
+        });
         let valid = hints.iter().filter(|h| h.sstart < end && e.sstart < h.sstart + (h.size as intb)).all(|h| {
             !h.is_type_lock() && h.sstart >= e.sstart && h.sstart + (h.size as intb) <= end
                 && (match h.range_type {
-                    RangeType::Open => (h.start == e.start && h.highind < 0) || is_lengthened(h, e),
-                    RangeType::Fixed => h.size == e.elem && ty.as_ref().is_some_and(|ty| joinable(ty, &h.type_)),
+                    RangeType::Open => h.type_.get_align_size() == e.elem
+                        && ((h.start == e.start && h.highind < 0) || is_lengthened(h, e)),
+                    RangeType::Fixed => h.size == e.elem && ty.is_some_and(|ty|
+                        ty.get_metatype() == h.type_.get_metatype() && joinable(ty, &h.type_)),
                     RangeType::Endpoint => false,
                 })
         });
-        let array = ty.filter(|_| valid).and_then(|ty| types.get_type_array(e.to + 1, ty).ok());
+        if !mapped || shared || !valid { e.to = -1; }
+    }
+    for e in extended.iter().filter(|e| e.from < 0) {
+        let hints = state.hints_mut();
+        let array = if e.to < 0 { None } else {
+            hints.iter().find(|h| is_lengthened(h, e))
+                .and_then(|h| types.get_type_array(e.to + 1, Rc::clone(&h.type_)).ok())
+        };
         if array.is_none() {
-            for h in hints.iter_mut().filter(|h| is_lengthened(h, e)) { h.highind = e.from; }
+            let base = OpenBase { start: e.start, elem: e.elem };
+            for h in hints.iter_mut().filter(|h| is_open(h, &base)) { h.highind = e.from; }
             continue;
         }
+        let end = e.sstart + (e.to as intb + 1) * e.elem as intb;
         hints.retain(|h| h.sstart >= end || h.sstart + (h.size as intb) <= e.sstart);
         state.add_range_pub(e.start, array, 0, RangeType::Fixed, -1);
-        fixed = true;
-    }
-    if fixed {
-        state.hints_mut().sort_by(RangeHint::compare_ranges);
     }
     extended.retain(|e| e.from >= 0);
+    state.set_extended(extended);
+}
+
+/// Retain wider indexed extents already produced by the original layout.
+pub(crate) fn settle(state: &mut MapState, space: &Rc<AddrSpace>, types: &dyn TypeFactory) {
+    let extended = state.take_extended();
     if extended.is_empty() { return; }
     let mut list = state.hints_mut().clone();
     for h in list.iter_mut() {
@@ -506,7 +526,7 @@ mod tests {
         use crate::varmap::ScopeLocal;
 
         for width in [1, 4, 8] {
-            for control in ["pair", "gap", "read-constant", "read", "address", "locked", "different-width", "runtime", "opposite-sign"] {
+            for control in ["pair", "gap", "three-gap", "runtime-base", "read-constant", "read", "address", "locked", "different-width", "runtime", "opposite-sign", "interior-indexed", "interior-unindexed", "base-open-other", "base-fixed-other", "base-locked", "base-opposite-sign"] {
                 let mut manager = AddrSpaceManager::new();
                 manager.insert_space(Rc::new(ConstantSpace::new())).unwrap();
                 manager.insert_space(Rc::new(UniqueSpace::new(1, 0, false))).unwrap();
@@ -523,8 +543,9 @@ mod tests {
                 let root = fd.bblocks_ref().root.unwrap();
                 let block = fd.bblocks_mut().new_block_basic(root);
                 let start = 0x10;
-                let following = start + width as u64;
-                let neighbour = following + width as u64 + if control == "gap" { 8 } else { 0 };
+                let interior = matches!(control, "interior-indexed" | "interior-unindexed");
+                let following = start + if interior { 2 * width as u64 } else { width as u64 };
+                let neighbour = following + width as u64 + if interior { width as u64 } else if control == "gap" { 8 } else if control == "three-gap" { width as u64 + 8 } else { 0 };
                 for offset in [following, neighbour] {
                     let value = fd.new_varnode(width, &Address::new(Rc::clone(&stack), offset), None);
                     if offset == neighbour || control == "read" {
@@ -545,18 +566,32 @@ mod tests {
                 range.insert_range(Rc::clone(&stack), 0, 0x3f);
                 let params = RangeList::new();
                 let mut state = MapState::new(Rc::clone(&stack), &range, &params, Rc::clone(&ty));
-                state.add_range_pub(start, Some(Rc::clone(&ty)), 0, RangeType::Open, -1);
+                state.add_range_pub(start, Some(Rc::clone(&ty)), 0, RangeType::Open, if control == "interior-indexed" { 3 } else { -1 });
+                if interior {
+                    state.add_range_pub(following, Some(Rc::clone(&ty)), 0, RangeType::Open, -1);
+                    for offset in [start + width as u64, following + width as u64] {
+                        state.add_range_pub(offset, Some(Rc::clone(&ty)), COPY_CONSTANT, RangeType::Fixed, -1);
+                    }
+                } else if control == "three-gap" {
+                    state.add_range_pub(start + 2 * width as u64, Some(Rc::clone(&ty)), COPY_CONSTANT, RangeType::Fixed, -1);
+                }
+                if control == "base-open-other" {
+                    let other = if width == 1 { 2 } else { 1 };
+                    state.add_range_pub(start, Some(Rc::new(Datatype::new_with_align(other, other, type_metatype::TYPE_UINT))), 0, RangeType::Open, -1);
+                }
                 for offset in [start, following, neighbour] {
-                    let slot_type = if offset == following && control == "different-width" {
+                    let slot_type = if (offset == following && control == "different-width") || (offset == start && control == "base-fixed-other") {
                         let other_width = if width == 1 { 2 } else { 1 };
                         Rc::new(Datatype::new_with_align(other_width, other_width, type_metatype::TYPE_UINT))
-                    } else if offset == following && control == "opposite-sign" {
+                    } else if (offset == following && control == "opposite-sign") || (offset == start && control == "base-opposite-sign") {
                         Rc::new(Datatype::new_with_align(width, width, type_metatype::TYPE_INT))
                     } else {
                         Rc::clone(&ty)
                     };
-                    let flags = if offset == following && control == "locked" {
+                    let flags = if (offset == following && control == "locked") || (offset == start && control == "base-locked") {
                         crate::varmap::TYPELOCK
+                    } else if offset == start && control == "runtime-base" {
+                        0
                     } else if (offset != neighbour && !(offset == following && control == "runtime")) || control == "read-constant" {
                         COPY_CONSTANT
                     } else {
@@ -585,11 +620,15 @@ mod tests {
                 let mut baseline = MapState::new(Rc::clone(&stack), &range, &params, Rc::clone(&ty));
                 baseline.hints_mut().extend(state.hints_mut().iter().cloned());
                 let before = layout(baseline);
-                extend_unbounded(&fd, &mut state, &stack, &[OpenBase { start, elem: width }]);
+                if interior {
+                    extend_unbounded(&fd, &mut state, &stack, &[OpenBase { start, elem: width }, OpenBase { start: following, elem: width }]);
+                } else {
+                    extend_unbounded(&fd, &mut state, &stack, &[OpenBase { start, elem: width }]);
+                }
                 let after = layout(state);
-                if matches!(control, "pair" | "gap" | "read-constant") {
-                    assert_eq!(after.0, [Some(start), Some(start), Some(neighbour)], "width={width}");
-                    assert_eq!(after.1, Some(2 * width), "{control}, width={width}: object absorbed padding");
+                if matches!(control, "pair" | "gap" | "three-gap" | "runtime-base" | "read-constant") {
+                    assert_eq!(after.0, [Some(start), Some(start), Some(neighbour)], "{control}, width={width}");
+                    assert_eq!(after.1, Some((if control == "three-gap" { 3 } else { 2 }) * width), "{control}, width={width}: object absorbed padding");
                 } else {
                     assert_eq!(after, before, "{control}, width={width}: independent storage layout changed");
                 }
