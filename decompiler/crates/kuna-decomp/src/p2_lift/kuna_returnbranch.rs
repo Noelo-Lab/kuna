@@ -188,6 +188,35 @@ impl<'a, F: Fn(u64) -> bool> Prefix<'a, F> {
     }
 }
 
+/// The user-op name a SLEIGH spec gives the marker that only selects an
+/// instruction set, in every language that declares one. Named rather than
+/// gated on an architecture id, which the Ghidra front end spells as a session
+/// number.
+pub(crate) fn names_isa_mode_switch(name: &[u8]) -> bool {
+    name == b"setISAMode"
+}
+
+/// Is `first` the start of the function, give or take decoded instructions
+/// that emitted no p-code at all? Such an instruction cannot have changed
+/// anything, so the prefix beginning after it is still the entry prefix.
+fn entry_prefix_starts_at(
+    data: &Funcdata,
+    visited: &crate::flow::VisitedMap,
+    first: &Address,
+) -> bool {
+    let mut at = data.get_address().clone();
+    while &at < first {
+        let Some(stat) = visited.get(&at) else {
+            return false;
+        };
+        if !stat.seqnum.get_addr().is_invalid() || stat.size <= 0 {
+            return false;
+        }
+        at = &at + stat.size as i64;
+    }
+    &at == first
+}
+
 fn transfers_control(code: OpCode) -> bool {
     matches!(
         code,
@@ -199,6 +228,7 @@ fn transfers_control(code: OpCode) -> bool {
 pub(crate) fn computed_target(
     data: &Funcdata,
     target: OpId,
+    visited: &crate::flow::VisitedMap,
     mode_switch: impl Fn(u64) -> bool,
 ) -> bool {
     let Some(ret) = data.obank().get(target) else {
@@ -222,7 +252,7 @@ pub(crate) fn computed_target(
     let mut prefix = Prefix::at_entry(data, mode_switch);
     for (i, id) in data.obank().iter_dead().take(256).enumerate() {
         let op = data.obank().get(id).expect("live raw op");
-        if i == 0 && op.get_addr() != data.get_address() {
+        if i == 0 && !entry_prefix_starts_at(data, visited, op.get_addr()) {
             return false;
         }
         if id == target {
@@ -239,9 +269,15 @@ pub(crate) fn computed_target(
 mod tests {
     use super::*;
     use crate::context::ArchContext;
-    use kuna_base::address::Address;
+    use kuna_base::address::{Address, SeqNum};
     use kuna_base::space::{AddrSpace, AddrSpaceManager, ConstantSpace, UniqueSpace};
     use std::rc::Rc;
+
+    /// Every decoded instruction emitted p-code, so the first raw op is the
+    /// entry's; the prefix map only matters in the tests that build one.
+    fn proves(fd: &Funcdata, ret: OpId, mode_switch: impl Fn(u64) -> bool) -> bool {
+        computed_target(fd, ret, &crate::flow::VisitedMap::new(), mode_switch)
+    }
 
     fn function() -> Funcdata {
         function_with_known_return(false)
@@ -382,6 +418,67 @@ mod tests {
         }
     }
 
+    /// A `visited` map in which each `(address, size)` is an instruction that
+    /// emitted no p-code, as a MIPS `nop` does.
+    fn without_pcode(fd: &Funcdata, run: &[(u64, i32)]) -> crate::flow::VisitedMap {
+        let ram = fd.get_address().get_space().unwrap().clone();
+        run.iter()
+            .map(|&(at, size)| {
+                (
+                    Address::new(ram.clone(), at),
+                    crate::flow::VisitStat { seqnum: SeqNum::new(Address::default(), 0), size },
+                )
+            })
+            .collect()
+    }
+
+    /// The whole run before the first operation emitted no p-code, so the
+    /// prefix that follows it is still the entry prefix.
+    #[test]
+    fn instructions_emitting_no_pcode_may_precede_the_entry_prefix() {
+        for leading in [&[(0x1000, 4)][..], &[(0x1000, 4), (0x1004, 4)][..]] {
+            let first = leading.last().unwrap().0 + 4;
+            let mut fd = function();
+            emit(&mut fd, first, OpCode::CPUI_COPY, Some((0x20, 8)), &[(true, 0x1080, 8)]);
+            let ret = emit(&mut fd, first + 4, OpCode::CPUI_RETURN, None, &[(false, 0x20, 8)]);
+            let visited = without_pcode(&fd, leading);
+            assert!(computed_target(&fd, ret, &visited, |_| false), "{leading:?}");
+            assert!(!proves(&fd, ret, |_| false), "{leading:?}");
+        }
+    }
+
+    /// Only a decoded instruction that emitted nothing may be skipped: an
+    /// unrecorded gap, an instruction that did emit p-code, one whose length
+    /// does not reach the first operation, and an operation before the entry
+    /// all leave the prefix unproven.
+    #[test]
+    fn a_gap_before_the_entry_prefix_is_not_assumed_empty() {
+        let mut fd = function();
+        emit(&mut fd, 0x1004, OpCode::CPUI_COPY, Some((0x20, 8)), &[(true, 0x1080, 8)]);
+        let ret = emit(&mut fd, 0x1008, OpCode::CPUI_RETURN, None, &[(false, 0x20, 8)]);
+        let ram = fd.get_address().get_space().unwrap().clone();
+        assert!(!computed_target(&fd, ret, &crate::flow::VisitedMap::new(), |_| false));
+        let mut emitted = without_pcode(&fd, &[(0x1000, 4)]);
+        emitted.get_mut(&Address::new(ram.clone(), 0x1000)).unwrap().seqnum =
+            SeqNum::new(Address::new(ram.clone(), 0x1000), 1);
+        assert!(!computed_target(&fd, ret, &emitted, |_| false));
+        assert!(!computed_target(&fd, ret, &without_pcode(&fd, &[(0x1000, 2)]), |_| false));
+        assert!(!computed_target(&fd, ret, &without_pcode(&fd, &[(0x1000, 8)]), |_| false));
+        let mut below = function();
+        emit(&mut below, 0x0ffc, OpCode::CPUI_COPY, Some((0x20, 8)), &[(true, 0x1080, 8)]);
+        let ret = emit(&mut below, 0x1000, OpCode::CPUI_RETURN, None, &[(false, 0x20, 8)]);
+        assert!(!computed_target(&below, ret, &without_pcode(&below, &[(0x0ffc, 4)]), |_| false));
+    }
+
+    /// The marker is named by the language, not by an architecture id.
+    #[test]
+    fn only_the_isa_mode_user_op_name_is_a_mode_switch() {
+        assert!(names_isa_mode_switch(b"setISAMode"));
+        assert!(!names_isa_mode_switch(b"setisamode"));
+        assert!(!names_isa_mode_switch(b"setISAMode2"));
+        assert!(!names_isa_mode_switch(b""));
+    }
+
     #[test]
     fn captured_jump_target_survives_the_delay_slot_overwrite() {
         let mut fd = function();
@@ -413,12 +510,12 @@ mod tests {
             None,
             &[(false, 0x20, 8)],
         );
-        assert!(computed_target(&fd, ret, |_| false));
+        assert!(proves(&fd, ret, |_| false));
         fd.obank_mut()
             .get_mut(ret)
             .unwrap()
             .set_flag(crate::op::pcodeop_flags::badinstruction);
-        assert!(!computed_target(&fd, ret, |_| false));
+        assert!(!proves(&fd, ret, |_| false));
         fd.obank_mut()
             .get_mut(ret)
             .unwrap()
@@ -426,7 +523,7 @@ mod tests {
         let at = Address::new(fd.get_address().get_space().unwrap().clone(), 0x1004);
         fd.get_override_mut()
             .insert_flow_override(at, crate::overrides::flow_type::RETURN);
-        assert!(!computed_target(&fd, ret, |_| false));
+        assert!(!proves(&fd, ret, |_| false));
     }
 
     #[test]
@@ -446,7 +543,7 @@ mod tests {
             None,
             &[(false, 0x20, 8)],
         );
-        assert!(!computed_target(&fd, ret, |_| false));
+        assert!(!proves(&fd, ret, |_| false));
     }
 
     #[test]
@@ -476,7 +573,7 @@ mod tests {
                 None,
                 &[(false, 0x20, 8)],
             );
-            assert_eq!(computed_target(&fd, ret, |_| false), overwritten);
+            assert_eq!(proves(&fd, ret, |_| false), overwritten);
         }
     }
 
@@ -504,7 +601,7 @@ mod tests {
             None,
             &[(false, 0x20, 8)],
         );
-        assert!(!computed_target(&fd, ret, |_| false));
+        assert!(!proves(&fd, ret, |_| false));
     }
 
     #[test]
@@ -529,7 +626,7 @@ mod tests {
                 None,
                 &[(false, 0x10, 8)],
             );
-            assert!(!computed_target(&fd, ret, |_| false), "{code:?}");
+            assert!(!proves(&fd, ret, |_| false), "{code:?}");
         }
     }
 
@@ -559,9 +656,9 @@ mod tests {
                 None,
                 &[(false, 0x10, 8)],
             );
-            assert!(!computed_target(&fd, ret, |_| false), "{code:?}");
+            assert!(!proves(&fd, ret, |_| false), "{code:?}");
             assert_eq!(
-                computed_target(&fd, ret, |id| id == 7),
+                proves(&fd, ret, |id| id == 7),
                 code == OpCode::CPUI_CALLOTHER
             );
         }
@@ -582,7 +679,7 @@ mod tests {
             None,
             &[(false, 0x10, 8)],
         );
-        assert!(!computed_target(&fd, ret, |_| false));
+        assert!(!proves(&fd, ret, |_| false));
     }
 
     #[test]
@@ -594,13 +691,13 @@ mod tests {
             emit(&mut fd, 0x1004, OpCode::CPUI_STORE, None,
                  &[(true, space, 8), (false, 0x18, 8), (true, 0, 8)]);
             let ret = emit(&mut fd, 0x1008, OpCode::CPUI_RETURN, None, &[(false, 0x10, 8)]);
-            assert_eq!(computed_target(&fd, ret, |_| false), kept, "space {space}");
+            assert_eq!(proves(&fd, ret, |_| false), kept, "space {space}");
         }
         let mut fd = function();
         emit(&mut fd, 0x1000, OpCode::CPUI_COPY, Some((0x10, 8)), &[(true, 0x1020, 8)]);
         emit(&mut fd, 0x1004, OpCode::CPUI_STORE, None,
              &[(false, 0x28, 8), (false, 0x18, 8), (true, 0, 8)]);
         let ret = emit(&mut fd, 0x1008, OpCode::CPUI_RETURN, None, &[(false, 0x10, 8)]);
-        assert!(!computed_target(&fd, ret, |_| false), "unknown space");
+        assert!(!proves(&fd, ret, |_| false), "unknown space");
     }
 }

@@ -252,8 +252,8 @@ pub trait FlowEnvironment {
         false
     }
 
-    /// The MIPS ISA-mode marker does not change general-register values.
-    fn is_mips_mode_switch(&self, _userop_index: uintb) -> bool {
+    /// The ISA-mode marker does not change general-register values.
+    fn is_isa_mode_switch(&self, _userop_index: uintb) -> bool {
         false
     }
 
@@ -1472,7 +1472,12 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                 let branchind = self.env.resolve_typeop(OpCode::CPUI_BRANCHIND);
                 self.data.op_set_opcode(curop, branchind);
             }
-            if crate::kuna_returnbranch::computed_target(&self.data, curop, |index| self.env.is_mips_mode_switch(index)) {
+            if crate::kuna_returnbranch::computed_target(
+                &self.data,
+                curop,
+                &self.visited,
+                |index| self.env.is_isa_mode_switch(index),
+            ) {
                 let branchind = self.env.resolve_typeop(OpCode::CPUI_BRANCHIND);
                 self.data.op_set_opcode(curop, branchind);
             }

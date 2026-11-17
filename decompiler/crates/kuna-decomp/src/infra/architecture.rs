@@ -3376,9 +3376,10 @@ impl Architecture {
         // BRANCHIND that is really a tail return through the return-address
         // register (the Switch-return jump-table failure mode `fail_return`).
         ctx.default_return_addr = self.default_return_addr.clone();
-        ctx.indirect_return_addr = self.default_return_addr.clone().or_else(|| {
-            self.archid.starts_with("MIPS:").then(|| self.get_register_varnode(b"ra").ok()).flatten()
-        });
+        ctx.indirect_return_addr = self
+            .default_return_addr
+            .clone()
+            .or_else(|| self.translate.probe_register_varnode(b"ra"));
         ctx.trim_recurse_max = self.trim_recurse_max;
         ctx.max_implied_ref = self.max_implied_ref;
         ctx.max_term_duplication = self.max_term_duplication;

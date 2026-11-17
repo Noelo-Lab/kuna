@@ -1,6 +1,8 @@
 // Shared integration-test executable. Process-sensitive tests stay separate.
 #[path = "mips_elf_selection.rs"]
 mod mips_elf_selection;
+#[path = "return_branch_cli.rs"]
+mod return_branch_cli;
 mod common;
 
 #[path = "rust_empty_match.rs"]

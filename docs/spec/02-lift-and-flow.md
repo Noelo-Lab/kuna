@@ -1874,13 +1874,23 @@ emitted p-code order (so delay-slot writes after the target is captured do not
 change it) and stops at any call, branch or unknown user operation. A write
 whose value is not proven invalidates the storage it overlaps, a store forgets
 every value in the space it writes, and a read of part of a known register
-takes the bytes it names in the space's byte order. A known MIPS mode marker
-that selects the ordinary ISA does not stop it. The incoming return storage is
-the cspec's return address, or MIPS's ABI `ra` when the cspec names none.
-`Prefix` is the one evaluator for such bounded target proofs. Only the flow kind changes: jump
-recovery must still prove the destination, so back edges discovered later
-cannot freeze an entry-only constant into the graph. A flow override at the
-return keeps its classification, and off restores the spec's RETURN.
+takes the bytes it names in the space's byte order. Decoded instructions that
+emitted no p-code at all may precede the prefix, since they cannot have changed
+anything; a MIPS `nop` is one, and demanding an operation at the entry address
+itself rejected the proof outright. A mode marker that selects the ordinary ISA
+does not stop the prefix. That marker is recognized by the user-op name the
+language declares, and the incoming return storage is the cspec's return
+address or a register the language names `ra` when the cspec names none — as
+the Octeon specs do. Neither consults the architecture id, which the Ghidra
+front end spells as a session number, so both front ends decide alike.
+`Prefix` is the one evaluator for such bounded target proofs. Only the flow
+kind changes: jump recovery must still prove the destination. It inherits one
+limitation it shares with every architecture's register jump, rather than
+introducing it — a recovered single-entry table whose register is redefined on
+a back edge found after recovery is not staged again, so that later transfer is
+missing from the output, exactly as it is for an x86-64 `jmp *%rax` of the same
+shape. A flow override at the return keeps its classification, and off restores
+the spec's RETURN.
 
 ## 2.3 Jump tables & switch recovery
 

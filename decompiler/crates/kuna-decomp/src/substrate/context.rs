@@ -707,7 +707,8 @@ pub struct ArchContext {
     /// tail return through the return-address register.
     pub default_return_addr: Option<kuna_num::pcoderaw::VarnodeData>,
     /// Entry return-address storage for a bounded indirect-transfer proof.
-    /// Includes MIPS's ABI link register when the cspec permits other return registers.
+    /// Falls back to a register the language names `ra` when the cspec names
+    /// none, which only ever withholds entry facts from the proof.
     pub indirect_return_addr: Option<kuna_num::pcoderaw::VarnodeData>,
     /// Maximum recursion depth for `Funcdata::ancestorOpUse` (C++
     /// `Architecture::trim_recurse_max`).  Drives `ActionReturnRecovery`'s
