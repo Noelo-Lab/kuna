@@ -6369,6 +6369,17 @@ assembly places inside another function's `.size`, and that only a data pointer
 reaches, loses its pattern start. One with an FDE or a direct call is still found
 by those passes.
 
+On SPARC32, an accepted aggressive-finder `save %sp, r, %sp` candidate
+owns an adjacent, still-undefined `sethi hi, r; or r, lo10, r` prefix
+(`aif/kuna_sparcprologue.rs`). The temporary must agree throughout, cannot
+be `%g0` or `%sp`, and must materialize an eight-byte-aligned negative frame
+size outside the signed 13-bit immediate range. The acceptance and fingerprint
+still come from the existing SAVE candidate, not a new initial discovery root.
+Only the matched prefix is added to its body and the entry moves to `sethi`;
+this removes the undefined frame-size input and the false interior boundary that
+otherwise truncates an explicit prefix entry. A claimed/defined prefix, a
+section boundary, or an intervening control transfer prevents the ownership change.
+
 **LSDA landing pads** (`eh_frame_full`, default-off): the deeper
 `GccExceptionAnalyzer` markup — follow each FDE's CIE `L` augmentation to its
 `.gcc_except_table` LSDA, decode the call-site table, and emit each landing pad as
