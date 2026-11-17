@@ -817,9 +817,11 @@ Three tiers:
 | unconditional loop prints do-while (true) at the bottom | [`infloopstyle`](#infloopstyle----while--do-default-while) |
 | prefer while (true) at the top | [`infloopstyle`](#infloopstyle----while--do-default-while) |
 | need the previous infinite-loop spelling for comparison | [`infloopstyle`](#infloopstyle----while--do-default-while) |
-| a signed ARM value is shifted left by a constant in the emitted C | [`armconstshift`](#armconstshift----on--off-default-off) |
-| UBSan reports a left shift of a negative value in recompiled ARM output | [`armconstshift`](#armconstshift----on--off-default-off) |
-| a signed ARM shift overflows into the sign bit in recompiled output | [`armconstshift`](#armconstshift----on--off-default-off) |
+| a signed ARM value is shifted left by a constant in the emitted C | [`armconstshift`](#armconstshift----off--on--all-default-off) |
+| UBSan reports a left shift of a negative value in recompiled ARM output | [`armconstshift`](#armconstshift----off--on--all-default-off) |
+| a signed ARM shift overflows into the sign bit in recompiled output | [`armconstshift`](#armconstshift----off--on--all-default-off) |
+| UBSan reports a left shift of a negative 64-bit value in recompiled output | [`armconstshift`](#armconstshift----off--on--all-default-off) |
+| a sign-extended 32-bit value shifted left into the sign bit of a 64-bit result | [`armconstshift`](#armconstshift----off--on--all-default-off) |
 | a function that reads many constant globals between calls exhausts memory during heritage | [`readonlycalls`](#readonlycalls----off--on---default-65536) |
 | decompile of a huge function is killed before the first jump table is recovered | [`readonlycalls`](#readonlycalls----off--on---default-65536) |
 | thousands of INDIRECTs over read-only globals survive in a large function's IR | [`readonlycalls`](#readonlycalls----off--on---default-65536) |
@@ -2544,11 +2546,11 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **Where / provenance:** P9/infinite-loop-style · kuna · presentation-default · server-infinite-loop-style
 - **Example:** `option infloopstyle do`
 
-### `armconstshift` -- on | off, default `off`
+### `armconstshift` -- off | on | all, default `off`
 
-- **Symptoms:** a signed ARM value is shifted left by a constant in the emitted C; UBSan reports a left shift of a negative value in recompiled ARM output; a signed ARM shift overflows into the sign bit in recompiled output.
-- **What it does:** Print a fixed 32-bit ARM LSL of a signed operand as a shift of its unsigned conversion, `(int)((unsigned int)x << n)`, so the emitted C is defined for negative values and for bits shifted into or past the sign. The shiftee is converted once, the signed result type is restored only when the p-code output is signed, unsigned and register-count shifts are unchanged, and a signed variable is never shifted in place.
-- **When to flip:** Turn on when the emitted C must be free of signed-shift undefined behavior, e.g. before recompiling it with sanitizers or comparing it against the binary. Off by default because the conversion adds a cast pair to every ARM sign-bit test such as `x << 0x18 < 0`, which firmware uses for nearly every register flag check.
+- **Symptoms:** a signed ARM value is shifted left by a constant in the emitted C; UBSan reports a left shift of a negative value in recompiled ARM output; a signed ARM shift overflows into the sign bit in recompiled output; UBSan reports a left shift of a negative 64-bit value in recompiled output; a sign-extended 32-bit value shifted left into the sign bit of a 64-bit result.
+- **What it does:** Print a fixed left shift of a signed operand as a shift of its unsigned conversion, so the emitted C is defined for negative values and for bits shifted into or past the sign. `on` covers ARM's fixed 32-bit LSL, `(int)((unsigned int)x << n)`; `all` adds every architecture's fixed 64-bit left shift with a count below 64, `(long)((unsigned long)x << n)`, keeping an operand's sign extension inside the conversion. The shiftee is converted once, the signed result type is restored only when the p-code output is signed, unsigned and register-count shifts are unchanged, a 64-bit operand whose known bits prove the result nonnegative keeps the compact form, and a signed variable is never shifted in place.
+- **When to flip:** Turn on when the emitted C must be free of signed-shift undefined behavior, e.g. before recompiling it with sanitizers or comparing it against the binary; use `all` for 64-bit code on any architecture. Off by default because the conversion adds a cast pair to every ARM sign-bit test such as `x << 0x18 < 0`, which firmware uses for nearly every register flag check, and to every scaled 64-bit index.
 - **Where / provenance:** P9/cast-policy · kuna · correctness-fix · arm-fixed-signed-lsl
 - **Example:** `option armconstshift on`
 

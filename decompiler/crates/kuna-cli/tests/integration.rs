@@ -54,6 +54,8 @@ mod conditional_stack_bytes;
 mod arm_conditional_switch;
 #[path = "arm_constant_shift.rs"]
 mod arm_constant_shift;
+#[path = "wide_shift_emission.rs"]
+mod wide_shift_emission;
 
 #[path = "arm_float_arguments.rs"]
 mod arm_float_arguments;
