@@ -61,7 +61,7 @@ fn a_declared_target_mark_does_not_outlive_a_throw() {
 #[test]
 fn an_init_block_not_taken_is_forgotten_with_its_class() {
     let _guard = common::install_default_context();
-    let cl = class("tests/data/b02/b02/B02Fields$Inner.class");
+    let cl = class("tests/data/k2_graph_oracle/classes/K2Shapes.class");
     let companion = ClassNode::new(ClassNodeType::Member, cl);
     let thrown = try_catch(|| {
         let _moved = kuna_fix_kt_static_initializer::scope();
@@ -82,7 +82,7 @@ fn the_class_reference_patterns_take_no_expression_ids() {
     let _guard = common::install_default_context();
     let node = ClassNode::new(
         ClassNodeType::Root,
-        class("tests/data/b02/b02/B02Fields.class"),
+        class("tests/data/k2_graph_oracle/classes/K2Shapes.class"),
     );
     let counter = DecompilerContext::get_counter_container();
     let before = counter.get_counter(CounterContainer::EXPRESSION_COUNTER);

@@ -26,7 +26,7 @@ use kuna_jvm::sequence_statement::SequenceStatement;
 use kuna_jvm::stat_edge::StatEdge;
 use kuna_jvm::statement::Statement;
 
-use crate::k2_dom_helper::{fixture_method, oracle_context, start_method};
+use crate::common::{fixture_method, oracle_context, start_method};
 use kuna_jvm::rt::{try_catch, JHashMap};
 
 fn pairs(list: &[(&'static str, &'static str)]) -> Vec<(String, String)> {
@@ -336,7 +336,7 @@ mod catch_loop_back_successor {
     use kuna_jvm::statement::Statement;
     use kuna_jvm::struct_method::StructMethod;
 
-    use crate::k2_dom_helper::{fixture_method, oracle_context, start_method};
+    use crate::common::{fixture_method, oracle_context, start_method};
 
     fn bb() -> Statement {
         BasicBlockStatement::create().0

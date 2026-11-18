@@ -34,7 +34,7 @@ $KUNA_JVM_ORACLE/
   corpus/                          the Java corpus (below), its built driver and tools/asmtools/
   corpus-kt/                       the Kotlin corpus, its built driver, tools/{m2,plugin,realworld}/
   dataset/spring-framework/        optional: the javabench dataset (scripts/javabench), for the
-                                   Kotlin real-world references and tests/data/kt1, kt3
+                                   Kotlin real-world references
   work/                            per-run work directories (regen, crosscheck)
 ```
 

@@ -5,8 +5,7 @@
 #   $CORPUS/tools/m2/                           Maven Central jars/poms (Gradle's resolved class path),
 #                                               checked against Maven Central .sha1 and the sha256 pinned here
 #   $CORPUS/tools/realworld/<group>.<artifact>-<version>.jar
-#                                               Maven Central jars for scripts/realworld.py and the engine's
-#                                               tests/data/kt1 and kt3 gen.sh, same checks
+#                                               Maven Central jars for scripts/realworld.py, same checks
 # Also needs $JDKS/jdk17 and $JDKS/jdk21 (../../java/scripts/fetch_tools.sh links them).
 set -euo pipefail
 NO_ORACLE='set it to the JVM oracle workspace (decompiler/nonnative/kuna-jvm/tools/oracle/README.md)'

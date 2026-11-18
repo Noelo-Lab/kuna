@@ -8,6 +8,7 @@
 use std::cell::OnceCell;
 use std::rc::Rc;
 
+use kuna_jvm::byte_cursor::ByteCursor;
 use kuna_jvm::classes_processor::ClassesProcessor;
 use kuna_jvm::decompiler_context::DecompilerContext;
 use kuna_jvm::i_decompiled_data::IDecompiledData;
@@ -17,6 +18,8 @@ use kuna_jvm::identity_renamer_factory::IdentityRenamerFactory;
 use kuna_jvm::pool_interceptor::PoolInterceptor;
 use kuna_jvm::struct_class::StructClass;
 use kuna_jvm::struct_context::StructContext;
+use kuna_jvm::struct_method::StructMethod;
+use kuna_jvm::var_processor::VarProcessor;
 
 /// The installed context; dropping it uninstalls the context and drops every
 /// arena object of this thread (`rt::reset_session_scope`).
@@ -116,4 +119,26 @@ impl IDecompiledData for ProcessorData {
     fn get_class_content(&self, _cl: StructClass) -> Option<String> {
         None
     }
+}
+
+/// `straight(II)I` of the committed fixture class `K2Shapes` (`data/k2_graph_oracle`).
+pub fn fixture_method() -> StructMethod {
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/data/k2_graph_oracle/classes/K2Shapes.class"
+    );
+    let bytes = std::fs::read(path).unwrap();
+    StructClass::create(&mut ByteCursor::new(bytes), true)
+        .get_method("straight", "(II)I")
+        .expect("fixture method")
+}
+
+/// `ClassWrapper.init`'s per-method setup: a fresh var processor and counter container.
+pub fn start_method(mt: StructMethod) {
+    DecompilerContext::start_method(VarProcessor::new(mt, &mt.method_descriptor()));
+}
+
+/// Vineflower's options with `TRY_LOOP_FIX`, the one these hand-built graphs reach, off.
+pub fn oracle_context() -> ContextGuard {
+    install_context_with(&[(IFernflowerPreferences::TRY_LOOP_FIX, "0")])
 }

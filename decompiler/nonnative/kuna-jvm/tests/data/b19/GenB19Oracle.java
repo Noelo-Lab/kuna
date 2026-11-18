@@ -128,44 +128,6 @@ public class GenB19Oracle {
     load("inconsistent-reversed", reversed);
     load("inconsistent-quiet", reversed, IFernflowerPreferences.WARN_INCONSISTENT_INNER_CLASSES, "0");
 
-    Fernflower fernflower = open(own);
-    DecompilerContext.getClassProcessor().loadClasses(null);
-    Map<String, ClassNode> roots = DecompilerContext.getClassProcessor().getMapRootClasses();
-    List<String> names = new ArrayList<>(roots.keySet());
-    names.sort(null);
-    System.out.println("== lambdas");
-    for (String n : names) {
-      ClassNode root = roots.get(n);
-      if (root.type == ClassNode.Type.ROOT) new LambdaProcessor().processClass(root);
-    }
-    for (String n : names) {
-      ClassNode root = roots.get(n);
-      if (root.type == ClassNode.Type.ROOT) dump(root);
-    }
-    List<String> lambdaKeys = new ArrayList<>();
-    for (String k : roots.keySet()) if (k.contains("##")) lambdaKeys.add(k);
-    lambdaKeys.sort(null);
-    System.out.println("keys\t" + String.join(",", lambdaKeys));
-
-    System.out.println("== wrapper");
-    ClassNode natives = roots.get("b/Natives");
-    DecompilerContext.startClass(new ImportCollector(natives));
-    ClassWrapper wrapper = new ClassWrapper(natives);
-    wrapper.init(null);
-    for (MethodWrapper mw : wrapper.getMethods()) {
-      if (mw.methodStruct.containsCode()) continue;
-      VarProcessor vp = mw.varproc;
-      System.out.println(String.join("\t", "method", mw.methodStruct.getName(), mw.methodStruct.getDescriptor(),
-        Boolean.toString(mw.decompileError == null), Boolean.toString(mw.root == null)));
-      List<VarVersionPair> pairs = new ArrayList<>(vp.getUsedVarVersions());
-      pairs.sort(Comparator.comparingInt((VarVersionPair p) -> p.var).thenComparingInt(p -> p.version));
-      for (VarVersionPair p : pairs) System.out.println("var\t" + p.var + "\t" + p.version + "\t" + vp.getVarName(p));
-      for (VarVersionPair p : vp.getParams()) System.out.println("param\t" + p.var + "\t" + p.version);
-      List<VarVersionPair> thisVars = new ArrayList<>(vp.getThisVars().keySet());
-      for (VarVersionPair p : thisVars) System.out.println("this\t" + p.var + "\t" + p.version + "\t" + vp.getThisVars().get(p));
-    }
-    DecompilerContext.setCurrentContext(null);
-
     System.out.println("== regex");
     String[][] cases = {
       {"b/Outer\\$A.*", "b/Outer$A$1"}, {"b/Outer\\$A.*", "b/Outer"}, {".*Test", "a/FooTest"},
