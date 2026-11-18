@@ -100,14 +100,14 @@ FIX_SETS = (('Kuna Fixes, Vineflower compat', 'kuna-fixes-compat', '1', 'expecte
             ('Kuna Fixes', 'kuna-fixes', '0', 'expected'))
 
 
-KUNA_FIXES_RS = 'decompiler/nonnative/kuna-jvm/src/p0_knowledge/kuna_fixes.rs'
+FIXES_TOML = 'decompiler/nonnative/kuna-jvm/fixes.toml'
 
 
 def fix_ids(repo):
-    """The ids of the kuna fixes (the strings `KunaFix::id` returns in kuna_fixes.rs) and the names of
-    the kuna-form options (options.toml rows with `change_kind = "kuna-form"`)."""
-    with open(os.path.join(repo, KUNA_FIXES_RS), encoding='utf-8') as f:
-        ids = re.findall(r'KunaFix::\w+ => "([a-z0-9_]+)"', f.read())
+    """The ids of the kuna fixes (the `id`s of fixes.toml) and the names of the kuna-form options
+    (options.toml rows with `change_kind = "kuna-form"`)."""
+    with open(os.path.join(repo, FIXES_TOML), encoding='utf-8') as f:
+        ids = re.findall(r'^\s*\{ id = "([a-z0-9_]+)"', f.read(), re.M)
     return ids + form_options(repo)
 
 
@@ -128,7 +128,7 @@ def check_fixes(fm, repo):
     ids = set(fix_ids(repo))
     bad = [f'{c["id"]}: {c["fix"]}' for c in fm['cases'] if c['fix'] not in ids]
     if bad:
-        sys.exit('kuna-fixes/cases.json: no such fix id (KunaFix::id in ' + KUNA_FIXES_RS + '): '
+        sys.exit('kuna-fixes/cases.json: no such fix id (an id of ' + FIXES_TOML + '): '
                  + ', '.join(bad))
 
 

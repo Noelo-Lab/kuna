@@ -604,8 +604,8 @@ them for Kotlin output. Each has an id, used in the docs, the spec and
 | `kt_default_impls_delegate` | in Kotlin output, writes the methods kotlinc generates (without JVM default methods) to call an interface member's default body: `override fun plus(other: Job): Job { return Job.DefaultImpls.plus(this, other) }` in every class that inherits the member, and the same calls between `DefaultImpls` classes; Kotlin cannot name `DefaultImpls`, and the JVM signature may override nothing (`fold(initial: R, operation: (R?, Element?) -> R)`) | a method the metadata does not declare whose code only passes `this` and its parameters to the `DefaultImpls` method of the same name of an interface its class implements is left out, as is a `DefaultImpls` class left with nothing else: the class inherits the member, and kotlinc generates the same method again (kotlinx-coroutines 1.10.2 75 methods, okhttp 5) |
 | `kt_inline_class_value` | in Kotlin output, writes the plumbing kotlinc compiles an inline (value) class to (`Meters.constructor_impl(x)`, `Meters.box_impl(m)`, `m.unbox_impl()`, `Meters.equals_impl0(a, b)`, `Meters.plus_HWDY4ac(a, b)` for `a + b`, a member property without its receiver, `half` for `m.half`), and a parameter, property or result declared with a value class where the code reads its underlying value as the value itself: `println(m)` and `"len $m"` for `println(m.v)` and `"len " + m.v`, which kotlinc compiles to the value class's `toString` (`Meters(v=1.5)` for `1.5`), `m * 2`, which it rejects | each expression is typed by what the class files declare and written as the value class's code: `Meters(x)`, `Result.success(x)`, `Result.failure(e)`, `m`, `a == b`, `a.plus(b)`, `m.half`, a mangled member call by its Kotlin name (`channel.trySend(x)`), locals typed with the value class, and `m.v` where the code reads the underlying value; a call whose callee has no metadata keeps Vineflower's text (kotlin-stdlib 2.2.20: `-impl` calls 1,898 to 286, mangled calls 820 to 184; kotlinx-coroutines 1.10.2: 121 to 15 and 61 to 13) |
 
-Every fix is a `KunaFix` variant in `src/p0_knowledge/kuna_fixes.rs`, whose
-`KunaFix::id` is the id above; each site where kuna departs from the Java asks
+Every fix is a row of `decompiler/nonnative/kuna-jvm/fixes.toml` (its id and family), from
+which `build.rs` generates its `KunaFix` variant; each site where kuna departs from the Java asks
 `kuna_fixes::enabled(KunaFix::..)` and keeps Vineflower's code verbatim in the other
 branch, which compat mode takes. A unit test that must isolate one fix runs with
 `KunaFixes::DEFAULT.without(KunaFix::X)` (through `Fernflower::new_with_fixes`, or a corpus
@@ -652,8 +652,10 @@ example):
    --all -S'<code>'` for the commit that introduced the defect. Port upstream's fix when there is one. The fix goes
    to the root cause, in the terms of Vineflower's algorithm: never a catch-and-continue,
    never keyed on a class or method name.
-3. **Add the fix.** A variant in `KunaFix`, added to `KunaFix::ALL`, and its id in
-   `KunaFix::id` (`KunaFix::X => "<id>"`, lower snake case, no `jvm_` prefix). There is no
+3. **Add the fix.** A row `{ id = "<id>", family = "<family>" }` in `fixes.toml`, among its
+   family's (lower snake case, no `jvm_` prefix; `kotlin = true` for a fix of Kotlin
+   output), which makes `KunaFix::X` (the id in CamelCase), and the new count in the sentence
+   above the table (`tests/kuna_fixes.rs` checks it). There is no
    option row: a fix is not a user option, and `jvm_vineflower_compat` already turns it
    off with the others. At the site: `if kuna_fixes::enabled(KunaFix::X) { ... } else {
    <the Java, unchanged> }`, and a line in the ported file's header naming the fix by its
@@ -683,9 +685,9 @@ example):
 7. **Gates**: `cargo test -p kuna-jvm`, `make test-jvm`, `kuna catalog --check`, `make
    check-spec` and `python3 tools/check_spec.py --strict`, `make lint`.
 
-Fixes made in parallel meet in the same files. Keep both sides of `KunaFix` (the enum,
-`ALL` and `id`) and of `tests/jvm/kuna-fixes/cases.json`, then rerun `regen.py` (it rewrites
-`cases.tsv` and both READMEs, and refuses a case whose `fix` is not a `KunaFix` id);
+Fixes made in parallel meet in the same files. Keep both sides of `fixes.toml` and of
+`tests/jvm/kuna-fixes/cases.json`, then rerun `regen.py` (it rewrites `cases.tsv` and both
+READMEs, and refuses a case whose `fix` is not an id of `fixes.toml`);
 `baseline.txt` is sorted, so keep both sides' lines.
 
 ## The JDK runtime library

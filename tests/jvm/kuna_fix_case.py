@@ -6,7 +6,7 @@
       [--language java|kotlin]
       [--wrong-output] [--extra-class path/to/other/Lib.class]...
 
-<id> is the fix's id, the string `KunaFix::id` returns for it in kuna_fixes.rs (e.g. lambda_wildcard_return).
+<id> is the fix's id, its `id` in decompiler/nonnative/kuna-jvm/fixes.toml (e.g. lambda_wildcard_return).
 The class's `Name$*.class` siblings in the same directory come with it, in name order (the corpus
 fixture's `addSource` order). --language defaults to kotlin when the class carries `kotlin.Metadata`, else
 java. A Kotlin case (`"language": "kotlin"` in cases.json) is decompiled with Vineflower's bundled plugins
@@ -42,7 +42,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
 FIXES = os.path.join(HERE, 'kuna-fixes')
 VF_DECOMPILE = os.path.join(REPO, 'decompiler/nonnative/kuna-jvm/tools/oracle/java/bin/vf-decompile')
-KUNA_FIXES_RS = os.path.join(REPO, 'decompiler/nonnative/kuna-jvm/src/p0_knowledge/kuna_fixes.rs')
+FIXES_TOML = os.path.join(REPO, 'decompiler/nonnative/kuna-jvm/fixes.toml')
 MARKER = "$VF: Couldn't be decompiled"
 # The fixture's leak check (unit-test mode) fails after the output is saved when a method fails
 # while it is written (once per such method); the saved text is still Vineflower's.
@@ -89,11 +89,11 @@ def class_name(path):
 
 
 def fix_ids():
-    """The ids of the kuna fixes (the strings `KunaFix::id` returns in kuna_fixes.rs) and the names of
+    """The ids of the kuna fixes (the `id`s of fixes.toml) and the names of
     the kuna-form options (options.toml rows with `change_kind = "kuna-form"`; a case of one passes
     `--opt NAME=1` unless the option is on by default)."""
-    with open(KUNA_FIXES_RS, encoding='utf-8') as f:
-        ids = re.findall(r'KunaFix::\w+ => "([a-z0-9_]+)"', f.read())
+    with open(FIXES_TOML, encoding='utf-8') as f:
+        ids = re.findall(r'^\s*\{ id = "([a-z0-9_]+)"', f.read(), re.M)
     with open(os.path.join(REPO, 'decompiler/nonnative/kuna-jvm/options.toml'), encoding='utf-8') as f:
         rows = f.read().split('[[option]]')
     return ids + [m.group(1) for row in rows if 'change_kind = "kuna-form"' in row
@@ -130,7 +130,7 @@ def regen():
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('--fix', required=True, help='the id of the fix the case demonstrates (KunaFix::id)')
+    ap.add_argument('--fix', required=True, help='the id of the fix the case demonstrates (its fixes.toml id)')
     ap.add_argument('--class', dest='cls', required=True, help='the class file (its Name$*.class siblings come along)')
     ap.add_argument('--source', help='the Java source the class was compiled from (vendored under src/)')
     ap.add_argument('--compiler', default='', help='the compiler that produced the class, e.g. "javac 17.0.20.1"')
@@ -148,7 +148,7 @@ def main():
                  '(decompiler/nonnative/kuna-jvm/tools/oracle/README.md)')
     ids = fix_ids()
     if a.fix not in ids:
-        sys.exit(f'{a.fix}: no such fix id (add the KunaFix variant and its id first); the ids are: '
+        sys.exit(f'{a.fix}: no such fix id (add its row to fixes.toml first); the ids are: '
                  + ', '.join(ids))
     extra = []
     for kv in a.opt:
