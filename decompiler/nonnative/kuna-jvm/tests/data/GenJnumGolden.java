@@ -73,6 +73,8 @@ public class GenJnumGolden {
       Math.nextDown(Double.MIN_NORMAL), Math.PI, Math.E, 0.1, 0.2, 0.3, 1.0 / 3, 2.0 / 3, 100.0, 1e7, 1e-3, 9999999.0,
       9999999.5, 9999999.999999998, 10000000.000000002, 0.001, Math.nextDown(0.001), Math.nextUp(0.001), 0.00099999, 1e23, 2e23, 8.41e21, 5e-324, 1.0E22};
     for (double v : special) { d(v); d(-v); }
+    // shortest digits on an exact tie, rounded half even
+    for (long b : new long[]{0x43118b54f22aeb03L, 0x430da3bf8bc2a7eeL, 0x4304123cd93ab0eeL}) d(Double.longBitsToDouble(b));
     for (int e = -325; e <= 310; e += 11) {
       double v = Double.parseDouble("1e" + e);
       d(v); d(Math.nextUp(v)); d(Math.nextDown(v));

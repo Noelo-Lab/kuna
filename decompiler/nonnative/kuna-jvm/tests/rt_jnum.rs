@@ -94,7 +94,7 @@ fn conversions_match_jdk21() {
     }
     assert_eq!(
         counts,
-        [1137, 637, 558, 558, 48, 48, 51, 47, 37, 37],
+        [1140, 637, 558, 558, 48, 48, 51, 47, 37, 37],
         "record counts"
     );
 }
