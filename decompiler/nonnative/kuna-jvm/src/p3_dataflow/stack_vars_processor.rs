@@ -25,9 +25,7 @@ use crate::method_descriptor::MethodDescriptor;
 use crate::method_processor::ScratchScope;
 use crate::monitor_exprent::Type as MonitorType;
 use crate::fixes::stack_var_inlining::field_read_all_paths::FieldReadAllPaths;
-use crate::fixes::stack_var_inlining::field_read_reuse;
-use crate::fixes::stack_var_inlining::kt_field_read_reuse;
-use crate::fixes::stack_var_inlining::kt_partial_inline;
+use crate::fixes::stack_var_inlining;
 use crate::fixes::stack_var_inlining::kt_inline_evaluation_order::KtInlineEvaluationOrder;
 use crate::fixes::stack_var_inlining::kt_inline_lock_local::KtInlineLockLocal;
 use crate::fixes::stack_var_inlining::kt_inline_heap_read::KtInlineHeapRead;
@@ -56,17 +54,21 @@ type ChildRet = (Option<Exprent>, bool, bool);
 
 const DEFAULT_OPTIONS: StackSimplifyOptions = StackSimplifyOptions {
     inline_regular_vars: false,
+    kotlin: false,
 };
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct StackSimplifyOptions {
     inline_regular_vars: bool,
+    /// kuna: the method's class is written as Kotlin (`stack_var_inlining::is_kotlin_class`).
+    kotlin: bool,
 }
 
 impl StackSimplifyOptions {
     pub fn new() -> StackSimplifyOptions {
         StackSimplifyOptions {
             inline_regular_vars: false,
+            kotlin: false,
         }
     }
 
@@ -88,7 +90,10 @@ impl StackVarsProcessor {
         cl: StructClass,
         options: StackSimplifyOptions,
     ) {
-        let _kotlin = kt_field_read_reuse::enter(cl);
+        let options = StackSimplifyOptions {
+            kotlin: stack_var_inlining::is_kotlin_class(cl),
+            ..options
+        };
         let mut scratch = ScratchScope::open();
         let mut set_reordered_ifs: JHashSet<i32> = JHashSet::new();
         let mut ssau: Option<SSAUConstructorSparseEx> = None;
@@ -620,19 +625,20 @@ impl StackVarsProcessor {
             && !options.inline_regular_vars
             && right.is_field()
             && kuna_fixes::enabled(KunaFix::FieldReadReuse)
-            && field_read_reuse::keeps_single_read(
+            && stack_var_inlining::keeps_single_read(
                 right,
                 &used_vers,
                 lst_exprents,
                 index as usize,
             )
-            && !field_read_reuse::stores_through(left, lst_exprents, index as usize);
+            && !stack_var_inlining::stores_through(left, lst_exprents, index as usize);
 
-        let kt_keeps_read = kt_field_read_reuse::keeps_read(
+        let kt_keeps_read = stack_var_inlining::keeps_read(
             right,
             &used_vers,
             lst_exprents,
             index as usize,
+            options.kotlin,
         );
 
         for usedvar in &used_vers {
@@ -654,7 +660,7 @@ impl StackVarsProcessor {
                 && !ssau.leaves_finally_body(left_var, usedver)
                 && !(keeps_single_read
                     && KtInlineHeapRead::rereads_heap(right)
-                    && !field_read_reuse::written_as_kotlin())
+                    && !stack_var_inlining::written_as_kotlin())
             {
                 set_temp_used_vers.add(usedver);
                 verreplaced = true;
@@ -663,7 +669,7 @@ impl StackVarsProcessor {
             }
         }
 
-        if (notdom || vernotreplaced) && kt_partial_inline::keeps_variable() {
+        if (notdom || vernotreplaced) && stack_var_inlining::keeps_variable(options.kotlin) {
             set_temp_used_vers = JHashSet::new();
             verreplaced = false;
             vernotreplaced = true;

@@ -1,29 +1,6 @@
-//! kuna fix `kt_inline_evaluation_order` (spec 10.16): where the Kotlin
-//! inliner may move a local's value that calls or reads an array.
-//!
-//! `StackVarsProcessor` inlines a stack variable into the next statement at
-//! the position the variable has there, and for a stack variable that position
-//! is where the value was on the operand stack: nothing the next statement
-//! evaluates before it was computed after it. The Kotlin plugin runs the same
-//! inliner over every local (`INLINE_ALL_VARS`), and a local carries no such
-//! guarantee: `val x = g(); use(h(), x)` became `use(h(), g())`, calling `h`
-//! first, `val x = g(); use(if (c) x else 0)` became `use(if (c) g() else 0)`,
-//! calling `g` only when `c` holds, and `val x = a[0]; use(g(), x)` read the
-//! element after `g()`, which may change it.
-//!
-//! With the fix, a local that is not a stack variable is inlined, by the
-//! classes of [`Movability`], only where its value means the same: a value
-//! that reads only locals and fields moves as before (the inliner checks the
-//! locals' versions and the fields' liveness); one that also reads an array
-//! element moves only into the next statement (the next exprent of its list,
-//! or the first of the single node that follows, such as a loop condition),
-//! to a use evaluated before anything there that calls or stores to the heap;
-//! one that calls, allocates or stores moves only into the next statement, to
-//! a use evaluated on every evaluation of it and before anything that touches
-//! the heap. As for field
-//! reads in Vineflower, the order of exceptions a moved value or its
-//! neighbours may throw (a null receiver, a failed cast, an index out of
-//! bounds) is not kept.
+//! Fix `kt_inline_evaluation_order`: the Kotlin inliner moves a local whose
+//! value calls, allocates or reads an array element only into the next
+//! statement, ahead of anything there it could observe or be observed by.
 
 use crate::code_type::CodeType;
 use crate::exprent::{Exprent, ExprentType};

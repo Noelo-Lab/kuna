@@ -3851,13 +3851,13 @@ the field came out read at both: `int i = lock.count; if (lock.count <= 0)`. Ano
 the field between the two reads, and on a volatile field each read synchronizes on its own
 (Elasticsearch's `KeyedLock.tryAcquire` on a `volatile int`; Guava's `ExecutionSequencer`, Ghidra's
 `FunctionDB`, Elasticsearch's `ImmutableOpenMap` and `RecyclerBytesStreamOutput`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/stack_var_inlining/field_read_reuse.rs (keeps_single_read)`) such
+(`decompiler/nonnative/kuna-jvm/src/fixes/stack_var_inlining/mod.rs (keeps_single_read)`) such
 a value stays in its stack variable when it has several uses, and the following passes write the
 assignment expression the source had (`while ((i = lock.count) > 0)`). A read followed in its block by
 a store into the same field keeps the copies: that is the `x++` Kotlin 1.3 compiles with a `dup`, which
 `PPandMMHelper` folds back into one read, and so does a store into a field of the read object through the
 variable or a stack copy of it (`this.counter.value++`,
-`decompiler/nonnative/kuna-jvm/src/fixes/stack_var_inlining/field_read_reuse.rs (stores_through)`). In Java
+`decompiler/nonnative/kuna-jvm/src/fixes/stack_var_inlining/mod.rs (stores_through)`). In Java
 output a kept read of a field that may change (not final; `kt_inline_heap_read`'s test) is copied into none
 of its uses: the next-statement rule still copied it into the uses in the following statement while the
 variable stayed for the others, and kotlinc's `x?.f` and `x ?: y` (`dup; ifnull`) put both uses of the
@@ -3866,7 +3866,7 @@ this.stream.close()` (okhttp's `Http2ExchangeCodec.cancel` on a `@Volatile` fiel
 case's `cancel`, recompiled with javac from Vineflower's text and run against a thread storing `null`,
 threw `NullPointerException` 28,977 times in 20,000,000 calls, the original never). javac's shapes and the
 five Java benchmark jars are unchanged. A class written as Kotlin
-(`decompiler/nonnative/kuna-jvm/src/fixes/stack_var_inlining/field_read_reuse.rs (written_as_kotlin)`) is left
+(`decompiler/nonnative/kuna-jvm/src/fixes/stack_var_inlining/mod.rs (written_as_kotlin)`) is left
 to `kt_field_read_reuse`, which keeps such a read in every pass, the Kotlin plugin's inliner
 (`INLINE_ALL_VARS`) included.
 
@@ -4276,7 +4276,7 @@ named local's field value into its uses (`val s = src.head; s!!.limit - s.pos` p
 `src.head!!.limit - src.head.pos`). Each read may see another value once another thread writes the field
 (kotlinx-coroutines' `@Volatile` fields, `DefaultExecutor._thread`), and the check guards another read
 than the one used, so kotlinc rejects the use of the nullable property. With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/stack_var_inlining/kt_field_read_reuse.rs (keeps_read)`), in
+(`decompiler/nonnative/kuna-jvm/src/fixes/stack_var_inlining/mod.rs (keeps_read)`), in
 Kotlin output (a class with Kotlin metadata, the Kotlin plugin on) a read of a field that is not final,
 with several uses, stays in its variable, not even copied into the next statement, as fix
 `field_read_reuse` keeps Java's stack variables. A final field (a `val` property's) keeps its value once
@@ -4290,7 +4290,7 @@ only the other uses read it. In the Kotlin plugin, which inlines every local, th
 another variable than the one it guards (`var t = text; if (text == null) t = ..`), a cast or an array
 element evaluated again (`val box = var10000` beside `(state as? Box) == null`), and Kotlin cannot
 smart-cast the variable. With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/stack_var_inlining/kt_partial_inline.rs (keeps_variable)`), in
+(`decompiler/nonnative/kuna-jvm/src/fixes/stack_var_inlining/mod.rs (keeps_variable)`), in
 Kotlin output a variable that stays (a use the value cannot move to, or a definition that does not reach
 all of them) is read at every use, as the bytecode reads it; a variable whose uses all take the value is
 inlined as before. Vineflower's numbering and clash renaming of the locals around it move on.

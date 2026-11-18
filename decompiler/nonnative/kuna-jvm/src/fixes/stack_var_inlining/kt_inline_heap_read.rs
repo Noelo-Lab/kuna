@@ -1,35 +1,13 @@
-//! kuna fix `kt_inline_heap_read` (spec 10.16): the Kotlin inliner does not
-//! copy a value that reads an array element, or a field that may change,
-//! into several uses.
-//!
-//! The Kotlin plugin's last `SimplifyStack` (`INLINE_ALL_VARS`) copies a
-//! variable's value into every use its SSAU checks pass and deletes the
-//! variable: an array element read passes as a field read does,
-//! `val e = slots[i]; if (e != null) e.value` became
-//! `if (this.slots[i] != null) this.slots[i].value`, and so did arithmetic of
-//! field reads (`val r = limit - count`) and a final field of an object a
-//! changing field holds (`val n = this.head.next`). Another thread may store
-//! between the reads, so the test passes on one value and the use reads
-//! another (`NullPointerException`, a value no single read gave); on a
-//! `@Volatile` field each read is a separate synchronizing action.
-//!
-//! With the fix such a value whose every use the inliner would copy, more
-//! than one, stays in its variable: the bytecode reads it once and so does
-//! the output. Not here: a read of a non-final field alone, which fix
-//! `kt_field_read_reuse` keeps in its variable in every pass of a Kotlin
-//! class, and a variable the inliner keeps for some uses, which fix
-//! `kt_partial_inline` reads at all of them. A single use still moves the
-//! read; a final field of an unchanging value (a constant, a local, `this`)
-//! is still copied; and so are the two uses of kotlinc's `x as? T` (`dup`,
-//! `instanceof`, `checkcast`), which the Kotlin writer prints as the one read
-//! `x as? T`.
+//! Fix `kt_inline_heap_read`: the Kotlin inliner keeps in its variable a value
+//! that reads an array element or a changing field when it would copy it into
+//! several uses.
 
 use crate::code_constants::ACC_FINAL;
 use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;
 use crate::field_exprent::FieldExprent;
 use crate::function_exprent::FunctionType;
-use crate::fixes::stack_var_inlining::field_read_reuse;
+use crate::fixes::stack_var_inlining;
 use crate::rt::JList;
 use crate::var_type::VarType;
 use crate::var_version_node::VarVersionNode;
@@ -70,7 +48,7 @@ impl KtInlineHeapRead {
             })
             .is_some_and(|fd| fd.has_modifier(ACC_FINAL));
         !declared_final
-            && field_read_reuse::keeps_single_read(value, used, exprents, index)
+            && stack_var_inlining::keeps_single_read(value, used, exprents, index)
     }
 
     /// Whether evaluating `value` again may give another value: it reads an
