@@ -571,6 +571,27 @@ impl FlowEnvironment for ArchFlowEnv {
         Some(crate::kuna_brktrap::BrkTrap { callother, code })
     }
 
+    /// (kuna `kernelbug`) Empty on every image without a `__bug_table`, so the
+    /// address lookup is the only cost; the user-op indices are resolved by name
+    /// (`invalidInstructionException` on x86, `SoftwareBreakpoint` on AArch64).
+    fn kernel_bug_site(
+        &self,
+        fd: &Funcdata,
+        op: crate::context::OpId,
+    ) -> Option<(crate::context::OpId, crate::kuna_kernelbug::KernelBugSite)> {
+        let arch = self.arch();
+        if arch.kernel_bug_sites.is_empty() {
+            return None;
+        }
+        let addr = fd.obank().get(op)?.get_addr().get_offset();
+        let site = crate::kuna_kernelbug::site_at(&arch.kernel_bug_sites, addr)?.clone();
+        let index = |name| arch.userops.get_op_by_name(name).map(|u| u.get_index() as u32);
+        let invalid = index(crate::kuna_kernelbug::INVALID_INSTRUCTION_USEROP);
+        let breakpoint = index(crate::kuna_ptrauthtrap::BREAKPOINT_USEROP);
+        let callother = crate::kuna_kernelbug::site_producer(fd, op, invalid, breakpoint)?;
+        Some((callother, site))
+    }
+
     fn is_tail_call_branch(
         &self,
         fd: &Funcdata,

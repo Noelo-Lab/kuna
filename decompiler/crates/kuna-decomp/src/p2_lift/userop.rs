@@ -132,6 +132,12 @@ pub const BUILTIN_SYSCALL_ERROR: uint4 = 0x10000007;
 /// (kuna) Built-in id for `strlen`, the length an inline `repnz scasb` scan
 /// computes (`strlenscan`).
 pub const BUILTIN_STRLEN: uint4 = 0x10000008;
+/// (kuna) Built-in id for `BUG`, a Linux kernel `__bug_table` trap the handler
+/// does not resume after (`kernelbug`).
+pub const BUILTIN_KERNEL_BUG: uint4 = 0x10000009;
+/// (kuna) Built-in id for `__WARN`, a Linux kernel `__bug_table` trap the
+/// handler resumes after (`kernelbug`).
+pub const BUILTIN_KERNEL_WARN: uint4 = 0x1000000a;
 
 // ---------------------------------------------------------------------------
 // UserOpBase + UserPcodeOp hierarchy (userop.hh:47-318)
@@ -1029,6 +1035,8 @@ impl UserOpManage {
                 let len_type = types.get_base_int(ptr_size);
                 UserPcodeOp::new_datatype(b"strlen", BUILTIN_STRLEN as int4, Some(len_type), &[Some(ptr_type)])
             }
+            BUILTIN_KERNEL_BUG => UserPcodeOp::new_unspecialized(b"BUG", BUILTIN_KERNEL_BUG as int4),
+            BUILTIN_KERNEL_WARN => UserPcodeOp::new_unspecialized(b"__WARN", BUILTIN_KERNEL_WARN as int4),
             _ => return Err(KunaError::lowlevel("Bad built-in userop id")),
         };
         self.builtinmap.insert(i, res);

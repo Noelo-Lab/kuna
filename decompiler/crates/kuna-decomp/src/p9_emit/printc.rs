@@ -6884,7 +6884,16 @@ impl PrintC {
                 }
                 for i in 1..nin {
                     if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(i)) {
-                        self.push_vn_ir(fd, arch, vn, op);
+                        // (kuna kernelbug) a `__WARN(file,line)` line is a decimal.
+                        let line = in0_off == crate::userop::BUILTIN_KERNEL_WARN as u64
+                            && i == nin - 1
+                            && fd.vbank().get(vn).is_some_and(|v| v.is_constant() && v.get_size() == 4);
+                        if line {
+                            let val = fd.vbank().get(vn).map(|v| v.get_offset()).unwrap_or(0);
+                            self.push_constant_ir_fmt_sign(val, 4, op, display_format::FORCE_DEC, false);
+                        } else {
+                            self.push_vn_ir(fd, arch, vn, op);
+                        }
                     }
                 }
             } else {

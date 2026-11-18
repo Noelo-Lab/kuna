@@ -1510,10 +1510,45 @@ flow instead of returning. Not matched, because a debugger or a kernel handler
 steps past them: `brk #0xf000` (`__builtin_debugtrap` and `__debugbreak`, which
 is why clang emits the function's `ret` behind it), `brk #0` (a debugger's
 breakpoint, Go's `runtime.breakpoint`) and Linux's kernel immediates (`#0x800`
-for `BUG`/`WARN`, KGDB, kprobes, KASAN, KCFI). They keep the jump-as-call. Only
+for `BUG`/`WARN`, KGDB, kprobes, KASAN, KCFI). They keep the jump-as-call,
+except for a `#0x800` the image's `__bug_table` names (next paragraph). Only
 the AArch64 specs define `SoftwareBreakpoint`; elsewhere the lookup of its
 user-op index fails before any op is walked. Exercised by
 `tests/stages/kuna-brktrap.xml`.
+
+**(kuna) A Linux kernel `WARN`/`BUG` site prints as the statement it is — always
+on, `decompiler/crates/kuna-decomp/src/p2_lift/kuna_kernelbug.rs (rewrite)`.**
+The kernel plants a trap at every `WARN_ON`/`BUG_ON` site — `ud2` on x86, `brk
+#0x800` on AArch64 — and names it in a `__bug_table` entry whose flags say
+whether the handler resumes after the trap (`BUGFLAG_WARNING`) or panics. x86
+SLEIGH lowers `ud2` the way AArch64 lowers `brk`: `target =
+invalidInstructionException(); goto [target];` (`ia.sinc`, `:UD2`), so each site
+took the jump-as-call path above and printed as `(*(void (*)(void))
+invalidInstructionException())(); // jump-as-call` followed by a return — false
+both ways, since a `WARN` site falls through to the next instruction and never
+returns, and a `BUG` site never continues. The analysis tier reads the table
+(chapter 01, `kernelbug`) and parks one `KernelBugSite` per entry on
+`Architecture::kernel_bug_sites`, sorted by trap address. Decision rule, asked
+in `FlowInfo::xref_control_flow` before the `brktrap` match: a BRANCHIND whose
+address is a parked site and which jumps through exactly the storage a
+CALLOTHER wrote in the same instruction (`kuna_brktrap.rs (trap_producer)`, the
+walk `brktrap` and `sparcstructret` use), that CALLOTHER being
+`invalidInstructionException` with no operand or `SoftwareBreakpoint` with the
+kernel's `#0x800`. The CALLOTHER's user-op index is then replaced by one of two
+built-ins (`userop.rs`, `BUILTIN_KERNEL_WARN` / `BUILTIN_KERNEL_BUG`, registered
+with the string built-ins): `__WARN(file,line)` — the kernel's own spelling of
+the macro, the file a pointer constant the type inference marks `char *`
+(`coreaction_infertypes.rs (input_type_local_with)`) so it prints as the literal,
+the line an `int` the printer writes in decimal (`printc.rs (op_callother_ir)`);
+both absent on a table built without
+`CONFIG_DEBUG_BUGVERBOSE`, where the statement prints bare — or `BUG()`. The
+BRANCHIND is destroyed. After a `__WARN` the instruction falls through, exactly
+as the trap handler resumes it; after a `BUG()` the flow plants the artificial
+no-return halt a call that never returns gets, as `brktrap` does. A trap the
+table does not name (an `__builtin_trap`, a KGDB or kprobes breakpoint) keeps
+its rendering, and an image with no `__bug_table` pays one empty-list test per
+BRANCHIND. The AArch64 `#0x800` the previous paragraph leaves alone is matched
+here only through a table entry. Exercised by `tests/stages/kuna-kernelbug.xml`.
 
 **(kuna) The x86-64 `SYSCALL` user-op's ABI effects — `option x64syscall`,
 default `on`, x86-64-gated (DIV-152),
