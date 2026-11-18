@@ -142,7 +142,11 @@ as `void f(void)` (Kuna #1621). A hidden form that writes a general register
 `pac{i}{a,b}1716`, `aut{i}{a,b}1716`, `xpaci`, `xpacd`) now lifts to a copy of
 that register onto itself, `Rd = Rd`, the transparent model's own semantics:
 the value flows to the return or store, and the function returns its pointer.
-The forms that act on `x30` or `sp` (`pac{i}{a,b}sp`, `pac{i}{a,b}z`,
+When the compiler builds a blended modifier in place in `x1`
+(`movk x1, #d, lsl #48` then `pacda x0, x1; ret`), return recovery also takes
+that scratch `x1`, and the function returns the `x1:x0` pair, as it does for
+any other write to `x1` before `ret`. The forms that act on `x30` or `sp`
+(`pac{i}{a,b}sp`, `pac{i}{a,b}z`,
 `aut{i}{a,b}sp`, `aut{i}{a,b}z`, `retaa`, `retab`, `xpaclri`) and the
 authenticating branches and loads (`braa`, `blraa`, `eretaa`, `ldraa` and
 their `b`-key forms) stay empty: the return address carries no value the
