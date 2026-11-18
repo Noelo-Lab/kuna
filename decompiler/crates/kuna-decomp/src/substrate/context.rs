@@ -706,6 +706,10 @@ pub struct ArchContext {
     /// `Funcdata::test_for_return_address` to detect a BRANCHIND that is really a
     /// tail return through the return-address register.
     pub default_return_addr: Option<kuna_num::pcoderaw::VarnodeData>,
+    /// Entry return-address storage for a bounded indirect-transfer proof.
+    /// Falls back to a register the language names `ra` when the cspec names
+    /// none, which only ever withholds entry facts from the proof.
+    pub indirect_return_addr: Option<kuna_num::pcoderaw::VarnodeData>,
     /// Maximum recursion depth for `Funcdata::ancestorOpUse` (C++
     /// `Architecture::trim_recurse_max`).  Drives `ActionReturnRecovery`'s
     /// ancestor-realism walk.
@@ -815,6 +819,10 @@ pub struct ArchContext {
     /// ([`USEROP_NAMES`](crate::kuna_roundingops::USEROP_NAMES)), typed float in
     /// and out by [`kuna_roundingops`](crate::kuna_roundingops).
     pub float_rounding_userops: Vec<kuna_base::types::uint4>,
+    /// (kuna) `returnbranch`, default-on: a RETURN whose target the entry
+    /// prefix proves constant flows as an indirect branch
+    /// ([`crate::kuna_returnbranch`]). Off keeps the spec's RETURN.
+    pub return_branch: bool,
     /// (kuna) GH-8724: re-express a strided-induction offset as counter*stride
     /// (C++ `recover_array_stride`, DIV-3 default-on).  Read by
     /// [`RuleArrayStride`](crate::kuna_arraystride::RuleArrayStride).
@@ -1530,6 +1538,7 @@ impl ArchContext {
             defaultfp: None,
             evalfp_current: None,
             default_return_addr: None,
+            indirect_return_addr: None,
             // C++ Architecture default: trim_recurse_max = 5 (resetDefaults).
             trim_recurse_max: 5,
             // C++ Architecture default: max_implied_ref = 2 (resetDefaults).
@@ -1585,6 +1594,7 @@ impl ArchContext {
             x87_float_to_int_userops: Vec::new(),
             x87_integer_userops: Vec::new(),
             float_rounding_userops: Vec::new(),
+            return_branch: false,        // returnbranch
             recover_array_stride: false, // GH-8724 arraystride
             memset_recover: false,       // GH-9230/1537 memsetrecover
             rodata_string: false,        // (kuna) rodatastring

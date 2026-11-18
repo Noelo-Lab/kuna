@@ -51,6 +51,9 @@ Three tiers:
 | the same callee is emitted twice in one function, once as a named call and once inlined | [`tailcallframe`](#tailcallframe----on--off-default-on) |
 | an unconditional jmp after add rsp,N; pop reg is followed instead of ending the function | [`tailcallframe`](#tailcallframe----on--off-default-on) |
 | kuna emits thousands of lines for a function the disassembly shows is a few hundred bytes | [`tailcallframe`](#tailcallframe----on--off-default-on) |
+| a function ends at jr $ra right after loading $ra with a constant address | [`returnbranch`](#returnbranch----on--off-default-on) |
+| stores and calls after a computed jump through the return register are missing | [`returnbranch`](#returnbranch----on--off-default-on) |
+| a MIPS function that reuses $ra as a jump register decompiles to an empty body | [`returnbranch`](#returnbranch----on--off-default-on) |
 | a function's tail is really the body of the NEXT function | [`funcboundflow`](#funcboundflow----on--off-default-on) |
 | dead/garbage code after a call to a die()/fatal()/throw wrapper that never returns | [`funcboundflow`](#funcboundflow----on--off-default-on) |
 | two adjacent functions merged into one, the second also decompiled on its own | [`funcboundflow`](#funcboundflow----on--off-default-on) |
@@ -914,6 +917,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** A function decompiled by address runs on into an unrelated function's body -- the output starts with the code you asked for and continues through a second routine's logic, strings and callees -- and the disassembly shows an unconditional `jmp` to that routine right after a stack-frame teardown (`add rsp,N; pop reg; jmp X`). Typical of an indirect-only callback (an event/listener/vtable entry) in a stripped binary, where the callee is not in `kuna functions` and so `tailcalljump` cannot see it. On by default; flip OFF to restore the flow-into-the-callee decode.
 - **Where / provenance:** P2/flow-classification · ida · correctness-fix · direct-address-keyboard-handler
 - **Example:** `option tailcallframe off`
+
+### `returnbranch` -- on | off, default `on`
+
+- **Symptoms:** a function ends at jr $ra right after loading $ra with a constant address; stores and calls after a computed jump through the return register are missing; a MIPS function that reuses $ra as a jump register decompiles to an empty body.
+- **What it does:** Keep a computed jump that the instruction spec classified as a return. SLEIGH marks `jr $ra` (and similar return-register jumps) as RETURN whatever the register holds, so a function that loads a constant code address into the return register and jumps through it ends at that jump: the code it reaches, and every store there, is dropped. On, a RETURN whose target a bounded straight-line prefix from the function entry proves constant (at most 256 raw operations, stopping at any call, branch or unknown user operation; an unproven write invalidates the storage it overlaps, a store forgets the values in the space it writes, and the incoming return address is never treated as known) becomes an indirect branch; ordinary jump recovery then follows it. A proven zero is not a target: `move ra, zero` ends a backtrace, so a function start placed on such a delay slot keeps its real return. Instructions that emit no p-code, such as a MIPS `nop`, may precede the prefix. An ISA-mode marker selecting the ordinary ISA does not stop it, recognized by the user-op name the language declares rather than by the architecture id, so the standalone and Ghidra front ends decide alike. A flow override at the return keeps its classification. Off restores the spec's RETURN.
+- **When to flip:** On by default: 0/675 datatest assertions move. Flip off to compare with upstream's return classification, or when the proven constant is not code this function continues at: a target that is another function's entry shows that function's body inside this one, and a target in a segment's zero fill can fail the whole function.
+- **Where / provenance:** P2/flow-classification · kuna · correctness-fix · mips-ra-jump
+- **Example:** `option returnbranch off`
 
 ### `funcboundflow` -- on | off, default `on`
 
