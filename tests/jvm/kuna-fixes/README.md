@@ -50,6 +50,7 @@ they were compiled from.
 | `pkg/TestCompanionPropertyInitializer` | `kt_companion_property_initializer` | kotlinc 2.0.0 -jvm-target 17 | the companion's properties keep the initializers the outer class's static initializer stores; Vineflower writes `val INSTANCES: MutableMap<..>` and `val FIRST` without them |
 | `pkg/TestCompoundAssignmentShape` | `compound_assignment_shape` | javac 17.0.21 (`-source 17 -target 17 -g`) | field and array element assignments are compound exactly where the bytecode `dup`s the receiver: `this.total += s.length()`, `this.total += other.total`, `this.bits &= m`, `this.count += delta` (a `long`), `this.letter += n`, `dest[i] &= ~src[i]`, `this.slots[i] += 2` (Vineflower writes them out), while `this.count = this.count + n` and `this.next.count = this.next.count + 3` stay as written (Vineflower writes `+=`); `this.count = y | this.count` and `a[0] = bump(a) + a[0]` keep their operand order, where Vineflower's `a[0] += bump(a)` reads `a[0]` before `bump` writes it (recompiled and run: 2, not 11); recompiled, every method has the original's bytecode |
 | `pkg/TestCompoundBitwiseAssignment` | `kt_compound_bitwise_assignment` | kotlinc 2.0.0 -jvm-target 17 | compound assignments with a bitwise or shift operator are written x = x or (y), which Kotlin has; Vineflower's x |= y is not Kotlin |
+| `pkg/TestCompoundBitwiseInfixOperand` | `kt_compound_bitwise_assignment` | kotlinc 2.0.0 -jvm-target 17 | the right operand of a compound bitwise assignment is parenthesised by Kotlin's precedence: x = x xor (this mask b) and f = f and (x !is String); without them a user's infix call regroups as (x xor this) mask b, which compiles and computes another value |
 | `pkg/TestCompoundShiftCount` | `compound_shift_count_type` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `lowestBit`, whose `int` shift count `sz` shifts a `long` with `>>>=`, compares `sz != 0`; Vineflower types `sz` as a `long` there and prints `sz != false`; `rotate` is unchanged |
 | `pkg/TestConcatOperandType` | `concat_operand_type` | javac 17.0.21 (`-g`) | String concatenation (`makeConcatWithConstants`) keeps each operand's argument type: Vineflower wrote `(closed ? '[' : '(')` as `(closed ? 91 : 40)`, `+ (int) c2` as `+ c2`, `+ (double) f` as `+ this.f` and `+ (float) n` as `+ this.n`, which print other text; the recompiled class's `javap -c -p` equals the original's but for `String.valueOf` calls Vineflower removes |
 | `pkg/TestConcatOperandTypeBuilder` | `concat_operand_type` | javac 17.0.21 (`--release 8 -g`) | String concatenation from `StringBuilder.append` chains (Java 8 class files) keeps each operand's `append` argument type: `(closed ? '[' : '(')`, `(int) c2`, `(double) f`, `(float) n` and `(long) n` are written as in the source, where Vineflower printed `91`/`40` and dropped the casts |
@@ -1942,6 +1943,26 @@ they were compiled from.
 -      this.bytes[2] = (byte)(this.bytes[2] or a)
 +      this.bytes[2] = (this.bytes[2].toInt() or a).toByte()
        return this.flags + this.mask + this.words[1] + this.bytes[2] + (if (this.ok) 1 else 0)
+    }
+ }
+```
+
+### `pkg/TestCompoundBitwiseInfixOperand`
+
+```diff
+--- expected-compat/pkg/TestCompoundBitwiseInfixOperand.kt
++++ expected/pkg/TestCompoundBitwiseInfixOperand.kt
+@@ -12,10 +12,10 @@
+    }
+ 
+    public fun mix(arr: IntArray, i: Int, b: Int) {
+-      arr[i] ^= this mask b
++      arr[i] = arr[i] xor (this mask b)
+    }
+ 
+    public fun check(flags: BooleanArray, x: Any) {
+-      flags[0] &= x !is java.lang.String
++      flags[0] = flags[0] and (x !is String)
     }
  }
 ```

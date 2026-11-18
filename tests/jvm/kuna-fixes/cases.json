@@ -893,7 +893,7 @@
       ],
       "source": "src/pkg/TestWhenCaseType.kt",
       "compiler": "kotlinc 2.0.0 (`-Xlambdas=class`)",
-      "summary": "the labels of the `when` over `name.hashCode()` are the hash codes, `45679 ->`, where Vineflower writes them as characters, `'뉯' ->`",
+      "summary": "the labels of the `when` over `name.hashCode()` are the hash codes, `45679 ->`, where Vineflower writes them as characters, `'\ub26f' ->`",
       "language": "kotlin"
     },
     {
@@ -3687,6 +3687,17 @@
       "source": "src/pkg/TestKtInlineClassValue.kt",
       "compiler": "kotlinc 2.0.0 -jvm-target 17",
       "summary": "values of the inline classes Meters and Name are written as the classes: a.plus(b), a.isZero(), Meters(x), m.half, a == b, a local declared Meters, and m.v where the code reads the underlying Double; Vineflower writes the plumbing (Meters.plus_HWDY4ac(a, b), constructor_impl, box_impl, equals_impl0) and the parameter m for its underlying value: println(m) and \"len $m\", which kotlinc compiles to Meters.toString (\"Meters(v=1.5)\" for 1.5), and m * 2, which it rejects",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestCompoundBitwiseInfixOperand",
+      "fix": "kt_compound_bitwise_assignment",
+      "class_files": [
+        "pkg/TestCompoundBitwiseInfixOperand.class"
+      ],
+      "source": "src/pkg/TestCompoundBitwiseInfixOperand.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "the right operand of a compound bitwise assignment is parenthesised by Kotlin's precedence: x = x xor (this mask b) and f = f and (x !is String); without them a user's infix call regroups as (x xor this) mask b, which compiles and computes another value",
       "language": "kotlin"
     }
   ]

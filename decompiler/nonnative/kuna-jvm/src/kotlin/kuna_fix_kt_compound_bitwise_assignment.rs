@@ -17,9 +17,11 @@
 //! which Kotlin's infix functions take and give back; Java narrows a `byte`,
 //! `short` or `char` result again, so those are left as they are. Infix
 //! calls bind less tightly than arithmetic and more than comparisons, and
-//! associate to the left, so the right side is written in parentheses unless
-//! it is a value, a call, or a prefix, postfix, conversion or arithmetic
-//! operation (`set or (1 shl id)`, which Java writes `set |= 1 << id`).
+//! associate to the left, so the right side is written in parentheses where
+//! the precedence table of `kt_operator_precedence` binds it at the infix
+//! level or below: another infix call (`set or (1 shl id)`, which Java
+//! writes `set |= 1 << id`, or `x xor (a mask b)` with a user's `infix fun`),
+//! a type check, comparison or elvis (`ok and (x !is String)`).
 //! With the fix `kt_narrow_bitwise_operand` a `Byte`, `Short` or `Char` left
 //! side is widened and the result narrowed back, as Java does:
 //! `b = (b.toInt() xor k.toInt()).toByte()`.
@@ -28,7 +30,7 @@ use crate::code_type::CodeType;
 use crate::exprent::Exprent;
 use crate::function_exprent::FunctionType;
 use crate::k_function_exprent::KFunctionType;
-use crate::kotlin::kuna_fix_kt_narrow_bitwise_operand;
+use crate::kotlin::{kuna_fix_kt_narrow_bitwise_operand, kuna_fix_kt_operator_precedence};
 use crate::kuna_fixes::{self, KunaFix};
 use crate::text_buffer::TextBuffer;
 use crate::var_type::VarType;
@@ -84,13 +86,13 @@ pub fn write(
         .flatten();
     if let Some(widened) = widened {
         buffer.append_buffer(&widened);
-    } else if binds_tighter(right) {
-        buffer.append_buffer(&right.to_java(indent));
-    } else {
+    } else if kuna_fix_kt_operator_precedence::infix_right_operand(right) {
         buffer
             .append("(")
             .append_buffer(&right.to_java(indent))
             .append(")");
+    } else {
+        buffer.append_buffer(&right.to_java(indent));
     }
     if narrowed {
         buffer.append(")").append(match left_type.type_ {
@@ -100,32 +102,6 @@ pub fn write(
         });
     }
     Some(buffer)
-}
-
-/// Whether `exprent` needs no parentheses as an infix call's right operand.
-fn binds_tighter(exprent: Exprent) -> bool {
-    if exprent
-        .try_as_k_function()
-        .is_some_and(|k| k.kd(|d| d.k_type) != KFunctionType::None)
-    {
-        return false;
-    }
-    let Some(function) = exprent.try_as_function() else {
-        return !exprent.is_assignment();
-    };
-    let type_ = function.get_func_type();
-    matches!(
-        type_,
-        FunctionType::Add
-            | FunctionType::Sub
-            | FunctionType::Mul
-            | FunctionType::Div
-            | FunctionType::Rem
-            | FunctionType::BitNot
-            | FunctionType::BoolNot
-            | FunctionType::Neg
-            | FunctionType::Cast
-    ) || type_.cast_type().is_some()
 }
 
 /// Whether evaluating `exprent` again reads the same place with no effect.

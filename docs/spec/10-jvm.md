@@ -3421,9 +3421,11 @@ arithmetic that cannot throw. Its type must be `Int`, `Long` or `Boolean`, the t
 functions take and return; a `byte`, `short` or `char` (whose result Java narrows again) is left as
 it is (1 in okhttp, `buffer[i] ^= key[j]` on a byte array). The infix functions all bind alike,
 less tightly than arithmetic and more than comparisons, and associate to the left, so the right side
-is written in parentheses unless it is a value, a call, or a prefix, postfix, conversion or
-arithmetic operation: `set |= 1 << id` is `set = set or (1 shl id)`, `ok |= a > b` is `ok = ok or (a
-> b)`.
+is written in parentheses where the precedence table of the fix `kt_operator_precedence` binds it at
+the infix level or below (`infix_right_operand`): `set |= 1 << id` is `set = set or (1 shl id)`, `ok
+|= a > b` is `ok = ok or (a > b)`, and a user's infix call or a negated type check keeps its own,
+`x = x xor (a mask b)` and `ok = ok and (x !is String)`; without them the first regroups as `(x xor
+a) mask b`, which compiles and computes another value.
 
 **`kt_switch_head_indent`.** Java's `SwitchStatement.toJava` writes the switch's first block (the
 statements before the `switch` in its basic block, which in Kotlin output hold the variables a `when`

@@ -3322,6 +3322,11 @@ opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestCompoundBitwiseAssignment.class
 expected	kuna-fixes/expected-compat/pkg/TestCompoundBitwiseAssignment.kt
 compare	TestCompoundBitwiseAssignment.kt	TestCompoundBitwiseAssignment.java
+case	kuna-fixes-compat/pkg/TestCompoundBitwiseInfixOperand	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestCompoundBitwiseInfixOperand.class
+expected	kuna-fixes/expected-compat/pkg/TestCompoundBitwiseInfixOperand.kt
+compare	TestCompoundBitwiseInfixOperand.kt	TestCompoundBitwiseInfixOperand.java
 case	kuna-fixes-compat/pkg/TestCompoundShiftCount	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestCompoundShiftCount.class
 expected	kuna-fixes/expected-compat/pkg/TestCompoundShiftCount.java
@@ -5283,6 +5288,11 @@ opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestCompoundBitwiseAssignment.class
 expected	kuna-fixes/expected/pkg/TestCompoundBitwiseAssignment.kt
 compare	TestCompoundBitwiseAssignment.kt	TestCompoundBitwiseAssignment.java
+case	kuna-fixes/pkg/TestCompoundBitwiseInfixOperand	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestCompoundBitwiseInfixOperand.class
+expected	kuna-fixes/expected/pkg/TestCompoundBitwiseInfixOperand.kt
+compare	TestCompoundBitwiseInfixOperand.kt	TestCompoundBitwiseInfixOperand.java
 case	kuna-fixes/pkg/TestCompoundShiftCount	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestCompoundShiftCount.class
 expected	kuna-fixes/expected/pkg/TestCompoundShiftCount.java

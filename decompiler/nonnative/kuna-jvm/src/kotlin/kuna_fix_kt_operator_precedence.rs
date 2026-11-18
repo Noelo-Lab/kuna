@@ -131,10 +131,16 @@ fn same_associative(parent: FunctionExprent, operand: Exprent) -> bool {
 pub fn infix_call_operand(operand: Exprent, right: bool) -> bool {
     kuna_fixes::enabled(KunaFix::KtOperatorPrecedence)
         && if right {
-            level(operand) >= INFIX
+            infix_right_operand(operand)
         } else {
             level(operand) > INFIX
         }
+}
+
+/// Whether the Kotlin text of `operand` needs parentheses as the right
+/// operand of an infix call (`x or (a mask b)`, `x and (y !is T)`).
+pub fn infix_right_operand(operand: Exprent) -> bool {
+    level(operand) >= INFIX
 }
 
 /// Whether the Kotlin text of `exprent` is a value or postfix expression, which
