@@ -5,7 +5,7 @@
 
 use std::collections::VecDeque;
 
-use super::{class_node, has_member, inner_member_declaring};
+use super::{class_node, has_member, inner_member_declaring, this_class};
 use crate::classes_processor::{ClassNode, ClassNodeType};
 use crate::code_constants::ACC_STATIC;
 use crate::decompiler_context::DecompilerContext;
@@ -18,17 +18,7 @@ use crate::text_buffer::TextBuffer;
 /// Whether `arg` is the instance of the innermost class enclosing the current
 /// one that has the member class declared in `declaring`.
 fn is_implicit(arg: Exprent, declaring: &str) -> bool {
-    let Some(var) = arg.try_as_var() else {
-        return false;
-    };
-    let Some(processor) = var.get_processor() else {
-        return false;
-    };
-    let Some(outer) = processor
-        .get_this_vars()
-        .borrow()
-        .get_cloned(&var.get_var_version_pair())
-    else {
+    let Some(outer) = this_class(arg) else {
         return false;
     };
     let mut scope = DecompilerContext::get_current_class_node().and_then(|n| n.with(|d| d.parent));

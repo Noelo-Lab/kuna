@@ -4,7 +4,7 @@
 
 use std::collections::VecDeque;
 
-use super::{has_member, inner_member_declaring};
+use super::{has_member, inner_member_declaring, this_class};
 use crate::classes_processor::ClassNodeType;
 use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;
@@ -39,17 +39,7 @@ pub fn is_implicit(new: NewExprent, classname: &str, params: &[Exprent]) -> bool
     let Some(declaring) = inner_member_declaring(classname) else {
         return false;
     };
-    let Some(var) = params[0].try_as_var() else {
-        return false;
-    };
-    let Some(processor) = var.get_processor() else {
-        return false;
-    };
-    let Some(outer) = processor
-        .get_this_vars()
-        .borrow()
-        .get_cloned(&var.get_var_version_pair())
-    else {
+    let Some(outer) = this_class(params[0]) else {
         return false;
     };
     let mut scope = DecompilerContext::get_current_class_node();
