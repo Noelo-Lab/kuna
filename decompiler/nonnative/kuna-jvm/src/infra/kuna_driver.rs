@@ -29,7 +29,6 @@ use std::time::Instant;
 
 use crate::classes_processor::ClassNode;
 use crate::decompiler_context::DecompilerContext;
-use crate::exprent::Exprent;
 use crate::fernflower::{DecompiledClass, Fernflower};
 use crate::i_fernflower_logger::IFernflowerLogger;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
@@ -145,7 +144,6 @@ pub struct Report {
     /// Roots selected but without output.
     pub failed: Vec<String>,
     pub workers: usize,
-    pub batches: usize,
     /// Engine instances created (the planning one included).
     pub instances: usize,
     /// Root classes pre-processed in total, dependencies included.
@@ -153,13 +151,8 @@ pub struct Report {
     /// Batches run again after a divergent read.
     pub repeated: usize,
     pub divergent_reads: Vec<DivergentRead>,
-    /// Batches after which the engine's thread-local lambda-type map was not
-    /// empty: a later class on that thread could have seen the leftover.
-    pub leaks: Vec<String>,
     /// Every batch run, in completion order.
     pub runs: Vec<BatchRun>,
-    pub plan_millis: u64,
-    pub millis: u64,
 }
 
 /// One batch run.
@@ -209,7 +202,6 @@ struct Outcome {
     batch: Batch,
     units: Vec<DecompiledClass>,
     reads: Vec<DivergentRead>,
-    leak: bool,
     failure: Option<String>,
     fresh_instance: bool,
     load_millis: u64,
@@ -223,7 +215,6 @@ pub fn run(
     config: &DriverConfig,
     sink: &mut dyn FnMut(ClassResult),
 ) -> Result<Report, DriverError> {
-    let started = Instant::now();
     trace(|| "driver start".into());
     let workers_wanted = worker_count(input, config);
     trace(|| format!("workers {workers_wanted}"));
@@ -267,7 +258,6 @@ pub fn run(
                 return Err(DriverError("the planning engine stopped".to_string()));
             }
         };
-        report.plan_millis = started.elapsed().as_millis() as u64;
         trace(|| format!("plan received roots={}", plan.roots.len()));
         report.roots = plan.roots.clone();
 
@@ -289,7 +279,6 @@ pub fn run(
         }
 
         let batches = make_batches(&plan, &selected, workers_wanted);
-        report.batches = batches.len();
         report.workers = workers_wanted.min(batches.len().max(1));
         if let Some(progress) = &config.progress {
             progress(&Progress::Planned {
@@ -337,11 +326,6 @@ pub fn run(
             });
             if outcome.fresh_instance {
                 report.instances += 1;
-            }
-            if outcome.leak {
-                report
-                    .leaks
-                    .push(names_of(&plan.roots, &outcome.batch.deliver).join(" "));
             }
             if !outcome.reads.is_empty() && outcome.failure.is_none() {
                 report.repeated += 1;
@@ -442,7 +426,6 @@ pub fn run(
     })();
     result?;
     report.instances = report.instances.max(instances.load(Ordering::SeqCst));
-    report.millis = started.elapsed().as_millis() as u64;
     Ok(report)
 }
 
@@ -522,10 +505,6 @@ impl Board {
             state = self.changed.wait(state).unwrap();
         }
     }
-}
-
-fn names_of(roots: &[String], indices: &BTreeSet<usize>) -> Vec<String> {
-    indices.iter().map(|&i| roots[i].clone()).collect()
 }
 
 /// One engine instance on this thread.
@@ -735,7 +714,6 @@ fn worker_main(
                         batch,
                         units: Vec::new(),
                         reads: Vec::new(),
-                        leak: false,
                         failure: Some(e),
                         fresh_instance: true,
                         load_millis: 0,
@@ -798,12 +776,10 @@ fn run_batch(session: &mut Session, batch: Batch, plan: &SharedPlan, fresh: bool
     } else {
         Vec::new()
     };
-    let leak = !Exprent::with_inferred_lambda_types(|m| m.is_empty());
     Outcome {
         batch,
         units,
         reads,
-        leak,
         failure: result
             .err()
             .map(|e| format!("the engine failed: {}", e.message)),
