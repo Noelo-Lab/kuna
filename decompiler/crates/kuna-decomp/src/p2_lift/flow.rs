@@ -266,6 +266,11 @@ pub trait FlowEnvironment {
         false
     }
 
+    /// A target-specific classifier will handle this return after the graph is built.
+    fn defers_return_classification(&self, _data: &Funcdata, _op: OpId) -> bool {
+        false
+    }
+
     /// Emit the callother-fixup p-code for the \e injected user-op `userop_index`
     /// into `emit`, resolving its parameters against `context` (C++
     /// `FlowInfo::injectUserOp` → `payload->inject(icontext,emitter)` via the
@@ -1526,7 +1531,8 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                 curop,
                 &self.visited,
                 |index| self.env.is_isa_mode_switch(index),
-            ) {
+            ) && !self.env.defers_return_classification(&self.data, curop)
+            {
                 let branchind = self.env.resolve_typeop(OpCode::CPUI_BRANCHIND);
                 self.data.op_set_opcode(curop, branchind);
             }

@@ -19,7 +19,20 @@ use crate::{
     jumptable::JumpTable,
 };
 
-type Key = (i32, u64, i32);
+pub(crate) type Key = (i32, u64, i32);
+
+pub(crate) fn link_register(arch: &Architecture) -> Option<Key> {
+    if !arch.archid.starts_with("PowerPC:") || !arch.archid.contains(":32:") {
+        return None;
+    }
+    register(arch, "LR").filter(|lr| matches!(lr.2, 4 | 8))
+}
+
+pub(crate) fn is_lr_return(data: &Funcdata, op: OpId, lr: Key) -> bool {
+    data.obank().get(op).is_some_and(|op| {
+        op.code() == OpCode::CPUI_RETURN && op.get_in(0).is_some_and(|input| key(data, input) == lr)
+    })
+}
 
 /// PPC32 branches discard LR's low two bits, including with eight-byte GPRs.
 /// Insert before instruction bookkeeping so its first op and CFG remain ordered.
@@ -42,11 +55,7 @@ pub(crate) fn align_target(
         .obank()
         .iter_at(site)
         .map(|(_, op)| op)
-        .filter(|&op| {
-            data.obank().get(op).is_some_and(|o| {
-                o.code() == OpCode::CPUI_RETURN && o.get_in(0).is_some_and(|v| key(data, v) == lr)
-            })
-        })
+        .filter(|&op| is_lr_return(data, op, lr))
         .collect();
     for ret in returns {
         let input = data.obank().get(ret).unwrap().get_in(0).unwrap();
@@ -628,18 +637,9 @@ fn sites(
     automatic: &BranchPlans,
     work: &mut usize,
 ) -> Option<KunaResult<Classification>> {
-    if !arch.archid.starts_with("PowerPC:") || !arch.archid.contains(":32:") {
-        return None;
-    }
-    let lr = register(arch, "LR")?;
-    if !matches!(lr.2, 4 | 8)
-        || (automatic.is_empty()
-            && !data.obank().iter_code(OpCode::CPUI_RETURN).any(|r| {
-                data.obank()
-                    .get(r)
-                    .and_then(|o| o.get_in(0))
-                    .is_some_and(|v| key(data, v) == lr)
-            }))
+    let lr = link_register(arch)?;
+    if automatic.is_empty()
+        && !data.obank().iter_code(OpCode::CPUI_RETURN).any(|op| is_lr_return(data, op, lr))
     {
         return None;
     }
