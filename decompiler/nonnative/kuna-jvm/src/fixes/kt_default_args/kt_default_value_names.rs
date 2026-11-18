@@ -20,7 +20,7 @@ use std::cell::RefCell;
 
 use crate::code_constants::ACC_STATIC;
 use crate::k_parameter::KParameter;
-use crate::fixes::kt_extensions::kt_extension_receiver;
+use crate::fixes::kt_extensions;
 use crate::kotlin_writer::KotlinWriter;
 use crate::method_wrapper::MethodWrapper;
 use crate::struct_class::StructClass;
@@ -72,7 +72,7 @@ pub fn enter(
     let mut slots: Vec<(i32, String)> = Vec::new();
     if !is_static {
         let instance = if extension {
-            format!("this@{}", kt_extension_receiver::class_label(cl)?)
+            format!("this@{}", kt_extensions::class_label(cl)?)
         } else {
             "this".to_string()
         };

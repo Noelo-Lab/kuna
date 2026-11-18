@@ -28,7 +28,7 @@ use crate::code_constants::{ACC_STATIC, ACC_SYNTHETIC};
 use crate::decompiler_context::DecompilerContext;
 use crate::exit_exprent::Type as ExitType;
 use crate::k_element::KElement;
-use crate::fixes::kt_extensions::kt_extension_receiver;
+use crate::fixes::kt_extensions;
 use crate::kt_attrs::KtAttrs;
 use crate::kt_flags::Flags;
 use crate::method_wrapper::MethodWrapper;
@@ -162,7 +162,7 @@ pub fn name(var: VarExprent) -> Option<String> {
                 return Some("this".to_string());
             }
             let cl = DecompilerContext::get_struct_context().get_class(&processor.get_method().get_class_qualified_name())?;
-            return kt_extension_receiver::class_label(cl).map(|label| format!("this@{label}"));
+            return kt_extensions::class_label(cl).map(|label| format!("this@{label}"));
         }
         at = processor.get_captured_source(pair)?;
     }

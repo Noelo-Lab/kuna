@@ -30,7 +30,7 @@ use crate::fixes::kt_default_args::kt_default_args_bridge_lookup;
 use crate::fixes::kt_default_args::kt_default_value_names;
 use crate::fixes::kt_declarations;
 use crate::fixes::kt_names::kt_function_parameter_name;
-use crate::fixes::kt_extensions::kt_extension_receiver;
+use crate::fixes::kt_extensions;
 use crate::fixes::kt_generated_members::kt_companion_static_copy;
 use crate::fixes::kt_suspend::kt_suspend_lambda;
 use crate::fixes::kt_suspend::kt_suspend_impl;
@@ -672,7 +672,7 @@ impl KFunction {
         let _receiver = (kuna_fixes::enabled(KunaFix::KtExtensionReceiver)
             && self.receiver_type.is_some())
         .then(|| {
-            kt_extension_receiver::enter(
+            kt_extensions::enter(
                 class_struct,
                 method_wrapper,
                 method_struct.has_modifier(ACC_STATIC),

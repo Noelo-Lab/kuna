@@ -23,7 +23,7 @@ use crate::k_types::KTypes;
 use crate::k_utils::KUtils;
 use crate::key::Key;
 use crate::fixes::kt_properties::kt_default_accessor_flags;
-use crate::fixes::kt_extensions::kt_extension_property::{self, Extension};
+use crate::fixes::kt_extensions::{self, Extension};
 use crate::kotlin_writer::KotlinWriter;
 use crate::kt_attrs::KtAttrs;
 use crate::kt_flags::Flags;
@@ -266,7 +266,7 @@ impl KProperty {
             "val "
         });
         if let Some(extension) = &self.extension {
-            kt_extension_property::write_receiver(&mut buf, extension, indent);
+            kt_extensions::write_receiver(&mut buf, extension, indent);
         }
         buf.append(&KotlinWriter::to_valid_kotlin_identifier(&self.name));
         let type_ = self.type_.as_ref().expect("NullPointerException: type");
@@ -280,7 +280,7 @@ impl KProperty {
             buf.append(": ").append_buffer(&type_buf);
         }
         if let Some(extension) = &self.extension {
-            kt_extension_property::write_where(&mut buf, extension, indent);
+            kt_extensions::write_where(&mut buf, extension, indent);
         }
 
         let mut has_initializer = false;
@@ -486,9 +486,9 @@ impl KProperty {
     fn receiver_scope(
         &self,
         accessor: MethodWrapper,
-    ) -> Option<crate::fixes::kt_extensions::kt_extension_receiver::ReceiverScope> {
+    ) -> Option<kt_extensions::ReceiverScope> {
         self.extension.as_ref()?;
-        kt_extension_property::enter(self.class_struct, accessor)
+        kt_extensions::enter_accessor(self.class_struct, accessor)
     }
 
     /// Fix `kt_accessor_backing_field`: the scope in which an accessor body names its backing field `field`.
@@ -761,7 +761,7 @@ impl KProperty {
             }
 
             let extension = kuna_fixes::enabled(KunaFix::KtExtensionProperty)
-                .then(|| kt_extension_property::parse(property, name_resolver))
+                .then(|| kt_extensions::parse(property, name_resolver))
                 .flatten();
             let mut kprop = KProperty::new(
                 name,

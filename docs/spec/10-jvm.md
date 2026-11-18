@@ -3086,7 +3086,7 @@ parameter and names it `$this$name` in the local variable table (newer compilers
 that is no identifier, which the decompiler writes `var0`). The plugin writes the function's header
 as an extension (`fun Buffer.commonWrite(..)`) but its body with the parameter's name, which names
 nothing in Kotlin. With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/kt_extensions/kt_extension_receiver.rs (name)`) the receiver
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_extensions.rs (name)`) the receiver
 parameter is written `this` in the function's own body (not in the lambdas and objects written
 inside it); in an extension declared inside a class, plain `this` is the extension receiver, so the
 class's own instance is written `this@Class`. A function whose class has no name, or whose code
@@ -4520,7 +4520,7 @@ function's does, but `KProperty` read neither: `val CharSequence.lastIndex: Int`
 lastIndex: Int`, a property without a receiver (which `s.lastIndex` does not name, and which repeats for
 each receiver of a facade: `ArraysKt___ArraysKt` declared nine `val indices`), and its getter read the
 receiver parameter by its debug name, `` `$this$lastIndex` ``. With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/kt_extensions/kt_extension_property.rs (parse)`) the property keeps
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_extensions.rs (parse)`) the property keeps
 the metadata's receiver and type parameters, read in the scope of its own type parameters, and the header
 is `val <T : B> Receiver.name: Type` (a receiver of a function type in parentheses, a type parameter with
 several bounds in a `where` clause after the type); each accessor body is written in the receiver scope of

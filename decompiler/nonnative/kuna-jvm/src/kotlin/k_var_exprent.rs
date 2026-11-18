@@ -5,7 +5,7 @@ use crate::k_dispatch::KExprentExt;
 use crate::k_types::KTypes;
 use crate::kotlin_exprent;
 use crate::fixes::kt_default_args::kt_default_value_names;
-use crate::fixes::kt_extensions::kt_extension_receiver;
+use crate::fixes::kt_extensions;
 use crate::fixes::kt_names::kt_function_parameter_name;
 use crate::fixes::kt_null_checks::kt_nullable_local;
 use crate::fixes::kt_types::kt_raw_generic_type;
@@ -103,7 +103,7 @@ impl KVarExprent {
 
     pub fn get_name(self) -> String {
         if kuna_fixes::enabled(KunaFix::KtExtensionReceiver) {
-            if let Some(name) = kt_extension_receiver::name(self.0) {
+            if let Some(name) = kt_extensions::name(self.0) {
                 return name;
             }
         }
