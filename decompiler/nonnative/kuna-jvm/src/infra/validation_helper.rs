@@ -510,17 +510,6 @@ impl ValidationHelper {
         }
     }
 
-    pub fn one_successor(stat: Statement) {
-        if !Self::VALIDATE() {
-            return;
-        }
-
-        if stat.get_all_successor_edges().len() != 1 {
-            jthrow!(IllegalStateException; "Statement has more than one successor: [{}] {}",
-                stat, jlist(stat.get_all_successor_edges().iter().map(|e| e.to_string()).collect()));
-        }
-    }
-
     fn is_successor(source: Statement, edge: StatEdge) -> bool {
         if source.get_all_successor_edges().contains(&edge) {
             return true;

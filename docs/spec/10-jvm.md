@@ -73,8 +73,7 @@ written before all of its unit is processed. **Per method**,
 `decompiler/nonnative/kuna-jvm/src/infra/method_processor.rs (MethodProcessor::code_to_java)`
 runs the pass schedule of sections 10.4-10.10 from bytecode to a structured statement
 tree. Every pass is recorded by name through
-`decompiler/nonnative/kuna-jvm/src/infra/decompile_record.rs (DecompileRecord::add)`, which
-is also where the trace differ hooks in (section 10.14).
+`decompiler/nonnative/kuna-jvm/src/infra/decompile_record.rs (DecompileRecord::add)`.
 
 Vineflower's plugin API is ported: the pass locations (`CfgConstruction`, `BeforeMain`,
 `InLoopDecomp`, `MainLoop`, `AfterMain`, `AtEnd`, `LateProcessing`) are kept in the
@@ -1122,12 +1121,6 @@ contexts) off the property list before the rest becomes Vineflower's option map 
 10.16), so that map is the one Vineflower would build. Any other key, a `jvm_fix_*` name included, is not a
 switch: `resolve` refuses it as an unknown option, and given to the engine directly it
 stays in Vineflower's option map like any key Vineflower does not read.
-
-**Tracing.** With `KUNA_JVM_TRACE=<file>`,
-`decompiler/nonnative/kuna-jvm/src/infra/kuna_trace.rs` writes a canonical dump of each
-method's statement tree after every recorded pass, in the format the Java-side tracer of
-`decompiler/nonnative/kuna-jvm/tools/vftrace` prints for Vineflower, so the two can be
-compared pass by pass (`docs/jvm.md`).
 
 **The CLI seam.** `kuna-cli` routes an input to this engine before any native code runs
 when the input operand is a class file, an archive or a directory (chapter 00, section

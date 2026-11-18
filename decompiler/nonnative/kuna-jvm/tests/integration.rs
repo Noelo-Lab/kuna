@@ -120,10 +120,6 @@ mod b19_classes;
 mod b20_nested;
 #[path = "kuna_corpus.rs"]
 mod kuna_corpus;
-#[path = "trace_vectors.rs"]
-mod trace_vectors;
-#[path = "trace_file.rs"]
-mod trace_file;
 #[path = "s3_parity.rs"]
 mod s3_parity;
 #[path = "kuna_support.rs"]
@@ -178,8 +174,6 @@ mod kt3_elements;
 mod kt7_kotlin_writer;
 #[path = "kt4_members.rs"]
 mod kt4_members;
-#[path = "kt6_passes.rs"]
-mod kt6_passes;
 #[path = "kt6_render.rs"]
 mod kt6_render;
 #[path = "kp1_plugins.rs"]

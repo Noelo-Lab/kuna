@@ -3,8 +3,7 @@
 
 use std::path::Path;
 
-use kuna_jvm::kotlin::kuna_fix_kt_mapped_java_member::{self, Form};
-use kuna_jvm::kotlin::kuna_fix_kt_string_literal_escape::kotlin_text;
+use kuna_jvm::testing::{kotlin_text, Form};
 use kuna_jvm::kuna_corpus::{load_cases, run_case, with_engine_stack, Case};
 use kuna_jvm::kuna_fixes::{KunaFix, KunaFixes};
 
@@ -276,7 +275,7 @@ fn kotlin_text_escapes_template_starts_only() {
 /// The forms of members of the JDK classes the fix lists (no decompiler context is needed for them).
 #[test]
 fn mapped_member_forms() {
-    let form = kuna_fix_kt_mapped_java_member::form;
+    let form = kuna_jvm::testing::form;
     assert_eq!(
         form("java/lang/String", "length", "()I"),
         Some(Form::Property("length"))

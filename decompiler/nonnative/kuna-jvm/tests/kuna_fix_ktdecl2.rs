@@ -5,7 +5,7 @@ use std::path::Path;
 
 use crate::common;
 
-use kuna_jvm::kotlin::kuna_fix_kt_escaped_class_name::{escape, escape_qualified};
+use kuna_jvm::testing::{escape, escape_qualified};
 use kuna_jvm::kuna_corpus::{load_cases, run_case, with_engine_stack, Case};
 use kuna_jvm::kuna_fixes::{KunaFix, KunaFixes};
 

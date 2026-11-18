@@ -42,7 +42,7 @@ impl GenericMain {
         match try_catch(body) {
             Ok(v) => Some(v),
             Err(caught) => {
-                if caught.is("CanceledException") || caught.is("UnportedError") {
+                if caught.is("CanceledException") {
                     rethrow(caught);
                 }
                 DecompilerContext::get_logger()

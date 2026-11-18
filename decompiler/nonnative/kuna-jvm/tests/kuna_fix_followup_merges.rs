@@ -6,7 +6,7 @@
 use std::path::Path;
 
 use kuna_jvm::kuna_corpus::{count_failed_methods, load_cases, run_case, with_engine_stack, Case};
-use kuna_jvm::kuna_fix_kt_reference_anonymous_super_call::split_signature;
+use kuna_jvm::testing::split_signature;
 use kuna_jvm::kuna_fixes::{KunaFix, KunaFixes};
 use kuna_jvm::kuna_options::SOURCE_LOCALS;
 

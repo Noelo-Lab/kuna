@@ -24,7 +24,7 @@ the environment variable `KUNA_JVM_ORACLE`. Every script that needs it and is ru
 with a one-line message naming the variable; the per-script overrides (`VF_JAR`, `VF_SRC`, `JDKS`,
 `CORPUS`, ...) still take precedence where a script has them. The same variable is the default
 source for `tests/jvm/regen.py`, `plugin_oracle.py`, `kotlin_corpus.py`, the engine's
-`tests/data/*/gen.sh` scripts and `tools/vftrace`.
+`tests/data/*/gen.sh` scripts.
 
 ```
 $KUNA_JVM_ORACLE/
@@ -35,7 +35,6 @@ $KUNA_JVM_ORACLE/
   corpus-kt/                       the Kotlin corpus, its built driver, tools/{m2,plugin,realworld}/
   dataset/spring-framework/        optional: the javabench dataset (scripts/javabench), for the
                                    Kotlin real-world references and tests/data/kt1, kt3
-  vftrace-build/                   tools/vftrace's build output
   work/                            per-run work directories (regen, crosscheck)
 ```
 
@@ -232,7 +231,6 @@ of an `--only` run and then fails to save the first class, so the script creates
 | `tests/jvm/plugin_oracle.py` | `java/scripts/compile_sets.sh` and `java/bin/vf-decompile --plugins`, the Vineflower checkout's plugin test data, `corpus/expected-defaults/`: the 6 plugin cases |
 | `tests/jvm/kotlin_corpus.py` | `corpus-kt/manifest.json`, `classes/`, `expected/` (checked against `SHA256SUMS`): the 71 vendorable Kotlin cases and `kotlin.json`; `--full-manifest` all 73 cases in all three forms; `--overlays` the plugin cases under option overlays, through `kotlin/bin/vf-decompile-kt` |
 | `decompiler/nonnative/kuna-jvm/tests/data/*/gen.sh` | the jar, the JDKs, kotlinc, asmtools, `corpus/classes` and `vf-decompile` |
-| `decompiler/nonnative/kuna-jvm/tools/vftrace` | the jar, the checkout, JDK 17/21, `corpus/manifest.json`; it compiles `java/driver/src/corpus/VfDriver.java` into its own build |
 
 Order: `kotlin_corpus.py` and `plugin_oracle.py` write their cases into `tests/jvm`, then `regen.py`
 appends them to `cases.tsv`. All three take `--out DIR` to write elsewhere.

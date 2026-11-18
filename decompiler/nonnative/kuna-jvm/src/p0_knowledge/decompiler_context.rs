@@ -303,10 +303,6 @@ impl DecompilerContext {
         Self::current(|d| d.static_props.current_var_processor)
     }
 
-    pub fn set_current_var_processor(value: Option<VarProcessor>) {
-        Self::current_mut(|d| d.static_props.current_var_processor = value)
-    }
-
     /// This context's counters, as `getCounter` reads them.
     pub fn counter_values(&self) -> [i32; 4] {
         let counter = self.with(|d| d.counter_container);

@@ -8,16 +8,11 @@
 
 pub const UNASSIGNED: i32 = 0;
 pub const UPPERCASE_LETTER: i32 = 1;
-pub const LOWERCASE_LETTER: i32 = 2;
-pub const TITLECASE_LETTER: i32 = 3;
-pub const MODIFIER_LETTER: i32 = 4;
 pub const OTHER_LETTER: i32 = 5;
 pub const NON_SPACING_MARK: i32 = 6;
-pub const ENCLOSING_MARK: i32 = 7;
 pub const COMBINING_SPACING_MARK: i32 = 8;
 pub const DECIMAL_DIGIT_NUMBER: i32 = 9;
 pub const LETTER_NUMBER: i32 = 10;
-pub const OTHER_NUMBER: i32 = 11;
 pub const SPACE_SEPARATOR: i32 = 12;
 pub const LINE_SEPARATOR: i32 = 13;
 pub const PARAGRAPH_SEPARATOR: i32 = 14;
@@ -25,16 +20,8 @@ pub const CONTROL: i32 = 15;
 pub const FORMAT: i32 = 16;
 pub const PRIVATE_USE: i32 = 18;
 pub const SURROGATE: i32 = 19;
-pub const DASH_PUNCTUATION: i32 = 20;
-pub const START_PUNCTUATION: i32 = 21;
-pub const END_PUNCTUATION: i32 = 22;
 pub const CONNECTOR_PUNCTUATION: i32 = 23;
-pub const OTHER_PUNCTUATION: i32 = 24;
-pub const MATH_SYMBOL: i32 = 25;
 pub const CURRENCY_SYMBOL: i32 = 26;
-pub const MODIFIER_SYMBOL: i32 = 27;
-pub const INITIAL_QUOTE_PUNCTUATION: i32 = 29;
-pub const FINAL_QUOTE_PUNCTUATION: i32 = 30;
 
 pub const MIN_RADIX: i32 = 2;
 pub const MAX_RADIX: i32 = 36;

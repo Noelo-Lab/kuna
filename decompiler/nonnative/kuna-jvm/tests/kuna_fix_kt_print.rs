@@ -7,7 +7,7 @@ use std::path::Path;
 
 use kuna_jvm::code_type::CodeType;
 use kuna_jvm::kuna_corpus::{load_cases, run_case, with_engine_stack, Case};
-use kuna_jvm::kuna_fix_kt_java_cast_syntax::conversion;
+use kuna_jvm::testing::java_cast_conversion as conversion;
 use kuna_jvm::kuna_fixes::{KunaFix, KunaFixes};
 
 fn fix_case(id: &str) -> Case {

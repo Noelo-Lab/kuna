@@ -159,7 +159,7 @@ fn jar_source_reads_like_zipfile() {
 
     let caught = try_catch(|| JarContextSource::new(&data("tree/readme.txt"))).unwrap_err();
     assert!(caught.is("IOException"), "{}", caught.message);
-    assert!(JarContextSource::open(&data("no-such.jar"), "").is_err());
+    assert!(JarContextSource::open(&data("no-such.jar")).is_err());
 }
 
 #[test]

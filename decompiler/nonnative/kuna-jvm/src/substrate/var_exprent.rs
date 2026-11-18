@@ -886,8 +886,6 @@ impl DefinitionLocker {
         var.set_definition(false);
         DefinitionLocker { var, is_def }
     }
-
-    pub fn close(self) {}
 }
 
 impl Drop for DefinitionLocker {

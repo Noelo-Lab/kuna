@@ -154,7 +154,7 @@ impl JdkRuntime {
         }
         Self::legacy_jars(home)
             .iter()
-            .filter_map(|jar| JarContextSource::open(jar, "").ok())
+            .filter_map(|jar| JarContextSource::open(jar).ok())
             .map(|source| Rc::new(source) as Rc<dyn IContextSource>)
             .collect()
     }
@@ -183,7 +183,7 @@ impl JdkRuntime {
     fn add_legacy(struct_context: StructContext, home: &Path) -> bool {
         let mut any_added = false;
         for lib in Self::legacy_jars(home) {
-            match JarContextSource::open(&lib, "") {
+            match JarContextSource::open(&lib) {
                 Ok(source) => struct_context.add_space(Rc::new(source), false),
                 Err(_) => {
                     let message = format!("Invalid archive {}", java_file_path(&lib));
@@ -311,23 +311,6 @@ pub struct JavaRuntimeContextSource {
 }
 
 impl JavaRuntimeContextSource {
-    /// Java: JavaRuntimeContextSource(File); `None` is the current runtime.
-    pub fn new(java_home: Option<&Path>) -> JavaRuntimeContextSource {
-        let opened = match java_home {
-            None => match JdkRuntime::locate(JdkRuntime::CURRENT) {
-                Some(home) => Self::open(&home, JdkRuntime::CURRENT),
-                None => Err(io::Error::new(
-                    io::ErrorKind::NotFound,
-                    "no Java runtime found",
-                )),
-            },
-            Some(home) => Self::open(home, &java_absolute_path(&java_file_path(home))),
-        };
-        match opened {
-            Ok(source) => source,
-            Err(e) => jthrow!(IOException; "{}", e),
-        }
-    }
 
     /// Open the runtime at `home`; `identifier` is what `get_name` reports.
     pub fn open(home: &Path, identifier: &str) -> io::Result<JavaRuntimeContextSource> {
@@ -400,10 +383,6 @@ pub struct JavaRuntimeModuleContextSource {
 }
 
 impl JavaRuntimeModuleContextSource {
-    /// The module's directory name in the runtime image.
-    pub fn get_module(&self) -> &str {
-        &self.module
-    }
 
     /// `entryNames()`: the module's paths relative to its root, in walk order.
     pub fn entry_names(&self) -> io::Result<Vec<String>> {
@@ -888,21 +867,8 @@ impl JImage {
         })
     }
 
-    pub fn path(&self) -> &Path {
-        &self.path
-    }
-
     pub fn is_big_endian(&self) -> bool {
         self.big_endian
-    }
-
-    /// The number of locations (resources and directories) in the index.
-    pub fn len(&self) -> usize {
-        self.offsets.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.offsets.is_empty()
     }
 
     pub fn close(&self) {

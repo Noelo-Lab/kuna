@@ -207,13 +207,6 @@ enum MType {
     Method,
 }
 
-#[allow(dead_code)]
-const ERROR_DUMP_STOP_POINTS: [&str; 3] = [
-    "Fernflower.decompileContext",
-    "MethodProcessor.codeToJava",
-    "KotlinWriter.writeMethod",
-];
-
 const NOT_NULL_ANN_NAME: &str = "org/jetbrains/annotations/NotNull";
 const NULLABLE_ANN_NAME: &str = "org/jetbrains/annotations/Nullable";
 const REPEATABLE_ANN_NAME: &str = "java/lang/annotation/Repeatable";
@@ -354,21 +347,9 @@ impl KotlinWriter {
         | ACC_FINAL
         | ACC_TRANSIENT
         | ACC_VOLATILE;
-    #[allow(dead_code)]
-    const METHOD_ALLOWED: i32 = ACC_PUBLIC
-        | ACC_PROTECTED
-        | ACC_PRIVATE
-        | ACC_ABSTRACT
-        | ACC_STATIC
-        | ACC_FINAL
-        | ACC_SYNCHRONIZED
-        | ACC_NATIVE
-        | ACC_STRICT;
 
     const CLASS_EXCLUDED: i32 = ACC_ABSTRACT | ACC_STATIC;
     const FIELD_EXCLUDED: i32 = ACC_PUBLIC | ACC_STATIC | ACC_FINAL;
-    #[allow(dead_code)]
-    const METHOD_EXCLUDED: i32 = ACC_PUBLIC | ACC_ABSTRACT;
 
     const ACCESSIBILITY_FLAGS: i32 = ACC_PUBLIC | ACC_PROTECTED | ACC_PRIVATE;
 
@@ -3004,11 +2985,6 @@ impl KotlinWriter {
             .append("// $VF: ")
             .append(comment)
             .append_line_separator();
-    }
-
-    #[allow(dead_code)]
-    fn append_inline_comment(buffer: &mut TextBuffer, comment: &str) {
-        buffer.append("/* $VF: ").append(comment).append(" */");
     }
 
     fn append_javadoc(buffer: &mut TextBuffer, java_doc: Option<&str>, indent: i32) {

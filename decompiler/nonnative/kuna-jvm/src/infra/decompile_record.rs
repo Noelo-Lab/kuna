@@ -1,6 +1,5 @@
 //! Port of `org/jetbrains/java/decompiler/main/rels/DecompileRecord.java`.
 
-use crate::kuna_trace;
 use crate::root_statement::RootStatement;
 use crate::struct_method::StructMethod;
 use crate::validation_helper::ValidationHelper;
@@ -46,10 +45,6 @@ impl DecompileRecord {
         let Some(root) = root else {
             return;
         };
-
-        if kuna_trace::enabled() {
-            kuna_trace::step(self.with(|d| d.mt), &export_name, root);
-        }
 
         ValidationHelper::validate_statement(root);
     }

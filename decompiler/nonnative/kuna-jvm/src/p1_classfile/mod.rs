@@ -5,7 +5,6 @@ pub mod class_wrapper;
 pub mod classes_processor;
 pub mod code_constants;
 pub mod constant_pool;
-pub mod lazy_loader;
 pub mod link_constant;
 pub mod method_wrapper;
 pub mod pooled_constant;

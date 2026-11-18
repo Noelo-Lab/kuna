@@ -14,7 +14,6 @@
 use std::collections::BTreeMap;
 
 use crate::kuna_fixes::{self, KunaFix};
-use crate::kuna_trace;
 use crate::method_descriptor::MethodDescriptor;
 use crate::p6_variables::kuna_fix_kt_java_keyword_variable_name;
 use crate::p6_variables::kuna_fix_refresh_printed_var_names;
@@ -206,10 +205,6 @@ impl VarProcessor {
             if !self.with(|d| d.params.j_contains(&key)) {
                 self.with_mut(|d| d.clashing_names.put(key, value));
             }
-        }
-
-        if kuna_trace::enabled() {
-            kuna_trace::step_vars(method, "RerunClashing", root, self);
         }
     }
 

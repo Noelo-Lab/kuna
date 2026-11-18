@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use kuna_jvm::kotlin::kuna_fix_kt_nullable_local::nullable;
+use kuna_jvm::testing::nullable;
 use kuna_jvm::kuna_corpus::{load_cases, run_case, with_engine_stack, Case};
 use kuna_jvm::kuna_fixes::{KunaFix, KunaFixes};
 

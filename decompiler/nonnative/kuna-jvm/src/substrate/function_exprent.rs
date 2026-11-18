@@ -49,7 +49,6 @@ use crate::substrate::kuna_fix_mixed_type_reassociation;
 use crate::substrate::kuna_fix_reference_unboxing;
 use crate::substrate::kuna_fix_ternary_numeric_arms;
 use crate::text_buffer::TextBuffer;
-use crate::typed::Typed;
 use crate::var_map_holder::VarMapHolder;
 use crate::var_type::{instance_of, VarType};
 use crate::{java_subclass, jthrow};
@@ -120,7 +119,6 @@ pub enum FunctionType {
     Other,
 }
 
-impl Typed for FunctionType {}
 
 impl JavaHash for FunctionType {
     fn java_hash(&self) -> i32 {

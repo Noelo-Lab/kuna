@@ -47,7 +47,6 @@ pub struct ZipEntry {
     pub name: String,
     pub method: u16,
     pub flags: u16,
-    pub crc: u32,
     pub size: u64,
     pub compressed_size: u64,
     /// Offset of the local header as recorded in the archive (before the stub shift).
@@ -129,10 +128,6 @@ impl ZipReader {
             entries,
             index,
         })
-    }
-
-    pub fn path(&self) -> &Path {
-        &self.path
     }
 
     /// The entries in central-directory order (`ZipFile.entries()`).
@@ -394,7 +389,6 @@ impl ZipReader {
             name,
             method,
             flags,
-            crc: get32(cen, pos + 16),
             size,
             compressed_size: csize,
             local_header_offset: offset,

@@ -196,7 +196,6 @@ impl fmt::Display for Entry {
 
 /// `struct.JarContextSource`: a jar or zip archive.
 pub struct JarContextSource {
-    relative_path: String,
     jar_file: String,
     file: ZipReader,
 }
@@ -204,39 +203,20 @@ pub struct JarContextSource {
 impl JarContextSource {
     /// Java: JarContextSource(IBytecodeProvider, File)
     pub fn new(archive: &Path) -> JarContextSource {
-        JarContextSource::new_relative(archive, "")
-    }
-
-    /// Java: JarContextSource(IBytecodeProvider, File, String)
-    pub fn new_relative(archive: &Path, relative_path: &str) -> JarContextSource {
-        match JarContextSource::open(archive, relative_path) {
+        match JarContextSource::open(archive) {
             Ok(source) => source,
             Err(e) => jthrow!(IOException; "{}: {}", java_file_path(archive), e),
         }
     }
 
     /// The constructor with its `IOException` as a `Result`.
-    pub fn open(archive: &Path, relative_path: &str) -> io::Result<JarContextSource> {
+    pub fn open(archive: &Path) -> io::Result<JarContextSource> {
         let jar_file = java_file_path(archive);
         let file = ZipReader::open(Path::new(&jar_file))?;
         Ok(JarContextSource {
-            relative_path: relative_path.to_string(),
             jar_file,
             file,
         })
-    }
-
-    /// The archive's folder relative to the enclosing directory source (`""` at top level).
-    pub fn get_relative_path(&self) -> &str {
-        &self.relative_path
-    }
-
-    pub fn get_jar_file(&self) -> &Path {
-        Path::new(&self.jar_file)
-    }
-
-    pub fn get_zip(&self) -> &ZipReader {
-        &self.file
     }
 
     fn add_directories(entry: &ZipEntry, directories: &mut JLinkedHashSet<String>) {
@@ -310,10 +290,6 @@ impl DirectoryContextSource {
         }
     }
 
-    pub fn get_base_directory(&self) -> &Path {
-        Path::new(&self.base_directory)
-    }
-
     /// `current` is an absolute path string, as `File.getAbsolutePath()` gives it.
     #[allow(clippy::only_used_in_recursion)]
     pub fn collect_entries(
@@ -339,9 +315,7 @@ impl DirectoryContextSource {
                 &relative_path[..relative_path.len() - CLASS_SUFFIX.len()],
             ));
         } else if relative_path.ends_with(".jar") || relative_path.ends_with(".zip") {
-            let parent = java_parent(current);
-            let relative_to = parent.get(base.len()..).unwrap_or("").to_string();
-            match JarContextSource::open(Path::new(current), &relative_to) {
+            match JarContextSource::open(Path::new(current)) {
                 Ok(source) => jar_children.push(Rc::new(source)),
                 Err(_) => {
                     let message = format!("Invalid archive {current}");
@@ -434,10 +408,6 @@ impl SingleFileContextSource {
             qualified_name,
             contents: Some(contents),
         })
-    }
-
-    pub fn get_file(&self) -> &Path {
-        Path::new(&self.file)
     }
 }
 
@@ -615,14 +585,6 @@ pub fn java_name(path: &str) -> &str {
     match path.rfind(MAIN_SEPARATOR) {
         Some(i) => &path[i + 1..],
         None => path,
-    }
-}
-
-fn java_parent(path: &str) -> &str {
-    match path.rfind(MAIN_SEPARATOR) {
-        Some(0) => &path[..1],
-        Some(i) => &path[..i],
-        None => "",
     }
 }
 

@@ -10,7 +10,6 @@ use crate::fast_fixed_set_factory::FastFixedSetFactory;
 use crate::long_fast_fixed_set_factory::LongFastFixedSet;
 use crate::rt::{exception, JHashSet, JavaEq, JavaHash};
 use crate::short_fast_fixed_set_factory::ShortFastFixedSet;
-use crate::validation_helper::ValidationHelper;
 
 pub enum FastFixedSet<E> {
     Short(ShortFastFixedSet<E>),
@@ -37,15 +36,6 @@ impl<E: JavaHash + JavaEq + Clone> FastFixedSet<E> {
             FastFixedSet::Short(s) => s.get_factory(),
             FastFixedSet::Long(s) => s.get_factory(),
         }
-    }
-
-    /// Deprecated in Java: reports a validation failure, then answers the factory's size.
-    pub fn size(&self) -> i32 {
-        ValidationHelper::validate_true(
-            false,
-            "The behaviour of FastFixedSet.size() is not correct",
-        );
-        self.get_factory().entries_len() as i32
     }
 
     pub fn get_real_size(&self) -> i32 {
@@ -186,10 +176,6 @@ impl<E: JavaHash + JavaEq + Clone> FastFixedSet<E> {
             FastFixedSet::Short(s) => Box::new(s.iter()),
             FastFixedSet::Long(s) => Box::new(s.iter()),
         }
-    }
-
-    pub fn to_vec(&self) -> Vec<E> {
-        self.iter().collect()
     }
 
     /// An iterator-`remove()` loop: drops the members `keep` rejects.

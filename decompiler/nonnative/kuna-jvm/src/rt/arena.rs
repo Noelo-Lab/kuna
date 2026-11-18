@@ -208,10 +208,6 @@ impl<T> Arena<T> {
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
-
-    pub fn name(&self) -> &'static str {
-        self.name
-    }
 }
 
 /// Drop every class-scope object on this thread; their handles become stale.

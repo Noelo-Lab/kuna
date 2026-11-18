@@ -80,20 +80,12 @@ impl DataPoint {
         &self.local_variables
     }
 
-    pub fn get_local_variables_mut(&mut self) -> &mut Vec<VarType> {
-        &mut self.local_variables
-    }
-
     pub fn set_local_variables(&mut self, local_variables: Vec<VarType>) {
         self.local_variables = local_variables;
     }
 
     pub fn get_stack(&mut self) -> &mut ListStack<VarType> {
         &mut self.stack
-    }
-
-    pub fn get_stack_ref(&self) -> &ListStack<VarType> {
-        &self.stack
     }
 
     pub fn set_stack(&mut self, stack: ListStack<VarType>) {

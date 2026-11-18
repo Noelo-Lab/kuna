@@ -5,8 +5,7 @@
 use std::path::Path;
 
 use kuna_jvm::kuna_corpus::{count_failed_methods, load_cases, run_case, with_engine_stack};
-use kuna_jvm::p6_variables::kuna_fix_var_merge_narrowing::{narrows, strictly_below};
-use kuna_jvm::substrate::kuna_fix_ternary_numeric_arms::promotes;
+use kuna_jvm::testing::{narrows, promotes, strictly_below};
 use kuna_jvm::var_type::VarType;
 
 use crate::common;

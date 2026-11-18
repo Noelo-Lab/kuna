@@ -376,16 +376,4 @@ impl SequenceHelper {
             }
         }
     }
-
-    pub fn first_non_seq(stat: Statement) -> Statement {
-        let Some(mut first) = stat.get_first() else {
-            return stat;
-        };
-
-        while first.is_sequence() {
-            first = first.get_first().expect("NullPointerException");
-        }
-
-        first
-    }
 }

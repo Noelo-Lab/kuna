@@ -6,40 +6,6 @@ use crate::statement::{Statement, StatementType};
 pub struct LowBreakHelper;
 
 impl LowBreakHelper {
-    pub fn low_break_labels(root: Statement) {
-        Self::low_break_labels_rec(root);
-
-        Self::lift_break_labels(root);
-    }
-
-    fn low_break_labels_rec(stat: Statement) {
-        loop {
-            let mut found = false;
-
-            let label_edges = stat.get_label_edges().borrow().to_vec();
-            for edge in label_edges {
-                if edge.get_type() == StatEdge::TYPE_BREAK {
-                    let minclosure = Self::get_min_closure(stat, edge.get_source());
-                    if minclosure != stat {
-                        minclosure.add_labeled_edge(edge);
-                        let labeled = Self::is_break_edge_labeled(edge.get_source(), minclosure);
-                        edge.with_mut(|d| d.labeled = labeled);
-                        found = true;
-                        break;
-                    }
-                }
-            }
-
-            if !found {
-                break;
-            }
-        }
-
-        let stats = stat.get_stats().borrow().to_vec();
-        for st in stats {
-            Self::low_break_labels_rec(st);
-        }
-    }
 
     pub fn is_break_edge_labeled(source: Statement, closure: Statement) -> bool {
         if closure.is_do() || closure.is_switch() {
@@ -120,65 +86,5 @@ impl LowBreakHelper {
         }
 
         ok
-    }
-
-    fn lift_break_labels(stat: Statement) {
-        let stats = stat.get_stats().borrow().to_vec();
-        for st in stats {
-            Self::lift_break_labels(st);
-        }
-
-        loop {
-            let mut found = false;
-
-            let label_edges = stat.get_label_edges().borrow().to_vec();
-            for edge in label_edges {
-                let (explicit, labeled) = edge.with(|d| (d.explicit, d.labeled));
-                if explicit && labeled && edge.get_type() == StatEdge::TYPE_BREAK {
-                    let newclosure = Self::get_max_break_lift(stat, edge);
-
-                    if let Some(newclosure) = newclosure {
-                        newclosure.add_labeled_edge(edge);
-                        let labeled = Self::is_break_edge_labeled(edge.get_source(), newclosure);
-                        edge.with_mut(|d| d.labeled = labeled);
-
-                        found = true;
-                        break;
-                    }
-                }
-            }
-
-            if !found {
-                break;
-            }
-        }
-    }
-
-    fn get_max_break_lift(stat: Statement, edge: StatEdge) -> Option<Statement> {
-        let mut closure: Option<Statement> = None;
-        let mut newclosure = stat;
-
-        while let Some(next) = Self::get_next_break_lift(newclosure, edge) {
-            newclosure = next;
-            closure = Some(newclosure);
-        }
-
-        closure
-    }
-
-    fn get_next_break_lift(stat: Statement, edge: StatEdge) -> Option<Statement> {
-        let mut closure = stat.get_parent();
-
-        while let Some(c) = closure.filter(|c| !c.contains_statement_strict(edge.get_destination()))
-        {
-            let labeled = Self::is_break_edge_labeled(edge.get_source(), c);
-            if c.is_labeled() || !labeled {
-                return Some(c);
-            }
-
-            closure = c.get_parent();
-        }
-
-        None
     }
 }

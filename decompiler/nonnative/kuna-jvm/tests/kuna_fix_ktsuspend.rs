@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use kuna_jvm::kotlin::kuna_fix_kt_suspend_state_machine::is_function_invoke;
+use kuna_jvm::testing::is_function_invoke;
 use kuna_jvm::kuna_corpus::{load_cases, run_case, with_engine_stack, Case};
 use kuna_jvm::kuna_fixes::{KunaFix, KunaFixes};
 

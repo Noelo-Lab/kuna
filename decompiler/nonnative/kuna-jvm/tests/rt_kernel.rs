@@ -2,7 +2,7 @@
 
 use kuna_jvm::rt::jstring::decode_modified_utf8;
 use kuna_jvm::rt::{reset_class_scope, throw, try_catch, BitSet, JList, JavaStr};
-use kuna_jvm::{arena_identity, arena_object, java_subclass, unported};
+use kuna_jvm::{arena_identity, arena_object, java_subclass};
 
 struct NodeData {
     value: i32,
@@ -199,6 +199,4 @@ fn subclass_views_cast_and_dispatch() {
     assert!(c.is_live());
     let caught = try_catch(|| c.as_square()).unwrap_err();
     assert!(caught.is("ClassCastException"));
-    let caught = try_catch(|| -> i32 { unported!("IfHelper.mergeAllIfs") }).unwrap_err();
-    assert!(caught.is("UnportedError"));
 }

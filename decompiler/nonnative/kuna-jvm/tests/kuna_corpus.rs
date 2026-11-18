@@ -1,4 +1,4 @@
-//! The corpus harness: manifest parsing, the fixture's comparison, histogram keys, baselines,
+//! The corpus harness: manifest parsing, the fixture's comparison, failure keys, baselines,
 //! the child-process result record, and the vendored corpus under `tests/jvm/`.
 
 use std::collections::BTreeSet;
@@ -306,7 +306,7 @@ fn evaluation_statuses() {
     let d = r.first_diff.clone().unwrap();
     assert_eq!((d.line, d.expected.as_deref()), (5, Some("}")));
     assert_eq!((r.failed_methods_actual, r.failed_methods_expected), (2, 1));
-    assert_eq!(failure_key(&r).as_deref(), Some("mismatch: closing brace"));
+    assert_eq!(failure_key(&r).as_deref(), Some("mismatch"));
 
     let r = evaluate_text(
         case,
@@ -319,8 +319,8 @@ fn evaluation_statuses() {
     assert_eq!(failure_key(&r).as_deref(), Some("mismatch: no output"));
 
     let err = thrown(
-        Some("UnportedError"),
-        "UnportedError: IfHelper.mergeAllIfs",
+        Some("NullPointerException"),
+        "NullPointerException: x",
         "src/x.rs:1",
     );
     let r = evaluate_text(
@@ -331,19 +331,18 @@ fn evaluation_statuses() {
     assert_eq!(r.status, CaseStatus::EngineError);
     assert_eq!(
         failure_key(&r).as_deref(),
-        Some("unported: IfHelper.mergeAllIfs")
+        Some("NullPointerException: src/x.rs:1")
     );
-    assert_eq!(error_head(&r), "UnportedError: IfHelper.mergeAllIfs");
+    assert_eq!(error_head(&r), "NullPointerException: x");
 }
 
 #[test]
-fn innermost_messages_and_unported_names() {
+fn innermost_messages() {
     let wrapped = "RuntimeException: java.util.concurrent.ExecutionException: UnportedError: IfHelper.mergeAllIfs";
     assert_eq!(
         innermost_message(wrapped),
         "UnportedError: IfHelper.mergeAllIfs"
     );
-    assert_eq!(unported_name(wrapped), Some("IfHelper.mergeAllIfs"));
     assert_eq!(
         innermost_message("RuntimeException: NullPointerException"),
         "NullPointerException"
@@ -356,11 +355,10 @@ fn innermost_messages_and_unported_names() {
         innermost_message("called `Option::unwrap()` on a `None` value"),
         "called `Option::unwrap()` on a `None` value"
     );
-    assert_eq!(unported_name("RuntimeException: boom"), None);
 }
 
 #[test]
-fn histogram_keys() {
+fn failure_keys() {
     let key = |r: &CaseResult| failure_key(r).unwrap();
     let mut r = result("a", CaseStatus::EngineError);
     r.error = Some(thrown(
@@ -415,107 +413,23 @@ fn histogram_keys() {
         severity: Severity::Warn,
         message: "Method x couldn't be decompiled.".into(),
         throwable: Some(thrown(
-            Some("UnportedError"),
-            "UnportedError: FinallyProcessor.iterateGraph",
-            "src/f.rs:3",
+            Some("NullPointerException"),
+            "NullPointerException: x",
+            "nonnative/kuna-jvm/src/f.rs:3",
         )),
     }];
-    assert_eq!(key(&m), "unported: FinallyProcessor.iterateGraph");
-
+    assert_eq!(key(&m), "NullPointerException: src/f.rs:3");
     m.log.clear();
-    let diff = |e: Option<&str>, a: Option<&str>| {
-        Some(FirstDiff {
-            line: 4,
-            expected: e.map(str::to_string),
-            actual: a.map(str::to_string),
-        })
-    };
-    m.first_diff = diff(
-        Some("import java.util.List;"),
-        Some("import java.util.Map;"),
-    );
-    assert_eq!(key(&m), "mismatch: import");
-    m.first_diff = diff(Some("      int a = 1;// 23"), Some("      int a = 1;// 24"));
-    assert_eq!(key(&m), "mismatch: original-line comment");
-    m.first_diff = diff(Some("      2      14"), Some("      3      14"));
-    assert_eq!(key(&m), "mismatch: line mapping");
-    m.first_diff = diff(None, Some("extra"));
-    assert_eq!(key(&m), "mismatch: end of file");
-    m.first_diff = diff(Some("   public void forArray() {"), Some("x"));
-    assert_eq!(key(&m), "mismatch: method declaration");
-    m.first_diff = diff(Some("public final class TestA extends B {"), Some("x"));
-    assert_eq!(key(&m), "mismatch: type declaration");
-    m.first_diff = diff(Some("      for (int number : numbers) {// 24"), Some("x"));
-    assert_eq!(key(&m), "mismatch: for");
-    m.first_diff = diff(Some("      } else {"), Some("x"));
-    assert_eq!(key(&m), "mismatch: else");
+    assert_eq!(key(&m), "mismatch");
 
-    let mut u1 = result("e", CaseStatus::EngineError);
-    u1.error = Some(thrown(Some("UnportedError"), "UnportedError: A.b", ""));
-    u1.log = vec![LogLine {
-        severity: Severity::Warn,
-        message: "m".into(),
-        throwable: Some(thrown(Some("UnportedError"), "UnportedError: C.d", "")),
-    }];
     let mut u2 = result("f", CaseStatus::EngineError);
-    u2.error = Some(thrown(Some("UnportedError"), "UnportedError: A.b", ""));
+    u2.error = Some(thrown(Some("RuntimeException"), "RuntimeException: A.b", ""));
     let ok = result("g", CaseStatus::Match);
-    let all = vec![
-        u2.clone(),
-        ok,
-        u1.clone(),
-        crash.clone(),
-        unsupported.clone(),
-    ];
-    let h = histogram(&all);
-    assert_eq!(
-        h,
-        vec![
-            (
-                "unported: A.b".to_string(),
-                vec!["f".to_string(), "e".to_string()]
-            ),
-            ("crash: stack overflow".to_string(), vec!["b".to_string()]),
-            (
-                "unsupported: jdk 8 not found".to_string(),
-                vec!["c".to_string()]
-            ),
-        ]
-    );
-    assert_eq!(
-        unported_reach(&all),
-        vec![("A.b".to_string(), 2), ("C.d".to_string(), 1)]
-    );
+    let all = vec![u2, ok, r, crash, unsupported];
     assert_eq!(
         totals_line(&all),
         "corpus: 1/5 match, 0 mismatch, 3 error, 1 unsupported"
     );
-}
-
-#[test]
-fn line_classes() {
-    for (line, class) in [
-        ("package pkg;", "package"),
-        ("", "blank line"),
-        ("// $VF: Couldn't be decompiled", "vf comment"),
-        ("/**", "comment"),
-        ("@Deprecated", "annotation"),
-        ("}", "closing brace"),
-        ("} catch (Exception e) {", "catch"),
-        ("return x;// 9", "return"),
-        ("if (a) {", "if"),
-        ("enum E {", "type declaration"),
-        ("class 'pkg/TestA' {", "line mapping"),
-        ("method 'forArray ()V' {", "line mapping"),
-        ("Lines mapping:", "line mapping"),
-        ("22 <-> 7", "line mapping"),
-        ("Runnable r = () -> {", "statement"),
-        ("x = y;", "statement"),
-        ("foo", "other"),
-    ] {
-        assert_eq!(line_class(Some(line)), class, "{line:?}");
-    }
-    assert_eq!(line_class(None), "end of file");
 }
 
 #[test]
@@ -588,50 +502,6 @@ fn result_records_round_trip() {
     assert!(CaseResult::from_record("nothing").is_err());
     let record = r.to_record();
     assert!(CaseResult::from_record(&record[..record.len() / 2]).is_err());
-}
-
-#[test]
-fn summary_has_one_row_per_result() {
-    let mut r = result("a", CaseStatus::Mismatch);
-    r.first_diff = Some(FirstDiff {
-        line: 12,
-        expected: Some("x".into()),
-        actual: Some("y".into()),
-    });
-    r.failed_methods_actual = 3;
-    let mut e = result("b", CaseStatus::EngineError);
-    e.error = Some(thrown(Some("UnportedError"), "UnportedError: A.b\tc", ""));
-    let tsv = summary_tsv(&[r, e]);
-    let rows: Vec<Vec<&str>> = tsv.lines().map(|l| l.split('\t').collect()).collect();
-    assert_eq!(rows[0], SUMMARY_COLUMNS);
-    assert_eq!(
-        rows[1],
-        [
-            "a",
-            "Default",
-            "Mismatch",
-            "12",
-            "3",
-            "0",
-            "",
-            "1",
-            "mismatch: other"
-        ]
-    );
-    assert_eq!(
-        rows[2],
-        [
-            "b",
-            "Default",
-            "EngineError",
-            "",
-            "0",
-            "0",
-            "UnportedError: A.b c",
-            "1",
-            "unported: A.b c"
-        ]
-    );
 }
 
 fn vendored() -> Vec<Case> {

@@ -28,7 +28,6 @@ kuna catalog --engine jvm                     # the jvm_* options
 | `tests/jvm/README.md` | the regression corpus: what a case is, how it was generated |
 | `tests/jvm/kuna-fixes/README.md` | the two-pass cases of kuna's own fixes |
 | `decompiler/nonnative/kuna-jvm/tools/oracle/README.md` | the Vineflower oracle the corpus is cut from: what it downloads, how to rebuild it |
-| `decompiler/nonnative/kuna-jvm/tools/vftrace/README.md` | the pass-by-pass trace differ |
 | `docs/jvm-benchmark.md` | the benchmark against Vineflower on five large Java projects: what it scores, how to run it, the result |
 
 ## How it relates to the native engine and p-code
@@ -99,14 +98,13 @@ byte.
 | `src/p9_emit/` | the Java writer, imports, line wrapping, line mapping |
 | `src/substrate/` | the shared IR (statements, expressions, edges, types) and its containers |
 | `src/rt/` | the Java-runtime kernel (below) |
-| `src/infra/` | the per-method schedule (`method_processor`), the plugin and language-plugin API, and kuna's parallel driver, spans, tracer, plugin bundle (`kuna_plugins`) and corpus runner |
+| `src/infra/` | the per-method schedule (`method_processor`), the plugin and language-plugin API, and kuna's parallel driver, spans, plugin bundle (`kuna_plugins`) and corpus runner |
 | `src/plugins/` | Vineflower's VariableRenaming and IdeaNotNull plugins |
 | `src/kotlin/` | Vineflower's Kotlin plugin: the metadata decoder, its pass schedule, the Kotlin expression and statement layer, the Kotlin writer (below, "Kotlin") |
 | `options.toml` | the `jvm_*` option rows; `build.rs` generates the static table from it |
-| `examples/` | `corpus` (the regression runner), `jvmdec` (a development CLI), `jvmtrace` (trace one run) |
+| `examples/` | `corpus` (the regression runner) |
 | `tests/` | the unit and differential suite, one `integration` test binary (`tests/integration.rs` registers every file) |
 | `tools/oracle/` | the Vineflower oracle: rebuilds the Java and Kotlin corpora the regression corpus comes from |
-| `tools/vftrace/` | the trace differ against the real Vineflower |
 
 The folders follow kuna's phase names so a stage can be found by its phase; the order the
 stages run in is the engine's own schedule, `src/infra/method_processor.rs` per method and
@@ -146,7 +144,7 @@ rules:
   an extra temporary.
 - **kuna's own code** lives in `kuna_*` modules (`kuna_input`, `kuna_inventory`,
   `kuna_options`, `kuna_fixes`, `kuna_driver`, `kuna_partition`, `kuna_plugins`, `kuna_spans`,
-  `kuna_trace`, `kuna_corpus`, `kuna_reclaim`), in the modules that replace JVM facilities (`context_source`,
+  `kuna_corpus`, `kuna_reclaim`), in the modules that replace JVM facilities (`context_source`,
   `jdk_runtime`, `zip_reader`, `byte_cursor`), and in the Kotlin plugin's seams
   (`kt_metadata`, `kt_attrs`, `k_dispatch`). Changes inside ported files are kept to the
   seams those modules need (span marks in the writer, a deadline poll in the
@@ -626,10 +624,10 @@ example):
    `KUNA_JVM_ORACLE` set) prints the Java stack. Then write a small class that fails
    both decompilers *without a JDK* (the corpus runs without one): replace JDK types the
    failure needs by nested stand-ins, and compare `vf-decompile --fixture --opt
-   dump-exception-on-error=1 ...` with `cargo run --release -p kuna-jvm --example jvmdec --
-   --opt include-runtime= --opt jvm_plugins=0 --opt jvm_vineflower_compat=1 ...` (`jvmdec`
-   takes Vineflower's option names and kuna's own rows by their names, and runs with kuna's
-   defaults otherwise; the trace differ's kuna side runs in compat mode). For the Rust backtrace of the caught
+   dump-exception-on-error=1 ...` with `kuna decompile-project DIR --option include-runtime ''
+   --option jvm_plugins 0 --option jvm_vineflower_compat 1 --option dump-exception-on-error 1
+   -o NEW_DIR` (`--option` takes Vineflower's option names and kuna's own rows by their
+   names). For the Rust backtrace of the caught
    throw, set `KUNA_JVM_BACKTRACE` to a piece of its message (`1` prints every caught
    throw, and the engine throws and catches routinely); build with
    `CARGO_PROFILE_RELEASE_DEBUG=line-tables-only` for line numbers.
@@ -946,8 +944,7 @@ ANTLR-generated parsers stopped (`SleighParser.tokendef`, `SleighParser_Semantic
 limit it was two on an idle machine and four on a busy one (spec section 10.12). A
 method stuck between two polls is not interrupted; as a last resort the CLI stops waiting
 after `2N+30` seconds, writes the classes that finished, gives the stuck ones a stub
-comment and exits. `jvmdec --opt mpm=N` is `--opt max-time-per-method=N`, as for any
-three-letter name.
+comment and exits.
 
 **Speed.** One engine instance is slower than Vineflower on one thread. Against
 Vineflower 1.12.0 with `-thr=1` on JDK 21, `--jobs 1` takes 1.2 to 2.2 times the wall time
@@ -1002,27 +999,9 @@ repository into `KUNA_JVM_ORACLE` (its `README.md` lists what it downloads, with
 hashes); `tests/jvm/README.md` has the commands, and `regen.py --out DIR` writes a fresh
 copy that matches the committed files byte for byte.
 
-**When a case differs.** The diff shows the symptom, rarely the pass. The trace differ
-(`decompiler/nonnative/kuna-jvm/tools/vftrace/`) runs both engines on the same classes and
-options, dumps every method's statement tree after every pass in one canonical format, and
-reports per method the first pass whose trees differ. From `decompiler/nonnative/kuna-jvm`:
-
-```bash
-tools/vftrace/build.sh                                       # once: needs a JDK 17 javac, the Vineflower 1.12.0 jar and sources
-tools/vftrace/trace-diff.sh Foo.class 'Foo$1.class' --fixture --opt ternary-in-if=1
-KUNA_JVM_TRACE=kuna.vft <any run>                            # the kuna side alone
-```
-
-The build also compiles the oracle's Vineflower driver (`tools/oracle/java/driver`). Its
-inputs come from `KUNA_JVM_ORACLE`; the per-input overrides (`VF_JAR`, `VF_SRC`, `JAVAC`,
-`BUILD`) are at the top of `build.sh`.
-
-Use it whenever an output difference is not obviously in the writer. It sees only the
-statement tree (not the CFG, SSA state or variable names), and a method that throws
-mid-pipeline just stops; `tools/vftrace/README.md` has the format and the canonicalization
-rules. For quick runs outside the CLI, `cargo run -p kuna-jvm --example jvmdec -- [--opt
-key=value]... [--runtime SPEC] [--jobs N] [-o DIR] <class|jar|dir>` takes Vineflower's
-option names directly.
+**When a case differs.** The diff shows the symptom, rarely the pass. `kuna decompile
+<class|jar|dir> [<class>] [--option NAME VALUE]...` reruns a class under any option set;
+`--option` also takes Vineflower's option names.
 
 ## javac's block layout
 
@@ -1116,7 +1095,7 @@ hunk.
 4. If the reference JDK moves, regenerate the embedded varargs table
    (`tests/data/jdk_varargs/gen.sh`) and the kernel goldens under `tests/data/`.
 5. Rebuild the oracle corpora (Java, plugins, Kotlin) with the new release jar (`tools/oracle`
-   pins 1.12.0's jar hash and commit; update both) and regenerate `tests/jvm/`; run the corpus and use the trace differ on every case that no longer
+   pins 1.12.0's jar hash and commit; update both) and regenerate `tests/jvm/`; run the corpus and fix every case that no longer
    matches. Re-record `tests/jvm/baseline.txt` only as part of the sync, and say so in the
    commit message.
 6. Update this page (version, commit, the differences above), the crate header in
