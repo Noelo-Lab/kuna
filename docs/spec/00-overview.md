@@ -3200,7 +3200,7 @@ appends before the next one. That alone still renumbers a growing block once
 per 280 operations, which is quadratic work in a long straight-line block: a
 30,000-instruction block took minutes to build. So an append steps by the
 smaller of the fixed gap (`0x1000000`) and the order space divided by the
-block's operation count. Blocks of up to 256 operations step exactly as
+block's operation count. Blocks of up to 255 operations step exactly as
 before; a longer block's gap shrinks as it grows, a renumber then leaves room
 for about as many appends as the block already holds, and the renumbers of a
 block grow with the logarithm of its length.

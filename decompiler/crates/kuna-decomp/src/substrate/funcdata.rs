@@ -4135,8 +4135,8 @@ impl Funcdata {
     /// `before`, then compute `ordbefore`/`ordafter` from neighbours and either
     /// set an overflow-safe midpoint or recompute the whole order. An append that
     /// finds no room renumbers into the lower half of the order space, and an
-    /// append to a block of more than 256 ops takes a gap that shrinks with the
-    /// block's length, so each renumbering leaves room for as many appends as
+    /// append that makes a block 256 ops or longer takes a gap that shrinks with
+    /// the block's length, so each renumbering leaves room for as many appends as
     /// the block already holds and building a block stays linear in its ops.
     /// The BRANCHIND `f_switch_out` mark is applied via the block flags.
     pub fn bb_insert_op(&mut self, op: OpId, bl: BlockId, before: Option<OpId>) {
