@@ -13,6 +13,7 @@ mod decompile_graph;
 mod disassemble;
 mod embedded_specs;
 mod fid;
+mod flirt;
 mod assertdecl;
 mod funcdecl;
 mod function_info;
@@ -62,6 +63,7 @@ const COMMANDS: &[(&str, CommandHandler)] = &[
     ("modes", cmd_modes),
     ("specs", specs::run),
     ("fid", fid::run),
+    ("flirt", flirt::run),
 ];
 
 fn main() -> ExitCode {
@@ -143,6 +145,7 @@ fn usage() {
          kuna specs [-a <dir>] [<slaspec>...] [--diff]\n\
          kuna fid build <lib.a|*.o ...> -o <out.fid> --lang <id> --cspec <id>\n\
          kuna fid query <binary> --db <file.fid> --addr <address> [--addr <address> ...] --json\n\
+         kuna flirt make <lib.a|*.o ...> -o <out.pat> [--sig <out.sig>] [--libname NAME]\n\
          kuna --version\n\
          \n\
          --image NAME (any subcommand): load that image of a dyld shared cache"
