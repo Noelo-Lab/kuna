@@ -1,26 +1,7 @@
-//! kuna fix `kt_default_args_call` (`kuna_fixes`): a call that leaves
-//! arguments to their defaults is written as the call the source makes.
-//!
-//! kotlinc compiles `foo(a)` of `fun foo(a: Int, b: Int = 1)` to a call of
-//! the synthetic `foo$default(a, 0, mask, null)`, which takes a placeholder
-//! for every defaulted parameter, one `int` mask bit per value parameter
-//! (set: use the default) and a marker; a member's bridge is static and takes
-//! the receiver first (an interface's lives in its `DefaultImpls`), and a
-//! constructor's is `<init>(.., mask, DefaultConstructorMarker)`. Vineflower
-//! prints these calls as they are. A function call is resugared when its
-//! bridge is synthetic and static, its marker `null`, its masks constants
-//! naming value parameters only, each defaulted parameter declares a default
-//! in the Kotlin metadata of the one function of that name and descriptor
-//! the bridge stands for and is passed a constant. Defaulted arguments are
-//! left out; passed ones after a defaulted one are written by name. When
-//! another function of that name the call could resolve to might accept
-//! what is left (by count and by type, or by names), the passed value
-//! arguments are written by name, or the call is left as it is. A call in a
-//! method of the target's name that has no metadata (an `@JvmOverloads`
-//! overload, which delegates to the bridge) is left as it is: written as the
-//! call of the function, it would read as the overload calling itself.
-//! Constructor calls (`new`, and a secondary constructor's delegation) go
-//! through `kt_default_args_super_call`'s resugaring.
+//! Fix `kt_default_args_call`: a call of a `$default` bridge whose masks are
+//! constants and whose defaulted parameters declare defaults is written as the
+//! call of the function it stands for, the defaulted arguments left out and the
+//! others named where the call could otherwise resolve to another function.
 
 use std::cell::Cell;
 use std::rc::Rc;

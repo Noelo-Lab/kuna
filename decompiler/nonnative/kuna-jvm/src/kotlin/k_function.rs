@@ -26,8 +26,7 @@ use crate::kotlin_writer::{is_stop_signal, KotlinWriter};
 use crate::kt_attrs::KtAttrs;
 use crate::kt_flags::Flags;
 use crate::kt_proto::{self, MemberKind, Modality, Visibility};
-use crate::fixes::kt_default_args::kt_default_args_bridge_lookup;
-use crate::fixes::kt_default_args::kt_default_value_names;
+use crate::fixes::kt_default_args;
 use crate::fixes::kt_declarations;
 use crate::fixes::kt_names::kt_function_parameter_name;
 use crate::fixes::kt_extensions;
@@ -307,7 +306,7 @@ impl KFunction {
             default_args_desc.push_str(&return_type.0.to_string());
 
             let bridge = kuna_fixes::enabled(KunaFix::KtDefaultArgsBridgeLookup).then(|| {
-                kt_default_args_bridge_lookup::locate(
+                kt_default_args::locate(
                     class_struct,
                     method,
                     parameters.len(),
@@ -590,7 +589,7 @@ impl KFunction {
                     .kuna_bridge()
                     .filter(|_| kuna_fixes::enabled(KunaFix::KtDefaultValueNames))
                     .and_then(|bridge| {
-                        kt_default_value_names::enter(
+                        kt_default_args::enter_defaults(
                             bridge,
                             class_struct,
                             method_struct,

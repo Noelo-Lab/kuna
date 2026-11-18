@@ -4566,7 +4566,7 @@ function, and their defaults printed as `= ...` (okio 5, okhttp 27, kotlin-stdli
 that names or leaves out its parameters. Where a function's Kotlin name is the JVM name of another function
 with the same JVM parameters (`@JvmName("pickInts") fun pick(xs: List<Int>, n: Int = 1)` beside `fun
 pick(xs: List<String>, n: Int = 2)`), it found the other function's method and printed its defaults. With
-the fix (`decompiler/nonnative/kuna-jvm/src/fixes/kt_default_args/kt_default_args_bridge_lookup.rs (locate)`) the
+the fix (`decompiler/nonnative/kuna-jvm/src/fixes/kt_default_args/mod.rs (locate)`) the
 method is `<JVM name>$default` with the function's own JVM descriptor's parameters and return type, the
 class's type first for a member, and the masks and marker; it must be static and synthetic, in the class or,
 for an interface's member, in its `DefaultImpls`, whose decompiled method the writer reads through that
@@ -4588,7 +4588,7 @@ name (`` `$this$toByteString`.size ``), a member's instance was `this` also in a
 Kotlin's `this` is the extension receiver (`fun String.pad(width: Int = this@Box.length)` printed `width:
 Int = this.length`, which Kotlin reads as the string's length), and the parameters of a function without
 code, an interface's abstract function, were not named at all (`by: Int = var1 * 2`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/kt_default_args/kt_default_value_names.rs (enter)`), while
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_default_args/mod.rs (enter_defaults)`), while
 `KFunction.stringify` writes a function's defaults, a variable of the default-arguments method at a value
 parameter's slot is written by the parameter's metadata name, at the extension receiver's slot `this`, and
 at slot 0 of a member `this`, or `this@Class` in an extension (`KVarExprent.getName`); an extension in a
@@ -4600,7 +4600,7 @@ checkcast MediaType` in okhttp 4.7.2, `new ArrayList ..; checkcast java/util/Lis
 same instruction whether or not the source wrote a cast. Vineflower prints it as part of the default: `=
 ", " as CharSequence`, `= null as MediaType?`, and `= ArrayList() as java.util.List` or `= "tag" as
 java.lang.CharSequence`, which kotlinc rejects. With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/kt_default_args/kt_default_value_coercion_cast.rs (uncast)`) a default
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_default_args/mod.rs (uncast)`) a default
 that is a cast of a reference to exactly the JVM type of the parameter the method assigns is printed as the
 cast's operand: the parameter's type is the default's expected type, so the declaration compiles to the
 same `checkcast`, and an operand that is not of that type is rejected rather than converted. The cast is

@@ -4,7 +4,7 @@ use crate::exprent::Exprent;
 use crate::k_dispatch::KExprentExt;
 use crate::k_types::KTypes;
 use crate::kotlin_exprent;
-use crate::fixes::kt_default_args::kt_default_value_names;
+use crate::fixes::kt_default_args;
 use crate::fixes::kt_extensions;
 use crate::fixes::kt_names::kt_function_parameter_name;
 use crate::fixes::kt_null_checks::kt_nullable_local;
@@ -113,7 +113,7 @@ impl KVarExprent {
             }
         }
         if kuna_fixes::enabled(KunaFix::KtDefaultValueNames) {
-            if let Some(name) = kt_default_value_names::name(self.0) {
+            if let Some(name) = kt_default_args::name_in_defaults(self.0) {
                 return name;
             }
         }
