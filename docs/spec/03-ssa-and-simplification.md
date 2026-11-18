@@ -3499,6 +3499,61 @@ x87 converts to the integer indefinite value when invalid is masked, take
 `FLOAT_TRUNC`'s unspecified result, as for `FISTTP`. Not settable: the rewrite
 is the conversion the instruction performs under that control word.
 
+**opaquepredicate** —
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_opaquepredicate.rs
+(RuleOpaquePredicate)`, oppool1, fires on INT_EQUAL, INT_NOTEQUAL, INT_LESS and
+INT_LESSEQUAL. With `option opaquepredicate on` (default off, on in the
+`aggressive` preset) a comparison that has the same result for every input is
+replaced by a `COPY` of that result, and constant-branch removal then deletes
+the arm that never runs. Control-flow obfuscation plants such comparisons in
+front of real code: `x * (x + 1)` is always even, `x * x` is 0 or 1 modulo 4,
+`(x | y) - (x & y)` always equals `x ^ y`. The rule folds only on an exact
+proof, of which there are three.
+
+*Low bits.* Bit `i` of a sum, difference, product, negation, left shift by a
+constant, or bitwise operation depends only on bits `0..=i` of its operands,
+and `COPY`, `INT_ZEXT`, `INT_SEXT` and a `SUBPIECE` at offset 0 keep the low
+bits of their operand. Each side of the comparison must be a constant or a
+value reduced to at most its low 8 bits — `INT_AND` with a constant mask, or
+`INT_REM` by a constant power of two — possibly under zero extensions. The
+operand of that reduction is read through the operations above; any other
+definition is an *input*, and at most two distinct inputs are allowed. The
+comparison is then a function of the low `k` bits of the inputs, where `k` is
+the width of the widest mask, and it is evaluated for all `2^k` or `4^k`
+assignments, stopping at the first two that disagree. A signed remainder
+(`INT_SREM` by a power of two) takes the sign of its dividend, so only whether
+it is zero follows from the low bits: it is admitted in an `INT_EQUAL` or
+`INT_NOTEQUAL` against zero, and elsewhere only while every assignment makes
+it zero.
+
+*Low bits that always differ.* For `INT_EQUAL` and `INT_NOTEQUAL` whose sides
+are both read through the same operations without a mask, the low four bits of
+the two sides are evaluated for every assignment of the low four bits of the
+inputs. If they differ every time the sides are never equal (`x * (x + 1)` is
+even, `2 * y + 1` is odd). This proof can only show inequality.
+
+*Linear combination of bitwise terms.* For `INT_EQUAL` and `INT_NOTEQUAL` each
+side is read as a sum, difference or negation of terms, each optionally
+multiplied or left-shifted by a constant, where a term is a constant or an
+expression built from `INT_AND`, `INT_OR`, `INT_XOR` and `INT_NEGATE` over the
+inputs with no constant other than zero and all ones. Such a sum takes the
+value its per-bit truth table dictates in every bit position, so the two sides
+differ by one constant for every input exactly when they do with each input set
+to all zeros or all ones. The rule evaluates those assignments (four for two
+inputs); if the difference is the same constant in all of them, the equality
+is always true (difference zero) or always false. An operation that does not
+fit the layer it is met in — a product of two inputs, an `INT_AND` with a mask
+— is itself taken as an input, which only makes the claim proven stronger.
+
+*Bounds.* A free Varnode, a value wider than 8 bytes, a third input, or a
+tree of more than 48 operations proves nothing, and the comparison is left as
+it is; so is any comparison that some assignment distinguishes, such as
+`x * (x + 2) & 1`. Nothing restricts the rule to obfuscated code: `x * 8 == 0x3f`
+folds on the same proof, including when it is one half of a flag-derived
+`<=`. The option is off by default because the predicate is part
+of what the binary does: with it folded, the output no longer shows that the
+function was obfuscated or which blocks the bogus edges reached.
+
 **flagcompare** (GH-1276 / GH-8777) —
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_flagcompare.rs`, two rules
 for architectures that model condition flags as explicit bits.

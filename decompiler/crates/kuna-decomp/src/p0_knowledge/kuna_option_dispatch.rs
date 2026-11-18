@@ -100,6 +100,7 @@ kuna_options! { self, p1;
     },
     "returnbranch" => on_off!(return_branch, "Computed jumps through the return register"),
     "globalarrayanchor" => on_off!(global_array_anchor, "Global array anchor preservation"),
+    "opaquepredicate" => on_off!(opaque_predicate, "Constant-comparison folding"),
     "signedness" => {
         let (val, msg) = crate::kuna_typeround::OptionSignedness.apply(p1)?;
         self.signedness = val;

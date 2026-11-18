@@ -1,0 +1,88 @@
+<decompilertest>
+<!-- P3 simplification quiescence, P0 option opaquepredicate (default off).
+     A comparison that has one result for every input is folded, and the
+     branch it guards loses the arm that never runs. clang -O0, x86-64:
+
+       int check(int x, int y)   { if (((x * (x + 1)) & 1) == 0 || y < 10) return y + 1; return y - 1; }
+       int keep(int x, int y)    { if (((x * (x + 2)) & 1) == 0 || y < 10) return y + 1; return y - 1; }
+       int square(int x, int y)  { if (((x * x) & 3) == 2) return y * 3; return y - 7; }
+       int mixed(unsigned x, unsigned y, int z)
+                                 { if ((x | y) - (x & y) != (x ^ y)) return z * 5; return z + 2; }
+       int mixedkeep(unsigned x, unsigned y, int z)
+                                 { if ((x | y) - (x & y) != (x ^ (y & 4))) return z * 5; return z + 2; }
+       int parity(unsigned x, unsigned y, int z)
+                                 { if (x * (x + 1) == 2 * y + 1) return z * 9; return z + 4; }
+
+     x * (x + 1) is even and x * x is 0 or 1 modulo 4 (decided by the low
+     bits); (x | y) - (x & y) equals x ^ y (decided with each input all zeros
+     or all ones); an even product never equals an odd sum (the low bits of
+     the two sides always differ). keep and mixedkeep depend on their inputs
+     and must stay. -->
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">f30f1efa554889e5897df88975f48b45f88b4df883c1010fafc183e00183f8007406837df40a7d0b8b45f483c0018945fceb098b45f483e8018945fc8b45fc5dc3</bytechunk>
+<symbol space="ram" offset="0x100000" name="check"/>
+<bytechunk space="ram" offset="0x100050" readonly="true">f30f1efa554889e5897df88975f48b45f88b4df883c1020fafc183e00183f8007406837df40a7d0b8b45f483c0018945fceb098b45f483e8018945fc8b45fc5dc3</bytechunk>
+<symbol space="ram" offset="0x100050" name="keep"/>
+<bytechunk space="ram" offset="0x1000a0" readonly="true">f30f1efa554889e5897df88975f48b45f80faf45f883e00383f80275096b45f4038945fceb098b45f483e8078945fc8b45fc5dc3</bytechunk>
+<symbol space="ram" offset="0x1000a0" name="square"/>
+<bytechunk space="ram" offset="0x1000e0" readonly="true">f30f1efa554889e5897df88975f48955f08b45f80b45f48b4df8234df429c88b4df8334df439c874096b45f0058945fceb098b45f083c0028945fc8b45fc5dc3</bytechunk>
+<symbol space="ram" offset="0x1000e0" name="mixed"/>
+<bytechunk space="ram" offset="0x100120" readonly="true">f30f1efa554889e5897df88975f48955f08b45f80b45f48b4df8234df429c88b4df88b55f483e20431d139c874096b45f0058945fceb098b45f083c0028945fc8b45fc5dc3</bytechunk>
+<symbol space="ram" offset="0x100120" name="mixedkeep"/>
+<bytechunk space="ram" offset="0x100170" readonly="true">f30f1efa554889e5897df88975f48955f08b45f88b4df883c1010fafc18b4df4d1e183c10139c875096b45f0098945fceb098b45f083c0048945fc8b45fc5dc3</bytechunk>
+<symbol space="ram" offset="0x100170" name="parity"/>
+</binaryimage>
+<script>
+<com>option ctypes on</com>
+<com>parse line extern int check(int x, int y);</com>
+<com>parse line extern int keep(int x, int y);</com>
+<com>parse line extern int square(int x, int y);</com>
+<com>parse line extern int mixed(unsigned int x, unsigned int y, int z);</com>
+<com>parse line extern int mixedkeep(unsigned int x, unsigned int y, int z);</com>
+<com>parse line extern int parity(unsigned int x, unsigned int y, int z);</com>
+<com>option opaquepredicate off</com>
+<com>lo fu check</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu square</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu mixed</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu parity</com>
+<com>decompile</com>
+<com>print C</com>
+<com>option opaquepredicate on</com>
+<com>lo fu check</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu keep</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu square</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu mixed</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu mixedkeep</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu parity</com>
+<com>decompile</com>
+<com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="off keeps the test of a product of consecutive integers" min="1" max="1">x \* \(x \+ 1\) &amp; 1</stringmatch>
+<stringmatch name="on returns the only reachable value" min="1" max="1">^  return y \+ 1;</stringmatch>
+<stringmatch name="a product that is odd for some input stays" min="1" max="1">x \* \(x \+ 2\) &amp; 1</stringmatch>
+<stringmatch name="off keeps the test of a square modulo four" min="1" max="1">x \* x &amp; 3</stringmatch>
+<stringmatch name="on drops the arm behind a square that is 2 modulo four" min="1" max="1">^  return y \+ -7;</stringmatch>
+<stringmatch name="the dead arm of the square test prints only when off" min="1" max="1">y \* 3</stringmatch>
+<stringmatch name="off keeps the bitwise identity" min="1" max="1">\(x \| y\) - \(x &amp; y\) != \(x \^ y\)\)</stringmatch>
+<stringmatch name="on folds the bitwise identity" min="1" max="1">^  return z \+ 2;</stringmatch>
+<stringmatch name="an equality that fails for some input stays" min="1" max="1">\(x \| y\) - \(x &amp; y\) != \(x \^ y &amp; 4\)</stringmatch>
+<stringmatch name="off keeps the comparison of an even product with an odd sum" min="1" max="1">x \* \(x \+ 1\) != y \* 2 \+ 1</stringmatch>
+<stringmatch name="on folds sides whose low bits always differ" min="1" max="1">^  return z \+ 4;</stringmatch>
+</decompilertest>

@@ -623,6 +623,8 @@ pub struct Architecture {
     /// Keep mapped global array bases separate from negative element offsets
     /// (option `globalarrayanchor`).
     pub global_array_anchor: bool,
+    /// Fold comparisons proven constant for every input (option `opaquepredicate`).
+    pub opaque_predicate: bool,
     /// (kuna) Refuse to split a shared RETURN block that stores to GLOBALS, so
     /// a 72-store epilogue is not cloned into each predecessor (option
     /// `retsplitglobal`).  See [`crate::p8_structure::kuna_retsplitglobal`].
@@ -2359,6 +2361,7 @@ impl Architecture {
             switch_selector_guard: false, // (kuna) option switchselector; reset_defaults sets the shipped default
             sparc_struct_return: false,
             global_array_anchor: false,
+            opaque_predicate: false,
             ret_split_global: false,
             ret_split_limit: None,
             stack_addr_arg_trial: false,
@@ -3444,6 +3447,7 @@ impl Architecture {
         // reads `data.get_arch().<flag>`; the rule is registered `enabled=false`
         // so the live flag drives both the DIV default and the toggle).
         ctx.global_array_anchor = self.global_array_anchor;
+        ctx.opaque_predicate = self.opaque_predicate;
         ctx.ret_split_global = self.ret_split_global; // retsplitglobal
         ctx.ret_split_limit = self.ret_split_limit; // retsplitlimit
         // (kuna) resolve the byte-shuffle user-op ids ONCE per program, so the
