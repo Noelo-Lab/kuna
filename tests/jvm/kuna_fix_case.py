@@ -22,6 +22,9 @@ Steps, all under tests/jvm/kuna-fixes/ (README.md there has the layout):
   4. runs the corpus runner on both passes: the compat pass must match Vineflower's text, and kuna's
      default output becomes expected/<id>EXT (printed as a diff against the compat text, for review);
   5. runs both passes again: both must match.
+The new case must also pass tests/fix_isolation.rs, and a fix that changes kuna's default text on
+Vineflower's own inputs moves digests that make test-jvm reports (kuna/<id>): read those texts and
+re-record them with the corpus runner's --save-digests (docs/jvm.md, "Fixing a Vineflower bug").
 
 Needs KUNA_JVM_ORACLE (the oracle workspace, decompiler/nonnative/kuna-jvm/tools/oracle/README.md) and
 cargo; the corpus runner is built in release mode (CARGO_TARGET_DIR is honoured).

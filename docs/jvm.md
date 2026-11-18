@@ -727,7 +727,11 @@ example):
    stores what the release jar prints (the compat expectation, which must contain the
    failure comment), checks that kuna in compat mode prints exactly that, stores kuna's
    default output, prints the diff for review, and rebuilds `cases.tsv` and the READMEs with
-   `regen.py`.
+   `regen.py`. The case must also pass `tests/fix_isolation.rs`, which turns its switch off
+   alone: a Java case must then print its compat text, and a Kotlin or form-option case
+   something other than its default text. A Java case that a second fix also changes names
+   that fix in the test's `PARTNERS` table; a Kotlin case whose fix another one masks names
+   that one in `MASKED_BY`.
 5. **Describe it.** A row in the table above: the defect, what kuna does instead, one
    sentence each. Spec section 10.16 changes only when the fix adds a mechanism that other
    fixes share or changes an invariant of the gate.
@@ -748,7 +752,9 @@ example):
 
 Fixes made in parallel meet in the same files. Keep both sides of `fixes.toml` and of
 `tests/jvm/kuna-fixes/cases.json`, then rerun `regen.py` (it rewrites `cases.tsv` and both
-READMEs, and refuses a case whose `fix` is not an id of `fixes.toml`).
+READMEs, keeping each case's `digest`, and refuses a case whose `fix` is not an id of
+`fixes.toml`); where both sides moved a digest, rerun `corpus --save-digests --out DIR`
+and read the texts of the ids it reports.
 
 ## The JDK runtime library
 
