@@ -1,21 +1,6 @@
-//! kuna fix `lambda_type_variable_target` (`kuna_fixes`): a lambda or method
-//! reference passed where a generic method takes a bare type variable, as
-//! `single(T element)`, gives javac no constraint on that variable (JLS
-//! 18.5.2): the variable is resolved from its other bounds first and the
-//! lambda is then checked against the result. When the call's result is in
-//! turn an argument of a generic method, as `concat(single((b, p) -> ...),
-//! chunks)` for `<T> It<T> concat(It<? extends T>... parts)`, the other
-//! arguments give that method's variable proper lower bounds, and unless
-//! the target type fixes it, it resolves to their least upper bound
-//! (`Leaf`, or the capture of `? extends Chunk`), which is not a functional
-//! interface: javac rejects the lambda. `InvocationExprent.getInferredExprType`
-//! takes the lambda's own interface for the variable, so Vineflower writes
-//! the lambda bare, without the cast the source needed. With the fix the
-//! outer call works out the variable's bounds from its other arguments and
-//! its declared target (a method's generic return type, or the function
-//! type's return type in a lambda body) and, when they resolve it to a type
-//! other than the lambda's interface, the lambda is cast to its interface,
-//! `single((Chunk)((b, p) -> ...))`; the cast compiles to no instruction.
+//! Fix `lambda_type_variable_target`: a lambda passed for a bare type variable
+//! that the outer call's other arguments and target resolve to another type
+//! is cast to its interface.
 
 use crate::classes_processor::ClassNodeType;
 use crate::code_constants::CodeConstants;

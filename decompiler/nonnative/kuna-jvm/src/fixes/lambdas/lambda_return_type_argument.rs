@@ -1,18 +1,6 @@
-//! kuna fix `lambda_return_type_argument` (`kuna_fixes`), called from
-//! `InvocationExprent::get_inferred_expr_type`.
-//!
-//! `getInferredExprType` writes explicit type arguments on a generic call
-//! (a qualifier of another) when it maps a type variable from no argument,
-//! and takes the value it has for it, which may come from where the chain's
-//! result goes rather than from the call: for `ext.map(Ext::names).orElse(
-//! Collections.emptyList())`, whose method reference's class is outside the
-//! input, `U` gets `orElse`'s argument's `List<String>`, and `ext.<List<String>>
-//! map(Ext::names)` does not compile, `Ext.names` returning a `Collection`.
-//! javac infers a variable the function type of a lambda or method reference
-//! argument returns from what its implementation returns. With the fix,
-//! type arguments contradicting that (the implementation's erased return
-//! type is no subclass of the argument's class) are not written, and javac
-//! infers them as the source did (Elasticsearch's `TransportVersion`).
+//! Fix `lambda_return_type_argument`: explicit type arguments that contradict
+//! the return type of a lambda or method reference argument's implementation
+//! are not written.
 
 use crate::code_type::CodeType;
 use crate::decompiler_context::DecompilerContext;

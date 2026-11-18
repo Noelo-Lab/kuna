@@ -1,15 +1,6 @@
-//! kuna fix `self_referencing_lambda` (`kuna_fixes`): lambdas whose bodies
-//! instantiate themselves.
-//!
-//! `LambdaProcessor` writes a lambda whose implementation is a synthetic
-//! method of its own class in place, as a lambda expression, and nests the
-//! lambdas that method creates under it. When an implementation method
-//! creates, directly or through the bodies of other lambdas, a lambda it
-//! implements itself, that nesting has a cycle and the expansion has no end:
-//! Vineflower throws `Lambda X is recursive?!` for one ordering of the
-//! one-method cycle and overflows the stack for the others. Such a method is
-//! kept as a method of the class instead, and every lambda it implements is
-//! written as a method reference to it, which means the same call.
+//! Fix `self_referencing_lambda`: a lambda implementation method that creates
+//! a lambda it implements stays a method of the class, and its lambdas are
+//! written as method references to it.
 
 use std::collections::{BTreeMap, BTreeSet};
 
