@@ -2221,7 +2221,8 @@ mod tests {
         // and kuna-ebpf-elf-map-reloc / an EM_BPF object loads and its map and subprogram relocations land in imm
         // and kuna-riscv-zcmp / RISC-V Zcmp push/pop decode under the Zcmp language variant
         // and gh1627-x86-senduipi-gatherpf / SENDUIPI is not RDRAND and VGATHERPF indexes with a ZMM register
-        assert_eq!(count, 775, "corpus file count drifted");
+        // and gh1628-x86-vmx-decode-flags / VMREAD/VMWRITE decode without REX.W and VMX instructions set CF/ZF
+        assert_eq!(count, 776, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

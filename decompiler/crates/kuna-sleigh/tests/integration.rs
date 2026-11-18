@@ -88,6 +88,8 @@ mod x86_bound;
 
 #[path = "x86_uintr_gatherpf.rs"]
 mod x86_uintr_gatherpf;
+#[path = "x86_vmx_status.rs"]
+mod x86_vmx_status;
 
 #[path = "octeon_core.rs"]
 mod octeon_core;
