@@ -2632,7 +2632,7 @@ condition and everything after it are in later nodes, and Vineflower drops them,
 `IntProgression`'s `if (step == 0) throw ..` and the field stores after it, or
 `UndispatchedCoroutine`'s thread-context save (6 constructors in kotlin-stdlib and
 kotlinx-coroutines, 3 more in abstract classes `kt_abstract_class_constructor` reads). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/kt_delegation_calls/kt_constructor_body_after_first_block.rs (body)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_delegation_calls/mod.rs (nonempty_body)`)
 the body is rendered when the first node is empty and counts as empty only when the rendering is
 blank.
 
@@ -2774,7 +2774,7 @@ from the primary constructor's first statement with the invoked class's short na
 BlockingCoroutine<T>(..) : AbstractCoroutine(parentContext, true, true)` (12 in kotlin-stdlib, 43 in
 kotlinx-coroutines); kotlinc rejects it ("one type argument expected"). The arguments are in the
 class's Kotlin metadata, in its supertype list. With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/kt_delegation_calls/kt_supertype_type_arguments.rs (type_arguments)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_delegation_calls/mod.rs (type_arguments)`)
 the supertype there that names the invoked class gives its arguments, written after the name as
 `KType` writes them, `: AbstractCoroutine<T>(..)`, `: PrimitiveSpreadBuilder<IntArray>(size)`; the
 class's type parameters are in scope while they are read (fix `kt_type_parameter_id`), so an inner
@@ -2916,7 +2916,7 @@ else is left out with a warning (6 in okhttp and kotlin-stdlib: `KotlinNullPoint
 `Response.Builder()`). With the fix `hideEmptySuper` keeps the call it removes on the method
 (`decompiler/nonnative/kuna-jvm/src/p8_structure/initializer_processor.rs (hide_empty_super)`), and
 `KConstructor`
-(`decompiler/nonnative/kuna-jvm/src/fixes/kt_delegation_calls/kt_hidden_empty_super_call.rs (hidden_call)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_delegation_calls/mod.rs (hidden_call)`)
 writes a primary constructor's as `ResponseBody()` in the header (with the metadata's type arguments,
 fix `kt_supertype_type_arguments`), and a secondary constructor's as no delegation call, which in a
 class without a primary constructor is the same `super()`; the constructor's statements stay in its

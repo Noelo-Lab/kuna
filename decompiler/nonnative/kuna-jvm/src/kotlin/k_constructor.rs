@@ -16,13 +16,11 @@ use crate::k_parameter::KParameter;
 use crate::k_type::KType;
 use crate::k_utils::KUtils;
 use crate::key::Key;
-use crate::fixes::kt_delegation_calls::kt_constructor_body_after_first_block;
+use crate::fixes::kt_delegation_calls;
 use crate::fixes::kt_constructors;
 use crate::fixes::kt_default_args::kt_default_args_call;
 use crate::fixes::kt_names::kt_function_parameter_name;
 use crate::fixes::kt_delegation_calls::kt_default_args_super_call;
-use crate::fixes::kt_delegation_calls::kt_hidden_empty_super_call;
-use crate::fixes::kt_delegation_calls::kt_supertype_type_arguments;
 use crate::fixes::kt_java_syntax::kt_java_reference_cast;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::kotlin_options::KotlinOptions;
@@ -437,7 +435,7 @@ impl KConstructor {
 
             let exprents = KConstructor::first_node(method_wrapper).exprents();
             let hidden_super = kuna_fixes::enabled(KunaFix::KtHiddenEmptySuperCall)
-                && kt_hidden_empty_super_call::hidden_call(method_wrapper).is_some();
+                && kt_delegation_calls::hidden_call(method_wrapper).is_some();
             if hidden_super {
                 buf.append(")");
             } else {
@@ -491,7 +489,7 @@ impl KConstructor {
                 .is_empty()
                 && kuna_fixes::enabled(KunaFix::KtConstructorBodyAfterFirstBlock)
             {
-                rendered = kt_constructor_body_after_first_block::body(|| {
+                rendered = kt_delegation_calls::nonempty_body(|| {
                     self.render_body(root, indent, method_wrapper)
                 });
             }
@@ -632,7 +630,7 @@ impl KConstructor {
         let method_wrapper = self.method_wrapper(wrapper);
 
         let hidden = kuna_fixes::enabled(KunaFix::KtHiddenEmptySuperCall)
-            .then(|| kt_hidden_empty_super_call::hidden_call(method_wrapper))
+            .then(|| kt_delegation_calls::hidden_call(method_wrapper))
             .flatten();
         let invocation = match hidden {
             Some(invocation) => invocation,
@@ -669,7 +667,7 @@ impl KConstructor {
 
         buf.append(super_class.as_deref().unwrap_or("null"));
         if kuna_fixes::enabled(KunaFix::KtSupertypeTypeArguments) {
-            if let Some(arguments) = kt_supertype_type_arguments::type_arguments(
+            if let Some(arguments) = kt_delegation_calls::type_arguments(
                 self.class_struct,
                 &invocation.get_classname(),
                 indent,

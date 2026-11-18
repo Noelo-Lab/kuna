@@ -11,7 +11,7 @@ use crate::code_constants::{ACC_STATIC, OPC_ALOAD, OPC_ILOAD, OPC_INVOKESPECIAL,
 use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;
 use crate::fixes::kt_default_args::kt_default_args_call;
-use crate::fixes::kt_delegation_calls::kt_hidden_empty_super_call;
+use crate::fixes::kt_delegation_calls;
 use crate::interpreter_util::InterpreterUtil;
 use crate::invocation_exprent::InvocationExprent;
 use crate::k_element::KElement;
@@ -264,7 +264,7 @@ pub fn delegation(wrapper: ClassWrapper, method: MethodWrapper) -> Option<Delega
     let (root, failed) = method.with(|d| (d.root, d.decompile_error.is_some()));
     let root = root.filter(|_| !failed)?;
     if kuna_fixes::enabled(KunaFix::KtHiddenEmptySuperCall)
-        && kt_hidden_empty_super_call::hidden_call(method).is_some()
+        && kt_delegation_calls::hidden_call(method).is_some()
     {
         return Some(Delegation::Implicit);
     }
