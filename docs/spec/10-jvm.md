@@ -2092,7 +2092,7 @@ thing done before a break: `if (round) { t = t.truncate(); if (up) { t = t.plus(
 `yield t.truncate(); if (up) { yield t.plus(1); }` (unreachable code), and a case left by a
 failed condition, a loop's exit or an empty block yields nothing (`switch rule completes without
 providing a value`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/switches/switch_expression_assignments.rs`) the
+(`decompiler/nonnative/kuna-jvm/src/fixes/switches.rs`) the
 switch becomes an expression only when every break source that is reached by completing normally
 (an empty block, an `if` without else, a conditional loop) is a block ending in an assignment to
 the variable or a throw, and every assignment to it in the cases is one of those. Upstream has no
@@ -3723,7 +3723,7 @@ case bodies out in the order of the source's cases (a switch over strings includ
 buckets and its second switch follow the source); the switch instruction's targets keep that
 order. `SwitchStatement::sort_edges_and_nodes` orders the case groups by their smallest key,
 the default last, then moves each case that falls through after its predecessor. With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/switches/switch_case_order.rs (positions)`) a
+(`decompiler/nonnative/kuna-jvm/src/fixes/switches.rs (positions)`) a
 group is ordered by the first instruction its keys jump to (the default's target included), so
 `case 'M' .. 'L' .. 'F' .. '-'`, an enum switch's constants and a `default` written between
 cases come out as the source has them; the fall-through pass is unchanged. javac's synthetic
@@ -3738,7 +3738,7 @@ code. `SwitchStatement.toJava` writes every entry of the default's group, so a s
 `default:` prints as `case 3: default:`, and `LabelHelper::hide_default_switch_edges`, which
 drops an empty last default, leaves such keys behind as an empty last case (`case 3: case 5:
 case 6: case 7:`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/switches/switch_table_fillers.rs (filler_edges)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/switches.rs (filler_edges)`)
 a key inside the table's range whose target is the default's is a filler when javac would
 still choose a `tableswitch` for the remaining labels (`Gen.visitSwitch`: `4 + (hi - lo + 1) +
 3 * 3 <= 3 + 2 * n + 3 * n` for `n` labels); the Java switch printer leaves fillers out of the
@@ -3759,13 +3759,13 @@ MatchException(null, null);`. And when one case gives an enum switch expression'
 the method returns it, javac lets that case fall into the return instruction: the case reads
 `return v;`, `SwitchExpressionHelper` finds no variable the cases assign, and the switch is
 printed as a statement with javac's default. With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/switches/switch_synthetic_default.rs (is_javac_default)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/switches.rs (is_javac_default)`)
 the default is javac's when its statement is exactly that throw and its target comes before
 every case's target in the switch instruction; `SwitchExprent::to_java` then leaves it out of
 any switch expression, and `SwitchStatement::to_java` out of a pattern switch statement (javac
 adds it to both again). A switch over an enum (not a pattern switch) with javac's default was
 an expression, since a statement switch over an enum gets none:
-`decompiler/nonnative/kuna-jvm/src/fixes/switches/switch_expression_return.rs (process)`,
+`decompiler/nonnative/kuna-jvm/src/fixes/switches.rs (process)`,
 called where `SwitchExpressionHelper` declines one, turns such a switch with no successor whose
 cases are each one block ending in `return v` or `throw` into `return switch (..) { .. };`: the
 returns become yields, the switch the phantom backing of a `SwitchExprent` in a block after it

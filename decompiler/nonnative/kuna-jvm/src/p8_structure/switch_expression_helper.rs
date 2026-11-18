@@ -7,7 +7,7 @@ use crate::exit_exprent::Type as ExitType;
 use crate::exprent::Exprent;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::kuna_fixes::{self, KunaFix};
-use crate::fixes::switches::{switch_expression_assignments, switch_expression_return};
+use crate::fixes::switches;
 use crate::pair::Pair;
 use crate::root_statement::RootStatement;
 use crate::rt::{JHashMap, JHashSet};
@@ -45,7 +45,7 @@ impl SwitchExpressionHelper {
         if let Some(switch_stat) = stat.try_as_switch() {
             ret |= Self::process_statement(switch_stat)
                 || (kuna_fixes::enabled(KunaFix::SwitchSyntheticDefault)
-                    && switch_expression_return::process(switch_stat));
+                    && switches::return_switch_expression(switch_stat));
         }
 
         ret
@@ -146,7 +146,7 @@ impl SwitchExpressionHelper {
         };
 
         if kuna_fixes::enabled(KunaFix::SwitchExpressionAssignments)
-            && !switch_expression_assignments::every_assignment_yields(
+            && !switches::every_assignment_yields(
                 stat,
                 &break_jumps,
                 relevant_var.get_index(),

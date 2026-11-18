@@ -12,7 +12,7 @@ use crate::function_exprent::FunctionType;
 use crate::pattern::Pattern;
 use crate::rt::{BitSet, JHashSet, JavaEq, JavaHash};
 use crate::stat_edge::StatEdge;
-use crate::fixes::switches::switch_synthetic_default;
+use crate::fixes::switches;
 use crate::switch_statement::SwitchStatement;
 use crate::text_buffer::TextBuffer;
 use crate::var_type::{get_class, VarType};
@@ -70,7 +70,7 @@ impl SwitchExprent {
         let switch_type = backing.get_headexprent().get_expr_type();
         let is_exhaustive = self.is_exhaustive()
             || (kuna_fixes::enabled(KunaFix::SwitchSyntheticDefault)
-                && switch_synthetic_default::is_javac_default(backing));
+                && switches::is_javac_default(backing));
 
         buf.append_buffer(&backing.get_headexprent().to_java(indent))
             .append(" {")

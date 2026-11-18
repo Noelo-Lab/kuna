@@ -45,7 +45,7 @@ use crate::stat_edge::StatEdge;
 use crate::statement::Statement;
 use crate::struct_class::StructClass;
 use crate::struct_general_attribute::StructGeneralAttribute;
-use crate::fixes::switches::switch_expression_poly_cast;
+use crate::fixes::switches;
 use crate::switch_head_exprent::SwitchHeadExprent;
 use crate::text_buffer::TextBuffer;
 use crate::text_util::TextUtil;
@@ -1387,7 +1387,7 @@ impl ExprProcessor {
             && !(cast_always || do_cast_null || do_cast_narrowing || do_cast_generics)
             && left_type.type_ == CodeType::Object
             && kuna_fixes::enabled(KunaFix::SwitchExpressionPolyCast)
-            && switch_expression_poly_cast::results_promote(exprent)
+            && switches::results_promote(exprent)
         {
             cast = false;
         }

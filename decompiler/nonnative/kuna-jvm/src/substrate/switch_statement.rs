@@ -23,7 +23,7 @@ use crate::statement::{
     add_instanceof_pattern_vars, EdgeDirection, LastBasicType, Statement, StatementKind,
     StatementType,
 };
-use crate::fixes::switches::{switch_case_order, switch_synthetic_default, switch_table_fillers};
+use crate::fixes::switches;
 use crate::text_buffer::TextBuffer;
 use crate::validation_helper::ValidationHelper;
 use crate::var_exprent::VarExprent;
@@ -156,7 +156,7 @@ impl SwitchStatement {
             )
         });
         let fillers = if kuna_fixes::enabled(KunaFix::SwitchTableFillers) {
-            switch_table_fillers::filler_edges(self)
+            switches::filler_edges(self)
         } else {
             Vec::new()
         };
@@ -173,7 +173,7 @@ impl SwitchStatement {
             let default_last =
                 !edges.is_empty() && Some(edges.get(edges.len() - 1)) == default_edge;
             if kuna_fixes::enabled(KunaFix::SwitchSyntheticDefault)
-                && switch_synthetic_default::hides_case(self, &edges.to_vec())
+                && switches::hides_case(self, &edges.to_vec())
             {
                 continue;
             }
@@ -476,7 +476,7 @@ impl SwitchStatement {
         }
 
         let positions = if kuna_fixes::enabled(KunaFix::SwitchCaseOrder) {
-            switch_case_order::positions(
+            switches::positions(
                 bbstat,
                 lst_first_succs.len(),
                 lst_first_succs[0].get_destination(),
