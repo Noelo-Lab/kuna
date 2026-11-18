@@ -2038,7 +2038,9 @@ object. Neither word can be read directly, and a separate address within the
 pair, a type lock, or a conflicting layout hint vetoes the change. The
 backing stops after the second word; a following local (such as a saved
 canary) is not absorbed. The two unsigned storage words are not a claim
-about the source type, and no callee or import name is used.
+about the source type, and no callee or import name is used
+(`kuna_callarrayextent.rs (coalesce_delay_slot_init)`). Other targets, and
+SPARC32 pairs whose second store is outside the delay slot, keep the split.
 
 **Terminator absorption** (`option nulterminator`, **opt-in, default off**). An
 open hint that `attempt_join` cannot extend ends where the next hint starts, so
