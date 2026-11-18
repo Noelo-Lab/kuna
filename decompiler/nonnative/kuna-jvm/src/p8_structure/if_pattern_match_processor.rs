@@ -2,7 +2,7 @@
 //!
 //! kuna fix `pattern_variable_scope` (`kuna_fixes`): `check_branch` makes a
 //! pattern only when the variable is used nowhere outside the pattern's scope
-//! (`kuna_fix_pattern_variable_scope`).
+//! (`fixes::patterns::pattern_variable_scope`).
 //! A type pattern is not made when the cast it replaces is unchecked
 //! (`unchecked_type_pattern`), nor from bytecode that is not javac's compiled
 //! pattern (`pattern_binding_shape`) or, with `jvm_source_patterns`, from a
@@ -22,9 +22,9 @@ use crate::if_helper::IfHelper;
 use crate::if_statement::IfStatement;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::p6_variables::kuna_source_locals;
-use crate::p8_structure::kuna_fix_pattern_binding_shape;
-use crate::p8_structure::kuna_fix_pattern_variable_scope;
-use crate::p8_structure::kuna_fix_unchecked_type_pattern;
+use crate::fixes::patterns::pattern_binding_shape;
+use crate::fixes::patterns::pattern_variable_scope;
+use crate::fixes::patterns::unchecked_type_pattern;
 use crate::p8_structure::kuna_source_patterns;
 use crate::pattern_exprent::PatternExprent;
 use crate::root_statement::RootStatement;
@@ -164,15 +164,15 @@ impl IfPatternMatchProcessor {
 
         let out_of_scope = kuna_fixes::enabled(KunaFix::PatternVariableScope)
             && left.try_as_var().is_some_and(|var| {
-                !kuna_fix_pattern_variable_scope::in_scope(statement, branch, var, root.0)
+                !pattern_variable_scope::in_scope(statement, branch, var, root.0)
             });
         let unchecked = kuna_fixes::enabled(KunaFix::UncheckedTypePattern)
-            && !kuna_fix_unchecked_type_pattern::is_checked_cast(
-                &kuna_fix_unchecked_type_pattern::operand_type(source, statement),
+            && !unchecked_type_pattern::is_checked_cast(
+                &unchecked_type_pattern::operand_type(source, statement),
                 &left.get_inferred_expr_type(None),
             );
         let foreign = kuna_fixes::enabled(KunaFix::PatternBindingShape)
-            && !kuna_fix_pattern_binding_shape::is_javac_pattern(root.mt(), iof, source, first)
+            && !pattern_binding_shape::is_javac_pattern(root.mt(), iof, source, first)
             || kuna_source_patterns::keeps_cast(root.mt(), iof, source, left, first);
         let mut result = !out_of_scope
             && !unchecked

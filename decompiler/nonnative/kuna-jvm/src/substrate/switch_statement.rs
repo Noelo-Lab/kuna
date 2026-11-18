@@ -8,10 +8,10 @@
 //! constant label of a pattern switch on another type; `type_switch_label_lookup`
 //! writes a case with several type patterns as one label of unnamed patterns;
 //! `switch_case_order` orders the cases by where their code starts
-//! (`kuna_fix_switch_case_order`); `switch_table_fillers` leaves out the
-//! keys javac fills a `tableswitch`'s gaps with (`kuna_fix_switch_table_fillers`);
+//! (`fixes::switches::switch_case_order`); `switch_table_fillers` leaves out the
+//! keys javac fills a `tableswitch`'s gaps with (`fixes::switches::switch_table_fillers`);
 //! `switch_synthetic_default` leaves out javac's default of a pattern switch
-//! (`kuna_fix_switch_synthetic_default`).
+//! (`fixes::switches::switch_synthetic_default`).
 
 use crate::basic_block_statement::BasicBlockStatement;
 use crate::const_exprent::ConstExprent;
@@ -20,7 +20,7 @@ use crate::decompiler_context::DecompilerContext;
 use crate::expr_processor::ExprProcessor;
 use crate::exprent::Exprent;
 use crate::kuna_fixes::{self, KunaFix};
-use crate::p8_structure::{kuna_fix_type_switch_enum_label, kuna_fix_type_switch_label_lookup};
+use crate::fixes::patterns::{type_switch_enum_label, type_switch_label_lookup};
 use crate::function_exprent::FunctionType;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::if_statement::set_head_slot;
@@ -32,9 +32,7 @@ use crate::statement::{
     add_instanceof_pattern_vars, EdgeDirection, LastBasicType, Statement, StatementKind,
     StatementType,
 };
-use crate::substrate::{
-    kuna_fix_switch_case_order, kuna_fix_switch_synthetic_default, kuna_fix_switch_table_fillers,
-};
+use crate::fixes::switches::{switch_case_order, switch_synthetic_default, switch_table_fillers};
 use crate::text_buffer::TextBuffer;
 use crate::validation_helper::ValidationHelper;
 use crate::var_exprent::VarExprent;
@@ -167,7 +165,7 @@ impl SwitchStatement {
             )
         });
         let fillers = if kuna_fixes::enabled(KunaFix::SwitchTableFillers) {
-            kuna_fix_switch_table_fillers::filler_edges(self)
+            switch_table_fillers::filler_edges(self)
         } else {
             Vec::new()
         };
@@ -184,12 +182,12 @@ impl SwitchStatement {
             let default_last =
                 !edges.is_empty() && Some(edges.get(edges.len() - 1)) == default_edge;
             if kuna_fixes::enabled(KunaFix::SwitchSyntheticDefault)
-                && kuna_fix_switch_synthetic_default::hides_case(self, &edges.to_vec())
+                && switch_synthetic_default::hides_case(self, &edges.to_vec())
             {
                 continue;
             }
             let unnamed = if kuna_fixes::enabled(KunaFix::TypeSwitchLabelLookup) {
-                kuna_fix_type_switch_label_lookup::unnamed_pattern_types(&values)
+                type_switch_label_lookup::unnamed_pattern_types(&values)
             } else {
                 None
             };
@@ -198,7 +196,7 @@ impl SwitchStatement {
                 if let Some(types) = &unnamed {
                     if j == 0 {
                         buf.append_indent(indent + 1).append("case ");
-                        kuna_fix_type_switch_label_lookup::append_unnamed(&mut buf, types);
+                        type_switch_label_lookup::append_unnamed(&mut buf, types);
                         if let Some(guard) = guard {
                             buf.append(" when ").append_buffer(&guard.to_java_default());
                         }
@@ -235,14 +233,14 @@ impl SwitchStatement {
                     let qualified = value.and_then(|v| v.try_as_field()).filter(|f| {
                         f.is_static()
                             && kuna_fixes::enabled(KunaFix::TypeSwitchEnumLabel)
-                            && kuna_fix_type_switch_enum_label::is_qualified_label(
+                            && type_switch_enum_label::is_qualified_label(
                                 *f,
                                 &switch_type,
                                 self.0,
                             )
                     });
                     if let Some(field) = qualified {
-                        buf.append_buffer(&kuna_fix_type_switch_enum_label::qualified_label(
+                        buf.append_buffer(&type_switch_enum_label::qualified_label(
                             field, indent,
                         ));
                     } else if let Some(field) = value
@@ -487,7 +485,7 @@ impl SwitchStatement {
         }
 
         let positions = if kuna_fixes::enabled(KunaFix::SwitchCaseOrder) {
-            kuna_fix_switch_case_order::positions(
+            switch_case_order::positions(
                 bbstat,
                 lst_first_succs.len(),
                 lst_first_succs[0].get_destination(),

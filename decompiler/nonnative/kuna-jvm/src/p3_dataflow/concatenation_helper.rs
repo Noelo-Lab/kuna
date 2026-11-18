@@ -1,7 +1,7 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/ConcatenationHelper.java`.
 //!
 //! kuna fix `concat_operand_type` (spec 10.16): each rebuilt concatenation
-//! records the argument type of its operands (`kuna_fix_concat_operand_type`).
+//! records the argument type of its operands (`fixes::numeric_types::concat_operand_type`).
 
 use crate::code_constants::CONSTANT_STRING;
 use crate::code_type::CodeType;
@@ -10,7 +10,7 @@ use crate::exprent::{Exprent, ExprentType};
 use crate::function_exprent::{FunctionExprent, FunctionType};
 use crate::invocation_exprent::InvocationExprent;
 use crate::new_exprent::NewExprent;
-use crate::p3_dataflow::kuna_fix_concat_operand_type;
+use crate::fixes::numeric_types::concat_operand_type;
 use crate::pooled_constant::PooledConstant;
 use crate::root_statement::RootStatement;
 use crate::rt::BitSet;
@@ -114,7 +114,7 @@ impl ConcatenationHelper {
                 let mut parameters =
                     Self::extract_parameters(root, bootstrap_arguments.as_deref(), iex);
                 let mut slots =
-                    kuna_fix_concat_operand_type::indy_slots(iex, &arguments, &parameters);
+                    concat_operand_type::indy_slots(iex, &arguments, &parameters);
 
                 let mut add_empty_string = true;
                 let mut index = 0;
@@ -139,7 +139,7 @@ impl ConcatenationHelper {
                 if parameters.len() >= 2 {
                     let concat =
                         Self::create_concat_exprent(&parameters, expr.get_bytecode().as_ref());
-                    kuna_fix_concat_operand_type::record(concat, &slots);
+                    concat_operand_type::record(concat, &slots);
                     return concat;
                 }
             }
@@ -222,7 +222,7 @@ impl ConcatenationHelper {
             }
 
             if ok {
-                slots[i] = kuna_fix_concat_operand_type::value_of_slot(
+                slots[i] = concat_operand_type::value_of_slot(
                     lst_operands[i],
                     rep,
                     slots[i].clone(),
@@ -231,7 +231,7 @@ impl ConcatenationHelper {
             }
         }
         let concat = Self::create_concat_exprent(&lst_operands, expr.get_bytecode().as_ref());
-        kuna_fix_concat_operand_type::record(concat, &slots);
+        concat_operand_type::record(concat, &slots);
         concat
     }
 

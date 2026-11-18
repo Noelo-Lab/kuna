@@ -1,11 +1,11 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/SecondaryFunctionsHelper.java`.
 //!
-//! kuna fix `compound_assignment_shape` (`kuna_fix_compound_assignment_shape`):
+//! kuna fix `compound_assignment_shape` (`fixes::numeric_types::compound_assignment_shape`):
 //! a field or array element assignment is made compound by the bytecode's
 //! shape, not by Vineflower's side-effect heuristic.
 //!
 //! kuna fix `implicit_widening_arithmetic`
-//! (`kuna_fix_implicit_widening_arithmetic`): a widening conversion is
+//! (`fixes::numeric_types::implicit_widening_arithmetic`): a widening conversion is
 //! written where leaving it out narrows the type an operation computes in.
 //!
 //! kuna option `jvm_javac_layout` (`kuna_javac_boolean_compare`): a comparison
@@ -22,10 +22,8 @@ use crate::function_exprent::{FunctionExprent, FunctionType};
 use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::if_statement::IfStatement;
 use crate::kuna_fixes::{self, KunaFix};
-use crate::p3_dataflow::{
-    kuna_fix_compound_assignment_shape, kuna_fix_implicit_widening_arithmetic,
-    kuna_javac_boolean_compare,
-};
+use crate::p3_dataflow::kuna_javac_boolean_compare;
+use crate::fixes::numeric_types::{compound_assignment_shape, implicit_widening_arithmetic};
 use crate::p8_structure::kuna_javac_layout;
 use crate::rt::JHashMap;
 use crate::stat_edge::StatEdge;
@@ -661,7 +659,7 @@ impl SecondaryFunctionsHelper {
                     Add | Sub | Mul | Div | Neg | Rem | Shl | Shr | Ushr
                         if kuna_fixes::enabled(KunaFix::ImplicitWideningArithmetic) =>
                     {
-                        kuna_fix_implicit_widening_arithmetic::keep_widening(fexpr);
+                        implicit_widening_arithmetic::keep_widening(fexpr);
                     }
                     Add | Sub | Mul | Div => {
                         let left = lst_operands.get(0);
@@ -693,7 +691,7 @@ impl SecondaryFunctionsHelper {
                 }
 
                 if kuna_fixes::enabled(KunaFix::CompoundAssignmentShape) {
-                    if let Some(made) = kuna_fix_compound_assignment_shape::compound(asexpr) {
+                    if let Some(made) = compound_assignment_shape::compound(asexpr) {
                         return if made { Some(exprent) } else { ret };
                     }
                 }

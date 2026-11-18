@@ -17,7 +17,7 @@ use crate::kuna_fixes::{self, KunaFix};
 use crate::new_class_name_builder::NewClassNameBuilder;
 use crate::rt::{JavaEq, JavaHash};
 use crate::struct_method::StructMethod;
-use crate::substrate::kuna_fix_constructor_signature_alignment;
+use crate::fixes::anonymous_classes::constructor_signature_alignment;
 use crate::var_type::{JStr, VarType};
 
 /// Immutable except for `genericInfo`, which Java assigns after construction.
@@ -174,7 +174,7 @@ impl MethodDescriptor {
                 {
                     if kuna_fixes::enabled(KunaFix::ConstructorSignatureAlignment) {
                         if let Some(aligned) = sig_fields.as_ref().and_then(|f| {
-                            kuna_fix_constructor_signature_alignment::align(&sig, &md.params, f)
+                            constructor_signature_alignment::align(&sig, &md.params, f)
                         }) {
                             let message = format!(
                                 "Descriptor and signature parameter counts mismatch, attempting to correct: {}",

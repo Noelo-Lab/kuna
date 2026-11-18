@@ -3,22 +3,22 @@
 //!
 //! kuna fix `kt_legacy_constructor_parameter_checks`: a constructor's Kotlin
 //! 1.3 parameter checks before its delegation call are dropped too
-//! (`kuna_fix_kt_legacy_constructor_parameter_checks`).
+//! (`fixes::kt_null_checks::kt_legacy_constructor_parameter_checks`).
 //!
 //! kuna fix `kt_legacy_parameter_checks`: so are the Kotlin 1.3 checks that
-//! open a function's body (`kuna_fix_kt_legacy_parameter_checks`).
+//! open a function's body (`fixes::kt_null_checks::kt_legacy_parameter_checks`).
 //!
 //! kuna fix `kt_delegation_call_arguments`: first, the stack variables a
 //! constructor computes its delegation call's arguments in are put back
-//! into the call (`kuna_fix_kt_delegation_call_arguments`).
+//! into the call (`fixes::kt_delegation_calls::kt_delegation_call_arguments`).
 
 use crate::exprent::Exprent;
 use crate::flatten_statements_helper::FlattenStatementsHelper;
 use crate::function_exprent::FunctionType;
 use crate::jthrow;
-use crate::kotlin::kuna_fix_kt_delegation_call_arguments;
-use crate::kotlin::kuna_fix_kt_legacy_constructor_parameter_checks;
-use crate::kotlin::kuna_fix_kt_legacy_parameter_checks;
+use crate::fixes::kt_delegation_calls::kt_delegation_call_arguments;
+use crate::fixes::kt_null_checks::kt_legacy_constructor_parameter_checks;
+use crate::fixes::kt_null_checks::kt_legacy_parameter_checks;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::k_function_exprent::{KFunctionExprent, KFunctionType};
 use crate::match_engine::MatchEngine;
@@ -97,15 +97,15 @@ impl Pass for ResugarKotlinMethodsPass {
         let mut res = false;
 
         if kuna_fixes::enabled(KunaFix::KtDelegationCallArguments) {
-            res |= kuna_fix_kt_delegation_call_arguments::inline(ctx);
+            res |= kt_delegation_call_arguments::inline(ctx);
         }
 
         if kuna_fixes::enabled(KunaFix::KtLegacyConstructorParameterChecks) {
-            res |= kuna_fix_kt_legacy_constructor_parameter_checks::remove(ctx);
+            res |= kt_legacy_constructor_parameter_checks::remove(ctx);
         }
 
         if kuna_fixes::enabled(KunaFix::KtLegacyParameterChecks) {
-            res |= kuna_fix_kt_legacy_parameter_checks::remove(ctx);
+            res |= kt_legacy_parameter_checks::remove(ctx);
         }
 
         let digraph =

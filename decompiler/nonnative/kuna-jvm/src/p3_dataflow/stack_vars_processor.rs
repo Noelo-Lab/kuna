@@ -9,21 +9,21 @@
 //! into the next statement, ahead of anything there it could observe or be
 //! observed by; `field_read_all_paths` builds the SSAU form with field reads
 //! live only while live on every path; `field_read_reuse` keeps a field read
-//! with several uses in its stack variable (`kuna_fix_field_read_reuse`);
+//! with several uses in its stack variable (`fixes::stack_var_inlining::field_read_reuse`);
 //! `kt_inline_lock_local` keeps every use of a lock local whose value may be
-//! another object when evaluated again (`kuna_fix_kt_inline_lock_local`);
+//! another object when evaluated again (`fixes::stack_var_inlining::kt_inline_lock_local`);
 //! `kt_inline_heap_read` keeps a variable the Kotlin inliner would copy into
 //! several uses when its value reads an array element or a field that may
 //! change and is not a field read `kt_field_read_reuse` keeps
-//! (`kuna_fix_kt_inline_heap_read`).
+//! (`fixes::stack_var_inlining::kt_inline_heap_read`).
 //!
 //! kuna fix `kt_suspend_lambda`: the Kotlin pass does not inline the local
 //! a rebuilt suspend lambda reads an argument into
-//! (`kuna_fix_kt_suspend_lambda::is_argument_local`).
+//! (`fixes::kt_suspend::kt_suspend_lambda::is_argument_local`).
 //!
 //! kuna fix `unlisted_anonymous_class`: `setEffectivelyFinalVars` keeps a
 //! local passed to the constructor of a class that fix nested, named or not
-//! (`kuna_fix_unlisted_anonymous_class::takes_local`).
+//! (`fixes::anonymous_classes::unlisted_anonymous_class::takes_local`).
 
 use std::collections::VecDeque;
 
@@ -41,19 +41,19 @@ use crate::flatten_statements_helper::FlattenStatementsHelper;
 use crate::function_exprent::FunctionType;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::jthrow;
-use crate::kotlin::kuna_fix_kt_suspend_lambda;
+use crate::fixes::kt_suspend::kt_suspend_lambda;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::method_descriptor::MethodDescriptor;
 use crate::method_processor::ScratchScope;
 use crate::monitor_exprent::Type as MonitorType;
-use crate::p3_dataflow::kuna_fix_field_read_all_paths::FieldReadAllPaths;
-use crate::p3_dataflow::kuna_fix_field_read_reuse;
-use crate::p3_dataflow::kuna_fix_kt_field_read_reuse;
-use crate::p3_dataflow::kuna_fix_kt_partial_inline;
-use crate::p3_dataflow::kuna_fix_kt_inline_evaluation_order::KtInlineEvaluationOrder;
-use crate::p3_dataflow::kuna_fix_kt_inline_lock_local::KtInlineLockLocal;
-use crate::p3_dataflow::kuna_fix_kt_inline_heap_read::KtInlineHeapRead;
-use crate::p8_structure::kuna_fix_unlisted_anonymous_class;
+use crate::fixes::stack_var_inlining::field_read_all_paths::FieldReadAllPaths;
+use crate::fixes::stack_var_inlining::field_read_reuse;
+use crate::fixes::stack_var_inlining::kt_field_read_reuse;
+use crate::fixes::stack_var_inlining::kt_partial_inline;
+use crate::fixes::stack_var_inlining::kt_inline_evaluation_order::KtInlineEvaluationOrder;
+use crate::fixes::stack_var_inlining::kt_inline_lock_local::KtInlineLockLocal;
+use crate::fixes::stack_var_inlining::kt_inline_heap_read::KtInlineHeapRead;
+use crate::fixes::anonymous_classes::unlisted_anonymous_class;
 use crate::root_statement::RootStatement;
 use crate::rt::{JHashMap, JHashSet, JList};
 use crate::sequence_helper::SequenceHelper;
@@ -110,7 +110,7 @@ impl StackVarsProcessor {
         cl: StructClass,
         options: StackSimplifyOptions,
     ) {
-        let _kotlin = kuna_fix_kt_field_read_reuse::enter(cl);
+        let _kotlin = kt_field_read_reuse::enter(cl);
         let mut scratch = ScratchScope::open();
         let mut set_reordered_ifs: JHashSet<i32> = JHashSet::new();
         let mut ssau: Option<SSAUConstructorSparseEx> = None;
@@ -514,7 +514,7 @@ impl StackVarsProcessor {
         if options.inline_regular_vars
             && !left.is_stack()
             && kuna_fixes::enabled(KunaFix::KtSuspendLambda)
-            && kuna_fix_kt_suspend_lambda::is_argument_local(left)
+            && kt_suspend_lambda::is_argument_local(left)
         {
             Self::set_ret(ret, -1, changed);
             return;
@@ -642,15 +642,15 @@ impl StackVarsProcessor {
             && !options.inline_regular_vars
             && right.is_field()
             && kuna_fixes::enabled(KunaFix::FieldReadReuse)
-            && kuna_fix_field_read_reuse::keeps_single_read(
+            && field_read_reuse::keeps_single_read(
                 right,
                 &used_vers,
                 lst_exprents,
                 index as usize,
             )
-            && !kuna_fix_field_read_reuse::stores_through(left, lst_exprents, index as usize);
+            && !field_read_reuse::stores_through(left, lst_exprents, index as usize);
 
-        let kt_keeps_read = kuna_fix_kt_field_read_reuse::keeps_read(
+        let kt_keeps_read = kt_field_read_reuse::keeps_read(
             right,
             &used_vers,
             lst_exprents,
@@ -676,7 +676,7 @@ impl StackVarsProcessor {
                 && !ssau.leaves_finally_body(left_var, usedver)
                 && !(keeps_single_read
                     && KtInlineHeapRead::rereads_heap(right)
-                    && !kuna_fix_field_read_reuse::written_as_kotlin())
+                    && !field_read_reuse::written_as_kotlin())
             {
                 set_temp_used_vers.add(usedver);
                 verreplaced = true;
@@ -685,7 +685,7 @@ impl StackVarsProcessor {
             }
         }
 
-        if (notdom || vernotreplaced) && kuna_fix_kt_partial_inline::keeps_variable() {
+        if (notdom || vernotreplaced) && kt_partial_inline::keeps_variable() {
             set_temp_used_vers = JHashSet::new();
             verreplaced = false;
             vernotreplaced = true;
@@ -1348,7 +1348,7 @@ impl StackVarsProcessor {
                                                             })
                                                         })
                                                 };
-                                                if kuna_fix_unlisted_anonymous_class::takes_local(
+                                                if unlisted_anonymous_class::takes_local(
                                                     node, new_expr, list, index, left_var,
                                                     &reads_def,
                                                 ) {

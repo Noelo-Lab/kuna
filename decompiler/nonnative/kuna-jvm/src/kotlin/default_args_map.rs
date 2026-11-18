@@ -7,12 +7,12 @@
 //! list, which only a basic block has, and fails the class.
 //!
 //! kuna fix `kt_default_arg_assigned_param`: in `from`, the default is what
-//! the branch assigns to the parameter (`kuna_fix_kt_default_arg_assigned_param`),
+//! the branch assigns to the parameter (`fixes::kt_default_args::kt_default_arg_assigned_param`),
 //! where Vineflower takes the branch's first assignment, whatever it assigns.
 //!
 //! kuna fix `kt_default_value_coercion_cast`: in `from`, kotlinc's cast of
 //! a default to its parameter's type is dropped
-//! (`kuna_fix_kt_default_value_coercion_cast`). The map keeps the
+//! (`fixes::kt_default_args::kt_default_value_coercion_cast`). The map keeps the
 //! default-arguments method (`kuna_bridge`) for fix `kt_default_value_names`.
 
 use std::rc::Rc;
@@ -26,8 +26,8 @@ use crate::k_constructor::KConstructor;
 use crate::k_element::KElement;
 use crate::k_parameter::KParameter;
 use crate::k_utils::KUtils;
-use crate::kotlin::kuna_fix_kt_default_arg_assigned_param;
-use crate::kotlin::kuna_fix_kt_default_value_coercion_cast;
+use crate::fixes::kt_default_args::kt_default_arg_assigned_param;
+use crate::fixes::kt_default_args::kt_default_value_coercion_cast;
 use crate::kotlin_options::KotlinOptions;
 use crate::kt_attrs::KtAttrs;
 use crate::kt_flags::Flags;
@@ -139,7 +139,7 @@ impl DefaultArgsMap {
             };
             let expr = exprents.get(0);
             let default = if kuna_fixes::enabled(KunaFix::KtDefaultArgAssignedParam) {
-                kuna_fix_kt_default_arg_assigned_param::default_value(
+                kt_default_arg_assigned_param::default_value(
                     &exprents.to_vec(),
                     start_of_bitmasks,
                 )
@@ -150,7 +150,7 @@ impl DefaultArgsMap {
             if let Some(default) = default {
                 let mut right = default.copy();
                 if kuna_fixes::enabled(KunaFix::KtDefaultValueCoercionCast) {
-                    right = kuna_fix_kt_default_value_coercion_cast::uncast(
+                    right = kt_default_value_coercion_cast::uncast(
                         right,
                         &exprents.to_vec(),
                         defaults,

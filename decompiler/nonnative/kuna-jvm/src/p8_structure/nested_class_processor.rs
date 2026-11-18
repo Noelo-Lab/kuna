@@ -2,26 +2,26 @@
 //!
 //! kuna fix `local_class_anonymous_subclass` (`kuna_fixes`): in
 //! `search_for_class`, creating an anonymous class whose supertype is the
-//! local class counts as a use of it (`kuna_fix_local_class_anonymous_subclass`).
+//! local class counts as a use of it (`fixes::anonymous_classes::local_class_anonymous_subclass`).
 //!
 //! kuna fix `lambda_catch_var_rename`: the clash rename of a lambda body's
-//! locals reaches its catch variables too (`kuna_fix_lambda_catch_var_rename`).
+//! locals reaches its catch variables too (`fixes::nested_class_vars::lambda_catch_var_rename`).
 //!
 //! kuna fix `anonymous_class_created_elsewhere`: a constructor argument that
 //! every `new` of a class this fix nested at its creator passes as the same
 //! stable field of the creating instance is a capture of that instance, read
-//! as that field (`kuna_fix_anonymous_class_created_elsewhere`).
+//! as that field (`fixes::anonymous_classes::anonymous_class_created_elsewhere`).
 //!
 //! kuna fix `captured_var_clash_name`: each captured variable records the
-//! variable it holds (`kuna_fix_captured_var_clash_name`).
+//! variable it holds (`fixes::nested_class_vars::captured_var_clash_name`).
 //!
 //! kuna fix `captured_var_through_cast`: a constructor argument that is a
 //! cast of a variable to a supertype of its class is a capture of that
-//! variable (`kuna_fix_captured_var_through_cast`).
+//! variable (`fixes::nested_class_vars::captured_var_through_cast`).
 //!
 //! kuna fix `unlisted_anonymous_class`: a captured variable of a class that
 //! fix nested takes the name the creating method declares its variable by
-//! (`kuna_fix_unlisted_anonymous_class::captured_lvt`).
+//! (`fixes::anonymous_classes::unlisted_anonymous_class::captured_lvt`).
 //!
 //! Java lets a variable name be `null` (an unnamed enclosing variable); the
 //! name maps here carry `Option<String>`, and a `None` name is not written
@@ -33,11 +33,11 @@ use std::collections::{BTreeSet, VecDeque};
 use std::fmt;
 
 use crate::kuna_fixes::{self, KunaFix};
-use crate::p8_structure::kuna_fix_local_class_anonymous_subclass;
-use crate::p8_structure::kuna_fix_anonymous_class_created_elsewhere;
-use crate::p8_structure::kuna_fix_captured_var_through_cast;
-use crate::p8_structure::kuna_fix_lambda_catch_var_rename;
-use crate::p8_structure::kuna_fix_unlisted_anonymous_class;
+use crate::fixes::anonymous_classes::local_class_anonymous_subclass;
+use crate::fixes::anonymous_classes::anonymous_class_created_elsewhere;
+use crate::fixes::nested_class_vars::captured_var_through_cast;
+use crate::fixes::nested_class_vars::lambda_catch_var_rename;
+use crate::fixes::anonymous_classes::unlisted_anonymous_class;
 use crate::class_wrapper::ClassWrapper;
 use crate::classes_processor::{ClassNode, ClassNodeType};
 use crate::code_constants::{
@@ -399,7 +399,7 @@ impl NestedClassProcessor {
             });
         if kuna_fixes::enabled(KunaFix::LambdaCatchVarRename) {
             if let Some(root) = method.with(|d| d.root) {
-                kuna_fix_lambda_catch_var_rename::rename_catch_vars(*root, &lvts, &|pair| {
+                lambda_catch_var_rename::rename_catch_vars(*root, &lvts, &|pair| {
                     map_new_names.contains_key(&pair)
                 });
             }
@@ -537,7 +537,7 @@ impl NestedClassProcessor {
 
         if !(cl_types.len() == 1 && cl_types.contains(&ClassNodeType::Member)) {
             if kuna_fixes::enabled(KunaFix::AnonymousClassCreatedElsewhere) {
-                kuna_fix_anonymous_class_created_elsewhere::find_field_captures(node);
+                anonymous_class_created_elsewhere::find_field_captures(node);
             }
             let wrapper = node.get_wrapper().expect("ClassWrapper");
             let methods = wrapper.get_methods().borrow().to_vec();
@@ -593,7 +593,7 @@ impl NestedClassProcessor {
                                         pair =
                                             Some(VarFieldPair::new(&field_key, var_pair, assigned));
                                     } else if let (Some(param), Some(mask_pair), true) = (
-                                        kuna_fix_captured_var_through_cast::cast_var(param),
+                                        captured_var_through_cast::cast_var(param),
                                         mask_pair,
                                         kuna_fixes::enabled(KunaFix::CapturedVarThroughCast),
                                     ) {
@@ -752,7 +752,7 @@ impl NestedClassProcessor {
         if !assigned {
             return None;
         }
-        kuna_fix_anonymous_class_created_elsewhere::field_capture(
+        anonymous_class_created_elsewhere::field_capture(
             class, descriptor, slot, param, &field_key,
         )
         .map(|var_pair| VarFieldPair::new(&field_key, var_pair, assigned))
@@ -871,7 +871,7 @@ impl NestedClassProcessor {
                             var_type = enclosing_varproc.get_var_type(pair);
                             var_lvt = enclosing_varproc.get_var_lvt(pair);
                             if kuna_fixes::enabled(KunaFix::UnlistedAnonymousClass) {
-                                var_lvt = kuna_fix_unlisted_anonymous_class::captured_lvt(
+                                var_lvt = unlisted_anonymous_class::captured_lvt(
                                     child,
                                     enclosing_method.expect("enclosing method"),
                                     pair,
@@ -948,7 +948,7 @@ impl NestedClassProcessor {
                         var_type = enclosing_varproc.get_var_type(field_var);
                         var_lvt = enclosing_varproc.get_var_lvt(field_var);
                         if kuna_fixes::enabled(KunaFix::UnlistedAnonymousClass) {
-                            var_lvt = kuna_fix_unlisted_anonymous_class::captured_lvt(
+                            var_lvt = unlisted_anonymous_class::captured_lvt(
                                 cn,
                                 enclosing_method,
                                 field_var,
@@ -1150,7 +1150,7 @@ impl NestedClassProcessor {
                 }
                 if kuna_fixes::enabled(KunaFix::AnonymousClassCreatedElsewhere) {
                     return Some(
-                        kuna_fix_anonymous_class_created_elsewhere::read_captured_field(
+                        anonymous_class_created_elsewhere::read_captured_field(
                             &f_expr.get_classname(),
                             &f_expr.get_name(),
                             &f_expr.get_descriptor().descriptor_string,
@@ -1627,7 +1627,7 @@ impl NestedClassProcessor {
                             || Self::contains_type(new_expr.get_constructor(), class_type);
                         if !res && kuna_fixes::enabled(KunaFix::LocalClassAnonymousSubclass) {
                             res = new_expr.is_anonymous()
-                                && kuna_fix_local_class_anonymous_subclass::extends(&new_type, classname);
+                                && local_class_anonymous_subclass::extends(&new_type, classname);
                         }
                     }
                 }

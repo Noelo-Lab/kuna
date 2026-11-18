@@ -3,7 +3,7 @@
 //! kuna fix `anonymous_static_qualifier` (`kuna_fixes`): in `to_java`,
 //! a static call of an anonymous class's method from a class nested in it is
 //! written unqualified instead of as `<unrepresentable>.m(...)`
-//! (`kuna_fix_anonymous_static_qualifier`).
+//! (`fixes::anonymous_classes::anonymous_static_qualifier`).
 //!
 //! kuna fix `kt_default_args_super_call`: `append_param_list` writes the
 //! arguments by the names the fix sets (`kuna_arg_names`), leaving out the
@@ -17,77 +17,77 @@
 //!
 //! kuna fix `raw_receiver_erasure`: a call on a receiver whose static type
 //! is raw has the erased result and parameter types
-//! (`kuna_fix_raw_receiver_erasure`).
+//! (`fixes::generic_casts::raw_receiver_erasure`).
 //!
 //! kuna fix `argument_generic_cast`: in `append_param_list`, an argument
 //! whose parameter's declared type is fixed is marked with it for
-//! `ExprProcessor.getCastedExprent` (`kuna_fix_argument_generic_cast`).
+//! `ExprProcessor.getCastedExprent` (`fixes::generic_casts::argument_generic_cast`).
 //!
 //! kuna fix `diamond_argument_conflict`: in `get_inferred_expr_type`, a
 //! generic `new` whose type, inferred from its arguments, is not assignable to
-//! the expected type gets no diamond (`kuna_fix_diamond_argument_conflict`).
+//! the expected type gets no diamond (`fixes::generics::diamond_argument_conflict`).
 //!
 //! kuna fix `lambda_argument_overload`: in `append_param_list`, a lambda
 //! argument another overload's functional interface also accepts is
-//! ambiguous (`kuna_fix_lambda_argument_overload`).
+//! ambiguous (`fixes::lambdas::lambda_argument_overload`).
 //!
 //! kuna fix `lambda_pertinence`: in `get_inferred_expr_type`, a type
 //! variable only lambdas and inexact method references map is missing, so a
-//! qualifier call gets explicit type arguments (`kuna_fix_lambda_pertinence`).
+//! qualifier call gets explicit type arguments (`fixes::lambdas::lambda_pertinence`).
 //!
 //! kuna fix `lambda_type_variable_target`: in `append_param_list`, the
 //! lambdas an argument call takes for a bare type variable that javac
-//! resolves to another type are cast (`kuna_fix_lambda_type_variable_target`).
+//! resolves to another type are cast (`fixes::lambdas::lambda_type_variable_target`).
 //!
 //! kuna fix `kt_mapped_java_member`: in a class written as Kotlin, a call of
 //! a JDK method Kotlin names otherwise is written with Kotlin's name
-//! (`kuna_fix_kt_mapped_java_member`).
+//! (`fixes::kt_calls::kt_mapped_java_member`).
 //!
 //! kuna fix `thrown_type_variable`: in `to_java`, a raw `new C()` receiver of
 //! a call that throws `C`'s type parameters gets `RuntimeException` for them
-//! (`kuna_fix_thrown_type_variable`).
+//! (`fixes::generics::thrown_type_variable`).
 //!
 //! kuna fix `unseen_class_overload`: in `append_param_list`, an argument of a
 //! call to a class outside the input keeps its parameter's type where a method
 //! of that name the input calls would otherwise be chosen
-//! (`kuna_fix_unseen_class_overload`).
+//! (`fixes::overloads::unseen_class_overload`).
 //!
 //! kuna fix `vararg_spread_resolution`: in `append_param_list`, a varargs
 //! array is spread only when the spread call resolves to the same method with
-//! the same array (`kuna_fix_vararg_spread_resolution`).
+//! the same array (`fixes::overloads::vararg_spread_resolution`).
 //!
 //! kuna fix `vararg_array_length`: in `append_param_list`, an array created
 //! by a length other than constant 0 is not spread into a varargs call's
-//! arguments (`kuna_fix_vararg_array_length`).
+//! arguments (`fixes::overloads::vararg_array_length`).
 //!
 //! kuna fix `kt_unescaped_name`: in Kotlin output, the method's name is
-//! written as the Kotlin writer writes a name (`kuna_fix_kt_unescaped_name`).
+//! written as the Kotlin writer writes a name (`fixes::kt_names::kt_unescaped_name`).
 //!
 //! kuna fix `qualified_super_call`: in `to_java`, a superclass constructor
 //! call passing an explicit outer instance is written `o.super(..)`; in
 //! `append_param_list`, the argument `kuna_skip_arg` names is left out
-//! (`kuna_fix_qualified_super_call`).
+//! (`fixes::constructor_calls::qualified_super_call`).
 //!
 //! kuna fix `kt_jvm_name_call`: the Kotlin writer has a call written with
 //! the function's Kotlin name (`kuna_kotlin_name`,
-//! `kuna_fix_kt_jvm_name_call`).
+//! `fixes::kt_calls::kt_jvm_name_call`).
 //!
 //! kuna fix `kt_suspend_call_continuation`: in `append_param_list`, the
 //! continuation a suspend call passes implicitly is left out
-//! (`kuna_continuation_arg`, `kuna_fix_kt_suspend_call_continuation`).
+//! (`kuna_continuation_arg`, `fixes::kt_suspend::kt_suspend_call_continuation`).
 //!
 //! kuna fix `lambda_return_type_argument`: in `get_inferred_expr_type`,
 //! explicit type arguments contradicting a lambda or method reference
 //! argument's implementation return type are not written
-//! (`kuna_fix_lambda_return_type_argument`).
+//! (`fixes::lambdas::lambda_return_type_argument`).
 //!
 //! kuna fix `reference_unboxing`: the unboxing call that is the argument of
-//! an unwritten boxing call is written (`kuna_fix_reference_unboxing`).
+//! an unwritten boxing call is written (`fixes::numeric_types::reference_unboxing`).
 //!
 //! kuna fix `ambiguous_type_variable_argument`: an ambiguous argument for a
 //! parameter declared as the generic method's own type variable is cast to
 //! the variable's erasure, and binds it, where the inferred type would select
-//! another overload (`kuna_fix_ambiguous_type_variable_argument`).
+//! another overload (`fixes::overloads::ambiguous_type_variable_argument`).
 //!
 //! kuna fix `unboxed_argument_type`: in `append_param_list`, an argument
 //! written without its boxing call keeps the boxed primitive's type for its
@@ -111,17 +111,17 @@ use crate::generic_type::GenericType;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::i_matchable::MatchProperties;
 use crate::interpreter_util::InterpreterUtil;
-use crate::kuna_fix_kt_explicit_type_arguments;
-use crate::kotlin::kuna_fix_kt_mapped_java_member::{self, Form as MappedForm};
-use crate::kuna_fix_kt_java_cast_syntax;
-use crate::kuna_fix_kt_java_reference_cast;
-use crate::kotlin::kuna_fix_kt_unboxing_cast_type;
-use crate::kuna_fix_lambda_argument_overload;
-use crate::kuna_fix_lambda_pertinence;
-use crate::kuna_fix_lambda_type_variable_target;
-use crate::kuna_fix_raw_receiver_erasure;
-use crate::kotlin::kuna_fix_kt_unescaped_name;
-use crate::kotlin::kuna_fix_kt_inlined_stdlib_call;
+use crate::fixes::kt_calls::kt_explicit_type_arguments;
+use crate::fixes::kt_calls::kt_mapped_java_member::{self, Form as MappedForm};
+use crate::fixes::kt_java_syntax::kt_java_cast_syntax;
+use crate::fixes::kt_java_syntax::kt_java_reference_cast;
+use crate::fixes::kt_java_syntax::kt_unboxing_cast_type;
+use crate::fixes::lambdas::lambda_argument_overload;
+use crate::fixes::lambdas::lambda_pertinence;
+use crate::fixes::lambdas::lambda_type_variable_target;
+use crate::fixes::generic_casts::raw_receiver_erasure;
+use crate::fixes::kt_names::kt_unescaped_name;
+use crate::fixes::kt_compiler_idioms::kt_inlined_stdlib_call;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::link_constant::LinkConstant;
 use crate::list_stack::ListStack;
@@ -136,18 +136,18 @@ use crate::s_forms_constructor::SFormsConstructor;
 use crate::statement::Statement;
 use crate::struct_class::{GenericMap, StructClass};
 use crate::struct_method::StructMethod;
-use crate::substrate::kuna_fix_anonymous_static_qualifier;
-use crate::substrate::kuna_fix_argument_generic_cast;
-use crate::substrate::kuna_fix_diamond_argument_conflict;
-use crate::substrate::kuna_fix_vararg_array_length;
-use crate::substrate::kuna_fix_qualified_super_call;
-use crate::substrate::kuna_fix_lambda_return_type_argument;
-use crate::substrate::kuna_fix_vararg_spread_resolution;
-use crate::substrate::kuna_fix_thrown_type_variable;
-use crate::substrate::kuna_fix_unseen_class_overload;
-use crate::substrate::kuna_fix_reference_unboxing;
-use crate::substrate::kuna_fix_ambiguous_type_variable_argument;
-use crate::p2_lift::kuna_fix_synthetic_null_check_shape;
+use crate::fixes::anonymous_classes::anonymous_static_qualifier;
+use crate::fixes::generic_casts::argument_generic_cast;
+use crate::fixes::generics::diamond_argument_conflict;
+use crate::fixes::overloads::vararg_array_length;
+use crate::fixes::constructor_calls::qualified_super_call;
+use crate::fixes::lambdas::lambda_return_type_argument;
+use crate::fixes::overloads::vararg_spread_resolution;
+use crate::fixes::generics::thrown_type_variable;
+use crate::fixes::overloads::unseen_class_overload;
+use crate::fixes::numeric_types::reference_unboxing;
+use crate::fixes::overloads::ambiguous_type_variable_argument;
+use crate::fixes::constructor_calls::synthetic_null_check_shape;
 use crate::text_buffer::TextBuffer;
 use crate::text_util::TextUtil;
 use crate::type_family::TypeFamily;
@@ -276,7 +276,7 @@ pub struct InvocationExprentData {
     pub kuna_unboxing_written_as: Option<UnboxingWrittenAs>,
     /// kuna fix `synthetic_null_check_shape`: the javac null check this
     /// discarded `requireNonNull`/`getClass` call's instructions match.
-    pub kuna_null_check_shape: Option<kuna_fix_synthetic_null_check_shape::Shape>,
+    pub kuna_null_check_shape: Option<synthetic_null_check_shape::Shape>,
     /// kuna fix `qualified_super_call`: javac's null check of this
     /// superclass constructor call's outer instance was removed.
     pub kuna_checked_outer: bool,
@@ -295,10 +295,10 @@ pub struct InvocationExprentData {
     pub kuna_continuation_arg: bool,
     /// kuna fix `kt_inlined_stdlib_call`: the standard-library inline
     /// function this call is written as.
-    pub kuna_inlined: Option<kuna_fix_kt_inlined_stdlib_call::Inlined>,
+    pub kuna_inlined: Option<kt_inlined_stdlib_call::Inlined>,
     /// kuna fix `kt_inline_class_value`: how this call of an inline class's
     /// plumbing or members is written.
-    pub kuna_inline_class: Option<crate::kotlin::kuna_fix_kt_inline_class_value::Form>,
+    pub kuna_inline_class: Option<crate::fixes::kt_types::kt_inline_class_value::Form>,
 }
 
 /// What a hidden unboxing call is written as: its instance, or the operand of
@@ -587,7 +587,7 @@ impl InvocationExprent {
     }
 
     pub fn get_inferred_expr_type(self, upper_bound: Option<&VarType>) -> VarType {
-        if self.d(|d| d.kuna_inlined.is_some_and(kuna_fix_kt_inlined_stdlib_call::typed_by_use)) {
+        if self.d(|d| d.kuna_inlined.is_some_and(kt_inlined_stdlib_call::typed_by_use)) {
             return self.get_expr_type();
         }
         let (classname, name, string_descriptor) = self.d(|d| {
@@ -636,7 +636,7 @@ impl InvocationExprent {
 
         let desc = self.d(|d| d.desc);
         if kuna_fixes::enabled(KunaFix::RawReceiverErasure)
-            && kuna_fix_raw_receiver_erasure::has_raw_receiver(self)
+            && raw_receiver_erasure::has_raw_receiver(self)
         {
             return self.get_expr_type();
         }
@@ -958,7 +958,7 @@ impl InvocationExprent {
                             }
                         }
                         let mut non_pertinent: JHashSet<VarType> = if pertinence {
-                            JHashSet::from_collection(kuna_fix_lambda_pertinence::excluded_vars(
+                            JHashSet::from_collection(lambda_pertinence::excluded_vars(
                                 parameter,
                                 &param_type,
                                 &fparams,
@@ -972,7 +972,7 @@ impl InvocationExprent {
                             && desc.has_modifier(CodeConstants::ACC_VARARGS)
                         {
                             if let Some((vars, elements)) =
-                                kuna_fix_lambda_pertinence::vararg_elements(
+                                lambda_pertinence::vararg_elements(
                                     parameter,
                                     &param_type,
                                     &fparams,
@@ -1204,7 +1204,7 @@ impl InvocationExprent {
                                 &mut generic_args,
                             );
                             if pertinence_missing
-                                && !kuna_fix_lambda_pertinence::writable(
+                                && !lambda_pertinence::writable(
                                     &generic_args,
                                     &JHashSet::from_collection(named.key_vec()),
                                 )
@@ -1214,7 +1214,7 @@ impl InvocationExprent {
                             if kuna_fixes::enabled(KunaFix::LambdaReturnTypeArgument)
                                 && !is_new
                                 && desc.get_signature().is_some_and(|sig| {
-                                    kuna_fix_lambda_return_type_argument::contradicts(
+                                    lambda_return_type_argument::contradicts(
                                         self,
                                         &sig.parameter_types(),
                                         &fparams,
@@ -1231,7 +1231,7 @@ impl InvocationExprent {
                             });
                         } else if is_gen_new
                             && !(kuna_fixes::enabled(KunaFix::DiamondArgumentConflict)
-                                && kuna_fix_diamond_argument_conflict::contradicts(
+                                && diamond_argument_conflict::contradicts(
                                     new_ret.as_ref(),
                                     upper_bound,
                                     &fparams,
@@ -1427,7 +1427,7 @@ impl InvocationExprent {
                 && !self.d(|d| d.boxing.force_boxing)
             {
                 if kuna_fixes::enabled(KunaFix::ReferenceUnboxing) {
-                    kuna_fix_reference_unboxing::keep_under_boxing(
+                    reference_unboxing::keep_under_boxing(
                         self.get_lst_parameters().get(0),
                     );
                 }
@@ -1457,7 +1457,7 @@ impl InvocationExprent {
                     .get_short_name_in_class_context(&ExprProcessor::build_java_class_name(
                         &classname,
                     ));
-                if !kuna_fix_anonymous_static_qualifier::drop_qualifier(
+                if !anonymous_static_qualifier::drop_qualifier(
                     &classname,
                     &self.get_name(),
                     &short_name,
@@ -1567,7 +1567,7 @@ impl InvocationExprent {
                         });
                         if kuna_fixes::enabled(KunaFix::KtUnboxingCastType) {
                             if let Some(cast) =
-                                kuna_fix_kt_unboxing_cast_type::write(self, instance, indent)
+                                kt_unboxing_cast_type::write(self, instance, indent)
                             {
                                 buf.append_buffer(&cast);
                                 return buf;
@@ -1584,7 +1584,7 @@ impl InvocationExprent {
                         pushed_call_chain_group = true;
                     }
                     if kuna_fixes::enabled(KunaFix::ThrownTypeVariable) {
-                        kuna_fix_thrown_type_variable::type_receiver(self, instance);
+                        thrown_type_variable::type_receiver(self, instance);
                     }
                     let res = instance.to_java(indent);
 
@@ -1613,9 +1613,9 @@ impl InvocationExprent {
                     } else if java_nio_buffer.equals(&self.get_descriptor().ret)
                         && !java_nio_buffer.equals(&right_type)
                         && instance_of(&right_type.value, &java_nio_buffer.value)
-                        && kuna_fix_kt_java_reference_cast::active()
+                        && kt_java_reference_cast::active()
                     {
-                        kuna_fix_kt_java_reference_cast::qualifier(
+                        kt_java_reference_cast::qualifier(
                             &mut buf,
                             &java_nio_buffer,
                             instance,
@@ -1647,9 +1647,9 @@ impl InvocationExprent {
             && super_qualifier.is_none()
             && instance.is_some()
             && buf.length() > 0
-            && kuna_fix_kt_java_cast_syntax::writing_kotlin())
+            && kt_java_cast_syntax::writing_kotlin())
         .then(|| {
-            kuna_fix_kt_mapped_java_member::form(
+            kt_mapped_java_member::form(
                 &classname,
                 &name,
                 &self.get_string_descriptor(),
@@ -1665,14 +1665,14 @@ impl InvocationExprent {
 
                 let kotlin_type_args = invocation_type != InvocationType::Dynamic
                     && invocation_type != InvocationType::ConstantDynamic
-                    && kuna_fix_kt_explicit_type_arguments::active();
+                    && kt_explicit_type_arguments::active();
                 let mut type_args = Vec::new();
                 let chain_args = self.d(|d| d.kuna_chain_type_args.clone());
                 if buf.length() > 0 {
                     buf.append(".");
                     type_args = chain_args.unwrap_or_else(|| self.get_generic_args());
                 } else if self.d(|d| d.kuna_needs_type_args) || chain_args.is_some() {
-                    kuna_fix_lambda_pertinence::append_qualifier(&mut buf, is_static, &classname);
+                    lambda_pertinence::append_qualifier(&mut buf, is_static, &classname);
                     type_args = chain_args.unwrap_or_else(|| self.get_generic_args());
                 }
                 if !kotlin_type_args {
@@ -1791,9 +1791,9 @@ impl InvocationExprent {
                 } else {
                     let kotlin_name = self.d(|d| d.kuna_kotlin_name.clone());
                     let printed = if let Some(kotlin_name) = &kotlin_name {
-                        kuna_fix_kt_unescaped_name::member(kotlin_name)
+                        kt_unescaped_name::member(kotlin_name)
                     } else if kuna_fixes::enabled(KunaFix::KtUnescapedName) {
-                        kuna_fix_kt_unescaped_name::member(&valid_name)
+                        kt_unescaped_name::member(&valid_name)
                     } else {
                         valid_name.clone()
                     };
@@ -1808,7 +1808,7 @@ impl InvocationExprent {
                         buf.append("/* $VF was: ").append(&name).append(" */");
                     }
                     if kotlin_type_args {
-                        kuna_fix_kt_explicit_type_arguments::append(&mut buf, &type_args);
+                        kt_explicit_type_arguments::append(&mut buf, &type_args);
                     }
                 }
 
@@ -1821,10 +1821,10 @@ impl InvocationExprent {
                 buf.add_bytecode_mapping(self.get_bytecode().as_ref());
                 if super_qualifier.is_some() {
                     if kuna_fixes::enabled(KunaFix::QualifiedSuperCall) {
-                        if let Some((outer, hide)) = kuna_fix_qualified_super_call::super_outer(self)
+                        if let Some((outer, hide)) = qualified_super_call::super_outer(self)
                         {
                             if let Some(outer) = outer {
-                                buf.append_buffer(&kuna_fix_qualified_super_call::qualifier_text(
+                                buf.append_buffer(&qualified_super_call::qualifier_text(
                                     outer, indent,
                                 ))
                                 .append(".");
@@ -1860,9 +1860,9 @@ impl InvocationExprent {
     }
 
     fn append_inst_cast(self, buf: &mut TextBuffer, left_type: &VarType, mut res: TextBuffer) {
-        if kuna_fix_kt_java_reference_cast::active() {
+        if kt_java_reference_cast::active() {
             let instance = self.get_instance().expect("NullPointerException");
-            kuna_fix_kt_java_reference_cast::qualifier(buf, left_type, instance, res);
+            kt_java_reference_cast::qualifier(buf, left_type, instance, res);
             return;
         }
         buf.append("((")
@@ -1957,19 +1957,19 @@ impl InvocationExprent {
         let mut set_ambiguous_parameters = self.get_ambiguous_parameters(&matches);
         let overload_ambiguous = set_ambiguous_parameters.clone();
         if kuna_fixes::enabled(KunaFix::LambdaArgumentOverload) {
-            set_ambiguous_parameters.or(&kuna_fix_lambda_argument_overload::ambiguous_arguments(
+            set_ambiguous_parameters.or(&lambda_argument_overload::ambiguous_arguments(
                 self, &matches,
             ));
         }
         if kuna_fixes::enabled(KunaFix::LambdaTypeVariableTarget) {
-            set_ambiguous_parameters.or(&kuna_fix_lambda_type_variable_target::cast_arguments(self));
+            set_ambiguous_parameters.or(&lambda_type_variable_target::cast_arguments(self));
         }
 
         if kuna_fixes::enabled(KunaFix::UnseenClassOverload)
-            && !kuna_fix_kt_java_cast_syntax::writing_kotlin()
+            && !kt_java_cast_syntax::writing_kotlin()
             && struct_context.get_class(&classname).is_none()
         {
-            kuna_fix_unseen_class_overload::mark(self, &mut set_ambiguous_parameters);
+            unseen_class_overload::mark(self, &mut set_ambiguous_parameters);
         }
 
         if lst_parameters.len() == descriptor.params.len()
@@ -1981,10 +1981,10 @@ impl InvocationExprent {
                 if last_param.get_expr_type().array_dim >= 1
                     && (!ambiguous_vararg || last_new.get_lst_array_elements().len() != 1)
                     && (!kuna_fixes::enabled(KunaFix::VarargArrayLength)
-                        || kuna_fix_vararg_array_length::spreads_as_elements(last_new))
+                        || vararg_array_length::spreads_as_elements(last_new))
                     && (!kuna_fixes::enabled(KunaFix::VarargSpreadResolution)
-                        || kuna_fix_kt_java_cast_syntax::writing_kotlin()
-                        || kuna_fix_vararg_spread_resolution::spread_resolves(self, last_new))
+                        || kt_java_cast_syntax::writing_kotlin()
+                        || vararg_spread_resolution::spread_resolves(self, last_new))
                 {
                     last_new.set_var_arg_param(true);
                 }
@@ -1992,7 +1992,7 @@ impl InvocationExprent {
         }
 
         if kuna_fixes::enabled(KunaFix::LambdaTypeVariableTarget) {
-            kuna_fix_lambda_type_variable_target::mark(self);
+            lambda_type_variable_target::mark(self);
         }
 
         let start: usize = if is_enum { 2 } else { 0 };
@@ -2055,7 +2055,7 @@ impl InvocationExprent {
                     inv.force_boxing(true);
                 } else {
                     if kuna_fixes::enabled(KunaFix::ReferenceUnboxing) {
-                        kuna_fix_reference_unboxing::keep_under_boxing(value);
+                        reference_unboxing::keep_under_boxing(value);
                     }
                     value.add_bytecode_offsets(inv.get_bytecode().as_ref());
                     parameters[i] = value;
@@ -2119,7 +2119,7 @@ impl InvocationExprent {
         }
         let desc = self.d(|d| d.desc).filter(|_| {
             !(kuna_fixes::enabled(KunaFix::RawReceiverErasure)
-                && kuna_fix_raw_receiver_erasure::has_raw_receiver(self))
+                && raw_receiver_erasure::has_raw_receiver(self))
         });
         if let Some((desc, desc_sig)) =
             desc.and_then(|desc| desc.get_signature().map(|s| (desc, s)))
@@ -2139,7 +2139,7 @@ impl InvocationExprent {
             let argument_casts =
                 kuna_fixes::enabled(KunaFix::ArgumentGenericCast) && !self.0.is_kotlin();
             let keep_unboxed = kuna_fixes::enabled(KunaFix::UnboxedArgumentType)
-                && !kuna_fix_kt_java_cast_syntax::writing_kotlin();
+                && !kt_java_cast_syntax::writing_kotlin();
             let erased = if mask.is_none() {
                 self.kuna_erased_type_variable_arguments(Some(&overload_ambiguous))
             } else {
@@ -2158,7 +2158,7 @@ impl InvocationExprent {
                 y += 1;
                 if argument_casts && x < kuna_formals.len() {
                     kuna_formals[x] =
-                        kuna_fix_argument_generic_cast::fixed_formal(self, desc, &parameter_type);
+                        argument_generic_cast::fixed_formal(self, desc, &parameter_type);
                 }
                 let type_ = self.remap_with_generics_map(
                     &parameter_type
@@ -2224,7 +2224,7 @@ impl InvocationExprent {
             }
 
             if let Some(formal) = kuna_formals.get(i).cloned().flatten() {
-                kuna_fix_argument_generic_cast::mark_argument_target(formal);
+                argument_generic_cast::mark_argument_target(formal);
             }
             ExprProcessor::get_casted_exprent_full(
                 lst_parameters.get(i),
@@ -2604,7 +2604,7 @@ impl InvocationExprent {
     /// computed when not given).
     fn kuna_erased_type_variable_arguments(self, ambiguous: Option<&BitSet>) -> Vec<usize> {
         if !kuna_fixes::enabled(KunaFix::AmbiguousTypeVariableArgument)
-            || kuna_fix_kt_java_cast_syntax::writing_kotlin()
+            || kt_java_cast_syntax::writing_kotlin()
             || self.get_functype() == Type::Init
         {
             return Vec::new();
@@ -2628,7 +2628,7 @@ impl InvocationExprent {
                 &computed
             }
         };
-        kuna_fix_ambiguous_type_variable_argument::erased_arguments(
+        ambiguous_type_variable_argument::erased_arguments(
             self,
             &declared,
             &type_parameters,
@@ -3168,12 +3168,12 @@ impl InvocationExprent {
 
     pub fn set_kuna_null_check_shape(
         self,
-        shape: Option<kuna_fix_synthetic_null_check_shape::Shape>,
+        shape: Option<synthetic_null_check_shape::Shape>,
     ) {
         self.d_mut(|d| d.kuna_null_check_shape = shape)
     }
 
-    pub fn get_kuna_null_check_shape(self) -> Option<kuna_fix_synthetic_null_check_shape::Shape> {
+    pub fn get_kuna_null_check_shape(self) -> Option<synthetic_null_check_shape::Shape> {
         self.d(|d| d.kuna_null_check_shape)
     }
 
@@ -3212,7 +3212,7 @@ impl InvocationExprent {
         }
         let desc = self.d(|d| d.desc).filter(|_| {
             !(kuna_fixes::enabled(KunaFix::RawReceiverErasure)
-                && kuna_fix_raw_receiver_erasure::has_raw_receiver(self))
+                && raw_receiver_erasure::has_raw_receiver(self))
         });
         if let Some((desc, desc_sig)) =
             desc.and_then(|desc| desc.get_signature().map(|s| (desc, s)))

@@ -2,23 +2,23 @@
 //!
 //! kuna fix `kt_jump_to_non_loop_label`: a labelled `if` that a written jump
 //! leaves is written as `run labelN@{ .. }`, and such jumps as `return@labelN`
-//! (`kuna_fix_kt_jump_to_non_loop_label`).
+//! (`fixes::kt_jumps::kt_jump_to_non_loop_label`).
 //!
 //! kuna fix `kt_when_break`: an unlabelled `break` out of a `when` that is
 //! the `if`'s only statement is left out or written `return@labelN`
-//! (`kuna_fix_kt_when_break`).
+//! (`fixes::kt_jumps::kt_when_break`).
 //!
 //! kuna fix `kt_unlabeled_sequence_break`: an unlabelled `break` whose
 //! closure is a sequence is written `break`
-//! (`kuna_fix_kt_unlabeled_sequence_break`).
+//! (`fixes::kt_jumps::kt_unlabeled_sequence_break`).
 
 use crate::expr_processor::ExprProcessor;
 use crate::if_statement::{set_head_slot, IfStatement};
 use crate::k_expr_processor::KExprProcessor;
-use crate::kotlin::kuna_fix_kt_unlabeled_sequence_break;
+use crate::fixes::kt_jumps::kt_unlabeled_sequence_break;
 use crate::kotlin_statement;
-use crate::kuna_fix_kt_jump_to_non_loop_label::{self, Lambda};
-use crate::kuna_fix_kt_when_break;
+use crate::fixes::kt_jumps::kt_jump_to_non_loop_label::{self, Lambda};
+use crate::fixes::kt_jumps::kt_when_break;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::rt::JavaStr;
 use crate::stat_edge::StatEdge;
@@ -126,14 +126,14 @@ impl KIfStatement {
 
         if self.is_labeled()
             && kuna_fixes::enabled(KunaFix::KtJumpToNonLoopLabel)
-            && kuna_fix_kt_jump_to_non_loop_label::jumped_out_of(self.into())
+            && kt_jump_to_non_loop_label::jumped_out_of(self.into())
         {
             buf.append_indent(indent)
                 .append("run label")
                 .append_int(self.id())
                 .append("@{")
                 .append_line_separator();
-            kuna_fix_kt_jump_to_non_loop_label::within(self.into(), Lambda::Run, || {
+            kt_jump_to_non_loop_label::within(self.into(), Lambda::Run, || {
                 self.write_if(&mut buf, indent + 1)
             });
             buf.append_indent(indent)
@@ -166,7 +166,7 @@ impl KIfStatement {
             None => {
                 let if_edge = self.get_if_edge().expect("NullPointerException: ifEdge");
                 let when_break = (kuna_fixes::enabled(KunaFix::KtWhenBreak) && if_edge.explicit())
-                    .then(|| kuna_fix_kt_when_break::jump(if_edge, self.into()))
+                    .then(|| kt_when_break::jump(if_edge, self.into()))
                     .flatten();
                 if let Some(when_break) = when_break {
                     if !when_break.is_empty() {
@@ -176,10 +176,10 @@ impl KIfStatement {
                     }
                 } else if if_edge.explicit() {
                     let lambda_return = kuna_fixes::enabled(KunaFix::KtJumpToNonLoopLabel)
-                        && kuna_fix_kt_jump_to_non_loop_label::returns(if_edge);
+                        && kt_jump_to_non_loop_label::returns(if_edge);
                     let closure_is_run =
                         if kuna_fixes::enabled(KunaFix::KtUnlabeledSequenceBreak) {
-                            kuna_fix_kt_unlabeled_sequence_break::returns_from_sequence(if_edge)
+                            kt_unlabeled_sequence_break::returns_from_sequence(if_edge)
                         } else {
                             if_edge.closure().is_some_and(|c| c.is_k_sequence())
                         };

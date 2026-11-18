@@ -5,40 +5,40 @@
 //! return in that class's scope.
 //!
 //! kuna fix `kt_type_parameter_id`: each member's types are read in the
-//! scope of its own type parameters (`kuna_fix_kt_type_parameter_id`).
+//! scope of its own type parameters (`fixes::kt_types::kt_type_parameter_id`).
 //!
 //! kuna fix `kt_abstract_function_body`: an abstract or external function
 //! (no code in the class file) is written without a body, where Vineflower
 //! writes an empty one, which Kotlin rejects.
 //!
 //! kuna fix `kt_missed_override`: a function that a bridge method of its
-//! class calls is an override (`kuna_fix_kt_missed_override`).
+//! class calls is an override (`fixes::kt_declarations::kt_missed_override`).
 //!
 //! kuna fix `kt_extension_receiver`: an extension function's body writes
-//! its receiver `this` (`kuna_fix_kt_extension_receiver`).
+//! its receiver `this` (`fixes::kt_extensions::kt_extension_receiver`).
 //!
 //! kuna fix `kt_default_args_bridge_lookup`: the default-arguments method is
 //! found by its JVM name and descriptor, in the class or an interface's
-//! `DefaultImpls` (`kuna_fix_kt_default_args_bridge_lookup`).
+//! `DefaultImpls` (`fixes::kt_default_args::kt_default_args_bridge_lookup`).
 //!
 //! kuna fix `kt_default_value_names`: a default value names the function's
 //! parameters and receivers as its declaration does
-//! (`kuna_fix_kt_default_value_names`).
+//! (`fixes::kt_default_args::kt_default_value_names`).
 //!
 //! kuna fix `kt_function_parameter_name`: the body names a parameter without
 //! a local variable table entry as the header does
-//! (`kuna_fix_kt_function_parameter_name`).
+//! (`fixes::kt_names::kt_function_parameter_name`).
 //!
 //! kuna fix `kt_suspend_impl`: an open suspend function whose body kotlinc
 //! moved into its `$suspendImpl` method is written with that body
-//! (`kuna_fix_kt_suspend_impl`).
+//! (`fixes::kt_suspend::kt_suspend_impl`).
 //!
 //! kuna fix `kt_suspend_lambda`: the function of a suspend lambda's class is
 //! its `invokeSuspend`, recorded for the class only
-//! (`kuna_fix_kt_suspend_lambda`).
+//! (`fixes::kt_suspend::kt_suspend_lambda`).
 //!
 //! kuna fix `kt_contract_import`: a function with a contract is annotated
-//! `@OptIn(ExperimentalContracts::class)` (`kuna_fix_kt_contract_import`).
+//! `@OptIn(ExperimentalContracts::class)` (`fixes::kt_declarations::kt_contract_import`).
 //!
 //! kuna fix `kt_delegated_member_default`: a member kotlinc generates for
 //! interface delegation (kind `DELEGATION`) is written without defaults: K1
@@ -48,7 +48,7 @@
 //!
 //! kuna fix `kt_companion_static_copy`: only a static method of the
 //! companion's class is marked as the copy of a companion function
-//! (`kuna_fix_kt_companion_static_copy`).
+//! (`fixes::kt_generated_members::kt_companion_static_copy`).
 
 use std::rc::Rc;
 
@@ -72,17 +72,17 @@ use crate::kotlin_writer::{is_stop_signal, KotlinWriter};
 use crate::kt_attrs::KtAttrs;
 use crate::kt_flags::Flags;
 use crate::kt_proto::{self, MemberKind, Modality, Visibility};
-use crate::kotlin::kuna_fix_kt_default_args_bridge_lookup;
-use crate::kotlin::kuna_fix_kt_default_value_names;
-use crate::kotlin::kuna_fix_kt_contract_import;
-use crate::kotlin::kuna_fix_kt_function_parameter_name;
-use crate::kotlin::kuna_fix_kt_extension_receiver;
-use crate::kotlin::kuna_fix_kt_missed_override;
-use crate::kotlin::kuna_fix_kt_companion_static_copy;
-use crate::kotlin::kuna_fix_kt_suspend_lambda;
-use crate::kotlin::kuna_fix_kt_suspend_impl;
-use crate::kuna_fix_kt_java_reference_cast;
-use crate::kuna_fix_kt_type_parameter_id;
+use crate::fixes::kt_default_args::kt_default_args_bridge_lookup;
+use crate::fixes::kt_default_args::kt_default_value_names;
+use crate::fixes::kt_declarations::kt_contract_import;
+use crate::fixes::kt_names::kt_function_parameter_name;
+use crate::fixes::kt_extensions::kt_extension_receiver;
+use crate::fixes::kt_declarations::kt_missed_override;
+use crate::fixes::kt_generated_members::kt_companion_static_copy;
+use crate::fixes::kt_suspend::kt_suspend_lambda;
+use crate::fixes::kt_suspend::kt_suspend_impl;
+use crate::fixes::kt_java_syntax::kt_java_reference_cast;
+use crate::fixes::kt_types::kt_type_parameter_id;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::metadata_name_resolver::MetadataNameResolver;
 use crate::method_wrapper::MethodWrapper;
@@ -187,7 +187,7 @@ impl KFunction {
 
         for function in proto_functions {
             let _type_parameters = kuna_fixes::enabled(KunaFix::KtTypeParameterId).then(|| {
-                kuna_fix_kt_type_parameter_id::member_scope(
+                kt_type_parameter_id::member_scope(
                     &function.get_type_parameter_list(),
                     resolver,
                 )
@@ -260,7 +260,7 @@ impl KFunction {
                     && "<anonymous>" == name
                     && kuna_fixes::enabled(KunaFix::KtSuspendLambda)
                 {
-                    method_lookup = kuna_fix_kt_suspend_lambda::body_method(class_struct);
+                    method_lookup = kt_suspend_lambda::body_method(class_struct);
                     suspend_lambda_body = method_lookup.is_some();
                 }
 
@@ -285,7 +285,7 @@ impl KFunction {
                         .get_method(&lookup_name, &desc)
                         .filter(|m| {
                             !kuna_fixes::enabled(KunaFix::KtCompanionStaticCopy)
-                                || kuna_fix_kt_companion_static_copy::is_copy(*m)
+                                || kt_companion_static_copy::is_copy(*m)
                         })
                     {
                         KtAttrs::put(
@@ -354,7 +354,7 @@ impl KFunction {
             default_args_desc.push_str(&return_type.0.to_string());
 
             let bridge = kuna_fixes::enabled(KunaFix::KtDefaultArgsBridgeLookup).then(|| {
-                kuna_fix_kt_default_args_bridge_lookup::locate(
+                kt_default_args_bridge_lookup::locate(
                     class_struct,
                     method,
                     parameters.len(),
@@ -416,7 +416,7 @@ impl KFunction {
                     &method.method_descriptor(),
                     false,
                 ) || kuna_fixes::enabled(KunaFix::KtMissedOverride)
-                    && kuna_fix_kt_missed_override::bridged(class_struct, method));
+                    && kt_missed_override::bridged(class_struct, method));
 
             let contract = if function.has_contract() {
                 Some(KContract::from(
@@ -494,7 +494,7 @@ impl KFunction {
         );
 
         if self.contract.is_some() && kuna_fixes::enabled(KunaFix::KtContractImport) {
-            kuna_fix_kt_contract_import::append_opt_in(&mut buf, indent);
+            kt_contract_import::append_opt_in(&mut buf, indent);
         }
 
         let method_key = InterpreterUtil::make_unique_key(
@@ -636,7 +636,7 @@ impl KFunction {
                     .kuna_bridge()
                     .filter(|_| kuna_fixes::enabled(KunaFix::KtDefaultValueNames))
                     .and_then(|bridge| {
-                        kuna_fix_kt_default_value_names::enter(
+                        kt_default_value_names::enter(
                             bridge,
                             class_struct,
                             method_struct,
@@ -710,15 +710,15 @@ impl KFunction {
             (self.method_supplier)(wrapper).expect("NullPointerException: methodWrapper");
         let mut _impl_scope = None;
         if kuna_fixes::enabled(KunaFix::KtSuspendImpl) {
-            if let Some(body) = kuna_fix_kt_suspend_impl::body_of(wrapper, method_wrapper) {
+            if let Some(body) = kt_suspend_impl::body_of(wrapper, method_wrapper) {
                 method_wrapper = body;
-                _impl_scope = Some(kuna_fix_kt_suspend_impl::enter(body));
+                _impl_scope = Some(kt_suspend_impl::enter(body));
             }
         }
         let _receiver = (kuna_fixes::enabled(KunaFix::KtExtensionReceiver)
             && self.receiver_type.is_some())
         .then(|| {
-            kuna_fix_kt_extension_receiver::enter(
+            kt_extension_receiver::enter(
                 class_struct,
                 method_wrapper,
                 method_struct.has_modifier(ACC_STATIC),
@@ -726,7 +726,7 @@ impl KFunction {
         })
         .flatten();
         let _parameter_names = kuna_fixes::enabled(KunaFix::KtFunctionParameterName).then(|| {
-            kuna_fix_kt_function_parameter_name::enter(
+            kt_function_parameter_name::enter(
                 method_wrapper,
                 &self.parameters,
                 usize::from(self.receiver_type.is_some()),
@@ -737,7 +737,7 @@ impl KFunction {
             method_wrapper.with(|d| (d.root, d.decompile_error.is_some()));
         if let (Some(root), false) = (root, decompile_error) {
             let result = try_catch(|| {
-                let mut body = kuna_fix_kt_java_reference_cast::with_nullable_parameters(
+                let mut body = kt_java_reference_cast::with_nullable_parameters(
                     nullable_parameters(&self.parameters),
                     || root.to_java(indent + 1),
                 );

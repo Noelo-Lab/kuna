@@ -101,6 +101,7 @@ byte.
 | `src/infra/` | the per-method schedule (`method_processor`), the plugin and language-plugin API, and kuna's parallel driver, spans, plugin bundle (`kuna_plugins`) and corpus runner |
 | `src/plugins/` | Vineflower's VariableRenaming and IdeaNotNull plugins |
 | `src/kotlin/` | Vineflower's Kotlin plugin: the metadata decoder, its pass schedule, the Kotlin expression and statement layer, the Kotlin writer (below, "Kotlin") |
+| `src/fixes/` | kuna's fixes of Vineflower's defects, one folder per family of `fixes.toml` (a file for a family of one module), called from the gated sites of the ported files (below, "Kuna-only fixes") |
 | `options.toml` | the `jvm_*` option rows; `build.rs` generates the static table from it |
 | `examples/` | `corpus` (the regression runner) |
 | `tests/` | the unit and differential suite, one `integration` test binary (`tests/integration.rs` registers every file) |
@@ -120,8 +121,9 @@ rules:
 - **One Java top-level class, one module**, named after the class in snake case
   (`IfHelper` is `if_helper`, `SSAUConstructorSparseEx` is `ssau_constructor_sparse_ex`;
   acronyms split oddly: `IFernflowerPreferences` is `i_fernflower_preferences`,
-  `PPandMMHelper` is `p_pand_mm_helper`). Every module is re-exported flat from the crate
-  root (`kuna_jvm::if_helper`), so code never names a folder. Types keep their Java names,
+  `PPandMMHelper` is `p_pand_mm_helper`). Every ported module is re-exported flat from the
+  crate root (`kuna_jvm::if_helper`), so code never names a phase folder; a fix is named by
+  its family (`crate::fixes::switches::switch_case_order`). Types keep their Java names,
   nested Java types live in their outer class's module, and methods are the Java names in
   snake case with prefixes kept (`getParent` is `get_parent`). A class of static methods
   is a unit struct, so a call reads like the Java (`IfHelper::merge_all_ifs(root)`).
@@ -144,12 +146,12 @@ rules:
   an extra temporary.
 - **kuna's own code** lives in `kuna_*` modules (`kuna_input`, `kuna_inventory`,
   `kuna_options`, `kuna_fixes`, `kuna_driver`, `kuna_partition`, `kuna_plugins`, `kuna_spans`,
-  `kuna_corpus`, `kuna_reclaim`), in the modules that replace JVM facilities (`context_source`,
-  `jdk_runtime`, `zip_reader`, `byte_cursor`), and in the Kotlin plugin's seams
-  (`kt_metadata`, `kt_attrs`, `k_dispatch`). Changes inside ported files are kept to the
-  seams those modules need (span marks in the writer, a deadline poll in the
-  cancellation manager, partial runs in `fernflower.rs`) and to the gated sites of kuna's
-  fixes (*Kuna-only fixes*), noted in the file headers.
+  `kuna_corpus`, `kuna_reclaim`), in `src/fixes/`, in the modules that replace JVM
+  facilities (`context_source`, `jdk_runtime`, `zip_reader`, `byte_cursor`), and in the
+  Kotlin plugin's seams (`kt_metadata`, `kt_attrs`, `k_dispatch`). Changes inside ported
+  files are kept to the seams those modules need (span marks in the writer, a deadline
+  poll in the cancellation manager, partial runs in `fernflower.rs`) and to the gated
+  sites of kuna's fixes (*Kuna-only fixes*), noted in the file headers.
 - **Comments are minimal**, as everywhere in kuna: Java comments and Javadoc are not
   transcribed.
 
@@ -714,10 +716,10 @@ example):
    option row: a fix is not a user option, and `jvm_vineflower_compat` already turns it
    off with the others. At the site: `if kuna_fixes::enabled(KunaFix::X) { ... } else {
    <the Java, unchanged> }`, and a line in the ported file's header naming the fix by its
-   id. A fix longer than a few lines goes in a `kuna_fix_<id>.rs` module next to the
-   ported file, called from the gated branch. Code that runs before `Fernflower::new`
-   installs the context reads the set it is building (`fixes.contains(..)`), as
-   `report_to_kuna` does.
+   id. A fix longer than a few lines goes in a module named by its id in its family's
+   folder, `src/fixes/<family>/<id>.rs`, called from the gated branch. Code that runs
+   before `Fernflower::new` installs the context reads the set it is building
+   (`fixes.contains(..)`), as `report_to_kuna` does.
 4. **Add the case.** Compile the reproducer and run `python3 -I
    tests/jvm/kuna_fix_case.py --fix <id> --class DIR/pkg/TestFoo.class --source
    pkg/TestFoo.java --compiler "javac 17.0.20.1" --summary "<what decompiles now>"`. It

@@ -2,7 +2,7 @@
 //!
 //! kuna fix `self_referencing_lambda` (`kuna_fixes`): before the lambda
 //! hierarchy is built, a lambda whose implementation method instantiates it
-//! again is written as a method reference (`kuna_fix_self_referencing_lambda`),
+//! again is written as a method reference (`fixes::lambdas::self_referencing_lambda`),
 //! where Vineflower nests it under itself and throws or overflows the stack.
 
 use crate::classes_processor::{sort_nodes, ClassNode, ClassNodeType};
@@ -12,7 +12,7 @@ use crate::interpreter_util::InterpreterUtil;
 use crate::jthrow;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::method_descriptor::MethodDescriptor;
-use crate::p4_calls::kuna_fix_self_referencing_lambda;
+use crate::fixes::lambdas::self_referencing_lambda;
 use crate::rt::{BitSet, JHashMap};
 use crate::struct_general_attribute::StructGeneralAttribute;
 
@@ -156,7 +156,7 @@ impl LambdaProcessor {
         sort_nodes(&nested);
 
         if kuna_fixes::enabled(KunaFix::SelfReferencingLambda) {
-            kuna_fix_self_referencing_lambda::write_recursive_lambdas_as_method_references(
+            self_referencing_lambda::write_recursive_lambdas_as_method_references(
                 &nested,
                 &mut map_methods_lambda,
             );

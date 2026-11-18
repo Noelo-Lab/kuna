@@ -7,10 +7,10 @@
 //! kuna fix `kt_return_outside_lambda` (`kuna_fixes`): the bare value
 //! stands for a `return` only where a lambda writer installed the current
 //! method wrapper, not where a declaration did
-//! (`kuna_fix_kt_return_outside_lambda`).
+//! (`fixes::kt_jumps::kt_return_outside_lambda`).
 //!
 //! kuna fix `kt_throwable_cast`: a thrown value is written without kotlinc's
-//! cast to `java.lang.Throwable` (`kuna_fix_kt_throwable_cast`).
+//! cast to `java.lang.Throwable` (`fixes::kt_java_syntax::kt_throwable_cast`).
 
 use crate::decompiler_context::DecompilerContext;
 use crate::exit_exprent::{ExitExprent, Type as ExitType};
@@ -18,10 +18,10 @@ use crate::exprent::Exprent;
 use crate::jthrow;
 use crate::k_dispatch::KExprentExt;
 use crate::k_type::KType;
-use crate::kotlin::kuna_fix_kt_throwable_cast;
+use crate::fixes::kt_java_syntax::kt_throwable_cast;
 use crate::kotlin_exprent;
-use crate::kuna_fix_kt_return_outside_lambda;
-use crate::kuna_fix_kt_synthetic_anonymous_object;
+use crate::fixes::kt_jumps::kt_return_outside_lambda;
+use crate::fixes::kt_anonymous_objects::kt_synthetic_anonymous_object;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::text_buffer::TextBuffer;
 use crate::var_type::VarType;
@@ -59,7 +59,7 @@ impl KExitExprent {
         if self.get_exit_type() == ExitType::Throw {
             if kuna_fixes::enabled(KunaFix::KtThrowableCast) {
                 if let Some(cast) = self.get_value() {
-                    if let Some(operand) = kuna_fix_kt_throwable_cast::uncast(cast) {
+                    if let Some(operand) = kt_throwable_cast::uncast(cast) {
                         let mut buf = TextBuffer::new();
                         buf.add_bytecode_mapping(self.get_bytecode().as_ref());
                         buf.add_bytecode_mapping(cast.get_bytecode().as_ref());
@@ -73,9 +73,9 @@ impl KExitExprent {
 
         let outer_method = DecompilerContext::get_current_method_wrapper().filter(|m| {
             !(kuna_fixes::enabled(KunaFix::KtSyntheticAnonymousObject)
-                && kuna_fix_kt_synthetic_anonymous_object::is_declaration(*m))
+                && kt_synthetic_anonymous_object::is_declaration(*m))
                 && !(kuna_fixes::enabled(KunaFix::KtReturnOutsideLambda)
-                    && !kuna_fix_kt_return_outside_lambda::is_lambda_body(*m))
+                    && !kt_return_outside_lambda::is_lambda_body(*m))
         });
         if outer_method.is_some() {
             let mut buf = TextBuffer::new();

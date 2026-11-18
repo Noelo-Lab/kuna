@@ -59,6 +59,7 @@ phase, but the order of execution is the engine's own:
 | `infra/` | the per-method schedule, pass hooks, the parallel driver and the debugging aids |
 | `plugins/` | Vineflower's VariableRenaming and IdeaNotNull plugins (this section, below) |
 | `kotlin/` | Vineflower's Kotlin plugin: metadata decoding, its pass schedule, expression and statement layer and writer (section 10.15) |
+| `fixes/` | (kuna) the fixes of Vineflower's defects, one module per family of `fixes.toml`, called from the gated sites of the folders above (section 10.16) |
 
 The schedule has two levels. **Per input**, `decompiler/nonnative/kuna-jvm/src/p0_knowledge/fernflower.rs
 (Fernflower::decompile_context)` loads the class universe and nests classes (section
@@ -814,7 +815,7 @@ Other declarations of the moved variable's slot and name in its new scope are me
 declaration whose slot, name and table entry are those of a variable in scope, or of a parameter, is
 merged into that variable (Vineflower splits `it = new Wrapper(it)` or `origin =
 origin.getParent()` into a new `var3`). Every merge is refused when a read of one variable could see
-a write of the other (`kuna_fix_var_merge_liveness::overwrites_live`, both ways), and a variable a
+a write of the other (`fixes::var_merge::var_merge_liveness::overwrites_live`, both ways), and a variable a
 lambda or a local or anonymous class captures, or a `final` one, is neither moved nor merged.
 `order_declarations` moves only variables the table names. `VarDefinitionHelper::merge_check`
 refuses to merge two variables the table names differently (`kuna_source_locals::named_apart`,
@@ -1374,7 +1375,9 @@ Vineflower prints wrong. The table in `docs/jvm.md` (*Kuna-only fixes*) describe
 by its id, in one row: the defect and what kuna does instead. This section describes the
 gate every fix goes through, the invariants the fixes keep, and the mechanisms groups of
 them share. The ported file of each gated site names the fix in its header, and a fix
-longer than a few lines lives in a `kuna_fix_<id>.rs` module next to that file.
+longer than a few lines lives in a module named by its id in its family's folder,
+`decompiler/nonnative/kuna-jvm/src/fixes/<family>/<id>.rs` (the family's file when it has one
+module).
 
 **The gate.** `decompiler/nonnative/kuna-jvm/src/p0_knowledge/kuna_fixes.rs (KunaFix)`
 names each fix; `KunaFix::id` gives its id (the name the table and the `fix` field of
@@ -1474,7 +1477,7 @@ kotlinx-coroutines. javac code shows it where two block-scoped locals share a sl
 = src.next(); if (o == MARK) return -1; } { String s = (String)src.next(); ... }` becomes `String
 o = (String)src.next(); if (o == MARK) ...`). `develop/1.13.0` (`3ce9eb26`) only refreshes the
 declared type of the merge target and keeps the merge. With the fix,
-`decompiler/nonnative/kuna-jvm/src/p6_variables/kuna_fix_var_merge_narrowing.rs (assigns_wider)`
+`decompiler/nonnative/kuna-jvm/src/fixes/var_merge/var_merge_narrowing.rs (assigns_wider)`
 is asked before a merge whose type narrows a lower bound: it collects the method's assignments
 and refuses the merge when one to either variable assigns a value of a reference type the merged
 type does not admit, one it is strictly below or one unrelated to it (`Object v = c ? "s" :
@@ -1495,7 +1498,7 @@ another variable, field or element; not an arm of a conditional; any use, for an
 which the writer casts wherever a narrower type is needed: kotlinc declares some locals
 `Object` and reads them by the verifier's type, `aload; arraylength`), the two are the source's
 one variable, and
-`decompiler/nonnative/kuna-jvm/src/p6_variables/kuna_fix_var_merge_narrowing.rs (declared_type)`
+`decompiler/nonnative/kuna-jvm/src/fixes/var_merge/var_merge_narrowing.rs (declared_type)`
 gives the merge that local's type in place of `getMergedType`'s: javac's own
 `Set<Modifier> modifiers = method.getModifiers(); ... modifiers = new LinkedHashSet<>(modifiers);`
 (spring-framework's javapoet `MethodSpec.overriding`) keeps one variable, as in Vineflower's
@@ -1733,7 +1736,7 @@ block or `run { }` initializers that run each statement where it ran.
 ends in a `Continuation` and it returns `Object`. kotlinc lowers a suspending body to a
 state machine whose resumed path recreates the direct path's frame, so the direct path is
 the source's body. The `SuspendStateMachine` pass
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_suspend_state_machine.rs`), first
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_suspend/kt_suspend_state_machine.rs`), first
 among the Kotlin plugin's graph passes, matches the machine instruction by instruction,
 rewrites the graph to the direct path and rejoins the try ranges kotlinc split; any other
 shape keeps Vineflower's machine. `kt_suspend_call_continuation` marks the calls that pass
@@ -1752,7 +1755,7 @@ calls `super([receiver,] Owner.class, "name", "getterSignature", flags)`. `Kotli
 recognises only `FunctionReferenceImpl` subclasses, so a property reference reaches the writer as
 an anonymous object without Class metadata: a bound one (`this::size`) fails its method, an
 unbound one prints `<unrepresentable>.INSTANCE` (unchanged on `develop/1.13.0`). With the fix,
-`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_property_reference.rs`, called from
+`decompiler/nonnative/kuna-jvm/src/fixes/kt_anonymous_objects/kt_property_reference.rs`, called from
 `decompiler/nonnative/kuna-jvm/src/kotlin/k_new_exprent.rs` and
 `decompiler/nonnative/kuna-jvm/src/kotlin/k_field_exprent.rs` for a Kotlin class without parsed
 metadata, writes such a class as the reference its super call describes (the super call found as
@@ -1769,7 +1772,7 @@ out as `KClass::superclasses`.
 **`kt_anonymous_class_failure_reason`.** What the three fixes above and
 `kt_synthetic_anonymous_object` leave of `IllegalStateException: Anonymous class does not have
 Class Kotlin metadata` is a structural limit, and the message says which
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_anonymous_class_failure_reason.rs`,
+(`decompiler/nonnative/kuna-jvm/src/fixes/failure_comments.rs`,
 thrown at the same place in `KotlinWriter::write_class_definition`), naming the class. A suspend
 function's continuation (`ContinuationImpl`; 54 failure comments in kotlinx-coroutines 1.8.0, 49
 in 1.10.2, 2 in kotlin-reflect) means the method is the coroutine state machine kotlinc compiled the
@@ -1798,7 +1801,7 @@ anonymous `Weight` subclasses of Elasticsearch's queries; `FilteredTermsEnum.Acc
 `LRUQueryCache.CacheAndCount`, `ConcurrentMergeScheduler.MergeThread`) becomes an import javac
 rejects (`has protected access`), and the whole file fails to compile (still so on
 `develop/1.13.0`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/p9_emit/kuna_fix_nonpublic_nested_import.rs`), a class
+(`decompiler/nonnative/kuna-jvm/src/fixes/class_writing/nonpublic_nested_import.rs`), a class
 outside the input that the `InnerClasses` attribute of the class being written (or of a class
 enclosing it, or of the class itself when it is loaded) records as a member class of a class in
 another package, and that is not public or is nested in a class that is not, is named through
@@ -1816,7 +1819,7 @@ descriptor, so a package-private method redeclared in a subclass in another pack
 method that has the name of a private superclass method gets an `@Override` javac rejects
 (`method does not override or implement a method from a supertype`; still so on
 `develop/1.13.0`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/p9_emit/kuna_fix_override_inaccessible_method.rs`), the
+(`decompiler/nonnative/kuna-jvm/src/fixes/class_writing/override_inaccessible_method.rs`), the
 search skips a supertype method the class cannot override and goes on to that type's own
 supertypes.
 
@@ -1842,7 +1845,7 @@ path, or reads after it (`T v; if (x instanceof T) { v = (T) x; } else { v = new
 v.use();`, Elasticsearch's `ES812PostingsReader.postings`, Ghidra's
 `FileBytesAdapterV0.createBuffers`), becomes a pattern variable used outside its scope, which
 javac cannot resolve (still so on `develop/1.13.0`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_fix_pattern_variable_scope.rs`), the
+(`decompiler/nonnative/kuna-jvm/src/fixes/patterns/pattern_variable_scope.rs`), the
 pattern is made only when no statement of the method outside the pattern's scope uses the
 variable (by index): the scope is the branch the assignment came from when it is the `if`'s own
 branch, or the statements after the `if` in its sequence when it is the `if`'s successor, plus
@@ -1861,7 +1864,7 @@ written in. Two cases that each declare `double z` before an `if` (Guava's
 `ConsistencyChecker.sizeRestriction`, Elasticsearch's `DocValuesConsumerUtil`) are then written
 without braces and javac rejects the second (`already defined`), and where a clash is detected
 the earlier written case can be the one renamed. With the fix
-(`decompiler/nonnative/kuna-jvm/src/p6_variables/kuna_fix_switch_case_scope.rs`), a switch
+(`decompiler/nonnative/kuna-jvm/src/fixes/declaration_scope/switch_case_scope.rs`), a switch
 statement's cases are visited in the order they are written, the declarations made at the top
 level of a case sequence stay live until the switch ends, as for a single-block case, and a
 declaration nested deeper in a later case that clashes only with top-level declarations of
@@ -1878,7 +1881,7 @@ extends the local class (`class LocalClass<T> {} ... new LocalClass<String>() {}
 `Types.ClassOwnership.detectJvmBehavior`) names only the anonymous class, so the declaration
 lands later, and javac cannot resolve the anonymous class's supertype (still so on
 `develop/1.13.0`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_fix_local_class_anonymous_subclass.rs`),
+(`decompiler/nonnative/kuna-jvm/src/fixes/anonymous_classes/local_class_anonymous_subclass.rs`),
 `new` of an anonymous class whose superclass or interface is the local class is a use of it.
 **Kotlin `for` loops** (`kt_for_loop_exit_condition`, `kt_for_range_counter`,
 `kt_for_range_exclusive_bound`, `kt_for_range_unmatched_bound`, `kt_for_loop_definitions`,
@@ -1890,7 +1893,7 @@ writes any other `for` loop as its initializer followed by a `while (true)` loop
 condition and runs the update at the end of the body. Six defects of that writer have one fix
 each. *Exit condition*: the fallback prints `if (COND) break` with the loop's condition as it
 is, the condition for going on, so the loop leaves at once whenever it should run; with the fix
-it is `while (COND) {`. *Counter* (`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_for_range_counter.rs (is_counted_loop)`):
+it is `while (COND) {`. *Counter* (`decompiler/nonnative/kuna-jvm/src/fixes/kt_for_loops.rs (is_counted_loop)`):
 the rewrite takes the initializer's variable for the loop variable without checking the rest of
 the header, and `MergeHelper.matchFor` often takes as initializer the assignment just before the
 loop, which for kotlinc's array loops (`int i = 0; for (int n = a.length; i < n; i++)`) is the
@@ -1931,14 +1934,14 @@ lives as long as the local did, across later versions of the same stack slot. Th
 makes the later version overwrite a value still to be read: kotlinc's two elvis results
 `val a = x?.split(..) ?: listOf(); val b = y?.split(..) ?: listOf(); if (a.size > b.size) a else b`
 come out as `if (var39.size() > var39.size()) var39 else var39`. With the fix
-(`decompiler/nonnative/kuna-jvm/src/p6_variables/kuna_fix_var_merge_liveness.rs (overwrites_live)`),
+(`decompiler/nonnative/kuna-jvm/src/fixes/var_merge/var_merge_liveness.rs (overwrites_live)`),
 each merge `mergeVars` proposes is also checked on the method's flattened flow graph: no path
 may read the earlier variable after a write of the later one (other than a copy of the earlier
 one, or a reference cast of it, which leaves the two equal) without the earlier one being
 written in between. Writes are read in evaluation order, a write under `&&`, `||` or `?:` that
 may not happen does not end a path, and a `for`-each or caught-exception variable is written by
 its node. One `mergeVars` builds the graph and each exprent's events once
-(`decompiler/nonnative/kuna-jvm/src/p6_variables/kuna_fix_var_merge_liveness.rs (Flow)`): a merge
+(`decompiler/nonnative/kuna-jvm/src/fixes/var_merge/var_merge_liveness.rs (Flow)`): a merge
 renames the merged variable in the exprents the nodes share with the statements and drops lone
 variables (which have no events), so after each merge only the exprents that mentioned the merged
 variable are read again. Rebuilding per proposed merge made a method of 600 sibling blocks reusing
@@ -1971,7 +1974,7 @@ cut around each suspension's early `return`, which the `finally` does not run (k
 `lastOrNull`, `maxWith`, `minWith`, `toChannel` and its `map`, `zip` lambdas,
 `SharedFlowImpl.collect`, `StateFlowImpl.collect`, `StreamFlow.collect`; unchanged on
 `develop/1.13.0`, whose only change to these classes is nullability). With the fix
-(`decompiler/nonnative/kuna-jvm/src/p7_regions/kuna_fix_irreducible_with_exception_edges.rs`),
+(`decompiler/nonnative/kuna-jvm/src/fixes/control_flow/irreducible_with_exception_edges.rs`),
 at the two points where Vineflower gives the region up for good (the map of extended
 postdominators fresh or refreshed) and only when the region is irreducible over its regular and
 exception edges together (a handler entered from its range), `DomHelper` goes on in two ways.
@@ -2015,7 +2018,7 @@ machine splits (okio's `AsyncTimeout` sinks and sources and `Pipe`, okhttp's `Re
 `DispatchedTask.run`, `ThreadSafeHeap.removeFirstIf`, `FastServiceLoader`, the `onStart`,
 `onEmpty`, `onCompletion` flows; the assertion: `ChannelsKt__DeprecatedKt`'s `toChannel`,
 `toCollection`, `toMap` and `StateFlowImpl.collect`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_semaphore_store_liveness.rs (monitor_vars)`),
+(`decompiler/nonnative/kuna-jvm/src/fixes/finally_sync/kt_semaphore_store_liveness.rs (monitor_vars)`),
 the pass collects the variables that a `finally`'s monitor reads and keeps every store to one of
 them or to a version of one (by `VarProcessor::get_var_original_index`): the semaphore is live
 wherever the guard can be reached. Its versions then merge back into one variable as in the
@@ -2032,7 +2035,7 @@ catch clause's variable belongs to its `CatchStatement` (or `CatchAllStatement`)
 node in that graph (`FlattenStatementsHelper` leaves it out: "TODO: add catch variable to this
 node"), so it keeps the old entry; the clause declares `e` while its uses read `ex`, and javac
 cannot resolve `ex`. With the fix
-(`decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_fix_lambda_catch_var_rename.rs`) the catch
+(`decompiler/nonnative/kuna-jvm/src/fixes/nested_class_vars/lambda_catch_var_rename.rs`) the catch
 variables of the body's statement tree take the entry their uses take. Upstream has no change
 here.
 
@@ -2043,7 +2046,7 @@ import collector, which decides how the same type is written without an annotati
 qualify it (`Map.Entry` where another `Entry` is in scope, the full name where the current
 package has a class of the same simple name); that qualifier is dropped, so
 `Map.@Nullable Entry<K, V>` is written `@Nullable Entry<K, V>`, which names another type or none.
-With the fix (`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_type_annotation_qualified_name.rs`)
+With the fix (`decompiler/nonnative/kuna-jvm/src/fixes/type_annotations/type_annotation_qualified_name.rs`)
 the first name is preceded by the qualifier of the import collector's name for it, and the
 annotation follows the qualifier, as Java requires (JLS 9.7.4).
 
@@ -2054,7 +2057,7 @@ and then recurses into the argument with all of the member's annotations, so an 
 for a later argument takes its steps inside an earlier one:
 `Function<Map<String, @A Object>, @B Map<String, @C Object>>` is written with `@A @C` on the first
 `Object` and nothing on the second. With the fix
-(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_type_annotation_argument_scope.rs`) the
+(`decompiler/nonnative/kuna-jvm/src/fixes/type_annotations/type_annotation_argument_scope.rs`) the
 recursion into an argument sees only the annotations whose path enters it.
 
 **Fix `assert_throw_after_if`**. `AssertProcessor.replaceAssertion` finds an assert's
@@ -2065,7 +2068,7 @@ the end of a loop body), the structurer writes the `if` the other way round:
 the throw being the last statement of the sequence, reached only when the condition is false.
 Vineflower leaves the shape alone, writes "Could not resugar all assert statements" and a reference
 to the synthetic field, which javac cannot resolve. With the fix
-(`decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_fix_assert_throw_after_if.rs`), when the
+(`decompiler/nonnative/kuna-jvm/src/fixes/asserts/assert_throw_after_if.rs`), when the
 throw's only predecessor is the `if`'s fall-through edge, the condition is negated
 (`SecondaryFunctionsHelper.propagateBoolNot`) and read as for `if (!C) throw`, and the `if` and
 the throw become the assert followed by the `if`'s body (or by its jump). Upstream has no change
@@ -2077,7 +2080,7 @@ its body, so a private member class (or one nested in a private member class) ca
 there (JLS 6.6.1) and javac rejects the clause and every subclass with it; a source produces such a
 class only by leaving the clause out, which makes the permitted subclasses those of the same
 compilation unit (JLS 8.1.6). With the fix
-(`decompiler/nonnative/kuna-jvm/src/p9_emit/kuna_fix_sealed_private_permits.rs`) the clause is left
+(`decompiler/nonnative/kuna-jvm/src/fixes/class_writing/sealed_private_permits.rs`) the clause is left
 out for a top-level class whose permitted subclasses are all its member classes and include such
 an inaccessible one. The recompiled attribute lists the same classes, in the order the classes are
 written.
@@ -2090,7 +2093,7 @@ thing done before a break: `if (round) { t = t.truncate(); if (up) { t = t.plus(
 `yield t.truncate(); if (up) { yield t.plus(1); }` (unreachable code), and a case left by a
 failed condition, a loop's exit or an empty block yields nothing (`switch rule completes without
 providing a value`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_fix_switch_expression_assignments.rs`) the
+(`decompiler/nonnative/kuna-jvm/src/fixes/switches/switch_expression_assignments.rs`) the
 switch becomes an expression only when every break source that is reached by completing normally
 (an empty block, an `if` without else, a conditional loop) is a block ending in an assignment to
 the variable or a throw, and every assignment to it in the cases is one of those. Upstream has no
@@ -2103,7 +2106,7 @@ captured variable shares its slot with a catch variable `e`), and the uses of a 
 written by their local-variable-table names, which take precedence, while `ClassWriter` declares a
 parameter by the `VarProcessor` name: `onFailure(Exception ex) { log(e); }`, which javac cannot
 resolve, or resolves to a captured variable. With the fix
-(`decompiler/nonnative/kuna-jvm/src/p9_emit/kuna_fix_nested_param_rename.rs`) a parameter without a
+(`decompiler/nonnative/kuna-jvm/src/fixes/nested_class_vars/nested_param_rename.rs`) a parameter without a
 clashing name or a `MethodParameters` name is declared by its local-variable-table name, the name
 its uses are written by; those names are the source's, under which the method compiled. A
 local-variable-table name that is not a Java identifier is not (kotlinc names a property setter's
@@ -2134,7 +2137,7 @@ static type already fixes `T`'s type arguments. A pattern of a type variable (`s
 nt`) or of a parameterization the operand does not determine (`value instanceof List<String>
 list` on an `Object`) is rejected (`instanceof.reifiable.not.safe`). With the fix,
 `decompiler/nonnative/kuna-jvm/src/p8_structure/if_pattern_match_processor.rs (IfPatternMatchProcessor::check_branch)`
-asks `decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_fix_unchecked_type_pattern.rs (is_checked_cast)`
+asks `decompiler/nonnative/kuna-jvm/src/fixes/patterns/unchecked_type_pattern.rs (is_checked_cast)`
 first, and makes no pattern when the cast is unchecked: the `instanceof` and the declaration
 from the cast stay as they are in the bytecode. A cast is checked when the target is reifiable
 (no type arguments but unbounded wildcards), when the operand's type is a subtype of it, or when
@@ -2164,7 +2167,7 @@ infer the class's type variable from an argument and drop a cast the call needs)
 infers a call's generic result whatever its receiver, finds `String[]`, and takes the
 `checkcast` the bytecode holds for redundant; and it writes a for-each over a raw collection
 with the typed loop variable javac then sees as `Object`. With the fix,
-`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_raw_receiver_erasure.rs (has_raw_receiver)`
+`decompiler/nonnative/kuna-jvm/src/fixes/generic_casts/raw_receiver_erasure.rs (has_raw_receiver)`
 finds the calls whose receiver's static type, as the decompiled program declares it, is raw (a
 class with type parameters, written without type arguments): a variable by its parameter or
 local-variable-table type (not `this`, not a lambda's parameter or a captured variable, whose
@@ -2194,7 +2197,7 @@ its place is a functional interface of the same arity whose result fits the lamb
 `InvocationExprent.getAmbiguousParameters` compares the lambda's own interface type, the one
 the bytecode created, with each overload's parameter and finds only the overload called, so no
 cast is written. With the fix,
-`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_lambda_argument_overload.rs (ambiguous_arguments)`
+`decompiler/nonnative/kuna-jvm/src/fixes/lambdas/lambda_argument_overload.rs (ambiguous_arguments)`
 marks such an argument ambiguous when another overload of the same arity takes, at its place,
 a known functional interface with as many parameters whose result kind (void or a value) the
 lambda can produce (a method reference both when its method returns a value, a lambda what its
@@ -2211,7 +2214,7 @@ leaves unresolved, named like one of the class's, is taken for the class's and w
 cast (`getUninterruptibly((Future<V>)future)` in Guava's `AbstractFuture`), which javac rejects
 in a static context. With the fix the walk out from the code stops counting class type
 variables once it has passed a static method
-(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_static_type_variable_scope.rs (is_static_method)`;
+(`decompiler/nonnative/kuna-jvm/src/fixes/generics/static_type_variable_scope.rs (is_static_method)`;
 a synthetic method, such as a lambda's static implementation method, says nothing about the
 context the lambda is written in); the method's own type variables, and those of the methods
 enclosing a local or anonymous class, stay. With the class's type variable out of the way,
@@ -2230,7 +2233,7 @@ bytecode keeps no trace of it. `ExprProcessor.getCastedExprent` writes a cast wh
 types need one or where `doGenericTypesCast` recognises a few generic shapes, and otherwise
 writes the value bare, which javac rejects when its generic type does not fit the target
 (`incompatible types`). With the fix,
-`decompiler/nonnative/kuna-jvm/src/p2_lift/kuna_fix_unchecked_generic_cast.rs (cast_for)`,
+`decompiler/nonnative/kuna-jvm/src/fixes/generic_casts/unchecked_generic_cast.rs (cast_for)`,
 asked by `decompiler/nonnative/kuna-jvm/src/p2_lift/expr_processor.rs (ExprProcessor::get_casted_exprent_full)`
 for a return, an assignment or a field initializer (not an argument), takes a value whose
 static type the program declares: `this` (not of an inner class, whose type does not show the
@@ -2297,7 +2300,7 @@ an `if`-`else` there); an early `return@label v` elsewhere, such as in a loop, b
 expression statement `v` and the lambda runs on (wrong output: `search`'s
 `for (..) { if (item == key) return@search i }; -1` returns `-1`). `KNewExprent`, which writes an
 `invokedynamic` lambda, labels it and writes `return@label` for every exit when it has several.
-With the fix (`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_lambda_singleton_returns.rs`)
+With the fix (`decompiler/nonnative/kuna-jvm/src/fixes/kt_jumps/kt_lambda_singleton_returns.rs`)
 a singleton lambda one of whose exits is not in tail position is labelled
 `lambda_<class's last name segment>@{` and its exits are `return@lambda_1 v`; one whose exits are
 all in tail position is written as before. None of the six Kotlin libraries checked has such a
@@ -2310,7 +2313,7 @@ class's in an inner class. `KType.from` reads only the name, so every such type 
 `Any`: `fun get(index: Int): Any` for `E`, `Map<Any, Any>` for `Map<K, V>`, constructor
 parameters `value: Any` for `T` (about 920 declarations in kotlin-stdlib, kotlinx-coroutines and
 kotlin-reflect). With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_type_parameter_id.rs`), the metadata
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_types/kt_type_parameter_id.rs`), the metadata
 parsers open a scope of ids and names: `KotlinChooser` for a class's members (its own type
 parameters and, for an `inner` class, those of the classes it is inner to, found through
 `InnerClasses` and their metadata), `KFunction.parse` and `KProperty.parse` for each member's own;
@@ -2325,7 +2328,7 @@ which is not Kotlin: the explicit numeric conversions (`I2L` .. `I2S`, through
 does not fit its context, `(int)Math.min(a, (long)b)`, `(byte)(w shr 16)`, `(T)value` (about
 2,500 casts in okio, okhttp, kotlin-stdlib, kotlinx-coroutines, kotlin-reflect and
 spring-framework's Kotlin classes). With the fix
-(`decompiler/nonnative/kuna-jvm/src/p2_lift/kuna_fix_kt_java_cast_syntax.rs`, called from
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_java_syntax/kt_java_cast_syntax.rs`, called from
 `ExprProcessor::get_casted_exprent_full` when the class being written has a language spec, and
 from `KFunctionExprent::to_java`), a cast to a numeric primitive type from a numeric primitive or
 its box is written as Kotlin's conversion call, `Math.min(a, b.toLong()).toInt()`: Kotlin compiles
@@ -2358,7 +2361,7 @@ type arguments on a qualifier call when one of its type variables is not mapped 
 (`InvocationExprent.getInferredExprType`, the `missing` test), but it counts every argument,
 lambdas included, as mapping the variables of its parameter type (except, for an overloaded
 method reference, those of the function type's parameters). With the fix
-(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_lambda_pertinence.rs (excluded_vars)`,
+(`decompiler/nonnative/kuna-jvm/src/fixes/lambdas/lambda_pertinence.rs (excluded_vars)`,
 asked by
 `decompiler/nonnative/kuna-jvm/src/substrate/invocation_exprent.rs (InvocationExprent::get_inferred_expr_type)`)
 the variables such an argument cannot fix for javac do not count, so the qualifier call gets its
@@ -2373,11 +2376,11 @@ change here. Two arguments are counted the same way. A call of a generic method 
 type parameter of its own that none of its parameter types does (`Predicates.always()`, which
 infers its `T` from its target only) fixes a bare type variable it is passed for to its result with
 that parameter's bound (`Predicate<Object>`), so for such a formal it does not count either
-(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_lambda_pertinence.rs (free_generic_call)`); a
+(`decompiler/nonnative/kuna-jvm/src/fixes/lambdas/lambda_pertinence.rs (free_generic_call)`); a
 method of a class outside the input returning a generic class is taken for one. And the array a
 varargs call passes for `T...`, which `appendParamList` writes as its elements, does not count when
 none of its elements does
-(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_lambda_pertinence.rs (vararg_elements)`);
+(`decompiler/nonnative/kuna-jvm/src/fixes/lambdas/lambda_pertinence.rs (vararg_elements)`);
 `T` is then mapped from the first element whose type is a parameterization of the array's raw
 component, which a lambda's is. Elasticsearch's `IndexRoutingTable`, whose field initializer
 `Stream.of(shardRouting -> .., Predicates.always()).flatMap(p1 -> Stream.of(ShardRouting::unassigned,
@@ -2396,7 +2399,7 @@ javac rejects the lambda. Vineflower's inference maps the variable to the lambda
 and writes the lambda bare, dropping the cast the source had (Elasticsearch writes
 `Iterators.single((ToXContent) (builder, p) -> ...)`), which compiles to no instruction. With the
 fix,
-`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_lambda_type_variable_target.rs (mark)`,
+`decompiler/nonnative/kuna-jvm/src/fixes/lambdas/lambda_type_variable_target.rs (mark)`,
 called from `InvocationExprent::append_param_list` of the outer call, works out the outer
 variable's bounds: the type each other argument gives it (a variable's or field's declared type,
 a call's inferred type), and the declared target of the call, which
@@ -2421,9 +2424,9 @@ arguments (JLS 4.5.2), the receiver being a value whose type the program declare
 in turn; a type argument that is a wildcard stands for a type parameter only where that is one of
 the return type's own type arguments (`Box<P>` with `P` from `Factory<? extends Shape>` is
 `Box<? extends Shape>`, javac's capture). With the fix
-(`decompiler/nonnative/kuna-jvm/src/p2_lift/kuna_fix_unchecked_call_result_cast.rs (declared_result)`,
+(`decompiler/nonnative/kuna-jvm/src/fixes/generic_casts/unchecked_call_result_cast.rs (declared_result)`,
 asked by
-`decompiler/nonnative/kuna-jvm/src/p2_lift/kuna_fix_unchecked_generic_cast.rs (declared_type)`)
+`decompiler/nonnative/kuna-jvm/src/fixes/generic_casts/unchecked_generic_cast.rs (declared_type)`)
 that type takes part in `unchecked_generic_cast`'s test, so `factory.make()` returned as a
 `Box<Shape>` is written `(Box<Shape>)factory.make()`, as the source had it
 (`(Constructor<Exception>) exceptionClass.getConstructor(..)` in spring-framework's
@@ -2488,7 +2491,7 @@ sequence. Otherwise it stays after the `try`, and code that reads the clause's v
 out of its scope (spring-boot's `LambdaSafe.invoke`: `catch (ClassCastException ex) { if (!...) throw
 ex; } this.logNonMatchingType(callbackInstance, ex);`). Behaviour is unchanged, as only the clause
 reaches that code, but javac rejects it. With the fix
-(`decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_fix_catch_tail_inline.rs (reads_left_catch_var)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/control_flow/catch_tail_inline.rs (reads_left_catch_var)`)
 statements that read the variable of a catch clause the break leaves are inlined into the clause
 regardless. `LambdaSafe.invoke` is the one instance on the benchmark inputs.
 
@@ -2500,7 +2503,7 @@ type needs another type variable there, javac cannot infer the diamond: `Supplie
 new EnumSetSupplier<>(valueClass)` with `valueClass` a `Class<V0>` and `V extends V0`, or `return new
 EnumMap<>(keyClass)` for a `Map<K, Collection<V>>` with a `Class<K0>` (the source wrote `(Supplier) new
 EnumSetSupplier<V0>(valueClass)`, an unchecked conversion the bytecode keeps no trace of). With the fix
-(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_diamond_argument_conflict.rs (contradicts)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/generics/diamond_argument_conflict.rs (contradicts)`)
 the inferred type is lifted to the expected type's class (through `GenericType.getGenericSuperType`,
 or the class's own signature when that class is outside the input) and compared argument by
 argument; where both sides name different type variables in scope, outside any wildcard and other
@@ -2518,7 +2521,7 @@ default) and a `null` marker. A member's bridge takes the receiver first (`Foo.f
 ..)`), an interface member's lives in its `DefaultImpls` class, a multifile facade's in the
 facade's parts, and a constructor's is `<init>(.., mask, DefaultConstructorMarker)`. Vineflower's
 Kotlin writer prints these calls as they are, which no Kotlin source can say. With the fix,
-`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_default_args_call.rs (resugar_call)`, called
+`decompiler/nonnative/kuna-jvm/src/fixes/kt_default_args/kt_default_args_call.rs (resugar_call)`, called
 from `KInvocationExprent::new` before the call's metadata is looked up, rewrites a static call of
 a `name$default` method into the call of `name` when all of these hold: the bridge exists in the
 called class (or a part of the facade) and is static and synthetic; its last argument is the
@@ -2558,7 +2561,7 @@ parameters and placeholders to the default-arguments constructor `<init>(.., int
 DefaultConstructorMarker)`. `KotlinWriter.writeClass` writes a member without metadata through
 `writeMethod`, which prints a constructor as a function named after the class, `fun Builder() {
 this(null, 1, null) }`: not Kotlin, and not in the source. With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_generated_constructor_hidden.rs (is_generated)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_generated_members/kt_generated_constructor_hidden.rs (is_generated)`)
 the writer skips a constructor of a class with Kotlin class metadata that has no metadata of its own
 and whose code is loads of parameters and constants, one `invokespecial` of the class's own
 constructor ending in `int, DefaultConstructorMarker`, and `return`. The primary constructor's
@@ -2577,8 +2580,8 @@ does not fit its context, `(byte[])this.data` for an overload, `return (java.uti
 (`((Http2Stream)this).id`); and `((Object[])x)[i]` / `.length` on a value not typed as an array.
 None is Kotlin, and none is a bytecode instruction: each stands for a type the verifier knew and the
 decompiler's typing lost. With the fix
-(`decompiler/nonnative/kuna-jvm/src/p2_lift/kuna_fix_kt_java_reference_cast.rs (type_name)`, reached
-through `kuna_fix_kt_java_cast_syntax::form` and from those three writers when the class being
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_java_syntax/kt_java_reference_cast.rs (type_name)`, reached
+through `fixes::kt_java_syntax::kt_java_cast_syntax::form` and from those three writers when the class being
 written has a language spec) each is written `x as T` (`(x as T).m()` as a qualifier) with the type
 in Kotlin: `ByteArray` for `byte[]`, `Array<T>`, `String` for `java.lang.String`, `out T` / `in T`
 for wildcards, `*` for an unknown or raw argument (`Iterable<*>`), `(A, B) -> R` for a
@@ -2602,7 +2605,7 @@ imperfect where the bytecode cannot tell (an array's element nullability, `Array
 arguments in Java's place, before the name, `CollectionsKt.<File>last(list)`,
 `context.<ThreadLocalElement<?>>get(key)` (seven in kotlin-stdlib and kotlinx-coroutines), which is
 not Kotlin. With the fix
-(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_kt_explicit_type_arguments.rs (append)`) a
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_calls/kt_explicit_type_arguments.rs (append)`) a
 Kotlin class's calls write them after the name with Kotlin's type names, `last<File>(list)`,
 `get<ThreadLocalElement<*>>(key)`; a list with an argument Vineflower does not know in full (Java's
 `Seq<>`) is left out, for Kotlin to infer as the source did, since a star projection there would
@@ -2629,7 +2632,7 @@ condition and everything after it are in later nodes, and Vineflower drops them,
 `IntProgression`'s `if (step == 0) throw ..` and the field stores after it, or
 `UndispatchedCoroutine`'s thread-context save (6 constructors in kotlin-stdlib and
 kotlinx-coroutines, 3 more in abstract classes `kt_abstract_class_constructor` reads). With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_constructor_body_after_first_block.rs (body)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_delegation_calls/kt_constructor_body_after_first_block.rs (body)`)
 the body is rendered when the first node is empty and counts as empty only when the rendering is
 blank.
 
@@ -2642,7 +2645,7 @@ the accessor's `this(..)`, `class UIntRange(..) : UIntRange(start, endInclusive)
 constructor, without metadata, is written as `fun UIntRange(start: Int, endInclusive: Int) {
 super(start, endInclusive, 1, null) }` (10 classes in kotlin-stdlib: the unsigned ranges,
 progressions and their iterators, `TimedValue`, the time marks). With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_inline_class_constructor_accessor.rs (real_constructor)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_constructors/kt_inline_class_constructor_accessor.rs (real_constructor)`)
 a synthetic constructor whose descriptor is another constructor's plus the marker and whose code is
 `aload 0`, a load of each other parameter in order, one `invokespecial` of that constructor and
 `return` stands for that constructor: the Kotlin constructor is read from it and the accessor is
@@ -2665,7 +2668,7 @@ jump writers write `break@labelN` out of a labelled `switch` and out of a `for` 
 cannot resugar, which `KSwitchStatement` and `KDoStatement` wrap in `run labelN@{ .. }` too (2), and
 `continue@labelN` for the next iteration of a loop `KDoStatement` writes as `repeat(n) labelN@{ ..
 }` (1). With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_jump_to_non_loop_label.rs (within)`) a
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_jumps/kt_jump_to_non_loop_label.rs (within)`) a
 labelled `if` that a written jump leaves is written `run labelN@{ if (..) { .. } }`, and the writers
 note each statement they write as a lambda; a `break` out of a `run` lambda is `return@labelN`, which
 goes to the lambda's end, the statement's end, and a `continue` of a `repeat` loop is
@@ -2692,7 +2695,7 @@ have Class Kotlin metadata` at the `new` and the whole function fails (59 failur
 kotlinx-coroutines 1.10.2, 64 in 1.8.0; unchanged on `develop/1.13.0`); `kt_synthetic_anonymous_object`
 writes only objects whose superclass is `Object`, since an `object` expression passes superclass
 arguments only through its header. With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_synthetic_object_super_call.rs (super_arguments)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_anonymous_objects/kt_synthetic_object_super_call.rs (super_arguments)`)
 `KNewExprent` computes, where the `new` stands, the arguments of an anonymous class without Class
 metadata whose superclass is not `Object`, as `kt_object_super_call` does for an object with Class
 metadata: the superclass call `NestedClassProcessor` kept for the node, each constructor parameter
@@ -2721,7 +2724,7 @@ the one before. The file's metadata does not name it, and `KotlinWriter.writeCla
 without metadata through `writeMethod`, which prints it among the file's top-level declarations as
 `open fun StringsKt__StringsKt() {}` (88 in kotlin-stdlib); kotlinc rejects `open` on a top-level
 function, and the function is not in the source. With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_file_class_constructor.rs (is_file_class_constructor)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_generated_members/kt_file_class_constructor.rs (is_file_class_constructor)`)
 the writer skips a constructor of a class with file metadata (a file facade or a multifile part)
 that has no metadata of its own, takes no parameters and whose code is `aload 0`, one
 `invokespecial` of the superclass's `<init>()V` and `return`.
@@ -2734,7 +2737,7 @@ one it leaves the loop. `KSwitchStatement` drops the `break` that follows a case
 when it is the `if`'s only statement, as `break` (24 in okhttp, kotlin-stdlib and
 kotlinx-coroutines, and 4 more `break;` in `try` blocks that `kt_java_statement_jump` brings to the
 same writer). With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_when_break.rs (jump)`) an unlabelled
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_jumps/kt_when_break.rs (jump)`) an unlabelled
 explicit `break` whose closure is a `when` is left out when control at it reaches the end of its
 branch and nothing else once it is gone: walking down from each case statement, the statement it
 follows is reached through the last statement of each sequence, either branch of an `if`, any block
@@ -2771,7 +2774,7 @@ from the primary constructor's first statement with the invoked class's short na
 BlockingCoroutine<T>(..) : AbstractCoroutine(parentContext, true, true)` (12 in kotlin-stdlib, 43 in
 kotlinx-coroutines); kotlinc rejects it ("one type argument expected"). The arguments are in the
 class's Kotlin metadata, in its supertype list. With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_supertype_type_arguments.rs (type_arguments)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_delegation_calls/kt_supertype_type_arguments.rs (type_arguments)`)
 the supertype there that names the invoked class gives its arguments, written after the name as
 `KType` writes them, `: AbstractCoroutine<T>(..)`, `: PrimitiveSpreadBuilder<IntArray>(size)`; the
 class's type parameters are in scope while they are read (fix `kt_type_parameter_id`), so an inner
@@ -2798,7 +2801,7 @@ metadata`, 15 failure comments in kotlinx-coroutines 1.10.2: `drop`, `take`, `ch
 `runningFold`, `combine`, ...), and where the creating class is written before the declaring one is
 processed, the object has no body at all (`Class .. wasn't processed yet!`). Unchanged on
 `develop/1.13.0`. With the fix
-(`decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_fix_anonymous_class_created_elsewhere.rs (nest_at_creating_class)`),
+(`decompiler/nonnative/kuna-jvm/src/fixes/anonymous_classes/anonymous_class_created_elsewhere.rs (nest_at_creating_class)`),
 once the class tree is built, an anonymous class whose declaring class has no `new` of it and which
 exactly one other class creates (its own nested classes aside) is nested in that class: the classes
 whose constant pool has a `Methodref` to its constructor
@@ -2842,7 +2845,7 @@ first, the captured `ObjectRef` is renamed `fromDownstreamx`, and the object sto
 exception into the `Throwable`). The output compiles and means something else; in Kotlin output,
 `kt_synthetic_anonymous_object` refuses an object whose captured name differs from the argument at
 the `new`, so 1.10.2's `catchImpl` fails. Unchanged on `develop/1.13.0`. With the fix
-(`decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_fix_captured_var_clash_name.rs (inherit_clashing_names)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/nested_class_vars/captured_var_clash_name.rs (inherit_clashing_names)`)
 `NestedClassProcessor` records which variable of which method each captured variable holds
 (`VarProcessor::set_captured_source`; a captured enclosing instance, written `Outer.this`, is not
 recorded), and when a class is about to be written, after the clash renaming of its methods, each
@@ -2866,7 +2869,7 @@ uncaptured: the object keeps a field and a constructor parameter, which the Kotl
 express as an object expression (kotlinx-coroutines 1.10.2's `awaitClose` fails), and an object
 written as a lambda reads `this.$cont` (1.8.0). Java output keeps the copy and is not affected.
 Unchanged on `develop/1.13.0`. With the fix
-(`decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_fix_captured_var_through_cast.rs (cast_var)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/nested_class_vars/captured_var_through_cast.rs (cast_var)`)
 an argument that is a cast of a variable is the capture of that variable when the variable's type is
 a class that is a subtype of the cast's class (`StructContext.instanceOf`): such a cast never throws
 and yields the same reference, and every use the object makes of the value as the cast type is valid
@@ -2886,7 +2889,7 @@ delegation call, `constructor(x: T) : Intrinsics.checkParameterIsNotNull(x, "x")
 and `InitializerProcessor` neither lifts the constructor's stores of synthetic fields nor reads its
 field stores as property initialisers, so when another constructor's are read the property is
 initialised and then assigned again (okio's `Segment`, a `val`; okhttp's `Request.Builder.tags`). With
-the fix (`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_legacy_constructor_parameter_checks.rs (remove)`),
+the fix (`decompiler/nonnative/kuna-jvm/src/fixes/kt_null_checks/kt_legacy_constructor_parameter_checks.rs (remove)`),
 called from the pass, the checks of a constructor's parameters (a parameter slot and a string constant)
 that come before its delegation call in its first block, with nothing between them but stores of
 parameters into fields of `this`, are dropped as the pass drops Kotlin 1.4's; the constructor then has
@@ -2913,7 +2916,7 @@ else is left out with a warning (6 in okhttp and kotlin-stdlib: `KotlinNullPoint
 `Response.Builder()`). With the fix `hideEmptySuper` keeps the call it removes on the method
 (`decompiler/nonnative/kuna-jvm/src/p8_structure/initializer_processor.rs (hide_empty_super)`), and
 `KConstructor`
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_hidden_empty_super_call.rs (hidden_call)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_delegation_calls/kt_hidden_empty_super_call.rs (hidden_call)`)
 writes a primary constructor's as `ResponseBody()` in the header (with the metadata's type arguments,
 fix `kt_supertype_type_arguments`), and a secondary constructor's as no delegation call, which in a
 class without a primary constructor is the same `super()`; the constructor's statements stay in its
@@ -2925,7 +2928,7 @@ body, and one without any is written as a declaration alone.
 and `ushr`, and has no `|=`, `&=`, `^=`, `<<=`, `>>=` or `>>>=`, so kotlinc rejects each one (241 in
 the Kotlin inputs, 231 of them `this.label |= Integer.MIN_VALUE`, the first statement of every
 suspend function's continuation). With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_compound_bitwise_assignment.rs (write)`),
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_operators/kt_compound_bitwise_assignment.rs (write)`),
 called from `AssignmentExprent.toJava` when the class is written as Kotlin, `x op= y` is written `x
 = x name y`. Java evaluates the left side's subexpressions once, reads it, then evaluates the right
 side; Kotlin evaluates the target's subexpressions, reads the left side again, then the right side,
@@ -2962,7 +2965,7 @@ written `x or 1 shl k`, which Kotlin reads `(x or 1) shl k`; `a | b & c` reads `
 (a && b)` reads `(x ?: a) && b` (135 statements in the five Kotlin inputs, among them okhttp's `(this.set
 and 1 shl id) != 0` and two copies in okio of `writeHexadecimalUnsignedLong`'s bit count, whose
 inlined expression takes 16,128 parenthesis pairs). With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_operator_precedence.rs (needs_parentheses)`),
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_operators/kt_operator_precedence.rs (needs_parentheses)`),
 called from `wrapOperandString` when the operator is a Kotlin one in a class written as Kotlin, an
 operand is also parenthesised when its Kotlin level binds less tightly than its operator's, or, as a
 right operand, as tightly unless it is the same associative operator (`a or b or c` stays); a negative
@@ -2977,7 +2980,7 @@ infix function on the operand as it is, `b and 255`, `x shl n`, `c xor 32`, `b.i
 `Byte`, `Short` and `Char` have none of these functions (`kotlin.experimental`'s `Byte.and` takes a
 `Byte`) and the shift count is an `Int`, so kotlinc rejects each (628 conversions in okio, okhttp and
 kotlin-stdlib, among them every unsigned byte read `readByte() and 255`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_narrow_bitwise_operand.rs (write)`) an operand
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_operators/kt_narrow_bitwise_operand.rs (write)`) an operand
 whose value Kotlin types as `Byte`, `Short` or `Char` (not an arithmetic or bitwise result, which
 Kotlin computes as `Int`, nor a number constant, written as an `Int` literal) is written with the
 conversion Java's promotion stands for, `b.toInt()`, `c.code`, or `b.toLong()` where Java widens it to
@@ -2993,7 +2996,7 @@ key[j].toInt()).toByte()` under the same rereading condition.
 `EQUALS3`, `===`, but leaves `!=` alone, so `a !== b`, the form a negated condition takes, is written
 `a != b`: a different test wherever `equals` is overridden (293 comparisons in the five Kotlin inputs,
 most of them kotlinx-coroutines' `state !== CLOSED` symbol checks). With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_reference_inequality.rs (mark)`) the
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_operators/kt_reference_inequality.rs (mark)`) the
 constructor marks such a comparison as an identity test; the mark survives the negations that flip
 `==` and `!=` in place, `copy` keeps it, and a marked `!=` between two references is written `!==`
 (a marked `==`, a negated `!==`, `===`). The `==` resugared from `Intrinsics.areEqual`
@@ -3005,7 +3008,7 @@ the plugin writes `this.limit` (`Owner.limit`). In Kotlin that names the propert
 accessor it calls the accessor again: okhttp's `Dispatcher.maxRequests` getter `return
 this.maxRequests` recurses without end once recompiled, its setter likewise (66 accessor
 bodies in okio, okhttp, kotlin-stdlib and both kotlinx-coroutines). Kotlin names the backing field `field` there. With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_accessor_backing_field.rs (stringify)`),
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_properties/kt_accessor_backing_field.rs (stringify)`),
 while `KProperty` writes an accessor's body, an access of exactly its backing field (the same field
 of the class file, not a delegate's) on the accessor's own receiver is written `field`: its `this` in
 the body, and in an object expression written inside the body the enclosing instance `this@Owner`
@@ -3021,7 +3024,7 @@ Kotlin string `$` followed by a name or `{` starts a template, so the parameter 
 escapes the `$` of each string piece but splices `Char` pieces in raw (a `'"'` ends the literal, a
 `'\n'` breaks the line) and writes a variable `$key` even when the next piece starts with a letter
 or digit (`"$key258EAFA5-.."` reads a variable `key258EAFA5`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_string_literal_escape.rs (kotlin_text)`) a
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_java_syntax/kt_string_literal_escape.rs (kotlin_text)`) a
 `$` that would start a template is written `\$`, a form feed `\u000c`, a `Char` piece is escaped
 as string text, a variable is written `${name}` unless `$name` ends where the name does, and an
 annotation's string argument is escaped the same way.
@@ -3046,7 +3049,7 @@ processor moves those stores into the outer class's static field initializers, t
 hides the field as the companion's, and `KProperty` looks the initializer up in the companion's own
 table, where it is not: the property is written without it and the value is lost (every
 `CipherSuite.TLS_..` constant, okio's `IDLE_TIMEOUT_NANOS`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_companion_property_initializer.rs (static_initializer)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_initializers/kt_companion_property_initializer.rs (static_initializer)`)
 such a property reads its initializer from the static field initializers of the class whose field
 it is. A store the processor leaves in `<clinit>` stays lost, as before.
 
@@ -3054,7 +3057,7 @@ it is. A store the processor leaves in `<clinit>` stays lost, as before.
 default (`var count: Int = 0`, `private var closed = false`, `var next: Node? = null`): the field
 starts with it. The decompiler finds nothing to extract and writes `var count: Int`, which Kotlin
 rejects. With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_default_property_initializer.rs (never_stored)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_initializers/kt_default_property_initializer.rs (never_stored)`)
 a property backed by a field without a `ConstantValue`, that is not `lateinit`, `const`, abstract,
 delegated, `expect` or `external`, and that no constructor of its class stores (`<init>`; for a
 static field `<clinit>` of the class and of its outer class) is written `= 0`, `0L`, `0.0`,
@@ -3068,7 +3071,7 @@ An override that narrows the return type (okio's `Buffer.emitCompleteSegments():
 ByteString)`) has another descriptor, and an overriding property is written `open val`: Kotlin
 rejects both ("hides member of supertype and needs an 'override' modifier"). kotlinc compiles such
 an override with a bridge method in the same class that calls it. With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_missed_override.rs (bridged)`) a function is
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_declarations/kt_missed_override.rs (bridged)`) a function is
 an override when a bridge method of its class calls it, and a property when its getter is such a
 function or has a supertype method of its descriptor.
 
@@ -3083,7 +3086,7 @@ parameter and names it `$this$name` in the local variable table (newer compilers
 that is no identifier, which the decompiler writes `var0`). The plugin writes the function's header
 as an extension (`fun Buffer.commonWrite(..)`) but its body with the parameter's name, which names
 nothing in Kotlin. With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_extension_receiver.rs (name)`) the receiver
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_extensions/kt_extension_receiver.rs (name)`) the receiver
 parameter is written `this` in the function's own body (not in the lambdas and objects written
 inside it); in an extension declared inside a class, plain `this` is the extension receiver, so the
 class's own instance is written `this@Class`. A function whose class has no name, or whose code
@@ -3099,14 +3102,14 @@ written `ReplaceWith(..)`.
 **`kt_throws_class_name`.** kotlinc records `@Throws(IOException::class)` as the method's
 `Exceptions` attribute, whose class names the plugin writes as they are:
 `@Throws(java/io/IOException::class)`, which Kotlin reads as a division of unresolved names. With
-the fix (`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_throws_class_name.rs (kotlin_name)`)
+the fix (`decompiler/nonnative/kuna-jvm/src/fixes/kt_declarations/kt_throws_class_name.rs (kotlin_name)`)
 each is written by its Kotlin type name, imported like any other type.
 
 **`kt_throwable_cast`.** kotlinc compiles `throw e` to `checkcast java/lang/Throwable; athrow`,
 since its `Throwable` is the JVM's. The cast is a no-op (Kotlin throws only an expression typed
 `Throwable`), but the plugin writes it: `throw IllegalStateException(..) as java.lang.Throwable`,
 which Kotlin rejects. With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_throwable_cast.rs (uncast)`) a thrown cast
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_java_syntax/kt_throwable_cast.rs (uncast)`) a thrown cast
 to `java/lang/Throwable` of an operand of a class type is written as the operand alone; an operand
 typed `Object` (an erased type variable) keeps it.
 
@@ -3117,7 +3120,7 @@ and the collection interfaces to its own types, which expose some JDK methods un
 `getMessage()`/`getCause()` `message`/`cause`, `name()`/`ordinal()` `name`/`ordinal`,
 `intValue()`.. `toInt()`.., `List.remove(int)` `removeAt`, `getClass()` `javaClass`, and an array's
 `length` is its `size`. The plugin writes the JDK names, which Kotlin rejects on its types. With the
-fix (`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_mapped_java_member.rs (form)`), in a
+fix (`decompiler/nonnative/kuna-jvm/src/fixes/kt_calls/kt_mapped_java_member.rs (form)`), in a
 class written as Kotlin, a call of such a method whose class is the mapped JDK type or, as far as
 the loaded classes show, a subtype of it is written in Kotlin's form, which kotlinc compiles to the
 same call.
@@ -3127,7 +3130,7 @@ and the boxed primitives in Java signatures as its own `String`, `CharSequence`,
 Kotlin source, `java.lang.String` is the Java class without that mapping, a different type, so a
 local declared `val tag: java.lang.String = loggerTag(name)` rejects the `String` it is given. The
 plugin translates `java.lang.Integer` (`Int`) and `java.lang.Object` (`Any`) only. With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_mapped_java_type.rs (kotlin_name)`) the other
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_types/kt_mapped_java_type.rs (kotlin_name)`) the other
 mapped classes without type parameters are written with Kotlin's names wherever the plugin writes a
 type (declarations, casts, `is`, `catch`, type arguments), and in the bounds fix `kt_java_type_syntax`
 writes for type parameters the metadata does not describe (`where T : Throwable`: kotlinc 2.0 rejects
@@ -3135,7 +3138,7 @@ an exception class as the argument of a `java.lang.Throwable` bound); the class 
 
 **`kt_object_instance`.** An `object`'s members are reached through its static `INSTANCE` field,
 which the plugin writes as such (`SegmentPool.INSTANCE.recycle(s)`); Kotlin has no `INSTANCE`. With
-the fix (`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_object_instance.rs (object_name)`),
+the fix (`decompiler/nonnative/kuna-jvm/src/fixes/kt_calls/kt_object_instance.rs (object_name)`),
 in both the plugin's field expressions and the ones written in Java's form, the static `INSTANCE`
 field of a class whose metadata kind is `OBJECT` is written as the object's name
 (`SegmentPool.recycle(s)`), which kotlinc compiles to the same `getstatic`.
@@ -3145,7 +3148,7 @@ field of a class whose metadata kind is `OBJECT` is written as the object's name
 `invokespecial` is the `this` variable: `this.isActive`, a virtual call that in an override of
 `isActive` calls itself without end (kotlinx-coroutines' `AbstractCoroutine.isActive`,
 `BroadcastCoroutine.isActive`, `BroadcastChannelImpl.isClosedForSend`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_super_property_access.rs (qualifier)`) an
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_properties/kt_super_property_access.rs (qualifier)`) an
 accessor called with `invokespecial` on `this`, of a class other than the caller's, is written on
 `super` (`super<Name>` for an interface's).
 
@@ -3155,7 +3158,7 @@ parameter, which for a setter kotlinc generates (`@JvmName(..) set`, `@Synchroni
 1.3 default setter) is `<set-?>`; the decompiler writes such a name `var1`, so the body assigns a
 variable that does not exist (okhttp's `Dispatcher.idleCallback`: `set(<set-?>) { this.idleCallback
 = var1 }`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_setter_parameter_name.rs (enter)`) the
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_properties/kt_setter_parameter_name.rs (enter)`) the
 setter's parameter, its last (after an extension property's receiver), is written in the body by the
 header's name, and a metadata name that is no Kotlin identifier is written `value` in both.
 
@@ -3164,7 +3167,7 @@ class constant as `C::class.java`; constants that reach the text through Java's 
 instead (the initializers the initializer processor extracts afterwards, the statements of `init`
 blocks) keep Java's `C.class`, which Kotlin does not parse (okhttp's `Logger.getLogger(Http2.class
 .getName())`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_java_class_literal.rs (write)`), in a class
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_java_syntax/kt_java_class_literal.rs (write)`), in a class
 written as Kotlin, such a constant is written as the plugin writes its own.
 **`kt_field_without_property`.** `KotlinWriter` writes a field through `KProperty` when the Kotlin
 metadata has a property for it; any other field goes through `writeField`, a port of the Java
@@ -3172,7 +3175,7 @@ writer's that adds `open`: `open int label;`, which kotlinc rejects. Such fields
 classes kotlinc gives no Class metadata, in practice the spill fields (`label`, `L$0`, `I$0`,
 `J$0`, ..) of suspend functions' continuations, both the continuation objects and the continuations
 kotlinc copies into `$$inlined$` classes (584 in the two kotlinx-coroutines jars). With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_field_without_property.rs (write)`) an
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_properties/kt_field_without_property.rs (write)`) an
 instance field of a class is written as a property declared from the class file alone: `val` when
 the field is final, else `var`; its (generic) type in Kotlin, nullable when it is a reference, since
 nothing in the class file says otherwise; its initializer when `InitializerProcessor` extracted
@@ -3192,7 +3195,7 @@ rejected by kotlinc. The constructors without metadata are those of classes with
 lists none, written as named classes when they are not nested where they are created (kotlinc's
 `$$inlined$` copies, objects created in another method): 261 in okhttp, kotlin-stdlib and the two
 kotlinx-coroutines jars, and 18 initializer blocks. With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_constructor_without_metadata.rs (delegation)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_constructors/kt_constructor_without_metadata.rs (delegation)`)
 a named class's constructor is a secondary constructor with the constructor's visibility
 (package-private: `internal`): the class has no primary constructor, so each constructor delegates,
 and the delegation is the superclass or `this` call that is the body's first statement (as
@@ -3219,7 +3222,7 @@ this(var10001)`. Kotlin has no statements before a constructor's delegation: `KC
 secondary constructor `constructor(pattern: String)  {` with the call in its body (or, with a Kotlin
 1.3 parameter check before it, that check as the delegation), and a primary constructor's call in an
 `init` block (kotlin-stdlib's three `Regex` constructors, okhttp's `Challenge`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_delegation_call_arguments.rs (inline)`),
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_delegation_calls/kt_delegation_call_arguments.rs (inline)`),
 first in the pass, the stack variables defined before the delegation call (a `this(..)`/`super(..)`
 invocation on `this`) in a constructor's first block are put back into the call when that computes
 the same values in the same order: nothing else precedes the call but parameter checks, which come
@@ -3241,7 +3244,7 @@ the bytecode calls `equals`. The copies that happen after the resugaring are tho
 expressions the Kotlin writer moves: a default value taken from the `$default` method (`fun f(a:
 String, b: Boolean = a == "x")` came out `= a === "x"`) and an object expression's supertype
 arguments; none in the five Kotlin inputs. With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_copied_equality.rs (keep_function_type)`) a
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_operators/kt_copied_equality.rs (keep_function_type)`) a
 copy keeps the function type of what it copies.
 
 **`kt_binary_numeric_promotion`.** Java converts the operands of `+ - * / %`, `< <= > >=` and `== !=`
@@ -3252,7 +3255,7 @@ are, and Kotlin's are member functions that do not promote: `Char + Int` and `Ch
 `"${c + 1}"` prints a character), `Char` has no other arithmetic and compares only with a `Char`,
 and kotlinc rejects `==` of two different types (`b == 0` for a `Byte`, `l != i` for a `Long` and an
 `Int`; 104 hunks in okio, okhttp and kotlin-stdlib). With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_binary_numeric_promotion.rs (conversions)`),
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_operators/kt_binary_numeric_promotion.rs (conversions)`),
 decided after the operator's constants take their printed type, a `Char` operand of arithmetic (but
 `Char - Char`, an `Int` in both languages) or of a comparison with another type is written with
 `.code`, and the operand of `==` or `!=` whose Kotlin type is not the promoted one with its conversion
@@ -3263,7 +3266,7 @@ conversion compiles to no instruction or to Java's widening one.
 `Intrinsics.areEqual(a, b) ^ 1`; the plugin resugars the call to `a == b` and writes the boolean `^ 1`
 as `xor true`, so the source's `a != b` came out `(a == b) xor true` (38 in okhttp). For a `Boolean`
 `x`, `x xor true` is `!x`, and the negation of `==` is `!=` (of `!=`, `==`; of `===`, `!==`). With the
-fix (`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_negated_equality.rs (negated)`) such an
+fix (`decompiler/nonnative/kuna-jvm/src/fixes/kt_operators/kt_negated_equality.rs (negated)`) such an
 `xor` is written as the comparison with the other operator; it then binds as an equality, which
 `kt_operator_precedence` parenthesises by (`c or (a != b)`), and with that fix off it is not done.
 
@@ -3275,7 +3278,7 @@ assignment `x = a` / `- (..)` assigns `a`, without an error, and a line starting
 a comparison does not parse (25 such breaks at statement level in the five Kotlin inputs, 16 before `+`
 or `-`, e.g. kotlin-stdlib's `this.byteBufferEndIndex = this.byteBufferEndIndex` / `+
 this.base64.decodeIntoByteArray(..)`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_operator_line_break.rs (breaks_after)`) the
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_operators/kt_operator_line_break.rs (breaks_after)`) the
 possible break of every binary operator but `&&` and `||` goes after the operator (`a +` / `b`); only
 whitespace changes.
 
@@ -3285,12 +3288,12 @@ writes the instance alone, here the cast, which the Kotlin plugin writes `x as j
 `KTypes` maps `Integer` to `Int` but the other box classes keep their Java names, and Kotlin does not
 unbox a `java.lang.Boolean` (kotlinc: "condition type mismatch"; 544 casts in okhttp, kotlin-stdlib
 and kotlinx-coroutines, most of them `predicate(element) as java.lang.Boolean`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_unboxing_cast_type.rs (write)`) a cast to the
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_java_syntax/kt_unboxing_cast_type.rs (write)`) a cast to the
 box class whose unboxing call is not written is written to the Kotlin type of the call's result,
 `x as Boolean`, `f() as Char`, which kotlinc compiles to the bytecode's `checkcast` and unboxing call
 (after a null check that throws the same `NullPointerException`). Such a call binds as what it is
 written as, which `kt_operator_precedence` takes into account
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_operator_precedence.rs (written_as_other)`):
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_operators/kt_operator_precedence.rs (written_as_other)`):
 its level is decided again after it is written, so under `!` the cast is parenthesised,
 `!(p(x) as Boolean)`, where Vineflower's `!p(x) as java.lang.Boolean` reads `(!p(x)) as ..` in Kotlin
 (177 of the 544).
@@ -3311,7 +3314,7 @@ without looking at what else their `if` holds; hand-written code of that form is
 try-with-resources and behaves differently. It also writes the resource as the variable or field the
 resource variable was copied from when the body does not use the variable, `try (this.f)`, which
 Java allows only for a final field. With the fixes
-(`decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_fix_twr_unresolved_resource.rs (javac_shape)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/twr.rs (javac_shape)`)
 the class's status is three-valued: `AutoCloseable` when its known hierarchy reaches it, not
 `AutoCloseable` when every class of its hierarchy is known, unresolved otherwise. An unresolved class
 (`twr_unresolved_resource`), and with `twr_desugaring_shape` a known `AutoCloseable` too, is
@@ -3339,7 +3342,7 @@ instance field once and `dup`s it, an element's array and index once with `dup2`
 for `a.f = a.f op e`; and the compound form always reads `left` first, so `left = e op left` is never
 its bytecode, and writing it `left op= e` reads `left` before `e`, wrong where `e` writes `left`
 (`a[0] = bump(a) + a[0]`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/p3_dataflow/kuna_fix_compound_assignment_shape.rs (compound)`), in
+(`decompiler/nonnative/kuna-jvm/src/fixes/numeric_types/compound_assignment_shape.rs (compound)`), in
 a class written as Java, an instance field or array element target is written compound exactly when
 its receiver (array and index) and the read's are one value on the operand stack (the same stack
 variable, or copies of one expression, which keep its instruction offsets), with any `e`, through the
@@ -3360,7 +3363,7 @@ Inner()`. javac compiles a qualified creation with a null check of the outer ins
 (`Objects.requireNonNull`, `getClass()` before Java 9), which `SimplifyExprentsHelper.isQualifiedNewGetClass`
 removes, and an unqualified `new Inner()` without one, so the qualified form recompiles to different
 bytecode, and in a generic outer class its constructor's parameter types break inference. With the fix
-(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_implicit_outer_instance.rs (is_implicit)`),
+(`decompiler/nonnative/kuna-jvm/src/fixes/constructor_calls/implicit_outer_instance.rs (is_implicit)`),
 `is_qualified_new_get_class` marks the creation whose check it removes, and an unmarked creation of a
 non-static member class whose outer instance is the `this` of an enclosing class `O` is written as
 Vineflower writes it for the current class's `this`, `new O.Inner()`, when no class from the current
@@ -3373,7 +3376,7 @@ turns `asList(new T[]{a, b})` back into `asList(a, b)`. It marks any array, and 
 length alone has no elements: `Arrays.asList(new T[n])`, a list of `n` nulls, is written
 `Arrays.asList()`, an empty list (Ghidra's `AssemblyConstructStateGenerator.applyOperands`, two
 methods of Elasticsearch's reindex tasks). With the fix
-(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_vararg_array_length.rs (spreads_as_elements)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/overloads/vararg_array_length.rs (spreads_as_elements)`)
 the array is marked only when writing its elements keeps the call's meaning: it has an initializer,
 no length, or a first length that is the constant 0 (what javac compiles a call passing no varargs
 to). Otherwise it is passed as the array, `Arrays.asList(new T[n])`.
@@ -3393,9 +3396,9 @@ and `Objects.requireNonNull(bytes); char[] r = new char[2 * bytes.length];` matc
 gone (Guava's `ImmutableSet.Builder.forceJdk`, Elasticsearch's `Iterables.flatten`,
 `TcpTransport.parse`, `MessageDigests.toHexCharArray`: 6 methods). With the fix `ExprProcessor`
 records, at the `pop`, which of javac's shapes the call's instructions match
-(`decompiler/nonnative/kuna-jvm/src/p2_lift/kuna_fix_synthetic_null_check_shape.rs (shape)`), and
+(`decompiler/nonnative/kuna-jvm/src/fixes/constructor_calls/synthetic_null_check_shape.rs (shape)`), and
 `isQualifiedNewGetClass` removes a call only in one of them
-(`decompiler/nonnative/kuna-jvm/src/p2_lift/kuna_fix_synthetic_null_check_shape.rs (is_javac_check)`):
+(`decompiler/nonnative/kuna-jvm/src/fixes/constructor_calls/synthetic_null_check_shape.rs (is_javac_check)`):
 a `dup` always; a constant next only where the checked value's declared class (a parameter's, a
 local's, a field's), or a superclass, declares an instance field whose constant value is the one
 loaded (`Objects.requireNonNull(b); return 5;` on a class with `final int k = 3` keeps its check,
@@ -3414,7 +3417,7 @@ one `static {}` block and `Box<Integer> box` in the next (javac reuses the slot;
 `LoggingApplicationListener`, both `ColorConverter`s) or in two sibling blocks of a method, become one
 variable declared `Box<String>`, and javac rejects the second one's code (`box.add(1)`), losing the
 class. With the fix
-(`decompiler/nonnative/kuna-jvm/src/p6_variables/kuna_fix_var_merge_declared_type.rs (declared_apart)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/var_merge/var_merge_declared_type.rs (declared_apart)`)
 `mergeVars` refuses such a merge, as one `remapVar` refuses: the two stay two variables, each declared
 with its own type, and the clash renaming names the second (`boxx`). Elasticsearch's
 `IndicesRequestCache.cleanCache` loses the raw `(Iterator)` cast the merge needed. The lattice also puts `int`
@@ -3437,7 +3440,7 @@ this.listener = listener;`, `this.content = content.retain();`, `this.slices = s
 Map.copyOf(slices) : null;`, loses the computations, and the record is printed with no constructor
 or a compact one (4 records in Elasticsearch); a compact constructor's stores to static fields go
 too. Upstream fixed this in Vineflower 1506b2f4 ("Fix incorrect compact record constructors"). With
-the fix (`decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_fix_compact_record_constructor.rs
+the fix (`decompiler/nonnative/kuna-jvm/src/fixes/class_writing/compact_record_constructor.rs
 (assigns_components_last)`) the constructor is compact only when, besides Vineflower's test,
 upstream's holds: its one exit that does not throw ends with `this.c = v` for every component in
 order, from increasing variable slots; and only stores to fields of `this` are removed. It also stays
@@ -3457,7 +3460,7 @@ variable and a type that is not a subtype of its bound with its type arguments m
 (`Range<Comparable>` to `Range<C>` for `C extends Comparable<?>`). The source casts to the raw class,
 `(ImmutableSet) builder.build()`, which compiles to the same (absent) instruction; Vineflower's cast loses
 the class (Guava's `CollectCollectors`) or the method. With the fix
-(`decompiler/nonnative/kuna-jvm/src/p2_lift/kuna_fix_disjoint_generic_cast.rs (raw_target)`) such a cast
+(`decompiler/nonnative/kuna-jvm/src/fixes/generic_casts/disjoint_generic_cast.rs (raw_target)`) such a cast
 of a returned or assigned value, or of a field's initializer (the three writers mark the value they
 pass, `mark_declared_target`), is written to the raw class, which the declared type takes by unchecked
 conversion. A cast of an argument is left alone, since a raw argument makes the call's result type its
@@ -3472,11 +3475,11 @@ SneakyThrows()`, without a target type to infer from; on a raw receiver the call
 erased to `Throwable` too (Guava's four `SneakyThrows` classes; Elasticsearch's `ScriptCache.rethrow`, and
 `TenaciousRetryBlobContainer.execute`, where Vineflower's copy of the catch parameter loses javac's precise
 rethrow). With the fix
-(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_thrown_type_variable.rs (throw_cast)`) a `throw` of a
+(`decompiler/nonnative/kuna-jvm/src/fixes/generics/thrown_type_variable.rs (throw_cast)`) a `throw` of a
 variable whose declared type (a parameter's, a local's without a generic signature) is a checked
 exception class that no class in the method's generic `throws` covers is cast to the first thrown type
 variable whose erasure (the `Exceptions` attribute's entry) admits it; and
-(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_thrown_type_variable.rs (type_receiver)`) a raw `new
+(`decompiler/nonnative/kuna-jvm/src/fixes/generics/thrown_type_variable.rs (type_receiver)`) a raw `new
 C()` that is the receiver of a call whose generic `throws` names every type parameter of `C`, each bounded
 by `Object`, `Throwable`, `Exception` or `RuntimeException`, is written `new C<RuntimeException>()`, the
 type JLS 18.4 gives a thrown inference variable with no other bound. Both compile to the same bytecode.
@@ -3488,7 +3491,7 @@ keywords. `new`, `default`, `char`, `int` and `byte` are ordinary Kotlin names, 
 to the table; refused, the variable keeps its generated name (`var2`), while the Kotlin writer prints
 the header that declares it from the metadata: `fun readBomAsCharset(default: Charset)` whose body
 reads `var1`, the singleton lambda `{ old, new -> old == var2 }`. With the fix
-(`decompiler/nonnative/kuna-jvm/src/p6_variables/kuna_fix_kt_java_keyword_variable_name.rs (accepts)`),
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_names/kt_java_keyword_variable_name.rs (accepts)`),
 in a class written as Kotlin a refused name that is still a Java identifier (a keyword) is taken, as
 any other debug name is; `KVarExprent` puts a Kotlin hard keyword in backticks. `this` stays refused,
 since the Kotlin writer prints a variable named `this` as the receiver. Like every debug name it is
@@ -3502,7 +3505,7 @@ default accessor. The setter of a public `var` is then printed `internal set`, o
 `internal set` too (kotlinc: "setter visibility cannot be more permissive"), of an `open var`
 `internal final set` ("modifier 'final' is not applicable"), and recompiled the setter is internal
 (`setPlain$main`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_default_accessor_flags.rs (accessor_flags)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_properties/kt_default_accessor_flags.rs (accessor_flags)`)
 an absent accessor's flags are its property's default accessor flags, and nothing is printed for it.
 
 **`kt_unescaped_name`.** `KotlinWriter.toValidKotlinIdentifier` puts a name Kotlin cannot write bare in
@@ -3513,7 +3516,7 @@ to `KVarExprent`. The writers Kotlin shares with Java print the class file's nam
 `KNewExprent` (``{ in -> `in` + 1 }``, and kotlinc's `<anonymous parameter 0>` for a parameter the
 source names `_`); `FieldExprent` (`System.in`, `this.L$0`); and `InvocationExprent`
 (`access$getFoo$p()`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_unescaped_name.rs (variable)`) they go through
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_names/kt_unescaped_name.rs (variable)`) they go through
 the same escape when the class is written as Kotlin, `this`, `this@x` and the nameless-enclosure
 marker excepted, and a lambda header writes `<anonymous parameter N>` as `_`. A method's name keeps
 Java's repair of a name Java cannot write, then is escaped. A class's binary name (`Foo$Bar`, a
@@ -3536,7 +3539,7 @@ header writers shared with Java's class writer (a class or object header, a meth
 not describe, fix `kt_synthetic_anonymous_object`'s object) print supertypes with `getCastTypeName`
 (`object : Function0<T[]>`, `KClass<Object>`) and type parameters as Java does (`<T extends
 Comparable<? super T>>`), and `KConstExprent` names an array class `int[]::class.java`. With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_java_type_syntax.rs (type_parameters)`) a type
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_types/kt_java_type_syntax.rs (type_parameters)`) a type
 argument is written with Kotlin's projections (`out`, `in`, `*`), arrays as `Array<T>` or `IntArray`,
 `Object` as `Any`; a header's supertype or bound keeps the class name Vineflower writes with its
 arguments converted (`Function0<Array<T>>`, not the nullable-parameter function type `getKotlinType`
@@ -3552,23 +3555,23 @@ only when a constant or store happens to follow it, otherwise writing `Objects.r
 `super(..)`. An anonymous class created by `o.new S(3) {..}` takes `o` as a parameter of its own constructor
 and passes it to `S`'s, so `NewExprent` writes `new Outer.S(o, 3) {..}` and the constructor's own check of
 `o` as an initializer, `{ Objects.requireNonNull(x0); }`. With the fix
-(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_qualified_super_call.rs (super_qualifier)`) a
+(`decompiler/nonnative/kuna-jvm/src/fixes/constructor_calls/qualified_super_call.rs (super_qualifier)`) a
 superclass constructor call to an inner member class of the input is written `o.super(..)` when its outer
 instance is not the `this` of the innermost class enclosing the current one that has `S` as a member (the
 instance an unqualified call passes), or when javac's check of it was removed: `isQualifiedNewGetClass`
 removes a check in javac's shape whose value is the outer instance of the next statement's superclass
 constructor call (itself, or a stack copy of its type, the test it makes for a `new`) or an argument of an
 anonymous class creation whose superclass is an inner member class, and marks the call
-(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_qualified_super_call.rs (mark_checked)`). An
+(`decompiler/nonnative/kuna-jvm/src/fixes/constructor_calls/qualified_super_call.rs (mark_checked)`). An
 anonymous class whose constructor passes its superclass's constructor one of its own non-synthetic
-parameters as the outer instance (`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_qualified_super_call.rs (anonymous_qualifier)`)
+parameters as the outer instance (`decompiler/nonnative/kuna-jvm/src/fixes/constructor_calls/qualified_super_call.rs (anonymous_qualifier)`)
 is written `o.new S(3) {..}`, the argument for that parameter as the qualifier and left out of the list.
 A superclass outside the input has no class node, so Vineflower hides no argument and writes the outer
 instance first, `super(HalfFloatComparator.this, context)`, which javac rejects (Elasticsearch's
 `HalfFloatComparator`, extending Lucene's `NumericComparator<Float>.NumericLeafComparator`: 15 methods lost
 with the class). With the fix, a superclass the current class's InnerClasses attribute names a non-static
 member class
-(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_qualified_super_call.rs (external_inner_member_declaring)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/constructor_calls/qualified_super_call.rs (external_inner_member_declaring)`)
 is treated alike, its first argument left out of the list (`super(context)`) or written as the
 qualifier. All of these recompile to the original bytecode; the five Java benchmark jars and the Kotlin
 inputs have no explicit outer instance, and the one external superclass is `HalfFloatComparator`'s.
@@ -3584,7 +3587,7 @@ are outside the input and both declare a `Bucket`, so `implements Filters.Bucket
 under an import, and javac reports `reference to Bucket is ambiguous` (the class is lost, 28 methods);
 `NodesHotThreadsResponse` imports `java.io.Reader` where the `Writeable.Reader` it inherits is in scope.
 With the fix
-(`decompiler/nonnative/kuna-jvm/src/p9_emit/kuna_fix_external_inherited_member_type.rs (add_external_members)`),
+(`decompiler/nonnative/kuna-jvm/src/fixes/class_writing/external_inherited_member_type.rs (add_external_members)`),
 the walk also notes each supertype it cannot load, and reads that one's member classes from the
 `InnerClasses` entries of the classes it did visit (javac records there every nested class a class file
 names, and `InternalMultiBucketAggregation` names `MultiBucketsAggregation.Bucket`, `InternalFilters`
@@ -3604,7 +3607,7 @@ gets `map`'s `U` from `orElse`'s argument, `.<List<TransportVersion>>map(..)`, a
 reference, whose method returns a `Collection` (the static initializer costs the class, 29 methods).
 javac infers a variable that a lambda or method reference argument's function type returns from what the
 implementation returns. With the fix
-(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_lambda_return_type_argument.rs (contradicts)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/lambdas/lambda_return_type_argument.rs (contradicts)`)
 the type arguments are not written when one of them is the return type of such an argument's function type
 (through `lambda_pertinence`'s `function_type`) and the implementation's erased return type, from its
 instantiated method type, is a class neither equal to nor a subclass of that argument's class; javac then
@@ -3620,7 +3623,7 @@ enclosing class written bare makes the type a member of a raw type: with type ar
 class javac rejects it (`improperly formed type`; Guava's `CombinedFuture`, whose field
 `@Nullable CombinedFutureInterruptibleTask<?> task` costs the class, 19 methods), without them it is a
 raw type (Guava's `LocalCache`, `MapMakerInternalMap`, `AbstractMapBasedMultimap`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_type_annotation_outer_arguments.rs (arguments_of)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/type_annotations/type_annotation_outer_arguments.rs (arguments_of)`)
 each enclosing class is followed by the type arguments the generic type's parent chain gives it,
 `CombinedFuture<V>.@Nullable CombinedFutureInterruptibleTask<?>`, which recompiles to the original
 Signature. These four Guava classes are the only change on the five Java benchmark jars; Kotlin output
@@ -3639,7 +3642,7 @@ instanceof T) { T v = (T) this.f;`, whose second read the pattern drops), and a 
 negated test's exit, at the `ifne`'s target (`if (!(o instanceof T)) return false; T v = (T)
 o;`, also written `o instanceof T == false`). javac compiles the patterns it prints otherwise:
 a temporary, and the binding before the exit. With the fix
-(`decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_fix_pattern_binding_shape.rs (is_javac_pattern)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/patterns/pattern_binding_shape.rs (is_javac_pattern)`)
 the pattern is made only when the subject is a variable, or the synthetic field holding a
 variable a local or anonymous class captured (which javac reads twice for a pattern on the
 captured variable), and the binding's first instruction is the one after the `ifeq` that
@@ -3662,7 +3665,7 @@ use(x)` prints `use(1)`). Replaying the body is right only for slots the body an
 share: `FinallyProcessor.equalInstructions` accepts a copy whose store goes to another slot (a local
 of the body that the copy keeps next to the return value's temporary), and replaying that slot would
 merge the handler's local with whatever the code after the copy reads there. With the fix
-(`decompiler/nonnative/kuna-jvm/src/p3_dataflow/kuna_fix_finally_exit_versions.rs (FinallyExitVersions::replay)`),
+(`decompiler/nonnative/kuna-jvm/src/fixes/finally_sync/finally_exit_versions.rs (FinallyExitVersions::replay)`),
 `FinallyProcessor` records, for each verified handler, the slots of every store it matched to a store
 of another slot (`CatchAllStatement.kuna_remapped_slots`), and on each edge that leaves a verified,
 non-semaphore `finally` normally the state takes, for every local the body assigns that is not such a
@@ -3721,7 +3724,7 @@ case bodies out in the order of the source's cases (a switch over strings includ
 buckets and its second switch follow the source); the switch instruction's targets keep that
 order. `SwitchStatement::sort_edges_and_nodes` orders the case groups by their smallest key,
 the default last, then moves each case that falls through after its predecessor. With the fix
-(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_switch_case_order.rs (positions)`) a
+(`decompiler/nonnative/kuna-jvm/src/fixes/switches/switch_case_order.rs (positions)`) a
 group is ordered by the first instruction its keys jump to (the default's target included), so
 `case 'M' .. 'L' .. 'F' .. '-'`, an enum switch's constants and a `default` written between
 cases come out as the source has them; the fall-through pass is unchanged. javac's synthetic
@@ -3736,7 +3739,7 @@ code. `SwitchStatement.toJava` writes every entry of the default's group, so a s
 `default:` prints as `case 3: default:`, and `LabelHelper::hide_default_switch_edges`, which
 drops an empty last default, leaves such keys behind as an empty last case (`case 3: case 5:
 case 6: case 7:`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_switch_table_fillers.rs (filler_edges)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/switches/switch_table_fillers.rs (filler_edges)`)
 a key inside the table's range whose target is the default's is a filler when javac would
 still choose a `tableswitch` for the remaining labels (`Gen.visitSwitch`: `4 + (hi - lo + 1) +
 3 * 3 <= 3 + 2 * n + 3 * n` for `n` labels); the Java switch printer leaves fillers out of the
@@ -3757,13 +3760,13 @@ MatchException(null, null);`. And when one case gives an enum switch expression'
 the method returns it, javac lets that case fall into the return instruction: the case reads
 `return v;`, `SwitchExpressionHelper` finds no variable the cases assign, and the switch is
 printed as a statement with javac's default. With the fix
-(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_switch_synthetic_default.rs (is_javac_default)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/switches/switch_synthetic_default.rs (is_javac_default)`)
 the default is javac's when its statement is exactly that throw and its target comes before
 every case's target in the switch instruction; `SwitchExprent::to_java` then leaves it out of
 any switch expression, and `SwitchStatement::to_java` out of a pattern switch statement (javac
 adds it to both again). A switch over an enum (not a pattern switch) with javac's default was
 an expression, since a statement switch over an enum gets none:
-`decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_fix_switch_expression_return.rs (process)`,
+`decompiler/nonnative/kuna-jvm/src/fixes/switches/switch_expression_return.rs (process)`,
 called where `SwitchExpressionHelper` declines one, turns such a switch with no successor whose
 cases are each one block ending in `return v` or `throw` into `return switch (..) { .. };`: the
 returns become yields, the switch the phantom backing of a `SwitchExprent` in a block after it
@@ -3780,7 +3783,7 @@ wins, so `build(new String[0])` inside `build()` came out `build()`, a call to i
 `invoke(target, new Object[]{callbacks})` with a `Callback[]` came out `invoke(target, callbacks)`, the
 callbacks as the argument list (spring-framework's cglib `Enhancer`), and `count(new Object[]{null})`
 came out `count(null)`, a null array. With the fix
-(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_vararg_spread_resolution.rs (spread_resolves)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/overloads/vararg_spread_resolution.rs (spread_resolves)`)
 a lone element whose written type converts to the array type is cast to the element type
 (`invoke(target, (Object)callbacks)`), and the array is spread only when, with that cast, no method of
 the name in the callee's class and its known superclasses and interfaces (an interface's static
@@ -3802,7 +3805,7 @@ then resolves the written call against the real class: `value((double) f)` (byte
 as the argument list (`TcpTransport.bindServer`); `field(name, b.booleanValue())` came out
 `field(name, b)`, which calls `field(String, Boolean)`. The class files of the input name every method
 they call, so they prove which other overloads of such a class exist. With the fix
-(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_unseen_class_overload.rs (mark)`) the
+(`decompiler/nonnative/kuna-jvm/src/fixes/overloads/unseen_class_overload.rs (mark)`) the
 descriptors under which the input calls a method of that name and class (read from the constant pools
 once per class universe) stand in for the class's methods: when one with the same parameter count is
 applicable to the written arguments in an earlier phase than the bytecode's method, or in the same
@@ -3833,7 +3836,7 @@ implicit, which prints the narrower value's text (`0.1` for `0.10000000149011612
 `char[]` passed to `append([C)` or `String.valueOf([C)` (which the helper removes as it removes
 `valueOf(C)`, the descriptor's parameter being of the `char` family) came out `"x" + cs`, the array's
 identity instead of its characters. With
-the fix (`decompiler/nonnative/kuna-jvm/src/p3_dataflow/kuna_fix_concat_operand_type.rs (write)`) the
+the fix (`decompiler/nonnative/kuna-jvm/src/fixes/numeric_types/concat_operand_type.rs (write)`) the
 helper records each operand's argument type on the concatenation (that of `String.valueOf` when it
 removes that call), and the concatenation writes an operand of another kind than its argument (`char`,
 `int` and narrower, `long`, `float`, `double`) with a cast to it, or, for a `char` argument whose
@@ -3849,13 +3852,13 @@ the field came out read at both: `int i = lock.count; if (lock.count <= 0)`. Ano
 the field between the two reads, and on a volatile field each read synchronizes on its own
 (Elasticsearch's `KeyedLock.tryAcquire` on a `volatile int`; Guava's `ExecutionSequencer`, Ghidra's
 `FunctionDB`, Elasticsearch's `ImmutableOpenMap` and `RecyclerBytesStreamOutput`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/p3_dataflow/kuna_fix_field_read_reuse.rs (keeps_single_read)`) such
+(`decompiler/nonnative/kuna-jvm/src/fixes/stack_var_inlining/field_read_reuse.rs (keeps_single_read)`) such
 a value stays in its stack variable when it has several uses, and the following passes write the
 assignment expression the source had (`while ((i = lock.count) > 0)`). A read followed in its block by
 a store into the same field keeps the copies: that is the `x++` Kotlin 1.3 compiles with a `dup`, which
 `PPandMMHelper` folds back into one read, and so does a store into a field of the read object through the
 variable or a stack copy of it (`this.counter.value++`,
-`decompiler/nonnative/kuna-jvm/src/p3_dataflow/kuna_fix_field_read_reuse.rs (stores_through)`). In Java
+`decompiler/nonnative/kuna-jvm/src/fixes/stack_var_inlining/field_read_reuse.rs (stores_through)`). In Java
 output a kept read of a field that may change (not final; `kt_inline_heap_read`'s test) is copied into none
 of its uses: the next-statement rule still copied it into the uses in the following statement while the
 variable stayed for the others, and kotlinc's `x?.f` and `x ?: y` (`dup; ifnull`) put both uses of the
@@ -3864,7 +3867,7 @@ this.stream.close()` (okhttp's `Http2ExchangeCodec.cancel` on a `@Volatile` fiel
 case's `cancel`, recompiled with javac from Vineflower's text and run against a thread storing `null`,
 threw `NullPointerException` 28,977 times in 20,000,000 calls, the original never). javac's shapes and the
 five Java benchmark jars are unchanged. A class written as Kotlin
-(`decompiler/nonnative/kuna-jvm/src/p3_dataflow/kuna_fix_field_read_reuse.rs (written_as_kotlin)`) is left
+(`decompiler/nonnative/kuna-jvm/src/fixes/stack_var_inlining/field_read_reuse.rs (written_as_kotlin)`) is left
 to `kt_field_read_reuse`, which keeps such a read in every pass, the Kotlin plugin's inliner
 (`INLINE_ALL_VARS`) included.
 
@@ -3879,7 +3882,7 @@ handler. No `try` can be built and the method fails with `parsing failure!` (okh
 `Util.isCivilized` and `PublicSuffixDatabase.readTheListUninterruptibly`). Trimming the `catch` range
 back would print wrong code: the `close()` of the inlined copy can throw the caught `IOException`, and
 the bytecode catches it there. With the fix
-(`decompiler/nonnative/kuna-jvm/src/p2_lift/kuna_fix_overlapping_ranges.rs (OverlappingRanges::split)`),
+(`decompiler/nonnative/kuna-jvm/src/fixes/exception_ranges/overlapping_ranges.rs (OverlappingRanges::split)`),
 run right before the multiple-entry check of the exception deobfuscation in both the Java schedule
 and the Kotlin plugin's, every handler whose protecting handlers cover part of its range and leave the
 rest out gives that rest its own copy of the handler. The copy's first instruction, the exception
@@ -3922,7 +3925,7 @@ the method that creates it, so that method fails. Written as Java (the Kotlin wr
 parameters otherwise), seven methods of okio 2.6.0 and okhttp 4.7.2 fail so: `Throttler.source` and
 `sink`, `AsyncTimeout.source` and `sink`, the constructor of `Cache.CacheResponseBody`,
 `DiskLruCache.Entry.newSource` and `RealWebSocket.connect`. With the fix
-(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_constructor_signature_alignment.rs (align)`) a
+(`decompiler/nonnative/kuna-jvm/src/fixes/anonymous_classes/constructor_signature_alignment.rs (align)`) a
 signature that describes the descriptor's parameters after a leading run of marked ones, each of its
 types one whose erasure is the descriptor's type at that position, is trimmed to the unmarked
 parameters, as `parseDescriptor` trims the IR form. The writer, which pairs the signature's types with
@@ -3944,7 +3947,7 @@ of okhttp 4.7.2, kotlin-stdlib 2.2.20 and kotlinx-coroutines 1.8.0 and 1.10.2, w
 Kotlin alike: okhttp's `Cookie.Builder.build`, `Http2Stream.takeHeaders`, `RealCall.initExchange`,
 kotlin-stdlib's `IndexingIterator.next`, `HexFormat.Builder.build`, coroutines'
 `JobSupport.toCancellationException`, `StateFlowKt.MutableStateFlow`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/p3_dataflow/kuna_fix_split_constructor_call.rs (join_split_constructors)`),
+(`decompiler/nonnative/kuna-jvm/src/fixes/constructor_calls/split_constructor_call.rs (join_split_constructors)`),
 the last step of the main loop of both the Java schedule and the Kotlin plugin's (after
 `CondenseExits`, when no other step changed the method; the loop runs again after a join), such a
 pair is joined as the same-list join does it:
@@ -3971,7 +3974,7 @@ and the code around it, so the single write in a loop body of a local declared b
 as its only one. Java output never prints this finality, but the Kotlin writer declares such a local
 `val`, which kotlinc rejects as reassigned (okhttp's `RetryAndFollowUpInterceptor`, okio's
 `codePointIndexToCharIndex`, 30 such locals in the two). With the fix
-(`decompiler/nonnative/kuna-jvm/src/p6_variables/kuna_fix_local_final_writes.rs (set_non_final)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/declaration_scope/local_final_writes.rs (set_non_final)`)
 heads are read where they run and a loop body starts with a set of its own, so a local declared outside
 the loop and written in it is non-final (`var`).
 
@@ -3982,7 +3985,7 @@ then the use, and the structurer often copies a field or array read into both pl
 deleted `checkNotNull` and kept `throwNpe`, so the expression lost the `!!` that gave it its non-null
 type: `val var10000: ResponseBody = response.body`, `this.stream.readTimeout()` on a nullable field,
 which kotlinc rejects (about 400 errors on okio and okhttp). With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_not_null_assertion.rs (recover)`), before the
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_null_checks/kt_not_null_assertion.rs (recover)`), before the
 last stack-variable pass, a check is folded back into an expression `x!!` (`KFunctionType::NotNull`):
 on `v = e` right before it when `v` is the checked stack variable or holds the read the check copies
 (the pass then inlines `e!!` into the use), else on the first read of the checked value in the next
@@ -3997,7 +4000,7 @@ non-null Kotlin property, kotlinc checks it first: `e; dup; Intrinsics.checkNotN
 call after the stack variables were simplified, leaving the stack variable that held the value, and kept
 the 1.3 one; in a static initializer either stopped `InitializerProcessor`, and the property lost its
 initializer to the `<clinit>` remainder (`val var10000: Logger = Logger.getLogger(..); logger =
-var10000`). With the fix (`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_expression_value_check.rs
+var10000`). With the fix (`decompiler/nonnative/kuna-jvm/src/fixes/kt_null_checks/kt_expression_value_check.rs
 (remove)`) the check of a stack variable that the next statement stores into a field is deleted before
 the last stack-variable pass, which writes the value into the store; kotlinc inserts the check again for
 the property's type. A check of a value used anywhere else is left as it was, since there it is all
@@ -4008,7 +4011,7 @@ invokespecial; astore_0; aload_0; putstatic INSTANCE` and reads local 0 for the 
 initializers and `init` blocks; kotlinc 2.0 reads `INSTANCE` back with `getstatic`. The local stopped
 `InitializerProcessor` at the first initializer that used it, and printed as is the remainder created a
 second instance (`val var0 = Hpack(); INSTANCE = var0; NAME_TO_FIRST_INDEX = var0.nameToFirstIndex()`).
-With the fix (`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_object_instance_local.rs (rewrite)`),
+With the fix (`decompiler/nonnative/kuna-jvm/src/fixes/kt_initializers/kt_object_instance_local.rs (rewrite)`),
 in the static initializer of an object or companion object, `var0 = new X(); X.INSTANCE = var0` becomes
 `X.INSTANCE = new X()` and each other read of the local, which is never written again, reads
 `X.INSTANCE`, the final field that holds the same value from then on: the code kotlinc 2.0 emits for the
@@ -4020,7 +4023,7 @@ into `<clinit>`. `InitializerProcessor` moves each initializer it can into its p
 (a `try`, a loop, a value built over several statements) stays in `<clinit>`, which the Kotlin writer
 printed as `@JvmStatic fun {`, no Kotlin at all (okhttp's `ConscryptPlatform`, `Huffman`, 30 classes in
 okhttp, kotlin-stdlib and kotlinx-coroutines). With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_static_initializer.rs (writes_init_block)`) that code
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_initializers/kt_static_initializer.rs (writes_init_block)`) that code
 is an `init` block: in the object itself, or, moved out of the class, in its companion object after the
 companion's properties, the place Vineflower's Java writer gives a `static` block after the field
 initializers. A file class has no `init`; its remainder (17 file classes in the five Kotlin libraries) is
@@ -4056,7 +4059,7 @@ the enter is written `synchronized (x){} // $VF: monitorenter`, which takes the 
 at once, and the body runs after it without the lock, with `// $VF: monitorexit` comments on the exits
 (wrong output in Java and Kotlin; kotlinx-coroutines 1.8.0 and 1.10.2's `ThreadSafeHeap.removeFirstIf`,
 an inline function written `synchronized(this) { val first = firstImpl() ?: return null; .. }`). With
-the fix (`decompiler/nonnative/kuna-jvm/src/p7_regions/kuna_fix_inline_marker_finally_copy.rs
+the fix (`decompiler/nonnative/kuna-jvm/src/fixes/finally_sync/inline_marker_finally_copy.rs
 (is_marker_depth)`), `compare_basic_blocks_ex` accepts an instruction pair that differs where both are a
 `bipush`/`sipush` followed in both sequences by the same `invokestatic` of
 `kotlin/jvm/internal/InlineMarker.finallyStart` or `finallyEnd` `(I)V`; nothing else of the copies may
@@ -4080,7 +4083,7 @@ synchronized statement" on the method in Java, and the release keeps `ExitHelper
 `EventLoopImplBase.DelayedTask.scheduleTask`, 1.8.0's `JobSupport.invokeOnCompletion`). The output is
 not wrong: the `synchronized` statement releases the lock on the `break`, at the same point as the
 bytecode's release. With the fix
-(`decompiler/nonnative/kuna-jvm/src/p7_regions/kuna_fix_synchronized_break_exit.rs (mark_break_exits)`),
+(`decompiler/nonnative/kuna-jvm/src/fixes/finally_sync/synchronized_break_exit.rs (mark_break_exits)`),
 `buildSynchronized` also marks dead the release in a block that is the destination of an edge from a
 statement of the body, when the block starts with `aload n; monitorexit` for the local `n` the
 `monitorenter` block locks (`aload n; monitorenter` or `dup; astore n; monitorenter`), holds no other
@@ -4098,7 +4101,7 @@ the call it is an argument of is split (`val var10003 = JobSupport::registerSele
 names such a class `<unrepresentable>`; the Java writer prints `var` for it, the Kotlin plugin's
 `KVarExprent` and `KProperty` print it as the declared type, which is not Kotlin (4 declarations in
 okhttp, 2 in kotlin-stdlib, 12 in each kotlinx-coroutines). With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_unrepresentable_declared_type.rs (omits)`), a
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_anonymous_objects/kt_unrepresentable_declared_type.rs (omits)`), a
 definition written as the left side of an assignment, and a property that is not delegated and has an
 initializer, leave the type out; Kotlin infers it from the initializer, which is the same object, typed
 as the object expression or as the reference's `KFunction` type (a subtype of the function type the
@@ -4118,7 +4121,7 @@ Vineflower; among the five Kotlin inputs only okhttp 4.7.2's
 `Http2Connection.ReaderRunnable.applyAndAckSettings` (`synchronized (var35[var33])` while `var32` holds
 the element): kotlinx-coroutines' `JobSupport.invokeOnCompletion` reads its state through a getter, a
 call the inliner does not copy, and locks `state`. Java output never inlines locals. With the fix
-(`decompiler/nonnative/kuna-jvm/src/p3_dataflow/kuna_fix_kt_inline_lock_local.rs (KtInlineLockLocal)`),
+(`decompiler/nonnative/kuna-jvm/src/fixes/stack_var_inlining/kt_inline_lock_local.rs (KtInlineLockLocal)`),
 `iterateStatements` first collects the SSAU versions whose value a monitor takes: the operand of every
 `monitorenter` and `monitorexit` and, through the var-assignment map, the uses of the locals the
 operands copy (kotlinc locks a copy: `val l = x; tmp = l; monitorenter(tmp)`). A local that is not a
@@ -4140,7 +4143,7 @@ synchronized (l) { .. }` became `this.lock = new Object(); synchronized (this.lo
 new object; an assignment moved past a call that changes its field; and `Object l = next(); synchronized
 (next()) { .. }` lost its first call (wrong output in Java, the same in Vineflower; no method of the ten
 benchmark inputs has the shape: every assignment it removes there is the compiler's). With the fix
-(`decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_fix_synchronized_lock_assignment.rs (is_lock_variable)`),
+(`decompiler/nonnative/kuna-jvm/src/fixes/finally_sync/synchronized_lock_assignment.rs (is_lock_variable)`),
 an assignment is the lock variable's only when every exprent after it in the head block stores a
 constant or a local to a local its value does not read, and one whose value the operand repeats is
 dropped only when that value has several uses (`MULTIPLE_USES`: no call, allocation or store). Not
@@ -4152,7 +4155,7 @@ facade. `KInvocationExprent` reads the callee's metadata from the method the cal
 multifile facade has none, and writes the call as Java does, `Util.format(..)`, a field as
 `Util.EMPTY_RESPONSE`, an accessor's property bare and without its import (`counter`, which reads a local
 `counter` where one is in scope). Kotlin has no name for a facade class. With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_facade_call.rs (qualifier)`) the callee of a
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_calls/kt_facade_call.rs (qualifier)`) the callee of a
 call through a multifile facade is the part method of that name and descriptor (`part_method`; from
 the class path when the facade is a library's, never for a name a value class mangled), and a callee of a
 facade or part is written by its Kotlin name with the import of its package's declaration (the metadata's
@@ -4174,7 +4177,7 @@ extension the same way on its dispatch receiver (`ByteString.Companion.encodeUtf
 resolves to a deprecated function of that name), and an extension property's accessor call through the
 property path, which has no receiver: `firstChar` for `s.firstChar`, and `tag = s` for `s.tag = 4`, which
 assigns the receiver and drops the value. With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_extension_call.rs (write_function)`) the call is
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_calls/kt_extension_call.rs (write_function)`) the call is
 written on its receiver by the callee's Kotlin name, the other arguments as Vineflower writes them, when
 the callee is in scope (a top-level one by its import, as for `kt_facade_call`; a member of an `object` or
 companion by being a member of a class around the call or by `import pkg.Outer.Companion.name`; a member of
@@ -4211,7 +4214,7 @@ Vineflower's form.
 alias kept under it. `KInvocationExprent` also reads the metadata of the class the call names only, so a
 member a subclass inherits keeps its JVM name, an inherited property its accessor call
 (`this.getClosed()`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_jvm_name_call.rs (kotlin_name)`) the metadata of
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_calls/kt_jvm_name_call.rs (kotlin_name)`) the metadata of
 the class declaring the called member is read too (`inherited`), and a member call is written with the
 function's Kotlin name (`kuna_kotlin_name`, read by `InvocationExprent`); a property's accessor is
 written as the property. A name a value-class parameter mangled (`take-dXQi75k`), which a call by the
@@ -4223,7 +4226,7 @@ lambda or object class, a class beside a top-level declaration, an inlined body)
 synthetic accessor of the member's class: `access$getX$p`, `access$setX$p`, `access$foo`.
 `NestedMemberAccess` replaces such calls only for callers nested in the accessor's class, and the rest
 are written as calls of the accessor, which Kotlin has no name for. With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_synthetic_accessor_call.rs (resugar)`), while a
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_calls/kt_synthetic_accessor_call.rs (resugar)`), while a
 call of a static synthetic `access$` method is written, when the accessor's code loads its parameters in
 order, makes one field access or call of a member of its own class with Kotlin metadata, and returns, the
 call is written as that access (a property read or assignment, a function call through the fixes above);
@@ -4235,7 +4238,7 @@ read, setter for a write) is the default one; otherwise the call keeps its acces
 `?`, so a local that holds `null` is declared non-null and kotlinc rejects the store: `var s: Segment =
 this.head` with `head` a `Segment?`, `val v: String = this.headers.get(name)`, `var10000 = null` (about
 440 errors on okio and okhttp, 550 on kotlinx-coroutines 1.10.2). With the fix, a pass after
-`ReplaceExprentsPass` (`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_nullable_local.rs (infer)`)
+`ReplaceExprentsPass` (`decompiler/nonnative/kuna-jvm/src/fixes/kt_null_checks/kt_nullable_local.rs (infer)`)
 walks the method in execution order and decides, for every store into a local, whether its value may be
 `null`: the `null` literal; a field, call or parameter whose Kotlin type is nullable (its `@Nullable`
 annotation, else the property, function or parameter in its owner's metadata, the owner's supertypes
@@ -4258,7 +4261,7 @@ counts as non-null.
 `Map<String, String>` is `Map.get; checkcast String; dup; ifnonnull`, and Vineflower wrote
 `names.get(key) as String`, which throws on a missing key where the original returns `-1` (recompiled and
 run). With the fix the same analysis marks each cast whose operand may be `null`
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_nullable_local.rs (infer)`), and `KFunctionExprent`
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_null_checks/kt_nullable_local.rs (infer)`), and `KFunctionExprent`
 writes it `as T?`; so does the cast Vineflower adds while writing (`get_casted_exprent`) to a read of a
 local that may hold `null` there (`maybeReleaseConnection(result as IOException?, false)`, `result`
 holding a parameter of type `E : IOException?`). A cast whose operand a check proved non-null
@@ -4274,7 +4277,7 @@ named local's field value into its uses (`val s = src.head; s!!.limit - s.pos` p
 `src.head!!.limit - src.head.pos`). Each read may see another value once another thread writes the field
 (kotlinx-coroutines' `@Volatile` fields, `DefaultExecutor._thread`), and the check guards another read
 than the one used, so kotlinc rejects the use of the nullable property. With the fix
-(`decompiler/nonnative/kuna-jvm/src/p3_dataflow/kuna_fix_kt_field_read_reuse.rs (keeps_read)`), in
+(`decompiler/nonnative/kuna-jvm/src/fixes/stack_var_inlining/kt_field_read_reuse.rs (keeps_read)`), in
 Kotlin output (a class with Kotlin metadata, the Kotlin plugin on) a read of a field that is not final,
 with several uses, stays in its variable, not even copied into the next statement, as fix
 `field_read_reuse` keeps Java's stack variables. A final field (a `val` property's) keeps its value once
@@ -4288,7 +4291,7 @@ only the other uses read it. In the Kotlin plugin, which inlines every local, th
 another variable than the one it guards (`var t = text; if (text == null) t = ..`), a cast or an array
 element evaluated again (`val box = var10000` beside `(state as? Box) == null`), and Kotlin cannot
 smart-cast the variable. With the fix
-(`decompiler/nonnative/kuna-jvm/src/p3_dataflow/kuna_fix_kt_partial_inline.rs (keeps_variable)`), in
+(`decompiler/nonnative/kuna-jvm/src/fixes/stack_var_inlining/kt_partial_inline.rs (keeps_variable)`), in
 Kotlin output a variable that stays (a use the value cannot move to, or a definition that does not reach
 all of them) is read at every use, as the bytecode reads it; a variable whose uses all take the value is
 inlined as before. Vineflower's numbering and clash renaming of the locals around it move on.
@@ -4298,7 +4301,7 @@ in declaration order, into the file class's `<clinit>`. `InitializerProcessor` m
 into its property; what it cannot (a `try`, a loop, a value built over several statements) stays in
 `<clinit>`, which the Kotlin writer printed as `fun { .. }`, and those properties have no value
 (okhttp's `okHttpName`, 4 file classes of kotlin-stdlib, 6 of each kotlinx-coroutines). With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_file_static_initializer.rs (prepare)`) the
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_initializers/kt_file_static_initializer.rs (prepare)`) the
 remainder is cut at each top-level store into a property of the file: the statements before it and the
 stored value become that property's initializer, `val x: T = run { ..; value }`, or the value alone. The
 properties are written in field order, which must be the order `<clinit>` stores them in (checked on its
@@ -4318,7 +4321,7 @@ code relies on (wrong output, Kotlin, the same in Vineflower; 36 volatile and 13
 fields of the five Kotlin inputs, none synthetic; the 66 and 61 synthetic `x$volatile` fields atomicfu
 generates in kotlinx-coroutines belong to no property and are left out by `remove-synthetic`, as in
 Java output). With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_property_field_flags.rs (annotations)`) the
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_properties/kt_property_field_flags.rs (annotations)`) the
 property is written with the annotation each flag of its backing field stands for, on a delegated
 property as `@delegate:` (the field is the delegate's). Not fixed on `develop/1.13.0`.
 
@@ -4329,7 +4332,7 @@ visibility and no accessors, and rejects the printed `private set` ("JvmField ca
 property with a custom accessor"; 51 properties of the five Kotlin inputs). kotlinc makes a backing
 field non-private only for such a property (and for a `lateinit` one, whose field takes its setter's
 visibility, so a private setter there means a private field). With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_jvm_field_setter.rs (has_no_setter)`) a `var`
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_properties/kt_jvm_field_setter.rs (has_no_setter)`) a `var`
 without a setter method whose non-delegate backing field is not private has no setter line. Not fixed on
 `develop/1.13.0`.
 
@@ -4346,7 +4349,7 @@ Vineflower; Java output never inlines locals. A read of a non-final field alone 
 `kt_field_read_reuse`'s (it keeps such a value in its variable in every pass of a Kotlin class), and a
 variable the inliner keeps for some uses is fix `kt_partial_inline`'s (it is read at all of them); this fix
 covers what is left. With it
-(`decompiler/nonnative/kuna-jvm/src/p3_dataflow/kuna_fix_kt_inline_heap_read.rs (KtInlineHeapRead)`), in
+(`decompiler/nonnative/kuna-jvm/src/fixes/stack_var_inlining/kt_inline_heap_read.rs (KtInlineHeapRead)`), in
 that pass a variable whose every use the inliner would copy, more than one, stays when its value reads an
 array element or a field not known to be final (looked up in the class the reference names and its
 superclasses) and is not a non-final field read `kt_field_read_reuse` keeps: the bytecode reads the
@@ -4359,7 +4362,7 @@ type parameters and the hierarchy map, which needs that class's file. A project'
 interfaces without code, such as Guava's `Function`, `Supplier` and `ReferenceEntry`, so `IdentityFunction
 implements Function<Object, Object>` gave nothing for `Function` and `return IdentityFunction.INSTANCE`
 from a `Function<E, E>` method was written without its cast, which javac rejects. With the fix
-(`decompiler/nonnative/kuna-jvm/src/p5_types/kuna_fix_external_supertype_arguments.rs (supertype_args)`),
+(`decompiler/nonnative/kuna-jvm/src/fixes/generic_casts/external_supertype_arguments.rs (supertype_args)`),
 when the supertype's class is unknown its arguments are read from the generic superclass and
 superinterfaces the known classes' signatures declare, walking up through known classes only and
 substituting each class's type arguments; a raw supertype gives none.
@@ -4370,7 +4373,7 @@ rejects the call where the target's type argument is outside the variable's boun
 Ordering.natural()` for an unbounded `E`, `return Ordering.natural().reverse()` from a `Comparator<? super
 E>` method (`<S extends T> Ordering<S> reverse()`, `T` the receiver's `Comparable`). The source casts,
 `(Ordering<E>) Ordering.natural()`, an unchecked cast that compiles to no instruction; Vineflower writes
-none. With the fix (`decompiler/nonnative/kuna-jvm/src/p2_lift/kuna_fix_bounded_inference_cast.rs
+none. With the fix (`decompiler/nonnative/kuna-jvm/src/fixes/generic_casts/bounded_inference_cast.rs
 (cast_for)`), a returned or assigned call of such a method with no explicit type arguments has its result
 seen as the target's class; each of its own variables that stands bare at a type argument the target
 gives exactly or as `? super X` must lie within its bounds' classes (erasures, a bound that is a type
@@ -4386,7 +4389,7 @@ has no target type (JLS 15.12), so javac infers its type arguments from its argu
 Builder<>(comparator).addAll(elements).build()` returned as an `ImmutableSortedSet<E>` infers the capture
 of `? super E`, and the result does not convert. The source writes `List.<Setting<?>>of(MODE)` and
 `new Builder<E>(comparator)`; Vineflower writes no type arguments. With the fix
-(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_receiver_type_arguments.rs (apply)`) a returned or
+(`decompiler/nonnative/kuna-jvm/src/fixes/generic_casts/receiver_type_arguments.rs (apply)`) a returned or
 assigned chain is traced from its target down through calls whose results are typed by their classes'
 type variables: each result, seen as the target's class, must match the target exactly, which fixes
 the receiver's type arguments, until the chain starts at a call of a generic method or a diamond or raw
@@ -4404,7 +4407,7 @@ binds). A target with a wildcard where a variable stands stops the trace.
 needed on an argument as much, and Vineflower writes them bare there: `out.writeGenericMap(innerMap)` of
 a `Map<String, String>` for a `Map<String, Object>` parameter, `super(name, source)` of a `Properties`,
 `result.add(PropertiesLoaderUtils.loadProperties(r))` into a `List<Map<String, ?>>`, `this(Ordering.natural())`
-for a `Comparator<? super E>`. With the fix (`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_argument_generic_cast.rs
+for a `Comparator<? super E>`. With the fix (`decompiler/nonnative/kuna-jvm/src/fixes/generic_casts/argument_generic_cast.rs
 (fixed_formal)`), `InvocationExprent.appendParamList` marks each argument whose parameter's declared type
 does not depend on what javac infers for the call: no type variable of a generic method, the class's
 variables taken from the receiver's declared type, from the current class's own (`this(..)`) or its
@@ -4424,7 +4427,7 @@ came out `-this.pageSize * pages.size()`, an `int` product that overflows (Elast
 `RecyclerBytesStreamOutput.close`), and so did a conversion under `%`, `&` or a conditional that is
 the operand of a `*`, while `-(long) a` alone came out `-a`, which differs at `Integer.MIN_VALUE`, and
 `(double) a % (double) b` came out `a % b`, which throws on `b == 0`. With the fix
-(`decompiler/nonnative/kuna-jvm/src/p3_dataflow/kuna_fix_implicit_widening_arithmetic.rs
+(`decompiler/nonnative/kuna-jvm/src/fixes/numeric_types/implicit_widening_arithmetic.rs
 (keep_widening)`), after its operands an operation whose result depends on the type it computes in
 (`+ - * /`, negation, shifts, and `%` of `float` or `double`) computes its operands' type as written
 (an unwritten conversion has its operand's, arithmetic the promotion of its operands', a conditional
@@ -4439,7 +4442,7 @@ freely only while every step computes in the same type, and an operand whose wid
 narrower as written: `(long) ord * (vectorByteSize * 2L)` came out `ord * this.vectorByteSize * 2L`,
 whose `ord * this.vectorByteSize` is an `int` product that overflows (Elasticsearch's
 `ES920DiskBBQVectorsWriter` and `ES940DiskBBQVectorsWriter` `readQuantizedVector`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_mixed_type_reassociation.rs (regroups_type)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/numeric_types/mixed_type_reassociation.rs (regroups_type)`)
 the parentheses of such an operand of `+` or `*` stay unless the left operand and the first operand
 of the regrouped group, as written (by `implicit_widening_arithmetic`'s rule), promote to the
 operator's own type: `ord * (this.vectorByteSize * 2L)`, while `x * y * z` on `long`s and
@@ -4457,7 +4460,7 @@ Java runs the `finally` on every iteration where the bytecode runs it once: `try
 synchronized (queue) { .. return; } task.run(); } } finally { .. }` came out `while (true) { try { ..
 } finally { .. } }`, which re-interrupts the thread before each task (Guava's
 `SequentialExecutor$QueueWorker.workOnQueue`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/p7_regions/kuna_fix_protected_back_edge.rs (is_open_loop_body)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/finally_sync/protected_back_edge.rs (is_open_loop_body)`)
 `CatchAllStatement.isHead` refuses a body whose continue set holds its own first block (its back edge
 lies inside the range, so the loop does), and `findGeneralStatement` accepts such a body alone as a
 region ending at its exit, as it accepts a body with a regular edge to itself: inside the region the
@@ -4473,7 +4476,7 @@ first statement was an empty loop sharing its head that `EliminateLoopsHelper` r
 its condition is false, and the rewrite made that the exit: `while ((l = v[++i]) >= p) { .. }`, which
 leaves where the bytecode scans on (Elasticsearch's `BulkNeighborQueue$ReservoirTopK.quickSelectIntro`
 returned the wrong k-th element). With the fix
-(`decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_fix_loop_first_if_exit.rs (exits_to)`) the
+(`decompiler/nonnative/kuna-jvm/src/fixes/control_flow/loop_first_if_exit.rs (exits_to)`) the
 rewrite is made only when every successor of the `if` is a `break` to that exit; otherwise the loop
 stays `while (true) { if ((l = v[++i]) >= p) { .. } }`.
 
@@ -4490,7 +4493,7 @@ came out comparing the boxes (kotlin-stdlib's Java `Intrinsics.areEqual(Double, 
 bytecode replaces, and compare identities. Vineflower's conditional `c ? defaultValue : readBoolean(..)`
 unboxed by the conditional's typing; `jvm_javac_layout`'s two returns did not, so Elasticsearch's
 `ConfigurationUtils.readBooleanProperty` returned `null` where it throws. With the fix
-(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_reference_unboxing.rs (keep_under_boxing)`) the
+(`decompiler/nonnative/kuna-jvm/src/fixes/numeric_types/reference_unboxing.rs (keep_under_boxing)`) the
 argument of an unwritten boxing call, and the left operand of such a comparison, is written with its
 unboxing call: `((Long)LONG.nextDown(value)).longValue()`, `first.doubleValue() == second`. Java output
 only.
@@ -4503,7 +4506,7 @@ statements; it finds none, takes the whole array as the initializer of the synth
 field, and the constants print bare (`NO_ERROR,` for `NO_ERROR(0)`) in Java and Kotlin output alike. Its
 "Failed to inline enum fields" note is added to `<clinit>`, which is then empty and hidden, so the loss is
 silent (okhttp 4.7.2's `ErrorCode`, `Protocol` and `TlsVersion`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_fix_enum_constant_in_values_array.rs (extract)`), when
+(`decompiler/nonnative/kuna-jvm/src/fixes/class_writing/enum_constant_in_values_array.rs (extract)`), when
 the first statement of an enum's static initializer stores an array of the enum into a static field of the
 class, and its elements are, in field order, one assignment `F = new E(..)` to each enum constant of the
 class, whose first two constructor arguments are the constant's own name and ordinal and whose value
@@ -4517,7 +4520,7 @@ function's does, but `KProperty` read neither: `val CharSequence.lastIndex: Int`
 lastIndex: Int`, a property without a receiver (which `s.lastIndex` does not name, and which repeats for
 each receiver of a facade: `ArraysKt___ArraysKt` declared nine `val indices`), and its getter read the
 receiver parameter by its debug name, `` `$this$lastIndex` ``. With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_extension_property.rs (parse)`) the property keeps
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_extensions/kt_extension_property.rs (parse)`) the property keeps
 the metadata's receiver and type parameters, read in the scope of its own type parameters, and the header
 is `val <T : B> Receiver.name: Type` (a receiver of a function type in parentheses, a type parameter with
 several bounds in a `where` clause after the type); each accessor body is written in the receiver scope of
@@ -4531,7 +4534,7 @@ from it (`Companion = Companion.$$INSTANCE`), which the plugin did not recognise
 declared the field in Java form inside the interface (`Interceptor.Companion Companion =
 Interceptor.Companion.$$INSTANCE;`; okhttp's `Interceptor`, kotlinx-coroutines' `Job.Key`,
 `Channel.Factory`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_interface_companion_field.rs (is_instance_read)`) an
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_generated_members/kt_interface_companion_field.rs (is_instance_read)`) an
 interface field of the companion's type initialized from the companion's own `$$INSTANCE` is hidden as the
 companion's instance too; the `companion object` the writer prints declares it.
 
@@ -4540,7 +4543,7 @@ per trailing default, without metadata, each passing its parameters, placeholder
 the bridge `f$default`. The Kotlin writer wrote them as functions of the source, `@JvmOverloads fun f(a: Int):
 Int { return f$default(this, a, 0, 2, null) }`, which Kotlin rejects (the bridge has no Kotlin name, and the
 annotated `f` already declares these overloads). With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_generated_overload_hidden.rs (is_generated)`) a
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_generated_members/kt_generated_overload_hidden.rs (is_generated)`) a
 method without metadata is not written when it carries `@JvmOverloads` (kotlinc copies the annotation from
 `f`, whose own method has metadata) and its code is only loads of parameters and constants, the null checks
 of its parameters (`Intrinsics.checkNotNullParameter`, `checkParameterIsNotNull`), one `invokestatic` of
@@ -4563,7 +4566,7 @@ function, and their defaults printed as `= ...` (okio 5, okhttp 27, kotlin-stdli
 that names or leaves out its parameters. Where a function's Kotlin name is the JVM name of another function
 with the same JVM parameters (`@JvmName("pickInts") fun pick(xs: List<Int>, n: Int = 1)` beside `fun
 pick(xs: List<String>, n: Int = 2)`), it found the other function's method and printed its defaults. With
-the fix (`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_default_args_bridge_lookup.rs (locate)`) the
+the fix (`decompiler/nonnative/kuna-jvm/src/fixes/kt_default_args/kt_default_args_bridge_lookup.rs (locate)`) the
 method is `<JVM name>$default` with the function's own JVM descriptor's parameters and return type, the
 class's type first for a member, and the masks and marker; it must be static and synthetic, in the class or,
 for an interface's member, in its `DefaultImpls`, whose decompiled method the writer reads through that
@@ -4585,7 +4588,7 @@ name (`` `$this$toByteString`.size ``), a member's instance was `this` also in a
 Kotlin's `this` is the extension receiver (`fun String.pad(width: Int = this@Box.length)` printed `width:
 Int = this.length`, which Kotlin reads as the string's length), and the parameters of a function without
 code, an interface's abstract function, were not named at all (`by: Int = var1 * 2`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_default_value_names.rs (enter)`), while
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_default_args/kt_default_value_names.rs (enter)`), while
 `KFunction.stringify` writes a function's defaults, a variable of the default-arguments method at a value
 parameter's slot is written by the parameter's metadata name, at the extension receiver's slot `this`, and
 at slot 0 of a member `this`, or `this@Class` in an extension (`KVarExprent.getName`); an extension in a
@@ -4597,7 +4600,7 @@ checkcast MediaType` in okhttp 4.7.2, `new ArrayList ..; checkcast java/util/Lis
 same instruction whether or not the source wrote a cast. Vineflower prints it as part of the default: `=
 ", " as CharSequence`, `= null as MediaType?`, and `= ArrayList() as java.util.List` or `= "tag" as
 java.lang.CharSequence`, which kotlinc rejects. With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_default_value_coercion_cast.rs (uncast)`) a default
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_default_args/kt_default_value_coercion_cast.rs (uncast)`) a default
 that is a cast of a reference to exactly the JVM type of the parameter the method assigns is printed as the
 cast's operand: the parameter's type is the default's expected type, so the declaration compiles to the
 same `checkcast`, and an operand that is not of that type is rejected rather than converted. The cast is
@@ -4623,7 +4626,7 @@ appendTo(StringBuilder, Iterator<?>)`, a call of `<A extends Appendable> A appen
 out `appendTo((StringBuilder)builder, parts)`, the method calling itself until the stack overflows
 (`Joiner` and `Joiner.MapJoiner`), and `show((Object) s)` of `<T> String show(T)` came out
 `show((String)s)`, a call of `show(String)`. With the fix
-(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_ambiguous_type_variable_argument.rs (erased_arguments)`),
+(`decompiler/nonnative/kuna-jvm/src/fixes/overloads/ambiguous_type_variable_argument.rs (erased_arguments)`),
 when the arguments as written would resolve to another method (applicable in an
 earlier phase of JLS 15.12.2, or in the same phase and strictly more specific, among the methods of the
 named class and its known supertypes that are its members, or for a class outside the input the
@@ -4657,7 +4660,7 @@ Kotlin plugin's pass list never calls it, so Kotlin output wrote the array read 
 `` when (LazyKt__LazyJVMKt.WhenMappings.`$EnumSwitchMapping$0`[mode.ordinal]) { 1 -> .. } ``, which names
 a synthetic class and a `$` field kotlinc rejects (okhttp 2, kotlin-stdlib 11, kotlinx-coroutines 3
 `when`s). With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_enum_when_mappings.rs (resugar)`), a pass after
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_when.rs (resugar)`), a pass after
 the main loop, where the Java pipeline simplifies switches, reads the mapping from the bytecode of the
 mapping class's static initializer (`getstatic F`, or the `aload` of a local the initializer later stores
 to `F`, then `getstatic E.C`, `invokevirtual E.ordinal()`, the label, `iastore`), which does not depend
@@ -4676,7 +4679,7 @@ callers passing `null` for the marker. Vineflower's supertype calls drop the mar
 (`KUtils.removeArguments`), but `KNewExprent` writes a `new` of the accessor as it is,
 `CipherSuite(javaName, null)`, a constructor the class does not declare (okio 2, okhttp 16, kotlin-stdlib
 26 calls). With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_constructor_accessor_call.rs (resugar)`) such a
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_constructors/kt_constructor_accessor_call.rs (resugar)`) such a
 call, its last argument the `null` constant, whose target is recognised as an accessor by its code
 (`kt_inline_class_constructor_accessor`'s `real_constructor`: `aload 0`, a load of each parameter but the
 marker in order, one `invokespecial` of this class's `<init>` with those parameters,
@@ -4707,7 +4710,7 @@ outside of method */ internal class ...`) whose constructor stores the captured 
 its code reads (`this.this$0.writeSynReset(this.$streamId$inlined, ..)`), and the method that inlined it
 calls its constructor by its `$` name (okhttp 17, kotlin-stdlib 37, kotlinx-coroutines 1.10.2 128 and
 1.8.0 125 classes; 33, 75 and 404 lines naming them). Unchanged on `develop/1.13.0`. With the fix
-(`decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_fix_unlisted_anonymous_class.rs (nest_in_enclosing_class)`),
+(`decompiler/nonnative/kuna-jvm/src/fixes/anonymous_classes/unlisted_anonymous_class.rs (nest_in_enclosing_class)`),
 once the tree is built, a class still at top level whose own entry says it is anonymous is nested, as
 the enclosing class's entry would have nested it, in the class its `EnclosingMethod` names, when that
 class is in the input and is not nested in it; so is each of its anonymous classes that listed it.
@@ -4723,7 +4726,7 @@ out for some inlined arguments (okhttp's `sendDegradedPingLater`, kotlin-stdlib'
 would keep a store of a parameter it does not show (`this.$context = $context`). So for an anonymous class
 nested where its enclosing class does not list it, a local whose definition an argument of the constructor
 call reads, directly or through a stack copy, is kept whether or not it has a name
-(`decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_fix_unlisted_anonymous_class.rs (takes_local)`). Two
+(`decompiler/nonnative/kuna-jvm/src/fixes/anonymous_classes/unlisted_anonymous_class.rs (takes_local)`). Two
 copies stay classes of their own, written as Vineflower writes them, so that their constructor call keeps
 showing what it is given: a suspend lambda in Kotlin output, which the Kotlin writer cannot write (it prints
 its failure comment where the lambda is created), and a copy created in a method that is not written (a
@@ -4736,7 +4739,7 @@ store, without an entry, by its own name (`val var7 = arrayOf(..)`), and the obj
 which nothing declares. For a class nested here, when the first assignment of a captured variable in the
 creating method has no debug entry, the captured variable's entry is renamed to the name the creating method
 declares it by
-(`decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_fix_unlisted_anonymous_class.rs (captured_lvt)`).
+(`decompiler/nonnative/kuna-jvm/src/fixes/anonymous_classes/unlisted_anonymous_class.rs (captured_lvt)`).
 
 **`kt_companion_nameless_class`.** `KotlinWriter.writeClass` finds a class's companion object among its
 nested classes by simple name, `n.simpleName.equals(name)`, and an anonymous class has none: when one
@@ -4759,7 +4762,7 @@ the copy instead of the parameter (okio's `Pipe.sink.write`; a suspend `emit`'s 
 valuex`, in 6 objects of each kotlinx-coroutines version once `unlisted_anonymous_class` nests them; in
 Java output, two locals of
 okhttp's `Relay` that end up with one name). Unchanged on `develop/1.13.0`. With the fix
-(`decompiler/nonnative/kuna-jvm/src/p6_variables/kuna_fix_refresh_printed_var_names.rs (refresh)`) the
+(`decompiler/nonnative/kuna-jvm/src/fixes/nested_class_vars/refresh_printed_var_names.rs (refresh)`) the
 clashing names are taken first and only the variables without one are renamed, so no variable is given
 a name another one prints.
 **`kt_implicit_widening`.** Java widens a primitive implicitly where it is stored, passed or returned
@@ -4770,7 +4773,7 @@ alone, also behind an `i2l` it marks implicit. Kotlin converts only explicitly, 
 source.readShortLe()` are rejected. With the fix, in Kotlin output, `getCastedExprent` gives a value whose
 written type is narrower than the expected numeric type, and which is not a constant (written in the target's
 type already), the conversion Kotlin writes, `.toInt()`, `.code` for a `Char`, `.toLong()`
-(`decompiler/nonnative/kuna-jvm/src/p2_lift/kuna_fix_kt_implicit_widening.rs (conversion)`); kotlinc
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_operators/kt_implicit_widening.rs (conversion)`); kotlinc
 compiles it to the same instructions. The declared types are unchanged.
 
 **`kt_object_monitor_call`.** Kotlin reads `java.lang.Object` as `Any`, which has no `wait`, `notify` or
@@ -4778,7 +4781,7 @@ compiles it to the same instructions. The declared types are unchanged.
 `Any.wait()` helpers). Vineflower writes `lock.notifyAll()`, which kotlinc rejects, or which resolves to
 okhttp's own inline extension inside it (a recursive inline function). The methods are final, so their name
 and descriptor identify them; with the fix the Kotlin invocation writer
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_object_monitor_call.rs (write)`) writes `(lock as
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_calls/kt_object_monitor_call.rs (write)`) writes `(lock as
 java.lang.Object).notifyAll()`, the `checkcast java/lang/Object` kotlinc emitted for the source's cast being
 the one written.
 
@@ -4787,7 +4790,7 @@ type, and kotlinc writes no LocalVariableTypeTable, so every local of a generic 
 pins: java.util.List = findMatchingPins(host)`, `val ref: ObjectRef = ObjectRef()`), as are type tests and
 casts (`x is java.util.Collection`); kotlinc rejects each and every member read through such a local. With the
 fix a Kotlin plugin pass after the method's variables are defined
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_raw_generic_type.rs (infer)`) types each local whose
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_types/kt_raw_generic_type.rs (infer)`) types each local whose
 class is generic (a JDK or Kotlin class it lists, or one whose `Signature` declares type parameters; function
 types aside) with the arguments the class file proves, iterating while one local's type proves another's:
 those of the values stored into it, as Vineflower infers a call's type from the callee's signature while the
@@ -4801,7 +4804,7 @@ with star projections, one whose evidence disagrees stays raw, and a `Ref.Object
 is declared by its read-only name unless the method mutates through the local, a view of it or a copy
 (`MutableList<T>`). The types live in the method's `VarProcessor` (`kuna_typed`); Vineflower's inference sees
 them only during the pass (a `Ref`'s always), so its casts elsewhere are unchanged
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_raw_generic_type.rs (visible)`). A cast of a raw
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_types/kt_raw_generic_type.rs (visible)`). A cast of a raw
 generic class takes the arguments of the local it is stored into or reads, of the method's return type it is
 returned as, or of its operand's generic type (`narrowed`), else star projections, and a type test star
 projections, both by Kotlin's read-only names, which compile to the same `checkcast`/`instanceof`; casts the
@@ -4817,7 +4820,7 @@ member is read from, an `import` line) or from the class node (`outer.Inner(..)`
 val Okio: -DeprecatedOkio = -DeprecatedOkio`, which kotlinc cannot parse. With the fix, in a Kotlin file, each
 dot-separated segment of a short name that is no Kotlin identifier (a hard keyword or a name with a character
 an identifier does not have) is written in backticks
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_escaped_class_name.rs (escape_qualified)`), in the
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_names/kt_escaped_class_name.rs (escape_qualified)`), in the
 short names, the `import` lines and the constructor calls on an outer instance alike; a segment with `$` (a
 synthetic class's binary name, which Kotlin cannot name in backticks either), an anonymous class's number, a
 marker (`<unrepresentable>`) or a character no JVM simple name has is left as it is. The names mean the same
@@ -4828,7 +4831,7 @@ classes.
 class's `this`, where Java writes `new Outer.Inner(..)` with the instance implicit; Vineflower's Kotlin writer
 then writes `Outer.Inner(..)`, which Kotlin reads as the constructor of a nested class and rejects
 (okhttp's `Cache.RealCacheRequest(editor)`, 21 calls; kotlinx-coroutines 1.10.2, 18). With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_inner_class_constructor.rs (implicit_receiver_name)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_constructors/kt_inner_class_constructor.rs (implicit_receiver_name)`)
 such a call of a member class of the current class names the class alone, `RealCacheRequest(editor)`:
 inside the class the simple name is that class, and Kotlin passes the current instance as the implicit
 receiver, the same argument. An inner class of a superclass keeps Vineflower's text.
@@ -4841,7 +4844,7 @@ class for any other class), and every synthesized member; kotlinc rejects the co
 right, each synthesized member as a conflicting declaration (okhttp's `Header`, `WebSocketExtensions`,
 `CustomTrustRootIndex`). kotlinc stores a constructor property first in the constructor, in parameter order,
 right after the superclass call. With the fix, when the primary constructor of a data class is written
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_data_class_property_parameters.rs (plan)`), each
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_constructors/kt_data_class_property_parameters.rs (plan)`), each
 leading store `this.p = p` of a parameter into the field of the property of the same name (declared in the
 class, not delegated, `lateinit` or `const`, with default accessors) is taken out of the constructor body and
 the property is written in the parameter's place with its annotations, modifiers and type, as the class body
@@ -4854,7 +4857,7 @@ the metadata records (`equals(other: Any?)`) but the body with the variable proc
 from the local variable table. A method without one (kotlinc 1.3's data class `equals`, a class stripped of
 debug information) reads its parameters as `var1`, a name the header never declared. With the fix, while a
 function's or a constructor's body is written
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_function_parameter_name.rs (enter)`), a parameter's
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_names/kt_function_parameter_name.rs (enter)`), a parameter's
 variable (its slot, version 0; the slots counted past an extension receiver or an outer instance, the JVM
 parameters checked to be the header's plus a suspend function's continuation) that has no local variable
 table entry is written by the header's name, unless another variable of the method already has it. The fix
@@ -4866,7 +4869,7 @@ is a top-level function of `kotlin.contracts`, not imported by default, and the 
 opt-in to `ExperimentalContracts`, which the source gives (`@file:OptIn(ExperimentalContracts::class)`) and
 the class file cannot keep (`OptIn` has source retention). kotlinc rejects both (kotlinx-coroutines 1.10.2:
 17 contracts, 68 errors). With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_contract_import.rs (contract_call)`) `contract` is
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_declarations/kt_contract_import.rs (contract_call)`) `contract` is
 imported, or written `kotlin.contracts.contract` where the simple name is taken, and the function is
 annotated `@OptIn(ExperimentalContracts::class)` (`append_opt_in`). A contract has no code; the function's
 bytecode is unchanged.
@@ -4877,7 +4880,7 @@ it ends where the jump goes, even when its closure is the sequence that ends the
 `KExprProcessor.jmpWrapper` and `KIfStatement` write `return@run` for any `break` whose closure is a
 `KSequenceStatement`, but a sequence is written `run labelN@{ .. }` only when it is labelled, so an unlabelled
 one has no `run` to return from and kotlinc rejects the `return`. With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_unlabeled_sequence_break.rs (returns_from_sequence)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_jumps/kt_unlabeled_sequence_break.rs (returns_from_sequence)`)
 such a `break` is written `break`, which leaves the innermost loop in Kotlin as in Java.
 **`kt_legacy_parameter_checks`.** kotlinc checks each non-null reference parameter of a non-private
 function, an extension's receiver too, on entry, before any of the function's own code.
@@ -4888,7 +4891,7 @@ wherever it stands and keeps Kotlin 1.3's (`Intrinsics.checkParameterIsNotNull`)
 2.6.0 449 calls, okhttp 4.7.2 764), and in an inline function it passes a lambda parameter as a value,
 which kotlinc rejects ("illegal usage of inline parameter": okio 11, okhttp 10). Unchanged on
 `develop/1.13.0`. With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_legacy_parameter_checks.rs (remove)`), called
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_null_checks/kt_legacy_parameter_checks.rs (remove)`), called
 from the pass after the constructor fix in every method but `<init>` and `<clinit>`, the checks that open
 the function's first block are dropped: the block a sequence, an `if`, a `switch` or a `synchronized`
 starts with, labeled or not (`first_block`; a loop's body may run again), each check of a parameter slot
@@ -4906,7 +4909,7 @@ okhttp 4.7.2 18 sites, okio 2.6.0 1, kotlin-stdlib 2.2.20 6, kotlinx-coroutines 
 typed `Array<Any>`, the `if (v == null) throw` with the code after it in its `else`, and a cast at each
 use. Unchanged on
 `develop/1.13.0`. With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_inlined_to_typed_array.rs (resugar)`), before the
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_compiler_idioms/kt_inlined_to_typed_array.rs (resugar)`), before the
 Kotlin plugin's last stack-variable pass, each such `toArray` call is made the call `toTypedArray()`
 typed `Array<T>` (`to_array_of_new`), and Kotlin 1.3's null check of the variable it was just stored into
 (the last statement of the `if`'s head block) is removed, an `else` becoming the statement after the `if`
@@ -4926,7 +4929,7 @@ local, or kotlinc's own temporary (an `if` or `when` value, the count of an inli
 kotlinc 1.3 kept for a `for` loop, the size of an inlined `Array(256) { .. }`), was an `Int`, and every use
 needs a conversion (`return v.toInt()`, fix `kt_implicit_widening`) or is rejected (`repeat(v)`,
 `arrayOfNulls(v)`). Unchanged on `develop/1.13.0`. With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_narrow_constant_local.rs (retype)`), after the
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_types/kt_narrow_constant_local.rs (retype)`), after the
 Kotlin plugin's last stack-variable pass, a local (not a parameter) without a LocalVariableTable entry,
 typed `Byte` or `Short`, whose every store is an integer constant or an `if` expression choosing between
 such values (`constants_of`), is typed `Int`, with its constants, when every read of it takes an `Int`
@@ -4952,7 +4955,7 @@ Vineflower writes the machine (or, failing on the continuation class, nothing; f
 `kt_synthetic_object_super_call`), which Kotlin cannot express. Vineflower 1.12.0 and `develop/1.13.0` have
 no suspend support (`//TODO suspend function support at large` in `KFunction`). With the fix a pass first in
 the Kotlin plugin's graph passes (`SuspendStateMachine`;
-`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_suspend_state_machine.rs (rebuild)`), for a method
+`decompiler/nonnative/kuna-jvm/src/fixes/kt_suspend/kt_suspend_state_machine.rs (rebuild)`), for a method
 whose metadata declares a `suspend` function (`completion_slot`; a class with a method in the suspend calling
 convention has its metadata read there), matches the machine instruction by instruction in the method's
 instruction sequence (`plan_machine`): the entry, the dispatch, for each label one resume block made only of
@@ -4986,7 +4989,7 @@ that parameter, but each call with it, `src.next(`$completion`)`, `block(x, `$co
 the `coroutineContext` intrinsic reads as `` `$completion`.getContext() ``, and the result's cast, which
 Vineflower writes nullable for `kt_nullable_cast` (`src.text(n) as String?`). With the fix a Kotlin plugin
 pass after the Kotlin expressions are made (`SuspendCalls`;
-`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_suspend_call_continuation.rs (mark)`) marks, in a
+`decompiler/nonnative/kuna-jvm/src/fixes/kt_suspend/kt_suspend_call_continuation.rs (mark)`) marks, in a
 function the metadata declares `suspend`, every call whose last argument is the function's `$completion`
 (its original slot) to a method in the suspend convention (a descriptor ending in a continuation and
 returning `Object`) that its metadata does not declare without `suspend`, or to a function type's `invoke`,
@@ -5003,7 +5006,7 @@ is as nullable as that declared type rather than the `@Nullable` kotlinc puts on
 `kotlin.coroutines.jvm.internal.Boxing.boxInt` (`boxLong`, `boxBoolean`, ..; a new wrapper the JIT can
 eliminate) where it would call `Integer.valueOf`; the functions are `internal` to the standard library, and
 Vineflower writes `return boxInt(count)`, which kotlinc rejects. With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_coroutine_boxing.rs (rewrite)`), in a late Kotlin
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_suspend/kt_coroutine_boxing.rs (rewrite)`), in a late Kotlin
 plugin pass (`CoroutineBoxing`) over the methods in the suspend calling convention and suspend lambdas'
 `invokeSuspend`, each such call of one argument becomes the wrapper's `valueOf` call of the same primitive type, which the writer leaves implicit as it does any boxing: the source's form, which kotlinc
 boxes with `Boxing` again in coroutine code.
@@ -5013,10 +5016,10 @@ to, `Function2<T, Continuation<R>, Any?>`, with the type's `suspend` flag set; `
 writes `(T, Continuation<R>) -> Any?` (kotlinx-coroutines' `block`, `transform` and `action` parameters, 119 in
 1.10.2, 27 in kotlin-stdlib), another type than the source's, which turns every `block(x)` into an error.
 With the fix `KType.from` keeps the flag (`kuna_suspend`;
-`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_suspend_function_type.rs (is_suspend)`) and
+`decompiler/nonnative/kuna-jvm/src/fixes/kt_suspend/kt_suspend_function_type.rs (is_suspend)`) and
 `KType.stringify` writes a flagged function type whose last parameter is a `Continuation` as
 `suspend (T) -> R`, `R` the continuation's type argument, in parentheses with `?` when nullable
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_suspend_function_type.rs (write)`).
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_suspend/kt_suspend_function_type.rs (write)`).
 
 **`kt_inlined_stdlib_call`.** kotlinc copies the body of an inline function into each call site, with the
 lambda's body in place of the lambda's call, and Vineflower writes the copy. For the standard library's
@@ -5032,7 +5035,7 @@ a copied platform call's value (`checkExpressionValueIsNotNull(v, "java.lang.Str
 library the class was compiled against is written as the call; anything else stays as it is. The helpers
 prove a copy only outside the `kotlin` package (`applies`), whose own code calls them directly. Before the
 Kotlin plugin's last stack-variable pass
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_inlined_stdlib_call.rs (resugar)`) the calls
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_compiler_idioms/kt_inlined_stdlib_call.rs (resugar)`) the calls
 without a lambda are rewritten in place and marked (`Inlined`), so the pass then inlines the copy's
 temporaries into them: `Integer.toString(x, checkRadix(r))` (and `Long.toString`, `parseInt`,
 `parseLong`, `parseShort`, `parseByte`) becomes `x.toString(r)` (`toInt`, ..), with the second
@@ -5081,7 +5084,7 @@ class is written without it: `Random` with no member at all, so kotlinc rejects 
 overrides (`overrides nothing`) and a class that must implement the member (`is not abstract and does not
 implement`), and a call of the member inside the class can name the companion's instead. Upstream's
 `develop/1.13.0` marks the same way. With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_companion_static_copy.rs (is_copy)`) only a static
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_generated_members/kt_companion_static_copy.rs (is_copy)`) only a static
 method is marked: a class cannot hold a static and an instance method of one signature, and kotlinc makes
 a member of a class with a companion static only for `@JvmStatic`. The companion's fields are not touched:
 every field of a class that has a companion property's field name and descriptor is static (kotlinc moves
@@ -5099,7 +5102,7 @@ ComparisonsKt__ComparisonsKt$compareBy$2(selector)`. Vineflower writes the `new`
 the class's body, which was decompiled against the variables of the method that declares it; the Kotlin
 writer throws on a body it cannot write there (`Anonymous class does not have Class Kotlin metadata`), or
 finds the declaring class not processed yet, and the caller fails. With the fix
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_reused_inline_object.rs (write)`, from
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_anonymous_objects/kt_reused_inline_object.rs (write)`, from
 `KNewExprent.toJava`), the `new` of an anonymous class in another top-level class than the one that
 declares it is written as the call of the method its `EnclosingMethod` attribute names, when that call
 means the same: the method is a public, static, top-level inline function with metadata (not an
@@ -5118,7 +5121,7 @@ new `kotlin.KotlinNothingValueException`, code that runs only if the callee retu
 writes it, `noImpl()` followed by `throw KotlinNothingValueException()`, which the source does not have and
 kotlinc rejects (the class is `@PublishedApi internal`; 53 in kotlinx-coroutines 1.10.2). With the fix a
 late Kotlin plugin pass (`NothingValueThrows`;
-`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_nothing_value_throw.rs (remove)`) leaves out each
+`decompiler/nonnative/kuna-jvm/src/fixes/kt_compiler_idioms/kt_nothing_value_throw.rs (remove)`) leaves out each
 `throw KotlinNothingValueException()` of the no-argument constructor that directly follows, in the same
 block, a call whose callee the metadata declares to return the non-null `Nothing` (a synthetic accessor's
 call counts as the call of the function it calls, as `kt_synthetic_accessor_call` writes it). There the
@@ -5133,7 +5136,7 @@ parameter; `k = 3` with no data), and such classes regenerated by the inliner in
 (kotlinx-coroutines' `FlowCollector`s inside `filter`, `map`, `transform`). Vineflower writes such a member
 from its JVM signature, `override fun emit(value: T, $completion: Continuation<in Unit>): Any`, with its
 state machine (`kt_suspend_state_machine` only rebuilds functions the metadata declares `suspend`). With the
-fix (`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_suspend_without_metadata.rs (overridden)`) a
+fix (`decompiler/nonnative/kuna-jvm/src/fixes/kt_suspend/kt_suspend_without_metadata.rs (overridden)`) a
 non-static, non-synthetic method without metadata whose descriptor is in the suspend convention is the
 suspend function it overrides when a supertype, searched as `searchForMethod` searches, declares the method
 of that name and descriptor and its metadata declares it `suspend`, or when the class's one other method of
@@ -5156,7 +5159,7 @@ and leaves it out; with kuna's fixes it decompiles and is written as another fun
 continuation parameter, the markers and the continuation class instantiated as a statement, which Kotlin
 cannot compile. With the fix `writeClass` leaves out a method `f$$forInline` of a class that also declares
 `f` with the same descriptor
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_for_inline_copy.rs (is_copy)`), as the plugin
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_suspend/kt_for_inline_copy.rs (is_copy)`), as the plugin
 leaves out kotlinc's `f$default`. kotlinx-coroutines 1.10.2: 47 copies (1.8.0: 33).
 
 **`kt_suspend_lambda`.** kotlinc compiles a suspend lambda to a class extending `SuspendLambda` (or
@@ -5168,7 +5171,7 @@ class gets `FAILED_LAMBDA`: Vineflower writes `{ // $VF: Could not decompile lam
 found. Is this a suspend lambda? }` (cast to the class's `FunctionN` interface where kotlinc casts it). With
 the fix `KFunction.parse` gives the function of a suspend lambda's class its `invokeSuspend` (recorded on the
 class only, `body_method`), and the first Kotlin graph pass
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_suspend_lambda.rs (rebuild_body)`) matches the
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_suspend/kt_suspend_lambda.rs (rebuild_body)`) matches the
 machine as `kt_suspend_state_machine` does a function's, `this` in the continuation's place (`plan`): the
 reads of the arguments (`this.L$0`, cast, unboxed for an inline class, stored into a local the local
 variable table names as the metadata's parameter, or for the receiver `$this$f` or `<this>`; before the
@@ -5197,7 +5200,7 @@ variable table in `invokeSuspend`, spills through `SpillingKt.nullOutSpilledVari
 method that only calls a static synthetic `foo$suspendImpl(this, args.., continuation)` holding the body, so
 that `super.foo(..)` reaches it. The plugin hides the synthetic method and writes `foo` as `return
 foo$suspendImpl(this, ..)`: the body is lost and the call names a method Kotlin has no name for (16 in
-kotlinx-coroutines 1.10.2). With the fix (`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_suspend_impl.rs (body_of)`)
+kotlinx-coroutines 1.10.2). With the fix (`decompiler/nonnative/kuna-jvm/src/fixes/kt_suspend/kt_suspend_impl.rs (body_of)`)
 `KFunction.stringify` writes such a `foo`, a member the metadata declares `suspend` whose body is only that
 call, with the body of `foo$suspendImpl` (recognised by its name, made of `foo`'s Kotlin name, which an
 `internal` function's JVM name mangles, or of its JVM name, which keeps an inline-class mangling, by its
@@ -5223,7 +5226,7 @@ one whose metadata keeps types in a type table (`applicable`), whose supertypes 
 parameters in scope (`all_resolved`), writes the metadata's: the type parameters with `in`/`out` and their
 bounds, a parameter with more than one bound in a `where` clause, then the superclass when the constructor
 call does not write it, then the other supertypes in the metadata's order, `Any` and an enum's `Enum`
-aside (`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_class_header_metadata.rs (header)`).
+aside (`decompiler/nonnative/kuna-jvm/src/fixes/kt_types/kt_class_header_metadata.rs (header)`).
 `KType.stringify` takes `kotlin.Function`, the supertype of the function types, for a function type of no
 parameters (`() -> R` for `Function<R>`); a supertype or bound that is `kotlin.Function` is written by its
 name (`render`), and a header with `kotlin.Function` inside a type argument stays Vineflower's. A class
@@ -5254,7 +5257,7 @@ the method its `EnclosingMethod` attribute names or of a class around it (`enclo
 position of the same supertype, when that variable is one of those type parameters and the class declares
 none of its own; an id found with two names, or where the `Signature` has a class (a copy inlined with
 `T` bound to `String`), stays unnamed and `Any`
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_enclosing_type_parameter.rs (scope_entries)`).
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_types/kt_enclosing_type_parameter.rs (scope_entries)`).
 The object expression's header opens that scope too. With fix `kt_raw_generic_type`, the locals of such a
 class's methods may be typed with those type parameters (`val c: FlowCollector<in T> = collector`, where
 Vineflower's raw `FlowCollector` stood), as they are in scope where the object is written; a class
@@ -5276,7 +5279,7 @@ of its interface) does not declare is not written when its code is exactly: Kotl
 its first parameter), the loads of its other parameters in order, each perhaps cast, an `invokestatic` of
 the method of the same name, the same other parameters and the same result in the `DefaultImpls` class of
 an interface its class implements (in a `DefaultImpls`, one its interface extends), and the return of the
-result (`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_default_impls_delegate.rs (is_delegate)`);
+result (`decompiler/nonnative/kuna-jvm/src/fixes/kt_generated_members/kt_default_impls_delegate.rs (is_delegate)`);
 a `DefaultImpls` class whose methods are all such is not written either (`is_emptied_default_impls`). A
 member the source overrides, even by `super.f()` (the same call), has metadata and stays. kotlinc gives the
 recompiled class the same methods again: the case's `Triangle` and `Square` recompile to identical
@@ -5292,7 +5295,7 @@ and writes a value whose declared type is `V` as itself where the code reads its
 for `m.v * 2`, which kotlinc rejects, and `println(m)` or `"len $m"` for `println(m.v)` or `"len " + m.v`,
 which kotlinc compiles to boxing and the value class's `toString`. Unchanged on `develop/1.13.0`. With the
 fix, once the Kotlin plugin has made its expressions
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_inline_class_value.rs (resugar)`), each
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_types/kt_inline_class_value.rs (resugar)`), each
 expression of a body is typed by what the class files declare. A value class is a loaded class whose
 metadata says so; its one instance field is the underlying property and type. An expression holds a `V`
 (as its `T`) when it is a parameter, field or call result whose metadata type is `V` (or `V?`) and whose
@@ -5315,7 +5318,7 @@ the call returns a `V`, its use is known. Such a local is declared with type `V`
 covariant unbounded type parameter and `*` for another (the function's return type where the local is
 returned), and a `V` its use takes as the underlying value is written `v.x` (`v?.x` for a `V?` held as
 `T?`), which kotlinc compiles to the same value, through a marked read of the underlying property
-(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_inline_class_value.rs (write)`). Anything else
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_types/kt_inline_class_value.rs (write)`). Anything else
 stays as Vineflower writes it, so a value the typing cannot follow keeps its plumbing, which kotlinc
 rejects, rather than gain a boxing. The value class's own declaration (its members' `$this`, written
 `arg0`; its synthesized members; its primary constructor) is not changed. In the case, recompiled with

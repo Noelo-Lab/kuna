@@ -2,18 +2,18 @@
 //!
 //! kuna fix `kt_accessor_backing_field`: while a Kotlin property accessor's
 //! body is written, its backing field is written `field`
-//! (`kuna_fix_kt_accessor_backing_field`).
+//! (`fixes::kt_properties::kt_accessor_backing_field`).
 //!
 //! kuna fix `kt_object_instance`: in a class written as Kotlin, an
 //! `object`'s `INSTANCE` field is written as the object's name
-//! (`kuna_fix_kt_object_instance`).
+//! (`fixes::kt_calls::kt_object_instance`).
 //!
 //! kuna fix `kt_unescaped_name`: in Kotlin output, the field's name is
-//! written as the Kotlin writer writes a name (`kuna_fix_kt_unescaped_name`).
+//! written as the Kotlin writer writes a name (`fixes::kt_names::kt_unescaped_name`).
 //!
 //! kuna fix `kt_facade_call`: in Kotlin output, a top-level property's field
 //! read through its facade class is written by its name
-//! (`kuna_fix_kt_facade_call`).
+//! (`fixes::kt_calls::kt_facade_call`).
 
 use crate::code_type::CodeType;
 use crate::decompiler_context::DecompilerContext;
@@ -23,11 +23,11 @@ use crate::exprent::{Exprent, ExprentKind};
 use crate::field_descriptor::FieldDescriptor;
 use crate::i_matchable::MatchProperties;
 use crate::java_subclass;
-use crate::kotlin::kuna_fix_kt_accessor_backing_field;
-use crate::kotlin::kuna_fix_kt_facade_call;
-use crate::kotlin::kuna_fix_kt_object_instance;
-use crate::kuna_fix_kt_java_cast_syntax;
-use crate::kotlin::kuna_fix_kt_unescaped_name;
+use crate::fixes::kt_properties::kt_accessor_backing_field;
+use crate::fixes::kt_calls::kt_facade_call;
+use crate::fixes::kt_calls::kt_object_instance;
+use crate::fixes::kt_java_syntax::kt_java_cast_syntax;
+use crate::fixes::kt_names::kt_unescaped_name;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::link_constant::LinkConstant;
 use crate::match_engine::MatchEngine;
@@ -281,21 +281,21 @@ impl FieldExprent {
     /// Java (`develop/1.13.0`): `toJava(int, boolean includeCondyComment)`.
     pub fn to_java_condy_comment(self, indent: i32, include_condy_comment: bool) -> TextBuffer {
         if kuna_fixes::enabled(KunaFix::KtAccessorBackingField) {
-            if let Some(buf) = kuna_fix_kt_accessor_backing_field::stringify(self) {
+            if let Some(buf) = kt_accessor_backing_field::stringify(self) {
                 return buf;
             }
         }
         if kuna_fixes::enabled(KunaFix::KtObjectInstance)
             && self.d(|d| d.is_static && d.name == "INSTANCE")
-            && kuna_fix_kt_java_cast_syntax::writing_kotlin()
+            && kt_java_cast_syntax::writing_kotlin()
         {
-            if let Some(buf) = kuna_fix_kt_object_instance::object_name(self) {
+            if let Some(buf) = kt_object_instance::object_name(self) {
                 return buf;
             }
         }
         if kuna_fixes::enabled(KunaFix::KtFacadeCall)
             && self.d(|d| d.is_static)
-            && kuna_fix_kt_java_cast_syntax::writing_kotlin()
+            && kt_java_cast_syntax::writing_kotlin()
         {
             let (classname, name, descriptor) = self.d(|d| {
                 (
@@ -305,7 +305,7 @@ impl FieldExprent {
                 )
             });
             if let Some(mut buf) =
-                kuna_fix_kt_facade_call::write_field(&classname, &name, &descriptor)
+                kt_facade_call::write_field(&classname, &name, &descriptor)
             {
                 buf.add_bytecode_mapping(self.get_bytecode().as_ref());
                 return buf;
@@ -405,7 +405,7 @@ impl FieldExprent {
         buf.add_bytecode_mapping(bytecode.as_ref());
 
         if kuna_fixes::enabled(KunaFix::KtUnescapedName) {
-            let printed = kuna_fix_kt_unescaped_name::member(&name);
+            let printed = kt_unescaped_name::member(&name);
             buf.append_field_descriptor(&printed, false, &classname, &name, &descriptor);
         } else {
             buf.append_field_descriptor(&name, false, &classname, &name, &descriptor);

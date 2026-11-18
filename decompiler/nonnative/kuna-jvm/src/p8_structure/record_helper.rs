@@ -1,6 +1,6 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/RecordHelper.java`.
 //!
-//! kuna fix `compact_record_constructor` (`kuna_fix_compact_record_constructor`):
+//! kuna fix `compact_record_constructor` (`fixes::class_writing::compact_record_constructor`):
 //! `fixup_canonical_constructor` takes a canonical constructor for a compact
 //! one only when it ends with every component's `this.c = c`, in order, and
 //! then removes only stores to fields of `this`.
@@ -9,7 +9,7 @@ use crate::class_writer::ClassWriter;
 use crate::code_constants::{ACC_STATIC, ACC_VARARGS, INIT_NAME};
 use crate::exprent::Exprent;
 use crate::kuna_fixes::{self, KunaFix};
-use crate::p8_structure::kuna_fix_compact_record_constructor;
+use crate::fixes::class_writing::compact_record_constructor;
 use crate::method_wrapper::MethodWrapper;
 use crate::root_statement::RootStatement;
 use crate::rt::{JHashSet, JLinkedHashSet};
@@ -317,8 +317,8 @@ impl RecordHelper {
         if Self::is_compact_canonical_constructor(mw)
             && (!fixed
                 || mw.with(|d| d.root).is_some_and(|root| {
-                    kuna_fix_compact_record_constructor::assigns_components_last(root, &components)
-                        && !kuna_fix_compact_record_constructor::stores_on_own_line(
+                    compact_record_constructor::assigns_components_last(root, &components)
+                        && !compact_record_constructor::stores_on_own_line(
                             root,
                             mw.with(|d| d.method_struct),
                             components.len(),
@@ -329,7 +329,7 @@ impl RecordHelper {
                 .expect("NullPointerException: graph")
                 .iterate_exprents(|exprent: Exprent| {
                     if fixed {
-                        return if kuna_fix_compact_record_constructor::is_this_field_store(exprent) {
+                        return if compact_record_constructor::is_this_field_store(exprent) {
                             2
                         } else {
                             0

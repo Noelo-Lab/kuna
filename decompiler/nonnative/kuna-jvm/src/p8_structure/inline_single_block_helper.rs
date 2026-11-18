@@ -11,7 +11,7 @@ use crate::if_statement::IfStatement;
 use crate::jthrow;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::merge_helper::MergeHelper;
-use crate::p8_structure::kuna_fix_catch_tail_inline;
+use crate::fixes::control_flow::catch_tail_inline;
 use crate::p8_structure::kuna_javac_layout;
 use crate::root_statement::RootStatement;
 use crate::sequence_helper::SequenceHelper;
@@ -177,7 +177,7 @@ impl InlineSingleBlockHelper {
 
                 if !edge.explicit()
                     && !(kuna_fixes::enabled(KunaFix::CatchTailInline)
-                        && kuna_fix_catch_tail_inline::reads_left_catch_var(seq, index, edge))
+                        && catch_tail_inline::reads_left_catch_var(seq, index, edge))
                 {
                     let mut i = index;
                     while i < seq.get_stats().borrow().len() {

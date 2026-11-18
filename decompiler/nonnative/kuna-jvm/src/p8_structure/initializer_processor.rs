@@ -5,7 +5,7 @@
 //!
 //! kuna fix `enum_constant_in_values_array`: `extract_static_initializers`
 //! first takes enum constants built inside the `$VALUES` array
-//! (`kuna_fix_enum_constant_in_values_array`).
+//! (`fixes::class_writing::enum_constant_in_values_array`).
 
 use crate::assignment_exprent::AssignmentExprent;
 use crate::cancelation_manager::CanceledException;
@@ -24,7 +24,7 @@ use crate::i_fernflower_logger::Severity;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::interpreter_util::InterpreterUtil;
 use crate::kuna_fixes::{self, KunaFix};
-use crate::p8_structure::kuna_fix_enum_constant_in_values_array;
+use crate::fixes::class_writing::enum_constant_in_values_array;
 use crate::method_descriptor::MethodDescriptor;
 use crate::method_wrapper::MethodWrapper;
 use crate::new_exprent::NewExprent;
@@ -242,7 +242,7 @@ impl InitializerProcessor {
             }
 
             if kuna_fixes::enabled(KunaFix::EnumConstantInValuesArray) {
-                kuna_fix_enum_constant_in_values_array::extract(
+                enum_constant_in_values_array::extract(
                     wrapper,
                     cl,
                     &first_exprents,

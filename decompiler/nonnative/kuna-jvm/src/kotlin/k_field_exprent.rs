@@ -1,18 +1,18 @@
 //! Port of `org/vineflower/kotlin/expr/KFieldExprent.java`.
 //!
 //! kuna fix `kt_property_reference`: the `INSTANCE` of a property-reference
-//! class is written as the reference (`kuna_fix_kt_property_reference`).
+//! class is written as the reference (`fixes::kt_anonymous_objects::kt_property_reference`).
 //!
 //! kuna fix `kt_lambda_singleton_returns`: the body of a lambda singleton
 //! with more than one exit is labelled and its exits are `return@label`
-//! (`kuna_fix_kt_lambda_singleton_returns`), where Vineflower writes each
+//! (`fixes::kt_jumps::kt_lambda_singleton_returns`), where Vineflower writes each
 //! exit as its bare value.
 //!
 //! kuna fix `kt_object_instance`: the `INSTANCE` field of an `object` is
-//! written as the object's name (`kuna_fix_kt_object_instance`).
+//! written as the object's name (`fixes::kt_calls::kt_object_instance`).
 //!
 //! kuna fix `kt_unescaped_name`: a lambda's parameters are named as the
-//! Kotlin writer writes a name (`kuna_fix_kt_unescaped_name`).
+//! Kotlin writer writes a name (`fixes::kt_names::kt_unescaped_name`).
 
 use crate::classes_processor::ClassNode;
 use crate::decompiler_context::DecompilerContext;
@@ -23,14 +23,14 @@ use crate::jthrow;
 use crate::k_dispatch::KExprentExt;
 use crate::k_element::KElement;
 use crate::k_types::KTypes;
-use crate::kotlin::kuna_fix_kt_object_instance;
-use crate::kotlin::kuna_fix_kt_unescaped_name;
+use crate::fixes::kt_calls::kt_object_instance;
+use crate::fixes::kt_names::kt_unescaped_name;
 use crate::kotlin_chooser::KotlinChooser;
 use crate::kotlin_exprent;
 use crate::kotlin_writer::KotlinWriter;
 use crate::kt_attrs::KtAttrs;
-use crate::kuna_fix_kt_lambda_singleton_returns;
-use crate::kuna_fix_kt_property_reference;
+use crate::fixes::kt_jumps::kt_lambda_singleton_returns;
+use crate::fixes::kt_anonymous_objects::kt_property_reference;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::method_wrapper::MethodWrapper;
 use crate::text_buffer::TextBuffer;
@@ -101,7 +101,7 @@ impl KFieldExprent {
             let Some(kt_data) = KtAttrs::get(cl, &KElement::KEY()) else {
                 if kuna_fixes::enabled(KunaFix::KtPropertyReference) {
                     let reference = root_class_node(&classname).and_then(|node| {
-                        kuna_fix_kt_property_reference::stringify(
+                        kt_property_reference::stringify(
                             indent,
                             node,
                             self.get_bytecode().as_ref(),
@@ -118,7 +118,7 @@ impl KFieldExprent {
             match kt_data {
                 KElement::Class(cls) => {
                     if kuna_fixes::enabled(KunaFix::KtObjectInstance) {
-                        if let Some(object) = kuna_fix_kt_object_instance::object_name(self.0) {
+                        if let Some(object) = kt_object_instance::object_name(self.0) {
                             return object;
                         }
                     }
@@ -160,7 +160,7 @@ impl KFieldExprent {
                             .method_struct
                             .unwrap_or_else(|| npe("KFunction.methodStruct()"));
                         let printed = if kuna_fixes::enabled(KunaFix::KtUnescapedName) {
-                            kuna_fix_kt_unescaped_name::lambda_parameter(&param.name)
+                            kt_unescaped_name::lambda_parameter(&param.name)
                         } else {
                             param.name.clone()
                         };
@@ -193,7 +193,7 @@ impl KFieldExprent {
                             if let Some(root) = root {
                                 DecompilerContext::set_current_method_wrapper(Some(method));
                                 if kuna_fixes::enabled(KunaFix::KtLambdaSingletonReturns) {
-                                    kuna_fix_kt_lambda_singleton_returns::label_exits(
+                                    kt_lambda_singleton_returns::label_exits(
                                         &mut buf, root, &classname,
                                     );
                                 }

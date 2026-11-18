@@ -1,13 +1,13 @@
 //! Port of `org/vineflower/kotlin/struct/KContract.java`.
 //!
 //! kuna fix `kt_contract_import`: `contract` is imported or qualified
-//! (`kuna_fix_kt_contract_import`).
+//! (`fixes::kt_declarations::kt_contract_import`).
 
 use crate::decompiler_context::DecompilerContext;
 use crate::jthrow;
 use crate::k_parameter::KParameter;
 use crate::k_type::KType;
-use crate::kotlin::kuna_fix_kt_contract_import;
+use crate::fixes::kt_declarations::kt_contract_import;
 use crate::kotlin_writer::KotlinWriter;
 use crate::kt_flags::Flags;
 use crate::kt_proto::{self, ConstantValue, EffectType, InvocationKind};
@@ -70,7 +70,7 @@ impl KContract {
         let mut buf = TextBuffer::new();
         if kuna_fixes::enabled(KunaFix::KtContractImport) {
             buf.append_indent(indent)
-                .append(&kuna_fix_kt_contract_import::contract_call())
+                .append(&kt_contract_import::contract_call())
                 .append(" {")
                 .append_line_separator();
         } else {

@@ -1,6 +1,6 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/PPandMMHelper.java`.
 //!
-//! kuna fix `compound_assignment_shape` (`kuna_fix_compound_assignment_shape`):
+//! kuna fix `compound_assignment_shape` (`fixes::numeric_types::compound_assignment_shape`):
 //! `x.f = x.f + 1` that loads `x` twice is not written `++x.f`.
 //! kuna option `jvm_source_locals` (`kuna_source_increments`): `inlinePPIandMMIIf`
 //! keeps an increment the source wrote as a statement before the `if`.
@@ -15,7 +15,7 @@ use crate::flatten_statements_helper::FlattenStatementsHelper;
 use crate::function_exprent::{FunctionExprent, FunctionType};
 use crate::if_statement::IfStatement;
 use crate::p3_dataflow::kuna_source_increments;
-use crate::p3_dataflow::kuna_fix_compound_assignment_shape;
+use crate::fixes::numeric_types::compound_assignment_shape;
 use crate::root_statement::RootStatement;
 use crate::rt::{JHashSet, JList};
 use crate::sequence_helper::SequenceHelper;
@@ -149,7 +149,7 @@ impl PPandMMHelper {
                         let condtype = left.get_expr_type();
                         if self.exprs_equal(Some(left), Some(econd))
                             && midlayer.as_ref().is_none_or(|m| m.equals(&condtype))
-                            && !kuna_fix_compound_assignment_shape::loads_twice(left, econd)
+                            && !compound_assignment_shape::loads_twice(left, econd)
                         {
                             let ret = FunctionExprent::new_single(
                                 if func.get_func_type() == FunctionType::Add {

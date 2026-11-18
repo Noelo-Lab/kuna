@@ -5,12 +5,12 @@
 //! (present exactly for a `KType`), and `KType` is a view over it.
 //!
 //! kuna fix `kt_type_parameter_id`: `from` names a type that refers to a
-//! type parameter by id (`kuna_fix_kt_type_parameter_id`), where Vineflower
+//! type parameter by id (`fixes::kt_types::kt_type_parameter_id`), where Vineflower
 //! reads only a reference by name and writes the others as `Any`.
 //!
 //! kuna fix `kt_suspend_function_type`: `from` keeps the metadata's
 //! `suspend` flag (`kuna_suspend`) and `stringify` writes such a function
-//! type `suspend (A) -> R` (`kuna_fix_kt_suspend_function_type`).
+//! type `suspend (A) -> R` (`fixes::kt_suspend::kt_suspend_function_type`).
 
 use std::ops::Deref;
 use std::rc::Rc;
@@ -20,8 +20,8 @@ use crate::decompiler_context::DecompilerContext;
 use crate::jthrow;
 use crate::k_types::KTypes;
 use crate::kt_proto::{self, Projection};
-use crate::kotlin::kuna_fix_kt_suspend_function_type;
-use crate::kuna_fix_kt_type_parameter_id;
+use crate::fixes::kt_suspend::kt_suspend_function_type;
+use crate::fixes::kt_types::kt_type_parameter_id;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::metadata_name_resolver::MetadataNameResolver;
 use crate::text_buffer::TextBuffer;
@@ -218,7 +218,7 @@ impl KType {
         let type_parameter_name = if type_.has_type_parameter_name() {
             Some(name_resolver.resolve(type_.get_type_parameter_name()))
         } else if kuna_fixes::enabled(KunaFix::KtTypeParameterId) && type_.has_type_parameter() {
-            kuna_fix_kt_type_parameter_id::name(type_.get_type_parameter())
+            kt_type_parameter_id::name(type_.get_type_parameter())
         } else {
             None
         };
@@ -238,7 +238,7 @@ impl KType {
             type_alias_name,
         );
         if kuna_fixes::enabled(KunaFix::KtSuspendFunctionType)
-            && kuna_fix_kt_suspend_function_type::is_suspend(type_)
+            && kt_suspend_function_type::is_suspend(type_)
         {
             k_type.kuna_with_suspend()
         } else {
@@ -295,7 +295,7 @@ impl KType {
             }
         } else if let Some(suspend) = k
             .kuna_suspend
-            .then(|| kuna_fix_kt_suspend_function_type::write(k, indent))
+            .then(|| kt_suspend_function_type::write(k, indent))
             .flatten()
         {
             buf.append_buffer(&suspend);

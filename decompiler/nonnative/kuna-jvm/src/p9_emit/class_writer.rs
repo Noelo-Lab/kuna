@@ -13,27 +13,27 @@
 //! `assert`) gets a block body, where Vineflower writes it as an expression body.
 //! kuna fix `enum_body_separator` (`kuna_fixes`): in `write_class`, an
 //! enum whose members have no constant before them gets the `;` Java requires
-//! (`kuna_fix_enum_body_separator`).
+//! (`fixes::class_writing::enum_body_separator`).
 //! kuna fix `override_inaccessible_method` (`kuna_fixes`): `@Override` is
 //! written only for a supertype method the class can override
-//! (`kuna_fix_override_inaccessible_method`).
+//! (`fixes::class_writing::override_inaccessible_method`).
 //! kuna fix `sealed_private_permits`: a top-level sealed class whose permitted
 //! subclasses are its own members, one of them private, is written without its
-//! `permits` clause (`kuna_fix_sealed_private_permits`).
+//! `permits` clause (`fixes::class_writing::sealed_private_permits`).
 //! kuna fix `nested_param_rename`: a parameter whose uses are written by its
-//! local-variable-table name is declared under it (`kuna_fix_nested_param_rename`).
+//! local-variable-table name is declared under it (`fixes::nested_class_vars::nested_param_rename`).
 //! kuna fix `captured_var_clash_name`: in `invoke_processors`, the captured
 //! variables of the class's methods take the clashing names of the variables
-//! they hold (`kuna_fix_captured_var_clash_name`).
+//! they hold (`fixes::nested_class_vars::captured_var_clash_name`).
 //!
 //! kuna fix `disjoint_generic_cast`: the value written here is marked as
-//! one with a declared target type (`kuna_fix_disjoint_generic_cast`).
+//! one with a declared target type (`fixes::generic_casts::disjoint_generic_cast`).
 
 use std::collections::VecDeque;
 use std::rc::Rc;
 
 use crate::annotation_exprent::AnnotationExprent;
-use crate::p2_lift::kuna_fix_disjoint_generic_cast;
+use crate::fixes::generic_casts::disjoint_generic_cast;
 use crate::cancelation_manager::CanceledException;
 use crate::class_reference14_processor::ClassReference14Processor;
 use crate::class_wrapper::ClassWrapper;
@@ -67,17 +67,17 @@ use crate::import_collector::ImportCollector;
 use crate::initializer_processor::InitializerProcessor;
 use crate::interpreter_util::InterpreterUtil;
 use crate::java_pass_location::JavaPassLocation;
-use crate::kuna_fix_statement_as_expression;
+use crate::fixes::asserts::statement_as_expression;
 use crate::kuna_fixes::{self, KunaFix};
-use crate::p8_structure::kuna_fix_captured_var_clash_name;
+use crate::fixes::nested_class_vars::captured_var_clash_name;
 use crate::kuna_spans;
 use crate::link_constant::LinkConstant;
 use crate::method_descriptor::MethodDescriptor;
 use crate::method_wrapper::MethodWrapper;
-use crate::p9_emit::kuna_fix_enum_body_separator::EnumBodySeparator;
-use crate::p9_emit::kuna_fix_override_inaccessible_method;
-use crate::p9_emit::kuna_fix_sealed_private_permits;
-use crate::p9_emit::kuna_fix_nested_param_rename;
+use crate::fixes::class_writing::enum_body_separator::EnumBodySeparator;
+use crate::fixes::class_writing::override_inaccessible_method;
+use crate::fixes::class_writing::sealed_private_permits;
+use crate::fixes::nested_class_vars::nested_param_rename;
 use crate::pair::Pair;
 use crate::pass_context::PassContext;
 use crate::pool_interceptor::PoolInterceptor;
@@ -370,7 +370,7 @@ impl ClassWriter {
                 }
             }
             if kuna_fixes::enabled(KunaFix::CapturedVarClashName) {
-                kuna_fix_captured_var_clash_name::inherit_clashing_names(wrapper);
+                captured_var_clash_name::inherit_clashing_names(wrapper);
             }
         });
         if let Err(t) = result {
@@ -630,7 +630,7 @@ impl ClassWriter {
 
                                 let is_expression =
                                     if kuna_fixes::enabled(KunaFix::StatementAsExpression) {
-                                        kuna_fix_statement_as_expression::is_lambda_expression_body(
+                                        statement_as_expression::is_lambda_expression_body(
                                             first_expr,
                                         )
                                     } else {
@@ -1316,7 +1316,7 @@ impl ClassWriter {
         }
 
         let omit_permits = kuna_fixes::enabled(KunaFix::SealedPrivatePermits)
-            && kuna_fix_sealed_private_permits::omit_permits(node, &permitted_sub_classes);
+            && sealed_private_permits::omit_permits(node, &permitted_sub_classes);
         if !is_enum && is_sealed && !omit_permits {
             buffer.append_possible_newline_alt(" ");
             buffer.append("permits ");
@@ -1517,7 +1517,7 @@ impl ClassWriter {
                     const_exprent.adjust_const_type(&field_type);
                 }
 
-                let _declared = kuna_fix_disjoint_generic_cast::mark_declared_target();
+                let _declared = disjoint_generic_cast::mark_declared_target();
                 ExprProcessor::get_casted_exprent(
                     initializer,
                     &declared_type(&descriptor),
@@ -1841,7 +1841,7 @@ impl ClassWriter {
 
             if should_apply_override {
                 let is_override = if kuna_fixes::enabled(KunaFix::OverrideInaccessibleMethod) {
-                    kuna_fix_override_inaccessible_method::overrides(cl, &mt.get_name(), &md)
+                    override_inaccessible_method::overrides(cl, &mt.get_name(), &md)
                 } else {
                     ClassWriter::search_for_method(Some(cl), &mt.get_name(), &md, false)
                 };
@@ -2333,7 +2333,7 @@ impl ClassWriter {
                     let name = varproc.get_var_name(VarVersionPair::new(index, 0));
                     let table_name = kuna_fixes::enabled(KunaFix::NestedParamRename)
                         .then(|| {
-                            kuna_fix_nested_param_rename::table_name(
+                            nested_param_rename::table_name(
                                 varproc,
                                 VarVersionPair::new(index, 0),
                                 name.as_deref(),

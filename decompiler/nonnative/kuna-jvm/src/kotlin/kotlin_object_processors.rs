@@ -2,14 +2,14 @@
 //!
 //! kuna fix `kt_interface_companion_field`: an interface's companion field,
 //! initialized from the companion's `$$INSTANCE`, is hidden as a class's is
-//! (`kuna_fix_kt_interface_companion_field`). The class's members keep the
+//! (`fixes::kt_generated_members::kt_interface_companion_field`). The class's members keep the
 //! elements their metadata declared before the companion's marks replace
 //! them (`kuna_declared_element`).
 
 use crate::class_wrapper::ClassWrapper;
 use crate::code_constants::ACC_INTERFACE;
 use crate::kotlin::kuna_declared_element;
-use crate::kotlin::kuna_fix_kt_interface_companion_field;
+use crate::fixes::kt_generated_members::kt_interface_companion_field;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::classes_processor::ClassNode;
 use crate::interpreter_util::InterpreterUtil;
@@ -85,7 +85,7 @@ impl KotlinObjectProcessors {
                 let interface_instance = kuna_fixes::enabled(KunaFix::KtInterfaceCompanionField)
                     && cl.has_modifier(ACC_INTERFACE)
                     && initializer.as_ref().is_some_and(|initializer| {
-                        kuna_fix_kt_interface_companion_field::is_instance_read(
+                        kt_interface_companion_field::is_instance_read(
                             initializer,
                             companion_struct,
                         )

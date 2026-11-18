@@ -21,8 +21,8 @@ use crate::if_pattern_match_processor::IfPatternMatchProcessor;
 use crate::if_statement::IfStatement;
 use crate::invocation_exprent::InvocationType;
 use crate::jthrow;
-use crate::p8_structure::kuna_fix_type_switch_enum_label;
-use crate::p8_structure::kuna_fix_type_switch_label_lookup;
+use crate::fixes::patterns::type_switch_enum_label;
+use crate::fixes::patterns::type_switch_label_lookup;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::pair::Pair;
 use crate::pattern_exprent::PatternExprent;
@@ -334,13 +334,13 @@ impl SwitchPatternMatchProcessor {
 
         let bootstrap_arguments = value.get_bootstrap_arguments().expect("bsm args");
         if kuna_fixes::enabled(KunaFix::TypeSwitchLabelLookup) {
-            kuna_fix_type_switch_label_lookup::replace_labels(
+            type_switch_label_lookup::replace_labels(
                 stat,
                 &bootstrap_arguments,
                 real_selector,
                 is_enum_switch,
             );
-            kuna_fix_type_switch_label_lookup::strip_multi_pattern_guards(stat);
+            type_switch_label_lookup::strip_multi_pattern_guards(stat);
         } else {
             for (i, bsa) in bootstrap_arguments.iter().enumerate() {
                 let i = i as i32;
@@ -373,7 +373,7 @@ impl SwitchPatternMatchProcessor {
                     Some(PooledConstant::Link(link))
                         if kuna_fixes::enabled(KunaFix::TypeSwitchEnumLabel) =>
                     {
-                        kuna_fix_type_switch_enum_label::resolve_label(link)
+                        type_switch_enum_label::resolve_label(link)
                     }
                     _ => None,
                 };
