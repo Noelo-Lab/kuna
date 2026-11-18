@@ -2221,7 +2221,7 @@ mod tests {
         // and kuna-ebpf-elf-map-reloc / an EM_BPF object loads and its map and subprogram relocations land in imm
         // and kuna-riscv-zcmp / RISC-V Zcmp push/pop decode under the Zcmp language variant
         // and kuna-declaredpop / a declared import pop is the stack solver's equation
-        assert_eq!(count, 774, "corpus file count drifted");
+        assert_eq!(count, 775, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
