@@ -94,6 +94,7 @@ pub mod kuna_elfgotimports;
 // from its mangled symbol name -- materialise the undefined half's bytes at its
 // synthetic extern slot, and mark both halves foldable.
 pub mod kuna_msvcfpconst;
+pub(crate) mod kuna_nanomips;
 pub mod format;
 // (kuna) PE/Mach-O import-slot call binding (`peimportcall`): `externref` over
 // typed import-pointer slots + upstream's strictly PE-only no-return API names.

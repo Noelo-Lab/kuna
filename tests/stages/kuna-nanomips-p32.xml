@@ -1,0 +1,65 @@
+<decompilertest>
+<binaryimage arch="nanoMIPS:LE:32:default:default">
+<!--
+    Kuna #1631: nanoMIPS had no SLEIGH language, so nanoMIPS code could not be
+    loaded at all ("No sleigh specification for nanoMIPS:LE:32:default").
+
+    The image is `nanomips-elf-gcc -O2` (MediaTek GNU Tools 2021.11-07, GCC
+    6.3.0) output for
+
+        int ext(int a, int b) { return (a ^ b) + (b << 3); }
+        int sum(const int *p, int n) { int s = 0; for (int i = 0; i < n; i++) s += p[i]; return s; }
+        int wrap(int a, int b) { int r = ext(a + 1, b * 3); return ext(r, a) + b; }
+        int sel(int x) { switch (x) { case 0: return 11; case 1: return 22; case 2: return 37;
+                                      case 3: return 41; case 4: return 5; default: return ext(x, x); } }
+        unsigned big(unsigned x) { return x * 3 + 0x12345678; }
+
+    linked at 0x1000 with .rodata (the five-byte switch table) directly behind
+    .text. It covers the three instruction lengths (16-bit `xor`, 32-bit `lsa`,
+    48-bit `addiu`), SAVE / RESTORE.JRC, MOVEP, MOVE.BALC, the scaled indexed
+    load LWXS, the PC-relative LAPC and the BRSC table jump.
+
+    Stage: 02 P-code lift (new SLEIGH language) + P0 compiler spec (p32 ABI).
+    No option: a language that decodes is not a judgement call. Before this
+    change the image does not load; the asserts pin the lifted output.
+-->
+<bytechunk space="ram" offset="0x1000">
+545285200f26e0dba08812806bbc87204744e990c03ca7a8f53f8610e0dbc010
+8610e0db111eacbc8990a5200f2ad13bdf09cdff78b2111fa4108cc82028e004
+2c00e4200739074800800bd2e0db05d2e0db16d2e0db25d2e0db29d2e0dba11b
+84200f22816078563412e0dbe0db0004060802
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="ext"/>
+<symbol space="ram" offset="0x1008" name="sum"/>
+<symbol space="ram" offset="0x1024" name="wrap"/>
+<symbol space="ram" offset="0x1038" name="sel"/>
+<symbol space="ram" offset="0x1060" name="big"/>
+</binaryimage>
+<script>
+  <com>lo fu ext</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu sum</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu wrap</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu sel</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu big</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="nanoMIPS #1: 16-bit xor and 32-bit lsa lift to plain arithmetic" min="1" max="1">return a1 \* 8 \+ \(a0 \^ a1\);</stringmatch>
+<stringmatch name="nanoMIPS #2: the lwxs loop reads p[i] through a scaled index" min="1" max="1">\*\(int4 \*\)\(.* \+ a0\)</stringmatch>
+<stringmatch name="nanoMIPS #3: save / restore.jrc leave no frame traffic, both calls keep their arguments" min="1" max="1">return a1 \+ ext\(</stringmatch>
+<stringmatch name="nanoMIPS #4: move.balc passes the moved register" min="1" max="1">ext\(a0 \+ 1,a1 \* 3</stringmatch>
+<stringmatch name="nanoMIPS #5: lapc + lbux + brsc recover the switch" min="1" max="1">switch\(a0\)</stringmatch>
+<stringmatch name="nanoMIPS #6: with all five table targets" min="5" max="5">case [0-4]:</stringmatch>
+<stringmatch name="nanoMIPS #7: the bc to ext is a tail call" min="1" max="1">return ext\(a0,a0\);</stringmatch>
+<stringmatch name="nanoMIPS #8: the 48-bit addiu carries its 32-bit immediate" min="1" max="1">return a0 \* 3 \+ 0x12345678;</stringmatch>
+<stringmatch name="nanoMIPS #9: nothing is left undecoded" min="0" max="0">halt_baddata|WARNING</stringmatch>
+</decompilertest>

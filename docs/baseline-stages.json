@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4498,
-    4498
+    4507,
+    4507
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -3652,6 +3652,15 @@
     "data:namestyle #5 ghidra restores: argument renders as param_N",
     "data:namestyle #6 ghidra restores: local renders as iVar with no location comment",
     "data:namestyle #7 ghidra restores: unnamed call target renders as func_0x<addr>",
+    "data:nanoMIPS #1: 16-bit xor and 32-bit lsa lift to plain arithmetic",
+    "data:nanoMIPS #2: the lwxs loop reads p[i] through a scaled index",
+    "data:nanoMIPS #3: save / restore.jrc leave no frame traffic, both calls keep their arguments",
+    "data:nanoMIPS #4: move.balc passes the moved register",
+    "data:nanoMIPS #5: lapc + lbux + brsc recover the switch",
+    "data:nanoMIPS #6: with all five table targets",
+    "data:nanoMIPS #7: the bc to ext is a tail call",
+    "data:nanoMIPS #8: the 48-bit addiu carries its 32-bit immediate",
+    "data:nanoMIPS #9: nothing is left undecoded",
     "data:narrow loads and bypassed or unaligned entries retain returns",
     "data:narrow writes do not name the formal parameter as a union",
     "data:narrow writes target the physical backing",

@@ -331,6 +331,29 @@ Every other RISC-V image keeps the default selection, including one whose
 attribute blobs are malformed, truncated or conflicting, and `--target` always
 wins.
 
+(kuna) An ELF32 whose `e_machine` is 249 (`EM_NANOMIPS`) selects
+`nanoMIPS:LE:32:default` or `nanoMIPS:BE:32:default` by its byte order
+(`decompiler/crates/kuna-analysis/src/loader/kuna_nanomips.rs`). The neutral
+object parser has no architecture for that machine, so the id is read from the
+ELF header itself, before the per-architecture table that would otherwise
+report an unsupported machine. nanoMIPS is its own encoding, not a mode of
+MIPS32: instructions are one, two or three 16-bit units, each stored in the
+image's byte order, with the major opcode in the top six bits of the first
+unit. The language (`specs/Ghidra/Processors/nanoMIPS`) covers the nanoMIPS32
+integer instruction set in all three lengths, the system and EVA instructions,
+and the p32 calling convention: eight integer argument registers `a0`..`a7`,
+further arguments on the stack from offset 0, the result in `a0` (and `a1` for
+a 64-bit value), and `s0`..`s7`, `fp`, `gp` and `sp` preserved. `SAVE` and
+`RESTORE` lift to one store or load per listed register at `sp - 4`, `sp - 8`,
+... relative to the frame's outer edge, plus the `sp` adjustment, so a prologue
+and epilogue read as ordinary callee-saved traffic and `RESTORE.JRC` is a
+return. The temporaries `t0`..`t5`, `t8` and `t9` are deliberately not declared
+killed by a call: a compiler that knows a callee's register use keeps values in
+them across the call, and declaring them killed would cut those values off.
+The floating-point, DSP and 64-bit instruction groups are not decoded yet; an
+image that uses them stops at the first such instruction. No option controls
+any of this, and an image for any other machine is unaffected.
+
 (kuna) PowerPC32 ELF APU requirements are read by
 `decompiler/crates/kuna-analysis/src/loader/kuna_ppcaputarget.rs` when the
 default-off `ppcapu` load-time option is on. SPE and embedded floating-point APUs
