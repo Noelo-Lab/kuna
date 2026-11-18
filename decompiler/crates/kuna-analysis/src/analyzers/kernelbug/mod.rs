@@ -32,7 +32,9 @@
 //!   entry size, and the other relocations inside one entry are its pointer
 //!   fields. The analyzer tier sees the module in the loaded image's address
 //!   space (`kuna_relocrebase`), so the field values read back already applied.
-//! * **A linked image (`vmlinux`)** has no relocations left. Each candidate entry
+//! * **A linked image (`vmlinux`)** is probed even when it keeps its
+//!   relocations (an x86-64 `vmlinux` links with `--emit-relocs`, whose offsets
+//!   are addresses, not section offsets). Each candidate entry
 //!   size in turn is tried, smallest first: the one under which every `bug_addr`
 //!   lands in executable bytes wins (under a wrong size the field read is a
 //!   string displacement or a line/flags word, which lands outside the code),
@@ -43,9 +45,15 @@
 //! The one pointer field that is ambiguous — a single string pointer is either
 //! `file` (verbose, no format) or `format` (format, not verbose) — is told apart
 //! by what it points at: a source path for `file`.
+//!
+//! Before Linux 5.19 (`69505e3d9a39`, "bug: Use normal relative pointers") a
+//! self-relative `file` counted from the start of the entry, not from the field,
+//! so read the 5.19 way it lands four bytes into the path. The table is read
+//! the old way when that reading puts more `file` fields on the first byte of a
+//! string than the new one does.
 
 use object::read::{Object, ObjectSection, ObjectSymbol};
-use object::{RelocationKind, RelocationTarget, SectionKind, SymbolSection};
+use object::{ObjectKind, RelocationKind, RelocationTarget, SectionKind, SymbolSection};
 
 use kuna_decomp::kuna_kernelbug::KernelBugSite;
 
@@ -63,6 +71,9 @@ const PROBE_STRIDES: [usize; 3] = [8, 12, 16];
 /// The longest source path read out of the image.
 const MAX_PATH: usize = 512;
 
+/// The entries the pre-5.19 `file` reading is decided on.
+const VOTE_ENTRIES: usize = 64;
+
 /// A recovered `struct bug_entry` layout.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Layout {
@@ -78,26 +89,51 @@ pub struct Layout {
     pub line: Option<usize>,
     /// Where `flags` lives.
     pub flags: usize,
+    /// A self-relative `file` counts from the entry's start (kernels before 5.19).
+    pub entry_relative: bool,
 }
 
 /// Read-only view of the image the table is decoded against.
 struct Image<'a, 'b> {
     file: &'a object::File<'b>,
+    /// The executable `[lo, hi)` extents, sorted and disjoint.
     exec: Vec<(u64, u64)>,
+    /// Every section placed at a nonzero address, as `(lo, hi, index)` sorted by `lo`.
+    sections: Vec<(u64, u64, object::SectionIndex)>,
 }
 
-impl Image<'_, '_> {
+impl<'a, 'b> Image<'a, 'b> {
+    fn new(file: &'a object::File<'b>, mut exec: Vec<(u64, u64)>) -> Self {
+        exec.sort_unstable();
+        let mut merged: Vec<(u64, u64)> = Vec::with_capacity(exec.len());
+        for (lo, hi) in exec {
+            match merged.last_mut() {
+                Some(last) if lo <= last.1 => last.1 = last.1.max(hi),
+                _ => merged.push((lo, hi)),
+            }
+        }
+        let mut sections: Vec<_> = file
+            .sections()
+            .filter(|s| s.address() != 0 && s.size() != 0)
+            .map(|s| (s.address(), s.address().saturating_add(s.size()), s.index()))
+            .collect();
+        sections.sort_unstable_by_key(|&(lo, hi, _)| (lo, hi));
+        Image { file, exec: merged, sections }
+    }
+
     fn is_executable(&self, addr: u64) -> bool {
-        self.exec.iter().any(|&(lo, hi)| addr >= lo && addr < hi)
+        let i = self.exec.partition_point(|&(lo, _)| lo <= addr);
+        i > 0 && addr < self.exec[i - 1].1
     }
 
     /// The section holding `addr`, with `addr`'s offset into its data.
-    fn section_at(&self, addr: u64) -> Option<(object::Section<'_, '_>, usize)> {
-        self.file.sections().find_map(|s| {
-            let lo = s.address();
-            let off = addr.checked_sub(lo)?;
-            (off < s.size()).then(|| (s, off as usize))
-        })
+    fn section_at(&self, addr: u64) -> Option<(object::Section<'a, 'b>, usize)> {
+        let i = self.sections.partition_point(|&(lo, _, _)| lo <= addr).checked_sub(1)?;
+        let (lo, hi, index) = self.sections[i];
+        if addr >= hi {
+            return None;
+        }
+        Some((self.file.section_by_index(index).ok()?, (addr - lo) as usize))
     }
 
     /// Is `addr` in a mapped, non-executable section — where a string lives?
@@ -115,6 +151,16 @@ impl Image<'_, '_> {
         std::str::from_utf8(&tail[..end]).ok().map(str::to_owned)
     }
 
+    /// Is `addr` the first byte of a string: data at its section's start or
+    /// right behind a NUL, with a NUL within [`MAX_PATH`]?
+    fn string_start(&self, addr: u64) -> bool {
+        self.is_data(addr)
+            && self.section_at(addr).is_some_and(|(section, off)| {
+                let data = section.data().unwrap_or_default();
+                (off == 0 || data.get(off - 1) == Some(&0))
+                    && data.get(off..).is_some_and(|t| t.iter().take(MAX_PATH).any(|&b| b == 0))
+            })
+    }
 }
 
 fn read_u16(data: &[u8], off: usize, big: bool) -> Option<u16> {
@@ -147,23 +193,50 @@ fn looks_like_source_path(s: &str) -> bool {
     s.contains('/') || [".c", ".h", ".S", ".rs", ".cc", ".cpp"].iter().any(|ext| s.ends_with(ext))
 }
 
+/// Does the table's self-relative string field at `off` count from the
+/// entry's start? Decided over the first [`VOTE_ENTRIES`] entries by which
+/// reading lands more of them on the first byte of a string.
+fn entry_relative(image: &Image, data: &[u8], vma: u64, big: bool, stride: usize, (off, width): (usize, u8)) -> bool {
+    if width != 4 {
+        return false;
+    }
+    let (mut field, mut entry) = (0usize, 0usize);
+    for e in (0..data.len()).step_by(stride).take(VOTE_ENTRIES) {
+        if let Some(a) = pointer(data, vma, e + off, width, big) {
+            field += usize::from(image.string_start(a));
+            entry += usize::from(image.string_start(a.wrapping_sub(off as u64)));
+        }
+    }
+    entry > field
+}
+
+/// The address the string field at `off` of the entry at `e` names.
+fn string_pointer(layout: &Layout, data: &[u8], vma: u64, e: usize, (off, width): (usize, u8), big: bool) -> Option<u64> {
+    let a = pointer(data, vma, e + off, width, big)?;
+    Some(if layout.entry_relative && width == 4 { a.wrapping_sub(off as u64) } else { a })
+}
+
 /// Complete a layout whose entry size and pointer fields are known: which
 /// pointer is `file`, and where `line` and `flags` sit behind the pointers.
+/// `None` unless `flags` ends the entry, before at most its alignment padding.
 fn finish_layout(image: &Image, data: &[u8], vma: u64, big: bool, stride: usize, addr_width: u8, pointers: Vec<(usize, u8)>) -> Option<Layout> {
     let after = pointers.iter().map(|&(off, w)| off + w as usize).max().unwrap_or(addr_width as usize);
-    let file = match pointers.len() {
+    let entry_relative = pointers.last().is_some_and(|&f| entry_relative(image, data, vma, big, stride, f));
+    let mut layout = Layout { stride, addr_width, pointers, file: None, line: None, flags: after, entry_relative };
+    layout.file = match layout.pointers.len() {
         0 => None,
-        1 => {
-            let (off, width) = pointers[0];
-            let path = pointer(data, vma, off, width, big)
-                .and_then(|a| image.string_at(a))
-                .is_some_and(|s| looks_like_source_path(&s));
-            path.then_some(0)
-        }
-        _ => Some(pointers.len() - 1),
+        1 => string_pointer(&layout, data, vma, 0, layout.pointers[0], big)
+            .and_then(|a| image.string_at(a))
+            .is_some_and(|s| looks_like_source_path(&s))
+            .then_some(0),
+        n => Some(n - 1),
     };
-    let (line, flags) = if file.is_some() { (Some(after), after + 2) } else { (None, after) };
-    (flags + 2 <= stride).then_some(Layout { stride, addr_width, pointers, file, line, flags })
+    if layout.file.is_some() {
+        (layout.line, layout.flags) = (Some(after), after + 2);
+    }
+    let align = if layout.addr_width == 8 || layout.pointers.iter().any(|&(_, w)| w == 8) { 8 } else { 4 };
+    let end = layout.flags + 2;
+    (end == stride || end.next_multiple_of(align) == stride).then_some(layout)
 }
 
 /// The layout a module's `.rela__bug_table` describes, or `None` when the
@@ -237,7 +310,7 @@ pub fn decode(layout: &Layout, data: &[u8], vma: u64, big: bool) -> Vec<KernelBu
         .filter_map(|e| {
             let addr = pointer(data, vma, e, layout.addr_width, big)?;
             let flags = read_u16(data, e + layout.flags, big)?;
-            let file = layout.file.and_then(|i| layout.pointers.get(i)).and_then(|&(off, w)| pointer(data, vma, e + off, w, big));
+            let file = layout.file.and_then(|i| layout.pointers.get(i)).and_then(|&f| string_pointer(layout, data, vma, e, f, big));
             let line = layout.line.and_then(|off| read_u16(data, e + off, big)).map(u32::from);
             Some(KernelBugSite { addr, warning: flags & BUGFLAG_WARNING != 0, file, line })
         })
@@ -252,10 +325,10 @@ pub fn scan(file: &object::File, exec: Vec<(u64, u64)>) -> Vec<KernelBugSite> {
     if data.is_empty() {
         return Vec::new();
     }
-    let image = Image { file, exec };
+    let image = Image::new(file, exec);
     let big = !file.is_little_endian();
     let vma = section.address();
-    let layout = if section.relocations().next().is_some() {
+    let layout = if file.kind() == ObjectKind::Relocatable && section.relocations().next().is_some() {
         layout_from_relocations(&image, &section, data, big)
     } else {
         layout_by_probe(&image, data, vma, big)

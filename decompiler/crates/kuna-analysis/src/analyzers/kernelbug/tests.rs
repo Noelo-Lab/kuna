@@ -37,7 +37,7 @@ fn x86_64_module_table_names_a_warn_and_a_bug() {
     assert_eq!(sites[1].addr, text + 0x4a);
     assert!(!sites[1].warning);
     assert_eq!(sites[1].line, Some(11));
-    let image = Image { file: &file, exec: exec_ranges(&file) };
+    let image = Image::new(&file, exec_ranges(&file));
     for s in &sites {
         assert_eq!(image.string_at(s.file.expect("verbose table")).as_deref(), Some("kwarn_bugsite.c"));
     }
@@ -143,6 +143,38 @@ fn linked_image_probe_recovers_the_verbose_layout() {
     );
 }
 
+/// Before Linux 5.19 a self-relative `file` counts from the entry's start: read
+/// the 5.19 way it lands four bytes into the path, so the table is read the old
+/// way and `file` names the path's first byte.
+#[test]
+fn pre_5_19_file_counts_from_the_entry() {
+    let text = [0x90, 0x0f, 0x0b, 0x90, 0x90, 0x0f, 0x0b, 0x90];
+    let rodata = b"x\0include/linux/mm.h\0fs/nfs/write.c\0";
+    let (text_vma, rodata_vma, table_vma) = (0x1000u64, 0x2000u64, 0x3000u64);
+    let mut table = Vec::new();
+    for (i, (trap, path, line, flags)) in [(1u64, 2u64, 607u16, 0x903u16), (5, 21, 77, 0)].iter().enumerate() {
+        let e = table_vma + 12 * i as u64;
+        table.extend_from_slice(&rel32(e, text_vma + trap));
+        table.extend_from_slice(&rel32(e, rodata_vma + path));
+        table.extend_from_slice(&line.to_le_bytes());
+        table.extend_from_slice(&flags.to_le_bytes());
+    }
+    let bytes = elf64(&[
+        (".text", text_vma, SHF_ALLOC_EXEC, &text),
+        (".rodata", rodata_vma, SHF_ALLOC, rodata),
+        (BUG_TABLE_SECTION, table_vma, SHF_ALLOC_WRITE, &table),
+    ]);
+    let file = object::File::parse(&*bytes).expect("parse");
+    let sites = scan(&file, exec_ranges(&file));
+    assert_eq!(
+        sites,
+        vec![
+            KernelBugSite { addr: 0x1001, warning: true, file: Some(0x2002), line: Some(607) },
+            KernelBugSite { addr: 0x1005, warning: false, file: Some(0x2015), line: Some(77) },
+        ]
+    );
+}
+
 /// Without `CONFIG_DEBUG_BUGVERBOSE` an entry is `bug_addr` and `flags` in 8
 /// bytes: no file, no line.
 #[test]
@@ -166,6 +198,25 @@ fn linked_image_probe_recovers_the_bare_layout() {
             KernelBugSite { addr: 0x1004, warning: false, file: None, line: None },
         ]
     );
+}
+
+/// A 12-byte entry whose second word is no string pointer leaves room the
+/// kernel's layouts do not have, so `flags` cannot be placed: nothing is read
+/// rather than a displacement's low half standing in for the flags.
+#[test]
+fn an_entry_with_unexplained_room_is_declined() {
+    let text = [0x90, 0x0f, 0x0b, 0x90, 0x90, 0x0f, 0x0b, 0x90];
+    let (text_vma, table_vma) = (0x1000u64, 0x3000u64);
+    let mut table = Vec::new();
+    for (i, trap) in [1u64, 5].iter().enumerate() {
+        let e = table_vma + 12 * i as u64;
+        table.extend_from_slice(&rel32(e, text_vma + trap));
+        table.extend_from_slice(&rel32(e + 4, text_vma));
+        table.extend_from_slice(&[0x01, 0x09, 0x01, 0x09]);
+    }
+    let bytes = elf64(&[(".text", text_vma, SHF_ALLOC_EXEC, &text), (BUG_TABLE_SECTION, table_vma, SHF_ALLOC_WRITE, &table)]);
+    let file = object::File::parse(&*bytes).expect("parse");
+    assert!(scan(&file, exec_ranges(&file)).is_empty());
 }
 
 /// A table whose entries point nowhere executable under any size yields nothing.

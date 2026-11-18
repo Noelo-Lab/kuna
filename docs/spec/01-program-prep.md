@@ -4794,8 +4794,10 @@ moves.
   an executable section are the `bug_addr` fields, their spacing is the entry
   size, and the other relocations inside an entry are its pointer fields (a
   32-bit self-relative displacement under `CONFIG_GENERIC_BUG_RELATIVE_POINTERS`,
-  an absolute 64-bit pointer otherwise). A linked image (`vmlinux`) has no
-  relocations left, so the sizes 8, 12 and 16 are tried in turn and the first
+  an absolute 64-bit pointer otherwise). A linked image (`vmlinux`) is probed,
+  even when it keeps its relocations (an x86-64 `vmlinux` links with
+  `--emit-relocs`, whose offsets are addresses, not section offsets): the sizes
+  8, 12 and 16 are tried in turn and the first
   under which every `bug_addr` lands in executable bytes wins — under a wrong
   size the field read is a string displacement or a line/flags word, which lands
   outside the code — and a field is a pointer when every entry's value lands in a
@@ -4805,7 +4807,16 @@ moves.
   and `flags`. With two pointer fields the second is `file` (the first is 7.x's
   `format`); with one, it is `file` when the string it points at is a source path
   (`lib/a.c`) and `format` otherwise, which is the one case the layout alone
-  does not decide. A table no size explains yields nothing. The 14,223 entries of
+  does not decide. A layout is kept only when `flags` ends the entry, before at
+  most its alignment padding, so a stride with room no field explains (a
+  12-byte entry whose second word is no string pointer) is declined rather than
+  read with a displacement standing in for the flags. Before Linux 5.19
+  (`69505e3d9a39`) a self-relative `file` counted from the start of the entry
+  rather than from the field, so read the newer way it lands four bytes into the
+  path; the older reading is taken when it puts more of the first 64 entries'
+  `file` fields on the first byte of a string. A table no size explains yields
+  nothing. Section and code lookups are binary searches, so the work is linear
+  in the table whatever the section count. The 14,223 entries of
   a 7.3 x86-64 `vmlinux` read in under 0.2 s. Committed sorted by trap address
   onto `Architecture::kernel_bug_sites`.
 - **x87 intrinsics** (`x87intrinsics`, always on, i386 only;
