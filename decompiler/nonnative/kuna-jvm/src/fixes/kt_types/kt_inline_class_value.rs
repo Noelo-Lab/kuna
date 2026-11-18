@@ -1232,10 +1232,7 @@ pub fn write(inv: InvocationExprent, indent: i32) -> Option<TextBuffer> {
             }
         }
         Form::Renamed(name) => {
-            inv.d_mut(|d| d.kuna_kotlin_name = Some(name.to_string()));
-            let out = InvocationExprent::to_java(inv, indent);
-            inv.d_mut(|d| d.kuna_kotlin_name = None);
-            return Some(out);
+            return Some(crate::fixes::kt_calls::kt_jvm_name_call::to_java_named(inv, name.to_string(), indent));
         }
         Form::Equals => {
             let precedence = FunctionType::Eq.precedence();

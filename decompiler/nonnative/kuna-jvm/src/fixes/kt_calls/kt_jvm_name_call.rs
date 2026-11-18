@@ -12,6 +12,7 @@ use crate::kotlin_chooser::KotlinChooser;
 use crate::kt_attrs::KtAttrs;
 use crate::struct_class::StructClass;
 use crate::struct_method::StructMethod;
+use crate::text_buffer::TextBuffer;
 
 /// The Kotlin name to write the call of `function` with, when it is not its
 /// JVM name.
@@ -48,4 +49,18 @@ pub fn inherited(cl: StructClass, name: &str, descriptor: &str) -> Option<Struct
     let owner = DecompilerContext::get_struct_context().get_class(&method.get_class_qualified_name())?;
     KotlinChooser::parse_metadata_for(owner);
     Some(method)
+}
+
+/// `inv` written by `InvocationExprent::to_java` with the name `name`, which
+/// is taken off the invocation again afterwards, also on an unwinding throw.
+pub fn to_java_named(inv: InvocationExprent, name: String, indent: i32) -> TextBuffer {
+    struct Clear(InvocationExprent);
+    impl Drop for Clear {
+        fn drop(&mut self) {
+            self.0.d_mut(|d| d.kuna_kotlin_name = None);
+        }
+    }
+    inv.d_mut(|d| d.kuna_kotlin_name = Some(name));
+    let _clear = Clear(inv);
+    InvocationExprent::to_java(inv, indent)
 }

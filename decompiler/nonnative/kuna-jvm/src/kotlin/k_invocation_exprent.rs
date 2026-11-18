@@ -266,13 +266,10 @@ impl KInvocationExprent {
             }
             _ => None,
         };
-        if kotlin_name.is_none() {
-            return InvocationExprent::to_java(self.0, indent);
+        match kotlin_name {
+            Some(name) => kt_jvm_name_call::to_java_named(self.0, name, indent),
+            None => InvocationExprent::to_java(self.0, indent),
         }
-        self.d_mut(|d| d.kuna_kotlin_name = kotlin_name);
-        let buf = InvocationExprent::to_java(self.0, indent);
-        self.d_mut(|d| d.kuna_kotlin_name = None);
-        buf
     }
 
     /// The call as the fixes `kt_extension_call` and `kt_facade_call` write
