@@ -1099,7 +1099,7 @@ gets closer. A negated pattern javac compiled as a guard, `if (!(o instanceof T 
 its guard instead of becoming `if (o instanceof T v) { rest } else { return ..; }` (javac places the
 binding, then a `goto` over the guard's exit). Where the bytecode is the same for both forms (an if-else of two returns, or
 a `continue` that ends a loop body), Vineflower's form mostly stays. The two-pass case `tests/jvm/kuna-fixes/` `pkg/TestJavacLayout` shows each
-shape, and `tests/jvm/kuna_fix_diff.py` recognises its hunks as `jvm_javac_layout`.
+shape.
 
 - two return instructions stay two returns instead of one return of a ternary (`if (c)
   return true; return false;` is not folded to `return c;`);
