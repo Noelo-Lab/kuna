@@ -78,6 +78,55 @@ fn cross_image_references_ride_in_the_note() {
 }
 
 #[test]
+fn several_images_merge_into_one_mach_o_at_their_cache_addresses() {
+    let cache = DyldCache::open(&fixture()).unwrap();
+    assert_eq!(cache.select_all(Some("libcaller + /usr/lib/libcallee.dylib")), Ok(vec![0, 1]));
+    assert_eq!(cache.extract_merged(&[1]).unwrap(), cache.extract(1).unwrap(), "one image is rebuilt as before");
+    assert_eq!(cache.extract_merged(&[0, 0]).unwrap(), cache.extract(0).unwrap(), "an image named twice counts once");
+    let bytes = cache.extract_merged(&[1, 0]).unwrap();
+    let file = object::File::parse(bytes.as_slice()).unwrap();
+    let text: Vec<(u64, Vec<u8>)> = file
+        .sections()
+        .filter(|s| s.name() == Ok("__text"))
+        .map(|s| (s.address(), s.data().unwrap()[..4].to_vec()))
+        .collect();
+    assert_eq!(
+        text,
+        [(0x1_8000_1800, 0xA9BF_7BFDu32.to_le_bytes().to_vec()), (0x1_8000_2800, 0x0B01_0000u32.to_le_bytes().to_vec())]
+    );
+    let symbol = |name: &str| {
+        let sym = file.symbols().find(|s| s.name() == Ok(name)).unwrap_or_else(|| panic!("{name}"));
+        (sym.address(), file.section_by_index(sym.section_index().unwrap()).unwrap().name().unwrap().to_string())
+    };
+    assert_eq!(symbol("_helper_local"), (0x1_8000_1828, "__text".into()));
+    assert_eq!(symbol("_callee_add"), (0x1_8000_2800, "__text".into()));
+    assert_eq!(symbol("_callee_counter"), (0x1_8001_0100, "__data".into()));
+    let kept: Vec<u64> = read_note(&bytes).iter().map(|x| x.addr).collect();
+    assert_eq!(kept, [0x1_8000_8800, 0x1_8001_0000, 0x1_8001_0008], "the island and the slots lie in no image");
+}
+
+#[test]
+fn an_address_outside_the_selection_adds_the_image_that_holds_it() {
+    let step = |requested, target, loaded| FollowStep { requested, target, image: "/usr/lib/libcallee.dylib".into(), loaded };
+    let follow = |addrs: &[(u64, bool)], limit| follow_images(&fixture(), "libcaller", addrs, limit).unwrap();
+
+    let direct = follow(&[(0x1_8000_2800, false), (0x1_8000_1800, false), (0x1_8001_0100, false)], 1);
+    assert_eq!(direct.images, "libcaller+/usr/lib/libcallee.dylib");
+    assert_eq!(direct.steps, [step(0x1_8000_2800, 0x1_8000_2800, true)], "the image is added once");
+
+    let island = follow(&[(0x1_8000_8800, true)], 1);
+    assert_eq!(island.steps, [step(0x1_8000_8800, 0x1_8000_2800, true)]);
+    assert_eq!(island.images, direct.images);
+
+    let unfollowed = follow(&[(0x1_8000_8800, false), (0x7000_0000, true)], 1);
+    assert_eq!((unfollowed.images.as_str(), unfollowed.steps.len()), ("libcaller", 0));
+
+    let bounded = follow(&[(0x1_8000_2800, false)], 0);
+    assert_eq!(bounded.images, "libcaller");
+    assert_eq!(bounded.steps, [step(0x1_8000_2800, 0x1_8000_2800, false)]);
+}
+
+#[test]
 fn a_file_that_is_not_a_cache_is_left_to_the_other_loaders() {
     let elf = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/armdiscseed_le32");
     assert!(read_selected_image(&elf).is_none());

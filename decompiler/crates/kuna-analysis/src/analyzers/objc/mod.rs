@@ -124,7 +124,7 @@ impl AnalysisPass for ObjcMetadataPass {
         // classes are read first so every instance layout is known before any
         // method is typed — a subclass embeds its local superclass's struct.
         let mut classes: Vec<(classt::ClassT, String)> = Vec::new();
-        if let Some((cl_addr, cl_data)) = img.classlist(ctx.file) {
+        for (cl_addr, cl_data) in img.classlists(ctx.file) {
             let ps = img.ptr_size() as usize;
             for (i, _) in cl_data.chunks_exact(ps).enumerate() {
                 let Some(class_ptr) = img.read_ptr(cl_addr.wrapping_add((i * ps) as u64)) else { continue };
@@ -399,7 +399,7 @@ mod tests {
         assert_eq!(file.format(), object::BinaryFormat::MachO, "fixture must be a Mach-O");
 
         let img = MachoImage::new(&file);
-        let (cl_addr, cl_data) = img.classlist(&file).expect("__objc_classlist present");
+        let (cl_addr, cl_data) = img.classlists(&file).into_iter().next().expect("__objc_classlist present");
         let ps = img.ptr_size() as usize;
         assert_eq!(ps, 8, "the fixture is a 64-bit Mach-O");
 
@@ -436,7 +436,7 @@ mod tests {
         assert_eq!(file.architecture(), object::Architecture::X86_64);
 
         let img = MachoImage::new(&file);
-        let (cl_addr, _) = img.classlist(&file).expect("__objc_classlist present");
+        let (cl_addr, _) = img.classlists(&file).into_iter().next().expect("__objc_classlist present");
         let class_ptr = img.read_ptr(cl_addr).expect("class_t pointer");
         let class = classt::read_class_t(&img, class_ptr).expect("class_t reads");
         let list = classt::base_methods(&img, class.ro).expect("baseMethods present");
@@ -491,7 +491,7 @@ mod tests {
 
         // (2) The arm64 walk THROUGH the resolved overlay recovers the method name.
         let img = MachoImage::with_fixups(&file, fixups);
-        let (cl_addr, _cl_data) = img.classlist(&file).expect("__objc_classlist present");
+        let (cl_addr, _cl_data) = img.classlists(&file).into_iter().next().expect("__objc_classlist present");
         let class_ptr = img.read_ptr(cl_addr).expect("class_t pointer (resolved)");
         assert_eq!(class_ptr, 0x100008000, "the resolved class_t VMA");
 
@@ -527,7 +527,7 @@ mod tests {
             // With an empty overlay, read_ptr falls through to the raw section word.
             let img = MachoImage::with_fixups(&file, fixups);
             let img_raw = MachoImage::new(&file);
-            if let Some((cl_addr, _)) = img.classlist(&file) {
+            if let Some((cl_addr, _)) = img.classlists(&file).into_iter().next() {
                 assert_eq!(
                     img.read_ptr(cl_addr),
                     img_raw.read_ptr(cl_addr),

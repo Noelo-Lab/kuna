@@ -568,6 +568,9 @@ mod xrefs_data_refs_cli;
 #[path = "xrefs_fileset_entry.rs"]
 mod xrefs_fileset_entry;
 
+#[path = "dyld_follow_images.rs"]
+mod dyld_follow_images;
+
 #[path = "xrefs_got_call.rs"]
 mod xrefs_got_call;
 

@@ -249,18 +249,25 @@ impl<'a> MachoImage<'a> {
         (terminated && paid).then_some(s)
     }
 
-    /// The `(vma_lo, bytes)` of the `__objc_classlist` section — the array of
-    /// `class_t*` entries the walk iterates (stride = [`Self::ptr_size`]). `None`
+    /// The `(vma_lo, bytes)` of every `__objc_classlist` section — the arrays of
+    /// `class_t*` entries the walk iterates (stride = [`Self::ptr_size`]). Empty
     /// when the image carries no ObjC class list (the inert path).
-    pub fn classlist(&self, file: &'a object::File<'a>) -> Option<(u64, &'a [u8])> {
-        let sec = file.section_by_name(SEC_CLASSLIST)?;
-        let addr = sec.address();
-        let data = sec.data().ok()?;
-        if data.is_empty() {
-            return None;
-        }
-        Some((addr, data))
+    pub fn classlists(&self, file: &'a object::File<'a>) -> Vec<(u64, &'a [u8])> {
+        sections_named(file, SEC_CLASSLIST)
+            .filter_map(|sec| Some((sec.address(), sec.data().ok()?)))
+            .filter(|(_, data)| !data.is_empty())
+            .collect()
     }
+}
+
+/// Every section named `name`, in load-command order. An ordinary image has at
+/// most one; a Mach-O joining several dyld shared cache images (`dyldimage
+/// A+B`) has one per image.
+pub fn sections_named<'data, 'file>(
+    file: &'file object::File<'data>,
+    name: &'file str,
+) -> impl Iterator<Item = object::Section<'data, 'file>> + 'file {
+    file.sections().filter(move |sec| sec.name_bytes() == Ok(name.as_bytes()))
 }
 
 #[cfg(test)]

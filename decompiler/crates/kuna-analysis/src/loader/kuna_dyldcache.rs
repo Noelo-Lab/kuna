@@ -1,5 +1,6 @@
 //! (kuna) The dyld shared cache: open a cache and its sub-caches, list its images,
-//! and rebuild one image as a standalone thin Mach-O at its cache addresses.
+//! and rebuild one image, or several joined, as a standalone thin Mach-O at its
+//! cache addresses.
 //!
 //! A cache is a main file named `dyld_shared_cache_<arch>` plus, on iOS 15+ and
 //! macOS 12+, sub-cache files beside it (`.01`, `.27.dylddata`, `.44.dyldlinkedit`,
@@ -12,8 +13,10 @@
 //! The cache is never read whole: a 3 GB cache costs only the pages of the image
 //! being rebuilt, read through file handles. [`read_selected_image`] is the one
 //! entry point the loader paths call, before they parse anything; after it, the
-//! input is an ordinary Mach-O. See [`extract`] for the rebuild and [`xrefs`] for
-//! how calls into other images are named.
+//! input is an ordinary Mach-O. See [`extract`] for the rebuild, `merge` for
+//! how several images become one program, and [`xrefs`] for how calls into
+//! other images are named. [`follow_images`] finds the image an address outside
+//! the selection lies in.
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -23,8 +26,12 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 pub mod extract;
+mod merge;
 pub mod slide;
 pub mod xrefs;
+
+/// Joins the image names of a `dyldimage` value that loads several images.
+pub const IMAGE_SEPARATOR: char = '+';
 
 /// Every dyld shared cache starts with this, followed by padding and the arch.
 pub const MAGIC_PREFIX: &[u8] = b"dyld_v1";
@@ -55,20 +62,19 @@ pub fn is_dyld_cache_file(path: &Path) -> bool {
         .is_ok_and(|()| is_dyld_cache(&prefix))
 }
 
-/// The selected image of the dyld shared cache at `path`, rebuilt as a thin
-/// Mach-O; `None` when `path` is not a dyld shared cache. The image is the
+/// The selected images of the dyld shared cache at `path`, rebuilt as one thin
+/// Mach-O; `None` when `path` is not a dyld shared cache. The selection is the
 /// `dyldimage` option, carried in [`kuna_decomp::kuna_dyldcache::DYLDIMAGE_ENV`].
 pub fn read_selected_image(path: &Path) -> Option<Result<Vec<u8>, String>> {
     if !is_dyld_cache_file(path) {
         return None;
     }
     Some(DyldCache::open(path).and_then(|cache| {
-        let index = cache.select(kuna_decomp::kuna_dyldcache::selected_image().as_deref())?;
-        cache.extract(index)
+        cache.extract_merged(&cache.select_all(kuna_decomp::kuna_dyldcache::selected_image().as_deref())?)
     }))
 }
 
-/// The byte size image `name` occupies, `__LINKEDIT` aside (the cache shares
+/// The byte size the images `name` selects occupy, `__LINKEDIT` aside (the cache shares
 /// one across all images): the cache counterpart of a file's length for
 /// size-based policy. `None` when `path` is not a cache.
 pub fn image_size(path: &Path, name: Option<&str>) -> Option<Result<u64, String>> {
@@ -76,9 +82,69 @@ pub fn image_size(path: &Path, name: Option<&str>) -> Option<Result<u64, String>
         return None;
     }
     Some(DyldCache::open(path).and_then(|cache| {
-        let image = cache.image_layout(cache.select(name)?)?;
-        Ok(image.segments.iter().filter(|s| s.name != "__LINKEDIT").map(|s| s.filesize).sum())
+        let mut size = 0u64;
+        for index in cache.select_all(name)? {
+            let image = cache.image_layout(index)?;
+            size += image.segments.iter().filter(|s| s.name != "__LINKEDIT").map(|s| s.filesize).sum::<u64>();
+        }
+        Ok(size)
     }))
+}
+
+/// One address [`follow_images`] found outside the loaded images.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FollowStep {
+    pub requested: u64,
+    /// `requested`, or what the stub at `requested` jumps to.
+    pub target: u64,
+    /// The install name of the image holding `target`.
+    pub image: String,
+    /// Is that image part of [`Followed::images`]? `false` past the limit.
+    pub loaded: bool,
+}
+
+/// What [`follow_images`] found: the `dyldimage` value to load and one step per
+/// address the selection did not hold.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Followed {
+    pub images: String,
+    pub steps: Vec<FollowStep>,
+}
+
+/// Widen the `dyldimage` value `selected` of the cache at `path` until the
+/// images it names hold `addrs`, adding at most `limit` images. Each address
+/// carries whether a stub there may be followed to its target: an address in a
+/// stub island belongs to no image, and what a request for it means is the
+/// function the stub jumps to. An address the cache does not map is left alone.
+pub fn follow_images(path: &Path, selected: &str, addrs: &[(u64, bool)], limit: usize) -> Result<Followed, String> {
+    let cache = DyldCache::open(path)?;
+    let mut loaded = Vec::new();
+    for index in cache.select_all(Some(selected))? {
+        loaded.push(cache.image_layout(index)?);
+    }
+    let mut followed = Followed { images: selected.to_string(), steps: Vec::new() };
+    let mut names = None;
+    let mut added = 0;
+    for &(requested, through_stubs) in addrs {
+        if loaded.iter().any(|layout| layout.holds(requested)) {
+            continue;
+        }
+        let names = names.get_or_insert_with(|| xrefs::Names::new(&cache));
+        let Some((target, index)) = names.owner(requested, through_stubs) else {
+            continue;
+        };
+        let image = cache.images[index].path.clone();
+        let mut held = loaded.iter().any(|layout| layout.holds(target));
+        if !held && added < limit {
+            loaded.push(cache.image_layout(index)?);
+            followed.images.push(IMAGE_SEPARATOR);
+            followed.images.push_str(&image);
+            added += 1;
+            held = true;
+        }
+        followed.steps.push(FollowStep { requested, target, image, loaded: held });
+    }
+    Ok(followed)
 }
 
 /// One file of a split cache: the main file, a sub-cache, or `.symbols`.
@@ -430,6 +496,20 @@ impl DyldCache {
     /// name, a cache of one image selects it.
     pub fn select(&self, name: Option<&str>) -> Result<usize, String> {
         select_image(&self.images, name)
+    }
+
+    /// Resolve a `dyldimage` value: one name, or several joined by `+`
+    /// (`Foundation+CoreFoundation`), each as [`DyldCache::select`] reads it.
+    pub fn select_all(&self, names: Option<&str>) -> Result<Vec<usize>, String> {
+        match names {
+            Some(names) if names.contains(IMAGE_SEPARATOR) => names
+                .split(IMAGE_SEPARATOR)
+                .map(str::trim)
+                .filter(|name| !name.is_empty())
+                .map(|name| self.select(Some(name)))
+                .collect(),
+            name => Ok(vec![self.select(name)?]),
+        }
     }
 
     /// The mapping holding `[va, va + len)`; the mappings are sorted by address.
