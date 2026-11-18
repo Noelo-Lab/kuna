@@ -3280,6 +3280,42 @@ provide processor-version and privilege-appropriate reads and masked writes.
 Register and immediate MSR update NZCVQ only when the flag byte is selected,
 preserving arithmetic flags across control-only writes.
 
+### RISC-V Zcmp and Zcmt (GH-1630)
+
+The Zc code-size extensions (`specs/Ghidra/Processors/RISCV/data/languages/riscv.zc.sinc`)
+put `cm.push`, `cm.pop`, `cm.popret`, `cm.popretz`, `cm.mvsa01`, `cm.mva01s`
+(Zcmp) and `cm.jt`, `cm.jalt` (Zcmt) in the `c.fsdsp` encoding space
+(op=10, funct3=101), so they exist only where Zcd does not. The `Zcmp` context
+bit (`riscv.reg.sinc`) selects between the two readings: `c.fsdsp` decodes at
+`Zcmp=0`, the Zc instructions at `Zcmp=1`, and the default RV32/RV64 processor
+specs leave the bit 0, so every existing RISC-V language decodes byte-identically.
+The `RISCV:LE:32:Zcmp` and `RISCV:LE:64:Zcmp` language variants
+(`riscv.ldefs`, `RV32zcmp.pspec`, `RV64zcmp.pspec`) share the `.sla` files
+and set the bit; the ELF loader picks them from `Tag_RISCV_arch` (§1).
+
+The register list `rlist` (bits 7:4, values 4..15) is a prefix of
+`{ra, s0, s1, ..., s11}`: `rlist - 3` registers, except 15, which is the full
+list of 13 (`s10` is never saved without `s11`). The stack adjustment is the
+list's byte size rounded up to 16 plus `16 * spimm` (bits 3:2), so one
+constructor per `rlist` value carries the base and a per-base operand
+(`zcadj16` ... `zcadj112`) adds `spimm`. `cm.push` stores the highest-numbered
+register at `sp - XLEN/8` and each lower one `XLEN/8` below it, `ra` lowest,
+then subtracts the adjustment; `cm.pop` loads the same registers from
+`sp + adjustment` downward and then adds the adjustment; `cm.popret` returns
+through the reloaded `ra`; `cm.popretz` also writes `a0 = 0`. `cm.mvsa01`
+copies `a0`, `a1` into two `s0..s7` registers, `cm.mva01s` copies them back.
+`cm.jt index` loads the jump target from the `jvt` CSR (0x017) table at
+`(jvt & ~0x3f) + index * XLEN/8` and jumps; `cm.jalt` (index 32..255) sets
+`ra` and calls. Displays print the register list and the adjustment as
+`cm.push {ra,s0-s1},-0x10`. Before this the issue's `-Os` prologue decoded as
+`c.fsdsp fs8,0x30(sp)` and its epilogue as a float store followed by a jump
+through whatever `ra` held, so the saves, the stack adjustment and the return
+were lost. Exercised by `tests/stages/kuna-riscv-zcmp.xml` (the issue's
+`keep`, hand-written `swapcall`/`zret`/`popsep`, the raw push/popret p-code)
+and `kuna-cli/tests/riscv_zcmp.rs` (one decode per encoding shape against
+LLVM's names, RV32 and RV64). Zcb, Zicond and the T-Head vendor extensions
+the issue also lists are not decoded.
+
 ### RISC-V moves and conversions from FP to integer registers (GH-831)
 
 `fmv.x.d` copies the 64-bit pattern of its FP source into the integer
