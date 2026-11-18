@@ -1,5 +1,6 @@
 //! Helpers several fix families share.
 
+use crate::classes_processor::ClassNode;
 use crate::code_type::CodeType;
 use crate::exprent::Exprent;
 use crate::statement::Statement;
@@ -29,4 +30,13 @@ pub fn collect_exprents(stat: Statement, out: &mut Vec<Exprent>) {
         out.extend(e.get_all_exprents_rec(true));
         out.push(e);
     }
+}
+
+/// The top-level class `node` is nested in (itself when it is one).
+pub fn top_level(node: ClassNode) -> ClassNode {
+    let mut node = node;
+    while let Some(parent) = node.with(|d| d.parent) {
+        node = parent;
+    }
+    node
 }

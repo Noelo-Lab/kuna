@@ -1,38 +1,12 @@
-//! Fix family `failure_comments` (Java and Kotlin output): the failure comment
-//! a method or class gets, and its note.
-//!
-//! kuna fix `kt_anonymous_class_failure_reason`: the failure of an
-//! anonymous class the Kotlin writer cannot write says what the class is.
-//!
-//! `KotlinWriter.writeClassDefinition` throws `Anonymous class does not have
-//! Class Kotlin metadata` for every anonymous class without Class metadata
-//! that no other path writes (the fixes `kt_synthetic_anonymous_object`,
-//! `kt_reference_anonymous_super_call` and `kt_property_reference` write
-//! the ones that have a Kotlin form). What remains is a structural limit, and
-//! the message names the class and the reason, so a reader of the failure
-//! comment knows what the method is:
-//!
-//! - the continuation of a suspend function (`ContinuationImpl`) or a suspend
-//!   lambda (`SuspendLambda`): the method is a coroutine state machine, which
-//!   the plugin prints as compiled and which has no Kotlin form (the
-//!   function's `instanceof`/cast of its own continuation class cannot be
-//!   written with an `object` expression, and Kotlin source never handles
-//!   the continuation); with the fix `kt_synthetic_object_super_call`, which
-//!   writes a continuation as an `object` expression, one it cannot write
-//!   gets the last reason below;
-//! - a callable-reference class of a shape `stringifyReference` does not
-//!   read, such as a reference to a local function that captures variables;
-//! - an object created in another class than the one whose method declares
-//!   it (kotlinc copies an inline function's object creation into the
-//!   `$$inlined$` classes of its callers): the object's body was decompiled
-//!   against its declaring method's variables, which do not exist where it is
-//!   created;
-//! - otherwise, an object whose superclass constructor call or captured
-//!   values an `object` expression cannot express at this `new`.
+//! Fix family `failure_comments`: the failure comment a method or class gets,
+//! and its note. In this file, `kt_anonymous_class_failure_reason` names the
+//! class and the reason in the failure of an anonymous class the Kotlin writer
+//! cannot write.
 
 use crate::classes_processor::ClassNode;
 use crate::code_constants::INIT_NAME;
 use crate::decompiler_context::DecompilerContext;
+use crate::fixes::util::top_level;
 use crate::kuna_fixes::{self, KunaFix};
 
 const CONTINUATIONS: [&str; 2] = [
@@ -109,15 +83,6 @@ pub fn message(node: ClassNode) -> String {
         }
     };
     format!("Anonymous class does not have Class Kotlin metadata: {reason}")
-}
-
-/// The top-level class `node` is nested in (itself when it is one).
-fn top_level(node: ClassNode) -> ClassNode {
-    let mut node = node;
-    while let Some(parent) = node.with(|d| d.parent) {
-        node = parent;
-    }
-    node
 }
 
 /// Whether a constructor of the reference class `node` takes captured

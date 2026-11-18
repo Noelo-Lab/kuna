@@ -1,30 +1,8 @@
-//! Fix family `twr` (Java output): try-with-resources.
-//!
-//! The kuna fixes `twr_unresolved_resource` and `twr_desugaring_shape`
-//! (`kuna_fixes`), called from
-//! `TryWithResourcesProcessor::make_try_with_resource_j11`.
-//!
-//! Vineflower re-sugars javac 11+'s try-with-resources desugaring only when
-//! the class of the `close()` call is known to be `AutoCloseable`, which fails
-//! when the class, or the supertype that makes it `AutoCloseable`, is outside
-//! the input; and when it is known it checks the shape only loosely, so
-//! hand-written code that skips a `close()`, reorders the resource's
-//! initializer or does something else than `addSuppressed` in the handler is
-//! printed as try-with-resources too. [`javac_shape`] is javac's desugaring
-//! (`Lower.makeTwrTry`) exactly: the resource is assigned by the last
-//! statement before the `try`, which catches `Throwable` `t` with the handler
-//! `[if (r != null)] { try { r.close(); } catch (Throwable x) {
-//! t.addSuppressed(x); } } throw t;`, every normal exit runs
-//! `[if (r != null)] r.close();` and nothing else leaves the body except a
-//! `throw`; the null checks are absent exactly when the initializer is a
-//! `new`, and the variable is used nowhere else. With `twr_unresolved_resource`
-//! a class whose hierarchy kuna cannot resolve is accepted when the shape is
-//! javac's; with `twr_desugaring_shape` a known `AutoCloseable` must have
-//! javac's shape too. A class whose whole hierarchy is known and does not
-//! reach `AutoCloseable` is never accepted. With `twr_desugaring_shape` the
-//! resource is written as the field it was copied from (`try (this.f)`) only
-//! when the field is final, as Java requires, and the copy is javac's (no
-//! name in the local variable table).
+//! Fix family `twr`: try-with-resources. [`javac_shape`] is javac's desugaring
+//! (`Lower.makeTwrTry`) exactly; `twr_unresolved_resource` accepts a resource
+//! whose hierarchy kuna cannot resolve in that shape, `twr_desugaring_shape`
+//! requires it of a known `AutoCloseable` too and writes `try (this.f)` only
+//! for a final field javac copied.
 
 use crate::assignment_exprent::AssignmentExprent;
 use crate::catch_statement::CatchStatement;
