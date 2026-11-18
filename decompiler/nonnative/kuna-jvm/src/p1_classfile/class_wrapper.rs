@@ -12,7 +12,7 @@ use std::rc::Rc;
 use std::panic::{self, AssertUnwindSafe};
 use std::time::{Duration, Instant};
 
-use crate::cancelation_manager::{CancelationManager, CanceledException, MethodDeadlineExceeded};
+use crate::cancelation_manager::{CancelationManager, MethodDeadlineExceeded};
 use crate::classes_processor::ClassNode;
 use crate::code_constants::ACC_STATIC;
 use crate::decompiler_context::{java_parse_int, DecompilerContext};
@@ -27,7 +27,7 @@ use crate::method_properties_processor::MethodPropertiesProcessor;
 use crate::method_wrapper::MethodWrapper;
 use crate::language_spec::LanguageSpec;
 use crate::root_statement::RootStatement;
-use crate::rt::{rethrow, try_catch, Caught, JHashMap, JHashSet, Shared};
+use crate::rt::{try_catch, Caught, JHashMap, JHashSet, Shared};
 use crate::struct_class::StructClass;
 use crate::struct_method::StructMethod;
 use crate::var_names_collector::VarNamesCollector;
@@ -176,9 +176,6 @@ impl ClassWrapper {
             match processed {
                 Ok(result) => root = result,
                 Err(t) => {
-                    if CanceledException::is(&t) {
-                        rethrow(t);
-                    }
                     let message = format!(
                         "Method {} {} in class {} couldn't be decompiled.",
                         mt.get_name(),

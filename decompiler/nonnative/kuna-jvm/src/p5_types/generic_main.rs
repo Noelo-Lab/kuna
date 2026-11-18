@@ -38,14 +38,13 @@ fn java_split_units(s: &[u16], sep: char) -> Vec<&[u16]> {
 }
 
 impl GenericMain {
-    /// `try { body } catch (CanceledException e) { throw e; } catch
-    /// (RuntimeException e) { log; return null; }`: an `Error` or a method
-    /// stop passes through.
+    /// `try { body } catch (RuntimeException e) { log; return null; }`: an
+    /// `Error` or a method stop passes through.
     fn catch_invalid<T>(original: &str, body: impl FnOnce() -> T) -> Option<T> {
         match try_catch(body) {
             Ok(v) => Some(v),
             Err(caught) => {
-                if caught.is("CanceledException") || !caught.is_runtime_exception() {
+                if !caught.is_runtime_exception() {
                     rethrow(caught);
                 }
                 DecompilerContext::get_logger()
