@@ -4025,6 +4025,28 @@ undoes the cleanup in front of it. The walk itself still stops at the declared
 call and continues into its frame only by the settled-pop rule above, so the
 slots that call popped are not read as the next call's pushes.
 
+With the `INT_ADD` folded in, every stack reference after the declared call
+was a constant offset from one before it, and the walk read whichever
+reference sat at a slot's offset, often one of the declared call's own popped
+argument slots. Three readings of the walk in a declared call's frame take the
+place of that coincidence (`kuna_calleepopslot.rs (push_run)`). A join of stack
+pointers whose inputs, read back through constant adjustments and stated pops,
+reach the same reference at the same offset is that reference
+(`kuna_calleepopslot.rs (resolve)`), for up to two joins: the run of
+`push esi; cmp edx,-1; jne b; call [GetLastError]; push eax; jmp c; b: push
+edx; c: push esi; call [FormatMessageW]` continues above the joined slot, which
+is a push because each path stores through it and one of them is an argument
+push; the folded test above reads through such joins too. A push of the entry
+value of a register the convention lets a call destroy (`EAX`, `ECX`, `EDX`),
+in the frame a call with a stated pop left, is an argument and not a saved
+register: `mov edi,edx; call [CreateFileW]; push [ebp+8]; push 0; push edi;
+push esi; call [SetFileTime]` pushes four. And the slot at the stack pointer a
+declared call left, written through before anything is pushed below it, is the
+caller's own frame and ends the run: `call [GetModuleFileNameA]; mov
+[esp],0x44; push` ten times `; call [CreateProcessA]` pushes ten, not eleven;
+MinGW's `call [f]; sub esp,4; mov [esp+4],eax` writes that slot after the
+stack pointer went below it and keeps it.
+
 A caller with no push run at all says how much its callee popped in a
 different way (consulted for any call whose extrapop the equations leave free,
 ahead of both readings above). GCC and Clang on i386 Windows

@@ -32,6 +32,16 @@
 ; pops holds a register's entry value, and passes the stack pointer right
 ; after xlen returns to xfill.
 ;
+; Three more shapes push arguments for an undeclared x.dll __stdcall import
+; right after a declared one, and read the stack after it:
+;   frame_local (0x401110)  `mov [esp],0x44` writes a local at the stack
+;                           pointer GetModuleFileNameA left, then pushes
+;                           xspawn's three arguments below it;
+;   keep_edx (0x401140)     __fastcall: EDX, kept in EDI across
+;                           GetModuleFileNameA, is xsettime's second argument;
+;   join_push (0x401170)    xformat's third argument is GetLastError's result
+;                           on one path and EDX on the other.
+;
 ; Build: nasm -f bin -I . -o declaredpop_pe_i386.exe declaredpop_pe_i386.asm
 
 %define IMAGE_DLL 0
@@ -135,7 +145,75 @@ entry:
     mov ecx, dllname
     push sym
     call clear_len
+    call frame_local
+    mov ecx, dllname
+    mov edx, sym
+    push 0
+    call keep_edx
+    mov edx, -1
+    push 0
+    call join_push
     ret
+
+    align 16, db 0xcc
+frame_local:
+    sub esp, 0x50
+    push 0x40
+    lea eax, [esp+0x14]
+    push eax
+    push 0
+    call [__imp_GetModuleFileNameA]
+    lea eax, [esp+0x10]
+    mov dword [esp], 0x44
+    push eax
+    push 2
+    push 1
+    call [__imp_xspawn]
+    mov eax, [esp]
+    add esp, 0x50
+    ret
+
+    align 16, db 0xcc
+keep_edx:
+    push esi
+    push edi
+    mov edi, edx
+    push 0x40
+    push ecx
+    push 0
+    call [__imp_GetModuleFileNameA]
+    mov esi, eax
+    push dword [esp+0xc]
+    push 0
+    push edi
+    push esi
+    call [__imp_xsettime]
+    mov eax, [esp+0xc]
+    pop edi
+    pop esi
+    ret 4
+
+    align 16, db 0xcc
+join_push:
+    push esi
+    xor esi, esi
+    push esi
+    push 0x10
+    push esi
+    cmp edx, -1
+    jne .other
+    call [__imp_GetLastError]
+    push eax
+    jmp .call
+.other:
+    push edx
+.call:
+    push esi
+    push 0x1000
+    call [__imp_xformat]
+    mov eax, [esp+8]
+    pop esi
+    ret 4
 
 section .rdata
     align 4, db 0
@@ -148,6 +226,7 @@ import_dir_end:
 iat:
 iat_k32:
 __imp_GetModuleFileNameA: dd RVA(hn_getmodulefilenamea)
+__imp_GetLastError: dd RVA(hn_getlasterror)
     dd 0
 iat_ole:
 __imp_VariantClear: dd RVA(hn_variantclear)
@@ -156,11 +235,14 @@ iat_x:
 __imp_OpenFile: dd RVA(hn_openfile)
 __imp_xlen: dd RVA(hn_xlen)
 __imp_xfill: dd RVA(hn_xfill)
+__imp_xspawn: dd RVA(hn_xspawn)
+__imp_xsettime: dd RVA(hn_xsettime)
+__imp_xformat: dd RVA(hn_xformat)
     dd 0
 iat_end:
-ilt_k32: dd RVA(hn_getmodulefilenamea), 0
+ilt_k32: dd RVA(hn_getmodulefilenamea), RVA(hn_getlasterror), 0
 ilt_ole: dd RVA(hn_variantclear), 0
-ilt_x: dd RVA(hn_openfile), RVA(hn_xlen), RVA(hn_xfill), 0
+ilt_x: dd RVA(hn_openfile), RVA(hn_xlen), RVA(hn_xfill), RVA(hn_xspawn), RVA(hn_xsettime), RVA(hn_xformat), 0
 hn_getmodulefilenamea: dw 0
     db 'GetModuleFileNameA', 0
     align 2, db 0
@@ -175,6 +257,18 @@ hn_xlen: dw 0
     align 2, db 0
 hn_xfill: dw 0
     db 'xfill', 0
+    align 2, db 0
+hn_getlasterror: dw 0
+    db 'GetLastError', 0
+    align 2, db 0
+hn_xspawn: dw 0
+    db 'xspawn', 0
+    align 2, db 0
+hn_xsettime: dw 0
+    db 'xsettime', 0
+    align 2, db 0
+hn_xformat: dw 0
+    db 'xformat', 0
     align 2, db 0
 dll_k32: db 'kernel32.dll', 0
 dll_ole: db 'oleaut32.dll', 0

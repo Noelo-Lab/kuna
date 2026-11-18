@@ -161,11 +161,19 @@ fn push_run(
     let mut bytes: int4 = 0;
     let mut off = delta + step;
     let mut crossed: Option<OpId> = None;
+    let mut joins = 0;
     while bytes < MAX_ARG_BYTES {
         let slot = if off == 0 { Some(base) } else { child_at(data, spacebase, base, off) };
         if let Some(v) = slot {
             let before = crossed.is_none_or(|at| pushed_before(data, v, at));
-            if before && is_argument_push(data, v) {
+            let after_stated = crossed.is_none() && stated_result(data, base);
+            if after_stated && off == 0 && bytes > 0 && written_before_pushes(data, spacebase, base, step) {
+                return Some(Run { bytes, at_save: true, folded });
+            }
+            let pushed = is_argument_push(data, v)
+                || (after_stated && stores_volatile_entry(data, v))
+                || (off == 0 && joined_push(data, spacebase, v));
+            if before && pushed {
                 bytes += step;
                 off += step;
                 continue;
@@ -176,6 +184,12 @@ fn push_run(
         }
         if crossed.is_some() {
             break;
+        }
+        if let Some((root, r)) = join_root(data, spacebase, base).filter(|_| joins < MAX_JOINS) {
+            joins += 1;
+            base = root;
+            off += r;
+            continue;
         }
         match cross(data, spacebase, base, off, settled) {
             Some((b, o, at)) => {
@@ -190,11 +204,23 @@ fn push_run(
 }
 
 /// Whether `call_sp`, read back through constant adjustments and through the
-/// stated pop of at least one earlier call ([`exact_pop`]), lands on an earlier
+/// stated pop of at least one earlier call ([`resolve`]), lands on an earlier
 /// reference at offset 0: the run exactly undoes a cleanup in front of it, as
 /// a folded run with no call in between does.
 fn folds_past_stated_pops(data: &Funcdata, spacebase: &Address, call_sp: VarnodeId) -> bool {
-    let (mut v, mut total, mut past_call) = (call_sp, 0, false);
+    let (root, total, past) = resolve(data, spacebase, call_sp, MAX_JOINS);
+    past && total == 0 && decompose(data, spacebase, root).is_none()
+}
+
+/// Most joins a reading of the stack pointer looks through.
+const MAX_JOINS: u32 = 2;
+
+/// `v` read back through constant adjustments, the stated pops of calls
+/// ([`exact_pop`]) and joins whose inputs all read back to one place: that
+/// place, the offset from it, and whether a stated pop was read through. Before
+/// the solve, the `INT_ADD` form of a stated pop let the simplifier fold these.
+fn resolve(data: &Funcdata, spacebase: &Address, v: VarnodeId, joins: u32) -> (VarnodeId, int4, bool) {
+    let (mut v, mut total, mut past) = (v, 0, false);
     for _ in 0..2 * MAX_EXACT_CALLS {
         if let Some((b, c)) = decompose(data, spacebase, v) {
             total += c;
@@ -202,15 +228,91 @@ fn folds_past_stated_pops(data: &Funcdata, spacebase: &Address, call_sp: Varnode
             continue;
         }
         let Some(o) = data.vbank().get(v).and_then(|x| x.get_def()).and_then(|d| data.obank().get(d)) else { break };
-        let Some(input) = o.get_in(0).filter(|&i| o.code() == OpCode::CPUI_INDIRECT && at_address(data, Some(i), spacebase)) else {
-            break;
+        let step = match o.code() {
+            OpCode::CPUI_INDIRECT => {
+                o.get_in(0).filter(|&i| at_address(data, Some(i), spacebase)).zip(exact_pop(data, o.get_in(1)))
+            }
+            OpCode::CPUI_MULTIEQUAL if joins > 0 && o.num_input() <= 8 => {
+                let read: Option<Vec<_>> =
+                    (0..o.num_input()).map(|j| o.get_in(j).map(|i| resolve(data, spacebase, i, joins - 1))).collect();
+                read.and_then(|read| {
+                    let (r, c, _) = *read.first()?;
+                    (read.iter().all(|&(r2, c2, _)| (r2, c2) == (r, c)) && read.iter().any(|&(_, _, p)| p))
+                        .then_some((r, c))
+                })
+            }
+            _ => None,
         };
-        let Some(pop) = exact_pop(data, o.get_in(1)) else { break };
-        total += pop;
-        past_call = true;
-        v = input;
+        let Some((next, c)) = step else { break };
+        total += c;
+        past = true;
+        v = next;
     }
-    past_call && total == 0 && decompose(data, spacebase, v).is_none()
+    (v, total, past)
+}
+
+/// The place a join of stack pointers reads back to, when its inputs agree
+/// once read through a stated pop ([`resolve`]).
+fn join_root(data: &Funcdata, spacebase: &Address, base: VarnodeId) -> Option<(VarnodeId, int4)> {
+    let def = data.vbank().get(base)?.get_def()?;
+    if data.obank().get(def)?.code() != OpCode::CPUI_MULTIEQUAL {
+        return None;
+    }
+    let (root, off, past) = resolve(data, spacebase, base, MAX_JOINS);
+    (past && root != base).then_some((root, off))
+}
+
+/// Is the join `v` of push slots that [`join_root`] reads back a push: each
+/// input stored, at least one an argument push?
+fn joined_push(data: &Funcdata, spacebase: &Address, v: VarnodeId) -> bool {
+    let Some(o) = data.vbank().get(v).and_then(|x| x.get_def()).and_then(|d| data.obank().get(d)) else { return false };
+    let ins: Vec<_> = (0..o.num_input()).filter_map(|j| o.get_in(j)).collect();
+    join_root(data, spacebase, v).is_some()
+        && ins.iter().all(|&i| is_stored(data, i))
+        && ins.iter().any(|&i| is_argument_push(data, i))
+}
+
+/// Is `sp` the stack pointer a call with a stated pop left?
+fn stated_result(data: &Funcdata, sp: VarnodeId) -> bool {
+    data.vbank().get(sp).and_then(|x| x.get_def()).and_then(|d| data.obank().get(d)).is_some_and(|o| {
+        o.code() == OpCode::CPUI_INDIRECT && exact_pop(data, o.get_in(1)).is_some()
+    })
+}
+
+/// Is the entry value of a register the calling convention lets a call
+/// destroy stored through `slot`? After a call that value is no save and no
+/// `push ecx` reservation: the caller kept it across the call to pass it.
+fn stores_volatile_entry(data: &Funcdata, slot: VarnodeId) -> bool {
+    let proto = data.get_func_proto();
+    proto.has_model()
+        && data.vbank().get(slot).is_some_and(|x| {
+            x.descend_iter().any(|op| {
+                data.obank().get(op).is_some_and(|o| {
+                    o.code() == OpCode::CPUI_STORE
+                        && o.get_in(1) == Some(slot)
+                        && o.get_in(2).and_then(|i| data.vbank().get(i)).is_some_and(|i| {
+                            i.is_input()
+                                && i.get_space().get_type() == kuna_base::space::spacetype::IPTR_PROCESSOR
+                                && proto.has_effect(i.get_addr(), i.get_size()) == crate::fspec::effect_type::KILLEDBYCALL
+                        })
+                })
+            })
+        })
+}
+
+/// Is the stack pointer `base` a call left written through before the stack
+/// pointer goes below it? That slot is the caller's own frame (a `mov [esp],x`
+/// local), not the top of the pushes that follow.
+fn written_before_pushes(data: &Funcdata, spacebase: &Address, base: VarnodeId, step: int4) -> bool {
+    let Some(at) = child_at(data, spacebase, base, -step).and_then(|b| data.vbank().get(b)?.get_def()) else {
+        return false;
+    };
+    let stores: Vec<OpId> = data.vbank().get(base).map_or_else(Vec::new, |v| {
+        v.descend_iter()
+            .filter(|&op| data.obank().get(op).is_some_and(|o| o.code() == OpCode::CPUI_STORE && o.get_in(1) == Some(base)))
+            .collect()
+    });
+    !stores.is_empty() && stores.iter().all(|&op| precedes(data, op, at))
 }
 
 /// Re-express the slot `base + off` in the frame of the earlier call whose
@@ -241,24 +343,24 @@ fn cross(
     })
 }
 
-/// Is some STORE through `slot` ahead of `at` on every path to it: earlier in
-/// the same block, or in a block that dominates `at`'s?
+/// Is some STORE through `slot` ahead of `at` on every path to it?
 fn pushed_before(data: &Funcdata, slot: VarnodeId, at: OpId) -> bool {
-    let Some(ref_op) = data.obank().get(at) else { return false };
-    let Some(ref_block) = ref_op.get_parent() else { return false };
-    let ref_order = ref_op.get_seq_num().get_order();
     let Some(v) = data.vbank().get(slot) else { return false };
     v.descend_iter().any(|op| {
-        let Some(o) = data.obank().get(op) else { return false };
-        if o.code() != OpCode::CPUI_STORE || o.get_in(1) != Some(slot) {
-            return false;
-        }
-        match o.get_parent() {
-            Some(b) if b == ref_block => o.get_seq_num().get_order() < ref_order,
-            Some(b) => data.bblocks_ref().dominates(b, Some(ref_block)),
-            None => false,
-        }
+        data.obank().get(op).is_some_and(|o| o.code() == OpCode::CPUI_STORE && o.get_in(1) == Some(slot))
+            && precedes(data, op, at)
     })
+}
+
+/// Does `op` run ahead of `at` on every path to it: earlier in the same block,
+/// or in a block that dominates `at`'s?
+fn precedes(data: &Funcdata, op: OpId, at: OpId) -> bool {
+    let (Some(o), Some(r)) = (data.obank().get(op), data.obank().get(at)) else { return false };
+    match (o.get_parent(), r.get_parent()) {
+        (Some(b), Some(rb)) if b == rb => o.get_seq_num().get_order() < r.get_seq_num().get_order(),
+        (Some(b), Some(rb)) => data.bblocks_ref().dominates(b, Some(rb)),
+        _ => false,
+    }
 }
 
 /// Does the caller's own stack activity continue from the call's result: a
