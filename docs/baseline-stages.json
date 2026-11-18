@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4423,
-    4423
+    4433,
+    4433
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2117,6 +2117,16 @@
     "data:SETLOCALE RETTYPE #1: NULL locale arg is typed char *",
     "data:SETLOCALE RETTYPE #2: no untyped indirect call",
     "data:SETLOCALE RETTYPE #3: call is the named setlocale",
+    "data:SHAREDPUSH #10: the guard check is never handed the argument",
+    "data:SHAREDPUSH #1: malloc keeps its push",
+    "data:SHAREDPUSH #2: the wrapper on the other arm takes it too",
+    "data:SHAREDPUSH #3: free keeps the pushed result",
+    "data:SHAREDPUSH #4: the free wrapper takes it too",
+    "data:SHAREDPUSH #5: toupper takes i in the loop",
+    "data:SHAREDPUSH #6: tolower through the register takes i too",
+    "data:SHAREDPUSH #7: malloc keeps its push where the arms rejoin",
+    "data:SHAREDPUSH #8: the call after the rejoin gains nothing",
+    "data:SHAREDPUSH #9: free keeps its argument beside the guarded call",
     "data:SHORT ASCII STRING #1: off, the four bytes remain a raw data word",
     "data:SHORT ASCII STRING #2: default, the four-byte literal is one string copy",
     "data:SHORT ASCII STRING #3: both passes preserve the surrounding string transform",
