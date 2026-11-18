@@ -41,7 +41,7 @@ use crate::exprent::Exprent;
 use crate::function_exprent::{FunctionExprent, FunctionType};
 use crate::if_statement::IfStatement;
 use crate::invocation_exprent::InvocationType;
-use crate::kt_metadata::KotlinMetadataAnnotation;
+use crate::p6_variables::kuna_source_locals;
 use crate::kuna_options::{self, JAVAC_LAYOUT};
 use crate::rt::BitSet;
 use crate::sequence_statement::SequenceStatement;
@@ -95,12 +95,10 @@ impl Drop for MethodScope {
 }
 
 /// Makes `mt` of `cl` the method [`active`] answers for until the scope
-/// drops; none when kotlinc compiled `cl` (it carries `kotlin.Metadata`),
+/// drops; none when kotlinc compiled `cl` (`kuna_source_locals::kotlinc_class`),
 /// since javac's layout is what the decisions read.
 pub fn enter(mt: StructMethod, cl: StructClass) -> MethodScope {
-    let method = KotlinMetadataAnnotation::find(cl)
-        .is_none()
-        .then(|| Method {
+    let method = (!kuna_source_locals::kotlinc_class(cl)).then(|| Method {
             mt,
             loops_built: false,
             code: None,

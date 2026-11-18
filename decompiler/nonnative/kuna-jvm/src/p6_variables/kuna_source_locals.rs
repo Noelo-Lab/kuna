@@ -24,6 +24,7 @@ use crate::method_descriptor::MethodDescriptor;
 use crate::p6_variables::{kuna_fix_var_merge_declared_type, kuna_source_scopes};
 use crate::rt::{JHashSet, JList};
 use crate::statement::{Statement, StatementType};
+use crate::struct_class::StructClass;
 use crate::struct_general_attribute::StructGeneralAttribute;
 use crate::var_exprent::VarExprent;
 use crate::var_processor::VarProcessor;
@@ -195,15 +196,19 @@ pub fn order_declarations(root: Statement, varproc: VarProcessor) {
     }
 }
 
-/// Whether the class being decompiled comes from kotlinc: it carries
-/// `kotlin.Metadata` or names a `.kt` source file.
+/// Whether the class being decompiled comes from kotlinc (see [`kotlinc_class`]).
 pub(crate) fn compiled_by_kotlinc() -> bool {
-    DecompilerContext::get_current_class().is_some_and(|cl| {
-        KotlinMetadataAnnotation::find(cl).is_some()
-            || cl
-                .get_attribute(StructGeneralAttribute::ATTRIBUTE_SOURCE_FILE)
-                .is_some_and(|a| a.get_source_file(cl.get_pool()).ends_with(".kt"))
-    })
+    DecompilerContext::get_current_class().is_some_and(kotlinc_class)
+}
+
+/// Whether kotlinc compiled `cl`: it carries `kotlin.Metadata` or names a
+/// `.kt` source file (kotlinc's `$WhenMappings` and similar classes carry no
+/// metadata). The form options that read javac's code shapes skip such a class.
+pub(crate) fn kotlinc_class(cl: StructClass) -> bool {
+    KotlinMetadataAnnotation::find(cl).is_some()
+        || cl
+            .get_attribute(StructGeneralAttribute::ATTRIBUTE_SOURCE_FILE)
+            .is_some_and(|a| a.get_source_file(cl.get_pool()).ends_with(".kt"))
 }
 
 fn gather(stat: Statement, current: &mut Vec<Declaration>, gathered: &mut Gathered) {

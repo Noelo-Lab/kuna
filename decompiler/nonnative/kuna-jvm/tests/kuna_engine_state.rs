@@ -1,7 +1,8 @@
 //! Engine state that must not leak between methods, classes, threads or
 //! batches: what `catch (RuntimeException)` catches, the thread-local marks of
 //! two fixes, the counter the `class$` patterns draw from, and the members a
-//! class's writing marks.
+//! class's writing marks; and the one test of a kotlinc class that the
+//! options reading javac's code shapes share.
 
 use std::path::Path;
 use std::rc::Rc;
@@ -134,4 +135,31 @@ fn a_batch_leaves_no_marks_for_the_next_one() {
         })
         .collect();
     assert_eq!(driven, single);
+}
+
+/// `KtSource.java` compiled by javac 17, and the same class naming a `.kt`
+/// source file with no `kotlin.Metadata`, which every option that reads
+/// javac's code shapes takes for kotlinc's (`jvm_javac_layout` keeps
+/// Vineflower's `return c ? 1 : 2` there).
+#[test]
+fn a_class_named_after_a_kotlin_source_keeps_vineflower_layout() {
+    let data = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/kotlinc_source/KtSource.class");
+    let javac = std::fs::read(&data).unwrap();
+    let name = |s: &str| {
+        let mut entry = vec![1u8];
+        entry.extend((s.len() as u16).to_be_bytes());
+        entry.extend(s.as_bytes());
+        entry
+    };
+    let (from, to) = (name("KtSource.java"), name("KtSource.kt"));
+    let at = javac.windows(from.len()).position(|w| w == from.as_slice()).unwrap();
+    let kotlinc = [&javac[..at], to.as_slice(), &javac[at + from.len()..]].concat();
+    let text = |bytes: &[u8], dir: &str| {
+        let dir = scratch(dir);
+        std::fs::write(dir.join("KtSource.class"), bytes).unwrap();
+        let input = kuna_input::load(&dir.join("KtSource.class"), &LoadOptions::default()).unwrap();
+        decompile(&input, &options(&[])).remove(0).content
+    };
+    assert!(!text(&javac, "kotlinc-source-java").contains("return var0 ? 1 : 2;"));
+    assert!(text(&kotlinc, "kotlinc-source-kt").contains("return var0 ? 1 : 2;"));
 }

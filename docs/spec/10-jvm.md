@@ -565,7 +565,10 @@ the removal of an `else` after a branch that always returns or throws
 
 **javac's block layout (kuna).** With `jvm_javac_layout` (on by default, off under
 `jvm_vineflower_compat`), the `if` and exit structuring of a method javac compiled (its
-class carries no `kotlin.Metadata`) follows the order javac laid its blocks out in. javac
+class carries no `kotlin.Metadata` and names no `.kt` source file, the one test of
+`decompiler/nonnative/kuna-jvm/src/p6_variables/kuna_source_locals.rs (kotlinc_class)` that the
+options reading javac's code shapes and the fix `switch_case_order` share) follows the order javac
+laid its blocks out in. javac
 emits an `if`'s then-branch right after the condition's last jump and the else-branch, or
 the code after the `if`, at the jump's target; a `return` or `throw` the source has is an
 instruction at its place, a `continue` or `break` a `goto` right after the condition, and a
@@ -3854,9 +3857,10 @@ a class written as Java, an instance field or array element target is written co
 its receiver (array and index) and the read's are one value on the operand stack (the same stack
 variable, or copies of one expression, which keep its instruction offsets), with any `e`, through the
 cast to the target's own type the compound form implies (and the widening of the read, `i += aLong`);
-otherwise it stays `left = left op e`; and `left = e op left` is never written compound. Locals and
-static fields, whose bytecode is the same in both forms, keep Vineflower's choice, and so do Kotlin
-classes, as kotlinc does not `dup` a property's receiver. The same holds for an increment:
+otherwise it stays `left = left op e`; and `left = e op left` is never written compound, whatever
+the target. For `left = left op e`, locals and static fields, whose bytecode is the same in both
+forms, keep Vineflower's choice, and so does every assignment of a Kotlin class, as kotlinc does not
+`dup` a property's receiver. The same holds for an increment:
 `PPandMMHelper`, `SimplifyExprentsHelper::is_ppi_or_mmi` and `is_ipp_or_imm2` write `a.f = a.f + 1`
 (and `- 1`) as `a.f++` before `SecondaryFunctionsHelper` sees it; with the fix they leave it when
 its receiver (array and index) is loaded twice (`loads_twice`), as for `this.version = version + 1`.
@@ -4236,7 +4240,7 @@ group is ordered by the first instruction its keys jump to (the default's target
 cases come out as the source has them; the fall-through pass is unchanged. javac's synthetic
 default of an exhaustive switch (fix `switch_synthetic_default`), which it lays out before
 every case, sorts last, where Vineflower puts it. A class kotlinc compiled (it carries
-`kotlin.Metadata`) keeps Vineflower's order: kotlinc lays out the branches of a `when` over
+`kotlin.Metadata` or names a `.kt` source file) keeps Vineflower's order: kotlinc lays out the branches of a `when` over
 strings in hash-map order.
 
 **`switch_table_fillers`.** A `tableswitch` has an entry for every value between its lowest

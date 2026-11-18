@@ -18,7 +18,7 @@
 use crate::basic_block_statement::BasicBlockStatement;
 use crate::code_constants::{OPC_ACONST_NULL, OPC_ATHROW, OPC_DUP, OPC_INVOKESPECIAL, OPC_NEW};
 use crate::decompiler_context::DecompilerContext;
-use crate::kt_metadata::KotlinMetadataAnnotation;
+use crate::p6_variables::kuna_source_locals;
 use crate::statement::Statement;
 
 /// The position each successor of the switch head `first` sorts at, by the
@@ -28,7 +28,7 @@ use crate::statement::Statement;
 /// account for `succs` successors.
 pub fn positions(first: BasicBlockStatement, succs: usize, default: Statement) -> Option<Vec<i64>> {
     let cl = DecompilerContext::get_current_class()?;
-    if KotlinMetadataAnnotation::find(cl).is_some() {
+    if kuna_source_locals::kotlinc_class(cl) {
         return None;
     }
     let instr = first.get_block().get_last_instruction()?.try_as_switch()?;
