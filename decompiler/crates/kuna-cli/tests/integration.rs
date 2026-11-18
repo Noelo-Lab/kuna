@@ -833,6 +833,9 @@ mod rust_array_decay;
 #[path = "rust_array_constant.rs"]
 mod rust_array_constant;
 
+#[path = "rust_array_init.rs"]
+mod rust_array_init;
+
 #[path = "high_address_branches.rs"]
 mod high_address_branches;
 
