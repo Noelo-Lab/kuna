@@ -9413,83 +9413,67 @@ define pcodeop vgatherdpd_avx512f ;
 }
 
 # VGATHERPF0DPS/VGATHERPF0QPS/VGATHERPF0DPD/VGATHERPF0QPD 5-264 PAGE 2088 LINE 107497
-# WARNING: did not recognize qualifier /vsib for "VGATHERPF0DPS vm32z {k1}"
 define pcodeop vgatherpf0dps_avx512pf ;
-:VGATHERPF0DPS m32^XmmOpMask  is $(EVEX_NONE) & $(EVEX_L512) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & XmmOpMask; byte=0xC6; reg_opcode=1 ... & m32
+:VGATHERPF0DPS z_vm32z^ZmmOpMask  is $(EVEX_NONE) & $(EVEX_L512) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & ZmmOpMask; byte=0xC6; reg_opcode=1 ... & z_vm32z
 [ evexD8Type = 1; evexTType = 3; ] # (TupleType T1S)
 {
-	vgatherpf0dps_avx512pf( m32, XmmOpMask );
-	# TODO missing destination or side effects
+	vgatherpf0dps_avx512pf( z_vm32z, ZmmOpMask );
 }
 
 # VGATHERPF0DPS/VGATHERPF0QPS/VGATHERPF0DPD/VGATHERPF0QPD 5-264 PAGE 2088 LINE 107500
-# WARNING: did not recognize qualifier /vsib for "VGATHERPF0QPS vm64z {k1}"
 define pcodeop vgatherpf0qps_avx512pf ;
-:VGATHERPF0QPS m64^XmmOpMask  is $(EVEX_NONE) & $(EVEX_L512) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & XmmOpMask; byte=0xC7; reg_opcode=1 ... & m64
+:VGATHERPF0QPS z_vm64z^ZmmOpMask  is $(EVEX_NONE) & $(EVEX_L512) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & ZmmOpMask; byte=0xC7; reg_opcode=1 ... & z_vm64z
 [ evexD8Type = 1; evexTType = 3; ] # (TupleType T1S)
 {
-	vgatherpf0qps_avx512pf( m64, XmmOpMask );
-	# TODO missing destination or side effects
+	vgatherpf0qps_avx512pf( z_vm64z, ZmmOpMask );
 }
 
 # VGATHERPF0DPS/VGATHERPF0QPS/VGATHERPF0DPD/VGATHERPF0QPD 5-264 PAGE 2088 LINE 107503
-# WARNING: did not recognize qualifier /vsib for "VGATHERPF0DPD vm32y {k1}"
 define pcodeop vgatherpf0dpd_avx512pf ;
-:VGATHERPF0DPD m32^XmmOpMask  is $(EVEX_NONE) & $(EVEX_L512) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & XmmOpMask; byte=0xC6; reg_opcode=1 ... & m32
+:VGATHERPF0DPD y_vm32y^YmmOpMask  is $(EVEX_NONE) & $(EVEX_L512) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & YmmOpMask; byte=0xC6; reg_opcode=1 ... & y_vm32y
 [ evexD8Type = 1; evexTType = 3; ] # (TupleType T1S)
 {
-	vgatherpf0dpd_avx512pf( m32, XmmOpMask );
-	# TODO missing destination or side effects
+	vgatherpf0dpd_avx512pf( y_vm32y, YmmOpMask );
 }
 
 # VGATHERPF0DPS/VGATHERPF0QPS/VGATHERPF0DPD/VGATHERPF0QPD 5-264 PAGE 2088 LINE 107506
-# WARNING: did not recognize qualifier /vsib for "VGATHERPF0QPD vm64z {k1}"
 define pcodeop vgatherpf0qpd_avx512pf ;
-:VGATHERPF0QPD m64^XmmOpMask  is $(EVEX_NONE) & $(EVEX_L512) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & XmmOpMask; byte=0xC7; reg_opcode=1 ... & m64
+:VGATHERPF0QPD z_vm64z^ZmmOpMask  is $(EVEX_NONE) & $(EVEX_L512) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & ZmmOpMask; byte=0xC7; reg_opcode=1 ... & z_vm64z
 [ evexD8Type = 1; evexTType = 3; ] # (TupleType T1S)
 {
-	vgatherpf0qpd_avx512pf( m64, XmmOpMask );
-	# TODO missing destination or side effects
+	vgatherpf0qpd_avx512pf( z_vm64z, ZmmOpMask );
 }
 
 # VGATHERPF1DPS/VGATHERPF1QPS/VGATHERPF1DPD/VGATHERPF1QPD 5-267 PAGE 2091 LINE 107620
-# WARNING: did not recognize qualifier /vsib for "VGATHERPF1DPS vm32z {k1}"
 define pcodeop vgatherpf1dps_avx512pf ;
-:VGATHERPF1DPS m32^XmmOpMask  is $(EVEX_NONE) & $(EVEX_L512) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & XmmOpMask; byte=0xC6; reg_opcode=2 ... & m32
+:VGATHERPF1DPS z_vm32z^ZmmOpMask  is $(EVEX_NONE) & $(EVEX_L512) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & ZmmOpMask; byte=0xC6; reg_opcode=2 ... & z_vm32z
 [ evexD8Type = 1; evexTType = 3; ] # (TupleType T1S)
 {
-	vgatherpf1dps_avx512pf( m32 , XmmOpMask);
-	# TODO missing destination or side effects
+	vgatherpf1dps_avx512pf( z_vm32z, ZmmOpMask );
 }
 
 # VGATHERPF1DPS/VGATHERPF1QPS/VGATHERPF1DPD/VGATHERPF1QPD 5-267 PAGE 2091 LINE 107623
-# WARNING: did not recognize qualifier /vsib for "VGATHERPF1QPS vm64z {k1}"
 define pcodeop vgatherpf1qps_avx512pf ;
-:VGATHERPF1QPS m64^XmmOpMask  is $(EVEX_NONE) & $(EVEX_L512) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & XmmOpMask; byte=0xC7; reg_opcode=2 ... & m64
+:VGATHERPF1QPS z_vm64z^ZmmOpMask  is $(EVEX_NONE) & $(EVEX_L512) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & ZmmOpMask; byte=0xC7; reg_opcode=2 ... & z_vm64z
 [ evexD8Type = 1; evexTType = 3; ] # (TupleType T1S)
 {
-	vgatherpf1qps_avx512pf( m64, XmmOpMask );
-	# TODO missing destination or side effects
+	vgatherpf1qps_avx512pf( z_vm64z, ZmmOpMask );
 }
 
 # VGATHERPF1DPS/VGATHERPF1QPS/VGATHERPF1DPD/VGATHERPF1QPD 5-267 PAGE 2091 LINE 107626
-# WARNING: did not recognize qualifier /vsib for "VGATHERPF1DPD vm32y {k1}"
 define pcodeop vgatherpf1dpd_avx512pf ;
-:VGATHERPF1DPD m32^XmmOpMask  is $(EVEX_NONE) & $(EVEX_L512) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & XmmOpMask; byte=0xC6; reg_opcode=2 ... & m32
+:VGATHERPF1DPD y_vm32y^YmmOpMask  is $(EVEX_NONE) & $(EVEX_L512) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & YmmOpMask; byte=0xC6; reg_opcode=2 ... & y_vm32y
 [ evexD8Type = 1; evexTType = 3; ] # (TupleType T1S)
 {
-	vgatherpf1dpd_avx512pf( m32, XmmOpMask );
-	# TODO missing destination or side effects
+	vgatherpf1dpd_avx512pf( y_vm32y, YmmOpMask );
 }
 
 # VGATHERPF1DPS/VGATHERPF1QPS/VGATHERPF1DPD/VGATHERPF1QPD 5-267 PAGE 2091 LINE 107629
-# WARNING: did not recognize qualifier /vsib for "VGATHERPF1QPD vm64z {k1}"
 define pcodeop vgatherpf1qpd_avx512pf ;
-:VGATHERPF1QPD m64^XmmOpMask  is $(EVEX_NONE) & $(EVEX_L512) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & XmmOpMask; byte=0xC7; reg_opcode=2 ... & m64
+:VGATHERPF1QPD z_vm64z^ZmmOpMask  is $(EVEX_NONE) & $(EVEX_L512) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & ZmmOpMask; byte=0xC7; reg_opcode=2 ... & z_vm64z
 [ evexD8Type = 1; evexTType = 3; ] # (TupleType T1S)
 {
-	vgatherpf1qpd_avx512pf( m64, XmmOpMask );
-	# TODO missing destination or side effects
+	vgatherpf1qpd_avx512pf( z_vm64z, ZmmOpMask );
 }
 
 # VGATHERQPS/VGATHERQPD 5-270 PAGE 2094 LINE 107742

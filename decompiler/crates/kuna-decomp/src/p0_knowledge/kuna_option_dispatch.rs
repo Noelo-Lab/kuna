@@ -42,7 +42,11 @@ kuna_options! { self, p1;
         self.present_lessequal = form.present_lessequal();
         Ok(msg)
     },
-    "armconstshift" => on_off!(arm_constant_shift, "ARM constant-shift C11 conversion"),
+    "armconstshift" => {
+        let (mode, msg) = crate::p9_emit::kuna_armconstantshift::OptionArmConstShift.apply(p1)?;
+        self.arm_constant_shift = mode;
+        Ok(msg)
+    },
     "rustarrayzero" => on_off!(rust_array_zero, "Rust byte-array zero values"),
     "arraynotation" => {
         let (val, msg) = crate::kuna_arraynotation::OptionArrayNotation.apply(p1)?;
@@ -94,6 +98,7 @@ kuna_options! { self, p1;
         self.return_single = form.return_single();
         Ok(msg)
     },
+    "returnbranch" => on_off!(return_branch, "Computed jumps through the return register"),
     "globalarrayanchor" => on_off!(global_array_anchor, "Global array anchor preservation"),
     "signedness" => {
         let (val, msg) = crate::kuna_typeround::OptionSignedness.apply(p1)?;

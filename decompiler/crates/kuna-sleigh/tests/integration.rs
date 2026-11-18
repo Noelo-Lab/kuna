@@ -86,6 +86,8 @@ mod x87_integer_rounding;
 #[path = "x86_bound.rs"]
 mod x86_bound;
 
+#[path = "x86_uintr_gatherpf.rs"]
+mod x86_uintr_gatherpf;
 #[path = "x86_vmx_status.rs"]
 mod x86_vmx_status;
 

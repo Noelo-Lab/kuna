@@ -73,6 +73,13 @@ impl ArchFlowEnv {
 }
 
 impl FlowEnvironment for ArchFlowEnv {
+    fn is_isa_mode_switch(&self, index: u64) -> bool {
+        self.arch()
+            .userops
+            .get_op(index as u32)
+            .is_some_and(|op| crate::kuna_returnbranch::names_isa_mode_switch(op.get_name()))
+    }
+
     fn mapped_flow_image(&self) -> Option<&dyn ImageBytes> {
         self.mapped_image.as_deref()
     }
@@ -143,6 +150,9 @@ impl FlowEnvironment for ArchFlowEnv {
         // makes flow follow the branch INTO the callee, so the entry set stands in.
         arch.is_lazy_entry(entry.get_offset())
             .then(|| arch.name_function(entry))
+    }
+    fn query_call_label(&self, entry: &Address) -> Option<String> {
+        self.arch().pspec_symbol_at(entry).map(str::to_string)
     }
     fn query_call_definition(&self, entry: &Address) -> Option<Address> {
         crate::p4_calls::kuna_pltlocal::definition(self.arch(), entry)
