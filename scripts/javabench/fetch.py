@@ -300,10 +300,10 @@ def class_stats(classes: dict[str, bytes]) -> dict:
     }
 
 
-def fetch_project(proj: P.Project, force: bool = False) -> Path:
+def fetch_project(proj: P.Project) -> Path:
     final = proj.dir
     lock = _load_lock(proj.name)
-    if final.exists() and (final / "meta.json").exists() and not force:
+    if final.exists() and (final / "meta.json").exists():
         meta = json.loads((final / "meta.json").read_text())
         if lock and meta.get("lock") == lock and sha256_file(final / "classes.jar") == meta.get("classes_jar_sha256"):
             log(f"{proj.name}: up to date ({final})")
@@ -350,8 +350,8 @@ def fetch_project(proj: P.Project, force: bool = False) -> Path:
     return final
 
 
-def main(names: list[str] | None, force: bool = False) -> None:
+def main(names: list[str] | None) -> None:
     P.DATASET_DIR.mkdir(parents=True, exist_ok=True)
     ensure_tools()
     for proj in P.selected(names):
-        fetch_project(proj, force=force)
+        fetch_project(proj)

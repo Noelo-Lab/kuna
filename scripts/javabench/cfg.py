@@ -64,10 +64,6 @@ class CFG:
         return cls([(bool(a), bool(b)) for a, b in d["roles"]], [tuple(e) for e in d["edges"]],
                    d["statements"], d.get("raw_nodes", 0))
 
-    @property
-    def n_blocks(self) -> int:
-        return len(self.roles)
-
     def to_networkx(self):
         import networkx as nx
 

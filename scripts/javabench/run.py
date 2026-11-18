@@ -25,7 +25,7 @@ def _apply_javac(proj: P.Project, javac_jdk: int | None) -> None:
 
 
 def run(decompiler: str, names: list[str] | None, full: bool, jobs: int, run_name: str | None,
-        kuna_bin: str | None = None, score: bool = True, skip_bytes: bool = False, timeout: int = 7200,
+        kuna_bin: str | None = None, skip_bytes: bool = False, timeout: int = 7200,
         javac_jdk: int | None = None) -> Path:
     adapter = get_adapter(decompiler, kuna_bin)
     ok, why = adapter.available()
@@ -77,14 +77,13 @@ def run(decompiler: str, names: list[str] | None, full: bool, jobs: int, run_nam
         (pdir / "run.json").write_text(json.dumps(info, indent=1) + "\n")
         meta["projects"][proj.name] = {k: v for k, v in info.items() if k != "selected"}
         (rdir / "run.json").write_text(json.dumps(meta, indent=1) + "\n")
-        if score and info["status"] == "decompiled":
+        if info["status"] == "decompiled":
             score_project(proj, pdir, adapter.failure_regex, jobs, skip_bytes=skip_bytes)
             info["status"] = "scored"
             (pdir / "run.json").write_text(json.dumps(info, indent=1) + "\n")
             meta["projects"][proj.name]["status"] = "scored"
             (rdir / "run.json").write_text(json.dumps(meta, indent=1) + "\n")
-    if score:
-        report([str(rdir)], quiet=False)
+    report([str(rdir)], quiet=False)
     return rdir
 
 

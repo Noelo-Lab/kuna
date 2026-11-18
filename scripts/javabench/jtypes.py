@@ -150,10 +150,6 @@ def descriptor_param_types(desc: str) -> list[str]:
     return _desc_list(args)
 
 
-def descriptor_return_type(desc: str) -> str:
-    return _desc_list(desc[desc.index(")") + 1 :])[0]
-
-
 def _desc_list(s: str) -> list[str]:
     out = []
     i = 0

@@ -23,7 +23,7 @@ from . import projects as P
 from .cfg import build_cfg, run_big_stack
 from .classfile import ClassFile, parse_class
 from .javasrc import index_source
-from .jtypes import descriptor_to_java, method_vars, normalize, signature_to_java
+from .jtypes import descriptor_to_java, method_vars, signature_to_java
 from .mapping import import_map, is_scored_method, map_method, map_types, method_key
 
 INDEX_VERSION = 5
@@ -201,9 +201,9 @@ def build_index(proj: P.Project, jobs: int = 16) -> dict:
     return index
 
 
-def load_index(proj: P.Project, rebuild: bool = False, jobs: int = 16) -> dict:
+def load_index(proj: P.Project, jobs: int = 16) -> dict:
     p = proj.dir / "index.json.gz"
-    if p.exists() and not rebuild:
+    if p.exists():
         with gzip.open(p, "rt") as f:
             idx = json.load(f)
         meta = json.loads((proj.dir / "meta.json").read_text())
