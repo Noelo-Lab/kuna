@@ -1,14 +1,7 @@
 //! Fix family `kt_for_loops` (Kotlin output): `for` loops written as ranges or
-//! as `while`.
-//!
-//! kuna fix `kt_for_range_counter` (`kuna_fixes`): `KDoStatement` rewrites a
-//! Java `for (V = A; L < R; V++/--)` into `for (V in A..B)` or `repeat(N)` only
-//! when the loop really counts `V` from `A` to the bound: the update and the
-//! comparison name `V` (on the side the update moves it towards the bound),
-//! the bound is a constant or a variable, the body assigns neither `V` nor
-//! the bound, and the initializer declares `V` (so nothing after the loop
-//! reads it). Vineflower takes the initializer's variable for the loop
-//! variable without checking any of this.
+//! as `while`. `is_counted_loop` is the test of `kt_for_range_counter`: the loop
+//! counts its initializer's variable to a constant or variable bound that its
+//! body does not assign.
 
 use crate::do_statement::DoStatement;
 use crate::exprent::Exprent;

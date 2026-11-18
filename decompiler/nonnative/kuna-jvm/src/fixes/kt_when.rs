@@ -1,27 +1,7 @@
-//! Fix family `kt_when` (Kotlin output): `when` labels and layout.
-//!
-//! kuna fix `kt_enum_when_mappings`: in Kotlin output, a `when` over an enum
-//! is written over the enum value with the enum constants as its branches.
-//!
-//! kotlinc compiles `when (e) { A -> .. }` to a `tableswitch` over
-//! `X$WhenMappings.$EnumSwitchMapping$N[e.ordinal()]`, a synthetic class whose
-//! static initializer stores, for each constant the `when`s of a file name,
-//! a label in a static final synthetic `int[]` (`map[A.ordinal()] = 1`); a
-//! nullable subject is tested first (`e == null ? -1 : map[..]`, label -1 for
-//! `null`). Vineflower's Java pipeline turns such switches back into
-//! `switch (e) { case A: .. }` (`SwitchHelper.simplifySwitches`), but the
-//! Kotlin plugin's pass list never calls it, so the `when` is written over
-//! the array with numeric labels. Here, after the main loop (where the Java
-//! pipeline simplifies switches), the mapping is read from the initializer's
-//! bytecode, where the order in which classes are processed does not matter:
-//! `getstatic F` or the `aload n` of a local later stored to `F` (`aload n;
-//! putstatic F`), then `getstatic E.C`, `invokevirtual E.ordinal()`, the
-//! label and `iastore`. Each label becomes its constant, `-1` of a nullable
-//! subject `null`, and the subject becomes `e`. A label in the case that
-//! holds the default (a `tableswitch` filler, or a mapped constant whose
-//! branch kotlinc left to `else`) is dropped with its edge: the value reaches
-//! the default either way. A switch with any other label not in the mapping
-//! is left as it is.
+//! Fix family `kt_when` (Kotlin output): `when` labels and layout. `resugar` is
+//! `kt_enum_when_mappings`: a `when` over a `$WhenMappings` array is written
+//! over the enum value, each label replaced by the constant the mapping class's
+//! static initializer stores it for.
 
 use crate::array_exprent::ArrayExprent;
 use crate::code_constants::{
