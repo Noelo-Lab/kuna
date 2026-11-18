@@ -1,0 +1,50 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Kuna #1627: "x86-64: SENDUIPI decodes as RDRAND; VGATHERPF0DPS reads a GPR
+    index"  https://github.com/Noelo-Lab/kuna/issues/1627
+
+    Bytes (the issue's repro, as clang assembles it):
+      f30fc7f7              senduipi %rdi            -> was RDRAND EDI
+      0f183d40000000        prefetchit0 0x40(%rip)   -> was NOP/reserved
+      62f27d49c60c88        vgatherpf0dps (%rax,%zmm1,4){%k1}
+                                                     -> index was RCX, operand a loaded dword
+      c3                    ret
+      f30f01ec f30f01ed f30f01ee f30f01ef   uiret testui clui stui
+                                            (clui/stui were RDPKRU/WRPKRU)
+      0fc7f7                rdrand %edi (control: the unprefixed form stays RDRAND)
+
+    Stage: S1 decode-table / S2 p-code lift (x86 spec-fix, no option).  The
+    UINTR group lives in uintr.sinc, PREFETCHIT0/1 in ia.sinc ahead of the
+    0F 18 NOP group, and the eight VGATHERPF constructors use the vsib
+    operand tables (vm32z/vm64z/vm32y) like VSCATTERPF already did, so the
+    user-op receives the gather address, not a dword loaded through a GPR.
+-->
+<bytechunk space="ram" offset="0x1000">
+f30fc7f70f183d4000000062f27d49c60c88c3
+f30f01ecf30f01edf30f01eef30f01ef
+0fc7f7
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="f"/>
+</binaryimage>
+<script>
+  <com>disassemble 0x1000 0x1026</com>
+  <com>parse line extern void f(unsigned long target);</com>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GH1627 #1: f3 0f c7 /6 reg-form is SENDUIPI r64" min="1" max="1">^0x0+1000: SENDUIPI +RDI</stringmatch>
+<stringmatch name="GH1627 #2: RIP-relative 0f 18 /7 is PREFETCHIT0" min="1" max="1">^0x0+1004: PREFETCHIT0 *byte ptr \[0x104b\]</stringmatch>
+<stringmatch name="GH1627 #3: VGATHERPF0DPS indexes with the ZMM register" min="1" max="1">^0x0+100b: VGATHERPF0DPS *zmmword ptr \[RAX \+ ZMM1\*0x4\]\{K1\}</stringmatch>
+<stringmatch name="GH1627 #4a: UIRET decodes" min="1" max="1">^0x0+1013: UIRET</stringmatch>
+<stringmatch name="GH1627 #4b: TESTUI decodes" min="1" max="1">^0x0+1017: TESTUI</stringmatch>
+<stringmatch name="GH1627 #4c: f3 0f 01 ee is CLUI, not RDPKRU" min="1" max="1">^0x0+101b: CLUI</stringmatch>
+<stringmatch name="GH1627 #4d: f3 0f 01 ef is STUI, not WRPKRU" min="1" max="1">^0x0+101f: STUI</stringmatch>
+<stringmatch name="GH1627 #5: unprefixed 0f c7 /6 is still RDRAND" min="1" max="1">^0x0+1023: RDRAND +EDI</stringmatch>
+<stringmatch name="GH1627 #6: no rdrand in the decompiled function" min="0" max="0">rdrand</stringmatch>
+<stringmatch name="GH1627 #7: senduipi takes the target register" min="1" max="1">senduipi\(target\);</stringmatch>
+<stringmatch name="GH1627 #8: the gather prefetch takes an address built from the ZMM index" min="1" max="1">vgatherpf0dps_avx512pf\([^;]*\* 4,</stringmatch>
+<stringmatch name="GH1627 #9: nothing is loaded for the prefetch" min="0" max="0">vgatherpf0dps_avx512pf\(\*</stringmatch>
+</decompilertest>

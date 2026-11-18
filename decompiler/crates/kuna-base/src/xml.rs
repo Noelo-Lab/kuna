@@ -2219,8 +2219,10 @@ mod tests {
         // and kuna-switchselfloop / a switch that heads its own loop keeps the loop
         // and kuna-wide-shifts / armconstshift all shifts a signed 64-bit operand unsigned
         // and kuna-ebpf-elf-map-reloc / an EM_BPF object loads and its map and subprogram relocations land in imm
+        // and kuna-riscv-zcmp / RISC-V Zcmp push/pop decode under the Zcmp language variant
+        // and gh1627-x86-senduipi-gatherpf / SENDUIPI is not RDRAND and VGATHERPF indexes with a ZMM register
         // and kuna-kernelbug / a Linux kernel __bug_table trap prints as __WARN(file,line) or BUG()
-        assert_eq!(count, 774, "corpus file count drifted");
+        assert_eq!(count, 776, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

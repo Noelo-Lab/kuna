@@ -56,6 +56,10 @@ reproduces both unmodified x86 hashes; kuna’s compiler produces the same chang
 element streams.
 The combined digests were produced with `slacomp`, which reproduces the
 pinned C++ digests for each of those changes applied alone.
+The three x86 digests were regenerated with `slacomp` again for the UINTR
+group (`uintr.sinc`), the RIP-relative `PREFETCHIT0/1` constructors and the
+VSIB-operand `VGATHERPF` constructors; `slacomp` reproduces all three
+previous digests on the previous sources.
 `x86-16.slaspec` (16-bit x86 with the real-mode code segment in the decode
 context) was added with a digest from the recorded C++ compiler, which
 `slacomp` matches. Its `ia.sinc` hook replaces three blank lines, so the
@@ -79,6 +83,11 @@ of the pointer-authentication instructions that write a general register
 now lift to. The digest was regenerated the same way: the recorded C++
 compiler reproduces the previous digest on the previous sources and
 `slacomp` matches it on the updated ones.
+
+The RISC-V entry includes the Zcmp/Zcmt constructors (`riscv.zc.sinc`), the
+`Zcmp` context bit and the `c.fsdsp` guard on it. Its digest was regenerated
+with `slacomp`, which reproduces the previous RISC-V digest on the unmodified
+sources.
 
 `xml_ops.xml` is the same pinned C++ compiler's `-y` output for
 `snips/xml_ops.slaspec`. The CLI test compares XML output byte-for-byte in both
