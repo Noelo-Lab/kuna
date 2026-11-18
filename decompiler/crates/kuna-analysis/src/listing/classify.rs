@@ -166,7 +166,7 @@ impl Classified {
 /// The absolute target VMA carried by a branch/call op's `in0`, or `None` if the
 /// `in0` is constant-space (p-code-relative, intra-instruction — gotcha 1) or
 /// absent.
-fn absolute_branch_target(op: &RawOp) -> Option<u64> {
+pub(super) fn absolute_branch_target(op: &RawOp) -> Option<u64> {
     let in0 = op.in0.as_ref()?;
     let addr = in0.get_addr();
     if addr.is_constant() {
