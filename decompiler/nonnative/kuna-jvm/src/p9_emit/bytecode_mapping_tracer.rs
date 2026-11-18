@@ -1,8 +1,6 @@
 //! Port of `org/jetbrains/java/decompiler/main/collectors/BytecodeMappingTracer.java`.
 
-use std::cell::Cell;
-
-use crate::rt::{BitSet, JHashMap, JHashSet, Shared};
+use crate::rt::{JHashMap, JHashSet, Shared};
 use crate::struct_line_number_table_attribute::StructLineNumberTableAttribute;
 use crate::{arena_identity, arena_object};
 
@@ -17,29 +15,7 @@ pub struct BytecodeMappingTracerData {
 arena_object!(pub BytecodeMappingTracer => BytecodeMappingTracerData, Class);
 arena_identity!(BytecodeMappingTracer);
 
-thread_local! {
-    static DUMMY: Cell<Option<BytecodeMappingTracer>> = const { Cell::new(None) };
-}
-
 impl BytecodeMappingTracer {
-    /// `BytecodeMappingTracer.DUMMY`: one shared sink per root class.
-    #[allow(non_snake_case)]
-    pub fn DUMMY() -> BytecodeMappingTracer {
-        DUMMY.with(|cell| match cell.get() {
-            Some(tracer) if tracer.is_live() => tracer,
-            _ => {
-                let tracer = BytecodeMappingTracer::new();
-                cell.set(Some(tracer));
-                tracer
-            }
-        })
-    }
-
-    /// The shared sink if one has been created in this run, without creating it.
-    pub(crate) fn existing_dummy() -> Option<BytecodeMappingTracer> {
-        DUMMY.with(Cell::get).filter(|tracer| tracer.is_live())
-    }
-
     /// Java: BytecodeMappingTracer()
     pub fn new() -> BytecodeMappingTracer {
         BytecodeMappingTracer::new_line(0)
@@ -55,16 +31,6 @@ impl BytecodeMappingTracer {
         })
     }
 
-    /// Java: incrementCurrentSourceLine()
-    pub fn increment_current_source_line(self) {
-        self.with_mut(|d| d.current_source_line = d.current_source_line.wrapping_add(1));
-    }
-
-    /// Java: incrementCurrentSourceLine(int)
-    pub fn increment_current_source_line_by(self, number_lines: i32) {
-        self.with_mut(|d| d.current_source_line = d.current_source_line.wrapping_add(number_lines));
-    }
-
     /// Java: addMapping(int)
     pub fn add_mapping(self, bytecode_offset: i32) {
         let (mapping, current_source_line) =
@@ -74,33 +40,8 @@ impl BytecodeMappingTracer {
             .put_if_absent(bytecode_offset, current_source_line);
     }
 
-    /// Java: addMapping(BitSet)
-    pub fn add_mapping_bitset(self, bytecode_offsets: Option<&BitSet>) {
-        if let Some(bytecode_offsets) = bytecode_offsets {
-            let mut i = bytecode_offsets.next_set_bit(0);
-            while i >= 0 {
-                self.add_mapping(i);
-                i = bytecode_offsets.next_set_bit(i as usize + 1);
-            }
-        }
-    }
-
-    pub fn add_tracer(self, tracer: Option<BytecodeMappingTracer>) {
-        if let Some(tracer) = tracer {
-            let entries = tracer.get_mapping().borrow().entry_vec();
-            let mapping = self.get_mapping();
-            for (key, value) in entries {
-                mapping.borrow_mut().put_if_absent(key, value);
-            }
-        }
-    }
-
     pub fn get_mapping(self) -> Shared<JHashMap<i32, i32>> {
         self.with(|d| d.mapping.clone())
-    }
-
-    pub fn get_current_source_line(self) -> i32 {
-        self.with(|d| d.current_source_line)
     }
 
     pub fn set_current_source_line(self, current_source_line: i32) {

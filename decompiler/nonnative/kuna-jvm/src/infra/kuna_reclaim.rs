@@ -100,8 +100,7 @@ fn cached_exprents_since(mark: u32) -> Vec<Exprent> {
 /// Decompile records, variable-definition helpers and bytecode-mapping
 /// tracers are only ever held by the pass that made them (a tracer's
 /// mapping is copied into the class's source mapper), so everything of those
-/// kinds the class allocated is garbage once it is done; only the shared
-/// `BytecodeMappingTracer::DUMMY` sink is kept.
+/// kinds the class allocated is garbage once it is done.
 #[derive(Clone, Copy)]
 pub(crate) struct ClassWindow {
     decompile_record: u32,
@@ -121,8 +120,7 @@ impl ClassWindow {
     pub(crate) fn close(self) {
         DecompileRecord::release_since(self.decompile_record, |_| false);
         VarDefinitionHelper::release_since(self.var_definition_helper, |_| false);
-        let dummy = BytecodeMappingTracer::existing_dummy().map(|t| t.index());
-        BytecodeMappingTracer::release_since(self.tracer, |i| Some(i) == dummy);
+        BytecodeMappingTracer::release_since(self.tracer, |_| false);
     }
 }
 

@@ -56,11 +56,6 @@ pub enum InputKind {
 }
 
 impl InputKind {
-    /// Whether the JVM path should handle the input (possibly with a clean error).
-    pub fn is_jvm(self) -> bool {
-        self != InputKind::Other
-    }
-
     /// Whether [`load`] can decompile it.
     pub fn is_supported(self) -> bool {
         matches!(

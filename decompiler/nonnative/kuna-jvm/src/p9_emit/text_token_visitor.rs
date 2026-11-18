@@ -3,11 +3,9 @@
 //! The abstract class is a trait: every method forwards to the `next` visitor
 //! of the chain by default, and the `*_base` methods are those default bodies,
 //! for overrides that call `super`. The class's statics live on
-//! `dyn TextTokenVisitor` (`<dyn TextTokenVisitor>::create_visitor()`). The
-//! registered factories are kept per thread rather than in the context's
-//! properties, which hold only strings in the port.
+//! `dyn TextTokenVisitor` (`<dyn TextTokenVisitor>::create_visitor()`); no
+//! plugin registers a factory, so a chain is the given factory's visitor alone.
 
-use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::field_descriptor::FieldDescriptor;
@@ -200,11 +198,6 @@ impl<F: Fn(Box<dyn TextTokenVisitor>) -> Box<dyn TextTokenVisitor>> Factory for 
     }
 }
 
-/// `Factory.andThen(after)`: `after` wraps what `first` creates.
-pub fn and_then(first: Rc<dyn Factory>, after: Rc<dyn Factory>) -> Rc<dyn Factory> {
-    Rc::new(move |next: Box<dyn TextTokenVisitor>| after.create(first.create(next)))
-}
-
 /// The visitor that ends every chain (Java's `EMPTY`).
 pub struct EmptyTextTokenVisitor;
 
@@ -214,35 +207,18 @@ impl TextTokenVisitor for EmptyTextTokenVisitor {
     }
 }
 
-thread_local! {
-    static FACTORIES: RefCell<Vec<Rc<dyn Factory>>> = const { RefCell::new(Vec::new()) };
-}
-
 impl dyn TextTokenVisitor {
     #[allow(non_snake_case)]
     pub fn EMPTY() -> Box<dyn TextTokenVisitor> {
         Box::new(EmptyTextTokenVisitor)
     }
 
-    pub fn add_visitor(factory: Rc<dyn Factory>) {
-        FACTORIES.with(|f| f.borrow_mut().push(factory));
-    }
-
-    fn chain_factories() -> Rc<dyn Factory> {
-        let factories = FACTORIES.with(|f| f.borrow().clone());
-        factories
-            .into_iter()
-            .reduce(and_then)
-            .unwrap_or_else(|| Rc::new(|v: Box<dyn TextTokenVisitor>| v))
-    }
-
     pub fn create_visitor() -> Box<dyn TextTokenVisitor> {
-        <dyn TextTokenVisitor>::chain_factories().create(<dyn TextTokenVisitor>::EMPTY())
+        <dyn TextTokenVisitor>::EMPTY()
     }
 
     /// Java: `createVisitor(Factory)`.
     pub fn create_visitor_with(factory: Rc<dyn Factory>) -> Box<dyn TextTokenVisitor> {
-        and_then(<dyn TextTokenVisitor>::chain_factories(), factory)
-            .create(<dyn TextTokenVisitor>::EMPTY())
+        factory.create(<dyn TextTokenVisitor>::EMPTY())
     }
 }

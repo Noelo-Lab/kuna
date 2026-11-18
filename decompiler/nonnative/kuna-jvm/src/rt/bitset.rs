@@ -10,12 +10,6 @@ impl BitSet {
         BitSet { words: Vec::new() }
     }
 
-    fn trim(&mut self) {
-        while self.words.last() == Some(&0) {
-            self.words.pop();
-        }
-    }
-
     pub fn get(&self, bit: usize) -> bool {
         self.words
             .get(bit / 64)
@@ -37,13 +31,6 @@ impl BitSet {
         }
     }
 
-    pub fn clear(&mut self, bit: usize) {
-        if let Some(w) = self.words.get_mut(bit / 64) {
-            *w &= !(1u64 << (bit % 64));
-            self.trim();
-        }
-    }
-
     pub fn or(&mut self, other: &BitSet) {
         if other.words.len() > self.words.len() {
             self.words.resize(other.words.len(), 0);
@@ -53,27 +40,8 @@ impl BitSet {
         }
     }
 
-    pub fn and(&mut self, other: &BitSet) {
-        self.words.truncate(other.words.len());
-        for (a, b) in self.words.iter_mut().zip(&other.words) {
-            *a &= *b;
-        }
-        self.trim();
-    }
-
-    pub fn and_not(&mut self, other: &BitSet) {
-        for (a, b) in self.words.iter_mut().zip(&other.words) {
-            *a &= !*b;
-        }
-        self.trim();
-    }
-
     pub fn intersects(&self, other: &BitSet) -> bool {
         self.words.iter().zip(&other.words).any(|(a, b)| a & b != 0)
-    }
-
-    pub fn cardinality(&self) -> usize {
-        self.words.iter().map(|w| w.count_ones() as usize).sum()
     }
 
     pub fn is_empty(&self) -> bool {

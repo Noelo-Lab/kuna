@@ -93,7 +93,7 @@ fn classify_and_sniff_files() {
     ];
     for (path, kind) in expect {
         assert_eq!(classify(path).unwrap(), kind, "{}", path.display());
-        assert_eq!(sniff(path), kind.is_jvm(), "sniff {}", path.display());
+        assert_eq!(sniff(path), kind != InputKind::Other, "sniff {}", path.display());
     }
     assert_eq!(classify(&dir).unwrap(), InputKind::Directory);
     assert!(sniff(&dir));
