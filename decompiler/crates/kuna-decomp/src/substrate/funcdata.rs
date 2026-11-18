@@ -7001,4 +7001,22 @@ mod tests {
         let third = fd.with_covermerge(|merge, _data| merge.copy_trims_len());
         assert_eq!(third, 0);
     }
+
+    /// Kuna #1674: a constant wider than 8 bytes holds zero above bit 63, so a
+    /// piece 8 or more bytes into it shadows only the constant 0.
+    #[test]
+    fn partial_copy_shadow_reads_zero_above_bit_63_of_a_wide_constant() {
+        let mut fd = build_fd();
+        let zero16 = fd.new_constant(16, 0);
+        let low16 = fd.new_constant(16, 0x1234);
+        let zero8 = fd.new_constant(8, 0);
+        let low8 = fd.new_constant(8, 0x1234);
+        let zero4 = fd.new_constant(4, 0);
+        assert!(fd.varnode_partial_copy_shadow(low8, low16, 0));
+        assert!(fd.varnode_partial_copy_shadow(zero8, zero16, 8));
+        assert!(fd.varnode_partial_copy_shadow(zero8, low16, 8));
+        assert!(fd.varnode_partial_copy_shadow(zero4, low16, 12));
+        assert!(!fd.varnode_partial_copy_shadow(low8, low16, 8));
+        assert!(!fd.varnode_partial_copy_shadow(low8, zero16, 8));
+    }
 }
