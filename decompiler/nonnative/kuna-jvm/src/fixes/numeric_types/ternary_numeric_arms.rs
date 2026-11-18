@@ -1,19 +1,6 @@
-//! kuna fix `ternary_numeric_arms` (`kuna_fixes`): a reference conditional
-//! whose arms print as numeric operands of different types keeps one arm cast
-//! to the conditional's type.
-//!
-//! In bytecode `c ? Integer.valueOf(1) : Long.valueOf(2L)` passes each boxed
-//! value through. `InvocationExprent.toJava` prints a boxing call unboxed, so
-//! `FunctionExprent.toJava` writes `c ? 1 : 2L`, and javac types that as a
-//! numeric conditional (JLS 15.25): both operands are promoted to `long`, the
-//! `Integer` becomes a `Long`, and a boxed operand is unboxed (a `null` throws).
-//! The same holds for `int` against `Integer` or `Integer` against `Long`.
-//! With the fix an arm is written `(T)arm`, `T` the conditional's reference
-//! type: the first arm when `T` is no boxed type, so it is no numeric operand;
-//! every arm not already of type `T` when `T` is a boxed type, so both arms
-//! have the same type. Either way the conditional stays a reference
-//! conditional as in the bytecode. Also the test the fix
-//! `switch_expression_poly_cast` uses for a switch expression's results.
+//! Fix `ternary_numeric_arms`: a reference conditional whose arms print as
+//! numeric operands of different types gets an arm cast to its type, so it
+//! stays a reference conditional.
 
 use crate::code_type::CodeType;
 use crate::exprent::Exprent;

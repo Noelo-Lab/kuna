@@ -24,6 +24,7 @@ pub(crate) mod stack_var_inlining;
 pub(crate) mod switches;
 pub(crate) mod twr;
 pub(crate) mod type_annotations;
+pub(crate) mod util;
 pub(crate) mod var_merge;
 
 pub(crate) mod kt_anonymous_objects;

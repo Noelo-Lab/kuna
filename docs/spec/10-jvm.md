@@ -4441,7 +4441,7 @@ freely only while every step computes in the same type, and an operand whose wid
 narrower as written: `(long) ord * (vectorByteSize * 2L)` came out `ord * this.vectorByteSize * 2L`,
 whose `ord * this.vectorByteSize` is an `int` product that overflows (Elasticsearch's
 `ES920DiskBBQVectorsWriter` and `ES940DiskBBQVectorsWriter` `readQuantizedVector`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/numeric_types/mixed_type_reassociation.rs (regroups_type)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/numeric_types/mod.rs (regroups_type)`)
 the parentheses of such an operand of `+` or `*` stay unless the left operand and the first operand
 of the regrouped group, as written (by `implicit_widening_arithmetic`'s rule), promote to the
 operator's own type: `ord * (this.vectorByteSize * 2L)`, while `x * y * z` on `long`s and
@@ -4492,7 +4492,7 @@ came out comparing the boxes (kotlin-stdlib's Java `Intrinsics.areEqual(Double, 
 bytecode replaces, and compare identities. Vineflower's conditional `c ? defaultValue : readBoolean(..)`
 unboxed by the conditional's typing; `jvm_javac_layout`'s two returns did not, so Elasticsearch's
 `ConfigurationUtils.readBooleanProperty` returned `null` where it throws. With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/numeric_types/reference_unboxing.rs (keep_under_boxing)`) the
+(`decompiler/nonnative/kuna-jvm/src/fixes/numeric_types/mod.rs (keep_under_boxing)`) the
 argument of an unwritten boxing call, and the left operand of such a comparison, is written with its
 unboxing call: `((Long)LONG.nextDown(value)).longValue()`, `first.doubleValue() == second`. Java output
 only.

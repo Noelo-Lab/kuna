@@ -51,7 +51,7 @@ use crate::fixes::constructor_calls::qualified_super_call;
 use crate::fixes::lambdas::lambda_return_type_argument;
 use crate::fixes::overloads::vararg_spread_resolution;
 use crate::fixes::overloads::unseen_class_overload;
-use crate::fixes::numeric_types::reference_unboxing;
+use crate::fixes::numeric_types;
 use crate::fixes::overloads::ambiguous_type_variable_argument;
 use crate::fixes::constructor_calls::synthetic_null_check_shape;
 use crate::text_buffer::TextBuffer;
@@ -1333,7 +1333,7 @@ impl InvocationExprent {
                 && !self.d(|d| d.boxing.force_boxing)
             {
                 if kuna_fixes::enabled(KunaFix::ReferenceUnboxing) {
-                    reference_unboxing::keep_under_boxing(
+                    numeric_types::keep_under_boxing(
                         self.get_lst_parameters().get(0),
                     );
                 }
@@ -1961,7 +1961,7 @@ impl InvocationExprent {
                     inv.force_boxing(true);
                 } else {
                     if kuna_fixes::enabled(KunaFix::ReferenceUnboxing) {
-                        reference_unboxing::keep_under_boxing(value);
+                        numeric_types::keep_under_boxing(value);
                     }
                     value.add_bytecode_offsets(inv.get_bytecode().as_ref());
                     parameters[i] = value;

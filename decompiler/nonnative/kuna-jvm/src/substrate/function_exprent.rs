@@ -22,8 +22,7 @@ use crate::pattern::Pattern;
 use crate::rt::{BitSet, JList, JavaEq, JavaHash};
 use crate::s_forms_constructor::SFormsConstructor;
 use crate::statement::Statement;
-use crate::fixes::numeric_types::mixed_type_reassociation;
-use crate::fixes::numeric_types::reference_unboxing;
+use crate::fixes::numeric_types;
 use crate::fixes::numeric_types::ternary_numeric_arms;
 use crate::text_buffer::TextBuffer;
 use crate::var_map_holder::VarMapHolder;
@@ -936,7 +935,7 @@ impl FunctionExprent {
             if matches!(func_type, FunctionType::Eq | FunctionType::Ne)
                 && kuna_fixes::enabled(KunaFix::ReferenceUnboxing)
             {
-                reference_unboxing::keep_in_comparison(left, right);
+                numeric_types::keep_in_comparison(left, right);
             }
 
             let (left_conversion, right_conversion) = self.kotlin_promotion(left, right);
@@ -1256,7 +1255,7 @@ impl FunctionExprent {
                         parentheses = !FunctionExprent::is_associative(func_type);
                         if !parentheses && kuna_fixes::enabled(KunaFix::MixedTypeReassociation) {
                             parentheses =
-                                mixed_type_reassociation::regroups_type(self, expr);
+                                numeric_types::regroups_type(self, expr);
                         }
                     }
                 }
