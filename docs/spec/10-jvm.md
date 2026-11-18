@@ -1104,7 +1104,12 @@ dropped and the next batch starts a fresh one, and a worker that unwinds outside
 catch reports the batch it held as failed, so the caller does not wait for it
 (`decompiler/nonnative/kuna-jvm/src/infra/kuna_driver.rs (InFlight)`). With renaming, the plan
 reads class files under their new names (`decompiler/nonnative/kuna-jvm/src/p0_knowledge/fernflower.rs
-(renamed_class)`), and a selection may name a root by either name. `ClassWrapper::init` pairs
+(renamed_class)`), and a selection may name a root by either name. Writing a Kotlin class marks
+members it reads again (its companion's overrides and forwarders, the `INSTANCE` and companion
+fields); a single run processes every class before writing any, so an engine kept for another batch
+takes those marks back when its batch ends (`decompiler/nonnative/kuna-jvm/src/kotlin/kt_attrs.rs
+(undo_marks)`): in compat mode `r.size` on a class whose companion overrides `size` came out
+`r.getSize()` once that class's batch had run on the same engine. `ClassWrapper::init` pairs
 the logger's `start_method` with its `end_method` also when the method throws before its body
 (a malformed descriptor), which Vineflower leaves unpaired; the CLI's stall watch reads the pairs.
 The detector exempts `getSyntheticParametersMask` reading a root class's own node except when

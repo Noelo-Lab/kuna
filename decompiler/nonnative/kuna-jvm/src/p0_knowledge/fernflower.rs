@@ -400,6 +400,7 @@ impl Fernflower {
         self.struct_context
             .save_context_selected(sink, Some(selection));
 
+        crate::kt_attrs::KtAttrs::undo_marks();
         self.end_class_scope();
         self.loaded = false;
     }

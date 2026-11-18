@@ -25,9 +25,21 @@ thread_local! {
 }
 
 /// Marks the next value `ExprProcessor.getCastedExprent` writes as returned,
-/// assigned or a field's initializer.
-pub fn mark_declared_target() {
+/// assigned or a field's initializer, until the returned guard drops (a
+/// throw before that call leaves no mark for the next cast on the thread).
+#[must_use]
+pub fn mark_declared_target() -> DeclaredTarget {
     DECLARED_TARGET.with(|c| c.set(true));
+    DeclaredTarget
+}
+
+/// Clears the mark [`mark_declared_target`] set when dropped.
+pub struct DeclaredTarget;
+
+impl Drop for DeclaredTarget {
+    fn drop(&mut self) {
+        DECLARED_TARGET.with(|c| c.set(false));
+    }
 }
 
 /// Whether the value being written was marked; clears the mark, so that the

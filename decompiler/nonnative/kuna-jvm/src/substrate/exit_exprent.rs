@@ -191,7 +191,7 @@ impl ExitExprent {
                     }
                 }
 
-                kuna_fix_disjoint_generic_cast::mark_declared_target();
+                let _declared = kuna_fix_disjoint_generic_cast::mark_declared_target();
                 ExprProcessor::get_casted_exprent_full(
                     value.expect("NullPointerException"),
                     &ret,

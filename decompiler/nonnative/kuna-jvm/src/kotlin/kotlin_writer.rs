@@ -435,8 +435,10 @@ impl KotlinWriter {
                 KEnumProcessor::clear_enum(wrapper);
             }
 
-            KotlinObjectProcessors::parse_with_companion(node);
-            KotlinObjectProcessors::mark_object_instance(wrapper);
+            KtAttrs::marking(|| {
+                KotlinObjectProcessors::parse_with_companion(node);
+                KotlinObjectProcessors::mark_object_instance(wrapper);
+            });
             if kuna_fixes::enabled(KunaFix::CapturedVarClashName) {
                 kuna_fix_captured_var_clash_name::inherit_clashing_names(wrapper);
             }
@@ -597,6 +599,7 @@ impl KotlinWriter {
     pub fn write_class(&self, node: ClassNode, buffer: &mut TextBuffer, indent: i32) {
         let _scope = kuna_fixes::enabled(KunaFix::KtReturnOutsideLambda)
             .then(kuna_fix_kt_return_outside_lambda::enter);
+        let _moved = kuna_fix_kt_static_initializer::scope();
         let span = kuna_spans::open_class(buffer, node.with(|d| d.class_struct));
         if self.write_class_body(node, buffer, indent) {
             kuna_spans::close(buffer, span);

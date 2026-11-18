@@ -24,7 +24,6 @@ use crate::var_type::VarType;
 
 thread_local! {
     static STATICS: Cell<Option<(ExitExprent, ExitExprent)>> = const { Cell::new(None) };
-    static CLASS_INITIALIZED: Cell<bool> = const { Cell::new(false) };
 }
 
 pub struct ClassReference14Processor;
@@ -42,22 +41,22 @@ impl ClassReference14Processor {
         Self::clinit().1
     }
 
-    /// Java's static initializer: it runs once, on the first `processClassReferences`,
-    /// and takes its expression ids from that class's counter. The exprents are
-    /// class-scope, so later rebuilds hand their ids back to keep the counter as Java has it.
+    /// Java's static initializer, which runs once per JVM and takes its
+    /// expression ids from the counter of the first class that processes
+    /// class references. Which class that is here would depend on what ran
+    /// on the thread before (and, in the parallel driver, on the batch), so
+    /// the ids are always handed back; the patterns' ids are never written.
+    /// The exprents are class-scope and rebuilt when released.
     fn clinit() -> (ExitExprent, ExitExprent) {
         if let Some((body, handler)) = STATICS.with(Cell::get) {
             if body.is_live() && handler.is_live() {
                 return (body, handler);
             }
         }
-        let rebuild = CLASS_INITIALIZED.with(|c| c.replace(true));
         let counter = DecompilerContext::get_counter_container();
         let next_id = counter.get_counter(CounterContainer::EXPRESSION_COUNTER);
         let statics = Self::build_statics();
-        if rebuild {
-            counter.set_counter(CounterContainer::EXPRESSION_COUNTER, next_id);
-        }
+        counter.set_counter(CounterContainer::EXPRESSION_COUNTER, next_id);
         STATICS.with(|s| s.set(Some(statics)));
         statics
     }

@@ -58,6 +58,21 @@ pub fn is_written(companion: ClassNode, outer: ClassWrapper) -> bool {
         && !outer.get_hidden_members().borrow().contains(&cl.qualified_name())
 }
 
+/// While alive, the `init` blocks moved during one class's write; dropping
+/// it forgets those its companion did not take (not written, or the write
+/// threw), so none reaches a later class of the same name on the thread.
+pub struct MovedScope(usize);
+
+pub fn scope() -> MovedScope {
+    MovedScope(MOVED.with(|m| m.borrow().len()))
+}
+
+impl Drop for MovedScope {
+    fn drop(&mut self) {
+        MOVED.with(|m| m.borrow_mut().truncate(self.0));
+    }
+}
+
 /// Keeps the `init` block `text` of an outer class for its companion `companion`.
 pub fn move_to(companion: ClassNode, text: TextBuffer) {
     let name = companion.with(|d| d.class_struct).qualified_name();
