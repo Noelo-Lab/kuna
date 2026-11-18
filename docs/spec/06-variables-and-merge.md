@@ -4006,6 +4006,25 @@ the walk continues past one call only. A push of a register's input value
 still ends the run, so a slot reserved with `push ecx` before a function's
 first call is still not counted for the call that pops it.
 
+(kuna) A call whose pop its declaration states reaches the solver as an
+INDIRECT with an exact equation rather than an `INT_ADD` (chapter
+[04](04-calls-and-prototypes.md), `kuna_declaredpop`), so the stack pointer
+after it is not yet a constant offset from the one before it when these
+guesses run. Two readings look past such a call by its pop
+(`decompiler/crates/kuna-decomp/src/p6_variables/kuna_calleepop.rs
+(exact_pop)`), as they did when the `INT_ADD` had already folded the two
+together. The caller's raise after a call continues past a later call with a
+stated pop, at the offset that pop leaves, for up to 64 such calls
+(`caller_raise`): `push a; call f; push b; call [g]; add esp,4` is a cleanup of
+f's argument even when g pops its own. And a return-address slot that, read
+back through constant adjustments and through at least one stated pop, lands on
+an earlier reference at offset 0 is folded, as above, for the deferred-cleanup
+check (`kuna_calleepopslot.rs (folds_past_stated_pops)`): `add esp,0xc; push
+esi; call [EnterCriticalSection]; push 0; push x; call [f]` is a run that
+undoes the cleanup in front of it. The walk itself still stops at the declared
+call and continues into its frame only by the settled-pop rule above, so the
+slots that call popped are not read as the next call's pushes.
+
 A caller with no push run at all says how much its callee popped in a
 different way (consulted for any call whose extrapop the equations leave free,
 ahead of both readings above). GCC and Clang on i386 Windows

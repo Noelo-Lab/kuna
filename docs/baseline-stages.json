@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4423,
-    4423
+    4429,
+    4429
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -565,6 +565,12 @@
     "data:DECLARED-CALLBACK-C #7: a returned callback has its own parameter suffix",
     "data:DECLARED-CALLBACK-C #8: callback arrays preserve parameter types",
     "data:DECLARED-CALLBACK-C #9: variadic callback fields retain ellipsis",
+    "data:DECLAREDPOP #1: the import keeps its declared arguments",
+    "data:DECLAREDPOP #2: the helper after it keeps both arguments",
+    "data:DECLAREDPOP #3: no call after the import loses its arguments",
+    "data:DECLAREDPOP #4: VariantClear keeps its argument",
+    "data:DECLAREDPOP #5: xlen keeps its argument",
+    "data:DECLAREDPOP #6: the stack pointer after xlen is where xlen popped it to",
     "data:DECLARING-DOUBLE-SCORE #1: the log result is never discarded",
     "data:DECLARING-DOUBLE-SCORE #2: the pipeline assigns the log result",
     "data:DECLARING-DOUBLE-SCORE #3: the pipeline returns both additive doubles",

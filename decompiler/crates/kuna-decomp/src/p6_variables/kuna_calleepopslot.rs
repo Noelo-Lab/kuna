@@ -56,7 +56,8 @@
 //!   only when no cleanup is deferred past the next call: MSVC cleans two
 //!   `__cdecl` calls with one `add esp,8` after the second, so a raise after
 //!   the next call that (taking that call to pop nothing) reaches above this
-//!   call's result keeps `calleepop`'s `4`.
+//!   call's result keeps `calleepop`'s `4`. A call in between whose pop is
+//!   stated is read past by that pop, as if it were not there.
 //! * **The run continues past the call right before it.** When the walk
 //!   reaches a slot that nothing pushed since that call `P` returned, and the
 //!   caller never raised the stack pointer to the slot after `P`, the slot is
@@ -80,8 +81,8 @@ use kuna_num::opcodes::OpCode;
 use crate::context::{OpId, VarnodeId};
 use crate::funcdata::Funcdata;
 use crate::p6_variables::kuna_calleepop::{
-    at_address, caller_cleans_up, caller_raise, child_at, const_signed, decompose,
-    is_argument_push, is_imported, MAX_ARG_BYTES, RETURN_ADDRESS_ONLY,
+    at_address, caller_cleans_up, caller_raise, child_at, const_signed, decompose, exact_pop,
+    is_argument_push, is_imported, MAX_ARG_BYTES, MAX_EXACT_CALLS, RETURN_ADDRESS_ONLY,
 };
 
 /// The settled pop of each earlier call, by the stack-pointer Varnode its
@@ -153,7 +154,7 @@ fn push_run(
         _ => return None,
     };
     let (mut base, delta, folded) = match decompose(data, spacebase, call_sp) {
-        Some((b, d)) => (b, d, false),
+        Some((b, d)) => (b, d, folds_past_stated_pops(data, spacebase, call_sp) && continues(data, spacebase, call_out)),
         None if continues(data, spacebase, call_out) => (call_sp, 0, true),
         None => return None,
     };
@@ -186,6 +187,30 @@ fn push_run(
         }
     }
     Some(Run { bytes, at_save: false, folded })
+}
+
+/// Whether `call_sp`, read back through constant adjustments and through the
+/// stated pop of at least one earlier call ([`exact_pop`]), lands on an earlier
+/// reference at offset 0: the run exactly undoes a cleanup in front of it, as
+/// a folded run with no call in between does.
+fn folds_past_stated_pops(data: &Funcdata, spacebase: &Address, call_sp: VarnodeId) -> bool {
+    let (mut v, mut total, mut past_call) = (call_sp, 0, false);
+    for _ in 0..2 * MAX_EXACT_CALLS {
+        if let Some((b, c)) = decompose(data, spacebase, v) {
+            total += c;
+            v = b;
+            continue;
+        }
+        let Some(o) = data.vbank().get(v).and_then(|x| x.get_def()).and_then(|d| data.obank().get(d)) else { break };
+        let Some(input) = o.get_in(0).filter(|&i| o.code() == OpCode::CPUI_INDIRECT && at_address(data, Some(i), spacebase)) else {
+            break;
+        };
+        let Some(pop) = exact_pop(data, o.get_in(1)) else { break };
+        total += pop;
+        past_call = true;
+        v = input;
+    }
+    past_call && total == 0 && decompose(data, spacebase, v).is_none()
 }
 
 /// Re-express the slot `base + off` in the frame of the earlier call whose

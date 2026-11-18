@@ -22,6 +22,7 @@ pub mod kuna_calleestackargs; // (kuna `calleeargs`) the stack-argument bytes an
 pub mod kuna_calleepurge; // (kuna) an x86-32 callee's stack purge read off its RET
 pub mod kuna_stackcookie; // (kuna) the frame cookie MSVC stores on the stack is no argument
 pub mod kuna_slotargs; // (kuna) a call through an import slot takes the declared parameters its caller's writes back
+pub mod kuna_declaredpop; // (kuna) a declared pop on a call through a pointer is the solver's equation, not an early INT_ADD
 pub mod kuna_calleeprotostack; // (kuna) a declared callee's prototype states its stack contract
 pub mod kuna_msvcbyval; // (kuna) an MSVC __cdecl import's by-value class argument sized at the call site
 pub(crate) mod kuna_calleenoreturn;
