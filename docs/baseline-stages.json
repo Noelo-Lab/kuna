@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4924,
-    4924
+    4926,
+    4926
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -4509,6 +4509,8 @@
     "data:spill and CTR effects acquire no terminal contract",
     "data:split caller stays untyped with protoorder off",
     "data:split caller takes the callee type by default",
+    "data:stack alias leaves the continuation in the caller",
+    "data:stack alias retains the callee return value",
     "data:stack bytes: no legacy seed reads",
     "data:stack bytes: scalar members absent",
     "data:stack bytes: snapshot remains independent",
