@@ -471,6 +471,10 @@ pub struct AnalysisOutput {
     /// entry, return address)`; the decompile step decodes a `void` function's
     /// callers from there.
     pub call_returns: Vec<(u64, u64)>,
+    /// (kuna `kernelbug`) A Linux kernel image's `__bug_table` entries, one per
+    /// `WARN`/`BUG` trap. Parked on the architecture for the flow
+    /// (`kuna_decomp::kuna_kernelbug`); empty on every other image.
+    pub kernel_bugs: Vec<kuna_decomp::kuna_kernelbug::KernelBugSite>,
     /// (kuna `poolextents`) The ARM32 literal pools the Listing's trusted
     /// instructions prove, as sorted, disjoint `[lo, hi)` word runs; the flow
     /// walk's `funcboundflow` bound ends a call's fall-through at one. Empty
@@ -838,6 +842,7 @@ impl AnalysisOutput {
         self.noreturn.extend(other.noreturn);
         self.no_fallthru_calls.extend(other.no_fallthru_calls);
         self.call_returns.extend(other.call_returns);
+        self.kernel_bugs.extend(other.kernel_bugs);
         self.arm_pool_extents.extend(other.arm_pool_extents);
         self.readonly.extend(other.readonly);
         self.const_ranges.extend(other.const_ranges);

@@ -5668,6 +5668,15 @@ fn commit_analysis_output(
         prog.arch_mut().kuna_call_returns = sites;
     }
 
+    // (kuna `kernelbug`) Park the `__bug_table` sites for the flow, sorted by
+    // trap address. Empty on every image without the table.
+    if !out.kernel_bugs.is_empty() {
+        let mut sites = out.kernel_bugs.clone();
+        sites.sort_by_key(|s| s.addr);
+        sites.dedup_by_key(|s| s.addr);
+        prog.arch_mut().kernel_bug_sites = sites;
+    }
+
     // (kuna `poolextents`) Park the ARM32 literal-pool extents the Listing's
     // trusted instructions prove. Empty without the Listing; `funcboundflow`
     // gates their use at flow time.
