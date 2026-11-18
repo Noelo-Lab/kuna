@@ -465,71 +465,12 @@ fn plan_machine(code: &Code, completion: i32) -> Result<Plan, Refusal> {
         }
     }
 
-    let mut seen: BTreeSet<usize> = BTreeSet::new();
-    for k in 1..code.insns.len().saturating_sub(4) {
-        if !(code.is(k, OPC_DUP)
-            && code.is_local(k + 1, OPC_ALOAD, machine.marker)
-            && code.is(k + 2, OPC_IF_ACMPNE)
-            && code.is_local(k + 3, OPC_ALOAD, machine.marker)
-            && code.is(k + 4, OPC_ARETURN))
-        {
-            continue;
-        }
-        let mut call = k - 1;
-        while call >= 2 && code.is_inline_marker(call - 1) {
-            plan.removed.extend([call - 1, call]);
-            owned.extend([call - 1, call]);
-            call -= 2;
-        }
-        let &(label, failure, after) = resumes.get(&(k + 5)).ok_or("check without resume block")?;
-        require(code.is_suspend_call(call), "suspension point is not a call")?;
-        require(seen.insert(label) && code.jump(k + 2) == after, "resume block")?;
-        let mut j = call;
-        let mut label_stored = false;
-        loop {
-            if j >= 2 && code.is_inline_marker(j - 2) {
-                plan.removed.extend([j - 2, j - 1]);
-                owned.extend([j - 2, j - 1]);
-                j -= 2;
-                continue;
-            }
-            if !(j >= 3
-                && code.is_local(j - 3, OPC_ALOAD, machine.cont)
-                && code.is(j - 1, OPC_PUTFIELD)
-                && code
-                    .member(j - 1)
-                    .is_some_and(|(owner, _, _)| owner == machine.class))
-            {
-                break;
-            }
-            let (_, field, _) = code.member(j - 1).ok_or("spill")?;
-            if field == "label" {
-                require(!label_stored && code.int_constant(j - 2) == Some(label as i32), "label store")?;
-                label_stored = true;
-            } else {
-                require(
-                    field != "result" && (code.is_load(j - 2) || code.is(j - 2, OPC_ACONST_NULL)),
-                    "spill",
-                )?;
-            }
-            plan.removed.extend([j - 3, j - 2, j - 1]);
-            owned.extend([j - 3, j - 2, j - 1]);
-            j -= 3;
-        }
-        require(label_stored, "label store")?;
+    suspension_points(code, &machine, &resumes, labels, |_| true, &mut plan, &mut owned, |j, plan, owned| {
         require(j > 0 && holds_cont(j - 1), "continuation is not the call's last argument")?;
-        require(
-            code.handlers_of(call) == code.handlers_of(failure),
-            "resumed failure has other handlers",
-        )?;
         plan.completion_loads.insert(j - 1);
         owned.insert(j - 1);
-        plan.removed.extend([k, k + 1, k + 2]);
-        owned.extend(k..k + 5);
-        plan.checks.push((k + 2, k + 3));
-        plan.joins.push((call, after));
-    }
-    require(seen.len() == labels - 1, "resume block without suspension call")?;
+        Ok(())
+    })?;
 
     for i in 0..code.insns.len() {
         if owned.contains(&i) {
@@ -586,6 +527,89 @@ fn continuation_aliases(
     }
     Ok(aliases)
 }
+
+/// Recognises the suspension points of `machine` in `code`: a suspend call
+/// whose result is returned when it is the marker, after the stores of the
+/// label and of the spilled locals (fields `spill` accepts) and the
+/// continuation argument, which `continuation` takes from the instructions
+/// before index `j`; one point per resume block of `resumes`.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn suspension_points(
+    code: &Code,
+    machine: &Machine,
+    resumes: &BTreeMap<usize, (usize, usize, usize)>,
+    labels: usize,
+    spill: impl Fn(&str) -> bool,
+    plan: &mut Plan,
+    owned: &mut BTreeSet<usize>,
+    mut continuation: impl FnMut(usize, &mut Plan, &mut BTreeSet<usize>) -> Result<(), Refusal>,
+) -> Result<(), Refusal> {
+    let mut seen: BTreeSet<usize> = BTreeSet::new();
+    for k in 1..code.insns.len().saturating_sub(4) {
+        if !(machine.marker >= 0
+            && code.is(k, OPC_DUP)
+            && code.is_local(k + 1, OPC_ALOAD, machine.marker)
+            && code.is(k + 2, OPC_IF_ACMPNE)
+            && code.is_local(k + 3, OPC_ALOAD, machine.marker)
+            && code.is(k + 4, OPC_ARETURN))
+        {
+            continue;
+        }
+        let mut call = k - 1;
+        while call >= 2 && code.is_inline_marker(call - 1) {
+            plan.removed.extend([call - 1, call]);
+            owned.extend([call - 1, call]);
+            call -= 2;
+        }
+        let &(label, failure, after) = resumes.get(&(k + 5)).ok_or("check without resume block")?;
+        require(code.is_suspend_call(call), "suspension point is not a call")?;
+        require(seen.insert(label) && code.jump(k + 2) == after, "resume block")?;
+        let mut j = call;
+        let mut label_stored = false;
+        loop {
+            if j >= 2 && code.is_inline_marker(j - 2) {
+                plan.removed.extend([j - 2, j - 1]);
+                owned.extend([j - 2, j - 1]);
+                j -= 2;
+                continue;
+            }
+            if !(j >= 3
+                && code.is_local(j - 3, OPC_ALOAD, machine.cont)
+                && code.is(j - 1, OPC_PUTFIELD)
+                && code
+                    .member(j - 1)
+                    .is_some_and(|(owner, field, _)| owner == machine.class && spill(&field)))
+            {
+                break;
+            }
+            let (_, field, _) = code.member(j - 1).ok_or("spill")?;
+            if field == "label" {
+                require(!label_stored && code.int_constant(j - 2) == Some(label as i32), "label store")?;
+                label_stored = true;
+            } else {
+                require(
+                    field != "result" && (code.is_load(j - 2) || code.is(j - 2, OPC_ACONST_NULL)),
+                    "spill",
+                )?;
+            }
+            plan.removed.extend([j - 3, j - 2, j - 1]);
+            owned.extend([j - 3, j - 2, j - 1]);
+            j -= 3;
+        }
+        require(label_stored, "label store")?;
+        continuation(j, plan, owned)?;
+        require(
+            code.handlers_of(call) == code.handlers_of(failure),
+            "resumed failure has other handlers",
+        )?;
+        plan.removed.extend([k, k + 1, k + 2]);
+        owned.extend(k..k + 5);
+        plan.checks.push((k + 2, k + 3));
+        plan.joins.push((call, after));
+    }
+    require(seen.len() == labels - 1, "resume block without suspension call")
+}
+
 
 /// The resume block at `start`: the index of its `throwOnFailure` and of
 /// the code after it, marking its instructions in `owned`.
