@@ -284,9 +284,10 @@ fn joined_parent_end(
 
 /// SPARC32 lifts a call's delay-slot store at the call's address. Recover
 /// the two-word initialization when both zero stores reach that call, it
-/// receives the first word's address, and the second is not used separately.
+/// receives the first word's address, and neither word is read directly.
 pub(super) fn coalesce_delay_slot_init(fd: &Funcdata, state: &mut MapState, space: &Rc<AddrSpace>) {
-    if space.get_addr_size() != 4
+    if fd.get_arch().array_extent < super::kuna_arrayextent::LEVEL_ON
+        || space.get_addr_size() != 4
         || !space.is_big_endian()
         || !fd.get_arch().manage().register_lookup().is_some_and(|regs| {
             regs.probe_register("o7").is_some() && regs.probe_register("i7").is_some()
@@ -351,10 +352,7 @@ pub(super) fn coalesce_delay_slot_init(fd: &Funcdata, state: &mut MapState, spac
                 })
             };
             initialized(offset, false) && initialized(tail_off, true)
-        }) || slots().any(|id| {
-            fd.vbank().get(id).unwrap().get_offset() >= tail_off
-                && super::kuna_storereach::is_read(fd, id)
-        }) {
+        }) || slots().any(|id| super::kuna_storereach::is_read(fd, id)) {
             continue;
         }
         let hints = state.hints_mut();
