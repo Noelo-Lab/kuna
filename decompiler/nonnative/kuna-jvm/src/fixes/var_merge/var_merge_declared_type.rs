@@ -1,16 +1,5 @@
-//! kuna fix `var_merge_declared_type` (`kuna_fixes`): `VarDefinitionHelper.mergeVars`
-//! merges two variables of one slot whose types are equal in its lattice, which
-//! compares erasures. Two locals the LocalVariableTable declares with one erased
-//! type and different generic types (`Box<String> box` in one `static {}` block and `Box<Integer>
-//! box` in the next, or two sibling `{ }` blocks) then become one variable
-//! declared with the first one's type, and the second one's code does not
-//! compile against it (`box.add(1)` on a `Box<String>`). Its lattice also
-//! puts `int` above `char`, `short` and `byte`: a `char c` and a later `int
-//! start` of one slot become one variable typed by the first one's entry,
-//! `char`, and the `int` store is narrowed (`c = (char)i;`, wrong for values
-//! past 65535; Kotlin `start = i.toChar()`). With the fix a merge of two
-//! variables the LocalVariableTable declares with different types (erased or
-//! generic) is refused: they are two variables, as in the source.
+//! Fix `var_merge_declared_type`: `mergeVars` refuses to merge two variables
+//! the LocalVariableTable declares with different (erased or generic) types.
 
 use crate::exprent::Exprent;
 use crate::statement::Statement;
