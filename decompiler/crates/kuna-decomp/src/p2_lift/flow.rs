@@ -795,6 +795,7 @@ pub struct FlowInfo<'a, E: FlowEnvironment> {
     /// Exact instruction addresses where a `BRANCH` override applied during
     /// this flow follow.
     applied_branch_overrides: std::collections::BTreeSet<Address>,
+    lr_branches: Option<&'a crate::kuna_ppc32lrflow::BranchPlans>,
     /// Boolean options for flow following (C++ `flags`).
     flags: uint4,
     /// Number of discovered call sites (C++ `qlst.size()`).
@@ -905,6 +906,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             flowoverride_present,
             loader_transfers_present,
             applied_branch_overrides: std::collections::BTreeSet::new(),
+            lr_branches: None,
             flags: 0,
             qlst_count: 0,
             inline_head: None,
@@ -948,6 +950,10 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
     pub fn set_range(&mut self, b: Address, e: Address) {
         self.baddr = b;
         self.eaddr = e;
+    }
+
+    pub(crate) fn set_lr_branches(&mut self, plans: Option<&'a crate::kuna_ppc32lrflow::BranchPlans>) {
+        self.lr_branches = plans;
     }
     /// Set the maximum number of instructions (C++ `setMaximumInstructions`).
     pub fn set_maximum_instructions(&mut self, max: uint4) {
@@ -4035,8 +4041,10 @@ truncating the fall-through here"
         // `None` and rebuilt per table when `option jtsharepartial` is off.
         let mut shared_partial: Option<Funcdata> = None;
         for op in table_ops {
-            let at = self.data.obank().get(op).map_or(0, |o| o.get_addr().get_offset());
-            let _scope = crate::decompile_drive::JumpTableScope::enter(at);
+            let Some(site) = self.data.obank().get(op).map(|o| o.get_addr().clone()) else {
+                continue;
+            };
+            let _scope = crate::decompile_drive::JumpTableScope::enter(site.get_offset());
             if !for_inline && self.is_stated_tail_call(op) {
                 self.stated_tail_call(op)?;
                 continue;
@@ -4044,8 +4052,12 @@ truncating the fall-through here"
             let retried = self.data.find_jump_table_index(op).filter(|&idx| {
                 self.data.get_jump_table(idx as int4).kuna_keeps_recovered_targets()
             });
+            let plan = self.lr_branches.and_then(|plans| plans.get(&site))
+                .filter(|_| self.applied_branch_overrides.contains(&site));
             let mode = if crate::decompile_drive::deadline_passed_in("jump-table recovery") {
                 Ok(None)
+            } else if let Some(plan) = plan.filter(|plan| plan.use_proven_targets) {
+                Ok(Some(self.install_lr_table(op, site.clone(), &plan.targets)?))
             } else {
                 let mode = self.data.recover_jump_table_flow(
                     op,
@@ -4057,20 +4069,28 @@ truncating the fall-through here"
                 crate::decompile_drive::deadline_passed_in("jump-table recovery");
                 mode
             };
-            let mode = match (mode, retried) {
-                (Ok(Some(idx)), _) => Ok(Some(idx)),
-                (_, Some(idx)) => {
+            let mode = match (mode, plan, retried) {
+                (Ok(Some(idx)), _, _) => Ok(Some(idx)),
+                (_, Some(plan), _) if !crate::decompile_drive::deadline_passed_in("LR destinations") => {
+                    Ok(Some(self.install_lr_table(op, site.clone(), &plan.targets)?))
+                }
+                (_, _, Some(idx)) => {
                     self.data.get_jump_table_mut(idx as int4).mark_complete();
-                    let addr = self.data.obank().get(op).expect("dispatch op").get_addr().clone();
-                    self.data.warning("Re-entered indirect jump may have more targets", &addr);
+                    self.data.warning("Re-entered indirect jump may have more targets", &site);
                     continue;
                 }
-                (failed, None) => failed,
+                (mode, _, None) => mode,
             };
             match mode {
                 Ok(Some(jt_idx)) => {
-                    let tail = (!for_inline).then(|| self.tail_call_table_dest(op, jt_idx));
-                    if let Some(dest) = tail.flatten() {
+                    let tail = (!for_inline && plan.is_none_or(|plan| plan.allow_tail_call))
+                        .then(|| self.tail_call_table_dest(op, jt_idx));
+                    // Injection would erase this call before LR revalidation.
+                    let tail = tail.flatten().filter(|dest| {
+                        plan.is_none()
+                            || (!self.env.query_call_inline(dest) && self.env.query_call_inject_id(dest) < 0)
+                    });
+                    if let Some(dest) = tail {
                         self.data.remove_jump_table(jt_idx);
                         for idx in new_tables.iter_mut().filter(|idx| **idx > jt_idx) {
                             *idx -= 1;
@@ -4123,6 +4143,22 @@ truncating the fall-through here"
         let truncop = self.artificial_halt(&addr, 0)?;
         self.data.op_dead_insert_after(truncop, op);
         Ok(())
+    }
+
+    /// Reuse the flow follower's ordinary table edges for exact LR destinations.
+    fn install_lr_table(&mut self, op: OpId, site: Address, targets: &[Address]) -> KunaResult<usize> {
+        let idx = if let Some(idx) = self.data.link_jump_table(op) {
+            if self.data.get_jump_table(idx as int4).is_override() {
+                return Err(KunaError::lowlevel("Cannot replace an explicit jump table"));
+            }
+            idx
+        } else {
+            self.data.install_jump_table(site.clone())?
+        };
+        let table = self.data.get_jump_table_mut(idx as int4);
+        table.set_flow_addresses(targets.to_vec());
+        table.set_indirect_op_addr(op, site);
+        Ok(idx)
     }
 
     /// Convert a BRANCHIND that could not be recovered into a call or return

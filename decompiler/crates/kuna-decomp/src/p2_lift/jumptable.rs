@@ -5598,6 +5598,7 @@ pub struct JumpTable {
     /// BRANCHIND at the live SSA value reaching it, so the header renders
     /// `switch(V)`.  `None` on every naturally-recovered table.
     kuna_lowered_var: Option<(Address, int4)>,
+    flow_addresses_proven: bool,
 }
 
 impl JumpTable {
@@ -5631,6 +5632,7 @@ impl JumpTable {
             case_values: Vec::new(),
             kuna_signed_labels: false,
             kuna_lowered_var: None,
+            flow_addresses_proven: false,
         }
     }
 
@@ -5666,6 +5668,7 @@ impl JumpTable {
             case_values: Vec::new(),
             kuna_signed_labels: op2.kuna_signed_labels,
             kuna_lowered_var: op2.kuna_lowered_var.clone(),
+            flow_addresses_proven: op2.flow_addresses_proven,
         }
     }
 
@@ -6119,6 +6122,20 @@ impl JumpTable {
         &self.addresstable
     }
 
+    pub(crate) fn out_edge_for_address(&self, address: &Address) -> Option<int4> {
+        let index = self.addresstable.iter().position(|dest| dest == address)? as int4;
+        self.block2addr.iter().find(|pair| pair.address_index == index)
+            .map(|pair| pair.block_position)
+    }
+
+    /// Flow proved the complete address set. Use those addresses as case labels.
+    pub(crate) fn set_flow_addresses(&mut self, addresses: Vec<Address>) {
+        self.clear();
+        self.addresstable = addresses;
+        self.kuna_set_trivial_model();
+        self.flow_addresses_proven = true;
+    }
+
     /// Borrow the recovered load points.
     pub fn load_points(&self) -> &[LoadTable] {
         &self.loadpoints
@@ -6149,6 +6166,7 @@ impl JumpTable {
         self.case_values.clear();
         self.recover_count = 0;
         self.partial_table = false;
+        self.flow_addresses_proven = false;
         // -opaddress- -maxtablesize- -collectloads- are permanent
     }
 
@@ -6536,6 +6554,9 @@ impl JumpTable {
                 "Trying to recover jumptable labels without addresses",
             ));
         }
+        if self.flow_addresses_proven {
+            return Ok(());
+        }
         // Unless the model is an override, move model so we can create a current
         // instance.
         if self.jmodel.is_some() {
@@ -6780,7 +6801,7 @@ impl JumpTable {
     /// Check if this jump-table requires an additional recovery stage
     /// (C++ `JumpTable::checkForMultistage`, `jumptable.cc:2865`).
     pub fn check_for_multistage(&mut self, fd: &Funcdata) -> KunaResult<bool> {
-        if self.addresstable.len() != 1 {
+        if self.flow_addresses_proven || self.addresstable.len() != 1 {
             return Ok(false);
         }
         if self.partial_table {

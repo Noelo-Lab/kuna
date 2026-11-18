@@ -932,7 +932,7 @@ pub fn ppc32_pic_call_bindings(
     within_flow_budget(arch, |arch| {
         crate::kuna_armfloatreturn::park_float_library_prototypes(arch);
         let fd = arch.new_funcdata(name, entry, size)?;
-        let data = generate_flow(arch, fd)?;
+        let data = generate_flow(arch, fd, None)?;
         Ok(crate::kuna_ppc32piccalls::prove(&data, arch).into_values().collect())
     })
 }
@@ -1027,10 +1027,10 @@ fn follow_flow_on_fd(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcda
 
 #[allow(clippy::mutable_key_type)]
 fn follow_lr_flow(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcdata> {
-    use crate::p2_lift::kuna_ppc32lrflow::Classification;
+    use crate::p2_lift::kuna_ppc32lrflow::{BranchPlans, Classification};
     let comments = fd.pending_comment_count();
-    let mut data = generate_flow(arch, fd)?;
-    let mut automatic = std::collections::BTreeSet::new();
+    let mut data = generate_flow(arch, fd, None)?;
+    let mut automatic = BranchPlans::new();
     let mut work = 0usize;
     let mut rounds = 0usize;
     loop {
@@ -1041,19 +1041,29 @@ fn follow_lr_flow(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcdata>
         match crate::p2_lift::kuna_ppc32lrflow::classify(&mut data, arch, &automatic, &mut work)? {
             Classification::Changed => continue,
             Classification::Sites(sites) => {
-                if sites.is_empty() { break; }
-                for site in sites {
-                    debug_assert_eq!(data.get_override().get_flow_override(&site), crate::overrides::flow_type::NONE);
-                    automatic.insert(site.clone());
-                    data.get_override_mut().insert_flow_override(site, crate::overrides::flow_type::BRANCH);
+                if sites.is_empty() {
+                    break;
+                }
+                for (site, plan) in sites {
+                    if !automatic.contains_key(&site) {
+                        debug_assert_eq!(
+                            data.get_override().get_flow_override(&site),
+                            crate::overrides::flow_type::NONE,
+                        );
+                        data.get_override_mut().insert_flow_override(
+                            site.clone(),
+                            crate::overrides::flow_type::BRANCH,
+                        );
+                    }
+                    automatic.insert(site, plan);
                 }
                 data.clear();
                 data.truncate_pending_comments(comments);
-                data = generate_flow(arch, data)?;
+                data = generate_flow(arch, data, Some(&automatic))?;
             }
         }
     }
-    for site in automatic {
+    for site in automatic.into_keys() {
         debug_assert_eq!(data.get_override().get_flow_override(&site), crate::overrides::flow_type::BRANCH);
         data.get_override_mut().remove_flow_override(&site);
     }
@@ -1063,7 +1073,11 @@ fn follow_lr_flow(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcdata>
 /// C++ `Funcdata::followFlow` through `startProcessing`'s sorting, without
 /// publishing the flow's buffered comments.
 #[allow(clippy::mutable_key_type)]
-fn generate_flow(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcdata> {
+fn generate_flow(
+    arch: &mut Architecture,
+    fd: Funcdata,
+    lr_branches: Option<&crate::kuna_ppc32lrflow::BranchPlans>,
+) -> KunaResult<Funcdata> {
     let _load = arch.load_scope();
     crate::kuna_mipsunaligned::paint(arch);
     crate::kuna_memtag::paint(arch, fd.get_address());
@@ -1088,6 +1102,7 @@ fn generate_flow(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcdata> 
         return_discard_memo: Default::default(),
     };
     let mut flow = FlowInfo::new(fd, &env);
+    flow.set_lr_branches(lr_branches);
     if let Some((baddr, eaddr)) = range {
         flow.set_range(baddr, eaddr);
     }
