@@ -342,7 +342,7 @@ fn checked_absolute(map: &[u8], targets: &[u32], retry_bound: usize) -> String {
 fn permuted_byte_map_keeps_original_index_labels() {
     let c = checked(&[0, 3, 1, 2], &[0x102c, 0x1032, 0x1038, 0x104f], 3, true);
     assert!(
-        c.contains("switch(mode)"),
+        c.contains("switch(mode - 5)"),
         "selector is in a different domain: {c}"
     );
     assert!(
@@ -367,7 +367,7 @@ fn compressed_map_with_duplicate_default_targets_keeps_all_index_labels() {
         true,
     );
     assert!(
-        c.contains("switch(mode)"),
+        c.contains("switch(mode - 5)"),
         "selector is in a different domain: {c}"
     );
     assert!(c.contains("case 0xb:"), "lost index11/240: {c}");
@@ -390,7 +390,7 @@ fn missing_guard_recovery_retains_raw_target_labels() {
     );
     assert!(c.contains("case 0x40104f:"), "lost raw default target: {c}");
     assert!(
-        c.contains("if (4 <= mode)"),
+        c.contains("if (4 <= mode - 5)"),
         "folded an unverified range guard: {c}"
     );
     assert!(
@@ -423,7 +423,7 @@ fn constant_retry_index_survives_a_rejected_late_model() {
 #[test]
 fn repeated_table_row_does_not_label_a_map_byte() {
     let c = checked(&[4, 1, 2, 3], &[0x102c, 0x1032, 0x1038, 0x104f, 0x102c], 3, true);
-    assert_index_selector(&c);
+    assert_index_selector(&c, "switch(mode - 5)");
 }
 
 /// The same repeated row through GCC's absolute byte map and 8-byte table.
@@ -434,12 +434,27 @@ fn repeated_absolute_table_row_does_not_label_a_map_byte() {
         &[0x401022, 0x401028, 0x40102e, 0x401041, 0x401022],
         3,
     );
-    assert_index_selector(&c);
+    assert_index_selector(&c, "switch(mode)");
 }
 
-fn assert_index_selector(c: &str) {
+/// Every case of gcc's hoisted dispatch jumps back to the selector call, so
+/// the switch is the body of a loop that only its range check leaves.
+#[test]
+fn a_switch_whose_cases_all_loop_back_keeps_its_loop() {
+    let binary = common::fixture("switchtable_gcc_x86_64");
+    let mut command = kuna();
+    command
+        .args(["decompile", binary.as_ref(), "hoist_dispatch", "--sleighpath"])
+        .arg(specs());
+    let c = printed(command);
+    let lines: Vec<_> = c.lines().map(str::trim).collect();
+    let dispatch = lines.iter().position(|l| l.starts_with("switch(next_selector(")).unwrap_or_else(|| panic!("{c}"));
+    assert_eq!(lines[dispatch - 1], "while( true ) {", "the dispatch lost its loop: {c}");
+}
+
+fn assert_index_selector(c: &str, selector: &str) {
     assert!(
-        c.contains("switch(mode)"),
+        c.contains(selector),
         "selector is in a different domain: {c}"
     );
     assert!(
