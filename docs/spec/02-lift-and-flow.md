@@ -77,14 +77,16 @@ This preserves the call on paths that still prove its destination. A restart
 derives these decisions again without changing explicit caller assertions.
 Calls, further branches and other contexts that cannot be copied safely cause
 a diagnostic instead of publishing an unproved branch. Incoming-return-address
-inspection beyond transparent copies, or loss of its provenance across calls
-and untracked storage, also invalidates later computed-target proofs. This
-includes partial stores of the incoming LR, partial overwrites of a saved LR
-slot and unresolved loads that may alias it. A known store that completely
-overwrites the slot discards the old fact. An equality constraint can make an
-apparent target the caller's return address. This conservatively retains such
-returns without attempting a
-general path-constraint solver. Proof work is bounded across discovery and
+inspection, or loss of its provenance across calls and untracked storage,
+also invalidates later computed-target proofs. Computations carry dependence
+on the incoming LR to their results. A branch predicate, indirect target,
+memory address or escaping value can expose that dependence. An unused
+register result leaves the proof intact. The proof also accounts for partial
+stores of the incoming LR, partial overwrites of a saved LR slot and unresolved
+loads that may alias it. A known store that completely overwrites the slot
+discards the old fact. An equality constraint can make an apparent target the
+caller's return address. The proof conservatively retains such returns without
+solving general path constraints. Proof work is bounded across discovery and
 revalidation together; exhaustion cannot validate a temporary decision.
 Entry registers begin unproved: an input register can already contain the
 return address. A move from an input into LR alone is not evidence of a

@@ -61,6 +61,23 @@
     4e800020
   </bytechunk>
   <symbol space="ram" offset="0x1700" name="reused_lr_slot"/>
+  <bytechunk space="ram" offset="0x1800" readonly="true">
+    7d8802a6 388c0004 2c030000 41820010
+    38001828 7c0803a6 4e800020 3860005d
+    7d8803a6 4e800020 38600059 7d8803a6
+    4e800020
+  </bytechunk>
+  <symbol space="ram" offset="0x1800" name="unused_lr_arithmetic"/>
+  <bytechunk space="ram" offset="0x1900" readonly="false">
+    7d8802a6 3d606000 916c0000 60000000
+    60000000 38a01940 80c50000 38600061
+    7c065800 4c820020 7ca803a6 4e800020
+    00000000 39401960 38600000 4bffffc5
+    7c000378 38630001 7d4803a6 4e800020
+    00000000 00000000 00000000 00000000
+    38000001 44000002
+  </bytechunk>
+  <symbol space="ram" offset="0x1900" name="store_through_lr"/>
 </binaryimage>
 <script>
   <com>load addr 0x1000</com>
@@ -87,6 +104,13 @@
   <com>load addr 0x1700</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>map prototype unused_lr_arithmetic int4 unused_lr_arithmetic(int4 a0);</com>
+  <com>load addr 0x1800</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x1900</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="computed LR reaches the common epilogue" min="1" max="2">return 7;</stringmatch>
@@ -100,4 +124,6 @@
 <stringmatch name="stack alias retains the callee return value" min="1" max="2">return 0x4d;</stringmatch>
 <stringmatch name="stack alias leaves the continuation in the caller" min="0" max="0">return 0x4e;</stringmatch>
 <stringmatch name="reusing a saved LR slot preserves the later local branch" min="1" max="1">return 0x55;</stringmatch>
+<stringmatch name="unused LR arithmetic preserves the later local branch" min="1" max="1">return 0x59;</stringmatch>
+<stringmatch name="a store through LR leaves the continuation in the caller" min="0" max="0">return 0x62;</stringmatch>
 </decompilertest>

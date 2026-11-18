@@ -70,6 +70,13 @@ enum Value {
     Bits { value: u64, known: u64 },
     Stack(u32),
     ReturnAddress,
+    ReturnDerived,
+}
+
+impl Value {
+    fn depends_on_return(self) -> bool {
+        matches!(self, Self::ReturnAddress | Self::ReturnDerived)
+    }
 }
 
 fn width_mask(size: i32) -> Option<u64> {
@@ -171,16 +178,21 @@ fn value(data: &Funcdata, id: VarnodeId, state: &State) -> Option<Value> {
             Value::Bits { value, known } => known_bits(value >> shift, known >> shift, mask),
             Value::Stack(offset) if shift == 0 && wanted.2 >= 4 => Some(Value::Stack(*offset)),
             Value::ReturnAddress if shift == 0 && wanted.2 >= 4 => Some(Value::ReturnAddress),
+            Value::ReturnDerived => Some(Value::ReturnDerived),
             _ => None,
         }
     }
 }
 
 fn write(state: &mut State, key: Key, value: Option<Value>) {
-    state.values.retain(|&(space, off, size), _| {
-        space != key.0
-            || off.saturating_add(size as u64) <= key.1
-            || key.1.saturating_add(key.2 as u64) <= off
+    let end = key.1.saturating_add(key.2 as u64);
+    state.values.retain(|&(space, off, size), prior| {
+        let prior_end = off.saturating_add(size as u64);
+        let overlaps = space == key.0 && off < end && key.1 < prior_end;
+        // A partial overwrite loses the fact for any surviving derived bytes.
+        state.return_address_observed |=
+            overlaps && *prior == Value::ReturnDerived && (off < key.1 || prior_end > end);
+        !overlaps
     });
     if let Some(value) = value {
         state.values.insert(key, value);
@@ -307,14 +319,14 @@ fn reads_return(data: &Funcdata, input: VarnodeId, state: &State) -> bool {
         .range(..=(space, offset, i32::MAX))
         .next_back()
         .is_some_and(|(&(at_space, at, width), value)| {
-            *value == Value::ReturnAddress
+            value.depends_on_return()
                 && space == at_space
                 && offset < at.saturating_add(width as u64)
         })
         || state
             .values
             .range((space, offset, 0)..(space, end, 0))
-            .any(|(_, value)| *value == Value::ReturnAddress)
+            .any(|(_, value)| value.depends_on_return())
 }
 
 /// Preserve known condition bits when SLEIGH packs an unknown status bit
@@ -362,7 +374,7 @@ fn transfer(data: &Funcdata, op: OpId, state: &mut State) {
                 .values
                 .values()
                 .chain(state.stack.values())
-                .any(|value| *value == Value::ReturnAddress);
+                .any(|value| value.depends_on_return());
             state.stack.clear();
             state.image_unmodified = false;
             let proto = data
@@ -385,7 +397,7 @@ fn transfer(data: &Funcdata, op: OpId, state: &mut State) {
                         .values
                         .values()
                         .chain(state.stack.values())
-                        .any(|value| *value == Value::ReturnAddress),
+                        .any(|value| value.depends_on_return()),
                 ..State::default()
             }
         }
@@ -410,12 +422,23 @@ fn transfer(data: &Funcdata, op: OpId, state: &mut State) {
                     state.stack.insert((offset, size), v);
                 }
             } else {
+                let address = o.get_in(1).expect("STORE address");
+                state.return_address_observed |= reads_return(data, address, state);
                 state.return_address_observed |= reads_return(data, stored, state);
                 state.return_address_observed |=
                     state.stack.values().any(|v| *v == Value::ReturnAddress);
                 state.stack.clear();
                 state.image_unmodified = false;
             }
+        }
+        OpCode::CPUI_CBRANCH | OpCode::CPUI_BRANCHIND => {
+            let input = if o.code() == OpCode::CPUI_CBRANCH {
+                1
+            } else {
+                0
+            };
+            let input = o.get_in(input).expect("branch input");
+            state.return_address_observed |= reads_return(data, input, state);
         }
         _ => {
             if let Some(out) = o.get_out() {
@@ -432,21 +455,24 @@ fn transfer(data: &Funcdata, op: OpId, state: &mut State) {
                         state.stack.get(&(at, key(data, out).2)).copied()
                     } else {
                         let loaded = image_value(data, op, state);
-                        // An unresolved address can alias a saved return address.
+                        let address = o.get_in(1).expect("LOAD address");
                         state.return_address_observed |= loaded.is_none()
-                            && state.stack.values().any(|v| *v == Value::ReturnAddress);
+                            && (reads_return(data, address, state)
+                                || state.stack.values().any(|v| *v == Value::ReturnAddress));
                         loaded
                     }
                 } else {
-                    pure(data, op, state).or_else(|| partial_bitwise(data, op, state))
-                };
-                if v.is_none() && !state.return_address_observed {
-                    for i in 0..o.num_input() {
-                        if reads_return(data, o.get_in(i).expect("raw op input"), state) {
-                            state.return_address_observed = true;
-                        }
+                    let known = pure(data, op, state).or_else(|| partial_bitwise(data, op, state));
+                    if known.is_none()
+                        && !state.return_address_observed
+                        && (0..o.num_input())
+                            .any(|i| reads_return(data, o.get_in(i).expect("raw op input"), state))
+                    {
+                        Some(Value::ReturnDerived)
+                    } else {
+                        known
                     }
-                }
+                };
                 write(state, key(data, out), v);
             }
         }
@@ -466,19 +492,19 @@ fn intersect(prior: &mut State, incoming: &State) -> bool {
         prior.return_address_observed = prior
             .values
             .iter()
-            .any(|(k, v)| *v == Value::ReturnAddress && incoming.values.get(k) != Some(v))
+            .any(|(k, v)| v.depends_on_return() && incoming.values.get(k) != Some(v))
             || incoming
                 .values
                 .iter()
-                .any(|(k, v)| *v == Value::ReturnAddress && prior.values.get(k) != Some(v))
+                .any(|(k, v)| v.depends_on_return() && prior.values.get(k) != Some(v))
             || prior
                 .stack
                 .iter()
-                .any(|(k, v)| *v == Value::ReturnAddress && incoming.stack.get(k) != Some(v))
+                .any(|(k, v)| v.depends_on_return() && incoming.stack.get(k) != Some(v))
             || incoming
                 .stack
                 .iter()
-                .any(|(k, v)| *v == Value::ReturnAddress && prior.stack.get(k) != Some(v));
+                .any(|(k, v)| v.depends_on_return() && prior.stack.get(k) != Some(v));
     }
     prior
         .values

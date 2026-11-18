@@ -138,6 +138,66 @@ fn saved_lr_byte_used_by_a_guard_stays_unproved() {
 }
 
 #[test]
+fn lr_memory_addresses_and_derived_guards_keep_caller_code_separate() {
+    let direct_store = [
+        0x7d8802a6, 0x3d606000, 0x916c0000, 0x60000000, 0x60000000, 0x38a01040, 0x80c50000,
+        0x38600007, 0x7c065800, 0x4c820020, 0x7ca803a6, 0x4e800020, 0, 0x39401060, 0x38600000,
+        0x4bffffc5, 0x7c000378, 0x38630001, 0x7d4803a6, 0x4e800020, 0, 0, 0, 0, 0x38000001,
+        0x44000002,
+    ];
+    let mut derived_store = direct_store;
+    derived_store[2..5].copy_from_slice(&[0x392c0004, 0x3929fffc, 0x91690000]);
+    let mut derived_guard = direct_store;
+    derived_guard[1] = 0x38cc0004; // addi r6,r12,4
+    derived_guard[2] = 0x39601044; // li r11,0x1044
+    derived_guard[6] = 0x60000000;
+    for order in ["BE", "LE"] {
+        for model in ["default", "e500"] {
+            for mode in ["fast", "reliable"] {
+                for (name, words) in [
+                    ("direct store", &direct_store),
+                    ("derived store", &derived_store),
+                    ("derived guard", &derived_guard),
+                ] {
+                    let c = decompile_saved_lr(words, order, model, mode, &[]);
+                    assert!(
+                        c.contains("return 7;")
+                            && !c.contains("case 0x1040:")
+                            && !c.contains("return 8;"),
+                        "{order} {model} {mode} {name}: {c}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn unused_lr_arithmetic_preserves_computed_transfers() {
+    let code = [
+        0x7d8802a6, 0x388c0004, 0x2c030000, 0x41820010, 0x38001028, 0x7c0803a6, 0x4e800020,
+        0x38600007, 0x7d8803a6, 0x4e800020, 0x38600007, 0x7d8803a6, 0x4e800020,
+    ];
+    for order in ["BE", "LE"] {
+        for model in ["default", "e500"] {
+            for mode in ["fast", "reliable"] {
+                let c = decompile_saved_lr(
+                    &code,
+                    order,
+                    model,
+                    mode,
+                    &["--assert", "prototype 0x1000 int sub_1000(int i)"],
+                );
+                check_runtime(
+                    &format!("{c}\nint check(int i) {{ return sub_1000(i); }}"),
+                    "7",
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn reusing_a_saved_lr_slot_keeps_computed_transfers() {
     let reused = [
         0x9421fff0, 0x7d8802a6, 0x9181000c, 0x8181000c, 0x9061000c, 0x38210010, 0x2c030000,
