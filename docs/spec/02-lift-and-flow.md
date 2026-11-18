@@ -3215,26 +3215,6 @@ provide processor-version and privilege-appropriate reads and masked writes.
 Register and immediate MSR update NZCVQ only when the flag byte is selected,
 preserving arithmetic flags across control-only writes.
 
-### RISC-V moves and conversions from FP to integer registers (GH-831)
-
-`fmv.x.d` copies the 64-bit pattern of its FP source into the integer
-destination. `fmv.x.w` copies the low 32 bits of the FP register and, on RV64,
-sign-extends them to the register width. `fcvt.w.d`, `fcvt.wu.d`, `fcvt.w.s`
-and `fcvt.wu.s` write their 32-bit result the same way. The unsigned forms
-convert to a 64-bit integer and keep its low 32 bits, so a source in
-[2^31, 2^32) gets its unsigned value, which a 32-bit signed conversion cannot
-represent.
-The FP operand is read as a value. Reading it through a register-space pointer
-to the operand's address would read the temporary that the operand table
-exports, at register offset 0x900, which prints as `dat_900`. The result is
-written to `rd` with `assignW`. A destination table that exports a temporary
-copy of the register would drop the write, which made these conversions
-produce no value at all. The fix is in the RISC-V SLEIGH sources, so
-`riscv.lp64d.sla`, `riscv.ilp32d.sla` and `andestar_v5.sla` must be rebuilt.
-Exercised by `tests/stages/gh831-riscv-fpmove.xml` (RV64: a call result moved
-by `fmv.x.d` and `fmv.x.w`, and all four conversions) and
-`tests/stages/gh831-riscv32-fpmove.xml` (the RV32 forms).
-
 ### RISC-V Zcmp and Zcmt (GH-1630)
 
 The Zc code-size extensions (`specs/Ghidra/Processors/RISCV/data/languages/riscv.zc.sinc`)
@@ -3243,7 +3223,7 @@ put `cm.push`, `cm.pop`, `cm.popret`, `cm.popretz`, `cm.mvsa01`, `cm.mva01s`
 (op=10, funct3=101), so they exist only where Zcd does not. The `Zcmp` context
 bit (`riscv.reg.sinc`) selects between the two readings: `c.fsdsp` decodes at
 `Zcmp=0`, the Zc instructions at `Zcmp=1`, and the default RV32/RV64 processor
-specs leave the bit 0, so every existing RISC-V language is byte-identical.
+specs leave the bit 0, so every existing RISC-V language decodes byte-identically.
 The `RISCV:LE:32:Zcmp` and `RISCV:LE:64:Zcmp` language variants
 (`riscv.ldefs`, `RV32zcmp.pspec`, `RV64zcmp.pspec`) share the `.sla` files
 and set the bit; the ELF loader picks them from `Tag_RISCV_arch` (§1).
@@ -3270,6 +3250,26 @@ were lost. Exercised by `tests/stages/kuna-riscv-zcmp.xml` (the issue's
 and `kuna-cli/tests/riscv_zcmp.rs` (one decode per encoding shape against
 LLVM's names, RV32 and RV64). Zcb, Zicond and the T-Head vendor extensions
 the issue also lists are not decoded.
+
+### RISC-V moves and conversions from FP to integer registers (GH-831)
+
+`fmv.x.d` copies the 64-bit pattern of its FP source into the integer
+destination. `fmv.x.w` copies the low 32 bits of the FP register and, on RV64,
+sign-extends them to the register width. `fcvt.w.d`, `fcvt.wu.d`, `fcvt.w.s`
+and `fcvt.wu.s` write their 32-bit result the same way. The unsigned forms
+convert to a 64-bit integer and keep its low 32 bits, so a source in
+[2^31, 2^32) gets its unsigned value, which a 32-bit signed conversion cannot
+represent.
+The FP operand is read as a value. Reading it through a register-space pointer
+to the operand's address would read the temporary that the operand table
+exports, at register offset 0x900, which prints as `dat_900`. The result is
+written to `rd` with `assignW`. A destination table that exports a temporary
+copy of the register would drop the write, which made these conversions
+produce no value at all. The fix is in the RISC-V SLEIGH sources, so
+`riscv.lp64d.sla`, `riscv.ilp32d.sla` and `andestar_v5.sla` must be rebuilt.
+Exercised by `tests/stages/gh831-riscv-fpmove.xml` (RV64: a call result moved
+by `fmv.x.d` and `fmv.x.w`, and all four conversions) and
+`tests/stages/gh831-riscv32-fpmove.xml` (the RV32 forms).
 
 The x87 `FIST` and `FISTP` lifts preserve integer conversion as width-specific
 `x87_float_to_int16`, `x87_float_to_int32`, or `x87_float_to_int64` user operations.

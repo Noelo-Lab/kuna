@@ -323,9 +323,10 @@ Zc stack and jump-table instructions (§2). The attribute is read from the
 `.riscv.attributes` section, or from the `PT_RISCV_ATTRIBUTES` segment when the
 image has no sections; extension names are compared with their versions
 stripped (`zcmp1p0` is `zcmp`). An image that also declares `zcd`, or `c`
-together with `d`, has no bundled language and requires an explicit target, as
-do malformed or conflicting attribute blobs. Every other RISC-V image keeps the
-default selection, and `--target` always wins.
+together with `d`, has no bundled language and requires an explicit target.
+Every other RISC-V image keeps the default selection, including one whose
+attribute blobs are malformed, truncated or conflicting, and `--target` always
+wins.
 
 (kuna) PowerPC32 ELF APU requirements are read by
 `decompiler/crates/kuna-analysis/src/loader/kuna_ppcaputarget.rs` when the

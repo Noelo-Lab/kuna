@@ -138,15 +138,16 @@ fn extensions(arch: &str) -> Vec<String> {
     names
 }
 
-/// `None` leaves non-Zc RISC-V selection alone; a declaration of both Zcmp
-/// and Zcd has no language and requires an explicit target.
+/// `None` leaves non-Zc RISC-V selection alone, including an image whose
+/// attributes are malformed or conflicting; a declaration of both Zcmp and
+/// Zcd has no language and requires an explicit target.
 pub fn language_id(file: &object::File<'_>) -> Result<Option<String>, &'static str> {
     if file.format() != BinaryFormat::Elf
         || !matches!(file.architecture(), Architecture::Riscv32 | Architecture::Riscv64)
     {
         return Ok(None);
     }
-    let Some(arch) = arch_string(file)? else { return Ok(None) };
+    let Ok(Some(arch)) = arch_string(file) else { return Ok(None) };
     let names = extensions(&arch);
     let has = |name: &str| names.iter().any(|n| n == name);
     if !has("zcmp") && !has("zcmt") {
@@ -233,19 +234,29 @@ mod tests {
     }
 
     #[test]
-    fn zcd_conflicts_and_malformed_blobs_require_an_explicit_target() {
+    fn zcd_conflicts_require_an_explicit_target() {
         for arch in ["rv32imafdc_zcmp", "rv32imac_zcd1p0_zcmp1p0", "rv64gc_zcmp"] {
             let bytes = elf(false, &[(b".riscv.attributes", attributes(arch))]);
             assert!(select(&bytes).is_err(), "{arch}");
         }
+    }
+
+    #[test]
+    fn malformed_and_conflicting_blobs_keep_the_default() {
+        let parse = |bytes: &[u8]| arch_string(&object::File::parse(bytes).unwrap());
         let good = attributes("rv32imac_zcmp");
-        for cut in [5, 12, 20, good.len() - 1] {
-            assert_eq!(select(&elf(false, &[(b".riscv.attributes", good[..cut].to_vec())])), Err(MALFORMED));
-        }
         let mut other = good.clone();
         other[0] = b'B';
-        assert_eq!(select(&elf(false, &[(b".riscv.attributes", other)])), Err(MALFORMED));
+        let mut blobs: Vec<Vec<u8>> = [0, 5, 12, 20, good.len() - 1].iter().map(|cut| good[..*cut].to_vec()).collect();
+        blobs.push(other);
+        for blob in blobs {
+            let bytes = elf(false, &[(b".riscv.attributes", blob)]);
+            assert_eq!(parse(&bytes), Err(MALFORMED));
+            assert_eq!(select(&bytes), Ok(None));
+        }
         let two = [(b".riscv.attributes".as_slice(), good.clone()), (b".riscv.attributes".as_slice(), attributes("rv32imac"))];
-        assert!(select(&elf(false, &two)).is_err());
+        let bytes = elf(false, &two);
+        assert!(parse(&bytes).is_err());
+        assert_eq!(select(&bytes), Ok(None));
     }
 }

@@ -2,7 +2,9 @@
 
 Linked shared objects whose `Tag_RISCV_arch` lists `zcmp` (and `zcmt`), so the
 loader selects the `RISCV:LE:32:Zcmp` / `RISCV:LE:64:Zcmp` language. Built with
-the LLVM 22 `llc` and `ld.lld` (rustc-master toolchain):
+the LLVM 23 `llc` and `ld.lld` (rustc-master toolchain; `.comment` records
+LLD 23.1.5). LLVM 21 reproduces every allocated section and
+`.riscv.attributes`; only `.comment`, `.symtab` and `.strtab` differ:
 
 ```sh
 llc -mtriple=riscv32-unknown-elf -mattr=+m,+a,+c,+zcmp -O2 -filetype=obj keep.ll -o keep.o
