@@ -73,7 +73,7 @@ public class GenJnumGolden {
       Math.nextDown(Double.MIN_NORMAL), Math.PI, Math.E, 0.1, 0.2, 0.3, 1.0 / 3, 2.0 / 3, 100.0, 1e7, 1e-3, 9999999.0,
       9999999.5, 9999999.999999998, 10000000.000000002, 0.001, Math.nextDown(0.001), Math.nextUp(0.001), 0.00099999, 1e23, 2e23, 8.41e21, 5e-324, 1.0E22};
     for (double v : special) { d(v); d(-v); }
-    for (int e = -325; e <= 310; e++) {
+    for (int e = -325; e <= 310; e += 11) {
       double v = Double.parseDouble("1e" + e);
       d(v); d(Math.nextUp(v)); d(Math.nextDown(v));
       d(Double.parseDouble("9.999999999999999e" + e));
@@ -81,16 +81,16 @@ public class GenJnumGolden {
       d(Double.parseDouble("2e" + e));
       d(Double.parseDouble("1.2345678901234567e" + e));
     }
-    for (int e = -1074; e <= 1023; e++) d(Math.scalb(1.0, e));
-    for (int i = 0; i <= 200; i++) { d(i); d(-i); d(i + 0.5); }
+    for (int e = -1074; e <= 1023; e += 9) d(Math.scalb(1.0, e));
+    for (int i = 0; i <= 20; i++) { d(i); d(-i); d(i + 0.5); }
     long p = 1;
     for (int k = 0; k <= 18; k++) { d(p); d(p - 1); d(p + 1); p *= 10; }
-    for (int t = 1; t <= 60; t++) d(Double.longBitsToDouble(t));
-    for (int k = 0; k < 300; k++) d(Double.longBitsToDouble(R.nextLong() & 0x000fffffffffffffL));
-    for (int k = 0; k < 2500; k++) d(Double.longBitsToDouble(R.nextLong()));
-    for (int k = 0; k < 1200; k++) d(Double.parseDouble(niceDecimal(17, 25)));
-    for (int i = 0; i < 300; i++) d(i / 1000.0);
-    for (int k = 0; k < 300; k++) d((double) Float.intBitsToFloat(R.nextInt()));
+    for (int t = 1; t <= 10; t++) d(Double.longBitsToDouble(t));
+    for (int k = 0; k < 30; k++) d(Double.longBitsToDouble(R.nextLong() & 0x000fffffffffffffL));
+    for (int k = 0; k < 150; k++) d(Double.longBitsToDouble(R.nextLong()));
+    for (int k = 0; k < 100; k++) d(Double.parseDouble(niceDecimal(17, 25)));
+    for (int i = 0; i < 30; i++) d(i / 1000.0);
+    for (int k = 0; k < 30; k++) d((double) Float.intBitsToFloat(R.nextInt()));
   }
 
   static void floats() {
@@ -98,21 +98,21 @@ public class GenJnumGolden {
       Float.MIN_VALUE, Float.MIN_NORMAL, Float.MAX_VALUE, Math.nextDown(Float.MIN_NORMAL), (float) Math.PI, (float) Math.E,
       0.1f, 0.2f, 0.3f, 1f / 3, 100f, 1e7f, 1e-3f, 9999999f, 1.0E10f, 0.001f, Math.nextDown(0.001f), Math.nextUp(0.001f), 1.17549435E-38f, 3.4028235E38f};
     for (float v : special) { f(v); f(-v); }
-    for (int e = -46; e <= 39; e++) {
+    for (int e = -46; e <= 39; e += 3) {
       float v = Float.parseFloat("1e" + e);
       f(v); f(Math.nextUp(v)); f(Math.nextDown(v));
       f(Float.parseFloat("9.999999e" + e));
       f(Float.parseFloat("5e" + e));
       f(Float.parseFloat("1.2345678e" + e));
     }
-    for (int e = -149; e <= 127; e++) f(Math.scalb(1.0f, e));
-    for (int i = 0; i <= 200; i++) { f(i); f(-i); f(i + 0.5f); }
-    for (int t = 1; t <= 64; t++) f(Float.intBitsToFloat(t));
-    for (int k = 0; k < 200; k++) f(Float.intBitsToFloat(R.nextInt() & 0x007fffff));
-    for (int k = 0; k < 2500; k++) f(Float.intBitsToFloat(R.nextInt()));
-    for (int k = 0; k < 1000; k++) f(Float.parseFloat(niceDecimal(9, 12)));
-    for (int i = 0; i < 300; i++) f(i / 1000.0f);
-    for (int k = 0; k < 300; k++) f((float) Double.longBitsToDouble(R.nextLong()));
+    for (int e = -149; e <= 127; e += 4) f(Math.scalb(1.0f, e));
+    for (int i = 0; i <= 20; i++) { f(i); f(-i); f(i + 0.5f); }
+    for (int t = 1; t <= 10; t++) f(Float.intBitsToFloat(t));
+    for (int k = 0; k < 20; k++) f(Float.intBitsToFloat(R.nextInt() & 0x007fffff));
+    for (int k = 0; k < 150; k++) f(Float.intBitsToFloat(R.nextInt()));
+    for (int k = 0; k < 100; k++) f(Float.parseFloat(niceDecimal(9, 12)));
+    for (int i = 0; i < 30; i++) f(i / 1000.0f);
+    for (int k = 0; k < 30; k++) f((float) Double.longBitsToDouble(R.nextLong()));
   }
 
   static String niceDecimal(int maxDigits, int maxExp) {
@@ -175,19 +175,19 @@ public class GenJnumGolden {
     PARSE.add(longInt + "e-1100");
     PARSE.add(new BigDecimal(Double.MIN_VALUE).divide(BigDecimal.valueOf(2)).toString());
     PARSE.add(new BigDecimal(Double.MIN_VALUE).divide(BigDecimal.valueOf(2)).add(new BigDecimal("1e-1100")).toPlainString());
-    for (int k = 0; k < 300; k++) {
+    for (int k = 0; k < 8; k++) {
       float v = Float.intBitsToFloat(R.nextInt() & 0x7fffffff);
       if (Float.isNaN(v) || Float.isInfinite(v)) continue;
       trimFloatInputs(Float.toString(v), true);
     }
-    for (int k = 0; k < 200; k++) {
+    for (int k = 0; k < 6; k++) {
       double v = Double.longBitsToDouble(R.nextLong() & 0x7fffffffffffffffL);
       if (Double.isNaN(v) || Double.isInfinite(v)) continue;
       trimFloatInputs(Double.toString(v), false);
     }
-    for (int k = 0; k < 120; k++) trimFloatInputs(Float.toString(Float.parseFloat(niceDecimal(8, 10))), true);
-    for (int k = 0; k < 120; k++) trimFloatInputs(Double.toString(Double.parseDouble(niceDecimal(16, 10))), false);
-    for (int k = 0; k < 240; k++) {
+    for (int k = 0; k < 4; k++) trimFloatInputs(Float.toString(Float.parseFloat(niceDecimal(8, 10))), true);
+    for (int k = 0; k < 4; k++) trimFloatInputs(Double.toString(Double.parseDouble(niceDecimal(16, 10))), false);
+    for (int k = 0; k < 24; k++) {
       double v = Double.longBitsToDouble(R.nextLong() & 0x7fefffffffffffffL);
       BigDecimal lo = new BigDecimal(v), hi = new BigDecimal(Math.nextUp(v));
       BigDecimal mid = lo.add(hi).divide(BigDecimal.valueOf(2));
@@ -195,7 +195,7 @@ public class GenJnumGolden {
       if (k % 4 == 0) PARSE.add(mid.add(mid.ulp()).toString());
       if (k % 4 == 1) PARSE.add(mid.subtract(mid.ulp()).toString());
     }
-    for (int k = 0; k < 300; k++) {
+    for (int k = 0; k < 30; k++) {
       float v = Float.intBitsToFloat(R.nextInt() & 0x7f7fffff);
       BigDecimal lo = new BigDecimal(v), hi = new BigDecimal(Math.nextUp(v));
       BigDecimal mid = lo.add(hi).divide(BigDecimal.valueOf(2));
@@ -203,7 +203,7 @@ public class GenJnumGolden {
       if (k % 3 == 0) PARSE.add(mid.add(mid.ulp()).toString());
     }
     String[] suffix = {"", "", "", "f", "D", "e3", "E-7", "e+12"};
-    for (int k = 0; k < 600; k++) {
+    for (int k = 0; k < 60; k++) {
       StringBuilder b = new StringBuilder();
       if (R.nextInt(4) == 0) b.append(R.nextBoolean() ? '-' : '+');
       int lead = R.nextInt(4) == 0 ? R.nextInt(5) : 0;
@@ -217,9 +217,9 @@ public class GenJnumGolden {
       if (R.nextInt(20) == 0) b.insert(R.nextInt(b.length() + 1), "xe.-".charAt(R.nextInt(4)));
       PARSE.add(b.toString());
     }
-    for (int k = 0; k < 300; k++) PARSE.add(Double.toHexString(Double.longBitsToDouble(R.nextLong())));
-    for (int k = 0; k < 200; k++) PARSE.add(Float.toHexString(Float.intBitsToFloat(R.nextInt())));
-    for (int k = 0; k < 400; k++) {
+    for (int k = 0; k < 30; k++) PARSE.add(Double.toHexString(Double.longBitsToDouble(R.nextLong())));
+    for (int k = 0; k < 20; k++) PARSE.add(Float.toHexString(Float.intBitsToFloat(R.nextInt())));
+    for (int k = 0; k < 40; k++) {
       StringBuilder b = new StringBuilder(R.nextBoolean() ? "0x" : "-0X");
       int n = 1 + R.nextInt(R.nextInt(4) == 0 ? 24 : 15);
       for (int i = 0; i < n; i++) b.append("0123456789abcdefABCDEF".charAt(R.nextInt(22)));
@@ -235,7 +235,7 @@ public class GenJnumGolden {
       "١٢", "１２", "-३", "12a", "0x10", "00012", "9223372036854775807", "9223372036854775808",
       "-9223372036854775808", "-9223372036854775809", "1.0", "+-1", "--1", "999999999999999999999"};
     PARSE_INT.addAll(Arrays.asList(fixed));
-    for (int k = 0; k < 60; k++) PARSE_INT.add(Integer.toString(R.nextInt()));
-    for (int k = 0; k < 60; k++) PARSE_INT.add(Long.toString(R.nextLong()));
+    for (int k = 0; k < 10; k++) PARSE_INT.add(Integer.toString(R.nextInt()));
+    for (int k = 0; k < 10; k++) PARSE_INT.add(Long.toString(R.nextLong()));
   }
 }

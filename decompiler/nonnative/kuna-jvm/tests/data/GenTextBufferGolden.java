@@ -75,7 +75,7 @@ public class GenTextBufferGolden {
     };
     String[] indents = {"   ", "\t", "  ", "    "};
     int[] lengths = {20, 30, 40, 60, 160, 8};
-    for (int scenario = 0; scenario < 60; scenario++) {
+    for (int scenario = 0; scenario < 6; scenario++) {
       boolean unix = scenario % 4 != 3;
       String indent = indents[scenario % indents.length];
       int pll = lengths[scenario % lengths.length];

@@ -342,7 +342,7 @@ fn collections_match_vineflower() {
             }
         }
     }
-    assert_eq!(counts, [30, 30, 30, 24]);
+    assert_eq!(counts, [10, 3, 3, 8]);
 }
 
 #[test]

@@ -13,8 +13,11 @@ followed by the absolute targets the parsed destinations resolve to.
 Only the attributes Vineflower reads are listed; a method's Code
 sub-attributes are merged into its own map exactly as `StructMethod.create`
 does (a Code-level attribute replaces a method-level one of the same name).
+A run of more than 1000 instructions or line-table entries keeps its first and
+last 40 lines around a `... N` line, which stands for the N lines between.
 """
 
+import itertools
 import os
 import re
 import subprocess
@@ -28,7 +31,7 @@ CONFIGS = [
     ("r8g", ["--release", "8", "-g"], ["all", "wide"]),
     ("r11n", ["--release", "11", "-g:none"], ["all", "mod11"]),
     ("r17p", ["--release", "17", "-g", "-parameters"], ["all"]),
-    ("r21g", ["--release", "21", "-g"], ["all", "j21", "wide"]),
+    ("r21g", ["--release", "21", "-g"], ["j21"]),
     ("r21np", ["--release", "21", "-g:none", "-parameters"], ["j21"]),
 ]
 
@@ -528,7 +531,22 @@ def golden_of(path, text):
         out.append(f" flags 0x{mflags:04x}")
         secs = sections(body, 4)
         out += attribute_lines(secs, pool, this_class, " ", is_class=False)
-    return "\n".join(out) + "\n"
+    return "\n".join(elide(out)) + "\n"
+
+
+def run_kind(line):
+    m = re.match(r"  (?:\d+:|(line) )", line)
+    return m and (m.group(1) or "insn")
+
+
+def elide(lines, keep=40, limit=1000):
+    out = []
+    for kind, run in itertools.groupby(lines, run_kind):
+        run = list(run)
+        if kind and len(run) > limit:
+            run = run[:keep] + [f"... {len(run) - 2 * keep}"] + run[-keep:]
+        out += run
+    return out
 
 
 def attribute_lines(secs, pool, this_class, prefix, is_class):

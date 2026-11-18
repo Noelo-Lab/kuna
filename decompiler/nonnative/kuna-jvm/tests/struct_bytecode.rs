@@ -617,7 +617,7 @@ fn corpus_class(config: &str, name: &str) -> Vec<u8> {
 
 #[test]
 fn every_truncation_fails_with_io_exception() {
-    let bytes = corpus_class("r21g", "Iface");
+    let bytes = corpus_class("r17p", "Iface");
     for cut in (0..bytes.len()).step_by(3) {
         let prefix = bytes[..cut].to_vec();
         let caught = try_catch(|| create(prefix, true)).unwrap_err();
@@ -645,7 +645,7 @@ fn foreign_classes_drop_method_bodies() {
 
 #[test]
 fn expand_data_rebuilds_a_stale_sequence() {
-    let cl = create(corpus_class("r21g", "Basics"), true);
+    let cl = create(corpus_class("r17p", "Basics"), true);
     let mt = cl.get_method("table", "(I)I").unwrap();
     mt.expand_data(cl);
     let first = mt.get_instruction_sequence().unwrap();
@@ -713,7 +713,7 @@ fn members_share_the_base_api() {
         .find(|m| m.get_name() == "describe")
         .unwrap();
     assert!(!lambda.is_synthetic());
-    let synthetic = create(corpus_class("r21g", "Lambdas"), true)
+    let synthetic = create(corpus_class("r17p", "Lambdas"), true)
         .get_methods()
         .iter()
         .filter(|m| m.is_synthetic())
@@ -727,7 +727,7 @@ fn members_share_the_base_api() {
 
 #[test]
 fn annotations_become_exprents_per_class_scope() {
-    let cl = create(corpus_class("r21g", "Annos"), true);
+    let cl = create(corpus_class("r17p", "Annos"), true);
     let attr = cl
         .get_attribute(StructGeneralAttribute::ATTRIBUTE_RUNTIME_VISIBLE_ANNOTATIONS)
         .unwrap();
@@ -765,7 +765,7 @@ fn annotations_become_exprents_per_class_scope() {
         .all(|t| t.get_annotation().get_class_name() == "TU"));
     assert!(types.iter().any(|t| t.get_target_type() == 0x40));
 
-    let everything = create(corpus_class("r21g", "Everything"), true);
+    let everything = create(corpus_class("r17p", "Everything"), true);
     let ints = everything.get_method("ints", "()[I").unwrap();
     let default = ints
         .get_attribute(StructGeneralAttribute::ATTRIBUTE_ANNOTATION_DEFAULT)

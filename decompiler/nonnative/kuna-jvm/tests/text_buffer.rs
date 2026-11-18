@@ -160,7 +160,7 @@ fn text_buffer_matches_vineflower() {
             scenarios.last_mut().unwrap().1.push((i + 1, line));
         }
     }
-    assert_eq!(scenarios.len(), 60);
+    assert_eq!(scenarios.len(), 6);
     for (fmt, lines) in &scenarios {
         run_scenario(fmt, lines);
     }

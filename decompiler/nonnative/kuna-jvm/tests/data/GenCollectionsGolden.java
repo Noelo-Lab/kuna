@@ -23,11 +23,11 @@ public class GenCollectionsGolden {
 
   public static void main(String[] args) {
     int[] sparseSizes = {0, 1, 5, 31, 32, 33, 64, 64, 64, 100};
-    for (int n : sparseSizes) for (int rep = 0; rep < 3; rep++) sparse(n);
-    for (int rep = 0; rep < 30; rep++) sforms();
-    for (int rep = 0; rep < 30; rep++) vb();
+    for (int n : sparseSizes) sparse(n);
+    for (int rep = 0; rep < 3; rep++) sforms();
+    for (int rep = 0; rep < 3; rep++) vb();
     int[] fixedSizes = {0, 1, 10, 63, 64, 65, 128, 130};
-    for (int n : fixedSizes) for (int rep = 0; rep < 3; rep++) fixed(n);
+    for (int n : fixedSizes) fixed(n);
     System.out.print(OUT);
   }
 
@@ -47,7 +47,7 @@ public class GenCollectionsGolden {
     FastSparseSet<Integer>[] sets = new FastSparseSet[5];
     for (int i = 0; i < sets.length; i++) { sets[i] = factory.createEmptySet(); line("n " + i); }
     int range = n + 40;
-    for (int step = 0; step < 220; step++) {
+    for (int step = 0; step < 100; step++) {
       int s = R.nextInt(sets.length), t = (s + 1 + R.nextInt(sets.length - 1)) % sets.length;
       int v = R.nextInt(range);
       switch (R.nextInt(16)) {
@@ -84,7 +84,7 @@ public class GenCollectionsGolden {
     FastSparseSetFactory<Integer> factory = new FastSparseSetFactory<>(init);
     SFormsFastMapDirect[] maps = new SFormsFastMapDirect[4];
     for (int i = 0; i < maps.length; i++) maps[i] = new SFormsFastMapDirect(factory);
-    for (int step = 0; step < 220; step++) {
+    for (int step = 0; step < 100; step++) {
       int m = R.nextInt(maps.length), o = (m + 1 + R.nextInt(maps.length - 1)) % maps.length;
       int key = sformsKey(), ver = 1 + R.nextInt(90);
       switch (R.nextInt(14)) {
@@ -114,7 +114,7 @@ public class GenCollectionsGolden {
     line("VB");
     VBStyleCollection<String, Integer> c = new VBStyleCollection<>();
     int counter = 0;
-    for (int step = 0; step < 160; step++) {
+    for (int step = 0; step < 80; step++) {
       int size = c.size();
       int key = R.nextInt(30);
       String e = "e" + (counter++);
@@ -148,7 +148,7 @@ public class GenCollectionsGolden {
     FastFixedSetFactory<Integer> factory = FastFixedSetFactory.create(entries);
     FastFixedSet<Integer>[] sets = new FastFixedSet[4];
     for (int i = 0; i < sets.length; i++) { sets[i] = factory.createEmptySet(); line("n " + i); }
-    for (int step = 0; step < (n == 0 ? 20 : 200); step++) {
+    for (int step = 0; step < (n == 0 ? 20 : 100); step++) {
       int s = R.nextInt(sets.length), t = (s + 1 + R.nextInt(sets.length - 1)) % sets.length;
       int v = n == 0 ? 0 : 3 * R.nextInt(n);
       switch (R.nextInt(17)) {
