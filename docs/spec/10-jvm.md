@@ -3148,7 +3148,7 @@ field of a class whose metadata kind is `OBJECT` is written as the object's name
 `invokespecial` is the `this` variable: `this.isActive`, a virtual call that in an override of
 `isActive` calls itself without end (kotlinx-coroutines' `AbstractCoroutine.isActive`,
 `BroadcastCoroutine.isActive`, `BroadcastChannelImpl.isClosedForSend`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/kt_properties/kt_super_property_access.rs (qualifier)`) an
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_properties/mod.rs (super_qualifier)`) an
 accessor called with `invokespecial` on `this`, of a class other than the caller's, is written on
 `super` (`super<Name>` for an interface's).
 
@@ -3158,7 +3158,7 @@ parameter, which for a setter kotlinc generates (`@JvmName(..) set`, `@Synchroni
 1.3 default setter) is `<set-?>`; the decompiler writes such a name `var1`, so the body assigns a
 variable that does not exist (okhttp's `Dispatcher.idleCallback`: `set(<set-?>) { this.idleCallback
 = var1 }`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/kt_properties/kt_setter_parameter_name.rs (enter)`) the
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_properties/mod.rs (enter_setter)`) the
 setter's parameter, its last (after an extension property's receiver), is written in the body by the
 header's name, and a metadata name that is no Kotlin identifier is written `value` in both.
 
@@ -3175,7 +3175,7 @@ writer's that adds `open`: `open int label;`, which kotlinc rejects. Such fields
 classes kotlinc gives no Class metadata, in practice the spill fields (`label`, `L$0`, `I$0`,
 `J$0`, ..) of suspend functions' continuations, both the continuation objects and the continuations
 kotlinc copies into `$$inlined$` classes (584 in the two kotlinx-coroutines jars). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/kt_properties/kt_field_without_property.rs (write)`) an
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_properties/mod.rs (write_field_as_property)`) an
 instance field of a class is written as a property declared from the class file alone: `val` when
 the field is final, else `var`; its (generic) type in Kotlin, nullable when it is a reference, since
 nothing in the class file says otherwise; its initializer when `InitializerProcessor` extracted
@@ -3505,7 +3505,7 @@ default accessor. The setter of a public `var` is then printed `internal set`, o
 `internal set` too (kotlinc: "setter visibility cannot be more permissive"), of an `open var`
 `internal final set` ("modifier 'final' is not applicable"), and recompiled the setter is internal
 (`setPlain$main`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/kt_properties/kt_default_accessor_flags.rs (accessor_flags)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_properties/mod.rs (accessor_flags)`)
 an absent accessor's flags are its property's default accessor flags, and nothing is printed for it.
 
 **`kt_unescaped_name`.** `KotlinWriter.toValidKotlinIdentifier` puts a name Kotlin cannot write bare in
@@ -4321,7 +4321,7 @@ code relies on (wrong output, Kotlin, the same in Vineflower; 36 volatile and 13
 fields of the five Kotlin inputs, none synthetic; the 66 and 61 synthetic `x$volatile` fields atomicfu
 generates in kotlinx-coroutines belong to no property and are left out by `remove-synthetic`, as in
 Java output). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/kt_properties/kt_property_field_flags.rs (annotations)`) the
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_properties/mod.rs (field_flag_annotations)`) the
 property is written with the annotation each flag of its backing field stands for, on a delegated
 property as `@delegate:` (the field is the delegate's). Not fixed on `develop/1.13.0`.
 
@@ -4332,7 +4332,7 @@ visibility and no accessors, and rejects the printed `private set` ("JvmField ca
 property with a custom accessor"; 51 properties of the five Kotlin inputs). kotlinc makes a backing
 field non-private only for such a property (and for a `lateinit` one, whose field takes its setter's
 visibility, so a private setter there means a private field). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/kt_properties/kt_jvm_field_setter.rs (has_no_setter)`) a `var`
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_properties/mod.rs (has_no_setter)`) a `var`
 without a setter method whose non-delegate backing field is not private has no setter line. Not fixed on
 `develop/1.13.0`.
 

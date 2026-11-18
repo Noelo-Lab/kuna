@@ -17,7 +17,7 @@ use crate::fixes::kt_calls::kt_jvm_name_call;
 use crate::fixes::kt_calls::kt_object_monitor_call;
 use crate::fixes::kt_calls::kt_synthetic_accessor_call;
 use crate::fixes::kt_operators::kt_operator_precedence;
-use crate::fixes::kt_properties::kt_super_property_access;
+use crate::fixes::kt_properties;
 use crate::fixes::kt_suspend::kt_suspend_call_continuation;
 use crate::kotlin_chooser::KotlinChooser;
 use crate::kotlin_exprent;
@@ -157,7 +157,7 @@ impl KInvocationExprent {
             let mut buf = TextBuffer::new();
             buf.add_bytecode_mapping(self.get_bytecode().as_ref());
             let super_qualifier = kuna_fixes::enabled(KunaFix::KtSuperPropertyAccess)
-                .then(|| kt_super_property_access::qualifier(self.0))
+                .then(|| kt_properties::super_qualifier(self.0))
                 .flatten();
             if let Some(super_qualifier) = super_qualifier {
                 buf.append(&super_qualifier).append_char('.');

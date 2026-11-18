@@ -22,7 +22,7 @@ use crate::k_type::KType;
 use crate::k_types::KTypes;
 use crate::k_utils::KUtils;
 use crate::key::Key;
-use crate::fixes::kt_properties::kt_default_accessor_flags;
+use crate::fixes::kt_properties;
 use crate::fixes::kt_extensions::{self, Extension};
 use crate::kotlin_writer::KotlinWriter;
 use crate::kt_attrs::KtAttrs;
@@ -33,9 +33,6 @@ use crate::fixes::kt_initializers;
 use crate::fixes::kt_initializers::kt_file_static_initializer;
 use crate::fixes::kt_anonymous_objects::kt_unrepresentable_declared_type;
 use crate::fixes::kt_declarations;
-use crate::fixes::kt_properties::kt_setter_parameter_name;
-use crate::fixes::kt_properties::kt_jvm_field_setter;
-use crate::fixes::kt_properties::kt_property_field_flags;
 use crate::fixes::kt_generated_members;
 use crate::fixes::kt_types::kt_type_parameter_id;
 use crate::method_wrapper::MethodWrapper;
@@ -197,7 +194,7 @@ impl KProperty {
         if kuna_fixes::enabled(KunaFix::KtPropertyFieldFlags) {
             if let Some(field) = self.underlying_field {
                 let delegated = Flags::IS_DELEGATED.get(flags);
-                for annotation in kt_property_field_flags::annotations(field, delegated) {
+                for annotation in kt_properties::field_flag_annotations(field, delegated) {
                     buf.append_indent(indent).append(&annotation).append_line_separator();
                 }
             }
@@ -381,11 +378,11 @@ impl KProperty {
                 let method_wrapper = (setter.method_supplier)(class_wrapper)
                     .expect("NullPointerException: methodWrapper");
                 let _parameter = kuna_fixes::enabled(KunaFix::KtSetterParameterName).then(|| {
-                    let name = kt_setter_parameter_name::parameter_name(
+                    let name = kt_properties::setter_parameter_name(
                         self.setter_param_name.as_deref(),
                     );
                     buf.append("set(").append(&name).append(") ");
-                    kt_setter_parameter_name::enter(method_wrapper, name)
+                    kt_properties::enter_setter(method_wrapper, name)
                 });
                 if _parameter.is_none() {
                     buf.append("set(")
@@ -429,7 +426,7 @@ impl KProperty {
             None if Flags::IS_VAR.get(flags)
                 && Flags::VISIBILITY.get(flags) != Some(Visibility::Private)
                 && !(kuna_fixes::enabled(KunaFix::KtJvmFieldSetter)
-                    && kt_jvm_field_setter::has_no_setter(
+                    && kt_properties::has_no_setter(
                         self.underlying_field,
                         Flags::IS_DELEGATED.get(flags),
                     )) =>
@@ -580,7 +577,7 @@ impl KProperty {
                 if let Some(getter_method) = getter_method {
                     let supplier = method_supplier(method_name.clone(), desc.clone());
                     let getter_flags = if kuna_fixes::enabled(KunaFix::KtDefaultAccessorFlags) {
-                        kt_default_accessor_flags::accessor_flags(
+                        kt_properties::accessor_flags(
                             property.has_getter_flags(),
                             property.get_getter_flags(),
                             flags,
@@ -624,7 +621,7 @@ impl KProperty {
                 if setter_method.is_some() {
                     let supplier = method_supplier(method_name.clone(), desc.clone());
                     let setter_flags = if kuna_fixes::enabled(KunaFix::KtDefaultAccessorFlags) {
-                        kt_default_accessor_flags::accessor_flags(
+                        kt_properties::accessor_flags(
                             property.has_setter_flags(),
                             property.get_setter_flags(),
                             flags,

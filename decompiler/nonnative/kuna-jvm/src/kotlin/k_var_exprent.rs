@@ -9,7 +9,7 @@ use crate::fixes::kt_extensions;
 use crate::fixes::kt_names::kt_function_parameter_name;
 use crate::fixes::kt_null_checks::kt_nullable_local;
 use crate::fixes::kt_types::kt_raw_generic_type;
-use crate::fixes::kt_properties::kt_setter_parameter_name;
+use crate::fixes::kt_properties;
 use crate::fixes::kt_suspend::kt_suspend_lambda;
 use crate::fixes::kt_suspend::kt_suspend_impl;
 use crate::fixes::kt_anonymous_objects::kt_unrepresentable_declared_type;
@@ -108,7 +108,7 @@ impl KVarExprent {
             }
         }
         if kuna_fixes::enabled(KunaFix::KtSetterParameterName) {
-            if let Some(name) = kt_setter_parameter_name::name(self.0) {
+            if let Some(name) = kt_properties::name_in_setter(self.0) {
                 return name;
             }
         }

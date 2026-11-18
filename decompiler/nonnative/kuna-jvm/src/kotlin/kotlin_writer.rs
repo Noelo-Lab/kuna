@@ -44,7 +44,7 @@ use crate::k_type::KType;
 use crate::k_types::KTypes;
 use crate::k_utils::KUtils;
 use crate::fixes::kt_constructors;
-use crate::fixes::kt_properties::kt_field_without_property;
+use crate::fixes::kt_properties;
 use crate::fixes::kt_compiler_idioms::kt_inlined_stdlib_call;
 use crate::fixes::kt_types::kt_class_header_metadata;
 use crate::fixes::kt_generated_members;
@@ -1793,9 +1793,9 @@ impl KotlinWriter {
         );
 
         if kuna_fixes::enabled(KunaFix::KtFieldWithoutProperty)
-            && kt_field_without_property::applies(cl, fd, is_enum)
+            && kt_properties::writes_field_as_property(cl, fd, is_enum)
         {
-            kt_field_without_property::write(wrapper, cl, fd, &name, buffer, indent);
+            kt_properties::write_field_as_property(wrapper, cl, fd, &name, buffer, indent);
             return;
         }
 
@@ -2133,7 +2133,7 @@ impl KotlinWriter {
             }
 
             if delegation.is_some() {
-                buffer.append(kt_field_without_property::visibility(flags));
+                buffer.append(kt_properties::visibility(flags));
                 name = Some("constructor".to_string());
             } else if static_init {
                 buffer.append("init ");
