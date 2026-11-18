@@ -1,27 +1,11 @@
-//! The kuna fix `qualified_super_call` (`kuna_fixes`), called from
-//! `InvocationExprent::to_java`, `NewExprent::to_java` and
-//! `SimplifyExprentsHelper::is_qualified_new_get_class`.
-//!
-//! A constructor of a class whose superclass `S` is an inner member class
-//! passes `S`'s constructor an outer instance first, which
-//! `ExprUtil.getSyntheticParametersMask` hides: Vineflower writes every such
-//! call `super(..)`, so `o.super(3)` becomes `super(3)`, which passes the
-//! enclosing instance (another object) or does not compile. javac
-//! null-checks an explicit outer instance (`dup; requireNonNull; pop`) unless
-//! it is a `this` or a `new`, and Vineflower keeps that check as a statement
-//! before the call. With the fix, the check is removed and marks the call
-//! ([`mark_checked`]), and a marked call, or one whose outer instance is not
-//! the instance of the innermost enclosing class having `S` as a member, is
-//! written `o.super(..)`. An anonymous class created by `o.new S(..) {..}`
-//! takes `o` as a constructor parameter of its own that its constructor passes
-//! to `S`'s: that creation is written qualified, without the parameter. A
-//! superclass outside the input that the class's InnerClasses attribute names
-//! an inner member class gets the same treatment, and its outer instance,
-//! which Vineflower writes as the first argument (`super(Outer.this, ctx)`),
-//! is left out of the list.
+//! Fix `qualified_super_call`: javac's null check of an explicit outer instance
+//! of a superclass constructor call is removed and marks the call, which is
+//! written `o.super(..)` (an anonymous `o.new S(..) {..}` qualified, without its
+//! extra parameter).
 
 use std::collections::VecDeque;
 
+use super::{class_node, has_member, inner_member_declaring};
 use crate::classes_processor::{ClassNode, ClassNodeType};
 use crate::code_constants::ACC_STATIC;
 use crate::decompiler_context::DecompilerContext;
@@ -30,29 +14,6 @@ use crate::exprent::Exprent;
 use crate::invocation_exprent::{InvocationExprent, Type as InvocationKind};
 use crate::struct_general_attribute::StructGeneralAttribute;
 use crate::text_buffer::TextBuffer;
-
-fn class_node(name: &str) -> Option<ClassNode> {
-    DecompilerContext::get_class_processor()
-        .get_map_root_classes()
-        .borrow()
-        .get(&name.to_string())
-        .copied()
-}
-
-/// The class declaring `class` when it is an inner (non-static) member class
-/// of the input.
-fn inner_member_declaring(class: &str) -> Option<String> {
-    let node = class_node(class)?;
-    let (type_, access, parent) = node.with(|d| (d.type_, d.access, d.parent));
-    if type_ != ClassNodeType::Member || (access & ACC_STATIC) != 0 {
-        return None;
-    }
-    parent.map(|p| p.with(|d| d.class_struct.qualified_name()))
-}
-
-fn has_member(class: &str, declaring: &str) -> bool {
-    class == declaring || DecompilerContext::get_struct_context().instance_of(class, declaring)
-}
 
 /// Whether `arg` is the instance of the innermost class enclosing the current
 /// one that has the member class declared in `declaring`.

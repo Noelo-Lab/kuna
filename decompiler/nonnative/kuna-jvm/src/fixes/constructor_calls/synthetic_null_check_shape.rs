@@ -1,26 +1,7 @@
-//! kuna fix `synthetic_null_check_shape` (`kuna_fixes`): javac null-checks a
-//! value with `invokestatic Objects.requireNonNull; pop` (`invokevirtual
-//! getClass; pop` before Java 9) where the source has no call: on a `dup` of
-//! the outer instance of `x.new Inner()`, the receiver of `x::m` or a pattern
-//! switch's selector, which stays on the stack for the construct (and the
-//! construct checks it again when written back), and on `x` of `x.CONST`, an
-//! instance field with a constant value read through `x`, whose constant is
-//! loaded next. `SimplifyExprentsHelper.isQualifiedNewGetClass` removes a
-//! discarded `requireNonNull`/`getClass` statement when `ExprProcessor`
-//! flagged it (a constant, `null` or an `astore` next) or when the next
-//! statement creates a nested class taking the checked value (or one of its
-//! type) first, so the source's own `Objects.requireNonNull(o); return new
-//! Holder(o);`, `Objects.requireNonNull(o); return null;` or
-//! `Objects.requireNonNull(bytes); char[] r = new char[2 * bytes.length];` lost
-//! its check. With the fix it removes only a call `ExprProcessor` found in one
-//! of javac's two shapes, the second only where the checked value's class or a
-//! superclass declares an instance field whose constant value is the one loaded
-//! next (`Objects.requireNonNull(b); return 5;` for a `b` whose class has
-//! `final int K = 3` keeps its check). A class that is not loaded is not
-//! known to declare one, so the check is kept: without a JDK the walk ended at
-//! `java.lang.String` or `java.lang.Object` and deleted `Objects.requireNonNull(s);
-//! return 5;`'s check. A check kept where javac wrote `x.CONST` still means
-//! what the bytecode does.
+//! Fix `synthetic_null_check_shape`: a discarded `requireNonNull`/`getClass`
+//! call is removed only when its instructions are one of javac's two null-check
+//! shapes; a check of `x` before `x.CONST` only when a loaded class declares
+//! that constant field.
 
 use crate::code_constants::*;
 use crate::code_type::CodeType;
