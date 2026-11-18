@@ -143,11 +143,6 @@ impl ContextUnit {
         ))
     }
 
-    pub fn get_directory_names(self) -> Vec<String> {
-        self.init_entries();
-        self.with(|d| d.dir_entries.clone())
-    }
-
     pub fn get_other_entries(self) -> Vec<Entry> {
         self.init_entries();
         self.with(|d| d.other_entries.clone())
@@ -169,17 +164,6 @@ impl ContextUnit {
             d.dir_entries = Vec::new();
             d.other_entries = Vec::new();
         });
-    }
-
-    /// Decompiles the unit's classes and hands each result to `sink`.
-    ///
-    /// Java: save(Function<String, StructClass>)
-    pub fn save(
-        self,
-        loader: &dyn Fn(&str) -> Option<StructClass>,
-        sink: &mut dyn FnMut(DecompiledClass),
-    ) {
-        self.save_selected(loader, sink, None);
     }
 
     /// [`ContextUnit::save`] restricted to `selection` (`None`: every class):
@@ -401,10 +385,6 @@ impl ContextUnit {
     /// The source is released with its last reference; only the entries are reset here.
     pub(crate) fn close(self) {
         self.clear();
-    }
-
-    pub fn get_stream(self, entry: &Entry) -> Option<Vec<u8>> {
-        self.source().get_input_stream(&entry.path())
     }
 }
 

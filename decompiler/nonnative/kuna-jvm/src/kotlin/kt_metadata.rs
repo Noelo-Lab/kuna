@@ -97,11 +97,6 @@ impl KotlinMetadataAnnotation {
         &self.record
     }
 
-    /// `getParNames()`.
-    pub fn get_par_names(&self) -> &[String] {
-        &self.record.names
-    }
-
     /// `getParNames().indexOf(name)`.
     pub fn index_of(&self, name: &str) -> i32 {
         self.record
@@ -175,22 +170,6 @@ impl KotlinMetadataAnnotation {
     pub fn get_d2(&self) -> Option<Vec<String>> {
         self.named("d2")
             .map(KotlinMetadataAnnotation::data_from_expr)
-    }
-
-    /// `xs`: the extra string (a multifile part's facade name).
-    pub fn get_xs(&self) -> Option<String> {
-        self.named("xs").map(KotlinMetadataAnnotation::string_value)
-    }
-
-    /// `mv`: the metadata version (not read by the plugin).
-    pub fn get_mv(&self) -> Option<Vec<i32>> {
-        self.named("mv")
-            .map(KotlinMetadataAnnotation::int_array_value)
-    }
-
-    /// `xi`: the extra flags (not read by the plugin).
-    pub fn get_xi(&self) -> Option<i32> {
-        self.named("xi").map(KotlinMetadataAnnotation::int_value)
     }
 }
 

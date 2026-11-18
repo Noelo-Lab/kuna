@@ -22,25 +22,6 @@ impl<E> Clone for FastFixedSetFactory<E> {
     }
 }
 
-impl<E> FastFixedSetFactory<E> {
-    /// Java reference `==`.
-    pub fn ptr_eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (FastFixedSetFactory::Short(a), FastFixedSetFactory::Short(b)) => a.ptr_eq(b),
-            (FastFixedSetFactory::Long(a), FastFixedSetFactory::Long(b)) => a.ptr_eq(b),
-            _ => false,
-        }
-    }
-
-    /// Identity `hashCode()`.
-    pub fn hash_code(&self) -> i32 {
-        match self {
-            FastFixedSetFactory::Short(f) => f.hash_code(),
-            FastFixedSetFactory::Long(f) => f.hash_code(),
-        }
-    }
-}
-
 impl<E: JavaHash + JavaEq + Clone> FastFixedSetFactory<E> {
     /// Up to 64 entries use one `long` per set, more use a `long[]`.
     pub fn create(entries: impl IntoIterator<Item = E>) -> FastFixedSetFactory<E> {
@@ -64,13 +45,6 @@ impl<E: JavaHash + JavaEq + Clone> FastFixedSetFactory<E> {
         match self {
             FastFixedSetFactory::Short(f) => f.get_entries(),
             FastFixedSetFactory::Long(f) => f.get_entries(),
-        }
-    }
-
-    pub fn entries_len(&self) -> usize {
-        match self {
-            FastFixedSetFactory::Short(f) => f.entries_len(),
-            FastFixedSetFactory::Long(f) => f.entries_len(),
         }
     }
 

@@ -1,5 +1,4 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/vars/VarVersionsGraph.java`.
-#![allow(dead_code)]
 
 use std::collections::VecDeque;
 

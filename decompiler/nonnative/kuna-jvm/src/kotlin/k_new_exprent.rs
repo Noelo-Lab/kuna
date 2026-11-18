@@ -123,8 +123,6 @@ impl Drop for RestoreMethodWrapper {
 }
 
 impl KNewExprent {
-    #[allow(dead_code)]
-    const REFERENCE_CTOR_DESC: &'static str = "(Ljava/lang/Object;)V";
 
     /// Java: KNewExprent(NewExprent)
     pub fn new(expr: NewExprent) -> KNewExprent {

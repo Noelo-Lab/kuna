@@ -15,12 +15,10 @@
 //! try-finally takes the versions its finally body assigns.
 use crate::cancelation_manager::CancelationManager;
 use crate::code_constants::ACC_STATIC;
-use crate::code_type::CodeType;
 use crate::direct_edge_type::DirectEdgeType;
 use crate::direct_graph::DirectGraph;
 use crate::direct_node::DirectNode;
 use crate::direct_node_type::DirectNodeType;
-use crate::exprent::{Exprent, ExprentType};
 use crate::fast_sparse_set_factory::FastSparseSetFactory;
 use crate::field_exprent::FieldExprent;
 use crate::flatten_statements_helper::FlattenStatementsHelper;
@@ -380,20 +378,6 @@ impl SFormsConstructor {
                 SSAUConstructorSparseEx::mark_direct_assignment(self, var_version_pair, right_pair)
             }
         }
-    }
-
-    #[allow(dead_code)]
-    fn makes_fields_dirty(expr: Exprent) -> bool {
-        match expr.get_type() {
-            ExprentType::Invocation => return true,
-            ExprentType::New => {
-                if expr.as_new().get_new_type().type_ == CodeType::Object {
-                    return true;
-                }
-            }
-            _ => {}
-        }
-        false
     }
 
     pub fn init_version(&mut self, var_exprent: VarExprent, stat: Statement) {

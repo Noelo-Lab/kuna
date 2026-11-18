@@ -1079,50 +1079,6 @@ impl SimplifyExprentsHelper {
         true
     }
 
-    #[allow(dead_code)]
-    fn is_method_array_assign(expr: Exprent, next: Exprent) -> bool {
-        let Some(asf) = expr.try_as_assignment() else {
-            return false;
-        };
-        let Some(ass) = next.try_as_assignment() else {
-            return false;
-        };
-        let Some(first_left) = asf.get_left().try_as_var() else {
-            return false;
-        };
-        let Some(second_left) = ass.get_left().try_as_array() else {
-            return false;
-        };
-        let Some(second_base) = second_left.get_array().try_as_var() else {
-            return false;
-        };
-        if !(first_left.get_index() == second_base.get_index() && second_base.is_stack()) {
-            return false;
-        }
-
-        let mut found_assign = false;
-        let second_right = ass.get_right();
-        for exprent in second_right.get_all_exprents() {
-            if let Some(arr_expr) = exprent.try_as_array() {
-                if arr_expr
-                    .get_array()
-                    .try_as_var()
-                    .is_some_and(|arr_var| arr_var.get_index() == first_left.get_index())
-                {
-                    exprent.replace_exprent(arr_expr.get_array(), asf.get_right().copy());
-                    found_assign = true;
-                }
-            }
-        }
-
-        if found_assign {
-            second_left.replace_exprent(second_base.0, asf.get_right());
-            return true;
-        }
-
-        false
-    }
-
     fn is_constructor_invocation_remote(list: &JList<Exprent>, index: i32) -> bool {
         let Some(as_) = list.get(index as usize).try_as_assignment() else {
             return false;

@@ -56,7 +56,6 @@ use crate::rt::jstring::from_utf16;
 use crate::rt::BitSet;
 use crate::text_buffer::TextBuffer;
 use crate::type_family::TypeFamily;
-use crate::typed::Typed;
 use crate::var_type::VarType;
 
 /// `KFunctionExprent.KFunctionType`.
@@ -88,7 +87,6 @@ impl KFunctionType {
     }
 }
 
-impl Typed for KFunctionType {}
 
 /// A `Typed` function type: `getAnyFunctionType()` and `setFuncType(Typed)`.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]

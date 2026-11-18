@@ -76,8 +76,6 @@ use crate::var_versions_graph::VarVersionsGraph;
 
 thread_local! {
     static DEBUG_CURRENTLY_DECOMPILING: Cell<Option<RootStatement>> = const { Cell::new(None) };
-    static DEBUG_CURRENT_CFG: Cell<Option<ControlFlowGraph>> = const { Cell::new(None) };
-    static DEBUG_CURRENT_DECOMPILE_RECORD: Cell<Option<DecompileRecord>> = const { Cell::new(None) };
 }
 
 pub struct MethodProcessor;
@@ -176,26 +174,6 @@ impl MethodProcessor {
         DEBUG_CURRENTLY_DECOMPILING.with(|c| c.set(root));
     }
 
-    /// `debugCurrentCFG.get()`.
-    pub fn debug_current_cfg() -> Option<ControlFlowGraph> {
-        DEBUG_CURRENT_CFG.with(Cell::get)
-    }
-
-    /// `debugCurrentCFG.set(graph)`.
-    pub fn set_debug_current_cfg(graph: Option<ControlFlowGraph>) {
-        DEBUG_CURRENT_CFG.with(|c| c.set(graph));
-    }
-
-    /// `debugCurrentDecompileRecord.get()`.
-    pub fn debug_current_decompile_record() -> Option<DecompileRecord> {
-        DEBUG_CURRENT_DECOMPILE_RECORD.with(Cell::get)
-    }
-
-    /// `debugCurrentDecompileRecord.set(record)`.
-    pub fn set_debug_current_decompile_record(record: Option<DecompileRecord>) {
-        DEBUG_CURRENT_DECOMPILE_RECORD.with(|c| c.set(record));
-    }
-
     /// The per-method pass schedule: bytecode to a structured statement tree.
     /// Statements, expressions and edges the schedule allocates and drops are
     /// released when it returns or throws (see `kuna_reclaim`).
@@ -234,8 +212,6 @@ impl MethodProcessor {
         CancelationManager::check_canceled();
 
         Self::set_debug_currently_decompiling(None);
-        Self::set_debug_current_cfg(None);
-        Self::set_debug_current_decompile_record(None);
 
         let is_initializer = CLINIT_NAME == mt.get_name();
         let plugin_context = PluginContext::get_current_context();
@@ -245,7 +221,6 @@ impl MethodProcessor {
             .get_instruction_sequence()
             .expect("getInstructionSequence()");
         let graph = ControlFlowGraph::new(seq);
-        Self::set_debug_current_cfg(Some(graph));
         let _javac_layout = kuna_javac_layout::enter(mt, cl);
 
         DecompilerContext::get_counter_container()
@@ -325,8 +300,6 @@ impl MethodProcessor {
 
         let mut root = DomHelper::parse_graph(graph, mt, 0);
 
-        Self::set_debug_current_decompile_record(Some(decompile_record));
-
         decompile_record.add("Initial", Some(root));
 
         Self::set_debug_currently_decompiling(Some(root));
@@ -350,7 +323,6 @@ impl MethodProcessor {
             decompile_record.add(&format!("ProcessFinally_{finally_processed}"), Some(root));
             reclaim.checkpoint(&[root.0], var_proc);
 
-            Self::set_debug_current_cfg(Some(graph));
             Self::set_debug_currently_decompiling(Some(root));
         }
 

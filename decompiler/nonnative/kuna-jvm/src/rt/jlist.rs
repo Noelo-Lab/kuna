@@ -193,7 +193,6 @@ impl<T: std::fmt::Debug> std::fmt::Debug for JList<T> {
 /// `List` operations that compare with Java `equals`, for plain vectors.
 pub trait JavaListExt<T> {
     fn j_index_of(&self, item: &T) -> i32;
-    fn j_last_index_of(&self, item: &T) -> i32;
     fn j_contains(&self, item: &T) -> bool;
 }
 
@@ -201,12 +200,6 @@ impl<T: JavaEq> JavaListExt<T> for [T] {
     fn j_index_of(&self, item: &T) -> i32 {
         self.iter()
             .position(|x| x.java_equals(item))
-            .map_or(-1, |i| i as i32)
-    }
-
-    fn j_last_index_of(&self, item: &T) -> i32 {
-        self.iter()
-            .rposition(|x| x.java_equals(item))
             .map_or(-1, |i| i as i32)
     }
 

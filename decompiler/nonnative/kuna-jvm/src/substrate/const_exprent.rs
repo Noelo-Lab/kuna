@@ -647,7 +647,6 @@ impl ConstExprent {
         }
     }
 
-    #[allow(dead_code)]
     fn gcd(a: f64, b: f64) -> f64 {
         if b == 0.0 {
             a

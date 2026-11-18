@@ -111,13 +111,6 @@ pub fn bundled_plugin_options() -> Vec<PluginOption> {
     out
 }
 
-/// The bundled plugin option with key `key`.
-pub fn find_plugin_option(key: &str) -> Option<PluginOption> {
-    bundled_plugin_options()
-        .into_iter()
-        .find(|o| o.option.key == key)
-}
-
 impl DecompiledClass {
     /// The language the class was written in: `kotlin` when the Kotlin plugin
     /// claimed it (its `path` then ends in `.kt`), else `java`.

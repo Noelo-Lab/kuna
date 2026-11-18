@@ -3,7 +3,6 @@
 //! `mapOriginalVarIndices` is replaced wholesale, never mutated after it is
 //! published; it is `Shared` so the getter hands out the map, not a copy.
 
-use crate::code_constants::ACC_STATIC;
 use crate::code_type::CodeType;
 use crate::counter_container::CounterContainer;
 use crate::decompiler_context::DecompilerContext;
@@ -144,101 +143,6 @@ impl VarVersionsProcessor {
                     .borrow_mut()
                     .put(paar, VarType::VARTYPE_OBJECT());
             }
-        }
-    }
-
-    #[allow(dead_code)]
-    fn simple_merge(type_processor: VarTypeProcessor, graph: DirectGraph, mt: StructMethod) {
-        let map_exprent_max_types = type_processor.get_upper_bounds();
-        let map_exprent_min_types = type_processor.get_lower_bounds();
-
-        let mut map_var_versions: JHashMap<i32, JHashSet<i32>> = JHashMap::new();
-
-        let keys = map_exprent_min_types.borrow().key_vec();
-        for pair in keys {
-            if pair.version >= 0 {
-                map_var_versions
-                    .compute_if_absent(pair.var, JHashSet::new)
-                    .add(pair.version);
-            }
-        }
-
-        let is_method_static = mt.has_modifier(ACC_STATIC);
-
-        let mut map_merged_versions: JHashMap<VarVersionPair, i32> = JHashMap::new();
-
-        for (key, versions) in map_var_versions.iter() {
-            if versions.len() > 1 {
-                let mut lst_versions = versions.to_vec();
-                lst_versions.sort();
-
-                let mut i = 0;
-                while i < lst_versions.len() {
-                    let first_pair = VarVersionPair::new(*key, lst_versions[i]);
-                    let mut first_type = map_exprent_min_types.borrow().get_cloned(&first_pair);
-
-                    if first_pair.var == 0 && first_pair.version == 1 && !is_method_static {
-                        i += 1;
-                        continue;
-                    }
-
-                    let mut j = i + 1;
-                    while j < lst_versions.len() {
-                        let second_pair = VarVersionPair::new(*key, lst_versions[j]);
-                        let second_type = map_exprent_min_types.borrow().get_cloned(&second_pair);
-
-                        let first = first_type.clone().expect("firstType");
-                        let mergeable = first.equals_opt(second_type.as_ref())
-                            || (first.equals(&VarType::VARTYPE_NULL())
-                                && second_type.as_ref().expect("secondType").type_
-                                    == CodeType::Object)
-                            || (second_type
-                                .as_ref()
-                                .expect("secondType")
-                                .equals(&VarType::VARTYPE_NULL())
-                                && first.type_ == CodeType::Object);
-                        if mergeable {
-                            let first_max_type =
-                                map_exprent_max_types.borrow().get_cloned(&first_pair);
-                            let second_max_type =
-                                map_exprent_max_types.borrow().get_cloned(&second_pair);
-                            let type_ = match (first_max_type, second_max_type) {
-                                (None, second) => second,
-                                (first, None) => first,
-                                (Some(first), Some(second)) => VarType::meet(&first, &second),
-                            };
-
-                            put_nullable(&map_exprent_max_types, first_pair, type_);
-                            map_merged_versions.put(second_pair, first_pair.version);
-                            map_exprent_max_types.borrow_mut().remove(&second_pair);
-                            map_exprent_min_types.borrow_mut().remove(&second_pair);
-
-                            if first.equals(&VarType::VARTYPE_NULL()) {
-                                put_nullable(
-                                    &map_exprent_min_types,
-                                    first_pair,
-                                    second_type.clone(),
-                                );
-                                first_type = second_type;
-                            }
-
-                            type_processor
-                                .get_map_final_vars()
-                                .borrow_mut()
-                                .put(first_pair, FinalType::NonFinal);
-
-                            lst_versions.remove(j);
-                            continue;
-                        }
-                        j += 1;
-                    }
-                    i += 1;
-                }
-            }
-        }
-
-        if !map_merged_versions.is_empty() {
-            Self::update_versions(graph, &map_merged_versions);
         }
     }
 

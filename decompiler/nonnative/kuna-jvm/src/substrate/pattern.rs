@@ -38,13 +38,6 @@ impl Pattern {
         }
     }
 
-    pub fn as_exprent(self) -> Exprent {
-        match self {
-            Pattern::Var(v) => v.0,
-            Pattern::Pattern(p) => p.0,
-        }
-    }
-
     pub fn get_pattern_vars(self) -> Vec<VarExprent> {
         match self {
             Pattern::Var(v) => VarExprent::get_pattern_vars(v),

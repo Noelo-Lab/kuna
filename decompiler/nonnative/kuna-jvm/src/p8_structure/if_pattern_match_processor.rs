@@ -963,18 +963,6 @@ impl PatternData {
     fn new(exp: PatternExprent, stat: Statement, index: i32) -> PatternData {
         PatternData { exp, stat, index }
     }
-
-    pub fn exp(&self) -> PatternExprent {
-        self.exp
-    }
-
-    pub fn stat(&self) -> Statement {
-        self.stat
-    }
-
-    pub fn index(&self) -> i32 {
-        self.index
-    }
 }
 
 impl JavaEq for PatternData {
@@ -1012,22 +1000,6 @@ impl PatternStore {
             type_: type_.clone(),
             store,
         }
-    }
-
-    pub fn component(&self) -> StructRecordComponent {
-        self.component
-    }
-
-    pub fn cl(&self) -> Option<StructClass> {
-        self.cl
-    }
-
-    pub fn type_(&self) -> VarType {
-        self.type_.clone()
-    }
-
-    pub fn store(&self) -> VarExprent {
-        self.store
     }
 }
 

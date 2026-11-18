@@ -9,7 +9,6 @@ use crate::rt::{JHashSet, JavaEq, JavaHash};
 pub struct InterpreterUtil;
 
 impl InterpreterUtil {
-    pub const EMPTY_INT_ARRAY: [i32; 0] = [];
 
     pub fn equal_sets<T: JavaHash + JavaEq + Clone>(c1: Option<&[T]>, c2: Option<&[T]>) -> bool {
         let (c1, c2) = match (c1, c2) {

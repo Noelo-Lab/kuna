@@ -153,15 +153,6 @@ enum MType {
     Method,
 }
 
-#[allow(dead_code)]
-const ERROR_DUMP_STOP_POINTS: [&str; 5] = [
-    "Fernflower.decompileContext",
-    "MethodProcessor.codeToJava",
-    "ClassWriter.writeMethod",
-    "ClassWriter.methodLambdaToJava",
-    "ClassWriter.classLambdaToJava",
-];
-
 const MODIFIERS: [(i32, &str); 11] = [
     (ACC_PUBLIC, "public"),
     (ACC_PROTECTED, "protected"),

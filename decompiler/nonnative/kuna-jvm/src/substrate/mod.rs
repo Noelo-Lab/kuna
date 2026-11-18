@@ -76,7 +76,6 @@ pub mod synchronized_statement;
 pub mod text_util;
 pub mod type_annotation;
 pub mod type_family;
-pub mod typed;
 pub mod var_exprent;
 pub mod var_type;
 pub mod vb_style_collection;

@@ -73,8 +73,6 @@ pub use kotlin::{
     kuna_fix_kt_lambda_singleton_returns, kuna_fix_kt_type_parameter_id,
 };
 pub use kotlin::kuna_fix_kt_generated_constructor_hidden;
-pub use kotlin::kuna_fix_kt_constructor_body_after_first_block;
-pub use kotlin::kuna_fix_kt_inline_class_constructor_accessor;
 pub use kotlin::kuna_fix_kt_jump_to_non_loop_label;
 pub use kotlin::kuna_fix_kt_file_class_constructor;
 pub use kotlin::kuna_fix_kt_when_break;
@@ -95,7 +93,7 @@ pub use p0_knowledge::{
     kuna_fixes, kuna_input, kuna_inventory, kuna_options, pool_interceptor, struct_context,
 };
 pub use p1_classfile::{
-    bytecode_version, class_wrapper, classes_processor, code_constants, constant_pool, lazy_loader,
+    bytecode_version, class_wrapper, classes_processor, code_constants, constant_pool,
     link_constant, method_wrapper, pooled_constant, primitive_constant,
     struct_ann_default_attribute, struct_annotation_attribute,
     struct_annotation_parameter_attribute, struct_bootstrap_methods_attribute, struct_class,
@@ -165,12 +163,12 @@ pub use substrate::{
     exprent, fast_fixed_set, fast_fixed_set_factory, fast_sparse_set_factory, field_descriptor,
     field_exprent, function_exprent, general_statement, i_matchable, if_exprent, if_statement,
     int_helper, interpreter_util, invocation_exprent, key, kuna_fix_statement_as_expression,
-    kuna_fix_switch_yield_const_retype, list_stack, long_fast_fixed_set_factory, match_engine,
+    list_stack, long_fast_fixed_set_factory, match_engine,
     match_node, method_descriptor, monitor_exprent, new_class_name_builder, new_exprent, packed_map,
     pair, pattern, pattern_exprent, root_statement, s_forms_fast_map_direct, sequence_statement,
     short_fast_fixed_set_factory, start_end_pair, stat_edge, statement, statement_iterator,
     statements, switch_exprent, switch_head_exprent, switch_statement, synchronized_statement,
-    text_util, type_annotation, type_family, typed, var_exprent, var_type, vb_style_collection,
+    text_util, type_annotation, type_family, var_exprent, var_type, vb_style_collection,
     yield_exprent, zip_reader,
 };
 pub use p2_lift::kuna_fix_unchecked_call_result_cast;

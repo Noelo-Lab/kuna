@@ -140,10 +140,6 @@ impl TryWithResourcesProcessor {
         false
     }
 
-    pub fn make_try_with_resource_j11(try_statement: CatchStatement) -> bool {
-        Self::make_try_with_resource_j11_in(try_statement, false)
-    }
-
     /// `make_try_with_resource_j11`; `old_class` (fix `twr_class_version`)
     /// runs it on a class older than Java 11, where only javac's exact shape
     /// is accepted.

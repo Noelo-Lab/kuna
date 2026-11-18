@@ -2693,10 +2693,6 @@ impl<K: Clone, V: Clone> SimpleEntry<K, V> {
     pub fn get_value(&self) -> V {
         self.value.clone()
     }
-
-    pub fn set_value(&mut self, value: V) -> V {
-        std::mem::replace(&mut self.value, value)
-    }
 }
 
 /// Java: `VarDefinitionHelper.VPPEntry`.
