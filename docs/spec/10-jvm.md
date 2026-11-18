@@ -2045,7 +2045,7 @@ import collector, which decides how the same type is written without an annotati
 qualify it (`Map.Entry` where another `Entry` is in scope, the full name where the current
 package has a class of the same simple name); that qualifier is dropped, so
 `Map.@Nullable Entry<K, V>` is written `@Nullable Entry<K, V>`, which names another type or none.
-With the fix (`decompiler/nonnative/kuna-jvm/src/fixes/type_annotations/type_annotation_qualified_name.rs`)
+With the fix (`decompiler/nonnative/kuna-jvm/src/fixes/type_annotations.rs`)
 the first name is preceded by the qualifier of the import collector's name for it, and the
 annotation follows the qualifier, as Java requires (JLS 9.7.4).
 
@@ -2056,7 +2056,7 @@ and then recurses into the argument with all of the member's annotations, so an 
 for a later argument takes its steps inside an earlier one:
 `Function<Map<String, @A Object>, @B Map<String, @C Object>>` is written with `@A @C` on the first
 `Object` and nothing on the second. With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/type_annotations/type_annotation_argument_scope.rs`) the
+(`decompiler/nonnative/kuna-jvm/src/fixes/type_annotations.rs`) the
 recursion into an argument sees only the annotations whose path enters it.
 
 **Fix `assert_throw_after_if`**. `AssertProcessor.replaceAssertion` finds an assert's
@@ -3622,7 +3622,7 @@ enclosing class written bare makes the type a member of a raw type: with type ar
 class javac rejects it (`improperly formed type`; Guava's `CombinedFuture`, whose field
 `@Nullable CombinedFutureInterruptibleTask<?> task` costs the class, 19 methods), without them it is a
 raw type (Guava's `LocalCache`, `MapMakerInternalMap`, `AbstractMapBasedMultimap`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/type_annotations/type_annotation_outer_arguments.rs (arguments_of)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/type_annotations.rs (arguments_of)`)
 each enclosing class is followed by the type arguments the generic type's parent chain gives it,
 `CombinedFuture<V>.@Nullable CombinedFutureInterruptibleTask<?>`, which recompiles to the original
 Signature. These four Guava classes are the only change on the five Java benchmark jars; Kotlin output
