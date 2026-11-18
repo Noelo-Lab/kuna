@@ -621,6 +621,7 @@ the comparison when the constant is the left operand (the comparison came from a
 relational comparison, `&&` or `||` (a condition only reaches a comparison as a computed
 value); a constant `false` on the right of any other operand is the `ifeq`/`ifne` form and
 still folds to `x` or `!x`.
+
 **javac's layout in loop bodies (kuna).** The same option lays out the ifs and exits of loop
 bodies and the code around them. Loops are recovered (`MergeHelper::enhance_loops`) before
 and inside the main loop of `MethodProcessor::code_to_java`, and an if-else made before a

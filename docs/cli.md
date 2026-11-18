@@ -4303,12 +4303,9 @@ kuna decompile app.jar com.ex.UtilKt --language java   # a Kotlin class written 
 
 A class file, a jar (or war, ear, zip) or a directory of classes is decompiled to **Java**,
 and a class compiled from Kotlin to **Kotlin**, by kuna's non-native JVM engine,
-`kuna-jvm`, a Rust port of Vineflower 1.12.0 and its bundled plugins that prints the text
-Vineflower prints, except where kuna fixes a Vineflower defect: a method Vineflower fails
-on, or code it prints wrong. The fixes are always on and have no options of their own;
-`--option jvm_vineflower_compat on` turns them all off and gives Vineflower's exact text
-(`docs/jvm.md`, the algorithm is `docs/spec/10-jvm.md`). The
-input is recognized before any native code runs, so none of the native machinery (SLEIGH
+`kuna-jvm`, a Rust port of Vineflower 1.12.0 and its bundled plugins with kuna's fixes of
+Vineflower's defects, which `--option jvm_vineflower_compat on` turns off for Vineflower's
+exact text (`docs/jvm.md`; the algorithm is `docs/spec/10-jvm.md`). The input is recognized before any native code runs, so none of the native machinery (SLEIGH
 specs, `decomp_dbg`, the loader, the native option tables) is involved, and a native
 binary pays one `stat` and one eight-byte read for the check. The commands keep their
 native names, flags and output shapes where they make sense for Java and Kotlin, and say so where
@@ -4647,32 +4644,24 @@ above).
 
 `--lib PATH` (repeatable) adds class files, jars or directories as context: their classes
 inform types, overrides and varargs but are not decompiled. The JDK class library is
-context too: `--option jvm_include_runtime on` (the default) uses `JAVA_HOME`, then the
-`java` on `PATH`, then the usual install directories; a path names a JDK home and `off`
-uses none; a path that holds no JDK is an error (exit `1`). When no JDK is found, one note
-on stderr says so and decompilation continues;
-the output can then lack `@Override` on methods that override JDK methods and some generic
-arguments (`docs/jvm.md`). Output depends on the JDK used, so pin one with a path when it
-must be reproducible.
+context too: `--option jvm_include_runtime` takes `on` (the default: the first JDK found),
+a JDK home path (one that holds no JDK is an error, exit `1`) or `off`; when none is found,
+one note on stderr says so and decompilation continues. Output depends on the JDK used, so
+pin one with a path when it must be reproducible (`docs/jvm.md`, "The JDK runtime library",
+has the search order and what changes without one).
 
 ### Parallelism and limits
 
-`--jobs N|auto` (default `auto`) runs N engine instances on N threads of one process. The
-output is byte-identical at every N. `auto` is the core count, at most 24 and at most one
-per 16 class files, reduced to what the available memory fits: each instance reads only
-the classes it uses, roughly 32 MiB plus 4 bytes per byte of input class files, and the
-decompiled state adds about 90 bytes per input byte (`docs/jvm.md`).
-
-`--max-fn-seconds N` (default 120, `0` disables) bounds each method: the engine counts
-the polls of its loops against a budget of 200,000 per second of N (the rate its slowest
-methods poll at), so the same methods stop on any machine under any load, with a
-wall-clock deadline at `2N` seconds behind it; a method that runs out is written as `//
-$VF: Couldn't be decompiled` with a `TimeoutException`, the class around it normally.
-Recursion deeper than the engine's stack fails the method or class it is in the same way,
-with a `StackOverflowError`, instead of ending the process (`docs/jvm.md`). As a last resort,
-after `2N+30` seconds the run writes the classes that finished, gives each stuck class a
-stub comment and exits. `--max-fn-memory MiB` is the native per-function limit, applied
-to the whole process, since the instances share it.
+`--jobs N|auto` (default `auto`) runs N engine instances on N threads of one process; the
+output is byte-identical at every N, and `auto` is the core count, capped by the input's
+size and the available memory. `--max-fn-seconds N` (default 120, `0` disables) bounds each
+method by a machine-independent count of its loop polls, with a wall-clock deadline at `2N`
+seconds behind it; a method that runs out, or recurses deeper than the engine's stack, is
+written as `// $VF: Couldn't be decompiled` with a `TimeoutException` or
+`StackOverflowError`, the class around it normally. As a last resort, after `2N+30` seconds
+the run writes the classes that finished, gives each stuck class a stub comment and exits.
+`--max-fn-memory MiB` is the native per-function limit, applied to the whole process, since
+the instances share it. `docs/jvm.md`, "Performance and limits", has the numbers.
 
 ### Flags refused on JVM inputs
 

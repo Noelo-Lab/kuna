@@ -33,9 +33,8 @@ recompile as written, and the decompiler's wall time, CPU time and peak memory.
 
 ## Running it
 
-It needs Python 3 with tree-sitter-languages 1.10.2, networkx, numpy, scipy,
-diff-match-patch and psutil, JDK 17 and 21 homes, and about 2 GB of disk for the downloads
-plus 1 GB for full runs of both tools; `fetch` downloads the projects, coursier, Temurin 25
+It needs the Python packages and JDK homes `scripts/javabench/README.md` lists, and about
+2 GB of disk for the downloads plus 1 GB for full runs of both tools; `fetch` downloads the projects, coursier, Temurin 25
 and the Vineflower jar, each checked against a pinned SHA-256. Everything goes to one workspace directory. From the repository root:
 
 ```bash
@@ -68,29 +67,13 @@ Vineflower 1.12.0 on all 110,238 methods.
 
 Every score field is identical between kuna in compat mode and Vineflower on all five
 projects: the scoreboards match, and so does every per-method record (GED, type and
-bytecode scores, perfect flags, failures). The benchmark shows that the port's output is
-Vineflower's on large real-world inputs; the timing columns show what the port costs.
-
-The timings were measured on one 80-core machine with both tools run back to back, one
-project at a time: kuna with default flags (before its fixes were added, when its output
-was compat mode's), Vineflower 1.12.0 on JDK 25 (Temurin 25.0.5) with `-thr=12`, each run
-once while the machine had other work. Wall and CPU time are the decompiler process's (user
-plus system); peak memory is the larger of its own maximum resident set and the sampled
-resident set of its process tree.
-
-| Project | Methods | Perfect on all metrics (both tools) | kuna wall / CPU / peak memory | Vineflower wall / CPU / peak memory |
-|---|---|---|---|---|
-| guava | 12,167 | 91.86% | 2.1 s / 41 s / 1.5 GiB | 4.5 s / 87 s / 3.8 GiB |
-| spring-boot | 3,967 | 88.98% | 0.7 s / 10 s / 0.7 GiB | 2.7 s / 49 s / 1.6 GiB |
-| spring-framework | 13,874 | 90.83% | 3.2 s / 47 s / 1.5 GiB | 6.0 s / 119 s / 4.7 GiB |
-| ghidra | 18,153 | 80.05% | 3.4 s / 70 s / 1.4 GiB | 7.1 s / 138 s / 6.9 GiB |
-| elasticsearch | 62,077 | 84.20% | 17.7 s / 357 s / 7.4 GiB | 29.2 s / 395 s / 11.5 GiB |
-
-A method that is not perfect is one where Vineflower's output (and so kuna's) departs from
-the source, or one of the few the harness cannot score perfectly even from the source
-itself: the source pseudo-decompiler (`--decompiler source`) reaches 100% on structure,
-99.98% on bytes and 98.96% of variable types, the misses being source-level `var`
-(`scripts/javabench/README.md`).
+bytecode scores, perfect flags, failures). These are the Vineflower scores in the table
+below. A method that is not perfect is one where Vineflower's output (and so kuna's)
+departs from the source, or one of the few the harness cannot score perfectly even from the
+source itself: the source pseudo-decompiler (`--decompiler source`) reaches 100% on
+structure, 99.98% on bytes and 98.96% of variable types, the misses being source-level
+`var` (`scripts/javabench/README.md`). Timings are in `docs/jvm.md`, "Performance and
+limits".
 
 ### Default mode: what kuna's fixes and options change
 
@@ -151,6 +134,3 @@ The other 5 come from fixes:
 - Elasticsearch's `TranslogWriter.writeAndReleaseOps`: 10 of 11 types instead of 11, with
   bytes now exact. The rebuilt resource is written `try (toWrite)`, Vineflower's form, where
   the source declares `try (ReleasableBytesReference toClose = toWrite)`.
-
-`docs/jvm.md` ("Performance and limits") has separate timings, measured as the best of
-three on a quiet machine with `kuna decompile-project` and Vineflower's default thread count.
