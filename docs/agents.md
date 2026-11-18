@@ -41,7 +41,7 @@ binaries into `decompiler/target/release/` and compiles the specs).
 |---|---|---|
 | `make test` | datatest corpus vs `docs/baseline.json` | **PARITY OK** (675/675) |
 | `make test-stages` | stage-issue corpus vs `docs/baseline-stages.json` | **PARITY OK** |
-| `make test-jvm` | JVM corpus vs `tests/jvm/baseline.txt` (no specs, no JDK needed) | no regression |
+| `make test-jvm` | JVM corpus: every case matches (no specs, no JDK needed) | all match |
 | `make rust-test` | full cargo workspace suite + `docs/options.md` freshness | green |
 | `make check-spec` | `docs/spec/` anchors + inline code paths resolve; each phase folder owned by exactly one chapter (`--strict` adds option-mention coverage) | green |
 
@@ -147,7 +147,7 @@ phases are **settable assertions/options** (`--option NAME VALUE`, discovered vi
   (not `phases.toml`; no catalog counts to bump). Its Vineflower rows stay one-to-one with
   `IFernflowerPreferences` and the bundled plugins' options (`kuna-jvm/tests/kuna_options.rs`); a kuna-only behavior is a
   new row with `source_decompiler = "kuna"`, default-on only if `make test-jvm` still
-  matches every baseline case. Regenerate `docs/options-jvm.md` with
+  matches every case. Regenerate `docs/options-jvm.md` with
   `kuna catalog --markdown --engine jvm`; describe it in `docs/spec/10-jvm.md`.
 - **The spec is live**: every new feature or behavior change is described in natural-language
   prose in the owning `docs/spec/` chapter in the same PR — not just an anchor update (each

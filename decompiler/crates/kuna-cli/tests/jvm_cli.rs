@@ -586,18 +586,16 @@ fn docs_embed_the_jvm_topics() {
 }
 
 #[test]
-fn test_jvm_runs_corpus_cases_against_the_baseline() {
-    let baseline = common::repo_root().join("tests/jvm/baseline.txt").display().to_string();
-    let out = kuna(&["test", "--jvm", "--name", "default/pkg/TestEnhancedForLoops", "--baseline", &baseline]);
-    let text = ok(&out);
+fn test_jvm_runs_corpus_cases() {
+    let text = ok(&kuna(&["test", "--jvm", "--name", "default/pkg/TestEnhancedForLoops"]));
     assert!(text.starts_with("jvm: 1/1 cases matched"), "{text}");
-    assert!(text.trim_end().ends_with("PARITY OK"), "{text}");
     let doc: Value = serde_json::from_str(&ok(&kuna(&["test", "--jvm", "--name", "TestEnhancedForLoops", "--json"]))).unwrap();
     assert_eq!(doc["passing"], serde_json::json!(["jvm:default/pkg/TestEnhancedForLoops"]));
     assert_eq!(doc["jvm_footer"], serde_json::json!([1, 1]));
     let miss = kuna(&["test", "--jvm", "--name", "no-such-case"]);
     assert_eq!(miss.status.code(), Some(2));
     assert_eq!(kuna(&["test", "--jvm", "--datatests"]).status.code(), Some(2));
+    assert_eq!(kuna(&["test", "--jvm", "--baseline", "x.txt"]).status.code(), Some(2));
 }
 
 #[test]

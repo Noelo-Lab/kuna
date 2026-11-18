@@ -36,8 +36,8 @@ usage: corpus [--manifest FILE] [--filter SUBSTR]... [--set NAME]... [--jobs N]
   --mem-limit MB        per-case address-space limit under --isolate (default 8192, 0 = none)
   --out DIR             write <id>.actual.java, <id>.diff, <id>.log per case (DIR must be new
                         or empty)
-  --baseline FILE       regression gate: report cases listed in FILE that no longer match;
-                        exit 1 on any regression (other mismatches do not fail the run)
+  --baseline FILE       for a manifest that does not match in full (an external one): fail only
+                        on the cases listed in FILE (one id per line) that no longer match
   --save-baseline FILE  write the matching ids (a filtered run keeps FILE's other ids)
   --verbose             one line per case, not only per non-matching case
   --progress            report each finished case on stderr

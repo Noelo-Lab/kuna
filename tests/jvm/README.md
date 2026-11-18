@@ -16,14 +16,13 @@ validated); do not edit by hand.
 | `cases.tsv` | the manifest: one record block per case (format below) |
 | `classes/<source set>/...` | the class files, laid out as in the oracle corpus |
 | `expected/<set slug>/<test class>.java` | Vineflower's output for each case, raw bytes (`.kt` for a case printed as Kotlin) |
-| `baseline.txt` | the regression gate: ids of the cases kuna-jvm matches today; refresh it with `corpus --save-baseline ../tests/jvm/baseline.txt` when a change makes more cases match |
-| `regen.py` | rebuilds everything here except `baseline.txt` |
+| `regen.py` | rebuilds everything here |
 | `plugins.json` | the plugin cases: Vineflower's bundled plugins' own tests, run with the plugins on |
 | `plugin_oracle.py` | rebuilds the plugin cases' class files (`classes/plugins/`) and expected text with the release jar |
 | `kotlin.json` | the Kotlin cases: the Kotlin plugin's own tests and core's Kotlin tests, from the Kotlin oracle corpus |
 | `kotlin_corpus.py` | vendors the Kotlin cases (`classes/kotlin/`, `expected/kotlin-*/`, `kotlin.json`) from the Kotlin oracle corpus (`$KUNA_JVM_ORACLE/corpus-kt`), and writes the manifest of all its forms |
 | `kuna-fixes/` | kuna's own cases: classes Vineflower fails on that a kuna fix decompiles, each run in compat and in default mode (`kuna-fixes/README.md`) |
-| `kuna_fix_case.py` | adds a kuna-fixes case from a class file: Vineflower's text through the oracle, kuna's text for review, the table, the baseline |
+| `kuna_fix_case.py` | adds a kuna-fixes case from a class file: Vineflower's text through the oracle, kuna's text for review, the table |
 
 ## Provenance
 
@@ -85,8 +84,8 @@ Line oriented, tab separated; fields escape `\\`, `\t`, `\n`, `\r`; `#` starts a
 
 ## Counts
 
-- Vendored: **1187 cases** in all, the baseline: 607 Vineflower-oracle cases (the Java cases here,
-  the plugin and Kotlin cases below) and 580 runs of the 290 kuna-fixes cases (below).
+- Vendored: **1187 cases** in all, each of which must match: 607 Vineflower-oracle cases (the Java
+  cases here, the plugin and Kotlin cases below) and 580 runs of the 290 kuna-fixes cases (below).
 - Java cases: **530** (Complex Condys 1, Default 505, Javadoc 1, Lambda to Anonymous Class 2, Literals 4, LVT 5, Markdown Javadoc 1, No LVT 1, Renaming 1, Synthetics Marking 3, Ternary Constant Simplification 2, Text Tokens 4), 858 class files (890 KiB) and 530
   expected files (1376 KiB); 2644 KiB in all with `cases.tsv`.
 - Of the oracle corpus's 598 runnable tests, **68 are not vendored** because their
@@ -159,12 +158,12 @@ cd decompiler
 cargo run -q --release -p kuna-jvm --example corpus -- --jobs 16 --out NEW_DIR
 # a quick in-process run of a few cases
 cargo run -q -p kuna-jvm --example corpus -- --filter TestEnhancedForLoops --out NEW_DIR
-# the regression gate: fail on any case that matched in the baseline and no longer does
-cargo run -q --release -p kuna-jvm --example corpus -- --jobs 16 --baseline ../tests/jvm/baseline.txt
 # all 598 runnable cases, JDK-dependent ones included, from the external corpus
 python3 -I ../tests/jvm/regen.py --skip-vendor --full-manifest all-cases.tsv
 cargo run -q --release -p kuna-jvm --example corpus -- --manifest all-cases.tsv --jobs 16
 ```
 
-`corpus --help` lists every flag. Regenerate this directory with `python3 -I tests/jvm/regen.py`
-(`--corpus DIR` overrides `$KUNA_JVM_ORACLE/corpus`).
+`corpus --help` lists every flag; on a manifest whose cases do not all match on this machine,
+`--save-baseline FILE` records the ids that match and `--baseline FILE` then fails only on those.
+Regenerate this directory with `python3 -I tests/jvm/regen.py` (`--corpus DIR` overrides
+`$KUNA_JVM_ORACLE/corpus`).
