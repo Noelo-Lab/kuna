@@ -66,14 +66,20 @@ struct Decoded {
 }
 
 fn decode(bytes: &[u8]) -> Decoded {
+    decode_in(true, bytes)
+}
+
+fn decode_in(longmode: bool, bytes: &[u8]) -> Decoded {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
-    let sla =
-        std::fs::read(root.join("specs/Ghidra/Processors/x86/data/languages/x86-64.sla")).unwrap();
+    let sla = if longmode { "x86-64.sla" } else { "x86.sla" };
+    let sla = std::fs::read(root.join("specs/Ghidra/Processors/x86/data/languages").join(sla)).unwrap();
     let mut sleigh = Sleigh::new(Box::new(Bytes(bytes.to_vec())), Box::new(ContextInternal::new()));
     sleigh.initialize_from_sla(&sla).unwrap();
-    sleigh.set_context_default("addrsize", 2);
+    sleigh.set_context_default("addrsize", if longmode { 2 } else { 1 });
     sleigh.set_context_default("opsize", 1);
-    sleigh.set_context_default("longMode", 1);
+    if longmode {
+        sleigh.set_context_default("longMode", 1);
+    }
     let ram = Rc::clone(sleigh.base().manager().get_space_by_name("ram").unwrap());
     let addr = Address::new(ram, BASE);
     let mut ops = Ops::default();
@@ -184,5 +190,19 @@ fn gather_prefetches_index_with_a_zmm_register_and_load_nothing() {
             "the ZMM index is scaled into the address: {:?}",
             d.ops
         );
+    }
+}
+
+#[test]
+fn gather_prefetches_keep_their_vector_index_in_32_bit_mode() {
+    for (bytes, text) in [
+        (&[0x62, 0xf2, 0x7d, 0x49, 0xc6, 0x0c, 0x88][..], "VGATHERPF0DPS zmmword ptr [EAX + ZMM1*0x4]{K1}"),
+        (&[0x62, 0xf2, 0x7d, 0x49, 0xc7, 0x0c, 0x88][..], "VGATHERPF0QPS zmmword ptr [EAX + ZMM1*0x4]{K1}"),
+        (&[0x62, 0xf2, 0xfd, 0x4f, 0xc7, 0x54, 0xf9, 0x08][..], "VGATHERPF1QPD zmmword ptr [ECX + ZMM7*0x8 + 0x40]{K7}"),
+    ] {
+        let d = decode_in(false, bytes);
+        assert_eq!(d.length as usize, bytes.len(), "{bytes:02x?}");
+        assert_eq!(d.text, text);
+        assert_eq!(loads(&d), 0, "a prefetch loads nothing: {:?}", d.ops);
     }
 }

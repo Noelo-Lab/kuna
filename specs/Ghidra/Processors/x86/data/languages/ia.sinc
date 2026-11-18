@@ -1288,6 +1288,8 @@ z_vm32z: "zmmword ptr "^vMem32z is vMem32z { export vMem32z; }
 x_vm64x: "xmmword ptr "^vMem64x is vMem64x { export vMem64x; }
 y_vm64y: "ymmword ptr "^vMem64y is vMem64y { export vMem64y; }
 z_vm64z: "zmmword ptr "^vMem64z is vMem64z { export vMem64z; }
+@else
+z_vm64z: "zmmword ptr "^vMem32z is vMem32z { export vMem32z; }
 @endif
 
 Reg32_m8:     Rmr32     is mod=3 & Rmr32                     { export Rmr32; }

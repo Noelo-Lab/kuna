@@ -9420,7 +9420,6 @@ define pcodeop vgatherpf0dps_avx512pf ;
 	vgatherpf0dps_avx512pf( z_vm32z, ZmmOpMask );
 }
 
-@ifdef IA64
 # VGATHERPF0DPS/VGATHERPF0QPS/VGATHERPF0DPD/VGATHERPF0QPD 5-264 PAGE 2088 LINE 107500
 define pcodeop vgatherpf0qps_avx512pf ;
 :VGATHERPF0QPS z_vm64z^ZmmOpMask  is $(EVEX_NONE) & $(EVEX_L512) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & ZmmOpMask; byte=0xC7; reg_opcode=1 ... & z_vm64z
@@ -9428,7 +9427,6 @@ define pcodeop vgatherpf0qps_avx512pf ;
 {
 	vgatherpf0qps_avx512pf( z_vm64z, ZmmOpMask );
 }
-@endif
 
 # VGATHERPF0DPS/VGATHERPF0QPS/VGATHERPF0DPD/VGATHERPF0QPD 5-264 PAGE 2088 LINE 107503
 define pcodeop vgatherpf0dpd_avx512pf ;
@@ -9438,7 +9436,6 @@ define pcodeop vgatherpf0dpd_avx512pf ;
 	vgatherpf0dpd_avx512pf( y_vm32y, YmmOpMask );
 }
 
-@ifdef IA64
 # VGATHERPF0DPS/VGATHERPF0QPS/VGATHERPF0DPD/VGATHERPF0QPD 5-264 PAGE 2088 LINE 107506
 define pcodeop vgatherpf0qpd_avx512pf ;
 :VGATHERPF0QPD z_vm64z^ZmmOpMask  is $(EVEX_NONE) & $(EVEX_L512) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & ZmmOpMask; byte=0xC7; reg_opcode=1 ... & z_vm64z
@@ -9446,7 +9443,6 @@ define pcodeop vgatherpf0qpd_avx512pf ;
 {
 	vgatherpf0qpd_avx512pf( z_vm64z, ZmmOpMask );
 }
-@endif
 
 # VGATHERPF1DPS/VGATHERPF1QPS/VGATHERPF1DPD/VGATHERPF1QPD 5-267 PAGE 2091 LINE 107620
 define pcodeop vgatherpf1dps_avx512pf ;
@@ -9456,7 +9452,6 @@ define pcodeop vgatherpf1dps_avx512pf ;
 	vgatherpf1dps_avx512pf( z_vm32z, ZmmOpMask );
 }
 
-@ifdef IA64
 # VGATHERPF1DPS/VGATHERPF1QPS/VGATHERPF1DPD/VGATHERPF1QPD 5-267 PAGE 2091 LINE 107623
 define pcodeop vgatherpf1qps_avx512pf ;
 :VGATHERPF1QPS z_vm64z^ZmmOpMask  is $(EVEX_NONE) & $(EVEX_L512) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & ZmmOpMask; byte=0xC7; reg_opcode=2 ... & z_vm64z
@@ -9464,7 +9459,6 @@ define pcodeop vgatherpf1qps_avx512pf ;
 {
 	vgatherpf1qps_avx512pf( z_vm64z, ZmmOpMask );
 }
-@endif
 
 # VGATHERPF1DPS/VGATHERPF1QPS/VGATHERPF1DPD/VGATHERPF1QPD 5-267 PAGE 2091 LINE 107626
 define pcodeop vgatherpf1dpd_avx512pf ;
@@ -9474,7 +9468,6 @@ define pcodeop vgatherpf1dpd_avx512pf ;
 	vgatherpf1dpd_avx512pf( y_vm32y, YmmOpMask );
 }
 
-@ifdef IA64
 # VGATHERPF1DPS/VGATHERPF1QPS/VGATHERPF1DPD/VGATHERPF1QPD 5-267 PAGE 2091 LINE 107629
 define pcodeop vgatherpf1qpd_avx512pf ;
 :VGATHERPF1QPD z_vm64z^ZmmOpMask  is $(EVEX_NONE) & $(EVEX_L512) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & ZmmOpMask; byte=0xC7; reg_opcode=2 ... & z_vm64z
@@ -9482,7 +9475,6 @@ define pcodeop vgatherpf1qpd_avx512pf ;
 {
 	vgatherpf1qpd_avx512pf( z_vm64z, ZmmOpMask );
 }
-@endif
 
 # VGATHERQPS/VGATHERQPD 5-270 PAGE 2094 LINE 107742
 # WARNING: did not recognize qualifier /vsib for "VGATHERQPS xmm1 {k1}, vm64x"

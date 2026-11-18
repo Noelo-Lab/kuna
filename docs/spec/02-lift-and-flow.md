@@ -3277,10 +3277,12 @@ every other `0F 18 /4..7` encoding stays a reserved NOP. The AVX-512PF
 `VGATHERPF0/1{D,Q}P{S,D}` constructors take their VSIB operand (`vm32z`,
 `vm64z`, `vm32y`) like the `VSCATTERPF` family, so the index is the ZMM or YMM
 register the SIB names and the user-op receives the gather address; the lift
-loads nothing. As with `VSCATTERPF`, the qword-index forms decode only in
-64-bit mode, because the spec defines its `vm64` VSIB tables there alone, and
-an index in `ZMM16`..`ZMM31` (`EVEX.V'`) still reads as `ZMM0`..`ZMM15`, as for
-every EVEX VSIB operand. Exercised by
+loads nothing. Outside 64-bit mode `z_vm64z` is the 32-bit-address form of
+the same operand (`vMem32z`), so the qword-index gathers still decode in
+32-bit code, while the other qword-index EVEX scatters (`VSCATTERPF*Q*`,
+`VPSCATTERQ*`) are still built for 64-bit mode only. An index in
+`ZMM16`..`ZMM31` (`EVEX.V'`) still reads as `ZMM0`..`ZMM15`, as for every EVEX
+VSIB operand. Exercised by
 `tests/stages/gh1627-x86-senduipi-gatherpf.xml`.
 
 For the bounded local policy (`kuna_localstackviews.rs`), the `FlowEmit::dump` seam in
