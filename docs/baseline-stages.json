@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4428,
-    4428
+    4432,
+    4432
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2286,6 +2286,10 @@
     "data:SWITCHSELECTOR #4: the switch never dispatches on a constant",
     "data:SWITCHSELECTOR #5: neither pass loses the dispatched-on parameter from the recovered prototype",
     "data:SWITCHSELECTOR #6: a case body is present in BOTH passes - the option changes the structure, not the content",
+    "data:SWITCHSELFLOOP #1: each dispatch is the body of its loop",
+    "data:SWITCHSELFLOOP #2: a leaving case runs the shared tail and returns",
+    "data:SWITCHSELFLOOP #3: the default case returns",
+    "data:SWITCHSELFLOOP #4: restarting the enclosing loop leaves the inner dispatch loop intact",
     "data:SWITCHUNROLLEDSENSE #1: by default the switch closes after 0x67, the last value both guards allow",
     "data:SWITCHUNROLLEDSENSE #2: only switchmultipred off reads row 5, past the guard",
     "data:SWITCHUNROLLEDSENSE #3: switchmultipred off still sends flow into an instruction interior",
