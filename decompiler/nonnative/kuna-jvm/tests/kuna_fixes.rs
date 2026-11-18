@@ -74,6 +74,21 @@ fn every_fix_has_its_own_id() {
 }
 
 #[test]
+fn the_docs_count_the_fixes_of_fixes_toml() {
+    let docs = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../docs/jvm.md"),
+    )
+    .unwrap();
+    let kotlin = KunaFix::ALL.iter().filter(|f| f.kotlin()).count();
+    let sentence = format!(
+        "There are {} fixes, {kotlin} of them for Kotlin output.",
+        KunaFix::ALL.len()
+    );
+    let text = docs.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(text.contains(&sentence), "docs/jvm.md must say: {sentence}");
+}
+
+#[test]
 fn only_the_compat_switch_leaves_the_property_list() {
     let (fixes, rest) = take_switches(&pairs(&[
         ("log-level", "warn"),
