@@ -3,7 +3,7 @@
 use std::collections::HashSet;
 use std::rc::Rc;
 
-use kuna_base::address::sign_extend;
+use kuna_base::address::{sign_extend, Address};
 use kuna_base::space::AddrSpace;
 use kuna_base::types::{int4, intb, uintb};
 use kuna_num::opcodes::OpCode;
@@ -280,6 +280,91 @@ fn joined_parent_end(
         }
     }
     Some(end)
+}
+
+/// SPARC32 lifts a call's delay-slot store at the call's address. Recover
+/// the two-word initialization when both zero stores reach that call, it
+/// receives the first word's address, and neither word is read directly.
+pub(super) fn coalesce_delay_slot_init(fd: &Funcdata, state: &mut MapState, space: &Rc<AddrSpace>) {
+    if fd.get_arch().array_extent < super::kuna_arrayextent::LEVEL_ON
+        || space.get_addr_size() != 4
+        || !space.is_big_endian()
+        || !fd.get_arch().manage().register_lookup().is_some_and(|regs| {
+            regs.probe_register("o7").is_some() && regs.probe_register("i7").is_some()
+        })
+    {
+        return;
+    }
+    let Some(types) = fd.get_arch().types_rc() else {
+        return;
+    };
+    for i in 0..state.get_alias().len() {
+        let checker = state.checker_mut();
+        let offset = checker.get_alias()[i];
+        let base = &checker.get_add_base()[i];
+        let start = sign_extend(offset as intb, 31);
+        let end = start + 8;
+        if base.index.is_some()
+            || end > 0
+            || start % 4 != 0
+            || checker.get_alias().iter().zip(checker.get_add_base()).any(|(&other, base)| {
+                let delta = other.wrapping_sub(offset);
+                (0 < delta && delta < 8) || (delta == 0 && base.index.is_some())
+            })
+        {
+            continue;
+        }
+        let base = base.base;
+        if !state.covers(offset, 8) {
+            continue;
+        }
+        let tail_off = space.wrap_offset((start + 4) as uintb);
+        let lo = Address::new(Rc::clone(space), offset);
+        let hi = Address::new(Rc::clone(space), space.wrap_offset(end as uintb));
+        let slots = || fd.vbank().iter_loc_addr_range(&lo, &hi);
+        let Some(ptr) = fd.vbank().get(base) else { continue };
+        if !ptr.descend_iter().any(|call| {
+            let Some(op) = fd.obank().get(call) else { return false };
+            if op.is_dead()
+                || op.code() != OpCode::CPUI_CALL
+                || !(1..op.num_input()).any(|slot| op.get_in(slot) == Some(base))
+            {
+                return false;
+            }
+            let initialized = |at, delay| {
+                slots().any(|id| {
+                    let v = fd.vbank().get(id).unwrap();
+                    if v.get_offset() != at || v.get_size() != 4 {
+                        return false;
+                    }
+                    let Some(store) = call_indirect_input(fd, id, &[call])
+                        .and_then(|input| fd.vbank().get(input)?.get_def())
+                        .and_then(|def| fd.obank().get(def))
+                    else {
+                        return false;
+                    };
+                    store.code() == OpCode::CPUI_COPY
+                        && store.get_parent() == op.get_parent()
+                        && store.get_seq_num().get_order() < op.get_seq_num().get_order()
+                        && (store.get_addr() == op.get_addr()) == delay
+                        && store.get_in(0).and_then(|input| fd.vbank().get(input))
+                            .is_some_and(|value| value.is_constant() && value.get_offset() == 0)
+                })
+            };
+            initialized(offset, false) && initialized(tail_off, true)
+        }) || slots().any(|id| super::kuna_storereach::is_read(fd, id)) {
+            continue;
+        }
+        let hints = state.hints_mut();
+        let overlaps = |h: &RangeHint| h.sstart < end && minimum_end(h).is_none_or(|last| start < last);
+        if hints.iter().filter(|h| overlaps(h)).any(|h| !compatible(h, start, end, 4)) {
+            continue;
+        }
+        let Ok(word) = types.get_base(4, type_metatype::TYPE_UINT) else { continue };
+        let Ok(array) = types.get_type_array(2, word) else { continue };
+        hints.retain(|h| !overlaps(h));
+        state.add_range_pub(offset, Some(array), 0, RangeType::Fixed, -1);
+    }
 }
 
 /// Preserve shared storage up to the next address-taken base or the local frame end.

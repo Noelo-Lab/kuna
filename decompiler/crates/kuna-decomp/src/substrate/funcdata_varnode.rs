@@ -4066,6 +4066,40 @@ mod tests {
     }
 
     #[test]
+    fn large_storage_merge_preserves_order_and_distinct_write_sites() {
+        use crate::kuna_varsources::StorageSource;
+
+        let mut fd = build_fd();
+        let dst = fd.new_unique(4, None);
+        let ram = ram(&fd);
+        let source = |offset, write: Option<u64>| StorageSource {
+            address: Address::new(Rc::clone(&ram), offset),
+            size: 4,
+            write_address: write.map(|pc| Address::new(Rc::clone(&ram), pc)),
+        };
+        fd.kuna_extend_storage_sources(dst, (0..64).map(|offset| source(offset, None)));
+        fd.kuna_extend_storage_sources(
+            dst,
+            (40..64).map(|offset| source(offset, None)).chain([
+                source(53, Some(0x100)),
+                source(4, Some(0x100)),
+                source(53, Some(0x100)),
+                source(53, Some(0x101)),
+            ]),
+        );
+
+        let mut expected: Vec<_> = (0..64).map(|offset| (offset, None)).collect();
+        expected.extend([(53, Some(0x100)), (4, Some(0x100)), (53, Some(0x101))]);
+        let actual: Vec<_> = fd.kuna_storage_sources(dst).iter().map(|source| {
+            (
+                source.address.get_offset(),
+                source.write_address.as_ref().map(Address::get_offset),
+            )
+        }).collect();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
     fn storage_sources_skip_constants_and_unspecified_width_changes() {
         let mut fd = build_fd();
         let original = fd.new_varnode(4, &Address::new(ram(&fd), 0x80), None);

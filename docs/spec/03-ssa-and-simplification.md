@@ -1991,6 +1991,11 @@ propagation, including correct outputs whose storage comments or variable
 merging the retained COPY also changes. The option is enabled in every mode;
 existing type and memory-order guards remain in force.
 
+Copy propagation preserves the storage homes of equivalent values in first-seen
+order. Homes at the same address remain distinct when their widths or write
+sites differ. A temporary membership index accelerates large merges without
+changing the order or contents of the retained homes.
+
 **Keeping a frame store that only a marker still reads** (always on).
 `RulePropagateCopy` rewrites a reader of a `COPY` output to read the
 `COPY`'s input instead. When the reader is an ordinary op that is pure gain: the
