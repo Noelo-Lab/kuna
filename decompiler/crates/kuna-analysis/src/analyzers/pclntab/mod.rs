@@ -38,8 +38,9 @@
 //! `GolangSymbolAnalyzer.FUNCNAMES_TO_IGNORE`.
 //!
 //! Defensive by construction (the [`AnalysisPass`] never-fail contract): an
-//! unknown magic, a malformed header, an out-of-range offset, or a missing table
-//! all yield an **empty** output — never a panic, never an error.
+//! unknown magic that no `moduledata` record makes up for
+//! ([`kuna_gomoduledata`]), a malformed header, an out-of-range offset, or a
+//! missing table all yield an **empty** output — never a panic, never an error.
 
 use object::read::{Object, ObjectSection, ObjectSymbol};
 
@@ -434,7 +435,10 @@ fn decode_functions(img: &ImageBytes, h: &PcHeader) -> Vec<GoFunc> {
 /// 3. a byte scan of the read-only data sections for the validated header magic
 ///    whose table also resolves ([`table_plausible`]), preferring the table the
 ///    image's own `moduledata` points at ([`moduledata_anchored`]) over an
-///    earlier one it only carries as data.
+///    earlier one it only carries as data;
+/// 4. the header the `moduledata` record names when no magic matched an own
+///    table ([`kuna_gomoduledata::locate`]): the magic was overwritten, and the
+///    record alone describes the table.
 pub(crate) fn locate_header(file: &object::File, img: &ImageBytes) -> Option<u64> {
     // (1) The named section. Go's ELF uses `.gopclntab` (`.data.rel.ro.gopclntab`
     // in a relro build); some toolchains/PE use `gopclntab` (no dot); Mach-O names
@@ -503,19 +507,21 @@ pub(crate) fn locate_header(file: &object::File, img: &ImageBytes) -> Option<u64
             }
         }
     }
-    first
+    kuna_gomoduledata::locate(file, img).map(|(vma, _)| vma).or(first)
 }
 
 /// `true` when a read-only data section of `file` holds a pclntab whose table
 /// resolves and whose `moduledata` points back at it — the image's OWN Go
 /// metadata, as opposed to Go bytes it merely carries (a dropper's embedded
-/// payload, in either data section). The PE detection arm pairs this with the
-/// build-info blob.
+/// payload, in either data section). A table whose magic was overwritten
+/// counts when the `moduledata` record describes it. The PE detection arm pairs
+/// this with the build-info blob.
 pub(crate) fn readonly_table_present(file: &object::File) -> bool {
     let img = ImageBytes::new(file);
-    file.sections()
-        .filter(|s| s.kind() == object::SectionKind::ReadOnlyData)
-        .any(|s| scan_section(&img, &s, |vma| moduledata_anchored(file, &img, vma)).is_some())
+    let readonly = || file.sections().filter(|s| s.kind() == object::SectionKind::ReadOnlyData);
+    readonly().any(|s| scan_section(&img, &s, |vma| moduledata_anchored(file, &img, vma)).is_some())
+        || kuna_gomoduledata::locate(file, &img)
+            .is_some_and(|(_, h)| readonly().any(|s| h.functab_vma.wrapping_sub(s.address()) < s.size()))
 }
 
 /// The first validated header in `sec` that `accept` takes, stepping the
@@ -596,7 +602,8 @@ fn recover_go_table(file: &object::File) -> (Vec<GoFunc>, Option<u64>) {
     let Some(header_vma) = locate_header(file, &img) else {
         return (Vec::new(), None);
     };
-    let Some(mut h) = parse_header(&img, header_vma) else {
+    let parsed = parse_header(&img, header_vma).or_else(|| kuna_gomoduledata::locate(file, &img).map(|(_, h)| h));
+    let Some(mut h) = parsed else {
         return (Vec::new(), None);
     };
     // Go 1.26 stopped storing the text base here (the runtime uses `moduledata.text`
@@ -715,6 +722,7 @@ impl AnalysisPass for GoPclntabPass {
     }
 }
 
+mod kuna_gomoduledata;
 pub mod kuna_gonoreturn;
 
 #[cfg(test)]

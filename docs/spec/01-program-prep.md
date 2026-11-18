@@ -4739,7 +4739,9 @@ moves.
   `.data` has a valid blob but its table is in writable data, and one carried
   twice (a const copy in `.rdata`, a writable one in `.data`) has a blob and
   a read-only table whose only `moduledata` names the address the table had in
-  its own image. Both questions must hold. The arm runs first, as on every format, and
+  its own image. A table whose magic was overwritten is counted when the
+  `moduledata` record describes it whole (`kuna_gomoduledata.rs (locate)`,
+  below) and its functab lies in read-only data. Both questions must hold. The arm runs first, as on every format, and
   returns before the `.rdata` toolchain-record scan the later arms do.
   Nothing else changes for a non-Go PE: its verdict is the same as before. The
   same blob lookup (`buildinfo_blob`) gives the version-keyed `goreg` shells
@@ -5072,6 +5074,36 @@ every other binary's pass list is byte-identical to before the pass existed):
   `minpc`/`maxpc`/`text`/`etext` nest) — an external link puts `crt` code and
   `.init`/`.plt` ahead of `runtime.text` — falling back to the lowest code section
   when no record is found.
+
+  A packer or obfuscator can overwrite the header's magic in the file (putting
+  it back, or skipping the runtime's start-up check, when the program runs) and
+  leave the table itself intact. When no magic
+  matches a table the image names, the pass finds `runtime.firstmoduledata` by
+  its shape and reads the table from that record alone, never consulting the
+  header
+  (`decompiler/crates/kuna-analysis/src/analyzers/pclntab/kuna_gomoduledata.rs
+  (locate)`). Every pointer-aligned position of every section that is not code
+  is tried; section names and kinds are not consulted, because a packer renames
+  them. A go1.16+ record is `pcHeader`, then the `funcnametab`, `cutab`,
+  `filetab`, `pctab`, `pclntable` and `ftab` slices, `findfunctab`, and
+  `minpc`, `maxpc`, `text`, `etext`. It is accepted when `ftab` starts where
+  `pclntable` does, the header, the name table and the functab sit in that
+  order, every slice's length is within its capacity, `len(ftab) - 1` is a
+  function count in range, the four PC bounds nest, and the functab bears the
+  bounds out: its first entry is `minpc` and its closing entry is `maxpc`, the
+  identity the runtime itself checks at start-up. That last test also selects
+  the entry shape: 32-bit offsets from `text` (go1.18+) are tried first, then
+  absolute pointers (go1.16/go1.17). A go1.5–go1.15 record opens with
+  `pclntable` and `ftab` instead, with `ftab` starting 8 bytes plus one pointer
+  into the table, and is checked the same way. The name table, the functab, the
+  `_func` base, the function count and the text base all come from the record,
+  so the names, entries and extents are the unmodified image's, and a header
+  wiped whole reads the same as one with only its magic gone. The record's
+  first word is still the header's address, which is what the Go type harvest
+  anchors on, so it works unchanged. The PE detection above counts such a table
+  when its functab lies in read-only data. The search runs only after every
+  magic-based route has failed, so an image with an intact header never pays
+  for it.
 - **MSVC RTTI** (`rtti`, PE-only, on by default and inert elsewhere;
   `decompiler/crates/kuna-analysis/src/analyzers/rtti/mod.rs`): find the shared
   `type_info` vftable, byte-search back from each `.?A…@@` TypeDescriptor to its
