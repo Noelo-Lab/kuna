@@ -1,41 +1,12 @@
-//! kuna fix `anonymous_class_created_elsewhere`: an anonymous class that only
-//! another class creates is nested in that class, so its captured variables
-//! are mapped from the method that creates it.
-//!
-//! `ClassesProcessor` nests an anonymous class in the class whose
-//! `InnerClasses` attribute lists it and whose method its `EnclosingMethod`
-//! names, and `NestedClassProcessor` maps the values its constructor stores
-//! (the captured variables) from the `new`s it finds in that class's
-//! methods. kotlinc copies the body of an inline function's lambda into the
-//! `$$inlined$` class it regenerates for each call site, `new` of the lambda's
-//! objects included, but leaves those objects declared where the lambda was
-//! written: the declaring method never creates them. Finding no `new`,
-//! `NestedClassProcessor` takes the first captured value for the enclosing
-//! instance, so the object's body reads `Outer.this` where the bytecode reads
-//! a captured `Ref` or collector, and its other captured values stay fields
-//! of the object. Vineflower prints that body, wrong, as Java and as a Kotlin
-//! lambda, and fails a Kotlin object without Class metadata.
-//!
-//! With the fix, an anonymous class whose declaring class does not create it
-//! and which exactly one other class creates (outside its own nested classes)
-//! is nested in that class instead, before any class is processed; its
-//! captured variables are then found at the `new`, as for any anonymous
-//! class. The `$$inlined$` class holds the lambda's captured variables in
-//! fields, so the `new` passes some of them as `this.f$inlined`, which
-//! `NestedClassProcessor` does not take for a capture: the object would keep
-//! its own copy in a field. For such an object (one constructor), a value
-//! every `new` passes as the same field `f` of the creating instance is a
-//! capture of that instance, and the object's reads of the field holding it
-//! become `Outer.this.f`, when that reads the same value: `f` is a final field
-//! of the creating class, every constructor of that class stores it once
-//! before calling anything, nothing else stores it, and no `new` is in a
-//! constructor. Like any anonymous class created at more than one `new`,
-//! the captured variables take their names from the first creating method;
-//! kotlinc's second site is the `$$forInline` copy of the first.
+//! Fix `anonymous_class_created_elsewhere`: an anonymous class its declaring
+//! class never creates, and exactly one other class does, is nested in that
+//! class before processing, and a value every `new` passes as the same final
+//! field of the creating instance is captured as that field.
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 
+use super::is_within;
 use crate::classes_processor::{sort_nodes, ClassNode, ClassNodeType};
 use crate::code_constants::{
     ACC_FINAL, ACC_STATIC, CLINIT_NAME, INIT_NAME, OPC_INVOKEDYNAMIC, OPC_INVOKEINTERFACE,
@@ -376,18 +347,6 @@ pub fn field_capture_reads_at_site(node: ClassNode, pair: VarVersionPair, arg: E
                 .iter()
                 .any(|((c, _), captured)| *c == class && *captured == field)
         })
-}
-
-/// Whether `node` is `ancestor` or nested in it.
-fn is_within(node: ClassNode, ancestor: ClassNode) -> bool {
-    let mut current = Some(node);
-    while let Some(n) = current {
-        if n == ancestor {
-            return true;
-        }
-        current = n.with(|d| d.parent);
-    }
-    false
 }
 
 /// Whether a method of `node`'s class has a `new` of `name`; `None` when a

@@ -10,7 +10,7 @@ use std::collections::{BTreeSet, VecDeque};
 use std::fmt;
 
 use crate::kuna_fixes::{self, KunaFix};
-use crate::fixes::anonymous_classes::local_class_anonymous_subclass;
+use crate::fixes::anonymous_classes;
 use crate::fixes::anonymous_classes::anonymous_class_created_elsewhere;
 use crate::fixes::nested_class_vars::captured_var_through_cast;
 use crate::fixes::nested_class_vars::lambda_catch_var_rename;
@@ -1604,7 +1604,7 @@ impl NestedClassProcessor {
                             || Self::contains_type(new_expr.get_constructor(), class_type);
                         if !res && kuna_fixes::enabled(KunaFix::LocalClassAnonymousSubclass) {
                             res = new_expr.is_anonymous()
-                                && local_class_anonymous_subclass::extends(&new_type, classname);
+                                && anonymous_classes::extends(&new_type, classname);
                         }
                     }
                 }

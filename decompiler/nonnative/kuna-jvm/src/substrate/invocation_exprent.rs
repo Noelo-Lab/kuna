@@ -43,7 +43,7 @@ use crate::s_forms_constructor::SFormsConstructor;
 use crate::statement::Statement;
 use crate::struct_class::{GenericMap, StructClass};
 use crate::struct_method::StructMethod;
-use crate::fixes::anonymous_classes::anonymous_static_qualifier;
+use crate::fixes::anonymous_classes;
 use crate::fixes::generic_casts::argument_generic_cast;
 use crate::fixes::generics;
 use crate::fixes::overloads::vararg_array_length;
@@ -1363,7 +1363,7 @@ impl InvocationExprent {
                     .get_short_name_in_class_context(&ExprProcessor::build_java_class_name(
                         &classname,
                     ));
-                if !anonymous_static_qualifier::drop_qualifier(
+                if !anonymous_classes::drop_qualifier(
                     &classname,
                     &self.get_name(),
                     &short_name,

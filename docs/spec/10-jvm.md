@@ -1880,7 +1880,7 @@ extends the local class (`class LocalClass<T> {} ... new LocalClass<String>() {}
 `Types.ClassOwnership.detectJvmBehavior`) names only the anonymous class, so the declaration
 lands later, and javac cannot resolve the anonymous class's supertype (still so on
 `develop/1.13.0`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/anonymous_classes/local_class_anonymous_subclass.rs`),
+(`decompiler/nonnative/kuna-jvm/src/fixes/anonymous_classes/mod.rs`),
 `new` of an anonymous class whose superclass or interface is the local class is a use of it.
 **Kotlin `for` loops** (`kt_for_loop_exit_condition`, `kt_for_range_counter`,
 `kt_for_range_exclusive_bound`, `kt_for_range_unmatched_bound`, `kt_for_loop_definitions`,
@@ -3924,7 +3924,7 @@ the method that creates it, so that method fails. Written as Java (the Kotlin wr
 parameters otherwise), seven methods of okio 2.6.0 and okhttp 4.7.2 fail so: `Throttler.source` and
 `sink`, `AsyncTimeout.source` and `sink`, the constructor of `Cache.CacheResponseBody`,
 `DiskLruCache.Entry.newSource` and `RealWebSocket.connect`. With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/anonymous_classes/constructor_signature_alignment.rs (align)`) a
+(`decompiler/nonnative/kuna-jvm/src/fixes/anonymous_classes/mod.rs (align)`) a
 signature that describes the descriptor's parameters after a leading run of marked ones, each of its
 types one whose erasure is the descriptor's type at that position, is trimmed to the unmarked
 parameters, as `parseDescriptor` trims the IR form. The writer, which pairs the signature's types with
