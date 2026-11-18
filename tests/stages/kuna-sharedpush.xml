@@ -20,7 +20,9 @@
     the slot malloc took, so Note gains nothing (7-8). 0x4010a0 runs a
     control-flow guard check (target in ECX) before the guarded call on the slot
     that free takes on the other arm; two calls read it on that arm, so neither
-    gains it and the guard check is never handed the argument (9-10).
+    gains it and the guard check is never handed the argument (9-10). 0x401100
+    pushes 3 above the shared 0x14 for Note, so 0x14 sits one slot deeper in
+    Note's area than it does in malloc's and is not Note's argument (11).
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -43,6 +45,9 @@ c3
   <com>load addr 0x4010a0</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>load addr 0x401100</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="SHAREDPUSH #1: malloc keeps its push" min="1" max="1">= malloc\(0x14\);</stringmatch>
@@ -51,8 +56,9 @@ c3
 <stringmatch name="SHAREDPUSH #4: the free wrapper takes it too" min="1" max="1">sub_4010e0\(p\);</stringmatch>
 <stringmatch name="SHAREDPUSH #5: toupper takes i in the loop" min="1" max="1">toupper\(c\);</stringmatch>
 <stringmatch name="SHAREDPUSH #6: tolower through the register takes i too" min="1" max="1">tolower\(c\);</stringmatch>
-<stringmatch name="SHAREDPUSH #7: malloc keeps its push where the arms rejoin" min="1" max="1">^\s*malloc\(0x14\);</stringmatch>
+<stringmatch name="SHAREDPUSH #7: malloc keeps its push where the arms rejoin, and beside the deeper push" min="2" max="2">^\s*malloc\(0x14\);</stringmatch>
 <stringmatch name="SHAREDPUSH #8: the call after the rejoin gains nothing" min="1" max="1">Note\(\);</stringmatch>
 <stringmatch name="SHAREDPUSH #9: free keeps its argument beside the guarded call" min="1" max="1">free\(a1\);</stringmatch>
 <stringmatch name="SHAREDPUSH #10: the guard check is never handed the argument" min="0" max="0">\(\*dat_[0-9a-f]+\)\([^)]</stringmatch>
+<stringmatch name="SHAREDPUSH #11: a push one slot deeper on the other arm is not taken" min="1" max="1">Note\(3\);</stringmatch>
 </decompilertest>

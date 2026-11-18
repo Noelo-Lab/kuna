@@ -18,6 +18,9 @@
 ;                    runs on the slot first and does not.
 ;   e_alloc (0x4010d0), e_free (0x4010e0)   __cdecl wrappers of the imports.
 ;   guard_nop (0x4010f0)                    the guard check, `ret`.
+;   deeper(sel)      __cdecl (0x401100). push 0x14, then malloc, or push 3
+;                    and call Note: on that arm 0x14 sits one slot deeper
+;                    than malloc's argument.
 ;
 ; Build: nasm -f bin -I . -o sharedpush_pe_i386.exe sharedpush_pe_i386.asm
 
@@ -126,6 +129,21 @@ guard_nop:                              ; 0x4010f0
     ret
 
     align 16, db 0xcc
+deeper:                                 ; 0x401100
+    cmp dword [esp+4], 0
+    push 0x14
+    jz .n
+    call [__imp_malloc]
+    jmp .j
+.n:
+    push 3
+    call [__imp_Note]
+    pop ecx
+.j:
+    pop ecx
+    ret
+
+    align 16, db 0xcc
 entry:
     push 1
     call pick
@@ -136,7 +154,9 @@ entry:
     push table
     push e_alloc
     call guarded
-    add esp, 20
+    push 1
+    call deeper
+    add esp, 24
     ret
 
 section .rdata
