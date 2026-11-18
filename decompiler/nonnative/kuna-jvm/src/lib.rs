@@ -48,9 +48,9 @@ pub mod substrate;
 
 pub use infra::{
     cancelation_manager, class_pass, class_pass_location, decompile_record, java_pass_location,
-    java_pass_registrar, kuna_corpus, kuna_driver, kuna_partition, kuna_spans,
-    looping_pass_builder, main_pass_builder, method_processor, named_pass, pass, pass_context,
-    plugin_context, validation_helper, wrapped_pass,
+    java_pass_registrar, kuna_corpus, kuna_driver, kuna_partition, kuna_spans, looping_pass_builder,
+    main_pass_builder, method_processor, named_pass, pass, pass_context, plugin_context,
+    validation_helper, wrapped_pass,
 };
 pub use infra::{
     graph_parser, kuna_plugins, language_chooser, language_spec, plugin, plugin_options,
@@ -63,20 +63,9 @@ pub use kotlin::{
     collapse_string_concat_pass, default_args_map, eliminate_dead_vars_pass, java_finally_pass,
     k_contract, k_enum_processor, k_expr_processor, k_merge_pass, k_parameter, k_property_accessor,
     k_type_parameter, k_types, k_utils, kotlin_chooser, kotlin_object_processors, kotlin_options,
-    kotlin_plugin, kotlin_writer, kuna_fix_kt_anonymous_class_failure_reason,
-    kuna_fix_kt_for_range_counter, kuna_fix_kt_object_super_call, kuna_fix_kt_property_reference,
-    kuna_fix_kt_reference_anonymous_super_call, kuna_fix_kt_return_outside_lambda,
-    kuna_fix_kt_synthetic_anonymous_object, obfuscated_exceptions_pass, replace_exprents_pass,
+    kotlin_plugin, kotlin_writer, obfuscated_exceptions_pass, replace_exprents_pass,
     replace_stats_pass, resugar_kotlin_methods_pass, stack_var_initial_pass,
 };
-pub use kotlin::{
-    kuna_fix_kt_lambda_singleton_returns, kuna_fix_kt_type_parameter_id,
-};
-pub use kotlin::kuna_fix_kt_generated_constructor_hidden;
-pub use kotlin::kuna_fix_kt_jump_to_non_loop_label;
-pub use kotlin::kuna_fix_kt_file_class_constructor;
-pub use kotlin::kuna_fix_kt_when_break;
-pub use kotlin::kuna_fix_kt_data_class_property_parameters;
 pub use kotlin::{
     k_annotation_exprent, k_catch_statement, k_class, k_const_exprent, k_constructor, k_dispatch,
     k_do_statement, k_element, k_exit_exprent, k_field_exprent, k_file, k_function,
@@ -106,9 +95,6 @@ pub use p1_classfile::{
     struct_permitted_subclasses_attribute, struct_record_attribute, struct_record_component,
     struct_source_file_attribute, struct_type_annotation_attribute,
 };
-pub use p2_lift::kuna_fix_kt_java_cast_syntax;
-pub use p2_lift::kuna_fix_kt_implicit_widening;
-pub use p2_lift::kuna_fix_kt_java_reference_cast;
 pub use p2_lift::{
     basic_block, control_flow_graph, dead_code_helper, exception_deobfuscator, exception_handler,
     exception_range_cfg, exception_table, expr_processor, full_instruction_sequence, instruction,
@@ -131,8 +117,8 @@ pub use p5_types::{
     intersection_cast_processor, var_type_processor,
 };
 pub use p6_variables::{
-    kuna_fix_var_merge_liveness, var_definition_helper, var_names_collector, var_processor,
-    var_version_node, var_version_pair, var_versions_graph, var_versions_processor,
+    var_definition_helper, var_names_collector, var_processor, var_version_node, var_version_pair,
+    var_versions_graph, var_versions_processor,
 };
 pub use p7_regions::{
     clear_struct_helper, dec_helper, dom_helper, dom_tracer, dominator_engine,
@@ -162,21 +148,54 @@ pub use substrate::{
     const_exprent, data_point, do_statement, dummy_exit_statement, either, exit_exprent, expr_util,
     exprent, fast_fixed_set, fast_fixed_set_factory, fast_sparse_set_factory, field_descriptor,
     field_exprent, function_exprent, general_statement, i_matchable, if_exprent, if_statement,
-    int_helper, interpreter_util, invocation_exprent, key, kuna_fix_statement_as_expression,
-    list_stack, long_fast_fixed_set_factory, match_engine,
-    match_node, method_descriptor, monitor_exprent, new_class_name_builder, new_exprent, packed_map,
-    pair, pattern, pattern_exprent, root_statement, s_forms_fast_map_direct, sequence_statement,
-    short_fast_fixed_set_factory, start_end_pair, stat_edge, statement, statement_iterator,
-    statements, switch_exprent, switch_head_exprent, switch_statement, synchronized_statement,
-    text_util, type_annotation, type_family, var_exprent, var_type, vb_style_collection,
-    yield_exprent, zip_reader,
+    int_helper, interpreter_util, invocation_exprent, key, list_stack, long_fast_fixed_set_factory,
+    match_engine, match_node, method_descriptor, monitor_exprent, new_class_name_builder,
+    new_exprent, packed_map, pair, pattern, pattern_exprent, root_statement,
+    s_forms_fast_map_direct, sequence_statement, short_fast_fixed_set_factory, start_end_pair,
+    stat_edge, statement, statement_iterator, statements, switch_exprent, switch_head_exprent,
+    switch_statement, synchronized_statement, text_util, type_annotation, type_family, var_exprent,
+    var_type, vb_style_collection, yield_exprent, zip_reader,
 };
-pub use p2_lift::kuna_fix_unchecked_call_result_cast;
-pub use p2_lift::kuna_fix_unchecked_generic_cast;
 pub use p5_types::kuna_static_types;
-pub use substrate::{
-    kuna_fix_lambda_argument_overload, kuna_fix_lambda_pertinence,
-    kuna_fix_lambda_type_variable_target, kuna_fix_raw_receiver_erasure,
-    kuna_fix_static_type_variable_scope,
+pub(crate) use kotlin::{
+    kuna_fix_kt_anonymous_class_failure_reason, kuna_fix_kt_data_class_property_parameters,
+    kuna_fix_kt_file_class_constructor, kuna_fix_kt_for_range_counter,
+    kuna_fix_kt_generated_constructor_hidden, kuna_fix_kt_jump_to_non_loop_label,
+    kuna_fix_kt_lambda_singleton_returns, kuna_fix_kt_object_super_call,
+    kuna_fix_kt_property_reference, kuna_fix_kt_reference_anonymous_super_call,
+    kuna_fix_kt_return_outside_lambda, kuna_fix_kt_synthetic_anonymous_object,
+    kuna_fix_kt_type_parameter_id, kuna_fix_kt_when_break,
 };
-pub use substrate::kuna_fix_kt_explicit_type_arguments;
+pub(crate) use p2_lift::{
+    kuna_fix_kt_implicit_widening, kuna_fix_kt_java_cast_syntax, kuna_fix_kt_java_reference_cast,
+    kuna_fix_unchecked_call_result_cast, kuna_fix_unchecked_generic_cast,
+};
+pub(crate) use p6_variables::kuna_fix_var_merge_liveness;
+pub(crate) use substrate::{
+    kuna_fix_kt_explicit_type_arguments, kuna_fix_lambda_argument_overload,
+    kuna_fix_lambda_pertinence, kuna_fix_lambda_type_variable_target, kuna_fix_raw_receiver_erasure,
+    kuna_fix_statement_as_expression, kuna_fix_static_type_variable_scope,
+};
+
+/// Fix helpers the integration tests call directly; not part of the engine's API.
+#[doc(hidden)]
+pub mod testing {
+    pub use crate::kotlin::kuna_fix_kt_default_accessor_flags::accessor_flags;
+    pub use crate::kotlin::kuna_fix_kt_escaped_class_name::{escape, escape_qualified};
+    pub use crate::kotlin::kuna_fix_kt_facade_call::{default_import, java_property, mangled};
+    pub use crate::kotlin::kuna_fix_kt_mapped_java_member::{form, Form};
+    pub use crate::kotlin::kuna_fix_kt_nullable_local::nullable;
+    pub use crate::kotlin::kuna_fix_kt_reference_anonymous_super_call::split_signature;
+    pub use crate::kotlin::kuna_fix_kt_string_literal_escape::kotlin_text;
+    pub use crate::kotlin::kuna_fix_kt_suspend_state_machine::is_function_invoke;
+    pub use crate::p2_lift::kuna_fix_kt_implicit_widening::conversion as implicit_widening_conversion;
+    pub use crate::p2_lift::kuna_fix_kt_java_cast_syntax::{conversion as java_cast_conversion, KotlinCast};
+    pub use crate::p6_variables::kuna_fix_var_merge_narrowing::{narrows, strictly_below};
+    pub use crate::p8_structure::kuna_fix_type_switch_label_lookup::{
+        replace_labels, strip_multi_pattern_guards, unnamed_pattern_types,
+    };
+    pub use crate::substrate::kuna_fix_statement_as_expression::{
+        is_lambda_expression_body, is_statement_only,
+    };
+    pub use crate::substrate::kuna_fix_ternary_numeric_arms::promotes;
+}

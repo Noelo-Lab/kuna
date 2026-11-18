@@ -4,7 +4,7 @@
 
 use std::path::Path;
 
-use kuna_jvm::kotlin::kuna_fix_kt_facade_call::{default_import, java_property, mangled};
+use kuna_jvm::testing::{default_import, java_property, mangled};
 use kuna_jvm::kuna_corpus::{load_cases, run_case, with_engine_stack, Case};
 use kuna_jvm::kuna_fixes::{KunaFix, KunaFixes};
 

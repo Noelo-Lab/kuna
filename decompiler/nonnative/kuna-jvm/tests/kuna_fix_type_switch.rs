@@ -6,7 +6,7 @@ use kuna_jvm::code_type::CodeType;
 use kuna_jvm::const_exprent::{ConstExprent, ConstValue};
 use kuna_jvm::exprent::Exprent;
 use kuna_jvm::function_exprent::{FunctionExprent, FunctionType};
-use kuna_jvm::p8_structure::kuna_fix_type_switch_label_lookup::{
+use kuna_jvm::testing::{
     replace_labels, strip_multi_pattern_guards, unnamed_pattern_types,
 };
 use kuna_jvm::pooled_constant::PooledConstant;

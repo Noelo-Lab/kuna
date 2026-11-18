@@ -457,7 +457,7 @@ fn statement_only_exprents_are_kept_out_of_expression_positions() {
     use kuna_jvm::assignment_exprent::AssignmentExprent;
     use kuna_jvm::const_exprent::ConstExprent;
     use kuna_jvm::exit_exprent::{self, ExitExprent};
-    use kuna_jvm::kuna_fix_statement_as_expression::{
+    use kuna_jvm::testing::{
         is_lambda_expression_body, is_statement_only,
     };
     use kuna_jvm::monitor_exprent::{self, MonitorExprent};
