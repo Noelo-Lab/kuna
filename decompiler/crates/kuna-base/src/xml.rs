@@ -2218,7 +2218,8 @@ mod tests {
         // and kuna-itaniumctors / Itanium constructors and destructors named from their vptr stores
         // and kuna-switchselfloop / a switch that heads its own loop keeps the loop
         // and kuna-wide-shifts / armconstshift all shifts a signed 64-bit operand unsigned
-        assert_eq!(count, 772, "corpus file count drifted");
+        // and kuna-ebpf-elf-map-reloc / an EM_BPF object loads and its map and subprogram relocations land in imm
+        assert_eq!(count, 773, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
