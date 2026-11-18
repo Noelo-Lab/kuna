@@ -31,6 +31,7 @@ pub mod kuna_callsitestackargs;
 pub mod kuna_dfunaffected;
 pub mod kuna_exclusivearguse; // (kuna) a dereference on the other arm of a branch does not compete with a call on this one
 pub mod kuna_exclusivecallret; // (kuna) a call and a return on mutually exclusive arms do not compete
+pub mod kuna_sharedpush; // (kuna) a push above a branch is the argument of the call on each arm
 pub mod kuna_noreturnretuse;
 pub mod kuna_returnpair;
 pub mod kuna_retinputhalf;
