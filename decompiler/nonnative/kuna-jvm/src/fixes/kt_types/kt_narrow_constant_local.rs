@@ -1,25 +1,6 @@
-//! kuna fix `kt_narrow_constant_local`: in Kotlin output, a local that only
-//! constants are stored into is typed `Int` where its uses take an `Int`.
-//!
-//! Vineflower types a local by the lower bound of what is stored into it,
-//! and a constant's lower bound is the smallest type that holds it: a local
-//! holding only `20`, `10` and `30` is a `byte`, one holding `256` a
-//! `short`. Java widens such a local implicitly wherever an `int` is taken;
-//! Kotlin does not, so the Kotlin output declares `var v: Byte` where the
-//! source's local (or kotlinc's own temporary: a `when` value, the count of
-//! an inlined `repeat(3)`, the size of an inlined `Array(256) { .. }`) was an
-//! `Int`, and every use needs a conversion (`return v.toInt()`) or is
-//! rejected (`repeat(v)`, `arrayOfNulls(v)`). With the fix, after the last
-//! stack-variable pass, a local without a LocalVariableTable entry whose
-//! every store is an integer constant (or an `if` expression choosing
-//! between them) and whose type is `Byte` or `Short` is typed `Int` (its
-//! constants too) when every read of it takes an `Int`:
-//! a return from a function returning `Int`, an `Int` argument, a store into
-//! an `Int` field, element or local, an operand of arithmetic, a comparison
-//! or a conversion, an array index or size, a `when` subject. A read
-//! anywhere else (a `Byte` argument, a branch of an `if` expression, a
-//! string template) keeps Vineflower's type. The bytecode of either
-//! declaration is the same: `bipush`, `istore`, `iload`.
+//! Fix `kt_narrow_constant_local`: after the last stack-variable pass, a local
+//! without a debug entry that only constants are stored into, typed `Byte` or
+//! `Short`, is typed `Int` when every read of it takes an `Int`.
 
 use std::collections::BTreeMap;
 

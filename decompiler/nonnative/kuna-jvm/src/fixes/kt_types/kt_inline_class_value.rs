@@ -1,37 +1,8 @@
-//! kuna fix `kt_inline_class_value`: in Kotlin output, a value of an inline
-//! (value) class that the code holds in its underlying type is written as a
-//! value of the class.
-//!
-//! kotlinc compiles `@JvmInline value class V(val x: T)` (and `Result`,
-//! `UInt`, `Duration` ..) so that a `V` is its `T` except where it is boxed:
-//! `V(x)` is the static `V.constructor-impl(x)`, a parameter, property or
-//! result declared `V` is a `T`, `V.box-impl(t)` and `v.unbox-impl()` box
-//! and unbox, a member `f` of `V` is the static `V.f-impl(t, ..)`, and a
-//! function taking or returning a `V` has a mangled name (`f-<hash>`).
-//! Vineflower writes that plumbing as calls, and writes a value declared `V`
-//! that the code reads as its `T` as the value itself: `m * 2` for the
-//! source's `m.x * 2`, and `println(m)` for `println(m.x)`, which kotlinc
-//! compiles to boxing and `V.toString`.
-//!
-//! With the fix each expression of a body is typed by what the class files
-//! declare. A `V` held as its `T` is: a parameter, field or call result whose
-//! Kotlin type is `V` and JVM type is `V`'s underlying type, `$this` of a
-//! static member of `V`, the result of `constructor-impl` and `unbox-impl`,
-//! and a local every assignment of which stores such a value. Each use takes
-//! a value as a `V` (an argument for a parameter of type `V`, the value
-//! returned by a function returning `V`, a value stored into a property or
-//! such a local, the receiver of a member of `V`, the operand of `box-impl`),
-//! as its underlying value (any other use), or as something unknown (an
-//! argument of a callee whose metadata is missing). Then `constructor-impl
-//! (x)` is `V(x)` (`Result.success(x)`, and `Result.failure(e)` for
-//! `createFailure(e)`), `box-impl(v)` and `v.unbox-impl()` are `v`, `V.f-impl
-//! (v, ..)` is `v.f(..)` (a property `v.f`; `equals-impl0(a, b)` is `a ==
-//! b`), and an instance call of a mangled member is written by its Kotlin
-//! name, each only where every argument taken as a `V` holds one and the
-//! result's use is known; such a local is declared with type `V` (star
-//! projections for its type parameters); and a `V` read as its underlying
-//! value is written `v.x` (`v?.x` for a `V?` held as `T?`), which kotlinc
-//! compiles to the same value. Anything else is left as Vineflower writes it.
+//! Fix `kt_inline_class_value`: each expression is typed as a value class `V`
+//! held as its underlying type, the underlying value or unknown; then
+//! `constructor-impl`, `box-impl`, `unbox-impl` and `f-impl` calls are written as
+//! `V(x)`, `v` and `v.f(..)`, locals holding a `V` are declared `V`, and a `V`
+//! read as its value is `v.x`, each only where every use is known.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;

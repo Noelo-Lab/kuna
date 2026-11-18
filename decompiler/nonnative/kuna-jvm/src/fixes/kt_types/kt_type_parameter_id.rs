@@ -1,16 +1,6 @@
-//! kuna fix `kt_type_parameter_id`: a metadata type that refers to a type
-//! parameter by id is written with that parameter's name.
-//!
-//! kotlinc refers to a type parameter of the declaration being serialized by
-//! name (`Type.type_parameter_name`) and to any other one, such as a class's
-//! `T` in the types of its members or an outer class's in an inner class, by
-//! id (`Type.type_parameter`). Vineflower reads only the name, so every type
-//! that is a class's type parameter is written as `Any`
-//! (`fun get(i: Int): Any` for `fun get(i: Int): T`, `Array<Any>` for
-//! `Array<T>`). The metadata parsers open a scope with the ids and names of
-//! the type parameters their types can refer to: a class's own and, for an
-//! inner class, those of the classes it is inner to; a function's and a
-//! property's own.
+//! Fix `kt_type_parameter_id`: the metadata parsers open a scope of the ids and
+//! names of the type parameters a declaration's types can refer to, so a type
+//! that names a type parameter by id is written with its name.
 
 use std::cell::RefCell;
 

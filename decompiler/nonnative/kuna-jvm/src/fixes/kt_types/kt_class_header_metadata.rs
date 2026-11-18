@@ -1,25 +1,6 @@
-//! kuna fix `kt_class_header_metadata` (spec 10.16): a Kotlin class header
-//! declares its type parameters and supertypes as the class's metadata does.
-//!
-//! `KotlinWriter.writeClassDefinition` writes a named class's type
-//! parameters and its supertypes (other than a superclass the primary
-//! constructor calls) from the JVM `Signature` attribute. That attribute has
-//! no declaration-site variance (`interface Flow<T>` for `Flow<out T>`), no
-//! nullability (`FlowCollector<Any>` for `FlowCollector<Any?>`), no
-//! `Nothing` (kotlinc erases `Flow<Nothing>` to a raw `Flow`), and Java's
-//! names of the collection interfaces with the marker interfaces kotlinc
-//! adds (`java.util.Collection<UInt>, KMappedMarker` for
-//! `Collection<UInt>`). Kotlin then reads every use of an invariant `Flow`
-//! as a type mismatch, and a member whose metadata signature names the
-//! nullable type (`emit(value: Any?)`) overrides nothing. The class's
-//! metadata records each type parameter with its variance and bounds and
-//! each supertype as the source wrote it. With the fix a class with
-//! metadata (not an annotation class, and not one whose metadata keeps its
-//! types in a type table) writes those: the type parameters in order, a
-//! parameter with more than one bound in a `where` clause; the superclass
-//! first, when the primary constructor's call does not write it, then the
-//! other supertypes in the metadata's order, `Any` and an enum's `Enum`
-//! aside. What the class compiles to is the same.
+//! Fix `kt_class_header_metadata`: a class with metadata declares its type
+//! parameters and supertypes as the metadata records them (variance,
+//! nullability, Kotlin's collection names), not from its JVM `Signature`.
 
 use std::rc::Rc;
 
