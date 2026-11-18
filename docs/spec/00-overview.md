@@ -2883,6 +2883,41 @@ wanted, so silence there is the failure this plane exists to end.
 Durability is caller-carried, as it is for boundaries: `--assert @FILE` is the
 artifact.
 
+(kuna) **Declarations from a header (`--types`).** A program built against a
+library that kuna carries no table for shows that library's handles and option
+codes as bare integers, and stating each prototype and enum as its own
+`--assert` does not scale to a header. `--types <file.h|dir>` reads a header and
+states its declarations on the same plane. `kuna_cheader::load_types` cuts the
+text into top-level declarations: it blanks comments, skips `#` lines (a
+`# <line> "<file>"` marker re-anchors the position it reports), ends a
+declaration at a `;` outside braces and parentheses, drops a function body, and
+looks through an `extern "C" {` wrapper. Each declaration becomes one
+directive. One that starts with `typedef`, or that defines a `struct`, `union`
+or `enum`, is a `typedef` directive. One whose first parenthesis outside braces
+follows an identifier is a `prototype` directive for that identifier, so it
+binds a function or an import of that name and parks for a name the image does
+not have. Anything else (a variable, a forward declaration) states nothing and
+is skipped. Identical declarations are stated once, which is what makes a
+header that several others include harmless.
+
+The C grammar behind `typedef` and `prototype` reads plain declarations only,
+so the front end rewrites the spellings real headers use that it has no
+reading for: compiler decorations are removed, an enumerator value or array
+bound that is an integer constant expression over literals and earlier
+enumerators is replaced by its value, an unsized array parameter is spelled as
+a pointer, and `__builtin_va_list` is spelled `void *`, the storage every
+supported ABI passes it in. kuna runs no preprocessor unless `--types-cpp <cc>`
+names one; then each header is piped through `<cc> -E` and the output is what
+is cut.
+
+The header's directives are placed ahead of the caller's own, whatever the
+order of the flags, and program-scoped directives are applied in order, so an
+`--assert prototype` for the same function is applied last and wins. Each
+directive's report row carries `--types <file>:<line>:` and the declaration; a
+declaration the grammar refuses is a `rejected` row and a warning, the others
+still apply, and such a row never fails the run, under `--assert-strict` too:
+a header is loaded as far as it parses.
+
 A `flow` directive is the sharpest of the four function-scoped ones, and the only
 one that changes which bytes are in the function at all. P2 classifies the flow
 out of each instruction — branch, call, call-that-does-not-return, return — and
