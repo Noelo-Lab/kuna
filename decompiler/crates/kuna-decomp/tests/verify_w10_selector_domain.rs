@@ -214,6 +214,25 @@ fn writable_byte_map_ends_the_table_where_the_map_begins() {
     ));
 }
 
+/// The map's last selector byte changed from 2 to 1, so its image selects only
+/// rows 0 and 1. A read-only map narrows to those two; a writable one is not
+/// narrowed from its image and keeps row 2, ending only where the map begins.
+#[test]
+fn writable_byte_map_keeps_a_row_its_image_does_not_select() {
+    let mut text = include_bytes!("fixtures/selector_domain_text.bin").to_vec();
+    let map = text
+        .windows(9)
+        .position(|w| w == [0, 0, 0, 0, 1, 0, 0, 0, 2])
+        .expect("map head");
+    text[map + 8] = 1;
+    assert_eq!(
+        decompile_dispatch(&text, true).matches("case ").count(),
+        2,
+        "read-only map was not narrowed"
+    );
+    assert_three_rows(&decompile_dispatch(&text, false));
+}
+
 /// `selector_domain.S` as with `-DINPUT_COUNT=70000`: more index values than
 /// are emulated, so the map's values stay unproven.
 #[test]
