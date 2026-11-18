@@ -152,14 +152,6 @@ impl DecompilerContext {
         context.with_mut(f)
     }
 
-    /// Java: setProperty(String, Object)
-    pub fn set_property(key: &str, value: impl Into<String>) {
-        let value = value.into();
-        Self::current_mut(|d| {
-            d.properties.put(key.to_string(), value);
-        })
-    }
-
     pub fn start_class(import_collector: ImportCollector) {
         let context = Self::get_current_context().expect("getCurrentContext()");
         context.with_mut(|d| d.import_collector = Some(import_collector));

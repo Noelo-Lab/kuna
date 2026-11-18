@@ -13,7 +13,6 @@ impl CounterContainer {
     pub const STATEMENT_COUNTER: i32 = 0;
     pub const EXPRESSION_COUNTER: i32 = 1;
     pub const VAR_COUNTER: i32 = 2;
-    pub const DOT_FILE_COUNTER: i32 = 3;
 
     #[allow(clippy::new_without_default)]
     pub fn new() -> CounterContainer {

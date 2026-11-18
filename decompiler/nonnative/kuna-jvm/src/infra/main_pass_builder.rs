@@ -22,12 +22,6 @@ impl MainPassBuilder {
         self
     }
 
-    /// Java: addPass(NamedPass)
-    pub fn add_pass_named(&mut self, pass: NamedPass) -> &mut MainPassBuilder {
-        self.passes.push(Rc::new(pass));
-        self
-    }
-
     pub fn build(&self) -> Rc<dyn Pass> {
         Rc::new(CompiledPass::new(&self.passes))
     }

@@ -19,32 +19,12 @@ use crate::var_type::VarType;
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
 pub enum UseSiteTarget {
     File,
-    Property,
-    Field,
-    Get,
-    Set,
-    Receiver,
-    Param,
-    Setparam,
-    Delegate,
 }
 
 impl UseSiteTarget {
-    pub fn ordinal(self) -> i32 {
-        self as i32
-    }
-
     pub fn name(self) -> &'static str {
         match self {
             UseSiteTarget::File => "FILE",
-            UseSiteTarget::Property => "PROPERTY",
-            UseSiteTarget::Field => "FIELD",
-            UseSiteTarget::Get => "GET",
-            UseSiteTarget::Set => "SET",
-            UseSiteTarget::Receiver => "RECEIVER",
-            UseSiteTarget::Param => "PARAM",
-            UseSiteTarget::Setparam => "SETPARAM",
-            UseSiteTarget::Delegate => "DELEGATE",
         }
     }
 }

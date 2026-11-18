@@ -41,10 +41,6 @@ impl TextToken {
         self.start += amount;
     }
 
-    pub fn copy(&self) -> TextToken {
-        self.clone()
-    }
-
     pub fn visit(&self, visitor: &mut dyn TextTokenVisitor) {
         match &self.kind {
             TextTokenKind::Class(t) => ClassTextToken::visit(t, self, visitor),
@@ -57,13 +53,5 @@ impl TextToken {
 
     pub fn get_start(&self) -> i32 {
         self.start
-    }
-
-    pub fn get_length(&self) -> i32 {
-        self.length
-    }
-
-    pub fn is_declaration(&self) -> bool {
-        self.declaration
     }
 }

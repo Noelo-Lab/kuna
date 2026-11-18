@@ -11,25 +11,16 @@ pub struct BytecodeVersion {
 impl BytecodeVersion {
     pub const PREVIEW: i32 = 65535;
     pub const MAJOR_1_0_2: i32 = 45;
-    pub const MAJOR_1_2: i32 = 46;
-    pub const MAJOR_1_3: i32 = 47;
     pub const MAJOR_1_4: i32 = 48;
     pub const MAJOR_5: i32 = 49;
     pub const MAJOR_6: i32 = 50;
     pub const MAJOR_7: i32 = 51;
     pub const MAJOR_8: i32 = 52;
     pub const MAJOR_9: i32 = 53;
-    pub const MAJOR_10: i32 = 54;
     pub const MAJOR_11: i32 = 55;
-    pub const MAJOR_12: i32 = 56;
-    pub const MAJOR_13: i32 = 57;
-    pub const MAJOR_14: i32 = 58;
     pub const MAJOR_15: i32 = 59;
     pub const MAJOR_16: i32 = 60;
     pub const MAJOR_17: i32 = 61;
-    pub const MAJOR_18: i32 = 62;
-    pub const MAJOR_19: i32 = 63;
-    pub const MAJOR_20: i32 = 64;
     pub const MAJOR_21: i32 = 65;
 
     pub fn new(major: i32, minor: i32) -> BytecodeVersion {
@@ -105,14 +96,6 @@ impl BytecodeVersion {
 
     fn preview_released(&self, preview_start: i32, release_major: i32) -> bool {
         self.major >= release_major || self.preview_from(preview_start)
-    }
-
-    pub fn compare_to(&self, o: &BytecodeVersion) -> i32 {
-        let cmp = self.major.cmp(&o.major) as i32;
-        if cmp != 0 {
-            return cmp;
-        }
-        self.minor.cmp(&o.minor) as i32
     }
 
     pub fn equals(&self, o: &BytecodeVersion) -> bool {

@@ -25,10 +25,6 @@ impl<E> Clone for FastSparseSetFactory<E> {
 }
 
 impl<E> FastSparseSetFactory<E> {
-    /// Java reference `==`.
-    pub fn ptr_eq(&self, other: &Self) -> bool {
-        Rc::ptr_eq(&self.0, &other.0)
-    }
 }
 
 impl<E: JavaHash + JavaEq + Clone> FastSparseSetFactory<E> {
@@ -256,18 +252,6 @@ impl<E: JavaHash + JavaEq + Clone> FastSparseSet<E> {
             && (self.data[block as usize] & PackedMap::<E>::unpack_high(index)) != 0
     }
 
-    fn set_next(&mut self) {
-        let mut link = 0;
-        for i in (0..self.data.len()).rev() {
-            if link != 0 && self.next.is_none() {
-                self.alloc_next()[i] = link;
-            }
-            if self.data[i] != 0 {
-                link = i as i32;
-            }
-        }
-    }
-
     fn change_next(&mut self, key: i32, oldnext: i32, newnext: i32) {
         let mut i = key - 1;
         while i >= 0 {
@@ -298,17 +282,6 @@ impl<E: JavaHash + JavaEq + Clone> FastSparseSet<E> {
                 break;
             }
         }
-    }
-
-    pub fn intersection(&mut self, set: &FastSparseSet<E>) {
-        let minlength = set.data.len().min(self.data.len());
-        for i in (0..minlength).rev() {
-            self.data[i] &= set.data[i];
-        }
-        for i in (minlength..self.data.len()).rev() {
-            self.data[i] = 0;
-        }
-        self.set_next();
     }
 
     pub fn complement(&mut self, set: &FastSparseSet<E>) {

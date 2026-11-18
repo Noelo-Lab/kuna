@@ -314,11 +314,6 @@ impl TextBuffer {
         TextBuffer::from_context(Vec::with_capacity(size.max(0) as usize))
     }
 
-    /// Java: `TextBuffer(String text)`.
-    pub fn from_text(text: &str) -> TextBuffer {
-        TextBuffer::from_context(units(text))
-    }
-
     /// A buffer with explicit formatting settings instead of the current
     /// context's (not in Java; for tests and tools).
     pub fn with_format(

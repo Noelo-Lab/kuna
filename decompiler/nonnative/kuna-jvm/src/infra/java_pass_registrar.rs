@@ -23,12 +23,6 @@ impl JavaPassRegistrar {
         self.passes.compute_if_absent(location, Vec::new).push(pass);
     }
 
-    pub fn register_class_pass(&mut self, location: ClassPassLocation, pass: Rc<dyn ClassPass>) {
-        self.class_passes
-            .compute_if_absent(location, Vec::new)
-            .push(pass);
-    }
-
     pub fn get_passes(&self) -> JHashMap<JavaPassLocation, Vec<NamedPass>> {
         self.passes.clone()
     }

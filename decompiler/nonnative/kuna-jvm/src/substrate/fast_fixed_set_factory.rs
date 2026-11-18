@@ -1,7 +1,7 @@
 //! Port of `org/jetbrains/java/decompiler/util/collections/fixed/FastFixedSetFactory.java`.
 //!
 //! The abstract factory is a closed enum over its two implementations;
-//! factories are shared references (clones alias, `ptr_eq` is Java `==`).
+//! factories are shared references (clones alias).
 
 use crate::fast_fixed_set::FastFixedSet;
 use crate::long_fast_fixed_set_factory::LongFastFixedSetFactory;
@@ -37,14 +37,6 @@ impl<E: JavaHash + JavaEq + Clone> FastFixedSetFactory<E> {
         match self {
             FastFixedSetFactory::Short(f) => FastFixedSet::Short(f.spawn_empty_set()),
             FastFixedSetFactory::Long(f) => FastFixedSet::Long(f.spawn_empty_set()),
-        }
-    }
-
-    /// The entries in their original order.
-    pub fn get_entries(&self) -> Vec<E> {
-        match self {
-            FastFixedSetFactory::Short(f) => f.get_entries(),
-            FastFixedSetFactory::Long(f) => f.get_entries(),
         }
     }
 

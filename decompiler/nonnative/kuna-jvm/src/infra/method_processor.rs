@@ -158,11 +158,6 @@ impl Drop for ScratchScope {
 }
 
 impl MethodProcessor {
-    /// `debugCurrentlyDecompiling.get()`.
-    pub fn debug_currently_decompiling() -> Option<RootStatement> {
-        DEBUG_CURRENTLY_DECOMPILING.with(Cell::get)
-    }
-
     /// `debugCurrentlyDecompiling.set(root)`.
     pub fn set_debug_currently_decompiling(root: Option<RootStatement>) {
         DEBUG_CURRENTLY_DECOMPILING.with(|c| c.set(root));
@@ -232,7 +227,7 @@ impl MethodProcessor {
 
         DeadCodeHelper::remove_gotos(graph);
 
-        let decompile_record = DecompileRecord::new(mt);
+        let decompile_record = DecompileRecord::new();
 
         if let Some(spec) = spec {
             let mut pctx = PassContext::new(None, Some(graph), mt, cl, var_proc, decompile_record);

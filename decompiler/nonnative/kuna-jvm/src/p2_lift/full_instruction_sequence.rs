@@ -36,10 +36,6 @@ impl FullInstructionSequence {
         self.with(|d| d.instructions.clone())
     }
 
-    pub fn offset_to_index(self) -> JHashMap<i32, i32> {
-        self.with(|d| d.offset_to_index.clone())
-    }
-
     pub fn exception_table(self) -> ExceptionTable {
         self.with(|d| d.exception_table.clone())
     }
@@ -50,10 +46,6 @@ impl FullInstructionSequence {
 
     pub fn length(self) -> i32 {
         self.with(|d| d.instructions.len() as i32)
-    }
-
-    pub fn is_empty(self) -> bool {
-        self.with(|d| d.instructions.is_empty())
     }
 
     pub fn get_index_by_rel_offset(self, instruction: Instruction, offset: i32) -> i32 {

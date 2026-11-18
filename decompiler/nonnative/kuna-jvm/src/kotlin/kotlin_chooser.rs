@@ -213,7 +213,7 @@ impl KotlinChooser {
             KtAttrs::put(
                 cl,
                 &KElement::KEY(),
-                KElement::File(Rc::new(KFile::new(pcl, resolver, None))),
+                KElement::File(Rc::new(KFile::new(None))),
             );
         } else if k == 3 {
             let func = kt_proto::Function::parse_from(&mut input);
@@ -269,7 +269,7 @@ impl KotlinChooser {
             KtAttrs::put(
                 cl,
                 &KElement::KEY(),
-                KElement::File(Rc::new(KFile::new(pcl, resolver, Some(multifile_name)))),
+                KElement::File(Rc::new(KFile::new(Some(multifile_name)))),
             );
         }
     }

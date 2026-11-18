@@ -359,13 +359,4 @@ impl VarType {
     pub fn try_as_k_type(&self) -> Option<KType> {
         self.kotlin.is_some().then(|| KType(self.clone()))
     }
-
-    /// Java `(KType) x`.
-    #[track_caller]
-    pub fn as_k_type(&self) -> KType {
-        if self.kotlin.is_none() {
-            crate::rt::throw("ClassCastException", "VarType cannot be cast to KType");
-        }
-        KType(self.clone())
-    }
 }

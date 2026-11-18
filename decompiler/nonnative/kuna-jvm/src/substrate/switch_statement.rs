@@ -17,7 +17,6 @@ use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::if_statement::set_head_slot;
 use crate::pattern::Pattern;
 use crate::rt::{JHashMap, JHashSet, JList};
-use crate::start_end_pair::StartEndPair;
 use crate::stat_edge::StatEdge;
 use crate::statement::{
     add_instanceof_pattern_vars, EdgeDirection, LastBasicType, Statement, StatementKind,
@@ -396,14 +395,6 @@ impl SwitchStatement {
         self.sort_edges_and_nodes();
     }
 
-    pub fn get_start_end_range(self) -> StartEndPair {
-        let mut sepairs = vec![Some(self.0.get_start_end_range_base())];
-        for st in self.get_case_statements().iter() {
-            sepairs.push(Some(st.get_start_end_range()));
-        }
-        StartEndPair::join(&sepairs)
-    }
-
     pub fn sort_edges_and_nodes(self) {
         let case_values = self.get_case_values();
         let skip = case_values.iter().any(|l| {
@@ -668,26 +659,6 @@ impl SwitchStatement {
         self.get_default_edge().map(|e| e.get_destination())
     }
 
-    pub fn set_default_case(self, stat: Statement) {
-        if let Some(default_case) = self.get_default_case() {
-            default_case.replace_with(stat);
-            return;
-        }
-
-        self.add_case_internal(0, JList::from(vec![None]), stat);
-    }
-
-    /// Java: addCase(List<Exprent>, Statement)
-    pub fn add_case(self, values: JList<Option<Exprent>>, stat: Statement) {
-        let case_count = self.get_case_statements().len() as i32;
-        let index = if self.get_default_edge().is_some() {
-            case_count - 1
-        } else {
-            case_count
-        };
-        self.add_case_internal(index, values, stat);
-    }
-
     /// Java: addCase(int, List<Exprent>, Statement)
     pub fn add_case_at(self, index: i32, values: JList<Option<Exprent>>, stat: Statement) {
         self.add_case_internal(index, values, stat);
@@ -716,16 +687,6 @@ impl SwitchStatement {
         }
 
         stat.set_parent(Some(self.0));
-    }
-
-    /// Java: removeCase(Statement)
-    pub fn remove_case(self, stat: Statement) {
-        let index = self.get_case_statements().index_of(&stat);
-        if index == -1 {
-            jthrow!(IllegalStateException; "Tried to remove a case statement that isn't in the switch!");
-        }
-
-        self.remove_case_at(index);
     }
 
     /// Java: removeCase(int)

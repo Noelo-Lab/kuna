@@ -16,13 +16,6 @@ impl<L, R> Either<L, R> {
         }
     }
 
-    pub fn right(right: R) -> Either<L, R> {
-        Either {
-            left: None,
-            right: Some(right),
-        }
-    }
-
     pub fn map(&self, if_left: impl FnOnce(&L), if_right: impl FnOnce(&R)) {
         self.check_invariants();
         if let Some(left) = &self.left {

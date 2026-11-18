@@ -1,6 +1,6 @@
 //! Port of `org/jetbrains/java/decompiler/struct/gen/generics/GenericClassDescriptor.java`.
 
-use std::cell::{Ref, RefCell, RefMut};
+use std::cell::{Ref, RefCell};
 use std::rc::Rc;
 
 use crate::decompiler_context::DecompilerContext;
@@ -38,19 +38,6 @@ impl GenericClassDescriptor {
             fbounds,
             checker: None,
         })))
-    }
-
-    pub fn borrow(&self) -> Ref<'_, GenericClassDescriptorData> {
-        self.0.borrow()
-    }
-
-    pub fn borrow_mut(&self) -> RefMut<'_, GenericClassDescriptorData> {
-        self.0.borrow_mut()
-    }
-
-    /// Java `==`.
-    pub fn ptr_eq(&self, other: &GenericClassDescriptor) -> bool {
-        Rc::ptr_eq(&self.0, &other.0)
     }
 
     pub fn superclass(&self) -> VarType {

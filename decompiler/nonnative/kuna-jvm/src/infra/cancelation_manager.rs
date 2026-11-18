@@ -26,11 +26,6 @@ static HAS_CHECKER: AtomicBool = AtomicBool::new(false);
 pub struct CancelationManager;
 
 impl CancelationManager {
-    /// Throws `CanceledException`.
-    pub fn cancel() -> ! {
-        CanceledException::throw()
-    }
-
     pub fn check_canceled() {
         if HAS_CHECKER.load(Ordering::Acquire) {
             let checker = CANCELATION_CHECKER
@@ -45,21 +40,6 @@ impl CancelationManager {
         if armed.deadline.is_some() || armed.polls_left.is_some() || armed.guarded {
             poll_method(armed);
         }
-    }
-
-    pub fn set_cancelation_checker(checker: impl Fn() + Send + Sync + 'static) {
-        *CANCELATION_CHECKER
-            .write()
-            .unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(checker));
-        HAS_CHECKER.store(true, Ordering::Release);
-    }
-
-    /// Restores the default no-op checker.
-    pub fn clear_cancelation_checker() {
-        HAS_CHECKER.store(false, Ordering::Release);
-        *CANCELATION_CHECKER
-            .write()
-            .unwrap_or_else(|e| e.into_inner()) = None;
     }
 }
 
@@ -169,10 +149,6 @@ pub struct CanceledException;
 
 impl CanceledException {
     pub const CLASS: &'static str = "CanceledException";
-
-    pub fn throw() -> ! {
-        crate::rt::throw(Self::CLASS, "")
-    }
 
     pub fn is(caught: &crate::rt::Caught) -> bool {
         caught.is(Self::CLASS)

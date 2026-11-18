@@ -148,11 +148,6 @@ impl PrintStreamLogger {
         }
     }
 
-    /// The default logger: standard error.
-    pub fn stderr() -> PrintStreamLogger {
-        PrintStreamLogger::new(Box::new(std::io::stderr()))
-    }
-
     fn println(&self, line: &str) {
         let mut stream = self.stream.borrow_mut();
         let _ = writeln!(stream, "{line}");

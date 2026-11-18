@@ -10,7 +10,6 @@ use crate::instruction_sequence::InstructionSequence;
 use crate::java_subclass;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::rt::JList;
-use crate::start_end_pair::StartEndPair;
 use crate::statement::{
     add_instanceof_pattern_vars, LastBasicType, Statement, StatementKind, StatementType,
 };
@@ -159,15 +158,6 @@ impl BasicBlockStatement {
             if exprents.get(i) == oldexpr {
                 exprents.set(i, newexpr);
             }
-        }
-    }
-
-    pub fn get_start_end_range(self) -> StartEndPair {
-        let block = self.get_block();
-        if block.size() > 0 {
-            StartEndPair::new(block.get_start_instruction(), block.get_end_instruction())
-        } else {
-            StartEndPair::new(0, 0)
         }
     }
 }

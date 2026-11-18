@@ -972,17 +972,6 @@ pub enum PropertyMethod {
 }
 
 impl PropertyMethod {
-    pub fn ordinal(self) -> i32 {
-        self as i32
-    }
-
-    pub fn name(self) -> &'static str {
-        match self {
-            PropertyMethod::Getter => "GETTER",
-            PropertyMethod::Setter => "SETTER",
-        }
-    }
-
     /// `PropertyMethod.KEY` (`Key.of(PropertyMethod.class.getName())`).
     #[allow(non_snake_case)]
     pub fn KEY() -> Key<PropertyMethod> {

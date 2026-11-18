@@ -11,10 +11,6 @@ pub enum DirectEdgeType {
 impl DirectEdgeType {
     pub const TYPES: [DirectEdgeType; 2] = [DirectEdgeType::Regular, DirectEdgeType::Exception];
 
-    pub fn values() -> [DirectEdgeType; 2] {
-        Self::TYPES
-    }
-
     pub fn ordinal(self) -> i32 {
         self as i32
     }

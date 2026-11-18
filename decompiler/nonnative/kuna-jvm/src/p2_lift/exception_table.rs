@@ -8,11 +8,6 @@ pub struct ExceptionTable {
 }
 
 impl ExceptionTable {
-    #[allow(non_snake_case)]
-    pub fn EMPTY() -> ExceptionTable {
-        ExceptionTable::new(Vec::new())
-    }
-
     pub fn new(handlers: Vec<ExceptionHandler>) -> ExceptionTable {
         ExceptionTable { handlers }
     }

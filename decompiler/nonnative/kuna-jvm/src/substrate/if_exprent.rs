@@ -72,28 +72,6 @@ impl Type {
         self as i32
     }
 
-    pub fn name(self) -> &'static str {
-        match self {
-            Type::Eq => "EQ",
-            Type::Ne => "NE",
-            Type::Lt => "LT",
-            Type::Ge => "GE",
-            Type::Gt => "GT",
-            Type::Le => "LE",
-            Type::Null => "NULL",
-            Type::Nonnull => "NONNULL",
-            Type::Icmpeq => "ICMPEQ",
-            Type::Icmpne => "ICMPNE",
-            Type::Icmplt => "ICMPLT",
-            Type::Icmpge => "ICMPGE",
-            Type::Icmpgt => "ICMPGT",
-            Type::Icmple => "ICMPLE",
-            Type::Acmpeq => "ACMPEQ",
-            Type::Acmpne => "ACMPNE",
-            Type::Value => "VALUE",
-        }
-    }
-
     /// Java field `functionType`.
     pub fn function_type(self) -> Option<FunctionType> {
         match self {

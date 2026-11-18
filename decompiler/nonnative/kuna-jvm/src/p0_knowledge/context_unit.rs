@@ -143,11 +143,6 @@ impl ContextUnit {
         ))
     }
 
-    pub fn get_other_entries(self) -> Vec<Entry> {
-        self.init_entries();
-        self.with(|d| d.other_entries.clone())
-    }
-
     pub fn get_child_contexts(self) -> Vec<Rc<dyn IContextSource>> {
         self.init_entries();
         self.with(|d| d.child_contexts.clone())

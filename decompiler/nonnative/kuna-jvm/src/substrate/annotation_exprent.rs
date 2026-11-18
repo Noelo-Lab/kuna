@@ -16,13 +16,6 @@ pub enum Type {
 }
 
 impl Type {
-    pub fn name(self) -> &'static str {
-        match self {
-            Type::Normal => "NORMAL",
-            Type::Marker => "MARKER",
-            Type::SingleElement => "SINGLE_ELEMENT",
-        }
-    }
 }
 
 impl JavaHash for Type {

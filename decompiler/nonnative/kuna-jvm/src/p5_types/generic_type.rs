@@ -323,10 +323,6 @@ impl GenericType {
         args
     }
 
-    pub fn get_next_type(value: &str) -> String {
-        from_utf16(GenericType::next_type_units(&value.utf16()))
-    }
-
     pub(crate) fn next_type_units(value: &[u16]) -> &[u16] {
         let mut counter: i32 = 0;
         let mut index = 0;

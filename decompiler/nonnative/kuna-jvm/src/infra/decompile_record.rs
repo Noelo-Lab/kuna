@@ -1,13 +1,11 @@
 //! Port of `org/jetbrains/java/decompiler/main/rels/DecompileRecord.java`.
 
 use crate::root_statement::RootStatement;
-use crate::struct_method::StructMethod;
 use crate::validation_helper::ValidationHelper;
 use crate::{arena_identity, arena_object};
 
 pub struct DecompileRecordData {
     pub names: Vec<String>,
-    pub mt: StructMethod,
     pub main_loop_iteration: i32,
     pub merge_loop_iteration: i32,
 }
@@ -16,10 +14,9 @@ arena_object!(pub DecompileRecord => DecompileRecordData, Class);
 arena_identity!(DecompileRecord);
 
 impl DecompileRecord {
-    pub fn new(mt: StructMethod) -> DecompileRecord {
+    pub fn new() -> DecompileRecord {
         DecompileRecord::alloc(DecompileRecordData {
             names: Vec::new(),
-            mt,
             main_loop_iteration: 0,
             merge_loop_iteration: 0,
         })
@@ -68,16 +65,5 @@ impl DecompileRecord {
 
     pub fn reset_merge_loop(self) {
         self.with_mut(|d| d.merge_loop_iteration = 0);
-    }
-
-    pub fn get_names(self) -> Vec<String> {
-        self.with(|d| d.names.clone())
-    }
-
-    pub fn print(self) {
-        let names = self.get_names();
-        for (i, name) in names.iter().enumerate() {
-            println!("{i} {name}");
-        }
     }
 }

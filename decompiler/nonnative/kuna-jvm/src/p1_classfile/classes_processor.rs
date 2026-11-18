@@ -112,10 +112,6 @@ impl ClassesProcessor {
         })
     }
 
-    pub fn add_whitelist(self, prefix: &str) {
-        self.with_mut(|d| d.whitelist.add(prefix.to_string()));
-    }
-
     pub fn is_whitelisted(self, cls: &str) -> bool {
         self.with(|d| {
             if d.whitelist.is_empty() {

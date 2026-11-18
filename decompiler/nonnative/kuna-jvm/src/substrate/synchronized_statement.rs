@@ -192,10 +192,6 @@ impl SynchronizedStatement {
         self.d(|d| d.body).expect("synchronized body")
     }
 
-    pub fn set_body(self, body: Statement) {
-        self.d_mut(|d| d.body = Some(body))
-    }
-
     /// The live one-slot list (empty while the Java slot is `null`).
     pub fn get_headexprent_list(self) -> JList<Exprent> {
         self.d(|d| d.headexprent.clone())

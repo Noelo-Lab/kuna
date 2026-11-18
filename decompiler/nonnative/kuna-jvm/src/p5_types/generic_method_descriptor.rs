@@ -45,11 +45,6 @@ impl GenericMethodDescriptor {
         self.0.borrow_mut()
     }
 
-    /// Java `==`.
-    pub fn ptr_eq(&self, other: &GenericMethodDescriptor) -> bool {
-        Rc::ptr_eq(&self.0, &other.0)
-    }
-
     pub fn type_parameters(&self) -> Ref<'_, Vec<String>> {
         Ref::map(self.0.borrow(), |d| &d.type_parameters)
     }

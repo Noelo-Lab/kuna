@@ -26,28 +26,6 @@ pub enum CodeType {
 }
 
 impl CodeType {
-    pub const VALUES: [CodeType; 19] = [
-        CodeType::Byte,
-        CodeType::Char,
-        CodeType::Double,
-        CodeType::Float,
-        CodeType::Int,
-        CodeType::Long,
-        CodeType::Short,
-        CodeType::Boolean,
-        CodeType::Object,
-        CodeType::Address,
-        CodeType::Void,
-        CodeType::Any,
-        CodeType::Group2empty,
-        CodeType::Null,
-        CodeType::Notinitialized,
-        CodeType::Bytechar,
-        CodeType::Shortchar,
-        CodeType::Unknown,
-        CodeType::Genvar,
-    ];
-
     pub fn ordinal(self) -> i32 {
         self as i32
     }

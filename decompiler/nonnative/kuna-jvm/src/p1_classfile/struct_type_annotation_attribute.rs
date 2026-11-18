@@ -143,18 +143,6 @@ impl StructTypeAnnotationAttribute {
         self.d_mut(|d| d.annotations = Some(built.clone()));
         built
     }
-
-    /// The parsed type annotations, without building exprents.
-    pub fn get_records(self) -> Vec<TypeAnnotationRecord> {
-        self.d(|d| d.source.clone())
-    }
-
-    pub fn set_annotations(self, annotations: Vec<TypeAnnotation>) {
-        self.d_mut(|d| {
-            d.annotations = Some(annotations);
-            d.pinned = true;
-        })
-    }
 }
 
 /// `PathKind.VALUES[index]`.

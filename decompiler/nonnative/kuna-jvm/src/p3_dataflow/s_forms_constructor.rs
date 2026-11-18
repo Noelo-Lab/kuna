@@ -100,14 +100,6 @@ impl SFormsConstructor {
         }
     }
 
-    pub fn is_ssa(&self) -> bool {
-        matches!(self.kind, SFormsConstructorKind::Ssa(_))
-    }
-
-    pub fn is_ssau(&self) -> bool {
-        matches!(self.kind, SFormsConstructorKind::Ssau(_))
-    }
-
     pub fn factory(&self) -> &FastSparseSetFactory<i32> {
         self.factory.as_ref().expect("SFormsConstructor.factory")
     }

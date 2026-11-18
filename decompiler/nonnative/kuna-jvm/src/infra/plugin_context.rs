@@ -2,8 +2,7 @@
 //!
 //! Vineflower discovers plugins through its static plugin sources (plugin
 //! jars, `ServiceLoader`); here each context holds its own sources
-//! ([`PluginContext::set_plugin_sources`], see `kuna_plugins`), and a plugin
-//! can also be registered directly with [`PluginContext::register_plugin`].
+//! ([`PluginContext::set_plugin_sources`], see `kuna_plugins`).
 
 use std::rc::Rc;
 
@@ -63,14 +62,6 @@ impl PluginContext {
 
     pub fn set_plugin_sources(self, sources: Vec<Rc<dyn PluginSource>>) {
         self.with_mut(|d| d.plugin_sources = sources);
-    }
-
-    /// A plugin from no source.
-    pub fn register_plugin(self, plugin: Rc<dyn Plugin>) {
-        self.with_mut(|d| {
-            d.plugins.push(plugin);
-            d.by_source.push(None);
-        });
     }
 
     /// Java: registerPlugin(Plugin, PluginSource)
@@ -192,15 +183,6 @@ impl PluginContext {
         }
 
         None
-    }
-
-    pub fn get_source(self, plugin: &Rc<dyn Plugin>) -> Option<Rc<dyn PluginSource>> {
-        self.with(|d| {
-            d.plugins
-                .iter()
-                .position(|p| Rc::ptr_eq(p, plugin))
-                .and_then(|i| d.by_source[i].clone())
-        })
     }
 
     pub fn get_plugins(self) -> Vec<Rc<dyn Plugin>> {

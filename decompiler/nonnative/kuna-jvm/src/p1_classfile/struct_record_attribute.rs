@@ -39,8 +39,4 @@ impl StructRecordAttribute {
     pub fn get_components(self) -> Vec<StructRecordComponent> {
         self.d(|d| d.components.clone())
     }
-
-    pub fn set_components(self, components: Vec<StructRecordComponent>) {
-        self.d_mut(|d| d.components = components)
-    }
 }

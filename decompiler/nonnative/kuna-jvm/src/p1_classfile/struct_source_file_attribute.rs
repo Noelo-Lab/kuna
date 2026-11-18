@@ -43,12 +43,4 @@ impl StructSourceFileAttribute {
             .get_string()
             .to_string()
     }
-
-    pub fn get_const_pool_index(self) -> i32 {
-        self.d(|d| d.const_pool_index)
-    }
-
-    pub fn set_const_pool_index(self, const_pool_index: i32) {
-        self.d_mut(|d| d.const_pool_index = const_pool_index)
-    }
 }

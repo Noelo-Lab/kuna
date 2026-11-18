@@ -75,16 +75,6 @@ pub enum InvocationType {
 }
 
 impl InvocationType {
-    pub fn name(self) -> &'static str {
-        match self {
-            InvocationType::Special => "SPECIAL",
-            InvocationType::Virtual => "VIRTUAL",
-            InvocationType::Static => "STATIC",
-            InvocationType::Interface => "INTERFACE",
-            InvocationType::Dynamic => "DYNAMIC",
-            InvocationType::ConstantDynamic => "CONSTANT_DYNAMIC",
-        }
-    }
 }
 
 impl JavaHash for InvocationType {
@@ -108,13 +98,6 @@ pub enum Type {
 }
 
 impl Type {
-    pub fn name(self) -> &'static str {
-        match self {
-            Type::General => "GENERAL",
-            Type::Init => "INIT",
-            Type::Clinit => "CLINIT",
-        }
-    }
 }
 
 impl JavaHash for Type {
@@ -3159,10 +3142,6 @@ impl InvocationExprent {
 
     pub fn get_generic_args(self) -> Vec<VarType> {
         self.d(|d| d.generic_args.clone())
-    }
-
-    pub fn get_generics_map(self) -> JHashMap<VarType, Option<VarType>> {
-        self.d(|d| d.generics_map.clone())
     }
 
     pub fn get_desc(self) -> Option<StructMethod> {

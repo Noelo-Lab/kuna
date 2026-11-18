@@ -1,8 +1,5 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/decompose/DominatorEngine.java`.
 
-use std::collections::VecDeque;
-
-use crate::rt::JHashSet;
 use crate::statement::Statement;
 use crate::vb_style_collection::VBStyleCollection;
 
@@ -136,35 +133,5 @@ impl DominatorEngine {
         }
 
         true
-    }
-
-    pub fn all_doms_for(&self, start: i32) -> JHashSet<i32> {
-        let mut ret = JHashSet::new();
-
-        let mut stack: VecDeque<i32> = VecDeque::new();
-        stack.push_back(start);
-
-        while let Some(id) = stack.pop_front() {
-            if ret.contains(&id) {
-                continue;
-            }
-
-            ret.add(id);
-
-            for key in self.col_ordered_idoms.get_lst_keys().to_vec() {
-                let key = key.expect("keyed idom");
-                let ndid = self
-                    .col_ordered_idoms
-                    .get_with_key(&key)
-                    .flatten()
-                    .expect("idom");
-
-                if ndid == id {
-                    stack.push_back(key);
-                }
-            }
-        }
-
-        ret
     }
 }

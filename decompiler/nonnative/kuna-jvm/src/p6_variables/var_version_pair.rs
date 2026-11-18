@@ -22,10 +22,6 @@ impl VarVersionPair {
         }
     }
 
-    pub fn is(&self, var: i32, version: i32) -> bool {
-        self.var == var && self.version == version
-    }
-
     pub fn equals(&self, o: &VarVersionPair) -> bool {
         self.var == o.var && self.version == o.version
     }

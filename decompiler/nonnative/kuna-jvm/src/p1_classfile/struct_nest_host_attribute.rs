@@ -43,8 +43,4 @@ impl StructNestHostAttribute {
             .get_string()
             .to_string()
     }
-
-    pub fn set_const_pool_index(self, const_pool_index: i32) {
-        self.d_mut(|d| d.const_pool_index = const_pool_index)
-    }
 }

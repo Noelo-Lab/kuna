@@ -3254,28 +3254,6 @@ impl StatementWriter for KotlinWriter {
         KotlinWriter::write_class(self, node, buffer, indent)
     }
 
-    fn write_field(
-        &self,
-        wrapper: ClassWrapper,
-        cl: StructClass,
-        fd: StructField,
-        buffer: &mut TextBuffer,
-        indent: i32,
-    ) {
-        KotlinWriter::write_field(self, wrapper, cl, fd, buffer, indent)
-    }
-
-    fn write_method(
-        &self,
-        node: ClassNode,
-        mt: StructMethod,
-        method_index: i32,
-        buffer: &mut TextBuffer,
-        indent: i32,
-    ) -> bool {
-        KotlinWriter::write_method(self, node, mt, method_index, buffer, indent)
-    }
-
     fn ends_with_semicolon(&self, expr: Exprent) -> bool {
         KotlinWriter::ends_with_semicolon(self, expr)
     }

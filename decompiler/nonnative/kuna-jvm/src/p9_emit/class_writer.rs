@@ -275,7 +275,7 @@ impl ClassWriter {
         for method in methods {
             let (method_struct, class_struct, varproc) =
                 method.with(|d| (d.method_struct, d.class_struct, d.varproc));
-            let rec = DecompileRecord::new(method_struct);
+            let rec = DecompileRecord::new();
             DecompilerContext::reset_method(method);
 
             if let Some(root) = method.with(|d| d.root) {

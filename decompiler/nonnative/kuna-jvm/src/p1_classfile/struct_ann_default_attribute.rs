@@ -62,16 +62,4 @@ impl StructAnnDefaultAttribute {
         self.d_mut(|d| d.default_value = built);
         built
     }
-
-    /// The parsed default value, without building an exprent.
-    pub fn get_record(self) -> Option<AnnotationElement> {
-        self.d(|d| d.source.clone())
-    }
-
-    pub fn set_default_value(self, default_value: Option<Exprent>) {
-        self.d_mut(|d| {
-            d.default_value = default_value;
-            d.pinned = true;
-        })
-    }
 }

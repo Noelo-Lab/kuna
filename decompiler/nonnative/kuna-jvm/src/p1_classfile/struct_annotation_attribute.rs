@@ -163,24 +163,6 @@ impl StructAnnotationAttribute {
         });
     }
 
-    /// Java: `parseAnnotations(ConstantPool, DataInputStream)`.
-    pub fn parse_annotations(pool: ConstantPool, data: &mut ByteCursor) -> Vec<AnnotationExprent> {
-        StructAnnotationAttribute::read_annotations(pool, data)
-            .iter()
-            .map(AnnotationRecord::to_exprent)
-            .collect()
-    }
-
-    /// Java: `parseAnnotation(DataInputStream, ConstantPool)`.
-    pub fn parse_annotation(data: &mut ByteCursor, pool: ConstantPool) -> AnnotationExprent {
-        StructAnnotationAttribute::read_annotation(data, pool).to_exprent()
-    }
-
-    /// Java: `parseAnnotationElement(DataInputStream, ConstantPool)`.
-    pub fn parse_annotation_element(data: &mut ByteCursor, pool: ConstantPool) -> Exprent {
-        StructAnnotationAttribute::read_annotation_element(data, pool).to_exprent()
-    }
-
     /// `parseAnnotations` up to the exprents.
     pub fn read_annotations(pool: ConstantPool, data: &mut ByteCursor) -> Vec<AnnotationRecord> {
         let len = data.read_unsigned_short();
@@ -329,13 +311,6 @@ impl StructAnnotationAttribute {
     /// The parsed annotations, without building exprents.
     pub fn get_records(self) -> Vec<AnnotationRecord> {
         self.d(|d| d.source.clone())
-    }
-
-    pub fn set_annotations(self, annotations: Vec<AnnotationExprent>) {
-        self.d_mut(|d| {
-            d.annotations = Some(annotations);
-            d.pinned = true;
-        })
     }
 }
 

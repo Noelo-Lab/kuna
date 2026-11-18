@@ -23,8 +23,6 @@ pub struct ClasspathHelper;
 /// The facts of a `java.lang.reflect.Method` that Vineflower reads.
 #[derive(Clone, Debug)]
 pub struct Method {
-    /// `Method.toString()`, e.g. `public static java.util.List java.util.Arrays.asList(java.lang.Object[])`.
-    pub to_string: String,
     pub var_args: bool,
 }
 
@@ -72,10 +70,7 @@ impl ClasspathHelper {
             .get(target_class)?
             .iter()
             .find(|mtd| mtd.contains(method_signature))
-            .map(|mtd| Method {
-                to_string: mtd.to_string(),
-                var_args: true,
-            })
+            .map(|_| Method { var_args: true })
     }
 
     /// The embedded table, by declaring class (`Method.toString()` names it before the name).

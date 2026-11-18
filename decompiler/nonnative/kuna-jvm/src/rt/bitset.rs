@@ -30,15 +30,6 @@ impl BitSet {
         self.words[w] |= 1u64 << (bit % 64);
     }
 
-    /// `set(bit, value)`.
-    pub fn set_to(&mut self, bit: usize, value: bool) {
-        if value {
-            self.set(bit)
-        } else {
-            self.clear(bit)
-        }
-    }
-
     /// `set(from, to)`: the half-open range.
     pub fn set_range(&mut self, from: usize, to: usize) {
         for bit in from..to {
@@ -51,10 +42,6 @@ impl BitSet {
             *w &= !(1u64 << (bit % 64));
             self.trim();
         }
-    }
-
-    pub fn clear_all(&mut self) {
-        self.words.clear();
     }
 
     pub fn or(&mut self, other: &BitSet) {
@@ -77,16 +64,6 @@ impl BitSet {
     pub fn and_not(&mut self, other: &BitSet) {
         for (a, b) in self.words.iter_mut().zip(&other.words) {
             *a &= !*b;
-        }
-        self.trim();
-    }
-
-    pub fn xor(&mut self, other: &BitSet) {
-        if other.words.len() > self.words.len() {
-            self.words.resize(other.words.len(), 0);
-        }
-        for (a, b) in self.words.iter_mut().zip(&other.words) {
-            *a ^= *b;
         }
         self.trim();
     }

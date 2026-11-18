@@ -193,7 +193,7 @@ fn an_engine_whose_batch_unwound_is_not_reused() {
     });
     let (results, report) = drive_within(&input, config(options(&[]), 1, logger), 300).unwrap();
     assert_eq!(results.len(), reference.len());
-    assert!(report.runs.len() > 1);
+    assert!(report.runs > 1);
     assert_eq!(report.instances, 2, "a fresh engine after the failed batch");
     let failed = check_against(&results, &reference);
     assert!(!failed.is_empty() && failed.len() < results.len(), "{failed:?}");

@@ -34,17 +34,6 @@ impl PooledConstant {
         }
     }
 
-    pub fn is_primitive(&self) -> bool {
-        matches!(self, PooledConstant::Primitive(_))
-    }
-
-    pub fn try_as_primitive(&self) -> Option<PrimitiveConstant> {
-        match self {
-            PooledConstant::Primitive(c) => Some(c.clone()),
-            PooledConstant::Link(_) => None,
-        }
-    }
-
     #[track_caller]
     pub fn as_primitive(&self) -> PrimitiveConstant {
         match self {
@@ -54,10 +43,6 @@ impl PooledConstant {
                 "LinkConstant cannot be cast to PrimitiveConstant",
             ),
         }
-    }
-
-    pub fn is_link(&self) -> bool {
-        matches!(self, PooledConstant::Link(_))
     }
 
     pub fn try_as_link(&self) -> Option<LinkConstant> {
@@ -82,15 +67,6 @@ impl PooledConstant {
         match self {
             PooledConstant::Primitive(c) => c.resolve_constant(pool),
             PooledConstant::Link(c) => c.resolve_constant(pool),
-        }
-    }
-
-    /// Java `==`.
-    pub fn ptr_eq(&self, other: &PooledConstant) -> bool {
-        match (self, other) {
-            (PooledConstant::Primitive(a), PooledConstant::Primitive(b)) => a.ptr_eq(b),
-            (PooledConstant::Link(a), PooledConstant::Link(b)) => a.ptr_eq(b),
-            _ => false,
         }
     }
 

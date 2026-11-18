@@ -59,16 +59,6 @@ impl StructBootstrapMethodsAttribute {
         }
     }
 
-    /// The public field `methodRefs`.
-    pub fn method_refs(self) -> Vec<Option<LinkConstant>> {
-        self.d(|d| d.method_refs.clone())
-    }
-
-    /// The public field `methodArguments`.
-    pub fn method_arguments(self) -> Vec<Vec<Option<PooledConstant>>> {
-        self.d(|d| d.method_arguments.clone())
-    }
-
     pub fn get_methods_number(self) -> i32 {
         self.d(|d| d.method_refs.len() as i32)
     }

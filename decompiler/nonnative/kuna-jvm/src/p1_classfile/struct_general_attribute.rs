@@ -244,9 +244,6 @@ impl StructGeneralAttribute {
         })
     }
 
-    /// Java: `init()`; the registry it fills is built into `create_attribute`.
-    pub fn init() {}
-
     pub fn init_content(self, data: &mut ByteCursor, pool: ConstantPool, version: BytecodeVersion) {
         if let Some(a) = self.try_as_code() {
             StructCodeAttribute::init_content(a, data, pool, version)

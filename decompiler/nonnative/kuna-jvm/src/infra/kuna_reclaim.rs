@@ -415,7 +415,6 @@ impl Marker {
             contains_monitor_exit: _,
             continue_set,
             phantom: _,
-            endpoints: _,
             kind,
             kt: _,
         } = d;

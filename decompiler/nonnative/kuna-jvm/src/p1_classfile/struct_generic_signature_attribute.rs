@@ -44,8 +44,4 @@ impl StructGenericSignatureAttribute {
     pub fn get_signature(self) -> String {
         self.d(|d| d.signature.clone())
     }
-
-    pub fn set_signature(self, signature: String) {
-        self.d_mut(|d| d.signature = signature)
-    }
 }

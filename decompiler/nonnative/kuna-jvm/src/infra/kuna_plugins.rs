@@ -39,10 +39,6 @@ impl PluginSource for BundledPluginSource {
     fn find_plugins(&self) -> Vec<Rc<dyn Plugin>> {
         bundled_plugins()
     }
-
-    fn get_simple_name(&self) -> String {
-        "ServicePluginSource".to_string()
-    }
 }
 
 /// `PluginSources.PLUGIN_SOURCES` of one engine instance.

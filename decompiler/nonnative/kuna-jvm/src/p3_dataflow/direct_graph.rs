@@ -20,7 +20,6 @@ pub struct DirectGraphData {
     pub extra_nodes: Vec<DirectNode>,
     pub first: Option<DirectNode>,
     pub map_neg_if_branch: JHashMap<Rc<str>, Rc<str>>,
-    pub map_finally_monitor_exception_path_exits: JHashMap<String, String>,
 }
 
 arena_object!(pub DirectGraph => DirectGraphData, Class);
@@ -45,7 +44,6 @@ impl DirectGraph {
             extra_nodes: Vec::new(),
             first: None,
             map_neg_if_branch: JHashMap::new(),
-            map_finally_monitor_exception_path_exits: JHashMap::new(),
         })
     }
 

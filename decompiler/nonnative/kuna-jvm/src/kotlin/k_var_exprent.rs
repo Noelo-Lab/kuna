@@ -32,18 +32,6 @@ pub enum DeclarationType {
 }
 
 impl DeclarationType {
-    pub fn ordinal(self) -> i32 {
-        self as i32
-    }
-
-    pub fn name(self) -> &'static str {
-        match self {
-            DeclarationType::Definition => "DEFINITION",
-            DeclarationType::Usage => "USAGE",
-            DeclarationType::ForLoopVariable => "FOR_LOOP_VARIABLE",
-            DeclarationType::ExceptionType => "EXCEPTION_TYPE",
-        }
-    }
 }
 
 pub struct KVarExprentData {

@@ -11,7 +11,6 @@ use crate::statement_writer::StatementWriter;
 /// A whole decompilation pipeline for a JVM language: the classes `chooser` claims skip the Java
 /// method schedule and the Java writer.
 pub struct LanguageSpec {
-    pub name: String,
     pub chooser: Rc<dyn LanguageChooser>,
     pub graph_parser: Rc<dyn GraphParser>,
     pub writer: Rc<dyn StatementWriter>,
@@ -22,9 +21,7 @@ pub struct LanguageSpec {
 }
 
 impl LanguageSpec {
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
-        name: &str,
         chooser: Rc<dyn LanguageChooser>,
         graph_parser: Rc<dyn GraphParser>,
         writer: Rc<dyn StatementWriter>,
@@ -34,7 +31,6 @@ impl LanguageSpec {
         extension: &str,
     ) -> LanguageSpec {
         LanguageSpec {
-            name: name.to_string(),
             chooser,
             graph_parser,
             writer,

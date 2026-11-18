@@ -125,11 +125,6 @@ impl Exprent {
 }
 
 impl Statement {
-    /// Whether this is an instance of a Kotlin statement class.
-    pub fn is_kotlin(self) -> bool {
-        self.with(|d| d.kt)
-    }
-
     /// Makes this statement an instance of the Kotlin class of its type.
     pub fn set_kt(self, kt: bool) {
         self.with_mut(|d| d.kt = kt);

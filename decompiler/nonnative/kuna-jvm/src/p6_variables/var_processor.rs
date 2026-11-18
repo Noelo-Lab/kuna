@@ -245,10 +245,6 @@ impl VarProcessor {
         self.with_mut(|d| d.params.push(pair));
     }
 
-    pub fn get_params(self) -> Vec<VarVersionPair> {
-        self.with(|d| d.params.clone())
-    }
-
     pub fn set_var_type(self, pair: VarVersionPair, type_: &VarType) {
         if let Some(var_versions) = self.with(|d| d.var_versions) {
             var_versions.set_var_type(pair, type_);
@@ -320,10 +316,6 @@ impl VarProcessor {
         self.with(|d| d.inherited_names.clone())
             .borrow_mut()
             .put(pair, name);
-    }
-
-    pub fn get_inherited_names(self) -> Shared<JHashMap<VarVersionPair, String>> {
-        self.with(|d| d.inherited_names.clone())
     }
 
     /// `mapVarNames.keySet()`, in iteration order.

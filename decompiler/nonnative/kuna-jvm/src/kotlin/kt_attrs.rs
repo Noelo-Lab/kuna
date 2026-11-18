@@ -73,15 +73,6 @@ impl KtAttrs {
         ATTRS.with(|a| a.borrow().contains_key(&entry))
     }
 
-    /// `member.getAttributes().remove(key)`; whether there was a value.
-    pub fn remove<T>(member: impl Into<StructMember>, key: &Key<T>) -> bool {
-        let entry = (member.into(), key.name.clone());
-        let previous = ATTRS.with(|a| a.borrow_mut().remove(&entry));
-        let removed = previous.is_some();
-        record(entry, previous);
-        removed
-    }
-
     /// Runs `f`, a class's writing marking members, recording every change
     /// for [`KtAttrs::undo_marks`].
     pub fn marking<R>(f: impl FnOnce() -> R) -> R {
@@ -108,10 +99,5 @@ impl KtAttrs {
         let dropped = ATTRS.with(|a| std::mem::take(&mut *a.borrow_mut()));
         drop(dropped);
         MARKS.with(|m| m.borrow_mut().clear());
-    }
-
-    /// How many attributes are set on this thread.
-    pub fn len() -> usize {
-        ATTRS.with(|a| a.borrow().len())
     }
 }

@@ -12,7 +12,6 @@ use crate::java_subclass;
 use crate::match_engine::MatchEngine;
 use crate::match_node::MatchNode;
 use crate::rt::{JList, JavaStr};
-use crate::start_end_pair::StartEndPair;
 use crate::stat_edge::StatEdge;
 use crate::statement::{
     add_instanceof_pattern_vars, LastBasicType, Statement, StatementKind, StatementType,
@@ -511,15 +510,6 @@ impl IfStatement {
         add_instanceof_pattern_vars(&condition_list, &mut vars);
 
         Some(vars)
-    }
-
-    pub fn get_start_end_range(self) -> StartEndPair {
-        let (ifstat, elsestat) = self.d(|d| (d.ifstat, d.elsestat));
-        StartEndPair::join(&[
-            Some(self.0.get_start_end_range_base()),
-            ifstat.map(|s| s.get_start_end_range()),
-            elsestat.map(|s| s.get_start_end_range()),
-        ])
     }
 
     pub fn find_object(self, match_node: &MatchNode, index: i32) -> Option<Box<dyn IMatchable>> {

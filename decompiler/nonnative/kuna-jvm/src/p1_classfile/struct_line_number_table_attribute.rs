@@ -70,8 +70,4 @@ impl StructLineNumberTableAttribute {
     pub fn get_raw_data(self) -> Vec<i32> {
         self.d(|d| d.my_line_info.clone())
     }
-
-    pub fn set_line_info(self, my_line_info: Vec<i32>) {
-        self.d_mut(|d| d.my_line_info = my_line_info)
-    }
 }

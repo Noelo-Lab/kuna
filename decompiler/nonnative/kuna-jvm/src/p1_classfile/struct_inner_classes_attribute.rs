@@ -111,8 +111,4 @@ impl StructInnerClassesAttribute {
     pub fn get_entries(self) -> Vec<Entry> {
         self.d(|d| d.entries.clone())
     }
-
-    pub fn set_entries(self, entries: Vec<Entry>) {
-        self.d_mut(|d| d.entries = entries)
-    }
 }

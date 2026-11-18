@@ -51,8 +51,4 @@ impl StructExceptionsAttribute {
     pub fn get_throws_exceptions(self) -> Vec<i32> {
         self.d(|d| d.throws_exceptions.clone())
     }
-
-    pub fn set_throws_exceptions(self, throws_exceptions: Vec<i32>) {
-        self.d_mut(|d| d.throws_exceptions = throws_exceptions)
-    }
 }

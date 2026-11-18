@@ -19,25 +19,6 @@ pub enum DirectNodeType {
 }
 
 impl DirectNodeType {
-    pub const VALUES: [DirectNodeType; 12] = [
-        DirectNodeType::Direct,
-        DirectNodeType::Tail,
-        DirectNodeType::Init,
-        DirectNodeType::Condition,
-        DirectNodeType::Increment,
-        DirectNodeType::Try,
-        DirectNodeType::Catch,
-        DirectNodeType::CombinedCatch,
-        DirectNodeType::Finally,
-        DirectNodeType::FinallyEnd,
-        DirectNodeType::ForeachVardef,
-        DirectNodeType::Case,
-    ];
-
-    pub fn values() -> [DirectNodeType; 12] {
-        Self::VALUES
-    }
-
     pub fn ordinal(self) -> i32 {
         self as i32
     }

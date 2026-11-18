@@ -29,12 +29,6 @@ pub enum Type {
 }
 
 impl Type {
-    pub fn name(self) -> &'static str {
-        match self {
-            Type::Return => "RETURN",
-            Type::Throw => "THROW",
-        }
-    }
 }
 
 impl JavaHash for Type {
