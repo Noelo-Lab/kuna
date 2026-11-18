@@ -31,6 +31,13 @@
 //! that type in Kotlin, and kotlinc emits the same cast for it. So is the
 //! unboxing of a result the metadata declares a primitive
 //! (`(src.next() as Number).toInt()` is `src.next()`).
+//!
+//! A call of a synthetic accessor (`access$helper`) has the declared type of
+//! the function it calls, and a call that `NestedMemberAccess` puts in place
+//! of an accessor's keeps the accessor call's mark.
+//!
+//! kuna fix `kt_suspend_lambda`: in a suspend lambda's rebuilt body the
+//! continuation the calls pass is `this`.
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -45,6 +52,8 @@ use crate::kt_flags::Flags;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::method_descriptor::MethodDescriptor;
 use crate::decompiler_context::DecompilerContext;
+use crate::kotlin::kuna_fix_kt_suspend_lambda;
+use crate::kotlin::kuna_fix_kt_synthetic_accessor_call;
 use crate::kotlin::kuna_fix_kt_suspend_state_machine::{completion_slot, is_function_invoke};
 use crate::root_statement::RootStatement;
 use crate::statement::Statement;
@@ -70,7 +79,7 @@ impl Drop for BodyScope {
 
 /// Enters the body of `mt` for fix `kt_nullable_local`'s typing.
 pub fn enter_body(mt: StructMethod) -> BodyScope {
-    let inside = kuna_fixes::enabled(KunaFix::KtSuspendCallContinuation) && completion_slot(mt).is_some();
+    let inside = kuna_fixes::enabled(KunaFix::KtSuspendCallContinuation) && continuation_slot(mt).is_some();
     BodyScope(IN_BODY.with(|b| b.replace(inside)))
 }
 
@@ -79,10 +88,20 @@ pub fn in_body() -> bool {
     IN_BODY.with(Cell::get)
 }
 
+/// The slot of the continuation a suspend function's calls pass on: its
+/// `$completion`, or `this` in a suspend lambda's body that fix
+/// `kt_suspend_lambda` rebuilt.
+fn continuation_slot(mt: StructMethod) -> Option<i32> {
+    completion_slot(mt).or_else(|| {
+        (kuna_fixes::enabled(KunaFix::KtSuspendLambda) && kuna_fix_kt_suspend_lambda::parameters(mt).is_some())
+            .then_some(0)
+    })
+}
+
 /// Marks the suspend calls under `root`, the body of `mt`, that pass the
 /// function's own continuation; whether it marked one.
 pub fn mark(root: RootStatement, mt: StructMethod) -> bool {
-    let Some(completion) = completion_slot(mt) else {
+    let Some(completion) = continuation_slot(mt) else {
         return false;
     };
     let mut exprents = Vec::new();
@@ -178,7 +197,8 @@ fn result_of_unboxing(e: Exprent) -> Option<(Exprent, VarType)> {
     fits.then(|| (call, declared.0.clone()))
 }
 
-/// The function a marked call with arguments calls, from its metadata.
+/// The function a marked call with arguments calls, from its metadata
+/// (through the synthetic accessor it calls, if it calls one).
 fn declared_function(call: Exprent) -> Option<Rc<KFunction>> {
     let inv = call.try_as_invocation()?;
     if !inv.d(|d| d.kuna_continuation_arg) || inv.get_lst_parameters().is_empty() {
@@ -186,7 +206,12 @@ fn declared_function(call: Exprent) -> Option<Rc<KFunction>> {
     }
     let cl = DecompilerContext::get_struct_context().get_class(&inv.get_classname())?;
     let method = cl.get_method(&inv.get_name(), &inv.get_string_descriptor())?;
-    match KtAttrs::get(method, &KElement::KEY()) {
+    let element = KtAttrs::get(method, &KElement::KEY()).or_else(|| {
+        kuna_fixes::enabled(KunaFix::KtSyntheticAccessorCall)
+            .then(|| kuna_fix_kt_synthetic_accessor_call::resugar(inv).map(|access| access.calling_data.clone()))
+            .flatten()
+    });
+    match element {
         Some(KElement::Function(function)) => Some(function),
         _ => None,
     }

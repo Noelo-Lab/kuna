@@ -58,7 +58,7 @@ fn label(class_name: &str) -> String {
 /// Whether the value of an exit in `stat` is the lambda's result when
 /// written bare: `stat` ends the body, through sequences that end with it and
 /// `if`-`else` statements, the value of the branch it ends.
-fn in_tail_position(stat: Statement) -> bool {
+pub(crate) fn in_tail_position(stat: Statement) -> bool {
     let mut current = stat;
     loop {
         let Some(parent) = current.get_parent() else {

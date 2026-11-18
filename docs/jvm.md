@@ -347,7 +347,7 @@ Where Vineflower 1.12.0 throws on a method, the port throws too and writes the m
 `// $VF: Couldn't be decompiled`. kuna fixes such defects, and code Vineflower prints wrong,
 in its own engine. A fix is a correction, not a judgement call, so it has no option: every
 fix is always on, and the only way to turn them off is all at once, with `--option
-jvm_vineflower_compat on`, which gives Vineflower's exact text. There are 241 fixes, 134 of
+jvm_vineflower_compat on`, which gives Vineflower's exact text. There are 246 fixes, 139 of
 them for Kotlin output. Each has an id, used in the docs, the spec and
 `tests/jvm/kuna-fixes/cases.json`:
 
@@ -594,6 +594,11 @@ them for Kotlin output. Each has an id, used in the docs, the spec and
 | `kt_inlined_stdlib_call` | in Kotlin output, writes kotlinc's inlined copy of a standard-library inline function as the copied body, which calls the library's `internal` helpers kotlinc rejects (`cannot access`): `use { }` as a `try`/`catch`/`finally` around `closeFinally`, a one-expression `map { }` as an `ArrayList(collectionSizeOrDefault(..))` loop, `String.format`/`fmt.format` as `java.lang.String.format(.., Arrays.copyOf(v, v.size))` of an array temporary after a `StringCompanionObject` read, `toString(radix)` as `Integer.toString(x, checkRadix(r))`, `copyOfRange` as `copyOfRangeImpl` | a copy that is exactly the function's body, outside the `kotlin` package, is written as the call: `String.format("%s", x)`, `b.toString(16)`, `a.copyOfRange(f, t)`, `return r.use { it.text() }` (`r.use { return it.text() }` where the lambda returned), `xs.map { it.name }`, the lambda's parameter named by kotlinc's debug names; kotlinc compiles each to the same instructions (okio 2 `format`, 4 `toString`, 8 `copyOfRange`; okhttp 10 `use`, 2 `map`, 1 `format`; kotlinx-coroutines 2 `use`); other copies stay as they are |
 | `kt_companion_static_copy` | in Kotlin output, writes a class without its own members that its companion object overrides or shadows: writing the companion marks every method of the class with a companion member's JVM signature as the companion's `@JvmStatic` copy (kotlin-stdlib's `Random` had none of its 15 functions, okhttp's `Android10SocketAdapter` lost `isSupported()`: `is not abstract and does not implement`) | only a static method is taken for the companion's copy; the class declares its own members |
 | `kt_reused_inline_object` | in Kotlin output, fails a method that creates an inline function's anonymous object kotlinc did not copy (the caller passes on its own value): the `new` is written as the object's body, which belongs to the inline function (kotlin-stdlib's `Sequence.sortedBy` and `sortedByDescending`; 24 more `sortBy`/`sortedBy` were written with the body's variable names) | the creation is written as the inline function's call when the function's code is only that creation from its parameters: `sortedWith(compareBy(selector))` |
+| `kt_nothing_value_throw` | in Kotlin output, writes the `throw KotlinNothingValueException()` kotlinc emits after a call of a function returning `Nothing` (dead code: the call never returns), which kotlinc rejects (the class is `@PublishedApi internal`; 53 in kotlinx-coroutines 1.10.2, 39 in kotlin-stdlib) | the call alone, which ends the branch as in the source (51 and 37 of them); kept where the callee is not declared `Nothing` (a type parameter or function type instantiated with it) |
+| `kt_suspend_without_metadata` | in Kotlin output, writes a suspend function of a class without function metadata (the `emit` of a SAM-converted suspend lambda's class, kotlinx-coroutines' `FlowCollector`s in `filter`, `map`, `collect { }`) from its JVM signature, `fun emit(value: T, $completion: Continuation<in Unit>): Any`, with its state machine | `override suspend fun emit(value: T)`: a method in the suspend calling convention that overrides a function a supertype's metadata declares `suspend` (or whose synthetic bridge does) is one, written with that function's result type and rebuilt by `kt_suspend_state_machine` and `kt_suspend_call_continuation` (kotlinx-coroutines 1.10.2: 43 of 48 such functions, 31 of them machines; the 5 left are `DefaultImpls` statics) |
+| `kt_for_inline_copy` | in Kotlin output, writes the `$$forInline` copy kotlinc adds to an object's suspend function in an inline function (its inliner's template, called by nothing), with its continuation parameter, `InlineMarker` calls and the continuation class instantiated as a statement (47 in kotlinx-coroutines 1.10.2, 33 in 1.8.0, written since kuna's fixes decompile them; Vineflower fails them and leaves them out) | the copy is not written, as the plugin leaves out kotlinc's other generated members |
+| `kt_suspend_lambda` | in Kotlin output, writes a suspend lambda (a `SuspendLambda` class, `flow { }`, `launch { }`) as `{ // $VF: Could not decompile lambda - root function was not found. Is this a suspend lambda? }` cast to its `FunctionN` interface (65 in kotlinx-coroutines 1.10.2, 12 in kotlin-stdlib) | the lambda with its body rebuilt from `invokeSuspend`'s state machine, its parameters as the metadata names them, a receiver as `this@label` with the lambda labelled, its exits as the lambda's value or `return@label`, without the cast (kotlinx-coroutines 1.10.2: 86 of 95; kept: 8 `$$inlined$` copies that pass the lambda on, 1 call with default arguments; kotlin-stdlib's 12, compiled by kotlinc 2.2 without local names, are kept) |
+| `kt_suspend_impl` | in Kotlin output, writes an open suspend function as a call of the static synthetic `foo$suspendImpl(this, ..)` kotlinc moved its body into, which the plugin hides, so the body is lost (16 in kotlinx-coroutines 1.10.2, 17 in 1.8.0) | the function with the body of `foo$suspendImpl` (all of them), its first parameter as `this` (`this@Class` where a lambda captures it), rebuilt as a suspend function's |
 
 Every fix is a `KunaFix` variant in `src/p0_knowledge/kuna_fixes.rs`, whose
 `KunaFix::id` is the id above; each site where kuna departs from the Java asks
@@ -845,9 +850,13 @@ cannot map completely (its continuation also used by inlined
 `suspendCoroutineUninterceptedOrReturn`) is written as the machine the compiler made of it:
 its continuation appears as `object : ContinuationImpl($completion) { ... }` where the
 function creates it, and the type Kotlin cannot name shows as `<unrepresentable>`
-(Vineflower fails on every such function). So are the suspend functions of objects kotlinc
-gives no function metadata (a `fun interface` lambda's `emit`) and suspend lambdas, which
-are not rebuilt.
+(Vineflower fails on every such function). Suspend lambdas, the suspend functions of
+objects kotlinc gives no function metadata (a `fun interface` lambda's `emit`) and open
+suspend functions' `$suspendImpl` bodies are rebuilt the same way (fixes
+`kt_suspend_lambda`, `kt_suspend_without_metadata`, `kt_suspend_impl`); a function type
+with a receiver is still written without it (`suspend (FlowCollector<T>) -> Unit` for
+`suspend FlowCollector<T>.() -> Unit`), so a rebuilt lambda with a receiver, written
+`flow@{ this@flow.emit(x) }`, does not match the declaration the plugin writes.
 The metadata schema is the one the plugin was built with (Kotlin 2.2), applied without a version
 check. When a method cannot be decompiled, its Kotlin declaration is written with the failure
 comment in place of the body, exactly as for Java, and the CLI reports it on stderr and in
@@ -1026,7 +1035,7 @@ out.
 
 | Command | Checks |
 |---|---|
-| `make test-jvm` (= `kuna test --jvm --baseline tests/jvm/baseline.txt`) | the gate: every case in the baseline still prints its expected text: the 607 Vineflower-oracle cases (Java, plugin and Kotlin, run in compat mode) Vineflower's exact text, and each of the 276 kuna-fixes cases Vineflower's text in compat mode and kuna's reviewed text by default (1159 runs in all). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
+| `make test-jvm` (= `kuna test --jvm --baseline tests/jvm/baseline.txt`) | the gate: every case in the baseline still prints its expected text: the 607 Vineflower-oracle cases (Java, plugin and Kotlin, run in compat mode) Vineflower's exact text, and each of the 281 kuna-fixes cases Vineflower's text in compat mode and kuna's reviewed text by default (1169 runs in all). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
 | `cd decompiler && cargo test -p kuna-jvm --test integration` | the unit and differential suite (part of `make rust-test`): kernel goldens against a real JDK, per-pass oracles, option-table checks, driver determinism |
 | `cd decompiler && cargo run --release -p kuna-jvm --example corpus -- --jobs 16 --baseline ../tests/jvm/baseline.txt` | the same corpus gate without the CLI |
 

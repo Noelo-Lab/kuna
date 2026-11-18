@@ -28,6 +28,13 @@
 //! kuna fix `kt_function_parameter_name`: a parameter without a local
 //! variable table entry is written by its header's name
 //! (`kuna_fix_kt_function_parameter_name`).
+//!
+//! kuna fix `kt_suspend_impl`: the first parameter of a `$suspendImpl` body
+//! written as its member's is `this` (`kuna_fix_kt_suspend_impl::name`).
+//!
+//! kuna fix `kt_suspend_lambda`: the receiver of a rebuilt suspend lambda
+//! written with a label is `this@label`
+//! (`kuna_fix_kt_suspend_lambda::receiver_reference`).
 
 use crate::exprent::Exprent;
 use crate::k_dispatch::KExprentExt;
@@ -39,6 +46,8 @@ use crate::kotlin::kuna_fix_kt_function_parameter_name;
 use crate::kotlin::kuna_fix_kt_nullable_local;
 use crate::kotlin::kuna_fix_kt_raw_generic_type;
 use crate::kotlin::kuna_fix_kt_setter_parameter_name;
+use crate::kotlin::kuna_fix_kt_suspend_lambda;
+use crate::kotlin::kuna_fix_kt_suspend_impl;
 use crate::kotlin::kuna_fix_kt_unrepresentable_declared_type;
 use crate::kotlin_writer::KotlinWriter;
 use crate::kuna_fixes::{self, KunaFix};
@@ -144,12 +153,23 @@ impl KVarExprent {
                 return name;
             }
         }
+        if kuna_fixes::enabled(KunaFix::KtSuspendImpl) {
+            if let Some(name) = kuna_fix_kt_suspend_impl::name(self.0) {
+                return name;
+            }
+        }
         if kuna_fixes::enabled(KunaFix::KtFunctionParameterName) {
             if let Some(name) = kuna_fix_kt_function_parameter_name::name(self.0) {
                 return name;
             }
         }
         let name = VarExprent::get_name_base(self.0);
+
+        if kuna_fixes::enabled(KunaFix::KtSuspendLambda) {
+            if let Some(reference) = kuna_fix_kt_suspend_lambda::receiver_reference(self.0) {
+                return reference;
+            }
+        }
 
         if name.starts_with("this@") || name == "this" {
             return name;

@@ -31,6 +31,13 @@
 //! their declared types left out (`SuspendCalls`).
 //! kuna fix `kt_coroutine_boxing`: then kotlinc's coroutine boxing calls
 //! become the `valueOf` boxing the writer leaves implicit (`CoroutineBoxing`).
+//! kuna fix `kt_suspend_lambda`: a suspend lambda's `invokeSuspend` is
+//! rebuilt like a suspend function (`SuspendStateMachine`), and the reads of
+//! its arguments are left out once its statements are made
+//! (`SuspendLambdaArguments`).
+//! kuna fix `kt_nothing_value_throw`: then the `throw
+//! KotlinNothingValueException()` after a call of a function returning
+//! `Nothing` is left out (`NothingValueThrows`).
 
 use std::rc::Rc;
 
@@ -65,6 +72,8 @@ use crate::kotlin::kuna_fix_kt_raw_generic_type;
 use crate::kotlin::kuna_fix_kt_coroutine_boxing;
 use crate::kotlin::kuna_fix_kt_suspend_call_continuation;
 use crate::kotlin::kuna_fix_kt_suspend_state_machine;
+use crate::kotlin::kuna_fix_kt_nothing_value_throw;
+use crate::kotlin::kuna_fix_kt_suspend_lambda;
 use crate::kotlin_chooser::KotlinChooser;
 use crate::kotlin_options::KotlinOptions;
 use crate::kotlin_writer::KotlinWriter;
@@ -140,12 +149,18 @@ impl KotlinPlugin {
             .add_pass(
                 "SuspendStateMachine",
                 Rc::new(|ctx: &mut PassContext| {
-                    kuna_fixes::enabled(KunaFix::KtSuspendStateMachine)
+                    (kuna_fixes::enabled(KunaFix::KtSuspendStateMachine)
                         && kuna_fix_kt_suspend_state_machine::rebuild(
                             graph(ctx),
                             ctx.get_method(),
                             ctx.get_enclosing_class(),
-                        )
+                        ))
+                        || (kuna_fixes::enabled(KunaFix::KtSuspendLambda)
+                            && kuna_fix_kt_suspend_lambda::rebuild_body(
+                                graph(ctx),
+                                ctx.get_method(),
+                                ctx.get_enclosing_class(),
+                            ))
                 }),
             )
             .add_pass(
@@ -399,6 +414,13 @@ impl KotlinPlugin {
             .add_pass("ReplaceStats", Rc::new(ReplaceStatsPass))
             .add_pass("ReplaceExprs", Rc::new(ReplaceExprentsPass))
             .add_pass(
+                "SuspendLambdaArguments",
+                Rc::new(|ctx: &mut PassContext| {
+                    kuna_fixes::enabled(KunaFix::KtSuspendLambda)
+                        && kuna_fix_kt_suspend_lambda::remove_argument_reads(root(ctx), ctx.get_method())
+                }),
+            )
+            .add_pass(
                 "SuspendCalls",
                 Rc::new(|ctx: &mut PassContext| {
                     kuna_fixes::enabled(KunaFix::KtSuspendCallContinuation)
@@ -437,6 +459,13 @@ impl KotlinPlugin {
                 Rc::new(|ctx: &mut PassContext| {
                     kuna_fixes::enabled(KunaFix::KtCoroutineBoxing)
                         && kuna_fix_kt_coroutine_boxing::rewrite(root(ctx), ctx.get_method())
+                }),
+            )
+            .add_pass(
+                "NothingValueThrows",
+                Rc::new(|ctx: &mut PassContext| {
+                    kuna_fixes::enabled(KunaFix::KtNothingValueThrow)
+                        && kuna_fix_kt_nothing_value_throw::remove(root(ctx).0)
                 }),
             )
             .add_pass(

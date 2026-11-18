@@ -9,7 +9,6 @@ import kotlin.coroutines.CoroutineContext.Key
 import kotlin.coroutines.intrinsics.IntrinsicsKt
 import kotlin.coroutines.jvm.internal.ContinuationImpl
 import kotlin.coroutines.jvm.internal.DebugProbesKt
-import kotlin.jvm.internal.InlineMarker
 import kotlin.jvm.internal.SourceDebugExtension
 
 public suspend fun combine(src: StateSource, scale: Long, flag: Boolean): String {
@@ -70,17 +69,6 @@ public suspend fun StateSource.sumOf(n: Int): Int {
 
 public suspend inline fun StateSource.pair(): Int {
    return this.next() * 10 + this.next()
-}
-
-fun StateSource.`pair$$forInline`(`$completion`: Continuation<in Int>): Any {
-   InlineMarker.mark(0)
-   var var10000: Any? = `$this$pair`.next(`$completion`)
-   InlineMarker.mark(1)
-   val var3: Int = (var10000 as Number).toInt() * 10
-   InlineMarker.mark(0)
-   var10000 = `$this$pair`.next(`$completion`)
-   InlineMarker.mark(1)
-   return var3 + (var10000 as Number).toInt()
 }
 
 public suspend fun pairs(src: StateSource): Int {

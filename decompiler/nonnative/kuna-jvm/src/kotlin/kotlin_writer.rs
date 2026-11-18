@@ -88,6 +88,18 @@
 //! initializer as `init { .. }`, and the class body of a class with a
 //! companion object moves its static initializer into the companion's body
 //! (`kuna_fix_kt_static_initializer`).
+//!
+//! kuna fix `kt_suspend_without_metadata`: `write_method` writes a method
+//! without metadata that overrides a suspend function as one
+//! (`kuna_fix_kt_suspend_without_metadata`).
+//!
+//! kuna fix `kt_for_inline_copy`: `write_class` leaves out the `$$forInline`
+//! copy of a suspend function (`kuna_fix_kt_for_inline_copy`).
+//!
+//! kuna fix `kt_suspend_lambda`: `write_lambda` writes a suspend lambda whose
+//! body was rebuilt with that body, its receiver as its first parameter and
+//! its exits as the lambda's (`kuna_fix_kt_suspend_lambda`); one that was not
+//! keeps Vineflower's comment.
 
 use std::rc::Rc;
 
@@ -133,6 +145,9 @@ use crate::kotlin::kuna_fix_kt_field_without_property;
 use crate::kotlin::kuna_fix_kt_synthetic_object_super_call;
 use crate::kotlin::kuna_fix_kt_inlined_stdlib_call;
 use crate::kotlin::kuna_fix_kt_java_type_syntax;
+use crate::kotlin::kuna_fix_kt_suspend_without_metadata;
+use crate::kotlin::kuna_fix_kt_for_inline_copy;
+use crate::kotlin::kuna_fix_kt_suspend_lambda;
 use crate::kotlin::kuna_fix_kt_unescaped_name;
 use crate::kotlin::kuna_fix_kt_static_initializer;
 use crate::kotlin_chooser::KotlinChooser;
@@ -898,6 +913,8 @@ impl KotlinWriter {
                     && kuna_fix_kt_generated_constructor_hidden::is_generated(cl, mt))
                 || (kuna_fixes::enabled(KunaFix::KtGeneratedOverloadHidden)
                     && kuna_fix_kt_generated_overload_hidden::is_generated(cl, mt))
+                || (kuna_fixes::enabled(KunaFix::KtForInlineCopy)
+                    && kuna_fix_kt_for_inline_copy::is_copy(cl, mt))
                 || (kuna_fixes::enabled(KunaFix::KtFileClassConstructor)
                     && kuna_fix_kt_file_class_constructor::is_file_class_constructor(cl, mt))
                 || (file_initializers && mt.get_name() == CLINIT_NAME);
@@ -1104,7 +1121,12 @@ impl KotlinWriter {
         indent: i32,
         function: &Rc<KFunction>,
     ) {
-        if Rc::ptr_eq(function, &KFunction::FAILED_LAMBDA()) {
+        let suspend_lambda = kuna_fixes::enabled(KunaFix::KtSuspendLambda)
+            && kuna_fix_kt_suspend_lambda::lambda_function(node.with(|d| d.class_struct))
+                .is_some_and(|f| Rc::ptr_eq(&f, function));
+        if Rc::ptr_eq(function, &KFunction::FAILED_LAMBDA())
+            || (suspend_lambda && !kuna_fix_kt_suspend_lambda::is_rebuilt(node.with(|d| d.class_struct)))
+        {
             DecompilerContext::get_logger().write_message(
                 &format!(
                     "No Kotlin function information for lambda class {}",
@@ -1134,11 +1156,33 @@ impl KotlinWriter {
             Some(wrapper) => kuna_spans::open_method(buffer, cl, mt, wrapper),
             None => None,
         };
+        let suspend_body = suspend_lambda.then(|| {
+            let wrapper = node.get_wrapper().expect("NullPointerException: node.getWrapper()");
+            (function.method_supplier)(wrapper).expect("NullPointerException: methodWrapper")
+        });
+        if let Some(body) = suspend_body.and_then(|w| w.with(|d| d.root)) {
+            let mut label = TextBuffer::new();
+            kuna_fix_kt_suspend_lambda::label_exits(&mut label, body, mt);
+            buffer.append_buffer(&label);
+        }
         buffer.append("{");
+
+        let receiver = suspend_lambda
+            .then(|| kuna_fix_kt_suspend_lambda::receiver_name(mt))
+            .flatten()
+            .filter(|_| kuna_fix_kt_suspend_lambda::label(mt).is_none())
+            .zip(function.receiver_type.as_ref());
+        if let Some((name, receiver_type)) = &receiver {
+            buffer
+                .append(" ")
+                .append(&KotlinWriter::to_valid_kotlin_identifier(name))
+                .append(": ")
+                .append_buffer(&receiver_type.stringify(indent + 1));
+        }
 
         let mut index: i32 = 0;
         for param in function.parameters.iter() {
-            if index > 0 {
+            if index > 0 || receiver.is_some() {
                 buffer.append(", ");
             } else {
                 buffer.append(" ");
@@ -1165,7 +1209,7 @@ impl KotlinWriter {
             index += param.type_.stack_size;
         }
 
-        if !function.parameters.is_empty() {
+        if !function.parameters.is_empty() || receiver.is_some() {
             buffer.append(" ->");
         }
 
@@ -1179,6 +1223,11 @@ impl KotlinWriter {
         let root = method_wrapper.with(|d| d.root);
 
         if let Some(root) = root.filter(|_| method_wrapper.with(|d| d.decompile_error.is_none())) {
+            let outer_wrapper = DecompilerContext::get_current_method_wrapper();
+            let _restore = suspend_lambda.then(|| {
+                DecompilerContext::set_current_method_wrapper(Some(method_wrapper));
+                RestoreMethodWrapper(outer_wrapper)
+            });
             let result = try_catch(|| {
                 let mut code = root.to_java(indent + 1);
                 code.add_bytecode_mapping(root.get_dummy_exit().bytecode().as_ref());
@@ -2113,6 +2162,9 @@ impl KotlinWriter {
                 .then(|| kuna_fix_kt_constructor_without_metadata::delegation(wrapper, method_wrapper))
                 .flatten();
 
+            let suspend = kuna_fixes::enabled(KunaFix::KtSuspendWithoutMetadata)
+                .then(|| kuna_fix_kt_suspend_without_metadata::overridden(mt))
+                .flatten();
             let mut did_override = false;
             if INIT_NAME != mt.get_name()
                 && CLINIT_NAME != mt.get_name()
@@ -2120,7 +2172,8 @@ impl KotlinWriter {
                 && !mt.has_modifier(ACC_PRIVATE)
             {
                 let is_override =
-                    KotlinWriter::search_for_method(Some(cl), &mt.get_name(), &md, false);
+                    KotlinWriter::search_for_method(Some(cl), &mt.get_name(), &md, false)
+                        || (suspend.is_some() && kuna_fix_kt_suspend_without_metadata::through_bridge(mt));
                 if is_override {
                     buffer.append("override ");
                     did_override = true;
@@ -2156,6 +2209,9 @@ impl KotlinWriter {
             } else if static_init {
                 buffer.append("init ");
             } else if !d_init {
+                if suspend.is_some() {
+                    buffer.append("suspend ");
+                }
                 buffer.append("fun ");
             }
 
@@ -2290,8 +2346,9 @@ impl KotlinWriter {
                 ));
                 buffer.append("(");
 
+                let params_end = md.params.len() - usize::from(suspend.is_some());
                 let mut last_visible_parameter_index: i32 = -1;
-                for i in 0..md.params.len() {
+                for i in 0..params_end {
                     if mask.as_ref().is_none_or(|m| m[i].is_none()) {
                         last_visible_parameter_index = i as i32;
                     }
@@ -2314,7 +2371,7 @@ impl KotlinWriter {
 
                 let mut first = true;
                 buffer.push_newline_group(indent, 0);
-                for i in start..md.params.len() {
+                for i in start..params_end {
                     let mut parameter_type = match &descriptor {
                         Some(descriptor)
                             if has_descriptor
@@ -2436,7 +2493,13 @@ impl KotlinWriter {
                 } else {
                     !ret_type.higher_equal_in_lattice_than(&VarType::VARTYPE_VOID())
                 };
-                if !init && returns_value {
+                if let Some(function) = &suspend {
+                    if let Some(result) =
+                        kuna_fix_kt_suspend_without_metadata::result_type(mt, function, indent)
+                    {
+                        buffer.append(": ").append_buffer(&result);
+                    }
+                } else if !init && returns_value {
                     buffer.append(": ");
                     let mut ret = KTypes::get_kotlin_type(Some(&ret_type));
                     if KTypes::is_function_type(&ret_type) && KotlinWriter::is_nullable(mt.0) {

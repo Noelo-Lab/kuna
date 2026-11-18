@@ -2364,6 +2364,8 @@ FIX_GROUPS = {
     'ktdefaults_composed': ('kt_default_args_bridge_lookup', 'kt_default_value_names', 'kt_default_value_coercion_cast',
                             'kt_delegated_member_default'),
     'ktlegacy_file': ('kt_inlined_to_typed_array', 'kt_narrow_constant_local'),
+    'ktsuspend2': ('kt_suspend_lambda', 'kt_suspend_without_metadata', 'kt_suspend_impl', 'kt_for_inline_copy',
+                   'kt_nothing_value_throw'),
 }
 
 
@@ -13911,6 +13913,211 @@ def ks_first():
 
 ks_first()
 
+
+
+
+KNV_THROW = 'throw KotlinNothingValueException()'
+
+
+def kt_nothing_value_throw(old, new):
+    """kt_nothing_value_throw: `throw KotlinNothingValueException()` lines left out, nothing else; or `when`
+    arms `c -> { call(); throw KotlinNothingValueException() }` written `c -> call()` once the throw is gone."""
+    kept = [x for x in old if x.strip()]
+    if kept and all(x.strip() == KNV_THROW for x in kept) and not any(x.strip() for x in new):
+        return True
+    arms, rest = [], [x.strip() for x in new if x.strip()]
+    i = 0
+    while i < len(kept):
+        if i + 3 < len(kept) and kept[i].rstrip().endswith('-> {') and kept[i + 2].strip() == KNV_THROW \
+                and kept[i + 3].strip() == '}':
+            arms.append(kept[i].strip()[:-1] + kept[i + 1].strip())
+            i += 4
+        else:
+            return False
+    return bool(arms) and arms == rest
+
+
+KS2_FAILED_LAMBDA = '// $VF: Could not decompile lambda - root function was not found. Is this a suspend lambda?'
+KS2_FIXES = ('kt_suspend_lambda', 'kt_suspend_without_metadata', 'kt_suspend_impl', 'kt_for_inline_copy')
+_KS2_FILES = {}
+
+
+def ks2_brace_end(lines_, h):
+    """The line closing the brace a lambda opens on line `h` (its last `{`), by token depth."""
+    depth = 0
+    for e in range(h, len(lines_)):
+        toks = [] if lines_[e].lstrip().startswith('//') else tokens([lines_[e]])
+        if e == h:
+            toks = toks[len(toks) - 1 - toks[::-1].index('{'):] if '{' in toks else []
+        depth += toks.count('{') - toks.count('}')
+        if depth <= 0:
+            return e
+    return None
+
+
+def ks2_lambda_head(line):
+    """A lambda's opening line up to its `{`, a label before it and the parameters after it aside."""
+    head = line[:line.rfind('{')] if '{' in line else line
+    return re.sub(r'[\w$]+@$', '', head.rstrip()).rstrip()
+
+
+def ks2_function_key(line):
+    """A function header's name and parameter names, a continuation parameter, the modifiers and the
+    return type aside."""
+    m = re.search(r'\bfun (?:<[^>]*> )?(?:[\w.<>?, ]+\.)?`?([\w$-]+)`?\((.*)\)', line)
+    if not m:
+        return None
+    names = tuple(n for n in re.findall(r'(?:^|, )`?([\w$<>]+)`?:', m.group(2)) if n != '$completion')
+    return m.group(1), names
+
+
+def ks2_pairs(a, b):
+    """The lines that the suspend fixes of ktsuspend2 change, per fix, as a pair of sets of line indices:
+    a failed suspend lambda and the lambda `b` writes in its place, after the same text (kt_suspend_lambda);
+    a function without metadata written with its continuation parameter and the suspend function of the
+    same name and parameters, without the machine's names (kt_suspend_without_metadata); an open suspend
+    function whose body is the call of its `$suspendImpl` and the same function (kt_suspend_impl); a
+    `$$forInline` function with the annotation and `/** @deprecated */` lines above it and the blank line
+    after it, left out (kt_for_inline_copy)."""
+    key = (id(a), id(b), len(a), len(b))
+    if key in _KS2_FILES:
+        return _KS2_FILES[key]
+    out = {fix: (set(), set()) for fix in KS2_FIXES}
+    failed = [i for i, x in enumerate(a) if x.strip() == KS2_FAILED_LAMBDA and i > 0 and a[i - 1].rstrip().endswith('{')]
+    heads_b = collections.defaultdict(list)
+    for h, x in enumerate(b):
+        if '{' in x and not x.lstrip().startswith('//') and x.rstrip().endswith(('{', '->')):
+            heads_b[ks2_lambda_head(x)].append(h)
+    used = set()
+    for i in failed:
+        h, e = i - 1, ks2_brace_end(a, i - 1)
+        if e is None:
+            continue
+        cands = [x for x in heads_b.get(ks2_lambda_head(a[h]), []) if x not in used]
+        cands = [x for x in cands if KS2_FAILED_LAMBDA not in (b[x + 1] if x + 1 < len(b) else '')]
+        if not cands:
+            continue
+        h2 = min(cands, key=lambda x: abs(x - h))
+        e2 = ks2_brace_end(b, h2)
+        if e2 is None:
+            continue
+        used.add(h2)
+        out['kt_suspend_lambda'][0].update(range(h, e + 1))
+        out['kt_suspend_lambda'][1].update(range(h2, e2 + 1))
+    spans_a, spans_b = ks_functions(a), ks_functions(b)
+    by_key = collections.defaultdict(list)
+    for h, e in spans_b:
+        k = ks2_function_key(b[h])
+        if k:
+            by_key[k].append((h, e))
+    taken = set()
+    for h, e in spans_a:
+        line = a[h]
+        if '$$forInline' in line:
+            first = h
+            while first > 0 and a[first - 1].strip().startswith(('@', '/**')):
+                first -= 1
+            out['kt_for_inline_copy'][0].update(range(first, e + 1))
+            if e + 1 < len(a) and not a[e + 1].strip():
+                out['kt_for_inline_copy'][0].add(e + 1)
+            continue
+        k = ks2_function_key(line)
+        cands = [x for x in by_key.get(k, []) if x not in taken] if k else []
+        if not cands:
+            continue
+        h2, e2 = min(cands, key=lambda x: abs(x[0] - h))
+        own_a = ks_own_lines(a, h, e, spans_a)
+        body_a = [a[i].strip() for i in own_a[1:-1] if a[i].strip()]
+        own_b = ks_own_lines(b, h2, e2, spans_b)
+        if '`$completion`: Continuation' in line and 'suspend fun ' not in line and 'suspend fun ' in b[h2]:
+            if any(KS_LEFT.search(b[i]) for i in own_b):
+                continue
+            fix = 'kt_suspend_without_metadata'
+        elif len(body_a) == 1 and re.fullmatch(r'return `?[\w$]+\$suspendImpl`?\(this\b.*\)', body_a[0]):
+            if '$suspendImpl' in ' '.join(b[i] for i in own_b):
+                continue
+            fix = 'kt_suspend_impl'
+        else:
+            continue
+        taken.add((h2, e2))
+        out[fix][0].update(own_a)
+        out[fix][1].update(own_b)
+    _KS2_FILES.clear()
+    _KS2_FILES[key] = out
+    return out
+
+
+def ks2_plain(line):
+    """Whether a line any hunk of these fixes may hold: blank, or an import."""
+    return not line.strip() or line.startswith('import ')
+
+
+def ks2_covered(a, b, i1, i2, j1, j2, fixes, extra=lambda line: False):
+    """Whether every line of the hunk is a line of a span `ks2_pairs` gives one of `fixes` (an old one
+    or a new one), a blank line, an import, or an old line `extra` accepts; old lines outside them may
+    stand for as many lines of the same text of a `$$forInline` span next to the hunk that the hunk
+    leaves (the diff cut the deleted function at another of its closing braces)."""
+    pairs = ks2_pairs(a, b)
+    ok_a = set().union(*(pairs[f][0] for f in fixes))
+    ok_b = set().union(*(pairs[f][1] for f in fixes))
+    if not (i2 > i1 or j2 > j1) or not all(y in ok_b or ks2_plain(b[y]) for y in range(j1, j2)):
+        return False
+    rest = [x for x in range(i1, i2) if not (x in ok_a or ks2_plain(a[x]) or extra(a[x]))]
+    if not rest:
+        return True
+    copies = pairs['kt_for_inline_copy'][0]
+    if 'kt_for_inline_copy' not in fixes or not copies & set(range(i1, i2)):
+        return False
+    width = len(rest)
+    outside = [x for x in copies if i2 <= x < i2 + width] or [x for x in copies if i1 - width <= x < i1]
+    return sorted(a[x] for x in rest) == sorted(a[x] for x in outside)
+
+
+def ks2_lambda_file(a, b, i1, i2, j1, j2, throw_names):
+    """kt_suspend_lambda: the hunk's lines are those of a failed suspend lambda (`{`, Vineflower's comment,
+    `}` with the cast to `FunctionN`) and of the lambda written in its place, after the same text."""
+    return ks2_covered(a, b, i1, i2, j1, j2, ('kt_suspend_lambda',))
+
+
+def ks2_without_metadata_file(a, b, i1, i2, j1, j2, throw_names):
+    """kt_suspend_without_metadata: the hunk's lines are those of a function written with its continuation
+    parameter and of the suspend function of the same name and parameters written in its place, without
+    the machine's names."""
+    return ks2_covered(a, b, i1, i2, j1, j2, ('kt_suspend_without_metadata',))
+
+
+def ks2_impl_file(a, b, i1, i2, j1, j2, throw_names):
+    """kt_suspend_impl: the hunk's lines are those of an open suspend function whose body is the call of
+    its `$suspendImpl` and of the function written with that method's body."""
+    return ks2_covered(a, b, i1, i2, j1, j2, ('kt_suspend_impl',))
+
+
+def ks2_for_inline_file(a, b, i1, i2, j1, j2, throw_names):
+    """kt_for_inline_copy: the hunk only removes `$$forInline` functions (with their annotations and the
+    blank line after each), possibly cut by the diff at another closing brace (`ks2_covered`)."""
+    return j2 == j1 and ks2_covered(a, b, i1, i2, j1, j2, ('kt_for_inline_copy',))
+
+
+def ks2_group_file(a, b, i1, i2, j1, j2, throw_names):
+    """ktsuspend2: a hunk that holds the changes of several of these fixes, each line one of theirs
+    (`ks2_covered` over all of them, a `throw KotlinNothingValueException()` included)."""
+    return ks2_covered(a, b, i1, i2, j1, j2, KS2_FIXES, lambda line: line.strip() == KNV_THROW)
+
+
+def ks2_first():
+    """Moves the context recognisers of ktsuspend2 right after the suspend fixes' (`ks_first`): the others
+    search the rebuilt functions' and lambdas' hunks for minutes."""
+    for fix in [f for f in CONTEXT_RECOGNISERS if f not in KS_FIXES + KS2_FIXES + ('ktsuspend2',)]:
+        CONTEXT_RECOGNISERS[fix] = CONTEXT_RECOGNISERS.pop(fix)
+
+
+RECOGNISERS['kt_nothing_value_throw'] = kt_nothing_value_throw
+CONTEXT_RECOGNISERS['kt_suspend_lambda'] = ks2_lambda_file
+CONTEXT_RECOGNISERS['kt_suspend_without_metadata'] = ks2_without_metadata_file
+CONTEXT_RECOGNISERS['kt_suspend_impl'] = ks2_impl_file
+CONTEXT_RECOGNISERS['kt_for_inline_copy'] = ks2_for_inline_file
+CONTEXT_RECOGNISERS['ktsuspend2'] = ks2_group_file
+ks2_first()
 
 KC_DECLARATION = re.compile(r'^(\s*)(?:@[\w.]+(?:\(.*\))?\s+)*(?:(?:public|protected|internal|private|open|abstract|'
                             r'override|final|inline|operator|infix|suspend|external|tailrec|lateinit|const)\s+)*'

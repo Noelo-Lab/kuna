@@ -3525,6 +3525,100 @@
       "compiler": "kotlinc 2.0.0 -jvm-target 17 (JDK 17); TestKtReusedInlineObjectKt and its objects from the same source",
       "summary": "the creation of an inline function's object that kotlinc did not copy into the caller (it passes on its own parameter) is written as the function's call: orderBy(key), orderByDescending(key), labelBy(name), from inline and plain callers; Vineflower writes the object's class at the site, which fails (the class is not processed yet, or has no Class metadata: kotlin-stdlib's Sequence.sortedBy, sortWith(compareBy(selector))); recompiled with kotlinc 2.0.0 the class is the original's",
       "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestNothingValueThrowKt",
+      "fix": "kt_nothing_value_throw",
+      "class_files": [
+        "pkg/TestNothingValueThrowKt.class",
+        "pkg/TestNothingValueThrowKt$nextOrNever$1.class",
+        "pkg/NothingSource.class"
+      ],
+      "source": "src/pkg/TestNothingValueThrow.kt",
+      "compiler": "kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21)",
+      "summary": "after a call of a function returning Nothing (fail, a suspend never()), the call ends the branch; kotlinc's dead throw KotlinNothingValueException(), which Kotlin cannot name, is not written",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestSuspendSamKt",
+      "fix": "kt_suspend_without_metadata",
+      "class_files": [
+        "pkg/TestSuspendSamKt.class",
+        "pkg/TestSuspendSamKt$forward$2$emit$1.class",
+        "pkg/TestSuspendSamKt$forward$2.class",
+        "pkg/TestSuspendSamKt$lengths$2$emit$1.class",
+        "pkg/TestSuspendSamKt$lengths$2.class",
+        "pkg/TestSuspendSamKt$relay$2.class",
+        "pkg/SamSink.class",
+        "pkg/SamIntSink.class",
+        "pkg/SamFlow.class",
+        "pkg/SamIntFlow.class"
+      ],
+      "source": "src/pkg/TestSuspendSam.kt",
+      "compiler": "kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21)",
+      "summary": "the emit of a SAM-converted suspend lambda's class, which has no function metadata, overrides the fun interface's suspend emit (directly, or through kotlinc's bridge for a specialised emit(int, ..)) and is written override suspend fun emit(v: Int) with its state machine rebuilt and its calls without the continuation (Vineflower fails the methods on the class without Class metadata; fix kt_synthetic_anonymous_object writes them as fun emit(v: Int, $completion: Continuation<in Unit>): Any)",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestForInlineCopyKt",
+      "fix": "kt_for_inline_copy",
+      "class_files": [
+        "pkg/TestForInlineCopyKt.class",
+        "pkg/TestForInlineCopyKt$peek$1$collect$1.class",
+        "pkg/TestForInlineCopyKt$peek$1$collect$2$emit$1.class",
+        "pkg/TestForInlineCopyKt$peek$1$collect$2.class",
+        "pkg/TestForInlineCopyKt$peek$1.class",
+        "pkg/InlineSink.class",
+        "pkg/InlineFlow.class"
+      ],
+      "source": "src/pkg/TestForInlineCopy.kt",
+      "compiler": "kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21)",
+      "summary": "the objects of the inline function peek declare collect and emit once: the collect$$forInline and emit$$forInline copies kotlinc adds as its inliner's templates, which Vineflower fails on and leaves out and kuna's other fixes decompile, are not written (the diff shows all fixes; the unit test turns this one off)",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestSuspendLambdaKt",
+      "fix": "kt_suspend_lambda",
+      "class_files": [
+        "pkg/TestSuspendLambdaKt.class",
+        "pkg/TestSuspendLambdaKt$firstPositive$1.class",
+        "pkg/TestSuspendLambdaKt$guarded$1.class",
+        "pkg/TestSuspendLambdaKt$helper$1.class",
+        "pkg/TestSuspendLambdaKt$lengthPlus$1.class",
+        "pkg/TestSuspendLambdaKt$nested$1$1.class",
+        "pkg/TestSuspendLambdaKt$nested$1.class",
+        "pkg/TestSuspendLambdaKt$plain$1.class",
+        "pkg/TestSuspendLambdaKt$pump$1.class",
+        "pkg/TestSuspendLambdaKt$runTwice$1.class",
+        "pkg/TestSuspendLambdaKt$scaled$1$WhenMappings.class",
+        "pkg/TestSuspendLambdaKt$scaled$1.class",
+        "pkg/TestSuspendLambdaKt$sumOf$1.class",
+        "pkg/TestSuspendLambdaKt$twice$1.class",
+        "pkg/TestSuspendLambdaKt$viaHelper$1.class",
+        "pkg/LambdaSource.class",
+        "pkg/LambdaSink.class",
+        "pkg/LambdaMode.class"
+      ],
+      "source": "src/pkg/TestSuspendLambda.kt",
+      "compiler": "kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21)",
+      "summary": "suspend lambdas (with and without suspension points, a parameter, an Int parameter with a receiver, try/catch, a when, an early return, a call of a private suspend function, a nested lambda using the outer receiver) are written as lambdas with their bodies rebuilt from invokeSuspend's state machine, a receiver as this@label, not as 'Could not decompile lambda' comments cast to FunctionN",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestSuspendImpl",
+      "fix": "kt_suspend_impl",
+      "class_files": [
+        "pkg/TestSuspendImpl.class",
+        "pkg/TestSuspendImpl$first$1.class",
+        "pkg/TestSuspendImpl$sum$1.class",
+        "pkg/ImplSource.class",
+        "pkg/TestSuspendImplDoubler.class",
+        "pkg/TestSuspendImplDoubler$sum$1.class"
+      ],
+      "source": "src/pkg/TestSuspendImpl.kt",
+      "compiler": "kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21)",
+      "summary": "the open suspend functions sum and first are written with the bodies kotlinc moved into sum$suspendImpl and first$suspendImpl (their state machines rebuilt, this for the first parameter), not as calls of the hidden synthetic methods",
+      "language": "kotlin"
     }
   ]
 }

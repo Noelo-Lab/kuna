@@ -1,9 +1,14 @@
 //! Port of `org/jetbrains/java/decompiler/main/rels/NestedMemberAccess.java`.
+//!
+//! kuna fix `kt_suspend_call_continuation`: a call that replaces a synthetic
+//! accessor's keeps the accessor call's mark to be written without its
+//! continuation argument.
 
 #![allow(clippy::collapsible_if)]
 
 use std::collections::VecDeque;
 
+use crate::kuna_fixes::{self, KunaFix};
 use crate::classes_processor::{ClassNode, ClassNodeType};
 use crate::code_constants::ACC_STATIC;
 use crate::counter_container::CounterContainer;
@@ -517,6 +522,13 @@ impl NestedMemberAccess {
                         invexpr.get_lst_parameters().get(i + index),
                     );
                     i += 1;
+                }
+
+                if kuna_fixes::enabled(KunaFix::KtSuspendCallContinuation)
+                    && invexpr.d(|d| d.kuna_continuation_arg)
+                    && invret.get_lst_parameters().len() + index == invexpr.get_lst_parameters().len()
+                {
+                    invret.set_kuna_continuation_arg(true);
                 }
 
                 retexprent = Some(invret.0);

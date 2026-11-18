@@ -130,7 +130,8 @@ fn property_references_are_written_as_references() {
 fn an_unwritable_anonymous_class_says_what_it_is() {
     let continuations = KunaFixes::DEFAULT
         .without(KunaFix::KtSyntheticObjectSuperCall)
-        .without(KunaFix::KtSuspendStateMachine);
+        .without(KunaFix::KtSuspendStateMachine)
+        .without(KunaFix::KtForInlineCopy);
     let fixed = text_with(UNWRITABLE, continuations, true);
     assert_eq!(count_failed_methods(&fixed), 3, "{fixed}");
     assert!(

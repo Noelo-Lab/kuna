@@ -23,7 +23,8 @@
 //! `InlineMarker` no-ops before a call whose last argument is the
 //! continuation, the `COROUTINE_SUSPENDED` check and return after it, and a
 //! resume block made only of restores, `nop`s and the `throwOnFailure` of
-//! `result` followed by `result` itself), and requires the continuation,
+//! `result` followed by `result` itself, unboxed when the call returns an
+//! inline class the direct path gets unboxed), and requires the continuation,
 //! `result` and the marker to be used nowhere else (copies of the
 //! continuation that only suspend calls and `getContext()` read count as
 //! the continuation) and every exception handler of a resume block's
@@ -51,7 +52,10 @@ use crate::dead_code_helper::DeadCodeHelper;
 use crate::instruction::Instruction;
 use crate::k_element::KElement;
 use crate::key::Key;
+use crate::kotlin::kuna_fix_kt_suspend_impl;
+use crate::kotlin::kuna_fix_kt_suspend_without_metadata;
 use crate::kotlin_chooser::KotlinChooser;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::kt_attrs::KtAttrs;
 use crate::kt_flags::Flags;
 use crate::method_descriptor::MethodDescriptor;
@@ -60,10 +64,10 @@ use crate::struct_class::StructClass;
 use crate::struct_method::StructMethod;
 
 const CONTINUATION: &str = "Lkotlin/coroutines/Continuation;";
-const CONTINUATION_CLASS: &str = "kotlin/coroutines/Continuation";
+pub(crate) const CONTINUATION_CLASS: &str = "kotlin/coroutines/Continuation";
 const INTRINSICS: &str = "kotlin/coroutines/intrinsics/IntrinsicsKt";
 const SUSPENDED: &str = "getCOROUTINE_SUSPENDED";
-const RESUME_ERROR: &str = "call to 'resume' before 'invoke' with coroutine";
+pub(crate) const RESUME_ERROR: &str = "call to 'resume' before 'invoke' with coroutine";
 
 /// The changes that turn a method's graph into its direct path, by index
 /// into the method's instruction sequence.
@@ -82,6 +86,10 @@ pub struct Plan {
     pub joins: Vec<(usize, usize)>,
     /// The resume blocks' instructions, dead once the plan is applied.
     pub resume_path: BTreeSet<usize>,
+    /// A dispatch that stays in its block (fix `kt_suspend_lambda`: code
+    /// before it reads the arguments): its switch, whose block keeps only
+    /// the edge to the first instruction of label 0, given second.
+    pub dispatch: Option<(usize, usize)>,
 }
 
 /// Rewrites the graph of a suspend function `mt` of `cl` into its direct
@@ -129,7 +137,7 @@ pub fn rebuild(graph: ControlFlowGraph, mt: StructMethod, cl: StructClass) -> bo
 /// The member attribute marking a rebuilt function: the indices of the
 /// instructions of its resume blocks, which its direct body does not run.
 #[allow(non_snake_case)]
-fn RESUME_PATH() -> Key<Rc<[usize]>> {
+pub(crate) fn RESUME_PATH() -> Key<Rc<[usize]>> {
     Key::of("KunaSuspendResumePath")
 }
 
@@ -139,12 +147,20 @@ pub fn resume_path(mt: StructMethod) -> Option<Rc<[usize]>> {
 }
 
 /// The slot of `$completion`, when `mt` is a function the metadata declares
-/// `suspend` and its last parameter is the continuation.
+/// `suspend` (or, with fix `kt_suspend_without_metadata`, a method without
+/// metadata that overrides one, or with fix `kt_suspend_impl` the
+/// `$suspendImpl` method holding one's body) and its last parameter is the
+/// continuation.
 pub fn completion_slot(mt: StructMethod) -> Option<i32> {
-    let Some(KElement::Function(function)) = KtAttrs::get(mt, &KElement::KEY()) else {
-        return None;
+    let suspend = match KtAttrs::get(mt, &KElement::KEY()) {
+        Some(KElement::Function(function)) => Flags::IS_SUSPEND.get(function.flags),
+        _ => {
+            (kuna_fixes::enabled(KunaFix::KtSuspendWithoutMetadata)
+                && kuna_fix_kt_suspend_without_metadata::overridden(mt).is_some())
+                || (kuna_fixes::enabled(KunaFix::KtSuspendImpl) && kuna_fix_kt_suspend_impl::member_of(mt).is_some())
+        }
     };
-    if !Flags::IS_SUSPEND.get(function.flags) {
+    if !suspend {
         return None;
     }
     let descriptor = mt.get_descriptor();
@@ -168,38 +184,38 @@ pub struct Code {
 }
 
 impl Code {
-    fn is(&self, i: usize, opcode: i32) -> bool {
+    pub(crate) fn is(&self, i: usize, opcode: i32) -> bool {
         self.insns.get(i).is_some_and(|x| x.opcode() == opcode)
     }
 
-    fn operand(&self, i: usize) -> i32 {
+    pub(crate) fn operand(&self, i: usize) -> i32 {
         self.insns[i].operand(0)
     }
 
-    fn is_local(&self, i: usize, opcode: i32, slot: i32) -> bool {
+    pub(crate) fn is_local(&self, i: usize, opcode: i32, slot: i32) -> bool {
         self.is(i, opcode) && self.operand(i) == slot
     }
 
-    fn member(&self, i: usize) -> Option<(String, String, String)> {
+    pub(crate) fn member(&self, i: usize) -> Option<(String, String, String)> {
         let link = self.pool.get_link_constant(self.operand(i))?;
         Some((link.classname.clone()?, link.elementname.clone(), link.descriptor.clone()))
     }
 
-    fn is_member(&self, i: usize, opcode: i32, owner: &str, name: &str) -> bool {
+    pub(crate) fn is_member(&self, i: usize, opcode: i32, owner: &str, name: &str) -> bool {
         self.is(i, opcode)
             && self
                 .member(i)
                 .is_some_and(|(o, n, _)| o == owner && n == name)
     }
 
-    fn class(&self, i: usize, opcode: i32) -> Option<String> {
+    pub(crate) fn class(&self, i: usize, opcode: i32) -> Option<String> {
         if !self.is(i, opcode) {
             return None;
         }
         Some(self.pool.get_primitive_constant(self.operand(i))?.get_string().to_string())
     }
 
-    fn int_constant(&self, i: usize) -> Option<i32> {
+    pub(crate) fn int_constant(&self, i: usize) -> Option<i32> {
         let insn = self.insns.get(i)?;
         match insn.opcode() {
             OPC_BIPUSH | OPC_SIPUSH => Some(insn.operand(0)),
@@ -211,7 +227,7 @@ impl Code {
         }
     }
 
-    fn is_string(&self, i: usize, text: &str) -> bool {
+    pub(crate) fn is_string(&self, i: usize, text: &str) -> bool {
         (self.is(i, OPC_LDC) || self.is(i, OPC_LDC_W))
             && self
                 .pool
@@ -219,15 +235,15 @@ impl Code {
                 .is_some_and(|c| matches!(&c.value, Some(ConstValue::String(s)) if &**s == text))
     }
 
-    fn jump(&self, i: usize) -> usize {
+    pub(crate) fn jump(&self, i: usize) -> usize {
         self.insns[i].as_jump().destination() as usize
     }
 
-    fn is_suspended_marker(&self, i: usize) -> bool {
+    pub(crate) fn is_suspended_marker(&self, i: usize) -> bool {
         self.is_member(i, OPC_INVOKESTATIC, INTRINSICS, SUSPENDED)
     }
 
-    fn is_throw_on_failure(&self, i: usize, result: i32) -> bool {
+    pub(crate) fn is_throw_on_failure(&self, i: usize, result: i32) -> bool {
         self.is_local(i, OPC_ALOAD, result)
             && self.is_member(i + 1, OPC_INVOKESTATIC, "kotlin/ResultKt", "throwOnFailure")
     }
@@ -235,7 +251,7 @@ impl Code {
     /// A call that passes a continuation last and returns `Object`: a
     /// suspend call, in kotlinc's calling convention, or the `invoke` of a
     /// function type, which a suspend function type is on the JVM.
-    fn is_suspend_call(&self, i: usize) -> bool {
+    pub(crate) fn is_suspend_call(&self, i: usize) -> bool {
         let Some(insn) = self.insns.get(i) else {
             return false;
         };
@@ -247,31 +263,31 @@ impl Code {
             })
     }
 
-    fn is_continuation_cast(&self, i: usize) -> bool {
+    pub(crate) fn is_continuation_cast(&self, i: usize) -> bool {
         self.class(i, OPC_CHECKCAST).as_deref() == Some(CONTINUATION_CLASS)
     }
 
     /// `InlineMarker.mark(n)`, the no-op kotlinc leaves around a suspend
     /// call it inlined, at `i` and `i + 1`.
-    fn is_inline_marker(&self, i: usize) -> bool {
+    pub(crate) fn is_inline_marker(&self, i: usize) -> bool {
         self.int_constant(i).is_some()
             && self.is_member(i + 1, OPC_INVOKESTATIC, "kotlin/jvm/internal/InlineMarker", "mark")
     }
 
-    fn is_load(&self, i: usize) -> bool {
+    pub(crate) fn is_load(&self, i: usize) -> bool {
         [OPC_ILOAD, OPC_LLOAD, OPC_FLOAD, OPC_DLOAD, OPC_ALOAD]
             .iter()
             .any(|&op| self.is(i, op))
     }
 
-    fn is_store(&self, i: usize) -> bool {
+    pub(crate) fn is_store(&self, i: usize) -> bool {
         [OPC_ISTORE, OPC_LSTORE, OPC_FSTORE, OPC_DSTORE, OPC_ASTORE]
             .iter()
             .any(|&op| self.is(i, op))
     }
 
     /// The `(handler, type)` entries covering instruction `i`, in table order.
-    fn handlers_of(&self, i: usize) -> Vec<(usize, Option<String>)> {
+    pub(crate) fn handlers_of(&self, i: usize) -> Vec<(usize, Option<String>)> {
         self.handlers
             .iter()
             .filter(|(from, to, _, _)| *from <= i && i < *to)
@@ -291,17 +307,17 @@ pub fn is_function_invoke(owner: &str, name: &str, d: &str) -> bool {
 }
 
 /// The continuation machine's locals and class.
-struct Machine {
-    class: String,
-    cont: i32,
-    result: i32,
-    marker: i32,
+pub(crate) struct Machine {
+    pub(crate) class: String,
+    pub(crate) cont: i32,
+    pub(crate) result: i32,
+    pub(crate) marker: i32,
 }
 
 /// Why a function keeps Vineflower's form.
 pub type Refusal = &'static str;
 
-fn require(ok: bool, why: Refusal) -> Result<(), Refusal> {
+pub(crate) fn require(ok: bool, why: Refusal) -> Result<(), Refusal> {
     if ok {
         Ok(())
     } else {
@@ -573,7 +589,7 @@ fn continuation_aliases(
 
 /// The resume block at `start`: the index of its `throwOnFailure` and of
 /// the code after it, marking its instructions in `owned`.
-fn resume_block(
+pub(crate) fn resume_block(
     code: &Code,
     machine: &Machine,
     start: usize,
@@ -583,12 +599,21 @@ fn resume_block(
     loop {
         if code.is_throw_on_failure(i, machine.result) {
             require(code.is_local(i + 2, OPC_ALOAD, machine.result), "resume block")?;
-            owned.extend(start..i + 3);
-            let after = if code.is(i + 3, OPC_GOTO) {
-                owned.insert(i + 3);
-                code.jump(i + 3)
+            let mut end = i + 3;
+            if code.is(end, OPC_CHECKCAST)
+                && code.is(end + 1, OPC_INVOKEVIRTUAL)
+                && code.member(end + 1).is_some_and(|(owner, name, d)| {
+                    Some(&owner) == code.class(end, OPC_CHECKCAST).as_ref() && name == "unbox-impl" && d.starts_with("()")
+                })
+            {
+                end += 2;
+            }
+            owned.extend(start..end);
+            let after = if code.is(end, OPC_GOTO) {
+                owned.insert(end);
+                code.jump(end)
             } else {
-                i + 3
+                end
             };
             return Ok((i + 1, after));
         }
@@ -654,7 +679,7 @@ fn plan_tail_checks(code: &Code, completion: i32) -> Result<Plan, Refusal> {
 
 /// Applies `plan` to `graph`; whether it did (nothing changes when the
 /// graph's blocks do not have the expected shape).
-fn apply(graph: ControlFlowGraph, code: &Code, plan: &Plan, completion: i32) -> bool {
+pub(crate) fn apply(graph: ControlFlowGraph, code: &Code, plan: &Plan, completion: i32) -> bool {
     let offset = |i: usize| code.insns[i].start_offset();
     let mut at: BTreeMap<i32, (BasicBlock, usize)> = BTreeMap::new();
     for block in graph.get_blocks().borrow().iter().copied() {
@@ -684,6 +709,21 @@ fn apply(graph: ControlFlowGraph, code: &Code, plan: &Plan, completion: i32) -> 
             Some(block) => Some(block),
             None => return false,
         },
+        None => None,
+    };
+    let dispatch = match plan.dispatch {
+        Some((switch, keep)) => {
+            let Some(&(block, p)) = at.get(&offset(switch)) else {
+                return false;
+            };
+            let Some(keep) = first_of(keep) else {
+                return false;
+            };
+            if p as i32 != block.size() - 1 || !block.get_succs().contains(&keep) {
+                return false;
+            }
+            Some((block, keep))
+        }
         None => None,
     };
     let mut joins: Vec<(BasicBlock, usize)> = Vec::new();
@@ -737,6 +777,13 @@ fn apply(graph: ControlFlowGraph, code: &Code, plan: &Plan, completion: i32) -> 
     }
     if let Some(entry) = entry {
         graph.set_first(entry);
+    }
+    if let Some((block, keep)) = dispatch {
+        for succ in block.get_succs().to_vec() {
+            if succ != keep {
+                block.remove_successor(succ);
+            }
+        }
     }
     DeadCodeHelper::remove_dead_blocks(graph);
     for block in emptied {

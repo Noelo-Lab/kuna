@@ -124,7 +124,7 @@ fn a_nested_copy_reads_its_creators_captured_values() {
     for text in [
         "public fun Source.dropFirst(count: Int, fallback: Int): Source {",
         "if (skipped.element >= count) {",
-        "`$this$dropFirst_u24lambda_u240`.put(it + fallback, `$completion`)",
+        "`$this$dropFirst_u24lambda_u240`.put(it + fallback)",
     ] {
         assert!(fixed.contains(text), "{text}\n{fixed}");
     }

@@ -147,3 +147,8 @@ pub mod kuna_fix_kt_inlined_stdlib_call;
 pub mod kuna_declared_element;
 pub mod kuna_fix_kt_companion_static_copy;
 pub mod kuna_fix_kt_reused_inline_object;
+pub mod kuna_fix_kt_nothing_value_throw;
+pub mod kuna_fix_kt_suspend_without_metadata;
+pub mod kuna_fix_kt_for_inline_copy;
+pub mod kuna_fix_kt_suspend_lambda;
+pub mod kuna_fix_kt_suspend_impl;
