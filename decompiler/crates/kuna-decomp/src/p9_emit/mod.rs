@@ -64,9 +64,11 @@ pub mod kuna_armregistershift; // (kuna) defined C for ARM register-controlled L
 mod kuna_armconstantshift;
 pub mod kuna_emptystrconst;
 pub mod kuna_cfstr; // (kuna) CFSTR("...") for a Mach-O __cfstring entry
+pub mod kuna_swiftstrobj; // (kuna) a Swift string object is not a pointer to the bytes it lands on
 pub mod kuna_renderfault; // (kuna) test-only: panic one function's render partway through
 pub mod kuna_truncarg;
 pub mod kuna_pointerargs; // (kuna) a scalar's address passed to a character-pointer parameter
+pub mod kuna_functionwarnings; // (kuna) the analysis warnings a render wrote, where the engine recorded them
 pub mod kuna_castimplied; // (kuna) casts C's own conversions already perform
 pub mod kuna_castnarrow; // (kuna) a narrowing C's own assignment, argument or return conversion performs keeps no cast
 pub mod kuna_declorder; // (kuna) the order local declarations print in

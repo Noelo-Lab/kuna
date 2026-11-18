@@ -97,17 +97,30 @@ use kuna_num::opcodes::OpCode;
 use crate::action::{ruleflags, Action, ActionBase, ActionContext, ActionGroupList, ApplyResult};
 use crate::funcdata::Funcdata;
 
-/// Resolve only a literal memory slot feeding `CALLIND`.
-///
-/// SLEIGH may spell the dereference either as `LOAD(slot) -> CALLIND` or as an
-/// unwritten memory Varnode directly in input 0.  No COPY chasing or pointer
-/// arithmetic is accepted here: those shapes need type recovery and the later
-/// de-indirection restart contract.  This early query exists for import veneers
-/// whose complete body is one exact load+jump.
+#[cfg(test)]
 fn exact_indirect_target_slot(
     data: &Funcdata,
     call_op: crate::context::OpId,
 ) -> Option<(Address, int4)> {
+    indirect_target_slot(data, call_op).map(|(slot, size, _)| (slot, size))
+}
+
+/// Resolve only a literal memory slot feeding `CALLIND`.
+///
+/// SLEIGH may spell the dereference either as `LOAD(slot) -> CALLIND` or as an
+/// unwritten memory Varnode directly in input 0, and x86's `call [slot]` as a
+/// temporary its own instruction fills from the slot before heritage links it.
+/// No other COPY chasing or pointer arithmetic is accepted here: those shapes
+/// need type recovery and the later de-indirection restart contract.  This
+/// early query exists for import veneers whose complete body is one exact
+/// load+jump, and for calls through an import slot.
+///
+/// The flag says the slot was read through the call's own instruction
+/// ([`crate::p4_calls::kuna_slotargs`]).
+fn indirect_target_slot(
+    data: &Funcdata,
+    call_op: crate::context::OpId,
+) -> Option<(Address, int4, bool)> {
     let call = data.obank().get(call_op)?;
     if call.code() != OpCode::CPUI_CALLIND {
         return None;
@@ -118,7 +131,11 @@ fn exact_indirect_target_slot(
         if target_vn.is_constant() || target_vn.is_written() {
             return None;
         }
-        return Some((target_vn.get_addr().clone(), target_vn.get_size()));
+        if target_vn.get_space().get_type() == kuna_base::space::spacetype::IPTR_INTERNAL {
+            let slot = crate::kuna_msvcimportcall::loaded_slot(data, call_op, target_vn.get_addr().clone(), target_vn.get_size())?;
+            return Some((slot, target_vn.get_size(), true));
+        }
+        return Some((target_vn.get_addr().clone(), target_vn.get_size(), false));
     };
     let load = data.obank().get(load_id)?;
     if load.code() != OpCode::CPUI_LOAD || load.get_out() != Some(target) {
@@ -136,7 +153,7 @@ fn exact_indirect_target_slot(
     }
     let space = Rc::clone(manager.get_space(index as int4)?);
     let offset = space.wrap_offset(pointer.get_offset());
-    Some((Address::new(space, offset), target_vn.get_size()))
+    Some((Address::new(space, offset), target_vn.get_size(), false))
 }
 
 // =============================================================================
@@ -488,27 +505,28 @@ impl Action for ActionDefaultParams {
                     None
                 } else {
                     let op = data.get_call_specs(i).get_op();
-                    exact_indirect_target_slot(data, op).and_then(|(slot, size)| {
+                    indirect_target_slot(data, op).and_then(|(slot, size, own)| {
                         let usepoint = data
                             .obank()
                             .get(op)
                             .map(|call| call.get_addr().clone())
                             .unwrap_or_default();
                         arch.query_indirect_slot_type(&slot, size, &usepoint)
-                            .map(|slot_type| (slot, slot_type))
+                            .map(|slot_type| (slot, slot_type, own))
                     })
                 };
                 let slot_proto = match &indirect_slot {
-                    Some((_, crate::context::IndirectSlotType::Prototype(proto))) => {
+                    Some((_, crate::context::IndirectSlotType::Prototype(proto), false)) => {
                         Some(Rc::clone(proto))
                     }
                     _ => None,
                 };
+                let own_slot = matches!(indirect_slot, Some((_, crate::context::IndirectSlotType::FunctionCode, true)));
                 let pieces_entry = if has_funcdata {
                     Some(data.get_call_specs(i).get_entry_address().clone())
                 } else {
                     match &indirect_slot {
-                        Some((slot, crate::context::IndirectSlotType::FunctionCode)) => {
+                        Some((slot, crate::context::IndirectSlotType::FunctionCode, _)) => {
                             Some(slot.clone())
                         }
                         _ => None,
@@ -518,8 +536,9 @@ impl Action for ActionDefaultParams {
                     // (kuna, Phase 3) A host-declared prototype model rides the
                     // locked pieces (ghidra-mode `<prototype model=…>`); `None`
                     // on the standalone path, keeping the default-model seed.
+                    let pieces = arch.callee_proto_pieces(&entry);
                     (
-                        arch.callee_proto_pieces(&entry),
+                        if own_slot { pieces.map(crate::p4_calls::kuna_slotargs::input_only) } else { pieces },
                         arch.callee_proto_model(&entry),
                         arch.bound_proto_model(&entry),
                     )
@@ -577,7 +596,9 @@ impl Action for ActionDefaultParams {
                                     crate::p4_calls::kuna_calleeprotostack::resolve_declared_extra_pop(
                                         &mut fp,
                                     );
-                                    Some(Rc::new(fp))
+                                    let op = data.get_call_specs(i).get_op();
+                                    (!own_slot || crate::p4_calls::kuna_slotargs::backed(data, op, &fp))
+                                        .then(|| Rc::new(fp))
                                 }
                                 // The callee storage assignment hit an un-ported boundary: fall
                                 // back to the default-model recovery for this call site.
@@ -604,11 +625,17 @@ impl Action for ActionDefaultParams {
                         // throwing Swift call, or a callee the analysis tier
                         // bound to a model without a signature, has its
                         // arguments recovered under that model.
+                        let virtual_model = crate::kuna_calleereginputs::virtual_call(data, data.get_call_specs(i).get_op());
                         let model = crate::kuna_armfloatreturn::helper_model(&arch, data.get_call_specs(i).get_name())
                             .or_else(|| crate::kuna_swiftcall::throwing_call(data, data.get_call_specs(i).get_op()))
                             .or(bound_model)
                             .or_else(|| crate::kuna_swiftcall::indirect_call(data, data.get_call_specs(i).get_op()))
+                            .or_else(|| virtual_model.clone())
+                            .or_else(|| data.get_call_specs(i).callee_reg_model().cloned())
                             .unwrap_or_else(|| evalfp.clone());
+                        if virtual_model.as_ref().is_some_and(|v| Rc::ptr_eq(v, &model)) {
+                            data.get_call_specs_mut(i).set_callee_reg_model(virtual_model);
+                        }
                         data.get_call_specs_mut(i).proto_mut().set_internal(model, void_ty.clone());
                         // (kuna) A console `map return <addr>`-only callee: keep the
                         // model-driven input recovery just established, but lock the
@@ -718,8 +745,17 @@ impl Action for ActionExtraPopSetup {
         let sb_addr = Address::new(point_space, point.offset);
         let sb_size = point.size as int4;
 
+        let exact = crate::p4_calls::kuna_calleepurge::every_pop_settled(data);
         for i in 0..data.num_calls() {
-            let extrapop = data.get_call_specs(i).get_extra_pop();
+            let mut extrapop = data.get_call_specs(i).get_extra_pop();
+            if extrapop == EXTRAPOP_UNKNOWN && exact {
+                // (kuna) A pop the callee's own returns prove; see
+                // [`crate::p4_calls::kuna_calleepurge`].
+                if let Some(ep) = data.get_call_specs(i).callee_purge() {
+                    data.get_call_specs_mut(i).proto_mut().set_extra_pop(ep);
+                    extrapop = ep;
+                }
+            }
             if extrapop == 0 {
                 continue;
             }
@@ -1260,6 +1296,7 @@ impl ActionActiveParam {
         &mut self,
         data: &mut Funcdata,
         aliascheck: &mut Option<crate::varmap::AliasChecker>,
+        held: &mut crate::p4_calls::kuna_calleestackargs::Contenders,
         idx: int4,
     ) -> bool {
         use crate::funcdata_callsite::check_input_trial_use;
@@ -1289,7 +1326,7 @@ impl ActionActiveParam {
 
         if !data.get_call_specs_mut(idx).get_active_input().is_fully_checked() {
             if let Some(ac) = aliascheck.as_mut() {
-                check_input_trial_use(idx, data, ac);
+                check_input_trial_use(idx, data, ac, held);
             }
         }
         data.get_call_specs_mut(idx).get_active_input().finish_pass();
@@ -1337,6 +1374,7 @@ impl Action for ActionActiveParam {
         // aliascheck.gather(&data, getStackSpace(), true): deferred local-alias
         // checker for the spacebase-parameter branch.
         let mut aliascheck = data.build_alias_checker_deferred();
+        let mut held = crate::p4_calls::kuna_calleestackargs::Contenders::default();
         let manager_rc = data.get_arch().manage.clone();
         // (kuna) `calleearityfwd`: call sites that finalize with an empty argument
         // list, retried at the end of the pass against the siblings that finalize
@@ -1374,7 +1412,7 @@ impl Action for ActionActiveParam {
                 let mut ready = Vec::new();
                 let mut pause = false;
                 for idx in 0..data.num_calls() {
-                    if !self.check_call_trials(data, &mut aliascheck, idx) {
+                    if !self.check_call_trials(data, &mut aliascheck, &mut held, idx) {
                         continue;
                     }
                     ready.push(idx);
@@ -1402,9 +1440,10 @@ impl Action for ActionActiveParam {
         };
         let count = if bootstrap { ready_calls.len() } else { data.num_calls() as usize };
         let mut ready = ready_calls.into_iter();
+        let mut finalized = false;
         for position in 0..count {
             let idx = if bootstrap { ready.next().expect("checked call") } else { position as int4 };
-            if !bootstrap && !self.check_call_trials(data, &mut aliascheck, idx) {
+            if !bootstrap && !self.check_call_trials(data, &mut aliascheck, &mut held, idx) {
                 continue;
             }
             {
@@ -1413,6 +1452,11 @@ impl Action for ActionActiveParam {
                 // can hold `&mut FuncCallSpecs` and `&mut Funcdata` at once, then
                 // put it back at the same index so the qlst stays index-stable for
                 // the remaining iterations.
+                let call_op = data.get_call_specs(idx).get_op();
+                let before = aliascheck
+                    .as_ref()
+                    .filter(|ac| ac.split_drawn())
+                    .map(|_| crate::p4_calls::kuna_directalias::call_inputs(data, call_op));
                 if data.get_call_specs(idx).active_input().needs_final_check() {
                     crate::p4_calls::kuna_reloadarg::recheck(data, idx, aliascheck.as_mut());
                 }
@@ -1431,6 +1475,8 @@ impl Action for ActionActiveParam {
                 // the next slot is on the stack -- the ABI reaches the stack
                 // only past a full register file.
                 fc.get_active_input().set_stack_arg_gap(true);
+                let reads = fc.callee_reg_model().is_some_and(|m| fc.proto().has_matching_model(m));
+                fc.get_active_input().set_callee_reads_registers(reads);
                 crate::kuna_armfloatargs::mark_single_floats(&mut fc, data);
                 let written = crate::kuna_armfloatargs::written_inputs(&fc, data);
                 // resolveModel(activeinput) + deriveInputMap(activeinput): resolve
@@ -1459,7 +1505,11 @@ impl Action for ActionActiveParam {
                 }
                 fc.clear_active_input();
                 data.restore_call_specs_at(idx, fc);
+                if let (Some(ac), Some(before)) = (aliascheck.as_mut(), before) {
+                    crate::p4_calls::kuna_directalias::refresh_rewritten(data, ac, call_op, &before);
+                }
                 self.base.count += 1;
+                finalized = true;
             }
         }
         // (kuna `formatstring`) Once no call has trials left, a resolved format
@@ -1478,6 +1528,11 @@ impl Action for ActionActiveParam {
         crate::p4_calls::kuna_calleereadarg::extend_pending(data, &pending_read);
         // (kuna) `passthrough`: last of all, so it only ever adds to a final list.
         crate::p4_calls::kuna_passthrough::extend_pending(data, &pending_pass);
+        // (kuna) The MSVC frame cookie and the frame slots above it leave every
+        // call once no call scores trials any more.
+        if finalized {
+            self.base.count += crate::p4_calls::kuna_stackcookie::shed_frame_cookies(data);
+        }
         0
     }
 }
@@ -2110,6 +2165,26 @@ fn update_input_types(
         let ty = crate::kuna_armfloatreturn::unused_vfp_type(data, active, triallist, i)
             .or_else(|| data.high_get_type(vn))
             .unwrap_or_else(|| Rc::new(crate::dtype::Datatype::new(1, crate::dtype::type_metatype::TYPE_UNKNOWN)));
+        // (kuna `gonewtype`) A `go.typedesc *` parameter type is the interface
+        // type word of an `any` argument mislabeled with the descriptor it points
+        // at: a `&type:T` descriptor global flows into a runtime/stdlib
+        // `any`-taking callee (`runtime.gopanic`, `fmt.(*pp).printArg`,
+        // `encoding/binary.Read`, ...) and local type inference — or the
+        // callee-vote plane — commits that pointer-to-descriptor onto the word.
+        // A `go.typedesc` is a synthesized descriptor shell, never a value type
+        // anything is declared as, so it is provably never a real parameter type;
+        // demote it to the honest untyped word of the same (pointer) width rather
+        // than export the wrong concrete signature. The genuine runtime type
+        // `abi.Type`, which reflect/runtime functions legitimately take by
+        // pointer, is a different real type and is untouched.
+        let ty = if crate::kuna_calleevote::is_go_typedesc_pointer(&ty) {
+            Rc::new(crate::dtype::Datatype::new(
+                ty.get_size(),
+                crate::dtype::type_metatype::TYPE_UNKNOWN,
+            ))
+        } else {
+            ty
+        };
         let _ = is_persist;
         // (kuna `elfmain`) A runtime argument of an executable's own `main` takes
         // its runtime name. See `kuna_elfmaindecl`.
@@ -2464,6 +2539,34 @@ mod tests {
         let copied = fd.new_unique_out(8, copy).unwrap();
         let copied_call = callind(&mut fd, copied);
         assert!(exact_indirect_target_slot(&fd, copied_call).is_none());
+    }
+
+    fn temp_loaded_at(fd: &mut Funcdata, at: u64) -> crate::context::VarnodeId {
+        let ram = Rc::clone(fd.get_arch().manage().get_space_by_name("ram").unwrap());
+        let copy = fd.new_op(1, Address::new(Rc::clone(&ram), at));
+        fd.op_set_opcode_code(copy, OpCode::CPUI_COPY);
+        fd.obank_mut().get_mut(copy).unwrap().set_flag(crate::op::pcodeop_flags::startmark);
+        let ty = Rc::new(Datatype::new(8, type_metatype::TYPE_UNKNOWN));
+        let word = fd.vbank_mut().create(8, Address::new(ram, 0x3000), Rc::clone(&ty));
+        fd.op_set_input(copy, word, 0).unwrap();
+        let temp = fd.new_unique_out(8, copy).unwrap();
+        let addr = fd.vbank().get(temp).unwrap().get_addr().clone();
+        fd.vbank_mut().create(8, addr, ty)
+    }
+
+    #[test]
+    fn exact_indirect_slot_reads_the_slot_its_own_instruction_loads() {
+        let mut fd = build_fd();
+        let target = temp_loaded_at(&mut fd, 0x1010);
+        let call = callind(&mut fd, target);
+        let (slot, size) = exact_indirect_target_slot(&fd, call).expect("own-instruction load");
+        assert_eq!(slot.get_offset(), 0x3000);
+        assert_eq!(size, 8);
+
+        let mut fd = build_fd();
+        let target = temp_loaded_at(&mut fd, 0x1008);
+        let call = callind(&mut fd, target);
+        assert!(exact_indirect_target_slot(&fd, call).is_none());
     }
 
     #[test]

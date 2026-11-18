@@ -1,0 +1,40 @@
+<decompilertest>
+<!-- Bitfields the C parser lays out in one container per run, read and written
+     through accesses of exactly their bytes (`wide`, `top`, `f3`) or of one byte
+     of the container (`hi`). Code is `gcc -O1 -fcf-protection=none -c
+     byte_aligned.c` (Ubuntu gcc 15.2.0), each function's .text bytes placed at
+     0x100000 plus its object offset. -->
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000">0fb74701c30fb64703c38d04f5000000000fb63783e60709c6408837c30fb6470483e00f0fb7570466c1ea040fb7d201d00fb7570601d0c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="get_wide"/>
+<symbol space="ram" offset="0x100005" name="get_top"/>
+<symbol space="ram" offset="0x10000a" name="set_hi"/>
+<symbol space="ram" offset="0x10001d" name="sum3"/>
+</binaryimage>
+<script>
+  <com>parse line struct bits { uint4 lo:3; uint4 hi:5; uint4 wide:16; uint4 top:8; };</com>
+  <com>parse line struct three { int4 head; uint4 f1:4; uint4 f2:12; uint4 f3:16; };</com>
+  <com>parse line extern uint4 get_wide(bits *p);</com>
+  <com>parse line extern uint4 get_top(bits *p);</com>
+  <com>parse line extern void set_hi(bits *p,uint4 v);</com>
+  <com>parse line extern uint4 sum3(three *t);</com>
+  <com>lo fu get_wide</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu get_top</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu set_hi</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu sum3</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="Byte-aligned bitfields #1" min="1" max="1">return p-&gt;wide;</stringmatch>
+<stringmatch name="Byte-aligned bitfields #2" min="1" max="1">return p-&gt;top;</stringmatch>
+<stringmatch name="Byte-aligned bitfields #3" min="1" max="1">p-&gt;hi = v;</stringmatch>
+<stringmatch name="Byte-aligned bitfields #4" min="1" max="1">return t-&gt;f1 \+ t-&gt;f2 \+ t-&gt;f3;</stringmatch>
+<stringmatch name="Byte-aligned bitfields #5" min="0" max="0">WARNING|p\.</stringmatch>
+</decompilertest>

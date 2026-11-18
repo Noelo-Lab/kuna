@@ -6,6 +6,21 @@ Anchors:
   - decompiler/crates/kuna-decomp/src/substrate/dtype.rs
 ```
 
+For the Octeon memory user operations `octeoneffects` resolves, local input-type
+queries identify the address operand as a pointer to an unsigned value of the
+access width; a cache-block zero clears a whole block, so its address stays
+untyped. Stored values are unsigned bit patterns, so an `unsigned int *` or
+`unsigned long *` operand needs no cast. A word result is `int`: every
+constructor sign-extends it into its 64-bit register, so typing it signed lets
+that extension print without a cast. A doubleword result and the
+store-conditional success byte are unsigned. Type inference and the merge phase's local queries each consult
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_octeoneffects.rs (output_type)`
+for a CALLOTHER; the size-only TypeOp dispatch sees no op to ask. Pointer typing requires the address
+operand to have the target RAM width, so N32 does not turn the full physical
+GPR or a 64-bit atomic payload into a 32-bit pointer. Unknown user operations
+and operations replaced by a compiler-spec injection are not assigned these
+types.
+
 Phase 5 computes the **fact fabric** over the SSA graph: a data-type on every
 live Varnode, plus the value facts the other phases consume — circular value
 ranges, non-zero masks, and consume bits. None of it runs as a standalone
@@ -589,7 +604,9 @@ step at least as large as the aggregate that is not exactly its size. coreutils
 `wc` is the stepped case: it walks `&fstatus[i].st`, a `stat` 8 bytes into a
 152-byte record, and reads `failed` at -8; libselinux indexes 120-byte records
 that hold a 40-byte mutex at +0x38, and 120 being three mutexes does not make
-them an array of mutexes. The same question guards propagation
+them an array of mutexes. Stride magnitude is unsigned, including the high-bit
+stride, and an overflowing constant access endpoint is outside the aggregate
+rather than wrapping into it. The same question guards propagation
 (`kuna_libcfit::refuses`, called from `propagate_type_edge` just before a type is
 adopted): a libc aggregate pointer is not carried onto a Varnode whose own
 descendants reach past the end, whichever call it came from. A declined vote
@@ -1478,6 +1495,10 @@ The type must also be one a C compiler would pass the same way. Laid out under
 the default model, each parameter of the built prototype has to fall inside the
 storage the call recorded for that argument (`FuncCallSpecs::final_input_storage`)
 and its result inside the call's output varnode; otherwise the call is skipped.
+A call that carries a `__thiscall` model (an x86-32 Windows virtual call,
+chapter 04) is laid out under that model instead, whose first parameter is ECX:
+under the default one its `this` would land on the stack, and every virtual
+call would print through an uncallable `void *`.
 That is what keeps the register class: recovery can hold a `float` it only
 moved as an `unsigned int` in `xmm0` or `s0`, or a `double`'s bits in `rdi`, and
 a type built from those would pass the value in `edi`/`r0` or `xmm0` and read
@@ -1985,6 +2006,116 @@ hide a later float (`Slot::reinterpreted`). A narrower access is not the field's
 evidence and needs no rule: it already prints through an address cast
 (`*(float *)&a0->field_0x8`).
 
+**(kuna) The per-call-site output type lock (`sitetypelock`), and its first
+client (`gonewtype`).** Everything above is a *vote*: a candidate folded by
+`typeOrder`, replaceable by propagation on the next pass and superseded by a
+record `structsynth` completes over the base. A vote is the right strength for
+an inference — but some call sites *state* their result type, and a statement
+delivered as a vote never reaches the declaration. The worked case is Go's
+allocator: `runtime.newobject(typ *_type)` returns a fresh object OF the type
+its descriptor argument names, the `gotypes` harvest (chapter 01) has interned
+that record, and `gotypeglobals` has named the descriptor global
+(`type:main.Point`) — yet an `outputTypeLocal` arm returning `main.Point *` at
+the site leaves the rendered C byte-identical, because the lattice folds it
+away and the final declaration takes whatever propagation and `structsynth`
+settled on. Prototype-level forcing overshoots in the other direction: a
+parked prototype locks EVERY site of the callee to one output (and a shell
+prototype locks it `void *`), when the whole point is that the type differs
+per site.
+
+What does survive to the declaration is the **Varnode type-lock plane** — the
+chain a type-locked Database symbol rides: `getLocalType` seeds a locked
+Varnode's own type, `propagateTypeEdge` refuses to write into one,
+`writeBack`'s `updateType` refuses to replace one, `ActionStructSynth`
+installs its record with `over=false` so it never displaces an existing lock,
+and `HighVariable::getTypeRepresentative` prefers the locked member when the
+high's type is derived. The primitive extends exactly that plane to a call
+site. The lock is recorded in the P0 override store
+(`decompiler/crates/kuna-decomp/src/p0_knowledge/overrides.rs
+(insert_output_typelock)`), keyed by the CALL op's address, engine-internal
+(not marshaled) like the `/GS` cookie-call and format-call commands, and
+surviving a decompilation restart like every other per-site override.
+`decompiler/crates/kuna-decomp/src/p5_types/kuna_sitetypelock.rs
+(ActionSiteTypeLock)`, scheduled in the `typerecovery` group directly before
+`ActionInferTypes`, asks the registered clients to contribute sites and then
+pins each pending lock onto the call's output Varnode
+(`update_type_locked(lock=true, over=false)`) before the first
+`buildLocaltypes` of the pass, so the lattice seeds from it. Both halves are
+idempotent and re-run every pass of the group: a site that resolves only after
+the lattice settles still contributes, and a lock whose output Varnode a later
+transform replaced is re-pinned from the surviving override entry. The shared
+refusals leave a site exactly as it was: a call with no output Varnode, an
+output already type-locked (a mapped-symbol or DWARF lock outranks any
+client), and a size mismatch.
+
+The first client, [`gonewtype`](../options.md) (`on|off`, default on;
+`decompiler/crates/kuna-decomp/src/p5_types/kuna_gonewtype.rs (contribute)`),
+reads the allocation fact: for each call spec naming a Go allocator entry —
+`runtime.newobject(typ)`, or the size-class `runtime.mallocgc*` family
+(`mallocgc(size, typ, needzero)` and the specializations go1.26+ compilers
+inline `newobject` into, such as `mallocgcSmallScanNoHeaderSC4`; the suffix is
+held to plain alphanumerics) — the descriptor argument must be a constant
+address (or one `COPY` away — the lifted `lea`), must point at the START of a
+`type:<name>` data symbol, and `<name>` must be held by the type factory as a
+complete named record (`TYPE_STRUCT`, non-zero size); a mallocgc-family site
+must additionally state a constant size equal to the record's. The site is
+then locked to `<name> *` at the output's width. Pointer, array and primitive
+descriptor spellings
+(`type:*main.T`, `type:[]uint8`, `type:int`) refuse, as does an empty shell —
+a refusal never blocks `structsynth` from completing a layout over the
+unlocked result later, which is the deliberate asymmetry: the lock is only
+taken where the binary's own metadata states a complete record, and a wrong
+guess would otherwise be unrecoverable downstream (a lock, by design, cannot
+be voted away). The option changes only types and the pointer-arithmetic
+rendering that follows from them (field reads become `->field`); it moves or
+deletes no statement. Off Go images it is structurally inert: the callee name,
+the `type:` symbol and the interned record only exist where the Go harvest
+ran.
+
+**(kuna) The interface type-word guard.** A Go interface value is a two-word
+`(type, data)` pair, and a `&type:T` descriptor global — the type word — is
+passed to the runtime and stdlib `any`-taking functions
+(`runtime.gopanic(e any)`, `fmt.(*pp).printArg`, `encoding/binary.Read`,
+`sync/atomic.(*Value).Store`, `encoding/json.MarshalIndent`). Local type
+inference inside such a callee, and the whole-binary callee-vote plane (§4.4),
+both then commit that pointer-to-descriptor onto the callee's interface
+type-word *parameter*, exporting a wrong concrete signature
+(`gopanic(go.typedesc *)`) where the truth is a bare word. A `go.typedesc` is
+the synthesized `internal/abi.Type` base shell — never a value type anything is
+declared as — so it is provably never a real parameter type: when
+`FuncProto::updateInputTypes` reads a recovered parameter type that is a pointer
+to `go.typedesc`
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleevote.rs
+(is_go_typedesc_pointer)`), it demotes it to the honest untyped word of the same
+width, and the callee-vote plane refuses to monomorphize a parameter to it in
+the first place. The body keeps its local descriptor typing where it genuinely
+reads the word as a type (a cast on that use survives); only the declaration is
+corrected. The genuine runtime type `abi.Type`, which reflect and runtime
+functions legitimately take by pointer, is a different real type and is
+untouched, as are concrete pointer parameters a function really does take
+(`syscall.Fstat(syscall.Stat_t *)`, `big.Int` receivers). Measured on the vet
+corpus: 18 functions declared a `go.typedesc *` parameter, every one the
+interface-word mislabel, all demoted with no genuine signature changed.
+
+Because a forced type that is wrong is unrecoverable, three further refusals
+hold the lock to a result whose type is genuinely stated. A Go reflection name
+is `pkg.Name`, which is *not* unique — distinct function-local types reuse one
+spelling with different layouts, and the name-keyed factory keeps only one — so
+the harvest marks such a name layout-ambiguous
+(`decompiler/crates/kuna-analysis/src/analyzers/gotypes/mod.rs` compares each
+descriptor's field-size fingerprint) and `resolve_site` refuses it
+(`TypeFactory::kuna_is_ambiguous_go_type`): locking through the name could assert
+the other site's layout. A result wider than one machine word is a reconstructed
+register pair (`rbx:rax`), not the pointer, so it refuses rather than mint a
+multi-word pointer that mislabels the wide storage. And a result whose SSA value
+is ever joined, through a phi, with a value of other provenance — a parameter, a
+global, a different allocation — refuses
+(`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs (site_value_is_pure)`),
+because the forced type would propagate across the join onto a variable that is
+only *sometimes* that type; the per-site lock is also withheld from electing a
+HighVariable's representative when the high holds a foreign member, so a merge
+the def-use graph does not show cannot export the lock's type either.
+
 **(kuna) A field held as a pointer (`fieldtype`).** Among accesses of one width
 the rule above keeps the type of the *first* one, and at `-O0` a field is reloaded
 for every use, so the first load is often the one an integer add or a compare with
@@ -2231,7 +2362,10 @@ batch, asks the ledger which structures were superseded
 (`ledger::superseded_names`), and decompiles again exactly the results whose C,
 prototype line, exported variable rows or `types` array spell one of those names
 as a whole identifier. The lookup now answers each with the survivor where the
-survivor is in reach.
+survivor is in reach. The callee-first driver's sweep admits its redos within a
+share of the first pass's printed lines, shortest first (chapter
+[00](00-overview.md)); a body it does not reach keeps the superseded name, as a
+reader out of the survivor's reach does.
 
 It is one sweep, not a fixpoint, and it does not always leave one name per
 record, because the growth bounds are not transitive. Take `fb` claiming four
@@ -2740,6 +2874,33 @@ Type facts are *consumed* back into the graph by the typerecovery rules: the
 member access from pointer types, and `ruleaction_6.rs (RulePtraddUndo,
 RulePtrsubUndo)` in the main pool reverts them when the types they were built
 from degrade — the visible ping that the 7-pass ceiling exists to bound.
+
+### A rounding user op takes and returns a float (`kuna_roundingops.rs`)
+
+p-code rounds a float to an integral float only toward minus infinity
+(`FLOAT_FLOOR`), toward plus infinity (`FLOAT_CEIL`) and to nearest with ties
+away from zero (`FLOAT_ROUND`). A processor spec lifts the other roundings to
+user ops named after the C library functions they compute: `FLOAT_ROUNDEVEN`
+(ties to even, `roundeven`), `FLOAT_TRUNC` (toward zero, `trunc`), and
+`FLOAT_RINT` and `FLOAT_NEARBYINT` (the current rounding mode, with and
+without the inexact exception); chapter 02 gives the AArch64 instructions
+that use them. A CALLOTHER carries no type, so
+`double g(double x, double y) { return rint(x) * y; }` printed its parameter
+as `unsigned long` and the product through a bit-reinterpreting union.
+Type inference and the cast pass's local type queries give the result and the
+one operand of a CALLOTHER whose user op has one of these names the float of
+the Varnode's width, as they do for `FLOAT_ROUND`
+(`decompiler/crates/kuna-decomp/src/p5_types/kuna_roundingops.rs
+(output_type, input_type)`). The user-op ids are resolved by name once per
+program, and a width the processor has no float format for (AArch64 half
+precision) keeps the untyped default. Such a CALLOTHER is a pure function of
+its operand, so dead-code removal deletes it once its result is unused
+instead of keeping it as a call statement (`is_pure_call`, read by
+`decompiler/crates/kuna-decomp/src/p9_emit/coreaction_render.rs
+(ActionDeadCode)`): a vector rounding whose other lanes the function never
+reads prints only the lanes it uses. Two such ops are never merged, and a
+constant operand is not folded. This is a correction, not an option: the ops
+compute on floats by definition.
 
 ### A value returned in a float register is a float (`kuna_floatreg.rs`)
 
@@ -3676,7 +3837,65 @@ bit numbering is where big/little endian diverge, and getting it wrong scrambles
 adjacent fields. Failure mode: any trace step the transform cannot prove
 (e.g. a masked value escaping to an op outside the recognized web) declines
 before mutation, leaving the raw shift/mask expressions in the output; the
-type is never consulted speculatively, so untyped code is untouched.
+type is never consulted speculatively, so untyped code is untouched. A root
+that holds exactly one field, such as a load of exactly the field's bytes, is
+pulled once immediately after its definition, or at block entry for an input
+(`bitfield/pull.rs (apply_root_record)`). DWARF never produces such a root,
+because its whole-byte bitfields are plain fields (chapter 01); a C-declared
+run of bitfields does. Every existing read, including
+MULTIEQUAL and INDIRECT inputs, takes the new scalar output, except that a
+mapped (address-tied or persistent) root keeps its MULTIEQUAL and INDIRECT
+reads: they describe the storage itself, and taking the field there would
+merge it into the whole variable (`t = t.type;`). The original
+LOAD or mapped input remains the pull's source; it is never replaced by its
+own output. Upstream's complete-root path unsets the load's output and then
+destroys that same load, which caused a null-input assertion. Pulling at each
+use instead would move reads past stores and repeatedly transform a LOAD
+that still feeds a marker. A pull that prints as its LOAD's memory read
+(`p->field`) keeps that read's identity when variable folding checks aliasing
+stores, calls and frame/global writes ([06](06-variables-and-merge.md)), whether
+the LOAD is absorbed or still printed for another reader; a saved value
+therefore stays ahead of a write that could change it, including for true
+non-byte-aligned bitfields.
+Every LOAD-derived pull is placed immediately after its source LOAD, even if
+the mask it replaces originally followed a store. Pull absorption cannot move
+that read across a store, call, memory-affecting user operation or block edge
+(`bitfield/absorb.rs (pull_move_is_order_safe)`), even while the LOAD is still
+printed if the pull names its field through the LOAD's pointer: a
+read-modify-write's INSERT can absorb the LOAD later, after which a moved pull
+would print the read past the store (`return p->mid;` after `p->hi = v;
+*q = 7;` for a register-pair return on 32-bit MIPS or PowerPC). Because those
+pulls all sit at the LOAD, a second record for the same bits of the same LOAD (same
+position, width, signedness and size, shifted or not) reads the first pull's
+output instead of cloning the LOAD again (`bitfield/pull.rs
+(reuse_loaded_pull)`): a word loaded once and tested several times after a
+call prints one saved field read, not one per test. A complete record whose
+value lives in mapped storage keeps its own pull, so that storage is still
+written.
+
+Type inference runs before these transforms, so the transforms' own outputs
+are the only values they retype. Two kuna rules keep the field's type and
+sign visible earlier. A LOAD or STORE whose pointer reaches exactly the whole
+bytes of one bitfield moves the field's integer type at that width, as a plain
+member would (`bitfield.rs (whole_byte_field_value)`, applied in
+`coreaction_infertypes.rs (propagate_load_store)` when the pointer itself
+names no type there), so a constant compared with or stored into an
+8-bit field is a number, not a character literal. And a SUBPIECE that leaves
+a signed field in the most significant bits of its output marks the field
+sign-extended, the same condition the trace applies at its root, so
+`SEXT(SUBPIECE(x))` of a signed whole-byte field pulls it (`s.a`) rather than
+leaving a raw byte read. A constant compared with a root pull is retyped to
+the field, as a compare record's constant is
+(`bitfield/pull.rs (retype_compared_constants)`).
+
+A write of exactly one whole-byte field into a mapped Varnode (`t.type = 6` on
+a stack struct) starts the insert trace at the write's own output, which is
+field-aligned. That output is the field only after the write, so the trace
+lifts it through its defining op to the written value before recording a
+field write, and declines if it cannot (`bitfield/insert.rs
+(process_backward)`); upstream recorded the output itself and the INSERT
+re-stored the field's old byte. `RuleBitFieldIn` likewise never takes a
+constant as a pull root.
 
 **Preferred splits**
 (`decompiler/crates/kuna-decomp/src/p5_types/prefersplit.rs

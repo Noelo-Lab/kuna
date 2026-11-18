@@ -2,7 +2,7 @@
 
 The GED loop (`optsweep`) measures the shape of the C kuna emits for a function
 it already found. Nothing there measures **which functions it finds**, so a P1
-discovery change (`aif`, `aifstrict`, `aifcorroborate`, `ptrentry`, `poolentry`,
+discovery change (`aif` and its `strict`/`precise` values, `ptrentry`, `poolentry`,
 `tailcallentry`, `funcstart_patterns`, ...) is invisible to it. This scores that
 directly: kuna's function-entry set for a STRIPPED image against ground truth
 recovered from the same image's UNSTRIPPED twin.

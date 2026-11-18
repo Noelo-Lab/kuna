@@ -1,0 +1,12 @@
+Stripped PE32 i386 fixture for kuna_calleestackargs (tests/stages/kuna-calleeargs.xml).
+
+cdecllocal_pe_i386.cpp and cdecllocal_pe_i386_impl.cpp are compiled by Visual C++ 2005 SP1
+(`cl /O2 /c`, outputs renamed cdecllocal_pe_i386_c.obj and cdecllocal_pe_i386_impl.obj).
+`count` (0x401000) stores `x = 0x1234` in the slot beside the push for the
+__cdecl tally(c) (0x401030), then passes &x to peek and bump; the cleanup for
+tally is deferred past peek.
+
+Build:
+  lld-link /nologo /entry:start /subsystem:console /nodefaultlib /base:0x400000 \
+    /fixed /safeseh:no /opt:noref /Brepro /out:cdecllocal_pe_i386.exe \
+    cdecllocal_pe_i386_c.obj cdecllocal_pe_i386_impl.obj

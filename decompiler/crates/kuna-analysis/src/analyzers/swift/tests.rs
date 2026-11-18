@@ -67,6 +67,8 @@ fn folded_functions_are_named_without_a_false_owner() {
         imports: &imports,
         memo: Default::default(),
         code: vec![(0x1000, 0x2000)],
+        bodies: Vec::new(),
+        insn_align: 1,
         claims: Default::default(),
         budget: std::cell::Cell::new(usize::MAX),
     };
@@ -165,6 +167,74 @@ fn folded_functions_are_named_without_a_false_owner() {
     assert!(!namer.ambiguous_self(0x3000), "not code: never claimed");
 }
 
+/// A record that points strictly inside a function body the image states,
+/// or at a misaligned arm64 address, claims nothing, so no function is made
+/// there; the start of the body and any code outside one still are.
+#[test]
+fn a_claim_needs_a_plausible_function_start() {
+    let md = Metadata::default();
+    let imports = HashMap::new();
+    let named = |bodies: Vec<(u64, u64)>, insn_align: u64| {
+        let namer = Namer {
+            md: &md,
+            imports: &imports,
+            memo: Default::default(),
+            code: vec![(0x1000, 0x2000)],
+            bodies,
+            insn_align,
+            claims: Default::default(),
+            budget: std::cell::Cell::new(usize::MAX),
+        };
+        for (k, addr) in [0x1000u64, 0x1008, 0x1022, 0x1040].into_iter().enumerate() {
+            namer.claim(addr, format!("M.A.vtable#{k}.getter"), "M.A", None, true);
+        }
+        let mut out = AnalysisOutput::default();
+        namer.resolve_claims(&mut out);
+        out.symbols.iter().map(|s| s.addr).collect::<Vec<u64>>()
+    };
+    assert_eq!(named(Vec::new(), 1), vec![0x1000, 0x1008, 0x1022, 0x1040]);
+    assert_eq!(named(vec![(0x1000, 0x1030)], 1), vec![0x1000, 0x1040]);
+    assert_eq!(named(Vec::new(), 4), vec![0x1000, 0x1008, 0x1040]);
+}
+
+/// On the stripped fixture, whose `.eh_frame` covers only the functions that
+/// keep a frame, every name the records give a function still lands, and on
+/// a start: none falls inside an FDE body.
+#[test]
+fn fixture_claims_are_outside_stated_bodies() {
+    let bytes = fixture();
+    let file = object::File::parse(&*bytes).unwrap();
+    let bodies = crate::analyzers::entry::stated_function_bodies(&file, &bytes);
+    assert!(!bodies.is_empty());
+    let unchecked = {
+        let md = read(&bytes, bytes.len());
+        let imports = HashMap::new();
+        let namer = Namer {
+            md: &md,
+            imports: &imports,
+            memo: Default::default(),
+            code: file
+                .sections()
+                .filter(|s| s.kind() == object::SectionKind::Text)
+                .map(|s| (s.address(), s.address().saturating_add(s.size())))
+                .collect(),
+            bodies: Vec::new(),
+            insn_align: 1,
+            claims: Default::default(),
+            budget: std::cell::Cell::new(usize::MAX),
+        };
+        let mut out = AnalysisOutput::default();
+        namer.emit(&mut out);
+        out
+    };
+    let checked = names(&bytes, usize::MAX);
+    let functions = |o: &AnalysisOutput| {
+        o.symbols.iter().filter(|s| s.kind == SymKind::Function).map(|s| (s.addr, s.name.clone())).collect::<Vec<_>>()
+    };
+    assert_eq!(functions(&checked), functions(&unchecked));
+    assert!(functions(&checked).iter().all(|(a, _)| !crate::analyzers::entry::inside_body(&bodies, *a)));
+}
+
 /// A repeated name takes the first free `.k`, with names that already
 /// carry a suffix taken into account, and many repeats stay in order.
 #[test]
@@ -176,6 +246,8 @@ fn repeated_names_take_the_next_free_suffix() {
         imports: &imports,
         memo: Default::default(),
         code: vec![(0x1000, 0x100000)],
+        bodies: Vec::new(),
+        insn_align: 1,
         claims: Default::default(),
         budget: std::cell::Cell::new(usize::MAX),
     };
@@ -284,6 +356,8 @@ fn names(bytes: &[u8], budget: usize) -> AnalysisOutput {
             .filter(|s| s.kind() == object::SectionKind::Text)
             .map(|s| (s.address(), s.address().saturating_add(s.size())))
             .collect(),
+        bodies: crate::analyzers::entry::stated_function_bodies(&file, bytes),
+        insn_align: insn_align(&file),
         claims: Default::default(),
         budget: std::cell::Cell::new(budget),
     };

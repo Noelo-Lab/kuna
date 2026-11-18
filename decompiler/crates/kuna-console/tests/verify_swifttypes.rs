@@ -13,7 +13,6 @@
 //! installed; on, every expected one is.
 
 use std::path::PathBuf;
-use std::rc::Rc;
 
 use kuna_base::address::Address;
 use kuna_console::engine::{ConsoleProgram, bootstrap_from_object};
@@ -99,11 +98,15 @@ fn repo_root() -> PathBuf {
 }
 
 fn load(types_on: bool) -> ConsoleProgram {
+    load_fixture(FIXTURE, types_on)
+}
+
+fn load_fixture(fixture: &str, types_on: bool) -> ConsoleProgram {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let bin = root
         .join("decompiler/crates/kuna-analysis/tests/fixtures")
-        .join(FIXTURE);
+        .join(fixture);
     assert!(bin.exists(), "missing fixture {bin:?}");
     let mut prog = bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots)
         .expect("bootstrap fixture with built processor specs");
@@ -223,4 +226,73 @@ fn swifttypes_off_installs_nothing() {
             });
         assert_ne!(found.as_deref(), Some(name), "no record at 0x{vma:x}");
     }
+}
+
+/// `swift_ext_types_elf`: `Holder`'s metadata accessor is the last
+/// instruction of `.text`, so fewer than sixteen bytes follow its entry; it
+/// is still read and `Holder` laid out.
+#[test]
+fn an_accessor_at_the_end_of_its_section_is_located() {
+    let prog = load_fixture("swift_ext_types_elf", true);
+    let holder = prog.arch().types().find_by_name("extfix.Holder").unwrap().expect("extfix.Holder is interned");
+    assert_eq!(holder.get_size(), 24);
+}
+
+/// `swift_ext_types_elf`: `extension Int { struct Pair }` gives `Pair` an
+/// extension context as its parent; `Holder.pair`'s symbolic reference to it
+/// resolves through that context to the laid-out `Swift.Int.Pair`.
+#[test]
+fn a_type_nested_in_an_extension_is_a_field_type() {
+    let prog = load_fixture("swift_ext_types_elf", true);
+    let types = prog.arch().types();
+    let fields = |name: &str| {
+        let t = types.find_by_name(name).unwrap().unwrap_or_else(|| panic!("{name} is interned"));
+        let mut got = Vec::new();
+        while let Some(f) = t.get_field(got.len() as i32) {
+            got.push((f.name.clone(), f.offset, f.field_type.get_name().to_string()));
+        }
+        got
+    };
+    let row = |n: &str, o: i32, t: &str| (n.to_string(), o, t.to_string());
+    assert_eq!(fields("Swift.Int.Pair"), vec![row("lo", 0, "int8"), row("hi", 8, "int8")]);
+    assert_eq!(fields("extfix.Holder"), vec![row("pair", 0, "Swift.Int.Pair"), row("count", 16, "int8")]);
+}
+
+/// A class's vtable getter has its `self` pinned as a parameter and is bound
+/// to `__swiftcall`; it decompiles under both, the model kept beside the
+/// lock rather than dropped for it.
+#[test]
+fn a_getter_with_a_pinned_self_keeps_the_swift_model() {
+    use kuna_console::ifacedecomp::{execute, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE};
+    use kuna_console::ifaceterm::ConsoleCommands;
+    let mut prog = load(true);
+    let addr = code_addr(&prog, 0x3e60);
+    assert!(prog.arch().loader_param_locks.contains_key(&addr), "self pinned at 0x3e60");
+    let name = match prog.arch().symboltab.find_function_across_scopes(&addr) {
+        Some((sid, _)) => prog.arch().symboltab.symbol(sid).get_name().to_string(),
+        None => prog.arch().name_function(&addr),
+    };
+    let fd = kuna_decomp::decompile_drive::build_and_follow_flow(
+        prog.arch_mut(),
+        &name,
+        addr,
+        kuna_console::engine::UNBOUNDED_SIZE,
+    )
+    .expect("the getter builds");
+    let mut status = ConsoleCommands::into_status(vec!["decompile".to_string(), "print C".to_string()]);
+    register_decomp_commands(&mut status);
+    {
+        let data = status.get_data_mut(DECOMPILE_MODULE).unwrap();
+        let dcp = data.as_any_mut().downcast_mut::<IfaceDecompData>().unwrap();
+        dcp.conf = Some(prog);
+        dcp.fd = Some(fd);
+    }
+    execute(&mut status);
+    execute(&mut status);
+    let c = status.optr.clone();
+    let data = status.get_data_mut(DECOMPILE_MODULE).unwrap();
+    let dcp = data.as_any_mut().downcast_mut::<IfaceDecompData>().unwrap();
+    let proto = dcp.fd.as_ref().expect("decompiled").get_func_proto();
+    assert_eq!(proto.get_model_name(), "__swiftcall", "{c}");
+    assert!(c.contains("(typefix.Sprite *self)"), "{c}");
 }

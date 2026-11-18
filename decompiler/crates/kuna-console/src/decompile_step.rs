@@ -136,7 +136,8 @@ pub fn decompile_one(
 ///
 /// Only the first drive can adopt it: the format-string re-decompile installs
 /// new per-call-site prototype overrides, which are consumed AT FLOW TIME, so
-/// that second pass always re-follows.
+/// that second pass always re-follows. Both drives, and the callee
+/// materialization between them, run under the program's load-time options.
 pub fn decompile_one_prefollowed(
     arch: &mut Architecture,
     name: &str,
@@ -146,6 +147,7 @@ pub fn decompile_one_prefollowed(
     proto_overrides: &[(Address, PrototypePieces)],
     prefollowed: Option<Funcdata>,
 ) -> DecompileStep {
+    let _load = arch.load_scope();
     let mut first = decompile_one_prefollowed_once(
         arch,
         name,
@@ -229,11 +231,6 @@ fn decompile_one_prefollowed_once(
     // RETURN, which distinguishes it from the incoming return address and from
     // ordinary RET/RET-immediate instructions. Seed the derived CALLs first so
     // an explicit flow assertion at the same address remains authoritative.
-    let probe = if arch.get_description().starts_with("ARM:") {
-        let scope = arch.translate().decode_context_scope();
-        if let Some(scope) = &scope { let _ = scope.protect_variable(b"TMode"); }
-        scope
-    } else { None };
     let entry_chain = crate::kuna_retcallchain::kuna_entry_chain_sites(
         arch.translate(),
         &entry,
@@ -245,7 +242,6 @@ fn decompile_one_prefollowed_once(
         &entry,
         crate::kuna_retcallchain::CHAIN_MAX_INSNS,
     );
-    drop(probe);
     let has_derived_flow = !entry_chain.is_empty() || push_immediate_ret.is_some();
     let mut flow_overrides = entry_chain
         .iter()

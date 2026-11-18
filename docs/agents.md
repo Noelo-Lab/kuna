@@ -207,6 +207,7 @@ phases are **settable assertions/options** (`--option NAME VALUE`, discovered vi
 | `docs/jvm-benchmark.md` | The JVM benchmark (`scripts/javabench`): kuna's JVM engine vs Vineflower on five large Java projects, how to run it, the result. |
 | `docs/cli.md` | The full `kuna` CLI reference. |
 | `docs/pr-bodies.md` | How to write a PR body (read before opening or editing any PR). |
+| `docs/prepr.md` | Optional pre-PR helpers: a call-arity diff over real MSVC binaries, and a diff lint. |
 | `docs/improvement-pipeline.md` | The autonomous improvement pipeline + standing requirements for feature PRs. |
 | `docs/re-pipeline.md` | The RE-friction loop: agents solve crackmes with kuna, record where it fails them, and close those gaps. The second, self-merging lane. |
 | `docs/decbench-loop.md` | The decbench benchmark / improvement campaign. |

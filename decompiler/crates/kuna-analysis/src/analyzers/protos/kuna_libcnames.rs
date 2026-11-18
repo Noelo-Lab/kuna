@@ -1,6 +1,7 @@
 //! (kuna `libcnames`) The library's own names for the parameters and results
-//! of the built-in libc signatures ([`super::LIBC`], [`super::kuna_libcsigs`],
-//! [`super::kuna_libctypes`]).
+//! of the built-in libc and Win32 signatures ([`super::LIBC`],
+//! [`super::kuna_libcsigs`], [`super::kuna_libctypes`],
+//! [`super::kuna_win32sigs`]).
 //!
 //! [`super::build_pieces`] attaches an entry to the prototype it builds from
 //! one of those tables, so the names travel with exactly the prototypes the
@@ -26,6 +27,15 @@
 //! string, `fp` for an opened stream, `pid`, `dirp`, `entry`, `c` for a read
 //! character, and the like. `fcntl` and `ioctl`, whose result depends on the
 //! command, have none.
+//!
+//! The Win32 table ([`super::kuna_win32sigs::WIN32`]) gets the Windows SDK names
+//! the same way ([`WIN32_NAMES`]), from the mingw-w64 8.0.0 declarations, which
+//! carry them; mingw-w64 leaves the OLE Automation `BSTR` family unnamed, and
+//! those take the SDK documentation's names. A Win32 result is named only where
+//! it is one kind of thing and the SDK names it as another entry point's
+//! parameter (`hModule`, `hHeap`, `lpMem`, `hFile`). The derivation is
+//! `docs/features/libcnames/gen_win32_names.py`. The two tables are disjoint, so
+//! a name reaches only its own table's prototype.
 
 use kuna_decomp::kuna_libcnames::LibraryNames;
 
@@ -600,9 +610,157 @@ const NAMES: &[(&str, LibraryNames)] = &[
     ("writev", LibraryNames { params: &["fd", "iovec", "count"], ret: Some("n") }),
 ];
 
+/// The Win32 entries ([`super::kuna_win32sigs::WIN32`]), sorted by function
+/// name.
+const WIN32_NAMES: &[(&str, LibraryNames)] = &[
+    ("AcquireSRWLockExclusive", LibraryNames { params: &["SRWLock"], ret: None }),
+    ("CheckRemoteDebuggerPresent", LibraryNames { params: &["hProcess", "pbDebuggerPresent"], ret: None }),
+    ("CloseHandle", LibraryNames { params: &["hObject"], ret: None }),
+    ("CompareStringW", LibraryNames { params: &["Locale", "dwCmpFlags", "lpString1", "cchCount1", "lpString2", "cchCount2"], ret: None }),
+    ("CreateFileW", LibraryNames { params: &["lpFileName", "dwDesiredAccess", "dwShareMode", "lpSecurityAttributes", "dwCreationDisposition", "dwFlagsAndAttributes", "hTemplateFile"], ret: Some("hFile") }),
+    ("CreateThread", LibraryNames { params: &["lpThreadAttributes", "dwStackSize", "lpStartAddress", "lpParameter", "dwCreationFlags", "lpThreadId"], ret: Some("hThread") }),
+    ("CreateToolhelp32Snapshot", LibraryNames { params: &["dwFlags", "th32ProcessID"], ret: Some("hSnapshot") }),
+    ("CryptReleaseContext", LibraryNames { params: &["hProv", "dwFlags"], ret: None }),
+    ("DecodePointer", LibraryNames { params: &["Ptr"], ret: None }),
+    ("DeleteCriticalSection", LibraryNames { params: &["lpCriticalSection"], ret: None }),
+    ("DuplicateHandle", LibraryNames { params: &["hSourceProcessHandle", "hSourceHandle", "hTargetProcessHandle", "lpTargetHandle", "dwDesiredAccess", "bInheritHandle", "dwOptions"], ret: None }),
+    ("EncodePointer", LibraryNames { params: &["Ptr"], ret: None }),
+    ("EnterCriticalSection", LibraryNames { params: &["lpCriticalSection"], ret: None }),
+    ("EnumResourceNamesW", LibraryNames { params: &["hModule", "lpType", "lpEnumFunc", "lParam"], ret: None }),
+    ("EnumResourceTypesW", LibraryNames { params: &["hModule", "lpEnumFunc", "lParam"], ret: None }),
+    ("EnumSystemLocalesW", LibraryNames { params: &["lpLocaleEnumProc", "dwFlags"], ret: None }),
+    ("ExitProcess", LibraryNames { params: &["uExitCode"], ret: None }),
+    ("FindClose", LibraryNames { params: &["hFindFile"], ret: None }),
+    ("FindFirstFileExW", LibraryNames { params: &["lpFileName", "fInfoLevelId", "lpFindFileData", "fSearchOp", "lpSearchFilter", "dwAdditionalFlags"], ret: Some("hFindFile") }),
+    ("FindNextFileW", LibraryNames { params: &["hFindFile", "lpFindFileData"], ret: None }),
+    ("FindResourceA", LibraryNames { params: &["hModule", "lpName", "lpType"], ret: Some("hResInfo") }),
+    ("FindResourceW", LibraryNames { params: &["hModule", "lpName", "lpType"], ret: Some("hResInfo") }),
+    ("FlsAlloc", LibraryNames { params: &["lpCallback"], ret: Some("dwFlsIndex") }),
+    ("FlsFree", LibraryNames { params: &["dwFlsIndex"], ret: None }),
+    ("FlsGetValue", LibraryNames { params: &["dwFlsIndex"], ret: Some("lpFlsData") }),
+    ("FlsSetValue", LibraryNames { params: &["dwFlsIndex", "lpFlsData"], ret: None }),
+    ("FlushFileBuffers", LibraryNames { params: &["hFile"], ret: None }),
+    ("FreeEnvironmentStringsA", LibraryNames { params: &["penv"], ret: None }),
+    ("FreeEnvironmentStringsW", LibraryNames { params: &["penv"], ret: None }),
+    ("FreeLibrary", LibraryNames { params: &["hLibModule"], ret: None }),
+    ("FreeResource", LibraryNames { params: &["hResData"], ret: None }),
+    ("GetACP", LibraryNames { params: &[], ret: Some("CodePage") }),
+    ("GetCPInfo", LibraryNames { params: &["CodePage", "lpCPInfo"], ret: None }),
+    ("GetConsoleMode", LibraryNames { params: &["hConsoleHandle", "lpMode"], ret: None }),
+    ("GetCurrentProcess", LibraryNames { params: &[], ret: Some("hProcess") }),
+    ("GetCurrentProcessId", LibraryNames { params: &[], ret: Some("dwProcessId") }),
+    ("GetCurrentThread", LibraryNames { params: &[], ret: Some("hThread") }),
+    ("GetCurrentThreadId", LibraryNames { params: &[], ret: Some("dwThreadId") }),
+    ("GetDC", LibraryNames { params: &["hWnd"], ret: None }),
+    ("GetEnvironmentStrings", LibraryNames { params: &[], ret: Some("penv") }),
+    ("GetEnvironmentStringsW", LibraryNames { params: &[], ret: Some("penv") }),
+    ("GetEnvironmentVariableW", LibraryNames { params: &["lpName", "lpBuffer", "nSize"], ret: None }),
+    ("GetExitCodeProcess", LibraryNames { params: &["hProcess", "lpExitCode"], ret: None }),
+    ("GetFileSizeEx", LibraryNames { params: &["hFile", "lpFileSize"], ret: None }),
+    ("GetFileType", LibraryNames { params: &["hFile"], ret: None }),
+    ("GetLastError", LibraryNames { params: &[], ret: Some("dwErrCode") }),
+    ("GetLocaleInfoW", LibraryNames { params: &["Locale", "LCType", "lpLCData", "cchData"], ret: None }),
+    ("GetModuleFileNameA", LibraryNames { params: &["hModule", "lpFilename", "nSize"], ret: None }),
+    ("GetModuleFileNameW", LibraryNames { params: &["hModule", "lpFilename", "nSize"], ret: None }),
+    ("GetModuleHandleA", LibraryNames { params: &["lpModuleName"], ret: Some("hModule") }),
+    ("GetModuleHandleExW", LibraryNames { params: &["dwFlags", "lpModuleName", "phModule"], ret: None }),
+    ("GetModuleHandleW", LibraryNames { params: &["lpModuleName"], ret: Some("hModule") }),
+    ("GetOEMCP", LibraryNames { params: &[], ret: Some("CodePage") }),
+    ("GetProcAddress", LibraryNames { params: &["hModule", "lpProcName"], ret: None }),
+    ("GetProcessHeap", LibraryNames { params: &[], ret: Some("hHeap") }),
+    ("GetStartupInfoA", LibraryNames { params: &["lpStartupInfo"], ret: None }),
+    ("GetStartupInfoW", LibraryNames { params: &["lpStartupInfo"], ret: None }),
+    ("GetStdHandle", LibraryNames { params: &["nStdHandle"], ret: None }),
+    ("GetStringTypeA", LibraryNames { params: &["Locale", "dwInfoType", "lpSrcStr", "cchSrc", "lpCharType"], ret: None }),
+    ("GetStringTypeW", LibraryNames { params: &["dwInfoType", "lpSrcStr", "cchSrc", "lpCharType"], ret: None }),
+    ("GetSystemTimeAsFileTime", LibraryNames { params: &["lpSystemTimeAsFileTime"], ret: None }),
+    ("GetThreadContext", LibraryNames { params: &["hThread", "lpContext"], ret: None }),
+    ("GetUserDefaultLCID", LibraryNames { params: &[], ret: Some("Locale") }),
+    ("HeapAlloc", LibraryNames { params: &["hHeap", "dwFlags", "dwBytes"], ret: Some("lpMem") }),
+    ("HeapCreate", LibraryNames { params: &["flOptions", "dwInitialSize", "dwMaximumSize"], ret: Some("hHeap") }),
+    ("HeapDestroy", LibraryNames { params: &["hHeap"], ret: None }),
+    ("HeapFree", LibraryNames { params: &["hHeap", "dwFlags", "lpMem"], ret: None }),
+    ("HeapReAlloc", LibraryNames { params: &["hHeap", "dwFlags", "lpMem", "dwBytes"], ret: Some("lpMem") }),
+    ("HeapSize", LibraryNames { params: &["hHeap", "dwFlags", "lpMem"], ret: None }),
+    ("InitializeCriticalSection", LibraryNames { params: &["lpCriticalSection"], ret: None }),
+    ("InitializeCriticalSectionAndSpinCount", LibraryNames { params: &["lpCriticalSection", "dwSpinCount"], ret: None }),
+    ("InitializeCriticalSectionEx", LibraryNames { params: &["lpCriticalSection", "dwSpinCount", "Flags"], ret: None }),
+    ("InitializeSListHead", LibraryNames { params: &["ListHead"], ret: None }),
+    ("IsProcessorFeaturePresent", LibraryNames { params: &["ProcessorFeature"], ret: None }),
+    ("IsValidCodePage", LibraryNames { params: &["CodePage"], ret: None }),
+    ("IsValidLocale", LibraryNames { params: &["Locale", "dwFlags"], ret: None }),
+    ("LCMapStringA", LibraryNames { params: &["Locale", "dwMapFlags", "lpSrcStr", "cchSrc", "lpDestStr", "cchDest"], ret: None }),
+    ("LCMapStringW", LibraryNames { params: &["Locale", "dwMapFlags", "lpSrcStr", "cchSrc", "lpDestStr", "cchDest"], ret: None }),
+    ("LeaveCriticalSection", LibraryNames { params: &["lpCriticalSection"], ret: None }),
+    ("LoadLibraryA", LibraryNames { params: &["lpLibFileName"], ret: Some("hModule") }),
+    ("LoadLibraryExA", LibraryNames { params: &["lpLibFileName", "hFile", "dwFlags"], ret: Some("hModule") }),
+    ("LoadLibraryExW", LibraryNames { params: &["lpLibFileName", "hFile", "dwFlags"], ret: Some("hModule") }),
+    ("LoadLibraryW", LibraryNames { params: &["lpLibFileName"], ret: Some("hModule") }),
+    ("LoadResource", LibraryNames { params: &["hModule", "hResInfo"], ret: Some("hResData") }),
+    ("LockResource", LibraryNames { params: &["hResData"], ret: None }),
+    ("MessageBoxA", LibraryNames { params: &["hWnd", "lpText", "lpCaption", "uType"], ret: None }),
+    ("MessageBoxW", LibraryNames { params: &["hWnd", "lpText", "lpCaption", "uType"], ret: None }),
+    ("MultiByteToWideChar", LibraryNames { params: &["CodePage", "dwFlags", "lpMultiByteStr", "cbMultiByte", "lpWideCharStr", "cchWideChar"], ret: None }),
+    ("OpenProcess", LibraryNames { params: &["dwDesiredAccess", "bInheritHandle", "dwProcessId"], ret: Some("hProcess") }),
+    ("OutputDebugStringA", LibraryNames { params: &["lpOutputString"], ret: None }),
+    ("QueryPerformanceCounter", LibraryNames { params: &["lpPerformanceCount"], ret: None }),
+    ("QueryPerformanceFrequency", LibraryNames { params: &["lpFrequency"], ret: None }),
+    ("RaiseException", LibraryNames { params: &["dwExceptionCode", "dwExceptionFlags", "nNumberOfArguments", "lpArguments"], ret: None }),
+    ("ReadConsoleW", LibraryNames { params: &["hConsoleInput", "lpBuffer", "nNumberOfCharsToRead", "lpNumberOfCharsRead", "lpReserved"], ret: None }),
+    ("ReadFile", LibraryNames { params: &["hFile", "lpBuffer", "nNumberOfBytesToRead", "lpNumberOfBytesRead", "lpOverlapped"], ret: None }),
+    ("ReleaseSRWLockExclusive", LibraryNames { params: &["SRWLock"], ret: None }),
+    ("ResumeThread", LibraryNames { params: &["hThread"], ret: None }),
+    ("SafeArrayAccessData", LibraryNames { params: &["psa", "ppvData"], ret: None }),
+    ("SafeArrayDestroy", LibraryNames { params: &["psa"], ret: None }),
+    ("SafeArrayUnaccessData", LibraryNames { params: &["psa"], ret: None }),
+    ("SetEnvironmentVariableW", LibraryNames { params: &["lpName", "lpValue"], ret: None }),
+    ("SetFilePointer", LibraryNames { params: &["hFile", "lDistanceToMove", "lpDistanceToMoveHigh", "dwMoveMethod"], ret: None }),
+    ("SetLastError", LibraryNames { params: &["dwErrCode"], ret: None }),
+    ("SetStdHandle", LibraryNames { params: &["nStdHandle", "hHandle"], ret: None }),
+    ("SetThreadContext", LibraryNames { params: &["hThread", "lpContext"], ret: None }),
+    ("SetUnhandledExceptionFilter", LibraryNames { params: &["lpTopLevelExceptionFilter"], ret: None }),
+    ("SizeofResource", LibraryNames { params: &["hModule", "hResInfo"], ret: None }),
+    ("Sleep", LibraryNames { params: &["dwMilliseconds"], ret: None }),
+    ("SleepConditionVariableSRW", LibraryNames { params: &["ConditionVariable", "SRWLock", "dwMilliseconds", "Flags"], ret: None }),
+    ("SuspendThread", LibraryNames { params: &["hThread"], ret: None }),
+    ("SysAllocString", LibraryNames { params: &["psz"], ret: Some("bstrString") }),
+    ("SysAllocStringByteLen", LibraryNames { params: &["psz", "len"], ret: Some("bstrString") }),
+    ("SysAllocStringLen", LibraryNames { params: &["strIn", "ui"], ret: Some("bstrString") }),
+    ("SysFreeString", LibraryNames { params: &["bstrString"], ret: None }),
+    ("SysReAllocString", LibraryNames { params: &["pbstr", "psz"], ret: None }),
+    ("SysReAllocStringLen", LibraryNames { params: &["pbstr", "psz", "len"], ret: None }),
+    ("SysStringByteLen", LibraryNames { params: &["bstr"], ret: None }),
+    ("SysStringLen", LibraryNames { params: &["pbstr"], ret: None }),
+    ("TerminateProcess", LibraryNames { params: &["hProcess", "uExitCode"], ret: None }),
+    ("TerminateThread", LibraryNames { params: &["hThread", "dwExitCode"], ret: None }),
+    ("TlsAlloc", LibraryNames { params: &[], ret: Some("dwTlsIndex") }),
+    ("TlsFree", LibraryNames { params: &["dwTlsIndex"], ret: None }),
+    ("TlsGetValue", LibraryNames { params: &["dwTlsIndex"], ret: Some("lpTlsValue") }),
+    ("TlsSetValue", LibraryNames { params: &["dwTlsIndex", "lpTlsValue"], ret: None }),
+    ("UnhandledExceptionFilter", LibraryNames { params: &["ExceptionInfo"], ret: None }),
+    ("VariantClear", LibraryNames { params: &["pvarg"], ret: None }),
+    ("VariantCopy", LibraryNames { params: &["pvargDest", "pvargSrc"], ret: None }),
+    ("VariantInit", LibraryNames { params: &["pvarg"], ret: None }),
+    ("VirtualAlloc", LibraryNames { params: &["lpAddress", "dwSize", "flAllocationType", "flProtect"], ret: Some("lpAddress") }),
+    ("VirtualFree", LibraryNames { params: &["lpAddress", "dwSize", "dwFreeType"], ret: None }),
+    ("VirtualProtect", LibraryNames { params: &["lpAddress", "dwSize", "flNewProtect", "lpflOldProtect"], ret: None }),
+    ("VirtualQuery", LibraryNames { params: &["lpAddress", "lpBuffer", "dwLength"], ret: None }),
+    ("WSAGetLastError", LibraryNames { params: &[], ret: Some("iError") }),
+    ("WSASetLastError", LibraryNames { params: &["iError"], ret: None }),
+    ("WaitForSingleObject", LibraryNames { params: &["hHandle", "dwMilliseconds"], ret: None }),
+    ("WakeAllConditionVariable", LibraryNames { params: &["ConditionVariable"], ret: None }),
+    ("WideCharToMultiByte", LibraryNames { params: &["CodePage", "dwFlags", "lpWideCharStr", "cchWideChar", "lpMultiByteStr", "cbMultiByte", "lpDefaultChar", "lpUsedDefaultChar"], ret: None }),
+    ("WriteConsoleW", LibraryNames { params: &["hConsoleOutput", "lpBuffer", "nNumberOfCharsToWrite", "lpNumberOfCharsWritten", "lpReserved"], ret: None }),
+    ("WriteFile", LibraryNames { params: &["hFile", "lpBuffer", "nNumberOfBytesToWrite", "lpNumberOfBytesWritten", "lpOverlapped"], ret: None }),
+    ("closesocket", LibraryNames { params: &["s"], ret: None }),
+    ("ioctlsocket", LibraryNames { params: &["s", "cmd", "argp"], ret: None }),
+];
+
 /// The library names for the built-in signature `name`, if it has any.
 pub(super) fn library_names(name: &str) -> Option<&'static LibraryNames> {
-    NAMES.binary_search_by(|(n, _)| (*n).cmp(name)).ok().map(|i| &NAMES[i].1)
+    [NAMES, WIN32_NAMES]
+        .into_iter()
+        .find_map(|table| table.binary_search_by(|(n, _)| (*n).cmp(name)).ok().map(|i| &table[i].1))
 }
 
 #[cfg(test)]
@@ -618,6 +776,29 @@ mod tests {
     #[test]
     fn sorted_and_unique() {
         assert!(NAMES.windows(2).all(|w| w[0].0 < w[1].0));
+        assert!(WIN32_NAMES.windows(2).all(|w| w[0].0 < w[1].0));
+    }
+
+    #[test]
+    fn every_win32_entry_matches_its_signature_slot_for_slot() {
+        let win32 = super::super::kuna_win32sigs::WIN32;
+        for (name, names) in WIN32_NAMES {
+            let sig = win32.iter().find(|(n, _)| n == name).map(|(_, sig)| sig);
+            assert_eq!(sig.map(|sig| sig.params.len()), Some(names.params.len()), "{name}");
+            assert!(NAMES.binary_search_by(|(n, _)| n.cmp(name)).is_err(), "{name} is in both tables");
+        }
+    }
+
+    #[test]
+    fn the_common_win32_calls_carry_their_sdk_names() {
+        let read = library_names("ReadFile").unwrap();
+        assert_eq!(read.params, ["hFile", "lpBuffer", "nNumberOfBytesToRead", "lpNumberOfBytesRead", "lpOverlapped"]);
+        assert_eq!(read.ret, None);
+        assert_eq!(library_names("CreateFileW").unwrap().ret, Some("hFile"));
+        assert_eq!(library_names("LoadLibraryW").unwrap().ret, Some("hModule"));
+        assert_eq!(library_names("GetProcAddress").unwrap().params, ["hModule", "lpProcName"]);
+        assert_eq!(library_names("HeapAlloc").unwrap().ret, Some("lpMem"));
+        assert_eq!(library_names("SysFreeString").unwrap().params, ["bstrString"]);
     }
 
     #[test]
@@ -652,7 +833,7 @@ mod tests {
 
     #[test]
     fn every_name_is_a_plain_c_identifier() {
-        for (function, names) in NAMES {
+        for (function, names) in NAMES.iter().chain(WIN32_NAMES) {
             for name in names.params.iter().chain(names.ret.iter()).filter(|n| !n.is_empty()) {
                 assert!(name.chars().next().is_some_and(|c| c.is_ascii_alphabetic()), "{function}: {name}");
                 assert!(name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'), "{function}: {name}");

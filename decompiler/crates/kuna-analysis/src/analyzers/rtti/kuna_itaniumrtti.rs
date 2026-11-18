@@ -61,7 +61,9 @@
 //! Per recovered class: `<C>::typeinfo`, `<C>::typeinfo_name`, `<C>::vtable`, and
 //! for a secondary sub-vtable — named from the inheritance displacement the vmi/si
 //! base list carries — `<C>::vtable_for_<Base>`; per virtual slot a **function**
-//! symbol `<C>::vtable_<i>`, and the slot array marked read-only. An inherited slot
+//! symbol `<C>::vfunc_<i>` (`<C>::vfunc_for_<Base>_<i>` in a secondary sub-vtable),
+//! and the slot array marked read-only. The stem is `vfunc_`, as in the MSVC sibling
+//! pass: a routine is not named after the data object that points at it. An inherited slot
 //! claimed by several classes' vtables is attributed to the **defining base**, not
 //! to whichever vtable the scan reached first, using the recovered inheritance
 //! graph — so `Shape::perimeter`, present in `Shape`'s, `Circle`'s and `Square`'s
@@ -84,6 +86,7 @@ use object::{BinaryFormat, RelocationTarget};
 use crate::demangle::demangle_typeinfo_name;
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase, SymFact, SymKind};
 
+use super::kuna_itaniumctors::ClassVtables;
 use super::models::ImageBytes;
 use super::refkind::{End, RefKind};
 use super::vftable::TextRanges;
@@ -194,38 +197,83 @@ impl AnalysisPass for ItaniumRttiPass {
 
     fn run(&self, ctx: &AnalysisCtx) -> AnalysisOutput {
         let mut out = AnalysisOutput::default();
-
-        // ELF gate (belt-and-suspenders on top of the passes_for registration gate):
-        // the MSVC ABI owns PE, and Mach-O's chained-fixup relocation model does not
-        // expose the anchor this pass reads.
-        if ctx.file.format() != BinaryFormat::Elf {
-            return out;
+        if let Some((typeinfos, subs, rk)) = recover_graph(ctx) {
+            emit(&typeinfos, &subs, &rk, &mut out);
         }
-
-        let rk = RefKind::new(
-            ctx.file.is_64(),
-            0,
-            if ctx.file.is_little_endian() { End::Little } else { End::Big },
-        );
-        // Discovery first, and bail before building anything else: a plain-C binary
-        // and a `-fno-rtti` C++ build both have no typeinfo, and that is the common
-        // case this pass must stay nearly free on.
-        let candidates = discover_typeinfos(ctx.file, rk.ptr_size() as u64);
-        if candidates.is_empty() {
-            return out;
-        }
-        let img = ImageBytes::new(ctx.file);
-        let typeinfos = decode_typeinfos(&img, &rk, &candidates);
-        if typeinfos.is_empty() {
-            return out;
-        }
-
-        let text = TextRanges::new(ctx.file);
-        let relocated = relocated_slots(ctx.file);
-        let subs = recover_subvtables(&img, &rk, &text, &relocated, &typeinfos);
-        emit(&typeinfos, &subs, &rk, &mut out);
         out
     }
+}
+
+/// Recover the typeinfo graph and its sub-vtables, or `None` on an image that has
+/// none.
+fn recover_graph(ctx: &AnalysisCtx) -> Option<(Vec<TypeInfo>, Vec<SubVtable>, RefKind)> {
+    // ELF gate (belt-and-suspenders on top of the passes_for registration gate):
+    // the MSVC ABI owns PE, and Mach-O's chained-fixup relocation model does not
+    // expose the anchor this pass reads.
+    if ctx.file.format() != BinaryFormat::Elf {
+        return None;
+    }
+
+    let rk = RefKind::new(
+        ctx.file.is_64(),
+        0,
+        if ctx.file.is_little_endian() { End::Little } else { End::Big },
+    );
+    // Discovery first, and bail before building anything else: a plain-C binary
+    // and a `-fno-rtti` C++ build both have no typeinfo, and that is the common
+    // case this pass must stay nearly free on.
+    let candidates = discover_typeinfos(ctx.file, rk.ptr_size() as u64);
+    if candidates.is_empty() {
+        return None;
+    }
+    let img = ImageBytes::new(ctx.file);
+    let typeinfos = decode_typeinfos(&img, &rk, &candidates);
+    if typeinfos.is_empty() {
+        return None;
+    }
+
+    let text = TextRanges::new(ctx.file);
+    let relocated = relocated_slots(ctx.file);
+    let subs = recover_subvtables(&img, &rk, &text, &relocated, &typeinfos);
+    Some((typeinfos, subs, rk))
+}
+
+/// The recovered classes' vtables, as the constructor/destructor recovery
+/// ([`super::kuna_itaniumctors`]) reads them; empty on an image without the
+/// Itanium graph.
+pub(super) fn recovered_classes(ctx: &AnalysisCtx) -> Vec<ClassVtables> {
+    recover_graph(ctx)
+        .map_or_else(Vec::new, |(typeinfos, subs, _)| class_vtables(&typeinfos, &subs))
+}
+
+/// Each recovered class's vptr values and primary slot targets, with its bases as
+/// indices into the same list — the input the constructor/destructor recovery
+/// reads.
+fn class_vtables(typeinfos: &[TypeInfo], subs: &[SubVtable]) -> Vec<ClassVtables> {
+    let by_addr: HashMap<u64, &TypeInfo> = typeinfos.iter().map(|t| (t.addr, t)).collect();
+    let index: HashMap<u64, usize> =
+        typeinfos.iter().enumerate().map(|(i, t)| (t.addr, i)).collect();
+    typeinfos
+        .iter()
+        .map(|ti| {
+            let mut own: Vec<&SubVtable> = subs.iter().filter(|s| s.typeinfo == ti.addr).collect();
+            own.sort_by_key(|s| (s.offset_to_top != 0, s.header));
+            let primary_slots = own
+                .first()
+                .filter(|s| s.offset_to_top == 0)
+                .map(|s| s.slots.clone())
+                .unwrap_or_default();
+            ClassVtables {
+                name: ti.class.clone(),
+                ancestors: ancestors_of(ti.addr, &by_addr)
+                    .iter()
+                    .filter_map(|a| index.get(a).copied())
+                    .collect(),
+                primary_slots,
+                vptrs: own.iter().map(|s| s.first_slot).collect(),
+            }
+        })
+        .collect()
 }
 
 /// The address of every slot a dynamic relocation writes. A vtable slot whose file
@@ -465,7 +513,7 @@ fn recover_subvtables(
 ///
 /// A slot reading 0 with a dynamic relocation covering it is an imported virtual
 /// method — the file simply does not carry its value. Recording it as `None` keeps
-/// the slot INDEX faithful (so `<C>::vtable_<i>` matches the ABI's numbering) and
+/// the slot INDEX faithful (so `<C>::vfunc_<i>` matches the ABI's numbering) and
 /// lets the walk continue to the locally-defined methods after it, which is what
 /// gives an abstract interface's vtable its true extent.
 fn walk_slots(
@@ -607,22 +655,22 @@ fn base_tag(ti: &TypeInfo, base: &TypeInfo, by_addr: &HashMap<u64, &TypeInfo>) -
     }
 }
 
-/// Name every virtual-method slot `<sub-vtable label>_<slot index>`, attributing an
+/// Name every virtual-method slot `<C>::vfunc[_for_<Base>]_<slot index>`, attributing an
 /// inherited slot to the class that **defines** it rather than to whichever vtable
 /// the scan reached first.
 ///
 /// A derived class's vtable repeats its bases' slots verbatim, so one function
 /// address is claimed by every class in its inheritance chain. Attributing by scan
 /// order would call `Shape::perimeter` — inherited unchanged by `Circle` and
-/// `Square` — `Square::vtable_3`. The recovered base graph resolves it: among the
+/// `Square` — `Square::vfunc_3`. The recovered base graph resolves it: among the
 /// claimants, the one whose class is an ancestor of all the others wins; a tie
 /// (unrelated classes sharing a thunk) falls back to the lowest typeinfo address so
 /// the result is deterministic.
 ///
-/// The label rather than the class name carries the prefix because a
-/// multiple-inheritance class has SEVERAL sub-vtables, whose slot indices both start
-/// at 0: `Widget::vtable_0` and `Widget::vtable_for_Drawable_0` are different
-/// functions (the second is the `this`-adjusting thunk).
+/// The sub-vtable's suffix rather than the class name alone carries the prefix
+/// because a multiple-inheritance class has SEVERAL sub-vtables, whose slot indices
+/// both start at 0: `Widget::vfunc_0` and `Widget::vfunc_for_Drawable_0` are
+/// different functions (the second is the `this`-adjusting thunk).
 fn attribute_slots(
     typeinfos: &[TypeInfo],
     subs: &[(&SubVtable, &str, String)],
@@ -659,7 +707,8 @@ fn attribute_slots(
             .copied()
             .or_else(|| cs.first().copied());
         if let Some((_, class, suffix, idx)) = best {
-            out.push((target, format!("{class}::{suffix}_{idx}")));
+            let stem = suffix.replacen("vtable", "vfunc", 1);
+            out.push((target, format!("{class}::{stem}_{idx}")));
         }
     }
     out.sort();
@@ -845,10 +894,10 @@ mod tests {
             .collect();
         let named: HashMap<u64, String> =
             attribute_slots(&tis, &labelled).into_iter().collect();
-        assert_eq!(named[&0x1000], "Shape::vtable_0");
-        assert_eq!(named[&0x1020], "Circle::vtable_0");
+        assert_eq!(named[&0x1000], "Shape::vfunc_0");
+        assert_eq!(named[&0x1020], "Circle::vfunc_0");
         // 0x1010 is slot 1 of BOTH vtables; Shape defines it, Circle inherits it.
-        assert_eq!(named[&0x1010], "Shape::vtable_1");
+        assert_eq!(named[&0x1010], "Shape::vfunc_1");
     }
 
     /// A secondary sub-vtable takes the NAME of the base subobject its

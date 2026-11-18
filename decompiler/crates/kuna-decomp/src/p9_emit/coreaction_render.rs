@@ -792,7 +792,7 @@ impl Action for ActionConstantPtr {
             if offset == 0 {
                 continue; // Never make constant 0 into spacebase
             }
-            if is_ptr_check {
+            if is_ptr_check || data.vbank().get(vn).unwrap().is_synthetic_literal() {
                 continue; // Have we checked this variable before
             }
             if has_no_descend {
@@ -832,6 +832,10 @@ impl Action for ActionConstantPtr {
             // Set check flag AFTER searching for the symbol.
             data.vbank_mut().get_mut(vn).expect("constantptr: stale vn").set_ptr_check();
             if let Some((entry, rampoint)) = resolved {
+                // (kuna) A Swift string object lands 32 bytes before its literal.
+                if crate::kuna_swiftstrobj::is_string_object(data, vn, &rampoint) {
+                    continue;
+                }
                 // (kuna) Mid-string char pointer. `is_pointer` admits a constant
                 // that lands in the MIDDLE of a read-only character array (it
                 // clears `needexacthit` for exactly that case), which is how a
@@ -1308,6 +1312,7 @@ impl Action for ActionDeindirect {
                 }
             }
 
+            if data.vbank().get(vn).is_some_and(|v| v.is_synthetic_literal()) { continue; }
             let v = match data.vbank().get(vn) {
                 Some(v) => v,
                 None => continue,
@@ -1347,6 +1352,15 @@ impl Action for ActionDeindirect {
                 // merge), then re-insert it at the same index to keep `qlst` ordering.
                 let no_return = proto.is_no_return();
                 let inline = proto.is_inline();
+                // (kuna) A declaration the early slot query locked outranks the
+                // symbol's recovered prototype.
+                let proto = if data.get_call_specs(i).proto().is_input_locked() && !proto.is_input_locked() {
+                    let mut declared = crate::fspec::FuncProto::new();
+                    declared.copy(data.get_call_specs(i).proto());
+                    std::rc::Rc::new(declared)
+                } else {
+                    proto
+                };
                 let mut fc = data.replace_call_specs(i);
                 let mut restartlog = crate::kuna_restartlog::RestartLog::new();
                 let r =
@@ -2185,7 +2199,7 @@ fn dc_never_consumed(data: &mut Funcdata, vn: VarnodeId) -> bool {
         data.op_set_input(op, zero, slot).expect("neverConsumed: opSetInput");
     }
     let op = data.vbank().get(vn).expect("neverConsumed: stale vn").get_def().expect("def");
-    if data.obank().get(op).expect("neverConsumed: stale op").is_call() {
+    if data.obank().get(op).expect("neverConsumed: stale op").is_call() && !crate::kuna_roundingops::is_pure_call(data, op) {
         data.op_unset_output(op);
     } else {
         data.op_destroy(op);
@@ -2476,7 +2490,7 @@ fn deadcode_apply(data: &mut Funcdata) -> ApplyResult {
         data.obank_mut().get_mut(op).expect("deadcode: stale op").clear_indirect_source();
         let (is_call, is_assignment, opc, n) = {
             let o = data.obank().get(op).expect("deadcode: stale op");
-            (o.is_call(), o.is_assignment(), o.code(), o.num_input())
+            (o.is_call() && !crate::kuna_roundingops::is_pure_call(data, op), o.is_assignment(), o.code(), o.num_input())
         };
         if is_call {
             if data.obank().get(op).expect("stale op").is_call_without_spec() {
@@ -2593,7 +2607,7 @@ fn deadcode_apply(data: &mut Funcdata) -> ApplyResult {
                 // Not even vacuously consumed -> remove the defining op.
                 let op = data.vbank().get(vn).expect("sweep: stale vn").get_def().expect("def");
                 changecount += 1;
-                if data.obank().get(op).expect("sweep: stale op").is_call() {
+                if data.obank().get(op).expect("sweep: stale op").is_call() && !crate::kuna_roundingops::is_pure_call(data, op) {
                     data.op_unset_output(op);
                 } else {
                     data.op_destroy(op);

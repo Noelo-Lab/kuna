@@ -479,23 +479,19 @@ impl PrimitiveExtractor {
 
     /// The `TYPE_STRUCT` tail of [`Self::extract`] (modelrules.cc:215-235).
     fn extract_struct(&mut self, dt: &Rc<Datatype>, max: int4, offset: int4) -> bool {
-        let num = dt.num_depend();
+        let Some(fields) = super::kuna_aggregateabi::primitive_fields(dt, offset) else {
+            return false;
+        };
         let mut expected_off = offset;
-        for i in 0..num {
-            let (comp_dt, field_off) = {
-                let field = match dt.get_field(i) {
-                    Some(f) => f,
-                    None => return false,
-                };
-                (Rc::clone(&field.field_type), field.offset)
-            };
-            let cur_off = field_off + offset;
-            let align = comp_dt.get_alignment();
-            if cur_off % align != 0 {
+        for field in fields {
+            let comp_dt = field.dt;
+            let cur_off = field.offset + offset;
+            let align = field.alignment;
+            if !field.bitfield && cur_off % align != 0 {
                 self.flags |= prim_flags::UNALIGNED;
             }
             let rem = expected_off % align;
-            if rem != 0 {
+            if rem != 0 && (!field.bitfield || expected_off != cur_off) {
                 expected_off += align - rem;
             }
             if expected_off != cur_off {

@@ -1,0 +1,37 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "functions",
+    "{{BIN}}",
+    "--json"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/itaniumrtti_x86_64.so",
+    "binary_sha256": "0b9737aee1bcf9bfa8be5b3b86f0e18da2248101be26ea79f50e0d8e34655839",
+    "binary_size": 14608,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/itaniumrtti_x86_64.so"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "\"name\": \"shapes::Shape::vfunc_2\"",
+      "\"name\": \"shapes::Widget::vfunc_for_Drawable_2\""
+    ],
+    "stdout_absent": [
+      "\"name\": \"[^\"]*::vtable_(for_[A-Za-z0-9_]+_)?[0-9]+\""
+    ]
+  },
+  "notes": "Itanium sibling of pe-function-inventory-labels. itaniumrtti names each sub-vtable slot's TARGET -- a function -- and used to call it `<C>::vtable_<i>` (`<C>::vtable_for_<Base>_<i>` in a secondary sub-vtable), so `kuna functions` listed routines under vtable names. Now `vfunc_<i>` / `vfunc_for_<Base>_<i>`, the MSVC rtti stem. itaniumrtti is on by default."
+}

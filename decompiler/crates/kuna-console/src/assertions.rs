@@ -145,8 +145,9 @@ pub struct Outcome {
     pub status: &'static str,
     pub detail: Option<String>,
     /// The pipeline ACCEPTED this directive, seeded it, and then refused it while
-    /// applying it -- today only a `flow` override the flow-follower could not
-    /// apply (`Funcdata::kuna_rejected_flow_overrides`).
+    /// applying it: a `flow` override the flow-follower could not apply
+    /// (`Funcdata::kuna_rejected_flow_overrides`), or a `name`/`type` whose local
+    /// the replayed C does not declare as asked ([`verify_printed`]).
     ///
     /// Such a rejection is fatal without `--assert-strict`, unlike one that never
     /// bound: the C that came back describes a program the directive was never
@@ -339,6 +340,7 @@ pub fn parse_hex_bytes(tok: &str) -> Result<Vec<u8>, String> {
 /// `readonly`/`volatile` precedent is the same constraint inverted — a range
 /// property stated after the symbols over it are mapped is silently inert.
 pub fn apply_image_scoped(prog: &mut ConsoleProgram) {
+    let _load = prog.arch().load_scope();
     let directives = prog.assertions().to_vec();
     for (i, directive) in directives.iter().enumerate() {
         let Body::Bytes { addr, data } = &directive.body else {
@@ -381,6 +383,7 @@ fn overlay_bytes(prog: &mut ConsoleProgram, vma: u64, data: &[u8]) -> Result<(),
 /// it, which is how "you asked about a function this run did not decompile"
 /// becomes a report row instead of silence.
 pub fn apply_program_scoped(prog: &mut ConsoleProgram) {
+    let _load = prog.arch().load_scope();
     let directives = prog.assertions().to_vec();
     for (i, directive) in directives.iter().enumerate() {
         // A QUALIFIED `param`/`return` is a statement about the named function's
@@ -1111,6 +1114,7 @@ pub fn apply_symbol_scoped(
     name: &str,
     single: bool,
 ) -> Option<Vec<Expected>> {
+    let _load = prog.arch().load_scope();
     let directives = prog.assertions().to_vec();
     let mut applied_any = false;
     let mut touched: Vec<(usize, kuna_decomp::database::SymbolId, Option<Rc<Datatype>>)> = Vec::new();

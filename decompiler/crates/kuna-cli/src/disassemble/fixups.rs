@@ -56,9 +56,11 @@ struct Slot {
     holds_target: bool,
 }
 
-/// The fixup slots one byte view overlaps, and the metadata that listed them.
+/// The fixup slots one byte view overlaps, the metadata that listed them, and
+/// what of it could not be read.
 pub(super) struct Fixups {
     coverage: Coverage,
+    reason: Option<String>,
     slots: Vec<Slot>,
 }
 
@@ -68,7 +70,7 @@ pub(super) struct Fixups {
 /// An image whose object view cannot be read again lists none, under
 /// `coverage` `none`, as does one whose fixups kuna does not read.
 pub(super) fn overlapping(view: Option<(&[u8], &object::File)>, prog: &ConsoleProgram, start: u64, end: u64) -> Fixups {
-    let none = Fixups { coverage: Coverage::None, slots: Vec::new() };
+    let none = Fixups { coverage: Coverage::None, reason: None, slots: Vec::new() };
     if end <= start {
         return none;
     }
@@ -94,7 +96,7 @@ pub(super) fn overlapping(view: Option<(&[u8], &object::File)>, prog: &ConsolePr
         let holds_target = site.target.is_some_and(|t| encode(t, image.len(), le) == image);
         slots.push(Slot { site, file: file_bytes, image, returned, holds_target });
     }
-    Fixups { coverage: listed.coverage, slots }
+    Fixups { coverage: listed.coverage, reason: listed.reason, slots }
 }
 
 /// `value` as a `width`-byte word in the image's byte order.
@@ -132,7 +134,8 @@ impl Fixups {
         ))
     }
 
-    /// `fixups_coverage` and `fixups`, for the byte view's JSON document.
+    /// `fixups_coverage`, `fixups_reason` and `fixups`, for the byte view's JSON
+    /// document.
     pub(super) fn json_fields(&self) -> Vec<(String, Json)> {
         let number = |v: u64| Json::Number(v.to_string());
         let rows = self
@@ -156,6 +159,7 @@ impl Fixups {
             .collect();
         vec![
             ("fixups_coverage".into(), Json::Str(self.coverage.as_str().into())),
+            ("fixups_reason".into(), self.reason.clone().map_or(Json::Null, Json::Str)),
             ("fixups".into(), Json::Array(rows)),
         ]
     }

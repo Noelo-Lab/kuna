@@ -1837,6 +1837,12 @@ impl PcodeOpBank {
         self.deadlist.insert_after(&mut self.arena, ListKind::Insert, prev, op);
     }
 
+    /// Insert a newly emitted raw operation before another raw operation.
+    pub fn insert_before_dead(&mut self, op: OpId, before: OpId) {
+        assert!(op != before && self.on_dead_list(op) && self.on_dead_list(before));
+        self.deadlist.splice_range(&mut self.arena, ListKind::Insert, op, op, Some(before));
+    }
+
     /// Move the inclusive sequence `[firstop, lastop]` to right after `prev` in
     /// the dead list (C++ `moveSequenceDead`, `op.cc:1086`).
     ///

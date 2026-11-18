@@ -16,6 +16,7 @@ kuna-analysis.workspace = true
 kuna-sleigh.workspace = true
 kuna-slacomp.workspace = true
 kuna-jvm = { workspace = true, optional = true }
+kuna-num.workspace = true
 # FID construction also reads archive members.
 object = { workspace = true, features = ["archive"] }
 regex.workspace = true
@@ -32,7 +33,6 @@ embed-specs = []
 jvm = ["dep:kuna-jvm"]
 
 [dev-dependencies]
-kuna-num.workspace = true
 object = { workspace = true, features = ["write"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 

@@ -19,6 +19,14 @@ impl CommonAllocator {
         }
     }
 
+    /// Keep `size` bytes between the extern slots and COMMON storage for other
+    /// synthetic slots, before anything is allocated. Returns where they end.
+    pub(super) fn reserve(&mut self, size: u64) -> Option<u64> {
+        debug_assert!(self.first.is_none());
+        self.cursor = self.cursor.and_then(|cursor| cursor.checked_add(size));
+        self.cursor
+    }
+
     pub(super) fn range(&self) -> Option<(u64, u64)> {
         Some((self.first?, self.cursor?))
     }
@@ -66,6 +74,18 @@ mod tests {
         let mut wide = CommonAllocator::new(u64::MAX - 3, 0, true);
         assert_eq!(wide.allocate(1, 8), None);
         assert_eq!(CommonAllocator::new(u64::MAX, 1, true).allocate(1, 1), None);
+    }
+
+    #[test]
+    fn reserved_slots_end_where_common_storage_begins() {
+        let mut allocator = CommonAllocator::new(0x402000, 1, true);
+        assert_eq!(allocator.reserve(0), Some(0x402010));
+        assert_eq!(allocator.reserve(24), Some(0x402028));
+        assert_eq!(allocator.allocate(4, 4), Some(0x402028));
+        assert_eq!(allocator.range(), Some((0x402028, 0x40202c)));
+        let mut full = CommonAllocator::new(u64::MAX - 15, 0, true);
+        assert_eq!(full.reserve(16), None);
+        assert_eq!(full.allocate(1, 1), None);
     }
 
     #[test]

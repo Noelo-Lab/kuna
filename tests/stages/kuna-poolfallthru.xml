@@ -1,0 +1,193 @@
+<!--
+  kuna: a call whose fall-through is the function's own literal pool does not return.
+  `probe` in the ARM32 fixtures (little- and big-endian, source poolfallthru.c) ends
+  `bl use; bl die` with no epilogue, and its five PC-relative literal words follow the
+  second call. kuna cannot prove `die` no-return, so the walk took the call's
+  fall-through, decoded the first four words as instructions and stopped at
+  `0x0002cbb2`, which decodes as nothing, while `kuna disassemble` lists the same
+  words as data.
+  Stage: P2 flow classification, the funcboundflow fall-through bound
+  (`p2_lift/kuna_funcboundflow.rs` kuna_should_bound_at_pool) over the pool extents
+  the Listing proves from trusted references (`kuna-analysis`
+  `listing/kuna_poolextents.rs`), so `option listing on` precedes `read symbols`.
+  P0 assertion: `option funcboundflow off|on` (default on).
+  `poolguards.s` drives every condition in both byte orders: eight negatives
+  violating exactly one each (conditional call, branch-targeted word, halfword read,
+  live gap, over-wide gap, word in a writable executable section, a callee that
+  provably returns with the pool's only load past a call, a reader past a call
+  nothing proves returns), `svc_junk` (a data
+  word past a non-returning `svc` that spells a load of the returning call's
+  fall-through: `return 5` stays and both passes agree), and seven positives
+  (`bounded_call`, `pad_call` with one instruction of padding, `indirect_call` through
+  `blx`, `two_pools` with two bounded calls, `wide_literal` through `vldr`,
+  `ordered_loads` with its load after the call, `junk_pointer` whose pool word spells
+  a load of live code that stays).
+  Assert 1 counts the ten `Bad instruction` truncations: the off pass of `probe` in
+  each byte order, the off pass of `svc_junk` in each byte order (two each: without
+  the bound the junk after `svc` runs on through the functions that follow), and per
+  byte order `live_gap` and `data_word`, whose fall-throughs are correctly not
+  bounded and so still decode their pools. Assert 2 counts the eighteen bounded
+  calls: the default pass of `probe` in each byte order and eight per byte order
+  (two in `two_pools`). Assert 3 pins the two indirect ones and assert 4 the six
+  `return 5` of `svc_junk`: its guard print and both passes, in both byte orders.
+-->
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v8:default">
+<bytechunk space="ram" offset="0x100000" readonly="true">1eff2fe1</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/poolfallthru_arm_le32</com>
+  <com>option listing on</com>
+  <com>read symbols</com>
+  <com>option funcboundflow off</com>
+  <com>load function probe</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option funcboundflow on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/poolfallthru_arm_be32</com>
+  <com>option listing on</com>
+  <com>read symbols</com>
+  <com>option funcboundflow off</com>
+  <com>load function probe</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option funcboundflow on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/poolguards_arm_le32</com>
+  <com>option listing on</com>
+  <com>read symbols</com>
+  <com>load function cond_call</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function labelled_word</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function halfword_read</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function live_gap</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function wide_gap</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function data_word</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function returning_callee</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function unproven_reader</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function svc_junk</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function bounded_call</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function pad_call</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function indirect_call</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function two_pools</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function wide_literal</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function ordered_loads</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function junk_pointer</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/poolguards_arm_le32</com>
+  <com>option listing on</com>
+  <com>read symbols</com>
+  <com>option funcboundflow off</com>
+  <com>load function svc_junk</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option funcboundflow on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/poolguards_arm_be32</com>
+  <com>option listing on</com>
+  <com>read symbols</com>
+  <com>load function cond_call</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function labelled_word</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function halfword_read</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function live_gap</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function wide_gap</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function data_word</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function returning_callee</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function unproven_reader</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function svc_junk</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function bounded_call</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function pad_call</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function indirect_call</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function two_pools</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function wide_literal</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function ordered_loads</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function junk_pointer</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/poolguards_arm_be32</com>
+  <com>option listing on</com>
+  <com>read symbols</com>
+  <com>option funcboundflow off</com>
+  <com>load function svc_junk</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option funcboundflow on</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="Pool fall-through #1" min="10" max="10">halt_baddata\(\); // warn: Bad instruction - Truncating control flow here</stringmatch>
+<stringmatch name="Pool fall-through #2" min="18" max="18">\); // warn: funcboundflow: the call's fall-through is this function's literal pool; truncating flow here</stringmatch>
+<stringmatch name="Pool fall-through #3" min="2" max="2">\(\*\(code \*\)0x2cea6\)\(\); // warn: funcboundflow: the call's fall-through is this function's literal pool</stringmatch>
+<stringmatch name="Pool fall-through #4" min="6" max="6">return 5;</stringmatch>
+</decompilertest>

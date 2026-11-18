@@ -210,6 +210,15 @@ fn push_hex_offset(s: &mut String, offset: u64) {
     write!(s, "0x{offset:x}").expect("writing to a String cannot fail");
 }
 
+/// A 64-bit code-address context follows a branch through its display subtables.
+fn push_hex_operand(s: &mut String, val: i64, code_address: bool) {
+    if code_address {
+        push_hex_offset(s, val as u64);
+    } else {
+        push_hex_intb(s, val);
+    }
+}
+
 /// C++ `(PatternValue *)PatternExpression::decodeExpression(decoder,trans)`:
 /// the cast is unchecked in C++ (UB on a non-value expression); the port
 /// reports a decoder error instead.
@@ -727,15 +736,18 @@ impl OperandSymbol {
         s: &mut String,
         walker: &mut (impl SymbolWalker + ?Sized),
         table: &SymbolTable,
+        code_address: bool,
     ) -> KunaResult<()> {
+        let code_address = code_address
+            || (self.is_code_address() && walker.get_cur_space().get_addr_size() == 8);
         walker.push_operand(self.get_index())?;
         if let Some(triple_id) = self.triple {
             let tsym = table.symbol(triple_id)?;
             if tsym.get_type() == SymbolType::Subtable {
                 let ctref = walker.get_constructor()?;
-                table.get_constructor(ctref)?.print(s, walker, table)?;
+                table.get_constructor(ctref)?.print_with_address(s, walker, table, code_address)?;
             } else {
-                tsym.print(s, walker, table)?;
+                tsym.print_with_address(s, walker, table, code_address)?;
             }
         } else {
             // C++ dereferences defexp unconditionally here (null would be UB)
@@ -744,7 +756,7 @@ impl OperandSymbol {
                 .as_ref()
                 .ok_or_else(|| KunaError::sleigh("operand has no defining expression"))?;
             let val = defexp.get_value(walker)?;
-            push_hex_intb(s, val);
+            push_hex_operand(s, val, code_address);
         }
         walker.pop_operand()?;
         Ok(())
@@ -1394,8 +1406,18 @@ impl Constructor {
         walker: &mut (impl SymbolWalker + ?Sized),
         table: &SymbolTable,
     ) -> KunaResult<()> {
+        self.print_with_address(s, walker, table, false)
+    }
+
+    fn print_with_address(
+        &self,
+        s: &mut String,
+        walker: &mut (impl SymbolWalker + ?Sized),
+        table: &SymbolTable,
+        code_address: bool,
+    ) -> KunaResult<()> {
         for piece in &self.printpiece {
-            self.print_piece(s, walker, table, piece)?;
+            self.print_piece(s, walker, table, piece, code_address)?;
         }
         Ok(())
     }
@@ -1407,11 +1429,12 @@ impl Constructor {
         walker: &mut (impl SymbolWalker + ?Sized),
         table: &SymbolTable,
         piece: &[u8],
+        code_address: bool,
     ) -> KunaResult<()> {
         if piece.first() == Some(&b'\n') {
             let index = i32::from(piece[1]) - i32::from(b'A');
             let opid = self.get_operand(index)?;
-            table.symbol(opid)?.print(s, walker, table)?;
+            table.symbol(opid)?.print_with_address(s, walker, table, code_address)?;
         } else {
             s.push_str(&String::from_utf8_lossy(piece));
         }
@@ -1441,7 +1464,7 @@ impl Constructor {
         };
         for i in 0..endind {
             let piece = &self.printpiece[i as usize];
-            self.print_piece(s, walker, table, piece)?;
+            self.print_piece(s, walker, table, piece, false)?;
         }
         Ok(())
     }
@@ -1468,7 +1491,7 @@ impl Constructor {
         // i sign-extends to 64-bit unsigned (i is >= 0 here in practice).
         while (i as i64 as u64) < self.printpiece.len() as u64 {
             let piece = &self.printpiece[i as usize];
-            self.print_piece(s, walker, table, piece)?;
+            self.print_piece(s, walker, table, piece, false)?;
             i += 1;
         }
         Ok(())
@@ -2977,6 +3000,16 @@ impl SleighSymbol {
         walker: &mut (impl SymbolWalker + ?Sized),
         table: &SymbolTable,
     ) -> KunaResult<()> {
+        self.print_with_address(s, walker, table, false)
+    }
+
+    fn print_with_address(
+        &self,
+        s: &mut String,
+        walker: &mut (impl SymbolWalker + ?Sized),
+        table: &SymbolTable,
+        code_address: bool,
+    ) -> KunaResult<()> {
         match &self.kind {
             SymbolKind::Epsilon(_) => {
                 s.push('0');
@@ -2984,7 +3017,7 @@ impl SleighSymbol {
             }
             SymbolKind::Value(v) => {
                 let val = v.patval()?.get_value(walker)?;
-                push_hex_intb(s, val);
+                push_hex_operand(s, val, code_address);
                 Ok(())
             }
             SymbolKind::ValueMap(v) => {
@@ -2993,7 +3026,7 @@ impl SleighSymbol {
                 // (C++ indexes unchecked: panic on violation)
                 let ind = v.value.patval()?.get_value(walker)? as u32;
                 let val = v.valuetable[ind as usize];
-                push_hex_intb(s, val);
+                push_hex_operand(s, val, code_address);
                 Ok(())
             }
             SymbolKind::Name(v) => {
@@ -3011,7 +3044,7 @@ impl SleighSymbol {
             SymbolKind::Context(v) => {
                 // ContextSymbol inherits ValueSymbol::print
                 let val = v.value.patval()?.get_value(walker)?;
-                push_hex_intb(s, val);
+                push_hex_operand(s, val, code_address);
                 Ok(())
             }
             SymbolKind::VarnodeList(v) => {
@@ -3029,7 +3062,7 @@ impl SleighSymbol {
                 s.push_str(name_text(table.symbol(vnid)?.get_name()).as_ref());
                 Ok(())
             }
-            SymbolKind::Operand(op) => op.print(s, walker, table),
+            SymbolKind::Operand(op) => op.print(s, walker, table, code_address),
             SymbolKind::Start(_) => {
                 // C++ `(intb) walker.getAddr().getOffset()` printed in hex
                 push_hex_offset(s, walker.get_addr().get_offset());
@@ -5725,6 +5758,83 @@ mod tests {
         s.push(' ');
         push_hex_offset(&mut s, u64::MAX);
         assert_eq!(s, "values 0x0 -0x1 -0x8000000000000000 0xffffffffffffffff");
+    }
+
+    #[test]
+    fn code_address_printing_reaches_nested_operands_without_changing_signed_scalars() {
+        for address_size in [4, 8] {
+            for value in [0, i64::MAX, i64::MIN, -1] {
+                for code_address in [false, true] {
+                    let mut table = SymbolTable::new();
+                    table.add_scope();
+                    let mut sub = SleighSymbol::new_subtable(b"target");
+                    if let SymbolKind::Subtable(sub) = sub.kind_mut() {
+                        let mut ct = Constructor::new();
+                        ct.set_parent(0);
+                        ct.add_operand(1);
+                        sub.add_constructor(ct);
+                    }
+                    table.add_global_symbol(sub).unwrap();
+                    let mut leaf = SleighSymbol::new_operand(
+                        b"reloc",
+                        0,
+                        ConstructorRef {
+                            table_id: 0,
+                            ct_id: 0,
+                        },
+                    );
+                    if let SymbolKind::Operand(op) = leaf.kind_mut() {
+                        op.define_operand_expression(PatternExpression::Value(
+                            PatternValue::ConstantValue(ConstantValue::new(value)),
+                        ))
+                        .unwrap();
+                    }
+                    table.add_global_symbol(leaf).unwrap();
+                    let mut outer = SleighSymbol::new_operand(
+                        b"address",
+                        0,
+                        ConstructorRef {
+                            table_id: 0,
+                            ct_id: 0,
+                        },
+                    );
+                    if let SymbolKind::Operand(op) = outer.kind_mut() {
+                        op.define_operand_symbol(0).unwrap();
+                        if code_address {
+                            op.set_code_address();
+                        }
+                    }
+                    let mut walker = TestWalker::from_bytes(&[]);
+                    walker.cur_space = Some(Rc::new(AddrSpace::new(
+                        spacetype_processor(),
+                        "ram",
+                        false,
+                        address_size,
+                        1,
+                        1,
+                        addrspace_flags::hasphysical,
+                        1,
+                        1,
+                    )));
+                    walker.ctmap.push((
+                        vec![0],
+                        ConstructorRef {
+                            table_id: 0,
+                            ct_id: 0,
+                        },
+                    ));
+                    let mut output = String::new();
+                    outer.print(&mut output, &mut walker, &table).unwrap();
+                    let expected = if (code_address && address_size == 8) || value >= 0 {
+                        format!("0x{:x}", value as u64)
+                    } else {
+                        format!("-0x{:x}", value.wrapping_neg())
+                    };
+                    assert_eq!(output, expected);
+                    assert!(walker.path.borrow().is_empty());
+                }
+            }
+        }
     }
 
     #[test]

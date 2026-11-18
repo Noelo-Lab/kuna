@@ -1564,7 +1564,14 @@ pub struct PrintC {
     /// as one `// slug, slug` end-of-line comment by
     /// [`flush_eol_warnings`](PrintC::flush_eol_warnings) at the owning line's
     /// last token (statement `;`, `if (cond) {` header, prototype, ...).
-    pub(crate) eol_warns: Vec<(String, std::rc::Rc<kuna_base::space::AddrSpace>, u64)>,
+    pub(crate) eol_warns: Vec<(
+        String,
+        std::rc::Rc<kuna_base::space::AddrSpace>,
+        u64,
+        Option<crate::kuna_functionwarnings::Warning>,
+    )>,
+    /// The analysis warnings the last plain render wrote, positioned in its text.
+    warnings: Vec<crate::kuna_functionwarnings::Warning>,
     /// Per-document spelling for a local HighVariable whose recovered name
     /// collides in the C function scope. Body references consume the same map.
     local_name_overrides: std::collections::HashMap<crate::context::HighVariableId, String>,
@@ -1636,6 +1643,7 @@ impl PrintC {
             rt_ctx: RealTypeCtx::OFF,
             out_lang: crate::kuna_lang::OutLang::C,
             eol_warns: Vec::new(),
+            warnings: Vec::new(),
             local_name_overrides: std::collections::HashMap::new(),
             indirect_input_aliases: std::collections::HashSet::new(),
             signature_param_names: std::collections::HashMap::new(),
@@ -1977,6 +1985,7 @@ impl PrintC {
         self.clear_rpn();
         self.emit_fd = None;
         self.eol_warns.clear();
+        self.warnings.clear();
         self.void_tail_return = None;
         self.stmt_op = None;
         self.label_names.clear();
@@ -2437,6 +2446,23 @@ impl PrintC {
         Some(record)
     }
 
+    /// The analysis warnings the last plain render, whose text was `untrimmed`,
+    /// wrote, positioned against that text with its leading newlines removed.
+    pub fn take_warnings(&mut self, untrimmed: &str) -> Vec<crate::kuna_functionwarnings::Warning> {
+        let mut warnings = std::mem::take(&mut self.warnings);
+        crate::kuna_functionwarnings::trim_lines(&mut warnings, untrimmed);
+        warnings
+    }
+
+    /// Record `warning` on the line of the comment `token` just written; a
+    /// markup pass records nothing.
+    fn record_warning(&mut self, mut warning: crate::kuna_functionwarnings::Warning, token: &str) {
+        if let PrintEmit::NoMarkup(emit) = &mut self.emit {
+            warning.line = emit.position().line - token.matches('\n').count();
+            self.warnings.push(warning);
+        }
+    }
+
     /// C++ `PrintC::docFunction` (printc.cc:2790), transcribed faithfully and
     /// driven over a real [`Funcdata`] + [`Architecture`]: emit the signature
     /// shell (real return type from the recovered proto), then the **structured
@@ -2621,6 +2647,9 @@ impl PrintC {
         self.declared_entry = Some(fd.get_address().clone());
         self.pointer_decls.clear();
         self.begin_pointer_record(fd);
+        if !self.emit.emits_markup() {
+            self.warnings.clear();
+        }
         // (kuna `signedness`) Round the declared signedness of this function's
         // integer locals from the operations applied to them.  Computed before
         // any declaration is written and consumed by
@@ -2721,13 +2750,13 @@ impl PrintC {
             // a pipeline failure (the driver stamped its reason), NOT structuring
             // declining on analyzed IR.
             self.emit.tag_line();
-            let text = match fd.kuna_pipeline_failure() {
-                Some(reason) => format!("/* WARNING: decompilation failed: {reason} */"),
-                None => {
-                    "/* WARNING: structured blocks unavailable (structuring declined) */".to_string()
-                }
+            let warning = match fd.kuna_pipeline_failure() {
+                Some(reason) => format!("WARNING: decompilation failed: {reason}"),
+                None => "WARNING: structured blocks unavailable (structuring declined)".to_string(),
             };
+            let text = format!("/* {warning} */");
             self.emit.print(&text, SyntaxHighlight::CommentColor);
+            self.record_warning(crate::kuna_functionwarnings::Warning::new(None, &warning), &text);
         }
         // (kuna warnstyle, DIV-39) drain any slug still pending from a
         // construct with no closer flush point onto the last body line, so no
@@ -3105,18 +3134,16 @@ impl PrintC {
         for text in headers {
             // (kuna warnstyle, DIV-39) Inline mode: header warnings collect as
             // slugs and flush at the end of the prototype line.
+            let warning = crate::kuna_functionwarnings::Warning::new(Some(off), &text);
             if self.options.warn_inline {
-                self.eol_warns.push((warning_slug(&text), std::rc::Rc::clone(&space), off));
+                self.eol_warns.push((warning_slug(&text), std::rc::Rc::clone(&space), off, Some(warning)));
                 continue;
             }
             // emitLineComment(0, comm): a fresh line then the `/* text */` token.
             self.emit.tag_line();
-            self.emit.tag_comment(
-                &format!("/* {text} */"),
-                SyntaxHighlight::CommentColor,
-                &space,
-                off,
-            );
+            let token = format!("/* {text} */");
+            self.emit.tag_comment(&token, SyntaxHighlight::CommentColor, &space, off);
+            self.record_warning(warning, &token);
         }
     }
 
@@ -4497,6 +4524,9 @@ impl PrintC {
             if (instr_comment_type & tp) == 0 {
                 continue;
             }
+            let warning = (tp == ct::WARNING && addr.get_space().is_some()).then(|| {
+                crate::kuna_functionwarnings::Warning::new(Some(addr.get_offset()), &String::from_utf8_lossy(&text))
+            });
             // (kuna warnstyle, DIV-39) Inline mode: a WARNING comment becomes a
             // terse `// slug` collected for the owning line's end; every other
             // comment type keeps the banner-line render.
@@ -4508,12 +4538,16 @@ impl PrintC {
                         warning_slug(&text_str),
                         space,
                         addr.get_offset(),
+                        warning,
                     ));
                     self.commsorter.mark_last_emitted();
                     continue;
                 }
             }
             self.emit_line_comment(-1, &text, &addr);
+            if let Some(warning) = warning {
+                self.record_warning(warning, &String::from_utf8_lossy(&text));
+            }
             // emitLineComment sets comm->setEmitted(true) (printlanguage.cc:655),
             // so a later walk over the same window skips it.
             self.commsorter.mark_last_emitted();
@@ -4535,12 +4569,11 @@ impl PrintC {
         let joined =
             warns.iter().map(|w| w.0.as_str()).collect::<Vec<_>>().join(", ");
         self.emit.spaces(1, 0);
-        self.emit.tag_comment(
-            &format!("// {joined}"),
-            SyntaxHighlight::CommentColor,
-            &space,
-            off,
-        );
+        let token = format!("// {joined}");
+        self.emit.tag_comment(&token, SyntaxHighlight::CommentColor, &space, off);
+        for warning in warns.into_iter().filter_map(|w| w.3) {
+            self.record_warning(warning, &token);
+        }
     }
 
     /// C++ `PrintLanguage::emitLineComment` (printlanguage.cc:596): a fresh line
@@ -9384,27 +9417,25 @@ impl PrintC {
     /// If the bitfield is not at byte offset 0 a PTRSUB must be present accessing
     /// the bitfield storage range; that PTRSUB is skipped and member syntax is
     /// used only when *another* PTRSUB/PTRADD remains underneath
-    /// ([`check_array_deref`](Self::check_array_deref)).
+    /// ([`check_array_deref`](Self::check_array_deref)). Divergence: a PTRSUB
+    /// whose offset falls inside the bitfield's container is skipped as well; it
+    /// reaches part of a container that starts at offset 0, which the C parser
+    /// gives a whole run of bitfields.
     fn check_bit_field_member(&self, fd: &Funcdata, vn: VarnodeId, field: &crate::dtype::TypeBitField) -> bool {
+        let ptrsub = fd
+            .vbank()
+            .get(vn)
+            .and_then(|v| v.get_def())
+            .and_then(|op| fd.obank().get(op))
+            .filter(|o| o.code() == OpCode::CPUI_PTRSUB);
+        let inside = ptrsub
+            .and_then(|o| o.get_in(1))
+            .and_then(|off| fd.vbank().get(off))
+            .is_some_and(|off| (1..field.byte_size as uintb).contains(&off.get_offset()));
         let mut vn = vn;
-        if field.byte_offset != 0 {
-            // Bitfield not at offset 0, a PTRSUB should be present.
-            let v = match fd.vbank().get(vn) {
+        if field.byte_offset != 0 || inside {
+            vn = match ptrsub.and_then(|o| o.get_in(0)) {
                 Some(v) => v,
-                None => return false,
-            };
-            if !v.is_written() {
-                return false;
-            }
-            let op = match v.get_def() {
-                Some(o) => o,
-                None => return false,
-            };
-            if fd.obank().get(op).map(|o| o.code()) != Some(OpCode::CPUI_PTRSUB) {
-                return false;
-            }
-            vn = match fd.obank().get(op).and_then(|o| o.get_in(0)) {
-                Some(v) => v, // Skip this PTRSUB
                 None => return false,
             };
         }
@@ -10590,7 +10621,7 @@ impl PrintC {
             if matches!(ct.get_metatype(), TYPE_PTR | TYPE_PTRREL) {
                 // (kuna `elemptr`) A pointer the rule gave `char *` says the bytes
                 // are indexed, never that they end at a zero byte.
-                if off != 0 && !crate::kuna_elemptr::reaches_element_pointer(fd, vn) {
+                if !v.is_synthetic_literal() && off != 0 && !crate::kuna_elemptr::reaches_element_pointer(fd, vn) {
                     if let Some(sub) = ct.get_ptr_to() {
                         // (kuna `cfstrings`) An entry reads as its string whatever its type.
                         let sub = if sub.is_char_print() { Some(sub) } else { cfstring_char(arch, off) };
@@ -10647,7 +10678,7 @@ impl PrintC {
                     ));
                     return;
                 }
-                if self.out_lang == crate::kuna_lang::OutLang::C
+                if !v.is_synthetic_literal() && self.out_lang == crate::kuna_lang::OutLang::C
                     && self.options.global_ref
                     && ct.get_metatype() == crate::dtype::type_metatype::TYPE_PTR
                     && ct.get_word_size() == Some(1)
@@ -10670,7 +10701,7 @@ impl PrintC {
                         return;
                     }
                 }
-                if let Some(addr) = self.globalref.decide(fd, arch, vn, op, off, &ct) {
+                if let Some(addr) = (!v.is_synthetic_literal()).then(|| self.globalref.decide(fd, arch, vn, op, off, &ct)).flatten() {
                     self.push_global_ref_ir(arch, addr, op, vn);
                     return;
                 }

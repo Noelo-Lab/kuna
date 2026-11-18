@@ -70,6 +70,8 @@ use kuna_decomp::inject_sleigh::SleighPayload;
 
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
 
+pub mod kuna_msvcftolsig;
+
 /// Prefix Ghidra strips from a conflicting library-imported function name before
 /// the target-map probe (`CallFixupAnalyzer.java:207-209`,
 /// `LIBRARY_ID_CONFLICT_PREFIX`).
@@ -191,7 +193,9 @@ impl AnalysisPass for CallFixupPass {
     }
 
     fn run(&self, ctx: &AnalysisCtx) -> AnalysisOutput {
-        scan_call_fixups(ctx.file, ctx.arch)
+        let mut out = scan_call_fixups(ctx.file, ctx.arch);
+        kuna_msvcftolsig::scan(ctx.file, &mut out);
+        out
     }
 }
 

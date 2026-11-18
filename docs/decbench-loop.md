@@ -295,7 +295,7 @@ every default flip and every gate on a default-ON pass.
 ### `entrysweep` is its discovery-tier twin — GED cannot see which functions you found
 
 `optsweep` measures the C kuna emits for a function it already found, so a P1 discovery
-change (`aif`, `aifstrict`, `aifcorroborate`, `ptrentry`, `poolentry`, `tailcallentry`,
+change (`aif` and its `strict`/`precise` values, `ptrentry`, `poolentry`, `tailcallentry`,
 `funcstart_patterns`) is invisible to it: an option that invents a thousand phantom
 functions, or loses a thousand real ones, moves no GED at all. `entrysweep` measures the
 entry set directly, against the unstripped `compiled/` twin every stripped decbench
@@ -305,7 +305,7 @@ guess.
 ```bash
 # the GH-299 / GH-313 baseline command: 110 non-x86-64 twins, three arms, ~4 min
 python3 -m scripts.decbench.entrysweep --arch non-x86-64 \
-    --arms shipped: nostrict:aifstrict=off aifoff:aif=off \
+    --arms shipped: nostrict:aif=on aifoff:aif=off \
     --marginal aifoff --out /tmp/sweep.json
 python3 -m scripts.decbench.entrysweep --report /tmp/sweep.json   # re-print, no runs
 # one image with no twin, scored against a reference-decompiler inventory JSON
@@ -324,7 +324,7 @@ added, and how many landed inside a body". Two traps the tool prints around on e
   recall reads as a clean win in the totals. Read the per-binary table and the
   `--tripwire` rows (u-boot and `CMSIS_DAP.axf` by default) before the totals.
 * **Baseline drift.** `--mode aggressive` (the default here) carries
-  `AGGRESSIVE_OVERRIDES`, which for this corpus IS the shipped default path, `aifstrict`
+  `AGGRESSIVE_OVERRIDES`, which for this corpus IS the shipped default path, `aif strict`
   included. Scoring a new guard against a hand-disabled preset member books that
   member's win as the new guard's own — the exact error GH-313's issue body makes.
 

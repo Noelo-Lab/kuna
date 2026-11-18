@@ -22,8 +22,8 @@
 //!   a bare integer constant (`*this = 0x4d38`). This is also exactly what Ghidra
 //!   12.1 produces on such a binary.
 //! * **option ON (the fix):** the class names, the vtables and every virtual slot
-//!   are recovered — `shapes::Shape::vtable_2`, `shapes::Shape_vtable`,
-//!   `shapes::Widget::vtable_for_Drawable_0`.
+//!   are recovered — `shapes::Shape::vfunc_2`, `shapes::Shape_vtable`,
+//!   `shapes::Widget::vfunc_for_Drawable_0`.
 
 use std::path::PathBuf;
 
@@ -31,17 +31,17 @@ use kuna_console::engine::{bootstrap_from_object, ConsoleProgram};
 
 /// A `__class_type_info` (base-less) class: its four slots are `~Shape` (complete),
 /// `~Shape` (deleting), `area`, `perimeter`.
-const SHAPE_AREA: &str = "shapes::Shape::vtable_2";
+const SHAPE_AREA: &str = "shapes::Shape::vfunc_2";
 /// `shapes::Shape::perimeter` — repeated verbatim in `Circle`'s vtable, so it is the
 /// witness that an inherited slot is attributed to the class that DEFINES it.
-const SHAPE_PERIMETER: &str = "shapes::Shape::vtable_3";
+const SHAPE_PERIMETER: &str = "shapes::Shape::vfunc_3";
 /// A `__si_class_type_info` class overriding `area` in slot 2.
-const CIRCLE_AREA: &str = "shapes::Circle::vtable_2";
+const CIRCLE_AREA: &str = "shapes::Circle::vfunc_2";
 /// A `__vmi_class_type_info` class's SECONDARY sub-vtable, reached through the
 /// `Drawable` base at +16: three `this`-adjusting thunks.
-const WIDGET_THUNK: &str = "shapes::Widget::vtable_for_Drawable_2";
+const WIDGET_THUNK: &str = "shapes::Widget::vfunc_for_Drawable_2";
 /// The primary sub-vtable's `render` override (the thunk's ultimate target).
-const WIDGET_RENDER: &str = "shapes::Widget::vtable_3";
+const WIDGET_RENDER: &str = "shapes::Widget::vfunc_3";
 /// The `_ZTV`-equivalent data label (the vtable object's `offset-to-top` word).
 const SHAPE_VTABLE: &str = "shapes::Shape_vtable";
 /// The `_ZTI`/`_ZTS`-equivalent data labels.
@@ -54,11 +54,11 @@ const WIDGET_VPTR: &str = "shapes::Widget_vptr";
 const WIDGET_VPTR_2: &str = "shapes::Widget_vptr_for_Drawable";
 /// The two template instantiations. Their NAME-ONLY demangling collides (both reduce
 /// to `Vec`), so they are the witness that distinct classes stay distinct.
-const VEC_INT_GET: &str = "shapes::Vec_int::vtable_2";
-const VEC_DOUBLE_GET: &str = "shapes::Vec_double::vtable_2";
+const VEC_INT_GET: &str = "shapes::Vec_int::vfunc_2";
+const VEC_DOUBLE_GET: &str = "shapes::Vec_double::vfunc_2";
 /// A translation-unit-local class: its ABI type-name string carries the leading `*`
 /// marker, and its demangled name is not a legal identifier chain.
-const HIDDEN_SCALED: &str = "anonymous_namespace::Hidden::vtable_2";
+const HIDDEN_SCALED: &str = "anonymous_namespace::Hidden::vfunc_2";
 /// The one exported entry point, which must survive both passes untouched.
 const EXPORTED: &str = "probe_shapes";
 
@@ -123,6 +123,20 @@ fn virtual_methods_are_named_from_the_rtti_graph() {
     }
 }
 
+/// A slot function is named after the function (`vfunc_<i>`), never after the vtable
+/// object that points at it — the stem the MSVC sibling pass uses for the same reason.
+#[test]
+fn a_virtual_method_is_not_named_after_its_vtable() {
+    let prog = bootstrap(true);
+    for stale in [
+        "shapes::Shape::vtable_2",
+        "shapes::Circle::vtable_2",
+        "shapes::Widget::vtable_for_Drawable_2",
+    ] {
+        assert!(!prog.has_symbol_named(stale), "{stale} names a function after its vtable");
+    }
+}
+
 /// The inheritance-attribution property: `Shape::perimeter` appears at slot 3 of
 /// BOTH `Shape`'s and `Circle`'s vtables (Circle does not override it). It must be
 /// named for the class that DEFINES it, never for the derived class whose table the
@@ -135,7 +149,7 @@ fn an_inherited_slot_is_named_for_the_defining_base() {
         "the slot Circle inherits unchanged must be named {SHAPE_PERIMETER}"
     );
     assert!(
-        prog.lookup_symbol("shapes::Circle::vtable_3").is_none(),
+        prog.lookup_symbol("shapes::Circle::vfunc_3").is_none(),
         "Circle inherits slot 3; it must NOT claim the name of Shape's method"
     );
 }

@@ -629,6 +629,60 @@ fn has_local_alias_uses_alias_boundary_for_negative_stack() {
 }
 
 #[test]
+fn split_direct_draws_the_boundary_from_the_rest_once_per_gather() {
+    let space = stack_space();
+    let ids = mint_varnodes(4);
+    let mut offsets = std::collections::BTreeMap::new();
+    offsets.insert(vn_key(ids[1]), 0x2000000u64);
+    offsets.insert(vn_key(ids[2]), 0x3000000u64);
+    offsets.insert(vn_key(ids[3]), 0x18u64);
+    let mut mock = MockGather {
+        spacebase: Some(ids[0]),
+        bases: vec![AddBase::new(ids[1], None), AddBase::new(ids[2], None), AddBase::new(ids[3], None)],
+        offsets,
+    };
+    let mut checker = AliasChecker::new();
+    checker.gather(Rc::clone(&space), None, false, &mut mock);
+    let direct = ids[1];
+    let split = checker.split_direct(|b| (b.base == direct).then_some(4)).clone();
+    assert_eq!(split, (0x3000000, vec![(0x2000000, 4)]));
+    assert_eq!(checker.split_direct(|_| None), &split);
+
+    checker.gather(Rc::clone(&space), None, false, &mut mock);
+    assert_eq!(checker.split_direct(|_| None), &(0x2000000, vec![]));
+}
+
+#[test]
+fn refresh_split_for_redraws_the_split_only_when_a_gathered_pointer_changed_class() {
+    let space = stack_space();
+    let ids = mint_varnodes(4);
+    let mut offsets = std::collections::BTreeMap::new();
+    offsets.insert(vn_key(ids[1]), 0x2000000u64);
+    offsets.insert(vn_key(ids[2]), 0x3000000u64);
+    let mut mock = MockGather {
+        spacebase: Some(ids[0]),
+        bases: vec![AddBase::new(ids[1], None), AddBase::new(ids[2], None)],
+        offsets,
+    };
+    let mut checker = AliasChecker::new();
+    checker.gather(Rc::clone(&space), None, false, &mut mock);
+    let indirect = (0x2000000, vec![]);
+    assert_eq!(checker.split_direct(|_| None), &indirect);
+
+    let first = ids[1];
+    let now = |b: &AddBase| (b.base == first).then_some(4);
+    checker.refresh_split_for(ids[3], || Some(4));
+    checker.refresh_split_for(ids[2], || None);
+    assert_eq!(checker.split_direct(now), &indirect);
+
+    checker.refresh_split_for(ids[1], || Some(4));
+    assert_eq!(checker.split_direct(now), &(0x3000000, vec![(0x2000000, 4)]));
+
+    checker.refresh_split_for(ids[1], || None);
+    assert_eq!(checker.split_direct(|_| None), &indirect);
+}
+
+#[test]
 fn has_parameter_alias_covers_the_slots_above_a_taken_home_slot() {
     // An address taken at 0x18, in the parameter area below localBoundary,
     // reaches 0x18 and above; `hasLocalAlias` never answers for it.

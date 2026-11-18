@@ -49,6 +49,11 @@ impl FileManage {
         }
     }
 
+    /// The search path, in the order directories were added (kuna).
+    pub fn path_list(&self) -> &[String] {
+        &self.pathlist
+    }
+
     /// Add current working directory to path (C++ `addCurrentDir`).
     ///
     /// C++ calls `getcwd` into a 256-byte buffer and silently adds nothing on

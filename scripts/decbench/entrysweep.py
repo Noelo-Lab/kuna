@@ -26,11 +26,11 @@ Usage (from the repo root; plain python3, pyelftools optional)::
 
     # the GH-313 baseline command: 110 non-x86-64 twins, three arms
     python3 -m scripts.decbench.entrysweep --arch non-x86-64 \\
-        --arms shipped: nostrict:aifstrict=off aifoff:aif=off \\
+        --arms shipped: nostrict:aif=on aifoff:aif=off \\
         --marginal aifoff --out /tmp/sweep.json
 
     # score a candidate guard: add an arm, keep `aifoff` as the marginal reference
-    python3 -m scripts.decbench.entrysweep --arms shipped: g1:aifcorroborate=on \\
+    python3 -m scripts.decbench.entrysweep --arms shipped: g1:aif=precise \\
         aifoff:aif=off --marginal aifoff --out /tmp/sweep_g1.json
 
     # re-print a saved run (per-binary table + tripwires), no kuna runs
@@ -38,7 +38,7 @@ Usage (from the repo root; plain python3, pyelftools optional)::
 
     # a single witness with no decbench twin (a reference-decompiler inventory)
     python3 -m scripts.decbench.entrysweep --witness game.exe ida_game.json \\
-        --arms shipped: g1:aifcorroborate=on aifoff:aif=off --marginal aifoff
+        --arms shipped: g1:aif=precise aifoff:aif=off --marginal aifoff
 
 `--only SUBSTR` filters targets by tag, `--limit N` caps them, `--arch x86-64`
 runs the 693 x86-64 twins as the no-regression control, and `--tripwire SUBSTR`

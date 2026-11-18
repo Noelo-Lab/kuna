@@ -985,7 +985,14 @@ the stack-pointer input's descendant tree — accumulating constant `INT_ADD`
 offsets, passing through COPY/INDIRECT/SEGMENTOP, and flagging any traversal of
 a *non-constant* add or a MULTIEQUAL — and records a guard
 (`heritage.rs (LoadGuard)`) for every LOAD/STORE reached on a flagged path,
-marking the op `spacebase_ptr`. A guard is born covering the **entire space**
+marking the op `spacebase_ptr`. **OR-masked pointers** (always on, kuna): an
+`INT_OR` of the path with a constant below `0x1000` (the window an unrefined
+guard covers) is flagged the same way. GCC reads a spilled `int`'s low byte
+through `(fp+0x7fb)|3` on SPARC64; which byte depends on the pointer's
+runtime low bits, so it is an indexed access at the pointer's offset.
+Upstream stops at the OR: the LOAD gets no guard, the spill
+looks dead and is deleted, and the result reads a slot nothing wrote. A guard
+is born covering the **entire space**
 (`LoadGuard::set`: minimum 0, maximum the space's highest offset). A STORE
 whose pointer is still a free varnode cannot be classified yet: it is
 conservatively marked and queued (`heritage.rs (Heritage::protect_free_stores)`),
@@ -1135,6 +1142,10 @@ The crossing check rejects operations outside the loaded value's current cover
 before inspecting their HighVariable members for global storage. This uses the
 same cover boundary policy as the final crossing decision, preserving which
 stores qualify while avoiding repeated member scans for unrelated operations.
+For a bitfield pull printed as its LOAD's read, these crossing checks use the
+underlying LOAD's pointer and full byte footprint with the pull's value cover
+(`bitfield/pull.rs (printed_load)`). Folding the LOAD into a field expression
+therefore does not erase its dependency on an intervening global write.
 
 
 At `global` heritage also gives a global the LOAD guard
@@ -1262,6 +1273,99 @@ in the one local the store writes through. Typical cases are an OR-formed
 address (`(&v1 | 4) + i`) and a pointer walk with a variable step. When no
 earlier pass guarded the frame, the guard is withdrawn for the whole function
 (`heritage.rs (store_frame_resolves)`), which then decompiles unguarded.
+
+Right after the first heritage pass, which links the registers but not yet the
+stack, `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_repframecopy.rs
+(expand_all)` expands a `rep movs` that builds a by-value argument block
+(called from `ActionHeritage`). It runs on x86-32 only, where the stack pointer
+is 4 bytes: on x86-64 the copy leaves `RCX` zero and `RSI` at the source's end,
+and the System V register trials of the call that follows would read both as
+arguments. SLEIGH lifts the instruction as a head that
+leaves when the count register is zero and a body that steps the count down by
+one, moves one element through `ESI`/`EDI` and branches back. A move into the
+outgoing area (`sub esp,0x20; mov edi,esp; rep movsd; call fill`) walks a
+pointer that starts at the stack pointer, so heritage sees none of the slots it
+writes: the call it feeds is left with placeholder slots in front of the
+argument the code pushed directly, the parameter chain rule turns every trial
+after them inactive, and the call prints with no arguments; the slots the move
+overwrites keep an earlier call's arguments and pushed return address; and the
+pointer to the bottom of the frame puts every frame slot above the alias
+boundary, so the local-alias test refuses an earlier call's pushes. The
+expansion applies when the head's count phi enters as the same constant on
+every path into the loop, the body holds one LOAD, one STORE of the same width
+and otherwise only pure operations of the one instruction, the move copies at
+most 16 elements and 64 bytes, and the STORE's pointer enters the loop as the
+stack pointer register itself and steps upward (the direction flag is known
+clear; `rep_move`). The block must also be the outgoing arguments of the first
+call that follows it along straight-line code (`argument_block`): its address
+reaches nothing but frame loads and stores, the stack pointer and the move's
+own pointers (`block_escapes`, so a local handed to a call in `ECX` or `EDX`
+is not one), and that call's direct callee reads into the block as its own
+code shows (chapter 04's `calleeargs` measure), or the pop its prototype
+states or its returns prove releases all of it. When the walk cannot settle
+the callee's stack effect (a call it cannot read, such as a string helper
+handed the argument's address), what the callee's own reached returns pop
+(`ret 0x20`) counts as that pop, but only when every return the walk reaches
+pops the same, the walk followed every path (no indirect jump, undecodable
+instruction or budget overrun), and no path ran into a software interrupt
+(`int3` padding) or fell through into another function the symbol table or
+the lazy entry set knows. A path that ends in a call the walk cannot read,
+which does not return, otherwise runs on into the next function, whose `ret
+0x20` would be stated as a `__cdecl` callee's pop. What the caller removes
+after the call (the rest of the call's `calleeargs` window) does not: a
+`__cdecl` callee pops only its return address, and the scan that reads the
+cleanup also credits an `add esp` that releases the caller's own locals
+before its epilogue, so it would place a bottom-of-frame local, or the block of
+a later call (`f(g(0), t)` copies `t` before calling `g`), in the next call's
+arguments, and stating that cleanup as the call's pop would move every stack
+slot after the call. MSVC
+builds such a block partly from an earlier `__cdecl` call's pushes whose
+cleanup it deferred (`push 0x20; push eax; push ecx; call memcpy; sub
+esp,0x14; mov edi,esp; rep movsd`), so the 32-byte struct sits 12 bytes above
+where the `sub` leaves the stack. An expansion that relies on the returns' pop
+states that pop on the call, and states that the earlier call whose pushes
+the block reuses (found by walking the copy's stack pointer back to that
+call's INDIRECT) pops only its return address, when its prototype states no
+pop and any purge its returns prove agrees. The solver
+applies proven purges only when every call in the function has one, and
+otherwise guesses that such a call pops its pushes, which places the whole
+block, and the copy's reads, 12 bytes too high. Such an expansion is made
+only when the stated pops leave every call in the function with a pop its
+prototype states or its returns prove, and the proven pops of the other calls
+are then stated too: they were held back only while some call's pop was a
+guess, and left to the solver an earlier `__thiscall` call that pops its one
+argument (`ret 4`) can be guessed to pop nothing, which moves every slot after
+it, so the block is read from the wrong slot and a local whose address the
+block's call takes (an out parameter MSVC keeps in a dead parameter slot) is
+named wrongly and folds to the constant stored before the call. An earlier
+call whose pop nothing proves (a `__stdcall` callee that calls through a
+pointer) would keep the solver's guess, the block would be read through the
+return address and the caller's parameters shifted by a slot, so then the
+block stays a loop, as it does without the returns' pop. Under a model whose pop is
+stated (gcc's cdecl), a release of the whole block by the caller before the
+next call or branch counts too, when nothing reads the block between the copy
+and that release. A record copied into a local at the bottom of the frame
+before a register-argument or virtual call (Delphi's `lea edi,[esp]; rep
+movsd; call [edx+0x58]`) fails every one of these and stays a loop; expanded,
+its slots would read as that call's stack arguments. When such a move reads the frame,
+every other qualifying move that writes the frame (the copy that built the
+struct) is expanded with it, so its reads see their writes, one whose
+destination is the stack pointer itself only when its next call is the one
+the argument block feeds; it is declined
+while any other STORE reaches the frame through a pointer that is not the stack
+pointer plus a constant (`walks_frame`: a `rep stosd` walk or an indexed loop),
+because that STORE's guards may not cover the slots a direct read would then
+see unwritten. A stack pointer adjusted by a call whose purge is not yet solved
+counts as the stack pointer plus a constant there. The rewrite removes the
+back edge and the count test, appends that many copies of the body to the head
+in order, each reading the previous copy's values, and gives every use after
+the loop the last copy's values; the copies are exact, overlapping moves
+included, and their frame accesses become stack slots in the same rule pass as
+the pushes, before the stack's first heritage. `fill(r, b)` then prints its
+nine argument slots, as a cdecl struct push does, and `indexaliasguard off`
+turns the expansion off with the other stack guards. A larger move, a move
+whose destination is not the stack pointer, one whose count is not a constant,
+and one no call takes as its arguments stay loops.
 
 The guard's second family guards a slot the function writes with any value,
 against indexed STOREs of any width. A stack range whose writes include one
@@ -1395,13 +1499,12 @@ context abandons the pass as on an expired deadline and requests the re-flow,
 and the drive skips the stack-store-guard layout check for the stopped pass
 (`decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (run_pipeline)`).
 The restarted run is the one that is printed in both orders, but it is not
-independent of the first. Upstream's `Funcdata::clear` also drops the local
-scope's unlocked symbols and the prototype's unlocked output (inputs go with
-the scope), and `clearAnalysis` drops the warning comments; kuna's
+independent of the first. Like upstream's `Funcdata::clear`, kuna's
 (`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs (Funcdata::clear)`)
-does neither yet, so the parameter and local symbols, the prototype inputs and
-the pending comments the first run recovered seed the restarted one, as does
-any Override. A stopped pass has recovered fewer of them: a duplicated
+drops the local scope's unlocked symbols (`Database::clear_unlocked`), resets
+the local window and clears the prototype's unlocked output and inputs. The
+pending comments the first run recovered still seed the restarted one (upstream's
+`clearAnalysis` drops them), as does any Override. A stopped pass has recovered fewer of them: a duplicated
 `// return-dupe` tag is gone, and the restarted run can merge and type some
 variables differently. Over 29,103 functions (decbench O0/O2/O2-noinline
 binaries, three ARM firmware images, CrashLogger.dll, python314.dll) 31 take a
@@ -1916,6 +2019,25 @@ constant, out of a same-location copy, and into any marker over a `persist`
 global — a global already has heritage's persist `RETURN-COPY` (§3.1) keeping
 its last store printed, so the brake has nothing to add there.
 
+**Keeping a retyped local out of its readers** (a strict fix, no option). A
+`type` directive that retypes a printed pointer local to a pointer to a record
+is replayed by locking the new type on the local's own definitions before type
+inference (chapter 06, `decompiler/crates/kuna-decomp/src/p6_variables/kuna_stablenames.rs
+(lock_retyped)`). Inference can then re-lay the frame the pointer points into,
+and `RulePtrsubUndo` folds the old frame offset into a new `INT_ADD`, turning
+the local's definition into a `COPY` of it. Propagated, that `COPY` handed its
+input to every reader and left the local with no instance: on ARM32 and
+PowerPC32 a register holding `&frame[1]` and retyped to `struct Probe *` printed
+`consume(&v4)` four times over the new `Probe v4`, and the directive was refused
+as `nothing is declared as \`v1\` after it`. `RulePropagateCopy` leaves a `COPY`
+whose output is a definition the lock matched, still carrying the replayed type
+itself
+(`decompiler/crates/kuna-decomp/src/p6_variables/kuna_stablenames.rs (is_retyped_definition)`),
+as it leaves the type-locked pointer of an isolated Symbol, so the local keeps
+its readers and prints `v1 = &v4; consume(v1);`. Another varnode locked to the
+same type is not one of them and propagates as before. A run without such a directive
+locks nothing and is unchanged.
+
 **Keeping a pointer stored to a global out of the global's markers**
 (`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_pointeestorekeep.rs
 (declines)`, a strict fix, no option, issue #767). When a register value is
@@ -2394,6 +2516,82 @@ stack arguments and locals without truncating their 64-bit contents. Narrow
 operands are never widened. Upstream sets sub-variable flow's aggressive mode
 for a pointer-flow value; kuna does not, since the mark says nothing about the
 upper bits of the full register.
+
+Octeon memory user operations identify only their first payload input as an
+address. On N32, `RulePtrFlow` applies the same narrowing to that input; atomic
+values, returned old values and other consumers of the original GPR retain
+their full width. Ordering operations have no pointer input.
+
+**(kuna) Octeon memory effects — `option octeoneffects`, default `atomic`,
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_octeoneffects.rs`.** It
+resolves the atomic, reservation and ordering operations an Octeon language
+declares, unless a compiler spec injects its own p-code for one. A
+fetch-and-add, exchange, load-linked, store-conditional or cache-block zero
+accesses memory through its address operand, so under `atomic` heritage places
+a guard across each of them over writable RAM and stack ranges, including
+partial overlaps, through the shared helper in
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_memoryguard.rs (guard_memory)`
+that the system-call guards also use. A guard retains preceding stores even when the
+instruction result has no scalar consumer, so a store that only a load-linked
+reads is kept, and a later read cannot reuse a value from before the update.
+Read-only image ranges are never guarded, so a GOT or `.rodata` read still
+folds as it does after an ordinary store, and only an address-tied range is
+forced: a guard on a local whose address never escapes collapses under
+`RuleIndirectCollapse`, so a spill stays a value. Cache-block zeroing is the
+exception: it can overwrite such a local through a neighboring stack address,
+so its guards survive even when that local's own address never escapes
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_octeoneffects.rs (keeps_unaliased_guard)`).
+An address built from the stack pointer, loaded from memory, returned by a
+call or transformed by arithmetic may reach any local. Absence of a
+stack-pointer dependency does not prove disjointness: subtracting 256 from an
+incoming pointer can move it into a newly allocated frame. Masks, shifts,
+variable offsets, wrapping and unknown definitions also keep the guards.
+Only an unchanged entry address retains the existing entry-pointer bound:
+copies, same-width casts, extensions, low-part extraction or concatenation
+preserving every target address bit, and joins of such values, preserve that proof. Canonical
+N32 extraction of the low four bytes of a GPR is a representation change;
+discarding actual address bits is not. The traversal is bounded and uncertainty
+keeps the guard. For an unchanged entry address, guards survive on locals
+overlapping the top 128 bytes of the frame or the caller's area above it, so
+deeper spills beside a direct incoming pointer still stay values. No
+scalar-width or stack-alignment proof establishes disjoint cache blocks here;
+a kept guard covers every writable range.
+
+The system calls of `syscallregs` and `x64syscall` and the selected Octeon
+operations form one list
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_memoryguard.rs (memory_ops)`),
+found once per heritage pass and once per `ActionMarkImplied` pass. Heritage
+guards each. Guards alone do not stop an unresolved LOAD expression from moving
+to a later use, so `ActionMarkImplied` also checks LOAD and call-result covers
+against each, keeping a pointer load in an explicit statement before an
+operation it originally preceded. `persistcalls` counts each as a STORE, so a
+sparse call guard is kept wherever an Octeon guard would otherwise read a
+global's value from before skipped calls.
+
+`ordered` also guards
+across every ordering operation, so a store before a barrier is kept; this is conservative about
+concurrent modification, not a claim that an ordering instruction writes
+memory, and the barrier itself stays a statement either way. Its guards grow
+with ordering operations times global ranges, so it stays opt-in; under
+`atomic` a store overwritten after a barrier is dropped, as upstream drops it.
+`off` restores upstream's lifting of the instructions upstream's MIPS spec
+also decodes, and only those: at architecture bootstrap each load-linked, store-conditional and
+ordering operation gets a callother fixup holding upstream's p-code (a plain
+load; a plain store whose success is 1; `SYNC(n)`), registered under the
+operation's own name, and the flow's injection gate
+(`decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (is_injected_userop)`)
+applies it only under `off`. The Octeon-only atomics (SAA/SAAD, the LA forms,
+ZCB/ZCBT) decode in every mode, where the base branch rejected them and upstream
+reaches them only through the SPECIAL2 catch-all Octeon excludes; under `off`
+they stay opaque, with no memory effects or types.
+The fixups are applied while lifting, so the option rewinds to P2. A fixup
+cannot be compiled without a local `.sla` (ghidra mode); there `off` keeps the
+memory effects of a load-linked or store-conditional left without one rather
+than leave it opaque. A load-linked or store-conditional result for `$zero` is
+discarded rather than written to `zero`; the raw p-code differs from
+upstream's, the emitted C does not. The option governs decompilation only: raw
+p-code and the analysis tier see the user operations in every mode.
+Other targets and unrelated user operations keep their existing treatment.
 
 Truncation can leave hundreds of fresh SUBPIECEs of one stack or base
 register in a single pool pass. While the option is live, `RuleSelectCse`
@@ -2994,11 +3192,24 @@ metadata: [docs/options.md](../options.md).
 (preserve_array_base)`.
 With `option globalarrayanchor on` (default off), constant collection defers
 combining an exact mapped array base with a negative whole-element displacement
-in an element-scaled LOAD/STORE address. This leaves the declared base available to
-constant-pointer recovery; the subsequent pointer rules can render the bias in
-the index. The displacement magnitude must not exceed the declared array size,
-and every variable coefficient must be an element-size multiple. No nearby-symbol
-search is performed. Ordinary arithmetic, unmapped addresses, unaligned byte
+in an element-scaled LOAD/STORE address. A named opaque (`TYPE_UNKNOWN`) object
+also qualifies, with byte-sized offsets rather than an inferred element type.
+This leaves the exact base available to constant-pointer recovery; subsequent
+pointer rules can render the bias in the index. A name-locked declaration may
+have an index origin larger than its extent: 23 bytes can be indexed by slots
+53..75 after subtracting 53. Inferred arrays retain the extent bound. In
+particular, a guessed string whose address matches the positive low half of a
+split negative offset is not evidence of a pointer base. Neither is a declared
+object at a page-aligned address when the bias fits a signed 16-bit low half:
+MIPS `%hi`/`%lo`, PowerPC `@ha`/`@l` and RISC-V `lui`/`addi` pairs split one
+address that way, and the high half equals whatever object starts on that
+boundary. The opaque-object and beyond-extent admissions therefore decline
+every such pair, whether or not a symbol covers the folded address, which
+keeps its main-branch rendering (the containing object or the literal). A
+declared base that is not page aligned is a complete materialized address
+with a separate displacement, which a split cannot produce, and still anchors.
+Variable coefficients must be element-size multiples. No nearby-symbol search
+is performed. Ordinary arithmetic, unmapped addresses, unaligned byte
 offsets, shared address trees and non-byte-addressed access spaces retain normal
 folding. Pointer-typed variable terms also decline.
 

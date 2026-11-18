@@ -30,193 +30,193 @@ Three tiers:
 
 | If the output shows... | Try |
 |---|---|
-| method javap lists as bridge is missing from the output | [`jvm_remove_bridge`](#jvm_remove_bridge) |
-| need the generated Object-typed forwarder of a generic override | [`jvm_remove_bridge`](#jvm_remove_bridge) |
-| an obfuscated method marked bridge vanished | [`jvm_remove_bridge`](#jvm_remove_bridge) |
-| code javap shows is missing from the decompiled class | [`jvm_remove_synthetic`](#jvm_remove_synthetic) |
-| lambda$main$0 or access$000 body needed but hidden | [`jvm_remove_synthetic`](#jvm_remove_synthetic) |
-| obfuscator flagged real methods synthetic and they disappeared | [`jvm_remove_synthetic`](#jvm_remove_synthetic) |
-| class$("java.lang.String") calls instead of String.class | [`jvm_decompile_java4`](#jvm_decompile_java4) |
-| static Class class$java$lang$String fields in old class files | [`jvm_decompile_java4`](#jvm_decompile_java4) |
-| need the raw Class.forName cache logic | [`jvm_decompile_java4`](#jvm_decompile_java4) |
-| if (!$assertionsDisabled && !cond) throw new AssertionError() instead of assert cond | [`jvm_decompile_assert`](#jvm_decompile_assert) |
-| $assertionsDisabled field visible | [`jvm_decompile_assert`](#jvm_decompile_assert) |
-| assert hides a check that must be read literally | [`jvm_decompile_assert`](#jvm_decompile_assert) |
-| constructor shows no super() call | [`jvm_hide_empty_super`](#jvm_hide_empty_super) |
-| need to see the implicit superclass constructor invocation | [`jvm_hide_empty_super`](#jvm_hide_empty_super) |
-| public Foo() {} constructor missing from the output | [`jvm_hide_default_constructor`](#jvm_hide_default_constructor) |
-| class seems to have no constructor | [`jvm_hide_default_constructor`](#jvm_hide_default_constructor) |
-| var = x; inside try followed by return var after the catch | [`jvm_incorporate_returns`](#jvm_incorporate_returns) |
-| return inside try reads differently from the bytecode | [`jvm_incorporate_returns`](#jvm_incorporate_returns) |
-| synchronized block covers more code than expected | [`jvm_ensure_synchronized_monitors`](#jvm_ensure_synchronized_monitors) |
-| MonitorEnter/MonitorExit pseudo-calls instead of synchronized | [`jvm_ensure_synchronized_monitors`](#jvm_ensure_synchronized_monitors) |
-| unbalanced monitor in handwritten bytecode | [`jvm_ensure_synchronized_monitors`](#jvm_ensure_synchronized_monitors) |
-| enum written as class extends Enum with $VALUES | [`jvm_decompile_enums`](#jvm_decompile_enums) |
-| need the generated values()/valueOf() bodies | [`jvm_decompile_enums`](#jvm_decompile_enums) |
-| enum constant initializers hide tampered code | [`jvm_decompile_enums`](#jvm_decompile_enums) |
-| stray outer.getClass(); before outer.new Inner() | [`jvm_remove_getclass`](#jvm_remove_getclass) |
-| Objects.requireNonNull-like check before an inner class instantiation | [`jvm_remove_getclass`](#jvm_remove_getclass) |
-| access$000(this) calls left in the output | [`jvm_synthetic_not_set`](#jvm_synthetic_not_set) |
-| this$0 or val$name fields printed in inner classes | [`jvm_synthetic_not_set`](#jvm_synthetic_not_set) |
-| class$ helper calls remain in old class files | [`jvm_synthetic_not_set`](#jvm_synthetic_not_set) |
-| exception handler code missing from the output | [`jvm_remove_empty_try_catch`](#jvm_remove_empty_try_catch) |
-| empty try { } catch blocks wanted for inspection | [`jvm_remove_empty_try_catch`](#jvm_remove_empty_try_catch) |
-| "Could not verify finally blocks" comment with a semaphore variable | [`jvm_decompile_finally`](#jvm_decompile_finally) |
-| cleanup code duplicated after every return | [`jvm_decompile_finally`](#jvm_decompile_finally) |
-| catch (Throwable var) { ...; throw var; } instead of finally (option is off) | [`jvm_decompile_finally`](#jvm_decompile_finally) |
-| need the interface method a lambda implements | [`jvm_lambda_to_anonymous_class`](#jvm_lambda_to_anonymous_class) |
-| output must compile with Java 7 | [`jvm_lambda_to_anonymous_class`](#jvm_lambda_to_anonymous_class) |
-| x -> ... where an anonymous class is wanted | [`jvm_lambda_to_anonymous_class`](#jvm_lambda_to_anonymous_class) |
-| $VF: Couldn't be decompiled with RuntimeException: Constructor ... not found | [`jvm_ignore_invalid_bytecode`](#jvm_ignore_invalid_bytecode) |
-| method fails on a new expression in a patched class | [`jvm_ignore_invalid_bytecode`](#jvm_ignore_invalid_bytecode) |
-| a ? true : b where a logical or was written | [`jvm_ternary_constant_simplification`](#jvm_ternary_constant_simplification) |
-| nested ternaries with true and false branches | [`jvm_ternary_constant_simplification`](#jvm_ternary_constant_simplification) |
-| x ? false : true instead of !x | [`jvm_ternary_constant_simplification`](#jvm_ternary_constant_simplification) |
-| String s = (String)o; after an instanceof test (option is off) | [`jvm_pattern_matching`](#jvm_pattern_matching) |
-| typeSwitch bootstrap call instead of a pattern switch | [`jvm_pattern_matching`](#jvm_pattern_matching) |
-| pattern variable reconstructed wrongly | [`jvm_pattern_matching`](#jvm_pattern_matching) |
-| while (true) with a try inside that does not match the bytecode | [`jvm_try_loop_fix`](#jvm_try_loop_fix) |
-| loop condition moved into a try block | [`jvm_try_loop_fix`](#jvm_try_loop_fix) |
-| if (a ? b : c) condition hard to read | [`jvm_ternary_in_if`](#jvm_ternary_in_if) |
-| duplicated if bodies where a ternary condition was compiled (option is off) | [`jvm_ternary_in_if`](#jvm_ternary_in_if) |
-| switch statement assigning a temporary in every case where a switch expression was written | [`jvm_decompile_switch_expressions`](#jvm_decompile_switch_expressions) |
-| yield statements misplaced | [`jvm_decompile_switch_expressions`](#jvm_decompile_switch_expressions) |
-| var10000 temporaries everywhere (option is off) | [`jvm_simplify_stack`](#jvm_simplify_stack) |
-| compound assignment merges side effects in the wrong order | [`jvm_simplify_stack`](#jvm_simplify_stack) |
-| arr[i++] = v reads differently from the bytecode | [`jvm_simplify_stack`](#jvm_simplify_stack) |
-| one variable reused for two unrelated values | [`jvm_verify_merges`](#jvm_verify_merges) |
-| variable read before its assignment in the output | [`jvm_verify_merges`](#jvm_verify_merges) |
-| decompiled code does not recompile because of variable scoping | [`jvm_verify_merges`](#jvm_verify_merges) |
-| i++ applied to the wrong variable after merging | [`jvm_verify_pre_post_merges`](#jvm_verify_pre_post_merges) |
-| loop counter merged with another variable | [`jvm_verify_pre_post_merges`](#jvm_verify_pre_post_merges) |
-| "Could not handle exception ranges with multiple entries" comment | [`jvm_old_try_dedup`](#jvm_old_try_dedup) |
-| duplicated try blocks in an obfuscated method | [`jvm_old_try_dedup`](#jvm_old_try_dedup) |
-| condy bootstrap call with ConstantBootstraps.fieldVarHandle in the output | [`jvm_decompile_complex_constant_dynamic`](#jvm_decompile_complex_constant_dynamic) |
-| VarHandle constant shown as an unresolved dynamic constant | [`jvm_decompile_complex_constant_dynamic`](#jvm_decompile_complex_constant_dynamic) |
-| method with jsr/ret fails to decompile in a modern class file | [`jvm_force_jsr_inline`](#jvm_force_jsr_inline) |
-| finally logic of a modern class built from subroutines | [`jvm_force_jsr_inline`](#jvm_force_jsr_inline) |
-| else branch missing after an if that returns | [`jvm_prettify_ifs`](#jvm_prettify_ifs) |
-| deep else chains after returns (option is off) | [`jvm_prettify_ifs`](#jvm_prettify_ifs) |
-| instanceof pattern where the source has an instanceof test and a cast | [`jvm_source_patterns`](#jvm_source_patterns) |
-| x instanceof T v printed for if (x instanceof T) { T v = (T) x; | [`jvm_source_patterns`](#jvm_source_patterns) |
-| want Vineflower's type patterns | [`jvm_source_patterns`](#jvm_source_patterns) |
-| a local variable of the source is missing | [`jvm_source_locals`](#jvm_source_locals) |
-| x = e; return x; printed as return e; | [`jvm_source_locals`](#jvm_source_locals) |
-| declarations reordered against the source | [`jvm_source_locals`](#jvm_source_locals) |
-| recompiled bytecode uses other local slots | [`jvm_source_locals`](#jvm_source_locals) |
-| a declaration inside a loop or try where the source has it before | [`jvm_source_locals`](#jvm_source_locals) |
-| a local printed as var3 next to the source's name | [`jvm_source_locals`](#jvm_source_locals) |
-| a[i] = i++ where the source has a[i] = i; i++; | [`jvm_source_locals`](#jvm_source_locals) |
-| want Vineflower's folded form of locals | [`jvm_source_locals`](#jvm_source_locals) |
-| if condition negated against the source with the branches swapped | [`jvm_javac_layout`](#jvm_javac_layout) |
-| early return or continue missing and the rest of the method nested in an if | [`jvm_javac_layout`](#jvm_javac_layout) |
-| return c ? a : b where the source has two returns | [`jvm_javac_layout`](#jvm_javac_layout) |
-| return c; where the source has if (c) return true; return false; | [`jvm_javac_layout`](#jvm_javac_layout) |
-| else branch after an if that returns | [`jvm_javac_layout`](#jvm_javac_layout) |
-| !x where the source has false == x | [`jvm_javac_layout`](#jvm_javac_layout) |
-| a negated condition (!a && !b) where the source compares the condition with false | [`jvm_javac_layout`](#jvm_javac_layout) |
-| locals named var1 var2 var3 with no hint of their type | [`jvm_variable_renaming`](#jvm_variable_renaming) |
-| obfuscated or meaningless local names from a forged LocalVariableTable | [`jvm_variable_renaming`](#jvm_variable_renaming) |
-| names differ from a Vineflower run with --variable-renaming=jad or tiny | [`jvm_variable_renaming`](#jvm_variable_renaming) |
-| locals renamed but parameters still named var1 or paramN | [`jvm_rename_parameters`](#jvm_rename_parameters) |
-| parameter names do not follow the renamer's scheme | [`jvm_rename_parameters`](#jvm_rename_parameters) |
-| an old Vineflower command line with --jad-style-variable-naming=1 gives JAD-style names | [`jvm_jad_style_variable_naming`](#jvm_jad_style_variable_naming) |
-| locals named var1 var2 where JAD-style names were expected | [`jvm_jad_style_variable_naming`](#jvm_jad_style_variable_naming) |
-| an old Vineflower command line with --jad-style-parameter-naming=1 renames parameters | [`jvm_jad_style_parameter_naming`](#jvm_jad_style_parameter_naming) |
-| parameters keep their names under the jad renamer | [`jvm_jad_style_parameter_naming`](#jvm_jad_style_parameter_naming) |
-| if (x == null) { $$$reportNull$$$0(0); } at the top of methods | [`jvm_resugar_idea_notnull`](#jvm_resugar_idea_notnull) |
-| explicit null checks on @NotNull parameters or before returns (option is off) | [`jvm_resugar_idea_notnull`](#jvm_resugar_idea_notnull) |
-| every Kotlin declaration starts with public | [`jvm_kt_show_public`](#jvm_kt_show_public) |
-| public modifiers that Kotlin source would omit | [`jvm_kt_show_public`](#jvm_kt_show_public) |
-| parameters written as x: Int = ... | [`jvm_kt_unknown_defaults`](#jvm_kt_unknown_defaults) |
-| default argument values missing from a Kotlin function signature | [`jvm_kt_unknown_defaults`](#jvm_kt_unknown_defaults) |
-| "a" + b + "c" in Kotlin output where a template was written | [`jvm_kt_collapse_string_concat`](#jvm_kt_collapse_string_concat) |
-| string templates hide the concatenation order | [`jvm_kt_collapse_string_concat`](#jvm_kt_collapse_string_concat) |
-| a facade class prints only This is a multifile facade and a list of files | [`jvm_kt_decompile_facades`](#jvm_kt_decompile_facades) |
-| functions of a @JvmMultifileClass facade are missing | [`jvm_kt_decompile_facades`](#jvm_kt_decompile_facades) |
-| Outer$Inner written as a separate class instead of nested | [`jvm_decompile_inner`](#jvm_decompile_inner) |
-| anonymous class body lands in the wrong method | [`jvm_decompile_inner`](#jvm_decompile_inner) |
-| need each class file decompiled on its own | [`jvm_decompile_inner`](#jvm_decompile_inner) |
-| anonymous class body inlined at the wrong new expression | [`jvm_verify_anonymous_classes`](#jvm_verify_anonymous_classes) |
-| class used twice printed as an anonymous class | [`jvm_verify_anonymous_classes`](#jvm_verify_anonymous_classes) |
-| "Inconsistent anonymous class" warnings wanted | [`jvm_verify_anonymous_classes`](#jvm_verify_anonymous_classes) |
-| extra casts on calls into java.util or java.lang | [`jvm_include_runtime`](#jvm_include_runtime) |
-| @Override missing on JDK interface methods | [`jvm_include_runtime`](#jvm_include_runtime) |
-| generic arguments of JDK types erased | [`jvm_include_runtime`](#jvm_include_runtime) |
-| output differs between machines with different JDKs | [`jvm_include_runtime`](#jvm_include_runtime) |
-| no JDK found note on stderr | [`jvm_include_runtime`](#jvm_include_runtime) |
-| class or method named like a Java keyword | [`jvm_rename_members`](#jvm_rename_members) |
-| identifiers that are not valid Java (obfuscated names) | [`jvm_rename_members`](#jvm_rename_members) |
-| many classes named a, b, c that clash | [`jvm_rename_members`](#jvm_rename_members) |
-| "Inconsistent inner class entries" warnings flood stderr | [`jvm_warn_inconsistent_inner_attributes`](#jvm_warn_inconsistent_inner_attributes) |
-| nested class appears under an unexpected outer class | [`jvm_warn_inconsistent_inner_attributes`](#jvm_warn_inconsistent_inner_attributes) |
-| decompiling a fat jar spends time on bundled libraries | [`jvm_excluded_classes`](#jvm_excluded_classes) |
-| output includes generated or third-party classes | [`jvm_excluded_classes`](#jvm_excluded_classes) |
-| only one package of a large jar is of interest | [`jvm_included_classes`](#jvm_included_classes) |
-| decompile-project takes too long on the whole jar | [`jvm_included_classes`](#jvm_included_classes) |
-| member classes of an obfuscated jar written as separate top-level classes | [`jvm_validate_inner_classes_names`](#jvm_validate_inner_classes_names) |
-| renamed inner classes not nested | [`jvm_validate_inner_classes_names`](#jvm_validate_inner_classes_names) |
-| inner and anonymous classes missing when decompiling one .class file | [`jvm_siblings`](#jvm_siblings) |
-| unrelated Name$x.class files nested into the class | [`jvm_siblings`](#jvm_siblings) |
-| a Vineflower command line to replay sets --kt-export-metadata=1 (the output is the same either way) | [`jvm_kt_export_metadata`](#jvm_kt_export_metadata) |
-| nonsense generic types from a tampered Signature attribute | [`jvm_decompile_generics`](#jvm_decompile_generics) |
-| need erased types that match the method descriptors | [`jvm_decompile_generics`](#jvm_decompile_generics) |
-| raw List where List<String> was expected (option is off) | [`jvm_decompile_generics`](#jvm_decompile_generics) |
-| Math.PI where the source had a numeric literal | [`jvm_keep_literals`](#jvm_keep_literals) |
-| Long.MAX_VALUE or Double.MAX_VALUE instead of the number | [`jvm_keep_literals`](#jvm_keep_literals) |
-| need raw digits of a float constant | [`jvm_keep_literals`](#jvm_keep_literals) |
-| int variable printed as boolean true/false | [`jvm_boolean_as_int`](#jvm_boolean_as_int) |
-| 1 and 0 where true and false were expected (option is off) | [`jvm_boolean_as_int`](#jvm_boolean_as_int) |
-| string literal shows odd or invisible characters | [`jvm_ascii_strings`](#jvm_ascii_strings) |
-| homoglyphs in a compared string | [`jvm_ascii_strings`](#jvm_ascii_strings) |
-| terminal mangles non-ASCII text in decompiled strings | [`jvm_ascii_strings`](#jvm_ascii_strings) |
-| <undefinedtype> in a parameter list (option is off) | [`jvm_undefined_as_object`](#jvm_undefined_as_object) |
-| lambda parameter typed Object where a type is expected | [`jvm_undefined_as_object`](#jvm_undefined_as_object) |
-| variables named like keywords or with misleading names from debug info | [`jvm_use_lvt_names`](#jvm_use_lvt_names) |
-| LocalVariableTable names contradict their use | [`jvm_use_lvt_names`](#jvm_use_lvt_names) |
-| var1 var2 names although debug info exists (option is off) | [`jvm_use_lvt_names`](#jvm_use_lvt_names) |
-| parameter names differ from the debug-info names | [`jvm_use_method_parameters`](#jvm_use_method_parameters) |
-| unexpected final on parameters | [`jvm_use_method_parameters`](#jvm_use_method_parameters) |
-| string switch reconstructed wrongly and the hidden hashCode switch is needed | [`jvm_show_hidden_statements`](#jvm_show_hidden_statements) |
-| debugging which switch the decompiler discarded | [`jvm_show_hidden_statements`](#jvm_show_hidden_statements) |
-| @Override missing on toString or interface methods (supertype not loaded) | [`jvm_override_annotation`](#jvm_override_annotation) |
-| @Override that javac did not write is unwanted | [`jvm_override_annotation`](#jvm_override_annotation) |
-| decompiled code fails to recompile with an inference error | [`jvm_explicit_generics`](#jvm_explicit_generics) |
-| need the type argument of a generic method call | [`jvm_explicit_generics`](#jvm_explicit_generics) |
-| x -> { return x + 1; } where x -> x + 1 is wanted (option is off) | [`jvm_inline_simple_lambdas`](#jvm_inline_simple_lambdas) |
-| one-line lambdas hard to diff | [`jvm_inline_simple_lambdas`](#jvm_inline_simple_lambdas) |
-| three-space indentation does not match the project style | [`jvm_indent_string`](#jvm_indent_string) |
-| output too wide when nested deeply | [`jvm_indent_string`](#jvm_indent_string) |
-| very long lines in builder chains | [`jvm_preferred_line_length`](#jvm_preferred_line_length) |
-| expressions wrapped across lines unexpectedly | [`jvm_preferred_line_length`](#jvm_preferred_line_length) |
-| decompiled files need a provenance or license header | [`jvm_banner`](#jvm_banner) |
-| failure comment asks to report to an issue tracker | [`jvm_error_message`](#jvm_error_message) |
-| failure comment should carry a project-specific note | [`jvm_error_message`](#jvm_error_message) |
-| failed method shows a long // Bytecode: listing | [`jvm_dump_bytecode_on_error`](#jvm_dump_bytecode_on_error) |
-| need the instructions of a method that failed to decompile (option is off) | [`jvm_dump_bytecode_on_error`](#jvm_dump_bytecode_on_error) |
-| exception text and at src/... lines inside a failed method | [`jvm_dump_exception_on_error`](#jvm_dump_exception_on_error) |
-| need to know why a method failed (option is off) | [`jvm_dump_exception_on_error`](#jvm_dump_exception_on_error) |
-| /* $VF: ... */ and // $VF: comments clutter the output | [`jvm_decompiler_comments`](#jvm_decompiler_comments) |
-| need to know where the decompiler approximated (option is off) | [`jvm_decompiler_comments`](#jvm_decompiler_comments) |
-| need the original .java file name of a class | [`jvm_sourcefile_comments`](#jvm_sourcefile_comments) |
-| repackaged or shaded classes of unknown origin | [`jvm_sourcefile_comments`](#jvm_sourcefile_comments) |
-| need the source positions of identifiers for navigation | [`jvm_dump_text_tokens`](#jvm_dump_text_tokens) |
-| debugging which identifier a name in the output refers to | [`jvm_dump_text_tokens`](#jvm_dump_text_tokens) |
-| long import blocks at the top of every file | [`jvm_remove_imports`](#jvm_remove_imports) |
-| imports are noise for the task at hand | [`jvm_remove_imports`](#jvm_remove_imports) |
-| stack trace names lambda$main$0 or Main$1 and the matching code is hard to find | [`jvm_mark_corresponding_synthetics`](#jvm_mark_corresponding_synthetics) |
-| need the class file of an anonymous class | [`jvm_mark_corresponding_synthetics`](#jvm_mark_corresponding_synthetics) |
-| output differs from Vineflower's test fixture but matches java -jar | [`jvm_plugins`](#jvm_plugins) |
-| a class is written in a plugin's language instead of Java | [`jvm_plugins`](#jvm_plugins) |
-| a bundled plugin's pass changes the Java output | [`jvm_plugins`](#jvm_plugins) |
-| output differs from Vineflower 1.12.0 | [`jvm_vineflower_compat`](#jvm_vineflower_compat) |
-| need Vineflower's exact text, failure comments included | [`jvm_vineflower_compat`](#jvm_vineflower_compat) |
-| a method decompiles in kuna but fails in Vineflower | [`jvm_vineflower_compat`](#jvm_vineflower_compat) |
-| failure comment names the kuna issue tracker instead of Vineflower's | [`jvm_vineflower_compat`](#jvm_vineflower_compat) |
-| a kuna fix is suspected of changing a method | [`jvm_vineflower_compat`](#jvm_vineflower_compat) |
-| Kotlin classes come out as Java with @Metadata(mv = ..., d1 = ...) | [`jvm_kt_enable`](#jvm_kt_enable) |
-| a Kotlin class is written as .kt but Java output is wanted | [`jvm_kt_enable`](#jvm_kt_enable) |
-| Kotlin output of a class is wrong or failed | [`jvm_kt_enable`](#jvm_kt_enable) |
+| method javap lists as bridge is missing from the output | [`jvm_remove_bridge`](#jvm_remove_bridge----on--off-default-on) |
+| need the generated Object-typed forwarder of a generic override | [`jvm_remove_bridge`](#jvm_remove_bridge----on--off-default-on) |
+| an obfuscated method marked bridge vanished | [`jvm_remove_bridge`](#jvm_remove_bridge----on--off-default-on) |
+| code javap shows is missing from the decompiled class | [`jvm_remove_synthetic`](#jvm_remove_synthetic----on--off-default-on) |
+| lambda$main$0 or access$000 body needed but hidden | [`jvm_remove_synthetic`](#jvm_remove_synthetic----on--off-default-on) |
+| obfuscator flagged real methods synthetic and they disappeared | [`jvm_remove_synthetic`](#jvm_remove_synthetic----on--off-default-on) |
+| class$("java.lang.String") calls instead of String.class | [`jvm_decompile_java4`](#jvm_decompile_java4----on--off-default-on) |
+| static Class class$java$lang$String fields in old class files | [`jvm_decompile_java4`](#jvm_decompile_java4----on--off-default-on) |
+| need the raw Class.forName cache logic | [`jvm_decompile_java4`](#jvm_decompile_java4----on--off-default-on) |
+| if (!$assertionsDisabled && !cond) throw new AssertionError() instead of assert cond | [`jvm_decompile_assert`](#jvm_decompile_assert----on--off-default-on) |
+| $assertionsDisabled field visible | [`jvm_decompile_assert`](#jvm_decompile_assert----on--off-default-on) |
+| assert hides a check that must be read literally | [`jvm_decompile_assert`](#jvm_decompile_assert----on--off-default-on) |
+| constructor shows no super() call | [`jvm_hide_empty_super`](#jvm_hide_empty_super----on--off-default-on) |
+| need to see the implicit superclass constructor invocation | [`jvm_hide_empty_super`](#jvm_hide_empty_super----on--off-default-on) |
+| public Foo() {} constructor missing from the output | [`jvm_hide_default_constructor`](#jvm_hide_default_constructor----on--off-default-on) |
+| class seems to have no constructor | [`jvm_hide_default_constructor`](#jvm_hide_default_constructor----on--off-default-on) |
+| var = x; inside try followed by return var after the catch | [`jvm_incorporate_returns`](#jvm_incorporate_returns----on--off-default-on) |
+| return inside try reads differently from the bytecode | [`jvm_incorporate_returns`](#jvm_incorporate_returns----on--off-default-on) |
+| synchronized block covers more code than expected | [`jvm_ensure_synchronized_monitors`](#jvm_ensure_synchronized_monitors----on--off-default-on) |
+| MonitorEnter/MonitorExit pseudo-calls instead of synchronized | [`jvm_ensure_synchronized_monitors`](#jvm_ensure_synchronized_monitors----on--off-default-on) |
+| unbalanced monitor in handwritten bytecode | [`jvm_ensure_synchronized_monitors`](#jvm_ensure_synchronized_monitors----on--off-default-on) |
+| enum written as class extends Enum with $VALUES | [`jvm_decompile_enums`](#jvm_decompile_enums----on--off-default-on) |
+| need the generated values()/valueOf() bodies | [`jvm_decompile_enums`](#jvm_decompile_enums----on--off-default-on) |
+| enum constant initializers hide tampered code | [`jvm_decompile_enums`](#jvm_decompile_enums----on--off-default-on) |
+| stray outer.getClass(); before outer.new Inner() | [`jvm_remove_getclass`](#jvm_remove_getclass----on--off-default-on) |
+| Objects.requireNonNull-like check before an inner class instantiation | [`jvm_remove_getclass`](#jvm_remove_getclass----on--off-default-on) |
+| access$000(this) calls left in the output | [`jvm_synthetic_not_set`](#jvm_synthetic_not_set----on--off-default-off) |
+| this$0 or val$name fields printed in inner classes | [`jvm_synthetic_not_set`](#jvm_synthetic_not_set----on--off-default-off) |
+| class$ helper calls remain in old class files | [`jvm_synthetic_not_set`](#jvm_synthetic_not_set----on--off-default-off) |
+| exception handler code missing from the output | [`jvm_remove_empty_try_catch`](#jvm_remove_empty_try_catch----on--off-default-on) |
+| empty try { } catch blocks wanted for inspection | [`jvm_remove_empty_try_catch`](#jvm_remove_empty_try_catch----on--off-default-on) |
+| "Could not verify finally blocks" comment with a semaphore variable | [`jvm_decompile_finally`](#jvm_decompile_finally----on--off-default-on) |
+| cleanup code duplicated after every return | [`jvm_decompile_finally`](#jvm_decompile_finally----on--off-default-on) |
+| catch (Throwable var) { ...; throw var; } instead of finally (option is off) | [`jvm_decompile_finally`](#jvm_decompile_finally----on--off-default-on) |
+| need the interface method a lambda implements | [`jvm_lambda_to_anonymous_class`](#jvm_lambda_to_anonymous_class----on--off-default-off) |
+| output must compile with Java 7 | [`jvm_lambda_to_anonymous_class`](#jvm_lambda_to_anonymous_class----on--off-default-off) |
+| x -> ... where an anonymous class is wanted | [`jvm_lambda_to_anonymous_class`](#jvm_lambda_to_anonymous_class----on--off-default-off) |
+| $VF: Couldn't be decompiled with RuntimeException: Constructor ... not found | [`jvm_ignore_invalid_bytecode`](#jvm_ignore_invalid_bytecode----on--off-default-off) |
+| method fails on a new expression in a patched class | [`jvm_ignore_invalid_bytecode`](#jvm_ignore_invalid_bytecode----on--off-default-off) |
+| a ? true : b where a logical or was written | [`jvm_ternary_constant_simplification`](#jvm_ternary_constant_simplification----on--off-default-off) |
+| nested ternaries with true and false branches | [`jvm_ternary_constant_simplification`](#jvm_ternary_constant_simplification----on--off-default-off) |
+| x ? false : true instead of !x | [`jvm_ternary_constant_simplification`](#jvm_ternary_constant_simplification----on--off-default-off) |
+| String s = (String)o; after an instanceof test (option is off) | [`jvm_pattern_matching`](#jvm_pattern_matching----on--off-default-on) |
+| typeSwitch bootstrap call instead of a pattern switch | [`jvm_pattern_matching`](#jvm_pattern_matching----on--off-default-on) |
+| pattern variable reconstructed wrongly | [`jvm_pattern_matching`](#jvm_pattern_matching----on--off-default-on) |
+| while (true) with a try inside that does not match the bytecode | [`jvm_try_loop_fix`](#jvm_try_loop_fix----on--off-default-on) |
+| loop condition moved into a try block | [`jvm_try_loop_fix`](#jvm_try_loop_fix----on--off-default-on) |
+| if (a ? b : c) condition hard to read | [`jvm_ternary_in_if`](#jvm_ternary_in_if----on--off-default-on) |
+| duplicated if bodies where a ternary condition was compiled (option is off) | [`jvm_ternary_in_if`](#jvm_ternary_in_if----on--off-default-on) |
+| switch statement assigning a temporary in every case where a switch expression was written | [`jvm_decompile_switch_expressions`](#jvm_decompile_switch_expressions----on--off-default-on) |
+| yield statements misplaced | [`jvm_decompile_switch_expressions`](#jvm_decompile_switch_expressions----on--off-default-on) |
+| var10000 temporaries everywhere (option is off) | [`jvm_simplify_stack`](#jvm_simplify_stack----on--off-default-on) |
+| compound assignment merges side effects in the wrong order | [`jvm_simplify_stack`](#jvm_simplify_stack----on--off-default-on) |
+| arr[i++] = v reads differently from the bytecode | [`jvm_simplify_stack`](#jvm_simplify_stack----on--off-default-on) |
+| one variable reused for two unrelated values | [`jvm_verify_merges`](#jvm_verify_merges----on--off-default-off) |
+| variable read before its assignment in the output | [`jvm_verify_merges`](#jvm_verify_merges----on--off-default-off) |
+| decompiled code does not recompile because of variable scoping | [`jvm_verify_merges`](#jvm_verify_merges----on--off-default-off) |
+| i++ applied to the wrong variable after merging | [`jvm_verify_pre_post_merges`](#jvm_verify_pre_post_merges----on--off-default-off) |
+| loop counter merged with another variable | [`jvm_verify_pre_post_merges`](#jvm_verify_pre_post_merges----on--off-default-off) |
+| "Could not handle exception ranges with multiple entries" comment | [`jvm_old_try_dedup`](#jvm_old_try_dedup----on--off-default-off) |
+| duplicated try blocks in an obfuscated method | [`jvm_old_try_dedup`](#jvm_old_try_dedup----on--off-default-off) |
+| condy bootstrap call with ConstantBootstraps.fieldVarHandle in the output | [`jvm_decompile_complex_constant_dynamic`](#jvm_decompile_complex_constant_dynamic----on--off-default-off) |
+| VarHandle constant shown as an unresolved dynamic constant | [`jvm_decompile_complex_constant_dynamic`](#jvm_decompile_complex_constant_dynamic----on--off-default-off) |
+| method with jsr/ret fails to decompile in a modern class file | [`jvm_force_jsr_inline`](#jvm_force_jsr_inline----on--off-default-off) |
+| finally logic of a modern class built from subroutines | [`jvm_force_jsr_inline`](#jvm_force_jsr_inline----on--off-default-off) |
+| else branch missing after an if that returns | [`jvm_prettify_ifs`](#jvm_prettify_ifs----on--off-default-on) |
+| deep else chains after returns (option is off) | [`jvm_prettify_ifs`](#jvm_prettify_ifs----on--off-default-on) |
+| instanceof pattern where the source has an instanceof test and a cast | [`jvm_source_patterns`](#jvm_source_patterns----on--off-default-on) |
+| x instanceof T v printed for if (x instanceof T) { T v = (T) x; | [`jvm_source_patterns`](#jvm_source_patterns----on--off-default-on) |
+| want Vineflower's type patterns | [`jvm_source_patterns`](#jvm_source_patterns----on--off-default-on) |
+| a local variable of the source is missing | [`jvm_source_locals`](#jvm_source_locals----on--off-default-on) |
+| x = e; return x; printed as return e; | [`jvm_source_locals`](#jvm_source_locals----on--off-default-on) |
+| declarations reordered against the source | [`jvm_source_locals`](#jvm_source_locals----on--off-default-on) |
+| recompiled bytecode uses other local slots | [`jvm_source_locals`](#jvm_source_locals----on--off-default-on) |
+| a declaration inside a loop or try where the source has it before | [`jvm_source_locals`](#jvm_source_locals----on--off-default-on) |
+| a local printed as var3 next to the source's name | [`jvm_source_locals`](#jvm_source_locals----on--off-default-on) |
+| a[i] = i++ where the source has a[i] = i; i++; | [`jvm_source_locals`](#jvm_source_locals----on--off-default-on) |
+| want Vineflower's folded form of locals | [`jvm_source_locals`](#jvm_source_locals----on--off-default-on) |
+| if condition negated against the source with the branches swapped | [`jvm_javac_layout`](#jvm_javac_layout----on--off-default-on) |
+| early return or continue missing and the rest of the method nested in an if | [`jvm_javac_layout`](#jvm_javac_layout----on--off-default-on) |
+| return c ? a : b where the source has two returns | [`jvm_javac_layout`](#jvm_javac_layout----on--off-default-on) |
+| return c; where the source has if (c) return true; return false; | [`jvm_javac_layout`](#jvm_javac_layout----on--off-default-on) |
+| else branch after an if that returns | [`jvm_javac_layout`](#jvm_javac_layout----on--off-default-on) |
+| !x where the source has false == x | [`jvm_javac_layout`](#jvm_javac_layout----on--off-default-on) |
+| a negated condition (!a && !b) where the source compares the condition with false | [`jvm_javac_layout`](#jvm_javac_layout----on--off-default-on) |
+| locals named var1 var2 var3 with no hint of their type | [`jvm_variable_renaming`](#jvm_variable_renaming----jad--tiny---default-) |
+| obfuscated or meaningless local names from a forged LocalVariableTable | [`jvm_variable_renaming`](#jvm_variable_renaming----jad--tiny---default-) |
+| names differ from a Vineflower run with --variable-renaming=jad or tiny | [`jvm_variable_renaming`](#jvm_variable_renaming----jad--tiny---default-) |
+| locals renamed but parameters still named var1 or paramN | [`jvm_rename_parameters`](#jvm_rename_parameters----on--off-default-off) |
+| parameter names do not follow the renamer's scheme | [`jvm_rename_parameters`](#jvm_rename_parameters----on--off-default-off) |
+| an old Vineflower command line with --jad-style-variable-naming=1 gives JAD-style names | [`jvm_jad_style_variable_naming`](#jvm_jad_style_variable_naming----on--off-default-off) |
+| locals named var1 var2 where JAD-style names were expected | [`jvm_jad_style_variable_naming`](#jvm_jad_style_variable_naming----on--off-default-off) |
+| an old Vineflower command line with --jad-style-parameter-naming=1 renames parameters | [`jvm_jad_style_parameter_naming`](#jvm_jad_style_parameter_naming----on--off-default-off) |
+| parameters keep their names under the jad renamer | [`jvm_jad_style_parameter_naming`](#jvm_jad_style_parameter_naming----on--off-default-off) |
+| if (x == null) { $$$reportNull$$$0(0); } at the top of methods | [`jvm_resugar_idea_notnull`](#jvm_resugar_idea_notnull----on--off-default-on) |
+| explicit null checks on @NotNull parameters or before returns (option is off) | [`jvm_resugar_idea_notnull`](#jvm_resugar_idea_notnull----on--off-default-on) |
+| every Kotlin declaration starts with public | [`jvm_kt_show_public`](#jvm_kt_show_public----on--off-default-on) |
+| public modifiers that Kotlin source would omit | [`jvm_kt_show_public`](#jvm_kt_show_public----on--off-default-on) |
+| parameters written as x: Int = ... | [`jvm_kt_unknown_defaults`](#jvm_kt_unknown_defaults-----default-) |
+| default argument values missing from a Kotlin function signature | [`jvm_kt_unknown_defaults`](#jvm_kt_unknown_defaults-----default-) |
+| "a" + b + "c" in Kotlin output where a template was written | [`jvm_kt_collapse_string_concat`](#jvm_kt_collapse_string_concat----on--off-default-on) |
+| string templates hide the concatenation order | [`jvm_kt_collapse_string_concat`](#jvm_kt_collapse_string_concat----on--off-default-on) |
+| a facade class prints only This is a multifile facade and a list of files | [`jvm_kt_decompile_facades`](#jvm_kt_decompile_facades----on--off-default-off) |
+| functions of a @JvmMultifileClass facade are missing | [`jvm_kt_decompile_facades`](#jvm_kt_decompile_facades----on--off-default-off) |
+| Outer$Inner written as a separate class instead of nested | [`jvm_decompile_inner`](#jvm_decompile_inner----on--off-default-on) |
+| anonymous class body lands in the wrong method | [`jvm_decompile_inner`](#jvm_decompile_inner----on--off-default-on) |
+| need each class file decompiled on its own | [`jvm_decompile_inner`](#jvm_decompile_inner----on--off-default-on) |
+| anonymous class body inlined at the wrong new expression | [`jvm_verify_anonymous_classes`](#jvm_verify_anonymous_classes----on--off-default-off) |
+| class used twice printed as an anonymous class | [`jvm_verify_anonymous_classes`](#jvm_verify_anonymous_classes----on--off-default-off) |
+| "Inconsistent anonymous class" warnings wanted | [`jvm_verify_anonymous_classes`](#jvm_verify_anonymous_classes----on--off-default-off) |
+| extra casts on calls into java.util or java.lang | [`jvm_include_runtime`](#jvm_include_runtime----on--off--current---default-on) |
+| @Override missing on JDK interface methods | [`jvm_include_runtime`](#jvm_include_runtime----on--off--current---default-on) |
+| generic arguments of JDK types erased | [`jvm_include_runtime`](#jvm_include_runtime----on--off--current---default-on) |
+| output differs between machines with different JDKs | [`jvm_include_runtime`](#jvm_include_runtime----on--off--current---default-on) |
+| no JDK found note on stderr | [`jvm_include_runtime`](#jvm_include_runtime----on--off--current---default-on) |
+| class or method named like a Java keyword | [`jvm_rename_members`](#jvm_rename_members----on--off-default-off) |
+| identifiers that are not valid Java (obfuscated names) | [`jvm_rename_members`](#jvm_rename_members----on--off-default-off) |
+| many classes named a, b, c that clash | [`jvm_rename_members`](#jvm_rename_members----on--off-default-off) |
+| "Inconsistent inner class entries" warnings flood stderr | [`jvm_warn_inconsistent_inner_attributes`](#jvm_warn_inconsistent_inner_attributes----on--off-default-on) |
+| nested class appears under an unexpected outer class | [`jvm_warn_inconsistent_inner_attributes`](#jvm_warn_inconsistent_inner_attributes----on--off-default-on) |
+| decompiling a fat jar spends time on bundled libraries | [`jvm_excluded_classes`](#jvm_excluded_classes-----default-) |
+| output includes generated or third-party classes | [`jvm_excluded_classes`](#jvm_excluded_classes-----default-) |
+| only one package of a large jar is of interest | [`jvm_included_classes`](#jvm_included_classes-----default-) |
+| decompile-project takes too long on the whole jar | [`jvm_included_classes`](#jvm_included_classes-----default-) |
+| member classes of an obfuscated jar written as separate top-level classes | [`jvm_validate_inner_classes_names`](#jvm_validate_inner_classes_names----on--off-default-on) |
+| renamed inner classes not nested | [`jvm_validate_inner_classes_names`](#jvm_validate_inner_classes_names----on--off-default-on) |
+| inner and anonymous classes missing when decompiling one .class file | [`jvm_siblings`](#jvm_siblings----on--off-default-on) |
+| unrelated Name$x.class files nested into the class | [`jvm_siblings`](#jvm_siblings----on--off-default-on) |
+| a Vineflower command line to replay sets --kt-export-metadata=1 (the output is the same either way) | [`jvm_kt_export_metadata`](#jvm_kt_export_metadata----on--off-default-off) |
+| nonsense generic types from a tampered Signature attribute | [`jvm_decompile_generics`](#jvm_decompile_generics----on--off-default-on) |
+| need erased types that match the method descriptors | [`jvm_decompile_generics`](#jvm_decompile_generics----on--off-default-on) |
+| raw List where List<String> was expected (option is off) | [`jvm_decompile_generics`](#jvm_decompile_generics----on--off-default-on) |
+| Math.PI where the source had a numeric literal | [`jvm_keep_literals`](#jvm_keep_literals----on--off-default-off) |
+| Long.MAX_VALUE or Double.MAX_VALUE instead of the number | [`jvm_keep_literals`](#jvm_keep_literals----on--off-default-off) |
+| need raw digits of a float constant | [`jvm_keep_literals`](#jvm_keep_literals----on--off-default-off) |
+| int variable printed as boolean true/false | [`jvm_boolean_as_int`](#jvm_boolean_as_int----on--off-default-on) |
+| 1 and 0 where true and false were expected (option is off) | [`jvm_boolean_as_int`](#jvm_boolean_as_int----on--off-default-on) |
+| string literal shows odd or invisible characters | [`jvm_ascii_strings`](#jvm_ascii_strings----on--off-default-off) |
+| homoglyphs in a compared string | [`jvm_ascii_strings`](#jvm_ascii_strings----on--off-default-off) |
+| terminal mangles non-ASCII text in decompiled strings | [`jvm_ascii_strings`](#jvm_ascii_strings----on--off-default-off) |
+| <undefinedtype> in a parameter list (option is off) | [`jvm_undefined_as_object`](#jvm_undefined_as_object----on--off-default-on) |
+| lambda parameter typed Object where a type is expected | [`jvm_undefined_as_object`](#jvm_undefined_as_object----on--off-default-on) |
+| variables named like keywords or with misleading names from debug info | [`jvm_use_lvt_names`](#jvm_use_lvt_names----on--off-default-on) |
+| LocalVariableTable names contradict their use | [`jvm_use_lvt_names`](#jvm_use_lvt_names----on--off-default-on) |
+| var1 var2 names although debug info exists (option is off) | [`jvm_use_lvt_names`](#jvm_use_lvt_names----on--off-default-on) |
+| parameter names differ from the debug-info names | [`jvm_use_method_parameters`](#jvm_use_method_parameters----on--off-default-on) |
+| unexpected final on parameters | [`jvm_use_method_parameters`](#jvm_use_method_parameters----on--off-default-on) |
+| string switch reconstructed wrongly and the hidden hashCode switch is needed | [`jvm_show_hidden_statements`](#jvm_show_hidden_statements----on--off-default-off-destructive-opt-in) |
+| debugging which switch the decompiler discarded | [`jvm_show_hidden_statements`](#jvm_show_hidden_statements----on--off-default-off-destructive-opt-in) |
+| @Override missing on toString or interface methods (supertype not loaded) | [`jvm_override_annotation`](#jvm_override_annotation----on--off-default-on) |
+| @Override that javac did not write is unwanted | [`jvm_override_annotation`](#jvm_override_annotation----on--off-default-on) |
+| decompiled code fails to recompile with an inference error | [`jvm_explicit_generics`](#jvm_explicit_generics----on--off-default-off) |
+| need the type argument of a generic method call | [`jvm_explicit_generics`](#jvm_explicit_generics----on--off-default-off) |
+| x -> { return x + 1; } where x -> x + 1 is wanted (option is off) | [`jvm_inline_simple_lambdas`](#jvm_inline_simple_lambdas----on--off-default-on) |
+| one-line lambdas hard to diff | [`jvm_inline_simple_lambdas`](#jvm_inline_simple_lambdas----on--off-default-on) |
+| three-space indentation does not match the project style | [`jvm_indent_string`](#jvm_indent_string-----default----) |
+| output too wide when nested deeply | [`jvm_indent_string`](#jvm_indent_string-----default----) |
+| very long lines in builder chains | [`jvm_preferred_line_length`](#jvm_preferred_line_length-----default-160) |
+| expressions wrapped across lines unexpectedly | [`jvm_preferred_line_length`](#jvm_preferred_line_length-----default-160) |
+| decompiled files need a provenance or license header | [`jvm_banner`](#jvm_banner-----default-) |
+| failure comment asks to report to an issue tracker | [`jvm_error_message`](#jvm_error_message-----default-please-report-this-to-the-vineflower-issue-tracker-at-httpsgithubcomvineflowervineflowerissues-with-a-copy-of-the-class-file-if-you-have-the-rights-to-distribute-it) |
+| failure comment should carry a project-specific note | [`jvm_error_message`](#jvm_error_message-----default-please-report-this-to-the-vineflower-issue-tracker-at-httpsgithubcomvineflowervineflowerissues-with-a-copy-of-the-class-file-if-you-have-the-rights-to-distribute-it) |
+| failed method shows a long // Bytecode: listing | [`jvm_dump_bytecode_on_error`](#jvm_dump_bytecode_on_error----on--off-default-on) |
+| need the instructions of a method that failed to decompile (option is off) | [`jvm_dump_bytecode_on_error`](#jvm_dump_bytecode_on_error----on--off-default-on) |
+| exception text and at src/... lines inside a failed method | [`jvm_dump_exception_on_error`](#jvm_dump_exception_on_error----on--off-default-on) |
+| need to know why a method failed (option is off) | [`jvm_dump_exception_on_error`](#jvm_dump_exception_on_error----on--off-default-on) |
+| /* $VF: ... */ and // $VF: comments clutter the output | [`jvm_decompiler_comments`](#jvm_decompiler_comments----on--off-default-on) |
+| need to know where the decompiler approximated (option is off) | [`jvm_decompiler_comments`](#jvm_decompiler_comments----on--off-default-on) |
+| need the original .java file name of a class | [`jvm_sourcefile_comments`](#jvm_sourcefile_comments----on--off-default-off) |
+| repackaged or shaded classes of unknown origin | [`jvm_sourcefile_comments`](#jvm_sourcefile_comments----on--off-default-off) |
+| need the source positions of identifiers for navigation | [`jvm_dump_text_tokens`](#jvm_dump_text_tokens----on--off-default-off-destructive-opt-in) |
+| debugging which identifier a name in the output refers to | [`jvm_dump_text_tokens`](#jvm_dump_text_tokens----on--off-default-off-destructive-opt-in) |
+| long import blocks at the top of every file | [`jvm_remove_imports`](#jvm_remove_imports----on--off-default-off) |
+| imports are noise for the task at hand | [`jvm_remove_imports`](#jvm_remove_imports----on--off-default-off) |
+| stack trace names lambda$main$0 or Main$1 and the matching code is hard to find | [`jvm_mark_corresponding_synthetics`](#jvm_mark_corresponding_synthetics----on--off-default-off) |
+| need the class file of an anonymous class | [`jvm_mark_corresponding_synthetics`](#jvm_mark_corresponding_synthetics----on--off-default-off) |
+| output differs from Vineflower's test fixture but matches java -jar | [`jvm_plugins`](#jvm_plugins----on--off-default-on) |
+| a class is written in a plugin's language instead of Java | [`jvm_plugins`](#jvm_plugins----on--off-default-on) |
+| a bundled plugin's pass changes the Java output | [`jvm_plugins`](#jvm_plugins----on--off-default-on) |
+| output differs from Vineflower 1.12.0 | [`jvm_vineflower_compat`](#jvm_vineflower_compat----on--off-default-off) |
+| need Vineflower's exact text, failure comments included | [`jvm_vineflower_compat`](#jvm_vineflower_compat----on--off-default-off) |
+| a method decompiles in kuna but fails in Vineflower | [`jvm_vineflower_compat`](#jvm_vineflower_compat----on--off-default-off) |
+| failure comment names the kuna issue tracker instead of Vineflower's | [`jvm_vineflower_compat`](#jvm_vineflower_compat----on--off-default-off) |
+| a kuna fix is suspected of changing a method | [`jvm_vineflower_compat`](#jvm_vineflower_compat----on--off-default-off) |
+| Kotlin classes come out as Java with @Metadata(mv = ..., d1 = ...) | [`jvm_kt_enable`](#jvm_kt_enable----on--off-default-on) |
+| a Kotlin class is written as .kt but Java output is wanted | [`jvm_kt_enable`](#jvm_kt_enable----on--off-default-on) |
+| Kotlin output of a class is wrong or failed | [`jvm_kt_enable`](#jvm_kt_enable----on--off-default-on) |
 
 ## Toggleable transforms
 

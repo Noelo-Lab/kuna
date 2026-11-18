@@ -29,8 +29,9 @@
 //! instruction makes it; those are the separate `pointer` rows
 //! ([`kuna_analysis::loader::kuna_dataptrs`]), taken from the image's own
 //! rebase/relocation metadata, never merged into the instruction rows, and
-//! reported with the metadata that listed them (`data_refs_coverage`, `none`
-//! for an image that lists no pointer relocations).
+//! reported with how much of that metadata they cover (`data_refs_coverage`:
+//! the source for a complete list, else `partial`, `unsupported` or `none`,
+//! with `data_refs_reason` saying why).
 //!
 //! `coverage` says what the walk examined: whether it decoded the queried
 //! address, the section that address is in, and the called code it did not
@@ -47,6 +48,8 @@ use kuna_analysis::listing::kuna_unflaggedcode::{
     declared_data, declared_function, named_at, placement, Placement, UnflaggedSection,
 };
 use kuna_analysis::listing::xrefs::{Xref, XrefIndex, XrefKind};
+use kuna_analysis::loader::kuna_dataptrs::Coverage as PointerCoverage;
+use kuna_analysis::loader::kuna_kernelcache::FilesetMap;
 use kuna_console::engine::{ConsoleProgram, EntryLookupError, EntrySelector};
 
 use crate::args::take_value as take;
@@ -254,7 +257,7 @@ fn query(args: &XrefArgs) -> Result<String, String> {
     // message `load_program` would have given it.
     std::fs::canonicalize(&args.binary)
         .map_err(|_| format!("binary not found: {}", args.binary))?;
-    let bytes = crate::image::image_bytes(
+    let (bytes, fileset) = crate::image::image_bytes_and_fileset(
         &args.binary,
         kuna_analysis::loader::macho_fat::slice_pref(args.slice.as_deref(), args.target.as_deref()),
     )?;
@@ -303,7 +306,8 @@ fn query(args: &XrefArgs) -> Result<String, String> {
     let proof_note = add_scoped_calls(args, &mut prog, &mut index, &entries, &target);
     warn_other_entries(&index, &names, &target);
     let unwalked = unwalked_code(&file, &index, &unflagged);
-    let mut coverage = coverage_of(&prog, &file, &index, &names, &target, args.direction, unwalked);
+    let mut coverage =
+        coverage_of(&prog, &file, &index, &names, &target, args.direction, unwalked, fileset.as_ref());
     coverage.notes.extend(proof_note);
     for note in &coverage.notes {
         eprintln!("note: {note}");
@@ -336,7 +340,7 @@ fn query(args: &XrefArgs) -> Result<String, String> {
     } else {
         Vec::new()
     };
-    let data = DataRefs { coverage: data.coverage, rows: pointers };
+    let data = DataRefs { coverage: data.coverage, reason: data.reason, rows: pointers };
 
     Ok(if args.json {
         let doc = result_json(args, &prog, &index, &names, &target, &rows, &data, &coverage);
@@ -459,6 +463,7 @@ fn unflagged_source(
     ranges
 }
 
+#[allow(clippy::too_many_arguments)]
 fn coverage_of(
     prog: &ConsoleProgram,
     file: &object::File,
@@ -467,16 +472,48 @@ fn coverage_of(
     target: &Target,
     direction: Direction,
     unwalked: Vec<(u64, String)>,
+    fileset: Option<&FilesetMap>,
 ) -> Coverage {
     let addr = target.addr;
     let decoded = index.is_decoded(if names.arm { addr & !1 } else { addr });
     let placement = placement(file, addr);
+    let elsewhere = fileset.and_then(|map| fileset_note(map, addr, direction));
     let mut notes = Vec::new();
     match direction {
-        Direction::From => notes.extend(source_note(file, index, addr, decoded, &placement)),
-        Direction::To => notes.extend(unwalked_note(prog, index, names, &unwalked)),
+        Direction::From => {
+            notes.extend(elsewhere.or_else(|| source_note(file, index, addr, decoded, &placement)))
+        }
+        Direction::To => {
+            notes.extend(elsewhere);
+            notes.extend(unwalked_note(prog, index, names, &unwalked));
+        }
     }
     Coverage { decoded, placement, unwalked, notes }
+}
+
+/// The note for an address of a kernel collection the loaded entry does not
+/// map: the walk decodes only the loaded entry, so nothing was decoded at an
+/// address another entry holds (`--from`), and the rows are only the loaded
+/// entry's references to it (`--to`).
+fn fileset_note(map: &FilesetMap, addr: u64, direction: Direction) -> Option<String> {
+    let loaded = map.loaded.as_str();
+    let owner = map.owner(addr);
+    if owner == Some(loaded) {
+        return None;
+    }
+    let consequence = match direction {
+        Direction::To => format!("only references made from {loaded} are listed"),
+        Direction::From => "nothing was decoded there, so no instruction references are listed".to_string(),
+    };
+    Some(match owner {
+        Some(other) => format!(
+            "0x{addr:x} is in the MH_FILESET entry {other}, not in {loaded}, the entry loaded: \
+             {consequence}; `--option kernelcache {other}` loads that entry"
+        ),
+        None => format!(
+            "0x{addr:x} is in no MH_FILESET entry's segments (the entry loaded is {loaded}): {consequence}"
+        ),
+    })
 }
 
 /// The call and jump targets in [`unflagged_sections`] the walk did not decode
@@ -646,10 +683,20 @@ fn coverage_json(prog: &ConsoleProgram, index: &XrefIndex, names: &EntryNames, c
 
 // --- data-held pointers -----------------------------------------------------
 
-/// The data-held pointers the query answers, and the metadata that listed them.
+/// The data-held pointers the query answers, how much of the image's metadata
+/// they cover, and why not all of it when they do not.
 struct DataRefs {
-    coverage: kuna_analysis::loader::kuna_dataptrs::Coverage,
+    coverage: PointerCoverage,
+    reason: Option<String>,
     rows: Vec<DataRef>,
+}
+
+impl DataRefs {
+    /// The metadata each row came from: the source of a complete or partial
+    /// list.
+    fn source(&self) -> &'static str {
+        self.coverage.source().map_or(self.coverage.as_str(), |source| source.as_str())
+    }
 }
 
 /// One stored pointer: the word's address, the address it holds, and the names
@@ -999,6 +1046,7 @@ fn result_json(
         ("coverage".into(), coverage_json(prog, index, names, coverage)),
         ("xrefs".into(), xrefs),
         ("data_refs_coverage".into(), Json::Str(data.coverage.as_str().to_string())),
+        ("data_refs_reason".into(), data.reason.clone().map_or(Json::Null, Json::Str)),
         ("data_refs_count".into(), Json::Number(data.rows.len().to_string())),
         ("data_refs".into(), data_refs_json(data)),
     ])
@@ -1022,7 +1070,7 @@ fn data_refs_json(data: &DataRefs) -> Json {
                     ("to_address_hex".into(), Json::Str(format!("0x{:x}", r.target))),
                     ("to_name".into(), name(&r.target_name)),
                     ("width".into(), Json::Number(r.width.to_string())),
-                    ("source".into(), Json::Str(data.coverage.as_str().to_string())),
+                    ("source".into(), Json::Str(data.source().to_string())),
                 ])
             })
             .collect(),
@@ -1097,15 +1145,30 @@ fn render_text(
             }
         }
     }
-    if !data.rows.is_empty() {
-        let plural = if data.rows.len() == 1 { "pointer" } else { "pointers" };
-        let _ = writeln!(
-            out,
-            "# {} data-held {plural} {} {label} ({})",
-            data.rows.len(),
-            args.direction.as_str(),
-            data.coverage.as_str()
-        );
+    let plural = if data.rows.len() == 1 { "pointer" } else { "pointers" };
+    let direction = args.direction.as_str();
+    let reason = data.reason.as_deref().unwrap_or("-");
+    match data.coverage {
+        PointerCoverage::Partial(source) if args.pointers => {
+            let _ = writeln!(
+                out,
+                "# {} data-held {plural} {direction} {label} ({}, partial: {reason})",
+                data.rows.len(),
+                source.as_str()
+            );
+        }
+        PointerCoverage::Unsupported if args.pointers => {
+            let _ = writeln!(out, "# data-held pointers {direction} {label} not listed (unsupported: {reason})");
+        }
+        _ if !data.rows.is_empty() => {
+            let _ = writeln!(
+                out,
+                "# {} data-held {plural} {direction} {label} ({})",
+                data.rows.len(),
+                data.coverage.as_str()
+            );
+        }
+        _ => {}
     }
     for r in &data.rows {
         let named = |n: &Option<String>| n.clone().unwrap_or_else(|| "-".into());
@@ -1266,8 +1329,13 @@ fn usage() {
          \n\
          `pointer` rows are words the image stores in its data that hold the target's\n\
          address (--to) or that lie in the target (--from), as its rebase/relocation\n\
-         metadata lists them; data_refs_coverage names that metadata, `none` when the\n\
-         image lists no pointer relocations (a non-PIE ELF).\n\
+         metadata lists them. data_refs_coverage names that metadata when kuna read\n\
+         all of it (chained-fixups, rebase-opcodes, dynamic-relocations,\n\
+         base-relocations); otherwise it is `partial` (some of it could not be read;\n\
+         the rows are the rest), `unsupported` (metadata kuna does not read, such as a\n\
+         MIPS image's or a relocatable object's) or `none` (the image keeps none, as a\n\
+         non-PIE ELF), and data_refs_reason says why. Only a complete list that is\n\
+         empty means no stored pointer holds the address.\n\
          \n\
          An explicit --from source in memory the image maps executable is decoded even\n\
          when its section is not marked as code (a function in __TEXT,__const), if\n\
@@ -1278,7 +1346,7 @@ fn usage() {
          --json emits {{binary,target:{{name,address,address_hex,aliases}},direction,count,\n\
          coverage:{{decoded,section,code_section,executable,unwalked,notes}},\n\
          xrefs:[{{address,address_hex,kind,from_function,to_function,instruction,..}}],\n\
-         data_refs_coverage,data_refs_count,data_refs:[{{kind,from_address,from_name,\n\
+         data_refs_coverage,data_refs_reason,data_refs_count,data_refs:[{{kind,from_address,from_name,\n\
          to_address,to_name,width,source,..}}]}};\n\
          without it, one tab-separated row each."
     );

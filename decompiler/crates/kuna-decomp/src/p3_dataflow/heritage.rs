@@ -903,6 +903,9 @@ pub struct Heritage {
     /// it would have guarded, in guard order, those calls and the kept ones.
     #[allow(clippy::type_complexity)]
     persist_skips: Option<(usize, usize, Vec<BlockId>, Vec<crate::context::OpId>, crate::kuna_fasthash::FxHashSet<crate::context::OpId>)>,
+    /// (kuna) This pass's user operations with memory effects
+    /// ([`super::kuna_memoryguard::memory_ops`]), found at most once.
+    memory_ops: Option<Vec<crate::context::OpId>>,
     /// (kuna `haltloopguard`) This pass's exitless loops, found at most once.
     halt_loops: Option<Vec<BlockId>>,
     /// (kuna `haltloopguard`) The ranges to keep alive at each exitless loop
@@ -981,6 +984,7 @@ impl Heritage {
             persist_memory: Default::default(),
             persist_pruned: Vec::new(),
             persist_skips: None,
+            memory_ops: None,
             halt_loops: None,
             halt_loop_marks: BTreeMap::new(),
             halt_loop_reach: Vec::new(),
@@ -1654,8 +1658,7 @@ impl Heritage {
             let sparse = (self.persist_sparse && !revisit && super::kuna_persistcalls::applies(fd, fl, addr))
                 .then_some((&*read, &full_write_ops[..], &partial_write_ops[..]));
             self.guard_calls(fd, fl, addr, size, write, live.as_ref(), sparse);
-            crate::kuna_syscallregs::guard_memory(fd, fl, addr, size, write);
-            crate::kuna_x64syscall::guard_memory(fd, fl, addr, size, write);
+            super::kuna_memoryguard::guard_memory(fd, &mut self.memory_ops, fl, addr, size, write);
             self.guard_returns(fd, fl, addr, size, write);
             if (fl & varnode_flags::persist) != 0 {
                 let heads = self.halt_loops.get_or_insert_with(|| super::kuna_haltloopguard::exitless_loops(fd));
@@ -5074,6 +5077,7 @@ impl Heritage {
         self.readonly_unguarded = self.readonly_cross_product(fd);
         self.persist_sparse = self.persist_cross_product(fd);
         self.persist_memory.clear();
+        self.memory_ops = None;
         self.halt_loops = None;
         self.halt_loop_marks.clear();
         self.halt_loop_reach.clear();
@@ -5538,6 +5542,26 @@ impl Heritage {
                                 cur_traversals | stacknode_flags::nonconstant_index | dynamic
                             );
                         }
+                    }
+                    OpCode::CPUI_INT_OR => {
+                        // (kuna) `p | c` with constant `c` lies in `[p, p+c]` (absent
+                        // wraparound): GCC reads a spilled int's low byte through
+                        // `(fp+off)|3` on SPARC64. Which byte depends on the runtime low
+                        // bits of `p`, so it is an indexed access at `p`'s offset, and the
+                        // LOAD/STORE it reaches needs a guard. An unrefined guard covers
+                        // `[p, p+0x1000)` (`LoadGuard::establish_range`), so a larger `c`
+                        // could only guard slots it cannot reach.
+                        let small_const = fd
+                            .obank()
+                            .get(op)
+                            .and_then(|o| o.get_in(1 - o.get_slot(cur_vn)))
+                            .and_then(|v| fd.vbank().get(v))
+                            .is_some_and(|v| v.is_constant() && v.get_offset() < 0x1000);
+                        let ov = match out_vn {
+                            Some(v) if small_const => v,
+                            _ => continue,
+                        };
+                        descend_into!(ov, cur_offset, cur_traversals | stacknode_flags::nonconstant_index);
                     }
                     OpCode::CPUI_SEGMENTOP => {
                         // Check that the stackpointer comes in as the inner pointer.

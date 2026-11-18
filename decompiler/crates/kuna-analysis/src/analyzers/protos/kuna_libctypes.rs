@@ -628,7 +628,11 @@ impl AnalysisPass for LibcTypesPass {
         // that this pass, merged after `DwarfPass`, would otherwise outrank.
         // Retargeting the import is the whole job; the definition belongs to
         // whoever declared it.
-        let (resolved, reloc_imports) = super::loaded_import_addrs(ctx.file, ctx.bytes, ctx.image);
+        let (resolved, reloc_imports) = super::loaded_import_addrs(
+            ctx.file,
+            ctx.bytes,
+            ctx.image.expect("load-time analysis image"),
+        );
         let imported = super::loaded_function_names(ctx.file, ctx.bytes, &reloc_imports, true);
         // The obstack exception and its two channels (see `LIBC_DEFINED_NAMED`).
         // The defined channel takes the DEFINED names, not the union: an

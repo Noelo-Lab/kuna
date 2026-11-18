@@ -27,6 +27,7 @@ pub mod kuna_charbyte; // (kuna) keep char for a byte loaded through a char poin
 pub mod kuna_charptr; // (kuna) commit a pointer used only on characters to char *
 pub mod kuna_elemptr; // (kuna) a pointer used only as an array of one element type is T *
 pub mod kuna_floatreg; // (kuna) a value returned in a float register is a float
+pub mod kuna_roundingops; // (kuna) a rounding user op p-code has no operator for is float in, float out
 pub mod kuna_floatglobals; // (kuna) a global the program only moves through float registers is a float
 pub mod kuna_floatbits; // (kuna) a helper that only works on a float's bits keeps the float
 pub mod kuna_zextreturn; // (kuna) a return the convention zero-extends only when unsigned is unsigned
@@ -37,6 +38,8 @@ pub mod kuna_structmerge; // (kuna) merge a synthesized record with the claims o
 pub mod kuna_structheadless; // (kuna) a closed function's parameter read only past its start is a record
 pub mod kuna_fieldtype; // (kuna) a synthesized field some access holds as a pointer is declared as that pointer
 pub mod kuna_structsynth; // (kuna) synthesize a struct type from a pointer parameter's constant-offset dereferences
+pub mod kuna_sitetypelock; // (kuna) per-call-site output type lock: a client-asserted call-result type that survives to the declaration
+pub mod kuna_gonewtype; // (kuna) type a runtime.newobject result from its descriptor argument (docs/multilang.md, Go pack)
 pub mod kuna_varargfloat; // (kuna) a variadic argument in a floating-point register is a double
 pub mod kuna_typequal; // (kuna) C type qualifiers on their own type layer
 pub mod kuna_aggregatefields; // (kuna) structured values kept whole until their fields can be named

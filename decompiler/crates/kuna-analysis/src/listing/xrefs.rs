@@ -877,7 +877,7 @@ fn descend(
     let mut raw: Vec<RawOp> = Vec::new();
 
     // Share the decoded partition with prologue recovery and AIF.
-    let gapwalk = arch.analysis_aif;
+    let gapwalk = arch.analysis_aif.enabled();
     let mut fingerprint_contexts = (prologues && gapwalk)
         .then(super::kuna_fingerprintcontext::FingerprintContexts::default);
     let mut prologues_done = false;
@@ -1596,13 +1596,13 @@ fn gap_entries(
     if let Some(prior) = frame {
         crate::aif::run_aif_after_frames(
             &listing, prior, translate, Rc::clone(code_space),
-            arch.analysis_aifstrict, arch.analysis_aifcorroborate, bracket,
+            arch.analysis_aif.strict(), arch.analysis_aif.corroborate(), bracket,
             poolslide, None, None,
         )
     } else {
         crate::aif::run_aif(
             &listing, translate, Rc::clone(code_space), listing.exec_ranges(),
-            arch.analysis_aifstrict, arch.analysis_aifcorroborate, bracket,
+            arch.analysis_aif.strict(), arch.analysis_aif.corroborate(), bracket,
             poolslide,
         )
     }

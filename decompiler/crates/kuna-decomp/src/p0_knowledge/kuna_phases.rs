@@ -505,6 +505,44 @@ pub fn emit_catalog_json(live: impl Fn(&str) -> Option<Cow<'static, str>>) -> St
     out
 }
 
+/// The `###` heading of an option's section, inline code included.
+fn option_heading(st: &MarkdownRow<'_>) -> String {
+    format!(
+        "`{}` -- {}, default `{}`{}",
+        st.option,
+        st.values.replace('|', " | "),
+        st.default,
+        if st.destructive { " (destructive opt-in)" } else { "" },
+    )
+}
+
+/// GitHub's anchor for a heading: the rendered text (code backticks and
+/// raw `<...>` spans gone) lowercased, punctuation dropped, spaces to hyphens.
+fn github_anchor(markdown_heading: &str) -> String {
+    let mut text = String::new();
+    let mut in_tag = false;
+    for ch in markdown_heading.chars() {
+        match ch {
+            '<' => in_tag = true,
+            '>' if in_tag => in_tag = false,
+            _ if in_tag => {}
+            '`' => {}
+            _ => text.push(ch),
+        }
+    }
+    text.chars()
+        .filter_map(|ch| match ch {
+            ' ' => Some('-'),
+            'A'..='Z' | 'a'..='z' | '0'..='9' | '-' | '_' => Some(ch.to_ascii_lowercase()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn option_anchor(st: &MarkdownRow<'_>) -> String {
+    github_anchor(&option_heading(st))
+}
+
 /// Render the whole settable catalog as the tier-grouped Markdown document
 /// committed at `docs/options.md` (regenerate: `kuna catalog --markdown >
 /// docs/options.md`; freshness fenced by `tests/options_md_fresh.rs`).
@@ -630,15 +668,7 @@ pub fn emit_catalog_markdown_from(rows: &[MarkdownRow<'_>], doc: &MarkdownDoc<'_
                 out.push_str(" | [`");
                 out.push_str(st.option);
                 out.push_str("`](#");
-                // GitHub-style slug of the `### `option`` heading.
-                for ch in st.option.chars() {
-                    match ch {
-                        'a'..='z' | '0'..='9' | '-' => out.push(ch),
-                        'A'..='Z' => out.push(ch.to_ascii_lowercase()),
-                        '_' => out.push('_'),
-                        _ => {}
-                    }
-                }
+                out.push_str(&option_anchor(st));
                 out.push_str(") |\n");
             }
         }
@@ -652,16 +682,8 @@ pub fn emit_catalog_markdown_from(rows: &[MarkdownRow<'_>], doc: &MarkdownDoc<'_
         out.push_str(blurb);
         out.push_str("\n\n");
         for st in rows.iter().filter(|st| st.tier == tier) {
-            out.push_str("### `");
-            out.push_str(st.option);
-            out.push_str("` -- ");
-            out.push_str(&st.values.replace('|', " | "));
-            out.push_str(", default `");
-            out.push_str(st.default);
-            out.push('`');
-            if st.destructive {
-                out.push_str(" (destructive opt-in)");
-            }
+            out.push_str("### ");
+            out.push_str(&option_heading(st));
             out.push_str("\n\n");
             out.push_str("- **Symptoms:** ");
             out.push_str(&st.symptoms.replace('|', "; "));

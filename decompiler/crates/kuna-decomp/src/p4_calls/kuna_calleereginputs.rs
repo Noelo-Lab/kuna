@@ -1,0 +1,665 @@
+//! (kuna) Read which registers an x86-32 callee takes as input off its own code.
+//!
+//! `x86win.cspec`'s default model, `__stdcall`, has no register parameters, so
+//! a direct call to a function with no declared prototype only ever recovers
+//! stack arguments. A `__thiscall` callee's `this` (ECX), and a `__fastcall`
+//! callee's ECX/EDX arguments, are dropped at the call; a caller that reaches
+//! the callee through an incremental-link `jmp` stub learns nothing from the
+//! stub's own decompile either.
+//!
+//! The callee's p-code is read from its entry along the straight line its first
+//! instructions run, following direct `jmp`s, until a conditional branch, a call,
+//! a return, an indirect jump or [`BUDGET`] instructions. A register the line
+//! reads before writing any part of it is an input: once `mov cx,[eax+0xa]` has
+//! set the low half, a read of all of ECX takes upper bytes no caller sets (the
+//! CRT's float formatter masks them off). Some readings are not uses: storing a
+//! register through the stack pointer (a `push` that saves it), a copy of a
+//! register onto itself (the `mov edi,edi` hot-patch prologue, the `lea ecx,[ecx]`
+//! padding nop) and a result the old value cannot change (`xor ecx,ecx`,
+//! `sub ecx,ecx`, `or ecx,-1`, `and ecx,0`); a push goes through a temporary,
+//! which only counts when something other than the push reads it. A callee that
+//! reads ECX alone takes the spec's own `__thiscall` model at the call, and one
+//! that reads ECX and EDX takes `__fastcall`. A callee that also reads EAX, EBX,
+//! ESI or EDI keeps the default: it takes a convention no spec model states
+//! (Borland `register`, an MSVC whole-program custom convention, `_chkstk`) or
+//! captures every register (`__report_gsfailure`, `_invoke_watson`). A callee in
+//! the import table is never walked.
+//!
+//! The registers the callee reads are its arguments whatever the caller's own
+//! data flow says, so the trial scoring that puts a register in front of the
+//! stack slots cannot let it end the list: a read register's trial is active,
+//! one the caller never wrote included (it passes its own value through), and
+//! its use does not count against another call taking the same value. Where the
+//! function's stack solution rests on a guessed pop, the call-site alias scan
+//! passes over these operands, as it did while they were dead: a `this` formed
+//! past the guess sits at an offset that says nothing about another call's
+//! slots. On by default on x86-32 Windows (`x86win.cspec`); option
+//! `calleereginputs off` keeps the default model.
+//!
+//! An indirect call has no callee to read, but MSVC's virtual dispatch states
+//! its convention in the caller: `mov eax,[ecx]; call [eax+k]` (or the slot
+//! loaded into a register first) calls through the vtable of the object in
+//! ECX, and a virtual member function is `__thiscall` with that object as
+//! `this`. Such a call takes the `__thiscall` model when ECX is not written
+//! between the vtable load and the call, judged over the ops since the previous
+//! call ([`virtual_call`]). A COM method is `__stdcall` and takes the interface
+//! as its first pushed argument instead, so a call whose last push stores the
+//! object keeps the default.
+
+use std::rc::Rc;
+
+use kuna_base::address::Address;
+use kuna_base::space::spacetype;
+use kuna_base::types::{int4, uintb};
+use kuna_num::opcodes::OpCode;
+use kuna_num::pcoderaw::VarnodeData;
+use kuna_sleigh::translate::PcodeEmit;
+
+use crate::architecture::Architecture;
+use crate::context::{OpId, VarnodeId};
+use crate::fspec::{FuncCallSpecs, ProtoModel, EXTRAPOP_UNKNOWN};
+use crate::funcdata::Funcdata;
+
+/// Instructions read from the callee's entry.
+const BUDGET: usize = 64;
+
+/// The general registers tracked, in the order of the bits of an input set.
+const REGISTERS: [&str; 6] = ["EAX", "ECX", "EDX", "EBX", "ESI", "EDI"];
+
+const ECX: u8 = 1 << 1;
+const EDX: u8 = 1 << 2;
+/// EAX and the callee-saved registers.
+const FOREIGN: u8 = 1 | (1 << 3) | (1 << 4) | (1 << 5);
+
+/// The shipped default of the `custom` extension (option `calleereginputs
+/// custom`): callee-saved EBX/ESI/EDI custom arguments. Opt-in — the default
+/// `on` stays byte-identical to what #1575 shipped.
+pub const CUSTOM_DEFAULT: bool = false;
+
+/// The callee-saved registers the `custom` extension recovers, with the bit it
+/// takes in [`Architecture::kuna_custom_reg_callers`]'s per-callee mask, in the
+/// deterministic order they are printed (register-space order).
+pub const CUSTOM: [(&str, u8); 3] = [("EBX", 1), ("ESI", 2), ("EDI", 4)];
+
+/// The spec model a callee's register inputs select.
+pub(crate) fn model_name(inputs: u8) -> Option<&'static str> {
+    if inputs & ECX == 0 || inputs & FOREIGN != 0 {
+        return None;
+    }
+    Some(if inputs & EDX != 0 { "__fastcall" } else { "__thiscall" })
+}
+
+/// The `__thiscall` model, ECX's storage and EAX's, for [`virtual_call`], when
+/// option `calleereginputs` is on and the language is x86-32 Windows under a
+/// default model that leaves extrapop unknown.
+pub fn virtual_this(arch: &Architecture) -> Option<(Rc<ProtoModel>, Address, int4, Address)> {
+    if !arch.callee_reginputs
+        || !arch.archid.starts_with("x86:LE:32:")
+        || !crate::kuna_fastfailnoreturn::archid_is_windows(&arch.archid)
+    {
+        return None;
+    }
+    if arch.default_fp().map(|m| m.get_extra_pop()) != Some(EXTRAPOP_UNKNOWN) {
+        return None;
+    }
+    let ecx = arch.translate().get_register_data("ECX").ok()?;
+    let eax = arch.translate().get_register_data("EAX").ok()?;
+    let addr = Address::new(ecx.space.clone()?, ecx.offset);
+    let eax_addr = Address::new(eax.space.clone()?, eax.offset);
+    Some((Rc::clone(arch.get_model("__thiscall")?), addr, ecx.size as int4, eax_addr))
+}
+
+/// The `__thiscall` model for an indirect call through the vtable of the object
+/// in ECX: the target is loaded from a slot of a table that is itself loaded
+/// from where ECX points, and ECX holds that object from the load to the call: a
+/// write to ECX in between must copy the object back (`mov eax,[ebx]; push 6;
+/// mov ecx,ebx`).
+/// A COM method is `__stdcall` with the interface pushed as its first argument,
+/// so a call whose last push before it stores the object (ECX, or a register
+/// holding the same value) keeps the default model (a `push ecx` that only
+/// reserves a slot a later store fills is not that push). So does one that
+/// stores the object at `[esp+4]`: GCC before 4.7 passes a member function's
+/// `this` on the stack, behind the hidden pointer of a returned class
+/// (`mov [esp+4],ecx; mov [esp],edx`). A `__thiscall` callee
+/// removes its own stack arguments, so a call the caller cleans up after
+/// (`add esp,4`, a C table of `__cdecl` function pointers; `own_cleanup`) keeps
+/// it too, as does one that also holds the object in EAX (Delphi's `register` convention passes
+/// it there). Values are compared over the ops since the previous call only
+/// ([`Values`]): a call clobbers ECX, so a register copied from ECX before it
+/// is not the object.
+pub fn virtual_call(data: &Funcdata, call: OpId) -> Option<Rc<ProtoModel>> {
+    use crate::kuna_swiftcall::defining_op;
+    let (model, ecx, ecx_size, eax) = data.get_arch().virtual_this.as_ref()?;
+    let op = data.obank().get(call).filter(|o| o.code() == OpCode::CPUI_CALLIND)?;
+    let target = data.vbank().get(op.get_in(0)?)?;
+    let slot_load = defining_op(data, call, target.get_addr().clone(), target.get_size(), &[OpCode::CPUI_COPY])?;
+    let slot = data.obank().get(slot_load).filter(|o| o.code() == OpCode::CPUI_LOAD)?;
+    let slot_ptr = data.vbank().get(slot.get_in(1)?)?;
+    let table_load = defining_op(
+        data,
+        slot_load,
+        slot_ptr.get_addr().clone(),
+        slot_ptr.get_size(),
+        &[OpCode::CPUI_COPY, OpCode::CPUI_INT_ADD],
+    )?;
+    data.obank().get(table_load).filter(|o| o.code() == OpCode::CPUI_LOAD)?;
+    let sp = data.get_arch().manage().get_stack_space().and_then(|s| s.get_spacebase(0).ok())?;
+    let sp_addr = Address::new(sp.space.clone()?, sp.offset);
+    let mut window = Vec::new();
+    let mut cur = data.op_previous_op(call);
+    while let Some(id) = cur.filter(|_| window.len() < VIRTUAL_SCAN) {
+        if matches!(data.obank().get(id)?.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND) {
+            break;
+        }
+        window.push(id);
+        cur = data.op_previous_op(id);
+    }
+    window.reverse();
+    let mut values = Values::default();
+    let (mut object, mut after_table, mut last_push, mut call_esp) = (None, false, None, None);
+    let (mut second_ptrs, mut second_slot) = (Vec::new(), Vec::new());
+    for &id in &window {
+        let o = data.obank().get(id)?;
+        if id == table_load {
+            object = Some(values.read(data, o.get_in(1)?, id));
+        }
+        let esp = values.at(&sp_addr, sp.size as int4);
+        if o.get_addr() == op.get_addr() && call_esp.is_none() {
+            call_esp = Some(esp);
+        }
+        if o.code() == OpCode::CPUI_STORE && o.get_addr() != op.get_addr() {
+            let ptr = values.read(data, o.get_in(1)?, id);
+            if esp == Some(ptr) {
+                last_push = Some(values.read(data, o.get_in(2)?, id));
+            } else if let Some(&(_, at)) = second_ptrs.iter().find(|(p, _)| *p == ptr) {
+                second_slot.push((at, values.read(data, o.get_in(2)?, id)));
+            }
+        }
+        if let (OpCode::CPUI_INT_ADD, Some(esp)) = (o.code(), esp) {
+            let four = |k| o.get_in(k).and_then(|v| data.vbank().get(v)).is_some_and(|v| v.is_constant() && v.get_offset() == 4);
+            let base = if four(0) { o.get_in(1) } else if four(1) { o.get_in(0) } else { None };
+            if base.is_some_and(|b| values.read(data, b, id) == esp) {
+                second_ptrs.push((Value::Output(id), esp));
+            }
+        }
+        let out = o.get_out().and_then(|v| data.vbank().get(v));
+        let sets_ecx = after_table && out.is_some_and(|v| overlaps(v.get_addr(), v.get_size(), ecx, *ecx_size));
+        after_table |= id == table_load;
+        values.write(data, id);
+        if sets_ecx && values.at(ecx, *ecx_size) != object {
+            return None;
+        }
+    }
+    let receiver = values.at(ecx, *ecx_size)?;
+    let call_esp = call_esp.unwrap_or_else(|| values.at(&sp_addr, sp.size as int4));
+    let second = second_slot.iter().rev().find(|(at, _)| Some(*at) == call_esp).is_some_and(|&(_, v)| v == receiver);
+    if object? != receiver || last_push == Some(receiver) || second || values.at(eax, *ecx_size) == Some(receiver) {
+        return None;
+    }
+    let cleaned = data.get_call_specs_index(call).is_some_and(|i| data.get_call_specs(i).callind_cleanup() > 0);
+    (!cleaned).then(|| Rc::clone(model))
+}
+
+/// Do `(a, asize)` and `(b, bsize)` share a byte?
+fn overlaps(a: &Address, asize: int4, b: &Address, bsize: int4) -> bool {
+    a.get_space().map(|s| s.get_index()) == b.get_space().map(|s| s.get_index())
+        && a.get_offset() < b.get_offset().wrapping_add(bsize as u64)
+        && b.get_offset() < a.get_offset().wrapping_add(asize as u64)
+}
+
+/// A value [`Values`] tells apart: a storage location as it stood when the run
+/// began, a constant, the output of an op, or a read of a location only partly
+/// written in the run.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Value {
+    Entry(Option<i32>, u64, int4),
+    Constant(u64, int4),
+    Output(OpId),
+    Partial(OpId, VarnodeId),
+}
+
+/// The values of the storage locations written in a run of ops, carried forward
+/// through copies (`mov esi,ecx`, `lea eax,[ecx]`), so two registers holding
+/// the same value compare equal.
+#[derive(Default)]
+struct Values(Vec<(Address, int4, Value)>);
+
+impl Values {
+    /// The value of `(addr, size)`, or `None` when the run wrote only part of it.
+    fn at(&self, addr: &Address, size: int4) -> Option<Value> {
+        match self.0.iter().rev().find(|(a, s, _)| overlaps(a, *s, addr, size)) {
+            Some((a, s, v)) => (a == addr && *s == size).then_some(*v),
+            None => Some(Value::Entry(addr.get_space().map(|s| s.get_index()), addr.get_offset(), size)),
+        }
+    }
+
+    fn read(&self, data: &Funcdata, vn: VarnodeId, op: OpId) -> Value {
+        let Some(v) = data.vbank().get(vn) else { return Value::Partial(op, vn) };
+        if v.is_constant() {
+            return Value::Constant(v.get_offset(), v.get_size());
+        }
+        self.at(v.get_addr(), v.get_size()).unwrap_or(Value::Partial(op, vn))
+    }
+
+    fn write(&mut self, data: &Funcdata, id: OpId) {
+        let Some(o) = data.obank().get(id) else { return };
+        let Some(out) = o.get_out().and_then(|v| data.vbank().get(v)) else { return };
+        let zero = |k| o.get_in(k).and_then(|v| data.vbank().get(v)).is_some_and(|v| v.is_constant() && v.get_offset() == 0);
+        let source = match o.code() {
+            OpCode::CPUI_COPY => o.get_in(0),
+            OpCode::CPUI_INT_ADD if zero(1) => o.get_in(0),
+            OpCode::CPUI_INT_ADD if zero(0) => o.get_in(1),
+            _ => None,
+        };
+        let value = source.map_or(Value::Output(id), |s| self.read(data, s, id));
+        let (addr, size) = (out.get_addr().clone(), out.get_size());
+        self.0.retain(|(a, s, _)| !overlaps(a, *s, &addr, size));
+        self.0.push((addr, size, value));
+    }
+}
+
+/// The stack bytes the caller removes right after the indirect call at
+/// `call_at`, read where [`virtual_call`] can apply.
+pub fn callind_cleanup(arch: &Architecture, call_at: &Address) -> u32 {
+    if virtual_this(arch).is_none() {
+        return 0;
+    }
+    crate::p4_calls::kuna_calleepurge::own_cleanup(arch, call_at)
+}
+
+/// Ops [`virtual_call`] reads back from the call.
+const VIRTUAL_SCAN: usize = 128;
+
+/// The model the inputs of the direct call target `entry` select, when option
+/// `calleereginputs` is on and the language is x86-32 under a default model that
+/// leaves extrapop unknown.
+///
+/// With `calleereginputs custom`, a callee-saved register (EBX/ESI/EDI) every
+/// direct call site in the image sets and whose entry value the callee genuinely
+/// reads ([`Architecture::kuna_custom_reg_callers`], built once by the
+/// callee-first driver) becomes a leading custom argument — a synthesized model
+/// is returned instead of the spec's `__thiscall`/`__fastcall`.
+pub fn callee_register_model(arch: &Architecture, entry: &Address) -> Option<Rc<ProtoModel>> {
+    register_model_for(arch, entry)
+}
+
+/// The model `entry`'s own evaluation should use so its decompiled parameters
+/// match what its callers pass: the synthesized custom-register model the
+/// whole-image rule decided, or `None` (the default evaluation is left alone,
+/// byte-identical to before) when it decided nothing.
+pub fn own_register_model(ctx: &crate::context::ArchContext, entry: &Address) -> Option<Rc<ProtoModel>> {
+    custom_model(&ctx.kuna_custom_reg_callers, &ctx.kuna_custom_reg_models, entry)
+}
+
+/// The model `entry` takes: the synthesized custom-register model the
+/// whole-image rule decided, else the spec's `__thiscall`/`__fastcall` from the
+/// register straight-line walk (exactly as #1575).
+fn register_model_for(arch: &Architecture, entry: &Address) -> Option<Rc<ProtoModel>> {
+    if !arch.callee_reginputs {
+        return None;
+    }
+    if let Some(m) = custom_model(&arch.kuna_custom_reg_callers, &arch.kuna_custom_reg_models, entry) {
+        return Some(m);
+    }
+    let name = model_name(callee_register_inputs(arch, entry)?)?;
+    arch.get_model(name).cloned()
+}
+
+/// Look up the synthesized model the whole-image rule decided for `entry` in the
+/// prebuilt per-callee maps.
+fn custom_model(
+    callers: &std::collections::HashMap<uintb, u16>,
+    models: &std::collections::HashMap<u16, Rc<ProtoModel>>,
+    entry: &Address,
+) -> Option<Rc<ProtoModel>> {
+    let key = *callers.get(&entry.get_offset())?;
+    models.get(&key).cloned()
+}
+
+/// Model-key bits (shared by the driver that builds the maps and
+/// [`Architecture::kuna_build_reginput_model`] via the driver).
+pub const KEY_ECX: u16 = 1;
+pub const KEY_EDX: u16 = 1 << 1;
+/// The custom (EBX/ESI/EDI) mask shifts into key bits 2..5.
+pub const KEY_CUSTOM_SHIFT: u16 = 2;
+
+/// Can the `custom` extension act on this image at all: x86-32 Windows under a
+/// default model whose extrapop is unknown, with the `custom` value on? The
+/// whole-image caller scan is skipped where this is false, so the extension
+/// costs nothing off its target.
+pub fn custom_applies(arch: &Architecture) -> bool {
+    arch.callee_reginputs
+        && arch.callee_reginputs_custom
+        && arch.archid.starts_with("x86:LE:32:")
+        && crate::kuna_fastfailnoreturn::archid_is_windows(&arch.archid)
+        && arch.default_fp().map(|m| m.get_extra_pop()) == Some(EXTRAPOP_UNKNOWN)
+}
+
+/// The register names an input-register key names, in printed (ECX, EDX, then
+/// register-space) order, and whether it is the `__thiscall` shape (ECX only).
+pub fn key_registers(key: u16) -> (Vec<&'static str>, bool) {
+    let mut regs = Vec::new();
+    if key & KEY_ECX != 0 {
+        regs.push("ECX");
+    }
+    if key & KEY_EDX != 0 {
+        regs.push("EDX");
+    }
+    for (name, bit) in CUSTOM {
+        if key & ((bit as u16) << KEY_CUSTOM_SHIFT) != 0 {
+            regs.push(name);
+        }
+    }
+    (regs, key & KEY_ECX != 0 && key & KEY_EDX == 0)
+}
+
+/// The ECX/EDX part of a callee's input-register key, from the #1575 straight-line
+/// walk's raw read bits. Unlike [`model_name`] this does not bail when a
+/// callee-saved register is also read: a `custom` callee that reads ECX (or ECX
+/// and EDX) beside EBX/ESI/EDI must carry all of them, or the unmodelled ECX/EDX
+/// stays a phantom read and the recovery misaligns.
+pub fn ecx_edx_key(arch: &Architecture, entry: &Address) -> u16 {
+    let Some(raw) = callee_register_inputs(arch, entry) else { return 0 };
+    let mut key = 0;
+    if raw & ECX != 0 {
+        key |= KEY_ECX;
+    }
+    if raw & EDX != 0 {
+        key |= KEY_EDX;
+    }
+    key
+}
+
+/// The bit [`record`] files beside the [`CUSTOM`] bits when the body also reads
+/// ECX or EDX on entry: such a callee keeps the ordinary `__thiscall` /
+/// `__fastcall` resolution and takes no custom model.
+pub const READS_ECX_EDX: u8 = 1 << 3;
+
+/// Record the callee-saved registers `entry`'s own body read on entry (the
+/// post-heritage entry reads), as [`CUSTOM`] bits plus [`READS_ECX_EDX`], and
+/// every direct call its decompile printed, for the two-sided decision after
+/// the pass. Unlike the straight-line walk the reads see a register used past
+/// the first branch or call (passed to a sub-call, then compared), which is the
+/// shape the `custom` rule exists for.
+pub fn record(arch: &mut Architecture, entry: &Address, data: &Funcdata) {
+    for i in 0..data.num_calls() {
+        let fc = data.get_call_specs(i);
+        let callee = fc.get_entry_address();
+        if callee.is_invalid() {
+            continue;
+        }
+        if let Some(site) = data.obank().get(fc.get_op()).map(|o| o.get_addr().get_offset()) {
+            arch.kuna_custom_reg_calls.entry(callee.get_offset()).or_default().insert((entry.get_offset(), site));
+        }
+    }
+    let Some(reads) = data.kuna_entry_reads() else { return };
+    let Some(space) = arch.manage().get_space_by_name("register").cloned() else { return };
+    let reg_idx = space.get_index();
+    let regs: Vec<(u64, u64, u8)> = CUSTOM
+        .iter()
+        .copied()
+        .chain([("ECX", READS_ECX_EDX), ("EDX", READS_ECX_EDX)])
+        .filter_map(|(name, bit)| {
+            let v = arch.translate().get_register_data(name).ok()?;
+            Some((v.offset, v.offset + v.size as u64, bit))
+        })
+        .collect();
+    let mut mask = 0u8;
+    for (addr, _) in reads.read.iter().chain(&reads.declared) {
+        if addr.get_space().map(|s| s.get_index()) != Some(reg_idx) {
+            continue;
+        }
+        let at = addr.get_offset();
+        for &(lo, hi, bit) in &regs {
+            if (lo..hi).contains(&at) {
+                mask |= bit;
+            }
+        }
+    }
+    if mask != 0 {
+        arch.kuna_custom_reg_reads.insert(entry.get_offset(), mask);
+    }
+}
+
+/// Is the register `addr`/`size` a parameter of the model the callee's reads
+/// selected for `fc`, while the call still carries that model?
+pub fn reads_register(fc: &FuncCallSpecs, addr: &Address, size: int4) -> bool {
+    let Some(model) = fc.callee_reg_model() else { return false };
+    fc.proto().has_matching_model(model)
+        && addr.get_space().is_some_and(|s| s.get_type() == spacetype::IPTR_PROCESSOR)
+        && model.possible_input_param(addr, size)
+}
+
+/// Does the call-site trial alias scan of `data` pass over the register
+/// operands its direct callees read? Only where the stack pointer's solution
+/// rests on a guessed pop, which leaves offsets on the two sides of the guess
+/// incomparable.
+pub fn skips_read_operands(data: &Funcdata) -> bool {
+    data.call_specs().iter().any(|fc| fc.callee_reg_model().is_some())
+        && !crate::p4_calls::kuna_calleepurge::every_pop_settled(data)
+}
+
+/// Is `vn`, read by the call `op` while its trials are scored, the operand of
+/// a register trial the direct callee reads?
+pub fn is_read_operand(data: &Funcdata, op: OpId, vn: VarnodeId) -> bool {
+    let Some(o) = data.obank().get(op).filter(|o| o.code() == OpCode::CPUI_CALL) else {
+        return false;
+    };
+    let Some(idx) = data.get_call_specs_index(op) else { return false };
+    let fc = data.get_call_specs(idx);
+    if fc.callee_reg_model().is_none() || !fc.is_input_active() {
+        return false;
+    }
+    let active = fc.active_input();
+    (0..o.num_input()).filter(|&slot| o.get_in(slot) == Some(vn)).any(|slot| {
+        (0..active.get_num_trials())
+            .map(|i| active.get_trial(i))
+            .any(|t| t.get_slot() == slot && reads_register(fc, t.get_address(), t.get_size()))
+    })
+}
+
+fn is_import(arch: &Architecture, entry: &Address) -> bool {
+    let Some(scope) = arch.symboltab.get_global_scope() else { return false };
+    let size = entry.get_space().map_or(1, |s| s.get_addr_size() as i32);
+    let (_, flags) = arch.symboltab.query_properties(scope, entry, size, entry);
+    flags & crate::varnode::varnode_flags::externref != 0
+}
+
+/// The tracked registers the callee at `entry` reads before writing, as bits
+/// in [`REGISTERS`] order.
+pub fn callee_register_inputs(arch: &Architecture, entry: &Address) -> Option<u8> {
+    if !arch.archid.starts_with("x86:LE:32:")
+        || !crate::kuna_fastfailnoreturn::archid_is_windows(&arch.archid)
+        || entry.is_invalid()
+    {
+        return None;
+    }
+    if arch.default_fp().map(|m| m.get_extra_pop()) != Some(EXTRAPOP_UNKNOWN) {
+        return None;
+    }
+    if is_import(arch, entry) {
+        return None;
+    }
+    let off = entry.get_offset();
+    if let Some(hit) = arch.kuna_callee_reginputs.borrow().get(&off) {
+        return *hit;
+    }
+    let found = walk(arch, entry);
+    arch.kuna_callee_reginputs.borrow_mut().insert(off, found);
+    found
+}
+
+#[derive(Default)]
+struct Collect(Vec<(OpCode, Option<VarnodeData>, Vec<VarnodeData>)>);
+
+impl PcodeEmit for Collect {
+    fn dump(&mut self, _at: &Address, opcode: OpCode, out: Option<&VarnodeData>, inputs: &[VarnodeData]) {
+        self.0.push((opcode, out.cloned(), inputs.to_vec()));
+    }
+}
+
+/// The tracked registers and the stack pointer, as storage.
+pub(crate) struct Regs {
+    pub tracked: Vec<VarnodeData>,
+    pub sp: VarnodeData,
+}
+
+fn same_space(a: &VarnodeData, b: &VarnodeData) -> bool {
+    match (&a.space, &b.space) {
+        (Some(x), Some(y)) => x.get_index() == y.get_index(),
+        _ => false,
+    }
+}
+
+/// The bytes of register `r` that `v` touches, bit `i` for byte `i` of `r`.
+fn byte_mask(v: &VarnodeData, r: &VarnodeData) -> u8 {
+    if !same_space(v, r) {
+        return 0;
+    }
+    let lo = v.offset.max(r.offset);
+    let hi = (v.offset + v.size as u64).min(r.offset + r.size as u64);
+    (lo..hi).fold(0u8, |m, b| m | (1 << (b - r.offset)))
+}
+
+fn same(a: &VarnodeData, b: &VarnodeData) -> bool {
+    same_space(a, b) && a.offset == b.offset && a.size == b.size
+}
+
+/// Is `v` the constant that fixes the result of `opc` whatever the other input
+/// holds (all ones for `INT_OR`, zero for `INT_AND`)?
+fn absorbs(opc: OpCode, v: &VarnodeData) -> bool {
+    if !v.space.as_ref().is_some_and(|sp| sp.get_type() == kuna_base::space::spacetype::IPTR_CONSTANT) {
+        return false;
+    }
+    let ones = if v.size >= 8 { u64::MAX } else { (1u64 << (8 * v.size)) - 1 };
+    match opc {
+        OpCode::CPUI_INT_OR => v.offset & ones == ones,
+        _ => v.offset & ones == 0,
+    }
+}
+
+/// What one instruction's p-code does to the line.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(crate) struct Step {
+    pub read: u8,
+    /// Per tracked register, the bytes written so far (bit `i` = byte `i`).
+    pub written: [u8; 6],
+    /// The next instruction of the line: `Some(target)` for a direct jump,
+    /// `None` when the line ends here; falls through when [`Self::ends`] is false.
+    pub jump: Option<uintb>,
+    pub ends: bool,
+}
+
+/// Summarize one instruction's p-code against the registers already `written`.
+pub(crate) fn step(
+    ops: &[(OpCode, Option<VarnodeData>, Vec<VarnodeData>)],
+    regs: &Regs,
+    written: [u8; 6],
+) -> Step {
+    let mut s = Step { written, ..Step::default() };
+    let is_unique = |v: &VarnodeData| {
+        v.space.as_ref().is_some_and(|sp| sp.get_type() == kuna_base::space::spacetype::IPTR_INTERNAL)
+    };
+    let read_bits = |v: &VarnodeData, done: &[u8; 6]| {
+        regs.tracked.iter().enumerate().fold(0u8, |acc, (k, r)| {
+            if byte_mask(v, r) != 0 && done[k] == 0 { acc | (1 << k) } else { acc }
+        })
+    };
+    // A register copied into a temporary that is then only pushed is saved, not used.
+    let mut held: Vec<(VarnodeData, u8)> = Vec::new();
+    for (opc, out, ins) in ops {
+        if *opc == OpCode::CPUI_COPY && ins.len() == 1 && out.as_ref().is_some_and(|o| same(o, &ins[0])) {
+            continue;
+        }
+        match opc {
+            OpCode::CPUI_COPY if ins.len() == 1 && out.as_ref().is_some_and(is_unique) => {
+                let bits = read_bits(&ins[0], &s.written);
+                if bits != 0 {
+                    held.push((out.clone().unwrap(), bits));
+                }
+            }
+            OpCode::CPUI_STORE if ins.len() == 3 && same(&ins[1], &regs.sp) => {
+                s.read |= read_bits(&ins[1], &s.written);
+                if let Some(pos) = held.iter().position(|(t, _)| same(t, &ins[2])) {
+                    held.remove(pos);
+                }
+            }
+            OpCode::CPUI_INT_XOR | OpCode::CPUI_INT_SUB if ins.len() == 2 && same(&ins[0], &ins[1]) => {}
+            OpCode::CPUI_INT_OR | OpCode::CPUI_INT_AND if ins.len() == 2 && ins.iter().any(|v| absorbs(*opc, v)) => {}
+            _ => {
+                for v in ins {
+                    s.read |= read_bits(v, &s.written);
+                    if let Some(pos) = held.iter().position(|(t, _)| same(t, v)) {
+                        s.read |= held.remove(pos).1;
+                    }
+                }
+            }
+        }
+        if let Some(o) = out {
+            for (k, r) in regs.tracked.iter().enumerate() {
+                s.written[k] |= byte_mask(o, r);
+            }
+        }
+        match opc {
+            OpCode::CPUI_BRANCH
+                if ins.first().is_some_and(|d| {
+                    !d.space.as_ref().is_some_and(|sp| sp.get_type() == kuna_base::space::spacetype::IPTR_CONSTANT)
+                }) =>
+            {
+                s.jump = Some(ins[0].offset);
+                s.ends = true;
+            }
+            OpCode::CPUI_CBRANCH
+            | OpCode::CPUI_BRANCHIND
+            | OpCode::CPUI_CALL
+            | OpCode::CPUI_CALLIND
+            | OpCode::CPUI_RETURN => {
+                s.ends = true;
+            }
+            _ => {}
+        }
+    }
+    s
+}
+
+fn registers(arch: &Architecture) -> Option<Regs> {
+    let translate = arch.translate();
+    let tracked = REGISTERS
+        .iter()
+        .map(|r| translate.get_register_data(r).ok())
+        .collect::<Option<Vec<_>>>()?;
+    let base = arch.manage().get_stack_space()?.get_spacebase(0).ok()?;
+    let sp = VarnodeData { space: base.space.clone(), offset: base.offset, size: base.size as u32 };
+    Some(Regs { tracked, sp })
+}
+
+/// The registers the straight line from `entry` reads before writing.
+fn walk(arch: &Architecture, entry: &Address) -> Option<u8> {
+    let space = entry.get_space()?.clone();
+    let regs = registers(arch)?;
+    let translate = arch.translate();
+    let mut at = entry.get_offset();
+    let mut written = [0u8; 6];
+    let mut read = 0u8;
+    let mut seen = std::collections::HashSet::new();
+    for _ in 0..BUDGET {
+        if !seen.insert(at) {
+            break;
+        }
+        let addr = Address::new(space.clone(), at);
+        let mut collect = Collect::default();
+        let len = translate.one_instruction(&mut collect, &addr).ok()?;
+        let s = step(&collect.0, &regs, written);
+        read |= s.read;
+        written = s.written;
+        match (s.ends, s.jump) {
+            (true, Some(target)) => at = target,
+            (true, None) => break,
+            (false, _) => at = at.wrapping_add(len.max(1) as uintb),
+        }
+    }
+    Some(read)
+}
+
+#[cfg(test)]
+mod tests;

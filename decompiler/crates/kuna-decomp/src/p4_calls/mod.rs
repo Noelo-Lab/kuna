@@ -16,6 +16,12 @@ pub mod kuna_zerofillreturn; // (kuna) the zero a narrow write leaves in a retur
 pub mod kuna_zerocallregs; // (kuna) a register a -fzero-call-used-regs epilogue clears is no part of the return value
 pub mod kuna_calleepreserves; // (kuna) the decoded callee's writes narrow the cspec killedbycall set
 pub mod kuna_callretpair; // (kuna) complete the two-register CALL output arm on any image, not just a Rust one
+pub mod kuna_x87intrinsic; // (kuna) the MSVC x87 one-operand intrinsics' ST0 model
+pub mod kuna_calleereginputs; // (kuna) an x86-32 callee's register inputs choose its model
+pub mod kuna_calleestackargs; // (kuna `calleeargs`) the stack-argument bytes an x86-32 callee reads
+pub mod kuna_calleepurge; // (kuna) an x86-32 callee's stack purge read off its RET
+pub mod kuna_stackcookie; // (kuna) the frame cookie MSVC stores on the stack is no argument
+pub mod kuna_slotargs; // (kuna) a call through an import slot takes the declared parameters its caller's writes back
 pub mod kuna_calleeprotostack; // (kuna) a declared callee's prototype states its stack contract
 pub mod kuna_msvcbyval; // (kuna) an MSVC __cdecl import's by-value class argument sized at the call site
 pub(crate) mod kuna_calleenoreturn;
@@ -32,6 +38,7 @@ pub mod kuna_retcallhalf; // (kuna) a call's result handed back beside a compute
 pub mod kuna_retsysreg; // (kuna) a register set for a system register is not the high word of the return
 pub mod kuna_retpushedhalf;
 pub mod kuna_reloadarg; // (kuna) a register reloaded from the caller's frame is re-scored once the frame is heritaged
+pub mod kuna_directalias; // (kuna) a direct access at a known stack offset aliases only the bytes it touches
 pub mod kuna_returnuncomputed;
 pub mod kuna_spillargtrial;
 pub mod kuna_stackaddrargtrial;

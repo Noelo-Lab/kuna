@@ -29,8 +29,8 @@
     },
     "stdout_matches": [
       "int big\\(int \\*a0,int a1,long \\*a2\\)",
-      "dat_401cf8 = v3;",
-      "\\*a2 = \\(long\\)v1;\\n  v45 = v45 \\+ v10 \\+ v11 \\+ dat_401cf8\\[1\\];"
+      "gi = v3;",
+      "\\*a2 = \\(long\\)v1;\\n  v45 = v45 \\+ v10 \\+ v11 \\+ gi\\[1\\];"
     ],
     "wall_ms": {
       "stat": "min",

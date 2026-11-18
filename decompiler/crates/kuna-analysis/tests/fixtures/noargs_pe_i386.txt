@@ -1,0 +1,12 @@
+Stripped PE32 i386 fixture for kuna_calleestackargs (tests/stages/kuna-calleeargs.xml).
+
+noargs_pe_i386.cpp and noargs_pe_i386_impl.cpp are compiled by Visual C++ 2005 SP1
+(`cl /O2 /GR- /c`, outputs renamed noargs_pe_i386_c.obj and noargs_pe_i386_impl.obj).
+`steer` (0x401000) pushes `extra` for the virtual `message` call, then calls the
+`this`-only `Vec::angle` (0x401030) before pushing the remaining arguments.
+
+Build:
+  clang --target=i686-pc-windows-msvc -c noargs_pe_i386_fltused.s -o fltused.obj
+  lld-link /nologo /entry:start /subsystem:console /nodefaultlib /base:0x400000 \
+    /fixed /safeseh:no /opt:noref /Brepro /out:noargs_pe_i386.exe \
+    noargs_pe_i386_c.obj noargs_pe_i386_impl.obj fltused.obj

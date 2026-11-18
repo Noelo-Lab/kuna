@@ -133,6 +133,8 @@ impl AnalysisPass for SwiftMetadataPass {
             imports: &imports,
             memo: Default::default(),
             code,
+            bodies: crate::analyzers::entry::stated_function_bodies(ctx.file, ctx.bytes),
+            insn_align: insn_align(ctx.file),
             claims: Default::default(),
             budget: std::cell::Cell::new(NAME_BYTES.saturating_add(ctx.bytes.len())),
         };
@@ -241,11 +243,26 @@ pub struct Claim {
     pub getter: bool,
 }
 
+/// [`Namer::insn_align`] of `file`'s architecture.
+fn insn_align(file: &object::File) -> u64 {
+    match file.architecture() {
+        object::Architecture::Aarch64 => 4,
+        _ => 1,
+    }
+}
+
 pub struct Namer<'a> {
     md: &'a Metadata,
     imports: &'a HashMap<u64, String>,
     memo: std::cell::RefCell<HashMap<u64, Option<String>>>,
     code: Vec<(u64, u64)>,
+    /// The function bodies the image states
+    /// ([`crate::analyzers::entry::stated_function_bodies`]): a record may
+    /// not claim a point strictly inside one.
+    bodies: Vec<(u64, u64)>,
+    /// The instruction alignment: 4 on arm64, where a misaligned address
+    /// starts no instruction, else 1.
+    insn_align: u64,
     /// Every claim on each function address, in record order.
     claims: std::cell::RefCell<std::collections::BTreeMap<u64, Vec<Claim>>>,
     /// Name bytes left to build ([`NAME_BYTES`] plus the image length).
@@ -337,7 +354,9 @@ impl Namer<'_> {
         }
     }
 
-    /// Record a metadata record's claim on the code at `addr`.
+    /// Record a metadata record's claim on the code at `addr`, when a function
+    /// can start there: a claim becomes a function, so one at a misaligned
+    /// address or inside a body the image states must not split that body.
     fn claim(
         &self,
         addr: u64,
@@ -347,6 +366,8 @@ impl Namer<'_> {
         getter: bool,
     ) {
         if !self.is_code(addr)
+            || addr % self.insn_align != 0
+            || crate::analyzers::entry::inside_body(&self.bodies, addr)
             || !self.spend(&name)
             || !self.spend(owner)
             || requirement
@@ -588,7 +609,7 @@ impl Namer<'_> {
                 name: name.clone(),
                 kind: SymKind::Function,
             });
-            out.fid_names.push(FidMatch { addr, name });
+            out.fid_names.push(FidMatch { addr, name, by_signature: false });
         }
     }
 

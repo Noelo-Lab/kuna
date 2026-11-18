@@ -114,7 +114,7 @@ impl AnalysisPass for ObjcMetadataPass {
         // The type-mapping context for IMP/ivar prototypes (PR-O2).
         let (ptr_size, word_size) = ctx.arch.data_org();
         let tctx = TypeCtx::new(ctx.arch.types(), ptr_size, word_size);
-        let sdk = match kuna_decomp::kuna_objcsdk::sdk_path_from_env() {
+        let sdk = match kuna_decomp::kuna_objcsdk::sdk_path() {
             Some(root) => kuna_objcsdk::signatures(&root, &kuna_objcsdk::linked_frameworks(ctx.file, ctx.bytes)),
             None => HashMap::new(),
         };
@@ -281,7 +281,7 @@ impl ObjcMetadataPass {
             // The label-gated rename (the FID precedent): overwrite the engine's
             // own sub_*/FUN_* placeholder with the ObjC method name, never a real
             // symbol.
-            out.fid_names.push(FidMatch { addr: m.imp, name: label.clone() });
+            out.fid_names.push(FidMatch { addr: m.imp, name: label.clone(), by_signature: false });
 
             // The typed prototype from the ObjC type encoding (PR-O2): `i20@0:8i16`
             // → `int -[Greeter greet:](id self, SEL _cmd, int n)`. Keyed by the

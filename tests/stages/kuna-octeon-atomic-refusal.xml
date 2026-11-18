@@ -1,8 +1,9 @@
 <decompilertest>
 <!-- P2 Octeon review: GNU as -64 -march=octeon2 lai $8,($4), followed
      by jr ra/nop. The old inherited restore changed SP and loaded registers.
-     Unsupported atomics must stop decoding. Original bytes, no vendor input. -->
-<binaryimage arch="MIPS:BE:64:octeon2:default">
+     LA instructions are unavailable on Octeon I and must stop decoding.
+     Original bytes, no vendor input. II/III semantics are tested separately. -->
+<binaryimage arch="MIPS:BE:64:octeon:default">
 <bytechunk space="ram" offset="0x1000" readonly="true">7080409f03e0000800000000</bytechunk>
 <symbol space="ram" offset="0x1000" name="unsupported_atomic"/>
 </binaryimage>

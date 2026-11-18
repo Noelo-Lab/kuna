@@ -9,14 +9,15 @@
 //!
 //! * **on** (default): the wide literal commits a typelocked `wchar2[10]` at its
 //!   address and the call renders `LoadLibraryW(L"ntdll.dll")`.
-//! * **off**: nothing is marked up at 2-byte width and the call renders the bare
-//!   `LoadLibraryW(0x140002100)`, also with `operand_refs` on (a `--mode
-//!   aggressive` member, and `auto` picks aggressive for anything under 500 KiB,
-//!   so it is what the `kuna` binary runs by default). That pass accepts a SINGLE
-//!   visible character, and once read the first unit plus its high-byte NUL as a
-//!   complete `char[2]`, rendering `LoadLibraryW("n")` -- the recorded defect. It
-//!   now declines a run that opens an array of 2-byte character codes nothing
-//!   points into. Both off-arms are asserted.
+//! * **off**: nothing is marked up at 2-byte width; the call still renders
+//!   `LoadLibraryW(L"ntdll.dll")`, read through the `wchar_t *` parameter of the
+//!   `win32sigs` declaration the IAT call carries, also with `operand_refs` on (a
+//!   `--mode aggressive` member, and `auto` picks aggressive for anything under
+//!   500 KiB, so it is what the `kuna` binary runs by default). That pass accepts
+//!   a SINGLE visible character, and once read the first unit plus its high-byte
+//!   NUL as a complete `char[2]`, rendering `LoadLibraryW("n")` -- the recorded
+//!   defect. It now declines a run that opens an array of 2-byte character codes
+//!   nothing points into. Both off-arms are asserted.
 //!
 //! The ASCII argument is the control: it must render identically on both arms, so
 //! the width the pass already had is untouched.
@@ -93,12 +94,12 @@ fn wide_literal_renders_whole_with_the_width_on() {
 fn wide_literal_is_unmarked_with_the_width_off() {
     let out = decompile_entry(false);
     assert!(
-        !out.contains("ntdll.dll"),
-        "off must mark up nothing at 2-byte width, got:\n{out}"
+        out.contains(r#"LoadLibraryW(L"ntdll.dll")"#),
+        "off, the declared wchar_t * parameter still reads the literal, got:\n{out}"
     );
     assert!(
-        out.contains("LoadLibraryW(0x140002100)"),
-        "off must leave the wide literal's address untyped, got:\n{out}"
+        !out.contains(r#"LoadLibraryW("n")"#),
+        "off must not read the wide literal as a one-character string, got:\n{out}"
     );
     // The control: the ASCII width is untouched by the gate.
     assert!(
@@ -116,7 +117,7 @@ fn wide_literal_is_unmarked_with_the_width_off() {
 fn the_width_outranks_the_scalar_markup_that_read_one_character() {
     let off = decompile_entry_with(false, true);
     assert!(
-        off.contains("LoadLibraryW(0x140002100)"),
+        !off.contains(r#"LoadLibraryW("n")"#) && off.contains(r#"LoadLibraryW(L"ntdll.dll")"#),
         "operand_refs must not read the wide literal as a one-character string \
          with the width off, got:\n{off}"
     );

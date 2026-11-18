@@ -98,15 +98,13 @@ fn bootstrap(on: bool) -> kuna_console::engine::ConsoleProgram {
     prog.arch_mut()
         .set_kuna_option("funcstart_patterns", "on")
         .expect("funcstart_patterns flips on");
+    // (kuna, GH-299) `aif on`, not `strict`: the aligned slide suppresses both
+    // phantoms this file exists to pin — it never probes `POOL+2`, which is 2-mod-4
+    // and not a hole start — and these five assertions are about `poolentry`'s own
+    // contract (pool inference, the paired MOVE, the unpaired KEEP, the disclosed
+    // split), so they keep the byte-granular cursor they were written against.
+    // `verify_aifstrict.rs` is the two-pass gate for the suppression itself.
     prog.arch_mut().set_kuna_option("aif", "on").expect("aif flips on");
-    // (kuna, GH-299) `aifstrict`'s aligned slide suppresses both phantoms this file
-    // exists to pin — it never probes `POOL+2`, which is 2-mod-4 and not a hole
-    // start. It is default-off so this is currently redundant, but these five
-    // assertions are about `poolentry`'s own contract (pool inference, the paired
-    // MOVE, the unpaired KEEP, the disclosed split), so the byte-granular cursor they
-    // were written against is pinned here rather than left to a default that may
-    // move. `verify_aifstrict.rs` is the two-pass gate for the suppression itself.
-    prog.arch_mut().set_kuna_option("aifstrict", "off").expect("aifstrict flips off");
     // `aifpoolslide` (default-on) keeps the gap walk off both pool words in the first
     // place; it is pinned off here for the same reason. `verify_aifpoolslide.rs`
     // gates it on this fixture.
@@ -310,8 +308,6 @@ fn checked_frame_program(
         ("funcstart_patterns", true),
         ("armframes", true),
         ("aif", aif),
-        ("aifstrict", false),
-        ("aifcorroborate", false),
         ("aifpoolslide", false),
         ("poolentry", pool),
         ("ptrentry", pointers),

@@ -6,7 +6,8 @@
 //!
 //! Fixtures: `kuna-analysis/tests/fixtures/libcnames_x86_64` and
 //! `libcnames_O0_x86_64` (source beside them). `copy_file` prints `fd`,
-//! `fd_2`, `n`, `v4` and `v5` by default. Every case runs on both surfaces: the
+//! `fd_2`, `n`, `buf` (the stack buffer whose address `read` takes) and `v5`
+//! by default. Every case runs on both surfaces: the
 //! text one drives `decomp_dbg`, `--json` runs in-process.
 
 use std::collections::BTreeSet;
@@ -90,14 +91,14 @@ fn renames_only(directives: &[&str], renames: &[(&str, &str)]) {
 #[test]
 fn the_default_names_the_locals_and_numbers_them_as_the_option_off_does() {
     let named = decompile(&[], &[]);
-    assert_eq!(declared(&named), names(&["fd", "fd_2", "n", "v4", "v5"]), "{named}");
+    assert_eq!(declared(&named), names(&["buf", "fd", "fd_2", "n", "v5"]), "{named}");
     assert!(named.contains("  fd = open(a0,0);\n"), "{named}");
-    assert!(named.contains("n = read(fd,v4,0x200);"), "{named}");
+    assert!(named.contains("n = read(fd,buf,0x200);"), "{named}");
     let plain = decompile(&["--mode", "reliable", "--option", "libcnames", "off"], &[]);
     assert_eq!(declared(&plain), names(&["v1", "v2", "v3", "v4", "v5"]), "{plain}");
-    assert_eq!(lines_renamed(&named, &[("fd", "v1"), ("fd_2", "v2"), ("n", "v3")]).len(), plain.lines().count());
+    assert_eq!(lines_renamed(&named, &[("fd", "v1"), ("fd_2", "v2"), ("n", "v3"), ("buf", "v4")]).len(), plain.lines().count());
     let reliable = decompile(&["--mode", "reliable"], &[]);
-    assert_eq!(declared(&reliable), names(&["fd", "fd_2", "n", "v4", "v5"]), "{reliable}");
+    assert_eq!(declared(&reliable), names(&["buf", "fd", "fd_2", "n", "v5"]), "{reliable}");
     let off = decompile(&["--option", "libcnames", "off"], &[]);
     assert_eq!(declared(&off), names(&["v1", "v2", "v3", "v4", "v5"]), "{off}");
 }
@@ -113,7 +114,14 @@ fn renaming_a_library_name_moves_no_other_local() {
 #[test]
 fn renaming_a_numbered_local_moves_no_library_name() {
     renames_only(&["name v5 total"], &[("total", "v5")]);
-    renames_only(&["name v4 block"], &[("block", "v4")]);
+}
+
+/// The stack buffer prints `buf` and answers to its number as well.
+#[test]
+fn a_stack_object_is_renamed_by_either_name_alone() {
+    renames_only(&["name buf block"], &[("block", "buf")]);
+    renames_only(&["name v4 block"], &[("block", "buf")]);
+    renames_only(&["name buf block", "name v5 total"], &[("block", "buf"), ("total", "v5")]);
 }
 
 /// The name a rename frees is handed to no other local: `fd_2` does not
@@ -121,7 +129,7 @@ fn renaming_a_numbered_local_moves_no_library_name() {
 #[test]
 fn a_freed_library_name_goes_to_no_other_local() {
     let code = decompile(&[], &["name fd src_fd"]);
-    assert_eq!(declared(&code), names(&["fd_2", "n", "src_fd", "v4", "v5"]), "{code}");
+    assert_eq!(declared(&code), names(&["buf", "fd_2", "n", "src_fd", "v5"]), "{code}");
 }
 
 /// A retype that keeps the width names nothing anew, and is applied by the
@@ -135,7 +143,7 @@ fn a_retype_of_a_library_named_local_keeps_every_name() {
         ("type v2 unsigned int", "fd_2"),
     ] {
         let code = decompile(&[], &[directive]);
-        assert_eq!(declared(&code), names(&["fd", "fd_2", "n", "v4", "v5"]), "{directive}:\n{code}");
+        assert_eq!(declared(&code), names(&["buf", "fd", "fd_2", "n", "v5"]), "{directive}:\n{code}");
         assert!(code.contains(&format!("  unsigned int {local}; // ")), "{directive}:\n{code}");
     }
     let code = decompile(&[], &["type n unsigned long"]);
@@ -153,7 +161,7 @@ fn a_number_shaped_rename_is_kept() {
     renames_only(&["name fd v9"], &[("v9", "fd")]);
     renames_only(&["name fd v9", "name v9 x"], &[("x", "fd")]);
     renames_only(&["name fd v9", "name fd_2 v8"], &[("v9", "fd"), ("v8", "fd_2")]);
-    renames_only(&["name v4 v1"], &[("v1", "v4")]);
+    renames_only(&["name v4 v1"], &[("v1", "buf")]);
     renames_only(&["name fd v1"], &[("v1", "fd")]);
 }
 
@@ -178,12 +186,12 @@ fn a_directive_reaches_the_same_local_in_every_mode() {
 #[test]
 fn a_local_a_rename_took_its_library_name_from_prints_its_number() {
     let code = decompile(&[], &["name v5 n"]);
-    assert_eq!(declared(&code), names(&["fd", "fd_2", "n", "v3", "v4"]), "{code}");
-    assert!(code.contains("v3 = read(fd,v4,0x200);") && code.contains("n += write(fd_2,v4,v3);"), "{code}");
+    assert_eq!(declared(&code), names(&["buf", "fd", "fd_2", "n", "v3"]), "{code}");
+    assert!(code.contains("v3 = read(fd,buf,0x200);") && code.contains("n += write(fd_2,buf,v3);"), "{code}");
     let code = decompile(&[], &["name v5 n", "name v3 got"]);
-    assert!(code.contains("got = read(fd,v4,0x200);") && code.contains("n += write(fd_2,v4,got);"), "{code}");
+    assert!(code.contains("got = read(fd,buf,0x200);") && code.contains("n += write(fd_2,buf,got);"), "{code}");
     let code = decompile(&[], &["name v5 n", "name n total"]);
-    assert!(code.contains("n = read(fd,v4,0x200);") && code.contains("total += write(fd_2,v4,n);"), "{code}");
+    assert!(code.contains("n = read(fd,buf,0x200);") && code.contains("total += write(fd_2,buf,n);"), "{code}");
     renames_only(&["name v5 fd_2", "name v2 second"], &[("fd_2", "v5"), ("second", "fd_2")]);
 }
 

@@ -254,8 +254,20 @@ pub struct RelocLayout {
     /// Half-open extent of allocated ELF COMMON storage, separate from extern slots.
     pub common_range: Option<(u64, u64)>,
     /// Half-open extent of a MIPS object's synthetic GOT: its entries hold what
-    /// the relocations put there and nothing else writes them.
+    /// the relocations put there and nothing else writes them, except its
+    /// [`Self::import_slots`].
     pub got_range: Option<(u64, u64)>,
+    /// A MIPS object's synthetic `$gp`.
+    pub gp: Option<u64>,
+    /// Half-open import slots: an undefined weak symbol's GOT entry or the
+    /// word allocated for its other address forms, which the run-time loader
+    /// fills and which therefore does not fold. Disjoint from the extern slots
+    /// and from [`Self::common_range`].
+    pub import_slots: Vec<(u64, u64)>,
+    pub nullable_relocations: Vec<kuna_decomp::kuna_nullable_reloc::NullableRelocation>,
+    /// Additional addresses of the same logical import, `(alias, canonical)`:
+    /// its import slot, beside the synthetic extern address it is entered at.
+    pub function_address_aliases: Vec<(u64, u64)>,
     /// A PowerPC64 ELFv1 object's function descriptors: `(descriptor, entry,
     /// TOC)`, sorted by descriptor address.
     pub opd: Vec<(u64, u64, Option<u64>)>,
@@ -374,7 +386,12 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
         cursor = align_up(cursor, 16).wrapping_add(g.size());
         gp = Some(g);
     }
-    let got_base = gp.as_ref().map(|g| g.gp().wrapping_sub(kuna_mipsreloc::GP_BIAS));
+    let got_base = gp.as_ref().map(|g| g.base());
+    let input_gp = if mips { kuna_mipsreloc::input_gp(file) } else { Ok(0) };
+    let weak = |target: RelocationTarget| match target {
+        RelocationTarget::Symbol(idx) => file.symbol_by_index(idx).is_ok_and(|s| s.is_undefined() && s.is_weak()),
+        _ => false,
+    };
 
     // Externs (undefined referenced symbols) live in a synthetic area above the
     // laid-out sections — the angr extern-object analog.  Allocated on demand.
@@ -386,6 +403,9 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
         file.symbols().filter(|symbol| symbol.section() == SymbolSection::Undefined).count(),
         file.is_64(),
     );
+    let weak_limit = common_allocator
+        .reserve(super::kuna_nullable_reloc::reserved_bytes(file))
+        .unwrap_or(0);
     // Externs reached through a PLT-relative relocation (`R_X86_64_PLT32`) or a
     // branch/call instruction field are *code targets* — even when the undefined
     // symbol is `STT_NOTYPE` (object `SymbolKind::Unknown`), which gcc emits for
@@ -423,10 +443,68 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
         // Collect first so the `laid` buffer can be borrowed mutably below.
         let relocs: Vec<(u64, object::Relocation)> = sec.relocations().collect();
         let lo_halves = if mips {
-            kuna_mipsreloc::lo_halves(&relocs, sec.data().unwrap_or(&[]), little_endian)
+            kuna_mipsreloc::lo_halves(file, &relocs, sec.data().unwrap_or(&[]), little_endian)
         } else {
             Vec::new()
         };
+        if let Some(g) = gp.as_mut() {
+            let gp_value = g.gp();
+            let mut resolve = |target: RelocationTarget| {
+                let local = kuna_mipsreloc::is_local(file, target);
+                if let RelocationTarget::Symbol(idx) = target {
+                    if let Some(special) = kuna_mipsreloc::special_symbol(file, idx, gp_value) {
+                        let address = special.unwrap_or(0);
+                        return Some(kuna_mipsreloc::Target { address, local, gp_disp: special.is_none() });
+                    }
+                }
+                let address = match target {
+                    RelocationTarget::Symbol(idx) => {
+                        resolve_symbol(
+                            file,
+                            idx,
+                            &vma_of,
+                            &mut extern_of,
+                            &mut extern_order,
+                            &mut extern_cursor,
+                            &mut common_allocator,
+                            architecture,
+                        )?
+                        .address
+                    }
+                    RelocationTarget::Section(idx) => *vma_of.get(&idx)?,
+                    RelocationTarget::Absolute => 0,
+                    _ => return None,
+                };
+                Some(kuna_mipsreloc::Target { address, local, gp_disp: false })
+            };
+            for (_, reloc) in &relocs {
+                if let (Some(r_type), RelocationTarget::Symbol(idx)) = (kuna_mipsreloc::r_type_of(reloc), reloc.target()) {
+                    if kuna_mipsreloc::targets_code(r_type) {
+                        code_externs.insert(idx);
+                    }
+                }
+            }
+            let applied = g.apply_section(
+                architecture,
+                &mut laid[li].data,
+                sec_vma,
+                &relocs,
+                &lo_halves,
+                input_gp,
+                &weak,
+                &mut resolve,
+            );
+            for (record, reason) in applied.failures {
+                let (offset, reloc) = &relocs[record];
+                diagnostics.record(architecture, kuna_mipsreloc::r_type_of(reloc), reason, sec_vma, *offset);
+            }
+            for callee in applied.callees {
+                if let RelocationTarget::Symbol(idx) = callee {
+                    code_externs.insert(idx);
+                }
+            }
+            continue;
+        }
         if matches!(architecture, Architecture::Sparc | Architecture::Sparc32Plus)
             && sec.kind() == SectionKind::Text
         {
@@ -436,11 +514,8 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
                 little_endian,
             ));
         }
-        for (ri, (offset, reloc)) in relocs.into_iter().enumerate() {
-            let r_type = match reloc.flags() {
-                RelocationFlags::Elf { r_type } => Some(r_type),
-                _ => None,
-            };
+        for (offset, reloc) in relocs {
+            let r_type = kuna_mipsreloc::r_type_of(&reloc);
             let spec = match reloc_apply::classify(architecture, &reloc) {
                 Ok(Some(spec)) => spec,
                 Ok(None) => continue,
@@ -471,12 +546,9 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
                 continue;
             }
             let spec = spec.refine_call_from_field(&laid[li].data[off..end], little_endian);
-            let special = match (&gp, reloc.target()) {
-                (Some(g), RelocationTarget::Symbol(idx)) => {
-                    kuna_mipsreloc::special_symbol(file, idx, g.gp())
-                }
+            let special = match reloc.target() {
                 // `.TOC.`, which ELFv2 code reaches `r2` through, is the linker's.
-                (None, RelocationTarget::Symbol(idx)) if architecture == Architecture::PowerPc64 => toc
+                RelocationTarget::Symbol(idx) if architecture == Architecture::PowerPc64 => toc
                     .filter(|_| {
                         file.symbol_by_index(idx)
                             .is_ok_and(|sym| sym.is_undefined() && sym.name() == Ok(".TOC."))
@@ -556,20 +628,6 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
                 continue;
             };
             let place = sec_vma.wrapping_add(offset);
-            if let (Some(mips_type), Some(g)) = (spec.mips_type(), gp.as_mut()) {
-                let target = kuna_mipsreloc::Target {
-                    address: target.address,
-                    local: kuna_mipsreloc::is_local(file, reloc.target()),
-                    gp_disp: special == Some(None),
-                };
-                let lo = lo_halves.get(ri).copied().flatten();
-                if let Err(reason) =
-                    g.apply(mips_type, &reloc, &mut laid[li].data[off..end], target, place, lo)
-                {
-                    diagnostics.record(architecture, r_type, reason, sec_vma, offset);
-                }
-                continue;
-            }
             if let Err(reason) = reloc_apply::apply(
                 spec,
                 &reloc,
@@ -638,6 +696,53 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
     }
     funcsizes.sort_unstable_by(|a, b| a.0.cmp(&b.0).then(b.1.cmp(&a.1)));
     funcsizes.dedup_by_key(|s| s.0);
+    // An undefined weak symbol's import slot: its MIPS GOT entry, or the word
+    // allocated here for its other address forms, which the run-time loader
+    // fills. The function stays at its synthetic extern address, where direct
+    // references reach it, and the slot is another address of that function, so
+    // `(*slot)(x)` calls the import while a test of the slot still reads it.
+    let mut import_slots = Vec::new();
+    let mut function_address_aliases = Vec::new();
+    let weak_storage_start = extern_cursor;
+    let mut nullable_slots: HashMap<_, _> = gp.as_ref()
+        .map(|g| g.imports().collect()).unwrap_or_default();
+    let mut function_slots: Vec<(SymbolIndex, u64)> = Vec::new();
+    if let Some(g) = &gp {
+        for (idx, slot) in g.imports() {
+            import_slots.push((slot, slot + g.entry()));
+            function_slots.push((idx, slot));
+        }
+    }
+    let (nullable_relocations, allocated) = super::kuna_nullable_reloc::references(
+        file, &vma_of, &extern_of, &mut nullable_slots, &mut extern_cursor, weak_limit);
+    for (idx, slot) in allocated {
+        import_slots.push((slot, slot + if file.is_64() { 8 } else { 4 }));
+        function_slots.push((idx, slot));
+    }
+    for (idx, slot) in function_slots {
+        let Ok(sym) = file.symbol_by_index(idx) else { continue };
+        if !code_externs.contains(&idx) && sym.kind() != SymbolKind::Text {
+            continue;
+        }
+        let Ok(name) = sym.name_bytes() else { continue };
+        if name.is_empty() {
+            continue;
+        }
+        if let Some(&entry) = extern_of.get(&idx) {
+            function_address_aliases.push((slot, entry));
+            continue;
+        }
+        symbol_info.push(RelocSymbolInfo {
+            name: String::from_utf8_lossy(name).into_owned(),
+            vma: slot,
+            section_index: None,
+            section_name: None,
+            section_offset: None,
+            binding: symbol_binding(&sym),
+            undefined: true,
+        });
+        funcsyms.push((slot, name.to_vec()));
+    }
     // Extern functions: name each external *code target* at its synthetic slot
     // so `call ext` renders by name instead of a bare address. A code target is
     // an undefined symbol reached through a PLT-relative reloc (reliable even for
@@ -671,6 +776,13 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
 
     let mut segments: Vec<(u64, Vec<u8>)> = laid.iter().map(|l| (l.vma, l.data.clone())).collect();
     let mut sections: Vec<(u64, u64, u32)> = laid.iter().map(|l| (l.vma, l.size, l.flags)).collect();
+    if extern_cursor > weak_storage_start {
+        segments.push((weak_storage_start, vec![0; (extern_cursor - weak_storage_start) as usize]));
+        sections.push((weak_storage_start, extern_cursor - weak_storage_start,
+            fmt.section_bits(".kuna.weak", SectionKind::Data, object::SectionFlags::Elf {
+                sh_flags: u64::from(object::elf::SHF_ALLOC | object::elf::SHF_WRITE),
+            })));
+    }
     let got_range = match (&gp, got_base) {
         (Some(g), Some(base)) if g.size() != 0 => {
             segments.push((base, g.bytes()));
@@ -705,6 +817,10 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
         extern_range,
         common_range: common_allocator.range(),
         got_range,
+        gp: gp.as_ref().map(kuna_mipsreloc::Gp::gp),
+        import_slots,
+        nullable_relocations,
+        function_address_aliases,
         opd: {
             opd_descriptors.sort_unstable();
             opd_descriptors.dedup();
