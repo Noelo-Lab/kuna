@@ -4443,6 +4443,65 @@ explanation, also printed as a `note:` line:
 note: 0xfffffe0007007000 is in the MH_FILESET entry com.apple.kernel, not in com.example.driver.PMGR, the entry loaded: only references made from com.example.driver.PMGR are listed; `--option kernelcache com.apple.kernel` loads that entry
 ```
 
+## `--member NAME` — one member of an `ar` archive
+
+A static library (`libfoo.a`) is an `ar` archive of relocatable objects, and
+every kuna surface works on one of them. Pass the archive as the binary and name
+the member with `--member NAME`, or spell both as one path, `libfoo.a:NAME`.
+`--member` with no name after it (last, or before another flag) lists the
+members with their sizes; with `--json` the listing is
+`{archive, members: [{name, size, object}]}`, where `object` says whether the
+member is an object file kuna can load.
+
+```
+$ kuna functions libm2.a --member
+a1.o	1064
+a2.o	1064
+$ kuna decompile libm2.a --member a2.o cube
+$ kuna decompile libm2.a:a2.o cube
+```
+
+Without a member, an archive of one object loads it. Otherwise the member is
+the one that defines a symbol the arguments spell, and a `note:` line on stderr
+names it:
+
+```
+$ kuna decompile libm2.a cube
+note: libm2.a: using member a2.o
+int cube(int a0)
+{
+  return a0 * a0 * a0;
+}
+```
+
+When no member, or more than one, defines such a symbol, the run exits `2` and
+lists the object members to choose from. An unknown member name, and `--member`
+on an input that is not an archive, also exit `2`.
+
+`kuna functions <lib.a>` with no member lists every object member, each name
+prefixed with its member:
+
+```
+$ kuna functions libm2.a
+0x400000	a1.o:sq
+0x400000	a2.o:cube
+```
+
+With `--json` that is `{archive, members: [{member, functions}]}`, where
+`functions` is the member's own `kuna functions --json` document. A member
+that does not load is skipped with a `note:` line. `--summary` describes one
+image, so it needs a member.
+
+The selected member is loaded exactly as the same `.o` file is: its relocations
+are applied, and a call into another member stays an external reference,
+because members are not linked against each other. The member is written to a
+temporary file for the run (`<tmp>/kuna_ar_*/<archive>/<member>`), removed on
+exit, and a `binary` field in JSON output names that file. A thin archive
+stores only member paths, so its members load from their own files. `--member`
+applies to `decompile`, `decompile-all`, `decompile-project`,
+`decompile-graph`, `functions`, `disassemble`, `raw-pcode`, `read`, `xrefs`,
+`strings` and `crypto`; `kuna fid build` reads a whole archive itself.
+
 ## `kuna fid` — function identification by fingerprint
 
 `kuna fid build <lib.a|*.o ...> -o <out.fid> --lang <id> --cspec <id>` writes a kuna
