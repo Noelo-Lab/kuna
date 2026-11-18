@@ -37,9 +37,9 @@ use crate::statement::Statement;
 use crate::struct_method::StructMethod;
 use crate::var_exprent::VarExprent;
 use crate::var_processor::VarProcessor;
+use crate::fixes::kt_util::SUSPEND_DESCRIPTOR_END;
 
 const SUFFIX: &str = "$suspendImpl";
-const SUSPEND_DESCRIPTOR_END: &str = "Lkotlin/coroutines/Continuation;)Ljava/lang/Object;";
 
 /// The suspend member whose body `mt`, a `$suspendImpl` method, holds.
 pub fn member_of(mt: StructMethod) -> Option<StructMethod> {

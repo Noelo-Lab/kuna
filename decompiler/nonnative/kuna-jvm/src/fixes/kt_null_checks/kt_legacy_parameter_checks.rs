@@ -29,10 +29,9 @@ use crate::pass_context::PassContext;
 use crate::statement::{Statement, StatementType};
 use crate::struct_method::StructMethod;
 use crate::type_family::TypeFamily;
+use crate::fixes::kt_util::{CHECK_DESCRIPTOR, INTRINSICS};
 
-const INTRINSICS: &str = "kotlin/jvm/internal/Intrinsics";
 const LEGACY_CHECK: &str = "checkParameterIsNotNull";
-const CHECK_DESCRIPTOR: &str = "(Ljava/lang/Object;Ljava/lang/String;)V";
 const NULLABLE: &str = "org/jetbrains/annotations/Nullable";
 
 /// Drops the legacy checks that open the body of the function `ctx`

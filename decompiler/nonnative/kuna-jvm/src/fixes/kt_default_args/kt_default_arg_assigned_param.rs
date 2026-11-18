@@ -9,8 +9,8 @@
 //! placeholder).
 
 use crate::exprent::Exprent;
+use crate::fixes::kt_util::INTRINSICS;
 
-const INTRINSICS: &str = "kotlin/jvm/internal/Intrinsics";
 const NULL_CHECKS: &[&str] = &[
     "checkNotNull",
     "checkNotNullExpressionValue",

@@ -57,9 +57,8 @@ use crate::struct_class::StructClass;
 use crate::struct_method::StructMethod;
 use crate::text_buffer::TextBuffer;
 use crate::code_type::CodeType;
+use crate::fixes::kt_util::{CHECK_DESCRIPTOR, EXPRESSION_CHECKS, INTRINSICS};
 
-const CHECKS: [&str; 2] = ["checkNotNullExpressionValue", "checkExpressionValueIsNotNull"];
-const INTRINSICS: &str = "kotlin/jvm/internal/Intrinsics";
 const STRING_COMPANION: &str = "kotlin/jvm/internal/StringCompanionObject";
 
 /// The standard-library call an invocation is written as.
@@ -493,8 +492,8 @@ fn check_message(list: &crate::rt::JList<Exprent>, at: usize) -> Option<String> 
 fn is_check(inv: InvocationExprent) -> bool {
     inv.is_static()
         && inv.get_classname() == INTRINSICS
-        && CHECKS.contains(&inv.get_name().as_str())
-        && inv.get_string_descriptor() == "(Ljava/lang/Object;Ljava/lang/String;)V"
+        && EXPRESSION_CHECKS.contains(&inv.get_name().as_str())
+        && inv.get_string_descriptor() == CHECK_DESCRIPTOR
 }
 
 /// Removes the expression-value checks of the stack variables that a

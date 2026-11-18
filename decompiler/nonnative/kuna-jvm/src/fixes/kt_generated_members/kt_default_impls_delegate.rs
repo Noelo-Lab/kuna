@@ -40,10 +40,9 @@ use crate::method_descriptor::MethodDescriptor;
 use crate::struct_class::StructClass;
 use crate::struct_method::StructMethod;
 use crate::var_type::VarType;
+use crate::fixes::kt_util::{INTRINSICS, PARAMETER_CHECKS};
 
 const DEFAULT_IMPLS: &str = "$DefaultImpls";
-const INTRINSICS: &str = "kotlin/jvm/internal/Intrinsics";
-const PARAMETER_CHECKS: [&str; 2] = ["checkNotNullParameter", "checkParameterIsNotNull"];
 
 /// Whether `mt`, a method of `cl`, is a call of an interface member's
 /// default body kotlinc generated (see the module header).

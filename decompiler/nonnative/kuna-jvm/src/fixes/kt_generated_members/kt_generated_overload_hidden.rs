@@ -22,10 +22,9 @@ use crate::kotlin_writer::KotlinWriter;
 use crate::kt_attrs::KtAttrs;
 use crate::struct_class::StructClass;
 use crate::struct_method::StructMethod;
+use crate::fixes::kt_util::{INTRINSICS, PARAMETER_CHECKS};
 
 const JVM_OVERLOADS: &str = "kotlin/jvm/JvmOverloads";
-const INTRINSICS: &str = "kotlin/jvm/internal/Intrinsics";
-const PARAMETER_CHECKS: [&str; 2] = ["checkNotNullParameter", "checkParameterIsNotNull"];
 
 /// Whether `mt`, a member of `cl` without Kotlin metadata, is an overload
 /// kotlinc generated for an `@JvmOverloads` function (see the module header).

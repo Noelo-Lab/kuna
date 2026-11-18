@@ -36,14 +36,7 @@ use crate::pass_context::PassContext;
 use crate::statements::Statements;
 use crate::var_exprent::VarExprent;
 use crate::var_version_pair::VarVersionPair;
-
-const INTRINSICS: &str = "kotlin/jvm/internal/Intrinsics";
-const CHECK_DESCRIPTOR: &str = "(Ljava/lang/Object;Ljava/lang/String;)V";
-const PARAMETER_CHECKS: [&str; 2] = ["checkNotNullParameter", "checkParameterIsNotNull"];
-const EXPRESSION_CHECKS: [&str; 2] = [
-    "checkNotNullExpressionValue",
-    "checkExpressionValueIsNotNull",
-];
+use crate::fixes::kt_util::{CHECK_DESCRIPTOR, EXPRESSION_CHECKS, INTRINSICS, PARAMETER_CHECKS};
 
 /// What a statement before the delegation call is.
 enum Before {

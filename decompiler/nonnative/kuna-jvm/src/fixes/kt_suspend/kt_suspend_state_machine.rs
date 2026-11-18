@@ -62,9 +62,9 @@ use crate::method_descriptor::MethodDescriptor;
 use crate::primitive_constant::ConstValue;
 use crate::struct_class::StructClass;
 use crate::struct_method::StructMethod;
+use crate::fixes::kt_util::SUSPEND_DESCRIPTOR_END;
+use super::CONTINUATION;
 
-const CONTINUATION: &str = "Lkotlin/coroutines/Continuation;";
-pub(crate) const CONTINUATION_CLASS: &str = "kotlin/coroutines/Continuation";
 const INTRINSICS: &str = "kotlin/coroutines/intrinsics/IntrinsicsKt";
 const SUSPENDED: &str = "getCOROUTINE_SUSPENDED";
 pub(crate) const RESUME_ERROR: &str = "call to 'resume' before 'invoke' with coroutine";
@@ -97,7 +97,7 @@ pub struct Plan {
 /// suspend calling convention is read here, before its methods are
 /// written, where the writer would read it.
 pub fn rebuild(graph: ControlFlowGraph, mt: StructMethod, cl: StructClass) -> bool {
-    if mt.get_descriptor().ends_with(&format!("{CONTINUATION})Ljava/lang/Object;")) {
+    if mt.get_descriptor().ends_with(SUSPEND_DESCRIPTOR_END) {
         KotlinChooser::parse_metadata_for(cl);
     }
     let Some(completion) = completion_slot(mt) else {
@@ -164,7 +164,7 @@ pub fn completion_slot(mt: StructMethod) -> Option<i32> {
         return None;
     }
     let descriptor = mt.get_descriptor();
-    if !descriptor.ends_with(&format!("{CONTINUATION})Ljava/lang/Object;")) {
+    if !descriptor.ends_with(SUSPEND_DESCRIPTOR_END) {
         return None;
     }
     let md = MethodDescriptor::parse_descriptor(&descriptor);
@@ -258,13 +258,13 @@ impl Code {
         insn.group() == GROUP_INVOCATION
             && insn.opcode() != OPC_INVOKEDYNAMIC
             && self.member(i).is_some_and(|(owner, name, d)| {
-                d.ends_with(&format!("{CONTINUATION})Ljava/lang/Object;"))
+                d.ends_with(SUSPEND_DESCRIPTOR_END)
                     || is_function_invoke(&owner, &name, &d)
             })
     }
 
     pub(crate) fn is_continuation_cast(&self, i: usize) -> bool {
-        self.class(i, OPC_CHECKCAST).as_deref() == Some(CONTINUATION_CLASS)
+        self.class(i, OPC_CHECKCAST).as_deref() == Some(CONTINUATION)
     }
 
     /// `InlineMarker.mark(n)`, the no-op kotlinc leaves around a suspend
@@ -378,7 +378,7 @@ fn plan_machine(code: &Code, completion: i32) -> Result<Plan, Refusal> {
     require(
         owner == class
             && name == "<init>"
-            && descriptor.ends_with(&format!("{CONTINUATION})V"))
+            && descriptor.ends_with("Lkotlin/coroutines/Continuation;)V")
             && MethodDescriptor::parse_descriptor(&descriptor).params.len() == 1 + usize::from(outer)
             && code.is_local(i + 2, OPC_ASTORE, cont)
             && main_at == i + 3,
@@ -459,7 +459,7 @@ fn plan_machine(code: &Code, completion: i32) -> Result<Plan, Refusal> {
         } else if code.is_continuation_cast(i + 1) && code.is(i + 2, OPC_POP) {
             plan.removed.extend([i, i + 1, i + 2]);
             owned.extend([i, i + 1, i + 2]);
-        } else if code.is_member(i + 1, OPC_INVOKEINTERFACE, CONTINUATION_CLASS, "getContext") {
+        } else if code.is_member(i + 1, OPC_INVOKEINTERFACE, CONTINUATION, "getContext") {
             plan.completion_loads.insert(i);
             owned.insert(i);
         }

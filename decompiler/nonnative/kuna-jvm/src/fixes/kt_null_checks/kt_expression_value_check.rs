@@ -21,9 +21,7 @@ use crate::exprent::Exprent;
 use crate::fixes::kt_null_checks::kt_not_null_assertion;
 use crate::root_statement::RootStatement;
 use crate::statement::Statement;
-
-const INTRINSICS: &str = "kotlin/jvm/internal/Intrinsics";
-const CHECKS: [&str; 2] = ["checkNotNullExpressionValue", "checkExpressionValueIsNotNull"];
+use crate::fixes::kt_util::{CHECK_DESCRIPTOR, EXPRESSION_CHECKS, INTRINSICS};
 
 /// Deletes the expression-value checks of values stored into fields under `root`.
 pub fn remove(root: RootStatement) -> bool {
@@ -61,8 +59,8 @@ fn is_stored_check(prev: Exprent, check: Exprent, next: Exprent) -> bool {
     };
     let is_check = inv.is_static()
         && inv.get_classname() == INTRINSICS
-        && CHECKS.contains(&inv.get_name().as_str())
-        && inv.get_string_descriptor() == "(Ljava/lang/Object;Ljava/lang/String;)V";
+        && EXPRESSION_CHECKS.contains(&inv.get_name().as_str())
+        && inv.get_string_descriptor() == CHECK_DESCRIPTOR;
     if !is_check {
         return false;
     }

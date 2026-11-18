@@ -16,8 +16,8 @@ use crate::k_type::{KType, KTypeData};
 use crate::kt_flags::Flags;
 use crate::kt_proto;
 use crate::text_buffer::TextBuffer;
+use super::CONTINUATION;
 
-const CONTINUATION: &str = "kotlin/coroutines/Continuation";
 
 /// Whether the metadata type `type_` is a suspend function type.
 pub fn is_suspend(type_: &kt_proto::Type) -> bool {

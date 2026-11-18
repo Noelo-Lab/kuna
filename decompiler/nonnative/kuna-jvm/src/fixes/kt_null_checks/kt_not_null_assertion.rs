@@ -23,8 +23,7 @@ use crate::k_function_exprent::{KFunctionExprent, KFunctionType};
 use crate::root_statement::RootStatement;
 use crate::stat_edge::StatEdge;
 use crate::statement::{Statement, StatementType};
-
-const INTRINSICS: &str = "kotlin/jvm/internal/Intrinsics";
+use crate::fixes::kt_util::INTRINSICS;
 
 /// Folds every `!!` check under `root` into its expression.
 pub fn recover(root: RootStatement) -> bool {

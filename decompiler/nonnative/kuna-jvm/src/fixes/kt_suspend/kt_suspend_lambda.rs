@@ -49,8 +49,9 @@ use crate::exprent::Exprent;
 use crate::function_exprent::FunctionType;
 use crate::key::Key;
 use crate::fixes::kt_suspend::kt_suspend_state_machine::{
-    apply, require, resume_block, Code, Machine, Plan, Refusal, CONTINUATION_CLASS, RESUME_ERROR, RESUME_PATH,
+    apply, require, resume_block, Code, Machine, Plan, Refusal, RESUME_ERROR, RESUME_PATH,
 };
+use crate::fixes::kt_suspend::CONTINUATION;
 use crate::k_element::KElement;
 use crate::k_function::KFunction;
 use crate::kotlin_chooser::KotlinChooser;
@@ -352,8 +353,8 @@ pub fn plan(
         let this_escapes = code.is_local(i, OPC_ALOAD, 0)
             && !(code.is(i + 1, OPC_GETFIELD) && code.member(i + 1).is_some_and(|(owner, _, _)| owner == class))
             && !(code.is_continuation_cast(i + 1)
-                && code.is_member(i + 2, OPC_INVOKEINTERFACE, CONTINUATION_CLASS, "getContext"))
-            && !code.is_member(i + 1, OPC_INVOKEINTERFACE, CONTINUATION_CLASS, "getContext")
+                && code.is_member(i + 2, OPC_INVOKEINTERFACE, CONTINUATION, "getContext"))
+            && !code.is_member(i + 1, OPC_INVOKEINTERFACE, CONTINUATION, "getContext")
             && !code.is_member(i + 1, OPC_INVOKEVIRTUAL, class, "getContext");
         require(
             !touches_local && !touches_machine && !this_escapes && !code.is_suspended_marker(i),

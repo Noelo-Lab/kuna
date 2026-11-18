@@ -60,9 +60,9 @@ use crate::statement::Statement;
 use crate::struct_method::StructMethod;
 use crate::text_buffer::TextBuffer;
 use crate::var_type::VarType;
+use crate::fixes::kt_util::SUSPEND_DESCRIPTOR_END;
+use super::CONTINUATION;
 
-const SUSPEND_DESCRIPTOR_END: &str = "Lkotlin/coroutines/Continuation;)Ljava/lang/Object;";
-const CONTINUATION: &str = "kotlin/coroutines/Continuation";
 
 thread_local! {
     static IN_BODY: Cell<bool> = const { Cell::new(false) };

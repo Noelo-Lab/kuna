@@ -47,9 +47,7 @@ use crate::struct_class::StructClass;
 use crate::struct_general_attribute::StructGeneralAttribute;
 use crate::struct_method::StructMethod;
 use crate::text_buffer::TextBuffer;
-
-const INTRINSICS: &str = "kotlin/jvm/internal/Intrinsics";
-const PARAMETER_CHECKS: [&str; 2] = ["checkNotNullParameter", "checkParameterIsNotNull"];
+use crate::fixes::kt_util::{CHECK_DESCRIPTOR, INTRINSICS, PARAMETER_CHECKS};
 
 /// The call of the inline function whose object the anonymous class `node`
 /// is, written for its `new` calling `constructor` outside that function;
@@ -167,7 +165,7 @@ fn creates_from_parameters(
             OPC_INVOKESTATIC,
             INTRINSICS,
             &PARAMETER_CHECKS,
-            "(Ljava/lang/Object;Ljava/lang/String;)V",
+            CHECK_DESCRIPTOR,
         )
     {
         i += 3;

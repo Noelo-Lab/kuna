@@ -1,6 +1,8 @@
 //! Fix family `kt_suspend` (Kotlin output): suspend functions and lambdas,
 //! rebuilt from their state machines.
 
+pub(crate) const CONTINUATION: &str = "kotlin/coroutines/Continuation";
+
 pub(crate) mod kt_coroutine_boxing;
 pub(crate) mod kt_for_inline_copy;
 pub(crate) mod kt_suspend_call_continuation;

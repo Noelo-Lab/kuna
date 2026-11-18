@@ -50,6 +50,7 @@ use crate::struct_class::StructClass;
 use crate::struct_member::StructMember;
 use crate::struct_method::StructMethod;
 use crate::type_family::TypeFamily;
+use crate::fixes::kt_util::SUSPEND_DESCRIPTOR_END;
 
 const NOT_NULL: &str = "org/jetbrains/annotations/NotNull";
 const NULLABLE: &str = "org/jetbrains/annotations/Nullable";
@@ -773,7 +774,7 @@ fn method_nullability(owner: &str, name: &str, desc: &str) -> Option<bool> {
         };
         if let Some(method) = cl.get_method(name, desc) {
             let suspend = kt_suspend_call_continuation::in_body()
-                && desc.ends_with("Lkotlin/coroutines/Continuation;)Ljava/lang/Object;")
+                && desc.ends_with(SUSPEND_DESCRIPTOR_END)
                 && {
                     KotlinChooser::parse_metadata_for(cl);
                     matches!(KtAttrs::get(method, &KElement::KEY()),

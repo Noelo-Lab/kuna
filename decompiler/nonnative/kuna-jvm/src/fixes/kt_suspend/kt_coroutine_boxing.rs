@@ -18,6 +18,7 @@ use crate::method_descriptor::MethodDescriptor;
 use crate::root_statement::RootStatement;
 use crate::statement::Statement;
 use crate::struct_method::StructMethod;
+use crate::fixes::kt_util::SUSPEND_DESCRIPTOR_END;
 
 const BOXING: &str = "kotlin/coroutines/jvm/internal/Boxing";
 
@@ -39,7 +40,7 @@ const BOXES: [(&str, &str, &str); 8] = [
 /// coroutine code: methods in the suspend calling convention and suspend
 /// lambdas' `invokeSuspend`.
 pub fn rewrite(root: RootStatement, mt: StructMethod) -> bool {
-    let coroutine = mt.get_descriptor().ends_with("Lkotlin/coroutines/Continuation;)Ljava/lang/Object;")
+    let coroutine = mt.get_descriptor().ends_with(SUSPEND_DESCRIPTOR_END)
         || mt.name_eq("invokeSuspend");
     if !coroutine {
         return false;

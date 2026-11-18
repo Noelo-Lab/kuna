@@ -27,10 +27,9 @@ use crate::pass_context::PassContext;
 use crate::statement::Statement;
 use crate::statements::Statements;
 use crate::var_version_pair::VarVersionPair;
+use crate::fixes::kt_util::{CHECK_DESCRIPTOR, INTRINSICS};
 
-const INTRINSICS: &str = "kotlin/jvm/internal/Intrinsics";
 const LEGACY_CHECK: &str = "checkParameterIsNotNull";
-const CHECK_DESCRIPTOR: &str = "(Ljava/lang/Object;Ljava/lang/String;)V";
 
 /// Drops the legacy checks before the delegation call of the constructor
 /// `ctx` decompiles; whether it dropped any.

@@ -39,8 +39,8 @@ use crate::k_types::KTypes;
 use crate::struct_class::StructClass;
 use crate::struct_method::StructMethod;
 use crate::text_buffer::TextBuffer;
+use crate::fixes::kt_util::SUSPEND_DESCRIPTOR_END;
 
-const SUSPEND_DESCRIPTOR_END: &str = "Lkotlin/coroutines/Continuation;)Ljava/lang/Object;";
 
 /// The suspend function `mt`, a method without Kotlin metadata, overrides:
 /// its declaration in a supertype's metadata. `None` when `mt` is not one.
