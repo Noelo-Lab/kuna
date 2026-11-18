@@ -15,7 +15,7 @@ use crate::kotlin_chooser::KotlinChooser;
 use crate::kotlin_exprent;
 use crate::kotlin_writer::KotlinWriter;
 use crate::kt_attrs::KtAttrs;
-use crate::fixes::kt_jumps::kt_lambda_singleton_returns;
+use crate::fixes::kt_jumps;
 use crate::fixes::kt_anonymous_objects::kt_property_reference;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::method_wrapper::MethodWrapper;
@@ -179,7 +179,7 @@ impl KFieldExprent {
                             if let Some(root) = root {
                                 DecompilerContext::set_current_method_wrapper(Some(method));
                                 if kuna_fixes::enabled(KunaFix::KtLambdaSingletonReturns) {
-                                    kt_lambda_singleton_returns::label_exits(
+                                    kt_jumps::label_exits(
                                         &mut buf, root, &classname,
                                     );
                                 }

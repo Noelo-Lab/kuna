@@ -58,7 +58,7 @@ use crate::kotlin_chooser::KotlinChooser;
 use crate::decompiler_context::DecompilerContext;
 use crate::exit_exprent::Type as ExitType;
 use crate::k_types::KTypes;
-use crate::fixes::kt_jumps::kt_lambda_singleton_returns;
+use crate::fixes::kt_jumps;
 use crate::kt_attrs::KtAttrs;
 use crate::stat_edge::StatEdge;
 use crate::text_buffer::TextBuffer;
@@ -375,7 +375,7 @@ pub fn remove_argument_reads(root: RootStatement, mt: StructMethod) -> bool {
             let Some(last) = exprents.last() else {
                 continue;
             };
-            if is_return_unit(last) && kt_lambda_singleton_returns::in_tail_position(source) {
+            if is_return_unit(last) && kt_jumps::in_tail_position(source) {
                 exprents.remove_at(exprents.len() - 1);
                 res = true;
             }
@@ -460,7 +460,7 @@ pub fn label_exits(buf: &mut TextBuffer, root: RootStatement, mt: StructMethod) 
             buf.append(&format!("{label}@"));
             for edge in root.get_dummy_exit().0.get_predecessor_edges(StatEdge::TYPE_BREAK) {
                 let source = edge.get_source();
-                if kt_lambda_singleton_returns::in_tail_position(source) {
+                if kt_jumps::in_tail_position(source) {
                     continue;
                 }
                 for e in source.get_exprents().map(|x| x.to_vec()).unwrap_or_default() {
@@ -472,7 +472,7 @@ pub fn label_exits(buf: &mut TextBuffer, root: RootStatement, mt: StructMethod) 
                 }
             }
         }
-        None => kt_lambda_singleton_returns::label_exits(buf, root, &mt.get_class_qualified_name()),
+        None => kt_jumps::label_exits(buf, root, &mt.get_class_qualified_name()),
     }
 }
 

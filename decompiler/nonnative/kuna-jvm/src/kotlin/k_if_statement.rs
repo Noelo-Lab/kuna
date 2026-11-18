@@ -3,10 +3,9 @@
 use crate::expr_processor::ExprProcessor;
 use crate::if_statement::{set_head_slot, IfStatement};
 use crate::k_expr_processor::KExprProcessor;
-use crate::fixes::kt_jumps::kt_unlabeled_sequence_break;
+use crate::fixes::kt_jumps;
 use crate::kotlin_statement;
 use crate::fixes::kt_jumps::kt_jump_to_non_loop_label::{self, Lambda};
-use crate::fixes::kt_jumps::kt_when_break;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::rt::JavaStr;
 use crate::stat_edge::StatEdge;
@@ -154,7 +153,7 @@ impl KIfStatement {
             None => {
                 let if_edge = self.get_if_edge().expect("NullPointerException: ifEdge");
                 let when_break = (kuna_fixes::enabled(KunaFix::KtWhenBreak) && if_edge.explicit())
-                    .then(|| kt_when_break::jump(if_edge, self.into()))
+                    .then(|| kt_jumps::when_jump(if_edge, self.into()))
                     .flatten();
                 if let Some(when_break) = when_break {
                     if !when_break.is_empty() {
@@ -167,7 +166,7 @@ impl KIfStatement {
                         && kt_jump_to_non_loop_label::returns(if_edge);
                     let closure_is_run =
                         if kuna_fixes::enabled(KunaFix::KtUnlabeledSequenceBreak) {
-                            kt_unlabeled_sequence_break::returns_from_sequence(if_edge)
+                            kt_jumps::returns_from_sequence(if_edge)
                         } else {
                             if_edge.closure().is_some_and(|c| c.is_k_sequence())
                         };

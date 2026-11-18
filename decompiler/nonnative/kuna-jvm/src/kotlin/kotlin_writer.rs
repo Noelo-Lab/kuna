@@ -64,7 +64,7 @@ use crate::kt_flags::Flags;
 use crate::kt_proto::{ClassKind, Modality, Visibility};
 use crate::fixes::kt_initializers::kt_file_static_initializer;
 use crate::fixes::kt_anonymous_objects::kt_object_super_call;
-use crate::fixes::kt_jumps::kt_return_outside_lambda;
+use crate::fixes::kt_jumps;
 use crate::fixes::failure_comments;
 use crate::fixes::kt_anonymous_objects::kt_reference_anonymous_super_call::{self, reference_name_and_descriptor};
 use crate::fixes::kt_anonymous_objects::kt_synthetic_anonymous_object;
@@ -478,7 +478,7 @@ impl KotlinWriter {
     /// (`kuna_spans`), as `ClassWriter` gives them; spans add no text.
     pub fn write_class(&self, node: ClassNode, buffer: &mut TextBuffer, indent: i32) {
         let _scope = kuna_fixes::enabled(KunaFix::KtReturnOutsideLambda)
-            .then(kt_return_outside_lambda::enter);
+            .then(kt_jumps::enter_declaration);
         let _moved = kt_initializers::scope();
         let span = kuna_spans::open_class(buffer, node.with(|d| d.class_struct));
         if self.write_class_body(node, buffer, indent) {
@@ -1952,7 +1952,7 @@ impl KotlinWriter {
         {
             let _finally = RestoreMethodWrapper(outer_wrapper);
             let _scope = kuna_fixes::enabled(KunaFix::KtReturnOutsideLambda)
-                .then(kt_return_outside_lambda::enter);
+                .then(kt_jumps::enter_declaration);
             let node_type = node.with(|d| d.type_);
             let (node_class_struct, node_access) = node.with(|d| (d.class_struct, d.access));
 

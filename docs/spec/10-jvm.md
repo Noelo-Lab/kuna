@@ -2300,7 +2300,7 @@ an `if`-`else` there); an early `return@label v` elsewhere, such as in a loop, b
 expression statement `v` and the lambda runs on (wrong output: `search`'s
 `for (..) { if (item == key) return@search i }; -1` returns `-1`). `KNewExprent`, which writes an
 `invokedynamic` lambda, labels it and writes `return@label` for every exit when it has several.
-With the fix (`decompiler/nonnative/kuna-jvm/src/fixes/kt_jumps/kt_lambda_singleton_returns.rs`)
+With the fix (`decompiler/nonnative/kuna-jvm/src/fixes/kt_jumps/mod.rs`)
 a singleton lambda one of whose exits is not in tail position is labelled
 `lambda_<class's last name segment>@{` and its exits are `return@lambda_1 v`; one whose exits are
 all in tail position is written as before. None of the six Kotlin libraries checked has such a
@@ -2737,7 +2737,7 @@ one it leaves the loop. `KSwitchStatement` drops the `break` that follows a case
 when it is the `if`'s only statement, as `break` (24 in okhttp, kotlin-stdlib and
 kotlinx-coroutines, and 4 more `break;` in `try` blocks that `kt_java_statement_jump` brings to the
 same writer). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/kt_jumps/kt_when_break.rs (jump)`) an unlabelled
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_jumps/mod.rs (when_jump)`) an unlabelled
 explicit `break` whose closure is a `when` is left out when control at it reaches the end of its
 branch and nothing else once it is gone: walking down from each case statement, the statement it
 follows is reached through the last statement of each sequence, either branch of an `if`, any block
@@ -4880,7 +4880,7 @@ it ends where the jump goes, even when its closure is the sequence that ends the
 `KExprProcessor.jmpWrapper` and `KIfStatement` write `return@run` for any `break` whose closure is a
 `KSequenceStatement`, but a sequence is written `run labelN@{ .. }` only when it is labelled, so an unlabelled
 one has no `run` to return from and kotlinc rejects the `return`. With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/kt_jumps/kt_unlabeled_sequence_break.rs (returns_from_sequence)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_jumps/mod.rs (returns_from_sequence)`)
 such a `break` is written `break`, which leaves the innermost loop in Kotlin as in Java.
 **`kt_legacy_parameter_checks`.** kotlinc checks each non-null reference parameter of a non-private
 function, an extension's receiver too, on entry, before any of the function's own code.

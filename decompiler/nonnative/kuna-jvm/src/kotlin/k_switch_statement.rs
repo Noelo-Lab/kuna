@@ -8,7 +8,7 @@ use crate::k_expr_processor::KExprProcessor;
 use crate::k_if_statement::copy_statement_fields;
 use crate::kotlin_statement;
 use crate::fixes::kt_jumps::kt_jump_to_non_loop_label::{self, Lambda};
-use crate::fixes::kt_jumps::kt_when_break;
+use crate::fixes::kt_jumps;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::rt::JavaStr;
 use crate::statement::Statement;
@@ -53,7 +53,7 @@ impl KSwitchStatement {
         if kuna_fixes::enabled(KunaFix::KtWhenBreak)
             && !self.is_labeled()
             && !self.is_phantom()
-            && kt_when_break::needs_run(self.into())
+            && kt_jumps::needs_run(self.into())
         {
             return kt_jump_to_non_loop_label::within(self.into(), Lambda::Run, || {
                 self.write(indent, true, false)

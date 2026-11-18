@@ -8,7 +8,7 @@ use crate::k_dispatch::KExprentExt;
 use crate::k_type::KType;
 use crate::fixes::kt_java_syntax::kt_throwable_cast;
 use crate::kotlin_exprent;
-use crate::fixes::kt_jumps::kt_return_outside_lambda;
+use crate::fixes::kt_jumps;
 use crate::fixes::kt_anonymous_objects::kt_synthetic_anonymous_object;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::text_buffer::TextBuffer;
@@ -63,7 +63,7 @@ impl KExitExprent {
             !(kuna_fixes::enabled(KunaFix::KtSyntheticAnonymousObject)
                 && kt_synthetic_anonymous_object::is_declaration(*m))
                 && !(kuna_fixes::enabled(KunaFix::KtReturnOutsideLambda)
-                    && !kt_return_outside_lambda::is_lambda_body(*m))
+                    && !kt_jumps::is_lambda_body(*m))
         });
         if outer_method.is_some() {
             let mut buf = TextBuffer::new();
