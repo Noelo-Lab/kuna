@@ -465,6 +465,16 @@ pub trait FlowEnvironment {
         None
     }
 
+    /// The name a direct call to `entry` prints when no function is known there
+    /// but a processor-spec `<default_symbols>` label outside the default code
+    /// space is (eBPF's helper ids in the `syscall` space): the label names the
+    /// callee, as a Ghidra function created at a labelled address does. Only a
+    /// name: the label makes `entry` no function boundary, so `query_call` stays
+    /// `None` for it.
+    fn query_call_label(&self, _entry: &Address) -> Option<String> {
+        None
+    }
+
     /// (kuna `pltlocal`) The function the PLT stub at a direct-call `entry` is
     /// bound to by the image's own relocations, which the call spec is built at.
     /// The default shell has no loader and reports `None`. See
@@ -3172,7 +3182,9 @@ truncating the fall-through here"
         // queryCall: resolve the direct callee symbol's name (W4 proto copy
         // postponed to ActionDefaultParams).
         if !indirect && !entry.is_invalid() {
-            if let Some(name) = self.env.query_call(&entry) {
+            if let Some(name) =
+                self.env.query_call(&entry).or_else(|| self.env.query_call_label(&entry))
+            {
                 let _ = fc.set_funcdata(callee.clone(), &name);
             }
             // C++ queryCall: fspecs.copyFlowEffects(otherfunc->getFuncProto()) —

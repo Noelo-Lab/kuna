@@ -74,6 +74,11 @@ rounding user ops, and the `FRINT32/64*` zeroing of the register bits above
 the result. Its digest was regenerated with the recorded C++ compiler,
 which reproduces the previous AArch64 digest on the unmodified sources;
 `slacomp` produces the same digest.
+It also includes the pass-through copy (`Rd = Rd`) the `ShowPAC=0` forms
+of the pointer-authentication instructions that write a general register
+now lift to. The digest was regenerated the same way: the recorded C++
+compiler reproduces the previous digest on the previous sources and
+`slacomp` matches it on the updated ones.
 
 `xml_ops.xml` is the same pinned C++ compiler's `-y` output for
 `snips/xml_ops.slaspec`. The CLI test compares XML output byte-for-byte in both
