@@ -75,7 +75,42 @@ def check_effective(t, sets, base):
         sys.exit(f'{t["id"]}: manifest options differ from base + set pairs')
 
 
-def plugin_records(pm, base):
+def class_stems(root, classes):
+    """`classes` (paths under `root`) as the stems of a `case` record, each standing for `STEM.class`
+    and then its `STEM$*.class` siblings in name order; None when the list does not have that shape."""
+    stems, i = [], 0
+    while i < len(classes):
+        stem = classes[i][:-len('.class')]
+        folder, name = os.path.split(stem)
+        group = [classes[i]] + [os.path.join(folder, n) for n in sorted(os.listdir(os.path.join(root, folder)))
+                                if n.startswith(name + '$') and n.endswith('.class')]
+        if classes[i:i + len(group)] != group:
+            return None
+        stems.append(stem)
+        i += len(group)
+    return stems
+
+
+def case_records(root, case_id, set_name, classes, expected, compare, opts=(), expected_dir=None):
+    """The records of one case. With `root` (the vendored manifest) the short form: class stems on the
+    `case` line, and `expected`/`compare` only where they differ from what the runner derives (README.md)."""
+    stems = class_stems(root, classes) if root else None
+    out = [line('case', case_id, set_name, *(stems or []))]
+    out += [line('opt', k, v) for k, v in opts]
+    if not stems:
+        out += [line('class', c) for c in classes]
+    if root:
+        found = os.path.join(expected_dir or 'expected/' + case_id.split('/')[0], case_id.split('/', 1)[1])
+        found = next((found + e for e in ('.java', '.kt') if os.path.isfile(os.path.join(root, found + e))), None)
+        stem, ext = os.path.basename(classes[0])[:-len('.class')], os.path.splitext(expected)[1]
+    if not root or expected != found:
+        out.append(line('expected', expected))
+    if not root or compare != [stem + ext] + ([stem + '.java'] if ext != '.java' else []):
+        out.append(line('compare', *compare))
+    return out
+
+
+def plugin_records(pm, base, root):
     """The set and case records of the plugin manifest: a fixture set starts from the fixture's base map."""
     set_lines, case_lines = [], []
     for s in pm['sets']:
@@ -86,11 +121,8 @@ def plugin_records(pm, base):
         for k, v in opts.items():
             set_lines.append(line('opt', k, v))
     for t in sorted(pm['tests'], key=lambda t: t['id']):
-        case_lines.append(line('case', t['id'], t['set']))
-        for f in t['class_files']:
-            case_lines.append(line('class', 'classes/' + f))
-        case_lines.append(line('expected', t['oracle']))
-        case_lines.append(line('compare', t['decompiled_file'], *filter(None, [t.get('decompiled_file_fallback')])))
+        case_lines += case_records(root, t['id'], t['set'], ['classes/' + f for f in t['class_files']], t['oracle'],
+                                   [t['decompiled_file'], *filter(None, [t.get('decompiled_file_fallback')])])
     return set_lines, case_lines
 
 
@@ -136,7 +168,7 @@ def fix_ext(c):
     return '.kt' if c.get('language') == 'kotlin' else '.java'
 
 
-def fix_records(fm, base):
+def fix_records(fm, base, root):
     """The set and case records of the kuna-fixes table: every case twice, compat and default."""
     set_lines, case_lines = [], []
     for name, slug, compat, expected in FIX_SETS:
@@ -144,24 +176,20 @@ def fix_records(fm, base):
         for k, v in fm['options']:
             opts[k] = v
         opts['jvm_vineflower_compat'] = compat
-        set_lines.append(line('set', name, slug))
+        set_lines.append(line('set', name, slug, f'{FIXES_DIR}/{expected}'))
         for k, v in opts.items():
             set_lines.append(line('opt', k, v))
     for name, slug, _, expected in FIX_SETS:
         for c in sorted(fm['cases'], key=lambda c: c['id']):
-            case_lines.append(line('case', f'{slug}/{c["id"]}', name))
-            if c.get('language') == 'kotlin':
-                case_lines.append(line('opt', 'jvm_plugins', '1'))
-            for k, v in c.get('options', []):
-                case_lines.append(line('opt', k, v))
-            for f in c['class_files']:
-                case_lines.append(line('class', f'{FIXES_DIR}/classes/{f}'))
-            case_lines.append(line('expected', f'{FIXES_DIR}/{expected}/{c["id"]}{fix_ext(c)}'))
+            opts = [('jvm_plugins', '1')] if c.get('language') == 'kotlin' else []
             stem = os.path.basename(c['class_files'][0])[:-len('.class')]
             names = [stem + fix_ext(c), stem + '.java']
             for unit in c.get('compare_fallback', []):
                 names += [unit + fix_ext(c), unit + '.java']
-            case_lines.append(line('compare', *dict.fromkeys(names)))
+            case_lines += case_records(root, f'{slug}/{c["id"]}', name,
+                                       [f'{FIXES_DIR}/classes/{f}' for f in c['class_files']],
+                                       f'{FIXES_DIR}/{expected}/{c["id"]}{fix_ext(c)}', list(dict.fromkeys(names)),
+                                       opts + [tuple(o) for o in c.get('options', [])], f'{FIXES_DIR}/{expected}')
     return set_lines, case_lines
 
 
@@ -207,7 +235,7 @@ def fix_readme(fm):
     return FIXES_README.format(options=options, rows='\n'.join(rows))
 
 
-def write_manifest(path, tests, sets, base, root, java_homes, rel_class, rel_expected, extra=([], [])):
+def write_manifest(path, tests, sets, base, root, java_homes, rel_class, rel_expected, extra=([], []), vendored=None):
     used_sets = []
     for t in tests:
         if t['set'] not in used_sets:
@@ -230,14 +258,10 @@ def write_manifest(path, tests, sets, base, root, java_homes, rel_class, rel_exp
             out.append(line('current_jdk', '17'))
     out.extend(extra[0])
     for t in tests:
-        out.append(line('case', t['id'], t['set']))
-        if t['runtime_injected'] is not None:
-            out.append(line('opt', 'include-runtime', '${java.%s.home}' % t['runtime_injected']))
-        for f in t['class_files']:
-            out.append(line('class', rel_class(f)))
-        out.append(line('expected', rel_expected(t['oracle'])))
+        opts = [] if t['runtime_injected'] is None else [('include-runtime', '${java.%s.home}' % t['runtime_injected'])]
         names = [t['decompiled_file']] + ([t['decompiled_file_fallback']] if t.get('decompiled_file_fallback') else [])
-        out.append(line('compare', *names))
+        out += case_records(vendored, t['id'], t['set'], [rel_class(f) for f in t['class_files']],
+                            rel_expected(t['oracle']), names, opts)
     out.extend(extra[1])
     tmp = path + '.tmp'
     with open(tmp, 'w', encoding='utf-8', newline='\n') as f:
@@ -269,7 +293,7 @@ validated); do not edit by hand.
 
 | Path | What |
 |---|---|
-| `cases.tsv` | the manifest: one record block per case (format below) |
+| `cases.tsv` | the manifest: about one line per case (format below) |
 | `classes/<source set>/...` | the class files, laid out as in the oracle corpus |
 | `expected/<set slug>/<test class>.java` | Vineflower's output for each case, raw bytes (`.kt` for a case printed as Kotlin) |
 | `regen.py` | rebuilds everything here |
@@ -317,15 +341,15 @@ Line oriented, tab separated; fields escape `\\\\`, `\\t`, `\\n`, `\\r`; `#` sta
 | `kuna-jvm-corpus` `1` | format header (first record) |
 | `root` `DIR` | base of relative paths (default: the manifest's directory) |
 | `java_home` `N` `DIR` | resolves `${{java.N.home}}` in option values |
-| `set` `NAME` `SLUG` | starts a test set; the `opt`/`javadoc`/`current_jdk` lines after it are the set's |
-| `case` `ID` `SET` | starts a case of set `SET`; following `opt`/`javadoc`/`current_jdk` lines overlay the set's |
+| `set` `NAME` `SLUG` [`DIR`] | starts a test set; the `opt`/`javadoc`/`current_jdk` lines after it are the set's; its cases' expected texts are under `DIR` (default `expected/SLUG`) |
+| `case` `ID` `SET` [`STEM`...] | starts a case of set `SET`; following `opt`/`javadoc`/`current_jdk` lines overlay the set's; each `STEM` (a path without `.class`) adds `STEM.class`, then its `STEM$*.class` siblings in name order |
 | `opt` `KEY` `VALUE` | an option pair (a repeated key replaces the earlier value in place) |
 | `javadoc` `plain\\|markdown` | the set passes an `IFabricJavadocProvider` object as `fabric:javadoc` |
 | `current_jdk` `N` | `include-classpath=1`: the "current" JDK must be JDK `N` |
-| `class` `PATH` | a class file, in `addSource` order |
+| `class` `PATH` | a class file, in `addSource` order, after the stems' |
 | `lib` `PATH` | a library (`addLibrary`), added before the sources |
-| `expected` `PATH` | the expected Java (or Kotlin) text |
-| `compare` `NAME`... | the output file compared; later names are fallbacks |
+| `expected` `PATH` | the expected Java (or Kotlin) text (default: `DIR/<ID without SLUG/>.java`, or `.kt` when only that exists) |
+| `compare` `NAME`... | the output file compared; later names are fallbacks (default: the first class file's name with the expected text's extension, then `.java`) |
 
 ## Counts
 
@@ -462,12 +486,12 @@ def main():
     if out != here:
         for f in plugin_files + fix_files(fm) + [f'{FIXES_DIR}/cases.json']:
             copy(os.path.join(here, f), os.path.join(out, f))
-    plugin_sets, plugin_cases = plugin_records(pm, base)
-    kotlin_sets, kotlin_cases = plugin_records(km, base)
-    fix_sets, fix_cases = fix_records(fm, base)
+    plugin_sets, plugin_cases = plugin_records(pm, base, out)
+    kotlin_sets, kotlin_cases = plugin_records(km, base, out)
+    fix_sets, fix_cases = fix_records(fm, base, out)
     write_manifest(os.path.join(out, 'cases.tsv'), included, sets, base, None, {},
                    lambda f: 'classes/' + f, lambda p: p,
-                   (plugin_sets + kotlin_sets + fix_sets, plugin_cases + kotlin_cases + fix_cases))
+                   (plugin_sets + kotlin_sets + fix_sets, plugin_cases + kotlin_cases + fix_cases), out)
     os.makedirs(os.path.join(out, FIXES_DIR), exist_ok=True)
     with open(os.path.join(out, FIXES_DIR, 'README.md'), 'w', encoding='utf-8', newline='\n') as f:
         f.write(fix_readme(fm))

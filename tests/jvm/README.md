@@ -13,7 +13,7 @@ validated); do not edit by hand.
 
 | Path | What |
 |---|---|
-| `cases.tsv` | the manifest: one record block per case (format below) |
+| `cases.tsv` | the manifest: about one line per case (format below) |
 | `classes/<source set>/...` | the class files, laid out as in the oracle corpus |
 | `expected/<set slug>/<test class>.java` | Vineflower's output for each case, raw bytes (`.kt` for a case printed as Kotlin) |
 | `regen.py` | rebuilds everything here |
@@ -72,22 +72,22 @@ Line oriented, tab separated; fields escape `\\`, `\t`, `\n`, `\r`; `#` starts a
 | `kuna-jvm-corpus` `1` | format header (first record) |
 | `root` `DIR` | base of relative paths (default: the manifest's directory) |
 | `java_home` `N` `DIR` | resolves `${java.N.home}` in option values |
-| `set` `NAME` `SLUG` | starts a test set; the `opt`/`javadoc`/`current_jdk` lines after it are the set's |
-| `case` `ID` `SET` | starts a case of set `SET`; following `opt`/`javadoc`/`current_jdk` lines overlay the set's |
+| `set` `NAME` `SLUG` [`DIR`] | starts a test set; the `opt`/`javadoc`/`current_jdk` lines after it are the set's; its cases' expected texts are under `DIR` (default `expected/SLUG`) |
+| `case` `ID` `SET` [`STEM`...] | starts a case of set `SET`; following `opt`/`javadoc`/`current_jdk` lines overlay the set's; each `STEM` (a path without `.class`) adds `STEM.class`, then its `STEM$*.class` siblings in name order |
 | `opt` `KEY` `VALUE` | an option pair (a repeated key replaces the earlier value in place) |
 | `javadoc` `plain\|markdown` | the set passes an `IFabricJavadocProvider` object as `fabric:javadoc` |
 | `current_jdk` `N` | `include-classpath=1`: the "current" JDK must be JDK `N` |
-| `class` `PATH` | a class file, in `addSource` order |
+| `class` `PATH` | a class file, in `addSource` order, after the stems' |
 | `lib` `PATH` | a library (`addLibrary`), added before the sources |
-| `expected` `PATH` | the expected Java (or Kotlin) text |
-| `compare` `NAME`... | the output file compared; later names are fallbacks |
+| `expected` `PATH` | the expected Java (or Kotlin) text (default: `DIR/<ID without SLUG/>.java`, or `.kt` when only that exists) |
+| `compare` `NAME`... | the output file compared; later names are fallbacks (default: the first class file's name with the expected text's extension, then `.java`) |
 
 ## Counts
 
 - Vendored: **1187 cases** in all, each of which must match: 607 Vineflower-oracle cases (the Java
   cases here, the plugin and Kotlin cases below) and 580 runs of the 290 kuna-fixes cases (below).
 - Java cases: **530** (Complex Condys 1, Default 505, Javadoc 1, Lambda to Anonymous Class 2, Literals 4, LVT 5, Markdown Javadoc 1, No LVT 1, Renaming 1, Synthetics Marking 3, Ternary Constant Simplification 2, Text Tokens 4), 858 class files (890 KiB) and 530
-  expected files (1376 KiB); 2644 KiB in all with `cases.tsv`.
+  expected files (1376 KiB); 2410 KiB in all with `cases.tsv`.
 - Of the oracle corpus's 598 runnable tests, **68 are not vendored** because their
   output depends on a particular JDK's class library; run them from the external corpus (below).
   13 registered tests are not runnable from it (Groovy and Scala sources it never compiles, and the

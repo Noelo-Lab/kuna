@@ -191,6 +191,41 @@ fn manifest_errors_name_the_line() {
 }
 
 #[test]
+fn the_short_form_derives_classes_expected_and_compare() {
+    let root = Path::new(env!("CARGO_TARGET_TMPDIR")).join("kuna_corpus_short_form");
+    let _ = std::fs::remove_dir_all(&root);
+    for f in [
+        "c/p/A.class",
+        "c/p/A$1.class",
+        "c/p/A$B$C.class",
+        "c/p/A$x.txt",
+        "c/p/AB.class",
+        "c/p/B.class",
+        "expected/s/p/A.kt",
+        "x/p/B.java",
+    ] {
+        std::fs::create_dir_all(root.join(f).parent().unwrap()).unwrap();
+        std::fs::write(root.join(f), "").unwrap();
+    }
+    let text = "kuna-jvm-corpus\t1\nset\tS\ts\nset\tX\tx\tx\n\
+                case\ts/p/A\tS\tc/p/A\tc/p/B\ncase\tx/p/B\tX\tc/p/B\nclass\tc/p/A.class\n";
+    let cases = parse_cases(text, &root).unwrap();
+    let names = |c: &Case| -> Vec<String> {
+        c.class_files
+            .iter()
+            .map(|p| p.strip_prefix(&root).unwrap().display().to_string())
+            .collect()
+    };
+    let classes = ["c/p/A.class", "c/p/A$1.class", "c/p/A$B$C.class", "c/p/B.class"];
+    assert_eq!(names(&cases[0]), classes);
+    assert_eq!(cases[0].expected, root.join("expected/s/p/A.kt"));
+    assert_eq!(cases[0].compare, ["A.kt", "A.java"]);
+    assert_eq!(names(&cases[1]), ["c/p/B.class", "c/p/A.class"]);
+    assert_eq!(cases[1].expected, root.join("x/p/B.java"));
+    assert_eq!(cases[1].compare, ["B.java"]);
+}
+
+#[test]
 fn fields_escape_round_trip() {
     for s in [
         "",

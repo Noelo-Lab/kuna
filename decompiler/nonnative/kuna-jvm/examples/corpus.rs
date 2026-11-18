@@ -12,8 +12,9 @@ use std::time::{Duration, Instant};
 use kuna_jvm::fernflower::DecompiledClass;
 use kuna_jvm::kuna_corpus::{
     compare_baseline, effective_options, error_head, escape_field, evaluate, expected_as_actual,
-    failure_key, format_baseline, load_cases, next_baseline, parse_baseline, run_case, totals,
-    totals_line, with_engine_stack, Case, CaseResult, CaseStatus, EngineRun, JAVADOC_OPTION,
+    failure_key, format_baseline, load_cases_where, next_baseline, parse_baseline, run_case,
+    totals, totals_line, with_engine_stack, Case, CaseResult, CaseStatus, EngineRun,
+    JAVADOC_OPTION,
 };
 use kuna_jvm::rt::try_catch;
 
@@ -153,7 +154,8 @@ fn main() -> ExitCode {
     let manifest = std::fs::canonicalize(&args.manifest)
         .or_else(|_| std::path::absolute(&args.manifest))
         .unwrap_or(args.manifest.clone());
-    let cases = match load_cases(&manifest) {
+    let child = args.child.as_deref();
+    let cases = match load_cases_where(&manifest, |id| child.is_none_or(|c| c == id)) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("error: {e}");
