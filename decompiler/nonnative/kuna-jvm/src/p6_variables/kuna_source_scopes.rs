@@ -50,7 +50,7 @@ use crate::var_processor::VarProcessor;
 use crate::var_type::VarType;
 use crate::var_type_processor::FinalType;
 use crate::var_version_pair::VarVersionPair;
-use crate::p6_variables::kuna_fix_var_merge_liveness;
+use crate::fixes::var_merge::var_merge_liveness;
 
 /// Where a declaration is printed: in an exprent list (a block's statements
 /// or the definitions printed before a statement), or in a statement's
@@ -514,8 +514,8 @@ impl Scopes {
         let primitive = |t: &VarType| t.type_family != TypeFamily::Object;
         if !shared
             || type_.is_none_or(|t| (primitive(&t) || primitive(&own)) && !t.equals(&own))
-            || kuna_fix_var_merge_liveness::overwrites_live(root, pair, target)
-            || kuna_fix_var_merge_liveness::overwrites_live(root, target, pair)
+            || var_merge_liveness::overwrites_live(root, pair, target)
+            || var_merge_liveness::overwrites_live(root, target, pair)
         {
             return false;
         }
@@ -655,8 +655,8 @@ impl Scopes {
         let pair = VarVersionPair::from_var(d.var);
         for &j in &partners {
             let other = VarVersionPair::from_var(self.decls[j].var);
-            if kuna_fix_var_merge_liveness::overwrites_live(root, other, pair)
-                || kuna_fix_var_merge_liveness::overwrites_live(root, pair, other)
+            if var_merge_liveness::overwrites_live(root, other, pair)
+                || var_merge_liveness::overwrites_live(root, pair, other)
             {
                 return false;
             }

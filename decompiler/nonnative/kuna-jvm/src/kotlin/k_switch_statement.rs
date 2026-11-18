@@ -6,11 +6,11 @@
 //!
 //! kuna fix `kt_jump_to_non_loop_label`: a jump out of a labelled `switch`,
 //! written in `run labelN@{ .. }`, is `return@labelN`
-//! (`kuna_fix_kt_jump_to_non_loop_label`).
+//! (`fixes::kt_jumps::kt_jump_to_non_loop_label`).
 //!
 //! kuna fix `kt_when_break`: a `when` that an unlabelled `break` leaves from
 //! inside its branch is written in `run labelN@{ .. }`
-//! (`kuna_fix_kt_when_break`).
+//! (`fixes::kt_jumps::kt_when_break`).
 //!
 //! kuna fix `kt_switch_head_indent`: the switch's first block is written at
 //! the statement's indentation, as Java's `SwitchStatement` writes it;
@@ -29,8 +29,8 @@ use crate::k_const_exprent::KConstExprent;
 use crate::k_expr_processor::KExprProcessor;
 use crate::k_if_statement::copy_statement_fields;
 use crate::kotlin_statement;
-use crate::kuna_fix_kt_jump_to_non_loop_label::{self, Lambda};
-use crate::kuna_fix_kt_when_break;
+use crate::fixes::kt_jumps::kt_jump_to_non_loop_label::{self, Lambda};
+use crate::fixes::kt_jumps::kt_when_break;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::rt::JavaStr;
 use crate::statement::Statement;
@@ -68,16 +68,16 @@ impl KSwitchStatement {
 
     pub fn to_java(self, indent: i32) -> TextBuffer {
         if self.is_labeled() && kuna_fixes::enabled(KunaFix::KtJumpToNonLoopLabel) {
-            return kuna_fix_kt_jump_to_non_loop_label::within(self.into(), Lambda::Run, || {
+            return kt_jump_to_non_loop_label::within(self.into(), Lambda::Run, || {
                 self.write(indent, true, true)
             });
         }
         if kuna_fixes::enabled(KunaFix::KtWhenBreak)
             && !self.is_labeled()
             && !self.is_phantom()
-            && kuna_fix_kt_when_break::needs_run(self.into())
+            && kt_when_break::needs_run(self.into())
         {
-            return kuna_fix_kt_jump_to_non_loop_label::within(self.into(), Lambda::Run, || {
+            return kt_jump_to_non_loop_label::within(self.into(), Lambda::Run, || {
                 self.write(indent, true, false)
             });
         }

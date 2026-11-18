@@ -7,22 +7,22 @@
 //!
 //! kuna fix `external_class_diamond`: in `get_inferred_expr_type`,
 //! `new C(..)` of a class outside the class universe whose expected type is a
-//! parameterization of `C` gets the diamond (`kuna_fix_external_class_diamond`),
+//! parameterization of `C` gets the diamond (`fixes::generics::external_class_diamond`),
 //! where Vineflower writes it raw.
 //!
 //! kuna fix `implicit_outer_instance`: in `to_java`, the creation of an inner
 //! class whose outer instance is the one an unqualified creation passes, and
 //! whose null check javac emits for a qualified one is absent, is written
-//! unqualified (`kuna_fix_implicit_outer_instance`).
+//! unqualified (`fixes::constructor_calls::implicit_outer_instance`).
 //!
 //! kuna fix `qualified_super_call`: in `to_java`, an anonymous class whose
 //! constructor passes one of its own parameters to its inner superclass's as
 //! the outer instance is created `o.new S(..) {..}`
-//! (`kuna_fix_qualified_super_call`).
+//! (`fixes::constructor_calls::qualified_super_call`).
 //!
 //! kuna fix `vararg_spread_resolution`: in `to_java`, the lone element of a
 //! spread varargs array that converts to the array type is cast to the
-//! element type (`kuna_fix_vararg_spread_resolution`).
+//! element type (`fixes::overloads::vararg_spread_resolution`).
 
 use std::collections::VecDeque;
 
@@ -44,10 +44,10 @@ use crate::interpreter_util::InterpreterUtil;
 use crate::invocation_exprent::InvocationExprent;
 use crate::java_subclass;
 use crate::kuna_fixes::{self, KunaFix};
-use crate::substrate::kuna_fix_external_class_diamond;
-use crate::substrate::kuna_fix_implicit_outer_instance;
-use crate::substrate::kuna_fix_qualified_super_call;
-use crate::substrate::kuna_fix_vararg_spread_resolution;
+use crate::fixes::generics::external_class_diamond;
+use crate::fixes::constructor_calls::implicit_outer_instance;
+use crate::fixes::constructor_calls::qualified_super_call;
+use crate::fixes::overloads::vararg_spread_resolution;
 use crate::list_stack::ListStack;
 use crate::method_descriptor::MethodDescriptor;
 use crate::rt::{BitSet, JHashMap, JHashSet, JList, JavaEq, JavaHash};
@@ -208,7 +208,7 @@ impl NewExprent {
             let node = struct_class(new_type.value.as_deref());
 
             if node.is_none() && kuna_fixes::enabled(KunaFix::ExternalClassDiamond) {
-                if let Some(type_) = kuna_fix_external_class_diamond::infer(self, upper_bound) {
+                if let Some(type_) = external_class_diamond::infer(self, upper_bound) {
                     return type_;
                 }
             }
@@ -636,7 +636,7 @@ impl NewExprent {
                     if let Some(constructor) = constructor {
                         let qualifier = if kuna_fixes::enabled(KunaFix::QualifiedSuperCall) {
                             child.and_then(|child| {
-                                kuna_fix_qualified_super_call::anonymous_qualifier(
+                                qualified_super_call::anonymous_qualifier(
                                     child,
                                     constructor,
                                 )
@@ -648,7 +648,7 @@ impl NewExprent {
                             constructor.set_kuna_skip_arg(qualifier);
                         }
                         enclosing = match qualifier {
-                            Some(arg) => Some(kuna_fix_qualified_super_call::qualifier_text(
+                            Some(arg) => Some(qualified_super_call::qualifier_text(
                                 constructor.get_lst_parameters().get(arg),
                                 indent,
                             )),
@@ -792,7 +792,7 @@ impl NewExprent {
                     let params = constructor.get_lst_parameters().to_vec();
                     let implicit = kuna_fixes::enabled(KunaFix::ImplicitOuterInstance)
                         && new_type.value.as_deref().is_some_and(|name| {
-                            kuna_fix_implicit_outer_instance::is_implicit(self, name, &params)
+                            implicit_outer_instance::is_implicit(self, name, &params)
                         });
                     if !implicit {
                         enclosing = NewExprent::get_qualified_new_instance_opt(
@@ -838,7 +838,7 @@ impl NewExprent {
             let lst_array_elements = self.get_lst_array_elements();
             let lone_cast = kuna_fixes::enabled(KunaFix::VarargSpreadResolution)
                 && lst_array_elements.len() == 1
-                && kuna_fix_vararg_spread_resolution::lone_element_cast(
+                && vararg_spread_resolution::lone_element_cast(
                     &new_type,
                     lst_array_elements.get(0),
                 );

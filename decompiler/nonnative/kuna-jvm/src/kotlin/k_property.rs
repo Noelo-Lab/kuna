@@ -6,17 +6,17 @@
 //! in the scope of the class being written.
 //!
 //! kuna fix `kt_type_parameter_id`: each member's types are read in the
-//! scope of its own type parameters (`kuna_fix_kt_type_parameter_id`).
+//! scope of its own type parameters (`fixes::kt_types::kt_type_parameter_id`).
 //!
 //! kuna fix `kt_accessor_backing_field`: an accessor's body names its
-//! property's backing field `field` (`kuna_fix_kt_accessor_backing_field`).
+//! property's backing field `field` (`fixes::kt_properties::kt_accessor_backing_field`).
 //!
 //! kuna fix `kt_misplaced_modality`: no modality is written on accessors,
 //! nor `final` on a top-level property; Kotlin allows neither.
 //!
 //! kuna fix `kt_companion_property_initializer`: a companion property's
 //! initializer is read from the class that holds its static field
-//! (`kuna_fix_kt_companion_property_initializer`).
+//! (`fixes::kt_initializers::kt_companion_property_initializer`).
 //!
 //! kuna fix `kt_property_initializer_key`: a property's initializer is looked
 //! up by its field's name and descriptor, the key `InitializerProcessor` filed
@@ -30,38 +30,38 @@
 //!
 //! kuna fix `kt_file_static_initializer`: a file property set by what is left
 //! of the file class's static initializer gets that code as its initializer
-//! (`kuna_fix_kt_file_static_initializer`).
+//! (`fixes::kt_initializers::kt_file_static_initializer`).
 //!
 //! kuna fix `kt_default_property_initializer`: a property whose field no
 //! constructor stores is written with its type's default value
-//! (`kuna_fix_kt_default_property_initializer`).
+//! (`fixes::kt_initializers::kt_default_property_initializer`).
 //!
 //! kuna fix `kt_missed_override`: a property whose getter overrides a
-//! supertype method is written `override` (`kuna_fix_kt_missed_override`).
+//! supertype method is written `override` (`fixes::kt_declarations::kt_missed_override`).
 //!
 //! kuna fix `kt_setter_parameter_name`: a setter's body names its parameter
-//! as its header does (`kuna_fix_kt_setter_parameter_name`).
+//! as its header does (`fixes::kt_properties::kt_setter_parameter_name`).
 //!
 //! kuna fix `kt_unrepresentable_declared_type`: a property with an
 //! initializer whose type Kotlin cannot name is written without a type
-//! (`kuna_fix_kt_unrepresentable_declared_type`).
+//! (`fixes::kt_anonymous_objects::kt_unrepresentable_declared_type`).
 //!
 //! kuna fix `kt_default_accessor_flags`: an accessor whose flags the metadata
 //! leaves out takes its property's default accessor flags.
 //!
 //! kuna fix `kt_property_field_flags`: the property carries the `@Volatile`,
 //! `@Transient` and `@JvmSynthetic` its backing field's flags stand for
-//! (`kuna_fix_kt_property_field_flags`).
+//! (`fixes::kt_properties::kt_property_field_flags`).
 //!
 //! kuna fix `kt_jvm_field_setter`: a `var` compiled without accessors
-//! (`@JvmField`) has no `private set` (`kuna_fix_kt_jvm_field_setter`).
+//! (`@JvmField`) has no `private set` (`fixes::kt_properties::kt_jvm_field_setter`).
 //!
 //! kuna fix `kt_extension_property`: an extension property is declared with
-//! its receiver and type parameters (`kuna_fix_kt_extension_property`).
+//! its receiver and type parameters (`fixes::kt_extensions::kt_extension_property`).
 //!
 //! kuna fix `kt_companion_static_copy`: only a static method of the
 //! companion's class is marked as the copy of a companion accessor
-//! (`kuna_fix_kt_companion_static_copy`).
+//! (`fixes::kt_generated_members::kt_companion_static_copy`).
 
 use std::rc::Rc;
 
@@ -80,23 +80,23 @@ use crate::k_type::KType;
 use crate::k_types::KTypes;
 use crate::k_utils::KUtils;
 use crate::key::Key;
-use crate::kotlin::kuna_fix_kt_default_accessor_flags;
-use crate::kotlin::kuna_fix_kt_extension_property::{self, Extension};
+use crate::fixes::kt_properties::kt_default_accessor_flags;
+use crate::fixes::kt_extensions::kt_extension_property::{self, Extension};
 use crate::kotlin_writer::KotlinWriter;
 use crate::kt_attrs::KtAttrs;
 use crate::kt_flags::Flags;
 use crate::kt_proto::{self, Modality, Visibility};
-use crate::kotlin::kuna_fix_kt_accessor_backing_field;
-use crate::kotlin::kuna_fix_kt_companion_property_initializer;
-use crate::kotlin::kuna_fix_kt_default_property_initializer;
-use crate::kotlin::kuna_fix_kt_file_static_initializer;
-use crate::kotlin::kuna_fix_kt_unrepresentable_declared_type;
-use crate::kotlin::kuna_fix_kt_missed_override;
-use crate::kotlin::kuna_fix_kt_setter_parameter_name;
-use crate::kotlin::kuna_fix_kt_jvm_field_setter;
-use crate::kotlin::kuna_fix_kt_property_field_flags;
-use crate::kotlin::kuna_fix_kt_companion_static_copy;
-use crate::kuna_fix_kt_type_parameter_id;
+use crate::fixes::kt_properties::kt_accessor_backing_field;
+use crate::fixes::kt_initializers::kt_companion_property_initializer;
+use crate::fixes::kt_initializers::kt_default_property_initializer;
+use crate::fixes::kt_initializers::kt_file_static_initializer;
+use crate::fixes::kt_anonymous_objects::kt_unrepresentable_declared_type;
+use crate::fixes::kt_declarations::kt_missed_override;
+use crate::fixes::kt_properties::kt_setter_parameter_name;
+use crate::fixes::kt_properties::kt_jvm_field_setter;
+use crate::fixes::kt_properties::kt_property_field_flags;
+use crate::fixes::kt_generated_members::kt_companion_static_copy;
+use crate::fixes::kt_types::kt_type_parameter_id;
 use crate::method_wrapper::MethodWrapper;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::metadata_name_resolver::MetadataNameResolver;
@@ -256,7 +256,7 @@ impl KProperty {
         if kuna_fixes::enabled(KunaFix::KtPropertyFieldFlags) {
             if let Some(field) = self.underlying_field {
                 let delegated = Flags::IS_DELEGATED.get(flags);
-                for annotation in kuna_fix_kt_property_field_flags::annotations(field, delegated) {
+                for annotation in kt_property_field_flags::annotations(field, delegated) {
                     buf.append_indent(indent).append(&annotation).append_line_separator();
                 }
             }
@@ -324,7 +324,7 @@ impl KProperty {
             "val "
         });
         if let Some(extension) = &self.extension {
-            kuna_fix_kt_extension_property::write_receiver(&mut buf, extension, indent);
+            kt_extension_property::write_receiver(&mut buf, extension, indent);
         }
         buf.append(&KotlinWriter::to_valid_kotlin_identifier(&self.name));
         let type_ = self.type_.as_ref().expect("NullPointerException: type");
@@ -333,12 +333,12 @@ impl KProperty {
         let omit_type = kuna_fixes::enabled(KunaFix::KtUnrepresentableDeclaredType)
             && initializer_expr.is_some()
             && !Flags::IS_DELEGATED.get(flags)
-            && type_buf.content_equals(kuna_fix_kt_unrepresentable_declared_type::UNREPRESENTABLE);
+            && type_buf.content_equals(kt_unrepresentable_declared_type::UNREPRESENTABLE);
         if !omit_type {
             buf.append(": ").append_buffer(&type_buf);
         }
         if let Some(extension) = &self.extension {
-            kuna_fix_kt_extension_property::write_where(&mut buf, extension, indent);
+            kt_extension_property::write_where(&mut buf, extension, indent);
         }
 
         let mut has_initializer = false;
@@ -359,7 +359,7 @@ impl KProperty {
         }
 
         if !has_initializer && kuna_fixes::enabled(KunaFix::KtFileStaticInitializer) {
-            if let Some(text) = self.underlying_field.and_then(kuna_fix_kt_file_static_initializer::initializer) {
+            if let Some(text) = self.underlying_field.and_then(kt_file_static_initializer::initializer) {
                 buf.append(" = ").append_buffer(&text);
                 has_initializer = true;
             }
@@ -440,11 +440,11 @@ impl KProperty {
                 let method_wrapper = (setter.method_supplier)(class_wrapper)
                     .expect("NullPointerException: methodWrapper");
                 let _parameter = kuna_fixes::enabled(KunaFix::KtSetterParameterName).then(|| {
-                    let name = kuna_fix_kt_setter_parameter_name::parameter_name(
+                    let name = kt_setter_parameter_name::parameter_name(
                         self.setter_param_name.as_deref(),
                     );
                     buf.append("set(").append(&name).append(") ");
-                    kuna_fix_kt_setter_parameter_name::enter(method_wrapper, name)
+                    kt_setter_parameter_name::enter(method_wrapper, name)
                 });
                 if _parameter.is_none() {
                     buf.append("set(")
@@ -488,7 +488,7 @@ impl KProperty {
             None if Flags::IS_VAR.get(flags)
                 && Flags::VISIBILITY.get(flags) != Some(Visibility::Private)
                 && !(kuna_fixes::enabled(KunaFix::KtJvmFieldSetter)
-                    && kuna_fix_kt_jvm_field_setter::has_no_setter(
+                    && kt_jvm_field_setter::has_no_setter(
                         self.underlying_field,
                         Flags::IS_DELEGATED.get(flags),
                     )) =>
@@ -517,7 +517,7 @@ impl KProperty {
             return false;
         };
         let method = getter.with(|d| d.method_struct);
-        kuna_fix_kt_missed_override::property_overrides(self.class_struct, method)
+        kt_missed_override::property_overrides(self.class_struct, method)
     }
 
     /// Fix `kt_default_property_initializer`: the default value a property
@@ -535,8 +535,8 @@ impl KProperty {
         {
             return None;
         }
-        let literal = kuna_fix_kt_default_property_initializer::default_literal(self.type_.as_ref()?)?;
-        kuna_fix_kt_default_property_initializer::never_stored(self.class_struct, field)
+        let literal = kt_default_property_initializer::default_literal(self.type_.as_ref()?)?;
+        kt_default_property_initializer::never_stored(self.class_struct, field)
             .then_some(literal)
     }
 
@@ -544,19 +544,19 @@ impl KProperty {
     fn receiver_scope(
         &self,
         accessor: MethodWrapper,
-    ) -> Option<crate::kotlin::kuna_fix_kt_extension_receiver::ReceiverScope> {
+    ) -> Option<crate::fixes::kt_extensions::kt_extension_receiver::ReceiverScope> {
         self.extension.as_ref()?;
-        kuna_fix_kt_extension_property::enter(self.class_struct, accessor)
+        kt_extension_property::enter(self.class_struct, accessor)
     }
 
     /// Fix `kt_accessor_backing_field`: the scope in which an accessor body names its backing field `field`.
     fn backing_field_scope(
         &self,
         accessor: MethodWrapper,
-    ) -> Option<kuna_fix_kt_accessor_backing_field::AccessorScope> {
+    ) -> Option<kt_accessor_backing_field::AccessorScope> {
         let field = self.underlying_field?;
         (kuna_fixes::enabled(KunaFix::KtAccessorBackingField) && !Flags::IS_DELEGATED.get(self.flags))
-            .then(|| kuna_fix_kt_accessor_backing_field::enter(field, accessor))
+            .then(|| kt_accessor_backing_field::enter(field, accessor))
     }
 
     pub fn parse(
@@ -571,7 +571,7 @@ impl KProperty {
 
         for property in proto_properties {
             let _type_parameters = kuna_fixes::enabled(KunaFix::KtTypeParameterId).then(|| {
-                kuna_fix_kt_type_parameter_id::member_scope(
+                kt_type_parameter_id::member_scope(
                     &property.get_type_parameter_list(),
                     name_resolver,
                 )
@@ -639,7 +639,7 @@ impl KProperty {
                 if let Some(getter_method) = getter_method {
                     let supplier = method_supplier(method_name.clone(), desc.clone());
                     let getter_flags = if kuna_fixes::enabled(KunaFix::KtDefaultAccessorFlags) {
-                        kuna_fix_kt_default_accessor_flags::accessor_flags(
+                        kt_default_accessor_flags::accessor_flags(
                             property.has_getter_flags(),
                             property.get_getter_flags(),
                             flags,
@@ -661,7 +661,7 @@ impl KProperty {
                         .get_method(&method_name, &desc)
                         .filter(|m| {
                             !kuna_fixes::enabled(KunaFix::KtCompanionStaticCopy)
-                                || kuna_fix_kt_companion_static_copy::is_copy(*m)
+                                || kt_companion_static_copy::is_copy(*m)
                         })
                     {
                         KtAttrs::put(
@@ -683,7 +683,7 @@ impl KProperty {
                 if setter_method.is_some() {
                     let supplier = method_supplier(method_name.clone(), desc.clone());
                     let setter_flags = if kuna_fixes::enabled(KunaFix::KtDefaultAccessorFlags) {
-                        kuna_fix_kt_default_accessor_flags::accessor_flags(
+                        kt_default_accessor_flags::accessor_flags(
                             property.has_setter_flags(),
                             property.get_setter_flags(),
                             flags,
@@ -702,7 +702,7 @@ impl KProperty {
                         .get_method(&method_name, &desc)
                         .filter(|m| {
                             !kuna_fixes::enabled(KunaFix::KtCompanionStaticCopy)
-                                || kuna_fix_kt_companion_static_copy::is_copy(*m)
+                                || kt_companion_static_copy::is_copy(*m)
                         })
                     {
                         KtAttrs::put(
@@ -807,7 +807,7 @@ impl KProperty {
                     && field_container != class_struct
                     && f.has_modifier(ACC_STATIC)
                 {
-                    initializer = Some(kuna_fix_kt_companion_property_initializer::static_initializer(
+                    initializer = Some(kt_companion_property_initializer::static_initializer(
                         field_container.qualified_name(),
                         key,
                     ));
@@ -819,7 +819,7 @@ impl KProperty {
             }
 
             let extension = kuna_fixes::enabled(KunaFix::KtExtensionProperty)
-                .then(|| kuna_fix_kt_extension_property::parse(property, name_resolver))
+                .then(|| kt_extension_property::parse(property, name_resolver))
                 .flatten();
             let mut kprop = KProperty::new(
                 name,

@@ -6,49 +6,49 @@
 //!
 //! kuna fix `kt_extension_receiver`: an extension function's receiver
 //! parameter is written `this` in its body
-//! (`kuna_fix_kt_extension_receiver`).
+//! (`fixes::kt_extensions::kt_extension_receiver`).
 //!
 //! kuna fix `kt_setter_parameter_name`: a setter's parameter is written by
-//! its header's name (`kuna_fix_kt_setter_parameter_name`).
+//! its header's name (`fixes::kt_properties::kt_setter_parameter_name`).
 //!
 //! kuna fix `kt_unrepresentable_declared_type`: a definition that an
 //! initializer follows leaves out a type Kotlin cannot name
-//! (`kuna_fix_kt_unrepresentable_declared_type`).
+//! (`fixes::kt_anonymous_objects::kt_unrepresentable_declared_type`).
 //!
 //! kuna fix `kt_nullable_local`: a definition of a local that may hold null
-//! is written with a nullable type (`kuna_fix_kt_nullable_local`).
+//! is written with a nullable type (`fixes::kt_null_checks::kt_nullable_local`).
 //!
 //! kuna fix `kt_default_value_names`: in a default value, a parameter or
 //! receiver is written by its declaration's name
-//! (`kuna_fix_kt_default_value_names`).
+//! (`fixes::kt_default_args::kt_default_value_names`).
 //!
 //! kuna fix `kt_raw_generic_type`: a local of a generic class is declared
-//! with the type arguments the plugin gave it (`kuna_fix_kt_raw_generic_type`).
+//! with the type arguments the plugin gave it (`fixes::kt_types::kt_raw_generic_type`).
 //!
 //! kuna fix `kt_function_parameter_name`: a parameter without a local
 //! variable table entry is written by its header's name
-//! (`kuna_fix_kt_function_parameter_name`).
+//! (`fixes::kt_names::kt_function_parameter_name`).
 //!
 //! kuna fix `kt_suspend_impl`: the first parameter of a `$suspendImpl` body
-//! written as its member's is `this` (`kuna_fix_kt_suspend_impl::name`).
+//! written as its member's is `this` (`fixes::kt_suspend::kt_suspend_impl::name`).
 //!
 //! kuna fix `kt_suspend_lambda`: the receiver of a rebuilt suspend lambda
 //! written with a label is `this@label`
-//! (`kuna_fix_kt_suspend_lambda::receiver_reference`).
+//! (`fixes::kt_suspend::kt_suspend_lambda::receiver_reference`).
 
 use crate::exprent::Exprent;
 use crate::k_dispatch::KExprentExt;
 use crate::k_types::KTypes;
 use crate::kotlin_exprent;
-use crate::kotlin::kuna_fix_kt_default_value_names;
-use crate::kotlin::kuna_fix_kt_extension_receiver;
-use crate::kotlin::kuna_fix_kt_function_parameter_name;
-use crate::kotlin::kuna_fix_kt_nullable_local;
-use crate::kotlin::kuna_fix_kt_raw_generic_type;
-use crate::kotlin::kuna_fix_kt_setter_parameter_name;
-use crate::kotlin::kuna_fix_kt_suspend_lambda;
-use crate::kotlin::kuna_fix_kt_suspend_impl;
-use crate::kotlin::kuna_fix_kt_unrepresentable_declared_type;
+use crate::fixes::kt_default_args::kt_default_value_names;
+use crate::fixes::kt_extensions::kt_extension_receiver;
+use crate::fixes::kt_names::kt_function_parameter_name;
+use crate::fixes::kt_null_checks::kt_nullable_local;
+use crate::fixes::kt_types::kt_raw_generic_type;
+use crate::fixes::kt_properties::kt_setter_parameter_name;
+use crate::fixes::kt_suspend::kt_suspend_lambda;
+use crate::fixes::kt_suspend::kt_suspend_impl;
+use crate::fixes::kt_anonymous_objects::kt_unrepresentable_declared_type;
 use crate::kotlin_writer::KotlinWriter;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::rt::BitSet;
@@ -139,34 +139,34 @@ impl KVarExprent {
 
     pub fn get_name(self) -> String {
         if kuna_fixes::enabled(KunaFix::KtExtensionReceiver) {
-            if let Some(name) = kuna_fix_kt_extension_receiver::name(self.0) {
+            if let Some(name) = kt_extension_receiver::name(self.0) {
                 return name;
             }
         }
         if kuna_fixes::enabled(KunaFix::KtSetterParameterName) {
-            if let Some(name) = kuna_fix_kt_setter_parameter_name::name(self.0) {
+            if let Some(name) = kt_setter_parameter_name::name(self.0) {
                 return name;
             }
         }
         if kuna_fixes::enabled(KunaFix::KtDefaultValueNames) {
-            if let Some(name) = kuna_fix_kt_default_value_names::name(self.0) {
+            if let Some(name) = kt_default_value_names::name(self.0) {
                 return name;
             }
         }
         if kuna_fixes::enabled(KunaFix::KtSuspendImpl) {
-            if let Some(name) = kuna_fix_kt_suspend_impl::name(self.0) {
+            if let Some(name) = kt_suspend_impl::name(self.0) {
                 return name;
             }
         }
         if kuna_fixes::enabled(KunaFix::KtFunctionParameterName) {
-            if let Some(name) = kuna_fix_kt_function_parameter_name::name(self.0) {
+            if let Some(name) = kt_function_parameter_name::name(self.0) {
                 return name;
             }
         }
         let name = VarExprent::get_name_base(self.0);
 
         if kuna_fixes::enabled(KunaFix::KtSuspendLambda) {
-            if let Some(reference) = kuna_fix_kt_suspend_lambda::receiver_reference(self.0) {
+            if let Some(reference) = kt_suspend_lambda::receiver_reference(self.0) {
                 return reference;
             }
         }
@@ -212,19 +212,19 @@ impl KVarExprent {
             || declaration_type == Some(DeclarationType::ExceptionType)
         {
             let written = match self.0.kuna_declared() {
-                Some(typed) => kuna_fix_kt_raw_generic_type::declared_type(&typed),
+                Some(typed) => kt_raw_generic_type::declared_type(&typed),
                 None => KTypes::get_kotlin_type(Some(&self.get_definition_var_type())),
             };
             if !(declaration_type == Some(DeclarationType::Definition)
                 && kuna_fixes::enabled(KunaFix::KtUnrepresentableDeclaredType)
-                && kuna_fix_kt_unrepresentable_declared_type::omits(&written))
+                && kt_unrepresentable_declared_type::omits(&written))
             {
                 buffer.append(": ");
                 if declaration_type == Some(DeclarationType::Definition)
                     && self.kd(|d| d.nullable)
                     && kuna_fixes::enabled(KunaFix::KtNullableLocal)
                 {
-                    buffer.append(&kuna_fix_kt_nullable_local::nullable(&written));
+                    buffer.append(&kt_nullable_local::nullable(&written));
                 } else {
                     buffer.append(&written);
                 }

@@ -1,12 +1,12 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/exps/FunctionExprent.java`.
 //!
-//! kuna fix `ternary_numeric_arms` (`kuna_fix_ternary_numeric_arms.rs`): a
+//! kuna fix `ternary_numeric_arms` (`fixes/numeric_types/ternary_numeric_arms.rs`): a
 //! reference conditional whose arms would be promoted casts its first arm.
 //! kuna fix `boxed_type_variable_cast`: a cast to a type variable keeps the
 //! boxing call of its operand.
 //! kuna fix `kt_operator_precedence`: in Kotlin output an operand is also
 //! parenthesised where Kotlin's precedence needs it
-//! (`kuna_fix_kt_operator_precedence`).
+//! (`fixes::kt_operators::kt_operator_precedence`).
 //! kuna fix `kt_mapped_java_member`: in Kotlin output an array's length is
 //! its `size`.
 //! kuna fix `kt_not_null_assertion`: a `!!` (`Other` in Kotlin's function
@@ -16,12 +16,12 @@
 //! kuna fix `field_read_all_paths`: a conditional's operand states merge
 //! field variables on all paths when the outer holder does.
 //! kuna fix `concat_operand_type`: a string concatenation operand is written
-//! with the type of its `append` argument (`kuna_fix_concat_operand_type`).
+//! with the type of its `append` argument (`fixes::numeric_types::concat_operand_type`).
 //! kuna fix `mixed_type_reassociation`: a right operand of the same `+` or
 //! `*` keeps its parentheses where regrouping changes the type a step
-//! computes in (`kuna_fix_mixed_type_reassociation`).
+//! computes in (`fixes::numeric_types::mixed_type_reassociation`).
 //! kuna fix `reference_unboxing`: of `==` or `!=` between two unboxing calls,
-//! the left one is written (`kuna_fix_reference_unboxing`).
+//! the left one is written (`fixes::numeric_types::reference_unboxing`).
 
 use crate::check_types_result::CheckTypesResult;
 use crate::code_type::CodeType;
@@ -30,13 +30,13 @@ use crate::expr_processor::ExprProcessor;
 use crate::exprent::{Exprent, ExprentKind, ExprentType};
 use crate::i_matchable::MatchProperties;
 use crate::int_helper::IntHelper;
-use crate::kotlin::kuna_fix_kt_binary_numeric_promotion;
-use crate::kotlin::kuna_fix_kt_not_null_assertion;
-use crate::kotlin::kuna_fix_kt_operator_line_break;
-use crate::kotlin::kuna_fix_kt_operator_precedence;
-use crate::kuna_fix_kt_java_reference_cast;
-use crate::kuna_fix_kt_java_cast_syntax;
-use crate::p3_dataflow::kuna_fix_concat_operand_type;
+use crate::fixes::kt_operators::kt_binary_numeric_promotion;
+use crate::fixes::kt_null_checks::kt_not_null_assertion;
+use crate::fixes::kt_operators::kt_operator_line_break;
+use crate::fixes::kt_operators::kt_operator_precedence;
+use crate::fixes::kt_java_syntax::kt_java_reference_cast;
+use crate::fixes::kt_java_syntax::kt_java_cast_syntax;
+use crate::fixes::numeric_types::concat_operand_type;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::list_stack::ListStack;
 use crate::match_engine::MatchEngine;
@@ -45,9 +45,9 @@ use crate::pattern::Pattern;
 use crate::rt::{BitSet, JList, JavaEq, JavaHash};
 use crate::s_forms_constructor::SFormsConstructor;
 use crate::statement::Statement;
-use crate::substrate::kuna_fix_mixed_type_reassociation;
-use crate::substrate::kuna_fix_reference_unboxing;
-use crate::substrate::kuna_fix_ternary_numeric_arms;
+use crate::fixes::numeric_types::mixed_type_reassociation;
+use crate::fixes::numeric_types::reference_unboxing;
+use crate::fixes::numeric_types::ternary_numeric_arms;
 use crate::text_buffer::TextBuffer;
 use crate::var_map_holder::VarMapHolder;
 use crate::var_type::{instance_of, VarType};
@@ -574,7 +574,7 @@ impl FunctionExprent {
         let (func_type, lst_operands) = self.d(|d| (d.func_type, d.lst_operands.clone()));
         if func_type == FunctionType::Other
             && kuna_fixes::enabled(KunaFix::KtNotNullAssertion)
-            && kuna_fix_kt_not_null_assertion::is_not_null(self.0)
+            && kt_not_null_assertion::is_not_null(self.0)
         {
             return lst_operands.get(0).get_inferred_expr_type_opt(upper_bound);
         }
@@ -711,7 +711,7 @@ impl FunctionExprent {
         let (func_type, lst_operands) = self.d(|d| (d.func_type, d.lst_operands.clone()));
         if func_type == FunctionType::Other
             && kuna_fixes::enabled(KunaFix::KtNotNullAssertion)
-            && kuna_fix_kt_not_null_assertion::is_not_null(self.0)
+            && kt_not_null_assertion::is_not_null(self.0)
         {
             return 0;
         }
@@ -959,7 +959,7 @@ impl FunctionExprent {
             if matches!(func_type, FunctionType::Eq | FunctionType::Ne)
                 && kuna_fixes::enabled(KunaFix::ReferenceUnboxing)
             {
-                kuna_fix_reference_unboxing::keep_in_comparison(left, right);
+                reference_unboxing::keep_in_comparison(left, right);
             }
 
             let (left_conversion, right_conversion) = self.kotlin_promotion(left, right);
@@ -968,13 +968,13 @@ impl FunctionExprent {
                 buf.push_newline_group(indent, 1);
             }
             let slots = self.d(|d| d.kuna_concat_slots.clone());
-            let left_operand = kuna_fix_concat_operand_type::write(left, &slots[0], indent)
+            let left_operand = concat_operand_type::write(left, &slots[0], indent)
                 .unwrap_or_else(|| {
                     self.promoted_operand_string(left, false, indent, left_conversion)
                 });
             buf.append_buffer(&left_operand);
             self.append_operator(&mut buf, operator);
-            let right_operand = kuna_fix_concat_operand_type::write(right, &slots[1], indent)
+            let right_operand = concat_operand_type::write(right, &slots[1], indent)
                 .unwrap_or_else(|| {
                     self.promoted_operand_string(right, true, indent, right_conversion)
                 });
@@ -994,7 +994,7 @@ impl FunctionExprent {
                     .flatten();
                 let mut operand = match conversion {
                     Some(conversion) => {
-                        kuna_fix_kt_binary_numeric_promotion::write(negated, conversion, indent)
+                        kt_binary_numeric_promotion::write(negated, conversion, indent)
                     }
                     None => self.wrap_operand_string(negated, true, indent),
                 };
@@ -1034,8 +1034,8 @@ impl FunctionExprent {
                 let arr = lst_operands.get(0);
 
                 buf.append_buffer(&self.wrap_operand_string(arr, false, indent));
-                if arr.get_expr_type().array_dim == 0 && kuna_fix_kt_java_reference_cast::active() {
-                    kuna_fix_kt_java_reference_cast::object_array(&mut buf);
+                if arr.get_expr_type().array_dim == 0 && kt_java_reference_cast::active() {
+                    kt_java_reference_cast::object_array(&mut buf);
                 } else if arr.get_expr_type().array_dim == 0 {
                     let obj_arr = VarType::VARTYPE_OBJECT().resize_array_dim(1);
                     buf.enclose(
@@ -1045,7 +1045,7 @@ impl FunctionExprent {
                     buf.add_type_name_token(&obj_arr, 2);
                 }
                 if kuna_fixes::enabled(KunaFix::KtMappedJavaMember)
-                    && kuna_fix_kt_java_cast_syntax::writing_kotlin()
+                    && kt_java_cast_syntax::writing_kotlin()
                 {
                     buf.append(".size");
                 } else {
@@ -1060,7 +1060,7 @@ impl FunctionExprent {
                     .append_possible_newline_alt(" ")
                     .append("? ");
                 let arm_casts = if kuna_fixes::enabled(KunaFix::TernaryNumericArms) {
-                    kuna_fix_ternary_numeric_arms::arm_casts(
+                    ternary_numeric_arms::arm_casts(
                         lst_operands.get(1),
                         lst_operands.get(2),
                     )
@@ -1183,7 +1183,7 @@ impl FunctionExprent {
         let Some(cast) = cast else {
             return self.wrap_operand_string(expr, true, indent);
         };
-        let written = kuna_fix_ternary_numeric_arms::written_operand(expr);
+        let written = ternary_numeric_arms::written_operand(expr);
         let quote = written.get_precedence() >= FunctionType::Cast.precedence();
         let mut buf = TextBuffer::new();
         buf.append_char('(')
@@ -1205,7 +1205,7 @@ impl FunctionExprent {
     /// `kt_operator_line_break`).
     fn append_operator(self, buf: &mut TextBuffer, operator: &str) {
         if kuna_fixes::enabled(KunaFix::KtOperatorLineBreak)
-            && kuna_fix_kt_operator_line_break::breaks_after(self)
+            && kt_operator_line_break::breaks_after(self)
         {
             buf.append(" ").append(operator).append_possible_newline_alt(" ");
         } else {
@@ -1225,7 +1225,7 @@ impl FunctionExprent {
         if !kuna_fixes::enabled(KunaFix::KtBinaryNumericPromotion) || !self.0.is_k_function() {
             return (None, None);
         }
-        kuna_fix_kt_binary_numeric_promotion::conversions(self.get_func_type(), left, right)
+        kt_binary_numeric_promotion::conversions(self.get_func_type(), left, right)
             .unwrap_or((None, None))
     }
 
@@ -1233,7 +1233,7 @@ impl FunctionExprent {
         if !kuna_fixes::enabled(KunaFix::KtBinaryNumericPromotion) || !self.0.is_k_function() {
             return None;
         }
-        kuna_fix_kt_binary_numeric_promotion::negation(operand)
+        kt_binary_numeric_promotion::negation(operand)
     }
 
     fn promoted_operand_string(
@@ -1244,7 +1244,7 @@ impl FunctionExprent {
         conversion: Option<&str>,
     ) -> TextBuffer {
         match conversion {
-            Some(conversion) => kuna_fix_kt_binary_numeric_promotion::write(expr, conversion, indent),
+            Some(conversion) => kt_binary_numeric_promotion::write(expr, conversion, indent),
             None => self.wrap_operand_string_group(expr, eq, indent, true),
         }
     }
@@ -1279,14 +1279,14 @@ impl FunctionExprent {
                         parentheses = !FunctionExprent::is_associative(func_type);
                         if !parentheses && kuna_fixes::enabled(KunaFix::MixedTypeReassociation) {
                             parentheses =
-                                kuna_fix_mixed_type_reassociation::regroups_type(self, expr);
+                                mixed_type_reassociation::regroups_type(self, expr);
                         }
                     }
                 }
             }
         }
         if !parentheses && kuna_fixes::enabled(KunaFix::KtOperatorPrecedence) {
-            parentheses = kuna_fix_kt_operator_precedence::needs_parentheses(self, expr);
+            parentheses = kt_operator_precedence::needs_parentheses(self, expr);
         }
 
         if newline_group && !parentheses && myprec == exprprec {
@@ -1304,9 +1304,9 @@ impl FunctionExprent {
         let mut res = expr.to_java(indent);
         if !parentheses
             && kuna_fixes::enabled(KunaFix::KtOperatorPrecedence)
-            && kuna_fix_kt_operator_precedence::written_as_other(expr)
+            && kt_operator_precedence::written_as_other(expr)
         {
-            parentheses = kuna_fix_kt_operator_precedence::needs_parentheses(self, expr);
+            parentheses = kt_operator_precedence::needs_parentheses(self, expr);
         }
 
         if parentheses {

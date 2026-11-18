@@ -5,13 +5,13 @@
 //! branch on that flag.
 //!
 //! kuna fix `kt_escaped_class_name`: an import's segments that are no Kotlin
-//! identifier are written in backticks (`kuna_fix_kt_escaped_class_name`).
+//! identifier are written in backticks (`fixes::kt_names::kt_escaped_class_name`).
 
 use crate::decompiler_context::DecompilerContext;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::import_collector::ImportCollector;
 use crate::k_types::KTypes;
-use crate::kotlin::kuna_fix_kt_escaped_class_name;
+use crate::fixes::kt_names::kt_escaped_class_name;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::text_buffer::TextBuffer;
 
@@ -86,7 +86,7 @@ impl KotlinImportCollector {
         let imports = self.0.pack_imports();
         for imp in &imports {
             if kuna_fixes::enabled(KunaFix::KtEscapedClassName) {
-                let imp = kuna_fix_kt_escaped_class_name::escape_qualified(imp);
+                let imp = kt_escaped_class_name::escape_qualified(imp);
                 buffer.append("import ").append(&imp).append_line_separator();
                 continue;
             }

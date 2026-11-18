@@ -1,8 +1,8 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/stats/CatchAllStatement.java`.
 //!
-//! kuna fix `protected_back_edge` (`kuna_fix_protected_back_edge`): no
+//! kuna fix `protected_back_edge` (`fixes::finally_sync::protected_back_edge`): no
 //! `try` is built around a loop body whose back edge it would protect.
-//! kuna fix `kt_inlined_stdlib_call` (`kuna_fix_kt_inlined_stdlib_call`):
+//! kuna fix `kt_inlined_stdlib_call` (`fixes::kt_compiler_idioms::kt_inlined_stdlib_call`):
 //! kotlinc's inlined copy of `use` is written as the call.
 
 use std::rc::Rc;
@@ -13,9 +13,9 @@ use crate::dec_helper::DecHelper;
 use crate::decompiler_context::DecompilerContext;
 use crate::expr_processor::ExprProcessor;
 use crate::java_subclass;
-use crate::kotlin::kuna_fix_kt_inlined_stdlib_call;
+use crate::fixes::kt_compiler_idioms::kt_inlined_stdlib_call;
 use crate::kuna_fixes::{self, KunaFix};
-use crate::p7_regions::kuna_fix_protected_back_edge;
+use crate::fixes::finally_sync::protected_back_edge;
 use crate::rt::{JList, JavaStr};
 use crate::stat_edge::StatEdge;
 use crate::statement::{LastBasicType, Statement, StatementKind, StatementType};
@@ -33,7 +33,7 @@ pub struct CatchAllStatementData {
     pub kuna_remapped_slots: Vec<i32>,
     /// kuna fix `kt_inlined_stdlib_call`: the `use` call this inlined copy
     /// is written as.
-    pub kuna_inlined_use: Option<Rc<kuna_fix_kt_inlined_stdlib_call::UseCall>>,
+    pub kuna_inlined_use: Option<Rc<kt_inlined_stdlib_call::UseCall>>,
 }
 
 java_subclass!(pub CatchAllStatement: Statement, StatementKind::CatchAll(CatchAllStatementData), is_catch_all, as_catch_all, try_as_catch_all);
@@ -83,7 +83,7 @@ impl CatchAllStatement {
         }
 
         if kuna_fixes::enabled(KunaFix::ProtectedBackEdge)
-            && kuna_fix_protected_back_edge::is_open_loop_body(head)
+            && protected_back_edge::is_open_loop_body(head)
         {
             return None;
         }
@@ -121,7 +121,7 @@ impl CatchAllStatement {
     }
 
     pub fn to_java(self, indent: i32) -> TextBuffer {
-        if let Some(buf) = kuna_fix_kt_inlined_stdlib_call::write_use(self, indent) {
+        if let Some(buf) = kt_inlined_stdlib_call::write_use(self, indent) {
             return buf;
         }
         let new_line_separator = DecompilerContext::get_new_line_separator();

@@ -7,15 +7,15 @@
 //!
 //! kuna fix `kt_mapped_java_type`: a JDK class that Kotlin maps to a
 //! built-in type is written with the built-in's name
-//! (`kuna_fix_kt_mapped_java_type`).
+//! (`fixes::kt_types::kt_mapped_java_type`).
 //!
 //! kuna fix `kt_java_type_syntax`: `get_kotlin_type` writes a generic class
-//! type's arguments in Kotlin's syntax (`kuna_fix_kt_java_type_syntax`).
+//! type's arguments in Kotlin's syntax (`fixes::kt_types::kt_java_type_syntax`).
 
 use crate::expr_processor::ExprProcessor;
 use crate::jthrow;
-use crate::kotlin::kuna_fix_kt_mapped_java_type;
-use crate::kotlin::kuna_fix_kt_java_type_syntax;
+use crate::fixes::kt_types::kt_mapped_java_type;
+use crate::fixes::kt_types::kt_java_type_syntax;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::rt::{jnum, try_catch};
 use crate::var_type::VarType;
@@ -201,7 +201,7 @@ impl KTypes {
             KTypes::lookup(KTypes::JAVA_CLASS_TRANSLATIONS, type_.value_str())
         {
             type_str = translated.to_string();
-        } else if let Some(translated) = kuna_fix_kt_mapped_java_type::kotlin_name(type_)
+        } else if let Some(translated) = kt_mapped_java_type::kotlin_name(type_)
             .filter(|_| kuna_fixes::enabled(KunaFix::KtMappedJavaType))
         {
             type_str = translated.to_string();
@@ -222,7 +222,7 @@ impl KTypes {
                         builder.push_str(", ");
                     }
                     if kuna_fixes::enabled(KunaFix::KtJavaTypeSyntax) {
-                        builder.push_str(&kuna_fix_kt_java_type_syntax::type_argument(
+                        builder.push_str(&kt_java_type_syntax::type_argument(
                             argument.as_ref(),
                         ));
                     } else {
@@ -235,7 +235,7 @@ impl KTypes {
         } else {
             if kuna_fixes::enabled(KunaFix::KtJavaTypeSyntax) {
                 if let Some(s) =
-                    kuna_fix_kt_java_type_syntax::generic_class_type(type_, include_outer_classes)
+                    kt_java_type_syntax::generic_class_type(type_, include_outer_classes)
                 {
                     return s;
                 }

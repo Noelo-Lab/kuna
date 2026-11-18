@@ -5,7 +5,7 @@
 //! Kotlin requires.
 //!
 //! kuna fix `kt_string_literal_escape`: a string argument escapes the `$`
-//! that would start a template (`kuna_fix_kt_string_literal_escape`).
+//! that would start a template (`fixes::kt_java_syntax::kt_string_literal_escape`).
 
 use crate::annotation_exprent::{AnnotationExprent, Type as AnnotationType};
 use crate::decompiler_context::DecompilerContext;
@@ -16,7 +16,7 @@ use crate::k_types::KTypes;
 use crate::k_utils::KUtils;
 use crate::const_exprent::ConstExprent;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
-use crate::kotlin::kuna_fix_kt_string_literal_escape;
+use crate::fixes::kt_java_syntax::kt_string_literal_escape;
 use crate::kotlin_exprent;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::text_buffer::TextBuffer;
@@ -214,7 +214,7 @@ impl KAnnotationExprent {
                     IFernflowerPreferences::ASCII_STRING_CHARACTERS,
                 );
                 let value = const_exprent.get_value().expect("checked");
-                let text = kuna_fix_kt_string_literal_escape::kotlin_text(
+                let text = kt_string_literal_escape::kotlin_text(
                     &ConstExprent::convert_string_to_java(value.as_string(), ascii),
                     false,
                 );

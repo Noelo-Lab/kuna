@@ -8,7 +8,7 @@
 //! `all_paths` keeps, when it merges two states, only the field variables both
 //! have.
 
-use crate::p3_dataflow::kuna_fix_field_read_all_paths::FieldReadAllPaths;
+use crate::fixes::stack_var_inlining::field_read_all_paths::FieldReadAllPaths;
 use crate::rt::Shared;
 use crate::s_forms_fast_map_direct::SFormsFastMapDirect;
 use crate::validation_helper::ValidationHelper;

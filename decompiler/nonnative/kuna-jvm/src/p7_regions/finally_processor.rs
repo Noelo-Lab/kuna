@@ -50,9 +50,9 @@ use crate::instruction_sequence::InstructionSequence;
 use crate::interpreter_util::InterpreterUtil;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::method_descriptor::MethodDescriptor;
-use crate::p2_lift::kuna_fix_handler_copy_shared_body::HandlerCopySharedBody;
-use crate::p2_lift::kuna_fix_overlapping_ranges::OverlappingRanges;
-use crate::p7_regions::kuna_fix_inline_marker_finally_copy;
+use crate::fixes::exception_ranges::handler_copy_shared_body::HandlerCopySharedBody;
+use crate::fixes::exception_ranges::overlapping_ranges::OverlappingRanges;
+use crate::fixes::finally_sync::inline_marker_finally_copy;
 use crate::root_statement::RootStatement;
 use crate::rt::{JHashMap, JHashSet, JLinkedHashMap, JLinkedHashSet, JavaEq};
 use crate::simple_ssa_reassign::SimpleSSAReassign;
@@ -1114,7 +1114,7 @@ impl FinallyProcessor {
             let instr_sample = seq_sample.get_instr(i);
 
             if !self.equal_instructions(instr_pattern, instr_sample, lst_store_vars)
-                && !kuna_fix_inline_marker_finally_copy::is_marker_depth(
+                && !inline_marker_finally_copy::is_marker_depth(
                     self.pool,
                     seq_pattern,
                     seq_sample,

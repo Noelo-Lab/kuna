@@ -1,45 +1,45 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/ExprProcessor.java`.
 //!
-//! kuna fix `switch_expression_poly_cast` (`kuna_fix_switch_expression_poly_cast.rs`):
+//! kuna fix `switch_expression_poly_cast` (`fixes/switches/switch_expression_poly_cast.rs`):
 //! `getCastedExprent` does not cast a switch expression whose results would be promoted.
 //! kuna fix `boxed_type_variable_cast`: `get_casted_exprent` keeps the
 //! boxing call of a value it casts to a type variable.
 //!
 //! kuna fix `unchecked_generic_cast`: `get_casted_exprent` writes the
 //! unchecked cast a declared value's generic type needs to be assigned or
-//! returned (`kuna_fix_unchecked_generic_cast`).
+//! returned (`fixes::generic_casts::unchecked_generic_cast`).
 //!
-//! kuna fix `kt_java_cast_syntax` (`kuna_fix_kt_java_cast_syntax.rs`): in Kotlin output,
+//! kuna fix `kt_java_cast_syntax` (`fixes/kt_java_syntax/kt_java_cast_syntax.rs`): in Kotlin output,
 //! `getCastedExprent` writes a numeric conversion or a cast to a type variable in Kotlin's syntax.
 //!
 //! kuna fix `kt_java_statement_jump`: in Kotlin output, `jmp_wrapper` writes the
 //! jump after a statement in Kotlin's syntax (`KExprProcessor.jmpWrapper`).
 //!
-//! kuna fix `disjoint_generic_cast` (`kuna_fix_disjoint_generic_cast`): a cast
+//! kuna fix `disjoint_generic_cast` (`fixes::generic_casts::disjoint_generic_cast`): a cast
 //! `doGenericTypesCast` asks for, of a returned or assigned value or a field's
 //! initializer, is written to the raw class when the value's parameterization
 //! is provably distinct from the target's.
 //!
 //! kuna fix `synthetic_null_check_shape`: at a `pop` of a `requireNonNull` or
 //! `getClass` result, the call is marked when its instructions are javac's
-//! null check (`kuna_fix_synthetic_null_check_shape`).
+//! null check (`fixes::constructor_calls::synthetic_null_check_shape`).
 //!
 //! kuna fix `bounded_inference_cast`: `get_casted_exprent` casts a returned
 //! or assigned call whose target puts a type variable it infers from the
-//! target only outside its bound (`kuna_fix_bounded_inference_cast`).
+//! target only outside its bound (`fixes::generic_casts::bounded_inference_cast`).
 //!
 //! kuna fix `receiver_type_arguments`: `get_casted_exprent` gives the generic
 //! call or creation a returned or assigned chain of calls starts with the
-//! type arguments its target needs (`kuna_fix_receiver_type_arguments`).
+//! type arguments its target needs (`fixes::generic_casts::receiver_type_arguments`).
 //!
 //! kuna fix `argument_generic_cast`: `get_casted_exprent` writes those
 //! unchecked casts for an argument whose parameter's declared type is fixed,
 //! through the raw class where they are provably distinct
-//! (`kuna_fix_argument_generic_cast`).
+//! (`fixes::generic_casts::argument_generic_cast`).
 //!
 //! kuna fix `kt_implicit_widening`: in Kotlin output, `get_casted_exprent`
 //! writes the conversion of a `Byte`, `Short` or `Char` value Java widens
-//! implicitly (`kuna_fix_kt_implicit_widening`).
+//! implicitly (`fixes::kt_operators::kt_implicit_widening`).
 
 use crate::array_exprent::ArrayExprent;
 use crate::assert_processor::AssertProcessor;
@@ -62,16 +62,16 @@ use crate::generic_type::GenericType;
 use crate::if_exprent::{IfExprent, Type as IfType};
 use crate::invocation_exprent::InvocationExprent;
 use crate::jthrow;
-use crate::kuna_fix_unchecked_generic_cast;
-use crate::p2_lift::kuna_fix_bounded_inference_cast;
-use crate::substrate::kuna_fix_argument_generic_cast;
-use crate::substrate::kuna_fix_receiver_type_arguments;
-use crate::p2_lift::kuna_fix_disjoint_generic_cast;
-use crate::p2_lift::kuna_fix_synthetic_null_check_shape;
+use crate::fixes::generic_casts::unchecked_generic_cast;
+use crate::fixes::generic_casts::bounded_inference_cast;
+use crate::fixes::generic_casts::argument_generic_cast;
+use crate::fixes::generic_casts::receiver_type_arguments;
+use crate::fixes::generic_casts::disjoint_generic_cast;
+use crate::fixes::constructor_calls::synthetic_null_check_shape;
 use crate::k_expr_processor::KExprProcessor;
-use crate::kuna_fix_kt_implicit_widening;
-use crate::kuna_fix_kt_java_cast_syntax;
-use crate::kuna_fix_kt_java_reference_cast;
+use crate::fixes::kt_operators::kt_implicit_widening;
+use crate::fixes::kt_java_syntax::kt_java_cast_syntax;
+use crate::fixes::kt_java_syntax::kt_java_reference_cast;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::list_stack::ListStack;
 use crate::method_descriptor::MethodDescriptor;
@@ -86,7 +86,7 @@ use crate::stat_edge::StatEdge;
 use crate::statement::Statement;
 use crate::struct_class::StructClass;
 use crate::struct_general_attribute::StructGeneralAttribute;
-use crate::substrate::kuna_fix_switch_expression_poly_cast;
+use crate::fixes::switches::switch_expression_poly_cast;
 use crate::switch_head_exprent::SwitchHeadExprent;
 use crate::text_buffer::TextBuffer;
 use crate::text_util::TextUtil;
@@ -893,7 +893,7 @@ impl ExprProcessor {
                                 }
                                 if kuna_fixes::enabled(KunaFix::SyntheticNullCheckShape) {
                                     invocation.set_kuna_null_check_shape(
-                                        kuna_fix_synthetic_null_check_shape::shape(seq, i),
+                                        synthetic_null_check_shape::shape(seq, i),
                                     );
                                 }
                             }
@@ -1219,7 +1219,7 @@ impl ExprProcessor {
 
     pub fn jmp_wrapper(stat: Statement, indent: i32, semicolon: bool) -> TextBuffer {
         let kotlin = kuna_fixes::enabled(KunaFix::KtJavaStatementJump)
-            && kuna_fix_kt_java_cast_syntax::writing_kotlin();
+            && kt_java_cast_syntax::writing_kotlin();
         let mut buf = if kotlin {
             KExprProcessor::jmp_wrapper(stat, indent, false)
         } else {
@@ -1385,8 +1385,8 @@ impl ExprProcessor {
         cast_narrowing: bool,
         unbox: bool,
     ) -> bool {
-        let declared_target = kuna_fix_disjoint_generic_cast::take_declared_target();
-        let argument_target = kuna_fix_argument_generic_cast::take_argument_target();
+        let declared_target = disjoint_generic_cast::take_declared_target();
+        let argument_target = argument_generic_cast::take_argument_target();
         let mut exprent = exprent;
         let mut left_type = left_type.clone();
 
@@ -1428,7 +1428,7 @@ impl ExprProcessor {
             && !(cast_always || do_cast_null || do_cast_narrowing || do_cast_generics)
             && left_type.type_ == CodeType::Object
             && kuna_fixes::enabled(KunaFix::SwitchExpressionPolyCast)
-            && kuna_fix_switch_expression_poly_cast::results_promote(exprent)
+            && switch_expression_poly_cast::results_promote(exprent)
         {
             cast = false;
         }
@@ -1440,12 +1440,12 @@ impl ExprProcessor {
         let mut unchecked_cast = None;
         if !cast && !unbox && !cast_narrowing && kuna_fixes::enabled(KunaFix::UncheckedGenericCast)
         {
-            unchecked_cast = kuna_fix_unchecked_generic_cast::cast_for(exprent, &left_type);
+            unchecked_cast = unchecked_generic_cast::cast_for(exprent, &left_type);
             cast = unchecked_cast.is_some();
         }
 
         if !cast && declared_target && kuna_fixes::enabled(KunaFix::BoundedInferenceCast) {
-            unchecked_cast = kuna_fix_bounded_inference_cast::cast_for(exprent, &left_type);
+            unchecked_cast = bounded_inference_cast::cast_for(exprent, &left_type);
             cast = unchecked_cast.is_some();
         }
 
@@ -1453,7 +1453,7 @@ impl ExprProcessor {
         if !cast && kuna_fixes::enabled(KunaFix::ArgumentGenericCast) {
             if let Some((to, raw)) = argument_target
                 .as_ref()
-                .and_then(|formal| kuna_fix_argument_generic_cast::cast_for(exprent, formal))
+                .and_then(|formal| argument_generic_cast::cast_for(exprent, formal))
             {
                 unchecked_cast = Some(to);
                 through_raw = raw;
@@ -1466,7 +1466,7 @@ impl ExprProcessor {
             && !exprent.is_kotlin()
             && kuna_fixes::enabled(KunaFix::ReceiverTypeArguments)
         {
-            kuna_fix_receiver_type_arguments::apply(exprent, &left_type);
+            receiver_type_arguments::apply(exprent, &left_type);
         }
 
         if cast
@@ -1476,7 +1476,7 @@ impl ExprProcessor {
             && !exprent.is_kotlin()
             && kuna_fixes::enabled(KunaFix::DisjointGenericCast)
         {
-            unchecked_cast = kuna_fix_disjoint_generic_cast::raw_target(
+            unchecked_cast = disjoint_generic_cast::raw_target(
                 &exprent.get_named_generics(),
                 &left_type,
                 &right_type,
@@ -1496,9 +1496,9 @@ impl ExprProcessor {
             && cast_always
             && !(do_cast || do_cast_null || do_cast_narrowing || do_cast_generics)
             && unchecked_cast.is_none()
-            && kuna_fix_kt_java_reference_cast::overload_cast_redundant(&left_type, &right_type)
-            && kuna_fix_kt_java_reference_cast::declared_type(exprent).is_some_and(|t| {
-                kuna_fix_kt_java_reference_cast::overload_cast_redundant(&left_type, &t)
+            && kt_java_reference_cast::overload_cast_redundant(&left_type, &right_type)
+            && kt_java_reference_cast::declared_type(exprent).is_some_and(|t| {
+                kt_java_reference_cast::overload_cast_redundant(&left_type, &t)
             })
         {
             cast = false;
@@ -1507,16 +1507,16 @@ impl ExprProcessor {
         let kotlin_cast = if cast
             && (kuna_fixes::enabled(KunaFix::KtJavaCastSyntax)
                 || kuna_fixes::enabled(KunaFix::KtJavaReferenceCast))
-            && kuna_fix_kt_java_cast_syntax::writing_kotlin()
+            && kt_java_cast_syntax::writing_kotlin()
         {
-            let written = kuna_fix_kt_java_cast_syntax::written_type(exprent, right_type.clone());
-            kuna_fix_kt_java_cast_syntax::form(&left_type, &written)
+            let written = kt_java_cast_syntax::written_type(exprent, right_type.clone());
+            kt_java_cast_syntax::form(&left_type, &written)
         } else if !cast
             && kuna_fixes::enabled(KunaFix::KtImplicitWidening)
-            && kuna_fix_kt_java_cast_syntax::writing_kotlin()
+            && kt_java_cast_syntax::writing_kotlin()
         {
-            let written = kuna_fix_kt_java_cast_syntax::written_type(exprent, right_type.clone());
-            kuna_fix_kt_implicit_widening::conversion(exprent, &left_type, &written)
+            let written = kt_java_cast_syntax::written_type(exprent, right_type.clone());
+            kt_implicit_widening::conversion(exprent, &left_type, &written)
         } else {
             None
         };
@@ -1567,14 +1567,14 @@ impl ExprProcessor {
         }
 
         match kotlin_cast {
-            Some(kotlin_cast @ kuna_fix_kt_java_cast_syntax::KotlinCast::Reference(_)) => buffer
-                .append_buffer(&kuna_fix_kt_java_cast_syntax::write(
+            Some(kotlin_cast @ kt_java_cast_syntax::KotlinCast::Reference(_)) => buffer
+                .append_buffer(&kt_java_cast_syntax::write(
                     kotlin_cast,
                     exprent,
                     unchecked_cast.as_ref().unwrap_or(&left_type),
                     indent,
                 )),
-            Some(kotlin_cast) => buffer.append_buffer(&kuna_fix_kt_java_cast_syntax::write(
+            Some(kotlin_cast) => buffer.append_buffer(&kt_java_cast_syntax::write(
                 kotlin_cast,
                 exprent,
                 &left_type,

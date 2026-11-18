@@ -2,12 +2,12 @@
 //!
 //! kuna fix `type_annotation_qualified_name` (`kuna_fixes`): an annotated
 //! class type keeps the qualifier the import collector gives its name
-//! (`kuna_fix_type_annotation_qualified_name`). kuna fix
+//! (`fixes::type_annotations::type_annotation_qualified_name`). kuna fix
 //! `type_annotation_argument_scope`: the annotations of a generic argument
 //! are looked for only inside that argument
-//! (`kuna_fix_type_annotation_argument_scope`). kuna fix
+//! (`fixes::type_annotations::type_annotation_argument_scope`). kuna fix
 //! `type_annotation_outer_arguments`: an enclosing class of the annotated
-//! type keeps its type arguments (`kuna_fix_type_annotation_outer_arguments`).
+//! type keeps its type arguments (`fixes::type_annotations::type_annotation_outer_arguments`).
 
 use std::collections::VecDeque;
 
@@ -20,9 +20,9 @@ use crate::expr_processor::ExprProcessor;
 use crate::generic_type::GenericType;
 use crate::jthrow;
 use crate::kuna_fixes::{self, KunaFix};
-use crate::substrate::kuna_fix_type_annotation_argument_scope;
-use crate::substrate::kuna_fix_type_annotation_outer_arguments;
-use crate::substrate::kuna_fix_type_annotation_qualified_name;
+use crate::fixes::type_annotations::type_annotation_argument_scope;
+use crate::fixes::type_annotations::type_annotation_outer_arguments;
+use crate::fixes::type_annotations::type_annotation_qualified_name;
 use crate::pair::Pair;
 use crate::rt::{JHashSet, JavaEq, JavaHash};
 use crate::text_buffer::TextBuffer;
@@ -278,7 +278,7 @@ impl TypeAnnotation {
                 if i > 0 {
                     buffer.append(".");
                 } else if kuna_fixes::enabled(KunaFix::TypeAnnotationQualifiedName) {
-                    buffer.append(&kuna_fix_type_annotation_qualified_name::qualifier(clazz));
+                    buffer.append(&type_annotation_qualified_name::qualifier(clazz));
                 }
 
                 if i >= start_idx {
@@ -294,7 +294,7 @@ impl TypeAnnotation {
                 if kuna_fixes::enabled(KunaFix::TypeAnnotationOuterArguments)
                     && i + 1 < full_classes.len()
                 {
-                    if let Some(args) = kuna_fix_type_annotation_outer_arguments::arguments_of(
+                    if let Some(args) = type_annotation_outer_arguments::arguments_of(
                         type_,
                         &clazz.replace('.', "/"),
                     ) {
@@ -328,7 +328,7 @@ impl TypeAnnotation {
                         let final_j = j as i32;
                         let in_arg = kuna_fixes::enabled(KunaFix::TypeAnnotationArgumentScope)
                             .then(|| {
-                                kuna_fix_type_annotation_argument_scope::entering(
+                                type_annotation_argument_scope::entering(
                                     type_annotations,
                                     final_j,
                                 )
@@ -341,14 +341,14 @@ impl TypeAnnotation {
                         );
                         match in_arg {
                             Some(in_arg) => {
-                                let mut sub = kuna_fix_type_annotation_argument_scope::take(
+                                let mut sub = type_annotation_argument_scope::take(
                                     type_annotations,
                                     &in_arg,
                                 );
                                 TypeAnnotation::append_generic_argument(
                                     buffer, arg.as_ref(), &mut sub, filter, vararg,
                                 );
-                                kuna_fix_type_annotation_argument_scope::put_back(
+                                type_annotation_argument_scope::put_back(
                                     type_annotations,
                                     &in_arg,
                                     sub,

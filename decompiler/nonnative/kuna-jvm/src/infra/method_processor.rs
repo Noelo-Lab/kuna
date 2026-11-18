@@ -52,8 +52,8 @@ use crate::loop_extract_helper::LoopExtractHelper;
 use crate::merge_helper::MergeHelper;
 use crate::method_descriptor::MethodDescriptor;
 use crate::method_wrapper::MethodWrapper;
-use crate::p2_lift::kuna_fix_overlapping_ranges::OverlappingRanges;
-use crate::p3_dataflow::kuna_fix_split_constructor_call;
+use crate::fixes::exception_ranges::overlapping_ranges::OverlappingRanges;
+use crate::fixes::constructor_calls::split_constructor_call;
 use crate::p8_structure::kuna_javac_layout;
 use crate::p_pand_mm_helper::PPandMMHelper;
 use crate::pass_context::PassContext;
@@ -534,7 +534,7 @@ impl MethodProcessor {
             }
 
             if kuna_fixes::enabled(KunaFix::SplitConstructorCall)
-                && kuna_fix_split_constructor_call::join_split_constructors(root)
+                && split_constructor_call::join_split_constructors(root)
             {
                 decompile_record.add("JoinSplitConstructors", Some(root));
                 continue;

@@ -3,7 +3,7 @@
 //! kuna fixes (`kuna_fixes`) in the `FOR` case: `kt_for_loop_exit_condition`
 //! writes a loop it cannot resugar as `while (COND)`, where Vineflower writes
 //! `while (true) { if (COND) break` and so leaves the loop when it should go on;
-//! `kt_for_range_counter` (`kuna_fix_kt_for_range_counter`) rewrites only
+//! `kt_for_range_counter` (`fixes::kt_for_loops`) rewrites only
 //! loops that count their initializer's variable to the bound;
 //! `kt_for_range_exclusive_bound` keeps the bound exclusive (`until` for a
 //! variable bound, `repeat(N)` with the bound itself), where Vineflower writes
@@ -15,7 +15,7 @@
 //! `while` puts the update at the end of the body, which `continue` skips;
 //! `kt_for_range_unmatched_bound` writes the loop of a bound it cannot match
 //! as a `while`, where Vineflower's `break resugar` writes no loop at all.
-//! `kt_jump_to_non_loop_label` (`kuna_fix_kt_jump_to_non_loop_label`) writes
+//! `kt_jump_to_non_loop_label` (`fixes::kt_jumps::kt_jump_to_non_loop_label`) writes
 //! a jump out of such a loop wrapped in `run labelN@{ .. }` as
 //! `return@labelN`, and a `continue` of a `repeat` loop as a `return` from
 //! its lambda.
@@ -34,8 +34,8 @@ use crate::k_if_statement::copy_statement_fields;
 use crate::k_utils::KUtils;
 use crate::k_var_exprent::{DeclarationType, KVarExprent};
 use crate::kotlin_statement;
-use crate::kuna_fix_kt_for_range_counter;
-use crate::kuna_fix_kt_jump_to_non_loop_label::{self, Lambda};
+use crate::fixes::kt_for_loops;
+use crate::fixes::kt_jumps::kt_jump_to_non_loop_label::{self, Lambda};
 use crate::kuna_fixes::{self, KunaFix};
 use crate::stat_edge::StatEdge;
 use crate::text_buffer::TextBuffer;
@@ -242,7 +242,7 @@ impl KDoStatement {
 
                         let body = || KExprProcessor::jmp_wrapper(first(), indent + 1, false);
                         buf.append_buffer(&if repeat && kuna_fixes::enabled(KunaFix::KtJumpToNonLoopLabel) {
-                            kuna_fix_kt_jump_to_non_loop_label::within(self.into(), Lambda::Repeat, body)
+                            kt_jump_to_non_loop_label::within(self.into(), Lambda::Repeat, body)
                         } else {
                             body()
                         });
@@ -325,7 +325,7 @@ impl KDoStatement {
                         }
                         let body = || KExprProcessor::jmp_wrapper(first(), indent + 1, false);
                         buf.append_buffer(&if labeled && kuna_fixes::enabled(KunaFix::KtJumpToNonLoopLabel) {
-                            kuna_fix_kt_jump_to_non_loop_label::within(self.into(), Lambda::Run, body)
+                            kt_jump_to_non_loop_label::within(self.into(), Lambda::Run, body)
                         } else {
                             body()
                         });
@@ -409,7 +409,7 @@ impl KDoStatement {
             return Resugar::NotRange;
         }
         if kuna_fixes::enabled(KunaFix::KtForRangeCounter)
-            && !kuna_fix_kt_for_range_counter::is_counted_loop(self.0, var_expr, inc, condition)
+            && !kt_for_loops::is_counted_loop(self.0, var_expr, inc, condition)
         {
             return Resugar::NotRange;
         }

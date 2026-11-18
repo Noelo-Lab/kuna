@@ -6,7 +6,7 @@
 //! the condition's missing second operand.
 //!
 //! kuna fixes `twr_unresolved_resource`, `twr_desugaring_shape` and
-//! `twr_class_version` (`kuna_fix_twr_unresolved_resource`): in
+//! `twr_class_version` (`fixes::twr`): in
 //! `make_try_with_resource_j11`, a resource whose class hierarchy is outside
 //! the input is accepted, the statement is re-sugared only when it is javac's
 //! exact desugaring, and `TryHelper` also runs it on classes older than Java 11.
@@ -19,7 +19,7 @@ use crate::exit_exprent;
 use crate::exprent::Exprent;
 use crate::function_exprent::{FunctionExprent, FunctionType};
 use crate::kuna_fixes::{self, KunaFix};
-use crate::p8_structure::kuna_fix_twr_unresolved_resource::{self as twr_fix, Closeable};
+use crate::fixes::twr::{self as twr_fix, Closeable};
 use crate::rt::{JHashMap, JHashSet, JLinkedHashSet};
 use crate::sequence_helper::SequenceHelper;
 use crate::stat_edge::StatEdge;

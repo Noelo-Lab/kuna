@@ -2,10 +2,10 @@
 //!
 //! kuna fix `implicit_outer_instance`: `is_qualified_new_get_class` marks the
 //! creation whose outer-instance null check it removes, which then stays
-//! qualified (`kuna_fix_implicit_outer_instance`).
+//! qualified (`fixes::constructor_calls::implicit_outer_instance`).
 //! kuna fix `synthetic_null_check_shape`: `is_qualified_new_get_class` removes a
 //! `requireNonNull`/`getClass` call only when its instructions are one of
-//! javac's null checks (`kuna_fix_synthetic_null_check_shape`); a call the
+//! javac's null checks (`fixes::constructor_calls::synthetic_null_check_shape`); a call the
 //! source makes is kept.
 //! kuna option `jvm_javac_layout` (`kuna_javac_layout`): `buildIff` merges two
 //! returns into a ternary only when they are one bytecode instruction.
@@ -20,7 +20,7 @@
 //! kuna fix `qualified_super_call`: `is_qualified_new_get_class` also removes
 //! javac's check of the outer instance of a superclass constructor call or of
 //! an anonymous class creation, and marks the call
-//! (`kuna_fix_qualified_super_call`).
+//! (`fixes::constructor_calls::qualified_super_call`).
 
 use std::collections::VecDeque;
 
@@ -42,7 +42,7 @@ use crate::interpreter_util::InterpreterUtil;
 use crate::invocation_exprent::{InvocationType, Type as InvocationFuncType};
 use crate::jthrow;
 use crate::kuna_fixes::{self, KunaFix};
-use crate::p2_lift::kuna_fix_synthetic_null_check_shape;
+use crate::fixes::constructor_calls::synthetic_null_check_shape;
 use crate::match_engine::MatchEngine;
 use crate::match_node::MatchValue;
 use crate::monitor_exprent::Type as MonitorType;
@@ -50,7 +50,7 @@ use crate::new_exprent::NewExprent;
 use crate::p8_structure::kuna_javac_layout;
 use crate::p6_variables::kuna_source_locals;
 use crate::p3_dataflow::kuna_source_increments;
-use crate::p3_dataflow::kuna_fix_compound_assignment_shape;
+use crate::fixes::numeric_types::compound_assignment_shape;
 use crate::pair::Pair;
 use crate::primitive_constant::ConstValue as PoolConstValue;
 use crate::rt::{JHashMap, JHashSet, JList};
@@ -59,8 +59,8 @@ use crate::ssa_constructor_sparse_ex::SSAConstructorSparseEx;
 use crate::stat_edge::StatEdge;
 use crate::statement::Statement;
 use crate::struct_class::StructClass;
-use crate::substrate::kuna_fix_implicit_outer_instance;
-use crate::substrate::kuna_fix_qualified_super_call;
+use crate::fixes::constructor_calls::implicit_outer_instance;
+use crate::fixes::constructor_calls::qualified_super_call;
 use crate::var_exprent::VarExprent;
 use crate::var_type::VarType;
 use crate::var_version_pair::VarVersionPair;
@@ -708,7 +708,7 @@ impl SimplifyExprentsHelper {
 
                 if !left.is_var()
                     && left.equals(econd)
-                    && !kuna_fix_compound_assignment_shape::loads_twice(left, econd)
+                    && !compound_assignment_shape::loads_twice(left, econd)
                 {
                     let type_ = if func.get_func_type() == FunctionType::Add {
                         FunctionType::Ppi
@@ -777,7 +777,7 @@ impl SimplifyExprentsHelper {
                 && af.get_left().equals(econd)
                 && af.get_right().equals(as_.get_left())
                 && (af.get_left().get_exprent_use() & Exprent::MULTIPLE_USES) != 0
-                && !kuna_fix_compound_assignment_shape::loads_twice(as_.get_left(), af.get_right())
+                && !compound_assignment_shape::loads_twice(as_.get_left(), af.get_right())
             {
                 let type_ = if func.get_func_type() == FunctionType::Add {
                     FunctionType::Ipp
@@ -949,7 +949,7 @@ impl SimplifyExprentsHelper {
                 && invocation.get_string_descriptor() == "(Ljava/lang/Object;)Ljava/lang/Object;")
         {
             if kuna_fixes::enabled(KunaFix::SyntheticNullCheckShape)
-                && !kuna_fix_synthetic_null_check_shape::is_javac_check(
+                && !synthetic_null_check_shape::is_javac_check(
                     invocation.get_kuna_null_check_shape(),
                     if invocation.is_static() {
                         invocation.get_lst_parameters().get(0)
@@ -966,10 +966,10 @@ impl SimplifyExprentsHelper {
                 } else {
                     invocation.get_instance().expect("NullPointerException: instance")
                 };
-                if kuna_fix_synthetic_null_check_shape::is_javac_check(
+                if synthetic_null_check_shape::is_javac_check(
                     invocation.get_kuna_null_check_shape(),
                     checked,
-                ) && kuna_fix_qualified_super_call::mark_checked(checked, second)
+                ) && qualified_super_call::mark_checked(checked, second)
                 {
                     return true;
                 }
@@ -982,7 +982,7 @@ impl SimplifyExprentsHelper {
                         invocation.get_instance()
                     };
                     if let Some(target) = target {
-                        kuna_fix_implicit_outer_instance::mark_checked(target, second);
+                        implicit_outer_instance::mark_checked(target, second);
                     }
                 }
                 return true;
@@ -1033,11 +1033,11 @@ impl SimplifyExprentsHelper {
                 }
             }
             if kuna_fixes::enabled(KunaFix::QualifiedSuperCall)
-                && kuna_fix_synthetic_null_check_shape::is_javac_check(
+                && synthetic_null_check_shape::is_javac_check(
                     invocation.get_kuna_null_check_shape(),
                     target.expect("NullPointerException: target"),
                 )
-                && kuna_fix_qualified_super_call::mark_checked_copy(
+                && qualified_super_call::mark_checked_copy(
                     target.expect("NullPointerException: target"),
                     second,
                     invocation.is_static(),

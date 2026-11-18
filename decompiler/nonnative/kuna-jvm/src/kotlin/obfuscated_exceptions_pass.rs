@@ -7,7 +7,7 @@ use crate::decompiler_context::DecompilerContext;
 use crate::exception_deobfuscator::ExceptionDeobfuscator;
 use crate::i_fernflower_logger::Severity;
 use crate::kuna_fixes::{self, KunaFix};
-use crate::p2_lift::kuna_fix_overlapping_ranges::OverlappingRanges;
+use crate::fixes::exception_ranges::overlapping_ranges::OverlappingRanges;
 use crate::pass::Pass;
 use crate::pass_context::PassContext;
 

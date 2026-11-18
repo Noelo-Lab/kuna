@@ -10,7 +10,8 @@
 //!
 //! Source folders follow kuna's phase taxonomy; the real pass order is the
 //! schedule in `infra/method_processor.rs`. Module names are flat
-//! (`kuna_jvm::if_helper`) through the re-exports below.
+//! (`kuna_jvm::if_helper`) through the re-exports below. kuna's fixes of
+//! Vineflower's defects are in `fixes/`, one module per family.
 
 // These lints fight a line-by-line port: the Java control flow is kept as written.
 #![allow(
@@ -30,6 +31,7 @@
     clippy::unnecessary_unwrap
 )]
 
+pub(crate) mod fixes;
 pub mod infra;
 pub mod kotlin;
 pub mod p0_knowledge;
@@ -157,51 +159,32 @@ pub use substrate::{
     var_type, vb_style_collection, yield_exprent, zip_reader,
 };
 pub use p5_types::kuna_static_types;
-pub(crate) use kotlin::{
-    kuna_fix_kt_anonymous_class_failure_reason, kuna_fix_kt_data_class_property_parameters,
-    kuna_fix_kt_file_class_constructor, kuna_fix_kt_for_range_counter,
-    kuna_fix_kt_generated_constructor_hidden, kuna_fix_kt_jump_to_non_loop_label,
-    kuna_fix_kt_lambda_singleton_returns, kuna_fix_kt_object_super_call,
-    kuna_fix_kt_property_reference, kuna_fix_kt_reference_anonymous_super_call,
-    kuna_fix_kt_return_outside_lambda, kuna_fix_kt_synthetic_anonymous_object,
-    kuna_fix_kt_type_parameter_id, kuna_fix_kt_when_break,
-};
-pub(crate) use p2_lift::{
-    kuna_fix_kt_implicit_widening, kuna_fix_kt_java_cast_syntax, kuna_fix_kt_java_reference_cast,
-    kuna_fix_unchecked_call_result_cast, kuna_fix_unchecked_generic_cast,
-};
-pub(crate) use p6_variables::kuna_fix_var_merge_liveness;
-pub(crate) use substrate::{
-    kuna_fix_kt_explicit_type_arguments, kuna_fix_lambda_argument_overload,
-    kuna_fix_lambda_pertinence, kuna_fix_lambda_type_variable_target, kuna_fix_raw_receiver_erasure,
-    kuna_fix_statement_as_expression, kuna_fix_static_type_variable_scope,
-};
 
 /// Fix helpers the integration tests call directly; not part of the engine's API.
 #[doc(hidden)]
 pub mod testing {
-    pub use crate::kotlin::kuna_fix_kt_default_accessor_flags::accessor_flags;
-    pub use crate::kotlin::kuna_fix_kt_escaped_class_name::{escape, escape_qualified};
-    pub use crate::kotlin::kuna_fix_kt_facade_call::{default_import, java_property, mangled};
-    pub use crate::kotlin::kuna_fix_kt_mapped_java_member::{form, Form};
-    pub use crate::kotlin::kuna_fix_kt_nullable_local::nullable;
-    pub use crate::kotlin::kuna_fix_kt_reference_anonymous_super_call::split_signature;
-    pub use crate::kotlin::kuna_fix_kt_string_literal_escape::kotlin_text;
-    pub use crate::kotlin::kuna_fix_kt_suspend_state_machine::is_function_invoke;
-    pub use crate::p2_lift::kuna_fix_kt_implicit_widening::conversion as implicit_widening_conversion;
-    pub use crate::p2_lift::kuna_fix_kt_java_cast_syntax::{conversion as java_cast_conversion, KotlinCast};
-    pub use crate::p6_variables::kuna_fix_var_merge_narrowing::{narrows, strictly_below};
-    pub use crate::p8_structure::kuna_fix_type_switch_label_lookup::{
+    pub use crate::fixes::kt_properties::kt_default_accessor_flags::accessor_flags;
+    pub use crate::fixes::kt_names::kt_escaped_class_name::{escape, escape_qualified};
+    pub use crate::fixes::kt_calls::kt_facade_call::{default_import, java_property, mangled};
+    pub use crate::fixes::kt_calls::kt_mapped_java_member::{form, Form};
+    pub use crate::fixes::kt_null_checks::kt_nullable_local::nullable;
+    pub use crate::fixes::kt_anonymous_objects::kt_reference_anonymous_super_call::split_signature;
+    pub use crate::fixes::kt_java_syntax::kt_string_literal_escape::kotlin_text;
+    pub use crate::fixes::kt_suspend::kt_suspend_state_machine::is_function_invoke;
+    pub use crate::fixes::kt_operators::kt_implicit_widening::conversion as implicit_widening_conversion;
+    pub use crate::fixes::kt_java_syntax::kt_java_cast_syntax::{conversion as java_cast_conversion, KotlinCast};
+    pub use crate::fixes::var_merge::var_merge_narrowing::{narrows, strictly_below};
+    pub use crate::fixes::patterns::type_switch_label_lookup::{
         replace_labels, strip_multi_pattern_guards, unnamed_pattern_types,
     };
-    pub use crate::substrate::kuna_fix_statement_as_expression::{
+    pub use crate::fixes::asserts::statement_as_expression::{
         is_lambda_expression_body, is_statement_only,
     };
-    pub use crate::substrate::kuna_fix_ternary_numeric_arms::promotes;
+    pub use crate::fixes::numeric_types::ternary_numeric_arms::promotes;
     pub mod disjoint_generic_cast {
-        pub use crate::p2_lift::kuna_fix_disjoint_generic_cast::{mark_declared_target, take_declared_target};
+        pub use crate::fixes::generic_casts::disjoint_generic_cast::{mark_declared_target, take_declared_target};
     }
     pub mod kt_static_initializer {
-        pub use crate::kotlin::kuna_fix_kt_static_initializer::{move_to, scope, take};
+        pub use crate::fixes::kt_initializers::kt_static_initializer::{move_to, scope, take};
     }
 }

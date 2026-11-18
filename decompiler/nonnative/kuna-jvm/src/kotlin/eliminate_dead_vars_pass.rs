@@ -6,7 +6,7 @@
 use crate::const_exprent::ConstValue;
 use crate::exprent::Exprent;
 use crate::k_types::KTypes;
-use crate::kotlin::kuna_fix_kt_semaphore_store_liveness as semaphore_fix;
+use crate::fixes::finally_sync::kt_semaphore_store_liveness as semaphore_fix;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::pass::Pass;
 use crate::pass_context::PassContext;

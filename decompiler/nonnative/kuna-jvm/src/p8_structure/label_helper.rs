@@ -2,7 +2,7 @@
 //!
 //! kuna fix `loop_body_exit_explicit` (`kuna_fixes`): `setExplicitEdges` returns
 //! no edges for a loop, whose body never falls through to the loop's end.
-//! kuna fix `switch_table_fillers` (`kuna_fix_switch_table_fillers`): the empty
+//! kuna fix `switch_table_fillers` (`fixes::switches::switch_table_fillers`): the empty
 //! last case `hideDefaultSwitchEdges` takes the default from goes too when its
 //! other keys are only a `tableswitch`'s fillers (its values become the lone
 //! default's, as when the default was its only key).
@@ -16,7 +16,7 @@ use crate::root_statement::RootStatement;
 use crate::rt::{JHashMap, JHashSet, JLinkedHashSet, JList};
 use crate::stat_edge::StatEdge;
 use crate::statement::{EdgeDirection, Statement, StatementType};
-use crate::substrate::kuna_fix_switch_table_fillers;
+use crate::fixes::switches::switch_table_fillers;
 
 pub struct LabelHelper;
 
@@ -500,7 +500,7 @@ impl LabelHelper {
                         }
                         if kuna_fixes::enabled(KunaFix::SwitchTableFillers) && !lst_edges.is_empty()
                         {
-                            let fillers = kuna_fix_switch_table_fillers::filler_edges(swst);
+                            let fillers = switch_table_fillers::filler_edges(swst);
                             if lst_edges.iter().all(|e| fillers.contains(&e)) {
                                 lst_edges.clear();
                                 swst.get_case_values()

@@ -1,12 +1,12 @@
 //! Port of `org/jetbrains/java/decompiler/main/collectors/ImportCollector.java`.
-//! kuna fix `nonpublic_nested_import` (`kuna_fix_nonpublic_nested_import`).
+//! kuna fix `nonpublic_nested_import` (`fixes::class_writing::nonpublic_nested_import`).
 //! kuna fix `external_inherited_member_type`: `get_super_class_inner_classes`
 //! also reads the member classes of supertypes outside the universe, and an
 //! ambiguous inherited simple name maps to no class
-//! (`kuna_fix_external_inherited_member_type`).
+//! (`fixes::class_writing::external_inherited_member_type`).
 //! kuna fix `kt_escaped_class_name`: in Kotlin output, a short name's
 //! segments that are no Kotlin identifier are written in backticks
-//! (`kuna_fix_kt_escaped_class_name`).
+//! (`fixes::kt_names::kt_escaped_class_name`).
 
 use std::collections::VecDeque;
 
@@ -14,11 +14,11 @@ use crate::classes_processor::{string_compare_to, ClassNode, ClassNodeType};
 use crate::decompiler_context::DecompilerContext;
 use crate::expr_processor::ExprProcessor;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
-use crate::kotlin::kuna_fix_kt_escaped_class_name;
+use crate::fixes::kt_names::kt_escaped_class_name;
 use crate::kotlin_import_collector::KotlinImportCollector;
 use crate::kuna_fixes::{self, KunaFix};
-use crate::p9_emit::kuna_fix_external_inherited_member_type;
-use crate::p9_emit::kuna_fix_nonpublic_nested_import::qualified_name;
+use crate::fixes::class_writing::external_inherited_member_type;
+use crate::fixes::class_writing::nonpublic_nested_import::qualified_name;
 use crate::struct_inner_classes_attribute::Entry;
 use crate::rt::{JHashMap, JHashSet};
 use crate::struct_class::StructClass;
@@ -154,7 +154,7 @@ impl ImportCollector {
     pub fn get_short_name_imported(self, full_name: &str, imported: bool) -> Option<String> {
         let name = self.get_short_name_imported_java(full_name, imported);
         if self.with(|d| d.kotlin) && kuna_fixes::enabled(KunaFix::KtEscapedClassName) {
-            return name.map(|name| kuna_fix_kt_escaped_class_name::escape_qualified(&name));
+            return name.map(|name| kt_escaped_class_name::escape_qualified(&name));
         }
         name
     }
@@ -433,7 +433,7 @@ impl ImportCollector {
                         if let Some(simple_name) = entry.simple_name.clone() {
                             if external_members
                                 && Some(class) != root
-                                && kuna_fix_external_inherited_member_type::inherited_by(
+                                && external_inherited_member_type::inherited_by(
                                     &entry, &package,
                                 )
                             {
@@ -475,7 +475,7 @@ impl ImportCollector {
             }
         }
         if let Some(kuna_names) = kuna_names {
-            kuna_fix_external_inherited_member_type::add_external_members(
+            external_inherited_member_type::add_external_members(
                 kuna_names,
                 &mut inherited,
                 &external,

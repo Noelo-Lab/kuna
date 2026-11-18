@@ -32,7 +32,7 @@ use crate::i_matchable::{IMatchable, MatchProperties};
 use crate::if_exprent::{IfExprent, IfExprentData};
 use crate::invocation_exprent::{InvocationExprent, InvocationExprentData};
 use crate::k_dispatch::{self, KExprentExt};
-use crate::kuna_fix_static_type_variable_scope;
+use crate::fixes::generics::static_type_variable_scope;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::match_engine::MatchEngine;
 use crate::match_node::{MatchNode, MatchValue};
@@ -821,7 +821,7 @@ impl Exprent {
             };
             if scoped {
                 static_context |= method.is_some_and(|m| {
-                    kuna_fix_static_type_variable_scope::is_static_method(class_, m)
+                    static_type_variable_scope::is_static_method(class_, m)
                 });
             }
             let cls = class_

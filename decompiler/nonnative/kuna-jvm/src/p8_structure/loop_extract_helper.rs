@@ -5,14 +5,15 @@
 //! if of the body whose body javac placed after the loop is moved after it,
 //! and a first if whose other path continues the loop is not made its exit.
 //!
-//! kuna fix `loop_first_if_exit` (`kuna_fix_loop_first_if_exit`): a loop's
+//! kuna fix `loop_first_if_exit` (`fixes::control_flow::loop_first_if_exit`): a loop's
 //! first if becomes its exit test only when the path past it leaves the loop.
 
 use crate::do_statement::{DoStatement, Type as LoopType};
 use crate::function_exprent::{FunctionExprent, FunctionType};
 use crate::if_statement::IfStatement;
 use crate::kuna_fixes::{self, KunaFix};
-use crate::p8_structure::{kuna_fix_loop_first_if_exit, kuna_javac_layout};
+use crate::p8_structure::kuna_javac_layout;
+use crate::fixes::control_flow::loop_first_if_exit;
 use crate::sequence_helper::SequenceHelper;
 use crate::sequence_statement::SequenceStatement;
 use crate::stat_edge::StatEdge;
@@ -245,7 +246,7 @@ impl LoopExtractHelper {
                 let destination =
                     check.get_successor_edges(StatEdge::TYPE_REGULAR)[0].get_destination();
                 if kuna_fixes::enabled(KunaFix::LoopFirstIfExit)
-                    && !kuna_fix_loop_first_if_exit::exits_to(firstif, destination)
+                    && !loop_first_if_exit::exits_to(firstif, destination)
                 {
                     return false;
                 }

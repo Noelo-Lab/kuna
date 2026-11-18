@@ -1,6 +1,6 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/vars/VarDefinitionHelper.java`.
 //!
-//! kuna fix `var_merge_liveness` (`kuna_fix_var_merge_liveness`): `mergeVars`
+//! kuna fix `var_merge_liveness` (`fixes::var_merge::var_merge_liveness`): `mergeVars`
 //! does not merge a variable into an earlier one whose value is read after the
 //! later one is written; such a merge is denied like one `remapVar` refuses, or,
 //! for a definition hoisted to a statement, left there.
@@ -12,14 +12,14 @@
 //! clash-renaming maps key statements by `Option<Statement>` (a root's parent)
 //! and hold `Option<String>` names (an unnamed parameter).
 //!
-//! kuna fix `var_merge_narrowing` (`kuna_fix_var_merge_narrowing.rs`): `mergeVars`
+//! kuna fix `var_merge_narrowing` (`fixes/var_merge/var_merge_narrowing.rs`): `mergeVars`
 //! refuses a merge whose type is narrower than a value either variable is assigned,
 //! unless the LocalVariableTable declares one local for both, whose type it then uses.
 //! kuna fix `switch_case_scope` (`kuna_fixes`): in `iterate_clashing_names`,
 //! a switch's cases are visited in the order they are written, and the
 //! declarations at the top level of a case's statement sequence stay live
 //! until the end of the switch block, which is their scope
-//! (`kuna_fix_switch_case_scope`).
+//! (`fixes::declaration_scope::switch_case_scope`).
 //! kuna fix `switch_expression_arm_scope` (`kuna_fixes`): `iterate_clashing_names`
 //! skips a switch expression's (phantom) switch statement, on the ground
 //! that its arms are blocks isolated from each other; they are, but not from
@@ -28,7 +28,7 @@
 //! `if` branch: its declarations are renamed when they clash with a live
 //! one and forgotten when the arm ends.
 //!
-//! kuna fix `var_merge_declared_type` (`kuna_fix_var_merge_declared_type`):
+//! kuna fix `var_merge_declared_type` (`fixes::var_merge::var_merge_declared_type`):
 //! `mergeVars` refuses to merge two variables the LocalVariableTable declares
 //! as two locals of one erased type and different generic types.
 //! kuna option `jvm_source_locals` (`kuna_source_locals`): `setVarDefinitions`
@@ -43,7 +43,7 @@
 //! `if`'s; Vineflower dropped them when the statement ended, so a later
 //! declaration of the same name kept it.
 //!
-//! kuna fix `local_final_writes` (`kuna_fix_local_final_writes`): `setNonFinal`
+//! kuna fix `local_final_writes` (`fixes::declaration_scope::local_final_writes`): `setNonFinal`
 //! reads statement heads and gives a loop body its own set of declared locals.
 //!
 //! kuna fix `var_merge_lost_definition` (`kuna_fixes`): `mergeVars` takes a
@@ -68,14 +68,14 @@ use crate::function_exprent::FunctionType;
 use crate::generic_type::GenericType;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::interpreter_util::InterpreterUtil;
-use crate::kuna_fix_var_merge_liveness;
-use crate::p6_variables::kuna_fix_local_final_writes;
+use crate::fixes::var_merge::var_merge_liveness;
+use crate::fixes::declaration_scope::local_final_writes;
 use crate::kuna_fixes::{self, KunaFix};
-use crate::p6_variables::kuna_fix_switch_case_scope;
-use crate::p6_variables::kuna_fix_var_merge_declared_type;
+use crate::fixes::declaration_scope::switch_case_scope;
+use crate::fixes::var_merge::var_merge_declared_type;
 use crate::p6_variables::kuna_source_locals;
 use crate::method_descriptor::MethodDescriptor;
-use crate::p6_variables::kuna_fix_var_merge_narrowing::{self, Merge};
+use crate::fixes::var_merge::var_merge_narrowing::{self, Merge};
 use crate::pair::Pair;
 use crate::root_statement::RootStatement;
 use crate::rt::{
@@ -118,7 +118,7 @@ pub struct VarDefinitionHelperData {
     clashing_names: Shared<JHashMap<VarVersionPair, String>>,
     widened: Option<(VarVersionPair, VarVersionPair, VarType)>,
     /// `var_merge_liveness`: the flow `mergeVars` checks merges against.
-    flow: Option<kuna_fix_var_merge_liveness::Flow>,
+    flow: Option<var_merge_liveness::Flow>,
 }
 
 arena_object!(pub VarDefinitionHelper => VarDefinitionHelperData, Class);
@@ -1009,7 +1009,7 @@ impl VarDefinitionHelper {
             return false;
         }
         if self.with(|d| d.flow.is_none()) {
-            let flow = kuna_fix_var_merge_liveness::Flow::build(self.root());
+            let flow = var_merge_liveness::Flow::build(self.root());
             self.with_mut(|d| d.flow = Some(flow));
         }
         self.with(|d| d.flow.as_ref().is_some_and(|f| f.overwrites_live(key, target)))
@@ -1266,7 +1266,7 @@ impl VarDefinitionHelper {
             return Merge::Refused;
         }
         if kuna_fixes::enabled(KunaFix::VarMergeDeclaredType)
-            && kuna_fix_var_merge_declared_type::declared_apart(
+            && var_merge_declared_type::declared_apart(
                 self.root().0,
                 self.varproc(),
                 from,
@@ -1286,14 +1286,14 @@ impl VarDefinitionHelper {
         let (Some(from_min), Some(to_min)) = (from_min, to_min) else {
             return Merge::Plain;
         };
-        if !kuna_fix_var_merge_narrowing::narrows(&merged, &from_min, &to_min)
-            || !kuna_fix_var_merge_narrowing::assigns_wider(root.0, from, to, &merged, &|v| {
+        if !var_merge_narrowing::narrows(&merged, &from_min, &to_min)
+            || !var_merge_narrowing::assigns_wider(root.0, from, to, &merged, &|v| {
                 varproc.get_var_type(v)
             })
         {
             return Merge::Plain;
         }
-        match kuna_fix_var_merge_narrowing::declared_type(root.0, varproc, from, to) {
+        match var_merge_narrowing::declared_type(root.0, varproc, from, to) {
             Some(declared) => Merge::Widened(declared),
             None => Merge::Refused,
         }
@@ -1702,7 +1702,7 @@ impl VarDefinitionHelper {
     /// Java: setNonFinal(Statement, Set)
     fn set_non_final(self, stat: Statement, un_initialized: &mut JHashSet<VarVersionPair>) {
         if kuna_fixes::enabled(KunaFix::LocalFinalWrites) {
-            kuna_fix_local_final_writes::set_non_final(self, stat, un_initialized);
+            local_final_writes::set_non_final(self, stat, un_initialized);
             return;
         }
         if let Some(exprents) = stat.get_exprents().filter(|e| !e.is_empty()) {
@@ -2116,7 +2116,7 @@ impl VarDefinitionHelper {
         if iterate {
             let mut stats = stat.get_stats().borrow().to_vec();
             if kuna_fixes::enabled(KunaFix::SwitchCaseScope) {
-                stats = kuna_fix_switch_case_scope::in_text_order(stat, stats, mt);
+                stats = switch_case_scope::in_text_order(stat, stats, mt);
             }
             for st in stats {
                 let mut st_vars: JHashSet<VarInMethod> = JHashSet::new();
@@ -2143,7 +2143,7 @@ impl VarDefinitionHelper {
         }
 
         let case_block = kuna_fixes::enabled(KunaFix::SwitchCaseScope)
-            && kuna_fix_switch_case_scope::is_case_block(stat, mt);
+            && switch_case_scope::is_case_block(stat, mt);
         if should_remove_at_end && !case_block {
             self.clear_statement(var_definitions, live_var_defs, name_map, stat);
         }
@@ -2152,7 +2152,7 @@ impl VarDefinitionHelper {
             let st = st.expect("NullPointerException: statement");
             if st.get_parent() == Some(stat) {
                 if case_block && st.get_exprents().is_some() {
-                    kuna_fix_switch_case_scope::keep_in_case(var_definitions, st, stat);
+                    switch_case_scope::keep_in_case(var_definitions, st, stat);
                 } else {
                     self.clear_statement(var_definitions, live_var_defs, name_map, st);
                 }
@@ -2431,7 +2431,7 @@ impl VarDefinitionHelper {
                         }
 
                         if !scoped_switch && kuna_fixes::enabled(KunaFix::SwitchCaseScope) {
-                            scoped_switch = kuna_fix_switch_case_scope::scope_clashing_cases(
+                            scoped_switch = switch_case_scope::scope_clashing_cases(
                                 stat,
                                 mt,
                                 parent.and_then(|p| p.try_as_switch()).is_some(),

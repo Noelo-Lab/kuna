@@ -10,7 +10,7 @@ use crate::expr_processor::ExprProcessor;
 use crate::exprent::Exprent;
 use crate::if_statement::set_head_slot;
 use crate::java_subclass;
-use crate::kuna_fix_raw_receiver_erasure;
+use crate::fixes::generic_casts::raw_receiver_erasure;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::rt::{JHashSet, JList, Shared};
 use crate::stat_edge::StatEdge;
@@ -187,7 +187,7 @@ impl DoStatement {
                     null_slot(self.get_init_exprent())
                         .try_as_var()
                         .and_then(|v| {
-                            kuna_fix_raw_receiver_erasure::foreach_cast_type(
+                            raw_receiver_erasure::foreach_cast_type(
                                 iterable,
                                 &v.get_definition_var_type(),
                             )
@@ -196,7 +196,7 @@ impl DoStatement {
                     None
                 };
                 match cast {
-                    Some(cast) => kuna_fix_raw_receiver_erasure::append_cast(
+                    Some(cast) => raw_receiver_erasure::append_cast(
                         &mut buf, iterable, &cast, indent,
                     ),
                     None => {

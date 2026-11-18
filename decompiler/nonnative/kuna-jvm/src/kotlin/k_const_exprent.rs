@@ -7,7 +7,7 @@
 //!
 //! kuna fix `kt_string_literal_escape`: a string constant escapes the `$`
 //! that would start a template and writes a form feed `\u000c`
-//! (`kuna_fix_kt_string_literal_escape`).
+//! (`fixes::kt_java_syntax::kt_string_literal_escape`).
 //!
 //! kuna fix `kt_java_type_syntax`: a class literal of an array type names the
 //! type in Kotlin (`Array<Any>::class.java`, `BooleanArray::class.java`).
@@ -15,7 +15,7 @@
 use crate::const_exprent::ConstExprent;
 use crate::decompiler_context::DecompilerContext;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
-use crate::kotlin::kuna_fix_kt_string_literal_escape;
+use crate::fixes::kt_java_syntax::kt_string_literal_escape;
 use crate::expr_util::ExprUtil;
 use crate::jthrow;
 use crate::k_dispatch::KExprentExt;
@@ -110,7 +110,7 @@ impl KConstExprent {
         {
             let ascii =
                 DecompilerContext::get_option(IFernflowerPreferences::ASCII_STRING_CHARACTERS);
-            let text = kuna_fix_kt_string_literal_escape::kotlin_text(
+            let text = kt_string_literal_escape::kotlin_text(
                 &ConstExprent::convert_string_to_java(value.as_string(), ascii),
                 false,
             );

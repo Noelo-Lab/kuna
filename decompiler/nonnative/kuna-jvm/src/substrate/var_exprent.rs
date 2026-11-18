@@ -4,16 +4,16 @@
 //! class's instance (`Outer.this`) is written `this@Outer`.
 //!
 //! kuna fix `kt_unescaped_name`: in Kotlin output, a variable's name is
-//! written as the Kotlin writer writes it (`kuna_fix_kt_unescaped_name`).
+//! written as the Kotlin writer writes it (`fixes::kt_names::kt_unescaped_name`).
 //!
 //! kuna fix `kt_raw_generic_type`: a Kotlin local the plugin gave type
-//! arguments has that type (`kuna_fix_kt_raw_generic_type`).
+//! arguments has that type (`fixes::kt_types::kt_raw_generic_type`).
 //!
 //! kuna fix `kt_suspend_lambda`: in Kotlin output, a captured copy of a
 //! labelled suspend lambda's receiver is written `this@label`
-//! (`kuna_fix_kt_suspend_lambda::receiver_reference`), and with fix
+//! (`fixes::kt_suspend::kt_suspend_lambda::receiver_reference`), and with fix
 //! `kt_suspend_impl` one of a `$suspendImpl` body's first parameter
-//! `this@Class` (`kuna_fix_kt_suspend_impl::name`).
+//! `this@Class` (`fixes::kt_suspend::kt_suspend_impl::name`).
 
 use crate::check_types_result::CheckTypesResult;
 use crate::class_writer::ClassWriter;
@@ -29,10 +29,10 @@ use crate::i_matchable::MatchProperties;
 use crate::instruction::Instruction;
 use crate::java_subclass;
 use crate::k_var_exprent::KVarExprent;
-use crate::kuna_fix_kt_java_cast_syntax;
-use crate::kotlin::kuna_fix_kt_suspend_impl;
-use crate::kotlin::kuna_fix_kt_suspend_lambda;
-use crate::kotlin::kuna_fix_kt_unescaped_name;
+use crate::fixes::kt_java_syntax::kt_java_cast_syntax;
+use crate::fixes::kt_suspend::kt_suspend_impl;
+use crate::fixes::kt_suspend::kt_suspend_lambda;
+use crate::fixes::kt_names::kt_unescaped_name;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::match_engine::MatchEngine;
 use crate::match_node::{MatchNode, MatchValue};
@@ -258,11 +258,11 @@ impl VarExprent {
             let name = self.get_name();
             if !definition
                 && kuna_fixes::enabled(KunaFix::KtSuspendLambda)
-                && kuna_fix_kt_java_cast_syntax::writing_kotlin()
+                && kt_java_cast_syntax::writing_kotlin()
             {
-                let reference = kuna_fix_kt_suspend_lambda::receiver_reference(self).or_else(|| {
+                let reference = kt_suspend_lambda::receiver_reference(self).or_else(|| {
                     kuna_fixes::enabled(KunaFix::KtSuspendImpl)
-                        .then(|| kuna_fix_kt_suspend_impl::name(self))
+                        .then(|| kt_suspend_impl::name(self))
                         .flatten()
                 });
                 if let Some(reference) = reference {
@@ -319,7 +319,7 @@ impl VarExprent {
                     Some(_)
                         if name.ends_with(".this")
                             && kuna_fixes::enabled(KunaFix::KtOuterThis)
-                            && kuna_fix_kt_java_cast_syntax::writing_kotlin() =>
+                            && kt_java_cast_syntax::writing_kotlin() =>
                     {
                         buffer.append(&KVarExprent::outer_this_label(&name[..name.len() - 5]));
                     }
@@ -335,7 +335,7 @@ impl VarExprent {
                             write_name = self.get_var_ver_name(self.get_var_version_pair());
                         }
                         let printed = if kuna_fixes::enabled(KunaFix::KtUnescapedName) {
-                            kuna_fix_kt_unescaped_name::variable(&write_name)
+                            kt_unescaped_name::variable(&write_name)
                         } else {
                             write_name.clone()
                         };
@@ -368,7 +368,7 @@ impl VarExprent {
                     Some(_)
                         if name.ends_with(".this")
                             && kuna_fixes::enabled(KunaFix::KtOuterThis)
-                            && kuna_fix_kt_java_cast_syntax::writing_kotlin() =>
+                            && kt_java_cast_syntax::writing_kotlin() =>
                     {
                         buffer.append(&KVarExprent::outer_this_label(&name[..name.len() - 5]));
                     }
@@ -393,7 +393,7 @@ impl VarExprent {
         }
 
         if kuna_fixes::enabled(KunaFix::KtUnescapedName) {
-            buffer.append(&kuna_fix_kt_unescaped_name::variable(&write_name));
+            buffer.append(&kt_unescaped_name::variable(&write_name));
         } else {
             buffer.append(&write_name);
         }
@@ -636,7 +636,7 @@ impl VarExprent {
     pub fn kuna_typed(self) -> Option<VarType> {
         self.kuna_declared()
             .map(|t| t.type_)
-            .filter(crate::kotlin::kuna_fix_kt_raw_generic_type::visible)
+            .filter(crate::fixes::kt_types::kt_raw_generic_type::visible)
     }
 
     /// Fix `kt_raw_generic_type`: the type the Kotlin plugin gave this local.

@@ -11,8 +11,8 @@ use crate::expr_processor::ExprProcessor;
 use crate::exprent::Exprent;
 use crate::if_statement::set_head_slot;
 use crate::java_subclass;
-use crate::kuna_fix_kt_java_cast_syntax;
-use crate::kuna_fix_kt_jump_to_non_loop_label::{self, Lambda};
+use crate::fixes::kt_java_syntax::kt_java_cast_syntax;
+use crate::fixes::kt_jumps::kt_jump_to_non_loop_label::{self, Lambda};
 use crate::kuna_fixes::{self, KunaFix};
 use crate::rt::JList;
 use crate::sequence_helper::SequenceHelper;
@@ -72,15 +72,15 @@ impl SynchronizedStatement {
 
         if self.is_labeled()
             && kuna_fixes::enabled(KunaFix::KtJumpToNonLoopLabel)
-            && kuna_fix_kt_java_cast_syntax::writing_kotlin()
-            && kuna_fix_kt_jump_to_non_loop_label::jumped_out_of(self.into())
+            && kt_java_cast_syntax::writing_kotlin()
+            && kt_jump_to_non_loop_label::jumped_out_of(self.into())
         {
             buf.append_indent(indent)
                 .append("run label")
                 .append_int(self.id())
                 .append("@{")
                 .append_line_separator();
-            kuna_fix_kt_jump_to_non_loop_label::within(self.into(), Lambda::Run, || {
+            kt_jump_to_non_loop_label::within(self.into(), Lambda::Run, || {
                 self.write_block(&mut buf, indent + 1)
             });
             buf.append_indent(indent)

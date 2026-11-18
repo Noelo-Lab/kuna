@@ -1,34 +1,34 @@
 //! Port of `org/vineflower/kotlin/expr/KFunctionExprent.java`.
 //!
 //! kuna fix `kt_java_cast_syntax`: a numeric conversion is written as a call
-//! of Kotlin's conversion function (`kuna_fix_kt_java_cast_syntax`), where
+//! of Kotlin's conversion function (`fixes::kt_java_syntax::kt_java_cast_syntax`), where
 //! Vineflower writes Java's cast, `(long)x`.
 //!
 //! kuna fix `kt_narrow_bitwise_operand`: a `Byte`, `Short` or `Char` operand
 //! of a bitwise or shift operator is widened to `Int`
-//! (`kuna_fix_kt_narrow_bitwise_operand`).
+//! (`fixes::kt_operators::kt_narrow_bitwise_operand`).
 //!
 //! kuna fix `kt_reference_inequality`: Java's `!=` of two references is
 //! written `!==`, and an identity `==` that a negation made of it `===`
-//! (`kuna_fix_kt_reference_inequality`).
+//! (`fixes::kt_operators::kt_reference_inequality`).
 //!
 //! kuna fix `kt_string_literal_escape`: a template's string pieces write a
 //! form feed `\u000c` and its `Char` pieces are escaped
-//! (`kuna_fix_kt_string_literal_escape`).
+//! (`fixes::kt_java_syntax::kt_string_literal_escape`).
 //!
 //! kuna fix `kt_copied_equality`: a copy of an `==` that tests equality is
-//! not made `===` (`kuna_fix_kt_copied_equality`).
+//! not made `===` (`fixes::kt_operators::kt_copied_equality`).
 //!
 //! kuna fix `kt_negated_equality`: `(a == b) xor true` is written `a != b`
-//! (`kuna_fix_kt_negated_equality`).
+//! (`fixes::kt_operators::kt_negated_equality`).
 //!
 //! kuna fix `kt_raw_generic_type`: the class of a type test or cast is
 //! written with star projections where it is raw, and a mapped collection
-//! interface by its read-only name (`kuna_fix_kt_raw_generic_type`).
+//! interface by its read-only name (`fixes::kt_types::kt_raw_generic_type`).
 //!
 //! kuna fix `kt_suspend_lambda`: kotlinc's cast of a suspend lambda written
 //! as one to its `FunctionN` interface is left out
-//! (`kuna_fix_kt_suspend_lambda`).
+//! (`fixes::kt_suspend::kt_suspend_lambda`).
 
 use crate::check_types_result::CheckTypesResult;
 use crate::code_type::CodeType;
@@ -42,15 +42,15 @@ use crate::jthrow;
 use crate::k_dispatch::KExprentExt;
 use crate::k_types::KTypes;
 use crate::k_utils::KUtils;
-use crate::kotlin::kuna_fix_kt_copied_equality;
-use crate::kotlin::kuna_fix_kt_narrow_bitwise_operand;
-use crate::kotlin::kuna_fix_kt_negated_equality;
-use crate::kotlin::kuna_fix_kt_raw_generic_type;
-use crate::kotlin::kuna_fix_kt_suspend_lambda;
-use crate::kotlin::kuna_fix_kt_reference_inequality;
-use crate::kotlin::kuna_fix_kt_string_literal_escape;
+use crate::fixes::kt_operators::kt_copied_equality;
+use crate::fixes::kt_operators::kt_narrow_bitwise_operand;
+use crate::fixes::kt_operators::kt_negated_equality;
+use crate::fixes::kt_types::kt_raw_generic_type;
+use crate::fixes::kt_suspend::kt_suspend_lambda;
+use crate::fixes::kt_operators::kt_reference_inequality;
+use crate::fixes::kt_java_syntax::kt_string_literal_escape;
 use crate::kotlin_exprent;
-use crate::kuna_fix_kt_java_cast_syntax;
+use crate::fixes::kt_java_syntax::kt_java_cast_syntax;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::rt::jstring::from_utf16;
 use crate::rt::BitSet;
@@ -187,7 +187,7 @@ impl KFunctionExprent {
             }
         }
         if kuna_fixes::enabled(KunaFix::KtReferenceInequality) {
-            kuna_fix_kt_reference_inequality::mark(kex);
+            kt_reference_inequality::mark(kex);
         }
 
         kex
@@ -223,14 +223,14 @@ impl KFunctionExprent {
         if t.array_dim != 0 || t.type_ != CodeType::Object {
             return None;
         }
-        let narrowed = cast.and_then(|c| kuna_fix_kt_raw_generic_type::narrowed(c, &t));
+        let narrowed = cast.and_then(|c| kt_raw_generic_type::narrowed(c, &t));
         let written = if let Some(narrowed) = narrowed {
             narrowed
         } else if t.is_generic() {
-            kuna_fix_kt_raw_generic_type::mapped_name(t.value_str(), false)?;
-            kuna_fix_kt_raw_generic_type::kotlin_type(&t, false)
+            kt_raw_generic_type::mapped_name(t.value_str(), false)?;
+            kt_raw_generic_type::kotlin_type(&t, false)
         } else {
-            kuna_fix_kt_raw_generic_type::star_projected(&t)?
+            kt_raw_generic_type::star_projected(&t)?
         };
         let mut buf = TextBuffer::new();
         buf.append(&written);
@@ -306,7 +306,7 @@ impl KFunctionExprent {
                                         ascii,
                                     );
                                     if kuna_fixes::enabled(KunaFix::KtStringLiteralEscape) {
-                                        buf.append(&kuna_fix_kt_string_literal_escape::kotlin_text(
+                                        buf.append(&kt_string_literal_escape::kotlin_text(
                                             &value, true,
                                         ));
                                     } else {
@@ -323,7 +323,7 @@ impl KFunctionExprent {
                                             IFernflowerPreferences::ASCII_STRING_CHARACTERS,
                                         );
                                         buf.append(
-                                            &kuna_fix_kt_string_literal_escape::template_char(
+                                            &kt_string_literal_escape::template_char(
                                                 unit, ascii,
                                             ),
                                         );
@@ -347,7 +347,7 @@ impl KFunctionExprent {
                             } else if expr.is_var() {
                                 let name = expr.to_java(indent);
                                 if kuna_fixes::enabled(KunaFix::KtStringLiteralEscape)
-                                    && !kuna_fix_kt_string_literal_escape::simple_reference(
+                                    && !kt_string_literal_escape::simple_reference(
                                         &name.convert_to_string_and_allow_data_discard(),
                                         operands.get(i + 1).copied(),
                                     )
@@ -443,9 +443,9 @@ impl KFunctionExprent {
             FunctionType::Cast => {
                 if !self.does_cast()
                     || (kuna_fixes::enabled(KunaFix::KtRawGenericType)
-                        && kuna_fix_kt_raw_generic_type::redundant(self))
+                        && kt_raw_generic_type::redundant(self))
                     || (kuna_fixes::enabled(KunaFix::KtSuspendLambda)
-                        && kuna_fix_kt_suspend_lambda::lambda_of_cast(self.0 .0).is_some())
+                        && kt_suspend_lambda::lambda_of_cast(self.0 .0).is_some())
                 {
                     buf.append_buffer(&lst_operands.get(0).to_java(indent));
                     return buf;
@@ -480,9 +480,9 @@ impl KFunctionExprent {
                 }
                 let to = func_type.cast_type().expect("a conversion");
                 let from =
-                    kuna_fix_kt_java_cast_syntax::written_type(operand, operand.get_expr_type());
-                if let Some(cast) = kuna_fix_kt_java_cast_syntax::form(&to, &from) {
-                    buf.append_buffer(&kuna_fix_kt_java_cast_syntax::write(
+                    kt_java_cast_syntax::written_type(operand, operand.get_expr_type());
+                if let Some(cast) = kt_java_cast_syntax::form(&to, &from) {
+                    buf.append_buffer(&kt_java_cast_syntax::write(
                         cast, operand, &to, indent,
                     ));
                     return buf;
@@ -496,7 +496,7 @@ impl KFunctionExprent {
             }
             FunctionType::Eq | FunctionType::Ne
                 if kuna_fixes::enabled(KunaFix::KtReferenceInequality)
-                    && kuna_fix_kt_reference_inequality::identity(self) =>
+                    && kt_reference_inequality::identity(self) =>
             {
                 let operator = if self.get_func_type() == FunctionType::Eq {
                     " === "
@@ -512,8 +512,8 @@ impl KFunctionExprent {
             FunctionType::And => return self.infix(buf, &lst_operands.to_vec(), " and ", indent),
             FunctionType::Or => return self.infix(buf, &lst_operands.to_vec(), " or ", indent),
             FunctionType::Xor => {
-                if let Some(comparison) = kuna_fix_kt_negated_equality::negated(self.0 .0) {
-                    return kuna_fix_kt_negated_equality::write(buf, comparison, indent);
+                if let Some(comparison) = kt_negated_equality::negated(self.0 .0) {
+                    return kt_negated_equality::write(buf, comparison, indent);
                 }
                 return self.infix(buf, &lst_operands.to_vec(), " xor ", indent);
             }
@@ -545,7 +545,7 @@ impl KFunctionExprent {
     /// widens a `Byte`, `Short` or `Char` one to `Int`.
     fn bitwise_operand(self, expr: Exprent, indent: i32) -> TextBuffer {
         if kuna_fixes::enabled(KunaFix::KtNarrowBitwiseOperand) {
-            if let Some(widened) = kuna_fix_kt_narrow_bitwise_operand::write(expr, indent) {
+            if let Some(widened) = kt_narrow_bitwise_operand::write(expr, indent) {
                 return widened;
             }
         }
@@ -710,7 +710,7 @@ impl KFunctionExprent {
             KFunctionType::NotNull => 0,
             KFunctionType::None
                 if kuna_fixes::enabled(KunaFix::KtRawGenericType)
-                    && kuna_fix_kt_raw_generic_type::redundant(self) =>
+                    && kt_raw_generic_type::redundant(self) =>
             {
                 self.get_lst_operands().get(0).get_precedence()
             }
@@ -724,7 +724,7 @@ impl KFunctionExprent {
         let expr_type = self.0 .0.get_expr_type_opt();
         let copy = KFunctionExprent::new_typed(func, k_type, expr_type);
         if kuna_fixes::enabled(KunaFix::KtCopiedEquality) {
-            kuna_fix_kt_copied_equality::keep_function_type(self, copy);
+            kt_copied_equality::keep_function_type(self, copy);
         }
         if kuna_fixes::enabled(KunaFix::KtReferenceInequality) {
             let identity = self.kd(|d| d.identity);

@@ -8,7 +8,7 @@
 //! constant label of a pattern switch on another type; `type_switch_label_lookup`
 //! writes a case with several type patterns as one label of unnamed patterns;
 //! `switch_synthetic_default` hides javac's default of any exhaustive switch
-//! (`kuna_fix_switch_synthetic_default`), not only of an enum's whose class
+//! (`fixes::switches::switch_synthetic_default`), not only of an enum's whose class
 //! is loaded.
 
 use crate::basic_block_statement::BasicBlockStatement;
@@ -18,12 +18,12 @@ use crate::exit_exprent::Type as ExitType;
 use crate::exprent::{Exprent, ExprentKind};
 use crate::field_exprent::FieldExprent;
 use crate::kuna_fixes::{self, KunaFix};
-use crate::p8_structure::{kuna_fix_type_switch_enum_label, kuna_fix_type_switch_label_lookup};
+use crate::fixes::patterns::{type_switch_enum_label, type_switch_label_lookup};
 use crate::function_exprent::FunctionType;
 use crate::pattern::Pattern;
 use crate::rt::{BitSet, JHashSet, JavaEq, JavaHash};
 use crate::stat_edge::StatEdge;
-use crate::substrate::kuna_fix_switch_synthetic_default;
+use crate::fixes::switches::switch_synthetic_default;
 use crate::switch_statement::SwitchStatement;
 use crate::text_buffer::TextBuffer;
 use crate::var_type::{get_class, VarType};
@@ -81,7 +81,7 @@ impl SwitchExprent {
         let switch_type = backing.get_headexprent().get_expr_type();
         let is_exhaustive = self.is_exhaustive()
             || (kuna_fixes::enabled(KunaFix::SwitchSyntheticDefault)
-                && kuna_fix_switch_synthetic_default::is_javac_default(backing));
+                && switch_synthetic_default::is_javac_default(backing));
 
         buf.append_buffer(&backing.get_headexprent().to_java(indent))
             .append(" {")
@@ -109,7 +109,7 @@ impl SwitchExprent {
             }
 
             let unnamed = if kuna_fixes::enabled(KunaFix::TypeSwitchLabelLookup) {
-                kuna_fix_type_switch_label_lookup::unnamed_pattern_types(&values)
+                type_switch_label_lookup::unnamed_pattern_types(&values)
             } else {
                 None
             };
@@ -118,7 +118,7 @@ impl SwitchExprent {
                 if let Some(types) = &unnamed {
                     if j == 0 {
                         buf.append_indent(indent + 1).append("case ");
-                        kuna_fix_type_switch_label_lookup::append_unnamed(&mut buf, types);
+                        type_switch_label_lookup::append_unnamed(&mut buf, types);
                         has_edge = true;
                     }
                     continue;
@@ -154,14 +154,14 @@ impl SwitchExprent {
                 let qualified = value_ex.try_as_field().filter(|f| {
                     f.is_static()
                         && kuna_fixes::enabled(KunaFix::TypeSwitchEnumLabel)
-                        && kuna_fix_type_switch_enum_label::is_qualified_label(
+                        && type_switch_enum_label::is_qualified_label(
                             *f,
                             &switch_type,
                             backing.0,
                         )
                 });
                 if let Some(field) = qualified {
-                    buf.append_buffer(&kuna_fix_type_switch_enum_label::qualified_label(
+                    buf.append_buffer(&type_switch_enum_label::qualified_label(
                         field, indent,
                     ));
                 } else if let Some(field) = value_ex.try_as_field().filter(|f| f.is_static()) {

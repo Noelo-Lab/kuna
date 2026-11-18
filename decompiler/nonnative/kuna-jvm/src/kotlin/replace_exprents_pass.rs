@@ -1,12 +1,12 @@
 //! Port of `org/vineflower/kotlin/pass/ReplaceExprentsPass.java`.
 //!
 //! kuna fix `kt_default_args_call`: the calls are replaced knowing the method
-//! they are in (`kuna_fix_kt_default_args_call::within`).
+//! they are in (`fixes::kt_default_args::kt_default_args_call::within`).
 
 use crate::exprent::Exprent;
 use crate::k_utils::KUtils;
 use crate::k_var_exprent::{DeclarationType, KVarExprent};
-use crate::kotlin::kuna_fix_kt_default_args_call;
+use crate::fixes::kt_default_args::kt_default_args_call;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::pass::Pass;
 use crate::pass_context::PassContext;
@@ -27,7 +27,7 @@ impl Pass for ReplaceExprentsPass {
     fn run(&self, ctx: &mut PassContext) -> bool {
         let root = ctx.get_root().expect("NullPointerException: root").0;
         if kuna_fixes::enabled(KunaFix::KtDefaultArgsCall) {
-            kuna_fix_kt_default_args_call::within(ctx.get_method(), || {
+            kt_default_args_call::within(ctx.get_method(), || {
                 ReplaceExprentsPass::replace(root)
             })
         } else {

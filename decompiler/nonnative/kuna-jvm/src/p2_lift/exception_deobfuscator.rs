@@ -23,8 +23,8 @@ use crate::i_graph::IGraph;
 use crate::instruction::Instruction;
 use crate::instruction_sequence::InstructionSequence;
 use crate::kuna_fixes::{self, KunaFix};
-use crate::p2_lift::kuna_fix_handler_copy_shared_body::HandlerCopySharedBody;
-use crate::p2_lift::kuna_fix_nested_handler_copies::NestedHandlerCopies;
+use crate::fixes::exception_ranges::handler_copy_shared_body::HandlerCopySharedBody;
+use crate::fixes::exception_ranges::nested_handler_copies::NestedHandlerCopies;
 use crate::rt::{objects_equals, JHashMap, JHashSet, JList, JavaListExt};
 
 pub struct ExceptionDeobfuscator;
