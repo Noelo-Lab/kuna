@@ -1260,9 +1260,11 @@ impl<'a> RegionStructurer<'a> {
         // a continue: it must be the exit so new_block_switch restores the loop.
         // That restoration needs every other output gone, so beside a case
         // leaving elsewhere or continuing an outer loop the fold declines.
+        // A case's backedge to itself (a folded inner dispatch loop) is internal
+        // too: folding it as a continue would drop that inner loop.
         let is_continue_case = |s: &Self, c: BlockId| -> bool {
             let cb = s.graph.block(c);
-            cb.size_out() == 1 && cb.is_back_edge_out(0) && cb.get_out(0) != bl
+            cb.size_out() == 1 && cb.is_back_edge_out(0) && ![bl, c].contains(&cb.get_out(0))
         };
 
         // --- Find the "obvious" exit block (ruleBlockSwitch first loop) ---------
@@ -3394,6 +3396,14 @@ mod tests {
                 assert_eq!((g.block(sw).size_out(), g.block(sw).get_out(0)), (1, sw));
             }
         }
+    }
+
+    #[test]
+    fn a_case_that_loops_on_itself_is_not_a_continue() {
+        let edges = [(0, 1), (1, 2), (2, 3), (2, 4), (3, 3), (4, 5)];
+        let (mut g, root, b) = switch_graph(6, &edges, &[3]);
+        assert!(fold_switch(&mut g, root, &b).is_none());
+        assert_eq!(g.block(b[3]).get_out(0), b[3]);
     }
 
     #[test]

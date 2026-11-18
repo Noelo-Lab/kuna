@@ -1546,3 +1546,9 @@ empty case when no range check precedes the table. An x86-64 compact switch with
 case therefore prints its biased selector inline (`switch(mode - 5)`), exactly
 as it does with `regionstructure off`; its earlier `switch(mode)` came from
 that lossy fold, rescued only when the structurer later stranded.
+
+The self-edge that `new_block_switch` restores leaves the folded switch as a
+block whose only edge loops back to itself. When the dispatch loop is a case
+of an outer switch, such a case is not a continue either: folding it as a
+terminal case would make its self-edge internal and drop the inner loop, so
+the outer switch declines until the loop schema has wrapped it.

@@ -1,11 +1,12 @@
 //! A switch that is its own loop header keeps every iteration, whether or not
-//! some of its cases leave the loop or restart an enclosing one.
+//! some of its cases leave the loop or restart an enclosing one, and when it
+//! is itself a case of another switch.
 use crate::common;
 use common::process;
 
 use std::process::Command;
 
-const FUNCTIONS: [&str; 5] = ["self_loop", "self_loop_exit", "mixed_loop", "direct_mixed", "direct_loop"];
+const FUNCTIONS: [&str; 6] = ["self_loop", "self_loop_exit", "mixed_loop", "direct_mixed", "direct_loop", "nested_switch"];
 const OBJECTS: [&str; 2] = ["switch_self_loop_gcc_x86_64.o", "switch_self_loop_clang_x86_64.o"];
 
 fn kuna() -> Command {

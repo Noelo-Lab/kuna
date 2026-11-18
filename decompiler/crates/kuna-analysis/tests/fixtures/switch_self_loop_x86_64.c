@@ -4,7 +4,8 @@
  * `direct_mixed` also have a case that restarts an enclosing loop, beside a
  * case tail shared by two cases.  `direct_mixed` and `direct_loop` dispatch
  * on a masked selector with no range check, so Clang's empty `case 0` jumps
- * straight back to the dispatch block.  The callees are external so the
+ * straight back to the dispatch block.  `nested_switch` puts such a dispatch
+ * loop in case 0 of another switch.  The callees are external so the
  * compiler keeps one dispatch at the loop head.
  *
  *   gcc -O2 -fno-pie -fcf-protection=none -c switch_self_loop_x86_64.c -o switch_self_loop_gcc_x86_64.o
@@ -90,4 +91,27 @@ void direct_loop(int x) {
     default: return;
     }
   }
+}
+
+void nested_switch(int x) {
+  t5();
+  switch (next_selector(x)) {
+  case 0:
+    for (;;) {
+      switch (next_selector(x)) {
+      case 0: t0(); break;
+      case 1: t1(); break;
+      case 2: t2(); break;
+      case 3: t3(); break;
+      case 4: t4(); return;
+      default: return;
+      }
+    }
+  case 1: t1(); return;
+  case 2: t2(); break;
+  case 3: t3(); break;
+  case 4: t4(); break;
+  default: return;
+  }
+  t5();
 }
