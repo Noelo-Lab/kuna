@@ -76,9 +76,12 @@ the returning edge receives a closed copy of the work before the transfer.
 This preserves the call on paths that still prove its destination. A restart
 derives these decisions again without changing explicit caller assertions.
 Calls, further branches and other contexts that cannot be copied safely cause
-a diagnostic instead of publishing an unproved branch. Incoming-return-address
-inspection, or loss of its provenance across calls and untracked storage,
-also invalidates later computed-target proofs. Computations carry dependence
+a diagnostic instead of publishing an unproved branch. An unknown branch
+decision or a call after the incoming return address is observed may select
+paths based on that address. The proof retains that possibility at joins
+and declines to classify subsequent LR transfers on those paths. An
+unconditional store of the incoming LR followed by an independently proven
+constant transfer can still reach its destination. Computations carry dependence
 on the incoming LR to their results. A branch predicate, indirect target,
 memory address or escaping value can expose that dependence. An unused
 register result leaves the proof intact. The proof also accounts for partial

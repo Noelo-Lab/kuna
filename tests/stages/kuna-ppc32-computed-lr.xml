@@ -78,6 +78,12 @@
     38000001 44000002
   </bytechunk>
   <symbol space="ram" offset="0x1900" name="store_through_lr"/>
+  <bytechunk space="ram" offset="0x1a00" readonly="true">
+    7d8802a6 91840000 38600064 38001a18
+    7c0803a6 4e800020 38600063 7d8803a6
+    4e800020
+  </bytechunk>
+  <symbol space="ram" offset="0x1a00" name="store_incoming_lr_then_jump"/>
 </binaryimage>
 <script>
   <com>load addr 0x1000</com>
@@ -111,6 +117,10 @@
   <com>load addr 0x1900</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>map prototype store_incoming_lr_then_jump int4 store_incoming_lr_then_jump(int4 i,int4 *slot);</com>
+  <com>load addr 0x1a00</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="computed LR reaches the common epilogue" min="1" max="2">return 7;</stringmatch>
@@ -126,4 +136,6 @@
 <stringmatch name="reusing a saved LR slot preserves the later local branch" min="1" max="1">return 0x55;</stringmatch>
 <stringmatch name="unused LR arithmetic preserves the later local branch" min="1" max="1">return 0x59;</stringmatch>
 <stringmatch name="a store through LR leaves the continuation in the caller" min="0" max="0">return 0x62;</stringmatch>
+<stringmatch name="storing incoming LR leaves the local jump reachable" min="1" max="1">return (0x63|99);</stringmatch>
+<stringmatch name="storing incoming LR does not end the function early" min="0" max="0">return (0x64|100);</stringmatch>
 </decompilertest>

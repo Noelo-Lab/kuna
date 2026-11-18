@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4951,
-    4951
+    4953,
+    4953
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -4624,6 +4624,8 @@
     "data:storealias #7: load, a value read before the pointer store prints as a read after it",
     "data:storealias #8: default, the value read before the store keeps its own variable",
     "data:storealias #9: load, three reads around two pointer stores collapse into one",
+    "data:storing incoming LR does not end the function early",
+    "data:storing incoming LR leaves the local jump reachable",
     "data:string fill width and precision",
     "data:string fill width and precision @dup2",
     "data:string input keeps both operands at an ordinary direct call",

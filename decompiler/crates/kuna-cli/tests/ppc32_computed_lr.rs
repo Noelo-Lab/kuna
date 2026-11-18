@@ -173,6 +173,55 @@ fn lr_memory_addresses_and_derived_guards_keep_caller_code_separate() {
 }
 
 #[test]
+fn storing_incoming_lr_preserves_a_later_constant_jump() {
+    let code = [
+        0x7d8802a6, // mflr r12
+        0x91840000, // stw r12,0(r4)
+        0x38600003, // li r3,3
+        0x38001018, // li r0,0x1018
+        0x7c0803a6, // mtlr r0
+        0x4e800020, // blr
+        0x38600007, // li r3,7
+        0x7d8803a6, // mtlr r12
+        0x4e800020, // blr
+    ];
+    let revisited = [
+        0x7d8802a6, 0x91840000, 0x38600009, 0x38001018, 0x7c0803a6, 0x4e800020, 0x38001024,
+        0x7c0803a6, 0x4bfffff4, 0x3863000e, 0x7d8803a6, 0x4e800020,
+    ];
+    for order in ["BE", "LE"] {
+        for model in ["default", "e500"] {
+            for mode in ["fast", "reliable"] {
+                for option in ["on", "off"] {
+                    for (words, reached, early_return) in [
+                        (&code[..], "return 7;", "return 3;"),
+                        (&revisited[..], "return 0x17;", "return 9;"),
+                    ] {
+                        let c = decompile_saved_lr(
+                            words,
+                            order,
+                            model,
+                            mode,
+                            &[
+                                "--assert",
+                                "prototype 0x1000 int sub_1000(int i, int *slot)",
+                                "--option",
+                                "returnbranch",
+                                option,
+                            ],
+                        );
+                        assert!(
+                            c.contains("*slot = ") && c.contains(reached) && !c.contains(early_return),
+                            "{order} {model} {mode} returnbranch={option}: {c}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn unused_lr_arithmetic_preserves_computed_transfers() {
     let code = [
         0x7d8802a6, 0x388c0004, 0x2c030000, 0x41820010, 0x38001028, 0x7c0803a6, 0x4e800020,
