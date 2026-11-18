@@ -1,0 +1,3 @@
+define endian=little;
+@define ENDIAN "little"
+@include "nanomips.sinc"

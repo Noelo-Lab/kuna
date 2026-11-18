@@ -1,0 +1,902 @@
+# nanoMIPS32 base instruction set: the 16-, 32- and 48-bit forms of the integer ISA,
+# its system instructions and the EVA memory accesses.
+#
+# An instruction is a sequence of 16-bit units in the image's byte order. The
+# first unit holds the major opcode in its top six bits; a 32-bit instruction
+# puts instruction bits 31..16 in the first unit and 15..0 in the second, and a
+# 48-bit instruction follows the first unit with the low and then the high half
+# of a 32-bit immediate.
+
+define alignment=2;
+
+define space ram      type=ram_space      size=4 default;
+define space register type=register_space size=4;
+
+define register offset=0 size=4 [
+  zero at t4 t5 a0 a1 a2 a3 a4 a5 a6 a7 t0 t1 t2 t3
+  s0 s1 s2 s3 s4 s5 s6 s7 t8 t9 k0 k1 gp sp fp ra
+];
+define register offset=0x100 size=4 [ pc ];
+
+define pcodeop syscall;
+define pcodeop hypcall;
+define pcodeop break;
+define pcodeop sdbbp;
+define pcodeop trap;
+define pcodeop reservedInstruction;
+define pcodeop getCopReg;
+define pcodeop setCopReg;
+define pcodeop getCopRegH;
+define pcodeop setCopRegH;
+define pcodeop getHWRegister;
+define pcodeop getShadowReg;
+define pcodeop setShadowReg;
+define pcodeop disableInterrupts;
+define pcodeop enableInterrupts;
+define pcodeop disableProcessors;
+define pcodeop enableProcessors;
+define pcodeop exceptionReturn;
+define pcodeop debugExceptionReturn;
+define pcodeop interruptReturn;
+define pcodeop wait;
+define pcodeop cacheOp;
+define pcodeop tlbOp;
+define pcodeop rotx;
+define pcodeop lockLoad;
+define pcodeop lockStore;
+
+define token hw0 (16)
+  op        = (10,15)
+  rt        = (5,9)
+  rtnum     = (5,9)
+  rs        = (0,4)
+  rsnum     = (0,4)
+  rt3       = (7,9)
+  rtz3      = (7,9)
+  rs3       = (4,6)
+  rd3       = (1,3)
+  rt3num    = (7,9)
+  rs3num    = (4,6)
+  rt4hi     = (9,9)
+  rt4lo     = (5,7)
+  rt4los    = (5,7)
+  rtz4lo    = (5,7)
+  rs4hi     = (4,4)
+  rs4lo     = (0,2)
+  rs4los    = (0,2)
+  rsz4lo    = (0,2)
+  rd1       = (8,8)
+  b0        = (0,0)
+  b1        = (1,1)
+  b2        = (2,2)
+  b3        = (3,3)
+  b4        = (4,4)
+  b6        = (6,6)
+  b8        = (8,8)
+  b9        = (9,9)
+  b01       = (0,1)
+  b03       = (0,3)
+  b23       = (2,3)
+  b34       = (3,4)
+  b24       = (2,4)
+  b04       = (0,4)
+  code2     = (0,1)
+  code3     = (0,2)
+  shift3    = (0,2)
+  u2s2      = (0,1)
+  u3s2      = (0,2)
+  u4        = (0,3)
+  u5        = (0,4)
+  u6        = (0,5)
+  u7        = (0,6)
+  eu4       = (0,3)
+  eu7       = (0,6)
+  rs5lo     = (0,2)
+  rs5sign   = (4,4) signed
+  h1        = (1,2)
+  s10lo     = (1,9)
+  s7lo      = (1,6)
+  s24hi     = (0,8)
+  asetbit   = (5,7)
+  sr_count  = (0,3)
+  sr16_u    = (4,7)
+  sr16_dir  = (8,8)
+  rt_w0   = (5,9)
+  rt_w1   = (5,9)
+  rt_w2   = (5,9)
+  rt_w3   = (5,9)
+  rt_w4   = (5,9)
+  rt_w5   = (5,9)
+  rt_w6   = (5,9)
+  rt_w7   = (5,9)
+  rt_w8   = (5,9)
+  rt_w9   = (5,9)
+  rt_w10   = (5,9)
+  rt_w11   = (5,9)
+  rt_w12   = (5,9)
+  rt_w13   = (5,9)
+  rt_w14   = (5,9)
+  r1_w0   = (9,9)
+  r1_w1   = (9,9)
+  r1_w2   = (9,9)
+  r1_w3   = (9,9)
+  r1_w4   = (9,9)
+  r1_w5   = (9,9)
+  r1_w6   = (9,9)
+  r1_w7   = (9,9)
+  r1_w8   = (9,9)
+  r1_w9   = (9,9)
+  r1_w10   = (9,9)
+  r1_w11   = (9,9)
+  r1_w12   = (9,9)
+  r1_w13   = (9,9)
+  r1_w14   = (9,9)
+;
+
+define token hw1 (16)
+  rd        = (11,15)
+  rdnum     = (11,15)
+  f16       = (0,15)
+  f11       = (0,10)
+  f10       = (0,9)
+  f9        = (0,8)
+  f6        = (0,5)
+  f2        = (0,1)
+  f1        = (0,0)
+  c1        = (1,1)
+  c5        = (5,5)
+  c11       = (11,11)
+  u16       = (0,15)
+  u12       = (0,11)
+  u12f      = (12,15)
+  shf       = (5,8)
+  sa        = (0,4)
+  shiftx    = (7,10)
+  stripe    = (6,6)
+  msbd      = (6,10)
+  lsb       = (0,4)
+  lsa_u2    = (9,10)
+  ext_sh    = (6,10)
+  sel5      = (11,15)
+  sel3      = (11,13)
+  gpw_lo    = (2,15)
+  sr_u      = (3,11)
+  sr_gp     = (2,2)
+  sr_dir    = (1,1)
+  sr_jrc    = (0,0)
+  ls9f      = (11,14)
+  ls9t      = (8,10)
+  s9sign    = (15,15) signed
+  s8        = (0,7)
+  s8w       = (2,7)
+  ru        = (3,7)
+  wm_count  = (12,14)
+  wm_dir    = (11,11)
+  brf       = (14,15)
+  ssign     = (0,0) signed
+  s15lo     = (1,15)
+  s13lo     = (1,13)
+  s10lo1    = (1,10)
+  bri_lo    = (11,15)
+  lui_mid   = (12,15)
+  lui_hi    = (2,11)
+;
+
+define token imm48lo (16) i48lo = (0,15);
+define token imm48hi (16) i48hi = (0,15) signed;
+
+attach variables [ rt rs rd ru ] [
+  zero at t4 t5 a0 a1 a2 a3 a4 a5 a6 a7 t0 t1 t2 t3
+  s0 s1 s2 s3 s4 s5 s6 s7 t8 t9 k0 k1 gp sp fp ra
+];
+attach variables [ rt3 rs3 rd3 ] [ s0 s1 s2 s3 a0 a1 a2 a3 ];
+attach variables [ rtz3 ] [ zero s1 s2 s3 a0 a1 a2 a3 ];
+attach variables [ rt4lo rs4lo ] [ a4 a5 a6 a7 a0 a1 a2 a3 ];
+attach variables [ rtz4lo rsz4lo ] [ a4 a5 a6 zero a0 a1 a2 a3 ];
+attach variables [ rt4los rs4los ] [ s0 s1 s2 s3 s4 s5 s6 s7 ];
+attach variables [ rd1 ] [ a0 a1 ];
+
+# Slot i of a register run starting at rt names register (rt & 0x10) | ((rt + i) & 0x1f).
+attach variables [ rt_w0 ] [ zero at t4 t5 a0 a1 a2 a3 a4 a5 a6 a7 t0 t1 t2 t3 s0 s1 s2 s3 s4 s5 s6 s7 t8 t9 k0 k1 gp sp fp ra ];
+attach variables [ rt_w1 ] [ at t4 t5 a0 a1 a2 a3 a4 a5 a6 a7 t0 t1 t2 t3 s0 s1 s2 s3 s4 s5 s6 s7 t8 t9 k0 k1 gp sp fp ra s0 ];
+attach variables [ rt_w2 ] [ t4 t5 a0 a1 a2 a3 a4 a5 a6 a7 t0 t1 t2 t3 s0 s1 s2 s3 s4 s5 s6 s7 t8 t9 k0 k1 gp sp fp ra s0 s1 ];
+attach variables [ rt_w3 ] [ t5 a0 a1 a2 a3 a4 a5 a6 a7 t0 t1 t2 t3 s0 s1 s2 s3 s4 s5 s6 s7 t8 t9 k0 k1 gp sp fp ra s0 s1 s2 ];
+attach variables [ rt_w4 ] [ a0 a1 a2 a3 a4 a5 a6 a7 t0 t1 t2 t3 s0 s1 s2 s3 s4 s5 s6 s7 t8 t9 k0 k1 gp sp fp ra s0 s1 s2 s3 ];
+attach variables [ rt_w5 ] [ a1 a2 a3 a4 a5 a6 a7 t0 t1 t2 t3 s0 s1 s2 s3 s4 s5 s6 s7 t8 t9 k0 k1 gp sp fp ra s0 s1 s2 s3 s4 ];
+attach variables [ rt_w6 ] [ a2 a3 a4 a5 a6 a7 t0 t1 t2 t3 s0 s1 s2 s3 s4 s5 s6 s7 t8 t9 k0 k1 gp sp fp ra s0 s1 s2 s3 s4 s5 ];
+attach variables [ rt_w7 ] [ a3 a4 a5 a6 a7 t0 t1 t2 t3 s0 s1 s2 s3 s4 s5 s6 s7 t8 t9 k0 k1 gp sp fp ra s0 s1 s2 s3 s4 s5 s6 ];
+attach variables [ rt_w8 ] [ a4 a5 a6 a7 t0 t1 t2 t3 s0 s1 s2 s3 s4 s5 s6 s7 t8 t9 k0 k1 gp sp fp ra s0 s1 s2 s3 s4 s5 s6 s7 ];
+attach variables [ rt_w9 ] [ a5 a6 a7 t0 t1 t2 t3 s0 s1 s2 s3 s4 s5 s6 s7 t8 t9 k0 k1 gp sp fp ra s0 s1 s2 s3 s4 s5 s6 s7 t8 ];
+attach variables [ rt_w10 ] [ a6 a7 t0 t1 t2 t3 s0 s1 s2 s3 s4 s5 s6 s7 t8 t9 k0 k1 gp sp fp ra s0 s1 s2 s3 s4 s5 s6 s7 t8 t9 ];
+attach variables [ rt_w11 ] [ a7 t0 t1 t2 t3 s0 s1 s2 s3 s4 s5 s6 s7 t8 t9 k0 k1 gp sp fp ra s0 s1 s2 s3 s4 s5 s6 s7 t8 t9 k0 ];
+attach variables [ rt_w12 ] [ t0 t1 t2 t3 s0 s1 s2 s3 s4 s5 s6 s7 t8 t9 k0 k1 gp sp fp ra s0 s1 s2 s3 s4 s5 s6 s7 t8 t9 k0 k1 ];
+attach variables [ rt_w13 ] [ t1 t2 t3 s0 s1 s2 s3 s4 s5 s6 s7 t8 t9 k0 k1 gp sp fp ra s0 s1 s2 s3 s4 s5 s6 s7 t8 t9 k0 k1 gp ];
+attach variables [ rt_w14 ] [ t2 t3 s0 s1 s2 s3 s4 s5 s6 s7 t8 t9 k0 k1 gp sp fp ra s0 s1 s2 s3 s4 s5 s6 s7 t8 t9 k0 k1 gp sp ];
+attach variables [ r1_w0 ] [ fp ra ];
+attach variables [ r1_w1 ] [ ra s0 ];
+attach variables [ r1_w2 ] [ s0 s1 ];
+attach variables [ r1_w3 ] [ s1 s2 ];
+attach variables [ r1_w4 ] [ s2 s3 ];
+attach variables [ r1_w5 ] [ s3 s4 ];
+attach variables [ r1_w6 ] [ s4 s5 ];
+attach variables [ r1_w7 ] [ s5 s6 ];
+attach variables [ r1_w8 ] [ s6 s7 ];
+attach variables [ r1_w9 ] [ s7 t8 ];
+attach variables [ r1_w10 ] [ t8 t9 ];
+attach variables [ r1_w11 ] [ t9 k0 ];
+attach variables [ r1_w12 ] [ k0 k1 ];
+attach variables [ r1_w13 ] [ k1 gp ];
+attach variables [ r1_w14 ] [ gp sp ];
+
+# Register operands. A source read of $zero is the constant 0 and a write to it is discarded.
+
+RTsrc: rt is rt { export rt; }
+RTsrc: rt is rt & rtnum=0 { export 0:4; }
+RSsrc: rs is rs { export rs; }
+RSsrc: rs is rs & rsnum=0 { export 0:4; }
+RDsrc: rd is rd { export rd; }
+RDsrc: rd is rd & rdnum=0 { export 0:4; }
+RUsrc: ru is ru { export ru; }
+RT: rt is rt { export rt; }
+RT: rt is rt & rtnum=0 { local discard:4 = 0; export discard; }
+RD: rd is rd { export rd; }
+RD: rd is rd & rdnum=0 { local discard:4 = 0; export discard; }
+RU: ru is ru { export ru; }
+
+RTz3: rtz3 is rtz3 { export rtz3; }
+RTz3: rtz3 is rtz3 & rt3num=0 { export 0:4; }
+
+RT4: rt4lo is rt4hi=0 & rt4lo { export rt4lo; }
+RT4: rt4los is rt4hi=1 & rt4los { export rt4los; }
+RS4: rs4lo is rs4hi=0 & rs4lo { export rs4lo; }
+RS4: rs4los is rs4hi=1 & rs4los { export rs4los; }
+RTz4: rtz4lo is rt4hi=0 & rtz4lo { export rtz4lo; }
+RTz4: rtz4lo is rt4hi=0 & rtz4lo & rt4lo=3 { export 0:4; }
+RTz4: rt4los is rt4hi=1 & rt4los { export rt4los; }
+RSz4: rsz4lo is rs4hi=0 & rsz4lo { export rsz4lo; }
+RSz4: rsz4lo is rs4hi=0 & rsz4lo & rs4lo=3 { export 0:4; }
+RSz4: rs4los is rs4hi=1 & rs4los { export rs4los; }
+
+# The MOVEP register pair, selected by instruction bits 3 and 8.
+RD2: a0 is b3=0 & b8=0 & a0 { export a0; }
+RD2: a1 is b3=0 & b8=1 & a1 { export a1; }
+RD2: a2 is b3=1 & b8=0 & a2 { export a2; }
+RD2: a3 is b3=1 & b8=1 & a3 { export a3; }
+RE2: a1 is b3=0 & b8=0 & a1 { export a1; }
+RE2: a2 is b3=0 & b8=1 & a2 { export a2; }
+RE2: a3 is b3=1 & b8=0 & a3 { export a3; }
+RE2: a4 is b3=1 & b8=1 & a4 { export a4; }
+
+# Immediates.
+
+Shift3: shift3 is shift3 { export *[const]:4 shift3; }
+Shift3: "8" is shift3=0 { export 8:4; }
+Eu7: eu7 is eu7 { export *[const]:4 eu7; }
+Eu7: "-1" is eu7=0x7f { export 0xffffffff:4; }
+Eu4: eu4 is eu4 { export *[const]:4 eu4; }
+Eu4: "0xff" is eu4=12 { export 0xff:4; }
+Eu4: "0xffff" is eu4=13 { export 0xffff:4; }
+U3s2: val is u3s2 [ val = u3s2 << 2; ] { export *[const]:4 val; }
+U4s2: val is u4 [ val = u4 << 2; ] { export *[const]:4 val; }
+U5s2: val is u5 [ val = u5 << 2; ] { export *[const]:4 val; }
+U6s2: val is u6 [ val = u6 << 2; ] { export *[const]:4 val; }
+U7s2: val is u7 [ val = u7 << 2; ] { export *[const]:4 val; }
+U4x4: val is b3 & b8 [ val = (b3 << 3) | (b8 << 2); ] { export *[const]:4 val; }
+H1s1: val is h1 [ val = h1 << 1; ] { export *[const]:4 val; }
+Rs5: val is rs5sign & rs5lo [ val = (rs5sign << 3) | rs5lo; ] { export *[const]:4 val; }
+Sr16U: val is sr16_u [ val = sr16_u << 4; ] { export *[const]:4 val; }
+Sr32U: val is sr_u [ val = sr_u << 3; ] { export *[const]:4 val; }
+S9: val is s9sign & s8 [ val = (s9sign << 8) | s8; ] { export *[const]:4 val; }
+S9w: val is s9sign & s8w [ val = (s9sign << 8) | (s8w << 2); ] { export *[const]:4 val; }
+Gpw: val is b04 ; gpw_lo [ val = (b04 << 16) | (gpw_lo << 2); ] { export *[const]:4 val; }
+Gpb: val is b01 ; u16 [ val = (b01 << 16) | u16; ] { export *[const]:4 val; }
+Gph: val is b01 ; u16 [ val = (b01 << 16) | (u16 & 0xfffe); ] { export *[const]:4 val; }
+Code19: val is code3 ; u16 [ val = (code3 << 16) | u16; ] { export *[const]:4 val; }
+Code18: val is code2 ; u16 [ val = (code2 << 16) | u16; ] { export *[const]:4 val; }
+Bri7: val is b01 ; bri_lo [ val = (b01 << 5) | bri_lo; ] { export *[const]:4 val; }
+Bit5: val is b0=0 ; bri_lo [ val = bri_lo + 0; ] { export *[const]:4 val; }
+Lui: val is b04 ; lui_mid & lui_hi & ssign [ val = ((ssign << 31) | (lui_hi << 21) | (b04 << 16) | (lui_mid << 12)) & 0xffffffff; ] { export *[const]:4 val; }
+Imm32: val is i48lo ; i48hi [ val = ((i48hi << 16) | i48lo) & 0xffffffff; ] { export *[const]:4 val; }
+Simm32: val is i48lo ; i48hi [ val = (i48hi << 16) | i48lo; ] { export *[const]:4 val; }
+
+# Branch and PC-relative targets, relative to the address of the next instruction.
+
+Rel4u: reloc is u4 [ reloc = inst_next + (u4 << 1); ] { export *[ram]:4 reloc; }
+Rel7: reloc is s7lo & b0 [ reloc = inst_next + ((s7lo << 1) | (-b0 << 7)); ] { export *[ram]:4 reloc; }
+Rel10: reloc is s10lo & b0 [ reloc = inst_next + ((s10lo << 1) | (-b0 << 10)); ] { export *[ram]:4 reloc; }
+Rel11: reloc is s10lo1 & ssign [ reloc = inst_next + ((s10lo1 << 1) | (ssign << 11)); ] { export *[ram]:4 reloc; }
+Rel14: reloc is s13lo & ssign [ reloc = inst_next + ((s13lo << 1) | (ssign << 14)); ] { export *[ram]:4 reloc; }
+Rel21: reloc is b04 ; s15lo & ssign [ reloc = inst_next + ((ssign << 21) | (b04 << 16) | (s15lo << 1)); ] { export *[ram]:4 reloc; }
+Rel25: reloc is s24hi ; s15lo & ssign [ reloc = inst_next + ((ssign << 25) | (s24hi << 16) | (s15lo << 1)); ] { export *[ram]:4 reloc; }
+Rel32: reloc is i48lo ; i48hi [ reloc = (inst_next + ((i48hi << 16) | i48lo)) & 0xffffffff; ] { export *[ram]:4 reloc; }
+Pc21: reloc is b04 ; s15lo & ssign [ reloc = inst_next + ((ssign << 21) | (b04 << 16) | (s15lo << 1)); ] { export *[const]:4 reloc; }
+Pc32: reloc is i48lo ; i48hi [ reloc = (inst_next + ((i48hi << 16) | i48lo)) & 0xffffffff; ] { export *[const]:4 reloc; }
+PcHi: reloc is b04 ; lui_mid & lui_hi & ssign [ reloc = (inst_next + ((ssign << 31) | (lui_hi << 21) | (b04 << 16) | (lui_mid << 12))) & 0xfffff000; ] { export *[const]:4 reloc; }
+
+# ---- 16-bit instructions ----
+
+:move RT, RSsrc is op=0x04 & RT & RSsrc { RT = RSsrc; }
+:syscall code2 is op=0x04 & rtnum=0 & b34=1 & b2=0 & code2 { syscall(code2:4); }
+:hypcall code2 is op=0x04 & rtnum=0 & b34=1 & b2=1 & code2 { hypcall(code2:4); }
+:break code3 is op=0x04 & rtnum=0 & b34=2 & code3 { break(code3:4); }
+:sdbbp code3 is op=0x04 & rtnum=0 & b34=3 & code3 { sdbbp(code3:4); }
+
+:sll rt3, rs3, Shift3 is op=0x0c & rt3 & rs3 & b3=0 & Shift3 { rt3 = rs3 << Shift3; }
+:srl rt3, rs3, Shift3 is op=0x0c & rt3 & rs3 & b3=1 & Shift3 { rt3 = rs3 >> Shift3; }
+
+:not rt3, rs3 is op=0x14 & rt3 & rs3 & b03=0x0 { rt3 = ~rs3; }
+:xor rt3, rs3 is op=0x14 & rt3 & rs3 & b03=0x4 { rt3 = rt3 ^ rs3; }
+:and rt3, rs3 is op=0x14 & rt3 & rs3 & b03=0x8 { rt3 = rt3 & rs3; }
+:or rt3, rs3 is op=0x14 & rt3 & rs3 & b03=0xc { rt3 = rt3 | rs3; }
+:lwxs rd3, rs3(rt3) is op=0x14 & rt3 & rs3 & rd3 & b0=1 { rd3 = *:4 ((rs3 << 2) + rt3); }
+
+:addiu rt3, sp, U6s2 is op=0x1c & rt3 & b6=1 & U6s2 & sp { rt3 = sp + U6s2; }
+:nop is op=0x24 & rtnum=0 & b3=1 { }
+:addiu RT, Rs5 is op=0x24 & RT & b3=1 & Rs5 { RT = RT + Rs5; }
+:addiu rt3, rs3, U3s2 is op=0x24 & rt3 & rs3 & b3=0 & U3s2 { rt3 = rs3 + U3s2; }
+:addu rd3, rs3, rt3 is op=0x2c & rt3 & rs3 & rd3 & b0=0 { rd3 = rs3 + rt3; }
+:subu rd3, rs3, rt3 is op=0x2c & rt3 & rs3 & rd3 & b0=1 { rd3 = rs3 - rt3; }
+:li rt3, Eu7 is op=0x34 & rt3 & Eu7 { rt3 = Eu7; }
+:andi rt3, rs3, Eu4 is op=0x3c & rt3 & rs3 & Eu4 { rt3 = rs3 & Eu4; }
+
+:lw rt3, U4s2(rs3) is op=0x05 & rt3 & rs3 & U4s2 { rt3 = *:4 (rs3 + U4s2); }
+:lw RT, U5s2(sp) is op=0x0d & RT & U5s2 & sp { RT = *:4 (sp + U5s2); }
+:lw rt3, U7s2(gp) is op=0x15 & rt3 & U7s2 & gp { rt3 = *:4 (gp + U7s2); }
+:lw RT4, U4x4(RS4) is op=0x1d & RT4 & RS4 & U4x4 { RT4 = *:4 (RS4 + U4x4); }
+:sw RTz3, U4s2(rs3) is op=0x25 & RTz3 & rs3 & U4s2 { *:4 (rs3 + U4s2) = RTz3; }
+:sw RTsrc, U5s2(sp) is op=0x2d & RTsrc & U5s2 & sp { *:4 (sp + U5s2) = RTsrc; }
+:sw RTz3, U7s2(gp) is op=0x35 & RTz3 & U7s2 & gp { *:4 (gp + U7s2) = RTz3; }
+:sw RTz4, U4x4(RS4) is op=0x3d & RTz4 & RS4 & U4x4 { *:4 (RS4 + U4x4) = RTz4; }
+
+:lb  rt3, u2s2(rs3) is op=0x17 & rt3 & rs3 & b23=0 & u2s2 { rt3 = sext(*:1 (rs3 + u2s2)); }
+:sb  RTz3, u2s2(rs3) is op=0x17 & RTz3 & rs3 & b23=1 & u2s2 { *:1 (rs3 + u2s2) = RTz3:1; }
+:lbu rt3, u2s2(rs3) is op=0x17 & rt3 & rs3 & b23=2 & u2s2 { rt3 = zext(*:1 (rs3 + u2s2)); }
+:lh  rt3, H1s1(rs3) is op=0x1f & rt3 & rs3 & b3=0 & b0=0 & H1s1 { rt3 = sext(*:2 (rs3 + H1s1)); }
+:sh  RTz3, H1s1(rs3) is op=0x1f & RTz3 & rs3 & b3=0 & b0=1 & H1s1 { *:2 (rs3 + H1s1) = RTz3:2; }
+:lhu rt3, H1s1(rs3) is op=0x1f & rt3 & rs3 & b3=1 & b0=0 & H1s1 { rt3 = zext(*:2 (rs3 + H1s1)); }
+
+:addu RT4, RS4 is op=0x0f & b8=0 & b3=0 & RT4 & RS4 { RT4 = RS4 + RT4; }
+:mul RT4, RS4 is op=0x0f & b8=0 & b3=1 & RT4 & RS4 { RT4 = RS4 * RT4; }
+
+:movep RD2, RE2, RSz4, RTz4 is op=0x2f & RD2 & RE2 & RSz4 & RTz4 {
+  local first:4 = RSz4;
+  local second:4 = RTz4;
+  RD2 = first;
+  RE2 = second;
+}
+:movep RS4, RT4, RD2, RE2 is op=0x3f & RD2 & RE2 & RS4 & RT4 {
+  local first:4 = RD2;
+  local second:4 = RE2;
+  RS4 = first;
+  RT4 = second;
+}
+
+:bc Rel10 is op=0x06 & Rel10 { goto Rel10; }
+:balc Rel10 is op=0x0e & Rel10 { ra = inst_next; call Rel10; }
+:beqzc rt3, Rel7 is op=0x26 & rt3 & Rel7 { if (rt3 == 0) goto Rel7; }
+:bnezc rt3, Rel7 is op=0x2e & rt3 & Rel7 { if (rt3 != 0) goto Rel7; }
+:beqc rs3, rt3, Rel4u is op=0x36 & rt3 & rs3 & rs3num < rt3num & Rel4u & (b0=1 | b1=1 | b2=1 | b3=1) { if (rs3 == rt3) goto Rel4u; }
+:bnec rs3, rt3, Rel4u is op=0x36 & rt3 & rs3 & rs3num >= rt3num & Rel4u & (b0=1 | b1=1 | b2=1 | b3=1) { if (rs3 != rt3) goto Rel4u; }
+:jrc RTsrc is op=0x36 & RTsrc & b03=0 & b4=0 { goto [RTsrc]; }
+:jrc ra is op=0x36 & rtnum=31 & ra & b03=0 & b4=0 { return [ra]; }
+:jalrc RTsrc is op=0x36 & RTsrc & b03=0 & b4=1 { local target:4 = RTsrc; ra = inst_next; call [target]; }
+
+# SAVE and RESTORE.JRC. Slot i of the register run lives at sp - 4*(i+1) before
+# the frame is opened and after it is closed.
+
+Sr16_0: ","^r1_w0 is r1_w0 & sr16_dir=0 & sr_count>0 { *:4 (sp - 4) = r1_w0; }
+Sr16_0: ","^r1_w0 is r1_w0 & sr16_dir=1 & sr_count>0 { r1_w0 = *:4 (sp - 4); }
+Sr16_0: is sr_count<1 { }
+Sr16_1: ","^r1_w1 is r1_w1 & sr16_dir=0 & sr_count>1 { *:4 (sp - 8) = r1_w1; }
+Sr16_1: ","^r1_w1 is r1_w1 & sr16_dir=1 & sr_count>1 { r1_w1 = *:4 (sp - 8); }
+Sr16_1: is sr_count<2 { }
+Sr16_2: ","^r1_w2 is r1_w2 & sr16_dir=0 & sr_count>2 { *:4 (sp - 12) = r1_w2; }
+Sr16_2: ","^r1_w2 is r1_w2 & sr16_dir=1 & sr_count>2 { r1_w2 = *:4 (sp - 12); }
+Sr16_2: is sr_count<3 { }
+Sr16_3: ","^r1_w3 is r1_w3 & sr16_dir=0 & sr_count>3 { *:4 (sp - 16) = r1_w3; }
+Sr16_3: ","^r1_w3 is r1_w3 & sr16_dir=1 & sr_count>3 { r1_w3 = *:4 (sp - 16); }
+Sr16_3: is sr_count<4 { }
+Sr16_4: ","^r1_w4 is r1_w4 & sr16_dir=0 & sr_count>4 { *:4 (sp - 20) = r1_w4; }
+Sr16_4: ","^r1_w4 is r1_w4 & sr16_dir=1 & sr_count>4 { r1_w4 = *:4 (sp - 20); }
+Sr16_4: is sr_count<5 { }
+Sr16_5: ","^r1_w5 is r1_w5 & sr16_dir=0 & sr_count>5 { *:4 (sp - 24) = r1_w5; }
+Sr16_5: ","^r1_w5 is r1_w5 & sr16_dir=1 & sr_count>5 { r1_w5 = *:4 (sp - 24); }
+Sr16_5: is sr_count<6 { }
+Sr16_6: ","^r1_w6 is r1_w6 & sr16_dir=0 & sr_count>6 { *:4 (sp - 28) = r1_w6; }
+Sr16_6: ","^r1_w6 is r1_w6 & sr16_dir=1 & sr_count>6 { r1_w6 = *:4 (sp - 28); }
+Sr16_6: is sr_count<7 { }
+Sr16_7: ","^r1_w7 is r1_w7 & sr16_dir=0 & sr_count>7 { *:4 (sp - 32) = r1_w7; }
+Sr16_7: ","^r1_w7 is r1_w7 & sr16_dir=1 & sr_count>7 { r1_w7 = *:4 (sp - 32); }
+Sr16_7: is sr_count<8 { }
+Sr16_8: ","^r1_w8 is r1_w8 & sr16_dir=0 & sr_count>8 { *:4 (sp - 36) = r1_w8; }
+Sr16_8: ","^r1_w8 is r1_w8 & sr16_dir=1 & sr_count>8 { r1_w8 = *:4 (sp - 36); }
+Sr16_8: is sr_count<9 { }
+Sr16_9: ","^r1_w9 is r1_w9 & sr16_dir=0 & sr_count>9 { *:4 (sp - 40) = r1_w9; }
+Sr16_9: ","^r1_w9 is r1_w9 & sr16_dir=1 & sr_count>9 { r1_w9 = *:4 (sp - 40); }
+Sr16_9: is sr_count<10 { }
+Sr16_10: ","^r1_w10 is r1_w10 & sr16_dir=0 & sr_count>10 { *:4 (sp - 44) = r1_w10; }
+Sr16_10: ","^r1_w10 is r1_w10 & sr16_dir=1 & sr_count>10 { r1_w10 = *:4 (sp - 44); }
+Sr16_10: is sr_count<11 { }
+Sr16_11: ","^r1_w11 is r1_w11 & sr16_dir=0 & sr_count>11 { *:4 (sp - 48) = r1_w11; }
+Sr16_11: ","^r1_w11 is r1_w11 & sr16_dir=1 & sr_count>11 { r1_w11 = *:4 (sp - 48); }
+Sr16_11: is sr_count<12 { }
+Sr16_12: ","^r1_w12 is r1_w12 & sr16_dir=0 & sr_count>12 { *:4 (sp - 52) = r1_w12; }
+Sr16_12: ","^r1_w12 is r1_w12 & sr16_dir=1 & sr_count>12 { r1_w12 = *:4 (sp - 52); }
+Sr16_12: is sr_count<13 { }
+Sr16_13: ","^r1_w13 is r1_w13 & sr16_dir=0 & sr_count>13 { *:4 (sp - 56) = r1_w13; }
+Sr16_13: ","^r1_w13 is r1_w13 & sr16_dir=1 & sr_count>13 { r1_w13 = *:4 (sp - 56); }
+Sr16_13: is sr_count<14 { }
+Sr16_14: ","^r1_w14 is r1_w14 & sr16_dir=0 & sr_count>14 { *:4 (sp - 60) = r1_w14; }
+Sr16_14: ","^r1_w14 is r1_w14 & sr16_dir=1 & sr_count>14 { r1_w14 = *:4 (sp - 60); }
+Sr16_14: is sr_count<15 { }
+
+Sr16: Sr16_0^Sr16_1^Sr16_2^Sr16_3^Sr16_4^Sr16_5^Sr16_6^Sr16_7^Sr16_8^Sr16_9^Sr16_10^Sr16_11^Sr16_12^Sr16_13^Sr16_14
+  is Sr16_0 & Sr16_1 & Sr16_2 & Sr16_3 & Sr16_4 & Sr16_5 & Sr16_6 & Sr16_7 & Sr16_8 & Sr16_9 & Sr16_10 & Sr16_11 & Sr16_12 & Sr16_13 & Sr16_14 { }
+
+:save Sr16U^Sr16 is op=0x07 & sr16_dir=0 & Sr16U & Sr16 { sp = sp - Sr16U; }
+:restore.jrc Sr16U^Sr16 is op=0x07 & sr16_dir=1 & Sr16U & Sr16 { sp = sp + Sr16U; build Sr16; return [ra]; }
+
+# ---- 32-bit instructions ----
+
+:addiu RT, RSsrc, u16 is op=0x00 & RT & RSsrc ; u16 { RT = RSsrc + u16; }
+:li RT, u16 is op=0x00 & RT & rsnum=0 ; u16 { RT = u16; }
+:sigrie Code19 is (op=0x00 & rtnum=0 & b34=0) ... & Code19 { reservedInstruction(Code19); }
+:sigrie Code19 is (op=0x00 & rtnum=0 & rsnum=0) ... & Code19 { reservedInstruction(Code19); }
+:syscall Code18 is (op=0x00 & rtnum=0 & b34=1 & b2=0) ... & Code18 { syscall(Code18); }
+:hypcall Code18 is (op=0x00 & rtnum=0 & b34=1 & b2=1) ... & Code18 { hypcall(Code18); }
+:break Code19 is (op=0x00 & rtnum=0 & b34=2) ... & Code19 { break(Code19); }
+:sdbbp Code19 is (op=0x00 & rtnum=0 & b34=3) ... & Code19 { sdbbp(Code19); }
+
+:lapc RT, Pc21 is (op=0x01 & RT) ... & Pc21 { RT = Pc21; }
+:move.balc rd1, RTz4, Rel21 is (op=0x02 & rd1 & RTz4) ... & Rel21 { rd1 = RTz4; ra = inst_next; call Rel21; }
+:bc Rel25 is (op=0x0a & b9=0) ... & Rel25 { goto Rel25; }
+:balc Rel25 is (op=0x0a & b9=1) ... & Rel25 { ra = inst_next; call Rel25; }
+
+# POOL32A0
+:teq RSsrc, RTsrc is op=0x08 & RTsrc & RSsrc ; f11=0x000 { if (RSsrc != RTsrc) goto inst_next; trap(); }
+:tne RSsrc, RTsrc is op=0x08 & RTsrc & RSsrc ; f11=0x400 { if (RSsrc == RTsrc) goto inst_next; trap(); }
+:seb RT, RSsrc is op=0x08 & RT & RSsrc ; f10=0x008 { RT = sext(RSsrc:1); }
+:seh RT, RSsrc is op=0x08 & RT & RSsrc ; f10=0x048 { RT = sext(RSsrc:2); }
+:sllv RD, RSsrc, RTsrc is op=0x08 & RTsrc & RSsrc ; RD & f10=0x010 { RD = RSsrc << (RTsrc & 0x1f); }
+:srlv RD, RSsrc, RTsrc is op=0x08 & RTsrc & RSsrc ; RD & f10=0x050 { RD = RSsrc >> (RTsrc & 0x1f); }
+:srav RD, RSsrc, RTsrc is op=0x08 & RTsrc & RSsrc ; RD & f10=0x090 { RD = RSsrc s>> (RTsrc & 0x1f); }
+:rotrv RD, RSsrc, RTsrc is op=0x08 & RTsrc & RSsrc ; RD & f10=0x0d0 {
+  local amount:4 = RTsrc & 0x1f;
+  RD = (RSsrc >> amount) | (RSsrc << ((32 - amount) & 0x1f));
+}
+:mul RD, RSsrc, RTsrc is op=0x08 & RTsrc & RSsrc ; RD & f10=0x018 { RD = RSsrc * RTsrc; }
+:muh RD, RSsrc, RTsrc is op=0x08 & RTsrc & RSsrc ; RD & f10=0x058 { local product:8 = sext(RSsrc) * sext(RTsrc); RD = product(4); }
+:mulu RD, RSsrc, RTsrc is op=0x08 & RTsrc & RSsrc ; RD & f10=0x098 { RD = RSsrc * RTsrc; }
+:muhu RD, RSsrc, RTsrc is op=0x08 & RTsrc & RSsrc ; RD & f10=0x0d8 { local product:8 = zext(RSsrc) * zext(RTsrc); RD = product(4); }
+:div RD, RSsrc, RTsrc is op=0x08 & RTsrc & RSsrc ; RD & f10=0x118 { RD = RSsrc s/ RTsrc; }
+:mod RD, RSsrc, RTsrc is op=0x08 & RTsrc & RSsrc ; RD & f10=0x158 { RD = RSsrc s% RTsrc; }
+:divu RD, RSsrc, RTsrc is op=0x08 & RTsrc & RSsrc ; RD & f10=0x198 { RD = RSsrc / RTsrc; }
+:modu RD, RSsrc, RTsrc is op=0x08 & RTsrc & RSsrc ; RD & f10=0x1d8 { RD = RSsrc % RTsrc; }
+:add RD, RSsrc, RTsrc is op=0x08 & RTsrc & RSsrc ; RD & f10=0x110 { if (scarry(RSsrc, RTsrc)) goto <overflow>; RD = RSsrc + RTsrc; goto inst_next; <overflow> trap(); }
+:addu RD, RSsrc, RTsrc is op=0x08 & RTsrc & RSsrc ; RD & f10=0x150 { RD = RSsrc + RTsrc; }
+:sub RD, RSsrc, RTsrc is op=0x08 & RTsrc & RSsrc ; RD & f10=0x190 { if (sborrow(RSsrc, RTsrc)) goto <overflow>; RD = RSsrc - RTsrc; goto inst_next; <overflow> trap(); }
+:subu RD, RSsrc, RTsrc is op=0x08 & RTsrc & RSsrc ; RD & f10=0x1d0 { RD = RSsrc - RTsrc; }
+:negu RD, RTsrc is op=0x08 & RTsrc & rsnum=0 ; RD & f10=0x1d0 { RD = -RTsrc; }
+:movz RD, RSsrc, RTsrc is op=0x08 & RTsrc & RSsrc ; RD & f11=0x210 { if (RTsrc != 0) goto inst_next; RD = RSsrc; }
+:movn RD, RSsrc, RTsrc is op=0x08 & RTsrc & RSsrc ; RD & f11=0x610 { if (RTsrc == 0) goto inst_next; RD = RSsrc; }
+:and RD, RSsrc, RTsrc is op=0x08 & RTsrc & RSsrc ; RD & f10=0x250 { RD = RSsrc & RTsrc; }
+:or RD, RSsrc, RTsrc is op=0x08 & RTsrc & RSsrc ; RD & f10=0x290 { RD = RSsrc | RTsrc; }
+:nor RD, RSsrc, RTsrc is op=0x08 & RTsrc & RSsrc ; RD & f10=0x2d0 { RD = ~(RSsrc | RTsrc); }
+:not RD, RSsrc is op=0x08 & rtnum=0 & RSsrc ; RD & f10=0x2d0 { RD = ~RSsrc; }
+:xor RD, RSsrc, RTsrc is op=0x08 & RTsrc & RSsrc ; RD & f10=0x310 { RD = RSsrc ^ RTsrc; }
+:slt RD, RSsrc, RTsrc is op=0x08 & RTsrc & RSsrc ; RD & f10=0x350 { RD = zext(RSsrc s< RTsrc); }
+:sltu RD, RSsrc, RTsrc is op=0x08 & RTsrc & RSsrc ; RD & f10=0x390 { RD = zext(RSsrc < RTsrc); }
+:sov RD, RSsrc, RTsrc is op=0x08 & RTsrc & RSsrc ; RD & f10=0x3d0 { RD = zext(scarry(RSsrc, RTsrc)); }
+:dvp RT is op=0x08 & RT ; f16=0x0390 { RT = disableProcessors(); }
+:evp RT is op=0x08 & RT ; f16=0x0790 { RT = enableProcessors(); }
+
+:mfc0 RT, rsnum, sel5 is op=0x08 & RT & rsnum ; sel5 & f10=0x030 { RT = getCopReg(0:1, rsnum:4, sel5:4); }
+:mfhc0 RT, rsnum, sel5 is op=0x08 & RT & rsnum ; sel5 & f10=0x038 { RT = getCopRegH(0:1, rsnum:4, sel5:4); }
+:mtc0 RTsrc, rsnum, sel5 is op=0x08 & RTsrc & rsnum ; sel5 & f10=0x070 { setCopReg(0:1, rsnum:4, sel5:4, RTsrc); }
+:mthc0 RTsrc, rsnum, sel5 is op=0x08 & RTsrc & rsnum ; sel5 & f10=0x078 { setCopRegH(0:1, rsnum:4, sel5:4, RTsrc); }
+:rdhwr RT, rsnum, sel3 is op=0x08 & RT & rsnum ; sel3 & f10=0x1c0 { RT = getHWRegister(rsnum:4, sel3:4); }
+
+# PP.LSX and PP.LSXS: indexed, and scaled-indexed, memory accesses
+:lbx  RD, RSsrc(RTsrc) is op=0x08 & RTsrc & RSsrc ; RD & f11=0x007 { RD = sext(*:1 (RSsrc + RTsrc)); }
+:sbx  RDsrc, RSsrc(RTsrc) is op=0x08 & RTsrc & RSsrc ; RDsrc & f11=0x087 { *:1 (RSsrc + RTsrc) = RDsrc:1; }
+:lbux RD, RSsrc(RTsrc) is op=0x08 & RTsrc & RSsrc ; RD & f11=0x107 { RD = zext(*:1 (RSsrc + RTsrc)); }
+:lhx  RD, RSsrc(RTsrc) is op=0x08 & RTsrc & RSsrc ; RD & f11=0x207 { RD = sext(*:2 (RSsrc + RTsrc)); }
+:shx  RDsrc, RSsrc(RTsrc) is op=0x08 & RTsrc & RSsrc ; RDsrc & f11=0x287 { *:2 (RSsrc + RTsrc) = RDsrc:2; }
+:lhux RD, RSsrc(RTsrc) is op=0x08 & RTsrc & RSsrc ; RD & f11=0x307 { RD = zext(*:2 (RSsrc + RTsrc)); }
+:lwx  RD, RSsrc(RTsrc) is op=0x08 & RTsrc & RSsrc ; RD & f11=0x407 { RD = *:4 (RSsrc + RTsrc); }
+:swx  RDsrc, RSsrc(RTsrc) is op=0x08 & RTsrc & RSsrc ; RDsrc & f11=0x487 { *:4 (RSsrc + RTsrc) = RDsrc; }
+:lhxs  RD, RSsrc(RTsrc) is op=0x08 & RTsrc & RSsrc ; RD & f11=0x247 { RD = sext(*:2 ((RSsrc << 1) + RTsrc)); }
+:shxs  RDsrc, RSsrc(RTsrc) is op=0x08 & RTsrc & RSsrc ; RDsrc & f11=0x2c7 { *:2 ((RSsrc << 1) + RTsrc) = RDsrc:2; }
+:lhuxs RD, RSsrc(RTsrc) is op=0x08 & RTsrc & RSsrc ; RD & f11=0x347 { RD = zext(*:2 ((RSsrc << 1) + RTsrc)); }
+:lwxs  RD, RSsrc(RTsrc) is op=0x08 & RTsrc & RSsrc ; RD & f11=0x447 { RD = *:4 ((RSsrc << 2) + RTsrc); }
+:swxs  RDsrc, RSsrc(RTsrc) is op=0x08 & RTsrc & RSsrc ; RDsrc & f11=0x4c7 { *:4 ((RSsrc << 2) + RTsrc) = RDsrc; }
+
+:lsa RD, RSsrc, RTsrc, lsa_u2 is op=0x08 & RTsrc & RSsrc ; RD & lsa_u2 & f6=0x0f { RD = (RSsrc << lsa_u2) + RTsrc; }
+:extw RD, RSsrc, RTsrc, ext_sh is op=0x08 & RTsrc & RSsrc ; RD & ext_sh & f6=0x1f {
+  local wide:8 = (zext(RTsrc) << 32) | zext(RSsrc);
+  wide = wide >> ext_sh;
+  RD = wide:4;
+}
+
+# POOL32Axf
+:clo RT, RSsrc is op=0x08 & RT & RSsrc ; f16=0x4b3f { RT = lzcount(~RSsrc); }
+:clz RT, RSsrc is op=0x08 & RT & RSsrc ; f16=0x5b3f { RT = lzcount(RSsrc); }
+:di RT is op=0x08 & RT ; f16=0x477f { RT = disableInterrupts(); }
+:ei RT is op=0x08 & RT ; f16=0x577f { RT = enableInterrupts(); }
+:eret is op=0x08 & b0=0 ; f16=0xf37f { local target:4 = exceptionReturn(); return [target]; }
+:eretnc is op=0x08 & b0=1 ; f16=0xf37f { local target:4 = exceptionReturn(); return [target]; }
+:deret is op=0x08 & rt ; f16=0xe37f { local target:4 = debugExceptionReturn(); return [target]; }
+:iret is op=0x08 & rt ; f16=0xd37f { local target:4 = interruptReturn(); return [target]; }
+:wait is op=0x08 & rt ; f16=0xc37f { wait(); }
+:rdpgpr RT, rs is op=0x08 & RT & rs ; f16=0xe17f { RT = getShadowReg(rs); }
+:wrpgpr RTsrc, rs is op=0x08 & RTsrc & rs ; f16=0xf17f { setShadowReg(rs, RTsrc); }
+:tlbp is op=0x08 & rt ; f16=0x037f { tlbOp(0:1); }
+:tlbr is op=0x08 & rt ; f16=0x137f { tlbOp(1:1); }
+:tlbwi is op=0x08 & rt ; f16=0x237f { tlbOp(2:1); }
+:tlbwr is op=0x08 & rt ; f16=0x337f { tlbOp(3:1); }
+:tlbinv is op=0x08 & rt ; f16=0x077f { tlbOp(4:1); }
+:tlbinvf is op=0x08 & rt ; f16=0x177f { tlbOp(5:1); }
+
+# P.GP.W and P.GP.BH: gp-relative accesses
+:addiu RT, gp, Gpw is (op=0x10 & RT) ... & gp & (rt ; f2=0) & Gpw { RT = gp + Gpw; }
+:lw RT, Gpw(gp) is (op=0x10 & RT) ... & gp & (rt ; f2=2) & Gpw { RT = *:4 (gp + Gpw); }
+:sw RTsrc, Gpw(gp) is (op=0x10 & RTsrc) ... & gp & (rt ; f2=3) & Gpw { *:4 (gp + Gpw) = RTsrc; }
+:lb RT, Gpb(gp) is (op=0x11 & RT & b24=0) ... & gp & Gpb { RT = sext(*:1 (gp + Gpb)); }
+:sb RTsrc, Gpb(gp) is (op=0x11 & RTsrc & b24=1) ... & gp & Gpb { *:1 (gp + Gpb) = RTsrc:1; }
+:lbu RT, Gpb(gp) is (op=0x11 & RT & b24=2) ... & gp & Gpb { RT = zext(*:1 (gp + Gpb)); }
+:addiu RT, gp, Gpb is (op=0x11 & RT & b24=3) ... & gp & Gpb { RT = gp + Gpb; }
+:lh RT, Gph(gp) is (op=0x11 & RT & b24=4) ... & gp & (rt ; f1=0) & Gph { RT = sext(*:2 (gp + Gph)); }
+:lhu RT, Gph(gp) is (op=0x11 & RT & b24=4) ... & gp & (rt ; f1=1) & Gph { RT = zext(*:2 (gp + Gph)); }
+:sh RTsrc, Gph(gp) is (op=0x11 & RTsrc & b24=5) ... & gp & (rt ; f1=0) & Gph { *:2 (gp + Gph) = RTsrc:2; }
+
+# P.J
+:jalrc RT, RSsrc is op=0x12 & RT & RSsrc ; u12f=0 { local target:4 = RSsrc; RT = inst_next; call [target]; }
+:jalrc.hb RT, RSsrc is op=0x12 & RT & RSsrc ; u12f=1 { local target:4 = RSsrc; RT = inst_next; call [target]; }
+:jrc RSsrc is op=0x12 & rtnum=0 & RSsrc ; u12f=0 { goto [RSsrc]; }
+:jrc ra is op=0x12 & rtnum=0 & rsnum=31 & ra ; u12f=0 { return [ra]; }
+:brsc RSsrc is op=0x12 & rtnum=0 & RSsrc ; u12f=8 { local target:4 = inst_next + (RSsrc << 1); goto [target]; }
+:balrsc RT, RSsrc is op=0x12 & RT & RSsrc ; u12f=8 { local target:4 = inst_next + (RSsrc << 1); RT = inst_next; call [target]; }
+
+# P.U12
+Shiftx: val is shiftx [ val = shiftx << 1; ] { export *[const]:1 val; }
+InsSize: val is msbd & lsb [ val = msbd - lsb + 1; ] { export *[const]:4 val; }
+InsMask: val is msbd & lsb [ val = ((1 << (msbd - lsb + 1)) - 1) << lsb; ] { export *[const]:4 val; }
+ExtSize: val is msbd [ val = msbd + 1; ] { export *[const]:4 val; }
+ExtMask: val is msbd [ val = (1 << (msbd + 1)) - 1; ] { export *[const]:4 val; }
+
+:ori RT, RSsrc, u12 is op=0x20 & RT & RSsrc ; u12f=0x0 & u12 { RT = RSsrc | u12; }
+:xori RT, RSsrc, u12 is op=0x20 & RT & RSsrc ; u12f=0x1 & u12 { RT = RSsrc ^ u12; }
+:andi RT, RSsrc, u12 is op=0x20 & RT & RSsrc ; u12f=0x2 & u12 { RT = RSsrc & u12; }
+:slti RT, RSsrc, u12 is op=0x20 & RT & RSsrc ; u12f=0x4 & u12 { RT = zext(RSsrc s< u12); }
+:sltiu RT, RSsrc, u12 is op=0x20 & RT & RSsrc ; u12f=0x5 & u12 { RT = zext(RSsrc < u12); }
+:seqi RT, RSsrc, u12 is op=0x20 & RT & RSsrc ; u12f=0x6 & u12 { RT = zext(RSsrc == u12); }
+:addiu RT, RSsrc, -u12 is op=0x20 & RT & RSsrc ; u12f=0x8 & u12 { RT = RSsrc - u12; }
+:li RT, -u12 is op=0x20 & RT & rsnum=0 ; u12f=0x8 & u12 { RT = -u12; }
+:sll RT, RSsrc, sa is op=0x20 & RT & RSsrc ; u12f=0xc & shf=0x0 & sa { RT = RSsrc << sa; }
+:srl RT, RSsrc, sa is op=0x20 & RT & RSsrc ; u12f=0xc & shf=0x2 & sa { RT = RSsrc >> sa; }
+:sra RT, RSsrc, sa is op=0x20 & RT & RSsrc ; u12f=0xc & shf=0x4 & sa { RT = RSsrc s>> sa; }
+:rotr RT, RSsrc, sa is op=0x20 & RT & RSsrc ; u12f=0xc & shf=0x6 & sa { RT = (RSsrc >> sa) | (RSsrc << ((32 - sa) & 0x1f)); }
+:nop is op=0x20 & rtnum=0 ; u12f=0xc & f9=0x000 { }
+:ehb is op=0x20 & rtnum=0 ; u12f=0xc & f9=0x003 { }
+:pause is op=0x20 & rtnum=0 ; u12f=0xc & f9=0x005 { }
+:sync rsnum is op=0x20 & rtnum=0 & rsnum ; u12f=0xc & f9=0x006 { }
+:rotx RT, RSsrc, sa, Shiftx, stripe is op=0x20 & RT & RSsrc ; u12f=0xd & c11=0 & c5=0 & Shiftx & stripe & sa { RT = rotx(RSsrc, sa:1, Shiftx, stripe:1); }
+macro bitrevBytes(dest, src) {
+  local value:4 = src;
+  value = ((value >> 1) & 0x55555555) | ((value & 0x55555555) << 1);
+  value = ((value >> 2) & 0x33333333) | ((value & 0x33333333) << 2);
+  dest = ((value >> 4) & 0x0f0f0f0f) | ((value & 0x0f0f0f0f) << 4);
+}
+macro byteSwapWord(dest, src) {
+  local value:4 = src;
+  dest = (value << 24) | ((value & 0xff00) << 8) | ((value >> 8) & 0xff00) | (value >> 24);
+}
+macro byteSwapHalves(dest, src) {
+  local value:4 = src;
+  dest = ((value & 0x00ff00ff) << 8) | ((value >> 8) & 0x00ff00ff);
+}
+:byterevw RT, RSsrc is op=0x20 & RT & RSsrc ; u12f=0xd & c11=0 & c5=0 & shiftx=4 & stripe=0 & sa=24 { byteSwapWord(RT, RSsrc); }
+:byterevh RT, RSsrc is op=0x20 & RT & RSsrc ; u12f=0xd & c11=0 & c5=0 & shiftx=12 & stripe=0 & sa=8 { byteSwapHalves(RT, RSsrc); }
+:bitrevw RT, RSsrc is op=0x20 & RT & RSsrc ; u12f=0xd & c11=0 & c5=0 & shiftx=0 & stripe=0 & sa=31 {
+  local value:4;
+  bitrevBytes(value, RSsrc);
+  byteSwapWord(RT, value);
+}
+:bitrevh RT, RSsrc is op=0x20 & RT & RSsrc ; u12f=0xd & c11=0 & c5=0 & shiftx=8 & stripe=0 & sa=15 {
+  local value:4;
+  bitrevBytes(value, RSsrc);
+  byteSwapHalves(RT, value);
+}
+:bitrevb RT, RSsrc is op=0x20 & RT & RSsrc ; u12f=0xd & c11=0 & c5=0 & shiftx=4 & stripe=1 & sa=7 { bitrevBytes(RT, RSsrc); }
+:ins RT, RSsrc, lsb, InsSize is op=0x20 & RT & RSsrc ; u12f=0xe & c11=0 & c5=0 & msbd & lsb & InsSize & InsMask {
+  RT = (RT & ~InsMask) | ((RSsrc << lsb) & InsMask);
+}
+:ext RT, RSsrc, lsb, ExtSize is op=0x20 & RT & RSsrc ; u12f=0xf & c11=0 & c5=0 & msbd & lsb & ExtSize & ExtMask {
+  RT = (RSsrc >> lsb) & ExtMask;
+}
+
+# SAVE, RESTORE and RESTORE.JRC with a 5-bit first register and an optional gp slot
+
+Sr32_0: ","^rt_w0 is rt_w0 & sr_count>0 ; sr_gp=0 & sr_dir=0 { *:4 (sp - 4) = rt_w0; }
+Sr32_0: ","^rt_w0 is rt_w0 & sr_count>1 ; sr_gp=1 & sr_dir=0 { *:4 (sp - 4) = rt_w0; }
+Sr32_0: ",gp" is sr_count=1 ; sr_gp=1 & sr_dir=0 { *:4 (sp - 4) = gp; }
+Sr32_0: ","^rt_w0 is rt_w0 & sr_count>0 ; sr_gp=0 & sr_dir=1 { rt_w0 = *:4 (sp - 4); }
+Sr32_0: ","^rt_w0 is rt_w0 & sr_count>1 ; sr_gp=1 & sr_dir=1 { rt_w0 = *:4 (sp - 4); }
+Sr32_0: ",gp" is sr_count=1 ; sr_gp=1 & sr_dir=1 { gp = *:4 (sp - 4); }
+Sr32_0: is sr_count<1 ; sr_gp { }
+Sr32_1: ","^rt_w1 is rt_w1 & sr_count>1 ; sr_gp=0 & sr_dir=0 { *:4 (sp - 8) = rt_w1; }
+Sr32_1: ","^rt_w1 is rt_w1 & sr_count>2 ; sr_gp=1 & sr_dir=0 { *:4 (sp - 8) = rt_w1; }
+Sr32_1: ",gp" is sr_count=2 ; sr_gp=1 & sr_dir=0 { *:4 (sp - 8) = gp; }
+Sr32_1: ","^rt_w1 is rt_w1 & sr_count>1 ; sr_gp=0 & sr_dir=1 { rt_w1 = *:4 (sp - 8); }
+Sr32_1: ","^rt_w1 is rt_w1 & sr_count>2 ; sr_gp=1 & sr_dir=1 { rt_w1 = *:4 (sp - 8); }
+Sr32_1: ",gp" is sr_count=2 ; sr_gp=1 & sr_dir=1 { gp = *:4 (sp - 8); }
+Sr32_1: is sr_count<2 ; sr_gp { }
+Sr32_2: ","^rt_w2 is rt_w2 & sr_count>2 ; sr_gp=0 & sr_dir=0 { *:4 (sp - 12) = rt_w2; }
+Sr32_2: ","^rt_w2 is rt_w2 & sr_count>3 ; sr_gp=1 & sr_dir=0 { *:4 (sp - 12) = rt_w2; }
+Sr32_2: ",gp" is sr_count=3 ; sr_gp=1 & sr_dir=0 { *:4 (sp - 12) = gp; }
+Sr32_2: ","^rt_w2 is rt_w2 & sr_count>2 ; sr_gp=0 & sr_dir=1 { rt_w2 = *:4 (sp - 12); }
+Sr32_2: ","^rt_w2 is rt_w2 & sr_count>3 ; sr_gp=1 & sr_dir=1 { rt_w2 = *:4 (sp - 12); }
+Sr32_2: ",gp" is sr_count=3 ; sr_gp=1 & sr_dir=1 { gp = *:4 (sp - 12); }
+Sr32_2: is sr_count<3 ; sr_gp { }
+Sr32_3: ","^rt_w3 is rt_w3 & sr_count>3 ; sr_gp=0 & sr_dir=0 { *:4 (sp - 16) = rt_w3; }
+Sr32_3: ","^rt_w3 is rt_w3 & sr_count>4 ; sr_gp=1 & sr_dir=0 { *:4 (sp - 16) = rt_w3; }
+Sr32_3: ",gp" is sr_count=4 ; sr_gp=1 & sr_dir=0 { *:4 (sp - 16) = gp; }
+Sr32_3: ","^rt_w3 is rt_w3 & sr_count>3 ; sr_gp=0 & sr_dir=1 { rt_w3 = *:4 (sp - 16); }
+Sr32_3: ","^rt_w3 is rt_w3 & sr_count>4 ; sr_gp=1 & sr_dir=1 { rt_w3 = *:4 (sp - 16); }
+Sr32_3: ",gp" is sr_count=4 ; sr_gp=1 & sr_dir=1 { gp = *:4 (sp - 16); }
+Sr32_3: is sr_count<4 ; sr_gp { }
+Sr32_4: ","^rt_w4 is rt_w4 & sr_count>4 ; sr_gp=0 & sr_dir=0 { *:4 (sp - 20) = rt_w4; }
+Sr32_4: ","^rt_w4 is rt_w4 & sr_count>5 ; sr_gp=1 & sr_dir=0 { *:4 (sp - 20) = rt_w4; }
+Sr32_4: ",gp" is sr_count=5 ; sr_gp=1 & sr_dir=0 { *:4 (sp - 20) = gp; }
+Sr32_4: ","^rt_w4 is rt_w4 & sr_count>4 ; sr_gp=0 & sr_dir=1 { rt_w4 = *:4 (sp - 20); }
+Sr32_4: ","^rt_w4 is rt_w4 & sr_count>5 ; sr_gp=1 & sr_dir=1 { rt_w4 = *:4 (sp - 20); }
+Sr32_4: ",gp" is sr_count=5 ; sr_gp=1 & sr_dir=1 { gp = *:4 (sp - 20); }
+Sr32_4: is sr_count<5 ; sr_gp { }
+Sr32_5: ","^rt_w5 is rt_w5 & sr_count>5 ; sr_gp=0 & sr_dir=0 { *:4 (sp - 24) = rt_w5; }
+Sr32_5: ","^rt_w5 is rt_w5 & sr_count>6 ; sr_gp=1 & sr_dir=0 { *:4 (sp - 24) = rt_w5; }
+Sr32_5: ",gp" is sr_count=6 ; sr_gp=1 & sr_dir=0 { *:4 (sp - 24) = gp; }
+Sr32_5: ","^rt_w5 is rt_w5 & sr_count>5 ; sr_gp=0 & sr_dir=1 { rt_w5 = *:4 (sp - 24); }
+Sr32_5: ","^rt_w5 is rt_w5 & sr_count>6 ; sr_gp=1 & sr_dir=1 { rt_w5 = *:4 (sp - 24); }
+Sr32_5: ",gp" is sr_count=6 ; sr_gp=1 & sr_dir=1 { gp = *:4 (sp - 24); }
+Sr32_5: is sr_count<6 ; sr_gp { }
+Sr32_6: ","^rt_w6 is rt_w6 & sr_count>6 ; sr_gp=0 & sr_dir=0 { *:4 (sp - 28) = rt_w6; }
+Sr32_6: ","^rt_w6 is rt_w6 & sr_count>7 ; sr_gp=1 & sr_dir=0 { *:4 (sp - 28) = rt_w6; }
+Sr32_6: ",gp" is sr_count=7 ; sr_gp=1 & sr_dir=0 { *:4 (sp - 28) = gp; }
+Sr32_6: ","^rt_w6 is rt_w6 & sr_count>6 ; sr_gp=0 & sr_dir=1 { rt_w6 = *:4 (sp - 28); }
+Sr32_6: ","^rt_w6 is rt_w6 & sr_count>7 ; sr_gp=1 & sr_dir=1 { rt_w6 = *:4 (sp - 28); }
+Sr32_6: ",gp" is sr_count=7 ; sr_gp=1 & sr_dir=1 { gp = *:4 (sp - 28); }
+Sr32_6: is sr_count<7 ; sr_gp { }
+Sr32_7: ","^rt_w7 is rt_w7 & sr_count>7 ; sr_gp=0 & sr_dir=0 { *:4 (sp - 32) = rt_w7; }
+Sr32_7: ","^rt_w7 is rt_w7 & sr_count>8 ; sr_gp=1 & sr_dir=0 { *:4 (sp - 32) = rt_w7; }
+Sr32_7: ",gp" is sr_count=8 ; sr_gp=1 & sr_dir=0 { *:4 (sp - 32) = gp; }
+Sr32_7: ","^rt_w7 is rt_w7 & sr_count>7 ; sr_gp=0 & sr_dir=1 { rt_w7 = *:4 (sp - 32); }
+Sr32_7: ","^rt_w7 is rt_w7 & sr_count>8 ; sr_gp=1 & sr_dir=1 { rt_w7 = *:4 (sp - 32); }
+Sr32_7: ",gp" is sr_count=8 ; sr_gp=1 & sr_dir=1 { gp = *:4 (sp - 32); }
+Sr32_7: is sr_count<8 ; sr_gp { }
+Sr32_8: ","^rt_w8 is rt_w8 & sr_count>8 ; sr_gp=0 & sr_dir=0 { *:4 (sp - 36) = rt_w8; }
+Sr32_8: ","^rt_w8 is rt_w8 & sr_count>9 ; sr_gp=1 & sr_dir=0 { *:4 (sp - 36) = rt_w8; }
+Sr32_8: ",gp" is sr_count=9 ; sr_gp=1 & sr_dir=0 { *:4 (sp - 36) = gp; }
+Sr32_8: ","^rt_w8 is rt_w8 & sr_count>8 ; sr_gp=0 & sr_dir=1 { rt_w8 = *:4 (sp - 36); }
+Sr32_8: ","^rt_w8 is rt_w8 & sr_count>9 ; sr_gp=1 & sr_dir=1 { rt_w8 = *:4 (sp - 36); }
+Sr32_8: ",gp" is sr_count=9 ; sr_gp=1 & sr_dir=1 { gp = *:4 (sp - 36); }
+Sr32_8: is sr_count<9 ; sr_gp { }
+Sr32_9: ","^rt_w9 is rt_w9 & sr_count>9 ; sr_gp=0 & sr_dir=0 { *:4 (sp - 40) = rt_w9; }
+Sr32_9: ","^rt_w9 is rt_w9 & sr_count>10 ; sr_gp=1 & sr_dir=0 { *:4 (sp - 40) = rt_w9; }
+Sr32_9: ",gp" is sr_count=10 ; sr_gp=1 & sr_dir=0 { *:4 (sp - 40) = gp; }
+Sr32_9: ","^rt_w9 is rt_w9 & sr_count>9 ; sr_gp=0 & sr_dir=1 { rt_w9 = *:4 (sp - 40); }
+Sr32_9: ","^rt_w9 is rt_w9 & sr_count>10 ; sr_gp=1 & sr_dir=1 { rt_w9 = *:4 (sp - 40); }
+Sr32_9: ",gp" is sr_count=10 ; sr_gp=1 & sr_dir=1 { gp = *:4 (sp - 40); }
+Sr32_9: is sr_count<10 ; sr_gp { }
+Sr32_10: ","^rt_w10 is rt_w10 & sr_count>10 ; sr_gp=0 & sr_dir=0 { *:4 (sp - 44) = rt_w10; }
+Sr32_10: ","^rt_w10 is rt_w10 & sr_count>11 ; sr_gp=1 & sr_dir=0 { *:4 (sp - 44) = rt_w10; }
+Sr32_10: ",gp" is sr_count=11 ; sr_gp=1 & sr_dir=0 { *:4 (sp - 44) = gp; }
+Sr32_10: ","^rt_w10 is rt_w10 & sr_count>10 ; sr_gp=0 & sr_dir=1 { rt_w10 = *:4 (sp - 44); }
+Sr32_10: ","^rt_w10 is rt_w10 & sr_count>11 ; sr_gp=1 & sr_dir=1 { rt_w10 = *:4 (sp - 44); }
+Sr32_10: ",gp" is sr_count=11 ; sr_gp=1 & sr_dir=1 { gp = *:4 (sp - 44); }
+Sr32_10: is sr_count<11 ; sr_gp { }
+Sr32_11: ","^rt_w11 is rt_w11 & sr_count>11 ; sr_gp=0 & sr_dir=0 { *:4 (sp - 48) = rt_w11; }
+Sr32_11: ","^rt_w11 is rt_w11 & sr_count>12 ; sr_gp=1 & sr_dir=0 { *:4 (sp - 48) = rt_w11; }
+Sr32_11: ",gp" is sr_count=12 ; sr_gp=1 & sr_dir=0 { *:4 (sp - 48) = gp; }
+Sr32_11: ","^rt_w11 is rt_w11 & sr_count>11 ; sr_gp=0 & sr_dir=1 { rt_w11 = *:4 (sp - 48); }
+Sr32_11: ","^rt_w11 is rt_w11 & sr_count>12 ; sr_gp=1 & sr_dir=1 { rt_w11 = *:4 (sp - 48); }
+Sr32_11: ",gp" is sr_count=12 ; sr_gp=1 & sr_dir=1 { gp = *:4 (sp - 48); }
+Sr32_11: is sr_count<12 ; sr_gp { }
+Sr32_12: ","^rt_w12 is rt_w12 & sr_count>12 ; sr_gp=0 & sr_dir=0 { *:4 (sp - 52) = rt_w12; }
+Sr32_12: ","^rt_w12 is rt_w12 & sr_count>13 ; sr_gp=1 & sr_dir=0 { *:4 (sp - 52) = rt_w12; }
+Sr32_12: ",gp" is sr_count=13 ; sr_gp=1 & sr_dir=0 { *:4 (sp - 52) = gp; }
+Sr32_12: ","^rt_w12 is rt_w12 & sr_count>12 ; sr_gp=0 & sr_dir=1 { rt_w12 = *:4 (sp - 52); }
+Sr32_12: ","^rt_w12 is rt_w12 & sr_count>13 ; sr_gp=1 & sr_dir=1 { rt_w12 = *:4 (sp - 52); }
+Sr32_12: ",gp" is sr_count=13 ; sr_gp=1 & sr_dir=1 { gp = *:4 (sp - 52); }
+Sr32_12: is sr_count<13 ; sr_gp { }
+Sr32_13: ","^rt_w13 is rt_w13 & sr_count>13 ; sr_gp=0 & sr_dir=0 { *:4 (sp - 56) = rt_w13; }
+Sr32_13: ","^rt_w13 is rt_w13 & sr_count>14 ; sr_gp=1 & sr_dir=0 { *:4 (sp - 56) = rt_w13; }
+Sr32_13: ",gp" is sr_count=14 ; sr_gp=1 & sr_dir=0 { *:4 (sp - 56) = gp; }
+Sr32_13: ","^rt_w13 is rt_w13 & sr_count>13 ; sr_gp=0 & sr_dir=1 { rt_w13 = *:4 (sp - 56); }
+Sr32_13: ","^rt_w13 is rt_w13 & sr_count>14 ; sr_gp=1 & sr_dir=1 { rt_w13 = *:4 (sp - 56); }
+Sr32_13: ",gp" is sr_count=14 ; sr_gp=1 & sr_dir=1 { gp = *:4 (sp - 56); }
+Sr32_13: is sr_count<14 ; sr_gp { }
+Sr32_14: ","^rt_w14 is rt_w14 & sr_count>14 ; sr_gp=0 & sr_dir=0 { *:4 (sp - 60) = rt_w14; }
+Sr32_14: ",gp" is sr_count=15 ; sr_gp=1 & sr_dir=0 { *:4 (sp - 60) = gp; }
+Sr32_14: ","^rt_w14 is rt_w14 & sr_count>14 ; sr_gp=0 & sr_dir=1 { rt_w14 = *:4 (sp - 60); }
+Sr32_14: ",gp" is sr_count=15 ; sr_gp=1 & sr_dir=1 { gp = *:4 (sp - 60); }
+Sr32_14: is sr_count<15 ; sr_gp { }
+
+Sr32: Sr32_0^Sr32_1^Sr32_2^Sr32_3^Sr32_4^Sr32_5^Sr32_6^Sr32_7^Sr32_8^Sr32_9^Sr32_10^Sr32_11^Sr32_12^Sr32_13^Sr32_14
+  is Sr32_0 & Sr32_1 & Sr32_2 & Sr32_3 & Sr32_4 & Sr32_5 & Sr32_6 & Sr32_7 & Sr32_8 & Sr32_9 & Sr32_10 & Sr32_11 & Sr32_12 & Sr32_13 & Sr32_14 { }
+
+:save Sr32U^Sr32 is (op=0x20 & b4=0 ; u12f=3 & sr_dir=0 & sr_jrc=0 & Sr32U) & Sr32 { sp = sp - Sr32U; }
+:restore Sr32U^Sr32 is (op=0x20 & b4=0 ; u12f=3 & sr_dir=1 & sr_jrc=0 & Sr32U) & Sr32 { sp = sp + Sr32U; build Sr32; }
+:restore.jrc Sr32U^Sr32 is (op=0x20 & b4=0 ; u12f=3 & sr_dir=1 & sr_jrc=1 & Sr32U) & Sr32 { sp = sp + Sr32U; build Sr32; return [ra]; }
+
+# P.LS.U12
+:lb  RT, u12(RSsrc) is op=0x21 & RT & RSsrc ; u12f=0x0 & u12 { RT = sext(*:1 (RSsrc + u12)); }
+:sb  RTsrc, u12(RSsrc) is op=0x21 & RTsrc & RSsrc ; u12f=0x1 & u12 { *:1 (RSsrc + u12) = RTsrc:1; }
+:lbu RT, u12(RSsrc) is op=0x21 & RT & RSsrc ; u12f=0x2 & u12 { RT = zext(*:1 (RSsrc + u12)); }
+:pref rtnum, u12(RSsrc) is op=0x21 & rtnum & RSsrc ; u12f=0x3 & u12 { }
+:synci u12(RSsrc) is op=0x21 & rtnum=31 & RSsrc ; u12f=0x3 & u12 { }
+:lh  RT, u12(RSsrc) is op=0x21 & RT & RSsrc ; u12f=0x4 & u12 { RT = sext(*:2 (RSsrc + u12)); }
+:sh  RTsrc, u12(RSsrc) is op=0x21 & RTsrc & RSsrc ; u12f=0x5 & u12 { *:2 (RSsrc + u12) = RTsrc:2; }
+:lhu RT, u12(RSsrc) is op=0x21 & RT & RSsrc ; u12f=0x6 & u12 { RT = zext(*:2 (RSsrc + u12)); }
+:lw  RT, u12(RSsrc) is op=0x21 & RT & RSsrc ; u12f=0x8 & u12 { RT = *:4 (RSsrc + u12); }
+:sw  RTsrc, u12(RSsrc) is op=0x21 & RTsrc & RSsrc ; u12f=0x9 & u12 { *:4 (RSsrc + u12) = RTsrc; }
+
+# P.LS.S9: 9-bit signed offsets, the unaligned and atomic accesses, and the EVA forms
+:lb  RT, S9(RSsrc) is op=0x29 & RT & RSsrc ; ls9t=0 & ls9f=0x0 & S9 { RT = sext(*:1 (RSsrc + S9)); }
+:sb  RTsrc, S9(RSsrc) is op=0x29 & RTsrc & RSsrc ; ls9t=0 & ls9f=0x1 & S9 { *:1 (RSsrc + S9) = RTsrc:1; }
+:lbu RT, S9(RSsrc) is op=0x29 & RT & RSsrc ; ls9t=0 & ls9f=0x2 & S9 { RT = zext(*:1 (RSsrc + S9)); }
+:pref rtnum, S9(RSsrc) is op=0x29 & rtnum & RSsrc ; ls9t=0 & ls9f=0x3 & S9 { }
+:synci S9(RSsrc) is op=0x29 & rtnum=31 & RSsrc ; ls9t=0 & ls9f=0x3 & S9 { }
+:lh  RT, S9(RSsrc) is op=0x29 & RT & RSsrc ; ls9t=0 & ls9f=0x4 & S9 { RT = sext(*:2 (RSsrc + S9)); }
+:sh  RTsrc, S9(RSsrc) is op=0x29 & RTsrc & RSsrc ; ls9t=0 & ls9f=0x5 & S9 { *:2 (RSsrc + S9) = RTsrc:2; }
+:lhu RT, S9(RSsrc) is op=0x29 & RT & RSsrc ; ls9t=0 & ls9f=0x6 & S9 { RT = zext(*:2 (RSsrc + S9)); }
+:lw  RT, S9(RSsrc) is op=0x29 & RT & RSsrc ; ls9t=0 & ls9f=0x8 & S9 { RT = *:4 (RSsrc + S9); }
+:sw  RTsrc, S9(RSsrc) is op=0x29 & RTsrc & RSsrc ; ls9t=0 & ls9f=0x9 & S9 { *:4 (RSsrc + S9) = RTsrc; }
+
+:aset asetbit, S9(RSsrc) is op=0x29 & b8=0 & b9=0 & asetbit & RSsrc ; ls9t=1 & ls9f=0x2 & S9 {
+  local address:4 = RSsrc + S9;
+  *:1 address = *:1 address | (1:1 << asetbit);
+}
+:aclr asetbit, S9(RSsrc) is op=0x29 & b8=0 & b9=1 & asetbit & RSsrc ; ls9t=1 & ls9f=0x2 & S9 {
+  local address:4 = RSsrc + S9;
+  *:1 address = *:1 address & ~(1:1 << asetbit);
+}
+:ualh RT, S9(RSsrc) is op=0x29 & RT & RSsrc ; ls9t=1 & ls9f=0x4 & S9 { RT = sext(*:2 (RSsrc + S9)); }
+:uash RTsrc, S9(RSsrc) is op=0x29 & RTsrc & RSsrc ; ls9t=1 & ls9f=0x5 & S9 { *:2 (RSsrc + S9) = RTsrc:2; }
+:cache rtnum, S9(RSsrc) is op=0x29 & rtnum & RSsrc ; ls9t=1 & ls9f=0x7 & S9 { cacheOp(rtnum:1, RSsrc + S9); }
+:ll RT, S9w(RSsrc) is op=0x29 & RT & RSsrc ; ls9t=1 & ls9f=0xa & f2=0 & S9w { local address:4 = RSsrc + S9w; lockLoad(address); RT = *:4 address; }
+:sc RT, S9w(RSsrc) is op=0x29 & RT & RTsrc & RSsrc ; ls9t=1 & ls9f=0xb & f2=0 & S9w { local address:4 = RSsrc + S9w; *:4 address = RTsrc; RT = lockStore(address); }
+:llwp RT, RU, (RSsrc) is op=0x29 & RT & RSsrc ; ls9t=1 & ls9f=0xa & f2=1 & RU {
+  local address:4 = RSsrc;
+  lockLoad(address);
+@if ENDIAN == "big"
+  RU = *:4 address;
+  RT = *:4 (address + 4);
+@else
+  RT = *:4 address;
+  RU = *:4 (address + 4);
+@endif
+}
+:scwp RT, RUsrc, (RSsrc) is op=0x29 & RT & RTsrc & RSsrc ; ls9t=1 & ls9f=0xb & f2=1 & RUsrc {
+  local address:4 = RSsrc;
+@if ENDIAN == "big"
+  *:4 address = RUsrc;
+  *:4 (address + 4) = RTsrc;
+@else
+  *:4 address = RTsrc;
+  *:4 (address + 4) = RUsrc;
+@endif
+  RT = lockStore(address);
+}
+
+:lbe  RT, S9(RSsrc) is op=0x29 & RT & RSsrc ; ls9t=2 & ls9f=0x0 & S9 { RT = sext(*:1 (RSsrc + S9)); }
+:sbe  RTsrc, S9(RSsrc) is op=0x29 & RTsrc & RSsrc ; ls9t=2 & ls9f=0x1 & S9 { *:1 (RSsrc + S9) = RTsrc:1; }
+:lbue RT, S9(RSsrc) is op=0x29 & RT & RSsrc ; ls9t=2 & ls9f=0x2 & S9 { RT = zext(*:1 (RSsrc + S9)); }
+:prefe rtnum, S9(RSsrc) is op=0x29 & rtnum & RSsrc ; ls9t=2 & ls9f=0x3 & S9 { }
+:syncie S9(RSsrc) is op=0x29 & rtnum=31 & RSsrc ; ls9t=2 & ls9f=0x3 & S9 { }
+:lhe  RT, S9(RSsrc) is op=0x29 & RT & RSsrc ; ls9t=2 & ls9f=0x4 & S9 { RT = sext(*:2 (RSsrc + S9)); }
+:she  RTsrc, S9(RSsrc) is op=0x29 & RTsrc & RSsrc ; ls9t=2 & ls9f=0x5 & S9 { *:2 (RSsrc + S9) = RTsrc:2; }
+:lhue RT, S9(RSsrc) is op=0x29 & RT & RSsrc ; ls9t=2 & ls9f=0x6 & S9 { RT = zext(*:2 (RSsrc + S9)); }
+:cachee rtnum, S9(RSsrc) is op=0x29 & rtnum & RSsrc ; ls9t=2 & ls9f=0x7 & S9 { cacheOp(rtnum:1, RSsrc + S9); }
+:lwe  RT, S9(RSsrc) is op=0x29 & RT & RSsrc ; ls9t=2 & ls9f=0x8 & S9 { RT = *:4 (RSsrc + S9); }
+:swe  RTsrc, S9(RSsrc) is op=0x29 & RTsrc & RSsrc ; ls9t=2 & ls9f=0x9 & S9 { *:4 (RSsrc + S9) = RTsrc; }
+:lle RT, S9w(RSsrc) is op=0x29 & RT & RSsrc ; ls9t=2 & ls9f=0xa & f2=0 & S9w { local address:4 = RSsrc + S9w; lockLoad(address); RT = *:4 address; }
+:sce RT, S9w(RSsrc) is op=0x29 & RT & RTsrc & RSsrc ; ls9t=2 & ls9f=0xb & f2=0 & S9w { local address:4 = RSsrc + S9w; *:4 address = RTsrc; RT = lockStore(address); }
+
+# LWM, SWM and their unaligned forms. Slot i of the register run is the word at offset + 4*i.
+
+Wm0: is rt_w0 & RSsrc ; wm_dir=0 & S9 { rt_w0 = *:4 (RSsrc + S9 + 0); }
+Wm0: is rt_w0 & RSsrc ; wm_dir=1 & S9 { *:4 (RSsrc + S9 + 0) = rt_w0; }
+Wm0: is rt=0 & RSsrc ; wm_dir=1 & S9 { *:4 (RSsrc + S9 + 0) = 0:4; }
+Wm1: is rt ; wm_count>0 & wm_count<2 { }
+Wm1: is rt_w1 & RSsrc ; wm_dir=0 & wm_count=0 & S9 { rt_w1 = *:4 (RSsrc + S9 + 4); }
+Wm1: is rt_w1 & RSsrc ; wm_dir=0 & wm_count>1 & S9 { rt_w1 = *:4 (RSsrc + S9 + 4); }
+Wm1: is rt_w1 & RSsrc ; wm_dir=1 & wm_count=0 & S9 { *:4 (RSsrc + S9 + 4) = rt_w1; }
+Wm1: is rt_w1 & RSsrc ; wm_dir=1 & wm_count>1 & S9 { *:4 (RSsrc + S9 + 4) = rt_w1; }
+Wm1: is rt=0 & RSsrc ; wm_dir=1 & wm_count=0 & S9 { *:4 (RSsrc + S9 + 4) = 0:4; }
+Wm1: is rt=0 & RSsrc ; wm_dir=1 & wm_count>1 & S9 { *:4 (RSsrc + S9 + 4) = 0:4; }
+Wm2: is rt ; wm_count>0 & wm_count<3 { }
+Wm2: is rt_w2 & RSsrc ; wm_dir=0 & wm_count=0 & S9 { rt_w2 = *:4 (RSsrc + S9 + 8); }
+Wm2: is rt_w2 & RSsrc ; wm_dir=0 & wm_count>2 & S9 { rt_w2 = *:4 (RSsrc + S9 + 8); }
+Wm2: is rt_w2 & RSsrc ; wm_dir=1 & wm_count=0 & S9 { *:4 (RSsrc + S9 + 8) = rt_w2; }
+Wm2: is rt_w2 & RSsrc ; wm_dir=1 & wm_count>2 & S9 { *:4 (RSsrc + S9 + 8) = rt_w2; }
+Wm2: is rt=0 & RSsrc ; wm_dir=1 & wm_count=0 & S9 { *:4 (RSsrc + S9 + 8) = 0:4; }
+Wm2: is rt=0 & RSsrc ; wm_dir=1 & wm_count>2 & S9 { *:4 (RSsrc + S9 + 8) = 0:4; }
+Wm3: is rt ; wm_count>0 & wm_count<4 { }
+Wm3: is rt_w3 & RSsrc ; wm_dir=0 & wm_count=0 & S9 { rt_w3 = *:4 (RSsrc + S9 + 12); }
+Wm3: is rt_w3 & RSsrc ; wm_dir=0 & wm_count>3 & S9 { rt_w3 = *:4 (RSsrc + S9 + 12); }
+Wm3: is rt_w3 & RSsrc ; wm_dir=1 & wm_count=0 & S9 { *:4 (RSsrc + S9 + 12) = rt_w3; }
+Wm3: is rt_w3 & RSsrc ; wm_dir=1 & wm_count>3 & S9 { *:4 (RSsrc + S9 + 12) = rt_w3; }
+Wm3: is rt=0 & RSsrc ; wm_dir=1 & wm_count=0 & S9 { *:4 (RSsrc + S9 + 12) = 0:4; }
+Wm3: is rt=0 & RSsrc ; wm_dir=1 & wm_count>3 & S9 { *:4 (RSsrc + S9 + 12) = 0:4; }
+Wm4: is rt ; wm_count>0 & wm_count<5 { }
+Wm4: is rt_w4 & RSsrc ; wm_dir=0 & wm_count=0 & S9 { rt_w4 = *:4 (RSsrc + S9 + 16); }
+Wm4: is rt_w4 & RSsrc ; wm_dir=0 & wm_count>4 & S9 { rt_w4 = *:4 (RSsrc + S9 + 16); }
+Wm4: is rt_w4 & RSsrc ; wm_dir=1 & wm_count=0 & S9 { *:4 (RSsrc + S9 + 16) = rt_w4; }
+Wm4: is rt_w4 & RSsrc ; wm_dir=1 & wm_count>4 & S9 { *:4 (RSsrc + S9 + 16) = rt_w4; }
+Wm4: is rt=0 & RSsrc ; wm_dir=1 & wm_count=0 & S9 { *:4 (RSsrc + S9 + 16) = 0:4; }
+Wm4: is rt=0 & RSsrc ; wm_dir=1 & wm_count>4 & S9 { *:4 (RSsrc + S9 + 16) = 0:4; }
+Wm5: is rt ; wm_count>0 & wm_count<6 { }
+Wm5: is rt_w5 & RSsrc ; wm_dir=0 & wm_count=0 & S9 { rt_w5 = *:4 (RSsrc + S9 + 20); }
+Wm5: is rt_w5 & RSsrc ; wm_dir=0 & wm_count>5 & S9 { rt_w5 = *:4 (RSsrc + S9 + 20); }
+Wm5: is rt_w5 & RSsrc ; wm_dir=1 & wm_count=0 & S9 { *:4 (RSsrc + S9 + 20) = rt_w5; }
+Wm5: is rt_w5 & RSsrc ; wm_dir=1 & wm_count>5 & S9 { *:4 (RSsrc + S9 + 20) = rt_w5; }
+Wm5: is rt=0 & RSsrc ; wm_dir=1 & wm_count=0 & S9 { *:4 (RSsrc + S9 + 20) = 0:4; }
+Wm5: is rt=0 & RSsrc ; wm_dir=1 & wm_count>5 & S9 { *:4 (RSsrc + S9 + 20) = 0:4; }
+Wm6: is rt ; wm_count>0 & wm_count<7 { }
+Wm6: is rt_w6 & RSsrc ; wm_dir=0 & wm_count=0 & S9 { rt_w6 = *:4 (RSsrc + S9 + 24); }
+Wm6: is rt_w6 & RSsrc ; wm_dir=0 & wm_count>6 & S9 { rt_w6 = *:4 (RSsrc + S9 + 24); }
+Wm6: is rt_w6 & RSsrc ; wm_dir=1 & wm_count=0 & S9 { *:4 (RSsrc + S9 + 24) = rt_w6; }
+Wm6: is rt_w6 & RSsrc ; wm_dir=1 & wm_count>6 & S9 { *:4 (RSsrc + S9 + 24) = rt_w6; }
+Wm6: is rt=0 & RSsrc ; wm_dir=1 & wm_count=0 & S9 { *:4 (RSsrc + S9 + 24) = 0:4; }
+Wm6: is rt=0 & RSsrc ; wm_dir=1 & wm_count>6 & S9 { *:4 (RSsrc + S9 + 24) = 0:4; }
+Wm7: is rt ; wm_count>0 & wm_count<8 { }
+Wm7: is rt_w7 & RSsrc ; wm_dir=0 & wm_count=0 & S9 { rt_w7 = *:4 (RSsrc + S9 + 28); }
+Wm7: is rt_w7 & RSsrc ; wm_dir=1 & wm_count=0 & S9 { *:4 (RSsrc + S9 + 28) = rt_w7; }
+Wm7: is rt=0 & RSsrc ; wm_dir=1 & wm_count=0 & S9 { *:4 (RSsrc + S9 + 28) = 0:4; }
+
+WmCount: wm_count is wm_count { }
+WmCount: "8" is wm_count=0 { }
+WmAll: is Wm0 & Wm1 & Wm2 & Wm3 & Wm4 & Wm5 & Wm6 & Wm7 { }
+
+:lwm rt, S9(RSsrc), WmCount is (op=0x29 & rt & RSsrc ; ls9t=4 & wm_dir=0 & S9 & WmCount) & WmAll { }
+:swm rt, S9(RSsrc), WmCount is (op=0x29 & rt & RSsrc ; ls9t=4 & wm_dir=1 & S9 & WmCount) & WmAll { }
+:ualwm rt, S9(RSsrc), WmCount is (op=0x29 & rt & RSsrc ; ls9t=5 & wm_dir=0 & S9 & WmCount) & WmAll { }
+:uaswm rt, S9(RSsrc), WmCount is (op=0x29 & rt & RSsrc ; ls9t=5 & wm_dir=1 & S9 & WmCount) & WmAll { }
+
+# Compare-and-branch
+:beqc RSsrc, RTsrc, Rel14 is op=0x22 & RTsrc & RSsrc ; brf=0 & Rel14 { if (RSsrc == RTsrc) goto Rel14; }
+:beqzc RSsrc, Rel14 is op=0x22 & rtnum=0 & RSsrc ; brf=0 & Rel14 { if (RSsrc == 0) goto Rel14; }
+:beqzc RTsrc, Rel14 is op=0x22 & RTsrc & rsnum=0 ; brf=0 & Rel14 { if (RTsrc == 0) goto Rel14; }
+:bgezc RSsrc, Rel14 is op=0x22 & rtnum=0 & RSsrc ; brf=2 & Rel14 { if (RSsrc s>= 0) goto Rel14; }
+:blezc RTsrc, Rel14 is op=0x22 & RTsrc & rsnum=0 ; brf=2 & Rel14 { if (RTsrc s<= 0) goto Rel14; }
+:bgec RSsrc, RTsrc, Rel14 is op=0x22 & RTsrc & RSsrc ; brf=2 & Rel14 { if (RSsrc s>= RTsrc) goto Rel14; }
+:bgeuc RSsrc, RTsrc, Rel14 is op=0x22 & RTsrc & RSsrc ; brf=3 & Rel14 { if (RSsrc >= RTsrc) goto Rel14; }
+:bnec RSsrc, RTsrc, Rel14 is op=0x2a & RTsrc & RSsrc ; brf=0 & Rel14 { if (RSsrc != RTsrc) goto Rel14; }
+:bnezc RSsrc, Rel14 is op=0x2a & rtnum=0 & RSsrc ; brf=0 & Rel14 { if (RSsrc != 0) goto Rel14; }
+:bnezc RTsrc, Rel14 is op=0x2a & RTsrc & rsnum=0 ; brf=0 & Rel14 { if (RTsrc != 0) goto Rel14; }
+:bltzc RSsrc, Rel14 is op=0x2a & rtnum=0 & RSsrc ; brf=2 & Rel14 { if (RSsrc s< 0) goto Rel14; }
+:bgtzc RTsrc, Rel14 is op=0x2a & RTsrc & rsnum=0 ; brf=2 & Rel14 { if (RTsrc s> 0) goto Rel14; }
+:bltc RSsrc, RTsrc, Rel14 is op=0x2a & RTsrc & RSsrc ; brf=2 & Rel14 { if (RSsrc s< RTsrc) goto Rel14; }
+:bltuc RSsrc, RTsrc, Rel14 is op=0x2a & RTsrc & RSsrc ; brf=3 & Rel14 { if (RSsrc < RTsrc) goto Rel14; }
+
+:beqic RTsrc, Bri7, Rel11 is (op=0x32 & RTsrc & b24=0) ... & Bri7 & (rt ; Rel11) { if (RTsrc == Bri7) goto Rel11; }
+:bbeqzc RTsrc, Bit5, Rel11 is (op=0x32 & RTsrc & b24=1) ... & Bit5 & (rt ; Rel11) { if (((RTsrc >> Bit5) & 1) == 0) goto Rel11; }
+:bgeic RTsrc, Bri7, Rel11 is (op=0x32 & RTsrc & b24=2) ... & Bri7 & (rt ; Rel11) { if (RTsrc s>= Bri7) goto Rel11; }
+:bgeiuc RTsrc, Bri7, Rel11 is (op=0x32 & RTsrc & b24=3) ... & Bri7 & (rt ; Rel11) { if (RTsrc >= Bri7) goto Rel11; }
+:bneic RTsrc, Bri7, Rel11 is (op=0x32 & RTsrc & b24=4) ... & Bri7 & (rt ; Rel11) { if (RTsrc != Bri7) goto Rel11; }
+:bbnezc RTsrc, Bit5, Rel11 is (op=0x32 & RTsrc & b24=5) ... & Bit5 & (rt ; Rel11) { if (((RTsrc >> Bit5) & 1) != 0) goto Rel11; }
+:bltic RTsrc, Bri7, Rel11 is (op=0x32 & RTsrc & b24=6) ... & Bri7 & (rt ; Rel11) { if (RTsrc s< Bri7) goto Rel11; }
+:bltiuc RTsrc, Bri7, Rel11 is (op=0x32 & RTsrc & b24=7) ... & Bri7 & (rt ; Rel11) { if (RTsrc < Bri7) goto Rel11; }
+
+# P.LUI
+:lui RT, Lui is (op=0x38 & RT) ... & (rt ; c1=0) & Lui { RT = Lui; }
+:aluipc RT, PcHi is (op=0x38 & RT) ... & (rt ; c1=1) & PcHi { RT = PcHi; }
+
+# ---- 48-bit instructions ----
+
+:li RT, Imm32 is op=0x18 & RT & b04=0x00 ; Imm32 { RT = Imm32; }
+:addiu RT, RTsrc, Simm32 is op=0x18 & RT & RTsrc & b04=0x01 ; Simm32 { RT = RTsrc + Simm32; }
+:addiu RT, gp, Simm32 is op=0x18 & RT & b04=0x02 & gp ; Simm32 { RT = gp + Simm32; }
+:lapc RT, Pc32 is op=0x18 & RT & b04=0x03 ; Pc32 { RT = Pc32; }
+:lwpc RT, Rel32 is op=0x18 & RT & b04=0x0b ; Rel32 { RT = Rel32; }
+:swpc RTsrc, Rel32 is op=0x18 & RTsrc & b04=0x0f ; Rel32 { Rel32 = RTsrc; }

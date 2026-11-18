@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<language_definitions>
+  <language processor="nanoMIPS" endian="little" size="32" variant="default" version="1.0"
+            slafile="nanomips32le.sla" processorspec="nanomips.pspec" id="nanoMIPS:LE:32:default">
+    <description>nanoMIPS32 base integer ISA, little endian</description>
+    <compiler name="default" spec="nanomips_p32.cspec" id="default"/>
+  </language>
+  <language processor="nanoMIPS" endian="big" size="32" variant="default" version="1.0"
+            slafile="nanomips32be.sla" processorspec="nanomips.pspec" id="nanoMIPS:BE:32:default">
+    <description>nanoMIPS32 base integer ISA, big endian</description>
+    <compiler name="default" spec="nanomips_p32.cspec" id="default"/>
+  </language>
+</language_definitions>
