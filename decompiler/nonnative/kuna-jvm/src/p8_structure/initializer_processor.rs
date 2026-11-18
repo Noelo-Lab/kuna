@@ -17,7 +17,7 @@ use crate::i_fernflower_logger::Severity;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::interpreter_util::InterpreterUtil;
 use crate::kuna_fixes::{self, KunaFix};
-use crate::fixes::class_writing::enum_constant_in_values_array;
+use crate::fixes::class_writing;
 use crate::method_descriptor::MethodDescriptor;
 use crate::method_wrapper::MethodWrapper;
 use crate::new_exprent::NewExprent;
@@ -235,7 +235,7 @@ impl InitializerProcessor {
             }
 
             if kuna_fixes::enabled(KunaFix::EnumConstantInValuesArray) {
-                enum_constant_in_values_array::extract(
+                class_writing::extract_values_array_constants(
                     wrapper,
                     cl,
                     &first_exprents,

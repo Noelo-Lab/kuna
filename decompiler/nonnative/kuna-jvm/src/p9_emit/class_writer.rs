@@ -53,9 +53,8 @@ use crate::kuna_spans;
 use crate::link_constant::LinkConstant;
 use crate::method_descriptor::MethodDescriptor;
 use crate::method_wrapper::MethodWrapper;
-use crate::fixes::class_writing::enum_body_separator::EnumBodySeparator;
-use crate::fixes::class_writing::override_inaccessible_method;
-use crate::fixes::class_writing::sealed_private_permits;
+use crate::fixes::class_writing::EnumBodySeparator;
+use crate::fixes::class_writing;
 use crate::fixes::nested_class_vars::nested_param_rename;
 use crate::pair::Pair;
 use crate::pass_context::PassContext;
@@ -1295,7 +1294,7 @@ impl ClassWriter {
         }
 
         let omit_permits = kuna_fixes::enabled(KunaFix::SealedPrivatePermits)
-            && sealed_private_permits::omit_permits(node, &permitted_sub_classes);
+            && class_writing::omit_permits(node, &permitted_sub_classes);
         if !is_enum && is_sealed && !omit_permits {
             buffer.append_possible_newline_alt(" ");
             buffer.append("permits ");
@@ -1820,7 +1819,7 @@ impl ClassWriter {
 
             if should_apply_override {
                 let is_override = if kuna_fixes::enabled(KunaFix::OverrideInaccessibleMethod) {
-                    override_inaccessible_method::overrides(cl, &mt.get_name(), &md)
+                    class_writing::overrides(cl, &mt.get_name(), &md)
                 } else {
                     ClassWriter::search_for_method(Some(cl), &mt.get_name(), &md, false)
                 };

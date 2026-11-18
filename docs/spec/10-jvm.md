@@ -1800,7 +1800,7 @@ anonymous `Weight` subclasses of Elasticsearch's queries; `FilteredTermsEnum.Acc
 `LRUQueryCache.CacheAndCount`, `ConcurrentMergeScheduler.MergeThread`) becomes an import javac
 rejects (`has protected access`), and the whole file fails to compile (still so on
 `develop/1.13.0`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/class_writing/nonpublic_nested_import.rs`), a class
+(`decompiler/nonnative/kuna-jvm/src/fixes/class_writing.rs`), a class
 outside the input that the `InnerClasses` attribute of the class being written (or of a class
 enclosing it, or of the class itself when it is loaded) records as a member class of a class in
 another package, and that is not public or is nested in a class that is not, is named through
@@ -1818,7 +1818,7 @@ descriptor, so a package-private method redeclared in a subclass in another pack
 method that has the name of a private superclass method gets an `@Override` javac rejects
 (`method does not override or implement a method from a supertype`; still so on
 `develop/1.13.0`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/class_writing/override_inaccessible_method.rs`), the
+(`decompiler/nonnative/kuna-jvm/src/fixes/class_writing.rs`), the
 search skips a supertype method the class cannot override and goes on to that type's own
 supertypes.
 
@@ -2079,7 +2079,7 @@ its body, so a private member class (or one nested in a private member class) ca
 there (JLS 6.6.1) and javac rejects the clause and every subclass with it; a source produces such a
 class only by leaving the clause out, which makes the permitted subclasses those of the same
 compilation unit (JLS 8.1.6). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/class_writing/sealed_private_permits.rs`) the clause is left
+(`decompiler/nonnative/kuna-jvm/src/fixes/class_writing.rs`) the clause is left
 out for a top-level class whose permitted subclasses are all its member classes and include such
 an inaccessible one. The recompiled attribute lists the same classes, in the order the classes are
 written.
@@ -3439,7 +3439,7 @@ this.listener = listener;`, `this.content = content.retain();`, `this.slices = s
 Map.copyOf(slices) : null;`, loses the computations, and the record is printed with no constructor
 or a compact one (4 records in Elasticsearch); a compact constructor's stores to static fields go
 too. Upstream fixed this in Vineflower 1506b2f4 ("Fix incorrect compact record constructors"). With
-the fix (`decompiler/nonnative/kuna-jvm/src/fixes/class_writing/compact_record_constructor.rs
+the fix (`decompiler/nonnative/kuna-jvm/src/fixes/class_writing.rs
 (assigns_components_last)`) the constructor is compact only when, besides Vineflower's test,
 upstream's holds: its one exit that does not throw ends with `this.c = v` for every component in
 order, from increasing variable slots; and only stores to fields of `this` are removed. It also stays
@@ -3586,7 +3586,7 @@ are outside the input and both declare a `Bucket`, so `implements Filters.Bucket
 under an import, and javac reports `reference to Bucket is ambiguous` (the class is lost, 28 methods);
 `NodesHotThreadsResponse` imports `java.io.Reader` where the `Writeable.Reader` it inherits is in scope.
 With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/class_writing/external_inherited_member_type.rs (add_external_members)`),
+(`decompiler/nonnative/kuna-jvm/src/fixes/class_writing.rs (add_external_members)`),
 the walk also notes each supertype it cannot load, and reads that one's member classes from the
 `InnerClasses` entries of the classes it did visit (javac records there every nested class a class file
 names, and `InternalMultiBucketAggregation` names `MultiBucketsAggregation.Bucket`, `InternalFilters`
@@ -4505,7 +4505,7 @@ statements; it finds none, takes the whole array as the initializer of the synth
 field, and the constants print bare (`NO_ERROR,` for `NO_ERROR(0)`) in Java and Kotlin output alike. Its
 "Failed to inline enum fields" note is added to `<clinit>`, which is then empty and hidden, so the loss is
 silent (okhttp 4.7.2's `ErrorCode`, `Protocol` and `TlsVersion`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/class_writing/enum_constant_in_values_array.rs (extract)`), when
+(`decompiler/nonnative/kuna-jvm/src/fixes/class_writing.rs (extract)`), when
 the first statement of an enum's static initializer stores an array of the enum into a static field of the
 class, and its elements are, in field order, one assignment `F = new E(..)` to each enum constant of the
 class, whose first two constructor arguments are the constant's own name and ordinal and whose value

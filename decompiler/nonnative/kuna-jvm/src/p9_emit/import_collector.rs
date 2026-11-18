@@ -9,8 +9,7 @@ use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::fixes::kt_names::kt_escaped_class_name;
 use crate::kotlin_import_collector::KotlinImportCollector;
 use crate::kuna_fixes::{self, KunaFix};
-use crate::fixes::class_writing::external_inherited_member_type;
-use crate::fixes::class_writing::nonpublic_nested_import::qualified_name;
+use crate::fixes::class_writing;
 use crate::struct_inner_classes_attribute::Entry;
 use crate::rt::{JHashMap, JHashSet};
 use crate::struct_class::StructClass;
@@ -194,7 +193,7 @@ impl ImportCollector {
             }
         } else {
             if kuna_fixes::enabled(KunaFix::NonpublicNestedImport) && !self.with(|d| d.kotlin) {
-                if let Some(name) = qualified_name(self, &full_name, imported) {
+                if let Some(name) = class_writing::qualified_name(self, &full_name, imported) {
                     return Some(name);
                 }
             }
@@ -425,7 +424,7 @@ impl ImportCollector {
                         if let Some(simple_name) = entry.simple_name.clone() {
                             if external_members
                                 && Some(class) != root
-                                && external_inherited_member_type::inherited_by(
+                                && class_writing::inherited_by(
                                     &entry, &package,
                                 )
                             {
@@ -467,7 +466,7 @@ impl ImportCollector {
             }
         }
         if let Some(kuna_names) = kuna_names {
-            external_inherited_member_type::add_external_members(
+            class_writing::add_external_members(
                 kuna_names,
                 &mut inherited,
                 &external,

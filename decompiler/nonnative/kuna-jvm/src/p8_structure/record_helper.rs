@@ -4,7 +4,7 @@ use crate::class_writer::ClassWriter;
 use crate::code_constants::{ACC_STATIC, ACC_VARARGS, INIT_NAME};
 use crate::exprent::Exprent;
 use crate::kuna_fixes::{self, KunaFix};
-use crate::fixes::class_writing::compact_record_constructor;
+use crate::fixes::class_writing;
 use crate::method_wrapper::MethodWrapper;
 use crate::root_statement::RootStatement;
 use crate::rt::{JHashSet, JLinkedHashSet};
@@ -312,8 +312,8 @@ impl RecordHelper {
         if Self::is_compact_canonical_constructor(mw)
             && (!fixed
                 || mw.with(|d| d.root).is_some_and(|root| {
-                    compact_record_constructor::assigns_components_last(root, &components)
-                        && !compact_record_constructor::stores_on_own_line(
+                    class_writing::assigns_components_last(root, &components)
+                        && !class_writing::stores_on_own_line(
                             root,
                             mw.with(|d| d.method_struct),
                             components.len(),
@@ -324,7 +324,7 @@ impl RecordHelper {
                 .expect("NullPointerException: graph")
                 .iterate_exprents(|exprent: Exprent| {
                     if fixed {
-                        return if compact_record_constructor::is_this_field_store(exprent) {
+                        return if class_writing::is_this_field_store(exprent) {
                             2
                         } else {
                             0
