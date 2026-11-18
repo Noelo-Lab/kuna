@@ -2218,7 +2218,7 @@ mod tests {
         // and kuna-switchselfloop / a switch that heads its own loop keeps the loop
         // and kuna-wide-shifts / armconstshift all shifts a signed 64-bit operand unsigned
         // and kuna-sharedpush / a push above a branch is the argument of the call on each arm
-        assert_eq!(count, 770, "corpus file count drifted");
+        assert_eq!(count, 771, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
