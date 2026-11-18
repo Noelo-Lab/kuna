@@ -33,7 +33,7 @@ use crate::fixes::kt_initializers::kt_companion_property_initializer;
 use crate::fixes::kt_initializers::kt_default_property_initializer;
 use crate::fixes::kt_initializers::kt_file_static_initializer;
 use crate::fixes::kt_anonymous_objects::kt_unrepresentable_declared_type;
-use crate::fixes::kt_declarations::kt_missed_override;
+use crate::fixes::kt_declarations;
 use crate::fixes::kt_properties::kt_setter_parameter_name;
 use crate::fixes::kt_properties::kt_jvm_field_setter;
 use crate::fixes::kt_properties::kt_property_field_flags;
@@ -459,7 +459,7 @@ impl KProperty {
             return false;
         };
         let method = getter.with(|d| d.method_struct);
-        kt_missed_override::property_overrides(self.class_struct, method)
+        kt_declarations::property_overrides(self.class_struct, method)
     }
 
     /// Fix `kt_default_property_initializer`: the default value a property

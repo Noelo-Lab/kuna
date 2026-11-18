@@ -28,10 +28,9 @@ use crate::kt_flags::Flags;
 use crate::kt_proto::{self, MemberKind, Modality, Visibility};
 use crate::fixes::kt_default_args::kt_default_args_bridge_lookup;
 use crate::fixes::kt_default_args::kt_default_value_names;
-use crate::fixes::kt_declarations::kt_contract_import;
+use crate::fixes::kt_declarations;
 use crate::fixes::kt_names::kt_function_parameter_name;
 use crate::fixes::kt_extensions::kt_extension_receiver;
-use crate::fixes::kt_declarations::kt_missed_override;
 use crate::fixes::kt_generated_members::kt_companion_static_copy;
 use crate::fixes::kt_suspend::kt_suspend_lambda;
 use crate::fixes::kt_suspend::kt_suspend_impl;
@@ -370,7 +369,7 @@ impl KFunction {
                     &method.method_descriptor(),
                     false,
                 ) || kuna_fixes::enabled(KunaFix::KtMissedOverride)
-                    && kt_missed_override::bridged(class_struct, method));
+                    && kt_declarations::bridged(class_struct, method));
 
             let contract = if function.has_contract() {
                 Some(KContract::from(
@@ -448,7 +447,7 @@ impl KFunction {
         );
 
         if self.contract.is_some() && kuna_fixes::enabled(KunaFix::KtContractImport) {
-            kt_contract_import::append_opt_in(&mut buf, indent);
+            kt_declarations::append_opt_in(&mut buf, indent);
         }
 
         let method_key = InterpreterUtil::make_unique_key(

@@ -1,28 +1,41 @@
-//! kuna fix `kt_missed_override`: a function or property that overrides a
-//! supertype member is written `override` when its class file shows it.
-//!
-//! Kotlin metadata does not record `override`; the plugin decides it by
-//! looking for a supertype method with exactly the same descriptor
-//! (`KotlinWriter::search_for_method`), and never for properties. An
-//! override that narrows the return type (`fun buffer(): Buffer` for
-//! `BufferedSink.buffer(): BufferedSink`) or whose parameter is a type
-//! parameter of the supertype (`compareTo(other: ByteString)` for
-//! `Comparable<ByteString>`) has another descriptor, and an overriding
-//! property (`val connection: RealConnection` of an interface) is written
-//! `open val`: Kotlin rejects both ("hides member of supertype and needs an
-//! 'override' modifier"). kotlinc compiles such an override with a bridge
-//! method in the same class, of the supertype's descriptor, that calls it.
-//! With the fix a function is an override when its class has a bridge method
-//! that calls it, and a property when its getter is such a function or has
-//! a supertype method of the same descriptor.
+//! Fix family `kt_declarations` (Kotlin output): what a function header needs
+//! that the plugin leaves out: Kotlin names in `@Throws`, the import and opt-in
+//! of a `contract`, and the `override` a bridge method shows.
 
 use crate::code_constants::{
     ACC_BRIDGE, OPC_INVOKEINTERFACE, OPC_INVOKESPECIAL, OPC_INVOKEVIRTUAL,
 };
+use crate::decompiler_context::DecompilerContext;
+use crate::fixes::kt_calls::kt_facade_call;
+use crate::k_types::KTypes;
 use crate::kotlin_writer::KotlinWriter;
 use crate::rt::try_catch;
 use crate::struct_class::StructClass;
 use crate::struct_method::StructMethod;
+use crate::text_buffer::TextBuffer;
+use crate::var_type::VarType;
+
+/// The Kotlin name of the exception class with internal name `name`.
+pub fn kotlin_name(name: &str) -> String {
+    KTypes::get_kotlin_type(Some(&VarType::new_signature_cl(name, true)))
+}
+
+/// How `contract` is written: bare when imported, else qualified.
+pub fn contract_call() -> String {
+    let prefix = kt_facade_call::qualifier("kotlin.contracts", "contract")
+        .unwrap_or_default();
+    format!("{prefix}contract")
+}
+
+/// Appends the line `@OptIn(ExperimentalContracts::class)`.
+pub fn append_opt_in(buf: &mut TextBuffer, indent: i32) {
+    let name = DecompilerContext::get_import_collector()
+        .get_short_name("kotlin.contracts.ExperimentalContracts")
+        .unwrap_or_else(|| "kotlin.contracts.ExperimentalContracts".to_string());
+    buf.append_indent(indent)
+        .append(&format!("@OptIn({name}::class)"))
+        .append_line_separator();
+}
 
 /// Whether a bridge method of `cl` calls `method`.
 pub fn bridged(cl: StructClass, method: StructMethod) -> bool {

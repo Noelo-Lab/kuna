@@ -3071,7 +3071,7 @@ An override that narrows the return type (okio's `Buffer.emitCompleteSegments():
 ByteString)`) has another descriptor, and an overriding property is written `open val`: Kotlin
 rejects both ("hides member of supertype and needs an 'override' modifier"). kotlinc compiles such
 an override with a bridge method in the same class that calls it. With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/kt_declarations/kt_missed_override.rs (bridged)`) a function is
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_declarations.rs (bridged)`) a function is
 an override when a bridge method of its class calls it, and a property when its getter is such a
 function or has a supertype method of its descriptor.
 
@@ -3102,7 +3102,7 @@ written `ReplaceWith(..)`.
 **`kt_throws_class_name`.** kotlinc records `@Throws(IOException::class)` as the method's
 `Exceptions` attribute, whose class names the plugin writes as they are:
 `@Throws(java/io/IOException::class)`, which Kotlin reads as a division of unresolved names. With
-the fix (`decompiler/nonnative/kuna-jvm/src/fixes/kt_declarations/kt_throws_class_name.rs (kotlin_name)`)
+the fix (`decompiler/nonnative/kuna-jvm/src/fixes/kt_declarations.rs (kotlin_name)`)
 each is written by its Kotlin type name, imported like any other type.
 
 **`kt_throwable_cast`.** kotlinc compiles `throw e` to `checkcast java/lang/Throwable; athrow`,
@@ -4869,7 +4869,7 @@ is a top-level function of `kotlin.contracts`, not imported by default, and the 
 opt-in to `ExperimentalContracts`, which the source gives (`@file:OptIn(ExperimentalContracts::class)`) and
 the class file cannot keep (`OptIn` has source retention). kotlinc rejects both (kotlinx-coroutines 1.10.2:
 17 contracts, 68 errors). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/kt_declarations/kt_contract_import.rs (contract_call)`) `contract` is
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_declarations.rs (contract_call)`) `contract` is
 imported, or written `kotlin.contracts.contract` where the simple name is taken, and the function is
 annotated `@OptIn(ExperimentalContracts::class)` (`append_opt_in`). A contract has no code; the function's
 bytecode is unchanged.

@@ -2998,7 +2998,7 @@ impl KotlinWriter {
                             .to_string();
                         if kuna_fixes::enabled(KunaFix::KtThrowsClassName) {
                             buffer
-                                .append(&crate::fixes::kt_declarations::kt_throws_class_name::kotlin_name(
+                                .append(&crate::fixes::kt_declarations::kotlin_name(
                                     &name,
                                 ))
                                 .append("::class");
