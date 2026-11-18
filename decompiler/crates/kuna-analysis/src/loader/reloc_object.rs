@@ -978,6 +978,8 @@ fn relocation_name(architecture: Architecture, r_type: u32) -> &'static str {
         (Architecture::Sparc | Architecture::Sparc32Plus, object::elf::R_SPARC_LO10) => {
             "R_SPARC_LO10"
         }
+        (Architecture::Bpf, object::elf::R_BPF_64_64) => "R_BPF_64_64",
+        (Architecture::Bpf, object::elf::R_BPF_64_32) => "R_BPF_64_32",
         _ => "ELF relocation",
     }
 }

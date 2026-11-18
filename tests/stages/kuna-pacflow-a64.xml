@@ -1,0 +1,78 @@
+<decompilertest>
+<!--
+    Kuna #1621: on arm64e a function that only signs, authenticates or
+    strips a pointer and returns it decompiled as `void`.  AARCH64.pspec
+    leaves the ShowPAC context at 0, and every ShowPAC=0 "hide" constructor
+    in AARCH64_base_PACoptions.sinc had an empty body: `pacda x0,x16` wrote
+    nothing, so x0 had no definition at the `ret` and return recovery
+    found no result.  The signing was the function's only write to x0.
+
+    Stage / sub-stage: P2 p-code lift (AArch64 spec-fix, no option).  With
+    ShowPAC=0 the decompiler models every signed pointer as already
+    authenticated, so a hidden pac*/aut*/xpac* that writes a general
+    register is now a pass-through copy of that register (Rd = Rd); the
+    x30/sp and branch forms stay empty.  The signed value flows to the
+    return and the store.
+
+    First chunk: the issue's clang -O2 bytes (arm64e-apple-ios16.0):
+      call_it       mov x2,x0; mov x0,x1; braaz x2
+      sign_it       mov x16,x1; movk x16,#0x1234,lsl #48; pacda x0,x16; ret
+      auth_it       autda x16,x17 + the FPAC-less check (xpacd, cmp, brk
+                    #0xc472); mov x0,x16; ret
+      strip_it      xpaci x0; ret
+      sign_fn       paciza x0; ret
+      store_signed  mov x16,x0; movk x16,#7,lsl #48; pacda x1,x16;
+                    str x1,[x0]; ret
+    Second chunk, hand-assembled, one per remaining form:
+      sign_ia_plain pacia x0,x1; ret      auth_ib_plain  autib x0,x1; ret
+      auth_iza      autiza x0; ret        strip_data     xpacd x0; ret
+      sign_db_store pacdb x1,x0; str x1,[x0]; ret
+
+    Before the fix sign_it, strip_it, sign_fn, sign_ia_plain,
+    auth_ib_plain, auth_iza and strip_data were all `void f(void)`.
+-->
+<binaryimage arch="AARCH64:LE:64:AppleSilicon:default">
+<bytechunk space="ram" offset="0x100000" readonly="true">
+e20300aae00301aa5f081fd6f00301aa9046e2f2000ac1dac0035fd6f00300aa
+f10301aa9146e2f2301ac1daf10310aaf147c1da1f0211eb40000054408e38d4
+e00310aac0035fd6e043c1dac0035fd6e023c1dac0035fd6f00300aaf000e0f2
+010ac1da010000f9c0035fd6
+</bytechunk>
+<bytechunk space="ram" offset="0x100100" readonly="true">
+2000c1dac0035fd62014c1dac0035fd6e033c1dac0035fd6e047c1dac0035fd6
+010cc1da010000f9c0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="call_it"/>
+<symbol space="ram" offset="0x10000c" name="sign_it"/>
+<symbol space="ram" offset="0x10001c" name="auth_it"/>
+<symbol space="ram" offset="0x100048" name="strip_it"/>
+<symbol space="ram" offset="0x100050" name="sign_fn"/>
+<symbol space="ram" offset="0x100058" name="store_signed"/>
+<symbol space="ram" offset="0x100100" name="sign_ia_plain"/>
+<symbol space="ram" offset="0x100108" name="auth_ib_plain"/>
+<symbol space="ram" offset="0x100110" name="auth_iza"/>
+<symbol space="ram" offset="0x100118" name="strip_data"/>
+<symbol space="ram" offset="0x100120" name="sign_db_store"/>
+</binaryimage>
+<script>
+  <com>lo fu call_it</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu sign_it</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu auth_it</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu strip_it</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu sign_fn</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu store_signed</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu sign_ia_plain</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu auth_ib_plain</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu auth_iza</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu strip_data</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu sign_db_store</com>  <com>decompile</com>  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="PACFLOW #1: no PAC-only function is void" min="0" max="0">^void \w+\(void\)</stringmatch>
+<stringmatch name="PACFLOW #2: every signing, authenticating or stripping function returns its pointer" min="8" max="8">^\s*return a0;$</stringmatch>
+<stringmatch name="PACFLOW #3: the pointer is the function's first parameter" min="8" max="8">^unsigned long \w+\(unsigned long a0\)$</stringmatch>
+<stringmatch name="PACFLOW #4: a signed pointer stored through its slot" min="2" max="2">^\s*\*a0 = a1;$</stringmatch>
+<stringmatch name="PACFLOW #5: the FPAC-less failure check folds away (no brk, no compare)" min="0" max="0">SoftwareBreakpoint|if \(</stringmatch>
+<stringmatch name="PACFLOW #6: no hidden PAC op surfaces as a user op" min="0" max="0">pac|Auth|xpac</stringmatch>
+<stringmatch name="PACFLOW #7: the braaz call still passes its argument" min="1" max="1">\(\*a0\)\(a1\);</stringmatch>
+</decompilertest>
