@@ -8149,6 +8149,27 @@ function behind padding, now at its own address) and 38 on the ARM ELFs (the
 function a zero run used to swallow); it removes 7,446 non-start PE entries and a
 net 77 mid-body ARM ones, and leaves i386 and x86-64 ELFs unchanged.
 
+(kuna) A SPARC32 large-frame entry starts at its frame-size constant
+(`decompiler/crates/kuna-analysis/src/analyzers/aif/kuna_sparcprologue.rs`, always on
+with `aif`, inert on every other target). A frame larger than the signed 13-bit
+immediate is built in a register first, `sethi %hi(-N), r; or r, %lo(-N), r;
+save %sp, r, %sp`, and the function begins at the `sethi`. The fingerprint test
+usually refuses the `sethi` candidate, because few discovered functions open that
+way, so the cursor slides on and accepts the `save`, leaving an entry whose frame
+size is an undefined input and two orphan instructions that truncate a decompile
+from the real start. An accepted `save %sp, r, %sp` candidate therefore owns the
+two still-undefined, unclaimed words in front of it, in the same executable range
+and with no function entry on them, when they are exactly that fall-through pair:
+the same register throughout (not `%g0` or `%sp`), and an eight-byte-aligned
+negative frame size outside the immediate range. Only the entry and its body move;
+acceptance and fingerprint stay the `save` candidate's, and only the plain gap walk
+applies it. Over 117 Debian SPARC32 images it moves 12 entries in 11 images back
+eight bytes, each onto a true start, and changes no count; GCC 14 stripped
+`-m32` images scored against their unstripped twins move 29 entries, all onto the
+symbol address. Two prefixes are not recognised: a frame size whose low ten bits
+are zero, which GCC builds with a lone `sethi`, and SPARC64's `sethi; xor`, since
+the pass runs only where `%g1` is four bytes.
+
 (kuna, GH-299) No gap entry starts on a literal-pool word: `aifpoolslide`
 (default-on; `decompiler/crates/kuna-analysis/src/analyzers/aif/kuna_aifpoolslide.rs`).
 ARM code keeps its constants in pools right after the code that loads them, so a

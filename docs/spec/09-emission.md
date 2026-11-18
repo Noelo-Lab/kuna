@@ -5055,6 +5055,25 @@ and callback order, and constant one-past addresses. Readable and protected
 mappings verify these address computations do not load the array contents.
 
 
+### Rust complete array initialization
+
+`p9_emit/kuna_rustarrayinit.rs` renders consecutive scalar COPY writes covering
+every element of a recovered integer array, in increasing index order, as one
+whole-array assignment. This initializes a previously uninitialized Rust local
+without zero-filling or manufacturing values. The existing COPY value renderer
+retains the original constants and integer conversions.
+
+The complete cover must remain inside one basic block with no intervening
+operations. Every output must be a nonvolatile local element of the same array
+symbol and type, with exact element width and no alignment padding. Inputs are
+constants or explicit named local values independent of that array; implied
+expressions, global/volatile reads, and reads of the destination or any physically
+overlapping source-high storage view are not moved.
+Incomplete, duplicate, reordered, mixed-symbol, and interrupted writes retain
+their ordinary statement rendering. No target-language-specific change to
+variable grouping is made. Complete native Rust formatting-consumer regressions
+compile and execute the resulting bodies against their original binaries.
+
 ### Rust zero values for byte-array stores
 
 With `rustarrayzero on`, `kuna_rustarrayzero.rs` renders a constant-zero STORE
