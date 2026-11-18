@@ -2140,9 +2140,13 @@ the case targets.
    proof. Each selector value is then emulated in order with its LOADs
    collected; the first one that reads a byte of the map ends the table, and
    the earlier values keep their rows. A table whose first row already lies
-   in the map is left alone. gcc places a three-row table directly before its
-   70,000-entry byte map; without this, rows 3 to 255 were read from the map
-   and from the bytes after it, and flow left for the addresses they named.
+   in the map is left alone. The `selector_domain.S` fixture places a
+   three-row table directly before its byte map, as MSVC lays out its
+   two-stage tables; with a 70,000-entry or writable map, rows 3 to 255 were
+   read from the map and from the bytes after it, and flow left for the
+   addresses they named. Only the selector's own map ends the table: a map
+   placed before the table, another switch's map after it, or padding between
+   table and map is still read as rows.
    **Stranded rows.** The smallest range can belong to a variable in front of
    a map: in `switch (map[mode])` one guard bounds `mode` and a second bounds
    `map[mode] - 8` to the table, and `mode`'s range is the smaller. A value of
