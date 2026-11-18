@@ -40,6 +40,7 @@ use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
 
 pub mod kuna_libgcc;
 mod kuna_libcnames;
+pub mod kuna_sdkprotos;
 pub mod kuna_libcsigs;
 pub mod kuna_libctypes;
 pub mod kuna_win32sigs;
@@ -424,6 +425,12 @@ pub fn declared_libc_prototype(
         .find(|(n, _)| *n == name)
         .map(|(_, sig)| sig)?;
     build_pieces(name, sig, types, word_size, layout).ok()
+}
+
+/// Whether a built-in table declares `name`, so no other source types it.
+pub(crate) fn has_builtin_prototype(name: &str) -> bool {
+    LIBC.iter().chain(kuna_libcsigs::LIBC_EXT.iter()).any(|(n, _)| *n == name)
+        || kuna_libctypes::declared_named_prototype(name).is_some()
 }
 
 /// Collect the set of FUNC symbol names present in the object — the names the
@@ -830,7 +837,7 @@ mod tests {
     }
 
     /// A type factory shaped like the x86-64 one the passes run against.
-    fn fmt_factory() -> kuna_decomp::dtype::TypeFactoryImpl {
+    pub(super) fn fmt_factory() -> kuna_decomp::dtype::TypeFactoryImpl {
         let types = kuna_decomp::dtype::TypeFactoryImpl::new();
         types.set_default_alignment_map();
         types.set_max_basetype_size(8);

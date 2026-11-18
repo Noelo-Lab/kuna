@@ -99,6 +99,10 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // names the image IMPORTS (see the module docs — a defined `error` is the
         // image's own function). Registered always.
         Box::new(crate::protos::kuna_libcsigs::LibcSigsPass),
+        // (kuna `objcsdk`) C prototypes read from the SDK headers the option
+        // names, for a Mach-O's imports. After the libc tables, which it defers
+        // to; inert with no header directory.
+        Box::new(crate::protos::kuna_sdkprotos::SdkProtoPass),
         // S1 libgcc DI-mode contracts (`libgccsigs`): `long long __divdi3(long long,
         // long long)` on SPARC32 BE ELF. Registered always; the COMMIT is gated by
         // `--option libgccsigs on|off` (default off) via `analysis_pass_enabled`.

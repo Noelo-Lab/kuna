@@ -1,0 +1,110 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<!--
+    C function prototypes from SDK headers (`option objcsdk <dir>|off`, the C
+    half of the option).
+
+    Issue: `objcsdk` read only Objective-C declarations, so the C functions the
+    same headers declare had no prototype. A call whose arguments were set up
+    before an earlier call lost them (`v2 = CFStringGetLength();`), a tail call
+    printed bare (`dispatch_async_f(); // tail-call`), a struct filled through
+    a pointer was loose stack slots, and an enum constant was a number.
+
+    Stage / sub-stage: P1 external-refinement.
+    `analyzers/protos/kuna_sdkprotos.rs` reads the declarations of the names the
+    image imports from the same directory: attribute macros skipped, the `#if`
+    branches the target rules out dropped, types resolved through typedefs,
+    records, the enum macros and the object macros. A by-value struct is spread
+    over registers only where its members travel as separate arguments would.
+
+    P0 assertion: `option objcsdk <directory>|off` (env-bridged, load-time: set
+    before the `load file` it applies to and cleared at the end).
+
+    The fixture is `macho_sdk_c.c`, built against the hand-written stand-in
+    headers in `tests/fixtures/sdk_c/` (no SDK text), every callee an import.
+
+    Pass 1 (no headers) reproduces the BUG. Pass 2 (`objcsdk` pointed at the
+    header directory) is the FIX. `GadgetAmbiguous` (declared two ways) and
+    `GadgetOpaque` (a by-value type no header defines) keep no prototype in
+    both passes.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_sdk_c_arm64</com>
+  <com>read symbols</com>
+  <com>load function _name_len</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function _later</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function _find</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function _where</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option objcsdk decompiler/crates/kuna-analysis/tests/fixtures/sdk_c</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_sdk_c_arm64</com>
+  <com>read symbols</com>
+  <com>load function _name_len</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function _later</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function _raise_tier</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function _same</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function _find</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function _info_count</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function _inset_width</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function _where</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function _sum</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function _show</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function _unreadable</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option objcsdk off</com>
+  <com>quit</com>
+</script>
+<stringmatch name="SDKPROTOS #1: without headers the argument set up before the earlier call is lost" min="1" max="1">v2 = CFStringGetLength\(\);</stringmatch>
+<stringmatch name="SDKPROTOS #2: without headers the tail call has no arguments" min="1" max="1">dispatch_async_f\(\); // tail-call</stringmatch>
+<stringmatch name="SDKPROTOS #3: without headers a call with an out-parameter has no arguments" min="1" max="1">if \(!CFStringFindWithOptions\(\)\)</stringmatch>
+<stringmatch name="SDKPROTOS #4: without headers a two-word struct return is an integer pair" min="1" max="1">return SUB168\(v1,0\) \+ SUB168\(v1,8\);</stringmatch>
+<stringmatch name="SDKPROTOS #5: with headers the callee takes the string" min="1" max="1">v2 = CFStringGetLength\(v1\);</stringmatch>
+<stringmatch name="SDKPROTOS #6: with headers the tail call passes all three" min="1" max="1">dispatch_async_f\(a0,a1,a2\); // tail-call</stringmatch>
+<stringmatch name="SDKPROTOS #7: the caller takes its types from the callee" min="1" max="1">void _later\(dispatch_queue_s \*a0,void \*a1,void \*a2\)</stringmatch>
+<stringmatch name="SDKPROTOS #8: an enum macro's constant prints by name" min="1" max="1">dispatch_set_tier\(a0,DISPATCH_TIER_HIGH\); // tail-call</stringmatch>
+<stringmatch name="SDKPROTOS #9: an options enum prints its flags, and the result its enumerator" min="1" max="1">kCFCompareNumerically\|kCFCompareCaseInsensitive\) == kCFCompareEqualTo;</stringmatch>
+<stringmatch name="SDKPROTOS #10: a two-word struct argument is spread, and the out-parameter is the struct" min="1" max="1">v3 = CFStringFindWithOptions\(a0,a1,a2,a3,kCFCompareBackwards,&amp;v2\);</stringmatch>
+<stringmatch name="SDKPROTOS #11: the struct behind the pointer has its fields" min="1" max="1">v1 = v2\.length \+ v2\.location;</stringmatch>
+<stringmatch name="SDKPROTOS #12: a struct with an array member is laid out" min="1" max="1">v1 = v2\.count \+ \(uint8\)v2\.flags\[1\];</stringmatch>
+<stringmatch name="SDKPROTOS #13: four doubles by value are four arguments, and the return is the struct" min="1" max="1">v1 = GadgetRectInset\(a0,a1,a2,a3,2\.0\);</stringmatch>
+<stringmatch name="SDKPROTOS #14: a two-word struct return is the struct" min="1" max="1">return v1\.location \+ v1\.length;</stringmatch>
+<stringmatch name="SDKPROTOS #15: a struct over sixteen bytes is the pointer the caller passes" min="1" max="1">GadgetWide v1; </stringmatch>
+<stringmatch name="SDKPROTOS #16: a variadic keeps its fixed argument and what follows" min="1" max="1">CFShowFormat\(a0,a1,a2\);</stringmatch>
+<stringmatch name="SDKPROTOS #17: two declarations that disagree give no prototype" min="1" max="1">v1 = GadgetAmbiguous\(\);</stringmatch>
+<stringmatch name="SDKPROTOS #18: a by-value type no header defines gives no prototype" min="1" max="1">int4 _unreadable\(unsigned long a0,unsigned long a1\)</stringmatch>
+</decompilertest>

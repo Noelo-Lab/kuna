@@ -10,7 +10,8 @@
 //! (`--option objcsdk <SDK root or header dir>`, `KUNA_OBJCSDK`): an SDK root
 //! contributes the `Headers/` of every framework the image links
 //! (`LC_LOAD_DYLIB`), any other directory every `.h` under it. Nothing derived
-//! from the headers is written anywhere.
+//! from the headers is written anywhere. The C functions the same headers
+//! declare are read by `protos::kuna_sdkprotos`.
 //!
 //! The grammar read is the declaration subset: `@interface` / `@protocol`
 //! (categories included) bodies, `- (ret)sel:(T)a …;` methods and `@property
@@ -100,7 +101,7 @@ fn headers(root: &Path, frameworks: &[String]) -> Vec<PathBuf> {
     out
 }
 
-fn walk(dir: &Path, out: &mut Vec<PathBuf>, depth: usize) {
+pub(crate) fn walk(dir: &Path, out: &mut Vec<PathBuf>, depth: usize) {
     if depth > 8 {
         return;
     }
@@ -118,7 +119,13 @@ fn walk(dir: &Path, out: &mut Vec<PathBuf>, depth: usize) {
 /// Drop `//` and `/* */` comments and preprocessor lines; newlines are kept so
 /// `@interface` lines stay line-delimited. Every other byte is copied as is, so
 /// a non-ASCII character survives intact.
-fn strip_comments(text: &str) -> String {
+pub(crate) fn strip_comments(text: &str) -> String {
+    strip(text, false)
+}
+
+/// [`strip_comments`], or with `directives` the same text with each
+/// preprocessor line kept, joined onto one line and free of comments.
+pub(crate) fn strip(text: &str, directives: bool) -> String {
     let mut out: Vec<u8> = Vec::with_capacity(text.len());
     let b = text.as_bytes();
     let mut i = 0;
@@ -137,6 +144,26 @@ fn strip_comments(text: &str) -> String {
                 i += 1;
             }
             i += 2;
+        } else if line_start && b[i] == b'#' && directives {
+            while i < b.len() && b[i] != b'\n' {
+                if b[i] == b'\\' && b.get(i + 1) == Some(&b'\n') {
+                    i += 2;
+                    out.push(b' ');
+                } else if b[i] == b'/' && b.get(i + 1) == Some(&b'/') {
+                    while i < b.len() && b[i] != b'\n' {
+                        i += 1;
+                    }
+                } else if b[i] == b'/' && b.get(i + 1) == Some(&b'*') {
+                    i += 2;
+                    while i < b.len() && !(b[i] == b'*' && b.get(i + 1) == Some(&b'/')) {
+                        i += 1;
+                    }
+                    i = (i + 2).min(b.len());
+                } else {
+                    out.push(b[i]);
+                    i += 1;
+                }
+            }
         } else if line_start && b[i] == b'#' {
             // A preprocessor line, with its backslash continuations.
             while i < b.len() && b[i] != b'\n' {
@@ -614,7 +641,7 @@ fn paren_group(b: &[u8], i: &mut usize) -> Option<String> {
 }
 
 /// The C and Foundation scalars with their 64-bit Apple encodings.
-fn scalar(t: &str) -> Option<&'static str> {
+pub(crate) fn scalar(t: &str) -> Option<&'static str> {
     Some(match t {
         "void" => "v",
         "id" | "instancetype" => "@",
