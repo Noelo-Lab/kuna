@@ -1,26 +1,12 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/SimplifyExprentsHelper.java`.
 //!
-//! kuna fix `implicit_outer_instance`: `is_qualified_new_get_class` marks the
-//! creation whose outer-instance null check it removes, which then stays
-//! qualified (`fixes::constructor_calls::implicit_outer_instance`).
-//! kuna fix `synthetic_null_check_shape`: `is_qualified_new_get_class` removes a
-//! `requireNonNull`/`getClass` call only when its instructions are one of
-//! javac's null checks (`fixes::constructor_calls::synthetic_null_check_shape`); a call the
-//! source makes is kept.
 //! kuna option `jvm_javac_layout` (`kuna_javac_layout`): `buildIff` merges two
 //! returns into a ternary only when they are one bytecode instruction.
-//! kuna fix `compound_assignment_shape`: `isPPIorMMI` and `isIPPorIMM2` do not
-//! write `x.f = x.f + 1`, which loads `x` twice, as `x.f++`.
 //! kuna option `jvm_source_locals` (`kuna_source_increments`): `isIPPorIMM` and
 //! `inlinePPIandMMI` keep an increment the source wrote as a statement.
 //! kuna option `jvm_source_locals` (`kuna_source_locals`): `isAssignmentReturn`,
 //! `isArrayInitializer` and `addArrayInitializer` leave a local of the source
 //! (one the LocalVariableTable names) as the source wrote it.
-//!
-//! kuna fix `qualified_super_call`: `is_qualified_new_get_class` also removes
-//! javac's check of the outer instance of a superclass constructor call or of
-//! an anonymous class creation, and marks the call
-//! (`fixes::constructor_calls::qualified_super_call`).
 
 use std::collections::VecDeque;
 

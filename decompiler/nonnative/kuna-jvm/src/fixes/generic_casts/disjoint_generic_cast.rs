@@ -1,21 +1,11 @@
-//! kuna fix `disjoint_generic_cast` (`kuna_fixes`): where a value's generic
-//! type differs from its target's in a way `doGenericTypesCast` flags,
-//! `ExprProcessor.getCastedExprent` writes a cast to the target's
-//! parameterization. javac rejects a cast between two parameterizations of one
-//! class whose type arguments are provably distinct (JLS 4.5, javac's
-//! `disjointType`): `(ImmutableSet<Class<? super T>>) builder.build()` of an
-//! `ImmutableSet<Class<?>>`, `(Collector<E, ?, ImmutableList<E>>) TO_LIST` of a
-//! `Collector<Object, ?, ImmutableList<Object>>`, `(Range<C>) ALL` of a
-//! `Range<Comparable>`; the source casts to the raw class, which compiles to
-//! the same (no) instruction. With the fix such a cast is written raw where
-//! the value is returned, assigned or initialises a field, whose declared type
-//! takes it by unchecked conversion; an argument stays as it is (a raw
-//! argument would erase the call's result type, JLS 15.12.2.6).
+//! Fix `disjoint_generic_cast`: a cast between provably distinct
+//! parameterizations of one class is written to the raw class where the value
+//! is returned, assigned or initialises a field.
 
+use super::is_exact;
 use std::cell::Cell;
 
 use crate::code_type::CodeType;
-use crate::generic_type::GenericType;
 use crate::kuna_static_types::{arg_equal, supertype_args};
 use crate::rt::JHashMap;
 use crate::var_type::{get_class, instance_of, VarType};
@@ -123,9 +113,4 @@ fn below_bound(named: &JHashMap<VarType, Vec<VarType>>, t: &VarType, var: &VarTy
             .is_none_or(|g| g.get_arguments().is_empty());
         !(bound_args && raw && t.value_str() == bound.value_str())
     })
-}
-
-fn is_exact(t: &VarType) -> bool {
-    t.try_as_generic()
-        .is_none_or(|g| g.get_wildcard() == GenericType::WILDCARD_NO)
 }

@@ -1,16 +1,6 @@
-//! kuna fix `var_merge_liveness` (`kuna_fixes`): `VarDefinitionHelper.mergeVars`
-//! merges a variable into an earlier one of the same original slot only when
-//! no write of the later one (other than a copy of the earlier one) can be
-//! followed by a read of the earlier one's value.
-//! Vineflower checks at most the rest of the defining block, which holds for
-//! slots whose versions keep their bytecode lifetimes, but not after a pass
-//! extends one (the Kotlin schedule's `SimplifyStack` with `inlineRegularVars`
-//! replaces a local copied from a stack variable by that variable), so the
-//! merge made the later variable overwrite a value still in use.
-//!
-//! With the fix `finally_exit_versions`, a search from a write inside a
-//! verified `finally` body also goes from the body's end to the code its
-//! protected code leaves to normally (the flattened graph has no such edge).
+//! Fix `var_merge_liveness`: `mergeVars` merges a variable into an earlier one
+//! of its slot only when no write of the later one can be followed by a read of
+//! the earlier one's value.
 
 use crate::direct_edge_type::DirectEdgeType;
 use crate::direct_node::DirectNode;

@@ -3,15 +3,6 @@
 //! `caseValues` is shared with the `SwitchHeadExprent` (`setCaseValues`), and
 //! its `null` entries mark the default case. `headexprent` is the one-slot list
 //! shared with flow nodes (empty while the Java slot is `null`).
-//!
-//! kuna fixes (`kuna_fixes`): `type_switch_enum_label` qualifies an enum
-//! constant label of a pattern switch on another type; `type_switch_label_lookup`
-//! writes a case with several type patterns as one label of unnamed patterns;
-//! `switch_case_order` orders the cases by where their code starts
-//! (`fixes::switches::switch_case_order`); `switch_table_fillers` leaves out the
-//! keys javac fills a `tableswitch`'s gaps with (`fixes::switches::switch_table_fillers`);
-//! `switch_synthetic_default` leaves out javac's default of a pattern switch
-//! (`fixes::switches::switch_synthetic_default`).
 
 use crate::basic_block_statement::BasicBlockStatement;
 use crate::const_exprent::ConstExprent;
@@ -32,7 +23,7 @@ use crate::statement::{
     add_instanceof_pattern_vars, EdgeDirection, LastBasicType, Statement, StatementKind,
     StatementType,
 };
-use crate::fixes::switches::{switch_case_order, switch_synthetic_default, switch_table_fillers};
+use crate::fixes::switches;
 use crate::text_buffer::TextBuffer;
 use crate::validation_helper::ValidationHelper;
 use crate::var_exprent::VarExprent;
@@ -165,7 +156,7 @@ impl SwitchStatement {
             )
         });
         let fillers = if kuna_fixes::enabled(KunaFix::SwitchTableFillers) {
-            switch_table_fillers::filler_edges(self)
+            switches::filler_edges(self)
         } else {
             Vec::new()
         };
@@ -182,7 +173,7 @@ impl SwitchStatement {
             let default_last =
                 !edges.is_empty() && Some(edges.get(edges.len() - 1)) == default_edge;
             if kuna_fixes::enabled(KunaFix::SwitchSyntheticDefault)
-                && switch_synthetic_default::hides_case(self, &edges.to_vec())
+                && switches::hides_case(self, &edges.to_vec())
             {
                 continue;
             }
@@ -485,7 +476,7 @@ impl SwitchStatement {
         }
 
         let positions = if kuna_fixes::enabled(KunaFix::SwitchCaseOrder) {
-            switch_case_order::positions(
+            switches::positions(
                 bbstat,
                 lst_first_succs.len(),
                 lst_first_succs[0].get_destination(),

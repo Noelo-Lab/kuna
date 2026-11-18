@@ -1,7 +1,5 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/PPandMMHelper.java`.
 //!
-//! kuna fix `compound_assignment_shape` (`fixes::numeric_types::compound_assignment_shape`):
-//! `x.f = x.f + 1` that loads `x` twice is not written `++x.f`.
 //! kuna option `jvm_source_locals` (`kuna_source_increments`): `inlinePPIandMMIIf`
 //! keeps an increment the source wrote as a statement before the `if`.
 

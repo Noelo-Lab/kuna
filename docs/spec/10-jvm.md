@@ -1374,10 +1374,9 @@ A *fix* is a deliberate departure from the Java at the place of such a defect, o
 Vineflower prints wrong. The table in `docs/jvm.md` (*Kuna-only fixes*) describes each fix,
 by its id, in one row: the defect and what kuna does instead. This section describes the
 gate every fix goes through, the invariants the fixes keep, and the mechanisms groups of
-them share. The ported file of each gated site names the fix in its header, and a fix
-longer than a few lines lives in a module named by its id in its family's folder,
-`decompiler/nonnative/kuna-jvm/src/fixes/<family>/<id>.rs` (the family's file when it has one
-module).
+them share. A fix longer than a few lines lives in its family's module,
+`decompiler/nonnative/kuna-jvm/src/fixes/<family>.rs`, or, in a family with a folder, in
+`decompiler/nonnative/kuna-jvm/src/fixes/<family>/<id>.rs`.
 
 **The gate.** `decompiler/nonnative/kuna-jvm/src/p0_knowledge/kuna_fixes.rs (KunaFix)`
 names each fix; `KunaFix::id` gives its id (the name the table and the `fix` field of
@@ -1801,7 +1800,7 @@ anonymous `Weight` subclasses of Elasticsearch's queries; `FilteredTermsEnum.Acc
 `LRUQueryCache.CacheAndCount`, `ConcurrentMergeScheduler.MergeThread`) becomes an import javac
 rejects (`has protected access`), and the whole file fails to compile (still so on
 `develop/1.13.0`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/class_writing/nonpublic_nested_import.rs`), a class
+(`decompiler/nonnative/kuna-jvm/src/fixes/class_writing.rs`), a class
 outside the input that the `InnerClasses` attribute of the class being written (or of a class
 enclosing it, or of the class itself when it is loaded) records as a member class of a class in
 another package, and that is not public or is nested in a class that is not, is named through
@@ -1819,7 +1818,7 @@ descriptor, so a package-private method redeclared in a subclass in another pack
 method that has the name of a private superclass method gets an `@Override` javac rejects
 (`method does not override or implement a method from a supertype`; still so on
 `develop/1.13.0`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/class_writing/override_inaccessible_method.rs`), the
+(`decompiler/nonnative/kuna-jvm/src/fixes/class_writing.rs`), the
 search skips a supertype method the class cannot override and goes on to that type's own
 supertypes.
 
@@ -1845,7 +1844,7 @@ path, or reads after it (`T v; if (x instanceof T) { v = (T) x; } else { v = new
 v.use();`, Elasticsearch's `ES812PostingsReader.postings`, Ghidra's
 `FileBytesAdapterV0.createBuffers`), becomes a pattern variable used outside its scope, which
 javac cannot resolve (still so on `develop/1.13.0`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/patterns/pattern_variable_scope.rs`), the
+(`decompiler/nonnative/kuna-jvm/src/fixes/patterns/mod.rs`), the
 pattern is made only when no statement of the method outside the pattern's scope uses the
 variable (by index): the scope is the branch the assignment came from when it is the `if`'s own
 branch, or the statements after the `if` in its sequence when it is the `if`'s successor, plus
@@ -1864,7 +1863,7 @@ written in. Two cases that each declare `double z` before an `if` (Guava's
 `ConsistencyChecker.sizeRestriction`, Elasticsearch's `DocValuesConsumerUtil`) are then written
 without braces and javac rejects the second (`already defined`), and where a clash is detected
 the earlier written case can be the one renamed. With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/declaration_scope/switch_case_scope.rs`), a switch
+(`decompiler/nonnative/kuna-jvm/src/fixes/declaration_scope.rs`), a switch
 statement's cases are visited in the order they are written, the declarations made at the top
 level of a case sequence stay live until the switch ends, as for a single-block case, and a
 declaration nested deeper in a later case that clashes only with top-level declarations of
@@ -1881,7 +1880,7 @@ extends the local class (`class LocalClass<T> {} ... new LocalClass<String>() {}
 `Types.ClassOwnership.detectJvmBehavior`) names only the anonymous class, so the declaration
 lands later, and javac cannot resolve the anonymous class's supertype (still so on
 `develop/1.13.0`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/anonymous_classes/local_class_anonymous_subclass.rs`),
+(`decompiler/nonnative/kuna-jvm/src/fixes/anonymous_classes/mod.rs`),
 `new` of an anonymous class whose superclass or interface is the local class is a use of it.
 **Kotlin `for` loops** (`kt_for_loop_exit_condition`, `kt_for_range_counter`,
 `kt_for_range_exclusive_bound`, `kt_for_range_unmatched_bound`, `kt_for_loop_definitions`,
@@ -1974,7 +1973,7 @@ cut around each suspension's early `return`, which the `finally` does not run (k
 `lastOrNull`, `maxWith`, `minWith`, `toChannel` and its `map`, `zip` lambdas,
 `SharedFlowImpl.collect`, `StateFlowImpl.collect`, `StreamFlow.collect`; unchanged on
 `develop/1.13.0`, whose only change to these classes is nullability). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/control_flow/irreducible_with_exception_edges.rs`),
+(`decompiler/nonnative/kuna-jvm/src/fixes/control_flow.rs`),
 at the two points where Vineflower gives the region up for good (the map of extended
 postdominators fresh or refreshed) and only when the region is irreducible over its regular and
 exception edges together (a handler entered from its range), `DomHelper` goes on in two ways.
@@ -2035,7 +2034,7 @@ catch clause's variable belongs to its `CatchStatement` (or `CatchAllStatement`)
 node in that graph (`FlattenStatementsHelper` leaves it out: "TODO: add catch variable to this
 node"), so it keeps the old entry; the clause declares `e` while its uses read `ex`, and javac
 cannot resolve `ex`. With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/nested_class_vars/lambda_catch_var_rename.rs`) the catch
+(`decompiler/nonnative/kuna-jvm/src/fixes/nested_class_vars/mod.rs`) the catch
 variables of the body's statement tree take the entry their uses take. Upstream has no change
 here.
 
@@ -2046,7 +2045,7 @@ import collector, which decides how the same type is written without an annotati
 qualify it (`Map.Entry` where another `Entry` is in scope, the full name where the current
 package has a class of the same simple name); that qualifier is dropped, so
 `Map.@Nullable Entry<K, V>` is written `@Nullable Entry<K, V>`, which names another type or none.
-With the fix (`decompiler/nonnative/kuna-jvm/src/fixes/type_annotations/type_annotation_qualified_name.rs`)
+With the fix (`decompiler/nonnative/kuna-jvm/src/fixes/type_annotations.rs`)
 the first name is preceded by the qualifier of the import collector's name for it, and the
 annotation follows the qualifier, as Java requires (JLS 9.7.4).
 
@@ -2057,7 +2056,7 @@ and then recurses into the argument with all of the member's annotations, so an 
 for a later argument takes its steps inside an earlier one:
 `Function<Map<String, @A Object>, @B Map<String, @C Object>>` is written with `@A @C` on the first
 `Object` and nothing on the second. With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/type_annotations/type_annotation_argument_scope.rs`) the
+(`decompiler/nonnative/kuna-jvm/src/fixes/type_annotations.rs`) the
 recursion into an argument sees only the annotations whose path enters it.
 
 **Fix `assert_throw_after_if`**. `AssertProcessor.replaceAssertion` finds an assert's
@@ -2068,7 +2067,7 @@ the end of a loop body), the structurer writes the `if` the other way round:
 the throw being the last statement of the sequence, reached only when the condition is false.
 Vineflower leaves the shape alone, writes "Could not resugar all assert statements" and a reference
 to the synthetic field, which javac cannot resolve. With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/asserts/assert_throw_after_if.rs`), when the
+(`decompiler/nonnative/kuna-jvm/src/fixes/asserts.rs`), when the
 throw's only predecessor is the `if`'s fall-through edge, the condition is negated
 (`SecondaryFunctionsHelper.propagateBoolNot`) and read as for `if (!C) throw`, and the `if` and
 the throw become the assert followed by the `if`'s body (or by its jump). Upstream has no change
@@ -2080,7 +2079,7 @@ its body, so a private member class (or one nested in a private member class) ca
 there (JLS 6.6.1) and javac rejects the clause and every subclass with it; a source produces such a
 class only by leaving the clause out, which makes the permitted subclasses those of the same
 compilation unit (JLS 8.1.6). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/class_writing/sealed_private_permits.rs`) the clause is left
+(`decompiler/nonnative/kuna-jvm/src/fixes/class_writing.rs`) the clause is left
 out for a top-level class whose permitted subclasses are all its member classes and include such
 an inaccessible one. The recompiled attribute lists the same classes, in the order the classes are
 written.
@@ -2093,7 +2092,7 @@ thing done before a break: `if (round) { t = t.truncate(); if (up) { t = t.plus(
 `yield t.truncate(); if (up) { yield t.plus(1); }` (unreachable code), and a case left by a
 failed condition, a loop's exit or an empty block yields nothing (`switch rule completes without
 providing a value`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/switches/switch_expression_assignments.rs`) the
+(`decompiler/nonnative/kuna-jvm/src/fixes/switches.rs`) the
 switch becomes an expression only when every break source that is reached by completing normally
 (an empty block, an `if` without else, a conditional loop) is a block ending in an assignment to
 the variable or a throw, and every assignment to it in the cases is one of those. Upstream has no
@@ -2106,7 +2105,7 @@ captured variable shares its slot with a catch variable `e`), and the uses of a 
 written by their local-variable-table names, which take precedence, while `ClassWriter` declares a
 parameter by the `VarProcessor` name: `onFailure(Exception ex) { log(e); }`, which javac cannot
 resolve, or resolves to a captured variable. With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/nested_class_vars/nested_param_rename.rs`) a parameter without a
+(`decompiler/nonnative/kuna-jvm/src/fixes/nested_class_vars/mod.rs`) a parameter without a
 clashing name or a `MethodParameters` name is declared by its local-variable-table name, the name
 its uses are written by; those names are the source's, under which the method compiled. A
 local-variable-table name that is not a Java identifier is not (kotlinc names a property setter's
@@ -2214,7 +2213,7 @@ leaves unresolved, named like one of the class's, is taken for the class's and w
 cast (`getUninterruptibly((Future<V>)future)` in Guava's `AbstractFuture`), which javac rejects
 in a static context. With the fix the walk out from the code stops counting class type
 variables once it has passed a static method
-(`decompiler/nonnative/kuna-jvm/src/fixes/generics/static_type_variable_scope.rs (is_static_method)`;
+(`decompiler/nonnative/kuna-jvm/src/fixes/generics.rs (is_static_method)`;
 a synthetic method, such as a lambda's static implementation method, says nothing about the
 context the lambda is written in); the method's own type variables, and those of the methods
 enclosing a local or anonymous class, stay. With the class's type variable out of the way,
@@ -2491,7 +2490,7 @@ sequence. Otherwise it stays after the `try`, and code that reads the clause's v
 out of its scope (spring-boot's `LambdaSafe.invoke`: `catch (ClassCastException ex) { if (!...) throw
 ex; } this.logNonMatchingType(callbackInstance, ex);`). Behaviour is unchanged, as only the clause
 reaches that code, but javac rejects it. With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/control_flow/catch_tail_inline.rs (reads_left_catch_var)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/control_flow.rs (reads_left_catch_var)`)
 statements that read the variable of a catch clause the break leaves are inlined into the clause
 regardless. `LambdaSafe.invoke` is the one instance on the benchmark inputs.
 
@@ -2503,7 +2502,7 @@ type needs another type variable there, javac cannot infer the diamond: `Supplie
 new EnumSetSupplier<>(valueClass)` with `valueClass` a `Class<V0>` and `V extends V0`, or `return new
 EnumMap<>(keyClass)` for a `Map<K, Collection<V>>` with a `Class<K0>` (the source wrote `(Supplier) new
 EnumSetSupplier<V0>(valueClass)`, an unchecked conversion the bytecode keeps no trace of). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/generics/diamond_argument_conflict.rs (contradicts)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/generics.rs (contradicts)`)
 the inferred type is lifted to the expected type's class (through `GenericType.getGenericSuperType`,
 or the class's own signature when that class is outside the input) and compared argument by
 argument; where both sides name different type variables in scope, outside any wildcard and other
@@ -3376,7 +3375,7 @@ turns `asList(new T[]{a, b})` back into `asList(a, b)`. It marks any array, and 
 length alone has no elements: `Arrays.asList(new T[n])`, a list of `n` nulls, is written
 `Arrays.asList()`, an empty list (Ghidra's `AssemblyConstructStateGenerator.applyOperands`, two
 methods of Elasticsearch's reindex tasks). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/overloads/vararg_array_length.rs (spreads_as_elements)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/overloads/mod.rs (spreads_as_elements)`)
 the array is marked only when writing its elements keeps the call's meaning: it has an initializer,
 no length, or a first length that is the constant 0 (what javac compiles a call passing no varargs
 to). Otherwise it is passed as the array, `Arrays.asList(new T[n])`.
@@ -3417,7 +3416,7 @@ one `static {}` block and `Box<Integer> box` in the next (javac reuses the slot;
 `LoggingApplicationListener`, both `ColorConverter`s) or in two sibling blocks of a method, become one
 variable declared `Box<String>`, and javac rejects the second one's code (`box.add(1)`), losing the
 class. With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/var_merge/var_merge_declared_type.rs (declared_apart)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/var_merge/mod.rs (declared_apart)`)
 `mergeVars` refuses such a merge, as one `remapVar` refuses: the two stay two variables, each declared
 with its own type, and the clash renaming names the second (`boxx`). Elasticsearch's
 `IndicesRequestCache.cleanCache` loses the raw `(Iterator)` cast the merge needed. The lattice also puts `int`
@@ -3440,7 +3439,7 @@ this.listener = listener;`, `this.content = content.retain();`, `this.slices = s
 Map.copyOf(slices) : null;`, loses the computations, and the record is printed with no constructor
 or a compact one (4 records in Elasticsearch); a compact constructor's stores to static fields go
 too. Upstream fixed this in Vineflower 1506b2f4 ("Fix incorrect compact record constructors"). With
-the fix (`decompiler/nonnative/kuna-jvm/src/fixes/class_writing/compact_record_constructor.rs
+the fix (`decompiler/nonnative/kuna-jvm/src/fixes/class_writing.rs
 (assigns_components_last)`) the constructor is compact only when, besides Vineflower's test,
 upstream's holds: its one exit that does not throw ends with `this.c = v` for every component in
 order, from increasing variable slots; and only stores to fields of `this` are removed. It also stays
@@ -3475,11 +3474,11 @@ SneakyThrows()`, without a target type to infer from; on a raw receiver the call
 erased to `Throwable` too (Guava's four `SneakyThrows` classes; Elasticsearch's `ScriptCache.rethrow`, and
 `TenaciousRetryBlobContainer.execute`, where Vineflower's copy of the catch parameter loses javac's precise
 rethrow). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/generics/thrown_type_variable.rs (throw_cast)`) a `throw` of a
+(`decompiler/nonnative/kuna-jvm/src/fixes/generics.rs (throw_cast)`) a `throw` of a
 variable whose declared type (a parameter's, a local's without a generic signature) is a checked
 exception class that no class in the method's generic `throws` covers is cast to the first thrown type
 variable whose erasure (the `Exceptions` attribute's entry) admits it; and
-(`decompiler/nonnative/kuna-jvm/src/fixes/generics/thrown_type_variable.rs (type_receiver)`) a raw `new
+(`decompiler/nonnative/kuna-jvm/src/fixes/generics.rs (type_receiver)`) a raw `new
 C()` that is the receiver of a call whose generic `throws` names every type parameter of `C`, each bounded
 by `Object`, `Throwable`, `Exception` or `RuntimeException`, is written `new C<RuntimeException>()`, the
 type JLS 18.4 gives a thrown inference variable with no other bound. Both compile to the same bytecode.
@@ -3587,7 +3586,7 @@ are outside the input and both declare a `Bucket`, so `implements Filters.Bucket
 under an import, and javac reports `reference to Bucket is ambiguous` (the class is lost, 28 methods);
 `NodesHotThreadsResponse` imports `java.io.Reader` where the `Writeable.Reader` it inherits is in scope.
 With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/class_writing/external_inherited_member_type.rs (add_external_members)`),
+(`decompiler/nonnative/kuna-jvm/src/fixes/class_writing.rs (add_external_members)`),
 the walk also notes each supertype it cannot load, and reads that one's member classes from the
 `InnerClasses` entries of the classes it did visit (javac records there every nested class a class file
 names, and `InternalMultiBucketAggregation` names `MultiBucketsAggregation.Bucket`, `InternalFilters`
@@ -3623,7 +3622,7 @@ enclosing class written bare makes the type a member of a raw type: with type ar
 class javac rejects it (`improperly formed type`; Guava's `CombinedFuture`, whose field
 `@Nullable CombinedFutureInterruptibleTask<?> task` costs the class, 19 methods), without them it is a
 raw type (Guava's `LocalCache`, `MapMakerInternalMap`, `AbstractMapBasedMultimap`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/type_annotations/type_annotation_outer_arguments.rs (arguments_of)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/type_annotations.rs (arguments_of)`)
 each enclosing class is followed by the type arguments the generic type's parent chain gives it,
 `CombinedFuture<V>.@Nullable CombinedFutureInterruptibleTask<?>`, which recompiles to the original
 Signature. These four Guava classes are the only change on the five Java benchmark jars; Kotlin output
@@ -3642,7 +3641,7 @@ instanceof T) { T v = (T) this.f;`, whose second read the pattern drops), and a 
 negated test's exit, at the `ifne`'s target (`if (!(o instanceof T)) return false; T v = (T)
 o;`, also written `o instanceof T == false`). javac compiles the patterns it prints otherwise:
 a temporary, and the binding before the exit. With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/patterns/pattern_binding_shape.rs (is_javac_pattern)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/patterns/mod.rs (is_javac_pattern)`)
 the pattern is made only when the subject is a variable, or the synthetic field holding a
 variable a local or anonymous class captured (which javac reads twice for a pattern on the
 captured variable), and the binding's first instruction is the one after the `ifeq` that
@@ -3724,7 +3723,7 @@ case bodies out in the order of the source's cases (a switch over strings includ
 buckets and its second switch follow the source); the switch instruction's targets keep that
 order. `SwitchStatement::sort_edges_and_nodes` orders the case groups by their smallest key,
 the default last, then moves each case that falls through after its predecessor. With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/switches/switch_case_order.rs (positions)`) a
+(`decompiler/nonnative/kuna-jvm/src/fixes/switches.rs (positions)`) a
 group is ordered by the first instruction its keys jump to (the default's target included), so
 `case 'M' .. 'L' .. 'F' .. '-'`, an enum switch's constants and a `default` written between
 cases come out as the source has them; the fall-through pass is unchanged. javac's synthetic
@@ -3739,7 +3738,7 @@ code. `SwitchStatement.toJava` writes every entry of the default's group, so a s
 `default:` prints as `case 3: default:`, and `LabelHelper::hide_default_switch_edges`, which
 drops an empty last default, leaves such keys behind as an empty last case (`case 3: case 5:
 case 6: case 7:`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/switches/switch_table_fillers.rs (filler_edges)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/switches.rs (filler_edges)`)
 a key inside the table's range whose target is the default's is a filler when javac would
 still choose a `tableswitch` for the remaining labels (`Gen.visitSwitch`: `4 + (hi - lo + 1) +
 3 * 3 <= 3 + 2 * n + 3 * n` for `n` labels); the Java switch printer leaves fillers out of the
@@ -3760,13 +3759,13 @@ MatchException(null, null);`. And when one case gives an enum switch expression'
 the method returns it, javac lets that case fall into the return instruction: the case reads
 `return v;`, `SwitchExpressionHelper` finds no variable the cases assign, and the switch is
 printed as a statement with javac's default. With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/switches/switch_synthetic_default.rs (is_javac_default)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/switches.rs (is_javac_default)`)
 the default is javac's when its statement is exactly that throw and its target comes before
 every case's target in the switch instruction; `SwitchExprent::to_java` then leaves it out of
 any switch expression, and `SwitchStatement::to_java` out of a pattern switch statement (javac
 adds it to both again). A switch over an enum (not a pattern switch) with javac's default was
 an expression, since a statement switch over an enum gets none:
-`decompiler/nonnative/kuna-jvm/src/fixes/switches/switch_expression_return.rs (process)`,
+`decompiler/nonnative/kuna-jvm/src/fixes/switches.rs (process)`,
 called where `SwitchExpressionHelper` declines one, turns such a switch with no successor whose
 cases are each one block ending in `return v` or `throw` into `return switch (..) { .. };`: the
 returns become yields, the switch the phantom backing of a `SwitchExprent` in a block after it
@@ -3852,13 +3851,13 @@ the field came out read at both: `int i = lock.count; if (lock.count <= 0)`. Ano
 the field between the two reads, and on a volatile field each read synchronizes on its own
 (Elasticsearch's `KeyedLock.tryAcquire` on a `volatile int`; Guava's `ExecutionSequencer`, Ghidra's
 `FunctionDB`, Elasticsearch's `ImmutableOpenMap` and `RecyclerBytesStreamOutput`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/stack_var_inlining/field_read_reuse.rs (keeps_single_read)`) such
+(`decompiler/nonnative/kuna-jvm/src/fixes/stack_var_inlining/mod.rs (keeps_single_read)`) such
 a value stays in its stack variable when it has several uses, and the following passes write the
 assignment expression the source had (`while ((i = lock.count) > 0)`). A read followed in its block by
 a store into the same field keeps the copies: that is the `x++` Kotlin 1.3 compiles with a `dup`, which
 `PPandMMHelper` folds back into one read, and so does a store into a field of the read object through the
 variable or a stack copy of it (`this.counter.value++`,
-`decompiler/nonnative/kuna-jvm/src/fixes/stack_var_inlining/field_read_reuse.rs (stores_through)`). In Java
+`decompiler/nonnative/kuna-jvm/src/fixes/stack_var_inlining/mod.rs (stores_through)`). In Java
 output a kept read of a field that may change (not final; `kt_inline_heap_read`'s test) is copied into none
 of its uses: the next-statement rule still copied it into the uses in the following statement while the
 variable stayed for the others, and kotlinc's `x?.f` and `x ?: y` (`dup; ifnull`) put both uses of the
@@ -3867,7 +3866,7 @@ this.stream.close()` (okhttp's `Http2ExchangeCodec.cancel` on a `@Volatile` fiel
 case's `cancel`, recompiled with javac from Vineflower's text and run against a thread storing `null`,
 threw `NullPointerException` 28,977 times in 20,000,000 calls, the original never). javac's shapes and the
 five Java benchmark jars are unchanged. A class written as Kotlin
-(`decompiler/nonnative/kuna-jvm/src/fixes/stack_var_inlining/field_read_reuse.rs (written_as_kotlin)`) is left
+(`decompiler/nonnative/kuna-jvm/src/fixes/stack_var_inlining/mod.rs (written_as_kotlin)`) is left
 to `kt_field_read_reuse`, which keeps such a read in every pass, the Kotlin plugin's inliner
 (`INLINE_ALL_VARS`) included.
 
@@ -3925,7 +3924,7 @@ the method that creates it, so that method fails. Written as Java (the Kotlin wr
 parameters otherwise), seven methods of okio 2.6.0 and okhttp 4.7.2 fail so: `Throttler.source` and
 `sink`, `AsyncTimeout.source` and `sink`, the constructor of `Cache.CacheResponseBody`,
 `DiskLruCache.Entry.newSource` and `RealWebSocket.connect`. With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/anonymous_classes/constructor_signature_alignment.rs (align)`) a
+(`decompiler/nonnative/kuna-jvm/src/fixes/anonymous_classes/mod.rs (align)`) a
 signature that describes the descriptor's parameters after a leading run of marked ones, each of its
 types one whose erasure is the descriptor's type at that position, is trimmed to the unmarked
 parameters, as `parseDescriptor` trims the IR form. The writer, which pairs the signature's types with
@@ -3974,7 +3973,7 @@ and the code around it, so the single write in a loop body of a local declared b
 as its only one. Java output never prints this finality, but the Kotlin writer declares such a local
 `val`, which kotlinc rejects as reassigned (okhttp's `RetryAndFollowUpInterceptor`, okio's
 `codePointIndexToCharIndex`, 30 such locals in the two). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/declaration_scope/local_final_writes.rs (set_non_final)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/declaration_scope.rs (set_non_final)`)
 heads are read where they run and a loop body starts with a set of its own, so a local declared outside
 the loop and written in it is non-final (`var`).
 
@@ -4059,7 +4058,7 @@ the enter is written `synchronized (x){} // $VF: monitorenter`, which takes the 
 at once, and the body runs after it without the lock, with `// $VF: monitorexit` comments on the exits
 (wrong output in Java and Kotlin; kotlinx-coroutines 1.8.0 and 1.10.2's `ThreadSafeHeap.removeFirstIf`,
 an inline function written `synchronized(this) { val first = firstImpl() ?: return null; .. }`). With
-the fix (`decompiler/nonnative/kuna-jvm/src/fixes/finally_sync/inline_marker_finally_copy.rs
+the fix (`decompiler/nonnative/kuna-jvm/src/fixes/finally_sync/mod.rs
 (is_marker_depth)`), `compare_basic_blocks_ex` accepts an instruction pair that differs where both are a
 `bipush`/`sipush` followed in both sequences by the same `invokestatic` of
 `kotlin/jvm/internal/InlineMarker.finallyStart` or `finallyEnd` `(I)V`; nothing else of the copies may
@@ -4083,7 +4082,7 @@ synchronized statement" on the method in Java, and the release keeps `ExitHelper
 `EventLoopImplBase.DelayedTask.scheduleTask`, 1.8.0's `JobSupport.invokeOnCompletion`). The output is
 not wrong: the `synchronized` statement releases the lock on the `break`, at the same point as the
 bytecode's release. With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/finally_sync/synchronized_break_exit.rs (mark_break_exits)`),
+(`decompiler/nonnative/kuna-jvm/src/fixes/finally_sync/mod.rs (mark_break_exits)`),
 `buildSynchronized` also marks dead the release in a block that is the destination of an edge from a
 statement of the body, when the block starts with `aload n; monitorexit` for the local `n` the
 `monitorenter` block locks (`aload n; monitorenter` or `dup; astore n; monitorenter`), holds no other
@@ -4143,7 +4142,7 @@ synchronized (l) { .. }` became `this.lock = new Object(); synchronized (this.lo
 new object; an assignment moved past a call that changes its field; and `Object l = next(); synchronized
 (next()) { .. }` lost its first call (wrong output in Java, the same in Vineflower; no method of the ten
 benchmark inputs has the shape: every assignment it removes there is the compiler's). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/finally_sync/synchronized_lock_assignment.rs (is_lock_variable)`),
+(`decompiler/nonnative/kuna-jvm/src/fixes/finally_sync/mod.rs (is_lock_variable)`),
 an assignment is the lock variable's only when every exprent after it in the head block stores a
 constant or a local to a local its value does not read, and one whose value the operand repeats is
 dropped only when that value has several uses (`MULTIPLE_USES`: no call, allocation or store). Not
@@ -4277,7 +4276,7 @@ named local's field value into its uses (`val s = src.head; s!!.limit - s.pos` p
 `src.head!!.limit - src.head.pos`). Each read may see another value once another thread writes the field
 (kotlinx-coroutines' `@Volatile` fields, `DefaultExecutor._thread`), and the check guards another read
 than the one used, so kotlinc rejects the use of the nullable property. With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/stack_var_inlining/kt_field_read_reuse.rs (keeps_read)`), in
+(`decompiler/nonnative/kuna-jvm/src/fixes/stack_var_inlining/mod.rs (keeps_read)`), in
 Kotlin output (a class with Kotlin metadata, the Kotlin plugin on) a read of a field that is not final,
 with several uses, stays in its variable, not even copied into the next statement, as fix
 `field_read_reuse` keeps Java's stack variables. A final field (a `val` property's) keeps its value once
@@ -4291,7 +4290,7 @@ only the other uses read it. In the Kotlin plugin, which inlines every local, th
 another variable than the one it guards (`var t = text; if (text == null) t = ..`), a cast or an array
 element evaluated again (`val box = var10000` beside `(state as? Box) == null`), and Kotlin cannot
 smart-cast the variable. With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/stack_var_inlining/kt_partial_inline.rs (keeps_variable)`), in
+(`decompiler/nonnative/kuna-jvm/src/fixes/stack_var_inlining/mod.rs (keeps_variable)`), in
 Kotlin output a variable that stays (a use the value cannot move to, or a definition that does not reach
 all of them) is read at every use, as the bytecode reads it; a variable whose uses all take the value is
 inlined as before. Vineflower's numbering and clash renaming of the locals around it move on.
@@ -4362,7 +4361,7 @@ type parameters and the hierarchy map, which needs that class's file. A project'
 interfaces without code, such as Guava's `Function`, `Supplier` and `ReferenceEntry`, so `IdentityFunction
 implements Function<Object, Object>` gave nothing for `Function` and `return IdentityFunction.INSTANCE`
 from a `Function<E, E>` method was written without its cast, which javac rejects. With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/generic_casts/external_supertype_arguments.rs (supertype_args)`),
+(`decompiler/nonnative/kuna-jvm/src/fixes/generic_casts/mod.rs (supertype_args)`),
 when the supertype's class is unknown its arguments are read from the generic superclass and
 superinterfaces the known classes' signatures declare, walking up through known classes only and
 substituting each class's type arguments; a raw supertype gives none.
@@ -4442,7 +4441,7 @@ freely only while every step computes in the same type, and an operand whose wid
 narrower as written: `(long) ord * (vectorByteSize * 2L)` came out `ord * this.vectorByteSize * 2L`,
 whose `ord * this.vectorByteSize` is an `int` product that overflows (Elasticsearch's
 `ES920DiskBBQVectorsWriter` and `ES940DiskBBQVectorsWriter` `readQuantizedVector`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/numeric_types/mixed_type_reassociation.rs (regroups_type)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/numeric_types/mod.rs (regroups_type)`)
 the parentheses of such an operand of `+` or `*` stay unless the left operand and the first operand
 of the regrouped group, as written (by `implicit_widening_arithmetic`'s rule), promote to the
 operator's own type: `ord * (this.vectorByteSize * 2L)`, while `x * y * z` on `long`s and
@@ -4460,7 +4459,7 @@ Java runs the `finally` on every iteration where the bytecode runs it once: `try
 synchronized (queue) { .. return; } task.run(); } } finally { .. }` came out `while (true) { try { ..
 } finally { .. } }`, which re-interrupts the thread before each task (Guava's
 `SequentialExecutor$QueueWorker.workOnQueue`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/finally_sync/protected_back_edge.rs (is_open_loop_body)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/finally_sync/mod.rs (is_open_loop_body)`)
 `CatchAllStatement.isHead` refuses a body whose continue set holds its own first block (its back edge
 lies inside the range, so the loop does), and `findGeneralStatement` accepts such a body alone as a
 region ending at its exit, as it accepts a body with a regular edge to itself: inside the region the
@@ -4476,7 +4475,7 @@ first statement was an empty loop sharing its head that `EliminateLoopsHelper` r
 its condition is false, and the rewrite made that the exit: `while ((l = v[++i]) >= p) { .. }`, which
 leaves where the bytecode scans on (Elasticsearch's `BulkNeighborQueue$ReservoirTopK.quickSelectIntro`
 returned the wrong k-th element). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/control_flow/loop_first_if_exit.rs (exits_to)`) the
+(`decompiler/nonnative/kuna-jvm/src/fixes/control_flow.rs (exits_to)`) the
 rewrite is made only when every successor of the `if` is a `break` to that exit; otherwise the loop
 stays `while (true) { if ((l = v[++i]) >= p) { .. } }`.
 
@@ -4493,7 +4492,7 @@ came out comparing the boxes (kotlin-stdlib's Java `Intrinsics.areEqual(Double, 
 bytecode replaces, and compare identities. Vineflower's conditional `c ? defaultValue : readBoolean(..)`
 unboxed by the conditional's typing; `jvm_javac_layout`'s two returns did not, so Elasticsearch's
 `ConfigurationUtils.readBooleanProperty` returned `null` where it throws. With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/numeric_types/reference_unboxing.rs (keep_under_boxing)`) the
+(`decompiler/nonnative/kuna-jvm/src/fixes/numeric_types/mod.rs (keep_under_boxing)`) the
 argument of an unwritten boxing call, and the left operand of such a comparison, is written with its
 unboxing call: `((Long)LONG.nextDown(value)).longValue()`, `first.doubleValue() == second`. Java output
 only.
@@ -4506,7 +4505,7 @@ statements; it finds none, takes the whole array as the initializer of the synth
 field, and the constants print bare (`NO_ERROR,` for `NO_ERROR(0)`) in Java and Kotlin output alike. Its
 "Failed to inline enum fields" note is added to `<clinit>`, which is then empty and hidden, so the loss is
 silent (okhttp 4.7.2's `ErrorCode`, `Protocol` and `TlsVersion`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/class_writing/enum_constant_in_values_array.rs (extract)`), when
+(`decompiler/nonnative/kuna-jvm/src/fixes/class_writing.rs (extract)`), when
 the first statement of an enum's static initializer stores an array of the enum into a static field of the
 class, and its elements are, in field order, one assignment `F = new E(..)` to each enum constant of the
 class, whose first two constructor arguments are the constant's own name and ordinal and whose value
@@ -4762,7 +4761,7 @@ the copy instead of the parameter (okio's `Pipe.sink.write`; a suspend `emit`'s 
 valuex`, in 6 objects of each kotlinx-coroutines version once `unlisted_anonymous_class` nests them; in
 Java output, two locals of
 okhttp's `Relay` that end up with one name). Unchanged on `develop/1.13.0`. With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/nested_class_vars/refresh_printed_var_names.rs (refresh)`) the
+(`decompiler/nonnative/kuna-jvm/src/fixes/nested_class_vars/mod.rs (refresh)`) the
 clashing names are taken first and only the variables without one are renamed, so no variable is given
 a name another one prints.
 **`kt_implicit_widening`.** Java widens a primitive implicitly where it is stored, passed or returned

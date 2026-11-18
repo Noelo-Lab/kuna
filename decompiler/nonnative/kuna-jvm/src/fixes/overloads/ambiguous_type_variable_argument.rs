@@ -1,23 +1,7 @@
-//! kuna fix `ambiguous_type_variable_argument` (`kuna_fixes`):
-//! `InvocationExprent.appendParamList` casts an argument that
-//! `getAmbiguousParameters` finds ambiguous to the type it writes for the
-//! parameter, which for a generic method is the signature's type with the
-//! type variables replaced by what inference found. When the parameter is
-//! declared as one of the method's own type variables, that replacement is
-//! the argument's own type, so the cast meant to pick the bytecode's method
-//! can make an overload taking that type applicable and more specific, and
-//! javac prefers it: Guava's `appendTo((Appendable) builder, parts)` of
-//! `<A extends Appendable> A appendTo(A, Iterator<?>)` came out
-//! `appendTo((StringBuilder) builder, parts)`, a call of
-//! `appendTo(StringBuilder, Iterator<?>)`, the method itself. With the fix,
-//! when the arguments as written would resolve (JLS 15.12.2, phases 1 and 2,
-//! as fix `vararg_spread_resolution` models them) to another method, such an
-//! argument is cast to the variable's erasure, the descriptor's parameter
-//! type: no other overload declares that type at that position (the two
-//! would erase alike), so the cast rules out the overloads it was meant to.
-//! `getInferredExprType` binds the variable to that erasure as javac will, so
-//! a cast of the call's result the bytecode makes is written. Where no other
-//! method is chosen the inferred type stays: it keeps the result's type.
+//! Fix `ambiguous_type_variable_argument`: an ambiguous argument for a
+//! parameter declared as the method's own type variable is cast to the
+//! variable's erasure when the written arguments would resolve to another
+//! method.
 
 use crate::code_constants::CodeConstants;
 use crate::code_type::CodeType;

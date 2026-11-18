@@ -1,12 +1,4 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/AssertProcessor.java`.
-//!
-//! kuna fix `assert_dead_throw` (`kuna_fixes`): in `replace_assertion`,
-//! a `throw new AssertionError` the `if` reached by a break is removed once
-//! the assert has consumed it (`fixes::asserts::assert_dead_throw`).
-//!
-//! kuna fix `assert_throw_after_if`: an assert whose throw follows an `if`
-//! the structurer wrote the other way round is recognised
-//! (`fixes::asserts::assert_throw_after_if`).
 
 use crate::assert_exprent::AssertExprent;
 use crate::basic_block_statement::BasicBlockStatement;
@@ -24,8 +16,7 @@ use crate::interpreter_util::InterpreterUtil;
 use crate::invocation_exprent::InvocationExprent;
 use crate::jthrow;
 use crate::kuna_fixes::{self, KunaFix};
-use crate::fixes::asserts::assert_dead_throw;
-use crate::fixes::asserts::assert_throw_after_if;
+use crate::fixes::asserts;
 use crate::secondary_functions_helper::SecondaryFunctionsHelper;
 use crate::root_statement::RootStatement;
 use crate::rt::JList;
@@ -366,7 +357,7 @@ impl AssertProcessor {
                 && !res.assignment
                 && !res.replace_parent
             {
-                assert_dead_throw::remove_consumed_throw(throw_stat, if_edge);
+                asserts::remove_consumed_throw(throw_stat, if_edge);
             }
         }
 
@@ -381,7 +372,7 @@ impl AssertProcessor {
         classname: &str,
         key: &str,
     ) -> bool {
-        let Some(next) = assert_throw_after_if::throw_after(parent, stat) else {
+        let Some(next) = asserts::throw_after(parent, stat) else {
             return false;
         };
         let Some(throw_error) = Self::is_assertion_error(Some(next)) else {
@@ -411,7 +402,7 @@ impl AssertProcessor {
         exprs.add(AssertExprent::new(lst_params).0);
         assertion.set_exprents(exprs);
 
-        assert_throw_after_if::replace(parent, stat, next, assertion);
+        asserts::replace(parent, stat, next, assertion);
         true
     }
 

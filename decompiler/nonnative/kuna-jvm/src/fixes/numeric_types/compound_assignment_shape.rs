@@ -1,25 +1,6 @@
-//! The kuna fix `compound_assignment_shape` (`kuna_fixes`), called from
-//! `SecondaryFunctionsHelper::identify_secondary_functions_exprent`.
-//!
-//! Vineflower writes `left = left op e` as `left op= e` by a heuristic: a
-//! field target only when `e` has no side effects, an array element only with
-//! a variable or constant array and index, never through a narrowing cast that
-//! is not `e`'s own type, and `left = e op left` as `left op= e` for a
-//! commutative `op`, which evaluates `left` before `e`. The bytecode tells the
-//! forms apart where it differs: javac evaluates the receiver of a compound
-//! assignment to a field once and `dup`s it, and an element's array and index
-//! once with `dup2`, while `a.f = a.f op e` loads them twice; and the compound
-//! form always reads `left` first. With the fix an instance field or array
-//! element target is written compound exactly when its receiver (array and
-//! index) and the read's are one load, with any `e` and through the cast to
-//! the target's own type that the compound form implies; and `left = e op
-//! left` is never written compound, whatever the target. For `left = left op
-//! e`, locals and static fields, which compile the same either way, keep
-//! Vineflower's choice, and so does every assignment of a class compiled
-//! from Kotlin (with `kotlin.Metadata`), whose compiler does not `dup` a
-//! property's receiver. The same holds for `x.f = x.f + 1`, which
-//! `PPandMMHelper`, `isPPIorMMI` and `isIPPorIMM2` write `x.f++`
-//! ([`loads_twice`]).
+//! Fix `compound_assignment_shape`: an instance field or array element target
+//! is written `op=` exactly when the bytecode loads its receiver (array and
+//! index) once, and `left = e op left` is never written compound.
 
 use crate::assignment_exprent::AssignmentExprent;
 use crate::decompiler_context::DecompilerContext;

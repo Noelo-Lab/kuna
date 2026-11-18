@@ -1,7 +1,4 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/deobfuscator/IrreducibleCFGDeobfuscator.java`.
-//!
-//! kuna fix `irreducible_with_exception_edges` reuses the candidate choice and
-//! the split (`fixes/control_flow/irreducible_with_exception_edges.rs`).
 
 use crate::cancelation_manager::CancelationManager;
 use crate::rt::{JHashMap, JHashSet};

@@ -1,7 +1,4 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/stats/BasicBlockStatement.java`.
-//!
-//! kuna fix `copied_finally` (spec 10.16): a copy's block records the
-//! block it was copied from.
 
 use crate::basic_block::BasicBlock;
 use crate::code_constants::{GROUP_JUMP, GROUP_SWITCH, OPC_GOTO, OPC_MONITOREXIT};

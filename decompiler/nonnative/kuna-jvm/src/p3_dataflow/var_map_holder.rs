@@ -3,10 +3,6 @@
 //! The maps are `Shared`: `set` makes two holders alias the same maps, and the
 //! state logic compares them by identity (`ptr_eq`). `ifTrue` is never null in
 //! practice, but `setIfFalse` can null it, so it is an `Option`.
-//!
-//! kuna fix `field_read_all_paths` (spec 10.16): a holder made with
-//! `all_paths` keeps, when it merges two states, only the field variables both
-//! have.
 
 use crate::fixes::stack_var_inlining::field_read_all_paths::FieldReadAllPaths;
 use crate::rt::Shared;

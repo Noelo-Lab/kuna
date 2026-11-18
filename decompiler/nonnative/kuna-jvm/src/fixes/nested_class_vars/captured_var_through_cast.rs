@@ -1,23 +1,5 @@
-//! kuna fix `captured_var_through_cast`: a `new` of an anonymous or local
-//! class that passes a captured variable through a reference cast that cannot
-//! fail still captures that variable.
-//!
-//! `NestedClassProcessor.computeLocalVarsAndDefinitions` takes a constructor
-//! argument for a captured variable only when it is a variable. kotlinc copies
-//! an inline function's lambda parameter into a local with a `checkcast` to
-//! the parameter's type (`val cont = cancellable as CancellableContinuation`)
-//! and passes that local to the objects the lambda creates; the Kotlin plugin
-//! inlines every single-use variable, so the `new` passes
-//! `(CancellableContinuation) cancellable`. Vineflower then leaves the
-//! parameter uncaptured: the object keeps a field and a constructor parameter,
-//! which the Kotlin writer cannot express as an `object` expression and fails
-//! (kotlinx-coroutines' `awaitClose`).
-//!
-//! With the fix a cast argument whose operand is a variable is the capture of
-//! that variable when the variable's type is a class that is a subtype of the
-//! cast's class: such a cast never throws and yields the same reference, and
-//! every use the object makes of the value as the cast type is valid on the
-//! variable's type.
+//! Fix `captured_var_through_cast`: a constructor argument that casts a
+//! variable to a supertype of its class captures that variable.
 
 use crate::code_type::CodeType;
 use crate::decompiler_context::DecompilerContext;

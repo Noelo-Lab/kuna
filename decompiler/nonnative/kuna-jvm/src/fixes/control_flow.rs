@@ -1,28 +1,55 @@
-//! kuna fix `irreducible_with_exception_edges` (spec 10.16): reducing an
-//! irreducible level of `DomHelper` that holds exception edges.
-//!
-//! `IrreducibleCFGDeobfuscator::is_statement_irreducible` answers "reducible"
-//! for any level where a statement has an exception edge, so such a level is
-//! never split; and where the regular flow is irreducible no statement
-//! dominates the loop, so the extended postdominators that would isolate a
-//! `try` inside it are filtered out. A Kotlin suspend function whose state
-//! machine resumes inside a loop that holds a `try` fails there with
-//! `parsing failure!`. Where Vineflower gives up on such a level (irreducible
-//! over its regular and exception edges together, a handler being entered from
-//! its range), [`IrreducibleWithExceptionEdges::isolate`] collapses the
-//! smallest single-entry, single-exit region that holds a handler's whole
-//! range, the region `findGeneralStatement` would build for that head and
-//! exit, so its `try` is built inside it; when there is none,
-//! [`IrreducibleWithExceptionEdges::split`] splits as Java does, choosing among
-//! the statements no exception edge touches, whose copies run the same code
-//! under the same (absent) protection.
+//! Fix family `control_flow`: `catch_tail_inline` moves the code only a
+//! handler reaches into the handler when it reads the catch variable;
+//! `irreducible_with_exception_edges` reduces an irreducible level that holds
+//! exception edges; `loop_first_if_exit` makes a loop's first `if` its exit
+//! test only when the path past the `if` leaves the loop.
 
 use crate::dom_helper::DomHelper;
 use crate::general_statement::GeneralStatement;
+use crate::if_statement::IfStatement;
 use crate::irreducible_cfg_deobfuscator::IrreducibleCFGDeobfuscator;
 use crate::rt::{JHashMap, JHashSet};
+use crate::sequence_statement::SequenceStatement;
 use crate::stat_edge::StatEdge;
 use crate::statement::{EdgeDirection, Statement};
+use crate::statement_iterator::StatementIterator;
+use crate::var_version_pair::VarVersionPair;
+
+/// Whether the statements of `seq` from `index` on read the variable of a
+/// catch clause that `edge`, the only break to them, leaves.
+pub fn reads_left_catch_var(seq: SequenceStatement, index: usize, edge: StatEdge) -> bool {
+    let to = edge.get_destination();
+    let mut from = edge.get_source();
+    let mut vars: JHashSet<VarVersionPair> = JHashSet::new();
+    while let Some(parent) = from.get_parent() {
+        if parent.contains_statement_strict(to) {
+            break;
+        }
+        if let Some(catch) = parent.try_as_catch() {
+            let stats = parent.get_stats().borrow().to_vec();
+            if let Some(i) = stats.iter().position(|s| *s == from).filter(|&i| i > 0) {
+                if let Some(var) = catch.get_vars().to_vec().get(i - 1) {
+                    vars.add(var.get_var_version_pair());
+                }
+            }
+        }
+        from = parent;
+    }
+    if vars.is_empty() {
+        return false;
+    }
+    let stats = seq.get_stats().borrow().to_vec();
+    let mut found = false;
+    for st in &stats[index..] {
+        StatementIterator::iterate(*st, &mut |e| {
+            if let Some(var) = e.try_as_var() {
+                found |= vars.contains(&var.get_var_version_pair());
+            }
+            0
+        });
+    }
+    found
+}
 
 pub struct IrreducibleWithExceptionEdges;
 
@@ -159,4 +186,13 @@ impl IrreducibleWithExceptionEdges {
             }
         }
     }
+}
+
+/// Whether the path past `firstif` already leaves for `destination`.
+pub fn exits_to(firstif: IfStatement, destination: Statement) -> bool {
+    let succs = firstif.get_successor_edges(Statement::STATEDGE_DIRECT_ALL);
+    !succs.is_empty()
+        && succs
+            .iter()
+            .all(|e| e.get_type() == StatEdge::TYPE_BREAK && e.get_destination() == destination)
 }

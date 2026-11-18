@@ -1,9 +1,4 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/stats/CatchAllStatement.java`.
-//!
-//! kuna fix `protected_back_edge` (`fixes::finally_sync::protected_back_edge`): no
-//! `try` is built around a loop body whose back edge it would protect.
-//! kuna fix `kt_inlined_stdlib_call` (`fixes::kt_compiler_idioms::kt_inlined_stdlib_call`):
-//! kotlinc's inlined copy of `use` is written as the call.
 
 use std::rc::Rc;
 
@@ -15,7 +10,7 @@ use crate::expr_processor::ExprProcessor;
 use crate::java_subclass;
 use crate::fixes::kt_compiler_idioms::kt_inlined_stdlib_call;
 use crate::kuna_fixes::{self, KunaFix};
-use crate::fixes::finally_sync::protected_back_edge;
+use crate::fixes::finally_sync;
 use crate::rt::{JList, JavaStr};
 use crate::stat_edge::StatEdge;
 use crate::statement::{LastBasicType, Statement, StatementKind, StatementType};
@@ -83,7 +78,7 @@ impl CatchAllStatement {
         }
 
         if kuna_fixes::enabled(KunaFix::ProtectedBackEdge)
-            && protected_back_edge::is_open_loop_body(head)
+            && finally_sync::is_open_loop_body(head)
         {
             return None;
         }

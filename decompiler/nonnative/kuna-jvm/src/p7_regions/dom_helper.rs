@@ -1,14 +1,6 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/decompose/DomHelper.java`.
 //!
 //! `GraphParser` is not ported (plugin API), so `createStatement` is inherent.
-//! kuna fix `irreducible_with_exception_edges`: where Vineflower gives up on an
-//! irreducible level with exception edges, a try region is isolated or an
-//! unprotected statement split (`fixes/control_flow/irreducible_with_exception_edges.rs`).
-//! kuna fix `synchronized_break_exit`: `build_synchronized` also removes the
-//! lock release at a `break` target the body leaves for
-//! (`fixes/finally_sync/synchronized_break_exit.rs`).
-//! kuna fix `protected_back_edge`: a loop body whose back edge is still open
-//! is a region on its own (`fixes/finally_sync/protected_back_edge.rs`).
 
 use std::collections::VecDeque;
 
@@ -32,9 +24,8 @@ use crate::jthrow;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::label_helper::LabelHelper;
 use crate::method_processor::MethodProcessor;
-use crate::fixes::control_flow::irreducible_with_exception_edges::IrreducibleWithExceptionEdges;
-use crate::fixes::finally_sync::protected_back_edge;
-use crate::fixes::finally_sync::synchronized_break_exit;
+use crate::fixes::control_flow::IrreducibleWithExceptionEdges;
+use crate::fixes::finally_sync;
 use crate::root_statement::RootStatement;
 use crate::rt::{JHashMap, JHashSet, JLinkedHashMap, JLinkedHashSet, JavaEq, Shared};
 use crate::sequence_helper::SequenceHelper;
@@ -436,7 +427,7 @@ impl DomHelper {
                                 }
 
                                 if kuna_fixes::enabled(KunaFix::SynchronizedBreakExit) {
-                                    synchronized_break_exit::mark_break_exits(current, ca_first);
+                                    finally_sync::mark_break_exits(current, ca_first);
                                 }
 
                                 current.remove_successor(
@@ -890,7 +881,7 @@ impl DomHelper {
                         .contains(&head)
                     || (!same
                         && kuna_fixes::enabled(KunaFix::ProtectedBackEdge)
-                        && protected_back_edge::is_open_loop_body(head)))
+                        && finally_sync::is_open_loop_body(head)))
                 && set_nodes.len() < stats.borrow().len()
                 && DomHelper::check_synchronized_completeness(&set_nodes)
             {

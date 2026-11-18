@@ -1,19 +1,9 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/exps/ExitExprent.java`.
-//!
-//! kuna fix `lambda_type_variable_target`: a returned call is told the
-//! declared type it is returned as (`fixes::lambdas::lambda_type_variable_target`).
-//!
-//! kuna fix `thrown_type_variable`: a `throw` of a checked exception the
-//! method declares only as a type variable casts it to that variable
-//! (`fixes::generics::thrown_type_variable`).
-//!
-//! kuna fix `disjoint_generic_cast`: the value written here is marked as
-//! one with a declared target type (`fixes::generic_casts::disjoint_generic_cast`).
 
 use crate::check_types_result::CheckTypesResult;
 use crate::fixes::generic_casts::disjoint_generic_cast;
 use crate::function_exprent::FunctionType;
-use crate::fixes::generics::thrown_type_variable;
+use crate::fixes::generics;
 use crate::code_type::CodeType;
 use crate::decompiler_context::DecompilerContext;
 use crate::expr_processor::{ExprProcessor, NullCastType};
@@ -208,7 +198,7 @@ impl ExitExprent {
         } else {
             if kuna_fixes::enabled(KunaFix::ThrownTypeVariable) {
                 let thrown = value.expect("NullPointerException");
-                if let Some(cast) = thrown_type_variable::throw_cast(thrown) {
+                if let Some(cast) = generics::throw_cast(thrown) {
                     buf.append("throw (").append_cast_type_name(&cast).append(")");
                     if thrown.get_precedence() >= FunctionType::Cast.precedence() {
                         buf.append("(").append_buffer(&thrown.to_java(indent)).append(")");

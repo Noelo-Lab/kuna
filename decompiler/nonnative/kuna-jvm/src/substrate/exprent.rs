@@ -5,10 +5,6 @@
 //! here that calls the overriding view in path form and falls back to the
 //! base body (`*_base`).
 //!
-//! kuna fix `type_variable_shadowing` (`kuna_fixes`): in `getNamedGenerics` a
-//! type variable of an enclosing class or method no longer replaces the bounds
-//! of a same-named one declared closer to the code.
-//!
 //! kuna option `jvm_source_locals` (`kuna_source_locals`): `sortIndexed`
 //! orders a run of declarations by the variables' original slots.
 
@@ -32,7 +28,7 @@ use crate::i_matchable::{IMatchable, MatchProperties};
 use crate::if_exprent::{IfExprent, IfExprentData};
 use crate::invocation_exprent::{InvocationExprent, InvocationExprentData};
 use crate::k_dispatch::{self, KExprentExt};
-use crate::fixes::generics::static_type_variable_scope;
+use crate::fixes::generics;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::match_engine::MatchEngine;
 use crate::match_node::{MatchNode, MatchValue};
@@ -821,7 +817,7 @@ impl Exprent {
             };
             if scoped {
                 static_context |= method.is_some_and(|m| {
-                    static_type_variable_scope::is_static_method(class_, m)
+                    generics::is_static_method(class_, m)
                 });
             }
             let cls = class_

@@ -1,10 +1,6 @@
 //! Static types as kuna's fixes of Vineflower's type inference need them:
 //! the declared type of a method parameter, a class's type parameters, the
 //! type arguments a type gives one of its supertypes, raw types.
-//!
-//! kuna fix `external_supertype_arguments`: in `supertype_args`, a supertype
-//! outside the classes kuna knows gets the arguments the known classes'
-//! signatures give it (`fixes::generic_casts::external_supertype_arguments`).
 
 use crate::code_constants::CodeConstants;
 use crate::code_type::CodeType;
@@ -13,7 +9,7 @@ use crate::field_exprent::FieldExprent;
 use crate::generic_type::GenericType;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::method_descriptor::MethodDescriptor;
-use crate::fixes::generic_casts::external_supertype_arguments;
+use crate::fixes::generic_casts;
 use crate::var_exprent::VarExprent;
 use crate::var_type::{get_class, VarType};
 
@@ -81,7 +77,7 @@ pub fn supertype_args(sub: &VarType, sup: &str) -> Option<Vec<Option<VarType>>> 
     }
     let Some(sup_formals) = formals(sup) else {
         return kuna_fixes::enabled(KunaFix::ExternalSupertypeArguments)
-            .then(|| external_supertype_arguments::supertype_args(sub, sup))
+            .then(|| generic_casts::external_supertype_args(sub, sup))
             .flatten();
     };
     let cls = get_class(&sub.value)?;

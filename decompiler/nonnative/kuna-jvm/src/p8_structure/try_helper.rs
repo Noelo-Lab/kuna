@@ -1,8 +1,4 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/TryHelper.java`.
-//!
-//! kuna fix `twr_class_version` (`kuna_fixes`): javac 11 and later desugar
-//! try-with-resources the same way for every `--release`, so the Java 11
-//! processor also runs on older class files (accepting only javac's shape).
 use crate::catch_statement::CatchStatement;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::root_statement::RootStatement;

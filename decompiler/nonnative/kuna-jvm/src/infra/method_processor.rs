@@ -8,12 +8,6 @@
 //!
 //! kuna option `jvm_javac_layout` (`kuna_javac_layout`): the Java schedule
 //! names its method to the layout decisions, which apply only there.
-//!
-//! kuna fix `overlapping_ranges` (spec 10.16): ranges that overlap without
-//! nesting are split before the multiple-entry check.
-//!
-//! kuna fix `split_constructor_call` (spec 10.16): the main loop's last step
-//! joins an allocation and its constructor call left in different statements.
 
 use std::cell::Cell;
 use std::panic::{self, AssertUnwindSafe};

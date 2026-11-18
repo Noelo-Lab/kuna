@@ -1,18 +1,8 @@
-//! kuna fix `receiver_type_arguments` (`kuna_fixes`): a generic call or
-//! diamond creation that is the qualifier of another call has no target type
-//! (JLS 15.12), so javac infers its type arguments from its own arguments
-//! alone: `List.of(MODE).iterator()` returned as an `Iterator<Setting<?>>`
-//! infers `E` as `Setting<IndexMode>`, `new Builder<>(comparator).build()`
-//! returned as an `ImmutableSortedSet<E>` infers a capture of
-//! `? super E`, and javac rejects the result (`incompatible types`). The
-//! source writes the type arguments, `List.<Setting<?>>of(MODE)`, which
-//! compile to no instruction; Vineflower writes none, or a raw `new`. With
-//! the fix, a returned or assigned chain of calls whose results are typed by
-//! their classes' type variables is traced back from its target to the
-//! generic call or creation it starts with, and that one gets the explicit
-//! type arguments the target needs, unless its arguments already give
-//! javac exactly those, or one of them could not take them.
+//! Fix `receiver_type_arguments`: the generic call or creation a returned or
+//! assigned chain of calls starts with gets the explicit type arguments its
+//! target needs, traced back through the chain.
 
+use super::{is_exact, mentions};
 use crate::code_type::CodeType;
 use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;
@@ -363,19 +353,4 @@ fn unify(p: &VarType, a: &VarType, vars: &[String], map: &mut JHashMap<String, V
 
 fn is_class_type(t: &VarType) -> bool {
     t.type_ == CodeType::Object && t.array_dim == 0
-}
-
-fn mentions(t: &VarType, var: &str) -> bool {
-    if t.type_ == CodeType::Genvar {
-        return t.value_str() == var;
-    }
-    t.try_as_generic().is_some_and(|g| {
-        g.get_arguments().iter().flatten().any(|a| mentions(a, var))
-            || g.get_parent().is_some_and(|p| mentions(&p, var))
-    })
-}
-
-fn is_exact(t: &VarType) -> bool {
-    t.try_as_generic()
-        .is_none_or(|g| g.get_wildcard() == GenericType::WILDCARD_NO)
 }

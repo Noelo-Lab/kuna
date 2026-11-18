@@ -1,27 +1,6 @@
-//! kuna fix `split_constructor_call` (`kuna_fixes`): an object creation whose
-//! constructor arguments hold control flow is rebuilt as one `new X(args)`.
-//!
-//! The bytecode of `new X(args)` is `new X; dup; <args>; invokespecial
-//! X.<init>`. When evaluating the arguments branches (Kotlin's `a!!` and
-//! `a ?: throw ..`, an inlined `require`, an overflow check), the stack is
-//! spilled at the branch and the allocation and the constructor call land in
-//! different statements: `v = new X` and, later, `v.<init>(args)`.
-//! `SimplifyExprentsHelper.isConstructorInvocationRemote` joins the two only
-//! within one exprent list, so Vineflower prints the `<init>` call with
-//! `$VF: Unable to resugar constructor`, which is not Java (or Kotlin).
-//! With the fix the pair is joined across statements, `v = new X(args)` at
-//! the constructor call, when the allocation is the only definition of `v`,
-//! the call is the only `<init>` on it, nothing reads `v` on a path from the
-//! allocation that has not passed the call, and the same handlers protect
-//! both. The verifier allows nothing but `<init>` on the uninitialised
-//! object, so what moves is the allocation itself, as the same-list join
-//! already moves it past the statements in between. That is not the same
-//! program in one respect: `X` is initialised after the arguments rather
-//! than before, and not at all on a path that leaves them without the call
-//! (`X(a ?: return null)` comes out `if (a == null) null else X(a)`, which
-//! skips `X.<clinit>` where the bytecode runs it). Only a static initializer
-//! of `X` with an effect, run first there, tells them apart; Vineflower's
-//! `<init>` call is not Java at all.
+//! Fix `split_constructor_call`: an allocation `v = new X` and its later
+//! `v.<init>(args)` in another statement are joined into `v = new X(args)` at
+//! the call when nothing can observe `v` in between.
 
 use crate::code_type::CodeType;
 use crate::direct_edge_type::DirectEdgeType;

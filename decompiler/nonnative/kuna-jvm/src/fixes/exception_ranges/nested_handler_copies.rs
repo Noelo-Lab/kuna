@@ -1,19 +1,6 @@
-//! kuna fix `nested_handler_copies` (spec 10.16): the nesting half of
-//! `ExceptionDeobfuscator::insert_dummy_exception_handler_blocks`.
-//!
-//! That pass gives every range of a handler with several ranges its own copy of
-//! the handler block and puts each copy into the ranges that protect the
-//! handler, under the handler those ranges have. When the handler is itself
-//! protected, as the `catch` of a `try`/`catch`/`finally` is by the `finally`'s
-//! handler, and that outer handler was duplicated too, a catch and the try body
-//! it serves end up under different copies of the outer handler, and
-//! `DomHelper` can never build the statement: the method fails with
-//! `parsing failure!`. [`NestedHandlerCopies::nest`] restores the nesting. An
-//! outer handler whose ranges together have a single entry did not need its
-//! copies, so its ranges go back to the handler itself; otherwise each catch
-//! moves to the copy of the outer handler that protects its try body. Copies of
-//! a handler run the same code with the same successors, so neither change
-//! alters what the method does.
+//! Fix `nested_handler_copies`: the handler copies of
+//! `insert_dummy_exception_handler_blocks` are nested in the outer-handler copy
+//! that protects the range they serve.
 
 use crate::basic_block::BasicBlock;
 use crate::control_flow_graph::ControlFlowGraph;

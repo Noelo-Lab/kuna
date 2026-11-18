@@ -101,7 +101,7 @@ byte.
 | `src/infra/` | the per-method schedule (`method_processor`), the plugin and language-plugin API, and kuna's parallel driver, spans, plugin bundle (`kuna_plugins`) and corpus runner |
 | `src/plugins/` | Vineflower's VariableRenaming and IdeaNotNull plugins |
 | `src/kotlin/` | Vineflower's Kotlin plugin: the metadata decoder, its pass schedule, the Kotlin expression and statement layer, the Kotlin writer (below, "Kotlin") |
-| `src/fixes/` | kuna's fixes of Vineflower's defects, one folder per family of `fixes.toml` (a file for a family of one module), called from the gated sites of the ported files (below, "Kuna-only fixes") |
+| `src/fixes/` | kuna's fixes of Vineflower's defects, one module per family of `fixes.toml` (a folder for a large family), called from the gated sites of the ported files (below, "Kuna-only fixes") |
 | `options.toml` | the `jvm_*` option rows; `build.rs` generates the static table from it |
 | `examples/` | `corpus` (the regression runner) |
 | `tests/` | the unit and differential suite, one `integration` test binary (`tests/integration.rs` registers every file) |
@@ -123,7 +123,7 @@ rules:
   acronyms split oddly: `IFernflowerPreferences` is `i_fernflower_preferences`,
   `PPandMMHelper` is `p_pand_mm_helper`). Every ported module is re-exported flat from the
   crate root (`kuna_jvm::if_helper`), so code never names a phase folder; a fix is named by
-  its family (`crate::fixes::switches::switch_case_order`). Types keep their Java names,
+  its family (`crate::fixes::switches`, `crate::fixes::generic_casts::receiver_type_arguments`). Types keep their Java names,
   nested Java types live in their outer class's module, and methods are the Java names in
   snake case with prefixes kept (`getParent` is `get_parent`). A class of static methods
   is a unit struct, so a call reads like the Java (`IfHelper::merge_all_ifs(root)`).
@@ -715,9 +715,9 @@ example):
    above the table (`tests/kuna_fixes.rs` checks it). There is no
    option row: a fix is not a user option, and `jvm_vineflower_compat` already turns it
    off with the others. At the site: `if kuna_fixes::enabled(KunaFix::X) { ... } else {
-   <the Java, unchanged> }`, and a line in the ported file's header naming the fix by its
-   id. A fix longer than a few lines goes in a module named by its id in its family's
-   folder, `src/fixes/<family>/<id>.rs`, called from the gated branch. Code that runs
+   <the Java, unchanged> }`. A fix longer than a few lines goes in its family's module,
+   `src/fixes/<family>.rs` (or `src/fixes/<family>/<id>.rs` in a family with a folder),
+   called from the gated branch. Code that runs
    before `Fernflower::new` installs the context reads the set it is building
    (`fixes.contains(..)`), as `report_to_kuna` does.
 4. **Add the case.** Compile the reproducer and run `python3 -I

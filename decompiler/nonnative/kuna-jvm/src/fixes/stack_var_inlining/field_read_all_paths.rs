@@ -1,33 +1,6 @@
-//! kuna fix `field_read_all_paths` (spec 10.16): the Kotlin inliner moves a
-//! field read only to a use that no path from the read to it crosses
-//! something that may change the field.
-//!
-//! `SSAUConstructorSparseEx` tracks each field read as a variable (a negative
-//! index) that is live from the read until a call, an object creation, a field
-//! store or an exception edge removes it (`removeAllFields`), and
-//! `StackVarsProcessor` moves a local's field value to a later use only while
-//! that variable is live there. Liveness has to hold on every path, but the
-//! maps are merged by union, which keeps a field live after a join where one
-//! predecessor removed it: past an `if` whose branch calls or a condition
-//! whose second operand calls (`VarMapHolder`'s merges), into a catch or
-//! finally body (the try node's own edge to its combined catch carries the
-//! state from before the protected code), and past a finally body that calls
-//! (the normal exit never sees the body). The Kotlin plugin inlines every
-//! local (`INLINE_ALL_VARS`), so `val v = h.count; try { work() } finally {
-//! use(v) }` printed `use(h.count)`, read after `work()`.
-//!
-//! With the fix, the SSAU forms of that pass keep a field variable at a merge
-//! only if every predecessor whose state is known has it (a `VarMapHolder`
-//! merge, only if both states have it), and drop every field variable on the
-//! normal exit of a try-finally whose body may change fields; a value without
-//! effects that reads a field whose variable is not live where it is
-//! assigned (a read on one branch of a conditional) is inlined only into the
-//! next statement, ahead of anything there that may change the heap.
-//! The passes that inline only stack variables keep Vineflower's merge: a
-//! stack value live across a join was pushed before a conditional
-//! expression's operands (or is the `x!!` of Kotlin 1.3, whose other branch
-//! never returns), and once the expression is rebuilt it is read before the
-//! conditional part.
+//! Fix `field_read_all_paths`: the SSAU forms of the Kotlin inliner keep a
+//! field variable live at a merge only when every predecessor has it, and drop
+//! field variables past a `finally` body that may change fields.
 
 use crate::code_type::CodeType;
 use crate::exprent::Exprent;

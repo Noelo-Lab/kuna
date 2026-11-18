@@ -298,15 +298,7 @@ impl Scopes {
 
     fn listed(&mut self, list: JList<Exprent>, block: usize) {
         for exprent in list.to_vec() {
-            let top = if let Some(var) = exprent.try_as_var() {
-                Some((var, true))
-            } else {
-                exprent
-                    .try_as_assignment()
-                    .and_then(|a| a.get_left().try_as_var())
-                    .map(|var| (var, false))
-            };
-            let Some((var, bare)) = top.filter(|(var, _)| var.is_definition()) else {
+            let Some((var, bare)) = declared(exprent) else {
                 continue;
             };
             let movable = !var.is_class_def() && (bare || splittable(exprent));
@@ -794,20 +786,34 @@ fn handler_offset(handler: Statement) -> Option<i32> {
         .filter(|&offset| offset > -1)
 }
 
+/// The variable the top-level exprent `exprent` declares, and whether the
+/// declaration is bare (`T v;`) rather than `T v = e;`.
+pub(super) fn declared(exprent: Exprent) -> Option<(VarExprent, bool)> {
+    let top = if let Some(var) = exprent.try_as_var() {
+        Some((var, true))
+    } else {
+        exprent
+            .try_as_assignment()
+            .and_then(|a| a.get_left().try_as_var())
+            .map(|var| (var, false))
+    };
+    top.filter(|(var, _)| var.is_definition())
+}
+
 /// Whether the definition `exprent` (`T v = e;`) can be written `T v;` and
 /// `v = e;`: its type has a name (it is not printed `var`).
-fn splittable(exprent: Exprent) -> bool {
+pub(super) fn splittable(exprent: Exprent) -> bool {
     exprent
         .try_as_assignment()
         .and_then(|a| a.get_left().try_as_var())
         .is_some_and(|v| !v.is_intersection_type() && v.get_definition_type() != "var")
 }
 
-fn position(list: &JList<Exprent>, exprent: Exprent) -> Option<usize> {
+pub(super) fn position(list: &JList<Exprent>, exprent: Exprent) -> Option<usize> {
     list.to_vec().iter().position(|e| *e == exprent)
 }
 
-fn remove(list: &JList<Exprent>, exprent: Exprent) {
+pub(super) fn remove(list: &JList<Exprent>, exprent: Exprent) {
     if let Some(at) = position(list, exprent) {
         list.remove_at(at);
     }

@@ -1,9 +1,5 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/IfHelper.java`.
 //!
-//! kuna fix `if_denest_fallthrough` (`kuna_fixes`): `ifElseChainDenesting`
-//! leaves an if alone when its body still reaches the statements it would move
-//! into the then-branch.
-//!
 //! kuna option `jvm_javac_layout` (`kuna_javac_layout`): `reorderIf` takes
 //! javac's branch order from the bytecode offsets and splits an if-else
 //! whose then-branch javac ended with a `continue` or `break`; the collapses

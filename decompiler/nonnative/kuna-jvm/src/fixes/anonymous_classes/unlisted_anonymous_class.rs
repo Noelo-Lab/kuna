@@ -1,50 +1,9 @@
-//! kuna fix `unlisted_anonymous_class`: an anonymous class that its
-//! enclosing class does not list among its inner classes is nested in it.
-//!
-//! `ClassesProcessor` nests a class only from the `InnerClasses` attribute of
-//! the class that encloses it, starting from the classes no other class lists.
-//! kotlinc copies the anonymous objects and lambdas of an inline function into
-//! a new class (`Foo$bar$$inlined$map$1`) at every call site that inlines it;
-//! the copy lists itself as anonymous and names the method it was inlined
-//! into (`EnclosingMethod`), but that method's class does not list it, and
-//! the copy's own nested classes (its continuation) list it back, which also
-//! keeps it from being a starting point. Vineflower then writes the copy, and
-//! its nested classes, as top-level classes: its captured values stay fields
-//! that its code reads (`this$0`, `$name`, `$block$inlined`) and the method
-//! that inlined it calls its constructor by its `$` name.
-//!
-//! With the fix, after that nesting, a class that is still a top-level class
-//! although it lists itself as anonymous (no simple name, no outer class) is
-//! nested in the class its `EnclosingMethod` names, as an anonymous class, the
-//! way the enclosing class's entry would have nested it; so are its own
-//! anonymous classes that listed it. `NestedClassProcessor` then maps its
-//! captured values at the `new` like any anonymous class's, and the writers
-//! write it where it is created.
-//!
-//! A captured value must reach the `new` as a variable for that mapping.
-//! `StackVarsProcessor.setEffectivelyFinalVars` keeps a local the constructor
-//! of an anonymous class takes out of the Kotlin plugin's inliner only when
-//! it has a debug name; kotlinc gives none to the locals that hold an inlined
-//! function's arguments in some methods, and the inliner then folds them
-//! into the `new`, leaving the object's field a store of a parameter it does
-//! not show (`this.$context = $context`). For an anonymous class nested where
-//! its enclosing class does not list it, a local passed to its constructor
-//! stays a local whether or not it has a name.
-//!
-//! A suspend lambda, which the Kotlin writer cannot write (it prints its
-//! failure comment where the lambda is created), stays a class of its own in
-//! Kotlin output, so its constructor call keeps showing what it is given;
-//! so does a class created in a method that is not written (a synthetic
-//! reified `inline fun`), which would otherwise not be written at all.
-//!
-//! A captured variable is written by the name of its debug entry, which
-//! `NestedClassProcessor` copies from the creating method's variable; where
-//! kotlinc stores an inlined argument into the slot it then re-stores under
-//! a debug name (`flows$iv`), the creating method declares the variable from
-//! the first store, without an entry, by its own name (`var7`), and the
-//! object would read a name nothing declares. The entry of a captured
-//! variable of a class nested here then takes the creating method's name.
+//! Fix `unlisted_anonymous_class`: a top-level class that lists itself as
+//! anonymous is nested, after `ClassesProcessor`'s nesting, in the class its
+//! `EnclosingMethod` names; the locals its constructor takes stay locals, and
+//! its captured variables take the creating method's names.
 
+use super::is_within;
 use crate::classes_processor::{sort_nodes, ClassNode, ClassNodeType, ClassesProcessor};
 use crate::code_constants::ACC_STATIC;
 use crate::decompiler_context::DecompilerContext;
@@ -288,14 +247,3 @@ fn created_in_hidden_method(
             .is_some_and(|mt| mt.is_synthetic())
 }
 
-/// Whether `node` is `ancestor` or nested in it.
-fn is_within(node: ClassNode, ancestor: ClassNode) -> bool {
-    let mut current = Some(node);
-    while let Some(n) = current {
-        if n == ancestor {
-            return true;
-        }
-        current = n.with(|d| d.parent);
-    }
-    false
-}

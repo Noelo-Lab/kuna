@@ -1,19 +1,4 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/exps/VarExprent.java`.
-//!
-//! kuna fix `kt_outer_this`: in a class written as Kotlin, an enclosing
-//! class's instance (`Outer.this`) is written `this@Outer`.
-//!
-//! kuna fix `kt_unescaped_name`: in Kotlin output, a variable's name is
-//! written as the Kotlin writer writes it (`fixes::kt_names::kt_unescaped_name`).
-//!
-//! kuna fix `kt_raw_generic_type`: a Kotlin local the plugin gave type
-//! arguments has that type (`fixes::kt_types::kt_raw_generic_type`).
-//!
-//! kuna fix `kt_suspend_lambda`: in Kotlin output, a captured copy of a
-//! labelled suspend lambda's receiver is written `this@label`
-//! (`fixes::kt_suspend::kt_suspend_lambda::receiver_reference`), and with fix
-//! `kt_suspend_impl` one of a `$suspendImpl` body's first parameter
-//! `this@Class` (`fixes::kt_suspend::kt_suspend_impl::name`).
 
 use crate::check_types_result::CheckTypesResult;
 use crate::class_writer::ClassWriter;

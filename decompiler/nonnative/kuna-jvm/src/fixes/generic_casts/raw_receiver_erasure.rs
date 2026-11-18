@@ -1,14 +1,6 @@
-//! kuna fix `raw_receiver_erasure` (`kuna_fixes`): in Java the members of a
-//! raw type are erased (JLS 4.8): `map.keySet()` on a raw `Map` is a raw
-//! `Set`, and `set.toArray(new String[0])` on it returns `Object[]`.
-//! Vineflower infers a call's generic result from its arguments whatever its
-//! receiver, finds `String[]`, and drops the `checkcast` that makes the
-//! program compile; a for-each over a raw iterable it writes with a typed
-//! loop variable that javac sees as `Object`. With the fix a call on a
-//! receiver whose static type is raw has its erased result type, so the cast
-//! the bytecode holds is written, and a for-each over a raw iterable casts
-//! the iterable to its class parameterized by the loop variable's type.
-//! Kotlin output is left alone.
+//! Fix `raw_receiver_erasure`: a call on a receiver of raw static type has its
+//! erased result type, and a for-each over a raw iterable casts the iterable to
+//! its class parameterized by the loop variable's type.
 
 use crate::code_constants::CodeConstants;
 use crate::code_type::CodeType;

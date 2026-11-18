@@ -1,21 +1,4 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/exps/AssignmentExprent.java`.
-//!
-//! kuna fix `compound_shift_count_type` (`kuna_fixes`): `checkExprTypeBounds`
-//! does not give the shift count of `<<=`, `>>=` or `>>>=` the shifted
-//! variable's type.
-//!
-//! kuna fix `kt_compound_bitwise_assignment`: in Kotlin output, `x |= y`
-//! (and `&=`, `^=`, `<<=`, `>>=`, `>>>=`) is written `x = x or y`
-//! (`fixes::kt_operators::kt_compound_bitwise_assignment`).
-//!
-//! kuna fix `definition_const_type` (`kuna_fixes`): a declaration whose type
-//! comes from the local variable table writes a boolean-typed constant
-//! initializer in that type when the type is integral.
-//!
-//! kuna fix `disjoint_generic_cast`: the value written here is marked as
-//! one with a declared target type (`fixes::generic_casts::disjoint_generic_cast`).
-//! kuna fix `kt_unescaped_name`: in Kotlin output, a field assigned in its
-//! class's initializer is named as the Kotlin writer writes a name.
 
 use crate::check_types_result::CheckTypesResult;
 use crate::fixes::generic_casts::disjoint_generic_cast;

@@ -1,31 +1,12 @@
-//! Fix `var_merge_narrowing`: `VarDefinitionHelper.mergeVars` does not merge two
-//! variables when the merged type is narrower than a value one of them is
-//! assigned.
-//!
-//! `getMergedType` may give the merged variable an upper bound (`fromMax`) or
-//! the narrower of the two lower bounds. Every assignment whose value is not
-//! of that type is then printed with a cast the bytecode does not have there.
-//! A Kotlin suspend loop shows it: `Object v = src.next(c); if (v ==
-//! SUSPENDED) return v; Integer w = (Integer)v;` merged `w` into `v` as an
-//! `Integer`, printed `Integer v = (Integer)src.next(c)`, which throws exactly
-//! where the bytecode returns the marker. A merge is refused when the merged
-//! type does not admit a value assigned to either variable, being strictly
-//! below or unrelated to its type (through conditionals and copies of other
-//! variables, whose own bounds may be a loose join: `Object v = c ? "s" :
-//! Integer.valueOf(k)` merged with a later `Integer w` was printed `Integer v =
-//! (Integer)(c ? "s" : k)`); two variables are always correct, the versions having
-//! been split by SSA. Where the merged type only narrows a loose lower bound
-//! (a join that found no common class, a `null`), the merge is kept. Where
-//! the LocalVariableTable declares one local at every store to both, and that
-//! local's type admits every value stored and every use that names a type (a
-//! receiver, an argument, a returned or stored value), the merge is made with
-//! that type instead: it is the source's variable (`Set<Modifier> m =
-//! e.getModifiers(); ... m = new LinkedHashSet<>(m);`).
+//! Fix `var_merge_narrowing`: `mergeVars` refuses a merge whose type does not
+//! admit a value assigned to either variable, unless the LocalVariableTable
+//! declares one local for both, whose type it then uses.
 
 use crate::code_type::CodeType;
 use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;
 use crate::exit_exprent::Type as ExitType;
+use crate::fixes::util::collect_exprents;
 use crate::function_exprent::FunctionType;
 use crate::rt::try_catch;
 use crate::statement::Statement;
@@ -228,22 +209,6 @@ pub fn declared_type(
             .all(|e| operands_admit(e, [from, to], &declared))
     };
     (stored && used).then_some(declared)
-}
-
-fn collect_exprents(stat: Statement, out: &mut Vec<Exprent>) {
-    let top: Vec<Exprent> = match stat.get_exprents() {
-        Some(exprents) => exprents.iter().collect(),
-        None => {
-            for st in stat.get_stats().borrow().iter() {
-                collect_exprents(*st, out);
-            }
-            stat.get_stat_exprents()
-        }
-    };
-    for e in top {
-        out.extend(e.get_all_exprents_rec(true));
-        out.push(e);
-    }
 }
 
 fn is_one_of(e: Exprent, vars: [VarVersionPair; 2]) -> bool {

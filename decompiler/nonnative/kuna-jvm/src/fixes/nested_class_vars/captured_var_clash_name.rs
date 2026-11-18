@@ -1,24 +1,5 @@
-//! kuna fix `captured_var_clash_name`: a captured variable is printed with
-//! the name the creating method's variable is printed with, also after the
-//! clash renaming has renamed that variable.
-//!
-//! `NestedClassProcessor` gives the variable that stands for a captured value
-//! in an anonymous or local class's methods (`insertLocalVars`), and in a
-//! lambda body (`setLambdaVars`), the name and local-variable-table entry of
-//! the creating method's variable it holds, copied once. Later
-//! `VarDefinitionHelper.remapClashingNames` renames a variable of the
-//! creating method whose name clashes with another one in scope (`x`
-//! becomes `xx`), by a clashing name that takes precedence over the variable's
-//! own; it runs again when the class is written (`ClassWriter.invokeProcessors`).
-//! The captured copy keeps the old name, so the nested body reads the other
-//! variable of that name (kotlinx-coroutines' `catchImpl`: the object stores
-//! into the `Throwable fromDownstream` instead of the `ObjectRef` it captured,
-//! renamed `fromDownstreamx`), or a name that is not in scope.
-//!
-//! With the fix `NestedClassProcessor` records which variable each captured
-//! variable holds, and when a class is about to be written (after the clash
-//! renaming of the methods it is written from) each of its captured variables
-//! takes the clashing name its source variable is printed with, if it has one.
+//! Fix `captured_var_clash_name`: a captured variable takes the clashing name
+//! of the creating method's variable it holds.
 
 use crate::class_wrapper::ClassWrapper;
 use crate::var_processor::VarProcessor;

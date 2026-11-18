@@ -1,26 +1,6 @@
-//! kuna fix `unseen_class_overload` (spec 10.16): an argument of a call to a
-//! class outside the input keeps the type of its parameter where another
-//! method of that name, which the input calls, would otherwise be chosen.
-//!
-//! `InvocationExprent.appendParamList` casts an argument (or keeps its boxing
-//! or unboxing call) only where `getAmbiguousParameters` finds an overload of
-//! the callee among its class's methods; for a class outside the input it
-//! finds none and writes every implicit conversion implicitly. javac then
-//! resolves the written call against the real class: `value((double) f)`
-//! (bytecode `f2d`, `value(D)`) came out `value(f)`, which calls `value(F)`;
-//! `debug(msg, (Object) addresses)` came out `debug(msg, addresses)`, which
-//! calls the more specific `debug(String, Object...)` with the array as its
-//! arguments; `field(name, b.booleanValue())` came out `field(name, b)`,
-//! which calls `field(String, Boolean)`. The class files of the input name
-//! every method they call, so the input proves which other overloads of an
-//! outside class exist. With the fix, the methods of the same name and
-//! parameter count that the input calls stand in for the class's methods:
-//! when one of them is applicable to the arguments as written and the
-//! bytecode's method is not the most specific in the earliest phase (JLS
-//! 15.12.2), each argument whose parameter type differs from that method's is
-//! written with the bytecode's type: cast, or with its boxing or unboxing
-//! call. An overload the input never calls stays unseen (Groovy's
-//! `Closure.call(Object...)` in spring-framework).
+//! Fix `unseen_class_overload`: for a class outside the input, the methods of
+//! that name the input calls stand in for its overloads, and an argument
+//! another of them would take is written with the bytecode's type.
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};

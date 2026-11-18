@@ -1,17 +1,6 @@
-//! kuna fix `type_switch_enum_label` (`kuna_fixes::KunaFix::TypeSwitchEnumLabel`).
-//!
-//! A pattern switch (`SwitchBootstraps.typeSwitch`, Java 21+) passes each
-//! qualified enum constant label (`case E.X`) as a dynamic constant,
-//! `ConstantBootstraps.invoke(EnumDesc.of, ClassDesc.of("pkg.E"), "X")`.
-//! Vineflower 1.12.0 resolves only integer, string and class labels, so such
-//! a label stays the switch's raw index. This resolves it to the enum field,
-//! as upstream's `CondyHelper.simplifyCondy(LinkConstant, ...)` does on
-//! `develop/1.13.0` (commit `36ac62ec`), restricted to the constants a
-//! `typeSwitch` label can be, with `ClassDesc`'s binary name read in internal
-//! form. The field is marked a dynamic constant, as upstream marks it, and
-//! that mark is what makes the switch writers print it qualified when the
-//! switch is not on the enum's type (`case E.X:`); other enum labels print
-//! as Vineflower 1.12.0 prints them.
+//! Fix `type_switch_enum_label`: an `EnumDesc` dynamic-constant label of a
+//! pattern switch resolves to its enum field, as upstream's
+//! `CondyHelper.simplifyCondy` does on 1.13.0.
 
 use crate::code_constants::{CONSTANT_DYNAMIC, TYPE_OBJECT};
 use crate::const_exprent::ConstValue;

@@ -1,97 +1,4 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/exps/InvocationExprent.java`.
-//!
-//! kuna fix `anonymous_static_qualifier` (`kuna_fixes`): in `to_java`,
-//! a static call of an anonymous class's method from a class nested in it is
-//! written unqualified instead of as `<unrepresentable>.m(...)`
-//! (`fixes::anonymous_classes::anonymous_static_qualifier`).
-//!
-//! kuna fix `kt_default_args_super_call`: `append_param_list` writes the
-//! arguments by the names the fix sets (`kuna_arg_names`), leaving out the
-//! ones it names none; unset (always, but for that fix) changes nothing.
-//! kuna fix `inner_method_argument_shift`: in `get_inferred_expr_type`, the
-//! arguments of a call to a method of a non-static inner class are matched
-//! to the signature's parameters from the first, not from the second as if
-//! the method took the outer instance like the class's constructors do; as
-//! in Java, only the method's own type variables are inferred from them (the
-//! classes' come from the receiver).
-//!
-//! kuna fix `raw_receiver_erasure`: a call on a receiver whose static type
-//! is raw has the erased result and parameter types
-//! (`fixes::generic_casts::raw_receiver_erasure`).
-//!
-//! kuna fix `argument_generic_cast`: in `append_param_list`, an argument
-//! whose parameter's declared type is fixed is marked with it for
-//! `ExprProcessor.getCastedExprent` (`fixes::generic_casts::argument_generic_cast`).
-//!
-//! kuna fix `diamond_argument_conflict`: in `get_inferred_expr_type`, a
-//! generic `new` whose type, inferred from its arguments, is not assignable to
-//! the expected type gets no diamond (`fixes::generics::diamond_argument_conflict`).
-//!
-//! kuna fix `lambda_argument_overload`: in `append_param_list`, a lambda
-//! argument another overload's functional interface also accepts is
-//! ambiguous (`fixes::lambdas::lambda_argument_overload`).
-//!
-//! kuna fix `lambda_pertinence`: in `get_inferred_expr_type`, a type
-//! variable only lambdas and inexact method references map is missing, so a
-//! qualifier call gets explicit type arguments (`fixes::lambdas::lambda_pertinence`).
-//!
-//! kuna fix `lambda_type_variable_target`: in `append_param_list`, the
-//! lambdas an argument call takes for a bare type variable that javac
-//! resolves to another type are cast (`fixes::lambdas::lambda_type_variable_target`).
-//!
-//! kuna fix `kt_mapped_java_member`: in a class written as Kotlin, a call of
-//! a JDK method Kotlin names otherwise is written with Kotlin's name
-//! (`fixes::kt_calls::kt_mapped_java_member`).
-//!
-//! kuna fix `thrown_type_variable`: in `to_java`, a raw `new C()` receiver of
-//! a call that throws `C`'s type parameters gets `RuntimeException` for them
-//! (`fixes::generics::thrown_type_variable`).
-//!
-//! kuna fix `unseen_class_overload`: in `append_param_list`, an argument of a
-//! call to a class outside the input keeps its parameter's type where a method
-//! of that name the input calls would otherwise be chosen
-//! (`fixes::overloads::unseen_class_overload`).
-//!
-//! kuna fix `vararg_spread_resolution`: in `append_param_list`, a varargs
-//! array is spread only when the spread call resolves to the same method with
-//! the same array (`fixes::overloads::vararg_spread_resolution`).
-//!
-//! kuna fix `vararg_array_length`: in `append_param_list`, an array created
-//! by a length other than constant 0 is not spread into a varargs call's
-//! arguments (`fixes::overloads::vararg_array_length`).
-//!
-//! kuna fix `kt_unescaped_name`: in Kotlin output, the method's name is
-//! written as the Kotlin writer writes a name (`fixes::kt_names::kt_unescaped_name`).
-//!
-//! kuna fix `qualified_super_call`: in `to_java`, a superclass constructor
-//! call passing an explicit outer instance is written `o.super(..)`; in
-//! `append_param_list`, the argument `kuna_skip_arg` names is left out
-//! (`fixes::constructor_calls::qualified_super_call`).
-//!
-//! kuna fix `kt_jvm_name_call`: the Kotlin writer has a call written with
-//! the function's Kotlin name (`kuna_kotlin_name`,
-//! `fixes::kt_calls::kt_jvm_name_call`).
-//!
-//! kuna fix `kt_suspend_call_continuation`: in `append_param_list`, the
-//! continuation a suspend call passes implicitly is left out
-//! (`kuna_continuation_arg`, `fixes::kt_suspend::kt_suspend_call_continuation`).
-//!
-//! kuna fix `lambda_return_type_argument`: in `get_inferred_expr_type`,
-//! explicit type arguments contradicting a lambda or method reference
-//! argument's implementation return type are not written
-//! (`fixes::lambdas::lambda_return_type_argument`).
-//!
-//! kuna fix `reference_unboxing`: the unboxing call that is the argument of
-//! an unwritten boxing call is written (`fixes::numeric_types::reference_unboxing`).
-//!
-//! kuna fix `ambiguous_type_variable_argument`: an ambiguous argument for a
-//! parameter declared as the generic method's own type variable is cast to
-//! the variable's erasure, and binds it, where the inferred type would select
-//! another overload (`fixes::overloads::ambiguous_type_variable_argument`).
-//!
-//! kuna fix `unboxed_argument_type`: in `append_param_list`, an argument
-//! written without its boxing call keeps the boxed primitive's type for its
-//! cast, where the generic signature's parameter type would replace it.
 
 use std::collections::VecDeque;
 use std::rc::Rc;
@@ -136,16 +43,15 @@ use crate::s_forms_constructor::SFormsConstructor;
 use crate::statement::Statement;
 use crate::struct_class::{GenericMap, StructClass};
 use crate::struct_method::StructMethod;
-use crate::fixes::anonymous_classes::anonymous_static_qualifier;
+use crate::fixes::anonymous_classes;
 use crate::fixes::generic_casts::argument_generic_cast;
-use crate::fixes::generics::diamond_argument_conflict;
-use crate::fixes::overloads::vararg_array_length;
+use crate::fixes::generics;
+use crate::fixes::overloads;
 use crate::fixes::constructor_calls::qualified_super_call;
 use crate::fixes::lambdas::lambda_return_type_argument;
 use crate::fixes::overloads::vararg_spread_resolution;
-use crate::fixes::generics::thrown_type_variable;
 use crate::fixes::overloads::unseen_class_overload;
-use crate::fixes::numeric_types::reference_unboxing;
+use crate::fixes::numeric_types;
 use crate::fixes::overloads::ambiguous_type_variable_argument;
 use crate::fixes::constructor_calls::synthetic_null_check_shape;
 use crate::text_buffer::TextBuffer;
@@ -1231,7 +1137,7 @@ impl InvocationExprent {
                             });
                         } else if is_gen_new
                             && !(kuna_fixes::enabled(KunaFix::DiamondArgumentConflict)
-                                && diamond_argument_conflict::contradicts(
+                                && generics::contradicts(
                                     new_ret.as_ref(),
                                     upper_bound,
                                     &fparams,
@@ -1427,7 +1333,7 @@ impl InvocationExprent {
                 && !self.d(|d| d.boxing.force_boxing)
             {
                 if kuna_fixes::enabled(KunaFix::ReferenceUnboxing) {
-                    reference_unboxing::keep_under_boxing(
+                    numeric_types::keep_under_boxing(
                         self.get_lst_parameters().get(0),
                     );
                 }
@@ -1457,7 +1363,7 @@ impl InvocationExprent {
                     .get_short_name_in_class_context(&ExprProcessor::build_java_class_name(
                         &classname,
                     ));
-                if !anonymous_static_qualifier::drop_qualifier(
+                if !anonymous_classes::drop_qualifier(
                     &classname,
                     &self.get_name(),
                     &short_name,
@@ -1584,7 +1490,7 @@ impl InvocationExprent {
                         pushed_call_chain_group = true;
                     }
                     if kuna_fixes::enabled(KunaFix::ThrownTypeVariable) {
-                        thrown_type_variable::type_receiver(self, instance);
+                        generics::type_receiver(self, instance);
                     }
                     let res = instance.to_java(indent);
 
@@ -1981,7 +1887,7 @@ impl InvocationExprent {
                 if last_param.get_expr_type().array_dim >= 1
                     && (!ambiguous_vararg || last_new.get_lst_array_elements().len() != 1)
                     && (!kuna_fixes::enabled(KunaFix::VarargArrayLength)
-                        || vararg_array_length::spreads_as_elements(last_new))
+                        || overloads::spreads_as_elements(last_new))
                     && (!kuna_fixes::enabled(KunaFix::VarargSpreadResolution)
                         || kt_java_cast_syntax::writing_kotlin()
                         || vararg_spread_resolution::spread_resolves(self, last_new))
@@ -2055,7 +1961,7 @@ impl InvocationExprent {
                     inv.force_boxing(true);
                 } else {
                     if kuna_fixes::enabled(KunaFix::ReferenceUnboxing) {
-                        reference_unboxing::keep_under_boxing(value);
+                        numeric_types::keep_under_boxing(value);
                     }
                     value.add_bytecode_offsets(inv.get_bytecode().as_ref());
                     parameters[i] = value;
@@ -2223,10 +2129,7 @@ impl InvocationExprent {
                 break;
             }
 
-            if let Some(formal) = kuna_formals.get(i).cloned().flatten() {
-                argument_generic_cast::mark_argument_target(formal);
-            }
-            ExprProcessor::get_casted_exprent_full(
+            ExprProcessor::get_casted_argument(
                 lst_parameters.get(i),
                 &types[i],
                 &mut buff,
@@ -2239,6 +2142,7 @@ impl InvocationExprent {
                 ambiguous,
                 true,
                 true,
+                kuna_formals.get(i).cloned().flatten(),
             );
 
             if let Some(name) = arg_name.filter(|name| !name.is_empty()) {

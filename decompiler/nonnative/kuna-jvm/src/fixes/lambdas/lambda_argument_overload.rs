@@ -1,15 +1,6 @@
-//! kuna fix `lambda_argument_overload` (`kuna_fixes`): an implicitly typed
-//! lambda or a method reference whose target is chosen by overload
-//! resolution says nothing about its type until javac has chosen the
-//! overload, so it is compatible with every overload whose parameter at its
-//! place is a functional interface of the same arity (JLS 15.12.2.1). Two
-//! such overloads, neither of whose interfaces is a subtype of the other's,
-//! make the call ambiguous: `spliterator.forEachRemaining(this::add)` on a
-//! `Spliterator.OfInt` matches `forEachRemaining(IntConsumer)` and
-//! `forEachRemaining(Consumer<? super Integer>)`. Vineflower's ambiguity
-//! check compares the lambda's own interface type with each overload's
-//! parameter, finds only the overload the bytecode calls, and writes no
-//! cast. With the fix such an argument is cast to its interface.
+//! Fix `lambda_argument_overload`: a lambda or method reference argument that
+//! another overload's functional interface of the same arity also accepts is
+//! cast to its interface.
 
 use crate::code_constants::CodeConstants;
 use crate::code_type::CodeType;

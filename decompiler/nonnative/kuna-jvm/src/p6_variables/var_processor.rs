@@ -4,19 +4,13 @@
 //! `Shared`: their getters hand out the collection and callers mutate it.
 //! Getters that return a key/value *view* (`getUsedVarVersions`,
 //! `getVarNames`, `clashingNames`) return a snapshot in iteration order.
-//!
-//! kuna fix `kt_java_keyword_variable_name`: `setDebugVarNames` keeps a debug
-//! name that is a Java keyword in Kotlin output.
-//!
-//! kuna fix `refresh_printed_var_names`: `refreshVarNames` allocates the
-//! clashing name a variable prints (`fixes::nested_class_vars::refresh_printed_var_names`).
 
 use std::collections::BTreeMap;
 
 use crate::kuna_fixes::{self, KunaFix};
 use crate::method_descriptor::MethodDescriptor;
 use crate::fixes::kt_names::kt_java_keyword_variable_name;
-use crate::fixes::nested_class_vars::refresh_printed_var_names;
+use crate::fixes::nested_class_vars;
 use crate::pair::Pair;
 use crate::root_statement::RootStatement;
 use crate::rt::{JHashMap, JHashSet, JavaListExt, Shared};
@@ -226,7 +220,7 @@ impl VarProcessor {
     pub fn refresh_var_names(self, vc: VarNamesCollector) {
         let temp_var_names = self.with(|d| d.map_var_names.clone());
         if kuna_fixes::enabled(KunaFix::RefreshPrintedVarNames) {
-            refresh_printed_var_names::refresh(self, vc, temp_var_names);
+            nested_class_vars::refresh(self, vc, temp_var_names);
             return;
         }
         for (key, value) in temp_var_names.entry_vec() {

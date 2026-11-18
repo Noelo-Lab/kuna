@@ -1,22 +1,5 @@
-//! kuna fix `vararg_spread_resolution` (spec 10.16): the array a varargs call
-//! passes is written as its elements only when javac would pack those
-//! elements into the same array for the same method.
-//!
-//! `InvocationExprent.appendParamList` spreads the last `new T[]{..}` of a
-//! varargs call unless an overload with as many parameters makes a one-element
-//! array ambiguous. javac resolves the spread call afresh, and its first two
-//! phases ignore varargs: a method taking the spread arguments as they are
-//! wins (`build(new String[0])` inside `build()` came out `build()`, a call
-//! to itself), and a lone element that converts to `T[]` is passed as the
-//! array (`count(new Object[]{names})` came out `count(names)`, the `String[]`
-//! as the argument list; `call(new Object[]{null})` came out `call(null)`, a
-//! null array). Vineflower casts a lone element to `Object` only when its type
-//! is `Object[]`. With the fix a lone element that converts to `T[]` is cast to
-//! `T`, and the array is spread only when, with that cast, no method of the
-//! name in the callee's class and its known supertypes is applicable to the
-//! written arguments without varargs and no other varargs method is applicable
-//! with them. For a callee whose class is not in the input the methods are
-//! the descriptors the input calls it by (fix `unseen_class_overload`).
+//! Fix `vararg_spread_resolution`: a varargs array is written as its elements
+//! only when javac would pack them into the same array for the same method.
 
 use crate::code_constants::CodeConstants;
 use crate::code_type::CodeType;

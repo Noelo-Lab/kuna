@@ -1,19 +1,4 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/exps/FieldExprent.java`.
-//!
-//! kuna fix `kt_accessor_backing_field`: while a Kotlin property accessor's
-//! body is written, its backing field is written `field`
-//! (`fixes::kt_properties::kt_accessor_backing_field`).
-//!
-//! kuna fix `kt_object_instance`: in a class written as Kotlin, an
-//! `object`'s `INSTANCE` field is written as the object's name
-//! (`fixes::kt_calls::kt_object_instance`).
-//!
-//! kuna fix `kt_unescaped_name`: in Kotlin output, the field's name is
-//! written as the Kotlin writer writes a name (`fixes::kt_names::kt_unescaped_name`).
-//!
-//! kuna fix `kt_facade_call`: in Kotlin output, a top-level property's field
-//! read through its facade class is written by its name
-//! (`fixes::kt_calls::kt_facade_call`).
 
 use crate::code_type::CodeType;
 use crate::decompiler_context::DecompilerContext;

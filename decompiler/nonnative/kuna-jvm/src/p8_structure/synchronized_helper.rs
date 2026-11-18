@@ -1,14 +1,10 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/SynchronizedHelper.java`.
-//!
-//! kuna fix `synchronized_lock_assignment`: `cleanSynchronizedVar` takes only
-//! the assignment right before the monitor for the compiler's lock variable
-//! (`fixes::finally_sync::synchronized_lock_assignment`).
 
 use crate::assignment_exprent::AssignmentExprent;
 use crate::counter_container::CounterContainer;
 use crate::decompiler_context::DecompilerContext;
 use crate::kuna_fixes::{self, KunaFix};
-use crate::fixes::finally_sync::synchronized_lock_assignment::is_lock_variable;
+use crate::fixes::finally_sync::is_lock_variable;
 use crate::root_statement::RootStatement;
 use crate::statement::Statement;
 use crate::var_exprent::VarExprent;

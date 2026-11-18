@@ -1,9 +1,5 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/InlineSingleBlockHelper.java`.
 //!
-//! kuna fix `catch_tail_inline` (`kuna_fixes`): in `isInlineable`, statements
-//! that read the variable of a catch clause the break to them leaves are
-//! inlined even when the break is implicit and they break out of the sequence.
-//!
 //! kuna option `jvm_javac_layout` (`kuna_javac_layout::keeps_tail`): code javac
 //! placed after a loop or switch and reached by a `break` stays there.
 
@@ -11,7 +7,7 @@ use crate::if_statement::IfStatement;
 use crate::jthrow;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::merge_helper::MergeHelper;
-use crate::fixes::control_flow::catch_tail_inline;
+use crate::fixes::control_flow;
 use crate::p8_structure::kuna_javac_layout;
 use crate::root_statement::RootStatement;
 use crate::sequence_helper::SequenceHelper;
@@ -177,7 +173,7 @@ impl InlineSingleBlockHelper {
 
                 if !edge.explicit()
                     && !(kuna_fixes::enabled(KunaFix::CatchTailInline)
-                        && catch_tail_inline::reads_left_catch_var(seq, index, edge))
+                        && control_flow::reads_left_catch_var(seq, index, edge))
                 {
                     let mut i = index;
                     while i < seq.get_stats().borrow().len() {

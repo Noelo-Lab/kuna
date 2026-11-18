@@ -1,26 +1,6 @@
-//! kuna fix `lambda_pertinence` (`kuna_fixes`): javac infers a generic
-//! method's type variables from a lambda or method reference argument only
-//! as far as the argument can be typed before them (JLS 18.5.2): the types
-//! of an implicitly typed lambda's parameters, and of an inexact method
-//! reference's (its name overloaded, its method generic or variable-arity,
-//! its class generic and written raw, as `Constructor::getParameterCount`),
-//! are the function type's parameter types, so the variables in those are
-//! resolved first, without the argument; and a lambda or method reference
-//! whose target is a bare type variable, as a lambda returned by a lambda
-//! whose function type returns one, needs that variable resolved first. A
-//! call that is the qualifier of another has no target type either (JLS
-//! 15.12), so such a variable becomes its bound there.
-//! `InvocationExprent.getInferredExprType` counts every argument's type as
-//! fixing the variables it maps, finds nothing missing and writes no type
-//! arguments: `names.map(n -> () -> n.length()).iterator()`,
-//! `Comparator.comparingInt(Constructor::getParameterCount).reversed()`,
-//! which javac rejects. With the fix those variables do not count, so a
-//! qualifier call they leave unfixed gets its explicit type arguments
-//! (`names.<Task<Integer>>map(...)`), unless one of them cannot be written
-//! where the call is. A call of a generic method that infers its result
-//! from its target only (`Predicates.always()`) does not fix a bare type
-//! variable either, and a varargs array counts as its elements
-//! (`Stream.<Predicate<ShardRouting>>of(lambda, Predicates.always())`).
+//! Fix `lambda_pertinence`: the type variables only implicitly typed lambdas
+//! and inexact method references map do not count as fixed, so a qualifier
+//! call they leave unfixed gets explicit type arguments.
 
 use crate::code_constants::CodeConstants;
 use crate::code_type::CodeType;

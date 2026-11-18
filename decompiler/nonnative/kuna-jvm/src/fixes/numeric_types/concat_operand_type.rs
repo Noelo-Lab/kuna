@@ -1,25 +1,7 @@
-//! kuna fix `concat_operand_type` (spec 10.16): a string concatenation
-//! operand is written with the type its `append` or
-//! `makeConcatWithConstants` argument converted it as.
-//!
-//! `ConcatenationHelper` rebuilds `new StringBuilder().append(a).append(b)
-//! .toString()` and `makeConcatWithConstants(a, b)` as `"" + a + b` from the
-//! arguments alone. The argument's type in the descriptor decided how javac
-//! turned the value into text, and the rebuilt operand need not have it: a
-//! `char` passed to `append(I)` (`+ (int) c`, no instruction) came out `+ c`,
-//! a character instead of its code; `append(C)` of `c ? '[' : '('`, whose
-//! constants carry no type, came out `+ (c ? 91 : 40)`; and an implicit
-//! widening (`+ (double) f`, `+ (float) n`) is left unwritten, so the text of
-//! the narrower value came out (`0.1` for `0.10000000149011612`, `7` for
-//! `7.0`). A `char[]` passed to `append([C)` or to `String.valueOf([C)`
-//! (which `ConcatenationHelper` removes as it removes `valueOf(C)`) came out
-//! `"x" + cs`, the array's identity instead of its characters. With the fix
-//! each operand keeps the type of its argument: the constants of a `char`
-//! argument are written as characters, an operand of another kind than its
-//! argument (`char`, `int` and narrower, `long`, `float`, `double`) is cast
-//! to it, so that javac converts it the same way, and a `char[]` one is
-//! written `String.valueOf(cs)`. Kotlin output (string templates) is
-//! unchanged.
+//! Fix `concat_operand_type`: a string concatenation operand keeps the type its
+//! `append` or `makeConcatWithConstants` argument converted it as: char
+//! constants as characters, a cast where the kinds differ, `String.valueOf` for
+//! a `char[]`.
 
 use crate::code_type::CodeType;
 use crate::const_exprent::ConstExprent;

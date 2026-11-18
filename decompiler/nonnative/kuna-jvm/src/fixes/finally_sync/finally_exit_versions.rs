@@ -1,30 +1,6 @@
-//! kuna fix `finally_exit_versions` (spec 10.16): the variable versions on a
-//! try-finally's normal exits.
-//!
-//! The flattened graph keeps the finally body off the normal path: it hangs
-//! off the try's combined catch and ends in `FINALLY_END`, which has no
-//! successors, while the edges that leave the protected code go straight to
-//! the continuation. `SFormsConstructor.getFilteredOutMap` was meant to replay
-//! the body on those edges, but it looks the body's state up under a key no
-//! node has, so the code after the `try` reads the versions from before the
-//! body: a value the body assigns to a local is invisible there, the variable
-//! is split from the one the body writes, and the stack-variable passes inline
-//! the old value.
-//!
-//! With the fix, a normal exit of a verified `finally` takes, for each local
-//! the body assigns, the versions of it created inside the body that reach
-//! `FINALLY_END`, and keeps its own versions as well when some path through
-//! the body leaves the local alone. The finally processing removed the inlined
-//! copies of the body, which may keep a body-local in another slot than the
-//! handler does; a slot such a copy renamed (`kuna_remapped_slots`) is left
-//! out, so the copy's slots never meet the handler's. A semaphore `finally`
-//! keeps its copies and skips its body on normal exits, so it replays nothing.
-//! Two passes that walk the flattened graph see those exits too: the
-//! stack-variable inliner, whose walk carries a value only along the graph's
-//! edges, does not move a value from a finally body past its end
-//! ([`FinallyExitVersions::leaves_body`]), and the path search of the fix
-//! `var_merge_liveness` goes from the body's end to the exits' targets
-//! ([`FinallyExitVersions::exit_edges`]).
+//! Fix `finally_exit_versions`: a normal exit of a verified `finally` takes the
+//! versions the finally body assigns that reach `FINALLY_END`, and the passes
+//! that walk the flattened graph see those exits.
 
 use crate::direct_edge_type::DirectEdgeType;
 use crate::direct_node::DirectNode;

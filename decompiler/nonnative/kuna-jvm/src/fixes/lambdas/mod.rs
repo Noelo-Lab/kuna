@@ -1,5 +1,5 @@
-//! Fix family `lambdas` (Java output): lambdas and method references: their
-//! inference, overloads and recursion.
+//! Fix family `lambdas`: lambdas and method references: their inference,
+//! overloads and recursion.
 
 pub(crate) mod lambda_argument_overload;
 pub(crate) mod lambda_pertinence;

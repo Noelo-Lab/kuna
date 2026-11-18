@@ -1,22 +1,6 @@
-//! kuna fix `kt_inline_lock_local` (spec 10.16): the Kotlin inliner keeps a
-//! lock local whose value, evaluated again, may be another object.
-//!
-//! `synchronized (l) { .. }` holds the monitor of the object `l` holds. The
-//! Kotlin plugin's last `SimplifyStack` (`INLINE_ALL_VARS`) copies a local's
-//! value into the uses it may reach and keeps the definition for the others,
-//! so `val l = this.lock; synchronized (l) { l.f() }` became
-//! `val l = this.lock; synchronized (this.lock) { l.f() }`: the field is read
-//! again for the lock, and another thread may have stored another object in
-//! it between the two reads, so the body runs holding a monitor the bytecode
-//! never takes while `l` names a different object. Array elements and calls
-//! the inliner moves the same way.
-//!
-//! With the fix, a local whose value reaches a monitor operand (directly or
-//! through the compiler's copies of it) is inlined only into its single use,
-//! which moves the evaluation instead of repeating it, unless its value
-//! evaluates to the same object wherever it is evaluated again: a constant, a
-//! local (the inliner checks its version), a final field of such a value,
-//! and casts and conditionals of those.
+//! Fix `kt_inline_lock_local`: the Kotlin inliner moves a lock local's value
+//! only into its single use, unless the value evaluates to the same object
+//! wherever it is evaluated again.
 
 use std::collections::VecDeque;
 

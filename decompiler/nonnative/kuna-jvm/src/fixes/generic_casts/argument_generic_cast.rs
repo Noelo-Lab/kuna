@@ -1,22 +1,9 @@
-//! kuna fix `argument_generic_cast` (`kuna_fixes`): the unchecked casts the
-//! fixes `unchecked_generic_cast`, `unchecked_call_result_cast` and
-//! `bounded_inference_cast` write for a returned or assigned value compile
-//! to no instruction wherever they are written, and javac needs them just as
-//! much on a method or constructor argument: `out.writeGenericMap(innerMap)`
-//! of a `Map<String, String>` for a `Map<String, Object>` parameter,
-//! `super(name, source)` of a `Properties` for a `Map<String, Object>`,
-//! `this(Ordering.natural())` for a `Comparator<? super E>` (`incompatible
-//! types`). Vineflower writes them bare. With the fix, an argument whose
-//! parameter's declared type does not depend on what javac infers for the
-//! call (no type variable of a generic method, nor of the class a diamond
-//! creates; the class's variables taken from the receiver's declared type,
-//! or from the superclass a `super(..)` call names) gets the cast those fixes
-//! derive for it, written through the raw class, `(Map<String, Object>)
-//! (Map) innerMap`, where the two parameterizations are provably distinct:
-//! a raw argument would erase the call's result (JLS 15.12.2.6).
+//! Fix `argument_generic_cast`: an argument whose parameter's declared type
+//! does not depend on the call's inference gets the unchecked cast the other
+//! cast fixes derive, through the raw class where the two are provably
+//! distinct.
 
-use std::cell::RefCell;
-
+use super::mentions;
 use crate::code_type::CodeType;
 use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;
@@ -28,22 +15,6 @@ use crate::fixes::generic_casts::bounded_inference_cast;
 use crate::rt::JHashMap;
 use crate::struct_method::StructMethod;
 use crate::var_type::VarType;
-
-thread_local! {
-    static ARGUMENT_TARGET: RefCell<Option<VarType>> = const { RefCell::new(None) };
-}
-
-/// Marks the next value `ExprProcessor.getCastedExprent` writes as an
-/// argument whose parameter is declared `formal`.
-pub fn mark_argument_target(formal: VarType) {
-    ARGUMENT_TARGET.with(|c| *c.borrow_mut() = Some(formal));
-}
-
-/// The declared parameter type of the value being written, when it was
-/// marked; clears the mark, so that the values nested in it are not.
-pub fn take_argument_target() -> Option<VarType> {
-    ARGUMENT_TARGET.with(|c| c.borrow_mut().take())
-}
 
 /// The cast `exprent` needs as an argument for a parameter declared
 /// `formal`, and the raw class to cast through first when the two are
@@ -128,14 +99,4 @@ pub fn fixed_formal(inv: InvocationExprent, m: StructMethod, param: &VarType) ->
     param
         .remap(&map)
         .filter(|f| f.type_ == CodeType::Object && f.array_dim == 0 && f.is_generic())
-}
-
-fn mentions(t: &VarType, var: &str) -> bool {
-    if t.type_ == CodeType::Genvar {
-        return t.value_str() == var;
-    }
-    t.try_as_generic().is_some_and(|g| {
-        g.get_arguments().iter().flatten().any(|a| mentions(a, var))
-            || g.get_parent().is_some_and(|p| mentions(&p, var))
-    })
 }

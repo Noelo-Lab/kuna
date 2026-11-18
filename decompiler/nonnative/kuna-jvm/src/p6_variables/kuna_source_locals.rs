@@ -21,8 +21,8 @@ use crate::exprent::Exprent;
 use crate::kt_metadata::KotlinMetadataAnnotation;
 use crate::kuna_options::{self, SOURCE_LOCALS};
 use crate::method_descriptor::MethodDescriptor;
-use crate::p6_variables::kuna_source_scopes;
-use crate::fixes::var_merge::var_merge_declared_type;
+use crate::p6_variables::kuna_source_scopes::{self, declared, position, remove, splittable};
+use crate::fixes::var_merge;
 use crate::rt::{JHashSet, JList};
 use crate::statement::{Statement, StatementType};
 use crate::struct_class::StructClass;
@@ -107,7 +107,7 @@ pub fn named_apart(root: Statement, from: VarVersionPair, to: VarVersionPair) ->
         return false;
     }
     let (mut from_lvt, mut to_lvt) = (None, None);
-    var_merge_declared_type::find_lvts(root, from, to, &mut from_lvt, &mut to_lvt);
+    var_merge::find_lvts(root, from, to, &mut from_lvt, &mut to_lvt);
     match (from_lvt, to_lvt) {
         (Some(a), Some(b)) => {
             a.get_name() != b.get_name() && !a.get_name().contains('$') && !b.get_name().contains('$')
@@ -283,15 +283,7 @@ fn enter(var: VarExprent, gathered: &mut Gathered) -> Option<i32> {
 
 fn declarations(list: JList<Exprent>, out: &mut Vec<Declaration>, gathered: &mut Gathered) {
     for exprent in list.iter() {
-        let top = if let Some(var) = exprent.try_as_var() {
-            Some((var, true))
-        } else {
-            exprent
-                .try_as_assignment()
-                .and_then(|a| a.get_left().try_as_var())
-                .map(|var| (var, false))
-        };
-        let Some((var, bare)) = top.filter(|(var, _)| var.is_definition()) else {
+        let Some((var, bare)) = declared(exprent) else {
             continue;
         };
         let slot = enter(var, gathered);
@@ -349,15 +341,6 @@ fn order_block(mut block: Vec<Declaration>) {
     }
 }
 
-/// Whether the definition `exprent` (`T v = e;`) can be written `T v;` and
-/// `v = e;`: its type has a name (it is not printed `var`).
-fn splittable(exprent: Exprent) -> bool {
-    exprent
-        .try_as_assignment()
-        .and_then(|a| a.get_left().try_as_var())
-        .is_some_and(|v| !v.is_intersection_type() && v.get_definition_type() != "var")
-}
-
 /// Sorts a run of declarations without an initializer as
 /// `Exprent.sortIndexed` prints it: by original slot (then index) while
 /// declarations are ordered for javac, else as Vineflower does, by index.
@@ -374,14 +357,4 @@ pub fn sort_declarations(defs: &mut [VarExprent]) {
             .unwrap_or(index);
         (slot, index)
     });
-}
-
-fn position(list: &JList<Exprent>, exprent: Exprent) -> Option<usize> {
-    list.to_vec().iter().position(|e| *e == exprent)
-}
-
-fn remove(list: &JList<Exprent>, exprent: Exprent) {
-    if let Some(at) = position(list, exprent) {
-        list.remove_at(at);
-    }
 }

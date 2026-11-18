@@ -1,6 +1,4 @@
 //! Port of `org/jetbrains/java/decompiler/struct/gen/MethodDescriptor.java`.
-//! kuna fix `constructor_signature_alignment`: `parseDescriptor` also trims a
-//! signature that omits only the leading synthetic parameters.
 
 use std::cell::RefCell;
 use std::ops::Deref;
@@ -17,7 +15,7 @@ use crate::kuna_fixes::{self, KunaFix};
 use crate::new_class_name_builder::NewClassNameBuilder;
 use crate::rt::{JavaEq, JavaHash};
 use crate::struct_method::StructMethod;
-use crate::fixes::anonymous_classes::constructor_signature_alignment;
+use crate::fixes::anonymous_classes;
 use crate::var_type::{JStr, VarType};
 
 /// Immutable except for `genericInfo`, which Java assigns after construction.
@@ -174,7 +172,7 @@ impl MethodDescriptor {
                 {
                     if kuna_fixes::enabled(KunaFix::ConstructorSignatureAlignment) {
                         if let Some(aligned) = sig_fields.as_ref().and_then(|f| {
-                            constructor_signature_alignment::align(&sig, &md.params, f)
+                            anonymous_classes::align(&sig, &md.params, f)
                         }) {
                             let message = format!(
                                 "Descriptor and signature parameter counts mismatch, attempting to correct: {}",

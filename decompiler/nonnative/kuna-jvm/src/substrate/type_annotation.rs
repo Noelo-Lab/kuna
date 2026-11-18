@@ -1,13 +1,4 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/exps/TypeAnnotation.java`.
-//!
-//! kuna fix `type_annotation_qualified_name` (`kuna_fixes`): an annotated
-//! class type keeps the qualifier the import collector gives its name
-//! (`fixes::type_annotations::type_annotation_qualified_name`). kuna fix
-//! `type_annotation_argument_scope`: the annotations of a generic argument
-//! are looked for only inside that argument
-//! (`fixes::type_annotations::type_annotation_argument_scope`). kuna fix
-//! `type_annotation_outer_arguments`: an enclosing class of the annotated
-//! type keeps its type arguments (`fixes::type_annotations::type_annotation_outer_arguments`).
 
 use std::collections::VecDeque;
 
@@ -20,9 +11,7 @@ use crate::expr_processor::ExprProcessor;
 use crate::generic_type::GenericType;
 use crate::jthrow;
 use crate::kuna_fixes::{self, KunaFix};
-use crate::fixes::type_annotations::type_annotation_argument_scope;
-use crate::fixes::type_annotations::type_annotation_outer_arguments;
-use crate::fixes::type_annotations::type_annotation_qualified_name;
+use crate::fixes::type_annotations;
 use crate::pair::Pair;
 use crate::rt::{JHashSet, JavaEq, JavaHash};
 use crate::text_buffer::TextBuffer;
@@ -278,7 +267,7 @@ impl TypeAnnotation {
                 if i > 0 {
                     buffer.append(".");
                 } else if kuna_fixes::enabled(KunaFix::TypeAnnotationQualifiedName) {
-                    buffer.append(&type_annotation_qualified_name::qualifier(clazz));
+                    buffer.append(&type_annotations::qualifier(clazz));
                 }
 
                 if i >= start_idx {
@@ -294,7 +283,7 @@ impl TypeAnnotation {
                 if kuna_fixes::enabled(KunaFix::TypeAnnotationOuterArguments)
                     && i + 1 < full_classes.len()
                 {
-                    if let Some(args) = type_annotation_outer_arguments::arguments_of(
+                    if let Some(args) = type_annotations::arguments_of(
                         type_,
                         &clazz.replace('.', "/"),
                     ) {
@@ -328,7 +317,7 @@ impl TypeAnnotation {
                         let final_j = j as i32;
                         let in_arg = kuna_fixes::enabled(KunaFix::TypeAnnotationArgumentScope)
                             .then(|| {
-                                type_annotation_argument_scope::entering(
+                                type_annotations::entering(
                                     type_annotations,
                                     final_j,
                                 )
@@ -341,14 +330,14 @@ impl TypeAnnotation {
                         );
                         match in_arg {
                             Some(in_arg) => {
-                                let mut sub = type_annotation_argument_scope::take(
+                                let mut sub = type_annotations::take(
                                     type_annotations,
                                     &in_arg,
                                 );
                                 TypeAnnotation::append_generic_argument(
                                     buffer, arg.as_ref(), &mut sub, filter, vararg,
                                 );
-                                type_annotation_argument_scope::put_back(
+                                type_annotations::put_back(
                                     type_annotations,
                                     &in_arg,
                                     sub,

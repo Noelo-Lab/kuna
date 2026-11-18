@@ -1,23 +1,5 @@
-//! kuna fix `overlapping_ranges` (spec 10.16): protected ranges that overlap
-//! without nesting.
-//!
-//! `DomHelper` builds a `try` from the blocks a handler protects, so the ranges
-//! of different handlers must nest. kotlinc 1.3 breaks that: the range of a
-//! `catch` inside a `try`/`finally` (or `use`) also covers the `finally` copy
-//! inlined before a `return` of the `try`, which the `finally`'s own ranges
-//! leave out, while those ranges protect the `catch`'s handler. The method
-//! fails with `parsing failure!`.
-//!
-//! [`OverlappingRanges::split`] gives the part of such an inner range that its
-//! handler's protectors leave out its own copy of the handler, then splits the
-//! ranges of every handler protecting it, innermost first, into pieces that
-//! are entered at one block, each with its own copy of the handler. A copy
-//! takes the blocks only its original runs (unprotected, entered from nowhere
-//! else) along: exact node splitting. Before a split, blocks of `nop`s leave
-//! the ranges: they cannot throw. Every block keeps the handlers it had, so the
-//! method does what it did. `FinallyProcessor` then works per piece; in such a
-//! method it refuses a `finally` copy that another path also runs and a `try`
-//! re-entered at its head from inside (see `finally_processor.rs`).
+//! Fix `overlapping_ranges`: protected ranges that overlap without nesting are
+//! split into single-entry pieces, each with its own copy of the handler.
 
 use crate::basic_block::BasicBlock;
 use crate::code_constants::{OPC_ASTORE, OPC_IRETURN, OPC_NOP, OPC_POP, OPC_RETURN};

@@ -1,16 +1,6 @@
-//! kuna fix `handler_copy_shared_body` (spec 10.16): the body half of
-//! `ExceptionDeobfuscator::insert_dummy_exception_handler_blocks`.
-//!
-//! That pass copies only the first block of a handler with several ranges, so
-//! the copies of a catch-any handler share the rest of it: the `finally` body
-//! after the exception store, and the rethrow. `FinallyProcessor` takes each
-//! catch-all's handler statement for the whole `finally` body; a shared body
-//! belongs to no copy's statement, so the copies cannot be processed (and the
-//! processing failed on the first copy's store, which has no offsets).
-//! [`HandlerCopySharedBody::separate`] gives every live copy its own copy of
-//! the blocks after the handler block when only the handler and its copies
-//! run them: node splitting of code no other block reaches, with the same
-//! successors and protection, so the method does what it did.
+//! Fix `handler_copy_shared_body`: every live copy of a catch-any handler gets
+//! its own copy of the blocks after the handler block that only the handler and
+//! its copies run.
 
 use crate::basic_block::BasicBlock;
 use crate::control_flow_graph::ControlFlowGraph;

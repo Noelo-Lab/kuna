@@ -1,34 +1,11 @@
-//! kuna fix `implicit_widening_arithmetic` (spec 10.16): a widening
-//! conversion is written wherever leaving it out makes an operation compute
-//! in a narrower type than the bytecode's.
-//!
-//! `SecondaryFunctionsHelper` leaves every widening conversion (`i2l`,
-//! `i2f`, `i2d`, `l2f`, `l2d`, `f2d`) unwritten, since Java widens on its
-//! own, and writes one back only for a `+ - * /` whose two operands are both
-//! such conversions, or for a shift's left operand. Java widens an operand
-//! only as far as the other operand's type: when that operand is itself
-//! narrower as written (`-(long) a` written `-a`, a conversion under `%`,
-//! `&` or a conditional), the operation runs in the narrower type and can
-//! overflow (`-(long) size * n` came out `-size * n`, an `int` product), and
-//! a negation alone differs at the type's minimum. With the fix, an
-//! operation whose result depends on the type it computes in (`+ - * /`,
-//! negation, shifts, and `%` of floating types) and whose operands, as
-//! written, promote to a narrower type than its own gets the conversion
-//! nearest its left operand written, as javac's source had it.
+//! Fix `implicit_widening_arithmetic`: an operation whose operands, as written,
+//! promote to a narrower type than its own gets the widening conversion nearest
+//! its left operand written.
 
 use crate::code_type::CodeType;
 use crate::exprent::Exprent;
+use crate::fixes::util::promoted;
 use crate::function_exprent::{FunctionExprent, FunctionType};
-
-/// Java's binary numeric promotion of two written numeric types.
-pub fn promoted(a: CodeType, b: CodeType) -> CodeType {
-    for wide in [CodeType::Double, CodeType::Float, CodeType::Long] {
-        if a == wide || b == wide {
-            return wide;
-        }
-    }
-    CodeType::Int
-}
 
 fn numeric(t: CodeType) -> bool {
     matches!(
