@@ -3712,6 +3712,16 @@
       "source": "src/pkg/TestNullCheckConstantValue.java",
       "compiler": "javac 17.0.21.0.3 (`-g`)",
       "summary": "a source Objects.requireNonNull(x); or x.getClass(); followed by a constant is kept unless x's class declares an instance field with that constant value (javac's x.CONST check), and when the class is not loaded (no JDK: String, Object); Vineflower deletes them, and the method no longer throws NullPointerException for null"
+    },
+    {
+      "id": "pkg/TestVarMergeUnrelatedType",
+      "fix": "var_merge_narrowing",
+      "class_files": [
+        "pkg/TestVarMergeUnrelatedType.class"
+      ],
+      "source": "src/pkg/TestVarMergeUnrelatedType.java",
+      "compiler": "javac 17.0.21.0.3 (no `-g`)",
+      "summary": "a variable is not merged with a later one of a type that does not admit a value it is assigned, unrelated or wider (Object v = c ? \"s\" : k with a later Integer w); Vineflower merges them as Integer, printing a cast that throws ClassCastException or code that does not compile"
     }
   ]
 }

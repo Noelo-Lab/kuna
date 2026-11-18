@@ -2133,9 +2133,12 @@ o = (String)src.next(); if (o == MARK) ...`). `develop/1.13.0` (`3ce9eb26`) only
 declared type of the merge target and keeps the merge. With the fix,
 `decompiler/nonnative/kuna-jvm/src/p6_variables/kuna_fix_var_merge_narrowing.rs (assigns_wider)`
 is asked before a merge whose type narrows a lower bound: it collects the method's assignments
-and refuses the merge when one to either variable assigns a value whose type the merged type is
-strictly below, following conditionals and copies of other variables, whose own lower bounds
-can be a loose join (the join of two interfaces that found no common class is `Object`). A
+and refuses the merge when one to either variable assigns a value of a reference type the merged
+type does not admit, one it is strictly below or one unrelated to it (`Object v = c ? "s" :
+Integer.valueOf(k)` before a block-scoped `Integer w` in the same slot, merged as `Integer`, was
+printed `Integer v = (Integer)(c ? "s" : k)`), following conditionals and copies of other
+variables, whose own lower bounds can be a loose join (the join of two interfaces that found no
+common class is `Object`). A
 refused merge is denylisted as one `remapVar` could not do, and a declaration that would have
 been merged stays where it is; two variables are always correct, since SSA split them. Merges
 that narrow only a loose bound (a `null`, a join, a parameter whose declared type the

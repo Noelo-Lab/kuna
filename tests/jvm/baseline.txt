@@ -861,6 +861,7 @@ kuna-fixes-compat/pkg/TestVarMergeLiveness
 kuna-fixes-compat/pkg/TestVarMergeLostDefinition
 kuna-fixes-compat/pkg/TestVarMergeLvtWidening
 kuna-fixes-compat/pkg/TestVarMergeNarrowing
+kuna-fixes-compat/pkg/TestVarMergeUnrelatedType
 kuna-fixes-compat/pkg/TestVarargArrayLength
 kuna-fixes-compat/pkg/TestVarargFromMetadata
 kuna-fixes-compat/pkg/TestVarargsSpreadResolution
@@ -1148,6 +1149,7 @@ kuna-fixes/pkg/TestVarMergeLiveness
 kuna-fixes/pkg/TestVarMergeLostDefinition
 kuna-fixes/pkg/TestVarMergeLvtWidening
 kuna-fixes/pkg/TestVarMergeNarrowing
+kuna-fixes/pkg/TestVarMergeUnrelatedType
 kuna-fixes/pkg/TestVarargArrayLength
 kuna-fixes/pkg/TestVarargFromMetadata
 kuna-fixes/pkg/TestVarargsSpreadResolution

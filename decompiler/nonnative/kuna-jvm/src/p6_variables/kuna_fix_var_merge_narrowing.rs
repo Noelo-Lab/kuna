@@ -9,9 +9,11 @@
 //! SUSPENDED) return v; Integer w = (Integer)v;` merged `w` into `v` as an
 //! `Integer`, printed `Integer v = (Integer)src.next(c)`, which throws exactly
 //! where the bytecode returns the marker. A merge is refused when the merged
-//! type is strictly below the type of a value assigned to either variable
-//! (through conditionals and copies of other variables, whose own bounds may
-//! be a loose join); two variables are always correct, the versions having
+//! type does not admit a value assigned to either variable, being strictly
+//! below or unrelated to its type (through conditionals and copies of other
+//! variables, whose own bounds may be a loose join: `Object v = c ? "s" :
+//! Integer.valueOf(k)` merged with a later `Integer w` was printed `Integer v =
+//! (Integer)(c ? "s" : k)`); two variables are always correct, the versions having
 //! been split by SSA. Where the merged type only narrows a loose lower bound
 //! (a join that found no common class, a `null`), the merge is kept. Where
 //! the LocalVariableTable declares one local at every store to both, and that
@@ -66,7 +68,8 @@ pub fn strictly_below(t: &VarType, bound: &VarType) -> bool {
 }
 
 /// Whether a value assigned to `from` or `to` anywhere under `root` has a
-/// type `merged` is strictly below; `lower` gives a variable's lower bound.
+/// type that `merged` does not admit (one strictly above it, or one
+/// unrelated to it); `lower` gives a variable's lower bound.
 pub fn assigns_wider(
     root: Statement,
     from: VarVersionPair,
@@ -116,7 +119,7 @@ fn var_wider(
 ) -> bool {
     if !start {
         match lower(var) {
-            Some(t) if strictly_below(merged, &t) => {}
+            Some(t) if !fits(&t, merged) => {}
             _ => return false,
         }
         if seen.contains(&var) {
@@ -167,7 +170,14 @@ fn value_wider(
                 || value_wider(ops.get(2), merged, defs, lower, seen);
         }
     }
-    strictly_below(merged, &e.get_expr_type())
+    !fits(&e.get_expr_type(), merged)
+}
+
+/// Whether a value of type `t` can be stored in a variable of type `merged`
+/// without a cast: it is not a reference type, or its reference type is
+/// assignable. A type strictly above `merged` is not, nor is an unrelated one.
+fn fits(t: &VarType, merged: &VarType) -> bool {
+    t.type_ != CodeType::Object || merged.type_ != CodeType::Object || assignable(t, merged)
 }
 
 /// The type of the one local the LocalVariableTable declares at every store

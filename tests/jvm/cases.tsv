@@ -5074,6 +5074,10 @@ class	kuna-fixes/classes/pkg/TestVarMergeNarrowing.class
 class	kuna-fixes/classes/pkg/TestVarMergeNarrowing$Source.class
 expected	kuna-fixes/expected-compat/pkg/TestVarMergeNarrowing.java
 compare	TestVarMergeNarrowing.java
+case	kuna-fixes-compat/pkg/TestVarMergeUnrelatedType	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestVarMergeUnrelatedType.class
+expected	kuna-fixes/expected-compat/pkg/TestVarMergeUnrelatedType.java
+compare	TestVarMergeUnrelatedType.java
 case	kuna-fixes-compat/pkg/TestVarargArrayLength	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestVarargArrayLength.class
 expected	kuna-fixes/expected-compat/pkg/TestVarargArrayLength.java
@@ -7047,6 +7051,10 @@ class	kuna-fixes/classes/pkg/TestVarMergeNarrowing.class
 class	kuna-fixes/classes/pkg/TestVarMergeNarrowing$Source.class
 expected	kuna-fixes/expected/pkg/TestVarMergeNarrowing.java
 compare	TestVarMergeNarrowing.java
+case	kuna-fixes/pkg/TestVarMergeUnrelatedType	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestVarMergeUnrelatedType.class
+expected	kuna-fixes/expected/pkg/TestVarMergeUnrelatedType.java
+compare	TestVarMergeUnrelatedType.java
 case	kuna-fixes/pkg/TestVarargArrayLength	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestVarargArrayLength.class
 expected	kuna-fixes/expected/pkg/TestVarargArrayLength.java

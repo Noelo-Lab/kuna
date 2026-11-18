@@ -303,6 +303,7 @@ they were compiled from.
 | `pkg/TestVarMergeLostDefinition` | `var_merge_lost_definition` | javac 17.0.21 | a variable whose merge into an earlier one of its slot has no common type keeps its declaration (Vineflower removes it first and prints the variable undeclared) |
 | `pkg/TestVarMergeLvtWidening` | `var_merge_narrowing` | javac 17.0.20.1 (`-g`) | `overriding`, whose local is reassigned `mods = new LinkedMods(mods)` under one LocalVariableTable entry, stays one `Mods` variable (the merge is widened to the declared type rather than refused); `firstLength`, whose two block-scoped locals have their own entries, still keeps two variables, so `src.next()` is not stored in an `Object` that is then used as a `String` |
 | `pkg/TestVarMergeNarrowing` | `var_merge_narrowing` | javac 17.0.20.1 (no `-g`) | `firstLength`, whose two block-scoped locals share a slot: the `Object` one is no longer merged into the `String` one, so `src.next()` is not cast to `String` before it is compared with `MARK` |
+| `pkg/TestVarMergeUnrelatedType` | `var_merge_narrowing` | javac 17.0.21.0.3 (no `-g`) | a variable is not merged with a later one of a type that does not admit a value it is assigned, unrelated or wider (Object v = c ? "s" : k with a later Integer w); Vineflower merges them as Integer, printing a cast that throws ClassCastException or code that does not compile |
 | `pkg/TestVarargArrayLength` | `vararg_array_length` | javac 17.0.21.0.3 (`-g`) | a varargs call passing an array created by its length, count(new Object[n]), keeps the array; Vineflower writes count(), no arguments |
 | `pkg/TestVarargFromMetadata` | `kt_vararg_from_metadata` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | the primary constructor's `Array<String>` parameter is no longer written `vararg names: Any`, and the `vararg` primitive parameters of a constructor and a function keep `vararg` with their element type (`vararg rest: Int`, not `rest: IntArray`) |
 | `pkg/TestVarargsSpreadResolution` | `vararg_spread_resolution` | javac 17.0.21 (`-g`) | A varargs call keeps the array or the cast that makes javac pack the same arguments for the same method: Vineflower spread `build(new String[0])` inside `build()` into `build()` (a call to itself), `count(new Object[]{names})` and `count((Object) null)` into `count(names)` and `count(null)` (the array, or null, as the argument list), and `pick(new String[]{"a"})` into `pick("a")` (a `pick(Object)`); the recompiled class's `javap -c -p` equals the original's |
@@ -22881,6 +22882,51 @@ they were compiled from.
     }
  
     public int nextLength(TestVarMergeNarrowing.Source var1) {
+```
+
+### `pkg/TestVarMergeUnrelatedType`
+
+```diff
+--- expected-compat/pkg/TestVarMergeUnrelatedType.java
++++ expected/pkg/TestVarMergeUnrelatedType.java
+@@ -10,10 +10,10 @@
+    }
+ 
+    static void conditional(boolean var0, int var1) {
+-      Integer var2 = (Integer)(var0 ? "s" : var1);
++      Object var2 = var0 ? "s" : var1;
+       sink(var2);
+-      var2 = (Integer)src(var1);
+-      sink(var2 + 1);
++      Integer var3 = (Integer)src(var1);
++      sink(var3 + 1);
+    }
+ 
+    static void branches(boolean var0, int var1) {
+@@ -25,18 +25,18 @@
+       }
+ 
+       sink(var2);
+-      var2 = (Integer)src(var1);
+-      sink(var2 + 1);
++      Integer var3 = (Integer)src(var1);
++      sink(var3 + 1);
+    }
+ 
+    static void copy(boolean var0, int var1, String var2) {
+-      Integer var3 = var2;
++      Object var3 = var2;
+       if (var0) {
+          var3 = var1;
+       }
+ 
+       sink(var3);
+-      var3 = (Integer)src(var1);
+-      sink(var3 + 1);
++      Integer var4 = (Integer)src(var1);
++      sink(var4 + 1);
+    }
+ }
 ```
 
 ### `pkg/TestVarargArrayLength`
