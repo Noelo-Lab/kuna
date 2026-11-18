@@ -17,10 +17,9 @@ use crate::k_element::KElement;
 use crate::k_exit_exprent::KExitExprent;
 use crate::k_types::KTypes;
 use crate::k_utils::KUtils;
-use crate::fixes::kt_constructors::kt_constructor_accessor_call;
+use crate::fixes::kt_constructors;
 use crate::fixes::kt_default_args::kt_default_args_call;
 use crate::fixes::kt_names::kt_escaped_class_name;
-use crate::fixes::kt_constructors::kt_inner_class_constructor;
 use crate::fixes::kt_types::kt_mapped_java_type;
 use crate::fixes::kt_anonymous_objects::kt_reused_inline_object;
 use crate::fixes::kt_anonymous_objects::kt_synthetic_object_super_call;
@@ -92,7 +91,7 @@ impl KNewExprent {
             kt_default_args_call::resugar_new(expr);
         }
         if kuna_fixes::enabled(KunaFix::KtConstructorAccessorCall) {
-            kt_constructor_accessor_call::resugar(expr);
+            kt_constructors::resugar_accessor_call(expr);
         }
 
         if KUtils::assertions_enabled() && expr.is_lambda() != new.is_lambda() {
@@ -423,7 +422,7 @@ impl KNewExprent {
                         }
                     } else if kuna_fixes::enabled(KunaFix::KtInnerClassConstructor) {
                         if let Some(name) = new_type.value.as_deref().and_then(|value| {
-                            kt_inner_class_constructor::implicit_receiver_name(
+                            kt_constructors::implicit_receiver_name(
                                 value,
                                 &constructor.get_lst_parameters().to_vec(),
                             )

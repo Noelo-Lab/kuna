@@ -43,7 +43,7 @@ use crate::k_property::KProperty;
 use crate::k_type::KType;
 use crate::k_types::KTypes;
 use crate::k_utils::KUtils;
-use crate::fixes::kt_constructors::kt_constructor_without_metadata;
+use crate::fixes::kt_constructors;
 use crate::fixes::kt_properties::kt_field_without_property;
 use crate::fixes::kt_anonymous_objects::kt_synthetic_object_super_call;
 use crate::fixes::kt_compiler_idioms::kt_inlined_stdlib_call;
@@ -639,7 +639,7 @@ impl KotlinWriter {
             }
         );
 
-        let mut visited_properties = crate::fixes::kt_constructors::kt_data_class_property_parameters::visited(cl);
+        let mut visited_properties = kt_constructors::visited(cl);
         let mut has_newline = false;
         let file_initializers = kuna_fixes::enabled(KunaFix::KtFileStaticInitializer)
             && matches!(kt_data, Some(KElement::File(_)))
@@ -2089,7 +2089,7 @@ impl KotlinWriter {
 
             let ctor_fix = kuna_fixes::enabled(KunaFix::KtConstructorWithoutMetadata);
             let delegation = (init && ctor_fix)
-                .then(|| kt_constructor_without_metadata::delegation(wrapper, method_wrapper))
+                .then(|| kt_constructors::delegation(wrapper, method_wrapper))
                 .flatten();
 
             let suspend = kuna_fixes::enabled(KunaFix::KtSuspendWithoutMetadata)
@@ -2446,7 +2446,7 @@ impl KotlinWriter {
             }
 
             let _restore = delegation.map(|delegation| {
-                kt_constructor_without_metadata::write_delegation(
+                kt_constructors::write_delegation(
                     method_wrapper,
                     delegation,
                     buffer,
@@ -2466,7 +2466,7 @@ impl KotlinWriter {
                 let hide_if_init = cl_init
                     || d_init
                     || (delegation.is_none_or(|delegation| {
-                        kt_constructor_without_metadata::may_hide(wrapper, delegation)
+                        kt_constructors::may_hide(wrapper, delegation)
                     }) && KotlinWriter::hide_constructor(
                         node,
                         init,

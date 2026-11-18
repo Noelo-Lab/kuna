@@ -2645,7 +2645,7 @@ the accessor's `this(..)`, `class UIntRange(..) : UIntRange(start, endInclusive)
 constructor, without metadata, is written as `fun UIntRange(start: Int, endInclusive: Int) {
 super(start, endInclusive, 1, null) }` (10 classes in kotlin-stdlib: the unsigned ranges,
 progressions and their iterators, `TimedValue`, the time marks). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/kt_constructors/kt_inline_class_constructor_accessor.rs (real_constructor)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_constructors.rs (real_constructor)`)
 a synthetic constructor whose descriptor is another constructor's plus the marker and whose code is
 `aload 0`, a load of each other parameter in order, one `invokespecial` of that constructor and
 `return` stands for that constructor: the Kotlin constructor is read from it and the accessor is
@@ -3195,7 +3195,7 @@ rejected by kotlinc. The constructors without metadata are those of classes with
 lists none, written as named classes when they are not nested where they are created (kotlinc's
 `$$inlined$` copies, objects created in another method): 261 in okhttp, kotlin-stdlib and the two
 kotlinx-coroutines jars, and 18 initializer blocks. With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/kt_constructors/kt_constructor_without_metadata.rs (delegation)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_constructors.rs (delegation)`)
 a named class's constructor is a secondary constructor with the constructor's visibility
 (package-private: `internal`): the class has no primary constructor, so each constructor delegates,
 and the delegation is the superclass or `this` call that is the body's first statement (as
@@ -4679,7 +4679,7 @@ callers passing `null` for the marker. Vineflower's supertype calls drop the mar
 (`KUtils.removeArguments`), but `KNewExprent` writes a `new` of the accessor as it is,
 `CipherSuite(javaName, null)`, a constructor the class does not declare (okio 2, okhttp 16, kotlin-stdlib
 26 calls). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/kt_constructors/kt_constructor_accessor_call.rs (resugar)`) such a
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_constructors.rs (resugar_accessor_call)`) such a
 call, its last argument the `null` constant, whose target is recognised as an accessor by its code
 (`kt_inline_class_constructor_accessor`'s `real_constructor`: `aload 0`, a load of each parameter but the
 marker in order, one `invokespecial` of this class's `<init>` with those parameters,
@@ -4831,7 +4831,7 @@ classes.
 class's `this`, where Java writes `new Outer.Inner(..)` with the instance implicit; Vineflower's Kotlin writer
 then writes `Outer.Inner(..)`, which Kotlin reads as the constructor of a nested class and rejects
 (okhttp's `Cache.RealCacheRequest(editor)`, 21 calls; kotlinx-coroutines 1.10.2, 18). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/kt_constructors/kt_inner_class_constructor.rs (implicit_receiver_name)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_constructors.rs (implicit_receiver_name)`)
 such a call of a member class of the current class names the class alone, `RealCacheRequest(editor)`:
 inside the class the simple name is that class, and Kotlin passes the current instance as the implicit
 receiver, the same argument. An inner class of a superclass keeps Vineflower's text.
@@ -4844,7 +4844,7 @@ class for any other class), and every synthesized member; kotlinc rejects the co
 right, each synthesized member as a conflicting declaration (okhttp's `Header`, `WebSocketExtensions`,
 `CustomTrustRootIndex`). kotlinc stores a constructor property first in the constructor, in parameter order,
 right after the superclass call. With the fix, when the primary constructor of a data class is written
-(`decompiler/nonnative/kuna-jvm/src/fixes/kt_constructors/kt_data_class_property_parameters.rs (plan)`), each
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_constructors.rs (plan)`), each
 leading store `this.p = p` of a parameter into the field of the property of the same name (declared in the
 class, not delegated, `lateinit` or `const`, with default accessors) is taken out of the constructor body and
 the property is written in the parameter's place with its annotations, modifiers and type, as the class body

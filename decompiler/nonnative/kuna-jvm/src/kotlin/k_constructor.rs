@@ -17,12 +17,11 @@ use crate::k_type::KType;
 use crate::k_utils::KUtils;
 use crate::key::Key;
 use crate::fixes::kt_delegation_calls::kt_constructor_body_after_first_block;
-use crate::fixes::kt_constructors::kt_data_class_property_parameters;
+use crate::fixes::kt_constructors;
 use crate::fixes::kt_default_args::kt_default_args_call;
 use crate::fixes::kt_names::kt_function_parameter_name;
 use crate::fixes::kt_delegation_calls::kt_default_args_super_call;
 use crate::fixes::kt_delegation_calls::kt_hidden_empty_super_call;
-use crate::fixes::kt_constructors::kt_inline_class_constructor_accessor;
 use crate::fixes::kt_delegation_calls::kt_supertype_type_arguments;
 use crate::fixes::kt_java_syntax::kt_java_reference_cast;
 use crate::kuna_fixes::{self, KunaFix};
@@ -185,7 +184,7 @@ impl KConstructor {
 
             let method = match kuna_fixes::enabled(KunaFix::KtInlineClassConstructorAccessor)
                 .then(|| {
-                    kt_inline_class_constructor_accessor::real_constructor(
+                    kt_constructors::real_constructor(
                         class_struct,
                         method,
                     )
@@ -331,7 +330,7 @@ impl KConstructor {
             && kuna_fixes::enabled(KunaFix::KtDataClassPropertyParameters))
         .then(|| {
             let method_wrapper = self.method_wrapper(wrapper);
-            kt_data_class_property_parameters::plan(
+            kt_constructors::plan(
                 self.class_struct,
                 self.class_flags,
                 self.method_struct.expect("NullPointerException: methodStruct"),
@@ -352,9 +351,9 @@ impl KConstructor {
             let header = declared
                 .as_ref()
                 .and_then(|plan| plan[i])
-                .and_then(kt_data_class_property_parameters::property)
+                .and_then(kt_constructors::property)
                 .and_then(|property| {
-                    kt_data_class_property_parameters::header(
+                    kt_constructors::header(
                         &property,
                         wrapper,
                         indent + 1,
