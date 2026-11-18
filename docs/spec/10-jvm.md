@@ -1973,7 +1973,7 @@ cut around each suspension's early `return`, which the `finally` does not run (k
 `lastOrNull`, `maxWith`, `minWith`, `toChannel` and its `map`, `zip` lambdas,
 `SharedFlowImpl.collect`, `StateFlowImpl.collect`, `StreamFlow.collect`; unchanged on
 `develop/1.13.0`, whose only change to these classes is nullability). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/control_flow/irreducible_with_exception_edges.rs`),
+(`decompiler/nonnative/kuna-jvm/src/fixes/control_flow.rs`),
 at the two points where Vineflower gives the region up for good (the map of extended
 postdominators fresh or refreshed) and only when the region is irreducible over its regular and
 exception edges together (a handler entered from its range), `DomHelper` goes on in two ways.
@@ -2490,7 +2490,7 @@ sequence. Otherwise it stays after the `try`, and code that reads the clause's v
 out of its scope (spring-boot's `LambdaSafe.invoke`: `catch (ClassCastException ex) { if (!...) throw
 ex; } this.logNonMatchingType(callbackInstance, ex);`). Behaviour is unchanged, as only the clause
 reaches that code, but javac rejects it. With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/control_flow/catch_tail_inline.rs (reads_left_catch_var)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/control_flow.rs (reads_left_catch_var)`)
 statements that read the variable of a catch clause the break leaves are inlined into the clause
 regardless. `LambdaSafe.invoke` is the one instance on the benchmark inputs.
 
@@ -4475,7 +4475,7 @@ first statement was an empty loop sharing its head that `EliminateLoopsHelper` r
 its condition is false, and the rewrite made that the exit: `while ((l = v[++i]) >= p) { .. }`, which
 leaves where the bytecode scans on (Elasticsearch's `BulkNeighborQueue$ReservoirTopK.quickSelectIntro`
 returned the wrong k-th element). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/control_flow/loop_first_if_exit.rs (exits_to)`) the
+(`decompiler/nonnative/kuna-jvm/src/fixes/control_flow.rs (exits_to)`) the
 rewrite is made only when every successor of the `if` is a `break` to that exit; otherwise the loop
 stays `while (true) { if ((l = v[++i]) >= p) { .. } }`.
 

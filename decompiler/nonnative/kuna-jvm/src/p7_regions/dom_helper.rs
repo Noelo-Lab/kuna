@@ -24,7 +24,7 @@ use crate::jthrow;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::label_helper::LabelHelper;
 use crate::method_processor::MethodProcessor;
-use crate::fixes::control_flow::irreducible_with_exception_edges::IrreducibleWithExceptionEdges;
+use crate::fixes::control_flow::IrreducibleWithExceptionEdges;
 use crate::fixes::finally_sync::protected_back_edge;
 use crate::fixes::finally_sync::synchronized_break_exit;
 use crate::root_statement::RootStatement;
