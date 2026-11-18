@@ -2604,3 +2604,19 @@ before its block for `take`, and `unsettled`@`0x4012c0` calls the `__stdcall`
 block for `take`. Source and recipe in `byvalreuse_pe_i386.s`: clang 17 and lld-link 17 (the
 `swift:6.0-jammy` Docker image ships both) reproduce it byte for byte; Ubuntu's clang 14
 does not. Used by `tests/stages/kuna-repframecopy.xml` (#14-#21).
+
+### `ehcatch_*.so` — C++ catch handlers behind `.eh_frame` and `.ARM.exidx`
+
+Three builds of `ehcatch.cc` (clang 22.1.8 `-O2 -fPIC -fexceptions`, `ld.lld -shared`;
+the recipe is in the source): `ehcatch_x86_64.so` (4,664 bytes, SHA-256
+`2d2cc2545c88a4999f91cff680b07b03562bac4ecf8855457fcd63ac0c4f98dc`),
+`ehcatch_arm.so` (3,404 bytes, `armv7a-linux-gnueabihf`, SHA-256
+`33f210700eea757667fefacd758658fb609467151ef4b92dfea46ff03e9a9ff1`) and
+`ehcatch_thumb_stripped.so` (2,284 bytes, the same target with `-mthumb`, then
+`llvm-strip`, SHA-256
+`bd861c63e25985927c38fa33a5b7b1667072f14b8f3861ec9b57fb76c6f55a2b`). `guarded`
+catches an `int`; `sorted` catches a hidden-visibility class `Odd`, which only its
+`type_info` name string names, and then everything; the static `twice` has no
+symbol in the stripped build, where `.ARM.exidx` alone states its start. Used by
+`tests/stages/kuna-ehcatch.xml` and the `entry::kuna_ehtable` /
+`entry::kuna_armexidx` unit tests.

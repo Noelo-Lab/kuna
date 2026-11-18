@@ -495,6 +495,10 @@ pub struct AnalysisOutput {
     /// `WARN`/`BUG` trap. Parked on the architecture for the flow
     /// (`kuna_decomp::kuna_kernelbug`); empty on every other image.
     pub kernel_bugs: Vec<kuna_decomp::kuna_kernelbug::KernelBugSite>,
+    /// (kuna `ehcatch`) The call-site records of the image's exception tables
+    /// (`entry::kuna_ehtable`), sorted and disjoint. Parked on the architecture
+    /// for the flow (`kuna_decomp::kuna_ehcatch`); empty on an image without one.
+    pub eh_call_sites: Vec<kuna_decomp::kuna_ehcatch::EhCallSite>,
     /// (kuna `poolextents`) The ARM32 literal pools the Listing's trusted
     /// instructions prove, as sorted, disjoint `[lo, hi)` word runs; the flow
     /// walk's `funcboundflow` bound ends a call's fall-through at one. Empty
@@ -876,6 +880,7 @@ impl AnalysisOutput {
         self.no_fallthru_calls.extend(other.no_fallthru_calls);
         self.call_returns.extend(other.call_returns);
         self.kernel_bugs.extend(other.kernel_bugs);
+        self.eh_call_sites.extend(other.eh_call_sites);
         self.arm_pool_extents.extend(other.arm_pool_extents);
         self.readonly.extend(other.readonly);
         self.const_ranges.extend(other.const_ranges);

@@ -45,7 +45,7 @@ fn is_rounding_op(data: &Funcdata, op: OpId) -> Option<()> {
 /// dead-code removal deletes, rather than keeps as a call, once its result is
 /// unused.
 pub(crate) fn is_pure_call(data: &Funcdata, op: OpId) -> bool {
-    is_rounding_op(data, op).is_some()
+    is_rounding_op(data, op).is_some() || crate::kuna_ehcatch::is_pure(data, op)
 }
 
 /// The float type of a `size`-byte value at a rounding user op `op`.

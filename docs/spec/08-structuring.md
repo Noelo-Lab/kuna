@@ -115,6 +115,24 @@ fprintf(...); exit(1);` — layout order gets all three right, because it is
 reading what the compiler recorded about the source rather than guessing from
 the callee.
 
+**`ehcatch` — a handler is the clause.** A block that ends in the test of a
+guarded call's exceptional edge (chapter 02, `ehcatch`) has one arm that is the
+handler. `ActionBlockStructure::apply` records that arm's basic block per test
+block (`kuna_ifnoexit.rs (ExitLeafFacts::eh_catch_arm)`, from
+`kuna_ehcatch.rs (catch_successor)`: the true out-edge, or the false one when
+the condition is negated an odd number of times against its boolean flip).
+`rule_block_if_no_exit` then tries the handler arm first whatever `guardarm`
+says, so when both arms qualify the handler becomes the `if` body and the
+normal path follows it flat (`blockaction.rs (eh_catch_arm)`). A handler with
+its own branches is not one terminal node until its inside collapses, while
+the normal arm, often a single `return`, qualifies at once. So the deferred
+scan's first pass, the one `loopcondhoist` uses for loop heads, also holds
+back a test whose handler arm does not qualify yet; if nothing else folds in
+that pass the ordinary scan takes the test as before, so a handler that
+rejoins the normal path costs nothing. The printer turns the resulting
+else-less `if` into `try`/`catch` (chapter 09). Functions without such a test
+have an empty table and take the old path unchanged.
+
 **`loopcondhoist` — which *block* the deferred scan folds first.** The deferred
 scan walks the live components in order and folds the first one whose terminal
 arm qualifies, then restarts the whole cascade from the top. A head-tested loop

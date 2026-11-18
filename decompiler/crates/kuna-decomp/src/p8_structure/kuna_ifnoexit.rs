@@ -24,6 +24,9 @@ pub struct ExitLeafFacts {
     pub halt: BTreeMap<BlockId, uint4>,
     /// Start address offset of each block, for the trace only.
     pub addr: BTreeMap<BlockId, u64>,
+    /// (kuna `ehcatch`) For a block ending in the test of a guarded call's
+    /// exceptional edge, the successor block on that edge.
+    pub eh_catch_arm: BTreeMap<BlockId, BlockId>,
 }
 
 impl ExitLeafFacts {

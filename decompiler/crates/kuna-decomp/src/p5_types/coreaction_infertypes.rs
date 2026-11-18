@@ -96,6 +96,10 @@ pub(crate) fn output_type_local(data: &Funcdata, op: OpId) -> Rc<Datatype> {
                 return Rc::clone(out.get_type());
             }
         }
+        // (kuna ehcatch) the exceptional-edge flag, exception object and selector.
+        if let Some(ty) = crate::kuna_ehcatch::output_type(data, in0_off, out_size) {
+            return ty;
+        }
         // (kuna strlenscan) `DatatypeUserOp::getOutputLocal` for the `strlen`
         // builtin: the length is an unsigned integer of the output's width.
         if in0_off == crate::userop::BUILTIN_STRLEN as u64 {

@@ -1,0 +1,94 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Kuna GH-1645: C++ catch handlers (option ehcatch off|catch|all, default catch).
+
+    Issue: a landing pad is entered only by the unwinder, so the flow walk never
+    decoded it. A function with a try/catch printed as its normal path alone
+    (`work(); return 0;`), with no note that a handler existed. On ARM32 the
+    tables live in .ARM.exidx/.ARM.extab, which kuna did not read at all.
+
+    Stage / sub-stage: P1 program prep decodes every LSDA
+    (`kuna-analysis/src/analyzers/entry/kuna_ehtable.rs`), reached through an
+    .eh_frame FDE or an .ARM.exidx entry (`kuna_armexidx.rs`, which also gives
+    the ARM function starts); P2 flow classification
+    (`p2_lift/kuna_ehcatch.rs`) gives a guarded call an edge to its landing
+    pad; P8 prefers the handler as the `if` body; P9 prints the `if` as
+    try/catch.
+
+    Fixtures: `decompiler/crates/kuna-analysis/tests/fixtures/ehcatch_x86_64.so`,
+    `ehcatch_arm.so` and `ehcatch_thumb_stripped.so`, three builds of
+    `ehcatch.cc` (clang 22 -O2 -fPIC -fexceptions, ld.lld -shared; the recipe is
+    in the source):
+
+      int guarded(int v) { try { work(v); } catch (int e) { return e; } return 0; }
+      int sorted(int v) {
+        try { work(v); }
+        catch (const Odd &e) { return e.code; }
+        catch (...) { return -1; }
+        return twice(v);
+      }
+
+    `Odd` has hidden visibility, so nothing names its type_info but the
+    object's own name string. `twice` is static: in the stripped Thumb build
+    only .ARM.exidx states where it starts.
+
+    Pass 1 is `ehcatch off` (the bug): #1 the header counts the hidden handler,
+    #2 no handler prints. Pass 2 is the default on x86-64: #3-#5 `guarded`
+    prints its handler as try/catch and returns the caught value, #6-#7
+    `sorted` names both clauses and dispatches on the selector. Pass 3 is the
+    ARM build, read through .ARM.exidx/.ARM.extab, and pass 4 the stripped
+    Thumb build: #8 in both the handler returns the caught value from inside
+    the catch block, #9 every handler reads the exception object the unwinder
+    hands it, #10 the static helper is a Thumb function .ARM.exidx alone
+    names, #11 no handler fell back to the plain `if (__eh_catch(T))` form.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/ehcatch_x86_64.so</com>
+  <com>option ehcatch off</com>
+  <com>read symbols</com>
+  <com>load function guarded</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/ehcatch_x86_64.so</com>
+  <com>read symbols</com>
+  <com>load function guarded</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function sorted</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/ehcatch_arm.so</com>
+  <com>read symbols</com>
+  <com>load function guarded</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/ehcatch_thumb_stripped.so</com>
+  <com>read symbols</com>
+  <com>load function guarded</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function 0x103f6</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="ehcatch #1: off: the header counts the hidden handler" min="1" max="1">guarded\(.*\) // warn: 1 catch handler not shown</stringmatch>
+<stringmatch name="ehcatch #2: off prints no handler: one per default decompile of a guarded function" min="4" max="4">^  catch \(</stringmatch>
+<stringmatch name="ehcatch #3: the guarded call sits in a try block" min="4" max="4">^  try \{$</stringmatch>
+<stringmatch name="ehcatch #4: the handler names the caught type" min="3" max="3">^  catch \(int\) \{$</stringmatch>
+<stringmatch name="ehcatch #5: x86-64: the handler rejoins the normal return with the caught value" min="1" max="1">^  return v2;$</stringmatch>
+<stringmatch name="ehcatch #6: a hidden class and a catch-all share one pad" min="1" max="1">^  catch \(Odd \| \.\.\.\) \{$</stringmatch>
+<stringmatch name="ehcatch #7: the pad dispatches on the selector" min="1" max="1">v3 = __eh_selector\(\);</stringmatch>
+<stringmatch name="ehcatch #8: ARM: the handler returns the caught value" min="2" max="2">^    return v2;$</stringmatch>
+<stringmatch name="ehcatch #9: the exception object comes from the unwinder" min="4" max="4">v1 = __eh_exception\(\);</stringmatch>
+<stringmatch name="ehcatch #10: the stripped Thumb helper decodes as Thumb" min="1" max="1">^  return a0 &lt;&lt; 1;$</stringmatch>
+<stringmatch name="ehcatch #11: no handler falls back to the plain test" min="0" max="0">__eh_catch</stringmatch>
+</decompilertest>

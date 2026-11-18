@@ -1654,6 +1654,68 @@ its rendering, and an image with no `__bug_table` pays one empty-list test per
 BRANCHIND. The AArch64 `#0x800` the previous paragraph leaves alone is matched
 here only through a table entry. Exercised by `tests/stages/kuna-kernelbug.xml`.
 
+**(kuna) A C++ landing pad joins the function that owns it — `option ehcatch
+off|catch|all`, default `catch`,
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_ehcatch.rs (plant)`.** A
+landing pad is entered only by the unwinder. No instruction branches to it, so
+the flow walk never decoded it and a function with a `try`/`catch` printed as
+its normal path alone, with no note that a handler existed. The analysis tier
+decodes the exception tables (chapter 01, `ehtable`) and parks one `EhCallSite`
+per call-site record: the guarded address range, the landing pad, and the
+caught types in handler order (none for a cleanup-only pad). Decision rule,
+asked in `FlowInfo::xref_control_flow` after a CALL or CALLIND has its call
+spec (`flow.rs (eh_landing_edge)`): the call's address lies in a record
+(`site_at`, a binary search), the mode admits the record (`catch`: it has a
+catch clause; `all`: any record), the language is one whose two unwinder
+registers are known (`unwinder_registers`: `RAX`/`RDX`, `EAX`/`EDX`, `r0`/`r1`,
+`x0`/`x1`), the call is not a call-fixup or inlined site, the walk is not
+building an inlined callee body, and the call is the last op of its instruction
+or is followed only by its own no-return halt. Then the exceptional edge is
+planted at the call's own address, directly after the call:
+
+```text
+  CALL work
+  u = CALLOTHER __eh_catch(#record)
+  CBRANCH <stub>, u
+  BRANCH <join>
+  stub: r_exception = CALLOTHER __eh_exception()
+        r_selector  = CALLOTHER __eh_selector()
+        BRANCH <landing pad>
+  join: u2 = COPY 0          (falls through to the next instruction)
+```
+
+The three branches inside the instruction are p-code-relative, so the
+instruction still ends in an op that falls through and every bound the walk
+applies to a call's fall-through (`funcboundflow`, the pool bound) sees what
+it saw before. The stub defines the two registers the unwinder loads before it
+enters the pad (`__builtin_eh_return_data_regno` 0 and 1), so the pad never
+reads the call's return value through them. The pad's address is queued as an
+ordinary flow target, bypassing the tail-call test: a pad that
+`eh_frame_full` also made an entry is still followed, not called. A guarded
+call that does not return (`__cxa_throw`, `__cxa_rethrow`) continues only at its
+pad, so its halt is replaced by the stub alone, with no test
+(`plant_no_return`), and the exception op carries the record so it prints the
+caught types: `__eh_exception(T)`. The three user-ops are built-ins
+(`userop.rs`, `BUILTIN_EH_CATCH`/`_EXCEPTION`/`_SELECTOR`). They only read
+unwinder state, so dead-code removal deletes one whose result is unused
+(`kuna_ehcatch.rs (is_pure)`): a handler that never looks at the selector
+shows no `__eh_selector()`. Their results are typed `bool`, `void *` and a
+signed integer (`coreaction_infertypes.rs`, `kuna_ehcatch.rs (output_type)`).
+Under `off` no edge is planted and the header says how many catch handlers the
+calls met would have reached (`N catch handlers not shown`). Structuring and
+printing of the edge are in chapters 08 and 09.
+
+One consequence holds for every mode but `off`. Only the unwinder enters a
+landing pad, so a call whose fall-through address is one does not return
+(`flow.rs (process_instruction)`, `FlowEnvironment::eh_landing_pad`): the walk
+plants the no-return halt there with the warning `ehcatch: the call's
+fall-through is an exception landing pad`, as `funcboundflow` does at the next
+function's entry. This is what ends a clang terminate pad (`mov rdi,rax; call
+__clang_call_terminate`), whose callee is a local function a stripped image
+does not name, instead of running it into the pad that follows. An image with
+no exception table pays one empty-list test per call. Exercised by
+`tests/stages/kuna-ehcatch.xml`.
+
 **(kuna) The x86-64 `SYSCALL` user-op's ABI effects — `option x64syscall`,
 default `on`, x86-64-gated (DIV-152),
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_x64syscall.rs
