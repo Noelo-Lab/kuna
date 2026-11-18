@@ -22,6 +22,7 @@ use crate::kotlin::kuna_declared_element;
 use crate::fixes::kt_calls::kt_facade_call::{self as facade, java_property};
 use crate::fixes::kt_calls::kt_jvm_name_call;
 use crate::fixes::kt_names::kt_unescaped_name;
+use crate::fixes::kt_util::args_after_receiver;
 use crate::kotlin_chooser::KotlinChooser;
 use crate::kt_attrs::KtAttrs;
 use crate::kt_flags::Flags;
@@ -554,11 +555,7 @@ pub fn write_function(
         kt_explicit_type_arguments::append(&mut buf, &invocation.get_generic_args());
     }
     buf.append("(");
-    let skipped = invocation.d(|d| d.kuna_skip_arg);
-    invocation.set_kuna_skip_arg(Some(0));
-    let params = invocation.append_param_list(indent);
-    invocation.set_kuna_skip_arg(skipped);
-    buf.append_buffer(&params).append(")");
+    buf.append_buffer(&args_after_receiver(invocation, indent)).append(")");
     buf.add_bytecode_mapping(invocation.get_bytecode().as_ref());
     Some(buf)
 }
