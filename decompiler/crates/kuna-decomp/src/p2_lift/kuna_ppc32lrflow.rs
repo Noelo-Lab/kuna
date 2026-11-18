@@ -393,19 +393,20 @@ fn transfer(data: &Funcdata, op: OpId, state: &mut State) {
             let stored = o.get_in(2).expect("STORE value");
             let size = key(data, stored).2;
             if let Some(offset) = stack_address(data, op, state) {
+                let stored_value = value(data, stored, state);
+                state.return_address_observed |=
+                    stored_value != Some(Value::ReturnAddress) && reads_return(data, stored, state);
                 state.return_address_observed |= state.stack.iter().any(|(&(at, width), v)| {
                     *v == Value::ReturnAddress
                         && (at.wrapping_sub(offset) < size as u32
                             || offset.wrapping_sub(at) < width as u32)
-                        && (at != offset
-                            || width != size
-                            || value(data, stored, state).as_ref() != Some(v))
+                        && (at != offset || width != size || stored_value.as_ref() != Some(v))
                 });
                 state.stack.retain(|&(at, width), _| {
                     at.wrapping_sub(offset) >= size as u32
                         && offset.wrapping_sub(at) >= width as u32
                 });
-                if let Some(v) = value(data, stored, state) {
+                if let Some(v) = stored_value {
                     state.stack.insert((offset, size), v);
                 }
             } else {
@@ -430,7 +431,11 @@ fn transfer(data: &Funcdata, op: OpId, state: &mut State) {
                         }
                         state.stack.get(&(at, key(data, out).2)).copied()
                     } else {
-                        image_value(data, op, state)
+                        let loaded = image_value(data, op, state);
+                        // An unresolved address can alias a saved return address.
+                        state.return_address_observed |= loaded.is_none()
+                            && state.stack.values().any(|v| *v == Value::ReturnAddress);
+                        loaded
                     }
                 } else {
                     pure(data, op, state).or_else(|| partial_bitwise(data, op, state))

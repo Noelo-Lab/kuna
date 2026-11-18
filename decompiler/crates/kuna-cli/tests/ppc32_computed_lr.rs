@@ -42,6 +42,101 @@ fn decompile_fixture(f: &fixture::Fixture, extra: &[&str]) -> std::process::Outp
     output
 }
 
+// The caller resumes at 0x1040 and increments the callee's result.
+const SAVED_LR_THROUGH_ALIAS: [u32; 26] = [
+    0x9421fff0, 0x7d8802a6, 0x9181000c, 0x8164fffc, 0x38210010, 0x38600007, 0x38a01040, 0x7c055800,
+    0x4c820020, 0x7ca803a6, 0x4e800020, 0, 0, 0x39401060, 0x7c240b78, 0x4bffffc5, 0x38630001,
+    0x7d4803a6, 0x4e800020, 0, 0, 0, 0, 0, 0x38000001, 0x44000002,
+];
+
+fn decompile_saved_lr(
+    words: &[u32],
+    order: &str,
+    model: &str,
+    mode: &str,
+    extra: &[&str],
+) -> String {
+    let image = common::scratch_file("ppc32-saved-lr", "bin");
+    let bytes: Vec<u8> = words
+        .iter()
+        .flat_map(|word| {
+            if order == "LE" {
+                word.to_le_bytes()
+            } else {
+                word.to_be_bytes()
+            }
+        })
+        .collect();
+    std::fs::write(&image, bytes).unwrap();
+    let target = format!("PowerPC:{order}:32:{model}");
+    let output = Command::new(env!("CARGO_BIN_EXE_kuna"))
+        .arg("decompile")
+        .arg(&image)
+        .args([
+            "0x1000",
+            "--raw-image",
+            "--base",
+            "0x1000",
+            "--target",
+            &target,
+            "--mode",
+            mode,
+        ])
+        .args(extra)
+        .output()
+        .unwrap();
+    std::fs::remove_file(image).unwrap();
+    assert!(output.status.success(), "{target} {mode}: {output:?}");
+    String::from_utf8(output.stdout).unwrap()
+}
+
+#[test]
+fn saved_lr_loaded_through_a_stack_alias_stays_a_return() {
+    for order in ["BE", "LE"] {
+        for model in ["default", "e500"] {
+            for mode in ["fast", "reliable"] {
+                let c = decompile_saved_lr(
+                    &SAVED_LR_THROUGH_ALIAS,
+                    order,
+                    model,
+                    mode,
+                    &[
+                        "--assert",
+                        "prototype 0x1000 int sub_1000(int a0, void *alias)",
+                    ],
+                );
+                assert!(
+                    !c.contains("case 0x1040:") && !c.contains("return 8;"),
+                    "{order} {model} {mode}: {c}"
+                );
+                let caller = "int check(int i) { int frame[2] = {i == 0 ? 0x1040 : 0, 0}; return sub_1000(0, frame + 1) + 1; }";
+                check_runtime(&format!("{c}\n{caller}"), "8");
+            }
+        }
+    }
+}
+
+#[test]
+fn saved_lr_byte_used_by_a_guard_stays_unproved() {
+    let mut words = SAVED_LR_THROUGH_ALIAS;
+    words[2] = 0x9981000c; // stb r12,12(r1)
+    words[3] = 0x8961000c; // lbz r11,12(r1)
+    words[7] = 0x2c0b0040; // cmpwi r11,0x40
+    for order in ["BE", "LE"] {
+        for model in ["default", "e500"] {
+            for mode in ["fast", "reliable"] {
+                let c = decompile_saved_lr(&words, order, model, mode, &[]);
+                assert!(
+                    c.contains("return 7;")
+                        && !c.contains("case 0x1040:")
+                        && !c.contains("return 8;"),
+                    "{order} {model} {mode}: {c}"
+                );
+            }
+        }
+    }
+}
+
 #[test]
 fn joined_lr_operands_keep_their_path_correlation() {
     let same_register = [
@@ -477,12 +572,18 @@ fn memory_loaded_code_address_is_a_transfer() {
         0x7d8802a6, 0x39601020, 0x800b0000, 0x7c0803a6, 0x4e800020, 0x60000000, 0x60000000,
         0x60000000, 0x00001024, 0x38600007, 0x7d8803a6, 0x4e800020,
     ];
+    let saved_lr = vec![
+        0x9421fff0, 0x7d8802a6, 0x9181000c, 0x39601028, 0x800b0000, 0x7c0803a6, 0x4e800020, 0, 0,
+        0, 0x0000102c, 0x38600007, 0x8181000c, 0x38210010, 0x7d8803a6, 0x4e800020,
+    ];
     for little in [false, true] {
         for model in ["default", "e500"] {
             let target = format!("PowerPC:{}:32:{model}", if little { "LE" } else { "BE" });
-            let output = run_decompile(little, code.clone(), &["--target", &target]);
-            assert!(output.status.success(), "{output:?}");
-            check_runtime(&String::from_utf8(output.stdout).unwrap(), "7");
+            for words in [&code, &saved_lr] {
+                let output = run_decompile(little, words.clone(), &["--target", &target]);
+                assert!(output.status.success(), "{output:?}");
+                check_runtime(&String::from_utf8(output.stdout).unwrap(), "7");
+            }
         }
     }
 }
