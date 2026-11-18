@@ -252,6 +252,11 @@ pub trait FlowEnvironment {
         false
     }
 
+    /// The ISA-mode marker does not change general-register values.
+    fn is_isa_mode_switch(&self, _userop_index: uintb) -> bool {
+        false
+    }
+
     /// Emit the callother-fixup p-code for the \e injected user-op `userop_index`
     /// into `emit`, resolving its parameters against `context` (C++
     /// `FlowInfo::injectUserOp` → `payload->inject(icontext,emitter)` via the
@@ -1464,6 +1469,15 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             }
             // (kuna) GH-8817: reclassify V850 jmp [reg] CALLIND -> BRANCHIND.
             if self.env.is_v850_indirect_jmp(&self.data, curop) {
+                let branchind = self.env.resolve_typeop(OpCode::CPUI_BRANCHIND);
+                self.data.op_set_opcode(curop, branchind);
+            }
+            if crate::kuna_returnbranch::computed_target(
+                &self.data,
+                curop,
+                &self.visited,
+                |index| self.env.is_isa_mode_switch(index),
+            ) {
                 let branchind = self.env.resolve_typeop(OpCode::CPUI_BRANCHIND);
                 self.data.op_set_opcode(curop, branchind);
             }

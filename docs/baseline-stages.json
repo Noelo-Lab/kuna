@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4431,
-    4431
+    4433,
+    4433
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -3912,6 +3912,8 @@
     "data:rettriangle #6: two conditions before the return print the same in both passes",
     "data:rettriangle #7: seven returns by default, four with the option on",
     "data:return slot preserved",
+    "data:returnbranch #1: only the default keeps the store",
+    "data:returnbranch #2: a leading instruction without p-code does not defeat the proof",
     "data:returncopysplit #1: fix -- no per-element store into the read-only literal in either pass",
     "data:returncopysplit #2: fix -- no raw SUB81 truncation of the literal survives",
     "data:returncopysplit #3: the real copy site still reads the literal's low half per byte",
