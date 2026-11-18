@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4498,
-    4498
+    4502,
+    4502
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -162,6 +162,10 @@
     "data:BRKTRAP #7: no function with a compiler trap prints void",
     "data:BRKTRAP #8: brk #0xf000, brk #0 and brk #0x800 keep the jump-as-call",
     "data:BRKTRAP #9: only the three resumable breakpoints are a jump-as-call",
+    "data:BYTEMAPROWS #1: the three table rows are the cases",
+    "data:BYTEMAPROWS #2: no row is read from the byte map",
+    "data:BYTEMAPROWS #3: flow stays in mapped memory",
+    "data:BYTEMAPROWS #4: each case returns its own value",
     "data:Bit reinterpret arm #1: storage transfers use a union",
     "data:Bit reinterpret arm #2: numeric integer conversion stays a cast",
     "data:Bit reinterpret arm #3: numeric float truncation stays a cast",
