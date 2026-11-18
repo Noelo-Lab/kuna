@@ -62,7 +62,7 @@ use crate::text_buffer::TextBuffer;
 use crate::var_type::VarType;
 use crate::fixes::kt_util::SUSPEND_DESCRIPTOR_END;
 use super::CONTINUATION;
-
+use crate::fixes::kt_util::all_exprents;
 
 thread_local! {
     static IN_BODY: Cell<bool> = const { Cell::new(false) };
@@ -104,8 +104,7 @@ pub fn mark(root: RootStatement, mt: StructMethod) -> bool {
     let Some(completion) = continuation_slot(mt) else {
         return false;
     };
-    let mut exprents = Vec::new();
-    collect(root.0, &mut exprents);
+    let exprents = all_exprents(root.0);
     let mut res = false;
     for e in exprents {
         let Some(inv) = e.try_as_invocation() else {
@@ -299,19 +298,3 @@ fn declared_not_suspend(inv: InvocationExprent) -> bool {
     )
 }
 
-/// Every exprent of `stat`'s tree, nested ones included.
-fn collect(stat: Statement, out: &mut Vec<Exprent>) {
-    let top: Vec<Exprent> = match stat.get_exprents() {
-        Some(exprents) => exprents.iter().collect(),
-        None => {
-            for st in stat.get_stats().borrow().iter() {
-                collect(*st, out);
-            }
-            stat.get_stat_exprents()
-        }
-    };
-    for e in top {
-        out.extend(e.get_all_exprents_rec(true));
-        out.push(e);
-    }
-}

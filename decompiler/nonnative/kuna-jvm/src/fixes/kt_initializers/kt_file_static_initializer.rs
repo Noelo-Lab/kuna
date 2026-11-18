@@ -39,6 +39,7 @@ use crate::struct_class::StructClass;
 use crate::struct_field::StructField;
 use crate::text_buffer::TextBuffer;
 use crate::var_exprent::VarExprent;
+use crate::fixes::kt_util::for_each_exprent;
 
 thread_local! {
     static INITIALIZERS: RefCell<Vec<(StructField, TextBuffer)>> = const { RefCell::new(Vec::new()) };
@@ -446,18 +447,8 @@ fn shared_locals(parts: &[Part], defs: &[Exprent]) -> Option<Vec<Vec<Redeclared>
 
 /// Every exprent under `stat`, definitions included.
 fn stat_exprents(stat: Statement) -> Vec<Exprent> {
-    let mut lists: Vec<Exprent> = stat.get_var_definitions().to_vec();
-    lists.extend(stat.get_stat_exprents());
-    if let Some(exprents) = stat.get_exprents() {
-        lists.extend(exprents.to_vec());
-    }
-    let mut res: Vec<Exprent> = lists
-        .into_iter()
-        .flat_map(|e| e.get_all_exprents_rec_self(true, true))
-        .collect();
-    for st in stat.get_stats().borrow().to_vec() {
-        res.extend(stat_exprents(st));
-    }
+    let mut res = Vec::new();
+    for_each_exprent(stat, &mut |e| res.extend(e.get_all_exprents_rec_self(true, true)));
     res
 }
 

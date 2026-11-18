@@ -30,12 +30,12 @@ use crate::exprent::{Exprent, ExprentType};
 use crate::function_exprent::FunctionType;
 use crate::method_descriptor::MethodDescriptor;
 use crate::root_statement::RootStatement;
-use crate::statement::Statement;
 use crate::struct_method::StructMethod;
 use crate::type_family::TypeFamily;
 use crate::var_processor::VarProcessor;
 use crate::var_type::VarType;
 use crate::var_version_pair::VarVersionPair;
+use crate::fixes::kt_util::for_each_exprent;
 
 #[derive(Default)]
 struct Local {
@@ -50,7 +50,7 @@ pub fn retype(root: RootStatement, method: StructMethod, md: &MethodDescriptor, 
         + i32::from(!method.has_modifier(ACC_STATIC));
     let mut locals: BTreeMap<i32, Local> = BTreeMap::new();
     let mut tops = Vec::new();
-    collect(root.0, &mut tops);
+    for_each_exprent(root.0, &mut |e| tops.push(e));
     for top in tops {
         visit(top, None, md, first_local, &mut locals);
     }
@@ -63,18 +63,6 @@ pub fn retype(root: RootStatement, method: StructMethod, md: &MethodDescriptor, 
         for constant in &local.constants {
             constant.as_const().set_const_type(VarType::VARTYPE_INT());
         }
-    }
-}
-
-fn collect(stat: Statement, out: &mut Vec<Exprent>) {
-    out.extend(stat.get_var_definitions().to_vec());
-    out.extend(stat.get_stat_exprents());
-    if let Some(exprents) = stat.get_exprents() {
-        out.extend(exprents.to_vec());
-    }
-    let stats = stat.get_stats().borrow().to_vec();
-    for child in stats {
-        collect(child, out);
     }
 }
 

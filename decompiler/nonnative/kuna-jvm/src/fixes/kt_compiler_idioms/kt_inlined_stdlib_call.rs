@@ -58,6 +58,7 @@ use crate::struct_method::StructMethod;
 use crate::text_buffer::TextBuffer;
 use crate::code_type::CodeType;
 use crate::fixes::kt_util::{CHECK_DESCRIPTOR, EXPRESSION_CHECKS, INTRINSICS};
+use crate::fixes::kt_util::for_each_exprent;
 
 const STRING_COMPANION: &str = "kotlin/jvm/internal/StringCompanionObject";
 
@@ -128,21 +129,6 @@ pub fn resugar(root: RootStatement, cl: StructClass, mt: StructMethod) -> bool {
         res |= remove_checks(stat);
     });
     res
-}
-
-fn for_each_exprent(stat: Statement, f: &mut dyn FnMut(Exprent)) {
-    let mut lists: Vec<Exprent> = stat.get_var_definitions().to_vec();
-    lists.extend(stat.get_stat_exprents());
-    if let Some(exprents) = stat.get_exprents() {
-        lists.extend(exprents.to_vec());
-    }
-    for e in lists {
-        f(e);
-    }
-    let stats = stat.get_stats().borrow().to_vec();
-    for child in stats {
-        for_each_exprent(child, f);
-    }
 }
 
 fn blocks(stat: Statement, f: &mut dyn FnMut(Statement)) {

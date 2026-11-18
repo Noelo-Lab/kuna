@@ -13,12 +13,11 @@
 //! for the same primitive type; kotlinc compiles the implicit boxing in
 //! coroutine code back to the `Boxing` call.
 
-use crate::exprent::Exprent;
 use crate::method_descriptor::MethodDescriptor;
 use crate::root_statement::RootStatement;
-use crate::statement::Statement;
 use crate::struct_method::StructMethod;
 use crate::fixes::kt_util::SUSPEND_DESCRIPTOR_END;
+use crate::fixes::kt_util::all_exprents;
 
 const BOXING: &str = "kotlin/coroutines/jvm/internal/Boxing";
 
@@ -45,8 +44,7 @@ pub fn rewrite(root: RootStatement, mt: StructMethod) -> bool {
     if !coroutine {
         return false;
     }
-    let mut exprents = Vec::new();
-    collect(root.0, &mut exprents);
+    let exprents = all_exprents(root.0);
     let mut res = false;
     for e in exprents {
         let Some(inv) = e.try_as_invocation() else {
@@ -79,18 +77,3 @@ pub fn rewrite(root: RootStatement, mt: StructMethod) -> bool {
     res
 }
 
-fn collect(stat: Statement, out: &mut Vec<Exprent>) {
-    let top: Vec<Exprent> = match stat.get_exprents() {
-        Some(exprents) => exprents.iter().collect(),
-        None => {
-            for st in stat.get_stats().borrow().iter() {
-                collect(*st, out);
-            }
-            stat.get_stat_exprents()
-        }
-    };
-    for e in top {
-        out.extend(e.get_all_exprents_rec(true));
-        out.push(e);
-    }
-}

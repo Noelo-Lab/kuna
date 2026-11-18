@@ -56,10 +56,10 @@ use crate::function_exprent::FunctionType;
 use crate::generic_type::GenericType;
 use crate::k_var_exprent::DeclarationType;
 use crate::root_statement::RootStatement;
-use crate::statement::Statement;
 use crate::struct_method::StructMethod;
 use crate::var_processor::{KunaLocalType, VarProcessor};
 use crate::var_type::VarType;
+use crate::fixes::kt_util::for_each_exprent;
 
 /// The JDK and Kotlin classes Kotlin source names with type arguments, and
 /// their arities; a class of the input (or a library) answers from its
@@ -315,7 +315,7 @@ pub fn infer(root: RootStatement, method: StructMethod, processor: VarProcessor)
         read_casts: Vec::new(),
         return_type: method.get_signature().and_then(|s| s.return_type()),
     };
-    walk.stat(root.0);
+    for_each_exprent(root.0, &mut |e| walk.visit(e));
     let scope = type_parameters_in_scope(method);
     for (slot, t) in parameter_types(method) {
         processor.set_kuna_typed(slot, local_type(t, false, Vec::new()));
@@ -1223,20 +1223,6 @@ struct Walk {
 }
 
 impl Walk {
-    fn stat(&mut self, stat: Statement) {
-        let mut lists: Vec<Exprent> = stat.get_var_definitions().to_vec();
-        lists.extend(stat.get_stat_exprents());
-        if let Some(exprents) = stat.get_exprents() {
-            lists.extend(exprents.to_vec());
-        }
-        for expr in lists {
-            self.visit(expr);
-        }
-        for child in stat.get_stats().borrow().to_vec() {
-            self.stat(child);
-        }
-    }
-
     fn local(&mut self, index: i32) -> &mut Local {
         self.locals.entry(index).or_default()
     }

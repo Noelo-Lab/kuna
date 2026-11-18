@@ -38,8 +38,8 @@ use crate::k_element::KElement;
 use crate::kt_attrs::KtAttrs;
 use crate::fixes::kt_anonymous_objects::kt_synthetic_anonymous_object;
 use crate::method_descriptor::MethodDescriptor;
-use crate::statement::Statement;
 use crate::text_buffer::TextBuffer;
+use crate::fixes::kt_util::all_exprents;
 
 thread_local! {
     static ARGUMENTS: RefCell<Option<(ClassNode, TextBuffer)>> = const { RefCell::new(None) };
@@ -157,9 +157,7 @@ fn super_arguments(
                 .and_then(|i| i.try_as_var())
                 .is_some_and(|v| v.get_index() == 0)
     })?;
-    let mut rest = Vec::new();
-    collect_exprents(root.0, &mut rest);
-    if !rest.is_empty() {
+    if !all_exprents(root.0).is_empty() {
         return None;
     }
 
@@ -171,23 +169,6 @@ fn super_arguments(
         }
     }
     Some(call.append_param_list(indent + 1))
-}
-
-/// Every exprent of `stat`'s tree, nested ones included.
-fn collect_exprents(stat: Statement, out: &mut Vec<Exprent>) {
-    let top: Vec<Exprent> = match stat.get_exprents() {
-        Some(exprents) => exprents.iter().collect(),
-        None => {
-            for st in stat.get_stats().borrow().iter() {
-                collect_exprents(*st, out);
-            }
-            stat.get_stat_exprents()
-        }
-    };
-    for e in top {
-        out.extend(e.get_all_exprents_rec(true));
-        out.push(e);
-    }
 }
 
 /// `exprent` with every read of a constructor parameter replaced by a copy

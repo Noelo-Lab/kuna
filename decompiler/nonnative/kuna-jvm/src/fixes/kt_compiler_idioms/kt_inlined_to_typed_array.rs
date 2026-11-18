@@ -36,6 +36,7 @@ use crate::statement::{Statement, StatementType};
 use crate::var_processor::VarProcessor;
 use crate::var_type::VarType;
 use crate::var_version_pair::VarVersionPair;
+use crate::fixes::kt_util::for_each_exprent;
 
 const COLLECTION: &str = "java/util/Collection";
 const TO_ARRAY_DESCRIPTOR: &str = "([Ljava/lang/Object;)[Ljava/lang/Object;";
@@ -97,21 +98,6 @@ fn type_argument(call: Exprent, typed: VarType) {
         return;
     }
     inv.d_mut(|d| d.kuna_chain_type_args = Some(vec![element]));
-}
-
-fn for_each_exprent(stat: Statement, f: &mut dyn FnMut(Exprent)) {
-    let mut lists: Vec<Exprent> = stat.get_var_definitions().to_vec();
-    lists.extend(stat.get_stat_exprents());
-    if let Some(exprents) = stat.get_exprents() {
-        lists.extend(exprents.to_vec());
-    }
-    for e in lists {
-        f(e);
-    }
-    let stats = stat.get_stats().borrow().to_vec();
-    for child in stats {
-        for_each_exprent(child, f);
-    }
 }
 
 fn rename(stat: Statement, res: &mut bool) {
