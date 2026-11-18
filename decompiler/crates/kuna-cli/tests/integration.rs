@@ -1,6 +1,10 @@
 // Shared integration-test executable. Process-sensitive tests stay separate.
 #[path = "mips_elf_selection.rs"]
 mod mips_elf_selection;
+#[path = "return_branch_cli.rs"]
+mod return_branch_cli;
+#[path = "riscv_zcmp.rs"]
+mod riscv_zcmp;
 mod common;
 #[path = "sparc_prologue_start.rs"]
 mod sparc_prologue_start;
@@ -56,6 +60,8 @@ mod conditional_stack_bytes;
 mod arm_conditional_switch;
 #[path = "arm_constant_shift.rs"]
 mod arm_constant_shift;
+#[path = "wide_shift_emission.rs"]
+mod wide_shift_emission;
 
 #[path = "arm_float_arguments.rs"]
 mod arm_float_arguments;

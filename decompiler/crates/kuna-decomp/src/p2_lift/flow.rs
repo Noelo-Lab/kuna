@@ -252,6 +252,11 @@ pub trait FlowEnvironment {
         false
     }
 
+    /// The ISA-mode marker does not change general-register values.
+    fn is_isa_mode_switch(&self, _userop_index: uintb) -> bool {
+        false
+    }
+
     /// Emit the callother-fixup p-code for the \e injected user-op `userop_index`
     /// into `emit`, resolving its parameters against `context` (C++
     /// `FlowInfo::injectUserOp` → `payload->inject(icontext,emitter)` via the
@@ -457,6 +462,16 @@ pub trait FlowEnvironment {
     /// (`queryCall`'s `copyFlowEffects` postpone), so only the name is needed
     /// here.  The default returns no name (no symbol table in the W3 shell).
     fn query_call(&self, _entry: &Address) -> Option<String> {
+        None
+    }
+
+    /// The name a direct call to `entry` prints when no function is known there
+    /// but a processor-spec `<default_symbols>` label outside the default code
+    /// space is (eBPF's helper ids in the `syscall` space): the label names the
+    /// callee, as a Ghidra function created at a labelled address does. Only a
+    /// name: the label makes `entry` no function boundary, so `query_call` stays
+    /// `None` for it.
+    fn query_call_label(&self, _entry: &Address) -> Option<String> {
         None
     }
 
@@ -1464,6 +1479,15 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             }
             // (kuna) GH-8817: reclassify V850 jmp [reg] CALLIND -> BRANCHIND.
             if self.env.is_v850_indirect_jmp(&self.data, curop) {
+                let branchind = self.env.resolve_typeop(OpCode::CPUI_BRANCHIND);
+                self.data.op_set_opcode(curop, branchind);
+            }
+            if crate::kuna_returnbranch::computed_target(
+                &self.data,
+                curop,
+                &self.visited,
+                |index| self.env.is_isa_mode_switch(index),
+            ) {
                 let branchind = self.env.resolve_typeop(OpCode::CPUI_BRANCHIND);
                 self.data.op_set_opcode(curop, branchind);
             }
@@ -3158,7 +3182,9 @@ truncating the fall-through here"
         // queryCall: resolve the direct callee symbol's name (W4 proto copy
         // postponed to ActionDefaultParams).
         if !indirect && !entry.is_invalid() {
-            if let Some(name) = self.env.query_call(&entry) {
+            if let Some(name) =
+                self.env.query_call(&entry).or_else(|| self.env.query_call_label(&entry))
+            {
                 let _ = fc.set_funcdata(callee.clone(), &name);
             }
             // C++ queryCall: fspecs.copyFlowEffects(otherfunc->getFuncProto()) —

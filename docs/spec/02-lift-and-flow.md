@@ -127,6 +127,36 @@ encoding decodes and disassembles as before, and `FCVTZS` and `FCVTZU` lift
 to the same p-code. This is a SLEIGH correctness repair, without an inference
 option.
 
+The AArch64 pointer-authentication instructions keep their register defined
+while hidden. `AARCH64.pspec` leaves the `ShowPAC` context at 0 for every
+AArch64 language, so `pac*`, `aut*` and `xpac*` lift under the `"hide"`
+constructors of
+`specs/Ghidra/Processors/AARCH64/data/languages/AARCH64_base_PACoptions.sinc`
+and the decompiler models every signed pointer as already authenticated (the
+`ptrauthtrap` section below describes that model). Upstream's `"hide"` bodies
+are empty, so `pacda x0,x16` wrote nothing: a function whose only write to
+`x0` is the signing had no definition of `x0` at its `ret`, return recovery
+found no result, and `return ptrauth_sign_unauthenticated(p, ..)` decompiled
+as `void f(void)` (Kuna #1621). A hidden form that writes a general register
+(`pac{i,d}{a,b}`, `pac{i,d}z{a,b}`, `aut{i,d}{a,b}`, `aut{i,d}z{a,b}`,
+`pac{i}{a,b}1716`, `aut{i}{a,b}1716`, `xpaci`, `xpacd`) now lifts to a copy of
+that register onto itself, `Rd = Rd`, the transparent model's own semantics:
+the value flows to the return or store, and the function returns its pointer.
+When the compiler builds a blended modifier in place in `x1`
+(`movk x1, #d, lsl #48` then `pacda x0, x1; ret`), return recovery also takes
+that scratch `x1`, and the function returns the `x1:x0` pair, as it does for
+any other write to `x1` before `ret`. The forms that act on `x30` or `sp`
+(`pac{i}{a,b}sp`, `pac{i}{a,b}z`,
+`aut{i}{a,b}sp`, `aut{i}{a,b}z`, `retaa`, `retab`, `xpaclri`) and the
+authenticating branches and loads (`braa`, `blraa`, `eretaa`, `ldraa` and
+their `b`-key forms) stay empty: the return address carries no value the
+output needs, and `ptrauthtrap` keys on `x30` being unwritten. The FPAC-less
+failure check after a data `aut*` still folds, since the stripped copy still
+equals the original. On an iOS system daemon and three jailbreak dylibs
+(6,517 functions, 491 pointer-auth instructions in one of them) the output is
+byte-identical. This is a SLEIGH correctness repair, without an inference
+option.
+
 SPARC integer branch conditions snapshot the ICC/XCC carry, negative, and
 overflow flags before expanding the delay slot. A flag-writing slot still
 publishes its new flags to subsequent instructions, but cannot change the
@@ -1861,6 +1891,41 @@ no standalone SLEIGH engine. The backend-boundary failure and regression drive
 are recorded in
 [`docs/features/ghidra-v850-register-lookup/analysis.md`](../features/ghidra-v850-register-lookup/analysis.md).
 
+**(kuna) Computed return-register jumps — `option returnbranch`, default on,
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_returnbranch.rs (computed_target)`.**
+A SLEIGH spec marks a jump through the return register as RETURN whatever the
+register holds, so MIPS code that loads a constant code address into `$ra` and
+executes `jr $ra` ended the function there and dropped what it reached. At the
+same point in `xref_control_flow`, a RETURN whose target a bounded
+straight-line prefix from the function entry proves constant is reclassified
+to BRANCHIND, unless the proven target is zero: `move ra, zero` marks the end
+of a backtrace, and a function start that discovery placed on such a delay
+slot (u-boot's `relocate_code` jumps to `board_init_r` with it) would otherwise
+turn the next function's real return into a jump to address zero. The prefix
+starts with the tracked context values, never counts
+the incoming return address as known, evaluates at most 256 raw operations in
+emitted p-code order (so delay-slot writes after the target is captured do not
+change it) and stops at any call, branch or unknown user operation. A write
+whose value is not proven invalidates the storage it overlaps, a store forgets
+every value in the space it writes, and a read of part of a known register
+takes the bytes it names in the space's byte order. Decoded instructions that
+emitted no p-code at all may precede the prefix, since they cannot have changed
+anything; a MIPS `nop` is one, and demanding an operation at the entry address
+itself rejected the proof outright. A mode marker that selects the ordinary ISA
+does not stop the prefix. That marker is recognized by the user-op name the
+language declares, and the incoming return storage is the cspec's return
+address or a register the language names `ra` when the cspec names none — as
+the Octeon specs do. Neither consults the architecture id, which the Ghidra
+front end spells as a session number, so both front ends decide alike.
+`Prefix` is the one evaluator for such bounded target proofs. Only the flow
+kind changes: jump recovery must still prove the destination. It inherits one
+limitation it shares with every architecture's register jump, rather than
+introducing it — a recovered single-entry table whose register is redefined on
+a back edge found after recovery is not staged again, so that later transfer is
+missing from the output, exactly as it is for an x86-64 `jmp *%rax` of the same
+shape. A flow override at the return keeps its classification, and off restores
+the spec's RETURN.
+
 ## 2.3 Jump tables & switch recovery
 
 A switch exists in the output only if a BRANCHIND op carries a recovered
@@ -3215,6 +3280,42 @@ provide processor-version and privilege-appropriate reads and masked writes.
 Register and immediate MSR update NZCVQ only when the flag byte is selected,
 preserving arithmetic flags across control-only writes.
 
+### RISC-V Zcmp and Zcmt (GH-1630)
+
+The Zc code-size extensions (`specs/Ghidra/Processors/RISCV/data/languages/riscv.zc.sinc`)
+put `cm.push`, `cm.pop`, `cm.popret`, `cm.popretz`, `cm.mvsa01`, `cm.mva01s`
+(Zcmp) and `cm.jt`, `cm.jalt` (Zcmt) in the `c.fsdsp` encoding space
+(op=10, funct3=101), so they exist only where Zcd does not. The `Zcmp` context
+bit (`riscv.reg.sinc`) selects between the two readings: `c.fsdsp` decodes at
+`Zcmp=0`, the Zc instructions at `Zcmp=1`, and the default RV32/RV64 processor
+specs leave the bit 0, so every existing RISC-V language decodes byte-identically.
+The `RISCV:LE:32:Zcmp` and `RISCV:LE:64:Zcmp` language variants
+(`riscv.ldefs`, `RV32zcmp.pspec`, `RV64zcmp.pspec`) share the `.sla` files
+and set the bit; the ELF loader picks them from `Tag_RISCV_arch` (§1).
+
+The register list `rlist` (bits 7:4, values 4..15) is a prefix of
+`{ra, s0, s1, ..., s11}`: `rlist - 3` registers, except 15, which is the full
+list of 13 (`s10` is never saved without `s11`). The stack adjustment is the
+list's byte size rounded up to 16 plus `16 * spimm` (bits 3:2), so one
+constructor per `rlist` value carries the base and a per-base operand
+(`zcadj16` ... `zcadj112`) adds `spimm`. `cm.push` stores the highest-numbered
+register at `sp - XLEN/8` and each lower one `XLEN/8` below it, `ra` lowest,
+then subtracts the adjustment; `cm.pop` loads the same registers from
+`sp + adjustment` downward and then adds the adjustment; `cm.popret` returns
+through the reloaded `ra`; `cm.popretz` also writes `a0 = 0`. `cm.mvsa01`
+copies `a0`, `a1` into two `s0..s7` registers, `cm.mva01s` copies them back.
+`cm.jt index` loads the jump target from the `jvt` CSR (0x017) table at
+`(jvt & ~0x3f) + index * XLEN/8` and jumps; `cm.jalt` (index 32..255) sets
+`ra` and calls. Displays print the register list and the adjustment as
+`cm.push {ra,s0-s1},-0x10`. Before this the issue's `-Os` prologue decoded as
+`c.fsdsp fs8,0x30(sp)` and its epilogue as a float store followed by a jump
+through whatever `ra` held, so the saves, the stack adjustment and the return
+were lost. Exercised by `tests/stages/kuna-riscv-zcmp.xml` (the issue's
+`keep`, hand-written `swapcall`/`zret`/`popsep`, the raw push/popret p-code)
+and `kuna-cli/tests/riscv_zcmp.rs` (one decode per encoding shape against
+LLVM's names, RV32 and RV64). Zcb, Zicond and the T-Head vendor extensions
+the issue also lists are not decoded.
+
 ### RISC-V moves and conversions from FP to integer registers (GH-831)
 
 `fmv.x.d` copies the 64-bit pattern of its FP source into the integer
@@ -3515,8 +3616,11 @@ that overlapping ownership can be represented without shrinking the buffer.
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_ptrauthtrap.rs
 (ActionPtrAuthTrap)`.** The AArch64 SLEIGH spec gives every pointer-auth
 instruction a `ShowPAC` context, off in `AARCH64.pspec`, and with it off the
-instruction lifts to no p-code. `paciasp`, `pacibsp`, `autibsp`, `pacia`,
-`pacda` and `xpaci` vanish. `retab` is a plain return. `braa`, `blraa` and
+instruction lifts to no p-code, except that a form writing a general
+register passes it through unchanged (the SLEIGH repairs at the top of this
+chapter). `paciasp`, `pacibsp` and
+`autibsp` vanish; `pacia`, `pacda` and `xpaci` leave their register as it
+was. `retab` is a plain return. `braa`, `blraa` and
 `blraaz` branch to their first register exactly like `br` and `blr`, so a
 call target the decompiler resolves through `blr x8` resolves the same way
 through `blraa x8, x9`. `ldraa` is a plain load. The decompiler therefore
