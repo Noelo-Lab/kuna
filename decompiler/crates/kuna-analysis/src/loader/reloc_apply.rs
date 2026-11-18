@@ -13,7 +13,9 @@
 //! PC-relative (`REL16`) and TOC-relative 16-bit halves, TOC64, and the
 //! unaligned and PC-relative data words; and SPARC
 //! `WDISP30`/`WPLT30` calls, the `HI22`/`LO10` and `PC22`/`PC10` `sethi`/`or`
-//! pairs, and `DISP32`. Generic
+//! pairs, and `DISP32`; and eBPF `64_64` (the two `imm` halves of `lddw`),
+//! `64_32` (the subprogram `call` displacement) and the `ABS`/`NODYLD` data
+//! words. Generic
 //! absolute, relative, PLT-relative, and image-offset relocations support
 //! 8/16/32/64-bit fields. Application preserves REL implicit addends and object
 //! endianness, and returns a specific failure classification rather than
@@ -69,6 +71,8 @@ enum Specific {
     SparcWdisp30,
     SparcHi22 { pc: bool },
     SparcLo10 { pc: bool },
+    BpfImm64,
+    BpfCall,
     Generic { bits: u8 },
 }
 
@@ -169,6 +173,7 @@ impl RelocationSpec {
                     | Specific::PpcAbs24
                     | Specific::PpcBranch14 { .. }
                     | Specific::SparcWdisp30
+                    | Specific::BpfCall
             )
     }
 }
@@ -325,13 +330,24 @@ fn classify_info(
         (Architecture::Sparc | Architecture::Sparc32Plus, Some(elf::R_SPARC_PC10)) => {
             Some((Specific::SparcLo10 { pc: true }, false))
         }
+
+        (Architecture::Bpf, Some(elf::R_BPF_NONE)) => return Ok(None),
+        (Architecture::Bpf, Some(elf::R_BPF_64_64)) => Some((Specific::BpfImm64, false)),
+        (Architecture::Bpf, Some(elf::R_BPF_64_32)) => Some((Specific::BpfCall, true)),
+        (Architecture::Bpf, Some(R_BPF_64_ABS64)) => {
+            Some((Specific::Data { bytes: 8, pc: false }, false))
+        }
+        (Architecture::Bpf, Some(R_BPF_64_ABS32 | R_BPF_64_NODYLD32)) => {
+            Some((Specific::Data { bytes: 4, pc: false }, false))
+        }
         _ => None,
     };
 
     if let Some((specific, call)) = specific {
         let width = match specific {
             Specific::Ppc64Toc16 { .. } | Specific::PpcHalf16 { .. } => 2,
-            Specific::Ppc64Toc64 => 8,
+            Specific::Ppc64Toc64 | Specific::BpfCall => 8,
+            Specific::BpfImm64 => 16,
             Specific::Data { bytes, .. } => usize::from(bytes),
             _ => 4,
         };
@@ -450,6 +466,8 @@ fn apply_info(
         Specific::SparcLo10 { pc } => {
             sparc_lo10(field, little_endian, reloc, symbol, pc.then_some(place))
         }
+        Specific::BpfImm64 => bpf_imm64(field, little_endian, reloc, symbol),
+        Specific::BpfCall => bpf_call(field, little_endian, reloc, symbol, place),
         Specific::Generic { bits } => generic(field, little_endian, reloc, symbol, place, bits),
     }
 }
@@ -979,6 +997,58 @@ fn sparc_lo10(
     Ok(())
 }
 
+/// `R_BPF_64_ABS64`, `R_BPF_64_ABS32` and `R_BPF_64_NODYLD32`, which the
+/// `object` crate does not name: plain data words in `.maps`, `.BTF` and the
+/// `.rel.BTF.ext` tables.
+const R_BPF_64_ABS64: u32 = 2;
+const R_BPF_64_ABS32: u32 = 3;
+const R_BPF_64_NODYLD32: u32 = 4;
+
+/// `R_BPF_64_64`: the 16-byte `lddw` (`ld_imm64`) instruction. The 64-bit
+/// value is split across the two 32-bit `imm` fields, the low half at +4 and the
+/// high half at +12; the opcode, registers and offset bytes are untouched.
+fn bpf_imm64(
+    field: &mut [u8],
+    le: bool,
+    reloc: RelocationInfo,
+    symbol: u64,
+) -> Result<(), RelocationFailure> {
+    if field[0] != 0x18 {
+        return Err(RelocationFailure::InvalidEncoding);
+    }
+    let implicit =
+        (u64::from(read_u32(&field[4..8], le)) | (u64::from(read_u32(&field[12..16], le)) << 32)) as i128;
+    let value = symbol as i128 + explicit_plus_implicit(reloc, implicit);
+    write_u32(&mut field[4..8], le, value as u32);
+    write_u32(&mut field[12..16], le, (value >> 32) as u32);
+    Ok(())
+}
+
+/// `R_BPF_64_32`: the `call` to a BPF subprogram (`src` = 1, the high register
+/// nibble little-endian and the low one big-endian). The `imm` at +4 holds the
+/// displacement in instructions from the next instruction, `(S + A - P) / 8 - 1`.
+/// The REL addend is `(imm + 1) * 8`: `0` for LLVM's `-1` against a function
+/// symbol, the callee's offset for a static callee named by its section symbol.
+fn bpf_call(
+    field: &mut [u8],
+    le: bool,
+    reloc: RelocationInfo,
+    symbol: u64,
+    place: u64,
+) -> Result<(), RelocationFailure> {
+    let src = if le { field[1] >> 4 } else { field[1] & 0x0f };
+    if field[0] != 0x85 || src != 1 {
+        return Err(RelocationFailure::InvalidEncoding);
+    }
+    let implicit = (i128::from(read_u32(&field[4..8], le) as i32) + 1) * 8;
+    let value = symbol as i128 + explicit_plus_implicit(reloc, implicit) - place as i128;
+    require_aligned(value, 8)?;
+    let words = value / 8 - 1;
+    require_signed(words, 32)?;
+    write_u32(&mut field[4..8], le, words as u32);
+    Ok(())
+}
+
 fn generic(
     field: &mut [u8],
     le: bool,
@@ -1187,6 +1257,75 @@ mod tests {
             classify_info(Architecture::X86_64, unsupported),
             Err(RelocationFailure::Unsupported)
         ));
+    }
+
+    #[test]
+    fn bpf_map_reference_patches_both_imm_halves_and_keeps_the_opcode() {
+        let r = reloc(elf::R_BPF_64_64, true);
+        let spec = classify_info(Architecture::Bpf, r).unwrap().unwrap();
+        assert_eq!(spec.width(), 16);
+        assert!(!spec.targets_code());
+        // lddw r1, 0x10 (the implicit addend sits in the low imm).
+        let mut bytes = [0x18, 0x01, 0, 0, 0x10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        apply_info(spec, r, &mut bytes, true, 0x1_2345_6780, 0x400020, None, None).unwrap();
+        assert_eq!(&bytes[..4], &[0x18, 0x01, 0, 0]);
+        assert_eq!(u32::from_le_bytes(bytes[4..8].try_into().unwrap()), 0x2345_6790);
+        assert_eq!(&bytes[8..12], &[0, 0, 0, 0]);
+        assert_eq!(u32::from_le_bytes(bytes[12..16].try_into().unwrap()), 1);
+
+        let mut be = [0x18, 0x10, 0, 0, 0, 0, 0, 0x10, 0, 0, 0, 0, 0, 0, 0, 0];
+        apply_info(spec, r, &mut be, false, 0x1_2345_6780, 0x400020, None, None).unwrap();
+        assert_eq!(u32::from_be_bytes(be[4..8].try_into().unwrap()), 0x2345_6790);
+        assert_eq!(u32::from_be_bytes(be[12..16].try_into().unwrap()), 1);
+
+        let mut not_lddw = [0x85u8; 16];
+        assert_eq!(
+            apply_info(spec, r, &mut not_lddw, true, 0, 0, None, None),
+            Err(RelocationFailure::InvalidEncoding)
+        );
+    }
+
+    #[test]
+    fn bpf_subprogram_call_encodes_the_instruction_displacement() {
+        let r = reloc(elf::R_BPF_64_32, true);
+        let spec = classify_info(Architecture::Bpf, r).unwrap().unwrap();
+        assert_eq!(spec.width(), 8);
+        assert!(spec.is_call() && spec.targets_code());
+        // call -1 at 0x400078 to a callee at 0x400000: (S - P) / 8 - 1 = -16.
+        let mut bytes = [0x85, 0x10, 0, 0, 0xff, 0xff, 0xff, 0xff];
+        apply_info(spec, r, &mut bytes, true, 0x400000, 0x400078, None, None).unwrap();
+        assert_eq!(&bytes[..4], &[0x85, 0x10, 0, 0]);
+        assert_eq!(i32::from_le_bytes(bytes[4..8].try_into().unwrap()), -16);
+
+        // call 2 against `.text` at 0x400000: the static callee is at 0x400018.
+        let mut section = [0x85, 0x10, 0, 0, 2, 0, 0, 0];
+        apply_info(spec, r, &mut section, true, 0x400000, 0x400078, None, None).unwrap();
+        assert_eq!(i32::from_le_bytes(section[4..8].try_into().unwrap()), -13);
+        let mut be = [0x85, 0x01, 0, 0, 0, 0, 0, 2];
+        apply_info(spec, r, &mut be, false, 0x400000, 0x400078, None, None).unwrap();
+        assert_eq!(be, [0x85, 0x01, 0, 0, 0xff, 0xff, 0xff, 0xf3]);
+
+        let mut misaligned = [0x85, 0x10, 0, 0, 0, 0, 0, 0];
+        assert_eq!(
+            apply_info(spec, r, &mut misaligned, true, 0x400004, 0x400078, None, None),
+            Err(RelocationFailure::Misaligned)
+        );
+        let mut helper = [0x85, 0x00, 0, 0, 1, 0, 0, 0];
+        assert_eq!(
+            apply_info(spec, r, &mut helper, true, 0x400000, 0x400078, None, None),
+            Err(RelocationFailure::InvalidEncoding)
+        );
+    }
+
+    #[test]
+    fn bpf_data_relocations_are_plain_words() {
+        assert!(classify_info(Architecture::Bpf, reloc(elf::R_BPF_NONE, true)).unwrap().is_none());
+        let abs64 = classify_info(Architecture::Bpf, reloc(R_BPF_64_ABS64, true)).unwrap().unwrap();
+        assert_eq!(abs64.width(), 8);
+        let abs32 = classify_info(Architecture::Bpf, reloc(R_BPF_64_ABS32, true)).unwrap().unwrap();
+        assert_eq!(abs32.width(), 4);
+        let nodyld = classify_info(Architecture::Bpf, reloc(R_BPF_64_NODYLD32, true)).unwrap().unwrap();
+        assert_eq!(nodyld.width(), 4);
     }
 
     #[test]

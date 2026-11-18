@@ -2202,6 +2202,7 @@ mod tests {
         // and kuna-calleepurge / an x86-32 callee's stack purge read off its own returns
         // and kuna-calleeargs / an x86-32 callee's own code bounds its stack arguments
         // and kuna-fcvtround-a64 / AArch64 FCVT and FRINT round in their own mode
+        // and kuna-pacflow-a64 / a hidden AArch64 pac*/aut*/xpac* passes its register through
         // and kuna-repframecopy / a by-value argument copied with rep movs reaches its call
         // and kuna-libcnames-win32 / a local takes the name of the Win32 call it meets
         // and kuna-libcnames-addr / a stack object takes the name of the library parameter its address meets
@@ -2215,8 +2216,11 @@ mod tests {
         // and kuna-x86-directalias-freed / and does so after an earlier call stops taking that pointer
         // and kuna-itaniumvfunc / an Itanium virtual method named after the function, not its vtable
         // and kuna-itaniumctors / Itanium constructors and destructors named from their vptr stores
+        // and kuna-switchselfloop / a switch that heads its own loop keeps the loop
+        // and kuna-wide-shifts / armconstshift all shifts a signed 64-bit operand unsigned
+        // and kuna-ebpf-elf-map-reloc / an EM_BPF object loads and its map and subprogram relocations land in imm
         // and kuna-riscv-zcmp / RISC-V Zcmp push/pop decode under the Zcmp language variant
-        assert_eq!(count, 769, "corpus file count drifted");
+        assert_eq!(count, 774, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

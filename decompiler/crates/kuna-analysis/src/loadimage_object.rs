@@ -2151,6 +2151,7 @@ pub(crate) fn compose_language_id(arch: Architecture, endian: &str, model: Optio
             format!("sparc:{endian}:32:default:{}", model.unwrap_or("default"))
         }
         Architecture::Sparc64 => format!("sparc:{endian}:64:default:{}", model.unwrap_or("default")),
+        Architecture::Bpf => format!("eBPF:{endian}:64:default:{}", model.unwrap_or("default")),
         _ => return None,
     })
 }
@@ -2204,6 +2205,7 @@ pub fn elf_language_ids() -> Vec<String> {
         (Architecture::Riscv32, &["LE"]),
         (Architecture::Sparc, &["BE"]),
         (Architecture::Sparc64, &["BE"]),
+        (Architecture::Bpf, &["LE", "BE"]),
     ];
     let mut out = Vec::new();
     for &(arch, endians) in arches {
@@ -2371,6 +2373,30 @@ mod tests {
             id(object::Architecture::Riscv64, true, Architecture::Riscv64),
             "RISCV:LE:64:RV64GC:gcc"
         );
+    }
+
+    /// An EM_BPF object resolves to the eBPF language of its byte order.
+    #[test]
+    fn bpf_object_composes_the_ebpf_language_id() {
+        let fmt = crate::loader::format::elf::ElfFormat;
+        for (endian, expected) in [
+            (object::Endianness::Little, "eBPF:LE:64:default:default"),
+            (object::Endianness::Big, "eBPF:BE:64:default:default"),
+        ] {
+            let mut obj = object::write::Object::new(
+                object::BinaryFormat::Elf,
+                object::Architecture::Bpf,
+                endian,
+            );
+            let text = obj.add_section(vec![], b".text".to_vec(), object::SectionKind::Text);
+            obj.append_section_data(text, &[0x95, 0, 0, 0, 0, 0, 0, 0], 8);
+            let bytes = obj.write().expect("write synthetic ELF");
+            let file = object::File::parse(bytes.as_slice()).expect("parse");
+            let id = language_id_for(&file, &fmt, &bytes, "synthetic", Architecture::Bpf, None)
+                .expect("id");
+            assert_eq!(String::from_utf8(id).expect("utf8"), expected);
+        }
+        assert!(elf_language_ids().iter().any(|id| id == "eBPF:LE:64:default:default"));
     }
 
     #[test]
