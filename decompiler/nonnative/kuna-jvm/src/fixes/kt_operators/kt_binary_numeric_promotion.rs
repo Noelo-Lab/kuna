@@ -1,22 +1,6 @@
-//! kuna fix `kt_binary_numeric_promotion`: in Kotlin output, the operands of
-//! an arithmetic, comparison or equality operator are converted where Java
-//! promotes them and Kotlin does not.
-//!
-//! Java converts the operands of `+ - * / %`, `< <= > >=` and `== !=` to a
-//! common type before it applies the operator (binary numeric promotion): a
-//! `byte`, `short` or `char` to `int`, then both to `long`, `float` or
-//! `double` if one is. The Kotlin plugin writes these operators as they are,
-//! but Kotlin's are member functions that do not promote: `Char + Int` and
-//! `Char - Int` give a `Char` (Java computes an `int`), `Char` has no other
-//! arithmetic and compares only with a `Char`, and `==` needs both operands
-//! of one type (kotlinc rejects `b == 0` for a `Byte` `b`, `c < 128` for a
-//! `Char` `c` and `l != i` for a `Long` `l` and an `Int` `i`). With the fix
-//! an operand is written with the conversion Java's promotion makes, which
-//! compiles to the instructions Java's does: a `Char` operand of arithmetic
-//! (other than `Char - Char`, an `Int` in both languages) or of a comparison
-//! with another type takes `.code`, and the operand of `==` or `!=` whose
-//! type is not the promoted one takes its conversion to it
-//! (`b.toInt() == 0`, `l != i.toLong()`); `-c` becomes `-c.code`.
+//! Fix `kt_binary_numeric_promotion`: an operand of arithmetic, a comparison or
+//! `==` is written with the conversion Java's binary numeric promotion makes
+//! (`.code` for a `Char`, `toInt()`/`toLong()`..), which Kotlin's operators do not.
 
 use crate::code_type::CodeType;
 use crate::exprent::Exprent;

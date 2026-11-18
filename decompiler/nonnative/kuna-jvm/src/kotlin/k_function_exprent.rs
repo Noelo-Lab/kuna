@@ -12,12 +12,9 @@ use crate::jthrow;
 use crate::k_dispatch::KExprentExt;
 use crate::k_types::KTypes;
 use crate::k_utils::KUtils;
-use crate::fixes::kt_operators::kt_copied_equality;
-use crate::fixes::kt_operators::kt_narrow_bitwise_operand;
-use crate::fixes::kt_operators::kt_negated_equality;
+use crate::fixes::kt_operators;
 use crate::fixes::kt_types::kt_raw_generic_type;
 use crate::fixes::kt_suspend::kt_suspend_lambda;
-use crate::fixes::kt_operators::kt_reference_inequality;
 use crate::fixes::kt_java_syntax::kt_string_literal_escape;
 use crate::kotlin_exprent;
 use crate::fixes::kt_java_syntax::kt_java_cast_syntax;
@@ -157,7 +154,7 @@ impl KFunctionExprent {
             }
         }
         if kuna_fixes::enabled(KunaFix::KtReferenceInequality) {
-            kt_reference_inequality::mark(kex);
+            kt_operators::mark_identity(kex);
         }
 
         kex
@@ -466,7 +463,7 @@ impl KFunctionExprent {
             }
             FunctionType::Eq | FunctionType::Ne
                 if kuna_fixes::enabled(KunaFix::KtReferenceInequality)
-                    && kt_reference_inequality::identity(self) =>
+                    && kt_operators::identity(self) =>
             {
                 let operator = if self.get_func_type() == FunctionType::Eq {
                     " === "
@@ -482,8 +479,8 @@ impl KFunctionExprent {
             FunctionType::And => return self.infix(buf, &lst_operands.to_vec(), " and ", indent),
             FunctionType::Or => return self.infix(buf, &lst_operands.to_vec(), " or ", indent),
             FunctionType::Xor => {
-                if let Some(comparison) = kt_negated_equality::negated(self.0 .0) {
-                    return kt_negated_equality::write(buf, comparison, indent);
+                if let Some(comparison) = kt_operators::negated(self.0 .0) {
+                    return kt_operators::write_negated(buf, comparison, indent);
                 }
                 return self.infix(buf, &lst_operands.to_vec(), " xor ", indent);
             }
@@ -515,7 +512,7 @@ impl KFunctionExprent {
     /// widens a `Byte`, `Short` or `Char` one to `Int`.
     fn bitwise_operand(self, expr: Exprent, indent: i32) -> TextBuffer {
         if kuna_fixes::enabled(KunaFix::KtNarrowBitwiseOperand) {
-            if let Some(widened) = kt_narrow_bitwise_operand::write(expr, indent) {
+            if let Some(widened) = kt_operators::write_widened(expr, indent) {
                 return widened;
             }
         }
@@ -694,7 +691,7 @@ impl KFunctionExprent {
         let expr_type = self.0 .0.get_expr_type_opt();
         let copy = KFunctionExprent::new_typed(func, k_type, expr_type);
         if kuna_fixes::enabled(KunaFix::KtCopiedEquality) {
-            kt_copied_equality::keep_function_type(self, copy);
+            kt_operators::keep_function_type(self, copy);
         }
         if kuna_fixes::enabled(KunaFix::KtReferenceInequality) {
             let identity = self.kd(|d| d.identity);

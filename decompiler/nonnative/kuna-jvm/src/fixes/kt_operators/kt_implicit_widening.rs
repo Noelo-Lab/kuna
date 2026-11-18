@@ -1,18 +1,6 @@
-//! kuna fix `kt_implicit_widening`: in Kotlin output, a number or `Char`
-//! that is stored, passed or returned where a wider numeric type is expected
-//! is written with its conversion.
-//!
-//! Java widens a primitive implicitly in assignment, invocation and return
-//! contexts (JLS 5.1.2), and Vineflower writes the value as it is: a
-//! `byte[]` element, typed `Byte` by its `baload`, stored into a local the
-//! LocalVariableTable types `I` (the JVM has no instruction for that
-//! widening), and an `i2l` it marks implicit. Kotlin converts only
-//! explicitly, so `val b0: Int = this[i++]`, `Integer.toString(b, 16)` and
-//! `val n: Long = source.readShortLe()` are rejected. kotlinc compiled the
-//! source's `this[i++].toInt()` to the same `baload; istore`, and its
-//! `.toLong()` to the `i2l`. With the fix the value takes that conversion
-//! (`.code` for a `Char`), the same instructions; the declared types are
-//! unchanged.
+//! Fix `kt_implicit_widening`: a number or `Char` stored, passed or returned
+//! where a wider numeric type is expected is written with its conversion, which
+//! Java leaves implicit and Kotlin requires.
 
 use crate::code_type::CodeType;
 use crate::exprent::Exprent;

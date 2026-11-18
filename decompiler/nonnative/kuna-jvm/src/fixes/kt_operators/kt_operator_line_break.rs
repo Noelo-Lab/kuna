@@ -1,16 +1,6 @@
-//! kuna fix `kt_operator_line_break`: in Kotlin output, a long binary
-//! operation is broken after its operator, not before it.
-//!
-//! Vineflower breaks a line that grows too long before a binary operator
-//! (`a` / `+ b` on the next line), which Java reads as one expression. Kotlin
-//! ends a statement at a line break unless the expression cannot end there:
-//! inside parentheses or brackets, after an operator, or before `&&`, `||`,
-//! `?:` and `.`. So `return a` / `+ b` returns `a` and evaluates `+b` as a
-//! statement of its own, and `x = a` / `- b` assigns `a`, without an error
-//! (a break before `*`, `/`, `%` or a comparison does not compile). With the
-//! fix the break of every binary operator but `&&` and `||` goes after the
-//! operator (`a +` / `b`), where Kotlin continues the expression; the text
-//! is the same apart from where the line breaks.
+//! Fix `kt_operator_line_break`: a long binary operation other than `&&` and
+//! `||` breaks its line after the operator, where Kotlin continues the
+//! expression.
 
 use crate::function_exprent::{FunctionExprent, FunctionType};
 

@@ -2980,7 +2980,7 @@ infix function on the operand as it is, `b and 255`, `x shl n`, `c xor 32`, `b.i
 `Byte`, `Short` and `Char` have none of these functions (`kotlin.experimental`'s `Byte.and` takes a
 `Byte`) and the shift count is an `Int`, so kotlinc rejects each (628 conversions in okio, okhttp and
 kotlin-stdlib, among them every unsigned byte read `readByte() and 255`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/kt_operators/kt_narrow_bitwise_operand.rs (write)`) an operand
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_operators/mod.rs (write_widened)`) an operand
 whose value Kotlin types as `Byte`, `Short` or `Char` (not an arithmetic or bitwise result, which
 Kotlin computes as `Int`, nor a number constant, written as an `Int` literal) is written with the
 conversion Java's promotion stands for, `b.toInt()`, `c.code`, or `b.toLong()` where Java widens it to
@@ -2996,7 +2996,7 @@ key[j].toInt()).toByte()` under the same rereading condition.
 `EQUALS3`, `===`, but leaves `!=` alone, so `a !== b`, the form a negated condition takes, is written
 `a != b`: a different test wherever `equals` is overridden (293 comparisons in the five Kotlin inputs,
 most of them kotlinx-coroutines' `state !== CLOSED` symbol checks). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/kt_operators/kt_reference_inequality.rs (mark)`) the
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_operators/mod.rs (mark_identity)`) the
 constructor marks such a comparison as an identity test; the mark survives the negations that flip
 `==` and `!=` in place, `copy` keeps it, and a marked `!=` between two references is written `!==`
 (a marked `==`, a negated `!==`, `===`). The `==` resugared from `Intrinsics.areEqual`
@@ -3244,7 +3244,7 @@ the bytecode calls `equals`. The copies that happen after the resugaring are tho
 expressions the Kotlin writer moves: a default value taken from the `$default` method (`fun f(a:
 String, b: Boolean = a == "x")` came out `= a === "x"`) and an object expression's supertype
 arguments; none in the five Kotlin inputs. With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/kt_operators/kt_copied_equality.rs (keep_function_type)`) a
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_operators/mod.rs (keep_function_type)`) a
 copy keeps the function type of what it copies.
 
 **`kt_binary_numeric_promotion`.** Java converts the operands of `+ - * / %`, `< <= > >=` and `== !=`
@@ -3266,7 +3266,7 @@ conversion compiles to no instruction or to Java's widening one.
 `Intrinsics.areEqual(a, b) ^ 1`; the plugin resugars the call to `a == b` and writes the boolean `^ 1`
 as `xor true`, so the source's `a != b` came out `(a == b) xor true` (38 in okhttp). For a `Boolean`
 `x`, `x xor true` is `!x`, and the negation of `==` is `!=` (of `!=`, `==`; of `===`, `!==`). With the
-fix (`decompiler/nonnative/kuna-jvm/src/fixes/kt_operators/kt_negated_equality.rs (negated)`) such an
+fix (`decompiler/nonnative/kuna-jvm/src/fixes/kt_operators/mod.rs (negated)`) such an
 `xor` is written as the comparison with the other operator; it then binds as an equality, which
 `kt_operator_precedence` parenthesises by (`c or (a != b)`), and with that fix off it is not done.
 
