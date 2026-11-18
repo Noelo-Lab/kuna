@@ -292,3 +292,16 @@ fn a_spent_retained_allowance_stops_slide_and_symbol_reads() {
     let pool = StringPool::read_at(&|_, len| Ok(vec![b'a'; len]), 8192, [1u64].into_iter(), &|_| Err("spent".into()));
     assert_eq!(pool.err().as_deref(), Some("spent"));
 }
+
+/// The caches of `dyld_cache_objc.py`: one names its selector base in the
+/// header's ObjCOptimizationHeader, the `_v16` one only in libobjc's
+/// `objc_opt_t`.
+#[test]
+fn objc_selector_base_from_the_header_and_from_libobjc() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    for folder in ["dyld_cache_objc", "dyld_cache_objc_v16"] {
+        let cache = DyldCache::open(&root.join(folder).join("dyld_shared_cache_arm64e")).unwrap();
+        assert_eq!(cache.objc_selector_base(), Some(0x1_8003_0100), "{folder}");
+    }
+    assert_eq!(DyldCache::open(&fixture()).unwrap().objc_selector_base(), None);
+}

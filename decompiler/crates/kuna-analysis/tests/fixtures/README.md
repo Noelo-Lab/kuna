@@ -1089,6 +1089,37 @@ Regenerate with:
 python3 dyld_cache_arm64e.py
 ```
 
+### A dyld shared cache image with Objective-C metadata (`dyld_cache_objc/`, `dyld_cache_objc_v16/`)
+
+`dyld_cache_objc/` and `dyld_cache_objc_v16/` (28 KB each, one file) are the
+fixtures for `tests/stages/kuna-dyldcacheobjc.xml`: a two-image arm64e cache
+whose stripped `libgreeter.dylib` carries ObjC metadata the way a cache lays it
+out. The selector strings (`greet:`, `count`, `shout`) and type strings live in
+`libobjc.A.dylib`'s `__OBJC_RO` region at `0x180030100`, outside every
+libgreeter segment. The small method list in `__objc_methlist` carries
+`0x40000000` (selectors as offsets from the selector base), `0x20000000` (type
+strings too) and the uniqued and sorted flags in its two low bits.
+`class_ro_t.baseMethods` has its low bit set and names a relative list of lists
+(`entsize 8, count 2`): the first entry reaches that list, the second a list in
+libobjc whose one method, `shout`, has its IMP in libobjc too. One
+`__objc_stubs` entry loads the `count` selector through a `__objc_selrefs` slot.
+The first cache's header names an ObjCOptimizationHeader (`objcOptsOffset` at
+464) with `relativeMethodSelectorBaseAddressOffset`; the `_v16` cache's header
+ends at `0x1D0`, before that field, so only libobjc's `objc_opt_t`
+(`__objc_opt_ro`, version 16, the base at +0x28 relative to the record) says
+where the selectors are. No Apple toolchain is needed. Regenerate both with:
+
+```bash
+python3 dyld_cache_objc.py
+```
+
+**Pinned VMAs:** `-[Greeter greet:]`@`0x180001800` (`n * 3 + 7`),
+`-[Greeter count]`@`0x180001810` (`42`), a tail call to the stub@`0x180001820`,
+a tail call to `-[Greeter shout]`@`0x180001830`, method list@`0x180001900`,
+`objc_msgSend$count`@`0x180001a00`, `-[Greeter shout]`@`0x180002810`,
+`class_t`@`0x180010100`, list of lists@`0x180010300`, `objc_opt_t`@`0x180030000`,
+ObjCOptimizationHeader@`0x180030800`.
+
 ## Mach-O fat/universal + arm64e (PR-8)
 
 The fat/universal + arm64e gate (`kuna-console/tests/verify_macho_fat.rs`, design
