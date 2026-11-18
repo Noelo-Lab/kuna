@@ -1,19 +1,6 @@
-//! kuna fix `kt_escaped_class_name`: in Kotlin output, a class whose Kotlin
-//! name is no identifier is named in backticks in types, expressions and
-//! imports.
-//!
-//! A Kotlin class may have any name in backticks (okio's
-//! ``object `-DeprecatedOkio` ``, a nested ``class `in` ``). `KotlinWriter`
-//! puts the name in backticks where it declares the class, but every other
-//! place takes the name from `ImportCollector.getShortName` (types, the
-//! object or class a member is read from, `import` lines) or from the class
-//! node (`outer.Inner(..)`), unescaped: `val Okio: -DeprecatedOkio =
-//! -DeprecatedOkio` is no Kotlin. With the fix each segment of such a name
-//! that is no Kotlin identifier is written in backticks, as the declaration
-//! is. A segment with `$` (a synthetic class's binary name, which Kotlin
-//! cannot name at all), an anonymous class's number (`fn.1.Local`), a marker
-//! (`<unrepresentable>`) or a character no JVM simple name has
-//! (`kotlin/RequiresOptIn`) is left as it is.
+//! Fix `kt_escaped_class_name`: each segment of a class name that is no Kotlin
+//! identifier is written in backticks in types, expressions and imports, as its
+//! declaration is.
 
 use crate::kotlin_writer::KotlinWriter;
 

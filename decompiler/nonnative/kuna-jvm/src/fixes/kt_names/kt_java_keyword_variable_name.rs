@@ -1,18 +1,6 @@
-//! kuna fix `kt_java_keyword_variable_name`: in a class written as Kotlin, a
-//! debug variable name that is a Java keyword but not reserved in Kotlin is
-//! the variable's name.
-//!
-//! `VarProcessor.setDebugVarNames` takes a LocalVariableTable name only when
-//! `TextUtil.isValidIdentifier` accepts it, a test of Java's rules that
-//! rejects Java's keywords. Kotlin reserves other words: `new`, `default`,
-//! `char`, `int` and `byte` are ordinary Kotlin names, and kotlinc writes
-//! them to the table. The variable then keeps its generated name (`var2`)
-//! while the Kotlin writer prints the declaring header from the metadata
-//! (`fun f(default: Charset)`, `{ old, new -> ..}`), so the body reads a
-//! variable nothing declares. In Kotlin output the table's name is taken
-//! when it is a Java identifier, keyword or not; the Kotlin variable writer
-//! puts a Kotlin hard keyword in backticks. `this` stays refused, as the
-//! Kotlin writer prints a variable named `this` as the receiver.
+//! Fix `kt_java_keyword_variable_name`: in Kotlin output a debug variable name
+//! that is a Java keyword but not reserved in Kotlin (`new`, `default`) is taken
+//! from the local variable table.
 
 use crate::fixes::kt_java_syntax::kt_java_cast_syntax::writing_kotlin;
 use crate::text_util::TextUtil;

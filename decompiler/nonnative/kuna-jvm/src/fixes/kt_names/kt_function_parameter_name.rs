@@ -1,16 +1,6 @@
-//! kuna fix `kt_function_parameter_name`: a Kotlin function's or
-//! constructor's body names a parameter as its header does when the class
-//! file has no name for it.
-//!
-//! `KFunction` and `KConstructor` write a header's parameters with the names
-//! the metadata records (`equals(other: Any?)`), but the body with the
-//! variable processor's names, which come from the local variable table.
-//! Where the method has none (kotlinc 1.3's data class `equals`, a class
-//! stripped of debug information) the body says `var1`, a name the header
-//! never declared: `return var1 is Header && ...`. With the fix, while the
-//! body is written, a parameter's variable (its slot, version 0) that has no
-//! local variable table entry is written by the header's name, unless
-//! another variable of the method is already called that.
+//! Fix `kt_function_parameter_name`: while a function's or constructor's body is
+//! written, a parameter without a local variable table entry is named as the
+//! header names it.
 
 use std::cell::RefCell;
 
