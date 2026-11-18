@@ -6698,6 +6698,8 @@ fn commit_analysis_output(
         );
     }
 
+    crate::kuna_fidproto::apply(prog, code_space, out.fid_prototypes);
+
     Ok(())
 }
 

@@ -1714,6 +1714,9 @@ pub struct Architecture {
     /// and types the parameters `main`'s own analysis recovers
     /// ([`crate::kuna_elfmaindecl`]).
     pub elfmain_main_decl: Option<(Address, crate::fspec::PrototypePieces)>,
+    /// (kuna `fid`) The entries whose parked prototype came from a `.fid`
+    /// record ([`crate::kuna_fidproto`]).
+    pub fid_prototypes: std::collections::BTreeSet<u64>,
     /// (kuna `formatstring`) The call points, among the prototype overrides of
     /// the drive in progress, whose override a resolved format string produced.
     /// Set by the console's decompile step around each drive; the flow build
@@ -2634,6 +2637,7 @@ impl Architecture {
             format_call_overrides: std::collections::BTreeMap::new(),
             format_stack_args: std::rc::Rc::new(std::collections::BTreeMap::new()),
             elfmain_main_decl: None,
+            fid_prototypes: std::collections::BTreeSet::new(),
             format_override_callpoints: std::collections::BTreeSet::new(),
             kuna_callee_overrides: std::collections::BTreeMap::new(),
             format_vararg_abi: None, // (kuna) a load-time fact; set by the console's `load file`

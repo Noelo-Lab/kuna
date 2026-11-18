@@ -9,18 +9,27 @@
 //!
 //! ```text
 //! magic        "KFID"                         # 4 bytes
-//! version      u32  (= FID_DB_VERSION = 1)
+//! version      u32  (1, or FID_DB_VERSION = 2)
 //! lang_id      len-prefixed UTF-8
 //! cspec_id     len-prefixed UTF-8
 //! n_records    u32
 //! records[n]:  full_hash:u64 | specific_hash:u64 | code_unit_size:i16 |
 //!              specific_addl:u8 | flags:u8 | name_off:u32
+//!              (version 2 adds) proto_off:u32 | types_first:u32 | types_count:u32
+//! (version 2)  n_types:u32 | types[n_types]: decl_off:u32
 //! string_blob  (interned, NUL-separated UTF-8)
 //! ```
 //!
 //! All multi-byte integers are little-endian; string lengths are `u32` byte
 //! counts. A name offset points into the trailing string blob. Loading checks
 //! lengths, offsets and UTF-8 and reports malformed input as `KunaError`.
+//!
+//! Version 2 lets a record carry the function's prototype as C text
+//! ([`NO_STRING`] for none) and the type declarations it needs: a run of
+//! `types_count` entries of the type table from `types_first`, each the blob
+//! offset of one declaration, so records share a declaration's text. The hashes of both versions are the same, so a
+//! version-1 file still loads, and a database none of whose records carries a
+//! prototype is still written as version 1.
 
 #[expect(clippy::disallowed_types, reason = "lookup indices; output ordering is explicit")]
 use std::collections::{hash_map::Entry, HashMap};
@@ -30,11 +39,17 @@ use kuna_base::error::{KunaError, KunaResult};
 /// `"KFID"` — the `.fid` file magic.
 pub const FID_DB_MAGIC: &[u8; 4] = b"KFID";
 
-/// The on-disk format version. **Bump on ANY change to the hash, the skipper
-/// patterns, or the record layout** (Ghidra's `FidFileManager.VERSION = 6`
+/// The newest on-disk format version. **Bump on ANY change to the hash, the
+/// skipper patterns, or the record layout** (Ghidra's `FidFileManager.VERSION = 6`
 /// analog) — a mismatched version means the stored hashes were computed by a
 /// different algorithm and would mis-match.
-pub const FID_DB_VERSION: u32 = 1;
+pub const FID_DB_VERSION: u32 = 2;
+
+/// The version whose records carry a name only; its hashes are version 2's.
+pub const FID_DB_VERSION_NAMES: u32 = 1;
+
+/// The `proto_off` of a record without a prototype.
+pub const NO_STRING: u32 = u32::MAX;
 
 /// `flags` bit 0 — the record's hash was computed over a body with a terminator
 /// (return/halt) as its last code unit. Other flag bits are reserved.
@@ -61,6 +76,11 @@ pub struct FidRecord {
     /// The function name this fingerprint identifies (resolved from the interned
     /// string blob at load; interned back into it at serialize).
     pub name: String,
+    /// The function's prototype as one C declaration (`int f(char *s)`).
+    pub prototype: Option<String>,
+    /// The type declarations the prototype needs, each one C declaration
+    /// without a line break, in definition-before-use order.
+    pub typedefs: Vec<String>,
 }
 
 /// Read-only metadata and full-hash lookup for a fingerprint database.
@@ -137,31 +157,58 @@ impl FidDb {
     pub fn serialize(&self) -> Vec<u8> {
         let records = self.records();
 
-        // Intern names into the blob, mapping each distinct name to its offset.
+        let described = records.iter().any(|rec| rec.prototype.is_some() || !rec.typedefs.is_empty());
+
+        // Intern strings into the blob, mapping each distinct one to its offset.
         let mut blob: Vec<u8> = Vec::new();
         #[expect(clippy::disallowed_types, reason = "lookup only; blob order follows sorted records")]
         let mut name_off: HashMap<&str, u32> = HashMap::new();
+        let mut offsets: Vec<(u32, u32, (u32, u32))> = Vec::with_capacity(records.len());
+        let mut types: Vec<u32> = Vec::new();
+        #[expect(clippy::disallowed_types, reason = "lookup only; table order follows sorted records")]
+        let mut runs: HashMap<Vec<u32>, u32> = HashMap::new();
         for rec in &records {
-            if let Entry::Vacant(entry) = name_off.entry(rec.name.as_str()) {
-                entry.insert(blob.len() as u32);
-                blob.extend_from_slice(rec.name.as_bytes());
-                blob.push(0); // NUL terminator
-            }
+            let name = intern(&mut name_off, &mut blob, Some(&rec.name));
+            let proto = intern(&mut name_off, &mut blob, rec.prototype.as_deref());
+            let run: Vec<u32> =
+                rec.typedefs.iter().map(|decl| intern(&mut name_off, &mut blob, Some(decl))).collect();
+            let count = run.len() as u32;
+            let first = match runs.entry(run) {
+                Entry::Occupied(entry) => *entry.get(),
+                Entry::Vacant(entry) => {
+                    let first = types.len() as u32;
+                    types.extend_from_slice(entry.key());
+                    *entry.insert(first)
+                }
+            };
+            offsets.push((name, proto, (first, count)));
         }
 
         let mut out: Vec<u8> = Vec::new();
         out.extend_from_slice(FID_DB_MAGIC);
-        out.extend_from_slice(&FID_DB_VERSION.to_le_bytes());
+        let version = if described { FID_DB_VERSION } else { FID_DB_VERSION_NAMES };
+        out.extend_from_slice(&version.to_le_bytes());
         write_str(&mut out, &self.lang_id);
         write_str(&mut out, &self.cspec_id);
         out.extend_from_slice(&(records.len() as u32).to_le_bytes());
-        for rec in &records {
+        for (rec, (name, proto, (first, count))) in records.iter().zip(offsets) {
             out.extend_from_slice(&rec.full_hash.to_le_bytes());
             out.extend_from_slice(&rec.specific_hash.to_le_bytes());
             out.extend_from_slice(&rec.code_unit_size.to_le_bytes());
             out.push(rec.specific_addl);
             out.push(rec.flags);
-            out.extend_from_slice(&name_off[rec.name.as_str()].to_le_bytes());
+            out.extend_from_slice(&name.to_le_bytes());
+            if described {
+                out.extend_from_slice(&proto.to_le_bytes());
+                out.extend_from_slice(&first.to_le_bytes());
+                out.extend_from_slice(&count.to_le_bytes());
+            }
+        }
+        if described {
+            out.extend_from_slice(&(types.len() as u32).to_le_bytes());
+            for decl in types {
+                out.extend_from_slice(&decl.to_le_bytes());
+            }
         }
         out.extend_from_slice(&blob);
         out
@@ -180,11 +227,12 @@ impl FidDb {
             )));
         }
         let version = r.u32()?;
-        if version != FID_DB_VERSION {
+        if version != FID_DB_VERSION && version != FID_DB_VERSION_NAMES {
             return Err(KunaError::bad_data(format!(
-                "fid: version {version} != supported {FID_DB_VERSION}"
+                "fid: version {version} != supported {FID_DB_VERSION_NAMES} or {FID_DB_VERSION}"
             )));
         }
+        let described = version == FID_DB_VERSION;
         let lang_id = r.string()?;
         let cspec_id = r.string()?;
         let n = r.u32()? as usize;
@@ -200,7 +248,14 @@ impl FidDb {
                 specific_addl: r.u8()?,
                 flags: r.u8()?,
                 name_off: r.u32()?,
+                proto_off: if described { r.u32()? } else { NO_STRING },
+                types: if described { (r.u32()? as usize, r.u32()? as usize) } else { (0, 0) },
             });
+        }
+        let n_types = if described { r.u32()? as usize } else { 0 };
+        let mut types: Vec<u32> = Vec::with_capacity(n_types.min(1 << 20));
+        for _ in 0..n_types {
+            types.push(r.u32()?);
         }
         // The remainder is the string blob.
         let blob = r.rest();
@@ -208,6 +263,19 @@ impl FidDb {
         let mut records: Vec<FidRecord> = Vec::with_capacity(raw.len());
         for rr in raw {
             let name = read_interned_name(blob, rr.name_off as usize)?;
+            let prototype = match rr.proto_off {
+                NO_STRING => None,
+                off => Some(read_interned_name(blob, off as usize)?),
+            };
+            let (first, count) = rr.types;
+            let run = first
+                .checked_add(count)
+                .and_then(|end| types.get(first..end))
+                .ok_or_else(|| KunaError::bad_data("fid: type run past the type table"))?;
+            let typedefs = run
+                .iter()
+                .map(|off| read_interned_name(blob, *off as usize))
+                .collect::<KunaResult<Vec<String>>>()?;
             records.push(FidRecord {
                 full_hash: rr.full_hash,
                 specific_hash: rr.specific_hash,
@@ -215,6 +283,8 @@ impl FidDb {
                 specific_addl: rr.specific_addl,
                 flags: rr.flags,
                 name,
+                prototype,
+                typedefs,
             });
         }
 
@@ -237,6 +307,22 @@ impl FidDatabase for FidDb {
     }
 }
 
+/// The blob offset of `text`, appended on first use; [`NO_STRING`] for none.
+#[expect(clippy::disallowed_types, reason = "lookup only; blob order follows sorted records")]
+fn intern<'a>(offsets: &mut HashMap<&'a str, u32>, blob: &mut Vec<u8>, text: Option<&'a str>) -> u32 {
+    let Some(text) = text else { return NO_STRING };
+    match offsets.entry(text) {
+        Entry::Occupied(entry) => *entry.get(),
+        Entry::Vacant(entry) => {
+            let off = blob.len() as u32;
+            entry.insert(off);
+            blob.extend_from_slice(text.as_bytes());
+            blob.push(0);
+            off
+        }
+    }
+}
+
 /// The on-disk record before name resolution.
 struct RawRecord {
     full_hash: u64,
@@ -245,6 +331,8 @@ struct RawRecord {
     specific_addl: u8,
     flags: u8,
     name_off: u32,
+    proto_off: u32,
+    types: (usize, usize),
 }
 
 /// Write a length-prefixed (`u32` LE) UTF-8 string.
@@ -345,7 +433,44 @@ mod tests {
             specific_addl: addl,
             flags: FLAG_HAS_TERMINATOR,
             name: name.to_string(),
+            prototype: None,
+            typedefs: Vec::new(),
         }
+    }
+
+    #[test]
+    fn prototypes_and_typedefs_round_trip_in_version_2() {
+        let mut described = rec(2, 20, 5, 0, "parse_header");
+        described.prototype = Some("int parse_header(unsigned char *buf,hdr *out)".into());
+        described.typedefs = vec!["typedef struct hdr hdr;".into(), "struct hdr { unsigned int magic; };".into()];
+        let mut shares = rec(3, 30, 5, 0, "other");
+        shares.typedefs = described.typedefs.clone();
+        let records = vec![rec(1, 10, 4, 0, "plain"), described, shares];
+        let bytes = FidDb::from_records("L", "C", records.clone()).serialize();
+        assert_eq!(bytes[4..8], FID_DB_VERSION.to_le_bytes());
+        assert_eq!(bytes.windows(11).filter(|w| *w == b"struct hdr ").count(), 2);
+        let table = 22 + 3 * 36;
+        assert_eq!(bytes[table..table + 12], [2, 0, 0, 0, 65, 0, 0, 0, 89, 0, 0, 0]);
+        let back = FidDb::load(&bytes).unwrap();
+        let got: Vec<FidRecord> = back.records().into_iter().cloned().collect();
+        assert_eq!(got, records);
+        for cut in 0..bytes.len() {
+            let _ = FidDb::load(&bytes[..cut]);
+        }
+        let mut bad = bytes.clone();
+        let proto_off = 22 + 36 + 24;
+        bad[proto_off..proto_off + 4].copy_from_slice(&0x7fff_ffffu32.to_le_bytes());
+        assert!(FidDb::load(&bad).is_err());
+        let mut bad = bytes.clone();
+        bad[proto_off + 8..proto_off + 12].copy_from_slice(&3u32.to_le_bytes());
+        assert!(FidDb::load(&bad).is_err());
+    }
+
+    #[test]
+    fn a_database_without_prototypes_is_written_as_version_1() {
+        let bytes = FidDb::from_records("L", "C", vec![rec(1, 10, 4, 0, "plain")]).serialize();
+        assert_eq!(bytes[4..8], FID_DB_VERSION_NAMES.to_le_bytes());
+        assert_eq!(bytes.len(), 22 + 24 + 6);
     }
 
     #[test]
@@ -458,7 +583,7 @@ mod tests {
     fn wrong_version_is_error() {
         let mut bytes = FidDb::from_records("L", "C", vec![]).serialize();
         // The version u32 starts right after the 4-byte magic.
-        bytes[4] = bytes[4].wrapping_add(1);
+        bytes[4] = bytes[4].wrapping_add(2);
         assert!(FidDb::load(&bytes).is_err());
     }
 
@@ -479,7 +604,7 @@ mod tests {
         // Hand-craft a DB whose single record points its name_off past the blob.
         let mut bytes: Vec<u8> = Vec::new();
         bytes.extend_from_slice(FID_DB_MAGIC);
-        bytes.extend_from_slice(&FID_DB_VERSION.to_le_bytes());
+        bytes.extend_from_slice(&FID_DB_VERSION_NAMES.to_le_bytes());
         // lang_id ""  cspec_id ""
         bytes.extend_from_slice(&0u32.to_le_bytes());
         bytes.extend_from_slice(&0u32.to_le_bytes());

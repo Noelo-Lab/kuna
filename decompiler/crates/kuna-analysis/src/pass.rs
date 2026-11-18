@@ -374,6 +374,22 @@ pub struct CallFixupFact {
     pub func_name: String,
 }
 
+/// (kuna `fid`) The prototype the `.fid` record matched at `addr` carries, as
+/// C text. The commit parses and parks it only where the function took the
+/// record's name and no other source parked a prototype
+/// (`kuna_console::kuna_fidproto`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FidProtoFact {
+    /// Entry of the matched function.
+    pub addr: u64,
+    /// The record's name; the prototype applies only to a function that has it.
+    pub name: String,
+    /// The prototype as one C declaration.
+    pub prototype: String,
+    /// The type declarations the prototype needs, definition before use.
+    pub typedefs: Vec<String>,
+}
+
 /// A function the FID matcher re-identified by full-hash fingerprint: at `addr`,
 /// the function's instruction-stream fingerprint matched a known-library record
 /// whose name is `name` (e.g. `kuna_crc32`). Produced by [`crate::fid::FidPass`]
@@ -655,6 +671,8 @@ pub struct AnalysisOutput {
     /// (kuna `calltable`) Discovered (not symbol) entries that sit on a switch
     /// case no call reaches; the commit drops them from the entry stream.
     pub case_entries: Vec<u64>,
+    /// The prototypes of the `.fid` records matched. See [`FidProtoFact`].
+    pub fid_prototypes: Vec<FidProtoFact>,
     /// What became of each `.fid` database the FID pass was configured with
     /// (loaded, missing, unreadable, invalid, incompatible). Produced only by
     /// [`crate::fid::FidPass`] when `kuna_fid_db` names a database.
@@ -774,6 +792,7 @@ impl AnalysisOutput {
         self.locals.iter_mut().for_each(|l| fix(&mut l.name));
         self.fid_names.iter_mut().for_each(|f| fix(&mut f.name));
         self.signature_vetoes.iter_mut().for_each(|f| fix(&mut f.name));
+        self.fid_prototypes.iter_mut().for_each(|f| fix(&mut f.name));
         self.fallback_names.iter_mut().for_each(|f| fix(&mut f.name));
         self.prototypes.iter_mut().for_each(fix_proto);
         self.prototypes_at.iter_mut().for_each(|(_, p)| fix_proto(p));
@@ -905,6 +924,7 @@ impl AnalysisOutput {
         self.fid_names.extend(other.fid_names);
         self.signature_vetoes.extend(other.signature_vetoes);
         self.case_entries.extend(other.case_entries);
+        self.fid_prototypes.extend(other.fid_prototypes);
         self.fid_databases.extend(other.fid_databases);
         self.fallback_names.extend(other.fallback_names);
         self.cpp_dwarf.symbols.extend(other.cpp_dwarf.symbols);

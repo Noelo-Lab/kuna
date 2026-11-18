@@ -239,6 +239,7 @@ fn fid_candidate(
                 "specific_hash_matches": r.specific_hash == quad.specific_hash,
                 "code_unit_size": r.code_unit_size,
                 "code_unit_size_matches": r.code_unit_size == quad.code_unit_size,
+                "prototype": r.prototype,
             })
         })
         .collect();

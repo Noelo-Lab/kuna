@@ -212,6 +212,8 @@ pub fn build_records(
             specific_addl: quad.specific_addl_size,
             flags,
             name: name.clone(),
+            prototype: None,
+            typedefs: Vec::new(),
         });
     }
 

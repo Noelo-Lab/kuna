@@ -45,12 +45,17 @@
 //! ⇒ the pass is a no-op. A configured database is matched only when it loads and its
 //! header language applies to the image ([`kuna_fidapply`]); either way the pass
 //! reports what became of it on [`AnalysisOutput::fid_databases`].
+//!
+//! A record may also carry the function's prototype ([`kuna_fidproto`]); a match
+//! emits it as a [`FidProtoFact`], which the commit applies to the function that
+//! took the record's name and that no other source declares.
 
 pub mod build;
 pub mod db;
 pub mod extent;
 pub mod hash;
 pub mod kuna_fidapply;
+pub mod kuna_fidproto;
 pub mod skipper;
 mod kuna_fidstrict;
 
@@ -58,7 +63,7 @@ use std::rc::Rc;
 
 use kuna_base::address::Address;
 
-use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, FidMatch, Phase};
+use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, FidMatch, FidProtoFact, Phase};
 use crate::fid::db::{FidDatabase, FidRecord};
 use crate::fid::hash::{FidHashQuad, FidHasher, InsnFingerprint, NoRelocations};
 use crate::fid::skipper::{InstructionSkipper, X86InstructionSkipper};
@@ -118,6 +123,14 @@ impl AnalysisPass for FidPass {
             let Some(name) = pick_unique_name(records, &quad) else {
                 continue;
             };
+            if let Some(record) = kuna_fidproto::pick(records, &quad) {
+                out.fid_prototypes.push(FidProtoFact {
+                    addr: entry,
+                    name: name.clone(),
+                    prototype: record.prototype.clone().unwrap_or_default(),
+                    typedefs: record.typedefs.clone(),
+                });
+            }
             let fact = FidMatch { addr: entry, name, by_signature: true };
             if ctx.arch.analysis_fid_strict && !kuna_fidstrict::supports_rename(records, &quad) {
                 out.signature_vetoes.push(fact);
@@ -201,6 +214,8 @@ mod tests {
             specific_addl: 0,
             flags: 0,
             name: name.to_string(),
+            prototype: None,
+            typedefs: Vec::new(),
         }
     }
 

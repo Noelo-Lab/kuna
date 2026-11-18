@@ -135,6 +135,16 @@ pub fn referenced_types(fd: &Funcdata) -> Vec<Rc<Datatype>> {
     order
 }
 
+/// The definable types `roots` name, in definition-before-use order.
+pub fn referenced_by<'a>(roots: impl Iterator<Item = &'a Rc<Datatype>>) -> Vec<Rc<Datatype>> {
+    let mut order = Vec::new();
+    let mut seen = HashSet::new();
+    for ty in roots {
+        visit(ty, &mut seen, &mut order);
+    }
+    order
+}
+
 /// Type roots needed only by project call-target declarations.
 pub fn referenced_call_types(fd: &Funcdata) -> Vec<Rc<Datatype>> {
     let mut order = Vec::new();

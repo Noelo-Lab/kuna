@@ -43,6 +43,7 @@ pub mod kuna_declaredbytes;
 pub mod kuna_lazyfuncs;
 mod kuna_paramasserts;
 mod kuna_dwarfstack;
+mod kuna_fidproto;
 pub mod kuna_buildstamp;
 pub mod consolemain;
 #[cfg(test)]
