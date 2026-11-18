@@ -10,7 +10,8 @@
 //! class of a class-file source flat into one directory, so the compared text is the *last*
 //! delivered unit whose file name is the case's `compare` name; it is compared with the expected
 //! text after the fixture's `getContent` normalization (`\r\n` to `\n`, then `String.trim()`).
-//! The manifest format is described in `tests/jvm/README.md`.
+//! A case with a `digest` record also runs with kuna's defaults, as `kuna/<id>`, and that text must
+//! have the pinned digest ([`text_digest`]). The manifest format is described in `tests/jvm/README.md`.
 
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
@@ -30,10 +31,13 @@ use crate::struct_class::StructClass;
 use crate::struct_field::StructField;
 use crate::struct_method::StructMethod;
 use crate::text_buffer::TextBuffer;
+use sha2::{Digest, Sha256};
 
 pub const MANIFEST_HEADER: &str = "kuna-jvm-corpus";
 pub const MANIFEST_VERSION: &str = "1";
 pub const FAILED_METHOD_MARKER: &str = "$VF: Couldn't be decompiled";
+/// The id prefix of a case's default-mode run (its `digest` record).
+pub const DEFAULT_RUN: &str = "kuna/";
 /// Stack for threads that run the engine. The recursion guard (`rt::stack`)
 /// lets the engine use `rt::stack::DEPTH_LIMIT` of it; the rest is headroom.
 pub const ENGINE_STACK_BYTES: usize = 512 << 20;
@@ -111,6 +115,8 @@ pub struct Case {
     pub compare: Vec<String>,
     pub javadoc: Option<String>,
     pub jdks: Vec<JdkNeed>,
+    /// A default-mode run's pinned [`text_digest`], compared instead of `expected`'s text.
+    pub digest: Option<String>,
     /// The fix set to run with instead of the one the options give: a test
     /// hook for isolating one fix (`KunaFixes::without`).
     #[doc(hidden)]
@@ -134,6 +140,7 @@ struct RawCase {
     libs: Vec<String>,
     expected: Option<String>,
     compare: Vec<String>,
+    digest: Option<String>,
 }
 
 /// The option pairs the engine runs `case` with: the fixture registers no plugin, so
@@ -294,6 +301,7 @@ fn parse_cases_where(
                     libs: Vec::new(),
                     expected: None,
                     compare: Vec::new(),
+                    digest: None,
                 });
                 at = At::Case;
             }
@@ -314,7 +322,7 @@ fn parse_cases_where(
                     _ => scoped.current_jdk = Some(args[0].clone()),
                 }
             }
-            "class" | "lib" | "expected" | "compare" => {
+            "class" | "lib" | "expected" | "compare" | "digest" => {
                 need(1)?;
                 if !matches!(at, At::Case) {
                     return err(&format!("`{tag}` outside a case"));
@@ -324,6 +332,7 @@ fn parse_cases_where(
                     "class" => case.classes.push(args[0].clone()),
                     "lib" => case.libs.push(args[0].clone()),
                     "expected" => case.expected = Some(args[0].clone()),
+                    "digest" => case.digest = Some(args[0].clone()),
                     _ => case.compare = args.iter().filter(|a| !a.is_empty()).cloned().collect(),
                 }
             }
@@ -355,7 +364,7 @@ fn parse_cases_where(
         if !seen.insert(raw.id.clone()) {
             return err("duplicate case id".to_string());
         }
-        if !keep(&raw.id) {
+        if !keep(&raw.id) && !keep(&format!("{DEFAULT_RUN}{}", raw.id)) {
             continue;
         }
         let Some((slug, expected_dir, set)) = sets.get(&raw.set) else {
@@ -415,7 +424,7 @@ fn parse_cases_where(
                 current: true,
             });
         }
-        out.push(Case {
+        let case = Case {
             id: raw.id,
             set: raw.set,
             set_slug: slug.clone(),
@@ -426,8 +435,21 @@ fn parse_cases_where(
             compare,
             javadoc: raw.scoped.javadoc.or_else(|| set.javadoc.clone()),
             jdks,
+            digest: None,
             fixes: None,
+        };
+        let default_run = raw.digest.map(|digest| {
+            let mut run = case.clone();
+            run.id = format!("{DEFAULT_RUN}{}", case.id);
+            overlay_option(&mut run.options, VINEFLOWER_COMPAT, "0");
+            run.digest = Some(digest);
+            run
         });
+        out.extend(
+            std::iter::once(case)
+                .chain(default_run)
+                .filter(|c| keep(&c.id)),
+        );
     }
     Ok(out)
 }
@@ -751,7 +773,7 @@ impl CaseStatus {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FirstDiff {
-    /// 1-based, in the normalized texts.
+    /// 1-based, in the normalized texts; 0 for a digest case, whose two digests this holds.
     pub line: usize,
     /// `None` past the end of the text.
     pub expected: Option<String>,
@@ -871,9 +893,22 @@ pub fn select_unit<'a>(
     })
 }
 
-/// Compares what a run produced with the case's expected text.
+/// The first 16 hex digits of the SHA-256 of `text` after the fixture's normalization.
+pub fn text_digest(text: &str) -> String {
+    Sha256::digest(normalize(text).as_bytes())[..8]
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
+/// Compares what a run produced with the case's expected text (or its pinned digest).
 pub fn evaluate(case: &Case, run: EngineRun) -> CaseResult {
-    let expected_raw = match std::fs::read(&case.expected) {
+    let read = if case.digest.is_some() {
+        Ok(Vec::new())
+    } else {
+        std::fs::read(&case.expected)
+    };
+    let expected_raw = match read {
         Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
         Err(e) => {
             return CaseResult::failed(
@@ -889,9 +924,16 @@ pub fn evaluate(case: &Case, run: EngineRun) -> CaseResult {
 pub fn evaluate_text(case: &Case, run: EngineRun, expected_raw: &str) -> CaseResult {
     let expected = normalize(expected_raw);
     let selected = select_unit(&run.units, &case.compare);
-    let first = match selected {
-        Some(unit) => first_diff(&expected, &normalize(&unit.content)),
-        None => Some(FirstDiff {
+    let first = match (selected, &case.digest) {
+        (Some(unit), Some(pinned)) => Some(text_digest(&unit.content))
+            .filter(|got| got != pinned)
+            .map(|got| FirstDiff {
+                line: 0,
+                expected: Some(pinned.clone()),
+                actual: Some(got),
+            }),
+        (Some(unit), None) => first_diff(&expected, &normalize(&unit.content)),
+        (None, _) => Some(FirstDiff {
             line: 1,
             expected: expected.split('\n').next().map(str::to_string),
             actual: None,
@@ -1038,6 +1080,13 @@ fn head(text: &str, max: usize) -> String {
 
 /// The failure key of a non-matching result; `None` for a match.
 pub fn failure_key(r: &CaseResult) -> Option<String> {
+    let digest = r.first_diff.as_ref().filter(|d| d.line == 0);
+    if let (CaseStatus::Mismatch, Some(d)) = (r.status, digest) {
+        let [pinned, got] = [&d.expected, &d.actual].map(|v| v.as_deref().unwrap_or("-"));
+        return Some(format!(
+            "digest {got}, pinned {pinned} (corpus --out DIR writes the text)"
+        ));
+    }
     match r.status {
         CaseStatus::Match => None,
         CaseStatus::Unsupported => Some(format!(

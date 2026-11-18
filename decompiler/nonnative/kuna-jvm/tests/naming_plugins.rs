@@ -59,6 +59,7 @@ fn variant_case(variant: &str, dir: &str, main: &str, pairs: &str) -> Case {
         compare: vec![format!("{main}.java")],
         javadoc: None,
         jdks: Vec::new(),
+        digest: None,
         fixes: None,
     }
 }

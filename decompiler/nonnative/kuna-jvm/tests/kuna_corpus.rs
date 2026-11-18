@@ -226,6 +226,44 @@ fn the_short_form_derives_classes_expected_and_compare() {
 }
 
 #[test]
+fn a_digest_record_adds_a_default_mode_run() {
+    let cases = parse_cases(
+        &format!("{SAMPLE}digest\t0123456789abcdef\n"),
+        Path::new("/m"),
+    )
+    .unwrap();
+    let (case, run) = (&cases[2], &cases[3]);
+    assert_eq!(run.id, "kuna/single/pkg/TestC");
+    let mut options = case.options.clone();
+    options.push(("jvm_vineflower_compat".into(), "0".into()));
+    assert_eq!(run.options, options);
+    assert_eq!(
+        (&run.class_files, &run.compare, &run.digest),
+        (&case.class_files, &case.compare, &Some("0123456789abcdef".into()))
+    );
+
+    assert_eq!(text_digest("abc"), "ba7816bf8f01cfea");
+    let mut case = sample()[0].clone();
+    case.digest = Some(text_digest("class TestA {\n}"));
+    let run = |text: &str| EngineRun {
+        units: vec![unit("pkg/TestA.java", text)],
+        ..EngineRun::default()
+    };
+    let r = evaluate(&case, run("\r\nclass TestA {\r\n}\n  "));
+    assert_eq!(r.status, CaseStatus::Match);
+    let r = evaluate(&case, run("class TestA {}"));
+    assert_eq!(r.status, CaseStatus::Mismatch);
+    assert_eq!(
+        failure_key(&r).unwrap(),
+        format!(
+            "digest {}, pinned {} (corpus --out DIR writes the text)",
+            text_digest("class TestA {}"),
+            text_digest("class TestA {\n}")
+        )
+    );
+}
+
+#[test]
 fn fields_escape_round_trip() {
     for s in [
         "",
@@ -567,7 +605,9 @@ fn is_kuna_fix(case: &Case) -> bool {
 
 #[test]
 fn vendored_corpus_is_complete() {
-    let cases = vendored();
+    let all = vendored();
+    assert_eq!(all.iter().filter(|c| c.digest.is_some()).count(), 607);
+    let cases: Vec<Case> = all.into_iter().filter(|c| c.digest.is_none()).collect();
     assert_eq!(cases.iter().filter(|c| !is_kuna_fix(c)).count(), 607);
     let compat: BTreeSet<&str> = cases
         .iter()
@@ -718,7 +758,10 @@ fn vendored_corpus_is_complete() {
 
 #[test]
 fn vendored_expected_texts_match_themselves() {
-    let cases = vendored();
+    let cases: Vec<Case> = vendored()
+        .into_iter()
+        .filter(|c| c.digest.is_none())
+        .collect();
     let mut matched = 0;
     for case in &cases {
         let run = expected_as_actual(case).unwrap();

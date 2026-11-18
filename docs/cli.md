@@ -183,7 +183,8 @@ kuna test --jvm                                        # the JVM engine's corpus
 `--jvm` runs the JVM engine's differential corpus (`tests/jvm/`, `docs/jvm.md`) in
 process: each case decompiles its class files with its pinned options and must print its
 expected text. The Vineflower-oracle cases run with `jvm_vineflower_compat on` and expect
-Vineflower's exact text; each kuna-fixes case runs twice, in compat mode against
+Vineflower's exact text, and again with the defaults (`kuna/<id>`) against a pinned digest
+of the text; each kuna-fixes case runs twice, in compat mode against
 Vineflower's text (failure comment included) and with the defaults against kuna's
 reviewed text. `--jvm-dir DIR` runs the manifest in another directory. It has no
 baseline: every case must match, and `--baseline`/`--save-baseline` are refused (exit
@@ -192,7 +193,7 @@ JDK. `--name N` keeps the cases whose id contains `N`, `--jobs N|auto`
 sets how many run at once (default: the core count, at most 16), and the datatest flags
 (`--all`, `--unittests`, `--datatests`, `--datatests-dir`, `--binary`, `--sleighpath`)
 are refused next to it (exit `2`). The summary line reads
-`jvm: 1187/1187 cases matched (0 mismatch, 0 error, 0 unsupported) in 1.6 s`. `--all`
+`jvm: 1794/1794 cases matched (0 mismatch, 0 error, 0 unsupported) in 5.2 s`. `--all`
 stays unit tests plus datatests.
 
 `kuna test` parses the harness's two streams separately (unit results on **stderr**,

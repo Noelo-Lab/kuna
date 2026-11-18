@@ -81,13 +81,15 @@ Line oriented, tab separated; fields escape `\\`, `\t`, `\n`, `\r`; `#` starts a
 | `lib` `PATH` | a library (`addLibrary`), added before the sources |
 | `expected` `PATH` | the expected Java (or Kotlin) text (default: `DIR/<ID without SLUG/>.java`, or `.kt` when only that exists) |
 | `compare` `NAME`... | the output file compared; later names are fallbacks (default: the first class file's name with the expected text's extension, then `.java`) |
+| `digest` `HEX` | the case also runs with kuna's defaults (`jvm_vineflower_compat` off) as `kuna/ID`, whose compared text must have this digest: the first 16 hex digits of the SHA-256 of the text after the fixture's normalization |
 
 ## Counts
 
-- Vendored: **1187 cases** in all, each of which must match: 607 Vineflower-oracle cases (the Java
-  cases here, the plugin and Kotlin cases below) and 580 runs of the 290 kuna-fixes cases (below).
+- Vendored: **1794 runs** in all, each of which must match: the 607 Vineflower-oracle cases (the
+  Java cases here, the plugin and Kotlin cases below) twice, in compat mode against Vineflower's text and
+  with kuna's defaults against a digest (below), and 580 runs of the 290 kuna-fixes cases (below).
 - Java cases: **530** (Complex Condys 1, Default 505, Javadoc 1, Lambda to Anonymous Class 2, Literals 4, LVT 5, Markdown Javadoc 1, No LVT 1, Renaming 1, Synthetics Marking 3, Ternary Constant Simplification 2, Text Tokens 4), 858 class files (890 KiB) and 530
-  expected files (1376 KiB); 2410 KiB in all with `cases.tsv`.
+  expected files (1376 KiB); 2424 KiB in all with `cases.tsv`.
 - Of the oracle corpus's 598 runnable tests, **68 are not vendored** because their
   output depends on a particular JDK's class library; run them from the external corpus (below).
   13 registered tests are not runnable from it (Groovy and Scala sources it never compiles, and the
@@ -149,6 +151,14 @@ compiled from. Each runs twice, on the fixture's base map plus `dump-exception-o
 (`kuna-fixes/expected-compat/`, failure comment included), and as `kuna-fixes/<id>` with kuna's defaults,
 against kuna's reviewed output (`kuna-fixes/expected/`). `kuna-fixes/README.md` lists them. Add one with
 `python3 -I tests/jvm/kuna_fix_case.py --fix <id> --class Foo.class --source Foo.java --summary TEXT`.
+
+## Default-mode digests
+
+Each Vineflower-oracle case runs a second time with kuna's defaults, as `kuna/<id>`, against the `digest`
+record after its `case` line, so the gate also pins what kuna's fixes and options print on Vineflower's own
+inputs. A mismatch prints both digests; `corpus --filter kuna/<id> --out DIR` writes the text
+(`DIR/kuna/<id>.actual.java`). Once the change is reviewed, `corpus --save-digests` re-records the `digest`
+records of the runs it made; `regen.py` keeps them, and writes `-` (no digest yet) for a new case.
 
 ## Running
 

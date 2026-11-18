@@ -588,10 +588,11 @@ fn docs_embed_the_jvm_topics() {
 #[test]
 fn test_jvm_runs_corpus_cases() {
     let text = ok(&kuna(&["test", "--jvm", "--name", "default/pkg/TestEnhancedForLoops"]));
-    assert!(text.starts_with("jvm: 1/1 cases matched"), "{text}");
+    assert!(text.starts_with("jvm: 2/2 cases matched"), "{text}");
     let doc: Value = serde_json::from_str(&ok(&kuna(&["test", "--jvm", "--name", "TestEnhancedForLoops", "--json"]))).unwrap();
-    assert_eq!(doc["passing"], serde_json::json!(["jvm:default/pkg/TestEnhancedForLoops"]));
-    assert_eq!(doc["jvm_footer"], serde_json::json!([1, 1]));
+    let ids = ["jvm:default/pkg/TestEnhancedForLoops", "jvm:kuna/default/pkg/TestEnhancedForLoops"];
+    assert_eq!(doc["passing"], serde_json::json!(ids));
+    assert_eq!(doc["jvm_footer"], serde_json::json!([2, 2]));
     let miss = kuna(&["test", "--jvm", "--name", "no-such-case"]);
     assert_eq!(miss.status.code(), Some(2));
     assert_eq!(kuna(&["test", "--jvm", "--datatests"]).status.code(), Some(2));

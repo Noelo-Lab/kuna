@@ -91,11 +91,13 @@ def class_stems(root, classes):
     return stems
 
 
-def case_records(root, case_id, set_name, classes, expected, compare, opts=(), expected_dir=None):
+def case_records(root, case_id, set_name, classes, expected, compare, opts=(), expected_dir=None, digest=None):
     """The records of one case. With `root` (the vendored manifest) the short form: class stems on the
     `case` line, and `expected`/`compare` only where they differ from what the runner derives (README.md)."""
     stems = class_stems(root, classes) if root else None
     out = [line('case', case_id, set_name, *(stems or []))]
+    if digest:
+        out.append(line('digest', digest))
     out += [line('opt', k, v) for k, v in opts]
     if not stems:
         out += [line('class', c) for c in classes]
@@ -110,7 +112,20 @@ def case_records(root, case_id, set_name, classes, expected, compare, opts=(), e
     return out
 
 
-def plugin_records(pm, base, root):
+def pinned_digests(path):
+    """The `digest` record of each case of the manifest at `path`, if it exists."""
+    digests, case = {}, None
+    if os.path.isfile(path):
+        with open(path, encoding='utf-8') as f:
+            for fields in (row.rstrip('\n').split('\t') for row in f):
+                if fields[0] == 'case':
+                    case = fields[1]
+                elif fields[0] == 'digest':
+                    digests[case] = fields[1]
+    return digests
+
+
+def plugin_records(pm, base, root, digests):
     """The set and case records of the plugin manifest: a fixture set starts from the fixture's base map."""
     set_lines, case_lines = [], []
     for s in pm['sets']:
@@ -122,7 +137,8 @@ def plugin_records(pm, base, root):
             set_lines.append(line('opt', k, v))
     for t in sorted(pm['tests'], key=lambda t: t['id']):
         case_lines += case_records(root, t['id'], t['set'], ['classes/' + f for f in t['class_files']], t['oracle'],
-                                   [t['decompiled_file'], *filter(None, [t.get('decompiled_file_fallback')])])
+                                   [t['decompiled_file'], *filter(None, [t.get('decompiled_file_fallback')])],
+                                   digest=digests.get(t['id'], '-'))
     return set_lines, case_lines
 
 
@@ -235,7 +251,8 @@ def fix_readme(fm):
     return FIXES_README.format(options=options, rows='\n'.join(rows))
 
 
-def write_manifest(path, tests, sets, base, root, java_homes, rel_class, rel_expected, extra=([], []), vendored=None):
+def write_manifest(path, tests, sets, base, root, java_homes, rel_class, rel_expected, extra=([], []), vendored=None,
+                   digests=None):
     used_sets = []
     for t in tests:
         if t['set'] not in used_sets:
@@ -261,7 +278,7 @@ def write_manifest(path, tests, sets, base, root, java_homes, rel_class, rel_exp
         opts = [] if t['runtime_injected'] is None else [('include-runtime', '${java.%s.home}' % t['runtime_injected'])]
         names = [t['decompiled_file']] + ([t['decompiled_file_fallback']] if t.get('decompiled_file_fallback') else [])
         out += case_records(vendored, t['id'], t['set'], [rel_class(f) for f in t['class_files']],
-                            rel_expected(t['oracle']), names, opts)
+                            rel_expected(t['oracle']), names, opts, digest=None if digests is None else digests.get(t['id'], '-'))
     out.extend(extra[1])
     tmp = path + '.tmp'
     with open(tmp, 'w', encoding='utf-8', newline='\n') as f:
@@ -350,11 +367,13 @@ Line oriented, tab separated; fields escape `\\\\`, `\\t`, `\\n`, `\\r`; `#` sta
 | `lib` `PATH` | a library (`addLibrary`), added before the sources |
 | `expected` `PATH` | the expected Java (or Kotlin) text (default: `DIR/<ID without SLUG/>.java`, or `.kt` when only that exists) |
 | `compare` `NAME`... | the output file compared; later names are fallbacks (default: the first class file's name with the expected text's extension, then `.java`) |
+| `digest` `HEX` | the case also runs with kuna's defaults (`jvm_vineflower_compat` off) as `kuna/ID`, whose compared text must have this digest: the first 16 hex digits of the SHA-256 of the text after the fixture's normalization |
 
 ## Counts
 
-- Vendored: **{ncases} cases** in all, each of which must match: {noracle} Vineflower-oracle cases (the Java
-  cases here, the plugin and Kotlin cases below) and {nfixruns} runs of the {nfix} kuna-fixes cases (below).
+- Vendored: **{ncases} runs** in all, each of which must match: the {noracle} Vineflower-oracle cases (the
+  Java cases here, the plugin and Kotlin cases below) twice, in compat mode against Vineflower's text and
+  with kuna's defaults against a digest (below), and {nfixruns} runs of the {nfix} kuna-fixes cases (below).
 - Java cases: **{included}** ({sets}), {nclasses} class files ({cls_kb} KiB) and {included}
   expected files ({exp_kb} KiB); {total_kb} KiB in all with `cases.tsv`.
 - Of the oracle corpus's {runnable} runnable tests, **{excluded} are not vendored** because their
@@ -414,6 +433,14 @@ compiled from. Each runs twice, on the fixture's base map plus `dump-exception-o
 (`kuna-fixes/expected-compat/`, failure comment included), and as `kuna-fixes/<id>` with kuna's defaults,
 against kuna's reviewed output (`kuna-fixes/expected/`). `kuna-fixes/README.md` lists them. Add one with
 `python3 -I tests/jvm/kuna_fix_case.py --fix <id> --class Foo.class --source Foo.java --summary TEXT`.
+
+## Default-mode digests
+
+Each Vineflower-oracle case runs a second time with kuna's defaults, as `kuna/<id>`, against the `digest`
+record after its `case` line, so the gate also pins what kuna's fixes and options print on Vineflower's own
+inputs. A mismatch prints both digests; `corpus --filter kuna/<id> --out DIR` writes the text
+(`DIR/kuna/<id>.actual.java`). Once the change is reviewed, `corpus --save-digests` re-records the `digest`
+records of the runs it made; `regen.py` keeps them, and writes `-` (no digest yet) for a new case.
 
 ## Running
 
@@ -486,12 +513,13 @@ def main():
     if out != here:
         for f in plugin_files + fix_files(fm) + [f'{FIXES_DIR}/cases.json']:
             copy(os.path.join(here, f), os.path.join(out, f))
-    plugin_sets, plugin_cases = plugin_records(pm, base, out)
-    kotlin_sets, kotlin_cases = plugin_records(km, base, out)
+    digests = pinned_digests(os.path.join(here, 'cases.tsv'))
+    plugin_sets, plugin_cases = plugin_records(pm, base, out, digests)
+    kotlin_sets, kotlin_cases = plugin_records(km, base, out, digests)
     fix_sets, fix_cases = fix_records(fm, base, out)
     write_manifest(os.path.join(out, 'cases.tsv'), included, sets, base, None, {},
                    lambda f: 'classes/' + f, lambda p: p,
-                   (plugin_sets + kotlin_sets + fix_sets, plugin_cases + kotlin_cases + fix_cases), out)
+                   (plugin_sets + kotlin_sets + fix_sets, plugin_cases + kotlin_cases + fix_cases), out, digests)
     os.makedirs(os.path.join(out, FIXES_DIR), exist_ok=True)
     with open(os.path.join(out, FIXES_DIR, 'README.md'), 'w', encoding='utf-8', newline='\n') as f:
         f.write(fix_readme(fm))
@@ -543,7 +571,7 @@ def main():
         nplugin=len(pm['tests']),
         noracle=len(included) + len(pm['tests']) + len(km['tests']), nfix=len(fm['cases']),
         nfixruns=len(FIX_SETS) * len(fm['cases']),
-        ncases=len(included) + len(pm['tests']) + len(km['tests']) + len(FIX_SETS) * len(fm['cases']),
+        ncases=2 * (len(included) + len(pm['tests']) + len(km['tests'])) + len(FIX_SETS) * len(fm['cases']),
         plugin_sets=', '.join(f'{n} {c}' for n, c in plugin_counts.items()),
         nkotlin=len(km['tests']), kotlin_sets=', '.join(f'{n} {c}' for n, c in kotlin_counts.items()),
         kt_nclasses=len(kt_class), kt_cls_kb=tree_size(kt_class) // 1024, kt_exp_kb=tree_size(kt_exp) // 1024,

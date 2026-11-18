@@ -738,7 +738,11 @@ example):
    `diff -ru COMPAT DEFAULT`, on the five benchmark jars (`docs/jvm-benchmark.md`) and on
    okio, okhttp and kotlin-stdlib: every hunk must be inside a method that failed in compat
    mode, a tracker note or an import, or be the fix's own correction; (d) `make
-   test-jvm` (the Vineflower-oracle cases run in compat mode).
+   test-jvm`. Its compat-mode runs must still match; a fix that changes kuna's default
+   text on Vineflower's own inputs moves the digests of their default-mode runs
+   (`kuna/<id>`, printed with both digests). Read each moved text (`corpus --filter
+   kuna/<id> --out DIR`), re-record them with `corpus --save-digests`, and name the moved
+   ids in the commit.
 7. **Gates**: `cargo test -p kuna-jvm`, `make test-jvm`, `kuna catalog --check`, `make
    check-spec` and `python3 tools/check_spec.py --strict`, `make lint`.
 
@@ -1054,12 +1058,13 @@ out.
 
 | Command | Checks |
 |---|---|
-| `make test-jvm` (= `kuna test --jvm`) | the gate: every case prints its expected text: each Vineflower-oracle case (Java, plugin and Kotlin, run in compat mode) Vineflower's exact text, and each kuna-fixes case Vineflower's text in compat mode and kuna's reviewed text by default (`tests/jvm/README.md` has the counts). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
+| `make test-jvm` (= `kuna test --jvm`) | the gate: every case prints its expected text: each Vineflower-oracle case (Java, plugin and Kotlin) Vineflower's exact text in compat mode and, by default, the text its digest pins, and each kuna-fixes case Vineflower's text in compat mode and kuna's reviewed text by default (`tests/jvm/README.md` has the counts). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
 | `cd decompiler && cargo test -p kuna-jvm --test integration` | the unit and differential suite (part of `make rust-test`): kernel goldens against a real JDK, per-pass oracles, option-table checks, driver determinism |
 | `cd decompiler && cargo run --release -p kuna-jvm --example corpus -- --jobs 16` | the same corpus gate without the CLI |
 
 Useful corpus-runner flags (`corpus --help` lists all): `--filter SUBSTR` runs matching
 cases in-process (quick); `--out DIR` writes each case's actual text, diff and log;
+`--save-digests` re-records the digests of the default-mode runs it made;
 `--manifest FILE` runs another manifest, such as the full Java or Kotlin one generated from
 the external corpora (`--save-baseline FILE` and `--baseline FILE` gate one whose cases do
 not all match on the machine).
@@ -1158,16 +1163,16 @@ unknown option. An option is for a judgement call (a readability trade, a heuris
 same rule as the native engine's (`docs/agents.md`).
 
 **Default-on needs corpus evidence.** The corpus gate compares against Vineflower's text,
-so a kuna improvement that changes any case stays off by default; it may default on
-only when `make test-jvm` still matches every case with it on and it passes the
-speed budget (the native engine's rule). Fixes, and the options compat mode turns off with
-them (the options of form, `jvm_javac_layout`), leave every Vineflower-oracle case alone,
-since those run in compat mode, and change only kuna-fixes cases' default text, re-recorded
-after review. A fix's evidence is its two-pass case and the whole-output diffs of step 6 of
-the recipe; such an option defaults on only when a full benchmark run of the five projects
-shows it better (methods perfect on every metric, classes that recompile, each worse method
-read and explained) at the same speed, and the same whole-output diffs are read hunk by
-hunk.
+so a kuna improvement that changes any compat-mode text stays off by default; it may
+default on only when `make test-jvm` still matches every compat-mode run with it on and it
+passes the speed budget (the native engine's rule). Fixes, and the options compat mode turns
+off with them (the options of form, `jvm_javac_layout`), leave every compat-mode text alone
+and change only default-mode ones: the kuna-fixes cases' expected text and the
+Vineflower-oracle cases' digests, both re-recorded after review. A fix's evidence is its
+two-pass case and the whole-output diffs of step 6 of the recipe; such an option defaults on
+only when a full benchmark run of the five projects shows it better (methods perfect on
+every metric, classes that recompile, each worse method read and explained) at the same
+speed, and the same whole-output diffs are read hunk by hunk.
 
 ## Re-syncing with a newer Vineflower
 
