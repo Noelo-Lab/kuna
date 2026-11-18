@@ -7,27 +7,6 @@
 //! `fabric:javadoc` property is `DecompilerContext::get_javadoc_provider`.
 //! A [`Caught`] has no stack trace or cause: `collectErrorLines` reports its
 //! throw location as the only frame.
-//!
-//! kuna fix `statement_as_expression` (`kuna_fixes`): in
-//! `class_lambda_to_java`, a lambda whose lone exprent is statement-only (an
-//! `assert`) gets a block body, where Vineflower writes it as an expression body.
-//! kuna fix `enum_body_separator` (`kuna_fixes`): in `write_class`, an
-//! enum whose members have no constant before them gets the `;` Java requires
-//! (`fixes::class_writing::enum_body_separator`).
-//! kuna fix `override_inaccessible_method` (`kuna_fixes`): `@Override` is
-//! written only for a supertype method the class can override
-//! (`fixes::class_writing::override_inaccessible_method`).
-//! kuna fix `sealed_private_permits`: a top-level sealed class whose permitted
-//! subclasses are its own members, one of them private, is written without its
-//! `permits` clause (`fixes::class_writing::sealed_private_permits`).
-//! kuna fix `nested_param_rename`: a parameter whose uses are written by its
-//! local-variable-table name is declared under it (`fixes::nested_class_vars::nested_param_rename`).
-//! kuna fix `captured_var_clash_name`: in `invoke_processors`, the captured
-//! variables of the class's methods take the clashing names of the variables
-//! they hold (`fixes::nested_class_vars::captured_var_clash_name`).
-//!
-//! kuna fix `disjoint_generic_cast`: the value written here is marked as
-//! one with a declared target type (`fixes::generic_casts::disjoint_generic_cast`).
 
 use std::collections::VecDeque;
 use std::rc::Rc;

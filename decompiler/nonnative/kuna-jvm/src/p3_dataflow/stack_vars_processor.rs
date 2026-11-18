@@ -2,28 +2,6 @@
 //!
 //! A Java `null` head slot is an empty `JList`, so the Java's `nd.exprents.add(null)`
 //! on an emptied loop init/condition/increment list is a no-op here.
-//!
-//! kuna fixes (spec 10.16), both for the pass that inlines every local
-//! (`inlineRegularVars`, the Kotlin plugin's): `kt_inline_evaluation_order`
-//! inlines a local whose value calls, allocates or reads an array element only
-//! into the next statement, ahead of anything there it could observe or be
-//! observed by; `field_read_all_paths` builds the SSAU form with field reads
-//! live only while live on every path; `field_read_reuse` keeps a field read
-//! with several uses in its stack variable (`fixes::stack_var_inlining::field_read_reuse`);
-//! `kt_inline_lock_local` keeps every use of a lock local whose value may be
-//! another object when evaluated again (`fixes::stack_var_inlining::kt_inline_lock_local`);
-//! `kt_inline_heap_read` keeps a variable the Kotlin inliner would copy into
-//! several uses when its value reads an array element or a field that may
-//! change and is not a field read `kt_field_read_reuse` keeps
-//! (`fixes::stack_var_inlining::kt_inline_heap_read`).
-//!
-//! kuna fix `kt_suspend_lambda`: the Kotlin pass does not inline the local
-//! a rebuilt suspend lambda reads an argument into
-//! (`fixes::kt_suspend::kt_suspend_lambda::is_argument_local`).
-//!
-//! kuna fix `unlisted_anonymous_class`: `setEffectivelyFinalVars` keeps a
-//! local passed to the constructor of a class that fix nested, named or not
-//! (`fixes::anonymous_classes::unlisted_anonymous_class::takes_local`).
 
 use std::collections::VecDeque;
 

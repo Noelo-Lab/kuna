@@ -1,12 +1,4 @@
 //! Port of `org/jetbrains/java/decompiler/main/collectors/ImportCollector.java`.
-//! kuna fix `nonpublic_nested_import` (`fixes::class_writing::nonpublic_nested_import`).
-//! kuna fix `external_inherited_member_type`: `get_super_class_inner_classes`
-//! also reads the member classes of supertypes outside the universe, and an
-//! ambiguous inherited simple name maps to no class
-//! (`fixes::class_writing::external_inherited_member_type`).
-//! kuna fix `kt_escaped_class_name`: in Kotlin output, a short name's
-//! segments that are no Kotlin identifier are written in backticks
-//! (`fixes::kt_names::kt_escaped_class_name`).
 
 use std::collections::VecDeque;
 

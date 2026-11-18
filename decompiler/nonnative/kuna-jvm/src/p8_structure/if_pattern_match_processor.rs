@@ -1,14 +1,4 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/IfPatternMatchProcessor.java`.
-//!
-//! kuna fix `pattern_variable_scope` (`kuna_fixes`): `check_branch` makes a
-//! pattern only when the variable is used nowhere outside the pattern's scope
-//! (`fixes::patterns::pattern_variable_scope`).
-//! A type pattern is not made when the cast it replaces is unchecked
-//! (`unchecked_type_pattern`), nor from bytecode that is not javac's compiled
-//! pattern (`pattern_binding_shape`) or, with `jvm_source_patterns`, from a
-//! cast the line table shows as a statement (`kuna_source_patterns`). With
-//! `jvm_source_locals`, a local the class file records is not folded into
-//! the pattern's subject.
 
 use std::collections::VecDeque;
 

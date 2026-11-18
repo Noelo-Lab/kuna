@@ -1,9 +1,4 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/stats/CatchAllStatement.java`.
-//!
-//! kuna fix `protected_back_edge` (`fixes::finally_sync::protected_back_edge`): no
-//! `try` is built around a loop body whose back edge it would protect.
-//! kuna fix `kt_inlined_stdlib_call` (`fixes::kt_compiler_idioms::kt_inlined_stdlib_call`):
-//! kotlinc's inlined copy of `use` is written as the call.
 
 use std::rc::Rc;
 

@@ -1,9 +1,5 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/MergeHelper.java`.
 //!
-//! kuna fix `statement_as_expression` (`kuna_fixes`): in `match_for`,
-//! a loop whose last exprent is statement-only (an `assert`) is not made a
-//! `for` loop with it as the update, where Vineflower excludes only an exit.
-//!
 //! kuna option `jvm_source_locals` (`kuna_source_locals`): `match_for_each`
 //! does not turn a loop whose iterator or index is a local of the source into
 //! a for-each, nor fold a local of the source into the for-each's iterable.

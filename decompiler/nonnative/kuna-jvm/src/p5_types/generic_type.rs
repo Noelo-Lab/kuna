@@ -2,18 +2,6 @@
 //!
 //! `GenericType` is a view over a [`VarType`] whose data carries the generic
 //! fields; see `var_type.rs`.
-//!
-//! kuna fix `generic_parent_without_signature` (`kuna_fixes`): in
-//! `map_gen_vars_to`, an enclosing class without a `Signature` attribute (a
-//! non-generic inner class of a generic class) maps as the generic type its
-//! signature would declare, `Name<>`, where Vineflower dereferences the
-//! missing signature.
-//!
-//! kuna fix `primitive_array_wildcard` (`kuna_fixes`): `parse` returns a plain
-//! `VarType` for a primitive element type, dropping the wildcard of a type
-//! argument bounded by a primitive array (`Publisher<+[B>`, written
-//! `Publisher<byte[]>`, which changes the signature and breaks overriding).
-//! With the fix such an argument keeps its wildcard: `? extends byte[]`.
 
 use std::ops::Deref;
 use std::rc::Rc;

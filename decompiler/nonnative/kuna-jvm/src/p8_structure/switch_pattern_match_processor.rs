@@ -1,10 +1,4 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/SwitchPatternMatchProcessor.java`.
-//!
-//! kuna fixes (`kuna_fixes`): `type_switch_enum_label` resolves an enum
-//! constant label passed as a dynamic constant; `type_switch_pattern_type`
-//! types the pattern made from a class label without a cast by that class
-//! instead of `Class`; `type_switch_label_lookup` finds each label by its
-//! own index constant and supports cases with several type patterns.
 
 use crate::assignment_exprent::AssignmentExprent;
 use crate::code_constants::{CONSTANT_CLASS, CONSTANT_INTEGER, CONSTANT_STRING};

@@ -1,14 +1,4 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/exps/ExitExprent.java`.
-//!
-//! kuna fix `lambda_type_variable_target`: a returned call is told the
-//! declared type it is returned as (`fixes::lambdas::lambda_type_variable_target`).
-//!
-//! kuna fix `thrown_type_variable`: a `throw` of a checked exception the
-//! method declares only as a type variable casts it to that variable
-//! (`fixes::generics::thrown_type_variable`).
-//!
-//! kuna fix `disjoint_generic_cast`: the value written here is marked as
-//! one with a declared target type (`fixes::generic_casts::disjoint_generic_cast`).
 
 use crate::check_types_result::CheckTypesResult;
 use crate::fixes::generic_casts::disjoint_generic_cast;

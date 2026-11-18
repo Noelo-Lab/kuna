@@ -3,15 +3,6 @@
 //! `caseValues` is shared with the `SwitchHeadExprent` (`setCaseValues`), and
 //! its `null` entries mark the default case. `headexprent` is the one-slot list
 //! shared with flow nodes (empty while the Java slot is `null`).
-//!
-//! kuna fixes (`kuna_fixes`): `type_switch_enum_label` qualifies an enum
-//! constant label of a pattern switch on another type; `type_switch_label_lookup`
-//! writes a case with several type patterns as one label of unnamed patterns;
-//! `switch_case_order` orders the cases by where their code starts
-//! (`fixes::switches::switch_case_order`); `switch_table_fillers` leaves out the
-//! keys javac fills a `tableswitch`'s gaps with (`fixes::switches::switch_table_fillers`);
-//! `switch_synthetic_default` leaves out javac's default of a pattern switch
-//! (`fixes::switches::switch_synthetic_default`).
 
 use crate::basic_block_statement::BasicBlockStatement;
 use crate::const_exprent::ConstExprent;

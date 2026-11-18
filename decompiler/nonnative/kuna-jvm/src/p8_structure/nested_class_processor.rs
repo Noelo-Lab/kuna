@@ -1,28 +1,5 @@
 //! Port of `org/jetbrains/java/decompiler/main/rels/NestedClassProcessor.java`.
 //!
-//! kuna fix `local_class_anonymous_subclass` (`kuna_fixes`): in
-//! `search_for_class`, creating an anonymous class whose supertype is the
-//! local class counts as a use of it (`fixes::anonymous_classes::local_class_anonymous_subclass`).
-//!
-//! kuna fix `lambda_catch_var_rename`: the clash rename of a lambda body's
-//! locals reaches its catch variables too (`fixes::nested_class_vars::lambda_catch_var_rename`).
-//!
-//! kuna fix `anonymous_class_created_elsewhere`: a constructor argument that
-//! every `new` of a class this fix nested at its creator passes as the same
-//! stable field of the creating instance is a capture of that instance, read
-//! as that field (`fixes::anonymous_classes::anonymous_class_created_elsewhere`).
-//!
-//! kuna fix `captured_var_clash_name`: each captured variable records the
-//! variable it holds (`fixes::nested_class_vars::captured_var_clash_name`).
-//!
-//! kuna fix `captured_var_through_cast`: a constructor argument that is a
-//! cast of a variable to a supertype of its class is a capture of that
-//! variable (`fixes::nested_class_vars::captured_var_through_cast`).
-//!
-//! kuna fix `unlisted_anonymous_class`: a captured variable of a class that
-//! fix nested takes the name the creating method declares its variable by
-//! (`fixes::anonymous_classes::unlisted_anonymous_class::captured_lvt`).
-//!
 //! Java lets a variable name be `null` (an unnamed enclosing variable); the
 //! name maps here carry `Option<String>`, and a `None` name is not written
 //! into a `VarProcessor` or name set, which cannot hold one.

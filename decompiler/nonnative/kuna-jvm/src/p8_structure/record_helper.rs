@@ -1,9 +1,4 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/RecordHelper.java`.
-//!
-//! kuna fix `compact_record_constructor` (`fixes::class_writing::compact_record_constructor`):
-//! `fixup_canonical_constructor` takes a canonical constructor for a compact
-//! one only when it ends with every component's `this.c = c`, in order, and
-//! then removes only stores to fields of `this`.
 
 use crate::class_writer::ClassWriter;
 use crate::code_constants::{ACC_STATIC, ACC_VARARGS, INIT_NAME};

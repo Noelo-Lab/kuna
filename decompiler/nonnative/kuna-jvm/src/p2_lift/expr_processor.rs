@@ -1,45 +1,4 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/ExprProcessor.java`.
-//!
-//! kuna fix `switch_expression_poly_cast` (`fixes/switches/switch_expression_poly_cast.rs`):
-//! `getCastedExprent` does not cast a switch expression whose results would be promoted.
-//! kuna fix `boxed_type_variable_cast`: `get_casted_exprent` keeps the
-//! boxing call of a value it casts to a type variable.
-//!
-//! kuna fix `unchecked_generic_cast`: `get_casted_exprent` writes the
-//! unchecked cast a declared value's generic type needs to be assigned or
-//! returned (`fixes::generic_casts::unchecked_generic_cast`).
-//!
-//! kuna fix `kt_java_cast_syntax` (`fixes/kt_java_syntax/kt_java_cast_syntax.rs`): in Kotlin output,
-//! `getCastedExprent` writes a numeric conversion or a cast to a type variable in Kotlin's syntax.
-//!
-//! kuna fix `kt_java_statement_jump`: in Kotlin output, `jmp_wrapper` writes the
-//! jump after a statement in Kotlin's syntax (`KExprProcessor.jmpWrapper`).
-//!
-//! kuna fix `disjoint_generic_cast` (`fixes::generic_casts::disjoint_generic_cast`): a cast
-//! `doGenericTypesCast` asks for, of a returned or assigned value or a field's
-//! initializer, is written to the raw class when the value's parameterization
-//! is provably distinct from the target's.
-//!
-//! kuna fix `synthetic_null_check_shape`: at a `pop` of a `requireNonNull` or
-//! `getClass` result, the call is marked when its instructions are javac's
-//! null check (`fixes::constructor_calls::synthetic_null_check_shape`).
-//!
-//! kuna fix `bounded_inference_cast`: `get_casted_exprent` casts a returned
-//! or assigned call whose target puts a type variable it infers from the
-//! target only outside its bound (`fixes::generic_casts::bounded_inference_cast`).
-//!
-//! kuna fix `receiver_type_arguments`: `get_casted_exprent` gives the generic
-//! call or creation a returned or assigned chain of calls starts with the
-//! type arguments its target needs (`fixes::generic_casts::receiver_type_arguments`).
-//!
-//! kuna fix `argument_generic_cast`: `get_casted_exprent` writes those
-//! unchecked casts for an argument whose parameter's declared type is fixed,
-//! through the raw class where they are provably distinct
-//! (`fixes::generic_casts::argument_generic_cast`).
-//!
-//! kuna fix `kt_implicit_widening`: in Kotlin output, `get_casted_exprent`
-//! writes the conversion of a `Byte`, `Short` or `Char` value Java widens
-//! implicitly (`fixes::kt_operators::kt_implicit_widening`).
 
 use crate::array_exprent::ArrayExprent;
 use crate::assert_processor::AssertProcessor;

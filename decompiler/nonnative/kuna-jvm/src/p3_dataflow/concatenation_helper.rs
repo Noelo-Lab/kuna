@@ -1,7 +1,4 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/ConcatenationHelper.java`.
-//!
-//! kuna fix `concat_operand_type` (spec 10.16): each rebuilt concatenation
-//! records the argument type of its operands (`fixes::numeric_types::concat_operand_type`).
 
 use crate::code_constants::CONSTANT_STRING;
 use crate::code_type::CodeType;

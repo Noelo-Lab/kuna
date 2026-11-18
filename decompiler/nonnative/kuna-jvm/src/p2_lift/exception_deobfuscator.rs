@@ -1,11 +1,4 @@
 //! Port of `org/jetbrains/java/decompiler/modules/code/ExceptionDeobfuscator.java`.
-//!
-//! kuna fix `nested_handler_copies` (spec 10.16): the handler copies of
-//! `insert_dummy_exception_handler_blocks` are nested in the outer-handler copy
-//! of the range they serve.
-//!
-//! kuna fix `handler_copy_shared_body` (spec 10.16): the copies of a catch-any
-//! handler get their own copies of the handler's further blocks.
 
 use std::collections::VecDeque;
 

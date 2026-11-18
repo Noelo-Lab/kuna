@@ -1,11 +1,4 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/LabelHelper.java`.
-//!
-//! kuna fix `loop_body_exit_explicit` (`kuna_fixes`): `setExplicitEdges` returns
-//! no edges for a loop, whose body never falls through to the loop's end.
-//! kuna fix `switch_table_fillers` (`fixes::switches::switch_table_fillers`): the empty
-//! last case `hideDefaultSwitchEdges` takes the default from goes too when its
-//! other keys are only a `tableswitch`'s fillers (its values become the lone
-//! default's, as when the default was its only key).
 
 use crate::do_statement::Type as DoType;
 use crate::function_exprent::FunctionType;

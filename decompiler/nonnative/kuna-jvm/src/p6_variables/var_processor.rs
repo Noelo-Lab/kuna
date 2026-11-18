@@ -4,12 +4,6 @@
 //! `Shared`: their getters hand out the collection and callers mutate it.
 //! Getters that return a key/value *view* (`getUsedVarVersions`,
 //! `getVarNames`, `clashingNames`) return a snapshot in iteration order.
-//!
-//! kuna fix `kt_java_keyword_variable_name`: `setDebugVarNames` keeps a debug
-//! name that is a Java keyword in Kotlin output.
-//!
-//! kuna fix `refresh_printed_var_names`: `refreshVarNames` allocates the
-//! clashing name a variable prints (`fixes::nested_class_vars::refresh_printed_var_names`).
 
 use std::collections::BTreeMap;
 

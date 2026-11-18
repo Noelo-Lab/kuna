@@ -1,9 +1,4 @@
 //! Port of `org/jetbrains/java/decompiler/main/rels/LambdaProcessor.java`.
-//!
-//! kuna fix `self_referencing_lambda` (`kuna_fixes`): before the lambda
-//! hierarchy is built, a lambda whose implementation method instantiates it
-//! again is written as a method reference (`fixes::lambdas::self_referencing_lambda`),
-//! where Vineflower nests it under itself and throws or overflows the stack.
 
 use crate::classes_processor::{sort_nodes, ClassNode, ClassNodeType};
 use crate::code_constants::OPC_INVOKEDYNAMIC;

@@ -7,12 +7,6 @@
 //! Var maps are `Shared`: the same map sits in a holder, a node's slot in these
 //! tables and `currentCatchableMap`, and is compared by identity. The set
 //! factory is an aliasing handle shared by every map and set it makes.
-//!
-//! kuna fix `field_read_all_paths` (spec 10.16): with `field_reads_all_paths`
-//! set, a field variable stays live only while it is live on every path.
-//!
-//! kuna fix `finally_exit_versions` (spec 10.16): a normal exit of a
-//! try-finally takes the versions its finally body assigns.
 use crate::cancelation_manager::CancelationManager;
 use crate::code_constants::ACC_STATIC;
 use crate::direct_edge_type::DirectEdgeType;

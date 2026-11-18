@@ -1,16 +1,5 @@
 //! Port of `org/jetbrains/java/decompiler/main/ClassesProcessor.java`.
 //!
-//! kuna fix `anonymous_class_created_elsewhere` (`kuna_fixes`): an anonymous
-//! class that only another class creates is nested in that class
-//! (`fixes::anonymous_classes::anonymous_class_created_elsewhere`).
-//!
-//! kuna fix `unlisted_anonymous_class` (`kuna_fixes`): an anonymous class
-//! that its enclosing class does not list is nested in that class
-//! (`fixes::anonymous_classes::unlisted_anonymous_class`).
-//!
-//! kuna fix `unseen_class_overload`: loading a class universe forgets the
-//! previous one's method references (`fixes::overloads::unseen_class_overload`).
-//!
 //! `excluded-classes`/`included-classes` are Java regular expressions; they are
 //! matched by the small backtracking engine in [`java_regex`].
 

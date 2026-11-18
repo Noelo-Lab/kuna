@@ -1,11 +1,4 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/InitializerProcessor.java`.
-//!
-//! kuna fix `kt_hidden_empty_super_call`: `hide_empty_super` keeps the call
-//! it removes on the method, for the Kotlin writer.
-//!
-//! kuna fix `enum_constant_in_values_array`: `extract_static_initializers`
-//! first takes enum constants built inside the `$VALUES` array
-//! (`fixes::class_writing::enum_constant_in_values_array`).
 
 use crate::assignment_exprent::AssignmentExprent;
 use crate::cancelation_manager::CanceledException;

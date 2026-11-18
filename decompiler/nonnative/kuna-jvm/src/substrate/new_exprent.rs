@@ -1,28 +1,4 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/exps/NewExprent.java`.
-//!
-//! kuna fix `lambda_wildcard_return` (`kuna_fixes`): in
-//! `get_inferred_expr_type`, a method reference whose return type is the
-//! receiver's `?` type argument keeps the generic mapping already inferred,
-//! where Vineflower dereferences the missing return type.
-//!
-//! kuna fix `external_class_diamond`: in `get_inferred_expr_type`,
-//! `new C(..)` of a class outside the class universe whose expected type is a
-//! parameterization of `C` gets the diamond (`fixes::generics::external_class_diamond`),
-//! where Vineflower writes it raw.
-//!
-//! kuna fix `implicit_outer_instance`: in `to_java`, the creation of an inner
-//! class whose outer instance is the one an unqualified creation passes, and
-//! whose null check javac emits for a qualified one is absent, is written
-//! unqualified (`fixes::constructor_calls::implicit_outer_instance`).
-//!
-//! kuna fix `qualified_super_call`: in `to_java`, an anonymous class whose
-//! constructor passes one of its own parameters to its inner superclass's as
-//! the outer instance is created `o.new S(..) {..}`
-//! (`fixes::constructor_calls::qualified_super_call`).
-//!
-//! kuna fix `vararg_spread_resolution`: in `to_java`, the lone element of a
-//! spread varargs array that converts to the array type is cast to the
-//! element type (`fixes::overloads::vararg_spread_resolution`).
 
 use std::collections::VecDeque;
 

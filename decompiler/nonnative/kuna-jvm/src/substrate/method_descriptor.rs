@@ -1,6 +1,4 @@
 //! Port of `org/jetbrains/java/decompiler/struct/gen/MethodDescriptor.java`.
-//! kuna fix `constructor_signature_alignment`: `parseDescriptor` also trims a
-//! signature that omits only the leading synthetic parameters.
 
 use std::cell::RefCell;
 use std::ops::Deref;

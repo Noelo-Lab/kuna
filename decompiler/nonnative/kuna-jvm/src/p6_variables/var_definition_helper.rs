@@ -1,10 +1,5 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/vars/VarDefinitionHelper.java`.
 //!
-//! kuna fix `var_merge_liveness` (`fixes::var_merge::var_merge_liveness`): `mergeVars`
-//! does not merge a variable into an earlier one whose value is read after the
-//! later one is written; such a merge is denied like one `remapVar` refuses, or,
-//! for a definition hoisted to a statement, left there.
-//!
 //! The merge maps (`this_vars`, `parent`, `leaked`) are keyed by
 //! `varproc.getVarOriginalIndex(..)`, which is null for a var created after
 //! version splitting; Java's `HashMap` then holds a `null` key, so the key type
@@ -12,44 +7,11 @@
 //! clash-renaming maps key statements by `Option<Statement>` (a root's parent)
 //! and hold `Option<String>` names (an unnamed parameter).
 //!
-//! kuna fix `var_merge_narrowing` (`fixes/var_merge/var_merge_narrowing.rs`): `mergeVars`
-//! refuses a merge whose type is narrower than a value either variable is assigned,
-//! unless the LocalVariableTable declares one local for both, whose type it then uses.
-//! kuna fix `switch_case_scope` (`kuna_fixes`): in `iterate_clashing_names`,
-//! a switch's cases are visited in the order they are written, and the
-//! declarations at the top level of a case's statement sequence stay live
-//! until the end of the switch block, which is their scope
-//! (`fixes::declaration_scope::switch_case_scope`).
-//! kuna fix `switch_expression_arm_scope` (`kuna_fixes`): `iterate_clashing_names`
-//! skips a switch expression's (phantom) switch statement, on the ground
-//! that its arms are blocks isolated from each other; they are, but not from
-//! the variables in scope around the expression, so an arm could declare a
-//! name already declared there. With the fix each arm is visited like an
-//! `if` branch: its declarations are renamed when they clash with a live
-//! one and forgotten when the arm ends.
-//!
-//! kuna fix `var_merge_declared_type` (`fixes::var_merge::var_merge_declared_type`):
-//! `mergeVars` refuses to merge two variables the LocalVariableTable declares
-//! as two locals of one erased type and different generic types.
 //! kuna option `jvm_source_locals` (`kuna_source_locals`): `setVarDefinitions`
 //! moves declarations without an initializer to where javac gives their
 //! variables the class file's slots, hoisting them out of the blocks
 //! Vineflower narrowed them into (`kuna_source_scopes`); `mergeVars` does not
 //! merge two variables the LocalVariableTable names differently.
-//!
-//! kuna fix `head_definition_scope` (`kuna_fixes`): `iterateClashingNames`
-//! keeps the declarations in a switch's or `synchronized`'s head block, which
-//! is written before the statement, live in the enclosing scope as it does an
-//! `if`'s; Vineflower dropped them when the statement ended, so a later
-//! declaration of the same name kept it.
-//!
-//! kuna fix `local_final_writes` (`fixes::declaration_scope::local_final_writes`): `setNonFinal`
-//! reads statement heads and gives a loop body its own set of declared locals.
-//!
-//! kuna fix `var_merge_lost_definition` (`kuna_fixes`): `mergeVars` takes a
-//! definition hoisted to a statement away only for a merge `remapVar` can make;
-//! Vineflower removed it first, and a merge refused for want of a common type
-//! left the variable undeclared.
 
 use std::collections::VecDeque;
 use std::ops::{Deref, DerefMut};

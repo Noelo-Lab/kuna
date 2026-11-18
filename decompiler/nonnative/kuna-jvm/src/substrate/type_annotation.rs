@@ -1,13 +1,4 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/exps/TypeAnnotation.java`.
-//!
-//! kuna fix `type_annotation_qualified_name` (`kuna_fixes`): an annotated
-//! class type keeps the qualifier the import collector gives its name
-//! (`fixes::type_annotations::type_annotation_qualified_name`). kuna fix
-//! `type_annotation_argument_scope`: the annotations of a generic argument
-//! are looked for only inside that argument
-//! (`fixes::type_annotations::type_annotation_argument_scope`). kuna fix
-//! `type_annotation_outer_arguments`: an enclosing class of the annotated
-//! type keeps its type arguments (`fixes::type_annotations::type_annotation_outer_arguments`).
 
 use std::collections::VecDeque;
 

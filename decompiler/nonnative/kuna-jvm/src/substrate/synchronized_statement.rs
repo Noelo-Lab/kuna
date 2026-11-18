@@ -2,9 +2,6 @@
 //!
 //! `headexprent` is the one-slot list shared with flow nodes (empty while the
 //! Java slot is `null`).
-//!
-//! kuna fix `kt_jump_to_non_loop_label`: in Kotlin output a labelled
-//! `synchronized` that a written jump leaves is `run labelN@{ .. }` around it.
 
 use crate::code_constants::OPC_MONITOREXIT;
 use crate::expr_processor::ExprProcessor;

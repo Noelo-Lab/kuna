@@ -1,24 +1,4 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/FinallyProcessor.java`.
-//!
-//! kuna fix `handler_copy_offsets` (`kuna_fixes`): on a handler copy made by
-//! `ExceptionDeobfuscator::insert_dummy_exception_handler_blocks` that holds the
-//! whole handler, `remove_exception_instructions_ex` removes only the instruction
-//! offsets the copy has (none). With the fix `handler_copy_shared_body`, a copy
-//! holds its whole handler when the blocks after it are its own.
-//!
-//! kuna fix `copied_finally` (spec 10.16): `iterate_graph` marks the copies
-//! irreducible-flow splitting made of a processed `finally` as `finally`.
-//!
-//! kuna fix `finally_exit_versions` (spec 10.16): a verified `finally` records
-//! the handler slots that a removed copy of the body keeps in another slot.
-//!
-//! kuna fix `overlapping_ranges` (spec 10.16): in a method whose ranges it
-//! split, a `try` re-entered at its head from inside or holding a `return`
-//! stays a catch-all, and a `finally` copy another path also runs is not
-//! removed.
-//!
-//! kuna fix `inline_marker_finally_copy` (spec 10.16): `compare_basic_blocks_ex`
-//! accepts a copy whose `InlineMarker` depth differs from the handler's.
 
 use std::cell::RefCell;
 use std::collections::VecDeque;

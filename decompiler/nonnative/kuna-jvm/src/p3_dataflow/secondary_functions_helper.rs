@@ -1,13 +1,5 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/SecondaryFunctionsHelper.java`.
 //!
-//! kuna fix `compound_assignment_shape` (`fixes::numeric_types::compound_assignment_shape`):
-//! a field or array element assignment is made compound by the bytecode's
-//! shape, not by Vineflower's side-effect heuristic.
-//!
-//! kuna fix `implicit_widening_arithmetic`
-//! (`fixes::numeric_types::implicit_widening_arithmetic`): a widening conversion is
-//! written where leaving it out narrows the type an operation computes in.
-//!
 //! kuna option `jvm_javac_layout` (`kuna_javac_boolean_compare`): a comparison
 //! with a boolean literal that javac's bytecode shows is not folded.
 

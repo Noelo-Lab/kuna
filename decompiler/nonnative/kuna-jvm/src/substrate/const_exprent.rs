@@ -1,7 +1,4 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/exps/ConstExprent.java`.
-//!
-//! kuna fix `double_constant_literal` (spec 10.16): a `double` constant is
-//! never written as a shorter `float` literal, whose type the context keeps.
 
 use std::rc::Rc;
 

@@ -1,27 +1,4 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/exps/FunctionExprent.java`.
-//!
-//! kuna fix `ternary_numeric_arms` (`fixes/numeric_types/ternary_numeric_arms.rs`): a
-//! reference conditional whose arms would be promoted casts its first arm.
-//! kuna fix `boxed_type_variable_cast`: a cast to a type variable keeps the
-//! boxing call of its operand.
-//! kuna fix `kt_operator_precedence`: in Kotlin output an operand is also
-//! parenthesised where Kotlin's precedence needs it
-//! (`fixes::kt_operators::kt_operator_precedence`).
-//! kuna fix `kt_mapped_java_member`: in Kotlin output an array's length is
-//! its `size`.
-//! kuna fix `kt_not_null_assertion`: a `!!` (`Other` in Kotlin's function
-//! exprent) has no use flags, so it is neither copied nor moved, and takes
-//! its operand's inferred type.
-//!
-//! kuna fix `field_read_all_paths`: a conditional's operand states merge
-//! field variables on all paths when the outer holder does.
-//! kuna fix `concat_operand_type`: a string concatenation operand is written
-//! with the type of its `append` argument (`fixes::numeric_types::concat_operand_type`).
-//! kuna fix `mixed_type_reassociation`: a right operand of the same `+` or
-//! `*` keeps its parentheses where regrouping changes the type a step
-//! computes in (`fixes::numeric_types::mixed_type_reassociation`).
-//! kuna fix `reference_unboxing`: of `==` or `!=` between two unboxing calls,
-//! the left one is written (`fixes::numeric_types::reference_unboxing`).
 
 use crate::check_types_result::CheckTypesResult;
 use crate::code_type::CodeType;

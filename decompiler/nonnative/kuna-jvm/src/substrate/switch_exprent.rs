@@ -1,15 +1,4 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/exps/SwitchExprent.java`.
-//!
-//! kuna fix `switch_yield_const_retype` (`kuna_fixes`): in `to_java`,
-//! a constant yielded by a single-expression arm takes the switch's type only
-//! when a constant can have that type, where Vineflower retypes it to any
-//! common supertype of the arms and fails to write it.
-//! kuna fixes (`kuna_fixes`): `type_switch_enum_label` qualifies an enum
-//! constant label of a pattern switch on another type; `type_switch_label_lookup`
-//! writes a case with several type patterns as one label of unnamed patterns;
-//! `switch_synthetic_default` hides javac's default of any exhaustive switch
-//! (`fixes::switches::switch_synthetic_default`), not only of an enum's whose class
-//! is loaded.
 
 use crate::basic_block_statement::BasicBlockStatement;
 use crate::code_constants::ACC_ENUM;

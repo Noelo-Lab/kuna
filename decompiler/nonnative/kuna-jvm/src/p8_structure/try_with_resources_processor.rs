@@ -1,15 +1,4 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/TryWithResourcesProcessor.java`.
-//!
-//! kuna fix `twr_unary_condition` (`kuna_fixes`): in
-//! `make_try_with_resource_j11`, a handler whose first `if` tests a unary
-//! condition (`!flag`) is not a resource's null check, where Vineflower reads
-//! the condition's missing second operand.
-//!
-//! kuna fixes `twr_unresolved_resource`, `twr_desugaring_shape` and
-//! `twr_class_version` (`fixes::twr`): in
-//! `make_try_with_resource_j11`, a resource whose class hierarchy is outside
-//! the input is accepted, the statement is re-sugared only when it is javac's
-//! exact desugaring, and `TryHelper` also runs it on classes older than Java 11.
 use crate::assignment_exprent::AssignmentExprent;
 use crate::basic_block_statement::BasicBlockStatement;
 use crate::catch_all_statement::CatchAllStatement;

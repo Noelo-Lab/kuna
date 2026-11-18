@@ -4,9 +4,6 @@
 //! loop's first or last if stays in the loop when javac placed it there, an
 //! if of the body whose body javac placed after the loop is moved after it,
 //! and a first if whose other path continues the loop is not made its exit.
-//!
-//! kuna fix `loop_first_if_exit` (`fixes::control_flow::loop_first_if_exit`): a loop's
-//! first if becomes its exit test only when the path past it leaves the loop.
 
 use crate::do_statement::{DoStatement, Type as LoopType};
 use crate::function_exprent::{FunctionExprent, FunctionType};

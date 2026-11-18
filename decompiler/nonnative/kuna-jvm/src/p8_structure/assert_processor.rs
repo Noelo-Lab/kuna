@@ -1,12 +1,4 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/AssertProcessor.java`.
-//!
-//! kuna fix `assert_dead_throw` (`kuna_fixes`): in `replace_assertion`,
-//! a `throw new AssertionError` the `if` reached by a break is removed once
-//! the assert has consumed it (`fixes::asserts::assert_dead_throw`).
-//!
-//! kuna fix `assert_throw_after_if`: an assert whose throw follows an `if`
-//! the structurer wrote the other way round is recognised
-//! (`fixes::asserts::assert_throw_after_if`).
 
 use crate::assert_exprent::AssertExprent;
 use crate::basic_block_statement::BasicBlockStatement;

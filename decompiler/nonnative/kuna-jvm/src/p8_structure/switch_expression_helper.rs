@@ -1,12 +1,4 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/SwitchExpressionHelper.java`.
-//!
-//! kuna fix `switch_expression_assignments` (`kuna_fixes`): a switch becomes
-//! an expression only when every assignment it turns into a `yield` is the
-//! last thing a case does before it breaks
-//! (`fixes::switches::switch_expression_assignments`). kuna fix
-//! `switch_synthetic_default`: a switch over an enum with javac's synthetic
-//! default whose cases return becomes `return switch`
-//! (`fixes::switches::switch_expression_return`).
 
 use crate::assignment_exprent::AssignmentExprent;
 use crate::basic_block_statement::BasicBlockStatement;

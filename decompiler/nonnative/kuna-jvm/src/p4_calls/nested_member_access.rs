@@ -1,8 +1,4 @@
 //! Port of `org/jetbrains/java/decompiler/main/rels/NestedMemberAccess.java`.
-//!
-//! kuna fix `kt_suspend_call_continuation`: a call that replaces a synthetic
-//! accessor's keeps the accessor call's mark to be written without its
-//! continuation argument.
 
 #![allow(clippy::collapsible_if)]
 

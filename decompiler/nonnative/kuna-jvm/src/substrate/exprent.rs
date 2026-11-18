@@ -5,10 +5,6 @@
 //! here that calls the overriding view in path form and falls back to the
 //! base body (`*_base`).
 //!
-//! kuna fix `type_variable_shadowing` (`kuna_fixes`): in `getNamedGenerics` a
-//! type variable of an enclosing class or method no longer replaces the bounds
-//! of a same-named one declared closer to the code.
-//!
 //! kuna option `jvm_source_locals` (`kuna_source_locals`): `sortIndexed`
 //! orders a run of declarations by the variables' original slots.
 
