@@ -22,12 +22,14 @@ use crate::key::Key;
 use crate::struct_member::StructMember;
 
 type Entry = (StructMember, String);
+/// An attribute changed while marking, with the value it had.
+type Mark = (Entry, Option<Rc<dyn Any>>);
 
 thread_local! {
     static ATTRS: RefCell<BTreeMap<Entry, Rc<dyn Any>>> =
         const { RefCell::new(BTreeMap::new()) };
     static RECORDING: Cell<bool> = const { Cell::new(false) };
-    static MARKS: RefCell<Vec<(Entry, Option<Rc<dyn Any>>)>> = const { RefCell::new(Vec::new()) };
+    static MARKS: RefCell<Vec<Mark>> = const { RefCell::new(Vec::new()) };
 }
 
 fn record(entry: Entry, previous: Option<Rc<dyn Any>>) {
