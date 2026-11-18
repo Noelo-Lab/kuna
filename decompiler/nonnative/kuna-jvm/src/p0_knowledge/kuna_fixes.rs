@@ -864,6 +864,15 @@ pub enum KunaFix {
     /// `kt_suspend_impl`: in Kotlin output, an open suspend function is
     /// written with the body kotlinc moved into its `$suspendImpl` method.
     KtSuspendImpl,
+    /// `kt_class_header_metadata`: a Kotlin class header declares its type
+    /// parameters (with their variance) and supertypes as its metadata does.
+    KtClassHeaderMetadata,
+    /// `kt_enclosing_type_parameter`: the Kotlin types of a class declared in
+    /// a function name the function's and outer classes' type parameters.
+    KtEnclosingTypeParameter,
+    /// `kt_default_impls_delegate`: the methods kotlinc generates to call an
+    /// interface member's default body through `DefaultImpls` are not written.
+    KtDefaultImplsDelegate,
 }
 
 impl KunaFix {
@@ -1115,6 +1124,9 @@ impl KunaFix {
         KunaFix::KtForInlineCopy,
         KunaFix::KtSuspendLambda,
         KunaFix::KtSuspendImpl,
+        KunaFix::KtClassHeaderMetadata,
+        KunaFix::KtEnclosingTypeParameter,
+        KunaFix::KtDefaultImplsDelegate,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -1366,6 +1378,9 @@ impl KunaFix {
             KunaFix::KtForInlineCopy => "kt_for_inline_copy",
             KunaFix::KtSuspendLambda => "kt_suspend_lambda",
             KunaFix::KtSuspendImpl => "kt_suspend_impl",
+            KunaFix::KtClassHeaderMetadata => "kt_class_header_metadata",
+            KunaFix::KtEnclosingTypeParameter => "kt_enclosing_type_parameter",
+            KunaFix::KtDefaultImplsDelegate => "kt_default_impls_delegate",
         }
     }
 

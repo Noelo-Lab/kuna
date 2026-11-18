@@ -980,6 +980,11 @@ fn type_parameters_in_scope(method: StructMethod) -> BTreeSet<String> {
     if let Some(sig) = method.get_signature() {
         scope.extend(sig.type_parameters().iter().cloned());
     }
+    if let Some(cl) = DecompilerContext::get_current_class().filter(|_| {
+        crate::kuna_fixes::enabled(crate::kuna_fixes::KunaFix::KtEnclosingTypeParameter)
+    }) {
+        scope.extend(crate::kotlin::kuna_fix_kt_enclosing_type_parameter::enclosing_names(cl));
+    }
     if let Some(cl) = DecompilerContext::get_current_class() {
         let mut name = cl.qualified_name();
         loop {

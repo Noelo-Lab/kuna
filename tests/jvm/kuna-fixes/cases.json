@@ -3619,6 +3619,62 @@
       "compiler": "kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21)",
       "summary": "the open suspend functions sum and first are written with the bodies kotlinc moved into sum$suspendImpl and first$suspendImpl (their state machines rebuilt, this for the first parameter), not as calls of the hidden synthetic methods",
       "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestKtClassHeaderMetadata",
+      "fix": "kt_class_header_metadata",
+      "class_files": [
+        "pkg/TestKtClassHeaderMetadata.class",
+        "pkg/TestKtClassHeaderMetadata$Countdown.class",
+        "pkg/TestKtClassHeaderMetadata$Empty.class",
+        "pkg/TestKtClassHeaderMetadata$Ranked.class",
+        "pkg/TestKtClassHeaderMetadata$Recorder.class",
+        "pkg/TestKtClassHeaderMetadata$Sink.class",
+        "pkg/TestKtClassHeaderMetadata$Sorted.class",
+        "pkg/TestKtClassHeaderMetadata$Source.class"
+      ],
+      "source": "src/pkg/TestKtClassHeaderMetadata.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "class headers declare their type parameters with the metadata's variance and Kotlin bounds (`interface Source<out T>`, `Sink<in T>`, `T : Comparable<T>`) and their supertypes as the metadata names them (`Source<Nothing>`, `Sink<Any?>`, `Iterator<Int>` without `KMappedMarker` and the `remove` stub); Vineflower wrote the JVM signature's (`Source<T>`, a raw `Source`, `Sink<Any>`, `java.util.Iterator<Int>, KMappedMarker`), which kotlinc rejects or reads as other types",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestKtEnclosingTypeParameter",
+      "fix": "kt_enclosing_type_parameter",
+      "class_files": [
+        "pkg/TestKtEnclosingTypeParameter.class",
+        "pkg/TestKtEnclosingTypeParameter$Pump.class",
+        "pkg/TestKtEnclosingTypeParameter$Source.class",
+        "pkg/TestKtEnclosingTypeParameter$computed$1.class",
+        "pkg/TestKtEnclosingTypeParameter$constant$1.class",
+        "pkg/TestKtEnclosingTypeParameter$keys$1.class",
+        "pkg/TestKtEnclosingTypeParameter$later$$inlined$computed$1.class",
+        "pkg/TestKtEnclosingTypeParameter$name$$inlined$computed$1.class",
+        "pkg/TestKtEnclosingTypeParameter$pairs$1.class",
+        "pkg/TestKtEnclosingTypeParameter$pumpOf$1.class"
+      ],
+      "source": "src/pkg/TestKtEnclosingTypeParameter.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "object expressions declared in generic functions and classes name the enclosing type parameters the metadata refers to by ids it does not declare (`object : Source<T>` with `next(): T`, `object : Iterator<Pair<K, T>>`, the inlined copy of `computed` in `later`), and a local of such an object's method is typed with them (`var target: MutableCollection<in T>`); Vineflower wrote `Any` (`object : Source<Any>`), which is not the function's result type; the copy inlined with a class (`name`, `Source<String>`) keeps `Any`",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestKtDefaultImplsDelegate",
+      "fix": "kt_default_impls_delegate",
+      "class_files": [
+        "pkg/TestKtDefaultImplsDelegate.class",
+        "pkg/TestKtDefaultImplsDelegate$Polygon$DefaultImpls.class",
+        "pkg/TestKtDefaultImplsDelegate$Polygon.class",
+        "pkg/TestKtDefaultImplsDelegate$Shape$DefaultImpls.class",
+        "pkg/TestKtDefaultImplsDelegate$Shape.class",
+        "pkg/TestKtDefaultImplsDelegate$Square.class",
+        "pkg/TestKtDefaultImplsDelegate$Tagged.class",
+        "pkg/TestKtDefaultImplsDelegate$Triangle.class"
+      ],
+      "source": "src/pkg/TestKtDefaultImplsDelegate.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "the methods kotlinc generates to call an interface member's default body (`override fun isTriangle(): Boolean { return Polygon.DefaultImpls.isTriangle(this) }` in `Triangle`, `Polygon.DefaultImpls.describe` calling `Shape.DefaultImpls.describe`) are left out, as the source has them: the class inherits the member; `Square.describe` and `Tagged.scaled`, which the source declares, stay",
+      "language": "kotlin"
     }
   ]
 }

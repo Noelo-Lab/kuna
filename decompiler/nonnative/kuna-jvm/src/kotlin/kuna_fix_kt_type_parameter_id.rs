@@ -93,6 +93,12 @@ pub fn class_scope(
 ) -> Scope {
     let mut params = outer_params(cl, proto.get_flags());
     params.extend(own(&proto.get_type_parameter_list(), resolver));
+    if crate::kuna_fixes::enabled(crate::kuna_fixes::KunaFix::KtEnclosingTypeParameter) {
+        let enclosing = crate::kotlin::kuna_fix_kt_enclosing_type_parameter::scope_entries(
+            cl, proto, resolver, &params,
+        );
+        params.extend(enclosing);
+    }
     enter(params)
 }
 

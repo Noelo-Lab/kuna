@@ -144,6 +144,9 @@ use crate::kotlin::kuna_fix_kt_constructor_without_metadata;
 use crate::kotlin::kuna_fix_kt_field_without_property;
 use crate::kotlin::kuna_fix_kt_synthetic_object_super_call;
 use crate::kotlin::kuna_fix_kt_inlined_stdlib_call;
+use crate::kotlin::kuna_fix_kt_class_header_metadata;
+use crate::kotlin::kuna_fix_kt_default_impls_delegate;
+use crate::kotlin::kuna_fix_kt_type_parameter_id;
 use crate::kotlin::kuna_fix_kt_java_type_syntax;
 use crate::kotlin::kuna_fix_kt_suspend_without_metadata;
 use crate::kotlin::kuna_fix_kt_for_inline_copy;
@@ -915,6 +918,13 @@ impl KotlinWriter {
                     && kuna_fix_kt_generated_overload_hidden::is_generated(cl, mt))
                 || (kuna_fixes::enabled(KunaFix::KtForInlineCopy)
                     && kuna_fix_kt_for_inline_copy::is_copy(cl, mt))
+                || kuna_fix_kt_default_impls_delegate::is_delegate(cl, mt)
+                || kuna_fix_kt_class_header_metadata::is_collection_stub(
+                    cl,
+                    mt,
+                    kt_data.as_ref(),
+                    node.with(|d| d.type_) == ClassNodeType::Anonymous,
+                )
                 || (kuna_fixes::enabled(KunaFix::KtFileClassConstructor)
                     && kuna_fix_kt_file_class_constructor::is_file_class_constructor(cl, mt))
                 || (file_initializers && mt.get_name() == CLINIT_NAME);
@@ -1055,7 +1065,8 @@ impl KotlinWriter {
                     || wrapper
                         .get_hidden_members()
                         .borrow()
-                        .contains(&inner_cl.qualified_name());
+                        .contains(&inner_cl.qualified_name())
+                    || kuna_fix_kt_default_impls_delegate::is_emptied_default_impls(inner_cl);
                 if hide {
                     continue;
                 }
@@ -1530,6 +1541,17 @@ impl KotlinWriter {
 
             buffer.append("object");
 
+            let _scope = cls
+                .resolver
+                .as_ref()
+                .filter(|_| kuna_fixes::enabled(KunaFix::KtEnclosingTypeParameter))
+                .map(|resolver| {
+                    kuna_fix_kt_type_parameter_id::class_scope(
+                        node.with(|d| d.class_struct),
+                        &cls.proto,
+                        resolver,
+                    )
+                });
             let mut first = true;
             for supertype in cls.proto.get_supertype_list() {
                 let k_type = KType::from(&supertype, KotlinWriter::class_resolver(cls));
@@ -1697,7 +1719,11 @@ impl KotlinWriter {
         }
 
         let mut where_clause = String::new();
-        if let Some(descriptor) = &descriptor {
+        let metadata_header = kuna_fix_kt_class_header_metadata::header(cl, kt_data, indent);
+        if let Some(header) = &metadata_header {
+            buffer.append(&header.type_parameters);
+            where_clause = header.where_clause.clone();
+        } else if let Some(descriptor) = &descriptor {
             if !descriptor.fparameters().is_empty() {
                 let fparameters = descriptor.fparameters().clone();
                 let fbounds = descriptor.fbounds().clone();
@@ -1719,7 +1745,27 @@ impl KotlinWriter {
             Some(constructor) => constructor.write_primary_constructor(wrapper, buffer, indent),
             None => false,
         };
-        if wrote_supertype {
+        if let Some(header) = &metadata_header {
+            let superclass = cl.super_class().map(|s| s.get_string().to_string());
+            let is_superclass = |class: &Option<String>| class.is_some() && *class == superclass;
+            let skip_superclass = wrote_supertype || is_enum;
+            appended_colon = wrote_supertype;
+            let superclass_first = header
+                .supertypes
+                .iter()
+                .filter(|(class, _)| is_superclass(class) && !skip_superclass)
+                .chain(header.supertypes.iter().filter(|(class, _)| !is_superclass(class)));
+            for (_, text) in superclass_first {
+                if !appended_colon {
+                    buffer.append(" :");
+                    appended_colon = true;
+                } else {
+                    buffer.append(",");
+                }
+                buffer.append_possible_newline_alt(" ");
+                buffer.append_buffer(text);
+            }
+        } else if wrote_supertype {
             appended_colon = true;
         } else if !is_enum && !is_interface {
             if let Some(super_class) = cl.super_class() {
@@ -1741,7 +1787,7 @@ impl KotlinWriter {
             }
         }
 
-        if !is_annotation {
+        if !is_annotation && metadata_header.is_none() {
             let interfaces = cl.get_interfaces();
             if !interfaces.is_empty() {
                 for i in 0..interfaces.len() {

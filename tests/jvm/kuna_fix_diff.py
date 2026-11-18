@@ -14237,5 +14237,313 @@ CONTEXT_RECOGNISERS['kt_companion_static_copy'] = kt_companion_static_copy
 RECOGNISERS['kt_reused_inline_object'] = kt_reused_inline_object
 
 
+KCH_MARKERS = re.compile(r'^(kotlin\.jvm\.internal\.markers\.)?K(Mapped|Mutable)\w*(\.Entry)?$')
+KCH_STUB = 'throw UnsupportedOperationException("Operation is not supported for read-only collection")'
+KCH_KEYWORDS = ('class', 'interface', 'object')
+KCH_TYPE_LINE = re.compile(r'^(?:[\w$.]+(?:<.*>)?\??|\(.*\)->.+)$')
+
+
+def kt_class_header_metadata(old, new):
+    """kt_class_header_metadata: a class header's type parameters and supertypes as the metadata declares them
+    (variance `out T`, Kotlin's names and nullability in bounds and supertypes, `Flow<Nothing>` for a raw `Flow`,
+    marker interfaces such as `KMappedMarker` left out), or a part of a wrapped one; a read-only collection's
+    stub methods (`UnsupportedOperationException("Operation is not supported for read-only collection")`) left
+    out; or a type name qualified otherwise once the header has its short name; imports aside."""
+    old = [x for x in old if not is_import(x)]
+    new = [x for x in new if not is_import(x)]
+    if old == new:
+        return False
+    if not any(x.strip() for x in new):
+        return kch_stubs(old)
+    if kch_requalified(old, new):
+        return True
+    ho, hn = kch_header_end(old), kch_header_end(new)
+    if ho and hn and (ho, hn) != (len(old), len(new)):
+        return (kt_class_header_metadata(old[:ho], new[:hn])
+                and (old[ho:] == new[hn:] or ktt_others(old[ho:], new[hn:])
+                     or kt_default_impls_delegate(old[ho:], new[hn:])))
+    a, b = kch_header(tokens(old)), kch_header(tokens(new))
+    if a is None or b is None:
+        return False
+    olds = [t for t in a['supers'] if not KCH_MARKERS.match(''.join(t))]
+    same = (a['prefix'] == b['prefix'] and a['params'] == b['params'] and a['tail'] == b['tail']
+            and len(olds) == len(b['supers']) and all(kch_same_class(x, y) for x, y in zip(olds, b['supers'])))
+    if not same:
+        return False
+    if a['ctor'] == b['ctor'] or kch_same_parameters(a['ctor'], b['ctor']):
+        return True
+    undone = [KCH_VARIANCE.sub(lambda m: m.group(1) + KCH_VARIANCE_WORD.sub('', m.group(2)), x) for x in new]
+    return undone != list(new) and ktt_others(old, undone)
+
+
+KCH_VARIANCE = re.compile(r'(\b(?:class|interface|object) [\w$`]+)(<[^()]*?>)(?=\(| :| \{| where|$)')
+KCH_VARIANCE_WORD = re.compile(r'\b(?:in|out) (?=[\w$`])')
+_KTT_DELEGATING = []
+KTT_FIXES = ('kt_class_header_metadata', 'kt_enclosing_type_parameter', 'kt_default_impls_delegate')
+
+
+def ktt_others(old, new):
+    """Whether, with this branch's change undone in `new`, the hunk is the same or another fix's recogniser
+    (not this branch's) accepts it; one level deep."""
+    if _KTT_DELEGATING:
+        return False
+    _KTT_DELEGATING.append(True)
+    try:
+        return list(old) == list(new) or same_tokens(old, new) or any(
+            r(old, new) for fix, r in RECOGNISERS.items() if fix not in KTT_FIXES)
+    finally:
+        _KTT_DELEGATING.pop()
+
+
+def kch_header_end(lines_):
+    """The number of lines up to the first that ends a class header (`.. {`), 0 without one."""
+    for i, line in enumerate(lines_):
+        if re.search(r'\b(class|interface|object)\b', ' '.join(lines_[:i + 1])) and line.rstrip().endswith('{'):
+            return i + 1
+    return 0
+
+
+def kch_same_parameters(a, b):
+    """Whether two primary constructors' tokens name the same parameters with types of the same classes (the
+    type arguments other fixes give them aside)."""
+    if '(' not in a or '(' not in b or a[:a.index('(')] != b[:b.index('(')] or a[-1:] != [')'] or b[-1:] != [')']:
+        return False
+    pa, pb = kch_split(a[a.index('(') + 1:-1]), kch_split(b[b.index('(') + 1:-1])
+    if len(pa) != len(pb):
+        return False
+    for x, y in zip(pa, pb):
+        if ':' not in x or ':' not in y:
+            return False
+        nx, ny = x[:x.index(':')], y[:y.index(':')]
+        if nx != ny or kch_head(x[x.index(':') + 1:]) != kch_head(y[y.index(':') + 1:]):
+            return False
+    return True
+
+
+def kch_stubs(old):
+    """Whether the non-blank lines of `old` are stub methods: `fun f(..) {`, the stub's throw, `}` (or the
+    same with each `}` matched to the line before, which the diff keeps)."""
+    lines_ = [x.strip() for x in old if x.strip()]
+    if lines_ and lines_[0] == '}':
+        lines_ = lines_[1:] + ['}']
+    if not lines_ or len(lines_) % 3:
+        return False
+    return all(re.match(r'^(override )?fun [\w$`-]+\(.*\)(: [\w$.<>?, *]+)? \{$', lines_[i])
+               and lines_[i + 1] == KCH_STUB and lines_[i + 2] == '}' for i in range(0, len(lines_), 3))
+
+
+def kch_requalified(old, new):
+    """Whether the lines differ only in how type names after `:` are qualified (`Factory` against
+    `okhttp3.EventListener.Factory`)."""
+    if len(old) != len(new):
+        return False
+    return [kch_short_types(tokens([x])) for x in old] == [kch_short_types(tokens([x])) for x in new]
+
+
+def kch_short_types(toks):
+    """`toks` with each dotted name after `:` cut to its last part."""
+    out, i = [], 0
+    while i < len(toks):
+        out.append(toks[i])
+        if toks[i] == ':' and i + 1 < len(toks) and WORD.fullmatch(toks[i + 1]):
+            j = i + 1
+            while j + 2 < len(toks) and toks[j + 1] == '.' and WORD.fullmatch(toks[j + 2]):
+                j += 2
+            out.append(toks[j])
+            i = j
+        i += 1
+    return out
+
+
+def kch_split(toks):
+    """`toks` split at its top-level commas."""
+    parts, cur, depth = [], [], 0
+    for t in toks:
+        if t in ('<', '(', '['):
+            depth += 1
+        elif t in ('>', ')', ']'):
+            depth -= 1
+        if t == ',' and depth == 0:
+            parts.append(cur)
+            cur = []
+        else:
+            cur.append(t)
+    parts.append(cur)
+    return [p for p in parts if p]
+
+
+def kch_header(toks):
+    """A class header's parts: the tokens up to the name, the type parameters' names, the primary
+    constructor's tokens, the supertypes, and the `{` at the end; or, for tokens that are only a wrapped
+    supertype list, that list. `None` for anything else."""
+    tail = []
+    if toks and toks[-1] == '{':
+        toks, tail = toks[:-1], ['{']
+    k = next((i for i, t in enumerate(toks) if t in KCH_KEYWORDS), None)
+    if k is None:
+        if not toks or toks[0] == ':':
+            return None
+        supers = kch_split(toks)
+        return {'prefix': [], 'params': [], 'ctor': [], 'supers': supers, 'tail': tail} \
+            if supers and all(kch_is_type(p) for p in supers) else None
+    if (k + 1 >= len(toks) or not WORD.fullmatch(toks[k + 1]) or '=' in toks[:k]
+            or ('fun' in toks[:k] and toks[k - 1:k + 1] != ['fun', 'interface'])):
+        return None
+    prefix, i, params = toks[:k + 2], k + 2, []
+    if i < len(toks) and toks[i] == '<':
+        depth, j = 0, i
+        while j < len(toks):
+            depth += toks[j] == '<'
+            depth -= toks[j] == '>'
+            if depth == 0:
+                break
+            j += 1
+        params = [p[1] if p[0] in ('in', 'out') and len(p) > 1 else p[0] for p in kch_split(toks[i + 1:j])]
+        i = j + 1
+    colon = next((j for j in range(i, len(toks)) if toks[j] == ':' and toks[i:j].count('(') == toks[i:j].count(')')),
+                 len(toks))
+    ctor, rest = toks[i:colon], toks[colon + 1:]
+    where = next((j for j, t in enumerate(rest) if t == 'where'), len(rest))
+    return {'prefix': prefix, 'params': params, 'ctor': ctor, 'supers': kch_split(rest[:where]), 'tail': tail}
+
+
+def kch_is_type(part):
+    """Whether the tokens `part` are a type and nothing else: no number, and no two names in a row but a
+    projection's `in`/`out`."""
+    if any(t[0].isdigit() for t in part):
+        return False
+    if any(WORD.fullmatch(a) and WORD.fullmatch(b) and a not in ('in', 'out') for a, b in zip(part, part[1:])):
+        return False
+    return bool(KCH_TYPE_LINE.match(''.join(part))) and '=' not in part and '.' != part[-1]
+
+
+def kch_same_class(a, b):
+    """Whether two supertypes name one class: the same last name before the type arguments (or call), Java's
+    collection names read as Kotlin's (`Mutable` aside), a `FunctionN` as a function type of N parameters,
+    and a constructor call's arguments the same."""
+    return kch_head(a) == kch_head(b) and kch_call(a) == kch_call(b)
+
+
+def kch_head(t):
+    if t and t[0] == '(':
+        depth, params, cur = 0, 0, False
+        for j, x in enumerate(t):
+            depth += x == '('
+            depth -= x == ')'
+            if depth == 1 and x not in ('(', ',') and not cur:
+                params, cur = params + 1, True
+            if depth == 1 and x == ',':
+                cur = False
+            if depth == 0:
+                return f'Function{params}' if t[j + 1:j + 3] == ['-', '>'] else None
+        return None
+    names = []
+    for x in t:
+        if x in ('<', '('):
+            break
+        if WORD.fullmatch(x):
+            names.append(x)
+    head = names[-1] if names else None
+    return head[len('Mutable'):] if head and head.startswith('Mutable') and head != 'Mutable' else head
+
+
+def kch_call(t):
+    """The constructor call's arguments of a supertype, `None` without one."""
+    depth = 0
+    for j, x in enumerate(t):
+        depth += x == '<'
+        depth -= x == '>'
+        if x == '(' and depth == 0 and j > 0 and t[0] != '(':
+            return t[j:]
+    return None
+
+
+KET_TYPE_VARIABLE = re.compile(r'^[A-Z][0-9]?$')
+
+
+def kt_enclosing_type_parameter(old, new):
+    """kt_enclosing_type_parameter: in a class declared in a function, a type the metadata names by an id of
+    the enclosing function's type parameter written as that parameter (`object : Flow<T>`, `collector:
+    FlowCollector<T>` for Vineflower's `Any`), and a local kt_raw_generic_type now types with it (`val c:
+    FlowCollector<in T>` for a raw `FlowCollector`, its `as FlowCollector<in T>` for `as FlowCollector<*>`);
+    line by line, imports aside."""
+    old = [x for x in old if not is_import(x)]
+    new = [x for x in new if not is_import(x)]
+    if old == new or len(old) != len(new):
+        return False
+    return all(o == n or ket_line(o, n) for o, n in zip(old, new))
+
+
+def ket_line(old, new):
+    a, b = tokens([old]), tokens([new])
+    if len(a) == len(b) and all(x == y or (x == 'Any' and KET_TYPE_VARIABLE.match(y)) for x, y in zip(a, b)):
+        return True
+    raw = kg_raw_line(new)
+    if raw != new and any(KET_TYPE_VARIABLE.match(t) for t in tokens([new])) and ket_line_any(old, raw):
+        return True
+    starred = re.sub(r'(\bas |: )(\w+)<[^<>]*\b[A-Z][0-9]?\b[^<>]*>', r'\1\2<*>', new)
+    return starred != new and starred == old
+
+
+def ket_line_any(old, new):
+    a, b = tokens([old]), tokens([new])
+    return len(a) == len(b) and all(x == y or (x == 'Any' and KET_TYPE_VARIABLE.match(y)) for x, y in zip(a, b))
+
+
+RECOGNISERS['kt_class_header_metadata'] = kt_class_header_metadata
+RECOGNISERS['kt_enclosing_type_parameter'] = kt_enclosing_type_parameter
+
+
+KDI_CALL = re.compile(r'^(return )?(?:[\w$.`]+\.)?DefaultImpls\.[\w$`]+\(.*\)$')
+KDI_HEADER = re.compile(r'^(?:[\w ]+ )?fun (?:<.*?> )?[\w$`.<>, ?*]+\(.*\)(?:: .+)? \{$')
+
+
+def kt_default_impls_delegate(old, new):
+    """kt_default_impls_delegate: kotlinc's calls of an interface member's default body through `DefaultImpls`
+    (`override fun plus(other: Job): Job { return Job.DefaultImpls.plus(this, other) }`, a `DefaultImpls`
+    method calling a super-interface's) left out with their annotations, and a `DefaultImpls` class left with
+    none of them (or written without a body); imports aside."""
+    old = [x.strip() for x in old if not is_import(x)]
+    new = [x.strip() for x in new if not is_import(x)]
+    if new == ['internal class DefaultImpls'] and old[:1] == ['internal class DefaultImpls {'] and old[-1:] == ['}']:
+        return kdi_methods(old[1:-1])
+    if new:
+        return any(kdi_removed(old[k:]) and ktt_others(old[:k], new) for k in range(1, min(len(old), 3) + 1)
+                   if len(new) <= 3)
+    return kdi_removed(old) or any(kdi_removed(old[k:]) and ktt_others(old[:k], []) for k in range(1, min(len(old), 3) + 1))
+
+
+def kdi_removed(old):
+    """Whether the stripped lines `old` are delegating methods, or a `DefaultImpls` class of only them."""
+    body = [x for x in old if x and x != '// $VF: Class flags could not be determined']
+    if body[:1] == ['internal class DefaultImpls {'] and body[-1:] == ['}']:
+        return kdi_methods(body[1:-1])
+    return kdi_methods(old)
+
+
+def kdi_methods(lines_):
+    """Whether `lines_` (stripped, blank ones aside) are delegating methods: annotations, `fun ..(..) {`, the
+    `DefaultImpls` call, `}` (or the same with the first `}` matched to the line before, which the diff
+    keeps)."""
+    lines_ = [x for x in lines_ if x]
+    if lines_ and lines_[0] == '}':
+        lines_ = lines_[1:] + ['}']
+    if not lines_:
+        return False
+    i = 0
+    while i < len(lines_):
+        while i < len(lines_) and (lines_[i].startswith('@') or lines_[i] == '/** @deprecated */'):
+            i += 1
+        if i + 2 >= len(lines_):
+            return False
+        if not (KDI_HEADER.match(lines_[i]) and KDI_CALL.match(lines_[i + 1]) and lines_[i + 2] == '}'):
+            return False
+        i += 3
+    return True
+
+
+RECOGNISERS['kt_default_impls_delegate'] = kt_default_impls_delegate
+
+
 if __name__ == '__main__':
     main()

@@ -105,8 +105,12 @@ fn underscore_names_are_written_in_backticks() {
 
 #[test]
 fn signature_types_are_written_in_kotlin_syntax() {
-    let (fixed, without) =
-        fixed_and_without("pkg/TestJavaTypeSyntax", KunaFix::KtJavaTypeSyntax);
+    let headers = KunaFixes::DEFAULT.without(KunaFix::KtClassHeaderMetadata);
+    let fixed = text_with("pkg/TestJavaTypeSyntax", headers);
+    let without = text_with(
+        "pkg/TestJavaTypeSyntax",
+        headers.without(KunaFix::KtJavaTypeSyntax),
+    );
     for written in [
         "interface TestJavaTypeSyntax<T : java.lang.Comparable<in T>> {",
         "class Box<S> : TestJavaTypeSyntax<S> where S : CharSequence, S : java.lang.Comparable<in S> {",

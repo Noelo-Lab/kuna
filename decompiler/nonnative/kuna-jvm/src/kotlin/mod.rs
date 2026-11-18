@@ -152,3 +152,6 @@ pub mod kuna_fix_kt_suspend_without_metadata;
 pub mod kuna_fix_kt_for_inline_copy;
 pub mod kuna_fix_kt_suspend_lambda;
 pub mod kuna_fix_kt_suspend_impl;
+pub mod kuna_fix_kt_class_header_metadata;
+pub mod kuna_fix_kt_enclosing_type_parameter;
+pub mod kuna_fix_kt_default_impls_delegate;

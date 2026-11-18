@@ -11,7 +11,7 @@ public class TestMissedOverride {
       }
    }
 
-   public class Buffer : TestMissedOverride.Sink, java.lang.Comparable<TestMissedOverride.Buffer> {
+   public class Buffer : TestMissedOverride.Sink, Comparable<TestMissedOverride.Buffer> {
       public final var total: Long = 0L
 
       public override fun buffer(): pkg.TestMissedOverride.Buffer {

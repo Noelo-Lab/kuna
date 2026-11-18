@@ -294,3 +294,5 @@ mod kuna_driver_determinism;
 mod kuna_fix_ktcompanion;
 #[path = "kuna_fix_ktsuspend2.rs"]
 mod kuna_fix_ktsuspend2;
+#[path = "kuna_fix_kttypes2.rs"]
+mod kuna_fix_kttypes2;
