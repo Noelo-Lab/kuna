@@ -1014,10 +1014,13 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   `R_BPF_64_64` names the 16-byte `lddw` (a map or global reference) and lands
   `S + A` in the two 32-bit `imm` fields at +4 and +12, the addend read back from
   those same halves, with the opcode, registers and offset untouched;
-  `R_BPF_64_32` is the `call` to a BPF subprogram and writes
-  `(S + A - P) / 8 - 1`, the displacement in instructions from the next
-  instruction, into the `imm` at +4, the field's own `-1` being LLVM's
-  placeholder and no addend; `R_BPF_64_ABS64`, `R_BPF_64_ABS32` and
+  `R_BPF_64_32` is the `call` to a BPF subprogram (source register 1, the high
+  nibble of the register byte little-endian and the low nibble big-endian) and
+  writes `(S + A - P) / 8 - 1`, the displacement in instructions from the next
+  instruction, into the `imm` at +4; its addend is the field's own `imm` in
+  instructions past the symbol, `(imm + 1) * 8`, which is `0` for LLVM's `-1`
+  against a function symbol and the callee's offset when a static callee is
+  named by its section symbol; `R_BPF_64_ABS64`, `R_BPF_64_ABS32` and
   `R_BPF_64_NODYLD32` are the data words of `.maps`, `.BTF` and `.BTF.ext`.
   A `call` whose `imm` is a helper id (source register 0) carries no
   relocation; it reaches the `syscall` space, where the pspec

@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4432,
-    4432
+    4434,
+    4434
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -3106,6 +3106,8 @@
     "data:ebpf #3: the helper id names the pspec helper",
     "data:ebpf #4: the subprogram call resolves to the .text callee",
     "data:ebpf #5: the map increment is recovered in every object",
+    "data:ebpf #6: a static callee named by the .text section symbol is the one its imm selects",
+    "data:ebpf #7: the first static call reaches twice in both byte orders",
     "data:elemptr #10: with the option on a returned word nothing shows the sign of is an unsigned element",
     "data:elemptr #11: the returned word is never declared signed in either pass",
     "data:elemptr #12: with the option on a lookup in the global table is a char the conditional widens itself",

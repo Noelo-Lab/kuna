@@ -1024,10 +1024,11 @@ fn bpf_imm64(
     Ok(())
 }
 
-/// `R_BPF_64_32`: the `call` to a BPF subprogram (`src` = 1). The `imm` at +4
-/// holds the displacement in instructions from the next instruction,
-/// `(S + A - P) / 8 - 1`. The field's own `imm` (`-1` from LLVM) is a
-/// placeholder, not an addend, so only the explicit addend counts.
+/// `R_BPF_64_32`: the `call` to a BPF subprogram (`src` = 1, the high register
+/// nibble little-endian and the low one big-endian). The `imm` at +4 holds the
+/// displacement in instructions from the next instruction, `(S + A - P) / 8 - 1`.
+/// The REL addend is `(imm + 1) * 8`: `0` for LLVM's `-1` against a function
+/// symbol, the callee's offset for a static callee named by its section symbol.
 fn bpf_call(
     field: &mut [u8],
     le: bool,
@@ -1035,10 +1036,12 @@ fn bpf_call(
     symbol: u64,
     place: u64,
 ) -> Result<(), RelocationFailure> {
-    if field[0] != 0x85 || field[1] & 0xf0 != 0x10 {
+    let src = if le { field[1] >> 4 } else { field[1] & 0x0f };
+    if field[0] != 0x85 || src != 1 {
         return Err(RelocationFailure::InvalidEncoding);
     }
-    let value = symbol as i128 + reloc.addend as i128 - place as i128;
+    let implicit = (i128::from(read_u32(&field[4..8], le) as i32) + 1) * 8;
+    let value = symbol as i128 + explicit_plus_implicit(reloc, implicit) - place as i128;
     require_aligned(value, 8)?;
     let words = value / 8 - 1;
     require_signed(words, 32)?;
@@ -1293,6 +1296,14 @@ mod tests {
         apply_info(spec, r, &mut bytes, true, 0x400000, 0x400078, None, None).unwrap();
         assert_eq!(&bytes[..4], &[0x85, 0x10, 0, 0]);
         assert_eq!(i32::from_le_bytes(bytes[4..8].try_into().unwrap()), -16);
+
+        // call 2 against `.text` at 0x400000: the static callee is at 0x400018.
+        let mut section = [0x85, 0x10, 0, 0, 2, 0, 0, 0];
+        apply_info(spec, r, &mut section, true, 0x400000, 0x400078, None, None).unwrap();
+        assert_eq!(i32::from_le_bytes(section[4..8].try_into().unwrap()), -13);
+        let mut be = [0x85, 0x01, 0, 0, 0, 0, 0, 2];
+        apply_info(spec, r, &mut be, false, 0x400000, 0x400078, None, None).unwrap();
+        assert_eq!(be, [0x85, 0x01, 0, 0, 0xff, 0xff, 0xff, 0xf3]);
 
         let mut misaligned = [0x85, 0x10, 0, 0, 0, 0, 0, 0];
         assert_eq!(
