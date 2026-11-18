@@ -11,7 +11,8 @@
 //! which pre-processes and writes the batch's roots plus their dependencies in
 //! the single run's order and delivers the batch's roots. A worker keeps its
 //! engine (the loaded class universe) for its next batch unless that batch
-//! needs a root this engine already processed. The divergent-read detector
+//! needs a root this engine already processed or the engine failed. The
+//! divergent-read detector
 //! watches every run; a batch that read the state of a root it did not process
 //! (or did not write, where the single run had written it) is run again with
 //! that root added (and written), and after a few rounds with every root
@@ -206,6 +207,8 @@ impl std::error::Error for DriverError {}
 struct Plan {
     roots: Vec<String>,
     order: Arc<BTreeMap<String, RootPos>>,
+    /// The class-file name of each root the renamer renamed, to its new name.
+    renamed: BTreeMap<String, String>,
     cost: Vec<u64>,
     deps: Vec<BTreeSet<usize>>,
 }
@@ -230,6 +233,22 @@ struct Outcome {
     fresh_instance: bool,
     load_millis: u64,
     millis: u64,
+}
+
+impl Outcome {
+    /// `batch` not run: every root it delivers fails with `failure`.
+    fn failed(batch: Batch, failure: String, fresh_instance: bool) -> Outcome {
+        Outcome {
+            batch,
+            units: Vec::new(),
+            reads: Vec::new(),
+            leak: false,
+            failure: Some(failure),
+            fresh_instance,
+            load_millis: 0,
+            millis: 0,
+        }
+    }
 }
 
 /// Decompiles `input` under `config`, handing each selected root class's
@@ -287,18 +306,22 @@ pub fn run(
         trace(|| format!("plan received roots={}", plan.roots.len()));
         report.roots = plan.roots.clone();
 
+        let index_of = |name: &String| {
+            let name = plan.renamed.get(name).unwrap_or(name);
+            plan.order.get(name).map(|p| p.index)
+        };
         let selected: Vec<usize> = match &config.select {
             None => (0..plan.roots.len()).collect(),
             Some(names) => names
                 .iter()
-                .filter_map(|n| plan.order.get(n).map(|p| p.index))
+                .filter_map(index_of)
                 .collect::<BTreeSet<usize>>()
                 .into_iter()
                 .collect(),
         };
         if let Some(names) = &config.select {
             for name in names {
-                if !plan.order.contains_key(name) {
+                if index_of(name).is_none() {
                     report.failed.push(name.clone());
                 }
             }
@@ -679,6 +702,41 @@ fn close_session(session: Option<Session>) {
     let _ = try_catch(reset_engine_thread);
 }
 
+/// A new engine with its classes loaded; one whose loading failed is dropped.
+fn open_loaded(env: &WorkerEnv) -> Result<Session, String> {
+    let mut session = open_session(env)?;
+    match try_catch(|| session.fernflower.load()) {
+        Ok(()) => {
+            trace(|| "loaded".into());
+            Ok(session)
+        }
+        Err(e) => {
+            close_session(Some(session));
+            Err(format!(
+                "cannot load {}: {}",
+                env.input.path().display(),
+                e.message
+            ))
+        }
+    }
+}
+
+/// Reports the batch a worker holds as failed when the worker unwinds
+/// outside the engine's catch, so the caller's wait for it ends.
+struct InFlight<'a> {
+    out_tx: &'a mpsc::Sender<Outcome>,
+    batch: Option<Batch>,
+}
+
+impl Drop for InFlight<'_> {
+    fn drop(&mut self) {
+        if let Some(batch) = self.batch.take().filter(|_| std::thread::panicking()) {
+            let failure = "the worker thread panicked".to_string();
+            let _ = self.out_tx.send(Outcome::failed(batch, failure, false));
+        }
+    }
+}
+
 fn worker_main(
     env: &WorkerEnv,
     plan_tx: Option<mpsc::Sender<Result<Plan, String>>>,
@@ -693,8 +751,15 @@ fn worker_main(
     let mut fresh = false;
     let mut load_millis = 0u64;
     let loading = Instant::now();
-    match (plan_tx, open_session(env)) {
-        (Some(plan_tx), Ok(mut s)) => {
+    match plan_tx {
+        Some(plan_tx) => {
+            let mut s = match open_session(env) {
+                Ok(s) => s,
+                Err(e) => {
+                    let _ = plan_tx.send(Err(e));
+                    return;
+                }
+            };
             instances.fetch_add(1, Ordering::SeqCst);
             match try_catch(|| plan(&mut s.fernflower, &env.input)) {
                 Ok(plan) => {
@@ -715,48 +780,37 @@ fn worker_main(
                 }
             }
         }
-        (Some(plan_tx), Err(e)) => {
-            let _ = plan_tx.send(Err(e));
-            return;
+        None => {
+            if let Ok(s) = open_loaded(env) {
+                instances.fetch_add(1, Ordering::SeqCst);
+                load_millis = loading.elapsed().as_millis() as u64;
+                session = Some(s);
+                fresh = true;
+            }
         }
-        (None, Ok(mut s)) => {
-            instances.fetch_add(1, Ordering::SeqCst);
-            let _ = try_catch(|| s.fernflower.load());
-            trace(|| "loaded".into());
-            load_millis = loading.elapsed().as_millis() as u64;
-            session = Some(s);
-            fresh = true;
-        }
-        (None, Err(_)) => close_session(None),
     }
     let none = BTreeSet::new();
     while let Some((batch, shared)) = board.take(session.as_ref().map_or(&none, |s| &s.processed)) {
+        let mut in_flight = InFlight {
+            out_tx,
+            batch: Some(batch.clone()),
+        };
         let reuse = session
             .as_ref()
             .is_some_and(|s| s.processed.is_disjoint(&batch.process));
         if !reuse {
             close_session(session.take());
             let loading = Instant::now();
-            match open_session(env) {
-                Ok(mut s) => {
+            match open_loaded(env) {
+                Ok(s) => {
                     instances.fetch_add(1, Ordering::SeqCst);
-                    let _ = try_catch(|| s.fernflower.load());
-                    trace(|| "loaded".into());
                     load_millis = loading.elapsed().as_millis() as u64;
                     session = Some(s);
                     fresh = true;
                 }
                 Err(e) => {
-                    let _ = out_tx.send(Outcome {
-                        batch,
-                        units: Vec::new(),
-                        reads: Vec::new(),
-                        leak: false,
-                        failure: Some(e),
-                        fresh_instance: true,
-                        load_millis: 0,
-                        millis: 0,
-                    });
+                    in_flight.batch = None;
+                    let _ = out_tx.send(Outcome::failed(batch, e, true));
                     continue;
                 }
             }
@@ -765,6 +819,10 @@ fn worker_main(
         let mut outcome = run_batch(s, batch, &shared, fresh);
         outcome.load_millis = std::mem::take(&mut load_millis);
         fresh = false;
+        if outcome.failure.is_some() {
+            close_session(session.take());
+        }
+        in_flight.batch = None;
         if out_tx.send(outcome).is_err() {
             break;
         }
@@ -861,7 +919,7 @@ fn plan(fernflower: &mut Fernflower, input: &InputSet) -> Plan {
     let mut cost = vec![0u64; roots.len()];
     let mut deps = vec![BTreeSet::new(); roots.len()];
     for (info, refs) in kuna_inventory::parse_all(input).into_iter().flatten() {
-        let Some(&root) = root_of.get(&info.internal) else {
+        let Some(&root) = root_of.get(&fernflower.renamed_class(&info.internal)) else {
             continue;
         };
         cost[root] += 256
@@ -871,16 +929,26 @@ fn plan(fernflower: &mut Fernflower, input: &InputSet) -> Plan {
                 .map(|m| m.code_length.unwrap_or(0) as u64)
                 .sum::<u64>();
         for owner in &refs.constructors {
-            if let Some(&dep) = root_of.get(owner) {
-                if dep != root && !order.contains_key(owner) {
+            let owner = fernflower.renamed_class(owner);
+            if let Some(&dep) = root_of.get(&owner) {
+                if dep != root && !order.contains_key(&owner) {
                     deps[root].insert(dep);
                 }
             }
         }
     }
+    let renamed = DecompilerContext::get_pool_interceptor()
+        .map(|interceptor| {
+            roots
+                .iter()
+                .filter_map(|n| interceptor.get_old_name(n).map(|old| (old, n.clone())))
+                .collect()
+        })
+        .unwrap_or_default();
     Plan {
         roots,
         order: Arc::new(order),
+        renamed,
         cost,
         deps,
     }

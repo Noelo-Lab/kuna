@@ -317,26 +317,27 @@ impl Fernflower {
         self.loaded = false;
     }
 
-    /// Tells the plugins decompilation starts, renames (when enabled) and loads
-    /// every own class into class nodes, once per run;
+    /// Tells the plugins decompilation starts, renames (when enabled, once
+    /// per engine, as Vineflower renames once per instance) and loads every
+    /// own class into class nodes, once per run;
     /// [`Fernflower::decompile_context`] does it itself when needed.
     pub fn load(&mut self) {
         if self.loaded {
             return;
         }
-        self.loaded = true;
 
         for plugin in self.struct_context.get_plugin_context().get_plugins() {
             plugin.before_decompile();
         }
 
-        if let Some(converter) = &mut self.converter {
+        if let Some(mut converter) = self.converter.take() {
             converter.rename();
         }
 
         crate::kuna_driver::trace(|| "load start".into());
         self.class_processor.load_classes(self.helper.as_deref());
         crate::kuna_driver::trace(|| "load_classes done".into());
+        self.loaded = true;
     }
 
     /// The root classes a full run delivers, in its order (own units in order,
@@ -354,6 +355,7 @@ impl Fernflower {
     pub fn root_classes_in_units(&mut self) -> Vec<(usize, String)> {
         self.load();
         let mut result = Vec::new();
+        let interceptor = DecompilerContext::get_pool_interceptor();
         let own_units = self
             .struct_context
             .get_units()
@@ -370,7 +372,7 @@ impl Fernflower {
                     None => unit
                         .get_class_bytes(&entry)
                         .and_then(|bytes| read_class_info(&bytes).ok())
-                        .map(|info| info.this_class),
+                        .map(|info| renamed_class(interceptor, info.this_class)),
                 };
                 let Some(name) = name else {
                     continue;
@@ -402,6 +404,12 @@ impl Fernflower {
         self.loaded = false;
     }
 
+    /// The name the run gives the class file named `original`: its new name
+    /// when the renamer renamed it.
+    pub fn renamed_class(&self, original: &str) -> String {
+        renamed_class(DecompilerContext::get_pool_interceptor(), original.to_string())
+    }
+
     /// `rt::reset_class_scope()` for the whole decompilation, keeping the
     /// current (root) context usable for a later run.
     fn end_class_scope(&self) {
@@ -422,6 +430,11 @@ impl Fernflower {
         self.struct_context.clear();
         DecompilerContext::set_current_context(None);
     }
+}
+
+/// `name` after renaming: the interceptor's new name for a renamed class.
+fn renamed_class(interceptor: Option<PoolInterceptor>, name: String) -> String {
+    interceptor.and_then(|i| i.get_name(&name)).unwrap_or(name)
 }
 
 impl IDecompiledData for Fernflower {

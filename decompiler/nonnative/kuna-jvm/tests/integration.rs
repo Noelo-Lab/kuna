@@ -298,3 +298,5 @@ mod kuna_fix_ktsuspend2;
 mod kuna_fix_kttypes2;
 #[path = "kuna_fix_ktinlineclass.rs"]
 mod kuna_fix_ktinlineclass;
+#[path = "kuna_driver_failures.rs"]
+mod kuna_driver_failures;

@@ -1098,6 +1098,15 @@ every root processed, which the detector does not watch and which still wrote on
 roots (kotlin-stdlib's `SequencesKt___SequencesKt`, whose `sortedBy` creates the `compareBy`
 object of `ComparisonsKt__ComparisonsKt`, written before it in the single run).
 The last resort now processes and writes every root: the single run.
+(kuna) An engine renames once, as a Vineflower instance does, however many batches it runs, and
+is kept only while its batches succeed: an engine that fails to load or whose batch unwinds is
+dropped and the next batch starts a fresh one, and a worker that unwinds outside the engine's
+catch reports the batch it held as failed, so the caller does not wait for it
+(`decompiler/nonnative/kuna-jvm/src/infra/kuna_driver.rs (InFlight)`). With renaming, the plan
+reads class files under their new names (`decompiler/nonnative/kuna-jvm/src/p0_knowledge/fernflower.rs
+(renamed_class)`), and a selection may name a root by either name. `ClassWrapper::init` pairs
+the logger's `start_method` with its `end_method` also when the method throws before its body
+(a malformed descriptor), which Vineflower leaves unpaired; the CLI's stall watch reads the pairs.
 The detector exempts `getSyntheticParametersMask` reading a root class's own node except when
 the root does not declare the constructor asked for: that call throws while the root is
 processed and answers no mask otherwise (the Kotlin plugin asks for a superclass's

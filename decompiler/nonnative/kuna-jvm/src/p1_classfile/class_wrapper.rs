@@ -8,6 +8,7 @@
 //! killed one does (see [`ClassWrapper::code_to_java_on_watchdog`]).
 
 use std::fmt;
+use std::rc::Rc;
 use std::panic::{self, AssertUnwindSafe};
 use std::time::{Duration, Instant};
 
@@ -16,7 +17,7 @@ use crate::classes_processor::ClassNode;
 use crate::code_constants::ACC_STATIC;
 use crate::decompiler_context::{java_parse_int, DecompilerContext};
 use crate::exprent::Exprent;
-use crate::i_fernflower_logger::Severity;
+use crate::i_fernflower_logger::{IFernflowerLogger, Severity};
 use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::interpreter_util::InterpreterUtil;
 use crate::method_descriptor::MethodDescriptor;
@@ -43,6 +44,25 @@ pub struct ClassWrapperData {
     pub dynamic_field_initializers: Shared<VBStyleCollection<Exprent, String>>,
     pub methods: Shared<VBStyleCollection<MethodWrapper, String>>,
     pub method_properties: Shared<JHashMap<String, MethodProperties>>,
+}
+
+/// The logger's `start_method`, paired with its `end_method` however the
+/// method's iteration ends, a throw out of `ClassWrapper::init` included (the
+/// Java leaves it unpaired; the CLI's stall watch reads the pairs).
+struct MethodLog(Rc<dyn IFernflowerLogger>);
+
+impl MethodLog {
+    fn start(method: &str) -> MethodLog {
+        let logger = DecompilerContext::get_logger();
+        logger.start_method(method);
+        MethodLog(logger)
+    }
+}
+
+impl Drop for MethodLog {
+    fn drop(&mut self) {
+        self.0.end_method();
+    }
 }
 
 arena_object!(pub ClassWrapper => ClassWrapperData, Class);
@@ -95,11 +115,8 @@ impl ClassWrapper {
         }
 
         for mt in methods {
-            DecompilerContext::get_logger().start_method(&format!(
-                "{} {}",
-                mt.get_name(),
-                mt.get_descriptor()
-            ));
+            let _method_log =
+                MethodLog::start(&format!("{} {}", mt.get_name(), mt.get_descriptor()));
 
             let md = MethodDescriptor::parse_descriptor_struct(mt, None);
             let var_proc = VarProcessor::new(mt, &md);
@@ -120,7 +137,6 @@ impl ClassWrapper {
                         method_wrapper,
                         InterpreterUtil::make_unique_key(&mt.get_name(), &mt.get_descriptor()),
                     );
-                    DecompilerContext::get_logger().end_method();
 
                     continue;
                 }
@@ -199,8 +215,6 @@ impl ClassWrapper {
                     }
                 }
             }
-
-            DecompilerContext::get_logger().end_method();
         }
 
         DecompilerContext::get_logger().end_class();
