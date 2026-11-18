@@ -3416,7 +3416,7 @@ one `static {}` block and `Box<Integer> box` in the next (javac reuses the slot;
 `LoggingApplicationListener`, both `ColorConverter`s) or in two sibling blocks of a method, become one
 variable declared `Box<String>`, and javac rejects the second one's code (`box.add(1)`), losing the
 class. With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/var_merge/var_merge_declared_type.rs (declared_apart)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/var_merge/mod.rs (declared_apart)`)
 `mergeVars` refuses such a merge, as one `remapVar` refuses: the two stay two variables, each declared
 with its own type, and the clash renaming names the second (`boxx`). Elasticsearch's
 `IndicesRequestCache.cleanCache` loses the raw `(Iterator)` cast the merge needed. The lattice also puts `int`

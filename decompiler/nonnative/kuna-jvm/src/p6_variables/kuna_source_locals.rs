@@ -22,7 +22,7 @@ use crate::kt_metadata::KotlinMetadataAnnotation;
 use crate::kuna_options::{self, SOURCE_LOCALS};
 use crate::method_descriptor::MethodDescriptor;
 use crate::p6_variables::kuna_source_scopes::{self, declared, position, remove, splittable};
-use crate::fixes::var_merge::var_merge_declared_type;
+use crate::fixes::var_merge;
 use crate::rt::{JHashSet, JList};
 use crate::statement::{Statement, StatementType};
 use crate::struct_class::StructClass;
@@ -107,7 +107,7 @@ pub fn named_apart(root: Statement, from: VarVersionPair, to: VarVersionPair) ->
         return false;
     }
     let (mut from_lvt, mut to_lvt) = (None, None);
-    var_merge_declared_type::find_lvts(root, from, to, &mut from_lvt, &mut to_lvt);
+    var_merge::find_lvts(root, from, to, &mut from_lvt, &mut to_lvt);
     match (from_lvt, to_lvt) {
         (Some(a), Some(b)) => {
             a.get_name() != b.get_name() && !a.get_name().contains('$') && !b.get_name().contains('$')

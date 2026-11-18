@@ -33,7 +33,7 @@ use crate::interpreter_util::InterpreterUtil;
 use crate::fixes::var_merge::var_merge_liveness;
 use crate::fixes::declaration_scope;
 use crate::kuna_fixes::{self, KunaFix};
-use crate::fixes::var_merge::var_merge_declared_type;
+use crate::fixes::var_merge;
 use crate::p6_variables::kuna_source_locals;
 use crate::method_descriptor::MethodDescriptor;
 use crate::fixes::var_merge::var_merge_narrowing::{self, Merge};
@@ -1227,7 +1227,7 @@ impl VarDefinitionHelper {
             return Merge::Refused;
         }
         if kuna_fixes::enabled(KunaFix::VarMergeDeclaredType)
-            && var_merge_declared_type::declared_apart(
+            && var_merge::declared_apart(
                 self.root().0,
                 self.varproc(),
                 from,
