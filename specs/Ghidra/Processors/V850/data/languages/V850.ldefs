@@ -13,4 +13,16 @@
     <description>Renesas V850 family</description>
     <compiler name="default" spec="V850.cspec" id="default"/>
   </language>
+  <language processor="V850"
+            endian="little"
+            size="32"
+            variant="RH850"
+            version="1.0"
+            slafile="RH850.sla"
+            processorspec="V850.pspec"
+            manualindexfile="../manuals/v850.idx"
+            id="V850:LE:32:RH850">
+    <description>Renesas RH850 (V850E3v5) with selID system-register banks</description>
+    <compiler name="default" spec="V850.cspec" id="default"/>
+  </language>
 </language_definitions>

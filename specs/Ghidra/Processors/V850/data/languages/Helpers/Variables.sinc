@@ -19,12 +19,87 @@ attach variables [ R0004x2 R1115x2 R1620x2 R2731x2 ]
   eplp 	 _ 
 ];
 
+@ifdef RH850
+attach variables [ SR0004 SR1115 ]
+[
+  EIPC    EIPSW   FEPC    FEPSW   ECR     PSW     FPSR    FPEPC
+  FPST    FPCC    FPCFG   FPEC    SR12_0  EIIC    FEIC    DBIC
+  CTPC    CTPSW   DBPC    DBPSW   CTBP    DIR     DBG22   DBG23
+  DBG24   DBG25   DBG26   DBG27   EIWR    FEWR    DBWR    BSEL
+];
+
+attach variables [ S1R0004 S1R1115 ]
+[
+  MCFG0   SR1_1   RBASE   EBASE   INTBP   MCTL    PID     SR7_1
+  SR8_1   SR9_1   SR10_1  SCCFG   SCBP    SR13_1  SR14_1  SR15_1
+  SR16_1  SR17_1  SR18_1  SR19_1  SR20_1  SR21_1  SR22_1  SR23_1
+  SR24_1  SR25_1  SR26_1  SR27_1  SR28_1  SR29_1  SR30_1  SR31_1
+];
+
+attach variables [ S2R0004 S2R1115 ]
+[
+  HTCFG0  SR1_2   SR2_2   SR3_2   SR4_2   SR5_2   MEA     ASID
+  MEI     SR9_2   ISPR    PMR     ICSR    INTCFG  SR14_2  SR15_2
+  SR16_2  SR17_2  SR18_2  SR19_2  SR20_2  SR21_2  SR22_2  SR23_2
+  SR24_2  SR25_2  SR26_2  SR27_2  SR28_2  SR29_2  SR30_2  SR31_2
+];
+
+attach variables [ S3R0004 S3R1115 ]
+[
+  SR0_3   SR1_3   SR2_3   SR3_3   SR4_3   SR5_3   SR6_3   SR7_3
+  SR8_3   SR9_3   SR10_3  SR11_3  SR12_3  SR13_3  SR14_3  SR15_3
+  SR16_3  SR17_3  SR18_3  SR19_3  SR20_3  SR21_3  SR22_3  SR23_3
+  SR24_3  SR25_3  SR26_3  SR27_3  SR28_3  SR29_3  SR30_3  SR31_3
+];
+
+attach variables [ S4R0004 S4R1115 ]
+[
+  SR0_4   SR1_4   SR2_4   SR3_4   SR4_4   SR5_4   SR6_4   SR7_4
+  SR8_4   SR9_4   SR10_4  SR11_4  SR12_4  SR13_4  SR14_4  SR15_4
+  ICTAGL  ICTAGH  ICDATL  ICDATH  SR20_4  SR21_4  SR22_4  SR23_4
+  ICCTRL  SR25_4  ICCFG   SR27_4  ICERR   SR29_4  SR30_4  SR31_4
+];
+
+attach variables [ S5R0004 S5R1115 ]
+[
+  MPM     MPRC    SR2_5   SR3_5   MPBRGN  MPTRGN  SR6_5   SR7_5
+  MCA     MCS     MCC     MCR     SR12_5  SR13_5  SR14_5  SR15_5
+  SR16_5  SR17_5  SR18_5  SR19_5  SR20_5  SR21_5  SR22_5  SR23_5
+  SR24_5  SR25_5  SR26_5  SR27_5  SR28_5  SR29_5  SR30_5  SR31_5
+];
+
+attach variables [ S6R0004 S6R1115 ]
+[
+  MPLA0   MPUA0   MPAT0   SR3_6   MPLA1   MPUA1   MPAT1   SR7_6
+  MPLA2   MPUA2   MPAT2   SR11_6  MPLA3   MPUA3   MPAT3   SR15_6
+  MPLA4   MPUA4   MPAT4   SR19_6  MPLA5   MPUA5   MPAT5   SR23_6
+  MPLA6   MPUA6   MPAT6   SR27_6  MPLA7   MPUA7   MPAT7   SR31_6
+];
+
+attach variables [ S7R0004 S7R1115 ]
+[
+  MPLA8   MPUA8   MPAT8   SR3_7   MPLA9   MPUA9   MPAT9   SR7_7
+  MPLA10  MPUA10  MPAT10  SR11_7  MPLA11  MPUA11  MPAT11  SR15_7
+  MPLA12  MPUA12  MPAT12  SR19_7  MPLA13  MPUA13  MPAT13  SR23_7
+  MPLA14  MPUA14  MPAT14  SR27_7  MPLA15  MPUA15  MPAT15  SR31_7
+];
+@else
 attach variables [ SR0004 SR1115 ]
 [
   EIPC   EIPSW  FEPC   FEPSW  ECR    PSW    FPSR   FPEPC  FPST  FPCC   
   FPCFG  SCCFG  SCBP   EIIC   FEIC   DBIC   CTPC   CTPSW  DBPC  DBPSW  
   CTBP   DIR    DBG22  DBG23  DBG24  DBG25  DBG26  DBG27  EIWR  FEWR  
   DBWR   BSEL
+];
+@endif
+
+# upper word of the register pair that starts at an odd register
+attach variables [ R2731hi ]
+[
+  r1      r2      sp      gp      tp      r6      r7      r8
+  r9      r10     r11     r12     r13     r14     r15     r16
+  r17     r18     r19     r20     r21     r22     r23     r24
+  r25     r26     r27     r28     r29     ep      lp      _
 ];
 
 

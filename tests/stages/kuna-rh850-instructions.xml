@@ -1,0 +1,138 @@
+<decompilertest>
+<binaryimage arch="V850:LE:32:default">
+<!--
+    Noelo-Lab/kuna#1629: RH850 (V850E3v5) instructions decoded as bad
+    instruction data.
+
+    The V850 SLEIGH spec had the V850E2M instruction set only, so a function
+    holding ROTL, BINS, LOOP, PUSHSP/POPSP, LDL.W/STC.W, LD.DW/ST.DW, the
+    register-indirect JARL, CACHE, PREF, SNOOZE, SYNCI or a hypervisor/debug
+    operation ended in halt_baddata().  Seven FPU constructors also carried
+    the mnemonic of a neighbour (cvtf.dw printed as cvtf.sw), and ST.W with a
+    23-bit displacement stored two bytes.
+
+    Stage: P2 decode table (SLEIGH spec fix, no option).  The bytes are the
+    output of GNU as 2.43.1 for `-mv850e3v5`, laid out as one listing block
+    (0x1000) and nine small functions; CLL and the odd-register LD.DW, which
+    GNU as does not accept, are written from the RH850G3MH software manual.
+
+    #1-#44 pin one decode per new or renamed constructor, #45 the unchanged
+    V850E2 system-register name, #46 that nothing is undecodable, #47-#55 the
+    decompiled C.  f_pushtop reads the word PUSHSP r6-r7 leaves at sp and
+    f_poplast the register POPSP r10-r11 loads first; both are r7.
+-->
+<bytechunk space="ram" offset="0x1000">
+e337c450e737c650e657d8b0e657b838e65798b0e6061500f44760f9f46760f9
+e6077853e6077a53ffff60f1a60709510000a6074fa44602a60709580000e6c7
+60f91c00e7ff6029e6df6021e00f2001e5071001e5d7606140f8e007460140f0
+40e840e0e65f6041f5cf6051e0073401e0073201e0876089e08760e9e08760c1
+e0876081e08760e1e2374254e3374254e63fe654e4375054e1375254f1375254
+e6477e54f2374054e337405400000000e337c4507f0000000000000000000000
+0750e657b8787f000000000000000000f44760a9ff4760f906a000aa27370100
+bfffd0ffcaa9443af4060d001550ff6760f9f46760a97f000000000000000000
+e6077853c751e6077a53e051a2fd7f00a60789500000a7070f5100007f000000
+ff4760f9e6c760f94152ff6760f97f0086074f3c46027f000000000000000000
+e647603923570100481a7f0000000000e6476039ea6760590b507f0000000000
+</bytechunk>
+<bytechunk space="ram" offset="0x2000">
+eb574000
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="listing"/>
+<symbol space="ram" offset="0x10b0" name="f_rotl"/>
+<symbol space="ram" offset="0x10c0" name="f_bins"/>
+<symbol space="ram" offset="0x10d0" name="f_sum"/>
+<symbol space="ram" offset="0x1100" name="f_atomic"/>
+<symbol space="ram" offset="0x1110" name="f_copy"/>
+<symbol space="ram" offset="0x1120" name="f_call"/>
+<symbol space="ram" offset="0x1130" name="f_wide"/>
+<symbol space="ram" offset="0x1140" name="f_pushtop"/>
+<symbol space="ram" offset="0x1150" name="f_poplast"/>
+</binaryimage>
+<script>
+  <com>disassemble 0x1000 0x10ae</com>
+  <com>disassemble 0x2000 0x2004</com>
+  <com>lo fu f_rotl</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu f_bins</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu f_sum</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu f_atomic</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu f_copy</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu f_call</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu f_wide</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu f_pushtop</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu f_poplast</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="RH850 #1: rotl 0x3, r6, r10 decodes" min="1" max="1">^0x00001000: rotl +0x3, r6, r10$</stringmatch>
+<stringmatch name="RH850 #2: rotl r7, r6, r10 decodes" min="1" max="1">^0x00001004: rotl +r7, r6, r10$</stringmatch>
+<stringmatch name="RH850 #3: bins r6, 0x4, 0x8, r10 decodes" min="1" max="1">^0x00001008: bins +r6, 0x4, 0x8, r10$</stringmatch>
+<stringmatch name="RH850 #4: bins r6, 0xc, 0x8, r10 decodes" min="1" max="1">^0x0000100c: bins +r6, 0xc, 0x8, r10$</stringmatch>
+<stringmatch name="RH850 #5: bins r6, 0x14, 0x8, r10 decodes" min="1" max="1">^0x00001010: bins +r6, 0x14, 0x8, r10$</stringmatch>
+<stringmatch name="RH850 #6: loop r6, 0x1000 decodes" min="1" max="1">^0x00001014: loop +r6, 0x1000$</stringmatch>
+<stringmatch name="RH850 #7: pushsp r20-lp decodes" min="1" max="1">^0x00001018: pushsp +r20-lp$</stringmatch>
+<stringmatch name="RH850 #8: popsp r20-lp decodes" min="1" max="1">^0x0000101c: popsp +r20-lp$</stringmatch>
+<stringmatch name="RH850 #9: ldl.w [r6], r10 decodes" min="1" max="1">^0x00001020: ldl\.w +\[r6\], r10$</stringmatch>
+<stringmatch name="RH850 #10: stc.w r10, [r6] decodes" min="1" max="1">^0x00001024: stc\.w +r10, \[r6\]$</stringmatch>
+<stringmatch name="RH850 #11: cll decodes" min="1" max="1">^0x00001028: cll$</stringmatch>
+<stringmatch name="RH850 #12: ld.dw 0x10[r6], r10r11 decodes" min="1" max="1">^0x0000102c: ld\.dw +0x10\[r6\], r10r11$</stringmatch>
+<stringmatch name="RH850 #13: st.dw r20r21, 0x12344[r6] decodes" min="1" max="1">^0x00001032: st\.dw +r20r21, 0x12344\[r6\]$</stringmatch>
+<stringmatch name="RH850 #14: ld.dw 0x0[r6], r11 decodes" min="1" max="1">^0x00001038: ld\.dw +0x0\[r6\], r11$</stringmatch>
+<stringmatch name="RH850 #15: jarl [r6], lp decodes" min="1" max="1">^0x0000103e: jarl +\[r6\], lp$</stringmatch>
+<stringmatch name="RH850 #16: synci decodes" min="1" max="1">^0x00001042: synci$</stringmatch>
+<stringmatch name="RH850 #17: cache 0x65, [r7] decodes" min="1" max="1">^0x00001044: cache +0x65, \[r7\]$</stringmatch>
+<stringmatch name="RH850 #18: pref 0x4, [r6] decodes" min="1" max="1">^0x00001048: pref +0x4, \[r6\]$</stringmatch>
+<stringmatch name="RH850 #19: snooze decodes" min="1" max="1">^0x0000104c: snooze$</stringmatch>
+<stringmatch name="RH850 #20: hvtrap 0x5 decodes" min="1" max="1">^0x00001050: hvtrap +0x5$</stringmatch>
+<stringmatch name="RH850 #21: hvcall 0x85 decodes" min="1" max="1">^0x00001054: hvcall +0x85$</stringmatch>
+<stringmatch name="RH850 #22: dbtrap decodes" min="1" max="1">^0x00001058: dbtrap$</stringmatch>
+<stringmatch name="RH850 #23: dbret decodes" min="1" max="1">^0x0000105a: dbret$</stringmatch>
+<stringmatch name="RH850 #24: rmtrap decodes" min="1" max="1">^0x0000105e: rmtrap$</stringmatch>
+<stringmatch name="RH850 #25: dbcp decodes" min="1" max="1">^0x00001060: dbcp$</stringmatch>
+<stringmatch name="RH850 #26: dbhvtrap decodes" min="1" max="1">^0x00001062: dbhvtrap$</stringmatch>
+<stringmatch name="RH850 #27: dbpush r6-r8 decodes" min="1" max="1">^0x00001064: dbpush +r6-r8$</stringmatch>
+<stringmatch name="RH850 #28: dbtag 0x155 decodes" min="1" max="1">^0x00001068: dbtag +0x155$</stringmatch>
+<stringmatch name="RH850 #29: dst decodes" min="1" max="1">^0x0000106c: dst$</stringmatch>
+<stringmatch name="RH850 #30: est decodes" min="1" max="1">^0x00001070: est$</stringmatch>
+<stringmatch name="RH850 #31: tlbai decodes" min="1" max="1">^0x00001074: tlbai$</stringmatch>
+<stringmatch name="RH850 #32: tlbr decodes" min="1" max="1">^0x00001078: tlbr$</stringmatch>
+<stringmatch name="RH850 #33: tlbs decodes" min="1" max="1">^0x0000107c: tlbs$</stringmatch>
+<stringmatch name="RH850 #34: tlbvi decodes" min="1" max="1">^0x00001080: tlbvi$</stringmatch>
+<stringmatch name="RH850 #35: tlbw decodes" min="1" max="1">^0x00001084: tlbw$</stringmatch>
+<stringmatch name="RH850 #36: cvtf.hs r6, r10 decodes" min="1" max="1">^0x00001088: cvtf\.hs +r6, r10$</stringmatch>
+<stringmatch name="RH850 #37: cvtf.sh r6, r10 decodes" min="1" max="1">^0x0000108c: cvtf\.sh +r6, r10$</stringmatch>
+<stringmatch name="RH850 #38: fnmsf.s r6, r7, r10 decodes" min="1" max="1">^0x00001090: fnmsf\.s +r6, r7, r10$</stringmatch>
+<stringmatch name="RH850 #39: cvtf.dw r6r7, r10 decodes" min="1" max="1">^0x00001094: cvtf\.dw +r6r7, r10$</stringmatch>
+<stringmatch name="RH850 #40: cvtf.ld r6r7, r10r11 decodes" min="1" max="1">^0x00001098: cvtf\.ld +r6r7, r10r11$</stringmatch>
+<stringmatch name="RH850 #41: cvtf.uld r6r7, r10r11 decodes" min="1" max="1">^0x0000109c: cvtf\.uld +r6r7, r10r11$</stringmatch>
+<stringmatch name="RH850 #42: divf.d r6r7, r8r9, r10r11 decodes" min="1" max="1">^0x000010a0: divf\.d +r6r7, r8r9, r10r11$</stringmatch>
+<stringmatch name="RH850 #43: ceilf.suw r6, r10 decodes" min="1" max="1">^0x000010a4: ceilf\.suw +r6, r10$</stringmatch>
+<stringmatch name="RH850 #44: floorf.sw r6, r10 decodes" min="1" max="1">^0x000010a8: floorf\.sw +r6, r10$</stringmatch>
+<stringmatch name="RH850 #45: plain V850 keeps the V850E2 name of system register 11" min="1" max="1">^0x00002000: stsr +SCCFG, r10$</stringmatch>
+<stringmatch name="RH850 #46: no instruction of the listing is undecodable" min="0" max="0">Unable to disassemble|halt_baddata|Bad instruction</stringmatch>
+<stringmatch name="RH850 #47: ROTL by a constant is a rotate" min="1" max="1">return a0 &lt;&lt; 3 \| a0 &gt;&gt; 0x1d;</stringmatch>
+<stringmatch name="RH850 #48: BINS replaces bits 12 to 23" min="1" max="1">return a1 &amp; 0xff000fff \| \(a0 &amp; 0xfff\) &lt;&lt; 0xc;</stringmatch>
+<stringmatch name="RH850 #49: PUSHSP/POPSP keep r20, r21 and lp out of the body" min="1" max="1">^int4 f_sum\(int4 a0,unsigned int \*a1\)$</stringmatch>
+<stringmatch name="RH850 #50: LOOP is the counted loop's back edge" min="1" max="1">\} while \(a0\);</stringmatch>
+<stringmatch name="RH850 #51: LDL.W/STC.W read and write the same word" min="1" max="1">^  \*a0 = \*a0 \+ a1;$</stringmatch>
+<stringmatch name="RH850 #52: LD.DW/ST.DW move one 8-byte value" min="1" max="1">\(\(unsigned long long \*\)a1\)\[2\] = \(\(unsigned long long \*\)a0\)\[1\];</stringmatch>
+<stringmatch name="RH850 #53: JARL [reg1], reg3 is an indirect call that returns" min="1" max="1">return \(\*a0\)\(\) \+ 1;</stringmatch>
+<stringmatch name="RH850 #54: ST.W disp23 stores the whole word" min="1" max="1">\*\(unsigned int \*\)\(a0 \+ 0x12344\) = a1;</stringmatch>
+<stringmatch name="RH850 #55: PUSHSP leaves rt on top and POPSP loads rt first" min="2" max="2">^  return a1;$</stringmatch>
+</decompilertest>

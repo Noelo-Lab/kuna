@@ -35,3 +35,4 @@ define space  register  type=register_space size=4;
 @include "./Instructions/Load_Store.sinc"
 @include "./Instructions/Logic.sinc"
 @include "./Instructions/Special.sinc"
+@include "./Instructions/RH850.sinc"

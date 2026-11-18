@@ -1,0 +1,40 @@
+<decompilertest>
+<binaryimage arch="V850:LE:32:RH850">
+<!--
+    Noelo-Lab/kuna#1629: the RH850 system-register banks.
+
+    On RH850 the second word of LDSR/STSR carries a selID that picks one of
+    the banks of 32 system registers; V850E2M has one bank and other names in
+    it (register 11 is SCCFG there and FPEC here, and SCCFG moves to selID 1).
+    The language V850:LE:32:RH850 is the V850 spec plus those banks, so plain
+    V850E2 code under V850:LE:32:default keeps its decode
+    (kuna-rh850-instructions.xml #45).
+
+    Stage: P2 decode table (SLEIGH spec fix, no option).  The bytes are the
+    output of GNU as 2.43.1 for `ldsr r6, regID, selID` and
+    `stsr regID, r10, selID`; the names are those of the RH850G3K and
+    RH850G3MH software manuals.
+-->
+<bytechunk space="ram" offset="0x1000">
+e62f2000e61f2008e65f2010e6072028e6172030e6f72038e2574008e5574008
+e7574010e5574000eb574000eb574008
+</bytechunk>
+</binaryimage>
+<script>
+  <com>disassemble 0x1000 0x1030</com>
+  <com>quit</com>
+</script>
+<stringmatch name="RH850-SYSREG #1: ldsr r6, PSW" min="1" max="1">^0x00001000: ldsr +r6, PSW$</stringmatch>
+<stringmatch name="RH850-SYSREG #2: ldsr r6, EBASE, 1" min="1" max="1">^0x00001004: ldsr +r6, EBASE, 1$</stringmatch>
+<stringmatch name="RH850-SYSREG #3: ldsr r6, PMR, 2" min="1" max="1">^0x00001008: ldsr +r6, PMR, 2$</stringmatch>
+<stringmatch name="RH850-SYSREG #4: ldsr r6, MPM, 5" min="1" max="1">^0x0000100c: ldsr +r6, MPM, 5$</stringmatch>
+<stringmatch name="RH850-SYSREG #5: ldsr r6, MPAT0, 6" min="1" max="1">^0x00001010: ldsr +r6, MPAT0, 6$</stringmatch>
+<stringmatch name="RH850-SYSREG #6: ldsr r6, MPAT15, 7" min="1" max="1">^0x00001014: ldsr +r6, MPAT15, 7$</stringmatch>
+<stringmatch name="RH850-SYSREG #7: stsr RBASE, r10, 1" min="1" max="1">^0x00001018: stsr +RBASE, r10, 1$</stringmatch>
+<stringmatch name="RH850-SYSREG #8: stsr MCTL, r10, 1" min="1" max="1">^0x0000101c: stsr +MCTL, r10, 1$</stringmatch>
+<stringmatch name="RH850-SYSREG #9: stsr ASID, r10, 2" min="1" max="1">^0x00001020: stsr +ASID, r10, 2$</stringmatch>
+<stringmatch name="RH850-SYSREG #10: stsr PSW, r10" min="1" max="1">^0x00001024: stsr +PSW, r10$</stringmatch>
+<stringmatch name="RH850-SYSREG #11: stsr FPEC, r10" min="1" max="1">^0x00001028: stsr +FPEC, r10$</stringmatch>
+<stringmatch name="RH850-SYSREG #12: stsr SCCFG, r10, 1" min="1" max="1">^0x0000102c: stsr +SCCFG, r10, 1$</stringmatch>
+<stringmatch name="RH850-SYSREG #13: every selID form decodes" min="0" max="0">Unable to disassemble|halt_baddata|Bad instruction</stringmatch>
+</decompilertest>

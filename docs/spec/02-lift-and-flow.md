@@ -101,6 +101,35 @@ the upper register bank. The rules apply in both language variants. See the
 [SPARC V9 instruction mapping](https://docs.oracle.com/cd/E19963-01/html/821-1607/sparcv9-32853.html).
 This is a SLEIGH correctness repair, without an inference option.
 
+The V850 spec decodes the instructions the RH850 (V850E3v5) cores add to
+V850E2M (`specs/Ghidra/Processors/V850/data/languages/Instructions/RH850.sinc`).
+Their encodings are undefined on V850E2M, so a function holding one used to end
+in `halt_baddata()` (Kuna #1629). `ROTL` is a rotate whose CY is bit 0 of the
+result (0 for a rotate by zero). `BINS` replaces bits `pos` to `pos + width - 1`
+of reg2 with the low bits of reg1; the mask is built from the encoded bit
+numbers, and an encoding whose top bit is below its bottom bit changes nothing.
+`LOOP` adds -1 with the flags of `ADD` and branches backward while the register
+is not zero. `PUSHSP rh-rt` stores rh to rt at descending addresses and
+`POPSP rh-rt` loads rt down to rh; each register of the range is its own
+store or load, so a prologue saves named registers. A range that holds `sp`
+stores the value `sp` had before the instruction and, on the way back, leaves
+`sp` at the address after the last word, as the manual's temporary does.
+`LD.DW`/`ST.DW` move one 8-byte value between memory and a register pair (the
+pair register for an even reg3, two word registers for an odd one). `LDL.W`
+sets a link flag and `STC.W` stores only while it is set, writes the outcome to
+reg3 and clears it (`CLL` clears it too), so the usual retry loop folds to one
+read-modify-write. `JARL [reg1], reg3` is an indirect call. `CACHE`, `PREF`,
+`SNOOZE`, `HVTRAP`, `HVCALL` and the debug and TLB operations are opaque
+operations with their operands. Seven FPU constructors carried the mnemonic of
+a neighbour (`cvtf.dw` printed as `cvtf.sw`), `CVTF.DL` converted an integer
+instead of a double, `ST.W` with a 23-bit displacement stored two bytes, and
+`CVTF.HS`, `CVTF.SH` were missing. The language `V850:LE:32:RH850` is the
+same spec plus the system-register banks that the selID field of `LDSR`/`STSR`
+selects (selID 0 to 7, names from the RH850G3K and RH850G3MH software manuals,
+`SRn_s` for an unnamed slot); `V850:LE:32:default` keeps the single V850E2M
+bank, where register 11 is `SCCFG` and a nonzero selID does not decode.
+This is a SLEIGH correctness repair, without an inference option.
+
 The AArch64 float-to-integer conversions and round-to-integral instructions
 round in the mode they name. Upstream lifts every scalar, SIMD-scalar and
 vector `FCVT{A,M,N,P,Z}{S,U}` as `TRUNC(x)`, and every `FRINT{A,I,M,N,P,X,Z}`

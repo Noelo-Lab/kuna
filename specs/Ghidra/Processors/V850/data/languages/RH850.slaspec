@@ -1,0 +1,5 @@
+# RH850 (V850E3v5): the V850 instruction set with the system-register banks
+# that the selID operand of LDSR/STSR selects.
+
+@define RH850 "1"
+@include "V850.slaspec"

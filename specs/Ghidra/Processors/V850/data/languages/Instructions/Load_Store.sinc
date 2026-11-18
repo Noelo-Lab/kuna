@@ -207,7 +207,7 @@
 {
 	local adr:4 = R0004 + disp23;
 	local tmp:4 = R2731;
-	*:2 adr = tmp:2;
+	*:4 adr = tmp;
 }
 
 
