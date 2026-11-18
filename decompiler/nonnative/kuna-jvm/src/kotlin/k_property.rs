@@ -37,7 +37,7 @@ use crate::fixes::kt_declarations;
 use crate::fixes::kt_properties::kt_setter_parameter_name;
 use crate::fixes::kt_properties::kt_jvm_field_setter;
 use crate::fixes::kt_properties::kt_property_field_flags;
-use crate::fixes::kt_generated_members::kt_companion_static_copy;
+use crate::fixes::kt_generated_members;
 use crate::fixes::kt_types::kt_type_parameter_id;
 use crate::method_wrapper::MethodWrapper;
 use crate::kuna_fixes::{self, KunaFix};
@@ -603,7 +603,7 @@ impl KProperty {
                         .get_method(&method_name, &desc)
                         .filter(|m| {
                             !kuna_fixes::enabled(KunaFix::KtCompanionStaticCopy)
-                                || kt_companion_static_copy::is_copy(*m)
+                                || kt_generated_members::is_copy(*m)
                         })
                     {
                         KtAttrs::put(
@@ -644,7 +644,7 @@ impl KProperty {
                         .get_method(&method_name, &desc)
                         .filter(|m| {
                             !kuna_fixes::enabled(KunaFix::KtCompanionStaticCopy)
-                                || kt_companion_static_copy::is_copy(*m)
+                                || kt_generated_members::is_copy(*m)
                         })
                     {
                         KtAttrs::put(

@@ -48,7 +48,7 @@ use crate::fixes::kt_properties::kt_field_without_property;
 use crate::fixes::kt_anonymous_objects::kt_synthetic_object_super_call;
 use crate::fixes::kt_compiler_idioms::kt_inlined_stdlib_call;
 use crate::fixes::kt_types::kt_class_header_metadata;
-use crate::fixes::kt_generated_members::kt_default_impls_delegate;
+use crate::fixes::kt_generated_members;
 use crate::fixes::kt_types::kt_type_parameter_id;
 use crate::fixes::kt_types::kt_java_type_syntax;
 use crate::fixes::kt_suspend::kt_suspend_without_metadata;
@@ -63,10 +63,7 @@ use crate::kotlin_options::KotlinOptions;
 use crate::kt_attrs::KtAttrs;
 use crate::kt_flags::Flags;
 use crate::kt_proto::{ClassKind, Modality, Visibility};
-use crate::fixes::kt_generated_members::kt_file_class_constructor;
 use crate::fixes::kt_initializers::kt_file_static_initializer;
-use crate::fixes::kt_generated_members::kt_generated_constructor_hidden;
-use crate::fixes::kt_generated_members::kt_generated_overload_hidden;
 use crate::fixes::kt_anonymous_objects::kt_object_super_call;
 use crate::fixes::kt_jumps::kt_return_outside_lambda;
 use crate::fixes::failure_comments;
@@ -800,12 +797,12 @@ impl KotlinWriter {
                 || matches!(&el, Some(KElement::Property(prop)) if !visited_properties.add((**prop).clone()))
                 || matches!(el, Some(KElement::HiddenElement(_)))
                 || (kuna_fixes::enabled(KunaFix::KtGeneratedConstructorHidden)
-                    && kt_generated_constructor_hidden::is_generated(cl, mt))
+                    && kt_generated_members::is_generated_constructor(cl, mt))
                 || (kuna_fixes::enabled(KunaFix::KtGeneratedOverloadHidden)
-                    && kt_generated_overload_hidden::is_generated(cl, mt))
+                    && kt_generated_members::is_generated_overload(cl, mt))
                 || (kuna_fixes::enabled(KunaFix::KtForInlineCopy)
                     && kt_for_inline_copy::is_copy(cl, mt))
-                || kt_default_impls_delegate::is_delegate(cl, mt)
+                || kt_generated_members::is_delegate(cl, mt)
                 || kt_class_header_metadata::is_collection_stub(
                     cl,
                     mt,
@@ -813,7 +810,7 @@ impl KotlinWriter {
                     node.with(|d| d.type_) == ClassNodeType::Anonymous,
                 )
                 || (kuna_fixes::enabled(KunaFix::KtFileClassConstructor)
-                    && kt_file_class_constructor::is_file_class_constructor(cl, mt))
+                    && kt_generated_members::is_file_class_constructor(cl, mt))
                 || (file_initializers && mt.get_name() == CLINIT_NAME);
             if hide {
                 continue;
@@ -953,7 +950,7 @@ impl KotlinWriter {
                         .get_hidden_members()
                         .borrow()
                         .contains(&inner_cl.qualified_name())
-                    || kt_default_impls_delegate::is_emptied_default_impls(inner_cl);
+                    || kt_generated_members::is_emptied_default_impls(inner_cl);
                 if hide {
                     continue;
                 }

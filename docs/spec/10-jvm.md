@@ -2561,7 +2561,7 @@ parameters and placeholders to the default-arguments constructor `<init>(.., int
 DefaultConstructorMarker)`. `KotlinWriter.writeClass` writes a member without metadata through
 `writeMethod`, which prints a constructor as a function named after the class, `fun Builder() {
 this(null, 1, null) }`: not Kotlin, and not in the source. With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/kt_generated_members/kt_generated_constructor_hidden.rs (is_generated)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_generated_members.rs (is_generated_constructor)`)
 the writer skips a constructor of a class with Kotlin class metadata that has no metadata of its own
 and whose code is loads of parameters and constants, one `invokespecial` of the class's own
 constructor ending in `int, DefaultConstructorMarker`, and `return`. The primary constructor's
@@ -2724,7 +2724,7 @@ the one before. The file's metadata does not name it, and `KotlinWriter.writeCla
 without metadata through `writeMethod`, which prints it among the file's top-level declarations as
 `open fun StringsKt__StringsKt() {}` (88 in kotlin-stdlib); kotlinc rejects `open` on a top-level
 function, and the function is not in the source. With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/kt_generated_members/kt_file_class_constructor.rs (is_file_class_constructor)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_generated_members.rs (is_file_class_constructor)`)
 the writer skips a constructor of a class with file metadata (a file facade or a multifile part)
 that has no metadata of its own, takes no parameters and whose code is `aload 0`, one
 `invokespecial` of the superclass's `<init>()V` and `return`.
@@ -4534,7 +4534,7 @@ from it (`Companion = Companion.$$INSTANCE`), which the plugin did not recognise
 declared the field in Java form inside the interface (`Interceptor.Companion Companion =
 Interceptor.Companion.$$INSTANCE;`; okhttp's `Interceptor`, kotlinx-coroutines' `Job.Key`,
 `Channel.Factory`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/kt_generated_members/kt_interface_companion_field.rs (is_instance_read)`) an
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_generated_members.rs (is_instance_read)`) an
 interface field of the companion's type initialized from the companion's own `$$INSTANCE` is hidden as the
 companion's instance too; the `companion object` the writer prints declares it.
 
@@ -4543,7 +4543,7 @@ per trailing default, without metadata, each passing its parameters, placeholder
 the bridge `f$default`. The Kotlin writer wrote them as functions of the source, `@JvmOverloads fun f(a: Int):
 Int { return f$default(this, a, 0, 2, null) }`, which Kotlin rejects (the bridge has no Kotlin name, and the
 annotated `f` already declares these overloads). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/kt_generated_members/kt_generated_overload_hidden.rs (is_generated)`) a
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_generated_members.rs (is_generated_overload)`) a
 method without metadata is not written when it carries `@JvmOverloads` (kotlinc copies the annotation from
 `f`, whose own method has metadata) and its code is only loads of parameters and constants, the null checks
 of its parameters (`Intrinsics.checkNotNullParameter`, `checkParameterIsNotNull`), one `invokestatic` of
@@ -5084,7 +5084,7 @@ class is written without it: `Random` with no member at all, so kotlinc rejects 
 overrides (`overrides nothing`) and a class that must implement the member (`is not abstract and does not
 implement`), and a call of the member inside the class can name the companion's instead. Upstream's
 `develop/1.13.0` marks the same way. With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/kt_generated_members/kt_companion_static_copy.rs (is_copy)`) only a static
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_generated_members.rs (is_copy)`) only a static
 method is marked: a class cannot hold a static and an instance method of one signature, and kotlinc makes
 a member of a class with a companion static only for `@JvmStatic`. The companion's fields are not touched:
 every field of a class that has a companion property's field name and descriptor is static (kotlinc moves
@@ -5279,7 +5279,7 @@ of its interface) does not declare is not written when its code is exactly: Kotl
 its first parameter), the loads of its other parameters in order, each perhaps cast, an `invokestatic` of
 the method of the same name, the same other parameters and the same result in the `DefaultImpls` class of
 an interface its class implements (in a `DefaultImpls`, one its interface extends), and the return of the
-result (`decompiler/nonnative/kuna-jvm/src/fixes/kt_generated_members/kt_default_impls_delegate.rs (is_delegate)`);
+result (`decompiler/nonnative/kuna-jvm/src/fixes/kt_generated_members.rs (is_delegate)`);
 a `DefaultImpls` class whose methods are all such is not written either (`is_emptied_default_impls`). A
 member the source overrides, even by `super.f()` (the same call), has metadata and stays. kotlinc gives the
 recompiled class the same methods again: the case's `Triangle` and `Square` recompile to identical

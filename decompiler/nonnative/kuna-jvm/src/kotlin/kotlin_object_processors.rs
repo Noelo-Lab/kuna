@@ -3,7 +3,7 @@
 use crate::class_wrapper::ClassWrapper;
 use crate::code_constants::ACC_INTERFACE;
 use crate::kotlin::kuna_declared_element;
-use crate::fixes::kt_generated_members::kt_interface_companion_field;
+use crate::fixes::kt_generated_members;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::classes_processor::ClassNode;
 use crate::interpreter_util::InterpreterUtil;
@@ -79,7 +79,7 @@ impl KotlinObjectProcessors {
                 let interface_instance = kuna_fixes::enabled(KunaFix::KtInterfaceCompanionField)
                     && cl.has_modifier(ACC_INTERFACE)
                     && initializer.as_ref().is_some_and(|initializer| {
-                        kt_interface_companion_field::is_instance_read(
+                        kt_generated_members::is_instance_read(
                             initializer,
                             companion_struct,
                         )
