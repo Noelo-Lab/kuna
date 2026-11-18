@@ -676,9 +676,9 @@ example):
    default output recompiles with javac and every method's `javap -c -p` matches the
    original class's; (c) no collateral change: `kuna decompile-project IN -o COMPAT
    --option jvm_vineflower_compat on`, `kuna decompile-project IN -o DEFAULT`, then
-   `python3 -I tests/jvm/kuna_fix_diff.py COMPAT DEFAULT`, on the five benchmark jars
-   (`docs/jvm-benchmark.md`) and on okio, okhttp and kotlin-stdlib: every difference must
-   be inside a method that failed in compat mode, a tracker note or an import; (d) `make
+   `diff -ru COMPAT DEFAULT`, on the five benchmark jars (`docs/jvm-benchmark.md`) and on
+   okio, okhttp and kotlin-stdlib: every hunk must be inside a method that failed in compat
+   mode, a tracker note or an import, or be the fix's own correction; (d) `make
    test-jvm` (the 607 Vineflower-oracle cases run in compat mode).
 7. **Gates**: `cargo test -p kuna-jvm`, `make test-jvm`, `kuna catalog --check`, `make
    check-spec` and `python3 tools/check_spec.py --strict`, `make lint`.
@@ -1105,7 +1105,7 @@ gets closer. A negated pattern javac compiled as a guard, `if (!(o instanceof T 
 its guard instead of becoming `if (o instanceof T v) { rest } else { return ..; }` (javac places the
 binding, then a `goto` over the guard's exit). Where the bytecode is the same for both forms (an if-else of two returns, or
 a `continue` that ends a loop body), Vineflower's form mostly stays. The two-pass case `tests/jvm/kuna-fixes/` `pkg/TestJavacLayout` shows each
-shape, and `tests/jvm/kuna_fix_diff.py` recognises its hunks as `jvm_javac_layout`.
+shape.
 
 The option also keeps a comparison with a boolean literal where the bytecode shows one. javac
 compiles `x == false`, `x != false` and `!x` alike (one `ifeq`/`ifne`), so those print `!x`
@@ -1196,9 +1196,8 @@ its two-pass case and the whole-output diffs of step 6 of the recipe. So is an o
 compat mode turns off with the fixes, such as `jvm_javac_layout`: it leaves every
 Vineflower-oracle case alone, changes only kuna-fixes cases' default text (re-recorded after
 reading their diffs), and defaults on on the evidence of a full benchmark run (every
-method that got worse read and explained) and the same whole-output diffs, recognised hunk
-by hunk.
-its two-pass case and the whole-output diffs of step 6 of the recipe. So are the options of
+method that got worse read and explained) and the same whole-output diffs, read hunk by
+hunk. So are the options of
 form (*Options of form*, above): compat mode turns them off, and one defaults on only when a
 full benchmark run of the five projects shows it better (methods perfect on every metric,
 classes that recompile, each worse method read) at the same speed; the default-mode texts of
