@@ -1423,15 +1423,15 @@ semaphore variable. `DomHelper` (`decompiler/nonnative/kuna-jvm/src/p7_regions/d
 builds a `try` from the blocks one handler protects, so ranges must be disjoint or nested,
 and reduces a region by forming simple statements, by isolating a general statement between
 a head and one of its extended postdominators, or by splitting irreducible nodes; a region
-none of these reduces fails the method. `catch_loop_back_successor`,
-`irreducible_with_exception_edges`, `overlapping_ranges` and `protected_back_edge` steer
-such shapes onto one of those paths. `FinallyProcessor` checks a `finally`'s copies and
+none of these reduces fails the method. `catch_loop_back_successor` and
+`irreducible_with_exception_edges` steer such shapes onto one of those paths. `FinallyProcessor` checks a `finally`'s copies and
 removes them, or falls back to a semaphore variable; `DomHelper.buildSynchronized` builds a
 `synchronized` from a verified catch-all, and `SynchronizedHelper.cleanSynchronizedVar`
 removes the lock variable (`e; dup; astore n; monitorenter` from javac, `e; astore n; aload
-n; monitorenter` from kotlinc). `inline_marker_finally_copy`, `synchronized_break_exit` and
-`synchronized_lock_assignment` each adjust one recognition step, so the built statement
-runs the `finally` or the release exactly where the bytecode does.
+n; monitorenter` from kotlinc). `overlapping_ranges`, `protected_back_edge`,
+`inline_marker_finally_copy`, `synchronized_break_exit` and `synchronized_lock_assignment`
+each adjust one recognition step, so the built statement runs the `finally` or the release
+exactly where the bytecode does.
 
 **Variables: merging, scopes and names.**
 `decompiler/nonnative/kuna-jvm/src/p6_variables/var_definition_helper.rs (VarDefinitionHelper::merge_vars)`
@@ -1470,14 +1470,15 @@ casts a value not known to fit. `unchecked_generic_cast`, `unchecked_call_result
 `bounded_inference_cast`, `receiver_type_arguments` and `argument_generic_cast` compare the
 type arguments the value's type gives the target's class with the target's own, and where
 javac would reject the conversion write the source's unchecked cast, through the raw class
-when the two parameterizations are provably distinct (JLS 4.5); bounds and types kuna
-cannot resolve count as satisfied. `appendParamList` spreads a trailing array and writes
+when the two parameterizations are provably distinct (JLS 4.5), or give the chain's first
+call explicit type arguments; bounds and types kuna cannot resolve count as satisfied. `appendParamList` spreads a trailing array and writes
 casts or boxing calls only where `getAmbiguousParameters` finds another overload, while
 javac resolves the written call afresh (JLS 15.12.2): `vararg_array_length`,
 `vararg_spread_resolution`, `unseen_class_overload`, `ambiguous_type_variable_argument`,
-`unboxed_argument_type` and `reference_unboxing` keep the array, cast or box wherever the
-written arguments would select another method or box to another type. For a class outside
-the input, the descriptors the input calls stand in for its methods.
+`unboxed_argument_type` and `reference_unboxing` correct the type each argument is written
+as wherever javac would otherwise pick another overload, box to another type, or keep a box
+or an identity comparison the bytecode lacks. For a class outside the input, the
+descriptors the input calls stand in for its methods.
 
 **Expression types.** A switch expression's or conditional's type is the join of its arms
 (their nearest common ancestor, or `Object` when the class universe knows none). Writing
