@@ -95,7 +95,7 @@ text does not parse.
 | ghidra | 18,153 | 80.05% → 98.71% | 90.60% → 99.78% | 98.56% → 99.83% | 80.18% → 98.86% | 98.09% → 99.73% | 0 |
 | elasticsearch | 62,077 | 84.20% → 98.89% | 96.80% → 99.82% | 99.62% → 99.92% | 84.26% → 99.00% | 91.82% → 97.54% | 14 → 0 |
 
-Over all five projects, 109,007 methods are perfect on every metric instead of 94,106
+Over all five projects, 109,006 methods are perfect on every metric instead of 94,106
 (98.88% instead of 85.37%), every method is decompiled, and 380 more classes recompile
 (7,988 of 8,155 instead of 7,608). Most of the gain in perfect methods comes from
 `jvm_javac_layout`: Vineflower writes two returns as one `return c ? a : b`, negates ifs
