@@ -1,0 +1,29 @@
+# User interrupts (UINTR): 64-bit mode only.  SENDUIPI shares F3 0F C7 /6 with
+# RDRAND's register form and always takes a 64-bit register; the operand-size
+# split only makes each form a specialization of the matching RDRAND constructor.
+# CLUI/STUI share 0F 01 EE/EF with RDPKRU/WRPKRU and are told apart by F3.
+@ifdef IA64
+define pcodeop senduipi;
+define pcodeop uiret;
+define pcodeop testui;
+define pcodeop clui;
+define pcodeop stui;
+
+:SENDUIPI Rmr64 is $(LONGMODE_ON) & vexMode=0 & (opsize=0 | opsize=1) & $(PRE_F3) & byte=0x0f; byte=0xc7; mod=3 & Rmr64 & reg_opcode=6 { senduipi(Rmr64); }
+:SENDUIPI Rmr64 is $(LONGMODE_ON) & vexMode=0 & opsize=2 & $(REX_W) & $(PRE_F3) & byte=0x0f; byte=0xc7; mod=3 & Rmr64 & reg_opcode=6 { senduipi(Rmr64); }
+
+:UIRET  is $(LONGMODE_ON) & vexMode=0 & $(PRE_F3) & byte=0x0f; byte=0x01; byte=0xec {
+	uiret();
+	pop88(RIP);
+	pop88(rflags);
+	unpackflags(rflags);
+	unpackeflags(rflags);
+	tmp:8 = 0;
+	pop88(tmp);
+	RSP = tmp;
+	return [RIP];
+}
+:TESTUI is $(LONGMODE_ON) & vexMode=0 & $(PRE_F3) & byte=0x0f; byte=0x01; byte=0xed { CF = testui(); OF = 0; SF = 0; ZF = 0; AF = 0; PF = 0; }
+:CLUI   is $(LONGMODE_ON) & vexMode=0 & $(PRE_F3) & byte=0x0f; byte=0x01; byte=0xee { clui(); }
+:STUI   is $(LONGMODE_ON) & vexMode=0 & $(PRE_F3) & byte=0x0f; byte=0x01; byte=0xef { stui(); }
+@endif
