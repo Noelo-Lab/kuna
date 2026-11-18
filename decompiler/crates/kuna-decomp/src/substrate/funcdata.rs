@@ -4881,7 +4881,9 @@ impl Funcdata {
 
     /// C++ `Varnode::findSubpieceShadow` (`varnode.cc:1025-1072`): does `vn`
     /// equal `whole` truncated by `least_byte` least-significant bytes, allowing
-    /// COPY/MULTIEQUAL in the flow path (bounded recursion depth 1).
+    /// COPY/MULTIEQUAL in the flow path (bounded recursion depth 1).  A constant
+    /// `whole` wider than 8 bytes holds zero above bit 63, so a truncation of 8
+    /// or more bytes reads 0 (the C++ shift is undefined there).
     fn find_subpiece_shadow(&self, vn: VarnodeId, least_byte: int4, whole: VarnodeId, recurse: int4) -> bool {
         let vn = self.skip_copy_chain(vn);
         let v = match self.vbank.get(vn) {
@@ -4898,7 +4900,7 @@ impl Funcdata {
                 if !wv.get_addr().is_constant() {
                     return false;
                 }
-                let off = (wv.get_offset() >> (least_byte * 8))
+                let off = wv.get_offset().checked_shr(least_byte as u32 * 8).unwrap_or(0)
                     & kuna_base::address::calc_mask(v.get_size());
                 return off == v.get_offset();
             }

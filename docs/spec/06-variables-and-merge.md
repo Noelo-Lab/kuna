@@ -278,7 +278,12 @@ secondary test:
   provably the same value (`merge.rs (MergeIntersect::test_block_intersection)`,
   through `decompiler/crates/kuna-decomp/src/p6_variables/funcdata_merge.rs
   (MergeContext for Funcdata)` to `Varnode::copy_shadow`); overlap-group pieces
-  are tested at their relative offsets with partial shadows.
+  are tested at their relative offsets with partial shadows. A partial shadow
+  between two constants compares the smaller one with the larger one truncated
+  by the relative byte offset; a constant wider than 8 bytes holds zero above
+  bit 63, so a truncation of 8 or more bytes compares against 0
+  (`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs
+  (Funcdata::find_subpiece_shadow)`).
 - If the covers are disjoint but exactly one high is address-tied, the
   *untied-call* test runs (`merge.rs
   (MergeIntersect::test_untied_call_intersection)`): a non-persistent tied
