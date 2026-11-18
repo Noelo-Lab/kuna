@@ -55,7 +55,7 @@ use crate::method_descriptor::MethodDescriptor;
 use crate::method_wrapper::MethodWrapper;
 use crate::fixes::class_writing::EnumBodySeparator;
 use crate::fixes::class_writing;
-use crate::fixes::nested_class_vars::nested_param_rename;
+use crate::fixes::nested_class_vars;
 use crate::pair::Pair;
 use crate::pass_context::PassContext;
 use crate::pool_interceptor::PoolInterceptor;
@@ -2311,7 +2311,7 @@ impl ClassWriter {
                     let name = varproc.get_var_name(VarVersionPair::new(index, 0));
                     let table_name = kuna_fixes::enabled(KunaFix::NestedParamRename)
                         .then(|| {
-                            nested_param_rename::table_name(
+                            nested_class_vars::table_name(
                                 varproc,
                                 VarVersionPair::new(index, 0),
                                 name.as_deref(),

@@ -13,7 +13,7 @@ use crate::kuna_fixes::{self, KunaFix};
 use crate::fixes::anonymous_classes;
 use crate::fixes::anonymous_classes::anonymous_class_created_elsewhere;
 use crate::fixes::nested_class_vars::captured_var_through_cast;
-use crate::fixes::nested_class_vars::lambda_catch_var_rename;
+use crate::fixes::nested_class_vars;
 use crate::fixes::anonymous_classes::unlisted_anonymous_class;
 use crate::class_wrapper::ClassWrapper;
 use crate::classes_processor::{ClassNode, ClassNodeType};
@@ -376,7 +376,7 @@ impl NestedClassProcessor {
             });
         if kuna_fixes::enabled(KunaFix::LambdaCatchVarRename) {
             if let Some(root) = method.with(|d| d.root) {
-                lambda_catch_var_rename::rename_catch_vars(*root, &lvts, &|pair| {
+                nested_class_vars::rename_catch_vars(*root, &lvts, &|pair| {
                     map_new_names.contains_key(&pair)
                 });
             }

@@ -2034,7 +2034,7 @@ catch clause's variable belongs to its `CatchStatement` (or `CatchAllStatement`)
 node in that graph (`FlattenStatementsHelper` leaves it out: "TODO: add catch variable to this
 node"), so it keeps the old entry; the clause declares `e` while its uses read `ex`, and javac
 cannot resolve `ex`. With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/nested_class_vars/lambda_catch_var_rename.rs`) the catch
+(`decompiler/nonnative/kuna-jvm/src/fixes/nested_class_vars/mod.rs`) the catch
 variables of the body's statement tree take the entry their uses take. Upstream has no change
 here.
 
@@ -2105,7 +2105,7 @@ captured variable shares its slot with a catch variable `e`), and the uses of a 
 written by their local-variable-table names, which take precedence, while `ClassWriter` declares a
 parameter by the `VarProcessor` name: `onFailure(Exception ex) { log(e); }`, which javac cannot
 resolve, or resolves to a captured variable. With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/nested_class_vars/nested_param_rename.rs`) a parameter without a
+(`decompiler/nonnative/kuna-jvm/src/fixes/nested_class_vars/mod.rs`) a parameter without a
 clashing name or a `MethodParameters` name is declared by its local-variable-table name, the name
 its uses are written by; those names are the source's, under which the method compiled. A
 local-variable-table name that is not a Java identifier is not (kotlinc names a property setter's
@@ -4761,7 +4761,7 @@ the copy instead of the parameter (okio's `Pipe.sink.write`; a suspend `emit`'s 
 valuex`, in 6 objects of each kotlinx-coroutines version once `unlisted_anonymous_class` nests them; in
 Java output, two locals of
 okhttp's `Relay` that end up with one name). Unchanged on `develop/1.13.0`. With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/nested_class_vars/refresh_printed_var_names.rs (refresh)`) the
+(`decompiler/nonnative/kuna-jvm/src/fixes/nested_class_vars/mod.rs (refresh)`) the
 clashing names are taken first and only the variables without one are renamed, so no variable is given
 a name another one prints.
 **`kt_implicit_widening`.** Java widens a primitive implicitly where it is stored, passed or returned
