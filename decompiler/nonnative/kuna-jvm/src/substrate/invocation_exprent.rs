@@ -2129,10 +2129,7 @@ impl InvocationExprent {
                 break;
             }
 
-            if let Some(formal) = kuna_formals.get(i).cloned().flatten() {
-                argument_generic_cast::mark_argument_target(formal);
-            }
-            ExprProcessor::get_casted_exprent_full(
+            ExprProcessor::get_casted_argument(
                 lst_parameters.get(i),
                 &types[i],
                 &mut buff,
@@ -2145,6 +2142,7 @@ impl InvocationExprent {
                 ambiguous,
                 true,
                 true,
+                kuna_formals.get(i).cloned().flatten(),
             );
 
             if let Some(name) = arg_name.filter(|name| !name.is_empty()) {

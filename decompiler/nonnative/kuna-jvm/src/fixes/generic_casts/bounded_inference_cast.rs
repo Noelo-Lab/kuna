@@ -1,15 +1,8 @@
-//! kuna fix `bounded_inference_cast` (`kuna_fixes`): a generic method whose
-//! result's type variables no parameter mentions, `<C extends Comparable>
-//! Ordering<C> natural()`, gets them from its target alone (JLS 18.5.2), and
-//! javac rejects the call when the target's type argument is outside the
-//! variable's bound: `Ordering<E> o = Ordering.natural();` for an unbounded
-//! `E` (`inference variable C has incompatible bounds`). The source casts,
-//! `(Ordering<E>) Ordering.natural()`, which compiles to no instruction, and
-//! Vineflower writes no cast. With the fix, a returned or assigned call whose
-//! target forces such a variable to a type variable or class outside its
-//! bound's class is cast to the target, or to the target's raw class when
-//! the type argument is a class (provably distinct from the call's own).
+//! Fix `bounded_inference_cast`: a returned or assigned call whose target
+//! forces a type variable only the target infers outside its bound is cast to
+//! the target, or to its raw class.
 
+use super::{is_exact, mentions};
 use crate::code_type::CodeType;
 use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;
@@ -226,19 +219,4 @@ fn satisfies(
         }
         _ => true,
     }
-}
-
-fn mentions(t: &VarType, var: &str) -> bool {
-    if t.type_ == CodeType::Genvar {
-        return t.value_str() == var;
-    }
-    t.try_as_generic().is_some_and(|g| {
-        g.get_arguments().iter().flatten().any(|a| mentions(a, var))
-            || g.get_parent().is_some_and(|p| mentions(&p, var))
-    })
-}
-
-fn is_exact(t: &VarType) -> bool {
-    t.try_as_generic()
-        .is_none_or(|g| g.get_wildcard() == GenericType::WILDCARD_NO)
 }

@@ -1,12 +1,6 @@
-//! kuna fix `external_supertype_arguments` (`kuna_fixes`): the type
-//! arguments a class gives a supertype were looked up through the
-//! supertype's own class file (its type parameters, then the hierarchy map),
-//! so a supertype outside the input, such as an interface with no code that
-//! a project's input leaves out, had none: `IdentityFunction implements
-//! Function<Object, Object>` gave nothing for `Function`, and the casts the
-//! unchecked-cast fixes derive from those arguments were not written. With
-//! the fix the arguments are read from the generic supertypes the known
-//! classes' signatures declare, walking up through known classes only.
+//! Fix `external_supertype_arguments`: the type arguments a class gives a
+//! supertype outside the input are read from the generic supertypes the known
+//! classes' signatures declare.
 
 use crate::generic_type::GenericType;
 use crate::kuna_static_types::args_of;

@@ -1344,8 +1344,34 @@ impl ExprProcessor {
         cast_narrowing: bool,
         unbox: bool,
     ) -> bool {
+        Self::get_casted_argument(
+            exprent,
+            left_type,
+            buffer,
+            indent,
+            cast_null,
+            cast_always,
+            cast_narrowing,
+            unbox,
+            None,
+        )
+    }
+
+    /// `get_casted_exprent_full` for an argument whose parameter is declared
+    /// `argument_target` (fix `argument_generic_cast`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn get_casted_argument(
+        exprent: Exprent,
+        left_type: &VarType,
+        buffer: &mut TextBuffer,
+        indent: i32,
+        cast_null: NullCastType,
+        cast_always: bool,
+        cast_narrowing: bool,
+        unbox: bool,
+        argument_target: Option<VarType>,
+    ) -> bool {
         let declared_target = disjoint_generic_cast::take_declared_target();
-        let argument_target = argument_generic_cast::take_argument_target();
         let mut exprent = exprent;
         let mut left_type = left_type.clone();
 

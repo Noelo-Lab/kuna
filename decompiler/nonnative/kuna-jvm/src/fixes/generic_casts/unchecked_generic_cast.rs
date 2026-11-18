@@ -1,24 +1,13 @@
-//! kuna fix `unchecked_generic_cast` (`kuna_fixes`): a cast between two
-//! parameterizations of one class, `(ReferenceEntry<K, V>) NullEntry.INSTANCE`
-//! or `(CacheBuilder<K1, V1>) this`, is unchecked and compiles to no
-//! instruction, so the bytecode keeps no trace of it. Vineflower writes a cast
-//! where the erased types call for one or where a few generic shapes do
-//! (`doGenericTypesCast`), and otherwise none, so a returned or assigned value
-//! whose declared generic type is not assignable to its target is written
-//! bare, which javac rejects (`incompatible types`). With the fix, when the
-//! value is `this`, a field or a variable, whose static type the program
-//! declares, and the target is a declared parameterization (a method's return
-//! type, a variable's or a field's type), a target whose type arguments the
-//! value's type cannot match gets the cast: to the target when the two are not
-//! provably distinct (JLS 4.5), else to its raw class, which javac converts
-//! unchecked. Kotlin output is left alone.
+//! Fix `unchecked_generic_cast`: a returned or assigned value of declared
+//! static type whose type arguments the target's cannot match gets the
+//! unchecked cast, to the target's raw class where they are provably distinct.
 
+use super::is_exact;
 use crate::classes_processor::ClassNodeType;
 use crate::code_constants::CodeConstants;
 use crate::code_type::CodeType;
 use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;
-use crate::generic_type::GenericType;
 use crate::fixes::generic_casts::unchecked_call_result_cast;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::kuna_static_types::{arg_equal, field_declared, param_type, supertype_args};
@@ -132,10 +121,4 @@ fn is_inner_class(class: &str) -> bool {
             node.with(|d| d.type_) != ClassNodeType::Root
                 && node.with(|d| d.access) & CodeConstants::ACC_STATIC == 0
         })
-}
-
-/// A type argument that is a type, not a wildcard.
-fn is_exact(t: &VarType) -> bool {
-    t.try_as_generic()
-        .is_none_or(|g| g.get_wildcard() == GenericType::WILDCARD_NO)
 }
