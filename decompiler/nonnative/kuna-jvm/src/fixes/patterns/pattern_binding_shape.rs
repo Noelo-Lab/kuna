@@ -1,20 +1,6 @@
-//! kuna fix `pattern_binding_shape` (`kuna_fixes`): javac compiles a type
-//! pattern `e instanceof T v` (JDK 16 and later, `TransPatterns`) to one
-//! shape: the subject is read once, from a local variable that is the
-//! source's own (`x instanceof T v`) or a temporary it stores `e` in, and the
-//! binding `aload; checkcast T; astore v` comes right after the
-//! `instanceof T; ifeq` that skips it, also for a negated pattern
-//! (`if (!(x instanceof T v)) return;`, whose binding a `goto` follows).
-//! `IfPatternMatchProcessor` makes a pattern from any `instanceof` and a store
-//! of the cast value at the head of the branch it guards, so the source's
-//! test and cast became a pattern too: a field, array element or other
-//! expression read once for the test and again for the cast
-//! (`if (this.f instanceof T) { T v = (T) this.f;`), and a cast after a
-//! negated test's exit (`if (!(x instanceof T)) return; T v = (T) x;`, the
-//! cast at the `ifne`'s target). With the fix the pattern is made only from
-//! javac's shape; otherwise the `instanceof` and the cast stay as the
-//! bytecode has them. A captured variable of a local or anonymous class reads
-//! the synthetic field javac gives it twice; it counts as a local.
+//! Fix `pattern_binding_shape`: an `instanceof` and a cast become a type
+//! pattern only in javac's shape: the subject read once from a local, the
+//! binding right after the `instanceof; ifeq` that skips it.
 
 use crate::code_constants::{OPC_IFEQ, OPC_INSTANCEOF};
 use crate::decompiler_context::DecompilerContext;

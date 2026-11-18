@@ -1,13 +1,6 @@
-//! kuna fix `unchecked_type_pattern` (`kuna_fixes`): `IfPatternMatchProcessor`
-//! turns `if (x instanceof C) { T v = (T) x; ... }` into the type pattern
-//! `x instanceof T v` and, when the variable's type is generic, writes that
-//! generic type into the pattern. Java allows a type pattern only when the
-//! cast it stands for is checked (JLS 15.20.2): `T` is reifiable, or the
-//! operand's static type already determines `T`'s type arguments. A pattern
-//! of a type variable (`sym instanceof NT nt`) or of a parameterization the
-//! operand does not determine (`value instanceof List<String> l` on an
-//! `Object`) does not compile. With the fix such a pattern is not made; the
-//! `instanceof` and the unchecked cast stay as they are in the bytecode.
+//! Fix `unchecked_type_pattern`: no type pattern is made for an unchecked cast
+//! (to a type variable, or to a parameterization the operand does not
+//! determine).
 
 use crate::code_type::CodeType;
 use crate::exprent::Exprent;

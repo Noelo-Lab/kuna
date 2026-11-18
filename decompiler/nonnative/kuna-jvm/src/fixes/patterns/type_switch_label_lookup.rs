@@ -1,23 +1,7 @@
-//! kuna fix `type_switch_label_lookup` (`kuna_fixes::KunaFix::TypeSwitchLabelLookup`).
-//!
-//! A pattern switch's `lookupswitch` keys are indices into the bootstrap
-//! arguments of `typeSwitch`/`enumSwitch`, and `SwitchPatternMatchProcessor`
-//! replaces each index constant among the case values by the label it
-//! stands for. Vineflower 1.12.0 finds the case of index `i` by looking for
-//! an integer constant equal to `i` in the *first* label of each case, and
-//! falls back to case number `i`. A case with several labels (`case 5, 7`,
-//! `case E.X, E.Y`, `case Integer _, String _`) keeps the raw index of every
-//! label after the first, and an integer label already substituted (`case 1`)
-//! is taken for index 1. Here each index constant is found by identity in
-//! whichever case holds it, so every label is replaced exactly once.
-//!
-//! A case with several type patterns (`case Integer _, String _`, Java 22+)
-//! then needs two things Vineflower has no notion of. javac compiles it to a
-//! guard that tests the selector against each pattern type again and
-//! restarts the switch otherwise; that test is javac's, not the source's, and
-//! is removed from the case's guard (`strip_multi_pattern_guards`). And such
-//! a label cannot bind variables, so its patterns print unnamed, as one label
-//! (`unnamed_pattern_types`).
+//! Fix `type_switch_label_lookup`: each index constant among a pattern switch's
+//! labels is replaced by its label, found by identity in whichever case holds
+//! it; javac's re-test of a multi-pattern case leaves its guard, and its
+//! patterns print unnamed.
 
 use crate::code_constants::CONSTANT_STRING;
 use crate::const_exprent::ConstValue;

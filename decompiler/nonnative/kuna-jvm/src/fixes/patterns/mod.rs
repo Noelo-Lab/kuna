@@ -1,5 +1,4 @@
-//! Fix family `patterns` (Java output): `instanceof` patterns and pattern
-//! switches.
+//! Fix family `patterns`: `instanceof` patterns and pattern switches.
 
 pub(crate) mod pattern_binding_shape;
 pub(crate) mod pattern_variable_scope;

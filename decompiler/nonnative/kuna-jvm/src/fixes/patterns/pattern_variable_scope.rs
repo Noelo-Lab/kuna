@@ -1,15 +1,5 @@
-//! kuna fix `pattern_variable_scope` (`kuna_fixes`): a pattern variable is in
-//! scope only where its `instanceof` is known to have matched (JLS 6.3.1):
-//! for `if (x instanceof T v) S else E`, in `S` (and in the rest of the
-//! condition); for `if (!(x instanceof T v)) S else E`, in `E`; and when an
-//! `if` without `else` whose condition is false on a match cannot complete
-//! normally, in the rest of the enclosing block. `IfPatternMatchProcessor`
-//! turns `if (x instanceof T) { v = (T) x; ... }` into a pattern after checking
-//! only that no predecessor assigns `v`, so a local that the other branch
-//! assigns, or that code after the `if` reads (`T v; if (x instanceof T) v =
-//! (T) x; else v = new T(); v.use();`), becomes a pattern variable used out of
-//! its scope. With the fix the pattern is made only when every other use of
-//! the variable lies inside the pattern's scope; otherwise the cast stays.
+//! Fix `pattern_variable_scope`: a pattern is made only when every other use of
+//! its variable lies in the pattern's scope (JLS 6.3.1).
 
 use crate::exprent::Exprent;
 use crate::if_statement::IfStatement;
