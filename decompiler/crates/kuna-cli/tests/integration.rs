@@ -2,6 +2,8 @@
 #[path = "mips_elf_selection.rs"]
 mod mips_elf_selection;
 mod common;
+#[path = "sparc_prologue_start.rs"]
+mod sparc_prologue_start;
 
 #[path = "rust_empty_match.rs"]
 mod rust_empty_match;
@@ -118,6 +120,9 @@ mod buildstamp_cli;
 
 #[path = "call_array_extent.rs"]
 mod call_array_extent;
+
+#[path = "sparc_delay_slot_storage.rs"]
+mod sparc_delay_slot_storage;
 
 #[path = "call_wide.rs"]
 mod call_wide;

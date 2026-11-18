@@ -124,6 +124,7 @@ mod kuna_framepool;
 pub(crate) mod kuna_frameflow;
 pub mod kuna_framereplay;
 mod kuna_thumbframes;
+mod kuna_sparcprologue;
 pub(crate) use kuna_framecache::ArmFrames;
 pub mod kuna_ptrentry;
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
@@ -1076,12 +1077,18 @@ fn aif_candidates(
             }
             match probe
             {
-                Probe::Accept(body) => {
-                    let entry = match (pool_end, filler) {
+                Probe::Accept(mut body) => {
+                    let mut entry = match (pool_end, filler) {
                         (Some(end), _) => end,
                         (None, kuna_aifnoppad::Filler::Before(at)) if body.contains(&at) => at,
                         _ => gap_start,
                     };
+                    if roots.is_none() && entry == gap_start {
+                        if let Some(prefix) = kuna_sparcprologue::prefix(decoder, listing, &claimed, entry) {
+                            body.extend([prefix, prefix + 4]);
+                            entry = prefix;
+                        }
+                    }
                     if let Some(bodies) = &mut bodies {
                         bodies.insert(entry, body.iter().copied().filter(|&at| at >= entry)
                             .map(|at| (at, decoder.recorded(at))).collect());
