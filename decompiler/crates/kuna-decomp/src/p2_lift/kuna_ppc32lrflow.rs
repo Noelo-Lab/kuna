@@ -110,6 +110,7 @@ struct State {
     stack: BTreeMap<(u32, i32), Value>,
     image_unmodified: bool,
     return_address_observed: bool,
+    return_address_may_constrain_path: bool,
 }
 
 /// Keep the facts from each incoming path together. If the bound is reached,
@@ -384,6 +385,7 @@ fn transfer(data: &Funcdata, op: OpId, state: &mut State) {
                 .values()
                 .chain(state.stack.values())
                 .any(|value| value.depends_on_return());
+            state.return_address_may_constrain_path |= state.return_address_observed;
             state.stack.clear();
             state.image_unmodified = false;
             let proto = data
@@ -400,13 +402,15 @@ fn transfer(data: &Funcdata, op: OpId, state: &mut State) {
             });
         }
         OpCode::CPUI_CALLOTHER => {
+            state.return_address_observed |= state
+                .values
+                .values()
+                .chain(state.stack.values())
+                .any(|value| value.depends_on_return());
             *state = State {
-                return_address_observed: state.return_address_observed
-                    || state
-                        .values
-                        .values()
-                        .chain(state.stack.values())
-                        .any(|value| value.depends_on_return()),
+                return_address_observed: state.return_address_observed,
+                return_address_may_constrain_path: state.return_address_may_constrain_path
+                    || state.return_address_observed,
                 ..State::default()
             }
         }
@@ -448,6 +452,9 @@ fn transfer(data: &Funcdata, op: OpId, state: &mut State) {
             };
             let input = o.get_in(input).expect("branch input");
             state.return_address_observed |= reads_return(data, input, state);
+            // An unknown decision after exposure can select paths by the incoming LR.
+            state.return_address_may_constrain_path |= state.return_address_observed
+                && !matches!(value(data, input, state), Some(Value::Constant(_)));
         }
         _ => {
             if let Some(out) = o.get_out() {
@@ -492,11 +499,13 @@ fn intersect(prior: &mut State, incoming: &State) -> bool {
     let before = (
         prior.image_unmodified,
         prior.return_address_observed,
+        prior.return_address_may_constrain_path,
         prior.values.len(),
         prior.stack.len(),
     );
     prior.image_unmodified &= incoming.image_unmodified;
     prior.return_address_observed |= incoming.return_address_observed;
+    prior.return_address_may_constrain_path |= incoming.return_address_may_constrain_path;
     if !prior.return_address_observed {
         prior.return_address_observed = prior
             .values
@@ -523,6 +532,7 @@ fn intersect(prior: &mut State, incoming: &State) -> bool {
         != (
             prior.image_unmodified,
             prior.return_address_observed,
+            prior.return_address_may_constrain_path,
             prior.values.len(),
             prior.stack.len(),
         )
@@ -538,7 +548,7 @@ fn proven_targets(
     let space = data.get_address().get_space()?;
     let mut addresses = BTreeSet::new();
     for state in &contexts.states {
-        if state.return_address_observed {
+        if state.return_address_may_constrain_path {
             return None;
         }
         let target = if let Some(lr) = direct_lr {
