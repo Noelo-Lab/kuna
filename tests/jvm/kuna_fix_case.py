@@ -219,8 +219,9 @@ def add_case(a, extra, work):
     else:
         table['cases'].append(entry)
     with open(table_path, 'w', encoding='utf-8', newline='\n') as f:
-        json.dump(table, f, indent=2)
-        f.write('\n')
+        head = [f'  {json.dumps(k)}: {json.dumps(v)}' for k, v in table.items() if k != 'cases']
+        f.write('{\n' + ',\n'.join(head) + ',\n  "cases": [\n')
+        f.write(',\n'.join('    ' + json.dumps(c) for c in table['cases']) + '\n  ]\n}\n')
     regen()
 
     compat_id, default_id = f'kuna-fixes-compat/{case_id}', f'kuna-fixes/{case_id}'
