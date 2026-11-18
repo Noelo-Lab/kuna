@@ -249,7 +249,7 @@ pub(crate) fn target_encoding(data: &Funcdata, branch: OpId) -> Option<(i32, u64
     Some((size, result))
 }
 
-fn incoming_return(data: &Funcdata, vn: VarnodeId) -> bool {
+pub(crate) fn incoming_return(data: &Funcdata, vn: VarnodeId) -> bool {
     let Some(value) = data.vbank().get(vn).filter(|v| v.is_input()) else {
         return false;
     };

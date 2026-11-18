@@ -2041,7 +2041,13 @@ A dispatcher loop jumps through one register, and each step's code loads the
 next step's address and jumps back. Flow recovers the dispatch's first target
 before that code is decoded, so upstream keeps a one-entry table and drops every
 later step. Under `reentry` (and `on`), a recovered in-bounds, non-override
-singleton table is provisional. After each round of table following,
+single-target table is provisional. A multi-target dispatch is also provisional
+when the jump forwards its target operand directly or through the transfer
+instruction's copies and alignment mask. For a table that reads its destinations
+from memory, a back edge through the destination load still uses the table's
+range model. Flow watches entries that bypass that load within the original
+basic block. When the load and transfer share an instruction, every entry
+executes the load. After each round of table following,
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_indirectreturn.rs (reentry_edges)`
 collects the new direct branches and fallthroughs into previously decoded
 instructions, reading only the dead list's tail: flow appends what it
@@ -2065,14 +2071,29 @@ runs the edge's block and the dispatch instruction's own operations through
 the same `Prefix` evaluator as the entry proof, and a proven local constant
 extends the table without another partial decompile. Any other reaching edge
 requests a full recovery once the locally proved frontier drains. At most 128
-such retries run per flow; every dispatch still pending when they run out
-keeps its targets and carries `Re-entered indirect jump may have more targets`,
-once each. A retry admits the constant-select model whatever `constselectjump`
-says except `off`, because the re-entry already shows the targets are one
-function's. A retry's failed second stage keeps the old model and targets and
-reports that warning; outside re-entry a failed second stage restores its model
-silently, as upstream does. `off` records no provisional table and restores
-upstream's flow.
+such retries run per flow. A successful retry must account for the local
+targets already followed. If it omits one, the union of the known targets
+stays reachable. With `off`, flow skips discovery of additional local
+targets and still checks whether a newly arriving value was covered.
+
+When recovery fails, is disabled, or exhausts its retries, flow keeps the
+unresolved dispatch until table following finishes. At the original jump it
+captures the computed operand once, after the instruction's side effects.
+It branches directly to each distinct known destination on equality and
+uses the ordinary indirect tail call and return for the remaining values.
+These operations share the jump instruction's address and require no unused
+instruction address for the call. An explicit table override retains its
+declared targets.
+
+For a transfer that may also return, the first SSA pass identifies the incoming
+return register or an entry-block load of the return at the initial stack
+pointer before any possible memory overwrite. It follows the selector
+through copies, identity operations, merges and the transfer's own alignment
+mask. An incoming return address takes a separate conditional return. A
+parallel merge carries that decision and a defined selector on each edge,
+so a callback may use any address value and other uses of the original
+selector keep their definitions. Each SSA operand and edge in this walk is
+visited a bounded number of times, including loop-carried merges.
 
 A re-entered dispatch can also receive the caller's return address, and not
 always last: an early exit can reach it before the later steps are decoded.
@@ -2082,8 +2103,7 @@ the table ceiling. The return becomes the table's last, unlabelled address: a
 synthetic RETURN that `FlowInfo::kuna_return_stub` plants one byte past the
 jump, where no instruction is decoded, and that the table marks as its default
 case. If an instruction is already decoded there, the return destination is
-dropped with `Indirect jump caller return overlaps decoded code` rather than
-flowing into that instruction. Whatever the dispatcher block does, including a
+handled by the conditional return of an open dispatch. Whatever the dispatcher block does, including a
 delay-slot update, runs before that return exactly as it does before each case.
 Out-of-bounds or unmapped destinations retain one placeholder and do not make a
 singleton table provisional. The original transfer's mask is recorded from raw
