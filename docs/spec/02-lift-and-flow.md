@@ -2094,8 +2094,10 @@ limitation it shares with every architecture's register jump, rather than
 introducing it — a recovered single-entry table whose register is redefined on
 a back edge found after recovery is not staged again, so that later transfer is
 missing from the output, exactly as it is for an x86-64 `jmp *%rax` of the same
-shape. A flow override at the return keeps its classification, and off restores
-the spec's RETURN.
+shape. A flow override at the return keeps its classification, and off keeps
+the instruction's original flow kind in this pass. The decompiler leaves
+PPC32 returns through LR to the PPC32 classifier, which follows additional
+paths to the same transfer and distinguishes local jumps from returns.
 
 **(kuna) Re-entered indirect dispatches — `option constselectjump`, default
 `reentry`, `decompiler/crates/kuna-decomp/src/p2_lift/flow.rs (generate_ops_with_jumptables)`.**
