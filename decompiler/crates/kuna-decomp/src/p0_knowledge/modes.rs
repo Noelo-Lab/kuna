@@ -629,6 +629,9 @@ mod tests {
             // preset sweep or speed measurement needed before changing the
             // default output for every aggressive-mode decompile.
             "bytearrayc",
+            // Allocation recovery selects the ordinary function-lifetime stack
+            // model; arbitrary stack switching remains outside that model.
+            "stackalloc",
         ];
 
         let agg = mode_overrides("aggressive").unwrap();

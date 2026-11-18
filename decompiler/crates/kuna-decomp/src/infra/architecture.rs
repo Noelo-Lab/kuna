@@ -771,6 +771,8 @@ pub struct Architecture {
     pub stack_alias_deadstore: bool,
     /// Operation-specific typed views over shared physical frame storage.
     pub stack_views: bool,
+    /// Materialize dynamic stack allocations across control flow.
+    pub stack_alloc: bool,
     /// (kuna `libcnames`) Name locals from the library calls they meet.
     /// See [`crate::kuna_libcnames`].
     pub libc_names: bool,
@@ -2399,6 +2401,7 @@ impl Architecture {
             dead_cascade: Some(crate::p3_dataflow::kuna_deadcascade::DEFAULT_PASSES),
             stack_alias_deadstore: false,
             stack_views: false,
+            stack_alloc: false,
             libc_names: false, // (kuna) option libcnames; reset_defaults sets the shipped default
             recover_array_stride: false,
             recover_lowered_switch: false,
@@ -2716,6 +2719,7 @@ impl Architecture {
         self.jumptable_share_partial = true; // (kuna) DIV: the upstream stageJumpTable shape
         self.dead_cascade = Some(crate::p3_dataflow::kuna_deadcascade::DEFAULT_PASSES);
         self.stack_views = false;
+        self.stack_alloc = false;
         self.libc_names = true; // (kuna) option libcnames default-on; `option libcnames off` keeps every local's `vN` name
         self.stack_alias_deadstore = false; // (kuna) default: upstream byte-identical (GH-8500)
         self.recover_array_stride = true; // (kuna) DIV-3 default-on (GH-8724)
@@ -3524,6 +3528,11 @@ impl Architecture {
         ctx.array_size = self.array_size; // arraysize
         ctx.stack_alias_deadstore = self.stack_alias_deadstore; // stackalias
         ctx.stack_views = self.stack_views;
+        ctx.stack_alloc = self.stack_alloc;
+        ctx.stack_alloc_scopes = self.stack_alloc
+            && self.print.out_lang() == crate::kuna_lang::OutLang::C;
+        ctx.stack_alloc_stacked_varargs = self.archid.starts_with("AARCH64")
+            && crate::kuna_formatstring::target_vararg_abi(self) == crate::kuna_formatstring::VarargAbi::Nothing;
         ctx.libc_names = self.libc_names; // libcnames
         ctx.devectorize_reduction = self.devectorize_reduction; // devectorize
         ctx.strlen_scan = self.strlen_scan; // strlenscan

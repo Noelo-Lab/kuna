@@ -553,6 +553,14 @@ impl Funcdata {
     pub fn restructure_varnode(&mut self, aliasyes: bool) -> int4 {
         use crate::varmap::MapState;
 
+        let previous_bytes = if self.stack_alloc_on()
+            && (self.stack_alloc_settled() || !self.kuna_stack_scope_holds.is_empty())
+        {
+            self.get_scope_local().map(|lm| lm.gather_symbol_hints()).unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+
         // C++ `restructureVarnode` head (varmap.cc:1259): clear out the unlocked
         // auto-recovered stack Symbols so this pass re-derives the layout from the
         // current Varnodes.  Without it a spurious open-array Symbol formed on an
@@ -616,6 +624,14 @@ impl Funcdata {
             None => Vec::new(),
         };
         state.gather_symbols(&hints);
+        if let Some(types) = self.get_arch().types_rc().filter(|_| !previous_bytes.is_empty()) {
+            if !super::kuna_arrayextent::preserve_stackalloc_bytes(self, &mut state, &space, &previous_bytes, types.as_ref()) {
+                self.touch_stack_alloc();
+                self.withdraw_stack_alloc();
+                self.spoil_stack_alloc(Some("Runtime stack recovery would truncate frame bytes affected by a live side effect; allocation recovery declined."));
+                return 0;
+            }
+        }
         crate::p6_variables::kuna_arrayextent::extend_unbounded(self, &mut state, &space, &unbounded);
 
         super::kuna_callarrayextent::coalesce_delay_slot_init(self, &mut state, &space);
@@ -1674,7 +1690,21 @@ impl Funcdata {
                 let code = o.code();
                 match code {
                     OpCode::CPUI_COPY => {
-                        nonadduse = true; // COPY is both a non-add use and part of an ADD chain.
+                        // (kuna stackalloc) A call's retained stack-pointer snapshot
+                        // only reads SP for the allocation proof; it takes no address.
+                        if o.get_out().is_some_and(|out| self.kuna_stack_call_sp.values().flatten().any(|&sp| sp == out)
+                            || self.kuna_stack_scope_holds.contains(&out)
+                                && self.vbank().get(out).is_some_and(|v| v.get_space().get_type() == kuna_base::space::spacetype::IPTR_INTERNAL))
+                        {
+                            continue;
+                        }
+                        // (kuna stackalloc) A held copy of the stack pointer into itself
+                        // is still the stack pointer, not an address taken from it.
+                        let sp_copy = o.get_out().is_some_and(|out| self.kuna_stack_scope_holds.contains(&out)
+                            && self.vbank().get(out).zip(self.vbank().get(vn)).is_some_and(|(x, y)|
+                                x.get_space().get_index() == y.get_space().get_index() && x.get_offset() == y.get_offset() && x.get_size() == y.get_size()
+                                && x.get_space().get_type() == kuna_base::space::spacetype::IPTR_PROCESSOR));
+                        nonadduse |= !sp_copy; // COPY is both a non-add use and part of an ADD chain.
                         if let Some(subvn) = o.get_out() {
                             if marked.insert(subvn) {
                                 vnqueue.push((subvn, indexvn));
@@ -1690,6 +1720,10 @@ impl Funcdata {
                                 if !self.vbank().get(ov).map(|x| x.is_constant()).unwrap_or(false) {
                                     indexvn = Some(ov);
                                 }
+                            }
+                            // (kuna stackalloc) Below a runtime reservation, not the frame.
+                            if crate::p3_dataflow::kuna_stackalloc::reserves_runtime_amount(self, op) {
+                                continue;
                             }
                             if let Some(subvn) = o.get_out() {
                                 if marked.insert(subvn) {
@@ -1708,6 +1742,9 @@ impl Funcdata {
                             if !self.vbank().get(ov).map(|x| x.is_constant()).unwrap_or(false) {
                                 indexvn = Some(ov);
                             }
+                        }
+                        if crate::p3_dataflow::kuna_stackalloc::reserves_runtime_amount(self, op) {
+                            continue;
                         }
                         if let Some(subvn) = o.get_out() {
                             if marked.insert(subvn) {

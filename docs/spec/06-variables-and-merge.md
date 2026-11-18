@@ -2028,6 +2028,33 @@ the mark there would end the array before that element and print the loop's
 index past it. Merging slots never changes what the C computes, only how many
 declarations it has. `off` is upstream.
 
+An unindexed escape without a known dereference extent does not establish an
+array bound. Adjacent initializations can belong to a larger object, including
+a consumer-owned ABI record; the observed prefix alone does not establish its size.
+
+Runtime-stack recovery can suppress a displaced-SP index before lowering the
+allocation. While its native values are held, and after materialization,
+`Funcdata::restructure_varnode` retains the preceding unlocked byte-array views
+only through `kuna_arrayextent.rs (preserve_stackalloc_bytes)`: a view is capped
+by its current contiguous one-byte writes, its preceding extent and the mapped
+frame. A live non-creation `INDIRECT` carrying a nonconstant byte from different
+storage preserves a propagated write, as in `gather_varnodes`; same-slot and
+creation markers alone do not. Gaps, wider writes, independent preceding symbols, direct reads,
+locked types or guards, and indexed hints stop preservation. Unindexed escaped
+addresses inside that already-existing written interval share the same fixed
+byte array; no preceding view means no new runtime-slot grouping. The preceding
+layout is not evidence of the original source object's size: an inferred
+twelve-byte view with six written bytes becomes six bytes, never padded to
+eight or twelve. This preservation is confined to active or materialized
+runtime-stack recovery and does not change `arrayextent`'s ordinary eligibility.
+Views larger than 257 bytes are left unchanged; this is the bounded scope of
+this preservation proof, not a claim that larger byte arrays are invalid.
+If the first byte without a direct or propagated write still has a live
+`INDIRECT` side effect and a compatible fixed-byte hint, the short prefix
+does not account for all observed storage. No hints are changed: runtime-stack
+recovery is withdrawn and the ordinary analysis restarts without it. This
+does not infer a callee-filled tail or assign a new historical extent.
+
 Unindexed escaped frame storage does not grow merely because an adjacent
 word is initialized.
 With `arrayextent on` on SPARC32, the lifter attributes a call's delay-slot

@@ -577,3 +577,71 @@ fn adv_w10_rspelim_analyze_extrapop_unknown_defaultfp_does_not_suppress() {
     let r2 = super::analyze_extra_pop(&mut fd, &stackspc, 0);
     assert_eq!(r, r2, "unknown-model path is deterministic across runs");
 }
+
+#[test]
+fn retained_call_stack_effect_keeps_the_native_input_and_applies_the_return_pop() {
+    fn value(fd: &Funcdata, vn: VarnodeId, entry: VarnodeId) -> u64 {
+        if vn == entry { return 0x1000; }
+        let node = fd.vbank().get(vn).unwrap();
+        if node.is_constant() { return node.get_offset(); }
+        let op = fd.obank().get(node.get_def().unwrap()).unwrap();
+        let input = value(fd, op.get_in(0).unwrap(), entry);
+        match op.code() {
+            OpCode::CPUI_INT_ADD => input.wrapping_add(value(fd, op.get_in(1).unwrap(), entry)),
+            OpCode::CPUI_INT_AND => input & value(fd, op.get_in(1).unwrap(), entry),
+            OpCode::CPUI_COPY | OpCode::CPUI_INDIRECT => input,
+            other => panic!("unexpected stack expression {other:?}"),
+        }
+    }
+    for enabled in [false, true] {
+        for held in [false, true] {
+            for pop in [0, 8, 16] {
+                let mut manage = build_manager();
+                manage.insert_space(Rc::new(kuna_base::space::IopSpace::new(4))).unwrap();
+                let stack = Rc::clone(manage.get_stack_space().unwrap());
+                let register = register_space(&manage);
+                manage.add_spacebase_pointer(&stack,
+                    &VarnodeStorage { space: Some(Rc::clone(&register)), offset: SP_OFF, size: SP_SIZE as u32 },
+                    SP_SIZE, true).unwrap();
+                let mut arch = ArchContext::new(manage);
+                arch.stack_alloc = enabled;
+                let mut fd = Funcdata::new("caller", "caller", Rc::new(arch),
+                    Address::new(register, 0x1000), 0x1000, 0x40).unwrap();
+                let block = new_block(&mut fd);
+                let entry = make_sp_in(&mut fd);
+                let reserve = mk_op(&mut fd, block, 0x10, 2, OpCode::CPUI_INT_ADD);
+                let minus_word = fd.new_constant(SP_SIZE, (-8_i64) as u64);
+                fd.op_set_all_input(reserve, &[entry, minus_word]).unwrap();
+                let before = fd.new_varnode_out(SP_SIZE, &reg_addr(&fd, SP_OFF), reserve).unwrap();
+                let before = if enabled && held {
+                    // The solver approximates alignment as a copy. The native
+                    // value must nevertheless retain its real alignment.
+                    fd.vbank_mut().get_mut(before).unwrap().set_auto_live_hold();
+                    let align = mk_op(&mut fd, block, 0x11, 2, OpCode::CPUI_INT_AND);
+                    let mask = fd.new_constant(SP_SIZE, (-64_i64) as u64);
+                    fd.op_set_all_input(align, &[before, mask]).unwrap();
+                    fd.new_varnode_out(SP_SIZE, &reg_addr(&fd, SP_OFF), align).unwrap()
+                } else { before };
+                let call = mk_op(&mut fd, block, 0x20, 1, OpCode::CPUI_CALL);
+                let target = fd.new_constant(SP_SIZE, 0x2000);
+                fd.op_set_input(call, target, 0).unwrap();
+                let mut spec = crate::fspec::FuncCallSpecs::new(call, Address::new_invalid());
+                spec.proto_mut().set_extra_pop(pop);
+                let index = fd.push_call_specs(spec);
+                let effect = mk_op(&mut fd, block, 0x21, 2, OpCode::CPUI_INDIRECT);
+                let marker = fd.new_varnode_iop(call);
+                fd.op_set_all_input(effect, &[before, marker]).unwrap();
+                let after = fd.new_varnode_out(SP_SIZE, &reg_addr(&fd, SP_OFF), effect).unwrap();
+                if held {
+                    fd.vbank_mut().get_mut(before).unwrap().set_auto_live_hold();
+                    fd.vbank_mut().get_mut(after).unwrap().set_auto_live_hold();
+                }
+                super::analyze_extra_pop(&mut fd, &stack, 0);
+                let native_before = if enabled && held { 0xfc0 } else { 0xff8 };
+                assert_eq!(value(&fd, after, entry), native_before + pop as u64,
+                    "enabled={enabled}, held={held}, pop={pop}: subsequent POP must address the saved word, not the return slot");
+                assert_eq!(fd.get_call_specs(index).get_effective_extra_pop(), pop);
+            }
+        }
+    }
+}

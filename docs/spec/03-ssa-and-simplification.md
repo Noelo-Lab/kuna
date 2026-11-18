@@ -5,6 +5,71 @@ Anchors:
   - decompiler/crates/kuna-decomp/src/p3_dataflow
 ```
 
+With `stackalloc on`, runtime-sized 16-, 32- and 64-bit stack allocation is materialized just
+after heritage, before stack arithmetic is copied into individual accesses.
+Candidate discovery follows definitions that feed the physical stack pointer,
+including copies, casts, alignment, indirect call effects, and PHIs.
+Before any allocation is recovered or native definitions are held, the stack
+alias gather requires a physical-SP reservation witness for reservation-specific
+boundaries. Ordinary fixed-frame indexing alone cannot trigger recovery's retry.
+The recovery pass waits for the entry stack-pointer SSA input before acquiring
+its first native holds. This avoids restarting ordinary analysis when entry SP
+cannot be recovered. Already-acquired holds still follow the normal cleanup path.
+Under the explicit ordinary-allocation model, the base may itself have been restored
+through memory; a complete provenance chain to entry SP is not required.
+Paired pointer/counter PHIs with equal constant
+steps preserve their difference, including through zero-iteration exit PHIs;
+this recovers a stack probe's original requested size without assuming a bound
+on the loop or deleting its control flow. Each allocation receives independent
+storage, including allocations inside branches and loops. An SSA fixed point
+bounds both address directions required by stack adjustments, memory accesses,
+and outgoing arguments; fresh allocation roots cut successive lifetimes.
+Pointer induction bounds still changing after 64 sweeps are widened to unknown and
+the fixed point is resumed, at most eight times; a function that still has not
+converged is declined, keeping this fixed-point search bounded. Unknown
+stack effects and decreasing stack-pointer cycles without a finite bound are declined,
+including a base carried around a loop by a nonzero constant step, as in a
+stack-clash probe that lowers SP one page at a time before subtracting the
+residual: that residual is not the whole buffer. Another address formed as the
+same base and amount displaced by a constant (`base + 8 - n` beside `SP = base - n`)
+and dominated by the allocation is rewritten from the allocated buffer.
+A bounded evaluator follows copies and pure integer constant expressions before
+normal simplification, including alignment masks in either operand position. A zero
+mask erases the address and is not an alignment proof; only masks applied to a
+recovered allocation contribute reservation slack. The abstract spacebase's
+coordinate alignment remains unchanged, including for explicitly realigned
+static frames and their restore/header proofs. Before ordinary simplification
+can erase a native address mask, allocation recovery retains its output as an
+alignment witness using the existing native-definition holds. Only masks related
+to a witnessed allocation's base or interior addresses are retained. A native SP
+formed as `SP - (SP & (A - 1)) + C` also witnesses alignment `A` only when the
+full-width terms cancel for the same SP, `A` is a power of two, and `C` is divisible
+by `A` in native-width arithmetic. For this witness only, a raw zero rotate
+`(SP << 0) | (SP >> wordbits)` (or the reversed arms) retains SP's identity:
+both logical shifts must use the same full-width source and exact zero/word-width
+counts. Narrow, different-source, arithmetic, and nonzero rotates are not accepted.
+At planning, validated frame equations transfer
+each surviving affine witness to its allocation's address congruence; unconnected
+integer masks contribute nothing.
+A rounded count alone does not align its address. A masked native base combines
+with the count's proved divisibility (including its native scale). Displaced bases
+and nonaligned backing headroom retain that congruence, reserving at most one
+alignment unit minus one extra bytes. Lower
+and upper SSA bounds reserve storage below and above the adopted SP. Memory access
+widths contribute to the upper reservation. The selected SPARC V9 register-window
+prototype's biased local range supplies its 2047-byte SP bias, which is retained in
+the allocated address so subsequent ABI-relative accesses remain aligned. The
+reserved space and alignment rounding are included in the compiler allocation,
+whose result is explicitly converted to an address-sized integer before subsequent
+stack arithmetic. The default is off; this is not an arbitrary stack-switch model.
+The native count is evaluated at native width; compiler-only padding is added
+at a wider width when one is available. Recovered storage describes C object
+accesses, not a reproduction of the binary's exact stack high-water mark.
+Recompiling it requires that the padded request fit the compiler's allocation
+size type and that the new frame fit the available stack. Padded 16-bit
+reservations carry this limitation in their allocation annotation.
+
+
 A LOAD through a pointer with an explicitly volatile pointee is treated as a
 volatile read by early removal and consume-based dead-code elimination, even
 when its value is unused. This type fact supplements the existing volatile
@@ -3893,3 +3958,16 @@ For the widened-operand guard, an isolated dynamic name without a type lock stil
 numeric value. Mapping that name does not disable the widened-operand guard when
 the datatype is the fallback array and every reader satisfies the existing
 arithmetic/SUBPIECE checks. Explicit locked array types keep their structuring.
+
+The stack-allocation pass distinguishes function-lifetime storage from shorter
+native lifetimes. Function-lifetime lowering requires enclosing loop latches and
+later reservations to retain the current backing. A proved restoration with a
+later frame observer can instead delimit a nested, aligned VLA. Both structurers
+preserve its explicit basic-block boundaries; values used afterward are captured
+at their existing definitions, not recomputed from the expired array.
+Unrepresentable regions and missing lifetime proofs decline recovery rather than
+retaining loop-local storage as function-lifetime alloca.
+Lifetime graph and SSA walks are bounded. A cumulative four-million-operation
+saved-frame span limit declines the function when its read proof is too expensive.
+Lowering follows completed live call-input recovery so native SP relationships
+are not replaced while real outgoing arguments are still being recovered.

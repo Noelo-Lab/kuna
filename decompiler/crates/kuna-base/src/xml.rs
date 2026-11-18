@@ -2216,6 +2216,7 @@ mod tests {
         // and kuna-x86-directalias-freed / and does so after an earlier call stops taking that pointer
         // and kuna-itaniumvfunc / an Itanium virtual method named after the function, not its vtable
         // and kuna-itaniumctors / Itanium constructors and destructors named from their vptr stores
+        // and kuna-stackalloc / runtime stack allocation reaches its uses
         // and kuna-switchselfloop / a switch that heads its own loop keeps the loop
         // and kuna-wide-shifts / armconstshift all shifts a signed 64-bit operand unsigned
         // and kuna-sharedpush / a push above a branch is the argument of the call on each arm
@@ -2224,7 +2225,7 @@ mod tests {
         // and gh1627-x86-senduipi-gatherpf / SENDUIPI is not RDRAND and VGATHERPF indexes with a ZMM register
         // and gh1628-x86-vmx-decode-flags / VMREAD/VMWRITE decode without REX.W and VMX instructions set CF/ZF
         // and kuna-kernelbug / a Linux kernel __bug_table trap prints as __WARN(file,line) or BUG()
-        assert_eq!(count, 778, "corpus file count drifted");
+        assert_eq!(count, 779, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

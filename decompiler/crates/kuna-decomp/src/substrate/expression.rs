@@ -564,6 +564,11 @@ impl TermOrder {
     /// `INT_ADD`) becomes a leaf term.
     pub fn collect(&mut self, fd: &crate::funcdata::Funcdata) {
         let obank = fd.obank();
+        // (kuna) Reassociation must preserve intermediate values retained by
+        // stackalloc's lifetime proof, not only the final sum.
+        let native: &[VarnodeId] = if fd.get_arch().stack_alloc {
+            &fd.kuna_stack_scope_holds
+        } else { &[] };
         let mut opstack: Vec<OpId> = Vec::new(); // Depth first traversal path
         let mut multstack: Vec<Option<OpId>> = Vec::new();
 
@@ -581,7 +586,7 @@ impl TermOrder {
                     self.terms.push(AdditiveEdge::new(curop, i, multop, obank));
                     continue;
                 }
-                if fd.lone_descend(curvn).is_none() {
+                if fd.lone_descend(curvn).is_none() || native.contains(&curvn) {
                     self.terms.push(AdditiveEdge::new(curop, i, multop, obank));
                     continue;
                 }
@@ -596,7 +601,7 @@ impl TermOrder {
                             if let Some(addop) = addop {
                                 if obank.get(addop).expect("collect: stale op").code() == OpCode::CPUI_INT_ADD {
                                     let addout = obank.get(addop).expect("collect").get_out().expect("collect: no out");
-                                    if fd.lone_descend(addout).is_some() {
+                                    if fd.lone_descend(addout).is_some() && !native.contains(&addout) {
                                         opstack.push(addop);
                                         multstack.push(Some(subop));
                                         continue;

@@ -159,6 +159,23 @@ pub struct DirectiveSymbol {
 pub struct Funcdata {
     pub(crate) kuna_x87_empty_returns: Vec<Address>,
     pub(crate) kuna_fpu_trunc_views: Vec<OpId>,
+    /// Materialized allocation operations and their native lifetime-end blocks.
+    pub(crate) kuna_stack_scopes: Vec<(OpId, BlockId)>,
+    /// Native restore values retained while call-input recovery is incomplete.
+    pub(crate) kuna_stack_scope_holds: Vec<VarnodeId>,
+    /// Native call-SP values retained only during dynamic stack recovery.
+    pub(crate) kuna_stack_call_sp: std::collections::BTreeMap<OpId, Option<VarnodeId>>,
+    /// Allocation recovery is off for this function (survives `clear`).
+    kuna_stack_alloc_withdrawn: bool,
+    /// Recovery changed this analysis without materializing an allocation.
+    kuna_stack_alloc_spoiled: Option<Option<String>>,
+    /// Recovery or the stack alias gather changed this analysis.
+    kuna_stack_alloc_touched: std::cell::Cell<bool>,
+    /// An allocation was materialized in this analysis.
+    kuna_stack_alloc_settled: bool,
+    /// This analysis's allocation and decline notes, stated as header warnings
+    /// once the pipeline is done: a restarted pass recomputes them.
+    kuna_stack_alloc_notes: Vec<String>,
     /// Boolean properties associated with \b this function (C++ `flags`)
     flags: uint4,
     /// Creation index of first Varnode created after start of cleanup
@@ -767,6 +784,14 @@ impl Funcdata {
         Ok(Funcdata {
             kuna_fpu_trunc_views: Vec::new(),
             kuna_x87_empty_returns: Vec::new(),
+            kuna_stack_scopes: Vec::new(),
+            kuna_stack_scope_holds: Vec::new(),
+            kuna_stack_call_sp: std::collections::BTreeMap::new(),
+            kuna_stack_alloc_withdrawn: false,
+            kuna_stack_alloc_spoiled: None,
+            kuna_stack_alloc_touched: std::cell::Cell::new(false),
+            kuna_stack_alloc_settled: false,
+            kuna_stack_alloc_notes: Vec::new(),
             flags: 0,
             clean_up_index: 0,
             high_level_index: 0,
@@ -2429,6 +2454,57 @@ impl Funcdata {
         }
     }
 
+    /// Split disjoint, uncommitted frame fillers at observed write bounds.
+    /// Preserve their full extent and never feed metadata types back into the IR.
+    pub(crate) fn record_frame_writes(&self, writes: impl IntoIterator<Item = (i64, int4)>) {
+        let mut writes = writes.into_iter().filter(|(_, size)| *size > 0).peekable();
+        if writes.peek().is_none() {
+            return;
+        }
+        let mut map = self.frame_slots.borrow_mut();
+        let mut entries = map.iter().peekable();
+        let mut prior_end = i64::MIN;
+        let mut disjoint = Vec::new();
+        while let Some((&off, slot)) = entries.next() {
+            let Some(end) = off.checked_add(i64::from(slot.size)) else { return };
+            let overlap = off < prior_end || entries.peek().is_some_and(|(next, _)| **next < end);
+            prior_end = prior_end.max(end);
+            if !overlap && crate::kuna_slotreport::uncommitted(&slot.dtype) {
+                disjoint.push(off);
+            }
+        }
+        for (off, size) in writes {
+            if disjoint.binary_search(&off).is_err() {
+                continue;
+            }
+            let previous = map.get(&off).unwrap();
+            if previous.size <= size {
+                continue;
+            }
+            let Some(end) = off.checked_add(i64::from(previous.size)) else { continue };
+            let Some(split) = off.checked_add(i64::from(size)) else { continue };
+            let name = std::mem::take(&mut map.get_mut(&off).unwrap().name);
+            map.insert(off, FrameSlot {
+                name,
+                dtype: std::rc::Rc::new(crate::dtype::Datatype::new(
+                    size, crate::dtype::type_metatype::TYPE_UNKNOWN)),
+                size,
+            });
+            let gap = (end - split) as int4;
+            map.insert(split, FrameSlot {
+                name: if split < 0 {
+                    format!("local_{:x}", split.unsigned_abs())
+                } else {
+                    format!("stack_{split:x}")
+                },
+                dtype: std::rc::Rc::new(crate::dtype::Datatype::new(
+                    gap, crate::dtype::type_metatype::TYPE_UNKNOWN)),
+                size: gap,
+            });
+        }
+    }
+
+
     /// (kuna `framelayout`) The union of every stack-frame slot any pass recovered.
     pub fn frame_slots(&self) -> Vec<(i64, FrameSlot)> {
         self.frame_slots.borrow().iter().map(|(k, v)| (*k, v.clone())).collect()
@@ -2661,6 +2737,60 @@ impl Funcdata {
     /// (kuna `stackstoreguard`) Did the final layout spoil what the guard needs?
     pub fn stack_store_guard_spoiled(&self) -> bool {
         self.stack_store_guard_spoiled.get()
+    }
+
+    /// (kuna `stackalloc`) Is runtime stack allocation recovery on for this
+    /// function? Off once the drive withdrew it after a decline.
+    pub fn stack_alloc_on(&self) -> bool {
+        self.get_arch().stack_alloc && !self.kuna_stack_alloc_withdrawn
+    }
+
+    /// (kuna `stackalloc`) Analyze this function without allocation recovery.
+    pub fn withdraw_stack_alloc(&mut self) {
+        self.kuna_stack_alloc_withdrawn = true;
+    }
+
+    /// (kuna `stackalloc`) Recovery changed the IR but materializes nothing:
+    /// the drive analyzes the function again without it, so a decline leaves
+    /// the output recovery-off would give. `note` is the decline reason.
+    pub(crate) fn spoil_stack_alloc(&mut self, note: Option<&str>) {
+        self.kuna_stack_alloc_spoiled = Some(note.map(str::to_owned));
+    }
+
+    /// (kuna `stackalloc`) Record a note of this pass's recovery.
+    pub(crate) fn note_stack_alloc(&mut self, note: String) {
+        self.kuna_stack_alloc_notes.push(note);
+    }
+
+    /// (kuna `stackalloc`) State the final pass's notes as header warnings.
+    pub fn publish_stack_alloc_notes(&mut self) {
+        for note in std::mem::take(&mut self.kuna_stack_alloc_notes) {
+            self.warning_header(&note);
+        }
+    }
+
+    pub(crate) fn settle_stack_alloc(&mut self) {
+        self.kuna_stack_alloc_spoiled = None;
+        self.kuna_stack_alloc_settled = true;
+    }
+
+    pub(crate) fn stack_alloc_settled(&self) -> bool {
+        self.kuna_stack_alloc_settled
+    }
+
+    /// (kuna `stackalloc`) Recovery, or the stack alias gather on its behalf,
+    /// changed this analysis; without a materialized allocation that spoils it.
+    pub(crate) fn touch_stack_alloc(&self) {
+        self.kuna_stack_alloc_touched.set(true);
+    }
+
+    /// (kuna `stackalloc`) Did a decline spoil this analysis? `Some(note)`.
+    pub fn stack_alloc_spoiled(&self) -> Option<Option<&str>> {
+        match &self.kuna_stack_alloc_spoiled {
+            Some(note) => Some(note.as_deref()),
+            None if self.kuna_stack_alloc_touched.get() && !self.kuna_stack_alloc_settled => Some(None),
+            None => None,
+        }
     }
 
     /// (kuna `castobject`) Every stack object any pass re-declared.
@@ -4354,10 +4484,10 @@ impl Funcdata {
     ///
     /// Like upstream, the local scope keeps only the symbols the function was
     /// given (type-locked, equates, asserted identities) and the prototype only
-    /// its locked parts, so a restarted analysis starts where a fresh decompile
-    /// does. The W3 IR clears (`clearBlocks`, `obank.clear`, `vbank.clear`) and
-    /// the flag/index reset are faithful. Buffered comments survive, as C++
-    /// comments already in the database survive a restart.
+    /// its locked parts. The IR and generic analysis flags restart from native
+    /// flow, while pending native-SP interest survives until re-proven or
+    /// withdrawn. Buffered comments survive, as C++ comments already in the
+    /// database survive a restart.
     pub fn clear(&mut self) {
         self.ppc32_pic_calls.clear();
         self.kuna_regnarrow_runs = 0;
@@ -4368,6 +4498,13 @@ impl Funcdata {
         self.kuna_call_mechanisms = Default::default();
         self.kuna_fpu_trunc_views.clear();
         self.kuna_x87_empty_returns.clear();
+        self.kuna_stack_scopes.clear();
+        self.kuna_stack_scope_holds.clear();
+        self.kuna_stack_call_sp.clear();
+        self.kuna_stack_alloc_spoiled = None;
+        // Keep native-SP interest across reflow until a later pass settles it.
+        self.kuna_stack_alloc_settled = false;
+        self.kuna_stack_alloc_notes.clear();
         // Clear the analysis-derived flags (the exact mask from funcdata.cc:88).
         self.flags &= !(funcdata_flags::highlevel_on
             | funcdata_flags::blocks_generated

@@ -214,7 +214,7 @@ pub fn run_region_structurer(
     // switch-case successors a structural natural-loop walk on the sblocks graph
     // misses) and exit frontier, so the refinement virtualizes exactly the
     // secondary exits.  Empty (and skipped) when refinement is off.
-    let cyclic_loops = if loop_refine { ri.cyclic_loops() } else { Vec::new() };
+    let mut cyclic_loops = if loop_refine { ri.cyclic_loops() } else { Vec::new() };
 
     // The `cyclic_loops` are keyed by basic-block start ADDRESS, but the structuring
     // graph's `BlockCopy` leaves carry only the bblocks `BlockId` they copy (their
@@ -234,6 +234,26 @@ pub fn run_region_structurer(
         std::collections::BTreeMap::new()
     };
 
+    let mut scoped_flips = Vec::new();
+    for region in crate::blockaction::seed_stack_scope_regions(data)? {
+        let inner_complex = region.complex_blocks(&complex_blocks);
+        let inner_condfold = region.condition_sets(&condfold_sets);
+        let inner_addresses: std::collections::BTreeMap<_, _> = bb_addr.iter()
+            .filter(|(block, _)| region.contains(block)).map(|(&block, &address)| (block, address)).collect();
+        let (inner_loops, remaining): (Vec<_>, Vec<_>) = cyclic_loops.into_iter()
+            .partition(|loop_region| inner_addresses.values().any(|&address| address == loop_region.head_addr));
+        cyclic_loops = remaining;
+        let mut inner = RegionStructurer::new(data.sblocks_mut(), region.graph)
+            .with_complex_blocks(inner_complex)
+            .with_condfold_sets(inner_condfold)
+            .with_loop_refine(loop_refine, inner_loops, inner_addresses)
+            .with_edge_order(edge_order);
+        if !inner.structure(deadline)? {
+            return Ok((false, Vec::new()));
+        }
+        scoped_flips.extend(inner.take_pending_flips());
+    }
+
     // ---- 2. Structure the seeded sblocks graph -------------------------------
     let sroot = data.sblocks_root();
     let graph = data.sblocks_mut();
@@ -244,7 +264,14 @@ pub fn run_region_structurer(
         .with_loop_refine(loop_refine, cyclic_loops, bb_addr)
         .with_edge_order(edge_order);
     let ok = st.structure(deadline)?;
-    let flips = if ok { st.take_pending_flips() } else { Vec::new() };
+    let mut flips = if ok { st.take_pending_flips() } else { Vec::new() };
+    if ok && !scoped_flips.is_empty() {
+        if flips.is_empty() {
+            flips = scoped_flips;
+        } else {
+            flips.extend(scoped_flips);
+        }
+    }
     if std::env::var_os("KUNA_RS_DEBUG").is_some() {
         eprintln!("[rs] structure -> ok={ok} flips={}", flips.len());
     }

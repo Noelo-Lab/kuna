@@ -3897,6 +3897,40 @@ impl Action for ActionBlockStructure {
         if data.get_arch().loop_continue {
             crate::p8_structure::kuna_loopcontinue::refine_latches(data.sblocks_mut(), sroot);
         }
+        let regions = match seed_stack_scope_regions(data) {
+            Ok(regions) => regions,
+            Err(error) => {
+                ctx.error = Some(error);
+                return -1;
+            }
+        };
+        for region in regions {
+            let inner_complex = region.complex_blocks(&complex_blocks);
+            let inner_condfold = region.condition_sets(&condfold_sets);
+            let mut inner_facts = crate::p8_structure::kuna_ifnoexit::ExitLeafFacts::default();
+            inner_facts.halt.extend(exitleaf_facts.halt.iter().filter(|(block, _)| region.contains(block))
+                .map(|(&block, &halt)| (block, halt)));
+            inner_facts.addr.extend(exitleaf_facts.addr.iter().filter(|(block, _)| region.contains(block))
+                .map(|(&block, &address)| (block, address)));
+            let scope = region.graph;
+            let mut inner = CollapseStructure::new(data.sblocks_mut(), scope)
+                .with_exitleaf_facts(inner_facts, apply_index)
+                .with_ifnoexit_options(guard_arm, loop_cond_hoist)
+                .with_complex_blocks(inner_complex)
+                .with_condfold_sets(inner_condfold);
+            let result = inner.collapse_all();
+            let count = inner.get_change_count();
+            let flips = inner.take_pending_flips();
+            drop(inner);
+            for block in flips {
+                data.block_basic_negate_lastop(block);
+            }
+            if let Err(error) = result {
+                ctx.error = Some(error);
+                return -1;
+            }
+            self.base_mut().count += count + 1;
+        }
         let mut collapse = CollapseStructure::new(data.sblocks_mut(), sroot)
             .with_exitleaf_facts(exitleaf_facts, apply_index)
             .with_ifnoexit_options(guard_arm, loop_cond_hoist)
@@ -4116,6 +4150,73 @@ impl Action for ActionReturnSplit {
         self.base_mut().count += changes;
         0
     }
+}
+
+pub(crate) struct StackScopeRegion {
+    pub graph: BlockId,
+    // Entry first; the remaining native block ids are sorted.
+    blocks: Vec<BlockId>,
+}
+
+impl StackScopeRegion {
+    pub(crate) fn contains(&self, block: &BlockId) -> bool {
+        *block == self.blocks[0] || self.blocks[1..].binary_search(block).is_ok()
+    }
+
+    pub(crate) fn complex_blocks(&self, all: &std::collections::BTreeSet<BlockId>) -> std::collections::BTreeSet<BlockId> {
+        let mut result: std::collections::BTreeSet<_> = all.iter().copied().filter(|block| self.contains(block)).collect();
+        result.insert(self.blocks[0]); // A declaration is not a comma expression.
+        result
+    }
+
+    pub(crate) fn condition_sets(&self, all: &crate::p8_structure::kuna_condfold::CondFoldSets)
+        -> crate::p8_structure::kuna_condfold::CondFoldSets
+    {
+        crate::p8_structure::kuna_condfold::CondFoldSets {
+            prefix: all.prefix.iter().copied().filter(|block| self.contains(block) && *block != self.blocks[0]).collect(),
+            shape: all.shape.iter().filter(|(block, _)| self.contains(block) && **block != self.blocks[0])
+                .map(|(&block, &shape)| (block, shape)).collect(),
+        }
+    }
+}
+
+/// Pin proved native lifetimes before either structurer folds their interiors.
+pub(crate) fn seed_stack_scope_regions(data: &mut Funcdata) -> KunaResult<Vec<StackScopeRegion>> {
+    let sroot = data.sblocks_root();
+    let mut regions = Vec::with_capacity(data.kuna_stack_scopes.len());
+    for index in 0..data.kuna_stack_scopes.len() {
+        let (allocation, end) = data.kuna_stack_scopes[index];
+        if data.obank().get(allocation).is_none_or(|op| op.is_dead()) {
+            continue;
+        }
+        let body = crate::p3_dataflow::kuna_stackalloc::scoped_region(data, allocation, end)
+            .map_err(KunaError::lowlevel)?;
+        // There is one continuing exit target, not necessarily one edge:
+        // native block cleanup can leave several paths to the same boundary.
+        // identify_internal deduplicates those edges when it groups the body.
+        if body[0] == end {
+            return Err(KunaError::lowlevel("Native stack lifetime boundary merged into its body"));
+        }
+        let mut region = StackScopeRegion { graph: sroot, blocks: body };
+        let mut nodes = Vec::with_capacity(region.blocks.len());
+        let mut first = 0;
+        for &copy in data.sblocks_ref().block(sroot).get_list() {
+            let Some(native) = data.sblocks_ref().block(copy).get_copy() else { continue };
+            if region.contains(&native) {
+                if native == region.blocks[0] {
+                    first = nodes.len();
+                }
+                nodes.push(copy);
+            }
+        }
+        if nodes.len() != region.blocks.len() {
+            return Err(KunaError::lowlevel("Native stack lifetime region has no intact block mirror"));
+        }
+        nodes.swap(0, first);
+        region.graph = data.sblocks_mut().new_stack_scope_region(sroot, &nodes);
+        regions.push(region);
+    }
+    Ok(regions)
 }
 
 #[cfg(test)]

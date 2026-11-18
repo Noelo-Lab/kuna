@@ -53,6 +53,7 @@ pub(crate) mod kuna_partialglobalload;
 pub(crate) mod kuna_stackstoreguard;
 pub(crate) mod kuna_stackbytecopy;
 pub(crate) mod kuna_repframecopy;
+pub(crate) mod kuna_stackalloc;
 pub(crate) mod kuna_spillstoreguard;
 pub mod kuna_tiedstorekeep;
 pub mod kuna_loopcounterstore;

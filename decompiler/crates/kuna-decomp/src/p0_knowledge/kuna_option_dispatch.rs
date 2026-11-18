@@ -299,6 +299,7 @@ kuna_options! { self, p1;
         self.persist_calls = val;
         Ok(msg)
     },
+    "stackalloc" => on_off!(stack_alloc, "Dynamic stack allocation"),
     "stackviews" => {
         let (value, message) = crate::kuna_stackviews::OptionStackViews.apply(p1)?;
         self.stack_views = value;

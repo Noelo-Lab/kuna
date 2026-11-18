@@ -23,6 +23,11 @@ for scalar arguments and results inside e500's wide registers, and decompiles a
 conditional tail-call wrapper with `exclusivecallret` off and on. The CLI tests
 cover both byte orders and execute the recovered wrappers.
 
+`kuna-stackalloc.xml` contrasts the raw dynamic-frame reference with allocated
+backing storage. Its CLI companion covers 32- and 64-bit Windows compilation,
+conditional and repeated allocation, scoped VLAs, and page-probe loops, with
+native Linux comparisons of recompiled C at O0 and O2.
+
 `kuna-callwide.xml` loads the committed sealed MIPS32-BE ELF and checks the
 four-byte OFF result against the proved eight-byte result and high-piece callers.
 Its CLI companion executes the original bytes and untouched emitted C/header

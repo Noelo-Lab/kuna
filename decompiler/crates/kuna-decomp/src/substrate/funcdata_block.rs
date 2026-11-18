@@ -814,6 +814,9 @@ impl Funcdata {
     /// Does block `bb` contain only MULTIEQUAL/INDIRECT marker ops and branches
     /// (C++ `BlockBasic::hasOnlyMarkers`, `block.cc:2626`)?
     pub fn bb_has_only_markers(&self, bb: BlockId) -> bool {
+        if self.bblocks_ref().block(bb).get_flags() & block_flags::f_stack_scope_boundary != 0 {
+            return false;
+        }
         for op in self.bb_ops(bb) {
             let o = self.obank().get(op).expect("bb_has_only_markers: stale op");
             if o.is_marker() {
@@ -830,6 +833,9 @@ impl Funcdata {
     /// Should block `bb` be removed because it does nothing useful
     /// (C++ `BlockBasic::isDoNothing`, `block.cc:2644`)?
     pub fn bb_is_do_nothing(&self, bb: BlockId) -> bool {
+        if self.bblocks_ref().block(bb).get_flags() & block_flags::f_stack_scope_boundary != 0 {
+            return false;
+        }
         let g = self.bblocks_ref();
         // No return / cbranch.
         if g.block(bb).size_out() != 1 {
@@ -2957,6 +2963,9 @@ impl Funcdata {
     /// `blockaction.cc:2242`).  Only MULTIEQUAL / COPY / RETURN ops with
     /// constant/annotation/non-free inputs are allowed.
     fn return_split_is_splittable(&self, b: BlockId) -> bool {
+        if self.bblocks_ref().block(b).get_flags() & block_flags::f_stack_scope_boundary != 0 {
+            return false;
+        }
         let mut global_stores: usize = 0;
         let mut cur = self.bb_op_head(b);
         while let Some(op) = cur {
@@ -3495,6 +3504,46 @@ impl Funcdata {
         }
     }
 
+    /// Keep native lifetime boundaries without introducing fake memory effects.
+    pub(crate) fn split_stack_scope_before(&mut self, first: OpId) -> BlockId {
+        let old = self.obank().get(first).unwrap().get_parent().unwrap();
+        self.split_stack_scope_at(old, Some(first))
+    }
+
+    pub(crate) fn split_stack_scope_after(&mut self, last: OpId) -> BlockId {
+        let op = self.obank().get(last).unwrap();
+        let old = op.get_parent().unwrap();
+        let next = op.basic_neighbours().1;
+        self.split_stack_scope_at(old, next)
+    }
+
+    fn split_stack_scope_at(&mut self, old: BlockId, first: Option<OpId>) -> BlockId {
+        if first.is_some() && self.bb_op_head(old) == first {
+            self.bblocks_mut().block_mut(old).set_flag(block_flags::f_stack_scope_boundary);
+            return old;
+        }
+        let root = self.bblocks_root_pub();
+        let new = self.bblocks_mut().new_block_basic(root);
+        self.copy_basic_range(old, new);
+        if let Some(first) = first {
+            let mut moving = false;
+            for id in self.bb_ops(old) {
+                moving |= id == first;
+                if moving {
+                    self.bb_remove_op(old, id);
+                    self.bb_insert_op(id, new, None);
+                }
+            }
+            self.obank_mut().get_mut(first).unwrap().set_flag(crate::op::pcodeop_flags::startbasic);
+        }
+        while self.bblocks_ref().block(old).size_out() != 0 {
+            self.bblocks_mut().move_out_edge(old, 0, new);
+        }
+        self.bblocks_mut().add_edge(old, new);
+        self.bblocks_mut().block_mut(new).set_flag(block_flags::f_stack_scope_boundary);
+        new
+    }
+
     /// Merge the given basic block with the block it flows into
     /// (C++ `Funcdata::spliceBlockBasic`, `funcdata_block.cc:927`).
     ///
@@ -3523,6 +3572,9 @@ impl Funcdata {
             }
             o.ok_or_else(|| KunaError::lowlevel("Cannot splice basic blocks"))?
         };
+        if self.bblocks_ref().block(outbl).get_flags() & block_flags::f_stack_scope_boundary != 0 {
+            return Err(KunaError::lowlevel("Cannot splice a native stack-lifetime boundary"));
+        }
 
         // Remove any jump op at the end of -bl- (C++ funcdata_block.cc:941).
         // `op_destroy` is now available (used by condexe.execute), so the

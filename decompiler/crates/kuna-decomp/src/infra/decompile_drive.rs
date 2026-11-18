@@ -1369,6 +1369,8 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
 /// `follow_flow_on_fd` before the pipeline runs; warnings raised *inside* the
 /// pipeline land here.  No-op when nothing was buffered.
 fn drain_pipeline_comments(arch: &mut Architecture, fd: &mut Funcdata) {
+    // (kuna `stackalloc`) Only the final pass's recovery notes are stated.
+    fd.publish_stack_alloc_notes();
     if !arch.kuna_drive_publishes() {
         return;
     }
@@ -1911,6 +1913,7 @@ fn decompile_func_full_with_objects_inner(
     let input_hints = arch.loader_input_hints.get(&funcaddr).cloned();
     let mut attempt = |prefollowed: Option<Funcdata>,
                        unguarded: bool,
+                       withdrawn: Option<&Option<String>>,
                        condstmts_seed: &std::collections::BTreeSet<Address>,
                        elfmain: Option<&crate::kuna_elfmaindecl::Runtime>|
      -> KunaResult<Funcdata> {
@@ -1933,6 +1936,9 @@ fn decompile_func_full_with_objects_inner(
         fd.set_kuna_record_names(record_names);
         if unguarded {
             fd.withdraw_stack_store_guard();
+        }
+        if withdrawn.is_some() {
+            fd.withdraw_stack_alloc();
         }
         fd.set_condstmts_seed(condstmts_seed.clone());
         // The prototype the function is decompiled *against*. Two sources, in
@@ -2093,6 +2099,9 @@ fn decompile_func_full_with_objects_inner(
         match res {
             Ok(r) => {
                 r?;
+                if let Some(Some(note)) = withdrawn {
+                    fd.warning_header(note);
+                }
                 Ok(fd)
             }
             Err(payload) => {
@@ -2111,25 +2120,41 @@ fn decompile_func_full_with_objects_inner(
     let mut elfmain = elfmain_rt.as_ref();
     let result = loop {
         // (kuna `stackstoreguard`) A function whose final layout spoiled what the
-        // guard needs is analyzed again from scratch without it.
+        // guard needs is analyzed again from scratch without it. (kuna
+        // `stackalloc`) So is one whose allocation recovery changed the analysis
+        // but declined, keeping only the reason. (kuna `condstmts`) A function
+        // whose final structure folded a block over the cap is analyzed again
+        // with that block complex from the first structuring on. Every analysis
+        // a reattempt yields is checked again for all three.
         let mut seed = std::collections::BTreeSet::new();
         let mut unguarded = false;
-        let mut result = match attempt(prefollowed.take(), false, &seed, elfmain) {
-            Ok(fd) if fd.stack_store_guard_spoiled() => {
-                unguarded = true;
-                attempt(None, true, &seed, elfmain)
-            }
-            other => other,
-        };
-        // (kuna `condstmts`) A function whose final structure folded a block over the
-        // cap is analyzed again with that block complex from the first structuring on.
-        for _ in 0..crate::p8_structure::kuna_condstmts::MAX_REATTEMPTS {
+        let mut withdrawn: Option<Option<String>> = None;
+        let mut reattempts = 0;
+        let mut result = attempt(prefollowed.take(), false, None, &seed, elfmain);
+        loop {
             let Ok(fd) = &result else { break };
-            let Some(next) = crate::p8_structure::kuna_condstmts::next_seed(fd) else { break };
-            seed = next;
-            match attempt(None, unguarded, &seed, elfmain) {
-                Ok(fd) => result = Ok(fd),
-                Err(_) => break,
+            // A failed guard or withdrawal reattempt replaces the analysis (a
+            // declined one stopped early); a failed structuring retry keeps it.
+            // The guard is judged on the first analysis only, as before.
+            let next_seed = || crate::p8_structure::kuna_condstmts::next_seed(fd);
+            let replace_on_error = if reattempts == 0 && !unguarded && fd.stack_store_guard_spoiled() {
+                unguarded = true;
+                true
+            } else if withdrawn.is_none() && fd.stack_alloc_spoiled().is_some() {
+                withdrawn = fd.stack_alloc_spoiled().map(|note| note.map(str::to_owned));
+                true
+            } else if let Some(next) = (reattempts < crate::p8_structure::kuna_condstmts::MAX_REATTEMPTS)
+                .then(next_seed).flatten()
+            {
+                seed = next;
+                reattempts += 1;
+                false
+            } else {
+                break;
+            };
+            match attempt(None, unguarded, withdrawn.as_ref(), &seed, elfmain) {
+                Err(_) if !replace_on_error => break,
+                next => result = next,
             }
         }
         if elfmain.is_some() && !result.as_ref().is_ok_and(crate::kuna_elfmaindecl::settled) {

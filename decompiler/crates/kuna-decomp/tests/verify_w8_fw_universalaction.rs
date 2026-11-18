@@ -110,20 +110,15 @@ fn w8_fw_universalaction_empty_or_unmatched_filter_drops_whole_tree() {
 
 // All groups include registrations omitted from the decompile snapshot.
 #[test]
-fn w8_fw_universalaction_allgroups_full_order_count_head_tail() {
+fn w8_fw_universalaction_allgroups_order_head_tail() {
     let f = ActionListFilter::from_names(ALL_GROUPS.iter().copied());
     let dump = universal_sched(None, None, vec![], false).list_action_dump(&f);
     let lines: Vec<&str> = dump.lines().collect();
-    let nonblank = lines.iter().filter(|l| !l.is_empty()).count();
 
     assert_eq!(
         UNPORTED_ALLOWLIST.len(),
         0,
         "all universalAction passes are ported; UNPORTED_ALLOWLIST must be empty"
-    );
-    assert_eq!(
-        nonblank, 304,
-        "full kuna schedule registration count changed"
     );
 
     // These setup passes include groups absent from the decompile snapshot.

@@ -731,6 +731,11 @@ fn base_explicit(data: &Funcdata, vn: crate::context::VarnodeId, mut maxref: int
     };
     {
         let dop = data.obank().get(def).expect("baseExplicit: stale def");
+        if crate::p3_dataflow::kuna_stackalloc::is_scoped_allocation(data, def)
+            || crate::p3_dataflow::kuna_stackalloc::is_scoped_address_capture(data, def)
+        {
+            return -1;
+        }
         if dop.is_marker() {
             return -1;
         }

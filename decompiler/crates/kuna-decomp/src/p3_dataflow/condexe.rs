@@ -198,6 +198,9 @@ impl ConditionalExecution {
     /// The block must have 2 \b in edges, 2 \b out edges and a final CBRANCH op.
     fn test_iblock(&mut self, fd: &Funcdata) -> bool {
         let iblock = self.iblock.expect("testIBlock: no iblock");
+        if fd.bblocks_ref().block(iblock).get_flags() & crate::block::block_flags::f_stack_scope_boundary != 0 {
+            return false;
+        }
         if fd.bblocks_ref().block(iblock).size_in() != 2 {
             return false;
         }

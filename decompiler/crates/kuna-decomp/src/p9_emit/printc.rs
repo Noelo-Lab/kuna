@@ -4288,11 +4288,16 @@ impl PrintC {
 
     /// C++ `PrintC::emitBlockGraph` (printc.cc:2895): emit each component block.
     fn emit_block_graph(&mut self, fd: &Funcdata, arch: &Architecture, graph: BlockId) {
+        let scope = (fd.sblocks_ref().block(graph).get_flags() & crate::block::block_flags::f_stack_scope != 0)
+            .then(|| self.emit.open_brace_indent("{", EmitBraceStyle::NextLine));
         let list: Vec<BlockId> = fd.sblocks_ref().block(graph).get_list().to_vec();
         for blk in list {
             let id = self.emit.begin_block(0);
             self.emit_block(fd, arch, blk);
             self.emit.end_block(id);
+        }
+        if let Some(scope) = scope {
+            self.emit.close_brace_indent("}", scope);
         }
     }
 
@@ -5834,7 +5839,8 @@ impl PrintC {
             if let Some(out) = o.get_out() {
                 if fd.vbank().get(out).map(|v| v.is_implied()).unwrap_or(false)
                     && !(self.out_lang == crate::kuna_lang::OutLang::C
-                        && crate::kuna_stackbytes::assignment(fd, inst).is_some())
+                        && (crate::kuna_stackbytes::assignment(fd, inst).is_some()
+                            || crate::p3_dataflow::kuna_stackalloc::is_scoped_allocation(fd, inst)))
                 {
                     continue;
                 }
@@ -5878,6 +5884,27 @@ impl PrintC {
 
     /// C++ `PrintC::emitStatement` (printc.cc:2361).
     fn emit_statement(&mut self, fd: &Funcdata, arch: &Architecture, inst: OpId) {
+        if crate::p3_dataflow::kuna_stackalloc::is_scoped_allocation(fd, inst) {
+            let name = self.stack_scope_array_name(fd, inst);
+            let markup = self.op_markup(fd, inst);
+            let declaration = self.emit.begin_statement(&markup);
+            self.emit.print("_Alignas(__BIGGEST_ALIGNMENT__) unsigned char ", SyntaxHighlight::TypeColor);
+            self.emit.print(&name, SyntaxHighlight::VarColor);
+            self.emit.print("[(", SyntaxHighlight::NoColor);
+            let count = fd.obank().get(inst).unwrap().get_in(1).unwrap();
+            self.push_stack_alloc_count_ir(fd, arch, count, inst);
+            self.recurse();
+            // GNU ?: evaluates the request once and avoids introducing VLA UB
+            // for a native zero-size reservation. Backing bytes are not bounds.
+            self.emit.print(") ?: 1];", SyntaxHighlight::NoColor);
+            self.emit.end_statement(declaration);
+            self.emit.tag_line();
+            if fd.obank().get(inst).and_then(|op| op.get_out())
+                .and_then(|out| fd.vbank().get(out)).is_some_and(|node| node.is_implied())
+            {
+                return;
+            }
+        }
         // C++ `emit->beginStatement(inst)`: the statement's root op — `opref =
         // inst->getTime()`, the `<ast>` `<seqnum uniq>` a client clicks to.
         let stmt_markup = self.op_markup(fd, inst);
@@ -6876,6 +6903,34 @@ impl PrintC {
             Some(v) => fd.vbank().get(v).map(|vn| vn.get_offset()).unwrap_or(0),
             None => 0,
         };
+        if in0_off == crate::p3_dataflow::kuna_stackalloc::BUILTIN_STACK_ALLOC as u64 {
+            let out = fd.obank().get(op).and_then(|o| o.get_out());
+            let width = out.and_then(|v| fd.vbank().get(v)).map(|v| v.get_size())
+                .unwrap_or(arch.types().get_size_of_pointer());
+            // A pointer result takes the storage as is (`void *` from alloca,
+            // the array's address otherwise); anything else views it as a word.
+            let pointer = out.map(|v| fd.vn_type_def_facing(v))
+                .filter(|ty| ty.get_metatype() == crate::dtype::type_metatype::TYPE_PTR);
+            let scoped = crate::p3_dataflow::kuna_stackalloc::is_scoped_allocation(fd, op);
+            let cast = match pointer {
+                Some(ty) => scoped.then_some(ty),
+                None => Some(arch.types().get_base(width, crate::dtype::type_metatype::TYPE_UINT).unwrap()),
+            };
+            if let Some(ty) = &cast { self.push_cast_open(ty, op); }
+            if scoped {
+                self.push_atom(&Atom::with_op(self.stack_scope_array_name(fd, op), TagType::VarToken,
+                    crate::printlanguage::SyntaxHighlight::var_color, op_key(op)));
+            } else {
+                self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
+                self.push_atom(&Atom::with_op("__builtin_alloca", TagType::OpToken,
+                    crate::printlanguage::SyntaxHighlight::funcname_color, op_key(op)));
+                if let Some(count) = fd.obank().get(op).and_then(|o| o.get_in(1)) {
+                    self.push_stack_alloc_count_ir(fd, arch, count, op);
+                }
+            }
+            if let Some(ty) = &cast { self.push_cast_close(ty); }
+            return;
+        }
         let display = arch
             .userops
             .get_op(in0_off as u32)
@@ -7004,6 +7059,28 @@ impl PrintC {
             }
         }
     }
+    fn push_stack_alloc_count_ir(
+        &mut self, fd: &Funcdata, arch: &Architecture, count: VarnodeId, op: OpId,
+    ) {
+        let width = fd.vbank().get(count).unwrap().get_size();
+        let ty = arch.types().get_base(width, crate::dtype::type_metatype::TYPE_UINT).unwrap();
+        self.push_cast_open(&ty, op);
+        self.push_vn_ir(fd, arch, count, op);
+        self.push_cast_close(&ty);
+    }
+
+    fn stack_scope_array_name(&self, fd: &Funcdata, op: OpId) -> String {
+        let mut name = format!("__kuna_stack_{:x}", op_key(op));
+        let globals = fd.get_arch().global_name_scope();
+        while self.declared_locals.iter().any(|local| local.name == name)
+            || self.signature_param_names.values().any(|parameter| parameter == &name)
+            || globals.as_ref().is_some_and(|globals| globals.has_symbol_name(&name))
+        {
+            name.push('_');
+        }
+        name
+    }
+
 
     /// C++ `PrintC::opFloatInt2Float` (printc.cc:850): the integer→float
     /// conversion prints as a `(floatN)input` type-cast.  The input is the
@@ -11568,6 +11645,57 @@ impl PrintC {
                 }
             }
 
+            // Saved virtual stack pointers address words through their byte view;
+            // only a function with a recovered allocation has them.
+            if fd.stack_alloc_on()
+                && self.out_lang == crate::kuna_lang::OutLang::C
+                && fd.obank().iter_alive().any(|id| fd.obank().get(id).is_some_and(|o|
+                    o.code() == kuna_num::opcodes::OpCode::CPUI_CALLOTHER
+                        && o.get_in(0).and_then(|v| fd.vbank().get(v)).is_some_and(|v| v.is_constant()
+                            && v.get_offset() == crate::p3_dataflow::kuna_stackalloc::BUILTIN_STACK_ALLOC as u64)))
+                && !valueon
+                && sym_off <= 0
+            {
+                let byte_pointer = |p: &std::rc::Rc<crate::dtype::Datatype>| {
+                    p.get_ptr_to().is_some_and(|t| {
+                        t.get_size() == 1
+                            && matches!(
+                                t.get_metatype(),
+                                crate::dtype::type_metatype::TYPE_INT
+                                    | crate::dtype::type_metatype::TYPE_UINT
+                                    | crate::dtype::type_metatype::TYPE_UNKNOWN
+                            )
+                    })
+                };
+                if let Some(out) = fd.obank().get(op).and_then(|o| o.get_out()) {
+                    let mut pointer = Some(fd.vn_type_def_facing(out)).filter(byte_pointer);
+                    if pointer.is_none() {
+                        pointer = crate::printc::declared_variable_type(fd, out)
+                            .filter(byte_pointer);
+                    }
+                    if pointer.is_none() {
+                        pointer = fd
+                            .vbank()
+                            .get(out)
+                            .into_iter()
+                            .flat_map(|v| v.descend_iter())
+                            .find_map(|user| {
+                                let copy = fd.obank().get(user)?;
+                                if copy.code() != OpCode::CPUI_COPY {
+                                    return None;
+                                }
+                                crate::printc::declared_variable_type(
+                                    fd,
+                                    copy.get_out()?,
+                                )
+                                .filter(byte_pointer)
+                            });
+                    }
+                    if let Some(pointer) = pointer {
+                        self.push_cast_open(&pointer, op);
+                    }
+                }
+            }
             if !valueon {
                 // EMIT  &name  (printc.cc:1095)
                 let tok = self.lang_token(&tokens::ADDRESSOF);

@@ -2412,6 +2412,9 @@ mod w10_printc_cast_render {
     #[path = "call_argument_extensions.rs"]
     mod call_argument_extensions;
 
+    #[path = "stack_alloc_counts.rs"]
+    mod stack_alloc_counts;
+
     /// Build a 1-input cast op (`opc`) whose in0 is a constant `k` (renders as a
     /// literal, deterministic) and whose OUTPUT carries the data-type `out_ty`.
     fn build_cast_over_const(
