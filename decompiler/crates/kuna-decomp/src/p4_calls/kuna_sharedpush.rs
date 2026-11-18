@@ -37,6 +37,8 @@
 //!
 //! Two undeclared calls keep upstream's first-scored-wins treatment: neither
 //! side states its arity, so the push may be a later call's deeper argument.
+//! The undeclared callee's own arity is not read either: a compiler hoists a
+//! push only when both arms begin with it, the inference a lone push rests on.
 
 use std::collections::HashSet;
 

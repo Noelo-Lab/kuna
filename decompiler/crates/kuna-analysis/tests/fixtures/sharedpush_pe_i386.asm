@@ -21,6 +21,11 @@
 ;   deeper(sel)      __cdecl (0x401100). push 0x14, then malloc, or push 3
 ;                    and call Note: on that arm 0x14 sits one slot deeper
 ;                    than malloc's argument.
+;   outer(p, sel)    __cdecl (0x401120). if (sel) free(p); else
+;                    pair(guard_nop(), p): p is pushed once for free and for
+;                    pair's second argument, so guard_nop runs on the slot
+;                    and pair reads it; guard_nop takes nothing.
+;   pair (0x401150)                          __cdecl, adds its two arguments.
 ;
 ; Build: nasm -f bin -I . -o sharedpush_pe_i386.exe sharedpush_pe_i386.asm
 
@@ -144,6 +149,27 @@ deeper:                                 ; 0x401100
     ret
 
     align 16, db 0xcc
+outer:                                  ; 0x401120
+    cmp dword [esp+8], 0
+    push dword [esp+4]
+    jz .k
+    call [__imp_free]
+    pop ecx
+    ret
+.k:
+    call guard_nop
+    push eax
+    call pair
+    add esp, 8
+    ret
+
+    align 16, db 0xcc
+pair:                                   ; 0x401150
+    mov eax, [esp+4]
+    add eax, [esp+8]
+    ret
+
+    align 16, db 0xcc
 entry:
     push 1
     call pick
@@ -156,7 +182,10 @@ entry:
     call guarded
     push 1
     call deeper
-    add esp, 24
+    push 0
+    push table
+    call outer
+    add esp, 32
     ret
 
 section .rdata

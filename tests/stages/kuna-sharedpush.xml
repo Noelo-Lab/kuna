@@ -23,6 +23,10 @@
     gains it and the guard check is never handed the argument (9-10). 0x401100
     pushes 3 above the shared 0x14 for Note, so 0x14 sits one slot deeper in
     Note's area than it does in malloc's and is not Note's argument (11).
+    0x401120 is `if (sel) free(p); else pair(guard_nop(), p);` with p pushed
+    once for free and for pair's second argument: guard_nop runs on the slot
+    pair then reads, so it is not the only reader on its arm and gains nothing
+    (12).
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -48,6 +52,9 @@ c3
   <com>load addr 0x401100</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>load addr 0x401120</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="SHAREDPUSH #1: malloc keeps its push" min="1" max="1">= malloc\(0x14\);</stringmatch>
@@ -61,4 +68,5 @@ c3
 <stringmatch name="SHAREDPUSH #9: free keeps its argument beside the guarded call" min="1" max="1">free\(a1\);</stringmatch>
 <stringmatch name="SHAREDPUSH #10: the guard check is never handed the argument" min="0" max="0">\(\*dat_[0-9a-f]+\)\([^)]</stringmatch>
 <stringmatch name="SHAREDPUSH #11: a push one slot deeper on the other arm is not taken" min="1" max="1">Note\(3\);</stringmatch>
+<stringmatch name="SHAREDPUSH #12: a call that runs before a later reader of the slot gains nothing" min="1" max="1">sub_4010f0\(\)</stringmatch>
 </decompilertest>

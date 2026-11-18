@@ -2291,7 +2291,14 @@ classified:
   before the guarded call and takes its target in `ECX`, so it must not be handed
   the argument. Two undeclared calls on exclusive arms keep upstream's
   first-scored-wins answer: neither states its arity, so the push may be a later
-  call's deeper argument.
+  call's deeper argument. The rule does not read the undeclared callee's own
+  arity. A compiler hoists a push above a branch only when both arms begin with
+  it, so on this shape the push is that callee's argument, the same inference
+  that prints `f(0x14)` for a lone `push 0x14; call f`. Hand-written code that
+  pushes for one arm only, or a wrong declared parameter list on the other arm,
+  hands the undeclared call a stray argument just as a lone push would. A push
+  one arm keeps for a later call's deeper argument (`if (c) free(p); else
+  k(h(), p);`) leaves `k` reading the slot on `h`'s arm, so `h` gains nothing.
 
   (kuna) The frame-reload rule
   (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_reloadarg.rs (note, recheck)`,
