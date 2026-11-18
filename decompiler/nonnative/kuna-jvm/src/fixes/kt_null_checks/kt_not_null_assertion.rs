@@ -1,19 +1,7 @@
-//! kuna fix `kt_not_null_assertion` (spec 10.16): kotlinc's code for `x!!` is
-//! written `x!!`.
-//!
-//! kotlinc compiles `e!!` to `e; dup; ifnonnull L; Intrinsics.throwNpe(); L:`
-//! (Kotlin 1.3) or `e; dup; Intrinsics.checkNotNull(e)` (1.4 and later), so the
-//! decompiled method holds the value in a stack variable, then
-//! `if (v == null) { Intrinsics.throwNpe(); }` or `Intrinsics.checkNotNull(v);`,
-//! then the use. Vineflower's Kotlin plugin deletes `checkNotNull` and keeps
-//! `throwNpe`; either way the expression loses the `!!` that gave it its
-//! non-null type, and kotlinc rejects the use of the nullable value (or of
-//! the stack variable declared non-null). Before the last stack-variable
-//! pass, a check is folded back into the expression: `v = e` right before it
-//! becomes `v = e!!` (which the pass then inlines into the use), and a check
-//! of a value read again by the next statement (a local, or a field the
-//! structurer copied into both places) puts the `!!` on that read when it is
-//! the first thing the statement evaluates that may have an effect.
+//! Fix `kt_not_null_assertion`: kotlinc's `!!` check of a stack variable
+//! (`Intrinsics.checkNotNull(v)`, Kotlin 1.3's `throwNpe` branch) is folded back
+//! into the expression: `v = e!!` before it, or the `!!` on the next statement's
+//! first read of the value.
 
 use crate::do_statement::Type as DoType;
 use crate::exprent::{Exprent, ExprentType};

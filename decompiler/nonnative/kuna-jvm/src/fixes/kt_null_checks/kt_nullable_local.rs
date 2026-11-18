@@ -1,26 +1,7 @@
-//! kuna fix `kt_nullable_local` (spec 10.16): a Kotlin local that the method
-//! stores a nullable value into is declared with a nullable type.
-//!
-//! Vineflower writes a local's declared type from its JVM type, never with a
-//! `?`, so a local that holds a nullable value (`var s: Segment = this.head`,
-//! `head` a `Segment?`; `var10000 = null`) is declared non-null and kotlinc
-//! rejects the store. A store's value may be null when it is the `null`
-//! constant; a field, a call or a parameter whose Kotlin type is nullable
-//! (the member's `@Nullable` annotation, else the owner's metadata); a
-//! mapped `Map.get`/`put`/`remove`, which Kotlin types `V?`; or a local that
-//! may hold null. A cast or an `if` expression passes its operands'
-//! nullability on; `x!!`, `new` and the other constants are non-null. A store
-//! that re-reads the value a null check of the enclosing `if` or `if`
-//! expression just tested (`if (this.head != null) { val h = this.head`) is
-//! non-null: the bytecode checked that value. A local any other store of
-//! which may be null is declared `T?`; kotlinc smart-casts its uses after
-//! the method's own null checks. Which value and which call are unchanged.
-//! With fix `kt_raw_generic_type`, an element read through a local that fix
-//! typed with a star-projected or nullable argument may be null too. With
-//! fix `kt_suspend_call_continuation`, in the body of a suspend function a
-//! suspend call's result is as nullable as its callee's metadata declares:
-//! kotlinc annotates the `Object` the method returns (the value or the
-//! suspension marker) `@Nullable`.
+//! Fix `kt_nullable_local`: a local is declared `T?` when a store into it may
+//! be null (the `null` constant, a nullable field, call or parameter, a mapped
+//! `Map` lookup, a nullable local), except a store of the value a null check of
+//! the enclosing `if` just tested.
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};

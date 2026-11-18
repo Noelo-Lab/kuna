@@ -21,7 +21,7 @@ use crate::inline_single_block_helper::InlineSingleBlockHelper;
 use crate::java_finally_pass::JavaFinallyPass;
 use crate::k_merge_pass::KMergePass;
 use crate::fixes::kt_initializers;
-use crate::fixes::kt_null_checks::{kt_expression_value_check, kt_not_null_assertion};
+use crate::fixes::kt_null_checks::{self, kt_not_null_assertion};
 use crate::fixes::kt_when;
 use crate::fixes::kt_compiler_idioms::kt_inlined_to_typed_array;
 use crate::fixes::kt_compiler_idioms::kt_inlined_stdlib_call;
@@ -318,7 +318,7 @@ impl KotlinPlugin {
                         kt_not_null_assertion::recover(root(ctx));
                     }
                     if kuna_fixes::enabled(KunaFix::KtExpressionValueCheck) {
-                        kt_expression_value_check::remove(root(ctx));
+                        kt_null_checks::remove_stored_value_checks(root(ctx));
                     }
                     if kuna_fixes::enabled(KunaFix::KtObjectInstanceLocal)
                         && ctx.get_method().get_name() == CLINIT_NAME

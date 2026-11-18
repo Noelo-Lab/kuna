@@ -2889,7 +2889,7 @@ delegation call, `constructor(x: T) : Intrinsics.checkParameterIsNotNull(x, "x")
 and `InitializerProcessor` neither lifts the constructor's stores of synthetic fields nor reads its
 field stores as property initialisers, so when another constructor's are read the property is
 initialised and then assigned again (okio's `Segment`, a `val`; okhttp's `Request.Builder.tags`). With
-the fix (`decompiler/nonnative/kuna-jvm/src/fixes/kt_null_checks/kt_legacy_constructor_parameter_checks.rs (remove)`),
+the fix (`decompiler/nonnative/kuna-jvm/src/fixes/kt_null_checks/mod.rs (remove_legacy_constructor_checks)`),
 called from the pass, the checks of a constructor's parameters (a parameter slot and a string constant)
 that come before its delegation call in its first block, with nothing between them but stores of
 parameters into fields of `this`, are dropped as the pass drops Kotlin 1.4's; the constructor then has
@@ -4000,8 +4000,8 @@ non-null Kotlin property, kotlinc checks it first: `e; dup; Intrinsics.checkNotN
 call after the stack variables were simplified, leaving the stack variable that held the value, and kept
 the 1.3 one; in a static initializer either stopped `InitializerProcessor`, and the property lost its
 initializer to the `<clinit>` remainder (`val var10000: Logger = Logger.getLogger(..); logger =
-var10000`). With the fix (`decompiler/nonnative/kuna-jvm/src/fixes/kt_null_checks/kt_expression_value_check.rs
-(remove)`) the check of a stack variable that the next statement stores into a field is deleted before
+var10000`). With the fix (`decompiler/nonnative/kuna-jvm/src/fixes/kt_null_checks/mod.rs
+(remove_stored_value_checks)`) the check of a stack variable that the next statement stores into a field is deleted before
 the last stack-variable pass, which writes the value into the store; kotlinc inserts the check again for
 the property's type. A check of a value used anywhere else is left as it was, since there it is all
 that keeps the value's non-null contract.
@@ -4891,7 +4891,7 @@ wherever it stands and keeps Kotlin 1.3's (`Intrinsics.checkParameterIsNotNull`)
 2.6.0 449 calls, okhttp 4.7.2 764), and in an inline function it passes a lambda parameter as a value,
 which kotlinc rejects ("illegal usage of inline parameter": okio 11, okhttp 10). Unchanged on
 `develop/1.13.0`. With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/kt_null_checks/kt_legacy_parameter_checks.rs (remove)`), called
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_null_checks/mod.rs (remove_legacy_checks)`), called
 from the pass after the constructor fix in every method but `<init>` and `<clinit>`, the checks that open
 the function's first block are dropped: the block a sequence, an `if`, a `switch` or a `synchronized`
 starts with, labeled or not (`first_block`; a loop's body may run again), each check of a parameter slot
