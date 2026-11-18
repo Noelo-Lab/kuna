@@ -1,6 +1,7 @@
 //! What several Kotlin fix families share: kotlinc's runtime names and
 //! walks of a statement tree's exprents.
 
+use crate::const_exprent::ConstValue;
 use crate::exprent::Exprent;
 use crate::statement::Statement;
 
@@ -52,4 +53,12 @@ pub(crate) fn all_exprents(stat: Statement) -> Vec<Exprent> {
     let mut out = Vec::new();
     collect(stat, &mut out);
     out
+}
+
+/// The value of `expr` when it is an `int` constant.
+pub(crate) fn int_constant(expr: Exprent) -> Option<i32> {
+    match expr.try_as_const()?.get_value()? {
+        ConstValue::Int(v) => Some(v),
+        _ => None,
+    }
 }

@@ -21,6 +21,7 @@ use crate::kt_flags::Flags;
 use crate::method_descriptor::MethodDescriptor;
 use crate::struct_class::StructClass;
 use crate::var_type::VarType;
+use crate::fixes::kt_util::int_constant;
 
 const MARKER: &str = "Lkotlin/jvm/internal/DefaultConstructorMarker;";
 
@@ -209,14 +210,6 @@ pub fn trailing_defaults(masks: &[i32], n: usize) -> Option<usize> {
     let passed = (0..n).find(|&i| defaulted(i)).unwrap_or(n);
     let beyond = (n..masks.len() * 32).any(defaulted);
     (passed < n && (passed..n).all(defaulted) && !beyond).then_some(passed)
-}
-
-fn int_constant(expr: Exprent) -> Option<i32> {
-    let value = expr.try_as_const()?.get_value()?;
-    match value {
-        crate::const_exprent::ConstValue::Int(v) => Some(v),
-        _ => None,
-    }
 }
 
 /// The value parameters of every constructor in the superclass's Kotlin

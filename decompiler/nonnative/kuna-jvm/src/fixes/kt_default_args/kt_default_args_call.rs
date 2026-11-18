@@ -28,7 +28,6 @@ use std::rc::Rc;
 use crate::code_constants::{
     ACC_BRIDGE, ACC_FINAL, ACC_INTERFACE, ACC_STATIC, ACC_SYNTHETIC, ACC_VARARGS,
 };
-use crate::const_exprent::ConstValue;
 use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;
 use crate::invocation_exprent::{InvocationExprent, InvocationType, Type};
@@ -44,6 +43,7 @@ use crate::new_exprent::NewExprent;
 use crate::struct_class::StructClass;
 use crate::struct_method::StructMethod;
 use crate::var_type::VarType;
+use crate::fixes::kt_util::int_constant;
 
 const SUFFIX: &str = "$default";
 const OBJECT: &str = "Ljava/lang/Object;";
@@ -592,13 +592,6 @@ fn supertypes(cl: StructClass) -> Vec<StructClass> {
 fn is_null(expr: Exprent) -> bool {
     expr.try_as_const()
         .is_some_and(|c| c.get_const_type().equals(&VarType::VARTYPE_NULL()))
-}
-
-fn int_constant(expr: Exprent) -> Option<i32> {
-    match expr.try_as_const()?.get_value()? {
-        ConstValue::Int(v) => Some(v),
-        _ => None,
-    }
 }
 
 #[cfg(test)]
