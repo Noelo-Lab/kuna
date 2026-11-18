@@ -1240,10 +1240,54 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   a System collection or an Auxiliary one built without a System collection,
   told apart by whichever of levels 1 and 3 its chains name (neither can point
   into the other's level). With no plist, or chains naming both, the level is
-  unknown and no kernel-collection target is written; targets at other levels
-  are never written
-  (`decompiler/crates/kuna-analysis/src/loader/format/macho/chained.rs (resolve_kernel_cache_levels)`)
-  — and one entry is cut out as a thin Mach-O by copying
+  unknown and no kernel-collection target is written; a target at another
+  level is kept aside with its level and offset, and counted as damage of the
+  walk, because only the file of that collection holds its base
+  (`decompiler/crates/kuna-analysis/src/loader/format/macho/chained.rs (resolve_kernel_cache_levels)`).
+  Those targets are what a macOS System or Auxiliary collection
+  (`SystemKernelExtensions.kc`, `AuxiliaryKernelExtensions.kc`) uses for every
+  pointer into the kernel: a kext's call slots, the vtables and metaclass
+  pointers its classes inherit. `kernelcache-boot` (kuna, default `auto`,
+  env-bridged through `KUNA_KERNELCACHE_BOOT`) resolves them from the other
+  file. The plist names each linked collection by UUID, `_BootKCID` for level 0
+  and `_PageableKCID` for level 1, as a 16-byte base64 `<data>` value. `auto`
+  lists the directory of the input (at most 4096 names, in name order), keeps
+  the files whose first 16 bytes are an `MH_FILESET` header (at most 16), and
+  reads each until every wanted UUID is found; a path value names one file,
+  which may be an IMG4 or IM4P container, or a directory searched the same
+  way; `off` reads no other file. A candidate is the linked collection only if
+  its `LC_UUID` or its own plist's `_PrelinkKCID` equals the wanted UUID, so a
+  boot collection from another build is never used: its offsets would land on
+  other functions. For a match, each slot gets the linked file's base (its
+  lowest file-backed segment address, the rule the own level uses) plus the
+  offset, pointer-authentication bits dropped. Then each such address that a
+  section symbol of the linked file defines inside an instruction-bearing
+  section is named: the kernel entry's symbol tables are read before the
+  kexts', each distinct entry header once, under the same work budget as the
+  bind below
+  (`decompiler/crates/kuna-analysis/src/loader/kuna_kernelcache/linked.rs (resolve)`).
+  The names reach the loaded entry as symbols of its own: its symbol table is
+  copied to the end of the file with one `N_ABS | N_EXT` symbol per named
+  address after it, the names follow, and the entry's `LC_SYMTAB` is pointed at
+  the copy, its string table keeping its offset and growing to reach the new
+  names
+  (`decompiler/crates/kuna-analysis/src/loader/kuna_kernelcache/fileset.rs (append_bound_symbols)`).
+  That is the form the collection bind below leaves an import in. The builder
+  of a collection turns each bind of a kext's symbol-pointer sections (`__got`,
+  `__auth_got`) and of `__auth_ptr` into a rebase, so after the peel the value
+  of such a slot is the only record of what it is bound to: the import walk
+  makes each 8-byte slot of those sections that holds a bound import's address,
+  and that the indirect-symbol table did not name, an import slot of that
+  function
+  (`decompiler/crates/kuna-analysis/src/loader/macho_stubs.rs (push_kext_bound_slots)`),
+  and a call through it prints the kernel function's name. A data target (a
+  vtable, a metaclass object) is rebased and not named. The load note states,
+  per level, how many pointers were rebased from which file and how many
+  functions were named, or how many stay unresolved and why (the option is off,
+  the plist carries no UUID for the level, no file with that UUID was found).
+  An unresolved slot keeps its packed word. A collection with no target at
+  another level reads no other file, so every other input is unaffected.
+  Then one entry is cut out as a thin Mach-O by copying
   its header and load commands to file offset 0. Nothing else moves: every
   entry's file offsets are already absolute in the collection, so its
   segments, symbol table and indirect-symbol table read correctly in place. The

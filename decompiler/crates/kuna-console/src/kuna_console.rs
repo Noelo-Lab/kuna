@@ -172,6 +172,11 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         let choice = kuna_decomp::kuna_kernelcache::KernelcacheChoice::in_force();
         return Some(Cow::Owned(choice.as_str().to_string()));
     }
+    if option == "kernelcache-boot" {
+        let _load = conf.load_scope();
+        let choice = kuna_decomp::kuna_kernelcacheboot::KernelcacheBoot::in_force();
+        return Some(Cow::Owned(choice.as_str().into_owned()));
+    }
     Some(Cow::Borrowed(match option {
         "bytearrayc" => on_off(conf.print().options.bytearray_c),
         "partialaccess" => on_off(conf.print().options.partial_access),
