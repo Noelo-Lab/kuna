@@ -548,7 +548,7 @@ fn print_command_failure(out: &str) -> Option<String> {
     }
 }
 
-/// The engine's panic, as `<location>: <message>`, read off its stderr.
+/// The engine's panic, as `<location> <message>`, read off its stderr.
 fn engine_panic(stderr: &str) -> Option<String> {
     let mut lines = stderr.lines();
     let at = lines.find_map(|line| line.split_once("panicked at ").map(|(_, at)| at.trim()))?;
