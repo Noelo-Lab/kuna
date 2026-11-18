@@ -29,27 +29,83 @@ use crate::var_version_pair::VarVersionPair;
 /// Whether some path of `root`'s flow graph reads `target` after a write of
 /// `key` that does not copy `target`, without writing `target` in between.
 pub fn overwrites_live(root: RootStatement, key: VarVersionPair, target: VarVersionPair) -> bool {
-    let graph = FlattenStatementsHelper::new().build_direct_graph(root);
-    let nodes: Vec<(DirectNode, Vec<Vec<Event>>)> = graph
-        .nodes()
-        .into_iter()
-        .map(|node| {
-            let defines = defines_vars(node);
-            let events = node
-                .exprents()
-                .to_vec()
-                .into_iter()
-                .map(|e| events(e, defines))
-                .collect();
-            (node, events)
-        })
-        .collect();
-    let exits = if kuna_fixes::enabled(KunaFix::FinallyExitVersions) {
-        FinallyExitVersions::exit_edges(&graph.nodes())
-    } else {
-        JHashMap::new()
-    };
-    read_after_write(&nodes, &exits, key, target)
+    Flow::build(root).overwrites_live(key, target)
+}
+
+/// A method's flattened flow graph with the variable events of each node's
+/// exprents. `mergeVars` keeps one for all its checks: a merge only renames
+/// variables in the exprents the nodes share with the statements (and drops
+/// lone variables, which have no events), so [`Flow::merged`] recomputes the
+/// exprents that mentioned the merged variable and the rest stay valid.
+pub struct Flow {
+    nodes: Vec<(DirectNode, Vec<Vec<Event>>)>,
+    /// The exprent each entry of a node's events belongs to.
+    exprents: Vec<Vec<Exprent>>,
+    by_id: JHashMap<String, usize>,
+    exits: JHashMap<String, Vec<DirectNode>>,
+}
+
+impl Flow {
+    pub fn build(root: RootStatement) -> Flow {
+        let graph = FlattenStatementsHelper::new().build_direct_graph(root);
+        let exprents: Vec<Vec<Exprent>> =
+            graph.nodes().into_iter().map(|node| node.exprents().to_vec()).collect();
+        let nodes: Vec<(DirectNode, Vec<Vec<Event>>)> = graph
+            .nodes()
+            .into_iter()
+            .zip(&exprents)
+            .map(|(node, list)| {
+                let defines = defines_vars(node);
+                (node, list.iter().map(|e| events(*e, defines)).collect())
+            })
+            .collect();
+        let mut by_id: JHashMap<String, usize> = JHashMap::new();
+        for (i, (node, _)) in nodes.iter().enumerate() {
+            by_id.put(node.id(), i);
+        }
+        let exits = if kuna_fixes::enabled(KunaFix::FinallyExitVersions) {
+            FinallyExitVersions::exit_edges(&graph.nodes())
+        } else {
+            JHashMap::new()
+        };
+        Flow {
+            nodes,
+            exprents,
+            by_id,
+            exits,
+        }
+    }
+
+    /// [`overwrites_live`] on this graph.
+    pub fn overwrites_live(&self, key: VarVersionPair, target: VarVersionPair) -> bool {
+        read_after_write(&self.nodes, &self.by_id, &self.exits, key, target)
+    }
+
+    /// After `from` was merged into another variable: the events of the
+    /// exprents that mentioned `from` read again, along each node's list as
+    /// it now is (the merge may have dropped some of its exprents).
+    pub fn merged(&mut self, from: VarVersionPair) {
+        for ((node, node_events), old) in self.nodes.iter_mut().zip(&mut self.exprents) {
+            if !node_events.iter().flatten().any(|e| e.mentions(from)) {
+                continue;
+            }
+            let defines = defines_vars(*node);
+            let live = node.exprents().to_vec();
+            let mut cached = old.iter().zip(node_events.iter()).peekable();
+            let mut fresh = Vec::with_capacity(live.len());
+            for &e in &live {
+                while cached.peek().is_some_and(|(x, _)| **x != e) {
+                    cached.next();
+                }
+                fresh.push(match cached.next() {
+                    Some((_, ev)) if !ev.iter().any(|v| v.mentions(from)) => ev.clone(),
+                    _ => events(e, defines),
+                });
+            }
+            *node_events = fresh;
+            *old = live;
+        }
+    }
 }
 
 /// What evaluating an exprent does to variables, in order.
@@ -62,16 +118,22 @@ enum Event {
     Copy(VarVersionPair, VarVersionPair),
 }
 
+impl Event {
+    fn mentions(self, var: VarVersionPair) -> bool {
+        match self {
+            Event::Read(v) | Event::Write(v, _) => v == var,
+            Event::Copy(v, w) => v == var || w == var,
+        }
+    }
+}
+
 fn read_after_write(
     nodes: &[(DirectNode, Vec<Vec<Event>>)],
+    by_id: &JHashMap<String, usize>,
     exits: &JHashMap<String, Vec<DirectNode>>,
     key: VarVersionPair,
     target: VarVersionPair,
 ) -> bool {
-    let mut by_id: JHashMap<String, usize> = JHashMap::new();
-    for (i, (node, _)) in nodes.iter().enumerate() {
-        by_id.put(node.id(), i);
-    }
     let mut work: Vec<DirectNode> = Vec::new();
     for (node, exprents) in nodes {
         let flat: Vec<Event> = exprents.iter().flatten().copied().collect();
@@ -87,14 +149,14 @@ fn read_after_write(
                     let bodies = finally_bodies(*node, exits);
                     if bodies.is_empty() {
                         work.extend(successors(*node, exits, &bodies));
-                    } else if reaches_read(nodes, &by_id, exits, &bodies, *node, target) {
+                    } else if reaches_read(nodes, by_id, exits, &bodies, *node, target) {
                         return true;
                     }
                 }
             }
         }
     }
-    walk(nodes, &by_id, exits, &[], work, target)
+    walk(nodes, by_id, exits, &[], work, target)
 }
 
 /// Fix `finally_exit_versions`: a write inside a verified `finally` body

@@ -117,6 +117,8 @@ pub struct VarDefinitionHelperData {
     mt: StructMethod,
     clashing_names: Shared<JHashMap<VarVersionPair, String>>,
     widened: Option<(VarVersionPair, VarVersionPair, VarType)>,
+    /// `var_merge_liveness`: the flow `mergeVars` checks merges against.
+    flow: Option<kuna_fix_var_merge_liveness::Flow>,
 }
 
 arena_object!(pub VarDefinitionHelper => VarDefinitionHelperData, Class);
@@ -152,6 +154,7 @@ impl VarDefinitionHelper {
             mt,
             clashing_names: Shared::new(JHashMap::new()),
             widened: None,
+            flow: None,
         });
 
         if !run {
@@ -761,6 +764,7 @@ impl VarDefinitionHelper {
             sources = self.get_var_exprent_sources();
         }
 
+        self.with_mut(|d| d.flow = None);
         let mut denylist: JHashMap<VarVersionPair, VarVersionPair> = JHashMap::new();
         let mut remap = self.merge_vars_rec(stat.0, &parent, &mut JHashMap::new(), &denylist);
         while let Some(entry) = remap {
@@ -773,7 +777,12 @@ impl VarDefinitionHelper {
                             self.with_mut(|d| d.widened = Some((from, to, type_)));
                         }
                         let remapped = self.remap_var(stat.0, from, to);
-                        self.with_mut(|d| d.widened = None);
+                        self.with_mut(|d| {
+                            d.widened = None;
+                            if let Some(flow) = d.flow.as_mut().filter(|_| remapped) {
+                                flow.merged(from);
+                            }
+                        });
                         !remapped
                     }
                 }
@@ -785,6 +794,7 @@ impl VarDefinitionHelper {
             remap = self.merge_vars_rec(stat.0, &parent, &mut JHashMap::new(), &denylist);
         }
 
+        self.with_mut(|d| d.flow = None);
         if let Some(sources) = &sources {
             let new_sources = self.get_var_exprent_sources();
             self.compare_var_exprent_sources(sources, new_sources.as_ref());
@@ -995,8 +1005,14 @@ impl VarDefinitionHelper {
     /// of `key` overwrite a value of `target` that is read later; always false
     /// in compat mode.
     fn merge_overwrites_live(self, key: VarVersionPair, target: VarVersionPair) -> bool {
-        kuna_fixes::enabled(KunaFix::VarMergeLiveness)
-            && kuna_fix_var_merge_liveness::overwrites_live(self.root(), key, target)
+        if !kuna_fixes::enabled(KunaFix::VarMergeLiveness) {
+            return false;
+        }
+        if self.with(|d| d.flow.is_none()) {
+            let flow = kuna_fix_var_merge_liveness::Flow::build(self.root());
+            self.with_mut(|d| d.flow = Some(flow));
+        }
+        self.with(|d| d.flow.as_ref().is_some_and(|f| f.overwrites_live(key, target)))
     }
 
     /// Fix `var_merge_lost_definition`: whether `remapVar` can merge `from`
@@ -1246,7 +1262,7 @@ impl VarDefinitionHelper {
     /// strictly below a value one of them is assigned is made with the type of
     /// the local the LocalVariableTable declares for both, or refused.
     fn merge_check(self, from: VarVersionPair, to: VarVersionPair) -> Merge {
-        if kuna_source_locals::named_apart(self.root().0, from, to) {
+        if self.varproc().has_lvt() && kuna_source_locals::named_apart(self.root().0, from, to) {
             return Merge::Refused;
         }
         if kuna_fixes::enabled(KunaFix::VarMergeDeclaredType)

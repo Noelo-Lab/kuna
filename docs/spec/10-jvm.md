@@ -2447,7 +2447,13 @@ may read the earlier variable after a write of the later one (other than a copy 
 one, or a reference cast of it, which leaves the two equal) without the earlier one being
 written in between. Writes are read in evaluation order, a write under `&&`, `||` or `?:` that
 may not happen does not end a path, and a `for`-each or caught-exception variable is written by
-its node. The fix changes no method of the five Java benchmark projects. Upstream has no
+its node. One `mergeVars` builds the graph and each exprent's events once
+(`decompiler/nonnative/kuna-jvm/src/p6_variables/kuna_fix_var_merge_liveness.rs (Flow)`): a merge
+renames the merged variable in the exprents the nodes share with the statements and drops lone
+variables (which have no events), so after each merge only the exprents that mentioned the merged
+variable are read again. Rebuilding per proposed merge made a method of 600 sibling blocks reusing
+one slot take 2.9 s in `mergeVars` against Vineflower mode's 1.2 s; it now takes 1.3 s. The fix
+changes no method of the five Java benchmark projects. Upstream has no
 such check; its later changes to `mergeVars` (`3ce9eb26`, `ba0aedef`) concern the merged type.
 
 **`kt_partial_array_dims`.** `KNewExprent.toJava` writes an array creation without
