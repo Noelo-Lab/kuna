@@ -189,3 +189,13 @@ fn only_the_all_value_plans_a_64_bit_shift() {
         assert_eq!(plan_fixed64_lsl(&fd, &arch, shift, as_signed).is_some(), planned, "{mode:?}");
     }
 }
+
+/// The two-valued spellings keep their meaning, including the bare `on`.
+#[test]
+fn option_values_keep_the_two_valued_spellings() {
+    use crate::p9_emit::kuna_armconstantshift::{ConstShiftMode, OptionArmConstShift};
+    for (value, mode) in [("off", ConstShiftMode::Off), ("on", ConstShiftMode::On), ("", ConstShiftMode::On), ("all", ConstShiftMode::All)] {
+        assert_eq!(OptionArmConstShift.apply(value).unwrap().0, mode, "{value:?}");
+    }
+    assert!(OptionArmConstShift.apply("yes").is_err());
+}

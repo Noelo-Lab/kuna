@@ -38,7 +38,7 @@ impl OptionArmConstShift {
     pub fn apply(&self, p1: &str) -> kuna_base::error::KunaResult<(ConstShiftMode, String)> {
         let mode = match p1 {
             "off" => ConstShiftMode::Off,
-            "on" => ConstShiftMode::On,
+            "on" | "" => ConstShiftMode::On,
             "all" => ConstShiftMode::All,
             other => {
                 return Err(kuna_base::error::KunaError::parse(format!(

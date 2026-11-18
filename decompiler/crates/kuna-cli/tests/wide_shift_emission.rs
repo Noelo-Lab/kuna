@@ -122,7 +122,7 @@ fn fixed_wide_shifts_keep_their_spelling_by_default() {
             "prototype shift63 long long shift63(long long value)",
         ]);
         let code = String::from_utf8(common::process::required_output(&mut command).stdout).unwrap();
-        assert!(code.contains("value << 0x3f"), "{file}: {code}");
-        assert!(!code.contains("(uint8)value"), "{file}: {code}");
+        assert!(code.contains("return value << 0x3f;"), "{file}: {code}");
+        assert!(!code.contains("unsigned long"), "{file}: {code}");
     }
 }
