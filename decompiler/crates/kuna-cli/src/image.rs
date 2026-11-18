@@ -1,4 +1,5 @@
-//! Shared object-file view, including Mach-O slice selection and TE/MZ refusal.
+//! Shared object-file view, including Mach-O slice selection and the refusal
+//! of the containers that have none (TE, MZ, the `retroimage` formats).
 
 use kuna_analysis::loader::kuna_kernelcache::FilesetMap;
 use kuna_analysis::loader::macho_fat::SlicePref;
@@ -62,13 +63,16 @@ pub(crate) fn image_bytes_and_repairs(binary: &str, pref: SlicePref) -> Result<(
     Ok((bytes, spans))
 }
 
-/// `bytes`, unless the image has no object-file view (TE, MZ).
+/// `bytes`, unless the image has no object-file view.
 fn object_view(binary: &str, bytes: Vec<u8>) -> Result<Vec<u8>, String> {
     if kuna_analysis::loadimage_te::is_te_image(&bytes) {
         return Err(te_object_view_error(binary));
     }
     if kuna_analysis::loadimage_mz::is_mz_dos_image(&bytes) {
         return Err(mz_object_view_error(binary));
+    }
+    if kuna_analysis::loader::kuna_retroimage::is_retro_image(&bytes) {
+        return Err(retro_object_view_error(binary));
     }
     Ok(bytes)
 }
@@ -87,6 +91,16 @@ pub(crate) fn slice_offset(binary: &str, pref: SlicePref) -> u64 {
         .ok()
         .and_then(|bytes| kuna_analysis::loader::macho_fat::fat_slice_offset(&bytes, pref))
         .unwrap_or(0)
+}
+
+/// The same capability error for a PS-X EXE, N64 ROM, a.out, Amiga hunk or
+/// PEF executable, which loads through its own parser.
+fn retro_object_view_error(binary: &str) -> String {
+    format!(
+        "{binary}: this executable format has no object-file view, which this operation needs; \
+         its support covers decompile, decompile-all, functions, disassemble/read, \
+         decompile-project, and the console"
+    )
 }
 
 /// The same capability error for an MS-DOS `MZ` executable, which loads as

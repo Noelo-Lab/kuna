@@ -127,6 +127,14 @@ fn every_object_format_language_id_resolves_in_the_database() {
                 "AARCH64:LE:64:v8A:default",
             ],
         ),
+        (
+            "retro",
+            kuna_analysis::loader::kuna_retroimage::retro_language_ids()
+                .into_iter()
+                .map(|id| (id.to_string(), None))
+                .collect(),
+            &["MIPS:LE:32:default", "MIPS:BE:64:64-32addr", "68000:BE:32:default", "PowerPC:BE:32:default"],
+        ),
     ];
 
     for (fmt_name, ids, expected) in suites {
