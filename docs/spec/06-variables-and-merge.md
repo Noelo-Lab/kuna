@@ -2029,10 +2029,15 @@ index past it. Merging slots never changes what the C computes, only how many
 declarations it has. `off` is upstream.
 
 Unindexed escaped frame storage does not grow merely because an adjacent
-word is initialized. For ELF32 SPARC, a resolved `mbrtowc` or `mbsinit` import
-from glibc supplies the exact eight-byte `mbstate_t` parameter type. The normal
-local type reconciliation keeps both state words under one declaration without
-absorbing an adjacent frame word.
+word is initialized.
+On SPARC32, the lifter attributes a call's delay-slot store to the call
+address. If that store zeros the second of two adjacent frame words, both
+zero stores reach the same direct call, and the call receives the first word's
+address, retain the pair as one eight-byte backing object. The second word
+must have no separate address or direct read, and existing type locks or
+conflicting layout hints veto the change. The backing stops after the
+second word; a following local (such as a saved canary) is not absorbed.
+No callee or import name is used, and the rule does not infer a source type.
 
 **Terminator absorption** (`option nulterminator`, **opt-in, default off**). An
 open hint that `attempt_join` cannot extend ends where the next hint starts, so
