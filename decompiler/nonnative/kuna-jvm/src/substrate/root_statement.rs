@@ -5,7 +5,6 @@ use crate::dummy_exit_statement::DummyExitStatement;
 use crate::expr_processor::ExprProcessor;
 use crate::java_subclass;
 use crate::rt::JLinkedHashSet;
-use crate::start_end_pair::StartEndPair;
 use crate::statement::{Statement, StatementKind, StatementType};
 use crate::struct_method::StructMethod;
 use crate::text_buffer::TextBuffer;
@@ -141,13 +140,5 @@ impl RootStatement {
 
     pub fn has_switch(self) -> bool {
         self.d(|d| d.flags.has_switch)
-    }
-
-    pub fn get_start_end_range(self) -> StartEndPair {
-        let first = self.get_first().expect("first");
-        StartEndPair::join(&[
-            Some(first.get_start_end_range()),
-            Some(self.get_dummy_exit().get_start_end_range()),
-        ])
     }
 }

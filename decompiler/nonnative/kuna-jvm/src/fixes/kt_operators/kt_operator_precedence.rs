@@ -11,6 +11,7 @@ use crate::k_function_exprent::KFunctionType;
 use crate::fixes::kt_operators;
 use crate::kt_flags::Flags;
 use crate::fixes::kt_java_syntax::kt_java_cast_syntax::{self, KotlinCast};
+use crate::fixes::kt_util::writing_kotlin;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::var_type::VarType;
 
@@ -67,7 +68,7 @@ pub fn needs_parentheses(parent: FunctionExprent, operand: Exprent) -> bool {
             _ => false,
         },
     };
-    needed && kt_java_cast_syntax::writing_kotlin()
+    needed && writing_kotlin()
 }
 
 /// Whether `operand` of the binary operator `parent` at `parent_level` needs

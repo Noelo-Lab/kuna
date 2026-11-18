@@ -18,10 +18,6 @@ impl NamedPass {
             pass,
         }
     }
-
-    pub fn of(name: &str, pass: Rc<dyn Pass>) -> NamedPass {
-        NamedPass::new(name, pass)
-    }
 }
 
 impl Pass for NamedPass {

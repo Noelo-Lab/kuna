@@ -6,7 +6,7 @@ use crate::code_type::CodeType;
 use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;
 use crate::exit_exprent::Type as ExitType;
-use crate::fixes::util::collect_exprents;
+use crate::fixes::util::all_exprents;
 use crate::function_exprent::FunctionType;
 use crate::rt::try_catch;
 use crate::statement::Statement;
@@ -203,9 +203,8 @@ pub fn declared_type(
         .filter(|(v, _, _)| *v == from || *v == to)
         .all(|(_, value, _)| admits(&declared, *value));
     let used = is_object(&declared) || {
-        let mut all: Vec<Exprent> = Vec::new();
-        collect_exprents(root, &mut all);
-        all.into_iter()
+        all_exprents(root)
+            .into_iter()
             .all(|e| operands_admit(e, [from, to], &declared))
     };
     (stored && used).then_some(declared)

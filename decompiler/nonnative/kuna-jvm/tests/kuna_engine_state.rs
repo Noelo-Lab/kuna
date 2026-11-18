@@ -126,7 +126,7 @@ fn a_batch_leaves_no_marks_for_the_next_one() {
     config.jobs = Jobs::Exactly(1);
     let mut results = Vec::new();
     let report = kuna_driver::run(&input, &config, &mut |r| results.push(r)).unwrap();
-    assert!(report.runs.len() > 1 && report.instances == 1, "{report:?}");
+    assert!(report.runs > 1 && report.instances == 1, "{report:?}");
     let driven: Vec<(String, String)> = results
         .into_iter()
         .map(|r| {

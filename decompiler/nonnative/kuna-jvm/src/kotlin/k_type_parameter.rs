@@ -10,7 +10,6 @@ pub struct KTypeParameter {
     pub variance: Variance,
     pub upper_bounds: Vec<KType>,
     pub name: String,
-    pub id: i32,
 }
 
 impl KTypeParameter {
@@ -19,14 +18,12 @@ impl KTypeParameter {
         variance: Variance,
         upper_bounds: Vec<KType>,
         name: String,
-        id: i32,
     ) -> KTypeParameter {
         KTypeParameter {
             reified,
             variance,
             upper_bounds,
             name,
-            id,
         }
     }
 
@@ -43,7 +40,6 @@ impl KTypeParameter {
                 .map(|type_| KType::from(type_, resolver))
                 .collect(),
             resolver.resolve(proto.get_name()),
-            proto.get_id(),
         )
     }
 }

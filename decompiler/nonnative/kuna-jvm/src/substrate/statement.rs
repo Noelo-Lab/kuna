@@ -13,7 +13,7 @@ use crate::code_constants::{OPC_ATHROW, OPC_MONITORENTER, OPC_MONITOREXIT};
 use crate::counter_container::CounterContainer;
 use crate::decompiler_context::DecompilerContext;
 use crate::do_statement::{DoStatement, DoStatementData};
-use crate::dummy_exit_statement::{DummyExitStatement, DummyExitStatementData};
+use crate::dummy_exit_statement::DummyExitStatementData;
 use crate::exprent::Exprent;
 use crate::function_exprent::FunctionType;
 use crate::general_statement::{GeneralStatement, GeneralStatementData};
@@ -24,9 +24,8 @@ use crate::match_engine::MatchEngine;
 use crate::match_node::{MatchNode, MatchValue};
 use crate::pattern::Pattern;
 use crate::root_statement::{RootStatement, RootStatementData};
-use crate::rt::{BitSet, JHashMap, JHashSet, JList, JavaEq, JavaHash, Shared};
+use crate::rt::{JHashMap, JHashSet, JList, JavaEq, JavaHash, Shared};
 use crate::sequence_statement::{SequenceStatement, SequenceStatementData};
-use crate::start_end_pair::StartEndPair;
 use crate::stat_edge::StatEdge;
 use crate::strong_connectivity_helper::StrongConnectivityHelper;
 use crate::switch_statement::{SwitchStatement, SwitchStatementData};
@@ -50,7 +49,6 @@ pub enum StatementType {
     Synchronized,
     TryCatch,
     CatchAll,
-    Other,
 }
 
 impl StatementType {
@@ -67,7 +65,6 @@ impl StatementType {
             StatementType::Synchronized => "Monitor",
             StatementType::TryCatch => "Catch",
             StatementType::CatchAll => "CatchAll",
-            StatementType::Other => "YouHaveMetATerribleFate",
         }
     }
 }
@@ -130,7 +127,6 @@ pub struct StatementData {
     pub contains_monitor_exit: bool,
     pub continue_set: Option<Shared<JHashSet<Statement>>>,
     pub phantom: bool,
-    pub endpoints: Option<StartEndPair>,
     pub kind: StatementKind,
     /// Whether the statement is an instance of the Kotlin class of its type (see `k_dispatch`).
     pub kt: bool,
@@ -212,7 +208,6 @@ impl Statement {
             contains_monitor_exit: false,
             continue_set: Some(Shared::new(JHashSet::new())),
             phantom: false,
-            endpoints: None,
             kind,
             kt: false,
         })
@@ -630,7 +625,7 @@ impl Statement {
             }
             StatementType::TryCatch => CatchStatement::to_java(CatchStatement(self), indent),
             StatementType::CatchAll => CatchAllStatement::to_java(CatchAllStatement(self), indent),
-            StatementType::DummyExit | StatementType::Other => jthrow!("not implemented"),
+            StatementType::DummyExit => jthrow!("not implemented"),
         }
     }
 
@@ -1216,64 +1211,6 @@ impl Statement {
 
     pub fn set_phantom(self, phantom: bool) {
         self.with_mut(|d| d.phantom = phantom)
-    }
-
-    pub fn to_debug(self) -> String {
-        let _v = DecompilerContext::get_import_collector().lock();
-        self.to_java_default()
-            .convert_to_string_and_allow_data_discard()
-    }
-
-    pub fn get_offset(self, values: &mut BitSet) {
-        match self.type_() {
-            StatementType::TryCatch => CatchStatement::get_offset(CatchStatement(self), values),
-            _ => self.get_offset_base(values),
-        }
-    }
-
-    pub fn get_offset_base(self, values: &mut BitSet) {
-        if self.is_dummy_exit() {
-            if let Some(bytecode) = DummyExitStatement(self).d(|d| d.bytecode.clone()) {
-                values.or(&bytecode);
-            }
-        }
-        if let Some(exprents) = self.get_exprents() {
-            for e in exprents.iter() {
-                e.get_bytecode_range(Some(&mut *values));
-            }
-        } else {
-            let stats = self.get_stats().borrow().to_vec();
-            for st in stats {
-                st.get_offset(values);
-            }
-
-            for e in self.get_stat_exprents() {
-                e.get_bytecode_range(Some(&mut *values));
-            }
-        }
-    }
-
-    pub fn get_start_end_range(self) -> StartEndPair {
-        match self.type_() {
-            StatementType::If => IfStatement::get_start_end_range(IfStatement(self)),
-            StatementType::Switch => SwitchStatement::get_start_end_range(SwitchStatement(self)),
-            StatementType::BasicBlock => {
-                BasicBlockStatement::get_start_end_range(BasicBlockStatement(self))
-            }
-            StatementType::Root => RootStatement::get_start_end_range(RootStatement(self)),
-            _ => self.get_start_end_range_base(),
-        }
-    }
-
-    pub fn get_start_end_range_base(self) -> StartEndPair {
-        if let Some(endpoints) = self.with(|d| d.endpoints) {
-            return endpoints;
-        }
-        let mut set = BitSet::new();
-        self.get_offset(&mut set);
-        let endpoints = StartEndPair::new(set.next_set_bit(0), set.length() as i32 - 1);
-        self.with_mut(|d| d.endpoints = Some(endpoints));
-        endpoints
     }
 
     pub fn find_object(self, match_node: &MatchNode, index: i32) -> Option<Box<dyn IMatchable>> {

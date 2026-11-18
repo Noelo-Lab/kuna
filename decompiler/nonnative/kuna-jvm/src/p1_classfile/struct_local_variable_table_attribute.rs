@@ -7,8 +7,7 @@ use crate::byte_cursor::ByteCursor;
 use crate::bytecode_version::BytecodeVersion;
 use crate::constant_pool::ConstantPool;
 use crate::jthrow;
-use crate::rt::{BitSet, JHashMap};
-use crate::statement::Statement;
+use crate::rt::JHashMap;
 use crate::struct_general_attribute::{
     attribute_view, StructGeneralAttribute, StructGeneralAttributeKind,
 };
@@ -134,13 +133,6 @@ impl StructLocalVariableTableAttribute {
                 .cloned()
                 .collect()
         })
-    }
-
-    /// Java: `matchingVars(Statement)`.
-    pub fn matching_vars_stat(self, stat: Statement) -> Vec<LocalVariable> {
-        let mut values = BitSet::new();
-        stat.get_offset(&mut values);
-        self.get_range(values.next_set_bit(0), values.length() as i32 - 1)
     }
 
     pub fn get_range(self, start: i32, end: i32) -> Vec<LocalVariable> {

@@ -123,24 +123,6 @@ impl VarMapHolder {
         ValidationHelper::assert_true(self.is_normal(), "VarMapHolder is not in normal state");
     }
 
-    pub fn set_if_true(&mut self, if_true: Shared<SFormsFastMapDirect>) {
-        if !same(self.if_true.as_ref(), Some(&if_true)) && self.if_false.is_none() {
-            self.if_false = self.if_true.clone();
-        } else if same(self.if_false.as_ref(), Some(&if_true)) {
-            self.if_false = None;
-        }
-
-        self.if_true = Some(if_true);
-    }
-
-    pub fn set_if_false(&mut self, if_false: Shared<SFormsFastMapDirect>) {
-        if same(self.if_true.as_ref(), Some(&if_false)) {
-            self.if_true = None;
-        } else {
-            self.if_false = Some(if_false);
-        }
-    }
-
     pub fn set_normal(&mut self, normal: Shared<SFormsFastMapDirect>) {
         self.if_false = None;
         self.if_true = Some(normal);
@@ -227,16 +209,5 @@ impl VarMapHolder {
         }
 
         map_to.clone()
-    }
-
-    pub fn remove_all_fields(&mut self) {
-        if let Some(if_false) = &self.if_false {
-            if_false.borrow_mut().remove_all_fields();
-        }
-        self.if_true
-            .as_ref()
-            .expect("ifTrue")
-            .borrow_mut()
-            .remove_all_fields();
     }
 }

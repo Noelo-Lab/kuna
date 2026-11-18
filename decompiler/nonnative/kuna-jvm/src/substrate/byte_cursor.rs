@@ -89,20 +89,12 @@ impl ByteCursor {
         self.take_array::<1>()[0] as i8
     }
 
-    pub fn read_boolean(&mut self) -> bool {
-        self.read_unsigned_byte() != 0
-    }
-
     pub fn read_unsigned_short(&mut self) -> i32 {
         u16::from_be_bytes(self.take_array()) as i32
     }
 
     pub fn read_short(&mut self) -> i16 {
         i16::from_be_bytes(self.take_array())
-    }
-
-    pub fn read_char(&mut self) -> u16 {
-        u16::from_be_bytes(self.take_array())
     }
 
     pub fn read_int(&mut self) -> i32 {

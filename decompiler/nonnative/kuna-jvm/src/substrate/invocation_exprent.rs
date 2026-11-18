@@ -20,7 +20,7 @@ use crate::i_matchable::MatchProperties;
 use crate::interpreter_util::InterpreterUtil;
 use crate::fixes::kt_calls::kt_explicit_type_arguments;
 use crate::fixes::kt_calls::kt_mapped_java_member::{self, Form as MappedForm};
-use crate::fixes::kt_java_syntax::kt_java_cast_syntax;
+use crate::fixes::kt_util::writing_kotlin;
 use crate::fixes::kt_java_syntax::kt_java_reference_cast;
 use crate::fixes::kt_java_syntax::kt_unboxing_cast_type;
 use crate::fixes::lambdas::lambda_argument_overload;
@@ -75,16 +75,6 @@ pub enum InvocationType {
 }
 
 impl InvocationType {
-    pub fn name(self) -> &'static str {
-        match self {
-            InvocationType::Special => "SPECIAL",
-            InvocationType::Virtual => "VIRTUAL",
-            InvocationType::Static => "STATIC",
-            InvocationType::Interface => "INTERFACE",
-            InvocationType::Dynamic => "DYNAMIC",
-            InvocationType::ConstantDynamic => "CONSTANT_DYNAMIC",
-        }
-    }
 }
 
 impl JavaHash for InvocationType {
@@ -108,13 +98,6 @@ pub enum Type {
 }
 
 impl Type {
-    pub fn name(self) -> &'static str {
-        match self {
-            Type::General => "GENERAL",
-            Type::Init => "INIT",
-            Type::Clinit => "CLINIT",
-        }
-    }
 }
 
 impl JavaHash for Type {
@@ -1553,7 +1536,7 @@ impl InvocationExprent {
             && super_qualifier.is_none()
             && instance.is_some()
             && buf.length() > 0
-            && kt_java_cast_syntax::writing_kotlin())
+            && writing_kotlin())
         .then(|| {
             kt_mapped_java_member::form(
                 &classname,
@@ -1872,7 +1855,7 @@ impl InvocationExprent {
         }
 
         if kuna_fixes::enabled(KunaFix::UnseenClassOverload)
-            && !kt_java_cast_syntax::writing_kotlin()
+            && !writing_kotlin()
             && struct_context.get_class(&classname).is_none()
         {
             unseen_class_overload::mark(self, &mut set_ambiguous_parameters);
@@ -1889,7 +1872,7 @@ impl InvocationExprent {
                     && (!kuna_fixes::enabled(KunaFix::VarargArrayLength)
                         || overloads::spreads_as_elements(last_new))
                     && (!kuna_fixes::enabled(KunaFix::VarargSpreadResolution)
-                        || kt_java_cast_syntax::writing_kotlin()
+                        || writing_kotlin()
                         || vararg_spread_resolution::spread_resolves(self, last_new))
                 {
                     last_new.set_var_arg_param(true);
@@ -2045,7 +2028,7 @@ impl InvocationExprent {
             let argument_casts =
                 kuna_fixes::enabled(KunaFix::ArgumentGenericCast) && !self.0.is_kotlin();
             let keep_unboxed = kuna_fixes::enabled(KunaFix::UnboxedArgumentType)
-                && !kt_java_cast_syntax::writing_kotlin();
+                && !writing_kotlin();
             let erased = if mask.is_none() {
                 self.kuna_erased_type_variable_arguments(Some(&overload_ambiguous))
             } else {
@@ -2508,7 +2491,7 @@ impl InvocationExprent {
     /// computed when not given).
     fn kuna_erased_type_variable_arguments(self, ambiguous: Option<&BitSet>) -> Vec<usize> {
         if !kuna_fixes::enabled(KunaFix::AmbiguousTypeVariableArgument)
-            || kt_java_cast_syntax::writing_kotlin()
+            || writing_kotlin()
             || self.get_functype() == Type::Init
         {
             return Vec::new();
@@ -3159,10 +3142,6 @@ impl InvocationExprent {
 
     pub fn get_generic_args(self) -> Vec<VarType> {
         self.d(|d| d.generic_args.clone())
-    }
-
-    pub fn get_generics_map(self) -> JHashMap<VarType, Option<VarType>> {
-        self.d(|d| d.generics_map.clone())
     }
 
     pub fn get_desc(self) -> Option<StructMethod> {

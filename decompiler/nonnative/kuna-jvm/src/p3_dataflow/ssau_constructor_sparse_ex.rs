@@ -3,7 +3,7 @@
 //! A newtype over `SFormsConstructor` (see there); the overriding bodies and
 //! the helpers they share take the base as `this`. `getLiveVarVersionsMap`
 //! returns the node's own (shared) live map, as Java does.
-#![allow(dead_code, unused_variables)]
+#![allow(unused_variables)]
 
 use std::ops::{Deref, DerefMut};
 
@@ -95,11 +95,6 @@ impl SSAUConstructorSparseEx {
             root,
             &Self::d(this).var_assignment_map,
         );
-    }
-
-    /// Java: getNode(VarExprent)
-    pub fn get_node(&self, var: VarExprent) -> Option<VarVersionNode> {
-        Self::get_node_pair(&self.0, var.get_var_version_pair())
     }
 
     /// Java: getNode(VarVersionPair)

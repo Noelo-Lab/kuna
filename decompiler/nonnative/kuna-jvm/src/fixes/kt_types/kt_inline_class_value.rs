@@ -23,6 +23,7 @@ use crate::k_type::{KType, TypeArgument};
 use crate::kt_proto::{Projection, Variance};
 use crate::k_types::KTypes;
 use crate::fixes::kt_names::kt_unescaped_name;
+use crate::fixes::kt_util::args_after_receiver;
 use crate::kotlin_chooser::KotlinChooser;
 use crate::kt_attrs::KtAttrs;
 use crate::kt_flags::Flags;
@@ -1224,11 +1225,7 @@ pub fn write(inv: InvocationExprent, indent: i32) -> Option<TextBuffer> {
             buf.append(&kt_unescaped_name::member(name));
             if !property {
                 buf.append("(");
-                let skipped = inv.d(|d| d.kuna_skip_arg);
-                inv.set_kuna_skip_arg(Some(0));
-                let params = inv.append_param_list(indent);
-                inv.set_kuna_skip_arg(skipped);
-                buf.append_buffer(&params).append(")");
+                buf.append_buffer(&args_after_receiver(inv, indent)).append(")");
             }
         }
         Form::Renamed(name) => {

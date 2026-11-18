@@ -169,21 +169,6 @@ impl StructMember {
             StructField::get_version(self.as_field())
         }
     }
-
-    pub fn read_attribute(
-        self,
-        in_: &mut ByteCursor,
-        pool: ConstantPool,
-        name: &str,
-    ) -> Option<StructGeneralAttribute> {
-        let attribute = StructGeneralAttribute::create_attribute(name);
-        let length = in_.read_int();
-        match attribute {
-            None => discard_bytes(in_, length),
-            Some(attribute) => attribute.init_content(in_, pool, self.get_version()),
-        }
-        attribute
-    }
 }
 
 impl std::fmt::Display for StructMember {

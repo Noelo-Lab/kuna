@@ -7,7 +7,7 @@
 use std::rc::Rc;
 
 use crate::annotation_exprent::AnnotationExprent;
-use crate::cancelation_manager::{CanceledException, MethodDeadlineExceeded};
+use crate::cancelation_manager::MethodDeadlineExceeded;
 use crate::class_reference14_processor::ClassReference14Processor;
 use crate::class_wrapper::ClassWrapper;
 use crate::class_writer::{ClassWriter, IFabricJavadocProvider};
@@ -169,13 +169,12 @@ fn is_java_error(caught: &Caught) -> bool {
         .is_some_and(|e| e.class.ends_with("Error"))
 }
 
-/// kuna's stop signals: a host cancel (`CanceledException`) or the per-method
-/// deadline (`MethodDeadlineExceeded`). Vineflower never raises either while it
-/// writes a Kotlin class (its checker runs in `codeToJava`, its watchdog only
-/// around it), so the Kotlin writer's catch-alls pass them on, as `ClassWriter`
-/// does, instead of recording a method or class that could not be written.
+/// kuna's per-method deadline (`MethodDeadlineExceeded`). Vineflower never
+/// raises it while it writes a Kotlin class (its watchdog runs only around it),
+/// so the Kotlin writer's catch-alls pass it on instead of recording a method or
+/// class that could not be written.
 pub fn is_stop_signal(caught: &Caught) -> bool {
-    CanceledException::is(caught) || caught.is(MethodDeadlineExceeded::CLASS)
+    caught.is(MethodDeadlineExceeded::CLASS)
 }
 
 /// A Java `String` that may be `null`, as `StringBuilder.append` prints it.
@@ -3252,28 +3251,6 @@ impl StatementWriter for KotlinWriter {
 
     fn write_class(&self, node: ClassNode, buffer: &mut TextBuffer, indent: i32) {
         KotlinWriter::write_class(self, node, buffer, indent)
-    }
-
-    fn write_field(
-        &self,
-        wrapper: ClassWrapper,
-        cl: StructClass,
-        fd: StructField,
-        buffer: &mut TextBuffer,
-        indent: i32,
-    ) {
-        KotlinWriter::write_field(self, wrapper, cl, fd, buffer, indent)
-    }
-
-    fn write_method(
-        &self,
-        node: ClassNode,
-        mt: StructMethod,
-        method_index: i32,
-        buffer: &mut TextBuffer,
-        indent: i32,
-    ) -> bool {
-        KotlinWriter::write_method(self, node, mt, method_index, buffer, indent)
     }
 
     fn ends_with_semicolon(&self, expr: Exprent) -> bool {

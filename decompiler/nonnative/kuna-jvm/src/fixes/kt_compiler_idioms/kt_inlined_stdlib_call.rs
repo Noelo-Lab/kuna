@@ -31,8 +31,9 @@ use crate::struct_class::StructClass;
 use crate::struct_method::StructMethod;
 use crate::text_buffer::TextBuffer;
 use crate::code_type::CodeType;
-use crate::fixes::kt_util::{CHECK_DESCRIPTOR, EXPRESSION_CHECKS, INTRINSICS};
-use crate::fixes::kt_util::for_each_exprent;
+use crate::fixes::kt_util::{
+    args_after_receiver, for_each_exprent, CHECK_DESCRIPTOR, EXPRESSION_CHECKS, INTRINSICS,
+};
 
 const STRING_COMPANION: &str = "kotlin/jvm/internal/StringCompanionObject";
 
@@ -490,11 +491,7 @@ pub fn write(inv: InvocationExprent, indent: i32) -> Option<TextBuffer> {
         Inlined::Extension(name) => {
             let recv = if name == "copyOfRange" { unerased(params[0]) } else { params[0] };
             buf.append_buffer(&receiver(recv, indent)).append(".").append(name).append("(");
-            let skipped = inv.d(|d| d.kuna_skip_arg);
-            inv.set_kuna_skip_arg(Some(0));
-            let list = inv.append_param_list(indent);
-            inv.set_kuna_skip_arg(skipped);
-            buf.append_buffer(&list).append(")");
+            buf.append_buffer(&args_after_receiver(inv, indent)).append(")");
         }
         Inlined::Map { param } => {
             buf.append_buffer(&write_map(&params, param, indent));

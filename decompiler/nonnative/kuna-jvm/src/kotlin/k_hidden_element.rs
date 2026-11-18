@@ -10,10 +10,6 @@ pub enum KHiddenElement {
 }
 
 impl KHiddenElement {
-    pub fn ordinal(self) -> i32 {
-        self as i32
-    }
-
     pub fn name(self) -> &'static str {
         match self {
             KHiddenElement::Generic => "GENERIC",

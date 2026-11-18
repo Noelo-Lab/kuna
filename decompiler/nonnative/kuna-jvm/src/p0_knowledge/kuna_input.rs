@@ -56,11 +56,6 @@ pub enum InputKind {
 }
 
 impl InputKind {
-    /// Whether the JVM path should handle the input (possibly with a clean error).
-    pub fn is_jvm(self) -> bool {
-        self != InputKind::Other
-    }
-
     /// Whether [`load`] can decompile it.
     pub fn is_supported(self) -> bool {
         matches!(
@@ -723,12 +718,6 @@ pub struct SharedRuntime {
 }
 
 impl SharedRuntime {
-    /// The JDK an `include-runtime` value names (`1`/`current`: `JAVA_HOME`,
-    /// then `java` on `PATH`, then well-known install directories; else a home path).
-    pub fn locate(spec: &str) -> Option<PathBuf> {
-        JdkRuntime::locate(spec)
-    }
-
     /// Locates and opens the runtime `spec` names, as `Fernflower`'s
     /// constructor would for `include-runtime`; the views of
     /// [`SharedRuntime::sources`] are added with `add_library` in its place.

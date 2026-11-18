@@ -27,6 +27,7 @@ use crate::struct_general_attribute::StructGeneralAttribute;
 use crate::struct_method::StructMethod;
 use crate::text_buffer::TextBuffer;
 use crate::fixes::kt_util::{CHECK_DESCRIPTOR, INTRINSICS, PARAMETER_CHECKS};
+use crate::fixes::util::top_level;
 
 /// The call of the inline function whose object the anonymous class `node`
 /// is, written for its `new` calling `constructor` outside that function;
@@ -47,15 +48,6 @@ pub fn write(node: ClassNode, constructor: InvocationExprent, indent: i32) -> Op
     call.set_functype(Type::General);
     call.d_mut(|d| d.invocation_type = InvocationType::Static);
     facade::write_function(call, &function, indent)
-}
-
-/// The top-level class `node` is nested in (itself when it is one).
-fn top_level(node: ClassNode) -> ClassNode {
-    let mut node = node;
-    while let Some(parent) = node.with(|d| d.parent) {
-        node = parent;
-    }
-    node
 }
 
 /// The inline function of `node`'s enclosing method, its class and method,

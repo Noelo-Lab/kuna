@@ -1,7 +1,6 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/InitializerProcessor.java`.
 
 use crate::assignment_exprent::AssignmentExprent;
-use crate::cancelation_manager::CanceledException;
 use crate::class_wrapper::ClassWrapper;
 use crate::classes_processor::{ClassNode, ClassNodeType};
 use crate::code_constants::{
@@ -21,7 +20,7 @@ use crate::fixes::class_writing;
 use crate::method_descriptor::MethodDescriptor;
 use crate::method_wrapper::MethodWrapper;
 use crate::new_exprent::NewExprent;
-use crate::rt::{rethrow, try_catch, JHashMap, JHashSet, JList, JavaListExt};
+use crate::rt::{try_catch, JHashMap, JHashSet, JList, JavaListExt};
 use crate::statements::Statements;
 use crate::struct_class::StructClass;
 use crate::var_version_pair::VarVersionPair;
@@ -43,9 +42,6 @@ impl InitializerProcessor {
             }
         });
         if let Err(t) = result {
-            if CanceledException::is(&t) {
-                rethrow(t);
-            }
             let method = method.expect("method");
             let mt = method.with(|d| d.method_struct);
             let message = format!(

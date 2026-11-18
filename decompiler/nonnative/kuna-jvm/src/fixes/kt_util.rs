@@ -1,9 +1,23 @@
-//! What several Kotlin fix families share: kotlinc's runtime names and
-//! walks of a statement tree's exprents.
+//! What several Kotlin fix families share: whether the class being written is
+//! Kotlin output, kotlinc's runtime names, a walk of a statement tree's exprents
+//! and the argument list of a call written after its receiver.
 
 use crate::const_exprent::ConstValue;
+use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;
+use crate::invocation_exprent::InvocationExprent;
+use crate::plugin_context::PluginContext;
 use crate::statement::Statement;
+use crate::text_buffer::TextBuffer;
+
+/// Whether the class being written is written as Kotlin.
+pub(crate) fn writing_kotlin() -> bool {
+    DecompilerContext::get_current_class().is_some_and(|cl| {
+        PluginContext::get_current_context()
+            .get_language_spec(cl)
+            .is_some()
+    })
+}
 
 pub(crate) const INTRINSICS: &str = "kotlin/jvm/internal/Intrinsics";
 /// `Intrinsics`' parameter checks, by their Kotlin 1.4 and earlier names.
@@ -32,33 +46,24 @@ pub(crate) fn for_each_exprent(stat: Statement, f: &mut dyn FnMut(Exprent)) {
     }
 }
 
-/// Every exprent of `stat`'s tree, each after the exprents it holds; a statement's
-/// children come before its head exprents, and variable definitions are left out.
-pub(crate) fn all_exprents(stat: Statement) -> Vec<Exprent> {
-    fn collect(stat: Statement, out: &mut Vec<Exprent>) {
-        let top: Vec<Exprent> = match stat.get_exprents() {
-            Some(exprents) => exprents.iter().collect(),
-            None => {
-                for st in stat.get_stats().borrow().iter() {
-                    collect(*st, out);
-                }
-                stat.get_stat_exprents()
-            }
-        };
-        for e in top {
-            out.extend(e.get_all_exprents_rec(true));
-            out.push(e);
-        }
-    }
-    let mut out = Vec::new();
-    collect(stat, &mut out);
-    out
-}
-
 /// The value of `expr` when it is an `int` constant.
 pub(crate) fn int_constant(expr: Exprent) -> Option<i32> {
     match expr.try_as_const()?.get_value()? {
         ConstValue::Int(v) => Some(v),
         _ => None,
     }
+}
+
+/// `inv`'s argument list without its first argument, which the caller wrote as
+/// the receiver; the skip is undone however the write ends.
+pub(crate) fn args_after_receiver(inv: InvocationExprent, indent: i32) -> TextBuffer {
+    struct Restore(InvocationExprent, Option<usize>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            self.0.set_kuna_skip_arg(self.1);
+        }
+    }
+    let _restore = Restore(inv, inv.d(|d| d.kuna_skip_arg));
+    inv.set_kuna_skip_arg(Some(0));
+    inv.append_param_list(indent)
 }

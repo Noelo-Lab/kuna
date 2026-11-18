@@ -498,8 +498,6 @@ impl Lock {
         outer.set_write_locked(true);
         Lock { outer, target }
     }
-
-    pub fn close(self) {}
 }
 
 impl Drop for Lock {

@@ -9,7 +9,7 @@ use crate::expr_processor::ExprProcessor;
 use crate::exprent::Exprent;
 use crate::java_subclass;
 use crate::kuna_fixes::{self, KunaFix};
-use crate::rt::{BitSet, JHashSet, JList};
+use crate::rt::{JHashSet, JList};
 use crate::stat_edge::StatEdge;
 use crate::statement::{LastBasicType, Statement, StatementKind, StatementType};
 use crate::text_buffer::TextBuffer;
@@ -269,14 +269,6 @@ impl CatchStatement {
         }
 
         cs.0
-    }
-
-    pub fn get_offset(self, values: &mut BitSet) {
-        self.0.get_offset_base(values);
-
-        for exp in self.get_resources().iter() {
-            exp.get_bytecode_range(Some(&mut *values));
-        }
     }
 
     /// The live list.

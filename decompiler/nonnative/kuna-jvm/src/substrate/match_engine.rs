@@ -240,10 +240,6 @@ impl MatchEngine {
         }
     }
 
-    pub fn get_root_node(&self) -> MatchNode {
-        self.root_node.clone()
-    }
-
     /// Java: `match(IMatchable)`
     pub fn match_(&self, object: &dyn IMatchable) -> bool {
         self.variables.borrow_mut().clear();

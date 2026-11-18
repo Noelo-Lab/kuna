@@ -93,10 +93,6 @@ impl KotlinMetadataAnnotation {
         KotlinMetadataAnnotation { record }
     }
 
-    pub fn get_record(&self) -> &AnnotationRecord {
-        &self.record
-    }
-
     /// `getParNames().indexOf(name)`.
     pub fn index_of(&self, name: &str) -> i32 {
         self.record
@@ -140,17 +136,6 @@ impl KotlinMetadataAnnotation {
     pub fn data_from_expr(element: &AnnotationElement) -> Vec<String> {
         match element {
             AnnotationElement::Array { elements } => elements.iter().map(const_string).collect(),
-            other => class_cast(exprent_class(other), NEW_EXPRENT),
-        }
-    }
-
-    /// The integers of an `int[]` value such as `mv`.
-    pub fn int_array_value(element: &AnnotationElement) -> Vec<i32> {
-        match element {
-            AnnotationElement::Array { elements } => elements
-                .iter()
-                .map(KotlinMetadataAnnotation::int_value)
-                .collect(),
             other => class_cast(exprent_class(other), NEW_EXPRENT),
         }
     }

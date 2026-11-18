@@ -61,7 +61,6 @@ const PREDEFINED: [&str; 44] = [
 const MAX_LIST_SIZE: i64 = i32::MAX as i64 - 8;
 
 pub struct MetadataNameResolverData {
-    pub types: StringTableTypes,
     pub strings: Vec<String>,
     /// `(first index, record)` for every record with a positive range.
     runs: Vec<(i64, Record)>,
@@ -86,19 +85,10 @@ impl MetadataNameResolver {
             }
         }
         MetadataNameResolver(Rc::new(MetadataNameResolverData {
-            types,
             strings,
             runs,
             size,
         }))
-    }
-
-    pub fn get_types(&self) -> &StringTableTypes {
-        &self.0.types
-    }
-
-    pub fn get_strings(&self) -> &[String] {
-        &self.0.strings
     }
 
     /// `records.size()`.

@@ -70,16 +70,4 @@ impl StructAnnotationParameterAttribute {
         self.d_mut(|d| d.param_annotations = Some(built.clone()));
         built
     }
-
-    /// The parsed parameter annotations, without building exprents.
-    pub fn get_records(self) -> Vec<Vec<AnnotationRecord>> {
-        self.d(|d| d.source.clone())
-    }
-
-    pub fn set_param_annotations(self, param_annotations: Vec<Vec<AnnotationExprent>>) {
-        self.d_mut(|d| {
-            d.param_annotations = Some(param_annotations);
-            d.pinned = true;
-        })
-    }
 }

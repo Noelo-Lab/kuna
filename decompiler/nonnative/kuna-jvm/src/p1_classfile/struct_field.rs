@@ -66,17 +66,6 @@ impl StructField {
         )
     }
 
-    /// Java: `StructField(int, Map, String, String, BytecodeVersion)`.
-    pub fn new(
-        access_flags: i32,
-        attributes: AttributeMap,
-        name: String,
-        descriptor: String,
-        version: BytecodeVersion,
-    ) -> StructField {
-        StructField::new_signature(access_flags, attributes, name, descriptor, None, version)
-    }
-
     /// Java: `StructField(int, Map, String, String, GenericFieldDescriptor, BytecodeVersion)`.
     pub fn new_signature(
         access_flags: i32,

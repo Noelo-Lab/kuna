@@ -129,35 +129,9 @@ pub enum ExprentType {
     SwitchHead,
     Var,
     Yield,
-    Other,
 }
 
 impl ExprentType {
-    pub const VALUES: [ExprentType; 18] = [
-        ExprentType::Annotation,
-        ExprentType::Array,
-        ExprentType::Assert,
-        ExprentType::Assignment,
-        ExprentType::Const,
-        ExprentType::Exit,
-        ExprentType::Field,
-        ExprentType::Function,
-        ExprentType::If,
-        ExprentType::Invocation,
-        ExprentType::Monitor,
-        ExprentType::New,
-        ExprentType::Pattern,
-        ExprentType::Switch,
-        ExprentType::SwitchHead,
-        ExprentType::Var,
-        ExprentType::Yield,
-        ExprentType::Other,
-    ];
-
-    pub fn ordinal(self) -> i32 {
-        self as i32
-    }
-
     pub fn name(self) -> &'static str {
         match self {
             ExprentType::Annotation => "ANNOTATION",
@@ -177,7 +151,6 @@ impl ExprentType {
             ExprentType::SwitchHead => "SWITCH_HEAD",
             ExprentType::Var => "VAR",
             ExprentType::Yield => "YIELD",
-            ExprentType::Other => "OTHER",
         }
     }
 }
@@ -532,7 +505,6 @@ impl Exprent {
             }
             ExprentType::Var => VarExprent::get_all_exprents_list(self.as_var(), list),
             ExprentType::Yield => YieldExprent::get_all_exprents_list(self.as_yield(), list),
-            ExprentType::Other => unreachable!("no Exprent of type OTHER"),
         }
     }
 
@@ -561,7 +533,6 @@ impl Exprent {
             ExprentType::SwitchHead => SwitchHeadExprent::copy(self.as_switch_head()),
             ExprentType::Var => VarExprent::copy(self.as_var()),
             ExprentType::Yield => YieldExprent::copy(self.as_yield()),
-            ExprentType::Other => unreachable!("no Exprent of type OTHER"),
         }
     }
 
@@ -594,7 +565,6 @@ impl Exprent {
             ExprentType::SwitchHead => SwitchHeadExprent::to_java(self.as_switch_head(), indent),
             ExprentType::Var => VarExprent::to_java(self.as_var(), indent),
             ExprentType::Yield => YieldExprent::to_java(self.as_yield(), indent),
-            ExprentType::Other => unreachable!("no Exprent of type OTHER"),
         }
     }
 
@@ -671,7 +641,6 @@ impl Exprent {
             }
             ExprentType::Var => VarExprent::get_bytecode_range(self.as_var(), values),
             ExprentType::Yield => YieldExprent::get_bytecode_range(self.as_yield(), values),
-            ExprentType::Other => unreachable!("no Exprent of type OTHER"),
         }
     }
 

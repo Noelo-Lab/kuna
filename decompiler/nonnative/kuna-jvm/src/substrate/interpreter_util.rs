@@ -33,23 +33,6 @@ impl InterpreterUtil {
         }
     }
 
-    pub fn equal_lists<T: JavaEq>(first: Option<&[T]>, second: Option<&[T]>) -> bool {
-        let (first, second) = match (first, second) {
-            (None, second) => return second.is_none(),
-            (Some(_), None) => return false,
-            (Some(first), Some(second)) => (first, second),
-        };
-        if first.len() == second.len() {
-            for i in 0..first.len() {
-                if !InterpreterUtil::equal_objects(Some(&first[i]), Some(&second[i])) {
-                    return false;
-                }
-            }
-            return true;
-        }
-        false
-    }
-
     /// Java: `makeUniqueKey(String, String)`.
     pub fn make_unique_key(name: &str, descriptor: &str) -> String {
         format!("{name} {descriptor}")

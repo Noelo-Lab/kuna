@@ -70,8 +70,4 @@ impl StructMethodParametersAttribute {
     pub fn get_entries(self) -> Vec<Entry> {
         self.d(|d| d.my_entries.clone())
     }
-
-    pub fn set_entries(self, my_entries: Vec<Entry>) {
-        self.d_mut(|d| d.my_entries = my_entries)
-    }
 }

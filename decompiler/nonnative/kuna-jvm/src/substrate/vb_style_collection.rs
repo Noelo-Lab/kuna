@@ -6,7 +6,6 @@
 
 use std::ops::Deref;
 
-use crate::jthrow;
 use crate::rt::{JHashMap, JavaEq, JavaHash, JavaListExt};
 
 pub struct VBStyleCollection<E, K> {
@@ -81,11 +80,6 @@ impl<E, K: JavaHash + JavaEq> VBStyleCollection<E, K> {
         true
     }
 
-    /// Java: `remove(Object)`, which Vineflower refuses.
-    pub fn remove_item(&mut self, _element: &E) -> bool {
-        jthrow!("not implemented!")
-    }
-
     /// Java: `addAll(Collection)`; the new elements carry no key.
     pub fn add_all(&mut self, c: impl IntoIterator<Item = E>) -> bool {
         let items: Vec<E> = c.into_iter().collect();
@@ -104,19 +98,6 @@ impl<E, K: JavaHash + JavaEq> VBStyleCollection<E, K> {
         self.map.put(key.clone(), self.list.len() as i32);
         self.list.push(element);
         self.lst_keys.push(Some(key));
-    }
-
-    pub fn add_all_with_key(&mut self, elements: Vec<E>, keys: Vec<K>)
-    where
-        K: Clone,
-    {
-        let mut index = self.list.len() as i32;
-        for key in &keys {
-            self.map.put(key.clone(), index);
-            index += 1;
-        }
-        self.list.extend(elements);
-        self.lst_keys.extend(keys.into_iter().map(Some));
     }
 
     /// Replaces the element under `key`, or appends it; returns the replaced element.
@@ -261,22 +242,6 @@ impl<E: JavaEq, K> VBStyleCollection<E, K> {
 }
 
 impl<E: std::fmt::Display, K: std::fmt::Display> VBStyleCollection<E, K> {
-    pub fn to_string_vb(&self) -> String {
-        let mut sb = String::from("[");
-        for i in 0..self.list.len() {
-            if i > 0 {
-                sb.push_str(", ");
-            }
-            match &self.lst_keys[i] {
-                Some(key) => sb.push_str(&key.to_string()),
-                None => sb.push_str("null"),
-            }
-            sb.push('=');
-            sb.push_str(&self.list[i].to_string());
-        }
-        sb.push(']');
-        sb
-    }
 }
 
 /// `ArrayList.equals`: element-wise, keys ignored.

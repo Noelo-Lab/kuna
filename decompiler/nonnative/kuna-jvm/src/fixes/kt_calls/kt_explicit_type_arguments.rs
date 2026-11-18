@@ -2,7 +2,7 @@
 //! written after the function's name with Kotlin's type names
 //! (`CollectionsKt.last<File>(list)`).
 
-use crate::fixes::kt_java_syntax::kt_java_cast_syntax;
+use crate::fixes::kt_util::writing_kotlin;
 use crate::fixes::kt_java_syntax::kt_java_reference_cast;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::text_buffer::TextBuffer;
@@ -11,7 +11,7 @@ use crate::var_type::VarType;
 /// Whether the fix writes the calls of the Kotlin class being written.
 pub fn active() -> bool {
     kuna_fixes::enabled(KunaFix::KtExplicitTypeArguments)
-        && kt_java_cast_syntax::writing_kotlin()
+        && writing_kotlin()
 }
 
 /// Appends `<A, B>` for the type arguments `args`, if any and all known: a

@@ -10,12 +10,6 @@ impl BitSet {
         BitSet { words: Vec::new() }
     }
 
-    fn trim(&mut self) {
-        while self.words.last() == Some(&0) {
-            self.words.pop();
-        }
-    }
-
     pub fn get(&self, bit: usize) -> bool {
         self.words
             .get(bit / 64)
@@ -30,31 +24,11 @@ impl BitSet {
         self.words[w] |= 1u64 << (bit % 64);
     }
 
-    /// `set(bit, value)`.
-    pub fn set_to(&mut self, bit: usize, value: bool) {
-        if value {
-            self.set(bit)
-        } else {
-            self.clear(bit)
-        }
-    }
-
     /// `set(from, to)`: the half-open range.
     pub fn set_range(&mut self, from: usize, to: usize) {
         for bit in from..to {
             self.set(bit);
         }
-    }
-
-    pub fn clear(&mut self, bit: usize) {
-        if let Some(w) = self.words.get_mut(bit / 64) {
-            *w &= !(1u64 << (bit % 64));
-            self.trim();
-        }
-    }
-
-    pub fn clear_all(&mut self) {
-        self.words.clear();
     }
 
     pub fn or(&mut self, other: &BitSet) {
@@ -66,37 +40,8 @@ impl BitSet {
         }
     }
 
-    pub fn and(&mut self, other: &BitSet) {
-        self.words.truncate(other.words.len());
-        for (a, b) in self.words.iter_mut().zip(&other.words) {
-            *a &= *b;
-        }
-        self.trim();
-    }
-
-    pub fn and_not(&mut self, other: &BitSet) {
-        for (a, b) in self.words.iter_mut().zip(&other.words) {
-            *a &= !*b;
-        }
-        self.trim();
-    }
-
-    pub fn xor(&mut self, other: &BitSet) {
-        if other.words.len() > self.words.len() {
-            self.words.resize(other.words.len(), 0);
-        }
-        for (a, b) in self.words.iter_mut().zip(&other.words) {
-            *a ^= *b;
-        }
-        self.trim();
-    }
-
     pub fn intersects(&self, other: &BitSet) -> bool {
         self.words.iter().zip(&other.words).any(|(a, b)| a & b != 0)
-    }
-
-    pub fn cardinality(&self) -> usize {
-        self.words.iter().map(|w| w.count_ones() as usize).sum()
     }
 
     pub fn is_empty(&self) -> bool {

@@ -340,16 +340,6 @@ impl Fernflower {
         self.loaded = true;
     }
 
-    /// The root classes a full run delivers, in its order (own units in order,
-    /// each in entry order); loads first. Reads only cached classes and class
-    /// headers, so it leaves the run unchanged.
-    pub fn root_classes(&mut self) -> Vec<String> {
-        self.root_classes_in_units()
-            .into_iter()
-            .map(|(_, name)| name)
-            .collect()
-    }
-
     /// [`Fernflower::root_classes`] with the index of each root's own unit:
     /// a run pre-processes and writes one unit's roots before the next unit's.
     pub fn root_classes_in_units(&mut self) -> Vec<(usize, String)> {
@@ -421,10 +411,6 @@ impl Fernflower {
         if let (Some(root_context), Some(counters)) = (root_context, counters) {
             root_context.survive_class_scope_reset(counters);
         }
-    }
-
-    pub fn add_whitelist(&self, prefix: &str) {
-        self.class_processor.add_whitelist(prefix);
     }
 
     pub fn clear_context(&mut self) {

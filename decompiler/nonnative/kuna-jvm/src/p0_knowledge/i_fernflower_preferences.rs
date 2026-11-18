@@ -203,23 +203,6 @@ pub enum OptionType {
 }
 
 impl OptionType {
-    /// The enum constant's name (`BOOLEAN`, ...).
-    pub fn name(self) -> &'static str {
-        match self {
-            OptionType::Boolean => "BOOLEAN",
-            OptionType::String => "STRING",
-            OptionType::Integer => "INTEGER",
-        }
-    }
-
-    /// `DecompilerOption.Type.toString()`.
-    pub fn friendly_name(self) -> &'static str {
-        match self {
-            OptionType::Boolean => "bool",
-            OptionType::String => "string",
-            OptionType::Integer => "int",
-        }
-    }
 }
 
 /// One option field of the interface and its annotations; `None` where the
@@ -236,10 +219,6 @@ pub struct PreferenceOption {
 }
 
 impl PreferenceOption {
-    /// The entry of `DEFAULTS`, as `DecompilerOption` reads it.
-    pub fn default_value(&self) -> Option<String> {
-        IFernflowerPreferences::DEFAULTS().get_cloned(&self.key.to_string())
-    }
 }
 
 static OPTIONS: &[PreferenceOption] = &[

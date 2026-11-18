@@ -61,14 +61,6 @@ impl<E: JavaHash + JavaEq + Clone> LongFastFixedSetFactory<E> {
         }
     }
 
-    pub fn get_entries(&self) -> Vec<E> {
-        self.0.indexes.key_vec()
-    }
-
-    pub fn entries_len(&self) -> usize {
-        self.0.indexes.len()
-    }
-
     pub fn entries_contain(&self, item: &E) -> bool {
         self.0.indexes.contains_key(item)
     }
@@ -121,10 +113,6 @@ impl<E: JavaHash + JavaEq + Clone> LongFastFixedSet<E> {
         let old = *word;
         *word |= bit(index);
         old != *word
-    }
-
-    pub fn clear(&mut self) {
-        self.data.fill(0);
     }
 
     pub fn remove(&mut self, element: &E) -> bool {
@@ -206,10 +194,6 @@ impl<E: JavaHash + JavaEq + Clone> LongFastFixedSet<E> {
             .wrapping_add(data_hash)
     }
 
-    pub fn get_real_size(&self) -> i32 {
-        self.data.iter().map(|d| d.count_ones() as i32).sum()
-    }
-
     pub fn is_empty(&self) -> bool {
         self.data.iter().all(|&d| d == 0)
     }
@@ -232,30 +216,6 @@ impl<E: JavaHash + JavaEq + Clone> LongFastFixedSet<E> {
                 rest: self.data.first().map_or(0, |&w| w as u64),
             },
             None => Members::Scan(scan()),
-        }
-    }
-
-    /// An iterator-`remove()` loop: drops the members `keep` rejects.
-    pub fn retain(&mut self, mut keep: impl FnMut(&E) -> bool) {
-        let factory = self.factory.clone();
-        if let Some(by_index) = &factory.0.by_index {
-            for word in 0..self.data.len() {
-                let mut rest = self.data[word] as u64;
-                while rest != 0 {
-                    let i = (word * 64) as i32 + rest.trailing_zeros() as i32;
-                    rest &= rest - 1;
-                    if (i as usize) < by_index.len() && !keep(&by_index[i as usize]) {
-                        self.data[word] &= !bit(i);
-                    }
-                }
-            }
-            return;
-        }
-        for (item, &i) in factory.0.indexes.iter() {
-            let word = (i >> 6) as usize;
-            if (self.data[word] & bit(i)) != 0 && !keep(item) {
-                self.data[word] &= !bit(i);
-            }
         }
     }
 }

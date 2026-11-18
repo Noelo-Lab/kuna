@@ -70,14 +70,6 @@ impl<E: JavaHash + JavaEq + Clone> ShortFastFixedSetFactory<E> {
         }
     }
 
-    pub fn get_entries(&self) -> Vec<E> {
-        self.0.masks.key_vec()
-    }
-
-    pub fn entries_len(&self) -> usize {
-        self.0.masks.len()
-    }
-
     pub fn entries_contain(&self, item: &E) -> bool {
         self.0.masks.contains_key(item)
     }
@@ -120,10 +112,6 @@ impl<E: JavaHash + JavaEq + Clone> ShortFastFixedSet<E> {
         let old = self.data;
         self.data |= mask;
         old != self.data
-    }
-
-    pub fn clear(&mut self) {
-        self.data = 0;
     }
 
     pub fn remove(&mut self, element: &E) -> bool {
@@ -170,10 +158,6 @@ impl<E: JavaHash + JavaEq + Clone> ShortFastFixedSet<E> {
             .wrapping_add(self.data.java_hash())
     }
 
-    pub fn get_real_size(&self) -> i32 {
-        self.data.count_ones() as i32
-    }
-
     pub fn is_empty(&self) -> bool {
         self.data == 0
     }
@@ -186,16 +170,6 @@ impl<E: JavaHash + JavaEq + Clone> ShortFastFixedSet<E> {
             .iter()
             .filter(move |(_, &mask)| (self.data & mask) != 0)
             .map(|(item, _)| item.clone())
-    }
-
-    /// An iterator-`remove()` loop: drops the members `keep` rejects.
-    pub fn retain(&mut self, mut keep: impl FnMut(&E) -> bool) {
-        let factory = self.factory.clone();
-        for (item, &mask) in factory.0.masks.iter() {
-            if (self.data & mask) != 0 && !keep(item) {
-                self.data &= !mask;
-            }
-        }
     }
 }
 

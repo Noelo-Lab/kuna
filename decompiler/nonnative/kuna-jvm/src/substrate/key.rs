@@ -22,15 +22,6 @@ impl<T> Key<T> {
     pub fn of(name: &str) -> Key<T> {
         Key::new(name.to_string())
     }
-
-    /// The unchecked cast `(Key<U>) key`.
-    pub fn cast<U>(&self) -> Key<U> {
-        Key::new(self.name.clone())
-    }
-
-    pub fn equals<U>(&self, other: &Key<U>) -> bool {
-        self.name == other.name
-    }
 }
 
 impl<T> Clone for Key<T> {

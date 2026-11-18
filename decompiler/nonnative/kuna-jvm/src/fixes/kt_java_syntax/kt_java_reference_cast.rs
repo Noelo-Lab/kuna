@@ -11,6 +11,7 @@ use crate::exprent::Exprent;
 use crate::generic_type::GenericType;
 use crate::k_types::KTypes;
 use crate::fixes::kt_null_checks::kt_nullable_local;
+use crate::fixes::kt_util::writing_kotlin;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::text_buffer::TextBuffer;
 use crate::var_type::VarType;
@@ -288,7 +289,7 @@ pub fn qualifier(buf: &mut TextBuffer, to: &VarType, instance: Exprent, mut res:
 /// Whether the fix writes the casts of the Kotlin class being written.
 pub fn active() -> bool {
     kuna_fixes::enabled(KunaFix::KtJavaReferenceCast)
-        && crate::fixes::kt_java_syntax::kt_java_cast_syntax::writing_kotlin()
+        && writing_kotlin()
 }
 
 /// `res`, the array operand of an element access or `length` whose type is

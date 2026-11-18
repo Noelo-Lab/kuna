@@ -34,14 +34,6 @@ impl FinalType {
     pub fn ordinal(self) -> i32 {
         self as i32
     }
-
-    pub fn name(self) -> &'static str {
-        match self {
-            FinalType::NonFinal => "NON_FINAL",
-            FinalType::ExplicitFinal => "EXPLICIT_FINAL",
-            FinalType::Final => "FINAL",
-        }
-    }
 }
 
 impl JavaHash for FinalType {

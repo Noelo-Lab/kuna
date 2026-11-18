@@ -8,7 +8,6 @@ use std::collections::VecDeque;
 use std::fmt;
 use std::rc::Rc;
 
-use crate::cancelation_manager::CanceledException;
 use crate::class_pass_location::ClassPassLocation;
 use crate::class_wrapper::ClassWrapper;
 use crate::class_writer::ClassWriter;
@@ -110,10 +109,6 @@ impl ClassesProcessor {
             map_root_classes: Shared::new(JHashMap::new()),
             whitelist: JHashSet::new(),
         })
-    }
-
-    pub fn add_whitelist(self, prefix: &str) {
-        self.with_mut(|d| d.whitelist.add(prefix.to_string()));
     }
 
     pub fn is_whitelisted(self, cls: &str) -> bool {
@@ -651,7 +646,7 @@ impl ClassesProcessor {
         });
         DecompilerContext::get_logger().end_processing_class();
         if let Err(e) = result {
-            if CanceledException::is(&e) || is_java_error(&e) {
+            if is_java_error(&e) {
                 rethrow(e);
             }
             jthrow!("{}", e.message);

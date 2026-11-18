@@ -180,11 +180,6 @@ impl StatEdge {
     pub fn can_inline(self) -> bool {
         self.with(|d| d.can_inline)
     }
-
-    /// Field read of the public Java field `phantomContinue`.
-    pub fn phantom_continue(self) -> bool {
-        self.with(|d| d.phantom_continue)
-    }
 }
 
 impl std::fmt::Display for StatEdge {

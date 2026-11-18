@@ -64,16 +64,4 @@ impl StructEnclosingMethodAttribute {
     pub fn get_method_name(self) -> Option<String> {
         self.d(|d| d.method_name.clone())
     }
-
-    pub fn set_class_name(self, class_name: Option<String>) {
-        self.d_mut(|d| d.class_name = class_name)
-    }
-
-    pub fn set_method_name(self, method_name: Option<String>) {
-        self.d_mut(|d| d.method_name = method_name)
-    }
-
-    pub fn set_method_descriptor(self, method_descriptor: Option<String>) {
-        self.d_mut(|d| d.method_descriptor = method_descriptor)
-    }
 }

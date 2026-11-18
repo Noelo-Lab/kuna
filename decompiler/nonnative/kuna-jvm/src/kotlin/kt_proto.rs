@@ -89,10 +89,6 @@ impl ByteArrayInputStream {
         let count = buf.len() as i32;
         ByteArrayInputStream { buf, pos: 0, count }
     }
-
-    pub fn available(&self) -> i32 {
-        self.count - self.pos
-    }
 }
 
 impl JavaInputStream for ByteArrayInputStream {
@@ -293,14 +289,6 @@ impl<'a> CodedInputStream<'a> {
                 return;
             }
         }
-    }
-
-    pub fn read_double(&mut self) -> f64 {
-        f64::from_bits(self.read_raw_little_endian64() as u64)
-    }
-
-    pub fn read_float(&mut self) -> f32 {
-        f32::from_bits(self.read_raw_little_endian32() as u32)
     }
 
     pub fn read_int64(&mut self) -> i64 {
@@ -1271,7 +1259,7 @@ impl MsgType {
 enum FieldValue {
     /// Int32, SInt64, Bool (0/1), Enum (number), Float/Double (raw bits).
     Scalar(i64),
-    Bytes(Rc<[u8]>),
+    Bytes,
     Message(Rc<Message>),
     Scalars(Vec<i64>),
     Messages(Vec<Rc<Message>>),
@@ -1292,10 +1280,6 @@ impl Message {
         }
     }
 
-    pub fn get_message_type(&self) -> MsgType {
-        self.message_type
-    }
-
     fn slot(&self, number: i32) -> usize {
         self.message_type
             .fields()
@@ -1312,13 +1296,6 @@ impl Message {
     pub fn scalar(&self, number: i32) -> Option<i64> {
         match &self.values[self.slot(number)] {
             Some(FieldValue::Scalar(v)) => Some(*v),
-            _ => None,
-        }
-    }
-
-    pub fn bytes(&self, number: i32) -> Option<Rc<[u8]>> {
-        match &self.values[self.slot(number)] {
-            Some(FieldValue::Bytes(v)) => Some(v.clone()),
             _ => None,
         }
     }
@@ -1481,8 +1458,8 @@ impl Message {
                 raw as i64
             }
             Bytes => {
-                let bytes = input.read_bytes();
-                self.values[slot] = Some(FieldValue::Bytes(bytes));
+                input.read_bytes();
+                self.values[slot] = Some(FieldValue::Bytes);
                 return;
             }
             Msg(t) => {
@@ -1806,22 +1783,8 @@ macro_rules! message_view {
                 $name(Rc::new(Message::new(MsgType::$name)))
             }
 
-            pub fn from_message(message: Rc<Message>) -> $name {
-                assert_eq!(message.get_message_type(), MsgType::$name);
-                $name(message)
-            }
-
             pub fn message(&self) -> &Rc<Message> {
                 &self.0
-            }
-
-            /// Java `==`.
-            pub fn ptr_eq(&self, other: &$name) -> bool {
-                Rc::ptr_eq(&self.0, &other.0)
-            }
-
-            pub fn is_initialized(&self) -> bool {
-                self.0.is_initialized()
             }
         }
     };
@@ -2034,31 +1997,6 @@ impl Class {
         TypeAlias
     );
     message_field!(has_type_table, get_type_table, 30, TypeTable);
-    int_field!(
-        has_extension_class_module_name,
-        get_extension_class_module_name,
-        101,
-        0
-    );
-    message_list!(
-        get_extension_class_local_variable_list,
-        get_extension_class_local_variable_count,
-        get_extension_class_local_variable,
-        102,
-        Property
-    );
-    int_field!(
-        has_extension_anonymous_object_origin_name,
-        get_extension_anonymous_object_origin_name,
-        103,
-        0
-    );
-    int_field!(
-        has_extension_jvm_class_flags,
-        get_extension_jvm_class_flags,
-        104,
-        0
-    );
 }
 
 impl Package {
@@ -2081,27 +2019,7 @@ impl Package {
         4,
         Property
     );
-    message_list!(
-        get_type_alias_list,
-        get_type_alias_count,
-        get_type_alias,
-        5,
-        TypeAlias
-    );
     message_field!(has_type_table, get_type_table, 30, TypeTable);
-    int_field!(
-        has_extension_package_module_name,
-        get_extension_package_module_name,
-        101,
-        0
-    );
-    message_list!(
-        get_extension_package_local_variable_list,
-        get_extension_package_local_variable_count,
-        get_extension_package_local_variable,
-        102,
-        Property
-    );
 }
 
 impl Function {
@@ -2143,12 +2061,6 @@ impl Function {
         100,
         JvmMethodSignature
     );
-    int_field!(
-        has_extension_lambda_class_origin_name,
-        get_extension_lambda_class_origin_name,
-        101,
-        0
-    );
 }
 
 impl Property {
@@ -2169,7 +2081,6 @@ impl Property {
         100,
         JvmPropertySignature
     );
-    int_field!(has_extension_flags, get_extension_flags, 101, 0);
     message_field!(has_receiver_type, get_receiver_type, 5, Type);
 }
 
@@ -2210,13 +2121,11 @@ impl Type {
     int_field!(has_class_name, get_class_name, 6, 0);
     int_field!(has_type_parameter_name, get_type_parameter_name, 9, 0);
     int_field!(has_type_alias_name, get_type_alias_name, 12, 0);
-    bool_field!(has_extension_is_raw, get_extension_is_raw, 101);
 }
 
 impl TypeArgument {
     enum_field!(has_projection, get_projection, 1, Projection::Inv);
     message_field!(has_type, get_type, 2, Type);
-    int_field!(has_type_id, get_type_id, 3, 0);
 }
 
 impl TypeParameter {
@@ -2235,7 +2144,6 @@ impl TypeParameter {
 
 impl TypeTable {
     message_list!(get_type_list, get_type_count, get_type, 1, Type);
-    int_field!(has_first_nullable, get_first_nullable, 2, -1);
 }
 
 impl TypeAlias {

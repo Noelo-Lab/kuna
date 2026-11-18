@@ -10,7 +10,6 @@ use std::rc::Rc;
 
 use crate::arena_object;
 use crate::byte_cursor::ByteCursor;
-use crate::cancelation_manager::CanceledException;
 use crate::class_writer::ClassWriter;
 use crate::context_source::{Entry, IContextSource};
 use crate::decompiler_context::java_parse_int;
@@ -141,11 +140,6 @@ impl ContextUnit {
             &mut ByteCursor::from_arc(data),
             self.is_own(),
         ))
-    }
-
-    pub fn get_other_entries(self) -> Vec<Entry> {
-        self.init_entries();
-        self.with(|d| d.other_entries.clone())
     }
 
     pub fn get_child_contexts(self) -> Vec<Rc<dyn IContextSource>> {
@@ -361,9 +355,6 @@ impl ContextUnit {
     fn wait_for_all(futures: Vec<Result<(), Caught>>) {
         for future in futures.into_iter().rev() {
             if let Err(cause) = future {
-                if CanceledException::is(&cause) {
-                    rethrow(cause);
-                }
                 jthrow!(RuntimeException; "java.util.concurrent.ExecutionException: {}", cause.message);
             }
         }

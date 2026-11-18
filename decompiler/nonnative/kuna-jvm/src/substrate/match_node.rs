@@ -154,11 +154,6 @@ impl MatchNode {
         }))
     }
 
-    /// Java `==`.
-    pub fn ptr_eq(&self, other: &MatchNode) -> bool {
-        Rc::ptr_eq(&self.0, &other.0)
-    }
-
     pub fn add_child(&self, child: MatchNode) {
         self.0.children.borrow_mut().push(child);
     }

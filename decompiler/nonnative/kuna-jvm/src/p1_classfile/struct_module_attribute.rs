@@ -206,11 +206,6 @@ impl StructModuleAttribute {
         self.d(|d| d.module_flags)
     }
 
-    /// The public field `moduleVersion`.
-    pub fn module_version(self) -> Option<String> {
-        self.d(|d| d.module_version.clone())
-    }
-
     /// The public field `requires`.
     pub fn requires(self) -> Vec<RequiresEntry> {
         self.d(|d| d.requires.clone())

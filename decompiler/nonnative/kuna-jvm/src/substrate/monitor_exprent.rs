@@ -16,12 +16,6 @@ pub enum Type {
 }
 
 impl Type {
-    pub fn name(self) -> &'static str {
-        match self {
-            Type::Enter => "ENTER",
-            Type::Exit => "EXIT",
-        }
-    }
 }
 
 impl JavaHash for Type {

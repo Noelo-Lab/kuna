@@ -19,7 +19,7 @@ use kuna_jvm::i_fernflower_logger::{CollectingLogger, IFernflowerLogger, LogReco
 use kuna_jvm::i_fernflower_preferences::IFernflowerPreferences;
 use kuna_jvm::jdk_runtime::JdkRuntime;
 use kuna_jvm::jthrow;
-use kuna_jvm::rt::{reset_class_scope, try_catch, BitSet};
+use kuna_jvm::rt::try_catch;
 use kuna_jvm::struct_class::StructClass;
 use kuna_jvm::struct_context::StructContext;
 
@@ -491,32 +491,12 @@ fn unknown_log_level_keeps_the_logger_severity() {
 fn mapping_tracer_keeps_the_first_line_per_offset() {
     let tracer = BytecodeMappingTracer::new_line(10);
     tracer.add_mapping(4);
-    tracer.increment_current_source_line();
+    tracer.set_current_source_line(11);
     tracer.add_mapping(4);
     tracer.add_mapping(7);
-    let mut offsets = BitSet::new();
-    offsets.set(2);
-    offsets.set(9);
-    tracer.increment_current_source_line_by(3);
-    tracer.add_mapping_bitset(Some(&offsets));
-    tracer.add_mapping_bitset(None);
-    assert_eq!(tracer.get_current_source_line(), 14);
     assert_eq!(
         tracer.get_mapping().borrow().entry_vec(),
-        vec![(2, 14), (4, 10), (7, 11), (9, 14)]
+        vec![(4, 10), (7, 11)]
     );
-
-    let other = BytecodeMappingTracer::new();
-    other.add_mapping(4);
-    other.add_mapping(5);
-    tracer.add_tracer(Some(other));
-    tracer.add_tracer(None);
-    assert_eq!(tracer.get_mapping().borrow().get_cloned(&4), Some(10));
-    assert_eq!(tracer.get_mapping().borrow().get_cloned(&5), Some(0));
     assert!(tracer.get_original_lines_mapping().is_empty());
-
-    let dummy = BytecodeMappingTracer::DUMMY();
-    assert_eq!(BytecodeMappingTracer::DUMMY(), dummy);
-    reset_class_scope();
-    assert!(BytecodeMappingTracer::DUMMY().is_live());
 }

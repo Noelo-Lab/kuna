@@ -475,7 +475,6 @@ impl Plugin for KotlinPlugin {
 
     fn get_language_spec(&self) -> Option<LanguageSpec> {
         Some(LanguageSpec::new(
-            "kotlin",
             Rc::new(KotlinChooser::new()),
             Rc::new(DomHelper),
             Rc::new(KotlinWriter::new()),

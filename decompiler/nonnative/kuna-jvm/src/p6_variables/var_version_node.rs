@@ -87,10 +87,6 @@ impl VarVersionNode {
         self.with(|d| d.lvt.clone())
     }
 
-    pub fn set_lvt(self, lvt: Option<LocalVariable>) {
-        self.with_mut(|d| d.lvt = lvt)
-    }
-
     pub fn state(self) -> Option<State> {
         self.with(|d| d.state)
     }
@@ -161,18 +157,6 @@ pub enum State {
 impl State {
     pub fn ordinal(self) -> i32 {
         self as i32
-    }
-
-    pub fn name(self) -> &'static str {
-        match self {
-            State::Write => "WRITE",
-            State::Read => "READ",
-            State::Phi => "PHI",
-            State::DeadRead => "DEAD_READ",
-            State::Phantom => "PHANTOM",
-            State::Param => "PARAM",
-            State::Catch => "CATCH",
-        }
     }
 }
 

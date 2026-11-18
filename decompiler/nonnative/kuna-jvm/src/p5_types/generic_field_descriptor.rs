@@ -22,11 +22,6 @@ impl GenericFieldDescriptor {
         GenericFieldDescriptor(Rc::new(RefCell::new(GenericFieldDescriptorData { type_ })))
     }
 
-    /// Java `==`.
-    pub fn ptr_eq(&self, other: &GenericFieldDescriptor) -> bool {
-        Rc::ptr_eq(&self.0, &other.0)
-    }
-
     pub fn type_(&self) -> VarType {
         self.0.borrow().type_.clone()
     }

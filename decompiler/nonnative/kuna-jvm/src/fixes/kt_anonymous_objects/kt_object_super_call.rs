@@ -13,7 +13,7 @@ use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;
 use crate::fixes::kt_anonymous_objects::kt_synthetic_anonymous_object;
 use crate::fixes::kt_delegation_calls::kt_default_args_super_call;
-use crate::fixes::kt_util::all_exprents;
+use crate::fixes::util::all_exprents;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::invocation_exprent::InvocationExprent;
 use crate::k_element::KElement;

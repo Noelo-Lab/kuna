@@ -12,7 +12,7 @@ use crate::fixes::kt_null_checks::kt_not_null_assertion;
 use crate::fixes::kt_operators::kt_operator_line_break;
 use crate::fixes::kt_operators::kt_operator_precedence;
 use crate::fixes::kt_java_syntax::kt_java_reference_cast;
-use crate::fixes::kt_java_syntax::kt_java_cast_syntax;
+use crate::fixes::kt_util::writing_kotlin;
 use crate::fixes::numeric_types::concat_operand_type;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::list_stack::ListStack;
@@ -109,61 +109,6 @@ impl JavaEq for FunctionType {
 }
 
 impl FunctionType {
-    pub const VALUES: [FunctionType; 52] = [
-        FunctionType::Add,
-        FunctionType::Sub,
-        FunctionType::Mul,
-        FunctionType::Div,
-        FunctionType::And,
-        FunctionType::Or,
-        FunctionType::Xor,
-        FunctionType::Rem,
-        FunctionType::Shl,
-        FunctionType::Shr,
-        FunctionType::Ushr,
-        FunctionType::BitNot,
-        FunctionType::BoolNot,
-        FunctionType::Neg,
-        FunctionType::I2l,
-        FunctionType::I2f,
-        FunctionType::I2d,
-        FunctionType::L2i,
-        FunctionType::L2f,
-        FunctionType::L2d,
-        FunctionType::F2i,
-        FunctionType::F2l,
-        FunctionType::F2d,
-        FunctionType::D2i,
-        FunctionType::D2l,
-        FunctionType::D2f,
-        FunctionType::I2b,
-        FunctionType::I2c,
-        FunctionType::I2s,
-        FunctionType::Cast,
-        FunctionType::Instanceof,
-        FunctionType::ArrayLength,
-        FunctionType::Imm,
-        FunctionType::Mmi,
-        FunctionType::Ipp,
-        FunctionType::Ppi,
-        FunctionType::Ternary,
-        FunctionType::Lcmp,
-        FunctionType::Fcmpl,
-        FunctionType::Fcmpg,
-        FunctionType::Dcmpl,
-        FunctionType::Dcmpg,
-        FunctionType::Eq,
-        FunctionType::Ne,
-        FunctionType::Lt,
-        FunctionType::Ge,
-        FunctionType::Gt,
-        FunctionType::Le,
-        FunctionType::BooleanAnd,
-        FunctionType::BooleanOr,
-        FunctionType::StrConcat,
-        FunctionType::Other,
-    ];
-
     pub fn ordinal(self) -> i32 {
         self as i32
     }
@@ -1021,7 +966,7 @@ impl FunctionExprent {
                     buf.add_type_name_token(&obj_arr, 2);
                 }
                 if kuna_fixes::enabled(KunaFix::KtMappedJavaMember)
-                    && kt_java_cast_syntax::writing_kotlin()
+                    && writing_kotlin()
                 {
                     buf.append(".size");
                 } else {

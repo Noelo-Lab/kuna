@@ -152,21 +152,8 @@ pub struct Report {
     /// Batches run again after a divergent read.
     pub repeated: usize,
     pub divergent_reads: Vec<DivergentRead>,
-    /// Every batch run, in completion order.
-    pub runs: Vec<BatchRun>,
-}
-
-/// One batch run.
-#[derive(Clone, Debug, Default)]
-pub struct BatchRun {
-    pub delivered: usize,
-    pub processed: usize,
-    /// Repetition round (0: first run).
-    pub round: usize,
-    /// Whether the run needed a new engine instance (`load_millis` is then its loading time).
-    pub fresh_instance: bool,
-    pub load_millis: u64,
-    pub millis: u64,
+    /// Batches run, repeats included.
+    pub runs: usize,
 }
 
 /// Why nothing could be decompiled.
@@ -207,8 +194,6 @@ struct Outcome {
     reads: Vec<DivergentRead>,
     failure: Option<String>,
     fresh_instance: bool,
-    load_millis: u64,
-    millis: u64,
 }
 
 impl Outcome {
@@ -220,8 +205,6 @@ impl Outcome {
             reads: Vec::new(),
             failure: Some(failure),
             fresh_instance,
-            load_millis: 0,
-            millis: 0,
         }
     }
 }
@@ -338,14 +321,7 @@ pub fn run(
                 )
             });
             report.processed += outcome.batch.process.len();
-            report.runs.push(BatchRun {
-                delivered: outcome.batch.deliver.len(),
-                processed: outcome.batch.process.len(),
-                round: outcome.batch.round,
-                fresh_instance: outcome.fresh_instance,
-                load_millis: outcome.load_millis,
-                millis: outcome.millis,
-            });
+            report.runs += 1;
             if outcome.fresh_instance {
                 report.instances += 1;
             }
@@ -711,8 +687,6 @@ fn worker_main(
     }
     let mut session: Option<Session> = None;
     let mut fresh = false;
-    let mut load_millis = 0u64;
-    let loading = Instant::now();
     match plan_tx {
         Some(plan_tx) => {
             let mut s = match open_session(env) {
@@ -726,7 +700,6 @@ fn worker_main(
             match try_catch(|| plan(&mut s.fernflower, &env.input)) {
                 Ok(plan) => {
                     trace(|| "plan done".into());
-                    load_millis = loading.elapsed().as_millis() as u64;
                     let _ = plan_tx.send(Ok(plan));
                     session = Some(s);
                     fresh = true;
@@ -745,7 +718,6 @@ fn worker_main(
         None => {
             if let Ok(s) = open_loaded(env) {
                 instances.fetch_add(1, Ordering::SeqCst);
-                load_millis = loading.elapsed().as_millis() as u64;
                 session = Some(s);
                 fresh = true;
             }
@@ -762,11 +734,9 @@ fn worker_main(
             .is_some_and(|s| s.processed.is_disjoint(&batch.process));
         if !reuse {
             close_session(session.take());
-            let loading = Instant::now();
             match open_loaded(env) {
                 Ok(s) => {
                     instances.fetch_add(1, Ordering::SeqCst);
-                    load_millis = loading.elapsed().as_millis() as u64;
                     session = Some(s);
                     fresh = true;
                 }
@@ -778,8 +748,7 @@ fn worker_main(
             }
         }
         let s = session.as_mut().expect("session");
-        let mut outcome = run_batch(s, batch, &shared, fresh);
-        outcome.load_millis = std::mem::take(&mut load_millis);
+        let outcome = run_batch(s, batch, &shared, fresh);
         fresh = false;
         if outcome.failure.is_some() {
             close_session(session.take());
@@ -811,7 +780,6 @@ fn run_batch(session: &mut Session, batch: Batch, plan: &SharedPlan, fresh: bool
         kuna_partition::watch(plan.order.clone(), &selection);
     }
     let mut units = Vec::new();
-    let started = Instant::now();
     trace(|| {
         format!(
             "batch {} start process={} deliver={} cost={} round={} fresh={}",
@@ -842,8 +810,6 @@ fn run_batch(session: &mut Session, batch: Batch, plan: &SharedPlan, fresh: bool
             .err()
             .map(|e| format!("the engine failed: {}", e.message)),
         fresh_instance: fresh,
-        load_millis: 0,
-        millis: started.elapsed().as_millis() as u64,
     }
 }
 

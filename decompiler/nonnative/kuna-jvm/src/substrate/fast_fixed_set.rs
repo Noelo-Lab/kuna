@@ -8,7 +8,7 @@
 
 use crate::fast_fixed_set_factory::FastFixedSetFactory;
 use crate::long_fast_fixed_set_factory::LongFastFixedSet;
-use crate::rt::{exception, JHashSet, JavaEq, JavaHash};
+use crate::rt::{exception, JavaEq, JavaHash};
 use crate::short_fast_fixed_set_factory::ShortFastFixedSet;
 
 pub enum FastFixedSet<E> {
@@ -38,13 +38,6 @@ impl<E: JavaHash + JavaEq + Clone> FastFixedSet<E> {
         }
     }
 
-    pub fn get_real_size(&self) -> i32 {
-        match self {
-            FastFixedSet::Short(s) => s.get_real_size(),
-            FastFixedSet::Long(s) => s.get_real_size(),
-        }
-    }
-
     pub fn set_all_elements(&mut self) {
         match self {
             FastFixedSet::Short(s) => s.set_all_elements(),
@@ -63,13 +56,6 @@ impl<E: JavaHash + JavaEq + Clone> FastFixedSet<E> {
         match self {
             FastFixedSet::Short(s) => s.remove(element),
             FastFixedSet::Long(s) => s.remove(element),
-        }
-    }
-
-    pub fn clear(&mut self) {
-        match self {
-            FastFixedSet::Short(s) => s.clear(),
-            FastFixedSet::Long(s) => s.clear(),
         }
     }
 
@@ -98,17 +84,6 @@ impl<E: JavaHash + JavaEq + Clone> FastFixedSet<E> {
         }
     }
 
-    /// Java: `addAll(Collection)` for a collection that is not a set of this factory.
-    pub fn add_all_collection(&mut self, c: impl IntoIterator<Item = E>) -> bool {
-        let mut modified = false;
-        for e in c {
-            if self.add(e) {
-                modified = true;
-            }
-        }
-        modified
-    }
-
     /// Java: `retainAll(FastFixedSet)`.
     pub fn retain_all(&mut self, set: &FastFixedSet<E>) -> bool {
         match (self, set) {
@@ -118,15 +93,6 @@ impl<E: JavaHash + JavaEq + Clone> FastFixedSet<E> {
         }
     }
 
-    /// Java: `retainAll(Collection)` for a collection that is not a set of this factory.
-    pub fn retain_all_collection(&mut self, c: &[E]) -> bool {
-        let mut stuffs = JHashSet::from_collection(self.get_factory().get_entries());
-        for item in c {
-            stuffs.remove(item);
-        }
-        self.remove_all_collection(stuffs.iter())
-    }
-
     /// Java: `removeAll(FastFixedSet)`.
     pub fn remove_all(&mut self, set: &FastFixedSet<E>) -> bool {
         match (self, set) {
@@ -134,18 +100,6 @@ impl<E: JavaHash + JavaEq + Clone> FastFixedSet<E> {
             (FastFixedSet::Long(a), FastFixedSet::Long(b)) => a.remove_all(b),
             _ => incompatible(),
         }
-    }
-
-    /// Java: `removeAll(Collection)` for a collection that is not a set of this factory.
-    pub fn remove_all_collection<'a>(&mut self, c: impl IntoIterator<Item = &'a E>) -> bool
-    where
-        E: 'a,
-    {
-        let mut mutated = false;
-        for o in c {
-            mutated |= self.remove(o);
-        }
-        mutated
     }
 
     pub fn equals(&self, o: &FastFixedSet<E>) -> bool {
@@ -176,22 +130,6 @@ impl<E: JavaHash + JavaEq + Clone> FastFixedSet<E> {
             FastFixedSet::Short(s) => Box::new(s.iter()),
             FastFixedSet::Long(s) => Box::new(s.iter()),
         }
-    }
-
-    /// An iterator-`remove()` loop: drops the members `keep` rejects.
-    pub fn retain(&mut self, keep: impl FnMut(&E) -> bool) {
-        match self {
-            FastFixedSet::Short(s) => s.retain(keep),
-            FastFixedSet::Long(s) => s.retain(keep),
-        }
-    }
-
-    pub fn to_plain_set(&self) -> JHashSet<E> {
-        let mut set = JHashSet::with_capacity(self.get_real_size() as usize);
-        for item in self.iter() {
-            set.add(item);
-        }
-        set
     }
 
     /// Deprecated in Java: membership in the factory's universe.

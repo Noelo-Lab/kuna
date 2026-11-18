@@ -79,11 +79,6 @@ impl InstructionSequence {
         self.with(|d| d.instructions.clone())
     }
 
-    /// Java: `iterator()`, over a snapshot.
-    pub fn iter(self) -> std::vec::IntoIter<Instruction> {
-        self.instructions().into_iter()
-    }
-
     /// Java: `toString(int)`.
     pub fn to_string_indent(self, indent: i32) -> String {
         let new_line_separator = DecompilerContext::get_new_line_separator();

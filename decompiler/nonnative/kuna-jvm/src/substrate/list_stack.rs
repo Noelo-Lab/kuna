@@ -40,13 +40,6 @@ impl<T> ListStack<T> {
         ListStack { items: Vec::new() }
     }
 
-    /// Java: `ListStack(Collection)`.
-    pub fn from_collection(list: impl IntoIterator<Item = T>) -> Self {
-        ListStack {
-            items: list.into_iter().collect(),
-        }
-    }
-
     pub fn push(&mut self, item: T) {
         self.items.push(item);
     }
@@ -79,19 +72,11 @@ impl<T> ListStack<T> {
     pub fn size(&self) -> usize {
         self.items.len()
     }
-
-    pub fn into_vec(self) -> Vec<T> {
-        self.items
-    }
 }
 
 impl<T: Clone> ListStack<T> {
     pub fn peek(&self) -> T {
         self.items[self.items.len() - 1].clone()
-    }
-
-    pub fn get(&self, index: usize) -> T {
-        self.items[index].clone()
     }
 
     pub fn get_by_offset(&self, offset: i32) -> T {

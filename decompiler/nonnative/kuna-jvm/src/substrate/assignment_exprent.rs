@@ -12,7 +12,7 @@ use crate::interpreter_util::InterpreterUtil;
 use crate::fixes::kt_operators::kt_compound_bitwise_assignment;
 use crate::fixes::kt_names::kt_unescaped_name;
 use crate::fixes::kt_anonymous_objects::kt_unrepresentable_declared_type;
-use crate::fixes::kt_java_syntax::kt_java_cast_syntax;
+use crate::fixes::kt_util::writing_kotlin;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::rt::{BitSet, JavaEq, JavaHash};
 use crate::s_forms_constructor::SFormsConstructor;
@@ -258,7 +258,7 @@ impl AssignmentExprent {
             }
             Some(cond_type) => {
                 let kotlin = (kuna_fixes::enabled(KunaFix::KtCompoundBitwiseAssignment)
-                    && kt_java_cast_syntax::writing_kotlin())
+                    && writing_kotlin())
                 .then(|| {
                     kt_compound_bitwise_assignment::write(
                         left, &left_type, cond_type, right, indent,

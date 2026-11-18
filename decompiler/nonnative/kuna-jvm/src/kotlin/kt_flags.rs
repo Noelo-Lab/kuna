@@ -139,8 +139,6 @@ pub struct Flags;
 
 impl Flags {
     pub const SUSPEND_TYPE: BooleanFlagField = BooleanFlagField::boolean_first();
-    pub const DEFINITELY_NOT_NULL_TYPE: BooleanFlagField =
-        BooleanFlagField::boolean_after(Self::SUSPEND_TYPE.field());
 
     pub const HAS_ANNOTATIONS: BooleanFlagField = BooleanFlagField::boolean_first();
     pub const VISIBILITY: EnumLiteFlagField<Visibility> =
@@ -161,15 +159,9 @@ impl Flags {
         BooleanFlagField::boolean_after(Self::IS_EXPECT_CLASS.field());
     pub const IS_FUN_INTERFACE: BooleanFlagField =
         BooleanFlagField::boolean_after(Self::IS_VALUE_CLASS.field());
-    pub const HAS_ENUM_ENTRIES: BooleanFlagField =
-        BooleanFlagField::boolean_after(Self::IS_FUN_INTERFACE.field());
 
     pub const IS_SECONDARY: BooleanFlagField =
         BooleanFlagField::boolean_after(Self::VISIBILITY.field());
-    pub const IS_CONSTRUCTOR_WITH_NON_STABLE_PARAMETER_NAMES: BooleanFlagField =
-        BooleanFlagField::boolean_after(Self::IS_SECONDARY.field());
-    pub const RETURN_VALUE_STATUS_CTOR: EnumLiteFlagField<ReturnValueStatus> =
-        EnumLiteFlagField::after(Self::IS_CONSTRUCTOR_WITH_NON_STABLE_PARAMETER_NAMES.field());
 
     pub const MEMBER_KIND: EnumLiteFlagField<MemberKind> =
         EnumLiteFlagField::after(Self::MODALITY.field());
@@ -187,10 +179,6 @@ impl Flags {
         BooleanFlagField::boolean_after(Self::IS_EXTERNAL_FUNCTION.field());
     pub const IS_EXPECT_FUNCTION: BooleanFlagField =
         BooleanFlagField::boolean_after(Self::IS_SUSPEND.field());
-    pub const IS_FUNCTION_WITH_NON_STABLE_PARAMETER_NAMES: BooleanFlagField =
-        BooleanFlagField::boolean_after(Self::IS_EXPECT_FUNCTION.field());
-    pub const RETURN_VALUE_STATUS_FUNCTION: EnumLiteFlagField<ReturnValueStatus> =
-        EnumLiteFlagField::after(Self::IS_FUNCTION_WITH_NON_STABLE_PARAMETER_NAMES.field());
 
     pub const IS_VAR: BooleanFlagField = BooleanFlagField::boolean_after(Self::MEMBER_KIND.field());
     pub const HAS_GETTER: BooleanFlagField = BooleanFlagField::boolean_after(Self::IS_VAR.field());
@@ -208,8 +196,6 @@ impl Flags {
         BooleanFlagField::boolean_after(Self::IS_EXTERNAL_PROPERTY.field());
     pub const IS_EXPECT_PROPERTY: BooleanFlagField =
         BooleanFlagField::boolean_after(Self::IS_DELEGATED.field());
-    pub const RETURN_VALUE_STATUS_PROPERTY: EnumLiteFlagField<ReturnValueStatus> =
-        EnumLiteFlagField::after(Self::IS_EXPECT_PROPERTY.field());
 
     pub const DECLARES_DEFAULT_VALUE: BooleanFlagField =
         BooleanFlagField::boolean_after(Self::HAS_ANNOTATIONS.field());
@@ -228,8 +214,6 @@ impl Flags {
     pub const IS_NEGATED: BooleanFlagField = BooleanFlagField::boolean_first();
     pub const IS_NULL_CHECK_PREDICATE: BooleanFlagField =
         BooleanFlagField::boolean_after(Self::IS_NEGATED.field());
-
-    pub const IS_UNSIGNED: BooleanFlagField = BooleanFlagField::boolean_first();
 
     pub fn get_accessor_flags(
         has_annotations: bool,

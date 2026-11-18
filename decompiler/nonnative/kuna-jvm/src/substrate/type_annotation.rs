@@ -27,21 +27,6 @@ pub enum PathKind {
 }
 
 impl PathKind {
-    pub const VALUES: [PathKind; 4] = [
-        PathKind::DeeperArray,
-        PathKind::DeeperNested,
-        PathKind::OnWildcard,
-        PathKind::GenericArgument,
-    ];
-
-    pub fn name(self) -> &'static str {
-        match self {
-            PathKind::DeeperArray => "DEEPER_ARRAY",
-            PathKind::DeeperNested => "DEEPER_NESTED",
-            PathKind::OnWildcard => "ON_WILDCARD",
-            PathKind::GenericArgument => "GENERIC_ARGUMENT",
-        }
-    }
 }
 
 impl JavaHash for PathKind {

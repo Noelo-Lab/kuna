@@ -30,6 +30,7 @@ use crate::fixes::constructor_calls::synthetic_null_check_shape;
 use crate::k_expr_processor::KExprProcessor;
 use crate::fixes::kt_operators::kt_implicit_widening;
 use crate::fixes::kt_java_syntax::kt_java_cast_syntax;
+use crate::fixes::kt_util::writing_kotlin;
 use crate::fixes::kt_java_syntax::kt_java_reference_cast;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::list_stack::ListStack;
@@ -1178,7 +1179,7 @@ impl ExprProcessor {
 
     pub fn jmp_wrapper(stat: Statement, indent: i32, semicolon: bool) -> TextBuffer {
         let kotlin = kuna_fixes::enabled(KunaFix::KtJavaStatementJump)
-            && kt_java_cast_syntax::writing_kotlin();
+            && writing_kotlin();
         let mut buf = if kotlin {
             KExprProcessor::jmp_wrapper(stat, indent, false)
         } else {
@@ -1492,13 +1493,13 @@ impl ExprProcessor {
         let kotlin_cast = if cast
             && (kuna_fixes::enabled(KunaFix::KtJavaCastSyntax)
                 || kuna_fixes::enabled(KunaFix::KtJavaReferenceCast))
-            && kt_java_cast_syntax::writing_kotlin()
+            && writing_kotlin()
         {
             let written = kt_java_cast_syntax::written_type(exprent, right_type.clone());
             kt_java_cast_syntax::form(&left_type, &written)
         } else if !cast
             && kuna_fixes::enabled(KunaFix::KtImplicitWidening)
-            && kt_java_cast_syntax::writing_kotlin()
+            && writing_kotlin()
         {
             let written = kt_java_cast_syntax::written_type(exprent, right_type.clone());
             kt_implicit_widening::conversion(exprent, &left_type, &written)

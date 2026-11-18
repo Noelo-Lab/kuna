@@ -38,10 +38,6 @@ pub enum KFunctionType {
 }
 
 impl KFunctionType {
-    pub fn ordinal(self) -> i32 {
-        self as i32
-    }
-
     pub fn name(self) -> &'static str {
         match self {
             KFunctionType::None => "NONE",

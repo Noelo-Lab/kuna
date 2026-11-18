@@ -13,7 +13,6 @@ use std::rc::Rc;
 
 use crate::annotation_exprent::AnnotationExprent;
 use crate::fixes::generic_casts::disjoint_generic_cast;
-use crate::cancelation_manager::CanceledException;
 use crate::class_reference14_processor::ClassReference14Processor;
 use crate::class_wrapper::ClassWrapper;
 use crate::classes_processor::{ClassNode, ClassNodeType};
@@ -275,7 +274,7 @@ impl ClassWriter {
         for method in methods {
             let (method_struct, class_struct, varproc) =
                 method.with(|d| (d.method_struct, d.class_struct, d.varproc));
-            let rec = DecompileRecord::new(method_struct);
+            let rec = DecompileRecord::new();
             DecompilerContext::reset_method(method);
 
             if let Some(root) = method.with(|d| d.root) {
@@ -303,9 +302,6 @@ impl ClassWriter {
                         .run_passes(JavaPassLocation::LateProcessing, &mut pctx);
                 });
                 if let Err(e) = result {
-                    if CanceledException::is(&e) {
-                        rethrow(e);
-                    }
                     let qualified_name = node.with(|d| d.class_struct).qualified_name();
                     DecompilerContext::get_logger().write_message_ex(
                         &format!(
@@ -352,9 +348,6 @@ impl ClassWriter {
             }
         });
         if let Err(t) = result {
-            if CanceledException::is(&t) {
-                rethrow(t);
-            }
             let simple_name = node.with(|d| d.simple_name.clone());
             DecompilerContext::get_logger().write_message_ex(
                 &format!(
@@ -647,9 +640,6 @@ impl ClassWriter {
                                         );
                                     });
                                     if let Err(ex) = result {
-                                        if CanceledException::is(&ex) {
-                                            rethrow(ex);
-                                        }
                                         DecompilerContext::get_logger().write_message_ex(
                                             &format!(
                                                 "Method {} {} in class {} couldn't be written.",
@@ -1632,9 +1622,6 @@ impl ClassWriter {
                     );
                 });
                 if let Err(t) = result {
-                    if CanceledException::is(&t) {
-                        rethrow(t);
-                    }
                     let message = format!(
                         "Method {} {} in class {} couldn't be written.",
                         mt.get_name(),
@@ -2133,9 +2120,6 @@ impl ClassWriter {
                         }
                     });
                     if let Err(t) = result {
-                        if CanceledException::is(&t) {
-                            rethrow(t);
-                        }
                         let message = format!(
                             "Method {} {} in class {} couldn't be written.",
                             mt.get_name(),

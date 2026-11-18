@@ -39,8 +39,4 @@ impl StructConstantValueAttribute {
     pub fn get_index(self) -> i32 {
         self.d(|d| d.index)
     }
-
-    pub fn set_index(self, index: i32) {
-        self.d_mut(|d| d.index = index)
-    }
 }

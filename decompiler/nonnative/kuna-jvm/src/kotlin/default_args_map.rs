@@ -21,7 +21,6 @@ use crate::rt::JHashMap;
 use crate::struct_ann_default_attribute::StructAnnDefaultAttribute;
 use crate::struct_class::StructClass;
 use crate::struct_general_attribute::StructGeneralAttribute;
-use crate::struct_method::StructMethod;
 use crate::text_buffer::TextBuffer;
 
 /// `Function<ClassWrapper, DefaultArgsMap>`: built at write time, in the class scope.
@@ -29,18 +28,13 @@ pub type DefaultArgsSupplier = Rc<dyn Fn(ClassWrapper) -> DefaultArgsMap>;
 
 pub struct DefaultArgsMap {
     map: JHashMap<KParameter, Exprent>,
-    default_method: Option<StructMethod>,
     kuna_bridge: Option<MethodWrapper>,
 }
 
 impl DefaultArgsMap {
-    fn new(
-        map: JHashMap<KParameter, Exprent>,
-        default_method: Option<StructMethod>,
-    ) -> DefaultArgsMap {
+    fn new(map: JHashMap<KParameter, Exprent>) -> DefaultArgsMap {
         DefaultArgsMap {
             map,
-            default_method,
             kuna_bridge: None,
         }
     }
@@ -52,7 +46,7 @@ impl DefaultArgsMap {
         params: &[KParameter],
     ) -> DefaultArgsMap {
         let Some(defaults) = defaults else {
-            return DefaultArgsMap::new(JHashMap::new(), None);
+            return DefaultArgsMap::new(JHashMap::new());
         };
         let calling = calling.expect("NullPointerException: calling");
 
@@ -157,7 +151,7 @@ impl DefaultArgsMap {
             }
         }
 
-        let mut args_map = DefaultArgsMap::new(map, Some(defaults.with(|d| d.method_struct)));
+        let mut args_map = DefaultArgsMap::new(map);
         args_map.kuna_bridge = Some(defaults);
         args_map
     }
@@ -165,7 +159,7 @@ impl DefaultArgsMap {
     pub fn from_annotation(cl: StructClass) -> DefaultArgsMap {
         let Some(primary_constructor) = KtAttrs::get(cl, &KConstructor::PRIMARY_CONSTRUCTOR())
         else {
-            return DefaultArgsMap::new(JHashMap::new(), None);
+            return DefaultArgsMap::new(JHashMap::new());
         };
 
         let mut defaults_by_name: JHashMap<String, StructAnnDefaultAttribute> = JHashMap::new();
@@ -208,7 +202,7 @@ impl DefaultArgsMap {
             defaults.put(param.clone(), expr);
         }
 
-        DefaultArgsMap::new(defaults, None)
+        DefaultArgsMap::new(defaults)
     }
 
     pub fn to_java(&self, parameter: &KParameter, indent: i32) -> TextBuffer {
@@ -241,10 +235,6 @@ impl DefaultArgsMap {
         for child in expr.get_all_exprents() {
             DefaultArgsMap::update_exprent(child, calling);
         }
-    }
-
-    pub fn get_default_method(&self) -> Option<StructMethod> {
-        self.default_method
     }
 
     /// The default-arguments method the defaults were read from.

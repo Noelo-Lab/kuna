@@ -4,7 +4,7 @@
 //! `_`.
 
 use crate::kotlin_writer::KotlinWriter;
-use crate::fixes::kt_java_syntax::kt_java_cast_syntax::writing_kotlin;
+use crate::fixes::kt_util::writing_kotlin;
 use crate::var_exprent::VarExprent;
 
 /// A variable's name as the Kotlin writer prints it, when the class being
