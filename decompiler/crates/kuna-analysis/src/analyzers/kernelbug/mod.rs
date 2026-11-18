@@ -71,7 +71,7 @@ const PROBE_STRIDES: [usize; 3] = [8, 12, 16];
 /// The longest source path read out of the image.
 const MAX_PATH: usize = 512;
 
-/// The entries the pre-5.19 `file` reading is decided on.
+/// The entries, spread through the table, the pre-5.19 `file` reading is decided on.
 const VOTE_ENTRIES: usize = 64;
 
 /// A recovered `struct bug_entry` layout.
@@ -194,14 +194,15 @@ fn looks_like_source_path(s: &str) -> bool {
 }
 
 /// Does the table's self-relative string field at `off` count from the
-/// entry's start? Decided over the first [`VOTE_ENTRIES`] entries by which
-/// reading lands more of them on the first byte of a string.
+/// entry's start? Decided over [`VOTE_ENTRIES`] entries spread evenly through
+/// the table by which reading lands more of them on the first byte of a string.
 fn entry_relative(image: &Image, data: &[u8], vma: u64, big: bool, stride: usize, (off, width): (usize, u8)) -> bool {
     if width != 4 {
         return false;
     }
+    let step = (data.len() / stride).div_ceil(VOTE_ENTRIES).max(1) * stride;
     let (mut field, mut entry) = (0usize, 0usize);
-    for e in (0..data.len()).step_by(stride).take(VOTE_ENTRIES) {
+    for e in (0..data.len()).step_by(step).take(VOTE_ENTRIES) {
         if let Some(a) = pointer(data, vma, e + off, width, big) {
             field += usize::from(image.string_start(a));
             entry += usize::from(image.string_start(a.wrapping_sub(off as u64)));

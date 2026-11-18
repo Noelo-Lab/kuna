@@ -4835,8 +4835,11 @@ moves.
   read with a displacement standing in for the flags. Before Linux 5.19
   (`69505e3d9a39`) a self-relative `file` counted from the start of the entry
   rather than from the field, so read the newer way it lands four bytes into the
-  path; the older reading is taken when it puts more of the first 64 entries'
-  `file` fields on the first byte of a string. A table no size explains yields
+  path; the older reading is taken when it puts more `file` fields on the first
+  byte of a string, over 64 entries spread evenly through the table (a linked
+  image keeps its entries in link order, and the first string of a merged
+  string blob can follow binary data with no NUL before it, so the leading
+  entries alone can mislead the vote). A table no size explains yields
   nothing. Section and code lookups are binary searches, so the work is linear
   in the table whatever the section count. The 14,223 entries of
   a 7.3 x86-64 `vmlinux` read in under 0.2 s. Committed sorted by trap address

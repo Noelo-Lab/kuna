@@ -175,6 +175,37 @@ fn pre_5_19_file_counts_from_the_entry() {
     );
 }
 
+/// A linked image keeps its entries in link order, and the first string of a
+/// merged string blob can follow binary data with no NUL before it. Neither
+/// reading puts the first 64 entries' `file` on a string start here, so the
+/// vote samples the whole table: the later entries settle it.
+#[test]
+fn pre_5_19_vote_spans_the_table() {
+    let text = [0x0f, 0x0b].repeat(128);
+    let rodata = b"\x07\x01include/linux/a.h\0lib/b.c\0";
+    let (text_vma, rodata_vma, table_vma) = (0x1000u64, 0x2000u64, 0x3000u64);
+    let path = |i: u64| rodata_vma + if i < 64 { 2 } else { 20 };
+    let mut table = Vec::new();
+    for i in 0..128u64 {
+        let e = table_vma + 12 * i;
+        table.extend_from_slice(&rel32(e, text_vma + 2 * i));
+        table.extend_from_slice(&rel32(e, path(i)));
+        table.extend_from_slice(&(i as u16 + 1).to_le_bytes());
+        table.extend_from_slice(&1u16.to_le_bytes());
+    }
+    let bytes = elf64(&[
+        (".text", text_vma, SHF_ALLOC_EXEC, &text),
+        (".rodata", rodata_vma, SHF_ALLOC, rodata),
+        (BUG_TABLE_SECTION, table_vma, SHF_ALLOC_WRITE, &table),
+    ]);
+    let file = object::File::parse(&*bytes).expect("parse");
+    let sites = scan(&file, exec_ranges(&file));
+    assert_eq!(sites.len(), 128);
+    for (i, s) in sites.iter().enumerate() {
+        assert_eq!(s.file, Some(path(i as u64)), "entry {i}");
+    }
+}
+
 /// Without `CONFIG_DEBUG_BUGVERBOSE` an entry is `bug_addr` and `flags` in 8
 /// bytes: no file, no line.
 #[test]
