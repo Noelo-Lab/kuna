@@ -3467,17 +3467,42 @@ impl Funcdata {
             return;
         }
         let homes = self.kuna_storage_sources.entry(destination).or_default();
+        // Preserve first-seen order. Index only large merges so small vectors
+        // and single-source updates do not allocate a temporary hash table.
+        let address_key = |address: &Address| {
+            use kuna_base::address::AddrSpacePtr;
+            let space = match address.base_ptr() {
+                AddrSpacePtr::Null => 0,
+                AddrSpacePtr::Max => usize::MAX,
+                AddrSpacePtr::Spc(space) => std::rc::Rc::as_ptr(space) as usize,
+            };
+            (space, address.get_offset())
+        };
+        let key = |source: &crate::kuna_varsources::StorageSource| {
+            (address_key(&source.address), source.size, source.write_address.as_ref().map(address_key))
+        };
+        let mut seen = (homes.len() >= 64 && sources.size_hint().0 >= 16).then(|| {
+            let mut seen = crate::kuna_fasthash::FxHashSet::default();
+            seen.reserve(homes.len());
+            seen.extend(homes.iter().map(key));
+            seen
+        });
         for source in sources {
             if Self::kuna_storage_write_matches(&self.kuna_denied_storage_writes, &source)
                 && !Self::kuna_storage_write_matches(&self.kuna_meaningful_storage_writes, &source)
             {
                 continue;
             }
-            if !homes.iter().any(|home| {
+            let new = if let Some(seen) = &mut seen {
+                seen.insert(key(&source))
+            } else {
+                !homes.iter().any(|home| {
                 home.address == source.address
                     && home.size == source.size
                     && home.write_address == source.write_address
-            }) {
+                })
+            };
+            if new {
                 homes.push(source);
             }
         }

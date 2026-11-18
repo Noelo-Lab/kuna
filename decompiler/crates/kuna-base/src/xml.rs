@@ -2215,8 +2215,10 @@ mod tests {
         // and kuna-x86-directalias-freed / and does so after an earlier call stops taking that pointer
         // and kuna-itaniumvfunc / an Itanium virtual method named after the function, not its vtable
         // and kuna-itaniumctors / Itanium constructors and destructors named from their vptr stores
+        // and kuna-switchselfloop / a switch that heads its own loop keeps the loop
+        // and kuna-wide-shifts / armconstshift all shifts a signed 64-bit operand unsigned
         // and kuna-sharedpush / a push above a branch is the argument of the call on each arm
-        assert_eq!(count, 769, "corpus file count drifted");
+        assert_eq!(count, 770, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

@@ -1587,6 +1587,7 @@ pub struct PrintC {
     local_name_standalones: std::collections::HashSet<crate::context::HighVariableId>,
     /// (kuna) The locals the last document declared, as [`DeclaredLocal`]s.
     declared_locals: Vec<DeclaredLocal>,
+    declared_local_index: std::collections::HashMap<crate::context::HighVariableId, usize>,
     /// (kuna) The entry of the function the last document printed.
     declared_entry: Option<Address>,
     /// Final C declarations, including storage and symbol overrides.
@@ -1651,6 +1652,7 @@ impl PrintC {
             local_name_aliases: std::collections::HashMap::new(),
             local_name_standalones: std::collections::HashSet::new(),
             declared_locals: Vec::new(),
+            declared_local_index: Default::default(),
             declared_entry: None,
             pointer_decls: crate::kuna_pointerargs::Declarations::default(),
             record_pointer_arguments: false,
@@ -1996,6 +1998,7 @@ impl PrintC {
         self.local_name_aliases.clear();
         self.local_name_standalones.clear();
         self.declared_locals.clear();
+        self.declared_local_index.clear();
         self.declared_entry = None;
         self.pointer_decls.clear();
         self.record_pointer_arguments = false;
@@ -2644,6 +2647,7 @@ impl PrintC {
         self.local_name_aliases.clear();
         self.local_name_standalones.clear();
         self.declared_locals.clear();
+        self.declared_local_index.clear();
         self.declared_entry = Some(fd.get_address().clone());
         self.pointer_decls.clear();
         self.begin_pointer_record(fd);
@@ -3773,6 +3777,7 @@ impl PrintC {
             if array_count.is_none() {
                 self.cast_implied.record_local(*high, name, format!("{decl_type}{decl_back}"));
             }
+            self.declared_local_index.entry(*high).or_insert(self.declared_locals.len());
             self.declared_locals.push(DeclaredLocal {
                 high: *high,
                 base: base_names.get(high).cloned().unwrap_or_else(|| name.clone()),
@@ -3908,7 +3913,7 @@ impl PrintC {
     /// its own, or the one it was collapsed into.
     pub fn declared_local(&self, high: crate::context::HighVariableId) -> Option<&DeclaredLocal> {
         let owner = self.local_name_aliases.get(&high).copied().unwrap_or(high);
-        self.declared_locals.iter().find(|local| local.high == owner)
+        self.declared_local_index.get(&owner).and_then(|&i| self.declared_locals.get(i))
     }
 
     /// Resolve the emitted spelling of a named HighVariable in this function.
@@ -5846,7 +5851,11 @@ impl PrintC {
                 self.emit_comment_group(fd, Some(inst));
                 self.emit.tag_line();
             }
-            self.emit_statement(fd, arch, inst);
+            if let Some(last) = self.emit_rust_array_init(fd, arch, inst) {
+                cur = fd.bb_op_next(last);
+            } else {
+                self.emit_statement(fd, arch, inst);
+            }
             // (kuna warnstyle, DIV-39) warnings collected for this statement
             // land after its semicolon — but NEVER inside a comma-separated
             // header (`while (...)` / `for (...)` parens), where an inline
@@ -5988,6 +5997,7 @@ impl PrintC {
             && (crate::p9_emit::kuna_armregistershift::plan_arm_register_lsl(fd, arch, op)
                 .is_some()
                 || crate::p9_emit::kuna_armconstantshift::plan_arm_constant_lsl(fd, arch, op)
+                    .or_else(|| self.fixed64_shift_plan(fd, arch, op))
                     .is_some())
         {
             return false;
@@ -6453,8 +6463,9 @@ impl PrintC {
                 return;
             }
             if tok.print1 == "<<" {
-                if let Some(plan) = crate::p9_emit::kuna_armconstantshift::plan_arm_constant_lsl(fd, arch, op) {
-                    self.emit_arm_constant_lsl(fd, arch, op, plan);
+                if let Some(plan) = crate::p9_emit::kuna_armconstantshift::plan_arm_constant_lsl(fd, arch, op)
+                    .or_else(|| self.fixed64_shift_plan(fd, arch, op)) {
+                    self.emit_constant_lsl(fd, arch, op, plan);
                     return;
                 }
             }
@@ -6597,13 +6608,27 @@ impl PrintC {
         }
     }
 
+    fn printed_operand_type(&self, fd: &Funcdata, vn: VarnodeId, op: OpId) -> std::rc::Rc<crate::dtype::Datatype> {
+        fd.vbank().get(vn).and_then(|v| (!v.is_implied()).then_some(v.get_high()).flatten())
+            .and_then(|high| self.declared_local(high)).and_then(|local| local.ty.clone())
+            .or_else(|| declared_variable_type(fd, vn))
+            .unwrap_or_else(|| fd.vn_type_read_facing(vn, op))
+    }
+
+    fn fixed64_shift_plan(&self, fd: &Funcdata, arch: &Architecture, op: OpId)
+        -> Option<crate::p9_emit::kuna_constantshift::ConstantLslPlan>
+    {
+        crate::p9_emit::kuna_constantshift::plan_fixed64_lsl(fd, arch, op,
+            |vn| self.printed_operand_type(fd, vn, op))
+    }
+
     /// Emit each fixed-shift operand once, converting the shiftee before LSL.
-    fn emit_arm_constant_lsl(
+    fn emit_constant_lsl(
         &mut self,
         fd: &Funcdata,
         arch: &Architecture,
         op: OpId,
-        plan: crate::p9_emit::kuna_armconstantshift::ArmConstantLslPlan,
+        plan: crate::p9_emit::kuna_constantshift::ConstantLslPlan,
     ) {
         if let Some(result_type) = &plan.signed_result_type {
             self.push_cast_open(result_type, op);
@@ -13727,6 +13752,9 @@ fn to_emit_hl(hl: crate::printlanguage::SyntaxHighlight) -> SyntaxHighlight {
         Pl::special_color => SyntaxHighlight::SpecialColor,
     }
 }
+
+#[path = "kuna_rustarrayinit.rs"]
+mod kuna_rustarrayinit;
 
 #[cfg(test)]
 mod tests;

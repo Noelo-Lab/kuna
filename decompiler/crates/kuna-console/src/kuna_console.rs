@@ -336,7 +336,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         // (kuna `aif`) Four-valued, so it reports its own token.
         "aif" => conf.analysis_aif.as_str(),
         "aifpoolslide" => on_off(conf.analysis_aifpoolslide),
-        "armconstshift" => on_off(conf.arm_constant_shift),
+        "armconstshift" => conf.arm_constant_shift.as_str(),
         // (PR-8) Mach-O arm64e spec selection: reflects the recorded requested
         // state (the live spec-selection gate is the load-time env var, but the
         // catalog `current` mirrors the `option macho-arm64e on|off` request).
