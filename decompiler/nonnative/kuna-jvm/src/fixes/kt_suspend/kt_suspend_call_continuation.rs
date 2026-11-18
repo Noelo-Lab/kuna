@@ -3,7 +3,6 @@
 //! be written without it, and the casts of its result to the declared type are
 //! left out.
 
-use std::cell::Cell;
 use std::rc::Rc;
 
 use crate::exprent::Exprent;
@@ -28,28 +27,10 @@ use crate::fixes::kt_util::SUSPEND_DESCRIPTOR_END;
 use super::CONTINUATION;
 use crate::fixes::kt_util::all_exprents;
 
-thread_local! {
-    static IN_BODY: Cell<bool> = const { Cell::new(false) };
-}
-
-/// While alive, the body of a suspend function is being typed.
-pub struct BodyScope(bool);
-
-impl Drop for BodyScope {
-    fn drop(&mut self) {
-        IN_BODY.with(|b| b.set(self.0));
-    }
-}
-
-/// Enters the body of `mt` for fix `kt_nullable_local`'s typing.
-pub fn enter_body(mt: StructMethod) -> BodyScope {
-    let inside = kuna_fixes::enabled(KunaFix::KtSuspendCallContinuation) && continuation_slot(mt).is_some();
-    BodyScope(IN_BODY.with(|b| b.replace(inside)))
-}
-
-/// Whether the body being typed is a suspend function's.
-pub fn in_body() -> bool {
-    IN_BODY.with(Cell::get)
+/// Whether `mt`'s body is a suspend function's whose calls this fix marks, for
+/// fix `kt_nullable_local`'s typing.
+pub fn is_suspend_body(mt: StructMethod) -> bool {
+    kuna_fixes::enabled(KunaFix::KtSuspendCallContinuation) && continuation_slot(mt).is_some()
 }
 
 /// The slot of the continuation a suspend function's calls pass on: its

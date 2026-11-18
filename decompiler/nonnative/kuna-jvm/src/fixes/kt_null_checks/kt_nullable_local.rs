@@ -76,8 +76,11 @@ struct Store {
 /// Marks the definitions under `root` of the locals that may hold null.
 pub fn infer(root: RootStatement, method: StructMethod) {
     LOOKUPS.with(|l| l.borrow_mut().clear());
-    let _suspend_body = kt_suspend_call_continuation::enter_body(method);
-    let params = parameter_nullability(method);
+    let suspend_body = kt_suspend_call_continuation::is_suspend_body(method);
+    let params = Method {
+        params: parameter_nullability(method),
+        suspend_body,
+    };
     let mut walk = Walk {
         params: &params,
         casts: Vec::new(),
@@ -152,8 +155,16 @@ pub fn infer(root: RootStatement, method: StructMethod) {
 
 /// The stores and definitions of a method body in execution order, with the
 /// values (locals, fields) its null checks have found non-null on the way.
+/// What the stores' nullability depends on in the method being typed: its
+/// parameters' nullability by variable index, and whether it is a suspend
+/// function's body, whose suspend calls return what their metadata declares.
+struct Method {
+    params: BTreeMap<i32, bool>,
+    suspend_body: bool,
+}
+
 struct Walk<'a> {
-    params: &'a BTreeMap<i32, bool>,
+    params: &'a Method,
     casts: Vec<Store>,
     uses: Vec<Exprent>,
     derefs: Vec<Exprent>,
@@ -500,7 +511,7 @@ fn may_be_null(
     value: Exprent,
     checked: &[Exprent],
     nullable: &BTreeSet<i32>,
-    params: &BTreeMap<i32, bool>,
+    params: &Method,
 ) -> Option<bool> {
     if checked.iter().any(|c| same(*c, value)) {
         return Some(false);
@@ -518,7 +529,7 @@ fn may_be_null(
             if nullable.contains(&index) {
                 Some(true)
             } else {
-                params.get(&index).copied()
+                params.params.get(&index).copied()
             }
         }
         ExprentType::Field => {
@@ -543,7 +554,7 @@ fn may_be_null(
                 inv.get_string_descriptor(),
             );
             looked_up(false, &owner, &name, &desc, || {
-                method_nullability(&owner, &name, &desc)
+                method_nullability(&owner, &name, &desc, params.suspend_body)
             })
         }
         ExprentType::Assignment => {
@@ -736,7 +747,7 @@ fn field_nullability(owner: &str, name: &str, desc: &str) -> Option<bool> {
 
 /// The Kotlin nullability of what the method `owner.name desc` returns,
 /// looked up in `owner` and its supertypes.
-fn method_nullability(owner: &str, name: &str, desc: &str) -> Option<bool> {
+fn method_nullability(owner: &str, name: &str, desc: &str, suspend_body: bool) -> Option<bool> {
     let ret = &desc[desc.find(')')? + 1..];
     if !ret.starts_with('L') && !ret.starts_with('[') {
         return Some(false);
@@ -754,7 +765,7 @@ fn method_nullability(owner: &str, name: &str, desc: &str) -> Option<bool> {
             continue;
         };
         if let Some(method) = cl.get_method(name, desc) {
-            let suspend = kt_suspend_call_continuation::in_body()
+            let suspend = suspend_body
                 && desc.ends_with(SUSPEND_DESCRIPTOR_END)
                 && {
                     KotlinChooser::parse_metadata_for(cl);
