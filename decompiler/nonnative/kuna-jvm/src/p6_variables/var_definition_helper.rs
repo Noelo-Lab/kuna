@@ -31,9 +31,8 @@ use crate::generic_type::GenericType;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::interpreter_util::InterpreterUtil;
 use crate::fixes::var_merge::var_merge_liveness;
-use crate::fixes::declaration_scope::local_final_writes;
+use crate::fixes::declaration_scope;
 use crate::kuna_fixes::{self, KunaFix};
-use crate::fixes::declaration_scope::switch_case_scope;
 use crate::fixes::var_merge::var_merge_declared_type;
 use crate::p6_variables::kuna_source_locals;
 use crate::method_descriptor::MethodDescriptor;
@@ -1664,7 +1663,7 @@ impl VarDefinitionHelper {
     /// Java: setNonFinal(Statement, Set)
     fn set_non_final(self, stat: Statement, un_initialized: &mut JHashSet<VarVersionPair>) {
         if kuna_fixes::enabled(KunaFix::LocalFinalWrites) {
-            local_final_writes::set_non_final(self, stat, un_initialized);
+            declaration_scope::set_non_final(self, stat, un_initialized);
             return;
         }
         if let Some(exprents) = stat.get_exprents().filter(|e| !e.is_empty()) {
@@ -2078,7 +2077,7 @@ impl VarDefinitionHelper {
         if iterate {
             let mut stats = stat.get_stats().borrow().to_vec();
             if kuna_fixes::enabled(KunaFix::SwitchCaseScope) {
-                stats = switch_case_scope::in_text_order(stat, stats, mt);
+                stats = declaration_scope::in_text_order(stat, stats, mt);
             }
             for st in stats {
                 let mut st_vars: JHashSet<VarInMethod> = JHashSet::new();
@@ -2105,7 +2104,7 @@ impl VarDefinitionHelper {
         }
 
         let case_block = kuna_fixes::enabled(KunaFix::SwitchCaseScope)
-            && switch_case_scope::is_case_block(stat, mt);
+            && declaration_scope::is_case_block(stat, mt);
         if should_remove_at_end && !case_block {
             self.clear_statement(var_definitions, live_var_defs, name_map, stat);
         }
@@ -2114,7 +2113,7 @@ impl VarDefinitionHelper {
             let st = st.expect("NullPointerException: statement");
             if st.get_parent() == Some(stat) {
                 if case_block && st.get_exprents().is_some() {
-                    switch_case_scope::keep_in_case(var_definitions, st, stat);
+                    declaration_scope::keep_in_case(var_definitions, st, stat);
                 } else {
                     self.clear_statement(var_definitions, live_var_defs, name_map, st);
                 }
@@ -2393,7 +2392,7 @@ impl VarDefinitionHelper {
                         }
 
                         if !scoped_switch && kuna_fixes::enabled(KunaFix::SwitchCaseScope) {
-                            scoped_switch = switch_case_scope::scope_clashing_cases(
+                            scoped_switch = declaration_scope::scope_clashing_cases(
                                 stat,
                                 mt,
                                 parent.and_then(|p| p.try_as_switch()).is_some(),

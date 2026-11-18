@@ -1,32 +1,83 @@
-//! kuna fix `switch_case_scope` (`kuna_fixes`): the body of a switch statement
-//! is one block (JLS 6.3), so a local declared at the top level of one case is
-//! in scope in every later case. `VarDefinitionHelper.iterateClashingNames`
-//! keeps the declarations of a case whose body is a single basic block live
-//! until the end of the switch (and so renames a clashing declaration in a
-//! later case, or puts both cases in braces), but forgets the declarations of
-//! a case whose body is a statement sequence when that sequence ends: two
-//! cases that each declare `double z = ...;` before an `if` are written
-//! without braces and javac rejects the second `z`. It also visits a switch's
-//! children in the order of its statement list, which need not be the order
-//! the cases are written in, so a declaration nested in a case written later
-//! can be visited (and forgotten) before the clashing top-level one of a case
-//! written earlier. With the fix the cases are visited in the order they are
-//! written, and the declarations made by the basic blocks at the top level of
-//! a case sequence, and the ones its children hand to it, stay live until the
-//! switch ends, as for a single-block case; and a declaration that clashes
-//! only with declarations made in other cases of the switch puts those cases
-//! (and its own, when it is at the top level of its case) in braces, where
-//! Vineflower renames it: a declaration made in a case is used in that case
-//! only, or it would have been declared before the switch.
+//! Fix family `declaration_scope`: `local_final_writes` makes `setNonFinal`
+//! see the writes in statement heads and repeated by loops;
+//! `switch_case_scope` keeps a case's declarations live to the end of the
+//! switch, visits cases in the order they are written, and braces the cases
+//! whose declarations clash instead of renaming.
 
 use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;
-use crate::plugin_context::PluginContext;
 use crate::p6_variables::var_definition_helper::{NameMap, VarDefs, VarInMethod};
+use crate::plugin_context::PluginContext;
 use crate::rt::JHashSet;
 use crate::statement::{Statement, StatementType};
 use crate::struct_method::StructMethod;
+use crate::var_definition_helper::VarDefinitionHelper;
 use crate::var_version_pair::VarVersionPair;
+
+/// `setNonFinal(Statement, Set)` with heads and loops.
+pub fn set_non_final(
+    helper: VarDefinitionHelper,
+    stat: Statement,
+    un_initialized: &mut JHashSet<VarVersionPair>,
+) {
+    if let Some(exprents) = stat.get_exprents().filter(|e| !e.is_empty()) {
+        for exp in exprents.iter() {
+            if let Some(var) = exp.try_as_var() {
+                un_initialized.add(VarVersionPair::from_var(var));
+            } else {
+                helper.set_non_final_exprent(Some(exp), un_initialized);
+            }
+        }
+    }
+
+    let stats = stat.get_stats().borrow().to_vec();
+    if let Some(dostat) = stat.try_as_do() {
+        for var in stat.get_var_definitions().iter() {
+            un_initialized.add(VarVersionPair::from_var(var.as_var()));
+        }
+        helper.set_non_final_exprent(dostat.get_init_exprent(), un_initialized);
+        let mut body: JHashSet<VarVersionPair> = JHashSet::new();
+        helper.set_non_final_exprent(dostat.get_condition_exprent(), &mut body);
+        helper.set_non_final_exprent(dostat.get_inc_exprent(), &mut body);
+        for st in stats {
+            set_non_final(helper, st, &mut body);
+        }
+        return;
+    }
+
+    let heads = if let Some(ifstat) = stat.try_as_if() {
+        Some(ifstat.get_headexprent_list())
+    } else if let Some(switch) = stat.try_as_switch() {
+        Some(switch.get_headexprent_list())
+    } else {
+        stat.try_as_synchronized().map(|sync| sync.get_headexprent_list())
+    };
+    let Some(heads) = heads else {
+        for st in stats {
+            set_non_final(helper, st, un_initialized);
+        }
+        return;
+    };
+
+    let first = stat.get_first();
+    if let Some(first) = first {
+        set_non_final(helper, first, un_initialized);
+    }
+    for head in heads.iter() {
+        helper.set_non_final_exprent(Some(head), un_initialized);
+    }
+    let rest: Vec<Statement> = stats.into_iter().filter(|st| Some(*st) != first).collect();
+    if let Some(ifstat) = stat.try_as_if() {
+        if let (Some(if_branch), Some(else_branch)) = (ifstat.get_ifstat(), ifstat.get_elsestat()) {
+            set_non_final(helper, if_branch, &mut un_initialized.clone());
+            set_non_final(helper, else_branch, un_initialized);
+            return;
+        }
+    }
+    for st in rest {
+        set_non_final(helper, st, un_initialized);
+    }
+}
 
 /// Whether `mt`'s class is written as Java: Kotlin's `when` branches are
 /// blocks of their own.

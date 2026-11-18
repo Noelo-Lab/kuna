@@ -1863,7 +1863,7 @@ written in. Two cases that each declare `double z` before an `if` (Guava's
 `ConsistencyChecker.sizeRestriction`, Elasticsearch's `DocValuesConsumerUtil`) are then written
 without braces and javac rejects the second (`already defined`), and where a clash is detected
 the earlier written case can be the one renamed. With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/declaration_scope/switch_case_scope.rs`), a switch
+(`decompiler/nonnative/kuna-jvm/src/fixes/declaration_scope.rs`), a switch
 statement's cases are visited in the order they are written, the declarations made at the top
 level of a case sequence stay live until the switch ends, as for a single-block case, and a
 declaration nested deeper in a later case that clashes only with top-level declarations of
@@ -3973,7 +3973,7 @@ and the code around it, so the single write in a loop body of a local declared b
 as its only one. Java output never prints this finality, but the Kotlin writer declares such a local
 `val`, which kotlinc rejects as reassigned (okhttp's `RetryAndFollowUpInterceptor`, okio's
 `codePointIndexToCharIndex`, 30 such locals in the two). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/declaration_scope/local_final_writes.rs (set_non_final)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/declaration_scope.rs (set_non_final)`)
 heads are read where they run and a loop body starts with a set of its own, so a local declared outside
 the loop and written in it is non-final (`var`).
 
