@@ -56,6 +56,10 @@ reproduces both unmodified x86 hashes; kuna’s compiler produces the same chang
 element streams.
 The combined digests were produced with `slacomp`, which reproduces the
 pinned C++ digests for each of those changes applied alone.
+The three x86 digests were regenerated with `slacomp` again when the VMX
+instructions gained their status flags (and VMREAD/VMWRITE their REX.W-free
+64-bit decode); `slacomp` reproduces all three previous digests on the
+previous sources.
 `x86-16.slaspec` (16-bit x86 with the real-mode code segment in the decode
 context) was added with a digest from the recorded C++ compiler, which
 `slacomp` matches. Its `ia.sinc` hook replaces three blank lines, so the

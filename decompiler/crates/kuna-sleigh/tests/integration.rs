@@ -86,5 +86,8 @@ mod x87_integer_rounding;
 #[path = "x86_bound.rs"]
 mod x86_bound;
 
+#[path = "x86_vmx_status.rs"]
+mod x86_vmx_status;
+
 #[path = "octeon_core.rs"]
 mod octeon_core;
