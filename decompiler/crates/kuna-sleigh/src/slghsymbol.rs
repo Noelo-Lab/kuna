@@ -3883,14 +3883,15 @@ impl SymbolTable {
     }
 
     /// Java `Constructor.buildPattern` "operand ... has an issue": an operand
-    /// defined as a bare operand whose pattern is generated after its own.
+    /// defined as itself or as a bare operand whose pattern is generated after
+    /// its own.
     fn operand_before_definition(&self, opid: u32) -> KunaError {
         let nm = self
             .symbol(opid)
             .map(|s| name_text(s.get_name()).to_string())
             .unwrap_or_default();
         KunaError::sleigh(format!(
-            "{nm}: operand is defined as an operand that follows it"
+            "{nm}: operand is defined as itself or an operand that follows it"
         ))
     }
 

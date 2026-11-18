@@ -80,19 +80,23 @@ fn pattern_build_errors_report_the_undefined_operand() {
 }
 
 #[test]
-fn operand_defined_as_a_later_operand_is_rejected() {
-    let (result, image) = compile(
-        "define token instr(16) op=(8,15) cop0209=(2,9);\n\
-         :foo idx is op=0x1 & cop0209 [ idx = cop0209; ] { r0 = idx; }\n",
-        &[],
-        false,
-    );
-    assert_eq!(result.status.code(), Some(2));
-    assert_eq!(
-        std::str::from_utf8(&result.stderr).unwrap(),
-        "main.slaspec:7 - ERROR Error: idx: operand is defined as an operand that follows it: for table \"instruction\" constructor starting at line 6\n\nNo output produced\n"
-    );
-    assert!(image.is_none());
+fn operand_defined_as_itself_or_a_later_operand_is_rejected() {
+    for action in ["idx = cop0209;", "idx = idx;"] {
+        let (result, image) = compile(
+            &format!(
+                "define token instr(16) op=(8,15) cop0209=(2,9);\n\
+                 :foo idx is op=0x1 & cop0209 [ {action} ] {{ r0 = idx; }}\n"
+            ),
+            &[],
+            false,
+        );
+        assert_eq!(result.status.code(), Some(2));
+        assert_eq!(
+            std::str::from_utf8(&result.stderr).unwrap(),
+            "main.slaspec:7 - ERROR Error: idx: operand is defined as itself or an operand that follows it: for table \"instruction\" constructor starting at line 6\n\nNo output produced\n"
+        );
+        assert!(image.is_none());
+    }
 }
 
 #[test]
