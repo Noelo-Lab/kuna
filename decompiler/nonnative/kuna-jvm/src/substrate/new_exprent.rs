@@ -20,7 +20,7 @@ use crate::interpreter_util::InterpreterUtil;
 use crate::invocation_exprent::InvocationExprent;
 use crate::java_subclass;
 use crate::kuna_fixes::{self, KunaFix};
-use crate::fixes::generics::external_class_diamond;
+use crate::fixes::generics;
 use crate::fixes::constructor_calls::implicit_outer_instance;
 use crate::fixes::constructor_calls::qualified_super_call;
 use crate::fixes::overloads::vararg_spread_resolution;
@@ -184,7 +184,7 @@ impl NewExprent {
             let node = struct_class(new_type.value.as_deref());
 
             if node.is_none() && kuna_fixes::enabled(KunaFix::ExternalClassDiamond) {
-                if let Some(type_) = external_class_diamond::infer(self, upper_bound) {
+                if let Some(type_) = generics::external_diamond_type(self, upper_bound) {
                     return type_;
                 }
             }

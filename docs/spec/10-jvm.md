@@ -2213,7 +2213,7 @@ leaves unresolved, named like one of the class's, is taken for the class's and w
 cast (`getUninterruptibly((Future<V>)future)` in Guava's `AbstractFuture`), which javac rejects
 in a static context. With the fix the walk out from the code stops counting class type
 variables once it has passed a static method
-(`decompiler/nonnative/kuna-jvm/src/fixes/generics/static_type_variable_scope.rs (is_static_method)`;
+(`decompiler/nonnative/kuna-jvm/src/fixes/generics.rs (is_static_method)`;
 a synthetic method, such as a lambda's static implementation method, says nothing about the
 context the lambda is written in); the method's own type variables, and those of the methods
 enclosing a local or anonymous class, stay. With the class's type variable out of the way,
@@ -2502,7 +2502,7 @@ type needs another type variable there, javac cannot infer the diamond: `Supplie
 new EnumSetSupplier<>(valueClass)` with `valueClass` a `Class<V0>` and `V extends V0`, or `return new
 EnumMap<>(keyClass)` for a `Map<K, Collection<V>>` with a `Class<K0>` (the source wrote `(Supplier) new
 EnumSetSupplier<V0>(valueClass)`, an unchecked conversion the bytecode keeps no trace of). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/generics/diamond_argument_conflict.rs (contradicts)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/generics.rs (contradicts)`)
 the inferred type is lifted to the expected type's class (through `GenericType.getGenericSuperType`,
 or the class's own signature when that class is outside the input) and compared argument by
 argument; where both sides name different type variables in scope, outside any wildcard and other
@@ -3474,11 +3474,11 @@ SneakyThrows()`, without a target type to infer from; on a raw receiver the call
 erased to `Throwable` too (Guava's four `SneakyThrows` classes; Elasticsearch's `ScriptCache.rethrow`, and
 `TenaciousRetryBlobContainer.execute`, where Vineflower's copy of the catch parameter loses javac's precise
 rethrow). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/generics/thrown_type_variable.rs (throw_cast)`) a `throw` of a
+(`decompiler/nonnative/kuna-jvm/src/fixes/generics.rs (throw_cast)`) a `throw` of a
 variable whose declared type (a parameter's, a local's without a generic signature) is a checked
 exception class that no class in the method's generic `throws` covers is cast to the first thrown type
 variable whose erasure (the `Exceptions` attribute's entry) admits it; and
-(`decompiler/nonnative/kuna-jvm/src/fixes/generics/thrown_type_variable.rs (type_receiver)`) a raw `new
+(`decompiler/nonnative/kuna-jvm/src/fixes/generics.rs (type_receiver)`) a raw `new
 C()` that is the receiver of a call whose generic `throws` names every type parameter of `C`, each bounded
 by `Object`, `Throwable`, `Exception` or `RuntimeException`, is written `new C<RuntimeException>()`, the
 type JLS 18.4 gives a thrown inference variable with no other bound. Both compile to the same bytecode.

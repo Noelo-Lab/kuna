@@ -3,7 +3,7 @@
 use crate::check_types_result::CheckTypesResult;
 use crate::fixes::generic_casts::disjoint_generic_cast;
 use crate::function_exprent::FunctionType;
-use crate::fixes::generics::thrown_type_variable;
+use crate::fixes::generics;
 use crate::code_type::CodeType;
 use crate::decompiler_context::DecompilerContext;
 use crate::expr_processor::{ExprProcessor, NullCastType};
@@ -198,7 +198,7 @@ impl ExitExprent {
         } else {
             if kuna_fixes::enabled(KunaFix::ThrownTypeVariable) {
                 let thrown = value.expect("NullPointerException");
-                if let Some(cast) = thrown_type_variable::throw_cast(thrown) {
+                if let Some(cast) = generics::throw_cast(thrown) {
                     buf.append("throw (").append_cast_type_name(&cast).append(")");
                     if thrown.get_precedence() >= FunctionType::Cast.precedence() {
                         buf.append("(").append_buffer(&thrown.to_java(indent)).append(")");

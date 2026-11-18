@@ -45,12 +45,11 @@ use crate::struct_class::{GenericMap, StructClass};
 use crate::struct_method::StructMethod;
 use crate::fixes::anonymous_classes::anonymous_static_qualifier;
 use crate::fixes::generic_casts::argument_generic_cast;
-use crate::fixes::generics::diamond_argument_conflict;
+use crate::fixes::generics;
 use crate::fixes::overloads::vararg_array_length;
 use crate::fixes::constructor_calls::qualified_super_call;
 use crate::fixes::lambdas::lambda_return_type_argument;
 use crate::fixes::overloads::vararg_spread_resolution;
-use crate::fixes::generics::thrown_type_variable;
 use crate::fixes::overloads::unseen_class_overload;
 use crate::fixes::numeric_types::reference_unboxing;
 use crate::fixes::overloads::ambiguous_type_variable_argument;
@@ -1138,7 +1137,7 @@ impl InvocationExprent {
                             });
                         } else if is_gen_new
                             && !(kuna_fixes::enabled(KunaFix::DiamondArgumentConflict)
-                                && diamond_argument_conflict::contradicts(
+                                && generics::contradicts(
                                     new_ret.as_ref(),
                                     upper_bound,
                                     &fparams,
@@ -1491,7 +1490,7 @@ impl InvocationExprent {
                         pushed_call_chain_group = true;
                     }
                     if kuna_fixes::enabled(KunaFix::ThrownTypeVariable) {
-                        thrown_type_variable::type_receiver(self, instance);
+                        generics::type_receiver(self, instance);
                     }
                     let res = instance.to_java(indent);
 
