@@ -1,25 +1,6 @@
-//! kuna fix `kt_operator_precedence`: in Kotlin output, an operand is
-//! parenthesised where Kotlin's operator precedence needs it, not only where
-//! Java's does.
-//!
-//! The Kotlin plugin writes Java's operators with Kotlin's syntax (`x shl 2`,
-//! `a ?: b`, `x is T`, `x.inv()`) but decides parentheses with
-//! `FunctionExprent.wrapOperandString`, by Java's precedence. Kotlin's grammar
-//! orders them differently: postfix, prefix, `as`, multiplicative, additive,
-//! range, infix function calls (`shl shr ushr and or xor`, every `infix fun`,
-//! all one level, left-associative), elvis, `is`/`in`, comparison, equality,
-//! `&&`, `||`. Java's `&`, `^` and `|` sit below comparison and equality, its
-//! shifts above them, and each has a level of its own; Java's `?:`-like
-//! elvis sits with `||`. So `x | 1 << k` came out `x or 1 shl k`, which
-//! Kotlin reads `(x or 1) shl k`, `a | b & c` as `(a or b) and c`, `ok &
-//! flags != 0` as `(ok and flags) != 0` and `x ?: (a && b)` as `(x ?: a) &&
-//! b`. With the fix an operand gets parentheses also when its Kotlin level
-//! binds less tightly than its operator's, or, as a right operand, as
-//! tightly unless it is the same associative operator (`a or b or c`).
-//! Parentheses Java's rule writes are kept. An unboxing call Vineflower does
-//! not write binds as what it is written as: `!(x as Boolean)`, where the
-//! unwritten `booleanValue()` came out `!x as Boolean`, which Kotlin reads
-//! `(!x) as Boolean`.
+//! Fix `kt_operator_precedence`: an operand is parenthesised where Kotlin's
+//! precedence (infix calls on one left-associative level, elvis, `is`, ..)
+//! binds it less tightly than its operator, besides where Java's does.
 
 use crate::const_exprent::ConstValue;
 use crate::exprent::Exprent;
@@ -27,7 +8,7 @@ use crate::function_exprent::{FunctionExprent, FunctionType};
 use crate::invocation_exprent::UnboxingWrittenAs;
 use crate::k_element::KElement;
 use crate::k_function_exprent::KFunctionType;
-use crate::fixes::kt_operators::kt_negated_equality;
+use crate::fixes::kt_operators;
 use crate::kt_flags::Flags;
 use crate::fixes::kt_java_syntax::kt_java_cast_syntax::{self, KotlinCast};
 use crate::kuna_fixes::{self, KunaFix};
@@ -184,7 +165,7 @@ fn level(exprent: Exprent) -> u8 {
     let Some(function) = exprent.try_as_function() else {
         return POSTFIX;
     };
-    if kt_negated_equality::negated(exprent).is_some() {
+    if kt_operators::negated(exprent).is_some() {
         return EQUALITY;
     }
     if let Some(kfunction) = exprent.try_as_k_function() {

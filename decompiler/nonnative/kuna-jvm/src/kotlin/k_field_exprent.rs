@@ -1,18 +1,4 @@
 //! Port of `org/vineflower/kotlin/expr/KFieldExprent.java`.
-//!
-//! kuna fix `kt_property_reference`: the `INSTANCE` of a property-reference
-//! class is written as the reference (`fixes::kt_anonymous_objects::kt_property_reference`).
-//!
-//! kuna fix `kt_lambda_singleton_returns`: the body of a lambda singleton
-//! with more than one exit is labelled and its exits are `return@label`
-//! (`fixes::kt_jumps::kt_lambda_singleton_returns`), where Vineflower writes each
-//! exit as its bare value.
-//!
-//! kuna fix `kt_object_instance`: the `INSTANCE` field of an `object` is
-//! written as the object's name (`fixes::kt_calls::kt_object_instance`).
-//!
-//! kuna fix `kt_unescaped_name`: a lambda's parameters are named as the
-//! Kotlin writer writes a name (`fixes::kt_names::kt_unescaped_name`).
 
 use crate::classes_processor::ClassNode;
 use crate::decompiler_context::DecompilerContext;
@@ -29,7 +15,7 @@ use crate::kotlin_chooser::KotlinChooser;
 use crate::kotlin_exprent;
 use crate::kotlin_writer::KotlinWriter;
 use crate::kt_attrs::KtAttrs;
-use crate::fixes::kt_jumps::kt_lambda_singleton_returns;
+use crate::fixes::kt_jumps;
 use crate::fixes::kt_anonymous_objects::kt_property_reference;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::method_wrapper::MethodWrapper;
@@ -193,7 +179,7 @@ impl KFieldExprent {
                             if let Some(root) = root {
                                 DecompilerContext::set_current_method_wrapper(Some(method));
                                 if kuna_fixes::enabled(KunaFix::KtLambdaSingletonReturns) {
-                                    kt_lambda_singleton_returns::label_exits(
+                                    kt_jumps::label_exits(
                                         &mut buf, root, &classname,
                                     );
                                 }

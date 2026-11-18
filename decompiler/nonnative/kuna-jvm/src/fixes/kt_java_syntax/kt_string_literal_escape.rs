@@ -1,17 +1,7 @@
-//! kuna fix `kt_string_literal_escape`: string literals in Kotlin output
-//! are escaped as Kotlin strings.
-//!
-//! Vineflower writes a string constant with Java's escapes. In a Kotlin
-//! string `$` followed by a name or `{` starts a template, so the constant
-//! `"$this$read"` reads `this.toString()` and a variable `read`, and `"${x}"`
-//! reads `x`; `\f` is not a Kotlin escape at all. In a string template the
-//! plugin escapes the `$` of each constant piece but splices a `Char`
-//! constant in raw, so `'"'`, `'$'` or a newline end or change the literal.
-//! A variable is spliced in as `$name`, even when the next piece starts with
-//! a letter or digit, so `"$key258EAF"` reads a variable `key258EAF`. With
-//! the fix a `$` that would start a template is written `\$`, a form feed
-//! `\u000c`, a `Char` piece of a template is escaped as a string, and a
-//! variable is written `${name}` unless `$name` ends where the name does.
+//! Fix `kt_string_literal_escape`: string literals are escaped as Kotlin
+//! strings: a `$` that would start a template is `\$`, a form feed `\u000c`, a
+//! template's `Char` piece is escaped, and a variable is `${name}` unless `$name`
+//! ends where the name does.
 
 use crate::const_exprent::ConstExprent;
 use crate::exprent::Exprent;

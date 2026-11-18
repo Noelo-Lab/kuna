@@ -1,23 +1,6 @@
-//! kuna fix `kt_java_reference_cast`: in Kotlin output, the casts to a class
-//! or array type that Vineflower writes in Java's syntax, `(Sink)delegate`,
-//! `(byte[])this.data`, `((Http2Stream)this).id`, which are not Kotlin, are
-//! written `delegate as Sink`, `this.data as ByteArray`,
-//! `(this as Http2Stream).id`.
-//!
-//! Java's cast and Kotlin's `as` to a non-null type compile to the same
-//! `checkcast` when the operand's Kotlin type is not nullable. Where it may
-//! be `null` (the `null` literal, a value of a type variable's type, which
-//! Kotlin bounds by `Any?`) the cast is written `as T?`, which lets `null`
-//! through as Java's cast does, and so is the upcast to `Object`, `as Any?`,
-//! which never fails; so is the cast of a parameter the function's Kotlin
-//! metadata declares nullable. A cast to a primitive type from
-//! `Object` or a type variable (Java's checked unboxing) is written
-//! `x as Int`, Kotlin's. The type is written in Kotlin: `java.lang.String` is
-//! `String`, `byte[]` is `ByteArray`, `? extends T` is `out T`, a raw generic
-//! class takes star projections, and a collection interface is Kotlin's
-//! read-only one (`java.util.List<T>` is `List<T>`): `as List<T>` is a
-//! `checkcast`, where `as MutableList<T>` also rejects Kotlin's read-only
-//! collections.
+//! Fix `kt_java_reference_cast`: a cast to a class or array type is written
+//! `x as T` with the type in Kotlin (`as T?` where the operand may be `null`,
+//! read-only collection names, star projections for a raw class).
 
 use std::cell::RefCell;
 

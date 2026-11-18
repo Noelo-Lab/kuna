@@ -1,52 +1,4 @@
 //! Port of `org/vineflower/kotlin/expr/KNewExprent.java`.
-//!
-//! kuna fix `kt_property_reference`: a property-reference class is
-//! written as the reference (`fixes::kt_anonymous_objects::kt_property_reference`).
-//!
-//! kuna fix `kt_synthetic_anonymous_object` (`kuna_fixes`): an
-//! anonymous class is written with its `new`'s constructor at hand, so the
-//! fix can tell whether the object's captured names mean what this `new`
-//! passes.
-//!
-//! kuna fix `kt_object_super_call` (`kuna_fixes`): an object's
-//! superclass arguments are computed here, where the `new` stands, before its
-//! class is written (`fixes::kt_anonymous_objects::kt_object_super_call`).
-//! kuna fix `kt_constructor_diamond`: a constructor call whose type arguments
-//! are left to inference (Java's diamond, a single `GenericType::DUMMY_VAR`)
-//! is written without type arguments, which is how Kotlin leaves them to
-//! inference; Vineflower writes `<>`, which is not Kotlin.
-//! kuna fix `kt_partial_array_dims` (`kuna_fixes`): in `to_java`, an array
-//! creation that sizes fewer dimensions than its type (`anewarray` of an array
-//! class) ends in `arrayOfNulls`, where Vineflower reads a length for every
-//! dimension of the type.
-//! kuna fix `kt_default_args_call` (`kuna_fixes`): a constructor call through
-//! a default-arguments constructor is written as the call it stands for
-//! (`fixes::kt_default_args::kt_default_args_call::resugar_new`).
-//! kuna fix `kt_synthetic_object_super_call` (`kuna_fixes`): the
-//! superclass arguments of an anonymous class without Class metadata are
-//! computed here, where the `new` stands
-//! (`fixes::kt_anonymous_objects::kt_synthetic_object_super_call`).
-//! kuna fix `kt_mapped_java_type`: a constructor call of a boxed type keeps
-//! its Java name (`fixes::kt_types::kt_mapped_java_type`).
-//!
-//! kuna fix `kt_unescaped_name`: a lambda's parameters are named as the
-//! Kotlin writer writes a name (`fixes::kt_names::kt_unescaped_name`).
-//!
-//! kuna fix `kt_constructor_accessor_call`: a call of a synthetic constructor
-//! that only forwards to another is written as the call of that one
-//! (`fixes::kt_constructors::kt_constructor_accessor_call`).
-//!
-//! kuna fix `kt_escaped_class_name`: the simple name of a class constructed
-//! on an outer instance is written in backticks when Kotlin needs them
-//! (`fixes::kt_names::kt_escaped_class_name`).
-//!
-//! kuna fix `kt_inner_class_constructor`: an `inner` class constructed on the
-//! current instance is called by its simple name
-//! (`fixes::kt_constructors::kt_inner_class_constructor`).
-//!
-//! kuna fix `kt_reused_inline_object`: the creation of an inline function's
-//! anonymous object outside the function is written as the function's call
-//! (`fixes::kt_anonymous_objects::kt_reused_inline_object`).
 
 use crate::class_writer::ClassWriter;
 use crate::classes_processor::{ClassNode, ClassNodeType};
@@ -65,13 +17,11 @@ use crate::k_element::KElement;
 use crate::k_exit_exprent::KExitExprent;
 use crate::k_types::KTypes;
 use crate::k_utils::KUtils;
-use crate::fixes::kt_constructors::kt_constructor_accessor_call;
+use crate::fixes::kt_constructors;
 use crate::fixes::kt_default_args::kt_default_args_call;
 use crate::fixes::kt_names::kt_escaped_class_name;
-use crate::fixes::kt_constructors::kt_inner_class_constructor;
 use crate::fixes::kt_types::kt_mapped_java_type;
 use crate::fixes::kt_anonymous_objects::kt_reused_inline_object;
-use crate::fixes::kt_anonymous_objects::kt_synthetic_object_super_call;
 use crate::fixes::kt_names::kt_unescaped_name;
 use crate::kotlin_chooser::KotlinChooser;
 use crate::kotlin_exprent;
@@ -140,7 +90,7 @@ impl KNewExprent {
             kt_default_args_call::resugar_new(expr);
         }
         if kuna_fixes::enabled(KunaFix::KtConstructorAccessorCall) {
-            kt_constructor_accessor_call::resugar(expr);
+            kt_constructors::resugar_accessor_call(expr);
         }
 
         if KUtils::assertions_enabled() && expr.is_lambda() != new.is_lambda() {
@@ -411,7 +361,7 @@ impl KNewExprent {
             };
             let write = |buf: &mut TextBuffer| {
                 if kuna_fixes::enabled(KunaFix::KtSyntheticObjectSuperCall) {
-                    kt_synthetic_object_super_call::write_at_site(
+                    kt_object_super_call::write_synthetic_at_site(
                         node,
                         self.get_constructor(),
                         indent,
@@ -471,7 +421,7 @@ impl KNewExprent {
                         }
                     } else if kuna_fixes::enabled(KunaFix::KtInnerClassConstructor) {
                         if let Some(name) = new_type.value.as_deref().and_then(|value| {
-                            kt_inner_class_constructor::implicit_receiver_name(
+                            kt_constructors::implicit_receiver_name(
                                 value,
                                 &constructor.get_lst_parameters().to_vec(),
                             )

@@ -1,7 +1,4 @@
 //! Port of `org/vineflower/kotlin/pass/EliminateDeadVarsPass.java`.
-//!
-//! kuna fix `kt_semaphore_store_liveness` (`kuna_fixes`): the stores to a
-//! `finally` semaphore are live (the catch-all's monitor reads them).
 
 use crate::const_exprent::ConstValue;
 use crate::exprent::Exprent;

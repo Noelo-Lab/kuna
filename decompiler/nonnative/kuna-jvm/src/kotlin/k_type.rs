@@ -3,14 +3,6 @@
 //! `KType extends VarType` without overriding anything, so, like
 //! `GenericType`, it is one Rust type `VarType` whose data carries `kotlin`
 //! (present exactly for a `KType`), and `KType` is a view over it.
-//!
-//! kuna fix `kt_type_parameter_id`: `from` names a type that refers to a
-//! type parameter by id (`fixes::kt_types::kt_type_parameter_id`), where Vineflower
-//! reads only a reference by name and writes the others as `Any`.
-//!
-//! kuna fix `kt_suspend_function_type`: `from` keeps the metadata's
-//! `suspend` flag (`kuna_suspend`) and `stringify` writes such a function
-//! type `suspend (A) -> R` (`fixes::kt_suspend::kt_suspend_function_type`).
 
 use std::ops::Deref;
 use std::rc::Rc;
@@ -20,7 +12,7 @@ use crate::decompiler_context::DecompilerContext;
 use crate::jthrow;
 use crate::k_types::KTypes;
 use crate::kt_proto::{self, Projection};
-use crate::fixes::kt_suspend::kt_suspend_function_type;
+use crate::fixes::kt_suspend;
 use crate::fixes::kt_types::kt_type_parameter_id;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::metadata_name_resolver::MetadataNameResolver;
@@ -238,7 +230,7 @@ impl KType {
             type_alias_name,
         );
         if kuna_fixes::enabled(KunaFix::KtSuspendFunctionType)
-            && kt_suspend_function_type::is_suspend(type_)
+            && kt_suspend::is_suspend_function_type(type_)
         {
             k_type.kuna_with_suspend()
         } else {
@@ -295,7 +287,7 @@ impl KType {
             }
         } else if let Some(suspend) = k
             .kuna_suspend
-            .then(|| kt_suspend_function_type::write(k, indent))
+            .then(|| kt_suspend::write_suspend_function_type(k, indent))
             .flatten()
         {
             buf.append_buffer(&suspend);

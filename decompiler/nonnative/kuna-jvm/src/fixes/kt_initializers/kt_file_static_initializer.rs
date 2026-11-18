@@ -1,22 +1,6 @@
-//! kuna fix `kt_file_static_initializer` (spec 10.16): what is left of a
-//! file class's static initializer is written as the initializers of the
-//! properties it sets.
-//!
-//! kotlinc compiles the initializers of a file's top-level properties, in
-//! their declaration order, into the file class's `<clinit>`.
-//! `InitializerProcessor` moves each one it can into its property; one built
-//! over several statements (a `try`, a loop, a checked value) stays in
-//! `<clinit>`, which Vineflower printed as `fun {`, no Kotlin, and its
-//! property had no value. A file has no `init` block, so with the fix the
-//! remainder is cut at each store into a property of the file: the code
-//! before a store and the stored value become that property's initializer,
-//! `val x: T = run { ..; value }` (the value alone when nothing precedes
-//! it). The properties are written in field order, which is the order
-//! `<clinit>` stores them in (checked on the bytecode), so every statement
-//! runs in its place. A local that a later part uses again is declared anew
-//! there, which needs it written before it is read; when that cannot be
-//! shown, when code follows the last store, or when a property is set
-//! inside a nested statement, the remainder is left as it was.
+//! Fix `kt_file_static_initializer`: what is left of a file class's static
+//! initializer is cut at each store into a file property, and the code before
+//! a store becomes that property's initializer (`run { ..; value }`).
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
@@ -39,6 +23,7 @@ use crate::struct_class::StructClass;
 use crate::struct_field::StructField;
 use crate::text_buffer::TextBuffer;
 use crate::var_exprent::VarExprent;
+use crate::fixes::kt_util::for_each_exprent;
 
 thread_local! {
     static INITIALIZERS: RefCell<Vec<(StructField, TextBuffer)>> = const { RefCell::new(Vec::new()) };
@@ -446,18 +431,8 @@ fn shared_locals(parts: &[Part], defs: &[Exprent]) -> Option<Vec<Vec<Redeclared>
 
 /// Every exprent under `stat`, definitions included.
 fn stat_exprents(stat: Statement) -> Vec<Exprent> {
-    let mut lists: Vec<Exprent> = stat.get_var_definitions().to_vec();
-    lists.extend(stat.get_stat_exprents());
-    if let Some(exprents) = stat.get_exprents() {
-        lists.extend(exprents.to_vec());
-    }
-    let mut res: Vec<Exprent> = lists
-        .into_iter()
-        .flat_map(|e| e.get_all_exprents_rec_self(true, true))
-        .collect();
-    for st in stat.get_stats().borrow().to_vec() {
-        res.extend(stat_exprents(st));
-    }
+    let mut res = Vec::new();
+    for_each_exprent(stat, &mut |e| res.extend(e.get_all_exprents_rec_self(true, true)));
     res
 }
 

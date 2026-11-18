@@ -1,30 +1,4 @@
 //! Port of `org/vineflower/kotlin/expr/KInvocationExprent.java`.
-//!
-//! kuna fix `kt_default_args_call`: a call of a default-arguments bridge is
-//! rewritten into the call it stands for (`fixes::kt_default_args::kt_default_args_call`).
-//! kuna fix `kt_operator_precedence`: an infix call's operands are
-//! parenthesised by Kotlin's precedence (`fixes::kt_operators::kt_operator_precedence`).
-//! kuna fix `kt_super_property_access`: an accessor called with
-//! `invokespecial` on `this` is written on `super`
-//! (`fixes::kt_properties::kt_super_property_access`).
-//! kuna fix `kt_synthetic_accessor_call`: a call of a synthetic accessor is
-//! the access it makes (`fixes::kt_calls::kt_synthetic_accessor_call`).
-//! kuna fixes `kt_facade_call`, `kt_extension_call` and `kt_jvm_name_call`:
-//! a call of a top-level, extension or renamed function or property is
-//! written as Kotlin calls it (`fixes::kt_calls::kt_facade_call`,
-//! `fixes::kt_calls::kt_extension_call`, `fixes::kt_calls::kt_jvm_name_call`).
-//! kuna fix `kt_inlined_stdlib_call`: a call rebuilt from kotlinc's inlined
-//! copy of a standard-library function is written as Kotlin calls it
-//! (`fixes::kt_compiler_idioms::kt_inlined_stdlib_call`).
-//! kuna fix `kt_object_monitor_call`: `wait`, `notify` and `notifyAll` are
-//! called on the receiver cast to `java.lang.Object`
-//! (`fixes::kt_calls::kt_object_monitor_call`).
-//! kuna fix `kt_suspend_call_continuation`: a suspend function's context
-//! read from its continuation is `coroutineContext`
-//! (`fixes::kt_suspend::kt_suspend_call_continuation`).
-//! kuna fix `kt_inline_class_value`: a call of an inline class's plumbing or
-//! members is written as the value class's code
-//! (`fixes::kt_types::kt_inline_class_value`).
 
 use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;
@@ -43,7 +17,7 @@ use crate::fixes::kt_calls::kt_jvm_name_call;
 use crate::fixes::kt_calls::kt_object_monitor_call;
 use crate::fixes::kt_calls::kt_synthetic_accessor_call;
 use crate::fixes::kt_operators::kt_operator_precedence;
-use crate::fixes::kt_properties::kt_super_property_access;
+use crate::fixes::kt_properties;
 use crate::fixes::kt_suspend::kt_suspend_call_continuation;
 use crate::kotlin_chooser::KotlinChooser;
 use crate::kotlin_exprent;
@@ -183,7 +157,7 @@ impl KInvocationExprent {
             let mut buf = TextBuffer::new();
             buf.add_bytecode_mapping(self.get_bytecode().as_ref());
             let super_qualifier = kuna_fixes::enabled(KunaFix::KtSuperPropertyAccess)
-                .then(|| kt_super_property_access::qualifier(self.0))
+                .then(|| kt_properties::super_qualifier(self.0))
                 .flatten();
             if let Some(super_qualifier) = super_qualifier {
                 buf.append(&super_qualifier).append_char('.');
@@ -292,13 +266,10 @@ impl KInvocationExprent {
             }
             _ => None,
         };
-        if kotlin_name.is_none() {
-            return InvocationExprent::to_java(self.0, indent);
+        match kotlin_name {
+            Some(name) => kt_jvm_name_call::to_java_named(self.0, name, indent),
+            None => InvocationExprent::to_java(self.0, indent),
         }
-        self.d_mut(|d| d.kuna_kotlin_name = kotlin_name);
-        let buf = InvocationExprent::to_java(self.0, indent);
-        self.d_mut(|d| d.kuna_kotlin_name = None);
-        buf
     }
 
     /// The call as the fixes `kt_extension_call` and `kt_facade_call` write

@@ -1,19 +1,6 @@
-//! kuna fix `kt_mapped_java_member`: a call of a JDK method that Kotlin
-//! exposes under another name is written with Kotlin's name.
-//!
-//! Kotlin maps `java.lang.String`, `CharSequence`, `Throwable`, `Number`,
-//! `Enum` and the collection interfaces to its own types, whose members
-//! cover the JDK methods under other names: `s.length()` is the property
-//! `s.length`, `s.charAt(i)` the operator `s[i]`, `list.size()` the property
-//! `list.size`, `map.entrySet()` `map.entries`, `e.getMessage()` `e.message`,
-//! `n.intValue()` `n.toInt()`, `x.getClass()` `x.javaClass`, and an array's
-//! `length` is its `size`. Vineflower writes the JVM names, which Kotlin
-//! rejects on its own types ("unresolved reference", "expression 'length'
-//! of type Int cannot be invoked as a function"). kotlinc compiles each
-//! Kotlin form to the same `invokevirtual`/`invokeinterface` of the JDK
-//! method (and `arraylength`). With the fix those calls are written in the
-//! Kotlin form when the called method's class is the mapped JDK type or a
-//! subtype of it.
+//! Fix `kt_mapped_java_member`: a call of a JDK method of a type Kotlin maps to
+//! its own (`String`, the collections, `Number`, ..) is written in the Kotlin
+//! form that compiles to it (`s.length`, `s[i]`, `n.toInt()`, `x.javaClass`).
 
 use crate::decompiler_context::DecompilerContext;
 

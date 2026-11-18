@@ -1,35 +1,9 @@
-//! kuna fix `kt_inlined_stdlib_call`: kotlinc's inlined copy of a
-//! standard-library inline function is written as the call.
-//!
-//! kotlinc copies an inline function's body into every call site, with the
-//! lambda's body in place of its call. Vineflower writes the copy: long,
-//! unlike the source, and calling the standard library's `internal`
-//! helpers, which other code may not call (`closeFinally`, `checkRadix`,
-//! `copyOfRangeImpl`, `collectionSizeOrDefault`, `StringCompanionObject`).
-//! A copy whose code is exactly the body of the function for the library
-//! version the class was compiled against is written as the call; anything
-//! else stays as it is. Calls of the helpers prove the copy only outside the
-//! `kotlin` package, whose own code calls them directly.
-//!
-//! Before the last stack-variable pass (`resugar`): `Integer.toString(x,
-//! checkRadix(r))` and its siblings become `x.toString(r)`, `s.toInt(r)`,
-//! `s.toLong(r)`, `s.toShort(r)`, `s.toByte(r)` (Kotlin 1.3's `Byte` and
-//! `Short` versions check the radix twice); `ArraysKt.copyOfRange(a, f, t)`
-//! (`copyOfRangeImpl`) becomes `a.copyOfRange(f, t)`; `java.lang.String
-//! .format(fmt, Arrays.copyOf(v, v.length))` with `v` the array just built
-//! becomes `String.format(fmt, e1, ..)` where kotlinc read `String.Companion`
-//! (stored into a local by Kotlin 1.3, read and popped by later versions),
-//! else `fmt.format(e1, ..)`, likewise with a `Locale`. kotlinc's check of
-//! the copied call's value (`checkExpressionValueIsNotNull(v, "java.lang
-//! .String.format(format, *args)")`) goes with it: kotlinc checks the
-//! rebuilt call again.
-//!
-//! Before the class is written (`rebuild_lambdas`), once its nested classes
-//! have their captured variables: a `try`/`finally` around `closeFinally`
-//! is marked to be written `receiver.use { p -> body }` (`match_use`), and
-//! `for (item in r) d.add(x)` filling `d = ArrayList(collectionSizeOrDefault
-//! (r, 10))` becomes `receiver.map { p -> x }` at the statement that reads
-//! `d` (`rebuild_map`); the parameters take kotlinc's debug names.
+//! Fix `kt_inlined_stdlib_call`: kotlinc's inlined copy of a standard-library
+//! function whose code is exactly that function's body (for the library version
+//! the class was compiled against) is written as the call: `toString(radix)`
+//! and the parse functions, `copyOfRange`, `String.format` before the last
+//! stack-variable pass (`resugar`); `use` and `map` before the class is written
+//! (`rebuild_lambdas`).
 
 use std::rc::Rc;
 
@@ -57,9 +31,9 @@ use crate::struct_class::StructClass;
 use crate::struct_method::StructMethod;
 use crate::text_buffer::TextBuffer;
 use crate::code_type::CodeType;
+use crate::fixes::kt_util::{CHECK_DESCRIPTOR, EXPRESSION_CHECKS, INTRINSICS};
+use crate::fixes::kt_util::for_each_exprent;
 
-const CHECKS: [&str; 2] = ["checkNotNullExpressionValue", "checkExpressionValueIsNotNull"];
-const INTRINSICS: &str = "kotlin/jvm/internal/Intrinsics";
 const STRING_COMPANION: &str = "kotlin/jvm/internal/StringCompanionObject";
 
 /// The standard-library call an invocation is written as.
@@ -129,21 +103,6 @@ pub fn resugar(root: RootStatement, cl: StructClass, mt: StructMethod) -> bool {
         res |= remove_checks(stat);
     });
     res
-}
-
-fn for_each_exprent(stat: Statement, f: &mut dyn FnMut(Exprent)) {
-    let mut lists: Vec<Exprent> = stat.get_var_definitions().to_vec();
-    lists.extend(stat.get_stat_exprents());
-    if let Some(exprents) = stat.get_exprents() {
-        lists.extend(exprents.to_vec());
-    }
-    for e in lists {
-        f(e);
-    }
-    let stats = stat.get_stats().borrow().to_vec();
-    for child in stats {
-        for_each_exprent(child, f);
-    }
 }
 
 fn blocks(stat: Statement, f: &mut dyn FnMut(Statement)) {
@@ -493,8 +452,8 @@ fn check_message(list: &crate::rt::JList<Exprent>, at: usize) -> Option<String> 
 fn is_check(inv: InvocationExprent) -> bool {
     inv.is_static()
         && inv.get_classname() == INTRINSICS
-        && CHECKS.contains(&inv.get_name().as_str())
-        && inv.get_string_descriptor() == "(Ljava/lang/Object;Ljava/lang/String;)V"
+        && EXPRESSION_CHECKS.contains(&inv.get_name().as_str())
+        && inv.get_string_descriptor() == CHECK_DESCRIPTOR
 }
 
 /// Removes the expression-value checks of the stack variables that a

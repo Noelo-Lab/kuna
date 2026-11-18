@@ -1,51 +1,15 @@
 //! Port of `org/vineflower/kotlin/expr/KVarExprent.java`.
-//!
-//! kuna fix `kt_outer_this`: the variable that holds an enclosing class's
-//! instance, named `Outer.this` (Java's qualified `this`), is written
-//! `this@Outer`, Kotlin's; `Outer.this` is not a Kotlin expression.
-//!
-//! kuna fix `kt_extension_receiver`: an extension function's receiver
-//! parameter is written `this` in its body
-//! (`fixes::kt_extensions::kt_extension_receiver`).
-//!
-//! kuna fix `kt_setter_parameter_name`: a setter's parameter is written by
-//! its header's name (`fixes::kt_properties::kt_setter_parameter_name`).
-//!
-//! kuna fix `kt_unrepresentable_declared_type`: a definition that an
-//! initializer follows leaves out a type Kotlin cannot name
-//! (`fixes::kt_anonymous_objects::kt_unrepresentable_declared_type`).
-//!
-//! kuna fix `kt_nullable_local`: a definition of a local that may hold null
-//! is written with a nullable type (`fixes::kt_null_checks::kt_nullable_local`).
-//!
-//! kuna fix `kt_default_value_names`: in a default value, a parameter or
-//! receiver is written by its declaration's name
-//! (`fixes::kt_default_args::kt_default_value_names`).
-//!
-//! kuna fix `kt_raw_generic_type`: a local of a generic class is declared
-//! with the type arguments the plugin gave it (`fixes::kt_types::kt_raw_generic_type`).
-//!
-//! kuna fix `kt_function_parameter_name`: a parameter without a local
-//! variable table entry is written by its header's name
-//! (`fixes::kt_names::kt_function_parameter_name`).
-//!
-//! kuna fix `kt_suspend_impl`: the first parameter of a `$suspendImpl` body
-//! written as its member's is `this` (`fixes::kt_suspend::kt_suspend_impl::name`).
-//!
-//! kuna fix `kt_suspend_lambda`: the receiver of a rebuilt suspend lambda
-//! written with a label is `this@label`
-//! (`fixes::kt_suspend::kt_suspend_lambda::receiver_reference`).
 
 use crate::exprent::Exprent;
 use crate::k_dispatch::KExprentExt;
 use crate::k_types::KTypes;
 use crate::kotlin_exprent;
-use crate::fixes::kt_default_args::kt_default_value_names;
-use crate::fixes::kt_extensions::kt_extension_receiver;
+use crate::fixes::kt_default_args;
+use crate::fixes::kt_extensions;
 use crate::fixes::kt_names::kt_function_parameter_name;
 use crate::fixes::kt_null_checks::kt_nullable_local;
 use crate::fixes::kt_types::kt_raw_generic_type;
-use crate::fixes::kt_properties::kt_setter_parameter_name;
+use crate::fixes::kt_properties;
 use crate::fixes::kt_suspend::kt_suspend_lambda;
 use crate::fixes::kt_suspend::kt_suspend_impl;
 use crate::fixes::kt_anonymous_objects::kt_unrepresentable_declared_type;
@@ -139,17 +103,17 @@ impl KVarExprent {
 
     pub fn get_name(self) -> String {
         if kuna_fixes::enabled(KunaFix::KtExtensionReceiver) {
-            if let Some(name) = kt_extension_receiver::name(self.0) {
+            if let Some(name) = kt_extensions::name(self.0) {
                 return name;
             }
         }
         if kuna_fixes::enabled(KunaFix::KtSetterParameterName) {
-            if let Some(name) = kt_setter_parameter_name::name(self.0) {
+            if let Some(name) = kt_properties::name_in_setter(self.0) {
                 return name;
             }
         }
         if kuna_fixes::enabled(KunaFix::KtDefaultValueNames) {
-            if let Some(name) = kt_default_value_names::name(self.0) {
+            if let Some(name) = kt_default_args::name_in_defaults(self.0) {
                 return name;
             }
         }

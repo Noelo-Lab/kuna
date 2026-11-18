@@ -46,4 +46,5 @@ pub(crate) mod kt_operators;
 pub(crate) mod kt_properties;
 pub(crate) mod kt_suspend;
 pub(crate) mod kt_types;
+pub(crate) mod kt_util;
 pub(crate) mod kt_when;

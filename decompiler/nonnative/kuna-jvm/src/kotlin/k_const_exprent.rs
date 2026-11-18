@@ -1,16 +1,4 @@
 //! Port of `org/vineflower/kotlin/expr/KConstExprent.java`.
-//!
-//! kuna fix `kt_when_case_type`: the character form feed is written
-//! `'\u000c'`, as Kotlin has no `\f` escape (Java's, which `ConstExprent`
-//! writes); the fix writes `when` labels as characters, the first place it
-//! reaches Kotlin output.
-//!
-//! kuna fix `kt_string_literal_escape`: a string constant escapes the `$`
-//! that would start a template and writes a form feed `\u000c`
-//! (`fixes::kt_java_syntax::kt_string_literal_escape`).
-//!
-//! kuna fix `kt_java_type_syntax`: a class literal of an array type names the
-//! type in Kotlin (`Array<Any>::class.java`, `BooleanArray::class.java`).
 
 use crate::const_exprent::ConstExprent;
 use crate::decompiler_context::DecompilerContext;

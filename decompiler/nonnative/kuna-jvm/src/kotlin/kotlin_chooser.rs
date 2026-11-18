@@ -1,9 +1,6 @@
 //! Port of `org/vineflower/kotlin/KotlinChooser.java`. The decoding half of
 //! `parseMetadataFor` is `kt_metadata`; the `EXTENSIONS` registry has no
 //! counterpart (`kt_proto` always reads the JVM extensions).
-//!
-//! kuna fix `kt_type_parameter_id`: a class's members are parsed in the
-//! scope of its type parameters (`fixes::kt_types::kt_type_parameter_id`).
 
 use std::rc::Rc;
 

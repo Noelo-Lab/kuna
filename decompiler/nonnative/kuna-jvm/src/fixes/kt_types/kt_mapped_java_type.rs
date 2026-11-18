@@ -1,21 +1,6 @@
-//! kuna fix `kt_mapped_java_type`: a type that is a JDK class Kotlin maps
-//! to one of its built-in types is written with the built-in's name.
-//!
-//! Kotlin reads `java.lang.String`, `CharSequence`, `Throwable`, `Number`
-//! and the boxed primitives in Java signatures as its own `String`,
-//! `CharSequence`, `Throwable`, `Number`, `Long`, ...: the same JVM classes.
-//! Named explicitly in Kotlin source, `java.lang.String` is another type
-//! (the Java class seen without the mapping), so a local declared
-//! `val tag: java.lang.String = loggerTag(name)`, a cast `as
-//! java.lang.CharSequence` or a `catch (e: java.lang.Throwable)` does not
-//! accept the `String` or `Throwable` it is given. Vineflower writes every
-//! class without a Kotlin translation by its Java name, except
-//! `java.lang.Integer` (`Int`) and `java.lang.Object` (`Any`). With the fix
-//! the other mapped classes without type parameters are written as Kotlin
-//! names them; the class file, and what kotlinc compiles the type to, is
-//! the same. A constructor call keeps the Java name of a boxed type (Kotlin's
-//! `Char`, `Long`, ... have no such constructors); `String(..)` and
-//! `Throwable(..)` are Kotlin's own functions and constructors.
+//! Fix `kt_mapped_java_type`: a JDK class Kotlin maps to a built-in type
+//! (`java.lang.String`, `Throwable`, the boxes) is written by the built-in's
+//! name, except a box's constructor call.
 
 use crate::code_type::CodeType;
 use crate::var_type::VarType;

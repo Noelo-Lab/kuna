@@ -1,45 +1,8 @@
-//! kuna fix `kt_suspend_call_continuation` (spec 10.16): in Kotlin output, a
-//! call of a suspend function from a suspend function is written without
-//! the continuation argument.
-//!
-//! kotlinc compiles a suspend function to a method that takes the caller's
-//! continuation as an extra last parameter, `$completion`, and a call of
-//! another suspend function to a call that passes it on. The writer prints
-//! the function's header from its metadata, with `suspend` and without that
-//! parameter, but each such call with it, `src.next(`$completion`)`, which
-//! names nothing in Kotlin and passes one argument too many. With the fix,
-//! a call in a function the metadata declares `suspend` whose last argument
-//! is the function's own `$completion`, to a method whose descriptor ends in
-//! a continuation and returns `Object` (kotlinc's convention for suspend
-//! functions) that is not a function its metadata declares without
-//! `suspend`, or to a function type's `invoke` (a suspend function type's
-//! value, `block(x)`, whose `FunctionN.invoke` the metadata of course
-//! declares without `suspend`), leaves that argument out: the call Kotlin writes, which
-//! kotlinc compiles to the same call passing the same continuation. The
-//! context read from that continuation, `$completion.getContext()` (what
-//! kotlinc compiles the `coroutineContext` intrinsic to), is written
-//! `kotlin.coroutines.coroutineContext`, qualified because in a
-//! `CoroutineScope`'s scope the simple name is the scope's own property.
-//!
-//! On the JVM a suspend function returns `Object` (its value or the
-//! suspension marker), so kotlinc casts the result of a suspend call to the
-//! function's declared type (`checkcast String`), and Vineflower writes that
-//! cast, nullable for fix `kt_nullable_cast` (`src.text(n) as String?`),
-//! which types the value wrongly for Kotlin. A cast of a marked call to the
-//! class of the return type the callee's metadata declares (not a type
-//! parameter) is left out, and the call is typed by that class: the call has
-//! that type in Kotlin, and kotlinc emits the same cast for it. So is the
-//! unboxing of a result the metadata declares a primitive
-//! (`(src.next() as Number).toInt()` is `src.next()`).
-//!
-//! A call of a synthetic accessor (`access$helper`) has the declared type of
-//! the function it calls, and a call that `NestedMemberAccess` puts in place
-//! of an accessor's keeps the accessor call's mark.
-//!
-//! kuna fix `kt_suspend_lambda`: in a suspend lambda's rebuilt body the
-//! continuation the calls pass is `this`.
+//! Fix `kt_suspend_call_continuation`: in a suspend function, a call of a
+//! suspend function that passes the function's own continuation is marked to
+//! be written without it, and the casts of its result to the declared type are
+//! left out.
 
-use std::cell::Cell;
 use std::rc::Rc;
 
 use crate::exprent::Exprent;
@@ -60,32 +23,14 @@ use crate::statement::Statement;
 use crate::struct_method::StructMethod;
 use crate::text_buffer::TextBuffer;
 use crate::var_type::VarType;
+use crate::fixes::kt_util::SUSPEND_DESCRIPTOR_END;
+use super::CONTINUATION;
+use crate::fixes::kt_util::all_exprents;
 
-const SUSPEND_DESCRIPTOR_END: &str = "Lkotlin/coroutines/Continuation;)Ljava/lang/Object;";
-const CONTINUATION: &str = "kotlin/coroutines/Continuation";
-
-thread_local! {
-    static IN_BODY: Cell<bool> = const { Cell::new(false) };
-}
-
-/// While alive, the body of a suspend function is being typed.
-pub struct BodyScope(bool);
-
-impl Drop for BodyScope {
-    fn drop(&mut self) {
-        IN_BODY.with(|b| b.set(self.0));
-    }
-}
-
-/// Enters the body of `mt` for fix `kt_nullable_local`'s typing.
-pub fn enter_body(mt: StructMethod) -> BodyScope {
-    let inside = kuna_fixes::enabled(KunaFix::KtSuspendCallContinuation) && continuation_slot(mt).is_some();
-    BodyScope(IN_BODY.with(|b| b.replace(inside)))
-}
-
-/// Whether the body being typed is a suspend function's.
-pub fn in_body() -> bool {
-    IN_BODY.with(Cell::get)
+/// Whether `mt`'s body is a suspend function's whose calls this fix marks, for
+/// fix `kt_nullable_local`'s typing.
+pub fn is_suspend_body(mt: StructMethod) -> bool {
+    kuna_fixes::enabled(KunaFix::KtSuspendCallContinuation) && continuation_slot(mt).is_some()
 }
 
 /// The slot of the continuation a suspend function's calls pass on: its
@@ -104,8 +49,7 @@ pub fn mark(root: RootStatement, mt: StructMethod) -> bool {
     let Some(completion) = continuation_slot(mt) else {
         return false;
     };
-    let mut exprents = Vec::new();
-    collect(root.0, &mut exprents);
+    let exprents = all_exprents(root.0);
     let mut res = false;
     for e in exprents {
         let Some(inv) = e.try_as_invocation() else {
@@ -299,19 +243,3 @@ fn declared_not_suspend(inv: InvocationExprent) -> bool {
     )
 }
 
-/// Every exprent of `stat`'s tree, nested ones included.
-fn collect(stat: Statement, out: &mut Vec<Exprent>) {
-    let top: Vec<Exprent> = match stat.get_exprents() {
-        Some(exprents) => exprents.iter().collect(),
-        None => {
-            for st in stat.get_stats().borrow().iter() {
-                collect(*st, out);
-            }
-            stat.get_stat_exprents()
-        }
-    };
-    for e in top {
-        out.extend(e.get_all_exprents_rec(true));
-        out.push(e);
-    }
-}

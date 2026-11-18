@@ -1,25 +1,6 @@
-//! kuna fix `kt_narrow_constant_local`: in Kotlin output, a local that only
-//! constants are stored into is typed `Int` where its uses take an `Int`.
-//!
-//! Vineflower types a local by the lower bound of what is stored into it,
-//! and a constant's lower bound is the smallest type that holds it: a local
-//! holding only `20`, `10` and `30` is a `byte`, one holding `256` a
-//! `short`. Java widens such a local implicitly wherever an `int` is taken;
-//! Kotlin does not, so the Kotlin output declares `var v: Byte` where the
-//! source's local (or kotlinc's own temporary: a `when` value, the count of
-//! an inlined `repeat(3)`, the size of an inlined `Array(256) { .. }`) was an
-//! `Int`, and every use needs a conversion (`return v.toInt()`) or is
-//! rejected (`repeat(v)`, `arrayOfNulls(v)`). With the fix, after the last
-//! stack-variable pass, a local without a LocalVariableTable entry whose
-//! every store is an integer constant (or an `if` expression choosing
-//! between them) and whose type is `Byte` or `Short` is typed `Int` (its
-//! constants too) when every read of it takes an `Int`:
-//! a return from a function returning `Int`, an `Int` argument, a store into
-//! an `Int` field, element or local, an operand of arithmetic, a comparison
-//! or a conversion, an array index or size, a `when` subject. A read
-//! anywhere else (a `Byte` argument, a branch of an `if` expression, a
-//! string template) keeps Vineflower's type. The bytecode of either
-//! declaration is the same: `bipush`, `istore`, `iload`.
+//! Fix `kt_narrow_constant_local`: after the last stack-variable pass, a local
+//! without a debug entry that only constants are stored into, typed `Byte` or
+//! `Short`, is typed `Int` when every read of it takes an `Int`.
 
 use std::collections::BTreeMap;
 
@@ -30,12 +11,12 @@ use crate::exprent::{Exprent, ExprentType};
 use crate::function_exprent::FunctionType;
 use crate::method_descriptor::MethodDescriptor;
 use crate::root_statement::RootStatement;
-use crate::statement::Statement;
 use crate::struct_method::StructMethod;
 use crate::type_family::TypeFamily;
 use crate::var_processor::VarProcessor;
 use crate::var_type::VarType;
 use crate::var_version_pair::VarVersionPair;
+use crate::fixes::kt_util::for_each_exprent;
 
 #[derive(Default)]
 struct Local {
@@ -50,7 +31,7 @@ pub fn retype(root: RootStatement, method: StructMethod, md: &MethodDescriptor, 
         + i32::from(!method.has_modifier(ACC_STATIC));
     let mut locals: BTreeMap<i32, Local> = BTreeMap::new();
     let mut tops = Vec::new();
-    collect(root.0, &mut tops);
+    for_each_exprent(root.0, &mut |e| tops.push(e));
     for top in tops {
         visit(top, None, md, first_local, &mut locals);
     }
@@ -63,18 +44,6 @@ pub fn retype(root: RootStatement, method: StructMethod, md: &MethodDescriptor, 
         for constant in &local.constants {
             constant.as_const().set_const_type(VarType::VARTYPE_INT());
         }
-    }
-}
-
-fn collect(stat: Statement, out: &mut Vec<Exprent>) {
-    out.extend(stat.get_var_definitions().to_vec());
-    out.extend(stat.get_stat_exprents());
-    if let Some(exprents) = stat.get_exprents() {
-        out.extend(exprents.to_vec());
-    }
-    let stats = stat.get_stats().borrow().to_vec();
-    for child in stats {
-        collect(child, out);
     }
 }
 

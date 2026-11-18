@@ -3,103 +3,6 @@
 //! A [`Caught`] has no stack trace or cause: `collectErrorLines` is
 //! `ClassWriter::collect_error_lines` (its throw location is the only frame),
 //! so `ERROR_DUMP_STOP_POINTS` is never consulted.
-//!
-//! kuna fix `kt_synthetic_anonymous_object` (`kuna_fixes`): an
-//! anonymous class without Class metadata that needs no constructor
-//! arguments is written as an `object` whose supertypes come from the class
-//! file, with no flags comment, where Vineflower throws; its methods keep
-//! their `return`s and failure comments
-//! (`fixes::kt_anonymous_objects::kt_synthetic_anonymous_object`).
-//!
-//! kuna fix `kt_inlined_stdlib_call`: before a class is written, the inlined
-//! copies of `use` and `map` in its methods are rebuilt as the calls
-//! (`fixes::kt_compiler_idioms::kt_inlined_stdlib_call`).
-//!
-//! kuna fix `kt_anonymous_class_failure_reason`: an anonymous class
-//! the writer cannot write fails with a message that names it and the reason
-//! (`fixes::failure_comments`).
-//!
-//! kuna fix `kt_reference_anonymous_super_call`: `stringify_reference`
-//! reads the super call of a reference class that is an anonymous class from
-//! the node, where `NestedClassProcessor` keeps it
-//! (`fixes::kt_anonymous_objects::kt_reference_anonymous_super_call`).
-//!
-//! kuna fix `kt_local_as_extension_receiver`: in `write_method`,
-//! only a method with a parameter can be an extension function, where
-//! Vineflower takes a `$this$` local in the first free slot of a
-//! parameterless method (a captured receiver's alias, an inlined lambda's
-//! receiver) for its receiver.
-//!
-//! kuna fix `kt_return_outside_lambda`: `write_class` and `write_method`
-//! open a declaration boundary, so `KExitExprent` drops `return` only in the
-//! lambdas written inside it (`fixes::kt_jumps::kt_return_outside_lambda`).
-//!
-//! kuna fix `kt_failed_method_hidden`: `write_method_body` keeps a method
-//! whose body failed, with its failure comment, where Vineflower hides it.
-//!
-//! kuna fix `kt_object_super_call`: an `object` header writes the arguments
-//! of its superclass constructor call (`fixes::kt_anonymous_objects::kt_object_super_call`).
-//!
-//! kuna fix `kt_companion_nameless_class`: the companion lookup in
-//! `write_class_body` skips nested classes without a name.
-//!
-//! kuna fix `kt_method_object_return_type`: `write_method` writes a return
-//! type for every method that returns a value, where Vineflower's test (the
-//! return type is not above `void` in its type lattice) is false for
-//! `java.lang.Object`, so a method returning `Any?` is written as a `Unit`
-//! function that returns a value.
-//!
-//! kuna fix `kt_generated_constructor_hidden`: the constructors kotlinc
-//! generates for default arguments are not written
-//! (`fixes::kt_generated_members::kt_generated_constructor_hidden`).
-//!
-//! kuna fix `kt_generated_overload_hidden`: the overloads kotlinc generates for
-//! an `@JvmOverloads` function are not written
-//! (`fixes::kt_generated_members::kt_generated_overload_hidden`).
-//!
-//! kuna fix `kt_synthetic_object_super_call`: an anonymous class without
-//! Class metadata whose superclass constructor takes arguments (a suspend
-//! function's continuation) is written as an `object` whose superclass is
-//! written with them (`fixes::kt_anonymous_objects::kt_synthetic_object_super_call`).
-//! kuna fix `kt_file_class_constructor`: the constructor kotlinc gives a
-//! file class (a multifile class part) is not written
-//! (`fixes::kt_generated_members::kt_file_class_constructor`).
-//! kuna fix `captured_var_clash_name`: in `invoke_processors`, the captured
-//! variables of the class's methods take the clashing names of the variables
-//! they hold (`fixes::nested_class_vars::captured_var_clash_name`).
-//! kuna fix `kt_field_without_property`: `write_field` writes an instance
-//! field as a Kotlin property (`fixes::kt_properties::kt_field_without_property`).
-//! kuna fix `kt_constructor_without_metadata`: `write_method` writes a
-//! constructor as `constructor(..) : super(..)` and an anonymous class's
-//! initializer as `init { .. }` (`fixes::kt_constructors::kt_constructor_without_metadata`).
-//!
-//! kuna fix `kt_unescaped_name`: `write_lambda` names the lambda's
-//! parameters as `to_valid_kotlin_identifier` writes a name.
-//!
-//! kuna fix `kt_reserved_underscore_name`: `to_valid_kotlin_identifier`
-//! puts a name made of underscores alone (`_`, `__`), which Kotlin reserves,
-//! in backticks.
-//!
-//! kuna fix `kt_java_type_syntax`: the class and method headers written from
-//! a class file (no metadata) write supertypes and type parameters in
-//! Kotlin's syntax (`fixes::kt_types::kt_java_type_syntax`).
-//!
-//! kuna fix `kt_static_initializer`: `write_method` writes an object's static
-//! initializer as `init { .. }`, and the class body of a class with a
-//! companion object moves its static initializer into the companion's body
-//! (`fixes::kt_initializers::kt_static_initializer`).
-//!
-//! kuna fix `kt_suspend_without_metadata`: `write_method` writes a method
-//! without metadata that overrides a suspend function as one
-//! (`fixes::kt_suspend::kt_suspend_without_metadata`).
-//!
-//! kuna fix `kt_for_inline_copy`: `write_class` leaves out the `$$forInline`
-//! copy of a suspend function (`fixes::kt_suspend::kt_for_inline_copy`).
-//!
-//! kuna fix `kt_suspend_lambda`: `write_lambda` writes a suspend lambda whose
-//! body was rebuilt with that body, its receiver as its first parameter and
-//! its exits as the lambda's (`fixes::kt_suspend::kt_suspend_lambda`); one that was not
-//! keeps Vineflower's comment.
 
 use std::rc::Rc;
 
@@ -140,19 +43,17 @@ use crate::k_property::KProperty;
 use crate::k_type::KType;
 use crate::k_types::KTypes;
 use crate::k_utils::KUtils;
-use crate::fixes::kt_constructors::kt_constructor_without_metadata;
-use crate::fixes::kt_properties::kt_field_without_property;
-use crate::fixes::kt_anonymous_objects::kt_synthetic_object_super_call;
+use crate::fixes::kt_constructors;
+use crate::fixes::kt_properties;
 use crate::fixes::kt_compiler_idioms::kt_inlined_stdlib_call;
 use crate::fixes::kt_types::kt_class_header_metadata;
-use crate::fixes::kt_generated_members::kt_default_impls_delegate;
+use crate::fixes::kt_generated_members;
 use crate::fixes::kt_types::kt_type_parameter_id;
 use crate::fixes::kt_types::kt_java_type_syntax;
-use crate::fixes::kt_suspend::kt_suspend_without_metadata;
-use crate::fixes::kt_suspend::kt_for_inline_copy;
+use crate::fixes::kt_suspend;
 use crate::fixes::kt_suspend::kt_suspend_lambda;
 use crate::fixes::kt_names::kt_unescaped_name;
-use crate::fixes::kt_initializers::kt_static_initializer;
+use crate::fixes::kt_initializers;
 use crate::kotlin_chooser::KotlinChooser;
 use crate::kotlin_import_collector::KotlinImportCollector;
 use crate::kotlin_object_processors::KotlinObjectProcessors;
@@ -160,12 +61,9 @@ use crate::kotlin_options::KotlinOptions;
 use crate::kt_attrs::KtAttrs;
 use crate::kt_flags::Flags;
 use crate::kt_proto::{ClassKind, Modality, Visibility};
-use crate::fixes::kt_generated_members::kt_file_class_constructor;
 use crate::fixes::kt_initializers::kt_file_static_initializer;
-use crate::fixes::kt_generated_members::kt_generated_constructor_hidden;
-use crate::fixes::kt_generated_members::kt_generated_overload_hidden;
 use crate::fixes::kt_anonymous_objects::kt_object_super_call;
-use crate::fixes::kt_jumps::kt_return_outside_lambda;
+use crate::fixes::kt_jumps;
 use crate::fixes::failure_comments;
 use crate::fixes::kt_anonymous_objects::kt_reference_anonymous_super_call::{self, reference_name_and_descriptor};
 use crate::fixes::kt_anonymous_objects::kt_synthetic_anonymous_object;
@@ -579,8 +477,8 @@ impl KotlinWriter {
     /// (`kuna_spans`), as `ClassWriter` gives them; spans add no text.
     pub fn write_class(&self, node: ClassNode, buffer: &mut TextBuffer, indent: i32) {
         let _scope = kuna_fixes::enabled(KunaFix::KtReturnOutsideLambda)
-            .then(kt_return_outside_lambda::enter);
-        let _moved = kt_static_initializer::scope();
+            .then(kt_jumps::enter_declaration);
+        let _moved = kt_initializers::scope();
         let span = kuna_spans::open_class(buffer, node.with(|d| d.class_struct));
         if self.write_class_body(node, buffer, indent) {
             kuna_spans::close(buffer, span);
@@ -637,7 +535,7 @@ impl KotlinWriter {
             && ((kuna_fixes::enabled(KunaFix::KtSyntheticAnonymousObject)
                 && kt_synthetic_anonymous_object::is_writable(node))
                 || (kuna_fixes::enabled(KunaFix::KtSyntheticObjectSuperCall)
-                    && kt_synthetic_object_super_call::is_writable(node)));
+                    && kt_object_super_call::is_writable(node)));
 
         let kotlin_flags = match &kt_data {
             None if synthetic_object => 0,
@@ -739,7 +637,7 @@ impl KotlinWriter {
             }
         );
 
-        let mut visited_properties = crate::fixes::kt_constructors::kt_data_class_property_parameters::visited(cl);
+        let mut visited_properties = kt_constructors::visited(cl);
         let mut has_newline = false;
         let file_initializers = kuna_fixes::enabled(KunaFix::KtFileStaticInitializer)
             && matches!(kt_data, Some(KElement::File(_)))
@@ -897,12 +795,12 @@ impl KotlinWriter {
                 || matches!(&el, Some(KElement::Property(prop)) if !visited_properties.add((**prop).clone()))
                 || matches!(el, Some(KElement::HiddenElement(_)))
                 || (kuna_fixes::enabled(KunaFix::KtGeneratedConstructorHidden)
-                    && kt_generated_constructor_hidden::is_generated(cl, mt))
+                    && kt_generated_members::is_generated_constructor(cl, mt))
                 || (kuna_fixes::enabled(KunaFix::KtGeneratedOverloadHidden)
-                    && kt_generated_overload_hidden::is_generated(cl, mt))
+                    && kt_generated_members::is_generated_overload(cl, mt))
                 || (kuna_fixes::enabled(KunaFix::KtForInlineCopy)
-                    && kt_for_inline_copy::is_copy(cl, mt))
-                || kt_default_impls_delegate::is_delegate(cl, mt)
+                    && kt_suspend::is_for_inline_copy(cl, mt))
+                || kt_generated_members::is_delegate(cl, mt)
                 || kt_class_header_metadata::is_collection_stub(
                     cl,
                     mt,
@@ -910,7 +808,7 @@ impl KotlinWriter {
                     node.with(|d| d.type_) == ClassNodeType::Anonymous,
                 )
                 || (kuna_fixes::enabled(KunaFix::KtFileClassConstructor)
-                    && kt_file_class_constructor::is_file_class_constructor(cl, mt))
+                    && kt_generated_members::is_file_class_constructor(cl, mt))
                 || (file_initializers && mt.get_name() == CLINIT_NAME);
             if hide {
                 continue;
@@ -998,7 +896,7 @@ impl KotlinWriter {
                     let moved = companion.filter(|c| {
                         CLINIT_NAME == mt.get_name()
                             && kuna_fixes::enabled(KunaFix::KtStaticInitializer)
-                            && kt_static_initializer::is_written(*c, wrapper)
+                            && kt_initializers::is_written(*c, wrapper)
                     });
                     let method_indent = if moved.is_some() { indent + 1 } else { indent };
                     let mut method_buffer = TextBuffer::new();
@@ -1016,7 +914,7 @@ impl KotlinWriter {
                     kuna_spans::close(&mut method_buffer, span);
                     if let Some(companion) = moved {
                         if !method_skipped {
-                            kt_static_initializer::move_to(companion, method_buffer);
+                            kt_initializers::move_to(companion, method_buffer);
                         }
                     } else if !method_skipped {
                         if has_content {
@@ -1030,7 +928,7 @@ impl KotlinWriter {
         }
 
         if kuna_fixes::enabled(KunaFix::KtStaticInitializer) {
-            if let Some(init) = kt_static_initializer::take(cl) {
+            if let Some(init) = kt_initializers::take(cl) {
                 if has_content {
                     inner_buffer.append_line_separator();
                 }
@@ -1050,7 +948,7 @@ impl KotlinWriter {
                         .get_hidden_members()
                         .borrow()
                         .contains(&inner_cl.qualified_name())
-                    || kt_default_impls_delegate::is_emptied_default_impls(inner_cl);
+                    || kt_generated_members::is_emptied_default_impls(inner_cl);
                 if hide {
                     continue;
                 }
@@ -1511,9 +1409,9 @@ impl KotlinWriter {
                     return;
                 }
                 if kuna_fixes::enabled(KunaFix::KtSyntheticObjectSuperCall)
-                    && kt_synthetic_object_super_call::is_writable(node)
+                    && kt_object_super_call::is_writable(node)
                 {
-                    kt_synthetic_object_super_call::write_object_header(node, buffer);
+                    kt_object_super_call::write_object_header(node, buffer);
                     return;
                 }
                 if kuna_fixes::enabled(KunaFix::KtAnonymousClassFailureReason) {
@@ -1894,9 +1792,9 @@ impl KotlinWriter {
         );
 
         if kuna_fixes::enabled(KunaFix::KtFieldWithoutProperty)
-            && kt_field_without_property::applies(cl, fd, is_enum)
+            && kt_properties::writes_field_as_property(cl, fd, is_enum)
         {
-            kt_field_without_property::write(wrapper, cl, fd, &name, buffer, indent);
+            kt_properties::write_field_as_property(wrapper, cl, fd, &name, buffer, indent);
             return;
         }
 
@@ -2053,7 +1951,7 @@ impl KotlinWriter {
         {
             let _finally = RestoreMethodWrapper(outer_wrapper);
             let _scope = kuna_fixes::enabled(KunaFix::KtReturnOutsideLambda)
-                .then(kt_return_outside_lambda::enter);
+                .then(kt_jumps::enter_declaration);
             let node_type = node.with(|d| d.type_);
             let (node_class_struct, node_access) = node.with(|d| (d.class_struct, d.access));
 
@@ -2147,7 +2045,7 @@ impl KotlinWriter {
 
             let static_init = CLINIT_NAME == mt.get_name()
                 && kuna_fixes::enabled(KunaFix::KtStaticInitializer)
-                && kt_static_initializer::writes_init_block(
+                && kt_initializers::writes_init_block(
                     cl,
                     KotlinWriter::companion_node(node),
                 );
@@ -2189,11 +2087,11 @@ impl KotlinWriter {
 
             let ctor_fix = kuna_fixes::enabled(KunaFix::KtConstructorWithoutMetadata);
             let delegation = (init && ctor_fix)
-                .then(|| kt_constructor_without_metadata::delegation(wrapper, method_wrapper))
+                .then(|| kt_constructors::delegation(wrapper, method_wrapper))
                 .flatten();
 
             let suspend = kuna_fixes::enabled(KunaFix::KtSuspendWithoutMetadata)
-                .then(|| kt_suspend_without_metadata::overridden(mt))
+                .then(|| kt_suspend::overridden(mt))
                 .flatten();
             let mut did_override = false;
             if INIT_NAME != mt.get_name()
@@ -2203,7 +2101,7 @@ impl KotlinWriter {
             {
                 let is_override =
                     KotlinWriter::search_for_method(Some(cl), &mt.get_name(), &md, false)
-                        || (suspend.is_some() && kt_suspend_without_metadata::through_bridge(mt));
+                        || (suspend.is_some() && kt_suspend::through_bridge(mt));
                 if is_override {
                     buffer.append("override ");
                     did_override = true;
@@ -2234,7 +2132,7 @@ impl KotlinWriter {
             }
 
             if delegation.is_some() {
-                buffer.append(kt_field_without_property::visibility(flags));
+                buffer.append(kt_properties::visibility(flags));
                 name = Some("constructor".to_string());
             } else if static_init {
                 buffer.append("init ");
@@ -2339,6 +2237,7 @@ impl KotlinWriter {
                     && varproc_name
                         .as_deref()
                         .is_some_and(|n| n.starts_with("$this$"))
+                    // a parameterless method's `$this$` local is a captured or inlined receiver
                     && (md.params.len() > start
                         || !kuna_fixes::enabled(KunaFix::KtLocalAsExtensionReceiver));
 
@@ -2518,6 +2417,7 @@ impl KotlinWriter {
                         .return_type()
                         .expect("NullPointerException: returnType"),
                 };
+                // `Object` is above `void` in the type lattice
                 let returns_value = if kuna_fixes::enabled(KunaFix::KtMethodObjectReturnType) {
                     !ret_type.equals(&VarType::VARTYPE_VOID())
                 } else {
@@ -2525,7 +2425,7 @@ impl KotlinWriter {
                 };
                 if let Some(function) = &suspend {
                     if let Some(result) =
-                        kt_suspend_without_metadata::result_type(mt, function, indent)
+                        kt_suspend::result_type(mt, function, indent)
                     {
                         buffer.append(": ").append_buffer(&result);
                     }
@@ -2544,7 +2444,7 @@ impl KotlinWriter {
             }
 
             let _restore = delegation.map(|delegation| {
-                kt_constructor_without_metadata::write_delegation(
+                kt_constructors::write_delegation(
                     method_wrapper,
                     delegation,
                     buffer,
@@ -2564,7 +2464,7 @@ impl KotlinWriter {
                 let hide_if_init = cl_init
                     || d_init
                     || (delegation.is_none_or(|delegation| {
-                        kt_constructor_without_metadata::may_hide(wrapper, delegation)
+                        kt_constructors::may_hide(wrapper, delegation)
                     }) && KotlinWriter::hide_constructor(
                         node,
                         init,
@@ -3050,8 +2950,6 @@ impl KotlinWriter {
         KotlinWriter::append_type_annotations(buffer, indent, mb, target_type, -1, &filter);
     }
 
-    /// kuna fix `kt_throws_class_name`: the `@Throws` of a `throws` clause
-    /// names its classes by their Kotlin names (`fixes::kt_declarations::kt_throws_class_name`).
     #[allow(clippy::too_many_arguments)]
     pub fn append_jvm_annotations(
         buffer: &mut TextBuffer,
@@ -3095,7 +2993,7 @@ impl KotlinWriter {
                             .to_string();
                         if kuna_fixes::enabled(KunaFix::KtThrowsClassName) {
                             buffer
-                                .append(&crate::fixes::kt_declarations::kt_throws_class_name::kotlin_name(
+                                .append(&crate::fixes::kt_declarations::kotlin_name(
                                     &name,
                                 ))
                                 .append("::class");

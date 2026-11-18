@@ -1,29 +1,7 @@
-//! kuna fix `kt_java_type_syntax`: in Kotlin output, a type read from a Java
-//! generic signature is written in Kotlin's syntax.
-//!
-//! `KTypes.getKotlinType` converts the type arguments of the `java.util`
-//! collection classes it translates but drops their wildcards
-//! (`MutableList<R>` for `List<? super R>`, a different type); any other
-//! generic class falls back to Java's `getCastTypeName` and a string rewrite
-//! that handles one wildcard or array at the outside of the name only, so
-//! nested arguments keep Java's syntax: `Continuation<? super
-//! java.lang.Boolean>`, `Flow<Flow<? extends R>>`. The writers the Kotlin plugin shares with Java's class writer, for
-//! a class header and for a method the metadata does not describe (an
-//! interface's `DefaultImpls`, a synthetic class, a `$$forInline` copy, the
-//! object of fix `kt_synthetic_anonymous_object`), print supertypes with
-//! `getCastTypeName` (`object : Function0<T[]>`, `KClass<Object>`) and type
-//! parameters as Java does (`<T extends Comparable<? super T>>`), and a
-//! class literal of an array type is `Object[]::class.java`. kotlinc
-//! rejects all of these. With the fix a type argument is converted
-//! (`? extends X` is `out X`, `? super X` is `in X`, `?` is `*`, `T[]` is
-//! `Array<T>`, `int[]` `IntArray`, `Object` `Any`), a generic class outside
-//! `getKotlinType`'s table keeps its name with its arguments converted, a
-//! header's supertype or bound keeps the class name Vineflower writes
-//! (`Function0<Array<T>>`, `java.lang.Iterable<Int>`: valid Kotlin, and not
-//! the function-type form with the nullable parameters `getKotlinType`
-//! gives `FunctionN`), a type parameter's bound is written `T : B`, and a
-//! type parameter with more than one bound is constrained in a `where`
-//! clause, as Kotlin requires.
+//! Fix `kt_java_type_syntax`: a type read from a Java generic signature is
+//! written in Kotlin's syntax (`out X`, `in X`, `*`, `Array<T>`, `IntArray`),
+//! and a header's type parameters as `T : B` with a `where` clause for several
+//! bounds.
 
 use crate::code_type::CodeType;
 use crate::expr_processor::ExprProcessor;

@@ -1,24 +1,7 @@
-//! kuna fix `kt_inlined_to_typed_array`: kotlinc's inlined `toTypedArray()`
-//! is written `toTypedArray()`.
-//!
-//! `Collection<T>.toTypedArray()` is an inline function whose body calls
-//! `java.util.Collection.toArray(arrayOfNulls<T>(0))` and casts the result to
-//! `Array<T>`; Kotlin 1.3's copy also checks the result for null and throws
-//! `TypeCastException("null cannot be cast to non-null type
-//! kotlin.Array<T>")`. Vineflower writes the inlined body: `toArray`, which
-//! a Kotlin collection does not have ("unresolved reference"), into a
-//! stack variable typed `Array<Any>`, the `if (v == null) throw ..` around
-//! the code after it, and the cast at each use. Before the last
-//! stack-variable pass, each `invokeinterface Collection.toArray` of a new
-//! zero-length array of `T` is made a call of `toTypedArray()` typed
-//! `Array<T>`, and Kotlin 1.3's null check of the variable it was just stored
-//! into is removed (an `else` becomes the code after it); after the pass, a
-//! cast to `Array<T>` of that call, or of a variable that holds it, is left
-//! out and the variable is typed `Array<T>`, and the call is written with
-//! its type argument, `toTypedArray<T>()`, unless the receiver's type names
-//! `T` for its elements (or `T` is a generic class, which has no raw name):
-//! the reified `T` is the class of the array the call creates. kotlinc
-//! compiles `toTypedArray()` to the same call and cast again.
+//! Fix `kt_inlined_to_typed_array`: kotlinc's inlined `toTypedArray()`
+//! (`toArray` of a new empty array, Kotlin 1.3's null check) is made the call
+//! before the last stack-variable pass; after it the casts of its result are
+//! left out and the call gets its type argument unless the receiver names it.
 
 use std::collections::BTreeSet;
 
@@ -36,6 +19,7 @@ use crate::statement::{Statement, StatementType};
 use crate::var_processor::VarProcessor;
 use crate::var_type::VarType;
 use crate::var_version_pair::VarVersionPair;
+use crate::fixes::kt_util::for_each_exprent;
 
 const COLLECTION: &str = "java/util/Collection";
 const TO_ARRAY_DESCRIPTOR: &str = "([Ljava/lang/Object;)[Ljava/lang/Object;";
@@ -97,21 +81,6 @@ fn type_argument(call: Exprent, typed: VarType) {
         return;
     }
     inv.d_mut(|d| d.kuna_chain_type_args = Some(vec![element]));
-}
-
-fn for_each_exprent(stat: Statement, f: &mut dyn FnMut(Exprent)) {
-    let mut lists: Vec<Exprent> = stat.get_var_definitions().to_vec();
-    lists.extend(stat.get_stat_exprents());
-    if let Some(exprents) = stat.get_exprents() {
-        lists.extend(exprents.to_vec());
-    }
-    for e in lists {
-        f(e);
-    }
-    let stats = stat.get_stats().borrow().to_vec();
-    for child in stats {
-        for_each_exprent(child, f);
-    }
 }
 
 fn rename(stat: Statement, res: &mut bool) {

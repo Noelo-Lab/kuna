@@ -1,23 +1,6 @@
-//! kuna fix `kt_property_reference`: a property reference (`x::p`,
-//! `C::p`, `R::p`, `::p`) is written as one.
-//!
-//! kotlinc compiles a property reference it cannot leave to
-//! `invokedynamic` to a synthetic class with synthetic-class metadata and no
-//! data, extending `kotlin.jvm.internal.PropertyReference{0,1,2}Impl` (or
-//! the `MutablePropertyReference` ones), whose constructor calls
-//! `super([receiver,] Owner.class, "name", "getterSignature", flags)`.
-//! `KotlinChooser` recognises only `FunctionReferenceImpl` subclasses as
-//! references, so a property reference reaches `KotlinWriter` as an
-//! anonymous object without Class metadata, which throws for a bound one
-//! (`new C$f$1(receiver)`) and prints `<unrepresentable>.INSTANCE` for an
-//! unbound one. With the fix such a class is written as the reference its
-//! super call describes: `receiver::name` when bound; unbound, the number in
-//! the superclass name counts the receivers `get` takes, and bit 0 of
-//! `flags` says the property is top-level (kotlin's `CallableReference`
-//! `isTopLevel`), so `::name` (top-level, none), `Receiver::name` (top-level
-//! extension, the getter's first parameter type), or `Owner::name` (a member,
-//! one). A member extension (two receivers) has no reference syntax, and any
-//! other constructor shape is left as before.
+//! Fix `kt_property_reference`: a synthetic `PropertyReference` class is written
+//! as the reference its constructor's super call describes (`receiver::name`,
+//! `::name`, `Receiver::name`, `Owner::name`).
 
 use crate::classes_processor::ClassNode;
 use crate::code_constants::INIT_NAME;

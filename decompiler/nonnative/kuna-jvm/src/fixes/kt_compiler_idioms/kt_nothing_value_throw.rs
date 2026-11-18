@@ -1,21 +1,6 @@
-//! kuna fix `kt_nothing_value_throw` (spec 10.16): in Kotlin output, a call
-//! of a function the metadata declares to return `Nothing` is not followed
-//! by `throw KotlinNothingValueException()`.
-//!
-//! A function returning `Nothing` never returns, but the JVM does not know
-//! it: the method returns `Void` (`Object` for a suspend function), so after
-//! each such call kotlinc pops the result and throws a new
-//! `kotlin.KotlinNothingValueException`, code that only runs if the callee
-//! returns after all. Vineflower writes that throw, `noImpl()` followed by
-//! `throw KotlinNothingValueException()`, which the source does not have and
-//! kotlinc rejects (the class is `@PublishedApi internal`). With the fix the
-//! throw is left out where it directly follows, in the same block, a call
-//! whose callee the metadata declares to return the non-null `Nothing`:
-//! there it is dead code, and kotlinc compiles the call alone to the same
-//! call and throw. A call of a synthetic accessor (`access$noImpl`) counts
-//! as the call of the function it calls, as fix `kt_synthetic_accessor_call`
-//! writes it. A callee returning a type parameter that the call site
-//! instantiates with `Nothing` keeps the throw.
+//! Fix `kt_nothing_value_throw`: the `throw KotlinNothingValueException()`
+//! kotlinc puts after a call of a function the metadata declares to return
+//! `Nothing` is left out.
 
 use crate::exit_exprent::Type as ExitType;
 use crate::exprent::Exprent;

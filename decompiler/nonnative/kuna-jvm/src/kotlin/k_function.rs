@@ -3,52 +3,6 @@
 //! The record lives for the session (it is attached to members by `kt_attrs`);
 //! its suppliers take the writing class's `ClassWrapper` and build what they
 //! return in that class's scope.
-//!
-//! kuna fix `kt_type_parameter_id`: each member's types are read in the
-//! scope of its own type parameters (`fixes::kt_types::kt_type_parameter_id`).
-//!
-//! kuna fix `kt_abstract_function_body`: an abstract or external function
-//! (no code in the class file) is written without a body, where Vineflower
-//! writes an empty one, which Kotlin rejects.
-//!
-//! kuna fix `kt_missed_override`: a function that a bridge method of its
-//! class calls is an override (`fixes::kt_declarations::kt_missed_override`).
-//!
-//! kuna fix `kt_extension_receiver`: an extension function's body writes
-//! its receiver `this` (`fixes::kt_extensions::kt_extension_receiver`).
-//!
-//! kuna fix `kt_default_args_bridge_lookup`: the default-arguments method is
-//! found by its JVM name and descriptor, in the class or an interface's
-//! `DefaultImpls` (`fixes::kt_default_args::kt_default_args_bridge_lookup`).
-//!
-//! kuna fix `kt_default_value_names`: a default value names the function's
-//! parameters and receivers as its declaration does
-//! (`fixes::kt_default_args::kt_default_value_names`).
-//!
-//! kuna fix `kt_function_parameter_name`: the body names a parameter without
-//! a local variable table entry as the header does
-//! (`fixes::kt_names::kt_function_parameter_name`).
-//!
-//! kuna fix `kt_suspend_impl`: an open suspend function whose body kotlinc
-//! moved into its `$suspendImpl` method is written with that body
-//! (`fixes::kt_suspend::kt_suspend_impl`).
-//!
-//! kuna fix `kt_suspend_lambda`: the function of a suspend lambda's class is
-//! its `invokeSuspend`, recorded for the class only
-//! (`fixes::kt_suspend::kt_suspend_lambda`).
-//!
-//! kuna fix `kt_contract_import`: a function with a contract is annotated
-//! `@OptIn(ExperimentalContracts::class)` (`fixes::kt_declarations::kt_contract_import`).
-//!
-//! kuna fix `kt_delegated_member_default`: a member kotlinc generates for
-//! interface delegation (kind `DELEGATION`) is written without defaults: K1
-//! copies the overridden parameters' "declares default value" flags into
-//! its metadata, but an override takes its defaults from the function it
-//! overrides and cannot declare any.
-//!
-//! kuna fix `kt_companion_static_copy`: only a static method of the
-//! companion's class is marked as the copy of a companion function
-//! (`fixes::kt_generated_members::kt_companion_static_copy`).
 
 use std::rc::Rc;
 
@@ -72,13 +26,11 @@ use crate::kotlin_writer::{is_stop_signal, KotlinWriter};
 use crate::kt_attrs::KtAttrs;
 use crate::kt_flags::Flags;
 use crate::kt_proto::{self, MemberKind, Modality, Visibility};
-use crate::fixes::kt_default_args::kt_default_args_bridge_lookup;
-use crate::fixes::kt_default_args::kt_default_value_names;
-use crate::fixes::kt_declarations::kt_contract_import;
+use crate::fixes::kt_default_args;
+use crate::fixes::kt_declarations;
 use crate::fixes::kt_names::kt_function_parameter_name;
-use crate::fixes::kt_extensions::kt_extension_receiver;
-use crate::fixes::kt_declarations::kt_missed_override;
-use crate::fixes::kt_generated_members::kt_companion_static_copy;
+use crate::fixes::kt_extensions;
+use crate::fixes::kt_generated_members;
 use crate::fixes::kt_suspend::kt_suspend_lambda;
 use crate::fixes::kt_suspend::kt_suspend_impl;
 use crate::fixes::kt_java_syntax::kt_java_reference_cast;
@@ -285,7 +237,7 @@ impl KFunction {
                         .get_method(&lookup_name, &desc)
                         .filter(|m| {
                             !kuna_fixes::enabled(KunaFix::KtCompanionStaticCopy)
-                                || kt_companion_static_copy::is_copy(*m)
+                                || kt_generated_members::is_copy(*m)
                         })
                     {
                         KtAttrs::put(
@@ -354,7 +306,7 @@ impl KFunction {
             default_args_desc.push_str(&return_type.0.to_string());
 
             let bridge = kuna_fixes::enabled(KunaFix::KtDefaultArgsBridgeLookup).then(|| {
-                kt_default_args_bridge_lookup::locate(
+                kt_default_args::locate(
                     class_struct,
                     method,
                     parameters.len(),
@@ -416,7 +368,7 @@ impl KFunction {
                     &method.method_descriptor(),
                     false,
                 ) || kuna_fixes::enabled(KunaFix::KtMissedOverride)
-                    && kt_missed_override::bridged(class_struct, method));
+                    && kt_declarations::bridged(class_struct, method));
 
             let contract = if function.has_contract() {
                 Some(KContract::from(
@@ -494,7 +446,7 @@ impl KFunction {
         );
 
         if self.contract.is_some() && kuna_fixes::enabled(KunaFix::KtContractImport) {
-            kt_contract_import::append_opt_in(&mut buf, indent);
+            kt_declarations::append_opt_in(&mut buf, indent);
         }
 
         let method_key = InterpreterUtil::make_unique_key(
@@ -628,6 +580,7 @@ impl KFunction {
             first = false;
 
             parameter.stringify(indent + 1, &mut buf);
+            // K1 copies the overridden function's default flags into a delegating member
             let delegated = kuna_fixes::enabled(KunaFix::KtDelegatedMemberDefault)
                 && Flags::MEMBER_KIND.get(flags) == Some(MemberKind::Delegation);
             if Flags::DECLARES_DEFAULT_VALUE.get(parameter.flags) && !delegated {
@@ -636,7 +589,7 @@ impl KFunction {
                     .kuna_bridge()
                     .filter(|_| kuna_fixes::enabled(KunaFix::KtDefaultValueNames))
                     .and_then(|bridge| {
-                        kt_default_value_names::enter(
+                        kt_default_args::enter_defaults(
                             bridge,
                             class_struct,
                             method_struct,
@@ -718,7 +671,7 @@ impl KFunction {
         let _receiver = (kuna_fixes::enabled(KunaFix::KtExtensionReceiver)
             && self.receiver_type.is_some())
         .then(|| {
-            kt_extension_receiver::enter(
+            kt_extensions::enter(
                 class_struct,
                 method_wrapper,
                 method_struct.has_modifier(ACC_STATIC),

@@ -1,27 +1,4 @@
 //! Port of `org/vineflower/kotlin/stat/KDoStatement.java`.
-//!
-//! kuna fixes (`kuna_fixes`) in the `FOR` case: `kt_for_loop_exit_condition`
-//! writes a loop it cannot resugar as `while (COND)`, where Vineflower writes
-//! `while (true) { if (COND) break` and so leaves the loop when it should go on;
-//! `kt_for_range_counter` (`fixes::kt_for_loops`) rewrites only
-//! loops that count their initializer's variable to the bound;
-//! `kt_for_range_exclusive_bound` keeps the bound exclusive (`until` for a
-//! variable bound, `repeat(N)` with the bound itself), where Vineflower writes
-//! the inclusive `..` of a variable and `repeat(N - 1)`;
-//! `kt_for_loop_definitions` writes the declarations of such a loop's
-//! variables, which Vineflower leaves out;
-//! `kt_for_loop_continue_update` writes such a loop whose body continues it
-//! as a `do`-`while` whose condition runs the update, where Vineflower's
-//! `while` puts the update at the end of the body, which `continue` skips;
-//! `kt_for_range_unmatched_bound` writes the loop of a bound it cannot match
-//! as a `while`, where Vineflower's `break resugar` writes no loop at all.
-//! `kt_jump_to_non_loop_label` (`fixes::kt_jumps::kt_jump_to_non_loop_label`) writes
-//! a jump out of such a loop wrapped in `run labelN@{ .. }` as
-//! `return@labelN`, and a `continue` of a `repeat` loop as a `return` from
-//! its lambda.
-//! `kt_range_operand_precedence` parenthesises a range bound that binds less
-//! tightly than the range operator, where Vineflower writes
-//! `for (i in if (c) 1 else 0 until n)`, whose `else` branch is the range.
 
 use crate::const_exprent::{ConstExprent, ConstValue};
 use crate::do_statement::{DoStatement, Type as LoopType};

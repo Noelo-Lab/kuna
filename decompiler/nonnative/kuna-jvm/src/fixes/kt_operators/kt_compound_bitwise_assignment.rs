@@ -1,36 +1,13 @@
-//! kuna fix `kt_compound_bitwise_assignment`: in Kotlin output, a compound
-//! assignment with a bitwise or shift operator is written as an assignment
-//! of the infix call.
-//!
-//! The Kotlin plugin writes assignments with Java's `AssignmentExprent`,
-//! which writes a compound assignment `x |= y`; Kotlin has `+=`, `-=`, `*=`,
-//! `/=` and `%=`, but no `|=`, `&=`, `^=`, `<<=`, `>>=` or `>>>=` (its
-//! bitwise operators are the infix functions `or`, `and`, `xor`, `shl`,
-//! `shr`, `ushr`), so kotlinc rejects every one (each `suspend` function's
-//! continuation has `this.label |= Integer.MIN_VALUE`). Java evaluates the
-//! left side's subexpressions once, reads it, evaluates the right side,
-//! applies the operator and stores; `x = x or y` evaluates the target's
-//! subexpressions, reads `x`, evaluates `y` and stores, which is the same
-//! when reading the left side again has no effect: when it is built from
-//! variables, constants, fields, array elements and arithmetic that cannot
-//! throw (no division) only. Its type must be `Int`, `Long` or `Boolean`,
-//! which Kotlin's infix functions take and give back; Java narrows a `byte`,
-//! `short` or `char` result again, so those are left as they are. Infix
-//! calls bind less tightly than arithmetic and more than comparisons, and
-//! associate to the left, so the right side is written in parentheses where
-//! the precedence table of `kt_operator_precedence` binds it at the infix
-//! level or below: another infix call (`set or (1 shl id)`, which Java
-//! writes `set |= 1 << id`, or `x xor (a mask b)` with a user's `infix fun`),
-//! a type check, comparison or elvis (`ok and (x !is String)`).
-//! With the fix `kt_narrow_bitwise_operand` a `Byte`, `Short` or `Char` left
-//! side is widened and the result narrowed back, as Java does:
-//! `b = (b.toInt() xor k.toInt()).toByte()`.
+//! Fix `kt_compound_bitwise_assignment`: `x |= y` and the other bitwise and shift
+//! compound assignments are written `x = x or y` when reading `x` again has no
+//! effect and its type is `Int`, `Long` or `Boolean`, the right side
+//! parenthesised by Kotlin's precedence.
 
 use crate::code_type::CodeType;
 use crate::exprent::Exprent;
 use crate::function_exprent::FunctionType;
 use crate::k_function_exprent::KFunctionType;
-use crate::fixes::kt_operators::{kt_narrow_bitwise_operand, kt_operator_precedence};
+use crate::fixes::kt_operators::{self, kt_operator_precedence};
 use crate::kuna_fixes::{self, KunaFix};
 use crate::text_buffer::TextBuffer;
 use crate::var_type::VarType;
@@ -45,7 +22,7 @@ pub fn write(
     indent: i32,
 ) -> Option<TextBuffer> {
     let narrowed = kuna_fixes::enabled(KunaFix::KtNarrowBitwiseOperand)
-        && kt_narrow_bitwise_operand::widening(left_type).is_some();
+        && kt_operators::widening(left_type).is_some();
     if !matches!(
         operator,
         FunctionType::And
@@ -78,11 +55,11 @@ pub fn write(
     }
     buffer.append_buffer(&left.to_java(indent));
     if narrowed {
-        buffer.append(kt_narrow_bitwise_operand::widening(left_type).unwrap_or(""));
+        buffer.append(kt_operators::widening(left_type).unwrap_or(""));
     }
     buffer.append(" ").append(name).append(" ");
     let widened = narrowed
-        .then(|| kt_narrow_bitwise_operand::write(right, indent))
+        .then(|| kt_operators::write_widened(right, indent))
         .flatten();
     if let Some(widened) = widened {
         buffer.append_buffer(&widened);

@@ -163,7 +163,7 @@ pub use p5_types::kuna_static_types;
 /// Fix helpers the integration tests call directly; not part of the engine's API.
 #[doc(hidden)]
 pub mod testing {
-    pub use crate::fixes::kt_properties::kt_default_accessor_flags::accessor_flags;
+    pub use crate::fixes::kt_properties::accessor_flags;
     pub use crate::fixes::kt_names::kt_escaped_class_name::{escape, escape_qualified};
     pub use crate::fixes::kt_calls::kt_facade_call::{default_import, java_property, mangled};
     pub use crate::fixes::kt_calls::kt_mapped_java_member::{form, Form};
@@ -185,6 +185,6 @@ pub mod testing {
         pub use crate::fixes::generic_casts::disjoint_generic_cast::{mark_declared_target, take_declared_target};
     }
     pub mod kt_static_initializer {
-        pub use crate::fixes::kt_initializers::kt_static_initializer::{move_to, scope, take};
+        pub use crate::fixes::kt_initializers::{move_to, scope, take};
     }
 }

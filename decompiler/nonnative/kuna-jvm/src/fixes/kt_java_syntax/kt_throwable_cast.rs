@@ -1,15 +1,5 @@
-//! kuna fix `kt_throwable_cast`: a thrown value is written without the cast
-//! to `java.lang.Throwable` that kotlinc puts before every `athrow`.
-//!
-//! kotlinc compiles `throw e` to `checkcast java/lang/Throwable; athrow`,
-//! as its `kotlin.Throwable` is the JVM's `java.lang.Throwable`. The cast is
-//! a no-op: Kotlin only throws an expression typed `Throwable`. Vineflower
-//! keeps it and writes `throw IllegalStateException(..) as
-//! java.lang.Throwable`, which Kotlin rejects (`java.lang.Throwable` is not
-//! `kotlin.Throwable` when named). With the fix a thrown cast to
-//! `java/lang/Throwable` of an operand of a class type is written as the
-//! operand alone; an operand typed `Object` (a value of an erased type
-//! variable) keeps the cast.
+//! Fix `kt_throwable_cast`: a thrown cast to `java.lang.Throwable` of an
+//! operand of a class type is written as the operand alone.
 
 use crate::code_type::CodeType;
 use crate::exprent::Exprent;

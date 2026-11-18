@@ -1,7 +1,4 @@
 //! Port of `org/vineflower/kotlin/pass/ReplaceExprentsPass.java`.
-//!
-//! kuna fix `kt_default_args_call`: the calls are replaced knowing the method
-//! they are in (`fixes::kt_default_args::kt_default_args_call::within`).
 
 use crate::exprent::Exprent;
 use crate::k_utils::KUtils;

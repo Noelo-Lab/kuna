@@ -1,10 +1,4 @@
 //! Port of `org/vineflower/kotlin/util/KUtils.java`.
-//!
-//! kuna fix `kt_local_visibility_comment` (`kuna_fixes`): in
-//! `append_visibility`, the note before a local declaration's `internal` is
-//! an inline comment naming the method; Vineflower's is a line comment
-//! (whose text a rename turned into `methodSupplier`) that leaves the
-//! declaration at column 0.
 
 use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;

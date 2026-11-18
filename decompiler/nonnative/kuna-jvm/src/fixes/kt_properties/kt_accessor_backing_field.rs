@@ -1,19 +1,5 @@
-//! kuna fix `kt_accessor_backing_field`: inside a property's own accessor,
-//! the property's backing field is written `field`.
-//!
-//! A getter or setter reads and writes the backing field with `getfield` /
-//! `putfield` (`getstatic` / `putstatic` for an `object`'s or a companion's
-//! property). Vineflower writes such an access as `this.name` (or
-//! `Owner.name`), which in Kotlin is a call of the property's accessor, so a
-//! recompiled getter `get() { return this.limit }` calls itself without end
-//! and a setter `this.limit = value` likewise. Kotlin names the backing field
-//! `field` inside the accessors. While `KProperty` writes an accessor's body,
-//! an access of exactly the backing field (the same field of the class file)
-//! on the accessor's own receiver is written `field`: in the body, its `this`;
-//! in an object or lambda written inside the body, the enclosing instance
-//! (`this@Owner`), which there is the accessor's receiver (`object : Runnable {
-//! override fun run() { field = v } }` came out `this@Acc.x = v`, a call of the
-//! setter that recurses without end).
+//! Fix `kt_accessor_backing_field`: while an accessor's body is written, a read
+//! or store of its property's backing field is written `field`.
 
 use std::cell::RefCell;
 

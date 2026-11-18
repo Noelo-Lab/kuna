@@ -1,66 +1,4 @@
 //! Port of `org/vineflower/kotlin/struct/KConstructor.java`.
-//!
-//! kuna fix `kt_default_args_call` (`kuna_fixes`): a secondary constructor's
-//! delegation through a default-arguments constructor is resugared
-//! (`fixes::kt_default_args::kt_default_args_call::resugar_delegation`).
-//!
-//! kuna fix `kt_default_args_super_call` (`kuna_fixes`): in
-//! `write_primary_constructor`, a supertype call through a default-arguments
-//! constructor is written as a call of the constructor it stands for
-//! (`fixes::kt_delegation_calls::kt_default_args_super_call`), where Vineflower removes only the
-//! marker argument and names a constructor that does not exist.
-//!
-//! kuna fix `kt_vararg_from_metadata`: in `parse`, a parameter gets a vararg
-//! element type only when its metadata has one; Vineflower gives every
-//! constructor parameter one, so every array parameter printed as `vararg`.
-//!
-//! kuna fix `kt_default_args_ctor_descriptor`: in `parse`, the
-//! default-arguments constructor's descriptor is the constructor's own
-//! parameters, then the masks and the marker; Vineflower spells the
-//! parameters from their Kotlin types (and the enum prefix), which misses an
-//! inner class's outer instance, so its defaults were never found.
-//!
-//! kuna fix `kt_abstract_class_constructor`: `parse` reads an abstract
-//! class's constructors too; Vineflower returns before them, so they were
-//! written as functions named after the class.
-//!
-//! kuna fix `kt_constructor_body_after_first_block`: in `stringify`, a
-//! constructor is empty only when its whole body writes nothing
-//! (`fixes::kt_delegation_calls::kt_constructor_body_after_first_block`).
-//!
-//! kuna fix `kt_inline_class_constructor_accessor`: `parse` takes the
-//! constructor an inline-class parameter's synthetic accessor forwards to
-//! (`fixes::kt_constructors::kt_inline_class_constructor_accessor`).
-//!
-//! kuna fix `kt_constructor_default_signature`: `parse` computes a
-//! constructor's JVM descriptor from its parameters when the metadata leaves
-//! it out (`object Unit`), where Vineflower resolves the absent index 0.
-//!
-//! kuna fix `kt_secondary_constructor_line`: in `stringify`, a secondary
-//! constructor without a body ends its line, where Vineflower leaves the
-//! next member or the class's closing brace on it (`: this(n, "n")}`).
-//!
-//! kuna fix `kt_supertype_type_arguments`: `write_primary_constructor` writes
-//! the superclass call's class with its type arguments from the metadata
-//! (`fixes::kt_delegation_calls::kt_supertype_type_arguments`).
-//!
-//! kuna fix `kt_hidden_empty_super_call`: a constructor whose empty
-//! superclass call `hideEmptySuper` removed writes that call: `()` in the
-//! primary constructor's header, nothing in a secondary one (where Vineflower
-//! takes the next statement for the call, or drops an empty constructor).
-//!
-//! kuna fix `kt_empty_primary_constructor`: `write_primary_constructor`
-//! writes `()` for a primary constructor without parameters when the class
-//! has secondary constructors; without it Kotlin reads the class as having no
-//! primary constructor, and a secondary one's `this()` names none.
-//!
-//! kuna fix `kt_data_class_property_parameters`: a data class's primary
-//! constructor declares its properties
-//! (`fixes::kt_constructors::kt_data_class_property_parameters`).
-//!
-//! kuna fix `kt_function_parameter_name`: the body names a parameter without
-//! a local variable table entry as the header does
-//! (`fixes::kt_names::kt_function_parameter_name`).
 
 use std::rc::Rc;
 
@@ -78,14 +16,11 @@ use crate::k_parameter::KParameter;
 use crate::k_type::KType;
 use crate::k_utils::KUtils;
 use crate::key::Key;
-use crate::fixes::kt_delegation_calls::kt_constructor_body_after_first_block;
-use crate::fixes::kt_constructors::kt_data_class_property_parameters;
+use crate::fixes::kt_delegation_calls;
+use crate::fixes::kt_constructors;
 use crate::fixes::kt_default_args::kt_default_args_call;
 use crate::fixes::kt_names::kt_function_parameter_name;
 use crate::fixes::kt_delegation_calls::kt_default_args_super_call;
-use crate::fixes::kt_delegation_calls::kt_hidden_empty_super_call;
-use crate::fixes::kt_constructors::kt_inline_class_constructor_accessor;
-use crate::fixes::kt_delegation_calls::kt_supertype_type_arguments;
 use crate::fixes::kt_java_syntax::kt_java_reference_cast;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::kotlin_options::KotlinOptions;
@@ -247,7 +182,7 @@ impl KConstructor {
 
             let method = match kuna_fixes::enabled(KunaFix::KtInlineClassConstructorAccessor)
                 .then(|| {
-                    kt_inline_class_constructor_accessor::real_constructor(
+                    kt_constructors::real_constructor(
                         class_struct,
                         method,
                     )
@@ -268,6 +203,7 @@ impl KConstructor {
             let is_primary = !Flags::IS_SECONDARY.get(flags);
 
             let mut default_args_desc = String::from("(");
+            // the Kotlin types miss an inner class's outer instance
             if kuna_fixes::enabled(KunaFix::KtDefaultArgsCtorDescriptor) {
                 for param in method.method_descriptor().params.iter() {
                     default_args_desc.push_str(&param.to_string());
@@ -392,7 +328,7 @@ impl KConstructor {
             && kuna_fixes::enabled(KunaFix::KtDataClassPropertyParameters))
         .then(|| {
             let method_wrapper = self.method_wrapper(wrapper);
-            kt_data_class_property_parameters::plan(
+            kt_constructors::plan(
                 self.class_struct,
                 self.class_flags,
                 self.method_struct.expect("NullPointerException: methodStruct"),
@@ -413,9 +349,9 @@ impl KConstructor {
             let header = declared
                 .as_ref()
                 .and_then(|plan| plan[i])
-                .and_then(kt_data_class_property_parameters::property)
+                .and_then(kt_constructors::property)
                 .and_then(|property| {
-                    kt_data_class_property_parameters::header(
+                    kt_constructors::header(
                         &property,
                         wrapper,
                         indent + 1,
@@ -499,7 +435,7 @@ impl KConstructor {
 
             let exprents = KConstructor::first_node(method_wrapper).exprents();
             let hidden_super = kuna_fixes::enabled(KunaFix::KtHiddenEmptySuperCall)
-                && kt_hidden_empty_super_call::hidden_call(method_wrapper).is_some();
+                && kt_delegation_calls::hidden_call(method_wrapper).is_some();
             if hidden_super {
                 buf.append(")");
             } else {
@@ -553,7 +489,7 @@ impl KConstructor {
                 .is_empty()
                 && kuna_fixes::enabled(KunaFix::KtConstructorBodyAfterFirstBlock)
             {
-                rendered = kt_constructor_body_after_first_block::body(|| {
+                rendered = kt_delegation_calls::nonempty_body(|| {
                     self.render_body(root, indent, method_wrapper)
                 });
             }
@@ -694,7 +630,7 @@ impl KConstructor {
         let method_wrapper = self.method_wrapper(wrapper);
 
         let hidden = kuna_fixes::enabled(KunaFix::KtHiddenEmptySuperCall)
-            .then(|| kt_hidden_empty_super_call::hidden_call(method_wrapper))
+            .then(|| kt_delegation_calls::hidden_call(method_wrapper))
             .flatten();
         let invocation = match hidden {
             Some(invocation) => invocation,
@@ -731,7 +667,7 @@ impl KConstructor {
 
         buf.append(super_class.as_deref().unwrap_or("null"));
         if kuna_fixes::enabled(KunaFix::KtSupertypeTypeArguments) {
-            if let Some(arguments) = kt_supertype_type_arguments::type_arguments(
+            if let Some(arguments) = kt_delegation_calls::type_arguments(
                 self.class_struct,
                 &invocation.get_classname(),
                 indent,

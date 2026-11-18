@@ -1,50 +1,9 @@
-//! kuna fix `kt_raw_generic_type` (spec 10.16): in Kotlin output, a generic
-//! class is written with type arguments.
-//!
-//! Kotlin has no raw types, but Vineflower writes a local's declared type
-//! from its JVM type, and kotlinc writes no LocalVariableTypeTable: `val
-//! pins: java.util.List = findMatchingPins(host)`, `val i: java.util.Iterator
-//! = set.iterator()`, `val ref: ObjectRef = ObjectRef()`. A type test and a
-//! cast of a generic class are written raw too (`x is java.util.Collection`).
-//! kotlinc rejects each ("one type argument expected"), and every member
-//! read through such a local after it (`i.next()`, `ref.element`).
-//!
-//! With the fix the Kotlin plugin types each local whose class is generic
-//! (a JDK or Kotlin class it knows, or a class whose `Signature` attribute
-//! declares type parameters; function types aside) with the arguments the
-//! class file proves: those of the values stored into it (the callee's
-//! generic signature, as Vineflower infers a call's type, while the method's
-//! parameters and its other typed locals have their generic types), else of
-//! how it is used (the parameter and return types and the typed locals it
-//! is passed to, then the nearest common class of the elements `add`ed or
-//! `put` into it, or the class a read of an element is cast to). A type
-//! variable of a callee is not the method's, and a generic method's result
-//! Vineflower types `Object` proves nothing. A local whose arguments nothing
-//! proves, which is not constructed, passed or written through (a call that
-//! takes one of its class's type parameters), is declared with star
-//! projections, `Iterator<*>`, which only reads; one whose evidence
-//! disagrees stays raw. A `Ref.ObjectRef` (a captured `var`) is
-//! `ObjectRef<Any?>`: kotlinc casts each read of its `element` to the
-//! variable's type where that is narrower, and the casts are written. A
-//! Kotlin collection interface is declared read-only (`List<T>`) unless the
-//! method mutates through the local, a view of it or a copy (`add`, an
-//! iterator's `remove`), as `MutableList<T>`.
-//!
-//! A cast of a raw generic class is written with the arguments of the local
-//! it is stored into or reads, of the method's return type it is returned
-//! as, or of its operand's generic type, else with star projections; a type
-//! test always with star projections; both by Kotlin's read-only names
-//! (`x is Collection<*>`, also for a generic cast Vineflower writes
-//! `MutableMap<K, V>`), which compile to the same `instanceof`/`checkcast`
-//! (the `Mutable` names call `TypeIntrinsics`). A cast the typed locals make
-//! redundant is left out: of `null` or of a constructor call stored into a
-//! declaration (kotlinc's checkcast after `mutableListOf()`), and of an
-//! element read from a typed local to the element's class (kotlinc's
-//! checkcast of a generic result, which the typed read compiles to again).
-//! Vineflower's own inference sees the types only while the locals are
-//! typed (a `Ref`'s always, so a store into its `element` needs no cast to
-//! `T`), so its casts elsewhere are unchanged. Type arguments do not change
-//! what the code does at run time.
+//! Fix `kt_raw_generic_type`: a local of a generic class is typed with the type
+//! arguments the class file proves (from what is stored into it, else how it is
+//! used), with star projections when nothing proves them and it is only read,
+//! and read-only collection names unless it is mutated; casts and type tests of
+//! raw classes get arguments or star projections, and casts the typed locals
+//! make redundant are left out.
 
 use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
@@ -56,10 +15,10 @@ use crate::function_exprent::FunctionType;
 use crate::generic_type::GenericType;
 use crate::k_var_exprent::DeclarationType;
 use crate::root_statement::RootStatement;
-use crate::statement::Statement;
 use crate::struct_method::StructMethod;
 use crate::var_processor::{KunaLocalType, VarProcessor};
 use crate::var_type::VarType;
+use crate::fixes::kt_util::for_each_exprent;
 
 /// The JDK and Kotlin classes Kotlin source names with type arguments, and
 /// their arities; a class of the input (or a library) answers from its
@@ -315,7 +274,7 @@ pub fn infer(root: RootStatement, method: StructMethod, processor: VarProcessor)
         read_casts: Vec::new(),
         return_type: method.get_signature().and_then(|s| s.return_type()),
     };
-    walk.stat(root.0);
+    for_each_exprent(root.0, &mut |e| walk.visit(e));
     let scope = type_parameters_in_scope(method);
     for (slot, t) in parameter_types(method) {
         processor.set_kuna_typed(slot, local_type(t, false, Vec::new()));
@@ -1223,20 +1182,6 @@ struct Walk {
 }
 
 impl Walk {
-    fn stat(&mut self, stat: Statement) {
-        let mut lists: Vec<Exprent> = stat.get_var_definitions().to_vec();
-        lists.extend(stat.get_stat_exprents());
-        if let Some(exprents) = stat.get_exprents() {
-            lists.extend(exprents.to_vec());
-        }
-        for expr in lists {
-            self.visit(expr);
-        }
-        for child in stat.get_stats().borrow().to_vec() {
-            self.stat(child);
-        }
-    }
-
     fn local(&mut self, index: i32) -> &mut Local {
         self.locals.entry(index).or_default()
     }

@@ -1,13 +1,7 @@
-//! kuna fix `kt_default_args_super_call` (`kuna_fixes`): a primary
-//! constructor's supertype call that goes through the superclass's
-//! default-arguments constructor (`<init>(P1..Pn, int mask.., DefaultConstructorMarker)`)
-//! becomes a call of the constructor it stands for, `<init>(P1..Pn)`, with the
-//! arguments the mask defaults left out. Vineflower removes only the marker, so
-//! the call names a constructor the class does not have. The masks number
-//! the value parameters, which for an inner superclass follow the outer
-//! instance. Where leaving out trailing arguments is not enough (a default
-//! before a passed argument, or another constructor that would take the
-//! arguments left), the passed arguments are written by name.
+//! Fix `kt_default_args_super_call`: a supertype call through the superclass's
+//! default-arguments constructor becomes a call of the constructor it stands
+//! for, leaving out the arguments the masks default, or naming the passed ones
+//! where leaving out trailing arguments would call another constructor.
 
 use crate::code_constants::{ACC_SYNTHETIC, ACC_VARARGS};
 use crate::decompiler_context::DecompilerContext;
@@ -21,6 +15,7 @@ use crate::kt_flags::Flags;
 use crate::method_descriptor::MethodDescriptor;
 use crate::struct_class::StructClass;
 use crate::var_type::VarType;
+use crate::fixes::kt_util::int_constant;
 
 const MARKER: &str = "Lkotlin/jvm/internal/DefaultConstructorMarker;";
 
@@ -209,14 +204,6 @@ pub fn trailing_defaults(masks: &[i32], n: usize) -> Option<usize> {
     let passed = (0..n).find(|&i| defaulted(i)).unwrap_or(n);
     let beyond = (n..masks.len() * 32).any(defaulted);
     (passed < n && (passed..n).all(defaulted) && !beyond).then_some(passed)
-}
-
-fn int_constant(expr: Exprent) -> Option<i32> {
-    let value = expr.try_as_const()?.get_value()?;
-    match value {
-        crate::const_exprent::ConstValue::Int(v) => Some(v),
-        _ => None,
-    }
 }
 
 /// The value parameters of every constructor in the superclass's Kotlin

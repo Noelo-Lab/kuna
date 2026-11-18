@@ -1,32 +1,7 @@
-//! kuna fix `kt_delegation_call_arguments`: a constructor's delegation call
-//! whose arguments kotlinc computed before a null check is written with
-//! them in the call.
-//!
-//! kotlinc checks a value of a platform type passed where a non-null one is
-//! expected right after computing it (`dup`, then
-//! `Intrinsics.checkNotNullExpressionValue`, Kotlin 1.3's
-//! `checkExpressionValueIsNotNull`). In a constructor that computes an
-//! argument of its `this(..)`/`super(..)` call that way, the check ends a
-//! statement with the call's receiver and arguments on the stack, so
-//! `ExprProcessor` stores them in stack variables, and `SimplifyStack`,
-//! which sees two uses of the checked one, leaves them: `val var10001 =
-//! Pattern.compile(pattern); this(var10001)`. `ResugarKotlinMethodsPass`
-//! then drops the check (Kotlin 1.4's name; 1.3's stays) and the variable
-//! stays. Kotlin has no statements before a constructor's delegation:
-//! `KConstructor` takes the first statement for the call, a secondary
-//! constructor is written `constructor(pattern: String)  {` with the call in
-//! its body, a primary one's call goes into an `init` block. Before the pass
-//! drops the checks, the stack variables defined before the delegation call
-//! in the constructor's first block are put back into the call when that
-//! computes the same values in the same order: each is used once apart from
-//! the checks, as an argument of the call, the arguments in the order of
-//! their definitions; every argument before one of them is a variable or a
-//! constant, which the computations do not assign; each check follows its
-//! variable's definition, and the parameter checks come first. The checks
-//! of those variables are dropped: kotlinc makes the same check of the
-//! expression passed in the call. What precedes the call afterwards is
-//! parameter checks only, which the pass drops (fix
-//! `kt_legacy_constructor_parameter_checks` for Kotlin 1.3's).
+//! Fix `kt_delegation_call_arguments`: the stack variables a constructor
+//! defines before its delegation call (values kotlinc null-checked) are put
+//! back into the call when that computes the same values in the same order,
+//! and their checks are dropped.
 
 use crate::const_exprent::ConstValue;
 use crate::exprent::Exprent;
@@ -36,14 +11,7 @@ use crate::pass_context::PassContext;
 use crate::statements::Statements;
 use crate::var_exprent::VarExprent;
 use crate::var_version_pair::VarVersionPair;
-
-const INTRINSICS: &str = "kotlin/jvm/internal/Intrinsics";
-const CHECK_DESCRIPTOR: &str = "(Ljava/lang/Object;Ljava/lang/String;)V";
-const PARAMETER_CHECKS: [&str; 2] = ["checkNotNullParameter", "checkParameterIsNotNull"];
-const EXPRESSION_CHECKS: [&str; 2] = [
-    "checkNotNullExpressionValue",
-    "checkExpressionValueIsNotNull",
-];
+use crate::fixes::kt_util::{CHECK_DESCRIPTOR, EXPRESSION_CHECKS, INTRINSICS, PARAMETER_CHECKS};
 
 /// What a statement before the delegation call is.
 enum Before {

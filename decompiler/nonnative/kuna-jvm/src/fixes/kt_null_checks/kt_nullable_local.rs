@@ -1,26 +1,7 @@
-//! kuna fix `kt_nullable_local` (spec 10.16): a Kotlin local that the method
-//! stores a nullable value into is declared with a nullable type.
-//!
-//! Vineflower writes a local's declared type from its JVM type, never with a
-//! `?`, so a local that holds a nullable value (`var s: Segment = this.head`,
-//! `head` a `Segment?`; `var10000 = null`) is declared non-null and kotlinc
-//! rejects the store. A store's value may be null when it is the `null`
-//! constant; a field, a call or a parameter whose Kotlin type is nullable
-//! (the member's `@Nullable` annotation, else the owner's metadata); a
-//! mapped `Map.get`/`put`/`remove`, which Kotlin types `V?`; or a local that
-//! may hold null. A cast or an `if` expression passes its operands'
-//! nullability on; `x!!`, `new` and the other constants are non-null. A store
-//! that re-reads the value a null check of the enclosing `if` or `if`
-//! expression just tested (`if (this.head != null) { val h = this.head`) is
-//! non-null: the bytecode checked that value. A local any other store of
-//! which may be null is declared `T?`; kotlinc smart-casts its uses after
-//! the method's own null checks. Which value and which call are unchanged.
-//! With fix `kt_raw_generic_type`, an element read through a local that fix
-//! typed with a star-projected or nullable argument may be null too. With
-//! fix `kt_suspend_call_continuation`, in the body of a suspend function a
-//! suspend call's result is as nullable as its callee's metadata declares:
-//! kotlinc annotates the `Object` the method returns (the value or the
-//! suspension marker) `@Nullable`.
+//! Fix `kt_nullable_local`: a local is declared `T?` when a store into it may
+//! be null (the `null` constant, a nullable field, call or parameter, a mapped
+//! `Map` lookup, a nullable local), except a store of the value a null check of
+//! the enclosing `if` just tested.
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
@@ -50,6 +31,7 @@ use crate::struct_class::StructClass;
 use crate::struct_member::StructMember;
 use crate::struct_method::StructMethod;
 use crate::type_family::TypeFamily;
+use crate::fixes::kt_util::SUSPEND_DESCRIPTOR_END;
 
 const NOT_NULL: &str = "org/jetbrains/annotations/NotNull";
 const NULLABLE: &str = "org/jetbrains/annotations/Nullable";
@@ -94,8 +76,11 @@ struct Store {
 /// Marks the definitions under `root` of the locals that may hold null.
 pub fn infer(root: RootStatement, method: StructMethod) {
     LOOKUPS.with(|l| l.borrow_mut().clear());
-    let _suspend_body = kt_suspend_call_continuation::enter_body(method);
-    let params = parameter_nullability(method);
+    let suspend_body = kt_suspend_call_continuation::is_suspend_body(method);
+    let params = Method {
+        params: parameter_nullability(method),
+        suspend_body,
+    };
     let mut walk = Walk {
         params: &params,
         casts: Vec::new(),
@@ -170,8 +155,16 @@ pub fn infer(root: RootStatement, method: StructMethod) {
 
 /// The stores and definitions of a method body in execution order, with the
 /// values (locals, fields) its null checks have found non-null on the way.
+/// What the stores' nullability depends on in the method being typed: its
+/// parameters' nullability by variable index, and whether it is a suspend
+/// function's body, whose suspend calls return what their metadata declares.
+struct Method {
+    params: BTreeMap<i32, bool>,
+    suspend_body: bool,
+}
+
 struct Walk<'a> {
-    params: &'a BTreeMap<i32, bool>,
+    params: &'a Method,
     casts: Vec<Store>,
     uses: Vec<Exprent>,
     derefs: Vec<Exprent>,
@@ -518,7 +511,7 @@ fn may_be_null(
     value: Exprent,
     checked: &[Exprent],
     nullable: &BTreeSet<i32>,
-    params: &BTreeMap<i32, bool>,
+    params: &Method,
 ) -> Option<bool> {
     if checked.iter().any(|c| same(*c, value)) {
         return Some(false);
@@ -536,7 +529,7 @@ fn may_be_null(
             if nullable.contains(&index) {
                 Some(true)
             } else {
-                params.get(&index).copied()
+                params.params.get(&index).copied()
             }
         }
         ExprentType::Field => {
@@ -561,7 +554,7 @@ fn may_be_null(
                 inv.get_string_descriptor(),
             );
             looked_up(false, &owner, &name, &desc, || {
-                method_nullability(&owner, &name, &desc)
+                method_nullability(&owner, &name, &desc, params.suspend_body)
             })
         }
         ExprentType::Assignment => {
@@ -754,7 +747,7 @@ fn field_nullability(owner: &str, name: &str, desc: &str) -> Option<bool> {
 
 /// The Kotlin nullability of what the method `owner.name desc` returns,
 /// looked up in `owner` and its supertypes.
-fn method_nullability(owner: &str, name: &str, desc: &str) -> Option<bool> {
+fn method_nullability(owner: &str, name: &str, desc: &str, suspend_body: bool) -> Option<bool> {
     let ret = &desc[desc.find(')')? + 1..];
     if !ret.starts_with('L') && !ret.starts_with('[') {
         return Some(false);
@@ -772,8 +765,8 @@ fn method_nullability(owner: &str, name: &str, desc: &str) -> Option<bool> {
             continue;
         };
         if let Some(method) = cl.get_method(name, desc) {
-            let suspend = kt_suspend_call_continuation::in_body()
-                && desc.ends_with("Lkotlin/coroutines/Continuation;)Ljava/lang/Object;")
+            let suspend = suspend_body
+                && desc.ends_with(SUSPEND_DESCRIPTOR_END)
                 && {
                     KotlinChooser::parse_metadata_for(cl);
                     matches!(KtAttrs::get(method, &KElement::KEY()),

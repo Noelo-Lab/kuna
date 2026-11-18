@@ -1,20 +1,7 @@
-//! kuna fix `kt_jump_to_non_loop_label` (`kuna_fixes`): a jump out of a
-//! statement that Kotlin output writes as a lambda is a `return` from that
-//! lambda, and a labelled `if` that is jumped out of is written as one.
-//!
-//! Java labels any statement (`label5: { .. break label5; .. }`); Kotlin's
-//! `break@label`/`continue@label` need a loop. Vineflower writes a labelled
-//! sequence as `run labelN@{ .. }` and leaves it with `return@labelN`, but it
-//! writes a labelled `if` as `labelN@ if (..)` and leaves it with
-//! `break@labelN`, and it writes `break@labelN` for a labelled `switch` and
-//! for a `for` loop it cannot resugar, which it also wraps in
-//! `run labelN@{ .. }`, and `continue@labelN` for a loop it writes as
-//! `repeat(n) labelN@{ .. }`. Kotlin rejects each. kuna writes a labelled
-//! `if` that a written jump leaves as `run labelN@{ if (..) { .. } }`, a
-//! `break` out of a statement written as `run` as `return@labelN` (the
-//! lambda's end is the statement's end), and a `continue` of a `repeat`
-//! loop as `return@labelN` (or `return@repeat`), which ends the iteration.
-//! `run` and `repeat` are inline, so the lambdas cost nothing at run time.
+//! Fix `kt_jump_to_non_loop_label`: the statements Kotlin output writes as a
+//! lambda (`run labelN@{ .. }`, `repeat`) are kept on a stack while written, so
+//! a jump out of one is `return@labelN` and a labelled `if` jumped out of is
+//! wrapped in `run`.
 
 use std::cell::RefCell;
 

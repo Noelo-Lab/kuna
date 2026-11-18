@@ -1,25 +1,6 @@
-//! kuna fix `kt_suspend_impl` (spec 10.16): in Kotlin output, an open
-//! suspend function of a class is written with its body, not as a call of
-//! kotlinc's `$suspendImpl` method.
-//!
-//! kotlinc compiles the body of an open (overridable) suspend member `foo`
-//! into a static synthetic method `foo$suspendImpl(this, args..,
-//! continuation)` of the same class and makes `foo` itself only call it, so
-//! that a subclass calling `super.foo(..)` reaches the body through the
-//! continuation machinery without dispatching to its own override.
-//! Vineflower hides the synthetic method and writes `foo` as `return
-//! foo$suspendImpl(this, ..)`: the function loses its body and calls a
-//! method that Kotlin has no name for. With the fix `foo` is written with the
-//! body of `foo$suspendImpl`, which is the source's: its parameters sit in
-//! the same slots (`this`, then `foo`'s), its first parameter is written
-//! `this`, and it counts as a suspend function for the rebuild of its state
-//! machine and its calls (fixes `kt_suspend_state_machine` and
-//! `kt_suspend_call_continuation`). The method is recognised as the
-//! `$suspendImpl` of `foo` by its name (`foo`'s Kotlin name, which the JVM
-//! name of an `internal` function mangles, or its JVM name, which keeps an
-//! inline-class mangling), its static and synthetic flags
-//! and its descriptor (`foo`'s with the class prepended), `foo` by its
-//! metadata (`suspend`) and by its body being exactly the call.
+//! Fix `kt_suspend_impl`: an open suspend member that only calls its
+//! `$suspendImpl` method is written with that method's body, its first
+//! parameter named `this`.
 
 use std::cell::RefCell;
 
@@ -28,7 +9,7 @@ use crate::code_constants::{ACC_STATIC, ACC_SYNTHETIC};
 use crate::decompiler_context::DecompilerContext;
 use crate::exit_exprent::Type as ExitType;
 use crate::k_element::KElement;
-use crate::fixes::kt_extensions::kt_extension_receiver;
+use crate::fixes::kt_extensions;
 use crate::kt_attrs::KtAttrs;
 use crate::kt_flags::Flags;
 use crate::method_wrapper::MethodWrapper;
@@ -37,9 +18,9 @@ use crate::statement::Statement;
 use crate::struct_method::StructMethod;
 use crate::var_exprent::VarExprent;
 use crate::var_processor::VarProcessor;
+use crate::fixes::kt_util::SUSPEND_DESCRIPTOR_END;
 
 const SUFFIX: &str = "$suspendImpl";
-const SUSPEND_DESCRIPTOR_END: &str = "Lkotlin/coroutines/Continuation;)Ljava/lang/Object;";
 
 /// The suspend member whose body `mt`, a `$suspendImpl` method, holds.
 pub fn member_of(mt: StructMethod) -> Option<StructMethod> {
@@ -162,7 +143,7 @@ pub fn name(var: VarExprent) -> Option<String> {
                 return Some("this".to_string());
             }
             let cl = DecompilerContext::get_struct_context().get_class(&processor.get_method().get_class_qualified_name())?;
-            return kt_extension_receiver::class_label(cl).map(|label| format!("this@{label}"));
+            return kt_extensions::class_label(cl).map(|label| format!("this@{label}"));
         }
         at = processor.get_captured_source(pair)?;
     }

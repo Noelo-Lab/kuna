@@ -1,45 +1,8 @@
-//! kuna fix `kt_suspend_state_machine` (spec 10.16): in Kotlin output, a
-//! suspend function is written with the body its source had, not as the
-//! coroutine state machine kotlinc compiled it to.
-//!
-//! kotlinc lowers a suspend function that suspends to a state machine: an
-//! entry that reuses its continuation object (`$completion is` the
-//! function's `ContinuationImpl` subclass with the `label` sign bit set) or
-//! creates one, reads `result` and `COROUTINE_SUSPENDED`, and dispatches on
-//! `label`; before each suspension point the live locals are spilled into
-//! the continuation's fields (`L$0`, `I$0`, `J$0`, ..) and `label` is set to
-//! the point's number, the callee gets the continuation, and a result that is
-//! `COROUTINE_SUSPENDED` is returned; the dispatch resumes at the code after
-//! the call, which restores the locals, calls `ResultKt.throwOnFailure` on
-//! the resumed `result` and continues with it as the call's value. The
-//! resumed path recreates the frame the direct path has after the call (that
-//! is what kotlinc's transformation guarantees), so the direct path alone is
-//! the source's body. Vineflower prints the machine, which Kotlin cannot
-//! express (`$completion`, the continuation type, `label`, the spill fields).
-//!
-//! The fix recognises the machine instruction by instruction (the entry,
-//! the dispatch with its `call to 'resume' before 'invoke'` default, and for
-//! each label a suspension point: the spill and label stores and
-//! `InlineMarker` no-ops before a call whose last argument is the
-//! continuation, the `COROUTINE_SUSPENDED` check and return after it, and a
-//! resume block made only of restores, `nop`s and the `throwOnFailure` of
-//! `result` followed by `result` itself, unboxed when the call returns an
-//! inline class the direct path gets unboxed), and requires the continuation,
-//! `result` and the marker to be used nowhere else (copies of the
-//! continuation that only suspend calls and `getContext()` read count as
-//! the continuation) and every exception handler of a resume block's
-//! `throwOnFailure` to be the call's. It then rewrites the method's graph
-//! into the direct path: the entry is the code of label 0, the spill, label
-//! and copy stores and the check are gone, each call passes `$completion`
-//! (the Kotlin writer leaves it out, fix `kt_suspend_call_continuation`) and
-//! flows into the code after it, the resume blocks are dead, and the parts
-//! of a `try` range kotlinc split at a suspension point are one range again.
-//! The same check after a call in tail position of a function without a
-//! machine (`return if (r === COROUTINE_SUSPENDED) r else Unit`) is removed
-//! too. Any other shape (a continuation used by inlined code, as
-//! `suspendCoroutineUninterceptedOrReturn` uses it) keeps Vineflower's form.
-//! The fix applies to functions the metadata declares `suspend`, the ones
-//! the writer prints with `suspend` and without the continuation parameter.
+//! Fix `kt_suspend_state_machine`: the control-flow graph of a suspend
+//! function's coroutine state machine is rewritten into its direct path before
+//! the graph passes: the dispatch, spills, label stores, suspension checks and
+//! resume blocks are removed and each suspension point joined to the code after
+//! it; a machine whose continuation other code uses is left as it is.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
@@ -53,7 +16,7 @@ use crate::instruction::Instruction;
 use crate::k_element::KElement;
 use crate::key::Key;
 use crate::fixes::kt_suspend::kt_suspend_impl;
-use crate::fixes::kt_suspend::kt_suspend_without_metadata;
+use crate::fixes::kt_suspend;
 use crate::kotlin_chooser::KotlinChooser;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::kt_attrs::KtAttrs;
@@ -62,9 +25,9 @@ use crate::method_descriptor::MethodDescriptor;
 use crate::primitive_constant::ConstValue;
 use crate::struct_class::StructClass;
 use crate::struct_method::StructMethod;
+use crate::fixes::kt_util::SUSPEND_DESCRIPTOR_END;
+use super::CONTINUATION;
 
-const CONTINUATION: &str = "Lkotlin/coroutines/Continuation;";
-pub(crate) const CONTINUATION_CLASS: &str = "kotlin/coroutines/Continuation";
 const INTRINSICS: &str = "kotlin/coroutines/intrinsics/IntrinsicsKt";
 const SUSPENDED: &str = "getCOROUTINE_SUSPENDED";
 pub(crate) const RESUME_ERROR: &str = "call to 'resume' before 'invoke' with coroutine";
@@ -97,7 +60,7 @@ pub struct Plan {
 /// suspend calling convention is read here, before its methods are
 /// written, where the writer would read it.
 pub fn rebuild(graph: ControlFlowGraph, mt: StructMethod, cl: StructClass) -> bool {
-    if mt.get_descriptor().ends_with(&format!("{CONTINUATION})Ljava/lang/Object;")) {
+    if mt.get_descriptor().ends_with(SUSPEND_DESCRIPTOR_END) {
         KotlinChooser::parse_metadata_for(cl);
     }
     let Some(completion) = completion_slot(mt) else {
@@ -156,7 +119,7 @@ pub fn completion_slot(mt: StructMethod) -> Option<i32> {
         Some(KElement::Function(function)) => Flags::IS_SUSPEND.get(function.flags),
         _ => {
             (kuna_fixes::enabled(KunaFix::KtSuspendWithoutMetadata)
-                && kt_suspend_without_metadata::overridden(mt).is_some())
+                && kt_suspend::overridden(mt).is_some())
                 || (kuna_fixes::enabled(KunaFix::KtSuspendImpl) && kt_suspend_impl::member_of(mt).is_some())
         }
     };
@@ -164,7 +127,7 @@ pub fn completion_slot(mt: StructMethod) -> Option<i32> {
         return None;
     }
     let descriptor = mt.get_descriptor();
-    if !descriptor.ends_with(&format!("{CONTINUATION})Ljava/lang/Object;")) {
+    if !descriptor.ends_with(SUSPEND_DESCRIPTOR_END) {
         return None;
     }
     let md = MethodDescriptor::parse_descriptor(&descriptor);
@@ -258,13 +221,13 @@ impl Code {
         insn.group() == GROUP_INVOCATION
             && insn.opcode() != OPC_INVOKEDYNAMIC
             && self.member(i).is_some_and(|(owner, name, d)| {
-                d.ends_with(&format!("{CONTINUATION})Ljava/lang/Object;"))
+                d.ends_with(SUSPEND_DESCRIPTOR_END)
                     || is_function_invoke(&owner, &name, &d)
             })
     }
 
     pub(crate) fn is_continuation_cast(&self, i: usize) -> bool {
-        self.class(i, OPC_CHECKCAST).as_deref() == Some(CONTINUATION_CLASS)
+        self.class(i, OPC_CHECKCAST).as_deref() == Some(CONTINUATION)
     }
 
     /// `InlineMarker.mark(n)`, the no-op kotlinc leaves around a suspend
@@ -378,7 +341,7 @@ fn plan_machine(code: &Code, completion: i32) -> Result<Plan, Refusal> {
     require(
         owner == class
             && name == "<init>"
-            && descriptor.ends_with(&format!("{CONTINUATION})V"))
+            && descriptor.ends_with("Lkotlin/coroutines/Continuation;)V")
             && MethodDescriptor::parse_descriptor(&descriptor).params.len() == 1 + usize::from(outer)
             && code.is_local(i + 2, OPC_ASTORE, cont)
             && main_at == i + 3,
@@ -459,77 +422,18 @@ fn plan_machine(code: &Code, completion: i32) -> Result<Plan, Refusal> {
         } else if code.is_continuation_cast(i + 1) && code.is(i + 2, OPC_POP) {
             plan.removed.extend([i, i + 1, i + 2]);
             owned.extend([i, i + 1, i + 2]);
-        } else if code.is_member(i + 1, OPC_INVOKEINTERFACE, CONTINUATION_CLASS, "getContext") {
+        } else if code.is_member(i + 1, OPC_INVOKEINTERFACE, CONTINUATION, "getContext") {
             plan.completion_loads.insert(i);
             owned.insert(i);
         }
     }
 
-    let mut seen: BTreeSet<usize> = BTreeSet::new();
-    for k in 1..code.insns.len().saturating_sub(4) {
-        if !(code.is(k, OPC_DUP)
-            && code.is_local(k + 1, OPC_ALOAD, machine.marker)
-            && code.is(k + 2, OPC_IF_ACMPNE)
-            && code.is_local(k + 3, OPC_ALOAD, machine.marker)
-            && code.is(k + 4, OPC_ARETURN))
-        {
-            continue;
-        }
-        let mut call = k - 1;
-        while call >= 2 && code.is_inline_marker(call - 1) {
-            plan.removed.extend([call - 1, call]);
-            owned.extend([call - 1, call]);
-            call -= 2;
-        }
-        let &(label, failure, after) = resumes.get(&(k + 5)).ok_or("check without resume block")?;
-        require(code.is_suspend_call(call), "suspension point is not a call")?;
-        require(seen.insert(label) && code.jump(k + 2) == after, "resume block")?;
-        let mut j = call;
-        let mut label_stored = false;
-        loop {
-            if j >= 2 && code.is_inline_marker(j - 2) {
-                plan.removed.extend([j - 2, j - 1]);
-                owned.extend([j - 2, j - 1]);
-                j -= 2;
-                continue;
-            }
-            if !(j >= 3
-                && code.is_local(j - 3, OPC_ALOAD, machine.cont)
-                && code.is(j - 1, OPC_PUTFIELD)
-                && code
-                    .member(j - 1)
-                    .is_some_and(|(owner, _, _)| owner == machine.class))
-            {
-                break;
-            }
-            let (_, field, _) = code.member(j - 1).ok_or("spill")?;
-            if field == "label" {
-                require(!label_stored && code.int_constant(j - 2) == Some(label as i32), "label store")?;
-                label_stored = true;
-            } else {
-                require(
-                    field != "result" && (code.is_load(j - 2) || code.is(j - 2, OPC_ACONST_NULL)),
-                    "spill",
-                )?;
-            }
-            plan.removed.extend([j - 3, j - 2, j - 1]);
-            owned.extend([j - 3, j - 2, j - 1]);
-            j -= 3;
-        }
-        require(label_stored, "label store")?;
+    suspension_points(code, &machine, &resumes, labels, |_| true, &mut plan, &mut owned, |j, plan, owned| {
         require(j > 0 && holds_cont(j - 1), "continuation is not the call's last argument")?;
-        require(
-            code.handlers_of(call) == code.handlers_of(failure),
-            "resumed failure has other handlers",
-        )?;
         plan.completion_loads.insert(j - 1);
         owned.insert(j - 1);
-        plan.removed.extend([k, k + 1, k + 2]);
-        owned.extend(k..k + 5);
-        plan.checks.push((k + 2, k + 3));
-        plan.joins.push((call, after));
-    }
-    require(seen.len() == labels - 1, "resume block without suspension call")?;
+        Ok(())
+    })?;
 
     for i in 0..code.insns.len() {
         if owned.contains(&i) {
@@ -586,6 +490,89 @@ fn continuation_aliases(
     }
     Ok(aliases)
 }
+
+/// Recognises the suspension points of `machine` in `code`: a suspend call
+/// whose result is returned when it is the marker, after the stores of the
+/// label and of the spilled locals (fields `spill` accepts) and the
+/// continuation argument, which `continuation` takes from the instructions
+/// before index `j`; one point per resume block of `resumes`.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn suspension_points(
+    code: &Code,
+    machine: &Machine,
+    resumes: &BTreeMap<usize, (usize, usize, usize)>,
+    labels: usize,
+    spill: impl Fn(&str) -> bool,
+    plan: &mut Plan,
+    owned: &mut BTreeSet<usize>,
+    mut continuation: impl FnMut(usize, &mut Plan, &mut BTreeSet<usize>) -> Result<(), Refusal>,
+) -> Result<(), Refusal> {
+    let mut seen: BTreeSet<usize> = BTreeSet::new();
+    for k in 1..code.insns.len().saturating_sub(4) {
+        if !(machine.marker >= 0
+            && code.is(k, OPC_DUP)
+            && code.is_local(k + 1, OPC_ALOAD, machine.marker)
+            && code.is(k + 2, OPC_IF_ACMPNE)
+            && code.is_local(k + 3, OPC_ALOAD, machine.marker)
+            && code.is(k + 4, OPC_ARETURN))
+        {
+            continue;
+        }
+        let mut call = k - 1;
+        while call >= 2 && code.is_inline_marker(call - 1) {
+            plan.removed.extend([call - 1, call]);
+            owned.extend([call - 1, call]);
+            call -= 2;
+        }
+        let &(label, failure, after) = resumes.get(&(k + 5)).ok_or("check without resume block")?;
+        require(code.is_suspend_call(call), "suspension point is not a call")?;
+        require(seen.insert(label) && code.jump(k + 2) == after, "resume block")?;
+        let mut j = call;
+        let mut label_stored = false;
+        loop {
+            if j >= 2 && code.is_inline_marker(j - 2) {
+                plan.removed.extend([j - 2, j - 1]);
+                owned.extend([j - 2, j - 1]);
+                j -= 2;
+                continue;
+            }
+            if !(j >= 3
+                && code.is_local(j - 3, OPC_ALOAD, machine.cont)
+                && code.is(j - 1, OPC_PUTFIELD)
+                && code
+                    .member(j - 1)
+                    .is_some_and(|(owner, field, _)| owner == machine.class && spill(&field)))
+            {
+                break;
+            }
+            let (_, field, _) = code.member(j - 1).ok_or("spill")?;
+            if field == "label" {
+                require(!label_stored && code.int_constant(j - 2) == Some(label as i32), "label store")?;
+                label_stored = true;
+            } else {
+                require(
+                    field != "result" && (code.is_load(j - 2) || code.is(j - 2, OPC_ACONST_NULL)),
+                    "spill",
+                )?;
+            }
+            plan.removed.extend([j - 3, j - 2, j - 1]);
+            owned.extend([j - 3, j - 2, j - 1]);
+            j -= 3;
+        }
+        require(label_stored, "label store")?;
+        continuation(j, plan, owned)?;
+        require(
+            code.handlers_of(call) == code.handlers_of(failure),
+            "resumed failure has other handlers",
+        )?;
+        plan.removed.extend([k, k + 1, k + 2]);
+        owned.extend(k..k + 5);
+        plan.checks.push((k + 2, k + 3));
+        plan.joins.push((call, after));
+    }
+    require(seen.len() == labels - 1, "resume block without suspension call")
+}
+
 
 /// The resume block at `start`: the index of its `throwOnFailure` and of
 /// the code after it, marking its instructions in `owned`.

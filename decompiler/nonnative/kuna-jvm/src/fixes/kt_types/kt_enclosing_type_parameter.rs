@@ -1,28 +1,7 @@
-//! kuna fix `kt_enclosing_type_parameter` (spec 10.16): the Kotlin types of
-//! a class declared in a function name the type parameters of the function
-//! and of the classes around it.
-//!
-//! kotlinc serializes the metadata of a class declared in a function (an
-//! `object` expression, and the copy of one that inlining a function makes)
-//! with a table of type-parameter ids of its own: a type that is a type
-//! parameter of the enclosing function, or of a class around it, is written
-//! as an id no metadata declares, and an inlined copy keeps the metadata of
-//! the inline function's object, whose ids stand for that function's
-//! parameters. Fix `kt_type_parameter_id` finds no name for such an id and
-//! Vineflower writes the type `Any`: inside `fun <T> Iterable<T>.asFlow():
-//! Flow<T>` the object is `object : Flow<Any> { override suspend fun
-//! collect(collector: FlowCollector<Any>) }`, which is not a `Flow<T>`. The
-//! class's JVM `Signature` names the same types by name (`Flow<T>`), and a
-//! name there resolves, as in Java, to a type parameter of the method its
-//! `EnclosingMethod` attribute names or of a class around it. With the fix
-//! an id no scope declares takes the name of the type variable the
-//! `Signature` has at the same position of the same supertype, when that
-//! variable is a type parameter of the enclosing methods or classes, the
-//! class is written inside its enclosing class (an object expression, a
-//! local class) and declares no type parameters of its own; an id found with two
-//! names, or where the `Signature` has a class, stays unnamed. With fix
-//! `kt_raw_generic_type`, the locals of the class's methods may be typed with
-//! those type parameters too.
+//! Fix `kt_enclosing_type_parameter`: a type-parameter id that no metadata
+//! scope declares, in a class declared in a function, takes the name of the type
+//! variable at the same place of its JVM `Signature` when that is a type
+//! parameter of the enclosing methods or classes.
 
 use std::collections::{BTreeMap, BTreeSet};
 

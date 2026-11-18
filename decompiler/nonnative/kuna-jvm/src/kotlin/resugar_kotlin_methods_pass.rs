@@ -1,24 +1,12 @@
 //! Port of `org/vineflower/kotlin/pass/ResugarKotlinMethodsPass.java`. The
 //! static `MatchEngine`s are per-thread (`NONNULL_INTRINSICS.with(..)`).
-//!
-//! kuna fix `kt_legacy_constructor_parameter_checks`: a constructor's Kotlin
-//! 1.3 parameter checks before its delegation call are dropped too
-//! (`fixes::kt_null_checks::kt_legacy_constructor_parameter_checks`).
-//!
-//! kuna fix `kt_legacy_parameter_checks`: so are the Kotlin 1.3 checks that
-//! open a function's body (`fixes::kt_null_checks::kt_legacy_parameter_checks`).
-//!
-//! kuna fix `kt_delegation_call_arguments`: first, the stack variables a
-//! constructor computes its delegation call's arguments in are put back
-//! into the call (`fixes::kt_delegation_calls::kt_delegation_call_arguments`).
 
 use crate::exprent::Exprent;
 use crate::flatten_statements_helper::FlattenStatementsHelper;
 use crate::function_exprent::FunctionType;
 use crate::jthrow;
 use crate::fixes::kt_delegation_calls::kt_delegation_call_arguments;
-use crate::fixes::kt_null_checks::kt_legacy_constructor_parameter_checks;
-use crate::fixes::kt_null_checks::kt_legacy_parameter_checks;
+use crate::fixes::kt_null_checks;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::k_function_exprent::{KFunctionExprent, KFunctionType};
 use crate::match_engine::MatchEngine;
@@ -101,11 +89,11 @@ impl Pass for ResugarKotlinMethodsPass {
         }
 
         if kuna_fixes::enabled(KunaFix::KtLegacyConstructorParameterChecks) {
-            res |= kt_legacy_constructor_parameter_checks::remove(ctx);
+            res |= kt_null_checks::remove_legacy_constructor_checks(ctx);
         }
 
         if kuna_fixes::enabled(KunaFix::KtLegacyParameterChecks) {
-            res |= kt_legacy_parameter_checks::remove(ctx);
+            res |= kt_null_checks::remove_legacy_checks(ctx);
         }
 
         let digraph =

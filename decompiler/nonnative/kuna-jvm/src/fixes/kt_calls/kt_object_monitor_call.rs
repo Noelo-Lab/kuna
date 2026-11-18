@@ -1,17 +1,6 @@
-//! kuna fix `kt_object_monitor_call`: in Kotlin output, a call of
-//! `java.lang.Object`'s `wait`, `notify` or `notifyAll` is made on the
-//! receiver cast to `java.lang.Object`.
-//!
-//! Kotlin reads `java.lang.Object` as its `Any`, which has none of the
-//! monitor methods, so Kotlin source calls them as `(lock as
-//! java.lang.Object).notifyAll()` (okio, okhttp's `Any.wait()` helpers).
-//! Vineflower writes `lock.notifyAll()`, which kotlinc rejects ("unresolved
-//! reference"), or, inside okhttp's `inline fun Any.notifyAll()`, resolves to
-//! the extension itself ("inline function cannot be recursive"). The methods
-//! are final, so the descriptor alone identifies them whatever class the
-//! instruction names; with the fix the receiver is cast as the source casts
-//! it (the `checkcast java/lang/Object` kotlinc emits for that cast is the one
-//! written), and kotlinc compiles the call to the same instructions.
+//! Fix `kt_object_monitor_call`: a call of `Object.wait`, `notify` or
+//! `notifyAll` is made on the receiver cast to `java.lang.Object`, as Kotlin
+//! source writes it.
 
 use crate::exprent::Exprent;
 use crate::function_exprent::FunctionType;

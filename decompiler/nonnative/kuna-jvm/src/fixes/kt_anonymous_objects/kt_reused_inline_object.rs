@@ -1,28 +1,7 @@
-//! kuna fix `kt_reused_inline_object`: an object an inline function creates,
-//! which kotlinc creates again in a caller without copying its class, is
-//! written as the call of the inline function.
-//!
-//! kotlinc inlines `compareBy(selector)` into its caller by copying the
-//! function's body. The anonymous class the body creates
-//! (`ComparisonsKt__ComparisonsKt$compareBy$2`) is copied too when the copy
-//! must differ (a lambda argument inlined into it); when the caller passes
-//! on a value it already holds (`sortedWith(compareBy(selector))` in the
-//! inline `Sequence.sortedBy`, whose `selector` is its own parameter),
-//! kotlinc creates the function's own class at the call site:
-//! `new ComparisonsKt__ComparisonsKt$compareBy$2(selector)`. Vineflower
-//! writes a `new` of an anonymous class as the class's body, which was
-//! decompiled against the variables of the method that declares it and
-//! cannot be written elsewhere; the Kotlin writer throws on it ("Anonymous
-//! class does not have Class Kotlin metadata") and the caller fails.
-//!
-//! With the fix such a `new` in another top-level class than the one that
-//! declares the class is written as the call of the declaring method when
-//! the call means the same: the method is a public top-level inline
-//! function (not an extension, no context receivers, not suspend) whose
-//! code is, after checks of its parameters and kotlinc's `$i$f$` marker,
-//! `new C(p1, .., pn)` of its parameters in order with the constructor the
-//! call site calls, returned: `compareBy(selector)`. Inlined, the call
-//! creates the class from the same arguments.
+//! Fix `kt_reused_inline_object`: a `new` of an anonymous class declared in
+//! another top-level class is written as the call of the public inline function
+//! that declares it, when that function only checks its parameters and returns
+//! `new C(p1, .., pn)` of them in order.
 
 use std::rc::Rc;
 
@@ -47,9 +26,7 @@ use crate::struct_class::StructClass;
 use crate::struct_general_attribute::StructGeneralAttribute;
 use crate::struct_method::StructMethod;
 use crate::text_buffer::TextBuffer;
-
-const INTRINSICS: &str = "kotlin/jvm/internal/Intrinsics";
-const PARAMETER_CHECKS: [&str; 2] = ["checkNotNullParameter", "checkParameterIsNotNull"];
+use crate::fixes::kt_util::{CHECK_DESCRIPTOR, INTRINSICS, PARAMETER_CHECKS};
 
 /// The call of the inline function whose object the anonymous class `node`
 /// is, written for its `new` calling `constructor` outside that function;
@@ -167,7 +144,7 @@ fn creates_from_parameters(
             OPC_INVOKESTATIC,
             INTRINSICS,
             &PARAMETER_CHECKS,
-            "(Ljava/lang/Object;Ljava/lang/String;)V",
+            CHECK_DESCRIPTOR,
         )
     {
         i += 3;

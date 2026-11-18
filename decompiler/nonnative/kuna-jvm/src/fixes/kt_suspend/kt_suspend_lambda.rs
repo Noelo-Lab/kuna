@@ -1,42 +1,7 @@
-//! kuna fix `kt_suspend_lambda` (spec 10.16): in Kotlin output, a suspend
-//! lambda is written as the lambda its source had.
-//!
-//! kotlinc compiles a suspend lambda (`flow { .. }`, `launch { .. }`, a
-//! `suspend (T) -> R` argument) to a class extending `SuspendLambda` (or
-//! `RestrictedSuspendLambda`) that is its own continuation: `create` stores
-//! the arguments in the fields `L$0`, `L$1`, .., `invoke` calls `create`
-//! and `invokeSuspend`, and `invokeSuspend(result)` holds the body as a
-//! state machine dispatching on the object's `label`. The class metadata
-//! describes the lambda as a function `<anonymous>` whose JVM signature
-//! names no method of the class, so Vineflower finds no body and writes
-//! `{ // $VF: Could not decompile lambda - root function was not found. Is
-//! this a suspend lambda? }` (`as Function2`, the class's interface, where
-//! kotlinc cast it).
-//!
-//! With the fix the lambda's body is `invokeSuspend`. Its state machine has
-//! the shape of a suspend function's (fix `kt_suspend_state_machine`)
-//! without the entry that finds the continuation: `COROUTINE_SUSPENDED`
-//! read into a local (or popped), the dispatch on `this.label` with the
-//! resume error as default, at label 0 the `throwOnFailure` of `result` and
-//! the reads of the arguments (`this.L$0`, unboxed for an inline class,
-//! stored into the local that the parameter's name names), and at each suspension point `this` passed
-//! to the call, the spills of the live locals into the object's fields, the
-//! label store, the check and the resume block. It is recognised the same
-//! way, `this` taking the continuation's place: besides a suspension call's
-//! last argument (cast to `Continuation`) and `getContext()`, the body may
-//! only read the object's other fields (the captured values), and no field
-//! of the machine (`label`, `L$0`, `I$0`, ..) outside the machine's own
-//! instructions and the argument reads, which must be the first of label 0
-//! and must name the metadata's parameters. The graph is rewritten into the
-//! direct path as a suspend function's, the argument reads are left out of
-//! the body once its statements are made (the lambda's parameters are those
-//! locals), and the lambda is written `{ p: T -> body }` (a receiver as its
-//! first parameter, the form the plugin writes for other lambdas with a
-//! receiver), its exits as the lambda's value or `return@label`, its
-//! suspend calls without the continuation (fix
-//! `kt_suspend_call_continuation`, `this` taking `$completion`'s place), and
-//! without the cast to its `FunctionN` interface at its use. A lambda of any
-//! other shape keeps Vineflower's comment.
+//! Fix `kt_suspend_lambda`: a `SuspendLambda` class is written as its lambda:
+//! `invokeSuspend` is rebuilt like a suspend function's state machine, the
+//! reads of its arguments from the `L$n` fields become its parameters, and its
+//! exits become the lambda's.
 
 use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
@@ -49,15 +14,16 @@ use crate::exprent::Exprent;
 use crate::function_exprent::FunctionType;
 use crate::key::Key;
 use crate::fixes::kt_suspend::kt_suspend_state_machine::{
-    apply, require, resume_block, Code, Machine, Plan, Refusal, CONTINUATION_CLASS, RESUME_ERROR, RESUME_PATH,
+    apply, require, resume_block, suspension_points, Code, Machine, Plan, Refusal, RESUME_ERROR, RESUME_PATH,
 };
+use crate::fixes::kt_suspend::CONTINUATION;
 use crate::k_element::KElement;
 use crate::k_function::KFunction;
 use crate::kotlin_chooser::KotlinChooser;
 use crate::decompiler_context::DecompilerContext;
 use crate::exit_exprent::Type as ExitType;
 use crate::k_types::KTypes;
-use crate::fixes::kt_jumps::kt_lambda_singleton_returns;
+use crate::fixes::kt_jumps;
 use crate::kt_attrs::KtAttrs;
 use crate::stat_edge::StatEdge;
 use crate::text_buffer::TextBuffer;
@@ -269,75 +235,17 @@ pub fn plan(
     }
     let parameters: BTreeMap<i32, String> = parameters.into_iter().map(|(slot, (name, _))| (slot, name)).collect();
 
-    let mut seen: BTreeSet<usize> = BTreeSet::new();
-    for k in 1..code.insns.len().saturating_sub(4) {
-        if !(marker >= 0
-            && code.is(k, OPC_DUP)
-            && code.is_local(k + 1, OPC_ALOAD, marker)
-            && code.is(k + 2, OPC_IF_ACMPNE)
-            && code.is_local(k + 3, OPC_ALOAD, marker)
-            && code.is(k + 4, OPC_ARETURN))
-        {
-            continue;
-        }
-        let mut call = k - 1;
-        while call >= 2 && code.is_inline_marker(call - 1) {
-            plan.removed.extend([call - 1, call]);
-            owned.extend([call - 1, call]);
-            call -= 2;
-        }
-        let &(label, failure, after) = resumes.get(&(k + 5)).ok_or("check without resume block")?;
-        require(code.is_suspend_call(call), "suspension point is not a call")?;
-        require(seen.insert(label) && code.jump(k + 2) == after, "resume block")?;
-        let mut j = call;
-        let mut label_stored = false;
-        loop {
-            if j >= 2 && code.is_inline_marker(j - 2) {
-                plan.removed.extend([j - 2, j - 1]);
-                owned.extend([j - 2, j - 1]);
-                j -= 2;
-                continue;
-            }
-            if !(j >= 3
-                && code.is_local(j - 3, OPC_ALOAD, 0)
-                && code.is(j - 1, OPC_PUTFIELD)
-                && code.member(j - 1).is_some_and(|(owner, f, _)| owner == class && is_machine_field(&f)))
-            {
-                break;
-            }
-            let (_, field, _) = code.member(j - 1).ok_or("spill")?;
-            if field == "label" {
-                require(!label_stored && code.int_constant(j - 2) == Some(label as i32), "label store")?;
-                label_stored = true;
-            } else {
-                require(
-                    field != "result" && (code.is_load(j - 2) || code.is(j - 2, OPC_ACONST_NULL)),
-                    "spill",
-                )?;
-            }
-            plan.removed.extend([j - 3, j - 2, j - 1]);
-            owned.extend([j - 3, j - 2, j - 1]);
-            j -= 3;
-        }
-        require(label_stored, "label store")?;
+    suspension_points(code, &machine, &resumes, labels, is_machine_field, &mut plan, &mut owned, |j, plan, owned| {
         let cast = j >= 2 && code.is_continuation_cast(j - 1);
         let load = if cast { j - 2 } else { j.wrapping_sub(1) };
         require(j > 0 && code.is_local(load, OPC_ALOAD, 0), "continuation is not the call's last argument")?;
-        require(
-            code.handlers_of(call) == code.handlers_of(failure),
-            "resumed failure has other handlers",
-        )?;
         if cast {
             plan.removed.insert(j - 1);
             owned.insert(j - 1);
         }
         owned.insert(load);
-        plan.removed.extend([k, k + 1, k + 2]);
-        owned.extend(k..k + 5);
-        plan.checks.push((k + 2, k + 3));
-        plan.joins.push((call, after));
-    }
-    require(seen.len() == labels - 1, "resume block without suspension call")?;
+        Ok(())
+    })?;
 
     for i in 0..code.insns.len() {
         if owned.contains(&i) {
@@ -352,8 +260,8 @@ pub fn plan(
         let this_escapes = code.is_local(i, OPC_ALOAD, 0)
             && !(code.is(i + 1, OPC_GETFIELD) && code.member(i + 1).is_some_and(|(owner, _, _)| owner == class))
             && !(code.is_continuation_cast(i + 1)
-                && code.is_member(i + 2, OPC_INVOKEINTERFACE, CONTINUATION_CLASS, "getContext"))
-            && !code.is_member(i + 1, OPC_INVOKEINTERFACE, CONTINUATION_CLASS, "getContext")
+                && code.is_member(i + 2, OPC_INVOKEINTERFACE, CONTINUATION, "getContext"))
+            && !code.is_member(i + 1, OPC_INVOKEINTERFACE, CONTINUATION, "getContext")
             && !code.is_member(i + 1, OPC_INVOKEVIRTUAL, class, "getContext");
         require(
             !touches_local && !touches_machine && !this_escapes && !code.is_suspended_marker(i),
@@ -432,7 +340,7 @@ pub fn remove_argument_reads(root: RootStatement, mt: StructMethod) -> bool {
             let Some(last) = exprents.last() else {
                 continue;
             };
-            if is_return_unit(last) && kt_lambda_singleton_returns::in_tail_position(source) {
+            if is_return_unit(last) && kt_jumps::in_tail_position(source) {
                 exprents.remove_at(exprents.len() - 1);
                 res = true;
             }
@@ -517,7 +425,7 @@ pub fn label_exits(buf: &mut TextBuffer, root: RootStatement, mt: StructMethod) 
             buf.append(&format!("{label}@"));
             for edge in root.get_dummy_exit().0.get_predecessor_edges(StatEdge::TYPE_BREAK) {
                 let source = edge.get_source();
-                if kt_lambda_singleton_returns::in_tail_position(source) {
+                if kt_jumps::in_tail_position(source) {
                     continue;
                 }
                 for e in source.get_exprents().map(|x| x.to_vec()).unwrap_or_default() {
@@ -529,7 +437,7 @@ pub fn label_exits(buf: &mut TextBuffer, root: RootStatement, mt: StructMethod) 
                 }
             }
         }
-        None => kt_lambda_singleton_returns::label_exits(buf, root, &mt.get_class_qualified_name()),
+        None => kt_jumps::label_exits(buf, root, &mt.get_class_qualified_name()),
     }
 }
 

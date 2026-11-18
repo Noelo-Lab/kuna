@@ -1,14 +1,5 @@
-//! kuna fix `kt_java_class_literal`: a class constant in a class written as
-//! Kotlin is written `Name::class.java`.
-//!
-//! The plugin turns the expressions of each method into its own, which write
-//! a class constant (`ldc C`) as Kotlin's `C::class.java`; constants that
-//! reach the text through Java's `ConstExprent` instead (the initializers the
-//! initializer processor extracts after that pass, the bodies of `init`
-//! blocks) keep Java's `C.class`, which Kotlin does not parse
-//! (`Logger.getLogger(Http2.class.getName())`). With the fix (called from
-//! `ConstExprent::to_java`) such a constant is written as the plugin writes
-//! its own, in a class written as Kotlin.
+//! Fix `kt_java_class_literal`: a class constant written through Java's
+//! `ConstExprent` in a class written as Kotlin is `Name::class.java`.
 
 use crate::const_exprent::ConstExprent;
 use crate::k_const_exprent::KConstExprent;
