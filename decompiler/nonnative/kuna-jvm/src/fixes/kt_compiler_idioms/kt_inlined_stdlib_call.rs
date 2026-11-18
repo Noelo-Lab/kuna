@@ -1,35 +1,9 @@
-//! kuna fix `kt_inlined_stdlib_call`: kotlinc's inlined copy of a
-//! standard-library inline function is written as the call.
-//!
-//! kotlinc copies an inline function's body into every call site, with the
-//! lambda's body in place of its call. Vineflower writes the copy: long,
-//! unlike the source, and calling the standard library's `internal`
-//! helpers, which other code may not call (`closeFinally`, `checkRadix`,
-//! `copyOfRangeImpl`, `collectionSizeOrDefault`, `StringCompanionObject`).
-//! A copy whose code is exactly the body of the function for the library
-//! version the class was compiled against is written as the call; anything
-//! else stays as it is. Calls of the helpers prove the copy only outside the
-//! `kotlin` package, whose own code calls them directly.
-//!
-//! Before the last stack-variable pass (`resugar`): `Integer.toString(x,
-//! checkRadix(r))` and its siblings become `x.toString(r)`, `s.toInt(r)`,
-//! `s.toLong(r)`, `s.toShort(r)`, `s.toByte(r)` (Kotlin 1.3's `Byte` and
-//! `Short` versions check the radix twice); `ArraysKt.copyOfRange(a, f, t)`
-//! (`copyOfRangeImpl`) becomes `a.copyOfRange(f, t)`; `java.lang.String
-//! .format(fmt, Arrays.copyOf(v, v.length))` with `v` the array just built
-//! becomes `String.format(fmt, e1, ..)` where kotlinc read `String.Companion`
-//! (stored into a local by Kotlin 1.3, read and popped by later versions),
-//! else `fmt.format(e1, ..)`, likewise with a `Locale`. kotlinc's check of
-//! the copied call's value (`checkExpressionValueIsNotNull(v, "java.lang
-//! .String.format(format, *args)")`) goes with it: kotlinc checks the
-//! rebuilt call again.
-//!
-//! Before the class is written (`rebuild_lambdas`), once its nested classes
-//! have their captured variables: a `try`/`finally` around `closeFinally`
-//! is marked to be written `receiver.use { p -> body }` (`match_use`), and
-//! `for (item in r) d.add(x)` filling `d = ArrayList(collectionSizeOrDefault
-//! (r, 10))` becomes `receiver.map { p -> x }` at the statement that reads
-//! `d` (`rebuild_map`); the parameters take kotlinc's debug names.
+//! Fix `kt_inlined_stdlib_call`: kotlinc's inlined copy of a standard-library
+//! function whose code is exactly that function's body (for the library version
+//! the class was compiled against) is written as the call: `toString(radix)`
+//! and the parse functions, `copyOfRange`, `String.format` before the last
+//! stack-variable pass (`resugar`); `use` and `map` before the class is written
+//! (`rebuild_lambdas`).
 
 use std::rc::Rc;
 
