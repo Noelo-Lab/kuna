@@ -1,6 +1,8 @@
 // Shared integration-test executable. Process-sensitive tests stay separate.
 #[path = "mips_elf_selection.rs"]
 mod mips_elf_selection;
+#[path = "return_branch_cli.rs"]
+mod return_branch_cli;
 mod common;
 #[path = "sparc_prologue_start.rs"]
 mod sparc_prologue_start;
@@ -56,6 +58,8 @@ mod conditional_stack_bytes;
 mod arm_conditional_switch;
 #[path = "arm_constant_shift.rs"]
 mod arm_constant_shift;
+#[path = "wide_shift_emission.rs"]
+mod wide_shift_emission;
 
 #[path = "arm_float_arguments.rs"]
 mod arm_float_arguments;
@@ -121,6 +125,9 @@ mod buildstamp_cli;
 #[path = "call_array_extent.rs"]
 mod call_array_extent;
 
+#[path = "sparc_delay_slot_storage.rs"]
+mod sparc_delay_slot_storage;
+
 #[path = "call_wide.rs"]
 mod call_wide;
 
@@ -149,6 +156,8 @@ mod coldentry_source_boundary;
 
 #[path = "compact_switch_cli.rs"]
 mod compact_switch_cli;
+#[path = "switch_self_loop_cli.rs"]
+mod switch_self_loop_cli;
 
 #[path = "contiguous_byte_frame.rs"]
 mod contiguous_byte_frame;
@@ -832,6 +841,9 @@ mod rust_array_decay;
 
 #[path = "rust_array_constant.rs"]
 mod rust_array_constant;
+
+#[path = "rust_array_init.rs"]
+mod rust_array_init;
 
 #[path = "high_address_branches.rs"]
 mod high_address_branches;

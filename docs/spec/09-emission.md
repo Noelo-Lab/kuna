@@ -1601,6 +1601,27 @@ signed-comparison probes pass the shifted result to a typed comparison helper
 so the comparison cannot canonicalize the shift into signed multiplication.
 Defining signed multiplication on overflow is outside this repair.
 
+**(kuna) Fixed 64-bit shifts in C — `option armconstshift all`.** The value
+`all` extends the ARM repair above to every architecture's fixed 64-bit left
+shift whose count is below 64 and whose operand prints as signed, including an
+implied sign extension of a narrower value. It computes through an unsigned
+64-bit C cast that keeps the complete input, extension included, and converts a
+signed output back after shifting so signed readers retain their
+interpretation: `(long)((unsigned long)(long)x << 0x1f)`.
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_constantshift.rs (plan_fixed64_lsl)`
+plans it and shares ARM's fixed-shift emitter, so each operand appears once and
+the IR and other readers are unchanged. The planner asks the printer for the
+operand's declared local type, since the printed signedness decides whether C
+shifts a signed value; the printer indexes its declared locals for that lookup.
+When the known bits prove the signed result nonnegative and representable, the
+compact form stays. Dynamic and out-of-range counts, other widths, unsigned
+operands and other output languages keep their rendering, and `on` remains the
+ARM-only repair. Like `on`, `all` is off by default: it adds a cast pair to every
+scaled 64-bit index and sign-bit test. `tests/stages/kuna-wide-shifts.xml` pins the
+default spelling and the converted one on x86-64, AArch64, PowerPC64 and MIPS64
+objects from `tests/fixtures/wide-integer-emission/`; `kuna-cli/tests/wide_shift_emission.rs`
+executes the emitted C at O0/O2 under UBSan over signed boundary bit patterns.
+
 **Every label labels a statement.** Label placement in the printed C is valid
 C99/C11/C17 and does not rely on C23. In those dialects a label is part of a
 labeled statement, so `case 2:`, `default:` or `label_10ad:` directly before a
@@ -5033,6 +5054,25 @@ whole arrays and fields, explicit casts, pointer stores with guard words, calls
 and callback order, and constant one-past addresses. Readable and protected
 mappings verify these address computations do not load the array contents.
 
+
+### Rust complete array initialization
+
+`p9_emit/kuna_rustarrayinit.rs` renders consecutive scalar COPY writes covering
+every element of a recovered integer array, in increasing index order, as one
+whole-array assignment. This initializes a previously uninitialized Rust local
+without zero-filling or manufacturing values. The existing COPY value renderer
+retains the original constants and integer conversions.
+
+The complete cover must remain inside one basic block with no intervening
+operations. Every output must be a nonvolatile local element of the same array
+symbol and type, with exact element width and no alignment padding. Inputs are
+constants or explicit named local values independent of that array; implied
+expressions, global/volatile reads, and reads of the destination or any physically
+overlapping source-high storage view are not moved.
+Incomplete, duplicate, reordered, mixed-symbol, and interrupted writes retain
+their ordinary statement rendering. No target-language-specific change to
+variable grouping is made. Complete native Rust formatting-consumer regressions
+compile and execute the resulting bodies against their original binaries.
 
 ### Rust zero values for byte-array stores
 
