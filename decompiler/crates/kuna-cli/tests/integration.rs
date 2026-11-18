@@ -121,6 +121,9 @@ mod buildstamp_cli;
 #[path = "call_array_extent.rs"]
 mod call_array_extent;
 
+#[path = "sparc_delay_slot_storage.rs"]
+mod sparc_delay_slot_storage;
+
 #[path = "call_wide.rs"]
 mod call_wide;
 
