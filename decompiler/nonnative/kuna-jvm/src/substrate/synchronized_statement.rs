@@ -8,7 +8,7 @@ use crate::expr_processor::ExprProcessor;
 use crate::exprent::Exprent;
 use crate::if_statement::set_head_slot;
 use crate::java_subclass;
-use crate::fixes::kt_java_syntax::kt_java_cast_syntax;
+use crate::fixes::kt_util::writing_kotlin;
 use crate::fixes::kt_jumps::kt_jump_to_non_loop_label::{self, Lambda};
 use crate::kuna_fixes::{self, KunaFix};
 use crate::rt::JList;
@@ -69,7 +69,7 @@ impl SynchronizedStatement {
 
         if self.is_labeled()
             && kuna_fixes::enabled(KunaFix::KtJumpToNonLoopLabel)
-            && kt_java_cast_syntax::writing_kotlin()
+            && writing_kotlin()
             && kt_jump_to_non_loop_label::jumped_out_of(self.into())
         {
             buf.append_indent(indent)

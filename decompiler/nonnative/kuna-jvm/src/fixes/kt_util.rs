@@ -1,9 +1,20 @@
-//! What several Kotlin fix families share: kotlinc's runtime names and
-//! walks of a statement tree's exprents.
+//! What several Kotlin fix families share: whether the class being written is
+//! Kotlin output, kotlinc's runtime names and a walk of a statement tree's exprents.
 
 use crate::const_exprent::ConstValue;
+use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;
+use crate::plugin_context::PluginContext;
 use crate::statement::Statement;
+
+/// Whether the class being written is written as Kotlin.
+pub(crate) fn writing_kotlin() -> bool {
+    DecompilerContext::get_current_class().is_some_and(|cl| {
+        PluginContext::get_current_context()
+            .get_language_spec(cl)
+            .is_some()
+    })
+}
 
 pub(crate) const INTRINSICS: &str = "kotlin/jvm/internal/Intrinsics";
 /// `Intrinsics`' parameter checks, by their Kotlin 1.4 and earlier names.
@@ -30,29 +41,6 @@ pub(crate) fn for_each_exprent(stat: Statement, f: &mut dyn FnMut(Exprent)) {
     for child in stats {
         for_each_exprent(child, f);
     }
-}
-
-/// Every exprent of `stat`'s tree, each after the exprents it holds; a statement's
-/// children come before its head exprents, and variable definitions are left out.
-pub(crate) fn all_exprents(stat: Statement) -> Vec<Exprent> {
-    fn collect(stat: Statement, out: &mut Vec<Exprent>) {
-        let top: Vec<Exprent> = match stat.get_exprents() {
-            Some(exprents) => exprents.iter().collect(),
-            None => {
-                for st in stat.get_stats().borrow().iter() {
-                    collect(*st, out);
-                }
-                stat.get_stat_exprents()
-            }
-        };
-        for e in top {
-            out.extend(e.get_all_exprents_rec(true));
-            out.push(e);
-        }
-    }
-    let mut out = Vec::new();
-    collect(stat, &mut out);
-    out
 }
 
 /// The value of `expr` when it is an `int` constant.

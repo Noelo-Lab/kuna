@@ -11,7 +11,7 @@ use crate::java_subclass;
 use crate::fixes::kt_properties::kt_accessor_backing_field;
 use crate::fixes::kt_calls::kt_facade_call;
 use crate::fixes::kt_calls::kt_object_instance;
-use crate::fixes::kt_java_syntax::kt_java_cast_syntax;
+use crate::fixes::kt_util::writing_kotlin;
 use crate::fixes::kt_names::kt_unescaped_name;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::link_constant::LinkConstant;
@@ -272,7 +272,7 @@ impl FieldExprent {
         }
         if kuna_fixes::enabled(KunaFix::KtObjectInstance)
             && self.d(|d| d.is_static && d.name == "INSTANCE")
-            && kt_java_cast_syntax::writing_kotlin()
+            && writing_kotlin()
         {
             if let Some(buf) = kt_object_instance::object_name(self) {
                 return buf;
@@ -280,7 +280,7 @@ impl FieldExprent {
         }
         if kuna_fixes::enabled(KunaFix::KtFacadeCall)
             && self.d(|d| d.is_static)
-            && kt_java_cast_syntax::writing_kotlin()
+            && writing_kotlin()
         {
             let (classname, name, descriptor) = self.d(|d| {
                 (

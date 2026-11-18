@@ -2,7 +2,7 @@
 //! that is a Java keyword but not reserved in Kotlin (`new`, `default`) is taken
 //! from the local variable table.
 
-use crate::fixes::kt_java_syntax::kt_java_cast_syntax::writing_kotlin;
+use crate::fixes::kt_util::writing_kotlin;
 use crate::text_util::TextUtil;
 
 /// Whether `name`, a debug name `TextUtil.isValidIdentifier` refused, names

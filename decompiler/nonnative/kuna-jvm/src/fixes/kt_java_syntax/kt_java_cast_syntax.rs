@@ -1,15 +1,12 @@
 //! Fix `kt_java_cast_syntax`: a cast Vineflower writes in Java's syntax is
 //! written with the Kotlin construct that compiles to it: a numeric conversion
-//! call (`x.toLong()`, `c.code`), `value as T` for a type variable;
-//! `writing_kotlin` says whether the class being written is Kotlin output.
+//! call (`x.toLong()`, `c.code`), `value as T` for a type variable.
 
 use crate::code_type::CodeType;
 use crate::const_exprent::ConstValue;
-use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;
 use crate::fixes::kt_java_syntax::kt_java_reference_cast;
 use crate::kuna_fixes::{self, KunaFix};
-use crate::plugin_context::PluginContext;
 use crate::text_buffer::TextBuffer;
 use crate::var_type::VarType;
 
@@ -22,15 +19,6 @@ pub enum KotlinCast {
     /// A cast to a class or array type, `as T` (fix `kt_java_reference_cast`);
     /// `true` when the operand may be `null` where its Kotlin type is too.
     Reference(bool),
-}
-
-/// Whether the class being written is written as Kotlin.
-pub fn writing_kotlin() -> bool {
-    DecompilerContext::get_current_class().is_some_and(|cl| {
-        PluginContext::get_current_context()
-            .get_language_spec(cl)
-            .is_some()
-    })
 }
 
 fn numeric(type_: CodeType) -> bool {

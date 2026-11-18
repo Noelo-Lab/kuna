@@ -7,6 +7,7 @@ use crate::exprent::Exprent;
 use crate::function_exprent::FunctionType;
 use crate::fixes::kt_operators::kt_operator_precedence;
 use crate::fixes::kt_java_syntax::kt_java_cast_syntax;
+use crate::fixes::util::promoted;
 use crate::text_buffer::TextBuffer;
 
 /// The Kotlin type of the value `operand` is written as, if it is a number
@@ -27,16 +28,6 @@ fn kotlin_type(operand: Exprent) -> Option<CodeType> {
             | CodeType::Double
     )
     .then_some(written.type_)
-}
-
-/// Java's binary numeric promotion of `a` and `b`.
-fn promoted(a: CodeType, b: CodeType) -> CodeType {
-    for wide in [CodeType::Double, CodeType::Float, CodeType::Long] {
-        if a == wide || b == wide {
-            return wide;
-        }
-    }
-    CodeType::Int
 }
 
 fn code(type_: CodeType) -> Option<&'static str> {

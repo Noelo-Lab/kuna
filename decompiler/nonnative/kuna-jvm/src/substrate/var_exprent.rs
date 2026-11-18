@@ -14,7 +14,7 @@ use crate::i_matchable::MatchProperties;
 use crate::instruction::Instruction;
 use crate::java_subclass;
 use crate::k_var_exprent::KVarExprent;
-use crate::fixes::kt_java_syntax::kt_java_cast_syntax;
+use crate::fixes::kt_util::writing_kotlin;
 use crate::fixes::kt_suspend::kt_suspend_impl;
 use crate::fixes::kt_suspend::kt_suspend_lambda;
 use crate::fixes::kt_names::kt_unescaped_name;
@@ -243,7 +243,7 @@ impl VarExprent {
             let name = self.get_name();
             if !definition
                 && kuna_fixes::enabled(KunaFix::KtSuspendLambda)
-                && kt_java_cast_syntax::writing_kotlin()
+                && writing_kotlin()
             {
                 let reference = kt_suspend_lambda::receiver_reference(self).or_else(|| {
                     kuna_fixes::enabled(KunaFix::KtSuspendImpl)
@@ -304,7 +304,7 @@ impl VarExprent {
                     Some(_)
                         if name.ends_with(".this")
                             && kuna_fixes::enabled(KunaFix::KtOuterThis)
-                            && kt_java_cast_syntax::writing_kotlin() =>
+                            && writing_kotlin() =>
                     {
                         buffer.append(&KVarExprent::outer_this_label(&name[..name.len() - 5]));
                     }
@@ -353,7 +353,7 @@ impl VarExprent {
                     Some(_)
                         if name.ends_with(".this")
                             && kuna_fixes::enabled(KunaFix::KtOuterThis)
-                            && kt_java_cast_syntax::writing_kotlin() =>
+                            && writing_kotlin() =>
                     {
                         buffer.append(&KVarExprent::outer_this_label(&name[..name.len() - 5]));
                     }

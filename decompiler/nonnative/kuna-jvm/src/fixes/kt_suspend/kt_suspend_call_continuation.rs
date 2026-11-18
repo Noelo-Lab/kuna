@@ -25,7 +25,7 @@ use crate::text_buffer::TextBuffer;
 use crate::var_type::VarType;
 use crate::fixes::kt_util::SUSPEND_DESCRIPTOR_END;
 use super::CONTINUATION;
-use crate::fixes::kt_util::all_exprents;
+use crate::fixes::util::all_exprents;
 
 /// Whether `mt`'s body is a suspend function's whose calls this fix marks, for
 /// fix `kt_nullable_local`'s typing.

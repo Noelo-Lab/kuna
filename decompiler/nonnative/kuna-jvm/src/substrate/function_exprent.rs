@@ -12,7 +12,7 @@ use crate::fixes::kt_null_checks::kt_not_null_assertion;
 use crate::fixes::kt_operators::kt_operator_line_break;
 use crate::fixes::kt_operators::kt_operator_precedence;
 use crate::fixes::kt_java_syntax::kt_java_reference_cast;
-use crate::fixes::kt_java_syntax::kt_java_cast_syntax;
+use crate::fixes::kt_util::writing_kotlin;
 use crate::fixes::numeric_types::concat_operand_type;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::list_stack::ListStack;
@@ -966,7 +966,7 @@ impl FunctionExprent {
                     buf.add_type_name_token(&obj_arr, 2);
                 }
                 if kuna_fixes::enabled(KunaFix::KtMappedJavaMember)
-                    && kt_java_cast_syntax::writing_kotlin()
+                    && writing_kotlin()
                 {
                     buf.append(".size");
                 } else {

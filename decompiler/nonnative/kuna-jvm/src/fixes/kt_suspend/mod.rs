@@ -14,7 +14,8 @@ use std::rc::Rc;
 
 use crate::code_constants::{ACC_BRIDGE, ACC_STATIC, ACC_SYNTHETIC};
 use crate::decompiler_context::DecompilerContext;
-use crate::fixes::kt_util::{all_exprents, SUSPEND_DESCRIPTOR_END};
+use crate::fixes::kt_util::SUSPEND_DESCRIPTOR_END;
+use crate::fixes::util::all_exprents;
 use crate::generic_type::GenericType;
 use crate::k_element::KElement;
 use crate::k_function::KFunction;

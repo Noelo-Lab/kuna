@@ -9,7 +9,7 @@ use crate::expr_processor::{ExprProcessor, NullCastType};
 use crate::exprent::Exprent;
 use crate::function_exprent::FunctionType;
 use crate::invocation_exprent::InvocationExprent;
-use crate::fixes::kt_java_syntax::kt_java_cast_syntax;
+use crate::fixes::kt_util::writing_kotlin;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::text_buffer::TextBuffer;
 use crate::var_type::VarType;
@@ -134,7 +134,7 @@ pub fn write(operand: Exprent, slot: &Option<VarType>, indent: i32) -> Option<Te
     if is_char_array(slot)
         && is_char_array(&written_type(operand))
         && kuna_fixes::enabled(KunaFix::ConcatOperandType)
-        && !kt_java_cast_syntax::writing_kotlin()
+        && !writing_kotlin()
     {
         let mut buf = TextBuffer::new();
         buf.append(&ExprProcessor::get_cast_type_name(&VarType::VARTYPE_STRING()))
@@ -147,7 +147,7 @@ pub fn write(operand: Exprent, slot: &Option<VarType>, indent: i32) -> Option<Te
     if wanted == Kind::Reference
         || wanted == Kind::Boolean
         || !kuna_fixes::enabled(KunaFix::ConcatOperandType)
-        || kt_java_cast_syntax::writing_kotlin()
+        || writing_kotlin()
         || kind(&written_type(operand)) == wanted
     {
         return None;

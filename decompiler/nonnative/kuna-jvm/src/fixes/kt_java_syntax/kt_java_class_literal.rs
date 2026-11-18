@@ -3,7 +3,7 @@
 
 use crate::const_exprent::ConstExprent;
 use crate::k_const_exprent::KConstExprent;
-use crate::fixes::kt_java_syntax::kt_java_cast_syntax;
+use crate::fixes::kt_util::writing_kotlin;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::text_buffer::TextBuffer;
 
@@ -11,7 +11,7 @@ use crate::text_buffer::TextBuffer;
 /// when the fix is off or the class is written as Java.
 pub fn write(constant: ConstExprent, buf: &mut TextBuffer) -> bool {
     if !kuna_fixes::enabled(KunaFix::KtJavaClassLiteral)
-        || !kt_java_cast_syntax::writing_kotlin()
+        || !writing_kotlin()
     {
         return false;
     }
