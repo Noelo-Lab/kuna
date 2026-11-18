@@ -394,6 +394,10 @@ impl Action for ActionHeritage {
             ctx.error = Some(error);
             return -1;
         }
+        if let Err(error) = crate::p2_lift::kuna_opendispatch::resolve_returns(data) {
+            ctx.error = Some(error);
+            return -1;
+        }
         if data.get_arch().pass_through {
             crate::kuna_entryreads::capture(data);
         }

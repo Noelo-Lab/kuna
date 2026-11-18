@@ -5760,6 +5760,11 @@ impl JumpTable {
         Some(true)
     }
 
+    /// Whether the recovered destinations came from entries in memory.
+    pub(crate) fn kuna_reads_table_entries(&self) -> bool {
+        self.row_loads.as_ref().is_some_and(|rows| rows.depth != 0)
+    }
+
     pub(crate) fn kuna_target_encoding(&self) -> Option<(i32, u64)> {
         self.target_encoding
     }
@@ -6470,11 +6475,27 @@ impl JumpTable {
     /// STUB(W4/W5): the save/restore-on-failure control flow is faithful; the
     /// inner `recoverAddresses` needs the absent subsystems.
     pub fn recover_multistage(&mut self, fd: &mut Funcdata) -> KunaResult<()> {
+        let previous_return = self.kuna_return_default().cloned();
         self.save_model();
         let oldaddresstable = std::mem::take(&mut self.addresstable);
         self.loadpoints.clear();
         let mut failure = None;
         match self.recover_addresses(fd) {
+            Ok(()) if self.reentered => {
+                let return_target = self.kuna_return_default();
+                let mut targets: BTreeSet<_> = self.addresstable.iter()
+                    .filter(|addr| Some(*addr) != return_target).cloned().collect();
+                let count = targets.len();
+                let lost_return = previous_return.is_some() && return_target.is_none();
+                targets.extend(oldaddresstable.into_iter().filter(|addr| Some(addr) != previous_return.as_ref()));
+                if targets.len() != count || lost_return {
+                    self.addresstable = targets.into_iter().collect();
+                    let offsets = self.addresstable.iter().map(Address::get_offset).collect();
+                    self.jmodel = Some(Box::new(crate::kuna_constselectjump::JumpModelConstSelect::from_flow_targets(offsets, None)));
+                    self.row_loads = None;
+                    failure = Some(KunaError::lowlevel("Revalidation omitted a previously reached destination"));
+                }
+            }
             Ok(()) => {}
             Err(error) => {
                 // C++ catches JumptableThunkError and LowlevelError identically:
