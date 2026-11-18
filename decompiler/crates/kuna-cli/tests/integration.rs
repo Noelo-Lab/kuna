@@ -858,10 +858,6 @@ mod e500_arguments;
 #[path = "jvm_cli.rs"]
 mod jvm_cli;
 
-#[cfg(feature = "jvm")]
-#[path = "options_jvm_md_fresh.rs"]
-mod options_jvm_md_fresh;
-
 #[path = "cvf_trace.rs"]
 mod cvf_trace;
 
