@@ -1026,7 +1026,9 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   relocation; it reaches the `syscall` space, where the pspec
   `<default_symbols>` label at that id names the callee
   (`bpf_map_lookup_elem`), as a Ghidra function created at a labelled address
-  does.
+  does. Only a label outside the default code space names a call this way: a
+  code-space label such as ARM's or AArch64's `Reset` at address 0 does not, so
+  a call to an unresolved weak function at 0 keeps its `sub_0` name.
 
   An undefined symbol reached through any branch or call instruction field —
   not only a call-spelled one — is bound to a named extern slot. A tail call is

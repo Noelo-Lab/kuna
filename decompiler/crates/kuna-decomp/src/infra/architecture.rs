@@ -2026,10 +2026,12 @@ pub struct Architecture {
     /// real mode.  `None` when the frontend did not supply it (then the engine
     /// keeps the `.sla`-default zero context).
     pspec_xml: Option<Vec<u8>>,
-    /// The pspec `<default_symbols>` by address, kept by [`Self::build_symbols`]
-    /// for the flow's `query_call_label`: a direct call whose target carries one
-    /// of these labels and no FunctionSymbol (eBPF's helper ids in the `syscall`
-    /// space) prints the label's name.
+    /// The pspec `<default_symbols>` outside the default code space by address,
+    /// kept by [`Self::build_symbols`] for the flow's `query_call_label`: a direct
+    /// call whose target carries one of these labels and no FunctionSymbol
+    /// (eBPF's helper ids in the `syscall` space) prints the label's name. A
+    /// code-space label such as ARM's `Reset` at 0 is not kept, so a call to an
+    /// unresolved weak function at 0 does not print as the reset vector.
     pspec_symbols: std::collections::HashMap<(int4, uintb), String>,
     /// (kuna, Phase 3) Raw `<coretypes>` XML (the fourth ghidra-mode
     /// registerProgram spec document), set by [`Self::set_coretypes_xml`]
@@ -5596,7 +5598,10 @@ impl Architecture {
             self.symboltab
                 .add_symbol_mapped(scope, &name, ct, &addr, &usepoint)?;
             if let Some(spc) = addr.get_space() {
-                self.pspec_symbols.insert((spc.get_index(), addr.get_offset()), name.clone());
+                let code = self.manage().get_default_code_space().map(|c| c.get_index());
+                if code != Some(spc.get_index()) {
+                    self.pspec_symbols.insert((spc.get_index(), addr.get_offset()), name.clone());
+                }
             }
             last_addr = addr;
             last_size = size;

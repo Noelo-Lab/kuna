@@ -461,10 +461,11 @@ pub trait FlowEnvironment {
     }
 
     /// The name a direct call to `entry` prints when no function is known there
-    /// but a processor-spec `<default_symbols>` label is (eBPF's helper ids in
-    /// the `syscall` space): the label names the callee, as a Ghidra function
-    /// created at a labelled address does. Only a name: the label makes `entry`
-    /// no function boundary, so `query_call` stays `None` for it.
+    /// but a processor-spec `<default_symbols>` label outside the default code
+    /// space is (eBPF's helper ids in the `syscall` space): the label names the
+    /// callee, as a Ghidra function created at a labelled address does. Only a
+    /// name: the label makes `entry` no function boundary, so `query_call` stays
+    /// `None` for it.
     fn query_call_label(&self, _entry: &Address) -> Option<String> {
         None
     }
