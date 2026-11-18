@@ -1051,6 +1051,16 @@ and line number. Consistency checks and section finalization share this lookup,
 so included-file diagnostics keep the constructor's location after parsing
 returns to the parent file. No separate constructor-location map is maintained.
 
+Constructor patterns are built one operand at a time, in operand order, and an
+operand whose disassembly action is a bare operand (`[ idx = fld; ]`) takes
+that operand's pattern. When the named operand comes later in the order its
+pattern does not exist yet, so the compiler rejects the constructor with
+`idx: operand is defined as an operand that follows it`, as Ghidra's compiler
+does with `operand idx has an issue`. Listing the source operand first, or
+writing an expression such as `fld + 0`, compiles
+(`decompiler/crates/kuna-sleigh/src/slghsymbol.rs (build_constructor_pattern)`,
+`decompiler/crates/kuna-sleigh/src/slghpatexpress.rs (gen_min_pattern)`).
+
 The consistency checker rejects a temporary that is read exactly once and
 written exactly once in the same semantic section when the read precedes or
 occurs in the write operation. This fatal error propagates through constructor
