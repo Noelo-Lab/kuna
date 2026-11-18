@@ -575,6 +575,11 @@ fn option_values_live_value_present_for_76() {
                             // same reason.  Its live value is
                             // `Architecture::cast_widen`.
                             | "castwiden"
+                            // (kuna) `armconstshift` takes a MODE
+                            // (`off|on|all`) over an enum field, for the same
+                            // reason.  Its live value is
+                            // `Architecture::arm_constant_shift`.
+                            | "armconstshift"
                             // (kuna) `declorder` takes a MODE (`natural|name`)
                             // over an enum field, for the same reason.  Its live
                             // value is `Architecture::decl_order`.
@@ -832,7 +837,9 @@ fn option_values_live_value_present_for_76() {
     // 76 -> 75: `calleereginputs` became three-valued (off|on|custom), so it has
     // no codegen live reader; its live value is read console-side via
     // `kuna_live_value`, like `narrowargs`/`protoorder`.
-    assert_eq!(with_live, 76);
+    // 75 -> 74: `armconstshift` became three-valued (off|on|all) over an enum
+    // field with no `live_field`.
+    assert_eq!(with_live, 75);
 }
 
 #[test]
