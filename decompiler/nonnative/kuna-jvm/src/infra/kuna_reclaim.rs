@@ -658,6 +658,7 @@ impl Marker {
                     kuna_chain_type_args: _,
                     kuna_continuation_arg: _,
                     kuna_inlined: _,
+                    kuna_inline_class: _,
                 } = &**invocation;
                 self.exprent_opt(*instance);
                 self.exprent_list(lst_parameters);

@@ -20,7 +20,7 @@ public class TestInlineClassConstructorAccessor {
 
       @JvmStatic
       public open fun hashCode(): Int {
-         return Integer.hashCode(arg0)
+         return Integer.hashCode(arg0.v)
       }
 
       fun hashCode(): Int {
@@ -29,9 +29,8 @@ public class TestInlineClassConstructorAccessor {
 
       @JvmStatic
       public open operator fun equals(other: Any?): Boolean {
-         return other is TestInlineClassConstructorAccessor.Meters
-            && arg0 == (other as TestInlineClassConstructorAccessor.Meters).unbox_impl/* $VF was: unbox-impl */()
-         }
+         return other is TestInlineClassConstructorAccessor.Meters && arg0.v == (other as TestInlineClassConstructorAccessor.Meters).v
+      }
 
       fun equals(other: Any): Boolean {
          return equals_impl/* $VF was: equals-impl */(this.v, other)

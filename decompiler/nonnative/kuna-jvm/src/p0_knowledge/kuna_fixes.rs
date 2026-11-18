@@ -873,6 +873,11 @@ pub enum KunaFix {
     /// `kt_default_impls_delegate`: the methods kotlinc generates to call an
     /// interface member's default body through `DefaultImpls` are not written.
     KtDefaultImplsDelegate,
+    /// `kt_inline_class_value`: in Kotlin output, a value of an inline
+    /// (value) class held in its underlying type is written as the value
+    /// class: `V(x)`, `v.member(..)`, `a == b`, locals of the class's type,
+    /// and the underlying property where the code reads the underlying value.
+    KtInlineClassValue,
 }
 
 impl KunaFix {
@@ -1127,6 +1132,7 @@ impl KunaFix {
         KunaFix::KtClassHeaderMetadata,
         KunaFix::KtEnclosingTypeParameter,
         KunaFix::KtDefaultImplsDelegate,
+        KunaFix::KtInlineClassValue,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -1381,6 +1387,7 @@ impl KunaFix {
             KunaFix::KtClassHeaderMetadata => "kt_class_header_metadata",
             KunaFix::KtEnclosingTypeParameter => "kt_enclosing_type_parameter",
             KunaFix::KtDefaultImplsDelegate => "kt_default_impls_delegate",
+            KunaFix::KtInlineClassValue => "kt_inline_class_value",
         }
     }
 

@@ -296,3 +296,5 @@ mod kuna_fix_ktcompanion;
 mod kuna_fix_ktsuspend2;
 #[path = "kuna_fix_kttypes2.rs"]
 mod kuna_fix_kttypes2;
+#[path = "kuna_fix_ktinlineclass.rs"]
+mod kuna_fix_ktinlineclass;

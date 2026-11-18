@@ -17,7 +17,7 @@ public class TestDefaultArgsBridgeLookup(base: Int) {
    }
 
    public fun walk(d: pkg.TestDefaultArgsBridgeLookup.Meters, steps: Int = 2): Int {
-      return d + steps + this.base
+      return d.v + steps + this.base
    }
 
    public suspend fun load(key: String = "k", times: Int = key.length): String {
@@ -52,7 +52,7 @@ public class TestDefaultArgsBridgeLookup(base: Int) {
 
       @JvmStatic
       public open fun toString(): String {
-         return "Meters(v=$arg0)"
+         return "Meters(v=${arg0.v})"
       }
 
       fun toString(): String {
@@ -61,7 +61,7 @@ public class TestDefaultArgsBridgeLookup(base: Int) {
 
       @JvmStatic
       public open fun hashCode(): Int {
-         return Integer.hashCode(arg0)
+         return Integer.hashCode(arg0.v)
       }
 
       fun hashCode(): Int {
@@ -70,7 +70,7 @@ public class TestDefaultArgsBridgeLookup(base: Int) {
 
       @JvmStatic
       public open operator fun equals(other: Any?): Boolean {
-         return other is TestDefaultArgsBridgeLookup.Meters && arg0 == (other as TestDefaultArgsBridgeLookup.Meters).unbox_impl/* $VF was: unbox-impl */()
+         return other is TestDefaultArgsBridgeLookup.Meters && arg0.v == (other as TestDefaultArgsBridgeLookup.Meters).v
       }
 
       fun equals(other: Any): Boolean {
