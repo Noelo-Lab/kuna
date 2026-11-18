@@ -1844,7 +1844,7 @@ path, or reads after it (`T v; if (x instanceof T) { v = (T) x; } else { v = new
 v.use();`, Elasticsearch's `ES812PostingsReader.postings`, Ghidra's
 `FileBytesAdapterV0.createBuffers`), becomes a pattern variable used outside its scope, which
 javac cannot resolve (still so on `develop/1.13.0`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/patterns/pattern_variable_scope.rs`), the
+(`decompiler/nonnative/kuna-jvm/src/fixes/patterns/mod.rs`), the
 pattern is made only when no statement of the method outside the pattern's scope uses the
 variable (by index): the scope is the branch the assignment came from when it is the `if`'s own
 branch, or the statements after the `if` in its sequence when it is the `if`'s successor, plus
@@ -3641,7 +3641,7 @@ instanceof T) { T v = (T) this.f;`, whose second read the pattern drops), and a 
 negated test's exit, at the `ifne`'s target (`if (!(o instanceof T)) return false; T v = (T)
 o;`, also written `o instanceof T == false`). javac compiles the patterns it prints otherwise:
 a temporary, and the binding before the exit. With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/patterns/pattern_binding_shape.rs (is_javac_pattern)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/patterns/mod.rs (is_javac_pattern)`)
 the pattern is made only when the subject is a variable, or the synthetic field holding a
 variable a local or anonymous class captured (which javac reads twice for a pattern on the
 captured variable), and the binding's first instruction is the one after the `ifeq` that

@@ -12,8 +12,7 @@ use crate::if_helper::IfHelper;
 use crate::if_statement::IfStatement;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::p6_variables::kuna_source_locals;
-use crate::fixes::patterns::pattern_binding_shape;
-use crate::fixes::patterns::pattern_variable_scope;
+use crate::fixes::patterns;
 use crate::fixes::patterns::unchecked_type_pattern;
 use crate::p8_structure::kuna_source_patterns;
 use crate::pattern_exprent::PatternExprent;
@@ -154,7 +153,7 @@ impl IfPatternMatchProcessor {
 
         let out_of_scope = kuna_fixes::enabled(KunaFix::PatternVariableScope)
             && left.try_as_var().is_some_and(|var| {
-                !pattern_variable_scope::in_scope(statement, branch, var, root.0)
+                !patterns::in_scope(statement, branch, var, root.0)
             });
         let unchecked = kuna_fixes::enabled(KunaFix::UncheckedTypePattern)
             && !unchecked_type_pattern::is_checked_cast(
@@ -162,7 +161,7 @@ impl IfPatternMatchProcessor {
                 &left.get_inferred_expr_type(None),
             );
         let foreign = kuna_fixes::enabled(KunaFix::PatternBindingShape)
-            && !pattern_binding_shape::is_javac_pattern(root.mt(), iof, source, first)
+            && !patterns::is_javac_pattern(root.mt(), iof, source, first)
             || kuna_source_patterns::keeps_cast(root.mt(), iof, source, left, first);
         let mut result = !out_of_scope
             && !unchecked
