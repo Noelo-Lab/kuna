@@ -4454,7 +4454,11 @@ arguments, and the same handlers protect the allocation and the call. The verifi
 copies and `<init>` on the uninitialised object, so what moves is the allocation itself, past the
 argument evaluation, as the same-list join already moves it past the statements between: the class is
 initialised after the arguments are evaluated rather than before, and a path that leaves without the
-call (a `throw`, `return` or `continue` in the arguments) allocates nothing. The following passes then
+call (a `throw`, `return` or `continue` in the arguments) allocates nothing. That differs from the
+bytecode where `X` has a static initializer with an effect that has not run yet: `return X(a ?: return
+null)` with a companion `init` that logs runs it before the null test, the joined `if (a == null) null
+else X(a)` only on the other path. The join is kept for that case, the alternative being Vineflower's
+`<init>` call, which is not Java. The following passes then
 simplify as usual (`return new X(args)`, a return copied into each branch of a labelled block).
 Not fixed on `develop/1.13.0`.
 **`local_final_writes`.** `VarDefinitionHelper.setNonFinal` decides which locals are written once: a
