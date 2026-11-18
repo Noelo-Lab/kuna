@@ -2480,7 +2480,14 @@ parser both surfaces use: the declaration is the grammar `prototype` takes, the
 trailing `;` is optional, and a parameter may be followed by `@<storage>` in
 the spelling `param` takes, which rides in the pieces' `input_storage` so the
 model places the remaining parameters around it; a `@<storage>` after the
-parameter list is the return's `output_storage`. The in-process surface seeds
+parameter list is the return's `output_storage`. The override is built under
+the default model (`build_override_proto`; the pieces carry no model), so a
+declaration naming any other calling convention (`__thiscall`) is rejected
+rather than laid out under the wrong one; `@<storage>` states a non-default
+placement.
+Two directives for the same call site keep the later one, and the earlier
+reports `rejected` (`assertions::restated_call_prototypes`, used by both
+surfaces). The in-process surface seeds
 the pieces as the drive's per-call-site overrides (`FunctionSeed::proto_overrides`),
 where a stated one outranks a format-string one discovered at the same address,
 and the script surface lowers to `override prototype` in the function slot. A
@@ -2489,7 +2496,9 @@ includes a tail jump treated as a call; any other address is rejected with `No
 call is made at this address` — by the console command on the script surface,
 and by `assertions::record_unbound_call_prototypes` against the decompiled
 function on the in-process one. Like `flow`, the directive withdraws the
-`callwide` whole-image proof, which did not see it.
+`callwide` whole-image proof, which did not see it. A stated prototype locks
+the call's inputs, and `calltargettype` (chapter 05) still types the target of
+such an indirect call from its arguments, so the call stays one C can make.
 
 (kuna) **A symbol-scoped directive reaches the register locals too, by mapping a
 Symbol over their storage.** `name`/`type` resolve their target through

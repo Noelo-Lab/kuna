@@ -3,7 +3,8 @@
  * variadic function pointer, the second a tail jump. Its target register is
  * read as a fifth argument unless that one call is given its own prototype.
  *
- * Build: clang -O2 -c callproto_x86_64.c -o callproto_x86_64.o
+ * Build (clang and ld.lld 22.1.8; 21.1.8 reproduces every section but .comment):
+ *        clang -O2 -fcf-protection=full -c callproto_x86_64.c -o callproto_x86_64.o
  *        ld.lld -shared -o callproto_x86_64 callproto_x86_64.o
  *
  * `report` is at 0x1370, the call at 0x1392, the tail jump at 0x13b0 and the

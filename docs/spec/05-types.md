@@ -1482,7 +1482,10 @@ states the signature its target must have, and when `calltargettype` is on,
 final one: it runs once, in the one-shot tail, after `ActionNameVars` and
 directly before `ActionSetCasts`, and never feeds the inference lattice or
 `ActionDeindirect`'s forced prototypes. For each indirect call whose prototype
-is neither locked nor variadic it builds `R (*)(A1,..,An)` with
+is not variadic, and not locked unless the lock is a prototype stated at the
+call itself (`override prototype`, the `callproto` assertion, whose arguments
+carry the stated types while the target stays untyped), it builds
+`R (*)(A1,..,An)` with
 `TypeFactory::getTypeCode(PrototypePieces)`: `R` is the high type of the call's
 output, or `void` when it has none, and each `Ai` the high type of the argument
 in that slot as it is read there -- except an argument printed inline as an

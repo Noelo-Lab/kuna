@@ -349,12 +349,24 @@ fn clobber_is_read(data: &Funcdata, op: OpId) -> bool {
 /// and return the result in the storage the call `op` uses?  A
 /// value in the other register class -- a `float` held as an `unsigned int` in
 /// `xmm0` or `s0`, a `double`'s bits in `rdi` -- or a record returned through
-/// memory compiles to a call that passes or reads something else.
+/// memory compiles to a call that passes or reads something else.  A call whose
+/// prototype was stated at the call recovered no storage; the storage its
+/// stated parameters were given stands in.
 fn passes_like_the_call(data: &Funcdata, op: OpId, built: &FuncProto, nargs: usize, out: Option<VarnodeId>) -> bool {
     let Some(fc) = data.get_call_specs_index(op).map(|i| data.get_call_specs(i)) else {
         return false;
     };
-    let storage = fc.final_input_storage();
+    let locked: Vec<(Address, int4)>;
+    let storage = if fc.is_input_locked() {
+        let proto = fc.proto();
+        locked = (0..proto.num_params())
+            .filter_map(|i| proto.get_param(i))
+            .map(|p| (p.get_address(), p.get_size()))
+            .collect();
+        &locked[..]
+    } else {
+        fc.final_input_storage()
+    };
     if built.num_params() as usize != nargs || storage.len() != nargs {
         return false;
     }
@@ -378,6 +390,18 @@ fn passes_like_the_call(data: &Funcdata, op: OpId, built: &FuncProto, nargs: usi
     params && result
 }
 
+/// Was the prototype of the call `op` declared at the call itself (`override
+/// prototype`, the `callproto` assertion) rather than read from a callee or a
+/// format string?  Its arguments then carry the declared types, and the
+/// target is still the untyped value the call goes through.
+fn stated_at_call(data: &Funcdata, op: OpId) -> bool {
+    data.obank().get(op).is_some_and(|o| {
+        let overrides = data.get_override();
+        overrides.find_proto_override(o.get_addr()).is_some_and(|p| p.pieces().is_some())
+            && !overrides.is_format_call(o.get_addr())
+    })
+}
+
 /// The indirect calls a high is the target of, with the type each one states.
 type Group = Vec<(OpId, Rc<Datatype>)>;
 
@@ -390,7 +414,7 @@ pub fn retype_call_targets(data: &mut Funcdata) {
     let ops: Vec<OpId> = (0..data.num_calls())
         .filter(|&i| {
             let fc = data.get_call_specs(i);
-            !fc.is_input_locked() && !fc.is_dotdotdot()
+            (!fc.is_input_locked() || stated_at_call(data, fc.get_op())) && !fc.is_dotdotdot()
         })
         .map(|i| data.get_call_specs(i).get_op())
         .collect();

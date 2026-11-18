@@ -431,7 +431,7 @@ fn assertion_outcomes(
     selected: Option<&str>,
 ) -> Vec<kuna_console::assertions::Outcome> {
     use kuna_console::assertions::Outcome;
-    directives
+    let mut outcomes: Vec<Outcome> = directives
         .iter()
         .map(|directive| {
             let (kind, phase, subphase) = directive.body.coords();
@@ -461,7 +461,13 @@ fn assertion_outcomes(
                 fatal,
             }
         })
-        .collect()
+        .collect();
+    let applied = |i: usize| outcomes[i].status == "applied";
+    let binds = |d: &kuna_console::assertions::Directive| crate::assertdecl::console_form(d, selected).is_ok();
+    for i in kuna_console::assertions::restated_call_prototypes(directives, applied, binds) {
+        outcomes[i] = kuna_console::assertions::restated(&directives[i]);
+    }
+    outcomes
 }
 
 /// The diagnostic the console printed for the command `line`, or `None` when it
@@ -2089,6 +2095,38 @@ Execution error: No symbol named: v9
         assert_eq!(report[0].status, "applied");
         assert_eq!(report[1].status, "rejected");
         assert_eq!(report[1].detail.as_deref(), Some("No symbol named: v9"));
+    }
+
+    /// Two `callproto` directives for one call: the console keeps the later
+    /// prototype, so the earlier is rejected rather than reported applied. A later
+    /// one the console refused replaces nothing.
+    #[test]
+    fn a_restated_call_prototype_rejects_the_earlier_one() {
+        let parse = |specs: &[&str]| -> Vec<_> {
+            specs.iter().map(|spec| crate::assertdecl::parse_one(spec).expect("parses")).collect()
+        };
+        let directives =
+            parse(&["callproto 0x13b0 void f(char *)", "callproto report::0x13b0 void g(char *, int)"]);
+        let transcript = "\
+[decomp]> override prototype 0x13b0 void f(char *);
+Successfully added override
+[decomp]> override prototype 0x13b0 void g(char *, int);
+Successfully added override
+";
+        let report = super::assertion_outcomes(transcript, &directives, Some("report"));
+        assert_eq!(report[0].status, "rejected");
+        assert!(report[0].detail.as_deref().unwrap_or_default().contains("later callproto"));
+        assert_eq!(report[1].status, "applied");
+        let directives = parse(&["callproto 0x13b0 void f(char *)", "callproto 0x13b0 void g(nosuch)"]);
+        let transcript = "\
+[decomp]> override prototype 0x13b0 void f(char *);
+Successfully added override
+[decomp]> override prototype 0x13b0 void g(nosuch);
+Execution error: Syntax error
+";
+        let report = super::assertion_outcomes(transcript, &directives, Some("report"));
+        assert_eq!(report[0].status, "applied");
+        assert_eq!(report[1].status, "rejected");
     }
 
     /// A script that never reached a directive did not apply it, and saying so is

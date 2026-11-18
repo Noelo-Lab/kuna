@@ -980,7 +980,39 @@ pub fn function_seed(
         };
         prog.set_assertion_outcome(i, outcome);
     }
+    if directives.iter().any(|d| matches!(d.body, Body::CallProto { .. })) {
+        let outcomes = prog.assertion_outcomes();
+        let applied = |i: usize| outcomes.get(i).is_some_and(|o| o.status == "applied");
+        for i in restated_call_prototypes(&directives, applied, |d| binds_to(&d.body, name, single)) {
+            prog.set_assertion_outcome(i, restated(&directives[i]));
+        }
+    }
     seed
+}
+
+/// The `callproto` directives a later one replaces: of those `binds` and
+/// `applied` accept, every one a later one names the same call site after.  A
+/// call keeps the newest prototype stated for it, as the console's `override
+/// prototype` does.
+pub fn restated_call_prototypes(
+    directives: &[Directive],
+    applied: impl Fn(usize) -> bool,
+    binds: impl Fn(&Directive) -> bool,
+) -> Vec<usize> {
+    let sites: Vec<Option<u64>> = directives
+        .iter()
+        .enumerate()
+        .map(|(i, d)| match d.body {
+            Body::CallProto { addr, .. } if applied(i) && binds(d) => Some(addr),
+            _ => None,
+        })
+        .collect();
+    (0..sites.len()).filter(|&i| sites[i].is_some() && sites[i + 1..].contains(&sites[i])).collect()
+}
+
+/// The outcome of a `callproto` a later one for the same call replaced.
+pub fn restated(directive: &Directive) -> Outcome {
+    directive.rejected("a later callproto states this call again, and that one is applied")
 }
 
 /// Downgrade the outcome of every `flow` directive bound to `name` that the flow

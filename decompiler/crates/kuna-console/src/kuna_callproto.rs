@@ -2,10 +2,11 @@
 //! against, shared by the console's `override prototype` and the `--assert`
 //! directive `callproto [<func>::]<callsite> <C declaration>`.
 //!
-//! The declaration is the grammar `prototype` takes, and each parameter may be
-//! followed by `@<storage>` in the spelling `param` takes (`RDI`, `%RDI`,
+//! The declaration is the grammar `prototype` takes, naming no calling
+//! convention but the default one, which the call is laid out under. Each parameter may
+//! be followed by `@<storage>` in the spelling `param` takes (`RDI`, `%RDI`,
 //! `[stack,-0x18,8]`); a `@<storage>` after the parameter list places the
-//! return value. A parameter without one is placed by the calling convention
+//! return value. A parameter without one is placed by the default convention
 //! around those that have one.
 
 use kuna_base::address::Address;
@@ -32,8 +33,16 @@ pub(crate) fn parse(prog: &ConsoleProgram, decl: &str) -> Result<PrototypePieces
     let org = DataOrg { addr_size, word_size };
     let text = text.trim();
     let text = if text.ends_with(';') { text.to_string() } else { format!("{text};") };
-    let mut pieces = crate::grammar::parse_protopieces(&text, prog.arch().types(), org)
-        .map_err(|e| e.explain().to_string())?;
+    let models = crate::assertions::model_names(prog);
+    let (mut pieces, model) =
+        crate::grammar::parse_protopieces_with_model(&text, prog.arch().types(), org, &models)
+            .map_err(|e| e.explain().to_string())?;
+    if !model.is_empty() && prog.arch().default_fp().is_none_or(|m| m.get_name() != model) {
+        return Err(format!(
+            "a call-site prototype is laid out under the default calling convention and \
+             cannot name {model}; place its parameters with @<storage>"
+        ));
+    }
     for (place, token) in storage {
         let token = crate::assertsyntax::normalize_storage(&token);
         let mut stream = crate::interface::CommandStream::new(&token);

@@ -1046,18 +1046,21 @@ arguments at each call. `callproto` gives the call made by one instruction its
 own declaration, in the grammar `prototype` takes:
 
 ```console
-$ kuna decompile ./vlog.so report
+$ kuna decompile ./vlog.so report --assert 'data 0x2458 void (**logger_slot)(char *fmt, ...)'
   (**v1)("%s %d %d",a1,(unsigned long)a0,(unsigned long)(a0 + 1),*v1); // jump-as-call
-$ kuna decompile ./vlog.so report --assert 'callproto 0x13b0 void f(char *fmt, char *s, int a, int b)'
+$ kuna decompile ./vlog.so report --assert 'data 0x2458 void (**logger_slot)(char *fmt, ...)' \
+      --assert 'callproto 0x13b0 void f(char *fmt, char *s, int a, int b)'
   (**v1)("%s %d %d",a1,a0,a0 + 1); // jump-as-call
 ```
 
-A parameter followed by `@<storage>` is read from that storage instead of the
-place the calling convention gives it (`int a @R8D`, `char *s @[stack,0x8,8]`),
-and a `@<storage>` after the parameter list places the return value; the
-parameters without one are placed by the convention around those that have one.
-An address where the function makes no call is **rejected** with `No call is
-made at this address`.
+The call is laid out under the default calling convention, so a declaration
+naming any other (`__thiscall` on x86) is **rejected**. A parameter followed by
+`@<storage>` is read from that storage instead of the place the convention
+gives it (`int a @R8D`, `char *s @[stack,0x8,8]`), and a `@<storage>` after the
+parameter list places the return value; the parameters without one are placed
+by the convention around those that have one. An address where the function
+makes no call is **rejected** with `No call is made at this address`, and of
+two directives for one call the later is applied and the earlier **rejected**.
 
 `comment`, `flow`, `callproto`, `name` and `type` describe the inside of one
 function body and have no cross-function reading, so qualifying one with a
