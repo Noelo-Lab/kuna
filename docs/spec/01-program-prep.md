@@ -242,7 +242,10 @@ of 512 bytes or fewer still follows exactly the path it always did.
 The mapping unit is the ELF **`PT_LOAD` segment** (what the OS actually maps), not the BFD
 section list. Where upstream returns a BFD target string for the Java side to
 re-map, kuna resolves the SLEIGH language id directly off the object header
-(machine + endianness + class → e.g. `x86:LE:64:default:gcc`).
+(machine + endianness + class → e.g. `x86:LE:64:default:gcc`). An `EM_BPF` (247)
+object takes `eBPF:LE:64:default` or `eBPF:BE:64:default` by its byte order, the
+same two ids the vendored `eBPF.opinion` declares, so a `clang --target=bpf -c`
+program loads without `--target`.
 
 (kuna) ELF target selection also reads declared instruction and ABI requirements
 (`decompiler/crates/kuna-analysis/src/loader/kuna_mipstarget.rs`). MIPS ELF32 can
@@ -1006,7 +1009,21 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   The split forms truncate rather than range-check, and reject a REL-style
   implicit addend, which cannot be reassembled from one half. SPARC64 (V9)
   instruction relocations, and GOT/TLS forms that need linker-built tables,
-  remain unsupported.
+  remain unsupported. eBPF objects are REL-only and every program ships as one,
+  so its three instruction forms are encoded rather than written as plain words:
+  `R_BPF_64_64` names the 16-byte `lddw` (a map or global reference) and lands
+  `S + A` in the two 32-bit `imm` fields at +4 and +12, the addend read back from
+  those same halves, with the opcode, registers and offset untouched;
+  `R_BPF_64_32` is the `call` to a BPF subprogram and writes
+  `(S + A - P) / 8 - 1`, the displacement in instructions from the next
+  instruction, into the `imm` at +4, the field's own `-1` being LLVM's
+  placeholder and no addend; `R_BPF_64_ABS64`, `R_BPF_64_ABS32` and
+  `R_BPF_64_NODYLD32` are the data words of `.maps`, `.BTF` and `.BTF.ext`.
+  A `call` whose `imm` is a helper id (source register 0) carries no
+  relocation; it reaches the `syscall` space, where the pspec
+  `<default_symbols>` label at that id names the callee
+  (`bpf_map_lookup_elem`), as a Ghidra function created at a labelled address
+  does.
 
   An undefined symbol reached through any branch or call instruction field —
   not only a call-spelled one — is bound to a named extern slot. A tail call is

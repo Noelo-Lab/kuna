@@ -144,6 +144,9 @@ impl FlowEnvironment for ArchFlowEnv {
         arch.is_lazy_entry(entry.get_offset())
             .then(|| arch.name_function(entry))
     }
+    fn query_call_label(&self, entry: &Address) -> Option<String> {
+        self.arch().pspec_symbol_at(entry).map(str::to_string)
+    }
     fn query_call_definition(&self, entry: &Address) -> Option<Address> {
         crate::p4_calls::kuna_pltlocal::definition(self.arch(), entry)
     }

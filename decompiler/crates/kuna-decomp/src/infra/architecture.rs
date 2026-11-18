@@ -2026,6 +2026,11 @@ pub struct Architecture {
     /// real mode.  `None` when the frontend did not supply it (then the engine
     /// keeps the `.sla`-default zero context).
     pspec_xml: Option<Vec<u8>>,
+    /// The pspec `<default_symbols>` by address, kept by [`Self::build_symbols`]
+    /// for the flow's `query_call_label`: a direct call whose target carries one
+    /// of these labels and no FunctionSymbol (eBPF's helper ids in the `syscall`
+    /// space) prints the label's name.
+    pspec_symbols: std::collections::HashMap<(int4, uintb), String>,
     /// (kuna, Phase 3) Raw `<coretypes>` XML (the fourth ghidra-mode
     /// registerProgram spec document), set by [`Self::set_coretypes_xml`]
     /// before [`init_post_engine`](Architecture::init_post_engine) so
@@ -2603,6 +2608,7 @@ impl Architecture {
             default_return_addr: None,
             cspec_xml: None,
             pspec_xml: None,
+            pspec_symbols: std::collections::HashMap::new(),
             coretypes_xml: None,
             split_records: Vec::new(),
             kuna_drive_depth: std::rc::Rc::new(std::cell::Cell::new(0)),
@@ -5280,6 +5286,12 @@ impl Architecture {
         self.pspec_xml = Some(xml);
     }
 
+    /// The pspec `<default_symbols>` label at exactly `addr`, if any.
+    pub fn pspec_symbol_at(&self, addr: &Address) -> Option<&str> {
+        let spc = addr.get_space()?;
+        self.pspec_symbols.get(&(spc.get_index(), addr.get_offset())).map(String::as_str)
+    }
+
     /// Apply the processor-spec `<context_data>` paints to the engine's context
     /// database (the relevant slice of C++ `Architecture::parseProcessorConfig`,
     /// architecture.cc:1176, dispatching the `ELEM_CONTEXT_DATA` branch to
@@ -5583,6 +5595,9 @@ impl Architecture {
             let ct = self.types.get_base(size, TYPE_UNKNOWN)?;
             self.symboltab
                 .add_symbol_mapped(scope, &name, ct, &addr, &usepoint)?;
+            if let Some(spc) = addr.get_space() {
+                self.pspec_symbols.insert((spc.get_index(), addr.get_offset()), name.clone());
+            }
             last_addr = addr;
             last_size = size;
         }
