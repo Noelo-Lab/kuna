@@ -1,21 +1,7 @@
-//! kuna fix `kt_java_cast_syntax`: in Kotlin output, the casts Vineflower
-//! writes in Java's syntax, `(long)x`, `(int)Math.min(a, b)`, `(T)value`,
-//! which is not Kotlin, are written with the Kotlin construct that does the
-//! same thing.
-//!
-//! A cast to a numeric primitive type from a numeric primitive or its box is
-//! a numeric conversion, which Kotlin writes as a call of the conversion
-//! function: `x.toLong()`, `Math.min(a, b).toInt()`; from or to `char`
-//! through its code (`c.code`, `i.toChar()`), and to `char`, `byte` and
-//! `short` from a type other than `int` through `toInt()`, as Java converts
-//! (`d.toInt().toShort()` for `(short)d`). Kotlin compiles each of these to
-//! the same conversion instructions as Java's cast. A cast to a type
-//! variable, `(T)value`, is unchecked in both languages and is written
-//! `value as T`, which is unchecked too and, like Java's, lets `null` through.
-//! An integer constant of a narrow type (`bipush 32` is typed as fitting
-//! `byte` and `char`) is written as an `Int` literal, so it converts as one:
-//! `32.toLong()`. Casts to class and array types are the fix
-//! `kt_java_reference_cast`'s.
+//! Fix `kt_java_cast_syntax`: a cast Vineflower writes in Java's syntax is
+//! written with the Kotlin construct that compiles to it: a numeric conversion
+//! call (`x.toLong()`, `c.code`), `value as T` for a type variable;
+//! `writing_kotlin` says whether the class being written is Kotlin output.
 
 use crate::code_type::CodeType;
 use crate::const_exprent::ConstValue;

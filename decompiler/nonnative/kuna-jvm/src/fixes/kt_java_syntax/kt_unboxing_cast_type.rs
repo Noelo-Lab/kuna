@@ -1,19 +1,5 @@
-//! kuna fix `kt_unboxing_cast_type`: in Kotlin output, the cast whose value
-//! an unboxing call unboxes is written to the Kotlin type of the unboxed
-//! value, `x as Boolean`, not to the box class, `x as java.lang.Boolean`.
-//!
-//! Vineflower does not write Java's unboxing calls (`booleanValue()`): Java
-//! unboxes `(Boolean)x` where a `boolean` is needed, so it writes the
-//! instance alone, here the cast `x as java.lang.Boolean`. Kotlin unboxes a
-//! value of its own `Boolean`, `Int`, `Long` ... type but not one of the Java
-//! box class, which kotlinc rejects where a `Boolean` is needed ("condition
-//! type mismatch: inferred type is 'java.lang.Boolean' but 'Boolean' was
-//! expected"). The Kotlin plugin writes `Integer` as `Int` and so unboxes
-//! `x as Int`, but writes the other box classes with their Java names. With
-//! the fix a cast to the box class whose unboxing call is not written is
-//! written to the Kotlin type of the call's result; kotlinc compiles
-//! `x as Boolean` there to the `checkcast java/lang/Boolean` and
-//! `booleanValue()` of the bytecode.
+//! Fix `kt_unboxing_cast_type`: the cast whose value an unwritten unboxing call
+//! unboxes is written to the Kotlin type of the call's result (`x as Boolean`).
 
 use crate::exprent::Exprent;
 use crate::function_exprent::FunctionType;
