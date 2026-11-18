@@ -1,39 +1,8 @@
-//! kuna fix `kt_facade_call`: a top-level function or property is called by
-//! its name, with the import of its package-level declaration, not through
-//! the JVM class that holds it.
-//!
-//! kotlinc compiles a file's top-level declarations into a file facade
-//! (`UtilKt`, or the `@file:JvmName`), and the files of a
-//! `@JvmMultifileClass` into parts behind one facade (`StringsKt` delegates
-//! to `StringsKt__StringsKt` ..), and calls them with `invokestatic` on the
-//! facade. Vineflower writes such a call as Java does, `Util.format(..)`,
-//! and reads a `@JvmField` or `const` as `Util.EMPTY_RESPONSE`: Kotlin has no
-//! name for a facade class, so neither resolves. A top-level property's
-//! accessor call it writes by the property's bare name without its import,
-//! which can name a local variable of that name instead. Vineflower takes
-//! the callee's metadata from the facade's own method only, which for a
-//! multifile facade has none, so those calls lose every Kotlin form.
-//!
-//! With the fix the callee of a call through a multifile facade is the part
-//! method of that name and descriptor (from the library on the class path
-//! when the facade is not in the input; a name an inline value class
-//! mangled is left alone), and a callee of a file facade, a multifile
-//! facade or a part is top-level: it is written by its Kotlin name (a
-//! property by its name, assigned for a setter), and its package's
-//! declaration of that name is imported, which is not written for the
-//! current package and for Kotlin's default imports. The name is written
-//! bare only where it can mean nothing else: no other import of the file
-//! holds that name, no member of a class whose members are in scope there
-//! (the class written, its outer classes, their companions and supertypes)
-//! and no local variable of their methods' local variable tables has it,
-//! and, for a callee of a default import, the file's package declares no
-//! class or top-level declaration of that name; else the call is qualified
-//! with the package (`okio.buffer`). A call passing a parameter its method's
-//! header declares with an inline value class type keeps Vineflower's form
-//! (`value_class_argument`): Kotlin may pass it to another overload. An
-//! extension is the fix
-//! `kt_extension_call`'s. A callee without metadata (its class neither in
-//! the input nor on the class path) keeps Vineflower's form.
+//! Fix `kt_facade_call`: a call of a top-level function or property through its
+//! file or multifile facade is written by its Kotlin name with the import of
+//! its package's declaration, or qualified with the package where the bare
+//! name could mean something else; a multifile facade's callee is read from
+//! the part that declares it.
 
 use std::rc::Rc;
 

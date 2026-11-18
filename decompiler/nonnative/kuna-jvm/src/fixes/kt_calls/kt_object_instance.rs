@@ -1,14 +1,5 @@
-//! kuna fix `kt_object_instance`: the `INSTANCE` field of an `object` is
-//! written as the object's name.
-//!
-//! kotlinc reaches an `object`'s members through its static `INSTANCE`
-//! field (`getstatic SegmentPool.INSTANCE`), which Vineflower writes as such:
-//! `SegmentPool.INSTANCE.recycle(s)`. Kotlin names the object itself, and has
-//! no `INSTANCE`. With the fix the static `INSTANCE` field of a class whose
-//! Kotlin metadata says `object` is written as the class's name
-//! (`SegmentPool.recycle(s)`, `addTransformer(DebugProbesTransformer)`),
-//! which kotlinc compiles to the same `getstatic`; both the plugin's field
-//! expressions and the ones the writer prints in Java's form use it.
+//! Fix `kt_object_instance`: the static `INSTANCE` field of a class whose
+//! metadata says `object` is written as the class's name.
 
 use crate::decompiler_context::DecompilerContext;
 use crate::expr_processor::ExprProcessor;

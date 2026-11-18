@@ -1,7 +1,5 @@
-//! kuna fix `kt_explicit_type_arguments`: in Kotlin output, a call's
-//! explicit type arguments, which Vineflower writes in Java's syntax before
-//! the function's name (`CollectionsKt.<File>last(list)`), are written after
-//! it, as Kotlin writes them, with Kotlin's type names
+//! Fix `kt_explicit_type_arguments`: a call's explicit type arguments are
+//! written after the function's name with Kotlin's type names
 //! (`CollectionsKt.last<File>(list)`).
 
 use crate::fixes::kt_java_syntax::kt_java_cast_syntax;

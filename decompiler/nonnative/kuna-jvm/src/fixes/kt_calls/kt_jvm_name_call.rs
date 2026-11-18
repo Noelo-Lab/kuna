@@ -1,24 +1,7 @@
-//! kuna fix `kt_jvm_name_call`: a call of a Kotlin function is written with
-//! the function's Kotlin name, not its JVM name.
-//!
-//! kotlinc names a function's method differently from the function in two
-//! cases: an `internal` member gets its module's name appended
-//! (`bump$main`, `canonicalize$okhttp`), and `@JvmName` renames it
-//! (`@JvmName("url") fun toUrl()`, okio's `@JvmName("getByte") operator fun
-//! get`). Vineflower writes the call with the method's name, which Kotlin
-//! cannot resolve (`` b.`bump$main`() ``) or resolves to the deprecated
-//! alias the library keeps under the JVM name (`url.url()`, `s.getByte(i)`).
-//! With the fix a call whose callee's metadata names the function otherwise
-//! is written with the metadata's name, `b.bump()`, `url.toUrl()`,
-//! `s.get(i)`; the call's instance and arguments are Vineflower's. A name
-//! that an inline-class parameter mangled (`f-QeA7wkU`), which another
-//! overload of the Kotlin name may take, keeps the JVM name. Vineflower
-//! reads the callee's metadata from the class the call names only, so a
-//! member the class inherits (`this.responseBodyComplete$okhttp()` in a
-//! subclass, an inherited property's `getClosed()`) kept its JVM name; with
-//! the fix the metadata of the class that declares it is read too. The
-//! `invoke` of a lambda's or local function's class keeps its name (its
-//! metadata names the local function, which is no member).
+//! Fix `kt_jvm_name_call`: a call is written with the Kotlin name its callee's
+//! metadata (or that of the class declaring it) gives, where the JVM name is
+//! an `internal` member's mangled name or a `@JvmName`; a name an inline-class
+//! parameter mangled keeps the JVM name.
 
 use crate::decompiler_context::DecompilerContext;
 use crate::invocation_exprent::InvocationExprent;

@@ -1,28 +1,8 @@
-//! kuna fix `kt_synthetic_accessor_call`: a call of a synthetic accessor
-//! kotlinc generates for a private member is written as the access it
-//! makes.
-//!
-//! A private member used from another JVM class of its file (a lambda or
-//! object class, a class beside a top-level declaration, an inlined body) is
-//! reached through a static synthetic method of its class: `access$getX$p`
-//! and `access$setX$p` read and write a property's field, `access$foo`
-//! calls a function. Vineflower replaces these calls only where the caller
-//! is nested in the accessor's class; elsewhere it writes the accessor,
-//! `` Http2Connection.`access$getPushObserver$p`(c) ``, which Kotlin has no
-//! name for. With the fix, when the accessor's code only passes its
-//! parameters, in order, to one field access or call of a member of its
-//! class that has Kotlin metadata, and returns what that gives, the call is
-//! the access: a property read `c.pushObserver` or assignment, a call
-//! `log(task, queue, message)` of the function, written as the call of that
-//! function is (receiver, name, import: the fixes `kt_extension_call`,
-//! `kt_facade_call`, `kt_jvm_name_call`). A static field is resugared only
-//! for a top-level property; an `invokespecial` only of the accessor's own
-//! class (a super call keeps its accessor). A field accessor (`$p`) is a
-//! property access only when the property is not delegated (its field holds
-//! the delegate, not the value) and the accessor the access would call is
-//! the default one; otherwise it keeps the accessor call (a custom accessor's
-//! `field`, reached through `$p` from an object expression, is written by
-//! the fix `kt_accessor_backing_field`).
+//! Fix `kt_synthetic_accessor_call`: a call of a synthetic accessor
+//! (`access$getX$p`, `access$foo`) whose code only passes its parameters to one
+//! member of its class is written as that member's access or call; a field
+//! accessor only for a property that is not delegated and whose accessor is the
+//! default one.
 
 use crate::code_constants::{
     ACC_INTERFACE, ACC_STATIC, ACC_SYNTHETIC, OPC_ALOAD, OPC_ALOAD_3, OPC_GETFIELD, OPC_GETSTATIC, OPC_ILOAD,

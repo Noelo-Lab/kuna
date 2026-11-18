@@ -1,55 +1,9 @@
-//! kuna fix `kt_extension_call`: an extension function or property is
-//! called on its receiver, `s.shout()`, `s.firstChar`, `s.tag = 4`.
-//!
-//! kotlinc compiles an extension to a method whose first parameter is the
-//! receiver. Vineflower writes a call of a top-level extension function as
-//! Java does, the receiver as the first argument (`Util.closeQuietly(x)`),
-//! a member extension the same way on its dispatch receiver
-//! (`ByteString.Companion.encodeUtf8(s)`, which Kotlin resolves to another,
-//! deprecated function), and the accessors of an extension property with
-//! the property path that has no receiver: `firstChar` for `s.firstChar` and
-//! `tag = s` for `s.tag = 4`, which read and assign another property (or
-//! none) and lose the value assigned.
-//!
-//! With the fix, when the callee's metadata says it has a receiver, the call
-//! is written on the receiver, by the callee's Kotlin name, the other
-//! arguments as Vineflower writes them. The callee must be in scope there: a
-//! top-level one by the import of its package's declaration of that name (no
-//! other import of the file holds the name), a member of an object (`object`
-//! or companion) as a member of a class written around the call or by the
-//! import of the object's member (`import okio.ByteString.Companion.encodeUtf8`),
-//! a member of another class only on `this`; and no member extension of that
-//! name may be declared by a class around the call. It must also be what
-//! Kotlin picks: the receiver is cast to the parameter's type (`(s as
-//! CharSequence).trim()`) where Vineflower casts the argument to pick the
-//! method, and where its own type would pick another extension of that name
-//! the callee's class or package declares for a narrower receiver, or a
-//! member the parameter's type does not have; the call keeps Vineflower's
-//! form when a member of the type the receiver is seen as could take the
-//! arguments (by name and count: Kotlin's members of a mapped type such as
-//! `String`, the non-private methods, properties and fields of a loaded
-//! class and its supertypes, private ones too inside that class; a type
-//! that is not loaded counts as having one), unless a parameter of the
-//! member and the extension's parameter at its place are one primitive and
-//! one other reference type than a box or a box's supertype, which no
-//! argument can be both of (`Random.nextInt(until: Int)` cannot take the
-//! `IntRange` of the extension `nextInt(range)`), and for a receiver of an
-//! inline value class type (a boxed one, or a parameter or receiver the header
-//! declares with one, `this` of `UByte.rotateLeft`) and a callee whose name
-//! a value class mangled, whose calls Kotlin resolves by other types than
-//! the JVM's. A property whose
-//! call keeps its form is written as the accessor's call, not without its
-//! receiver. A primitive receiver boxed into a generic callee's receiver type
-//! parameter gets that type argument written where another extension of the
-//! name takes the primitive (`this.coerceIn<Int>(range)`), which Kotlin would
-//! otherwise choose. An infix call Vineflower already writes on its receiver gets
-//! the import of its top-level callee.
-//!
-//! A member extension's dispatch receiver may also be a local the method
-//! assigns once, from `this`: kotlinc's receiver of an inlined `apply`,
-//! `run` or `with` lambda (`$this$apply`), where the source calls the
-//! extension with `this` as its implicit dispatch receiver
-//! (`maxAge.clampToInt()` in `apply { .. }`). It is in scope as `this` is.
+//! Fix `kt_extension_call`: a call of a function or property accessor whose
+//! metadata has a receiver is written on the receiver by its Kotlin name
+//! (`s.shout()`, `s.tag = 4`), when the callee is in scope there (imported, or a
+//! member of a class around the call) and is what Kotlin picks for the
+//! receiver's type (no member or narrower extension of that name could take
+//! the arguments); else it keeps Vineflower's form.
 
 use std::rc::Rc;
 
