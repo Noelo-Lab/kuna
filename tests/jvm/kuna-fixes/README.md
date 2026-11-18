@@ -26,6 +26,7 @@ they were compiled from.
 | `pkg/TestAbstractClassConstructor` | `kt_abstract_class_constructor` | kotlinc 2.0.0 (-jvm-target 17) | an abstract class's constructors are its primary constructor (header and init), and a secondary constructor, not functions named after the class |
 | `pkg/TestAbstractFunctionBody` | `kt_abstract_function_body` | kotlinc 2.0.0 -jvm-target 17 | abstract and external functions are written without a body; Vineflower writes `abstract fun dispose() { }`, which kotlinc rejects |
 | `pkg/TestAccessorBackingField` | `kt_accessor_backing_field` | kotlinc 2.0.0 -jvm-target 17 | a property accessor writes its own backing field `field`; Vineflower writes `this.limit`, which in Kotlin calls the accessor again (a getter that recurses without end) |
+| `pkg/TestAccessorFieldInObject` | `kt_accessor_backing_field` | kotlinc 2.0.0 -jvm-target 17 | an object expression inside a property's accessor writes the backing field as field; Vineflower writes this@Owner.count = v, which calls the accessor again (StackOverflowError); a private property with default accessors keeps this@Owner.hits |
 | `pkg/TestAmbiguousTypeVariableArgument` | `ambiguous_type_variable_argument` | javac 17.0.21.0.3 (`-g`) | an argument cast to choose the generic method is cast to its type variable's erasure (appendTo((Sink)buf, parts), show((Object)value)) and the call's result is cast where javac then infers the erasure, where Vineflower's cast to the inferred type selects the non-generic overload (the caller itself: StackOverflowError); recompiled, every method has the original's bytecode |
 | `pkg/TestAnnotatedInnerType` | `type_annotation_outer_arguments` | javac 17.0.21 (`-g`) | a field of an annotated inner class type of a generic outer keeps the outer's type arguments, `TestAnnotatedInnerType<V>.@Nullable Task<?>` (Vineflower: `TestAnnotatedInnerType.@Nullable Task<?>`, type arguments on a member of a raw type, which javac rejects); recompiles to the original bytecode |
 | `pkg/TestAnonymousStaticCall` | `anonymous_static_qualifier` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the inner anonymous class's call of its enclosing anonymous class's static `twice` is written `twice(value)`, not `<unrepresentable>.twice(value)`; the call of a named class's static method keeps its qualifier |
@@ -540,6 +541,56 @@ they were compiled from.
 +            field = "$value."
           }
  
+    }
+```
+
+### `pkg/TestAccessorFieldInObject`
+
+```diff
+--- expected-compat/pkg/TestAccessorFieldInObject.kt
++++ expected/pkg/TestAccessorFieldInObject.kt
+@@ -1,34 +1,33 @@
+ package pkg
+ 
+ public class TestAccessorFieldInObject {
+-   public final var count: Int
+-      public final set(v) {
++   public final var count: Int = 0
++      public set(v) {
+          object : Runnable {
+             public open fun run() {
+-               TestAccessorFieldInObject.this.count = v
++               field = v
+             }
+          }.run()
+       }
+ 
+ 
+    public final var label: String = "a"
+-      public final get() {
++      public get() {
+          object : Runnable {
+             public open fun run() {
+-               System.out.println(TestAccessorFieldInObject.this.label)
++               System.out.println(field)
+             }
+          }.run()
+-         return this.label
++         return field
+       }
+ 
+-      internal set
+ 
+-   private final var hits: Int
++   private final var hits: Int = 0
+ 
+    public fun hit(): Runnable {
+       return object : Runnable {
+          public open fun run() {
+-            TestAccessorFieldInObject.this.hits = TestAccessorFieldInObject.this.hits + 1
++            this@TestAccessorFieldInObject.hits = this@TestAccessorFieldInObject.hits + 1
+          }
+       }
     }
 ```
 

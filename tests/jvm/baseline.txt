@@ -584,6 +584,7 @@ kuna-fixes-compat/pkg/NoMetaBag
 kuna-fixes-compat/pkg/TestAbstractClassConstructor
 kuna-fixes-compat/pkg/TestAbstractFunctionBody
 kuna-fixes-compat/pkg/TestAccessorBackingField
+kuna-fixes-compat/pkg/TestAccessorFieldInObject
 kuna-fixes-compat/pkg/TestAmbiguousTypeVariableArgument
 kuna-fixes-compat/pkg/TestAnnotatedInnerType
 kuna-fixes-compat/pkg/TestAnonymousStaticCall
@@ -873,6 +874,7 @@ kuna-fixes/pkg/NoMetaBag
 kuna-fixes/pkg/TestAbstractClassConstructor
 kuna-fixes/pkg/TestAbstractFunctionBody
 kuna-fixes/pkg/TestAccessorBackingField
+kuna-fixes/pkg/TestAccessorFieldInObject
 kuna-fixes/pkg/TestAmbiguousTypeVariableArgument
 kuna-fixes/pkg/TestAnnotatedInnerType
 kuna-fixes/pkg/TestAnonymousStaticCall

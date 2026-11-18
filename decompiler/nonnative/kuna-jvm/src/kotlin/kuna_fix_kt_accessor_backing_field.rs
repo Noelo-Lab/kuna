@@ -8,9 +8,12 @@
 //! recompiled getter `get() { return this.limit }` calls itself without end
 //! and a setter `this.limit = value` likewise. Kotlin names the backing field
 //! `field` inside the accessors. While `KProperty` writes an accessor's body,
-//! an access of exactly the backing field (the same field of the class file),
-//! on the accessor's own receiver and outside any lambda or object written
-//! inside the body, is written `field`.
+//! an access of exactly the backing field (the same field of the class file)
+//! on the accessor's own receiver is written `field`: in the body, its `this`;
+//! in an object or lambda written inside the body, the enclosing instance
+//! (`this@Owner`), which there is the accessor's receiver (`object : Runnable {
+//! override fun run() { field = v } }` came out `this@Acc.x = v`, a call of the
+//! setter that recurses without end).
 
 use std::cell::RefCell;
 
@@ -59,9 +62,6 @@ pub fn enter(field: StructField, accessor: MethodWrapper) -> AccessorScope {
 /// `field`, when `exprent` is the backing field of the accessor being written.
 pub fn stringify(exprent: FieldExprent) -> Option<TextBuffer> {
     let accessor = ACCESSOR.with(|a| a.borrow().last().cloned())?;
-    if DecompilerContext::get_current_method_wrapper() != accessor.method_wrapper {
-        return None;
-    }
     let field = accessor.field;
     let static_field = field.has_modifier(crate::code_constants::ACC_STATIC);
     if exprent.is_static() != static_field
@@ -76,7 +76,18 @@ pub fn stringify(exprent: FieldExprent) -> Option<TextBuffer> {
     }
     if !static_field {
         let this = exprent.get_instance()?.try_as_var()?;
-        if this.get_index() != 0 || this.get_processor() != Some(accessor.varproc) {
+        let own = this.get_index() == 0
+            && this.get_processor() == Some(accessor.varproc)
+            && DecompilerContext::get_current_method_wrapper() == accessor.method_wrapper;
+        let enclosing = || {
+            this.get_processor().is_some_and(|p| {
+                p.get_this_vars()
+                    .borrow()
+                    .get_cloned(&this.get_var_version_pair())
+                    .is_some_and(|class| class == owner.qualified_name())
+            })
+        };
+        if !own && !enclosing() {
             return None;
         }
     }

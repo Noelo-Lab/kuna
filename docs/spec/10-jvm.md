@@ -3506,8 +3506,12 @@ this.maxRequests` recurses without end once recompiled, its setter likewise (66 
 bodies in okio, okhttp, kotlin-stdlib and both kotlinx-coroutines). Kotlin names the backing field `field` there. With the fix
 (`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_accessor_backing_field.rs (stringify)`),
 while `KProperty` writes an accessor's body, an access of exactly its backing field (the same field
-of the class file, not a delegate's), on the accessor's own receiver and outside the lambdas and
-objects written inside the body, is written `field`.
+of the class file, not a delegate's) on the accessor's own receiver is written `field`: its `this` in
+the body, and in an object expression written inside the body the enclosing instance `this@Owner`
+(a `this` variable of the owner class), which there is the accessor's receiver; `object : Runnable {
+override fun run() { field = v } }` in a setter came out `this@Acc.x = v`, which calls the setter
+again and recurses without end. A lambda's captured receiver is not recognised (it is written
+`` `this$0` `` either way).
 
 **`kt_string_literal_escape`.** The plugin writes a string constant with Java's escapes. In a
 Kotlin string `$` followed by a name or `{` starts a template, so the parameter check
@@ -4718,7 +4722,9 @@ call of a static synthetic `access$` method is written, when the accessor's code
 order, makes one field access or call of a member of its own class with Kotlin metadata, and returns, the
 call is written as that access (a property read or assignment, a function call through the fixes above);
 a static field only for a top-level property, an `invokespecial` only of the accessor's class (a super
-call keeps its accessor).
+call keeps its accessor). A field accessor is a property access only when the property is not delegated
+(its field holds the delegate, not the value) and the accessor that access calls in Kotlin (getter for a
+read, setter for a write) is the default one; otherwise the call keeps its accessor.
 **`kt_nullable_local`.** `KVarExprent` writes a local's declared type from its JVM type, never with a
 `?`, so a local that holds `null` is declared non-null and kotlinc rejects the store: `var s: Segment =
 this.head` with `head` a `Segment?`, `val v: String = this.headers.get(name)`, `var10000 = null` (about

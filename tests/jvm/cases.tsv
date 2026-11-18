@@ -3161,6 +3161,14 @@ class	kuna-fixes/classes/pkg/TestAccessorBackingField.class
 class	kuna-fixes/classes/pkg/TestAccessorBackingField$Companion.class
 expected	kuna-fixes/expected-compat/pkg/TestAccessorBackingField.kt
 compare	TestAccessorBackingField.kt	TestAccessorBackingField.java
+case	kuna-fixes-compat/pkg/TestAccessorFieldInObject	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestAccessorFieldInObject.class
+class	kuna-fixes/classes/pkg/TestAccessorFieldInObject$count$r$1.class
+class	kuna-fixes/classes/pkg/TestAccessorFieldInObject$hit$1.class
+class	kuna-fixes/classes/pkg/TestAccessorFieldInObject$label$r$1.class
+expected	kuna-fixes/expected-compat/pkg/TestAccessorFieldInObject.kt
+compare	TestAccessorFieldInObject.kt	TestAccessorFieldInObject.java
 case	kuna-fixes-compat/pkg/TestAmbiguousTypeVariableArgument	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestAmbiguousTypeVariableArgument.class
 class	kuna-fixes/classes/pkg/TestAmbiguousTypeVariableArgument$Buf.class
@@ -5142,6 +5150,14 @@ class	kuna-fixes/classes/pkg/TestAccessorBackingField.class
 class	kuna-fixes/classes/pkg/TestAccessorBackingField$Companion.class
 expected	kuna-fixes/expected/pkg/TestAccessorBackingField.kt
 compare	TestAccessorBackingField.kt	TestAccessorBackingField.java
+case	kuna-fixes/pkg/TestAccessorFieldInObject	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestAccessorFieldInObject.class
+class	kuna-fixes/classes/pkg/TestAccessorFieldInObject$count$r$1.class
+class	kuna-fixes/classes/pkg/TestAccessorFieldInObject$hit$1.class
+class	kuna-fixes/classes/pkg/TestAccessorFieldInObject$label$r$1.class
+expected	kuna-fixes/expected/pkg/TestAccessorFieldInObject.kt
+compare	TestAccessorFieldInObject.kt	TestAccessorFieldInObject.java
 case	kuna-fixes/pkg/TestAmbiguousTypeVariableArgument	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestAmbiguousTypeVariableArgument.class
 class	kuna-fixes/classes/pkg/TestAmbiguousTypeVariableArgument$Buf.class

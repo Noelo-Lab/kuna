@@ -3732,6 +3732,20 @@
       "source": "src/pkg/TestConcatCharArray.java",
       "compiler": "javac 17.0.21.0.3 (`-g`)",
       "summary": "a char[] concatenated through String.valueOf(char[]) or append(char[]) is written String.valueOf(cs); Vineflower writes \"x\" + cs, the array's identity instead of its characters"
+    },
+    {
+      "id": "pkg/TestAccessorFieldInObject",
+      "fix": "kt_accessor_backing_field",
+      "class_files": [
+        "pkg/TestAccessorFieldInObject.class",
+        "pkg/TestAccessorFieldInObject$count$r$1.class",
+        "pkg/TestAccessorFieldInObject$hit$1.class",
+        "pkg/TestAccessorFieldInObject$label$r$1.class"
+      ],
+      "source": "src/pkg/TestAccessorFieldInObject.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "an object expression inside a property's accessor writes the backing field as field; Vineflower writes this@Owner.count = v, which calls the accessor again (StackOverflowError); a private property with default accessors keeps this@Owner.hits",
+      "language": "kotlin"
     }
   ]
 }
