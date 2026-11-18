@@ -4361,7 +4361,7 @@ type parameters and the hierarchy map, which needs that class's file. A project'
 interfaces without code, such as Guava's `Function`, `Supplier` and `ReferenceEntry`, so `IdentityFunction
 implements Function<Object, Object>` gave nothing for `Function` and `return IdentityFunction.INSTANCE`
 from a `Function<E, E>` method was written without its cast, which javac rejects. With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/generic_casts/external_supertype_arguments.rs (supertype_args)`),
+(`decompiler/nonnative/kuna-jvm/src/fixes/generic_casts/mod.rs (supertype_args)`),
 when the supertype's class is unknown its arguments are read from the generic superclass and
 superinterfaces the known classes' signatures declare, walking up through known classes only and
 substituting each class's type arguments; a raw supertype gives none.
