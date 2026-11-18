@@ -98,7 +98,11 @@ fn loads(d: &Decoded) -> usize {
 
 #[test]
 fn senduipi_is_not_rdrand() {
-    for bytes in [&[0xf3, 0x0f, 0xc7, 0xf7][..], &[0xf3, 0x48, 0x0f, 0xc7, 0xf7][..]] {
+    for bytes in [
+        &[0xf3, 0x0f, 0xc7, 0xf7][..],
+        &[0xf3, 0x48, 0x0f, 0xc7, 0xf7][..],
+        &[0x66, 0xf3, 0x0f, 0xc7, 0xf7][..],
+    ] {
         let d = decode(bytes);
         assert_eq!(d.length as usize, bytes.len());
         assert_eq!(d.text, "SENDUIPI RDI", "{bytes:02x?}");
@@ -111,6 +115,7 @@ fn senduipi_is_not_rdrand() {
     assert_eq!(callother_names(&d), ["rdrand", "rdrandIsValid"]);
     let d = decode(&[0x48, 0x0f, 0xc7, 0xf7]);
     assert_eq!(d.text, "RDRAND RDI");
+    assert_eq!(decode(&[0x66, 0x0f, 0xc7, 0xf7]).text, "RDRAND DI");
 }
 
 #[test]
