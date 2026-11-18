@@ -3375,7 +3375,7 @@ turns `asList(new T[]{a, b})` back into `asList(a, b)`. It marks any array, and 
 length alone has no elements: `Arrays.asList(new T[n])`, a list of `n` nulls, is written
 `Arrays.asList()`, an empty list (Ghidra's `AssemblyConstructStateGenerator.applyOperands`, two
 methods of Elasticsearch's reindex tasks). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/overloads/vararg_array_length.rs (spreads_as_elements)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/overloads/mod.rs (spreads_as_elements)`)
 the array is marked only when writing its elements keeps the call's meaning: it has an initializer,
 no length, or a first length that is the constant 0 (what javac compiles a call passing no varargs
 to). Otherwise it is passed as the array, `Arrays.asList(new T[n])`.

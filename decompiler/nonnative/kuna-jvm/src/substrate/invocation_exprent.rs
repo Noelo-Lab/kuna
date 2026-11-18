@@ -46,7 +46,7 @@ use crate::struct_method::StructMethod;
 use crate::fixes::anonymous_classes;
 use crate::fixes::generic_casts::argument_generic_cast;
 use crate::fixes::generics;
-use crate::fixes::overloads::vararg_array_length;
+use crate::fixes::overloads;
 use crate::fixes::constructor_calls::qualified_super_call;
 use crate::fixes::lambdas::lambda_return_type_argument;
 use crate::fixes::overloads::vararg_spread_resolution;
@@ -1887,7 +1887,7 @@ impl InvocationExprent {
                 if last_param.get_expr_type().array_dim >= 1
                     && (!ambiguous_vararg || last_new.get_lst_array_elements().len() != 1)
                     && (!kuna_fixes::enabled(KunaFix::VarargArrayLength)
-                        || vararg_array_length::spreads_as_elements(last_new))
+                        || overloads::spreads_as_elements(last_new))
                     && (!kuna_fixes::enabled(KunaFix::VarargSpreadResolution)
                         || kt_java_cast_syntax::writing_kotlin()
                         || vararg_spread_resolution::spread_resolves(self, last_new))
