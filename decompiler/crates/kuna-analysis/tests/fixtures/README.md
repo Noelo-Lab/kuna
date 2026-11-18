@@ -1548,6 +1548,33 @@ decompiler/crates/kuna-analysis/tests/fixtures/objc_sdk` it reads
 `objc_msgSend$setAlpha:(a1,a0);`, `v1 = objc_msgSend$frame(a1);` as a `CGRect` and
 `objc_msgSend$setFrame:(a1,v1.x,v1.y,v1.width + 10.0,v1.height);`.
 
+### `macho_sdk_c_arm64` + `sdk_c/` — C prototypes from headers
+
+`macho_sdk_c_arm64` (arm64, ~50 KB) is the fixture for the C half of `objcsdk`
+(`analyzers/protos/kuna_sdkprotos.rs`, stage test `tests/stages/kuna-sdkprotos.xml`).
+Source `macho_sdk_c.c`: twelve small functions whose callees are all imports
+(`-undefined dynamic_lookup`), compiled against the headers in `sdk_c/`. Those are
+**hand-written** stand-ins for SDK headers (no Apple text):
+`CoreFoundation/CFBase.h` (typedef chains with an `#if __LP64__` pair, an
+`extern "C"` block, `CF_ENUM` / `CF_OPTIONS`, a two-word `CFRange`, prototypes
+behind `CF_EXPORT` and `API_AVAILABLE(...)`, a variadic), `dispatch/dispatch.h`
+(`DISPATCH_DECL`, `DISPATCH_ENUM`, a transparent union, a prototype spread over
+four lines of attribute macros) and `gadget.h` (a four-double struct by value
+and as a return, a struct with an array member behind a pointer, a 32-byte
+struct by value, one function declared two ways and one taking a type no header
+defines).
+
+```bash
+clang --target=arm64-apple-ios16.0 -nostdinc -Isdk_c -O2 -c macho_sdk_c.c -o macho_sdk_c.o
+ld64.lld -arch arm64 -platform_version ios 16.0 16.0 -dylib -undefined dynamic_lookup \
+         -o macho_sdk_c_arm64 macho_sdk_c.o
+```
+
+clang / LLD 22.1.8. Without the option `_name_len` reads `v2 = CFStringGetLength();`
+and `_later` reads `dispatch_async_f(); // tail-call`; with `option objcsdk
+decompiler/crates/kuna-analysis/tests/fixtures/sdk_c` they read
+`v2 = CFStringGetLength(v1);` and `dispatch_async_f(a0,a1,a2); // tail-call`.
+
 ### `macho_objc_types_arm64` — declarations typed by class
 
 `macho_objc_types_arm64` (arm64, ~50 KB) is the fixture for class-typed

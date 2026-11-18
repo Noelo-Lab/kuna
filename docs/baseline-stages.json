@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4498,
-    4498
+    4516,
+    4516
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2143,6 +2143,24 @@
     "data:SAVED-XMM-WIN64 fixture #1: unaffected XMM6-9 lane spills are absent from the local frame",
     "data:SAVED-XMM-WIN64 fixture #2: the disjoint caller-owned Rect still reaches its helper and return",
     "data:SAVED-XMM-WIN64 fixture #3: an observed XMM spill stays mapped at its frame slot",
+    "data:SDKPROTOS #10: a two-word struct argument is spread, and the out-parameter is the struct",
+    "data:SDKPROTOS #11: the struct behind the pointer has its fields",
+    "data:SDKPROTOS #12: a struct with an array member is laid out",
+    "data:SDKPROTOS #13: four doubles by value are four arguments, and the return is the struct",
+    "data:SDKPROTOS #14: a two-word struct return is the struct",
+    "data:SDKPROTOS #15: a struct over sixteen bytes is the pointer the caller passes",
+    "data:SDKPROTOS #16: a variadic keeps its fixed argument and what follows",
+    "data:SDKPROTOS #17: two declarations that disagree give no prototype",
+    "data:SDKPROTOS #18: a by-value type no header defines gives no prototype",
+    "data:SDKPROTOS #1: without headers the argument set up before the earlier call is lost",
+    "data:SDKPROTOS #2: without headers the tail call has no arguments",
+    "data:SDKPROTOS #3: without headers a call with an out-parameter has no arguments",
+    "data:SDKPROTOS #4: without headers a two-word struct return is an integer pair",
+    "data:SDKPROTOS #5: with headers the callee takes the string",
+    "data:SDKPROTOS #6: with headers the tail call passes all three",
+    "data:SDKPROTOS #7: the caller takes its types from the callee",
+    "data:SDKPROTOS #8: an enum macro's constant prints by name",
+    "data:SDKPROTOS #9: an options enum prints its flags, and the result its enumerator",
     "data:SETLOCALE RETTYPE #1: NULL locale arg is typed char *",
     "data:SETLOCALE RETTYPE #2: no untyped indirect call",
     "data:SETLOCALE RETTYPE #3: call is the named setlocale",
