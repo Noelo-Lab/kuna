@@ -4,13 +4,6 @@
 //! code only looks them up, except `KotlinImportCollector`, which walks the
 //! keys of `KOTLIN_TO_JAVA_LANG` and `KOTLIN_TO_JAVA_UTIL` (whose JDK order is
 //! salted per JVM run).
-//!
-//! kuna fix `kt_mapped_java_type`: a JDK class that Kotlin maps to a
-//! built-in type is written with the built-in's name
-//! (`fixes::kt_types::kt_mapped_java_type`).
-//!
-//! kuna fix `kt_java_type_syntax`: `get_kotlin_type` writes a generic class
-//! type's arguments in Kotlin's syntax (`fixes::kt_types::kt_java_type_syntax`).
 
 use crate::expr_processor::ExprProcessor;
 use crate::jthrow;

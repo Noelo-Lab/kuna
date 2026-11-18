@@ -3,14 +3,6 @@
 //! `KType extends VarType` without overriding anything, so, like
 //! `GenericType`, it is one Rust type `VarType` whose data carries `kotlin`
 //! (present exactly for a `KType`), and `KType` is a view over it.
-//!
-//! kuna fix `kt_type_parameter_id`: `from` names a type that refers to a
-//! type parameter by id (`fixes::kt_types::kt_type_parameter_id`), where Vineflower
-//! reads only a reference by name and writes the others as `Any`.
-//!
-//! kuna fix `kt_suspend_function_type`: `from` keeps the metadata's
-//! `suspend` flag (`kuna_suspend`) and `stringify` writes such a function
-//! type `suspend (A) -> R` (`fixes::kt_suspend::kt_suspend_function_type`).
 
 use std::ops::Deref;
 use std::rc::Rc;

@@ -3,9 +3,6 @@
 //! `KotlinImportCollector extends ImportCollector` adds no field: it is an
 //! `ImportCollector` with `kotlin` set, and the two methods it overrides
 //! branch on that flag.
-//!
-//! kuna fix `kt_escaped_class_name`: an import's segments that are no Kotlin
-//! identifier are written in backticks (`fixes::kt_names::kt_escaped_class_name`).
 
 use crate::decompiler_context::DecompilerContext;
 use crate::i_fernflower_preferences::IFernflowerPreferences;

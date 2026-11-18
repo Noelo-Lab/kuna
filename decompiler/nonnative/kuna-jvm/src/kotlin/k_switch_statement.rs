@@ -1,26 +1,4 @@
 //! Port of `org/vineflower/kotlin/stat/KSwitchStatement.java`.
-//!
-//! kuna fix `kt_when_case_type`: a case constant is written with the
-//! selector's type (`':' ->` on a `Char`), where Vineflower retypes a copy it
-//! never prints and writes the constant's own type (`58 ->`).
-//!
-//! kuna fix `kt_jump_to_non_loop_label`: a jump out of a labelled `switch`,
-//! written in `run labelN@{ .. }`, is `return@labelN`
-//! (`fixes::kt_jumps::kt_jump_to_non_loop_label`).
-//!
-//! kuna fix `kt_when_break`: a `when` that an unlabelled `break` leaves from
-//! inside its branch is written in `run labelN@{ .. }`
-//! (`fixes::kt_jumps::kt_when_break`).
-//!
-//! kuna fix `kt_switch_head_indent`: the switch's first block is written at
-//! the statement's indentation, as Java's `SwitchStatement` writes it;
-//! Vineflower writes it at indentation 0 after one indent, so every line of
-//! it but the first starts in column 0.
-//!
-//! kuna fix `kt_enum_when_mappings`: an enum constant label (which only that
-//! fix writes into a Kotlin `when`) names its class as Java source does
-//! (`ExprProcessor::build_java_class_name`); Vineflower passes the internal
-//! name, `java/net/Proxy.Type` for a class outside the input.
 
 use crate::decompiler_context::DecompilerContext;
 use crate::expr_processor::ExprProcessor;

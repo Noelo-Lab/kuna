@@ -1,10 +1,4 @@
 //! Port of `org/vineflower/kotlin/util/KotlinObjectProcessors.java`.
-//!
-//! kuna fix `kt_interface_companion_field`: an interface's companion field,
-//! initialized from the companion's `$$INSTANCE`, is hidden as a class's is
-//! (`fixes::kt_generated_members::kt_interface_companion_field`). The class's members keep the
-//! elements their metadata declared before the companion's marks replace
-//! them (`kuna_declared_element`).
 
 use crate::class_wrapper::ClassWrapper;
 use crate::code_constants::ACC_INTERFACE;

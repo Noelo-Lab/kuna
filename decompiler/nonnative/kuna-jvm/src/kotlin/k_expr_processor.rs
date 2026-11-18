@@ -1,14 +1,4 @@
 //! Port of `org/vineflower/kotlin/util/KExprProcessor.java`.
-//!
-//! kuna fix `kt_jump_to_non_loop_label`: a jump out of a statement written as
-//! a lambda is written `return@label` (`fixes::kt_jumps::kt_jump_to_non_loop_label`).
-//!
-//! kuna fix `kt_when_break`: an unlabelled `break` out of a `when` is left
-//! out or written `return@label` (`fixes::kt_jumps::kt_when_break`).
-//!
-//! kuna fix `kt_unlabeled_sequence_break`: an unlabelled `break` whose
-//! closure is a sequence is written `break`
-//! (`fixes::kt_jumps::kt_unlabeled_sequence_break`).
 
 use crate::expr_processor::ExprProcessor;
 use crate::jthrow;

@@ -1,7 +1,4 @@
 //! Port of `org/vineflower/kotlin/struct/KContract.java`.
-//!
-//! kuna fix `kt_contract_import`: `contract` is imported or qualified
-//! (`fixes::kt_declarations::kt_contract_import`).
 
 use crate::decompiler_context::DecompilerContext;
 use crate::jthrow;

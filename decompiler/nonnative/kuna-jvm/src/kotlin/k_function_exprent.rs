@@ -1,34 +1,4 @@
 //! Port of `org/vineflower/kotlin/expr/KFunctionExprent.java`.
-//!
-//! kuna fix `kt_java_cast_syntax`: a numeric conversion is written as a call
-//! of Kotlin's conversion function (`fixes::kt_java_syntax::kt_java_cast_syntax`), where
-//! Vineflower writes Java's cast, `(long)x`.
-//!
-//! kuna fix `kt_narrow_bitwise_operand`: a `Byte`, `Short` or `Char` operand
-//! of a bitwise or shift operator is widened to `Int`
-//! (`fixes::kt_operators::kt_narrow_bitwise_operand`).
-//!
-//! kuna fix `kt_reference_inequality`: Java's `!=` of two references is
-//! written `!==`, and an identity `==` that a negation made of it `===`
-//! (`fixes::kt_operators::kt_reference_inequality`).
-//!
-//! kuna fix `kt_string_literal_escape`: a template's string pieces write a
-//! form feed `\u000c` and its `Char` pieces are escaped
-//! (`fixes::kt_java_syntax::kt_string_literal_escape`).
-//!
-//! kuna fix `kt_copied_equality`: a copy of an `==` that tests equality is
-//! not made `===` (`fixes::kt_operators::kt_copied_equality`).
-//!
-//! kuna fix `kt_negated_equality`: `(a == b) xor true` is written `a != b`
-//! (`fixes::kt_operators::kt_negated_equality`).
-//!
-//! kuna fix `kt_raw_generic_type`: the class of a type test or cast is
-//! written with star projections where it is raw, and a mapped collection
-//! interface by its read-only name (`fixes::kt_types::kt_raw_generic_type`).
-//!
-//! kuna fix `kt_suspend_lambda`: kotlinc's cast of a suspend lambda written
-//! as one to its `FunctionN` interface is left out
-//! (`fixes::kt_suspend::kt_suspend_lambda`).
 
 use crate::check_types_result::CheckTypesResult;
 use crate::code_type::CodeType;

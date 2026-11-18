@@ -1,19 +1,4 @@
 //! Port of `org/vineflower/kotlin/struct/DefaultArgsMap.java`.
-//!
-//! kuna fix `kt_default_arg_compound_branch` (`kuna_fixes`): in
-//! `from`, a mask test whose branch is not a basic block (a default value
-//! computed by several statements) recovers no default, as any other branch
-//! that is not a simple assignment; Vineflower reads the branch's expression
-//! list, which only a basic block has, and fails the class.
-//!
-//! kuna fix `kt_default_arg_assigned_param`: in `from`, the default is what
-//! the branch assigns to the parameter (`fixes::kt_default_args::kt_default_arg_assigned_param`),
-//! where Vineflower takes the branch's first assignment, whatever it assigns.
-//!
-//! kuna fix `kt_default_value_coercion_cast`: in `from`, kotlinc's cast of
-//! a default to its parameter's type is dropped
-//! (`fixes::kt_default_args::kt_default_value_coercion_cast`). The map keeps the
-//! default-arguments method (`kuna_bridge`) for fix `kt_default_value_names`.
 
 use std::rc::Rc;
 

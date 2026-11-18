@@ -1,7 +1,4 @@
 //! Port of `org/vineflower/kotlin/pass/ObfuscatedExceptionsPass.java`.
-//!
-//! kuna fix `overlapping_ranges` (spec 10.16): ranges that overlap without
-//! nesting are split before the multiple-entry check.
 
 use crate::decompiler_context::DecompilerContext;
 use crate::exception_deobfuscator::ExceptionDeobfuscator;

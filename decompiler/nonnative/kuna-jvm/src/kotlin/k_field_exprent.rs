@@ -1,18 +1,4 @@
 //! Port of `org/vineflower/kotlin/expr/KFieldExprent.java`.
-//!
-//! kuna fix `kt_property_reference`: the `INSTANCE` of a property-reference
-//! class is written as the reference (`fixes::kt_anonymous_objects::kt_property_reference`).
-//!
-//! kuna fix `kt_lambda_singleton_returns`: the body of a lambda singleton
-//! with more than one exit is labelled and its exits are `return@label`
-//! (`fixes::kt_jumps::kt_lambda_singleton_returns`), where Vineflower writes each
-//! exit as its bare value.
-//!
-//! kuna fix `kt_object_instance`: the `INSTANCE` field of an `object` is
-//! written as the object's name (`fixes::kt_calls::kt_object_instance`).
-//!
-//! kuna fix `kt_unescaped_name`: a lambda's parameters are named as the
-//! Kotlin writer writes a name (`fixes::kt_names::kt_unescaped_name`).
 
 use crate::classes_processor::ClassNode;
 use crate::decompiler_context::DecompilerContext;

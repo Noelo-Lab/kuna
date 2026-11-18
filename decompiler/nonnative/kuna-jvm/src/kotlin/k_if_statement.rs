@@ -1,16 +1,4 @@
 //! Port of `org/vineflower/kotlin/stat/KIfStatement.java`.
-//!
-//! kuna fix `kt_jump_to_non_loop_label`: a labelled `if` that a written jump
-//! leaves is written as `run labelN@{ .. }`, and such jumps as `return@labelN`
-//! (`fixes::kt_jumps::kt_jump_to_non_loop_label`).
-//!
-//! kuna fix `kt_when_break`: an unlabelled `break` out of a `when` that is
-//! the `if`'s only statement is left out or written `return@labelN`
-//! (`fixes::kt_jumps::kt_when_break`).
-//!
-//! kuna fix `kt_unlabeled_sequence_break`: an unlabelled `break` whose
-//! closure is a sequence is written `break`
-//! (`fixes::kt_jumps::kt_unlabeled_sequence_break`).
 
 use crate::expr_processor::ExprProcessor;
 use crate::if_statement::{set_head_slot, IfStatement};

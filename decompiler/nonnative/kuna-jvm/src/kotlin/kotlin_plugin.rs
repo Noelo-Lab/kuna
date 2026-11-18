@@ -1,46 +1,4 @@
 //! Port of `org/vineflower/kotlin/KotlinPlugin.java`.
-//! kuna fix `split_constructor_call`: the main loop's last step joins split
-//! constructor calls (`JoinSplitConstructors`).
-//!
-//! kuna fix `kt_not_null_assertion`: the last `SimplifyStack` first folds
-//! kotlinc's `!!` checks back into their expressions.
-//! kuna fix `kt_expression_value_check`: it also deletes kotlinc's checks of
-//! platform-typed values first, so their stack variables are inlined.
-//! kuna fix `kt_object_instance_local`: and in an object's static
-//! initializer, replaces the Kotlin 1.3 instance local by `INSTANCE`.
-//! kuna fix `kt_enum_when_mappings`: after the main loop, where the Java
-//! pipeline simplifies switches, a `when` over a `$WhenMappings` array is
-//! written over the enum (`WhenMappings`).
-//! kuna fix `kt_inlined_to_typed_array`: the last `SimplifyStack` first
-//! writes kotlinc's inlined `toTypedArray()` as the call, and after it leaves
-//! out the casts of its result (`fixes::kt_compiler_idioms::kt_inlined_to_typed_array`); the
-//! call's type argument is decided once the exprents are replaced
-//! (`RawGenericTypes`).
-//! kuna fix `kt_inlined_stdlib_call`: the last `SimplifyStack` first writes
-//! kotlinc's inlined copies of standard-library functions that take no
-//! lambda as their calls (`fixes::kt_compiler_idioms::kt_inlined_stdlib_call`).
-//! kuna fix `kt_narrow_constant_local`: after it, a local of constants that
-//! Vineflower types `Byte` or `Short` is typed `Int` where its uses take one
-//! (`fixes::kt_types::kt_narrow_constant_local`).
-//! kuna fix `kt_suspend_state_machine`: before the graph passes, a suspend
-//! function's state machine is rebuilt into its direct body
-//! (`SuspendStateMachine`).
-//! kuna fix `kt_suspend_call_continuation`: once the Kotlin expressions are
-//! made, the suspend calls that pass the function's own continuation are
-//! marked to be written without it, and the casts of their results to
-//! their declared types left out (`SuspendCalls`).
-//! kuna fix `kt_coroutine_boxing`: then kotlinc's coroutine boxing calls
-//! become the `valueOf` boxing the writer leaves implicit (`CoroutineBoxing`).
-//! kuna fix `kt_suspend_lambda`: a suspend lambda's `invokeSuspend` is
-//! rebuilt like a suspend function (`SuspendStateMachine`), and the reads of
-//! its arguments are left out once its statements are made
-//! (`SuspendLambdaArguments`).
-//! kuna fix `kt_nothing_value_throw`: then the `throw
-//! KotlinNothingValueException()` after a call of a function returning
-//! `Nothing` is left out (`NothingValueThrows`).
-//! kuna fix `kt_inline_class_value`: last, the values of inline classes held
-//! in their underlying type are typed and written as the value classes
-//! (`InlineClassValues`).
 
 use std::rc::Rc;
 

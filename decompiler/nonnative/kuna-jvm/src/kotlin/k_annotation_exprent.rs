@@ -1,11 +1,4 @@
 //! Port of `org/vineflower/kotlin/expr/KAnnotationExprent.java`.
-//!
-//! kuna fix `kt_nested_annotation_argument`: an annotation that is the
-//! argument of another is written without `@` (`ReplaceWith(..)`), as
-//! Kotlin requires.
-//!
-//! kuna fix `kt_string_literal_escape`: a string argument escapes the `$`
-//! that would start a template (`fixes::kt_java_syntax::kt_string_literal_escape`).
 
 use crate::annotation_exprent::{AnnotationExprent, Type as AnnotationType};
 use crate::decompiler_context::DecompilerContext;

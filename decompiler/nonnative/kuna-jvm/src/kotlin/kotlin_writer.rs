@@ -3,103 +3,6 @@
 //! A [`Caught`] has no stack trace or cause: `collectErrorLines` is
 //! `ClassWriter::collect_error_lines` (its throw location is the only frame),
 //! so `ERROR_DUMP_STOP_POINTS` is never consulted.
-//!
-//! kuna fix `kt_synthetic_anonymous_object` (`kuna_fixes`): an
-//! anonymous class without Class metadata that needs no constructor
-//! arguments is written as an `object` whose supertypes come from the class
-//! file, with no flags comment, where Vineflower throws; its methods keep
-//! their `return`s and failure comments
-//! (`fixes::kt_anonymous_objects::kt_synthetic_anonymous_object`).
-//!
-//! kuna fix `kt_inlined_stdlib_call`: before a class is written, the inlined
-//! copies of `use` and `map` in its methods are rebuilt as the calls
-//! (`fixes::kt_compiler_idioms::kt_inlined_stdlib_call`).
-//!
-//! kuna fix `kt_anonymous_class_failure_reason`: an anonymous class
-//! the writer cannot write fails with a message that names it and the reason
-//! (`fixes::failure_comments`).
-//!
-//! kuna fix `kt_reference_anonymous_super_call`: `stringify_reference`
-//! reads the super call of a reference class that is an anonymous class from
-//! the node, where `NestedClassProcessor` keeps it
-//! (`fixes::kt_anonymous_objects::kt_reference_anonymous_super_call`).
-//!
-//! kuna fix `kt_local_as_extension_receiver`: in `write_method`,
-//! only a method with a parameter can be an extension function, where
-//! Vineflower takes a `$this$` local in the first free slot of a
-//! parameterless method (a captured receiver's alias, an inlined lambda's
-//! receiver) for its receiver.
-//!
-//! kuna fix `kt_return_outside_lambda`: `write_class` and `write_method`
-//! open a declaration boundary, so `KExitExprent` drops `return` only in the
-//! lambdas written inside it (`fixes::kt_jumps::kt_return_outside_lambda`).
-//!
-//! kuna fix `kt_failed_method_hidden`: `write_method_body` keeps a method
-//! whose body failed, with its failure comment, where Vineflower hides it.
-//!
-//! kuna fix `kt_object_super_call`: an `object` header writes the arguments
-//! of its superclass constructor call (`fixes::kt_anonymous_objects::kt_object_super_call`).
-//!
-//! kuna fix `kt_companion_nameless_class`: the companion lookup in
-//! `write_class_body` skips nested classes without a name.
-//!
-//! kuna fix `kt_method_object_return_type`: `write_method` writes a return
-//! type for every method that returns a value, where Vineflower's test (the
-//! return type is not above `void` in its type lattice) is false for
-//! `java.lang.Object`, so a method returning `Any?` is written as a `Unit`
-//! function that returns a value.
-//!
-//! kuna fix `kt_generated_constructor_hidden`: the constructors kotlinc
-//! generates for default arguments are not written
-//! (`fixes::kt_generated_members::kt_generated_constructor_hidden`).
-//!
-//! kuna fix `kt_generated_overload_hidden`: the overloads kotlinc generates for
-//! an `@JvmOverloads` function are not written
-//! (`fixes::kt_generated_members::kt_generated_overload_hidden`).
-//!
-//! kuna fix `kt_synthetic_object_super_call`: an anonymous class without
-//! Class metadata whose superclass constructor takes arguments (a suspend
-//! function's continuation) is written as an `object` whose superclass is
-//! written with them (`fixes::kt_anonymous_objects::kt_synthetic_object_super_call`).
-//! kuna fix `kt_file_class_constructor`: the constructor kotlinc gives a
-//! file class (a multifile class part) is not written
-//! (`fixes::kt_generated_members::kt_file_class_constructor`).
-//! kuna fix `captured_var_clash_name`: in `invoke_processors`, the captured
-//! variables of the class's methods take the clashing names of the variables
-//! they hold (`fixes::nested_class_vars::captured_var_clash_name`).
-//! kuna fix `kt_field_without_property`: `write_field` writes an instance
-//! field as a Kotlin property (`fixes::kt_properties::kt_field_without_property`).
-//! kuna fix `kt_constructor_without_metadata`: `write_method` writes a
-//! constructor as `constructor(..) : super(..)` and an anonymous class's
-//! initializer as `init { .. }` (`fixes::kt_constructors::kt_constructor_without_metadata`).
-//!
-//! kuna fix `kt_unescaped_name`: `write_lambda` names the lambda's
-//! parameters as `to_valid_kotlin_identifier` writes a name.
-//!
-//! kuna fix `kt_reserved_underscore_name`: `to_valid_kotlin_identifier`
-//! puts a name made of underscores alone (`_`, `__`), which Kotlin reserves,
-//! in backticks.
-//!
-//! kuna fix `kt_java_type_syntax`: the class and method headers written from
-//! a class file (no metadata) write supertypes and type parameters in
-//! Kotlin's syntax (`fixes::kt_types::kt_java_type_syntax`).
-//!
-//! kuna fix `kt_static_initializer`: `write_method` writes an object's static
-//! initializer as `init { .. }`, and the class body of a class with a
-//! companion object moves its static initializer into the companion's body
-//! (`fixes::kt_initializers::kt_static_initializer`).
-//!
-//! kuna fix `kt_suspend_without_metadata`: `write_method` writes a method
-//! without metadata that overrides a suspend function as one
-//! (`fixes::kt_suspend::kt_suspend_without_metadata`).
-//!
-//! kuna fix `kt_for_inline_copy`: `write_class` leaves out the `$$forInline`
-//! copy of a suspend function (`fixes::kt_suspend::kt_for_inline_copy`).
-//!
-//! kuna fix `kt_suspend_lambda`: `write_lambda` writes a suspend lambda whose
-//! body was rebuilt with that body, its receiver as its first parameter and
-//! its exits as the lambda's (`fixes::kt_suspend::kt_suspend_lambda`); one that was not
-//! keeps Vineflower's comment.
 
 use std::rc::Rc;
 
@@ -2339,6 +2242,7 @@ impl KotlinWriter {
                     && varproc_name
                         .as_deref()
                         .is_some_and(|n| n.starts_with("$this$"))
+                    // a parameterless method's `$this$` local is a captured or inlined receiver
                     && (md.params.len() > start
                         || !kuna_fixes::enabled(KunaFix::KtLocalAsExtensionReceiver));
 
@@ -2518,6 +2422,7 @@ impl KotlinWriter {
                         .return_type()
                         .expect("NullPointerException: returnType"),
                 };
+                // `Object` is above `void` in the type lattice
                 let returns_value = if kuna_fixes::enabled(KunaFix::KtMethodObjectReturnType) {
                     !ret_type.equals(&VarType::VARTYPE_VOID())
                 } else {
@@ -3050,8 +2955,6 @@ impl KotlinWriter {
         KotlinWriter::append_type_annotations(buffer, indent, mb, target_type, -1, &filter);
     }
 
-    /// kuna fix `kt_throws_class_name`: the `@Throws` of a `throws` clause
-    /// names its classes by their Kotlin names (`fixes::kt_declarations::kt_throws_class_name`).
     #[allow(clippy::too_many_arguments)]
     pub fn append_jvm_annotations(
         buffer: &mut TextBuffer,

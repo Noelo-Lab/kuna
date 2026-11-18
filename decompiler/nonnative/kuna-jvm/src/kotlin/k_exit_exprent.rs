@@ -1,16 +1,4 @@
 //! Port of `org/vineflower/kotlin/expr/KExitExprent.java`.
-//!
-//! kuna fix `kt_synthetic_anonymous_object` (`kuna_fixes`): in a
-//! method of an object that fix writes, the current method wrapper is the
-//! method itself, not a lambda's, and a `return` is printed.
-//!
-//! kuna fix `kt_return_outside_lambda` (`kuna_fixes`): the bare value
-//! stands for a `return` only where a lambda writer installed the current
-//! method wrapper, not where a declaration did
-//! (`fixes::kt_jumps::kt_return_outside_lambda`).
-//!
-//! kuna fix `kt_throwable_cast`: a thrown value is written without kotlinc's
-//! cast to `java.lang.Throwable` (`fixes::kt_java_syntax::kt_throwable_cast`).
 
 use crate::decompiler_context::DecompilerContext;
 use crate::exit_exprent::{ExitExprent, Type as ExitType};
