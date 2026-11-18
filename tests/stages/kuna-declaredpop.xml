@@ -1,0 +1,97 @@
+<decompilertest>
+<binaryimage arch="x86:LE:32:default:windows">
+<!--
+    A declared __stdcall import's pop is the stack solver's exact equation,
+    not an INT_ADD written into the IR before the solve.
+
+    Issue: none filed; found on setuptools' cli-32.exe launcher, where every
+    call after GetModuleFileNameA lost its arguments once the import's
+    declaration reached the call (`kuna_slotargs`). The solved pops are the
+    same in both representations; what changed is how the passes that read the
+    stack pointer before the solve see it.
+
+    Stage / sub-stage: P4 `ActionExtraPopSetup`
+    (`p4_calls/kuna_declaredpop.rs`), read by P6 `StackSolver::build` and its
+    push-run guesses (`p6_variables/kuna_calleepop.rs`,
+    `p6_variables/kuna_calleepopslot.rs`). A strict fix: no option.
+
+    The fixture `declaredpop_pe_i386.exe` is assembled from
+    `declaredpop_pe_i386.asm` (see the fixtures README).
+
+    0x401000 calls GetModuleFileNameA(NULL, path, 0x100), measures `path`
+    with a pointer difference, and passes it to an internal __cdecl helper
+    whose pop the solver can only guess. With the import's pop as an INT_ADD,
+    term collection rewrote the pointer difference in terms of the stack
+    pointer at the import's last push, the local-alias boundary took that slot
+    as an escaped address, and the helper printed `sub_401080()`.
+
+    0x4010a0 calls VariantClear (declared, pops 8), then `xlen`, an import the
+    tables do not declare, on a pushed argument, and takes the stack pointer
+    right after it. With VariantClear's pop as an INT_ADD, xlen's push-run
+    guess read VariantClear's popped slot as its own (a register save, so
+    "pops nothing"), the stack pointer after xlen came out 4 bytes low, and
+    the escaped address landed on xlen's argument: `xfill(xlen(),&Stackffffffec)`.
+
+    0x401110, 0x401140 and 0x401170 push an undeclared import's arguments
+    right after a declared call, so its push-run guess walks the frame the
+    declared call left. A `mov [esp],0x44` local at that stack pointer is not
+    a fourth argument of xspawn; EDX's entry value, kept in EDI across the
+    call, is xsettime's argument and not a saved register; and xformat's
+    third argument is pushed on both sides of a join from GetLastError. A
+    wrong count moves the stack pointer after the call, and the function's
+    stack argument read after it (`return a2`) becomes a local.
+
+    0x4011a0 and 0x4011d0 do the same with the shapes those readings must
+    not take. In GCC's `add esp,12` after a padded call, one of xsettime's
+    pushes lands on the stack pointer GetModuleFileNameA left: a push, not a
+    `mov [esp]` local, so all four count and `return a1` stays the argument.
+    In MinGW's fixed frame, `mov [esp],ebx` writes ECX's entry value as the
+    one argument of the __cdecl xopen: no push run to read, so xopen pops
+    nothing and the function keeps three parameters.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/declaredpop_pe_i386.exe</com>
+  <com>read symbols</com>
+  <com>load addr 0x401000</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x4010a0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x401110</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x401140</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x401170</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x4011a0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x4011d0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="DECLAREDPOP #1: the import keeps its declared arguments" min="1" max="1">GetModuleFileNameA\(NULL,Filename,0x100\);</stringmatch>
+<stringmatch name="DECLAREDPOP #2: the helper after it keeps both arguments" min="1" max="1">= sub_401080\(Filename,0\);</stringmatch>
+<stringmatch name="DECLAREDPOP #3: no call after the import loses its arguments" min="0" max="0">sub_401080\(\)</stringmatch>
+<stringmatch name="DECLAREDPOP #4: VariantClear keeps its argument" min="1" max="1">VariantClear\(a0\);</stringmatch>
+<stringmatch name="DECLAREDPOP #5: xlen keeps its argument" min="1" max="1">xlen\(a1\)</stringmatch>
+<stringmatch name="DECLAREDPOP #6: the stack pointer after xlen is where xlen popped it to" min="1" max="1">xfill\(v1,&amp;Stackfffffff0\);</stringmatch>
+<stringmatch name="DECLAREDPOP #7: a local at the stack pointer the declared call left is no argument" min="1" max="1">xspawn\(1,2,Filename\);</stringmatch>
+<stringmatch name="DECLAREDPOP #8: the local keeps its value" min="1" max="1">return 0x44;</stringmatch>
+<stringmatch name="DECLAREDPOP #9: EDX's entry value kept across the declared call is an argument" min="1" max="1">xsettime\(GetModuleFileNameA\(NULL,a0,0x40\),a1,0,a2\);</stringmatch>
+<stringmatch name="DECLAREDPOP #10: a pushed value joined from the declared call's path is an argument" min="1" max="1">xformat\(0x1000,0,a1,0,0x10,0\);</stringmatch>
+<stringmatch name="DECLAREDPOP #11: the stack argument read after each guessed call is still the argument" min="2" max="2">return a2;</stringmatch>
+<stringmatch name="DECLAREDPOP #12: a push that lands on the stack pointer the declared call left is still an argument" min="1" max="1">return a1;</stringmatch>
+<stringmatch name="DECLAREDPOP #13: an entry value a fixed frame writes with mov is no push" min="1" max="1">return xopen\(a1\) \+ v1 \+ a2;</stringmatch>
+</decompilertest>

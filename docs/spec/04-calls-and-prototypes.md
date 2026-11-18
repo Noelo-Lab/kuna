@@ -1773,6 +1773,32 @@ that machinery.
   `__thiscall` callee, which shifts each later stack offset by the arguments
   the callee popped, so later calls lose stack arguments and locals whose
   address is taken alias outgoing-argument slots.
+
+  (kuna) A pop a call through a pointer takes from its declaration (an import
+  slot's library declaration, §4.1, `kuna_slotargs`), under a model that leaves
+  extrapop unknown, is not written as the `INT_ADD` either when the function
+  has a guessed pop (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_declaredpop.rs
+  (deferred)`). The call takes the INDIRECT the other calls take and keeps the
+  pop on its prototype, so `StackSolver::build` gives it the exact equation
+  (rhs = the pop) and the solve writes it into the IR with every other stack
+  reference. The solved pops are the ones the `INT_ADD` gave. What the
+  `INT_ADD` changed was the stack pointer the solver's guesses and the
+  simplifier read before the solve. It joined the references after the call
+  to the ones before it. The next call's push-run guess
+  (§6, `kuna_calleepopslot`) then walked the slots the declared call had popped
+  as its own pushes: `push edi; call [VariantClear]; push esi; call
+  [lstrlenA]` credited lstrlenA with VariantClear's argument and, that slot
+  holding a register's entry value, guessed that it pops nothing. Term
+  collection also rewrote a pointer difference after `GetModuleFileNameA`
+  (`end - (path + 1)`) as minus the stack pointer at the import's last push.
+  The local-alias boundary (§4.3, `checkInputTrialUse`) took that slot as an
+  escaped address, and every outgoing argument above it was refused for the
+  rest of the function. Where the solve cannot place the stack pointer, the
+  INDIRECT is written as the `INT_ADD` after the solve (`write_unplaced`): a
+  frame sized at run time, or a stack pointer an exception handler loads from
+  its frame. A direct call's declared pop (a DWARF or demangled declaration of
+  the image's own function) keeps the `INT_ADD`, and so does every pop in a
+  function with nothing to guess.
 - **`ActionFuncLink`** (`coreaction_protos.rs (ActionFuncLink)`) arms each
   call site. Unlocked or varargs prototype → input recovery on
   (`init_active_input`). Locked prototype → one pre-marked trial per declared

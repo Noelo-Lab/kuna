@@ -759,6 +759,10 @@ impl Action for ActionExtraPopSetup {
             if extrapop == 0 {
                 continue;
             }
+            // (kuna) See [`crate::p4_calls::kuna_declaredpop`].
+            if crate::p4_calls::kuna_declaredpop::deferred(data, i, exact) {
+                extrapop = EXTRAPOP_UNKNOWN;
+            }
             let fc_op = data.get_call_specs(i).get_op();
             let fc_op_addr = match data.obank().get(fc_op) {
                 Some(o) => o.get_addr().clone(),

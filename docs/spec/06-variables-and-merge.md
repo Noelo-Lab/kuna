@@ -4006,6 +4006,54 @@ the walk continues past one call only. A push of a register's input value
 still ends the run, so a slot reserved with `push ecx` before a function's
 first call is still not counted for the call that pops it.
 
+(kuna) A call whose pop its declaration states reaches the solver as an
+INDIRECT with an exact equation rather than an `INT_ADD` (chapter
+[04](04-calls-and-prototypes.md), `kuna_declaredpop`), so the stack pointer
+after it is not yet a constant offset from the one before it when these
+guesses run. Two readings look past such a call by its pop
+(`decompiler/crates/kuna-decomp/src/p6_variables/kuna_calleepop.rs
+(exact_pop)`), as they did when the `INT_ADD` had already folded the two
+together. The caller's raise after a call continues past a later call with a
+stated pop, at the offset that pop leaves, for up to 64 such calls
+(`caller_raise`): `push a; call f; push b; call [g]; add esp,4` is a cleanup of
+f's argument even when g pops its own. And a return-address slot that, read
+back through constant adjustments and through at least one stated pop, lands on
+an earlier reference at offset 0 is folded, as above, for the deferred-cleanup
+check (`kuna_calleepopslot.rs (folds_past_stated_pops)`): `add esp,0xc; push
+esi; call [EnterCriticalSection]; push 0; push x; call [f]` is a run that
+undoes the cleanup in front of it. The walk itself still stops at the declared
+call and continues into its frame only by the settled-pop rule above, so the
+slots that call popped are not read as the next call's pushes.
+
+With the `INT_ADD` folded in, every stack reference after the declared call
+was a constant offset from one before it, and the walk read whichever
+reference sat at a slot's offset, often one of the declared call's own popped
+argument slots. Three readings of the walk in a declared call's frame take the
+place of that coincidence (`kuna_calleepopslot.rs (push_run)`). A join of stack
+pointers whose inputs, read back through constant adjustments and stated pops,
+reach the same reference at the same offset is that reference
+(`kuna_calleepopslot.rs (resolve)`), for up to two joins: the run of
+`push esi; cmp edx,-1; jne b; call [GetLastError]; push eax; jmp c; b: push
+edx; c: push esi; call [FormatMessageW]` continues above the joined slot, which
+is a push because each path stores through it and one of them is an argument
+push; the folded test above reads through such joins too. A push of the entry
+value of a register the convention lets a call destroy (`EAX`, `ECX`, `EDX`),
+in the frame a call with a stated pop left, is an argument and not a saved
+register: `mov edi,edx; call [CreateFileW]; push [ebp+8]; push 0; push edi;
+push esi; call [SetFileTime]` pushes four. Only a push counts: MinGW's fixed
+frame writes the one argument of a `__cdecl` callee with `mov [esp],ebx`, and
+that callee pops nothing. And the slot at the stack pointer a declared call
+left, written through by a `mov` before anything is pushed below it, is the
+caller's own frame and ends the run: `call [GetModuleFileNameA]; mov
+[esp],0x44; push` ten times `; call [CreateProcessA]` pushes ten, not eleven;
+MinGW's `call [f]; sub esp,4; mov [esp+4],eax` writes that slot after the
+stack pointer went below it and keeps it. A push can land on that slot too,
+after a raise: GCC's `call [GetModuleFileNameA]; add esp,12; push; push; push;
+push; call [f]` (the call was padded to 16 bytes) puts the third push there,
+and it is one of the four. Which store is a push is read off the
+instruction's bytes (`kuna_calleepopslot.rs (is_push)`), since by the solve
+the simplifier has removed such a push's stack-pointer write.
+
 A caller with no push run at all says how much its callee popped in a
 different way (consulted for any call whose extrapop the equations leave free,
 ahead of both readings above). GCC and Clang on i386 Windows
