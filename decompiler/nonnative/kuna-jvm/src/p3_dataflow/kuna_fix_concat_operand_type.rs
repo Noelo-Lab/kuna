@@ -11,11 +11,15 @@
 //! constants carry no type, came out `+ (c ? 91 : 40)`; and an implicit
 //! widening (`+ (double) f`, `+ (float) n`) is left unwritten, so the text of
 //! the narrower value came out (`0.1` for `0.10000000149011612`, `7` for
-//! `7.0`). With the fix each operand keeps the type of its argument: the
-//! constants of a `char` argument are written as characters, and an operand
-//! of another kind than its argument (`char`, `int` and narrower, `long`,
-//! `float`, `double`) is cast to it, so that javac converts it the same way.
-//! Kotlin output (string templates) is unchanged.
+//! `7.0`). A `char[]` passed to `append([C)` or to `String.valueOf([C)`
+//! (which `ConcatenationHelper` removes as it removes `valueOf(C)`) came out
+//! `"x" + cs`, the array's identity instead of its characters. With the fix
+//! each operand keeps the type of its argument: the constants of a `char`
+//! argument are written as characters, an operand of another kind than its
+//! argument (`char`, `int` and narrower, `long`, `float`, `double`) is cast
+//! to it, so that javac converts it the same way, and a `char[]` one is
+//! written `String.valueOf(cs)`. Kotlin output (string templates) is
+//! unchanged.
 
 use crate::code_type::CodeType;
 use crate::const_exprent::ConstExprent;
@@ -111,6 +115,10 @@ fn kind(t: &VarType) -> Kind {
     }
 }
 
+fn is_char_array(t: &VarType) -> bool {
+    t.type_ == CodeType::Char && t.array_dim == 1
+}
+
 /// The type `e` is written with: an implicit widening is not written.
 fn written_type(e: Exprent) -> VarType {
     if let Some(f) = e.try_as_function() {
@@ -141,6 +149,18 @@ fn constants(e: Exprent, out: &mut Vec<ConstExprent>) -> bool {
 /// already.
 pub fn write(operand: Exprent, slot: &Option<VarType>, indent: i32) -> Option<TextBuffer> {
     let slot = slot.as_ref()?;
+    if is_char_array(slot)
+        && is_char_array(&written_type(operand))
+        && kuna_fixes::enabled(KunaFix::ConcatOperandType)
+        && !kuna_fix_kt_java_cast_syntax::writing_kotlin()
+    {
+        let mut buf = TextBuffer::new();
+        buf.append(&ExprProcessor::get_cast_type_name(&VarType::VARTYPE_STRING()))
+            .append(".valueOf(")
+            .append_buffer(&operand.to_java(indent))
+            .append(")");
+        return Some(buf);
+    }
     let wanted = kind(slot);
     if wanted == Kind::Reference
         || wanted == Kind::Boolean

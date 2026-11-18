@@ -52,6 +52,7 @@ they were compiled from.
 | `pkg/TestCompoundBitwiseAssignment` | `kt_compound_bitwise_assignment` | kotlinc 2.0.0 -jvm-target 17 | compound assignments with a bitwise or shift operator are written x = x or (y), which Kotlin has; Vineflower's x |= y is not Kotlin |
 | `pkg/TestCompoundBitwiseInfixOperand` | `kt_compound_bitwise_assignment` | kotlinc 2.0.0 -jvm-target 17 | the right operand of a compound bitwise assignment is parenthesised by Kotlin's precedence: x = x xor (this mask b) and f = f and (x !is String); without them a user's infix call regroups as (x xor this) mask b, which compiles and computes another value |
 | `pkg/TestCompoundShiftCount` | `compound_shift_count_type` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `lowestBit`, whose `int` shift count `sz` shifts a `long` with `>>>=`, compares `sz != 0`; Vineflower types `sz` as a `long` there and prints `sz != false`; `rotate` is unchanged |
+| `pkg/TestConcatCharArray` | `concat_operand_type` | javac 17.0.21.0.3 (`-g`) | a char[] concatenated through String.valueOf(char[]) or append(char[]) is written String.valueOf(cs); Vineflower writes "x" + cs, the array's identity instead of its characters |
 | `pkg/TestConcatOperandType` | `concat_operand_type` | javac 17.0.21 (`-g`) | String concatenation (`makeConcatWithConstants`) keeps each operand's argument type: Vineflower wrote `(closed ? '[' : '(')` as `(closed ? 91 : 40)`, `+ (int) c2` as `+ c2`, `+ (double) f` as `+ this.f` and `+ (float) n` as `+ this.n`, which print other text; the recompiled class's `javap -c -p` equals the original's but for `String.valueOf` calls Vineflower removes |
 | `pkg/TestConcatOperandTypeBuilder` | `concat_operand_type` | javac 17.0.21 (`--release 8 -g`) | String concatenation from `StringBuilder.append` chains (Java 8 class files) keeps each operand's `append` argument type: `(closed ? '[' : '(')`, `(int) c2`, `(double) f`, `(float) n` and `(long) n` are written as in the source, where Vineflower printed `91`/`40` and dropped the casts |
 | `pkg/TestConstructorBodyBeyondFirstBlock` | `kt_constructor_body_after_first_block` | kotlinc 2.0.0 (-jvm-target 17) | a constructor's code after its super/this call that starts with an if is written (init block, secondary constructor body), not dropped |
@@ -1983,6 +1984,26 @@ they were compiled from.
  
        return res;
     }
+```
+
+### `pkg/TestConcatCharArray`
+
+```diff
+--- expected-compat/pkg/TestConcatCharArray.java
++++ expected/pkg/TestConcatCharArray.java
+@@ -2,10 +2,10 @@
+ 
+ public class TestConcatCharArray {
+    static String valueOf(char[] cs) {
+-      return "x" + cs + "y";
++      return "x" + String.valueOf(cs) + "y";
+    }
+ 
+    static String builder(char[] cs) {
+-      return "x" + cs + "y";
++      return "x" + String.valueOf(cs) + "y";
+    }
+ }
 ```
 
 ### `pkg/TestConcatOperandType`

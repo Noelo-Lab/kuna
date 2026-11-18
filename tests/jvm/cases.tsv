@@ -3331,6 +3331,10 @@ case	kuna-fixes-compat/pkg/TestCompoundShiftCount	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestCompoundShiftCount.class
 expected	kuna-fixes/expected-compat/pkg/TestCompoundShiftCount.java
 compare	TestCompoundShiftCount.java
+case	kuna-fixes-compat/pkg/TestConcatCharArray	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestConcatCharArray.class
+expected	kuna-fixes/expected-compat/pkg/TestConcatCharArray.java
+compare	TestConcatCharArray.java
 case	kuna-fixes-compat/pkg/TestConcatOperandType	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestConcatOperandType.class
 expected	kuna-fixes/expected-compat/pkg/TestConcatOperandType.java
@@ -5308,6 +5312,10 @@ case	kuna-fixes/pkg/TestCompoundShiftCount	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestCompoundShiftCount.class
 expected	kuna-fixes/expected/pkg/TestCompoundShiftCount.java
 compare	TestCompoundShiftCount.java
+case	kuna-fixes/pkg/TestConcatCharArray	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestConcatCharArray.class
+expected	kuna-fixes/expected/pkg/TestConcatCharArray.java
+compare	TestConcatCharArray.java
 case	kuna-fixes/pkg/TestConcatOperandType	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestConcatOperandType.class
 expected	kuna-fixes/expected/pkg/TestConcatOperandType.java

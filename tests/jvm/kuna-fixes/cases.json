@@ -3722,6 +3722,16 @@
       "source": "src/pkg/TestVarMergeUnrelatedType.java",
       "compiler": "javac 17.0.21.0.3 (no `-g`)",
       "summary": "a variable is not merged with a later one of a type that does not admit a value it is assigned, unrelated or wider (Object v = c ? \"s\" : k with a later Integer w); Vineflower merges them as Integer, printing a cast that throws ClassCastException or code that does not compile"
+    },
+    {
+      "id": "pkg/TestConcatCharArray",
+      "fix": "concat_operand_type",
+      "class_files": [
+        "pkg/TestConcatCharArray.class"
+      ],
+      "source": "src/pkg/TestConcatCharArray.java",
+      "compiler": "javac 17.0.21.0.3 (`-g`)",
+      "summary": "a char[] concatenated through String.valueOf(char[]) or append(char[]) is written String.valueOf(cs); Vineflower writes \"x\" + cs, the array's identity instead of its characters"
     }
   ]
 }

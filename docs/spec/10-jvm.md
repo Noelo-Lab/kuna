@@ -4323,13 +4323,17 @@ operand need not have it: a `char` passed to `append(I)` (`+ (int) c`, no instru
 the character instead of its code (Guava's `UnicodeEscaper.codePointAt`); `append(C)` of
 `closed ? '[' : '('`, whose constants carry no type, came out `+ (closed ? 91 : 40)` (Guava's
 `GeneralRange.toString`); and a widening the operand needs (`+ (double) f`, `+ (float) n`) is left
-implicit, which prints the narrower value's text (`0.1` for `0.10000000149011612`, `7` for `7.0`). With
+implicit, which prints the narrower value's text (`0.1` for `0.10000000149011612`, `7` for `7.0`); a
+`char[]` passed to `append([C)` or `String.valueOf([C)` (which the helper removes as it removes
+`valueOf(C)`, the descriptor's parameter being of the `char` family) came out `"x" + cs`, the array's
+identity instead of its characters. With
 the fix (`decompiler/nonnative/kuna-jvm/src/p3_dataflow/kuna_fix_concat_operand_type.rs (write)`) the
 helper records each operand's argument type on the concatenation (that of `String.valueOf` when it
 removes that call), and the concatenation writes an operand of another kind than its argument (`char`,
 `int` and narrower, `long`, `float`, `double`) with a cast to it, or, for a `char` argument whose
-operand is integer constants (through conditionals), with those constants as character literals. Kotlin
-string templates are unchanged.
+operand is integer constants (through conditionals), with those constants as character literals; a
+`char[]` operand of a `char[]` argument is written `String.valueOf(cs)`. Kotlin string templates are
+unchanged.
 
 **`field_read_reuse`.** `StackVarsProcessor` copies the value of a stack variable into each of its uses
 when the value may be used several times (`MULTIPLE_USES`), and a field read on a variable counts as

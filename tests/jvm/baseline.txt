@@ -610,6 +610,7 @@ kuna-fixes-compat/pkg/TestCompoundAssignmentShape
 kuna-fixes-compat/pkg/TestCompoundBitwiseAssignment
 kuna-fixes-compat/pkg/TestCompoundBitwiseInfixOperand
 kuna-fixes-compat/pkg/TestCompoundShiftCount
+kuna-fixes-compat/pkg/TestConcatCharArray
 kuna-fixes-compat/pkg/TestConcatOperandType
 kuna-fixes-compat/pkg/TestConcatOperandTypeBuilder
 kuna-fixes-compat/pkg/TestConstructorBodyBeyondFirstBlock
@@ -898,6 +899,7 @@ kuna-fixes/pkg/TestCompoundAssignmentShape
 kuna-fixes/pkg/TestCompoundBitwiseAssignment
 kuna-fixes/pkg/TestCompoundBitwiseInfixOperand
 kuna-fixes/pkg/TestCompoundShiftCount
+kuna-fixes/pkg/TestConcatCharArray
 kuna-fixes/pkg/TestConcatOperandType
 kuna-fixes/pkg/TestConcatOperandTypeBuilder
 kuna-fixes/pkg/TestConstructorBodyBeyondFirstBlock
