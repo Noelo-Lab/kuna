@@ -1,12 +1,5 @@
-//! kuna fix `kt_semaphore_store_liveness` (`kuna_fixes`): `EliminateDeadVarsPass`
-//! keeps the stores to a `finally` semaphore. When `FinallyProcessor` cannot
-//! deduplicate a `finally`, it guards the handler with a semaphore variable that
-//! the catch-all reads as its monitor (`if (varN)` at the finally's entry). That
-//! read is a field of the statement, not an exprent, so the SSAU graph the pass
-//! queries has no use of the variable, and Vineflower drops every store of
-//! `false` as dead: the guard then reads an unassigned variable, the versions of
-//! the semaphore are no longer merged into one, and variable definition either
-//! fails ("Var types not processed!") or declares the guard after its use.
+//! Fix `kt_semaphore_store_liveness`: `EliminateDeadVarsPass` keeps the stores
+//! to a `finally` semaphore, whose read is a field of the catch-all statement.
 
 use crate::rt::JHashSet;
 use crate::statement::Statement;

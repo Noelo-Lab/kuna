@@ -25,8 +25,7 @@ use crate::kuna_fixes::{self, KunaFix};
 use crate::label_helper::LabelHelper;
 use crate::method_processor::MethodProcessor;
 use crate::fixes::control_flow::IrreducibleWithExceptionEdges;
-use crate::fixes::finally_sync::protected_back_edge;
-use crate::fixes::finally_sync::synchronized_break_exit;
+use crate::fixes::finally_sync;
 use crate::root_statement::RootStatement;
 use crate::rt::{JHashMap, JHashSet, JLinkedHashMap, JLinkedHashSet, JavaEq, Shared};
 use crate::sequence_helper::SequenceHelper;
@@ -428,7 +427,7 @@ impl DomHelper {
                                 }
 
                                 if kuna_fixes::enabled(KunaFix::SynchronizedBreakExit) {
-                                    synchronized_break_exit::mark_break_exits(current, ca_first);
+                                    finally_sync::mark_break_exits(current, ca_first);
                                 }
 
                                 current.remove_successor(
@@ -882,7 +881,7 @@ impl DomHelper {
                         .contains(&head)
                     || (!same
                         && kuna_fixes::enabled(KunaFix::ProtectedBackEdge)
-                        && protected_back_edge::is_open_loop_body(head)))
+                        && finally_sync::is_open_loop_body(head)))
                 && set_nodes.len() < stats.borrow().len()
                 && DomHelper::check_synchronized_completeness(&set_nodes)
             {

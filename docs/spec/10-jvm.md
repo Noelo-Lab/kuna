@@ -4058,7 +4058,7 @@ the enter is written `synchronized (x){} // $VF: monitorenter`, which takes the 
 at once, and the body runs after it without the lock, with `// $VF: monitorexit` comments on the exits
 (wrong output in Java and Kotlin; kotlinx-coroutines 1.8.0 and 1.10.2's `ThreadSafeHeap.removeFirstIf`,
 an inline function written `synchronized(this) { val first = firstImpl() ?: return null; .. }`). With
-the fix (`decompiler/nonnative/kuna-jvm/src/fixes/finally_sync/inline_marker_finally_copy.rs
+the fix (`decompiler/nonnative/kuna-jvm/src/fixes/finally_sync/mod.rs
 (is_marker_depth)`), `compare_basic_blocks_ex` accepts an instruction pair that differs where both are a
 `bipush`/`sipush` followed in both sequences by the same `invokestatic` of
 `kotlin/jvm/internal/InlineMarker.finallyStart` or `finallyEnd` `(I)V`; nothing else of the copies may
@@ -4082,7 +4082,7 @@ synchronized statement" on the method in Java, and the release keeps `ExitHelper
 `EventLoopImplBase.DelayedTask.scheduleTask`, 1.8.0's `JobSupport.invokeOnCompletion`). The output is
 not wrong: the `synchronized` statement releases the lock on the `break`, at the same point as the
 bytecode's release. With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/finally_sync/synchronized_break_exit.rs (mark_break_exits)`),
+(`decompiler/nonnative/kuna-jvm/src/fixes/finally_sync/mod.rs (mark_break_exits)`),
 `buildSynchronized` also marks dead the release in a block that is the destination of an edge from a
 statement of the body, when the block starts with `aload n; monitorexit` for the local `n` the
 `monitorenter` block locks (`aload n; monitorenter` or `dup; astore n; monitorenter`), holds no other
@@ -4142,7 +4142,7 @@ synchronized (l) { .. }` became `this.lock = new Object(); synchronized (this.lo
 new object; an assignment moved past a call that changes its field; and `Object l = next(); synchronized
 (next()) { .. }` lost its first call (wrong output in Java, the same in Vineflower; no method of the ten
 benchmark inputs has the shape: every assignment it removes there is the compiler's). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/finally_sync/synchronized_lock_assignment.rs (is_lock_variable)`),
+(`decompiler/nonnative/kuna-jvm/src/fixes/finally_sync/mod.rs (is_lock_variable)`),
 an assignment is the lock variable's only when every exprent after it in the head block stores a
 constant or a local to a local its value does not read, and one whose value the operand repeats is
 dropped only when that value has several uses (`MULTIPLE_USES`: no call, allocation or store). Not
@@ -4459,7 +4459,7 @@ Java runs the `finally` on every iteration where the bytecode runs it once: `try
 synchronized (queue) { .. return; } task.run(); } } finally { .. }` came out `while (true) { try { ..
 } finally { .. } }`, which re-interrupts the thread before each task (Guava's
 `SequentialExecutor$QueueWorker.workOnQueue`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/finally_sync/protected_back_edge.rs (is_open_loop_body)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/finally_sync/mod.rs (is_open_loop_body)`)
 `CatchAllStatement.isHead` refuses a body whose continue set holds its own first block (its back edge
 lies inside the range, so the loop does), and `findGeneralStatement` accepts such a body alone as a
 region ending at its exit, as it accepts a body with a regular edge to itself: inside the region the
