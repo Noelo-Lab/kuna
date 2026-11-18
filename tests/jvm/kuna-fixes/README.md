@@ -198,6 +198,7 @@ they were compiled from.
 | `pkg/TestNotNullAssertion` | `kt_not_null_assertion` | kotlinc 2.0.0 -jvm-target 17 | kotlinc's `Intrinsics.checkNotNull` of a `!!` is written back as `x!!` (`this.name!!.length`, `node = node.next!!`, `this.head!!.next!!.label!!`); Vineflower deleted the check and left the value nullable, which kotlinc rejects |
 | `pkg/TestNotNullAssertionLegacy` | `kt_not_null_assertion` | kotlinc 2.0.0 -jvm-target 17 -Xno-unified-null-checks (Kotlin 1.3's null checks) | Kotlin 1.3's `!!` (`if (x == null) Intrinsics.throwNpe()`, the value re-read in the use) is written back as `x!!` on the read it guards; Vineflower kept the `if` and the nullable use |
 | `pkg/TestNothingValueThrowKt` | `kt_nothing_value_throw` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21) | after a call of a function returning Nothing (fail, a suspend never()), the call ends the branch; kotlinc's dead throw KotlinNothingValueException(), which Kotlin cannot name, is not written |
+| `pkg/TestNullCheckConstantValue` | `synthetic_null_check_shape` | javac 17.0.21.0.3 (`-g`) | a source Objects.requireNonNull(x); or x.getClass(); followed by a constant is kept unless x's class declares an instance field with that constant value (javac's x.CONST check), and when the class is not loaded (no JDK: String, Object); Vineflower deletes them, and the method no longer throws NullPointerException for null |
 | `pkg/TestNullableCast` | `kt_nullable_cast` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | the cast of a `Map.get` result that an elvis then tests is written `as String?`, which lets `null` through as the bytecode's `checkcast` does, instead of `as String`, which throws `NullPointerException` on a missing key |
 | `pkg/TestNullableLocal` | `kt_nullable_local` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | a local that holds a nullable value (a nullable property, a parameter declared nullable, `null`) is declared `T?` (`var node: Node? = this.head`, `var found: String? = null`), and one stored after the check of an elvis keeps `T`, instead of `T`, which kotlinc rejects |
 | `pkg/TestObjectInstance` | `kt_object_instance` | kotlinc 2.0.0 -jvm-target 17 | an object's `INSTANCE` field is written as the object's name (`TestObjectInstance.take()`) |
@@ -11390,6 +11391,46 @@ they were compiled from.
 +      return v
 +   }
  }
+```
+
+### `pkg/TestNullCheckConstantValue`
+
+```diff
+--- expected-compat/pkg/TestNullCheckConstantValue.java
++++ expected/pkg/TestNullCheckConstantValue.java
+@@ -1,4 +1,6 @@
+ package pkg;
++
++import java.util.Objects;
+ 
+ public class TestNullCheckConstantValue {
+    static int foo(int a, TestNullCheckConstantValue.Sub s) {
+@@ -6,10 +8,12 @@
+    }
+ 
+    int anonymous(TestNullCheckConstantValue.Box x) {
++      Objects.requireNonNull(x);
+       return foo(5, new TestNullCheckConstantValue.Sub(x) {});
+    }
+ 
+    static int other(TestNullCheckConstantValue.Box b) {
++      Objects.requireNonNull(b);
+       return 7;
+    }
+ 
+@@ -22,10 +26,12 @@
+    }
+ 
+    static int string(String s) {
++      Objects.requireNonNull(s);
+       return 5;
+    }
+ 
+    static int object(Object o) {
++      o.getClass();
+       return 9;
+    }
+ 
 ```
 
 ### `pkg/TestNullableCast`

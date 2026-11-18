@@ -3888,9 +3888,14 @@ records, at the `pop`, which of javac's shapes the call's instructions match
 `isQualifiedNewGetClass` removes a call only in one of them
 (`decompiler/nonnative/kuna-jvm/src/p2_lift/kuna_fix_synthetic_null_check_shape.rs (is_javac_check)`):
 a `dup` always; a constant next only where the checked value's declared class (a parameter's, a
-local's, a field's), or a superclass, declares an instance field with a constant value, or is outside
-the input. Every other call stays, written as the statement it is. A source call followed by a
-constant on a value of such a class is indistinguishable from `x.CONST` and is still removed.
+local's, a field's), or a superclass, declares an instance field whose constant value is the one
+loaded (`Objects.requireNonNull(b); return 5;` on a class with `final int k = 3` keeps its check,
+which also reached `qualified_super_call`'s `mark_checked` before an anonymous subclass of an inner
+class taking `b`). A class that is not loaded is not known to declare one, so its check stays: without
+a JDK the walk ended at the unloaded `java.lang.String` or `java.lang.Object` and removed the source's
+`Objects.requireNonNull(s); return 5;` and `o.getClass(); return 9;`. Every other call stays, written
+as the statement it is. A source call followed by the same constant as such a field is
+indistinguishable from `x.CONST` and is still removed.
 
 **`var_merge_declared_type`.** `VarDefinitionHelper.mergeVars` merges a variable defined in a
 scope into the earlier one of its slot when their types are comparable in the type lattice, which

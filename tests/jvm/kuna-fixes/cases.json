@@ -3699,6 +3699,19 @@
       "compiler": "kotlinc 2.0.0 -jvm-target 17",
       "summary": "the right operand of a compound bitwise assignment is parenthesised by Kotlin's precedence: x = x xor (this mask b) and f = f and (x !is String); without them a user's infix call regroups as (x xor this) mask b, which compiles and computes another value",
       "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestNullCheckConstantValue",
+      "fix": "synthetic_null_check_shape",
+      "class_files": [
+        "pkg/TestNullCheckConstantValue.class",
+        "pkg/TestNullCheckConstantValue$1.class",
+        "pkg/TestNullCheckConstantValue$Box.class",
+        "pkg/TestNullCheckConstantValue$Sub.class"
+      ],
+      "source": "src/pkg/TestNullCheckConstantValue.java",
+      "compiler": "javac 17.0.21.0.3 (`-g`)",
+      "summary": "a source Objects.requireNonNull(x); or x.getClass(); followed by a constant is kept unless x's class declares an instance field with that constant value (javac's x.CONST check), and when the class is not loaded (no JDK: String, Object); Vineflower deletes them, and the method no longer throws NullPointerException for null"
     }
   ]
 }

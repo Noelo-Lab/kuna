@@ -4340,6 +4340,13 @@ class	kuna-fixes/classes/pkg/TestNothingValueThrowKt$nextOrNever$1.class
 class	kuna-fixes/classes/pkg/NothingSource.class
 expected	kuna-fixes/expected-compat/pkg/TestNothingValueThrowKt.kt
 compare	TestNothingValueThrowKt.kt	TestNothingValueThrowKt.java
+case	kuna-fixes-compat/pkg/TestNullCheckConstantValue	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestNullCheckConstantValue.class
+class	kuna-fixes/classes/pkg/TestNullCheckConstantValue$1.class
+class	kuna-fixes/classes/pkg/TestNullCheckConstantValue$Box.class
+class	kuna-fixes/classes/pkg/TestNullCheckConstantValue$Sub.class
+expected	kuna-fixes/expected-compat/pkg/TestNullCheckConstantValue.java
+compare	TestNullCheckConstantValue.java
 case	kuna-fixes-compat/pkg/TestNullableCast	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestNullableCast.class
@@ -6306,6 +6313,13 @@ class	kuna-fixes/classes/pkg/TestNothingValueThrowKt$nextOrNever$1.class
 class	kuna-fixes/classes/pkg/NothingSource.class
 expected	kuna-fixes/expected/pkg/TestNothingValueThrowKt.kt
 compare	TestNothingValueThrowKt.kt	TestNothingValueThrowKt.java
+case	kuna-fixes/pkg/TestNullCheckConstantValue	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestNullCheckConstantValue.class
+class	kuna-fixes/classes/pkg/TestNullCheckConstantValue$1.class
+class	kuna-fixes/classes/pkg/TestNullCheckConstantValue$Box.class
+class	kuna-fixes/classes/pkg/TestNullCheckConstantValue$Sub.class
+expected	kuna-fixes/expected/pkg/TestNullCheckConstantValue.java
+compare	TestNullCheckConstantValue.java
 case	kuna-fixes/pkg/TestNullableCast	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestNullableCast.class

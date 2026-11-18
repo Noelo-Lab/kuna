@@ -756,6 +756,7 @@ kuna-fixes-compat/pkg/TestNonPublicNestedImport
 kuna-fixes-compat/pkg/TestNotNullAssertion
 kuna-fixes-compat/pkg/TestNotNullAssertionLegacy
 kuna-fixes-compat/pkg/TestNothingValueThrowKt
+kuna-fixes-compat/pkg/TestNullCheckConstantValue
 kuna-fixes-compat/pkg/TestNullableCast
 kuna-fixes-compat/pkg/TestNullableLocal
 kuna-fixes-compat/pkg/TestObjectInstance
@@ -1042,6 +1043,7 @@ kuna-fixes/pkg/TestNonPublicNestedImport
 kuna-fixes/pkg/TestNotNullAssertion
 kuna-fixes/pkg/TestNotNullAssertionLegacy
 kuna-fixes/pkg/TestNothingValueThrowKt
+kuna-fixes/pkg/TestNullCheckConstantValue
 kuna-fixes/pkg/TestNullableCast
 kuna-fixes/pkg/TestNullableLocal
 kuna-fixes/pkg/TestObjectInstance
