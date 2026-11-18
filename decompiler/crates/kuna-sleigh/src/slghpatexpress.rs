@@ -748,17 +748,17 @@ impl PatternValue {
 
     /// C++ virtual `PatternValue::genMinPattern(const vector<TokenPattern>&)`.
     /// `TokenField` returns its token; `OperandValue` returns `ops[index]`;
-    /// the rest return TRUE.
-    pub fn gen_min_pattern(&self, ops: &[TokenPattern]) -> TokenPattern {
+    /// the rest return TRUE.  `None` is the Java `OperandValue.genMinPattern`
+    /// null: the operand's pattern has not been generated yet.
+    pub fn gen_min_pattern(&self, ops: &[TokenPattern]) -> Option<TokenPattern> {
         match self {
-            PatternValue::TokenField(v) => v.gen_min_pattern(),
-            PatternValue::ContextField(v) => v.gen_min_pattern(),
-            // C++ `OperandValue::genMinPattern`: `return ops[index]`
-            PatternValue::OperandValue(v) => ops[v.index() as usize].clone(),
+            PatternValue::TokenField(v) => Some(v.gen_min_pattern()),
+            PatternValue::ContextField(v) => Some(v.gen_min_pattern()),
+            PatternValue::OperandValue(v) => ops.get(v.index() as usize).cloned(),
             PatternValue::ConstantValue(_)
             | PatternValue::StartInstructionValue(_)
             | PatternValue::EndInstructionValue(_)
-            | PatternValue::Next2InstructionValue(_) => TokenPattern::new_true(),
+            | PatternValue::Next2InstructionValue(_) => Some(TokenPattern::new_true()),
         }
     }
 
@@ -1034,12 +1034,13 @@ impl PatternExpression {
 
     /// C++ virtual `genMinPattern(const vector<TokenPattern> &ops)`.  Only
     /// `PatternValue` leaves do anything; every `BinaryExpression`/
-    /// `UnaryExpression` returns `TokenPattern()` (TRUE).
-    pub fn gen_min_pattern(&self, ops: &[TokenPattern]) -> TokenPattern {
+    /// `UnaryExpression` returns `TokenPattern()` (TRUE).  `None` when a
+    /// bare operand value names an operand that has no pattern in `ops` yet.
+    pub fn gen_min_pattern(&self, ops: &[TokenPattern]) -> Option<TokenPattern> {
         match self {
             PatternExpression::Value(v) => v.gen_min_pattern(ops),
             // BinaryExpression::genMinPattern / UnaryExpression::genMinPattern
-            _ => TokenPattern::new_true(),
+            _ => Some(TokenPattern::new_true()),
         }
     }
 
@@ -1905,7 +1906,9 @@ impl EquationArena {
             // OperandEquation::genPattern: resultpattern = ops[index]
             PatternEquation::Operand { index } => Ok(ops[*index as usize].clone()),
             // UnconstrainedEquation::genPattern: patex->genMinPattern(ops)
-            PatternEquation::Unconstrained { patex } => Ok(patex.gen_min_pattern(ops)),
+            PatternEquation::Unconstrained { patex } => patex
+                .gen_min_pattern(ops)
+                .ok_or_else(|| KunaError::sleigh("Operand used before its pattern is known")),
             PatternEquation::Equal { lhs, rhs } => {
                 gen_comparison(lhs, rhs, ops, Comparison::Equal)
             }
