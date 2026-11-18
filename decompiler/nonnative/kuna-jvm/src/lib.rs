@@ -198,4 +198,10 @@ pub mod testing {
         is_lambda_expression_body, is_statement_only,
     };
     pub use crate::substrate::kuna_fix_ternary_numeric_arms::promotes;
+    pub mod disjoint_generic_cast {
+        pub use crate::p2_lift::kuna_fix_disjoint_generic_cast::{mark_declared_target, take_declared_target};
+    }
+    pub mod kt_static_initializer {
+        pub use crate::kotlin::kuna_fix_kt_static_initializer::{move_to, scope, take};
+    }
 }

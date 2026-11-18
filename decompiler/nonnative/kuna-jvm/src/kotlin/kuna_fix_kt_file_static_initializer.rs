@@ -605,7 +605,7 @@ fn value_text(store: AssignmentExprent, indent: i32) -> TextBuffer {
     if cast_name == ExprProcessor::UNREPRESENTABLE_TYPE_STRING {
         buf.append_buffer(&right.to_java(indent));
     } else {
-        kuna_fix_disjoint_generic_cast::mark_declared_target();
+        let _declared = kuna_fix_disjoint_generic_cast::mark_declared_target();
         ExprProcessor::get_casted_exprent_full(
             right,
             &left_type,

@@ -15,10 +15,9 @@
 //! first) shows a pattern and keeps it. Docs: `docs/spec/10-jvm.md` section
 //! 10.10.
 
-use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;
 use crate::function_exprent::FunctionExprent;
-use crate::kt_metadata::KotlinMetadataAnnotation;
+use crate::p6_variables::kuna_source_locals;
 use crate::kuna_options::{self, SOURCE_PATTERNS};
 use crate::rt::BitSet;
 use crate::struct_general_attribute::StructGeneralAttribute;
@@ -35,8 +34,7 @@ pub fn keeps_cast(
     binding: Exprent,
 ) -> bool {
     if !kuna_options::form_enabled(SOURCE_PATTERNS)
-        || DecompilerContext::get_current_class()
-            .is_some_and(|cl| KotlinMetadataAnnotation::find(cl).is_some())
+        || kuna_source_locals::compiled_by_kotlinc()
         || javac_temporary(source, left)
     {
         return false;

@@ -50,6 +50,18 @@ impl Caught {
     pub fn is(&self, class: &str) -> bool {
         self.exception.as_ref().is_some_and(|e| e.class == class)
     }
+
+    /// Whether `catch (RuntimeException e)` catches it: a Rust panic (the
+    /// port's `NullPointerException` or index failure) or an exception that
+    /// is neither an `Error` (`StackOverflowError`, `UnportedError`) nor one
+    /// of kuna's method stops, which Vineflower has as a killed thread.
+    pub fn is_runtime_exception(&self) -> bool {
+        self.exception.as_ref().is_none_or(|e| {
+            !e.class.ends_with("Error")
+                && e.class != "MethodDeadlineExceeded"
+                && e.class != "MethodAbortedException"
+        })
+    }
 }
 
 thread_local! {

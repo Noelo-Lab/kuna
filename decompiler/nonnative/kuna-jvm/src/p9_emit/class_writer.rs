@@ -1517,7 +1517,7 @@ impl ClassWriter {
                     const_exprent.adjust_const_type(&field_type);
                 }
 
-                kuna_fix_disjoint_generic_cast::mark_declared_target();
+                let _declared = kuna_fix_disjoint_generic_cast::mark_declared_target();
                 ExprProcessor::get_casted_exprent(
                     initializer,
                     &declared_type(&descriptor),

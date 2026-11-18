@@ -13,8 +13,9 @@
 //! element target is written compound exactly when its receiver (array and
 //! index) and the read's are one load, with any `e` and through the cast to
 //! the target's own type that the compound form implies; and `left = e op
-//! left` is never written compound. Locals and static fields, which compile
-//! the same either way, keep Vineflower's choice, and so do classes compiled
+//! left` is never written compound, whatever the target. For `left = left op
+//! e`, locals and static fields, which compile the same either way, keep
+//! Vineflower's choice, and so does every assignment of a class compiled
 //! from Kotlin (with `kotlin.Metadata`), whose compiler does not `dup` a
 //! property's receiver. The same holds for `x.f = x.f + 1`, which
 //! `PPandMMHelper`, `isPPIorMMI` and `isIPPorIMM2` write `x.f++`

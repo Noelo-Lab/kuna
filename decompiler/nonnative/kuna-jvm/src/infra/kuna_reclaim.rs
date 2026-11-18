@@ -17,8 +17,9 @@
 //! then ([`note_cached_exprents`]): a plugin pass may read them mid-schedule.
 //! The variable-version processors each `setVarVersions` replaces go too:
 //! only the method's current one (and its type processor) is kept.
-//! The traversal destructures every data struct without `..`, so a new field
-//! fails to compile until it is traversed or explicitly ignored here.
+//! The traversal destructures every data struct without `..`, Kotlin
+//! extension data (`ExprentData.kt`) included, so a new field fails to
+//! compile until it is traversed or explicitly ignored here.
 
 use crate::annotation_exprent::AnnotationExprentData;
 use crate::array_exprent::ArrayExprentData;
@@ -41,6 +42,13 @@ use crate::general_statement::GeneralStatementData;
 use crate::if_exprent::IfExprentData;
 use crate::if_statement::IfStatementData;
 use crate::invocation_exprent::InvocationExprentData;
+use crate::k_annotation_exprent::KAnnotationExprentData;
+use crate::k_dispatch::KExprentExt;
+use crate::k_exit_exprent::KExitExprentData;
+use crate::k_function_exprent::KFunctionExprentData;
+use crate::k_invocation_exprent::KInvocationExprentData;
+use crate::k_new_exprent::KNewExprentData;
+use crate::k_var_exprent::KVarExprentData;
 use crate::method_wrapper::MethodWrapper;
 use crate::monitor_exprent::MonitorExprentData;
 use crate::new_exprent::NewExprentData;
@@ -551,13 +559,43 @@ impl Marker {
         }
     }
 
+    fn trace_kotlin_exprent(&mut self, kt: &KExprentExt) {
+        match kt {
+            KExprentExt::Function(KFunctionExprentData {
+                k_type: _,
+                identity: _,
+                nullable_cast: _,
+                redundant_cast: _,
+                kuna_typed_from,
+                kuna_cast_target: _,
+            }) => self.exprent_opt(*kuna_typed_from),
+            KExprentExt::Annotation(KAnnotationExprentData { use_site_target: _ })
+            | KExprentExt::Exit(KExitExprentData { lambda_name: _ })
+            | KExprentExt::Invocation(KInvocationExprentData {
+                calling_data: _,
+                property_method: _,
+            })
+            | KExprentExt::New(KNewExprentData { in_annotation: _ })
+            | KExprentExt::Var(KVarExprentData {
+                declaration_type: _,
+                nullable: _,
+            })
+            | KExprentExt::Const
+            | KExprentExt::Field
+            | KExprentExt::SwitchHead => {}
+        }
+    }
+
     fn trace_exprent(&mut self, d: &ExprentData) {
         let ExprentData {
             id: _,
             bytecode: _,
             kind,
-            kt: _,
+            kt,
         } = d;
+        if let Some(kt) = kt {
+            self.trace_kotlin_exprent(kt);
+        }
         match kind {
             ExprentKind::Annotation(AnnotationExprentData {
                 class_name: _,
@@ -730,5 +768,45 @@ impl Marker {
                 ret_type: _,
             }) => self.exprent(*content),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::k_function_exprent::KFunctionType;
+
+    fn bare(kt: Option<KExprentExt>) -> Exprent {
+        Exprent::alloc(ExprentData {
+            id: 0,
+            bytecode: None,
+            kind: ExprentKind::Assert(AssertExprentData {
+                parameters: Vec::new(),
+            }),
+            kt: kt.map(Box::new),
+        })
+    }
+
+    #[test]
+    fn a_kotlin_cast_keeps_the_local_it_is_typed_from() {
+        let window = ReclaimWindow::open();
+        let local = bare(None);
+        let cast = bare(Some(KExprentExt::Function(KFunctionExprentData {
+            k_type: KFunctionType::None,
+            identity: false,
+            nullable_cast: false,
+            redundant_cast: false,
+            kuna_typed_from: Some(local),
+            kuna_cast_target: None,
+        })));
+        let dropped = bare(None);
+        let mut marker = Marker::new(window);
+        marker.exprent(cast);
+        marker.drain();
+        let released = marker.release();
+        assert_eq!(released.exprents, 1, "only the unreachable exprent");
+        assert_eq!(local.get_id(), 0, "the local the cast is typed from is kept");
+        let _ = dropped;
+        crate::rt::reset_session_scope();
     }
 }

@@ -17,7 +17,12 @@
 //! function is (receiver, name, import: the fixes `kt_extension_call`,
 //! `kt_facade_call`, `kt_jvm_name_call`). A static field is resugared only
 //! for a top-level property; an `invokespecial` only of the accessor's own
-//! class (a super call keeps its accessor).
+//! class (a super call keeps its accessor). A field accessor (`$p`) is a
+//! property access only when the property is not delegated (its field holds
+//! the delegate, not the value) and the accessor the access would call is
+//! the default one; otherwise it keeps the accessor call (a custom accessor's
+//! `field`, reached through `$p` from an object expression, is written by
+//! the fix `kt_accessor_backing_field`).
 
 use crate::code_constants::{
     ACC_INTERFACE, ACC_STATIC, ACC_SYNTHETIC, OPC_ALOAD, OPC_ALOAD_3, OPC_GETFIELD, OPC_GETSTATIC, OPC_ILOAD,
@@ -28,8 +33,9 @@ use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;
 use crate::invocation_exprent::{InvocationExprent, InvocationType, Type};
 use crate::k_element::KElement;
-use crate::k_property::PropertyMethod;
+use crate::k_property::{KProperty, PropertyMethod};
 use crate::kotlin::kuna_fix_kt_facade_call;
+use crate::kt_flags::Flags;
 use crate::kotlin_chooser::KotlinChooser;
 use crate::kt_attrs::KtAttrs;
 use crate::link_constant::LinkConstant;
@@ -114,8 +120,11 @@ pub fn resugar(invocation: InvocationExprent) -> Option<Resugared> {
         if field.has_modifier(ACC_STATIC) != static_field {
             return None;
         }
+        let setter = matches!(access.opcode, OPC_PUTFIELD | OPC_PUTSTATIC);
         match KtAttrs::get(field, &KElement::KEY()) {
-            Some(KElement::Property(p)) => Some(KElement::Property(p)),
+            Some(KElement::Property(p)) if plain_field_access(&p, setter) => {
+                Some(KElement::Property(p))
+            }
             _ => None,
         }
     };
@@ -203,6 +212,17 @@ pub fn resugar(invocation: InvocationExprent) -> Option<Resugared> {
         calling_data: calling,
         property_method: method,
     })
+}
+
+/// Whether reading (or, `setter`, writing) the property `p` in Kotlin is the
+/// access of its backing field: it is not delegated (whose field holds the
+/// delegate) and that accessor is the default one.
+fn plain_field_access(p: &KProperty, setter: bool) -> bool {
+    let accessor = if setter { &p.setter } else { &p.getter };
+    !Flags::IS_DELEGATED.get(p.flags)
+        && !accessor
+            .as_ref()
+            .is_some_and(|a| Flags::IS_NOT_DEFAULT.get(a.flags))
 }
 
 /// The one access `mt`'s code makes after loading every parameter in

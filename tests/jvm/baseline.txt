@@ -584,6 +584,7 @@ kuna-fixes-compat/pkg/NoMetaBag
 kuna-fixes-compat/pkg/TestAbstractClassConstructor
 kuna-fixes-compat/pkg/TestAbstractFunctionBody
 kuna-fixes-compat/pkg/TestAccessorBackingField
+kuna-fixes-compat/pkg/TestAccessorFieldInObject
 kuna-fixes-compat/pkg/TestAmbiguousTypeVariableArgument
 kuna-fixes-compat/pkg/TestAnnotatedInnerType
 kuna-fixes-compat/pkg/TestAnonymousStaticCall
@@ -608,7 +609,9 @@ kuna-fixes-compat/pkg/TestCharIntSlotKt
 kuna-fixes-compat/pkg/TestCompanionPropertyInitializer
 kuna-fixes-compat/pkg/TestCompoundAssignmentShape
 kuna-fixes-compat/pkg/TestCompoundBitwiseAssignment
+kuna-fixes-compat/pkg/TestCompoundBitwiseInfixOperand
 kuna-fixes-compat/pkg/TestCompoundShiftCount
+kuna-fixes-compat/pkg/TestConcatCharArray
 kuna-fixes-compat/pkg/TestConcatOperandType
 kuna-fixes-compat/pkg/TestConcatOperandTypeBuilder
 kuna-fixes-compat/pkg/TestConstructorBodyBeyondFirstBlock
@@ -755,6 +758,7 @@ kuna-fixes-compat/pkg/TestNonPublicNestedImport
 kuna-fixes-compat/pkg/TestNotNullAssertion
 kuna-fixes-compat/pkg/TestNotNullAssertionLegacy
 kuna-fixes-compat/pkg/TestNothingValueThrowKt
+kuna-fixes-compat/pkg/TestNullCheckConstantValue
 kuna-fixes-compat/pkg/TestNullableCast
 kuna-fixes-compat/pkg/TestNullableLocal
 kuna-fixes-compat/pkg/TestObjectInstance
@@ -859,6 +863,7 @@ kuna-fixes-compat/pkg/TestVarMergeLiveness
 kuna-fixes-compat/pkg/TestVarMergeLostDefinition
 kuna-fixes-compat/pkg/TestVarMergeLvtWidening
 kuna-fixes-compat/pkg/TestVarMergeNarrowing
+kuna-fixes-compat/pkg/TestVarMergeUnrelatedType
 kuna-fixes-compat/pkg/TestVarargArrayLength
 kuna-fixes-compat/pkg/TestVarargFromMetadata
 kuna-fixes-compat/pkg/TestVarargsSpreadResolution
@@ -869,6 +874,7 @@ kuna-fixes/pkg/NoMetaBag
 kuna-fixes/pkg/TestAbstractClassConstructor
 kuna-fixes/pkg/TestAbstractFunctionBody
 kuna-fixes/pkg/TestAccessorBackingField
+kuna-fixes/pkg/TestAccessorFieldInObject
 kuna-fixes/pkg/TestAmbiguousTypeVariableArgument
 kuna-fixes/pkg/TestAnnotatedInnerType
 kuna-fixes/pkg/TestAnonymousStaticCall
@@ -893,7 +899,9 @@ kuna-fixes/pkg/TestCharIntSlotKt
 kuna-fixes/pkg/TestCompanionPropertyInitializer
 kuna-fixes/pkg/TestCompoundAssignmentShape
 kuna-fixes/pkg/TestCompoundBitwiseAssignment
+kuna-fixes/pkg/TestCompoundBitwiseInfixOperand
 kuna-fixes/pkg/TestCompoundShiftCount
+kuna-fixes/pkg/TestConcatCharArray
 kuna-fixes/pkg/TestConcatOperandType
 kuna-fixes/pkg/TestConcatOperandTypeBuilder
 kuna-fixes/pkg/TestConstructorBodyBeyondFirstBlock
@@ -1040,6 +1048,7 @@ kuna-fixes/pkg/TestNonPublicNestedImport
 kuna-fixes/pkg/TestNotNullAssertion
 kuna-fixes/pkg/TestNotNullAssertionLegacy
 kuna-fixes/pkg/TestNothingValueThrowKt
+kuna-fixes/pkg/TestNullCheckConstantValue
 kuna-fixes/pkg/TestNullableCast
 kuna-fixes/pkg/TestNullableLocal
 kuna-fixes/pkg/TestObjectInstance
@@ -1144,6 +1153,7 @@ kuna-fixes/pkg/TestVarMergeLiveness
 kuna-fixes/pkg/TestVarMergeLostDefinition
 kuna-fixes/pkg/TestVarMergeLvtWidening
 kuna-fixes/pkg/TestVarMergeNarrowing
+kuna-fixes/pkg/TestVarMergeUnrelatedType
 kuna-fixes/pkg/TestVarargArrayLength
 kuna-fixes/pkg/TestVarargFromMetadata
 kuna-fixes/pkg/TestVarargsSpreadResolution

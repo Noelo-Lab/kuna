@@ -15,7 +15,13 @@
 //! allocation that has not passed the call, and the same handlers protect
 //! both. The verifier allows nothing but `<init>` on the uninitialised
 //! object, so what moves is the allocation itself, as the same-list join
-//! already moves it past the statements in between.
+//! already moves it past the statements in between. That is not the same
+//! program in one respect: `X` is initialised after the arguments rather
+//! than before, and not at all on a path that leaves them without the call
+//! (`X(a ?: return null)` comes out `if (a == null) null else X(a)`, which
+//! skips `X.<clinit>` where the bytecode runs it). Only a static initializer
+//! of `X` with an effect, run first there, tells them apart; Vineflower's
+//! `<init>` call is not Java at all.
 
 use crate::code_type::CodeType;
 use crate::direct_edge_type::DirectEdgeType;
