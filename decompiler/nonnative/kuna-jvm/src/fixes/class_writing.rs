@@ -172,32 +172,6 @@ impl EnumBodySeparator {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn writes_the_separator_once_and_only_when_owed() {
-        let mut buffer = TextBuffer::with_format("\n", "   ", 160);
-        let mut sep = EnumBodySeparator {
-            pending: true,
-            indent: 1,
-        };
-        assert!(sep.before_member(&mut buffer));
-        assert!(!sep.before_member(&mut buffer));
-        assert!(buffer.content_equals("   ;\n"));
-
-        let mut buffer = TextBuffer::with_format("\n", "   ", 160);
-        let mut sep = EnumBodySeparator {
-            pending: true,
-            indent: 1,
-        };
-        sep.constant_written();
-        assert!(!sep.before_member(&mut buffer));
-        assert!(buffer.content_equals(""));
-    }
-}
-
 /// Moves the constants built in a leading `$VALUES = new E[]{F = new E(..), ..}`
 /// to their fields' initializers; `independent(field, value, whitelist, index)`
 /// is `InitializerProcessor`'s independence test for a static initializer.
@@ -486,4 +460,30 @@ pub fn omit_permits(node: ClassNode, permitted: &[String]) -> bool {
         }
     }
     private
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn writes_the_separator_once_and_only_when_owed() {
+        let mut buffer = TextBuffer::with_format("\n", "   ", 160);
+        let mut sep = EnumBodySeparator {
+            pending: true,
+            indent: 1,
+        };
+        assert!(sep.before_member(&mut buffer));
+        assert!(!sep.before_member(&mut buffer));
+        assert!(buffer.content_equals("   ;\n"));
+
+        let mut buffer = TextBuffer::with_format("\n", "   ", 160);
+        let mut sep = EnumBodySeparator {
+            pending: true,
+            indent: 1,
+        };
+        sep.constant_written();
+        assert!(!sep.before_member(&mut buffer));
+        assert!(buffer.content_equals(""));
+    }
 }
