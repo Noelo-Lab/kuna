@@ -421,7 +421,7 @@ The jump-table ceiling is the other budget a giant function hits: a switch whose
 range check admits more than `jumptablemax` cases (1024 by default) is not
 recovered, and its dispatch prints as a computed call (`// jump-as-call`).
 `jumptablemax` is catalogued (`kuna catalog`), and the same value bounds how far
-`kuna functions`/`xrefs`/`strings`/`crypto` follow a switch table:
+`kuna functions`/`xrefs`/`strings`/`crypto`/`blobs` follow a switch table:
 
 ```bash
 kuna decompile ./state_machine.exe 0x14000c0b0 --addr \
@@ -3534,6 +3534,80 @@ A binary with no recognized constant is exit `0` with `count: 0`. An unreadable
 or unparseable binary, or an unknown `--section`, is exit `1` with the reason on
 stderr; a malformed command line is exit `2` with the usage block.
 
+## `kuna blobs` — the embedded-file inventory
+
+```bash
+kuna blobs ./firmware.elf                      # every embedded image and archive, with the functions that reference it
+kuna blobs ./firmware.elf --json               # machine-readable
+kuna blobs ./firmware.elf --extract out/       # also write each file to out/<kind>_<address>.<ext>
+kuna blobs ./firmware.elf --kind png,zip --section .rodata --no-xrefs
+```
+
+Lists the whole image and archive files stored in the binary's mapped sections:
+a logo, an icon set, a packed resource, a dropper's payload. Each row has the
+file's address, kind, exact length and section, and the functions that
+reference any byte of it, from the reference index `kuna strings` and
+`kuna xrefs` use. The image is not modified.
+
+A candidate is a magic number. It is listed only when its container structure
+walks to its end, which is also what gives the exact length:
+
+| `kind` | listed when |
+|---|---|
+| `png` | every chunk from `IHDR` to `IEND` has a matching CRC-32 and an `IDAT` is present |
+| `jpeg` | the marker segments reach `EOI` after a frame header and a scan |
+| `gif` | the block stream reaches the trailer after at least one image |
+| `bmp` | the header's file size equals the pixel array the DIB header describes |
+| `ico` | the directory's images follow it back to back and each is a PNG or a DIB |
+| `zip` | the end-of-central-directory record's directory names a local header for every entry |
+| `gzip` | the deflate stream inflates to the trailer's CRC-32 and length |
+| `xz` | the stream footer and index CRC-32s match and the index sums to the blocks |
+| `zstd` | the frame's blocks reach the last block inside their size limits |
+
+No image is decoded. A truncated file (a PNG with no `IEND`) is not listed. A
+file stored inside a listed one (a PNG in a zip or an ICO) is not listed
+separately. A zip is located from its end record, so a self-extracting stub in
+front of it is not part of the row; a zip64 archive is not listed. A zstd frame
+of only raw blocks with no declared content size is not listed. The scan's work
+is capped at sixteen times the section size, so a hostile image built to make
+every candidate walk far ends the scan early with the rows found so far.
+
+`--extract DIR` creates `DIR` and writes each listed file as
+`<kind>_<address>.<ext>` (`png_3c0.png`, `jpeg_440.jpg`, `gzip_6c0.gz`); the
+row's `file` field names it. `--kind` keeps the named kinds, comma-separated.
+`--section` scans one section (with or without its leading dot). `--no-xrefs`
+skips the reference walk (`xrefs_count` 0, no functions) and needs no processor
+spec.
+
+`kuna decompile` names the same files: each is a `<kind>_<address>` data symbol
+typed `unsigned char[length]` unless a symbol already covers the address
+(`--option blobs off` turns that off).
+
+### Output
+
+```
+# 5 embedded blobs in ./embedded_blobs_x86_64.so (scanned by sections)
+0x3c0	png	69	.rodata	1	get_logo
+0x410	gif	47	.rodata	1	get_icon
+0x440	jpeg	331	.rodata	1	get_photo
+0x590	zip	297	.rodata	1	get_archive
+0x6c0	gzip	86	.rodata	1	get_packed
+```
+
+A `#` header, then one tab-separated row per file: address, kind, length,
+section, reference count, functions, and the extracted path under `--extract`.
+
+```json
+{"binary": "...", "section": null, "scanned": "sections", "xrefs": true, "count": N,
+ "blobs": [{"address","address_hex","kind","length","section","file","xrefs_count",
+            "functions": [{"name","address","address_hex"}]}]}
+```
+
+A binary with no embedded file is exit `0` with `count: 0`. An unreadable or
+unparseable binary, an unknown `--section`, or an `--extract` directory that
+cannot be written is exit `1` with the reason on stderr; a malformed command
+line is exit `2` with the usage block.
+
 ## `kuna unpack` — statically unpack a UPX-, NEOLite- or PKLITE-packed executable
 
 ```bash
@@ -4420,7 +4494,7 @@ container). kuna loads one entry: the kernel by default, or the entry
 `--option kernelcache <bundle-id>` names, by full id or a unique dotted suffix
 (`--option kernelcache list` prints them all). Like `--image`, the choice
 applies to the whole invocation: `functions`, `decompile`, `disassemble`,
-`xrefs`, `strings`, `crypto`, `decompile-all`, `decompile-graph` and
+`xrefs`, `strings`, `crypto`, `blobs`, `decompile-all`, `decompile-graph` and
 `decompile-project` all read the same entry. So does `--option dyldimage NAME`,
 the option spelling of `--image`. Given more than once, the last one wins. The
 option overrides `KUNA_KERNELCACHE` (or `KUNA_DYLD_IMAGE`) set in the

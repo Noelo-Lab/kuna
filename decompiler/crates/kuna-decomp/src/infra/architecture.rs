@@ -1855,6 +1855,13 @@ pub struct Architecture {
     /// (kuna `cfstrings`) The `__cfstring` entry addresses the commit seeded, so
     /// the printer renders a literal at one of them as `CFSTR("...")`.
     pub cfstring_entries: std::collections::BTreeSet<u64>,
+    /// (kuna) `option blobs` — plant each embedded image or archive the
+    /// `blobs` pass found as a `<kind>_<addr>` data symbol typed
+    /// `unsigned char[len]`. Default **on**; real-binary-path only.
+    pub analysis_blobs: bool,
+    /// (kuna `blobs`) The first address of each committed blob. A constant equal
+    /// to one is weighed as a pointer even below the space's pointer lower bound.
+    pub blob_entries: Rc<std::collections::BTreeSet<u64>>,
     /// (kuna) Gate the Swift type-layout arm of the metadata pass
     /// (`swifttypes`): struct and class layouts from static type metadata,
     /// typed metadata records, accessor prototypes and the register-pinned
@@ -2584,6 +2591,8 @@ impl Architecture {
             analysis_cfstrings: false,
             cfstrings_annotate: false,
             cfstring_entries: std::collections::BTreeSet::new(),
+            analysis_blobs: false,
+            blob_entries: Rc::default(),
             analysis_swifttypes: true,
             loader_param_locks: std::collections::BTreeMap::new(),
             analysis_objcivars: true,
@@ -2925,6 +2934,7 @@ impl Architecture {
         self.analysis_swiftmetadata = true; // Swift runtime-metadata recovery (inert without swift5_* sections)
         self.analysis_cfstrings = true; // (kuna) Mach-O __cfstring constant-string recovery default-on: Mach-O-only and real-binary-path only, so the XML datatest corpus never runs it (0/675); on an 80 MB third-party arm64 iOS app one decompile is within noise (min 2.324 s off, 2.359 s on, medians 2.442 / 2.372 over 6 interleaved runs)
         self.cfstrings_annotate = false;
+        self.analysis_blobs = true; // (kuna) embedded image/archive data symbols; real-binary-path only
         self.analysis_swifttypes = true; // Swift type layouts default-on, inert unless swiftmetadata is on
         self.analysis_objcivars = true; // (kuna) ObjC instance structs + typed self + ivar offset fold; inert unless objc is on
         self.analysis_swiftcall = true; // Swift calling convention default-on, inert unless swiftmetadata is on
@@ -3706,6 +3716,7 @@ impl Architecture {
         // `glb`) can rewrite a mapped global-constant address into a typed
         // `PTRSUB(spacebase,off)`.
         ctx.infer_pointers = self.infer_pointers;
+        ctx.blob_entries = Rc::clone(&self.blob_entries);
         ctx.infer_ptr_spaces = self.infer_ptr_spaces.clone();
         // Snapshot the tracked-register database (C++ `glb->context`'s track base,
         // populated by `set track`) so `ActionConstbase` can query it for the

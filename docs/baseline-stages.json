@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4498,
-    4498
+    4507,
+    4507
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2784,6 +2784,15 @@
     "data:bejoinpass #2: the default joins the call's pair high word first",
     "data:bejoinpass #3: off prints the pair with its halves swapped",
     "data:bejoinpass #4: off joins the call's pair first register low",
+    "data:blobs #3: the PNG is returned by name",
+    "data:blobs #4: the GIF is returned by name",
+    "data:blobs #5: the JPEG is returned by name",
+    "data:blobs #6: the zip is returned by name",
+    "data:blobs #7: the gzip is returned by name",
+    "data:blobs #8: each named file is a byte pointer",
+    "data:blobs #9: the truncated PNG is not a file in either pass",
+    "data:blobs off #1: the PNG is a bare address",
+    "data:blobs off #2: the zip is a bare address",
     "data:boolbyte #10: the slot both controls hand to the callee stays a character in both passes -- the INDIRECT a call leaves on it is not identity, and one byte of a bigger object is not a declaration of its own",
     "data:boolbyte #11: with the option off a truncation whose destination a comparison already made bool prints as the raw SUB41 intrinsic -- an undeclared identifier",
     "data:boolbyte #12: with the option on the same truncation prints as the cast it is",

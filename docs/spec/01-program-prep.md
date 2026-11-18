@@ -486,7 +486,7 @@ parse, so an image whose table is usable is passed on byte for byte; the rewrite
 kept only if the rewritten copy actually parses, so corruption elsewhere still
 reports `object`'s own error rather than a misleading one about the section table.
 What was dropped, and what survived it, is reported on stderr. The CLI surfaces
-that parse the image themselves rather than through the loader (`strings`, `crypto`,
+that parse the image themselves rather than through the loader (`strings`, `crypto`, `blobs`,
 `xrefs`, `decompile-graph`, the call graph) read it through the same normalization
 (`elf_shdr (read_image)`), so a recovered image is recovered everywhere.
 
@@ -4857,6 +4857,42 @@ moves.
   in the table whatever the section count. The 14,223 entries of
   a 7.3 x86-64 `vmlinux` read in under 0.2 s. Committed sorted by trap address
   onto `Architecture::kernel_bug_sites`.
+- **Embedded images and archives** (`blobs on|off`, default on;
+  `decompiler/crates/kuna-analysis/src/analyzers/blobs/mod.rs (BlobPass)`): a
+  program that ships a logo, an icon set or a packed resource stores the whole
+  file in a data section, where it showed only as the string fragments of its
+  header (`PNG`, `IHDR`, `IDATx`) and as a bare address in the code that hands
+  it out. The pass searches every mapped, file-backed section for nine magic
+  numbers (`blobs/mod.rs (scan)`) and keeps a candidate only when its container
+  structure walks to its end, which is also what gives the exact length. A PNG
+  is its chunks from `IHDR` to `IEND` with every chunk CRC-32 checked and an
+  `IDAT` present; a JPEG its marker segments to `EOI` after a frame header and
+  a scan, skipping the entropy-coded bytes; a GIF its blocks to the trailer
+  after at least one image; a BMP a header whose file size equals the pixel
+  array its DIB header describes; an ICO a directory whose images follow it
+  back to back, each a PNG or a DIB of the entry's dimensions
+  (`blobs/images.rs`). A zip is found from its end-of-central-directory
+  record, whose directory must sit right before it and name a local header for
+  every entry, so a stub in front of the archive is not part of it and a zip64
+  archive is not reported; a gzip member is inflated into a discarded buffer to
+  check the trailer's CRC-32 and length, the one kind whose length cannot be
+  known otherwise; an xz stream needs a footer and an index whose CRC-32s match
+  and whose index sums to the bytes between header and index; a zstd frame is
+  its frame and block headers to the last block, with a compressed block whose
+  literals and sequences headers fit it, or raw and RLE blocks that sum to the
+  declared content size (`blobs/archives.rs`). No pixels are decoded. A
+  truncated file is not a blob, and a file stored inside an earlier-starting
+  one (a PNG in a zip, a PNG in an ICO) is not reported separately. The image
+  is hostile input: every read is bounds-checked and the bytes one scan may
+  walk are capped at sixteen times the section, after which it returns what it
+  has. The commit (`decompiler/crates/kuna-console/src/kuna_blobdata.rs
+  (commit)`) runs after every other data source, so a DWARF global or a
+  symbol-table object keeps the address; where nothing covers it the blob
+  becomes `<kind>_<addr>` (`png_3c0`), an `unsigned char[length]` with name and
+  type locked, and the string facts that fall inside any blob are not planted.
+  Each blob's first address is also recorded for constant-pointer recovery
+  (chapter 05, `blobs`). `kuna blobs` runs the same scan as an inventory, with
+  the functions that reference each file.
 - **x87 intrinsics** (`x87intrinsics`, always on, i386 only;
   `decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_x87intrinsics.rs
   (X87IntrinsicPass)`): binds the MSVC one-operand x87 math intrinsics to the

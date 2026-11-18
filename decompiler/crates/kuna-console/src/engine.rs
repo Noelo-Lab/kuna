@@ -3474,6 +3474,7 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // `CFStringRef`). Registered here so `off` really skips it; `off`
         // renders the entry exactly as before.
         "cfstrings" => arch.analysis_cfstrings,
+        "blobs" => arch.analysis_blobs,
         // (kuna) PE PDB metadata recovery — default-OFF (output-changing: renames
         // stripped functions to their real PDB names). PE-only + externally gated on
         // a fingerprint-matching `.pdb` (the `kuna_pdb_path` env var). Registered
@@ -5858,6 +5859,7 @@ fn commit_analysis_output(
     //    produced for the same address (the measured witness: three adjacent
     //    unterminated literals read back as one 39-byte string). A bounded
     //    fact's `len` is the exact element count — there is no terminator.
+    let blob_extents = crate::kuna_blobdata::Extents::new(&out.blobs);
     let wide = if prog.arch().analysis_widestrings { out.wide_strings.as_slice() } else { &[] };
     let wide32 =
         if prog.arch().analysis_widestrings32 { out.wide_strings32.as_slice() } else { &[] };
@@ -5872,6 +5874,9 @@ fn commit_analysis_output(
         .chain(wide.iter().map(|f| (f, 2u32)))
         .chain(out.strings.iter().map(|f| (f, 1u32)))
     {
+        if blob_extents.contains(fact.addr) {
+            continue;
+        }
         let addr = Address::new(Rc::clone(code_space), fact.addr);
         // Conservative guard: skip an address that already carries a symbol (an
         // existing data/function symbol must not be shadowed). Ghidra likewise
@@ -6121,6 +6126,10 @@ fn commit_analysis_output(
             arch.symboltab.add_symbol_mapped(scope, &base, ct, &addr, &Address::new_invalid())?;
         arch.symboltab.set_attribute(sid, kuna_decomp::varnode::varnode_flags::namelock);
     }
+
+    // 4c. (kuna `blobs`) Embedded images and archives, last so every named or
+    //     typed claim on the address is kept.
+    crate::kuna_blobdata::commit(prog, code_space, &out.blobs, &mut data_names, num_spaces)?;
 
     // 4b. The C runtime declaration `elfmain` has for an executable's own
     //     `main`. Not parked on the symbol: the drive locks only its `int`

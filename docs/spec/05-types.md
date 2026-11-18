@@ -1716,7 +1716,7 @@ recovered as a pointer into the declaration when its sink is typed as a
 pointer, and otherwise prints as the bare address, the same as for an
 aggregate the DWARF tier declared.
 
-Two (kuna) escapes hook exactly here, both always on:
+Three (kuna) escapes hook exactly here; the first two are always on:
 
 - **(kuna GH-6930)** The function-entry escape: the
   bit-transitions rejection is skipped when the constant resolves *exactly* to
@@ -1756,6 +1756,19 @@ Two (kuna) escapes hook exactly here, both always on:
   number *anywhere*, which `ActionConstantPtr::apply` collects once per pass from
   the constant snapshot it already takes
   (`decompiler/crates/kuna-decomp/src/p9_emit/coreaction_render.rs`).
+- **(kuna `blobs`)** The embedded-file escape: a constant equal to the first
+  address of an embedded image or archive (chapter 01, `blobs`) skips both the
+  pointer-lower-bound rejection and the bit-transitions rejection
+  (`decompiler/crates/kuna-decomp/src/p9_emit/coreaction_render.rs
+  (is_pointer)`). A shared object linked at base zero keeps its read-only data
+  in the first page, below the bound every x86 processor spec sets, so the
+  function returning a PNG at `0x2d0` printed `return 0x2d0;` whether or not a
+  symbol named the array; and `0x3c0` is a single run of set bits. The address
+  set is exact starts only, shared from `Architecture::blob_entries`, and the
+  skip is declined on the same two readings as the function-entry escape
+  (`kuna_inferfuncentry.rs (entry_escape_applies)`): the reader is not
+  arithmetic, and the function reads that value as a number nowhere else.
+  Empty, so inert, under `blobs off`.
 - **(kuna GH-8471)** Thumb function-pointer preservation: a Thumb function pointer
   is `fn|1`; constant-pointer recovery produces `PTRSUB(fn) + 1`, and the
   simplification rule that normally deletes out-of-bounds PTRSUBs would

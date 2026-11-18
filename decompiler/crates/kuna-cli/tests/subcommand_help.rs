@@ -119,6 +119,7 @@ fn every_json_surface_names_its_root_in_help() {
         ("xrefs", "{binary,"),
         ("strings", "{binary,"),
         ("crypto", "{binary,"),
+        ("blobs", "{binary,"),
         ("unpack", "{binary,"),
         ("test", "{unit_footer,"),
         ("modes", "{modes:["),
