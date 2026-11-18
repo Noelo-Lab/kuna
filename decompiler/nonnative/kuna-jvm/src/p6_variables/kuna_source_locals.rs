@@ -21,7 +21,7 @@ use crate::exprent::Exprent;
 use crate::kt_metadata::KotlinMetadataAnnotation;
 use crate::kuna_options::{self, SOURCE_LOCALS};
 use crate::method_descriptor::MethodDescriptor;
-use crate::p6_variables::kuna_source_scopes::{self, position, remove, splittable};
+use crate::p6_variables::kuna_source_scopes::{self, declared, position, remove, splittable};
 use crate::fixes::var_merge::var_merge_declared_type;
 use crate::rt::{JHashSet, JList};
 use crate::statement::{Statement, StatementType};
@@ -283,15 +283,7 @@ fn enter(var: VarExprent, gathered: &mut Gathered) -> Option<i32> {
 
 fn declarations(list: JList<Exprent>, out: &mut Vec<Declaration>, gathered: &mut Gathered) {
     for exprent in list.iter() {
-        let top = if let Some(var) = exprent.try_as_var() {
-            Some((var, true))
-        } else {
-            exprent
-                .try_as_assignment()
-                .and_then(|a| a.get_left().try_as_var())
-                .map(|var| (var, false))
-        };
-        let Some((var, bare)) = top.filter(|(var, _)| var.is_definition()) else {
+        let Some((var, bare)) = declared(exprent) else {
             continue;
         };
         let slot = enter(var, gathered);
