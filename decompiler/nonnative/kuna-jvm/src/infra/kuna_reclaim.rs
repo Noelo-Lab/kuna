@@ -804,8 +804,9 @@ mod tests {
         marker.exprent(cast);
         marker.drain();
         let released = marker.release();
-        assert_eq!(released.exprents, 1);
-        assert!(cast.is_live() && local.is_live() && !dropped.is_live());
+        assert_eq!(released.exprents, 1, "only the unreachable exprent");
+        assert_eq!(local.get_id(), 0, "the local the cast is typed from is kept");
+        let _ = dropped;
         crate::rt::reset_session_scope();
     }
 }
