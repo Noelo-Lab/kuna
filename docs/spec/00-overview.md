@@ -1637,7 +1637,13 @@ jump-table recovery probes it too, before and after each table's attempt and
 after its basic and default-path models (`decompiler/crates/kuna-decomp/src/p2_lift/flow.rs
 (FlowInfo::recover_jump_tables)`, `decompiler/crates/kuna-decomp/src/p2_lift/jumptable.rs
 (JumpTable::recover_model)`); a table reached past the deadline is not attempted
-and its indirect jump is truncated as an unrecovered one. On expiry the
+and its indirect jump is truncated as an unrecovered one. Inside a model, every
+loop over the values of the switch variable (building the address table,
+checking its rows against the guards, labelling them) advances through
+`decompiler/crates/kuna-decomp/src/p2_lift/jumptable.rs (walk_within_budget)`,
+which fails the walk once a probe sees the budget spent, so a table of any
+length the `jumptablemax` ceiling admits ends with its drive instead of after
+its last row. On expiry the
 containers stop scheduling work and unwind; the driver converts that into the
 function's `error` record (a pass panic after the deadline passed reports the
 same budget error) and the batch continues. The record names where the budget
@@ -1648,7 +1654,8 @@ running when the deadline passed — an action (a rule pool adds the rule that
 applied most since the function's reset, `decompiler/crates/kuna-decomp/src/infra/action.rs
 (ActionPool::budget_site)`), heritage, variable merging, region identification,
 region structuring, `action activeparam`'s trial scoring, a
-store-reachability walk or a jump-table step. A walk that recurses too often
+store-reachability walk or a jump-table step (`jump-table value walk` for
+the loop over a table's values). A walk that recurses too often
 to read the clock at each step probes through
 `decompile_drive.rs (budget_probe)`, which reads it every 256th call and,
 once it has seen the budget spent, answers at once for the rest of the drive;
@@ -3189,7 +3196,14 @@ the top of the space by halving the remaining gap, so a block renumbered to end
 near the maximum would run out of room again within a few dozen appends, and
 building a block of tens of thousands of operations would renumber it thousands
 of times. With the upper half free, a renumber is followed by roughly 280
-appends before the next one.
+appends before the next one. That alone still renumbers a growing block once
+per 280 operations, which is quadratic work in a long straight-line block: a
+30,000-instruction block took minutes to build. So an append steps by the
+smaller of the fixed gap (`0x1000000`) and the order space divided by the
+block's operation count. Blocks of up to 256 operations step exactly as
+before; a longer block's gap shrinks as it grows, a renumber then leaves room
+for about as many appends as the block already holds, and the renumbers of a
+block grow with the logarithm of its length.
 
 Deleting a varnode through `Funcdata::delete_varnode` first checks the bank's
 deletion precondition: the node must have neither a defining operation nor any
