@@ -20,7 +20,6 @@ import json
 import re
 import sys
 import time
-import zipfile
 from collections import Counter, defaultdict
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
@@ -375,11 +374,6 @@ def aggregate(recs: list[dict], file_results: dict, run: dict | None, n_tops: in
     if run is not None:
         board["decompile"] = {k: run.get(k) for k in ("wall_seconds", "peak_rss_mb", "cpu_seconds", "exit_code", "timed_out", "java_files")}
     return board
-
-
-def pool_boards(per_project: dict[str, list[dict]], file_results: dict[str, dict], runs: dict[str, dict], n_tops: int) -> dict:
-    recs = [r for rs in per_project.values() for r in rs]
-    return aggregate(recs, file_results, None, n_tops)
 
 
 def _f(v, suffix=""):

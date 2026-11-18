@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import hashlib
 import os
-import re
 import subprocess
 import sys
 import time
@@ -233,21 +232,6 @@ def _tops_index(jar: str) -> dict[str, list[str]]:
                 d.setdefault(n[:-6].split("$")[0], []).append(n[:-6])
         _JAR_NAMES[jar] = d
     return d
-
-
-def original_listings(jar: str, keys: list[str]) -> dict[str, tuple[list[str], list[str]]]:
-    z = zipfile.ZipFile(jar)
-    by_cls: dict[str, list[str]] = {}
-    for k in keys:
-        by_cls.setdefault(k.split("#")[0].replace(".", "/"), []).append(k)
-    out = {}
-    for cls, ks in by_cls.items():
-        cf = parse_class(z.read(cls + ".class"))
-        ms = {f"{cf.dotted}#{m.name}{m.descriptor}": m for m in cf.methods}
-        for k in ks:
-            if k in ms:
-                out[k] = listings(cf, ms[k])
-    return out
 
 
 def compare_file(args) -> dict[str, dict]:

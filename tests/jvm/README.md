@@ -148,8 +148,7 @@ a small class Vineflower 1.12.0 fails on, the fix (its `KunaFix` id) that decomp
 compiled from. Each runs twice, on the fixture's base map plus `dump-exception-on-error=0`: as
 `kuna-fixes-compat/<id>` with `jvm_vineflower_compat` on, against what the release jar prints
 (`kuna-fixes/expected-compat/`, failure comment included), and as `kuna-fixes/<id>` with kuna's defaults,
-against kuna's reviewed output (`kuna-fixes/expected/`). `kuna-fixes/README.md` lists them with the diff
-between the two. Add one with
+against kuna's reviewed output (`kuna-fixes/expected/`). `kuna-fixes/README.md` lists them. Add one with
 `python3 -I tests/jvm/kuna_fix_case.py --fix <id> --class Foo.class --source Foo.java --summary TEXT`.
 
 ## Running

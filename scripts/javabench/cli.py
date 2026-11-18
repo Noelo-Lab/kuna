@@ -15,11 +15,9 @@ def main(argv: list[str] | None = None) -> None:
 
     f = sub.add_parser("fetch", help="download + pin the dataset (reproduces <dataset>/<project>/)")
     f.add_argument("--project", action="append", help="limit to project(s); repeatable")
-    f.add_argument("--force", action="store_true", help="rebuild project dirs (old ones are renamed, never deleted)")
 
     i = sub.add_parser("index", help="(re)build the ground-truth index")
     i.add_argument("--project", action="append")
-    i.add_argument("--rebuild", action="store_true")
     i.add_argument("--jobs", type=int, default=16)
 
     r = sub.add_parser("run", help="decompile and score")
@@ -29,7 +27,6 @@ def main(argv: list[str] | None = None) -> None:
     r.add_argument("--jobs", type=int, default=16)
     r.add_argument("--run-name")
     r.add_argument("--kuna-bin", default=os.environ.get("KUNA_BIN"))
-    r.add_argument("--no-score", action="store_true")
     r.add_argument("--skip-bytes", action="store_true", help="skip recompilation (GED + types only; fast loop)")
     r.add_argument("--timeout", type=int, default=7200, help="per-project decompiler timeout (s)")
     r.add_argument("--javac-jdk", type=int, choices=[17, 19, 21, 25], help="override the recompiling javac (calibration)")
@@ -62,19 +59,19 @@ def main(argv: list[str] | None = None) -> None:
     if args.cmd == "fetch":
         from . import fetch
 
-        fetch.main(args.project, force=args.force)
+        fetch.main(args.project)
     elif args.cmd == "index":
         from . import projects as P
         from .index import load_index
 
         for proj in P.selected(args.project):
-            idx = load_index(proj, rebuild=args.rebuild, jobs=args.jobs)
+            idx = load_index(proj, jobs=args.jobs)
             print(proj.name, idx["summary"])
     elif args.cmd == "run":
         from .run import run
 
         run(args.decompiler, args.project, args.full, args.jobs, args.run_name, args.kuna_bin,
-            score=not args.no_score, skip_bytes=args.skip_bytes, timeout=args.timeout, javac_jdk=args.javac_jdk)
+            skip_bytes=args.skip_bytes, timeout=args.timeout, javac_jdk=args.javac_jdk)
     elif args.cmd == "score":
         from .run import score_run
 
