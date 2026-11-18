@@ -177,7 +177,7 @@ pub mod testing {
     pub use crate::fixes::patterns::type_switch_label_lookup::{
         replace_labels, strip_multi_pattern_guards, unnamed_pattern_types,
     };
-    pub use crate::fixes::asserts::statement_as_expression::{
+    pub use crate::fixes::asserts::{
         is_lambda_expression_body, is_statement_only,
     };
     pub use crate::fixes::numeric_types::ternary_numeric_arms::promotes;

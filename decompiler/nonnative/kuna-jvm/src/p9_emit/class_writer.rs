@@ -46,7 +46,7 @@ use crate::import_collector::ImportCollector;
 use crate::initializer_processor::InitializerProcessor;
 use crate::interpreter_util::InterpreterUtil;
 use crate::java_pass_location::JavaPassLocation;
-use crate::fixes::asserts::statement_as_expression;
+use crate::fixes::asserts;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::fixes::nested_class_vars::captured_var_clash_name;
 use crate::kuna_spans;
@@ -609,7 +609,7 @@ impl ClassWriter {
 
                                 let is_expression =
                                     if kuna_fixes::enabled(KunaFix::StatementAsExpression) {
-                                        statement_as_expression::is_lambda_expression_body(
+                                        asserts::is_lambda_expression_body(
                                             first_expr,
                                         )
                                     } else {

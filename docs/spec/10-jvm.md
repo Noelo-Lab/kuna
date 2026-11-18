@@ -1374,10 +1374,9 @@ A *fix* is a deliberate departure from the Java at the place of such a defect, o
 Vineflower prints wrong. The table in `docs/jvm.md` (*Kuna-only fixes*) describes each fix,
 by its id, in one row: the defect and what kuna does instead. This section describes the
 gate every fix goes through, the invariants the fixes keep, and the mechanisms groups of
-them share. The ported file of each gated site names the fix in its header, and a fix
-longer than a few lines lives in a module named by its id in its family's folder,
-`decompiler/nonnative/kuna-jvm/src/fixes/<family>/<id>.rs` (the family's file when it has one
-module).
+them share. A fix longer than a few lines lives in its family's module,
+`decompiler/nonnative/kuna-jvm/src/fixes/<family>.rs`, or, in a family with a folder, in
+`decompiler/nonnative/kuna-jvm/src/fixes/<family>/<id>.rs`.
 
 **The gate.** `decompiler/nonnative/kuna-jvm/src/p0_knowledge/kuna_fixes.rs (KunaFix)`
 names each fix; `KunaFix::id` gives its id (the name the table and the `fix` field of
@@ -2068,7 +2067,7 @@ the end of a loop body), the structurer writes the `if` the other way round:
 the throw being the last statement of the sequence, reached only when the condition is false.
 Vineflower leaves the shape alone, writes "Could not resugar all assert statements" and a reference
 to the synthetic field, which javac cannot resolve. With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/asserts/assert_throw_after_if.rs`), when the
+(`decompiler/nonnative/kuna-jvm/src/fixes/asserts.rs`), when the
 throw's only predecessor is the `if`'s fall-through edge, the condition is negated
 (`SecondaryFunctionsHelper.propagateBoolNot`) and read as for `if (!C) throw`, and the `if` and
 the throw become the assert followed by the `if`'s body (or by its jump). Upstream has no change
