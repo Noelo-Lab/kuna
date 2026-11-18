@@ -3272,12 +3272,14 @@ VMfailValid and 2 for VMfailInvalid (the values the `__vmx_*` compiler
 intrinsics return), and the `vmxflags` macro writes `ZF = status == 1`,
 `CF = status == 2` and clears `OF`, `SF`, `AF` and `PF`, so a following
 `setna`/`jbe` tests that status and a `jz`/`jc` picks one failure kind.
-`VMREAD` keeps its value output and takes the status from the outputless-input
+`VMREAD` keeps its value output and takes the status from the input-less
 `vmx_status` user-op that follows it; `VMPTRST` stores the result of `vmptrst`
 to its operand (it no longer passes the loaded qword to the user-op) and
 always succeeds. In 64-bit mode `VMREAD r/m64, r64` and `VMWRITE r64, r/m64`
 decode whatever `REX.W` says, since their operand size is fixed at 64 bits
-there and compilers encode them without the prefix. Exercised by
+there and compilers encode them without the prefix. `VMFUNC` and `VMCALL`
+write no flags: `VMFUNC` leaves them unchanged, and the flags after a guest's
+`VMCALL` are whatever the hypervisor returns. Exercised by
 `tests/stages/gh1628-x86-vmx-decode-flags.xml`.
 
 For the bounded local policy (`kuna_localstackviews.rs`), the `FlowEmit::dump` seam in
