@@ -2216,8 +2216,9 @@ mod tests {
         // and kuna-itaniumvfunc / an Itanium virtual method named after the function, not its vtable
         // and kuna-itaniumctors / Itanium constructors and destructors named from their vptr stores
         // and kuna-switchselfloop / a switch that heads its own loop keeps the loop
+        // and kuna-wide-shifts / armconstshift all shifts a signed 64-bit operand unsigned
         // and kuna-kernelbug / a Linux kernel __bug_table trap prints as __WARN(file,line) or BUG()
-        assert_eq!(count, 770, "corpus file count drifted");
+        assert_eq!(count, 772, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

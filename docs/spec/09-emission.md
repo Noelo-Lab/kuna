@@ -1601,6 +1601,27 @@ signed-comparison probes pass the shifted result to a typed comparison helper
 so the comparison cannot canonicalize the shift into signed multiplication.
 Defining signed multiplication on overflow is outside this repair.
 
+**(kuna) Fixed 64-bit shifts in C — `option armconstshift all`.** The value
+`all` extends the ARM repair above to every architecture's fixed 64-bit left
+shift whose count is below 64 and whose operand prints as signed, including an
+implied sign extension of a narrower value. It computes through an unsigned
+64-bit C cast that keeps the complete input, extension included, and converts a
+signed output back after shifting so signed readers retain their
+interpretation: `(long)((unsigned long)(long)x << 0x1f)`.
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_constantshift.rs (plan_fixed64_lsl)`
+plans it and shares ARM's fixed-shift emitter, so each operand appears once and
+the IR and other readers are unchanged. The planner asks the printer for the
+operand's declared local type, since the printed signedness decides whether C
+shifts a signed value; the printer indexes its declared locals for that lookup.
+When the known bits prove the signed result nonnegative and representable, the
+compact form stays. Dynamic and out-of-range counts, other widths, unsigned
+operands and other output languages keep their rendering, and `on` remains the
+ARM-only repair. Like `on`, `all` is off by default: it adds a cast pair to every
+scaled 64-bit index and sign-bit test. `tests/stages/kuna-wide-shifts.xml` pins the
+default spelling and the converted one on x86-64, AArch64, PowerPC64 and MIPS64
+objects from `tests/fixtures/wide-integer-emission/`; `kuna-cli/tests/wide_shift_emission.rs`
+executes the emitted C at O0/O2 under UBSan over signed boundary bit patterns.
+
 **Every label labels a statement.** Label placement in the printed C is valid
 C99/C11/C17 and does not rely on C23. In those dialects a label is part of a
 labeled statement, so `case 2:`, `default:` or `label_10ad:` directly before a
