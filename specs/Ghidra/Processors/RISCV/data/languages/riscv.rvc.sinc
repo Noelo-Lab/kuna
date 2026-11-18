@@ -125,7 +125,7 @@
 }
 
 # c.fsdsp CT,CN(Cc) 0000a002 0000e003 QWORD|DREF (0, 8) 
-:c.fsdsp cfr0206,csdspimm(sp) is cfr0206 & sp & cop0001=0x2 & cop1315=0x5 & csdspimm
+:c.fsdsp cfr0206,csdspimm(sp) is Zcmp=0 & cfr0206 & sp & cop0001=0x2 & cop1315=0x5 & csdspimm
 {
 	local ea:$(XLEN) = csdspimm + sp;
 	*[ram]:8 ea = cfr0206;
