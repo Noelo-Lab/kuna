@@ -1679,6 +1679,10 @@ pub struct Architecture {
     /// installs those overrides with an open tail
     /// ([`crate::p4_calls::kuna_formattail`]).
     pub format_override_callpoints: std::collections::BTreeSet<u64>,
+    /// (kuna `--assert callee`) Caller-stated destinations of indirect calls:
+    /// function entry -> call site -> callee entry
+    /// ([`crate::p2_lift::kuna_calleeoverride`]).
+    pub kuna_callee_overrides: std::collections::BTreeMap<Address, std::collections::BTreeMap<Address, Address>>,
     /// (kuna `formatstring`) Which variadic arguments the target passes exactly
     /// as named ones, which bounds what a closed printf/scanf override may
     /// declare. A FACT, written once at `load file` from the image's container;
@@ -2560,6 +2564,7 @@ impl Architecture {
             format_stack_args: std::rc::Rc::new(std::collections::BTreeMap::new()),
             elfmain_main_decl: None,
             format_override_callpoints: std::collections::BTreeSet::new(),
+            kuna_callee_overrides: std::collections::BTreeMap::new(),
             format_vararg_abi: None, // (kuna) a load-time fact; set by the console's `load file`
             analysis_listing: false,
             analysis_fast_funcdisc: false,

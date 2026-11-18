@@ -2537,6 +2537,7 @@ impl ConsoleProgram {
     pub fn set_assertions(&mut self, directives: Vec<crate::assertions::Directive>) {
         if directives.iter().any(|directive| matches!(directive.body,
             crate::assertions::Body::Flow { .. }
+            | crate::assertions::Body::Callee { .. }
             | crate::assertions::Body::Param { func: None, .. }
             | crate::assertions::Body::Return { func: None, .. }))
         {

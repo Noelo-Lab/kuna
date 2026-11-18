@@ -754,6 +754,23 @@ itself
 (resolve_declared_extra_pop)`), so a
 `__thiscall` or `__stdcall` import pops what its declaration says instead of
 what the push run in front of it suggests.
+
+(kuna `--assert callee`) The reader can plant the same indirect override. A
+front-end parks `call site -> callee entry` facts on the architecture, keyed
+by the entry of the function that holds the call, and
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_calleeoverride.rs (seed)`
+copies a function's facts into its `Override` store when the flow build
+creates the `Funcdata`. `setup_callind_specs` then makes the named CALLIND a
+direct CALL, so the callee's name and its declared prototype apply. A named
+BRANCHIND is a tail call: `recover_jump_tables` asks the environment
+(`FlowEnvironment::stated_callee_site`) before it tries a table, and for a
+stated site it goes straight to `truncate_indirect_jump` in the thunk mode,
+which builds the CALLIND, the direct call and the return with no warning.
+After the follow, `kuna_calleeoverride.rs (audit)` looks for a direct call to
+the stated callee at each site and records every site that has none on the
+`Funcdata` (`note_rejected_callee_override`); the front-ends report those as
+refused directives. A function with no parked fact pays one map lookup.
+
 `flow.rs (FlowInfo::check_for_flow_modification)` then
 applies the callee's flow effects: an *inline* callee queues the op for
 injection; a *no-return* callee gets an artificial halt planted directly after

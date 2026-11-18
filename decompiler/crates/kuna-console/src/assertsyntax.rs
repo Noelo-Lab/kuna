@@ -329,12 +329,22 @@ pub fn parse_directive(spec: &str) -> Result<Directive, String> {
             }
             Body::Flow { func, addr, kind: kind.to_string() }
         }
+        "callee" => {
+            let (addr, callee) = take_token(rest);
+            let (func, addr) = split_qualifier(addr);
+            let addr = parse_vma(&addr).ok_or_else(|| bad("callee needs a hex <callsite>"))?;
+            let (callee, tail) = take_token(callee);
+            if callee.is_empty() || !tail.is_empty() {
+                return Err(bad("callee takes exactly <callsite> <name|address>"));
+            }
+            Body::Callee { func, addr, callee: callee.to_string() }
+        }
         "" => return Err("--assert: empty directive".into()),
         other => {
             return Err(format!(
                 "--assert {raw:?}: unknown directive {other:?} (want one of \
-                 function, typedef, prototype, data, param, return, comment, flow, name, \
-                 type, readonly, volatile, bytes)"
+                 function, typedef, prototype, data, param, return, comment, flow, callee, \
+                 name, type, readonly, volatile, bytes)"
             ))
         }
     };

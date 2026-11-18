@@ -39,6 +39,9 @@ mod declared_bytes_cli;
 #[path = "argument_errors_cli.rs"]
 mod argument_errors_cli;
 
+#[path = "assert_callee.rs"]
+mod assert_callee;
+
 #[path = "array_member_bits.rs"]
 mod array_member_bits;
 
