@@ -118,6 +118,8 @@ pub mod mips_markers;
 pub mod kuna_mipsentry;
 pub(crate) mod kuna_mipsabi;
 pub mod kuna_mipsocteon;
+// (kuna) RISC-V Zcmp/Zcmt language selection from `Tag_RISCV_arch`.
+pub mod kuna_riscvzc;
 // (kuna) Go toolchain version off the build-info blob (goreg shell layouts).
 pub mod gobuildinfo;
 pub mod noreturn;
