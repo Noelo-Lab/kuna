@@ -58,14 +58,10 @@ pub(crate) struct Prefix<'a, F> {
 }
 
 impl<'a, F: Fn(u64) -> bool> Prefix<'a, F> {
-    /// No storage is known. `mode_switch` names user operations that only
-    /// select an instruction set and leave every register unchanged.
-    pub(crate) fn new(data: &'a Funcdata, mode_switch: F) -> Self {
-        Prefix { data, known: Vec::new(), previous: None, mode_switch }
-    }
-
     /// The function entry: tracked context values are known, except any
-    /// overlapping the incoming return address.
+    /// overlapping the incoming return address. `mode_switch` names user
+    /// operations that only select an instruction set and leave every register
+    /// unchanged.
     fn at_entry(data: &'a Funcdata, mode_switch: F) -> Self {
         let incoming_return = data
             .get_arch()
@@ -224,7 +220,10 @@ fn transfers_control(code: OpCode) -> bool {
     )
 }
 
-/// Does the entry prefix compute a constant target for this real RETURN?
+/// Does the entry prefix compute a constant target for this real RETURN? Zero
+/// is not one: `move ra, zero` marks the end of a backtrace, and a function
+/// start placed on such a delay slot would otherwise turn its real return into
+/// a jump to address zero.
 pub(crate) fn computed_target(
     data: &Funcdata,
     target: OpId,
@@ -256,7 +255,7 @@ pub(crate) fn computed_target(
             return false;
         }
         if id == target {
-            return prefix.input(id, 0).is_some();
+            return prefix.input(id, 0).is_some_and(|to| to != 0);
         }
         if transfers_control(op.code()) || !prefix.execute(id) {
             return false;
@@ -544,6 +543,16 @@ mod tests {
             &[(false, 0x20, 8)],
         );
         assert!(!proves(&fd, ret, |_| false));
+    }
+
+    #[test]
+    fn a_zeroed_return_register_keeps_the_return() {
+        for (value, kept) in [(0, false), (0x1020, true)] {
+            let mut fd = function();
+            emit(&mut fd, 0x1000, OpCode::CPUI_COPY, Some((0x10, 8)), &[(true, value, 8)]);
+            let ret = emit(&mut fd, 0x1004, OpCode::CPUI_RETURN, None, &[(false, 0x10, 8)]);
+            assert_eq!(proves(&fd, ret, |_| false), kept, "{value:#x}");
+        }
     }
 
     #[test]

@@ -1868,7 +1868,11 @@ register holds, so MIPS code that loads a constant code address into `$ra` and
 executes `jr $ra` ended the function there and dropped what it reached. At the
 same point in `xref_control_flow`, a RETURN whose target a bounded
 straight-line prefix from the function entry proves constant is reclassified
-to BRANCHIND. The prefix starts with the tracked context values, never counts
+to BRANCHIND, unless the proven target is zero: `move ra, zero` marks the end
+of a backtrace, and a function start that discovery placed on such a delay
+slot (u-boot's `relocate_code` jumps to `board_init_r` with it) would otherwise
+turn the next function's real return into a jump to address zero. The prefix
+starts with the tracked context values, never counts
 the incoming return address as known, evaluates at most 256 raw operations in
 emitted p-code order (so delay-slot writes after the target is captured do not
 change it) and stops at any call, branch or unknown user operation. A write
