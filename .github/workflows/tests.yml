@@ -94,9 +94,9 @@ jobs:
       - name: make test-stages -- stage corpus vs docs/baseline-stages.json
         run: make test-stages
 
-      # The JVM engine (docs/jvm.md): the vendored Vineflower corpus vs tests/jvm/baseline.txt.
+      # The JVM engine (docs/jvm.md): every case of the vendored corpus must match.
       # Reuses the release kuna built above; needs neither specs nor a JDK.
-      - name: make test-jvm -- JVM corpus vs tests/jvm/baseline.txt
+      - name: make test-jvm -- JVM corpus, every case matches
         run: make test-jvm
 
       - name: make check-spec

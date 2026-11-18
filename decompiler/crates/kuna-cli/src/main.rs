@@ -245,7 +245,10 @@ fn cmd_test(argv: &[String]) -> Result<i32, String> {
         if let Some(flag) = native_flag {
             return Err(format!("--jvm runs the JVM corpus on its own; drop {flag}"));
         }
-        return run_jvm_tests(jvm_dir, names, baseline, save_baseline, json, jobs);
+        if baseline.is_some() || save_baseline.is_some() {
+            return Err("--jvm has no baseline: every case must match".into());
+        }
+        return run_jvm_tests(jvm_dir, names, json, jobs);
     }
     if jobs.is_some() {
         return Err("--jobs applies to --jvm".into());
@@ -269,33 +272,12 @@ fn cmd_test(argv: &[String]) -> Result<i32, String> {
 }
 
 #[cfg(feature = "jvm")]
-fn run_jvm_tests(
-    dir: Option<String>,
-    names: Vec<String>,
-    baseline: Option<String>,
-    save_baseline: Option<String>,
-    json: bool,
-    jobs: Option<usize>,
-) -> Result<i32, String> {
-    Ok(nonnative::corpus::run(&nonnative::corpus::JvmTestArgs {
-        dir,
-        names,
-        baseline,
-        save_baseline,
-        json,
-        jobs,
-    }))
+fn run_jvm_tests(dir: Option<String>, names: Vec<String>, json: bool, jobs: Option<usize>) -> Result<i32, String> {
+    Ok(nonnative::corpus::run(&nonnative::corpus::JvmTestArgs { dir, names, json, jobs }))
 }
 
 #[cfg(not(feature = "jvm"))]
-fn run_jvm_tests(
-    _dir: Option<String>,
-    _names: Vec<String>,
-    _baseline: Option<String>,
-    _save_baseline: Option<String>,
-    _json: bool,
-    _jobs: Option<usize>,
-) -> Result<i32, String> {
+fn run_jvm_tests(_dir: Option<String>, _names: Vec<String>, _json: bool, _jobs: Option<usize>) -> Result<i32, String> {
     Err("this kuna was built without the JVM engine (cargo feature `jvm`)".into())
 }
 
@@ -325,10 +307,9 @@ fn usage_test() {
          \n\
          --jvm [--jvm-dir D] [--jobs N|auto] runs the JVM engine's corpus (tests/jvm:\n\
          each case's expected text is Vineflower 1.12.0's output, byte for byte) in\n\
-         this process; --name N keeps the cases whose id contains N, and --baseline F\n\
-         takes tests/jvm/baseline.txt (one case id per line) or a JSON record\n\
-         (passing keys jvm:<id>). With --json: {{jvm_footer,passing,returncode,\n\
-         failures,selection}}, plus parity with --baseline."
+         this process and fails on any case that does not match; --name N keeps the\n\
+         cases whose id contains N. With --json: {{jvm_footer,passing,returncode,\n\
+         failures,selection}}."
     );
 }
 

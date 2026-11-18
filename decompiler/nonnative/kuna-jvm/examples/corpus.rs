@@ -1,7 +1,7 @@
 //! The kuna-jvm corpus runner: decompiles every case of a corpus manifest (default
 //! `tests/jvm/cases.tsv`) and compares the output with Vineflower's. Run with `--help`.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
@@ -11,9 +11,10 @@ use std::time::{Duration, Instant};
 
 use kuna_jvm::fernflower::DecompiledClass;
 use kuna_jvm::kuna_corpus::{
-    compare_baseline, effective_options, error_head, escape_field, evaluate, expected_as_actual,
-    failure_key, format_baseline, load_cases, next_baseline, parse_baseline, run_case, totals,
-    totals_line, with_engine_stack, Case, CaseResult, CaseStatus, EngineRun, JAVADOC_OPTION,
+    compare_baseline, effective_options, error_head, escape_field, evaluate, failure_key,
+    format_baseline, load_cases_where, next_baseline, parse_baseline, run_case, text_digest,
+    totals, totals_line, unescape_field, with_engine_stack, Case, CaseResult, CaseStatus,
+    EngineRun, DEFAULT_RUN, JAVADOC_OPTION,
 };
 use kuna_jvm::rt::try_catch;
 
@@ -22,8 +23,8 @@ const DEFAULT_MANIFEST: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../../te
 const USAGE: &str = "\
 usage: corpus [--manifest FILE] [--filter SUBSTR]... [--set NAME]... [--jobs N]
               [--isolate | --in-process] [--timeout SECONDS] [--mem-limit MB] [--out DIR]
-              [--baseline FILE] [--save-baseline FILE] [--verbose] [--progress]
-              [--expected-as-actual] [--dump-options FILE] [--list]
+              [--baseline FILE] [--save-baseline FILE] [--save-digests] [--verbose]
+              [--progress] [--dump-options FILE] [--list]
 
   --manifest FILE       corpus manifest (default: tests/jvm/cases.tsv)
   --filter SUBSTR       run cases whose id contains SUBSTR (repeatable: any of them)
@@ -36,12 +37,13 @@ usage: corpus [--manifest FILE] [--filter SUBSTR]... [--set NAME]... [--jobs N]
   --mem-limit MB        per-case address-space limit under --isolate (default 8192, 0 = none)
   --out DIR             write <id>.actual.java, <id>.diff, <id>.log per case (DIR must be new
                         or empty)
-  --baseline FILE       regression gate: report cases listed in FILE that no longer match;
-                        exit 1 on any regression (other mismatches do not fail the run)
+  --baseline FILE       for a manifest that does not match in full (an external one): fail only
+                        on the cases listed in FILE (one id per line) that no longer match
   --save-baseline FILE  write the matching ids (a filtered run keeps FILE's other ids)
+  --save-digests        rewrite the manifest's `digest` record of each default-mode run (kuna/<id>)
+                        that ran, with the digest of the text it printed
   --verbose             one line per case, not only per non-matching case
   --progress            report each finished case on stderr
-  --expected-as-actual  self-check: feed each expected text through the comparison as the output
   --actual-dir DIR      compare stored outputs (DIR/<id>.actual.java, the --out layout) instead of
                         running the engine
   --inject-fault KIND:SUBSTR  self-check of --isolate: the child for each case whose id contains
@@ -64,9 +66,9 @@ struct Args {
     out: Option<PathBuf>,
     baseline: Option<PathBuf>,
     save_baseline: Option<PathBuf>,
+    save_digests: bool,
     verbose: bool,
     progress: bool,
-    expected_as_actual: bool,
     actual_dir: Option<PathBuf>,
     dump_options: Option<PathBuf>,
     list: bool,
@@ -89,9 +91,9 @@ fn parse_args() -> Result<Args, String> {
         out: None,
         baseline: None,
         save_baseline: None,
+        save_digests: false,
         verbose: false,
         progress: false,
-        expected_as_actual: false,
         actual_dir: None,
         dump_options: None,
         list: false,
@@ -117,9 +119,9 @@ fn parse_args() -> Result<Args, String> {
             "--out" => a.out = Some(PathBuf::from(value("--out")?)),
             "--baseline" => a.baseline = Some(PathBuf::from(value("--baseline")?)),
             "--save-baseline" => a.save_baseline = Some(PathBuf::from(value("--save-baseline")?)),
+            "--save-digests" => a.save_digests = true,
             "--verbose" => a.verbose = true,
             "--progress" => a.progress = true,
-            "--expected-as-actual" => a.expected_as_actual = true,
             "--actual-dir" => a.actual_dir = Some(PathBuf::from(value("--actual-dir")?)),
             "--dump-options" => a.dump_options = Some(PathBuf::from(value("--dump-options")?)),
             "--list" => a.list = true,
@@ -153,7 +155,8 @@ fn main() -> ExitCode {
     let manifest = std::fs::canonicalize(&args.manifest)
         .or_else(|_| std::path::absolute(&args.manifest))
         .unwrap_or(args.manifest.clone());
-    let cases = match load_cases(&manifest) {
+    let child = args.child.as_deref();
+    let cases = match load_cases_where(&manifest, |id| child.is_none_or(|c| c == id)) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("error: {e}");
@@ -223,16 +226,13 @@ fn main() -> ExitCode {
     };
 
     let filtered = !args.filters.is_empty() || !args.sets.is_empty();
-    let offline = args.expected_as_actual || args.actual_dir.is_some();
-    let isolate = !offline && args.isolate.unwrap_or(!filtered);
+    let isolate = args.actual_dir.is_none() && args.isolate.unwrap_or(!filtered);
     let started = Instant::now();
     eprintln!(
         "corpus: {} case(s) from {}, {}, {} job(s)",
         selected.len(),
         manifest.display(),
-        if args.expected_as_actual {
-            "expected-as-actual"
-        } else if args.actual_dir.is_some() {
+        if args.actual_dir.is_some() {
             "stored outputs"
         } else if isolate {
             "isolated"
@@ -246,6 +246,12 @@ fn main() -> ExitCode {
         "corpus: finished in {:.1} s",
         started.elapsed().as_secs_f64()
     );
+    if args.save_digests {
+        if let Err(e) = save_digests(&manifest, &results) {
+            eprintln!("error: --save-digests {}: {e}", manifest.display());
+            return ExitCode::from(2);
+        }
+    }
 
     report(&args, &results, baseline.as_ref())
 }
@@ -262,9 +268,7 @@ fn run_all(args: &Args, manifest: &Path, cases: &[Case], isolate: bool) -> Vec<C
             scope.spawn(move || loop {
                 let i = next.fetch_add(1, Ordering::SeqCst);
                 let Some(case) = cases.get(i) else { break };
-                let (result, output) = if args.expected_as_actual {
-                    (self_check(case), String::new())
-                } else if let Some(dir) = &args.actual_dir {
+                let (result, output) = if let Some(dir) = &args.actual_dir {
                     (stored(case, dir), String::new())
                 } else if isolate {
                     run_child(args, manifest, case)
@@ -304,13 +308,6 @@ fn run_all(args: &Args, manifest: &Path, cases: &[Case], isolate: bool) -> Vec<C
 fn contained(case: &Case) -> CaseResult {
     try_catch(|| run_case(case))
         .unwrap_or_else(|e| CaseResult::failed(case, format!("harness: {}", e.message), 0))
-}
-
-fn self_check(case: &Case) -> CaseResult {
-    match expected_as_actual(case) {
-        Ok(run) => evaluate(case, run),
-        Err(e) => CaseResult::failed(case, format!("harness: {e}"), 0),
-    }
 }
 
 fn stored(case: &Case, dir: &Path) -> CaseResult {
@@ -523,7 +520,7 @@ fn write_case_files(out: &Path, case: &Case, r: &CaseResult, child_output: &str)
     let actual_path = with_ext(".actual.java");
     if let Some(actual) = &r.actual {
         let _ = std::fs::write(&actual_path, actual);
-        if r.status != CaseStatus::Match {
+        if r.status != CaseStatus::Match && case.digest.is_none() {
             let diff = Command::new("diff")
                 .arg("-u")
                 .arg("--label")
@@ -560,7 +557,7 @@ fn case_log(case: &Case, r: &CaseResult, child_output: &str) -> String {
         r.actual_path.as_deref().unwrap_or("(none)")
     ));
     line(format!("units: {}", r.units.join(", ")));
-    if let Some(d) = &r.first_diff {
+    if let Some(d) = r.first_diff.as_ref().filter(|d| d.line > 0) {
         line(format!("first diff: line {}", d.line));
         line(format!(
             "  expected: {}",
@@ -643,6 +640,41 @@ fn dump_options(cases: &[Case], path: &Path) -> ExitCode {
     }
 }
 
+/// Rewrites the `digest` record of each case whose default-mode run printed text without an error.
+fn save_digests(manifest: &Path, results: &[CaseResult]) -> Result<(), String> {
+    let digests: BTreeMap<&str, String> = results
+        .iter()
+        .filter(|r| r.error.is_none())
+        .filter_map(|r| {
+            Some((
+                r.id.strip_prefix(DEFAULT_RUN)?,
+                text_digest(r.actual.as_deref()?),
+            ))
+        })
+        .collect();
+    let text = std::fs::read_to_string(manifest).map_err(|e| e.to_string())?;
+    let mut case = String::new();
+    let lines: Vec<String> = text
+        .split('\n')
+        .map(|line| {
+            let fields: Vec<&str> = line.split('\t').collect();
+            match fields[..] {
+                ["case", id, ..] => case = unescape_field(id),
+                ["digest", old] => {
+                    if let Some(new) = digests.get(case.as_str()).filter(|new| *new != old) {
+                        eprintln!("corpus: {DEFAULT_RUN}{case}: digest {old} -> {new}");
+                        return format!("digest\t{new}");
+                    }
+                }
+                _ => {}
+            }
+            line.to_string()
+        })
+        .collect();
+    eprintln!("corpus: saved the digests of {} run(s)", digests.len());
+    std::fs::write(manifest, lines.join("\n")).map_err(|e| e.to_string())
+}
+
 fn report(args: &Args, results: &[CaseResult], baseline: Option<&BTreeSet<String>>) -> ExitCode {
     for r in results {
         if r.status == CaseStatus::Match && !args.verbose && results.len() > 10 {
@@ -654,7 +686,9 @@ fn report(args: &Args, results: &[CaseResult], baseline: Option<&BTreeSet<String
             r.id,
             failure_key(r).unwrap_or_default()
         );
-        if let (CaseStatus::Mismatch, Some(d)) = (r.status, &r.first_diff) {
+        if let (CaseStatus::Mismatch, Some(d)) =
+            (r.status, r.first_diff.as_ref().filter(|d| d.line > 0))
+        {
             println!("    line {}", d.line);
             println!(
                 "      expected: {:?}",

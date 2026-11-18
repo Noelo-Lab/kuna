@@ -261,7 +261,7 @@ objects by creation in the arena; see the fidelity contract below.
 **The test oracle is Vineflower's text.** Every Vineflower-oracle case of the vendored
 corpus matches in compat mode (core's Java tests, the variable-renaming and IDEA not-null
 plugins' tests, and the Kotlin plugin's and core's Kotlin tests: `tests/jvm/README.md` has
-the counts, `tests/jvm/baseline.txt` the ids). So do the Java cases that need a particular
+the counts). So do the Java cases that need a particular
 JDK on the machine, run from the external oracle corpus, and the Kotlin
 plugin's tests under nine option overlays (594 runs). Whole jars (log4j, pdfbox, fontbox,
 commons-logging, gettext, the Vineflower jar itself, Vineflower's obfuscated test jars)
@@ -656,8 +656,12 @@ example):
    vendors the class and its `TestFoo$*.class` siblings into `tests/jvm/kuna-fixes/`,
    stores what the release jar prints (the compat expectation, which must contain the
    failure comment), checks that kuna in compat mode prints exactly that, stores kuna's
-   default output, prints the diff for review, rebuilds `cases.tsv` and the READMEs with
-   `regen.py`, and adds both runs to `tests/jvm/baseline.txt`.
+   default output, prints the diff for review, and rebuilds `cases.tsv` and the READMEs with
+   `regen.py`. The case must also pass `tests/fix_isolation.rs`, which turns its switch off
+   alone: a Java case must then print its compat text, and a Kotlin or form-option case
+   something other than its default text. A Java case that a second fix also changes names
+   that fix in the test's `PARTNERS` table; a Kotlin case whose fix another one masks names
+   that one in `MASKED_BY`.
 5. **Describe it.** A row in the table above: the defect, what kuna does instead, one
    sentence each. Spec section 10.16 changes only when the fix adds a mechanism that other
    fixes share or changes an invariant of the gate.
@@ -668,14 +672,19 @@ example):
    `diff -ru COMPAT DEFAULT`, on the five benchmark jars (`docs/jvm-benchmark.md`) and on
    okio, okhttp and kotlin-stdlib: every hunk must be inside a method that failed in compat
    mode, a tracker note or an import, or be the fix's own correction; (d) `make
-   test-jvm` (the Vineflower-oracle cases run in compat mode).
+   test-jvm`. Its compat-mode runs must still match; a fix that changes kuna's default
+   text on Vineflower's own inputs moves the digests of their default-mode runs
+   (`kuna/<id>`, printed with both digests). Read each moved text (`corpus --filter
+   kuna/<id> --out DIR`), re-record them with `corpus --save-digests`, and name the moved
+   ids in the commit.
 7. **Gates**: `cargo test -p kuna-jvm`, `make test-jvm`, `kuna catalog --check`, `make
    check-spec` and `python3 tools/check_spec.py --strict`, `make lint`.
 
 Fixes made in parallel meet in the same files. Keep both sides of `fixes.toml` and of
 `tests/jvm/kuna-fixes/cases.json`, then rerun `regen.py` (it rewrites `cases.tsv` and both
-READMEs, and refuses a case whose `fix` is not an id of `fixes.toml`);
-`baseline.txt` is sorted, so keep both sides' lines.
+READMEs, keeping each case's `digest`, and refuses a case whose `fix` is not an id of
+`fixes.toml`); where both sides moved a digest, rerun `corpus --save-digests --out DIR`
+and read the texts of the ids it reports.
 
 ## The JDK runtime library
 
@@ -985,15 +994,16 @@ out.
 
 | Command | Checks |
 |---|---|
-| `make test-jvm` (= `kuna test --jvm --baseline tests/jvm/baseline.txt`) | the gate: every case in the baseline still prints its expected text: each Vineflower-oracle case (Java, plugin and Kotlin, run in compat mode) Vineflower's exact text, and each kuna-fixes case Vineflower's text in compat mode and kuna's reviewed text by default (`tests/jvm/README.md` has the counts). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
+| `make test-jvm` (= `kuna test --jvm`) | the gate: every case prints its expected text: each Vineflower-oracle case (Java, plugin and Kotlin) Vineflower's exact text in compat mode and, by default, the text its digest pins, and each kuna-fixes case Vineflower's text in compat mode and kuna's reviewed text by default (`tests/jvm/README.md` has the counts). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
 | `cd decompiler && cargo test -p kuna-jvm --test integration` | the unit and differential suite (part of `make rust-test`): kernel goldens against a real JDK, per-pass oracles, option-table checks, driver determinism |
-| `cd decompiler && cargo run --release -p kuna-jvm --example corpus -- --jobs 16 --baseline ../tests/jvm/baseline.txt` | the same corpus gate without the CLI |
+| `cd decompiler && cargo run --release -p kuna-jvm --example corpus -- --jobs 16` | the same corpus gate without the CLI |
 
 Useful corpus-runner flags (`corpus --help` lists all): `--filter SUBSTR` runs matching
 cases in-process (quick); `--out DIR` writes each case's actual text, diff and log;
-`--save-baseline ../tests/jvm/baseline.txt` re-records the baseline when a change makes
-more cases match (never to absorb a regression); `--manifest FILE` runs another manifest,
-such as the full Java or Kotlin one generated from the external corpora.
+`--save-digests` re-records the digests of the default-mode runs it made;
+`--manifest FILE` runs another manifest, such as the full Java or Kotlin one generated from
+the external corpora (`--save-baseline FILE` and `--baseline FILE` gate one whose cases do
+not all match on the machine).
 
 **Regenerating the corpus.** `tests/jvm/` is generated, never edited by hand, from the
 Vineflower oracle that `decompiler/nonnative/kuna-jvm/tools/oracle` builds outside the
@@ -1070,16 +1080,16 @@ unknown option. An option is for a judgement call (a readability trade, a heuris
 same rule as the native engine's (`docs/agents.md`).
 
 **Default-on needs corpus evidence.** The corpus gate compares against Vineflower's text,
-so a kuna improvement that changes any baseline case stays off by default; it may default on
-only when `make test-jvm` still matches every baseline case with it on and it passes the
-speed budget (the native engine's rule). Fixes, and the options compat mode turns off with
-them (the options of form, `jvm_javac_layout`), leave every Vineflower-oracle case alone,
-since those run in compat mode, and change only kuna-fixes cases' default text, re-recorded
-after review. A fix's evidence is its two-pass case and the whole-output diffs of step 6 of
-the recipe; such an option defaults on only when a full benchmark run of the five projects
-shows it better (methods perfect on every metric, classes that recompile, each worse method
-read and explained) at the same speed, and the same whole-output diffs are read hunk by
-hunk.
+so a kuna improvement that changes any compat-mode text stays off by default; it may
+default on only when `make test-jvm` still matches every compat-mode run with it on and it
+passes the speed budget (the native engine's rule). Fixes, and the options compat mode turns
+off with them (the options of form, `jvm_javac_layout`), leave every compat-mode text alone
+and change only default-mode ones: the kuna-fixes cases' expected text and the
+Vineflower-oracle cases' digests, both re-recorded after review. A fix's evidence is its
+two-pass case and the whole-output diffs of step 6 of the recipe; such an option defaults on
+only when a full benchmark run of the five projects shows it better (methods perfect on
+every metric, classes that recompile, each worse method read and explained) at the same
+speed, and the same whole-output diffs are read hunk by hunk.
 
 ## Re-syncing with a newer Vineflower
 
@@ -1098,8 +1108,7 @@ hunk.
    (`tests/data/jdk_varargs/gen.sh`) and the kernel goldens under `tests/data/`.
 5. Rebuild the oracle corpora (Java, plugins, Kotlin) with the new release jar (`tools/oracle`
    pins 1.12.0's jar hash and commit; update both) and regenerate `tests/jvm/`; run the corpus and fix every case that no longer
-   matches. Re-record `tests/jvm/baseline.txt` only as part of the sync, and say so in the
-   commit message.
+   matches.
 6. Update this page (version, commit, the differences above), the crate header in
    `src/lib.rs`, `decompiler/nonnative/README.md`, the `inspiration` field of every row,
    and `NOTICE` if the upstream copyright notices changed.

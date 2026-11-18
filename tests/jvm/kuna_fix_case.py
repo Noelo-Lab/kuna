@@ -21,7 +21,10 @@ Steps, all under tests/jvm/kuna-fixes/ (README.md there has the layout):
   3. records the case in cases.json and rebuilds cases.tsv and the READMEs with regen.py;
   4. runs the corpus runner on both passes: the compat pass must match Vineflower's text, and kuna's
      default output becomes expected/<id>EXT (printed as a diff against the compat text, for review);
-  5. runs both passes again and records them in tests/jvm/baseline.txt.
+  5. runs both passes again: both must match.
+The new case must also pass tests/fix_isolation.rs, and a fix that changes kuna's default text on
+Vineflower's own inputs moves digests that make test-jvm reports (kuna/<id>): read those texts and
+re-record them with the corpus runner's --save-digests (docs/jvm.md, "Fixing a Vineflower bug").
 
 Needs KUNA_JVM_ORACLE (the oracle workspace, decompiler/nonnative/kuna-jvm/tools/oracle/README.md) and
 cargo; the corpus runner is built in release mode (CARGO_TARGET_DIR is honoured).
@@ -105,20 +108,20 @@ def run(cmd, cwd=None, env=None):
     return r.returncode, r.stdout, r.stderr
 
 
-def corpus(case_ids, out, extra=()):
-    """Runs the corpus runner on the given case ids, in process: their statuses and the runner's output."""
+def corpus(case_ids, out):
+    """Runs the corpus runner on the given case ids, in process: their statuses (from the `status:` line
+    of each `<id>.log`) and the runner's output."""
     cmd = ['cargo', 'run', '-q', '--release', '-p', 'kuna-jvm', '--example', 'corpus', '--',
            '--manifest', os.path.join(HERE, 'cases.tsv'), '--in-process', '--out', out]
     for case_id in case_ids:
         cmd += ['--filter', case_id]
-    _, stdout, stderr = run(cmd + list(extra), cwd=os.path.join(REPO, 'decompiler'))
+    _, stdout, stderr = run(cmd, cwd=os.path.join(REPO, 'decompiler'))
     statuses = {}
-    summary = os.path.join(out, 'summary.tsv')
-    if os.path.isfile(summary):
-        with open(summary, encoding='utf-8') as f:
-            for row in list(f)[1:]:
-                fields = row.rstrip('\n').split('\t')
-                statuses[fields[0]] = fields[2]
+    for case_id in case_ids:
+        log = os.path.join(out, case_id + '.log')
+        if os.path.isfile(log):
+            with open(log, encoding='utf-8') as f:
+                statuses[case_id] = next((l[len('status: '):].strip() for l in f if l.startswith('status: ')), None)
     return statuses, stdout + stderr
 
 
@@ -251,11 +254,10 @@ def add_case(a, extra, work):
     elif after >= before:
         print('warning: the fix does not decompile any method Vineflower fails on in this class')
 
-    statuses, out = corpus([compat_id, default_id], os.path.join(work, 'run2'),
-                           ['--save-baseline', os.path.join(HERE, 'baseline.txt')])
+    statuses, out = corpus([compat_id, default_id], os.path.join(work, 'run2'))
     if statuses.get(compat_id) != 'Match' or statuses.get(default_id) != 'Match':
         sys.exit(f'the two passes do not both match after recording:\n{out}')
-    print(f'{compat_id} and {default_id} match and are in tests/jvm/baseline.txt; review the diff above, '
+    print(f'{compat_id} and {default_id} match; review the diff above, '
           f'then fill in the case\'s summary in kuna-fixes/cases.json (and rerun regen.py) if it is empty')
 
 

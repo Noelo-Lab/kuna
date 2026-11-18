@@ -356,6 +356,7 @@ version = "0.1.0"
 dependencies = [
  "flate2",
  "serde",
+ "sha2",
  "toml",
 ]
 

@@ -10,7 +10,8 @@
 //! class of a class-file source flat into one directory, so the compared text is the *last*
 //! delivered unit whose file name is the case's `compare` name; it is compared with the expected
 //! text after the fixture's `getContent` normalization (`\r\n` to `\n`, then `String.trim()`).
-//! The manifest format is described in `tests/jvm/README.md`.
+//! A case with a `digest` record also runs with kuna's defaults, as `kuna/<id>`, and that text must
+//! have the pinned digest ([`text_digest`]). The manifest format is described in `tests/jvm/README.md`.
 
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
@@ -30,10 +31,13 @@ use crate::struct_class::StructClass;
 use crate::struct_field::StructField;
 use crate::struct_method::StructMethod;
 use crate::text_buffer::TextBuffer;
+use sha2::{Digest, Sha256};
 
 pub const MANIFEST_HEADER: &str = "kuna-jvm-corpus";
 pub const MANIFEST_VERSION: &str = "1";
 pub const FAILED_METHOD_MARKER: &str = "$VF: Couldn't be decompiled";
+/// The id prefix of a case's default-mode run (its `digest` record).
+pub const DEFAULT_RUN: &str = "kuna/";
 /// Stack for threads that run the engine. The recursion guard (`rt::stack`)
 /// lets the engine use `rt::stack::DEPTH_LIMIT` of it; the rest is headroom.
 pub const ENGINE_STACK_BYTES: usize = 512 << 20;
@@ -111,6 +115,8 @@ pub struct Case {
     pub compare: Vec<String>,
     pub javadoc: Option<String>,
     pub jdks: Vec<JdkNeed>,
+    /// A default-mode run's pinned [`text_digest`], compared instead of `expected`'s text.
+    pub digest: Option<String>,
     /// The fix set to run with instead of the one the options give: a test
     /// hook for isolating one fix (`KunaFixes::without`).
     #[doc(hidden)]
@@ -129,10 +135,12 @@ struct RawCase {
     id: String,
     set: String,
     scoped: Scoped,
+    stems: Vec<String>,
     classes: Vec<String>,
     libs: Vec<String>,
     expected: Option<String>,
     compare: Vec<String>,
+    digest: Option<String>,
 }
 
 /// The option pairs the engine runs `case` with: the fixture registers no plugin, so
@@ -201,18 +209,31 @@ fn record_line(fields: &[&str]) -> String {
 }
 
 pub fn load_cases(path: &Path) -> Result<Vec<Case>, String> {
+    load_cases_where(path, |_| true)
+}
+
+/// The cases whose id `keep` accepts, without looking at the files of the others.
+pub fn load_cases_where(path: &Path, keep: impl Fn(&str) -> bool) -> Result<Vec<Case>, String> {
     let text = std::fs::read_to_string(path)
         .map_err(|e| format!("cannot read manifest {}: {e}", path.display()))?;
     let base = path.parent().unwrap_or_else(|| Path::new("."));
-    parse_cases(&text, base).map_err(|e| format!("{}: {e}", path.display()))
+    parse_cases_where(&text, base, keep).map_err(|e| format!("{}: {e}", path.display()))
 }
 
 /// Parses a manifest; relative paths resolve against `root` (default: `base_dir`).
 pub fn parse_cases(text: &str, base_dir: &Path) -> Result<Vec<Case>, String> {
+    parse_cases_where(text, base_dir, |_| true)
+}
+
+fn parse_cases_where(
+    text: &str,
+    base_dir: &Path,
+    keep: impl Fn(&str) -> bool,
+) -> Result<Vec<Case>, String> {
     let mut header = false;
     let mut root: Option<String> = None;
     let mut java_homes: BTreeMap<String, String> = BTreeMap::new();
-    let mut sets: BTreeMap<String, (String, Scoped)> = BTreeMap::new();
+    let mut sets: BTreeMap<String, (String, String, Scoped)> = BTreeMap::new();
     let mut cases: Vec<RawCase> = Vec::new();
     enum At {
         Top,
@@ -261,10 +282,11 @@ pub fn parse_cases(text: &str, base_dir: &Path) -> Result<Vec<Case>, String> {
                 need(1)?;
                 let name = args[0].clone();
                 let slug = args.get(1).cloned().unwrap_or_default();
+                let expected_dir = args.get(2).cloned().unwrap_or(format!("expected/{slug}"));
                 if sets.contains_key(&name) {
                     return err(&format!("set `{name}` defined twice"));
                 }
-                sets.insert(name.clone(), (slug, Scoped::default()));
+                sets.insert(name.clone(), (slug, expected_dir, Scoped::default()));
                 at = At::Set(name);
             }
             "case" => {
@@ -274,10 +296,12 @@ pub fn parse_cases(text: &str, base_dir: &Path) -> Result<Vec<Case>, String> {
                     id: args[0].clone(),
                     set: args[1].clone(),
                     scoped: Scoped::default(),
+                    stems: args[2..].to_vec(),
                     classes: Vec::new(),
                     libs: Vec::new(),
                     expected: None,
                     compare: Vec::new(),
+                    digest: None,
                 });
                 at = At::Case;
             }
@@ -285,7 +309,7 @@ pub fn parse_cases(text: &str, base_dir: &Path) -> Result<Vec<Case>, String> {
                 need(1)?;
                 let scoped = match &at {
                     At::Top => return err(&format!("`{tag}` outside a set or case")),
-                    At::Set(name) => &mut sets.get_mut(name).expect("current set").1,
+                    At::Set(name) => &mut sets.get_mut(name).expect("current set").2,
                     At::Case => &mut cases.last_mut().expect("current case").scoped,
                 };
                 match tag {
@@ -298,7 +322,7 @@ pub fn parse_cases(text: &str, base_dir: &Path) -> Result<Vec<Case>, String> {
                     _ => scoped.current_jdk = Some(args[0].clone()),
                 }
             }
-            "class" | "lib" | "expected" | "compare" => {
+            "class" | "lib" | "expected" | "compare" | "digest" => {
                 need(1)?;
                 if !matches!(at, At::Case) {
                     return err(&format!("`{tag}` outside a case"));
@@ -308,6 +332,7 @@ pub fn parse_cases(text: &str, base_dir: &Path) -> Result<Vec<Case>, String> {
                     "class" => case.classes.push(args[0].clone()),
                     "lib" => case.libs.push(args[0].clone()),
                     "expected" => case.expected = Some(args[0].clone()),
+                    "digest" => case.digest = Some(args[0].clone()),
                     _ => case.compare = args.iter().filter(|a| !a.is_empty()).cloned().collect(),
                 }
             }
@@ -332,24 +357,57 @@ pub fn parse_cases(text: &str, base_dir: &Path) -> Result<Vec<Case>, String> {
     };
 
     let mut seen = BTreeSet::new();
+    let mut listings = Listings::default();
     let mut out = Vec::with_capacity(cases.len());
     for raw in cases {
         let err = |msg: String| Err(format!("line {}: case `{}`: {msg}", raw.line, raw.id));
         if !seen.insert(raw.id.clone()) {
             return err("duplicate case id".to_string());
         }
-        let Some((slug, set)) = sets.get(&raw.set) else {
+        if !keep(&raw.id) && !keep(&format!("{DEFAULT_RUN}{}", raw.id)) {
+            continue;
+        }
+        let Some((slug, expected_dir, set)) = sets.get(&raw.set) else {
             return err(format!("unknown set `{}`", raw.set));
         };
-        if raw.classes.is_empty() {
+        let mut class_files = Vec::new();
+        for stem in &raw.stems {
+            class_files.extend(listings.expand(&resolve(stem)));
+        }
+        class_files.extend(raw.classes.iter().map(|c| resolve(c)));
+        if class_files.is_empty() {
             return err("no class files".to_string());
         }
-        let Some(expected) = raw.expected.as_deref() else {
-            return err("no expected file".to_string());
+        let expected = match raw.expected.as_deref() {
+            Some(path) => resolve(path),
+            None => {
+                let tail = raw.id.strip_prefix(&format!("{slug}/")).unwrap_or(&raw.id);
+                let base = resolve(expected_dir).join(tail);
+                let Some(ext) = [".java", ".kt"]
+                    .into_iter()
+                    .find(|e| listings.has(&base, e))
+                else {
+                    return err(format!("no expected file ({}.java or .kt)", base.display()));
+                };
+                let mut path = base.into_os_string();
+                path.push(ext);
+                PathBuf::from(path)
+            }
         };
-        if raw.compare.is_empty() {
-            return err("no compare name".to_string());
-        }
+        let compare = if raw.compare.is_empty() {
+            let stem = class_files[0]
+                .file_stem()
+                .unwrap_or_default()
+                .to_string_lossy();
+            let ext = expected.extension().unwrap_or_default().to_string_lossy();
+            let mut names = vec![format!("{stem}.{ext}")];
+            if ext != "java" {
+                names.push(format!("{stem}.java"));
+            }
+            names
+        } else {
+            raw.compare
+        };
         let mut options = set.options.clone();
         for (k, v) in &raw.scoped.options {
             overlay_option(&mut options, k, v);
@@ -366,21 +424,78 @@ pub fn parse_cases(text: &str, base_dir: &Path) -> Result<Vec<Case>, String> {
                 current: true,
             });
         }
-        out.push(Case {
+        let case = Case {
             id: raw.id,
             set: raw.set,
             set_slug: slug.clone(),
             options,
-            class_files: raw.classes.iter().map(|c| resolve(c)).collect(),
+            class_files,
             libraries: raw.libs.iter().map(|c| resolve(c)).collect(),
-            expected: resolve(expected),
-            compare: raw.compare,
+            expected,
+            compare,
             javadoc: raw.scoped.javadoc.or_else(|| set.javadoc.clone()),
             jdks,
+            digest: None,
             fixes: None,
+        };
+        let default_run = raw.digest.map(|digest| {
+            let mut run = case.clone();
+            run.id = format!("{DEFAULT_RUN}{}", case.id);
+            overlay_option(&mut run.options, VINEFLOWER_COMPAT, "0");
+            run.digest = Some(digest);
+            run
         });
+        out.extend(
+            std::iter::once(case)
+                .chain(default_run)
+                .filter(|c| keep(&c.id)),
+        );
     }
     Ok(out)
+}
+
+/// Each directory's file names, sorted, read once per manifest.
+#[derive(Default)]
+struct Listings(BTreeMap<std::ffi::OsString, Vec<String>>);
+
+impl Listings {
+    fn names(&mut self, dir: &Path) -> &[String] {
+        self.0.entry(dir.as_os_str().to_owned()).or_insert_with(|| {
+            let mut names: Vec<String> = std::fs::read_dir(dir)
+                .into_iter()
+                .flatten()
+                .filter_map(|e| e.ok()?.file_name().into_string().ok())
+                .collect();
+            names.sort();
+            names
+        })
+    }
+
+    /// Whether `path` with `ext` appended names a file.
+    fn has(&mut self, path: &Path, ext: &str) -> bool {
+        let name = format!(
+            "{}{ext}",
+            path.file_name().unwrap_or_default().to_string_lossy()
+        );
+        let dir = path.parent().unwrap_or(Path::new("."));
+        self.names(dir).binary_search(&name).is_ok()
+    }
+
+    /// `STEM.class`, then its `STEM$*.class` siblings in name order (the fixture's `addSource` order).
+    fn expand(&mut self, stem: &Path) -> Vec<PathBuf> {
+        let dir = stem.parent().unwrap_or(Path::new("."));
+        let name = stem.file_name().unwrap_or_default().to_string_lossy();
+        let prefix = format!("{name}$");
+        let names = self.names(dir);
+        let siblings = names[names.partition_point(|n| *n < prefix)..]
+            .iter()
+            .take_while(|n| n.starts_with(&prefix))
+            .filter(|n| n.ends_with(".class"));
+        std::iter::once(format!("{name}.class"))
+            .chain(siblings.cloned())
+            .map(|n| dir.join(n))
+            .collect()
+    }
 }
 
 fn substitute_java_homes(
@@ -658,7 +773,7 @@ impl CaseStatus {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FirstDiff {
-    /// 1-based, in the normalized texts.
+    /// 1-based, in the normalized texts; 0 for a digest case, whose two digests this holds.
     pub line: usize,
     /// `None` past the end of the text.
     pub expected: Option<String>,
@@ -778,9 +893,22 @@ pub fn select_unit<'a>(
     })
 }
 
-/// Compares what a run produced with the case's expected text.
+/// The first 16 hex digits of the SHA-256 of `text` after the fixture's normalization.
+pub fn text_digest(text: &str) -> String {
+    Sha256::digest(normalize(text).as_bytes())[..8]
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
+/// Compares what a run produced with the case's expected text (or its pinned digest).
 pub fn evaluate(case: &Case, run: EngineRun) -> CaseResult {
-    let expected_raw = match std::fs::read(&case.expected) {
+    let read = if case.digest.is_some() {
+        Ok(Vec::new())
+    } else {
+        std::fs::read(&case.expected)
+    };
+    let expected_raw = match read {
         Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
         Err(e) => {
             return CaseResult::failed(
@@ -796,9 +924,16 @@ pub fn evaluate(case: &Case, run: EngineRun) -> CaseResult {
 pub fn evaluate_text(case: &Case, run: EngineRun, expected_raw: &str) -> CaseResult {
     let expected = normalize(expected_raw);
     let selected = select_unit(&run.units, &case.compare);
-    let first = match selected {
-        Some(unit) => first_diff(&expected, &normalize(&unit.content)),
-        None => Some(FirstDiff {
+    let first = match (selected, &case.digest) {
+        (Some(unit), Some(pinned)) => Some(text_digest(&unit.content))
+            .filter(|got| got != pinned)
+            .map(|got| FirstDiff {
+                line: 0,
+                expected: Some(pinned.clone()),
+                actual: Some(got),
+            }),
+        (Some(unit), None) => first_diff(&expected, &normalize(&unit.content)),
+        (None, _) => Some(FirstDiff {
             line: 1,
             expected: expected.split('\n').next().map(str::to_string),
             actual: None,
@@ -945,6 +1080,13 @@ fn head(text: &str, max: usize) -> String {
 
 /// The failure key of a non-matching result; `None` for a match.
 pub fn failure_key(r: &CaseResult) -> Option<String> {
+    let digest = r.first_diff.as_ref().filter(|d| d.line == 0);
+    if let (CaseStatus::Mismatch, Some(d)) = (r.status, digest) {
+        let [pinned, got] = [&d.expected, &d.actual].map(|v| v.as_deref().unwrap_or("-"));
+        return Some(format!(
+            "digest {got}, pinned {pinned} (corpus --out DIR writes the text)"
+        ));
+    }
     match r.status {
         CaseStatus::Match => None,
         CaseStatus::Unsupported => Some(format!(

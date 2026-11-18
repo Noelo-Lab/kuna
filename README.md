@@ -141,7 +141,7 @@ Five gates, all expected green before every commit:
 ```bash
 make test        # the 675/675 decompiler regression parity (tests/datatests/ vs docs/baseline.json)
 make test-stages # the kuna-owned issue testcases (tests/stages/ vs docs/baseline-stages.json)
-make test-jvm    # the JVM engine's Vineflower-derived corpus (tests/jvm/ vs tests/jvm/baseline.txt)
+make test-jvm    # the JVM engine's Vineflower-derived corpus (tests/jvm/: every case matches)
 make rust-test   # the full cargo workspace suite (ported unit tests, golden differential
                  # vectors, SLEIGH-compiler .sla content-parity, docs/options.md freshness, ...)
 make check-spec  # docs/spec/ honesty: anchors and inline code paths resolve, and each

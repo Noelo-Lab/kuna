@@ -54,11 +54,10 @@ test-stages: $(BINDIR)/kuna
 	cd $(ROOT) && $(BINDIR)/kuna test --datatests \
 	  --datatests-dir tests/stages --baseline docs/baseline-stages.json
 
-# The JVM engine's differential corpus (tests/jvm/, docs/jvm.md): every vendored Vineflower
-# case listed in the baseline must still print Vineflower's exact text. Needs no SLEIGH specs
-# and no JDK (the corpus pins its own options).
+# The JVM engine's differential corpus (tests/jvm/, docs/jvm.md): every case must print its
+# expected text. Needs no SLEIGH specs and no JDK (the corpus pins its own options).
 test-jvm: $(BINDIR)/kuna
-	cd $(ROOT) && $(BINDIR)/kuna test --jvm --baseline tests/jvm/baseline.txt
+	cd $(ROOT) && $(BINDIR)/kuna test --jvm
 
 $(BINDIR)/kuna:
 	cd $(ENGINE) && cargo build --$(PROFILE) -p kuna-cli
