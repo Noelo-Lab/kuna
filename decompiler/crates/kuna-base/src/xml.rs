@@ -2215,7 +2215,8 @@ mod tests {
         // and kuna-x86-directalias-freed / and does so after an earlier call stops taking that pointer
         // and kuna-itaniumvfunc / an Itanium virtual method named after the function, not its vtable
         // and kuna-itaniumctors / Itanium constructors and destructors named from their vptr stores
-        assert_eq!(count, 768, "corpus file count drifted");
+        // and gh1627-x86-senduipi-gatherpf / SENDUIPI is not RDRAND and VGATHERPF indexes with a ZMM register
+        assert_eq!(count, 769, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

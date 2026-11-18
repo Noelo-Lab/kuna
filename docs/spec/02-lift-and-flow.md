@@ -3264,6 +3264,20 @@ diamonds around every check. The abstraction does not specify OS handler
 dispatch or resumable exception state. Both operand widths preserve the checks
 instead of lifting to an empty operation list.
 
+In 64-bit mode the x86 spec decodes the user-interrupt group (`uintr.sinc`):
+`SENDUIPI r64` is the `F3`-prefixed register form of `0F C7 /6`, so it is no
+longer lifted as `RDRAND`, and `UIRET`, `TESTUI`, `CLUI` and `STUI` are the
+`F3`-prefixed `0F 01 EC..EF` forms (`CLUI`/`STUI` were `RDPKRU`/`WRPKRU`). Each
+lifts to a user-op of its own name; `UIRET` pops `RIP`, `RFLAGS` and `RSP` and
+returns, and `TESTUI` writes `CF` from its user-op and clears the other
+arithmetic flags. `PREFETCHIT0`/`PREFETCHIT1` are the RIP-relative `0F 18 /7`
+and `/6` encodings, lifted as the other prefetch hints are (no operations);
+every other `0F 18 /4..7` encoding stays a reserved NOP. The AVX-512PF
+`VGATHERPF0/1{D,Q}P{S,D}` constructors take their VSIB operand (`vm32z`,
+`vm64z`, `vm32y`) like the `VSCATTERPF` family, so the index is the ZMM or YMM
+register the SIB names and the user-op receives the gather address; the lift
+loads nothing. Exercised by `tests/stages/gh1627-x86-senduipi-gatherpf.xml`.
+
 For the bounded local policy (`kuna_localstackviews.rs`), the `FlowEmit::dump` seam in
 `decompiler/crates/kuna-decomp/src/p2_lift/flow.rs` records original STORE and
 persistent memory COPY identities for the bounded P6 policy. Register COPYs do

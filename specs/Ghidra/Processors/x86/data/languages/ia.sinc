@@ -4154,6 +4154,13 @@ define pcodeop swap_bytes;
 @endif
 
 :NOP            is vexMode=0 & byte=0x90 & (mandover=0 | mandover=4 | mandover=1) & (rexprefix=0 | rexWRXBprefix=8)  { }
+# PREFETCHIT0/1 (0F 18 /7, /6) are only prefetches in their RIP-relative form in
+# 64-bit mode; every other 0F 18 /4../7 encoding stays a reserved NOP.  Listed
+# before the 0F 18..1F NOP group so the overlap resolves to the prefetch.
+@ifdef IA64
+:PREFETCHIT0 m8 is $(LONGMODE_ON) & vexMode=0 & byte=0x0f; byte=0x18; ( mod=0 & r_m=5 & reg_opcode=7 ) ... & m8 { }
+:PREFETCHIT1 m8 is $(LONGMODE_ON) & vexMode=0 & byte=0x0f; byte=0x18; ( mod=0 & r_m=5 & reg_opcode=6 ) ... & m8 { }
+@endif
 :NOP rm16       is vexMode=0 & mandover & opsize=0 & byte=0x0f; high5=3; rm16  ...    { }
 :NOP rm32       is vexMode=0 & mandover & opsize=1 & byte=0x0f; high5=3; rm32  ...    { }
 :NOP^"/reserved" rm16 is vexMode=0 & mandover & opsize=0 & byte=0x0f; byte=0x18; rm16 & reg_opcode_hb=1 ...    { }
