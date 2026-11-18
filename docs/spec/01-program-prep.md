@@ -5461,6 +5461,77 @@ every other binary's pass list is byte-identical to before the pass existed):
     The 1.9 MB app: 2,897 → 1,221 argument-less stub calls; an 84 MB app sample: 32 → 4, 60 of
     265 stub calls change shape (`setTransitioningDelegate:(v3, delegate)`,
     `presentViewController:animated:completion:(vc, (UIViewController *)v10, 1, NULL)`).
+  - **SDK C prototypes** (`objcsdk`, kuna, the C half of the same directory,
+    `decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_sdkprotos.rs (SdkProtoPass)`):
+    the same headers declare the C functions an image imports — CoreFoundation,
+    libdispatch, Security, CoreGraphics, `os_log`, and in a kernel SDK the
+    functions a kext calls — and an import of one had no prototype, so a call
+    whose arguments were set up before an earlier call lost them
+    (`v2 = CFStringGetLength();`) and a tail call printed bare
+    (`dispatch_async_f(); // tail-call`). The pass runs on any Mach-O when the
+    directory is named, needs no `objc`, and is registered after the libc
+    tables, which it defers to (`has_builtin_prototype`); the `objc_msgSend`
+    family is left to the selector path. For this half an SDK root also
+    contributes `usr/include` (without its C++ tree), and a kext
+    (`MH_KEXT_BUNDLE`) gets `Kernel.framework/Headers` alone so user and kernel
+    declarations of one name do not meet
+    (`kuna_sdkprotos.rs (header_paths)`).
+    Each header is first cut down to the target: preprocessor conditionals over
+    the pointer width, the architecture, the platform the image's build version
+    names (`TARGET_OS_IPHONE`, `TARGET_OS_OSX`, …), `__cplusplus` and the
+    compiler (`kuna_sdkprotos.rs (predefined)`) keep only the branch that
+    applies, and an include guard is no condition. A condition that turns on
+    anything else keeps every branch and marks their text as undecided: a
+    function declared there is still read (both branches must then agree), but a
+    record defined only there, or with such a condition inside its body, has no
+    layout, and an enum defined there has no names — the 32-bit-inode
+    `struct stat` beside the real one is the case. A `#pragma pack` or
+    `#pragma options align` caps the alignment of the members it covers
+    (`pack(push, 4)` around the Mach message structs); a form the reader does
+    not follow leaves the rest of that file's records without a layout
+    (`kuna_sdkprotos.rs (select_branches)`). Objective-C bodies are dropped, their
+    class names kept. The rest is split into statements — a linkage block
+    (`extern "C" { }`) is transparent, an inline function is dropped with its
+    body — and each statement is indexed by what it defines without resolving
+    anything: `typedef` names, `struct` / `union` / `enum` bodies by tag, the
+    enum macros (`typedef CF_ENUM(Base, Name) { … }` and its `NS_` / `CF_OPTIONS`
+    forms, `OS_ENUM(name, Base, …)` / `DISPATCH_ENUM`, which define `name_t`),
+    the object macros (`DISPATCH_DECL(dispatch_queue)`, `OS_OBJECT_DECL(…)`:
+    `name_t` is a pointer to the opaque `name_s`), and the statements holding
+    `name(` for an imported `name` (`kuna_sdkprotos.rs (Index)`).
+    Only those are then parsed: the return type is what precedes the name once
+    attribute macros are skipped (an all-capitals name or a `__` name that is no
+    type, each with its argument list: `CF_EXPORT`, `API_AVAILABLE(…)`,
+    `__attribute__((…))`), each parameter is specifiers plus a declarator
+    (pointers, an optional name, arrays, a function pointer or block), `...`
+    makes it variadic, and `()` declares nothing. Types resolve on demand
+    through the index; a `typedef` or record the headers define two ways is
+    unresolved, except that two pointer definitions are still a pointer, an enum
+    agrees with its underlying integer, and a transparent union is its first
+    member. A function gets a prototype only when every declaration of it
+    resolves and they agree (`kuna_sdkprotos.rs (signature)`).
+    A `struct` or `union` whose members all resolve — no bitfield, no packing
+    attribute, every array bound a constant — is interned with its 64-bit
+    layout, so a pointer parameter to it has fields
+    (`CFRange v2; … v2.length + v2.location`,
+    `GadgetGetInfo(a0,&v2); … v2.count`); any other record is a declared one
+    behind its pointer (`__CFString *`). An enum whose enumerators evaluate
+    becomes a named enum of its underlying width, so constants print by name
+    (`kCFCompareNumerically|kCFCompareCaseInsensitive`,
+    `== kCFCompareEqualTo`). A by-value struct argument is spread into one
+    parameter per member only where the convention passes it as those members
+    would travel alone — a homogeneous aggregate of up to four floating-point
+    members or two words on AArch64, two doubles or two words on x86-64, and
+    only while the registers last — an AArch64 struct over sixteen bytes is the
+    pointer the caller passes, and every other by-value aggregate, argument or
+    return, leaves the function without a prototype
+    (`kuna_sdkprotos.rs (passing)`). The prototype is parked on each import
+    address and by name, as the libc tables are. On the arm64e `trustd` of iOS
+    16.4 against the iOS 16.5 SDK, 252 of the 255 imported functions the SDK
+    declares get a prototype (the other three take `sqlite3_int64`, whose type
+    is a build-time macro); reading the linked frameworks' headers and
+    `usr/include` adds about 0.15 s to that load in a development build. With
+    no directory named the pass returns before reading anything.
   Decoding every method's encoding asks the type factory for `objc_object *`
   once per argument, and the factory finds a type by name with a linear scan of
   every type it holds; with thousands of class structs interned that scan is no
