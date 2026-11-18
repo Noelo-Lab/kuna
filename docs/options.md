@@ -26,6 +26,10 @@ Three tiers:
 | if (!v3) break; v3 -= 1; inside a loop that reads one byte per step | [`strlenscan`](#strlenscan----on--off-default-on) |
 | ~v3 - 1 or ~v3 - 5 where the source computes a string length | [`strlenscan`](#strlenscan----on--off-default-on) |
 | repnz scasb in the disassembly where IDA prints strlen | [`strlenscan`](#strlenscan----on--off-default-on) |
+| a while loop that copies or stores one element per iteration and steps pointers and a count | [`repstring`](#repstring----on--off-default-on) |
+| rep movsq / rep stosd from -Os code printed as a loop instead of memcpy/memset | [`repstring`](#repstring----on--off-default-on) |
+| a struct copy prints as a 16-iteration word loop | [`repstring`](#repstring----on--off-default-on) |
+| a strcmp against a short constant prints as a do/while over two byte pointers and a count | [`repstring`](#repstring----on--off-default-on) |
 | stack string initialisation renders as an array-typed cast such as (char[8])s_addr._0_8_ | [`rodatastring`](#rodatastring----on--off-default-on) |
 | partial-symbol slice assignments like buf._0_9_ = s_addr._16_9_ instead of the string | [`rodatastring`](#rodatastring----on--off-default-on) |
 | a recognized rodata literal never appears in the function that copies it onto the stack | [`rodatastring`](#rodatastring----on--off-default-on) |
@@ -861,6 +865,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On by default: a string length gcc 9 or older MSVC computed with `repnz scasb` reads `strlen(s)`, taken where the scan was (`v1 = strlen(s);` when it is read twice or before a store). Set it off to see the scan loop SLEIGH lifts the instruction to, as upstream prints it.
 - **Where / provenance:** P3/simplification-quiescence · ida · presentation-default · kuna-strlenscan
 - **Example:** `option strlenscan off`
+
+### `repstring` -- on | off, default `on`
+
+- **Symptoms:** a while loop that copies or stores one element per iteration and steps pointers and a count; rep movsq / rep stosd from -Os code printed as a loop instead of memcpy/memset; a struct copy prints as a 16-iteration word loop; a strcmp against a short constant prints as a do/while over two byte pointers and a count.
+- **What it does:** x86: print a `rep movs` as `builtin_memcpy(dst, src, n * w)`, a `rep stos` as `builtin_memset(dst, c, n * w)` or `builtin_memset16`/`32`/`64(dst, value, n)`, and a `repz cmpsb` as `builtin_memcmp(a, b, n)`. SLEIGH lifts a repeat prefix as a loop inside the one instruction, so a copy, fill or compare a compiler inlines (gcc and clang at `-Os`, gcc's `-minline-all-stringops`, MSVC `/Oi`) printed as `while (n) { *p = *q; n -= 1; ... }` or `do { if (!n) return 1; ... } while (x == y);`. `kuna_repstring` runs in the fullloop tail beside `strlenscan` and matches the two blocks the instruction lifts to on SSA: a head, entered from outside and from the body, that leaves exactly when the count is zero, and a body at the same instruction address that steps the count down by one and each pointer up by the element width (a set direction flag, which steps them down, is declined). A copy or fill body stores one element, loaded through the source or defined before the loop, computes nothing else, and nothing outside the loop reads what it computes; the builtin goes in the head over the values entering the loop, every later read of the count becomes 0 and of a pointer the pointer plus `n * w`, and the edge into the body is removed. A fill is `builtin_memset` when every byte of the value is the same (`stosb` always, a constant such as 0) and the element-wide builtin, whose count is in elements, otherwise. A destination in the function's own frame is declined: the builtin is placed after heritage, so the frame locations it writes would have no definition at it. A compare body loads one byte through each pointer and returns to the head exactly while they are equal (checked for all 65536 pairs); `r = builtin_memcmp(a, b, n)` goes in the head, and each flag read after the loop is rebuilt from `r` by evaluating it over every byte pair: the zero flag is `r == 0`, the carry flag `r < 0`. A flag the head merges must enter the loop already holding its value for equal bytes (gcc's `cmp eax, eax` before the instruction) unless the count is a non-zero constant, and a compare whose final count or pointers are read keeps its loop. The builtins keep the call flag, so they stay ordered against loads, stores and calls, and type their pointer operands `void *`. Inert where no instruction lifts to a loop: 0/675 datatest assertions move.
+- **When to flip:** On by default. Flip off when a `rep movsb` copies forward over its own output on purpose -- an LZ77 decoder's overlapping match copy is defined for the instruction and not for memcpy -- or to see the instruction's loop.
+- **Where / provenance:** P3/simplification-quiescence · kuna · presentation-default · GH-1650
+- **Example:** `option repstring off`
 
 ### `rodatastring` -- on | off, default `on`
 
