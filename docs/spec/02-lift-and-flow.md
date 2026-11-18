@@ -3421,6 +3421,24 @@ the same operand (`vMem32z`), so the qword-index gathers still decode in
 VSIB operand. Exercised by
 `tests/stages/gh1627-x86-senduipi-gatherpf.xml`.
 
+The x86 VMX lifts report the instruction's outcome the way the hardware does
+(Intel SDM 31.2, "Conventions"): each of `VMLAUNCH`, `VMRESUME`, `VMXOFF`,
+`VMXON`, `VMPTRLD`, `VMCLEAR`, `VMWRITE`, `INVEPT` and `INVVPID` is a user-op
+of its own name whose 4-byte result is the status, 0 for VMsucceed, 1 for
+VMfailValid and 2 for VMfailInvalid (the values the `__vmx_*` compiler
+intrinsics return), and the `vmxflags` macro writes `ZF = status == 1`,
+`CF = status == 2` and clears `OF`, `SF`, `AF` and `PF`, so a following
+`setna`/`jbe` tests that status and a `jz`/`jc` picks one failure kind.
+`VMREAD` keeps its value output and takes the status from the input-less
+`vmx_status` user-op that follows it; `VMPTRST` stores the result of `vmptrst`
+to its operand (it no longer passes the loaded qword to the user-op) and
+always succeeds. In 64-bit mode `VMREAD r/m64, r64` and `VMWRITE r64, r/m64`
+decode whatever `REX.W` says, since their operand size is fixed at 64 bits
+there and compilers encode them without the prefix. `VMFUNC` and `VMCALL`
+write no flags: `VMFUNC` leaves them unchanged, and the flags after a guest's
+`VMCALL` are whatever the hypervisor returns. Exercised by
+`tests/stages/gh1628-x86-vmx-decode-flags.xml`.
+
 For the bounded local policy (`kuna_localstackviews.rs`), the `FlowEmit::dump` seam in
 `decompiler/crates/kuna-decomp/src/p2_lift/flow.rs` records original STORE and
 persistent memory COPY identities for the bounded P6 policy. Register COPYs do

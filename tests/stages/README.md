@@ -113,6 +113,8 @@ writeup, not here.
 
 | `gh1627-x86-senduipi-gatherpf.xml` | [Kuna #1627](https://github.com/Noelo-Lab/kuna/issues/1627) | S1 decode-table / S2 p-code lift (x86 spec-fix, no option) | `F3 0F C7 /6` reg-form is `SENDUIPI r64` (was RDRAND), with `UIRET`/`TESTUI`/`CLUI`/`STUI` in `uintr.sinc`; RIP-relative `0F 18 /7`,`/6` are `PREFETCHIT0/1`; `VGATHERPF*` use the VSIB operand tables so the index is a ZMM/YMM register and the user-op takes an address |
 
+| `gh1628-x86-vmx-decode-flags.xml` | [Kuna #1628](https://github.com/Noelo-Lab/kuna/issues/1628) | S1 decode-table / S2 p-code lift (x86 spec-fix, no option) | `VMREAD`/`VMWRITE` decode without REX.W in 64-bit mode; every VMX user-op returns its status (0/1/2) and `vmxflags` sets ZF/CF from it, so `setna` after `vmlaunch` reads the VMX outcome; `VMPTRST` stores the VMCS pointer |
+
 | `gh9184-x86-fma-ymm256.xml` | [GH-9184](https://github.com/NationalSecurityAgency/ghidra/issues/9184) | S1/S2 decode + pcode-semantics (x86 spec-fix, no option) | SLEIGH YMM FMA uses 256-bit `local tmp:32` (was `tmp:16`) |
 
 | `gh5897-arm-cpy-mov.xml` | [GH-5897](https://github.com/NationalSecurityAgency/ghidra/issues/5897) | S1 decode-table (ARM spec-fix, no option) | SLEIGH reg-to-reg move constructor renders UAL `mov`, not pre-UAL `cpy` |
