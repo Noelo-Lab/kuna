@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4949,
-    4949
+    4951,
+    4951
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2833,6 +2833,7 @@
     "data:a split high part with no object below it keeps the folded address",
     "data:a split high part yields to the object it addresses",
     "data:a stale pair half does not hide the next call's single argument",
+    "data:a store through LR leaves the continuation in the caller",
     "data:a tagged address does not become a float",
     "data:adjacent arguments preserve empty separating pieces",
     "data:adjacent object does not steal array reference",
@@ -4832,6 +4833,7 @@
     "data:untouched complete pair remains an input",
     "data:untouched high return half remains an input",
     "data:untouched low return half remains an input",
+    "data:unused LR arithmetic preserves the later local branch",
     "data:unused parameter name is reserved for pointer alias",
     "data:unused volatile pointee survives",
     "data:unused volatile reads remain",
