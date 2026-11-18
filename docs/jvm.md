@@ -123,7 +123,7 @@ rules:
   acronyms split oddly: `IFernflowerPreferences` is `i_fernflower_preferences`,
   `PPandMMHelper` is `p_pand_mm_helper`). Every ported module is re-exported flat from the
   crate root (`kuna_jvm::if_helper`), so code never names a phase folder; a fix is named by
-  its family (`crate::fixes::switches::switch_case_order`). Types keep their Java names,
+  its family (`crate::fixes::switches`, `crate::fixes::generic_casts::receiver_type_arguments`). Types keep their Java names,
   nested Java types live in their outer class's module, and methods are the Java names in
   snake case with prefixes kept (`getParent` is `get_parent`). A class of static methods
   is a unit struct, so a call reads like the Java (`IfHelper::merge_all_ifs(root)`).
