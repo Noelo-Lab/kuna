@@ -2286,6 +2286,46 @@ classified:
   address target, such as an e500 GPR. Whether a trial has that shape does not
   depend on the use being scored, so it is decided once per walk.
 
+  (kuna) The shared-push rule
+  (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_sharedpush.rs (declared_arm_shares)`,
+  always on) covers a stack argument that MSVC pushes once above a branch because
+  both arms need it: `push 0x14; jz L; call [malloc]; jmp M; L: call _emalloc;
+  M: pop ecx`. Both calls are entered with the same stack pointer and read the
+  same slot, so both receive `0x14`. `check_call_double_use` refuses a trial whose
+  value another call reads unless that call's own trial is still open, and a call
+  with a declared parameter list has no trial, so the declared call always kept
+  the push and the other printed `_emalloc()`. The refusal exists for the stale
+  slot: a `__cdecl` argument the caller has not popped is still on the stack when a
+  later call runs, and that call must not take it. That is a question of order,
+  and the rule accepts the declared call's read when order cannot arise. The
+  trial is a stack trial read as the slot's own Varnode, which the declared call
+  reads directly or through the copy it makes for its parameter, so no write of
+  the slot comes between. The declared call has a parameter at the trial's
+  call-relative address and size, and both calls sit at the same stack offset, so
+  the push is an argument the declared callee takes, at the same position as the
+  other callee is entered with it; a push that sits deeper in one call's area than
+  in the other's does not qualify. The slot is written by an operation that is not a
+  `MULTIEQUAL` or an `INDIRECT`, which is the push; the push and the two calls sit
+  in three distinct blocks, and neither call's block reaches the other's without
+  passing through the push's block. A path that avoids the push's block would run
+  the second call on the slot the first one already consumed. A path through it
+  pushes the value again, so two arms inside a loop body that loop back through
+  the push still qualify. Every other call reading the slot, a copy of it, or its
+  continuation through a merge or a call, must also sit apart from the scored
+  call in that sense: when two calls on one arm read the slot, the stack cannot
+  show which of them the push was for. A control-flow guard check runs on the slot
+  before the guarded call and takes its target in `ECX`, so it must not be handed
+  the argument. Two undeclared calls on exclusive arms keep upstream's
+  first-scored-wins answer: neither states its arity, so the push may be a later
+  call's deeper argument. The rule does not read the undeclared callee's own
+  arity. A compiler hoists a push above a branch only when both arms begin with
+  it, so on this shape the push is that callee's argument, the same inference
+  that prints `f(0x14)` for a lone `push 0x14; call f`. Hand-written code that
+  pushes for one arm only, or a wrong declared parameter list on the other arm,
+  hands the undeclared call a stray argument just as a lone push would. A push
+  one arm keeps for a later call's deeper argument (`if (c) free(p); else
+  k(h(), p);`) leaves `k` reading the slot on `h`'s arm, so `h` gains nothing.
+
   (kuna) The frame-reload rule
   (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_reloadarg.rs (note, recheck)`,
   always on) judges a register reloaded from the caller's own frame again once the frame is

@@ -2204,7 +2204,8 @@ impl Funcdata {
             }
             return true;
         }
-        false
+        // (kuna) `sharedpush`: see [`crate::p4_calls::kuna_sharedpush`].
+        crate::p4_calls::kuna_sharedpush::declared_arm_shares(self, opmatch, op, vn, trial)
     }
 
     /// Test if the given Varnode seems to only be used by `opmatch` as a

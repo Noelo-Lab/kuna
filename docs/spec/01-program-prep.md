@@ -4797,7 +4797,12 @@ moves.
   upstream's only-if-no-fixup-set check so a hand-applied fixup is never clobbered.
   The same name match runs when a caller names a function with
   `--define-function` / `function bounds … as NAME`, so declaring a stripped
-  helper's CRT name installs its fixup too.
+  helper's CRT name installs its fixup too. A relocatable object's undefined
+  symbols carry no type — a kernel module's `__fentry__` and
+  `__x86_return_thunk` are `NOTYPE UND` — and the loader binds each one a call
+  reaches as an extern function, so an untyped undefined symbol is matched like
+  a FUNC one; without that the module's every function opened with
+  `__fentry__();` and ended its tail jump in `__x86_return_thunk(); // tail-call`.
   On a PE32 i386 image (target-gated, always on, inert elsewhere) the pass also
   recognizes the statically linked MSVC float-to-integer helpers by their bytes
   (`decompiler/crates/kuna-analysis/src/analyzers/callfixup/kuna_msvcftolsig.rs`),
@@ -4811,6 +4816,47 @@ moves.
   Each entry is committed as a function symbol under its CRT name (plus a
   placeholder rename for one another fact already installed) and as a call-fixup
   fact; a match only names and tags, and a near miss of any one byte is no match.
+- **Linux kernel `__bug_table`** (`kernelbug`, always on, inert without the
+  section; `decompiler/crates/kuna-analysis/src/analyzers/kernelbug/mod.rs
+  (KernelBugPass)`): the kernel's `WARN_ON`/`BUG_ON` macros plant a trap (`ud2`,
+  AArch64 `brk #0x800`) and describe it in a `struct bug_entry` — the trap's
+  address, under `CONFIG_DEBUG_BUGVERBOSE` the source file and line, and a flags
+  word whose bit 0 (`BUGFLAG_WARNING`) says the handler resumes after the trap.
+  The pass reads every entry into a `KernelBugSite` the flow consumes (chapter
+  02, `kernelbug`). The entry layout is not declared in the image, so it is
+  recovered from the section itself. A module (`ET_REL`) keeps
+  `.rela__bug_table`, read on the rebased view: the relocations whose target is
+  an executable section are the `bug_addr` fields, their spacing is the entry
+  size, and the other relocations inside an entry are its pointer fields (a
+  32-bit self-relative displacement under `CONFIG_GENERIC_BUG_RELATIVE_POINTERS`,
+  an absolute 64-bit pointer otherwise). A linked image (`vmlinux`) is probed,
+  even when it keeps its relocations (an x86-64 `vmlinux` links with
+  `--emit-relocs`, whose offsets are addresses, not section offsets): the sizes
+  8, 12 and 16 are tried in turn and the first
+  under which every `bug_addr` lands in executable bytes wins — under a wrong
+  size the field read is a string displacement or a line/flags word, which lands
+  outside the code — and a field is a pointer when every entry's value lands in a
+  non-executable section. A `bug_addr` need not be a trap: a 7.x kernel's `WARN()`
+  with arguments is a `call __WARN_trap` the table also names, which the flow
+  leaves alone. Behind the pointers sit `line` (two bytes, only with a `file`)
+  and `flags`. With two pointer fields the second is `file` (the first is 7.x's
+  `format`); with one, it is `file` when the string it points at is a source path
+  (`lib/a.c`) and `format` otherwise, which is the one case the layout alone
+  does not decide. A layout is kept only when `flags` ends the entry, before at
+  most its alignment padding, so a stride with room no field explains (a
+  12-byte entry whose second word is no string pointer) is declined rather than
+  read with a displacement standing in for the flags. Before Linux 5.19
+  (`69505e3d9a39`) a self-relative `file` counted from the start of the entry
+  rather than from the field, so read the newer way it lands four bytes into the
+  path; the older reading is taken when it puts more `file` fields on the first
+  byte of a string, over 64 entries spread evenly through the table (a linked
+  image keeps its entries in link order, and the first string of a merged
+  string blob can follow binary data with no NUL before it, so the leading
+  entries alone can mislead the vote). A table no size explains yields
+  nothing. Section and code lookups are binary searches, so the work is linear
+  in the table whatever the section count. The 14,223 entries of
+  a 7.3 x86-64 `vmlinux` read in under 0.2 s. Committed sorted by trap address
+  onto `Architecture::kernel_bug_sites`.
 - **x87 intrinsics** (`x87intrinsics`, always on, i386 only;
   `decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_x87intrinsics.rs
   (X87IntrinsicPass)`): binds the MSVC one-operand x87 math intrinsics to the

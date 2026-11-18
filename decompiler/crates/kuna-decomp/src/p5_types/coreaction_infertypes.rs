@@ -178,6 +178,25 @@ fn input_type_local_with(data: &Funcdata, op: OpId, slot: int4, recovered: bool)
         }
     }
 
+    // (kuna kernelbug) `__WARN(file,line)`: the file is a `char *`, the line an `int`.
+    if opcode == OpCode::CPUI_CALLOTHER
+        && slot > 0
+        && o.get_in(0).and_then(|v| data.vbank().get(v)).map(|v| v.get_offset())
+            == Some(crate::userop::BUILTIN_KERNEL_WARN as u64)
+    {
+        if let Some(tlst) = arch.types() {
+            if in_size == 4 {
+                if let Ok(t) = tlst.get_base(4, type_metatype::TYPE_INT) {
+                    return t;
+                }
+            }
+            let ws = data.get_arch().manage().get_default_data_space().map(|s| s.get_word_size()).unwrap_or(1);
+            if let Ok(ptr) = tlst.get_type_char(1).and_then(|c| tlst.get_type_pointer(in_size, c, ws)) {
+                return ptr;
+            }
+        }
+    }
+
     // C++ `TypeOpCallind::getInputLocal(op, 0)` (typeop.cc:763-768): the first input
     // of a CALLIND is the *function pointer*, so its suggested type is `code *` —
     // `getTypePointer(in0Size, getTypeCode(), spc->getWordSize())`.  This is what

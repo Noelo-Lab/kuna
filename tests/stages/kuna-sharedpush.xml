@@ -1,0 +1,72 @@
+<decompilertest>
+<binaryimage arch="x86:LE:32:default:windows">
+<!--
+    sharedpush: one push above a branch is the argument of the call on each arm.
+    pkgen2.exe 0x40621e
+      push 0x14; jz L; call [malloc]; jmp M; L: call _emalloc; M: pop ecx
+    printed `malloc(0x14)` and `_emalloc()`, although both callees receive 0x14.
+    The upstream double-use test refuses an input trial whose value another call
+    reads unless that call's own trial is still open, and a call through a
+    declared import slot has no trial, so the declared call always kept the push.
+    Stage / sub-stage: P4 call-site input recovery (`check_call_double_use`,
+    `p4_calls/kuna_sharedpush.rs`). A strict fix, always on.
+    The fixture `sharedpush_pe_i386.exe` is assembled from
+    `sharedpush_pe_i386.asm` (see the fixtures README).
+    0x401000 pushes 0x14 for malloc or the internal wrapper at 0x4010d0, then the
+    result for free or the wrapper at 0x4010e0: every call takes its push
+    (asserts 1-4). 0x401040 pushes i in a loop for toupper through the import
+    table or tolower through a register; the arms rejoin and loop back through the
+    push, and both take i (5-6). 0x401080 runs Note after malloc on one path, on
+    the slot malloc took, so Note gains nothing (7-8). 0x4010a0 runs a
+    control-flow guard check (target in ECX) before the guarded call on the slot
+    that free takes on the other arm; two calls read it on that arm, so neither
+    gains it and the guard check is never handed the argument (9-10). 0x401100
+    pushes 3 above the shared 0x14 for Note, so 0x14 sits one slot deeper in
+    Note's area than it does in malloc's and is not Note's argument (11).
+    0x401120 is `if (sel) free(p); else pair(guard_nop(), p);` with p pushed
+    once for free and for pair's second argument: guard_nop runs on the slot
+    pair then reads, so it is not the only reader on its arm and gains nothing
+    (12).
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/sharedpush_pe_i386.exe</com>
+  <com>read symbols</com>
+  <com>load addr 0x401000</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x401040</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x401080</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x4010a0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x401100</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x401120</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="SHAREDPUSH #1: malloc keeps its push" min="1" max="1">= malloc\(0x14\);</stringmatch>
+<stringmatch name="SHAREDPUSH #2: the wrapper on the other arm takes it too" min="1" max="1">sub_4010d0\(0x14\);</stringmatch>
+<stringmatch name="SHAREDPUSH #3: free keeps the pushed result" min="1" max="1">^\s*free\(p\);</stringmatch>
+<stringmatch name="SHAREDPUSH #4: the free wrapper takes it too" min="1" max="1">sub_4010e0\(p\);</stringmatch>
+<stringmatch name="SHAREDPUSH #5: toupper takes i in the loop" min="1" max="1">toupper\(c\);</stringmatch>
+<stringmatch name="SHAREDPUSH #6: tolower through the register takes i too" min="1" max="1">tolower\(c\);</stringmatch>
+<stringmatch name="SHAREDPUSH #7: malloc keeps its push where the arms rejoin, and beside the deeper push" min="2" max="2">^\s*malloc\(0x14\);</stringmatch>
+<stringmatch name="SHAREDPUSH #8: the call after the rejoin gains nothing" min="1" max="1">Note\(\);</stringmatch>
+<stringmatch name="SHAREDPUSH #9: free keeps its argument beside the guarded call" min="1" max="1">free\(a1\);</stringmatch>
+<stringmatch name="SHAREDPUSH #10: the guard check is never handed the argument" min="0" max="0">\(\*dat_[0-9a-f]+\)\([^)]</stringmatch>
+<stringmatch name="SHAREDPUSH #11: a push one slot deeper on the other arm is not taken" min="1" max="1">Note\(3\);</stringmatch>
+<stringmatch name="SHAREDPUSH #12: a call that runs before a later reader of the slot gains nothing" min="1" max="1">sub_4010f0\(\)</stringmatch>
+</decompilertest>
