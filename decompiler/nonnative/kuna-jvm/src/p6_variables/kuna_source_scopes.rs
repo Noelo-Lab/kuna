@@ -796,18 +796,18 @@ fn handler_offset(handler: Statement) -> Option<i32> {
 
 /// Whether the definition `exprent` (`T v = e;`) can be written `T v;` and
 /// `v = e;`: its type has a name (it is not printed `var`).
-fn splittable(exprent: Exprent) -> bool {
+pub(super) fn splittable(exprent: Exprent) -> bool {
     exprent
         .try_as_assignment()
         .and_then(|a| a.get_left().try_as_var())
         .is_some_and(|v| !v.is_intersection_type() && v.get_definition_type() != "var")
 }
 
-fn position(list: &JList<Exprent>, exprent: Exprent) -> Option<usize> {
+pub(super) fn position(list: &JList<Exprent>, exprent: Exprent) -> Option<usize> {
     list.to_vec().iter().position(|e| *e == exprent)
 }
 
-fn remove(list: &JList<Exprent>, exprent: Exprent) {
+pub(super) fn remove(list: &JList<Exprent>, exprent: Exprent) {
     if let Some(at) = position(list, exprent) {
         list.remove_at(at);
     }

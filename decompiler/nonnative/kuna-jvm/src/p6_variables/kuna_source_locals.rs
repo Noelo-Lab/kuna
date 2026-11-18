@@ -21,7 +21,7 @@ use crate::exprent::Exprent;
 use crate::kt_metadata::KotlinMetadataAnnotation;
 use crate::kuna_options::{self, SOURCE_LOCALS};
 use crate::method_descriptor::MethodDescriptor;
-use crate::p6_variables::kuna_source_scopes;
+use crate::p6_variables::kuna_source_scopes::{self, position, remove, splittable};
 use crate::fixes::var_merge::var_merge_declared_type;
 use crate::rt::{JHashSet, JList};
 use crate::statement::{Statement, StatementType};
@@ -349,15 +349,6 @@ fn order_block(mut block: Vec<Declaration>) {
     }
 }
 
-/// Whether the definition `exprent` (`T v = e;`) can be written `T v;` and
-/// `v = e;`: its type has a name (it is not printed `var`).
-fn splittable(exprent: Exprent) -> bool {
-    exprent
-        .try_as_assignment()
-        .and_then(|a| a.get_left().try_as_var())
-        .is_some_and(|v| !v.is_intersection_type() && v.get_definition_type() != "var")
-}
-
 /// Sorts a run of declarations without an initializer as
 /// `Exprent.sortIndexed` prints it: by original slot (then index) while
 /// declarations are ordered for javac, else as Vineflower does, by index.
@@ -374,14 +365,4 @@ pub fn sort_declarations(defs: &mut [VarExprent]) {
             .unwrap_or(index);
         (slot, index)
     });
-}
-
-fn position(list: &JList<Exprent>, exprent: Exprent) -> Option<usize> {
-    list.to_vec().iter().position(|e| *e == exprent)
-}
-
-fn remove(list: &JList<Exprent>, exprent: Exprent) {
-    if let Some(at) = position(list, exprent) {
-        list.remove_at(at);
-    }
 }
