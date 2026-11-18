@@ -5846,11 +5846,7 @@ impl PrintC {
                 self.emit_comment_group(fd, Some(inst));
                 self.emit.tag_line();
             }
-            if let Some(last) = self.emit_rust_array_init(fd, arch, inst) {
-                cur = fd.bb_op_next(last);
-            } else {
-                self.emit_statement(fd, arch, inst);
-            }
+            self.emit_statement(fd, arch, inst);
             // (kuna warnstyle, DIV-39) warnings collected for this statement
             // land after its semicolon — but NEVER inside a comma-separated
             // header (`while (...)` / `for (...)` parens), where an inline
@@ -13731,9 +13727,6 @@ fn to_emit_hl(hl: crate::printlanguage::SyntaxHighlight) -> SyntaxHighlight {
         Pl::special_color => SyntaxHighlight::SpecialColor,
     }
 }
-
-#[path = "kuna_rustarrayinit.rs"]
-mod kuna_rustarrayinit;
 
 #[cfg(test)]
 mod tests;

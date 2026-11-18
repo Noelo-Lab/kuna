@@ -777,6 +777,28 @@ impl AnalysisPass for LibcSigsPass {
         let (_addr_size, word_size) = ctx.arch.data_org();
         seed_named_prototypes(&mut out, &imported, LIBC_EXT, types, word_size, super::L);
         seed_resolved_prototypes(&mut out, &resolved, LIBC_EXT, types, word_size, super::L);
+        // The SPARC32 glibc state is eight bytes, aligned to four. Do not
+        // enable the other aggregate signatures, whose widths are x86-64's.
+        if ctx.file.format() == object::BinaryFormat::Elf
+            && matches!(ctx.file.architecture(), object::Architecture::Sparc | object::Architecture::Sparc32Plus)
+            && !ctx.file.is_64()
+        {
+            if let Ok(declared_imports) = ctx.file.imports() {
+                for (name, addr) in &resolved {
+                    if !matches!(name.as_str(), "mbrtowc" | "mbsinit")
+                        || !declared_imports.iter().any(|i| i.name() == name.as_bytes())
+                        || declared_imports.iter().any(|i| i.name() == name.as_bytes() && i.library() != b"libc.so.6")
+                    {
+                        continue;
+                    }
+                    if let Some(sig) = super::kuna_libctypes::declared_named_prototype(name) {
+                        if let Ok(pieces) = super::build_pieces(name, sig, types, word_size, super::L) {
+                            out.prototypes_at.push((*addr, pieces));
+                        }
+                    }
+                }
+            }
+        }
         let complex_max = crate::analyzers::dwarf::kuna_dwarfcomplex::max_size(
             ctx.file.format(),
             ctx.file.architecture(),

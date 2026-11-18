@@ -1146,12 +1146,11 @@ impl Funcdata {
             super::kuna_wrappedstackaggregate::map(self, space, offset, index.is_some(), ct.as_ref());
             // If there is an index Varnode, assume at least the 4 values [0,3].
             let mut min_items = if index.is_some() { 3 } else { -1 };
-            if extent >= super::kuna_arrayextent::LEVEL_BOUND {
+            if index.is_some() && extent >= super::kuna_arrayextent::LEVEL_BOUND {
                 let elem = ct.as_ref().map(|c| c.get_align_size()).filter(|&s| s > 0).unwrap_or(1);
                 let next = super::kuna_arrayextent::next_base(space, &base_offsets, offset);
                 match super::kuna_arrayextent::bounded_items(self, space, base, offset, next, elem) {
-                    Some(items) if index.is_some() => min_items = min_items.max(items - 1),
-                    Some(_) => {}
+                    Some(items) => min_items = min_items.max(items - 1),
                     None if extent >= super::kuna_arrayextent::LEVEL_ON => {
                         unbounded.push(super::kuna_arrayextent::OpenBase { start: offset, elem });
                     }

@@ -2,12 +2,9 @@
 //!
 //! `bound` extends indexed storage using known index bits. `on` also includes
 //! contiguous, unlocked, same-width slots only observed through a pointer.
-//! An escaped unindexed base starts with one element, not the indexed base's
-//! four-element assumption. Separately addressed or directly read slots stop
+//! Unindexed escapes need an exact extent from a declared aggregate, not
+//! adjacent stores. Separately addressed or directly read slots stop indexed
 //! extension; element types, locked guards and frame limits remain authoritative.
-//!
-//! Unindexed inferred storage becomes a fixed-size array hint before layout,
-//! so neither constant absorption nor padding can enlarge the witnessed extent.
 //! Indexed bases retain a wider extent already produced by upstream layout.
 
 use std::rc::Rc;
@@ -149,7 +146,6 @@ pub(crate) struct Extended {
     elem: int4,
     from: int4,
     to: int4,
-    coalescible: bool,
 }
 
 /// Lengthen open hints over contiguous write-only slots, recording their extent
@@ -189,20 +185,19 @@ pub(crate) fn extend_unbounded(
         let (sstart, highind, ty) = (open.sstart, open.highind, Rc::clone(&open.type_));
         let elem = base.elem as intb;
         let same = |e: &Extended| e.start == base.start && e.elem == base.elem;
-        let first = extended.iter().find(|e| same(e)).map_or(highind.max(0), |e| e.from.max(0));
-        let unindexed = extended.iter().find(|e| same(e)).map_or(highind < 0, |e| e.from < 0);
-        let mut reach = highind.max(0);
+        let first = extended.iter().find(|e| same(e)).map_or(highind, |e| e.from);
+        let mut reach = highind;
         while reach < first + MAX_FOLLOW {
             let slot = sstart + (reach as intb + 1) * elem;
             if slot + elem > end
                 || crosses(hints, &order, sstart, slot)
-                || !takes_slot(fd, space, hints, &order, sstart, slot, elem, &ty, unindexed)
+                || !takes_slot(fd, space, hints, &order, sstart, slot, elem, &ty)
             {
                 break;
             }
             reach += 1;
         }
-        if reach == highind.max(0) {
+        if reach == highind {
             continue;
         }
         for h in hints.iter_mut().filter(|h| is_open(h, base)) {
@@ -210,59 +205,9 @@ pub(crate) fn extend_unbounded(
         }
         match extended.iter_mut().find(|e| same(e)) {
             Some(e) => e.to = reach,
-            None => extended.push(Extended { start: base.start, sstart, elem: base.elem, from: highind, to: reach, coalescible: true }),
+            None => extended.push(Extended { start: base.start, sstart, elem: base.elem, from: highind, to: reach }),
         }
     }
-    state.set_extended(extended);
-}
-
-/// Fix witnessed unindexed extents before datatype reconciliation changes hints.
-pub(crate) fn coalesce_unindexed(state: &mut MapState, types: &dyn TypeFactory) {
-    let mut extended = state.take_extended();
-    if extended.is_empty() {
-        return;
-    }
-    // Decide all spans before removing any Open or restoring its original bound.
-    for e in extended.iter_mut().filter(|e| e.from < 0) {
-        let end = e.sstart + (e.to as intb + 1) * e.elem as intb;
-        let mapped = e.elem.checked_mul(e.to + 1).is_some_and(|size| state.covers(e.start, size));
-        let hints = state.hints_mut();
-        let ty = hints.iter().find(|h| is_lengthened(h, e)).map(|h| &h.type_);
-        let shared = hints.iter().any(|h| {
-            if h.range_type != RangeType::Open || h.start == e.start { return false; }
-            if h.sstart > e.sstart { return h.sstart <= end; }
-            let width = h.type_.get_align_size().max(h.size).max(1) as intb;
-            let reach = (h.highind.max(0) as intb + 1) * width;
-            e.sstart.checked_sub(h.sstart).is_none_or(|distance| distance <= reach)
-        });
-        let valid = hints.iter().filter(|h| h.sstart < end && e.sstart < h.sstart + (h.size as intb)).all(|h| {
-            !h.is_type_lock() && h.sstart >= e.sstart && h.sstart + (h.size as intb) <= end
-                && (match h.range_type {
-                    RangeType::Open => h.type_.get_align_size() == e.elem
-                        && ((h.start == e.start && h.highind < 0) || is_lengthened(h, e)),
-                    RangeType::Fixed => h.size == e.elem && ty.is_some_and(|ty|
-                        ty.get_metatype() == h.type_.get_metatype() && joinable(ty, &h.type_)),
-                    RangeType::Endpoint => false,
-                })
-        });
-        e.coalescible = mapped && !shared && valid;
-    }
-    for e in extended.iter().filter(|e| e.from < 0) {
-        let hints = state.hints_mut();
-        let array = if !e.coalescible { None } else {
-            hints.iter().find(|h| is_lengthened(h, e))
-                .and_then(|h| types.get_type_array(e.to + 1, Rc::clone(&h.type_)).ok())
-        };
-        if array.is_none() {
-            // A later producer may have replaced or widened this Open.
-            for h in hints.iter_mut().filter(|h| is_lengthened(h, e)) { h.highind = e.from; }
-            continue;
-        }
-        let end = e.sstart + (e.to as intb + 1) * e.elem as intb;
-        hints.retain(|h| h.sstart >= end || h.sstart + (h.size as intb) <= e.sstart);
-        state.add_range_pub(e.start, array, 0, RangeType::Fixed, -1);
-    }
-    extended.retain(|e| e.from >= 0);
     state.set_extended(extended);
 }
 
@@ -363,9 +308,10 @@ fn bases_at<'a>(extended: &'a [Extended], h: &'a RangeHint) -> impl Iterator<Ite
         .filter(move |&e| h.range_type == RangeType::Open && h.start == extended[e].start)
 }
 
-/// Is `h` an unlocked open hint at `base`'s start and element size?
+/// Is `h` an unlocked indexed hint at `base`'s start and element size?
 fn is_open(h: &RangeHint, base: &OpenBase) -> bool {
     h.range_type == RangeType::Open
+        && h.highind >= 0
         && h.start == base.start
         && !h.is_type_lock()
         && h.type_.get_align_size() == base.elem
@@ -405,7 +351,6 @@ fn takes_slot(
     slot: intb,
     elem: intb,
     ty: &Rc<Datatype>,
-    unindexed: bool,
 ) -> bool {
     let first = order.partition_point(|&(s, _)| s < slot);
     let inside: Vec<&RangeHint> = order[first..]
@@ -422,7 +367,6 @@ fn takes_slot(
             && !h.is_type_lock()
             && h.size as intb == elem
             && joinable(ty, &h.type_)
-            && (!unindexed || (h.flags & COPY_CONSTANT != 0 && h.type_.get_metatype() == ty.get_metatype()))
     }) && !observed(fd, space, start, slot, elem)
 }
 
@@ -527,7 +471,7 @@ mod tests {
         use crate::varmap::ScopeLocal;
 
         for width in [1, 4, 8] {
-            for control in ["pair", "gap", "three-gap", "runtime-base", "read-constant", "read", "address", "locked", "different-width", "runtime", "opposite-sign", "interior-indexed", "interior-unindexed", "base-open-other", "base-fixed-other", "base-locked", "base-opposite-sign", "later-raised", "later-replaced"] {
+            for control in ["pair", "gap", "three-gap", "runtime-base", "read-constant", "read", "address", "locked", "different-width", "runtime", "opposite-sign", "interior-indexed", "interior-unindexed", "base-open-other", "base-fixed-other", "base-locked", "base-opposite-sign"] {
                 let mut manager = AddrSpaceManager::new();
                 manager.insert_space(Rc::new(ConstantSpace::new())).unwrap();
                 manager.insert_space(Rc::new(UniqueSpace::new(1, 0, false))).unwrap();
@@ -620,39 +564,14 @@ mod tests {
                 };
                 let mut baseline = MapState::new(Rc::clone(&stack), &range, &params, Rc::clone(&ty));
                 baseline.hints_mut().extend(state.hints_mut().iter().cloned());
-                let mut before = layout(baseline);
+                let before = layout(baseline);
                 if interior {
                     extend_unbounded(&fd, &mut state, &stack, &[OpenBase { start, elem: width }, OpenBase { start: following, elem: width }]);
                 } else {
                     extend_unbounded(&fd, &mut state, &stack, &[OpenBase { start, elem: width }]);
                 }
-                if matches!(control, "later-raised" | "later-replaced") {
-                    state.hints_mut().retain(|h| h.range_type != RangeType::Fixed || h.start != start);
-                    if control == "later-raised" {
-                        for h in state.hints_mut().iter_mut().filter(|h| h.range_type == RangeType::Open && h.start == start) {
-                            h.highind = 3;
-                        }
-                    } else {
-                        state.hints_mut().retain(|h| h.range_type != RangeType::Open || h.start != start);
-                        state.add_range_pub(start, Some(Rc::clone(&ty)), 0, RangeType::Open, 5);
-                    }
-                    let mut baseline = MapState::new(Rc::clone(&stack), &range, &params, Rc::clone(&ty));
-                    baseline.hints_mut().extend(state.hints_mut().iter().cloned());
-                    before = layout(baseline);
-                    coalesce_unindexed(&mut state, &types);
-                    let bound = state.hints_mut().iter()
-                        .find(|h| h.range_type == RangeType::Open && h.start == start)
-                        .map(|h| h.highind);
-                    assert_eq!(bound, Some(if control == "later-raised" { 3 } else { 5 }),
-                        "{control}, width={width}: later producer's bound was lost");
-                }
                 let after = layout(state);
-                if matches!(control, "pair" | "gap" | "three-gap" | "runtime-base" | "read-constant") {
-                    assert_eq!(after.0, [Some(start), Some(start), Some(neighbour)], "{control}, width={width}");
-                    assert_eq!(after.1, Some((if control == "three-gap" { 3 } else { 2 }) * width), "{control}, width={width}: object absorbed padding");
-                } else {
-                    assert_eq!(after, before, "{control}, width={width}: independent storage layout changed");
-                }
+                assert_eq!(after, before, "{control}, width={width}: independent storage layout changed");
             }
         }
     }

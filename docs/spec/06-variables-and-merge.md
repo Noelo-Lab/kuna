@@ -2028,25 +2028,11 @@ the mark there would end the array before that element and print the loop's
 index past it. Merging slots never changes what the C computes, only how many
 declarations it has. `off` is upstream.
 
-The same `on` rule applies to an unindexed escaped frame address with no known
-dereference extent. It starts from one element, retaining `highind = -1` until
-the adjacent constant-initialized write-only evidence extends it; it does not
-inherit the indexed four-element floor. Only neighbours with the same metatype
-extend this unindexed storage, so signed reads retain their interpretation.
-This preserves a zero-initialized two-word object passed through one pointer
-instead of declaring its words as unrelated scalars. Independently read,
-separately addressed, locked, runtime-initialized or differently sized neighbours
-do not extend it. The first element may be runtime-initialized; its metatype must
-still match the array element. Before datatype reconciliation, the witnessed
-span becomes one fixed-size array hint, using the same representation as
-call-escaped array storage. The span must fit the mapped range and cannot absorb
-padding. Another Open that can share its extent leaves the original layout
-unchanged, including interior pointers into indexed arrays. A differing bound
-established by a later hint producer is retained on decline; rollback only
-recognizes a hint still at the recorded extended bound. An equal later bound
-is indistinguishable without additional provenance. The indexed-array
-preservation rule above remains unchanged.
-
+Unindexed escaped frame storage does not grow merely because an adjacent
+word is initialized. For ELF32 SPARC, a resolved `mbrtowc` or `mbsinit` import
+from glibc supplies the exact eight-byte `mbstate_t` parameter type. The normal
+local type reconciliation keeps both state words under one declaration without
+absorbing an adjacent frame word.
 
 **Terminator absorption** (`option nulterminator`, **opt-in, default off**). An
 open hint that `attempt_join` cannot extend ends where the next hint starts, so
