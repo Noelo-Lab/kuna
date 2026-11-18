@@ -50,8 +50,7 @@ use crate::fixes::kt_types::kt_class_header_metadata;
 use crate::fixes::kt_generated_members;
 use crate::fixes::kt_types::kt_type_parameter_id;
 use crate::fixes::kt_types::kt_java_type_syntax;
-use crate::fixes::kt_suspend::kt_suspend_without_metadata;
-use crate::fixes::kt_suspend::kt_for_inline_copy;
+use crate::fixes::kt_suspend;
 use crate::fixes::kt_suspend::kt_suspend_lambda;
 use crate::fixes::kt_names::kt_unescaped_name;
 use crate::fixes::kt_initializers;
@@ -800,7 +799,7 @@ impl KotlinWriter {
                 || (kuna_fixes::enabled(KunaFix::KtGeneratedOverloadHidden)
                     && kt_generated_members::is_generated_overload(cl, mt))
                 || (kuna_fixes::enabled(KunaFix::KtForInlineCopy)
-                    && kt_for_inline_copy::is_copy(cl, mt))
+                    && kt_suspend::is_for_inline_copy(cl, mt))
                 || kt_generated_members::is_delegate(cl, mt)
                 || kt_class_header_metadata::is_collection_stub(
                     cl,
@@ -2092,7 +2091,7 @@ impl KotlinWriter {
                 .flatten();
 
             let suspend = kuna_fixes::enabled(KunaFix::KtSuspendWithoutMetadata)
-                .then(|| kt_suspend_without_metadata::overridden(mt))
+                .then(|| kt_suspend::overridden(mt))
                 .flatten();
             let mut did_override = false;
             if INIT_NAME != mt.get_name()
@@ -2102,7 +2101,7 @@ impl KotlinWriter {
             {
                 let is_override =
                     KotlinWriter::search_for_method(Some(cl), &mt.get_name(), &md, false)
-                        || (suspend.is_some() && kt_suspend_without_metadata::through_bridge(mt));
+                        || (suspend.is_some() && kt_suspend::through_bridge(mt));
                 if is_override {
                     buffer.append("override ");
                     did_override = true;
@@ -2426,7 +2425,7 @@ impl KotlinWriter {
                 };
                 if let Some(function) = &suspend {
                     if let Some(result) =
-                        kt_suspend_without_metadata::result_type(mt, function, indent)
+                        kt_suspend::result_type(mt, function, indent)
                     {
                         buffer.append(": ").append_buffer(&result);
                     }

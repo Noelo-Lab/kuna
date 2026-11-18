@@ -1,42 +1,7 @@
-//! kuna fix `kt_suspend_lambda` (spec 10.16): in Kotlin output, a suspend
-//! lambda is written as the lambda its source had.
-//!
-//! kotlinc compiles a suspend lambda (`flow { .. }`, `launch { .. }`, a
-//! `suspend (T) -> R` argument) to a class extending `SuspendLambda` (or
-//! `RestrictedSuspendLambda`) that is its own continuation: `create` stores
-//! the arguments in the fields `L$0`, `L$1`, .., `invoke` calls `create`
-//! and `invokeSuspend`, and `invokeSuspend(result)` holds the body as a
-//! state machine dispatching on the object's `label`. The class metadata
-//! describes the lambda as a function `<anonymous>` whose JVM signature
-//! names no method of the class, so Vineflower finds no body and writes
-//! `{ // $VF: Could not decompile lambda - root function was not found. Is
-//! this a suspend lambda? }` (`as Function2`, the class's interface, where
-//! kotlinc cast it).
-//!
-//! With the fix the lambda's body is `invokeSuspend`. Its state machine has
-//! the shape of a suspend function's (fix `kt_suspend_state_machine`)
-//! without the entry that finds the continuation: `COROUTINE_SUSPENDED`
-//! read into a local (or popped), the dispatch on `this.label` with the
-//! resume error as default, at label 0 the `throwOnFailure` of `result` and
-//! the reads of the arguments (`this.L$0`, unboxed for an inline class,
-//! stored into the local that the parameter's name names), and at each suspension point `this` passed
-//! to the call, the spills of the live locals into the object's fields, the
-//! label store, the check and the resume block. It is recognised the same
-//! way, `this` taking the continuation's place: besides a suspension call's
-//! last argument (cast to `Continuation`) and `getContext()`, the body may
-//! only read the object's other fields (the captured values), and no field
-//! of the machine (`label`, `L$0`, `I$0`, ..) outside the machine's own
-//! instructions and the argument reads, which must be the first of label 0
-//! and must name the metadata's parameters. The graph is rewritten into the
-//! direct path as a suspend function's, the argument reads are left out of
-//! the body once its statements are made (the lambda's parameters are those
-//! locals), and the lambda is written `{ p: T -> body }` (a receiver as its
-//! first parameter, the form the plugin writes for other lambdas with a
-//! receiver), its exits as the lambda's value or `return@label`, its
-//! suspend calls without the continuation (fix
-//! `kt_suspend_call_continuation`, `this` taking `$completion`'s place), and
-//! without the cast to its `FunctionN` interface at its use. A lambda of any
-//! other shape keeps Vineflower's comment.
+//! Fix `kt_suspend_lambda`: a `SuspendLambda` class is written as its lambda:
+//! `invokeSuspend` is rebuilt like a suspend function's state machine, the
+//! reads of its arguments from the `L$n` fields become its parameters, and its
+//! exits become the lambda's.
 
 use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};

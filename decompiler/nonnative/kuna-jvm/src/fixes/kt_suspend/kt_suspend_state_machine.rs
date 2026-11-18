@@ -1,45 +1,8 @@
-//! kuna fix `kt_suspend_state_machine` (spec 10.16): in Kotlin output, a
-//! suspend function is written with the body its source had, not as the
-//! coroutine state machine kotlinc compiled it to.
-//!
-//! kotlinc lowers a suspend function that suspends to a state machine: an
-//! entry that reuses its continuation object (`$completion is` the
-//! function's `ContinuationImpl` subclass with the `label` sign bit set) or
-//! creates one, reads `result` and `COROUTINE_SUSPENDED`, and dispatches on
-//! `label`; before each suspension point the live locals are spilled into
-//! the continuation's fields (`L$0`, `I$0`, `J$0`, ..) and `label` is set to
-//! the point's number, the callee gets the continuation, and a result that is
-//! `COROUTINE_SUSPENDED` is returned; the dispatch resumes at the code after
-//! the call, which restores the locals, calls `ResultKt.throwOnFailure` on
-//! the resumed `result` and continues with it as the call's value. The
-//! resumed path recreates the frame the direct path has after the call (that
-//! is what kotlinc's transformation guarantees), so the direct path alone is
-//! the source's body. Vineflower prints the machine, which Kotlin cannot
-//! express (`$completion`, the continuation type, `label`, the spill fields).
-//!
-//! The fix recognises the machine instruction by instruction (the entry,
-//! the dispatch with its `call to 'resume' before 'invoke'` default, and for
-//! each label a suspension point: the spill and label stores and
-//! `InlineMarker` no-ops before a call whose last argument is the
-//! continuation, the `COROUTINE_SUSPENDED` check and return after it, and a
-//! resume block made only of restores, `nop`s and the `throwOnFailure` of
-//! `result` followed by `result` itself, unboxed when the call returns an
-//! inline class the direct path gets unboxed), and requires the continuation,
-//! `result` and the marker to be used nowhere else (copies of the
-//! continuation that only suspend calls and `getContext()` read count as
-//! the continuation) and every exception handler of a resume block's
-//! `throwOnFailure` to be the call's. It then rewrites the method's graph
-//! into the direct path: the entry is the code of label 0, the spill, label
-//! and copy stores and the check are gone, each call passes `$completion`
-//! (the Kotlin writer leaves it out, fix `kt_suspend_call_continuation`) and
-//! flows into the code after it, the resume blocks are dead, and the parts
-//! of a `try` range kotlinc split at a suspension point are one range again.
-//! The same check after a call in tail position of a function without a
-//! machine (`return if (r === COROUTINE_SUSPENDED) r else Unit`) is removed
-//! too. Any other shape (a continuation used by inlined code, as
-//! `suspendCoroutineUninterceptedOrReturn` uses it) keeps Vineflower's form.
-//! The fix applies to functions the metadata declares `suspend`, the ones
-//! the writer prints with `suspend` and without the continuation parameter.
+//! Fix `kt_suspend_state_machine`: the control-flow graph of a suspend
+//! function's coroutine state machine is rewritten into its direct path before
+//! the graph passes: the dispatch, spills, label stores, suspension checks and
+//! resume blocks are removed and each suspension point joined to the code after
+//! it; a machine whose continuation other code uses is left as it is.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
@@ -53,7 +16,7 @@ use crate::instruction::Instruction;
 use crate::k_element::KElement;
 use crate::key::Key;
 use crate::fixes::kt_suspend::kt_suspend_impl;
-use crate::fixes::kt_suspend::kt_suspend_without_metadata;
+use crate::fixes::kt_suspend;
 use crate::kotlin_chooser::KotlinChooser;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::kt_attrs::KtAttrs;
@@ -156,7 +119,7 @@ pub fn completion_slot(mt: StructMethod) -> Option<i32> {
         Some(KElement::Function(function)) => Flags::IS_SUSPEND.get(function.flags),
         _ => {
             (kuna_fixes::enabled(KunaFix::KtSuspendWithoutMetadata)
-                && kt_suspend_without_metadata::overridden(mt).is_some())
+                && kt_suspend::overridden(mt).is_some())
                 || (kuna_fixes::enabled(KunaFix::KtSuspendImpl) && kt_suspend_impl::member_of(mt).is_some())
         }
     };

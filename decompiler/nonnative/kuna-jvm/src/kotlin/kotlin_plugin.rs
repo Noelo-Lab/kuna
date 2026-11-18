@@ -28,7 +28,7 @@ use crate::fixes::kt_compiler_idioms::kt_inlined_stdlib_call;
 use crate::fixes::kt_types::kt_narrow_constant_local;
 use crate::fixes::kt_null_checks::kt_nullable_local;
 use crate::fixes::kt_types::kt_raw_generic_type;
-use crate::fixes::kt_suspend::kt_coroutine_boxing;
+use crate::fixes::kt_suspend;
 use crate::fixes::kt_types::kt_inline_class_value;
 use crate::fixes::kt_suspend::kt_suspend_call_continuation;
 use crate::fixes::kt_suspend::kt_suspend_state_machine;
@@ -418,7 +418,7 @@ impl KotlinPlugin {
                 "CoroutineBoxing",
                 Rc::new(|ctx: &mut PassContext| {
                     kuna_fixes::enabled(KunaFix::KtCoroutineBoxing)
-                        && kt_coroutine_boxing::rewrite(root(ctx), ctx.get_method())
+                        && kt_suspend::rewrite_boxing(root(ctx), ctx.get_method())
                 }),
             )
             .add_pass(

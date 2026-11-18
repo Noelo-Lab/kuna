@@ -1,43 +1,7 @@
-//! kuna fix `kt_suspend_call_continuation` (spec 10.16): in Kotlin output, a
-//! call of a suspend function from a suspend function is written without
-//! the continuation argument.
-//!
-//! kotlinc compiles a suspend function to a method that takes the caller's
-//! continuation as an extra last parameter, `$completion`, and a call of
-//! another suspend function to a call that passes it on. The writer prints
-//! the function's header from its metadata, with `suspend` and without that
-//! parameter, but each such call with it, `src.next(`$completion`)`, which
-//! names nothing in Kotlin and passes one argument too many. With the fix,
-//! a call in a function the metadata declares `suspend` whose last argument
-//! is the function's own `$completion`, to a method whose descriptor ends in
-//! a continuation and returns `Object` (kotlinc's convention for suspend
-//! functions) that is not a function its metadata declares without
-//! `suspend`, or to a function type's `invoke` (a suspend function type's
-//! value, `block(x)`, whose `FunctionN.invoke` the metadata of course
-//! declares without `suspend`), leaves that argument out: the call Kotlin writes, which
-//! kotlinc compiles to the same call passing the same continuation. The
-//! context read from that continuation, `$completion.getContext()` (what
-//! kotlinc compiles the `coroutineContext` intrinsic to), is written
-//! `kotlin.coroutines.coroutineContext`, qualified because in a
-//! `CoroutineScope`'s scope the simple name is the scope's own property.
-//!
-//! On the JVM a suspend function returns `Object` (its value or the
-//! suspension marker), so kotlinc casts the result of a suspend call to the
-//! function's declared type (`checkcast String`), and Vineflower writes that
-//! cast, nullable for fix `kt_nullable_cast` (`src.text(n) as String?`),
-//! which types the value wrongly for Kotlin. A cast of a marked call to the
-//! class of the return type the callee's metadata declares (not a type
-//! parameter) is left out, and the call is typed by that class: the call has
-//! that type in Kotlin, and kotlinc emits the same cast for it. So is the
-//! unboxing of a result the metadata declares a primitive
-//! (`(src.next() as Number).toInt()` is `src.next()`).
-//!
-//! A call of a synthetic accessor (`access$helper`) has the declared type of
-//! the function it calls, and a call that `NestedMemberAccess` puts in place
-//! of an accessor's keeps the accessor call's mark.
-//!
-//! kuna fix `kt_suspend_lambda`: in a suspend lambda's rebuilt body the
-//! continuation the calls pass is `this`.
+//! Fix `kt_suspend_call_continuation`: in a suspend function, a call of a
+//! suspend function that passes the function's own continuation is marked to
+//! be written without it, and the casts of its result to the declared type are
+//! left out.
 
 use std::cell::Cell;
 use std::rc::Rc;

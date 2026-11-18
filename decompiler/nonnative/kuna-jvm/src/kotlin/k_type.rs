@@ -12,7 +12,7 @@ use crate::decompiler_context::DecompilerContext;
 use crate::jthrow;
 use crate::k_types::KTypes;
 use crate::kt_proto::{self, Projection};
-use crate::fixes::kt_suspend::kt_suspend_function_type;
+use crate::fixes::kt_suspend;
 use crate::fixes::kt_types::kt_type_parameter_id;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::metadata_name_resolver::MetadataNameResolver;
@@ -230,7 +230,7 @@ impl KType {
             type_alias_name,
         );
         if kuna_fixes::enabled(KunaFix::KtSuspendFunctionType)
-            && kt_suspend_function_type::is_suspend(type_)
+            && kt_suspend::is_suspend_function_type(type_)
         {
             k_type.kuna_with_suspend()
         } else {
@@ -287,7 +287,7 @@ impl KType {
             }
         } else if let Some(suspend) = k
             .kuna_suspend
-            .then(|| kt_suspend_function_type::write(k, indent))
+            .then(|| kt_suspend::write_suspend_function_type(k, indent))
             .flatten()
         {
             buf.append_buffer(&suspend);
