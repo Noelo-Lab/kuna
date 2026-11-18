@@ -42,6 +42,16 @@
 ;   join_push (0x401170)    xformat's third argument is GetLastError's result
 ;                           on one path and EDX on the other.
 ;
+; Two more read a stack argument after a guessed call:
+;   land_push (0x4011a0)    GCC's shape: GetModuleFileNameA pops its pushes back
+;                           to a 12-byte pad, `add esp,12` drops the pad, and of
+;                           xsettime's four pushes the third lands on the stack
+;                           pointer GetModuleFileNameA left;
+;   acc_entry (0x4011d0)    MinGW's fixed frame: __fastcall, ECX kept in EBX
+;                           across GetModuleFileNameA is the one argument of
+;                           the __cdecl xopen, written with `mov [esp],ebx`;
+;                           EDX kept in ESI is the next xopen's.
+;
 ; Build: nasm -f bin -I . -o declaredpop_pe_i386.exe declaredpop_pe_i386.asm
 
 %define IMAGE_DLL 0
@@ -212,6 +222,48 @@ join_push:
     push 0x1000
     call [__imp_xformat]
     mov eax, [esp+8]
+    pop esi
+    ret 4
+
+    align 16, db 0xcc
+land_push:
+    push esi
+    sub esp, 0xc
+    push 0x20
+    push dword [esp+0x18]
+    push 0
+    call [__imp_GetModuleFileNameA]
+    add esp, 0xc
+    push dword [esp+0x10]
+    push 1
+    push dword [esp+0x14]
+    push eax
+    call [__imp_xsettime]
+    mov eax, [esp+0xc]
+    pop esi
+    ret 0xc
+
+    align 16, db 0xcc
+acc_entry:
+    push esi
+    mov esi, edx
+    push ebx
+    mov ebx, ecx
+    sub esp, 0x18
+    mov dword [esp+0x8], 0x20
+    mov [esp+0x4], ebx
+    mov dword [esp], 0
+    call [__imp_GetModuleFileNameA]
+    sub esp, 0xc
+    mov [esp], ebx
+    call [__imp_OpenFile]
+    mov [esp], esi
+    mov ebx, eax
+    call [__imp_OpenFile]
+    add eax, ebx
+    add eax, [esp+0x24]
+    add esp, 0x18
+    pop ebx
     pop esi
     ret 4
 

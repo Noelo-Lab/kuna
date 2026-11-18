@@ -40,6 +40,14 @@
     third argument is pushed on both sides of a join from GetLastError. A
     wrong count moves the stack pointer after the call, and the function's
     stack argument read after it (`return a2`) becomes a local.
+
+    0x4011a0 and 0x4011d0 do the same with the shapes those readings must
+    not take. In GCC's `add esp,12` after a padded call, one of xsettime's
+    pushes lands on the stack pointer GetModuleFileNameA left: a push, not a
+    `mov [esp]` local, so all four count and `return a1` stays the argument.
+    In MinGW's fixed frame, `mov [esp],ebx` writes ECX's entry value as the
+    one argument of the __cdecl xopen: no push run to read, so xopen pops
+    nothing and the function keeps three parameters.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -65,6 +73,12 @@ c3
   <com>load addr 0x401170</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>load addr 0x4011a0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x4011d0</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="DECLAREDPOP #1: the import keeps its declared arguments" min="1" max="1">GetModuleFileNameA\(NULL,Filename,0x100\);</stringmatch>
@@ -78,4 +92,6 @@ c3
 <stringmatch name="DECLAREDPOP #9: EDX's entry value kept across the declared call is an argument" min="1" max="1">xsettime\(GetModuleFileNameA\(NULL,a0,0x40\),a1,0,a2\);</stringmatch>
 <stringmatch name="DECLAREDPOP #10: a pushed value joined from the declared call's path is an argument" min="1" max="1">xformat\(0x1000,0,a1,0,0x10,0\);</stringmatch>
 <stringmatch name="DECLAREDPOP #11: the stack argument read after each guessed call is still the argument" min="2" max="2">return a2;</stringmatch>
+<stringmatch name="DECLAREDPOP #12: a push that lands on the stack pointer the declared call left is still an argument" min="1" max="1">return a1;</stringmatch>
+<stringmatch name="DECLAREDPOP #13: an entry value a fixed frame writes with mov is no push" min="1" max="1">return xopen\(a1\) \+ v1 \+ a2;</stringmatch>
 </decompilertest>

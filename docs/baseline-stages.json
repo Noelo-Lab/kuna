@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4509,
-    4509
+    4511,
+    4511
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -567,6 +567,8 @@
     "data:DECLARED-CALLBACK-C #9: variadic callback fields retain ellipsis",
     "data:DECLAREDPOP #10: a pushed value joined from the declared call's path is an argument",
     "data:DECLAREDPOP #11: the stack argument read after each guessed call is still the argument",
+    "data:DECLAREDPOP #12: a push that lands on the stack pointer the declared call left is still an argument",
+    "data:DECLAREDPOP #13: an entry value a fixed frame writes with mov is no push",
     "data:DECLAREDPOP #1: the import keeps its declared arguments",
     "data:DECLAREDPOP #2: the helper after it keeps both arguments",
     "data:DECLAREDPOP #3: no call after the import loses its arguments",

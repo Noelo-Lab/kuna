@@ -4040,12 +4040,19 @@ push; the folded test above reads through such joins too. A push of the entry
 value of a register the convention lets a call destroy (`EAX`, `ECX`, `EDX`),
 in the frame a call with a stated pop left, is an argument and not a saved
 register: `mov edi,edx; call [CreateFileW]; push [ebp+8]; push 0; push edi;
-push esi; call [SetFileTime]` pushes four. And the slot at the stack pointer a
-declared call left, written through before anything is pushed below it, is the
+push esi; call [SetFileTime]` pushes four. Only a push counts: MinGW's fixed
+frame writes the one argument of a `__cdecl` callee with `mov [esp],ebx`, and
+that callee pops nothing. And the slot at the stack pointer a declared call
+left, written through by a `mov` before anything is pushed below it, is the
 caller's own frame and ends the run: `call [GetModuleFileNameA]; mov
 [esp],0x44; push` ten times `; call [CreateProcessA]` pushes ten, not eleven;
 MinGW's `call [f]; sub esp,4; mov [esp+4],eax` writes that slot after the
-stack pointer went below it and keeps it.
+stack pointer went below it and keeps it. A push can land on that slot too,
+after a raise: GCC's `call [GetModuleFileNameA]; add esp,12; push; push; push;
+push; call [f]` (the call was padded to 16 bytes) puts the third push there,
+and it is one of the four. Which store is a push is read off the
+instruction's bytes (`kuna_calleepopslot.rs (is_push)`), since by the solve
+the simplifier has removed such a push's stack-pointer write.
 
 A caller with no push run at all says how much its callee popped in a
 different way (consulted for any call whose extrapop the equations leave free,

@@ -280,8 +280,9 @@ fn stated_result(data: &Funcdata, sp: VarnodeId) -> bool {
 }
 
 /// Is the entry value of a register the calling convention lets a call
-/// destroy stored through `slot`? After a call that value is no save and no
-/// `push ecx` reservation: the caller kept it across the call to pass it.
+/// destroy pushed through `slot`? After a call that value is no save and no
+/// `push ecx` reservation: the caller kept it across the call to pass it. A
+/// `mov [esp+k]` store is a fixed frame's, where no push run is read.
 fn stores_volatile_entry(data: &Funcdata, slot: VarnodeId) -> bool {
     let proto = data.get_func_proto();
     proto.has_model()
@@ -295,6 +296,7 @@ fn stores_volatile_entry(data: &Funcdata, slot: VarnodeId) -> bool {
                                 && i.get_space().get_type() == kuna_base::space::spacetype::IPTR_PROCESSOR
                                 && proto.has_effect(i.get_addr(), i.get_size()) == crate::fspec::effect_type::KILLEDBYCALL
                         })
+                        && is_push(data, op)
                 })
             })
         })
@@ -302,7 +304,8 @@ fn stores_volatile_entry(data: &Funcdata, slot: VarnodeId) -> bool {
 
 /// Is the stack pointer `base` a call left written through before the stack
 /// pointer goes below it? That slot is the caller's own frame (a `mov [esp],x`
-/// local), not the top of the pushes that follow.
+/// local), not the top of the pushes that follow. A push that lands on `base`
+/// after a raise (`add esp,12; push; push`) is one of those pushes.
 fn written_before_pushes(data: &Funcdata, spacebase: &Address, base: VarnodeId, step: int4) -> bool {
     let Some(at) = child_at(data, spacebase, base, -step).and_then(|b| data.vbank().get(b)?.get_def()) else {
         return false;
@@ -312,7 +315,23 @@ fn written_before_pushes(data: &Funcdata, spacebase: &Address, base: VarnodeId, 
             .filter(|&op| data.obank().get(op).is_some_and(|o| o.code() == OpCode::CPUI_STORE && o.get_in(1) == Some(base)))
             .collect()
     });
-    !stores.is_empty() && stores.iter().all(|&op| precedes(data, op, at))
+    !stores.is_empty() && stores.iter().all(|&op| !is_push(data, op) && precedes(data, op, at))
+}
+
+/// Is the instruction of `store` an x86 push? Read off its bytes: once a push
+/// lands on a stack pointer from before it, its stack-pointer write is gone.
+fn is_push(data: &Funcdata, store: OpId) -> bool {
+    let Some(at) = data.obank().get(store).map(|o| o.get_addr().clone()) else { return false };
+    let mut b = [0u8; 4];
+    if data.get_arch().loader_fill(&mut b, &at).is_err() {
+        return false;
+    }
+    let i = b.iter().position(|x| !matches!(x, 0x26 | 0x2e | 0x36 | 0x3e | 0x64 | 0x65 | 0x66 | 0x67)).unwrap_or(3);
+    match b[i] {
+        0x06 | 0x0e | 0x16 | 0x1e | 0x50..=0x57 | 0x60 | 0x68 | 0x6a | 0x9c => true,
+        0xff => b.get(i + 1).is_some_and(|m| (m >> 3) & 7 == 6),
+        _ => false,
+    }
 }
 
 /// Re-express the slot `base + off` in the frame of the earlier call whose
