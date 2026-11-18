@@ -138,6 +138,79 @@ fn saved_lr_byte_used_by_a_guard_stays_unproved() {
 }
 
 #[test]
+fn reusing_a_saved_lr_slot_keeps_computed_transfers() {
+    let reused = [
+        0x9421fff0, 0x7d8802a6, 0x9181000c, 0x8181000c, 0x9061000c, 0x38210010, 0x2c030000,
+        0x41820010, 0x38001038, 0x7c0803a6, 0x4e800020, 0x38600007, 0x7d8803a6, 0x4e800020,
+        0x38600007, 0x7d8803a6, 0x4e800020,
+    ];
+    let mut adjacent = reused;
+    adjacent[4] = 0x90610008;
+    let mut wider = reused;
+    wider[4] = 0xd8210008; // stfd f1,8(r1), covering the spill at 12(r1)
+    let reload_target = [
+        0x9421fff0, 0x7d8802a6, 0x9181000c, 0x8181000c, 0x38001024, 0x9001000c, 0x8001000c,
+        0x7c0803a6, 0x4e800020, 0x38600007, 0x38210010, 0x7d8803a6, 0x4e800020,
+    ];
+    for order in ["BE", "LE"] {
+        for model in ["default", "e500"] {
+            for mode in ["fast", "reliable"] {
+                for (words, case) in [
+                    (reused.as_slice(), None),
+                    (adjacent.as_slice(), None),
+                    (wider.as_slice(), None),
+                    (reload_target.as_slice(), Some("case 0x1024:")),
+                ] {
+                    let c = decompile_saved_lr(
+                        words,
+                        order,
+                        model,
+                        mode,
+                        &["--assert", "prototype 0x1000 int sub_1000(int i)"],
+                    );
+                    let program = format!("{c}\nint check(int i) {{ return sub_1000(i); }}");
+                    if let Some(case) = case.filter(|_| c.contains("switch(")) {
+                        assert!(c.contains(case), "{order} {model} {mode}: {c}");
+                        assert_eq!(c.matches("case ").count(), 1, "{order} {model} {mode}: {c}");
+                        check_runtime_with_flags(&program, "7", &["-Wno-error=return-type"]);
+                    } else {
+                        check_runtime(&program, "7");
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn partial_overwrite_can_leave_saved_lr_bytes_in_a_guard() {
+    let mut words = [
+        0x9421fff0, 0x7d8802a6, 0x9181000c, 0x9861000c, 0x8161000c, 0x38210010, 0x38600007,
+        0x38a01040, 0x7c055800, 0x4c820020, 0x7ca803a6, 0x4e800020, 0, 0x39401060, 0x38600000,
+        0x4bffffc5, 0x38630001, 0x7d4803a6, 0x4e800020, 0, 0, 0, 0, 0, 0x38000001, 0x44000002,
+    ];
+    for order in ["BE", "LE"] {
+        // Replace the high byte of LR and keep the other three bytes intact.
+        words[3] = if order == "LE" {
+            0x9861000f
+        } else {
+            0x9861000c
+        };
+        for model in ["default", "e500"] {
+            for mode in ["fast", "reliable"] {
+                let c = decompile_saved_lr(&words, order, model, mode, &[]);
+                assert!(
+                    c.contains("return 7;")
+                        && !c.contains("case 0x1040:")
+                        && !c.contains("return 8;"),
+                    "{order} {model} {mode}: {c}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn joined_lr_operands_keep_their_path_correlation() {
     let same_register = [
         0x7d8802a6, 0x2c030000, 0x4182000c, 0x38800004, 0x48000008, 0x38800014, 0x7ca42050,

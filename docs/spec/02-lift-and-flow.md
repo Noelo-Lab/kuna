@@ -79,9 +79,11 @@ Calls, further branches and other contexts that cannot be copied safely cause
 a diagnostic instead of publishing an unproved branch. Incoming-return-address
 inspection beyond transparent copies, or loss of its provenance across calls
 and untracked storage, also invalidates later computed-target proofs. This
-includes partial stores of the incoming LR and unresolved loads that may alias
-a saved LR stack slot. An equality constraint can make an apparent target the
-caller's return address. This conservatively retains such returns without attempting a
+includes partial stores of the incoming LR, partial overwrites of a saved LR
+slot and unresolved loads that may alias it. A known store that completely
+overwrites the slot discards the old fact. An equality constraint can make an
+apparent target the caller's return address. This conservatively retains such
+returns without attempting a
 general path-constraint solver. Proof work is bounded across discovery and
 revalidation together; exhaustion cannot validate a temporary decision.
 Entry registers begin unproved: an input register can already contain the

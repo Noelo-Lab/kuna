@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4926,
-    4926
+    4927,
+    4927
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -4392,6 +4392,7 @@
     "data:returning callers retain their original calls",
     "data:returning unwind caller remains unnamed",
     "data:reused parameter bytes have complete native definitions",
+    "data:reusing a saved LR slot preserves the later local branch",
     "data:reversed save overlap grants no terminal contract",
     "data:reversed save overlap keeps the stub unnamed",
     "data:reversed save overlap retains both caller returns",

@@ -396,15 +396,15 @@ fn transfer(data: &Funcdata, op: OpId, state: &mut State) {
                 let stored_value = value(data, stored, state);
                 state.return_address_observed |=
                     stored_value != Some(Value::ReturnAddress) && reads_return(data, stored, state);
-                state.return_address_observed |= state.stack.iter().any(|(&(at, width), v)| {
-                    *v == Value::ReturnAddress
-                        && (at.wrapping_sub(offset) < size as u32
-                            || offset.wrapping_sub(at) < width as u32)
-                        && (at != offset || width != size || stored_value.as_ref() != Some(v))
-                });
-                state.stack.retain(|&(at, width), _| {
-                    at.wrapping_sub(offset) >= size as u32
-                        && offset.wrapping_sub(at) >= width as u32
+                state.stack.retain(|&(at, width), v| {
+                    let from_store = at.wrapping_sub(offset);
+                    let overlaps =
+                        from_store < size as u32 || offset.wrapping_sub(at) < width as u32;
+                    let covered = width <= size && from_store <= (size - width) as u32;
+                    // A partial overwrite can leave bytes of the saved LR behind.
+                    state.return_address_observed |=
+                        *v == Value::ReturnAddress && overlaps && !covered;
+                    !overlaps
                 });
                 if let Some(v) = stored_value {
                     state.stack.insert((offset, size), v);
