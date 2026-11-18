@@ -673,6 +673,9 @@ impl MergeContext for Funcdata {
         // isolated cannot answer `true` from any of them, and the global arm
         // below is unconditionally `false`, so the whole scan is skippable —
         // see `ScopeLocal::has_isolated_symbols`.
+        if crate::kuna_isolated::holds(self, high) {
+            return true;
+        }
         if !self.get_scope_local().map(|lm| lm.has_isolated_symbols()).unwrap_or(false) {
             return false;
         }

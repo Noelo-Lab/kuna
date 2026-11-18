@@ -610,6 +610,8 @@ One directive per `--assert`, keyed by intent rather than by phase:
 | `return [<func>::]<storage> <C typedecl>` | the storage and type of the return value |
 | `name [<func>::]<symbol> <newname>` | rename a local |
 | `type [<func>::]<symbol> <C type>` | retype a local |
+| `format [<func>::]<addr> hex\|dec\|oct\|bin\|char [<value>]` | the form the constant read by the instruction at `<addr>` is printed in |
+| `isolate [<func>::]<symbol>` | this local is its own variable: it is not merged with another |
 | `typedef <C declaration>` | intern a `struct`/`union`/`enum`/`typedef` so `type` can name it |
 | `data <addr> <C typedeclaration>` | a named, typed global at an address |
 | `comment [<func>::]<addr> <text>` | a comment rendered into the C at that instruction |
@@ -669,6 +671,36 @@ Saved copies, joins and later reuse of that register remain distinct. JOIN
 values, temporaries and ambiguous definition addresses use a validated
 dataflow anchor. A missing or ambiguous anchor rejects the directive rather
 than applying it to another value.
+
+**`format` and `isolate` change how one constant or one local is shown.**
+`format <addr> oct` prints the constant the instruction at `<addr>` reads in
+octal; the forms are `hex`, `dec`, `oct`, `bin` and `char`. The address is the
+one `kuna disassemble` shows for the instruction, and `--json` lists the
+addresses behind each line of C in `line_mappings`. When the instruction reads
+several constants, a `<value>` (decimal, or hex with `0x`) picks one, and the
+rejection of a request without it lists them. An address where the decompiled
+function reads no integer constant is `rejected`. A format that was taken and
+whose constant the second pass does not find again is reported refused
+(`fatal`).
+
+```bash
+kuna decompile ./mode.so is_rwx --assert 'format 0x1304 oct' --assert 'format 0x130c oct'
+#   return (a0 & 0777) == 0755;       (was: return (a0 & 0x1ff) == 0x1ed;)
+```
+
+`isolate <symbol>` keeps a local out of the merges kuna chooses to make: a
+copy with its source, and the result of an operation with its input, which
+is what prints one variable for two values (`v1 = v1 * 3 + 1;`) or reuses a
+parameter (`a0 *= 3;`). The isolated local keeps the values it is defined
+with, and the other value gets a declaration of its own. Values that meet
+where two paths join are one variable and stay one. The name is resolved as
+`name` resolves it, so a register local, a stack local and a parameter can
+all be isolated.
+
+```bash
+kuna decompile ./a.out triple --assert 'isolate a0'
+#   v2 = a0 * 3;                      (was: a0 *= 3;)
+```
 
 With `option stackviews on`, the console command `print stack objects` lists
 logical frame objects at declared address uses: calls, typed pointer assignments,
