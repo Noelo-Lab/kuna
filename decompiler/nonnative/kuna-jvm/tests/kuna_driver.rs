@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use kuna_jvm::fernflower::{DecompiledClass, Fernflower};
 use kuna_jvm::i_fernflower_logger::IFernflowerLogger;
 use kuna_jvm::kuna_corpus::{reset_engine_thread, with_engine_stack};
-use kuna_jvm::kuna_driver::{self, ClassResult, DriverConfig, Jobs, Progress, Report, Strategy};
+use kuna_jvm::kuna_driver::{self, ClassResult, DriverConfig, Jobs, Progress, Report};
 use kuna_jvm::kuna_input::{self, InputSet, LoadOptions};
 use kuna_jvm::kuna_partition::{self, DivergentRead, RootPos, RootSelection};
 
@@ -40,15 +40,8 @@ fn output_is_identical_for_any_worker_count() {
     let input = kuna_input::load(&corpus("java16"), &LoadOptions::default()).unwrap();
     let reference = contents(&decompile(&input, &options(&[])));
     assert!(reference.len() > 30);
-    for (jobs, strategy) in [
-        (1, Strategy::Closure),
-        (2, Strategy::Closure),
-        (4, Strategy::Closure),
-        (3, Strategy::Components),
-    ] {
-        let mut config = config(jobs);
-        config.strategy = strategy;
-        let (results, report) = drive(&input, &config);
+    for jobs in [1, 2, 3, 4] {
+        let (results, report) = drive(&input, &config(jobs));
         let indices: Vec<usize> = results.iter().map(|r| r.index).collect();
         assert_eq!(indices, (0..results.len()).collect::<Vec<_>>());
         let got: Vec<(String, String)> = results
@@ -63,7 +56,7 @@ fn output_is_identical_for_any_worker_count() {
             .collect();
         assert_eq!(got.len(), reference.len(), "jobs {jobs}");
         for (mine, theirs) in got.iter().zip(&reference) {
-            assert_eq!(mine, theirs, "jobs {jobs} {strategy:?}: {} differs", mine.0);
+            assert_eq!(mine, theirs, "jobs {jobs}: {} differs", mine.0);
         }
         assert!(
             report.divergent_reads.is_empty(),

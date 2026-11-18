@@ -111,7 +111,7 @@ chapter 00, section 0.2).
 | `src/plugins/` | Vineflower's VariableRenaming and IdeaNotNull plugins |
 | `src/kotlin/` | Vineflower's Kotlin plugin: the metadata decoder, its pass schedule, the Kotlin expression and statement layer, the Kotlin writer (below, "Kotlin") |
 | `options.toml` | the `jvm_*` option rows; `build.rs` generates the static table from it |
-| `examples/` | `corpus` (the regression runner), `jvmdec` (a development CLI) |
+| `examples/` | `corpus` (the regression runner) |
 | `tests/` | the unit and differential suite, one `integration` test binary (`tests/integration.rs` registers every file) |
 | `tools/oracle/` | the Vineflower oracle: rebuilds the Java and Kotlin corpora the regression corpus comes from |
 
@@ -637,10 +637,10 @@ example):
    `KUNA_JVM_ORACLE` set) prints the Java stack. Then write a small class that fails
    both decompilers *without a JDK* (the corpus runs without one): replace JDK types the
    failure needs by nested stand-ins, and compare `vf-decompile --fixture --opt
-   dump-exception-on-error=1 ...` with `cargo run --release -p kuna-jvm --example jvmdec --
-   --opt include-runtime= --opt jvm_plugins=0 --opt jvm_vineflower_compat=1 ...` (`jvmdec`
-   takes Vineflower's option names and kuna's own rows by their names, and runs with kuna's
-   defaults otherwise; the trace differ's kuna side runs in compat mode). For the Rust backtrace of the caught
+   dump-exception-on-error=1 ...` with `kuna decompile-project DIR --option include-runtime ''
+   --option jvm_plugins 0 --option jvm_vineflower_compat 1 --option dump-exception-on-error 1
+   -o NEW_DIR` (`--option` takes Vineflower's option names and kuna's own rows by their
+   names). For the Rust backtrace of the caught
    throw, set `KUNA_JVM_BACKTRACE` to a piece of its message (`1` prints every caught
    throw, and the engine throws and catches routinely); build with
    `CARGO_PROFILE_RELEASE_DEBUG=line-tables-only` for line numbers.
@@ -993,8 +993,7 @@ ANTLR-generated parsers stopped (`SleighParser.tokendef`, `SleighParser_Semantic
 limit it was two on an idle machine and four on a busy one (spec section 10.12). A
 method stuck between two polls is not interrupted; as a last resort the CLI stops waiting
 after `2N+30` seconds, writes the classes that finished, gives the stuck ones a stub
-comment and exits. `jvmdec --opt mpm=N` is `--opt max-time-per-method=N`, as for any
-three-letter name.
+comment and exits.
 
 **Speed.** One engine instance is slower than Vineflower on one thread. Against
 Vineflower 1.12.0 with `-thr=1` on JDK 21, `--jobs 1` takes 1.2 to 2.2 times the wall time
@@ -1060,9 +1059,9 @@ refresh the Kotlin and plugin cases and `python3 -I tests/jvm/regen.py` the rest
 committed files byte for byte. The 68 JDK-dependent cases run only from the oracle itself
 (`regen.py --skip-vendor --full-manifest FILE`, then `corpus --manifest FILE`).
 
-**When a case differs.** The diff shows the symptom, rarely the pass. For quick runs outside the CLI, `cargo run -p kuna-jvm --example jvmdec -- [--opt
-key=value]... [--runtime SPEC] [--jobs N] [-o DIR] <class|jar|dir>` takes Vineflower's
-option names directly.
+**When a case differs.** The diff shows the symptom, rarely the pass. `kuna decompile
+<class|jar|dir> [<class>] [--option NAME VALUE]...` reruns a class under any option set;
+`--option` also takes Vineflower's option names.
 
 ## javac's block layout
 
@@ -1200,7 +1199,7 @@ the kuna-fixes cases it changes are re-recorded after review.
 4. If the reference JDK moves, regenerate the embedded varargs table
    (`tests/data/jdk_varargs/gen.sh`) and the kernel goldens under `tests/data/`.
 5. Rebuild the oracle corpora (Java, plugins, Kotlin) with the new release jar (`tools/oracle`
-   pins 1.12.0's jar hash and commit; update both) and regenerate `tests/jvm/`; run the corpus and use the trace differ on every case that no longer
+   pins 1.12.0's jar hash and commit; update both) and regenerate `tests/jvm/`; run the corpus and fix every case that no longer
    matches. Re-record `tests/jvm/baseline.txt` only as part of the sync, and say so in the
    commit message.
 6. Update this page (version, commit, the differences above), the crate header in

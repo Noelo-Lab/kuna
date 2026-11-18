@@ -74,8 +74,7 @@ written before all of its unit is processed. **Per method**,
 `decompiler/nonnative/kuna-jvm/src/infra/method_processor.rs (MethodProcessor::code_to_java)`
 runs the pass schedule of sections 10.4-10.10 from bytecode to a structured statement
 tree. Every pass is recorded by name through
-`decompiler/nonnative/kuna-jvm/src/infra/decompile_record.rs (DecompileRecord::add)`, which
-is also where the trace differ hooks in (section 10.14).
+`decompiler/nonnative/kuna-jvm/src/infra/decompile_record.rs (DecompileRecord::add)`.
 
 Vineflower's plugin API is ported: the pass locations (`CfgConstruction`, `BeforeMain`,
 `InLoopDecomp`, `MainLoop`, `AfterMain`, `AtEnd`, `LateProcessing`) are kept in the

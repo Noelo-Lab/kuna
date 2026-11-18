@@ -6,7 +6,7 @@
 //! order a single run visits them and reads, from the class files, which
 //! other roots a root needs pre-processed (the roots whose nested classes'
 //! constructors it calls, see `kuna_partition`). The roots are then grouped
-//! into batches ([`Strategy`]); worker threads take batches from a shared
+//! into batches ([`make_batches`]); worker threads take batches from a shared
 //! cursor, largest first, and run each with `Fernflower::decompile_selected`,
 //! which pre-processes and writes the batch's roots plus their dependencies in
 //! the single run's order and delivers the batch's roots. A worker keeps its
@@ -56,20 +56,6 @@ pub enum Jobs {
     Exactly(usize),
 }
 
-/// How root classes are grouped into batches.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Strategy {
-    /// Roots joined with the roots they depend on while the unit stays
-    /// within the first batch's size, units packed in run order into batches
-    /// that shrink as the plan goes; each batch also pre-processes the roots
-    /// it depends on outside it, so a root may be processed by several instances.
-    Closure,
-    /// Roots joined with everything they depend on (connected components),
-    /// packed into batches; no root is processed twice, but one large
-    /// component limits the parallelism.
-    Components,
-}
-
 /// Creates the engine logger of each instance (called on the worker thread).
 pub type LoggerFactory = Arc<dyn Fn() -> Rc<dyn IFernflowerLogger> + Send + Sync>;
 /// Creates the method guard of each worker thread (see `CancelationManager::set_method_guard`).
@@ -83,7 +69,6 @@ pub struct DriverConfig {
     /// instance (the bundled plugins are on when it is absent).
     pub options: Vec<(String, String)>,
     pub jobs: Jobs,
-    pub strategy: Strategy,
     /// The JDK whose classes give the engine context (`None`: no runtime).
     pub runtime: Option<Arc<SharedRuntime>>,
     /// Inputs read for context only, not decompiled.
@@ -108,7 +93,6 @@ impl DriverConfig {
         DriverConfig {
             options,
             jobs: Jobs::Auto,
-            strategy: Strategy::Closure,
             runtime: None,
             libraries: Vec::new(),
             select: None,
@@ -304,7 +288,7 @@ pub fn run(
             }
         }
 
-        let batches = make_batches(&plan, &selected, workers_wanted, config.strategy);
+        let batches = make_batches(&plan, &selected, workers_wanted);
         report.batches = batches.len();
         report.workers = workers_wanted.min(batches.len().max(1));
         if let Some(progress) = &config.progress {
@@ -933,91 +917,43 @@ fn dependency_units(plan: &Plan, selected: &[usize], cap: u64) -> Vec<Vec<usize>
     units.into_values().collect()
 }
 
-fn make_batches(plan: &Plan, selected: &[usize], workers: usize, strategy: Strategy) -> Vec<Batch> {
+fn make_batches(plan: &Plan, selected: &[usize], workers: usize) -> Vec<Batch> {
     if selected.is_empty() {
         return Vec::new();
     }
-    let target = (workers * 4).clamp(1, selected.len());
-    let groups: Vec<BTreeSet<usize>> = match strategy {
-        Strategy::Closure => {
-            let total: u64 = selected.iter().map(|&i| plan.cost[i].max(1)).sum();
-            let floor = total.div_ceil((workers * 8) as u64).max(1);
-            let share = |remaining: u64| remaining.div_ceil((workers * 2) as u64).max(floor);
-            let mut remaining = total;
-            let mut groups = Vec::new();
-            let mut current = BTreeSet::new();
-            let mut weight = 0u64;
-            for unit in dependency_units(plan, selected, share(total)) {
-                let unit_weight: u64 = unit.iter().map(|&i| plan.cost[i].max(1)).sum();
-                if weight > 0 && weight + unit_weight > share(remaining) {
-                    groups.push(std::mem::take(&mut current));
-                    remaining -= weight;
-                    weight = 0;
-                }
-                current.extend(unit);
-                weight += unit_weight;
-                if weight >= share(remaining) {
-                    groups.push(std::mem::take(&mut current));
-                    remaining -= weight;
-                    weight = 0;
-                }
-            }
-            if !current.is_empty() {
-                groups.push(current);
-            }
-            groups
+    let total: u64 = selected.iter().map(|&i| plan.cost[i].max(1)).sum();
+    let floor = total.div_ceil((workers * 8) as u64).max(1);
+    let share = |remaining: u64| remaining.div_ceil((workers * 2) as u64).max(floor);
+    let mut remaining = total;
+    let mut groups = Vec::new();
+    let mut current = BTreeSet::new();
+    let mut weight = 0u64;
+    for unit in dependency_units(plan, selected, share(total)) {
+        let unit_weight: u64 = unit.iter().map(|&i| plan.cost[i].max(1)).sum();
+        if weight > 0 && weight + unit_weight > share(remaining) {
+            groups.push(std::mem::take(&mut current));
+            remaining -= weight;
+            weight = 0;
         }
-        Strategy::Components => {
-            let mut parent: Vec<usize> = (0..plan.roots.len()).collect();
-            for (root, deps) in plan.deps.iter().enumerate() {
-                for &dep in deps {
-                    let (a, b) = (find(&mut parent, root), find(&mut parent, dep));
-                    if a != b {
-                        parent[a.max(b)] = a.min(b);
-                    }
-                }
-            }
-            let mut components: BTreeMap<usize, BTreeSet<usize>> = BTreeMap::new();
-            for i in 0..plan.roots.len() {
-                let r = find(&mut parent, i);
-                components.entry(r).or_default().insert(i);
-            }
-            let wanted: BTreeSet<usize> = selected.iter().map(|&i| find(&mut parent, i)).collect();
-            let members: Vec<BTreeSet<usize>> = components
-                .into_iter()
-                .filter(|(r, _)| wanted.contains(r))
-                .map(|(_, s)| s)
-                .collect();
-            let mut sized: Vec<(u64, BTreeSet<usize>)> = members
-                .into_iter()
-                .map(|s| (s.iter().map(|&i| plan.cost[i].max(1)).sum(), s))
-                .collect();
-            sized.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
-            let mut bins: Vec<(u64, BTreeSet<usize>)> = vec![(0, BTreeSet::new()); target];
-            for (weight, set) in sized {
-                let bin = bins
-                    .iter_mut()
-                    .min_by_key(|(w, s)| (*w, s.first().copied()))
-                    .expect("bins");
-                bin.0 += weight;
-                bin.1.extend(set);
-            }
-            bins.into_iter()
-                .map(|(_, s)| s)
-                .filter(|s| !s.is_empty())
-                .collect()
+        current.extend(unit);
+        weight += unit_weight;
+        if weight >= share(remaining) {
+            groups.push(std::mem::take(&mut current));
+            remaining -= weight;
+            weight = 0;
         }
-    };
+    }
+    if !current.is_empty() {
+        groups.push(current);
+    }
     let selected_set: BTreeSet<usize> = selected.iter().copied().collect();
     groups
         .into_iter()
         .enumerate()
         .map(|(id, group)| {
             let mut process = group.clone();
-            if strategy == Strategy::Closure {
-                for &i in &group {
-                    process.extend(plan.deps[i].iter().copied());
-                }
+            for &i in &group {
+                process.extend(plan.deps[i].iter().copied());
             }
             let deliver: BTreeSet<usize> = group.intersection(&selected_set).copied().collect();
             Batch {
