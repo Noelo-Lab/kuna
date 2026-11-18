@@ -22,6 +22,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.join(HERE, "src")
@@ -79,12 +80,37 @@ MODIFIERS = {"public": 0x1, "private": 0x2, "protected": 0x4, "static": 0x8, "fi
              "default": 0, "sealed": 0, "non-sealed": 0}
 
 
+def wide_source():
+    """Wide.java: 140 long locals (wide slots), 300 string constants (ldc_w) and a method of
+    more than 32 KiB of code (goto_w)."""
+    out = ["public class Wide {", "  static long many(long seed) {"]
+    out += [f"    long l{i} = seed + {i};" for i in range(140)]
+    out += ["    double d0 = seed; Object o0 = null; int i0 = 7;",
+            "    i0 += 30000; i0 -= 200; i0 += 127; i0 -= 128;",
+            "    float f0 = i0; o0 = Long.valueOf(l139);",
+            "    return " + " + ".join(f"l{i}" for i in range(0, 140, 7))
+            + " + (long) d0 + i0 + (long) f0 + o0.hashCode();",
+            "  }", "  static String strs(int k) {",
+            "    String[] a = {" + ", ".join(f'"s{i}"' for i in range(300)) + "};",
+            "    double x = 3.25 + k; long y = 77777777777L + k; float z = 0.1f + k;",
+            "    return a[k] + x + y + z;", "  }",
+            "  static int huge(int x, int[] a) {", "    int r = 0;",
+            "    for (int i = 0; i < x; i++) {", "      if (a[i] == 3) {"]
+    out += [f"        r += a[{i % 50}] * {i % 7};" for i in range(3800)]
+    out += ["      }", "    }", "    return r;", "  }", "}"]
+    return "\n".join(out) + "\n"
+
+
 def run_javac():
     for name, opts, dirs in CONFIGS:
         out = os.path.join(CLASSES, name)
         os.makedirs(out, exist_ok=True)
         for d in dirs:
             base = os.path.join(SRC, d)
+            if d == "wide":
+                base = tempfile.mkdtemp()
+                with open(os.path.join(base, "Wide.java"), "w") as fh:
+                    fh.write(wide_source())
             files = []
             for root, _, fs in os.walk(base):
                 files += [os.path.join(root, f) for f in fs if f.endswith(".java")]

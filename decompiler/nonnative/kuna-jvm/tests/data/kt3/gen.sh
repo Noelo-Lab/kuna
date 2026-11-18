@@ -3,8 +3,9 @@
 # KtElementDump.java (KType, KTypeParameter, KParameter, KContract, KTypes,
 # KUtils, KotlinImportCollector and KotlinChooser on real and crafted input).
 #
-#   gen.sh              committed vectors: meta.golden (KT1's fixtures, the
-#                       Kotlin corpus, subset.txt of the real-world jars),
+#   gen.sh              committed vectors: meta.golden (KT1's fixtures and
+#                       subset.txt of the real-world jars; the Kotlin corpus
+#                       is left to tests/jvm),
 #                       chooser.golden, kotlintypes.golden, misc.golden,
 #                       crafted.golden (gen_crafted.py); also recompiles
 #                       classes/ from src/
@@ -37,8 +38,12 @@ jars() {
   echo "reflect16=$LIB/org.jetbrains.kotlin.kotlin-reflect-1.6.10.jar"
 }
 
-dirs() {
+fixtures() {
   echo "kt1fx=$HERE/../kt1/classes"
+}
+
+dirs() {
+  fixtures
   echo "kt=$CORPUS/kt"
   echo "ktold=$CORPUS/ktold"
   echo "corekt=$CORPUS/core-kt"
@@ -66,7 +71,7 @@ for s in a b1 b2 b3 c; do
 done
 
 {
-  dirs | while IFS== read -r label path; do run meta "$label" "$path"; done
+  fixtures | while IFS== read -r label path; do run meta "$label" "$path"; done
   jars | while IFS== read -r label path; do run meta "$label" "$path" "$HERE/subset.txt"; done
 } > "$HERE/meta.golden"
 {
@@ -75,7 +80,7 @@ done
 } > "$HERE/chooser.golden"
 {
   run kotlintypes crafted -
-  dirs | while IFS== read -r label path; do run kotlintypes "$label" "$path"; done
+  fixtures | while IFS== read -r label path; do run kotlintypes "$label" "$path"; done
   jars | while IFS== read -r label path; do run kotlintypes "$label" "$path" 31; done
 } > "$HERE/kotlintypes.golden"
 run misc > "$HERE/misc.golden"

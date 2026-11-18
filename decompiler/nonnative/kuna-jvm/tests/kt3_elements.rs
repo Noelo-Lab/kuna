@@ -709,7 +709,7 @@ fn kt3_elements_match_plugin() {
     let mut tally = Tally::default();
     check_meta(&cases, &mut tally);
     tally.check("meta.golden");
-    assert!(tally.cases >= 100);
+    assert!(tally.cases >= 80);
 }
 
 #[test]
@@ -766,7 +766,7 @@ fn kt3_kotlin_types_match_plugin() {
     check_kotlin_types(&data_dir().join("kotlintypes.golden"), &mut tally);
     tally.check("kotlintypes.golden");
     assert_eq!(tally.pending, 0);
-    assert!(tally.cases >= 500);
+    assert!(tally.cases >= 400);
     assert_eq!(KTypes::get_kotlin_type(None), "*");
 }
 
