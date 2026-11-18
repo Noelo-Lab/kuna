@@ -43,6 +43,79 @@ fn decompile_fixture(f: &fixture::Fixture, extra: &[&str]) -> std::process::Outp
 }
 
 #[test]
+fn joined_lr_operands_keep_their_path_correlation() {
+    let same_register = [
+        0x7d8802a6, 0x2c030000, 0x4182000c, 0x38800004, 0x48000008, 0x38800014, 0x7ca42050,
+        0x38a51040, 0x7ca803a6, 0x4e800020, 0, 0, 0x7c6803a6, 0x4bfffff0, 0, 0, 0x60000000,
+        0x7d8803a6, 0x4e800020, 0, 0x4bffffd4,
+    ];
+    let copied_register = [
+        0x7d8802a6, 0x2c030000, 0x4182000c, 0x38800004, 0x48000008, 0x38800014, 0x7c862378,
+        0x7ca62050, 0x38a51040, 0x7ca803a6, 0x4e800020, 0, 0x7c6803a6, 0x4bfffff4, 0, 0,
+        0x60000000, 0x7d8803a6, 0x4e800020, 0, 0x4bffffd8,
+    ];
+    let mut known_condition = vec![
+        0x7d8802a6, 0x2c030000, 0x4182000c, 0x38800004, 0x48000008, 0x38800014, 0x2c040004,
+        0x4182000c, 0x38c00014, 0x48000008, 0x38c00004, 0x7ca43050, 0x38a51080, 0x7ca803a6,
+        0x4e800020,
+    ];
+    known_condition.resize(0x70 / 4, 0);
+    known_condition.extend([
+        0x7c6803a6, 0x4bffffc4, 0, 0, 0x7d8803a6, 0x4e800020, 0, 0, 0x4bffffa8,
+    ]);
+    let distinct_targets = [
+        0x7d8802a6, 0x2c030000, 0x41820010, 0x38800004, 0x38c00014, 0x4800000c, 0x38800014,
+        0x38c00004, 0x7ca62050, 0x38a51040, 0x7ca803a6, 0x4e800020, 0x38800009, 0x48000020, 0, 0,
+        0x7c6803a6, 0x4bffffe8, 0, 0, 0x38800007, 0x2c030000, 0x4180000c, 0x7c632214, 0x48000008,
+        0x7c641850, 0x7d8803a6, 0x4e800020,
+    ];
+    let cases = [
+        ("same register", same_register.as_slice(), "i"),
+        ("copied register", copied_register.as_slice(), "i"),
+        ("known condition", known_condition.as_slice(), "i"),
+        (
+            "distinct targets",
+            distinct_targets.as_slice(),
+            "i == 0 ? 7 : i < 0 ? i - 9 : i + 9",
+        ),
+    ];
+    for order in ["BE", "LE"] {
+        for model in ["default", "e500"] {
+            let target = format!("PowerPC:{order}:32:{model}");
+            for mode in ["fast", "reliable"] {
+                for (case, words, expected) in cases {
+                    let output = run_decompile(
+                        order == "LE",
+                        words.to_vec(),
+                        &["--target", &target, "--mode", mode],
+                    );
+                    assert!(
+                        output.status.success(),
+                        "{target} {mode} {case}: {output:?}"
+                    );
+                    let c = String::from_utf8(output.stdout).unwrap();
+                    assert!(
+                        !c.contains("halt_missing") && !c.contains("jump-as-call"),
+                        "{target} {mode} {case}: {c}"
+                    );
+                    if case == "distinct targets" {
+                        assert!(!c.contains("case 0x1040:"), "{target} {mode}: {c}");
+                    }
+                    if case == "known condition" && c.contains("switch(") {
+                        assert!(c.contains("case 0x1080:"), "{target} {mode}: {c}");
+                        assert_eq!(c.matches("case ").count(), 1, "{target} {mode}: {c}");
+                        // A C compiler cannot prove that this case exhausts the switch.
+                        check_runtime_with_flags(&c, expected, &["-Wno-error=return-type"]);
+                    } else {
+                        check_runtime(&c, expected);
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn shared_lr_transfer_discovers_its_second_destination() {
     let code = vec![
         0x7d8802a6, 0x38600009, 0x38001014, 0x7c0803a6, 0x4e800020, 0x38001020, 0x7c0803a6,
@@ -155,6 +228,10 @@ fn wide_register_ppc32_lr_transfers_keep_the_target() {
 }
 
 fn check_runtime(c: &str, expected: &str) {
+    check_runtime_with_flags(c, expected, &[]);
+}
+
+fn check_runtime_with_flags(c: &str, expected: &str, flags: &[&str]) {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         eprintln!("cc unavailable; skipping only emitted-C execution");
         return;
@@ -170,6 +247,7 @@ fn check_runtime(c: &str, expected: &str) {
                 "-Werror=implicit-function-declaration",
                 "-Werror=return-type",
             ])
+            .args(flags)
             .arg(&source)
             .arg("-o")
             .arg(&executable)

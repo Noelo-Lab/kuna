@@ -7,7 +7,6 @@
 //! machinery. Saved-LR returns and explicit flow assertions retain their meaning.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
-use std::rc::Rc;
 
 use kuna_base::address::Address;
 use kuna_base::error::{KunaError, KunaResult};
@@ -17,6 +16,7 @@ use crate::{
     architecture::Architecture,
     context::{BlockId, OpId, VarnodeId},
     funcdata::Funcdata,
+    jumptable::JumpTable,
 };
 
 type Key = (i32, u64, i32);
@@ -62,31 +62,29 @@ pub(crate) fn align_target(
     Ok(())
 }
 
-const MAX_CONSTANTS: usize = 8;
+const MAX_CONTEXTS: usize = 8;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Value {
     Constant(u64),
-    Constants(Rc<[u64]>),
+    Bits { value: u64, known: u64 },
     Stack(u32),
     ReturnAddress,
 }
 
-impl Value {
-    fn constants(&self) -> Option<&[u64]> {
-        match self {
-            Self::Constant(value) => Some(std::slice::from_ref(value)),
-            Self::Constants(values) => Some(values),
-            _ => None,
-        }
-    }
+fn width_mask(size: i32) -> Option<u64> {
+    (1..=8).contains(&size).then(|| u64::MAX >> (64 - size * 8))
+}
 
-    fn from_constants(values: BTreeSet<u64>) -> Option<Self> {
-        match values.len() {
-            1 => values.first().copied().map(Self::Constant),
-            2..=MAX_CONSTANTS => Some(Self::Constants(values.into_iter().collect())),
-            _ => None,
-        }
+fn known_bits(value: u64, known: u64, width: u64) -> Option<Value> {
+    let known = known & width;
+    let value = value & known;
+    if known == width {
+        Some(Value::Constant(value))
+    } else if known == 0 {
+        None
+    } else {
+        Some(Value::Bits { value, known })
     }
 }
 
@@ -96,6 +94,39 @@ struct State {
     stack: BTreeMap<(u32, i32), Value>,
     image_unmodified: bool,
     return_address_observed: bool,
+}
+
+/// Keep the facts from each incoming path together. If the bound is reached,
+/// retain only facts shared by all paths.
+#[derive(Clone, Default)]
+struct Contexts {
+    states: Vec<State>,
+    widened: bool,
+}
+
+impl Contexts {
+    fn join<'a>(&mut self, incoming: impl Iterator<Item = &'a State>) -> bool {
+        let mut changed = false;
+        for state in incoming {
+            if self.widened {
+                changed |= intersect(&mut self.states[0], state);
+            } else if !self.states.contains(state) {
+                if self.states.len() < MAX_CONTEXTS {
+                    self.states.push(state.clone());
+                } else {
+                    let (first, rest) = self.states.split_first_mut().unwrap();
+                    for other in rest {
+                        intersect(first, other);
+                    }
+                    intersect(first, state);
+                    self.states.truncate(1);
+                    self.widened = true;
+                }
+                changed = true;
+            }
+        }
+        changed
+    }
 }
 
 fn key(data: &Funcdata, id: VarnodeId) -> Key {
@@ -115,7 +146,7 @@ fn value(data: &Funcdata, id: VarnodeId, state: &State) -> Option<Value> {
     } else {
         let wanted = key(data, id);
         if let Some(value) = state.values.get(&wanted) {
-            return Some(value.clone());
+            return Some(*value);
         }
         let (&(space, offset, size), stored) = state
             .values
@@ -134,12 +165,10 @@ fn value(data: &Funcdata, id: VarnodeId, state: &State) -> Option<Value> {
         } else {
             displacement
         } * 8;
-        let mask = u64::MAX >> (64 - wanted.2 * 8);
+        let mask = width_mask(wanted.2)?;
         match stored {
             Value::Constant(n) => Some(Value::Constant((n >> shift) & mask)),
-            Value::Constants(values) => {
-                Value::from_constants(values.iter().map(|n| (n >> shift) & mask).collect())
-            }
+            Value::Bits { value, known } => known_bits(value >> shift, known >> shift, mask),
             Value::Stack(offset) if shift == 0 && wanted.2 >= 4 => Some(Value::Stack(*offset)),
             Value::ReturnAddress if shift == 0 && wanted.2 >= 4 => Some(Value::ReturnAddress),
             _ => None,
@@ -166,20 +195,20 @@ fn pure(data: &Funcdata, op: OpId, state: &State) -> Option<Value> {
         .collect();
     let inputs = inputs?;
     if o.code() == OpCode::CPUI_COPY {
-        return inputs.first().cloned();
+        return inputs.first().copied();
     }
     if o.code() == OpCode::CPUI_INT_ZEXT
         && out.get_size() == 8
         && data.vbank().get(o.get_in(0)?)?.get_size() == 4
         && matches!(inputs.first(), Some(Value::Stack(_) | Value::ReturnAddress))
     {
-        return inputs.first().cloned();
+        return inputs.first().copied();
     }
     if matches!(o.code(), OpCode::CPUI_INT_OR | OpCode::CPUI_INT_AND)
         && inputs.len() == 2
         && o.get_in(0).map(|v| key(data, v)) == o.get_in(1).map(|v| key(data, v))
     {
-        return inputs.first().cloned();
+        return inputs.first().copied();
     }
     if matches!(
         inputs.as_slice(),
@@ -195,7 +224,7 @@ fn pure(data: &Funcdata, op: OpId, state: &State) -> Option<Value> {
                 OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB | OpCode::CPUI_INT_OR
             )
         {
-            return Some(base.clone());
+            return Some(*base);
         }
         if let Value::Stack(offset) = base {
             if matches!(out.get_size(), 4 | 8) {
@@ -211,39 +240,19 @@ fn pure(data: &Funcdata, op: OpId, state: &State) -> Option<Value> {
             }
         }
     }
-    let constants: Option<Vec<_>> = inputs.iter().map(Value::constants).collect();
-    let constants = constants?;
     let size = data.vbank().get(o.get_in(0)?)?.get_size();
     let behavior = data.get_arch().op_behavior(o.code())?;
     let width = out.get_size();
-    let evaluate = |a, b, c| match constants.len() {
-        1 => behavior.evaluate_unary(width, size, a).ok(),
-        2 => behavior.evaluate_binary(width, size, a, b).ok(),
-        3 => behavior.evaluate_ternary(width, size, a, b, c).ok(),
-        _ => None,
-    };
-    let combinations = constants.iter().map(|set| set.len()).product::<usize>();
-    if constants.len() > 3 || combinations > 64 {
-        return None;
-    }
-    let mut results = BTreeSet::new();
-    let first = *constants.first()?;
-    let second = constants.get(1).copied().unwrap_or(&[0]);
-    let third = constants.get(2).copied().unwrap_or(&[0]);
-    if combinations == 1 {
-        return evaluate(first[0], second[0], third[0]).map(Value::Constant);
-    }
-    for &a in first {
-        for &b in second {
-            for &c in third {
-                results.insert(evaluate(a, b, c)?);
-                if results.len() > MAX_CONSTANTS {
-                    return None;
-                }
-            }
+    match inputs.as_slice() {
+        [Value::Constant(a)] => behavior.evaluate_unary(width, size, *a),
+        [Value::Constant(a), Value::Constant(b)] => behavior.evaluate_binary(width, size, *a, *b),
+        [Value::Constant(a), Value::Constant(b), Value::Constant(c)] => {
+            behavior.evaluate_ternary(width, size, *a, *b, *c)
         }
+        _ => return None,
     }
-    Value::from_constants(results)
+    .ok()
+    .map(Value::Constant)
 }
 
 fn stack_address(data: &Funcdata, op: OpId, state: &State) -> Option<u32> {
@@ -306,6 +315,43 @@ fn reads_return(data: &Funcdata, input: VarnodeId, state: &State) -> bool {
             .values
             .range((space, offset, 0)..(space, end, 0))
             .any(|(_, value)| *value == Value::ReturnAddress)
+}
+
+/// Preserve known condition bits when SLEIGH packs an unknown status bit
+/// into the same register. Address identities still require exact copies.
+fn partial_bitwise(data: &Funcdata, op: OpId, state: &State) -> Option<Value> {
+    let o = data.obank().get(op)?;
+    use OpCode::{CPUI_INT_AND, CPUI_INT_OR, CPUI_INT_RIGHT};
+    if !matches!(o.code(), CPUI_INT_AND | CPUI_INT_OR | CPUI_INT_RIGHT) {
+        return None;
+    }
+    let size = key(data, o.get_out()?).2;
+    let width = width_mask(size)?;
+    let bits = |id| match value(data, id, state) {
+        Some(Value::Constant(value)) => Some((value & width, width)),
+        Some(Value::Bits { value, known }) => Some((value, known)),
+        None if !reads_return(data, id, state) => Some((0, 0)),
+        _ => None,
+    };
+    let (a, a_mask) = bits(o.get_in(0)?)?;
+    let right = o.get_in(1)?;
+    if o.code() == CPUI_INT_RIGHT {
+        let Value::Constant(shift) = value(data, right, state)? else {
+            return None;
+        };
+        if shift >= (size * 8) as u64 {
+            return Some(Value::Constant(0));
+        }
+        return known_bits(a >> shift, (a_mask >> shift) | !(width >> shift), width);
+    }
+    let (b, b_mask) = bits(right)?;
+    let (a_zero, b_zero) = (a_mask & !a, b_mask & !b);
+    let (ones, zeros) = if o.code() == CPUI_INT_AND {
+        (a & b, a_zero | b_zero)
+    } else {
+        (a | b, a_zero & b_zero)
+    };
+    known_bits(ones, ones | zeros, width)
 }
 
 fn transfer(data: &Funcdata, op: OpId, state: &mut State) {
@@ -382,12 +428,12 @@ fn transfer(data: &Funcdata, op: OpId, state: &mut State) {
                         }) {
                             state.return_address_observed = true;
                         }
-                        state.stack.get(&(at, key(data, out).2)).cloned()
+                        state.stack.get(&(at, key(data, out).2)).copied()
                     } else {
                         image_value(data, op, state)
                     }
                 } else {
-                    pure(data, op, state)
+                    pure(data, op, state).or_else(|| partial_bitwise(data, op, state))
                 };
                 if v.is_none() && !state.return_address_observed {
                     for i in 0..o.num_input() {
@@ -402,21 +448,13 @@ fn transfer(data: &Funcdata, op: OpId, state: &mut State) {
     }
 }
 
-fn merge_value(a: &Value, b: &Value) -> Option<Value> {
-    if a == b {
-        return Some(a.clone());
-    }
-    Value::from_constants(
-        a.constants()?
-            .iter()
-            .chain(b.constants()?)
-            .copied()
-            .collect(),
-    )
-}
-
-fn merge(prior: &mut State, incoming: &State) -> bool {
-    let old = prior.clone();
+fn intersect(prior: &mut State, incoming: &State) -> bool {
+    let before = (
+        prior.image_unmodified,
+        prior.return_address_observed,
+        prior.values.len(),
+        prior.stack.len(),
+    );
     prior.image_unmodified &= incoming.image_unmodified;
     prior.return_address_observed |= incoming.return_address_observed;
     if !prior.return_address_observed {
@@ -437,31 +475,44 @@ fn merge(prior: &mut State, incoming: &State) -> bool {
                 .iter()
                 .any(|(k, v)| *v == Value::ReturnAddress && prior.stack.get(k) != Some(v));
     }
-    prior.values.retain(|k, v| {
-        if let Some(joined) = incoming
-            .values
-            .get(k)
-            .and_then(|other| merge_value(v, other))
-        {
-            *v = joined;
-            true
-        } else {
-            false
+    prior
+        .values
+        .retain(|k, v| incoming.values.get(k) == Some(v));
+    prior.stack.retain(|k, v| incoming.stack.get(k) == Some(v));
+    before
+        != (
+            prior.image_unmodified,
+            prior.return_address_observed,
+            prior.values.len(),
+            prior.stack.len(),
+        )
+}
+
+#[allow(clippy::mutable_key_type)]
+fn proven_targets(
+    data: &Funcdata,
+    contexts: &Contexts,
+    input: Option<VarnodeId>,
+    direct_lr: Option<Key>,
+) -> Option<Vec<Address>> {
+    let space = data.get_address().get_space()?;
+    let mut addresses = BTreeSet::new();
+    for state in &contexts.states {
+        if state.return_address_observed {
+            return None;
         }
-    });
-    prior.stack.retain(|k, v| {
-        if let Some(joined) = incoming
-            .stack
-            .get(k)
-            .and_then(|other| merge_value(v, other))
-        {
-            *v = joined;
-            true
+        let target = if let Some(lr) = direct_lr {
+            // A recovered tail call carries the callee operand instead of LR.
+            state.values.get(&lr).copied()
         } else {
-            false
-        }
-    });
-    *prior != old
+            value(data, input?, state)
+        };
+        let Value::Constant(raw) = target? else {
+            return None;
+        };
+        addresses.insert(Address::new(space.clone(), raw & 0xffff_fffc));
+    }
+    (!addresses.is_empty()).then(|| addresses.into_iter().collect())
 }
 
 #[derive(Clone)]
@@ -472,6 +523,52 @@ pub(crate) struct BranchPlan {
 }
 
 pub(crate) type BranchPlans = BTreeMap<Address, BranchPlan>;
+
+#[derive(Clone, Copy)]
+enum EdgeRule<'a> {
+    Conditional(VarnodeId, bool),
+    Dispatch(VarnodeId, &'a JumpTable),
+}
+
+fn edge_rule<'a>(
+    data: &'a Funcdata,
+    ops: &[OpId],
+    automatic: &BranchPlans,
+    successors: i32,
+) -> Option<EdgeRule<'a>> {
+    let &tail = ops.last()?;
+    let op = data.obank().get(tail)?;
+    match op.code() {
+        OpCode::CPUI_CBRANCH if successors == 2 => {
+            Some(EdgeRule::Conditional(op.get_in(1)?, op.is_boolean_flip()))
+        }
+        OpCode::CPUI_BRANCHIND if automatic.contains_key(op.get_addr()) => Some(
+            EdgeRule::Dispatch(op.get_in(0)?, data.find_jump_table(tail)?),
+        ),
+        _ => None,
+    }
+}
+
+/// A newly proved destination can be absent from the current table.
+/// It participates in revalidation but does not reach any existing edge.
+fn reaches_edge(data: &Funcdata, rule: Option<EdgeRule<'_>>, state: &State, edge: i32) -> bool {
+    match rule {
+        Some(EdgeRule::Conditional(input, flipped)) => match value(data, input, state) {
+            Some(Value::Constant(test)) => edge == i32::from((test != 0) != flipped),
+            _ => true,
+        },
+        Some(EdgeRule::Dispatch(input, table)) => match value(data, input, state) {
+            Some(Value::Constant(raw)) => {
+                let space = data.get_address().get_space().expect("PPC32 code space");
+                let dest = Address::new(space.clone(), raw & 0xffff_fffc);
+                table.out_edge_for_address(&dest) == Some(edge)
+            }
+            Some(Value::ReturnAddress) => false,
+            _ => true,
+        },
+        None => true,
+    }
+}
 
 pub(crate) enum Classification {
     Sites(BranchPlans),
@@ -529,26 +626,27 @@ fn sites(
     initial
         .values
         .insert(register(arch, "r1")?, Value::Stack(0));
-    let mut inputs = vec![None; n];
-    inputs[0] = Some(initial);
+    let mut inputs = vec![Contexts::default(); n];
+    inputs[0].states.push(initial);
     let mut queue = VecDeque::from([0usize]);
     let mut queued = vec![false; n];
     queued[0] = true;
     while let Some(i) = queue.pop_front() {
         queued[i] = false;
-        let mut state = inputs[i].clone()?;
-        for op in data.bb_ops(blocks[i]) {
+        let mut state = inputs[i].clone();
+        let ops = data.bb_ops(blocks[i]);
+        for &op in &ops {
             step(data, op, &mut state, work)?;
         }
         let block = data.bblocks_ref().block(blocks[i]);
+        let rule = edge_rule(data, &ops, automatic, block.size_out());
         for j in 0..block.size_out() {
             let next = *indices.get(&block.get_out(j))?;
-            let changed = if let Some(prior) = &mut inputs[next] {
-                merge(prior, &state)
-            } else {
-                inputs[next] = Some(state.clone());
-                true
-            };
+            let incoming = state
+                .states
+                .iter()
+                .filter(|s| reaches_edge(data, rule, s, j));
+            let changed = inputs[next].join(incoming);
             if changed && !queued[next] {
                 queued[next] = true;
                 queue.push_back(next);
@@ -557,44 +655,23 @@ fn sites(
     }
     let mut result = BranchPlans::new();
     for (i, &block) in blocks.iter().enumerate() {
-        let Some(mut state) = inputs[i].clone() else {
+        if inputs[i].states.is_empty() {
             continue;
-        };
+        }
+        let mut state = inputs[i].clone();
         let ops = data.bb_ops(block);
         for op in ops {
             let o = data.obank().get(op)?;
             let plan = automatic
                 .get(o.get_addr())
                 .filter(|_| matches!(o.code(), OpCode::CPUI_BRANCHIND | OpCode::CPUI_CALL));
-            let target = if plan.is_some() && o.code() == OpCode::CPUI_CALL {
-                // Recovering a direct tail call replaced the input with the
-                // callee. The original instruction still branches through LR.
-                state.values.get(&lr).cloned()
-            } else if plan.is_some() || o.code() == OpCode::CPUI_RETURN {
-                o.get_in(0).and_then(|v| value(data, v, &state))
+            let direct = o.code() == OpCode::CPUI_CALL;
+            let targets = if plan.is_some() || o.code() == OpCode::CPUI_RETURN {
+                proven_targets(data, &state, o.get_in(0), direct.then_some(lr))
             } else {
                 None
-            };
-            let targets = if state.return_address_observed {
-                None
-            } else {
-                target.as_ref().and_then(Value::constants).map(|values| {
-                    let mut addresses: Vec<_> = values
-                        .iter()
-                        .map(|raw| {
-                            Address::new(
-                                data.get_address().get_space().unwrap().clone(),
-                                raw & 0xffff_fffc,
-                            )
-                        })
-                        .collect();
-                    addresses.sort_unstable();
-                    addresses.dedup();
-                    addresses
-                })
             };
             if let Some(plan) = plan {
-                let direct = o.code() == OpCode::CPUI_CALL;
                 if targets.is_none() {
                     let return_input = if direct {
                         Some(lr)
@@ -603,11 +680,13 @@ fn sites(
                     }?;
                     for edge in 0..data.bblocks_ref().block(block).size_in() {
                         let pred = data.bblocks_ref().block(block).get_in(edge);
-                        let Some(mut incoming) = inputs[*indices.get(&pred)?].clone() else {
-                            continue;
-                        };
-                        replay_edge(data, pred, block, op, &mut incoming, work)?;
-                        if incoming.values.get(&return_input) == Some(&Value::ReturnAddress) {
+                        let mut incoming = inputs[*indices.get(&pred)?].clone();
+                        replay_edge(data, block, edge, op, automatic, &mut incoming, work)?;
+                        if !incoming.states.is_empty()
+                            && incoming.states.iter().all(|state| {
+                                state.values.get(&return_input) == Some(&Value::ReturnAddress)
+                            })
+                        {
                             let raw_lr = direct
                                 .then(|| arch.manage().get_space(lr.0))
                                 .flatten()
@@ -662,20 +741,14 @@ fn sites(
                             let mut incoming_targets = Vec::new();
                             for edge in 0..basic.size_in() {
                                 let pred = basic.get_in(edge);
-                                let mut incoming = inputs[*indices.get(&pred)?].clone()?;
-                                replay_edge(data, pred, block, op, &mut incoming, work)?;
-                                let target = o.get_in(0).and_then(|v| value(data, v, &incoming));
-                                let Some(Value::Constant(offset)) =
-                                    target.filter(|_| !incoming.return_address_observed)
-                                else {
+                                let mut incoming = inputs[*indices.get(&pred)?].clone();
+                                replay_edge(data, block, edge, op, automatic, &mut incoming, work)?;
+                                let targets = proven_targets(data, &incoming, o.get_in(0), None);
+                                let Some([dest]) = targets.as_deref() else {
                                     return Some(Err(dispatch_loop_error()));
                                 };
-                                let dest = Address::new(
-                                    o.get_addr().get_space()?.clone(),
-                                    offset & 0xffff_fffc,
-                                );
-                                let slot = data.find_jump_table(op)?.out_edge_for_address(&dest)?;
-                                incoming_targets.push((dest, basic.get_out(slot)));
+                                let slot = data.find_jump_table(op)?.out_edge_for_address(dest)?;
+                                incoming_targets.push((dest.clone(), basic.get_out(slot)));
                             }
                             return Some(
                                 specialize_dispatch_loop(data, block, op, &incoming_targets)
@@ -711,28 +784,43 @@ fn sites(
     Some(Ok(Classification::Sites(result)))
 }
 
-fn step(data: &Funcdata, op: OpId, state: &mut State, work: &mut usize) -> Option<()> {
-    *work += 1;
-    if *work > 1_000_000 || state.values.len() > 4096 || state.stack.len() > 4096 {
-        return None;
+fn step(data: &Funcdata, op: OpId, contexts: &mut Contexts, work: &mut usize) -> Option<()> {
+    for state in &mut contexts.states {
+        *work += 1;
+        if *work > 1_000_000 || state.values.len() > 4096 || state.stack.len() > 4096 {
+            return None;
+        }
+        transfer(data, op, state);
     }
-    transfer(data, op, state);
     Some(())
 }
 
 fn replay_edge(
     data: &Funcdata,
-    pred: BlockId,
     block: BlockId,
+    edge: i32,
     tail: OpId,
-    state: &mut State,
+    automatic: &BranchPlans,
+    state: &mut Contexts,
     work: &mut usize,
 ) -> Option<()> {
-    for op in data
-        .bb_ops(pred)
-        .into_iter()
-        .chain(data.bb_ops(block).into_iter().take_while(|&op| op != tail))
-    {
+    let block_info = data.bblocks_ref().block(block);
+    let pred = block_info.get_in(edge);
+    let ops = data.bb_ops(pred);
+    for &op in &ops {
+        step(data, op, state, work)?;
+    }
+    let rule = edge_rule(
+        data,
+        &ops,
+        automatic,
+        data.bblocks_ref().block(pred).size_out(),
+    );
+    let outgoing = block_info.get_in_rev_index(edge);
+    state
+        .states
+        .retain(|s| reaches_edge(data, rule, s, outgoing));
+    for op in data.bb_ops(block).into_iter().take_while(|&op| op != tail) {
         step(data, op, state, work)?;
     }
     Some(())

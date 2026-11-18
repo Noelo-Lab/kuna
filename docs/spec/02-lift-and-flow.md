@@ -54,9 +54,16 @@ and use the 32-bit instruction address, including with eight-byte registers;
 QEMU confirms a target with a low bit set reaches the same instruction. This
 classification repair has no option.
 
-Automatic branch overrides are temporary discovery decisions. The proof carries
-bounded sets of constants through joins and checks the recovered destination set
-after each expansion. A mismatch triggers another flow pass with the proven
+Automatic branch overrides are temporary discovery decisions. The proof keeps
+the values from each path together through joins. It evaluates each calculation
+within one path and collects the resulting destinations. A block can retain up
+to eight distinct states. If it exceeds that bound, only facts shared by all
+incoming states survive the join. Each surviving state must prove a destination
+before flow can install the table. A known conditional outcome or dispatch target
+restricts the edges that its state can reach. Masking and logical right shifts
+preserve known comparison bits when a condition register also contains an
+unknown status bit. The proof checks the recovered destination set after each
+expansion. A mismatch triggers another flow pass with the proven
 addresses and address-based case labels. When a newly completed table forms
 a loop back to its own dispatch, the proof must resolve each incoming edge
 to one destination. Flow copies the work before the transfer and uses direct

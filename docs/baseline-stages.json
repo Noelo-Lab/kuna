@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4945,
-    4945
+    4946,
+    4946
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -3839,6 +3839,7 @@
     "data:iteregion #3: fix (on) -- the diamond collapses to a single ?: ternary (on pass only)",
     "data:iteregion #4: fix (on) -- the rewrite is logged",
     "data:iteregion #5: p-code untouched -- the merged variable still feeds the call in BOTH passes",
+    "data:joined LR operands reach their common destination",
     "data:jtsharepartial #2: all three passes are in the scanned stream (one memcpy_opt definition each), so the counts above are not one dropped pass",
     "data:kernelbug #1: the WARN site prints with its file and line",
     "data:kernelbug #2: the BUG site prints as the function's last statement",
