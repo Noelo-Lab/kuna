@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4423,
-    4423
+    4430,
+    4430
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1781,6 +1781,13 @@
     "data:P3: TOTAL goto-label count across both passes is 1 (off: 1, on: 0)",
     "data:P3: off keeps ONE merged variable return (the transform is fully option-gated)",
     "data:P3: the convergence sink post() is untouched (one per pass = 2 total)",
+    "data:PACFLOW #1: no PAC-only function is void",
+    "data:PACFLOW #2: every signing, authenticating or stripping function returns its pointer",
+    "data:PACFLOW #3: the pointer is the function's first parameter",
+    "data:PACFLOW #4: a signed pointer stored through its slot",
+    "data:PACFLOW #5: the FPAC-less failure check folds away (no brk, no compare)",
+    "data:PACFLOW #6: no hidden PAC op surfaces as a user op",
+    "data:PACFLOW #7: the braaz call still passes its argument",
     "data:PARAMETER-ALIAS #1: the input stays in the signature",
     "data:PARAMETER-ALIAS #2: entry comparisons read the input",
     "data:PARAMETER-ALIAS #3: the later local retains both assigned values",
