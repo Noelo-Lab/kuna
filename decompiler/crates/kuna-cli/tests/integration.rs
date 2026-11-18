@@ -1,6 +1,8 @@
 // Shared integration-test executable. Process-sensitive tests stay separate.
 #[path = "mips_elf_selection.rs"]
 mod mips_elf_selection;
+#[path = "riscv_zcmp.rs"]
+mod riscv_zcmp;
 mod common;
 #[path = "sparc_prologue_start.rs"]
 mod sparc_prologue_start;

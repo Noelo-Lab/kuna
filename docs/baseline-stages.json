@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4423,
-    4423
+    4434,
+    4434
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2485,6 +2485,17 @@
     "data:X87INTRINSICS #6: pow and fmod take both operands",
     "data:X87INTRINSICS #7: an imported _CIcos takes the value loaded into ST0",
     "data:X87INTRINSICS #8: the imported _CIcos reads nothing off the caller's stack",
+    "data:ZCMP #1: keep has no float store",
+    "data:ZCMP #2: keep has no jump-as-call epilogue",
+    "data:ZCMP #3a: keep's first call takes a0",
+    "data:ZCMP #3b: keep's third call takes the first result",
+    "data:ZCMP #4: cm.mvsa01/cm.mva01s swap the arguments",
+    "data:ZCMP #5: cm.popretz returns zero",
+    "data:ZCMP #6: cm.pop restores s0 before the return",
+    "data:ZCMP #7a: cm.push stores ra, s0 and s1 below sp",
+    "data:ZCMP #7b: cm.push drops sp by 16",
+    "data:ZCMP #7c: cm.popret reloads ra, s0 and s1",
+    "data:ZCMP #7d: cm.popret returns through ra",
     "data:ZEROIDIOMUSE #1: the watchdog call inside the loop never has an empty argument list",
     "data:ZEROIDIOMUSE #2: both loaded registers reach the call as arguments",
     "data:ZEROIDIOMUSE #3: the zeroing idiom itself is folded to the constants reader is called with",

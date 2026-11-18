@@ -315,6 +315,18 @@ Octeon N32/N64 selection does not intercept ELF32 O32 images, including
 little-endian images carrying Octeon machine flags: they retain generic MIPS
 selection, and an explicit target still takes precedence.
 
+(kuna) A RISC-V ELF whose `Tag_RISCV_arch` attribute lists `zcmp` or `zcmt`
+selects the `RISCV:LE:32:Zcmp` or `RISCV:LE:64:Zcmp` language
+(`decompiler/crates/kuna-analysis/src/loader/kuna_riscvzc.rs`), whose processor
+spec sets the `Zcmp` context bit so the `c.fsdsp` encoding space decodes as the
+Zc stack and jump-table instructions (§2). The attribute is read from the
+`.riscv.attributes` section, or from the `PT_RISCV_ATTRIBUTES` segment when the
+image has no sections; extension names are compared with their versions
+stripped (`zcmp1p0` is `zcmp`). An image that also declares `zcd`, or `c`
+together with `d`, has no bundled language and requires an explicit target, as
+do malformed or conflicting attribute blobs. Every other RISC-V image keeps the
+default selection, and `--target` always wins.
+
 (kuna) PowerPC32 ELF APU requirements are read by
 `decompiler/crates/kuna-analysis/src/loader/kuna_ppcaputarget.rs` when the
 default-off `ppcapu` load-time option is on. SPE and embedded floating-point APUs

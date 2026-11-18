@@ -75,6 +75,11 @@ the result. Its digest was regenerated with the recorded C++ compiler,
 which reproduces the previous AArch64 digest on the unmodified sources;
 `slacomp` produces the same digest.
 
+The RISC-V entry includes the Zcmp/Zcmt constructors (`riscv.zc.sinc`), the
+`Zcmp` context bit and the `c.fsdsp` guard on it. Its digest was regenerated
+with `slacomp`, which reproduces the previous RISC-V digest on the unmodified
+sources.
+
 `xml_ops.xml` is the same pinned C++ compiler's `-y` output for
 `snips/xml_ops.slaspec`. The CLI test compares XML output byte-for-byte in both
 single-file and recursive modes, including the `BUILD` and `INT_ADD` opcode
