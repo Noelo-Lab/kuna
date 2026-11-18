@@ -156,11 +156,3 @@ macro_rules! jthrow {
         $crate::rt::exception::throw("RuntimeException", format!($($arg)*))
     };
 }
-
-/// Marks a method whose body has not been ported yet; throws `UnportedError`.
-#[macro_export]
-macro_rules! unported {
-    ($what:literal) => {
-        $crate::rt::exception::throw("UnportedError", $what)
-    };
-}

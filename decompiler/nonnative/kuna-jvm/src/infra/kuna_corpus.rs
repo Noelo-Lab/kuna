@@ -500,7 +500,7 @@ fn split_throwable(message: &str) -> Option<(&str, &str)> {
 }
 
 /// The innermost `Class: message` of a `Throwable.toString()` that wraps others
-/// (`RuntimeException: java.util.concurrent.ExecutionException: UnportedError: X` -> `UnportedError: X`).
+/// (`RuntimeException: java.util.concurrent.ExecutionException: NullPointerException: x` -> `NullPointerException: x`).
 pub fn innermost_message(message: &str) -> &str {
     let mut m = message;
     while let Some((_, rest)) = split_throwable(m) {
@@ -510,13 +510,6 @@ pub fn innermost_message(message: &str) -> &str {
         m = rest;
     }
     m
-}
-
-/// `X` of an `UnportedError: X`.
-pub fn unported_name(message: &str) -> Option<&str> {
-    let inner = innermost_message(message);
-    let rest = inner.strip_prefix("UnportedError: ")?;
-    Some(rest.lines().next().unwrap_or("").trim())
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -927,12 +920,9 @@ pub fn short_location(location: &str) -> String {
     location.to_string()
 }
 
-/// The histogram key of something the engine threw.
+/// The failure key of something the engine threw.
 pub fn thrown_key(t: &Thrown) -> String {
     let inner = t.innermost();
-    if let Some(name) = unported_name(inner) {
-        return format!("unported: {name}");
-    }
     let location = short_location(&t.location);
     let class = split_throwable(inner).map(|(c, _)| c.to_string());
     match (class.or_else(|| t.class.clone()), location.is_empty()) {
@@ -953,113 +943,7 @@ fn head(text: &str, max: usize) -> String {
     }
 }
 
-/// A line without a trailing `// 12` / `// 12 13` original-line comment.
-fn strip_line_comment(line: &str) -> &str {
-    if let Some(i) = line.rfind("//") {
-        let tail = line[i + 2..].trim();
-        if !tail.is_empty()
-            && tail
-                .split(' ')
-                .all(|t| !t.is_empty() && t.bytes().all(|b| b.is_ascii_digit()))
-        {
-            return &line[..i];
-        }
-    }
-    line
-}
-
-/// A coarse kind of Java source line, for grouping first differences.
-pub fn line_class(line: Option<&str>) -> &'static str {
-    let Some(line) = line else {
-        return "end of file";
-    };
-    let t = strip_line_comment(line).trim();
-    let digits_only = |s: &str| {
-        !s.is_empty()
-            && s.split_whitespace()
-                .all(|w| w.bytes().all(|b| b.is_ascii_digit()))
-    };
-    if t.is_empty() {
-        return "blank line";
-    }
-    if t == "Lines mapping:" || t == "Not mapped:" || digits_only(t) || t.contains(" <-> ") {
-        return "line mapping";
-    }
-    if (t.starts_with("class '") || t.starts_with("method '")) && t.ends_with('{') {
-        return "line mapping";
-    }
-    if t.starts_with("package ") {
-        return "package";
-    }
-    if t.starts_with("import ") {
-        return "import";
-    }
-    if t.starts_with("//") {
-        return if t.contains("$VF") {
-            "vf comment"
-        } else {
-            "comment"
-        };
-    }
-    if t.starts_with("/*") || t.starts_with('*') {
-        return "comment";
-    }
-    if t.starts_with('@') && !t.starts_with("@interface") {
-        return "annotation";
-    }
-    if let Some(rest) = t.strip_prefix('}') {
-        let rest = rest.trim_start();
-        for kw in ["else", "catch", "finally", "while"] {
-            if rest.starts_with(kw) {
-                return kw;
-            }
-        }
-        return "closing brace";
-    }
-    let first = t.split([' ', '(', ';', ':']).next().unwrap_or("");
-    const KEYWORDS: [&str; 18] = [
-        "if",
-        "else",
-        "for",
-        "while",
-        "do",
-        "switch",
-        "try",
-        "catch",
-        "finally",
-        "synchronized",
-        "return",
-        "throw",
-        "break",
-        "continue",
-        "case",
-        "default",
-        "yield",
-        "assert",
-    ];
-    if let Some(kw) = KEYWORDS.into_iter().find(|k| *k == first) {
-        return kw;
-    }
-    let before_brace = t.split('{').next().unwrap_or("");
-    let words: Vec<&str> = before_brace.split_whitespace().collect();
-    if words
-        .iter()
-        .any(|w| matches!(*w, "class" | "interface" | "enum" | "record" | "@interface"))
-        && !before_brace.contains('=')
-        && !before_brace.contains('(')
-    {
-        return "type declaration";
-    }
-    if t.ends_with('{') && t.contains('(') && !t.contains("->") && !t.contains('=') {
-        return "method declaration";
-    }
-    if t.ends_with(';') || t.ends_with('{') {
-        return "statement";
-    }
-    "other"
-}
-
-/// The histogram key of a non-matching result; `None` for a match.
+/// The failure key of a non-matching result; `None` for a match.
 pub fn failure_key(r: &CaseResult) -> Option<String> {
     match r.status {
         CaseStatus::Match => None,
@@ -1077,7 +961,8 @@ pub fn failure_key(r: &CaseResult) -> Option<String> {
         }),
         CaseStatus::Mismatch => Some(match r.log.iter().find_map(|l| l.throwable.as_ref()) {
             Some(t) => thrown_key(t),
-            None => mismatch_key(r),
+            None if r.actual.is_none() => "mismatch: no output".to_string(),
+            None => "mismatch".to_string(),
         }),
     }
 }
@@ -1096,21 +981,6 @@ fn located(t: &Thrown, log: &[LogLine]) -> Thrown {
         .unwrap_or_else(|| t.clone())
 }
 
-fn mismatch_key(r: &CaseResult) -> String {
-    if r.actual.is_none() {
-        return "mismatch: no output".to_string();
-    }
-    let Some(d) = &r.first_diff else {
-        return "mismatch".to_string();
-    };
-    if let (Some(e), Some(a)) = (&d.expected, &d.actual) {
-        if strip_line_comment(e) == strip_line_comment(a) {
-            return "mismatch: original-line comment".to_string();
-        }
-    }
-    format!("mismatch: {}", line_class(d.expected.as_deref()))
-}
-
 /// The first line of the most telling error text of a result.
 pub fn error_head(r: &CaseResult) -> String {
     if let Some(f) = &r.failure {
@@ -1127,41 +997,6 @@ pub fn error_head(r: &CaseResult) -> String {
         .find_map(|l| l.throwable.as_ref())
         .map(|t| head(t.innermost(), 200))
         .unwrap_or_default()
-}
-
-/// Non-matching cases grouped by [`failure_key`], most frequent first.
-pub fn histogram(results: &[CaseResult]) -> Vec<(String, Vec<String>)> {
-    let mut groups: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    for r in results {
-        if let Some(key) = failure_key(r) {
-            groups.entry(key).or_default().push(r.id.clone());
-        }
-    }
-    let mut out: Vec<(String, Vec<String>)> = groups.into_iter().collect();
-    out.sort_by(|a, b| b.1.len().cmp(&a.1.len()).then_with(|| a.0.cmp(&b.0)));
-    out
-}
-
-/// Every unported body a result ran into, in the error or anywhere in the log.
-pub fn unported_hits(r: &CaseResult) -> BTreeSet<String> {
-    r.error
-        .iter()
-        .chain(r.log.iter().filter_map(|l| l.throwable.as_ref()))
-        .filter_map(|t| unported_name(t.innermost()).map(str::to_string))
-        .collect()
-}
-
-/// Unported bodies by the number of non-matching cases that ran into them, most first.
-pub fn unported_reach(results: &[CaseResult]) -> Vec<(String, usize)> {
-    let mut counts: BTreeMap<String, usize> = BTreeMap::new();
-    for r in results.iter().filter(|r| r.status != CaseStatus::Match) {
-        for name in unported_hits(r) {
-            *counts.entry(name).or_default() += 1;
-        }
-    }
-    let mut out: Vec<(String, usize)> = counts.into_iter().collect();
-    out.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
-    out
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -1195,51 +1030,6 @@ pub fn totals_line(results: &[CaseResult]) -> String {
         "corpus: {}/{} match, {} mismatch, {} error, {} unsupported",
         t.matched, t.total, t.mismatch, t.error, t.unsupported
     )
-}
-
-pub const SUMMARY_COLUMNS: [&str; 9] = [
-    "id",
-    "set",
-    "status",
-    "first_diff",
-    "failed_actual",
-    "failed_expected",
-    "error",
-    "ms",
-    "key",
-];
-
-fn tsv_field(s: &str) -> String {
-    s.replace(['\t', '\n', '\r'], " ")
-}
-
-pub fn summary_tsv(results: &[CaseResult]) -> String {
-    let mut out = SUMMARY_COLUMNS.join("\t");
-    out.push('\n');
-    for r in results {
-        let fields = [
-            r.id.clone(),
-            r.set.clone(),
-            r.status.name().to_string(),
-            r.first_diff
-                .as_ref()
-                .map_or(String::new(), |d| d.line.to_string()),
-            r.failed_methods_actual.to_string(),
-            r.failed_methods_expected.to_string(),
-            error_head(r),
-            r.millis.to_string(),
-            failure_key(r).unwrap_or_default(),
-        ];
-        out.push_str(
-            &fields
-                .iter()
-                .map(|f| tsv_field(f))
-                .collect::<Vec<_>>()
-                .join("\t"),
-        );
-        out.push('\n');
-    }
-    out
 }
 
 /// A baseline file: one matching case id per line; blank and `#` lines are ignored.

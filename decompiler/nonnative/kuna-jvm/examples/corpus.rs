@@ -12,9 +12,8 @@ use std::time::{Duration, Instant};
 use kuna_jvm::fernflower::DecompiledClass;
 use kuna_jvm::kuna_corpus::{
     compare_baseline, effective_options, error_head, escape_field, evaluate, expected_as_actual,
-    failure_key, format_baseline, histogram, load_cases, next_baseline, parse_baseline, run_case,
-    summary_tsv, totals, totals_line, unported_reach, with_engine_stack, Case, CaseResult,
-    CaseStatus, EngineRun, JAVADOC_OPTION,
+    failure_key, format_baseline, load_cases, next_baseline, parse_baseline, run_case, totals,
+    totals_line, with_engine_stack, Case, CaseResult, CaseStatus, EngineRun, JAVADOC_OPTION,
 };
 use kuna_jvm::rt::try_catch;
 
@@ -23,7 +22,7 @@ const DEFAULT_MANIFEST: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../../te
 const USAGE: &str = "\
 usage: corpus [--manifest FILE] [--filter SUBSTR]... [--set NAME]... [--jobs N]
               [--isolate | --in-process] [--timeout SECONDS] [--mem-limit MB] [--out DIR]
-              [--baseline FILE] [--save-baseline FILE] [--top N] [--verbose] [--progress]
+              [--baseline FILE] [--save-baseline FILE] [--verbose] [--progress]
               [--expected-as-actual] [--dump-options FILE] [--list]
 
   --manifest FILE       corpus manifest (default: tests/jvm/cases.tsv)
@@ -35,13 +34,12 @@ usage: corpus [--manifest FILE] [--filter SUBSTR]... [--set NAME]... [--jobs N]
   --in-process          run cases on fresh threads of this process (default with --filter/--set)
   --timeout SECONDS     per-case limit under --isolate (default 120)
   --mem-limit MB        per-case address-space limit under --isolate (default 8192, 0 = none)
-  --out DIR             write <id>.actual.java, <id>.diff, <id>.log per case and summary.tsv,
-                        histogram.tsv, unported.tsv (DIR must be new or empty)
+  --out DIR             write <id>.actual.java, <id>.diff, <id>.log per case (DIR must be new
+                        or empty)
   --baseline FILE       regression gate: report cases listed in FILE that no longer match;
                         exit 1 on any regression (other mismatches do not fail the run)
   --save-baseline FILE  write the matching ids (a filtered run keeps FILE's other ids)
-  --top N               histogram rows printed (default 40, 0 = all)
-  --verbose             one line per case
+  --verbose             one line per case, not only per non-matching case
   --progress            report each finished case on stderr
   --expected-as-actual  self-check: feed each expected text through the comparison as the output
   --actual-dir DIR      compare stored outputs (DIR/<id>.actual.java, the --out layout) instead of
@@ -66,7 +64,6 @@ struct Args {
     out: Option<PathBuf>,
     baseline: Option<PathBuf>,
     save_baseline: Option<PathBuf>,
-    top: usize,
     verbose: bool,
     progress: bool,
     expected_as_actual: bool,
@@ -92,7 +89,6 @@ fn parse_args() -> Result<Args, String> {
         out: None,
         baseline: None,
         save_baseline: None,
-        top: 40,
         verbose: false,
         progress: false,
         expected_as_actual: false,
@@ -121,7 +117,6 @@ fn parse_args() -> Result<Args, String> {
             "--out" => a.out = Some(PathBuf::from(value("--out")?)),
             "--baseline" => a.baseline = Some(PathBuf::from(value("--baseline")?)),
             "--save-baseline" => a.save_baseline = Some(PathBuf::from(value("--save-baseline")?)),
-            "--top" => a.top = number("--top", value("--top")?)? as usize,
             "--verbose" => a.verbose = true,
             "--progress" => a.progress = true,
             "--expected-as-actual" => a.expected_as_actual = true,
@@ -649,73 +644,30 @@ fn dump_options(cases: &[Case], path: &Path) -> ExitCode {
 }
 
 fn report(args: &Args, results: &[CaseResult], baseline: Option<&BTreeSet<String>>) -> ExitCode {
-    let hist = histogram(results);
-    let reach = unported_reach(results);
-    let shown = |n: usize| if args.top == 0 { n } else { n.min(args.top) };
-
-    if args.verbose || results.len() <= 10 {
-        for r in results {
+    for r in results {
+        if r.status == CaseStatus::Match && !args.verbose && results.len() > 10 {
+            continue;
+        }
+        println!(
+            "{:<11} {} {}",
+            r.status.name(),
+            r.id,
+            failure_key(r).unwrap_or_default()
+        );
+        if let (CaseStatus::Mismatch, Some(d)) = (r.status, &r.first_diff) {
+            println!("    line {}", d.line);
             println!(
-                "{:<11} {} {}",
-                r.status.name(),
-                r.id,
-                failure_key(r).unwrap_or_default()
+                "      expected: {:?}",
+                d.expected.as_deref().unwrap_or("(end of text)")
             );
-            if let (CaseStatus::Mismatch, Some(d)) = (r.status, &r.first_diff) {
-                println!("    line {}", d.line);
-                println!(
-                    "      expected: {:?}",
-                    d.expected.as_deref().unwrap_or("(end of text)")
-                );
-                println!(
-                    "      actual:   {:?}",
-                    d.actual.as_deref().unwrap_or("(end of text)")
-                );
-            }
-            if r.status != CaseStatus::Match && !error_head(r).is_empty() {
-                println!("    {}", error_head(r));
-            }
+            println!(
+                "      actual:   {:?}",
+                d.actual.as_deref().unwrap_or("(end of text)")
+            );
         }
-    }
-
-    let non_matching: usize = hist.iter().map(|(_, ids)| ids.len()).sum();
-    if non_matching > 0 {
-        println!(
-            "failure histogram ({non_matching} non-matching case(s), {} key(s)):",
-            hist.len()
-        );
-        for (key, ids) in hist.iter().take(shown(hist.len())) {
-            println!("{:>6}  {key}", ids.len());
+        if r.status != CaseStatus::Match && !error_head(r).is_empty() {
+            println!("    {}", error_head(r));
         }
-        if shown(hist.len()) < hist.len() {
-            println!("   ...  {} more key(s)", hist.len() - shown(hist.len()));
-        }
-    }
-    if !reach.is_empty() {
-        println!(
-            "unported bodies by non-matching cases reaching them ({} bodies):",
-            reach.len()
-        );
-        for (name, n) in reach.iter().take(shown(reach.len())) {
-            println!("{n:>6}  {name}");
-        }
-        if shown(reach.len()) < reach.len() {
-            println!("   ...  {} more", reach.len() - shown(reach.len()));
-        }
-    }
-
-    if let Some(out) = &args.out {
-        let _ = std::fs::write(out.join("summary.tsv"), summary_tsv(results));
-        let mut h = String::from("count\tkey\tids\n");
-        for (key, ids) in &hist {
-            h.push_str(&format!("{}\t{}\t{}\n", ids.len(), key, ids.join(" ")));
-        }
-        let _ = std::fs::write(out.join("histogram.tsv"), h);
-        let mut u = String::from("cases\tunported\n");
-        for (name, n) in &reach {
-            u.push_str(&format!("{n}\t{name}\n"));
-        }
-        let _ = std::fs::write(out.join("unported.tsv"), u);
     }
 
     let mut regressed = false;
