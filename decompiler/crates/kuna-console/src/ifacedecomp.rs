@@ -3314,26 +3314,13 @@ decomp_command!(
         let prog = dcp.conf.as_ref().expect("conf present when fd present");
         let (callpoint, _size) = parse_machaddr(prog, s, false).map_err(IfaceError::parse)?;
         let fd = dcp.fd.as_ref().expect("fd present");
-        let mut found = false;
-        for i in 0..fd.num_calls() {
-            let op = fd.get_call_specs(i).get_op();
-            if let Some(o) = fd.obank().get(op) {
-                if o.get_addr() == &callpoint {
-                    found = true;
-                    break;
-                }
-            }
-        }
-        if !found {
-            return Err(IfaceError::execution("No call is made at this address"));
+        if !crate::kuna_callproto::has_call_at(fd, &callpoint) {
+            return Err(IfaceError::execution(crate::kuna_callproto::NO_CALL));
         }
         // C++ parse_protopieces(pieces,s,dcp->conf) — the remainder of the line.
         s.skip_ws();
         let decl = s.rest().trim().to_string();
-        let (addr_size, word_size) = prog.arch().data_org();
-        let org = crate::grammar::DataOrg { addr_size, word_size };
-        let pieces = crate::grammar::parse_protopieces(&decl, prog.arch().types(), org)
-            .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+        let pieces = crate::kuna_callproto::parse(prog, &decl).map_err(IfaceError::execution)?;
         // C++ builds a FuncProto (setInternal + setPieces) and
         // insertProtoOverride(callpoint, newproto).  The W4 `applyPrototype` consume
         // (FlowInfo::queryCall) is still stubbed (LOSS-031 neighborhood), so the

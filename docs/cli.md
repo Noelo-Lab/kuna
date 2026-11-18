@@ -614,6 +614,7 @@ One directive per `--assert`, keyed by intent rather than by phase:
 | `data <addr> <C typedeclaration>` | a named, typed global at an address |
 | `comment [<func>::]<addr> <text>` | a comment rendered into the C at that instruction |
 | `flow [<func>::]<addr> branch\|call\|callreturn\|return` | the flow out of this instruction is not what kuna decided |
+| `callproto [<func>::]<callsite> <C declaration>` | the arguments and return of the one call made by the instruction at `<callsite>` |
 | `function <start>[-<end>][=<name>]` | the `--define-function` spelling, on this plane |
 | `readonly <addr>+<size>` | the bytes in this range never change at run time |
 | `volatile <addr>+<size>` | device memory: every access is a real access |
@@ -1038,9 +1039,29 @@ render different arguments. Slots may be declared in any order and one you do
 not name is `undefined`; declaring them all is the same statement as a
 `prototype` directive with the storage added.
 
-`comment`, `flow`, `name` and `type` describe the inside of one function body
-and have no cross-function reading, so qualifying one with a function this run
-did not decompile is **rejected** — with a `warning:` line naming it, and a
+**`callproto` states one call.** `prototype` describes a function and `data` can
+type a function-pointer global, but a call through a pointer or a register has
+no callee symbol to carry a signature, and a variadic callback takes different
+arguments at each call. `callproto` gives the call made by one instruction its
+own declaration, in the grammar `prototype` takes:
+
+```console
+$ kuna decompile ./vlog.so report
+  (**v1)("%s %d %d",a1,(unsigned long)a0,(unsigned long)(a0 + 1),*v1); // jump-as-call
+$ kuna decompile ./vlog.so report --assert 'callproto 0x13b0 void f(char *fmt, char *s, int a, int b)'
+  (**v1)("%s %d %d",a1,a0,a0 + 1); // jump-as-call
+```
+
+A parameter followed by `@<storage>` is read from that storage instead of the
+place the calling convention gives it (`int a @R8D`, `char *s @[stack,0x8,8]`),
+and a `@<storage>` after the parameter list places the return value; the
+parameters without one are placed by the convention around those that have one.
+An address where the function makes no call is **rejected** with `No call is
+made at this address`.
+
+`comment`, `flow`, `callproto`, `name` and `type` describe the inside of one
+function body and have no cross-function reading, so qualifying one with a
+function this run did not decompile is **rejected** — with a `warning:` line naming it, and a
 non-zero exit under `--assert-strict` — rather than quietly applied to the
 function that was selected.
 

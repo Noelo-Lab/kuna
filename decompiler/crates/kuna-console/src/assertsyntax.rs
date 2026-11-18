@@ -116,7 +116,7 @@ fn split_qualifier(tok: &str) -> (Option<String>, String) {
 /// shortcut `R`, "Bad address: R"), so it is rewritten to `%RDI` here: a token
 /// that starts with a letter and carries no `0x` cannot be any of the other
 /// forms.
-fn normalize_storage(tok: &str) -> String {
+pub(crate) fn normalize_storage(tok: &str) -> String {
     let bare_name = tok.starts_with(|c: char| c.is_ascii_alphabetic())
         && !tok.contains("0x")
         && !tok.contains("0X")
@@ -329,12 +329,21 @@ pub fn parse_directive(spec: &str) -> Result<Directive, String> {
             }
             Body::Flow { func, addr, kind: kind.to_string() }
         }
+        "callproto" => {
+            let (site, decl) = take_token(rest);
+            let (func, site) = split_qualifier(site);
+            let addr = parse_vma(&site).ok_or_else(|| bad("callproto needs a hex <callsite>"))?;
+            if decl.is_empty() {
+                return Err(bad("callproto needs <callsite> then a C declaration"));
+            }
+            Body::CallProto { func, addr, decl: decl.to_string() }
+        }
         "" => return Err("--assert: empty directive".into()),
         other => {
             return Err(format!(
                 "--assert {raw:?}: unknown directive {other:?} (want one of \
-                 function, typedef, prototype, data, param, return, comment, flow, name, \
-                 type, readonly, volatile, bytes)"
+                 function, typedef, prototype, callproto, data, param, return, comment, flow, \
+                 name, type, readonly, volatile, bytes)"
             ))
         }
     };

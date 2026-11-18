@@ -48,6 +48,7 @@ mod kuna_buildstamp_fingerprint;
 pub mod assertions;
 mod kuna_qualifiedstorage;
 pub mod assertsyntax;
+mod kuna_callproto;
 pub mod grammar;
 pub mod rulecompile;
 pub mod unify;

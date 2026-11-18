@@ -25,6 +25,7 @@
 //!   data <addr> <C typedeclaration>        map address          P5 const-pointer
 //!   comment [<func>::]<addr> <text>        comment instruction  P9
 //!   flow [<func>::]<addr> <flowkind>       override flow        P2 flow-classification
+//!   callproto [<func>::]<callsite> <decl>  override prototype   P4 prototype-source
 //!   function <start>[-<end>][=<name>]      function bounds      P1  (= --define-function)
 //!   readonly <addr>+<size>                 readonly             P1 code-data-partition
 //!   volatile <addr>+<size>                 volatile             P1 code-data-partition
@@ -57,13 +58,16 @@
 //! * **Program-scoped** (`function`, `typedef`, `prototype`, `data`) is applied
 //!   by [`apply_program_scoped`] right after the analysis commit, so a declared
 //!   fact outranks whatever discovery decided.
-//! * **Function-scoped** (`param`, `return`, `comment`, `flow`) is turned into
+//! * **Function-scoped** (`param`, `return`, `comment`, `flow`, `callproto`) is turned into
 //!   decompile SEEDS by [`function_seed`] — the facts the drive consumes at flow
 //!   time.  `flow` is the sharpest of them: it reclassifies the flow out of one
 //!   instruction (`branch`, `call`, `callreturn`, `return`), which is how a
 //!   caller corrects a function whose body the flow-follower walked out of — an
 //!   indirect `call *%rdx` that never returns, a tail call kuna read as a call,
-//!   a jump into a neighbour.
+//!   a jump into a neighbour.  `callproto` states the arguments and return of
+//!   ONE call instruction ([`crate::kuna_callproto`]), which is what a call
+//!   through a pointer or a variadic callback needs: no callee symbol carries
+//!   its signature.  An address no call is at is rejected.
 //! * **Symbol-scoped** (`name`, `type`) can only be applied AFTER a decompile:
 //!   a local like `v2` does not exist until one has run (`rename v2 buf` before
 //!   the first decompile answers `No symbol named: v2`, which is precisely the
@@ -119,6 +123,9 @@ pub enum Body {
     /// `flow [<func>::]<addr> branch|call|callreturn|return` — the flow out of
     /// this instruction is not what kuna decided it was.
     Flow { func: Option<String>, addr: u64, kind: String },
+    /// `callproto [<func>::]<callsite> <C declaration>` — the prototype of the
+    /// one call made by the instruction at this address.
+    CallProto { func: Option<String>, addr: u64, decl: String },
     /// `name [<func>::]<symbol> <newname>` — rename a local.
     Name { func: Option<String>, symbol: String, newname: String },
     /// `type [<func>::]<symbol> <C type>` — retype a local.
@@ -169,6 +176,7 @@ impl Body {
             Body::Return { .. } => ("return", "P4", "prototype-source"),
             Body::Comment { .. } => ("comment", "P9", "external-refinement"),
             Body::Flow { .. } => ("flow", "P2", "flow-classification"),
+            Body::CallProto { .. } => ("callproto", "P4", "prototype-source"),
             Body::Name { .. } => ("name", "P9", "naming-policy"),
             Body::Type { .. } => ("type", "P5", "type-propagation"),
             Body::Readonly { .. } => ("readonly", "P1", "code-data-partition"),
@@ -185,6 +193,7 @@ impl Body {
             | Body::Return { func, .. }
             | Body::Comment { func, .. }
             | Body::Flow { func, .. }
+            | Body::CallProto { func, .. }
             | Body::Name { func, .. }
             | Body::Type { func, .. } => func.as_deref(),
             _ => None,
@@ -199,6 +208,7 @@ impl Body {
                 | Body::Return { .. }
                 | Body::Comment { .. }
                 | Body::Flow { .. }
+                | Body::CallProto { .. }
                 | Body::Name { .. }
                 | Body::Type { .. }
         )
@@ -930,6 +940,9 @@ pub struct FunctionSeed {
     /// `override flow` facts, in the drive's `flow_overrides` shape: the flow
     /// type forced at each named instruction.
     pub flow_overrides: Vec<(Address, uint4)>,
+    /// `override prototype` facts, in the drive's `proto_overrides` shape: the
+    /// prototype forced onto the call at each named instruction.
+    pub proto_overrides: Vec<(Address, PrototypePieces)>,
 }
 
 /// Build the [`FunctionSeed`] for the function `name` entered at `entry`, and
@@ -1002,6 +1015,34 @@ pub fn record_rejected_flow_overrides(
         };
         let outcome = directive.refused(reason.clone());
         prog.set_assertion_outcome(i, outcome);
+    }
+}
+
+/// Reject every `callproto` directive bound to `name` whose address no call of
+/// the decompiled function is at.  [`function_seed`] recorded `applied` when it
+/// seeded it; which instructions call is known only once flow has followed.
+pub fn record_unbound_call_prototypes(
+    prog: &mut ConsoleProgram,
+    name: &str,
+    single: bool,
+    fd: &Funcdata,
+) {
+    if !prog.assertions().iter().any(|d| matches!(d.body, Body::CallProto { .. })) {
+        return;
+    }
+    let directives = prog.assertions().to_vec();
+    for (i, directive) in directives.iter().enumerate() {
+        let Body::CallProto { addr, .. } = &directive.body else { continue };
+        if !binds_to(&directive.body, name, single)
+            || prog.assertion_outcomes().get(i).is_none_or(|o| o.status != "applied")
+        {
+            continue;
+        }
+        let Ok(at) = code_addr(prog, *addr) else { continue };
+        if !crate::kuna_callproto::has_call_at(fd, &at) {
+            let outcome = directive.rejected(crate::kuna_callproto::NO_CALL);
+            prog.set_assertion_outcome(i, outcome);
+        }
     }
 }
 
@@ -1081,6 +1122,13 @@ fn seed_one(
                     seed.flow_overrides.push((site, type_));
                 }
             }
+            Ok(())
+        }
+        Body::CallProto { addr, decl, .. } => {
+            let at = code_addr(prog, *addr)?;
+            let pieces = crate::kuna_callproto::parse(prog, decl)?;
+            seed.proto_overrides.retain(|(site, _)| site != &at);
+            seed.proto_overrides.push((at, pieces));
             Ok(())
         }
         _ => Err("internal: not a function-scoped directive".into()),

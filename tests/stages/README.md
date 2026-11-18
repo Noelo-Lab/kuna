@@ -18,6 +18,11 @@ and narrowed callback results. Its CLI companion compiles complete C and Rust
 output under the same asserted prototypes and checks every byte value and call
 counts. The original fixture is only decompiled.
 
+`kuna-callproto.xml` checks a tail jump through a variadic function pointer with
+nothing stated, with a call-site prototype, and with one parameter placed in a
+register. Its CLI companion covers both decompile surfaces and the rejection of
+an address that is not a call.
+
 `kuna-e500-call-slots.xml` compares disabled and automatic call-overlap guards
 for scalar arguments and results inside e500's wide registers, and decompiles a
 conditional tail-call wrapper with `exclusivecallret` off and on. The CLI tests
