@@ -5057,9 +5057,10 @@ pub(crate) fn bootstrap_object(
     // datatest corpus by construction.
     let compiler = kuna_analysis::sourcelang::effective_compiler_bytes(&bytes);
     sleigh.base_mut().unwrap().source_lang_detected = compiler.to_source_lang();
+    let rust_image = compiler == kuna_analysis::sourcelang::Compiler::Rustc;
     sleigh.base_mut().unwrap().rustc_stable_version =
-        kuna_analysis::sourcelang::stable_rustc_version(&bytes);
-    if let Some(layout) = kuna_analysis::sourcelang::fmt_pieces_layout(&bytes) {
+        kuna_analysis::sourcelang::stable_rustc_version(&bytes, rust_image);
+    if let Some(layout) = kuna_analysis::sourcelang::fmt_pieces_layout(&bytes, rust_image) {
         sleigh.base_mut().unwrap().rustc_pieces_layout = true;
         sleigh.base_mut().unwrap().rust_fmt_pieces_relro = layout.relro;
     }
