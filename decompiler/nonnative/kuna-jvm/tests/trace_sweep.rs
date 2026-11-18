@@ -1,4 +1,4 @@
-//! Final-text regressions for port bugs found by the pass-trace sweep (`tools/vftrace/sweep.sh`):
+//! Final-text regressions for port bugs found by a pass-trace sweep:
 //! vendored corpus classes run with the Default set's options plus a few overrides, compared with
 //! Vineflower 1.12.0's output for the same run (`tests/data/trace_sweep/gen.sh`).
 

@@ -1123,12 +1123,6 @@ contexts) off the property list before the rest becomes Vineflower's option map 
 switch: `resolve` refuses it as an unknown option, and given to the engine directly it
 stays in Vineflower's option map like any key Vineflower does not read.
 
-**Tracing.** With `KUNA_JVM_TRACE=<file>`,
-`decompiler/nonnative/kuna-jvm/src/infra/kuna_trace.rs` writes a canonical dump of each
-method's statement tree after every recorded pass, in the format the Java-side tracer of
-`decompiler/nonnative/kuna-jvm/tools/vftrace` prints for Vineflower, so the two can be
-compared pass by pass (`docs/jvm.md`).
-
 **The CLI seam.** `kuna-cli` routes an input to this engine before any native code runs
 when the input operand is a class file, an archive or a directory (chapter 00, section
 0.2); its non-native module (this chapter's third anchor) builds a driver configuration

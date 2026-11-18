@@ -11,7 +11,6 @@ pub mod kuna_driver;
 pub mod kuna_partition;
 pub mod kuna_reclaim;
 pub mod kuna_spans;
-pub mod kuna_trace;
 pub mod looping_pass_builder;
 pub mod main_pass_builder;
 pub mod method_processor;
