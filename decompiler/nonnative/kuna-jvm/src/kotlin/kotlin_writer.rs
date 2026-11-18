@@ -55,7 +55,7 @@ use crate::fixes::kt_suspend::kt_suspend_without_metadata;
 use crate::fixes::kt_suspend::kt_for_inline_copy;
 use crate::fixes::kt_suspend::kt_suspend_lambda;
 use crate::fixes::kt_names::kt_unescaped_name;
-use crate::fixes::kt_initializers::kt_static_initializer;
+use crate::fixes::kt_initializers;
 use crate::kotlin_chooser::KotlinChooser;
 use crate::kotlin_import_collector::KotlinImportCollector;
 use crate::kotlin_object_processors::KotlinObjectProcessors;
@@ -480,7 +480,7 @@ impl KotlinWriter {
     pub fn write_class(&self, node: ClassNode, buffer: &mut TextBuffer, indent: i32) {
         let _scope = kuna_fixes::enabled(KunaFix::KtReturnOutsideLambda)
             .then(kt_return_outside_lambda::enter);
-        let _moved = kt_static_initializer::scope();
+        let _moved = kt_initializers::scope();
         let span = kuna_spans::open_class(buffer, node.with(|d| d.class_struct));
         if self.write_class_body(node, buffer, indent) {
             kuna_spans::close(buffer, span);
@@ -898,7 +898,7 @@ impl KotlinWriter {
                     let moved = companion.filter(|c| {
                         CLINIT_NAME == mt.get_name()
                             && kuna_fixes::enabled(KunaFix::KtStaticInitializer)
-                            && kt_static_initializer::is_written(*c, wrapper)
+                            && kt_initializers::is_written(*c, wrapper)
                     });
                     let method_indent = if moved.is_some() { indent + 1 } else { indent };
                     let mut method_buffer = TextBuffer::new();
@@ -916,7 +916,7 @@ impl KotlinWriter {
                     kuna_spans::close(&mut method_buffer, span);
                     if let Some(companion) = moved {
                         if !method_skipped {
-                            kt_static_initializer::move_to(companion, method_buffer);
+                            kt_initializers::move_to(companion, method_buffer);
                         }
                     } else if !method_skipped {
                         if has_content {
@@ -930,7 +930,7 @@ impl KotlinWriter {
         }
 
         if kuna_fixes::enabled(KunaFix::KtStaticInitializer) {
-            if let Some(init) = kt_static_initializer::take(cl) {
+            if let Some(init) = kt_initializers::take(cl) {
                 if has_content {
                     inner_buffer.append_line_separator();
                 }
@@ -2047,7 +2047,7 @@ impl KotlinWriter {
 
             let static_init = CLINIT_NAME == mt.get_name()
                 && kuna_fixes::enabled(KunaFix::KtStaticInitializer)
-                && kt_static_initializer::writes_init_block(
+                && kt_initializers::writes_init_block(
                     cl,
                     KotlinWriter::companion_node(node),
                 );

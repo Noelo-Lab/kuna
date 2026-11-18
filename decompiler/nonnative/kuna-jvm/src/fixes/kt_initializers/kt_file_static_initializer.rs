@@ -1,22 +1,6 @@
-//! kuna fix `kt_file_static_initializer` (spec 10.16): what is left of a
-//! file class's static initializer is written as the initializers of the
-//! properties it sets.
-//!
-//! kotlinc compiles the initializers of a file's top-level properties, in
-//! their declaration order, into the file class's `<clinit>`.
-//! `InitializerProcessor` moves each one it can into its property; one built
-//! over several statements (a `try`, a loop, a checked value) stays in
-//! `<clinit>`, which Vineflower printed as `fun {`, no Kotlin, and its
-//! property had no value. A file has no `init` block, so with the fix the
-//! remainder is cut at each store into a property of the file: the code
-//! before a store and the stored value become that property's initializer,
-//! `val x: T = run { ..; value }` (the value alone when nothing precedes
-//! it). The properties are written in field order, which is the order
-//! `<clinit>` stores them in (checked on the bytecode), so every statement
-//! runs in its place. A local that a later part uses again is declared anew
-//! there, which needs it written before it is read; when that cannot be
-//! shown, when code follows the last store, or when a property is set
-//! inside a nested statement, the remainder is left as it was.
+//! Fix `kt_file_static_initializer`: what is left of a file class's static
+//! initializer is cut at each store into a file property, and the code before
+//! a store becomes that property's initializer (`run { ..; value }`).
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};

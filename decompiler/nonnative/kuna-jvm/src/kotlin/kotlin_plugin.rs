@@ -20,7 +20,7 @@ use crate::if_helper::IfHelper;
 use crate::inline_single_block_helper::InlineSingleBlockHelper;
 use crate::java_finally_pass::JavaFinallyPass;
 use crate::k_merge_pass::KMergePass;
-use crate::fixes::kt_initializers::kt_object_instance_local;
+use crate::fixes::kt_initializers;
 use crate::fixes::kt_null_checks::{kt_expression_value_check, kt_not_null_assertion};
 use crate::fixes::kt_when;
 use crate::fixes::kt_compiler_idioms::kt_inlined_to_typed_array;
@@ -323,7 +323,7 @@ impl KotlinPlugin {
                     if kuna_fixes::enabled(KunaFix::KtObjectInstanceLocal)
                         && ctx.get_method().get_name() == CLINIT_NAME
                     {
-                        kt_object_instance_local::rewrite(
+                        kt_initializers::replace_instance_local(
                             root(ctx),
                             ctx.get_enclosing_class(),
                         );

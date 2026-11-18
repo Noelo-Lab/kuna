@@ -3049,7 +3049,7 @@ processor moves those stores into the outer class's static field initializers, t
 hides the field as the companion's, and `KProperty` looks the initializer up in the companion's own
 table, where it is not: the property is written without it and the value is lost (every
 `CipherSuite.TLS_..` constant, okio's `IDLE_TIMEOUT_NANOS`). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/kt_initializers/kt_companion_property_initializer.rs (static_initializer)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_initializers/mod.rs (static_initializer)`)
 such a property reads its initializer from the static field initializers of the class whose field
 it is. A store the processor leaves in `<clinit>` stays lost, as before.
 
@@ -3057,7 +3057,7 @@ it is. A store the processor leaves in `<clinit>` stays lost, as before.
 default (`var count: Int = 0`, `private var closed = false`, `var next: Node? = null`): the field
 starts with it. The decompiler finds nothing to extract and writes `var count: Int`, which Kotlin
 rejects. With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/kt_initializers/kt_default_property_initializer.rs (never_stored)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_initializers/mod.rs (never_stored)`)
 a property backed by a field without a `ConstantValue`, that is not `lateinit`, `const`, abstract,
 delegated, `expect` or `external`, and that no constructor of its class stores (`<init>`; for a
 static field `<clinit>` of the class and of its outer class) is written `= 0`, `0L`, `0.0`,
@@ -4011,7 +4011,7 @@ invokespecial; astore_0; aload_0; putstatic INSTANCE` and reads local 0 for the 
 initializers and `init` blocks; kotlinc 2.0 reads `INSTANCE` back with `getstatic`. The local stopped
 `InitializerProcessor` at the first initializer that used it, and printed as is the remainder created a
 second instance (`val var0 = Hpack(); INSTANCE = var0; NAME_TO_FIRST_INDEX = var0.nameToFirstIndex()`).
-With the fix (`decompiler/nonnative/kuna-jvm/src/fixes/kt_initializers/kt_object_instance_local.rs (rewrite)`),
+With the fix (`decompiler/nonnative/kuna-jvm/src/fixes/kt_initializers/mod.rs (replace_instance_local)`),
 in the static initializer of an object or companion object, `var0 = new X(); X.INSTANCE = var0` becomes
 `X.INSTANCE = new X()` and each other read of the local, which is never written again, reads
 `X.INSTANCE`, the final field that holds the same value from then on: the code kotlinc 2.0 emits for the
@@ -4023,7 +4023,7 @@ into `<clinit>`. `InitializerProcessor` moves each initializer it can into its p
 (a `try`, a loop, a value built over several statements) stays in `<clinit>`, which the Kotlin writer
 printed as `@JvmStatic fun {`, no Kotlin at all (okhttp's `ConscryptPlatform`, `Huffman`, 30 classes in
 okhttp, kotlin-stdlib and kotlinx-coroutines). With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/kt_initializers/kt_static_initializer.rs (writes_init_block)`) that code
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_initializers/mod.rs (writes_init_block)`) that code
 is an `init` block: in the object itself, or, moved out of the class, in its companion object after the
 companion's properties, the place Vineflower's Java writer gives a `static` block after the field
 initializers. A file class has no `init`; its remainder (17 file classes in the five Kotlin libraries) is

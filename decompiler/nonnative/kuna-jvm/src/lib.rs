@@ -185,6 +185,6 @@ pub mod testing {
         pub use crate::fixes::generic_casts::disjoint_generic_cast::{mark_declared_target, take_declared_target};
     }
     pub mod kt_static_initializer {
-        pub use crate::fixes::kt_initializers::kt_static_initializer::{move_to, scope, take};
+        pub use crate::fixes::kt_initializers::{move_to, scope, take};
     }
 }

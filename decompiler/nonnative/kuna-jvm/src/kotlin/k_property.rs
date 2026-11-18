@@ -29,8 +29,7 @@ use crate::kt_attrs::KtAttrs;
 use crate::kt_flags::Flags;
 use crate::kt_proto::{self, Modality, Visibility};
 use crate::fixes::kt_properties::kt_accessor_backing_field;
-use crate::fixes::kt_initializers::kt_companion_property_initializer;
-use crate::fixes::kt_initializers::kt_default_property_initializer;
+use crate::fixes::kt_initializers;
 use crate::fixes::kt_initializers::kt_file_static_initializer;
 use crate::fixes::kt_anonymous_objects::kt_unrepresentable_declared_type;
 use crate::fixes::kt_declarations;
@@ -477,8 +476,8 @@ impl KProperty {
         {
             return None;
         }
-        let literal = kt_default_property_initializer::default_literal(self.type_.as_ref()?)?;
-        kt_default_property_initializer::never_stored(self.class_struct, field)
+        let literal = kt_initializers::default_literal(self.type_.as_ref()?)?;
+        kt_initializers::never_stored(self.class_struct, field)
             .then_some(literal)
     }
 
@@ -749,7 +748,7 @@ impl KProperty {
                     && field_container != class_struct
                     && f.has_modifier(ACC_STATIC)
                 {
-                    initializer = Some(kt_companion_property_initializer::static_initializer(
+                    initializer = Some(kt_initializers::static_initializer(
                         field_container.qualified_name(),
                         key,
                     ));
