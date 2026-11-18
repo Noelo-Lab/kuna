@@ -4,7 +4,7 @@
 //! call from one into another can be followed without a second run. Each image
 //! is first rebuilt on its own ([`DyldCache::extract`]); this module joins the
 //! results. The merged file opens with a header page of its own, since the
-//! commands of several images do not fit in the padding of one. Every
+//! commands of several images need not fit in the padding of one. Every
 //! non-`__LINKEDIT` segment follows at its cache address, images in address
 //! order, and one `__LINKEDIT` closes the file.
 //!
