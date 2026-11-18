@@ -1741,6 +1741,11 @@ pub struct Architecture {
     /// discovery finds them (`kuna_analysis::listing::kuna_dosexit`); flow ends
     /// at each ([`FlowEnvironment::is_dos_exit_callind`](crate::flow::FlowEnvironment::is_dos_exit_callind)).
     pub dos_exit_sites: Vec<u64>,
+    /// (kuna `kernelbug`) The Linux kernel's `__bug_table` entries, sorted by
+    /// trap address. The analysis tier reads the table
+    /// (`kuna_analysis::kernelbug`); flow renders each trap as `BUG()` or
+    /// `__WARN(file,line)` ([`crate::kuna_kernelbug`]). Empty on every other image.
+    pub kernel_bug_sites: Vec<crate::kuna_kernelbug::KernelBugSite>,
     /// (kuna) Gate the FID fingerprint matcher (`fid`), a Listing/xref consumer;
     /// default **off**. The kuna analog of Ghidra's FID identification analyzer:
     /// over the built Listing it fingerprints each function with the byte-exact
@@ -2565,6 +2570,7 @@ impl Architecture {
             analysis_noreturn_reach: false,
             error_noreturn_callsites: Vec::new(),
             dos_exit_sites: Vec::new(),
+            kernel_bug_sites: Vec::new(),
             analysis_fid: false,
             analysis_fid_strict: false,
             analysis_flirt: false,
@@ -4635,9 +4641,9 @@ impl Architecture {
     /// front-loaded here).
     fn register_string_builtins(&mut self) -> KunaResult<()> {
         use crate::userop::{
-            BUILTIN_MEMCPY, BUILTIN_MEMSET, BUILTIN_STRINGDATA, BUILTIN_STRLEN, BUILTIN_STRNCPY,
-            BUILTIN_SYSCALL_ERROR, BUILTIN_VOLATILE_READ, BUILTIN_VOLATILE_WRITE,
-            BUILTIN_WCSNCPY,
+            BUILTIN_KERNEL_BUG, BUILTIN_KERNEL_WARN, BUILTIN_MEMCPY, BUILTIN_MEMSET,
+            BUILTIN_STRINGDATA, BUILTIN_STRLEN, BUILTIN_STRNCPY, BUILTIN_SYSCALL_ERROR,
+            BUILTIN_VOLATILE_READ, BUILTIN_VOLATILE_WRITE, BUILTIN_WCSNCPY,
         };
         // Split the &mut userops borrow from the &self type-factory read by
         // building a small adapter over the (already-populated) factory.
@@ -4670,6 +4676,9 @@ impl Architecture {
             userops.register_builtin(BUILTIN_SYSCALL_ERROR, &adapter)?;
             // (kuna strlenscan) the length an inline `repnz scasb` computes.
             userops.register_builtin(BUILTIN_STRLEN, &adapter)?;
+            // (kuna kernelbug) the Linux `__bug_table` trap statements.
+            userops.register_builtin(BUILTIN_KERNEL_BUG, &adapter)?;
+            userops.register_builtin(BUILTIN_KERNEL_WARN, &adapter)?;
             Ok(())
         })();
         self.userops = userops;

@@ -336,6 +336,8 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // (the fixup tags the *callee* function, independent of prototype seeding).
         // Always-on, like noreturn/libproto/entry.
         Box::new(crate::callfixup::CallFixupPass),
+        // (kuna `kernelbug`) A Linux kernel image's `__bug_table`; inert elsewhere.
+        Box::new(crate::kernelbug::KernelBugPass),
         // (kuna `thunkentry`) An MSVC incremental-link table's stubs and targets.
         Box::new(crate::listing::kuna_thunkentry::IncrementalLinkPass),
         // (kuna) The MSVC x87 one-operand intrinsics take ST0 and return in ST0.

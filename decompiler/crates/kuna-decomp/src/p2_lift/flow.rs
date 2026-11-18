@@ -408,6 +408,18 @@ pub trait FlowEnvironment {
         None
     }
 
+    /// (kuna) Is `op` the BRANCHIND half of a trap a Linux kernel `__bug_table`
+    /// entry names? Matched, the trap's CALLOTHER and the entry are returned and
+    /// the site prints as `BUG()` or `__WARN(file,line)`. See
+    /// [`kuna_kernelbug`](crate::kuna_kernelbug).
+    fn kernel_bug_site(
+        &self,
+        _fd: &Funcdata,
+        _op: OpId,
+    ) -> Option<(OpId, crate::kuna_kernelbug::KernelBugSite)> {
+        None
+    }
+
     /// (kuna) Is the direct BRANCH or bounded CBRANCH `op`, whose target is
     /// `dest`, an `-O2` tail call to another known function's entry (and so should
     /// be recovered as a `CALL` + `RETURN` rather than flow-followed into the
@@ -1569,6 +1581,20 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                         op = None;
                         *isfallthru = true;
                         break;
+                    }
+                    if let Some((callother, site)) = self.env.kernel_bug_site(&self.data, curop) {
+                        let addr =
+                            self.data.obank().get(curop).expect("kernelbug: stale op").get_addr().clone();
+                        crate::kuna_kernelbug::rewrite(&mut self.data, curop, callother, &site)?;
+                        self.data.op_destroy_raw(curop)?;
+                        if site.warning {
+                            op = Some(callother);
+                            continue;
+                        }
+                        let halt = self.artificial_halt(&addr, pcodeop_flags::noreturn)?;
+                        self.data.op_dead_insert_after(halt, callother);
+                        cursor = Some(halt);
+                        continue;
                     }
                     if let Some(trap) = self.env.brk_trap(&self.data, curop) {
                         if let Some(code) = &trap.code {
