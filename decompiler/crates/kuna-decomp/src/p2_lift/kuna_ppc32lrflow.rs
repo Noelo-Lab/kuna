@@ -7,6 +7,7 @@
 //! machinery. Saved-LR returns and explicit flow assertions retain their meaning.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::rc::Rc;
 
 use kuna_base::address::Address;
 use kuna_base::error::{KunaError, KunaResult};
@@ -61,12 +62,32 @@ pub(crate) fn align_target(
     Ok(())
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+const MAX_CONSTANTS: usize = 8;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 enum Value {
     Constant(u64),
+    Constants(Rc<[u64]>),
     Stack(u32),
     ReturnAddress,
-    Computed,
+}
+
+impl Value {
+    fn constants(&self) -> Option<&[u64]> {
+        match self {
+            Self::Constant(value) => Some(std::slice::from_ref(value)),
+            Self::Constants(values) => Some(values),
+            _ => None,
+        }
+    }
+
+    fn from_constants(values: BTreeSet<u64>) -> Option<Self> {
+        match values.len() {
+            1 => values.first().copied().map(Self::Constant),
+            2..=MAX_CONSTANTS => Some(Self::Constants(values.into_iter().collect())),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Default, PartialEq, Eq)]
@@ -94,7 +115,7 @@ fn value(data: &Funcdata, id: VarnodeId, state: &State) -> Option<Value> {
     } else {
         let wanted = key(data, id);
         if let Some(value) = state.values.get(&wanted) {
-            return Some(*value);
+            return Some(value.clone());
         }
         let (&(space, offset, size), stored) = state
             .values
@@ -113,11 +134,12 @@ fn value(data: &Funcdata, id: VarnodeId, state: &State) -> Option<Value> {
         } else {
             displacement
         } * 8;
+        let mask = u64::MAX >> (64 - wanted.2 * 8);
         match stored {
-            Value::Constant(c) => Some(Value::Constant(
-                (c >> shift) & (u64::MAX >> (64 - wanted.2 * 8)),
-            )),
-            Value::Computed => Some(Value::Computed),
+            Value::Constant(n) => Some(Value::Constant((n >> shift) & mask)),
+            Value::Constants(values) => {
+                Value::from_constants(values.iter().map(|n| (n >> shift) & mask).collect())
+            }
             Value::Stack(offset) if shift == 0 && wanted.2 >= 4 => Some(Value::Stack(*offset)),
             Value::ReturnAddress if shift == 0 && wanted.2 >= 4 => Some(Value::ReturnAddress),
             _ => None,
@@ -144,20 +166,20 @@ fn pure(data: &Funcdata, op: OpId, state: &State) -> Option<Value> {
         .collect();
     let inputs = inputs?;
     if o.code() == OpCode::CPUI_COPY {
-        return inputs.first().copied();
+        return inputs.first().cloned();
     }
     if o.code() == OpCode::CPUI_INT_ZEXT
         && out.get_size() == 8
         && data.vbank().get(o.get_in(0)?)?.get_size() == 4
         && matches!(inputs.first(), Some(Value::Stack(_) | Value::ReturnAddress))
     {
-        return inputs.first().copied();
+        return inputs.first().cloned();
     }
     if matches!(o.code(), OpCode::CPUI_INT_OR | OpCode::CPUI_INT_AND)
         && inputs.len() == 2
         && o.get_in(0).map(|v| key(data, v)) == o.get_in(1).map(|v| key(data, v))
     {
-        return inputs.first().copied();
+        return inputs.first().cloned();
     }
     if matches!(
         inputs.as_slice(),
@@ -173,7 +195,7 @@ fn pure(data: &Funcdata, op: OpId, state: &State) -> Option<Value> {
                 OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB | OpCode::CPUI_INT_OR
             )
         {
-            return Some(*base);
+            return Some(base.clone());
         }
         if let Value::Stack(offset) = base {
             if matches!(out.get_size(), 4 | 8) {
@@ -189,36 +211,39 @@ fn pure(data: &Funcdata, op: OpId, state: &State) -> Option<Value> {
             }
         }
     }
-    if inputs
-        .iter()
-        .any(|v| matches!(v, Value::Stack(_) | Value::ReturnAddress))
-    {
-        return None;
-    }
-    if inputs.contains(&Value::Computed) {
-        return Some(Value::Computed);
-    }
-    let constants: Vec<_> = inputs
-        .into_iter()
-        .filter_map(|v| {
-            if let Value::Constant(c) = v {
-                Some(c)
-            } else {
-                None
-            }
-        })
-        .collect();
+    let constants: Option<Vec<_>> = inputs.iter().map(Value::constants).collect();
+    let constants = constants?;
     let size = data.vbank().get(o.get_in(0)?)?.get_size();
     let behavior = data.get_arch().op_behavior(o.code())?;
-    let c = match constants.as_slice() {
-        [a] => behavior.evaluate_unary(out.get_size(), size, *a).ok(),
-        [a, b] => behavior.evaluate_binary(out.get_size(), size, *a, *b).ok(),
-        [a, b, c] => behavior
-            .evaluate_ternary(out.get_size(), size, *a, *b, *c)
-            .ok(),
+    let width = out.get_size();
+    let evaluate = |a, b, c| match constants.len() {
+        1 => behavior.evaluate_unary(width, size, a).ok(),
+        2 => behavior.evaluate_binary(width, size, a, b).ok(),
+        3 => behavior.evaluate_ternary(width, size, a, b, c).ok(),
         _ => None,
-    }?;
-    Some(Value::Constant(c))
+    };
+    let combinations = constants.iter().map(|set| set.len()).product::<usize>();
+    if constants.len() > 3 || combinations > 64 {
+        return None;
+    }
+    let mut results = BTreeSet::new();
+    let first = *constants.first()?;
+    let second = constants.get(1).copied().unwrap_or(&[0]);
+    let third = constants.get(2).copied().unwrap_or(&[0]);
+    if combinations == 1 {
+        return evaluate(first[0], second[0], third[0]).map(Value::Constant);
+    }
+    for &a in first {
+        for &b in second {
+            for &c in third {
+                results.insert(evaluate(a, b, c)?);
+                if results.len() > MAX_CONSTANTS {
+                    return None;
+                }
+            }
+        }
+    }
+    Value::from_constants(results)
 }
 
 fn stack_address(data: &Funcdata, op: OpId, state: &State) -> Option<u32> {
@@ -272,15 +297,15 @@ fn reads_return(data: &Funcdata, input: VarnodeId, state: &State) -> bool {
         .values
         .range(..=(space, offset, i32::MAX))
         .next_back()
-        .is_some_and(|(&(at_space, at, width), &value)| {
-            value == Value::ReturnAddress
+        .is_some_and(|(&(at_space, at, width), value)| {
+            *value == Value::ReturnAddress
                 && space == at_space
                 && offset < at.saturating_add(width as u64)
         })
         || state
             .values
             .range((space, offset, 0)..(space, end, 0))
-            .any(|(_, &value)| value == Value::ReturnAddress)
+            .any(|(_, value)| *value == Value::ReturnAddress)
 }
 
 fn transfer(data: &Funcdata, op: OpId, state: &mut State) {
@@ -291,7 +316,7 @@ fn transfer(data: &Funcdata, op: OpId, state: &mut State) {
                 .values
                 .values()
                 .chain(state.stack.values())
-                .any(|&value| value == Value::ReturnAddress);
+                .any(|value| *value == Value::ReturnAddress);
             state.stack.clear();
             state.image_unmodified = false;
             let proto = data
@@ -314,7 +339,7 @@ fn transfer(data: &Funcdata, op: OpId, state: &mut State) {
                         .values
                         .values()
                         .chain(state.stack.values())
-                        .any(|&value| value == Value::ReturnAddress),
+                        .any(|value| *value == Value::ReturnAddress),
                 ..State::default()
             }
         }
@@ -322,11 +347,13 @@ fn transfer(data: &Funcdata, op: OpId, state: &mut State) {
             let stored = o.get_in(2).expect("STORE value");
             let size = key(data, stored).2;
             if let Some(offset) = stack_address(data, op, state) {
-                state.return_address_observed |= state.stack.iter().any(|(&(at, width), &v)| {
-                    v == Value::ReturnAddress
+                state.return_address_observed |= state.stack.iter().any(|(&(at, width), v)| {
+                    *v == Value::ReturnAddress
                         && (at.wrapping_sub(offset) < size as u32
                             || offset.wrapping_sub(at) < width as u32)
-                        && (at != offset || width != size || value(data, stored, state) != Some(v))
+                        && (at != offset
+                            || width != size
+                            || value(data, stored, state).as_ref() != Some(v))
                 });
                 state.stack.retain(|&(at, width), _| {
                     at.wrapping_sub(offset) >= size as u32
@@ -338,7 +365,7 @@ fn transfer(data: &Funcdata, op: OpId, state: &mut State) {
             } else {
                 state.return_address_observed |= reads_return(data, stored, state);
                 state.return_address_observed |=
-                    state.stack.values().any(|&v| v == Value::ReturnAddress);
+                    state.stack.values().any(|v| *v == Value::ReturnAddress);
                 state.stack.clear();
                 state.image_unmodified = false;
             }
@@ -347,15 +374,15 @@ fn transfer(data: &Funcdata, op: OpId, state: &mut State) {
             if let Some(out) = o.get_out() {
                 let v = if o.code() == OpCode::CPUI_LOAD {
                     if let Some(at) = stack_address(data, op, state) {
-                        if state.stack.iter().any(|(&(offset, width), &value)| {
-                            value == Value::ReturnAddress
+                        if state.stack.iter().any(|(&(offset, width), value)| {
+                            *value == Value::ReturnAddress
                                 && (at.wrapping_sub(offset) < width as u32
                                     || offset.wrapping_sub(at) < key(data, out).2 as u32)
                                 && (at != offset || key(data, out).2 != width)
                         }) {
                             state.return_address_observed = true;
                         }
-                        state.stack.get(&(at, key(data, out).2)).copied()
+                        state.stack.get(&(at, key(data, out).2)).cloned()
                     } else {
                         image_value(data, op, state)
                     }
@@ -375,16 +402,17 @@ fn transfer(data: &Funcdata, op: OpId, state: &mut State) {
     }
 }
 
-fn merge_value(a: Value, b: Value) -> Option<Value> {
+fn merge_value(a: &Value, b: &Value) -> Option<Value> {
     if a == b {
-        return Some(a);
+        return Some(a.clone());
     }
-    match (a, b) {
-        (Value::Constant(_) | Value::Computed, Value::Constant(_) | Value::Computed) => {
-            Some(Value::Computed)
-        }
-        _ => None,
-    }
+    Value::from_constants(
+        a.constants()?
+            .iter()
+            .chain(b.constants()?)
+            .copied()
+            .collect(),
+    )
 }
 
 fn merge(prior: &mut State, incoming: &State) -> bool {
@@ -395,25 +423,25 @@ fn merge(prior: &mut State, incoming: &State) -> bool {
         prior.return_address_observed = prior
             .values
             .iter()
-            .any(|(k, &v)| v == Value::ReturnAddress && incoming.values.get(k) != Some(&v))
+            .any(|(k, v)| *v == Value::ReturnAddress && incoming.values.get(k) != Some(v))
             || incoming
                 .values
                 .iter()
-                .any(|(k, &v)| v == Value::ReturnAddress && prior.values.get(k) != Some(&v))
+                .any(|(k, v)| *v == Value::ReturnAddress && prior.values.get(k) != Some(v))
             || prior
                 .stack
                 .iter()
-                .any(|(k, &v)| v == Value::ReturnAddress && incoming.stack.get(k) != Some(&v))
+                .any(|(k, v)| *v == Value::ReturnAddress && incoming.stack.get(k) != Some(v))
             || incoming
                 .stack
                 .iter()
-                .any(|(k, &v)| v == Value::ReturnAddress && prior.stack.get(k) != Some(&v));
+                .any(|(k, v)| *v == Value::ReturnAddress && prior.stack.get(k) != Some(v));
     }
     prior.values.retain(|k, v| {
         if let Some(joined) = incoming
             .values
             .get(k)
-            .and_then(|other| merge_value(*v, *other))
+            .and_then(|other| merge_value(v, other))
         {
             *v = joined;
             true
@@ -425,7 +453,7 @@ fn merge(prior: &mut State, incoming: &State) -> bool {
         if let Some(joined) = incoming
             .stack
             .get(k)
-            .and_then(|other| merge_value(*v, *other))
+            .and_then(|other| merge_value(v, other))
         {
             *v = joined;
             true
@@ -436,8 +464,17 @@ fn merge(prior: &mut State, incoming: &State) -> bool {
     *prior != old
 }
 
+#[derive(Clone)]
+pub(crate) struct BranchPlan {
+    pub(crate) targets: Vec<Address>,
+    pub(crate) use_proven_targets: bool,
+    pub(crate) allow_tail_call: bool,
+}
+
+pub(crate) type BranchPlans = BTreeMap<Address, BranchPlan>;
+
 pub(crate) enum Classification {
-    Sites(Vec<Address>),
+    Sites(BranchPlans),
     Changed,
 }
 
@@ -446,12 +483,12 @@ pub(crate) enum Classification {
 pub(crate) fn classify(
     data: &mut Funcdata,
     arch: &Architecture,
-    automatic: &BTreeSet<Address>,
+    automatic: &BranchPlans,
     work: &mut usize,
 ) -> KunaResult<Classification> {
     match sites(data, arch, automatic, work) {
         Some(result) => result,
-        None if automatic.is_empty() => Ok(Classification::Sites(Vec::new())),
+        None if automatic.is_empty() => Ok(Classification::Sites(BranchPlans::new())),
         None => Err(KunaError::lowlevel("Cannot revalidate PPC32 LR flow")),
     }
 }
@@ -460,7 +497,7 @@ pub(crate) fn classify(
 fn sites(
     data: &mut Funcdata,
     arch: &Architecture,
-    automatic: &BTreeSet<Address>,
+    automatic: &BranchPlans,
     work: &mut usize,
 ) -> Option<KunaResult<Classification>> {
     if !arch.archid.starts_with("PowerPC:") || !arch.archid.contains(":32:") {
@@ -518,7 +555,7 @@ fn sites(
             }
         }
     }
-    let mut result = Vec::new();
+    let mut result = BranchPlans::new();
     for (i, &block) in blocks.iter().enumerate() {
         let Some(mut state) = inputs[i].clone() else {
             continue;
@@ -526,57 +563,147 @@ fn sites(
         let ops = data.bb_ops(block);
         for op in ops {
             let o = data.obank().get(op)?;
-            let automatic_transfer =
-                matches!(o.code(), OpCode::CPUI_BRANCHIND | OpCode::CPUI_CALLIND)
-                    && automatic.contains(o.get_addr());
-            let target = if automatic_transfer || o.code() == OpCode::CPUI_RETURN {
+            let plan = automatic
+                .get(o.get_addr())
+                .filter(|_| matches!(o.code(), OpCode::CPUI_BRANCHIND | OpCode::CPUI_CALL));
+            let target = if plan.is_some() && o.code() == OpCode::CPUI_CALL {
+                // Recovering a direct tail call replaced the input with the
+                // callee. The original instruction still branches through LR.
+                state.values.get(&lr).cloned()
+            } else if plan.is_some() || o.code() == OpCode::CPUI_RETURN {
                 o.get_in(0).and_then(|v| value(data, v, &state))
             } else {
                 None
             };
-            let computed = !state.return_address_observed
-                && matches!(target, Some(Value::Constant(_) | Value::Computed));
-            if automatic_transfer && !computed {
-                if o.code() != OpCode::CPUI_BRANCHIND || data.bb_op_tail(block) != Some(op) {
+            let targets = if state.return_address_observed {
+                None
+            } else {
+                target.as_ref().and_then(Value::constants).map(|values| {
+                    let mut addresses: Vec<_> = values
+                        .iter()
+                        .map(|raw| {
+                            Address::new(
+                                data.get_address().get_space().unwrap().clone(),
+                                raw & 0xffff_fffc,
+                            )
+                        })
+                        .collect();
+                    addresses.sort_unstable();
+                    addresses.dedup();
+                    addresses
+                })
+            };
+            if let Some(plan) = plan {
+                let direct = o.code() == OpCode::CPUI_CALL;
+                if targets.is_none() {
+                    let return_input = if direct {
+                        Some(lr)
+                    } else {
+                        o.get_in(0).map(|vn| key(data, vn))
+                    }?;
+                    for edge in 0..data.bblocks_ref().block(block).size_in() {
+                        let pred = data.bblocks_ref().block(block).get_in(edge);
+                        let Some(mut incoming) = inputs[*indices.get(&pred)?].clone() else {
+                            continue;
+                        };
+                        replay_edge(data, pred, block, op, &mut incoming, work)?;
+                        if incoming.values.get(&return_input) == Some(&Value::ReturnAddress) {
+                            let raw_lr = direct
+                                .then(|| arch.manage().get_space(lr.0))
+                                .flatten()
+                                .map(|space| (Address::new(space.clone(), lr.1), lr.2));
+                            if direct && raw_lr.is_none() {
+                                return None;
+                            }
+                            return Some(
+                                split_return_edge(data, block, edge, op, raw_lr)
+                                    .map(|()| Classification::Changed),
+                            );
+                        }
+                    }
+                }
+                if direct {
+                    let callee = data.get_call_specs_index(op).map(|idx| {
+                        let call = data.get_call_specs(idx);
+                        call.plt_stub().unwrap_or_else(|| call.get_entry_address())
+                    });
+                    let valid = targets.as_deref().is_some_and(
+                        |addresses| matches!(addresses, [dest] if Some(dest) == callee),
+                    );
+                    if !valid {
+                        if !plan.allow_tail_call {
+                            return Some(Err(KunaError::lowlevel(
+                                "Cannot revalidate a rewritten PPC32 LR transfer",
+                            )));
+                        }
+                        let mut retry = plan.clone();
+                        retry.allow_tail_call = false;
+                        result.insert(o.get_addr().clone(), retry);
+                    }
+                } else if let Some(targets) = targets {
+                    let covered = data.find_jump_table(op).is_some_and(|jt| {
+                        let actual = jt.address_table();
+                        targets.iter().all(|dest| actual.contains(dest))
+                            && actual.iter().all(|dest| targets.contains(dest))
+                    });
+                    if !covered {
+                        if plan.use_proven_targets && plan.targets == targets {
+                            return Some(Err(KunaError::lowlevel(
+                                "Cannot recover the proven PPC32 LR destinations",
+                            )));
+                        }
+                        let mut retry = plan.clone();
+                        retry.targets = targets;
+                        retry.use_proven_targets = true;
+                        result.insert(o.get_addr().clone(), retry);
+                    } else if plan.use_proven_targets && targets.len() > 1 {
+                        let basic = data.bblocks_ref().block(block);
+                        if (0..basic.size_in()).any(|edge| basic.is_loop_in(edge)) {
+                            let mut incoming_targets = Vec::new();
+                            for edge in 0..basic.size_in() {
+                                let pred = basic.get_in(edge);
+                                let mut incoming = inputs[*indices.get(&pred)?].clone()?;
+                                replay_edge(data, pred, block, op, &mut incoming, work)?;
+                                let target = o.get_in(0).and_then(|v| value(data, v, &incoming));
+                                let Some(Value::Constant(offset)) =
+                                    target.filter(|_| !incoming.return_address_observed)
+                                else {
+                                    return Some(Err(dispatch_loop_error()));
+                                };
+                                let dest = Address::new(
+                                    o.get_addr().get_space()?.clone(),
+                                    offset & 0xffff_fffc,
+                                );
+                                let slot = data.find_jump_table(op)?.out_edge_for_address(&dest)?;
+                                incoming_targets.push((dest, basic.get_out(slot)));
+                            }
+                            return Some(
+                                specialize_dispatch_loop(data, block, op, &incoming_targets)
+                                    .map(|()| Classification::Changed),
+                            );
+                        }
+                    }
+                } else {
                     return Some(Err(KunaError::lowlevel(
                         "Cannot revalidate PPC32 LR transfer after discovering additional paths",
                     )));
                 }
-                for edge in 0..data.bblocks_ref().block(block).size_in() {
-                    let pred = data.bblocks_ref().block(block).get_in(edge);
-                    let Some(mut incoming) = inputs[*indices.get(&pred)?].clone() else {
-                        continue;
-                    };
-                    for prior in data.bb_ops(pred) {
-                        step(data, prior, &mut incoming, work)?;
-                    }
-                    for prior in data.bb_ops(block) {
-                        if prior == op {
-                            break;
-                        }
-                        step(data, prior, &mut incoming, work)?;
-                    }
-                    if o.get_in(0).and_then(|v| value(data, v, &incoming))
-                        == Some(Value::ReturnAddress)
-                    {
-                        return Some(
-                            split_return_edge(data, block, edge, op)
-                                .map(|()| Classification::Changed),
-                        );
-                    }
-                }
-                return Some(Err(KunaError::lowlevel(
-                    "Cannot revalidate PPC32 LR transfer after discovering additional paths",
-                )));
-            }
-            if o.code() == OpCode::CPUI_RETURN
+            } else if o.code() == OpCode::CPUI_RETURN
                 && o.get_halt_type() == 0
                 && data.get_override().get_flow_override(o.get_addr())
                     == crate::overrides::flow_type::NONE
-                && computed
                 && o.get_in(0).is_some_and(|v| key(data, v) == lr)
             {
-                result.push(o.get_addr().clone());
+                if let Some(targets) = targets {
+                    result.insert(
+                        o.get_addr().clone(),
+                        BranchPlan {
+                            targets,
+                            use_proven_targets: false,
+                            allow_tail_call: true,
+                        },
+                    );
+                }
             }
             step(data, op, &mut state, work)?;
         }
@@ -593,23 +720,131 @@ fn step(data: &Funcdata, op: OpId, state: &mut State, work: &mut usize) -> Optio
     Some(())
 }
 
-/// The duplicate is a closed returning path, so no cloned output escapes it.
-fn split_return_edge(data: &mut Funcdata, block: BlockId, edge: i32, tail: OpId) -> KunaResult<()> {
-    let ops = data.bb_ops(block);
-    if data.bblocks_ref().block(block).size_in() < 2
-        || ops.iter().any(|&op| {
-            op != tail
-                && data.obank().get(op).is_none_or(|o| {
-                    o.is_branch()
-                        || o.is_call()
-                        || matches!(
-                            o.code(),
-                            OpCode::CPUI_CALLOTHER
-                                | OpCode::CPUI_INDIRECT
-                                | OpCode::CPUI_MULTIEQUAL
-                        )
-                })
+fn replay_edge(
+    data: &Funcdata,
+    pred: BlockId,
+    block: BlockId,
+    tail: OpId,
+    state: &mut State,
+    work: &mut usize,
+) -> Option<()> {
+    for op in data
+        .bb_ops(pred)
+        .into_iter()
+        .chain(data.bb_ops(block).into_iter().take_while(|&op| op != tail))
+    {
+        step(data, op, state, work)?;
+    }
+    Some(())
+}
+
+fn cloneable(data: &Funcdata, ops: &[OpId]) -> bool {
+    ops.iter().all(|&id| {
+        data.obank().get(id).is_some_and(|op| {
+            !op.is_branch()
+                && !op.is_call()
+                && !matches!(
+                    op.code(),
+                    OpCode::CPUI_CALLOTHER | OpCode::CPUI_INDIRECT | OpCode::CPUI_MULTIEQUAL
+                )
         })
+    })
+}
+
+fn dispatch_loop_error() -> KunaError {
+    KunaError::lowlevel("Cannot separate PPC32 LR destinations on a dispatch loop")
+}
+
+/// Lower each proven incoming path to its own straight-line branch. This keeps
+/// the backedge when the switch itself would become the head of its loop.
+fn specialize_dispatch_loop(
+    data: &mut Funcdata,
+    block: BlockId,
+    tail: OpId,
+    incoming: &[(Address, BlockId)],
+) -> KunaResult<()> {
+    let basic = data.bblocks_ref().block(block);
+    let n = basic.size_in();
+    let preds: BTreeSet<_> = (0..n).map(|i| basic.get_in(i)).collect();
+    let mut prefix = data.bb_ops(block);
+    if !(2..=16).contains(&n)
+        || preds.len() != n as usize
+        || preds.contains(&block)
+        || prefix.pop() != Some(tail)
+        || incoming.iter().any(|(_, dest)| *dest == block)
+        || !cloneable(data, &prefix)
+    {
+        return Err(dispatch_loop_error());
+    }
+    let site = data.obank().get(tail).unwrap().get_addr().clone();
+    let table = data
+        .find_jump_table_index(tail)
+        .ok_or_else(dispatch_loop_error)?;
+    for edge in (1..n).rev() {
+        let duplicate = data.node_split_block_edge(block, edge);
+        copy_lr_ops(data, duplicate, &prefix, None)?;
+        let branch = data.new_op(1, site.clone());
+        set_direct_exit(data, duplicate, branch, &incoming[edge as usize])?;
+        data.op_insert_end(branch, duplicate);
+    }
+    set_direct_exit(data, block, tail, &incoming[0])?;
+    data.remove_jump_table(table);
+    data.structure_reset();
+    data.sort_call_specs();
+    Ok(())
+}
+
+fn set_direct_exit(
+    data: &mut Funcdata,
+    block: BlockId,
+    op: OpId,
+    (address, dest): &(Address, BlockId),
+) -> KunaResult<()> {
+    let basic = data.bblocks_ref().block(block);
+    let remove: Vec<_> = (0..basic.size_out())
+        .map(|i| basic.get_out(i))
+        .filter(|out| out != dest)
+        .collect();
+    for out in remove {
+        data.bblocks_mut().remove_edge(block, out);
+    }
+    debug_assert_eq!(data.bblocks_ref().block(block).size_out(), 1);
+    data.bblocks_mut()
+        .block_mut(block)
+        .clear_flag(crate::block::block_flags::f_switch_out);
+    data.op_set_opcode_code(op, OpCode::CPUI_BRANCH);
+    let target = data.new_code_ref(address);
+    data.op_set_input(op, target, 0)
+}
+
+/// The duplicate is a closed returning path, so no cloned output escapes it.
+fn split_return_edge(
+    data: &mut Funcdata,
+    block: BlockId,
+    edge: i32,
+    tail: OpId,
+    raw_lr: Option<(Address, i32)>,
+) -> KunaResult<()> {
+    let mut ops = data.bb_ops(block);
+    let tail_index = ops
+        .iter()
+        .position(|&op| op == tail)
+        .expect("LR transfer in block");
+    let site = data.obank().get(tail).unwrap().get_addr().clone();
+    let remainder = &ops[tail_index + 1..];
+    let terminal = if raw_lr.is_some() {
+        data.bblocks_ref().block(block).size_out() == 0
+            && remainder.iter().all(|&op| {
+                let o = data.obank().get(op).unwrap();
+                o.code() == OpCode::CPUI_RETURN && o.get_addr() == &site
+            })
+    } else {
+        remainder.is_empty()
+    };
+    ops.truncate(tail_index + 1);
+    if data.bblocks_ref().block(block).size_in() < 2
+        || !terminal
+        || !cloneable(data, &ops[..tail_index])
     {
         return Err(KunaError::lowlevel(
             "Cannot split mixed PPC32 LR transfer contexts",
@@ -620,10 +855,31 @@ fn split_return_edge(data: &mut Funcdata, block: BlockId, edge: i32, tail: OpId)
         let out = data.bblocks_ref().block(duplicate).get_out(0);
         data.bblocks_mut().remove_edge(duplicate, out);
     }
+    if let Some((address, size)) = raw_lr {
+        copy_lr_ops(data, duplicate, &ops[..tail_index], None)?;
+        let ret = data.new_op(1, site);
+        let input = data.new_varnode(size, &address, None);
+        data.op_set_opcode_code(ret, OpCode::CPUI_RETURN);
+        data.op_set_input(ret, input, 0)?;
+        data.op_insert_end(ret, duplicate);
+    } else {
+        copy_lr_ops(data, duplicate, &ops, Some(tail))?;
+    }
+    data.structure_reset();
+    data.sort_call_specs();
+    Ok(())
+}
+
+fn copy_lr_ops(
+    data: &mut Funcdata,
+    duplicate: BlockId,
+    ops: &[OpId],
+    return_tail: Option<OpId>,
+) -> KunaResult<()> {
     let mut copied = BTreeMap::new();
-    for old in ops {
+    for &old in ops {
         let o = data.obank().get(old).expect("raw LR context op");
-        let code = if old == tail {
+        let code = if Some(old) == return_tail {
             OpCode::CPUI_RETURN
         } else {
             o.code()
@@ -652,7 +908,5 @@ fn split_return_edge(data: &mut Funcdata, block: BlockId, edge: i32, tail: OpId)
         }
         data.op_insert_end(new, duplicate);
     }
-    data.structure_reset();
-    data.sort_call_specs();
     Ok(())
 }

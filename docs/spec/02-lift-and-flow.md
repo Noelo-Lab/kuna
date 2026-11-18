@@ -54,11 +54,20 @@ and use the 32-bit instruction address, including with eight-byte registers;
 QEMU confirms a target with a low bit set reaches the same instruction. This
 classification repair has no option.
 
-Automatic branch overrides are temporary discovery decisions. Each expanded
-graph revalidates them before publication, and a restart derives them again
-without changing explicit caller assertions. If one incoming edge proves an LR
-restore while another proves a computed transfer, the returning edge receives
-a closed copy of the shared block, including its work before the transfer.
+Automatic branch overrides are temporary discovery decisions. The proof carries
+bounded sets of constants through joins and checks the recovered destination set
+after each expansion. A mismatch triggers another flow pass with the proven
+addresses and address-based case labels. When a newly completed table forms
+a loop back to its own dispatch, the proof must resolve each incoming edge
+to one destination. Flow copies the work before the transfer and uses direct
+edges for those paths, so a switch exit cannot hide a repeated dispatch.
+A converted direct tail call is
+rechecked against LR at the call site. When another computed destination is
+possible, flow follows the instruction again as an indirect branch. If one
+incoming edge proves an LR restore while another proves a computed transfer,
+the returning edge receives a closed copy of the work before the transfer.
+This preserves the call on paths that still prove its destination. A restart
+derives these decisions again without changing explicit caller assertions.
 Calls, further branches and other contexts that cannot be copied safely cause
 a diagnostic instead of publishing an unproved branch. Incoming-return-address
 inspection beyond transparent copies, or loss of its provenance across calls

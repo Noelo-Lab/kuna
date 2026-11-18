@@ -1,5 +1,6 @@
 use crate::common;
 use std::process::Command;
+use std::time::Duration;
 
 #[path = "fixtures/ppc32_import_fixture.rs"]
 mod fixture;
@@ -19,6 +20,10 @@ fn run_decompile(little: bool, words: Vec<u32>, extra: &[&str]) -> std::process:
     f.little = little;
     f.pic_collision = true;
     f.caller = Some(words);
+    decompile_fixture(&f, extra)
+}
+
+fn decompile_fixture(f: &fixture::Fixture, extra: &[&str]) -> std::process::Output {
     let path = common::scratch_file("ppc32-computed-lr", "elf");
     std::fs::write(&path, f.bytes()).unwrap();
     let output = Command::new(env!("CARGO_BIN_EXE_kuna"))
@@ -35,6 +40,76 @@ fn run_decompile(little: bool, words: Vec<u32>, extra: &[&str]) -> std::process:
         .unwrap();
     std::fs::remove_file(path).unwrap();
     output
+}
+
+#[test]
+fn shared_lr_transfer_discovers_its_second_destination() {
+    let code = vec![
+        0x7d8802a6, 0x38600009, 0x38001014, 0x7c0803a6, 0x4e800020, 0x38001020, 0x7c0803a6,
+        0x4bfffff4, 0x3863000e, 0x7d8803a6, 0x4e800020,
+    ];
+    let common_work = vec![
+        0x7d8802a6, 0x38600000, 0x38001018, 0x7c0803a6, 0x38630001, 0x4e800020, 0x38001024,
+        0x7c0803a6, 0x4bfffff0, 0x38630014, 0x7d8803a6, 0x4e800020,
+    ];
+    for order in ["BE", "LE"] {
+        for model in ["default", "e500"] {
+            let target = format!("PowerPC:{order}:32:{model}");
+            for mode in ["fast", "reliable"] {
+                for (words, expected) in [(&code, "23"), (&common_work, "22")] {
+                    let output = run_decompile(
+                        order == "LE",
+                        words.clone(),
+                        &["--target", &target, "--mode", mode],
+                    );
+                    assert!(output.status.success(), "{target} {mode}: {output:?}");
+                    let c = String::from_utf8(output.stdout).unwrap();
+                    assert!(
+                        c.contains("return ") && !c.contains("jump-as-call"),
+                        "{target} {mode}: {c}"
+                    );
+                    check_runtime(&c, expected);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn shared_lr_tail_call_keeps_the_saved_return_path() {
+    for order in ["BE", "LE"] {
+        let mut f = fixture::Fixture::new(fixture::Plt::Short);
+        f.little = order == "LE";
+        f.pic_collision = true;
+        f.caller = Some(vec![
+            0x7d8802a6, 0x2c030000, 0x38600007, 0x41820010, 0x38001028, 0x7c0803a6, 0x4e800020,
+            0x38001030, 0x7c0803a6, 0x4e800020, 0x7d8803a6, 0x4bfffff8,
+        ]);
+        f.second_caller = Some(vec![0x38600063, 0x7d8803a6, 0x4e800020]);
+        for model in ["default", "e500"] {
+            let target = format!("PowerPC:{order}:32:{model}");
+            for mode in ["fast", "reliable"] {
+                let output = decompile_fixture(
+                    &f,
+                    &[
+                        "--target",
+                        &target,
+                        "--mode",
+                        mode,
+                        "--assert",
+                        "prototype check2 int check2(void)",
+                    ],
+                );
+                assert!(output.status.success(), "{target} {mode}: {output:?}");
+                let c = String::from_utf8(output.stdout).unwrap();
+                assert!(c.contains("return 7;"), "{target} {mode}: {c}");
+                check_runtime(
+                    &format!("int check2(void) {{ return 99; }}\n{c}"),
+                    "i == 0 ? 99 : 7",
+                );
+            }
+        }
+    }
 }
 
 #[test]
@@ -86,7 +161,7 @@ fn check_runtime(c: &str, expected: &str) {
     }
     let source = common::scratch_file("ppc32-lr-output", "c");
     let executable = common::scratch_file("ppc32-lr-output", "bin");
-    let source_text = format!("typedef unsigned int undefined4; typedef unsigned int uint; typedef int int4;\n{c}\nint main(void) {{ for (int i = -4; i <= 4; ++i) if (check(i) != ({expected})) return 1; return 0; }}\n");
+    let source_text = format!("#include <stdbool.h>\ntypedef unsigned int undefined4; typedef unsigned int uint; typedef int int4;\n{c}\nint main(void) {{ for (int i = -4; i <= 4; ++i) if (check(i) != ({expected})) return 1; return 0; }}\n");
     std::fs::write(&source, source_text).unwrap();
     for optimization in ["-O0", "-O2"] {
         let build = Command::new("cc")
@@ -105,7 +180,12 @@ fn check_runtime(c: &str, expected: &str) {
             "{c}\n{}",
             String::from_utf8_lossy(&build.stderr)
         );
-        let run = Command::new(&executable).output().unwrap();
+        let run = common::process::output_with_timeout(
+            &mut Command::new(&executable),
+            Duration::from_secs(5),
+            Duration::from_millis(10),
+        )
+        .unwrap_or_else(|| panic!("emitted C did not return\n{c}"));
         assert!(run.status.success(), "{c}\n{run:?}");
     }
     std::fs::remove_file(source).unwrap();
