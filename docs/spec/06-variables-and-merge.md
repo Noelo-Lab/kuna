@@ -2028,6 +2028,20 @@ the mark there would end the array before that element and print the loop's
 index past it. Merging slots never changes what the C computes, only how many
 declarations it has. `off` is upstream.
 
+Unindexed escaped frame storage does not grow merely because an adjacent
+word is initialized.
+With `arrayextent on` on SPARC32, the lifter attributes a call's delay-slot
+store to the call address. If that store zeros the second of two adjacent
+frame words, both zero stores reach the same direct call, and the call
+receives the first word's address, retain the pair as one eight-byte backing
+object. Neither word can be read directly, and a separate address within the
+pair, a type lock, or a conflicting layout hint vetoes the change. The
+backing stops after the second word; a following local (such as a saved
+canary) is not absorbed. The two unsigned storage words are not a claim
+about the source type, and no callee or import name is used
+(`kuna_callarrayextent.rs (coalesce_delay_slot_init)`). Other targets, and
+SPARC32 pairs whose second store is outside the delay slot, keep the split.
+
 **Terminator absorption** (`option nulterminator`, **opt-in, default off**). An
 open hint that `attempt_join` cannot extend ends where the next hint starts, so
 `strncpy(buf, s, sizeof(buf) - 1); buf[sizeof(buf) - 1] = 0;` splits into `char

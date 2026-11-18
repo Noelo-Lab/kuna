@@ -121,6 +121,9 @@ mod buildstamp_cli;
 #[path = "call_array_extent.rs"]
 mod call_array_extent;
 
+#[path = "sparc_delay_slot_storage.rs"]
+mod sparc_delay_slot_storage;
+
 #[path = "call_wide.rs"]
 mod call_wide;
 
@@ -149,6 +152,8 @@ mod coldentry_source_boundary;
 
 #[path = "compact_switch_cli.rs"]
 mod compact_switch_cli;
+#[path = "switch_self_loop_cli.rs"]
+mod switch_self_loop_cli;
 
 #[path = "contiguous_byte_frame.rs"]
 mod contiguous_byte_frame;
