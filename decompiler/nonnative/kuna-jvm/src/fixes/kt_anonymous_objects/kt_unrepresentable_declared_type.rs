@@ -1,14 +1,5 @@
-//! kuna fix `kt_unrepresentable_declared_type` (spec 10.16): a declaration
-//! with an initializer whose type has no name in Kotlin is written without a
-//! type.
-//!
-//! The type of a local variable or a private property can be an anonymous
-//! class: an `object` expression, or the synthetic class kotlinc makes for a
-//! callable reference (`JobSupport::registerSelectForOnJoin`) or a lambda.
-//! Vineflower writes such a type `<unrepresentable>`, which is not Kotlin
-//! (its Java writer prints `var` there). When an initializer follows, Kotlin
-//! infers the declaration's type from it: the same object, statically typed
-//! as the object expression or as the reference's function type.
+//! Fix `kt_unrepresentable_declared_type`: a declaration with an initializer
+//! whose type Kotlin cannot name (an anonymous class) is written without a type.
 
 use std::cell::Cell;
 

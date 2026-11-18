@@ -1,36 +1,8 @@
-//! kuna fix `kt_synthetic_anonymous_object`: writing an anonymous
-//! class whose Kotlin metadata is not a Class.
-//!
-//! kotlinc gives some anonymous classes only synthetic-class metadata
-//! (`k = 3`) with no data: the class of a lambda or SAM conversion it cannot
-//! compile to `invokedynamic` (a `Comparator { .. }`, `fun interface` or
-//! function-type lambda in an inline function that uses a `crossinline`
-//! parameter), a suspend function's continuation, a reference to a local
-//! function. `KotlinWriter` reads an anonymous object's supertypes from its
-//! Class metadata and throws without one. With the fix it writes such a
-//! class as an `object` expression from the class file: the supertypes as it
-//! writes those of a named class without metadata, and the methods, which
-//! have no metadata either, with `write_method`. Two things differ from how
-//! `write_method` treats the methods of a named class, because here they
-//! stand where an object's functions stand: a `return` is printed as in a
-//! function (`write_method` installs the method as the current method
-//! wrapper, which `KExitExprent` takes for a lambda body and drops the
-//! `return`), and a method that fails keeps its failure comment
-//! (`write_method_body` hides a method whose body it could not write).
-//!
-//! An `object` expression has no superclass constructor call and no
-//! constructor parameters, and it names what it captures, so only an object
-//! that needs neither and whose names mean what the `new` passes is written:
-//! its superclass is `Object`, every constructor parameter is a captured
-//! variable, and at this `new` each one is passed the variable of the name
-//! the object's body gives it. That holds where `NestedClassProcessor` found
-//! the captures, in the class's enclosing method; kotlinc also creates the
-//! object of one inline function in the inline functions that call it, where
-//! it holds only when the caller's variable has the same name. Any other
-//! such class still fails as in Vineflower.
-//!
-//! With fix `kt_java_type_syntax` the header's supertypes are written in
-//! Kotlin's syntax (`object : Function0<Array<T>>`, not `Function0<T[]>`).
+//! Fix `kt_synthetic_anonymous_object`: an anonymous class with only
+//! synthetic-class metadata, superclass `Object` and only captured variables
+//! as constructor parameters is written as an `object` expression from its
+//! class file, where the `new` passes each capture the variable of its name;
+//! its methods keep their `return`s and failure comments.
 
 use std::cell::Cell;
 

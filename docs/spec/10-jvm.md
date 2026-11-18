@@ -2695,7 +2695,7 @@ have Class Kotlin metadata` at the `new` and the whole function fails (59 failur
 kotlinx-coroutines 1.10.2, 64 in 1.8.0; unchanged on `develop/1.13.0`); `kt_synthetic_anonymous_object`
 writes only objects whose superclass is `Object`, since an `object` expression passes superclass
 arguments only through its header. With the fix
-(`decompiler/nonnative/kuna-jvm/src/fixes/kt_anonymous_objects/kt_synthetic_object_super_call.rs (super_arguments)`)
+(`decompiler/nonnative/kuna-jvm/src/fixes/kt_anonymous_objects/kt_object_super_call.rs (synthetic_super_arguments)`)
 `KNewExprent` computes, where the `new` stands, the arguments of an anonymous class without Class
 metadata whose superclass is not `Object`, as `kt_object_super_call` does for an object with Class
 metadata: the superclass call `NestedClassProcessor` kept for the node, each constructor parameter

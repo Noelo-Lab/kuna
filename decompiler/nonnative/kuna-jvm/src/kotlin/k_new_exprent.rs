@@ -22,7 +22,6 @@ use crate::fixes::kt_default_args::kt_default_args_call;
 use crate::fixes::kt_names::kt_escaped_class_name;
 use crate::fixes::kt_types::kt_mapped_java_type;
 use crate::fixes::kt_anonymous_objects::kt_reused_inline_object;
-use crate::fixes::kt_anonymous_objects::kt_synthetic_object_super_call;
 use crate::fixes::kt_names::kt_unescaped_name;
 use crate::kotlin_chooser::KotlinChooser;
 use crate::kotlin_exprent;
@@ -362,7 +361,7 @@ impl KNewExprent {
             };
             let write = |buf: &mut TextBuffer| {
                 if kuna_fixes::enabled(KunaFix::KtSyntheticObjectSuperCall) {
-                    kt_synthetic_object_super_call::write_at_site(
+                    kt_object_super_call::write_synthetic_at_site(
                         node,
                         self.get_constructor(),
                         indent,

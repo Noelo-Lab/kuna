@@ -45,7 +45,6 @@ use crate::k_types::KTypes;
 use crate::k_utils::KUtils;
 use crate::fixes::kt_constructors;
 use crate::fixes::kt_properties::kt_field_without_property;
-use crate::fixes::kt_anonymous_objects::kt_synthetic_object_super_call;
 use crate::fixes::kt_compiler_idioms::kt_inlined_stdlib_call;
 use crate::fixes::kt_types::kt_class_header_metadata;
 use crate::fixes::kt_generated_members;
@@ -537,7 +536,7 @@ impl KotlinWriter {
             && ((kuna_fixes::enabled(KunaFix::KtSyntheticAnonymousObject)
                 && kt_synthetic_anonymous_object::is_writable(node))
                 || (kuna_fixes::enabled(KunaFix::KtSyntheticObjectSuperCall)
-                    && kt_synthetic_object_super_call::is_writable(node)));
+                    && kt_object_super_call::is_writable(node)));
 
         let kotlin_flags = match &kt_data {
             None if synthetic_object => 0,
@@ -1411,9 +1410,9 @@ impl KotlinWriter {
                     return;
                 }
                 if kuna_fixes::enabled(KunaFix::KtSyntheticObjectSuperCall)
-                    && kt_synthetic_object_super_call::is_writable(node)
+                    && kt_object_super_call::is_writable(node)
                 {
-                    kt_synthetic_object_super_call::write_object_header(node, buffer);
+                    kt_object_super_call::write_object_header(node, buffer);
                     return;
                 }
                 if kuna_fixes::enabled(KunaFix::KtAnonymousClassFailureReason) {
