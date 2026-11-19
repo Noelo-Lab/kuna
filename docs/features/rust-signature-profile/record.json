@@ -1,0 +1,8 @@
+{
+  "slug": "rust-signature-profile",
+  "title": "Report compatible Rust signature profiles",
+  "phase": "P0",
+  "change_kind": "diagnostic",
+  "source_decompiler": "angr",
+  "status": "proposal"
+}
