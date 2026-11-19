@@ -1777,7 +1777,19 @@ lays a peripheral out as a C structure, dropping a register that overlaps an
 earlier one and padding gaps. The CLI's `--svd FILE` asserts the structure
 (`typedef`), the peripheral as a typed global at its base (`data`) and its
 register range as volatile, and names the IRQ handlers the vector table found
-from the interrupts.
+from the interrupts. `uefifv.rs (walk)` walks UEFI PI firmware volumes for `kuna unpack`:
+FV header (`_FVH`, extended header), FFS files (24- or 32-byte headers, 8-byte
+alignment, erase polarity from the volume attributes), sections (4-byte
+alignment, extended sizes), nested volumes in `FIRMWARE_VOLUME_IMAGE` sections
+and RAW files, standard compression sections stored uncompressed or in the
+EFI 1.1 format (`tiano.rs (decompress)`, a port of EDK2
+`BaseTools/Source/C/Common/Decompress.c` with the 4-bit position set, retried
+with the 5-bit Tiano set), and GUID-defined sections for EDK2 LZMA (the
+13-byte LZMA-alone header in front of a raw LZMA1 stream, decoded by the UPX
+decoder of `decompiler/crates/kuna-analysis/src/upx/lzma.rs` behind its own
+two-byte property prefix), LZMA with the x86 BCJ filter (decoded as the LZMA
+SDK `x86_Convert`), Tiano and CRC32. Every PE32/TE section is a module named
+by the file's UI section.
 
 PE entry discovery and Listing seeds normalize the low bit according to the
 selected decoder before deduplication and naming. A 32-bit ARM decoder clears

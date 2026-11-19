@@ -1,5 +1,6 @@
 //! Raw firmware front end: a Cortex-M flash dump loads with no `--target`,
-//! `--base` or `--entry`, from its vector table; `--svd` types its peripherals.
+//! `--base` or `--entry`, from its vector table; `--svd` types its peripherals;
+//! `kuna unpack` writes the modules of a UEFI firmware volume.
 
 use crate::common;
 
@@ -45,4 +46,14 @@ fn svd_is_refused_where_it_does_not_apply() {
     let (_, err, code) = common::run_kuna(&["strings", &bin, "--svd", &svd]);
     assert_eq!(code, 2, "{err}");
     assert!(err.contains("--svd does not apply to strings"), "{err}");
+}
+
+#[test]
+fn unpack_decodes_efi_standard_and_tiano_compressed_files() {
+    let fv = common::fixture("uefi_tiano_efi_compressed.fv");
+    let (out, err, code) = common::run_kuna(&["unpack", &fv, "--list"]);
+    assert_eq!(code, 0, "{err}");
+    assert!(out.contains("2 modules in 1 volumes"), "{out}");
+    assert!(out.contains("DiskIoDxe.efi") && out.contains("DiskIoDxe_2.efi"), "{out}");
+    assert!(!out.contains("undecoded"), "{out}");
 }

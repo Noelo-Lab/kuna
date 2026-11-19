@@ -4118,6 +4118,28 @@ packer's trailer), to total exactly the original file size, and to reproduce **b
 of the packer's own Adler-32 checksums (a flipped literal byte
 decodes to a wrong image of exactly the right length; only the checksum catches it).
 
+### A UEFI firmware image
+
+A file that holds a UEFI firmware volume (`_FVH` at offset 0x28 of an
+8-byte-aligned header anywhere in it: a whole SPI flash image, `OVMF.fd`, a
+bare `.fv`) is unpacked into its executable modules. Every volume is walked
+FV -> FFS file -> section, into nested volumes and through the compressed
+sections: EDK2's LZMA (also its x86-BCJ variant) and CRC32 GUID-defined
+sections, EFI 1.1 standard compression sections, and EDK2 Tiano GUID-defined
+sections (a standard section that fails as EFI 1.1 is retried as Tiano, which
+some vendors store there). Each PE32 or TE section is written as `<UI
+name>.efi` / `.te` (the file GUID when there is no UI section) into
+`<binary>.modules/` or `-o DIR`; `--list` only lists them, and `--json`
+reports volumes, modules (file, GUID, name, FFS type, size) and the sections
+it could not decode (a Brotli section is reported, not decoded). Each module
+is then an ordinary EFI image for the other subcommands.
+
+```sh
+$ kuna unpack OVMF.fd --list | tail -2
+SECURITY_CORE          DF1CCEF6-F301-4A63-9661-FC6030DCC880    45824  SecMain.efi
+107 modules in 5 volumes
+```
+
 ### A dyld shared cache
 
 ```bash
