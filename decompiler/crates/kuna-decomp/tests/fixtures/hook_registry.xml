@@ -1,0 +1,8 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">534883ec1089fb09f321f701fb488d7c240ce81900000089d83344240c4883c4105bc3</bytechunk>
+<symbol space="ram" offset="0x100000" name="mba_sum"/>
+<bytechunk space="ram" offset="0x100030" readonly="true">c70707000000c3</bytechunk>
+<symbol space="ram" offset="0x100030" name="fill"/>
+</binaryimage>
+</decompilertest>
