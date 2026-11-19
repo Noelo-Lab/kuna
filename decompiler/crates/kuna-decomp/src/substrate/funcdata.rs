@@ -4264,9 +4264,11 @@ impl Funcdata {
     /// op's parent, splice it onto the per-op intrusive basic-block list before
     /// `before`, then compute `ordbefore`/`ordafter` from neighbours and either
     /// set an overflow-safe midpoint or recompute the whole order. An append that
-    /// finds no room renumbers into the lower half of the order space, so later
-    /// appends do not renumber the block again every few ops. The BRANCHIND
-    /// `f_switch_out` mark is applied via the block flags.
+    /// finds no room renumbers into the lower half of the order space, and an
+    /// append that makes a block 256 ops or longer takes a gap that shrinks with
+    /// the block's length, so each renumbering leaves room for as many appends as
+    /// the block already holds and building a block stays linear in its ops.
+    /// The BRANCHIND `f_switch_out` mark is applied via the block flags.
     pub fn bb_insert_op(&mut self, op: OpId, bl: BlockId, before: Option<OpId>) {
         if self.op_is_call_or_store(op) {
             self.affecting_ops_changed();
@@ -4304,7 +4306,8 @@ impl Funcdata {
         // on overflow) else the order of the op we inserted before.
         let ordafter: uintm = match before {
             None => {
-                let oa = ordbefore.wadd(0x1000000);
+                let gap = (uintm::MAX / self.bb_op_len(bl) as uintm).min(0x1000000);
+                let oa = ordbefore.wadd(gap);
                 if oa <= ordbefore {
                     uintm::MAX
                 } else {
@@ -5018,7 +5021,9 @@ impl Funcdata {
 
     /// C++ `Varnode::findSubpieceShadow` (`varnode.cc:1025-1072`): does `vn`
     /// equal `whole` truncated by `least_byte` least-significant bytes, allowing
-    /// COPY/MULTIEQUAL in the flow path (bounded recursion depth 1).
+    /// COPY/MULTIEQUAL in the flow path (bounded recursion depth 1).  A constant
+    /// `whole` wider than 8 bytes holds zero above bit 63, so a truncation of 8
+    /// or more bytes reads 0 (the C++ shift is undefined there).
     fn find_subpiece_shadow(&self, vn: VarnodeId, least_byte: int4, whole: VarnodeId, recurse: int4) -> bool {
         let vn = self.skip_copy_chain(vn);
         let v = match self.vbank.get(vn) {
@@ -5035,7 +5040,7 @@ impl Funcdata {
                 if !wv.get_addr().is_constant() {
                     return false;
                 }
-                let off = (wv.get_offset() >> (least_byte * 8))
+                let off = wv.get_offset().checked_shr(least_byte as u32 * 8).unwrap_or(0)
                     & kuna_base::address::calc_mask(v.get_size());
                 return off == v.get_offset();
             }
@@ -6747,14 +6752,14 @@ mod tests {
         let mut fd = build_fd();
         let (block, _) = make_block_with_ops(&mut fd, 1);
         let start = fd.affecting_ops_revision();
-        for i in 0..20_000u64 {
+        for i in 0..200_000u64 {
             let op = fd.obank.create_at(1, Address::new(ram_space(&fd), 0x2000 + i));
             fd.obank.change_opcode(op, TypeOp::new(OpCode::CPUI_COPY, 0, "COPY"));
             fd.bb_insert_op(op, block, None);
         }
         assert_strict_block_order(&fd, block);
         let renumbers = fd.affecting_ops_revision() - start;
-        assert!(renumbers <= 100, "{renumbers} renumbers");
+        assert!(renumbers <= 16, "{renumbers} renumbers");
     }
 
     #[test]
@@ -7135,5 +7140,23 @@ mod tests {
         fd.clear_covermerge();
         let third = fd.with_covermerge(|merge, _data| merge.copy_trims_len());
         assert_eq!(third, 0);
+    }
+
+    /// Kuna #1674: a constant wider than 8 bytes holds zero above bit 63, so a
+    /// piece 8 or more bytes into it shadows only the constant 0.
+    #[test]
+    fn partial_copy_shadow_reads_zero_above_bit_63_of_a_wide_constant() {
+        let mut fd = build_fd();
+        let zero16 = fd.new_constant(16, 0);
+        let low16 = fd.new_constant(16, 0x1234);
+        let zero8 = fd.new_constant(8, 0);
+        let low8 = fd.new_constant(8, 0x1234);
+        let zero4 = fd.new_constant(4, 0);
+        assert!(fd.varnode_partial_copy_shadow(low8, low16, 0));
+        assert!(fd.varnode_partial_copy_shadow(zero8, zero16, 8));
+        assert!(fd.varnode_partial_copy_shadow(zero8, low16, 8));
+        assert!(fd.varnode_partial_copy_shadow(zero4, low16, 12));
+        assert!(!fd.varnode_partial_copy_shadow(low8, low16, 8));
+        assert!(!fd.varnode_partial_copy_shadow(low8, zero16, 8));
     }
 }

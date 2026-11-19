@@ -2126,6 +2126,27 @@ the case targets.
    addresses they named. A candidate stops as soon as its values cover the
    selector's whole range, since it can no longer narrow it: a 65,536-entry
    map that names all 256 rows in its first 256 bytes costs 256 emulations.
+   When no candidate proves a domain (the index takes more values than the
+   budget, or the map is not read-only), the selector keeps its whole range,
+   but the table still cannot run through the map: the map's bytes are
+   selector values, not rows. `jumptable.rs
+   (JumpBasicModel::end_table_at_selector_map)` finds the bytes the map
+   occupies and ends the table at the first selector value whose row would be
+   read from them. The map's extent comes from the nearest upstream index that
+   a guard bounds to a range that does not wrap: the path is emulated at the
+   range's two ends and the selector LOAD's addresses there are the map's
+   first and last (`jumptable.rs (JumpBasicModel::selector_map_extent)`). Only
+   addresses are used, never the map's values, so this needs no read-only
+   proof. Each selector value is then emulated in order with its LOADs
+   collected; the first one that reads a byte of the map ends the table, and
+   the earlier values keep their rows. A table whose first row already lies
+   in the map is left alone. The `selector_domain.S` fixture places a
+   three-row table directly before its byte map, as MSVC lays out its
+   two-stage tables; with a 70,000-entry or writable map, rows 3 to 255 were
+   read from the map and from the bytes after it, and flow left for the
+   addresses they named. Only the selector's own map ends the table: a map
+   placed before the table, another switch's map after it, or padding between
+   table and map is still read as rows.
    **Stranded rows.** The smallest range can belong to a variable in front of
    a map: in `switch (map[mode])` one guard bounds `mode` and a second bounds
    `map[mode] - 8` to the table, and `mode`'s range is the smaller. A value of

@@ -1,5 +1,10 @@
 # Stage-model issue testcases
 
+`ghangr-go-abi0-model.xml` checks recovery of a Go stack-input leaf and the
+arguments passed by both call orders. It also checks the disabled option,
+an ordinary name lookalike, a wrapper with stack results, the signal
+trampoline and two linked runtime functions with private or foreign exits.
+
 `ghangr-call-argument-extensions.xml` checks explicit and missing parameter
 contracts. The CLI companion executes complete emitted C, Go and Rust callers
 and callees, covering zero extension, sign extension, signedness and store canaries.
@@ -120,6 +125,8 @@ writeup, not here.
 
 | `gh1628-x86-vmx-decode-flags.xml` | [Kuna #1628](https://github.com/Noelo-Lab/kuna/issues/1628) | S1 decode-table / S2 p-code lift (x86 spec-fix, no option) | `VMREAD`/`VMWRITE` decode without REX.W in 64-bit mode; every VMX user-op returns its status (0/1/2) and `vmxflags` sets ZF/CF from it, so `setna` after `vmlaunch` reads the VMX outcome; `VMPTRST` stores the VMCS pointer |
 
+| `gh1674-subpiece-shadow-wide-const.xml` | [Kuna #1674](https://github.com/Noelo-Lab/kuna/issues/1674) | P6 merge (cover intersection, partial copy shadow; no option) | a constant truncated by 8 or more bytes reads 0 instead of shifting a 64-bit offset by 64 or more bits, so the function decompiles in a build with overflow checks |
+
 | `gh9184-x86-fma-ymm256.xml` | [GH-9184](https://github.com/NationalSecurityAgency/ghidra/issues/9184) | S1/S2 decode + pcode-semantics (x86 spec-fix, no option) | SLEIGH YMM FMA uses 256-bit `local tmp:32` (was `tmp:16`) |
 
 | `gh5897-arm-cpy-mov.xml` | [GH-5897](https://github.com/NationalSecurityAgency/ghidra/issues/5897) | S1 decode-table (ARM spec-fix, no option) | SLEIGH reg-to-reg move constructor renders UAL `mov`, not pre-UAL `cpy` |
@@ -140,6 +147,7 @@ writeup, not here.
 | `gh831-riscv-fpmove.xml`, `gh831-riscv32-fpmove.xml` | [Kuna #831](https://github.com/Noelo-Lab/kuna/issues/831) | P2 p-code lift (RISCV spec-fix, no option) | `fmv.x.d`/`fmv.x.w` read the FP register itself, and `fmv.x.w`/`fcvt.w*` write the integer register (sign-extended on RV64) |
 | `kuna-fcvtround-a64.xml` | [Kuna #1535](https://github.com/Noelo-Lab/kuna/issues/1535) | P2 p-code lift (AArch64 spec-fix, no option) + P5 typing of its rounding user ops (`p5_types/kuna_roundingops.rs`) | `fcvt{a,m,n,p}{s,u}` and `frint*` round in their own mode (`FLOAT_FLOOR`/`FLOAT_CEIL`/`FLOAT_ROUND`, typed `FLOAT_ROUNDEVEN`/`FLOAT_TRUNC`/`FLOAT_RINT`/`FLOAT_NEARBYINT`), so the issue's floor/ceil interpolation branch survives; `frint32/64*` zero the register bits above the result |
 | `kuna-pacflow-a64.xml` | [Kuna #1621](https://github.com/Noelo-Lab/kuna/issues/1621) | P2 p-code lift (AArch64 spec-fix, no option) | with `ShowPAC=0` a `pac*`/`aut*`/`xpac*` that writes a general register lifts to a pass-through copy (`Rd = Rd`) instead of nothing, so a function whose only write to `x0` is the signing returns its pointer instead of decompiling as `void`; the `x30`/`sp` and branch forms stay empty |
+| `kuna-rustversion-commit.xml` | [Kuna #1639](https://github.com/Noelo-Lab/kuna/issues/1639) | P0 knowledge (loader image facts, Rust compiler version; no option) | a Rust image without a `.comment` record takes its stable release from the commit in its `/rustc/<commit>/library/...` source paths, so the 1.93 `rustfmt` argument recovery still applies |
 
 | `gh6904-ppc-e500-concat44.xml` | [GH-6904](https://github.com/NationalSecurityAgency/ghidra/issues/6904) | P-code lift (PowerPC e500 spec-fix, no option) | `or`/`or.` (`mr`/`mr.`) zero-extend their 32-bit result on the 64-bit-register e500, killing spurious CONCAT44 at function boundaries (partial) |
 

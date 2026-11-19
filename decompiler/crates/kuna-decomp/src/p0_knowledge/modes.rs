@@ -528,7 +528,9 @@ mod tests {
         ///
         /// `armconstshift` makes signed ARM constant shifts defined C at the
         /// cost of a cast pair on every sign-bit test (`x << 0x18 < 0`), which
-        /// firmware uses for nearly every register flag check.
+        /// firmware uses for nearly every register flag check. `wrapadd` makes a
+        /// widened four-byte sum wrap the same way, at the cost of a cast pair on
+        /// every such sum (`return a0 + 3;`).
         ///
         /// `x86listingswitch` reaches valid cases but ordinary tail jumps from
         /// them can hide independent function entries from the AIF gap walk;
@@ -556,7 +558,7 @@ mod tests {
               "nulterminator", "msvcstrappend",
               "structdefs", "indirectonly", "protoorder", "stackalias", "stackviews", "bejoin",
               "mixedtailret", "varargsharedfloat", "callarrayextent",
-              "armconstshift", "regsigned", "x86listingswitch", "callwide", "ppc32picimports", "ppcapu", "rustprobestack", "highsliceguard", "rustarrayzero",
+              "armconstshift", "wrapadd", "regsigned", "x86listingswitch", "callwide", "ppc32picimports", "ppcapu", "rustprobestack", "highsliceguard", "rustarrayzero",
               // `lazyfuncs` changes no output, but its saving is a single-function
               // property: the whole-binary surfaces the presets drive (decompile-all,
               // the web front-end, the benchmark) materialize every target they walk

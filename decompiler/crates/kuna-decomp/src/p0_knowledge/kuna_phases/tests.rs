@@ -837,8 +837,11 @@ fn option_values_live_value_present_for_76() {
     // 76 -> 75: `calleereginputs` became three-valued (off|on|custom), so it has
     // no codegen live reader; its live value is read console-side via
     // `kuna_live_value`, like `narrowargs`/`protoorder`.
-    // `armconstshift` has no live_field; `stackalloc` adds one.
-    assert_eq!(with_live, 76);
+    // 75 -> 74: `armconstshift` became three-valued (off|on|all) over an enum
+    // field with no `live_field`.
+    // 75 -> 76: +1 for `wrapadd` (live_field = wrap_add).
+    // 76 -> 77: +1 for `stackalloc` (live_field = stack_alloc).
+    assert_eq!(with_live, 77);
 }
 
 #[test]
