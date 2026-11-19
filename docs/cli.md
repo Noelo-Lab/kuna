@@ -1564,6 +1564,34 @@ failed function stays a per-function `error` record and never aborts the batch
 (its text now carries the real panic message instead of `panic with non-string
 payload`).
 
+### Raw Cortex-M dumps
+
+A headerless Cortex-M flash dump needs none of `--target`, `--base`, `--isa`
+or `--entry`. Before `decompile`, `decompile-all`, `decompile-project` and
+`functions` parse their arguments, the binary (the first argument) is probed
+for a Cortex-M vector table (`kuna_analysis::loader::firmware::cortexm`): an
+initial stack pointer in SRAM, Thumb handler pointers into the Code region, and
+IRQ vectors up to the first word that is neither zero nor such a pointer. The
+base is the 0x1000-aligned address the most (handler, dummy-handler instruction)
+pairs vote for, else the first common flash base that holds every handler. The
+run then gets `--raw-image --target ARM:LE:32:Cortex --base <base> --isa
+thumb`, every handler as an `--entry` (unless an `--entry`/`--addr` was given),
+a `--define-function <addr>=<Name>_Handler` per handler (`IRQ<n>_Handler`,
+`Default_Handler` for a target several IRQs share), and the two Device memory
+regions of the ARMv7-M/ARMv8-M map (`0x40000000+0x20000000`,
+`0xe0000000+0x20000000`) as `--assert volatile`, so a peripheral
+read-modify-write survives. A line on stderr reports what was found. An
+explicit `--base` turns the probe off; an explicit `--target` other than a
+32-bit little-endian ARM one does too. Object files (ELF, PE, TE, Mach-O,
+archives) are never probed.
+
+```sh
+$ kuna decompile-all stm32.bin
+[kuna firmware] Cortex-M vector table: base 0x8000000, initial SP 0x20005000, 4 handlers, reset 0x8000174
+// Function: Default_Handler @ 0x80000e0
+...
+```
+
 ## `kuna decompile-all` / `kuna functions` — whole binary, machine-readable
 
 ```bash

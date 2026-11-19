@@ -1752,6 +1752,25 @@ it, and a walk that publishes nothing leaves the context partition as it found
 it. A wholly Thumb image can opt into the explicit `--isa thumb` range paint
 instead.
 
+(kuna) **Firmware front ends.** `decompiler/crates/kuna-analysis/src/loader/firmware/`
+holds the probes that turn a headerless firmware file into raw-image arguments.
+`cortexm.rs (probe)` reads a Cortex-M vector table: word 0 an initial stack
+pointer in `0x10000000..0x40000000` (SRAM or a CCM/TCM alias), the fifteen
+system words zero or odd pointers below `0x20000000` with Reset non-zero
+(reserved slots are not checked, since NXP parts keep a checksum there), then
+IRQ words to the first word that is neither, at most 496, trailing zeros
+trimmed. The base is voted: every 2-byte-aligned dummy handler after the table
+(`bx lr`, `b .`, `b.w .`, `nop; b .`) and every handler target give the
+candidate `target - offset` when it is 0x1000-aligned, and the most-voted
+candidate wins with at least 15 votes; else the first of 0x08000000, 0,
+0x400000, 0x10000, 0x8000, 0x10000000 that holds every handler; else the page
+below the lowest handler. Handlers are named `<Exception>_Handler` and
+`IRQ<n>_Handler`, a target several IRQs share is `Default_Handler`. The CLI
+(`decompiler/crates/kuna-cli/src/rawfront.rs (prepare)`) turns the table into
+`--raw-image` arguments before a subcommand parses its own, so the engine sees
+an ordinary raw load; the probe runs only on a file whose magic no object
+loader claims, and an explicit `--base` or a non-ARM `--target` turns it off.
+
 PE entry discovery and Listing seeds normalize the low bit according to the
 selected decoder before deduplication and naming. A 32-bit ARM decoder clears
 the Thumb bit; a non-ARM override preserves an odd address even when the header
