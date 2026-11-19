@@ -3234,6 +3234,11 @@ define pcodeop SetPtrTag;  # this could be implemented in pcode, but it would br
 define pcodeop LoadMemTag;
 define pcodeop StoreMemTag;
 define pcodeop AlignmentFault;
+# (kuna) memory-tagging ops that take or produce the whole tagged pointer
+define pcodeop AddPtrTag;      # in0 with its tag advanced by in1, skipping excluded tags (ADDG, SUBG)
+define pcodeop ExcludePtrTag;  # in1 with the bit of in0's tag set (GMI)
+define pcodeop LoadPtrTag;     # in0 with the allocation tag of the granule holding in1 (LDG)
+define pcodeop StorePtrTag;    # in1's tag becomes the allocation tag of the granule at in0 (STG, ST2G, STZG, STZ2G, STGP)
 
 # BTI show/hide operations, which use pcodeops defined above
 

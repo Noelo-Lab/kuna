@@ -358,3 +358,34 @@ fn a_spent_retained_allowance_stops_slide_and_symbol_reads() {
     let pool = StringPool::read_at(&|_, len| Ok(vec![b'a'; len]), 8192, [1u64].into_iter(), &|_| Err("spent".into()));
     assert_eq!(pool.err().as_deref(), Some("spent"));
 }
+
+/// The caches of `dyld_cache_objc.py`: one names its selector base in the
+/// header's ObjCOptimizationHeader, the `_v16` one only in libobjc's
+/// `objc_opt_t`.
+#[test]
+fn objc_selector_base_from_the_header_and_from_libobjc() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    for folder in ["dyld_cache_objc", "dyld_cache_objc_v16"] {
+        let cache = DyldCache::open(&root.join(folder).join("dyld_shared_cache_arm64e")).unwrap();
+        assert_eq!(cache.objc_selector_base(), Some(0x1_8003_0100), "{folder}");
+        assert_eq!(cache.libobjc_selector_base(), Some(0x1_8003_0100), "{folder}");
+        let header = (folder == "dyld_cache_objc").then_some(0x1_8003_0100);
+        assert_eq!(cache.header_selector_base(), header, "{folder}");
+    }
+    assert_eq!(DyldCache::open(&fixture()).unwrap().objc_selector_base(), None);
+}
+
+/// `objc_opt_t.relativeMethodSelectorBaseAddressOffset` is an `int64_t` from
+/// the record, so a base below libobjc's `__objc_opt_ro` is a negative offset.
+#[test]
+fn objc_selector_base_below_the_objc_opt_t_record() {
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/dyld_cache_objc_v16/dyld_shared_cache_arm64e");
+    let mut bytes = std::fs::read(src).unwrap();
+    put(&mut bytes, 0x5028, &(-0x1_0000i64).to_le_bytes());
+    let dir = std::env::temp_dir().join(format!("kuna-dyld-objcneg-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("dyld_shared_cache_arm64e");
+    std::fs::write(&path, &bytes).unwrap();
+    assert_eq!(DyldCache::open(&path).unwrap().objc_selector_base(), Some(0x1_8002_0000));
+    std::fs::remove_dir_all(dir).unwrap();
+}

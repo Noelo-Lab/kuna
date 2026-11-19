@@ -610,10 +610,14 @@ One directive per `--assert`, keyed by intent rather than by phase:
 | `return [<func>::]<storage> <C typedecl>` | the storage and type of the return value |
 | `name [<func>::]<symbol> <newname>` | rename a local |
 | `type [<func>::]<symbol> <C type>` | retype a local |
+| `format [<func>::]<addr> hex\|dec\|oct\|bin\|char [<value>]` | the form the constant read by the instruction at `<addr>` is printed in |
+| `isolate [<func>::]<symbol>` | this local is its own variable: it is not merged with another |
 | `typedef <C declaration>` | intern a `struct`/`union`/`enum`/`typedef` so `type` can name it |
 | `data <addr> <C typedeclaration>` | a named, typed global at an address |
 | `comment [<func>::]<addr> <text>` | a comment rendered into the C at that instruction |
 | `flow [<func>::]<addr> branch\|call\|callreturn\|return` | the flow out of this instruction is not what kuna decided |
+| `callee [<func>::]<callsite> <name\|address>` | the indirect call at this instruction goes to this function |
+| `callproto [<func>::]<callsite> <C declaration>` | the arguments and return of the one call made by the instruction at `<callsite>` |
 | `function <start>[-<end>][=<name>]` | the `--define-function` spelling, on this plane |
 | `readonly <addr>+<size>` | the bytes in this range never change at run time |
 | `volatile <addr>+<size>` | device memory: every access is a real access |
@@ -669,6 +673,38 @@ Saved copies, joins and later reuse of that register remain distinct. JOIN
 values, temporaries and ambiguous definition addresses use a validated
 dataflow anchor. A missing or ambiguous anchor rejects the directive rather
 than applying it to another value.
+
+**`format` and `isolate` change how one constant or one local is shown.**
+`format <addr> oct` prints the constant the instruction at `<addr>` reads in
+octal; the forms are `hex`, `dec`, `oct`, `bin` and `char`. The address is the
+one `kuna disassemble` shows for the instruction, and `--json` lists the
+addresses behind each line of C in `line_mappings`. When the instruction reads
+several constants, a `<value>` (decimal, or hex with `0x`) picks one, and the
+rejection of a request without it lists them. An address where the decompiled
+function reads no integer constant is `rejected`, and so is a constant that
+prints as an enum's name and a `char` request for a value wider than 32 bits,
+which no character literal holds. A format that was taken and
+whose constant the second pass does not find again is reported refused
+(`fatal`).
+
+```bash
+kuna decompile ./mode.so is_rwx --assert 'format 0x1304 oct' --assert 'format 0x130c oct'
+#   return (a0 & 0777) == 0755;       (was: return (a0 & 0x1ff) == 0x1ed;)
+```
+
+`isolate <symbol>` keeps a local out of the merges kuna chooses to make: a
+copy with its source, and the result of an operation with its input, which
+is what prints one variable for two values (`v1 = v1 * 3 + 1;`) or reuses a
+parameter (`a0 *= 3;`). The isolated local keeps the values it is defined
+with, and the other value gets a declaration of its own. Values that meet
+where two paths join are one variable and stay one. The name is resolved as
+`name` resolves it, so a register local, a stack local and a parameter can
+all be isolated.
+
+```bash
+kuna decompile ./a.out triple --assert 'isolate a0'
+#   v2 = a0 * 3;                      (was: a0 *= 3;)
+```
 
 With `option stackviews on`, the console command `print stack objects` lists
 logical frame objects at declared address uses: calls, typed pointer assignments,
@@ -955,6 +991,31 @@ error: --assert "flow 0x1405 call" refused by the pipeline: Could not apply flow
 exit 1
 ```
 
+**`callee` states where an indirect call goes.** kuna prints a call through a
+table or a function pointer as the pointer expression, because the destination
+is not in the code. When you know it, name the call instruction and the
+function, by name or by entry address:
+
+```console
+$ kuna decompile ./ops.so twice
+  v1 = (*(int (*)(unsigned long,unsigned int))**(unsigned long **)&table[(a1 & 3) * 8UL])(a0,a2);
+$ kuna decompile ./ops.so twice --assert 'callee 0x147a handle_open'
+  v1 = handle_open(a0,a2);
+```
+
+The call is rebuilt as a direct call before the function is analysed, so the
+callee's name and prototype apply to its arguments and its result. An indirect
+jump (`jmp *%rax`) is taken as a tail call: a call to the function, then a
+return (no return after a callee that never returns); no switch is recovered
+from it. The statement outranks a destination kuna would recover itself, such
+as the import a `call *slot(%rip)` loads. The directive is rejected when the
+instruction is a direct call, when it is not a call or an indirect jump, and
+when the destination is not a function (declare one first with `function`). A
+second `callee` for the same call site replaces the first, which is reported
+rejected. A call site the function's flow never reaches is refused after the
+decompile, and the run exits non-zero. In the console the same fact is
+`override indirect <callsite> <name|address>`, given after `load function`.
+
 **A `call` override follows the RET-call chain it starts.** `push
 <continuation>; push <target>; ret` is a call written without a `call`
 instruction: the `ret` pops `<target>` and jumps to it, and the callee returns to
@@ -1038,9 +1099,33 @@ render different arguments. Slots may be declared in any order and one you do
 not name is `undefined`; declaring them all is the same statement as a
 `prototype` directive with the storage added.
 
-`comment`, `flow`, `name` and `type` describe the inside of one function body
-and have no cross-function reading, so qualifying one with a function this run
-did not decompile is **rejected** — with a `warning:` line naming it, and a
+**`callproto` states one call.** `prototype` describes a function and `data` can
+type a function-pointer global, but a call through a pointer or a register has
+no callee symbol to carry a signature, and a variadic callback takes different
+arguments at each call. `callproto` gives the call made by one instruction its
+own declaration, in the grammar `prototype` takes:
+
+```console
+$ kuna decompile ./vlog.so report --assert 'data 0x2458 void (**logger_slot)(char *fmt, ...)'
+  (**v1)("%s %d %d",a1,(unsigned long)a0,(unsigned long)(a0 + 1),*v1); // jump-as-call
+$ kuna decompile ./vlog.so report --assert 'data 0x2458 void (**logger_slot)(char *fmt, ...)' \
+      --assert 'callproto 0x13b0 void f(char *fmt, char *s, int a, int b)'
+  (**v1)("%s %d %d",a1,a0,a0 + 1); // jump-as-call
+```
+
+The call is laid out under the default calling convention, so a declaration
+naming any other (`__thiscall` on x86) is **rejected**; a name the compiler
+spec gives the default one (`__cdecl` on x86-64 Windows) is accepted. A
+parameter followed by `@<storage>` is read from that storage instead of the
+place the convention gives it (`int a @R8D`, `char *s @[stack,0x8,8]`), and a
+`@<storage>` after the parameter list places the return value; the parameters
+without one are placed by the convention around those that have one. An address where the function
+makes no call is **rejected** with `No call is made at this address`, and of
+two directives for one call the later is applied and the earlier **rejected**.
+
+`comment`, `flow`, `callproto`, `name` and `type` describe the inside of one
+function body and have no cross-function reading, so qualifying one with a
+function this run did not decompile is **rejected** — with a `warning:` line naming it, and a
 non-zero exit under `--assert-strict` — rather than quietly applied to the
 function that was selected.
 
@@ -4538,6 +4623,42 @@ explanation, also printed as a `note:` line:
 ```
 note: 0xfffffe0007007000 is in the MH_FILESET entry com.apple.kernel, not in com.example.driver.PMGR, the entry loaded: only references made from com.example.driver.PMGR are listed; `--option kernelcache com.apple.kernel` loads that entry
 ```
+
+### `--option kernelcache-boot PATH` — the collections a System or Auxiliary collection links
+
+A macOS `AuxiliaryKernelExtensions.kc` (third-party kexts) or
+`SystemKernelExtensions.kc` points into the boot collection with fixups that
+are offsets from the boot collection's base, so it cannot be resolved from its
+own bytes. kuna looks in the directory of the input for the collection whose
+UUID the input's `__PRELINK_INFO` names (`_BootKCID`, and `_PageableKCID` for
+the System collection), rebases those pointers against it and names the kernel
+functions they reach:
+
+```
+$ ls
+AuxiliaryKernelExtensions.kc  BootKernelExtensions.kc
+$ kuna decompile AuxiliaryKernelExtensions.kc gadget_start
+[kuna] MH_FILESET: loaded com.example.driver.Gadget (entry 1 of 1, 1 chained-fixup pointers rebased, 2 pointers into the boot collection rebased from BootKernelExtensions.kc (2 functions named)); ...
+void gadget_start(unsigned long a0)
+{
+  kernel_add(a0,7);
+}
+```
+
+On a Mac the two files are `/Library/KernelCollections/AuxiliaryKernelExtensions.kc`
+and `/System/Library/KernelCollections/BootKernelExtensions.kc`.
+
+Only an input with pointers into another collection reads any other file.
+`auto` then opens the regular files of the input's directory (at most 4096
+entries) for their first 16 bytes, and reads whole only the `MH_FILESET` ones
+(at most 16, never the input itself) until the UUID matches; the load note
+names the file it used. `--option kernelcache-boot PATH` names the file (raw,
+or an IMG4 / IM4P container) or a directory to search instead; `off` reads no
+other file. A file with a different UUID is not used. When no file matches,
+the pointers stay unresolved and the note says how many and which UUID is
+missing. Like
+`kernelcache`, the option applies to the whole invocation and overrides
+`KUNA_KERNELCACHE_BOOT`.
 
 ## `--member NAME` — one member of an `ar` archive
 

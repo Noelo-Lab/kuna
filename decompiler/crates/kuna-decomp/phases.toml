@@ -1691,6 +1691,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "acleintrinsics"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P9"
+subphase = "naming-policy"
+strength = "HARD"
+rewind = "P2"
+issue = "kuna-acleintrinsics"
+summary = "On AArch64, lift the memory-tagging (MTE) instructions with their tag effect and print the barrier, hint and memory-tagging user ops as the ACLE intrinsics of <arm_acle.h>. The vendored AARCH64.pspec leaves the ShowMemTag context at 0, under which irg, addg, subg, gmi and ldg lift as a plain pointer copy or add and the stg family as nothing or a plain store, so __arm_mte_create_random_tag(p, 0) decompiled to return p. On sets ShowMemTag to 1 over the code space before a function is lifted; only the memory-tagging constructors read that context, so code without those instructions lifts exactly as before. Each tag instruction is then one user op whose result is the tagged pointer: irg prints __arm_mte_create_random_tag(p, mask), addg and subg __arm_mte_increment_tag(p + n, k), gmi __arm_mte_exclude_tag(p, mask), ldg x, [x] __arm_mte_get_tag(p), and stg x, [x] (and each granule st2g, stzg, stz2g and stgp tag) __arm_mte_set_tag(p). A tag load or store whose pointer and granule address differ has no ACLE spelling and keeps its user-op name, LoadPtrTag(p, addr) or StorePtrTag(addr, p). The alignment fault stg raises on a misaligned address is not modelled as a branch. Independently of MTE, DataMemoryBarrier(domain, types) prints __dmb(CRm) with the two operands recombined into the 4-bit CRm the intrinsic takes, DataSynchronizationBarrier likewise __dsb(CRm) (the nXS forms keep their name), InstructionSynchronizationBarrier() prints __isb(CRm) with CRm read from the instruction, and WaitForInterrupt, WaitForEvent, Yield, SendEvent and SendEventLocally print __wfi(), __wfe(), __yield(), __sev() and __sevl(). The rewrite is keyed on the user-op name and changes only the spelling of the call."
+use_when = "On by default on AArch64 and inert on every other target: the output names the intrinsic the source called, and a pointer that was tagged is the result of a call instead of an unchanged copy. Flip off to read barriers and hints under their SLEIGH instruction names with the domain and type operands separate, or to read MTE-hardened code (for example a stack-tagging build, which tags every address-taken local) as if the core had no tags."
+example = "option acleintrinsics off"
+source_decompiler = "kuna"
+inspiration = "clang -march=armv8.5-a+memtag: void *tag(void *p) { return __arm_mte_create_random_tag(p, 0); } is irg x0, x0; ret and decompiled to return a0; __dmb(11) printed DataMemoryBarrier(2,3)"
+change_kind = "correctness-fix"
+tier = "core"
+symptoms = "an AArch64 function that tags a pointer (irg, addg) decompiles to return a0|stg, st2g or stzg leave no trace in the output of MTE-hardened AArch64 code|DataMemoryBarrier(2,3) or DataSynchronizationBarrier(3,3,0) where the source called __dmb or __dsb|WaitForInterrupt() or Yield() where the source called __wfi or __yield"
+live_field = "acle_intrinsics"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "tailcalljump"
 values = "on|direct|off"
 default = "on"
@@ -5185,6 +5207,25 @@ inspiration = "Apple's public IMG4/IM4P DER layout, the lzfse reference format, 
 change_kind = "analysis-enablement"
 tier = "analysis"
 symptoms = "an iOS kernelcache (IMG4/IM4P) is rejected as an unrecognized input format|kuna functions on a decompressed MH_FILESET kernelcache finds no functions|a kext cannot be selected out of a kernel collection|pointers in a kernelcache read as packed chained-fixup words instead of addresses"
+
+[[settable]]
+option = "kernelcache-boot"
+values = "auto|off|<path>"
+default = "auto"
+destructive = false
+phase = "P1"
+subphase = "code-data-partition"
+strength = "HARD"
+rewind = "P1"
+issue = "kuna-kernelcache-boot"
+summary = "Apple kernel collections only: resolve the pointers a System or Auxiliary collection (macOS SystemKernelExtensions.kc, AuxiliaryKernelExtensions.kc) holds into the collections it was linked against. A DYLD_CHAINED_PTR_64_KERNEL_CACHE or X86_64_KERNEL_CACHE rebase names a cache level, and a target at level 0 (the boot collection) or 1 (the System collection) is an offset from the base of that other file, so the collection alone cannot say where it points: the slot would keep its packed chain word, and a call through it, or a vtable or metaclass pointer it holds, prints as a raw number. The collection's __PRELINK_INFO plist names each file it needs by UUID (_BootKCID, _PageableKCID). kuna reads the MH_FILESET files in the directory of the input (`auto`), or the file or directory the value names (a file may be an IMG4/IM4P container), takes the one whose LC_UUID or _PrelinkKCID is that UUID, writes base + offset into every such slot, and gives each target that a section symbol of the linked file defines inside code that symbol's name as an import of the loaded kext (the kernel's symbol before a kext's); a `__got`, `__auth_got` or `__auth_ptr` slot holding such an address is that import's slot, so a call through it is a call to the named function. A file with another UUID is never used. The load note counts, per level, the pointers rebased and functions named, or the pointers left unresolved and why. Inert on every input that is not a kernel collection pointing into another one. Loader-tier: read through the KUNA_KERNELCACHE_BOOT env var, because the image is built inside load file."
+use_when = "Auto (default): with BootKernelExtensions.kc copied next to AuxiliaryKernelExtensions.kc, a kext's calls into the kernel through its pointer slots print the kernel function's name. Give a path when the boot collection lives elsewhere (`--option kernelcache-boot /System/Library/KernelCollections`). Flip off to read no file but the input: the slots into other collections stay unresolved and the load note counts them."
+example = "--option kernelcache-boot /System/Library/KernelCollections/BootKernelExtensions.kc"
+source_decompiler = "kuna"
+inspiration = "xnu's kernel-collection fixup walk (basePointers indexed by cacheLevel) and the _BootKCID / _PageableKCID UUID checks OSKext makes before it accepts a System or Auxiliary collection; mach-o/fixup-chains.h dyld_chained_ptr_64_kernel_cache_rebase"
+change_kind = "analysis-enablement"
+tier = "analysis"
+symptoms = "a kext in an Auxiliary kernel collection calls the kernel through a raw number instead of a named function|pointers into the boot kernel collection read as packed chained-fixup words|vtable and metaclass pointers of a third-party kext are not addresses|AuxiliaryKernelExtensions.kc or SystemKernelExtensions.kc loads with unresolved kernel references"
 
 [[settable]]
 option = "outline"

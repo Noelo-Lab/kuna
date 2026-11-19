@@ -44,6 +44,9 @@ mod argument_errors_cli;
 #[path = "archive_members_cli.rs"]
 mod archive_members_cli;
 
+#[path = "assert_callee.rs"]
+mod assert_callee;
+
 #[path = "array_member_bits.rs"]
 mod array_member_bits;
 
@@ -115,6 +118,9 @@ mod thumbswitch_guards;
 
 #[path = "asserted_enum_layout.rs"]
 mod asserted_enum_layout;
+
+#[path = "assert_format_isolate.rs"]
+mod assert_format_isolate;
 
 #[path = "baseline_cli.rs"]
 mod baseline_cli;
@@ -889,3 +895,6 @@ mod mips_weak_imports;
 
 #[path = "nullable_relocations.rs"]
 mod nullable_relocations;
+
+#[path = "call_site_prototype.rs"]
+mod call_site_prototype;

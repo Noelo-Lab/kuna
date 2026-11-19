@@ -6894,6 +6894,9 @@ pub struct FuncCallSpecs {
     /// (kuna) The model the direct callee's register inputs select. See
     /// [`crate::p4_calls::kuna_calleereginputs`].
     callee_reg_model: Option<Rc<ProtoModel>>,
+    /// (kuna) How many of EAX, ECX and EDX the direct callee reads before
+    /// writing them. See [`crate::p4_calls::kuna_calleereginputs`].
+    callee_arg_registers: u8,
     /// (kuna) The extrapop the direct callee's own returns state. See
     /// [`crate::p4_calls::kuna_calleepurge`].
     callee_purge: Option<int4>,
@@ -6948,6 +6951,7 @@ impl FuncCallSpecs {
             jump_target_storage: None,       // (kuna) tailcalljump
             plt_stub: None,                  // (kuna) pltlocal
             callee_reg_model: None,
+            callee_arg_registers: 0,
             callee_purge: None,
             callee_stack_arg_bytes: None,
             callee_moves_stack: false,
@@ -6987,6 +6991,7 @@ impl FuncCallSpecs {
         res.jump_target_storage = self.jump_target_storage.clone();
         res.plt_stub = self.plt_stub.clone();
         res.callee_reg_model = self.callee_reg_model.clone();
+        res.callee_arg_registers = self.callee_arg_registers;
         res.callee_purge = self.callee_purge;
         res.callee_stack_arg_bytes = self.callee_stack_arg_bytes;
         res.callee_moves_stack = self.callee_moves_stack;
@@ -7357,6 +7362,17 @@ impl FuncCallSpecs {
     /// Record the model the direct callee's register inputs select.
     pub fn set_callee_reg_model(&mut self, model: Option<Rc<ProtoModel>>) {
         self.callee_reg_model = model;
+    }
+
+    /// How many of EAX, ECX and EDX the direct callee reads before writing them.
+    pub fn callee_arg_registers(&self) -> u8 {
+        self.callee_arg_registers
+    }
+
+    /// Record how many of EAX, ECX and EDX the direct callee reads before
+    /// writing them.
+    pub fn set_callee_arg_registers(&mut self, count: u8) {
+        self.callee_arg_registers = count;
     }
 
     /// The extrapop the direct callee's own returns state, if read.
