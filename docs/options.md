@@ -478,6 +478,10 @@ Three tiers:
 | string constants render as raw addresses or unnamed data instead of quoted char[N] literals | [`strings`](#strings----on--off-default-on) |
 | no data symbols at ascii runs in rodata | [`strings`](#strings----on--off-default-on) |
 | four-character commands such as quit, show, bind, or fork render as hexadecimal addresses | [`strings`](#strings----on--off-default-on) |
+| a function returns a bare address that points at an embedded PNG or JPEG | [`blobs`](#blobs----on--off-default-on) |
+| PNG, IHDR or IDATx show up as short string fragments in rodata | [`blobs`](#blobs----on--off-default-on) |
+| an embedded zip or gzip archive renders as dat_ globals with no length | [`blobs`](#blobs----on--off-default-on) |
+| a resource table of images is unnamed data | [`blobs`](#blobs----on--off-default-on) |
 | a wide Windows API argument renders as a one-character string literal | [`widestrings`](#widestrings----on--off-default-on) |
 | LoadLibraryW("n") or FindWindowW("O",0) in the emitted C | [`widestrings`](#widestrings----on--off-default-on) |
 | kuna strings --encoding utf16 reports a literal the decompiled C truncates to its first character | [`widestrings`](#widestrings----on--off-default-on) |
@@ -621,6 +625,8 @@ Three tiers:
 | a dyld_shared_cache file is rejected as an unrecognized input format | [`dyldimage`](#dyldimage----none---default-none) |
 | cannot decompile an ios or macos system library because it only exists inside the dyld shared cache | [`dyldimage`](#dyldimage----none---default-none) |
 | dyld shared cache holds N images; choose one with --image | [`dyldimage`](#dyldimage----none---default-none) |
+| address is not mapped in this input for a callee in another image of the dyld shared cache | [`dyldimage`](#dyldimage----none---default-none) |
+| following a call from one cache image into another needs a second run | [`dyldimage`](#dyldimage----none---default-none) |
 | calls in a dyld shared cache image render as sub_<addr> into a __TEXT_STUBS island | [`dyldcrossrefs`](#dyldcrossrefs----on--off-default-on) |
 | a cache image's __got loads name nothing | [`dyldcrossrefs`](#dyldcrossrefs----on--off-default-on) |
 | cross-library calls of an ios framework have no names | [`dyldcrossrefs`](#dyldcrossrefs----on--off-default-on) |
@@ -660,6 +666,10 @@ Three tiers:
 | kuna functions on a decompressed MH_FILESET kernelcache finds no functions | [`kernelcache`](#kernelcache----auto--off---default-auto) |
 | a kext cannot be selected out of a kernel collection | [`kernelcache`](#kernelcache----auto--off---default-auto) |
 | pointers in a kernelcache read as packed chained-fixup words instead of addresses | [`kernelcache`](#kernelcache----auto--off---default-auto) |
+| a kext in an Auxiliary kernel collection calls the kernel through a raw number instead of a named function | [`kernelcache-boot`](#kernelcache-boot----auto--off---default-auto) |
+| pointers into the boot kernel collection read as packed chained-fixup words | [`kernelcache-boot`](#kernelcache-boot----auto--off---default-auto) |
+| vtable and metaclass pointers of a third-party kext are not addresses | [`kernelcache-boot`](#kernelcache-boot----auto--off---default-auto) |
+| AuxiliaryKernelExtensions.kc or SystemKernelExtensions.kc loads with unresolved kernel references | [`kernelcache-boot`](#kernelcache-boot----auto--off---default-auto) |
 | go functions lose source parameters despite dwarf | [`godwarfsig`](#godwarfsig----on--off-default-on) |
 | go identity function decompiles as void | [`godwarfsig`](#godwarfsig----on--off-default-on) |
 | go result parameters appear as inputs | [`godwarfsig`](#godwarfsig----on--off-default-on) |
@@ -697,6 +707,10 @@ Three tiers:
 | warning text wanted inline at the end of the statement it describes | [`warnstyle`](#warnstyle----inline--banner-default-inline) |
 | terse warning slugs unwanted; full upstream warning text needed | [`warnstyle`](#warnstyle----inline--banner-default-inline) |
 | warning style needs to match upstream ghidra for diffing | [`warnstyle`](#warnstyle----inline--banner-default-inline) |
+| an AArch64 function that tags a pointer (irg, addg) decompiles to return a0 | [`acleintrinsics`](#acleintrinsics----on--off-default-on) |
+| stg, st2g or stzg leave no trace in the output of MTE-hardened AArch64 code | [`acleintrinsics`](#acleintrinsics----on--off-default-on) |
+| DataMemoryBarrier(2,3) or DataSynchronizationBarrier(3,3,0) where the source called __dmb or __dsb | [`acleintrinsics`](#acleintrinsics----on--off-default-on) |
+| WaitForInterrupt() or Yield() where the source called __wfi or __yield | [`acleintrinsics`](#acleintrinsics----on--off-default-on) |
 | a DOS program's float code decompiles as calls through swi(0x35) and other INT 34h-3Dh vectors | [`fpuemu`](#fpuemu----off--auto--on-default-auto) |
 | Control flow encountered bad instruction data in a DOS function that does float math | [`fpuemu`](#fpuemu----off--auto--on-default-auto) |
 | a phantom function starts inside an INT 35h instruction's operand bytes | [`fpuemu`](#fpuemu----off--auto--on-default-auto) |
@@ -830,6 +844,9 @@ Three tiers:
 | a signed ARM shift overflows into the sign bit in recompiled output | [`armconstshift`](#armconstshift----off--on--all-default-off) |
 | UBSan reports a left shift of a negative 64-bit value in recompiled output | [`armconstshift`](#armconstshift----off--on--all-default-off) |
 | a sign-extended 32-bit value shifted left into the sign bit of a 64-bit result | [`armconstshift`](#armconstshift----off--on--all-default-off) |
+| UBSan reports a signed integer overflow in a recompiled 32-bit addition | [`wrapadd`](#wrapadd----on--off-default-off) |
+| a sign-extended 32-bit sum differs from the binary at INT32_MAX in recompiled output | [`wrapadd`](#wrapadd----on--off-default-off) |
+| (long)(a + 1) where the machine wraps at 32 bits | [`wrapadd`](#wrapadd----on--off-default-off) |
 | a function that reads many constant globals between calls exhausts memory during heritage | [`readonlycalls`](#readonlycalls----off--on---default-65536) |
 | decompile of a huge function is killed before the first jump table is recovered | [`readonlycalls`](#readonlycalls----off--on---default-65536) |
 | thousands of INDIRECTs over read-only globals survive in a large function's IR | [`readonlycalls`](#readonlycalls----off--on---default-65536) |
@@ -1846,6 +1863,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-strings
 - **Example:** `option strings off`
 
+### `blobs` -- on | off, default `on`
+
+- **Symptoms:** a function returns a bare address that points at an embedded PNG or JPEG; PNG, IHDR or IDATx show up as short string fragments in rodata; an embedded zip or gzip archive renders as dat_ globals with no length; a resource table of images is unnamed data.
+- **What it does:** Plant a data symbol on every whole image or archive file stored in a mapped section: PNG, JPEG, GIF, BMP, ICO, zip, gzip, xz and zstd. A file counts only when its container structure walks to its end, which also gives the exact length (PNG chunks to IEND with every CRC-32, JPEG markers to EOI, GIF blocks to the trailer, the BMP header size against its pixel array, an ICO directory of PNG or DIB images, the zip end record and central directory, a gzip stream inflated to its trailer CRC-32, the xz footer and index CRC-32s, zstd frame and block headers); a truncated file is not one. Each is named <kind>_<addr> (png_2d0) and typed unsigned char[length], where no symbol already covers the address, and the string fragments the string pass finds inside it (PNG, IHDR, IDATx) are not planted. A constant equal to a file's first address is weighed as a pointer even below the pointer lower bound or with the bit pattern of a mask, unless the function also uses that value as a number, so a shared object whose read-only data starts in the first page still returns png_2d0 instead of 0x2d0. Real-image path only. `kuna blobs` lists the same files with the functions that reference them.
+- **When to flip:** On (default) names embedded files and types them as byte arrays; off leaves their addresses as bare constants or dat_ globals and lets the string pass plant the header fragments. Flip off when a plain number in code that never touches the file prints as its name (return png_370; where 0x370 is a size): a file starting in the first page of a small shared object shares its address with ordinary constants.
+- **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-1649-blobs
+- **Example:** `option blobs off`
+
 ### `widestrings` -- on | off, default `on`
 
 - **Symptoms:** a wide Windows API argument renders as a one-character string literal; LoadLibraryW("n") or FindWindowW("O",0) in the emitted C; kuna strings --encoding utf16 reports a literal the decompiled C truncates to its first character; a UTF-16 string address carries no data symbol while the ascii ones do; an anti-debugging check names no DLL or window class.
@@ -2126,11 +2151,11 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-multilang-gotypeglobals
 - **Example:** `option gotypeglobals off`
 
-### `dyldimage` -- none | <install-name>, default `none`
+### `dyldimage` -- none | <install-name>[+<install-name>...], default `none`
 
-- **Symptoms:** a dyld_shared_cache file is rejected as an unrecognized input format; cannot decompile an ios or macos system library because it only exists inside the dyld shared cache; dyld shared cache holds N images; choose one with --image.
-- **What it does:** Choose which image of a dyld shared cache to load. A cache (dyld_shared_cache_arm64e and its sub-caches .01, .27.dylddata, .44.dyldlinkedit, ... and .symbols beside it) holds every system library of an iOS or macOS release; kuna rebuilds the chosen image as a standalone thin Mach-O before anything parses it, so the loader, the analysis passes and every surface see an ordinary Mach-O. The rebuild keeps each segment at its cache address, applies the cache's slide info (v2, v3 with arm64e auth pointers, v5) at slide zero so every rebased pointer reads as its unslid target, and gives the image a private __LINKEDIT with its own symbol table, the local symbols the cache moved to its .symbols file in place of the <redacted> placeholders, the renumbered indirect-symbol table, and copies of the export trie, function starts and data-in-code. The name matches a full install name (/usr/lib/libobjc.A.dylib), else a unique basename (libobjc.A.dylib, CoreFoundation), else a unique basename without its last extension (libobjc.A). `none` (default) loads the image of a one-image cache and refuses a larger one with the image count. The image is rebuilt inside `load file`, so the choice travels as the KUNA_DYLD_IMAGE environment variable; the CLI's global `--image NAME` sets it for every subcommand, and the console sets it with `option dyldimage NAME` before `load file`, accepted before any image is loaded. `kuna unpack <cache> --list` lists the images and `kuna unpack <cache> --image NAME` writes the rebuilt Mach-O.
-- **When to flip:** Set it (or pass --image) whenever the input is a dyld shared cache: kuna decompile dyld_shared_cache_arm64e --image CoreFoundation CFStringCreateCopy. Not used for any other input.
+- **Symptoms:** a dyld_shared_cache file is rejected as an unrecognized input format; cannot decompile an ios or macos system library because it only exists inside the dyld shared cache; dyld shared cache holds N images; choose one with --image; address is not mapped in this input for a callee in another image of the dyld shared cache; following a call from one cache image into another needs a second run.
+- **What it does:** Choose which image of a dyld shared cache to load. A cache (dyld_shared_cache_arm64e and its sub-caches .01, .27.dylddata, .44.dyldlinkedit, ... and .symbols beside it) holds every system library of an iOS or macOS release; kuna rebuilds the chosen image as a standalone thin Mach-O before anything parses it, so the loader, the analysis passes and every surface see an ordinary Mach-O. The rebuild keeps each segment at its cache address, applies the cache's slide info (v2, v3 with arm64e auth pointers, v5) at slide zero so every rebased pointer reads as its unslid target, and gives the image a private __LINKEDIT with its own symbol table, the local symbols the cache moved to its .symbols file in place of the <redacted> placeholders, the renumbered indirect-symbol table, and copies of the export trie, function starts and data-in-code. The name matches a full install name (/usr/lib/libobjc.A.dylib), else a unique basename (libobjc.A.dylib, CoreFoundation), else a unique basename without its last extension (libobjc.A). `none` (default) loads the image of a one-image cache and refuses a larger one with the image count. The image is rebuilt inside `load file`, so the choice travels as the KUNA_DYLD_IMAGE environment variable; the CLI's global `--image NAME` sets it for every subcommand, and the console sets it with `option dyldimage NAME` before `load file`, accepted before any image is loaded. `kuna unpack <cache> --list` lists the images and `kuna unpack <cache> --image NAME` writes the rebuilt Mach-O. Several names joined by `+` (Foundation+CoreFoundation) load several images as one program: each is rebuilt on its own and the results are joined into one thin Mach-O, every segment at its cache address, images in address order, with one symbol table (section ordinals renumbered), one indirect-symbol table, one function-starts table and one cross-image reference note, so a function of either image decompiles in the same run and the analysis passes read the ObjC, Swift and CFString sections of every image. The identity commands (LC_ID_DYLIB, the dylib list) are those of the image named first. The joined images may hold at most 255 sections together, the most a Mach-O symbol can index. The CLI also widens the selection on demand: `decompile`, `disassemble` and `xrefs` look each 0x address of the request up in the cache's image ranges and add the image that holds it, up to `--follow-images N` images (default 2, 0 turns it off), and `decompile` and `disassemble` first follow a stub-island address to the function the stub jumps to.
+- **When to flip:** Set it (or pass --image) whenever the input is a dyld shared cache: kuna decompile dyld_shared_cache_arm64e --image CoreFoundation CFStringCreateCopy. Join names with + to follow calls from one image into another without a second run: --image Foundation+CoreFoundation. Not used for any other input.
 - **Where / provenance:** P1/environment-binding · kuna · analysis-enablement · kuna-apple-dyldcache
 - **Example:** `option dyldimage /usr/lib/libobjc.A.dylib`
 
@@ -2230,6 +2255,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-kernelcache
 - **Example:** `--option kernelcache com.apple.iokit.IOSurface`
 
+### `kernelcache-boot` -- auto | off | <path>, default `auto`
+
+- **Symptoms:** a kext in an Auxiliary kernel collection calls the kernel through a raw number instead of a named function; pointers into the boot kernel collection read as packed chained-fixup words; vtable and metaclass pointers of a third-party kext are not addresses; AuxiliaryKernelExtensions.kc or SystemKernelExtensions.kc loads with unresolved kernel references.
+- **What it does:** Apple kernel collections only: resolve the pointers a System or Auxiliary collection (macOS SystemKernelExtensions.kc, AuxiliaryKernelExtensions.kc) holds into the collections it was linked against. A DYLD_CHAINED_PTR_64_KERNEL_CACHE or X86_64_KERNEL_CACHE rebase names a cache level, and a target at level 0 (the boot collection) or 1 (the System collection) is an offset from the base of that other file, so the collection alone cannot say where it points: the slot would keep its packed chain word, and a call through it, or a vtable or metaclass pointer it holds, prints as a raw number. The collection's __PRELINK_INFO plist names each file it needs by UUID (_BootKCID, _PageableKCID). kuna reads the MH_FILESET files in the directory of the input (`auto`), or the file or directory the value names (a file may be an IMG4/IM4P container), takes the one whose LC_UUID or _PrelinkKCID is that UUID, writes base + offset into every such slot, and gives each target that a section symbol of the linked file defines inside code that symbol's name as an import of the loaded kext (the kernel's symbol before a kext's); a `__got`, `__auth_got` or `__auth_ptr` slot holding such an address is that import's slot, so a call through it is a call to the named function. A file with another UUID is never used. The load note counts, per level, the pointers rebased and functions named, or the pointers left unresolved and why. Inert on every input that is not a kernel collection pointing into another one. Loader-tier: read through the KUNA_KERNELCACHE_BOOT env var, because the image is built inside load file.
+- **When to flip:** Auto (default): with BootKernelExtensions.kc copied next to AuxiliaryKernelExtensions.kc, a kext's calls into the kernel through its pointer slots print the kernel function's name. Give a path when the boot collection lives elsewhere (`--option kernelcache-boot /System/Library/KernelCollections`). Flip off to read no file but the input: the slots into other collections stay unresolved and the load note counts them.
+- **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-kernelcache-boot
+- **Example:** `--option kernelcache-boot /System/Library/KernelCollections/BootKernelExtensions.kc`
+
 ### `godwarfsig` -- on | off, default `on`
 
 - **Symptoms:** go functions lose source parameters despite dwarf; go identity function decompiles as void; go result parameters appear as inputs.
@@ -2321,6 +2354,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** Inline by default (DIV-38): usage(1); // no-return, if (v8) { // branch-flip, prototype-line // early-return x3. Flip to banner to reproduce upstream Ghidra's full warning text or to grep for the long-form messages. Unknown warning texts keep their full text behind a warn: marker; user/dwarf_lines comments always keep banner lines.
 - **Where / provenance:** P9/warning-style · kuna · presentation-default · kuna-cnorm-fmt
 - **Example:** `option warnstyle banner`
+
+### `acleintrinsics` -- on | off, default `on`
+
+- **Symptoms:** an AArch64 function that tags a pointer (irg, addg) decompiles to return a0; stg, st2g or stzg leave no trace in the output of MTE-hardened AArch64 code; DataMemoryBarrier(2,3) or DataSynchronizationBarrier(3,3,0) where the source called __dmb or __dsb; WaitForInterrupt() or Yield() where the source called __wfi or __yield.
+- **What it does:** On AArch64, lift the memory-tagging (MTE) instructions with their tag effect and print the barrier, hint and memory-tagging user ops as the ACLE intrinsics of <arm_acle.h>. The vendored AARCH64.pspec leaves the ShowMemTag context at 0, under which irg, addg, subg, gmi and ldg lift as a plain pointer copy or add and the stg family as nothing or a plain store, so __arm_mte_create_random_tag(p, 0) decompiled to return p. On sets ShowMemTag to 1 over the code space before a function is lifted; only the memory-tagging constructors read that context, so code without those instructions lifts exactly as before. Each tag instruction is then one user op whose result is the tagged pointer: irg prints __arm_mte_create_random_tag(p, mask), addg and subg __arm_mte_increment_tag(p + n, k), gmi __arm_mte_exclude_tag(p, mask), ldg x, [x] __arm_mte_get_tag(p), and stg x, [x] (and each granule st2g, stzg, stz2g and stgp tag) __arm_mte_set_tag(p). A tag load or store whose pointer and granule address differ has no ACLE spelling and keeps its user-op name, LoadPtrTag(p, addr) or StorePtrTag(addr, p). The alignment fault stg raises on a misaligned address is not modelled as a branch. Independently of MTE, DataMemoryBarrier(domain, types) prints __dmb(CRm) with the two operands recombined into the 4-bit CRm the intrinsic takes, DataSynchronizationBarrier likewise __dsb(CRm) (the nXS forms keep their name), InstructionSynchronizationBarrier() prints __isb(CRm) with CRm read from the instruction, and WaitForInterrupt, WaitForEvent, Yield, SendEvent and SendEventLocally print __wfi(), __wfe(), __yield(), __sev() and __sevl(). The rewrite is keyed on the user-op name and changes only the spelling of the call.
+- **When to flip:** On by default on AArch64 and inert on every other target: the output names the intrinsic the source called, and a pointer that was tagged is the result of a call instead of an unchanged copy. Flip off to read barriers and hints under their SLEIGH instruction names with the domain and type operands separate, or to read MTE-hardened code (for example a stack-tagging build, which tags every address-taken local) as if the core had no tags.
+- **Where / provenance:** P9/naming-policy · kuna · correctness-fix · kuna-acleintrinsics
+- **Example:** `option acleintrinsics off`
 
 ### `fpuemu` -- off | auto | on, default `auto`
 
@@ -2577,6 +2618,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** Turn on when the emitted C must be free of signed-shift undefined behavior, e.g. before recompiling it with sanitizers or comparing it against the binary; use `all` for 64-bit code on any architecture. Off by default because the conversion adds a cast pair to every ARM sign-bit test such as `x << 0x18 < 0`, which firmware uses for nearly every register flag check, and to every scaled 64-bit index.
 - **Where / provenance:** P9/cast-policy · kuna · correctness-fix · arm-fixed-signed-lsl
 - **Example:** `option armconstshift on`
+
+### `wrapadd` -- on | off, default `off`
+
+- **Symptoms:** UBSan reports a signed integer overflow in a recompiled 32-bit addition; a sign-extended 32-bit sum differs from the binary at INT32_MAX in recompiled output; (long)(a + 1) where the machine wraps at 32 bits.
+- **What it does:** Print a four-byte addition whose result a wider sign extension observes, through a return, a store or a comparison, as an addition of its unsigned conversion, `(int)((unsigned int)a + b)`, so the emitted C wraps at 32 bits exactly as the machine word does instead of overflowing a signed int, which is undefined and lets a compiler compute the sum at 64 bits. Applies on every architecture when the printed operands are signed four-byte integers or literals and the output language is C. Each operand prints once and other readers are unchanged; an already unsigned literal, address-only uses and library lengths keep their spelling.
+- **When to flip:** Turn on when the emitted C must be free of signed-overflow undefined behavior, e.g. before recompiling it with sanitizers or comparing it against the binary; MIPS `addiu` and RISC-V `addw` results that are sign-extended into 64-bit registers are the usual source. Off by default because the casts land on every widened int sum such as `return a0 + 3;`.
+- **Where / provenance:** P9/cast-policy · kuna · correctness-fix · widened-signed-add
+- **Example:** `option wrapadd on`
 
 ### `readonlycalls` -- off | on | <n>, default `65536`
 

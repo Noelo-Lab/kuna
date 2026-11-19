@@ -959,6 +959,17 @@ fn matching_constants(fd: &Funcdata, vn1: VarnodeId, vn2: VarnodeId) -> bool {
 // JumpValues iterator family (jumptable.hh:166-231, jumptable.cc:261-388)
 // ---------------------------------------------------------------------------
 
+/// (kuna) Fails a walk over a switch variable's values once the per-function
+/// budget is spent, so a model with a long range ends with its drive: every
+/// recovery loop advances through [`JumpValues::next`].
+fn walk_within_budget() -> KunaResult<()> {
+    if !crate::decompile_drive::budget_probe() {
+        return Ok(());
+    }
+    crate::decompile_drive::note_budget_site(|| "jump-table value walk".to_string());
+    Err(KunaError::lowlevel("Jumptable value walk ran past the per-function budget"))
+}
+
 /// An iterator over values a switch variable can take (C++ `JumpValues`,
 /// `jumptable.hh:166`).
 ///
@@ -1134,6 +1145,7 @@ impl JumpValues for JumpValuesRange {
     }
 
     fn next(&mut self) -> KunaResult<bool> {
+        walk_within_budget()?;
         if let Some(values) = &self.explicit_values {
             if self.explicit_index + 1 >= values.len() {
                 return Ok(false);
@@ -1271,6 +1283,7 @@ impl JumpValues for JumpValuesRangeDefault {
         if self.lastvalue {
             return Ok(false);
         }
+        walk_within_budget()?;
         let mut cv = self.base.curval;
         if self.base.range.get_next(&mut cv) {
             self.base.curval = cv;

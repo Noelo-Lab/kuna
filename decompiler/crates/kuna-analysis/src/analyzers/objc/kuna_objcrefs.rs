@@ -210,7 +210,7 @@ pub(super) fn emit(
         out.data_objects.push(DataObjectFact { addr: va, name: format!("protoRef_{name}"), size: ps as u32 });
     }
 
-    if let Some(sec) = file.section_by_name(SEC_STUBS) {
+    for sec in super::sections::sections_named(file, SEC_STUBS) {
         if let Ok(data) = sec.data() {
             for (stub_va, selref_va) in stubs(file.architecture(), sec.address(), data) {
                 let Some(sel_va) = img.rebase_ptr(selref_va) else { continue };
@@ -230,16 +230,18 @@ pub(super) fn emit(
     const_slots
 }
 
-/// The address of every pointer-sized slot of the named section, bounded by the
+/// The address of every pointer-sized slot of the sections named `name`, bounded by the
 /// bytes the file actually backs it with (a header size alone is untrusted).
 pub(super) fn section_slots(file: &object::File, name: &str, ps: u64) -> Vec<u64> {
-    let Some(sec) = file.section_by_name(name) else { return Vec::new() };
-    let Ok(data) = sec.data() else { return Vec::new() };
-    let (base, n) = (sec.address(), (data.len() as u64).min(sec.size()) / ps);
-    if base.checked_add(n * ps).is_none() {
-        return Vec::new();
+    let mut slots = Vec::new();
+    for sec in super::sections::sections_named(file, name) {
+        let Ok(data) = sec.data() else { continue };
+        let (base, n) = (sec.address(), (data.len() as u64).min(sec.size()) / ps);
+        if base.checked_add(n * ps).is_some() {
+            slots.extend((0..n).map(|i| base + i * ps));
+        }
     }
-    (0..n).map(|i| base + i * ps).collect()
+    slots
 }
 
 /// (test) `bytes` with the `size` field of the 64-bit section `name` rewritten.

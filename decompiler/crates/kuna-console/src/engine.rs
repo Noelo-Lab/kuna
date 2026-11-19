@@ -2550,6 +2550,8 @@ impl ConsoleProgram {
     pub fn set_assertions(&mut self, directives: Vec<crate::assertions::Directive>) {
         if directives.iter().any(|directive| matches!(directive.body,
             crate::assertions::Body::Flow { .. }
+            | crate::assertions::Body::Callee { .. }
+            | crate::assertions::Body::CallProto { .. }
             | crate::assertions::Body::Param { func: None, .. }
             | crate::assertions::Body::Return { func: None, .. }))
         {
@@ -3515,6 +3517,7 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // `CFStringRef`). Registered here so `off` really skips it; `off`
         // renders the entry exactly as before.
         "cfstrings" => arch.analysis_cfstrings,
+        "blobs" => arch.analysis_blobs,
         // (kuna) PE PDB metadata recovery — default-OFF (output-changing: renames
         // stripped functions to their real PDB names). PE-only + externally gated on
         // a fingerprint-matching `.pdb` (the `kuna_pdb_path` env var). Registered
@@ -4803,7 +4806,7 @@ pub(crate) fn bootstrap_object(
             // (kuna `kernelcache`) IMG4 / IM4P / LZFSE / complzss unwrapping and MH_FILESET
             // entry selection, ahead of every other normalization.
             let choice = kuna_decomp::kuna_kernelcache::KernelcacheChoice::in_force();
-            let peeled = kuna_analysis::loader::kuna_kernelcache::peel(bytes, &choice)
+            let peeled = kuna_analysis::loader::kuna_kernelcache::peel_file(Path::new(path), bytes, &choice)
                 .map_err(KunaError::lowlevel)?;
             if let Some(note) = &peeled.note {
                 kuna_base::notes::say_once(path, &format!("[kuna] {note}"));
@@ -5100,9 +5103,10 @@ pub(crate) fn bootstrap_object(
     // datatest corpus by construction.
     let compiler = kuna_analysis::sourcelang::effective_compiler_bytes(&bytes);
     sleigh.base_mut().unwrap().source_lang_detected = compiler.to_source_lang();
+    let rust_image = compiler == kuna_analysis::sourcelang::Compiler::Rustc;
     sleigh.base_mut().unwrap().rustc_stable_version =
-        kuna_analysis::sourcelang::stable_rustc_version(&bytes);
-    if let Some(layout) = kuna_analysis::sourcelang::fmt_pieces_layout(&bytes) {
+        kuna_analysis::sourcelang::stable_rustc_version(&bytes, rust_image);
+    if let Some(layout) = kuna_analysis::sourcelang::fmt_pieces_layout(&bytes, rust_image) {
         sleigh.base_mut().unwrap().rustc_pieces_layout = true;
         sleigh.base_mut().unwrap().rust_fmt_pieces_relro = layout.relro;
     }
@@ -5908,6 +5912,7 @@ fn commit_analysis_output(
     //    produced for the same address (the measured witness: three adjacent
     //    unterminated literals read back as one 39-byte string). A bounded
     //    fact's `len` is the exact element count — there is no terminator.
+    let blob_extents = crate::kuna_blobdata::Extents::new(&out.blobs);
     let wide = if prog.arch().analysis_widestrings { out.wide_strings.as_slice() } else { &[] };
     let wide32 =
         if prog.arch().analysis_widestrings32 { out.wide_strings32.as_slice() } else { &[] };
@@ -5922,6 +5927,9 @@ fn commit_analysis_output(
         .chain(wide.iter().map(|f| (f, 2u32)))
         .chain(out.strings.iter().map(|f| (f, 1u32)))
     {
+        if blob_extents.contains(fact.addr) {
+            continue;
+        }
         let addr = Address::new(Rc::clone(code_space), fact.addr);
         // Conservative guard: skip an address that already carries a symbol (an
         // existing data/function symbol must not be shadowed). Ghidra likewise
@@ -6171,6 +6179,10 @@ fn commit_analysis_output(
             arch.symboltab.add_symbol_mapped(scope, &base, ct, &addr, &Address::new_invalid())?;
         arch.symboltab.set_attribute(sid, kuna_decomp::varnode::varnode_flags::namelock);
     }
+
+    // 4c. (kuna `blobs`) Embedded images and archives, last so every named or
+    //     typed claim on the address is kept.
+    crate::kuna_blobdata::commit(prog, code_space, &out.blobs, &mut data_names, num_spaces)?;
 
     // 4b. The C runtime declaration `elfmain` has for an executable's own
     //     `main`. Not parked on the symbol: the drive locks only its `int`
