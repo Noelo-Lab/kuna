@@ -2243,7 +2243,8 @@ mod tests {
         // and kuna-rawpatterns / a headerless image is swept with its language's function-start patterns
         // and kuna-importvote / an undeclared import takes the arguments its other call sites pass (option importvote)
         // and kuna-formatcallees / undeclared format functions are typed from their formats (option formatstring)
-        assert_eq!(count, 806, "corpus file count drifted");
+        // and kuna-strcpychain / memcpy(d, s, strlen(s) + 1) prints as strcpy(d, s) (option helperroles)
+        assert_eq!(count, 807, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

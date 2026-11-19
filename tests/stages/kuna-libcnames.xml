@@ -40,6 +40,7 @@ c3
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libcnames_x86_64</com>
   <com>read symbols</com>
+  <com>option helperroles off</com>
   <com>option libcnames off</com>
   <com>lo fu copy_file</com>
   <com>decompile</com>
