@@ -635,6 +635,7 @@ kuna_options! { self, p1;
     "callrettype" => on_off!(call_ret_type, "callee-stated call return types"),
     "castnarrow" => on_off!(cast_narrow, "implied narrowing-cast elision"),
     "libcnames" => on_off!(libc_names, "library-call local names"),
+    "contextnames" => on_off!(context_names, "loop-counter and result local names"),
     "mapglobalsyms" => on_off!(mapglobalsyms, "Global scope keeps the data Symbols mapGlobals creates"),
     "declorder" => {
         let (mode, msg) = crate::kuna_declorder::OptionDeclOrder.apply(p1)?;

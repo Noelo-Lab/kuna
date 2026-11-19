@@ -1054,6 +1054,32 @@ only how one callee uses its argument (`s` 565, `ptr` 385, `size` 375, `n` 307,
 `stream` 299, `src` 227, `nmemb` 188), so most of those signatures would trade
 `a0` for a callee's generic name.
 
+**A loop counter and the returned local are named from their shape
+(`contextnames`, default off).** `decompiler/crates/kuna-decomp/src/p6_variables/kuna_contextnames.rs
+(evidence)` adds two kinds of evidence to the `libcnames` walk above, so they
+are aliases of the same kind: the walk numbers every local as with the option
+off, the name is printed over the number afterwards, a directive reaches the
+local by either spelling, and a clash takes `_2`, `_3`, ... The loops come from
+the basic-block graph: an edge into a block that dominates its source is a
+back edge, and the loop of that head is every block that reaches the source
+without passing the head. A counter is an integer local (by its varnode type)
+that the head's phi joins from outside the loop with an initial value and, on
+every back edge, with itself plus or minus one, through copies and casts. It is
+named for how many loops contain its head: `i` for an outermost loop, then `j`,
+`k`, `m`, `n`, and nothing deeper. So `for (v5 = 0; ...; v5 += 1)` prints `i`,
+a second loop at the same depth prints `i_2`, and a pointer that walks a buffer
+or a value that steps by anything else (`len -= 12`, `v6 += a2 * a3`) keeps its
+number. `result` is the one local every `return` of a non-constant value
+returns, through the folded copies and casts; a function whose returns name two
+different locals names neither. A counter outranks every library kind but a
+library call's result (a counter passed as `read`'s `nbytes` stays `i`;
+`len = strlen(s)` counted down stays `len`), and `result` is the weakest
+evidence. Evidence an option prints is preferred to library evidence that is
+decided only so a directive can name a local, so with `libcnames` off a
+returned `open` descriptor still prints `result`. The option is off by default
+because it renames locals that other tests spell as `vN`: on, 52 of 675
+datatest assertions and 146 stage assertions move, in names only.
+
 **A register piece no register name covers is a local.** The `vN` allocator
 routes a high with no covering Symbol to `dat_<addr>` when its storage is global
 data, and kuna's proxy for global data was "an `IPTR_PROCESSOR` address with no

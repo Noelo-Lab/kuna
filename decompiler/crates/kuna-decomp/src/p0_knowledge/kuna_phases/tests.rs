@@ -56,13 +56,13 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_223() {
-    assert_eq!(kuna_num_settables(), 223);
-    assert_eq!(SETTABLE_TABLE.len(), 223);
+fn settable_count_is_224() {
+    assert_eq!(kuna_num_settables(), 224);
+    assert_eq!(SETTABLE_TABLE.len(), 224);
 }
 
 #[test]
-fn tier_counts_are_46_core_121_transform_56_analysis() {
+fn tier_counts_are_47_core_121_transform_56_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -74,7 +74,7 @@ fn tier_counts_are_46_core_121_transform_56_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (46, 121, 56));
+    assert_eq!((core, transform, analysis), (47, 121, 56));
 }
 
 #[test]
@@ -850,7 +850,8 @@ fn option_values_live_value_present_for_76() {
     // 75 -> 76: +1 for `wrapadd` (live_field = wrap_add).
     // +1 for `acleintrinsics` (live_field = acle_intrinsics).
     // +1 for `repstring` (live_field = rep_string).
-    assert_eq!(with_live, 78);
+    // +1 for `contextnames` (live_field = context_names).
+    assert_eq!(with_live, 79);
 }
 
 #[test]
@@ -1104,7 +1105,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `blobs`; its P1 row sits after `strings`.
     // +1 for `repstring`; its P3 row sits after `strlenscan`.
     // +1 for `mapglobalsyms`; its P9 row sits before `castimplied`.
-    assert_eq!(json.matches("},\n").count(), 222);
+    // +1 for `contextnames`; its P6 row sits beside `libcnames`.
+    assert_eq!(json.matches("},\n").count(), 223);
 }
 
 #[test]

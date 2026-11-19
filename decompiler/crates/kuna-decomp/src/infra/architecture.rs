@@ -781,6 +781,9 @@ pub struct Architecture {
     /// (kuna `libcnames`) Name locals from the library calls they meet.
     /// See [`crate::kuna_libcnames`].
     pub libc_names: bool,
+    /// (kuna `contextnames`) Name loop counters and the returned local.
+    /// See [`crate::kuna_contextnames`].
+    pub context_names: bool,
     /// (kuna GH-8724) Re-express a strided-induction offset as counter*stride
     /// (C++ `recover_array_stride`).
     pub recover_array_stride: bool,
@@ -2428,6 +2431,7 @@ impl Architecture {
             stack_alias_deadstore: false,
             stack_views: false,
             libc_names: false, // (kuna) option libcnames; reset_defaults sets the shipped default
+            context_names: false, // (kuna) option contextnames; reset_defaults sets the shipped default
             recover_array_stride: false,
             recover_lowered_switch: false,
             nul_terminator: false,
@@ -2750,6 +2754,7 @@ impl Architecture {
         self.dead_cascade = Some(crate::p3_dataflow::kuna_deadcascade::DEFAULT_PASSES);
         self.stack_views = false;
         self.libc_names = true; // (kuna) option libcnames default-on; `option libcnames off` keeps every local's `vN` name
+        self.context_names = false; // (kuna) option contextnames default-off: it renames loop counters and returned locals that other features' stage assertions and CLI tests spell as `vN`
         self.stack_alias_deadstore = false; // (kuna) default: upstream byte-identical (GH-8500)
         self.recover_array_stride = true; // (kuna) DIV-3 default-on (GH-8724)
         self.recover_lowered_switch = true; // (kuna) default-on (angr port)
@@ -3562,6 +3567,7 @@ impl Architecture {
         ctx.stack_alias_deadstore = self.stack_alias_deadstore; // stackalias
         ctx.stack_views = self.stack_views;
         ctx.libc_names = self.libc_names; // libcnames
+        ctx.context_names = self.context_names; // contextnames
         ctx.devectorize_reduction = self.devectorize_reduction; // devectorize
         ctx.strlen_scan = self.strlen_scan; // strlenscan
         ctx.rep_string = self.rep_string; // repstring

@@ -1,0 +1,52 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Loop counters and returned locals named from their shape
+    (`option contextnames on|off`, default off; stage P6 naming policy,
+    `kuna_contextnames` evidence for the `kuna_libcnames` alias walk).
+
+    The fixture (contextnames.c beside it, gcc -O1, stripped) has a triple
+    loop nest accumulating into a returned total, and a checksum whose
+    accumulator is returned on one path while the others return constants.
+
+    Pass 1 is the shipped default: every local keeps its `vN` number.
+    Pass 2 turns the option on: the three counters, which a loop head's phi
+    joins with themselves plus one, are named `i`, `j` and `k` by nesting
+    depth; the totals every non-constant `return` returns are `result`; the
+    induction values that step by a run-time amount (`v4`, `v6`) keep their
+    numbers.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/contextnames_x86_64</com>
+  <com>read symbols</com>
+  <com>load function sub_11a0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function sub_12e2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/contextnames_x86_64</com>
+  <com>option contextnames on</com>
+  <com>read symbols</com>
+  <com>load function sub_11a0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function sub_12e2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="CONTEXTNAMES #1: off, the counters keep their numbers" min="1" max="1">\} while \(a1 != v5\);</stringmatch>
+<stringmatch name="CONTEXTNAMES #2: on, the outermost counter is i" min="1" max="1">\} while \(a1 != i\);</stringmatch>
+<stringmatch name="CONTEXTNAMES #3: on, the middle counter is j" min="1" max="1">\} while \(a2 != j\);</stringmatch>
+<stringmatch name="CONTEXTNAMES #4: on, the innermost counter is k" min="1" max="1">\} while \(k != a3\);</stringmatch>
+<stringmatch name="CONTEXTNAMES #5: on, both returned accumulators are result" min="2" max="2">return result;</stringmatch>
+<stringmatch name="CONTEXTNAMES #6: a run-time stride is not a counter" min="2" max="2">v6 \+= a2 \* a3;</stringmatch>
+</decompilertest>

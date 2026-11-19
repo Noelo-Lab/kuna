@@ -2239,7 +2239,8 @@ mod tests {
         // and kuna-repstring, kuna-repstring-i386 / x86 rep movs/stos/cmpsb print as copy, fill and compare builtins
         // and kuna-mapglobals / a global read wider than its Symbol prints as _<symbol> with the overlap warning
         // and kuna-mapglobalsyms / the global scope keeps the data Symbols mapGlobals creates
-        assert_eq!(count, 802, "corpus file count drifted");
+        // and kuna-contextnames / loop counters and returned locals are named
+        assert_eq!(count, 803, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
