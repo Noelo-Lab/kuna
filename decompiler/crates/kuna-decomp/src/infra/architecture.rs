@@ -659,6 +659,9 @@ pub struct Architecture {
     /// (kuna `looprotate`) A guarded do-while loop becomes a while loop.  See
     /// [`crate::p8_structure::kuna_looprotate`].
     pub loop_rotate: bool,
+    /// (kuna `switchguardmerge`) Merge an equality guard into its switch.  See
+    /// [`crate::p2_lift::kuna_switchguardmerge`].
+    pub switch_guard_merge: bool,
     /// (kuna) The most ops `ActionReturnSplit` may clone out of one return block,
     /// `None` for no limit (option `retsplitlimit`).  See
     /// [`crate::p8_structure::kuna_retsplitlimit`].
@@ -2452,6 +2455,7 @@ impl Architecture {
             ret_split_global: false,
             goto_sink: false, // (kuna) option gotosink; reset_defaults sets the shipped default
             loop_rotate: false, // (kuna) option looprotate; reset_defaults sets the shipped default
+            switch_guard_merge: false, // (kuna) option switchguardmerge; reset_defaults sets the shipped default
             ret_split_limit: None,
             stack_addr_arg_trial: false,
             callee_filled_arg: false, // (kuna) option calleefilledarg; reset_defaults sets the shipped default
@@ -2801,6 +2805,7 @@ impl Architecture {
         self.ret_split_global = true; // (kuna) DIV-PENDING default-on: a shared RETURN block that stores to GLOBALS is not the bare epilogue `ActionReturnSplit::isSplittable` assumes, so it is no longer cloned into every predecessor. One-directional (it can only decline a split) and byte-identical (0/675) on the datatest corpus; restore the upstream predicate with `option retsplitglobal off`
         self.goto_sink = true; // (kuna) option gotosink default-on: list edits around existing jumps only; 0/675 datatest assertions
         self.loop_rotate = true; // (kuna) option looprotate default-on: a guarded do-while becomes a while loop; 0/675 datatest assertions
+        self.switch_guard_merge = true; // (kuna) option switchguardmerge default-on: an outlier equality test joins the switch its guard leads to; 0/675 datatest assertions
         self.ret_split_limit = Some(crate::p8_structure::kuna_retsplitlimit::DEFAULT_LIMIT); // (kuna) GH-1034 default-on: a return block whose split would clone more than 2^20 ops keeps its gotos
         self.stack_addr_arg_trial = false;
         self.callee_filled_arg = true; // (kuna) option calleefilledarg default-on: at an objc_msgSend$<sel> selector stub, a definitely-unused argument register the stub writes before reading is no parameter slot, so the positional rule does not end the list there; inert outside Objective-C (0/675)
@@ -3589,6 +3594,7 @@ impl Architecture {
         ctx.ret_split_global = self.ret_split_global; // retsplitglobal
         ctx.goto_sink = self.goto_sink; // gotosink
         ctx.loop_rotate = self.loop_rotate; // looprotate
+        ctx.switch_guard_merge = self.switch_guard_merge; // switchguardmerge
         ctx.ret_split_limit = self.ret_split_limit; // retsplitlimit
         // (kuna) resolve the byte-shuffle user-op ids ONCE per program, so the
         // rule can name a CALLOTHER through the ArchSeam (the boundary

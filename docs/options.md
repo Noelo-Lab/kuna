@@ -117,6 +117,8 @@ Three tiers:
 | narrow comparison after a logical right shift does not bound a jump table | [`highsliceguard`](#highsliceguard----on--off-default-off) |
 | a high-byte table index renders as jump-as-call | [`highsliceguard`](#highsliceguard----on--off-default-off) |
 | a Rust match over a shifted tag is missing despite an unsigned bound | [`highsliceguard`](#highsliceguard----on--off-default-off) |
+| a switch with a far outlier case prints as if (x <= N) { switch } if (x == C) ... | [`switchguardmerge`](#switchguardmerge----on--off-default-on) |
+| a case value outside the jump table is tested after the switch | [`switchguardmerge`](#switchguardmerge----on--off-default-on) |
 | getopt-style switch inside a loop degrades to a computed call with goto spaghetti | [`switchsharedcase`](#switchsharedcase----on--off-default-on-destructive-opt-in) |
 | pic relative-offset jump table with a loop-carried base register never recovered | [`switchsharedcase`](#switchsharedcase----on--off-default-on-destructive-opt-in) |
 | 'Too many branches' on a dispatch whose table base is set before the loop | [`switchsharedcase`](#switchsharedcase----on--off-default-on-destructive-opt-in) |
@@ -1119,6 +1121,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** Off in every preset. Enable when a narrow comparison after a logical right shift bounds a table but it renders as a computed call or reports too many branches. The exact guard identity recovers the missing switch without a non-zero-mask assumption. Measured enabled recovery added 10.8% median CPU and 11.2% median wall time on the pinned upstream walk_dir case, exceeding the 5% default speed budget; the original 675 datatest assertions were unchanged.
 - **Where / provenance:** P2/switch-model · angr · structure-recovery · angr-amd64-single-block-jumptable
 - **Example:** `option highsliceguard on`
+
+### `switchguardmerge` -- on | off, default `on`
+
+- **Symptoms:** a switch with a far outlier case prints as if (x <= N) { switch } if (x == C) ...; a case value outside the jump table is tested after the switch.
+- **What it does:** Merge an equality test that a switch's range guard (or its default) leads to into the switch as more cases. gcc and clang lower a switch with a far outlier (case 100 beside case 0..6) to a jump table behind a range guard plus `x == 100` tests on the guard's other side, which printed as `if (a0 <= 6) { switch(a0) {...} } if (a0 != 100) return -1; ...`. With this on, the guard is evaluated on the outliers and on every case label (each must keep its path), the blocks on the way must only compute into values nothing outside the function reads, and the default must read the same values either way; then each outlier becomes a case and the guard goes. The same holds for a chain of tests that is the switch's own default (clang). When gcc's repeated unsigned range check landed on case 0 and was folded as the default, the chain's miss becomes the default, provided the standing guards admit only case labels.
+- **When to flip:** On (default). Flip off to see the guard and the separate equality tests the compiler emitted.
+- **Where / provenance:** P2/switch-model · kuna · presentation-default · kuna-switchguardmerge
+- **Example:** `option switchguardmerge off`
 
 ### `switchsharedcase` -- on | off, default `on` (destructive opt-in)
 

@@ -2252,6 +2252,33 @@ impl JumpBasicModel {
         &self.path_meld
     }
 
+    /// (kuna `switchguardmerge`) The values of `vn` the guards not folded into
+    /// the switch, and the CBRANCH blocks `guards` on the side of their out-edge
+    /// `toward`, still let through to it.
+    pub fn kuna_standing_guard_range(&self, fd: &Funcdata, vn: VarnodeId, guards: &[(BlockId, BlockId)]) -> Option<CircleRange> {
+        let (mut rng, _) = Self::width_range(fd, vn);
+        let mut standing: Vec<GuardRecord> = self.selectguards.iter().filter(|g| g.get_branch().is_some()).cloned().collect();
+        for &(block, toward) in guards {
+            let cbranch = fd.bb_op_tail(block)?;
+            let op = fd.obank().get(cbranch)?;
+            if op.code() != OpCode::CPUI_CBRANCH {
+                return None;
+            }
+            let indpath = (0..2).find(|&i| fd.bblocks_ref().block(block).get_out(i) == toward)?;
+            let mut guard_vn = op.get_in(1)?;
+            let mut guard_rng = CircleRange::new_bool((indpath == 1) != op.is_boolean_flip());
+            standing.push(GuardRecord::new(fd, cbranch, cbranch, indpath, guard_rng.clone(), guard_vn, false));
+            for _ in 0..2 {
+                let Some(read_op) = fd.vbank().get(guard_vn).and_then(|n| n.get_def()) else { break };
+                let Some(newvn) = circlerange_pull_back(fd, &mut guard_rng, read_op, !self.is_partial) else { break };
+                guard_vn = newvn;
+                standing.push(GuardRecord::new(fd, cbranch, read_op, indpath, guard_rng.clone(), guard_vn, false));
+            }
+        }
+        crate::kuna_switchguardrange::intersect(fd, &standing, vn, &mut rng);
+        Some(rng)
+    }
+
     /// The normalized value iterator (C++ `getValueRange`).
     fn jrange(&self) -> &dyn JumpValues {
         &**self.jrange.as_ref().expect("JumpBasic: jrange not set")
@@ -6070,6 +6097,52 @@ impl JumpTable {
             .push(IndexPair::new(self.last_block, self.addresstable.len() as int4 - 1));
         self.label.push(lab);
         Ok(())
+    }
+
+    /// (kuna `switchguardmerge`) The values of `vn` the guards not folded into
+    /// the switch, and the CBRANCH blocks `guards` on the side of their out-edge
+    /// `toward`, still let through, when the basic model recovered it.
+    pub fn kuna_standing_guard_range(&self, fd: &Funcdata, vn: VarnodeId, guards: &[(BlockId, BlockId)]) -> Option<CircleRange> {
+        self.jmodel
+            .as_ref()
+            .and_then(|m| m.as_any().downcast_ref::<JumpBasicModel>())
+            .and_then(|m| m.kuna_standing_guard_range(fd, vn, guards))
+    }
+
+    /// (kuna `switchguardmerge`) Fold out-edge `from` into out-edge `into`:
+    /// every table entry reaching `from` now reaches `into` (at `into_addr`),
+    /// and the out-edges after `from` move down one, as removing that edge
+    /// leaves them.
+    pub fn kuna_merge_out_edge(&mut self, from: int4, into: int4, into_addr: &Address) {
+        let shift = |p: int4| if p > from { p - 1 } else { p };
+        for pair in &self.block2addr {
+            if pair.block_position == from {
+                self.addresstable[pair.address_index as usize] = into_addr.clone();
+            }
+        }
+        for pair in &mut self.block2addr {
+            if pair.block_position == from {
+                pair.block_position = into;
+            }
+            pair.block_position = shift(pair.block_position);
+        }
+        self.block2addr.sort();
+        for (pos, _) in &mut self.case_values {
+            if *pos == from {
+                *pos = into;
+            }
+            *pos = shift(*pos);
+        }
+        self.case_values.sort();
+        self.case_values.dedup();
+        for edge in [&mut self.default_block, &mut self.last_block] {
+            if *edge == from {
+                *edge = into;
+            }
+            if *edge >= 0 {
+                *edge = shift(*edge);
+            }
+        }
     }
 
     /// Return the number of address table entries that target the given block

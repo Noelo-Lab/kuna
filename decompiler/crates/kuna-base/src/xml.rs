@@ -2272,7 +2272,9 @@ mod tests {
         // and kuna-switchnext-a64 / a byte-masked last table ends at the next function's table (option switchextent)
         // and kuna-gotosink / backward gotos become loops, a jump over a run becomes an if
         // and kuna-looprotate / a guarded do-while loop becomes a while loop
-        assert_eq!(count, 854, "corpus file count drifted");
+        // and kuna-switchguardmerge / an outlier equality test joins the switch its guard leads to
+        // and kuna-switchguardmerge-default / a default chain of equality tests joins its switch
+        assert_eq!(count, 856, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
