@@ -562,7 +562,7 @@ fn any_record_opens_with(blob: &[u8], needle: &str) -> bool {
 }
 
 /// `true` if any symbol name is a Rust-mangled symbol: the v0 scheme (`_R...`) or
-/// the legacy scheme (`_ZN...17h<16 hex>E`). This is the mangled-symbol heuristic
+/// the legacy scheme (`_ZN...17h<16 lowercase hex>E`). This is the mangled-symbol heuristic
 /// — robust on a non-stripped Rust binary even when the `.comment` record was
 /// removed, and **format-neutral** (`file.symbols()`/`dynamic_symbols()` work for
 /// ELF/PE/Mach-O alike), so it is the shared Rust signal every format arm uses.
@@ -596,8 +596,7 @@ pub fn detect_compiler_bytes(bytes: &[u8]) -> Compiler {
 /// - **v0**: `_R<path>` (or `__R<path>` with a platform leading underscore),
 ///   parsed against the scheme's grammar — the prefix alone is not evidence.
 /// - **legacy**: `_ZN...17h<hex16>E` — the Itanium-`_ZN` form rustc emits with a
-///   trailing 16-hex-digit `17h…` hash component, which distinguishes it from a
-///   plain C++ `_ZN…` symbol.
+///   trailing `17h…` hash component containing 16 lowercase hex digits.
 ///
 /// Format-agnostic, for a caller holding a bare name (the demangle pass). Where
 /// the object format is known, use [`is_rust_mangled_in`].
@@ -641,10 +640,12 @@ fn is_rust_legacy(name: &str) -> bool {
     let Some(pos) = name.rfind("17h") else {
         return false;
     };
-    let bare = name[pos + 3..].strip_suffix('E').is_some_and(|hex| {
-        hex.len() == 16 && hex.bytes().all(|b| b.is_ascii_hexdigit())
-    });
-    bare || kuna_legacy_llvm::stem(name).is_some()
+    name[pos + 3..].strip_suffix('E').is_some_and(is_legacy_rust_hash_digits)
+        || kuna_legacy_llvm::stem(name).is_some()
+}
+
+pub(crate) fn is_legacy_rust_hash_digits(hex: &str) -> bool {
+    hex.len() == 16 && hex.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 /// `true` if the `.rodata` section carries any [`RUST_SIGNATURES`] byte signature
