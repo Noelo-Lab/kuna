@@ -1727,6 +1727,9 @@ pub struct Architecture {
     /// `None` (the XML `<binaryimage>` bootstrap) falls back to the language id.
     /// See [`crate::kuna_formatstring::target_vararg_abi`].
     pub format_vararg_abi: Option<crate::kuna_formatstring::VarargAbi>,
+    /// (kuna `varargstackargs`) Per-run cache of the callee `va_start` probe,
+    /// keyed by the callee's `(space index, entry offset)`.
+    pub kuna_darwin_variadic_cache: std::collections::HashMap<(int4, uintb), bool>,
     /// (kuna) Gate the Listing/xref disassembly tier (`listing`); default
     /// **off**. When on (real-ELF path only), a program-wide recursive-descent
     /// disassembly Listing/xref model is built once at load and shared read-only
@@ -2624,6 +2627,7 @@ impl Architecture {
             format_override_callpoints: std::collections::BTreeSet::new(),
             kuna_callee_overrides: std::collections::BTreeMap::new(),
             format_vararg_abi: None, // (kuna) a load-time fact; set by the console's `load file`
+            kuna_darwin_variadic_cache: std::collections::HashMap::new(),
             analysis_listing: false,
             analysis_fast_funcdisc: false,
             analysis_lazyfuncs: false,
