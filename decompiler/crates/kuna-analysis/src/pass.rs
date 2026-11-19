@@ -553,6 +553,10 @@ pub struct AnalysisOutput {
     /// emits them here instead. The libc and Win32 signature passes all use this
     /// stream for concrete resolver entries. See [`crate::protos`].
     pub prototypes_at: Vec<(u64, kuna_decomp::fspec::PrototypePieces)>,
+    /// (kuna `xnutables`) `(view address, what it allocates)` for every
+    /// `kalloc_type_view` / `kalloc_type_var_view`; the engine types a typed
+    /// allocator's result by the view it is passed.
+    pub kalloc_types: Vec<(u64, kuna_decomp::kuna_kalloctype::KallocView)>,
     /// Library prototypes declaring a `float` or `double` that an ARM image
     /// holds back, by name (`None`) or by entry address: whether the image
     /// returns a `double` whole depends on `armfloatreturn`, which is set after
@@ -860,6 +864,7 @@ impl AnalysisOutput {
         self.cfstrings.extend(other.cfstrings);
         self.prototypes.extend(other.prototypes);
         self.prototypes_at.extend(other.prototypes_at);
+        self.kalloc_types.extend(other.kalloc_types);
         self.arm_float_prototypes.extend(other.arm_float_prototypes);
         self.main_decl_at.extend(other.main_decl_at);
         self.c_runtime_imports.extend(other.c_runtime_imports);

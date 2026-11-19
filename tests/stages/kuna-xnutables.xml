@@ -1,0 +1,87 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<!--
+    Kuna `xnutables` option (P1 external refinement): kalloc_type views and
+    IOExternalMethodDispatch tables on an XNU kext.
+
+    The fixture (gen_iokit.py) adds to the iokitclasses kext one
+    __kalloc_type view for site.Derived (signature 121112, 0x30 bytes), a
+    four-record IOExternalMethodDispatch table whose address Derived's own
+    vtable method computes, alloc_derived (allocates through kalloc_type_impl
+    and stores into the result) and a reader of the table's third function
+    pointer. Only the allocator and alloc_derived have symbols.
+
+    Pass 1 (`option xnutables off`) is the bug: the view is a bare address,
+    the dispatched handler is sub_<addr>, the allocation is a long with casts
+    around it and the table read is dat_<addr>. Pass 2 (`on`) names the view
+    kalloc_type_view_Derived and the handler after its owner and selector,
+    types the allocation Derived * from the view's signature (field_0x18 a
+    pointer, field_0x8 data) and the table IOExternalMethodDispatch[4], and
+    types the variable-size allocation as its header struct Packet *, and
+    names the __got slot Base::m1_ptr.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">c0035fd6</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/kernelcache/iokit_kext.macho</com>
+  <com>option xnutables off</com>
+  <com>read symbols</com>
+  <com>load addr 0xfffffff007a04200</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0xfffffff007a041b0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function alloc_derived</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0xfffffff007a04240</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function alloc_packet</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0xfffffff007a04260</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/kernelcache/iokit_kext.macho</com>
+  <com>option xnutables on</com>
+  <com>read symbols</com>
+  <com>load addr 0xfffffff007a04200</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function Derived::externalMethod_1</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function alloc_derived</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0xfffffff007a04240</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function alloc_packet</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0xfffffff007a04260</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="XNUTABLES #1: off leaves the kalloc_type view a bare address" min="1" max="1">kalloc_type_impl\(0xfffffff007a05200\); // tail-call</stringmatch>
+<stringmatch name="XNUTABLES #2: off leaves the dispatched handler unnamed" min="1" max="1">^unsigned long sub_fffffff007a041b0\(</stringmatch>
+<stringmatch name="XNUTABLES #3: on names the view after its type" min="1" max="1">kalloc_type_impl\(kalloc_type_view_Derived,a1\); // tail-call</stringmatch>
+<stringmatch name="XNUTABLES #4: on names the handler by owner and selector" min="1" max="1">^unsigned long Derived::externalMethod_1\(</stringmatch>
+<stringmatch name="XNUTABLES #5: off leaves the allocation an untyped word" min="1" max="1">^  \*\(unsigned long \*\)\(v1 \+ 0x18\) = 0;</stringmatch>
+<stringmatch name="XNUTABLES #6: off reads the dispatch table as a bare word" min="1" max="1">return dat_fffffff007a05270;</stringmatch>
+<stringmatch name="XNUTABLES #7: on types the allocation from the view's signature" min="1" max="1">^  Derived \*v1; // x0</stringmatch>
+<stringmatch name="XNUTABLES #8: on stores through the synthesized fields" min="1" max="1">^  v1->field_0x18 = NULL;</stringmatch>
+<stringmatch name="XNUTABLES #9: on types the dispatch table as records" min="1" max="1">return Derived_sMethods\[2\]\.function;</stringmatch>
+<stringmatch name="XNUTABLES #10: off leaves a variable-size allocation an untyped word" min="1" max="1">^  \*\(unsigned long \*\)v1 = v1;</stringmatch>
+<stringmatch name="XNUTABLES #11: on names the var view and types its allocation by the header" min="1" max="1">v1 = kalloc_type_var_impl\(kalloc_type_var_view_Packet,0x28,0,0\);</stringmatch>
+<stringmatch name="XNUTABLES #12: on types the variable-size allocation from the header signature" min="1" max="1">^  Packet \*v1; // x0</stringmatch>
+<stringmatch name="XNUTABLES #13: off leaves an unindexed __got slot a bare address" min="1" max="1">\(\*dat_fffffff007a05300\)\(\); // jump-as-call</stringmatch>
+<stringmatch name="XNUTABLES #14: on names the __got slot after the function it holds" min="1" max="1">\(\*Base::m1_ptr\)\(\); // jump-as-call</stringmatch>
+</decompilertest>

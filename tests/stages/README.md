@@ -454,7 +454,9 @@ fixtures and their generator live in
 `iokitclasses` off and on: the OSMetaClass constructor, the metaclass objects and
 a vtable-only override gain their names. `kuna-osclassinfo.xml` does the same for
 a synthetic DriverKit executable (`gen_dext.py`): its metaclass global and `New`
-function take their class's name.
+function take their class's name. `kuna-xnutables.xml` decompiles the kext with
+`xnutables` off and on: a `kalloc_type` view, an `IOExternalMethodDispatch`
+handler and a `__got` slot gain names, and typed allocations their struct.
 
 `ghangr-go-pointer-arithmetic-32.xml` and `ghangr-go-pointer-arithmetic-64.xml`
 check live pointer bases through constant, negative and signed dynamic byte

@@ -299,6 +299,9 @@ pub struct Architecture {
     /// every per-function handle by `build_arch_handle`. Empty on every other
     /// path, so it is inert for the XML datatest oracle.
     pub dynreloc_const: Rc<Vec<(u64, u64)>>,
+    /// (kuna `xnutables`) What each kalloc_type view allocates, by view
+    /// address, handed over by the XNU table analysis; empty elsewhere.
+    pub kuna_kalloc_types: Rc<crate::kuna_kalloctype::KallocTypes>,
     /// (kuna `pltlocal`) `(stub, definition)` for each PLT stub the image's own
     /// dynamic relocations bind to a function it defines, ascending by stub
     /// (`ObjectLoadImage::plt_local_targets`). Installed by the ELF bootstrap;
@@ -1860,6 +1863,9 @@ pub struct Architecture {
     /// or kext, and DriverKit class records (a commit-gated analysis pass,
     /// default on).
     pub analysis_iokitclasses: bool,
+    /// (kuna) `xnutables`: kalloc_type views, IOExternalMethodDispatch tables and
+    /// unnamed pointer slots on an XNU kernel or kext (default on).
+    pub analysis_xnutables: bool,
     /// (kuna `cfstrings annotate`) Follow each rendered `CFSTR("...")` with a
     /// comment naming its `__cfstring` entry address. Default **off**.
     pub cfstrings_annotate: bool,
@@ -2293,6 +2299,7 @@ impl Architecture {
             aggressive_ext_trim: false,
             readonlypropagate: false,
             dynreloc_const: Rc::new(Vec::new()),
+            kuna_kalloc_types: Rc::default(),
             plt_local: Rc::new(Vec::new()),
             litpool_const: Rc::new(Vec::new()),
             arm_pool_extents: Rc::new(Vec::new()),
@@ -2596,6 +2603,7 @@ impl Architecture {
             analysis_swiftmetadata: false,
             analysis_cfstrings: false,
             analysis_iokitclasses: false,
+            analysis_xnutables: false,
             cfstrings_annotate: false,
             cfstring_entries: std::collections::BTreeSet::new(),
             analysis_swifttypes: true,
@@ -2942,6 +2950,7 @@ impl Architecture {
         self.analysis_cfstrings = true; // (kuna) Mach-O __cfstring constant-string recovery default-on: Mach-O-only and real-binary-path only, so the XML datatest corpus never runs it (0/675); on an 80 MB third-party arm64 iOS app one decompile is within noise (min 2.324 s off, 2.359 s on, medians 2.442 / 2.372 over 6 interleaved runs)
         self.cfstrings_annotate = false;
         self.analysis_iokitclasses = true; // (kuna) IOKit class recovery, XNU and DriverKit images only
+        self.analysis_xnutables = true; // (kuna) XNU data tables, XNU images only
         self.analysis_swifttypes = true; // Swift type layouts default-on, inert unless swiftmetadata is on
         self.analysis_objcivars = true; // (kuna) ObjC instance structs + typed self + ivar offset fold; inert unless objc is on
         self.analysis_swiftcall = true; // Swift calling convention default-on, inert unless swiftmetadata is on
@@ -3669,6 +3678,7 @@ impl Architecture {
         // slots so `ActionVarnodeProps` folds those loads with global read-only
         // propagation still off. `Rc` clone: the list is built once at load.
         ctx.dynreloc_const = Rc::clone(&self.dynreloc_const);
+        ctx.kuna_kalloc_types = Rc::clone(&self.kuna_kalloc_types);
         ctx.litpool_const = Rc::clone(&self.litpool_const);
         // Carry the data-type-splitting toggle bits (C++ `glb->split_datatype_config`)
         // so `SplitDatatype` / `RuleSplit{Copy,Load,Store}` reach them per function.

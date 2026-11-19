@@ -378,6 +378,9 @@ fn call_output_type_local(data: &Funcdata, op: OpId, opcode: OpCode) -> Option<R
         }
     }
     let fc = fc?;
+    if let Some(ct) = crate::kuna_kalloctype::allocated_type(data, op, fc) {
+        return Some(ct);
+    }
     let proto = fc.proto();
     if !proto.is_output_locked() {
         let size = data.obank().get(op)?.get_out().and_then(|v| data.vbank().get(v)).map(|v| v.get_size())?;

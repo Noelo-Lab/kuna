@@ -1411,6 +1411,8 @@ pub struct ArchContext {
     /// every hand-built fixture and every XML `<binaryimage>` load, which is why
     /// the datatest parity oracle cannot see this field.
     pub dynreloc_const: Rc<Vec<(u64, u64)>>,
+    /// (kuna `xnutables`) What each kalloc_type view allocates, by view address.
+    pub kuna_kalloc_types: Rc<crate::kuna_kalloctype::KallocTypes>,
     /// (kuna `litpoolconst`) `[start, stop]` (inclusive) offsets of the image's
     /// executable, non-writable, file-backed regions — the instruction stream, and
     /// so the literal pools embedded in it. A read entirely inside one is foldable
@@ -1743,6 +1745,7 @@ impl ArchContext {
             // (kuna) No dynamic-relocation const slots until a real ELF load
             // installs them (see `Architecture::dynreloc_const`).
             dynreloc_const: Rc::new(Vec::new()),
+            kuna_kalloc_types: Rc::default(),
             // (kuna) No executable read-only ranges until a real object load
             // installs them (see `Architecture::litpool_const`).
             litpool_const: Rc::new(Vec::new()),

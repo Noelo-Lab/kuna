@@ -952,6 +952,7 @@ kuna_options! { self, p1;
         Ok(format!("Mach-O __cfstring constant-string recovery pass turned {state}"))
     },
     "iokitclasses" => on_off!(analysis_iokitclasses, "IOKit class and vtable recovery"),
+    "xnutables" => on_off!(analysis_xnutables, "XNU kalloc_type view and dispatch table recovery"),
     "swifttypes" => on_off!(analysis_swifttypes, "Swift type layouts from static metadata"),
     "objcivars" => {
         let val = on_or_off(p1)?;

@@ -193,3 +193,23 @@ pub(super) fn returned_constant(img: &MachoImage, entry: u64, limit: usize) -> O
     }
     None
 }
+
+/// Every address `ADRP`/`ADD`/`ADR` compute in straight-line code from `entry`.
+pub(super) fn constants(img: &MachoImage, entry: u64, budget: usize) -> Vec<u64> {
+    let mut regs = Regs::default();
+    let mut events = Vec::new();
+    let mut out = Vec::new();
+    let mut pc = entry;
+    for _ in 0..budget {
+        let Some(ins) = img.read_u32(pc) else { break };
+        let stop = matches!(step(img, pc, ins, &mut regs, &mut events, None), Step::Stop);
+        if ins & 0x1f00_0000 == 0x1000_0000 || ins & 0xff80_0000 == 0x9100_0000 {
+            out.extend(regs.get(rd(ins)));
+        }
+        if stop {
+            break;
+        }
+        pc = pc.wrapping_add(4);
+    }
+    out
+}

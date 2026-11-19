@@ -3516,6 +3516,7 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // renders the entry exactly as before.
         "cfstrings" => arch.analysis_cfstrings,
         "iokitclasses" | "osclassinfo" => arch.analysis_iokitclasses,
+        "xnutables" => arch.analysis_xnutables,
         // (kuna) PE PDB metadata recovery — default-OFF (output-changing: renames
         // stripped functions to their real PDB names). PE-only + externally gated on
         // a fingerprint-matching `.pdb` (the `kuna_pdb_path` env var). Registered
@@ -6213,6 +6214,9 @@ fn commit_analysis_output(
     //     one the call actually resolves to. Applied after 5 so an address-keyed
     //     signature wins over a by-name one for the same function, and before the
     //     C++ streams below so DWARF ground truth still wins over both.
+    if !out.kalloc_types.is_empty() {
+        prog.arch_mut().kuna_kalloc_types = Rc::new(out.kalloc_types.iter().cloned().collect());
+    }
     for (addr, pieces) in out.prototypes_at {
         let a = Address::new(Rc::clone(code_space), addr);
         prog.arch_mut().set_function_prototype_pieces_at(&a, pieces);

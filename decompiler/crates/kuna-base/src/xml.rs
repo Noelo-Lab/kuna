@@ -2231,7 +2231,8 @@ mod tests {
         // and kuna-acleintrinsics / AArch64 MTE tag instructions and barriers print as ACLE intrinsics
         // and kuna-iokitclasses / IOKit class and vtable recovery on an XNU kext
         // and kuna-osclassinfo / DriverKit class records name metaclass globals and New functions
-        assert_eq!(count, 792, "corpus file count drifted");
+        // and kuna-xnutables / kalloc_type views, IOExternalMethodDispatch tables and got slots on an XNU kext
+        assert_eq!(count, 793, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

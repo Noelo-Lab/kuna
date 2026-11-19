@@ -26,7 +26,15 @@ text.bvx2.lzfse`, and likewise for the other two).
 `MH_KEXT_BUNDLE` for the `iokitclasses` pass: one `__mod_init_func` initializer
 registers `Base` and `Derived` through an unnamed constructor and stores their
 metaclass vtables; each class has a vtable with its `getMetaClass()`; `Derived`
-overrides `Base::m2` and adds one method. Only `meta_of_derived`, `Base::m1`,
+overrides `Base::m2` and adds one method. For `xnutables` it also holds a
+`__kalloc_type` view for `site.Derived` (signature `121112`, 0x30 bytes),
+`alloc_derived` allocating through `kalloc_type_impl` and storing into the
+result, a four-record `IOExternalMethodDispatch` table that `Derived::m3`
+addresses, a reader of its third function pointer, a `__kalloc_var` view for
+`site.struct Packet` (a 0x10-byte header, signature `12`, then 8-byte elements)
+that `alloc_packet` allocates through `kalloc_type_var_impl`, and a `__got` slot
+with no indirect-symbol entry holding `Base::m1` that the function at
+`0xfffffff007a04260` branches through. Only `meta_of_derived`, `Base::m1`,
 `Base::m2`, the two allocators, `alloc_derived` and `alloc_packet` have symbols,
 and pointers are plain absolute words.
 

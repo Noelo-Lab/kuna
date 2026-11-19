@@ -5868,6 +5868,68 @@ every other binary's pass list is byte-identical to before the pass existed):
   Stage tests: `tests/stages/kuna-iokitclasses.xml` (a stripped synthetic
   kext) and `tests/stages/kuna-osclassinfo.xml` (a synthetic DriverKit
   executable), each with the option off and on.
+- **XNU data tables** (kuna, `xnutables`, the same XNU images, default-on;
+  `decompiler/crates/kuna-analysis/src/analyzers/iokit/tables.rs`): three kinds
+  of table that need no class knowledge to find. Each `__kalloc_type` record (a
+  0x40-byte `kalloc_type_view`, its `site.<type>` name at +0x10) and
+  `__kalloc_var` record (a 0x50-byte `kalloc_type_var_view`) becomes a sized data
+  object under its symbol, or else `kalloc_type_view_<T>` / `kalloc_type_var_view_<T>`
+  (`struct` dropped, `*` spelled `_ptr`); the typed allocator entry points
+  (`kalloc_type_impl`, `IOMallocTypeImpl`, `OSObject_typed_operator_new`, their
+  `var` and `free` forms) get prototypes whose first parameter is a pointer,
+  parked by name and at every address the image calls one at, so the view an
+  allocation passes renders by name. A fixed-size view also describes what it
+  allocates: its `kt_signature` (+0x20) spells the type one character per
+  8-byte granule (`1` a pointer, `8` a signed pointer, `2` data, `4` either,
+  `0` padding; a data-only type has an empty signature) and `kt_size` (+0x2c)
+  is `sizeof` the type. A variable-size view describes a header followed by
+  elements: `kt_size_hdr` (+0x2) and `kt_sig_hdr` (+0x38) the header,
+  `kt_size_type` (+0x4) and `kt_sig_type` (+0x40) one element. Its allocation
+  is the header struct `<T>` when there is a header, else the element (an
+  array of `void *` when the site names a pointer type, `site.T *`). The
+  struct `<T>` of that size is laid out from the signature
+  (`decompiler/crates/kuna-decomp/src/p5_types/kuna_kalloctype.rs (view_struct)`): a `void *` field per pointer granule, an
+  `undefined8` per data granule, a trailing `undefined1[n]` where the size is
+  not a multiple of eight, each named `field_0x<off>` except the first pointer
+  of a class `iokitclasses` recovered, which is its `vtable`; a name another
+  size already holds becomes `<T>_<size>` (template instances, `ExpansionData`),
+  and a same-size struct of the name is reused. The names are decided by the
+  pass, in section order, so every surface agrees on them; the struct itself
+  is interned the first time a decompiled call needs it, so the project `.h`
+  declares only the view structs some exported function allocates (two
+  kernel functions exported: 534 structs and 575 KB of `.h` before, 2 and
+  2.4 KB after). The view-to-layout map is handed to the engine
+  (`Architecture::kuna_kalloc_types`), where
+  `TypeOpCall::getOutputLocal`
+  (`decompiler/crates/kuna-decomp/src/p5_types/kuna_kalloctype.rs (allocated_type)`)
+  answers for a call to one of the allocators whose view argument folds to a
+  known view with `<T> *`, ahead of the prototype's locked `void *`: the
+  allocation is declared `<T> *` and the stores into it are field accesses.
+  A run of at least four
+  `IOExternalMethodDispatch` (0x18-byte) or `IOExternalMethodDispatch2022`
+  (0x28-byte) records in `__const`, each a pointer into this image's code with
+  at most 16 scalars each way and struct sizes up to 256 KiB or variable, at
+  least one variable, is a dispatch table: it
+  becomes a typed data object (its symbol, else `<Owner>_sMethods`) whose type
+  is an array of the record struct (`tables.rs (dispatch_struct)`:
+  `function`, a pointer to `int (void *target, void *reference, void *arguments)`,
+  the four `check…` counts, and for 2022 `allowAsync` and `checkEntitlement`),
+  so a read of a slot is `sMethods[2].function`, and every unnamed
+  handler `<Owner>::externalMethod_<selector>`, the owner being the class whose
+  vtable holds a method that computes the table's address (`a64::constants`),
+  else the class of the table's named handlers. A `__got` / `__auth_got` /
+  `__auth_ptr` slot the indirect-symbol table does not name, whose rebased
+  pointer reaches a function or object of this image named by a symbol or by
+  `iokitclasses`, is named `<target>_ptr` (a further slot holding the same target is
+  `<target>_ptr_2`, and so on). On the entries of an iOS 16.4.1 kernelcache:
+  the kernel has 1,449 views and 2 dispatch tables whose 23 handlers gain
+  names; IOSurface has 67 views and one (symbol-named) dispatch table, and
+  decompiling its 1,586 functions with the pass on declares 22 more
+  allocations as a pointer to their struct, turns 84 more stores into
+  `->field_0x<off>` accesses, and takes the same time within run-to-run
+  noise (9.5 to 11.2 s either way); the table scan itself takes 12 ms on the
+  kernel. Stage test: `tests/stages/kuna-xnutables.xml`, the option off and
+  on over the synthetic kext.
 - **PDB** (`pdb`, PE-only, default-on;
   `decompiler/crates/kuna-analysis/src/analyzers/pdb/mod.rs`): Windows' debug info
   lives in a separate `.pdb` the PE only fingerprints, so the pass reads the

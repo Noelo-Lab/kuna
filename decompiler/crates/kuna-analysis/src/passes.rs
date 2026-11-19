@@ -500,11 +500,13 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
     }
 
     // (kuna `iokitclasses`) IOKit class + vtable recovery on an XNU kernel or
-    // kext and DriverKit `__osclassinfo` class records (each pass checks for
-    // its own image kind); Mach-O only.
+    // kext and DriverKit `__osclassinfo` class records, and (kuna `xnutables`)
+    // the XNU data tables of the same images (each pass checks for its own
+    // image kind); Mach-O only.
     if format == object::BinaryFormat::MachO {
         passes.push(Box::new(crate::iokit::IokitClassesPass));
         passes.push(Box::new(crate::iokit::OsClassInfoPass));
+        passes.push(Box::new(crate::iokit::XnuTablesPass));
     }
 
     // S1 Mach-O Objective-C metadata recovery (ObjcMetadataPass): when the binary
@@ -1987,7 +1989,7 @@ mod tests {
         assert!(macho.contains(&"objc"), "Mach-O must carry the objc pass");
         // Compare the format-neutral base after dropping each format's gated
         // additions: `itaniumrtti` and `elfgotimports` for ELF and `peimportcall`,
-        // `authptrcall`, `cfstrings`, `iokitclasses` and `objc` for Mach-O.
+        // `authptrcall`, `cfstrings`, the IOKit passes and `objc` for Mach-O.
         let elf_neutral: Vec<&str> = elf
             .iter()
             .copied()
@@ -1996,7 +1998,7 @@ mod tests {
         let macho_neutral: Vec<&str> = macho
             .iter()
             .copied()
-            .filter(|&p| !matches!(p, "peimportcall" | "authptrcall" | "cfstrings" | "iokitclasses" | "osclassinfo" | "objc"))
+            .filter(|&p| !matches!(p, "peimportcall" | "authptrcall" | "cfstrings" | "iokitclasses" | "osclassinfo" | "xnutables" | "objc"))
             .collect();
         assert!(!elf_neutral.contains(&"itaniumrtti"));
         assert_eq!(
