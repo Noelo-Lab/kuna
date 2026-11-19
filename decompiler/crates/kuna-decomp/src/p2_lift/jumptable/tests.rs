@@ -780,3 +780,39 @@ fn a_dropped_return_destination_keeps_the_constant_targets() {
     jt.kuna_drop_return_default();
     assert_eq!(jt.address_table().len(), 1);
 }
+
+#[test]
+fn word_selectors_that_alias_keep_both_labels_without_a_transfer_encoding() {
+    let space = Rc::new(AddrSpace::new(
+        spacetype::IPTR_PROCESSOR, "words", false, 8, 2, 2, addrspace_flags::hasphysical, 1, 1,
+    ));
+    let address = |byte| Address::new(Rc::clone(&space), byte);
+    let mut table = JumpTable::new(address(4));
+    let high = (1u64 << 63) | 0x18;
+    let basic = JumpBasicModel::new();
+    basic.singleton_selector.set(Some(high));
+    table.jmodel = Some(Box::new(basic));
+    table.addresstable.push(address(0x30));
+    assert_eq!(table.kuna_target_encoding(), None);
+    assert_eq!(table.kuna_extend_flow_target(0x18, address(0x30), 0, 3), Some(true));
+    assert_eq!(table.kuna_extend_flow_target(high, address(0x30), 0, 3), Some(false));
+    assert_eq!(table.kuna_extend_flow_target(0x30, address(0x60), 0, 3), Some(true));
+    assert_eq!(table.kuna_extend_flow_target(0x40, address(0x80), 0, 3), None);
+    let model = table.jmodel.as_ref().unwrap();
+    let mut labels = Vec::new();
+    model.build_labels(&mut build_fd(), &mut table.addresstable, &mut labels, &**model).unwrap();
+    assert_eq!(labels, [0x18, high, 0x30]);
+}
+
+#[test]
+fn ordinary_multistage_uses_the_late_guarded_targets_even_if_the_singleton_differs() {
+    let ram = ram_of(&build_manager());
+    let at = |byte| Address::new(Rc::clone(&ram), byte);
+    let mut table = JumpTable::new(at(4));
+    table.addresstable.push(at(8));
+    let guarded = [at(16), at(24)];
+    assert!(!table.kuna_adopt_multistage_targets(&guarded, true));
+    assert_eq!(table.address_table(), &[at(8)]);
+    assert!(table.kuna_adopt_multistage_targets(&guarded, false));
+    assert_eq!(table.address_table(), &guarded);
+}

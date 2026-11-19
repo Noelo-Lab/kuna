@@ -2183,6 +2183,9 @@ enum NextTableRows {
 /// `// STUB(structuring/W6)` — recorded as losses; they are reached only at
 /// label/guard-fold time, after the BRANCHIND addresses are recovered.
 pub struct JumpBasicModel {
+    /// Exact BRANCHIND operand of an emulated singleton, before word scaling
+    /// and alignment. Its decoded address alone can lose selector bits.
+    singleton_selector: std::cell::Cell<Option<uintb>>,
     /// The flow-time rows a late re-recovery must account for before its
     /// labels are trusted (set only by [`JumpTable::match_model`]).
     label_rows: Option<Rc<LabelRows>>,
@@ -2229,6 +2232,7 @@ impl JumpBasicModel {
     /// Construct an empty basic model (C++ `JumpBasic(JumpTable*)`).
     pub fn new() -> JumpBasicModel {
         JumpBasicModel {
+            singleton_selector: Default::default(),
             label_rows: None,
             rows_rejected: false,
             run_on: false,
@@ -4758,7 +4762,7 @@ impl JumpBasicModel {
         addresstable: &mut Vec<Address>,
         mut loadpoints: Option<&mut Vec<LoadTable>>,
         mut loadcounts: Option<&mut Vec<int4>>,
-    ) -> KunaResult<()> {
+    ) -> KunaResult<Option<uintb>> {
         addresstable.clear();
         let mut emul = EmulateFunction::new(fd);
         emul.set_load_collect(loadpoints.is_some());
@@ -4773,6 +4777,7 @@ impl JumpBasicModel {
 
         let mut jr = self.jrange().clone_box();
         let mut notdone = jr.initialize_for_reading();
+        let mut last_raw = None;
         while notdone {
             let val = jr.get_value();
             let startop = jr
@@ -4782,6 +4787,7 @@ impl JumpBasicModel {
                 .get_start_varnode()
                 .ok_or_else(|| KunaError::lowlevel("buildAddresses: no start vn"))?;
             let raw = emul.emulate_path(val, &self.path_meld, startop, startvn)?;
+            last_raw = Some(raw);
             addresstable.push(Self::destination(&spc, mask, raw));
             if let Some(lc) = loadcounts.as_mut() {
                 let count = emul
@@ -4797,7 +4803,7 @@ impl JumpBasicModel {
                 lp.extend(collected);
             }
         }
-        Ok(())
+        Ok(last_raw.filter(|_| addresstable.len() == 1))
     }
 
     /// Recover the unnormalized switch variable (C++
@@ -5042,7 +5048,9 @@ impl JumpModel for JumpBasicModel {
         loadpoints: Option<&mut Vec<LoadTable>>,
         loadcounts: Option<&mut Vec<int4>>,
     ) -> KunaResult<()> {
-        self.build_addresses_basic(fd, indop, addresstable, loadpoints, loadcounts)
+        let selector = self.build_addresses_basic(fd, indop, addresstable, loadpoints, loadcounts)?;
+        self.singleton_selector.set(selector);
+        Ok(())
     }
 
     fn find_unnormalized(
@@ -5184,6 +5192,7 @@ impl JumpModel for JumpBasicModel {
         // C++ JumpBasic::clone only clones the JumpValues iterator.
         let mut res = JumpBasicModel::new();
         res.is_model2 = self.is_model2;
+        res.singleton_selector.set(self.singleton_selector.get());
         if let Some(jr) = &self.jrange {
             res.jrange = Some(jr.clone_box());
         }
@@ -5191,6 +5200,7 @@ impl JumpModel for JumpBasicModel {
     }
 
     fn clear(&mut self) {
+        self.singleton_selector.set(None);
         self.label_rows = None;
         self.rows_rejected = false;
         self.run_on = false;
@@ -5870,23 +5880,42 @@ impl JumpTable {
         self.reentered && self.partial_table && !self.addresstable.is_empty()
     }
     /// Add an exact edge-local target without running another partial decompile.
-    pub(crate) fn kuna_extend_flow_target(&mut self, target: Address, limit: usize) -> Option<bool> {
-        if self.is_override() || self.addresstable.is_empty()
-            || !crate::kuna_constselectjump::kuna_destination_is_local(
-                self.opaddress.get_offset(), target.get_offset())
-        { return None; }
-        if self.addresstable.contains(&target) { return Some(false); }
-        if self.addresstable.len() >= limit { return None; }
+    pub(crate) fn kuna_extend_flow_target(
+        &mut self, selector: uintb, target: Address, align: i32, limit: usize,
+    ) -> Option<bool> {
+        use crate::kuna_constselectjump::{kuna_destination_is_local, target_offset, JumpModelConstSelect};
+        if self.is_override() || !kuna_destination_is_local(self.opaddress.get_offset(), target.get_offset()) {
+            return None;
+        }
+        let model = self.jmodel.as_ref()?;
         let stub = self.kuna_return_default().cloned();
+        if stub.as_ref() == Some(&target) { return None; }
+        let rows = &self.addresstable[..self.addresstable.len() - usize::from(stub.is_some())];
+        let word_size = target.get_space()?.get_word_size();
+        let mut dests = if let Some(model) = model.as_any().downcast_ref::<JumpModelConstSelect>() {
+            if model.destinations().len() != rows.len() { return None; }
+            model.destinations().to_vec()
+        } else if let Some(raw) = model.as_any().downcast_ref::<JumpBasicModel>()
+            .and_then(|basic| basic.singleton_selector.get())
+            .filter(|&raw| matches!(rows, [row] if row.get_offset() == target_offset(raw, word_size, align)))
+        {
+            vec![raw]
+        } else if word_size == 1 && align == 0 && !rows.is_empty() {
+            rows.iter().map(Address::get_offset).collect()
+        } else {
+            return None;
+        };
+        // Distinct raw operands can dispatch to the same aligned byte address.
+        if dests.contains(&selector) { return Some(false); }
+        if self.addresstable.len() >= limit { return None; }
+        dests.push(selector);
+        dests.sort_unstable();
         if stub.is_some() { self.addresstable.pop(); }
         self.addresstable.push(target);
         self.addresstable.sort();
-        let dests = self.addresstable.iter().map(|a| {
-            AddrSpace::byte_to_address(a.get_offset(), a.get_space().unwrap().get_word_size())
-        }).collect();
         if let Some(address) = &stub { self.addresstable.push(address.clone()); }
-        self.jmodel = Some(Box::new(crate::kuna_constselectjump::JumpModelConstSelect::from_flow_targets(
-            dests, stub.as_ref().map(|a| a.get_offset()))));
+        self.jmodel = Some(Box::new(JumpModelConstSelect::from_flow_targets(
+            dests, stub.as_ref().map(Address::get_offset))));
         self.reentered = true;
         self.partial_table = false;
         self.row_loads = None;
@@ -6631,8 +6660,9 @@ impl JumpTable {
     /// (kuna) A second flow-time stage that again recovered a single address
     /// adopts the targets the late model recorded with the multistage hint, so
     /// flow follows every case of the table.
-    pub fn kuna_adopt_multistage_targets(&mut self, targets: &[Address]) -> bool {
-        if self.addresstable.len() == 1 && targets.len() > 1 && targets.contains(&self.addresstable[0]) {
+    pub fn kuna_adopt_multistage_targets(&mut self, targets: &[Address], restored_reentry: bool) -> bool {
+        if self.addresstable.len() == 1 && targets.len() > 1
+            && (!restored_reentry || targets.contains(&self.addresstable[0])) {
             self.addresstable = targets.to_vec();
             self.row_loads = None;
             return true;

@@ -2066,8 +2066,11 @@ runs the edge's block and the dispatch instruction's own operations through
 the same `Prefix` evaluator as the entry proof, and a proven local constant
 extends the table without another partial decompile. Selectors are in addressable
 units. Flow scales them by the code-space word size and applies function-pointer
-alignment before checking locality and mapping. When conversion could erase
-selector bits, SSA recovers the raw case values. Any other reaching edge
+alignment before checking locality and mapping. A basic singleton retains the
+emulated branch operand. Local extension keeps that operand and each arriving
+selector for case labels, including distinct values with the same byte address.
+When the original operands are unavailable and conversion can lose bits, flow
+requests SSA recovery. Any other reaching edge
 requests a full recovery once the locally proved frontier drains. At most 128
 such retries run per flow; every dispatch still pending when they run out
 keeps its targets and carries `Re-entered indirect jump may have more targets`,
@@ -2570,8 +2573,8 @@ more entries records a multistage hint for its jump and restarts the function
 and recovers it through `jumptable.rs (JumpTable::recover_multistage)`. (kuna) The
 second stage runs on the same kind of partial, so it can fold the index again.
 The hint therefore also carries the targets the late model built
-(`overrides.rs (Override::multistage_targets)`). A second stage that recovers or restores a singleton
-adopts them if they include that singleton (`jumptable.rs (JumpTable::kuna_adopt_multistage_targets)`),
+(`overrides.rs (Override::multistage_targets)`). An ordinary second stage with a singleton
+adopts the guarded hint. A failed re-entry retry adopts it only if it covers the restored singleton (`jumptable.rs (JumpTable::kuna_adopt_multistage_targets)`),
 so flow follows every case and the late check below labels them. Each jump is
 restarted at most once. A jump is not restarted unless every value in the
 late model's range passes the guards on its path
