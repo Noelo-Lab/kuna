@@ -8,6 +8,7 @@ use object::{BinaryFormat, Object};
 use super::{accepted_matches, applies_to, Image};
 use crate::listing::Listing;
 
+mod kuna_application;
 mod kuna_image;
 pub use kuna_image::{CompilerProvenance, ImageReport, Request};
 

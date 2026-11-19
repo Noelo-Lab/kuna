@@ -1794,6 +1794,31 @@ accept raw images, slice/target/ISA selection, image-selection options, assertio
 or function-definition overrides. Unsupported image formats or unavailable
 analysis retain an explicit report status instead of guessing a profile.
 
+To apply names from a manifest you trust, request application separately:
+
+```bash
+kuna functions ./fmt --json --apply-rust-signatures ./rust-signatures.json
+kuna decompile ./fmt '<recovered raw symbol>' --apply-rust-signatures ./rust-signatures.json
+kuna decompile ./fmt 0x154a20 --json --apply-rust-signatures ./rust-signatures.json
+```
+
+Application requires a complete comparison and a unique positive profile. Only
+exact raw symbol/address pairs accepted by both banks of that profile become name
+proposals. Existing loader and metadata names, name ownership, and conflicting
+FID/FLIRT matches still take precedence. Caller function declarations and
+assertions retain their precedence. This supplies names only; it does not infer
+compiler identity, types or ABI layouts, and it leaves the JSON schema unchanged.
+
+The manifest is evaluated once before function selection. Inventory and
+single-function text/JSON use the same analysis defaults, including discovery
+when selecting an address; explicit `--option` choices still apply. Unsupported
+images, incomplete or ambiguous profiles, and absent bank agreement are errors.
+`--apply-rust-signatures` cannot be repeated or combined with the report-only
+flag. It rejects archive inputs before member listing, selection or fan-out, as
+well as byte overlays, raw images, slice/target/ISA/image-selection changes, `--jobs` values other than `1`, and batch/project/graph commands. Single
+function application uses the in-process engine for text and JSON and rejects
+`--raw`, `--regions`, `--kassert`, `--decomp-dbg`, and `--engine`.
+
 ```json
 {"binary":"…","count":1150,"total":1150,"error":null,"warnings":[],
  "summary":{"entry":{"name","address","address_hex"},
