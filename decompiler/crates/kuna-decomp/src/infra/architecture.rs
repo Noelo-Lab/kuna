@@ -670,6 +670,10 @@ pub struct Architecture {
     /// `option reloadarg` stands down on.  The XML `<binaryimage>` bootstrap
     /// never runs the analyzer tier, so it stays `Unknown` there.
     pub source_lang_detected: crate::kuna_sourcelang::SourceLang,
+    /// Executable `runtime.chanrecv2` entry confirmed by the Go function table.
+    pub go_chanrecv2: Option<u64>,
+    /// Function entry to its single DWARF-verified status receive call site.
+    pub go_chanrecv_status_sites: std::collections::BTreeMap<u64, u64>,
     /// Unambiguous stable rustc version from ELF compiler metadata.
     pub rustc_stable_version: Option<(u16, u16, u16)>,
     pub rustc_pieces_layout: bool,
@@ -2403,6 +2407,8 @@ impl Architecture {
             rust_fmt_write_relro: None,
             rust_io_writer_profiles: std::collections::BTreeMap::new(),
             source_lang_detected: Default::default(), // (kuna) a load-time fact; set by the console's `load file`
+            go_chanrecv2: None,
+            go_chanrecv_status_sites: Default::default(),
             source_lang_forced: None, // (kuna) option sourcelang; reset_defaults restores auto
             fat_str: 0, // (kuna) option fatstr; reset_defaults sets the shipped default (auto)
             go_morestack: 0, // (kuna) option gomorestack; reset_defaults sets the shipped default (auto)

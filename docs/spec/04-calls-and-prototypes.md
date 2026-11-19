@@ -2641,6 +2641,22 @@ frame and marking those ranges not-mapped, and materializing recovered but
 unreferenced parameters as fresh Varnodes. For a locked varargs prototype the
 fixed arguments sort to the front first (`ParamActive::sort_fixed_position`).
 
+### Status-only Go channel receive
+
+`kuna_gochanrecv`
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_gochanrecv.rs`)
+uses the address-scoped `godwarfsig` proof from §1 for a direct blocking
+receive. The exact amd64 Go stack-guard hot path preserves the full RAX
+channel handle, provides an aligned private eight-byte destination in RBX,
+and returns with AL unchanged after the call. The verified channel element
+width fits that storage. The caller and call use the ordinary ABI input and
+output assignment, with an opaque channel pointer, a pointer to an eight-byte
+scratch word, and a one-byte boolean result. The normal call pipeline retains
+the receive's memory and blocking effects. The proof stays local to this call
+site and survives a flow restart. An existing caller or callee contract that
+conflicts with this proof, or an explicit call-site override, takes precedence.
+Callers without the owned boolean result keep their ordinary recovery.
+
 ### Caller-proved big-endian pair returns
 
 The `callwide` option (`off|on`, default **off**) adds positive caller evidence

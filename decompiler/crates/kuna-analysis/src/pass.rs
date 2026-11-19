@@ -424,6 +424,8 @@ pub struct AnalysisOutput {
     pub ppc32_pic_slots: Vec<kuna_decomp::kuna_ppc32piccalls::ImportSlot>,
     /// `(addr, name, kind)` -> seed `Database::add_function` / symbol map.
     pub symbols: Vec<SymFact>,
+    /// Unique AMD64 Go function-table entry of the blocking status receive helper.
+    pub go_chanrecv2: Option<u64>,
     /// Named, sized data globals (the symbol-table / DWARF data objects). Mapped
     /// into the global scope with an `undefined<size>` type so a memory access of
     /// the object renders its NAME (`max_width`) not `dat_<addr>`. See
@@ -843,6 +845,7 @@ impl AnalysisOutput {
     /// Fold another output into this one (concatenation; dedup is the driver's job).
     pub fn merge(&mut self, other: AnalysisOutput) {
         self.symbols.extend(other.symbols);
+        self.go_chanrecv2 = self.go_chanrecv2.or(other.go_chanrecv2);
         self.data_objects.extend(other.data_objects);
         self.typed_data.extend(other.typed_data);
         self.go_type_globals.extend(other.go_type_globals);

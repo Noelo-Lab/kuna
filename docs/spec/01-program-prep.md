@@ -4081,6 +4081,18 @@ moves.
   Stripped images, arbitrary interfaces and other composite results retain
   inference. With `godwarfsig off`, this carrier and its metadata are absent.
 
+  A status-only channel receive on amd64 Go ELF can supply a single boolean
+  contract. Its unique concrete entry must have a register-ABI input in RAX
+  declared as the compiler's receive-only `int` channel and a sole one-byte
+  boolean result. The channel typedef must resolve to the complete compiler
+  backing record through an eight-byte pointer. `DW_AT_go_elem` must resolve
+  to the signed eight-byte Go `int`. That width must fit the private stack
+  slot addressed by the guarded receive instruction sequence. The loader
+  verifies the sequence against the exact executable `runtime.chanrecv2`
+  entry from Go's function table and preserves the proven caller and call site
+  for §4's locked-call recovery. Unavailable, ambiguous or inconsistent
+  evidence leaves the ordinary inference path in place.
+
   Native Go zlib debug sections are retained compressed at load time. Their
   combined stored/declared extents are bounded to 64 MiB and are inflated only
   when `godwarfsig` is enabled. Each stream must end exactly, pass its checksum

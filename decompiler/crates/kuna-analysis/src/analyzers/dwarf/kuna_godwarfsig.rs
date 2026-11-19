@@ -53,6 +53,7 @@ pub(super) struct UnitExtras {
     go: bool,
     regabi: bool,
     entries: BTreeMap<usize, Extra>,
+    channel_elements: BTreeMap<usize, usize>,
     pub(super) complete: bool,
 }
 
@@ -87,6 +88,12 @@ impl UnitExtras {
             Some(gimli::AttributeValue::DebugInfoRef(offset)) => Some(offset.0),
             _ => None,
         };
+        let kind = entry.attr_value(gimli::DwAt(0x2900)).and_then(|value| value.udata_value());
+        if kind == Some(18) {
+            if let Some(element) = reference(gimli::DwAt(0x2902)) {
+                self.channel_elements.insert(entry.offset().0, element);
+            }
+        }
         let location = if entry.tag() == gimli::DW_TAG_formal_parameter {
             entry.attr_value(gimli::DW_AT_location)
                 .map(|location| {
@@ -106,7 +113,7 @@ impl UnitExtras {
                 Some(gimli::AttributeValue::Flag(value)) => Some(value),
                 _ => None,
             },
-            kind: entry.attr_value(gimli::DwAt(0x2900)).and_then(|value| value.udata_value()),
+            kind,
             location,
             regabi: self.regabi,
             trampoline: entry.attr_value(gimli::DW_AT_trampoline).is_some(),
@@ -165,6 +172,7 @@ fn empty_entry_location(
 pub struct Facts {
     dies: BTreeMap<usize, DieSnap>,
     extras: BTreeMap<usize, Extra>,
+    channel_elements: BTreeMap<usize, usize>,
     names: NameChars,
     compressed: Option<Deferred>,
 }
@@ -172,10 +180,17 @@ pub struct Facts {
 impl Default for Facts {
     fn default() -> Self {
         Self {
-            dies: BTreeMap::new(), extras: BTreeMap::new(), names: NameChars::Off,
+            dies: BTreeMap::new(), extras: BTreeMap::new(), channel_elements: BTreeMap::new(),
+            names: NameChars::Off,
             compressed: None,
         }
     }
+}
+
+pub struct Materialized {
+    pub entry: u64,
+    pub pieces: PrototypePieces,
+    pub status_site: Option<u64>,
 }
 
 impl fmt::Debug for Facts {
@@ -205,6 +220,9 @@ impl Facts {
             let Some(children) = die.children.iter().map(|child| base.checked_add(*child))
                 .collect::<Option<Vec<_>>>() else { continue };
             die.children = children;
+            if let Some(element) = extra.channel_elements.get(&offset) {
+                self.channel_elements.insert(absolute, *element);
+            }
             self.dies.insert(absolute, die);
             self.extras.insert(absolute, attributes.clone());
         }
@@ -214,7 +232,7 @@ impl Facts {
         self.dies.is_empty()
     }
 
-    pub fn materialize(&self, arch: &Architecture) -> Vec<(u64, PrototypePieces)> {
+    pub fn materialize(&self, arch: &Architecture) -> Vec<Materialized> {
         if !arch.archid.starts_with("x86:LE:64:") || arch.data_org().0 != 8
             || !arch.default_fp().is_some_and(|model| model.get_name() == "abi-internal")
         {
@@ -234,12 +252,15 @@ impl Facts {
             if die.tag != gimli::DW_TAG_subprogram || die.declaration {
                 return None;
             }
-            let pieces = self.prototype(*offset, arch, !repeated.contains(&die.low_pc?))?;
-            Some((die.low_pc?, pieces))
+            let entry = die.low_pc?;
+            let (pieces, status_site) = self.prototype(*offset, arch, !repeated.contains(&entry))?;
+            Some(Materialized { entry, pieces, status_site })
         }).collect()
     }
 
-    fn prototype(&self, offset: usize, arch: &Architecture, unique: bool) -> Option<PrototypePieces> {
+    fn prototype(&self, offset: usize, arch: &Architecture, unique: bool)
+        -> Option<(PrototypePieces, Option<u64>)>
+    {
         let sub = self.dies.get(&offset)?;
         let extra = self.extras.get(&offset)?;
         if !extra.regabi || extra.trampoline || extra.closure || extra.invalid || sub.type_ref.is_some() {
@@ -308,6 +329,11 @@ impl Facts {
         }
         if parameters.is_empty() || seen != inherited {
             return None;
+        }
+        if unique {
+            if let Some((pieces, site)) = self.channel_status(arch, sub.low_pc?, name, &parameters) {
+                return Some((pieces, Some(site)));
+            }
         }
         if parameters.iter().any(|(_, location, _)| matches!(location, Location::EmptyEntryRegister(_))) {
             if extra.code_size != Some(1) { return None; }
@@ -462,7 +488,76 @@ impl Facts {
             };
             pieces.outtype = Some(outtype);
         }
-        Some(pieces)
+        Some((pieces, None))
+    }
+
+    fn channel_status(
+        &self,
+        arch: &Architecture,
+        entry: u64,
+        name: &str,
+        parameters: &[(&DieSnap, Location, bool)],
+    ) -> Option<(PrototypePieces, u64)> {
+        let [(input, Location::Register(0), false), (output, result_location, true)] = parameters
+            else { return None; };
+        if !matches!(result_location, Location::Unavailable | Location::Register(0)) {
+            return None;
+        }
+        let channel_offset = input.type_ref?;
+        let channel = self.dies.get(&channel_offset)?;
+        if channel.tag != gimli::DW_TAG_typedef || channel.name != "<-chan int"
+            || channel.declaration || !matches!(channel.byte_size, None | Some(8))
+            || self.extras.get(&channel_offset)?.invalid
+        {
+            return None;
+        }
+        let backing_offset = channel.type_ref?;
+        let backing = self.dies.get(&backing_offset)?;
+        if backing.tag != gimli::DW_TAG_pointer_type || backing.name != "*hchan<int>"
+            || backing.declaration || !matches!(backing.byte_size, None | Some(8))
+            || self.extras.get(&backing_offset)?.invalid
+        {
+            return None;
+        }
+        let record_offset = backing.type_ref?;
+        let record = self.dies.get(&record_offset)?;
+        if record.tag != gimli::DW_TAG_structure_type || record.name != "hchan<int>"
+            || record.declaration || record.byte_size.is_none_or(|size| size < 8)
+            || self.extras.get(&record_offset)?.invalid
+        {
+            return None;
+        }
+        let element_offset = *self.channel_elements.get(&channel_offset)?;
+        let element = self.dies.get(&element_offset)?;
+        if element.name != "int" || self.extras.get(&element_offset)?.kind != Some(2) {
+            return None;
+        }
+        let element = self.scalar(element_offset, &mut BTreeSet::new(), &mut 256)?;
+        let result = self.scalar(output.type_ref?, &mut BTreeSet::new(), &mut 256)?;
+        if element.size != 8 || element.meta != type_metatype::TYPE_INT
+            || result.size != 1 || result.meta != type_metatype::TYPE_BOOL
+        {
+            return None;
+        }
+        let site = kuna_decomp::kuna_gochanrecv::status_site(arch, entry)?;
+        let types = arch.types();
+        let handle = types.get_type_pointer(8, types.get_type_void().ok()?, 1).ok()?;
+        let status = types.get_base(1, type_metatype::TYPE_BOOL).ok()?;
+        let pieces = PrototypePieces {
+            name: sanitize_symbol_name(name, self.names).into_owned(),
+            outtype: Some(Rc::clone(&status)),
+            intypes: vec![Rc::clone(&handle)],
+            innames: vec![sanitize_symbol_name(&input.name, self.names).into_owned()],
+            first_var_arg_slot: -1,
+            ..PrototypePieces::default()
+        };
+        let mut assigned = Vec::new();
+        arch.default_fp()?.assign_parameter_storage(&pieces, &mut assigned, false, types, arch.manage()).ok()?;
+        let [out, input] = assigned.as_slice() else { return None; };
+        if !storage_matches(arch, out, "AL", &status) || !storage_matches(arch, input, "RAX", &handle) {
+            return None;
+        }
+        Some((pieces, site))
     }
 
     fn scalar(&self, offset: usize, visited: &mut BTreeSet<usize>, budget: &mut usize) -> Option<Scalar> {
