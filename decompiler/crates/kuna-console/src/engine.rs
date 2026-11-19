@@ -5504,6 +5504,7 @@ fn commit_analysis_output(
             out.swift_types.regs = swift.regs;
             out.swift_types.declared = swift.declared;
             out.swift_types.runtime_context = swift.runtime_context;
+            out.swift_types.async_imports = swift.async_imports;
         }
     } else {
         out.swift_types = Default::default();
@@ -6723,6 +6724,15 @@ fn commit_analysis_output(
                     self_reg,
                     error_reg,
                     async_reg,
+                    async_names: out
+                        .swift_types
+                        .async_imports
+                        .iter()
+                        .flat_map(|(n, throws)| {
+                            let bare = n.strip_prefix('_').filter(|b| b.starts_with('$'));
+                            std::iter::once((n.clone(), *throws)).chain(bare.map(|b| (b.to_string(), *throws)))
+                        })
+                        .collect(),
                     async_context: prog
                         .arch()
                         .types()
