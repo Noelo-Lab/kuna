@@ -809,6 +809,8 @@ mod integer_field_extract;
 mod go_store_value;
 #[path = "go_pointer_arithmetic.rs"]
 mod go_pointer_arithmetic;
+#[path = "call_table_cli.rs"]
+mod call_table_cli;
 
 #[path = "rust_integer_conversions.rs"]
 mod rust_integer_conversions;

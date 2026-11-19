@@ -113,6 +113,21 @@ impl<'a> PoolImage<'a> {
         Some(word)
     }
 
+    /// Every pointer-aligned, pointer-sized word of the read-only image.
+    pub(super) fn words(&self) -> impl Iterator<Item = u64> + '_ {
+        let ptr = self.ptr as usize;
+        self.ro.iter().flat_map(move |&(lo, hi, data)| {
+            let len = ((hi - lo) as usize).min(data.len());
+            let lead = (ptr - (lo as usize % ptr)) % ptr;
+            data[..len].get(lead..).unwrap_or(&[]).chunks_exact(ptr).map(move |b| match (ptr, self.little_endian) {
+                (8, true) => u64::from_le_bytes(b.try_into().unwrap()),
+                (8, false) => u64::from_be_bytes(b.try_into().unwrap()),
+                (_, true) => u64::from(u32::from_le_bytes(b.try_into().unwrap())),
+                (_, false) => u64::from(u32::from_be_bytes(b.try_into().unwrap())),
+            })
+        })
+    }
+
     /// The target's pointer width in bytes, which is also the stride of any
     /// array of pointers in the image (`kuna_switchtable`'s table).
     pub(super) fn ptr_width(&self) -> u32 {

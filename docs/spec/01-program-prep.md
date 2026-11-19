@@ -8545,6 +8545,29 @@ an entry" a property of the wiring rather than of a heuristic. Output-changing
 (more functions), hence default-off; ARM-only and Listing-tier, so it is a strict
 no-op on every other architecture, with `listing off`, and on the XML datatest path.
 
+**Call tables** (`calltable`, on by default; kuna;
+`decompiler/crates/kuna-analysis/src/listing/kuna_calltable.rs (scan)`). A
+table a computed transfer indexes is either a switch or a table of functions.
+The tables are read with the register-chain fold the switch reader uses
+(`decompiler/crates/kuna-analysis/src/listing/kuna_switchtable.rs
+(register_targets)`), which also answers for a `CALLIND` and reads a pointer
+table with no range check up to 256 entries, stopping at the first word that
+is not code of the section the transfer is in; such a read is flagged
+`unbounded` and is never taken as a switch. The vote
+(`decompiler/crates/kuna-analysis/src/listing/kuna_calltable.rs
+(is_call_table)`): an indexed call calls every entry; a jump whose distinct
+targets are 40% or more other functions' entries is a table of tail calls; on
+x86 an unbounded table whose targets all sit on 16-byte boundaries is one too
+(a switch whose range check the slice did not reach has case labels in the
+middle of its function). The targets of a call table become entries, and in
+the `kuna xrefs` walk they are call references of the dispatcher rather than
+its switch cases. The other way round, a discovered, non-symbol entry that
+sits on a case of a switch and that no call reaches is dropped at the commit
+(`AnalysisOutput::case_entries`): a case body that opens `push rbp; mov
+rbp,rsp` looks like a function to a prologue scan. On the fixture
+`calltable_x86_64` the two table functions are found and the prologue-shaped
+case is no longer a function.
+
 **Tail-call entries** (`tailcallentry`, on by default, ARM-only; kuna;
 `decompiler/crates/kuna-analysis/src/listing/kuna_tailcallentry.rs (tail_call_entries)`)
 closes the walk's other structural blind spot. The recursive-descent walk

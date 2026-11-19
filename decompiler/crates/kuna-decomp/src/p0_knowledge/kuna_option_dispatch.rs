@@ -937,6 +937,7 @@ kuna_options! { self, p1;
     "tailcallentry" => {
         on_off!(analysis_tailcallentry, "Tail-call function-entry recovery Listing consumer")
     },
+    "calltable" => on_off!(analysis_calltable, "Call-table recovery and the call-table vs switch vote"),
     "objc" => on_off!(analysis_objc, "Mach-O Objective-C metadata recovery pass"),
     "swiftmetadata" => on_off!(analysis_swiftmetadata, "Swift runtime-metadata recovery pass"),
     "cfstrings" => {

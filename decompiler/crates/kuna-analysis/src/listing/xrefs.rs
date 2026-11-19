@@ -85,6 +85,7 @@ use super::kuna_picpool::{self, GotImage, Insn, PicPool};
 use super::kuna_pltstub::PltStubs;
 use super::kuna_poolref::PoolImage;
 use super::kuna_regcarry::{self, Machine as CarryMachine};
+use super::kuna_calltable;
 use super::kuna_switchtable;
 use super::model::{FlowKind, FlowType, RawOp};
 #[path = "kuna_prefixreuse.rs"]
@@ -829,8 +830,10 @@ fn descend(
     let reach = kuna_switchtable::Reach {
         max_entries,
         preserved: &preserved,
+        settled: false,
     };
     let arm = file.architecture() == object::Architecture::Arm;
+    let x86 = arch.archid.starts_with("x86");
     let pic_image = pool.as_ref().map(|pool| kuna_picpool::Image {
         pool,
         mapped: &mapped,
@@ -1103,6 +1106,33 @@ fn descend(
                     pending_focus.extend(found.into_iter().rev());
                     continue;
                 }
+                // (kuna `calltable`) Nothing fell into these dispatches: a
+                // pointer table with no range check above it is a call table
+                // or nothing.
+                None if arch.analysis_calltable && !waiting.is_empty() && pool.is_some() => {
+                    let settled = kuna_switchtable::Reach { settled: true, ..reach };
+                    let mut left: Vec<_> = waiting.drain().flat_map(|(_, sites)| sites).collect();
+                    left.sort_unstable_by_key(|&(vma, ..)| vma);
+                    for (vma, _, branch) in left {
+                        let read = kuna_switchtable::register_targets(
+                            translate, &code_space, data_space.as_ref(), &st.decoded, vma, &branch,
+                            pool.as_ref().unwrap(), &exec, &settled,
+                        );
+                        if !read.unbounded
+                            || !kuna_calltable::is_call_table(&read.cases, true, x86, |t| st.funcs.contains(&t))
+                        {
+                            continue;
+                        }
+                        let text = assembly(translate, vma, &code_space);
+                        for t in read.cases.into_iter().collect::<BTreeSet<u64>>() {
+                            st.file(vma, t, XrefKind::Call, &text);
+                            if st.funcs.insert(t) {
+                                func_queue.push_back(t);
+                            }
+                        }
+                    }
+                    continue;
+                }
                 None => {
                     if let Some(context) = frame_context.take() {
                         context.commit();
@@ -1163,7 +1193,7 @@ fn descend(
                         thumb_tables.as_ref(),
                     );
                 }
-                if read.cases.is_empty() && read.stated.is_none() {
+                if read.unbounded || (read.cases.is_empty() && read.stated.is_none()) {
                     if let Some(gap) = read.gap {
                         waiting.entry(gap).or_default().push((vma, mode, branch));
                     }
@@ -1369,6 +1399,7 @@ fn descend(
                         waiting.entry(gap).or_default().push((vma, mode, branch.clone()));
                     }
                     let unpredicated = c.flows.is_empty();
+                    let mut unbounded = false;
                     for &(base, kind) in &drefs {
                         if unpredicated && kind == XrefKind::Data && stated.is_none() && a32.gap.is_none() {
                             cases.extend(kuna_switchtable::targets(
@@ -1403,6 +1434,7 @@ fn descend(
                             }
                         }
                         (cases, stated) = (read.cases, read.stated);
+                        unbounded = read.unbounded;
                     }
                     // A dispatch that names no address rendered nothing above,
                     // and a row whose instruction column is blank does not say
@@ -1410,9 +1442,42 @@ fn descend(
                     if !cases.is_empty() && text.is_empty() {
                         text = assembly(translate, vma, &code_space);
                     }
-                    st.take_switch(vma, entry, &cases, stated, max_entries, &text);
-                    picpool.cases(vma, &cases);
-                    insn_queue.extend(cases.iter().map(|&target| (target, mode)));
+                    // (kuna `calltable`) A table whose distinct targets are 40%
+                    // or more other functions' entries dispatches tail calls,
+                    // not cases of this function.
+                    let call_table = arch.analysis_calltable
+                        && kuna_calltable::is_call_table(&cases, unbounded, x86, |t| st.funcs.contains(&t) && t != entry);
+                    if call_table {
+                        for t in cases.iter().copied().collect::<BTreeSet<u64>>() {
+                            st.file(vma, t, XrefKind::Call, &text);
+                            if st.funcs.insert(t) {
+                                func_queue.push_back(t);
+                            }
+                        }
+                    } else if !unbounded {
+                        st.take_switch(vma, entry, &cases, stated, max_entries, &text);
+                        picpool.cases(vma, &cases);
+                        insn_queue.extend(cases.iter().map(|&target| (target, mode)));
+                    }
+                }
+            }
+            // (kuna `calltable`) An indexed call through a table of function
+            // pointers calls every entry of the table.
+            if arch.analysis_calltable && c.flows.is_empty() && c.flow.is_computed && c.flow.is_call {
+                let callind = cap.ops().iter().find(|o| o.opcode == OpCode::CPUI_CALLIND).and_then(|o| o.ins.first());
+                if let (Some(p), Some(callind)) = (pool.as_ref(), callind) {
+                    let read = kuna_switchtable::register_targets(
+                        translate, &code_space, data_space.as_ref(), &st.decoded, vma, callind, p, &exec, &reach,
+                    );
+                    if !read.cases.is_empty() && text.is_empty() {
+                        text = assembly(translate, vma, &code_space);
+                    }
+                    for t in read.cases.into_iter().collect::<BTreeSet<u64>>() {
+                        st.file(vma, t, XrefKind::Call, &text);
+                        if st.funcs.insert(t) {
+                            func_queue.push_back(t);
+                        }
+                    }
                 }
             }
 

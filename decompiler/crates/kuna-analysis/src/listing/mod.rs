@@ -35,6 +35,7 @@ mod kuna_insnstore;
 pub mod context;
 pub mod decode;
 pub mod kuna_callbackentry;
+pub mod kuna_calltable;
 pub mod kuna_callerreads;
 pub mod kuna_poolextents;
 pub mod kuna_entrythumbflow;
