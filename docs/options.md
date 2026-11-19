@@ -451,6 +451,9 @@ Three tiers:
 | an arm64 macOS function with a large frame or a variable-length array prints with a (void) parameter list | [`chkstkdarwin`](#chkstkdarwin----on--off-default-on-destructive-opt-in) |
 | a variable-length array is sized from a register nothing assigns after __chkstk_darwin() | [`chkstkdarwin`](#chkstkdarwin----on--off-default-on-destructive-opt-in) |
 | __chkstk_darwin is called with arguments it does not take | [`chkstkdarwin`](#chkstkdarwin----on--off-default-on-destructive-opt-in) |
+| avx code prints vpaddd_avx2( or vfmadd132ps_fma( instead of an intrinsic | [`avxintrinsics`](#avxintrinsics----on--off-default-on) |
+| an fma call lists its operands in instruction order rather than multiplicands first | [`avxintrinsics`](#avxintrinsics----on--off-default-on) |
+| vector user-ops are named after the mnemonic and its extension | [`avxintrinsics`](#avxintrinsics----on--off-default-on) |
 | a DOS program's globals print as *(short *)0x308e near-pointer dereferences instead of named globals | [`mzdgroup`](#mzdgroup----on--off-default-on) |
 | every function of an MS-DOS executable declares an unsigned short local commented // ds | [`mzdgroup`](#mzdgroup----on--off-default-on) |
 | the same DOS global gets no shared name across functions | [`mzdgroup`](#mzdgroup----on--off-default-on) |
@@ -1810,6 +1813,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On by default. Keep it on for macOS and iOS arm64 binaries: a function with a large frame or a variable-length array otherwise prints `v = __chkstk_darwin();`, loses the parameters it reads after the probe, or sizes a stack allocation from a register nothing assigns. Flip OFF to see the probe calls again, for instance to find the functions that allocate more than a page of stack.
 - **Where / provenance:** P2/flow-classification · kuna · structure-recovery · kuna-chkstkdarwin
 - **Example:** `option chkstkdarwin off`
+
+### `avxintrinsics` -- on | off, default `on`
+
+- **Symptoms:** avx code prints vpaddd_avx2( or vfmadd132ps_fma( instead of an intrinsic; an fma call lists its operands in instruction order rather than multiplicands first; vector user-ops are named after the mnemonic and its extension.
+- **What it does:** x86 only (inert elsewhere: only the x86 SLEIGH spec declares these user-ops): print the AVX user-ops as the Intel intrinsics a programmer writes. The x86 spec lifts most AVX2, FMA and AVX-512 instructions to opaque user-ops named after the mnemonic and its extension (`vpaddd_avx2`, `vfmadd132ps_fma`, `vaddps_avx512f`). With this option the printer names each mapped one `_mm<W>_<op>_<type>`, where the width comes from the user-op's result size (16, 32 or 64 bytes): `_mm256_add_epi32`, `_mm512_add_ps`, `_mm256_max_epu8`, `_mm256_shuffle_epi8`, `_mm256_and_si256`. The FMA forms also get the intrinsic's operand order: `vfmadd132ps(a, b, c)` computes `a*c + b` and prints as `_mm256_fmadd_ps(a, c, b)` (213 is `b*a + c`, 231 is `b*c + a`). Display only; the IR keeps the user-op. A user-op without a mapping, or whose operand count differs from the intrinsic's, keeps its SLEIGH name.
+- **When to flip:** On by default: vector code reads as intrinsics. Turn it off to see the SLEIGH user-op names, for example to search for an instruction mnemonic.
+- **Where / provenance:** P9/naming-policy · kuna · presentation-default · kuna-avxintrinsics
+- **Example:** `option avxintrinsics off`
 
 ## Analysis & loader passes
 

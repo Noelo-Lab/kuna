@@ -55,5 +55,5 @@ c5fc57c031c0c5fc100c87c5fc101486c4e275b8c283c00839d07ceac5fc1101c5f877c3
 <stringmatch name="GH9184 #1: FMA accumulator is 256-bit (char [32] array), not truncated to [16]" min="1" max="1">char \w+ \[32\];</stringmatch>
 <stringmatch name="GH9184 #2: no 128-bit accumulator temp (char [16] array)" min="0" max="0">char \w+ \[16\];</stringmatch>
 <stringmatch name="GH9184 #3: no per-iteration ZEXT1632 truncation round-trip on the FMA result" min="0" max="0">ZEXT1632</stringmatch>
-<stringmatch name="GH9184 #4: the vfmadd231ps_fma pcodeop is still emitted (sanity)" min="1" max="1">vfmadd231ps_fma\(</stringmatch>
+<stringmatch name="GH9184 #4: the vfmadd231ps_fma pcodeop is still emitted (sanity)" min="1" max="1">(vfmadd231ps_fma|_mm256_fmadd_ps)\(</stringmatch>
 </decompilertest>

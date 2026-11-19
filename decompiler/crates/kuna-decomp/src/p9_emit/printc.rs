@@ -6956,6 +6956,22 @@ impl PrintC {
             {
                 nm.insert_str(0, "r#");
             }
+            let mut order: Vec<int4> = (1..nin).collect();
+            if arch.avx_intrinsics && arch.archid.starts_with("x86:") {
+                let size = fd
+                    .obank()
+                    .get(op)
+                    .and_then(|o| o.get_out().or_else(|| o.get_in(1)))
+                    .and_then(|v| fd.vbank().get(v))
+                    .map(|v| v.get_size())
+                    .unwrap_or(0);
+                if let Some((intr, args)) = crate::kuna_avxintrinsics::intrinsic(&nm, size) {
+                    if args.len() == order.len() {
+                        nm = intr;
+                        order = args.iter().map(|&a| a as int4 + 1).collect();
+                    }
+                }
+            }
             self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
             self.push_atom(&Atom::with_op(
                 nm,
@@ -6968,7 +6984,7 @@ impl PrintC {
                 for _ in 1..(nin - 1) {
                     self.push_op(&tokens::COMMA, Some(op_key(op)));
                 }
-                for i in 1..nin {
+                for &i in &order {
                     if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(i)) {
                         // (kuna kernelbug) a `__WARN(file,line)` line is a decimal.
                         let line = in0_off == crate::userop::BUILTIN_KERNEL_WARN as u64
