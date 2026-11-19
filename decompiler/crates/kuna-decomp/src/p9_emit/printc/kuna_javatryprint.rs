@@ -389,14 +389,6 @@ impl PrintC {
         consumed
     }
 
-    fn emit_java_try_piece(&mut self, fd: &Funcdata, arch: &Architecture, (blk, filter): Piece, handler: u64) {
-        let id = self.emit.begin_block(0);
-        self.java_push_filter(fd, blk, filter, handler);
-        self.emit_block(fd, arch, blk);
-        self.java_pop_filter(fd, blk, filter);
-        self.emit.end_block(id);
-    }
-
     /// Filters are keyed by the basic block a straddling `BlockCopy` mirrors,
     /// the block `emit_basic_block_ops` prints.
     fn java_push_filter(&mut self, fd: &Funcdata, blk: BlockId, filter: Option<bool>, handler: u64) {

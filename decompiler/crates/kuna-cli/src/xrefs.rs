@@ -1254,12 +1254,15 @@ fn dex_query(args: &XrefArgs, bytes: Vec<u8>) -> Result<String, String> {
     };
     let entry_of = |site: u64| names.range(..=site).next_back().map(|(&a, n)| (a, n.clone()));
     let calls = links::calls(&models);
+    let wants_calls = args.kinds.is_empty() || args.kinds.contains(&XrefKind::Call);
     let rows: Vec<&links::DexCall> = calls
         .iter()
-        .filter(|c| args.kinds.is_empty() || args.kinds.contains(&XrefKind::Call))
-        .filter(|c| match args.direction {
-            Direction::To => c.callee == Some(target),
-            Direction::From => c.caller == target || (!names.contains_key(&target) && c.site == target),
+        .filter(|c| {
+            wants_calls
+                && match args.direction {
+                    Direction::To => c.callee == Some(target),
+                    Direction::From => c.caller == target || (!names.contains_key(&target) && c.site == target),
+                }
         })
         .collect();
     let target_name = names.get(&target).cloned();
