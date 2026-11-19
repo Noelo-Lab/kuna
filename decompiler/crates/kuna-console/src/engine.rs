@@ -3501,6 +3501,7 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         "addrtable" => arch.analysis_addrtable,
         "operand_refs" => arch.analysis_operand_refs,
         "listing" => arch.analysis_listing,
+        "globalwidth" => arch.analysis_globalwidth,
         "fast_funcdisc" => arch.analysis_fast_funcdisc,
         "noreturn_disc" => arch.analysis_noreturn_disc,
         // (kuna, GH-312) The positive-evidence-only tally has no fact stream of its
@@ -6183,6 +6184,7 @@ fn commit_analysis_output(
     //     symbols`; the stash is drained so a second `read symbols` does not
     //     re-commit.
     let loader_data_objects = std::mem::take(&mut prog.loader_data_objects);
+    let global_widths: std::collections::BTreeMap<u64, u32> = out.global_widths.iter().copied().collect();
     for (sym_addr, name, size) in &loader_data_objects {
         let addr = Address::new(Rc::clone(code_space), *sym_addr);
         let occupied = {
@@ -6211,13 +6213,15 @@ fn commit_analysis_output(
         // NEGATIVE size that indexed the type factory's cache out of bounds and
         // took the process down. A declared extent is never trusted to be
         // representable. GH-339.
-        let ct = prog
-            .arch()
-            .types()
-            .get_base(
-                (*size).clamp(1, int4::MAX as u64) as int4,
-                kuna_decomp::dtype::type_metatype::TYPE_UNKNOWN,
-            )?;
+        let clamped = (*size).clamp(1, int4::MAX as u64) as int4;
+        let width = global_widths.get(sym_addr).copied().unwrap_or(0) as int4;
+        let ct = if width > 0 && width < clamped && clamped % width == 0 {
+            let types = prog.arch().types();
+            let elem = types.get_base(width, kuna_decomp::dtype::type_metatype::TYPE_UNKNOWN)?;
+            types.get_type_array(clamped / width, elem)?
+        } else {
+            prog.arch().types().get_base(clamped, kuna_decomp::dtype::type_metatype::TYPE_UNKNOWN)?
+        };
         let name = data_names.name(name, *sym_addr);
         let arch = prog.arch_mut();
         let (scope, base) =

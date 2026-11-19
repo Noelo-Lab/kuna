@@ -152,13 +152,13 @@ pub fn scan(arch: &Architecture, input: &FloatScan) -> FloatGlobals {
 
 /// The register-space ranges that hold floating-point values, by the names the
 /// processor's own SLEIGH specification gives them.
-struct FloatRegisters {
+pub(super) struct FloatRegisters {
     space: Option<Rc<AddrSpace>>,
     ranges: Vec<(u64, u64)>,
 }
 
 impl FloatRegisters {
-    fn new(translate: &dyn Translate, family: &str) -> FloatRegisters {
+    pub(super) fn new(translate: &dyn Translate, family: &str) -> FloatRegisters {
         let numbered = |name: &str, prefixes: &[&str]| {
             prefixes.iter().any(|p| {
                 name.strip_prefix(p).is_some_and(|rest| !rest.is_empty() && rest.bytes().all(|b| b.is_ascii_digit()))
@@ -195,7 +195,7 @@ impl FloatRegisters {
         FloatRegisters { space, ranges: range_union(ranges) }
     }
 
-    fn contains(&self, vn: &VarnodeData) -> bool {
+    pub(super) fn contains(&self, vn: &VarnodeData) -> bool {
         let same = vn.space.as_ref().zip(self.space.as_ref()).is_some_and(|(a, b)| Rc::ptr_eq(a, b));
         same && {
             let n = self.ranges.partition_point(|&(lo, _)| lo <= vn.offset);

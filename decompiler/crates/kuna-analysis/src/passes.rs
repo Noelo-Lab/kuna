@@ -1382,6 +1382,24 @@ pub fn run_listing_consumers_replaying_observed(
         }
     }
 
+    // (kuna `globalwidth`) The access width of each symbol-table data object.
+    if arch.analysis_listing && arch.analysis_globalwidth {
+        if let (Some(code), Some(data)) = (arch.manage().get_default_code_space(), arch.manage().get_default_data_space()) {
+            use object::read::{Object, ObjectSymbol};
+            let objects: Vec<(u64, u64)> = file
+                .symbols()
+                .chain(file.dynamic_symbols())
+                .filter(|s| s.kind() == object::SymbolKind::Data && s.address() != 0 && s.size() > 0)
+                .map(|s| (s.address(), s.size()))
+                .collect();
+            let family = arch.archid.split(':').next().unwrap_or_default();
+            let mut gw_out = AnalysisOutput::default();
+            gw_out.global_widths =
+                crate::listing::kuna_accesswidth::access_widths(&listing, translate, family, code, data, &objects);
+            out.push(("globalwidth", gw_out));
+        }
+    }
+
     // (kuna `thunkentry`) The targets of the walk's jump thunks join the walk's own
     // function set wherever that set is committed. See `listing/kuna_thunkentry.rs`.
     let thunk_targets = if walk_committed {

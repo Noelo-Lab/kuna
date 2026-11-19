@@ -441,6 +441,9 @@ pub struct AnalysisOutput {
     /// every function), so the list is empty whenever their gates are off and the
     /// suppression is a no-op.
     pub fde_bodies: Vec<(u64, u64)>,
+    /// (kuna `globalwidth`) The one width each sized data object is read and
+    /// written with, as `(object address, width)`.
+    pub global_widths: Vec<(u64, u32)>,
     /// (kuna) Function entries strictly inside an FDE body that the image itself
     /// enters from outside it — the extra entry points of a multi-entry `.cold`
     /// fragment. Added after the [`Self::fde_bodies`] suppression. Produced only by
@@ -856,6 +859,7 @@ impl AnalysisOutput {
         self.swift_types.regs = self.swift_types.regs.or(other.swift_types.regs);
         self.entries.extend(other.entries);
         self.fde_bodies.extend(other.fde_bodies);
+        self.global_widths.extend(other.global_widths);
         self.fde_interior_entries.extend(other.fde_interior_entries);
         self.pdb_bodies.extend(other.pdb_bodies);
         self.entry_names.extend(other.entry_names);

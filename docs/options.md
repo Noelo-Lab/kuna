@@ -457,6 +457,9 @@ Three tiers:
 | an arm64 macOS function with a large frame or a variable-length array prints with a (void) parameter list | [`chkstkdarwin`](#chkstkdarwin----on--off-default-on-destructive-opt-in) |
 | a variable-length array is sized from a register nothing assigns after __chkstk_darwin() | [`chkstkdarwin`](#chkstkdarwin----on--off-default-on-destructive-opt-in) |
 | __chkstk_darwin is called with arguments it does not take | [`chkstkdarwin`](#chkstkdarwin----on--off-default-on-destructive-opt-in) |
+| a symbol-table array prints as *(short *)&g[i * 2] | [`globalwidth`](#globalwidth----on--off-default-on) |
+| a global array with a symbol but no debug info decompiles as byte offsets | [`globalwidth`](#globalwidth----on--off-default-on) |
+| element accesses to a named global table need casts | [`globalwidth`](#globalwidth----on--off-default-on) |
 | a DOS program's globals print as *(short *)0x308e near-pointer dereferences instead of named globals | [`mzdgroup`](#mzdgroup----on--off-default-on) |
 | every function of an MS-DOS executable declares an unsigned short local commented // ds | [`mzdgroup`](#mzdgroup----on--off-default-on) |
 | the same DOS global gets no shared name across functions | [`mzdgroup`](#mzdgroup----on--off-default-on) |
@@ -1840,6 +1843,14 @@ The control surface: each of these can make output worse on the wrong source sha
 ## Analysis & loader passes
 
 Program-prep enablement: what is discovered, decoded, and named before any function is decompiled.
+
+### `globalwidth` -- on | off, default `on`
+
+- **Symptoms:** a symbol-table array prints as *(short *)&g[i * 2]; a global array with a symbol but no debug info decompiles as byte offsets; element accesses to a named global table need casts.
+- **What it does:** Type each symbol-table data object (STT_OBJECT with a size, no DWARF type) from the width the code reads and writes it with. A data object is otherwise mapped as undefined<size>, so a short g[8] is an opaque 16-byte blob and every element access renders as *(short *)&g[i * 2]. With the Listing built, every LOAD or STORE whose address is a constant or a constant plus something, and every direct data-space operand, that lands inside the object is read at the width of the value moved; an object all of whose accesses use one width w that divides its size, with some access indexed or past the first element, is mapped as an array of size / w undefined<w> elements. Mixed widths, a lone narrowing read of a wider scalar, and any access through a floating-point or vector register (a float table keeps its float reads) leave it as it was.
+- **When to flip:** On (default); inert without the Listing (option listing on, which the aggressive preset and auto on a small image carry). Flip off to restore undefined<size> blobs for symbol-table data objects.
+- **Where / provenance:** P1/external-refinement · kuna · type-inference · kuna-globalwidth
+- **Example:** `--option globalwidth off`
 
 ### `mzdgroup` -- on | off, default `on`
 

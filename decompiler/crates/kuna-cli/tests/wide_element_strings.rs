@@ -110,7 +110,7 @@ fn stripped_character_code_arrays_are_not_one_character_strings() {
 fn literals_beside_a_lookup_table_or_an_int_table_keep_their_strings() {
     for (fixture, funcs, want) in [
         ("widecodes_switch_clang_O2_x86_64", "usea,usee", ["settag(\"a\")", "settag(\"e\")"]),
-        ("widecodes_tail_gcc_O2_x86_64", "fa,get", ["sink(\"A\")", "&t[a0 * 4L]"]),
+        ("widecodes_tail_gcc_O2_x86_64", "fa,get", ["sink(\"A\")", "return t[a0];"]),
     ] {
         let (printed, stderr, code) =
             common::run_kuna(&["decompile-all", &common::fixture(fixture), "--functions", funcs]);

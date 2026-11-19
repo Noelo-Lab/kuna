@@ -1,0 +1,43 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna-globalwidth: a symbol-table data object takes the element width its
+    accesses use (option globalwidth).
+
+    Fixture: decompiler/crates/kuna-analysis/tests/fixtures/globalwidth_x86_64
+    (clang -O2 of the .c alongside, symbols kept, no DWARF): f writes
+    `short g3[8]` by index and reads g3[1], writes `char gbuf[32]` by index,
+    and reads the low half of `unsigned long g1`.
+
+    Stage: P1 (listing/kuna_accesswidth.rs access_widths, committed with the
+    loader data symbols). Pass 1 (listing on, globalwidth default) maps g3 as
+    eight 2-byte elements; pass 2 (globalwidth off) keeps the 16-byte blob. The
+    lone narrowing read of g1 is no array in either pass.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/globalwidth_x86_64</com>
+  <com>option listing on</com>
+  <com>read symbols</com>
+  <com>load function f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/globalwidth_x86_64</com>
+  <com>option listing on</com>
+  <com>option globalwidth off</com>
+  <com>read symbols</com>
+  <com>load function f</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="GLOBALWIDTH #1: the indexed store is an element store (default)" min="1" max="1">g3\[a0 &amp; 7\] = </stringmatch>
+<stringmatch name="GLOBALWIDTH #2: the fixed element read is g3[1] (default)" min="1" max="1">g3\[1\]</stringmatch>
+<stringmatch name="GLOBALWIDTH #3: globalwidth off casts into the blob" min="1" max="1">\*\(int2 \*\)&amp;g3\[\(a0 &amp; 7\) \* 2</stringmatch>
+<stringmatch name="GLOBALWIDTH #4: a narrowing read of a scalar is no array in either pass" min="2" max="2">\(int4\)g1</stringmatch>
+</decompilertest>

@@ -474,6 +474,8 @@ pub struct Architecture {
     /// (kuna `returnbranch`) Flow a RETURN with a proven constant target as an
     /// indirect branch; see [`crate::context::ArchContext::return_branch`].
     pub return_branch: bool,
+    /// (kuna `globalwidth`) Type symbol-table data objects from their access width.
+    pub analysis_globalwidth: bool,
     /// (kuna `indexrescale`) A byte offset into an array becomes an element index.
     pub index_rescale: bool,
     /// (kuna GH-8817) Reclassify V850 `jmp [reg]` CALLIND to BRANCHIND
@@ -2352,6 +2354,7 @@ impl Architecture {
             callee_reginputs: true, // (kuna) option calleereginputs; default on, inert off x86-32 Windows
             callee_reginputs_custom: false, // (kuna) option calleereginputs `custom`; reset_defaults sets the shipped default
             return_branch: false, // (kuna) option returnbranch; reset_defaults sets the shipped default
+            analysis_globalwidth: false,
             index_rescale: false,
             v850_indirect_branch: false,
             int3_pad: crate::kuna_int3pad::Int3PadMode::Off, // (kuna) option int3pad; reset_defaults sets the shipped default
@@ -2839,6 +2842,7 @@ impl Architecture {
         self.calleevote = crate::kuna_calleevote::CalleeVoteMode::Fields; // (kuna) option calleevote default `fields`: on a whole-binary run a parameter every known caller passes the same committed pointer to takes it, and a closed function's lone field is a record field; inert without a callee-first pass
         self.protoorder = crate::kuna_protoorder::ProtoOrderMode::Cycles; // (kuna) option protoorder default `cycles`: the callee's recovered parameter types reach its call sites as a vote, with no lock and no arity change, and a function in a recursive component states its types too (`types` is the same without them); `lock` also states the arity and stays opt-in
         self.return_branch = true; // (kuna) option returnbranch default-on: 0/675 datatest assertions move; restore the spec's RETURN with `option returnbranch off`
+        self.analysis_globalwidth = true;
         self.index_rescale = true;
         self.analyze_for_loops = true;
         self.present_lessequal = true; // (kuna) DIV-2 default-on (GH-558)

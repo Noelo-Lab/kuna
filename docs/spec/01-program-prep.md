@@ -732,6 +732,21 @@ info, and it is what makes `fprintf(stderr, ...)` read as an error path instead
 of `fprintf(dat_61a0, ...)` on a stripped binary (GH-184). The stream is
 collected at `load file` but committed at `read symbols` (DIV-26/DIV-76).
 
+**Data-object width** (`globalwidth`, default-on; kuna;
+`decompiler/crates/kuna-analysis/src/listing/kuna_accesswidth.rs (access_widths)`):
+such an object has a size but no type, so mapped as `undefined<size>` an element
+access renders as `*(short *)&g3[(i & 7) * 2UL]`. Over the decoded Listing every
+`LOAD`/`STORE` whose address is a constant or a constant plus something, and
+every direct data-space operand (branch and call targets excluded), that lands
+in an object is read at the width of the value moved. An object all of whose
+accesses use one width `w` that divides its size, with some access indexed or
+past the first element, is mapped as `undefined<w>[size / w]` instead; a lone
+narrowing read (`(int)g1` of a `long`) and an object read at two widths change
+nothing, and neither does an object some instruction moves through a
+floating-point or vector register: its elements are floats, and an integer
+element would print each read as a conversion. The facts need the Listing (`option listing`), so without it every
+object keeps `undefined<size>`.
+
 A PE image has no sized data symbols, but its export directory names data too:
 `msvcrt.dll` exports `_iob`, `_environ` and `__argc`, and a COM DLL exports its
 `IID_*` constants. Each named export whose address lies outside every code

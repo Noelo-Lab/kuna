@@ -100,6 +100,7 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "returnbranch" => on_off!(return_branch, "Computed jumps through the return register"),
+    "globalwidth" => on_off!(analysis_globalwidth, "Data-object typing from access width"),
     "indexrescale" => on_off!(index_rescale, "Byte offsets rescaled to element indexes"),
     "globalarrayanchor" => on_off!(global_array_anchor, "Global array anchor preservation"),
     "signedness" => {

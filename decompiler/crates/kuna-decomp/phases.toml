@@ -1823,6 +1823,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "globalwidth"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P1"
+subphase = "external-refinement"
+strength = "HARD"
+rewind = "P1"
+issue = "kuna-globalwidth"
+summary = "Type each symbol-table data object (STT_OBJECT with a size, no DWARF type) from the width the code reads and writes it with. A data object is otherwise mapped as undefined<size>, so a short g[8] is an opaque 16-byte blob and every element access renders as *(short *)&g[i * 2]. With the Listing built, every LOAD or STORE whose address is a constant or a constant plus something, and every direct data-space operand, that lands inside the object is read at the width of the value moved; an object all of whose accesses use one width w that divides its size, with some access indexed or past the first element, is mapped as an array of size / w undefined<w> elements. Mixed widths, a lone narrowing read of a wider scalar, and any access through a floating-point or vector register (a float table keeps its float reads) leave it as it was."
+use_when = "On (default); inert without the Listing (option listing on, which the aggressive preset and auto on a small image carry). Flip off to restore undefined<size> blobs for symbol-table data objects."
+example = "--option globalwidth off"
+source_decompiler = "kuna"
+inspiration = "a symbol table gives a data object's size but not its element type; the instructions that use it give the element width"
+change_kind = "type-inference"
+tier = "analysis"
+symptoms = "a symbol-table array prints as *(short *)&g[i * 2]|a global array with a symbol but no debug info decompiles as byte offsets|element accesses to a named global table need casts"
+live_field = "analysis_globalwidth"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "funcboundflow"
 values = "on|off"
 default = "on"
