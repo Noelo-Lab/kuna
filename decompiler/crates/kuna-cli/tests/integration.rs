@@ -316,6 +316,9 @@ mod library_names;
 #[path = "libgcc_divdi3.rs"]
 mod libgcc_divdi3;
 
+#[path = "arithhelpers.rs"]
+mod arithhelpers;
+
 #[path = "rettriangle_round_trip.rs"]
 mod rettriangle_round_trip;
 

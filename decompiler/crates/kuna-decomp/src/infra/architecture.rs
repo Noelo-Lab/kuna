@@ -561,6 +561,11 @@ pub struct Architecture {
     /// (`p2_lift/kuna_chkstkdarwin.rs`), so the argument registers it preserves
     /// keep their values across it. Default on.
     pub chkstk_darwin: bool,
+    /// (kuna `arithhelpers`) Install the arithmetic runtime-helper call-fixups
+    /// (`p2_lift/kuna_arithhelpers.rs`) so a 32-bit call to `__udivdi3`,
+    /// `__aeabi_uldivmod`, `_alldiv`, ... prints as the C operator it implements.
+    /// Read by the analysis-tier call-fixup installer. Default on.
+    pub arith_helpers: bool,
     /// (kuna tee-O2 tail-jumps) Recover a direct `jmp` to another function's
     /// entry (e.g. `jmp setlocale@plt`) as a tail call (CALL + RETURN) instead of
     /// flowing into the callee (`option tailcalljump on|direct`).
@@ -2392,6 +2397,7 @@ impl Architecture {
             field_type: false, // (kuna) option fieldtype; reset_defaults sets the shipped default
             image_windows_user: false, // (kuna) a load-time fact; set by the console's `load file`
             chkstk_darwin: false, // (kuna) option chkstkdarwin; reset_defaults sets the shipped default
+            arith_helpers: false, // (kuna) option arithhelpers; reset_defaults sets the shipped default
             tail_call_jumps: false,
             tail_call_tables: false, // (kuna) option tailcalljump; reset_defaults sets the shipped default
             tail_call_frame: false, // (kuna) option tailcallframe; reset_defaults sets the shipped default
@@ -2735,6 +2741,7 @@ impl Architecture {
         self.field_type = false; // (kuna) option fieldtype default-off: the flip moves which record the layout ledger shares between readers (fields-only layout precision .8713 -> .8693); docs/features/fieldtype/default-on-evaluation.md
         self.struct_headless = crate::kuna_structheadless::StructHeadlessMode::Off; // (kuna) structheadless default `off`: a closed function's parameter read at two or more constant offsets, none of them zero, is declared `struct_N *` with filler over the bytes before its first access; `option structheadless closed` turns it on
         self.chkstk_darwin = true; // (kuna) default-on, Darwin AArch64 only (`image_apple` and an AArch64 language): inert unless a call reaches `___chkstk_darwin`; 0/675 datatests
+        self.arith_helpers = true; // (kuna) default-on: x86-32 and ARM32 only, inert unless the binary names a helper; 0/675 datatests name one
         self.tail_call_jumps = true; // (kuna) DIV-13 default-on (angr tail-call recovery; per-test opt-out on Long double #1/#2)
         self.tail_call_tables = true; // (kuna) GH-781 default `tailcalljump on`: a veneer whose one destination is another function's entry is a tail call when the destination is outside a declared extent, or the callee's prototype is stated and its return value (if any) reaches a stated output. 0/675 byte-identical on the datatest corpus; `option tailcalljump direct` restores the flow into the destination
         self.tail_call_frame = true; // (kuna) DIV-109 default-on: REMOVES CODE. A direct jmp preceded by a teardown of exactly the entry block's frame is a tail call even when the callee was never discovered. Byte-identical (0/675) on the datatest corpus; restore the flow-into-the-callee decode with `option tailcallframe off`
@@ -4441,8 +4448,9 @@ impl Architecture {
     }
 
     /// (kuna) Register the synthesized MSVC `__ftol`-family call-fixup
-    /// (`p2_lift::kuna_msvcftol`) alongside the cspec's own `<callfixup>`
-    /// elements, so `parse_inject_all` compiles it with the rest.  A registered
+    /// (`p2_lift::kuna_msvcftol`) and the arithmetic runtime-helper fixups
+    /// (`p2_lift::kuna_arithhelpers`, option `arithhelpers`) alongside the cspec's
+    /// own `<callfixup>` elements, so `parse_inject_all` compiles them with the rest.  A registered
     /// payload is inert until the analysis-tier `callfixup` pass installs it at
     /// `read symbols`.
     ///
@@ -4459,19 +4467,19 @@ impl Architecture {
         if self.translate.as_sleigh().is_none() {
             return Ok(());
         }
-        let code_addr_size = self
-            .manage()
-            .get_default_code_space()
-            .map(|s| s.get_addr_size() as int4)
-            .unwrap_or(0);
+        let code_space = self.manage().get_default_code_space();
+        let code_addr_size = code_space.as_ref().map(|s| s.get_addr_size() as int4).unwrap_or(0);
+        let big_endian = code_space.as_ref().map(|s| s.is_big_endian()).unwrap_or(false);
         let resolve = |nm: &[u8]| self.translate.probe_register_varnode(nm).is_some();
-        if !crate::kuna_msvcftol::language_is_x86_32(resolve, code_addr_size) {
+        let ftol = crate::kuna_msvcftol::language_is_x86_32(resolve, code_addr_size);
+        let helpers = crate::kuna_arithhelpers::helper_abi(resolve, code_addr_size, big_endian);
+        if !ftol && helpers.is_none() {
             return Ok(());
         }
         let manager = self.translate.manager_rc();
         let mut registry = IdRegistry::with_base_ids();
         crate::pcodeinject::register_ids(&mut registry);
-        crate::kuna_msvcftol::decode_payload(|root| {
+        let mut register = |root: &Rc<kuna_base::xml::Element>| {
             let mut decoder = XmlDecode::new_with_root(&manager, &registry, root, 0);
             self.pcodeinjectlib.decode_inject(
                 b" : kuna compiler helpers",
@@ -4480,7 +4488,14 @@ impl Architecture {
                 &mut decoder,
             )?;
             Ok(())
-        })
+        };
+        if ftol {
+            crate::kuna_msvcftol::decode_payload(&mut register)?;
+        }
+        if let Some(abi) = helpers {
+            crate::kuna_arithhelpers::decode_payloads(abi, &mut register)?;
+        }
+        Ok(())
     }
 
     /// Initialize the user-op table and decode the cspec `<callotherfixup>`

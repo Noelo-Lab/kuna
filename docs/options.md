@@ -477,6 +477,10 @@ Three tiers:
 | an arm64 macOS function with a large frame or a variable-length array prints with a (void) parameter list | [`chkstkdarwin`](#chkstkdarwin----on--off-default-on-destructive-opt-in) |
 | a variable-length array is sized from a register nothing assigns after __chkstk_darwin() | [`chkstkdarwin`](#chkstkdarwin----on--off-default-on-destructive-opt-in) |
 | __chkstk_darwin is called with arguments it does not take | [`chkstkdarwin`](#chkstkdarwin----on--off-default-on-destructive-opt-in) |
+| __udivdi3 / __divdi3 / __umoddi3 / __moddi3 called with four 32-bit words instead of a / b | [`arithhelpers`](#arithhelpers----on--off-default-on) |
+| __aeabi_uldivmod() / __aeabi_idiv() / __aeabi_lmul() called with missing or reordered arguments on ARM | [`arithhelpers`](#arithhelpers----on--off-default-on) |
+| __alldiv / __allrem called and the caller returns void on an MSVC x86-32 image | [`arithhelpers`](#arithhelpers----on--off-default-on) |
+| a 64-bit division on a 32-bit target prints as a helper call | [`arithhelpers`](#arithhelpers----on--off-default-on) |
 | a DOS program's globals print as *(short *)0x308e near-pointer dereferences instead of named globals | [`mzdgroup`](#mzdgroup----on--off-default-on) |
 | every function of an MS-DOS executable declares an unsigned short local commented // ds | [`mzdgroup`](#mzdgroup----on--off-default-on) |
 | the same DOS global gets no shared name across functions | [`mzdgroup`](#mzdgroup----on--off-default-on) |
@@ -1896,6 +1900,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On by default. Keep it on for macOS and iOS arm64 binaries: a function with a large frame or a variable-length array otherwise prints `v = __chkstk_darwin();`, loses the parameters it reads after the probe, or sizes a stack allocation from a register nothing assigns. Flip OFF to see the probe calls again, for instance to find the functions that allocate more than a page of stack.
 - **Where / provenance:** P2/flow-classification · kuna · structure-recovery · kuna-chkstkdarwin
 - **Example:** `option chkstkdarwin off`
+
+### `arithhelpers` -- on | off, default `on`
+
+- **Symptoms:** __udivdi3 / __divdi3 / __umoddi3 / __moddi3 called with four 32-bit words instead of a / b; __aeabi_uldivmod() / __aeabi_idiv() / __aeabi_lmul() called with missing or reordered arguments on ARM; __alldiv / __allrem called and the caller returns void on an MSVC x86-32 image; a 64-bit division on a 32-bit target prints as a helper call.
+- **What it does:** Replace a call to a 32-bit target's arithmetic runtime helper with the operation it implements, via synthesized `<callfixup>` payloads, so it prints as the C operator. x86-32: libgcc's cdecl `__udivdi3`, `__divdi3`, `__umoddi3`, `__moddi3`, `__muldi3`, `__ashldi3`, `__lshrdi3`, `__ashrdi3`, `__negdi2`, `__udivmoddi4` and `__divmoddi4` (operands read from the stack above the popped return address, the remainder of the divmod pair stored through the pointer argument) and the MSVC CRT's __stdcall `_alldiv`, `_aulldiv`, `_allrem`, `_aullrem`, `_allmul`, `_alldvrm`, `_aulldvrm` (which also pop their 16 argument bytes; the dvrm pair returns the remainder in EBX:ECX) and register-argument `_allshl`, `_allshr`, `_aullshr` (EDX:EAX by CL). 32-bit ARM, either byte order: the run-time ABI's `__aeabi_uldivmod`/`__aeabi_ldivmod` (quotient in r0:r1, remainder in r2:r3), `__aeabi_uidivmod`/`__aeabi_idivmod`, `__aeabi_uidiv`, `__aeabi_idiv`, `__aeabi_lmul`, `__aeabi_llsl`, `__aeabi_llsr`, `__aeabi_lasr`, and libgcc's DI-mode helpers and `__udivsi3`, `__divsi3`, `__umodsi3`, `__modsi3`, with a `long long` in r0:r1 / r2:r3 low word first on little-endian and high word first on big-endian. Each helper is also targeted with one more leading underscore (COFF and Mach-O spell `__udivdi3` as `___udivdi3`). Off, the call keeps an inferred prototype: four 32-bit words for two `long long` operands (`__divdi3((unsigned int)a,a._4_4_,(unsigned int)b,b._4_4_)`), a dropped divisor (`__aeabi_idiv(a)`), or, on a __stdcall helper whose 16 popped bytes the caller does not know about, a `void` caller. The install also probes every function name the analysis passes recover (PDB, DWARF, FID), not only the object file's symbols, and tags every FunctionSymbol of a matched name, so an MSVC image whose PDB alone names `__alldiv` and a Thumb helper with an `entry|1` twin are covered.
+- **When to flip:** A 32-bit x86 or ARM caller shows `__udivdi3(...)`, `__aeabi_uldivmod()`, `__aeabi_idiv(a)` or `__alldiv(a0,a1,a2,a3)` where the source has `/`, `%`, `*` or a shift on `long long` (or an `int` division on ARM). On by default; flip OFF to see the helper calls.
+- **Where / provenance:** P2/flow-classification · kuna · correctness-fix · kuna-arithhelpers
+- **Example:** `option arithhelpers off`
 
 ## Analysis & loader passes
 
