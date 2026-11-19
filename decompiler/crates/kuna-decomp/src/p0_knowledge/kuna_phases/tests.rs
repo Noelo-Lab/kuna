@@ -62,7 +62,7 @@ fn settable_count_is_218() {
 }
 
 #[test]
-fn tier_counts_are_43_core_120_transform_55_analysis() {
+fn tier_counts_are_44_core_120_transform_55_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -74,7 +74,7 @@ fn tier_counts_are_43_core_120_transform_55_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (43, 120, 55));
+    assert_eq!((core, transform, analysis), (44, 120, 55));
 }
 
 #[test]
@@ -841,7 +841,8 @@ fn option_values_live_value_present_for_76() {
     // `kuna_live_value`, like `narrowargs`/`protoorder`.
     // 75 -> 74: `armconstshift` became three-valued (off|on|all) over an enum
     // field with no `live_field`.
-    assert_eq!(with_live, 75);
+    // 75 -> 76: +1 for `wrapadd` (live_field = wrap_add).
+    assert_eq!(with_live, 76);
 }
 
 #[test]
