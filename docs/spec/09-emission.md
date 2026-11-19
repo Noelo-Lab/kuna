@@ -4026,9 +4026,10 @@ the header declares the global; and for a pointer to code. An `undefinedN` direc
 read is accepted against an unsigned integer of the same size, since that is the
 C type the export's prelude defines it as. A `void *` constant needs one more
 thing: the declared object's pointer must convert to `void *` exactly as the
-cast did, which C does for an argument, a returned value, a copy or store into
-`void *` storage and an equality test against another `void *`, and does not for
-a compare against a pointer of another type. An address the function only ever
+cast did, which C does for an argument (including a `void *` operand of a
+`repstring` copy, fill or compare builtin, 03-ssa §3.5), a returned value, a copy
+or store into `void *` storage and an equality test against another `void *`, and
+does not for a compare against a pointer of another type. An address the function only ever
 uses through `void *` is declared at the one type it reads the storage at
 directly (`Plan::direct_type_at`), or as the unknown byte.
 

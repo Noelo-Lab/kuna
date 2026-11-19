@@ -162,6 +162,8 @@ mod caller_stack_cli;
 mod castnarrow_round_trip;
 #[path = "strlenscan_round_trip.rs"]
 mod strlenscan_round_trip;
+#[path = "repstring_round_trip.rs"]
+mod repstring_round_trip;
 
 #[path = "coff_strings.rs"]
 mod coff_strings;

@@ -911,6 +911,10 @@ pub struct Architecture {
     /// (kuna) Collapse an inline `repnz scasb` string length into `strlen`
     /// (option `strlenscan`).  See [`crate::p3_dataflow::kuna_strlenscan`].
     pub strlen_scan: bool,
+    /// (kuna) Collapse an x86 `rep movs`/`rep stos`/`repz cmpsb` loop into a
+    /// copy, fill or compare builtin (option `repstring`).  See
+    /// [`crate::p3_dataflow::kuna_repstring`].
+    pub rep_string: bool,
     /// (kuna) Region-based (Phoenix/SAILR) structurer: structure the CFG by
     /// walking the [`KunaRegionIdentifier`](crate::p7_regions::kuna_regionid)
     /// region tree and matching Phoenix acyclic schemas instead of running
@@ -2451,6 +2455,7 @@ impl Architecture {
             array_size: 0, // (kuna) option arraysize; reset_defaults sets the shipped default
             devectorize_reduction: false, // (kuna) option devectorize (opt-in default-off)
             strlen_scan: false, // (kuna) option strlenscan; reset_defaults sets the shipped default
+            rep_string: false, // (kuna) option repstring; reset_defaults sets the shipped default
             region_structure: true,
             guard_arm: false,
             loop_continue: true,
@@ -2801,6 +2806,7 @@ impl Architecture {
         self.cast_narrow = true; // (kuna) option castnarrow default-on: leaves out only an integer truncation or sign change that an assignment, store, trusted argument or return of exactly the cast's type performs itself
         self.decl_order = crate::kuna_declorder::DeclOrder::Natural; // (kuna) option declorder default `natural`: locals declare v1, v2, ..., v10; only the order of declaration lines moves, 0/675 datatest assertions
         self.strlen_scan = true; // (kuna) option strlenscan default-on: an inline repnz scasb length prints as strlen; byte-identical on gcc 11 decbench output, 0/675 datatest assertions
+        self.rep_string = true; // (kuna) option repstring default-on: an x86 rep movs/stos/cmpsb loop prints as a copy, fill or compare builtin; inert off x86, 0/675 datatest assertions
         self.cortexmpriv = true; // (kuna) DIV-99: default-ON; the fixup is registered only on a language that declares the user-op (ARM), so inert elsewhere; "the core is privileged" is a modelling judgement, so `off` audits unprivileged Thread-mode code
         self.acle_intrinsics = true; // (kuna) option acleintrinsics default-on; reads the AArch64 `ShowMemTag` context and AArch64 user-op names only, so inert on every other target
         self.float_globals = true; // (kuna) option floatglobals default-on
@@ -3553,6 +3559,7 @@ impl Architecture {
         ctx.libc_names = self.libc_names; // libcnames
         ctx.devectorize_reduction = self.devectorize_reduction; // devectorize
         ctx.strlen_scan = self.strlen_scan; // strlenscan
+        ctx.rep_string = self.rep_string; // repstring
         ctx.region_structure = self.region_structure; // regionstructure
         ctx.guard_arm = self.guard_arm; // guardarm
         ctx.loop_continue = self.loop_continue;
@@ -4668,7 +4675,8 @@ impl Architecture {
     /// front-loaded here).
     fn register_string_builtins(&mut self) -> KunaResult<()> {
         use crate::userop::{
-            BUILTIN_KERNEL_BUG, BUILTIN_KERNEL_WARN, BUILTIN_MEMCPY, BUILTIN_MEMSET,
+            BUILTIN_KERNEL_BUG, BUILTIN_KERNEL_WARN, BUILTIN_MEMCMP, BUILTIN_MEMCPY, BUILTIN_MEMSET,
+            BUILTIN_MEMSET16, BUILTIN_MEMSET32, BUILTIN_MEMSET64,
             BUILTIN_STRINGDATA, BUILTIN_STRLEN, BUILTIN_STRNCPY, BUILTIN_SYSCALL_ERROR,
             BUILTIN_VOLATILE_READ, BUILTIN_VOLATILE_WRITE, BUILTIN_WCSNCPY,
         };
@@ -4706,6 +4714,11 @@ impl Architecture {
             // (kuna kernelbug) the Linux `__bug_table` trap statements.
             userops.register_builtin(BUILTIN_KERNEL_BUG, &adapter)?;
             userops.register_builtin(BUILTIN_KERNEL_WARN, &adapter)?;
+            // (kuna repstring) the fills and the compare a repeated string
+            // instruction prints as.
+            for id in [BUILTIN_MEMSET16, BUILTIN_MEMSET32, BUILTIN_MEMSET64, BUILTIN_MEMCMP] {
+                userops.register_builtin(id, &adapter)?;
+            }
             Ok(())
         })();
         self.userops = userops;

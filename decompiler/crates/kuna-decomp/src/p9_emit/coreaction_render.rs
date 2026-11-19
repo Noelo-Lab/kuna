@@ -1144,6 +1144,11 @@ fn is_pointer(
                     return None;
                 }
             }
+            OpCode::CPUI_CALLOTHER => {
+                if !glb.rep_string || crate::kuna_repstring::input_type(data, op, slot).is_none() {
+                    return None;
+                }
+            }
             _ => return None,
         }
         // Make sure the constant is in the expected range for a pointer.
