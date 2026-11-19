@@ -216,6 +216,8 @@ Three tiers:
 | one source loop emitted as multiple nested infinite loops | [`loopcontinue`](#loopcontinue----on--off-default-on) |
 | early continues emitted as retry loops | [`loopcontinue`](#loopcontinue----on--off-default-on) |
 | accept and fork retries obscure a server's main loop | [`loopcontinue`](#loopcontinue----on--off-default-on) |
+| goto label_N; inside a while loop where label_N: is the loop condition | [`loopcontinue`](#loopcontinue----on--off-default-on) |
+| a do-while body jumps to an empty label in front of the loop test | [`loopcontinue`](#loopcontinue----on--off-default-on) |
 | goto-heavy multi-exit loop where angr recovers a clean while/for with break/continue | [`regionlooprefine`](#regionlooprefine----on--off-default-on) |
 | irreducible or multi-latch loop falls back to raw gotos instead of folding | [`regionlooprefine`](#regionlooprefine----on--off-default-on) |
 | secondary loop exits rendered as gotos rather than break statements | [`regionlooprefine`](#regionlooprefine----on--off-default-on) |
@@ -1272,8 +1274,8 @@ The control surface: each of these can make output worse on the wrong source sha
 
 ### `loopcontinue` -- on | off, default `on`
 
-- **Symptoms:** one source loop emitted as multiple nested infinite loops; early continues emitted as retry loops; accept and fork retries obscure a server's main loop.
-- **What it does:** Preserve secondary back-edges in single-entry natural loops as continues before CollapseStructure folds retry paths into nested loops. Keep the deepest latch structural; virtualize the others. After collapse, a goto to the first leaf of its innermost infinite loop becomes continue. Conditional loops reset this recovery scope. Head-tested loops, switch bodies, nested loop heads, and conditional retained latches are excluded.
+- **Symptoms:** one source loop emitted as multiple nested infinite loops; early continues emitted as retry loops; accept and fork retries obscure a server's main loop; goto label_N; inside a while loop where label_N: is the loop condition; a do-while body jumps to an empty label in front of the loop test.
+- **What it does:** Preserve secondary back-edges in single-entry natural loops as continues before CollapseStructure folds retry paths into nested loops. Keep the deepest latch structural; virtualize the others. After collapse, a goto to the first leaf of its innermost infinite loop becomes continue, as does a goto to a conditional loop's own test: a while-do's condition block (not a for, whose continue runs the iterate statement first) or a do-while's last leaf when it prints nothing but the test. Any other conditional loop resets this recovery scope. Head-tested loops, switch bodies, nested loop heads, and conditional retained latches are excluded.
 - **When to flip:** A single source loop with early continues decompiles as nested infinite retry loops, as in a server accept/fork loop. Flip off to restore CollapseStructure's original loop-schema precedence.
 - **Where / provenance:** P8/goto-quality · kuna · structure-recovery · server-main-nested-retry-loops
 - **Example:** `option loopcontinue on`
