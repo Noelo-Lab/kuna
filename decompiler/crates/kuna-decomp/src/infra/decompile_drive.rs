@@ -191,6 +191,13 @@ impl FlowEnvironment for ArchFlowEnv {
     fn query_call_no_return_at(&self, entry: &Address, call: &Address, fallthrough: &Address) -> bool {
         crate::p4_calls::kuna_calleenoreturn::is_proxy_no_return_at(self.arch(), entry, call, fallthrough)
     }
+    fn query_call_retarget(&self, callsite: &Address) -> Option<Address> {
+        let imp = *self.arch().kuna_objc_retargets.get(&callsite.get_offset())?;
+        Some(Address::new(Rc::clone(callsite.get_space()?), imp))
+    }
+    fn query_call_site_pieces(&self, callsite: &Address) -> Option<crate::fspec::PrototypePieces> {
+        self.arch().kuna_objc_site_pieces.get(&callsite.get_offset()).cloned()
+    }
 
     fn funcbound_flow_enabled(&self) -> bool {
         // (kuna funcboundflow) the Architecture-owned gate (`option funcboundflow`).
