@@ -1,0 +1,22 @@
+{
+  "slug": "rust-signature-profile",
+  "title": "Report compatible Rust signature profiles",
+  "phase": "P0",
+  "change_kind": "diagnostic",
+  "source_decompiler": "angr",
+  "status": "validated",
+  "acceptance": {
+    "pinned_rust_images": 3,
+    "ordinary_summaries_byte_identical": 4,
+    "vendor_assertions_passed": 675,
+    "stage_assertions_passed": 4508
+  },
+  "timeit": {
+    "fixture": "Rust coreutils nightly-2025-05-22-O3/fmt",
+    "executable_profile": "optimized test",
+    "runs_per_configuration": 10,
+    "summary_median_wall_s": 1.628,
+    "manifest_summary_median_wall_s": 2.412,
+    "paired_median_added_cpu_s": 0.796
+  }
+}
