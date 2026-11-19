@@ -820,6 +820,9 @@ fn descend(
     // read-only mapped section, and every relocatable object, whose sections are
     // not the runtime ones) leaves every reference below exactly as it was.
     let pool = if mapped.is_empty() { None } else { PoolImage::new(file) };
+    let got_calls = if mapped.is_empty() { None } else {
+        super::kuna_gotcall::GotCalls::new(file, arch, &exec_set)
+    };
     // (kuna) `picpool`: the GOT's file bytes, read through a PC-composed base.
     let got = if mapped.is_empty() { None } else { GotImage::new(file) };
     // (kuna) `pcform`: the addresses an instruction forms from its own address,
@@ -1244,6 +1247,18 @@ fn descend(
                 c.fall_through = None;
                 c.flows.clear();
             }
+            let proven_call = if c.flow.is_call && c.flows.is_empty() {
+                got_calls.as_ref().zip(data_space.as_ref())
+                    .and_then(|(calls, data)| calls.target(cap.ops(), data))
+            } else {
+                None
+            };
+            let proven_call = proven_call.filter(|_| {
+                !super::kuna_gotcall::has_stated_callee(arch, &code_space, vma)
+            });
+            if let Some((_, target)) = proven_call {
+                c.flows.push(target);
+            }
             let skip = a32_tables.as_ref().and_then(|_| c.predicated_skip(vma, len));
             let mut condition = condskip.then(|| c.condition_skip(&raw, vma, len)).flatten();
             if let Some(fall) = c.fall_through.filter(|_| !waiting.is_empty()) {
@@ -1263,6 +1278,9 @@ fn descend(
                 let delayed = || has_delay_slot(translate, vma, &code_space, len);
                 data_refs(cap.ops(), data_space.as_ref(), &mapped, fall_through, pool.as_ref(), &formed, &delayed)
             };
+            if let Some((slot, _)) = proven_call {
+                super::kuna_gotcall::resolved_slot_reads(&mut drefs, slot);
+            }
             // (kuna) `regcarry`: the address a register pair forms across
             // instructions. See [`super::kuna_regcarry`].
             if let Some(m) = &carry_machine {
@@ -2306,7 +2324,7 @@ fn is_return_address_sum(op: &FullOp, fall_through: u64) -> bool {
 /// the slack past it is a scan over one instruction's ops and costs nothing, but
 /// it stays small so a long chain of temporaries inside a multi-operand
 /// instruction cannot be read as the operand fetch.
-const MAX_SLOT_COPIES: usize = 4;
+pub(super) const MAX_SLOT_COPIES: usize = 4;
 
 /// Does the indirect `CALL` in this one instruction read its destination out of
 /// `slot`?
@@ -2586,6 +2604,34 @@ mod tests {
             refs(&ram, &ops),
             vec![(0x1030, XrefKind::Call), (0x4010, XrefKind::Read)]
         );
+    }
+
+    #[test]
+    fn a_resolved_call_keeps_both_physical_slot_reads_without_a_stale_call_edge() {
+        let (ram, _cst) = spaces();
+        let tmp = Rc::new(AddrSpace::new_for_decode(spacetype::IPTR_INTERNAL));
+        let ops = [
+            op(OpCode::CPUI_COPY, Some(vn(&tmp, 0x100)), vec![vn(&ram, 0x1030)]),
+            op(OpCode::CPUI_COPY, Some(vn(&tmp, 0x100)), vec![vn(&ram, 0x4010)]),
+            op(OpCode::CPUI_COPY, Some(vn(&ram, 0x4020)), vec![vn(&tmp, 0x200)]),
+            op(OpCode::CPUI_CALLIND, None, vec![vn(&tmp, 0x100)]),
+        ];
+        let mut references = refs(&ram, &ops);
+        assert_eq!(references, vec![
+            (0x1030, XrefKind::Call), (0x4010, XrefKind::Read), (0x4020, XrefKind::Write),
+        ]);
+        super::super::kuna_gotcall::resolved_slot_reads(&mut references, 0x4010);
+        assert_eq!(references, vec![
+            (0x1030, XrefKind::Read), (0x4010, XrefKind::Read), (0x4020, XrefKind::Write),
+        ]);
+        let outside_sections = [
+            op(OpCode::CPUI_COPY, Some(vn(&tmp, 0x100)), vec![vn(&ram, 0x3000)]),
+            op(OpCode::CPUI_CALLIND, None, vec![vn(&tmp, 0x100)]),
+        ];
+        let mut references = refs(&ram, &outside_sections);
+        assert!(references.is_empty());
+        super::super::kuna_gotcall::resolved_slot_reads(&mut references, 0x3000);
+        assert_eq!(references, vec![(0x3000, XrefKind::Read)]);
     }
 
     /// The chain is bounded: a temporary the flow op reaches only through more
