@@ -908,3 +908,6 @@ mod call_site_prototype;
 
 #[path = "xrefs_immutable_got.rs"]
 mod xrefs_immutable_got;
+
+#[path = "addrtable_xrefs.rs"]
+mod addrtable_xrefs;
