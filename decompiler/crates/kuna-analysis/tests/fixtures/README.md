@@ -1558,6 +1558,34 @@ LLD=$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin
 slot @`0x100004008`. With `objc on` the invokes are `__15-[Chain build:]_block_invoke`,
 `_2`, `_3`, `__sum_block_invoke`, `__sum_block_invoke_2`, `__pick_block_invoke`.
 
+### `macho_objc_stubagree_arm64` — a stub typed only from agreeing declarations
+
+`macho_objc_stubagree_arm64` (arm64, ~50 KB) is the fixture for stub typing
+(`analyzers/objc/kuna_objcrefs.rs (stub_encoding)`, stage test
+`tests/stages/kuna-objcstubagree.xml`). Source `macho_objc_stubagree.m`: protocol
+`Measured` declares `-(double)length` and nothing implements it (`measured`
+references it so its metadata is emitted); root class `Ruler` implements
+`-(double)tag`; `Str` is declared and never implemented, its `length` and `tag`
+returning integers; `validate(s, t, err)` sends `[s length]` and `[t tag]`, each
+routed through a linker stub, and passes each result to the external `check`
+with three more arguments. The `.s` is `clang -S` output with both selref loads
+dropped and each `bl _objc_msgSend` replaced by `bl "_objc_msgSend$<sel>"` (and
+the two `.loh AdrpLdr` lines naming the dropped loads deleted):
+
+```bash
+clang -target arm64-apple-macos11 -fno-objc-arc -O1 -S macho_objc_stubagree.m -o macho_objc_stubagree_arm64.s
+# edit: route the `length` and `tag` sends through `_objc_msgSend$<sel>`
+clang -target arm64-apple-macos11 -c macho_objc_stubagree_arm64.s -o sa.o
+ld64.lld -arch arm64 -platform_version macos 11.0 11.0 -fixup_chains -objc_stubs_fast \
+         -undefined dynamic_lookup -x -e _main -o macho_objc_stubagree_arm64 sa.o
+```
+
+**Pinned VMAs:** `_validate`@`0x1000007e4`, `__objc_stubs`@`0x100000860` (two
+32-byte entries), `__objc_protolist`@`0x100004010`. With `objc on` `validate` reads
+`check(v1,a2,1,"empty name")`; with `option objcsdk
+decompiler/crates/kuna-analysis/tests/fixtures/objc_sdk` (whose `Widget.h` declares
+an `NSInteger tag`) also `check(objc_msgSend$tag(a1),a2,2,"bad tag")`.
+
 ### `swift_metadata_elf` — a stripped Swift executable (`swiftmetadata`)
 
 `swift_metadata_elf` (x86-64 ELF, 14 KB) is the Swift runtime-metadata fixture
