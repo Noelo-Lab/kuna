@@ -118,6 +118,10 @@ impl<'a, F: Fn(u64) -> bool> Prefix<'a, F> {
     /// Apply operation `id`, which must not transfer control. `false` means
     /// the operation may change anything and the proof stops.
     pub(crate) fn execute(&mut self, id: OpId) -> bool {
+        self.execute_with_table_loads(id, false)
+    }
+
+    fn execute_with_table_loads(&mut self, id: OpId, table_loads: bool) -> bool {
         self.enter(id);
         let Some(op) = self.data.obank().get(id) else { return false };
         match op.code() {
@@ -144,8 +148,16 @@ impl<'a, F: Fn(u64) -> bool> Prefix<'a, F> {
             return true;
         };
         let result = (|| {
-            if !(1..=8).contains(&out.2)
-                || !matches!(
+            if !(1..=8).contains(&out.2) { return None; }
+            if table_loads && op.code() == OpCode::CPUI_LOAD {
+                let index = i32::try_from(self.value(op.get_in(0)?)?).ok()?;
+                let space = self.data.get_arch().manage().get_space(index)?;
+                let ptr = self.value(op.get_in(1)?)?.checked_mul(space.get_word_size() as u64)?;
+                let mut emulator = crate::kuna_emulatefunction::EmulateFunction::new(self.data);
+                emulator.set_readonly_image_required(true);
+                return emulator.get_load_image_value(space, ptr, out.2).ok();
+            }
+            if !matches!(
                     op.code(),
                     OpCode::CPUI_COPY
                         | OpCode::CPUI_INT_ZEXT
@@ -266,12 +278,14 @@ pub(crate) fn computed_target(
 
 /// An exact local proof of the target after following `from` back into a
 /// dispatch instruction: the run from `from`'s block start, then the dispatch
-/// instruction's own operations before the jump, through [`Prefix`]. Unknown
-/// inputs never become known; longer or nonlocal paths use SSA recovery.
+/// instruction's own operations before the jump, through [`Prefix`]. For an
+/// indexed bypass, replay the actual straight-line suffix starting at its
+/// entry, admitting only immutable image reads at known addresses.
 pub(crate) fn target_on_edge(
     data: &Funcdata,
     from: OpId,
     dispatch: OpId,
+    table_entry: Option<OpId>,
     mode_switch: impl Fn(u64) -> bool,
 ) -> Option<u64> {
     let mut run = Vec::new();
@@ -291,8 +305,12 @@ pub(crate) fn target_on_edge(
     let address = data.obank().get(dispatch)?.get_addr().clone();
     let mut slot = Vec::new();
     let mut cursor = dispatch;
-    while let Some(prev) = data.obank().dead_prev(cursor) {
-        if data.obank().get(prev)?.get_addr() != &address {
+    while table_entry != Some(cursor) {
+        let Some(prev) = data.obank().dead_prev(cursor) else {
+            if table_entry.is_some() { return None; }
+            break;
+        };
+        if table_entry.is_none() && data.obank().get(prev)?.get_addr() != &address {
             break;
         }
         slot.push(prev);
@@ -303,9 +321,15 @@ pub(crate) fn target_on_edge(
     }
     slot.reverse();
     let mut prefix = Prefix { data, known: Vec::new(), previous: None, mode_switch };
-    for id in run.into_iter().chain(slot) {
+    for id in run {
         let code = data.obank().get(id)?.code();
         if (id != from && transfers_control(code)) || !prefix.execute(id) {
+            return None;
+        }
+    }
+    for id in slot {
+        if transfers_control(data.obank().get(id)?.code())
+            || !prefix.execute_with_table_loads(id, table_entry.is_some()) {
             return None;
         }
     }
@@ -775,7 +799,7 @@ mod tests {
             }
             let edge = emit(&mut fd, 0x1028, OpCode::CPUI_BRANCH, None, &[(true, 0x1000, 8)]);
             let proved = matches!(case, "constant" | "store-other");
-            assert_eq!(target_on_edge(&fd, edge, dispatch, |_| false), proved.then_some(0x1040), "{case}");
+            assert_eq!(target_on_edge(&fd, edge, dispatch, None, |_| false), proved.then_some(0x1040), "{case}");
         }
     }
 }

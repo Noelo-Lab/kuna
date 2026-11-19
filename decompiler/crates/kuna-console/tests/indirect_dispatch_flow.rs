@@ -68,20 +68,26 @@ fn four_hundred_steps_use_two_full_recovery_stages() {
 }
 
 #[test]
-fn failed_real_retry_keeps_its_target_and_warns() {
-    let (program, fd) = flow(
+fn failed_real_retry_keeps_its_target_and_indirect_exit() {
+    let (_, fd) = flow(
         "tests/fixtures/indirect-flow-closure/retry-failure-64.bin",
         false,
     );
-    assert_eq!(fd.num_jump_tables(), 1);
-    let table = fd.get_jump_table(0);
-    assert_eq!(table.num_entries(), 1);
-    assert_eq!(table.get_recover_count(), 2);
-    let op = fd.obank().get(table.get_indirect_op().unwrap()).unwrap();
-    assert_eq!(op.code(), OpCode::CPUI_BRANCHIND);
-    assert!(program.arch().commentdb.comments().iter().any(|c| c
-        .text
-        .contains("Re-entered indirect jump may have more targets")));
+    assert_eq!(fd.num_jump_tables(), 0);
+    assert_eq!(open_cases(&fd), [1]);
+}
+
+/// Count direct case edges at each remaining indirect call. A return guard
+/// uses a p-code-relative target and does not represent a local case.
+fn open_cases(fd: &kuna_decomp::funcdata::Funcdata) -> Vec<usize> {
+    fd.obank().iter_alive().filter(|&id| fd.obank().get(id).unwrap().code() == OpCode::CPUI_CALLIND).map(|id| {
+        let site = fd.obank().get(id).unwrap().get_addr();
+        fd.obank().iter_at(site).filter(|(_, id)| {
+            let op = fd.obank().get(*id).unwrap();
+            op.code() == OpCode::CPUI_CBRANCH && op.get_in(0)
+                .and_then(|vn| fd.vbank().get(vn)).is_some_and(|v| !v.is_constant())
+        }).count()
+    }).collect()
 }
 
 #[test]
@@ -91,12 +97,12 @@ fn ordinary_register_closure_needs_only_the_reentry_value() {
     assert_eq!(fd.num_jump_tables(), 1);
     assert_eq!(fd.get_jump_table(0).num_entries(), 3);
     let (_, fd) = flow(path, true);
-    assert_eq!(fd.get_jump_table(0).num_entries(), 1, "off keeps upstream's first target");
+    assert_eq!(open_cases(&fd), [1], "off follows the first case and calls through other values");
 }
 
 fn warnings(program: &kuna_console::engine::ConsoleProgram) -> usize {
     program.arch().commentdb.comments().iter()
-        .filter(|c| c.text.contains("Re-entered indirect jump may have more targets"))
+        .filter(|c| c.text.contains("Indirect jump recovery limit reached"))
         .count()
 }
 
@@ -120,8 +126,8 @@ fn unrelated_single_target_jumps_spend_no_retry_budget() {
 #[test]
 fn every_dispatch_left_at_the_retry_cap_is_warned() {
     let (program, fd) = flow("tests/fixtures/indirect-flow-closure/two-chains-64.bin", false);
-    let sizes: Vec<_> = entries(&fd).into_iter().filter(|&n| n > 1).collect();
+    let sizes = open_cases(&fd);
     assert_eq!(sizes.len(), 2, "{sizes:?}");
-    assert!(sizes.iter().all(|&n| n < 80), "both chains need more than the cap: {sizes:?}");
+    assert!(sizes.iter().all(|&n| (2..80).contains(&n)), "both chains need more than the cap: {sizes:?}");
     assert_eq!(warnings(&program), 2);
 }
