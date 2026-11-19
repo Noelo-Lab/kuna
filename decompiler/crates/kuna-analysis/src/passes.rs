@@ -972,16 +972,11 @@ pub fn run_listing_consumers_replaying_observed(
                 break;
             }
             callback_roots += added;
-            listing = crate::listing::Listing::build_with_meta_planned_without_image(
-                &file,
-                arch,
-                translate,
-                &seeds,
-                &funcsym_seeds,
-                &seed_names,
-                detail,
-                plan,
-            );
+            // Continue the walk from the new roots instead of decoding the
+            // whole program again: a decode at an address does not depend on
+            // who reached it first, so the result is the Listing a fresh build
+            // makes.
+            listing = listing.resume(&file, arch, translate, &seeds, &funcsym_seeds, &seed_names, detail, plan);
         }
     }
     // (kuna `thunkentry`, `addrtakenentry`) Where the walk's own function set is
