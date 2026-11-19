@@ -3632,6 +3632,37 @@ shared target" sets holds, so the first branch takes the merged test and the
 second branch's condition becomes the constant that sends it the other way;
 `ActionDeterminedBranch` then removes the dead edge.
 
+**bitidioms** (kuna) —
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_bitidioms.rs (RuleBitIdioms)`,
+`(RuleIntAbs)` and `(ActionBitScanLoop)`, live gate `bit_idioms`
+(`option bitidioms`, default on). On an `INT_OR` the rule follows where each bit
+of the result comes from, through constant shifts, masks, ORs of disjoint bits,
+zero extensions and `SUBPIECE`s; when byte `i` of one source `x` of the same size
+lands in byte `N - 1 - i` the `INT_OR` becomes `bswap(x)`, and when bit `i` lands
+in bit `W - 1 - i` it becomes `bitreverse(x)`. Otherwise
+`(x << n) | (x >> (W - n))` with a constant `n` becomes `rotl(x, n)`, unless a
+reader masks away every bit of one of the two halves (PowerPC `rlwinm`/`rldic`
+write shifts as rotate-and-mask, and the shift rules fold those further; a mask
+not yet constant waits for the next pass). The mask may sit past a zero extension
+or a `PIECE` the AND was pushed onto, read at the rotate's bit position; a
+`rotl` formed before such a mask appeared is turned back into its two shifts. A `rotl(v, k)` whose `v` is a partial
+reversal the rotate completes becomes `bswap`/`bitreverse` on a later visit,
+because AArch64 `rev`/`rbit` lift to staged swaps whose last stage can fold
+first. `LZCOUNT(bitreverse(x))`, AArch64's `rbit` + `clz` spelling of
+`__builtin_ctz`, becomes `ctz(x)`. `RuleIntAbs` turns a two-input MULTIEQUAL of
+`x` and `-x` into `abs(x)` (`labs` at 8 bytes) when the branch that picks between
+them is a signed compare of `x` or `-x` with constants that chooses `-x` at
+`x = -5` and `x` at `x = 5`: the `neg; cmovs` and `cmp; cneg` lowerings of
+`x < 0 ? -x : x`. `ActionBitScanLoop` (group `returnsplit`, next to `strlenscan`)
+takes the one-instruction loop SLEIGH lifts x86 `bsf`/`tzcnt`/`bsr` to (a head and
+a body whose ops all carry one instruction address), runs it on every single-bit
+source and several mixed ones, and when the counter it hands to the exit is the
+lowest (or highest) set bit index on all of them and nothing else leaves the
+loop, replaces the counter's uses after the loop with `ctz(x)` (or
+`LZCOUNT(x) ^ (W - 1)`) and removes the edge into the body. The builtins are
+`BUILTIN_BSWAP`, `BUILTIN_ROTL`, `BUILTIN_BITREV`, `BUILTIN_CTZ` (unspecialised)
+and `BUILTIN_ABS`/`BUILTIN_LABS` (typed `int`/`long`).
+
 **constspaceload** (repipe `arm-neon-zero-initialization`) —
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_constspaceload.rs
 (RuleConstSpaceLoad)`, oppool1, fires on LOAD. *Pattern:* a LOAD whose space

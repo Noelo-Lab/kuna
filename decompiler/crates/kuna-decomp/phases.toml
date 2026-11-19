@@ -1669,6 +1669,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "bitidioms"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P3"
+subphase = "simplification-quiescence"
+strength = "HARD"
+rewind = "P3"
+issue = "kuna-bitidioms"
+summary = "Fold a byte swap or a constant rotate written out as shifts, masks and ORs into a call: bswap(x) when every leaf of an INT_OR tree moves whole bytes of the same x so that byte i lands in byte N-1-i (2, 4 or 8 bytes, each destination byte exactly once; masks, shifts and zero-extended byte pieces accepted), and rotl(x, n) for (x << n) | (x >> (W - n)) with a constant n. SLEIGH lifts bswap/rev and rol/ror into exactly that shift form, and compilers emit it for the portable C, so the decompiled C showed four masked shifts where the source said __builtin_bswap32. It also folds the cmov/cneg lowering of x < 0 ? -x : x (a MULTIEQUAL of x and -x chosen by a sign test, checked at x = -5 and x = 5) into abs(x) / labs(x), an AArch64 rbit + clz (LZCOUNT of a full bit reversal) into ctz(x), a full bit reversal into bitreverse(x), and the loop SLEIGH lifts x86 bsf/tzcnt/bsr to into ctz(x) / LZCOUNT(x) ^ (W-1), proved by running the loop on every single-bit and several mixed sources. A rotate whose reader masks away one of its two halves is left to the shift rules (PowerPC rlwinm/rldic write shifts as rotate-and-mask)."
+use_when = "On (default). Flip off to see the raw shift-and-mask expressions, the cmov/cneg abs diamond and the one-instruction bsf/bsr loops, for example to check which bits a hand-written partial swap moves."
+example = "--option bitidioms off"
+source_decompiler = "kuna"
+inspiration = "gcc and clang expand __builtin_bswap32 and portable rotate macros into the same shift-and-mask shape that SLEIGH gives bswap/rev and rol/ror; the C library names abs, labs and the GCC builtins ctz/clz name the results"
+change_kind = "presentation-default"
+tier = "transform"
+symptoms = "a byte swap prints as four masked shifts ORed together|a rotate prints as a pair of opposite shifts ORed together|bswap or rev instructions decompile to shift and mask soup|hash or crc code full of paired shifts"
+live_field = "bit_idioms"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "rodatastring"
 values = "on|off"
 default = "on"

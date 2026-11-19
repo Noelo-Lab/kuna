@@ -1082,6 +1082,8 @@ pub struct ArchContext {
     pub pow2_select: bool,
     /// (kuna) `cmpmerge` — merge two comparisons of the same operands into one.
     pub cmp_merge: bool,
+    /// (kuna) `bitidioms` — byte swap, rotate, abs, bit reversal and bit-scan idioms.
+    pub bit_idioms: bool,
     /// (kuna) region-based (Phoenix/SAILR) structurer: structure the CFG by
     /// walking the [`KunaRegionIdentifier`](crate::p7_regions::kuna_regionid)
     /// region tree and matching Phoenix acyclic schemas instead of running
@@ -1687,6 +1689,7 @@ impl ArchContext {
             range_fold: false, // rangefold (live value copied from the Architecture)
             pow2_select: false, // pow2select (live value copied from the Architecture)
             cmp_merge: false, // cmpmerge (live value copied from the Architecture)
+            bit_idioms: false, // bitidioms (live value copied from the Architecture)
             region_structure: false,     // regionstructure (opt-in default-off)
             guard_arm: false,            // guardarm (opt-in default-off)
             loop_continue: true,

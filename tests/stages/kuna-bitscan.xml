@@ -1,0 +1,51 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna-bitscan: abs and the one-instruction bit-scan loops (option bitidioms).
+
+    Source (clang -O2, x86-64):
+      int iabs(int x) { return x < 0 ? -x : x; }     neg eax ; cmovs eax,edi
+      int ctz(unsigned x) { return __builtin_ctz(x); }  tzcnt eax,edi
+      int clz(unsigned x) { return __builtin_clz(x); }  bsr eax,edi ; xor eax,0x1f
+
+    SLEIGH lifts cmovs as a branch around a copy and tzcnt/bsr as loops inside
+    the one instruction. Stage: P3 simplification (RuleIntAbs, the MULTIEQUAL
+    of x and -x chosen by a sign test) and the returnsplit-group action
+    ActionBitScanLoop, which proves the loop by running it on every single-bit
+    source and rewrites it to ctz(x) or LZCOUNT(x) ^ 0x1f.
+
+    Pass 1 (default) prints abs(a0), ctz(a0) and LZCOUNT; pass 2 (bitidioms off)
+    prints the cmov diamond and the loops.
+-->
+<bytechunk space="ram" offset="0x401000" readonly="true">
+f30f1efa89f8f7d80f48c7c300000000f30f1efaf30fbcc7c300000000000000f30f1efa0fbdc783f01fc30000000000
+</bytechunk>
+<symbol space="ram" offset="0x401000" name="iabs"/>
+<symbol space="ram" offset="0x401010" name="ctz"/>
+<symbol space="ram" offset="0x401020" name="clz"/>
+</binaryimage>
+<script>
+  <com>lo fu iabs</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ctz</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu clz</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option bitidioms off</com>
+  <com>lo fu iabs</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ctz</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="KUNA-BITSCAN #1: cmov abs folds to abs (default)" min="1" max="1">return abs\(</stringmatch>
+<stringmatch name="KUNA-BITSCAN #2: the tzcnt loop folds to ctz (default)" min="1" max="1">return ctz\(</stringmatch>
+<stringmatch name="KUNA-BITSCAN #3: the bsr loop folds to LZCOUNT (default)" min="1" max="1">LZCOUNT\(</stringmatch>
+<stringmatch name="KUNA-BITSCAN #4: bitidioms off keeps the tzcnt loop" min="1" max="1">for \(</stringmatch>
+<stringmatch name="KUNA-BITSCAN #5: bitidioms off keeps the negation diamond" min="1" max="2">= -</stringmatch>
+</decompilertest>

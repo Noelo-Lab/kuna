@@ -41,6 +41,10 @@ Three tiers:
 | a0 != a1 && !(a0 < a1) on floats | [`cmpmerge`](#cmpmerge----on--off-default-off) |
 | two branches in a row test the same value against neighbouring constants and jump to one place | [`cmpmerge`](#cmpmerge----on--off-default-off) |
 | x == 3 or 3 < x printed as two tests | [`cmpmerge`](#cmpmerge----on--off-default-off) |
+| a byte swap prints as four masked shifts ORed together | [`bitidioms`](#bitidioms----on--off-default-on) |
+| a rotate prints as a pair of opposite shifts ORed together | [`bitidioms`](#bitidioms----on--off-default-on) |
+| bswap or rev instructions decompile to shift and mask soup | [`bitidioms`](#bitidioms----on--off-default-on) |
+| hash or crc code full of paired shifts | [`bitidioms`](#bitidioms----on--off-default-on) |
 | stack string initialisation renders as an array-typed cast such as (char[8])s_addr._0_8_ | [`rodatastring`](#rodatastring----on--off-default-on) |
 | partial-symbol slice assignments like buf._0_9_ = s_addr._16_9_ instead of the string | [`rodatastring`](#rodatastring----on--off-default-on) |
 | a recognized rodata literal never appears in the function that copies it onto the stack | [`rodatastring`](#rodatastring----on--off-default-on) |
@@ -925,6 +929,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** Turn on to print `a <= b` for `a < b || a == b`, `(unsigned)v >= 8` for `v < 0 || 8 <= v`, and `!(a <= b)` for a float `a != b && !(a < b)`, mostly in -O0 code where each test is its own branch. Default off: the merged forms move 5/675 datatest assertions (an AArch64 ccmp `val <= 9` that becomes `val < 10`, bitfield and signed-byte tests). x86-64 gcc -O0: `if ((a1 <= a0) && (a0 != a1)) return 0;` becomes `if (a1 < a0) return 0;` and `if ((!(a1 < a0)) && (a0 != a1))` on doubles becomes `if (!(a1 <= a0))`.
 - **Where / provenance:** P3/simplification-quiescence · kuna · transform · kuna-cmpmerge
 - **Example:** `option cmpmerge on`
+
+### `bitidioms` -- on | off, default `on`
+
+- **Symptoms:** a byte swap prints as four masked shifts ORed together; a rotate prints as a pair of opposite shifts ORed together; bswap or rev instructions decompile to shift and mask soup; hash or crc code full of paired shifts.
+- **What it does:** Fold a byte swap or a constant rotate written out as shifts, masks and ORs into a call: bswap(x) when every leaf of an INT_OR tree moves whole bytes of the same x so that byte i lands in byte N-1-i (2, 4 or 8 bytes, each destination byte exactly once; masks, shifts and zero-extended byte pieces accepted), and rotl(x, n) for (x << n) | (x >> (W - n)) with a constant n. SLEIGH lifts bswap/rev and rol/ror into exactly that shift form, and compilers emit it for the portable C, so the decompiled C showed four masked shifts where the source said __builtin_bswap32. It also folds the cmov/cneg lowering of x < 0 ? -x : x (a MULTIEQUAL of x and -x chosen by a sign test, checked at x = -5 and x = 5) into abs(x) / labs(x), an AArch64 rbit + clz (LZCOUNT of a full bit reversal) into ctz(x), a full bit reversal into bitreverse(x), and the loop SLEIGH lifts x86 bsf/tzcnt/bsr to into ctz(x) / LZCOUNT(x) ^ (W-1), proved by running the loop on every single-bit and several mixed sources. A rotate whose reader masks away one of its two halves is left to the shift rules (PowerPC rlwinm/rldic write shifts as rotate-and-mask).
+- **When to flip:** On (default). Flip off to see the raw shift-and-mask expressions, the cmov/cneg abs diamond and the one-instruction bsf/bsr loops, for example to check which bits a hand-written partial swap moves.
+- **Where / provenance:** P3/simplification-quiescence · kuna · presentation-default · kuna-bitidioms
+- **Example:** `--option bitidioms off`
 
 
 ### `rodatastring` -- on | off, default `on`

@@ -5,7 +5,10 @@
   through a byte pointer and one byte into a recovered word field. The emitted
   Rust must keep both physical widths without aligned dereferences or borrows.
   The retained fmt fixture also contains a halfword store into an indexed byte
-  array in escape_unicode; the place must not become a mutable reference.
+  array in escape_unicode; the place must not become a mutable reference. That
+  function runs with `bitidioms` off: with the bsr loop folded to a count, the
+  index is bounded and the cleanup string-store rule prints the halfword as the
+  two characters it holds.
 -->
 <binaryimage arch="x86:LE:64:default:gcc">
 <bytechunk space="ram" offset="0x101000" readonly="true">488937c3</bytechunk>
@@ -34,6 +37,7 @@
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_write_real_x86_64</com>
   <com>read symbols</com>
   <com>option outlang rust</com>
+  <com>option bitidioms off</com>
   <com>load function 0x1b509</com>
   <com>decompile</com>
   <com>print C</com>

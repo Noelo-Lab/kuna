@@ -458,6 +458,7 @@ kuna_options! { self, p1;
     "rangefold" => on_off!(range_fold, "dominating-range folding"),
     "pow2select" => on_off!(pow2_select, "power-of-two division select recovery"),
     "cmpmerge" => on_off!(cmp_merge, "comparison merge"),
+    "bitidioms" => on_off!(bit_idioms, "byte-swap, rotate, abs and bit-scan idioms"),
     "regionstructure" => {
         let (val, msg) =
             crate::p8_structure::region_structurer::OptionRegionStructure.apply(p1)?;
