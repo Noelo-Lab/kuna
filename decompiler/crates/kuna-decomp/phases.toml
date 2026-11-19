@@ -2179,6 +2179,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "switchtrim"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P2"
+subphase = "switch-model"
+strength = "HARD"
+rewind = "P2"
+issue = "kuna-switchtrim"
+summary = "Recover a jump table that no guard bounds, and end it where its layout ends. A switch whose default is unreachable (`__builtin_unreachable()`, an enum the compiler trusts) indexes its table with no range check, so JumpBasic sees the full width of the index, the range exceeds jumptablemax, and the BRANCHIND stays a computed jump-as-call -- `v1 = *(code **)(a0 * 8 + 0x402000); return (*v1)();`. The upstream sanity check (JumpBasic::sanityCheck, kept as reasonable_rows) only stops at a zero row or a far row with no image bytes, which is no help once the range is unbounded. With the option on, after every guard-based extension has declined, a table whose path holds exactly one LOAD is opened to [0, jumptablemax); emulation stops at the first row it cannot read, and the sanity check keeps the rows before the first one that points into the table's own bytes (the entries read, first to last) or, on an object load, outside the image's executable memory -- the table's own layout ends it. Fewer than two surviving rows is no table, and the computed jump stays. Bounded tables are untouched."
+use_when = "On by default. Keep it on when a switch renders as `(*v1)()` through a table read with an unbounded index -- typically a switch with an unreachable default. Flip OFF if a recovered switch carries cases that are not really part of it (a table followed directly by another code-pointer table with no gap), or to restore the computed jump."
+example = "option switchtrim off"
+source_decompiler = "kuna"
+inspiration = "gcc -O2 `switch (x) { case 0..5: ...; default: __builtin_unreachable(); }`: `mov edi,edi; notrack jmp [0x402000 + rdi*8]` with no range check, printed as a computed jump-as-call; upstream JumpBasic::sanityCheck (jumptable.cc:1726)"
+change_kind = "structure-recovery"
+tier = "transform"
+symptoms = "a switch with an unreachable default renders as a computed jump-as-call through a table|`*(code **)(a0 * 8 + table)` called instead of a switch|Too many branches on a table indexed with no range check"
+live_field = "switch_trim"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "unrolledguard"
 values = "on|off"
 default = "off"

@@ -749,6 +749,9 @@ pub struct Architecture {
     /// lifting the common guard onto the MULTIEQUAL output so the table bounds
     /// (C++ `switch_multi_pred`).
     pub switch_multi_pred: bool,
+    /// (kuna) Recover an unbounded single-LOAD jump table by reading until its
+    /// layout ends (option `switchtrim`).  See [`crate::p2_lift::kuna_switchtrim`].
+    pub switch_trim: bool,
     /// (kuna, angr `test_decompiling_optimized_memcpy`) Recover the interleaved
     /// jump tables of an MSVC optimized memcpy/memmove (Duff's device).  When a
     /// function holds several jump tables whose case bodies are reachable only as
@@ -2429,6 +2432,7 @@ impl Architecture {
             switch_guard_bound: false,
             switch_shared_case: false,
             switch_multi_pred: false,
+            switch_trim: false,
             unrolled_guard: false,
             jumptable_share_partial: true,
             dead_cascade: Some(crate::p3_dataflow::kuna_deadcascade::DEFAULT_PASSES),
@@ -2754,6 +2758,7 @@ impl Architecture {
         self.highslice_guard = false;
         self.switch_guard_bound = false; // (kuna) default: upstream byte-identical (angr opt-in)
         self.switch_shared_case = true; // (kuna) DIV-14 default-on (angr loop-carried-guard PIC switch recovery; slower on the functions it recovers, kept on for quality; 0/675 byte-identical)
+        self.switch_trim = true; // (kuna) default-on: a jump table no guard bounds is read until its layout ends; 0/675 datatest assertions
         self.switch_multi_pred = true; // (kuna) DIV-13 default-on (angr multi-predecessor unrolled-guard jump-table; 0/675 ablation)
         self.unrolled_guard = false; // (kuna) default: upstream byte-identical (angr opt-in)
         self.jumptable_share_partial = true; // (kuna) DIV: the upstream stageJumpTable shape
@@ -3687,6 +3692,7 @@ impl Architecture {
         // (kuna, angr) carry the multi-predecessor unrolled-guard jump-table gate
         // (`option switchmultipred`) so `JumpBasic::checkUnrolledGuard` reaches it.
         ctx.switch_multi_pred = self.switch_multi_pred;
+        ctx.switch_trim = self.switch_trim;
         // (kuna, angr) carry the interleaved unrolled-guard partial-flow gate
         // (`option unrolledguard`) so `FlowInfo::collectEdges` reaches it.
         ctx.unrolled_guard = self.unrolled_guard;

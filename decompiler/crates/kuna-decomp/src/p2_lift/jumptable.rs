@@ -2207,6 +2207,9 @@ pub struct JumpBasicModel {
     /// emulation before each `build_addresses` path walk.  Empty for every model
     /// the basic recovery handles directly.
     loop_carried_seeds: Vec<(VarnodeId, uintb)>,
+    /// (kuna `switchtrim`) The range was opened to `[0, jumptablemax)` for a
+    /// table no guard bounds; the rows end where the table's layout does.
+    trim_rows: bool,
 }
 
 impl JumpBasicModel {
@@ -2228,6 +2231,7 @@ impl JumpBasicModel {
             orig_path_meld: PathMeld::new(),
             is_partial: false,
             loop_carried_seeds: Vec::new(),
+            trim_rows: false,
         }
     }
 
@@ -3192,10 +3196,31 @@ impl JumpBasicModel {
                 self.mark_foldable_guards(fd);
                 return Ok(true);
             }
+            if unbounded && fd.get_arch().switch_trim && self.kuna_try_trimmed_table(fd, maxtablesize) {
+                return Ok(true);
+            }
             return Ok(false);
         }
         self.mark_foldable_guards(fd);
         Ok(true)
+    }
+
+    /// (kuna `switchtrim`) Open an unbounded single-LOAD table to
+    /// `[0, maxtablesize)` and let the sanity check end it where its layout
+    /// does (see [`crate::p2_lift::kuna_switchtrim`]).
+    fn kuna_try_trimmed_table(&mut self, fd: &Funcdata, maxtablesize: uint4) -> bool {
+        let loads = (0..self.path_meld.num_ops())
+            .filter(|&i| self.path_meld.get_op(i).and_then(|op| fd.obank().get(op)).is_some_and(|o| o.code() == OpCode::CPUI_LOAD))
+            .count();
+        if loads != 1 || maxtablesize < 2 || !self.selectguards.is_empty() || self.jrange().get_size() <= 0xffff {
+            return false;
+        }
+        let Some(start_vn) = self.jrange().get_start_varnode() else { return false };
+        let Some(vsize) = fd.vbank().get(start_vn).map(|v| v.get_size()) else { return false };
+        let jr = self.jrange_range_mut();
+        jr.set_range(CircleRange::new(0, maxtablesize as uintb, vsize, 1));
+        self.trim_rows = true;
+        true
     }
 
     /// (kuna) GH-9191: bound a LOAD-table jump-table by a modulo/and-mask on its
@@ -4740,15 +4765,26 @@ impl JumpBasicModel {
             let startvn = jr
                 .get_start_varnode()
                 .ok_or_else(|| KunaError::lowlevel("buildAddresses: no start vn"))?;
-            let raw = emul.emulate_path(val, &self.path_meld, startop, startvn)?;
+            let raw = match emul.emulate_path(val, &self.path_meld, startop, startvn) {
+                Ok(raw) => raw,
+                Err(_) if self.trim_rows && !addresstable.is_empty() => break,
+                Err(e) => return Err(e),
+            };
             addresstable.push(Self::destination(&spc, mask, raw));
             if let Some(lc) = loadcounts.as_mut() {
                 let count = emul
                     .loadpoints_len()
                     .ok_or_else(|| KunaError::lowlevel("buildAddresses: loadcounts without loadpoints"))?;
+                let stalled = lc.last().is_some_and(|&prev| prev as usize >= count) || count == 0;
                 lc.push(count as int4);
+                if self.trim_rows && (stalled || raw == 0) {
+                    break;
+                }
             }
             notdone = jr.next()?;
+        }
+        if self.trim_rows && addresstable.len() < 2 {
+            return Err(KunaError::lowlevel("switchtrim: fewer than two table rows"));
         }
         // Hand back any collected LOAD records.
         if let Some(lp) = loadpoints.as_mut() {
@@ -5101,6 +5137,12 @@ impl JumpModel for JumpBasicModel {
             return Ok(true);
         }
         let mut i = Self::reasonable_rows(fd, addresstable);
+        if self.trim_rows {
+            i = i.min(crate::p2_lift::kuna_switchtrim::trimmed_rows(fd, addresstable, loadpoints, loadcounts));
+            if i < 2 {
+                return Ok(false);
+            }
+        }
         if i == 0 {
             return Ok(false);
         }
@@ -5134,6 +5176,7 @@ impl JumpModel for JumpBasicModel {
         // C++ JumpBasic::clone only clones the JumpValues iterator.
         let mut res = JumpBasicModel::new();
         res.is_model2 = self.is_model2;
+        res.trim_rows = self.trim_rows;
         if let Some(jr) = &self.jrange {
             res.jrange = Some(jr.clone_box());
         }
@@ -5153,6 +5196,7 @@ impl JumpModel for JumpBasicModel {
         self.extravn = None;
         self.orig_path_meld.clear();
         self.loop_carried_seeds.clear();
+        self.trim_rows = false;
     }
 
     fn take_rebuild(&mut self) -> bool {
@@ -6252,7 +6296,6 @@ impl JumpTable {
         // STUB(W4): the CALLOTHER `JumpAssisted` (jumpassist userop) model — not
         // yet ported (needs pcodeinjectlib/ExecutablePcode).  Recorded as a loss;
         // the basic models cover the corpus switches.
-
         // Try the basic model.
         let mut jbasic = JumpBasicModel::new();
         jbasic.label_rows = rows;
@@ -6370,7 +6413,19 @@ impl JumpTable {
             r?;
             crate::decompile_drive::deadline_passed_in("jump-table address emulation");
             let bounded = self.flow_bounded_values(fd);
-            self.sanity_check(fd, None)?;
+            let trim = self
+                .jmodel
+                .as_ref()
+                .and_then(|m| m.as_any().downcast_ref::<JumpBasicModel>())
+                .is_some_and(|m| m.trim_rows);
+            if trim {
+                self.loadpoints = loads.clone();
+                let checked = self.sanity_check(fd, Some(&loadcounts));
+                self.loadpoints.clear();
+                checked?;
+            } else {
+                self.sanity_check(fd, None)?;
+            }
             let cut = self.cut_rows_dispatched(fd, bounded, loadcounts.len());
             self.row_loads =
                 Self::kept_row_loads(loads, &loadcounts, self.addresstable.len(), &cut);

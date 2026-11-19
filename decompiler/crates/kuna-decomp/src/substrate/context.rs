@@ -1380,6 +1380,8 @@ pub struct ArchContext {
     /// multi-predecessor unrolled-guard walk.  `false` (default off / upstream
     /// byte-identical).
     pub switch_multi_pred: bool,
+    /// (kuna) `Architecture::switch_trim`, flipped by `option switchtrim`.
+    pub switch_trim: bool,
     /// (kuna) Recover the interleaved jump tables of an MSVC optimized
     /// memcpy/memmove by making the jump-table-recovery partial clone's
     /// `collect_edges` SKIP a recovered sibling table's case-target edge whose
@@ -1750,6 +1752,7 @@ impl ArchContext {
             switch_guard_bound: false, // (kuna) angr opt-in default off (upstream byte-identical)
             switch_shared_case: false, // (kuna) angr opt-in default off (upstream byte-identical)
             switch_multi_pred: false, // (kuna) angr opt-in default off (upstream byte-identical)
+            switch_trim: false,
             unrolled_guard: false, // (kuna) angr opt-in default off (upstream byte-identical)
             jumptable_share_partial: true, // (kuna) DIV: upstream stageJumpTable shape
             dead_cascade: Some(crate::p3_dataflow::kuna_deadcascade::DEFAULT_PASSES),

@@ -2962,6 +2962,27 @@ any sibling recovered — and the memcpy witness recovers all sixteen dispatches
 with this gate off, so the two settings are paired: turn `unrolledguard` on only
 together with `jtsharepartial off`.
 
+**`switchtrim`, default on** — the last bound extension, for a table that no
+guard bounds at all: no guard was found and the index range is wider than
+`0xffff`. A switch with an unreachable default
+(`__builtin_unreachable()`, an enum the compiler trusts) dispatches through
+`jmp [table + idx*8]` with no range check, so the index range is its whole
+width and every extension above declines. After they have, a table whose path
+holds exactly one `LOAD` has its range opened to `[0, jumptablemax)`
+(`jumptable.rs (kuna_try_trimmed_table)`). Emulation stops at the first row it
+cannot read instead of failing the table, and the sanity check keeps the rows
+before the first one that breaks the table's layout
+(`kuna_switchtrim.rs (trimmed_rows)`): a row
+that points into the table's own bytes, a row read at or above the lowest code
+address an earlier row jumps to (an inline table cannot run into the code it
+dispatches to), or, on an object load, a row that points outside the image's
+executable memory, plus upstream's zero / far-and-unloaded rule. Every row
+must read its own table entry, above the previous row's, so a range opened on
+a value that is not the table index (the loaded entry itself, when the index
+feeds an image-base add) reads no table at all. Fewer than two rows is no
+table, and the jump stays a computed call. A bounded table
+never reaches this arm.
+
 ## 2.4 No-return at lift time
 
 The mechanism is §2.1's halt plant: if `check_for_flow_modification` believes a
