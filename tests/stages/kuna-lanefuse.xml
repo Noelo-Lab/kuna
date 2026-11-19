@@ -1,0 +1,78 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna lanefuse: P2 flow, option lanefuse on|all|off (default on).
+
+      0x1000 addv:    vaddps ymm0,ymm0,ymm1; ret                  (VEX, eight float lanes)
+      0x1010 madd:    kmovw k1,edi; vaddps zmm0{k1},zmm1,zmm2; ret        (EVEX merge mask)
+      0x1020 maddz:   kmovw k1,edi; vaddps zmm0{k1}{z},zmm0,zmm1; ret     (EVEX zero mask)
+      0x1030 add128:  addps xmm0,xmm1; ret                        (legacy SSE, four float lanes)
+      0x1040 add128i: paddd xmm0,xmm1; ret                        (legacy SSE, integer lanes)
+      0x1050 mul128d: mulpd xmm0,xmm1; ret                        (legacy SSE, two double lanes)
+
+    The SLEIGH spec writes these instructions lane by lane, and applies an
+    AVX-512 write mask as a multiply-or per lane after the user-op.
+
+    The first pass is `lanefuse off`, the second the default, the third
+    `lanefuse all` on the two legacy-SSE shapes the default leaves as lanes.
+-->
+<bytechunk space="ram" offset="0x1000" readonly="true">c5fc58c1c3</bytechunk>
+<bytechunk space="ram" offset="0x1010" readonly="true">c5f892cf62f1744958c2c3</bytechunk>
+<bytechunk space="ram" offset="0x1020" readonly="true">c5f892cf62f17cc958c1c3</bytechunk>
+<bytechunk space="ram" offset="0x1030" readonly="true">0f58c1c3</bytechunk>
+<bytechunk space="ram" offset="0x1040" readonly="true">660ffec1c3</bytechunk>
+<bytechunk space="ram" offset="0x1050" readonly="true">660f59c1c3</bytechunk>
+<symbol space="ram" offset="0x1000" name="addv"/>
+<symbol space="ram" offset="0x1010" name="madd"/>
+<symbol space="ram" offset="0x1020" name="maddz"/>
+<symbol space="ram" offset="0x1030" name="add128"/>
+<symbol space="ram" offset="0x1040" name="add128i"/>
+<symbol space="ram" offset="0x1050" name="mul128d"/>
+</binaryimage>
+<script>
+  <com>option lanefuse off</com>
+  <com>lo fu addv</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu madd</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option lanefuse on</com>
+  <com>lo fu addv</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu madd</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu maddz</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu add128</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu add128i</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mul128d</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option lanefuse all</com>
+  <com>lo fu add128i</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mul128d</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="lanefuse #1: off, the VADDPS lanes print as separate float additions" min="1" max="1">^unsigned long addv\((unsigned long|uint8) a0,(unsigned long|uint8) a1\)</stringmatch>
+<stringmatch name="lanefuse #2: off, the masked add prints unmasked, its mask applied after it" min="1" max="1">_mm512_add_ps\(</stringmatch>
+<stringmatch name="lanefuse #3: on, the lane run is one intrinsic" min="1" max="1">_mm256_add_ps\(v1,v2\)</stringmatch>
+<stringmatch name="lanefuse #4: on, the merge mask folds into the intrinsic" min="1" max="1">_mm512_mask_add_ps\(v1,a0,v2,v3\)</stringmatch>
+<stringmatch name="lanefuse #5: on, EVEX.z gives the zero-masking form" min="1" max="1">_mm512_maskz_add_ps\(a0,v1,v2\)</stringmatch>
+<stringmatch name="lanefuse #6: on, a legacy SSE addps fuses" min="1" max="1">_mm_add_ps\(v1,v2\)</stringmatch>
+<stringmatch name="lanefuse #7: on, legacy SSE paddd keeps its lanes" min="1" max="1">^unsigned long add128i\((unsigned long|uint8) a0,(unsigned long|uint8) a1\)</stringmatch>
+<stringmatch name="lanefuse #8: on, legacy SSE mulpd stays a scalar product" min="1" max="1">return a0 \* a1;</stringmatch>
+<stringmatch name="lanefuse #9: all fuses SSE2 integer lanes" min="1" max="1">_mm_add_epi32\(v1,v2\)</stringmatch>
+<stringmatch name="lanefuse #10: all fuses two-lane doubles" min="1" max="1">_mm_mul_pd\(v1,v2\)</stringmatch>
+</decompilertest>

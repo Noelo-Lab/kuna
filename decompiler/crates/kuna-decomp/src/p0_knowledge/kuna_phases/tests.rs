@@ -56,13 +56,13 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_220() {
-    assert_eq!(kuna_num_settables(), 220);
-    assert_eq!(SETTABLE_TABLE.len(), 220);
+fn settable_count_is_223() {
+    assert_eq!(kuna_num_settables(), 223);
+    assert_eq!(SETTABLE_TABLE.len(), 223);
 }
 
 #[test]
-fn tier_counts_are_45_core_120_transform_55_analysis() {
+fn tier_counts_are_46_core_122_transform_55_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -74,7 +74,7 @@ fn tier_counts_are_45_core_120_transform_55_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (45, 120, 55));
+    assert_eq!((core, transform, analysis), (46, 122, 55));
 }
 
 #[test]
@@ -519,6 +519,9 @@ fn option_values_live_value_present_for_76() {
                             | "int3pad"
                             | "x64syscall"
                             | "pebnames"
+                            // (kuna) `lanefuse` takes `on|all|off` over an enum
+                            // field; its live value is read console-side.
+                            | "lanefuse"
                             // (kuna) `ptrfromuse` takes `off|byte|void`, which
                             // the codegen live reader (a bool
                             // `live_true`/`live_false` pair) cannot express --
@@ -844,7 +847,9 @@ fn option_values_live_value_present_for_76() {
     // field with no `live_field`.
     // 75 -> 76: +1 for `wrapadd` (live_field = wrap_add).
     // +1 for `acleintrinsics` (live_field = acle_intrinsics).
-    assert_eq!(with_live, 77);
+    // +1 for `avxintrinsics`.
+    // +1 for `vexzeroupper`.
+    assert_eq!(with_live, 79);
 }
 
 #[test]
@@ -1095,7 +1100,10 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `calleeargs`; its P4 row sits after `argclobber`.
     // +1 for `acleintrinsics`; its P9 row sits after `cortexmpriv`.
     // +1 for `kernelcache-boot`; its P1 row sits after `kernelcache`.
-    assert_eq!(json.matches("},\n").count(), 219);
+    // +1 for `avxintrinsics`; its P9 row is appended at the end of the table.
+    // +1 for `vexzeroupper`; its P2 row is appended after `avxintrinsics`.
+    // +1 for `lanefuse`; its P2 row is appended after `vexzeroupper`.
+    assert_eq!(json.matches("},\n").count(), 222);
 }
 
 #[test]

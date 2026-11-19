@@ -1,0 +1,43 @@
+<decompilertest>
+<binaryimage arch="x86:LE:32:default:gcc">
+<!--
+    kuna x87 stack depth warnings: a declared type that the x87 stack depth
+    contradicts.
+
+        8048100 h:  fld1; ret                 ; leaves one value on the x87 stack
+        8048110 g:  call h; fstp st(0); ret   ; pops what h left
+        8048120 f:  fld1; ret
+
+    h and f are declared to return int, so their result is read from EAX,
+    while the code returns its value in ST0. The depth solve proves that h's
+    call leaves one value (g pops it) and that f returns at depth 1.
+
+    Stage: P4 prototype warnings (ActionPrototypeWarnings). No option.
+-->
+<bytechunk space="ram" offset="0x8048100">
+d9e8c3
+</bytechunk>
+<bytechunk space="ram" offset="0x8048110">
+e8ebffffffddd8c3
+</bytechunk>
+<bytechunk space="ram" offset="0x8048120">
+d9e8c3
+</bytechunk>
+<symbol space="ram" offset="0x8048100" name="h"/>
+<symbol space="ram" offset="0x8048110" name="g"/>
+<symbol space="ram" offset="0x8048120" name="f"/>
+</binaryimage>
+<script>
+  <com>parse line extern int4 h(void);</com>
+  <com>parse line extern int4 f(void);</com>
+  <com>lo fu g</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="X87DEPTHWARN #1: the call to h is flagged" min="1" max="1">call to h leaves a value on the x87 stack</stringmatch>
+<stringmatch name="X87DEPTHWARN #2: f is flagged" min="1" max="1">the function leaves a value on the x87 stack but its return type is not floating-point</stringmatch>
+</decompilertest>

@@ -43,6 +43,7 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "wrapadd" => on_off!(wrap_add, "Wrapping four-byte addition before a wider sign extension"),
+    "avxintrinsics" => on_off!(avx_intrinsics, "Intel intrinsic names for AVX user-ops"),
     "armconstshift" => {
         let (mode, msg) = crate::p9_emit::kuna_armconstantshift::OptionArmConstShift.apply(p1)?;
         self.arm_constant_shift = mode;
@@ -172,6 +173,13 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "chkstkdarwin" => on_off!(chkstk_darwin, "Darwin stack-probe call removal"),
+    "vexzeroupper" => on_off!(vex_zero_upper, "VEX zero-upper writes split at the result width"),
+    "lanefuse" => {
+        let mode = crate::kuna_lanefuse::LaneFuseMode::parse(p1)
+            .ok_or_else(|| KunaError::lowlevel("lanefuse takes on, all or off"))?;
+        self.lane_fuse = mode;
+        Ok(format!("Per-lane vector p-code re-fused into one intrinsic turned {}", mode.as_str()))
+    },
     "tailcalljump" => {
         let (jumps, tables, msg) = crate::kuna_tailcalljump::tail_call_mode(p1)?;
         self.tail_call_jumps = jumps;

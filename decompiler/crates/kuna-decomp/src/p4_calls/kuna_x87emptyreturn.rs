@@ -1,4 +1,5 @@
-//! Do not infer an x87 result when every returning path explicitly freed ST0.
+//! Do not infer an x87 result when every returning path explicitly freed ST0,
+//! or when the x87 stack depth (`kuna_x87depth`) proves the stack empty there.
 use crate::{context::OpId, fspec::ParamActive, funcdata::Funcdata};
 use kuna_base::address::Address;
 use kuna_num::{opcodes::OpCode, pcoderaw::VarnodeData};
@@ -7,7 +8,7 @@ use std::collections::{HashMap, VecDeque};
 #[derive(Clone)]
 pub struct Storage {
     pub(super) free: u64,
-    top: VarnodeData,
+    pub(super) top: VarnodeData,
     pub(super) tags: VarnodeData,
     pub(super) bank: Vec<VarnodeData>,
 }
@@ -168,9 +169,15 @@ fn effect(data: &Funcdata, id: OpId, storage: &Storage) -> Effect {
 /// Record raw register identities before SSA and copy propagation erase them.
 pub fn capture(data: &mut Funcdata) {
     data.kuna_x87_empty_returns.clear();
+    data.kuna_x87_float_returns.clear();
+    data.kuna_x87_float_calls.clear();
     let Some(storage) = data.get_arch().x87_empty_storage.clone() else {
         return;
     };
+    let facts = crate::p4_calls::kuna_x87depth::facts(data, &storage);
+    data.kuna_x87_empty_returns = facts.empty_returns;
+    data.kuna_x87_float_returns = facts.float_returns;
+    data.kuna_x87_float_calls = facts.float_calls;
     let has_free = data.obank().iter_code(OpCode::CPUI_CALLOTHER).any(|id| {
         data.obank()
             .get(id)
@@ -229,10 +236,11 @@ pub fn capture(data: &mut Funcdata) {
             }
         }
     }
-    data.kuna_x87_empty_returns = returns
-        .into_iter()
-        .filter_map(|(addr, empty)| empty.then_some(addr))
-        .collect();
+    for addr in returns.into_iter().filter_map(|(addr, empty)| empty.then_some(addr)) {
+        if !data.kuna_x87_empty_returns.contains(&addr) {
+            data.kuna_x87_empty_returns.push(addr);
+        }
+    }
 }
 
 pub fn drop_empty(data: &Funcdata, active: &mut ParamActive, returns: &[OpId]) {

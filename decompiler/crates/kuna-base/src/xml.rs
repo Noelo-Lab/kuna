@@ -2235,7 +2235,12 @@ mod tests {
         // and kuna-callproto / one call through a pointer is given its own prototype
         // and kuna-dyldcacheobjc / a dyld shared cache image's ObjC metadata is read through the cache
         // and kuna-dyldimage-merge / dyldimage A+B loads two dyld shared cache images as one program
-        assert_eq!(count, 796, "corpus file count drifted");
+        // and kuna-avxintrinsics / the x86 AVX user-ops print as Intel intrinsics (option avxintrinsics)
+        // and kuna-vexzeroupper / a VEX write of ymm0 no longer widens the register to zmm0 (option vexzeroupper)
+        // and kuna-lanefuse / per-lane vector p-code and AVX-512 write masks fuse into one intrinsic (option lanefuse)
+        // and kuna-x87depth / a discarded x87 call result no longer makes a void function return long double
+        // and kuna-x87depth-warn / a non-float declared type the x87 stack depth contradicts is warned about
+        assert_eq!(count, 801, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

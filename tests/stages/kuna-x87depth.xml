@@ -1,0 +1,61 @@
+<decompilertest>
+<binaryimage arch="x86:LE:32:default:gcc">
+<!--
+    kuna x87 stack depth: a discarded x87 call result no longer makes a void
+    function return `long double`.
+
+    Source (gcc -m32 -O2 -fomit-frame-pointer):
+
+        double g;
+        double noisy(double x) { g = x; return x * 2; }
+        void drop2(double x) { noisy(x); g += 1; }
+        double keep(double x) { double a = noisy(x); double b = noisy(a + 1); return a * b; }
+
+        80491b0 drop2: sub esp,4; push [esp+0xc]; push [esp+0xc]
+        80491bb        call noisy          ; leaves its result in ST0
+        80491c0        fstp st(0)          ; discards it
+        80491c2        fld1
+        80491c4        fadd qword [g]
+        80491ca        fstp qword [g]      ; the x87 stack is empty again
+        80491d0        add esp,0xc; ret
+
+    SLEIGH has no x87 stack top: ST0..ST7 are fixed registers and each push or
+    pop is a copy shift, and the call itself shifts nothing. At the `ret` ST0
+    holds what the pops moved down, so return recovery found a written ST0 and
+    drop2 returned an undefined `long double`. The depth after the call is
+    1 (the `fstp st(0)` pops a value), so it is 0 at the `ret`.
+
+    Stage: P4 return recovery (ActionReturnRecovery, the x87emptyreturn drop).
+    A correctness fix with no option: one pass pins drop2 as void, and keep,
+    whose depth at its `ret` is 1, still returns its value.
+-->
+<bytechunk space="ram" offset="0x80491a0">
+dd442404dd1510c00408d8c0c3
+</bytechunk>
+<bytechunk space="ram" offset="0x80491b0">
+83ec04ff74240cff74240ce8e0ffffffddd8d9e8dc0510c00408dd1d10c0040883c40cc3
+</bytechunk>
+<bytechunk space="ram" offset="0x80491e0">
+83ec0cff742414ff742414e8b0ffffff83ec08dd542410d80508a00408dd1c24e89bffffffdc4c241083c41cc3
+</bytechunk>
+<bytechunk space="ram" offset="0x804a008">
+0000803f
+</bytechunk>
+<symbol space="ram" offset="0x80491a0" name="noisy"/>
+<symbol space="ram" offset="0x80491b0" name="drop2"/>
+<symbol space="ram" offset="0x80491e0" name="keep"/>
+<symbol space="ram" offset="0x804c010" name="g"/>
+</binaryimage>
+<script>
+  <com>lo fu drop2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu keep</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="X87DEPTH #1: drop2 returns nothing" min="1" max="1">^void drop2\(</stringmatch>
+<stringmatch name="X87DEPTH #2: drop2 does not return an undefined long double" min="0" max="0">^float10 drop2\(</stringmatch>
+<stringmatch name="X87DEPTH #3: keep still returns the product" min="1" max="1">^float10 keep\(</stringmatch>
+</decompilertest>

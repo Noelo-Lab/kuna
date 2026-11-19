@@ -1,0 +1,39 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna avxintrinsics: P9 naming policy, option avxintrinsics (default on).
+
+      0x1000 vadd: vpaddd ymm0,ymm0,ymm1; ret
+      0x1010 vfma: vfmadd132ps ymm0,ymm2,ymm1; ret     (ymm0 = ymm0*ymm1 + ymm2)
+
+    Asserts #1-#2 are the off pass: the SLEIGH user-op names.
+    Asserts #3-#4 are the on pass: the Intel intrinsics, the FMA one with its
+    operands in intrinsic order (multiplicands first, addend last).
+-->
+<bytechunk space="ram" offset="0x1000" readonly="true">c5fdfec1c3</bytechunk>
+<bytechunk space="ram" offset="0x1010" readonly="true">c4e26d98c1c3</bytechunk>
+<symbol space="ram" offset="0x1000" name="vadd"/>
+<symbol space="ram" offset="0x1010" name="vfma"/>
+</binaryimage>
+<script>
+  <com>option avxintrinsics off</com>
+  <com>lo fu vadd</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu vfma</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option avxintrinsics on</com>
+  <com>lo fu vadd</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu vfma</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="avxintrinsics #1: off prints the SLEIGH add user-op" min="1" max="1">vpaddd_avx2\(</stringmatch>
+<stringmatch name="avxintrinsics #2: off prints the SLEIGH FMA user-op" min="1" max="1">vfmadd132ps_fma\(</stringmatch>
+<stringmatch name="avxintrinsics #3: on prints _mm256_add_epi32" min="1" max="1">_mm256_add_epi32\(</stringmatch>
+<stringmatch name="avxintrinsics #4: on prints _mm256_fmadd_ps" min="1" max="1">_mm256_fmadd_ps\(</stringmatch>
+</decompilertest>

@@ -9528,6 +9528,45 @@ operations and operands outside the complete ten-byte stack-register bank retain
 their original inputs. Implementation:
 `decompiler/crates/kuna-decomp/src/p4_calls/kuna_x87free.rs`.
 
+**(kuna) The x87 stack depth at each return —
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_x87depth.rs (facts)`.** The
+must-empty analysis above needs an explicit FFREE; the common gcc shape has
+none. A function that calls a float-returning helper only for its side effect
+pops the result with `fstp %st(0)`, and since SLEIGH models ST0–ST7 as fixed
+registers moved by copy shifts, with no stack top and no shift at a call, ST0
+at the `ret` holds whatever the pops moved down: return recovery then returned
+an undefined `long double`. Before SSA the pass walks each block's raw ops in
+order and counts the depth: the `ST7 = ST6` copy that opens a push adds one,
+the `ST6 = ST7` copy that closes a pop removes one, and a pop or any other read
+of ST(i) needs a depth above i. The other shift copies and the `tmp = ST7` of
+the `fdec` rotation (`fld m64`) are not reads. The calling convention supplies
+the rest: the stack is empty at entry and at every call, and each call leaves
+an unknown 0 or 1 values. Reads after a call bound its unknown from below, the
+next call and every join with a known depth pin it, and a join of two calls'
+results relates the two unknowns (a union-find with offsets over a
+difference-constraint system). Every call to one direct callee shares one
+unknown, so a read after one call settles all of them. A return whose depth is
+determined and 0 is added to the must-empty returns, so the same rule retires
+the ST0 trial when every ordinary return agrees. An MMX access to the bank, a
+tag-word write, a negative depth, a call with a non-empty stack, or a conflict
+at a join gives no answer for the whole function, and a return whose depth
+still depends on an unconstrained call is left alone. It is a correctness fix
+with no option: the only output it removes is a returned value that no
+instruction produced.
+
+`callerreads` asks the same question from the caller's side
+(`kuna_x87depth.rs (call_leaves)`): it walks a call site's code from the return
+address to the next call, at most 256 instructions, and when that pins the
+callee's effect to 0 the push shift that reads ST0 there is not a read of a
+returned value; when it pins it to 1 the site reads the whole ST0.
+
+Where the solved depth contradicts a declared type, `ActionPrototypeWarnings`
+adds a warning (`kuna_x87depth.rs (warn)`): a function whose output is locked
+to a non-float type but that returns at depth 1 and never at depth 0, and a
+call whose callee's output is locked to a non-float type but that is proven to
+leave a value. Exercised by `tests/stages/kuna-x87depth.xml` and
+`tests/stages/kuna-x87depth-warn.xml`.
+
 ### Qualified register declarations bind to an entry (`kuna_qualifiedstorage.rs`, `kuna_qualifiedcall.rs`)
 
 The console's qualified `map param <func>::<i>` and `map return <func>::<storage>`

@@ -475,3 +475,23 @@ indirect tail jump each print as a direct call to the stated function, and the
 tail call to a callee marked no-return ends the function with no return. The CLI
 companion covers `--assert callee` on both surfaces and every refusal. The
 fixture source is `decompiler/crates/kuna-cli/tests/fixtures/assert_callee.c`.
+
+`kuna-avxintrinsics.xml` decompiles `vpaddd` and `vfmadd132ps` twice: with
+`avxintrinsics off` the SLEIGH user-op names print, and at the default they
+print as `_mm256_add_epi32` and `_mm256_fmadd_ps` with the FMA operands in
+intrinsic order.
+
+`kuna-vexzeroupper.xml` decompiles `vpaddd` and `vfmadd132ps` twice: with
+`vexzeroupper off` the `ymm0` operand is a 64-byte local read through
+`SUB6432`, and at the default it is read at its own 32 bytes.
+
+`kuna-lanefuse.xml` runs three passes over six one-instruction vector
+functions: `lanefuse off` prints the SLEIGH lanes, the default fuses a VEX
+`vaddps`, a legacy `addps` and both AVX-512 mask forms into one intrinsic and
+leaves legacy `paddd` and `mulpd` as lanes, and `lanefuse all` fuses those too.
+
+`kuna-x87depth.xml` pins an i386 function that calls a `double` helper and
+pops the result with `fstp %st(0)`: it prints as `void`, and its sibling that
+keeps the value still returns `float10`. `kuna-x87depth-warn.xml` declares two
+functions that leave a value on the x87 stack as returning `int` and checks
+the warning at the function and at the call.

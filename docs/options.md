@@ -451,6 +451,12 @@ Three tiers:
 | an arm64 macOS function with a large frame or a variable-length array prints with a (void) parameter list | [`chkstkdarwin`](#chkstkdarwin----on--off-default-on-destructive-opt-in) |
 | a variable-length array is sized from a register nothing assigns after __chkstk_darwin() | [`chkstkdarwin`](#chkstkdarwin----on--off-default-on-destructive-opt-in) |
 | __chkstk_darwin is called with arguments it does not take | [`chkstkdarwin`](#chkstkdarwin----on--off-default-on-destructive-opt-in) |
+| avx code prints vpaddd_avx2( or vfmadd132ps_fma( instead of an intrinsic | [`avxintrinsics`](#avxintrinsics----on--off-default-on) |
+| an fma call lists its operands in instruction order rather than multiplicands first | [`avxintrinsics`](#avxintrinsics----on--off-default-on) |
+| vector user-ops are named after the mnemonic and its extension | [`avxintrinsics`](#avxintrinsics----on--off-default-on) |
+| eight float additions on slices of one register instead of a vector add | [`lanefuse`](#lanefuse----on--all--off-default-on) |
+| avx-512 mask applied as sixteen per-lane multiply-or statements | [`lanefuse`](#lanefuse----on--all--off-default-on) |
+| a vector function body is one statement per lane | [`lanefuse`](#lanefuse----on--all--off-default-on) |
 | a DOS program's globals print as *(short *)0x308e near-pointer dereferences instead of named globals | [`mzdgroup`](#mzdgroup----on--off-default-on) |
 | every function of an MS-DOS executable declares an unsigned short local commented // ds | [`mzdgroup`](#mzdgroup----on--off-default-on) |
 | the same DOS global gets no shared name across functions | [`mzdgroup`](#mzdgroup----on--off-default-on) |
@@ -846,6 +852,9 @@ Three tiers:
 | a function that touches thousands of globals between thousands of calls takes gigabytes and minutes to decompile | [`persistcalls`](#persistcalls----off--on---default-65536) |
 | heritage builds millions of INDIRECTs over writable globals that survive dead-code removal | [`persistcalls`](#persistcalls----off--on---default-65536) |
 | a huge initializer or finalizer exhausts memory in assignhigh or merging | [`persistcalls`](#persistcalls----off--on---default-65536) |
+| avx code reads SUB6432(zmm0,0) instead of ymm0 | [`vexzeroupper`](#vexzeroupper----on--off-default-on) |
+| a ymm or xmm value shows as a 64-byte zmm local | [`vexzeroupper`](#vexzeroupper----on--off-default-on) |
+| vector values are widened to char[64] | [`vexzeroupper`](#vexzeroupper----on--off-default-on) |
 
 ## Toggleable transforms
 
@@ -1811,6 +1820,22 @@ The control surface: each of these can make output worse on the wrong source sha
 - **Where / provenance:** P2/flow-classification · kuna · structure-recovery · kuna-chkstkdarwin
 - **Example:** `option chkstkdarwin off`
 
+### `avxintrinsics` -- on | off, default `on`
+
+- **Symptoms:** avx code prints vpaddd_avx2( or vfmadd132ps_fma( instead of an intrinsic; an fma call lists its operands in instruction order rather than multiplicands first; vector user-ops are named after the mnemonic and its extension.
+- **What it does:** x86 only (inert elsewhere: only the x86 SLEIGH spec declares these user-ops): print the AVX user-ops as the Intel intrinsics a programmer writes. The x86 spec lifts most AVX2, FMA and AVX-512 instructions to opaque user-ops named after the mnemonic and its extension (`vpaddd_avx2`, `vfmadd132ps_fma`, `vaddps_avx512f`). With this option the printer names each mapped one `_mm<W>_<op>_<type>`, where the width comes from the user-op's result size (16, 32 or 64 bytes): `_mm256_add_epi32`, `_mm512_add_ps`, `_mm256_max_epu8`, `_mm256_shuffle_epi8`, `_mm256_and_si256`. The FMA forms also get the intrinsic's operand order: `vfmadd132ps(a, b, c)` computes `a*c + b` and prints as `_mm256_fmadd_ps(a, c, b)` (213 is `b*a + c`, 231 is `b*c + a`). Display only; the IR keeps the user-op. A user-op without a mapping, or whose operand count differs from the intrinsic's, keeps its SLEIGH name.
+- **When to flip:** On by default: vector code reads as intrinsics. Turn it off to see the SLEIGH user-op names, for example to search for an instruction mnemonic.
+- **Where / provenance:** P9/naming-policy · kuna · presentation-default · kuna-avxintrinsics
+- **Example:** `option avxintrinsics off`
+
+### `lanefuse` -- on | all | off, default `on`
+
+- **Symptoms:** eight float additions on slices of one register instead of a vector add; avx-512 mask applied as sixteen per-lane multiply-or statements; a vector function body is one statement per lane.
+- **What it does:** x86-64 only (inert elsewhere): re-fuse the per-lane p-code of a vector instruction into one intrinsic op, and fold an AVX-512 write mask into the instruction's user-op. The x86 SLEIGH spec writes many SSE/AVX instructions lane by lane (`VADDPS ymm0,ymm0,ymm1` is eight FLOAT_ADDs on 4-byte slices), so heritage never sees the whole vector and the body prints as one float statement per lane. A run of two or more ops of one opcode (FLOAT_ADD/SUB/MULT/DIV, INT_ADD/SUB/MULT) whose output and inputs are consecutive equal-width slices of the same storage, covering 16, 32 or 64 bytes, becomes one built-in user-op named for the intrinsic (`_mm256_add_ps`, `_mm_add_epi32`). An EVEX `{k}` mask, which the spec applies per lane after the user-op as `r[j] = zext(k_j)*r[j] | zext(!k_j)*src[j]`, becomes the user-op's masked form with the source and the mask as arguments (`_mm512_mask_add_ps(src, k, a, b)`, `_mm512_maskz_add_ps(k, a, b)` when EVEX.z is set). At `on` (default) legacy-SSE integer and two-lane double runs keep their lanes, because compilers emit them for auto-vectorised and SLP-paired scalar code that `devectorize`, `wideslice`, `simdlane` and the float-precision rules turn back into scalars; `all` fuses them too, for hand-written SSE2 intrinsic code (`_mm_add_epi32`, `_mm_mul_pd`). Lane-wise AND/OR/XOR never fuse (scalar `xorps x,x` / `andps` sign-mask idioms).
+- **When to flip:** On by default: vector code reads as one intrinsic per instruction. Use `all` for hand-written SSE2 integer/double intrinsic code; turn it off to see the SLEIGH lane statements.
+- **Where / provenance:** P2/flow-classification · kuna · new-analysis · kuna-lanefuse
+- **Example:** `option lanefuse off`
+
 ## Analysis & loader passes
 
 Program-prep enablement: what is discovered, decoded, and named before any function is decompiled.
@@ -2618,6 +2643,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default at 65,536 guards, the size at which the guards cost a huge function gigabytes and minutes. Set `on` to place the sparse guards in every pass with a call, a larger N or `off` to keep upstream's guard on every persistent global at every call, for example to compare heritage's IR with upstream.
 - **Where / provenance:** P3/call-guard · kuna · performance · gh-1034
 - **Example:** `option persistcalls off`
+
+### `vexzeroupper` -- on | off, default `on`
+
+- **Symptoms:** avx code reads SUB6432(zmm0,0) instead of ymm0; a ymm or xmm value shows as a 64-byte zmm local; vector values are widened to char[64].
+- **What it does:** x86-64 only (inert elsewhere): split each VEX/EVEX zero-upper register write at the result's width. The x86 SLEIGH spec writes `ZmmReg1 = zext(result)` for every VEX-encoded instruction that writes an XMM or YMM register, so each write overlaps every read of the same XMM/YMM register and heritage widens the storage to all 64 bytes of ZMM: a function that reads ymm0 and returns in ymm0 had a 64-byte zmm0 input and read it back as `SUB6432(zmm0,0)`. At flow time each such `INT_ZEXT` into a 32- or 64-byte register becomes a write of the result's own width (the producing user-op writes the low register directly when its temporary has no other reader) plus zero fills of the bytes above it, cut at the YMM/ZMM boundary.
+- **When to flip:** On by default: AVX code keeps xmm/ymm values at their width. Turn it off to see the SLEIGH spec's whole-ZMM writes.
+- **Where / provenance:** P2/flow-classification · kuna · correctness-fix · kuna-vexzeroupper
+- **Example:** `option vexzeroupper off`
 
 ## Programmatic use
 

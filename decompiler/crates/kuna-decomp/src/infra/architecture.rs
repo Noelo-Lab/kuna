@@ -424,6 +424,9 @@ pub struct Architecture {
     /// (kuna `wrapadd`) Print a four-byte addition that a wider sign extension
     /// observes through unsigned C, so it wraps as the machine word does.
     pub wrap_add: bool,
+    /// (kuna `avxintrinsics`) Print the x86 SLEIGH AVX user-ops as Intel
+    /// intrinsics (`p9_emit/kuna_avxintrinsics.rs`). Default on.
+    pub avx_intrinsics: bool,
     pub rust_array_zero: bool,
     /// (kuna `charbyte`) Keep `char` for a byte loaded through a `char *` when
     /// the only unsigned vote on it is a zero-extension.  Implementation:
@@ -561,6 +564,12 @@ pub struct Architecture {
     /// (`p2_lift/kuna_chkstkdarwin.rs`), so the argument registers it preserves
     /// keep their values across it. Default on.
     pub chkstk_darwin: bool,
+    /// (kuna `vexzeroupper`) Split each VEX/EVEX zero-upper ZMM write at the
+    /// result's width (`p2_lift/kuna_vexzeroupper.rs`). x86-64 only. Default on.
+    pub vex_zero_upper: bool,
+    /// (kuna `lanefuse`) Re-fuse the per-lane p-code of a vector instruction
+    /// into one intrinsic op (`p2_lift/kuna_lanefuse.rs`). x86-64 only. Default on.
+    pub lane_fuse: crate::kuna_lanefuse::LaneFuseMode,
     /// (kuna tee-O2 tail-jumps) Recover a direct `jmp` to another function's
     /// entry (e.g. `jmp setlocale@plt`) as a tail call (CALL + RETURN) instead of
     /// flowing into the callee (`option tailcalljump on|direct`).
@@ -2325,6 +2334,7 @@ impl Architecture {
             bool_byte: true, // (kuna) option boolbyte; reset_defaults sets the shipped default
             arm_constant_shift: crate::p9_emit::kuna_armconstantshift::ConstShiftMode::Off,
             wrap_add: false,
+            avx_intrinsics: false, // (kuna) option avxintrinsics; reset_defaults sets the shipped default
             rust_array_zero: false,
             char_byte: true, // (kuna) option charbyte; reset_defaults sets the shipped default
             cast_arith: false, // (kuna) option castarith; reset_defaults sets the shipped default
@@ -2359,6 +2369,8 @@ impl Architecture {
             field_type: false, // (kuna) option fieldtype; reset_defaults sets the shipped default
             image_windows_user: false, // (kuna) a load-time fact; set by the console's `load file`
             chkstk_darwin: false, // (kuna) option chkstkdarwin; reset_defaults sets the shipped default
+            vex_zero_upper: false, // (kuna) option vexzeroupper; reset_defaults sets the shipped default
+            lane_fuse: crate::kuna_lanefuse::LaneFuseMode::Off, // (kuna) option lanefuse; reset_defaults sets the shipped default
             tail_call_jumps: false,
             tail_call_tables: false, // (kuna) option tailcalljump; reset_defaults sets the shipped default
             tail_call_frame: false, // (kuna) option tailcallframe; reset_defaults sets the shipped default
@@ -2692,6 +2704,8 @@ impl Architecture {
         self.struct_merge = crate::kuna_structmerge::StructMergeMode::Off; // (kuna) structmerge default `off`: a freshly measured layout that agrees with a held record is answered with the union of the two, so a field one reader proved is kept for the others. Off because at the agreement floor two records that merely begin alike are indistinguishable; `option structmerge siblings` turns it on
         self.field_type = false; // (kuna) option fieldtype default-off: the flip moves which record the layout ledger shares between readers (fields-only layout precision .8713 -> .8693); docs/features/fieldtype/default-on-evaluation.md
         self.struct_headless = crate::kuna_structheadless::StructHeadlessMode::Off; // (kuna) structheadless default `off`: a closed function's parameter read at two or more constant offsets, none of them zero, is declared `struct_N *` with filler over the bytes before its first access; `option structheadless closed` turns it on
+        self.lane_fuse = crate::kuna_lanefuse::LaneFuseMode::On; // (kuna) option lanefuse default `on`, x86-64 only: VEX/EVEX lane runs and four-lane legacy float runs become one intrinsic op; 0/675 datatests
+        self.vex_zero_upper = true; // (kuna) option vexzeroupper default-on, x86-64 only: the split writes cover the bytes the one ZMM write covered; 0/675 datatests
         self.chkstk_darwin = true; // (kuna) default-on, Darwin AArch64 only (`image_apple` and an AArch64 language): inert unless a call reaches `___chkstk_darwin`; 0/675 datatests
         self.tail_call_jumps = true; // (kuna) DIV-13 default-on (angr tail-call recovery; per-test opt-out on Long double #1/#2)
         self.tail_call_tables = true; // (kuna) GH-781 default `tailcalljump on`: a veneer whose one destination is another function's entry is a tail call when the destination is outside a declared extent, or the callee's prototype is stated and its return value (if any) reaches a stated output. 0/675 byte-identical on the datatest corpus; `option tailcalljump direct` restores the flow into the destination
@@ -2799,6 +2813,7 @@ impl Architecture {
         self.ptrdepthcap = false; // (kuna) DIV-108: default-OFF in the catalog because it changes INFERRED types and the datatest corpus pins the upstream spellings; ON in the `aggressive` preset, which `auto` selects under 500 KiB, so the cap is the default rendering for every real binary
         self.bool_byte = true; // (kuna) option boolbyte default-on: measured 0/675 datatest assertions moved, stages PARITY OK, decbench type_match improved with none worse, speed within budget; docs/features/boolbyte/record.json carries the evidence
         self.arm_constant_shift = crate::p9_emit::kuna_armconstantshift::ConstShiftMode::Off;
+        self.avx_intrinsics = true; // (kuna) option avxintrinsics default-on: display only, and only the x86 SLEIGH spec declares the user-ops it renames; 0/675 datatests
         self.wrap_add = false; // (kuna) option wrapadd: default off, the casts cost readability on every widened int sum
         self.rust_array_zero = false;
         self.arm_float_args = true; // (kuna) option armfloatargs: default-ON with armfloatreturn; inert unless the ELF states the VFP procedure-call standard
@@ -3438,6 +3453,8 @@ impl Architecture {
         ctx.go_morestack = self.go_morestack;
         ctx.rust_probestack = self.rust_probestack;
         ctx.chkstk_darwin = self.chkstk_darwin && self.image_apple && crate::kuna_chkstkdarwin::applies_to(&self.archid);
+        ctx.vex_zero_upper = self.vex_zero_upper && self.archid.starts_with("x86:LE:64");
+        ctx.lane_fuse = if self.archid.starts_with("x86:LE:64") { self.lane_fuse } else { crate::kuna_lanefuse::LaneFuseMode::Off };
         ctx.go_bool = self.go_bool;
         ctx.go_write_barrier = self.go_write_barrier;
         ctx.go_new_type = self.go_new_type;
@@ -4695,6 +4712,18 @@ impl Architecture {
             // (kuna kernelbug) the Linux `__bug_table` trap statements.
             userops.register_builtin(BUILTIN_KERNEL_BUG, &adapter)?;
             userops.register_builtin(BUILTIN_KERNEL_WARN, &adapter)?;
+            // (kuna lanefuse) the fused-lane intrinsics and the masked forms of
+            // the SLEIGH vector user-ops.
+            if self.archid.starts_with("x86:LE:64") {
+                for (id, name) in crate::kuna_lanefuse::builtins() {
+                    userops.register_named_builtin(id, &name);
+                }
+                let named: Vec<(kuna_base::types::uint4, Vec<u8>)> =
+                    userops.named_ops().map(|(i, nm)| (i, nm.to_vec())).collect();
+                for (id, name) in crate::kuna_lanefuse::mask_builtins(named.iter().map(|(i, nm)| (*i, nm.as_slice()))) {
+                    userops.register_named_builtin(id, &name);
+                }
+            }
             Ok(())
         })();
         self.userops = userops;
