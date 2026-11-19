@@ -7518,16 +7518,52 @@ it. On PowerPC64 an array element is the value its dynamic relocation leaves, an
 file, which a linker may leave zero or stale; an element that any other relocation
 writes is left out.
 
-**Address tables** (`addrtable`,
+**Address tables** (`addrtable`, default-off, on in `--mode aggressive`;
 `decompiler/crates/kuna-analysis/src/analyzers/addrtable/mod.rs (AddrTablePass)`)
-scan `.rodata`/`.data` for runs of pointer-width values all landing in executable
-sections — vtables and absolute function-pointer arrays — emitting data symbols
-plus a read-only range (never entries, never switch ranges; in-function switch
-recovery is the inherited S2 engine machinery, a different thing entirely). Ghidra
-ships this analyzer disabled, and kuna goes one further: the pass is implemented
-and tested but **left out of the registered pass list** (`passes.rs` keeps its
-registration commented out), because a pointer-run scanner over-accepts and the
-relocation guard that defends it is weak on non-PIE executables.
+scan initialized data for runs of pointer-width values that all land in executable
+sections: vtables, absolute function-pointer arrays and hook tables. The import
+slot sections (`.got`, `.got.plt`, `.idata`, the Mach-O `__got` /
+`__auth_got` / `__la_symbol_ptr` / `__nl_symbol_ptr`) are skipped. Those slots
+are the loader's, and a lazily bound one points back into its own PLT stub. The
+pass never emits entries or switch ranges; in-function switch recovery is the
+inherited S2 engine machinery, a different thing entirely. Ghidra ships this
+analyzer disabled, and so does kuna, because a pointer-run scanner over-accepts
+and the relocation guard that defends it is weak on non-PIE executables. The
+gate is known only after `load file`, so the pass is not in the load-time list.
+`commit_pending_analysis` runs it at the deferred commit
+(`passes.rs (run_addrtable)`), and a default run scans nothing.
+
+What it commits depends on where the table lies:
+- **Writable data.** No compiler puts a switch table there, so the table is a
+  run-time hook or callback table. It is typed `code *[N]` under the image's name
+  for its head, or `AddrTable<addr>` (the label Ghidra's `AddressTable.makeTable`
+  writes). A call through a slot then reads `(*AddrTable002022b0[a0 % 3])(x)`
+  instead of a cast byte offset.
+- **Read-only data.** The table may be a switch's offset table that the code masks
+  and adds to. A name-locked object with no element type would print every access
+  as `*(unsigned int *)&AddrTable[i * 4]`, so this table gets only a read-only range
+  over its body: a load from a fixed slot folds to the function it holds, and a
+  variable access keeps its inferred `dat_<addr>[i]` spelling.
+
+Over 400 small x86-64, ARM, MIPS and PE fixtures decompiled under `auto`
+(aggressive below 500 KiB), two binaries change, one function each, both to a
+typed table index.
+
+The reference walk behind `kuna xrefs`
+(`decompiler/crates/kuna-analysis/src/listing/xrefs.rs (XrefIndex)`) reads the same
+tables. Under `addrtable on` each slot is filed as a `data` reference from the
+slot to the code it holds, which is the reference `makeTable` creates. So
+`kuna xrefs --to` a function reached only through a pointer table names the slot.
+A slot is data, so the reference is attributed to no function.
+
+The scanner's one live consumer is the reference walk behind `kuna xrefs`
+(`decompiler/crates/kuna-analysis/src/listing/xrefs.rs (XrefIndex)`). Under
+`--option addrtable on` (and so `--mode aggressive`) each table slot is filed as a
+`data` reference from the slot to the code it holds — the reference Ghidra's
+`AddressTable.makeTable` creates — so `kuna xrefs --to` a function reached only
+through a pointer table names the slot instead of answering zero references. A
+slot is data, so the reference is attributed to no function. Emitted C is
+unaffected: no fact is committed.
 
 ## 1.6 The Listing tier
 

@@ -905,3 +905,6 @@ mod nullable_relocations;
 
 #[path = "call_site_prototype.rs"]
 mod call_site_prototype;
+
+#[path = "addrtable_xrefs.rs"]
+mod addrtable_xrefs;

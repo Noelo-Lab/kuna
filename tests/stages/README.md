@@ -160,6 +160,7 @@ writeup, not here.
 
 | `re-constselectjump.xml` | RE-friction need `conditional-indirect-branches-hide` | S2 switch model (destination selected between constant addresses by a conditional move) | `option constselectjump on\|off` |
 | `kuna-entryretdispatch.xml` | RE-friction need `entry-point-ret-dispatch` | S2 flow classification (proven entry `push continuation; push target; ret` links become calls) | always on (P2 `flow-classification`, `kuna_entryretdispatch.rs`) |
+| `kuna-addrtable.xml` | a hook table of function pointers in writable `.data` (no symbol) stayed `*(code **)((a0 % 3) * 8UL + 0x2022b0)`: the address-table pass was never registered, so `option addrtable on` did nothing (authored C, fixture `fixtures/addrtable/`) | P1 program-prep, code-data-partition (`analyzers/addrtable/mod.rs emit_facts`; `passes.rs run_addrtable` at the deferred commit) | `option addrtable on\|off` |
 | `kuna-extent-fallthrough.xml` | [Kuna #850](https://github.com/Noelo-Lab/kuna/issues/850) | S2 flow classification (caller-declared extent vs discovered interior entry) | `option funcboundflow on\|off` |
 | `kuna-extent-direct-branch.xml` | [Kuna #850](https://github.com/Noelo-Lab/kuna/issues/850) | S2 flow classification (in-extent direct and recovered indirect branches vs tail-call inference; out-of-extent veneer control) | `option tailcalljump on\|off` |
 | `kuna-conditional-tail.xml` | Authored bounded conditional forwarding | P2 flow classification (a known out-of-extent entry is called only on the taken path) | `option tailcalljump on\|direct\|off` |

@@ -345,20 +345,12 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // (kuna) The MSVC x87 one-operand intrinsics take ST0 and return in ST0.
         Box::new(crate::protos::kuna_x87intrinsics::X87IntrinsicPass),
 
-        // S1 address tables (AddrTablePass) is implemented + tested but **disabled
-        // by default**, matching Ghidra's `AddressTableAnalyzer.setDefaultEnablement(false)`.
-        // It scans .rodata/.data for a run of consecutive pointer-width values that
-        // all land inside an executable section (an absolute address/jump table) and
-        // emits Data symbols + a readonly range. It is OFF because (a) Ghidra ships
-        // it off (parity); (b) a pointer-run scanner over-accepts — any coincidental
-        // run of in-range aligned values reads as a "table" (real false-positive
-        // risk), and the relocation guard that defends it is weak on non-PIE EXEC
-        // (absolute .text pointers carry no relocation). NOTE this is NOT switch
-        // recovery (that is the INHERITED S2 engine machinery, p2_lift/jumptable.rs)
-        // and NOT the roadmap-#9 post-typing refinement (that is an engine S2 feedback
-        // change behind the Override::queryMultistageJumptable hook) — it is only the
-        // application-layer absolute-pointer-table discovery. See docs/history/analysis-port-log.md.
-        // Box::new(crate::addrtable::AddrTablePass { min_run: 2 }),
+        // S1 address tables (AddrTablePass) run DEFERRED, from [`run_addrtable`]
+        // at the commit point, and only under `--option addrtable on` (off,
+        // matching Ghidra's `AddressTableAnalyzer.setDefaultEnablement(false)`:
+        // the pointer-run scanner over-accepts). Registered here it would scan
+        // every image's data on every load for facts the default gate then
+        // drops. Not switch recovery (`p2_lift/jumptable.rs`).
 
         // S1 scalar/operand reference markup (OperandRefsPass) is implemented +
         // tested but **gated off by default** AND runs DEFERRED (not in this
@@ -1488,6 +1480,29 @@ pub fn run_operand_refs(
         crate::loader::kuna_relocrebase::retain_in_image(&mut out, view);
     }
     out.sanitize_names(symbolnamechars_mode());
+    out
+}
+
+/// (kuna `addrtable`) The address-table pass over the same rebased view the
+/// load-time list takes, run at the commit point once its gate is known.
+pub fn run_addrtable(bytes: &[u8], arch: &Architecture) -> AnalysisOutput {
+    let Ok(raw) = crate::loadimage_object::parse_object(bytes) else {
+        return AnalysisOutput::default();
+    };
+    let view = crate::loader::kuna_relocrebase::rebased_view(&raw, bytes);
+    let (file, bytes) = crate::loader::kuna_relocrebase::select(raw, bytes, &view);
+    let ctx = AnalysisCtx {
+        file: &file,
+        bytes,
+        image: None,
+        arch,
+        listing: None,
+        image_path: None,
+    };
+    let mut out = crate::addrtable::AddrTablePass::default().run(&ctx);
+    if let Some(view) = &view {
+        crate::loader::kuna_relocrebase::retain_in_image(&mut out, view);
+    }
     out
 }
 

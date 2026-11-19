@@ -2034,8 +2034,8 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 ### `addrtable` -- on | off, default `off`
 
 - **Symptoms:** absolute function-pointer table in rodata never recognized; indirect calls through an unrecovered address table in a stripped target.
-- **What it does:** Run the address-table analysis pass: scan .rodata/.data for a run of pointer-width values landing inside an executable section (an absolute address/jump table) and emit Data symbols + a readonly range. DISABLED by default (matches Ghidra AddressTableAnalyzer.setDefaultEnablement(false); the pointer-run scanner over-accepts).
-- **When to flip:** Off (default, parity + over-acceptance risk); flip on to recover absolute pointer tables in a stripped target.
+- **What it does:** Run the address-table analysis pass at the deferred commit: scan initialized data (not the import-slot sections) for runs of pointer-width values landing inside an executable section. A table in writable data (a hook or callback table) is typed code *[N] under its image name or AddrTable<addr>; a table in read-only data (possibly a switch offset table) gets a read-only range only, so a fixed-slot load folds. kuna xrefs also files every slot as a data reference to the code it holds. DISABLED by default (matches Ghidra AddressTableAnalyzer.setDefaultEnablement(false); the pointer-run scanner over-accepts); on in --mode aggressive.
+- **When to flip:** Off by default (parity + over-acceptance risk), on in --mode aggressive. Flip on when a call through a global function-pointer table prints as a cast byte offset (*(code **)((i % 3) * 8 + 0x2022b0)) or kuna xrefs --to a function reached only through a table answers zero references. Over 400 small fixtures under aggressive, 2 functions change, both to a typed table index.
 - **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-addrtable
 - **Example:** `option addrtable on`
 

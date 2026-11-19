@@ -1,0 +1,45 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    A run-time hook table in writable .data, three function pointers the code
+    calls through and stores into (fixtures/addrtable/addrtable.c, built with
+    clang -O1 -fno-inline -ffreestanding -fno-pic -nostdlib -static
+    -fuse-ld=lld -Wl,discard-all, so the table has no symbol). The address-table
+    pass found it but was never registered, so `option addrtable on` changed
+    nothing and every access stayed a cast byte offset.
+
+    Stage model: P1 program-prep, code-data-partition
+    (analyzers/addrtable/mod.rs emit_facts; passes.rs run_addrtable at the
+    deferred commit). A writable table is typed `code *[N]` and named
+    AddrTable<addr>; a read-only one only gets a read-only range.
+
+    Option: addrtable (default off; on in the aggressive mode). Pass 1 is off,
+    pass 2 on.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file tests/stages/fixtures/addrtable/addrtable</com>
+  <com>read symbols</com>
+  <com>load function hook</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/stages/fixtures/addrtable/addrtable</com>
+  <com>option addrtable on</com>
+  <com>read symbols</com>
+  <com>load function hook</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function set_hook</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="ADDRTABLE #1: off, the slot load is a cast byte offset" min="1" max="1">v1 = \*\(code \*\*\)\(\(a0 % 3\) \* 8UL \+ 0x2022b0\);</stringmatch>
+<stringmatch name="ADDRTABLE #2: on, the call indexes the typed table" min="1" max="1">v1 = AddrTable002022b0\[a0 % 3\];</stringmatch>
+<stringmatch name="ADDRTABLE #3: on, the store indexes it too" min="1" max="1">AddrTable002022b0\[a0 % 3\] = a1;</stringmatch>
+</decompilertest>

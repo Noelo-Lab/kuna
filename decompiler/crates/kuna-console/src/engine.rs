@@ -3217,6 +3217,9 @@ impl ConsoleProgram {
                         zero_size_data_names =
                             kuna_analysis::flirt::kuna_elf_data_names::zero_size_data_names(&bytes);
                     }
+                    if self.arch().analysis_addrtable {
+                        merged.merge(kuna_analysis::passes::run_addrtable(&bytes, self.arch()));
+                    }
             }
         } else {
             // Both deferred passes off: drop the stash (no deferred build).
