@@ -1,0 +1,27 @@
+{
+  "state": "proposal",
+  "opportunity": "Project reopen with a learned Go scalar return width",
+  "selector": "main.consume",
+  "func_addr": "0x47db20",
+  "source_decompiler": "angr",
+  "reference_angr_commit": "6afa0c79a83d9f677a46b0275cdb63bf16c1979e",
+  "baseline_commit": "ed7a24ed001a915284dd6df3e8fec504c126a0f0",
+  "baseline_tree": "6f91bcd1799ea4855931c4ae88df4f30b9e0ae9a",
+  "stock_cli_sha256": "48b3debdd7626d10126c2d62afecb9c5a6e5032db2a7b573b879ffdd2c9ea59d",
+  "scope": "Serial C project export and console restore of one supported learned-result fact kind for AMD64 Go",
+  "stock_evidence": {
+    "authored_compiler": "go1.27.2 linux/amd64",
+    "authored_data_sha256": "6cfd1ce36a266c93bc034042871d0dfedb9df2a1d15609460294727896ac6e1e",
+    "repro_sha256": "3021fd0b8e2bec35b5cdb9dd6b200d41a893d2e227a0f80abf022511351dca65",
+    "same_c_artifact_sha256": {
+      "c": "db44db10ff434b977f4168976b4590856e67453092f92edb61e93293a4582343",
+      "h": "09ecb3ebd2059297489ab707963c1c68d1a6d69db7f9c22b66eb7162d3cde3a6"
+    },
+    "trace": "[protoorder] state main.produce @0x47db00 params=1 trimmed=0",
+    "ordered_go_batch": "return byte(produce(seed)) != 0x0",
+    "fresh_go_consumer": "return produce(seed) != 0x0",
+    "console_snapshot_commands_rejected": 2,
+    "input_executed": false
+  },
+  "candidate_validation": null
+}
