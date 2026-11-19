@@ -314,6 +314,33 @@ fn auxiliary_collection_without_its_boot_collection_stays_unresolved() {
     std::fs::remove_dir_all(dir).unwrap();
 }
 
+/// Only a regular file other than the input is read as a linked collection:
+/// an input whose plist names its own UUID is not its own boot collection, and
+/// a device named by path is not read.
+#[test]
+fn a_linked_collection_is_a_regular_file_other_than_the_input() {
+    use kuna_decomp::kuna_kernelcacheboot::KernelcacheBoot;
+    let dir = linked_dir("self", &[]);
+    let input = dir.join("AuxiliaryKernelExtensions.kc");
+    let mut aux = fixture("linked/AuxiliaryKernelExtensions.kc");
+    let at = aux.windows(22).position(|w| w == b"a3VuYWJvb3RLQwAAAAAAAQ").unwrap();
+    aux[at..at + 22].copy_from_slice(b"a3VuYWF1eEtDAAAAAAAAAw");
+    std::fs::write(&input, &aux).unwrap();
+    let note = |choice| {
+        let kext = peel_linked(aux.clone(), &KernelcacheChoice::Auto, &LinkSearch::new(&input, choice)).unwrap();
+        kext.note.unwrap()
+    };
+    let mut choices = vec![KernelcacheBoot::Auto, KernelcacheBoot::Path(input.clone())];
+    if cfg!(unix) {
+        choices.push(KernelcacheBoot::Path("/dev/zero".into()));
+    }
+    for choice in choices {
+        let note = note(choice.clone());
+        assert!(note.contains("2 pointers into the boot collection left unresolved (no collection with UUID"), "{choice:?}: {note}");
+    }
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
 #[test]
 fn compressed_containers_peel_to_the_same_kernel() {
     let expected = peel(fixture("fileset.macho"), &KernelcacheChoice::Auto).unwrap().bytes;

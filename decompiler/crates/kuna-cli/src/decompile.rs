@@ -716,7 +716,8 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
             &engine.path,
             pinned_by,
         );
-        for note in stderr_text.lines().filter(|line| line.starts_with("[kuna target] ")) {
+        let forwarded = |line: &&str| line.starts_with("[kuna target] ") || line.starts_with("[kuna] MH_FILESET: ");
+        for note in stderr_text.lines().filter(forwarded) {
             kuna_base::notes::say_once(&binary, note);
         }
         let combined = format!("{stdout_text}\n{stderr_text}");

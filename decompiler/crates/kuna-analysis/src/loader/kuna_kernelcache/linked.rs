@@ -44,21 +44,28 @@ impl LinkSearch {
     }
 
     /// The files to try, in name order, and the place searched as a note names it.
+    /// The input itself is never one of them.
     fn candidates(&self) -> (Vec<PathBuf>, String) {
+        let real = |path: &Path| std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+        let input = self.input.as_deref().map(real);
+        let not_input = |path: &Path| input.as_ref().is_none_or(|input| real(path) != *input);
         match &self.choice {
             KernelcacheBoot::Off => (Vec::new(), String::new()),
-            KernelcacheBoot::Path(path) if !path.is_dir() => (vec![path.clone()], format!("in {}", path.display())),
-            KernelcacheBoot::Path(dir) => (collections_in(dir), format!("in {}", dir.display())),
+            KernelcacheBoot::Path(path) if !path.is_dir() => {
+                (Some(path.clone()).filter(|p| not_input(p)).into_iter().collect(), format!("in {}", path.display()))
+            }
+            KernelcacheBoot::Path(dir) => (collections_in(dir, not_input), format!("in {}", dir.display())),
             KernelcacheBoot::Auto => {
                 let dir = self.input.as_deref().and_then(Path::parent).filter(|d| !d.as_os_str().is_empty());
-                (collections_in(dir.unwrap_or(Path::new("."))), "beside the input".to_string())
+                (collections_in(dir.unwrap_or(Path::new(".")), not_input), "beside the input".to_string())
             }
         }
     }
 }
 
-/// The `MH_FILESET` files directly inside `dir`, told by their first 16 bytes.
-fn collections_in(dir: &Path) -> Vec<PathBuf> {
+/// The `MH_FILESET` regular files directly inside `dir` that `keep` accepts,
+/// told by their first 16 bytes.
+fn collections_in(dir: &Path, keep: impl Fn(&Path) -> bool) -> Vec<PathBuf> {
     let Ok(listing) = std::fs::read_dir(dir) else { return Vec::new() };
     let mut paths: Vec<PathBuf> = listing.take(MAX_LISTED).filter_map(|e| Some(e.ok()?.path())).collect();
     paths.sort();
@@ -67,19 +74,21 @@ fn collections_in(dir: &Path) -> Vec<PathBuf> {
         path.is_file()
             && std::fs::File::open(path).and_then(|mut f| f.read_exact(&mut head)).is_ok()
             && fileset::is_fileset(&head)
+            && keep(path)
     });
     paths.truncate(MAX_CANDIDATES);
     paths
 }
 
 /// A candidate's bytes, a firmware container unwrapped; `None` unless it is a
-/// 64-bit Mach-O within the decode limit.
+/// regular file and a 64-bit Mach-O within the decode limit.
 fn read_collection(path: &Path) -> Option<Vec<u8>> {
-    let size = std::fs::metadata(path).ok()?.len();
-    if size > super::DECODED_LIMIT as u64 {
+    let meta = std::fs::metadata(path).ok()?;
+    if !meta.is_file() || meta.len() > super::DECODED_LIMIT as u64 {
         return None;
     }
-    let bytes = std::fs::read(path).ok()?;
+    let mut bytes = Vec::new();
+    std::fs::File::open(path).ok()?.take(meta.len()).read_to_end(&mut bytes).ok()?;
     let bytes = if super::is_container(&bytes) { super::unwrap_payload(&bytes).ok()?.0 } else { bytes };
     fileset::load_commands(&bytes, 0).map(|_| bytes)
 }
