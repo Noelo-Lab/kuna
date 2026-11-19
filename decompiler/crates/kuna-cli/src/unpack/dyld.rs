@@ -39,9 +39,15 @@ pub(super) fn run(binary: &str, output: Option<&str>, list: bool, json: bool) ->
             return 1;
         }
     };
-    let name = std::env::var(kuna_decomp::kuna_dyldcache::DYLDIMAGE_ENV).unwrap_or_default();
-    let base = name.trim().rsplit('/').next().unwrap_or("image").to_string();
-    let out_path = output.map(str::to_string).unwrap_or_else(|| format!("{binary}.{base}.unpacked"));
+    let mut name = std::env::var(kuna_decomp::kuna_dyldcache::DYLDIMAGE_ENV).unwrap_or_default().trim().to_string();
+    if name.is_empty() {
+        if let Ok(cache) = DyldCache::open(path) {
+            if let [only] = cache.images() {
+                name = only.path.clone();
+            }
+        }
+    }
+    let out_path = output.map(str::to_string).unwrap_or_else(|| format!("{binary}.{}.unpacked", output_stem(&name)));
     if let Err(e) = std::fs::write(&out_path, &image) {
         eprintln!("error: could not write {out_path}: {e}");
         return 1;
@@ -51,14 +57,19 @@ pub(super) fn run(binary: &str, output: Option<&str>, list: bool, json: bool) ->
             ("binary".into(), Json::Str(binary.into())),
             ("output".into(), Json::Str(out_path.clone())),
             ("packer".into(), Json::Str("dyld_shared_cache".into())),
-            ("image".into(), Json::Str(name.trim().into())),
+            ("image".into(), Json::Str(name.clone())),
             ("unpacked_size".into(), num(image.len() as u64)),
         ]);
         format!("{}\n", dumps_indent2(&v))
     } else {
-        format!("unpacked {binary} image {} -> {out_path} ({} bytes)\n", name.trim(), image.len())
+        format!("unpacked {binary} image {name} -> {out_path} ({} bytes)\n", image.len())
     };
     crate::output::emit_with_status(&text, 0)
+}
+
+/// The image's file name for the default output path, `image` when it has none.
+fn output_stem(name: &str) -> &str {
+    name.rsplit('/').next().filter(|s| !s.is_empty()).unwrap_or("image")
 }
 
 fn render_list(binary: &str, cache: &DyldCache, json: bool) -> String {
@@ -96,4 +107,17 @@ fn render_list(binary: &str, cache: &DyldCache, json: bool) -> String {
         let _ = writeln!(s, "{i:5}  {:#x}  {}", image.address, image.path);
     }
     s
+}
+
+#[cfg(test)]
+mod tests {
+    use super::output_stem;
+
+    #[test]
+    fn an_unnamed_image_still_gets_a_stem() {
+        assert_eq!(output_stem("/usr/lib/libobjc.A.dylib"), "libobjc.A.dylib");
+        assert_eq!(output_stem("libfoo"), "libfoo");
+        assert_eq!(output_stem(""), "image");
+        assert_eq!(output_stem("/usr/lib/"), "image");
+    }
 }
