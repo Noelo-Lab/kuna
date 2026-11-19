@@ -198,8 +198,6 @@ pub(crate) enum IndirectSlotType {
 #[derive(Debug, Clone)]
 struct GlobalSpaceIndex {
     space_index: int4,
-    entry_start: usize,
-    entry_end: usize,
     interval_order: Vec<usize>,
     max_last: Vec<u64>,
     leaf_base: usize,
@@ -227,8 +225,6 @@ impl GlobalSpaceIndex {
 
         Self {
             space_index,
-            entry_start,
-            entry_end,
             interval_order,
             max_last,
             leaf_base,
@@ -367,12 +363,24 @@ impl GlobalQuery {
             .filter(|index| index.space_index == space_index)
     }
 
-    /// Return only entries belonging to one address space.
+    #[cfg(test)]
     fn entries_for_space(&self, space_index: int4) -> &[GlobalEntry] {
-        let Some(index) = self.index_for_space(space_index) else {
-            return &[];
-        };
-        &self.entries[index.entry_start..index.entry_end]
+        let start = self.entries.partition_point(|entry| entry.space_index < space_index);
+        let end = self.entries.partition_point(|entry| entry.space_index <= space_index);
+        &self.entries[start..end]
+    }
+
+    /// The entries of one address space whose storage starts at `start`, in
+    /// snapshot order, by binary search over the space's interval order rather
+    /// than a scan of the whole space.
+    fn entries_starting_at(
+        &self,
+        space_index: int4,
+        start: u64,
+    ) -> impl Iterator<Item = &GlobalEntry> {
+        self.index_for_space(space_index)
+            .into_iter()
+            .flat_map(move |index| index.starting_at(&self.entries, start))
     }
 
     /// C++ `Database::getProperty(addr)` (`database.hh:949`): the boolean
@@ -502,8 +510,7 @@ impl GlobalQuery {
             }
         }
 
-        let index = self.index_for_space(space_index);
-        let starting_at = || index.into_iter().flat_map(|index| index.starting_at(&self.entries, start));
+        let starting_at = || self.entries_starting_at(space_index, start);
         let active = |entry: &GlobalEntry| {
             entry.addrtied
                 || (!usepoint.is_invalid() && entry.uselimit.in_range(usepoint, 1))
@@ -2248,10 +2255,7 @@ impl ArchContext {
         let gq = self.effective_global_query(entry)?;
         let space_index = entry.get_space()?.get_index();
         let start = entry.get_offset();
-        for e in gq.entries_for_space(space_index) {
-            if e.first != start {
-                continue;
-            }
+        for e in gq.entries_starting_at(space_index, start) {
             if let Some(ct) = &e.symbol_type {
                 if let Some(proto) = ct.get_code_prototype() {
                     return Some(std::rc::Rc::clone(proto));
@@ -2331,10 +2335,7 @@ impl ArchContext {
         let space = entry.get_space()?;
         let space_index = space.get_index();
         let start = entry.get_offset();
-        for e in gq.entries_for_space(space_index) {
-            if e.first != start {
-                continue;
-            }
+        for e in gq.entries_starting_at(space_index, start) {
             // C++ `Scope::queryFunction(addr)` returns the `FunctionSymbol`'s
             // `Funcdata`, whose `getFuncProto()` is its recovered prototype — or,
             // for a bare loader symbol, the default (void, unlocked) proto.  A

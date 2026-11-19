@@ -690,6 +690,9 @@ pub struct ConsoleProgram {
     /// [`Self::function_entries_canonical`] for (symbols revision, declared
     /// revision): name lookups resolve against it without regrouping the image.
     canonical_entries: std::cell::RefCell<Option<(u64, u64, Rc<Vec<FunctionEntry>>)>>,
+    /// The name index over [`Self::canonical_entries`] and `loader_aliases`,
+    /// built on the first name lookup against those entries.
+    entry_names: std::cell::RefCell<Option<(Rc<Vec<FunctionEntry>>, Rc<EntryNames>)>>,
     /// (kuna `--assert`) The caller-supplied assertions this program was loaded
     /// with, in the order they were given -- the one override plane an agent
     /// states facts through (`crate::assertions`).  Empty for every invocation
@@ -1301,7 +1304,7 @@ impl ConsoleProgram {
                 return Some(self.entry_at_or_named(addr.get_offset()));
             }
         }
-        let matches = self.entries_named(&self.function_entries_canonical(), want);
+        let matches = self.entries_named(want);
         // On a miss, the (kuna, RE-need `string-owner-function-name`) placeholder
         // fallback [`Self::resolve_entry`] takes, so the two name lookups answer
         // one name the same way.
@@ -1327,16 +1330,29 @@ impl ConsoleProgram {
     /// The canonical entries spelled `want`, plus the entry at each loader alias
     /// spelled `want` whose address no canonical entry holds yet, so a lookup
     /// sees the same candidates whether or not discovery has named that address.
-    fn entries_named(&self, entries: &[FunctionEntry], want: &str) -> Vec<FunctionEntry> {
-        let mut found = entries_spelled(entries, want);
-        for (&vma, names) in &self.loader_aliases {
-            if names.iter().any(|name| name == want)
-                && !found.iter().any(|entry| entry.addr.get_offset() == vma)
-            {
+    fn entries_named(&self, want: &str) -> Vec<FunctionEntry> {
+        let (entries, names) = self.entry_names();
+        let mut found: Vec<FunctionEntry> =
+            names.spelled(&entries, want).map(|at| entries[at].clone()).collect();
+        for vma in names.aliased(&self.loader_aliases, want) {
+            if !found.iter().any(|entry| entry.addr.get_offset() == vma) {
                 found.push(self.entry_at_or_named(vma));
             }
         }
         found
+    }
+
+    /// The canonical entries with their name index, rebuilt with them.
+    fn entry_names(&self) -> (Rc<Vec<FunctionEntry>>, Rc<EntryNames>) {
+        let entries = self.function_entries_shared();
+        if let Some((indexed, names)) = self.entry_names.borrow().as_ref() {
+            if Rc::ptr_eq(indexed, &entries) {
+                return (entries, Rc::clone(names));
+            }
+        }
+        let names = Rc::new(EntryNames::new(&entries, &self.loader_aliases));
+        *self.entry_names.borrow_mut() = Some((Rc::clone(&entries), Rc::clone(&names)));
+        (entries, names)
     }
 
     /// Drop the candidates `want` reaches only through a loader alias, when any
@@ -1441,9 +1457,7 @@ impl ConsoleProgram {
                         return Ok(self.entry_at_or_named(addr.get_offset()));
                     }
                 }
-                let entries = self.function_entries_shared();
-                let entries: &[FunctionEntry] = &entries;
-                let mut candidates = self.entries_named(entries, want);
+                let mut candidates = self.entries_named(want);
                 if candidates.is_empty() {
                     // (kuna, RE-need `string-owner-function-name`) Nothing carries
                     // that name, so read it as the placeholder it looks like: a
@@ -1459,10 +1473,11 @@ impl ConsoleProgram {
                     // image carrying both spellings answers the one it was asked.
                     if self.symbol_underscore_prefix && !want.starts_with('_') {
                         let decorated = format!("_{want}");
-                        candidates = self.entries_named(entries, &decorated);
+                        candidates = self.entries_named(&decorated);
                         self.keep_direct_candidates(&mut candidates, &decorated);
                     }
                     if candidates.is_empty() {
+                        let entries = self.function_entries_shared();
                         return Err(EntryLookupError::NotFound {
                             selector: selector.display(),
                             suggestion: nearest_spelling(&entries, want),
@@ -3542,13 +3557,76 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
     }
 }
 
-/// The canonical entries `want` names, by reported name or by alias.
-fn entries_spelled(entries: &[FunctionEntry], want: &str) -> Vec<FunctionEntry> {
-    entries
-        .iter()
-        .filter(|entry| entry.name == want || entry.aliases.iter().any(|alias| alias == want))
-        .cloned()
-        .collect()
+/// Every spelling of the canonical entries and of the loader aliases, keyed by
+/// a hash of the name so one lookup is a binary search rather than a scan of
+/// the whole inventory. A hash collision only adds a candidate the exact
+/// comparison then drops, so answers keep the scan's order and content.
+struct EntryNames {
+    /// (name hash, canonical entry index), sorted.
+    spelled: Vec<(u64, usize)>,
+    /// (name hash, loader-alias entry vma), sorted.
+    aliased: Vec<(u64, u64)>,
+}
+
+impl EntryNames {
+    fn new(entries: &[FunctionEntry], loader_aliases: &BTreeMap<u64, Vec<String>>) -> Self {
+        let mut spelled: Vec<(u64, usize)> = entries
+            .iter()
+            .enumerate()
+            .flat_map(|(at, entry)| {
+                std::iter::once(&entry.name)
+                    .chain(&entry.aliases)
+                    .map(move |name| (name_hash(name), at))
+            })
+            .collect();
+        spelled.sort_unstable();
+        spelled.dedup();
+        let mut aliased: Vec<(u64, u64)> = loader_aliases
+            .iter()
+            .flat_map(|(&vma, names)| names.iter().map(move |name| (name_hash(name), vma)))
+            .collect();
+        aliased.sort_unstable();
+        aliased.dedup();
+        Self { spelled, aliased }
+    }
+
+    /// The indexes of the canonical entries `want` names, by reported name or
+    /// by alias, in inventory order.
+    fn spelled<'a>(
+        &'a self,
+        entries: &'a [FunctionEntry],
+        want: &'a str,
+    ) -> impl Iterator<Item = usize> + 'a {
+        hashed(&self.spelled, want).filter(move |&at| {
+            let entry = &entries[at];
+            entry.name == want || entry.aliases.iter().any(|alias| alias == want)
+        })
+    }
+
+    /// The entry addresses holding a loader alias spelled `want`, ascending.
+    fn aliased<'a>(
+        &'a self,
+        loader_aliases: &'a BTreeMap<u64, Vec<String>>,
+        want: &'a str,
+    ) -> impl Iterator<Item = u64> + 'a {
+        hashed(&self.aliased, want).filter(move |vma| {
+            loader_aliases.get(vma).is_some_and(|names| names.iter().any(|name| name == want))
+        })
+    }
+}
+
+fn name_hash(name: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::hash::DefaultHasher::new();
+    name.hash(&mut hasher);
+    hasher.finish()
+}
+
+fn hashed<'a, T: Copy>(index: &'a [(u64, T)], want: &str) -> impl Iterator<Item = T> + 'a {
+    let hash = name_hash(want);
+    let lo = index.partition_point(|&(key, _)| key < hash);
+    let hi = lo + index[lo..].partition_point(|&(key, _)| key == hash);
+    index[lo..hi].iter().map(|&(_, value)| value)
 }
 
 /// (kuna, issue #666) The name the image carries that a caller most likely meant
@@ -4239,6 +4317,7 @@ fn empty_program(
         anonymous_entries: Vec::new(),
         anonymous_symbols: std::cell::OnceCell::new(),
         canonical_entries: std::cell::RefCell::new(None),
+        entry_names: std::cell::RefCell::new(None),
         assertions: Vec::new(),
         assertion_outcomes: Vec::new(),
         pending_prototypes: BTreeMap::new(),

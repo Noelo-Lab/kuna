@@ -602,3 +602,32 @@ fn in_section_of_reads_the_section_that_holds_the_first_address() {
     assert!(!ctx.in_section_of(&addr(&ram, 0x9000), &addr(&ram, 0x1010)));
     assert!(ctx.in_section_of(&addr(&ram, 0x4000), &addr(&ram, 0x9000)), "no section holds it");
 }
+
+#[test]
+fn exact_start_lookup_keeps_snapshot_order() {
+    let space9 = space(9);
+    let query = query(vec![
+        entry(&space9, 0x200, 4, 0x1, "late-a", true, RangeList::new()),
+        entry(&space9, 0x100, 8, 0x2, "early-a", true, RangeList::new()),
+        entry(&space9, 0x200, 8, 0x3, "late-b", true, RangeList::new()),
+        entry(&space9, 0x100, 4, 0x4, "early-b", true, RangeList::new()),
+        entry(&space9, 0x200, 2, 0x5, "late-c", true, RangeList::new()),
+    ]);
+    let names = |start| -> Vec<&str> {
+        query
+            .entries_starting_at(9, start)
+            .map(|entry| entry.symbol_name.as_str())
+            .collect()
+    };
+    assert_eq!(names(0x200), ["late-a", "late-b", "late-c"]);
+    assert_eq!(names(0x100), ["early-a", "early-b"]);
+    assert!(names(0x180).is_empty());
+    assert!(query.entries_starting_at(5, 0x100).next().is_none());
+    let linear: Vec<&str> = query
+        .entries_for_space(9)
+        .iter()
+        .filter(|entry| entry.first == 0x200)
+        .map(|entry| entry.symbol_name.as_str())
+        .collect();
+    assert_eq!(names(0x200), linear);
+}
