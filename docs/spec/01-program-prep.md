@@ -10642,6 +10642,19 @@ the image defines matches: a linked image's own helper is no-return only when
 its body shows it.
 Name-based: free, exact, and useless on stripped custom wrappers.
 
+`decompiler/crates/kuna-analysis/src/loader/kuna_rustnoreturn.rs` additionally
+recognizes the complete legacy-mangled `std::process::exit` path in a Rust ELF.
+The suffix must contain exactly sixteen lowercase hexadecimal hash digits and
+the final mangling terminator; malformed and extended spellings refuse. The
+vendored list is unchanged. This supplies the same address-keyed
+no-return fact as the existing panic entries. This preserves the exit-code argument
+and preceding effects while preventing flow into the compiler's dead trap padding;
+existing structuring can then duplicate the closed exit tail without introducing
+a Rust panic for a reachable branch. Other namespaces, longer names such as
+`std::process::exit_status`, and non-Rust compiler selections do not gain this fact.
+The rule does not infer no-return from a leaf named `exit`, recover stripped
+wrappers, or add a Rust-v0 signature.
+
 **Pclntab names** (the `gonoreturn` pass,
 `decompiler/crates/kuna-analysis/src/analyzers/pclntab/kuna_gonoreturn.rs
 (GoNoReturnPass)`, kuna, gated by `noreturn_known`, Go-detected binaries only;
