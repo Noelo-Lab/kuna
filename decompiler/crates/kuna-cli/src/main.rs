@@ -31,6 +31,7 @@ mod optname;
 mod output;
 mod paths;
 mod project_stream;
+mod rawfront;
 mod runtime_hints;
 mod rust_signatures;
 mod skill;
@@ -106,6 +107,7 @@ fn main() -> ExitCode {
     };
     loadtime::export_image_selection(&rest);
     followimages::apply(sub, &mut rest, follow_limit);
+    rawfront::prepare(sub, &mut rest);
     let rest = rest.as_slice();
     runtime_hints::note_for_invocation(sub, rest);
     let code = match sub {

@@ -57,6 +57,8 @@ pub mod elf_shdr;
 // (kuna) PE data-directory tolerance: a `NumberOfRvaAndSizes` larger than its own
 // optional header is clamped to the directories that are really present.
 pub mod pe_datadirs;
+// (kuna) Headerless firmware images: the probes that say where the bytes load.
+pub mod firmware;
 // (kuna) PE DOS-magic tolerance: a trashed `e_magic` in front of an `e_lfanew`
 // that still points at a `PE\0\0` signature is repaired in memory.
 pub mod pe_dosmagic;
