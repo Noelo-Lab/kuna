@@ -331,8 +331,20 @@ pub struct RawLoadImage {
     /// Address space that the file bytes are mapped to (C++ raw pointer,
     /// null until `attachToSpace`)
     spaceid: Option<Rc<AddrSpace>>,
-    /// Cursor for the synthetic whole-file section record.
-    cursection: Cell<bool>,
+    /// Cursor for the section records.
+    cursection: Cell<usize>,
+    /// (kuna) The mapped runs of a segmented image, ascending and disjoint;
+    /// empty when the whole file is one run.
+    segments: Vec<RawSegment>,
+}
+
+/// (kuna) One mapped run of a segmented [`RawLoadImage`]: `bytes` at `offset`
+/// from the image's first byte, with [`section_flags`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RawSegment {
+    pub offset: u64,
+    pub bytes: Vec<u8>,
+    pub flags: u32,
 }
 
 impl RawLoadImage {
@@ -345,7 +357,8 @@ impl RawLoadImage {
             bytes: None,
             filesize: 0,
             spaceid: None,
-            cursection: Cell::new(false),
+            cursection: Cell::new(0),
+            segments: Vec::new(),
         }
     }
 
@@ -356,6 +369,77 @@ impl RawLoadImage {
         image.filesize = bytes.len() as u64;
         image.bytes = Some(bytes);
         image
+    }
+
+    /// (kuna) An already-open image over separate runs of bytes, such as the
+    /// segments of a firmware image, each `(address, bytes, flags)`. The image
+    /// starts at the lowest address, which is returned for the caller to pass
+    /// as the base; the space between two runs is not mapped. `None` when
+    /// there is no byte, when two runs overlap or when one wraps the address
+    /// space.
+    pub fn from_segments(f: &str, mut runs: Vec<(u64, Vec<u8>, u32)>) -> Option<(RawLoadImage, u64)> {
+        runs.retain(|run| !run.1.is_empty());
+        runs.sort_by_key(|run| run.0);
+        let base = runs.first()?.0;
+        let mut end = base;
+        let mut segments = Vec::with_capacity(runs.len());
+        for (vma, bytes, flags) in runs {
+            if vma < end {
+                return None;
+            }
+            end = vma.checked_add(bytes.len() as u64)?;
+            segments.push(RawSegment { offset: vma - base, bytes, flags });
+        }
+        let mut image = RawLoadImage::new(f);
+        image.filesize = end - base;
+        image.bytes = Some(Vec::new());
+        image.segments = segments;
+        Some((image, base))
+    }
+
+    /// The segment mapping the image-relative `offset`, or the offset of the
+    /// next segment above it.
+    fn segment_at(&self, offset: u64) -> Result<(&RawSegment, usize), Option<u64>> {
+        let next = self.segments.partition_point(|s| s.offset <= offset);
+        let above = self.segments.get(next).map(|s| s.offset);
+        let Some(segment) = next.checked_sub(1).map(|i| &self.segments[i]) else {
+            return Err(above);
+        };
+        let within = offset - segment.offset;
+        if within < segment.bytes.len() as u64 {
+            Ok((segment, within as usize))
+        } else {
+            Err(above)
+        }
+    }
+
+    /// [`LoadImage::load_fill`] over the segments: bytes no segment maps read
+    /// as zero once the first byte is mapped.
+    fn load_fill_segments(&self, ptr: &mut [u8], addr: &Address) -> KunaResult<()> {
+        let mut offset = addr.get_offset().wsub(self.vma);
+        let mut done = 0usize;
+        while done < ptr.len() {
+            match self.segment_at(offset) {
+                Ok((segment, within)) => {
+                    let n = (segment.bytes.len() - within).min(ptr.len() - done);
+                    ptr[done..done + n].copy_from_slice(&segment.bytes[within..within + n]);
+                    done += n;
+                    offset = offset.wadd(n as u64);
+                }
+                Err(_) if done == 0 => {
+                    let mut errmsg = format!("Unable to load {} bytes at {}", ptr.len(), addr.get_shortcut());
+                    addr.print_raw(&mut errmsg)?;
+                    return Err(KunaError::data_unavail(errmsg));
+                }
+                Err(above) => {
+                    let gap = above.map_or(u64::MAX, |next| next - offset).min((ptr.len() - done) as u64) as usize;
+                    ptr[done..done + gap].fill(0);
+                    done += gap;
+                    offset = offset.wadd(gap as u64);
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Attach the raw image to a particular space
@@ -410,6 +494,9 @@ impl LoadImage for RawLoadImage {
     }
 
     fn load_fill(&mut self, ptr: &mut [u8], addr: &Address) -> KunaResult<()> {
+        if !self.segments.is_empty() {
+            return self.load_fill_segments(ptr, addr);
+        }
         // cast: the C++ `int4 size` parameter (slice length; see trait docs)
         let mut size: i32 = ptr.len() as i32;
         let mut curaddr: u64 = addr.get_offset();
@@ -478,21 +565,36 @@ impl LoadImage for RawLoadImage {
     }
 
     fn open_section_info(&self) {
-        self.cursection.set(false);
+        self.cursection.set(0);
     }
 
     fn get_next_section(&self, record: &mut LoadImageSection) -> bool {
-        if self.cursection.replace(true) || self.filesize == 0 {
+        let index = self.cursection.get();
+        self.cursection.set(index.saturating_add(1));
+        let (offset, size, flags, count) = match self.segments.get(index) {
+            Some(s) => (s.offset, s.bytes.len() as u64, s.flags, self.segments.len()),
+            None if index == 0 && self.segments.is_empty() => (0, self.filesize, section_flags::CODE, 1),
+            None => return false,
+        };
+        if size == 0 {
             return false;
         }
         let space = self
             .spaceid
             .as_ref()
             .expect("RawLoadImage::getNextSection before attachToSpace (C++ null space)");
-        record.address = Address::new(Rc::clone(space), self.vma);
-        record.size = self.filesize;
-        record.flags = section_flags::CODE;
-        false
+        record.address = Address::new(Rc::clone(space), self.vma.wadd(offset));
+        record.size = size;
+        record.flags = flags;
+        index + 1 < count
+    }
+
+    fn get_readonly(&self, list: &mut RangeList) {
+        let Some(space) = self.spaceid.as_ref() else { return };
+        for segment in self.segments.iter().filter(|s| s.flags & section_flags::READONLY != 0) {
+            let first = self.vma.wadd(segment.offset);
+            list.insert_range(Rc::clone(space), first, first.wadd(segment.bytes.len() as u64 - 1));
+        }
     }
 
     fn adjust_vma(&mut self, adjust: i64) {
@@ -596,6 +698,43 @@ mod tests {
         assert_eq!(buf, [12, 13, 14, 15, 0, 0, 0, 0]);
         let mut buf = [0xaau8; 2];
         assert!(img.load_fill(&mut buf, &Address::new(Rc::clone(&ram), 0xfffe)).is_err());
+    }
+
+    #[test]
+    fn raw_load_image_from_segments_maps_only_its_runs() {
+        let m = manager(1);
+        let ram = Rc::clone(m.get_space_by_name("ram").unwrap());
+        let ro = section_flags::DATA | section_flags::READONLY;
+        let runs = vec![(0x4000_0000, vec![5, 6, 7, 8], section_flags::CODE), (0x3000_0000, vec![1, 2], ro), (0x3800_0000, vec![], 0)];
+        let (mut img, base) = RawLoadImage::from_segments("image", runs).unwrap();
+        assert_eq!(base, 0x3000_0000);
+        img.attach_to_space(Rc::clone(&ram));
+        img.adjust_vma(base as i64);
+        let mut buf = [0xaau8; 4];
+        img.load_fill(&mut buf, &Address::new(Rc::clone(&ram), 0x3000_0001)).unwrap();
+        assert_eq!(buf, [2, 0, 0, 0], "past a run reads as zero");
+        img.load_fill(&mut buf, &Address::new(Rc::clone(&ram), 0x4000_0000)).unwrap();
+        assert_eq!(buf, [5, 6, 7, 8]);
+        for unmapped in [0x2fff_ffff, 0x3000_0002, 0x3800_0000, 0x4000_0004] {
+            assert!(img.load_fill(&mut buf, &Address::new(Rc::clone(&ram), unmapped)).is_err(), "{unmapped:#x}");
+        }
+
+        let mut record = LoadImageSection::default();
+        img.open_section_info();
+        assert!(img.get_next_section(&mut record));
+        assert_eq!((record.address.get_offset(), record.size, record.flags), (0x3000_0000, 2, ro));
+        assert!(!img.get_next_section(&mut record));
+        assert_eq!((record.address.get_offset(), record.size, record.flags), (0x4000_0000, 4, section_flags::CODE));
+        assert!(!img.get_next_section(&mut record));
+
+        let mut readonly = RangeList::new();
+        img.get_readonly(&mut readonly);
+        assert_eq!(readonly.num_ranges(), 1);
+
+        let overlap = vec![(0x1000, vec![0; 8], 0), (0x1004, vec![0; 8], 0)];
+        assert!(RawLoadImage::from_segments("image", overlap).is_none());
+        assert!(RawLoadImage::from_segments("image", vec![(u64::MAX, vec![0; 2], 0)]).is_none());
+        assert!(RawLoadImage::from_segments("image", Vec::new()).is_none());
     }
 
     #[test]

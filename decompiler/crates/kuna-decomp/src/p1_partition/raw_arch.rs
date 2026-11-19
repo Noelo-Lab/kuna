@@ -208,6 +208,18 @@ impl RawBinaryArchitecture {
         self.place_loader(loader, default_code_space, base);
     }
 
+    /// (kuna) [`Self::build_loader_at`] over an image already built from
+    /// separate runs ([`RawLoadImage::from_segments`]) whose first byte is at
+    /// `base`.
+    pub fn build_loader_from_image(
+        &mut self,
+        default_code_space: Rc<AddrSpace>,
+        base: u64,
+        loader: RawLoadImage,
+    ) {
+        self.place_loader(loader, default_code_space, base);
+    }
+
     fn place_loader(&mut self, mut loader: RawLoadImage, space: Rc<AddrSpace>, base: u64) {
         loader.attach_to_space(space);
         if base != 0 {
