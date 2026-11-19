@@ -512,7 +512,11 @@ fn option_heading(st: &KunaSettable) -> String {
         st.option,
         st.values.replace('|', " | "),
         st.shipped,
-        if st.destructive { " (destructive opt-in)" } else { "" },
+        match (st.destructive, st.option) {
+            (true, "constselectjump") => " (`on` is destructive)",
+            (true, _) => " (destructive opt-in)",
+            _ => "",
+        },
     )
 }
 

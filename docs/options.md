@@ -103,9 +103,9 @@ Three tiers:
 | a MIPS syscall wrapper that passes its parameters straight to the kernel shows none of them | [`syscallregs`](#syscallregs----off--auto--on-default-auto) |
 | switch reports 'Could not recover jumptable ... Too many branches' and renders as a computed call | [`switchmodbound`](#switchmodbound----on--off-default-off-destructive-opt-in) |
 | indirect jump bounded only by a modulo or and-mask on its index never becomes a switch | [`switchmodbound`](#switchmodbound----on--off-default-off-destructive-opt-in) |
-| indirect jump renders as a computed (code *)() call whose destinations are already constants in the emitted C | [`constselectjump`](#constselectjump----off--reentry--on-default-reentry-destructive-opt-in) |
-| 'Treating indirect jump as call' on a CMOV/predicated dispatch | [`constselectjump`](#constselectjump----off--reentry--on-default-reentry-destructive-opt-in) |
-| the body behind a conditional indirect branch is never decoded | [`constselectjump`](#constselectjump----off--reentry--on-default-reentry-destructive-opt-in) |
+| indirect jump renders as a computed (code *)() call whose destinations are already constants in the emitted C | [`constselectjump`](#constselectjump----off--reentry--on-default-reentry-on-is-destructive) |
+| 'Treating indirect jump as call' on a CMOV/predicated dispatch | [`constselectjump`](#constselectjump----off--reentry--on-default-reentry-on-is-destructive) |
+| the body behind a conditional indirect branch is never decoded | [`constselectjump`](#constselectjump----off--reentry--on-default-reentry-on-is-destructive) |
 | 'Too many branches' jumptable failure where a cbranch range guard bounds the index | [`switchguardbound`](#switchguardbound----on--off-default-off-destructive-opt-in) |
 | computed (code *)() call at a gcc sub/ja guarded dispatch with the index spilled to the stack | [`switchguardbound`](#switchguardbound----on--off-default-off-destructive-opt-in) |
 | narrow comparison after a logical right shift does not bound a jump table | [`highsliceguard`](#highsliceguard----on--off-default-off) |
@@ -1035,7 +1035,7 @@ The control surface: each of these can make output worse on the wrong source sha
 - **Where / provenance:** P2/switch-model · ghidra-upstream · opt-in-tool · GH-9191
 - **Example:** `option switchmodbound on`
 
-### `constselectjump` -- off | reentry | on, default `reentry` (destructive opt-in)
+### `constselectjump` -- off | reentry | on, default `reentry` (`on` is destructive)
 
 - **Symptoms:** indirect jump renders as a computed (code *)() call whose destinations are already constants in the emitted C; 'Treating indirect jump as call' on a CMOV/predicated dispatch; the body behind a conditional indirect branch is never decoded.
 - **What it does:** Recover an indirect branch whose destination is selected between constant addresses as a jump table over that constant set. `on` recovers every such select (a CMOV/predicated dispatch) instead of truncating it to a call. `reentry`, the default, recovers only a dispatcher loop: a single-target jump whose own target code flows back into it with another local constant, so the re-entry already shows the targets are one function's. Flow retries only the dispatches a newly found edge can reach, proves a constant arriving straight at the dispatch without another partial decompile, keeps the caller's return as a destination when the selector can still hold it, and warns for every dispatch left unresolved when the retry budget runs out. `off` keeps the first target, as upstream does.
