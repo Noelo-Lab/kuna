@@ -110,7 +110,7 @@ use object::{BinaryFormat, Endianness, FileKind, SymbolKind};
 /// reports [`Compiler::Rustc`].
 const RUST_NORETURN_LIST: &str = include_str!("../../../data/RustFunctionsThatDoNotReturn");
 
-/// The Golang no-return list, vendored verbatim from Ghidra
+/// The Golang no-return list, adapted from Ghidra
 /// `Ghidra/Features/Base/data/GolangFunctionsThatDoNotReturn` (the
 /// `compiler id="golang"` arm of `noReturnFunctionConstraints.xml`). Applied
 /// **in addition** to `ElfFunctionsThatDoNotReturn` when [`detect_compiler`]

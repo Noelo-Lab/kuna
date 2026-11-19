@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4773,
-    4773
+    4776,
+    4776
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1230,6 +1230,7 @@
     "data:Go equality preserves a separate implied load in its NaN guard",
     "data:Go field conversions respect diagnostic suppression",
     "data:Go float storage conversion preserves bits",
+    "data:Go gopanic fallthrough sentinel appears only with known no-return off",
     "data:Go high pair stores each named result field",
     "data:Go indexed signed store converts unsigned value",
     "data:Go integer pointer conversion retains uintptr bridge",
@@ -1250,6 +1251,8 @@
     "data:Go paired nested call evaluates outside adapter parameter scope",
     "data:Go paired returns project both fields",
     "data:Go paired signatures preserve both source integer results",
+    "data:Go panicCheck1 keeps its return and terminal throw paths",
+    "data:Go panicCheck1 returns to the terminal gopanic call",
     "data:Go pointer element keeps word stride and pointer result",
     "data:Go pointer indexing retains byte scaling",
     "data:Go real pointer valued load remains a dereference",

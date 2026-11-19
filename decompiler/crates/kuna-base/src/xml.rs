@@ -2239,7 +2239,8 @@ mod tests {
         // and kuna-repstring, kuna-repstring-i386 / x86 rep movs/stos/cmpsb print as copy, fill and compare builtins
         // and kuna-reentereddispatch / a re-entered dispatch keeps every step's store
         // and kuna-dispatch-values / dispatcher return values survive narrowing and copies
-        assert_eq!(count, 818, "corpus file count drifted");
+        // and ghangr-go-paniccheck-return / a returning Go panic check keeps its continuation
+        assert_eq!(count, 819, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
