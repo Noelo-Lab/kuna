@@ -1366,6 +1366,7 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
         // (kuna `calleedeadarg`) Same story for the entry-liveness probe the
         // input-trial scoring seam consults.
         crate::p4_calls::kuna_calleedeadarg::seed_callee_entry_dead(arch, fd);
+        crate::p4_calls::kuna_darwinvarargs::seed(arch, fd);
         crate::kuna_swiftcall::seed_self_readers(arch, fd);
         // (kuna `zerofillreturn`) And the zero fills, read off the fresh p-code.
         crate::p4_calls::kuna_zerofillreturn::seed(fd);
@@ -2168,6 +2169,7 @@ fn decompile_func_full_with_objects_inner(
         // input-trial scoring seam consults, for the same reason and at the same
         // point.
         crate::p4_calls::kuna_calleedeadarg::seed_callee_entry_dead(arch, &mut fd);
+        crate::p4_calls::kuna_darwinvarargs::seed(arch, &mut fd);
         // (kuna `swiftcall`) Which direct callees do not read `swiftself`, for
         // the stale-`self` test at the same seam.
         crate::kuna_swiftcall::seed_self_readers(arch, &mut fd);
