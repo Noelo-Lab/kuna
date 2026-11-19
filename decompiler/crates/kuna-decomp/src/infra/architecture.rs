@@ -406,10 +406,10 @@ pub struct Architecture {
     pub kuna_function_bodies: Vec<(u64, u64)>,
     /// (kuna `floatglobals`) The scan's answer, once a function asked for it.
     pub kuna_float_globals: Option<Rc<crate::kuna_floatglobals::FloatGlobals>>,
-    /// (kuna `floatglobals`, `callerreads`) The run decompiles more than one
-    /// function, so the whole-program scan is paid for whatever the image's
-    /// size, and the callers a batch decompiles answer for their callees.
+    /// (kuna `floatglobals`) A multi-function run scans images of any size.
     pub kuna_float_scan_batch: bool,
+    /// The callee-first driver settles return values from its decompiled callers.
+    pub kuna_settle_caller_reads: bool,
     /// (kuna `callerreads`) Every direct call the Listing walked, as `(callee
     /// entry, address the call returns to)`, sorted. Empty without the Listing.
     pub kuna_call_returns: Vec<(u64, u64)>,
@@ -2336,6 +2336,7 @@ impl Architecture {
             kuna_function_bodies: Vec::new(),
             kuna_float_globals: None,
             kuna_float_scan_batch: false,
+            kuna_settle_caller_reads: false,
             kuna_call_returns: Vec::new(),
             bool_byte: true, // (kuna) option boolbyte; reset_defaults sets the shipped default
             arm_constant_shift: crate::p9_emit::kuna_armconstantshift::ConstShiftMode::Off,
