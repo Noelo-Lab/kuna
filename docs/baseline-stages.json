@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4528,
-    4528
+    4531,
+    4531
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1103,7 +1103,7 @@
     "data:GOTTAILCALL #1: the jump through ext's slot is never lost to halt_missing",
     "data:GOTTAILCALL #2: it is a tail call that keeps the argument",
     "data:GOTTAILCALL #3: a slot naming unmapped memory that is no function stays a jump",
-    "data:GOTTAILCALL #4: a slot naming a label of the function's own code stays a switch",
+    "data:GOTTAILCALL #4: a slot naming a label of the function's own code is a direct jump",
     "data:GOWBPHI #1: the thunk call renders under off and folds under always",
     "data:GOWBPHI #2: the guards render under off and fold under always",
     "data:GOWBPHI #3: the real store survives both passes, the buffer record only the first",
@@ -2361,6 +2361,9 @@
     "data:SWITCHSELFLOOP #2: a leaving case runs the shared tail and returns",
     "data:SWITCHSELFLOOP #3: the default case returns",
     "data:SWITCHSELFLOOP #4: restarting the enclosing loop leaves the inner dispatch loop intact",
+    "data:SWITCHSINGLE #1: the one-destination switch is removed with its warning",
+    "data:SWITCHSINGLE #2: no switch remains",
+    "data:SWITCHSINGLE #3: the shared case body is the straight-line return",
     "data:SWITCHUNROLLEDSENSE #1: by default the switch closes after 0x67, the last value both guards allow",
     "data:SWITCHUNROLLEDSENSE #2: only switchmultipred off reads row 5, past the guard",
     "data:SWITCHUNROLLEDSENSE #3: switchmultipred off still sends flow into an instruction interior",

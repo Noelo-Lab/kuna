@@ -5,6 +5,10 @@ arguments passed by both call orders. It also checks the disabled option,
 an ordinary name lookalike, a wrapper with stack results, the signal
 trampoline and two linked runtime functions with private or foreign exits.
 
+`kuna-switchsingle.xml` checks that a jump table whose four entries all name one
+block becomes straight-line code with the "all go to same destination" warning
+instead of a `switch` with only a `default` arm.
+
 `ghangr-call-argument-extensions.xml` checks explicit and missing parameter
 contracts. The CLI companion executes complete emitted C, Go and Rust callers
 and callees, covering zero extension, sign extension, signedness and store canaries.

@@ -640,7 +640,7 @@ impl FlowEnvironment for ArchFlowEnv {
     ) -> bool {
         let glb = fd.get_arch();
         let arch = self.arch();
-        crate::kuna_tailcalljump::kuna_is_tail_call_table(
+        let tail_call = crate::kuna_tailcalljump::kuna_is_tail_call_table(
             fd,
             op,
             arch.tail_call_tables,
@@ -667,7 +667,11 @@ impl FlowEnvironment for ArchFlowEnv {
                         || glb.query_callee_proto(own).is_some_and(|p| p.is_output_locked());
                 crate::kuna_tailcalljump::tail_call_states_the_body(stated, own_output_stated)
             },
-        )
+        );
+        if !tail_call {
+            crate::kuna_gottailcall::followed(arch, fd, dest);
+        }
+        tail_call
     }
 
     fn is_return_discarding_trampoline(&self, dest: &Address) -> bool {
