@@ -451,6 +451,9 @@ pub struct AnalysisOutput {
     /// (kuna `aif`) Discovered (not symbol) entries the decoded code reads or
     /// writes as data; the commit drops them from the entry stream.
     pub data_vetoed: Vec<u64>,
+    /// (kuna `funcchunks`) Each function's flow body size in bytes (the sum of
+    /// its chunks, shared tails included), by `(entry, bytes)`.
+    pub function_bodies: Vec<(u64, u64)>,
     /// (kuna) The direct call sites of each PLT import, by stub address.
     /// Produced only by [`crate::protos::kuna_importvote`] (`importvote`).
     pub import_call_sites: Vec<(u64, Vec<u64>)>,
@@ -869,6 +872,7 @@ impl AnalysisOutput {
         self.fde_bodies.extend(other.fde_bodies);
         self.fde_interior_entries.extend(other.fde_interior_entries);
         self.data_vetoed.extend(other.data_vetoed);
+        self.function_bodies.extend(other.function_bodies);
         self.import_call_sites.extend(other.import_call_sites);
         self.pdb_bodies.extend(other.pdb_bodies);
         self.entry_names.extend(other.entry_names);

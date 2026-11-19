@@ -5,8 +5,8 @@
 # live-value match. Editing a row here is the one edit point; the codegen makes
 # any drift a build failure. DO NOT hand-edit the generated Rust.
 #
-# Counts (asserted in tests): group=39, subphase=40, surface=98, settable=77
-# (tiers: 16 core / 36 transform / 25 analysis).
+# Counts (asserted in tests): group=39, subphase=40, surface=98, settable=78
+# (tiers: 16 core / 36 transform / 26 analysis).
 
 # ---------------------------------------------------------------------------
 # groupTable: every action/rule GROUP name -> its dominant stage (39 rows).
@@ -4803,6 +4803,24 @@ inspiration = "decbench: kuna's own ARM entry-recall measurement (docs/features/
 change_kind = "analysis-enablement"
 tier = "analysis"
 symptoms = "routine reached only by a tail B produces no decompiled output at all|a shared ISR handler is swallowed by the two-instruction stub that branches to it|function entry missing where the previous function ends in an unconditional branch|kuna emits one oversized function where the ground truth has two"
+[[settable]]
+option = "funcchunks"
+values = "on|off"
+default = "off"
+destructive = false
+phase = "P1"
+subphase = "code-data-partition"
+strength = "HARD"
+rewind = "P1"
+issue = "kuna-funcchunks"
+summary = "Give every discovered function a body made of chunks instead of the address clip [entry, next entry). After the Listing walk, a function's body is the flow closure of its entry: fall-through and branch targets, never a call target, and never another function's entry (a jump there is a tail call). The body is cut into address runs (undecoded alignment padding of up to 16 bytes joins two runs). The run that holds the entry is the main chunk; every other run is a tail. An instruction reached from several entries is a shared tail and lists every function that reaches it as an owner. The FID matcher hashes this body (main chunk plus tails, ascending, Ghidra's func.getBody() order) instead of the clip, so a function whose error path or epilogue sits after the next function, or that shares a tail with another function, hashes the instructions it really runs, and the inventory size of `kuna functions` is the chunk body. Requires the Listing (option listing on); inert without it."
+use_when = "Flip on with listing on and fid on when FID misses a library function whose body is not one contiguous run (a gcc .cold split, a shared epilogue, an outlined error path after the next function), or when the clip makes a function absorb a neighbour that the walk never reaches from its entry. Off keeps the [entry, next) clip."
+example = "--option listing on --option fid on --option funcchunks on"
+source_decompiler = "kuna"
+inspiration = "a function as a main chunk plus tails, each tail keeping the list of functions that jump into it; Ghidra's func.getBody() iteration over a non-contiguous AddressSetView"
+change_kind = "analysis-enablement"
+tier = "analysis"
+symptoms = "fid misses a library function whose body is split by the compiler|a function's body in the inventory absorbs the function after it|a shared epilogue is counted in only one function|a .cold part after the next function is not part of its parent's fingerprint"
 [[settable]]
 option = "fatstr"
 values = "off|auto|always"

@@ -914,3 +914,6 @@ mod addrtable_xrefs;
 
 #[path = "aif_data_veto.rs"]
 mod aif_data_veto;
+
+#[path = "funcchunks_cli.rs"]
+mod funcchunks_cli;

@@ -110,8 +110,12 @@ impl AnalysisPass for FidPass {
             return out;
         };
 
+        let chunks = ctx
+            .arch
+            .analysis_funcchunks
+            .then(|| crate::listing::kuna_funcchunks::ChunkModel::build(listing));
         for (&entry, _) in listing.functions() {
-            let Ok(quad) = fingerprint_function(listing, ctx.arch, entry) else {
+            let Ok(quad) = fingerprint_function_in(listing, ctx.arch, entry, chunks.as_ref()) else {
                 continue;
             };
             let records = db.find_by_full_hash(quad.full_hash);
@@ -144,7 +148,24 @@ pub fn fingerprint_function(
     arch: &kuna_decomp::architecture::Architecture,
     entry: u64,
 ) -> Result<FidHashQuad, &'static str> {
-    let extent = extent::calculate_extent(listing, entry);
+    let chunks = arch
+        .analysis_funcchunks
+        .then(|| crate::listing::kuna_funcchunks::ChunkModel::build(listing));
+    fingerprint_function_in(listing, arch, entry, chunks.as_ref())
+}
+
+/// [`fingerprint_function`] over the `[entry, next)` clip, or over the flow body
+/// (main chunk plus tails) when a chunk model is given (`funcchunks`).
+pub fn fingerprint_function_in(
+    listing: &crate::listing::Listing,
+    arch: &kuna_decomp::architecture::Architecture,
+    entry: u64,
+    chunks: Option<&crate::listing::kuna_funcchunks::ChunkModel>,
+) -> Result<FidHashQuad, &'static str> {
+    let extent = match chunks {
+        Some(model) => extent::chunk_extent(listing, model, entry),
+        None => extent::calculate_extent(listing, entry),
+    };
     if extent.len() < hash::SHORT_HASH_CODE_UNIT_LENGTH as usize {
         return Err("too_short");
     }

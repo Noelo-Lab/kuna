@@ -618,6 +618,10 @@ Three tiers:
 | a shared ISR handler is swallowed by the two-instruction stub that branches to it | [`tailcallentry`](#tailcallentry----on--off-default-on) |
 | function entry missing where the previous function ends in an unconditional branch | [`tailcallentry`](#tailcallentry----on--off-default-on) |
 | kuna emits one oversized function where the ground truth has two | [`tailcallentry`](#tailcallentry----on--off-default-on) |
+| fid misses a library function whose body is split by the compiler | [`funcchunks`](#funcchunks----on--off-default-off) |
+| a function's body in the inventory absorbs the function after it | [`funcchunks`](#funcchunks----on--off-default-off) |
+| a shared epilogue is counted in only one function | [`funcchunks`](#funcchunks----on--off-default-off) |
+| a .cold part after the next function is not part of its parent's fingerprint | [`funcchunks`](#funcchunks----on--off-default-off) |
 | go function parameters missing or void while the body reads rax/rbx locals that are never assigned | [`goabi`](#goabi----auto--off-default-auto) |
 | a go function returning two values loses the second and the statements computing it | [`goabi`](#goabi----auto--off-default-auto) |
 | go output full of unassigned register-commented locals | [`goabi`](#goabi----auto--off-default-auto) |
@@ -2158,6 +2162,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On by default, with `listing` (which `kuna decompile`, `decompile-all` and `functions` inject on non-x86-64 and the `aggressive` preset supplies): on stripped ARM firmware a routine reached only by a tail `B` -- a shared ISR stub's handler, a `pop {r4,lr} ; b helper` tail call, a jump-thunk target -- becomes a function of its own instead of being absorbed into an earlier function and producing no output. Measured on 96 Cortex-M images: +561 ground-truth functions, 94.6% of the new entries are real function starts, zero real bodies split, zero entries lost. Inert on every non-ARM image and without `listing`. Flip off to leave the walk's absorption in place.
 - **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-tailcallentry
 - **Example:** `option listing on --option tailcallentry on`
+
+### `funcchunks` -- on | off, default `off`
+
+- **Symptoms:** fid misses a library function whose body is split by the compiler; a function's body in the inventory absorbs the function after it; a shared epilogue is counted in only one function; a .cold part after the next function is not part of its parent's fingerprint.
+- **What it does:** Give every discovered function a body made of chunks instead of the address clip [entry, next entry). After the Listing walk, a function's body is the flow closure of its entry: fall-through and branch targets, never a call target, and never another function's entry (a jump there is a tail call). The body is cut into address runs (undecoded alignment padding of up to 16 bytes joins two runs). The run that holds the entry is the main chunk; every other run is a tail. An instruction reached from several entries is a shared tail and lists every function that reaches it as an owner. The FID matcher hashes this body (main chunk plus tails, ascending, Ghidra's func.getBody() order) instead of the clip, so a function whose error path or epilogue sits after the next function, or that shares a tail with another function, hashes the instructions it really runs, and the inventory size of `kuna functions` is the chunk body. Requires the Listing (option listing on); inert without it.
+- **When to flip:** Flip on with listing on and fid on when FID misses a library function whose body is not one contiguous run (a gcc .cold split, a shared epilogue, an outlined error path after the next function), or when the clip makes a function absorb a neighbour that the walk never reaches from its entry. Off keeps the [entry, next) clip.
+- **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-funcchunks
+- **Example:** `--option listing on --option fid on --option funcchunks on`
 
 ### `goabi` -- auto | off, default `auto`
 
