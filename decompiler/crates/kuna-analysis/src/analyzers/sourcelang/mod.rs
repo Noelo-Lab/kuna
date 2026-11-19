@@ -94,6 +94,7 @@ mod kuna_rustformatters;
 mod kuna_rustfmtstr;
 mod kuna_rustfmtwrite;
 mod kuna_rustfmtio;
+mod kuna_rustfmtconstructor;
 pub use kuna_rustformatters::{formatter_metadata, integer_formatters, primitive_display_formatters, FormatterMetadata};
 
 use object::macho::{MachHeader32, MachHeader64};

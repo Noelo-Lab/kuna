@@ -9,19 +9,22 @@ use crate::loader::kuna_dynrelocs::{fixup_sites, relro_range, FixupKind, FixupSi
 
 const STDOUT_WRITE_FMT: &str = "<&std::io::stdio::Stdout as std::io::Write>::write_fmt";
 
-struct Image<'file, 'data> {
+pub(super) struct Image<'file, 'data> {
     file: &'file object::File<'data>,
     relro: Option<(u64, u64)>,
     fixups: Vec<FixupSite>,
+    complete_fixups: bool,
 }
 
 impl<'file, 'data> Image<'file, 'data> {
-    fn new(file: &'file object::File<'data>, bytes: &[u8]) -> Self {
+    pub(super) fn new(file: &'file object::File<'data>, bytes: &[u8]) -> Self {
+        let fixups = fixup_sites(file, bytes);
         Self {
             file,
             relro: relro_range(bytes)
                 .and_then(|(lo, hi)| (lo < (hi & !4095)).then_some((lo, hi & !4095))),
-            fixups: fixup_sites(file, bytes).sites,
+            complete_fixups: matches!(fixups.coverage, crate::loader::kuna_dataptrs::Coverage::Complete(_)),
+            fixups: fixups.sites,
         }
     }
 
@@ -92,6 +95,22 @@ impl<'file, 'data> Image<'file, 'data> {
                 && segment.address() <= address
                 && segment.address().checked_add(segment.size()).is_some_and(|hi| end <= hi)
         }).then_some(span)
+    }
+
+    pub(super) fn unrelocated_code(&self, address: u64, size: usize) -> Option<ImageSpan> {
+        let end = address.checked_add(size as u64)?;
+        if !self.complete_fixups || self.fixups.iter().any(|fixup| {
+            fixup.vma < end && fixup.vma.checked_add(u64::from(fixup.width.max(1)))
+                .is_none_or(|last| address < last)
+        }) || !self.file.segments().any(|segment| {
+            matches!(segment.flags(), SegmentFlags::Elf { p_flags }
+                if p_flags & (object::elf::PF_X | object::elf::PF_W) == object::elf::PF_X)
+                && segment.address() <= address
+                && segment.address().checked_add(segment.size()).is_some_and(|hi| end <= hi)
+        }) {
+            return None;
+        }
+        self.code(address, size)
     }
 
     fn imported(&self, address: u64, name: &str) -> bool {
