@@ -89,6 +89,7 @@ pub mod kuna_langc; // (kuna) the c-language policy objects (CSpeller)
 pub mod kuna_rustfmt;
 pub(crate) mod kuna_rustfmtliteral;
 pub mod kuna_rustfmtargs;
+pub mod kuna_oslog;
 pub mod kuna_rustfmtstr;
 pub mod kuna_rustfmtwrite;
 pub mod kuna_rustfmtio;

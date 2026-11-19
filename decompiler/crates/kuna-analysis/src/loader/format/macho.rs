@@ -23,7 +23,9 @@
 //! are admitted by the engine dispatch unconditionally; the XML/datatest corpus
 //! never carries a Mach-O magic, so the ELF/XML oracles are untouched.
 
-use object::macho::{S_ATTR_PURE_INSTRUCTIONS, S_GB_ZEROFILL, S_ZEROFILL, SECTION_TYPE};
+use object::macho::{
+    S_ATTR_PURE_INSTRUCTIONS, S_CSTRING_LITERALS, S_GB_ZEROFILL, S_ZEROFILL, SECTION_TYPE,
+};
 use object::macho::{CPU_SUBTYPE_ARM64E, CPU_SUBTYPE_MASK};
 use object::read::macho::MachHeader;
 use object::{Architecture, FileKind, SectionFlags, SectionKind};
@@ -41,6 +43,39 @@ pub use chained::{resolve_chained_fixups, ChainedBind, ChainedFixups};
 /// fills on an image that predates chained fixups.
 pub mod dyldinfo;
 pub use dyldinfo::resolve_dyld_info_binds;
+
+/// The `[start, end)` ranges of a Mach-O image's segments mapped without write
+/// permission (`__TEXT`); empty for any other format.
+pub fn readonly_segments(file: &object::File) -> Vec<(u64, u64)> {
+    use object::read::{Object, ObjectSegment};
+    use object::SegmentFlags;
+    if file.format() != object::BinaryFormat::MachO {
+        return Vec::new();
+    }
+    file.segments()
+        .filter(|segment| {
+            matches!(segment.flags(), SegmentFlags::MachO { initprot, .. }
+                if initprot & object::macho::VM_PROT_WRITE == 0
+                    && initprot & object::macho::VM_PROT_READ != 0)
+        })
+        .filter_map(|segment| {
+            let start = segment.address();
+            Some((start, start.checked_add(segment.size())?))
+        })
+        .filter(|(start, end)| start < end)
+        .collect()
+}
+
+/// True when `section` lies wholly inside one of `segments`: its contents are
+/// read-only at run time, whatever kind `object` gives the section.
+pub fn in_readonly_segment(segments: &[(u64, u64)], section: &object::Section) -> bool {
+    use object::read::ObjectSection;
+    let start = section.address();
+    let Some(end) = start.checked_add(section.size()) else {
+        return false;
+    };
+    section.size() != 0 && segments.iter().any(|&(low, high)| low <= start && end <= high)
+}
 
 /// The environment-variable gate for arm64e Apple-Silicon spec selection
 /// (design §3.7): on unless it holds an off-token, which `--option
@@ -139,21 +174,29 @@ impl ObjectFormat for MachOFormat {
         // data / text / string section is readonly; writable data is not.
         // `__cstring` is `SectionKind::ReadOnlyString` — marking it READONLY is
         // what lets the printer's constant-string route read a `char *` arg's
-        // bytes and render `printf("%d\n", …)` (PR-10).
-        if matches!(
-            kind,
-            SectionKind::ReadOnlyData | SectionKind::ReadOnlyString | SectionKind::Text
-        ) {
+        // bytes and render `printf("%d\n", …)` (PR-10). Any other
+        // `S_CSTRING_LITERALS` pool (`__oslogstring`, kernel `__os_log`,
+        // `__objc_methname`) is the same coalesced literal data under a name
+        // `object` does not know.
+        let cstrings = sec_type == S_CSTRING_LITERALS;
+        if cstrings
+            || matches!(
+                kind,
+                SectionKind::ReadOnlyData | SectionKind::ReadOnlyString | SectionKind::Text
+            )
+        {
             out |= section_flags::READONLY;
         }
         // CODE: a `__text`-kind section or a pure-instructions section.
         if pure_instr || matches!(kind, SectionKind::Text) {
             out |= section_flags::CODE;
         }
-        if matches!(
-            kind,
-            SectionKind::Data | SectionKind::ReadOnlyData | SectionKind::ReadOnlyString
-        ) {
+        if cstrings
+            || matches!(
+                kind,
+                SectionKind::Data | SectionKind::ReadOnlyData | SectionKind::ReadOnlyString
+            )
+        {
             out |= section_flags::DATA;
         }
         out
@@ -208,6 +251,26 @@ mod tests {
             SectionFlags::MachO { flags: S_ZEROFILL },
         );
         assert!(bss & section_flags::NOLOAD != 0, "zerofill section is NOLOAD");
+    }
+
+    /// A literal pool `object` classifies `Unknown` (`__TEXT,__oslogstring`) is
+    /// read-only data by its `S_CSTRING_LITERALS` type; an unknown regular
+    /// section is not.
+    #[test]
+    fn macho_section_bits_cstring_literal_pool() {
+        let f = MachOFormat;
+        let pool = f.section_bits(
+            "__oslogstring",
+            SectionKind::Unknown,
+            SectionFlags::MachO { flags: S_CSTRING_LITERALS },
+        );
+        assert_eq!(
+            pool & (section_flags::READONLY | section_flags::DATA | section_flags::CODE),
+            section_flags::READONLY | section_flags::DATA
+        );
+        let other =
+            f.section_bits("__other", SectionKind::Unknown, SectionFlags::MachO { flags: 0 });
+        assert_eq!(other & section_flags::READONLY, 0);
     }
 
     /// A minimal `mach_header_64` buffer with the given cputype/cpusubtype, the

@@ -459,6 +459,9 @@ Three tiers:
 | objc_msgSend$count(v2) on a receiver whose class is known | [`objcresolve`](#objcresolve----on--call--off-default-on) |
 | [[Foo alloc] init] typed objc_object * or unsigned long | [`objcresolve`](#objcresolve----on--call--off-default-on) |
 | the call graph of an ObjC image stops at objc_msgSend | [`objcresolve`](#objcresolve----on--call--off-default-on) |
+| an os_log call prints a stack buffer address and a byte count instead of its arguments | [`oslog`](#oslog----on--off-default-on) |
+| _os_log_impl(0x100000000,...,&v1,8) with v1 = 0x4000100 before it | [`oslog`](#oslog----on--off-default-on) |
+| the first argument of _os_log_impl or _os_log_internal is a raw image address | [`oslog`](#oslog----on--off-default-on) |
 | a DOS program's globals print as *(short *)0x308e near-pointer dereferences instead of named globals | [`mzdgroup`](#mzdgroup----on--off-default-on) |
 | every function of an MS-DOS executable declares an unsigned short local commented // ds | [`mzdgroup`](#mzdgroup----on--off-default-on) |
 | the same DOS global gets no shared name across functions | [`mzdgroup`](#mzdgroup----on--off-default-on) |
@@ -1828,6 +1831,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On by default: message sends to objects of the image's own classes otherwise read as `objc_msgSend(obj, sel_x, ...)` with `obj` an `objc_object *`, and every field read through an alloc/init result is a cast. Set `call` when the arguments of a resolved send should take the method's declared types. Flip OFF to see the runtime entry point at every call, or when a receiver's dynamic class may be a subclass that overrides the method and the static resolution misleads.
 - **Where / provenance:** P5/type-propagation · kuna · analysis-enablement · kuna-objcresolve
 - **Example:** `option objcresolve off`
+
+### `oslog` -- on | off, default `on`
+
+- **Symptoms:** an os_log call prints a stack buffer address and a byte count instead of its arguments; _os_log_impl(0x100000000,...,&v1,8) with v1 = 0x4000100 before it; the first argument of _os_log_impl or _os_log_internal is a raw image address.
+- **What it does:** Apple images only (inert unless a call reaches an os_log entry point): print an Apple unified-logging call with its decoded arguments. The os_log macros pack the arguments into a stack buffer filled right before `_os_log_impl` (and the `_error`/`_fault`/`_debug` variants, `_os_signpost_emit_with_name_impl`): byte 0 summary flags, byte 1 the count, then per argument a descriptor byte, a size byte and the value. When the call's INDIRECT effects show every byte of that buffer, every header, descriptor and size byte is a constant, each non-constant value fills exactly its own slot, and the items end at the constant size argument, the buffer and size arguments print as the values (`_os_log_impl(&__mh_execute_header,log,0x10,"fmt %d",v2)`) and the statements that only fill the buffer are not printed. The dso argument of these calls and of the kernel's `_os_log_internal` prints as the Mach-O header symbol (`__mh_execute_header`, `__mh_dylib_header`) at that address. Anything else keeps the raw call.
+- **When to flip:** On by default: the decode is exact or refused, and no datatest moves. Turn off to see the packed buffer, its size and the raw header address, for example to check a descriptor byte or a privacy flag.
+- **Where / provenance:** P9/os-log-format · kuna · presentation-default · kuna-oslog
+- **Example:** `option oslog off`
 
 ## Analysis & loader passes
 
