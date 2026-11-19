@@ -1,0 +1,11 @@
+# Go by-value record input storage
+
+Declaring a Go function's real `Point` input currently breaks an otherwise correct decompilation. With two scalar inputs, the decompiled arithmetic matches all 576 authored executions across Go 1.22.10 and 1.27.2 on AMD64 and ARM64. Declaring the by-value record retains its type and name in the signature while disconnecting it from both incoming values. The emitted program gives 568 wrong results. The companion function with two independent parameters still receives both inputs.
+
+The exact `cc158dce` main program and the independently built Go ARM64 scalar-result projection at tree `e37c1358` produced the same raw results on all four images. A full explicit declaration assigns `Point p` 16 bytes at stack offset +8, with no use sites. An explicit lock at that stack location reproduces the body and variable metadata. Two scalar declarations give the same emitted bodies and variables as separately locking their physical registers.
+
+The faulty assignment happens in P4 before input locking. The Go ABIInternal input lists have eight-byte scalar register entries and a generic stack fallback. A 16-byte record takes the latter in `ParamListStandard::assign_map_standard`. `FuncProto::set_pieces` then locks it. After the declaration, the callee's raw IR still reads RAX and RBX on AMD64 and X0 and X1 on ARM64. Its caller's raw CALL instead receives an untouched stack value. A renderer change would leave that wrong CALL operand intact.
+
+A private compiler-spec diagnostic assigned the same declared type to a two-register join and left the tool executable and fixture unchanged. For all four images, the callee emitted field reads at offsets zero and eight and its caller built the record from the two original values. The scalar peer was byte-identical. This shows that the existing join, SSA, call and Go emission paths can carry the narrow case once the shared input allocator supplies the correct storage.
+
+Go's versioned `src/cmd/compile/abi-internal.md` defines field-wise allocation using separate integer and floating-point register cursors. It attempts the entire argument and rolls both cursors back before falling back to stack. A fixed first-pair assignment based only on byte width would fail for an argument later in the signature or one with floating-point fields.
