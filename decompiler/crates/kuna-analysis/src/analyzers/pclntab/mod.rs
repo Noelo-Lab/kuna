@@ -510,6 +510,22 @@ pub(crate) fn locate_header(file: &object::File, img: &ImageBytes) -> Option<u64
     kuna_gomoduledata::locate(file, img).map(|(vma, _)| vma).or(first)
 }
 
+/// The newest Go release that wrote the pclntab format of the image's named
+/// table section, for the two formats older than go1.18: go1.15 for the go1.2
+/// layout, go1.17 for the go1.16 one. `None` for a newer format, which says
+/// nothing the callers act on, and for an image with no named table.
+pub(crate) fn format_last_release(file: &object::File, img: &ImageBytes) -> Option<(u16, u16)> {
+    let (ver, ..) = [".gopclntab", ".data.rel.ro.gopclntab", "gopclntab", "__gopclntab"]
+        .iter()
+        .filter_map(|name| img.read(file.section_by_name(name)?.address(), 8))
+        .find_map(probe_header)?;
+    match ver {
+        GoVer::Go12 => Some((1, 15)),
+        GoVer::Go116 => Some((1, 17)),
+        GoVer::Go118 => None,
+    }
+}
+
 /// `true` when a read-only data section of `file` holds a pclntab whose table
 /// resolves and whose `moduledata` points back at it — the image's OWN Go
 /// metadata, as opposed to Go bytes it merely carries (a dropper's embedded

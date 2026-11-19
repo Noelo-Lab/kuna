@@ -4850,7 +4850,8 @@ pub(crate) fn bootstrap_object(
     // (kuna goreg) The Go toolchain version is a BUILD-TIME fact: the goreg
     // shells are interned inside the cspec decode during the sleigh build
     // below, upstream of every per-image fact write, and their layouts drift
-    // by release (go1.23's g.syscallbp, go1.25's dropped gobuf.ret). It travels
+    // by release (go1.23's g.syscallbp, go1.25's dropped gobuf.ret), and a
+    // release older than the register ABI takes the stack model. It travels
     // on the load options, which every gate below reads; this scope replaces the
     // caller's until the load returns.
     // An environment-reading load takes the version from the image alone: a

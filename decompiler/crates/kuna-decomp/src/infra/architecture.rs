@@ -4189,7 +4189,7 @@ impl Architecture {
     /// no-register golang target (x86-32 reaches `g` through TLS) and every
     /// other image are untouched.
     fn kuna_install_goreg(&mut self) -> KunaResult<()> {
-        let Some(reg) = crate::kuna_goreg::goroutine_register(&self.archid) else {
+        let Some(reg) = crate::kuna_goreg::goroutine_register(&self.archid, self.go_version()) else {
             return Ok(());
         };
         let scope = match self.symboltab.get_global_scope() {
@@ -4712,15 +4712,33 @@ impl Architecture {
         }
     }
 
+    /// (kuna) The image's Go toolchain release, when the load stated one.
+    fn go_version(&self) -> Option<(u16, u16)> {
+        if self.load_options_from_env {
+            crate::kuna_loadoptions::env::go_version()
+        } else {
+            self.load_options.go_version
+        }
+    }
+
     /// (kuna `goreg`) The runtime layouts of the image's Go toolchain release.
     fn go_layout(&self) -> crate::kuna_goreg::GoLayout {
-        if self.load_options_from_env {
-            return crate::kuna_goreg::GoLayout::from_env();
-        }
-        match self.load_options.go_version {
+        match self.go_version() {
             Some((major, minor)) => crate::kuna_goreg::GoLayout::from_version(major, minor),
             None => crate::kuna_goreg::GoLayout::baseline(),
         }
+    }
+
+    /// (kuna `goabi`) Make the stack model `abi0` the default of a golang-cspec
+    /// image built before the register ABI reached its CPU.
+    fn kuna_go_stack_default(&mut self) -> KunaResult<()> {
+        if self.archid.ends_with(":golang")
+            && self.proto_models.contains_key("abi0")
+            && !crate::kuna_goreg::register_abi(&self.archid, self.go_version())
+        {
+            crate::options::ArchOptionContext::set_default_model(self, "abi0")?;
+        }
+        Ok(())
     }
 
     /// Borrow the data-type factory (C++ `glb->types`).
@@ -6726,6 +6744,7 @@ impl Architecture {
         // kuna-side so the vendored spec stays pristine.
         self.kuna_install_goreg()?;
         self.build_default_proto();
+        self.kuna_go_stack_default()?;
         // Share `defaultfp` + the engine address-space manager into the type
         // factory so the C-declaration grammar's nested function-pointer
         // `buildType` path (`FunctionModifier::modType` -> `getTypeCode(
