@@ -42,6 +42,7 @@ pub mod kuna_libgcc;
 mod kuna_libcnames;
 pub mod kuna_libcsigs;
 pub mod kuna_libctypes;
+pub mod kuna_typelib;
 pub mod kuna_win32sigs;
 pub mod kuna_x87intrinsics;
 

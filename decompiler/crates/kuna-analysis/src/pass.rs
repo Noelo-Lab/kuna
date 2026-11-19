@@ -692,6 +692,9 @@ pub struct AnalysisOutput {
     /// Carried for the same late consumer as [`Self::libctypes_glibc`], which
     /// must then answer from the width-stable `void *` tables too.
     pub libctypes_refused: bool,
+    /// (kuna `typelib`) The library target of this image and its imports, for
+    /// the commit to consult the prebuilt type library with.
+    pub typelib: Option<TypeLibFacts>,
     /// (kuna `armframes`) What whole-image frame recovery decided, for a
     /// `--jobs` worker to replay.
     pub arm_frames: Option<crate::aif::kuna_framereplay::ArmFrameReplay>,
@@ -883,10 +886,28 @@ impl AnalysisOutput {
         self.format_sites.extend(other.format_sites);
         self.libctypes_glibc |= other.libctypes_glibc;
         self.libctypes_refused |= other.libctypes_refused;
+        if other.typelib.is_some() {
+            self.typelib = other.typelib;
+        }
         if other.arm_frames.is_some() {
             self.arm_frames = other.arm_frames;
         }
     }
+}
+
+/// (kuna `typelib`) What [`crate::protos::kuna_typelib::TypeLibPass`] read off
+/// the object file for the prebuilt type library.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TypeLibFacts {
+    /// The library target the image is (`linux x86_64`).
+    pub target: &'static str,
+    /// The image links against glibc rather than the C library the library was
+    /// built from.
+    pub glibc: bool,
+    /// Every imported function with each address it is reached at.
+    pub imports: Vec<(String, u64)>,
+    /// The imported names no function the image defines shares, sorted.
+    pub named: Vec<String>,
 }
 
 /// (kuna `formatstring static`) One printf/scanf-family call site whose format

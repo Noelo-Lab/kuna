@@ -321,6 +321,9 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // commit boundary, because with the gate off not one of those shells may
         // exist, interned or not.
         Box::new(crate::protos::kuna_libctypes::LibcTypesPass),
+        // (kuna `typelib`) The image's library target and imports, for the
+        // prebuilt type library the commit consults; no facts off-target.
+        Box::new(crate::protos::kuna_typelib::TypeLibPass),
         // S1 DWARF source lines: parse `.debug_line` and surface each
         // instruction's `file:line` as a `Comment::user2` on the decompiled
         // output (the kuna analog of Ghidra's `DWARFLineInfoCommentScript`).
