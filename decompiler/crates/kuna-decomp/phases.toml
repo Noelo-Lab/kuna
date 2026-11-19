@@ -1971,6 +1971,28 @@ tier = "transform"
 symptoms = "an int3 pad renders as (*(void *)swi(3))() - a call through a pointer nothing assigns|a function returns the result of a call through swi(3)|nothing in the C says control ran into a run of 0xcc padding bytes|an anti-debug binary's clean-run path ends in an indirect call that only the disassembly explains"
 
 [[settable]]
+option = "trapaftercall"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P2"
+subphase = "flow-classification"
+strength = "HARD"
+rewind = "P2"
+issue = "trap-after-call"
+summary = "End the flow at an x86 call instruction followed by `ud2`. clang with trap-unreachable (the Darwin and rustc default) emits `ud2` after every call it knows cannot return, and execution never reaches it after a call that returns. In a stripped image such a callee has no name, so no name list marks it no-return, flow walks into the trap, and the call is followed by `(*(invalidInstructionException() as ...))()`. When the instruction is a machine `call` (E8, or FF /2, after prefixes) and the next two bytes are 0F 0B, the call site is no-return: the artificial halt is planted and, for a direct call, its call spec is marked, as for a named no-return callee (an indirect call through a GOT slot is left unmarked, because ActionDeindirect would otherwise restart the function when it resolves the slot). A tail `jmp` the flow turned into a call is not evidence, neither is a `ud2` a Linux kernel `__bug_table` entry names (a WARN after `__warn_printk` resumes; kernelbug prints it), and neither is `int3`, because anti-debug code returns into an `int3` pad on purpose (int3pad). Per call site; x86 language ids only."
+use_when = "On by default. The OFF symptom is a stripped clang, Apple or Rust binary where every panic or fatal-error helper call is followed by a jump-as-call through invalidInstructionException(). Flip off to see the trap the compiler planted."
+example = "option trapaftercall off"
+source_decompiler = "kuna"
+inspiration = "a stripped clang binary whose unnamed fatal-error helper was followed by `ud2`: the call printed as returning into a call through invalidInstructionException()"
+change_kind = "correctness-fix"
+tier = "core"
+symptoms = "invalidInstructionException() after a call in a stripped rust or clang binary|a panic helper call is not marked no-return|ud2 after a call is printed as a jump-as-call"
+live_field = "trap_after_call"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "x64syscall"
 values = "off|on|abi"
 default = "on"

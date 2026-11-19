@@ -608,6 +608,10 @@ impl FlowEnvironment for ArchFlowEnv {
         Some((callother, site))
     }
 
+    fn kernel_bug_trap_at(&self, addr: u64) -> bool {
+        crate::kuna_kernelbug::site_at(&self.arch().kernel_bug_sites, addr).is_some()
+    }
+
     fn is_tail_call_branch(
         &self,
         fd: &Funcdata,

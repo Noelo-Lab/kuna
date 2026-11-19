@@ -1567,6 +1567,27 @@ naming the pad does not depend on asserting that the process dies there. `option
 int3pad off` restores the unannotated rendering. Exercised by
 `tests/stages/kuna-int3pad.xml`.
 
+**(kuna) A `ud2` after a call is a no-return call site — `option trapaftercall`,
+default on, `decompiler/crates/kuna-decomp/src/p2_lift/flow.rs
+(trap_follows_call)`.** clang with trap-unreachable (the Darwin and rustc
+default) emits `ud2` after every call it knows cannot return. A stripped image
+gives such a callee no name, so no name list marks it no-return, and flow walks
+into the trap. `FlowInfo::check_for_flow_modification` checks that the
+instruction is a machine `call` (E8, or FF /2, after prefixes; a tail `jmp`
+turned into a call does not count) and reads the two bytes after it (its size is
+the visited record's); `0F 0B` plants the artificial halt, the same path a named
+no-return callee takes, and marks a direct call's spec no-return. An indirect
+call (rustc calls through GOT slots) gets the halt only: `ActionDeindirect`
+would find a no-return mark disagreeing with the resolved callee's prototype and
+restart the function, doubling its cost. A `ud2` that a Linux kernel
+`__bug_table` entry names is a `WARN` or `BUG` statement of its own (`kernelbug`;
+`WARN(1, fmt)` is `call __warn_printk; ud2` and resumes), so it says nothing
+about the call (`FlowEnvironment::kernel_bug_trap_at`). Two `int3` bytes after a
+call are not
+read this way, because anti-debug code returns into an `int3` pad on purpose
+(`int3pad` above). The evidence is per call site and x86 language ids only
+(`ctx.trap_after_call`). Exercised by `tests/stages/kuna-trapaftercall.xml`.
+
 **(kuna) A compiler's AArch64 `brk` trap ends the flow — always on,
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_brktrap.rs
 (is_brk_trap_branchind)`.** AArch64 SLEIGH lowers `BRK #imm16` to `pc =

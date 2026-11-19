@@ -1,0 +1,46 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna trapaftercall: a trap the compiler emits after a no-return call.
+
+    clang with trap-unreachable (the Darwin and rustc default) puts `ud2` after
+    every call it knows cannot return. In a stripped image the callee has no
+    name, so no name list marks it no-return, and flow walks into the trap,
+    which prints as a call through invalidInstructionException().  Execution
+    never reaches a trap after a call that returns, so the trap is no-return
+    evidence for that call site.
+
+        401000  test edi,edi
+        401002  je   401010
+        401004  mov  edi,1
+        401009  call 401100        ; an unnamed fatal-error helper
+        40100e  ud2
+        401010  xor  eax,eax
+        401012  ret
+        401100  hlt; jmp 401100
+
+    Stage: P2 flow (FlowInfo::checkForFlowModification), option
+    trapaftercall off|on.  Pass 1 (off) pins the bug, pass 2 (on, the default)
+    the fix.
+-->
+<bytechunk space="ram" offset="0x401000">
+85ff740cbf01000000e8f20000000f0b31c0c3
+</bytechunk>
+<bytechunk space="ram" offset="0x401100">
+f4ebfd
+</bytechunk>
+<symbol space="ram" offset="0x401000" name="f"/>
+</binaryimage>
+<script>
+  <com>option trapaftercall off</com>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option trapaftercall on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="TRAPAFTERCALL #1: off, flow runs into the ud2 after the call" min="1" max="1">invalidInstructionException</stringmatch>
+<stringmatch name="TRAPAFTERCALL #2: both passes, the helper is called with its argument" min="2" max="2">sub_401100\(1\);</stringmatch>
+</decompilertest>
