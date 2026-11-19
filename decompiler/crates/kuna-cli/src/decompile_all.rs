@@ -1867,7 +1867,9 @@ pub(crate) fn name_miss_hint(error: &EntryLookupError) -> Option<String> {
 /// Build the target [`FunctionEntry`] list from the filters: `--addr` entries
 /// (the canonical record at that address, else a record named via the symbol
 /// table / `name_function`), `--functions` names or aliases, or — with no filter
-/// — every CODE-backed entry, each exactly once.
+/// — every CODE-backed entry, each exactly once. Among several selectors, one
+/// naming a bodyless import slot is reported on stderr and skipped; a lone one,
+/// or a run whose every selector is such a slot, is an error.
 pub(crate) fn resolve_targets(
     prog: &ConsoleProgram,
     args: &Args,
@@ -1891,6 +1893,16 @@ fn resolve_targets_with_policy(
     require_body: bool,
 ) -> Result<Vec<FunctionEntry>, String> {
     let mut targets: Vec<FunctionEntry> = Vec::new();
+    let batch = args.addrs.len() + args.names.as_ref().map_or(0, Vec::len) > 1;
+    let mut skipped = false;
+    let mut skip_import = |error: &EntryLookupError| -> bool {
+        if !batch || !matches!(error, EntryLookupError::BodylessImport { .. }) {
+            return false;
+        }
+        eprintln!("warning: {error}; skipped");
+        skipped = true;
+        true
+    };
 
     // Resolve every address form through the program's shared selector model.
     // `args.entry_seeds` is deliberately not here: a raw image's `--entry`
@@ -1910,7 +1922,11 @@ fn resolve_targets_with_policy(
         } else {
             prog.resolve_entry(&selector)
         };
-        targets.push(entry.map_err(|error| error.to_string())?);
+        match entry {
+            Ok(entry) => targets.push(entry),
+            Err(error) if skip_import(&error) => {}
+            Err(error) => return Err(error.to_string()),
+        }
     }
 
     // `--functions a,b,c`: intersect names with the enumerated set.  An ALIAS
@@ -1940,9 +1956,13 @@ fn resolve_targets_with_policy(
                         None => eprintln!("warning: no function named {want:?} in {}", args.binary),
                     }
                 }
+                Err(error) if skip_import(&error) => {}
                 Err(error) => return Err(error.to_string()),
             }
         }
+    }
+    if targets.is_empty() && skipped {
+        return Err("every selector names an import slot; nothing to decompile".to_string());
     }
 
     // Dedup the explicitly-selected targets by entry offset: `--addr 0xX` and
