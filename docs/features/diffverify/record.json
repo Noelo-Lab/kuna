@@ -1,0 +1,15 @@
+{
+  "slug": "diffverify",
+  "track": "infrastructure",
+  "scope": "large",
+  "proposal": true,
+  "option": null,
+  "default_on": false,
+  "change_kind": "tooling",
+  "phase": null,
+  "owning_crate": "decompiler/crates/kuna-verify",
+  "depends_on": ["https://github.com/Noelo-Lab/kuna/pull/1699"],
+  "external_tools": ["z3 (SMT-LIB 2 over a pipe)", "Unicorn / qemu-user"],
+  "first_slice": "2a",
+  "motivating_fix": "https://github.com/Noelo-Lab/kuna/pull/794"
+}
