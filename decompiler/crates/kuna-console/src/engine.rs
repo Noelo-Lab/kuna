@@ -5428,7 +5428,9 @@ fn commit_analysis_output(
     out.locals.extend(cpp.locals);
     out.cpp_dwarf.prototypes = cpp.prototypes;
     let go_prototypes = if prog.arch().analysis_godwarfsig {
-        out.go_dwarf.iter().flat_map(|facts| facts.materialize(prog.arch())).collect::<Vec<_>>()
+        out.go_dwarf.iter()
+            .flat_map(|facts| facts.materialize(prog.arch(), &out.go_pointer_methods))
+            .collect::<Vec<_>>()
     } else {
         Vec::new()
     };
@@ -6458,7 +6460,10 @@ fn commit_analysis_output(
         if let Some(site) = fact.status_site {
             prog.arch_mut().go_chanrecv_status_sites.insert(fact.entry, site);
         }
-        prog.arch_mut().set_function_prototype_pieces_at(&a, fact.pieces);
+        prog.arch_mut().set_go_dwarf_prototype_at(&a, fact.pieces, fact.string_input);
+        if let Some(receiver) = fact.pointer_receiver {
+            prog.arch_mut().symboltab.attach_go_pointer_receiver(&a, receiver);
+        }
     }
 
     // 5e. (kuna `importvote`) The call sites of every PLT import, read by the

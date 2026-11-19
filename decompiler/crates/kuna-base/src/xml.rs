@@ -2251,7 +2251,10 @@ mod tests {
         // and kuna-strcpychain / memcpy(d, s, strlen(s) + 1) prints as strcpy(d, s) (option helperroles)
         // and kuna-objectview / a TE or raw image runs the object-file analysis passes over a rebuilt view (option objectview)
         // and kuna-aifdataveto / a gap entry the code reads as data is not a function (option aif)
-        assert_eq!(count, 814, "corpus file count drifted");
+        // and ghangr-go-paniccheck-return / a returning Go panic check keeps its continuation
+        // and ghangr-go-aarch64-stack-stride / adjacent eight-byte spills keep their declared inputs
+        // and ghangr-go-mcall-resumption / a scheduler switch preserves its caller's continuation
+        assert_eq!(count, 836, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

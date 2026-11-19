@@ -373,6 +373,13 @@ code space also seed pointer flow; chapter 03 describes address-use trimming.
 With the option off neither input is seeded, the stack register stays one wide
 input, and no parameter starts with pointer flow.
 
+The AArch64 Go ABIInternal input stack starts at `SP+8` in the decompiler's
+entry-relative frame. Adjacent spilled eight-byte scalar arguments occupy
+`SP+8` and `SP+16`. The input model uses eight-byte slots, matching these
+arguments' adjacency even though the machine stack pointer is aligned to a
+16-byte boundary. The register inputs, result stack model and other compiler
+conventions keep their own allocation rules.
+
 The model's stack ranges come from the spec too, as upstream `ProtoModel::decode`
 takes them (§6.2): the parameter range is every stack `<pentry>` of `<input>` plus any
 `<paramrange>`, and the local range is the `<localrange>` element
@@ -9504,7 +9511,7 @@ goes from `char` to `unsigned long`, its reader only renumbered; and dash's
 `hashvar` and bash -O0's `pshash_getbucket`, which compute a pointer in 32 bits,
 return 64-bit values (a `char *` for bash).
 
-### A function decompiled alone returns what its callers read (`kuna_callerreads.rs`)
+### Raw caller reads prove a return outside callee-first settling (`kuna_callerreads.rs`)
 
 `kuna decompile` decompiles one function, so no caller of it is decompiled
 beside it and the ledger above has nothing to settle: `int f(int a) { gi = a *
@@ -9519,7 +9526,7 @@ The Listing files (`kuna_callerreads.rs`, always on), for every direct
 call it walked, the callee's entry and the address the call returns to
 (`decompiler/crates/kuna-analysis/src/listing/kuna_callerreads.rs
 (call_returns)`), and the commit parks the sorted pairs on the architecture
-(`Architecture::kuna_call_returns`). After the single-function decompile step's
+(`Architecture::kuna_call_returns`). After the shared decompile step's
 drives (chapter [00](00-overview.md)), a function recovered `void` with a model,
 no declared prototype, no locked output and a live RETURN is checked by
 `decompiler/crates/kuna-decomp/src/p4_calls/kuna_callerreads.rs (read)`. It
@@ -9545,11 +9552,14 @@ scoring above decides: a value also stored to a global, branched on, or left in
 another register is returned, and so is a call's result, while a load or store
 through the value or a call reading it still refuses it. The forcing is undone
 after the drive, and the redo is kept only when the function then returns a
-value; otherwise the first decompile stands. A batch run skips the check
-(`Architecture::kuna_float_scan_batch`), because its callers answer for their
-callees through the ledger, and a run without the Listing (the XML corpora, a raw
+value; otherwise the first decompile stands. When the callee-first driver has a
+call graph, it settles returns from its decompiled callers and skips this raw
+check. Other batches use the raw evidence just as a single-function run does.
+For example, a selected function can return an indirect call's result because
+an unselected direct caller reads its return register. Float global scanning
+still follows batch size. A run without the Listing (the XML corpora, a raw
 image) has no call to read. A function nothing calls directly, or whose callers
-all ignore the register, stays `void`, as in `decompile-all`. Over every function
+all ignore the register, stays `void`. Over every function
 of gzip, dash and diff at -O2 (941), 17 change, each from `void` to the value its
 callers use: dash's `ckmalloc`, `ckrealloc` and diff's `xrealloc` return their
 pointer, `findkwd`, `stnputs`, `pstrcmp`, `xvsnprintf` and `shell_quote_length`
@@ -9593,6 +9603,15 @@ rejected instead of being parked as a function name nothing has. An
 input-only or output-only declaration keeps its partial-prototype inference;
 only a declaration that also states the return type retypes the symbol. The
 binding lives in `decompiler/crates/kuna-console/src/kuna_qualifiedstorage.rs`.
+
+An output-only declaration also leaves the callee's own input recovery open
+when its IR is rebuilt. `FuncProto::seed_locked_from_pieces` assigns the stated
+output storage and locks its type and model, then releases the empty input
+lock only when the pieces state no input types, names, storage, or variadic
+boundary. The declared return does not turn a physical incoming register read
+into an uninitialized local or a zero-argument signature. A full declaration
+with an explicitly empty parameter list stays locked, and input-only or
+combined input/return declarations keep their existing parameter locks.
 
 A call that reaches such a callee indirectly, through an import slot or a
 constant pointer, becomes direct only once `ActionDeindirect` resolves it

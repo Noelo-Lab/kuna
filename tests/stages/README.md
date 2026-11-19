@@ -1,5 +1,18 @@
 # Stage-model issue testcases
 
+`ghangr-go-paniccheck-return.xml` checks that a returning Go panic helper
+falls through to the terminal `runtime.gopanic` call. It also checks the
+helper's conditional throw and shows the caller's sentinel with the known
+no-return analysis disabled.
+
+`ghangr-go-mcall-resumption.xml` checks the continuation after a Go scheduler
+switch, independent terminal propagation through a lookalike wrapper, and
+explicit function and call-site overrides.
+
+`kuna-go-atomic-return.xml` checks exact AMD64 Go direct-return atomic additions,
+including old-value, flag, branch, memory-effect and width refusals. The same
+bytes retain C/Rust rendering and the non-Go source control.
+
 `ghangr-go-abi0-model.xml` checks recovery of a Go stack-input leaf and the
 arguments passed by both call orders. It also checks the disabled option,
 an ordinary name lookalike, a wrapper with stack results, the signal
@@ -432,6 +445,11 @@ overwrites a writable relocation slot, across off/on/off option toggles.
 compressed cross-unit references, result roles, caller propagation and a wrong-register
 control. Its console companion executes hermetic and native recovered Go bodies.
 
+`ghangr-go-dwarf-string-inputs.xml` checks the two physical Go string input
+words, the ABI slot after an earlier scalar, numeric byte iteration, a retained
+bounds branch, and explicit prototype precedence. The stage also exercises
+malformed pairs and a word-identical scalar signature.
+
 `ghangr-go-pair-results.xml` checks opt-in paired 64-bit Go integer results,
 ordinary local struct storage, destructuring calls and nested result selection.
 Its console companion covers the option gate, malformed cross-unit DWARF,
@@ -482,3 +500,7 @@ indirect tail jump each print as a direct call to the stated function, and the
 tail call to a callee marked no-return ends the function with no return. The CLI
 companion covers `--assert callee` on both surfaces and every refusal. The
 fixture source is `decompiler/crates/kuna-cli/tests/fixtures/assert_callee.c`.
+
+`kuna-rust-process-exit.xml` preserves exit status and preceding stores while
+removing dead trap flow after a known Rust standard-library process exit.
+Different namespaces and a longer similarly named function retain their callers.

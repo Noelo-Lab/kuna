@@ -914,3 +914,6 @@ mod aif_data_veto;
 
 #[path = "funcchunks_cli.rs"]
 mod funcchunks_cli;
+
+#[path = "xrefs_immutable_got.rs"]
+mod xrefs_immutable_got;
