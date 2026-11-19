@@ -115,6 +115,6 @@ c389f089d199f7f9c389f089d199f7f989c7e9e9fdffff31c0c389f789d6e9fdfdffff666666662e
 ^label_50115f:$</stringmatch>
 <stringmatch name="gotonext #7: off, the leaving case and the loop exits jump to labels" min="1" max="1">^    case 4:$
 ^      goto label_401160;$</stringmatch>
-<stringmatch name="gotonext #8: 13 gotos with the option off, 3 by default" min="16" max="16">goto label_</stringmatch>
-<stringmatch name="gotonext #9: 12 labels with the option off, 3 by default" min="15" max="15">^label_</stringmatch>
+<stringmatch name="gotonext #8: 12 gotos with the option off, 2 by default" min="14" max="14">goto label_</stringmatch>
+<stringmatch name="gotonext #9: 11 labels with the option off, 2 by default" min="13" max="13">^label_</stringmatch>
 </decompilertest>

@@ -2399,6 +2399,94 @@ impl BlockGraph {
     /// its parent is a [`Ls`](BlockKind::Ls)/[`Graph`](BlockKind::Graph) able to
     /// host the moved sibling.  Returns `true` on success, `false` if the shape no
     /// longer matches (defensive — the tree may have shifted under a prior splice).
+    /// (kuna `gotosink`) Replace components `start..=end` of the list `parent`
+    /// with one new node of `kind` holding them in order, and return it.  A
+    /// print-tree edit like [`kuna_flatten_ifelse`](Self::kuna_flatten_ifelse):
+    /// list and parent links only.
+    pub fn kuna_wrap_components(&mut self, parent: BlockId, start: usize, end: usize, kind: BlockKind) -> BlockId {
+        let members: Vec<BlockId> = self.arena[parent].list[start..=end].to_vec();
+        let node = self.arena.insert(FlowBlock::new_kind(kind));
+        for &m in &members {
+            self.arena[m].parent = Some(node);
+        }
+        self.arena[node].list = members;
+        self.arena[node].parent = Some(parent);
+        self.arena[parent].list.splice(start..=end, [node]);
+        node
+    }
+
+    /// (kuna `gotosink`) Splice every `BlockList` that is itself a member of a
+    /// list or graph into its parent, so statements that print as one sequence
+    /// are siblings; a goto, goto case or edge that named the list names its
+    /// first member, which is where it lands.  A pure print-tree edit: a nested list prints exactly its
+    /// members in order.
+    pub fn kuna_flatten_lists(&mut self, root: BlockId) {
+        let mut moved: std::collections::BTreeMap<BlockId, BlockId> = std::collections::BTreeMap::new();
+        let mut stack = vec![root];
+        while let Some(id) = stack.pop() {
+            if matches!(self.arena[id].get_type(), BlockType::Ls | BlockType::Graph) {
+                let mut i = 0;
+                while i < self.arena[id].list.len() {
+                    let child = self.arena[id].list[i];
+                    if self.arena[child].get_type() == BlockType::Ls && !self.arena[child].list.is_empty() {
+                        let members = std::mem::take(&mut self.arena[child].list);
+                        moved.insert(child, members[0]);
+                        for &m in &members {
+                            self.arena[m].parent = Some(id);
+                        }
+                        self.arena[id].list.splice(i..=i, members);
+                        continue;
+                    }
+                    i += 1;
+                }
+            }
+            for k in 0..self.arena[id].list.len() {
+                stack.push(self.arena[id].list[k]);
+            }
+        }
+        if moved.is_empty() {
+            return;
+        }
+        // A jump to a flattened list now names the list's first member.
+        let resolve = |mut b: BlockId| {
+            while let Some(&n) = moved.get(&b) {
+                b = n;
+            }
+            b
+        };
+        let mut walk = vec![root];
+        while let Some(id) = walk.pop() {
+            match &mut self.arena[id].kind {
+                BlockKind::Goto { gototarget: Some(t), .. } | BlockKind::If { gototarget: Some(t), .. } => *t = resolve(*t),
+                BlockKind::MultiGoto { gotoedges, .. } => {
+                    for t in gotoedges.iter_mut() {
+                        *t = resolve(*t);
+                    }
+                }
+                _ => {}
+            }
+            if let Some(cases) = self.arena[id].switch_caseblocks_mut() {
+                for c in cases.iter_mut().filter(|c| c.gototype != 0) {
+                    c.block = resolve(c.block);
+                }
+            }
+            walk.extend(self.arena[id].list.iter().copied());
+        }
+    }
+
+    /// (kuna `gotosink`) Put `node` at position `idx` of the list `parent`.
+    pub fn kuna_set_component(&mut self, parent: BlockId, idx: usize, node: BlockId) {
+        self.arena[parent].list[idx] = node;
+        self.arena[node].parent = Some(parent);
+    }
+
+    /// (kuna `gotosink`) Move component `idx` of `parent` to the end of `dest`.
+    pub fn kuna_move_component(&mut self, parent: BlockId, idx: usize, dest: BlockId) {
+        let node = self.arena[parent].list.remove(idx);
+        self.arena[node].parent = Some(dest);
+        self.arena[dest].list.push(node);
+    }
+
     pub fn kuna_flatten_ifelse(&mut self, if_id: BlockId) -> bool {
         // Must still be a 3-component BlockIf.
         if self.arena[if_id].get_type() != BlockType::If || self.arena[if_id].get_size() != 3 {

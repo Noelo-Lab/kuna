@@ -1,0 +1,106 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna `gotosink`: two rewrites of a structured statement list run after the
+    other structuring passes.  `L: S1..Sk; goto L;` (or `if (c) goto L;` at
+    the end) becomes a `while( true )` (or `do ... while (c)`) around the
+    statements, with other jumps to `L` from that loop printing as
+    `continue;`; `if (c) goto L; S1..Sk; L:` in one list becomes
+    `if (!c) { S1..Sk }`.  A run with a free `break;` or `continue;` is left
+    alone.  Default on.  The structurer already sinks most local jumps, so
+    the sinking witness (normal_ignoreSectionTok) runs with the three
+    tail-duplication options off, which leaves `if (9 <= v) goto L;` above
+    the switch it skips.
+
+    Stage / sub-stage: P8 "goto-quality", option `gotosink on|off`.
+
+    The bytes are normal_getAtts, little2_updatePosition and
+    normal_ignoreSectionTok from lib/xmltok.c
+    of expat 2.8.2 (MIT, after ./configure), built by gcc 15.3 at -O2
+    -fno-pie -no-pie -nostartfiles -nostdlib with unresolved symbols ignored,
+    with their jump tables.  Pass 1 is the default; the ignoreSectionTok passes run on, then off;
+    the last pass runs the first two with `option gotosink off`.
+-->
+<bytechunk space="ram" offset="0x401d00">
+f30f1efa41564989d64829f24155415455534885d27e724889f34989cc4889fd4531ed0fb60380bc0588000000080f87fc0000000fb68405880000003eff24c5
+10d440000f1f400049891c2431c05b5d415c415d415ec3660f1f8400000000004883fa030f8e4b0100004889de4889efff95c801000085c075ce4883c3044c89
+f24829da4885d27f9a5bb8ffffffff5d415c415d415ec3660f1f8400000000004883fa020f8e0b0100004889de4889efff95c001000085c0758e4883c3034c89
+f24829daebbe662e0f1f8400000000004883fa010f84db0000004889de4889efff95b801000085c00f855affffff4883c3024c89f24829daeb8a660f1f440000
+488d43014c89f24829c24885d20f8e76ffffff807b015d74674889c30fb60380bc0588000000080f8607ffffff0f1f004883c3014c89f24829dae945ffffff90
+488d43014c89f24829c24885d20f8e36ffffff807b012175c0488d43024c89f24829c24885d20f8e1dffffff807b025b75a74183c501e93fffffff0f1f440000
+488d43024c89f24829c24885d20f8ef6feffff807b023e0f857cffffff4883c3034585ed74194c89f24183ed014829dae9cffeffffb8feffffffe98ffeffff49
+891c24b82a000000e981feffff0f1f00
+</bytechunk>
+<bytechunk space="ram" offset="0x40d410" readonly="true">
+481d400000000000481d400000000000401e400000000000301e400000000000001e400000000000d01d400000000000a01d400000000000601d400000000000
+481d400000000000
+</bytechunk>
+<bytechunk space="ram" offset="0x401f70">
+f30f1efa534189d14989ca488d56014531db4531c0be01000000660f1f4400000fb6024889c10fb684078800000083e8033c1a771b0fb6c03eff24c558d44000
+83fe020f85ef0100000f1f80000000004883c201ebca662e0f1f840000000000488d420185f60f85da0100004539c87d114963c848c1e1054989140a41c6440a
+18014889c2be01000000eb940f1f40004883c20183fe010f84b301000083fe020f857affffff4539c80f8d71ffffff4963c048c1e00541c644021800e95fffff
+ff0f1f8000000000488d5a0183fe010f84b301000083fe020f85ea0100004539c80f8de10100004963c048c1e0054c01d080781800741348395008740980f920
+0f84ca010000c64018004889dabe02000000e909ffffff660f1f84000000000085f6751b4539c87d114963c048c1e0054989140241c644021801be0100000048
+83c204e9d8feffff0f1f84000000000085f6751b4539c87d114963c048c1e0054989140241c644021801be010000004883c203e9a8feffff0f1f840000000000
+85f6751b4539c87d114963c048c1e0054989140241c644021801be010000004883c202e978feffff0f1f8400000000004883c2014539c80f8d63feffffe9edfe
+ffff660f1f440000488d420183fe02746f4539c80f8dd60000004963d041bb0d000000be0200000048c1e20549894412084889c2e927feffff0f1f8000000000
+488d420183fe0274574539c80f8d860000004963d041bb0c000000be0200000048c1e20549894412084889c2e9effdffff0f1f80000000004489c05bc30f1f00
+4183fb0d74204889c2e9d2fdffff669031f6e9c9fdffff660f1f8400000000004183fb0c75e04539c87d0c4963c848c1e1054989540a104183c0014889c231f6
+e99bfdffff0f1f004889da31f6e98efdffff660f1f4400004889c241bb0c000000be02000000e975fdffff0f1f4400004889c241bb0d000000be02000000e95d
+fdffff0f1f4400004889dae950fdffff0fb6520180fa200f8429feffff0fb68c17880000004889da4439d90f852ffdffffe910feffff662e0f1f840000000000
+</bytechunk>
+<bytechunk space="ram" offset="0x406450">
+f30f1efa4889f04889d64829c20f1f004883fa017e470fb6500184d275220fb6100fb694178800000083ea0580fa0577170fb6d23eff24d530e740000f1f4000
+83c22880fa0376584883c0024889f248834108014829c24883fa017fb9c36690488d50024989f0488301014929d04983f8017e7c807803007510440fb6400242
+80bc07880000000a747648c74108000000004889d0e97cffffff660f1f4400004883c0044889f248834108014829c2e95cffffff0f1f40004883c0034889f248
+834108014829c2e944ffffff0f1f40004883c0024889f24883010148c74108000000004829c2e925ffffff0f1f44000048c7410800000000c30f1f8000000000
+4883c0044889f248c74108000000004829c2e9f9feffff660f1f840000000000
+</bytechunk>
+<bytechunk space="ram" offset="0x40d458" readonly="true">
+2021400000000000c01f400000000000f020400000000000c0204000000000009020400000000000c01f40000000000000204000000000000020400000000000
+b01f40000000000070214000000000003821400000000000c01f400000000000c01f400000000000c01f400000000000b01f400000000000c01f400000000000
+c01f400000000000c01f4000000000003820400000000000d01f400000000000c01f400000000000d01f400000000000c01f400000000000c01f400000000000
+c01f400000000000c01f400000000000d01f400000000000d023400000000000c023400000000000b023400000000000a023400000000000a023400000000000
+</bytechunk>
+<bytechunk space="ram" offset="0x40e730" readonly="true">
+98644000000000000865400000000000f0644000000000009864400000000000b0644000000000002065400000000000b8654000000000002866400000000000
+1066400000000000b865400000000000d0654000000000004066400000000000
+</bytechunk>
+<symbol space="ram" offset="0x401f70" name="normal_getAtts"/>
+<symbol space="ram" offset="0x401d00" name="normal_ignoreSectionTok"/>
+<symbol space="ram" offset="0x406450" name="little2_updatePosition"/>
+</binaryimage>
+<script>
+  <com>lo fu normal_getAtts</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu little2_updatePosition</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option crossjumprevert off</com>
+  <com>option gotoreduce off</com>
+  <com>option returndup off</com>
+  <com>lo fu normal_ignoreSectionTok</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option gotosink off</com>
+  <com>lo fu normal_ignoreSectionTok</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option crossjumprevert on</com>
+  <com>option gotoreduce on</com>
+  <com>option returndup on</com>
+  <com>lo fu normal_getAtts</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu little2_updatePosition</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="gotosink #1: the 14 backward jumps to the switch head print only with the option off" min="14" max="14">goto label_401f90;</stringmatch>
+<stringmatch name="gotosink #2: by default they are continue in the loop around the switch" min="13" max="13">continue;</stringmatch>
+<stringmatch name="gotosink #3: new loops by default; one while( true ) per function the off pass already had" min="6" max="6">while\( true \)</stringmatch>
+<stringmatch name="gotosink #4: two jumps to the outer head of updatePosition by default, four with the option off" min="6" max="6">goto label_406460;</stringmatch>
+<stringmatch name="gotosink #5: sinking, the jump over the switch becomes an if around it" min="1" max="1">^    if \(9 &gt; v1\) \{$</stringmatch>
+<stringmatch name="gotosink #6: with the option off the jump over the switch stays" min="1" max="1">^  if \(9 &lt;= v1\) goto label_401e30;$</stringmatch>
+</decompilertest>

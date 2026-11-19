@@ -182,6 +182,34 @@ switches. A jump into any other leaf, including the latch of a `while( true )`
 loop, keeps its goto. `off` restores the original collapse precedence and
 rendering.
 
+**`gotosink` — backward gotos become loops; a jump over a run becomes an
+`if`.** `kuna_gotosink.rs (ActionGotoSink)` runs after the other
+blockrecovery passes that edit the tree (last before `paramcopyhoist`), with
+`gotosink on` (the default). It first splices every `BlockList` that is a
+member of a list or graph into its parent (`BlockGraph::kuna_flatten_lists`):
+a nested list prints its members in order anyway, so the edit is invisible,
+and a jump that named the list now names its first member, where it lands.
+Then, to a fixpoint over every list:
+
+* A component that ends in a plain jump back to the front leaf of an earlier
+  component of the same list, `L: S1..Sk; goto L;`, is wrapped with
+  everything from `L` on in a `BlockInfLoop` around a `BlockList`; the jump
+  at the end is the loop's back edge, so its `BlockGoto` loses its target and
+  prints nothing, and every other plain jump to `L` whose innermost loop is the new one is
+  retagged `continue`. A conditional jump back, `L: S1..Sk; if (c) goto L;`,
+  becomes a `BlockDoWhile` whose body ends in the jump's condition block.
+  A run holding a `break` or `continue` that no loop (for `continue`) or loop
+  or switch (for `break`) inside it encloses is skipped.
+* An if-goto whose target is the front leaf of a later component of the same
+  list, `if (c) goto L; S1..Sk; L:`, with one to sixteen components between
+  and a condition that is one basic block, becomes a two-component `BlockIf`
+  over those components, and the condition's branch is negated
+  (`Funcdata::block_basic_negate_lastop`) so it prints `if (!c)`.
+
+The label of a leaf no plain goto reaches any more is released (a `continue`
+to it keeps none), and `mark_label_bump_up` runs again so a new loop prints its
+head's label above itself.
+
 **(angr) `condfold` — folding across a *complex* sibling.** `rule_block_or`
 requires the sibling condition block (upstream's `orblock`, the right operand
 of the prospective `&&`/`||`) to be *non-complex*: `substrate/funcdata_block.rs

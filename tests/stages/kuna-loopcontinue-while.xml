@@ -49,10 +49,10 @@ a87f400000000000a87f400000000000a87f400000000000a87f400000000000a87f400000000000
   <com>decompile</com>
   <com>print C</com>
 </script>
-<stringmatch name="LOOPCONTINUE-WHILE #1: the case that jumps to the do-while test continues" min="1" max="1">^          v1 = &amp;v1\[4\];$
-^          continue;$</stringmatch>
-<stringmatch name="LOOPCONTINUE-WHILE #2: with the option off it jumps to an empty label above the test" min="1" max="1">^          goto label_407fe6;$</stringmatch>
+<stringmatch name="LOOPCONTINUE-WHILE #1: the case that jumps to the do-while test continues" min="1" max="1">^            v1 = &amp;v1\[4\];$
+^            continue;$</stringmatch>
+<stringmatch name="LOOPCONTINUE-WHILE #2: with the option off it jumps to an empty label above the test" min="1" max="1">^            goto label_407fe6;$</stringmatch>
 <stringmatch name="LOOPCONTINUE-WHILE #3: the empty label prints only with the option off" min="1" max="1">^label_407fe6:$</stringmatch>
-<stringmatch name="LOOPCONTINUE-WHILE #4: 19 gotos over both passes, nine by default and ten with the option off" min="19" max="19">goto label_</stringmatch>
+<stringmatch name="LOOPCONTINUE-WHILE #4: 17 gotos over both passes, eight by default and nine with the option off" min="17" max="17">goto label_</stringmatch>
 <stringmatch name="LOOPCONTINUE-WHILE #5: Rust's loop-and-break do-while keeps the jump to its test as a goto marker" min="1" max="1">panic!\("kuna: unstructured goto to label_407fe6"\)</stringmatch>
 </decompilertest>

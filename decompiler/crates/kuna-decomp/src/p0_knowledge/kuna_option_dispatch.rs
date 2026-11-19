@@ -113,6 +113,7 @@ kuna_options! { self, p1;
         self.ret_split_global = val;
         Ok(msg)
     },
+    "gotosink" => on_off!(goto_sink, "goto sinking and backward-goto loops"),
     "retsplitlimit" => {
         let (val, msg) =
             crate::p8_structure::kuna_retsplitlimit::OptionRetSplitLimit.apply(p1)?;
