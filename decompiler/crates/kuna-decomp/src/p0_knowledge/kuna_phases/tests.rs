@@ -56,9 +56,9 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_218() {
-    assert_eq!(kuna_num_settables(), 218);
-    assert_eq!(SETTABLE_TABLE.len(), 218);
+fn settable_count_is_219() {
+    assert_eq!(kuna_num_settables(), 219);
+    assert_eq!(SETTABLE_TABLE.len(), 219);
 }
 
 #[test]
@@ -1092,7 +1092,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `chkstkdarwin`, its P2 row after `msvcftol`.
     // +1 for `calleeargs`; its P4 row sits after `argclobber`.
     // +1 for `blobs`; its P1 row sits after `strings`.
-    assert_eq!(json.matches("},\n").count(), 217);
+    assert_eq!(json.matches("},\n").count(), 218);
 }
 
 #[test]
