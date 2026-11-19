@@ -1549,6 +1549,18 @@ pub struct PrintC {
     void_tail_return: Option<OpId>,
     /// (kuna `javanew`) This function's `<init>` calls that print as `new T(args)`.
     java_new: std::collections::HashMap<OpId, crate::kuna_javanew::NewInit>,
+    /// (kuna `javanew`) A constructor's `this(...)` / `super(...)` calls.
+    java_ctor_calls: std::collections::HashMap<OpId, crate::kuna_javanew::CtorCall>,
+    /// (kuna `javatry`) This function's catch clauses, in java-language output.
+    java_catches: Option<crate::kuna_javatry::CatchTable>,
+    /// (kuna) The userop index of Dalvik's `throwException`, in java-language
+    /// output.
+    java_throw_userop: Option<u64>,
+    /// (kuna `javatry`) The blocks straddling a `try`'s end, while they print:
+    /// for each, the handlers and whether the statements inside their ranges print.
+    java_block_filters: std::collections::HashMap<BlockId, Vec<(u64, bool)>>,
+    /// (kuna `javatry`) Handlers already printed as a `catch` clause.
+    java_caught_shown: std::collections::HashSet<u64>,
     /// (kuna) Resolved `realtypes` rendering context for the function currently
     /// being printed — the `Architecture::realtypes` gate plus the data-model fact
     /// (`long` is 8 bytes) needed to relabel residual `TYPE_UNKNOWN` (`xunknownN`)
@@ -1644,6 +1656,11 @@ impl PrintC {
             commsorter: crate::comment::CommentSorter::new(),
             void_tail_return: None,
             java_new: std::collections::HashMap::new(),
+            java_ctor_calls: std::collections::HashMap::new(),
+            java_catches: None,
+            java_caught_shown: std::collections::HashSet::new(),
+            java_throw_userop: None,
+            java_block_filters: std::collections::HashMap::new(),
             rt_ctx: RealTypeCtx::OFF,
             out_lang: crate::kuna_lang::OutLang::C,
             eol_warns: Vec::new(),
@@ -2745,6 +2762,15 @@ impl PrintC {
         // ScopeLocal symbol walk is the W4 surface; we emit from the named
         // HighVariables directly (the `kuna_name` stand-in), which is the same set
         // of locals the scope would declare.
+        self.java_catches = if self.out_lang == crate::kuna_lang::OutLang::Java {
+            crate::kuna_javatry::CatchTable::new(fd)
+        } else {
+            None
+        };
+        self.java_caught_shown.clear();
+        self.java_throw_userop = (self.out_lang == crate::kuna_lang::OutLang::Java && arch.java_try)
+            .then(|| arch.userops.get_op_by_name(b"throwException").map(|u| u.get_index() as u64))
+            .flatten();
         let atomic_return = if self.out_lang == crate::kuna_lang::OutLang::Go
             && !self.signature_param_names.values().any(|name| name == "atomic" || name == "unsafe")
         {
@@ -3045,9 +3071,17 @@ impl PrintC {
         let mut display = fd.get_display_name().to_string();
         // (kuna java) `PrintJava::docFunction` prints in the scope of the class, so
         // the method name stands alone.
+        let mut java_ctor = false;
         if self.out_lang == crate::kuna_lang::OutLang::Java {
-            if let Some((_, base)) = display.rsplit_once("::") {
-                display = base.to_string();
+            if let Some((scope, base)) = display.rsplit_once("::") {
+                // (kuna javanew) A constructor is declared by its class name.
+                java_ctor = arch.java_new && (base == "<init>" || base.starts_with("<init>_"));
+                display = if java_ctor {
+                    let class = scope.rsplit("::").next().unwrap_or(scope);
+                    class.rsplit('$').next().unwrap_or(class).to_string()
+                } else {
+                    base.to_string()
+                };
             }
         }
         // Return type from the recovered proto output (C++ `getFuncProto().
@@ -3072,10 +3106,12 @@ impl PrintC {
         if self.caller_stack_function(fd, arch) {
             self.emit.print("__attribute__((noinline)) ", SyntaxHighlight::KeywordColor);
         }
-        let idret = self.emit.begin_return_type(markup);
-        self.emit.tag_type(&ret_type, SyntaxHighlight::TypeColor, markup);
-        self.emit.end_return_type(idret);
-        self.emit.spaces(1, 0);
+        if !java_ctor {
+            let idret = self.emit.begin_return_type(markup);
+            self.emit.tag_type(&ret_type, SyntaxHighlight::TypeColor, markup);
+            self.emit.end_return_type(idret);
+            self.emit.spaces(1, 0);
+        }
         let id1g = self.emit.open_group();
         // emitSymbolScope(fd->getSymbol()): Ghidra mode's display name is bare.
         if let Some(remote) = arch.remote_scope.as_ref() {
@@ -3360,6 +3396,17 @@ impl PrintC {
                 None => continue,
             };
             seen.insert(high);
+            // (kuna javatry) A catch clause declares its exception variable.
+            if self.java_catches.is_some() {
+                let only_caught = fd.high_bank().get(high).is_some_and(|h| {
+                    let defs: Vec<Option<OpId>> =
+                        (0..h.num_instances()).map(|i| fd.vbank().get(h.get_instance(i)).and_then(|v| v.get_def())).collect();
+                    !defs.is_empty() && defs.iter().all(|d| d.is_some_and(|op| crate::kuna_javatry::caught_handler(fd, op).is_some()))
+                });
+                if only_caught {
+                    continue;
+                }
+            }
             // A `&symbol` reference's offset is a CONSTANT operand of the PTRSUB
             // markup, not a scope Symbol.  When a constant-only reference high
             // SHADOWS a real local that is already declared from its own storage —
@@ -4283,11 +4330,13 @@ impl PrintC {
         self.assign_label_names(fd, sroot);
         if self.out_lang == crate::kuna_lang::OutLang::Java && arch.java_new {
             self.java_new = crate::kuna_javanew::pairs(fd);
+            self.java_ctor_calls = crate::kuna_javanew::ctor_calls(fd);
         }
         self.emit_block_graph(fd, arch, sroot);
         self.void_tail_return = None;
         self.label_names.clear();
         self.java_new.clear();
+        self.java_ctor_calls.clear();
     }
 
     /// Give every printed label a distinct name.  Block duplication (return
@@ -4706,6 +4755,10 @@ impl PrintC {
             return;
         }
         let n = list.len();
+        if self.java_catches.is_some() && self.list_has_java_try(fd, &list) {
+            self.emit_block_ls_java_try(fd, arch, &list);
+            return;
+        }
         let id1 = self.emit.begin_block(0);
         // C++ `PrintC::emitBlockLs` (printc.cc:2929-2933): a single-element list
         // emits its one block **once**, in the caller's branch state (before the
@@ -4745,6 +4798,11 @@ impl PrintC {
     /// block 2 (optional) the else body.
     fn emit_block_if(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
         use crate::prettyprint::Emit;
+        // (kuna `javatry`) A DEX try dispatch prints as `try { } catch`.
+        if let Some(shape) = self.java_try_shape(fd, blk, &[]).filter(Self::java_try_standalone) {
+            self.emit_java_try(fd, arch, shape, &[]);
+            return;
+        }
         // (kuna) iteregion: a two-arm assignment diamond the S8 `iteregion` pass
         // marked (its condition `CBRANCH` carries the `kuna_iteregion` addl-flag)
         // renders as a single `dest = ( cond ) ? A : B;` ternary instead of the
@@ -5085,6 +5143,62 @@ impl PrintC {
                 || crate::kuna_stackassign::assignment(fd, op).is_some())
     }
 
+    /// (kuna) Is `op` Dalvik's `throwException(x)`, which java-language output
+    /// prints as `throw x`?
+    fn is_java_throw(&self, fd: &Funcdata, op: OpId) -> bool {
+        let Some(o) = fd.obank().get(op) else { return false };
+        if self.out_lang != crate::kuna_lang::OutLang::Java || o.code() != OpCode::CPUI_CALLOTHER || o.num_input() != 2 {
+            return false;
+        }
+        let Some(id) = o.get_in(0).and_then(|v| fd.vbank().get(v)).map(|v| v.get_offset()) else { return false };
+        self.java_throw_userop == Some(id)
+    }
+
+    /// (kuna `javatry`) Does the list, nested lists included, hold a `try`
+    /// dispatch?
+    fn list_has_java_try(&self, fd: &Funcdata, list: &[BlockId]) -> bool {
+        list.iter().any(|&b| match fd.sblocks_ref().block(b).get_type() {
+            crate::block::BlockType::Ls => self.list_has_java_try(fd, fd.sblocks_ref().block(b).get_list()),
+            _ => self.java_try_shape(fd, b, &[]).is_some(),
+        })
+    }
+
+    /// (kuna `javatry`) `emit_block_ls` for a list holding a `try` dispatch: the
+    /// `try` takes the statements it protects from the elements after it.
+    pub(super) fn emit_block_ls_java_try(&mut self, fd: &Funcdata, arch: &Architecture, list: &[BlockId]) {
+        // A nested list prints as its elements in place; flattened, a dispatch
+        // sees every statement that follows it.
+        let mut flat: Vec<BlockId> = Vec::with_capacity(list.len());
+        let mut stack: Vec<BlockId> = list.iter().rev().copied().collect();
+        while let Some(b) = stack.pop() {
+            if fd.sblocks_ref().block(b).get_type() == crate::block::BlockType::Ls {
+                stack.extend(fd.sblocks_ref().block(b).get_list().iter().rev());
+            } else {
+                flat.push(b);
+            }
+        }
+        let list = flat.as_slice();
+        let n = list.len();
+        let mut k = 0;
+        while k < n {
+            let last = k + 1 == n;
+            let id = self.emit.begin_block(0);
+            self.context.push_mod();
+            if !last && !self.is_flat() {
+                self.context.set_mod(modifiers::NO_BRANCH);
+            }
+            let rest = &list[k + 1..];
+            if let Some(shape) = self.java_try_shape(fd, list[k], rest) {
+                k += 1 + self.emit_java_try(fd, arch, shape, rest);
+            } else {
+                self.emit_block(fd, arch, list[k]);
+                k += 1;
+            }
+            self.context.pop_mod();
+            self.emit.end_block(id);
+        }
+    }
+
     fn is_suppressed_statement(&self, fd: &Funcdata, op: OpId) -> bool {
         let Some(operation) = fd.obank().get(op) else {
             return true;
@@ -5096,6 +5210,21 @@ impl PrintC {
             return true;
         }
         if operation.code() == OpCode::CPUI_NEW && self.java_new.values().any(|pair| pair.new_op == op) {
+            return true;
+        }
+        if self.java_ctor_calls.get(&op) == Some(&crate::kuna_javanew::CtorCall::Implicit) {
+            return true;
+        }
+        if operation.code() == OpCode::CPUI_CBRANCH && crate::kuna_javatry::is_throws_edge(fd, op) {
+            return true;
+        }
+        if crate::kuna_javatry::caught_handler(fd, op).is_some_and(|h| self.java_caught_shown.contains(&h)) {
+            return true;
+        }
+        if self.out_lang == crate::kuna_lang::OutLang::Java
+            && operation.code() == OpCode::CPUI_RETURN
+            && fd.obank().get(op).and_then(|o| o.basic_neighbours().0).is_some_and(|prev| self.is_java_throw(fd, prev))
+        {
             return true;
         }
         crate::p9_emit::kuna_stackmarkers::nonprinting(fd, op)
@@ -5865,6 +5994,9 @@ impl PrintC {
                 None => continue,
             };
             if self.is_suppressed_statement(fd, inst) {
+                continue;
+            }
+            if !self.java_block_filters.is_empty() && !self.java_visible(fd, bb, inst) {
                 continue;
             }
             // (kuna `voidtailreturn`) The function's own trailing bare `return;`.
@@ -7011,6 +7143,13 @@ impl PrintC {
         };
         let display = userop.map_or(0, |op| op.get_display());
         let nin = fd.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
+        if self.is_java_throw(fd, op) {
+            self.push_op(&crate::kuna_langjava::THROW, Some(op_key(op)));
+            if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(1)) {
+                self.push_vn_ir(fd, arch, vn, op);
+            }
+            return;
+        }
         if display == 0 {
             let acle = userop.and_then(|u| {
                 crate::kuna_acleintrinsics::intrinsic(fd, arch, op, u.get_name())
@@ -14000,6 +14139,7 @@ mod kuna_rustarrayinit;
 mod kuna_rustoption_niche;
 
 mod kuna_cpoolprint;
+mod kuna_javatryprint;
 
 #[cfg(test)]
 mod tests;

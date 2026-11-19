@@ -2244,7 +2244,8 @@ mod tests {
         // and ghangr-go-mcall-resumption / a scheduler switch preserves its caller's continuation
         // and kuna-dex / a DEX file's constant pool, entry copies and sparse switches
         // and kuna-dex-javanew / an allocation and its <init> call as new T(args)
-        assert_eq!(count, 826, "corpus file count drifted");
+        // and kuna-dex-javatry + kuna-dex-javactor / DEX try/catch and constructors as Java
+        assert_eq!(count, 828, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

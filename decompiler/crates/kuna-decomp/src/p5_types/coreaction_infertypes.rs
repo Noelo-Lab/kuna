@@ -103,6 +103,24 @@ pub(crate) fn output_type_local(data: &Funcdata, op: OpId) -> Rc<Datatype> {
                 return t;
             }
         }
+        // (kuna javatry) the try dispatch and the exceptional-edge test are
+        // `bool`; the caught exception has its catch clause's class type.
+        if in0_off == crate::userop::BUILTIN_JAVA_TRY as u64 || in0_off == crate::userop::BUILTIN_JAVA_THROWS as u64 {
+            if let Some(Ok(t)) = arch.types().map(|t| t.get_base(out_size, type_metatype::TYPE_BOOL)) {
+                return t;
+            }
+        }
+        if in0_off == crate::userop::BUILTIN_JAVA_CAUGHT as u64 {
+            let handler = o.get_in(1).and_then(|v| data.vbank().get(v)).map(|v| v.get_offset());
+            let caught = handler.and_then(|h| {
+                let table = crate::kuna_javatry::CatchTable::new(data)?;
+                let model = arch.dex.as_ref()?;
+                model.java_type(&table.caught_descriptor(h), arch.types()?).ok()
+            });
+            if let Some(t) = caught {
+                return t;
+            }
+        }
     }
     // C++ `TypeOpCpoolref::getOutputLocal` (typeop.cc:2453): the record's type,
     // or a boolean for an `instanceof` test.

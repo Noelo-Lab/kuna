@@ -62,6 +62,33 @@ pub struct CodeItem {
     pub insns_units: u32,
 }
 
+impl CodeItem {
+    /// File offset of the `try_item` array, which follows the instructions
+    /// (padded to four bytes).
+    pub fn tries_off(&self) -> usize {
+        let end = self.insns_off as usize + self.insns_units as usize * 2;
+        (end + 3) & !3
+    }
+}
+
+/// One catch clause of a `try_item`: the exception type (`None` for the
+/// catch-all) and the handler, in 16-bit units from the method's first
+/// instruction.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CatchHandler {
+    pub type_idx: Option<u32>,
+    pub addr: u32,
+}
+
+/// One `try_item`: the covered instructions, in 16-bit units from the method's
+/// first instruction, and its catch clauses in match order.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TryItem {
+    pub start: u32,
+    pub count: u16,
+    pub handlers: Vec<CatchHandler>,
+}
+
 /// One method from a `class_data_item`.
 #[derive(Clone, Copy, Debug)]
 pub struct EncodedMethod {
@@ -134,6 +161,26 @@ fn uleb128(bytes: &[u8], pos: &mut usize) -> KunaResult<u32> {
         }
     }
     Err(bad("uleb128 longer than five bytes"))
+}
+
+fn sleb128(bytes: &[u8], pos: &mut usize) -> KunaResult<i32> {
+    let mut result: u32 = 0;
+    let mut shift = 0;
+    loop {
+        let byte = *bytes.get(*pos).ok_or_else(|| bad("truncated sleb128"))?;
+        *pos += 1;
+        result |= u32::from(byte & 0x7f) << shift;
+        shift += 7;
+        if byte & 0x80 == 0 {
+            if shift < 32 && byte & 0x40 != 0 {
+                result |= u32::MAX << shift;
+            }
+            return Ok(result as i32);
+        }
+        if shift >= 35 {
+            return Err(bad("sleb128 longer than five bytes"));
+        }
+    }
 }
 
 /// Decode a NUL-terminated MUTF-8 string (CESU-8 surrogates, `C0 80` for NUL).
@@ -266,6 +313,32 @@ impl DexFile {
         Ok(item)
     }
 
+    /// The `try_item`s of a code item with their catch clauses.
+    pub fn tries(&self, code: &CodeItem) -> KunaResult<Vec<TryItem>> {
+        let b = &self.bytes;
+        let tries_off = code.tries_off();
+        let list_off = tries_off + usize::from(code.tries_size) * 8;
+        let mut out = Vec::with_capacity(usize::from(code.tries_size));
+        for k in 0..usize::from(code.tries_size) {
+            let at = tries_off + k * 8;
+            let start = u32_at(b, at)?;
+            let count = u16_at(b, at + 4)?;
+            let mut pos = list_off + usize::from(u16_at(b, at + 6)?);
+            let size = sleb128(b, &mut pos)?;
+            let mut handlers = Vec::new();
+            for _ in 0..size.unsigned_abs().min(0xffff) {
+                let type_idx = uleb128(b, &mut pos)?;
+                let addr = uleb128(b, &mut pos)?;
+                handlers.push(CatchHandler { type_idx: Some(type_idx), addr });
+            }
+            if size <= 0 {
+                handlers.push(CatchHandler { type_idx: None, addr: uleb128(b, &mut pos)? });
+            }
+            out.push(TryItem { start, count, handlers });
+        }
+        Ok(out)
+    }
+
     pub fn num_strings(&self) -> usize {
         self.strings.count
     }
@@ -380,6 +453,21 @@ pub fn simple_class_name(descriptor: &str) -> String {
     match java.rfind('.') {
         Some(dot) => java[dot + 1..].to_string(),
         None => java,
+    }
+}
+
+/// The length in 16-bit units of the Dalvik instruction with opcode `op`
+/// (the format table of the bytecode document); `0x00` is a `nop` unless it
+/// heads a payload, which [`DexModel::instruction_units`] sizes.
+pub fn opcode_units(op: u8) -> u32 {
+    match op {
+        0x00..=0x01 | 0x04 | 0x07 | 0x0a..=0x12 | 0x1d | 0x1e | 0x21 | 0x27 | 0x28 => 1,
+        0x3e..=0x43 | 0x73 | 0x79 | 0x7a | 0x7b..=0x8f | 0xb0..=0xcf | 0xe3..=0xf9 => 1,
+        0x02 | 0x05 | 0x08 | 0x13 | 0x15 | 0x16 | 0x19 | 0x1a | 0x1c | 0x1f | 0x20 | 0x22 | 0x23 | 0x29 => 2,
+        0x2d..=0x3d | 0x44..=0x6d | 0x90..=0xaf | 0xd0..=0xe2 | 0xfe | 0xff => 2,
+        0x03 | 0x06 | 0x09 | 0x14 | 0x17 | 0x1b | 0x24..=0x26 | 0x2a..=0x2c | 0x6e..=0x72 | 0x74..=0x78 | 0xfc | 0xfd => 3,
+        0xfa | 0xfb => 4,
+        0x18 => 5,
     }
 }
 

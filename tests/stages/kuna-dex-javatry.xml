@@ -1,0 +1,108 @@
+<decompilertest>
+<binaryimage arch="Dalvik:LE:32:DEX_Android12">
+<!--
+    Kuna DEX loader, try/catch: P2 flow + P8 structure + P9 Java output,
+    option javatry (default on). The script loads the committed DEX fixture
+    built from tests/stages/fixtures/dex/Tries.java and prints Java.
+
+    Asserts #1-#2 are the off pass: no catch handler is reachable, so the
+    catch bodies vanish and parse prints only its protected statement.
+    Asserts #3-#10 are the default pass: every dispatch prints as
+    try { } catch (T e) { }, with clauses of one try merged (twoCatches),
+    a try/finally's normal-path copy after the try (withFinally), a try
+    inside a loop (loopTry), a synchronized block's catch-all (sync), and
+    Dalvik's throw as a Java throw statement (rethrow).
+-->
+<bytechunk space="ram" offset="0x0" readonly="true">0e00</bytechunk>
+<symbol space="ram" offset="0x0" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file tests/stages/fixtures/dex/tries.dex</com>
+  <com>option setlanguage java-language</com>
+  <com>option javatry off</com>
+  <com>read symbols</com>
+  <com>load function demo::Tries::parse</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/stages/fixtures/dex/tries.dex</com>
+  <com>option setlanguage java-language</com>
+  <com>option javatry off</com>
+  <com>read symbols</com>
+  <com>load function demo::Tries::rethrow</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/stages/fixtures/dex/tries.dex</com>
+  <com>option setlanguage java-language</com>
+  <com>read symbols</com>
+  <com>load function demo::Tries::parse</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/stages/fixtures/dex/tries.dex</com>
+  <com>option setlanguage java-language</com>
+  <com>read symbols</com>
+  <com>load function demo::Tries::twoCatches</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/stages/fixtures/dex/tries.dex</com>
+  <com>option setlanguage java-language</com>
+  <com>read symbols</com>
+  <com>load function demo::Tries::withFinally</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/stages/fixtures/dex/tries.dex</com>
+  <com>option setlanguage java-language</com>
+  <com>read symbols</com>
+  <com>load function demo::Tries::loopTry</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/stages/fixtures/dex/tries.dex</com>
+  <com>option setlanguage java-language</com>
+  <com>read symbols</com>
+  <com>load function demo::Tries::sync</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/stages/fixtures/dex/tries.dex</com>
+  <com>option setlanguage java-language</com>
+  <com>read symbols</com>
+  <com>load function demo::Tries::rethrow</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="javatry #1: off loses the catch of parse" min="1" max="1">return Integer\.parseInt\(a0\);
+^}</stringmatch>
+<stringmatch name="javatry #2: off runs on past the call that could throw" min="1" max="1">^  Integer\.parseInt\(a0\);
+^}</stringmatch>
+<stringmatch name="javatry #3: parse catches NumberFormatException" min="1" max="1">catch \(NumberFormatException e\) \{
+return -1;</stringmatch>
+<stringmatch name="javatry #4: twoCatches has two clauses on one try" min="1" max="1">catch \(NumberFormatException e\) \{
+v1 = -1;
+\}
+catch \(ArrayIndexOutOfBoundsException e\) \{
+v1 = -2;</stringmatch>
+<stringmatch name="javatry #5: withFinally keeps the finally copy after the try" min="1" max="1">catch \(Throwable v3\) \{
+a0\.append\(v2\);
+throw v3;
+\}
+a0\.append\(v2\);
+return v1;</stringmatch>
+<stringmatch name="javatry #6: loopTry's try sits in the loop body" min="1" max="1">for \(v1 = 0; v1 &lt;= 9; v1 = v1 \+ 1\) \{
+try \{
+v2 \+= a0\[v1\];</stringmatch>
+<stringmatch name="javatry #7: sync's catch-all releases the monitor and rethrows" min="1" max="1">catch \(Throwable v1\) \{
+monitorExit\(a0\);
+throw v1;</stringmatch>
+<stringmatch name="javatry #8: rethrow binds the caught exception" min="1" max="1">catch \(RuntimeException v1\) \{
+ref = new IOException\("bad",v1\);
+throw ref;</stringmatch>
+<stringmatch name="javatry #9: no dispatch or caught value leaks" min="0" max="0">java_try|java_caught|java_throws</stringmatch>
+<stringmatch name="javatry #10: throwException prints as throw" min="0" max="0">throwException</stringmatch>
+</decompilertest>

@@ -2043,6 +2043,10 @@ impl Rule for RuleConditionalMove {
         if op_code(data, cbranch) != OpCode::CPUI_CBRANCH {
             return 0;
         }
+        // (kuna javatry) An exception edge selects no value.
+        if crate::kuna_javatry::dispatch_handler(data, cbranch).is_some() || crate::kuna_javatry::is_throws_edge(data, cbranch) {
+            return 0;
+        }
 
         // Re-resolve the boolean roots (checkBoolean returns the expression root).
         let bool0 = RuleConditionalMove::check_boolean(data, in0).expect("condmove: bool0");

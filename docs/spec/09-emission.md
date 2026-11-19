@@ -3787,6 +3787,34 @@ profile, the type speller and the Java string escapes, and
   statements and order, which is sound because Java evaluates them after the
   allocation too. A pair split across blocks — an `if` choosing between two
   constructors — keeps the two-statement form.
+- **Constructors** (kuna, `option javanew`). A constructor (`<init>`, with or
+  without its overload suffix) is declared by its class name, the part after
+  the last `$`, with no return type. In a constructor, an `<init>` call on the
+  method's own `this` input is Java's `this(args)` when the called method
+  belongs to the same class and `super(args)` otherwise
+  (`kuna_javanew.rs (ctor_calls)`, the class read from the DEX model). The
+  no-argument `super()` to `java.lang.Object` is the call Java inserts
+  implicitly, so it prints nothing.
+- **Exceptions** (kuna, `option javatry`, default on). Dalvik's `throw` lifts to
+  `throwException(x)` followed by a RETURN; the RETURN is a halt (chapter 2),
+  and the pair prints `throw x;`. A `java_try` dispatch (chapter 2) prints as a
+  `try` statement (`printc/kuna_javatryprint.rs`). The dispatch structures as an
+  `if` one of whose arms starts at the handler: the arm is the catch clause,
+  and the protected statements are the `if`'s other arm or, when the handler
+  ends the path, the statements that follow the `if` in its list (nested lists
+  flattened). The protected part runs to the last statement inside the
+  handler's ranges; a statement between two of them that cannot throw is
+  inside too (D8 leaves those out of a range), and a basic block that straddles
+  the end prints its statements on each side by the address of the
+  instructions each one executes (`kuna_javatryprint.rs (statement_in_range)`).
+  What follows prints after the `try` when no clause can fall into it; when one
+  can, a tail that cannot throw moves inside, and a tail that can moves inside
+  under a comment saying an exception there would not reach the catch.
+  Consecutive dispatches with the same ranges are the clauses of one `try`; an
+  `if` whose handler arm is the code after it is an empty catch, and an
+  `if (dispatch) goto L` is a catch whose body is that jump. The clause binds
+  the variable `java_caught` defines (declared only there) and names the types
+  its handler catches, `A | B` for several.
 - **Signature.** The method name prints without its class path, the `this`
   parameter is hidden, and an empty parameter list prints `()`.
 - **Casts.** `CastStrategyJava` decides casts (`cast.rs (java_cast_standard)`):

@@ -301,6 +301,35 @@ impl LoopBody {
     /// `blockaction.cc:182`).  A structured loop is allowed at most one exit
     /// block; pick it.  `looporder` is needed only to resolve `immed_container`.
     pub fn find_exit(&mut self, body: &[BlockId], graph: &mut BlockGraph, looporder: &[LoopBody]) {
+        self.find_exit_avoiding(body, graph, looporder, &std::collections::BTreeSet::new());
+    }
+
+    /// [`find_exit`](Self::find_exit) that takes a block in `avoid` (a `try`
+    /// handler, kuna `javatry`) only when no other exit qualifies, so the handler
+    /// stays inside the loop as a catch clause.
+    pub fn find_exit_avoiding(
+        &mut self,
+        body: &[BlockId],
+        graph: &mut BlockGraph,
+        looporder: &[LoopBody],
+        avoid: &std::collections::BTreeSet<BlockId>,
+    ) {
+        if !avoid.is_empty() {
+            self.find_exit_inner(body, graph, looporder, avoid);
+            if self.exitblock.is_some() {
+                return;
+            }
+        }
+        self.find_exit_inner(body, graph, looporder, &std::collections::BTreeSet::new());
+    }
+
+    fn find_exit_inner(
+        &mut self,
+        body: &[BlockId],
+        graph: &mut BlockGraph,
+        looporder: &[LoopBody],
+        avoid: &std::collections::BTreeSet<BlockId>,
+    ) {
         let mut trialexit: Vec<BlockId> = Vec::new();
 
         for j in 0..self.tails.len() {
@@ -311,7 +340,7 @@ impl LoopBody {
                     continue; // Don't use goto as exit edge
                 }
                 let curbl = graph.block(tail).get_out(i);
-                if !graph.block(curbl).is_mark() {
+                if !graph.block(curbl).is_mark() && !avoid.contains(&curbl) {
                     if self.immed_container.is_none() {
                         self.exitblock = Some(curbl);
                         return;
@@ -332,7 +361,7 @@ impl LoopBody {
                     continue; // Don't use goto as exit edge
                 }
                 let curbl = graph.block(bl).get_out(j);
-                if !graph.block(curbl).is_mark() {
+                if !graph.block(curbl).is_mark() && !avoid.contains(&curbl) {
                     if self.immed_container.is_none() {
                         self.exitblock = Some(curbl);
                         return;
@@ -1795,12 +1824,20 @@ impl<'a> CollapseStructure<'a> {
             }
             // loopbody.sort(): by depth (deepest first), stable.
             self.stable_sort_loopbody_by_depth();
+            let handler_blocks: std::collections::BTreeSet<BlockId> = if self.exitleaf_facts.java_handlers.is_empty() {
+                Default::default()
+            } else {
+                let list: Vec<BlockId> = self.graph.block(self.graph_id).get_list().to_vec();
+                list.into_iter()
+                    .filter(|&b| self.is_java_handler(b))
+                    .collect()
+            };
             for idx in 0..self.loopbody.len() {
                 let mut body: Vec<BlockId> = Vec::new();
                 self.loopbody[idx].find_base(&mut body, self.graph);
                 // findExit needs immed_container resolved against the full loopbody.
                 let looporder_snapshot = self.loopbody.clone();
-                self.loopbody[idx].find_exit(&body, self.graph, &looporder_snapshot);
+                self.loopbody[idx].find_exit_avoiding(&body, self.graph, &looporder_snapshot, &handler_blocks);
                 self.loopbody[idx].order_tails(self.graph);
                 let lb = self.loopbody[idx].clone();
                 lb.extend(&mut body, self.graph);
@@ -1997,9 +2034,34 @@ impl<'a> CollapseStructure<'a> {
             nodes.push(outblock); // Extend the cat chain
         }
 
+        // (kuna javatry) A `try` dispatch must not become the leading statement of
+        // a condition: leave the trailing condition to structure first.
+        let last = *nodes.last().expect("nodes");
+        if nodes.len() > 1
+            && self.graph.block(last).size_out() == 2
+            && (self.is_java_dispatch(last) || nodes[..nodes.len() - 1].iter().any(|&n| self.is_java_dispatch_if(n)))
+        {
+            nodes.pop();
+            if nodes.len() < 2 {
+                return Ok(false);
+            }
+        }
+
         let graph_id = self.graph_id;
         self.graph.new_block_list(graph_id, &nodes)?; // Concatenate into a single block
         Ok(true)
+    }
+
+    /// (kuna javatry) Is `bl` an `if` whose condition is a `try` dispatch?
+    fn is_java_dispatch_if(&self, bl: BlockId) -> bool {
+        if self.exitleaf_facts.java_dispatch.is_empty() {
+            return false;
+        }
+        match self.graph.block(bl).get_type() {
+            crate::block::BlockType::If => self.is_java_dispatch(self.graph.block(bl).get_block(0)),
+            crate::block::BlockType::Ls => self.graph.block(bl).get_list().iter().any(|&b| self.is_java_dispatch_if(b)),
+            _ => false,
+        }
     }
 
     /// Is structuring block `bl` too complex to be a condition clause (C++
@@ -2086,6 +2148,10 @@ impl<'a> CollapseStructure<'a> {
             }
             if self.graph.block(bl).is_back_edge_out(i) {
                 continue; // Don't use loop branch to get to orblock
+            }
+            // (kuna javatry) A `try` dispatch never joins a short-circuit condition.
+            if self.is_java_dispatch(bl) || self.is_java_dispatch(orblock) {
+                continue;
             }
             // (kuna, `option condfold`) upstream declines outright on a complex
             // sibling.  When condfold is on, a complex sibling is still accepted if
@@ -2516,6 +2582,25 @@ impl<'a> CollapseStructure<'a> {
             && self.graph.block(bl).is_decision_out(i)
     }
 
+    /// (kuna javatry) Does `bl` start at a block a `java_try` dispatch enters?
+    fn is_java_handler(&self, bl: BlockId) -> bool {
+        self.graph
+            .get_front_leaf(bl)
+            .and_then(|leaf| self.graph.block(leaf).get_copy())
+            .is_some_and(|bb| self.exitleaf_facts.java_handlers.contains(&bb))
+    }
+
+    /// (kuna javatry) Does `bl` end in a `java_try` dispatch?
+    fn is_java_dispatch(&self, bl: BlockId) -> bool {
+        if self.exitleaf_facts.java_dispatch.is_empty() {
+            return false;
+        }
+        self.graph
+            .get_exit_leaf(bl)
+            .and_then(|leaf| self.graph.block(leaf).get_copy())
+            .is_some_and(|bb| self.exitleaf_facts.java_dispatch.contains(&bb))
+    }
+
     /// The start address of the first leaf that executes inside a structuring
     /// node — the node's position in the original code layout.
     fn ifnoexit_arm_addr(&self, bl: BlockId) -> Option<u64> {
@@ -2535,6 +2620,17 @@ impl<'a> CollapseStructure<'a> {
     /// `if (c) A; B;` out in front of `B`.  Ties only; a single eligible arm is
     /// unaffected, so the vast majority of guards are untouched.
     fn ifnoexit_arm_order(&self, bl: BlockId) -> [int4; 2] {
+        // (kuna `javatry`) A dispatch's handler is the clause, so the protected
+        // code stays in the enclosing sequence.
+        if !self.exitleaf_facts.java_handlers.is_empty() {
+            let handler = |i| self.is_java_handler(self.graph.block(bl).get_out(i));
+            if handler(1) {
+                return [1, 0];
+            }
+            if handler(0) {
+                return [0, 1];
+            }
+        }
         if !self.guard_arm {
             return [0, 1];
         }
@@ -2645,6 +2741,9 @@ impl<'a> CollapseStructure<'a> {
     /// Attempt to apply the BlockWhileDo structure (C++
     /// `CollapseStructure::ruleBlockWhileDo`, `blockaction.cc:1518`).
     fn rule_block_while_do(&mut self, bl: BlockId) -> bool {
+        if self.is_java_dispatch(bl) {
+            return false; // (kuna javatry) a `try` dispatch is no loop condition
+        }
         if self.graph.block(bl).size_out() != 2 {
             return false; // Must be binary condition
         }
@@ -2701,6 +2800,9 @@ impl<'a> CollapseStructure<'a> {
     /// Attempt to apply the BlockDoWhile structure (C++
     /// `CollapseStructure::ruleBlockDoWhile`, `blockaction.cc:1555`).
     fn rule_block_do_while(&mut self, bl: BlockId) -> bool {
+        if self.is_java_dispatch(bl) {
+            return false; // (kuna javatry) a `try` dispatch is no loop condition
+        }
         if self.graph.block(bl).size_out() != 2 {
             return false; // Must be binary condition
         }
@@ -3771,6 +3873,7 @@ impl Action for ActionBlockStructure {
         // BlockCopy leaf (the copy's `copy` field points back at the bblocks block
         // so the printer can walk its op list).
         data.seed_sblocks_copy();
+        crate::kuna_javatry::drop_throws_edges(data);
         // (kuna) Region-based (Phoenix/SAILR) structurer — `option regionstructure
         // on` (default-off, parity-safe).  When ON, replace Ghidra's
         // `CollapseStructure` with the region-driven structurer
@@ -3781,7 +3884,11 @@ impl Action for ActionBlockStructure {
         // knot or the hang-guard), re-seed `sblocks` and fall through to the
         // unchanged `CollapseStructure` path.  OFF (default) skips this entirely and
         // output is byte-identical.
-        if data.get_arch().region_structure {
+        // (kuna javatry) A DEX method with `try` dispatches takes CollapseStructure,
+        // which knows to keep a dispatch out of `&&`/`||` and to make its handler
+        // the `if` clause.
+        let java_try = !crate::kuna_javatry::dispatch_blocks(data).is_empty();
+        if data.get_arch().region_structure && !java_try {
             match crate::p8_structure::region_structurer::run_region_structurer(data, ctx.deadline) {
                 Ok((true, flips)) => {
                     // Realize the deferred data-flow half of the loop-condition
@@ -3804,6 +3911,7 @@ impl Action for ActionBlockStructure {
                     // and re-seed a clean BlockCopy mirror for the CollapseStructure
                     // fallback (never abort — honest-partial parity).
                     data.reseed_sblocks_copy();
+                    crate::kuna_javatry::drop_throws_edges(data);
                 }
             }
         }
@@ -3827,7 +3935,9 @@ impl Action for ActionBlockStructure {
         let dbg_ifne = crate::p8_structure::kuna_ifnoexit::trace_enabled();
         let guard_arm = data.get_arch().guard_arm;
         let loop_cond_hoist = data.get_arch().loop_cond_hoist;
-        let want_addr = dbg_ifne || guard_arm;
+        exitleaf_facts.java_handlers = crate::kuna_javatry::dispatch_targets(data);
+        exitleaf_facts.java_dispatch = crate::kuna_javatry::dispatch_blocks(data).into_iter().collect();
+        let want_addr = dbg_ifne || guard_arm || !exitleaf_facts.java_handlers.is_empty();
         let nbb = data.bblocks_get_size();
         for i in 0..nbb {
             let bb = data.bblocks_get_block(i);

@@ -9,6 +9,11 @@
 //! printer can drop the NEW statement and print the call as the allocation.
 //! Arguments keep their own statements and their order: they are evaluated
 //! between the two operations, as Java evaluates them after the allocation.
+//!
+//! A constructor's call of another constructor on its own object is Java's
+//! `this(args)` (same class) or `super(args)` (the superclass); [`ctor_calls`]
+//! names them. A no-argument `super()` to `java.lang.Object` is the call Java
+//! inserts implicitly, so it prints nothing.
 
 use std::collections::HashMap;
 
@@ -94,6 +99,64 @@ pub fn pairs(fd: &Funcdata) -> HashMap<OpId, NewInit> {
             let class = String::from_utf8_lossy(class.get_token()).into_owned();
             out.insert(call, NewInit { new_op, object, class });
         }
+    }
+    out
+}
+
+/// How a constructor's call of another constructor on its own object prints.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CtorCall {
+    /// `this(args)`.
+    This,
+    /// `super(args)`.
+    Super,
+    /// The implicit `super()` to `java.lang.Object`: nothing.
+    Implicit,
+}
+
+/// Every `<init>` CALLIND in a constructor that initializes the constructor's
+/// own object (its `this` input), keyed by the call.
+pub fn ctor_calls(fd: &Funcdata) -> HashMap<OpId, CtorCall> {
+    let mut out = HashMap::new();
+    let arch = fd.get_arch();
+    let Some(model) = arch.dex.as_ref() else { return out };
+    let Some((class, superclass)) = model.method_class(fd.get_address().get_offset()) else { return out };
+    for i in 0..fd.num_calls() {
+        let call = fd.get_call_specs(i).get_op();
+        let Some(c) = fd.obank().get(call) else { continue };
+        if c.code() != OpCode::CPUI_CALLIND || c.num_input() < 2 {
+            continue;
+        }
+        let Some(target) = c.get_in(0).and_then(|vn| def_of(fd, vn)) else { continue };
+        let Some(rec) = record_of(fd, target) else { continue };
+        if rec.get_tag() != cpool_tag::POINTER_METHOD || rec.get_token() != b"<init>" {
+            continue;
+        }
+        let Some(t) = fd.obank().get(target) else { continue };
+        let Some(object) = c.get_in(1).filter(|&o| t.get_in(0) == Some(o)) else { continue };
+        let mut source = object;
+        while let Some(copy) = def_of(fd, source).and_then(|d| fd.obank().get(d)).filter(|d| d.code() == OpCode::CPUI_COPY) {
+            let Some(from) = copy.get_in(0) else { break };
+            source = from;
+        }
+        let is_this = fd.vbank().get(source).is_some_and(|v| {
+            v.is_input() && v.get_offset() == crate::kuna_dex::INPUT_REGISTER_START
+        });
+        if !is_this {
+            continue;
+        }
+        let Some(index) = t.get_in(1).and_then(|v| fd.vbank().get(v)).map(|v| v.get_offset()) else { continue };
+        let Some(owner) = u32::try_from(index).ok().and_then(|i| model.method_owner(i)) else { continue };
+        let kind = if owner == class {
+            CtorCall::This
+        } else if c.num_input() == 2
+            && superclass.and_then(|s| model.type_descriptor(s)).as_deref() == Some("Ljava/lang/Object;")
+        {
+            CtorCall::Implicit
+        } else {
+            CtorCall::Super
+        };
+        out.insert(call, kind);
     }
     out
 }

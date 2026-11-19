@@ -198,8 +198,13 @@ impl PrintC {
             self.push_atom(&Atom::with_op(keywords::KEYWORD_NEW, TagType::OpToken, SyntaxHighlight::keyword_color, op_key(op)));
         }
         self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
+        let ctor = self.java_ctor_calls.get(&op).copied();
         match &merged {
             Some(pair) => self.push_atom(&Atom::with_op(pair.class.clone(), TagType::OpToken, SyntaxHighlight::type_color, op_key(op))),
+            None if ctor.is_some() => {
+                let keyword = if ctor == Some(crate::kuna_javanew::CtorCall::This) { "this" } else { "super" };
+                self.push_atom(&Atom::with_op(keyword.to_string(), TagType::OpToken, SyntaxHighlight::keyword_color, op_key(op)));
+            }
             None => {
                 if let Some(callee) = o.get_in(0) {
                     self.push_vn_ir(fd, arch, callee, op);

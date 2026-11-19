@@ -656,6 +656,8 @@ pub struct ArchContext {
     /// (kuna `dexmodel`) The loaded DEX file's constant pool and register
     /// payloads; `None` for any other image or with the option off.
     pub dex: Option<Rc<crate::kuna_dex::DexModel>>,
+    /// (kuna `javatry`) Give a DEX method's `try_item`s exception edges.
+    pub java_try: bool,
     /// (kuna `jumpassist`) The compiled `<jumpassist>` scripts; empty with the
     /// option off.
     pub jump_assists: Rc<crate::kuna_jumpassist::JumpAssists>,
@@ -1541,6 +1543,7 @@ impl ArchContext {
             call_mechanism_effects: false,
             call_mechanism_reload_only: false,
             dex: None,
+            java_try: false,
             jump_assists: Rc::default(),
             manage,
             min_laned_register_size: 4,

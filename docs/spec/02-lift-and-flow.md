@@ -3975,3 +3975,54 @@ deletes a real call and the stack-overflow fault its page touches can raise.
 Through an arm64e `__auth_ptr` slot (`adrp x16; ldr x16,[x16,#off]; blraaz x16`,
 named by `authptrcall`) the same walk matches, since the slot carries the
 import's function symbol. `off` keeps the call.
+
+## 2.16 DEX exception edges
+
+**(kuna) `option javatry on|off`, default on,
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_javatry.rs`.** A DEX method lists
+its protected ranges and their catch clauses in its `code_item`
+(`kuna_dex/format.rs (DexFile::tries)`); nothing in the instruction stream
+reaches a handler, so without the table every catch body is unreachable code.
+Upstream Ghidra's Dalvik support never reaches them either.
+
+**Handlers.** Each clause names a type (or the catch-all) and a handler
+address. D8 gives every type of a multi-type catch its own stub, a
+`move-exception` and a `goto` (or fall-through) into the one catch body; two
+handlers of one try item whose stubs bind the same register and continue at the
+same place are one handler, catching both types
+(`kuna_javatry.rs (canonical_blocks)`).
+
+**Flow.** `FlowInfo::process_instruction`, before decoding an instruction:
+
+- At a handler whose first instruction is `move-exception vA` (which the Dalvik
+  spec leaves empty), `vA = java_caught(handler)` defines the exception.
+- At the start of the first range that names a handler, `t = java_try(handler);
+  CBRANCH handler, t` dispatches to it, once per handler. A handler whose ranges
+  reach further is dispatched first, so an enclosing `try` comes before the one
+  it contains; handlers of one try item keep their match order. The dispatch
+  ops start a basic block of their own, and `ActionRedundBranch` does not splice
+  that block into its predecessor, so the statements before a `try` are never
+  part of its condition.
+- Every other instruction inside a range that can throw (an invoke, a field or
+  array access, an allocation, a cast, `throw`, a monitor operation, integer
+  division) is preceded by `t = java_throws(); CBRANCH handler, t` for each of
+  its handlers. These edges carry the register state at the throw to the
+  handler, so a value the protected code assigns reaches the catch body.
+- Dalvik's `throw` lifts to `throwException(x)` and a RETURN; the RETURN is
+  marked a no-return halt, so return recovery gives it no value.
+
+**Pruning.** `ActionJavaThrowPrune` (in `fullloop`, beside the edge-removing
+strippers) removes an exceptional edge when every MULTIEQUAL at its handler
+brings the same value along another edge: the edge then tells the handler
+nothing. Removing it lets the next `mainloop` splice the two halves of the block
+it split, which keeps a condition in the protected code a single block.
+`RuleConditionalMove` never turns a dispatch or exceptional edge into a value.
+
+**Structuring** (chapter 8). The structuring graph drops every `java_throws`
+edge (`kuna_javatry.rs (drop_throws_edges)`), so a handler is reached only
+from its dispatch. A function with a dispatch takes `CollapseStructure` rather
+than the region structurer, which there knows to: make the handler the clause of
+an `if` with no exit; never fold a dispatch into `&&`/`||`, a loop condition or
+a condition list; and prefer an exit other than a handler when choosing a
+loop's exit, so a catch inside a loop stays in the loop. The printer (chapter 9)
+reads the dispatch `if` as the `try` statement.

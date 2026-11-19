@@ -734,6 +734,10 @@ fn base_explicit(data: &Funcdata, vn: crate::context::VarnodeId, mut maxref: int
         if dop.is_marker() {
             return -1;
         }
+        // (kuna javatry) The caught exception is the catch clause's variable.
+        if crate::kuna_javatry::caught_handler(data, def).is_some() {
+            return -1;
+        }
         if dop.is_call() {
             if dop.code() == OpCode::CPUI_NEW && dop.num_input() == 1 {
                 return -2; // Explicit, but may need special printing

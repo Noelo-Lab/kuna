@@ -35,6 +35,8 @@ use crate::printlanguage::{OpToken, TokenType};
 pub static SHIFT_RIGHT_UNSIGNED: OpToken = op_token(">>>", "", 2, 46, false, TokenType::Binary, 1, 0);
 /// Java's unsigned right-shift assignment.
 pub static RIGHTEQUAL_UNSIGNED: OpToken = op_token(">>>=", "", 2, 14, false, TokenType::Binary, 1, 5);
+/// Java's `throw`, the statement Dalvik's `throwException(x)` performs.
+pub static THROW: OpToken = op_token("throw ", "", 1, 2, false, TokenType::UnaryPrefix, 0, 0);
 /// Java's `instanceof` (`PrintJava::instanceof`).
 pub static INSTANCEOF: OpToken = op_token("instanceof", "", 2, 60, true, TokenType::Binary, 1, 0);
 
