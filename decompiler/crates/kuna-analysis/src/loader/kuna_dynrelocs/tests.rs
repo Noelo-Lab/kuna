@@ -297,6 +297,14 @@ fn unhandled_machine_is_inert() {
     assert!(run(&bytes).writes.is_empty());
 }
 
+/// Only the import's slot holds a value this image does not determine; an
+/// image whose relocations kuna cannot classify lists nothing as known.
+#[test]
+fn runtime_written_is_the_slots_resolve_leaves_alone() {
+    assert_eq!(run(&image64(62, 8, 6, 7)).runtime_written, Some(vec![(GOT_VMA + 16, GOT_VMA + 24)]));
+    assert_eq!(run(&image64(21, 8, 6, 7)).runtime_written, None);
+}
+
 /// GH #1379: [`fixup_sites`] lists every slot, the import [`resolve`] leaves
 /// alone included, with what the loader stores where the image says it.
 #[test]

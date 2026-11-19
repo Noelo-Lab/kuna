@@ -2225,7 +2225,8 @@ mod tests {
         // and gh1628-x86-vmx-decode-flags / VMREAD/VMWRITE decode without REX.W and VMX instructions set CF/ZF
         // and kuna-kernelbug / a Linux kernel __bug_table trap prints as __WARN(file,line) or BUG()
         // and kuna-opaquepredicate / a comparison constant for every input folds under opaquepredicate
-        assert_eq!(count, 779, "corpus file count drifted");
+        // and kuna-opaquepredicate-proofs / narrow inputs, dominating branches, identical arms, never-written globals
+        assert_eq!(count, 780, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

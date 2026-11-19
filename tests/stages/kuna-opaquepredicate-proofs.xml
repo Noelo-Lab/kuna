@@ -1,0 +1,134 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    P3 simplification quiescence, P0 option opaquepredicate (default off):
+    the proofs beyond low bits and bitwise identities, and the value
+    `globals`. The script loads an in-tree linked image of opaqueglobal.c
+    (source beside it): clang -O0, x86-64, freestanding and static.
+
+    Narrow inputs (kuna_opaquedomain.rs): (v * v * v - v) % 3 is zero and
+    v * v is not negative for every byte v, so cube and square lose their
+    dead arm; cubewide tests a 32-bit v, for which the product wraps, and
+    stays.
+
+    Implied (kuna_opaqueimplied.rs): inside `if (v > 5)` the test `v <= 5` is
+    false (again), inside `if (v < 5)` so is `v > 10` (range); `v > 2` is
+    still open there (rangekeep).
+
+    Identical arms (kuna_opaquearms.rs): same and samecall run the same
+    operations whichever way their branch goes, so one copy remains; differ
+    multiplies by another constant in one arm and keeps both.
+
+    Never-written globals (kuna_opaqueglobals.rs, value `globals` only): no
+    instruction stores to y, seven or next and no code holds their address,
+    so `y >= 10` (bogus), `seven != 7` (init) and `next != 0` (afterarr) are
+    decided by the image's bytes. `on` leaves bogus and init alone. live is
+    stored to by set_live and esc has its address passed to take: written
+    and taken keep their branch under `globals`.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/opaqueglobal_x86_64_clang_O0</com>
+  <com>read symbols</com>
+  <com>option ctypes on</com>
+  <com>option opaquepredicate off</com>
+  <com>load function bogus</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function cube</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function square</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function again</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function range</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function same</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function samecall</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option opaquepredicate on</com>
+  <com>load function bogus</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function init</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function cube</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function square</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function cubewide</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function again</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function range</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function rangekeep</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function same</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function samecall</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function differ</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option opaquepredicate globals</com>
+  <com>load function bogus</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function init</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function afterarr</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function written</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function taken</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="off and on keep the test of a global nothing writes" min="2" max="2">10 &lt;= y</stringmatch>
+<stringmatch name="globals returns the only value bogus can reach" min="1" max="1">^  return a0 \+ 1;</stringmatch>
+<stringmatch name="on keeps the test of an initialized global" min="1" max="1">seven != 7</stringmatch>
+<stringmatch name="globals reads the initialized global as its image value" min="1" max="1">^  return a0 \+ 2;</stringmatch>
+<stringmatch name="globals reads a zero-filled global beside an indexed array" min="1" max="1">^  return a0 \+ 6;</stringmatch>
+<stringmatch name="the arm behind the zero-filled global is gone" min="0" max="0">a0 \* 6</stringmatch>
+<stringmatch name="a global another function stores to keeps its test" min="1" max="1">3 &lt;= live</stringmatch>
+<stringmatch name="a global whose address is passed on keeps its test" min="1" max="1">3 &lt;= esc</stringmatch>
+<stringmatch name="off keeps the remainder of a byte's cube" min="1" max="1">v1 \* v1 \* v1 - v1\) % 3</stringmatch>
+<stringmatch name="on folds the remainder for every byte" min="1" max="1">^  return a1 \+ 5;</stringmatch>
+<stringmatch name="the same test over 32 bits stays" min="1" max="1">a0 \* a0 \* a0 - a0\) % 3</stringmatch>
+<stringmatch name="off keeps the sign test of a byte's square" min="1" max="1">0 &lt;= \(int\)a0 \* \(int\)a0</stringmatch>
+<stringmatch name="on folds the sign test" min="1" max="1">^  return a1 \+ 7;</stringmatch>
+<stringmatch name="the contradicting test prints only when off" min="1" max="1">if \(a0 &lt;= 5\)</stringmatch>
+<stringmatch name="its arm prints only when off" min="1" max="1">v1 \*= 0xf;</stringmatch>
+<stringmatch name="a test outside the dominating range prints only when off" min="1" max="1">v1 \*= 0x11;</stringmatch>
+<stringmatch name="a test the dominating range leaves open stays" min="1" max="1">v1 \*= 0x13;</stringmatch>
+<stringmatch name="identical arms print twice off, once on, once in differ" min="4" max="4">\*a1 = \*a1 \* 0x15 \+ a0;</stringmatch>
+<stringmatch name="arms that differ both stay" min="1" max="1">\*a1 = \*a1 \* 0x19 \+ a0;</stringmatch>
+<stringmatch name="off selects between two identical calls" min="1" max="1">\? sink\(a1 \* 0x17 \+ 1\) : sink\(a1 \* 0x17 \+ 1\)</stringmatch>
+<stringmatch name="on makes the call once" min="1" max="1">^  return sink\(a1 \* 0x17 \+ 1\);</stringmatch>
+</decompilertest>
