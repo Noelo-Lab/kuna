@@ -11705,14 +11705,21 @@ impl PrintC {
             // whole-symbol cover the C++ `setSymbol` records for a size-matching
             // entry) is also a bare-name render, so `off <= 0` covers both.
             if sym_off <= 0 {
-                if self.out_lang == crate::kuna_lang::OutLang::C
+                if matches!(self.out_lang, crate::kuna_lang::OutLang::C | crate::kuna_lang::OutLang::Rust)
                     && sym_type.as_ref().is_some_and(|ty| ty.get_metatype() == crate::dtype::type_metatype::TYPE_CODE)
                 {
                     if let Some(address) = spacebase_unnamed_address(arch, fd, op, &ct, in1const, ptr_size) {
                         let point = fd.obank().get(op).map(|o| o.get_addr().clone()).unwrap_or_default();
-                        if let Some(prefix) = crate::kuna_funcptrnames::prefix(
-                            fd, arch, &address, &point, &name, self.context.namespace_strategy(),
-                        ) {
+                        let prefix = if self.out_lang == crate::kuna_lang::OutLang::Rust {
+                            crate::kuna_rustfuncptr::prefix(
+                                fd, arch, &address, &point, &name, self.context.namespace_strategy(),
+                            )
+                        } else {
+                            crate::kuna_funcptrnames::prefix(
+                                fd, arch, &address, &point, &name, self.context.namespace_strategy(),
+                            )
+                        };
+                        if let Some(prefix) = prefix {
                             for scope in prefix {
                                 self.push_op(&tokens::SCOPE, None);
                                 self.push_atom(&Atom::syntax(

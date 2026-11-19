@@ -51,7 +51,25 @@ and any global root needed to disambiguate a local, and `none` emits the bare
 name. Local scopes belong to the function's detached database; namespace lookup
 uses only scope identities from the live architecture database. Scope tokens
 precede the existing symbol atom, preserving its instruction and varnode tags.
-Rust and Go output retain their own existing function-value spelling.
+Rust reuses the same exact-function proof and applies Rust module lookup through
+`kuna_rustfuncptr.rs`. A foreign function address keeps the module path that
+distinguishes its target: a startup wrapper named `main` passing
+`r17_probe::main` must not pass its own `main` instead. A required global root
+is spelled `crate::`: sibling and ancestor module targets start at the crate
+root, while an unshadowed same-module or descendant target can use a relative
+path under the minimal policy. The all-namespaces policy retains the full target
+path and roots it when the caller belongs to a module. Ordinary namespace
+components that are Rust keywords
+use raw identifiers, such as `r#type::callback`. Explicit `crate`, `self`,
+`Self`, `super` and `_` scope names are refused rather than being reinterpreted
+as Rust path operators. Primitive type names, reference/pointer type paths,
+templates and anonymous scopes are refused. This qualification applies only to
+ordinary identifier function names; it does not reconstruct generic functions
+or type-associated paths. Same-scope values that need
+no qualifier keep their bare spelling, and `none` retains its explicit bare-name
+policy. Direct calls, callback variables, data/interior addresses and C/Go
+emission are unchanged. The prefix remains a sequence of scope tokens, so the
+original function-value atom keeps its instruction and varnode tags.
 
 Typed byte-copy stores explicitly convert a pointer initializer to its declared
 pointer type when the rendered operand is not already a pointer that type accepts
