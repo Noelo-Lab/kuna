@@ -11,11 +11,19 @@
 //! The runtime is C (every entry point here is `extern "C"` under the
 //! platform convention), so these are plain prototypes; the `swiftcc`
 //! entry points whose arguments ride in the Swift registers
-//! (`swift_task_switch`, the key-path accessors) are left to recovery, and so
+//! (the key-path accessors) are left to recovery, and so
 //! are the three whose last argument the compiler leaves unset when the callee
 //! ignores it (`swift_once`'s context, `swift_getKeyPath`'s arguments,
 //! `swift_getWitnessTable`'s instantiation arguments): a declared slot there
 //! would make a stale register an argument, and a parameter of the caller.
+//!
+//! The concurrency runtime's entry points come from the generated table
+//! ([`super::kuna_swiftconcurrency`]). Most are plain prototypes too; the
+//! ones that suspend the calling task (`swift_task_switch`,
+//! `swift_asyncLet_get`, `swift_task_future_wait`, ...) are `swiftasync`
+//! functions that take the caller's context in the `swiftasync` register
+//! (x22 / r14), and are stated as [`ContextProto`]s, which the commit binds
+//! under `__swiftasynccall` with that parameter pinned to the register.
 
 use std::rc::Rc;
 
@@ -26,8 +34,8 @@ use object::read::Object;
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
 
 /// The types the table spells.
-#[derive(Clone, Copy)]
-enum Ty {
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Ty {
     Void,
     /// `void *`.
     Ptr,
@@ -50,6 +58,15 @@ enum Ty {
     /// `unsigned int`.
     U32,
     Bool,
+    /// `swift.AsyncContext *`.
+    Ctx,
+    /// `swift.ContinuationAsyncContext *`.
+    ContCtx,
+    /// An executor reference, two words: `swift.ExecutorRef` as a result,
+    /// an identity and an implementation word as a parameter.
+    Exec,
+    /// `swift.AsyncTaskAndContext` (a new task and its initial context).
+    TaskAndContext,
 }
 
 struct Sig {
@@ -253,11 +270,6 @@ const RUNTIME: &[(&str, Sig)] = &[
     ),
     ("swift_beginAccess", sig!(Void(Ptr, Ptr, Size, Ptr))),
     ("swift_endAccess", sig!(Void(Ptr))),
-    ("swift_task_alloc", sig!(Ptr(Size))),
-    ("swift_task_dealloc", sig!(Void(Ptr))),
-    ("swift_task_getCurrent", sig!(Ptr())),
-    ("swift_task_getMainExecutor", sig!(Ptr())),
-    ("swift_task_isCurrentExecutor", sig!(Bool(Ptr, Ptr))),
     ("swift_getEnumCaseMultiPayload", sig!(U32(Ptr, Meta))),
     ("swift_storeEnumTagMultiPayload", sig!(Void(Ptr, Meta, U32))),
     (
@@ -346,9 +358,6 @@ const RUNTIME: &[(&str, Sig)] = &[
     ("swift_unknownObjectUnownedTakeInit", sig!(Ptr(Ptr, Ptr))),
     ("swift_unknownObjectUnownedCopyAssign", sig!(Ptr(Ptr, Ptr))),
     ("swift_unknownObjectUnownedTakeAssign", sig!(Ptr(Ptr, Ptr))),
-    ("swift_defaultActor_initialize", sig!(Void(Ptr))),
-    ("swift_defaultActor_destroy", sig!(Void(Ptr))),
-    ("swift_defaultActor_deallocate", sig!(Void(Ptr))),
     ("swift_stdlib_isStackAllocationSafe", sig!(Bool(Size, Size))),
     ("swift_stdlib_random", sig!(Void(Ptr, Size))),
     ("swift_getTypeName", sig!(BoxPair(Meta, Bool))),
@@ -420,6 +429,50 @@ impl Types<'_> {
         )
     }
 
+    fn async_context(&self) -> Option<Rc<Datatype>> {
+        let ptr = self.void_ptr()?;
+        let ctx = self.pair("swift.AsyncContext", [("parent", Rc::clone(&ptr)), ("resume_parent", ptr)])?;
+        self.tf.get_type_pointer(self.ptr_size, ctx, 1).ok()
+    }
+
+    /// `swift.ContinuationAsyncContext`: the context a continuation resumes
+    /// into (`swift/ABI/Task.h`), its header an `AsyncContext`.
+    fn continuation_context(&self) -> Option<Rc<Datatype>> {
+        const NAME: &str = "swift.ContinuationAsyncContext";
+        if let Some(t) = self.tf.find_by_name(NAME).ok().flatten().filter(|t| t.get_size() > 0) {
+            return self.tf.get_type_pointer(self.ptr_size, t, 1).ok();
+        }
+        let ptr = self.void_ptr()?;
+        let word = self.tf.get_base(8, type_metatype::TYPE_UINT).ok()?;
+        let fields = [
+            ("parent", Rc::clone(&ptr)),
+            ("resume_parent", Rc::clone(&ptr)),
+            ("flags", Rc::clone(&word)),
+            ("await_synchronization", Rc::clone(&word)),
+            ("error_result", Rc::clone(&ptr)),
+            ("normal_result", Rc::clone(&ptr)),
+            ("resume_to_executor", self.executor_ref()?),
+        ];
+        let mut off = 0;
+        let fields = fields
+            .into_iter()
+            .enumerate()
+            .map(|(i, (n, t))| {
+                let f = TypeField::new(i as i32, off, n.to_string(), Rc::clone(&t));
+                off += t.get_size();
+                f
+            })
+            .collect();
+        let shell = self.tf.get_type_struct(NAME).ok()?;
+        let st = self.tf.set_fields_struct_raw(&shell, fields, Vec::new(), off, 8, 0).ok()?;
+        self.tf.get_type_pointer(self.ptr_size, st, 1).ok()
+    }
+
+    fn executor_ref(&self) -> Option<Rc<Datatype>> {
+        let word = self.tf.get_base(8, type_metatype::TYPE_UINT).ok()?;
+        self.pair("swift.ExecutorRef", [("identity", self.void_ptr()?), ("implementation", word)])
+    }
+
     fn of(&self, ty: Ty) -> Option<Rc<Datatype>> {
         Some(match ty {
             Void => self.tf.get_type_void().ok()?,
@@ -436,6 +489,13 @@ impl Types<'_> {
             Int => self.tf.get_base(8, type_metatype::TYPE_INT).ok()?,
             U32 => self.tf.get_base(4, type_metatype::TYPE_UINT).ok()?,
             Bool => self.tf.get_base(1, type_metatype::TYPE_BOOL).ok()?,
+            Ctx => self.async_context()?,
+            ContCtx => self.continuation_context()?,
+            Exec => self.executor_ref()?,
+            TaskAndContext => self.pair(
+                "swift.AsyncTaskAndContext",
+                [("task", self.void_ptr()?), ("initial_context", self.async_context()?)],
+            )?,
         })
     }
 }
@@ -464,6 +524,57 @@ pub fn prototypes(tf: &dyn TypeFactory, ptr_size: i32) -> Vec<PrototypePieces> {
     out
 }
 
+/// A `swiftasync` runtime entry point: its prototype, and the parameter
+/// that rides in the `swiftasync` register.
+#[derive(Clone, Debug)]
+pub struct ContextProto {
+    pub pieces: PrototypePieces,
+    pub context_slot: i32,
+}
+
+/// The concurrency runtime's prototypes: the plain ones, and the ones that
+/// take the caller's context in the `swiftasync` register.
+pub fn concurrency(tf: &dyn TypeFactory, ptr_size: i32) -> (Vec<PrototypePieces>, Vec<ContextProto>) {
+    let types = Types { tf, ptr_size };
+    let (mut plain, mut context) = (Vec::new(), Vec::new());
+    'entries: for e in super::kuna_swiftconcurrency::CONCURRENCY {
+        let Some(outtype) = types.of(e.ret) else { continue };
+        let (mut intypes, mut innames) = (Vec::new(), Vec::new());
+        let mut context_slot = None;
+        for (i, &(ty, name)) in e.params.iter().enumerate() {
+            if e.context == Some(i) {
+                context_slot = Some(intypes.len() as i32);
+            }
+            if ty == Exec {
+                let (Some(identity), Some(implementation)) = (types.of(Ptr), types.of(Size)) else {
+                    continue 'entries;
+                };
+                intypes.extend([identity, implementation]);
+                innames.extend([format!("{name}_identity"), format!("{name}_implementation")]);
+                continue;
+            }
+            let Some(t) = types.of(ty) else { continue 'entries };
+            intypes.push(t);
+            innames.push(name.to_string());
+        }
+        let pieces = PrototypePieces {
+            name: e.name.to_string(),
+            outtype: Some(outtype),
+            intypes,
+            innames,
+            first_var_arg_slot: -1,
+            output_storage: None,
+            input_storage: Vec::new(),
+            kuna_library_names: None,
+        };
+        match context_slot {
+            Some(context_slot) => context.push(ContextProto { pieces, context_slot }),
+            None => plain.push(pieces),
+        }
+    }
+    (plain, context)
+}
+
 /// P1 pass: the runtime prototypes of a Swift image (always on; registered
 /// for a Swift-detected image only).
 pub struct SwiftRuntimePass;
@@ -481,6 +592,11 @@ impl AnalysisPass for SwiftRuntimePass {
         let mut out = AnalysisOutput::default();
         let ptr_size = if ctx.file.is_64() { 8 } else { 4 };
         out.prototypes = prototypes(ctx.arch.types(), ptr_size);
+        if ptr_size == 8 {
+            let (plain, context) = concurrency(ctx.arch.types(), ptr_size);
+            out.prototypes.extend(plain);
+            out.swift_types.runtime_context = context;
+        }
         out
     }
 }
@@ -497,5 +613,16 @@ mod tests {
         names.dedup();
         assert_eq!(names.len(), total, "a runtime entry point is listed twice");
         assert!(names.iter().all(|n| n.starts_with("swift_")));
+    }
+
+    #[test]
+    fn concurrency_table_is_sorted_and_apart_from_the_runtime_table() {
+        let table = super::super::kuna_swiftconcurrency::CONCURRENCY;
+        assert!(table.windows(2).all(|w| w[0].name < w[1].name));
+        assert!(table.iter().all(|e| RUNTIME.iter().all(|(n, _)| *n != e.name)));
+        assert!(table.iter().all(|e| e.context.is_none_or(|i| e.params.get(i).is_some_and(|p| p.0 == Ctx))));
+        let switch = table.iter().find(|e| e.name == "swift_task_switch").unwrap();
+        assert_eq!(switch.context, Some(0));
+        assert_eq!(switch.params.len(), 3);
     }
 }
