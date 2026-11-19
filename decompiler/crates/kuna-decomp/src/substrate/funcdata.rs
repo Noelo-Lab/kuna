@@ -687,6 +687,7 @@ pub struct Funcdata {
     /// the return-half placement test
     /// ([`crate::kuna_retpushedhalf::PushedRegisters`]).
     kuna_pushed_registers: crate::kuna_retpushedhalf::PushedRegisters,
+    pub(crate) kuna_atomic_xadds: Vec<crate::p2_lift::kuna_atomicxadd::Instruction>,
 }
 
 /// Opaque handle for a jump-table (C++ `JumpTable *` slot in `jumpvec`).
@@ -911,6 +912,7 @@ impl Funcdata {
             kuna_elemptr_no_objects: false,
             kuna_elemptr_stated: std::collections::HashMap::new(),
             kuna_pushed_registers: crate::kuna_retpushedhalf::PushedRegisters::default(),
+            kuna_atomic_xadds: Vec::new(),
         })
     }
 
@@ -4381,6 +4383,7 @@ impl Funcdata {
     /// the flag/index reset are faithful. Buffered comments survive, as C++
     /// comments already in the database survive a restart.
     pub fn clear(&mut self) {
+        self.kuna_atomic_xadds.clear();
         self.ppc32_pic_calls.clear();
         self.kuna_regnarrow_runs = 0;
         self.kuna_regnarrow_values.clear();
