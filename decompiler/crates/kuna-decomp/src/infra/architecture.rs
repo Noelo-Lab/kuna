@@ -1856,6 +1856,9 @@ pub struct Architecture {
     /// (`--option listing on` builds it); a no-op when the Listing is absent, so
     /// every parity gate is byte-identical.
     pub analysis_tailcallentry: bool,
+    /// (kuna) Function bodies as chunks with shared tails (`funcchunks`); the FID
+    /// matcher hashes the chunk body and the inventory reports its size. Default off.
+    pub analysis_funcchunks: bool,
     /// (kuna) Gate the Mach-O Objective-C metadata recovery pass (`objc`); default
     /// **off**. The kuna analog of Ghidra's `ObjcTypeMetadataAnalyzer`
     /// (name-recovery half): when the binary is a Mach-O, walk the `__objc_*`
@@ -2626,6 +2629,7 @@ impl Architecture {
             analysis_aif: crate::kuna_aif::AifMode::Off,
             analysis_aifpoolslide: true,
             analysis_tailcallentry: false,
+            analysis_funcchunks: false,
             analysis_objc: false,
             analysis_swiftmetadata: false,
             analysis_cfstrings: false,
@@ -2976,6 +2980,7 @@ impl Architecture {
         // (kuna, GH-299) AIF literal-pool slide -- default-ON; inert without `aif`.
         self.analysis_aifpoolslide = true;
         self.analysis_tailcallentry = true; // tail-call function-entry recovery (ARM-only, needs listing)
+        self.analysis_funcchunks = false;
         self.analysis_objc = true; // Mach-O Objective-C metadata recovery (Mach-O-only pass)
         self.analysis_swiftmetadata = true; // Swift runtime-metadata recovery (inert without swift5_* sections)
         self.analysis_cfstrings = true; // (kuna) Mach-O __cfstring constant-string recovery default-on: Mach-O-only and real-binary-path only, so the XML datatest corpus never runs it (0/675); on an 80 MB third-party arm64 iOS app one decompile is within noise (min 2.324 s off, 2.359 s on, medians 2.442 / 2.372 over 6 interleaved runs)

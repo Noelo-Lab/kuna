@@ -1356,6 +1356,18 @@ pub fn run_listing_consumers_replaying_observed(
         out.push(("tailcallentry", tce_out));
     }
 
+    // (kuna `funcchunks`) The flow body of every function, for the inventory
+    // `size` the console reports.
+    if arch.analysis_listing && arch.analysis_funcchunks {
+        let model = crate::listing::kuna_funcchunks::ChunkModel::build(&listing);
+        let mut fc_out = AnalysisOutput::default();
+        fc_out.function_bodies = listing
+            .functions()
+            .filter_map(|(&e, _)| Some((e, model.chunks(e)?.iter().map(|&(s, end)| end - s).sum())))
+            .collect();
+        out.push(("funcchunks", fc_out));
+    }
+
     // (kuna `callerreads`) Where each direct call returns to, for the decompile
     // step to read a `void` function's callers from.
     if arch.analysis_listing && listing.has_refs() {

@@ -56,13 +56,13 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_225() {
-    assert_eq!(kuna_num_settables(), 225);
-    assert_eq!(SETTABLE_TABLE.len(), 225);
+fn settable_count_is_226() {
+    assert_eq!(kuna_num_settables(), 226);
+    assert_eq!(SETTABLE_TABLE.len(), 226);
 }
 
 #[test]
-fn tier_counts_are_45_core_122_transform_58_analysis() {
+fn tier_counts_are_45_core_122_transform_59_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -74,7 +74,7 @@ fn tier_counts_are_45_core_122_transform_58_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (45, 122, 58));
+    assert_eq!((core, transform, analysis), (45, 122, 59));
 }
 
 #[test]
@@ -401,6 +401,7 @@ fn option_values_live_value_present_for_76() {
         // codegen live reader (read console-side via kuna_live_value), same as the
         // gates around it. Default-off, ARM-only.
         "tailcallentry",
+        "funcchunks",
         // (kuna) ARM literal-pool inference — an analysis-pass gate with no codegen
         // live reader (read console-side via kuna_live_value), same as
         // `tailcallentry` above. Default-off, ARM-only.
@@ -1111,11 +1112,11 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `kernelcache-boot`; its P1 row sits after `kernelcache`.
     // +1 for `blobs`; its P1 row sits after `strings`.
     // +1 for `repstring`; its P3 row sits after `strlenscan`.
-    assert_eq!(json.matches("},\n").count(), 222);
-    // +1 for `importvote`.
-        // +1 for `helperroles`.
-        // +1 for `objectview`.
-    assert_eq!(json.matches("},\n").count(), 222);
+    // +1 for `importvote`; its P4 row sits beside `calleevote`.
+    // +1 for `helperroles`; its P3 row sits after `globalarrayanchor`.
+    // +1 for `objectview`; its P1 row sits after `lazyfuncs`.
+    // +1 for `funcchunks`; its P1 row sits after `tailcallentry`.
+    assert_eq!(json.matches("},\n").count(), 225);
 }
 
 #[test]

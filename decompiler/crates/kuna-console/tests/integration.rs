@@ -565,3 +565,6 @@ mod mips_weak_imports;
 
 #[path = "indirect_dispatch_flow.rs"]
 mod indirect_dispatch_flow;
+
+#[path = "verify_funcchunks.rs"]
+mod verify_funcchunks;

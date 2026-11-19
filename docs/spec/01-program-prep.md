@@ -9011,6 +9011,26 @@ they replaced. Output-changing (more functions), hence default-off; ARM-only and
 it is a strict no-op on every other architecture, with `listing off`, and on the
 XML datatest path.
 
+**Function chunks** (`funcchunks`, default-off; kuna;
+`decompiler/crates/kuna-analysis/src/listing/kuna_funcchunks.rs (ChunkModel::build)`)
+gives a discovered function a body. The Listing keys a function by its entry,
+and every consumer that needs a body clips `[entry, next entry)`; that clip
+mis-assigns the two shapes compilers produce most: a tail several functions jump
+into (a shared epilogue or error path) and a part placed after another function.
+The chunk model is a per-function set of address runs with shared tails,
+computed after the walk from the decoded flow. A function's body is the flow closure of its entry over
+fall-through and branch targets; a call target is never followed, and neither is
+another function's entry, because a jump there is a tail call. The body is cut
+into address runs, where up to 16 undecoded bytes of alignment padding join two
+runs and any decoded instruction between them splits them. The run holding the
+entry is the main chunk and every other run is a tail. An instruction reached
+from several entries is shared, and the model keeps the list of every function
+that reaches it. With the option on, the FID
+matcher hashes this body (all chunks, ascending, Ghidra's `func.getBody()`
+order) instead of the clip, and the inventory `size` of `kuna functions` is the
+chunk body. Analysis-tier and Listing-only, so it is inert on the XML datatest
+path.
+
 **Literal-pool inference** (`poolentry`, on by default, ARM-only; kuna;
 `decompiler/crates/kuna-analysis/src/analyzers/aif/kuna_poolentry.rs`) is aimed at
 the gap walk itself rather than at what the walk misses. AIF advances its cursor by
