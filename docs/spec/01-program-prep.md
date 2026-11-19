@@ -1370,7 +1370,11 @@ A `dyldimage` value may join several names with `+`
 (`Foundation+CoreFoundation`), and the loader then works on all of them as one
 program, so a call from one image into another can be followed without a
 second run. `kuna_dyldcache.rs (DyldCache::select_all)` resolves each name the
-way a single one is resolved, and
+way a single one is resolved; since `+` also occurs inside install names
+(`libc++.1.dylib`, `libc++abi.dylib`), `kuna_dyldcache.rs (select_images)`
+takes from each piece the longest run of `+`-joined pieces that names an
+image, a run ending only at the end of the value or before a non-empty piece,
+so `libc++.1.dylib` stays one image and `libc++` is not read as `libc`. Then
 `kuna_dyldcache/merge.rs (DyldCache::extract_merged)` rebuilds each image on
 its own, as above, and joins the results into one thin Mach-O (an entry named
 twice, or two entries sharing a header, count once, and one image is rebuilt

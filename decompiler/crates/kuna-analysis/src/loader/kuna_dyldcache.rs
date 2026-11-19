@@ -500,14 +500,11 @@ impl DyldCache {
 
     /// Resolve a `dyldimage` value: one name, or several joined by `+`
     /// (`Foundation+CoreFoundation`), each as [`DyldCache::select`] reads it.
+    /// A `+` inside an image's own name (`libc++.1.dylib+Foundation`) stays
+    /// part of that name.
     pub fn select_all(&self, names: Option<&str>) -> Result<Vec<usize>, String> {
         match names {
-            Some(names) if names.contains(IMAGE_SEPARATOR) => names
-                .split(IMAGE_SEPARATOR)
-                .map(str::trim)
-                .filter(|name| !name.is_empty())
-                .map(|name| self.select(Some(name)))
-                .collect(),
+            Some(names) if names.contains(IMAGE_SEPARATOR) => select_images(&self.images, names),
             name => Ok(vec![self.select(name)?]),
         }
     }
@@ -629,6 +626,50 @@ fn select_image(images: &[CacheImage], name: Option<&str>) -> Result<usize, Stri
             )),
         };
     };
+    match_image(images, name)?.ok_or_else(|| no_image(images, name))
+}
+
+/// [`DyldCache::select_all`] over an image list, for a value holding a `+`.
+/// From each piece the longest run of `+`-joined pieces that names an image is
+/// taken, so a `+` of an image's own name (`libc++.1.dylib`) does not split it.
+/// A run ends at the end of the value or before a non-empty piece (`libc++`
+/// never reads as `libc`), and holds at most as many `+` as the image name
+/// holding the most.
+fn select_images(images: &[CacheImage], names: &str) -> Result<Vec<usize>, String> {
+    let pieces: Vec<&str> = names.split(IMAGE_SEPARATOR).collect();
+    let widest = images.iter().map(|i| i.path.matches(IMAGE_SEPARATOR).count()).max().unwrap_or(0);
+    let joined = |from: usize, to: usize| pieces[from..to].join("+").trim().to_string();
+    let ends_a_name = |to: &usize| *to == pieces.len() || !pieces[*to].trim().is_empty();
+    let longest = |from: usize| -> Result<Option<(usize, usize)>, String> {
+        for to in (from + 1..=pieces.len().min(from + 1 + widest)).rev().filter(ends_a_name) {
+            if let Some(index) = match_image(images, &joined(from, to))? {
+                return Ok(Some((to, index)));
+            }
+        }
+        Ok(None)
+    };
+    let mut out = Vec::new();
+    let mut from = 0;
+    while from < pieces.len() {
+        if pieces[from].trim().is_empty() {
+            from += 1;
+            continue;
+        }
+        let Some((to, index)) = longest(from)? else {
+            let named = |k: &usize| !pieces[*k].trim().is_empty() && !matches!(longest(*k), Ok(None));
+            let to = (from + 1..pieces.len()).find(named).unwrap_or(pieces.len());
+            return Err(no_image(images, &joined(from, to)));
+        };
+        out.push(index);
+        from = to;
+    }
+    Ok(out)
+}
+
+/// The image `name` names: a full install name, else a unique basename, else
+/// a unique basename without its last extension. `None` when no image matches;
+/// an error when several share the first tier that matches.
+fn match_image(images: &[CacheImage], name: &str) -> Result<Option<usize>, String> {
     let base = |p: &str| p.rsplit('/').next().unwrap_or(p).to_string();
     let stem = |p: &str| {
         let b = base(p);
@@ -644,13 +685,19 @@ fn select_image(images: &[CacheImage], name: Option<&str>) -> Result<usize, Stri
             images.iter().enumerate().filter(|(_, i)| matches(i)).map(|(n, _)| n).collect();
         match hits.len() {
             0 => continue,
-            1 => return Ok(hits[0]),
+            1 => return Ok(Some(hits[0])),
             _ => {
                 let names: Vec<&str> = hits.iter().map(|&n| images[n].path.as_str()).collect();
                 return Err(format!("image name {name:?} is ambiguous: {}", names.join(", ")));
             }
         }
     }
+    Ok(None)
+}
+
+/// The error for a `name` no image matches, with up to eight images whose
+/// install names contain it.
+fn no_image(images: &[CacheImage], name: &str) -> String {
     let lower = name.to_ascii_lowercase();
     let near: Vec<&str> = images
         .iter()
@@ -658,11 +705,11 @@ fn select_image(images: &[CacheImage], name: Option<&str>) -> Result<usize, Stri
         .take(8)
         .map(|i| i.path.as_str())
         .collect();
-    Err(if near.is_empty() {
+    if near.is_empty() {
         format!("no image named {name:?} in the dyld shared cache")
     } else {
         format!("no image named {name:?} in the dyld shared cache; close: {}", near.join(", "))
-    })
+    }
 }
 
 /// The retained-byte allowance's floor (see [`DyldCache::charge`]), so a small

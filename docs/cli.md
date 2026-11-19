@@ -4422,6 +4422,11 @@ $ kuna decompile dyld_shared_cache_arm64e --image Foundation+CoreFoundation __NS
 $ kuna decompile dyld_shared_cache_arm64e --image Foundation+CoreFoundation 0x1870ac53c --addr
 ```
 
+A `+` that is part of an image's own name does not split it: `--image
+libc++.1.dylib` is one image and `--image libc++.1.dylib+libc++abi` two. The
+longest run of `+`-joined pieces that names an image wins, and `libc++` alone
+names no image (it is not read as `libc`).
+
 Each image is rebuilt on its own and the results are joined into one thin
 Mach-O: every segment at its cache address, one symbol table, one
 indirect-symbol table, one function-starts table. `functions` lists the

@@ -40,6 +40,23 @@ fn a_stem_drops_only_the_last_extension() {
 }
 
 #[test]
+fn a_plus_inside_an_image_name_does_not_split_it() {
+    let images: Vec<CacheImage> =
+        ["/usr/lib/libc++.1.dylib", "/usr/lib/libc++abi.dylib", "/usr/lib/libc.dylib", "/usr/lib/libz.1.dylib"]
+            .into_iter()
+            .map(|p| CacheImage { address: 0, path: p.into() })
+            .collect();
+    assert_eq!(select_images(&images, "libc++.1.dylib"), Ok(vec![0]));
+    assert_eq!(select_images(&images, "/usr/lib/libc++abi.dylib"), Ok(vec![1]));
+    assert_eq!(select_images(&images, "libc++.1+libc++abi+libc"), Ok(vec![0, 1, 2]));
+    assert_eq!(select_images(&images, " libz.1 + libc++.1.dylib "), Ok(vec![3, 0]));
+    let err = select_images(&images, "libc++").unwrap_err();
+    assert!(err.contains("no image named \"libc++\"") && err.contains("close: /usr/lib/libc++.1.dylib"), "{err}");
+    let err = select_images(&images, "libzz+libc++.1").unwrap_err();
+    assert!(err.contains("no image named \"libzz\""), "{err}");
+}
+
+#[test]
 fn rebuilt_image_is_a_mach_o_at_its_cache_addresses_with_slid_pointers() {
     let cache = DyldCache::open(&fixture()).unwrap();
     let bytes = cache.extract(0).unwrap();
