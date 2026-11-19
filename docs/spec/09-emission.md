@@ -2996,6 +2996,15 @@ and `printc.rs (print_unicode)` emits the named C escapes then falls to `print_c
 (not in the loadimage) can be registered under a constant-space hash address
 and resolve through the same cache.
 
+**Bounded literals** (kuna, `printc.rs (bounded_char_array)`). A Rust or Go
+literal committed as a length-bounded `char[N]` (chapter 01's `fatstrrecords`
+and `strcodelen`) has no NUL, and the next literal follows it directly. Read to
+a NUL, it would print glued to its neighbours. So when the address is the start
+of a NUL-free `char[N]` data symbol, the printer prints exactly those N bytes.
+A NUL-terminated read that reaches the start of such a symbol also ends there,
+because the next literal begins at that byte. A NUL-terminated `char[N]`, such
+as a tail-merged C string, never cuts a read.
+
 When `globalarrayanchor` is enabled, `ActionConstantPtr` records its per-function
 pass count for the P3 folding guard (§3.5). Reset activates this count only for
 a scheduled action with the option on; functions without that action leave the

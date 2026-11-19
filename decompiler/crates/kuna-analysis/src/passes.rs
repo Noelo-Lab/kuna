@@ -452,6 +452,7 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
     // off` drops the facts at the read-symbols boundary.
     if compiler.is_rust() {
         passes.push(Box::new(crate::strings::kuna_strrecords::StrRecordPass::rust()));
+        passes.push(Box::new(crate::strings::kuna_strcodelen::StrCodeLenPass));
     }
 
     // S1 PE/Mach-O import-slot call binding (PeImportCallPass): paint

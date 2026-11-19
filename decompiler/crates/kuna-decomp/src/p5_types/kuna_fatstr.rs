@@ -115,12 +115,19 @@ pub fn parse_fatstr_mode(value: &str) -> Result<(FatStrMode, String), String> {
 
 /// Is the rewrite live for this function?
 pub fn live(data: &Funcdata) -> bool {
-    match FatStrMode::from_u8(data.get_arch().fat_str) {
+    live_for(data.get_arch().fat_str, data.get_arch().source_lang)
+}
+
+/// Is the option live for a program the printer renders (the bounded-literal
+/// print, [`crate::printc`])?
+pub fn live_arch(arch: &crate::architecture::Architecture) -> bool {
+    live_for(arch.fat_str, arch.source_lang())
+}
+
+fn live_for(mode: u8, lang: crate::kuna_sourcelang::SourceLang) -> bool {
+    match FatStrMode::from_u8(mode) {
         FatStrMode::Off => false,
-        FatStrMode::Auto => {
-            let lang = data.get_arch().source_lang;
-            lang.is_rust() || lang.is_go()
-        }
+        FatStrMode::Auto => lang.is_rust() || lang.is_go(),
         FatStrMode::Always => true,
     }
 }

@@ -3421,7 +3421,7 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // (kuna `fatstr`) The Rust `&str`-record string pass — gated on the SAME
         // option mode the engine's (ptr,len) literal rule reads, so one option
         // governs both recognizers; `off` (0) drops the bounded facts here.
-        "fatstrrecords" => arch.fat_str != 0,
+        "fatstrrecords" | "strcodelen" => arch.fat_str != 0,
         "entry_disc" => arch.analysis_entry_disc,
         // (kuna) `.eh_frame` LSDA landing-pad discovery (GccExceptionAnalyzer) — a
         // standalone stashed pass whose facts (the exception landing pads) are

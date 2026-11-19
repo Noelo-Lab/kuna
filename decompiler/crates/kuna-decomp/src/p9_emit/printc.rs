@@ -7052,6 +7052,7 @@ impl PrintC {
                                 &addr,
                                 &subct,
                                 &mut chars_emitted,
+                                false,
                             ) {
                                 ok = true;
                             }
@@ -12285,7 +12286,7 @@ impl PrintC {
         }
         let mut s = String::new();
         let mut chars_emitted: int4 = 0;
-        if !self.print_character_constant(arch, &mut s, &stringaddr, subct, &mut chars_emitted) {
+        if !self.print_character_constant(arch, &mut s, &stringaddr, subct, &mut chars_emitted, true) {
             return false;
         }
         // (kuna `elemptr`) `indexed` is `Some(bound)` for the base of an access
@@ -12343,7 +12344,9 @@ impl PrintC {
     /// string bytes through the `StringManager` (over the loadimage), emits the
     /// optional `L` wide prefix, then the escaped contents between quotes (with the
     /// truncation marker when the literal was clipped).  Returns `false` when no
-    /// string data is available.
+    /// string data is available.  With `bounded`, a length-bounded `char[N]`
+    /// data symbol at `addr` prints exactly its N bytes, and a NUL-terminated
+    /// read ends where such a symbol starts ([`bounded_char_array`]).
     fn print_character_constant(
         &self,
         arch: &Architecture,
@@ -12351,6 +12354,7 @@ impl PrintC {
         addr: &Address,
         char_type: &std::rc::Rc<crate::dtype::Datatype>,
         chars_emitted: &mut int4,
+        bounded: bool,
     ) -> bool {
         use crate::stringmanage::StringManager;
         // Pull UTF-8 string data through the architecture's persistent
@@ -12361,11 +12365,15 @@ impl PrintC {
         // hit and otherwise reads the loadimage exactly as before.
         let loader_rc = arch.translate().loader_rc();
         let mut is_trunc = false;
-        let buffer: Vec<u8> = {
-            let mut mgr = arch.string_manager.borrow_mut();
-            let mut loader = loader_rc.borrow_mut();
-            mgr.get_string_data(addr, char_type, &mut **loader, &mut is_trunc)
-                .to_vec()
+        let bounded = bounded && crate::kuna_fatstr::live_arch(arch);
+        let exact = if bounded { bounded_char_array(arch, addr, char_type) } else { None };
+        let buffer: Vec<u8> = match exact {
+            Some(text) => text.into_bytes(),
+            None => {
+                let mut mgr = arch.string_manager.borrow_mut();
+                let mut loader = loader_rc.borrow_mut();
+                mgr.get_string_data(addr, char_type, &mut **loader, &mut is_trunc).to_vec()
+            }
         };
         if buffer.is_empty() {
             return false;
@@ -12379,7 +12387,17 @@ impl PrintC {
         // the buffer is already UTF-8 (charsize 1); walk codepoints and re-escape.
         let bigend = arch.translate().is_big_endian();
         let mut i: int4 = 0;
-        let count = buffer.len() as int4;
+        let mut count = buffer.len() as int4;
+        if bounded && char_type.get_size() == 1 {
+            let next_bounded = |k: usize| {
+                let spc = std::rc::Rc::clone(addr.get_space()?);
+                bounded_char_array(arch, &Address::new(spc, addr.get_offset() + k as uintb), char_type)
+            };
+            if let Some(cut) = (1..buffer.len()).find(|&k| next_bounded(k).is_some()) {
+                count = cut as int4;
+                is_trunc = false;
+            }
+        }
         while i < count {
             let mut skip: int4 = 1;
             let codepoint = StringManager::get_codepoint(&buffer[i as usize..], 1, bigend, &mut skip);
@@ -12401,6 +12419,32 @@ impl PrintC {
         }
         true
     }
+}
+
+/// (kuna `fatstr`) The text of a NUL-free `char[N]` data symbol starting at
+/// `addr`: a length-bounded `(ptr, len)` literal, which runs straight into the
+/// next one, so reading to a NUL would glue them (and a NUL-terminated read
+/// that reaches one ends there).
+fn bounded_char_array(arch: &Architecture, addr: &Address, char_type: &crate::dtype::Datatype) -> Option<String> {
+    if char_type.get_size() != 1 {
+        return None;
+    }
+    let global = arch.symboltab.get_global_scope()?;
+    let eref = arch.symboltab.find_addr(global, addr, &Address::new_invalid())?;
+    let entry = arch.symboltab.entry(global, eref);
+    if entry.get_addr() != addr {
+        return None;
+    }
+    let ct = arch.symboltab.symbol(entry.symbol).dtype.clone()?;
+    if ct.get_metatype() != crate::dtype::type_metatype::TYPE_ARRAY || !ct.get_array_base()?.is_char_print() {
+        return None;
+    }
+    let mut buf = vec![0u8; usize::try_from(ct.get_size()).ok()?];
+    arch.translate().loader_rc().borrow_mut().load_fill(&mut buf, addr).ok()?;
+    if buf.contains(&0) {
+        return None;
+    }
+    String::from_utf8(buf).ok()
 }
 
 /// The import a `LOAD` reads through when its pointer is a loader-marked

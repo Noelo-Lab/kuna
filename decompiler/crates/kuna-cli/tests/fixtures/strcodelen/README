@@ -1,0 +1,3 @@
+Built with:
+  rustc --edition 2021 -O -C panic=abort -C relocation-model=pic -C link-arg=-nostartfiles -C link-arg=-static -C link-arg=-Wl,--build-id=none --crate-type bin -o strs_x86_64.elf strs.rs
+  strip --strip-debug strs_x86_64.elf

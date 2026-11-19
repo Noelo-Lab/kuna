@@ -3135,6 +3135,24 @@ The always-on core, in pass order (`passes.rs (passes_for)`):
   bytes, valid UTF-8 at least 90% printable-or-whitespace, and the direct
   (relocation-less) arm additionally keeps the NUL scan's minimum of four.
   The engine half of the option is chapter [05](05-types.md)'s `RuleFatStr`.
+- **Code-side `&str` lengths** (part of `fatstr`, rustc-detected images under
+  the same gate, pass id `strcodelen`,
+  `decompiler/crates/kuna-analysis/src/analyzers/strings/kuna_strcodelen.rs
+  (scan)`): a literal that only code references has no static record, but the
+  code loads its length beside it, because a `&str` argument or result is two
+  scalar registers. The pass scans the executable sections. On x86-64 the
+  pointer is a `lea r64, [rip+d]` (or a non-PIE `mov r32, imm32`) into a SysV
+  argument register, and the length is the nearest `mov r32, imm32` into the
+  next argument register (`rdx` beside a returned `rax`) within 32 bytes, after
+  the pointer first. On AArch64 it is `adrp`+`add` into x(N) and the nearest
+  `movz w(N+1)` within eight instructions. The pair must then reach its
+  consumer: a call or tail jump, or a `ret` for the result registers. That
+  rejects a lookup table whose base and an unrelated constant happen to sit in
+  `rax` and `rdx`. The target must be 2..=4096 bytes of valid UTF-8 in
+  read-only data. Pieces of one `fmt::Arguments` template are referenced inside
+  each other, so a fact ends at the next fact's start. The facts join the
+  record facts as bounded strings: they commit before the NUL stream and
+  narrow its rows (`tests/stages/kuna-strcodelen.xml`).
 - **Wide strings** (`widestrings`, the `StringsAnalyzer` `allCharWidths` arm,
   `decompiler/crates/kuna-analysis/src/analyzers/strings/kuna_widestrings.rs
   (scan_wide_strings)`): the same matcher over 2-byte little-endian code units —

@@ -2240,7 +2240,8 @@ mod tests {
         // and kuna-mapglobals / a global read wider than its Symbol prints as _<symbol> with the overlap warning
         // and kuna-mapglobalsyms / the global scope keeps the data Symbols mapGlobals creates
         // and kuna-contextnames / loop counters and returned locals are named
-        assert_eq!(count, 803, "corpus file count drifted");
+        // and kuna-strcodelen / a Rust &str literal only code references is bounded by the length the code loads
+        assert_eq!(count, 804, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

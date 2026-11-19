@@ -1,0 +1,48 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Code-side Rust &str lengths (part of `fatstr`, default on): P1 external
+    refinement. The script loads the committed strcodelen/strs_x86_64.elf (a
+    no_std rustc build, source and command beside it). greet() passes
+    "hello there" and "general kenobi" as (ptr, len) pairs; rustc lays them out
+    back to back with no NUL, and no static record holds their lengths. keep()
+    passes the first pointer alone.
+
+    Pass 1 turns fatstr off: keep's pointer stays a bare address (the bytes run
+    into the next literal with no NUL, so no string covers them) and greet's
+    pairs print as addresses. Pass 2 is the default: the pass bounds both
+    literals by the lengths greet loads beside them, so keep's pointer alone
+    prints only its own text and never the glued "hello theregeneral kenobi"
+    (a bounded char[N] symbol prints exactly N bytes), and greet's pairs print
+    their literals.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/strcodelen/strs_x86_64.elf</com>
+  <com>option fatstr off</com>
+  <com>read symbols</com>
+  <com>load function greet</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function keep</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/strcodelen/strs_x86_64.elf</com>
+  <com>read symbols</com>
+  <com>load function greet</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function keep</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="strcodelen #1: fatstr off leaves keep's pointer as an address" min="1" max="1">sink_ptr\(0x200158\);</stringmatch>
+<stringmatch name="strcodelen #2: on, keep's pointer prints as its own literal" min="1" max="1">sink_ptr\("hello there"\);</stringmatch>
+<stringmatch name="strcodelen #3: no literal is glued to the next" min="0" max="0">hello theregeneral</stringmatch>
+<stringmatch name="strcodelen #4: on, greet's pairs print their literals" min="1" max="1">sink\("general kenobi",0xe\);</stringmatch>
+</decompilertest>
