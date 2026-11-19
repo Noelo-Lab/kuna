@@ -441,6 +441,9 @@ pub struct Funcdata {
     /// is what lets the front-ends report the rejection (`--assert` ledger, exit
     /// code) while still emitting the C.
     kuna_rejected_flow: Vec<(Address, kuna_base::types::uint4, String)>,
+    /// (kuna `--assert callee`) The caller-stated indirect-call destinations
+    /// the followed flow did not apply, as `(call site, callee, reason)`.
+    kuna_rejected_callee: Vec<(Address, Address, String)>,
     /// (kuna `--assert`) The local-scope Symbols the `name`/`type` directives
     /// applied to THIS pass renamed, retyped or created, each keyed back to the
     /// identifier the pass printed for its variable.  A rebuilt `Funcdata` starts
@@ -841,6 +844,7 @@ impl Funcdata {
             kuna_call_mechanisms: Default::default(),
             kuna_fspec_handles: Vec::new(),
             kuna_rejected_flow: Vec::new(),
+            kuna_rejected_callee: Vec::new(),
             kuna_directive_symbols: Vec::new(),
             kuna_prior_names: Default::default(),
             kuna_default_name_end: 1,
@@ -1070,6 +1074,21 @@ impl Funcdata {
     /// (kuna) The flow overrides this function's flow follow refused.
     pub fn kuna_rejected_flow_overrides(&self) -> &[(Address, kuna_base::types::uint4, String)] {
         &self.kuna_rejected_flow
+    }
+
+    /// (kuna) Record a stated indirect-call destination the flow did not apply.
+    /// Idempotent per call site.
+    pub fn note_rejected_callee_override(&mut self, site: Address, callee: Address, reason: &str) {
+        if self.kuna_rejected_callee.iter().any(|(s, _, _)| s == &site) {
+            return;
+        }
+        self.kuna_rejected_callee.push((site, callee, reason.to_string()));
+    }
+
+    /// (kuna) The stated indirect-call destinations this function's flow did
+    /// not apply.
+    pub fn kuna_rejected_callee_overrides(&self) -> &[(Address, Address, String)] {
+        &self.kuna_rejected_callee
     }
 
     /// (kuna `--assert`) The Symbols a `name`/`type` directive touched on this pass.

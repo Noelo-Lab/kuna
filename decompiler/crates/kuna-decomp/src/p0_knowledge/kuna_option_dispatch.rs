@@ -698,6 +698,7 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "cortexmpriv" => on_off!(cortexmpriv, "Cortex-M privileged-mode guard folding"),
+    "acleintrinsics" => on_off!(acle_intrinsics, "AArch64 ACLE intrinsics"),
     "dedupvardecls" => {
         let (val, msg) = crate::kuna_dedupvardecls::OptionDedupVarDecls.apply(p1)?;
         self.dedup_var_decls = val;
@@ -835,6 +836,12 @@ kuna_options! { self, p1;
         let (choice, msg) = crate::kuna_kernelcache::parse_kernelcache(p1)?;
         crate::kuna_kernelcache::set_kernelcache_env(&choice);
         self.load_options_mut().kernelcache = choice;
+        Ok(msg)
+    },
+    "kernelcache-boot" => {
+        let (choice, msg) = crate::kuna_kernelcacheboot::parse_kernelcache_boot(p1)?;
+        crate::kuna_kernelcacheboot::set_kernelcache_boot_env(&choice);
+        self.load_options_mut().kernelcache_boot = choice;
         Ok(msg)
     },
     "dyldimage" => {
