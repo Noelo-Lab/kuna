@@ -119,7 +119,7 @@ fn volume(fv: &[u8], depth: usize, w: &mut Walk) {
     loop {
         off = (off + 7) & !7;
         let Some(head) = fv.get(off..off + 24) else { break };
-        if head.iter().all(|&b| b == erased) || head[..16].iter().all(|&b| b == 0xff) {
+        if head.iter().all(|&b| b == erased) {
             break;
         }
         let large = head[0x13] & 0x01 != 0;
@@ -385,6 +385,35 @@ mod tests {
         assert_eq!(w.modules.len(), 2);
         assert!(w.modules.iter().all(|m| m.image == plain));
         assert_eq!(w.modules[0].name.as_deref(), Some("DiskIoDxe"));
+    }
+
+    #[test]
+    fn a_pad_file_does_not_end_the_volume() {
+        let pe = b"MZ-after-the-pad";
+        let mut fv = vec![0u8; 0x48];
+        fv[0x28..0x2c].copy_from_slice(b"_FVH");
+        fv[0x30..0x32].copy_from_slice(&0x48u16.to_le_bytes());
+        fv[0x2c..0x30].copy_from_slice(&0x800u32.to_le_bytes());
+        let mut pad = vec![0xffu8; 16];
+        pad.extend([0, 0, 0xf0, 0]);
+        pad.extend(&32u32.to_le_bytes()[..3]);
+        pad.push(0xf8);
+        pad.extend([0xffu8; 8]);
+        fv.extend(&pad);
+        let mut file = vec![0x33u8; 16];
+        file.extend([0, 0, 0x06, 0]);
+        file.extend(&((24 + 4 + pe.len()) as u32).to_le_bytes()[..3]);
+        file.push(0xf8);
+        file.extend(section(0x10, pe));
+        fv.extend(&file);
+        while fv.len() % 8 != 0 {
+            fv.push(0xff);
+        }
+        let total = fv.len() as u64;
+        fv[0x20..0x28].copy_from_slice(&total.to_le_bytes());
+        let w = walk(&fv);
+        assert_eq!(w.modules.len(), 1, "{:?}", w.undecoded);
+        assert_eq!(w.modules[0].file_type, 0x06);
     }
 
     #[test]
