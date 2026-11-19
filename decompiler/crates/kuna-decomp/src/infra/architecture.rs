@@ -1940,6 +1940,8 @@ pub struct Architecture {
     pub options: OptionDatabase,
     /// Actions that can be applied in this architecture (C++ `allacts`).
     pub allacts: ActionDatabase,
+    /// (kuna) Embedder rules and phase callbacks the universal tree is built with.
+    hooks: crate::kuna_hooks::HookRegistry,
     /// (kuna) Per-program restart-trigger side table (C++ file-static
     /// `restartTable`, owned here per `docs/rust-port/README.md` — one log per loaded
     /// program; survives `Funcdata::clear()` because it lives outside the
@@ -2598,6 +2600,7 @@ impl Architecture {
             remote_scope: None,
             options: OptionDatabase::new(),
             allacts: ActionDatabase::new(),
+            hooks: crate::kuna_hooks::HookRegistry::default(),
             restart_log: crate::kuna_restartlog::RestartLog::new(),
             userops: UserOpManage::new(),
             // sleigh_arch.cc:250: stringManager = new StringManagerUnicode(this,2048)
@@ -6542,16 +6545,8 @@ impl Architecture {
     /// `resetDefaults()`, architecture.cc:590).  The stack space (if any) is
     /// taken from the engine so the stack-aware passes are scheduled.
     pub fn build_action(&mut self) {
-        let stackspace = self.manage().get_stack_space().cloned();
-        let stackspace_index = stackspace.as_ref().map(|s| s.get_index());
-        let truncated = self.manage().get_default_data_space().is_some_and(|s| s.is_truncated());
-        crate::universalaction::install_universal(
-            &mut self.allacts,
-            stackspace,
-            stackspace_index,
-            Vec::new(),
-            truncated,
-        );
+        crate::action::build_default_groups(&mut self.allacts);
+        self.build_universal();
         // C++ `Architecture::buildAction` runs `allacts.resetDefaults()`
         // (coreaction.cc `ActionDatabase::resetDefaults` -> `setCurrent(...)`),
         // which leaves the "decompile" root as the current action *before* any
@@ -6561,6 +6556,62 @@ impl Architecture {
         // readers (kuna_console).  Set it here so the at-rest current name is
         // "decompile", matching upstream `resetDefaults`.
         let _ = self.allacts.set_current("decompile");
+    }
+
+    /// Install the universal tree, built with the registered hooks.
+    fn build_universal(&mut self) {
+        let stackspace = self.manage().get_stack_space().cloned();
+        let stackspace_index = stackspace.as_ref().map(|s| s.get_index());
+        let truncated = self.manage().get_default_data_space().is_some_and(|s| s.is_truncated());
+        self.allacts.set_universal(crate::universalaction::build_universal_action_hooked(
+            stackspace,
+            stackspace_index,
+            Vec::new(),
+            truncated,
+            &self.hooks,
+        ));
+    }
+
+    /// Rebuild the universal tree after a hook registration and re-derive the
+    /// current root from it.  The group lists are kept; breakpoints and
+    /// disabled rules set on the old roots are not.
+    fn rebuild_hooked_actions(&mut self) -> KunaResult<()> {
+        self.build_universal();
+        self.allacts.drop_derived();
+        let current = self.allacts.get_current_name().to_string();
+        if current.is_empty() {
+            return Ok(());
+        }
+        self.allacts.set_current(&current)
+    }
+
+    /// (kuna) Add `rule` to the default pipeline, behind the last rule of
+    /// `after_group` in the pool that holds that group
+    /// ([`HookRegistry::add_rule`](crate::kuna_hooks::HookRegistry::add_rule)).
+    pub fn add_rule(
+        &mut self,
+        after_group: &str,
+        state: crate::action::RuleState,
+        rule: Box<dyn crate::action::Rule>,
+    ) -> KunaResult<()> {
+        self.hooks.add_rule(after_group, state, rule)?;
+        self.rebuild_hooked_actions()
+    }
+
+    /// (kuna) Run `callback` on every function at the boundary of `phase`
+    /// ([`HookRegistry::on_phase`](crate::kuna_hooks::HookRegistry::on_phase)).
+    pub fn on_phase(
+        &mut self,
+        phase: crate::kuna_phases::KunaPhase,
+        callback: impl FnMut(&mut Funcdata) + 'static,
+    ) -> KunaResult<()> {
+        self.hooks.on_phase(phase, Box::new(callback))?;
+        self.rebuild_hooked_actions()
+    }
+
+    /// (kuna) The registered embedder hooks.
+    pub fn hooks(&self) -> &crate::kuna_hooks::HookRegistry {
+        &self.hooks
     }
 
     /// Register the p-code OpBehavior table (C++ `Architecture::buildInstructions`,
