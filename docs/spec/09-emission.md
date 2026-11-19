@@ -4536,9 +4536,22 @@ The helper declines mismatched widths, enums, noninteger values and aggregates;
 it does not infer aggregate layout or repair memory STORE widths. Cosmetic cast
 suppression disables these conversions. C and Go emission are unchanged.
 
-Native validation uses wrapping arithmetic, with Rust overflow checks disabled,
-to match the binary's integer operations. The conversion does not itself select
-checked versus wrapping arithmetic for a source build.
+### Rust wrapping arithmetic
+
+`kuna_rustwrapping.rs` prints integer addition, subtraction, multiplication,
+and two's-complement negation as the Rust primitive's wrapping operation. The
+operation uses the exact p-code width and its output's printed signedness at
+1, 2, 4, 8, or 16 bytes. Constants are interpreted in that width and signedness,
+and other operands are converted to the result's primitive type if needed.
+The arguments retain their p-code order and each is evaluated once. In-place
+forms expand to ordinary assignments with the wrapping expression as their
+right-hand side. These operations have the same result with Rust overflow
+checks enabled or disabled. Recovered branches that check overflow or call a
+panic routine still print separately.
+
+The wrapping path requires primitive integer operands and matching widths.
+It preserves the existing forms for pointer, aggregate, or unsupported
+operations, for cosmetic cast suppression, and for other output languages.
 
 ### Rust Boolean conversions
 
