@@ -693,6 +693,10 @@ Three tiers:
 | warning text wanted inline at the end of the statement it describes | [`warnstyle`](#warnstyle----inline--banner-default-inline) |
 | terse warning slugs unwanted; full upstream warning text needed | [`warnstyle`](#warnstyle----inline--banner-default-inline) |
 | warning style needs to match upstream ghidra for diffing | [`warnstyle`](#warnstyle----inline--banner-default-inline) |
+| an AArch64 function that tags a pointer (irg, addg) decompiles to return a0 | [`acleintrinsics`](#acleintrinsics----on--off-default-on) |
+| stg, st2g or stzg leave no trace in the output of MTE-hardened AArch64 code | [`acleintrinsics`](#acleintrinsics----on--off-default-on) |
+| DataMemoryBarrier(2,3) or DataSynchronizationBarrier(3,3,0) where the source called __dmb or __dsb | [`acleintrinsics`](#acleintrinsics----on--off-default-on) |
+| WaitForInterrupt() or Yield() where the source called __wfi or __yield | [`acleintrinsics`](#acleintrinsics----on--off-default-on) |
 | a DOS program's float code decompiles as calls through swi(0x35) and other INT 34h-3Dh vectors | [`fpuemu`](#fpuemu----off--auto--on-default-auto) |
 | Control flow encountered bad instruction data in a DOS function that does float math | [`fpuemu`](#fpuemu----off--auto--on-default-auto) |
 | a phantom function starts inside an INT 35h instruction's operand bytes | [`fpuemu`](#fpuemu----off--auto--on-default-auto) |
@@ -2312,6 +2316,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** Inline by default (DIV-38): usage(1); // no-return, if (v8) { // branch-flip, prototype-line // early-return x3. Flip to banner to reproduce upstream Ghidra's full warning text or to grep for the long-form messages. Unknown warning texts keep their full text behind a warn: marker; user/dwarf_lines comments always keep banner lines.
 - **Where / provenance:** P9/warning-style · kuna · presentation-default · kuna-cnorm-fmt
 - **Example:** `option warnstyle banner`
+
+### `acleintrinsics` -- on | off, default `on`
+
+- **Symptoms:** an AArch64 function that tags a pointer (irg, addg) decompiles to return a0; stg, st2g or stzg leave no trace in the output of MTE-hardened AArch64 code; DataMemoryBarrier(2,3) or DataSynchronizationBarrier(3,3,0) where the source called __dmb or __dsb; WaitForInterrupt() or Yield() where the source called __wfi or __yield.
+- **What it does:** On AArch64, lift the memory-tagging (MTE) instructions with their tag effect and print the barrier, hint and memory-tagging user ops as the ACLE intrinsics of <arm_acle.h>. The vendored AARCH64.pspec leaves the ShowMemTag context at 0, under which irg, addg, subg, gmi and ldg lift as a plain pointer copy or add and the stg family as nothing or a plain store, so __arm_mte_create_random_tag(p, 0) decompiled to return p. On sets ShowMemTag to 1 over the code space before a function is lifted; only the memory-tagging constructors read that context, so code without those instructions lifts exactly as before. Each tag instruction is then one user op whose result is the tagged pointer: irg prints __arm_mte_create_random_tag(p, mask), addg and subg __arm_mte_increment_tag(p + n, k), gmi __arm_mte_exclude_tag(p, mask), ldg x, [x] __arm_mte_get_tag(p), and stg x, [x] (and each granule st2g, stzg, stz2g and stgp tag) __arm_mte_set_tag(p). A tag load or store whose pointer and granule address differ has no ACLE spelling and keeps its user-op name, LoadPtrTag(p, addr) or StorePtrTag(addr, p). The alignment fault stg raises on a misaligned address is not modelled as a branch. Independently of MTE, DataMemoryBarrier(domain, types) prints __dmb(CRm) with the two operands recombined into the 4-bit CRm the intrinsic takes, DataSynchronizationBarrier likewise __dsb(CRm) (the nXS forms keep their name), InstructionSynchronizationBarrier() prints __isb(CRm) with CRm read from the instruction, and WaitForInterrupt, WaitForEvent, Yield, SendEvent and SendEventLocally print __wfi(), __wfe(), __yield(), __sev() and __sevl(). The rewrite is keyed on the user-op name and changes only the spelling of the call.
+- **When to flip:** On by default on AArch64 and inert on every other target: the output names the intrinsic the source called, and a pointer that was tagged is the result of a call instead of an unchanged copy. Flip off to read barriers and hints under their SLEIGH instruction names with the domain and type operands separate, or to read MTE-hardened code (for example a stack-tagging build, which tags every address-taken local) as if the core had no tags.
+- **Where / provenance:** P9/naming-policy · kuna · correctness-fix · kuna-acleintrinsics
+- **Example:** `option acleintrinsics off`
 
 ### `fpuemu` -- off | auto | on, default `auto`
 
