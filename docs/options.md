@@ -826,6 +826,9 @@ Three tiers:
 | a signed ARM shift overflows into the sign bit in recompiled output | [`armconstshift`](#armconstshift----off--on--all-default-off) |
 | UBSan reports a left shift of a negative 64-bit value in recompiled output | [`armconstshift`](#armconstshift----off--on--all-default-off) |
 | a sign-extended 32-bit value shifted left into the sign bit of a 64-bit result | [`armconstshift`](#armconstshift----off--on--all-default-off) |
+| UBSan reports a signed integer overflow in a recompiled 32-bit addition | [`wrapadd`](#wrapadd----on--off-default-off) |
+| a sign-extended 32-bit sum differs from the binary at INT32_MAX in recompiled output | [`wrapadd`](#wrapadd----on--off-default-off) |
+| (long)(a + 1) where the machine wraps at 32 bits | [`wrapadd`](#wrapadd----on--off-default-off) |
 | a function that reads many constant globals between calls exhausts memory during heritage | [`readonlycalls`](#readonlycalls----off--on---default-65536) |
 | decompile of a huge function is killed before the first jump table is recovered | [`readonlycalls`](#readonlycalls----off--on---default-65536) |
 | thousands of INDIRECTs over read-only globals survive in a large function's IR | [`readonlycalls`](#readonlycalls----off--on---default-65536) |
@@ -2565,6 +2568,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** Turn on when the emitted C must be free of signed-shift undefined behavior, e.g. before recompiling it with sanitizers or comparing it against the binary; use `all` for 64-bit code on any architecture. Off by default because the conversion adds a cast pair to every ARM sign-bit test such as `x << 0x18 < 0`, which firmware uses for nearly every register flag check, and to every scaled 64-bit index.
 - **Where / provenance:** P9/cast-policy · kuna · correctness-fix · arm-fixed-signed-lsl
 - **Example:** `option armconstshift on`
+
+### `wrapadd` -- on | off, default `off`
+
+- **Symptoms:** UBSan reports a signed integer overflow in a recompiled 32-bit addition; a sign-extended 32-bit sum differs from the binary at INT32_MAX in recompiled output; (long)(a + 1) where the machine wraps at 32 bits.
+- **What it does:** Print a four-byte addition whose result a wider sign extension observes, through a return, a store or a comparison, as an addition of its unsigned conversion, `(int)((unsigned int)a + b)`, so the emitted C wraps at 32 bits exactly as the machine word does instead of overflowing a signed int, which is undefined and lets a compiler compute the sum at 64 bits. Applies on every architecture when the printed operands are signed four-byte integers or literals and the output language is C. Each operand prints once and other readers are unchanged; an already unsigned literal, address-only uses and library lengths keep their spelling.
+- **When to flip:** Turn on when the emitted C must be free of signed-overflow undefined behavior, e.g. before recompiling it with sanitizers or comparing it against the binary; MIPS `addiu` and RISC-V `addw` results that are sign-extended into 64-bit registers are the usual source. Off by default because the casts land on every widened int sum such as `return a0 + 3;`.
+- **Where / provenance:** P9/cast-policy · kuna · correctness-fix · widened-signed-add
+- **Example:** `option wrapadd on`
 
 ### `readonlycalls` -- off | on | <n>, default `65536`
 

@@ -218,6 +218,23 @@ simultaneous ingests have independent member files. Non-object members are
 still skipped, bootstrap failures retain the archive/member warning, and
 record order and cross-input deduplication remain unchanged.
 
+Archive inputs to the image commands are settled before dispatch by
+`decompiler/crates/kuna-cli/src/armember.rs (resolve)`. An argument that names
+an `ar` archive, alone or as `lib.a:NAME`, is replaced by the path of one
+member: the one `--member NAME` or the `:NAME` suffix names, else the only
+object member, else the only object member defining a symbol that another
+argument spells (a Mach-O name also matches without its leading underscore).
+Any other case is a usage error listing the object members. A name stored
+more than once is selected as `NAME#K`, its K-th occurrence, and an argument
+that is an existing file is never split at a `:`. The member is written under
+an owned temporary directory that is removed when the command returns; a thin
+archive's member is named in place, resolved against the archive's directory,
+and must be a regular file (read on demand, one at a time), with a `note:`
+when its path leaves that directory. `--member` with no name prints the member
+list, and `functions` with no member re-runs itself once per object member
+(`--member=NAME`) and joins the listings with a `member:` prefix on each name.
+Commands never see the archive, so a member loads exactly as its `.o` does.
+
 Text decompilation owns its C and optional region-output files for the entire
 console run, including a discovery retry. Each file is privately created and
 its initial writing handle is closed before launching the console. Scope exit
@@ -1638,7 +1655,13 @@ address the written-slot guard guards, every 256 new values a pointer walk of
 (`decompiler/crates/kuna-decomp/src/p6_variables/merge.rs (Merge::budget)`,
 chapter 06), every 1024 seeds the implied-variable walk visits
 (`decompiler/crates/kuna-decomp/src/p6_variables/coreaction_cleanup.rs
-(MARK_IMPLIED_PROBE_STRIDE)`), before each region attempt of region identification (chapter
+(MARK_IMPLIED_PROBE_STRIDE)`), every 256 Varnodes the dead-code sweep visits
+(`decompiler/crates/kuna-decomp/src/p9_emit/coreaction_render.rs
+(SWEEP_DEADLINE_STRIDE)`: destroying a dead operation unlinks it from each
+input's reader list, which is linear in that list, so a function whose dead
+operations all read one Varnode sweeps in quadratic time and the sweep stops
+where the budget ends, leaving the rest of the dead operations in place),
+before each region attempt of region identification (chapter
 07), before each call-argument trial `ActionActiveParam` scores and every 256
 steps of the trial's use walks (chapter 04), and again after the final layout checks: the drive
 publishes its deadline to
@@ -1648,7 +1671,13 @@ jump-table recovery probes it too, before and after each table's attempt and
 after its basic and default-path models (`decompiler/crates/kuna-decomp/src/p2_lift/flow.rs
 (FlowInfo::recover_jump_tables)`, `decompiler/crates/kuna-decomp/src/p2_lift/jumptable.rs
 (JumpTable::recover_model)`); a table reached past the deadline is not attempted
-and its indirect jump is truncated as an unrecovered one. On expiry the
+and its indirect jump is truncated as an unrecovered one. Inside a model, every
+loop over the values of the switch variable (building the address table,
+checking its rows against the guards, labelling them) advances through
+`decompiler/crates/kuna-decomp/src/p2_lift/jumptable.rs (walk_within_budget)`,
+which fails the walk once a probe sees the budget spent, so a table of any
+length the `jumptablemax` ceiling admits ends with its drive instead of after
+its last row. On expiry the
 containers stop scheduling work and unwind; the driver converts that into the
 function's `error` record (a pass panic after the deadline passed reports the
 same budget error) and the batch continues. The record names where the budget
@@ -1659,7 +1688,8 @@ running when the deadline passed — an action (a rule pool adds the rule that
 applied most since the function's reset, `decompiler/crates/kuna-decomp/src/infra/action.rs
 (ActionPool::budget_site)`), heritage, variable merging, region identification,
 region structuring, `action activeparam`'s trial scoring, a
-store-reachability walk or a jump-table step. A walk that recurses too often
+store-reachability walk or a jump-table step (`jump-table value walk` for
+the loop over a table's values). A walk that recurses too often
 to read the clock at each step probes through
 `decompile_drive.rs (budget_probe)`, which reads it every 256th call and,
 once it has seen the budget spent, answers at once for the rest of the drive;
@@ -2603,6 +2633,17 @@ anchor; an unresolved or ambiguous anchor still rejects the directive.
 Type seeding uses the definition usepoint, and naming retains the selected SymbolId;
 a storage-only re-query must not attach another lifetime's name or type.
 
+Console `rename` and whole-variable `retype` edits carried by `PriorNames`
+survive switching to another function and returning within the loaded program.
+`IfaceDecompData`
+records the replay after an explicit edit, keyed by the resolved entry address
+and its address space. An untouched function gets its own fresh analysis. The
+replay uses the existing definition identities and numbering context to find
+the edited local. The active function continues to carry its current edits
+directly across rebuilds. Later edits replace the saved replay for that entry,
+and explicitly loading the already-selected entry clears its replay and starts
+a fresh local analysis. Clearing the architecture clears the session records.
+
 (kuna) **A `prototype` directive binds to `<func>`, whatever name its declaration
 carries.** The operand says which function the signature describes; the
 declaration supplies the return type, the parameter types and the parameter
@@ -3200,7 +3241,14 @@ the top of the space by halving the remaining gap, so a block renumbered to end
 near the maximum would run out of room again within a few dozen appends, and
 building a block of tens of thousands of operations would renumber it thousands
 of times. With the upper half free, a renumber is followed by roughly 280
-appends before the next one.
+appends before the next one. That alone still renumbers a growing block once
+per 280 operations, which is quadratic work in a long straight-line block: a
+30,000-instruction block took minutes to build. So an append steps by the
+smaller of the fixed gap (`0x1000000`) and the order space divided by the
+block's operation count. Blocks of up to 255 operations step exactly as
+before; a longer block's gap shrinks as it grows, a renumber then leaves room
+for about as many appends as the block already holds, and the renumbers of a
+block grow with the logarithm of its length.
 
 Deleting a varnode through `Funcdata::delete_varnode` first checks the bank's
 deletion precondition: the node must have neither a defining operation nor any

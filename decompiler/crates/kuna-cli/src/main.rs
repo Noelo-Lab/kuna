@@ -1,6 +1,7 @@
 //! Command dispatch for the kuna CLI.
 
 mod args;
+mod armember;
 mod callgraph;
 mod catalog;
 mod crypto;
@@ -28,6 +29,7 @@ mod output;
 mod paths;
 mod project_stream;
 mod runtime_hints;
+mod rust_signatures;
 mod skill;
 mod specs;
 mod strings;
@@ -81,6 +83,14 @@ fn main() -> ExitCode {
         eprintln!("error: {e}");
         return ExitCode::from(2);
     }
+    let _staged = match armember::resolve(sub, &mut rest) {
+        Ok(armember::Resolved::Run(staged)) => staged,
+        Ok(armember::Resolved::Done(code)) => return ExitCode::from(code as u8),
+        Err(e) => {
+            eprintln!("error: {e}");
+            return ExitCode::from(2);
+        }
+    };
     let rest = rest.as_slice();
     loadtime::export_image_selection(rest);
     runtime_hints::note_for_invocation(sub, rest);
@@ -145,7 +155,8 @@ fn usage() {
          kuna fid query <binary> --db <file.fid> --addr <address> [--addr <address> ...] --json\n\
          kuna --version\n\
          \n\
-         --image NAME (any subcommand): load that image of a dyld shared cache"
+         --image NAME (any subcommand): load that image of a dyld shared cache\n\
+         --member [NAME] (any <binary> that is an ar archive): load that member, or list the members when no NAME follows; <lib.a>:NAME is the same selection"
     );
 }
 
