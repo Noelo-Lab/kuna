@@ -5215,11 +5215,18 @@ every other binary's pass list is byte-identical to before the pass existed):
   pointer record's elem to the named struct pointee. It interns
   package-qualified named struct shells (fields at their recorded offsets,
   zero-size embedded markers dropped, overlapping or over-extent layouts
-  refused whole). A validated Go 1.18 build-info version selects the older
-  `offset << 1 | embedded` struct-field encoding: the importer shifts the
-  word before checking the field extent. Go 1.19 and later use byte offsets
-  directly. An absent or unrecognized version retains the direct-offset
-  interpretation; the importer never guesses from a plausible shifted layout.
+  refused whole). The build-info version
+  (`decompiler/crates/kuna-analysis/src/loader/gobuildinfo.rs (go_version)`,
+  read from the inline go1.18+ blob or the pointer form go1.13..go1.17
+  binaries carry) selects the metadata encodings that changed before go1.19:
+  a Go 1.9..1.18 version selects the older `offset << 1 | embedded`
+  struct-field encoding (the importer shifts the word before checking the
+  field extent; Go 1.19 and later use byte offsets directly), and a Go 1.16
+  or older version selects the big-endian `u16` name length that preceded
+  the go1.17 varint, which is what lets a go1.16 image's descriptors decode
+  at all. An absent or unrecognized version retains the direct-offset and
+  varint interpretations; the importer never guesses from a plausible
+  shifted layout.
   The same bounds and overlap checks apply after decoding. Stripped amd64
   and arm64 tests include an embedded pointer field at a nonzero offset.
   Named struct fields held by value are completed before their enclosing
@@ -5281,12 +5288,29 @@ every other binary's pass list is byte-identical to before the pass existed):
   them. A descriptor is a global of layout `internal/abi.Type` that
   Go's linker names `type:main.Point` / `type:*main.Point` / `type:[]uint8`;
   stripping deletes those symtab names while the records stay reachable
-  through the moduledata. Every decodable record (typelinks or the go1.27+
-  descriptor region, a pointer record's pointee included, deduplicated by
-  VMA and emitted in address order) becomes one typed-data fact: the record's
-  VMA, the linker-spelling `type:<name>` symbol (the decoded name — a
-  pointer record genuinely starts with `*`, an extra-star name was already
-  stripped by the record reader), and the `go.typedesc` shell — the
+  through the moduledata. The typelinks (and the go1.27+ descriptor region)
+  list the types interface conversion reaches; the types those are built
+  from have descriptors of their own that allocation and reflection sites
+  name just as often, so the located records are the roots of a walk over
+  the type graph
+  (`decompiler/crates/kuna-analysis/src/analyzers/gotypes/kuna_typeglobals.rs (reachable)`): `ptrToThis`, the
+  element and key of an array, chan, map, pointer or slice, a func's
+  parameters and results, an interface's method types and a struct's field
+  types, bounded at 200,000 descriptors. Every reachable record (deduplicated
+  by VMA, emitted in address order) becomes one typed-data fact: the record's
+  VMA, the linker-spelling `type:<name>` symbol, and the `go.typedesc` shell.
+  The name is the linker's
+  (`decompiler/crates/kuna-analysis/src/analyzers/gotypes/kuna_typeglobals.rs (linker_name)`): a named
+  type's package qualifier is the full import path from its
+  `uncommontype.pkgPath` (`type:internal/poll.FD`, where the name record
+  holds `poll.FD`), and a pointer, slice, array or map spelling is rebuilt
+  from its elements' so the qualifier reaches it (`type:*internal/poll.FD`,
+  `type:[]io/fs.DirEntry`); a func or chan type, an anonymous struct and a
+  map type's own `pkgPath` (its record changed size with the swiss-table
+  maps) keep the record's spelling. A pointer record genuinely starts with
+  `*`; an extra-star name was already stripped by the record reader. The
+  `gonewtype` client maps the symbol back to the interned record by
+  dropping the path's directory part. The shell is the
   48/32-byte `abi.Type` base record at the harvest's own decode offsets
   (`Size_` through `PtrToThis`), spanning only the base record so the mapped
   extent never overlaps the next descriptor; runtime code walking a
@@ -5326,12 +5350,11 @@ every other binary's pass list is byte-identical to before the pass existed):
   how Go's own symtab names an itab), so an interface conversion renders
   `go:itab.main.Point,fmt.Stringer` instead of a bare `&DAT_<addr>`. An itab
   the image already names is left to that name, so the pass only ADDS the ones
-  stripping removed. Sub-package types keep the `_type` record's short package
-  name (`reflectlite.rtype`, matching every other recovered Go type) rather
-  than the linker's full import path (`internal/reflectlite.rtype`); the
-  names are unambiguous and byte-identical to the linker for top-level
-  packages (e2e: `verify_gotypes::stripped_go_itab_renders_named`, green on
-  the itablinks and the contiguous-region layouts).
+  stripping removed. Both names are the linker's spellings (`linker_name`,
+  full import paths: `go:itab.*internal/poll.FD,io.Writer`), so a stripped
+  image's itab symbols match an unstripped build's byte for byte (e2e:
+  `verify_gotypes::stripped_go_itab_renders_named`, green on the itablinks
+  and the contiguous-region layouts).
 
 - **Go pclntab** (`gopclntab`, Go-detected binaries only, always on;
   `decompiler/crates/kuna-analysis/src/analyzers/pclntab/mod.rs`): the runtime

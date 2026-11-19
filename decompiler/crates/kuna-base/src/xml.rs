@@ -2242,7 +2242,8 @@ mod tests {
         // and ghangr-go-paniccheck-return / a returning Go panic check keeps its continuation
         // and ghangr-go-aarch64-stack-stride / adjacent eight-byte spills keep their declared inputs
         // and ghangr-go-mcall-resumption / a scheduler switch preserves its caller's continuation
-        assert_eq!(count, 824, "corpus file count drifted");
+        // and kuna-gotypenames / Go type descriptors and itabs named as the linker spells them, go1.16 on
+        assert_eq!(count, 825, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

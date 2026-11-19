@@ -7,9 +7,10 @@
 //! a 32-byte header — the 14-byte magic `"\xff Go buildinf:"`, a pointer-size
 //! byte, a flags byte — then, when flags bit 1 is set (every toolchain since
 //! go1.18, the whole register-ABI era), two varint-length-prefixed strings:
-//! the version (`"go1.22.10"`) and the modinfo. The pointer-indirection form
-//! older toolchains used is not parsed for the version: those binaries predate
-//! the register ABI, so nothing downstream would consume the answer.
+//! the version (`"go1.22.10"`) and the modinfo. Older toolchains (go1.13 to
+//! go1.17) point at a Go string header instead; [`go_version`] resolves that
+//! form too, for the readers whose metadata encodings changed before go1.18
+//! (the `gotypes` name records).
 //!
 //! The blob is also how a Go **PE** is recognized at all. Go's linker gives
 //! ELF and Mach-O a build-info section of their own, but on Windows it merges
@@ -94,22 +95,35 @@ fn is_version_string(s: &[u8]) -> bool {
 /// and follows it with the varint-prefixed version; the pointer form (older
 /// toolchains) points at a Go string header, resolved through `read`.
 pub fn blob_is_buildinfo<'a>(blob: &[u8], read: impl FnMut(u64, usize) -> Option<&'a [u8]>) -> bool {
+    version_string(blob, read).is_some()
+}
+
+/// The toolchain version from a build-info blob of either form: inline
+/// strings, or the pre-go1.18 pointer to a Go string header, resolved through
+/// `read`.
+pub fn go_version<'a>(blob: &[u8], read: impl FnMut(u64, usize) -> Option<&'a [u8]>) -> Option<(u16, u16)> {
+    parse_go_version(version_string(blob, read)?.trim())
+}
+
+/// The version string a well-formed build-info header names (see
+/// [`blob_is_buildinfo`]), `None` for any malformation.
+fn version_string<'a>(blob: &[u8], read: impl FnMut(u64, usize) -> Option<&'a [u8]>) -> Option<String> {
     let mut read = read;
     if blob.len() < HEADER_SIZE || &blob[..14] != MAGIC {
-        return false;
+        return None;
     }
     let (ptr_size, flags) = (usize::from(blob[14]), blob[15]);
     if !matches!(ptr_size, 4 | 8) || flags & !0x3 != 0 {
-        return false;
+        return None;
     }
     if flags & 0x2 != 0 {
         if blob[16..HEADER_SIZE].iter().any(|&b| b != 0) {
-            return false;
+            return None;
         }
-        let Some((len, n)) = uvarint(&blob[HEADER_SIZE..]) else { return false };
+        let (len, n) = uvarint(&blob[HEADER_SIZE..])?;
         let start = HEADER_SIZE + n;
-        let end = usize::try_from(len).ok().and_then(|l| start.checked_add(l));
-        return end.and_then(|e| blob.get(start..e)).is_some_and(is_version_string);
+        let end = start.checked_add(usize::try_from(len).ok()?)?;
+        return blob.get(start..end).filter(|s| is_version_string(s)).map(ascii_string);
     }
     let word = |b: &[u8]| {
         let mut w = [0u8; 8];
@@ -121,13 +135,15 @@ pub fn blob_is_buildinfo<'a>(blob: &[u8], read: impl FnMut(u64, usize) -> Option
             u64::from_le_bytes(w)
         }
     };
-    let Some(header) = read(word(&blob[16..]), 2 * ptr_size) else { return false };
+    let header = read(word(&blob[16..]), 2 * ptr_size)?;
     let (ptr, len) = (word(header), word(&header[ptr_size..]));
-    usize::try_from(len)
-        .ok()
-        .filter(|&l| l <= MAX_VERSION_LEN)
-        .and_then(|l| read(ptr, l))
-        .is_some_and(is_version_string)
+    let len = usize::try_from(len).ok().filter(|&l| l <= MAX_VERSION_LEN)?;
+    read(ptr, len).filter(|s| is_version_string(s)).map(ascii_string)
+}
+
+/// An owned copy of bytes [`is_version_string`] accepted (printable ASCII).
+fn ascii_string(s: &[u8]) -> String {
+    String::from_utf8_lossy(s).into_owned()
 }
 
 /// The build-info blob of a Go **PE**: the first 16-byte-aligned magic in the
@@ -242,6 +258,7 @@ mod tests {
             _ => None,
         };
         assert!(blob_is_buildinfo(&b, read));
+        assert_eq!(go_version(&b, read), Some((1, 16)));
         let dangling = |vma: u64, len: usize| if vma == 0x5000 { header.get(..len) } else { None };
         assert!(!blob_is_buildinfo(&b, dangling), "the version pointer leads nowhere");
         assert!(!blob_is_buildinfo(&b, unmapped));

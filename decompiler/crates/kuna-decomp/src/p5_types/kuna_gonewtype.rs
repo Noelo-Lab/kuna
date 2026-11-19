@@ -116,7 +116,10 @@ fn resolve_site(data: &Funcdata, op: OpId, slot: int4) -> Option<(Address, Rc<Da
     if sym_off != 0 {
         return None;
     }
-    let spelled = name.strip_prefix("type:")?;
+    // The symbol qualifies the type with its full import path
+    // (`type:internal/poll.FD`); the harvest interns the record under the
+    // reflection spelling, which keeps the last path element only (`poll.FD`).
+    let spelled = name.strip_prefix("type:")?.rsplit('/').next()?;
     if spelled.is_empty() {
         return None;
     }
