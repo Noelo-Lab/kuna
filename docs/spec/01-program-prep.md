@@ -5123,7 +5123,7 @@ every other binary's pass list is byte-identical to before the pass existed):
   exactly what a search per class would. A search per class is
   `O(classes × image)`: `torch_cpu.dll` (31,623 type descriptors in 309 MB) did
   not finish loading in 30 minutes that way.
-- **(kuna) Itanium RTTI** (`itaniumrtti`, ELF-only, on by default and inert elsewhere;
+- **(kuna) Itanium RTTI** (`itaniumrtti`, ELF and Mach-O, on by default and inert elsewhere;
   `decompiler/crates/kuna-analysis/src/analyzers/rtti/kuna_itaniumrtti.rs`): the
   GCC/Clang counterpart of the pass above, and a capability with **no Ghidra
   equivalent at all** — upstream's `RttiAnalyzer` is a Microsoft-PE analyzer and its
@@ -5277,6 +5277,27 @@ every other binary's pass list is byte-identical to before the pass existed):
   so no anchor exists and the output is empty. Independent code-pointer-run scanning
   — which would find such vtables heuristically — is deliberately **not** part of
   this pass.
+
+  **On Mach-O** the same walk runs over a copy of the sections in which every
+  `LC_DYLD_CHAINED_FIXUPS` slot holds what dyld writes there
+  (`kuna_itaniumrtti.rs (MachoSlots)`, over
+  `loader/format/macho/chained.rs (resolve_chained_fixups)`): a rebase's
+  target, or 0 for a bind, which is the shape an ELF import slot has in the
+  file. The bind slots are the "relocated" set the slot walk steps over. The
+  exact anchor is a bind to `__ZTVN10__cxxabiv1…_type_infoE` (the Mach-O
+  spelling, one more `_`) with addend `2 × ptr`; `__ZTI…` symbols are the
+  second source. The copy is made only after an anchor is found, so a Mach-O
+  without C++ RTTI pays for the bind list alone. Apple's arm64 ABI sets bit 63
+  of a typeinfo's name pointer when the type may be duplicated across images
+  and must be compared by string, so the name pointer is read with that bit
+  cleared. On a `-fixup_chains` dylib whose `Circle` and `Square` typeinfos
+  are local, `make()` changes from `v1 = 0x40a8;` to `v1 = Square_vptr;`. A
+  classic `LC_DYLD_INFO` image already has the ELF shape (rebased pointers in
+  the file, zeros in bind slots); only its bind names are needed, and they
+  come from replaying the bind opcodes
+  (`loader/format/macho/dyldinfo.rs (resolve_dyld_info_binds)`), which carry
+  no addend, so the anchor is accepted on the name alone. Pinned by
+  `tests/stages/kuna-itaniumrtti-macho.xml` and its `-classic` twin.
 - **Objective-C** (`objc`, Mach-O-only, on by default and inert elsewhere;
   `decompiler/crates/kuna-analysis/src/analyzers/objc/mod.rs`): walk
   `__objc_classlist` → `class_t` → `class_ro_t` → method lists (both absolute and

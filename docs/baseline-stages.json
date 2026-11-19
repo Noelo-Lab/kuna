@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4512,
-    4512
+    4518,
+    4518
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1223,6 +1223,12 @@
     "data:ISAMODE #2: the four table-reachable tail-call arms are intact",
     "data:ISAMODE #3: the table-reachable f0 call sites survive the injection",
     "data:ISAMODE #4: flow still reaches the last jump-table entry",
+    "data:ITANIUMRTTI-MACHO #1: off leaves the vptr stores as addresses",
+    "data:ITANIUMRTTI-MACHO #2: on names Square's vptr",
+    "data:ITANIUMRTTI-MACHO #3: on names Circle's vptr",
+    "data:ITANIUMRTTI-MACHO-CLASSIC #1: off leaves the vptr stores as addresses",
+    "data:ITANIUMRTTI-MACHO-CLASSIC #2: on names Square's vptr",
+    "data:ITANIUMRTTI-MACHO-CLASSIC #3: on names Circle's vptr",
     "data:JUMPTABLEMAX #1: at the default cap the four-case switch is recovered",
     "data:JUMPTABLEMAX #2: every case of the table is a case label",
     "data:JUMPTABLEMAX #3: `option jumptablemax 2` refuses the four-case table and the dispatch prints as a call",
