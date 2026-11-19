@@ -8,9 +8,9 @@
 //! stored to a frame slot, the invoke and descriptor addresses stored 16 and 24
 //! bytes after it. [`stack_blocks`] finds those stores in arm64 code (the
 //! `adrp`/`ldr` of the isa's GOT slot, the `adrp`/`add` of the two addresses,
-//! `str`/`stp` to `sp`), names the invoke the way Clang mangles it
-//! (`__17-[Runner maker:]_block_invoke`) and types it from the descriptor's
-//! signature.
+//! `str`/`stp` to `sp`) and in x86-64 code (`x86.rs`), names the invoke the
+//! way Clang mangles it (`__17-[Runner maker:]_block_invoke`) and types it
+//! from the descriptor's signature.
 
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
@@ -22,6 +22,8 @@ use object::read::{Object, ObjectSection};
 use super::encoding::{decode_ivar_type, split_method, TypeCtx};
 use super::sections::MachoImage;
 use crate::pass::{AnalysisOutput, ConstGate, ConstRange, FidMatch, LocalFact, SymFact, SymKind, TypedDataFact};
+
+mod x86;
 
 /// `Block_layout.flags` bit: the descriptor has copy/dispose helpers.
 const BLOCK_HAS_COPY_DISPOSE: u32 = 1 << 25;
@@ -701,6 +703,20 @@ fn next_label(base: &str, counters: &mut HashMap<String, u32>, taken: &mut HashS
     }
 }
 
+/// Whether the image lists its function starts (`LC_FUNCTION_STARTS`): the
+/// code between two starts is then one function.
+fn lists_function_starts(file: &object::File) -> bool {
+    let object::File::MachO64(macho) = file else { return false };
+    let Ok(mut commands) = macho.macho_load_commands() else { return false };
+    while let Ok(Some(command)) = commands.next() {
+        if command.cmd() == object::macho::LC_FUNCTION_STARTS {
+            let table = command.data::<object::macho::LinkeditDataCommand<object::Endianness>>();
+            return table.is_ok_and(|t| t.datasize.get(macho.endian()) > 0);
+        }
+    }
+    false
+}
+
 /// One block whose invoke gets a name: a stack literal (its index in the
 /// sites) or a global literal's first reference.
 enum Built {
@@ -733,7 +749,8 @@ pub fn stack_blocks(
             out.fid_names.push(FidMatch { addr: g.invoke, name: label, by_signature: false });
         }
     };
-    if file.architecture() != object::Architecture::Aarch64 {
+    let arch = file.architecture();
+    if !matches!(arch, object::Architecture::Aarch64 | object::Architecture::X86_64) {
         return fallback(globals, &named, out);
     }
     let ps = img.ptr_size();
@@ -782,7 +799,15 @@ pub fn stack_blocks(
         .map(|s| (s.address(), s.address().saturating_add(s.size())))
         .collect();
     let mut pools: Vec<u64> = Vec::new();
-    let found = stack_block_sites(&read_ptr, &in_text, &text, &isa_slots, &global_lits, &starts);
+    let found = match arch {
+        object::Architecture::X86_64 => {
+            let mut bounds: Vec<u64> = starts.iter().chain(creators.iter().map(|(a, _)| a)).copied().collect();
+            bounds.sort_unstable();
+            bounds.dedup();
+            x86::sites(&read_ptr, &in_text, &text, &isa_slots, &global_lits, &bounds, lists_function_starts(file))
+        }
+        _ => stack_block_sites(&read_ptr, &in_text, &text, &isa_slots, &global_lits, &starts),
+    };
     let (mut sites, cells) = (found.sites, found.cells);
     sites.sort_by_key(|s| s.pc);
     let mut built: Vec<(u64, Built)> = sites.iter().enumerate().map(|(i, s)| (s.pc, Built::Stack(i))).collect();
@@ -862,6 +887,7 @@ pub fn stack_blocks(
         let Some((sig, helpers)) = site.descriptor.and_then(|d| descriptor_signature(img, d)) else { continue };
         let Some(layout) = layout.get_or_insert_with(|| block_layout(tctx)).as_ref() else { return };
         let kinds = match (helpers, site.descriptor.and_then(|d| img.rebase_ptr(d.wrapping_add(16)))) {
+            (true, Some(copy)) if arch == object::Architecture::X86_64 => x86::copy_helper_kinds(img, copy, &runtime),
             (true, Some(copy)) => copy_helper_kinds(img, copy, &runtime),
             _ => Vec::new(),
         };

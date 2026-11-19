@@ -1541,6 +1541,33 @@ LLD=$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin
 slot @`0x100004008`. With `objc on` the invokes are `__15-[Chain build:]_block_invoke`,
 `_2`, `_3`, `__sum_block_invoke`, `__sum_block_invoke_2`, `__pick_block_invoke`.
 
+### `macho_objc_blocks_x86_64`, `macho_objc_blocks2_x86_64` — blocks built by x86-64 creators
+
+The x86-64 builds of `macho_objc_blocks.m` and `macho_objc_blocks2.m` (17 KB
+each, SHA-256 `9cba8e3ad3c5eff655dffe240d603b31871286aca53171dcd7bf1cf62cea47fa`
+and `68370224f1cf8b2c5d7462ecdaccd792dd51307aea7ded9291e004e279656d29`), the
+fixtures for `tests/stages/kuna-objcblocksx86.xml`. A creator loads the isa
+with `mov r, [rip + slot]`, takes the invoke and descriptor with `lea`, moves
+the flags through a register as a 32-bit immediate and stores all of them
+through `rbp`; `-[Chain build:]` keeps the isa in `r12` across its sends; the
+copy helper calls `objc_retain` through the GOT and tail-jumps to
+`_Block_object_assign`. Linked without `-fixup_chains`, so the images carry
+`LC_DYLD_INFO_ONLY` binds like an x86-64 macOS 11 image (clang and LLD 22.1.8):
+
+```bash
+clang -target x86_64-apple-macos11 -fobjc-arc -O2 -c macho_objc_blocks.m -o m.o
+ld64.lld -arch x86_64 -platform_version macos 11.0 11.0 \
+       -undefined dynamic_lookup -x -e _main -o macho_objc_blocks_x86_64 m.o
+```
+
+**Pinned VMAs** (`macho_objc_blocks_x86_64`): `-[Runner maker:]`@`0x1000008e0`
+(invoke@`0x100000940`), `-[Runner tally:scale:]`@`0x100000960`
+(invoke@`0x100000a20`, copy helper@`0x100000a70`), `_NSConcreteStackBlock`
+slot@`0x100002008`. (`macho_objc_blocks2_x86_64`): `-[Chain build:]`@`0x100000890`
+(invokes @`0x100000980`, `0x100000990`, `0x1000009a0`; copy helper @`0x1000009b0`),
+`_sum`@`0x1000009d0` (invoke @`0x100000a20`, nested @`0x100000a70`),
+`_pick`@`0x100000a90` (global invoke @`0x100000ab0`).
+
 ### `macho_objc_stubagree_arm64` — a stub typed only from agreeing declarations
 
 `macho_objc_stubagree_arm64` (arm64, ~50 KB) is the fixture for stub typing

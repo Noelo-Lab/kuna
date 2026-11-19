@@ -1,0 +1,96 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Stack and global blocks on x86-64 Mach-O: the invoke named after its
+    creator and typed, the captures and a `__block` cell typed, the creator's
+    frame typed, as kuna-objcblocks.xml and kuna-objcblocks2.xml pin for arm64.
+
+    Issue: block recovery read only arm64 creators. On an x86-64 image a stack
+    block's invoke stayed a `sub_` taking a `void *`, its captures read as
+    offsets off that pointer, the creator was a run of stores to numbered
+    locals, and a global block's invoke was `block_invoke_<addr>`.
+
+    Fix: `analyzers/objc/kuna_objcblocks/x86.rs (sites)` decodes each x86-64
+    function that references the `_NSConcreteStackBlock` GOT slot or a global
+    literal: the isa is `mov r, [rip + slot]`, the invoke and descriptor are
+    `lea r, [rip + addr]`, and the stores go through `rbp`, `rsp` or a register
+    holding a frame address, at offsets taken relative to `rsp` at entry. The
+    copy helper's `objc_retain` and `_Block_object_assign` calls (direct, tail
+    or through the GOT) type the captures.
+
+    Pass 1 (`objc off`): `sub_100000a20(void *a0,...)`, the creator stores
+    `v6 = sub_100000a20;`. Pass 2 (`objc on`), `macho_objc_blocks_x86_64`:
+    `__22-[Runner tally:scale:]_block_invoke(Block_layout_100000a20 *block,...)`
+    reading `block->capture_1->forwarding->value`; the creator stores
+    `block.block.invoke`, `block.capture_1 = &cell_1`. Pass 3 (`objc on`),
+    `macho_objc_blocks2_x86_64`: three blocks of one creator with the isa kept
+    in `r12` across the sends, a nested block, a global block, a copy helper.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_objc_blocks_x86_64</com>
+  <com>option objc off</com>
+  <com>read symbols</com>
+  <com>load addr 0x100000a20</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x100000960</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_objc_blocks_x86_64</com>
+  <com>option objc on</com>
+  <com>read symbols</com>
+  <com>load addr 0x100000a20</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x100000960</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x1000008e0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x100000940</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_objc_blocks2_x86_64</com>
+  <com>option objc on</com>
+  <com>read symbols</com>
+  <com>load addr 0x100000890</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x100000a20</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x100000ab0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x1000009b0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="OBJCBLOCKSX86 #1: objc off, the invoke is an anonymous function taking a void pointer" min="1" max="1">sub_100000a20\(void \*a0,int8 a1\)</stringmatch>
+<stringmatch name="OBJCBLOCKSX86 #2: objc off, the creator stores the invoke to a numbered local" min="1" max="1">v6 = sub_100000a20;</stringmatch>
+<stringmatch name="OBJCBLOCKSX86 #3: the invoke is named after its creator and typed from the descriptor" min="1" max="1">__22-\[Runner tally:scale:\]_block_invoke\(Block_layout_100000a20 \*block,int8 arg1\)</stringmatch>
+<stringmatch name="OBJCBLOCKSX86 #4: the copy helper's objc_retain makes the first capture an object" min="1" max="1">objc_object \*v4; // rdi</stringmatch>
+<stringmatch name="OBJCBLOCKSX86 #5: the __block cell is read through its forwarding pointer" min="1" max="1">return block-&gt;capture_1-&gt;forwarding-&gt;value;</stringmatch>
+<stringmatch name="OBJCBLOCKSX86 #6: the double and int captures" min="1" max="1">v2 = block-&gt;capture_2;</stringmatch>
+<stringmatch name="OBJCBLOCKSX86 #7: the creator's literal is a typed local at its frame offset" min="1" max="1">Block_layout_100000a20 block; // .*stack - 0x70</stringmatch>
+<stringmatch name="OBJCBLOCKSX86 #8: the creator stores the cell's address and the cell forwards to itself" min="1" max="1">cell_1\.forwarding = block\.capture_1;</stringmatch>
+<stringmatch name="OBJCBLOCKSX86 #9: the cell's flags and size are fields" min="1" max="1">cell_1\.size = 0x20;</stringmatch>
+<stringmatch name="OBJCBLOCKSX86 #10: the flags stored from a 32-bit immediate split into flags and reserved" min="1" max="1">block\.block\.flags = 0xc2000000;</stringmatch>
+<stringmatch name="OBJCBLOCKSX86 #11: the plain capture of the first block is a word" min="1" max="1">return arg1 \* block-&gt;capture_0;</stringmatch>
+<stringmatch name="OBJCBLOCKSX86 #12: the descriptor is typed data" min="1" max="1">block\.block\.descriptor = &amp;block_descriptor_100002030;</stringmatch>
+<stringmatch name="OBJCBLOCKSX86 #13: three blocks of one creator carry Clang's names" min="1" max="1">block_3\.block\.invoke = __15-\[Chain build:\]_block_invoke_3;</stringmatch>
+<stringmatch name="OBJCBLOCKSX86 #14: the isa kept in a callee-saved register across the sends still starts a literal" min="2" max="2">block_[23]\.block\.isa = v1;</stringmatch>
+<stringmatch name="OBJCBLOCKSX86 #15: a nested block counts on under the outermost function" min="1" max="1">block_1\.block\.invoke = __sum_block_invoke_2;</stringmatch>
+<stringmatch name="OBJCBLOCKSX86 #16: a global block is named after the function that references it" min="1" max="1">int8 __pick_block_invoke\(Block_layout \*block,int8 arg1\)</stringmatch>
+<stringmatch name="OBJCBLOCKSX86 #17: the copy helper is named after its invoke" min="1" max="1">__15-\[Chain build:\]_block_invoke_3_copy_helper\(</stringmatch>
+</decompilertest>

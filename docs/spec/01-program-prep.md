@@ -5619,8 +5619,7 @@ every other binary's pass list is byte-identical to before the pass existed):
     (`LocalFact`s the decompile seeds like DWARF locals): the literal is
     `block` (`block_2`, …) and each cell `cell_<k>`, so the build reads
     `block.block.invoke = …; block.capture_1 = &cell_1; cell_1.forwarding = block.capture_1;`.
-    x86-64 creators and a
-    capture's signedness are not modelled. The stage tests
+    A capture's signedness is not modelled. The stage tests
     `tests/stages/kuna-objcstructs.xml` and `tests/stages/kuna-objcblocks.xml`
     run `macho_objc_structs_arm64` and `macho_objc_blocks_arm64`.
 
@@ -5639,6 +5638,49 @@ every other binary's pass list is byte-identical to before the pass existed):
     start; a pointer-authenticated isa (`pacda`) and invoke (`pacia`) keep the
     value they sign.
 
+    On an x86-64 Mach-O the same recovery reads x86-64 creators
+    (`decompiler/crates/kuna-analysis/src/analyzers/objc/kuna_objcblocks/x86.rs (sites)`,
+    on with `objc` on that target and never run on another): the isa is
+    `mov r, [rip + slot]` of the `_NSConcreteStackBlock` GOT slot, the invoke
+    and descriptor are `lea r, [rip + addr]`, the flags a 32-bit immediate
+    moved through a register (or two `mov dword` stores), and the stores go
+    through `rbp`, `rsp` or a register holding a frame address. Instructions
+    there have no fixed width, so the scan does not walk the whole text: it
+    first finds every four bytes that, read as a `rip`-relative displacement,
+    land on the isa slot or on a global block literal, and decodes only the
+    functions those lie in, from their start (the function starts above and
+    every label that can name a creator). The
+    decoder (`x86.rs (decode)`) gives every 64-bit-mode instruction its length
+    (legacy, REX and VEX prefixes, the one-byte, `0F`, `0F 38` and `0F 3A`
+    maps); bytes that are no instruction (EVEX, an opcode invalid in 64-bit
+    mode, a jump table in the text) are stepped over one at a time with the
+    state cleared. The scan models the handful a literal is built from: `mov` between
+    registers, to and from the frame and of an immediate, `lea`, `xor r, r`,
+    the SSE/AVX stores (`movsd` a `double`, `movss` a `float`, `movaps`/
+    `movups`/`movdqa` 16 bytes), `push`/`pop`/`add`/`sub rsp`/`leave` for the
+    frame depth. Every other instruction clears the registers it may write
+    (never fewer than it does write), a call clears the caller-saved ones, and
+    `ret` or an unconditional jump clears everything but the frame registers
+    and gives the code after it the `rsp` and `rbp` the function body had
+    before its epilogue. Frame offsets are kept relative to `rsp` at entry, so
+    a literal at `[rbp - 0x68]` under `push rbp; mov rbp, rsp` is the local at
+    `stack - 0x70`. The copy helper is read the same way
+    (`x86.rs (copy_helper_kinds)`): the capture is the last `mov r, [r + off]`
+    into `rdi` at an `objc_retain` / `objc_retainBlock` or into `rsi` at a
+    `_Block_object_assign` (its flags in `edx`), whether the call is direct,
+    a tail jump, or through the GOT (`call [rip + slot]`). Naming, the
+    descriptor, the captured layout and the typed locals are the shared code
+    above. An image with no `LC_FUNCTION_STARTS` (Chromium's framework) has
+    only its labels and exports for starts, so there the code after a `ret`,
+    a jump through a slot or a jump out of `__text` may be another function's:
+    a block built past one has no known creator, is named
+    `__block_<invoke>_block_invoke`, and types no frame; its invoke is typed
+    all the same. With the table, a creator's label names its blocks whatever
+    `ret`s precede them. A flags word is never pooled on this
+    target, so nothing is reported constant for it. `tests/stages/kuna-objcblocksx86.xml` runs
+    `macho_objc_blocks_x86_64` and `macho_objc_blocks2_x86_64` with `objc` off
+    and on.
+
   - **Block naming and typing**
     (`decompiler/crates/kuna-analysis/src/analyzers/objc/kuna_objcblocks.rs (stack_blocks)`,
     kuna, part of `objc`, no option): the invoke is named the way Clang mangles it
@@ -5650,7 +5692,7 @@ every other binary's pass list is byte-identical to before the pass existed):
     no name `sub_<addr>`, and a name the image already uses skipped. An
     invoke the symbol table names keeps that name and is only typed. A global
     block's invoke is named after the first function that materializes the
-    literal's address (`adrp; add` or `adr`), in the same numbering as that
+    literal's address (`adrp; add` or `adr`; `lea r, [rip + literal]` on x86-64), in the same numbering as that
     function's stack blocks; one nothing references stays `block_invoke_<addr>`.
     With `BLOCK_HAS_COPY_DISPOSE` the descriptor's helpers are named
     `<invoke>_copy_helper` and `<invoke>_dispose_helper`. Each descriptor a
