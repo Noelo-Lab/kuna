@@ -4213,6 +4213,30 @@ impl ProtoModel {
     pub fn input_opt(&self) -> Option<&ParamListStandard> {
         self.input.as_ref()
     }
+
+    /// Restrict a convention with one forward stack resource to a whole-slot frame area.
+    pub fn kuna_bound_stack_inputs(&self, bytes: u32) -> Option<Self> {
+        let input = self.input_opt()?;
+        let [entry] = input.entry.as_slice() else { return None };
+        let bytes = i32::try_from(bytes).ok()?;
+        if entry.get_space().get_type() != spacetype::IPTR_SPACEBASE
+            || entry.is_reverse_stack()
+            || entry.alignment <= 0
+            || bytes <= 0
+            || bytes > entry.size
+            || bytes % entry.alignment != 0
+        {
+            return None;
+        }
+        let mut model = self.clone();
+        let input = model.input_mut();
+        let entry = &mut input.entry[0];
+        entry.size = bytes;
+        entry.minsize = entry.alignment;
+        entry.numslots = bytes / entry.alignment;
+        input.populate_resolver();
+        Some(model)
+    }
     /// Borrow the output resource model (panics if not yet built — C++ would
     /// dereference a null `output`).
     pub fn output(&self) -> &ParamListStandard {
