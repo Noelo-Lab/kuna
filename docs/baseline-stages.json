@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4920,
-    4920
+    4928,
+    4928
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -51,6 +51,14 @@
     "data:APS3 #4: and its guard survives as a signed comparison",
     "data:APS3 #5: call [r15] reaches the loaded target at 0x40",
     "data:APS3 #6: it must NOT resolve to the following instruction 0x3a",
+    "data:ARCv2 #1: both zero-overhead loops are do-while loops",
+    "data:ARCv2 #2: each loop is counted down to zero",
+    "data:ARCv2 #3: sum accumulates the loaded words",
+    "data:ARCv2 #4: no goto is left by the loop back-edge",
+    "data:ARCv2 #5: the call ending fill's loop has its delay-slot argument",
+    "data:ARCv2 #6: fill's frame array is indexed by the masked argument",
+    "data:ARCv2 #7: clamp's long immediate and delay-slot or",
+    "data:ARCv2 #8: clamp's add3 and delay-slot xor",
     "data:ARM FRAME SPILL #1: off retains the three-argument call",
     "data:ARM FRAME SPILL #2: reload recovers the fourth argument",
     "data:ARM GUARD RANGE #1: both ADDPL tables and healthy controls recover switches",

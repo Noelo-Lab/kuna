@@ -1,0 +1,2 @@
+@define ENDIAN "little"
+@include "arcv2.sinc"

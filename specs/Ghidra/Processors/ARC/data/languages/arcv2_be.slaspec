@@ -1,0 +1,2 @@
+@define ENDIAN "big"
+@include "arcv2.sinc"

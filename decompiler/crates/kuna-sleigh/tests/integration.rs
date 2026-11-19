@@ -1,4 +1,7 @@
 // Shared integration-test executable. Process-sensitive tests stay separate.
+#[path = "arcv2_decode.rs"]
+mod arcv2_decode;
+
 #[path = "arm_coprocessor_selectors.rs"]
 mod arm_coprocessor_selectors;
 

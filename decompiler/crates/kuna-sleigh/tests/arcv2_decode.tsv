@@ -1,0 +1,508 @@
+0x10000	00218000	add r0, r1, r2
+0x10004	00244381	add.f r3, r4, r5
+0x10008	40264d18	add r13, r14, 0x21
+0x1000c	80263e07	add r6, r6, -0x64
+0x1001c	0026ca7234127856	add r10, 0x12345678, r11
+0x10024	c0244213	add.ne r12, r12, r13
+0x10028	c0216981	add.gt.f r1, r1, 0x5
+0x1002c	0021be00	add 0, r1, r2
+0x10034	0024df36	add blink, sp, fp
+0x10038	40270171	add r1, pcl, 0x4
+0x1003c	01218000	adc r0, r1, r2
+0x10040	01244381	adc.f r3, r4, r5
+0x10060	c1244213	adc.ne r12, r12, r13
+0x10064	c1216981	adc.gt.f r1, r1, 0x5
+0x10078	02218000	sub r0, r1, r2
+0x1007c	02244381	sub.f r3, r4, r5
+0x1009c	c2244213	sub.ne r12, r12, r13
+0x100a0	c2216981	sub.gt.f r1, r1, 0x5
+0x100b4	03218000	sbc r0, r1, r2
+0x100b8	03244381	sbc.f r3, r4, r5
+0x100d8	c3244213	sbc.ne r12, r12, r13
+0x100dc	c3216981	sbc.gt.f r1, r1, 0x5
+0x100f0	04218000	and r0, r1, r2
+0x100f4	04244381	and.f r3, r4, r5
+0x10114	c4244213	and.ne r12, r12, r13
+0x10118	c4216981	and.gt.f r1, r1, 0x5
+0x1012c	05218000	or r0, r1, r2
+0x10130	05244381	or.f r3, r4, r5
+0x10150	c5244213	or.ne r12, r12, r13
+0x10154	c5216981	or.gt.f r1, r1, 0x5
+0x10168	06218000	bic r0, r1, r2
+0x1016c	06244381	bic.f r3, r4, r5
+0x1018c	c6244213	bic.ne r12, r12, r13
+0x10190	c6216981	bic.gt.f r1, r1, 0x5
+0x101a4	07218000	xor r0, r1, r2
+0x101a8	07244381	xor.f r3, r4, r5
+0x101c8	c7244213	xor.ne r12, r12, r13
+0x101cc	c7216981	xor.gt.f r1, r1, 0x5
+0x101e0	08218000	max r0, r1, r2
+0x101e4	08244381	max.f r3, r4, r5
+0x10204	c8244213	max.ne r12, r12, r13
+0x10208	c8216981	max.gt.f r1, r1, 0x5
+0x1021c	09218000	min r0, r1, r2
+0x10220	09244381	min.f r3, r4, r5
+0x10240	c9244213	min.ne r12, r12, r13
+0x10244	c9216981	min.gt.f r1, r1, 0x5
+0x10258	0e218000	rsub r0, r1, r2
+0x1025c	0e244381	rsub.f r3, r4, r5
+0x1027c	ce244213	rsub.ne r12, r12, r13
+0x10280	ce216981	rsub.gt.f r1, r1, 0x5
+0x10294	0f218000	bset r0, r1, r2
+0x10298	0f244381	bset.f r3, r4, r5
+0x102b8	cf244213	bset.ne r12, r12, r13
+0x102bc	cf216981	bset.gt.f r1, r1, 0x5
+0x102d0	10218000	bclr r0, r1, r2
+0x102d4	10244381	bclr.f r3, r4, r5
+0x102f4	d0244213	bclr.ne r12, r12, r13
+0x102f8	d0216981	bclr.gt.f r1, r1, 0x5
+0x1030c	12218000	bxor r0, r1, r2
+0x10310	12244381	bxor.f r3, r4, r5
+0x10330	d2244213	bxor.ne r12, r12, r13
+0x10334	d2216981	bxor.gt.f r1, r1, 0x5
+0x10348	13218000	bmsk r0, r1, r2
+0x1034c	13244381	bmsk.f r3, r4, r5
+0x1036c	d3244213	bmsk.ne r12, r12, r13
+0x10370	d3216981	bmsk.gt.f r1, r1, 0x5
+0x10384	2c218000	bmskn r0, r1, r2
+0x10388	2c244381	bmskn.f r3, r4, r5
+0x103a8	ec244213	bmskn.ne r12, r12, r13
+0x103ac	ec216981	bmskn.gt.f r1, r1, 0x5
+0x103c0	14218000	add1 r0, r1, r2
+0x103c4	14244381	add1.f r3, r4, r5
+0x103e4	d4244213	add1.ne r12, r12, r13
+0x103e8	d4216981	add1.gt.f r1, r1, 0x5
+0x103fc	15218000	add2 r0, r1, r2
+0x10400	15244381	add2.f r3, r4, r5
+0x10420	d5244213	add2.ne r12, r12, r13
+0x10424	d5216981	add2.gt.f r1, r1, 0x5
+0x10438	16218000	add3 r0, r1, r2
+0x1043c	16244381	add3.f r3, r4, r5
+0x1045c	d6244213	add3.ne r12, r12, r13
+0x10460	d6216981	add3.gt.f r1, r1, 0x5
+0x10474	17218000	sub1 r0, r1, r2
+0x10478	17244381	sub1.f r3, r4, r5
+0x10498	d7244213	sub1.ne r12, r12, r13
+0x1049c	d7216981	sub1.gt.f r1, r1, 0x5
+0x104b0	18218000	sub2 r0, r1, r2
+0x104b4	18244381	sub2.f r3, r4, r5
+0x104d4	d8244213	sub2.ne r12, r12, r13
+0x104d8	d8216981	sub2.gt.f r1, r1, 0x5
+0x104ec	19218000	sub3 r0, r1, r2
+0x104f0	19244381	sub3.f r3, r4, r5
+0x10510	d9244213	sub3.ne r12, r12, r13
+0x10514	d9216981	sub3.gt.f r1, r1, 0x5
+0x10528	1a218000	mpy r0, r1, r2
+0x1052c	1a244381	mpy.f r3, r4, r5
+0x1054c	da244213	mpy.ne r12, r12, r13
+0x10550	da216981	mpy.gt.f r1, r1, 0x5
+0x10564	1b218000	mpym r0, r1, r2
+0x10568	1b244381	mpym.f r3, r4, r5
+0x10588	db244213	mpym.ne r12, r12, r13
+0x1058c	db216981	mpym.gt.f r1, r1, 0x5
+0x105a0	1c218000	mpymu r0, r1, r2
+0x105a4	1c244381	mpymu.f r3, r4, r5
+0x105c4	dc244213	mpymu.ne r12, r12, r13
+0x105c8	dc216981	mpymu.gt.f r1, r1, 0x5
+0x105dc	1d218000	mpyu r0, r1, r2
+0x105e0	1d244381	mpyu.f r3, r4, r5
+0x10600	dd244213	mpyu.ne r12, r12, r13
+0x10604	dd216981	mpyu.gt.f r1, r1, 0x5
+0x10618	1e218000	mpyw r0, r1, r2
+0x1061c	1e244381	mpyw.f r3, r4, r5
+0x1063c	de244213	mpyw.ne r12, r12, r13
+0x10640	de216981	mpyw.gt.f r1, r1, 0x5
+0x10654	1f218000	mpyuw r0, r1, r2
+0x10658	1f244381	mpyuw.f r3, r4, r5
+0x10678	df244213	mpyuw.ne r12, r12, r13
+0x1067c	df216981	mpyuw.gt.f r1, r1, 0x5
+0x10690	00298000	asl r0, r1, r2
+0x10694	002c4381	asl.f r3, r4, r5
+0x106b4	c02c4213	asl.ne r12, r12, r13
+0x106b8	c0296981	asl.gt.f r1, r1, 0x5
+0x106cc	01298000	lsr r0, r1, r2
+0x106d0	012c4381	lsr.f r3, r4, r5
+0x106f0	c12c4213	lsr.ne r12, r12, r13
+0x106f4	c1296981	lsr.gt.f r1, r1, 0x5
+0x10708	02298000	asr r0, r1, r2
+0x1070c	022c4381	asr.f r3, r4, r5
+0x1072c	c22c4213	asr.ne r12, r12, r13
+0x10730	c2296981	asr.gt.f r1, r1, 0x5
+0x10744	03298000	ror r0, r1, r2
+0x10748	032c4381	ror.f r3, r4, r5
+0x10768	c32c4213	ror.ne r12, r12, r13
+0x1076c	c3296981	ror.gt.f r1, r1, 0x5
+0x10780	04298000	div r0, r1, r2
+0x10784	042c4381	div.f r3, r4, r5
+0x107a4	c42c4213	div.ne r12, r12, r13
+0x107a8	c4296981	div.gt.f r1, r1, 0x5
+0x107bc	05298000	divu r0, r1, r2
+0x107c0	052c4381	divu.f r3, r4, r5
+0x107e0	c52c4213	divu.ne r12, r12, r13
+0x107e4	c5296981	divu.gt.f r1, r1, 0x5
+0x107f8	08298000	rem r0, r1, r2
+0x107fc	082c4381	rem.f r3, r4, r5
+0x1081c	c82c4213	rem.ne r12, r12, r13
+0x10820	c8296981	rem.gt.f r1, r1, 0x5
+0x10834	09298000	remu r0, r1, r2
+0x10838	092c4381	remu.f r3, r4, r5
+0x10858	c92c4213	remu.ne r12, r12, r13
+0x1085c	c9296981	remu.gt.f r1, r1, 0x5
+0x10870	38218000	seteq r0, r1, r2
+0x10874	38244381	seteq.f r3, r4, r5
+0x10894	f8244213	seteq.ne r12, r12, r13
+0x10898	f8216901	seteq.gt r1, r1, 0x5
+0x108ac	39218000	setne r0, r1, r2
+0x108b0	39244381	setne.f r3, r4, r5
+0x108d0	f9244213	setne.ne r12, r12, r13
+0x108d4	f9216901	setne.gt r1, r1, 0x5
+0x108e8	3a218000	setlt r0, r1, r2
+0x108ec	3a244381	setlt.f r3, r4, r5
+0x1090c	fa244213	setlt.ne r12, r12, r13
+0x10910	fa216901	setlt.gt r1, r1, 0x5
+0x10924	3b218000	setge r0, r1, r2
+0x10928	3b244381	setge.f r3, r4, r5
+0x10948	fb244213	setge.ne r12, r12, r13
+0x1094c	fb216901	setge.gt r1, r1, 0x5
+0x10960	3c218000	setlo r0, r1, r2
+0x10964	3c244381	setlo.f r3, r4, r5
+0x10984	fc244213	setlo.ne r12, r12, r13
+0x10988	fc216901	setlo.gt r1, r1, 0x5
+0x1099c	3d218000	seths r0, r1, r2
+0x109a0	3d244381	seths.f r3, r4, r5
+0x109c0	fd244213	seths.ne r12, r12, r13
+0x109c4	fd216901	seths.gt r1, r1, 0x5
+0x109d8	3e218000	setle r0, r1, r2
+0x109dc	3e244381	setle.f r3, r4, r5
+0x109fc	fe244213	setle.ne r12, r12, r13
+0x10a00	fe216901	setle.gt r1, r1, 0x5
+0x10a14	3f218000	setgt r0, r1, r2
+0x10a18	3f244381	setgt.f r3, r4, r5
+0x10a38	ff244213	setgt.ne r12, r12, r13
+0x10a3c	ff216901	setgt.gt r1, r1, 0x5
+0x10a50	2d218000	xbfu r0, r1, r2
+0x10a54	2d244381	xbfu.f r3, r4, r5
+0x10a74	ed244213	xbfu.ne r12, r12, r13
+0x10a78	ed216981	xbfu.gt.f r1, r1, 0x5
+0x10a8c	0a204000	mov r0, r1
+0x10a90	4a244021	mov r20, 0x5
+0x10a94	8a23ff0e	mov r3, -0x5
+0x10aa0	ca258b01	mov.lt r5, r6
+0x10aa4	ca256d02	mov.hi r5, 0x9
+0x10aa8	0c204080	cmp r0, r1
+0x10aac	4c2440a1	cmp r20, 0x5
+0x10ab0	8c23ff8e	cmp r3, -0x5
+0x10abc	cc258b81	cmp.lt r5, r6
+0x10ac0	cc256d82	cmp.hi r5, 0x9
+0x10ac4	0d204080	rcmp r0, r1
+0x10ad8	cd258b81	rcmp.lt r5, r6
+0x10adc	cd256d82	rcmp.hi r5, 0x9
+0x10ae0	0b204080	tst r0, r1
+0x10af4	cb258b81	tst.lt r5, r6
+0x10af8	cb256d82	tst.hi r5, 0x9
+0x10afc	11204080	btst r0, r1
+0x10b10	d1258b81	btst.lt r5, r6
+0x10b14	d1256d82	btst.hi r5, 0x9
+0x10b18	0a204080	mov.f r0, r1
+0x10b1c	0a248070	mov lp_count, r2
+0x10b20	0a20000f	mov r0, lp_count
+0x10b24	0a24c036	mov sp, fp
+0x10b2c	4a260070	nop
+0x10b80	2f204400	rrc r0, r1
+0x10b84	2f260495	rrc.f r14, r20
+0x10b94	2f204500	sexb r0, r1
+0x10b98	2f260595	sexb.f r14, r20
+0x10ba8	2f204600	sexh r0, r1
+0x10bac	2f260695	sexh.f r14, r20
+0x10bbc	2f204700	extb r0, r1
+0x10bc0	2f260795	extb.f r14, r20
+0x10bd0	2f204800	exth r0, r1
+0x10bd4	2f260895	exth.f r14, r20
+0x10be4	2f204900	abs r0, r1
+0x10be8	2f260995	abs.f r14, r20
+0x10bf8	2f204a00	not r0, r1
+0x10bfc	2f260a95	not.f r14, r20
+0x10c0c	2f204b00	rlc r0, r1
+0x10c10	2f260b95	rlc.f r14, r20
+0x10c20	2f204d00	rol r0, r1
+0x10c24	2f260d95	rol.f r14, r20
+0x10c34	2f284000	swap r0, r1
+0x10c38	2f2e0095	swap.f r14, r20
+0x10c48	2f284100	norm r0, r1
+0x10c4c	2f2e0195	norm.f r14, r20
+0x10c5c	2f284800	normh r0, r1
+0x10c60	2f2e0895	normh.f r14, r20
+0x10c70	2f284900	swape r0, r1
+0x10c74	2f2e0995	swape.f r14, r20
+0x10c84	2f284a00	lsl16 r0, r1
+0x10c88	2f2e0a95	lsl16.f r14, r20
+0x10c98	2f284b00	lsr16 r0, r1
+0x10c9c	2f2e0b95	lsr16.f r14, r20
+0x10cac	2f284c00	asr16 r0, r1
+0x10cb0	2f2e0c95	asr16.f r14, r20
+0x10cc0	2f284d00	asr8 r0, r1
+0x10cc4	2f2e0d95	asr8.f r14, r20
+0x10cd4	2f284e00	lsr8 r0, r1
+0x10cd8	2f2e0e95	lsr8.f r14, r20
+0x10ce8	2f284f00	lsl8 r0, r1
+0x10cec	2f2e0f95	lsl8.f r14, r20
+0x10cfc	2f285000	rol8 r0, r1
+0x10d00	2f2e1095	rol8.f r14, r20
+0x10d10	2f285100	ror8 r0, r1
+0x10d14	2f2e1195	ror8.f r14, r20
+0x10d24	2f285200	ffs r0, r1
+0x10d28	2f2e1295	ffs.f r14, r20
+0x10d38	2f285300	fls r0, r1
+0x10d3c	2f2e1395	fls.f r14, r20
+0x10d4c	00110000	ld r0, [r1]
+0x10d50	08130200	ld r2, [r3, 0x8]
+0x10d54	f41404b0	ld r4, [sp, -0xc]
+0x10d58	04160502	ld.aw r5, [r6, 0x4]
+0x10d5c	fc100794	ld.ab r7, [r8, -0x4]
+0x10d60	3022c912	ld r9, [r10, r11]
+0x10d6c	00160f7000200010	ld r15, [0x20001000]
+0x10d7c	10170170	ld r1, [pcl, 0x10]
+0x10d80	64120130	ld r1, [gp, 0x64]
+0x10d84	08141f30	ld blink, [sp, 0x8]
+0x10d88	00118000	ldb r0, [r1]
+0x10d94	04168502	ldb.aw r5, [r6, 0x4]
+0x10d98	fc108794	ldb.ab r7, [r8, -0x4]
+0x10dc4	00110001	ldh r0, [r1]
+0x10dd0	04160503	ldh.aw r5, [r6, 0x4]
+0x10dd4	fc100795	ldh.ab r7, [r8, -0x4]
+0x10e00	0011c000	ldb.x r0, [r1]
+0x10e0c	0416c502	ldb.x.aw r5, [r6, 0x4]
+0x10e10	fc10c794	ldb.x.ab r7, [r8, -0x4]
+0x10e3c	00114001	ldh.x r0, [r1]
+0x10e48	04164503	ldh.x.aw r5, [r6, 0x4]
+0x10e4c	fc104795	ldh.x.ab r7, [r8, -0x4]
+0x10e78	03120106	ld.as r1, [r2, 0x3]
+0x10e80	03120107	ldh.as r1, [r2, 0x3]
+0x10e90	00190000	st r0, [r1]
+0x10e94	081b8000	st r2, [r3, 0x8]
+0x10e98	f41c00b1	st r4, [sp, -0xc]
+0x10e9c	fc1e4881	st.aw r5, [r6, -0x4]
+0x10ea0	0418d011	st.ab r7, [r8, 0x4]
+0x10ea4	001ec07300200010	st r15, [0x20001000]
+0x10eac	04194101	st 0x5, [r1, 0x4]
+0x10eb0	001a410f	st -0x3, [r2]
+0x10ebc	041cc037	st blink, [sp, 0x4]
+0x10ec0	00190200	stb r0, [r1]
+0x10ecc	fc1e4a81	stb.aw r5, [r6, -0x4]
+0x10ed0	0418d211	stb.ab r7, [r8, 0x4]
+0x10ef0	00190400	sth r0, [r1]
+0x10efc	fc1e4c81	sth.aw r5, [r6, -0x4]
+0x10f00	0418d411	sth.ab r7, [r8, 0x4]
+0x10f20	031a5800	st.as r1, [r2, 0x3]
+0x10f24	031a5c00	sth.as r1, [r2, 0x3]
+0x10f28	01000000	b 0x10f28
+0x10f2c	d1022000	b.d 0x111fc
+0x10f30	e078	nop_s
+0x10f32	f807c1ff	beq 0x10f28
+0x10f36	c8022100	beq.d 0x111fc
+0x10f3c	ec0fc1ff	bleq 0x10f28
+0x10f40	e020c107	jeq [blink]
+0x10f44	e1204100	jeq.d [r1]
+0x10f4a	e2208100	jleq [r2]
+0x10f52	d807c2ff	bne 0x10f28
+0x10f56	a8022200	bne.d 0x111fc
+0x10f5c	cc0fc2ff	blne 0x10f28
+0x10f60	e020c207	jne [blink]
+0x10f64	e1204200	jne.d [r1]
+0x10f6a	e2208200	jlne [r2]
+0x10f72	b807c3ff	bp 0x10f28
+0x10f76	88022300	bp.d 0x111fc
+0x10f7c	ac0fc3ff	blp 0x10f28
+0x10f80	e020c307	jp [blink]
+0x10f84	e1204300	jp.d [r1]
+0x10f8a	e2208300	jlp [r2]
+0x10f92	9807c4ff	bn 0x10f28
+0x10f96	68022400	bn.d 0x111fc
+0x10f9c	8c0fc4ff	bln 0x10f28
+0x10fa0	e020c407	jn [blink]
+0x10fa4	e1204400	jn.d [r1]
+0x10faa	e2208400	jln [r2]
+0x10fb2	7807c5ff	blo 0x10f28
+0x10fb6	48022500	blo.d 0x111fc
+0x10fbc	6c0fc5ff	bllo 0x10f28
+0x10fc0	e020c507	jlo [blink]
+0x10fc4	e1204500	jlo.d [r1]
+0x10fca	e2208500	jllo [r2]
+0x10fd2	5807c6ff	bhs 0x10f28
+0x10fd6	28022600	bhs.d 0x111fc
+0x10fdc	4c0fc6ff	blhs 0x10f28
+0x10fe0	e020c607	jhs [blink]
+0x10fe4	e1204600	jhs.d [r1]
+0x10fea	e2208600	jlhs [r2]
+0x10ff2	3807c7ff	bv 0x10f28
+0x10ff6	08022700	bv.d 0x111fc
+0x10ffc	2c0fc7ff	blv 0x10f28
+0x11000	e020c707	jv [blink]
+0x11004	e1204700	jv.d [r1]
+0x1100a	e2208700	jlv [r2]
+0x11012	1807c8ff	bnv 0x10f28
+0x11016	e8012800	bnv.d 0x111fc
+0x1101c	0c0fc8ff	blnv 0x10f28
+0x11020	e020c807	jnv [blink]
+0x11024	e1204800	jnv.d [r1]
+0x1102a	e2208800	jlnv [r2]
+0x11032	f806c9ff	bgt 0x10f28
+0x11036	c8012900	bgt.d 0x111fc
+0x1103c	ec0ec9ff	blgt 0x10f28
+0x11040	e020c907	jgt [blink]
+0x11044	e1204900	jgt.d [r1]
+0x1104a	e2208900	jlgt [r2]
+0x11052	d806caff	bge 0x10f28
+0x11056	a8012a00	bge.d 0x111fc
+0x1105c	cc0ecaff	blge 0x10f28
+0x11060	e020ca07	jge [blink]
+0x11064	e1204a00	jge.d [r1]
+0x1106a	e2208a00	jlge [r2]
+0x11072	b806cbff	blt 0x10f28
+0x11076	88012b00	blt.d 0x111fc
+0x1107c	ac0ecbff	bllt 0x10f28
+0x11080	e020cb07	jlt [blink]
+0x11084	e1204b00	jlt.d [r1]
+0x1108a	e2208b00	jllt [r2]
+0x11092	9806ccff	ble 0x10f28
+0x11096	68012c00	ble.d 0x111fc
+0x1109c	8c0eccff	blle 0x10f28
+0x110a0	e020cc07	jle [blink]
+0x110a4	e1204c00	jle.d [r1]
+0x110aa	e2208c00	jlle [r2]
+0x110b2	7806cdff	bhi 0x10f28
+0x110b6	48012d00	bhi.d 0x111fc
+0x110bc	6c0ecdff	blhi 0x10f28
+0x110c0	e020cd07	jhi [blink]
+0x110c4	e1204d00	jhi.d [r1]
+0x110ca	e2208d00	jlhi [r2]
+0x110d2	5806ceff	bls 0x10f28
+0x110d6	28012e00	bls.d 0x111fc
+0x110dc	4c0eceff	blls 0x10f28
+0x110e0	e020ce07	jls [blink]
+0x110e4	e1204e00	jls.d [r1]
+0x110ea	e2208e00	jlls [r2]
+0x110f2	3806cfff	bpnz 0x10f28
+0x110f6	08012f00	bpnz.d 0x111fc
+0x110fc	2c0ecfff	blpnz 0x10f28
+0x11100	e020cf07	jpnz [blink]
+0x11104	e1204f00	jpnz.d [r1]
+0x1110a	e2208f00	jlpnz [r2]
+0x11112	1a0ecfff	bl 0x10f28
+0x11116	ea082000	bl.d 0x111fc
+0x11124	2020c007	j [blink]
+0x11128	2120c007	j.d [blink]
+0x1112e	20204001	j [r5]
+0x11138	2220c001	jl [r7]
+0x1113c	23200002	jl.d [r8]
+0x11142	2020800f00000040	j [0x4000]
+0x1114a	2220800f01004423	jl [0x12344]
+0x11152	a020000f	j 0x3c
+0x11156	a2200008	jl 0x20
+0x1115c	01084000	breq r0, r1, 0x1115c
+0x11160	9d0a5001	breq r2, 0x5, 0x111fc
+0x11164	990b2001	breq.d r3, r4, 0x111fc
+0x1116e	f1084180	brne r0, r1, 0x1115c
+0x11176	890b2101	brne.d r3, r4, 0x111fc
+0x11180	dd084280	brlt r0, r1, 0x1115c
+0x11188	750b2201	brlt.d r3, r4, 0x111fc
+0x11192	cd084380	brge r0, r1, 0x1115c
+0x1119a	650b2301	brge.d r3, r4, 0x111fc
+0x111a4	b9084480	brlo r0, r1, 0x1115c
+0x111ac	510b2401	brlo.d r3, r4, 0x111fc
+0x111b6	a9084580	brhs r0, r1, 0x1115c
+0x111be	410b2501	brhs.d r3, r4, 0x111fc
+0x111c8	95084680	bbit0 r0, r1, 0x1115c
+0x111d0	2d0b2601	bbit0.d r3, r4, 0x111fc
+0x111da	85084780	bbit1 r0, r1, 0x1115c
+0x111e2	1d0b2701	bbit1.d r3, r4, 0x111fc
+0x11200	a8208001	lp 0x1120c
+0x1120c	e8202201	lpne 0x11214
+0x11214	8c213f0d	dbnz r1, 0x111fc
+0x11218	8d22bf0c	dbnz.d r2, 0x111fc
+0x11222	2a218000	lr r1, [r2]
+0x1122a	2b218000	sr r1, [r2]
+0x11236	27218000	aex r1, [r2]
+0x1123e	29204000	flag r1
+0x11246	29204080	kflag r1
+0x1124a	6f213f00	sleep 0x0
+0x11252	6f223f00	swi
+0x11256	6f233f00	sync
+0x1125a	6f243f00	rtie
+0x1125e	6f253f00	brk
+0x11262	6f263f00	seti 0x0
+0x11272	2f27bf00	clri r2
+0x11276	2f218c00	ex r1, [r2]
+0x1127a	2f219000	llock r1, [r2]
+0x1127e	2f219100	scond r1, [r2]
+0x11282	24204000	bi [r1]
+0x11286	25208000	bih [r2]
+0x1128a	26218000	ldi r1, [r2]
+0x11292	0846	mov_s r14, r0
+0x112a2	3c70	mov_s.ne r0, r1
+0x112a8	cd40	ld_s r0, [r14, 0x4]
+0x112ac	614a	ld_s.as r1, [r2, r3]
+0x112ae	714a	sub_s r1, r2, r3
+0x112b0	584a	add_s r0, r2, 0x28
+0x112b6	9451	st_s r0, [gp, 0x190]
+0x112b8	2c51	ldi_s r1, [0x14]
+0x112ba	0558	jli_s 0x5
+0x112bc	095c	ei_s 0x9
+0x112c0	4861	ldb_s r0, [r1, r2]
+0x112c2	5061	ldh_s r0, [r1, r2]
+0x112ca	1369	asl_s r0, r1, 0x3
+0x112cc	1b69	asr_s r0, r1, 0x3
+0x112d4	9270	cmp_s r0, r20
+0x112e6	0078	j_s [r0]
+0x112e8	2079	j_s.d [r1]
+0x112ec	407a	jl_s [r2]
+0x112ee	607b	jl_s.d [r3]
+0x112f2	c079	sub_s.ne r1, r1, r1
+0x112f6	e079	unimp_s
+0x112f8	e07a	swi_s
+0x112fa	e07c	jeq_s [blink]
+0x112fc	e07d	jne_s [blink]
+0x11306	2478	and_s r0, r0, r1
+0x11308	2578	or_s r0, r0, r1
+0x1130a	2678	bic_s r0, r0, r1
+0x1130c	2778	xor_s r0, r0, r1
+0x1130e	2978	mpyw_s r0, r0, r1
+0x11310	2a78	mpyuw_s r0, r0, r1
+0x11312	2b78	tst_s r0, r1
+0x11314	2c78	mpy_s r0, r0, r1
+0x11316	2d78	sexb_s r0, r1
+0x11318	2e78	sexh_s r0, r1
+0x1131a	2f78	extb_s r0, r1
+0x1131c	3078	exth_s r0, r1
+0x1131e	3178	abs_s r0, r1
+0x11320	3278	not_s r0, r1
+0x11322	3378	neg_s r0, r1
+0x11324	3478	add1_s r0, r0, r1
+0x11326	3578	add2_s r0, r0, r1
+0x11328	3678	add3_s r0, r0, r1
+0x1132c	3978	lsr_s r0, r0, r1
+0x11336	be78	trap_s 0x5
+0x1133a	ff7f	brk_s
+0x11342	0399	ldh_s.x r0, [r1, 0x6]
+0x11346	05a9	stb_s r0, [r1, 0x5]
+0x11348	03b1	sth_s r0, [r1, 0x6]
+0x11352	85b8	bset_s r0, r0, 0x5
+0x11354	a5b8	bclr_s r0, r0, 0x5
+0x11356	c5b8	bmsk_s r0, r0, 0x5
+0x11358	e5b8	btst_s r0, 0x5
+0x11368	c1c1	pop_s r1
+0x1136c	e1c1	push_s r1
+0x11370	e6c3	enter_s {r13-r15 fp blink}
+0x11372	c6c3	leave_s {r13-r15 fp blink}
+0x1138e	10e9	breq_s r1, 0, 0x113ac
+0x11390	8eea	brne_s r2, 0, 0x113ac
+0x11392	0ef0	b_s 0x113ac
+0x11398	0af6	bgt_s 0x113ac
+0x1139a	4af6	bge_s 0x113ac
+0x1139c	88f6	blt_s 0x113ac
+0x1139e	c8f6	ble_s 0x113ac
+0x113a0	06f7	bhi_s 0x113ac
+0x113a2	46f7	bhs_s 0x113ac
+0x113a4	84f7	blo_s 0x113ac
+0x113a6	c4f7	bls_s 0x113ac
+0x113a8	01f8	bl_s 0x113ac

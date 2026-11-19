@@ -1,0 +1,49 @@
+<decompilertest>
+<binaryimage arch="ARC:LE:32:ARCv2:default">
+<!--
+    Synopsys ARCv2 (specs/Ghidra/Processors/ARC), kuna #1632.  Three functions
+    compiled by `arc-zephyr-elf-gcc -mcpu=em4 -O2` and linked at 0x1000.
+
+    sum   - a zero-overhead loop: `mov lp_count,r2 ; lp 0x102a ; ld.aw ; add_s`.
+            `lp` writes the loop start into the decode context of the address it
+            names as the loop end, and the instruction decoded there carries the
+            hardware's end-of-body test, a direct branch back.  The loop is a
+            `do .. while`, counted by lp_count.
+    fill  - the loop ends on a call (`bl.d sink` at 0x104c), whose delay slot
+            loads the argument; the call still has one callee and the frame
+            array is recovered.
+    clamp - a long immediate after the instruction word, `brlo`, and a delay
+            slot on each return.
+
+    Stage: 01 decode / 02 P-code lift (a new SLEIGH language).  No option: the
+    language is selected by the image's machine and is inert everywhere else.
+-->
+<bytechunk space="ram" offset="0x1000">
+2d09520015264170fffffcff422003012f2142002f2142000c7041690a248070a820400104130c029860e07ee07f0c70f1c0e1c5a8c16c7008458b4408da0a248070a8208001041cd010bb6346082000834088c2c2bd15224d03e0150090a8c004141f30e07f08140d34e078190904002f2002002f2002000421810fff00ff00e07f25784a22000016220000e07f2778e07e
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="sum"/>
+<symbol space="ram" offset="0x1030" name="fill"/>
+<symbol space="ram" offset="0x106c" name="clamp"/>
+<symbol space="ram" offset="0x1090" name="sink"/>
+</binaryimage>
+<script>
+  <com>lo fu sum</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fill</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu clamp</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="ARCv2 #1: both zero-overhead loops are do-while loops" min="2" max="2">do \{</stringmatch>
+<stringmatch name="ARCv2 #2: each loop is counted down to zero" min="2" max="2">\} while \(v[0-9]+\);</stringmatch>
+<stringmatch name="ARCv2 #3: sum accumulates the loaded words" min="1" max="1">v[0-9]+ \+= \*v[0-9]+;</stringmatch>
+<stringmatch name="ARCv2 #4: no goto is left by the loop back-edge" min="0" max="0">goto</stringmatch>
+<stringmatch name="ARCv2 #5: the call ending fill's loop has its delay-slot argument" min="1" max="1">sink\(v[0-9]+\);</stringmatch>
+<stringmatch name="ARCv2 #6: fill's frame array is indexed by the masked argument" min="1" max="1">return v[0-9]+\[a0 &amp; 7\];</stringmatch>
+<stringmatch name="ARCv2 #7: clamp's long immediate and delay-slot or" min="1" max="1">return a0 >> 2 \| a1 &amp; 0xff00ff;</stringmatch>
+<stringmatch name="ARCv2 #8: clamp's add3 and delay-slot xor" min="1" max="1">return a0 \* 8 \^ a1;</stringmatch>
+</decompilertest>
