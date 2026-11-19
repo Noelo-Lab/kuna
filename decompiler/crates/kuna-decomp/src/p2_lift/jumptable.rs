@@ -1411,6 +1411,11 @@ pub trait JumpModel {
     ) -> KunaResult<bool>;
     /// Clone \b this model (C++ `clone`).
     fn clone_box(&self) -> Box<dyn JumpModel>;
+    /// (kuna) Is the table's last address the synthetic return a dispatch
+    /// takes when its target is the caller's return address?
+    fn kuna_returns_to_caller(&self) -> bool {
+        false
+    }
     /// Downcast support: `buildLabels` receives the \e orig model as a
     /// `&dyn JumpModel` and (in C++) `static_cast`s it to `const JumpBasic *`.
     fn as_any(&self) -> &dyn std::any::Any;
@@ -5562,6 +5567,9 @@ pub struct JumpTable {
     display_format: uint4,
     /// Set to \b true if \b this table is incomplete (C++ `partialTable`).
     partial_table: bool,
+    /// (kuna) Staged again because later flow re-entered the code before it.
+    reentered: bool,
+    target_encoding: Option<(i32, u64)>,
     /// Set to \b true if in-memory model data should be collected
     /// (C++ `collectloads`).
     collectloads: bool,
@@ -5615,6 +5623,8 @@ impl JumpTable {
             recover_count: 0,
             display_format: 0,
             partial_table: false,
+            reentered: false,
+            target_encoding: None,
             collectloads: false,
             default_is_folded: false,
             default_pinned: false,
@@ -5648,6 +5658,8 @@ impl JumpTable {
             recover_count: op2.recover_count,
             display_format: op2.display_format,
             partial_table: op2.partial_table,
+            reentered: op2.reentered,
+            target_encoding: op2.target_encoding,
             collectloads: op2.collectloads,
             default_is_folded: false,
             default_pinned: false,
@@ -5685,6 +5697,76 @@ impl JumpTable {
     /// Mark whatever is recovered so far as the complete table (C++ `markComplete`).
     pub fn mark_complete(&mut self) {
         self.partial_table = false;
+    }
+
+    /// (kuna) Stage this recovered table again: later flow re-entered the
+    /// code before it, so its target may now be one of several constants.
+    pub(crate) fn kuna_retry_flow(&mut self) {
+        self.partial_table = true;
+        self.reentered = true;
+    }
+    /// (kuna) Has flow extended or staged this table again for re-entry? Such a
+    /// table is followed many times, so flow follows each destination once.
+    pub(crate) fn kuna_is_reentered(&self) -> bool {
+        self.reentered
+    }
+    /// (kuna) The constant-select model needs `constselectjump on`, except on a
+    /// table staged again for re-entry, which only `off` prevents.
+    pub(crate) fn kuna_admits_const_select(&self, mode: crate::kuna_constselectjump::ConstSelectMode) -> bool {
+        mode == crate::kuna_constselectjump::ConstSelectMode::On || self.reentered
+    }
+    /// (kuna) The synthetic return destination, when the model proved the
+    /// dispatch can also jump to the caller's return address.
+    pub(crate) fn kuna_return_default(&self) -> Option<&Address> {
+        self.jmodel
+            .as_ref()
+            .filter(|model| model.kuna_returns_to_caller())
+            .and_then(|_| self.addresstable.last())
+    }
+    /// (kuna) Forget the synthetic return destination; the remaining constant
+    /// targets keep their model.
+    pub(crate) fn kuna_drop_return_default(&mut self) {
+        if self.kuna_return_default().is_none() {
+            return;
+        }
+        self.addresstable.pop();
+        let dests = self.addresstable.iter().map(|a| a.get_offset()).collect();
+        self.jmodel = Some(Box::new(crate::kuna_constselectjump::JumpModelConstSelect::from_flow_targets(dests, None)));
+    }
+    /// (kuna) Is this a re-entry retry of a table whose followed targets must
+    /// survive a failed second stage?
+    pub(crate) fn kuna_keeps_recovered_targets(&self) -> bool {
+        self.reentered && self.partial_table && !self.addresstable.is_empty()
+    }
+    /// Add an exact edge-local target without running another partial decompile.
+    pub(crate) fn kuna_extend_flow_target(&mut self, target: Address, limit: usize) -> Option<bool> {
+        if self.is_override() || self.addresstable.is_empty()
+            || !crate::kuna_constselectjump::kuna_destination_is_local(
+                self.opaddress.get_offset(), target.get_offset())
+        { return None; }
+        if self.addresstable.contains(&target) { return Some(false); }
+        if self.addresstable.len() >= limit { return None; }
+        let stub = self.kuna_return_default().cloned();
+        if stub.is_some() { self.addresstable.pop(); }
+        self.addresstable.push(target);
+        self.addresstable.sort();
+        let dests = self.addresstable.iter().map(|a| a.get_offset()).collect();
+        if let Some(address) = &stub { self.addresstable.push(address.clone()); }
+        self.jmodel = Some(Box::new(crate::kuna_constselectjump::JumpModelConstSelect::from_flow_targets(
+            dests, stub.as_ref().map(|a| a.get_offset()))));
+        self.reentered = true;
+        self.partial_table = false;
+        self.row_loads = None;
+        Some(true)
+    }
+
+    pub(crate) fn kuna_target_encoding(&self) -> Option<(i32, u64)> {
+        self.target_encoding
+    }
+    pub(crate) fn kuna_set_target_encoding(&mut self, encoding: Option<(i32, u64)>) {
+        if self.target_encoding.is_none() {
+            self.target_encoding = encoding;
+        }
     }
 
     /// (kuna) Attach a trivial (non-override) model to a hand-built table (C++
@@ -6146,6 +6228,9 @@ impl JumpTable {
                 self.default_block = cur_pos;
             }
         }
+        if self.kuna_return_default().is_some() {
+            self.default_block = self.last_block;
+        }
         Ok(())
     }
 
@@ -6213,11 +6298,15 @@ impl JumpTable {
             return Ok(());
         }
         // (kuna) Neither value-range model could bound the destination.  When
-        // `option constselectjump on`, the destination may still be a select over
+        // `option constselectjump on`, or for a table staged again after flow
+        // re-entered the code before it, the destination may still be a select over
         // constants -- a set both models prune away at the MULTIEQUAL rather than
         // lose.  See `p2_lift/kuna_constselectjump.rs`.
-        if fd.get_arch().const_select_jump {
+        if self.kuna_admits_const_select(fd.get_arch().const_select_jump) {
             let mut jconst = crate::kuna_constselectjump::JumpModelConstSelect::new();
+            if self.reentered {
+                jconst.kuna_admit_return(self.target_encoding);
+            }
             if jconst.recover_model(fd, indirect, self.addresstable.len() as uint4, max_table_size)?
             {
                 self.jmodel = Some(Box::new(jconst));
@@ -6384,9 +6473,10 @@ impl JumpTable {
         self.save_model();
         let oldaddresstable = std::mem::take(&mut self.addresstable);
         self.loadpoints.clear();
+        let mut failure = None;
         match self.recover_addresses(fd) {
             Ok(()) => {}
-            Err(_e) => {
+            Err(error) => {
                 // C++ catches JumptableThunkError and LowlevelError identically:
                 // restore the saved model and warn. (We do not yet distinguish
                 // the thunk subclass; both downgrade to the same restore path.)
@@ -6394,11 +6484,15 @@ impl JumpTable {
                 self.addresstable = oldaddresstable;
                 // fd->warning("Second-stage recovery error", indirect->getAddr())
                 // STUB(W4): warning sink lives on Funcdata; recorded as a loss.
+                // A re-entry retry reports its failure to the flow instead.
+                if self.reentered {
+                    failure = Some(error);
+                }
             }
         }
         self.partial_table = false;
         self.clear_saved_model(); // Keep the new model if it was created successfully
-        Ok(())
+        match failure { Some(error) => Err(error), None => Ok(()) }
     }
 
     /// (kuna) A second flow-time stage that again recovered a single address
