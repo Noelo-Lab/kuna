@@ -101,7 +101,7 @@ fn type_headers_and_slices_use_32_bit_words() {
     assert_eq!((t.kind, t.size, t.name.as_str()), (KIND_INT, 4, "int"));
     assert_eq!(plausible_slice(&img, 0x1050, 2), Some((0x1000, 2)));
     assert!(read_type(&img, 0x1000, 0x101f, 0).is_none());
-    assert!(descriptor_stride(&img, &t).is_none(), "newer 32-bit descriptor regions are not guessed");
+    assert_eq!(descriptor_stride(&img, &t), Some(32));
 }
 
 #[test]
@@ -336,6 +336,62 @@ fn descriptor_stride_matches_the_abi_math() {
     assert_eq!(descriptor_stride(&img, &point), Some(80 + 2 * 24), "struct base + fields");
     let ptr = read_type(&img, types, etypes, 0xb8).expect("ptr");
     assert_eq!(descriptor_stride(&img, &ptr), Some(56), "pointer wrapper");
+}
+
+#[test]
+fn go127_descriptor_walk_uses_32_bit_wrappers_and_record_boundaries() {
+    const T: u64 = 0x100000;
+    const M: u64 = 0x300000;
+    const NAME: i32 = 0x3f0;
+    let wrappers = [
+        (KIND_ARRAY, 44),
+        (KIND_CHAN, 40),
+        (KIND_FUNC, 64), // 36-byte wrapper, uncommon, and 3 type pointers
+        (KIND_INTERFACE, 56),
+        (KIND_MAP, 76),
+        (KIND_POINTER, 36),
+        (KIND_SLICE, 36),
+        (KIND_STRUCT, 72),
+        (KIND_INT, 32),
+    ];
+    let mut blob = vec![0u8; 0x400];
+    let mut offsets = Vec::new();
+    let mut at = 4;
+    for (kind, width) in wrappers {
+        offsets.push(at as u32);
+        blob[at..at + 4].copy_from_slice(&4u32.to_le_bytes());
+        blob[at + 15] = kind;
+        blob[at + 24..at + 28].copy_from_slice(&NAME.to_le_bytes());
+        match kind {
+            KIND_FUNC => {
+                blob[at + 12] = 1;
+                blob[at + 32..at + 34].copy_from_slice(&2u16.to_le_bytes());
+                blob[at + 34..at + 36].copy_from_slice(&0x8001u16.to_le_bytes());
+            }
+            KIND_INTERFACE | KIND_STRUCT => {
+                let count: u32 = if kind == KIND_INTERFACE { 1 } else { 2 };
+                blob[at + 40..at + 44].copy_from_slice(&count.to_le_bytes());
+                blob[at + 44..at + 48].copy_from_slice(&count.to_le_bytes());
+            }
+            _ => {}
+        }
+        at += width;
+    }
+    blob[NAME as usize..NAME as usize + 5].copy_from_slice(b"\0\x03int");
+    let mut moduledata = vec![0u8; 96 * 4];
+    moduledata[20..24].copy_from_slice(&(T as u32).to_le_bytes());
+    moduledata[24..28].copy_from_slice(&(at as u32).to_le_bytes());
+    moduledata[28..32].copy_from_slice(&((T + 0x400) as u32).to_le_bytes());
+    {
+        let mut img = GoImage::from_spans(vec![(T, &blob), (M, &moduledata)]);
+        img.word_size = 4;
+        let region = locate_type_meta_descriptors(&img, M).expect("32-bit descriptor region");
+        assert_eq!(region.offsets, offsets);
+    }
+    moduledata[24..28].copy_from_slice(&((at - 4) as u32).to_le_bytes());
+    let mut img = GoImage::from_spans(vec![(T, &blob), (M, &moduledata)]);
+    img.word_size = 4;
+    assert!(locate_type_meta_descriptors(&img, M).is_none(), "a partial last record");
 }
 
 #[test]
