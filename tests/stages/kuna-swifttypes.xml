@@ -74,5 +74,5 @@ c3
 <stringmatch name="swifttypes on: a struct-typed field returns as the nested struct" min="1" max="1">typefix\.Point typefix\.Sprite\.vtable#0\.getter\(typefix\.Sprite \*self\)</stringmatch>
 <stringmatch name="swifttypes on: the accessor returns the typed metadata record" min="1" max="1">return &amp;typefix\.Point\.type_metadata;</stringmatch>
 <stringmatch name="swifttypes on: the accessor prototype" min="1" max="1">swift\.type_metadata \* typefix\.Point\.type_metadata_accessor\(int8 request\)</stringmatch>
-<stringmatch name="swifttypes on: the witness getter takes the struct's self behind Self and the witness table" min="1" max="1">requirement#1\(swift\.type_metadata \*Self,void \*witness_table,typefix\.Pixel \*self\)</stringmatch>
+<stringmatch name="swifttypes on: the witness getter takes the struct's self behind Self and the witness table" min="1" max="1">requirement#1\.getter\(swift\.type_metadata \*Self,void \*witness_table,typefix\.Pixel \*self\)</stringmatch>
 </decompilertest>

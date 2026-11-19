@@ -1542,6 +1542,45 @@ llvm-strip --strip-all -o macho_swift_strsel_arm64 strsel
 `Field.hash(into:)`@`0x100000f1c` (a switch over "serviceItems", "serviceDate",
 "serviceProvider", "odoMeter").
 
+### `swift_names_macho` — a stripped arm64 Swift Mach-O (`swiftmetadata`)
+
+`swift_names_macho` (arm64 Mach-O, 67 KB) is the fixture for the names the
+Swift metadata pass reads off code shape (`tests/stages/kuna-swiftnames.xml`,
+`kuna-console/tests/verify_swiftnames.rs`), and `swift_names_macho_symbols`
+is the same link before the strip, the oracle the test holds every derived
+name to. Its source `swift_names_macho.swift` declares internal types (so the
+executable exports nothing but `_main`, as an app does): a class with stored,
+`let`, lazy and computed properties, a subclass with a stored and a computed
+property conforming to a local protocol, structs conforming to it (one too
+large for the existential buffer), a plain-data struct and a payload enum.
+Built on Linux with the swiftly 5.10.1 toolchain and a Darwin Swift SDK
+bundle (`~/.swiftpm/swift-sdks/darwin.artifactbundle`, MacOSX 13.3 SDK, its
+`ld64.lld`); the binary carries no SDK content, only its import names:
+
+```bash
+B=~/.swiftpm/swift-sdks/darwin.artifactbundle
+SDK=$B/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk
+swiftc -O -module-name namefix -target arm64-apple-macos13 -sdk $SDK \
+  -use-ld=lld -ld-path=$B/toolset/bin/ld64.lld swift_names_macho.swift \
+  -o swift_names_macho_symbols
+llvm-strip --strip-all -o swift_names_macho swift_names_macho_symbols
+```
+
+**Pinned VMAs** (the twin's symbols): `$s7namefix5BoardC5widthSivg`
+(`Board.width.getter`, vtable slot 0)@`0x100001514`, the lazy
+`Board.cells.getter` (slot 6)@`0x1000016ac`, `Tile.id.getter`@`0x100001ab8`,
+the `Dot: Shape` witness of `id.getter`@`0x1000020bc` and of the computed
+`area.getter`@`0x1000020e0`, `__swift_instantiateConcreteTypeFromMangledName`
+@`0x10000262c`, `__swift_project_boxed_opaque_existential_1`@`0x100002764`,
+`Token`'s `destroy` value witness@`0x1000027f4` and `outlined copy`
+@`0x1000027a8`, `__swift_memcpy25_8`@`0x1000028d0`. With `swiftmetadata` on
+they decompile as `namefix.Board.width.getter`,
+`<namefix.Dot:namefix.Shape>.id.getter`,
+`<namefix.Dot:namefix.Shape>.requirement#3.getter`,
+`___swift_instantiateConcreteTypeFromMangledName`, …, where the records
+alone give `namefix.Board.vtable#0.getter`,
+`<namefix.Dot:namefix.Shape>.requirement#0.getter`, `sub_10000262c`, ….
+
 ### `swift_metadata_elf` — a stripped Swift executable (`swiftmetadata`)
 
 `swift_metadata_elf` (x86-64 ELF, 14 KB) is the Swift runtime-metadata fixture
@@ -2458,9 +2497,9 @@ Its `DT_RUNPATH` was blanked after the build the same way as
 witnesses of `Alpha` and `Beta` both at `0x27f0`, `Delta`'s `tag.getter` and
 `describe()` witnesses both at `0x2ab0`, `Gamma`'s `Keyed.key.getter` witness
 at `0x2850`, `Alpha`'s `describe()` at `0x2800`. With `swiftmetadata on` they
-decompile as `<*:icffix.Tagged>.requirement#0(void)`,
-`<icffix.Delta:icffix.Tagged>.requirement#0.merged#2(void)` and
-`<icffix.Gamma:icffix.Keyed>.requirement#0(swift.type_metadata *Self, void
+decompile as `<*:icffix.Tagged>.requirement#0.getter(void)`,
+`<icffix.Delta:icffix.Tagged>.requirement#0.getter.merged#2(void)` and
+`<icffix.Gamma:icffix.Keyed>.requirement#0.getter(swift.type_metadata *Self, void
 *witness_table, icffix.Gamma *self)`.
 ### `swift_call_elf` / `swift_call_syms_elf` — Swift methods, witnesses and a throwing call (`swiftcall`)
 
@@ -2607,7 +2646,7 @@ llvm-objcopy --strip-all nativefix swift_call_native_elf
 (`0x10fe`) zero r12, make an unrelated call and read r12 back as a value,
 which no throwing call's caller does: `tests/stages/kuna-swiftcall.xml` pins
 that their `__swiftcall_throws` rule stays off, so the zero stays a zero.
-`<nativefix.Impl:nativefix.ClassOnly>.requirement#0` (`0xe70`) is the witness
+`<nativefix.Impl:nativefix.ClassOnly>.requirement#0.getter` (`0xe70`) is the witness
 of a class-bound protocol on a class, whose `self` is the reference itself.
 
 ### `swift_call_arm64_elf` — arm64 callers that test x21 after a throwing call (`swiftcall`)

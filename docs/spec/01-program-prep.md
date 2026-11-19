@@ -6051,9 +6051,9 @@ every other binary's pass list is byte-identical to before the pass existed):
   descriptor is an import (`…Tq`), the real member name; `Module.Sub.vtable#3.init`
   for an override of a local base; `<Module.Type:Swift.Hashable>.hash(into:)`
   for a resilient witness whose requirement descriptor is an import,
-  `<T:P>.requirement#2` for a local protocol's witness (the witness-table words,
+  `<T:P>.requirement#2.getter` (its position and requirement kind) for a local protocol's witness (the witness-table words,
   read through the chained-fixup overlay on a Mach-O and the `R_*_RELATIVE`
-  addends on an ELF), `Module.P.requirement#2.default` for a default
+  addends on an ELF), `Module.P.requirement#2.getter.default` for a default
   implementation; and the records: `….nominal_type_descriptor`,
   `….protocol_descriptor`, `….module_descriptor`,
   `<T:P>.protocol_conformance_descriptor`, `<T:P>.protocol_witness_table`,
@@ -6077,7 +6077,7 @@ every other binary's pass list is byte-identical to before the pass existed):
   claimed by more than one type. Such a function is never named after one of
   its claimants: when all claims come from one type it is named after the
   first member (sorted) with the count of members it serves
-  (`<T:P>.requirement#0.merged#2`); when they are witnesses of one protocol
+  (`<T:P>.requirement#0.getter.merged#2`); when they are witnesses of one protocol
   member from different types it is named after the member alone
   (`<*:Swift.RawRepresentable>.init(rawValue:)`); any other mix (different
   types' vtable slots, different members) keeps the engine placeholder. A
@@ -6317,6 +6317,64 @@ every other binary's pass list is byte-identical to before the pass existed):
   `swift_call_syms_elf` on, and `swift_call_native_elf` on, where a C function
   uses r12 as an ordinary variable and a class witness of a class-bound
   protocol takes the reference.
+- **Swift names from code shape** (part of `swiftmetadata`; the pass reads
+  them at load, with the type-layout arm's metadata locations;
+  `decompiler/crates/kuna-analysis/src/analyzers/swift/kuna_swiftnames.rs`):
+  where a record gives only a position, the code at it is read (A64 only; the
+  decoder knows the handful of load/store, add, move and branch forms the
+  matchers need). *Stored-property accessors*: a class vtable run of getter,
+  setter and modify slots is one property's, and a stored property's getter
+  addresses its field first — `add x0, x20, #off` for the exclusivity check,
+  a direct `ldr`/`str` off `x20` (the `swiftself` register), or a register
+  offset whose value the body loads from a field offset global (`adrp; ldr`,
+  read statically: a class whose layout another module fixes). The offset
+  picks the field record through the static metadata's field offset vector
+  (the type-layout arm's metadata location), which must be a `var`; the
+  property is the record's name, a lazy property's `$__lazy_storage_$_`
+  storage naming the property itself (`Module.Class.cells.getter`). A
+  computed property dispatches through the isa or calls before it touches a
+  field, so it never matches. The evidence must agree: a setter or modify the
+  optimizer kept addresses the same field (a stored modify yields the field's
+  address; a lazy one calls the getter), a lazy getter stores the storage
+  back, each field is claimed by one run, and the matched getters follow the
+  field records' order — any failure leaves the class's slots positional. An
+  override of a slot so named takes the member too (`Module.Sub.width.getter`).
+  *Protocol requirements*: a local requirement takes the member name of what
+  a class conformance's witness thunk forwards to — the vtable slot it loads
+  through the isa (`ldr x8, [x20]; ldr x8, [x8, #off]; blr x8`, the offset
+  mapped through the class's and its local superclasses' vtable positions) or
+  the slot implementation it calls — or of a surviving witness symbol, when
+  every conformance agrees and the member's kind matches the requirement's; a
+  settable property's modify requirement follows a getter and setter so
+  named. That names the requirement for every conformer, struct witnesses
+  included (`<Module.Dot:Module.Shape>.id.getter`). A requirement left unnamed
+  has its witnesses carry the requirement kind (`<T:P>.requirement#2.getter`,
+  `.method`, `.init`, `.setter`, `.modify`, `.read`), on every architecture
+  and with or without the layout arm: the kind is the record's own.
+  *Value witnesses*: each statically laid-out struct and enum names the
+  functions its value witness table points at
+  (`Module.Token.destroy_value_witness`, and an enum's `getEnumTag`,
+  `destructiveProjectEnumData`, `destructiveInjectEnumTag`); a copy witness
+  that is a bitwise copy of exactly the type's size (loads off `x1` stored off
+  `x0` covering `[0, size)`) is the shared `__swift_memcpy<size>_<align>`, a
+  `destroy` that only returns is `__swift_noop_void_return`, and an enum's
+  `destroy` / `initializeWithCopy` whose one call is a local function names
+  that function its `outlined_consume` / `outlined_copy`. *Runtime helpers*:
+  the functions IRGen emits into every Swift image are matched by their fixed
+  arm64 bodies (branch displacements cleared) and the import each call's stub
+  reaches — `__swift_instantiateConcreteTypeFromMangledName` (the swiftc 5 and
+  6 forms and a split form taking the cache and the mangled-name reference
+  apart, each calling `swift_getTypeByMangledNameInContext` or its `2`
+  variant), `__swift_project_boxed_opaque_existential_1`,
+  `__swift_mutable_project_boxed_opaque_existential_1` (calling
+  `swift_makeBoxUnique`) and `__swift_destroy_boxed_opaque_existential_1`
+  (tail-calling `swift_release`); a C name takes the format's prefix (`_` on
+  a Mach-O). These claims join the record claims before any name is given, so
+  folded code resolves as above. On the stripped fixture `swift_names_macho`
+  every name code shape gives equals the unstripped twin's symbol or is the
+  kind-tagged position of it (`kuna-console/tests/verify_swiftnames.rs`); the
+  stage test `tests/stages/kuna-swiftnames.xml` runs the fixture with
+  `swiftmetadata` off and on.
 - **Swift runtime prototypes** (Swift-detected Mach-O and ELF, always on;
   `decompiler/crates/kuna-analysis/src/analyzers/swift/kuna_swiftruntime.rs`):
   the runtime's entry points carry the signatures its public headers give

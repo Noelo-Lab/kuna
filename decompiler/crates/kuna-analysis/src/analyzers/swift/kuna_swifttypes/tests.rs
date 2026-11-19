@@ -68,6 +68,7 @@ fn with_edited_types<R>(edit: impl FnOnce(&mut Metadata), f: impl FnOnce(&Types)
         insn_align: 1,
         claims: Default::default(),
         budget: std::cell::Cell::new(usize::MAX),
+        names: Default::default(),
     };
     let tf = factory();
     let mut types = Types::new(

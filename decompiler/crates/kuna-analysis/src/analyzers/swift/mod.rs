@@ -22,6 +22,10 @@
 //!   `….protocol_descriptor`, `<T:P>.protocol_conformance_descriptor`,
 //!   `<T:P>.protocol_witness_table`, `….reflection_field_descriptor`.
 //!
+//! Where a record gives only a position, `kuna_swiftnames.rs` reads the
+//! code it points at: stored-property accessors, protocol requirements,
+//! value witnesses and the compiler's runtime helpers take their names.
+//!
 //! Function names use the FID-precedent label-gated rename: a real symbol
 //! is never overwritten, only an engine placeholder. Registered for Mach-O
 //! and ELF (the two formats Swift ships in); an image without the sections
@@ -29,6 +33,7 @@
 
 pub mod descriptors;
 pub mod kuna_swiftcall;
+pub mod kuna_swiftnames;
 pub mod kuna_swiftruntime;
 pub mod kuna_swifttypes;
 
@@ -145,40 +150,56 @@ impl AnalysisPass for SwiftMetadataPass {
             insn_align: insn_align(ctx.file),
             claims: Default::default(),
             budget: std::cell::Cell::new(NAME_BYTES.saturating_add(ctx.bytes.len())),
+            names: Default::default(),
         };
+        if !ctx.arch.analysis_swifttypes {
+            namer.emit(&mut out);
+            return out;
+        }
+        let mut types = kuna_swifttypes::Types::new(
+            &md,
+            &reader,
+            &imports,
+            &namer,
+            ctx.arch.types(),
+            ctx.file.architecture(),
+            ctx.file.format() == object::BinaryFormat::MachO,
+        );
+        types.locate_all();
+        // The names code shape gives where a record gives a position: read
+        // before any name is given, so folded code resolves with them.
+        let names = kuna_swiftnames::Deriver::new(
+            ctx.file,
+            &md,
+            &img,
+            &namer,
+            &types,
+            &imports,
+            &bind_slots,
+        )
+        .derive(ctx.file);
+        *namer.names.borrow_mut() = names;
         namer.emit(&mut out);
-        if ctx.arch.analysis_swifttypes {
-            let mut types = kuna_swifttypes::Types::new(
-                &md,
-                &reader,
-                &imports,
-                &namer,
-                ctx.arch.types(),
-                ctx.file.architecture(),
-                ctx.file.format() == object::BinaryFormat::MachO,
-            );
-            types.locate_all();
-            let regs = kuna_swifttypes::Registers::for_arch(ctx.file.architecture());
-            types.emit(regs.as_ref(), &mut out);
-            // A global variable's storage symbol (`$s…vp`) names its type:
-            // a typed data object where the image kept its symbols.
-            for s in ctx.file.symbols().filter(|s| s.kind() == object::SymbolKind::Data && s.is_definition()) {
-                let (Ok(name), addr) = (s.name(), s.address()) else {
-                    continue;
-                };
-                if let Some((path, t)) = types.global_variable(name) {
-                    out.swift_types.typed_data.push(crate::pass::TypedDataFact { addr, name: path, type_: t });
-                }
+        let regs = kuna_swifttypes::Registers::for_arch(ctx.file.architecture());
+        types.emit(regs.as_ref(), &mut out);
+        // A global variable's storage symbol (`$s…vp`) names its type:
+        // a typed data object where the image kept its symbols.
+        for s in ctx.file.symbols().filter(|s| s.kind() == object::SymbolKind::Data && s.is_definition()) {
+            let (Ok(name), addr) = (s.name(), s.address()) else {
+                continue;
+            };
+            if let Some((path, t)) = types.global_variable(name) {
+                out.swift_types.typed_data.push(crate::pass::TypedDataFact { addr, name: path, type_: t });
             }
-            if let (true, Some(regs)) = (ctx.arch.analysis_swiftcall, regs.as_ref()) {
-                let symbols: Vec<(u64, String)> = ctx
-                    .file
-                    .symbols()
-                    .filter(|s| s.kind() == object::SymbolKind::Text && s.is_definition())
-                    .filter_map(|s| Some((s.address(), s.name().ok()?.to_string())))
-                    .collect();
-                kuna_swiftcall::bind(&types, regs, &symbols, &mut out);
-            }
+        }
+        if let (true, Some(regs)) = (ctx.arch.analysis_swiftcall, regs.as_ref()) {
+            let symbols: Vec<(u64, String)> = ctx
+                .file
+                .symbols()
+                .filter(|s| s.kind() == object::SymbolKind::Text && s.is_definition())
+                .filter_map(|s| Some((s.address(), s.name().ok()?.to_string())))
+                .collect();
+            kuna_swiftcall::bind(&types, regs, &symbols, &mut out);
         }
         out
     }
@@ -285,6 +306,8 @@ pub struct Namer<'a> {
     claims: std::cell::RefCell<std::collections::BTreeMap<u64, Vec<Claim>>>,
     /// Name bytes left to build ([`NAME_BYTES`] plus the image length).
     budget: std::cell::Cell<usize>,
+    /// The names derived from code shape ([`kuna_swiftnames`]).
+    names: std::cell::RefCell<kuna_swiftnames::Names>,
 }
 
 impl Namer<'_> {
@@ -438,11 +461,12 @@ impl Namer<'_> {
                         name: format!("{path}.protocol_descriptor"),
                         kind: SymKind::Data,
                     });
-                    for (k, (_, default_impl)) in ctx.requirements.iter().enumerate() {
+                    for (k, (req, default_impl)) in ctx.requirements.iter().enumerate() {
                         if let Some(f) = default_impl {
+                            let member = self.requirement_member(ctx.addr, k, *req);
                             self.claim(
                                 *f,
-                                format!("{path}.requirement#{k}.default"),
+                                format!("{path}.{member}.default"),
                                 &path,
                                 None,
                                 false,
@@ -477,7 +501,7 @@ impl Namer<'_> {
                             let getter = e.kind == descriptors::MethodKind::Getter && e.instance;
                             self.claim(
                                 f,
-                                format!("{path}.vtable#{}.{}", e.index, e.kind.tag()),
+                                self.slot_name(&path, ctx.addr, e),
                                 &path,
                                 None,
                                 getter,
@@ -534,7 +558,7 @@ impl Namer<'_> {
                             if let Some(f) = self.md.words.get(&slot) {
                                 witness(
                                     *f,
-                                    format!("requirement#{k}"),
+                                    self.requirement_member(p, k, *req),
                                     kind == 3 && flags & 0x10 != 0,
                                 );
                             }
@@ -559,9 +583,12 @@ impl Namer<'_> {
                             _ => None,
                         }
                     }
-                    Target::Direct(r) => self
-                        .requirement_index(c.protocol, r)
-                        .map(|i| format!("requirement#{i}")),
+                    Target::Direct(r) => match c.protocol {
+                        Target::Direct(p) => self
+                            .requirement_index(c.protocol, r)
+                            .map(|i| self.requirement_member(p, i, r)),
+                        Target::Slot(_) => None,
+                    },
                 };
                 let member = member.unwrap_or_else(|| format!("witness#{k}"));
                 let getter = match *req {
@@ -573,6 +600,9 @@ impl Namer<'_> {
                 };
                 witness(*f, member, getter);
             }
+        }
+        for (addr, name, owner) in std::mem::take(&mut self.names.borrow_mut().functions) {
+            self.claim(addr, name, &owner, None, false);
         }
         self.resolve_claims(out);
         // Dedup by address: the first (lowest-addressed descriptor) wins.
@@ -631,6 +661,27 @@ impl Namer<'_> {
         }
     }
 
+    /// A class vtable slot's name: the member its code shape gives, else its
+    /// position and kind.
+    fn slot_name(&self, class_path: &str, class: u64, e: &descriptors::VTableEntry) -> String {
+        match self.names.borrow().slots.get(&(class, e.index)) {
+            Some(member) => format!("{class_path}.{member}"),
+            None => format!("{class_path}.vtable#{}.{}", e.index, e.kind.tag()),
+        }
+    }
+
+    /// A local protocol requirement's member: the name its witnesses give,
+    /// else its position and kind.
+    fn requirement_member(&self, protocol: u64, k: usize, requirement: u64) -> String {
+        if let Some(m) = self.names.borrow().requirements.get(&(protocol, k)) {
+            return m.clone();
+        }
+        match kuna_swiftnames::requirement_tag(self.md.requirement_kind(requirement)) {
+            Some(tag) => format!("requirement#{k}.{tag}"),
+            None => format!("requirement#{k}"),
+        }
+    }
+
     fn requirement_index(&self, protocol: Target, requirement: u64) -> Option<usize> {
         let Target::Direct(p) = protocol else {
             return None;
@@ -655,7 +706,7 @@ impl Namer<'_> {
                 };
                 let base = self.md.contexts.get(&b)?;
                 let e = base.vtable.iter().find(|e| e.addr == m)?;
-                Some(format!("{class_path}.vtable#{}.{}", e.index, e.kind.tag()))
+                Some(self.slot_name(class_path, b, e))
             }
         }
     }
