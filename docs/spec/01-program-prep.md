@@ -6389,8 +6389,8 @@ every other binary's pass list is byte-identical to before the pass existed):
   references, enum tags, array bulk operations, class/struct/enum metadata
   initialization and the task allocator. The runtime is C under the platform
   convention, so these are plain prototypes; the `swiftcc` entry points
-  whose arguments ride in the Swift registers (`swift_task_switch`, the
-  key-path accessors) are left to recovery, and so are the three whose last
+  whose arguments ride in the Swift registers (the key-path accessors) are
+  left to recovery, and so are the three whose last
   argument the compiler leaves unset when the callee ignores it (`swift_once`,
   `swift_getKeyPath`, `swift_getWitnessTable`): a declared slot there would
   make a stale register an argument and a parameter of the caller. An object
@@ -6401,6 +6401,12 @@ every other binary's pass list is byte-identical to before the pass existed):
   option; the pass is registered for a Swift-detected image only and every
   other image's pass list is unchanged. The stage test
   `tests/stages/kuna-swiftruntime.xml` runs the stripped `swift_types_elf`.
+  The concurrency runtime's entry points come from a second, generated table
+  (`kuna_swiftconcurrency.rs`, from the Swift project's
+  `swift/Runtime/Concurrency.h` by `tools/gen_swift_concurrency.py`, 64-bit
+  images only): the plain ones join these prototypes, and the `swiftasync`
+  ones, which take the caller's context in the `swiftasync` register, are
+  carried as facts the `swiftcall` commit binds (§4, *Swift*).
 - **PDB** (`pdb`, PE-only, default-on;
   `decompiler/crates/kuna-analysis/src/analyzers/pdb/mod.rs`): Windows' debug info
   lives in a separate `.pdb` the PE only fingerprints, so the pass reads the
