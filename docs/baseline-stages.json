@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4531,
-    4531
+    4535,
+    4535
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2140,6 +2140,10 @@
     "data:Rust nested shift retains context through an existing cast",
     "data:Rust never uses an integer as bool cast",
     "data:Rust other module target",
+    "data:Rust physical store: indexed byte array supplies a raw halfword address",
+    "data:Rust physical store: matching pointer keeps normal assignment",
+    "data:Rust physical store: qword stays unaligned through the byte pointer",
+    "data:Rust physical store: word field is addressed without borrowing",
     "data:Rust pointer array address keeps pointer elements",
     "data:Rust pointer index cast suppression keeps diagnostic output",
     "data:Rust raw array address keeps callback order",
