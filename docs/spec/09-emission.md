@@ -3700,6 +3700,12 @@ uses `unsafe.Add` with the IR's byte scale. Boolean-to-integer conversions use a
 single-evaluation function literal. Float storage transfers use the matching
 `math.Float32bits`/`Float64bits` and inverse operations, preserving the distinction
 from numeric conversion. Non-finite and negative-zero literals retain their bits.
+For a locked Go return with a complete named record consisting of two adjacent
+eight-byte `void *` fields, `p9_emit/kuna_gozerorecord.rs` spells an implied
+16-byte zero extension of a literal zero as the record's empty composite
+literal. The two fields are nil. The check follows only the existing bounded
+carrier's copy and cast chain. Live or nonzero carrier words use the usual
+rendering, and the underlying return and its storage are unchanged.
 Rune and string escaping uses Go syntax; invalid rune values stay numeric. A
 resolved one-byte C string pointer uses `unsafe.StringData` and includes its
 terminating zero. Wide or truncated pointer strings retain their address.

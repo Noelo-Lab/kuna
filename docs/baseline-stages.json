@@ -1,11 +1,15 @@
 {
   "data_footer": [
-    4810,
-    4810
+    4815,
+    4815
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
     "data:64-bit unsigned merge retains signed conversion",
+    "data:A declared Go pointer pair keeps the low nonzero constant distinct",
+    "data:A declared Go pointer pair retains the payload on the live path",
+    "data:A declared Go pointer pair retains the table from input on both live paths",
+    "data:A declared Go pointer pair returns the all-zero record",
     "data:A final component with mixed-case digits remains a function name",
     "data:A final uppercase component remains a function name",
     "data:A lowercase legacy compiler hash remains elided",
@@ -2679,6 +2683,7 @@
     "data:TRUNCPTRFLOW #5: both stack arguments are added",
     "data:TRUNCPTRFLOW #6: the declared pointer argument is read directly",
     "data:TRUNCPTRFLOW #7: pointer_ninth decompiles",
+    "data:The C view keeps its original zero-carrier expression",
     "data:The ordinary Go function with the same basename stays a free function",
     "data:Third aggregate field is published",
     "data:Third array field is published",

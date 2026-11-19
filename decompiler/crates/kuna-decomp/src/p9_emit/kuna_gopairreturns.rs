@@ -11,6 +11,8 @@ use crate::printc::{op_key, op_token, tokens, PrintC};
 use crate::printlanguage::{Atom, OpToken, SyntaxHighlight, TagType, TokenType};
 use kuna_num::opcodes::OpCode;
 
+pub(crate) use carrier::is_zero_word_carrier;
+
 pub(crate) fn fields(cx: &SpellCtx, ty: &Datatype) -> Option<[Rc<Datatype>; 2]> {
     if ty.get_metatype() != type_metatype::TYPE_STRUCT {
         return None;

@@ -6355,7 +6355,9 @@ impl PrintC {
                     self.emit.spaces(1, 0);
                     if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(1)) {
                         if self.out_lang == crate::kuna_lang::OutLang::Go {
-                            if self.rt_ctx.go_pair_types.is_none() || !self.push_go_pair_return(fd, arch, vn, op) {
+                            let emitted_pair = self.rt_ctx.go_pair_types.is_some()
+                                && self.push_go_pair_return(fd, arch, vn, op);
+                            if !emitted_pair && !self.push_go_zero_record_return(fd, vn, op) {
                                 if let Some(target) = fd.get_func_proto().get_output_type() {
                                     self.push_go_value_as(fd, arch, vn, op, target);
                                 } else { self.push_vn_ir(fd, arch, vn, op); }
