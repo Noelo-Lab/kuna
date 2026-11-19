@@ -931,6 +931,9 @@ pub struct Architecture {
     /// bit-scan loops into `bswap` / `rotl` / `abs` / `bitreverse` / `ctz`
     /// (option `bitidioms`).  See [`crate::p3_dataflow::kuna_bitidioms`].
     pub bit_idioms: bool,
+    /// (kuna) Simplify mixed boolean-arithmetic expressions (option `mba`).  See
+    /// [`crate::p3_dataflow::kuna_mba`].
+    pub mba: bool,
     /// (kuna) Region-based (Phoenix/SAILR) structurer: structure the CFG by
     /// walking the [`KunaRegionIdentifier`](crate::p7_regions::kuna_regionid)
     /// region tree and matching Phoenix acyclic schemas instead of running
@@ -2476,6 +2479,7 @@ impl Architecture {
             pow2_select: false, // (kuna) option pow2select; reset_defaults sets the shipped default
             cmp_merge: false, // (kuna) option cmpmerge; reset_defaults sets the shipped default
             bit_idioms: false, // (kuna) option bitidioms; reset_defaults sets the shipped default
+            mba: false, // (kuna) option mba; reset_defaults sets the shipped default
             region_structure: true,
             guard_arm: false,
             loop_continue: true,
@@ -3587,6 +3591,7 @@ impl Architecture {
         ctx.pow2_select = self.pow2_select; // pow2select
         ctx.cmp_merge = self.cmp_merge; // cmpmerge
         ctx.bit_idioms = self.bit_idioms; // bitidioms
+        ctx.mba = self.mba; // mba
         ctx.region_structure = self.region_structure; // regionstructure
         ctx.guard_arm = self.guard_arm; // guardarm
         ctx.loop_continue = self.loop_continue;

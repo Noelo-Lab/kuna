@@ -45,6 +45,10 @@ Three tiers:
 | a rotate prints as a pair of opposite shifts ORed together | [`bitidioms`](#bitidioms----on--off-default-on) |
 | bswap or rev instructions decompile to shift and mask soup | [`bitidioms`](#bitidioms----on--off-default-on) |
 | hash or crc code full of paired shifts | [`bitidioms`](#bitidioms----on--off-default-on) |
+| obfuscated arithmetic such as (a ^ b) + (a & b) * 2 instead of a + b | [`mba`](#mba----on--off-default-off) |
+| xor and and terms combined with additions and multiplications by 2 | [`mba`](#mba----on--off-default-off) |
+| ollvm or tigress instruction substitution in the output | [`mba`](#mba----on--off-default-off) |
+| a product of and/or terms that hides a plain multiplication | [`mba`](#mba----on--off-default-off) |
 | stack string initialisation renders as an array-typed cast such as (char[8])s_addr._0_8_ | [`rodatastring`](#rodatastring----on--off-default-on) |
 | partial-symbol slice assignments like buf._0_9_ = s_addr._16_9_ instead of the string | [`rodatastring`](#rodatastring----on--off-default-on) |
 | a recognized rodata literal never appears in the function that copies it onto the stack | [`rodatastring`](#rodatastring----on--off-default-on) |
@@ -937,6 +941,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On (default). Flip off to see the raw shift-and-mask expressions, the cmov/cneg abs diamond and the one-instruction bsf/bsr loops, for example to check which bits a hand-written partial swap moves.
 - **Where / provenance:** P3/simplification-quiescence · kuna · presentation-default · kuna-bitidioms
 - **Example:** `--option bitidioms off`
+
+### `mba` -- on | off, default `off`
+
+- **Symptoms:** obfuscated arithmetic such as (a ^ b) + (a & b) * 2 instead of a + b; xor and and terms combined with additions and multiplications by 2; ollvm or tigress instruction substitution in the output; a product of and/or terms that hides a plain multiplication.
+- **What it does:** Simplify mixed boolean-arithmetic (MBA) expressions, the obfuscation that hides `x + y` as `(x ^ y) + 2*(x & y)`. RuleMbaSimplify collects the tree under an arithmetic root (interior ops with one reader inlined, up to 6 distinct leaves) with at least one arithmetic and one bitwise op. A linear MBA (+, -, negation and multiplication by a constant over bitwise subterms of leaves) is evaluated on the 2^n points where each leaf is 0 or 1 and Möbius-inverted into conjunction-basis coefficients; agreement on those points implies equality at every width, so no SMT solver is needed. The multi-leaf terms are split into groups of leaves that share a term, each group rewritten as c*g for one boolean function g (the smallest table expression for up to 3 leaves; for 4 to 6, the cheapest disjoint bi-decomposition or Shannon expansion). A polynomial MBA (a product of two non-constant terms) is multiplied out over the conjunction basis and rebuilt from that normal form, so `(x & y) * (x | y) + (x & ~y) * (~x & y)` becomes `x * y`. A replacement is applied only when it has fewer ops (a multiply by -1 is free, the IR spelling of a subtraction) and 64 pseudo-random full-width evaluations agree.
+- **When to flip:** Off by default. Turn it on for obfuscated code (Tigress, OLLVM substitution) whose arithmetic reads as xor/and/or soup, such as `(a0 ^ a1) + (a0 & a1) * 2`.
+- **Where / provenance:** P3/simplification-quiescence · kuna · new-analysis · kuna-mba
+- **Example:** `--option mba on`
 
 
 ### `rodatastring` -- on | off, default `on`

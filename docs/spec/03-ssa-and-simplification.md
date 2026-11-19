@@ -3822,6 +3822,96 @@ Always on. Upstream Ghidra's rendering prints the same `undefined1 auVarN [16]`
 blobs — this is a deliberate readability divergence, not a fidelity fix, and it
 is inert on every function with no wide multiply.
 
+### (kuna) MBA simplification — `option mba`, default off
+
+**`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_mba.rs (RuleMbaSimplify)`,
+in oppool1 after `boolsignshift`.** Obfuscators hide `x + y` as
+`(x ^ y) + 2*(x & y)`, `x | y` as `(x & ~y) + y`, and so on. Each of these is a
+*linear mixed boolean-arithmetic* expression: an integer combination of bitwise
+functions of the same variables. For that class, two expressions are equal at
+every width when they agree on the inputs where each variable is 0 or 1 (the
+result behind SiMBA). An SMT proof of each candidate is unnecessary here: the
+shape check decides which trees the table theorem covers.
+
+**Collecting.** The rule fires on an `INT_ADD`, `INT_SUB`, `INT_2COMP`,
+`INT_MULT`, `INT_AND`, `INT_OR`, `INT_XOR` or `INT_NEGATE`. A defining op of the
+same set is inlined when its output has one reader; anything else is a leaf, up
+to six distinct leaves and 48 nodes. The rule also fires below the root of a
+larger tree: an obfuscated sum is often xor-ed with a key, which makes the
+whole tree non-linear while the sum itself is linear. Every rewrite strictly
+lowers the op count, so repeated firing terminates. The op count treats a
+multiply by -1 as free: `a + b * -1` is the IR's own spelling of `a - b`, and a
+core rule turns one into the other, so counting it would make the two rules
+trade the forms forever. `INT_XOR` with all ones is read as `~`. `INT_MULT` by a
+constant is a scaled term; `INT_MULT` of two non-constants is a product, for the
+polynomial path below.
+
+**The shape.** The tree must be linear: `+`, `-`, negation and multiplication by
+a constant over bitwise subterms (`&`, `|`, `^`, `~`) that contain only leaves.
+It must also contain at least one arithmetic op and one bitwise op, so plain
+arithmetic and plain bit logic are left to the other rules.
+
+**Coefficients.** The tree is evaluated at the `2^n` points with every leaf 0 or
+1, at the root's width. A Möbius inversion over those values gives the
+coefficients `b_S` of the conjunction basis:
+`f = b_∅ + Σ_{S≠∅} b_S · AND(S)`. The constant term is plain, because a bitwise
+function's empty-set term is all ones, which is -1 at every width.
+
+**Candidates.** The cheapest of these is kept:
+
+- a linear sum of the leaves, when every multi-leaf coefficient is 0
+  (`(x ^ y) + 2*(x & y)` gives `x + y`);
+- `k + Σ c_j·g_j + Σ c_i·z_i`: the multi-leaf terms are split into groups of
+  leaves that share a term, and each group must be one boolean function `g_j`
+  of its leaves times a constant. That holds when the group's part takes only
+  two values on its 0/1 points; the truth table of `g_j` is where it takes the
+  non-zero one (or its complement, with the constant negated, whichever prints
+  smaller). The leaves in no group stay a linear sum. Examples:
+  `(x & ~y) + y + z` gives `(x | y) + z`;
+  `(x & y) + (x & z) - (x & y & z)` gives `x & (y | z)`;
+  `(a ^ b) + 2*(a & b) + (c & ~d) + d + (e | f) - (e & f)` gives
+  `a + b + (c | d) + (e ^ f)`, three groups over six leaves.
+  - **Up to three leaves:** `g` is the smallest expression of its truth table.
+    The smallest expression of every two- and three-variable boolean function
+    (14 and 254 of them; at most five ops) is found once per process by growing
+    expressions from the leaves with `&`, `|`, `^` and `~`, in truth-table order
+    so ties break the same way every run.
+  - **Four to six leaves:** `g` is synthesized, memoized per truth table, as
+    the cheapest of two forms. One is a disjoint bi-decomposition `gA | gB`,
+    `gA & gB` or `gA ^ gB` over a split of the leaves into two sets. OR exists
+    exactly when the table equals the OR of its universal projections onto the
+    two sets, AND when it equals the AND of its existential ones, and XOR when
+    the cofactors on one side differ by a constant; each part is synthesized in
+    turn. The other is a Shannon expansion `x ? f1 : f0` on each leaf, written
+    `(x & f1) | (f0 & ~x)` or `f0 ^ (x & (f0 ^ f1))`. So
+    `(x & y) + (z & w) - (x & y & z & w)` gives `x & y | z & w`;
+- the conjunction sum itself.
+
+**Polynomial MBA.** A tree with a product of two non-constant terms
+(`(x & y) * (x | y) + (x & ~y) * (~x & y)`) is not linear, so the truth table
+does not decide it. But each bitwise subterm still equals its conjunction-basis
+sum at full width, because bits are independent. So the tree multiplies out
+into a polynomial whose variables are the conjunctions `AND(S)`; this is
+MBA-Blast's normalization. Equal polynomials mean equal trees. That is sound,
+not complete: the conjunctions are not independent variables, so some equal
+trees have different polynomials. The normal form is rebuilt from the
+polynomial: its degree-0 and degree-1 part through the candidates above, and
+each higher-degree monomial as a product of conjunctions with its coefficient.
+The example gives `x * y`. The degree is capped at 4 and the polynomial at 128
+monomials. A bitwise operator over arithmetic (`(x + y) & z`) has no polynomial,
+so the rule leaves that tree alone.
+
+The replacement is applied only when it has fewer ops than the tree and 64
+pseudo-random full-width evaluations agree with it. The new ops go before the
+root, and the root becomes a `COPY` of the result; dead-code elimination removes
+the old tree. Pinned by `tests/stages/kuna-mba.xml` (two leaves) and
+`tests/stages/kuna-mba-groups.xml` (a four-leaf group, six leaves in three
+groups, and the polynomial). An intermediate with two readers is a leaf, so a
+compiler's common-subexpression sharing can hide a larger group. Cost with
+the option on: +0.67% instructions over `/usr/bin/patchelf` decompile-all, with
+no function changed. Not done: the I/O-fingerprint oracle for expressions that
+are neither linear nor polynomial MBA.
+
 ## 3.6 Early passes
 
 `decompiler/crates/kuna-decomp/src/p3_dataflow/coreaction_early.rs` holds the

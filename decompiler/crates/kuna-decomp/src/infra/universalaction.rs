@@ -377,6 +377,7 @@ pub fn universal_sched(
         rrow!("comparemerge", "analysis", crate::kuna_cmpmerge::RuleCompareMerge::new("analysis")),
         rrow!("bitidioms", "analysis", crate::kuna_bitidioms::RuleBitIdioms::new("analysis")),
         rrow!("intabs", "analysis", crate::kuna_bitidioms::RuleIntAbs::new("analysis")),
+        rrow!("mba", "analysis", crate::kuna_mba::RuleMbaSimplify::new("analysis")),
         rrow!("gobool", "analysis", crate::kuna_gobool::RuleGoBoolReturn::with_group(false, "analysis")),
         rrow!("boolsignless", "analysis", crate::kuna_flagcompare::RuleBoolSignLess::with_group("analysis")),
         rrow!("sborrowge", "analysis", crate::kuna_flagcompare::RuleSborrowGe::with_group("analysis")),

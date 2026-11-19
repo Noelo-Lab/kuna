@@ -56,13 +56,13 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_226() {
-    assert_eq!(kuna_num_settables(), 226);
-    assert_eq!(SETTABLE_TABLE.len(), 226);
+fn settable_count_is_227() {
+    assert_eq!(kuna_num_settables(), 227);
+    assert_eq!(SETTABLE_TABLE.len(), 227);
 }
 
 #[test]
-fn tier_counts_are_45_core_125_transform_56_analysis() {
+fn tier_counts_are_45_core_126_transform_56_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -74,7 +74,7 @@ fn tier_counts_are_45_core_125_transform_56_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (45, 125, 56));
+    assert_eq!((core, transform, analysis), (45, 126, 56));
 }
 
 #[test]
@@ -849,7 +849,7 @@ fn option_values_live_value_present_for_76() {
     // +1 for `repstring` (live_field = rep_string).
     // +8 for `rangefold`, `pow2select`, `cmpmerge`, `bitidioms`, `mba`, `copyrun`,
     // `arithhelpers` and `alloca` (each field-backed).
-    assert_eq!(with_live, 82);
+    assert_eq!(with_live, 83);
 }
 
 #[test]
@@ -1105,7 +1105,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +7 for `rangefold`, `pow2select`, `cmpmerge`, `bitidioms`, `mba`, `copyrun` and
     // `alloca`; their P3 rows follow `repstring`. +1 for `arithhelpers`, its P2 row
     // after `chkstkdarwin`.
-    assert_eq!(json.matches("},\n").count(), 225);
+    assert_eq!(json.matches("},\n").count(), 226);
 }
 
 #[test]

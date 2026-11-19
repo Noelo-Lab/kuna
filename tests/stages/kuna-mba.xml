@@ -1,0 +1,43 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Kuna (linear MBA without SMT): P3 simplification
+    quiescence, option mba (default off).
+
+      0x1000 mba_add: mov eax,edi; xor edi,esi; and eax,esi; lea eax,[rdi+rax*2]; ret
+                      (x ^ y) + 2*(x & y)  ==  x + y
+      0x1010 mba_or:  mov eax,esi; not eax; and eax,edi; add eax,esi; ret
+                      (x & ~y) + y          ==  x | y
+
+    Asserts #1-#2 are the off pass: the obfuscated forms print as written.
+    Asserts #3-#4 are the on pass: both fold.
+-->
+<bytechunk space="ram" offset="0x1000" readonly="true">89f831f721f08d0447c3</bytechunk>
+<bytechunk space="ram" offset="0x1010" readonly="true">89f0f7d021f801f0c3</bytechunk>
+<symbol space="ram" offset="0x1000" name="mba_add"/>
+<symbol space="ram" offset="0x1010" name="mba_or"/>
+</binaryimage>
+<script>
+  <com>option mba off</com>
+  <com>parse line extern uint4 mba_add(uint4 x,uint4 y);</com>
+  <com>parse line extern uint4 mba_or(uint4 x,uint4 y);</com>
+  <com>lo fu mba_add</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mba_or</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option mba on</com>
+  <com>lo fu mba_add</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mba_or</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="mba #1: off keeps the xor/and form" min="1" max="1">return \(x \^ y\) \+ \(x &amp; y\) \* 2;</stringmatch>
+<stringmatch name="mba #2: off keeps the and-not form" min="1" max="1">~y &amp; x\) \+ y;</stringmatch>
+<stringmatch name="mba #3: on folds (x ^ y) + 2*(x &amp; y) to an add" min="1" max="1">return x \+ y;</stringmatch>
+<stringmatch name="mba #4: on folds (x &amp; ~y) + y to an or" min="1" max="1">return [xy] \| [xy];</stringmatch>
+</decompilertest>
