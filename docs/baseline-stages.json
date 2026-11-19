@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4706,
-    4706
+    4710,
+    4710
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2227,6 +2227,10 @@
     "data:Rust raw array address uses the byte scale",
     "data:Rust raw nested array address keeps outer scaling",
     "data:Rust retains explicit widening after narrow arithmetic",
+    "data:Rust returned Option calls its producer once",
+    "data:Rust returned Option does not access a tag field",
+    "data:Rust returned Option retains both branch callback values",
+    "data:Rust returned Option uses the full typed call as the pattern scrutinee",
     "data:Rust side effect store converts returned value once",
     "data:Rust signed and unsigned Boolean consumers compare once",
     "data:Rust signed byte compound assignment preserves arithmetic shift",

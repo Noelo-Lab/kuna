@@ -3329,6 +3329,19 @@ What differs, and why each is a language fact rather than a preference:
 - **Selection expressions** the `iteregion` recovery renders `dest = if c { A }
   else { B };`. Rust's `if`/`else` is an expression, so this is a *better* form
   than C's `?:`, not a lost one — the passes stay on.
+- **Returned Rust Option condition.** `p9_emit/kuna_rustoption.rs` uses the
+  locked direct-call output prototype and imported `VariantLayout` for a
+  complete AMD64 Rust `Option<u64>` scalar pair in RDX:RAX. It requires the
+  eight-byte tag at offset zero and the payload at offset eight, along with
+  distinct, recorded `None` and `Some` discriminants of zero and one. In a
+  simple structured if, an equality test of the exact low return word becomes
+  `if let ::core::option::Option::Some(_) = callee(...)` or the corresponding
+  `None` pattern. Branch polarity and implied Boolean negation determine the
+  pattern. The call and each intermediate must have just their one expected
+  reader. The constructor path is absolute, and the whole call is evaluated
+  in the same condition with the original branch bodies. Explicit prototypes
+  retain priority. Unresolved or indirect calls, different layouts, narrowed
+  or shared results, and absent DWARF keep the ordinary condition rendering.
 - **Literals** no `U`/`L`/`LL` suffixes (Rust infers the literal type, and naming
   a width here would assert one this site does not know); `b'a'` for a 1-byte
   character constant with a printable spelling and the integer otherwise, since
