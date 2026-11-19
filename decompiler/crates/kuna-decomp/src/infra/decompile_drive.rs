@@ -2050,7 +2050,7 @@ fn decompile_func_full_with_objects_inner(
         // resolves through the global scope, so it can only reach global symbols).
         // (kuna `swiftcall`) Which direct callees, and whether this function,
         // read `swiftself` on entry.
-        let reads_swiftself = crate::kuna_swiftinfer::seed(arch, &mut fd);
+        let (reads_swiftself, reads_swiftasync) = crate::kuna_swiftinfer::seed(arch, &mut fd);
         let recovered_proto = if pending_proto.is_none() {
             arch.symboltab.function_proto_pieces_across_scopes(&entry_addr).cloned()
         } else {
@@ -2094,7 +2094,8 @@ fn decompile_func_full_with_objects_inner(
             // runtime's suspension entry points make it `async` — so a
             // stripped image's resume partials take their context and its
             // throwing functions hand back their error. A function the
-            // metadata did not bind is Swift when its body reads `swiftself`.
+            // metadata did not bind is Swift when its body reads `swiftself`,
+            // and any is `async` when its body reads `swiftasync`.
             let bound = fd.get_arch().bound_proto_model(&entry_addr);
             let (mut is_async, mut throws) = crate::kuna_swiftcall::callee_evidence(&fd, |a| {
                 arch.symboltab
@@ -2106,6 +2107,7 @@ fn decompile_func_full_with_objects_inner(
                 throws |= n.ends_with("_throws");
                 is_async |= n.starts_with(crate::kuna_swiftcall::SWIFTASYNCCALL);
             }
+            is_async |= reads_swiftasync;
             if bound.is_some() || is_async || throws || reads_swiftself {
                 let proto = fd.get_func_proto_mut();
                 proto.set_model(Some(abi.model(is_async, throws)));

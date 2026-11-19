@@ -223,6 +223,16 @@ pub fn check_input_trial_use(
             trial.set_ancestor_realistic();
             trial.set_ancestor_solid();
             trial.mark_active();
+        } else if crate::p4_calls::kuna_swiftinfer::carries_async_target(data, idx, slot) {
+            data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_no_use();
+        } else if {
+            let t = data.get_call_specs(idx).active_input().get_trial(i);
+            crate::p4_calls::kuna_swiftinfer::passes_context(data, idx, t.get_address(), t.get_size())
+        } {
+            let trial = data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i);
+            trial.set_ancestor_realistic();
+            trial.set_ancestor_solid();
+            trial.mark_active();
         } else if {
             let t = data.get_call_specs(idx).active_input().get_trial(i);
             data.get_call_specs(idx).carries_jump_target(t.get_address(), t.get_size())

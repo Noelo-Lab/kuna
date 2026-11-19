@@ -662,6 +662,8 @@ pub struct Funcdata {
     kuna_input_hints: Option<std::rc::Rc<Vec<crate::kuna_inputhints::InputHint>>>,
     /// (kuna `swiftcall`) The direct callees whose body reads `swiftself`.
     kuna_swift_self_callees: std::collections::BTreeSet<(int4, kuna_base::types::uintb)>,
+    /// (kuna `swiftcall`) The direct callees whose body reads `swiftasync`.
+    kuna_swift_async_callees: std::collections::BTreeSet<(int4, kuna_base::types::uintb)>,
     /// (kuna `calleevote fields`) Every caller of this function is a known direct call.
     kuna_calleevote_closed: bool,
     /// (kuna `elemptr`) The globals this function must not type as element
@@ -920,6 +922,7 @@ impl Funcdata {
             go_string_input: None,
             kuna_input_hints: None,
             kuna_swift_self_callees: std::collections::BTreeSet::new(),
+            kuna_swift_async_callees: std::collections::BTreeSet::new(),
             kuna_calleevote_closed: false,
             kuna_elemptr_blocked: None,
             kuna_elemptr_adopt: None,
@@ -1711,6 +1714,16 @@ impl Funcdata {
     /// (kuna `swiftcall`) The direct callees whose body reads `swiftself`.
     pub fn kuna_swift_self_callees(&self) -> &std::collections::BTreeSet<(int4, kuna_base::types::uintb)> {
         &self.kuna_swift_self_callees
+    }
+
+    /// (kuna `swiftcall`) Seed the direct callees whose body reads `swiftasync`.
+    pub fn kuna_set_swift_async_callees(&mut self, s: std::collections::BTreeSet<(int4, kuna_base::types::uintb)>) {
+        self.kuna_swift_async_callees = s;
+    }
+
+    /// (kuna `swiftcall`) The direct callees whose body reads `swiftasync`.
+    pub fn kuna_swift_async_callees(&self) -> &std::collections::BTreeSet<(int4, kuna_base::types::uintb)> {
+        &self.kuna_swift_async_callees
     }
 
     /// (kuna `swiftcall`) The input hints of this function.
