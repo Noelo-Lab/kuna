@@ -6244,6 +6244,14 @@ every other binary's pass list is byte-identical to before the pass existed):
   statuses, with the verified external manifest/source identities. These fields
   are absent unless requested; stable compiler and formatter-layout facts remain
   separate. Malformed manifests and hash mismatches fail before image analysis.
+  The CLI can include `comment_profile_hint` based on consistent stable ELF
+  `.comment` records and the availability of both requested O3 banks. It chooses
+  the closest patch at or below the compiler in the same minor, or the newest
+  complete O3 profile of the same major when the compiler minor is above the
+  requested range. Prereleases, conflicting versions and changes in major
+  version have no such hint. The report evaluates scores and ties independently
+  of the hint. Compiler identity, ABI and layout recovery use their original
+  evidence.
   The separate `--apply-rust-signatures PATH` request explicitly trusts the same
   hashed manifest for names. It is available on `functions` and one-function
   `decompile`, whose text and JSON forms share the in-process load. Application
