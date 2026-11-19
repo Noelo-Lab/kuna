@@ -409,6 +409,18 @@ calls to a bounded copy of the stack-input model. Stripped images lack the
 alias proof. Call-bearing functions, independently proven result storage,
 other input shapes and source types require separate evidence.
 
+The AArch64 Go `abi-internal` model contributes zero net stack-pointer
+movement when a call returns
+(`specs/Ghidra/Processors/AARCH64/data/languages/AARCH64_golang.cspec`).
+`BL` places the link in a register, and the callee restores its own frame;
+there is no additional eight-byte pop. The model therefore states
+`extrapop="0"`. A nonzero value makes `ActionExtraPopSetup` insert an
+artificial stack-pointer addition after each call, disconnecting a saved
+argument and an earlier recursive result from their later loads. This
+correction changes only that model's return stack effect: its stackshift,
+stack-argument offsets, register banks and other Go models remain as stated.
+The AArch64 C model already has a zero extra pop.
+
 (kuna) **With the golang cspec active, the goroutine register becomes the
 named, typed global `g`** (always on;
 `decompiler/crates/kuna-decomp/src/p1_partition/kuna_goreg.rs`, installed by
