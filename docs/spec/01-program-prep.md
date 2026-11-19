@@ -6176,6 +6176,17 @@ every other binary's pass list is byte-identical to before the pass existed):
   signature guesses (`FidMatch::by_signature`): the commit applies the metadata
   renames (PDB, Objective-C, Swift) first, so a guess never replaces one, and
   applies a guess only when every FID and FLIRT name at that address agrees.
+  A supplied function name is protected even when it resembles a `sub_` or
+  `FUN_` placeholder. Before replacing a discovery placeholder, the engine
+  checks both the signature spelling and its loader-style canonical spelling
+  for existing name ownership. A collision leaves the placeholder and the
+  established name available at their original addresses.
+  A defined ELF object label inside an allocated, mapped section reserves its
+  spelling for this check even when its declared size is zero. Its name
+  provides ownership evidence only and supplies no data object extent.
+  Eligible signature proposals at different entries that share a raw or
+  canonical spelling all keep their placeholders. Ownership is checked before
+  any of the proposals are installed, so traversal order cannot choose an owner.
   When the two passes disagree, the function keeps its placeholder rather than
   taking whichever name sorts first.
   Measured on stripped static programs against their unstripped twins (right/wrong
