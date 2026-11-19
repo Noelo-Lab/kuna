@@ -104,6 +104,7 @@ pub mod kuna_langgo;
 pub(crate) mod kuna_gopointerarith;
 pub(crate) mod kuna_goorderedcompare;
 pub mod kuna_gopackage;
+mod kuna_gomethod;
 pub(crate) mod kuna_gobyteview;
 pub(crate) mod kuna_gobyteextract;
 pub mod kuna_rusttypes; // (kuna) the rust-language type speller

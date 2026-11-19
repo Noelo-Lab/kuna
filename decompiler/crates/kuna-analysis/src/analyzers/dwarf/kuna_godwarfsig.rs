@@ -14,6 +14,7 @@ use super::{build_datatype, kuna_dwarfbyref, DieSnap, Reader, TypeWalk};
 use object::{Object, ObjectSection};
 
 mod kuna_goerror;
+mod kuna_pointerreceiver;
 
 const INTEGER_REGISTERS: &[(u16, &str)] = &[
     (0, "RAX"), (3, "RBX"), (2, "RCX"), (5, "RDI"), (4, "RSI"),
@@ -42,6 +43,7 @@ struct Extra {
     origin_ref: Option<usize>,
     result: Option<bool>,
     kind: Option<u64>,
+    runtime_type: Option<u32>,
     location: Location,
     regabi: bool,
     trampoline: bool,
@@ -117,6 +119,9 @@ impl UnitExtras {
                 _ => None,
             },
             kind,
+            runtime_type: entry.attr_value(gimli::DwAt(0x2904))
+                .and_then(|value| dwarf.attr_address(unit, value).ok().flatten())
+                .and_then(|value| u32::try_from(value).ok()).filter(|&value| value != 0),
             location,
             regabi: self.regabi,
             trampoline: entry.attr_value(gimli::DW_AT_trampoline).is_some(),
@@ -204,6 +209,7 @@ pub struct Materialized {
     pub entry: u64,
     pub pieces: PrototypePieces,
     pub status_site: Option<u64>,
+    pub pointer_receiver: Option<kuna_decomp::kuna_gopointermethod::Receiver>,
 }
 
 impl fmt::Debug for Facts {
@@ -245,14 +251,16 @@ impl Facts {
         self.dies.is_empty()
     }
 
-    pub fn materialize(&self, arch: &Architecture) -> Vec<Materialized> {
+    pub fn materialize(&self, arch: &Architecture,
+        methods: &BTreeMap<u64, crate::gotypes::kuna_pointermethods::LinkedMethod>,
+    ) -> Vec<Materialized> {
         if !arch.archid.starts_with("x86:LE:64:") || arch.data_org().0 != 8
             || !arch.default_fp().is_some_and(|model| model.get_name() == "abi-internal")
         {
             return Vec::new();
         }
         if let Some(compressed) = &self.compressed {
-            return compressed.decode(self.names).map(|facts| facts.materialize(arch)).unwrap_or_default();
+            return compressed.decode(self.names).map(|facts| facts.materialize(arch, methods)).unwrap_or_default();
         }
         let mut repeated = BTreeSet::new();
         let mut entries = BTreeSet::new();
@@ -266,13 +274,15 @@ impl Facts {
                 return None;
             }
             let entry = die.low_pc?;
-            let (pieces, status_site) = self.prototype(*offset, arch, !repeated.contains(&entry))?;
-            Some(Materialized { entry, pieces, status_site })
+            let (pieces, status_site, pointer_receiver) =
+                self.prototype(*offset, arch, !repeated.contains(&entry), methods.get(&entry))?;
+            Some(Materialized { entry, pieces, status_site, pointer_receiver })
         }).collect()
     }
 
-    fn prototype(&self, offset: usize, arch: &Architecture, unique: bool)
-        -> Option<(PrototypePieces, Option<u64>)>
+    fn prototype(&self, offset: usize, arch: &Architecture, unique: bool,
+        method: Option<&crate::gotypes::kuna_pointermethods::LinkedMethod>,
+    ) -> Option<(PrototypePieces, Option<u64>, Option<kuna_decomp::kuna_gopointermethod::Receiver>)>
     {
         let sub = self.dies.get(&offset)?;
         let extra = self.extras.get(&offset)?;
@@ -345,9 +355,11 @@ impl Facts {
         }
         if unique {
             if let Some((pieces, site)) = self.channel_status(arch, sub.low_pc?, name, &parameters) {
-                return Some((pieces, Some(site)));
+                return Some((pieces, Some(site), None));
             }
         }
+        let receiver = method.filter(|_| unique && origin.is_none())
+            .and_then(|method| self.pointer_receiver(sub, &parameters, method));
         if parameters.iter().any(|(_, location, _)| matches!(location, Location::EmptyEntryRegister(_))) {
             if extra.code_size != Some(1) { return None; }
             let address = kuna_base::address::Address::new(arch.manage().get_default_code_space()?.clone(), sub.low_pc?);
@@ -529,7 +541,7 @@ impl Facts {
             };
             pieces.outtype = Some(outtype);
         }
-        Some((pieces, None))
+        Some((pieces, None, receiver))
     }
 
     fn channel_status(

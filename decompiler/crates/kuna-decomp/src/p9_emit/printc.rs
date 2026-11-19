@@ -8641,29 +8641,30 @@ impl PrintC {
         }
 
         // Direct CALL: the callee name from the fspec annotation.
-        let name = self.call_callee_name(fd, op);
-        for scope in self.call_scope_prefix(fd, arch, op, &name) {
-            self.push_op(&tokens::SCOPE, None);
-            self.push_atom(&Atom::syntax(
-                scope,
-                TagType::Syntax,
-                crate::printlanguage::SyntaxHighlight::global_color,
+        let first_argument = self.push_go_direct_method(fd, arch, op).unwrap_or_else(|| {
+            let name = self.call_callee_name(fd, op);
+            for scope in self.call_scope_prefix(fd, arch, op, &name) {
+                self.push_op(&tokens::SCOPE, None);
+                self.push_atom(&Atom::syntax(
+                    scope,
+                    TagType::Syntax,
+                    crate::printlanguage::SyntaxHighlight::global_color,
+                ));
+            }
+            self.push_atom(&Atom::with_op(
+                name,
+                TagType::FuncToken,
+                crate::printlanguage::SyntaxHighlight::funcname_color,
+                op_key(op),
             ));
-        }
-        self.push_atom(&Atom::with_op(
-            name,
-            TagType::FuncToken,
-            crate::printlanguage::SyntaxHighlight::funcname_color,
-            op_key(op),
-        ));
-        // count = numInput - 1 (no hidden-this: skip = -1).  The argument Varnodes
-        // are in[1..].
-        let count = nin - 1;
+            1
+        });
+        let count = nin - first_argument;
         if count > 0 {
             for _ in 0..(count - 1) {
                 self.push_op(&tokens::COMMA, Some(op_key(op)));
             }
-            for i in 1..nin {
+            for i in first_argument..nin {
                 if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(i)) {
                     self.pointer_candidate = if self.pointer_record.is_some() && !self.emit.emits_markup() {
                         let view = PointerView { pc: self, fd };
@@ -8684,6 +8685,44 @@ impl PrintC {
             ));
         }
         self.push_call_result_close(result_conversion, op);
+    }
+
+    fn push_go_direct_method(
+        &mut self, fd: &Funcdata, arch: &Architecture, op: OpId,
+    ) -> Option<i32> {
+        use super::kuna_langgo::identifier;
+
+        if self.out_lang != crate::kuna_lang::OutLang::Go {
+            return None;
+        }
+        let method = super::kuna_gomethod::direct_method(fd, arch, op)?;
+        let shadowed = self.signature_param_names.values().any(|name| name == &method.type_name)
+            || self.declared_locals.iter().any(|local| identifier(&local.name) == method.type_name);
+        let (name, first_argument) = if shadowed {
+            let receiver = fd.vbank().get(method.receiver)?;
+            if receiver.is_implied() || receiver.is_constant() {
+                return None;
+            }
+            let ty = receiver.get_high()
+                .and_then(|high| self.declared_local(high))
+                .and_then(|local| local.ty.clone())
+                .or_else(|| declared_variable_type(fd, method.receiver))?;
+            if !method.has_selector_type(&ty) {
+                return None;
+            }
+            self.push_op(&tokens::OBJECT_MEMBER, Some(op_key(op)));
+            self.push_vn_ir(fd, arch, method.receiver, op);
+            (method.member, 2)
+        } else {
+            (format!("(*{}).{}", method.type_name, method.member), 1)
+        };
+        self.push_atom(&Atom::with_op(
+            name,
+            TagType::OpToken,
+            crate::printlanguage::SyntaxHighlight::funcname_color,
+            op_key(op),
+        ));
+        Some(first_argument)
     }
 
     fn emit_indirect_input_aliases(&mut self, fd: &Funcdata) {

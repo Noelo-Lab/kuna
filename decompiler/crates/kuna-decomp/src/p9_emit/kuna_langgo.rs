@@ -414,32 +414,32 @@ impl PrintC {
         }
         let group = self.emit.begin_func_proto();
         self.emit.print("func ", SyntaxHighlight::KeywordColor);
+        let proto = fd.get_func_proto();
+        let mut first = 0;
+        if arch.analysis_godwarfsig && fd.kuna_go_receiver.as_ref().is_some_and(|receiver| {
+            receiver.symbol == display && receiver.matches(arch, proto)
+                && arch.symboltab.go_pointer_receiver(fd.get_address()).is_some()
+        }) {
+            if let Some(receiver) = proto.get_param(0) {
+                let paren = self.emit.open_paren("(", 0);
+                self.emit_go_parameter(arch, receiver, 0, markup);
+                self.emit.close_paren(")", paren);
+                self.emit.print(" ", SyntaxHighlight::NoColor);
+                first = 1;
+            }
+        }
         self.emit
             .tag_func_name(&name, SyntaxHighlight::FuncnameColor, markup);
         let paren = self.emit.open_paren("(", 0);
-        let proto = fd.get_func_proto();
         if proto.has_store() {
-            for i in 0..proto.num_params() {
+            for i in first..proto.num_params() {
                 let Some(param) = proto.get_param(i) else {
                     continue;
                 };
-                if i > 0 {
+                if i > first {
                     self.emit.print(", ", SyntaxHighlight::NoColor);
                 }
-                let name = if param.get_name().is_empty() {
-                    crate::database::kuna_materialized_param_name(arch.name_style_angr, i, "")
-                } else {
-                    param.get_name().to_string()
-                };
-                self.remember_go_parameter(i, &name);
-                self.emit
-                    .tag_variable(&identifier(&name), SyntaxHighlight::VarColor, markup);
-                self.emit.print(" ", SyntaxHighlight::NoColor);
-                let ty = param
-                    .get_type()
-                    .map(|t| declarator_parts(t, self.rt_ctx.clone()).0)
-                    .unwrap_or("any".into());
-                self.emit.tag_type(&ty, SyntaxHighlight::TypeColor, markup);
+                self.emit_go_parameter(arch, param, i, markup);
             }
             if proto.is_dotdotdot() {
                 if proto.num_params() > 0 {
@@ -463,6 +463,24 @@ impl PrintC {
             self.emit.end_return_type(ret);
         }
         self.emit.end_func_proto(group);
+    }
+
+    fn emit_go_parameter(
+        &mut self, arch: &Architecture, param: &dyn crate::fspec::ProtoParameter,
+        index: i32, markup: &MarkupRef,
+    ) {
+        let name = if param.get_name().is_empty() {
+            crate::database::kuna_materialized_param_name(arch.name_style_angr, index, "")
+        } else {
+            param.get_name().to_string()
+        };
+        self.remember_go_parameter(index, &name);
+        self.emit.tag_variable(&identifier(&name), SyntaxHighlight::VarColor, markup);
+        self.emit.print(" ", SyntaxHighlight::NoColor);
+        let ty = param.get_type()
+            .map(|ty| declarator_parts(ty, self.rt_ctx.clone()).0)
+            .unwrap_or("any".into());
+        self.emit.tag_type(&ty, SyntaxHighlight::TypeColor, markup);
     }
 
     pub(crate) fn emit_var_decl_go(

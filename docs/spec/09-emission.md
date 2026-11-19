@@ -3547,6 +3547,18 @@ shortened; external and compound type names retain their existing spelling.
 This per-document context never renames the interned type and is cleared for
 other source or output languages.
 
+A proved pointer receiver uses the first imported parameter as the Go
+receiver, keeping its original name, type and RAX storage. The remaining
+formal and result keep their original ABI positions. A same-package direct
+call with that exact target, matching prototype, and both full-width
+operands uses the Go method expression `(*T).Method(receiver, argument)`.
+If an emitted parameter or local shadows `T` and the first operand's
+declaration proves it is a pointer to that exact named type, the call uses
+`receiver.Method(argument)` with the original receiver evaluated once.
+An explicit name or prototype, a different target, or a call-site override
+keeps the ordinary declaration or call renderer. C and Rust use the same
+physical prototype and operand rendering as before.
+
 Go integer and float names retain the recovered byte width. Unknown or unusual
 widths use `[N]byte` storage rather than assert a different integer size. Arrays
 use `[N]T`, pointers use `*T`, void/opaque pointers use `unsafe.Pointer`, and a
