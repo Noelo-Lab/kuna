@@ -117,6 +117,9 @@ c3
   <com>load addr 0x35e0</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>load addr 0x3870</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/swift_call_syms_elf</com>
   <com>option swiftmetadata on</com>
@@ -195,15 +198,19 @@ c3
 <stringmatch name="swiftcall on: a virtual call on self passes self" min="2" max="2">\(\*\(\(code \*\*\)self-&gt;isa\)\[9\]\)\(self\);</stringmatch>
 <stringmatch name="swiftcall on: the struct witness writes a field of self" min="1" max="1">self-&gt;step = self-&gt;step \+ a1;</stringmatch>
 <stringmatch name="swiftcall on: a class witness takes the address of the reference" min="1" max="1">requirement#1\(callfix\.Account \*\*self,int8 a1\)</stringmatch>
-<stringmatch name="swiftcall on: the virtual call passes the self it set" min="2" max="2">v2 = \(\*\*\(code \*\*\)\(\*a0 \+ 0x80\)\)\(a0,a2,2\);</stringmatch>
-<stringmatch name="swiftcall on: the throwing virtual call passes self" min="2" max="2">v3 = \(\*\*\(code \*\*\)\(\*a0 \+ 0x88\)\)\(a0\);</stringmatch>
+<stringmatch name="swiftcall on: the virtual call passes the self it set" min="1" max="1">v2 = \(\*\*\(code \*\*\)\(\*a0 \+ 0x80\)\)\(a0,a2,2\);</stringmatch>
+<stringmatch name="swiftcall on: the throwing virtual call passes self" min="1" max="1">v3 = \(\*\*\(code \*\*\)\(\*a0 \+ 0x88\)\)\(a0\);</stringmatch>
+<stringmatch name="swiftcall on, symbols: a free function is declared from its name" min="1" max="1">callfix\.run\(_:_:_:\)\(callfix\.Account \*a0,callfix\.Counter \*a1,int8 a2\)</stringmatch>
+<stringmatch name="swiftcall on, symbols: the virtual call on a declared class goes through its isa" min="1" max="1">v2 = \(\*\(\(code \*\*\)a0-&gt;isa\)\[0x10\]\)\(a0,a2,2\);</stringmatch>
 <stringmatch name="swiftcall on: the error path survives" min="2" max="2">swift_release\(v5\);</stringmatch>
-<stringmatch name="swiftcall on, symbols: the mutating struct method takes the struct's self" min="1" max="1">callfix\.Counter\.advance\(by:times:\)\(callfix\.Counter \*self,int8 a1,int8 a2\)</stringmatch>
-<stringmatch name="swiftcall on, symbols: the mutating method's body reads self's fields" min="1" max="1">self-&gt;value = v1 \+ a2 \+ self-&gt;value;</stringmatch>
-<stringmatch name="swiftcall on, symbols: the call passes the struct's address as self" min="1" max="1">callfix\.Counter\.advance\(by:times:\)\(a1,a2,3\);</stringmatch>
-<stringmatch name="swiftcall on, symbols: the non-mutating method gains no self" min="1" max="1">callfix\.Counter\.peek\(_:\)\(a2,a1-&gt;field_0x0,a1-&gt;field_0x8\)</stringmatch>
-<stringmatch name="swiftcall on, symbols: a final method hands its own self on" min="1" max="1">v1 = callfix\.Account\.fee\(for:\)\(self,a1\);</stringmatch>
-<stringmatch name="swiftcall on, symbols: and again after a call" min="1" max="1">return callfix\.Account\.fee\(for:\)\(self,v2\) \+ v1;</stringmatch>
+<stringmatch name="swiftcall on: the throwing call's error is read as a call result" min="2" max="2">v5 = swift_error\(\);</stringmatch>
+<stringmatch name="swiftcall on, symbols: the throwing function hands its error back" min="1" max="1">swift_throw\(v5\);</stringmatch>
+<stringmatch name="swiftcall on, symbols: the mutating struct method takes the struct's self by address" min="1" max="1">callfix\.Counter\.advance\(by:times:\)\(int8 by,int8 times,callfix\.Counter \*self\)</stringmatch>
+<stringmatch name="swiftcall on, symbols: the mutating method's body reads self's fields" min="1" max="1">self-&gt;value = v1 \+ times \+ self-&gt;value;</stringmatch>
+<stringmatch name="swiftcall on, symbols: the call passes the struct's address as self" min="1" max="1">callfix\.Counter\.advance\(by:times:\)\(a2,3,a1\);</stringmatch>
+<stringmatch name="swiftcall on, symbols: the non-mutating method takes self by value" min="1" max="1">callfix\.Counter\.peek\(_:\)\(a2,\*a1\)</stringmatch>
+<stringmatch name="swiftcall on, symbols: a final method hands its own self on" min="1" max="1">v1 = callfix\.Account\.fee\(for:\)\(a0,self\);</stringmatch>
+<stringmatch name="swiftcall on, symbols: and again after a call" min="1" max="1">return callfix\.Account\.fee\(for:\)\(for_,self\) \+ v1;</stringmatch>
 <stringmatch name="swiftcall off: the call after a runtime helper passes no self" min="2" max="2">helperfix\.Counter\.bump\(\)\(\);</stringmatch>
 <stringmatch name="swiftcall on: a runtime helper call leaves the self the caller set" min="2" max="2">helperfix\.Counter\.bump\(\)\(a0\);</stringmatch>
 <stringmatch name="swiftcall on: the zeroed r12 of a C function stays a constant across its call" min="1" max="1">return sub_10d2\(a0\) \+ 5;</stringmatch>

@@ -2228,7 +2228,10 @@ mod tests {
         // and kuna-swiftstr / a Swift string literal's two constant words print as the literal
         // and kuna-swiftstrcsel / a Swift literal's two words are paired along one branch arm
         // and kuna-swiftruntime / the Swift runtime's entry points carry their header signatures
-        assert_eq!(count, 787, "corpus file count drifted");
+        // and kuna-swiftsigs / Swift prototypes declared from mangled names under the Swift models
+        // and kuna-swiftasync / a stripped Swift function's convention from what it calls
+        // and kuna-swiftglobals / a Swift global typed from its storage symbol
+        assert_eq!(count, 790, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

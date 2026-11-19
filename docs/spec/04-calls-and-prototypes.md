@@ -4681,7 +4681,19 @@ only `x20` does not grow `x0`; no declared type is ever assigned to it. Ghidra's
 `__thiscall`, so any argument in x0 forces a `self` before it. `__swiftcall`
 keeps x20 and x21 among the preserved registers, as a non-throwing callee
 keeps them; `__swiftcall_throws` moves the error register to the killed ones,
-so the value a caller tests after the call is the callee's.
+so the value a caller tests after the call is the callee's. Two more,
+`__swiftasynccall` and `__swiftasynccall_throws`, put the `swiftasync`
+register (x22 / r14) ahead of `swiftself` with `storage="class2"` — its own
+section again — for an `async` function's task context. All four take
+Swift's return rule: Swift returns up to four words in registers (x0–x3;
+rax, rdx, rcx, r8), so the derivation appends two output entries after the
+default model's second general one and moves the C model's indirect-result
+rule (`minsize="17"` → the hidden return through x8 / rax) to 33 bytes. A
+struct of 17 to 32 bytes a Swift function returns therefore comes back as a
+register join where the C model would have read it through x8; from 33
+bytes the indirect result register stands, as in C. On x86-64 the default
+model's output is an explicit `join_dual_class` rule rather than a register
+list, so only the threshold changes there.
 
 A convention can be bound to a function without a signature: the analysis
 tier's `(addr, model)` facts land in `Architecture::loader_proto_models` and
@@ -4706,6 +4718,70 @@ runtime arguments theirs, and propagation and record synthesis leave it in
 place; the recovered parameter takes the hinted name. A hint with no type
 names the parameter only. A body that never reads the register declares
 nothing.
+
+A symbol-named function states more than its convention: its mangled name
+carries the signature, and where every type in it maps to a kuna type the
+analysis tier declares the prototype
+(`decompiler/crates/kuna-analysis/src/analyzers/swift/kuna_swiftcall.rs
+(Binder::declared)`, committed through `set_function_prototype_pieces_at`
+under the model, so the function takes no model-only binding beside it).
+Parameters take their argument labels as names; `self` comes last and is
+pinned to `swiftself` as explicit input storage (a class member's
+`Class *`, a witness's `T *` with the `Self` metadata and the witness table
+after it); a free function has none. A by-value aggregate argument follows
+Swift's rule: a struct of up to four eight-byte integer or pointer words
+(each leaf a whole word, no padding) stays by value, and the models join it
+from the argument registers (the C join rule's bound of 16 bytes is 32 in
+the derived models, for inputs as for outputs); a wider one is declared as
+a pointer to it, the address Swift passes; a struct with a float or a
+narrow word in it has no single rule and leaves the function undeclared.
+A tuple is a struct of its elements at their natural alignment, named
+after the tuple (`(Swift.Int,Swift.Int)`) with fields `_0`, `_1`, …; it
+travels as any struct of that size. A generic function's arguments carry
+on after the declared ones: the metadata of each type parameter
+(`swift.type_metadata *metadata_A`) and the witness table of each
+conformance requirement (`void *witness_A_Hashable`); a value of a type
+parameter's type is passed by address, and a function whose return is
+generic (written through the caller's indirect result) stays undeclared.
+`throws` and typed `throws` alike select the throwing model. A struct's
+instance member is the one case the name does not settle: `self` is
+exploded into the argument registers for a non-mutating member of a struct
+of up to four words and arrives in `swiftself` otherwise (a `mutating`
+member, a wider struct). The fact carries both forms, and the commit asks
+the body (`decompiler/crates/kuna-analysis/src/analyzers/swift/mod.rs
+(self_first)`): the function's first sixty-four instructions are decoded in
+order, and a read of `swiftself` before any write to it — a spill through
+the stack pointer and its reload not counting — means the address form;
+a write first, or no touch at all, means the exploded value, declared as
+the struct by value in the trailing position. An `async` function's
+context is a `swift.AsyncContext *` whose record names the parent context
+and the resume function at its head (`parent`, `resume_parent`), the
+function's own frame following. The stage test
+`tests/stages/kuna-swiftsigs.xml` runs `swift_sigs_syms_elf` with the arm
+off and on.
+
+The error register has two moments the dataflow names
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_swifterror.rs`, an action
+after `ActionFuncLink` has given every call its model and before heritage):
+after a call under a throwing model, an op defines the register with the
+opaque `swift_error()`, so the caller's test reads the call's error as a call
+result — `v5 = swift_error(); if (v5) { ... }` — rather than an uninitialized
+register, and where nothing reads it the op dies as any other; and in a
+function under a throwing model, the last write of the register before a
+`return` with no call between them feeds `swift_throw(e)`, so the error
+handed back is visible at the return instead of a dead write of
+`swift_allocError`'s result.
+
+A function with no signature and no name to say so still states its
+convention by what it calls (`kuna_swiftcall::callee_evidence`, read in the
+decompile drive before the model is set): a body that calls `swift_willThrow`
+throws, one that calls the task runtime's suspension entry points
+(`swift_task_alloc` / `swift_task_dealloc` / `swift_task_switch`,
+`swift_continuation_*`, `swift_asyncLet_*`, the task-group and future waits)
+is `async`, and the metadata's binding is upgraded to the matching model —
+`__swiftasynccall` with a nameless `async_context` hint on the `swiftasync`
+register — so a stripped image's resume partials take their context
+(`tests/stages/kuna-swiftasync.xml`, the stripped `swift_sigs_elf`).
 
 Two call-site rules read the image's Swift registers
 (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_swiftcall.rs`,

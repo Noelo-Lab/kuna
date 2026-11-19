@@ -237,6 +237,23 @@ pub struct ParamLockFact {
     pub type_: std::rc::Rc<kuna_decomp::dtype::Datatype>,
 }
 
+/// (kuna `swiftcall`) A symbol-named Swift member's declared prototype:
+/// `pieces` under `model`, with the parameter at `self_slot` (the last one)
+/// pinned to `self_reg`, the `swiftself` register, which the commit resolves
+/// and stores as the prototype's explicit input storage.
+#[derive(Clone, Debug)]
+pub struct SwiftDeclaredFact {
+    pub func_addr: u64,
+    pub model: &'static str,
+    pub self_slot: Option<i32>,
+    pub self_reg: &'static str,
+    /// A struct instance member's `self` by value, the form the prototype
+    /// takes when the body does not read `swiftself` first (see
+    /// `analyzers::swift::self_first`).
+    pub exploded_self: Option<std::rc::Rc<kuna_decomp::dtype::Datatype>>,
+    pub pieces: kuna_decomp::fspec::PrototypePieces,
+}
+
 /// (kuna `swifttypes`) The facts the Swift type-layout arm produces, kept
 /// apart so the commit can drop them whole under `option swifttypes off`:
 /// the typed metadata records, the accessor prototypes and the
@@ -252,11 +269,14 @@ pub struct SwiftTypeFacts {
     /// and accessor, and the name and type of its `self`.
     pub models: Vec<ModelFact>,
     pub input_hints: Vec<InputHintFact>,
+    /// (kuna `swiftcall`) Declared prototypes from mangled names.
+    pub declared: Vec<SwiftDeclaredFact>,
     /// Swift functions of a module, no type's members, by entry address: a
     /// call to one passes no `self` and leaves `swiftself` as it was.
     pub no_self: Vec<u64>,
-    /// The `swiftself` and `swifterror` registers, once a convention is bound.
-    pub regs: Option<(&'static str, &'static str)>,
+    /// The `swiftself`, `swifterror` and `swiftasync` registers, once a
+    /// convention is bound.
+    pub regs: Option<(&'static str, &'static str, &'static str)>,
 }
 
 /// The function at `func_addr` follows the cspec prototype model `model`,
@@ -835,6 +855,7 @@ impl AnalysisOutput {
         self.swift_types.param_locks.extend(other.swift_types.param_locks);
         self.swift_types.models.extend(other.swift_types.models);
         self.swift_types.input_hints.extend(other.swift_types.input_hints);
+        self.swift_types.declared.extend(other.swift_types.declared);
         self.swift_types.no_self.extend(other.swift_types.no_self);
         self.swift_types.regs = self.swift_types.regs.or(other.swift_types.regs);
         self.entries.extend(other.entries);

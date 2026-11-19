@@ -2002,6 +2002,40 @@ fn decompile_func_full_with_objects_inner(
             fd.apply_locked_prototype_with_model(&rt.output, None)?;
             fd.get_func_proto_mut().set_input_lock(false);
             fd.kuna_set_elfmain(Some(rt.fresh()));
+        } else if let Some(abi) = fd.get_arch().swift_abi.clone() {
+            // (kuna `swiftcall`) A Swift function's convention without a
+            // signature: the one the metadata bound, upgraded by what the
+            // body calls — `swift_willThrow` makes it throw, the task
+            // runtime's suspension entry points make it `async` — so a
+            // stripped image's resume partials take their context and its
+            // throwing functions hand back their error.
+            let bound = fd.get_arch().bound_proto_model(&entry_addr);
+            let (mut is_async, mut throws) = crate::kuna_swiftcall::callee_evidence(&fd, |a| {
+                arch.symboltab
+                    .find_function_across_scopes(a)
+                    .map(|(sid, _)| arch.symboltab.symbol(sid).get_name().to_string())
+            });
+            if let Some(b) = &bound {
+                let n = b.get_name();
+                throws |= n.ends_with("_throws");
+                is_async |= n.starts_with(crate::kuna_swiftcall::SWIFTASYNCCALL);
+            }
+            if bound.is_some() || is_async || throws {
+                let proto = fd.get_func_proto_mut();
+                proto.set_model(Some(abi.model(is_async, throws)));
+                proto.set_model_lock(true);
+                let mut hints: Vec<crate::kuna_inputhints::InputHint> =
+                    input_hints.as_deref().cloned().unwrap_or_default();
+                if is_async && !hints.iter().any(|h| h.addr == abi.async_reg.0) {
+                    hints.push(crate::kuna_inputhints::InputHint {
+                        addr: abi.async_reg.0.clone(),
+                        size: abi.async_reg.1,
+                        name: "async_context".to_string(),
+                        ct: abi.async_context.clone(),
+                    });
+                }
+                fd.kuna_set_input_hints((!hints.is_empty()).then(|| std::rc::Rc::new(hints)));
+            }
         } else if let Some(model) =
             fd.get_arch().bound_proto_model(&entry_addr)
         {

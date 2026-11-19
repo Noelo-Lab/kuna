@@ -153,6 +153,16 @@ impl AnalysisPass for SwiftMetadataPass {
             types.locate_all();
             let regs = kuna_swifttypes::Registers::for_arch(ctx.file.architecture());
             types.emit(regs.as_ref(), &mut out);
+            // A global variable's storage symbol (`$s…vp`) names its type:
+            // a typed data object where the image kept its symbols.
+            for s in ctx.file.symbols().filter(|s| s.kind() == object::SymbolKind::Data && s.is_definition()) {
+                let (Ok(name), addr) = (s.name(), s.address()) else {
+                    continue;
+                };
+                if let Some((path, t)) = types.global_variable(name) {
+                    out.swift_types.typed_data.push(crate::pass::TypedDataFact { addr, name: path, type_: t });
+                }
+            }
             if let (true, Some(regs)) = (ctx.arch.analysis_swiftcall, regs.as_ref()) {
                 let symbols: Vec<(u64, String)> = ctx
                     .file
@@ -643,3 +653,5 @@ impl Namer<'_> {
         }
     }
 }
+
+pub use kuna_decomp::kuna_swiftcall::self_first;

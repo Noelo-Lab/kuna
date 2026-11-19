@@ -794,6 +794,11 @@ pub fn universal_sched(
             act!(ActionPrototypeTypes::boxed("protorecovery")),
             act!(ActionFuncLink::boxed("protorecovery")),
             act!(ActionFuncLinkOutOnly::boxed("noproto")),
+            // (kuna) swifterror (option `swiftcall`): the error register
+            // defined after a throwing Swift call and read before a throwing
+            // return. After FuncLink, which gives each call its model; before
+            // heritage, which links the new write and read.
+            act!(crate::p4_calls::kuna_swifterror::ActionSwiftError::boxed("protorecovery")),
             fullloop,
             act!(ActionMappedLocalSync::boxed("localrecovery")),
             act!(ActionStartCleanUp::boxed("cleanup")),
