@@ -380,10 +380,34 @@ byte-identical to before, and `elf_language_ids` enumerates the golang ids so
 the resolves-in-the-DB gate proves them vendored. Measured on a stripped
 go1.22 hello-world (1,544 functions): functions with recovered parameters
 544 → 992, functions reading a never-assigned register local 853 → 501, zero
-failures either way. Per-symbol `abi0` binding is deliberately absent: the
-go1.22 pclntab carries no `.abi0` names and the canonical entry inventory
-collapses the unstripped symtab aliases, so no `.abi0` spelling reaches the
-engine — alias-aware symbol plumbing has to come first.
+failures either way.
+
+On AMD64 ELF with `goabi auto`, the Go function-table pass
+(`decompiler/crates/kuna-analysis/src/analyzers/pclntab/kuna_goabi0.rs`)
+compares the original defined text symbols with the pclntab entries. A
+symbol `name.abi0` must match a pclntab entry at the same address named
+`name`, which keeps the binding independent of the name chosen for display.
+The pass checks the linker's function-data base against the matching
+`runtime.firstmoduledata` and bounds `FUNCDATA_ArgInfo`'s offset entry by its
+own function record. The complete incoming list must describe consecutive
+eight-byte scalar inputs from offset zero, covering the whole area declared
+by `_func.args`. Since the list excludes results, there is no room for a
+nonzero stack result. A missing list, gaps, narrower inputs, aggregate or
+truncation markers, generic dictionary arguments and an area with extra
+bytes keep inference.
+
+The function must have the ordinary FuncID and no flags other than the
+optional assembly flag. Its nonempty ELF text symbol must end within the
+pclntab function extent and cover at most 256 mapped bytes. After loader
+attachment, the commit checks those bytes with a context-isolated SLEIGH walk
+(`decompiler/crates/kuna-analysis/src/analyzers/pclntab/kuna_goabi0_leaf.rs`).
+The walk must reach a decoded near return at the symbol boundary without a branch,
+call, processor user operation or stack-pointer write before the return.
+This keeps private runtime tail transfers and thread-exit paths under the
+existing model. The model-fact commit binds a qualifying function and direct
+calls to a bounded copy of the stack-input model. Stripped images lack the
+alias proof. Call-bearing functions, independently proven result storage,
+other input shapes and source types require separate evidence.
 
 (kuna) **With the golang cspec active, the goroutine register becomes the
 named, typed global `g`** (always on;
@@ -4739,7 +4763,9 @@ moves.
   `.data` has a valid blob but its table is in writable data, and one carried
   twice (a const copy in `.rdata`, a writable one in `.data`) has a blob and
   a read-only table whose only `moduledata` names the address the table had in
-  its own image. Both questions must hold. The arm runs first, as on every format, and
+  its own image. A table whose magic was overwritten is counted when the
+  `moduledata` record describes it whole (`kuna_gomoduledata.rs (locate)`,
+  below) and its functab lies in read-only data. Both questions must hold. The arm runs first, as on every format, and
   returns before the `.rdata` toolchain-record scan the later arms do.
   Nothing else changes for a non-Go PE: its verdict is the same as before. The
   same blob lookup (`buildinfo_blob`) gives the version-keyed `goreg` shells
@@ -5072,6 +5098,36 @@ every other binary's pass list is byte-identical to before the pass existed):
   `minpc`/`maxpc`/`text`/`etext` nest) — an external link puts `crt` code and
   `.init`/`.plt` ahead of `runtime.text` — falling back to the lowest code section
   when no record is found.
+
+  A packer or obfuscator can overwrite the header's magic in the file (putting
+  it back, or skipping the runtime's start-up check, when the program runs) and
+  leave the table itself intact. When no magic
+  matches a table the image names, the pass finds `runtime.firstmoduledata` by
+  its shape and reads the table from that record alone, never consulting the
+  header
+  (`decompiler/crates/kuna-analysis/src/analyzers/pclntab/kuna_gomoduledata.rs
+  (locate)`). Every pointer-aligned position of every section that is not code
+  is tried; section names and kinds are not consulted, because a packer renames
+  them. A go1.16+ record is `pcHeader`, then the `funcnametab`, `cutab`,
+  `filetab`, `pctab`, `pclntable` and `ftab` slices, `findfunctab`, and
+  `minpc`, `maxpc`, `text`, `etext`. It is accepted when `ftab` starts where
+  `pclntable` does, the header, the name table and the functab sit in that
+  order, every slice's length is within its capacity, `len(ftab) - 1` is a
+  function count in range, the four PC bounds nest, and the functab bears the
+  bounds out: its first entry is `minpc` and its closing entry is `maxpc`, the
+  identity the runtime itself checks at start-up. That last test also selects
+  the entry shape: 32-bit offsets from `text` (go1.18+) are tried first, then
+  absolute pointers (go1.16/go1.17). A go1.5–go1.15 record opens with
+  `pclntable` and `ftab` instead, with `ftab` starting 8 bytes plus one pointer
+  into the table, and is checked the same way. The name table, the functab, the
+  `_func` base, the function count and the text base all come from the record,
+  so the names, entries and extents are the unmodified image's, and a header
+  wiped whole reads the same as one with only its magic gone. The record's
+  first word is still the header's address, which is what the Go type harvest
+  anchors on, so it works unchanged. The PE detection above counts such a table
+  when its functab lies in read-only data. The search runs only after every
+  magic-based route has failed, so an image with an intact header never pays
+  for it.
 - **MSVC RTTI** (`rtti`, PE-only, on by default and inert elsewhere;
   `decompiler/crates/kuna-analysis/src/analyzers/rtti/mod.rs`): find the shared
   `type_info` vftable, byte-search back from each `.?A…@@` TypeDescriptor to its
@@ -5943,6 +5999,48 @@ every other binary's pass list is byte-identical to before the pass existed):
   can still make the pass slow, because every module of a crafted file can match
   at every entry, so `KUNA_FLIRT_SIGS` should name signature files from a trusted
   source.
+  The opt-in report API in
+  `decompiler/crates/kuna-analysis/src/analyzers/flirt/kuna_rustprofiles.rs`
+  compares an explicit set of Rust version/optimization candidates on the same
+  caller-supplied Listing and entry set. It retains each external signature
+  source's identity, inline/no-inline bank, header library name, and accepted
+  `core::`, `std::`, or `alloc::` match addresses and full names. The shared
+  matcher can report an already-named entry when its exact signature name agrees;
+  this does not emit a rename or alter matching rounds. Name collisions,
+  reference-site requirements, CRC checks and ambiguous module names still
+  refuse. Ordinary `FlirtPass` renames retain their existing behavior and do not
+  collect report records.
+  Each candidate's score is the greater of its two bank counts, not their sum.
+  An absent bank makes the comparison incomplete; duplicate banks are errors.
+  An empty candidate set, all-zero scores and tied best scores report distinct
+  unresolved outcomes. A unique positive maximum identifies only the best
+  measured candidate, never an authenticated compiler version or permission to
+  enable an ABI/layout recovery. The API accepts linked little-endian x86-64
+  ELF images and checks external signatures' x86 processor, ELF applicability
+  and non-startup status. The caller supplies the signature provenance and
+  candidate set; no signature corpus is bundled or downloaded, and no candidate
+  is inferred from a fixture's name or a nightly version number.
+  `kuna functions --summary --json --rust-signature-manifest PATH` requests this
+  report for one loaded image. The CLI validates the explicit corpus/candidate
+  manifest and hashes each signature's bytes before constructing the request.
+  The request is distinct from `KUNA_FLIRT_SIGS` and does not turn on `flirt`,
+  `listing`, or another analysis consumer. The console consumes it once during
+  the deferred image-analysis commit; the observer in
+  `decompiler/crates/kuna-analysis/src/passes.rs` receives the final accepted
+  Listing after recovery and never applies the report's matches as names.
+  If a Listing is already required, that same object supplies the report. If
+  only reporting requires it, consumer gates retain their original values.
+  Unsupported targets decline before a reporting-only decode. A repeated
+  analysis commit retains the completed report without rescoring.
+  The report considers function entries in each text section's final 128 KiB;
+  summary presentation filters do not change its candidate set or evidence.
+  `compiler_provenance` contains independently observed Rust `.comment` records
+  and complete `/rustc/<40-hex-commit>/library/` source-path hashes, including
+  conflicting records. No source path is translated into a nominal version.
+  `rust_signature_profile` carries compatibility scores and explicit unresolved
+  statuses, with the verified external manifest/source identities. These fields
+  are absent unless requested; stable compiler and formatter-layout facts remain
+  separate. Malformed manifests and hash mismatches fail before image analysis.
 - **Format strings** (`formatstring off|static|full`, default `static`;
   `decompiler/crates/kuna-analysis/src/analyzers/formatstring/mod.rs`): what a
   `printf`/`scanf`-family call does with its variadic arguments is stated by its

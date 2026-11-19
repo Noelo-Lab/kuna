@@ -1051,6 +1051,17 @@ and line number. Consistency checks and section finalization share this lookup,
 so included-file diagnostics keep the constructor's location after parsing
 returns to the parent file. No separate constructor-location map is maintained.
 
+Constructor patterns are built one operand at a time, in operand order, and an
+operand whose disassembly action is a bare operand (`[ idx = fld; ]`) takes
+that operand's pattern. When the named operand is the operand itself
+(`[ idx = idx; ]`) or comes later in the order, its pattern does not exist yet,
+so the compiler rejects the constructor with
+`idx: operand is defined as itself or an operand that follows it`, as Ghidra's
+compiler does with `operand idx has an issue`. Listing the source operand first,
+or writing an expression such as `fld + 0`, compiles
+(`decompiler/crates/kuna-sleigh/src/slghsymbol.rs (build_constructor_pattern)`,
+`decompiler/crates/kuna-sleigh/src/slghpatexpress.rs (gen_min_pattern)`).
+
 The consistency checker rejects a temporary that is read exactly once and
 written exactly once in the same semantic section when the read precedes or
 occurs in the write operation. This fatal error propagates through constructor
@@ -2598,6 +2609,17 @@ Definitions sharing one native instruction address use a verified dynamic-hash
 anchor; an unresolved or ambiguous anchor still rejects the directive.
 Type seeding uses the definition usepoint, and naming retains the selected SymbolId;
 a storage-only re-query must not attach another lifetime's name or type.
+
+Console `rename` and whole-variable `retype` edits carried by `PriorNames`
+survive switching to another function and returning within the loaded program.
+`IfaceDecompData`
+records the replay after an explicit edit, keyed by the resolved entry address
+and its address space. An untouched function gets its own fresh analysis. The
+replay uses the existing definition identities and numbering context to find
+the edited local. The active function continues to carry its current edits
+directly across rebuilds. Later edits replace the saved replay for that entry,
+and explicitly loading the already-selected entry clears its replay and starts
+a fresh local analysis. Clearing the architecture clears the session records.
 
 (kuna) **A `prototype` directive binds to `<func>`, whatever name its declaration
 carries.** The operand says which function the signature describes; the

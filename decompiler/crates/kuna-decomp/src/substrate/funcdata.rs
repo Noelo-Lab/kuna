@@ -4884,7 +4884,9 @@ impl Funcdata {
 
     /// C++ `Varnode::findSubpieceShadow` (`varnode.cc:1025-1072`): does `vn`
     /// equal `whole` truncated by `least_byte` least-significant bytes, allowing
-    /// COPY/MULTIEQUAL in the flow path (bounded recursion depth 1).
+    /// COPY/MULTIEQUAL in the flow path (bounded recursion depth 1).  A constant
+    /// `whole` wider than 8 bytes holds zero above bit 63, so a truncation of 8
+    /// or more bytes reads 0 (the C++ shift is undefined there).
     fn find_subpiece_shadow(&self, vn: VarnodeId, least_byte: int4, whole: VarnodeId, recurse: int4) -> bool {
         let vn = self.skip_copy_chain(vn);
         let v = match self.vbank.get(vn) {
@@ -4901,7 +4903,7 @@ impl Funcdata {
                 if !wv.get_addr().is_constant() {
                     return false;
                 }
-                let off = (wv.get_offset() >> (least_byte * 8))
+                let off = wv.get_offset().checked_shr(least_byte as u32 * 8).unwrap_or(0)
                     & kuna_base::address::calc_mask(v.get_size());
                 return off == v.get_offset();
             }
@@ -7001,5 +7003,23 @@ mod tests {
         fd.clear_covermerge();
         let third = fd.with_covermerge(|merge, _data| merge.copy_trims_len());
         assert_eq!(third, 0);
+    }
+
+    /// Kuna #1674: a constant wider than 8 bytes holds zero above bit 63, so a
+    /// piece 8 or more bytes into it shadows only the constant 0.
+    #[test]
+    fn partial_copy_shadow_reads_zero_above_bit_63_of_a_wide_constant() {
+        let mut fd = build_fd();
+        let zero16 = fd.new_constant(16, 0);
+        let low16 = fd.new_constant(16, 0x1234);
+        let zero8 = fd.new_constant(8, 0);
+        let low8 = fd.new_constant(8, 0x1234);
+        let zero4 = fd.new_constant(4, 0);
+        assert!(fd.varnode_partial_copy_shadow(low8, low16, 0));
+        assert!(fd.varnode_partial_copy_shadow(zero8, zero16, 8));
+        assert!(fd.varnode_partial_copy_shadow(zero8, low16, 8));
+        assert!(fd.varnode_partial_copy_shadow(zero4, low16, 12));
+        assert!(!fd.varnode_partial_copy_shadow(low8, low16, 8));
+        assert!(!fd.varnode_partial_copy_shadow(low8, zero16, 8));
     }
 }
