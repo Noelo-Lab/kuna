@@ -1608,6 +1608,8 @@ pub struct PrintC {
     indirect_input_aliases: std::collections::HashSet<crate::context::HighVariableId>,
     signature_param_names: std::collections::HashMap<i32, String>,
     pub(crate) go_suppressed_labels: std::collections::HashSet<BlockId>,
+    /// (kuna `oslog`) Statements that only fill a decoded os_log buffer.
+    oslog_hidden: std::collections::BTreeSet<OpId>,
     /// Strict subpieces suppressed in favor of their overlap group's unique
     /// whole-value declaration. References resolve through the whole owner.
     local_name_aliases: std::collections::HashMap<crate::context::HighVariableId, crate::context::HighVariableId>,
@@ -1681,6 +1683,7 @@ impl PrintC {
             indirect_input_aliases: std::collections::HashSet::new(),
             signature_param_names: std::collections::HashMap::new(),
             go_suppressed_labels: Default::default(),
+            oslog_hidden: Default::default(),
             local_name_aliases: std::collections::HashMap::new(),
             local_name_standalones: std::collections::HashSet::new(),
             declared_locals: Vec::new(),
@@ -2071,6 +2074,7 @@ impl PrintC {
         self.indirect_input_aliases.clear();
         self.signature_param_names.clear();
         self.go_suppressed_labels.clear();
+        self.oslog_hidden.clear();
         self.local_name_aliases.clear();
         self.local_name_standalones.clear();
         self.declared_locals.clear();
@@ -2720,12 +2724,16 @@ impl PrintC {
         self.indirect_input_aliases.clear();
         self.signature_param_names.clear();
         self.go_suppressed_labels.clear();
+        self.oslog_hidden.clear();
         self.local_name_aliases.clear();
         self.local_name_standalones.clear();
         self.declared_locals.clear();
         self.declared_local_index.clear();
         self.declared_entry = Some(fd.get_address().clone());
         self.pointer_decls.clear();
+        if self.out_lang == crate::kuna_lang::OutLang::C {
+            self.oslog_hidden = super::kuna_oslog::hidden_ops(fd, arch);
+        }
         self.begin_pointer_record(fd);
         if !self.emit.emits_markup() {
             self.warnings.clear();
@@ -5156,6 +5164,9 @@ impl PrintC {
             && !(self.out_lang == crate::kuna_lang::OutLang::C
                 && crate::kuna_stackbytes::assignment(fd, op).is_some())
         {
+            return true;
+        }
+        if self.oslog_hidden.contains(&op) {
             return true;
         }
         crate::p9_emit::kuna_stackmarkers::nonprinting(fd, op)
@@ -8663,6 +8674,12 @@ impl PrintC {
                 return;
             }
         }
+        if self.out_lang == crate::kuna_lang::OutLang::C {
+            if let Some(plan) = super::kuna_oslog::recover(fd, arch, op) {
+                self.push_oslog_call(fd, arch, op, plan);
+                return;
+            }
+        }
         let opc = fd.obank().get(op).expect("op_call_ir: stale op").code();
         let nin = fd.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
         let proto = fd.get_call_specs_index(op).map(|index| fd.get_call_specs(index).proto());
@@ -8855,6 +8872,59 @@ impl PrintC {
             self.emit.print(";", SyntaxHighlight::NoColor);
         }
         self.emit.tag_line();
+    }
+
+    /// (kuna `oslog`) A direct os_log call: the dso as its header symbol and
+    /// the decoded buffer items in place of the buffer and its size.
+    fn push_oslog_call(
+        &mut self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        op: OpId,
+        plan: super::kuna_oslog::Plan,
+    ) {
+        let Some(call) = fd.obank().get(op) else { return };
+        let nin = call.num_input();
+        let inputs: Vec<VarnodeId> = (1..nin).filter_map(|slot| call.get_in(slot)).collect();
+        let proto = fd.get_call_specs_index(op).map(|index| fd.get_call_specs(index).proto());
+        let count = match &plan.items {
+            Some(items) => plan.fixed as usize + items.len(),
+            None => inputs.len(),
+        };
+        self.push_word_result_open(fd, arch, op);
+        self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
+        let name = self.call_callee_name(fd, op);
+        self.push_atom(&Atom::with_op(
+            name,
+            TagType::FuncToken,
+            crate::printlanguage::SyntaxHighlight::funcname_color,
+            op_key(op),
+        ));
+        for _ in 1..count {
+            self.push_op(&tokens::COMMA, Some(op_key(op)));
+        }
+        let shown = if plan.items.is_some() { plan.fixed as usize } else { inputs.len() };
+        for (index, &vn) in inputs.iter().take(shown).enumerate() {
+            if index == 0 {
+                if let Some(header) = &plan.dso {
+                    self.push_atom(&Atom::syntax(
+                        format!("&{header}"),
+                        TagType::Syntax,
+                        crate::printlanguage::SyntaxHighlight::global_color,
+                    ));
+                    continue;
+                }
+            }
+            self.push_call_argument_ir(fd, arch, vn, op, index as i32 + 1, proto);
+        }
+        for item in plan.items.unwrap_or_default() {
+            match item {
+                super::kuna_oslog::Item::Value(vn) => self.push_vn_ir(fd, arch, vn, op),
+                super::kuna_oslog::Item::Constant { value, size } => {
+                    self.push_constant_ir(value, size, op)
+                }
+            }
+        }
     }
 
     fn push_call_argument_ir(

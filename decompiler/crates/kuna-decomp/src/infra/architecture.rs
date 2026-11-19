@@ -581,6 +581,8 @@ pub struct Architecture {
     /// (kuna `objcresolve call`) Also decompile again with each resolved send's
     /// CALL sent to the method, so it carries the method's prototype.
     pub objc_resolve_call: bool,
+    /// (kuna `oslog`) Print decoded os_log buffer arguments at the call.
+    pub os_log_args: bool,
     /// (kuna) The image's Objective-C classes, methods and selector strings,
     /// handed over by the ObjC analysis commit; empty on every other image.
     pub kuna_objc_classes: Rc<crate::kuna_objcresolve::ObjcClassTable>,
@@ -2435,6 +2437,7 @@ impl Architecture {
             objc_arc: false, // (kuna) option objcarc; reset_defaults sets the shipped default
             objc_resolve: false, // (kuna) option objcresolve; reset_defaults sets the shipped default
             objc_resolve_call: false,
+            os_log_args: false, // (kuna) option oslog; reset_defaults sets the shipped default
             kuna_objc_classes: Rc::new(Default::default()),
             kuna_objc_retargets: Default::default(),
             kuna_objc_site_pieces: Default::default(),
@@ -2791,6 +2794,7 @@ impl Architecture {
         self.objc_arc = true; // (kuna) default-on: inert unless the image names an ObjC ARC runtime entry point (0/675 datatests carry one); `option objcarc off` shows the calls again
         self.objc_resolve = true; // (kuna) default-on: inert unless the ObjC analysis handed over a class table (0/675 datatests)
         self.objc_resolve_call = false; // (kuna) `objcresolve call` decompiles a function with resolved sends twice
+        self.os_log_args = true; // (kuna) default-on: inert unless a call reaches an os_log entry point (0/675 datatests)
         self.tail_call_jumps = true; // (kuna) DIV-13 default-on (angr tail-call recovery; per-test opt-out on Long double #1/#2)
         self.tail_call_tables = true; // (kuna) GH-781 default `tailcalljump on`: a veneer whose one destination is another function's entry is a tail call when the destination is outside a declared extent, or the callee's prototype is stated and its return value (if any) reaches a stated output. 0/675 byte-identical on the datatest corpus; `option tailcalljump direct` restores the flow into the destination
         self.tail_call_frame = true; // (kuna) DIV-109 default-on: REMOVES CODE. A direct jmp preceded by a teardown of exactly the entry block's frame is a tail call even when the callee was never discovered. Byte-identical (0/675) on the datatest corpus; restore the flow-into-the-callee decode with `option tailcallframe off`
