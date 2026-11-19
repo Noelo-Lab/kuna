@@ -4255,6 +4255,8 @@ CopReg: ssbs is Op0=3 & Op1_uimm3=3 & CRn=4 & CRm=2 & Op2_uimm3=6 & ssbs { expor
 CopReg: dbgdtrrx_el0 is l=0 & Op0=2 & Op1_uimm3=3 & CRn=0 & CRm=5 & Op2_uimm3=0 & dbgdtrrx_el0 { export dbgdtrrx_el0; }
 CopReg: dbgdtrtx_el0 is l=1 & Op0=2 & Op1_uimm3=3 & CRn=0 & CRm=5 & Op2_uimm3=0 & dbgdtrtx_el0 { export dbgdtrtx_el0; }
 
+@include "AARCH64_sysregs_cop.sinc"
+
 CopReg: "sreg("^Op0^", "^Op1_uimm3^", c"^CRn^", c"^CRm^", "^Op2_uimm3^")" is l=1 & Op0 & Op1_uimm3 & CRn & CRm & Op2_uimm3 { tmp:8 = UnkSytemRegRead(Op0:1, Op1_uimm3:1, CRn:1, CRm:1, Op2_uimm3:1); export tmp; }
 CopReg: "sreg("^Op0^", "^Op1_uimm3^", c"^CRn^", c"^CRm^", "^Op2_uimm3^")" is l=0 & Op0 & Op1_uimm3 & CRn & CRm & Op2_uimm3 & Rt_GPR64 { tmp:8 = UnkSytemRegWrite(Op0:1, Op1_uimm3:1, CRn:1, CRm:1, Op2_uimm3:1, Rt_GPR64); export tmp; }
 

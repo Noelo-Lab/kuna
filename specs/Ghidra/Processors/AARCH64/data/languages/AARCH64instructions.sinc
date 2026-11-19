@@ -412,6 +412,8 @@ define register offset=0x1800 size=8
 	dbgvcr32_el2
 ];
 
+@include "AARCH64_sysregs.sinc"
+
 define register offset=0x3000 size=4 contextreg;
 
 # value loaded from memory to store in register
@@ -3993,13 +3995,7 @@ with : ImmS_ImmR_TestSet=1 {
 is b_0031=0xe7ffdeff
 unimpl
 
-:NotYetImplemented_UNK2
-is b_0031=0x00200820
-unimpl
-
-:NotYetImplemented_UNK3
-is b_0031=0x00200c20
-unimpl
-
 } # end with ImmS_ImmR_TestSet=1
+
+@include "AARCH64_apple.sinc"
 
