@@ -572,7 +572,7 @@ pub fn record(arch: &mut Architecture, entry: &Address, fd: &Funcdata) {
             (fc.get_name().to_string(), fc.get_op())
         };
         let Some(e) = entry_for(&name) else { continue };
-        let storage = fd.get_call_specs(i).final_input_storage().to_vec();
+        let storage = declared_or_recovered_storage(fd.get_call_specs(i));
         let Some(model) = slot_storage(e, arch) else {
             if trace() {
                 eprintln!("[callbacktype] {name}: no model storage");
@@ -652,6 +652,20 @@ pub fn record(arch: &mut Architecture, entry: &Address, fd: &Funcdata) {
     if let Some(own) = own {
         ledger.own.insert(me, own);
     }
+}
+
+/// Where each argument of a call lives: the declared parameters' storage when
+/// the callee's prototype is declared, since no trial ran to record any, else
+/// what the call's recovery recorded.
+fn declared_or_recovered_storage(fc: &crate::fspec::FuncCallSpecs) -> Vec<(Address, int4)> {
+    let proto = fc.proto();
+    if !proto.is_input_locked() {
+        return fc.final_input_storage().to_vec();
+    }
+    (0..proto.num_params())
+        .filter_map(|i| proto.get_param(i))
+        .map(|p| (p.get_address(), p.get_size()))
+        .collect()
 }
 
 /// What every direct call in this body reads of its callee's return: the low

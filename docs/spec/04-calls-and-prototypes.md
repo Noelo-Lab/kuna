@@ -7709,7 +7709,10 @@ the wrong one would land on whatever the caller passed as its data pointer.
 constant a declared callback slot carried: the CALL's input at the slot's
 storage, resolved through the forms a global address takes on the way to a call
 (a plain constant, the `PTRSUB` off the constant spacebase a `&DAT_3a72` is
-built as, and the copies, casts and zero-extensions between them). Anything
+built as, and the copies, casts and zero-extensions between them). Where each
+argument lives is what the call's own recovery recorded; when the entry point
+has a declared prototype (the type library's `qsort`, a `--types` header's) no
+recovery ran, and the storage is the declared parameters'. Anything
 else — a load, a phi, arithmetic on a base — is not one address and is not
 recorded. Of the addresses it did record, `record` also files the ones this
 body used somewhere no callback argument accounts for: every operation that
