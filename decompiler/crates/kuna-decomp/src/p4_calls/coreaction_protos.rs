@@ -628,7 +628,9 @@ impl Action for ActionDefaultParams {
                         let virtual_model = crate::kuna_calleereginputs::virtual_call(data, data.get_call_specs(i).get_op());
                         let model = crate::kuna_armfloatreturn::helper_model(&arch, data.get_call_specs(i).get_name())
                             .or_else(|| crate::kuna_swiftcall::throwing_call(data, data.get_call_specs(i).get_op()))
+                            .or_else(|| crate::kuna_swiftinfer::error_passing_call(data, data.get_call_specs(i).get_op()))
                             .or(bound_model)
+                            .or_else(|| crate::kuna_swiftinfer::callee_model(data, i))
                             .or_else(|| crate::kuna_swiftcall::indirect_call(data, data.get_call_specs(i).get_op()))
                             .or_else(|| virtual_model.clone())
                             .or_else(|| data.get_call_specs(i).callee_reg_model().cloned())
