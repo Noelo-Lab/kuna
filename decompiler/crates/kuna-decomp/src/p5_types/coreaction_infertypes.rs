@@ -390,6 +390,7 @@ fn call_output_type_local(data: &Funcdata, op: OpId, opcode: OpCode) -> Option<R
         return crate::p4_calls::kuna_passthrough::tail_return_type(data, op, size)
             .or_else(|| crate::p4_calls::kuna_slotargs::declared_result_type(data, op, fc, size))
             .or_else(|| crate::p4_calls::kuna_callrettype::stated_return_type(data, op, fc))
+            .or_else(|| crate::kuna_swiftinfer::pair_output_type(data, op))
             .or_else(|| crate::p4_calls::kuna_narrowret::stated_type(data, op, fc, size))
             .or_else(|| crate::kuna_floatreg::jump_result_type(data, op, size));
     }

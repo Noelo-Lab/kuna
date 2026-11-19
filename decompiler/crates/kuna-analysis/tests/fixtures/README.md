@@ -2409,6 +2409,23 @@ long a1, swift.type_metadata *metadata_A, void *witness_A_Hashable)`, `long
 sigfix.Triple.sum()(sigfix.Triple self)` and `void sigfix.Triple.bump(_:)(long a0,
 sigfix.Triple *self)`.
 
+### `swift_infer_elf` — Swift functions the metadata does not bind (`swiftcall`)
+
+`swift_infer_elf` (x86-64 ELF, 11 KB, stripped) is the fixture for
+`tests/stages/kuna-swiftinfer.xml`. Its source `swift_infer_elf.swift` returns an
+escaping closure from `makeAdder`, whose partial-apply forwarder (0x24b0)
+reads the captured `Box` through r13; `usePair` (0x2840) reads both words of
+the `(Int, Int)` that `split` returns; `forward` (0x28a0) calls the throwing
+`mayThrow` with its own r12 and tests r12 after. Built with the swiftly 6.3
+toolchain:
+
+```bash
+swiftc -O -module-name inferfix -parse-as-library swift_infer_elf.swift -o swift_infer_syms_elf
+llvm-strip --strip-all -o swift_infer_elf swift_infer_syms_elf
+```
+
+SHA-256: `27e0e70757ea530825ba3e489f012c93566fa02f730e99b928ed951bd65ab162`.
+
 ### `swift_call_helper_elf` — a mutating struct call after a runtime helper (`swiftcall`)
 
 `swift_call_helper_elf` (x86-64 ELF, 17 KB, with symbols) is the fixture for the

@@ -1292,6 +1292,10 @@ pub struct Architecture {
     /// (kuna `swiftcall`) Per-image cache of whether a callee's body leaves
     /// `swiftself` unread ([`crate::kuna_swiftcall::seed_self_readers`]).
     pub kuna_swift_self_first_cache: std::collections::HashMap<(int4, uintb), bool>,
+    /// (kuna `swiftcall`) Whether the body at an entry reads `swiftself`
+    /// before writing it, other than to save it
+    /// ([`crate::kuna_swiftinfer::seed`]).
+    pub kuna_swift_self_reads: std::collections::BTreeMap<(int4, uintb), bool>,
     /// (kuna `argclobber`) Per-image cache of the forwarding resolution
     /// ([`crate::kuna_calleedeadarg::resolve_forward_transfer`]) — what a value
     /// the caller leaves in a register can reach once the callee at `(space
@@ -2488,6 +2492,7 @@ impl Architecture {
             kuna_callee_dead_cache: std::collections::HashMap::new(),
             kuna_callee_memory_cache: std::collections::HashMap::new(),
             kuna_swift_self_first_cache: std::collections::HashMap::new(),
+            kuna_swift_self_reads: std::collections::BTreeMap::new(),
             kuna_callee_forward_cache: std::collections::HashMap::new(),
             kuna_protoorder_types: std::collections::HashMap::new(),
             kuna_vfp_variadic: RefCell::new(None),
