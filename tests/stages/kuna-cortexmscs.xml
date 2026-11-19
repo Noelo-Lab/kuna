@@ -1,0 +1,68 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    The Cortex-M System Control Space as typed volatile globals
+    (`option cortexmscs on|off`).
+
+    Stage P1 external-refinement. The fixture is a Cortex-M3 startup in the
+    shape of a vendor HAL (cortexm3_scs.c: SystemInit, NVIC and SysTick setup
+    against the fixed register addresses), linked as an ELF whose build
+    attributes state the M profile.
+
+    Pass 1 (`cortexmscs off`, the bug): the registers are raw addresses and an
+    interrupt enable is a store through a computed pointer.
+    Pass 2 (default, the fix): each register is a member of its CMSIS-named
+    block, and STIR, which lies beyond the block that names it, is a global of
+    its own.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/cortexm3_scs.elf</com>
+  <com>option cortexmscs off</com>
+  <com>read symbols</com>
+  <com>load function SystemInit</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function nvic_enable</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/cortexm3_scs.elf</com>
+  <com>read symbols</com>
+  <com>load function SystemInit</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function nvic_enable</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function nvic_priority</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function systick_config</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function trace_enable</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function main</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="CORTEXMSCS #1: off, VTOR is a raw address" min="1" max="1">dat_e000ed08 = 0x8000000;</stringmatch>
+<stringmatch name="CORTEXMSCS #2: off, the interrupt enable is a computed store" min="1" max="1">\(a0 &gt;&gt; 5\) \* 4 \+ -0x1fff1f00\)</stringmatch>
+<stringmatch name="CORTEXMSCS #3: on, VTOR is a member store" min="1" max="1">SCB\.VTOR = 0x8000000;</stringmatch>
+<stringmatch name="CORTEXMSCS #4: on, the coprocessor access register is read and written as a member" min="1" max="1">SCB\.CPACR \|?= (SCB\.CPACR \| )?0xf00000;</stringmatch>
+<stringmatch name="CORTEXMSCS #5: on, the interrupt enable indexes the set-enable words" min="1" max="1">NVIC\.ISER\[a0 &gt;&gt; 5\] =</stringmatch>
+<stringmatch name="CORTEXMSCS #6: on, a constant interrupt enable is element 0" min="1" max="1">NVIC\.ISER\[0\] = 0x40;</stringmatch>
+<stringmatch name="CORTEXMSCS #7: on, byte-wide priority registers index by interrupt" min="1" max="1">NVIC\.IP\[a0\] = a1 &lt;&lt; 4;</stringmatch>
+<stringmatch name="CORTEXMSCS #8: on, SysTick is a block of its own" min="1" max="1">SysTick\.LOAD = a0 - 1U;</stringmatch>
+<stringmatch name="CORTEXMSCS #9: on, the system handler priority bytes index as an array" min="1" max="1">SCB\.SHPR\[0xb\] = 0xf0;</stringmatch>
+<stringmatch name="CORTEXMSCS #10: on, the debug blocks are typed" min="1" max="1">DWT\.CYCCNT = 0;</stringmatch>
+<stringmatch name="CORTEXMSCS #11: on, the debug exception and monitor control register is a member" min="1" max="1">CoreDebug\.DEMCR \|?=</stringmatch>
+<stringmatch name="CORTEXMSCS #12: on, a register beyond its block is its own global" min="1" max="1">SCB_STIR = 0x25;</stringmatch>
+</decompilertest>

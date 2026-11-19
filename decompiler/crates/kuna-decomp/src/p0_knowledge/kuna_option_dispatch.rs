@@ -944,6 +944,7 @@ kuna_options! { self, p1;
     "flirt" => on_off!(analysis_flirt, "FLIRT signature matcher Listing consumer"),
     "rtti" => on_off!(analysis_rtti, "MSVC RTTI / vftable class-name recovery pass"),
     "uefi" => on_off!(analysis_uefi, "UEFI module markup pass"),
+    "cortexmscs" => on_off!(analysis_cortexmscs, "Cortex-M System Control Space globals"),
     "itaniumrtti" => {
         on_off!(analysis_itaniumrtti, "Itanium (GCC/Clang) RTTI / vtable recovery pass")
     },

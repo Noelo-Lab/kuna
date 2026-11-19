@@ -2267,7 +2267,8 @@ mod tests {
         // and kuna-opaquepredicate / a comparison constant for every input folds under opaquepredicate
         // and kuna-stubbinds / a stripped Mach-O stub is named from the chained bind on its slot (option stubbinds)
         // and kuna-uefi / an EFI-subsystem PE gets the UEFI entry prototype, table types and GUID names
-        assert_eq!(count, 849, "corpus file count drifted");
+        // and kuna-cortexmscs / Cortex-M System Control Space registers are members of typed volatile globals
+        assert_eq!(count, 850, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

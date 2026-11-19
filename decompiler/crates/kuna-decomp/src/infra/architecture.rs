@@ -1821,6 +1821,9 @@ pub struct Architecture {
     /// (kuna) Gate the UEFI module markup pass (`uefi`); default on. PE-only,
     /// and inert unless the image's Subsystem is an EFI one.
     pub analysis_uefi: bool,
+    /// (kuna) Gate the Cortex-M System Control Space globals (`cortexmscs`);
+    /// default on. Inert unless the image is a Cortex-M one.
+    pub analysis_cortexmscs: bool,
     /// (kuna, NOVEL) Gate the Itanium (GCC/Clang) RTTI + vtable recovery pass
     /// (`itaniumrtti`); default **off**. Ghidra has no Itanium RTTI analyzer at all
     /// — its `RttiAnalyzer` is Microsoft-only and its GCC class recovery is
@@ -2655,6 +2658,7 @@ impl Architecture {
             analysis_flirt: false,
             analysis_rtti: false,
             analysis_uefi: false,
+            analysis_cortexmscs: false,
             analysis_itaniumrtti: false,
             analysis_panicloc: false,
             analysis_aif: crate::kuna_aif::AifMode::Off,
@@ -3010,6 +3014,7 @@ impl Architecture {
         self.analysis_rtti = true; // MSVC RTTI / vftable recovery (PE-only pass)
         self.analysis_panicloc = true; // (kuna) default-on, Rust images only: the pass is registered for a rustc-detected image and the XML datatest path never runs an analysis pass (0/675)
         self.analysis_uefi = true; // UEFI module markup (EFI-subsystem PE only)
+        self.analysis_cortexmscs = true; // Cortex-M System Control Space globals (Cortex-M images only)
         self.analysis_itaniumrtti = true; // (kuna, NOVEL) Itanium RTTI / vtable recovery (ELF-only pass)
         self.analysis_aif = crate::kuna_aif::AifMode::Off; // Aggressive Instruction Finder gap-walk default-off; `aggressive` sets `strict`
         // (kuna, GH-299) AIF bracketed-candidate reject -- default-ON; inert without `aif`.

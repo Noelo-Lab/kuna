@@ -1609,6 +1609,14 @@ $ kuna decompile-all stm32.bin --svd STM32F401.svd
 [kuna firmware] SVD STM32F401: 52 peripherals, 85 interrupts
 ```
 
+The registers every Cortex-M core has need no SVD: on a Cortex-M image
+(a probed dump, `--target ARM:LE:32:Cortex` or `ARM:LE:32:v8-m`, or an ELF
+whose build attributes state the M profile) the System Control Space is
+declared from built-in CMSIS-Core layouts, so `SCB.VTOR`, `NVIC.ISER[n]`,
+`SysTick.CTRL` and the MPU, FPU, DWT, ITM, FPB and debug registers read as
+members (`--option cortexmscs off` leaves the raw addresses). An SVD
+peripheral at one of those addresses replaces the built-in block.
+
 ### Firmware containers
 
 A file that is not an object file is also tried as a firmware container

@@ -389,6 +389,12 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // `aif/mod.rs` + docs/history/analysis-port-log.md.
     ];
 
+    // (kuna `cortexmscs`) The Cortex-M System Control Space as typed volatile
+    // globals (a raw image is stashed by its bootstrap). Registered for every
+    // format; the pass self-gates on a Cortex-M language or M-profile ELF build
+    // attributes.
+    passes.push(Box::new(crate::cortexmscs::CortexMScsPass));
+
     // (kuna, NOVEL) S1 Itanium (GCC/Clang) RTTI + vtable recovery
     // (ItaniumRttiPass): on an ELF, discover every `_ZTI…` typeinfo object from the
     // dynamic relocations that name a `__cxxabiv1` typeinfo vtable (the anchor that
