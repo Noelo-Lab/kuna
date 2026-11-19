@@ -5834,11 +5834,16 @@ fn commit_analysis_output(
         let stack_idx = prog.arch().manage().get_stack_space().map(|sp| sp.get_index());
         if let (Some(model), Some(stack_idx)) = (model, stack_idx) {
             let mut map: std::collections::BTreeMap<u64, usize> = std::collections::BTreeMap::new();
+            let void = prog.arch().types().get_type_void().ok();
             for site in &out.format_sites {
                 let mut res = Vec::new();
+                let mut pieces = site.pieces.clone();
+                if pieces.outtype.is_none() {
+                    pieces.outtype = void.clone();
+                }
                 if model
                     .assign_parameter_storage(
-                        &site.pieces,
+                        &pieces,
                         &mut res,
                         true,
                         prog.arch().types(),

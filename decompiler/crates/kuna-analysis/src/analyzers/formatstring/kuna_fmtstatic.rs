@@ -253,6 +253,16 @@ impl AnalysisPass for FormatStringStaticPass {
                 }
             }
         }
+        let inputs = super::kuna_fmtcallee::Inputs {
+            ctx,
+            listing,
+            model: &model,
+            abi,
+            gettext: &gettext,
+            imports: &imports,
+            dbg,
+        };
+        out.format_sites.extend(super::kuna_fmtcallee::infer(&inputs, &mut lifts));
         out.format_sites.sort_by(|a, b| (a.func, a.callpoint).cmp(&(b.func, b.callpoint)));
         out.format_sites.dedup_by(|a, b| a.func == b.func && a.callpoint == b.callpoint);
         out
@@ -263,7 +273,7 @@ impl AnalysisPass for FormatStringStaticPass {
 /// the parameters follow. `None` when the model refuses, or when a hidden
 /// return-buffer parameter shifts the map (no format function has one, so the
 /// shift is a reason to decline rather than to compensate).
-fn assign(
+pub(super) fn assign(
     model: &Rc<ProtoModel>,
     pieces: &PrototypePieces,
     arch: &Architecture,
@@ -281,7 +291,7 @@ fn assign(
 /// Read the NUL-terminated byte string at `vma` out of the load image. Bails on
 /// the first unreadable byte, on an empty string, and on non-UTF-8 — the same
 /// contract as the decompile-time reader.
-fn read_cstring(arch: &Architecture, vma: uintb) -> Option<String> {
+pub(super) fn read_cstring(arch: &Architecture, vma: uintb) -> Option<String> {
     const MAX: u64 = 4096;
     let space = Rc::clone(arch.manage().get_default_code_space()?);
     let mut bytes: Vec<u8> = Vec::new();
@@ -298,7 +308,7 @@ fn read_cstring(arch: &Architecture, vma: uintb) -> Option<String> {
 
 /// The constant in `store` at `call_site`, or `None` if it is not constant in
 /// the call's own basic block.
-fn resolve_at(
+pub(super) fn resolve_at(
     ctx: &AnalysisCtx,
     listing: &Listing,
     call_site: u64,
@@ -319,6 +329,37 @@ fn resolve_at(
         return None;
     }
     Some(value)
+}
+
+/// How wide the value `store` holds at `call_site` is, as its last write in the
+/// call's own block made it: the width of a narrower write, or of the input a
+/// zero extension widened (x86-64 writes a 32-bit result as `zext` of it).
+/// `None` when the block does not write `store`.
+pub(super) fn written_width(
+    ctx: &AnalysisCtx,
+    listing: &Listing,
+    call_site: u64,
+    store: &Key,
+    lifts: &mut LiftCache,
+) -> Option<u32> {
+    let (space, off, size) = *store;
+    let hi = off.wrapping_add(u64::from(size));
+    let mut width = None;
+    for vma in backward_block(listing, call_site) {
+        let lifted = lift(ctx, vma, lifts)?;
+        for (opc, out, ins) in &lifted.ops {
+            let Some((s, o, sz)) = out.as_ref().and_then(key_of) else { continue };
+            if s != space || o >= hi || off >= o.wrapping_add(u64::from(sz)) {
+                continue;
+            }
+            width = Some(if (s, o, sz) == *store && *opc == OpCode::CPUI_INT_ZEXT {
+                ins.first().map_or(sz, |v| v.size)
+            } else {
+                sz.min(size)
+            });
+        }
+    }
+    width
 }
 
 /// The instructions of `call_site`'s basic block that precede it, oldest first.
@@ -361,7 +402,7 @@ fn backward_block(listing: &Listing, call_site: u64) -> Vec<u64> {
 
 /// Does the instruction at `from` fall through into `to` (as opposed to
 /// branching there)?
-fn falls_into(listing: &Listing, from: u64, to: u64) -> bool {
+pub(super) fn falls_into(listing: &Listing, from: u64, to: u64) -> bool {
     listing.instruction_at(from).is_some_and(|i| i.fall_through == Some(to))
         && from + u64::from(listing.instruction_at(from).map_or(0, |i| i.len)) == to
 }
@@ -377,22 +418,22 @@ fn previous_instruction(listing: &Listing, vma: u64) -> Option<u64> {
 }
 
 /// A constant-folding key: one storage location.
-type Key = (usize, u64, u32);
+pub(super) type Key = (usize, u64, u32);
 
 /// One lifted instruction per address, for the whole pass.
-type LiftCache = HashMap<u64, Rc<Lifted>>;
+pub(super) type LiftCache = HashMap<u64, Rc<Lifted>>;
 
-fn key_of(vn: &VarnodeData) -> Option<Key> {
+pub(super) fn key_of(vn: &VarnodeData) -> Option<Key> {
     let space = vn.space.as_ref()?;
     Some((space.get_index() as usize, vn.offset, vn.size))
 }
 
 /// The p-code of one instruction, captured whole (opcode, output, inputs).
-struct Lifted {
-    ops: Vec<(OpCode, Option<VarnodeData>, Vec<VarnodeData>)>,
+pub(super) struct Lifted {
+    pub(super) ops: Vec<(OpCode, Option<VarnodeData>, Vec<VarnodeData>)>,
     /// Did the decode succeed? A failed one folds to nothing rather than to the
     /// partial op list it emitted.
-    ok: bool,
+    pub(super) ok: bool,
 }
 
 impl PcodeEmit for Lifted {
@@ -443,7 +484,7 @@ fn fold(
 
 /// The p-code of the instruction at `vma`, lifted once per binary: neighbouring
 /// call sites share most of their window.
-fn lift(ctx: &AnalysisCtx, vma: u64, lifts: &mut LiftCache) -> Option<Rc<Lifted>> {
+pub(super) fn lift(ctx: &AnalysisCtx, vma: u64, lifts: &mut LiftCache) -> Option<Rc<Lifted>> {
     if let Some(l) = lifts.get(&vma) {
         return Some(Rc::clone(l));
     }
@@ -477,7 +518,7 @@ fn writes_before_transfer(ops: &[(OpCode, Option<VarnodeData>, Vec<VarnodeData>)
 /// The fold key for one assigned parameter/return slot: its storage address plus
 /// the WIDTH of the type that occupies it (a register space's own address size
 /// is not the datum's width).
-fn storage_key(p: &ParameterPieces) -> Option<Key> {
+pub(super) fn storage_key(p: &ParameterPieces) -> Option<Key> {
     let space = p.addr.get_space()?;
     let size = p.type_.as_ref()?.get_size();
     if size == 0 {
@@ -531,6 +572,11 @@ fn step(
             let bits = vars[0].size.saturating_mul(8).min(64);
             sign_extend(v, bits)
         }),
+        OpCode::CPUI_INT_XOR | OpCode::CPUI_INT_SUB
+            if vars.len() == 2 && key_of(&vars[0]).is_some() && key_of(&vars[0]) == key_of(&vars[1]) =>
+        {
+            Some(0)
+        }
         OpCode::CPUI_INT_ADD
         | OpCode::CPUI_INT_SUB
         | OpCode::CPUI_INT_MULT
@@ -643,7 +689,7 @@ fn kill_overlapping(known: &mut HashMap<Key, u64>, k: &Key) {
 
 /// Is `[vma, vma + len)` inside one section the image initializes and does not
 /// write? A string in `.data` is whatever the program last stored there.
-fn in_readonly_section(ctx: &AnalysisCtx, vma: u64, len: u64) -> bool {
+pub(super) fn in_readonly_section(ctx: &AnalysisCtx, vma: u64, len: u64) -> bool {
     use object::{Object, ObjectSection, SectionKind};
     ctx.file.sections().any(|s| {
         let start = s.address();
