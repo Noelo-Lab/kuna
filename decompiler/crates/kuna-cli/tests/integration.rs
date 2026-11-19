@@ -208,6 +208,9 @@ mod dos_pcmemory_cli;
 #[path = "dos_mz_cli.rs"]
 mod dos_mz_cli;
 
+#[path = "wasm_cli.rs"]
+mod wasm_cli;
+
 #[path = "dos_exit_cli.rs"]
 mod dos_exit_cli;
 

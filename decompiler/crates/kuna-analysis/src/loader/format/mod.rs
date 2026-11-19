@@ -15,6 +15,7 @@ pub mod elf;
 pub mod elf_userland;
 pub mod macho;
 pub mod pe;
+pub mod wasm;
 
 /// Provenance for a symbol emitted by the format resolver.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

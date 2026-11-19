@@ -515,6 +515,14 @@ offsets in Go loads, stores and returns. Integer-address reconstruction remains
 a control. The CLI companion builds both authored assembly fixtures and runs
 the complete emitted functions with Go pointer checks and full-array canaries.
 
+`kuna-wasm-module.xml` loads three committed WebAssembly modules (the #1634
+module, a clang module and a rustc module; sources and `build.sh` in
+`tests/fixtures/wasm/`) and checks the lowered bodies' C: parameters and
+arithmetic, a loop over linear memory, a `br_table` switch, imports called with
+their declared arguments, `call_indirect` through the named table, a
+`__stack_pointer` frame as stack locals, and `i64`/`f64` arithmetic. Its CLI
+companion compiles the printed C beside the C source and compares results.
+
 `kuna-elf-unwind-pcread.xml` checks an authored PowerPC PC-relative literal read:
 with FDE ownership disabled it remains a call; with ownership enabled the
 complete body returns `a0 * 3 + 7`. The fixture generator is

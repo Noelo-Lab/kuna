@@ -1,0 +1,61 @@
+<decompilertest>
+<!--
+    Kuna #1634: a WebAssembly module is an input (P1 program prep, P2 lift;
+    always on, no option). The loader lays the module out as a flat image and
+    lowers each stack-machine body to register form; Wasm.slaspec lifts it.
+    One pass: there is no earlier output to compare with, the module did not
+    load. Fixtures and their sources: tests/fixtures/wasm/ (build.sh).
+
+    mul_add.wasm is the issue's module. calls.wasm (clang) covers a loop over
+    linear memory, a br_table switch, a data global, imports with their
+    declared signatures, an indirect call through the element table, a frame
+    on the linear-memory stack, and i64 and f64 arithmetic. indirect.wasm
+    (rustc) covers a loop around a call_indirect.
+-->
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/wasm/mul_add.wasm</com>
+  <com>option ctypes on</com>
+  <com>read symbols</com>
+  <com>load function mul_add</com><com>decompile</com><com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/wasm/calls.wasm</com>
+  <com>option ctypes on</com>
+  <com>read symbols</com>
+  <com>load function sum</com><com>decompile</com><com>print C</com>
+  <com>load function pick</com><com>decompile</com><com>print C</com>
+  <com>load function bump</com><com>decompile</com><com>print C</com>
+  <com>load function apply</com><com>decompile</com><com>print C</com>
+  <com>load function frame</com><com>decompile</com><com>print C</com>
+  <com>load function mix</com><com>decompile</com><com>print C</com>
+  <com>load function favg</com><com>decompile</com><com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/wasm/indirect.wasm</com>
+  <com>option ctypes on</com>
+  <com>read symbols</com>
+  <com>load function apply_all</com><com>decompile</com><com>print C</com>
+  <com>load function collatz</com><com>decompile</com><com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="wasm #1: the issue's function, parameters in wasm operand order" min="1" max="1">return a1 \* a0 \+ a2;</stringmatch>
+<stringmatch name="wasm #2: three i32 parameters and an i32 result" min="1" max="1">^int mul_add\(int a0,int a1,int a2\)</stringmatch>
+<stringmatch name="wasm #3: a load through a parameter makes it a pointer" min="1" max="1">^int sum\(int \*a0,unsigned int a1\)</stringmatch>
+<stringmatch name="wasm #4: the loop over linear memory" min="1" max="1">v3 = \*a0\+\+ \+ v3;</stringmatch>
+<stringmatch name="wasm #5: br_table is a switch" min="1" max="1">switch\(a0\) \{</stringmatch>
+<stringmatch name="wasm #6: a case calls the import with its one declared argument" min="1" max="1">v1 = a1 - ext_log\(a1\);</stringmatch>
+<stringmatch name="wasm #7: a data global in linear memory is read and written at its address" min="1" max="1">dat_10020 = \*\(int \*\)\(\(dat_10020 &amp; 7\) \* 4 \+ 0x10000\) \+ dat_10020;</stringmatch>
+<stringmatch name="wasm #8: call_indirect indexes the named table" min="1" max="1">v1 = table0\[\*\(int \*\)\(a0 \* 4 \+ 0x10024\)\];</stringmatch>
+<stringmatch name="wasm #9: the indirect call passes both arguments" min="1" max="1">return \(\*v1\)\(a1,a2\);</stringmatch>
+<stringmatch name="wasm #10: __stack_pointer is the stack pointer, so the buffer is a stack local" min="1" max="1">int v1 \[3\]; // .*stack - 0x10</stringmatch>
+<stringmatch name="wasm #11: the frame's address is the import's argument" min="1" max="1">ext_fill\(\(unsigned int\)v1,a0\);</stringmatch>
+<stringmatch name="wasm #12: no stack-pointer arithmetic is left in a body" min="0" max="0">__stack_pointer</stringmatch>
+<stringmatch name="wasm #13: i64 rotate and multiply" min="1" max="1">return a1 \* -0x61c8864680b583ebULL \^ rotl\(a0,7\);</stringmatch>
+<stringmatch name="wasm #14: f64 parameters, arithmetic and result" min="1" max="1">return \(a0 \+ a1\) \* 0.5;</stringmatch>
+<stringmatch name="wasm #15: rustc call_indirect in a loop" min="3" max="3">= \(\*table0\[v7\]\)\(v6</stringmatch>
+<stringmatch name="wasm #16: rustc loop with a select" min="1" max="1">\} while \(a0 != 1\);</stringmatch>
+<stringmatch name="wasm #17: every body was lowered" min="0" max="0">unsupported\(\)</stringmatch>
+</decompilertest>
