@@ -2272,6 +2272,8 @@ mod tests {
         // and kuna-switchnext-a64 / a byte-masked last table ends at the next function's table (option switchextent)
         // and kuna-swiftstr / a Swift string literal's two constant words print as the literal
         // and kuna-swiftstrcsel / a Swift literal's two words are paired along one branch arm
+
+        // and kuna-swiftruntime / the Swift runtime's entry points carry their header signatures
         assert_eq!(count, 854, "corpus file count drifted");
     }
 

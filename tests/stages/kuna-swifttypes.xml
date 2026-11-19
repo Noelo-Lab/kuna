@@ -67,7 +67,7 @@ c3
   <com>quit</com>
 </script>
 <stringmatch name="swifttypes off: the getter takes no self and reads a raw offset" min="1" max="1">vtable#6\.getter\(void\)</stringmatch>
-<stringmatch name="swifttypes off: the field is an offset off an unnamed register" min="1" max="1">\(v2 \+ 0x60\)</stringmatch>
+<stringmatch name="swifttypes off: the field is an offset off an unnamed register" min="1" max="1">return \*\(unsigned long \*\)\(v2 \+ 0x60\);</stringmatch>
 <stringmatch name="swifttypes off: the accessor returns a bare constant" min="1" max="1">return ZEXT816\(0x5318\);</stringmatch>
 <stringmatch name="swifttypes on: the getter takes the class's self" min="1" max="1">typefix\.Sprite\.vtable#6\.getter\(typefix\.Sprite \*self\)</stringmatch>
 <stringmatch name="swifttypes on: the stored property is a field of the layout" min="1" max="1">return self-&gt;count;</stringmatch>
