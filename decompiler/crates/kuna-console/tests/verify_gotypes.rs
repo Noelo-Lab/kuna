@@ -385,9 +385,8 @@ fn check_named_struct(arch: &str) {
     // private to the factory).
     let text =
         kuna_decomp::kuna_structdefs::definition_text(&pt, kuna_decomp::kuna_langtypes::SpellCtx::OFF);
-    // The C renderer sanitizes the dotted tag (`struct main_Point`) and spells
-    // the string header field through its shell.
-    for needle in ["main_Point".to_string(), format!("int{width} X"), format!("int{width} Y"), "go.string Tag".to_string()] {
+    // The C renderer uses declared aliases for the tag and the string-header member type.
+    for needle in ["main_Point".to_string(), format!("int{width} X"), format!("int{width} Y"), "go_string Tag;".to_string()] {
         assert!(text.contains(&needle), "definition renders {needle}; got:\n{text}");
     }
 
