@@ -593,12 +593,15 @@ fn recover_go_functions(file: &object::File) -> Vec<GoFunc> {
 /// closing `etext` entry), when the table carries one.
 fn recover_go_table(file: &object::File) -> (Vec<GoFunc>, Option<u64>) {
     let img = ImageBytes::new(file);
-    let Some(header_vma) = locate_header(file, &img) else {
+    let Some((h, _)) = recover_go_header(file, &img) else {
         return (Vec::new(), None);
     };
-    let Some(mut h) = parse_header(&img, header_vma) else {
-        return (Vec::new(), None);
-    };
+    (decode_functions(&img, &h), functab_end(&img, &h))
+}
+
+fn recover_go_header(file: &object::File, img: &ImageBytes) -> Option<(PcHeader, u64)> {
+    let header_vma = locate_header(file, img)?;
+    let mut h = parse_header(img, header_vma)?;
     // Go 1.26 stopped storing the text base here (the runtime uses `moduledata.text`
     // instead), so `entryoff` is resolved against the module's `moduledata.text`,
     // falling back to the lowest code section when no moduledata is found.
@@ -606,7 +609,7 @@ fn recover_go_table(file: &object::File) -> (Vec<GoFunc>, Option<u64>) {
         h.text_start =
             moduledata_text(file, &h, header_vma).unwrap_or_else(|| text_section_start(file));
     }
-    (decode_functions(&img, &h), functab_end(&img, &h))
+    Some((h, header_vma))
 }
 
 /// The closing functab entry (`ftab[nfunc]`): the PC one past the module's last
@@ -694,9 +697,13 @@ impl AnalysisPass for GoPclntabPass {
         // entry is admitted only inside executable bytes, so a corrupt table cannot
         // mint a function over data.
         let exec = ctx.image.expect("load-time analysis image").executable_ranges();
-        let (funcs, text_end) = recover_go_table(ctx.file);
-        let mut funcs: Vec<GoFunc> = funcs.into_iter().filter(|f| exec_end(&exec, f.addr).is_some()).collect();
+        let img = ImageBytes::new(ctx.file);
+        let Some((h, header_vma)) = recover_go_header(ctx.file, &img) else { return out };
+        let text_end = functab_end(&img, &h);
+        let mut funcs: Vec<GoFunc> = decode_functions(&img, &h)
+            .into_iter().filter(|f| exec_end(&exec, f.addr).is_some()).collect();
         funcs.sort_unstable_by_key(|f| f.addr);
+        out.models = kuna_goabi0::model_facts(ctx, &funcs, &h, header_vma);
         let addrs: Vec<u64> = funcs.iter().map(|f| f.addr).collect();
         for (i, f) in funcs.into_iter().enumerate() {
             // The next entry (the functab's closing `etext` for the last function) is
@@ -715,6 +722,8 @@ impl AnalysisPass for GoPclntabPass {
     }
 }
 
+mod kuna_goabi0;
+pub(crate) mod kuna_goabi0_leaf;
 pub mod kuna_gonoreturn;
 
 #[cfg(test)]

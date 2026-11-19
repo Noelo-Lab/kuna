@@ -5237,6 +5237,13 @@ fn commit_model_facts(
     let mut models = (*prog.arch().loader_proto_models).clone();
     for fact in facts {
         let Some(model) = prog.arch().get_model(fact.model).cloned() else { continue };
+        let model = if let Some(inputs) = &fact.leaf_stack_inputs {
+            let Some(limit) = inputs.proven_limit(prog.arch(), fact.func_addr) else { continue };
+            let Some(bounded) = model.kuna_bound_stack_inputs(limit) else { continue };
+            Rc::new(bounded)
+        } else {
+            model
+        };
         models.insert((code_space.get_index(), fact.func_addr), model);
     }
     prog.arch_mut().loader_proto_models = Rc::new(models);
