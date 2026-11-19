@@ -1283,6 +1283,14 @@ recipe, toolchain and SHA-256s in `macho_ptrslots_arm64.provenance`. Pinned by
 `loadimage_object.rs (macho_chained_fixups_are_applied_to_the_image)`,
 `chained.rs (fixture_rebases_and_binds)` and `tests/verify_dynrelocs_gate.rs`.
 
+### `macho_bindslots_arm64` — data pointers bound to imports
+
+`macho_bindslots_arm64` (arm64, 33 KB) has two `__DATA,__data` pointers bound by
+chained fixups to the undefined `_ext_handler` and `_ext_counter`, with no
+indirect-symbol entry naming either slot, local symbols stripped. Built from
+`macho_bindslots_arm64.c`, whose header has the commands. The witness that a
+bound slot is named for its import (`tests/stages/kuna-machobinds.xml`).
+
 ### `macho_arm64_outlined` — MachineOutliner fragments
 
 `macho_arm64_outlined` (plain arm64, ~33 KB) is `macho_arm64_outlined.s` linked

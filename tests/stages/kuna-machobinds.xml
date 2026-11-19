@@ -1,0 +1,47 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<!--
+    Mach-O bound pointer slots named for their import.
+
+    Issue: kuna named an import slot only through the LC_DYSYMTAB
+    indirect-symbol table (and an arm64e __auth_ptr slot through its bind), so
+    any other pointer slot dyld fills through a bind record - a C function
+    pointer or data pointer initialized to an import, a vtable entry - read as
+    an anonymous dat_<addr>: `(*dat_100004000)()`.
+
+    Stage / sub-stage: P1 environment-binding, the Mach-O bound-slot pass
+    (`kuna-analysis/src/loader/kuna_machobinds.rs (MachoBindSlotsPass)`),
+    committed at `read symbols`. The names go to the symbol table only, never
+    the function inventory.
+
+    The XML wrapper only supplies the harness architecture. The fixture
+    `macho_bindslots_arm64` (built from `macho_bindslots_arm64.c`, local
+    symbols stripped) has two __DATA,__data pointers bound by chained fixups
+    to `_ext_handler` and `_ext_counter`; `dispatch` calls through the first
+    and reads through the second. `importdata` renders a data read through an
+    import slot as the import.
+
+    The call is `ext_handler()` and the read `ext_counter`; neither slot keeps
+    its `dat_` name, and neither joins the function list.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_bindslots_arm64</com>
+  <com>option importdata on</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>load function _dispatch</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="MACHOBINDS #1: the call through the bound slot names its import" min="1" max="1">= ext_handler\(\);</stringmatch>
+<stringmatch name="MACHOBINDS #2: the read through the bound slot names its import" min="1" max="1">return ext_counter \+</stringmatch>
+<stringmatch name="MACHOBINDS #3: no bound slot keeps its anonymous name" min="0" max="0">dat_10000400[08]</stringmatch>
+<stringmatch name="MACHOBINDS #4: a bound slot is not a function" min="0" max="0">0x10000400[08] ext_</stringmatch>
+</decompilertest>

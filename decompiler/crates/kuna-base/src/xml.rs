@@ -2233,7 +2233,8 @@ mod tests {
         // and kuna-assert-format-isolate / a constant's format set by its instruction, and an isolated local
         // and kuna-machotruncated / a Mach-O cut short still loads the bytes it has
         // and kuna-outlinedinline / MachineOutliner fragments inlined into their callers (option outlinedinline)
-        assert_eq!(count, 794, "corpus file count drifted");
+        // and kuna-machobinds / a Mach-O pointer slot a bind fills is named for its import
+        assert_eq!(count, 795, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

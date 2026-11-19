@@ -43,6 +43,12 @@ const MAX_BINDS: usize = 1 << 20;
 /// `LC_DYLD_INFO` Mach-O. Empty for a chained-fixup image (which has no bind
 /// opcodes), a non-Mach-O, or an unparsable program.
 pub fn resolve_dyld_info_binds(file: &object::File, bytes: &[u8]) -> HashMap<u64, Rc<str>> {
+    resolve_dyld_info_bind_slots(file, bytes).into_iter().map(|(slot, (name, _))| (slot, name)).collect()
+}
+
+/// As [`resolve_dyld_info_binds`], with each bind's addend: the slot holds
+/// `&symbol + addend` at run time.
+pub fn resolve_dyld_info_bind_slots(file: &object::File, bytes: &[u8]) -> HashMap<u64, (Rc<str>, i64)> {
     if file.format() != object::BinaryFormat::MachO {
         return HashMap::new();
     }
@@ -53,7 +59,7 @@ pub fn resolve_dyld_info_binds(file: &object::File, bytes: &[u8]) -> HashMap<u64
     }
 }
 
-fn collect<Mach>(bytes: &[u8], ptr_size: u64) -> HashMap<u64, Rc<str>>
+fn collect<Mach>(bytes: &[u8], ptr_size: u64) -> HashMap<u64, (Rc<str>, i64)>
 where
     Mach: MachHeader<Endian = object::Endianness>,
 {
@@ -88,17 +94,21 @@ fn replay(
     program: &[u8],
     segments: &[u64],
     ptr_size: u64,
-    out: &mut HashMap<u64, Rc<str>>,
+    out: &mut HashMap<u64, (Rc<str>, i64)>,
     left: &mut usize,
 ) -> Option<()> {
     let mut p = 0usize;
     let mut addr: Option<u64> = None;
-    let mut symbol: Rc<str> = Rc::from("");
-    let bind = |addr: &mut Option<u64>, symbol: &Rc<str>, out: &mut HashMap<u64, Rc<str>>, left: &mut usize| -> Option<()> {
+    let mut symbol: (Rc<str>, i64) = (Rc::from(""), 0);
+    let bind = |addr: &mut Option<u64>,
+                symbol: &(Rc<str>, i64),
+                out: &mut HashMap<u64, (Rc<str>, i64)>,
+                left: &mut usize|
+     -> Option<()> {
         *left = left.checked_sub(1)?;
         if let Some(a) = *addr {
-            if !symbol.is_empty() {
-                out.insert(a, Rc::clone(symbol));
+            if !symbol.0.is_empty() {
+                out.insert(a, symbol.clone());
             }
             *addr = Some(a.wrapping_add(ptr_size));
         }
@@ -114,11 +124,11 @@ fn replay(
                 uleb(program, &mut p)?;
             }
             BIND_OPCODE_SET_ADDEND_SLEB => {
-                sleb(program, &mut p)?;
+                symbol.1 = sleb(program, &mut p)?;
             }
             BIND_OPCODE_SET_SYMBOL_TRAILING_FLAGS_IMM => {
                 let end = program.get(p..)?.iter().position(|&b| b == 0)?;
-                symbol = Rc::from(String::from_utf8_lossy(&program[p..p + end]).as_ref());
+                symbol.0 = Rc::from(String::from_utf8_lossy(&program[p..p + end]).as_ref());
                 p += end + 1;
             }
             BIND_OPCODE_SET_SEGMENT_AND_OFFSET_ULEB => {
@@ -216,10 +226,26 @@ mod tests {
         ];
         let mut out = HashMap::new();
         replay(&program, &[0x1000, 0x2000], 8, &mut out, &mut MAX_BINDS.clone());
-        assert_eq!(out.get(&0x2010).map(Rc::as_ref), Some("_a"));
-        assert_eq!(out.get(&0x2020).map(Rc::as_ref), Some("_a"));
-        assert_eq!(out.get(&0x20a8).map(Rc::as_ref), Some("_b"));
+        assert_eq!(out.get(&0x2010).map(|b| b.0.as_ref()), Some("_a"));
+        assert_eq!(out.get(&0x2020).map(|b| b.0.as_ref()), Some("_a"));
+        assert_eq!(out.get(&0x20a8).map(|b| b.0.as_ref()), Some("_b"));
         assert_eq!(out.len(), 3);
+    }
+
+    /// `SET_ADDEND_SLEB` stays in force for the binds after it.
+    #[test]
+    fn an_addend_rides_with_its_binds() {
+        let program = [
+            BIND_OPCODE_SET_SYMBOL_TRAILING_FLAGS_IMM, b'_', b'a', 0,
+            BIND_OPCODE_SET_SEGMENT_AND_OFFSET_ULEB, 0,
+            BIND_OPCODE_DO_BIND,
+            BIND_OPCODE_SET_ADDEND_SLEB, 0x10,
+            BIND_OPCODE_DO_BIND,
+        ];
+        let mut out = HashMap::new();
+        replay(&program, &[0x1000], 8, &mut out, &mut MAX_BINDS.clone());
+        assert_eq!(out.get(&0x1000).map(|b| b.1), Some(0));
+        assert_eq!(out.get(&0x1008).map(|b| b.1), Some(0x10));
     }
 
     /// The classic x86-64 `macho_objc` fixture binds `__objc_empty_cache` (the
@@ -262,7 +288,7 @@ mod tests {
         let mut out = HashMap::new();
         replay(&program, &[0x1000], 8, &mut out, &mut MAX_BINDS.clone());
         assert_eq!(out.len(), 0x800);
-        assert!(out.values().all(|n| Rc::ptr_eq(n, out.values().next().unwrap())));
+        assert!(out.values().all(|n| Rc::ptr_eq(&n.0, &out.values().next().unwrap().0)));
     }
 
     /// A run longer than 65,536 slots (ld64 folds every same-symbol, same-stride
@@ -281,8 +307,8 @@ mod tests {
         let mut out = HashMap::new();
         assert_eq!(replay(&program, &[0x1000], 8, &mut out, &mut MAX_BINDS.clone()), Some(()));
         assert_eq!(out.len(), 70_001);
-        assert_eq!(out.get(&(0x1000 + 69_999 * 32)).map(Rc::as_ref), Some("_a"));
-        assert_eq!(out.get(&(0x1000 + 70_000 * 32)).map(Rc::as_ref), Some("_b"));
+        assert_eq!(out.get(&(0x1000 + 69_999 * 32)).map(|b| b.0.as_ref()), Some("_a"));
+        assert_eq!(out.get(&(0x1000 + 70_000 * 32)).map(|b| b.0.as_ref()), Some("_b"));
     }
 
     /// A program that rebinds one slot over and over spends the budget though

@@ -2824,6 +2824,25 @@ commit and `ActionDeindirect` then treat the slot exactly like a `__got` slot.
 A bind with a nonzero addend points inside the import rather than at it, so it
 is skipped.
 
+Every other pointer slot a bind fills is named too
+(`decompiler/crates/kuna-analysis/src/loader/kuna_machobinds.rs (MachoBindSlotsPass)`,
+Mach-O only, always on). A C function pointer or data pointer initialized to an
+import, a vtable entry or a Swift witness slot lies in an ordinary data
+section: no indirect-symbol entry lists it, and only a chained-fixup bind or a
+classic `LC_DYLD_INFO` bind opcode says which import it holds, so a call
+through it read `(*dat_100004000)()`. The pass takes each addend-free bind of
+either kind outside the symbol-pointer sections the indirect-symbol walk names
+(`S_NON_LAZY_SYMBOL_POINTERS`, `S_LAZY_SYMBOL_POINTERS`) and outside
+`__auth_ptr`, `__objc_*` and `__cfstring` (whose own passes name their slots).
+It reports the slot as an `externref` range and its import, one leading `_`
+stripped, as an import-slot name: the channel `elfgotimports` uses for ELF GOT
+slots, a `FunctionSymbol` in the symbol table that `query_function` resolves
+for a call through the slot (`ActionDeindirect`) or, with `importdata`, a read
+through it, and that never joins the function inventory. The classic bind
+replay keeps each bind's `SET_ADDEND_SLEB` addend for this
+(`dyldinfo.rs (resolve_dyld_info_bind_slots)`). Pinned by
+`tests/stages/kuna-machobinds.xml`.
+
 Two arch-marker passes paint **decode context** rather than names, because a wrong
 decode mode is unrecoverable downstream. `decompiler/crates/kuna-analysis/src/loader/arm_markers.rs
 (ArmMarkerPass)` (`arm_markers`) ports ARM's `ARM_ElfExtension`/`ArmSymbolAnalyzer`:
