@@ -825,9 +825,22 @@ impl IfaceCommandAction for IfcKunaAssert {
             Dispatch::Retype => Err(engine_unavailable(
                 "parse_type + Scope::retypeSymbol (IfaceDecompData::readSymbol) for kassert type-propagation",
             )),
-            Dispatch::Isolate => Err(engine_unavailable(
-                "Symbol::setIsolated (IfaceDecompData::readSymbol) for kassert merge-aggressiveness",
-            )),
+            Dispatch::Isolate => {
+                let Some(name) = tokens.first().cloned() else {
+                    return Err(IfaceError::parse("merge-aggressiveness assertion needs <name>"));
+                };
+                let dcp = dcp_mut(status)?;
+                let maxduplicates = kuna_decomp::kuna_dynamichashmax::MAX_DUPLICATES;
+                dcp.local_symbol_fd(&name)?;
+                let (Some(fd), arch) = (dcp.fd.as_mut(), dcp.conf.as_ref().map(|p| p.arch())) else {
+                    return Err(IfaceError::execution("no function selected"));
+                };
+                crate::kuna_hightarget::isolate_local(fd, &name, maxduplicates, arch)
+                    .map_err(IfaceError::execution)?;
+                status.out(&applied_line);
+                self.assert_log.borrow_mut().push(record);
+                Ok(())
+            }
             Dispatch::Rename => {
                 if tokens.len() < 2 {
                     return Err(IfaceError::parse(
@@ -1627,6 +1640,11 @@ pub fn register_kuna_commands(status: &mut IfaceStatus) {
     status.register_com(
         Box::new(crate::ifacedecomp::IfcOverrideBytes),
         &["override", "bytes"],
+    );
+    // (kuna) Nor this: where an indirect call goes is the reader's knowledge.
+    status.register_com(
+        Box::new(crate::ifacedecomp::IfcOverrideIndirect),
+        &["override", "indirect"],
     );
 }
 

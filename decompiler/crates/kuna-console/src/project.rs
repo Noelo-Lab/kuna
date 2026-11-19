@@ -748,7 +748,7 @@ pub fn decompile_pulled(
                 flow_overrides: &flow_ovr,
                 mapped_params: &seed.mapped_params,
             },
-            &[],
+            &seed.proto_overrides,
         );
         prog.arch_mut().kuna_record_names = false;
         // (kuna `--assert`) The symbol-scoped second pass. `name`/`type` name a
@@ -783,7 +783,7 @@ pub fn decompile_pulled(
                             flow_overrides: &flow_ovr,
                             mapped_params: &carried_params,
                         },
-                        &[],
+                        &seed.proto_overrides,
                     )
                     .result;
                     prog.arch_mut().kuna_prior_names = Default::default();
@@ -800,6 +800,18 @@ pub fn decompile_pulled(
                 // (kuna `--assert`) The flow overrides the follower REFUSED are only
                 // known now: `function_seed` recorded `applied` when it seeded them.
                 crate::assertions::record_rejected_flow_overrides(
+                    prog,
+                    &name,
+                    single_target,
+                    &fd,
+                );
+                crate::assertions::record_rejected_callee_overrides(
+                    prog,
+                    &name,
+                    single_target,
+                    &fd,
+                );
+                crate::assertions::record_unbound_call_prototypes(
                     prog,
                     &name,
                     single_target,
@@ -970,6 +982,9 @@ pub fn decompile_pulled(
                 match rendered {
                     Ok((code, variables, types, (globals, field_calls, call_declarations, callwide_prototypes), proto, line_mappings, callee_hints, detail, (pointerargs, warnings), stack_objects)) => {
                     crate::assertions::verify_printed(prog, &fd, &code, &replayed);
+                    if replay {
+                        crate::assertions::verify_formats(prog, &fd, &name, single_target);
+                    }
                     sink(FuncResult {
                         name,
                         address,

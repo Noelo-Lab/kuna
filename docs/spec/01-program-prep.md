@@ -5574,6 +5574,49 @@ every other binary's pass list is byte-identical to before the pass existed):
     The 1.9 MB app: 2,897 → 1,221 argument-less stub calls; an 84 MB app sample: 32 → 4, 60 of
     265 stub calls change shape (`setTransitioningDelegate:(v3, delegate)`,
     `presentViewController:animated:completion:(vc, (UIViewController *)v10, 1, NULL)`).
+  - **A dyld shared cache image**
+    (`decompiler/crates/kuna-analysis/src/analyzers/objc/kuna_objccache.rs (CacheReader)`,
+    `decompiler/crates/kuna-analysis/src/loader/kuna_dyldcache.rs (objc_selector_base)`,
+    kuna, no option: it rides `objc`): an image rebuilt out of a cache keeps
+    its own sections, but the cache builder moved the rest of its metadata. A
+    small method list holds its selectors as offsets from the cache's *selector
+    base* (`entsizeAndFlags & 0x40000000`) and, under `0x20000000`, its type
+    strings too. The strings and the `__objc_selrefs` targets live in libobjc's
+    `__OBJC_RO` region, outside the image. `class_ro_t.baseMethods` with its low
+    bit set names a relative list of lists (`entsize 8`; each entry's `>> 16` is
+    the list's offset from the entry, its low 16 bits an image index), the shape
+    of preattached categories. When the image under analysis was loaded from a
+    cache (`AnalysisCtx::image_path` opens it), `MachoImage::with_cache` reads
+    every address outside the image's own sections through the cache, one slid
+    page at a time with pointers unslid, each page read once and each read
+    charged to the walk budget. `methods.rs (read_small_direct)` resolves the
+    two flags from the base and `classt.rs (method_lists)` walks the list of
+    lists. The base comes from the `ObjCOptimizationHeader` the cache header
+    names (`objcOptsOffset`; `relativeMethodSelectorBaseAddressOffset` at
+    +0x30, an offset from the cache base), else from libobjc's `objc_opt_t`
+    (`__objc_opt_ro`, version 16 on, the same field at +0x28 as a signed offset
+    from the record) on an older cache. A method whose IMP lies outside the image, a
+    category of another image preattached to this image's class, is named at
+    that address as an import (`AnalysisOutput::import_slot_names`) and makes
+    no function. Class, super and protocol reference slots hold plain pointers
+    into other images, so the same reads name them; the cache's hash tables are
+    not consulted.
+    Two readings apply to every Mach-O, and a cache is where they show. The
+    entry size of a method list is `entsizeAndFlags & 0xfffc`: the two low bits
+    are the uniqued and sorted flags, which the cache builder sets on disk, and
+    reading them as size walks 15-byte records. And the linker merges the
+    categories of a class into one, so the metadata names only the merged
+    category while the symbol keeps the original (`-[NSObject(NSKeyValueCoding)
+    valueForKeyPath:]` against a metadata `NSObject(Foundation)`); a symbol at
+    the IMP that spells the same class and selector is the label
+    (`sections.rs (MachoImage::method_symbol)`), which is also what lets the
+    prototype reach a function the symbol table already named.
+    Foundation out of an iOS 16.4 arm64e cache: 3,979 `objc_msgSend$<sel>` stubs
+    named (none before), every selector, class, super and protocol reference
+    slot named (6,050, 566, 481 and 33), `self` and `_cmd` typed on its methods.
+    `tests/stages/kuna-dyldcacheobjc.xml` runs the two synthetic caches of
+    `dyld_cache_objc.py`, one with the header and one with only the
+    `objc_opt_t`.
   Decoding every method's encoding asks the type factory for `objc_object *`
   once per argument, and the factory finds a type by name with a linear scan of
   every type it holds; with thousands of class structs interned that scan is no

@@ -2228,7 +2228,13 @@ mod tests {
         // and gh1674-subpiece-shadow-wide-const / a subpiece shadow 8 bytes into a 16-byte constant reads 0
         // and kuna-wrapadd / wrapadd wraps a widened four-byte sum before its extension
         // and kuna-rustversion-commit / a Rust image without .comment gets its release from /rustc/<commit>/ paths
-        assert_eq!(count, 789, "corpus file count drifted");
+        // and kuna-sharedpush-regparm / a declared list its callee's register reads contradict shares no push
+        // and kuna-acleintrinsics / AArch64 MTE tag instructions and barriers print as ACLE intrinsics
+        // and kuna-assert-callee / a stated destination makes an indirect call direct
+        // and kuna-assert-format-isolate / a constant's format set by its instruction, and an isolated local
+        // and kuna-callproto / one call through a pointer is given its own prototype
+        // and kuna-dyldcacheobjc / a dyld shared cache image's ObjC metadata is read through the cache
+        assert_eq!(count, 795, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
