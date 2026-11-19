@@ -246,6 +246,9 @@ pub struct Override {
     flowoverride: BTreeMap<Address, uint4>,
     /// `/GS` checker call sites recognized after SSA and replayed on restart.
     msvc_cookie_calls: BTreeSet<Address>,
+    /// (kuna `spsolve`) Call sites the stack-pointer solve found not to return,
+    /// replayed on the restart it asks for.
+    no_return_calls: BTreeSet<Address>,
     /// (kuna `formatstring`) Call points whose prototype override is a resolved
     /// format string, installed with an open tail it sheds after P4.
     format_calls: BTreeSet<Address>,
@@ -278,6 +281,7 @@ impl Override {
         self.multistagetargets.clear();
         self.flowoverride.clear();
         self.msvc_cookie_calls.clear();
+        self.no_return_calls.clear();
         self.format_calls.clear();
         self.persist_calls_off = false;
         self.outputtypelock.clear();
@@ -403,6 +407,18 @@ impl Override {
     /// persistent global at every call?
     pub fn persist_calls_off(&self) -> bool {
         self.persist_calls_off
+    }
+
+    /// (kuna `spsolve`) Does the call at `addr` not return, by the stack-pointer
+    /// solve of an earlier pass?
+    pub fn is_no_return_call(&self, addr: &Address) -> bool {
+        self.no_return_calls.contains(addr)
+    }
+
+    /// (kuna `spsolve`) Record that the call at `addr` does not return; `false`
+    /// when it was already recorded.
+    pub fn insert_no_return_call(&mut self, addr: Address) -> bool {
+        self.no_return_calls.insert(addr)
     }
 
     /// Has the late `/GS` recognizer seeded this exact call site?

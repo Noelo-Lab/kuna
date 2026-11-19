@@ -2566,3 +2566,13 @@ before its block for `take`, and `unsettled`@`0x4012c0` calls the `__stdcall`
 block for `take`. Source and recipe in `byvalreuse_pe_i386.s`: clang 17 and lld-link 17 (the
 `swift:6.0-jammy` Docker image ships both) reproduce it byte for byte; Ubuntu's clang 14
 does not. Used by `tests/stages/kuna-repframecopy.xml` (#14-#21).
+
+`spsolve_elf_i386` (i386 ELF, 9 KB, static, no libc) is the witness for
+`option spsolve`: `caller_sret` calls `mk`, which returns a pair through a hidden
+pointer and ends in `ret 4`, a different number of times on its two paths;
+`caller_ptr` calls `scale` (`ret 12`) through a pointer and reads its own second
+argument afterwards; `caller_die` calls `die`, which leaves through a pointer and
+never comes back, right before the block its other path enters with twelve more
+bytes reserved. Source and build line in `spsolve_elf_i386.s` (GCC 15.3.0,
+GNU ld 2.45.1; SHA-256 `fb21f698b5b6c97467f8c9c07febb23e3767e06cdb803fb9a9b6fde0d679737f`).
+Used by `tests/stages/kuna-spsolve.xml`.

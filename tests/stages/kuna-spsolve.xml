@@ -1,0 +1,73 @@
+<decompilertest>
+<binaryimage arch="x86:LE:32:default:gcc">
+<!--
+    kuna issue testcase: an x86-32 function's stack-pointer deltas, solved for
+    the calls that pop arguments or do not return (`option spsolve on|off`,
+    default on).
+
+    Issue:      under a compiler spec whose default model states its extrapop
+                (x86gcc.cspec: __cdecl, 4), every call is taken to pop its
+                return address and nothing else. A callee that pops more, or a
+                call that does not return, leaves two paths reaching a block
+                with different stack pointers: the stack pointer stays a
+                variable, arguments are written through it and calls lose
+                them.
+    Stage:      P4 calls - ActionExtraPopSetup (`p4_calls/kuna_spsolve.rs`).
+    P0 assert:  option spsolve on|off (default on).
+
+    spsolve_elf_i386 (source and build line in spsolve_elf_i386.s):
+    caller_sret calls mk, which returns a pair through a hidden pointer and
+    ends in `ret 4`, once on one path and twice on the other, then sum on the
+    block both reach. caller_ptr calls scale, which ends in `ret 12`, through a
+    pointer, and reads its own second argument afterwards. caller_die calls
+    die, which leaves through a pointer and never comes back, right before the
+    block the other path enters with twelve more bytes reserved.
+
+    Pass 1 (`option spsolve off`) reproduces the bug; pass 2 is the default.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/spsolve_elf_i386</com>
+  <com>option spsolve off</com>
+  <com>read symbols</com>
+  <com>load function caller_sret</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function caller_ptr</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function caller_die</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/spsolve_elf_i386</com>
+  <com>read symbols</com>
+  <com>load function caller_sret</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function caller_ptr</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function caller_die</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="SPSOLVE #1: off, the stack pointer is a variable in two functions; on, in none" min="2" max="2">; // esp</stringmatch>
+<stringmatch name="SPSOLVE #2: off, the first call to the aggregate-returning callee loses its arguments" min="1" max="1">  mk\(\);</stringmatch>
+<stringmatch name="SPSOLVE #3: on, it takes the result buffer and the value" min="1" max="1">  mk\(v[0-9]+,a0\);</stringmatch>
+<stringmatch name="SPSOLVE #4: on, the second call takes the other buffer" min="1" max="1">    mk\(v[0-9]+,v1\);</stringmatch>
+<stringmatch name="SPSOLVE #5: off, the call both paths reach takes nothing; on, the first buffer" min="1" max="1">return sum\(v[0-9]+\) \+ v1;</stringmatch>
+<stringmatch name="SPSOLVE #6: off, the argument read after a callee that pops twelve bytes is an unassigned local" min="1" max="1">return v2 \+ v3 \+ v1;</stringmatch>
+<stringmatch name="SPSOLVE #7: on, it is the caller's second parameter" min="1" max="1">return v2 \+ a1 \+ v1;</stringmatch>
+<stringmatch name="SPSOLVE #8: off and on, the call through the pointer keeps its three arguments" min="2" max="2">\(\*dat_804a000\)\(a0,a1,3\);</stringmatch>
+<stringmatch name="SPSOLVE #9: on, the call that cannot have returned is marked" min="1" max="1">die\(\); // no-return</stringmatch>
+<stringmatch name="SPSOLVE #10: off, the argument of the call after it is stored through the stack pointer" min="1" max="1">\*\(int4 \*\)&amp;v[0-9]+\[-4\] = v1;</stringmatch>
+<stringmatch name="SPSOLVE #11: on, it is passed" min="1" max="1">report\(v1\);</stringmatch>
+<stringmatch name="SPSOLVE #12: off and on, the call that returns keeps its argument" min="2" max="2">v2 = check\(a0\);</stringmatch>
+</decompilertest>

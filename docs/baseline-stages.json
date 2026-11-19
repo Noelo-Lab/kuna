@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4815,
-    4815
+    4827,
+    4827
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2407,6 +2407,18 @@
     "data:SPLITSTOREKEEP #4: copy31 is five assignments and the non-overlapping control copy32 is four",
     "data:SPLITSTOREKEEP #5: the filed bug, the head store with the middle fifteen bytes gone, never appears",
     "data:SPLITSTOREKEEP #6: the control's word at dst+0x18 is a plain eight-byte local, so refinement never touched it",
+    "data:SPSOLVE #10: off, the argument of the call after it is stored through the stack pointer",
+    "data:SPSOLVE #11: on, it is passed",
+    "data:SPSOLVE #12: off and on, the call that returns keeps its argument",
+    "data:SPSOLVE #1: off, the stack pointer is a variable in two functions; on, in none",
+    "data:SPSOLVE #2: off, the first call to the aggregate-returning callee loses its arguments",
+    "data:SPSOLVE #3: on, it takes the result buffer and the value",
+    "data:SPSOLVE #4: on, the second call takes the other buffer",
+    "data:SPSOLVE #5: off, the call both paths reach takes nothing; on, the first buffer",
+    "data:SPSOLVE #6: off, the argument read after a callee that pops twelve bytes is an unassigned local",
+    "data:SPSOLVE #7: on, it is the caller's second parameter",
+    "data:SPSOLVE #8: off and on, the call through the pointer keeps its three arguments",
+    "data:SPSOLVE #9: on, the call that cannot have returned is marked",
     "data:STACK ADDRESS #1: default loses the output argument",
     "data:STACK ADDRESS #2: enabled retains the local address",
     "data:STACK ADDRESS #3: only the default folds the output to zero",

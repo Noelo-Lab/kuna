@@ -166,6 +166,9 @@ impl FlowEnvironment for ArchFlowEnv {
     fn query_call_extra_pop(&self, entry: &Address) -> Option<int4> {
         crate::p4_calls::kuna_calleepurge::callee_extra_pop(self.arch(), entry)
     }
+    fn query_call_returns(&self, entry: &Address) -> Option<crate::p4_calls::kuna_spsolve::CalleeReturns> {
+        crate::p4_calls::kuna_spsolve::callee_returns(self.arch(), entry)
+    }
     fn query_callind_cleanup(&self, call_at: &Address) -> u32 {
         crate::p4_calls::kuna_calleereginputs::callind_cleanup(self.arch(), call_at)
     }
@@ -187,6 +190,7 @@ impl FlowEnvironment for ArchFlowEnv {
     }
     fn query_call_no_return(&self, entry: &Address) -> bool {
         crate::p4_calls::kuna_calleenoreturn::is_no_return(self.arch(), entry)
+            || crate::p4_calls::kuna_spsolve::callee_never_returns(self.arch(), entry)
     }
     fn query_call_no_return_at(&self, entry: &Address, call: &Address, fallthrough: &Address) -> bool {
         crate::p4_calls::kuna_calleenoreturn::is_proxy_no_return_at(self.arch(), entry, call, fallthrough)

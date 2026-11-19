@@ -6909,6 +6909,9 @@ pub struct FuncCallSpecs {
     /// (kuna) The extrapop the direct callee's own returns state. See
     /// [`crate::p4_calls::kuna_calleepurge`].
     callee_purge: Option<int4>,
+    /// (kuna `spsolve`) What the direct callee's own returns do to the stack
+    /// pointer. See [`crate::p4_calls::kuna_spsolve`].
+    callee_returns: Option<crate::p4_calls::kuna_spsolve::CalleeReturns>,
     /// (kuna `calleeargs`) The stack-argument bytes the direct callee reads. See
     /// [`crate::p4_calls::kuna_calleestackargs`].
     callee_stack_arg_bytes: Option<crate::p4_calls::kuna_calleepurge::StackArgs>,
@@ -6962,6 +6965,7 @@ impl FuncCallSpecs {
             callee_reg_model: None,
             callee_arg_registers: 0,
             callee_purge: None,
+            callee_returns: None,
             callee_stack_arg_bytes: None,
             callee_moves_stack: false,
             callee_stack_window: None,
@@ -7392,6 +7396,17 @@ impl FuncCallSpecs {
     /// Record the extrapop the direct callee's own returns state.
     pub fn set_callee_purge(&mut self, extrapop: Option<int4>) {
         self.callee_purge = extrapop;
+    }
+
+    /// (kuna `spsolve`) What the direct callee's own returns do to the stack
+    /// pointer, if read.
+    pub fn callee_returns(&self) -> Option<crate::p4_calls::kuna_spsolve::CalleeReturns> {
+        self.callee_returns
+    }
+
+    /// (kuna `spsolve`) Record what the direct callee's own returns do.
+    pub fn set_callee_returns(&mut self, returns: Option<crate::p4_calls::kuna_spsolve::CalleeReturns>) {
+        self.callee_returns = returns;
     }
 
     /// The stack-argument bytes the direct callee reads, if measured.

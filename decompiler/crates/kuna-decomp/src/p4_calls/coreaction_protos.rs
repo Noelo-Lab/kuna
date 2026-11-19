@@ -745,6 +745,9 @@ impl Action for ActionExtraPopSetup {
         let sb_addr = Address::new(point_space, point.offset);
         let sb_size = point.size as int4;
 
+        if crate::p4_calls::kuna_spsolve::settle(data, &sb_addr, sb_size) {
+            return 0;
+        }
         let exact = crate::p4_calls::kuna_calleepurge::every_pop_settled(data);
         for i in 0..data.num_calls() {
             let mut extrapop = data.get_call_specs(i).get_extra_pop();
