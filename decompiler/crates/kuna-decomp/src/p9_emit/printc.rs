@@ -4822,7 +4822,9 @@ impl PrintC {
         self.emit.spaces(1, 0);
         self.context.push_mod();
         self.context.set_mod(modifiers::ONLY_BRANCH);
-        self.emit_block(fd, arch, cond_block);
+        if !self.emit_rust_option_condition(fd, arch, cond_block) {
+            self.emit_block(fd, arch, cond_block);
+        }
         self.context.pop_mod();
 
         // If the if has an unstructured-branch target, emit a goto/break/continue
