@@ -324,3 +324,18 @@ fn ordered(value: Value) -> Json {
 
 #[cfg(test)]
 mod tests;
+
+/// The application and its scoring must observe the same unmodified linked image.
+pub(crate) fn validate_application(args: &crate::decompile_all::Args) -> Result<(), String> {
+    use kuna_console::assertions::Body;
+    if args.raw_image || args.slice.is_some() || args.target.is_some() || args.isa.is_some()
+        || args.assertions.iter().any(|directive| matches!(directive.body, Body::Bytes { .. }))
+        || args.options.iter().any(|(name, _)| matches!(name.as_str(), "dyldimage" | "kernelcache"))
+    {
+        return Err("--apply-rust-signatures requires an unmodified object image without raw, slice, target, ISA, image-selection or bytes overrides".into());
+    }
+    if args.jobs != 1 || args.jobs_auto || args.jobs_worker.is_some() {
+        return Err("--apply-rust-signatures requires a single-process functions or decompile run".into());
+    }
+    Ok(())
+}
