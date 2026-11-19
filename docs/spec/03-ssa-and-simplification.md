@@ -3971,3 +3971,19 @@ Lifetime graph and SSA walks are bounded. A cumulative four-million-operation
 saved-frame span limit declines the function when its read proof is too expensive.
 Lowering follows completed live call-input recovery so native SP relationships
 are not replaced while real outgoing arguments are still being recovered.
+
+A variadic call's stack arguments stored through a lowered allocation are not
+visible to input recovery, so after lowering they are bound to the call
+directly. When the last named argument was itself read from the call's
+outgoing storage, the words stored contiguously above it are the tail. When
+the call already fills the prototype model's register slots, the tail sits at
+the model's own stack offsets from the stack pointer at the call operation
+(after any return-address push, so x86-64 starts at 8 and MIPS o32 at 16); only
+words that one whole store wrote since the previous call in the block, and that
+lie below the recovered object, are bound. A call short of its register slots
+takes its tail from the stack's first word only on Apple arm64, which passes
+every variadic argument on the stack. Two shapes keep the option-off spelling of
+their outgoing arguments: a tail stored below an object the compiler realigned
+inside the reservation (GCC's `(SP + 15) & ~15`), whose words stay unbound, and
+a call reached both with and without a reservation, whose outgoing words are
+written relative to the merged stack pointer.

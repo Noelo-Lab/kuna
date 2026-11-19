@@ -1003,18 +1003,19 @@ fn bind_variadic_tails(fd: &mut Funcdata, shifts: &[(VarnodeId, u64)]) {
 /// call short of them takes its tail from the stack's first word only on a
 /// target that passes every variadic argument on the stack (Apple arm64, by
 /// image family: the generic AArch64 model a Mach-O loads with still says
-/// registers). Only a model whose stack area begins at the stack pointer is
-/// read: an ABI that puts a return address or a home area in front of it
-/// shifts the callee's offsets by an amount the model does not state.
+/// registers), and only when that model's stack area begins at the stack
+/// pointer. The model's stack offsets are from the stack pointer at the call
+/// operation, after any return-address push, so a return address or home area
+/// in front of the stack arguments is already part of them.
 fn variadic_stack_slots(fd: &Funcdata, index: int4, from: usize) -> Vec<(i128, int4)> {
     const LIMIT: usize = 32;
     let arch = fd.get_arch();
     let proto = fd.get_call_specs(index).proto();
     let model = Rc::clone(proto.model());
     let Some(stack) = arch.manage().get_stack_space() else { return Vec::new() };
-    let mut stack_bases = model.input().get_entry().iter()
-        .filter(|e| Rc::ptr_eq(e.get_space(), stack)).map(|e| e.get_base());
-    if stack_bases.clone().min() != Some(0) || stack_bases.next().is_none() { return Vec::new(); }
+    let stack_base = model.input().get_entry().iter()
+        .filter(|e| Rc::ptr_eq(e.get_space(), stack)).map(|e| e.get_base()).min();
+    if stack_base.is_none() { return Vec::new(); }
     let mut pieces = crate::p4_calls::fspec::PrototypePieces::default();
     proto.get_pieces(&mut pieces);
     let Ok(named) = usize::try_from(pieces.first_var_arg_slot) else { return Vec::new() };
@@ -1036,7 +1037,7 @@ fn variadic_stack_slots(fd: &Funcdata, index: int4, from: usize) -> Vec<(i128, i
         // argument goes to the stack (Apple arm64; the loader records the
         // image family) lays the tail from the stack's first word, and only
         // when no variadic argument was recovered in a register.
-        if !arch.stack_alloc_stacked_varargs || from != named { return Vec::new(); }
+        if !arch.stack_alloc_stacked_varargs || from != named || stack_base != Some(0) { return Vec::new(); }
         return (0..LIMIT as i128).map(|k| (k * size as i128, size)).collect();
     }
     let bits = stack.get_addr_size() as i32 * 8;

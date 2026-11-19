@@ -63,3 +63,38 @@ fn windows_chkstk_reservations_lower_to_c_allocations() {
         assert_eq!(call.matches(',').count(), 1, "{fixture}: observe lost an argument\n{code}");
     }
 }
+
+/// x86-64 SysV passes the first six integer arguments in registers and the
+/// rest of a variadic call on the stack, at the prototype model's offsets from
+/// the stack pointer at the call (8 above it, past the return address). Stored
+/// below a runtime allocation, those words are bound to the call.
+#[test]
+fn sysv_variadic_tail_after_an_allocation_keeps_its_stack_arguments() {
+    if crate::common::process::optional_output(Command::new("clang").arg("--version")).is_none() {
+        return;
+    }
+    let root = crate::common::scratch_file("stackalloc-sysv-variadic", "dir");
+    std::fs::create_dir_all(&root).unwrap();
+    let source = root.join("sample.c");
+    let binary = root.join("sample.so");
+    std::fs::write(&source, concat!(
+        "__attribute__((noinline)) unsigned sink(unsigned count, ...) { return count; }\n",
+        "unsigned sample(unsigned n) { unsigned char *p = __builtin_alloca(n + 1); p[0] = 11;",
+        " return sink(10, p, n, 1u, 2u, 3u, 4u, 5u, 6u, 7u, 8u); }\n",
+    )).unwrap();
+    crate::common::process::required_output(Command::new("clang")
+        .args(["--target=x86_64-linux-gnu", "-O0", "-shared", "-fPIC", "-nostdlib", "-Wl,-Bsymbolic"])
+        .arg(&source).arg("-o").arg(&binary));
+    let output = Command::new(env!("CARGO_BIN_EXE_kuna"))
+        .env("KUNA_SPECS", crate::common::repo_root().join("specs"))
+        .arg("decompile").arg(&binary).arg("sample")
+        .args(["--option", "stackalloc", "on",
+            "--assert", "prototype sink unsigned int sink(unsigned int count,...)",
+            "--assert", "prototype sample unsigned int sample(unsigned int n)"])
+        .output().unwrap();
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    let code = String::from_utf8(output.stdout).unwrap();
+    assert!(code.contains("__builtin_alloca("), "the allocation was not recovered\n{code}");
+    let call = code.lines().find(|line| line.contains("sink(")).unwrap_or_default();
+    assert_eq!(call.matches(',').count(), 10, "sink must receive count, p, n and eight words\n{code}");
+}
