@@ -46,6 +46,7 @@ const IMAGE_COMMANDS: &[&str] = &[
     "xrefs",
     "strings",
     "crypto",
+    "blobs",
 ];
 
 /// What `--member` asked for.

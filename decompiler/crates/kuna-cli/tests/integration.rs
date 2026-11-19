@@ -162,6 +162,8 @@ mod caller_stack_cli;
 mod castnarrow_round_trip;
 #[path = "strlenscan_round_trip.rs"]
 mod strlenscan_round_trip;
+#[path = "repstring_round_trip.rs"]
+mod repstring_round_trip;
 
 #[path = "coff_strings.rs"]
 mod coff_strings;
@@ -173,12 +175,17 @@ mod coldentry_source_boundary;
 mod compact_switch_cli;
 #[path = "switch_self_loop_cli.rs"]
 mod switch_self_loop_cli;
+#[path = "indirect_dispatch.rs"]
+mod indirect_dispatch;
 
 #[path = "contiguous_byte_frame.rs"]
 mod contiguous_byte_frame;
 
 #[path = "cookie_pointer_return_271.rs"]
 mod cookie_pointer_return_271;
+
+#[path = "blobs_cli.rs"]
+mod blobs_cli;
 
 #[path = "crypto_cli.rs"]
 mod crypto_cli;

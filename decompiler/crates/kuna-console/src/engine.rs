@@ -31,6 +31,7 @@
 //! is precisely what `readLoaderSymbols` reads).
 
 mod lazy_inventory;
+mod kuna_signature_names;
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -3053,6 +3054,7 @@ impl ConsoleProgram {
         // Filter by the per-pass enable flags (default-on, set by the user's
         // `--option <id> on|off`), then merge the survivors in pass order.
         let mut merged = kuna_analysis::pass::AnalysisOutput::default();
+        let mut zero_size_data_names = Vec::new();
         let mut input_context_paints = Vec::new();
         for (id, out) in pending {
             if id == "input_isa" {
@@ -3185,6 +3187,10 @@ impl ConsoleProgram {
                             self.arch(),
                         ));
                     }
+                    if merged.fid_names.iter().any(|m| m.by_signature) {
+                        zero_size_data_names =
+                            kuna_analysis::flirt::kuna_elf_data_names::zero_size_data_names(&bytes);
+                    }
             }
         } else {
             // Both deferred passes off: drop the stash (no deferred build).
@@ -3217,7 +3223,7 @@ impl ConsoleProgram {
         suppress_pdb_interior_entries(self.arch(), &code_space, &mut merged);
         merged.context_paints.extend(input_context_paints);
         self.fid_databases = std::mem::take(&mut merged.fid_databases);
-        let committed = commit_analysis_output(self, &code_space, merged);
+        let committed = commit_analysis_output(self, &code_space, merged, zero_size_data_names);
         self.stash_float_scan();
         committed
     }
@@ -3517,6 +3523,7 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // `CFStringRef`). Registered here so `off` really skips it; `off`
         // renders the entry exactly as before.
         "cfstrings" => arch.analysis_cfstrings,
+        "blobs" => arch.analysis_blobs,
         // (kuna) PE PDB metadata recovery — default-OFF (output-changing: renames
         // stripped functions to their real PDB names). PE-only + externally gated on
         // a fingerprint-matching `.pdb` (the `kuna_pdb_path` env var). Registered
@@ -5298,6 +5305,7 @@ fn commit_analysis_output(
     prog: &mut ConsoleProgram,
     code_space: &Rc<AddrSpace>,
     out: kuna_analysis::pass::AnalysisOutput,
+    zero_size_data_names: Vec<String>,
 ) -> KunaResult<()> {
     use kuna_analysis::pass::SymKind;
 
@@ -5375,6 +5383,8 @@ fn commit_analysis_output(
         Vec::new()
     };
     let out = out;
+    let signature_names =
+        kuna_signature_names::SignatureNames::collect(prog, &out, zero_size_data_names);
 
     // Keep lookup identities even when richer debug information wins the map;
     // a spelling shared by several objects resolves to its lowest address.
@@ -5842,21 +5852,31 @@ fn commit_analysis_output(
         let name = names.into_iter().next()?;
         Some(FidMatch { addr, name, by_signature: true })
     }));
+    let mut signature_renames = Vec::new();
     for m in &fids {
         let addr = Address::new(Rc::clone(code_space), m.addr);
         let sid = prog.arch().symboltab.find_function_across_scopes(&addr).map(|(sid, _)| sid);
         if let Some(sid) = sid {
-            // The label gate: only rename an engine placeholder.
-            let is_placeholder = {
-                let cur = prog.arch().symboltab.symbol(sid).get_name();
-                is_generic_placeholder_name(cur)
-            };
-            if is_placeholder {
-                prog.arch_mut().symboltab.rename_symbol(sid, &m.name)?;
-                // Make the new name resolvable by `load function <name>` (the same
-                // name->addr binding the entry/symbol arms register).
-                prog.register_symbol(&m.name, addr);
+            if !is_generic_placeholder_name(prog.arch().symboltab.symbol(sid).get_name()) {
+                continue;
             }
+            if m.by_signature {
+                if !signature_names.blocks(prog, m.addr, &m.name) {
+                    signature_renames.push((addr, sid, m.name.as_str()));
+                }
+                continue;
+            }
+            prog.arch_mut().symboltab.rename_symbol(sid, &m.name)?;
+            prog.register_symbol(&m.name, addr);
+        }
+    }
+    let contested = kuna_signature_names::contested_addresses(signature_renames.iter().map(
+        |(addr, _, name)| (prog.thumb_normalized(addr.get_offset()), *name),
+    ));
+    for (addr, sid, name) in signature_renames {
+        if !contested.contains(&prog.thumb_normalized(addr.get_offset())) {
+            prog.arch_mut().symboltab.rename_symbol(sid, name)?;
+            prog.register_symbol(name, addr);
         }
     }
 
@@ -5911,6 +5931,7 @@ fn commit_analysis_output(
     //    produced for the same address (the measured witness: three adjacent
     //    unterminated literals read back as one 39-byte string). A bounded
     //    fact's `len` is the exact element count — there is no terminator.
+    let blob_extents = crate::kuna_blobdata::Extents::new(&out.blobs);
     let wide = if prog.arch().analysis_widestrings { out.wide_strings.as_slice() } else { &[] };
     let wide32 =
         if prog.arch().analysis_widestrings32 { out.wide_strings32.as_slice() } else { &[] };
@@ -5925,6 +5946,9 @@ fn commit_analysis_output(
         .chain(wide.iter().map(|f| (f, 2u32)))
         .chain(out.strings.iter().map(|f| (f, 1u32)))
     {
+        if blob_extents.contains(fact.addr) {
+            continue;
+        }
         let addr = Address::new(Rc::clone(code_space), fact.addr);
         // Conservative guard: skip an address that already carries a symbol (an
         // existing data/function symbol must not be shadowed). Ghidra likewise
@@ -6174,6 +6198,10 @@ fn commit_analysis_output(
             arch.symboltab.add_symbol_mapped(scope, &base, ct, &addr, &Address::new_invalid())?;
         arch.symboltab.set_attribute(sid, kuna_decomp::varnode::varnode_flags::namelock);
     }
+
+    // 4c. (kuna `blobs`) Embedded images and archives, last so every named or
+    //     typed claim on the address is kept.
+    crate::kuna_blobdata::commit(prog, code_space, &out.blobs, &mut data_names, num_spaces)?;
 
     // 4b. The C runtime declaration `elfmain` has for an executable's own
     //     `main`. Not parked on the symbol: the drive locks only its `int`

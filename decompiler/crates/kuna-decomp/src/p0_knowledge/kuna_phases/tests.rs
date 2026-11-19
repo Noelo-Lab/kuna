@@ -56,13 +56,13 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_221() {
-    assert_eq!(kuna_num_settables(), 221);
-    assert_eq!(SETTABLE_TABLE.len(), 221);
+fn settable_count_is_223() {
+    assert_eq!(kuna_num_settables(), 223);
+    assert_eq!(SETTABLE_TABLE.len(), 223);
 }
 
 #[test]
-fn tier_counts_are_46_core_120_transform_55_analysis() {
+fn tier_counts_are_46_core_121_transform_56_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -74,7 +74,7 @@ fn tier_counts_are_46_core_120_transform_55_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (46, 120, 55));
+    assert_eq!((core, transform, analysis), (46, 121, 56));
 }
 
 #[test]
@@ -415,6 +415,8 @@ fn option_values_live_value_present_for_76() {
         // with no codegen live reader (read console-side via kuna_live_value), like
         // the gates around it. Default-on, Mach-O-only.
         "cfstrings",
+        // (kuna) Embedded image and archive data symbols: a commit-side gate.
+        "blobs",
         // (kuna) The Swift type-layout arm's gate, read inside that pass.
         "swifttypes",
         // (kuna) Objective-C instance layouts — same commit-side gate as `objc`.
@@ -583,6 +585,11 @@ fn option_values_live_value_present_for_76() {
                             // reason.  Its live value is
                             // `Architecture::arm_constant_shift`.
                             | "armconstshift"
+                            // (kuna) `constselectjump` takes a MODE
+                            // (`off|reentry|on`) over an enum field, for the
+                            // same reason.  Its live value is
+                            // `Architecture::const_select_jump`.
+                            | "constselectjump"
                             // (kuna) `declorder` takes a MODE (`natural|name`)
                             // over an enum field, for the same reason.  Its live
                             // value is `Architecture::decl_order`.
@@ -844,7 +851,10 @@ fn option_values_live_value_present_for_76() {
     // field with no `live_field`.
     // 75 -> 76: +1 for `wrapadd` (live_field = wrap_add).
     // +1 for `acleintrinsics` (live_field = acle_intrinsics).
-    // 77 -> 78: +1 for `stackalloc` (live_field = stack_alloc).
+    // +1 for `repstring` (live_field = rep_string).
+    // -1: `constselectjump` became three-valued (off|reentry|on) over an
+    // enum field with no `live_field`.
+    // +1 for `stackalloc` (live_field = stack_alloc).
     assert_eq!(with_live, 78);
 }
 
@@ -1096,8 +1106,10 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `calleeargs`; its P4 row sits after `argclobber`.
     // +1 for `acleintrinsics`; its P9 row sits after `cortexmpriv`.
     // +1 for `kernelcache-boot`; its P1 row sits after `kernelcache`.
+    // +1 for `blobs`; its P1 row sits after `strings`.
+    // +1 for `repstring`; its P3 row sits after `strlenscan`.
     // +1 for `stackalloc`; its P3 row sits after `chkstkdarwin`.
-    assert_eq!(json.matches("},\n").count(), 220);
+    assert_eq!(json.matches("},\n").count(), 222);
 }
 
 #[test]

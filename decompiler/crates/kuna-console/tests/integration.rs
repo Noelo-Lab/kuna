@@ -557,3 +557,6 @@ mod verify_bootstrap;
 
 #[path = "mips_weak_imports.rs"]
 mod mips_weak_imports;
+
+#[path = "indirect_dispatch_flow.rs"]
+mod indirect_dispatch_flow;

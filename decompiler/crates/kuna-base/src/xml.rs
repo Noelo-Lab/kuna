@@ -2236,8 +2236,12 @@ mod tests {
         // and kuna-callproto / one call through a pointer is given its own prototype
         // and kuna-dyldcacheobjc / a dyld shared cache image's ObjC metadata is read through the cache
         // and kuna-dyldimage-merge / dyldimage A+B loads two dyld shared cache images as one program
+        // and kuna-blobs / an embedded PNG, GIF, JPEG, zip or gzip is returned by name
+        // and kuna-repstring, kuna-repstring-i386 / x86 rep movs/stos/cmpsb print as copy, fill and compare builtins
+        // and kuna-reentereddispatch / a re-entered dispatch keeps every step's store
+        // and kuna-dispatch-values / dispatcher return values survive narrowing and copies
         // and kuna-stackalloc / a runtime stack reservation lowers to __builtin_alloca under stackalloc on
-        assert_eq!(count, 797, "corpus file count drifted");
+        assert_eq!(count, 802, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

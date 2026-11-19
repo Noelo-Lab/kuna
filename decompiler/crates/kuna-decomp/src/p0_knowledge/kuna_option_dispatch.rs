@@ -317,7 +317,11 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "switchmodbound" => on_off!(switch_modulo_bound, "Switch modulo/and-mask index bound"),
-    "constselectjump" => on_off!(const_select_jump, "Constant-select indirect branch recovery"),
+    "constselectjump" => {
+        let (mode, msg) = crate::kuna_constselectjump::OptionConstSelectJump.apply(p1)?;
+        self.const_select_jump = mode;
+        Ok(msg)
+    },
     "switchguardbound" => on_off!(switch_guard_bound, "Switch CBRANCH-guard index bound"),
     "highsliceguard" => on_off!(highslice_guard, "High-byte slice jump-table guard"),
     "switchsharedcase" => on_off!(switch_shared_case, "Switch loop-carried-guard table"),
@@ -455,6 +459,7 @@ kuna_options! { self, p1;
     },
     "devectorize" => on_off!(devectorize_reduction, "Vectorized reduction re-roll"),
     "strlenscan" => on_off!(strlen_scan, "inline repnz scasb string length as strlen"),
+    "repstring" => on_off!(rep_string, "rep movs/stos/cmps loops as copy, fill and compare builtins"),
     "regionstructure" => {
         let (val, msg) =
             crate::p8_structure::region_structurer::OptionRegionStructure.apply(p1)?;
@@ -958,6 +963,7 @@ kuna_options! { self, p1;
         let state = if annotate { "on, annotated" } else if pass { "on" } else { "off" };
         Ok(format!("Mach-O __cfstring constant-string recovery pass turned {state}"))
     },
+    "blobs" => on_off!(analysis_blobs, "Embedded image and archive data symbols"),
     "swifttypes" => on_off!(analysis_swifttypes, "Swift type layouts from static metadata"),
     "objcivars" => {
         let val = on_or_off(p1)?;

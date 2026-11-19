@@ -2021,6 +2021,73 @@ missing from the output, exactly as it is for an x86-64 `jmp *%rax` of the same
 shape. A flow override at the return keeps its classification, and off restores
 the spec's RETURN.
 
+**(kuna) Re-entered indirect dispatches — `option constselectjump`, default
+`reentry`, `decompiler/crates/kuna-decomp/src/p2_lift/flow.rs (generate_ops_with_jumptables)`.**
+A dispatcher loop jumps through one register, and each step's code loads the
+next step's address and jumps back. Flow recovers the dispatch's first target
+before that code is decoded, so upstream keeps a one-entry table and drops every
+later step. Under `reentry` (and `on`), a recovered in-bounds, non-override
+singleton table is provisional. After each round of table following,
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_indirectreturn.rs (reentry_edges)`
+collects the new direct branches and fallthroughs into previously decoded
+instructions, reading only the dead list's tail: flow appends what it
+generates and moves injected or inlined sequences only next to other new
+operations. A recovered table destination that is already decoded is an edge
+as well, since following it creates no operations. A re-entered table is
+followed again on every round, so its transfer/destination pairs are followed
+once each; other tables keep upstream's re-following, which on x86-64 gnulib
+`quotearg_buffer_restyled` already shapes the output.
+
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_indirectreturn.rs (reaching_edges)`
+keeps, for each provisional dispatch, only the new edges whose destination
+reaches it over raw flow: fallthroughs, direct targets, every operation of an
+instruction with an internal relative branch, and recovered table targets. An
+edge elsewhere cannot bring the dispatch another value, so it costs that
+dispatch nothing. A round's walks visit at most 2^20 operations; past that,
+every dispatch counts as reached. When every reaching edge lands on the
+dispatch instruction itself,
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_returnbranch.rs (target_on_edge)`
+runs the edge's block and the dispatch instruction's own operations through
+the same `Prefix` evaluator as the entry proof, and a proven local constant
+extends the table without another partial decompile. Any other reaching edge
+requests a full recovery once the locally proved frontier drains. At most 128
+such retries run per flow; every dispatch still pending when they run out
+keeps its targets and carries `Re-entered indirect jump may have more targets`,
+once each. A retry admits the constant-select model whatever `constselectjump`
+says except `off`, because the re-entry already shows the targets are one
+function's. A retry's failed second stage keeps the old model and targets and
+reports that warning; outside re-entry a failed second stage restores its model
+silently, as upstream does. `off` records no provisional table and restores
+upstream's flow.
+
+A re-entered dispatch can also receive the caller's return address, and not
+always last: an early exit can reach it before the later steps are decoded.
+For such a retry the select model accepts values that are local constants or
+the incoming return, through the transfer's own mask, with its walk bounded by
+the table ceiling. The return becomes the table's last, unlabelled address: a
+synthetic RETURN that `FlowInfo::kuna_return_stub` plants one byte past the
+jump, where no instruction is decoded, and that the table marks as its default
+case. If an instruction is already decoded there, the return destination is
+dropped with `Indirect jump caller return overlaps decoded code` rather than
+flowing into that instruction. Whatever the dispatcher block does, including a
+delay-slot update, runs before that return exactly as it does before each case.
+Out-of-bounds or unmapped destinations retain one placeholder and do not make a
+singleton table provisional. The original transfer's mask is recorded from raw
+storage before SSA can combine it with other operations.
+
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_indirectreturn.rs (normalize_return_selector)`
+checks a bounded COPY/PHI/low-pointer projection of known destinations and the
+incoming return token. All constant targets must already be represented.
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_returnselector.rs (ActionReturnSelector)`
+then clones only this selector expression, replacing the caller-return input in
+the clone with a representable sentinel distinct from every real target. Labels
+and guards are recovered first. Other readers of the original values are
+unchanged, and dead original selector operations are removed before
+declarations. The synthetic default RETURN thus has a defined C selector,
+including conditional and early returns. Every dispatcher operation remains;
+unknown inputs, destructive masks, unsupported projections or an exhausted
+finite encoding refuse normalization with a warning.
+
 ## 2.3 Jump tables & switch recovery
 
 A switch exists in the output only if a BRANCHIND op carries a recovered
@@ -2372,14 +2439,16 @@ last entry; a dominance check (`check_normal_dominance`) decides whether the
 normalization walk can proceed past the join.
 
 **Model 3 — the constant destination set** (`kuna_constselectjump.rs
-(JumpModelConstSelect)`, kuna, `option constselectjump`, default off). Both
+(JumpModelConstSelect)`, kuna, `option constselectjump`; `on` admits it for
+every table, the default `reentry` only for the re-entry retry described
+under re-entered indirect dispatches above). Both
 models above are value-range models over one switch variable, and
 `jumptable.rs (JumpBasic::isprune)` stops the backward walk at any marker op, so
 a destination computed by a conditional move — `CMOVZ R11,R10; JMP R11` over two
 `LEA`-loaded code addresses — leaves the MULTIEQUAL output as the normalized
 variable with nothing to bound it. The destination set is not lost there, it is
 simply never promoted into the CFG: every reaching definition is already a
-literal address. When the option is on and both value-range models have
+literal address. When the model is admitted and both value-range models have
 declined, `kuna_constselectjump.rs (kuna_collect_const_destinations)` walks the
 MULTIEQUAL/COPY web behind the BRANCHIND input; if every reaching definition is
 a constant, the set becomes a fixed address table whose case labels are the
@@ -2390,14 +2459,14 @@ already handles. Every destination must also sit within `0xffff` of the branch �
 the same intraprocedural-vs-thunk yardstick `sanity_check` uses above — so a
 conditional *tail call* between two distant function entries keeps the upstream
 `CALLIND` rendering rather than splicing both callee bodies into the caller.
-Without the option the branch is truncated to a `CALLIND` carrying
+When the model is not admitted the branch is truncated to a `CALLIND` carrying
 `"Treating indirect jump as call"` and neither arm is ever decoded.
 
 **What is deliberately absent.** The CALLOTHER-assisted `JumpAssisted` model
 (the `jumpassist` user-op family) and the manual `JumpBasicOverride` model are
 unported shells: `jumptable.rs (JumpTable::set_override)` and the
 `<basicoverride>` arm of `jumptable.rs (JumpTable::decode)` return errors, and
-`recover_model` walks only JumpBasic/JumpBasic2 and, when `option constselectjump` is on, the constant-destination model above (Trivial exists only as the label-time fallback).
+`recover_model` walks only JumpBasic/JumpBasic2 and, when `option constselectjump` is `on` or the table is a re-entry retry, the constant-destination model above (Trivial exists only as the label-time fallback).
 
 **Multistage recovery.** A flow-time table can come out with a single address
 when the partial clone folds its index to a constant. One case is a stack slot

@@ -3508,6 +3508,98 @@ loop with `~v3 - 1`. `kuna-cli/tests/strlenscan_round_trip.rs` prints gcc 9
 x86-64 ones beside the source, with buffers whose bytes past the terminator are
 not zero, to check each printed function computes the same values.
 
+**Inline copies, fills and compares** (`option repstring`, default **on**) —
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_repstring.rs
+(ActionRepString)`, in the fullloop tail right after `strlenscan`. On x86 a
+copy, fill or compare a compiler inlines (gcc and clang at `-Os`, gcc's
+`-minline-all-stringops`, MSVC with `/Oi`) is one `rep movs`, `rep stos` or
+`repz cmpsb`, which SLEIGH lifts the same way as the scan above: a head `H`
+that leaves when the count is zero and otherwise enters a body `B` that returns
+to `H`. The action matches the pair on SSA when every op of `H` and `B` sits at
+one instruction address, `H` is entered from one block outside and from `B`,
+and `B` is entered only from `H`. `H` must hold only its branch, the zero test
+of the count (`n == 0` taking the exit or `n != 0` taking the body) and phis.
+No other target lifts an instruction to this shape, so the action is inert
+there.
+
+*Copies and fills.* `B` leaves only to `H`, and `H`'s phis are the count, the
+destination and, for a copy, the source. `B` must step the count down by one
+and each pointer up by the element width `w` (1, 2, 4 or 8; the steps are read
+through COPYs, `INT_ADD`, `INT_SUB` and `PTRADD`, so a pointer that steps down
+because the direction flag is set does not match), store one element through
+the destination, and either load that element through the source (`movs`) or
+store a value defined before the loop (`stos`). Nothing outside the loop may
+read a value `B` computes. A destination in the function's own frame (the stack
+pointer plus a constant, through copies) is declined: the builtin is placed
+after heritage, so the frame locations it writes would have no definition at
+it, and the merge could fold a value stored into the buffer after the fill into
+a variable that held it before. A frame location heritage did guard the element
+store with (an `INDIRECT` on the store and a phi in `H`, for an address-taken
+local a heap destination might alias) is kept: the rewrite gives it an
+`INDIRECT` on the builtin, so a read of it after the loop still sees the write.
+The rewrite places the builtin in `H` before its branch, over the values
+entering the loop: `builtin_memcpy(dst, src, n * w)` for a copy;
+`builtin_memset(dst, c, n * w)` for a fill whose value has the same byte
+throughout (`stosb` always, a constant such as 0); and
+`builtin_memset16`/`32`/`64(dst, value, n)`, whose count is in elements, for
+any other fill of 2-, 4- or 8-byte elements. It points every read after the
+loop of the count at 0 and of a pointer at the pointer plus `n * w`, and removes
+the edge into `B`; the next mainloop pass deletes the unreachable body and the
+single-input phis. `rep movs` is defined for a destination that overlaps its
+source ahead of it, as an LZ77 decoder's match copy does on purpose, and
+`memcpy` is not; the rewrite cannot tell the two apart, which is what the
+option is for.
+
+*Compares.* `B` leaves two ways, back to `H` and out. It must step the count
+down by one and two pointers up by one, load one byte through each, and
+otherwise compute only pure values; that it returns to `H` exactly while the
+two bytes are equal is checked by evaluating its branch for all 65536 byte
+pairs, which is what makes the instruction a `repz cmpsb` (a `repnz`, or a
+compare of wider elements, keeps its loop). The first operand `a` is the
+pointer whose byte a subtraction or ordered compare in `B` reads first, so the
+carry flag reads `a[i] < b[i]`. `r = builtin_memcmp(a, b, n)` is placed in `H`.
+Every value the code after the loop reads is then restated in terms of `r`, by
+evaluation rather than by flag name. A value `B` computes is seen after the
+loop only for the first pair that differs, and over all 65280 such pairs it
+must be one constant (the zero flag, 0), `x < y` (the carry flag, `r < 0`) or
+`x > y` (`0 < r`). A flag `H` merges is seen when the count ran out, as its
+value for an equal pair, which must be the same for all 256; and since a zero
+count leaves the flags as they were, the flag must also enter the loop holding
+that constant (gcc emits `cmp eax, eax` before the instruction so that it
+does), unless the count enters as a non-zero constant and the flag is read only
+on the way out of `H`. A loop whose final count or pointers are read, or any
+value that fits none of these, is left alone. When both ways out reach one
+block, each of its phis becomes one expression (`r == 0` for the zero flag, `r
+< 0` for the carry flag) and the edge into `B` is removed; otherwise `H`'s
+branch is retargeted from the zero count to `r == 0` and `B`'s back edge is
+removed, so `B` is what runs when the blocks differ.
+
+The builtins keep the call flag, so they stay ordered against the loads, stores
+and calls around them, as `strlen` does. `p5_types/coreaction_infertypes.rs
+(input_type_local)` asks `kuna_repstring::input_type` for their pointer
+operands: `void *` for a copy or fill, a pointer to the element for
+`builtin_memset16`/`32`/`64`, and `char *` for a compare, so that a constant
+operand prints as the string it points at (`builtin_memcmp(a0,"-",2) == 0` for
+gcc's inlined `strcmp(s, "-") == 0`). Those same operands count as pointer
+readers when a constant address is named: `ActionConstantPtr`
+(`p9_emit/coreaction_render.rs (is_pointer)`) binds one that lands exactly on a
+global symbol, as it does for the `COPY` into the destination register the loop
+read it through, so a fill of `buf` prints `builtin_memset(buf,0,0x1118)` rather
+than `builtin_memset((void *)0x4042c0,0,0x1118)`, and `globalref` (09-emission
+§9.9) names an unnamed one `&dat_<addr>`, since passing that address as a
+`void *` operand converts exactly as the cast did.
+`tests/stages/kuna-repstring.xml` and `kuna-repstring-i386.xml` run gcc 15
+`-Os -minline-all-stringops` builds of
+`kuna-analysis/tests/fixtures/repstring.c` in both passes: fills of a mixed
+word, of zero words and of a byte, a copy, a copy whose final pointer is
+returned, compares used for equality, for order and with a run-time length, a
+compare with no flags set up before it, and a compare whose final pointer is
+returned, which keeps its loop; the x86-64 file adds a gcc 15 `-O2` fill of a
+global `map address` names, which prints `builtin_memset(gfill,0,0x80)`.
+`kuna-cli/tests/repstring_round_trip.rs`
+compiles the printed x86-64 functions beside the source and checks they compute
+the same values.
+
 **constspaceload** (repipe `arm-neon-zero-initialization`) —
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_constspaceload.rs
 (RuleConstSpaceLoad)`, oppool1, fires on LOAD. *Pattern:* a LOAD whose space
