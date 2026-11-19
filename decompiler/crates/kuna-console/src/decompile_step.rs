@@ -326,6 +326,32 @@ fn decompile_one_prefollowed_once(
             }
         }
     }
+    // (kuna `opaquepredicate globals`) A comparison read a global before the
+    // whole-program scan ran: take it once for the run, and drive again.
+    if arch.kuna_opaque_globals.is_none()
+        && result.as_ref().is_ok_and(|fd| fd.get_arch().opaque_globals_wanted.get())
+    {
+        let found = arch
+            .kuna_float_scan
+            .clone()
+            .map(|input| kuna_analysis::listing::kuna_opaqueglobals::scan(arch, &input))
+            .unwrap_or_default();
+        arch.kuna_opaque_globals = Some(Rc::new(found));
+        result = kuna_decomp::decompile_drive::decompile_func_full_with_override_dyn(
+            arch,
+            name,
+            entry.clone(),
+            size,
+            seed.mapped_symbols,
+            seed.usepoint_symbols,
+            seed.dynamic_symbols,
+            seed.pending_proto,
+            &flow_overrides,
+            proto_overrides,
+            seed.mapped_params,
+            seed.purpose,
+        );
+    }
     // A parked override the drive contradicts is withdrawn, and the function is
     // driven again without it. See [`audit_parked_format_sites`].
     let dropped: Vec<u64> = match &result {

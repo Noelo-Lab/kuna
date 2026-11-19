@@ -625,6 +625,12 @@ pub struct Architecture {
     pub global_array_anchor: bool,
     /// Fold comparisons proven constant for every input (option `opaquepredicate`).
     pub opaque_predicate: bool,
+    /// (kuna `opaquepredicate globals`) Read a global the whole program never
+    /// writes as its initial value (`kuna_opaqueglobals`).
+    pub opaque_globals: bool,
+    /// (kuna `opaquepredicate globals`) The scan's answer, once a function
+    /// asked for it.
+    pub kuna_opaque_globals: Option<Rc<crate::kuna_opaqueglobals::UnwrittenGlobals>>,
     /// (kuna) Refuse to split a shared RETURN block that stores to GLOBALS, so
     /// a 72-store epilogue is not cloned into each predecessor (option
     /// `retsplitglobal`).  See [`crate::p8_structure::kuna_retsplitglobal`].
@@ -2362,6 +2368,8 @@ impl Architecture {
             sparc_struct_return: false,
             global_array_anchor: false,
             opaque_predicate: false,
+            opaque_globals: false,
+            kuna_opaque_globals: None,
             ret_split_global: false,
             ret_split_limit: None,
             stack_addr_arg_trial: false,
@@ -3448,6 +3456,10 @@ impl Architecture {
         // so the live flag drives both the DIV default and the toggle).
         ctx.global_array_anchor = self.global_array_anchor;
         ctx.opaque_predicate = self.opaque_predicate;
+        if self.opaque_predicate && self.opaque_globals {
+            ctx.opaque_globals = self.kuna_opaque_globals.clone();
+            ctx.opaque_globals_pending = self.kuna_opaque_globals.is_none() && self.kuna_float_scan.is_some();
+        }
         ctx.ret_split_global = self.ret_split_global; // retsplitglobal
         ctx.ret_split_limit = self.ret_split_limit; // retsplitlimit
         // (kuna) resolve the byte-shuffle user-op ids ONCE per program, so the

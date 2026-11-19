@@ -319,6 +319,18 @@ fn prove_linear(data: &Funcdata, in0: VarnodeId, in1: VarnodeId) -> Option<bool>
     difference.map(|delta| delta == 0)
 }
 
+/// The `(fold, read unwritten globals)` pair an `opaquepredicate` value selects.
+pub fn parse_mode(value: &str) -> kuna_base::error::KunaResult<(bool, bool)> {
+    match value {
+        "off" => Ok((false, false)),
+        "on" => Ok((true, false)),
+        "globals" => Ok((true, true)),
+        other => Err(kuna_base::error::KunaError::parse(format!(
+            "opaquepredicate: expected off, on or globals, got {other}"
+        ))),
+    }
+}
+
 /// The constant value of comparison `op`, if one of the proofs finds it.
 fn constant_result(data: &Funcdata, op: OpId) -> Option<bool> {
     let o = data.obank().get(op)?;

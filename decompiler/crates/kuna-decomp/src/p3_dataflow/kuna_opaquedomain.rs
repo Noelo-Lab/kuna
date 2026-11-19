@@ -10,6 +10,9 @@
 //! a right shift, which the low-bit proofs of `kuna_opaquepredicate` cannot
 //! read: `(x * x * x - x) % 3 == 0` and `x * x >= 0` hold for every zero- or
 //! sign-extended byte `x` and for no wider one.
+//!
+//! A read of a global the whole program never writes (`kuna_opaqueglobals`,
+//! `opaquepredicate globals`) is the constant the image initializes it to.
 
 use std::collections::BTreeMap;
 
@@ -37,6 +40,7 @@ struct Tree<'a> {
     nodes: Vec<Node>,
     leaves: Vec<(VarnodeId, int4)>,
     memo: BTreeMap<VarnodeId, usize>,
+    globals: usize,
 }
 
 fn evaluable(code: OpCode) -> bool {
@@ -86,9 +90,10 @@ impl<'a> Tree<'a> {
         Some(self.nodes.len() - 1)
     }
 
-    fn rollback(&mut self, nodes: usize, leaves: usize) {
+    fn rollback(&mut self, nodes: usize, leaves: usize, globals: usize) {
         self.nodes.truncate(nodes);
         self.leaves.truncate(leaves);
+        self.globals = globals;
         self.memo.retain(|_, index| *index < nodes);
     }
 
@@ -107,11 +112,15 @@ impl<'a> Tree<'a> {
         if let Some(&index) = self.memo.get(&vn) {
             return Some(index);
         }
-        let mark = (self.nodes.len(), self.leaves.len());
+        if let Some(value) = crate::kuna_opaqueglobals::constant_read(self.data, vn) {
+            self.globals += 1;
+            return self.push(Node::Const(value));
+        }
+        let mark = (self.nodes.len(), self.leaves.len(), self.globals);
         let index = match v.get_def().and_then(|def| self.compile_op(def)) {
             Some(index) => index,
             None => {
-                self.rollback(mark.0, mark.1);
+                self.rollback(mark.0, mark.1, mark.2);
                 let slot = match self.leaves.iter().position(|&(leaf, _)| leaf == vn) {
                     Some(slot) => slot,
                     None => {
@@ -209,13 +218,16 @@ impl<'a> Tree<'a> {
 /// The result of comparison `op` when it is the same for every value of the
 /// narrow inputs it is computed from.
 pub(crate) fn prove(data: &Funcdata, op: OpId) -> Option<bool> {
-    let mut tree = Tree { data, nodes: Vec::new(), leaves: Vec::new(), memo: BTreeMap::new() };
+    let mut tree = Tree { data, nodes: Vec::new(), leaves: Vec::new(), memo: BTreeMap::new(), globals: 0 };
     tree.compile_op(op)?;
-    if tree.leaves.is_empty() {
+    if tree.leaves.is_empty() && tree.globals == 0 {
         return None;
     }
     let mut slots = Vec::with_capacity(tree.nodes.len());
     let first = tree.run([0; MAX_LEAVES], &mut slots)?;
+    if tree.leaves.is_empty() {
+        return Some(first != 0);
+    }
     let probes = tree.probes();
     for &x in &probes {
         for &y in &probes[..if tree.leaves.len() > 1 { probes.len() } else { 1 }] {

@@ -242,6 +242,17 @@ pub trait LoadImage {
         Vec::new()
     }
 
+    /// (kuna `opaquepredicate globals`) The `[lo, hi)` ranges of the mapped
+    /// image that something other than the image's own code writes: a slot a
+    /// load-time relocation or bind fills, a data object another module can
+    /// reach by name.
+    ///
+    /// `None` -- the default -- means the image cannot say, and a reader must
+    /// then treat every byte as written.
+    fn kuna_runtime_written(&self) -> Option<Vec<(u64, u64)>> {
+        None
+    }
+
     /// (kuna) A `Send + Sync` view of this image's mapped bytes, for a decoder
     /// running on another thread.
     ///

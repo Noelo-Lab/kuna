@@ -797,6 +797,16 @@ pub struct ArchContext {
     pub global_array_anchor: bool,
     /// Fold comparisons proven constant for every input (`opaquepredicate`).
     pub opaque_predicate: bool,
+    /// (kuna `opaquepredicate globals`) The writable data nothing may write,
+    /// once the scan has run; read by
+    /// [`constant_read`](crate::kuna_opaqueglobals::constant_read).
+    pub opaque_globals: Option<Rc<crate::kuna_opaqueglobals::UnwrittenGlobals>>,
+    /// (kuna `opaquepredicate globals`) The value is on and the scan can run
+    /// but has not.
+    pub opaque_globals_pending: bool,
+    /// (kuna `opaquepredicate globals`) A comparison asked while the scan was
+    /// pending.
+    pub opaque_globals_wanted: std::cell::Cell<bool>,
     /// (kuna) refuse to split a shared RETURN block that stores to GLOBALS
     /// (`retsplitglobal`).  Read by
     /// [`Funcdata::return_split_is_splittable`](crate::funcdata::Funcdata),
@@ -1591,6 +1601,9 @@ impl ArchContext {
             // unit tests.
             global_array_anchor: false,
             opaque_predicate: false,
+            opaque_globals: None,
+            opaque_globals_pending: false,
+            opaque_globals_wanted: std::cell::Cell::new(false),
             ret_split_global: false,     // retsplitglobal (the ArchSeam carries the real default)
             ret_split_limit: None,       // retsplitlimit (the ArchSeam carries the real default)
             simd_shuffle_userops: Vec::new(),

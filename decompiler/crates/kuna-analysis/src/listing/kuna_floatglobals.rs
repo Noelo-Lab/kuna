@@ -59,6 +59,17 @@ const MAX_ACCESS: u64 = 64;
 /// does not model (i386 and SPARC position-independent code reach globals
 /// through a register a thunk call sets).
 pub fn scan(arch: &Architecture, input: &FloatScan) -> FloatGlobals {
+    walk(arch, input, |image, evidence, _| evidence.decide(image)).unwrap_or_default()
+}
+
+/// Walk every function of the inventory and hand `finish` the image, what the
+/// walk filed and the pointer width.  `None` for a processor family the scan
+/// does not model.
+pub(super) fn walk<R>(
+    arch: &Architecture,
+    input: &FloatScan,
+    finish: impl FnOnce(&Image, &Evidence, u32) -> R,
+) -> Option<R> {
     let family = arch.archid.split(':').collect::<Vec<_>>();
     let wide = family.get(2).copied();
     let supported = match family.first().copied() {
@@ -67,21 +78,21 @@ pub fn scan(arch: &Architecture, input: &FloatScan) -> FloatGlobals {
         _ => false,
     };
     if !supported {
-        return FloatGlobals::new();
+        return None;
     }
     let manage = arch.manage();
     let (Some(code), Some(data)) = (manage.get_default_code_space().cloned(), manage.get_default_data_space().cloned())
     else {
-        return FloatGlobals::new();
+        return None;
     };
     let translate: &dyn Translate = arch.translate();
     let floats = FloatRegisters::new(translate, family[0]);
     if floats.ranges.is_empty() {
-        return FloatGlobals::new();
+        return None;
     }
     let image = Image::new(arch, &data, &input.sections, translate.is_big_endian());
     if image.exec.is_empty() {
-        return FloatGlobals::new();
+        return None;
     }
     let ptr = code.get_addr_size();
     let pool = PoolImage::from_ranges(
@@ -140,6 +151,7 @@ pub fn scan(arch: &Architecture, input: &FloatScan) -> FloatGlobals {
             body.extend(&ctx, &entries, &mut cap, found);
             at = body.solve(&ctx);
         }
+        evidence.writes.incomplete |= body.insns.len() >= MAX_FUNCTION_INSNS;
         body.file(&ctx, &at, &mut evidence);
         for &callee in &body.callees {
             if !walked.contains(&callee) && in_range(&image.exec, callee) {
@@ -147,7 +159,7 @@ pub fn scan(arch: &Architecture, input: &FloatScan) -> FloatGlobals {
             }
         }
     }
-    evidence.decide(&image)
+    Some(finish(&image, &evidence, ptr))
 }
 
 /// The register-space ranges that hold floating-point values, by the names the
@@ -219,19 +231,19 @@ fn clobbered_registers(arch: &Architecture) -> Vec<(u64, u64)> {
     range_union(out)
 }
 
-struct Section {
-    lo: u64,
-    hi: u64,
-    flags: u32,
-    bytes: Option<Vec<u8>>,
+pub(super) struct Section {
+    pub(super) lo: u64,
+    pub(super) hi: u64,
+    pub(super) flags: u32,
+    pub(super) bytes: Option<Vec<u8>>,
 }
 
 /// The loaded image as the scan reads it: which addresses are code, data and
 /// writable data, and the bytes behind them.
-struct Image {
-    sections: Vec<Section>,
+pub(super) struct Image {
+    pub(super) sections: Vec<Section>,
     exec: Vec<(u64, u64)>,
-    big_endian: bool,
+    pub(super) big_endian: bool,
 }
 
 impl Image {
@@ -268,7 +280,7 @@ impl Image {
         self.section(at).is_some_and(|s| s.flags & section_flags::CODE == 0)
     }
 
-    fn is_writable_data(&self, at: u64) -> bool {
+    pub(super) fn is_writable_data(&self, at: u64) -> bool {
         self.section(at).is_some_and(|s| s.flags & (section_flags::CODE | section_flags::READONLY) == 0)
     }
 
@@ -781,10 +793,12 @@ fn mask(v: u64, size: u32) -> u64 {
 
 /// Every access and escape the scan has filed.
 #[derive(Default)]
-struct Evidence {
+pub(super) struct Evidence {
     /// Accesses by address: `(width, float)`.
     accesses: BTreeMap<u64, Vec<(u8, bool)>>,
-    escapes: BTreeSet<u64>,
+    pub(super) escapes: BTreeSet<u64>,
+    /// (kuna `opaquepredicate globals`) Stores and address uses.
+    pub(super) writes: super::kuna_opaqueglobals::Writes,
 }
 
 impl Evidence {
@@ -824,6 +838,10 @@ fn step(ctx: &Ctx<'_>, insn: &Insn, mut state: State, mut evidence: Option<&mut 
     let mut temps: Vec<Temp> = Vec::new();
     let is_data_space = |vn: &VarnodeData| vn.space.as_ref().is_some_and(|s| Rc::ptr_eq(s, ctx.data));
     let mut conditional = false;
+    let pointed = |v: Option<Val>, size: u32| match v {
+        Some(Val::Const(x)) if size == ctx.ptr && ctx.image.is_writable_data(x) => Some(x),
+        _ => None,
+    };
     for (k, op) in insn.ops.iter().enumerate() {
         if op.opcode == OpCode::CPUI_CBRANCH && op.ins.first().is_some_and(is_constant) {
             conditional = true;
@@ -846,10 +864,14 @@ fn step(ctx: &Ctx<'_>, insn: &Insn, mut state: State, mut evidence: Option<&mut 
             OpCode::CPUI_STORE => {
                 if let Some(v) = op.ins.get(2) {
                     let stored = value(v, &state, &temps);
+                    if let (Some(ev), Some(x)) = (evidence.as_deref_mut(), pointed(stored, v.size)) {
+                        ev.writes.take(x);
+                    }
                     match op.ins.get(1).and_then(|p| value(p, &state, &temps)) {
                         Some(Val::Const(a)) => {
                             if let Some(ev) = evidence.as_deref_mut().filter(|_| ctx.image.is_data(a)) {
                                 ev.access(a, v.size, from_float(ctx, &insn.ops, k, v, 0));
+                                ev.writes.store(a, v.size);
                             }
                         }
                         Some(Val::Stack(o)) => {
@@ -881,7 +903,15 @@ fn step(ctx: &Ctx<'_>, insn: &Insn, mut state: State, mut evidence: Option<&mut 
                     }
                 }
                 let ins: Vec<Option<Val>> = op.ins.iter().map(|vn| value(vn, &state, &temps)).collect();
-                evaluate(op, &ins)
+                let result = evaluate(op, &ins);
+                if let Some(ev) = evidence.as_deref_mut() {
+                    let carried = matches!(result, Some(Val::Const(_)))
+                        && op.out.as_ref().and_then(|o| o.space.as_ref()).is_some_and(|s| s.get_type() == spacetype::IPTR_INTERNAL);
+                    for x in op.ins.iter().zip(&ins).filter_map(|(vn, &v)| pointed(v, vn.size)).filter(|_| !carried) {
+                        ev.writes.take(x);
+                    }
+                }
+                result
             }
         };
         let Some(out) = &op.out else { continue };
@@ -889,11 +919,15 @@ fn step(ctx: &Ctx<'_>, insn: &Insn, mut state: State, mut evidence: Option<&mut 
         if is_data_space(out) {
             if let Some(ev) = evidence.as_deref_mut().filter(|_| ctx.image.is_data(out.offset)) {
                 ev.access(out.offset, out.size, made_float(ctx, &insn.ops, k));
+                ev.writes.store(out.offset, out.size);
             }
         } else if space.get_type() == spacetype::IPTR_INTERNAL {
             temps.retain(|t| !(t.0 == out.offset && t.1 == out.size));
             temps.push((out.offset, out.size, result));
         } else if space.get_type() == spacetype::IPTR_PROCESSOR && !Rc::ptr_eq(space, ctx.code) {
+            if let (Some(ev), Some(x)) = (evidence.as_deref_mut(), pointed(result, out.size)) {
+                ev.writes.take(x);
+            }
             let kept = result.filter(|&x| !conditional || state.get_reg(out.offset, out.size, big) == Some(x));
             if let Some(x) = state.set_reg(out.offset, out.size, kept).filter(|&x| ctx.image.is_data(x)) {
                 if let Some(ev) = evidence.as_deref_mut() {

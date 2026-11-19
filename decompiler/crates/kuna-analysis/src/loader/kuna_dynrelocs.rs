@@ -84,6 +84,12 @@ pub struct DynRelocs {
     /// `[start, stop]` **inclusive** byte ranges of the written slots that
     /// `PT_GNU_RELRO` covers — the ones a reader may treat as constant.
     pub const_ranges: Vec<(u64, u64)>,
+    /// (kuna `opaquepredicate globals`) `[lo, hi)` of every slot whose run-time
+    /// content this image does not determine: an import's bind, a `COPY`
+    /// relocation's whole object, any relocation kuna does not apply. `None`
+    /// when the tables were not all read, or the image's format keeps such
+    /// slots where this walk does not look.
+    pub runtime_written: Option<Vec<(u64, u64)>>,
 }
 
 /// The `RELATIVE` / `GLOB_DAT` / `JUMP_SLOT` `r_type` triple for `machine`, or
@@ -205,12 +211,21 @@ pub fn resolve(file: &object::File, bytes: &[u8]) -> DynRelocs {
     if file.format() == object::BinaryFormat::MachO {
         return macho_chained(file, bytes);
     }
-    let Some(table) = ElfTable::new(file).filter(|table| table.triple.is_some()) else {
+    let Some(table) = ElfTable::new(file) else {
+        let linked = file.kind() != object::ObjectKind::Relocatable;
+        out.runtime_written = (linked && unread_tables(file).is_empty()).then(Vec::new);
         return out;
     };
+    if table.triple.is_none() {
+        return out;
+    }
     let relro = relro_range(bytes);
+    let mut unknown = Vec::new();
     for (offset, reloc) in file.dynamic_relocations().into_iter().flatten() {
-        let Some(value) = table.classify(file, offset, &reloc).written() else {
+        let fixup = table.classify(file, offset, &reloc);
+        let Some(value) = fixup.written() else {
+            let object = fixup.symbol.and_then(|idx| table.dynsyms.get(&idx.0)).map_or(0, |entry| entry.2);
+            unknown.push((offset, offset.saturating_add(object.max(table.width as u64))));
             continue;
         };
         out.writes.push(DynRelocWrite { vma: offset, value, width: table.width as u8 });
@@ -222,6 +237,7 @@ pub fn resolve(file: &object::File, bytes: &[u8]) -> DynRelocs {
             }
         }
     }
+    out.runtime_written = unread_tables(file).is_empty().then_some(unknown);
 
     out
 }
@@ -236,7 +252,7 @@ struct ElfTable {
     /// `.dynsym` by index — the index a dynamic relocation's `r_sym` names. The
     /// generic `symbol_by_index` reads `.symtab`, which is a different table (and
     /// is absent from a stripped image), so the map is built here.
-    dynsyms: std::collections::HashMap<usize, (u64, bool)>,
+    dynsyms: std::collections::HashMap<usize, (u64, bool, u64)>,
 }
 
 /// What one dynamic relocation stores, as far as this image alone says.
@@ -271,7 +287,7 @@ impl ElfTable {
         let mut dynsyms = std::collections::HashMap::new();
         if triple.is_some() {
             for s in file.dynamic_symbols() {
-                dynsyms.insert(s.index().0, (s.address(), s.is_undefined()));
+                dynsyms.insert(s.index().0, (s.address(), s.is_undefined(), s.size()));
             }
         }
         Some(ElfTable {
@@ -320,7 +336,7 @@ impl ElfTable {
         // Nothing to write, and the PLT/import naming already covers the call —
         // the slot stays exactly as the linker left it.
         let value = match (symbol.and_then(|idx| self.dynsyms.get(&idx.0)), a) {
-            (Some(&(addr, false)), Some(a)) => Some(addr.wrapping_add(a) & self.mask),
+            (Some(&(addr, false, _)), Some(a)) => Some(addr.wrapping_add(a) & self.mask),
             _ => None,
         };
         ElfFixup { kind: FixupKind::Bind, symbol, addend: a.map(|a| a as i64), value }
@@ -698,7 +714,10 @@ fn macho_chained(file: &object::File, bytes: &[u8]) -> DynRelocs {
         .filter(|&(vma, _)| fixups.in_readonly_segment(vma))
         .map(|(vma, _)| (vma, vma.wrapping_add(width as u64 - 1)))
         .collect();
-    DynRelocs { writes, const_ranges }
+    let bound: Vec<(u64, u64)> =
+        fixups.binds().map(|(vma, _)| (vma, vma.saturating_add(u64::from(width)))).collect();
+    let listed = fixups.damage().is_none() && !writes.is_empty();
+    DynRelocs { writes, const_ranges, runtime_written: listed.then_some(bound) }
 }
 
 #[cfg(test)]

@@ -65,6 +65,7 @@ pub mod kuna_simdlane;
 pub mod kuna_x87truncate;
 pub mod kuna_opaquearms;
 pub mod kuna_opaquedomain;
+pub mod kuna_opaqueglobals;
 pub mod kuna_opaqueimplied;
 pub mod kuna_opaquepredicate;
 pub mod kuna_cancelbytearithmetic;

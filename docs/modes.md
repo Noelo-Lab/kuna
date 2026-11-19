@@ -95,7 +95,8 @@ build failure. The options it enables:
   `switchguardbound` (speed-costly),
   `unrolledguard` (speed-costly), `sparcstructret`,
   `globalarrayanchor` (retain mapped array bases in negatively biased element indices),
-  `opaquepredicate` (fold a comparison proven constant for every input),
+  `opaquepredicate` (fold a comparison proven constant for every input; the
+  preset sets `on`, never the speculative `globals`),
   `regionedgeorder`, `returndup`, `iteexpr`,
   `devectorize` (a proven vectorized integer reduction re-rolled into its scalar
   loop; off by default only because the rewrite hides the stride and the
