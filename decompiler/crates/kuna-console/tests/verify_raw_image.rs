@@ -522,3 +522,32 @@ fn raw_input_rejects_mapping_overflow() {
     };
     assert!(error.contains("overflows"), "unexpected error: {error}");
 }
+
+/// `funcstart_patterns` on a headerless image: f2 and f3 are reached only
+/// through a function-pointer table (gcc -O0, `.text` of a no-pie build at
+/// 0x401000), so the call-target walk from the one seed misses them, while their
+/// prologues follow a `ret`/`pop rbp` the x86-64 patterns accept.
+#[test]
+fn raw_image_takes_pattern_starts_when_the_option_is_on() {
+    let bytes: Vec<u8> = (0..192).step_by(2).map(|i| u8::from_str_radix(&"554889e5897dfc8b55fc89d001c001d083c0015dc3554889e5897decc745fc00000000c745f800000000eb0a8b45f80145fc8345f8018b45f83b45ec7cee8b45fc5dc3554889e5897dfc8975f88b45fc3345f85dc3554889e5b8000000005dc3"[i..i + 2], 16).unwrap()).collect();
+    let fixture = RawFixture::new("raw-fp-x86-64", &bytes);
+    let path = fixture.0.to_string_lossy();
+    let mut counts = Vec::new();
+    for on in ["off", "on"] {
+        let mut program = bootstrap_from_raw(&path, "x86:LE:64:default", 0x401000, &[0x401055], None, &specs())
+            .expect("bootstrap raw x86-64 fixture with built specs");
+        program.arch_mut().set_kuna_option("funcstart_patterns", on).unwrap();
+        program.commit_pending_analysis().unwrap();
+        counts.push((program.find_entry_at(0x401015).is_some(), program.find_entry_at(0x401043).is_some()));
+    }
+    assert_eq!(counts, vec![(false, false), (true, true)]);
+
+    // No seed at all: the pattern sweep alone finds the functions.
+    let mut program = bootstrap_from_raw(&path, "x86:LE:64:default", 0x401000, &[], None, &specs())
+        .expect("a raw image needs no --entry");
+    program.arch_mut().set_kuna_option("funcstart_patterns", "on").unwrap();
+    program.commit_pending_analysis().unwrap();
+    for start in [0x401015, 0x401043, 0x401055] {
+        assert!(program.find_entry_at(start).is_some(), "0x{start:x} is a pattern start");
+    }
+}
