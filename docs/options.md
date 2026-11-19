@@ -840,6 +840,9 @@ Three tiers:
 | a function that touches thousands of globals between thousands of calls takes gigabytes and minutes to decompile | [`persistcalls`](#persistcalls----off--on---default-65536) |
 | heritage builds millions of INDIRECTs over writable globals that survive dead-code removal | [`persistcalls`](#persistcalls----off--on---default-65536) |
 | a huge initializer or finalizer exhausts memory in assignhigh or merging | [`persistcalls`](#persistcalls----off--on---default-65536) |
+| runtime-sized buffer accesses below a fixed local array | [`stackalloc`](#stackalloc----on--off-default-off) |
+| dynamic stack memory is overwritten by a generated call | [`stackalloc`](#stackalloc----on--off-default-off) |
+| undeclared Stack location after variable stack subtraction | [`stackalloc`](#stackalloc----on--off-default-off) |
 
 ## Toggleable transforms
 
@@ -2604,6 +2607,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default at 65,536 guards, the size at which the guards cost a huge function gigabytes and minutes. Set `on` to place the sparse guards in every pass with a call, a larger N or `off` to keep upstream's guard on every persistent global at every call, for example to compare heritage's IR with upstream.
 - **Where / provenance:** P3/call-guard · kuna · performance · gh-1034
 - **Example:** `option persistcalls off`
+
+### `stackalloc` -- on | off, default `off`
+
+- **Symptoms:** runtime-sized buffer accesses below a fixed local array; dynamic stack memory is overwritten by a generated call; undeclared Stack location after variable stack subtraction.
+- **What it does:** Recover runtime-sized 16-, 32- and 64-bit stack storage across control flow. Emit function-lifetime compiler alloca or a proved shorter lexical VLA, retain native reservation and restoration witnesses, and bound outgoing accesses by SSA analysis.
+- **When to flip:** Enable for ordinary runtime stack buffers printed below a fixed local array or as undeclared Stack locations. Handles conditional/repeated allocations, paired pointer/counter probes and proved saved-stack relationships. Proved shorter lifetimes become nested aligned VLAs; missing lifetime proofs decline recovery, not expired alloca storage. Uses the ABI stack pointer on x86, AMD64, ARM/Thumb, AArch64, RISC-V32/64, SPARC32/64, PPC32/64 and MIPS32/64, in both supported endians. Bounds both sides of each allocation and preserves the SPARC V9 stack bias. Unknown stack effects, unbounded outgoing-area cycles and exhausted proof budgets decline recovery; a declined function prints as with the option off, sometimes with a header note. GCC stack-clash probes (-fstack-clash-protection, the Ubuntu, Debian and Fedora default) are declined, so those builds mostly print as off. Saved-context switching is outside this model. No --mode turns it on; when on it costs roughly 3-10% more decompile CPU.
+- **Where / provenance:** P3/stack-pointer-flow · kuna · correctness-fix · kuna-stackalloc
+- **Example:** `option stackalloc on`
 
 ## Programmatic use
 
