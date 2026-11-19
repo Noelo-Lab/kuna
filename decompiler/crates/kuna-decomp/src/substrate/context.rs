@@ -764,6 +764,9 @@ pub struct ArchContext {
     /// (kuna) `option vexzeroupper` on an x86-64 language; read by
     /// [`crate::p2_lift::kuna_vexzeroupper`].
     pub vex_zero_upper: bool,
+    /// (kuna) `option lanefuse` on an x86-64 language; read by
+    /// [`crate::p2_lift::kuna_lanefuse`].
+    pub lane_fuse: crate::kuna_lanefuse::LaneFuseMode,
     /// (kuna) `option gobool` mode; read by [`crate::p4_calls::kuna_gobool`].
     /// Copied from the engine `Architecture` in `build_arch_handle`.
     pub go_bool: u8,
@@ -1570,6 +1573,7 @@ impl ArchContext {
             rust_probestack: crate::kuna_rustprobestack::RustProbestackMode::Off,
             chkstk_darwin: false,
             vex_zero_upper: false,
+            lane_fuse: crate::kuna_lanefuse::LaneFuseMode::Off,
             // (kuna) `option gobool` default auto; copied the same way.
             go_bool: 1,
             // (kuna) `option gowritebarrier` default auto; the real value is

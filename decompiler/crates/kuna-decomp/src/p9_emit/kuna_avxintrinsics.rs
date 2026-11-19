@@ -7,11 +7,26 @@
 //! `_mm512_add_ps`) and the order its arguments go in. The vector width comes
 //! from the user-op's result size (16, 32 or 64 bytes). The FMA forms are the
 //! one reordering: `vfmadd132ps(a, b, c)` computes `a*c + b`, so it prints as
-//! `_mm256_fmadd_ps(a, c, b)`.
+//! `_mm256_fmadd_ps(a, c, b)`. The `lanefuse` masked forms (`<name>_mask`,
+//! `<name>_maskz`) take the intrinsic's `_mask_`/`_maskz_` infix and its
+//! leading source and mask arguments.
 
 /// The intrinsic name and the order of the user-op's arguments (0-based,
 /// after the user-op id) for the user-op `name` whose result is `size` bytes.
 pub fn intrinsic(name: &str, size: i32) -> Option<(String, Vec<usize>)> {
+    // The `lanefuse` masked forms: `(src, k, operands...)` / `(k, operands...)`.
+    if let Some(base) = name.strip_suffix("_maskz") {
+        let (intr, order) = intrinsic(base, size)?;
+        let (head, tail) = intr.split_once('_').and_then(|(_, r)| r.split_once('_'))?;
+        let named = format!("_{head}_maskz_{tail}");
+        return Some((named, std::iter::once(0).chain(order.into_iter().map(|a| a + 1)).collect()));
+    }
+    if let Some(base) = name.strip_suffix("_mask") {
+        let (intr, order) = intrinsic(base, size)?;
+        let (head, tail) = intr.split_once('_').and_then(|(_, r)| r.split_once('_'))?;
+        let named = format!("_{head}_mask_{tail}");
+        return Some((named, [0, 1].into_iter().chain(order.into_iter().map(|a| a + 2)).collect()));
+    }
     let (mnem, ext) = name.rsplit_once('_')?;
     if !matches!(ext, "avx" | "avx2" | "fma" | "avx512f" | "avx512bw" | "avx512dq" | "avx512vl" | "avx512cd") {
         return None;

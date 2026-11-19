@@ -2237,7 +2237,8 @@ mod tests {
         // and kuna-dyldimage-merge / dyldimage A+B loads two dyld shared cache images as one program
         // and kuna-avxintrinsics / the x86 AVX user-ops print as Intel intrinsics (option avxintrinsics)
         // and kuna-vexzeroupper / a VEX write of ymm0 no longer widens the register to zmm0 (option vexzeroupper)
-        assert_eq!(count, 798, "corpus file count drifted");
+        // and kuna-lanefuse / per-lane vector p-code and AVX-512 write masks fuse into one intrinsic (option lanefuse)
+        assert_eq!(count, 799, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

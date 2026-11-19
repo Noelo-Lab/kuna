@@ -1232,6 +1232,41 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             .set_flag(pcodeop_flags::startbasic);
     }
 
+    /// (kuna `lanefuse`) Re-fuse the lane runs of the instruction at `curaddr`
+    /// and fold its AVX-512 write mask (`kuna_lanefuse`); true when either
+    /// rewrote the instruction. The encoding is read from the first instruction
+    /// bytes: a VEX/EVEX prefix fuses every run, and bit 7 of the fourth EVEX
+    /// byte is zero-masking.
+    fn fuse_vector_lanes(&mut self, curaddr: &Address, insn_ops: &[OpId]) -> KunaResult<bool> {
+        let has_lanes = insn_ops.iter().any(|&op| {
+            self.data.obank().get(op).is_some_and(|o| {
+                matches!(
+                    o.code(),
+                    OpCode::CPUI_FLOAT_ADD
+                        | OpCode::CPUI_FLOAT_SUB
+                        | OpCode::CPUI_FLOAT_MULT
+                        | OpCode::CPUI_FLOAT_DIV
+                        | OpCode::CPUI_INT_ADD
+                        | OpCode::CPUI_INT_SUB
+                        | OpCode::CPUI_INT_MULT
+                        | OpCode::CPUI_CALLOTHER
+                )
+            })
+        });
+        if !has_lanes {
+            return Ok(false);
+        }
+        let mut head = [0u8; 4];
+        let fetched = self.data.get_arch().loader_fill(&mut head, curaddr).is_ok();
+        let all = self.data.get_arch().lane_fuse == crate::kuna_lanefuse::LaneFuseMode::All;
+        let vex = fetched && matches!(head[0], 0xc4 | 0xc5 | 0x62) || all;
+        let fused = crate::kuna_lanefuse::fuse(&mut self.data, insn_ops, vex)?;
+        let evex_z = fetched && head[0] == 0x62 && head[3] & 0x80 != 0;
+        let live: Vec<OpId> = insn_ops.iter().copied().filter(|&op| self.data.obank().get(op).is_some()).collect();
+        let masked = crate::kuna_lanefuse::fold_mask(&mut self.data, &live, evex_z)?;
+        Ok(fused || masked)
+    }
+
     /// Mark the given op as the first op of its instruction (C++
     /// `Funcdata::opMarkStartInstruction` → `op->setFlag(PcodeOp::startmark)`).
     fn op_mark_start_instruction(&mut self, op: OpId) {
@@ -2117,6 +2152,14 @@ truncating the fall-through here"
                 stat.seqnum = seq;
             }
             self.op_mark_start_instruction(firstop);
+            if self.data.get_arch().lane_fuse != crate::kuna_lanefuse::LaneFuseMode::Off
+                && self.fuse_vector_lanes(curaddr, &insn_ops)?
+            {
+                insn_ops = vec![firstop];
+                while let Some(next) = self.dead_next(*insn_ops.last().expect("non-empty")) {
+                    insn_ops.push(next);
+                }
+            }
             if self.data.get_arch().vex_zero_upper {
                 for &op in &insn_ops {
                     crate::kuna_vexzeroupper::split(&mut self.data, op, &insn_ops)?;

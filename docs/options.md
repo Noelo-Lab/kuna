@@ -454,6 +454,9 @@ Three tiers:
 | avx code prints vpaddd_avx2( or vfmadd132ps_fma( instead of an intrinsic | [`avxintrinsics`](#avxintrinsics----on--off-default-on) |
 | an fma call lists its operands in instruction order rather than multiplicands first | [`avxintrinsics`](#avxintrinsics----on--off-default-on) |
 | vector user-ops are named after the mnemonic and its extension | [`avxintrinsics`](#avxintrinsics----on--off-default-on) |
+| eight float additions on slices of one register instead of a vector add | [`lanefuse`](#lanefuse----on--all--off-default-on) |
+| avx-512 mask applied as sixteen per-lane multiply-or statements | [`lanefuse`](#lanefuse----on--all--off-default-on) |
+| a vector function body is one statement per lane | [`lanefuse`](#lanefuse----on--all--off-default-on) |
 | a DOS program's globals print as *(short *)0x308e near-pointer dereferences instead of named globals | [`mzdgroup`](#mzdgroup----on--off-default-on) |
 | every function of an MS-DOS executable declares an unsigned short local commented // ds | [`mzdgroup`](#mzdgroup----on--off-default-on) |
 | the same DOS global gets no shared name across functions | [`mzdgroup`](#mzdgroup----on--off-default-on) |
@@ -1824,6 +1827,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On by default: vector code reads as intrinsics. Turn it off to see the SLEIGH user-op names, for example to search for an instruction mnemonic.
 - **Where / provenance:** P9/naming-policy · kuna · presentation-default · kuna-avxintrinsics
 - **Example:** `option avxintrinsics off`
+
+### `lanefuse` -- on | all | off, default `on`
+
+- **Symptoms:** eight float additions on slices of one register instead of a vector add; avx-512 mask applied as sixteen per-lane multiply-or statements; a vector function body is one statement per lane.
+- **What it does:** x86-64 only (inert elsewhere): re-fuse the per-lane p-code of a vector instruction into one intrinsic op, and fold an AVX-512 write mask into the instruction's user-op. The x86 SLEIGH spec writes many SSE/AVX instructions lane by lane (`VADDPS ymm0,ymm0,ymm1` is eight FLOAT_ADDs on 4-byte slices), so heritage never sees the whole vector and the body prints as one float statement per lane. A run of two or more ops of one opcode (FLOAT_ADD/SUB/MULT/DIV, INT_ADD/SUB/MULT) whose output and inputs are consecutive equal-width slices of the same storage, covering 16, 32 or 64 bytes, becomes one built-in user-op named for the intrinsic (`_mm256_add_ps`, `_mm_add_epi32`). An EVEX `{k}` mask, which the spec applies per lane after the user-op as `r[j] = zext(k_j)*r[j] | zext(!k_j)*src[j]`, becomes the user-op's masked form with the source and the mask as arguments (`_mm512_mask_add_ps(src, k, a, b)`, `_mm512_maskz_add_ps(k, a, b)` when EVEX.z is set). At `on` (default) legacy-SSE integer and two-lane double runs keep their lanes, because compilers emit them for auto-vectorised and SLP-paired scalar code that `devectorize`, `wideslice`, `simdlane` and the float-precision rules turn back into scalars; `all` fuses them too, for hand-written SSE2 intrinsic code (`_mm_add_epi32`, `_mm_mul_pd`). Lane-wise AND/OR/XOR never fuse (scalar `xorps x,x` / `andps` sign-mask idioms).
+- **When to flip:** On by default: vector code reads as one intrinsic per instruction. Use `all` for hand-written SSE2 integer/double intrinsic code; turn it off to see the SLEIGH lane statements.
+- **Where / provenance:** P2/flow-classification · kuna · new-analysis · kuna-lanefuse
+- **Example:** `option lanefuse off`
 
 ## Analysis & loader passes
 

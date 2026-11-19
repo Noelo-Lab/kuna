@@ -3885,3 +3885,44 @@ The split writes cover exactly the bytes the one write covered, with the same
 values, so it changes how heritage partitions the register and nothing else.
 `option vexzeroupper off` keeps the spec's whole-ZMM write. Changes 0/675
 datatest assertions. Pinned by `tests/stages/kuna-vexzeroupper.xml`.
+
+## (kuna) Per-lane vector p-code re-fused into one intrinsic — `option lanefuse`, default on
+
+**`decompiler/crates/kuna-decomp/src/p2_lift/kuna_lanefuse.rs (fuse,
+fold_mask)`, called from `flow.rs (process_instruction)`.** The x86 SLEIGH
+spec writes many SSE/AVX instructions lane by lane: `VADDPS ymm0, ymm0, ymm1`
+is eight `FLOAT_ADD`s on 4-byte slices, so no op reads or writes a whole
+vector. After an instruction is translated, on x86-64 only, a run of two or
+more ops of one opcode whose output and inputs are consecutive equal-width
+slices of the same storage (or `SUBPIECE`s of one varnode at consecutive
+offsets), covering 16, 32 or 64 bytes, is rebuilt into one `CALLOTHER` on the
+whole operands. The instruction's first lane op is rewritten in place, so the
+instruction keeps its first op. The user-op is a generated built-in
+(`BUILTIN_LANE_BASE`) named for the intrinsic: `_mm256_add_ps`, `_mm_sub_pd`,
+`_mm256_add_epi32`. Which runs fuse:
+
+- `FLOAT_ADD/SUB/MULT/DIV` and `INT_ADD/SUB/MULT` always under VEX/EVEX
+  (first instruction byte `c4`, `c5` or `62`);
+- under legacy SSE encoding, only four-lane float runs (`addps`) at the
+  default `on`. Legacy SSE integer lanes and two-lane double runs are what
+  compilers emit for auto-vectorised and SLP-paired scalar code, and
+  `devectorize`, `wideslice`, `simdlane` and the float-precision rules read
+  them back as scalars. `lanefuse all` fuses them too, for hand-written SSE2
+  intrinsic code (`_mm_add_epi32`, `_mm_mul_pd`);
+- never lane-wise `AND/OR/XOR`, which carry scalar idioms (`xorps x,x`,
+  `andps` with a sign mask for `fabs`).
+
+An EVEX `{k}` mask is applied by the spec per lane after the user-op:
+`r[j] = zext(k_j)*r[j] | zext(!k_j)*src[j]`. When every lane of the user-op's
+result is rewritten that way (`fold_mask`), the lane ops and the mask
+extraction are removed. The user-op becomes its masked built-in
+(`BUILTIN_MASK_BASE + 2*id`, `vaddps_avx512f_mask`) reading
+`(src, k, operands...)`, or its zero-masked one (`+1`, `..._maskz`) reading
+`(k, operands...)` when EVEX.z is set (byte 3 bit 7 of the `62` prefix). The
+mask is passed at the intrinsic's width (two bytes for sixteen lanes), and a
+following `dst = COPY r` is folded so the op writes `dst`. `avxintrinsics`
+prints these as `_mm512_mask_add_ps` and `_mm512_maskz_add_ps`; with it off
+they keep the `_mask`/`_maskz` suffix on the SLEIGH name.
+
+`option lanefuse off` keeps the lane statements. Changes 0/675 datatest
+assertions. Pinned by `tests/stages/kuna-lanefuse.xml`.

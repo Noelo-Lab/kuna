@@ -5766,3 +5766,22 @@ symptoms = "avx code reads SUB6432(zmm0,0) instead of ymm0|a ymm or xmm value sh
 live_field = "vex_zero_upper"
 live_true = "on"
 live_false = "off"
+
+[[settable]]
+option = "lanefuse"
+values = "on|all|off"
+default = "on"
+destructive = false
+phase = "P2"
+subphase = "flow-classification"
+strength = "HARD"
+rewind = "P2"
+issue = "kuna-lanefuse"
+summary = "x86-64 only (inert elsewhere): re-fuse the per-lane p-code of a vector instruction into one intrinsic op, and fold an AVX-512 write mask into the instruction's user-op. The x86 SLEIGH spec writes many SSE/AVX instructions lane by lane (`VADDPS ymm0,ymm0,ymm1` is eight FLOAT_ADDs on 4-byte slices), so heritage never sees the whole vector and the body prints as one float statement per lane. A run of two or more ops of one opcode (FLOAT_ADD/SUB/MULT/DIV, INT_ADD/SUB/MULT) whose output and inputs are consecutive equal-width slices of the same storage, covering 16, 32 or 64 bytes, becomes one built-in user-op named for the intrinsic (`_mm256_add_ps`, `_mm_add_epi32`). An EVEX `{k}` mask, which the spec applies per lane after the user-op as `r[j] = zext(k_j)*r[j] | zext(!k_j)*src[j]`, becomes the user-op's masked form with the source and the mask as arguments (`_mm512_mask_add_ps(src, k, a, b)`, `_mm512_maskz_add_ps(k, a, b)` when EVEX.z is set). At `on` (default) legacy-SSE integer and two-lane double runs keep their lanes, because compilers emit them for auto-vectorised and SLP-paired scalar code that `devectorize`, `wideslice`, `simdlane` and the float-precision rules turn back into scalars; `all` fuses them too, for hand-written SSE2 intrinsic code (`_mm_add_epi32`, `_mm_mul_pd`). Lane-wise AND/OR/XOR never fuse (scalar `xorps x,x` / `andps` sign-mask idioms)."
+use_when = "On by default: vector code reads as one intrinsic per instruction. Use `all` for hand-written SSE2 integer/double intrinsic code; turn it off to see the SLEIGH lane statements."
+example = "option lanefuse off"
+source_decompiler = "kuna"
+inspiration = "The Intel Intrinsics Guide: one intrinsic per packed instruction, and the `_mask_`/`_maskz_` forms of the AVX-512 write mask"
+change_kind = "new-analysis"
+tier = "transform"
+symptoms = "eight float additions on slices of one register instead of a vector add|avx-512 mask applied as sixteen per-lane multiply-or statements|a vector function body is one statement per lane"
