@@ -1622,25 +1622,34 @@ default spelling and the converted one on x86-64, AArch64, PowerPC64 and MIPS64
 objects from `tests/fixtures/wide-integer-emission/`; `kuna-cli/tests/wide_shift_emission.rs`
 executes the emitted C at O0/O2 under UBSan over signed boundary bit patterns.
 
-**(kuna) Wrapping widened additions — `option wrapadd`.** A four-byte
-addition whose result a wider sign extension observes, such as MIPS `addiu`
-or RISC-V `addw` feeding a 64-bit register, wraps at 32 bits on the machine.
-Printed as `(long)(a + 1)` over signed operands, the C addition overflows an
-`int` instead, which is undefined: UBSan reports it and a compiler may compute
-the sum at 64 bits. With the option on,
+**(kuna) Wrapping widened additions — `option wrapadd`.** A four-byte addition
+whose result a wider sign extension observes, such as MIPS `addiu` or RISC-V
+`addw` feeding a 64-bit register, wraps at 32 bits on the machine. Printed as
+`(long)(a + 1)` over signed operands, the C addition overflows an `int` instead,
+which is undefined: UBSan reports it and a compiler may compute the sum at 64
+bits. With the option on,
 `decompiler/crates/kuna-decomp/src/p9_emit/kuna_widenedadd.rs (plan)` finds such
 an `INT_ADD`: a four-byte output, operands that print as signed four-byte
 integers (or one of them a four-byte literal), and a bounded COPY/CAST reader
 chain into a wider `INT_SEXT` whose value reaches a return, a store or a
 comparison. The printer then adds the left operand's unsigned conversion and
-restores a signed result: `(int)((unsigned int)a + 1)`. Each operand prints
-once and other readers keep their form. Address-only uses and library lengths
-keep their pointer and domain handling, and a U-suffixed literal already makes
-the addition wrap. The option is off by default because the casts land on
-every widened int sum; `tests/stages/kuna-wrapadd.xml` pins both spellings on
-x86-64, AArch64, PowerPC64 and MIPS64 objects from
-`tests/fixtures/wide-integer-emission/`, and `kuna-cli/tests/wrap_add_emission.rs`
-executes the `on` output at O0/O2 under UBSan at `INT32_MAX` and `UINT32_MAX`.
+restores a signed result: `(int)((unsigned int)a + 1)`. Each operand prints once
+and the IR is unchanged. The conversion is the addition's own spelling, so a sum
+printed inline at several readers is converted at each of them, and a compound
+`x += 1` prints as `x = (int)((unsigned int)x + 1)`. Address-only uses and
+library lengths keep their pointer and domain handling, and a U-suffixed literal
+already makes the addition wrap. Only the top-level addition is repaired: an
+operand keeps its own spelling, so in `(int)((unsigned int)(a + b) + c)` the
+inner `a + b` can still overflow. A subtraction of two values (`INT_SUB`), a
+product, and a sum that reaches its sign extension through a phi or is only
+zero-extended keep their signed form. The option is off by default because the
+casts land on every widened int sum, loop counters included: over 441 x86-64,
+AArch64, ARM, PowerPC64, MIPS64 and RISC-V 64 binaries it adds about 1.3 casts
+per 1,000 output lines (5.7 on MIPS64, 4.2 on RISC-V 64, under 0.3 elsewhere).
+`tests/stages/kuna-wrapadd.xml` pins both spellings on x86-64, AArch64,
+PowerPC64 and MIPS64 objects from `tests/fixtures/wide-integer-emission/`, and
+`kuna-cli/tests/wrap_add_emission.rs` executes the `on` output at O0/O2 under
+UBSan at `INT32_MAX` and `UINT32_MAX`.
 
 **Every label labels a statement.** Label placement in the printed C is valid
 C99/C11/C17 and does not rely on C23. In those dialects a label is part of a
