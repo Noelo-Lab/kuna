@@ -329,9 +329,15 @@ pub(super) fn collect_fbreg_locals(
     cfa: i64,
     out: &mut Vec<crate::pass::LocalFact>,
 ) {
+    let Some(base) = super::kuna_dwarfscopes::frame_base_offset(sub.frame_base, cfa) else { return };
     let mut walk = TypeWalk::new();
-    for &coff in &sub.children {
+    let mut pending: Vec<usize> = sub.children.iter().rev().copied().collect();
+    while let Some(coff) = pending.pop() {
         let Some(child) = dies.get(&coff) else { continue };
+        if child.tag == gimli::DW_TAG_lexical_block {
+            pending.extend(child.children.iter().rev().copied());
+            continue;
+        }
         if !matches!(child.tag, gimli::DW_TAG_variable | gimli::DW_TAG_formal_parameter) {
             continue;
         }
@@ -357,7 +363,7 @@ pub(super) fn collect_fbreg_locals(
             func_addr,
             name,
             type_: ty,
-            stack_offset: cfa.wrapping_add(fbreg),
+            stack_offset: base.wrapping_add(fbreg),
         });
     }
 }

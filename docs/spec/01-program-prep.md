@@ -4166,8 +4166,45 @@ moves.
   location may include `DW_OP_plus_uconst` displacements, as emitted for interior
   equivalence views. Each unsigned LEB128 operand is decoded and added without
   signed overflow; truncated operands and dereference, piece, register, or value
-  expressions remain outside this fixed-local path. Nested lexical-block locals
-  and composite locations are a documented loss. (ida) The
+  expressions remain outside this fixed-local path. The offset is relative to
+  the subprogram's `DW_AT_frame_base`
+  (`decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_dwarfscopes.rs (frame_base_offset)`):
+  gcc's `DW_OP_call_frame_cfa` is `call_frame_cfa`; clang's frame-pointer
+  bases are where the standard prologue leaves them, RBP on x86-64 16 bytes
+  below the CFA, EBP on i386 8 below, x29 on AArch64 16 below, s0 on RISC-V at
+  the CFA; any other register base (an `-fomit-frame-pointer` RSP) moves with
+  the body, so that function gets no DWARF stack locals. Every clang -O0 local
+  used to be placed 16 bytes off and named the wrong slot. Locals nested in
+  `DW_TAG_lexical_block` scopes at any depth are collected in document order
+  like direct children, and a variable whose location is a location list takes
+  the stack slot when every frame-relative entry of the list names the same one;
+  a composite whose `DW_OP_piece` parts are consecutive frame slots is the
+  first slot (`kuna_dwarfscopes.rs (piece_frame_offset)`). Inlined subroutines
+  are walked like lexical blocks, their variables named through
+  `DW_AT_abstract_origin`, a repeated name in one function suffixed `_2`, `_3`
+  (`scope_vars`, `LocalNames`). A variable held in one register (a whole-function
+  `DW_OP_reg<n>`/`DW_OP_regx`, or the longest single-register entry of its
+  location list, `register_location`) becomes a `pass.rs (RegLocalFact)`; the
+  DWARF register number is turned into the SLEIGH name by the psABI tables in
+  `register_name` (x86-64, i386, AArch64, ARM, RISC-V, MIPS, PowerPC). The
+  commit parks them on the architecture by function entry, and the decompile
+  (`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs (seed_dwarf_register_locals)`)
+  maps each as a namelocked, typelocked local at the use point its value will
+  have after heritage: the range's start when it begins a basic block (a
+  loop-carried value's phi), otherwise the last raw write covering the storage
+  strictly before the start and at most 16 bytes earlier (the defining
+  instruction); the matching raw varnodes have their properties refreshed, as
+  for a console `type varnode`. A parameter whose location at the entry PC is a
+  single register (`entry_storage`) is locked to that register when the
+  default model would put some parameter of the function elsewhere and gives it
+  no hidden return pointer (the commit asks the model with
+  `assign_parameter_storage`): locked twice, as a `map param` lock for the
+  function's own decompile and as explicit input storage on the prototype its
+  callers read, so a `regparm(3)` callee and its call sites agree. A function the
+  model already describes keeps its model-derived storage, and a
+  `DW_CC_nocall` subprogram is left to the changed-convention rule below. A
+  composite held in several registers (a struct split across RDI:RSI) is not
+  mapped; it would need a local symbol at a join-space address. The
   data-global fix (DIV-24): a global used to be mapped with a size-1 type, so any
   multi-byte access queried `queryContainer(addr, 4)` past it and rendered
   `dat_<addr>`; the pass now resolves `DW_AT_type` to a byte size

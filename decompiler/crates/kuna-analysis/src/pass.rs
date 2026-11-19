@@ -211,6 +211,22 @@ pub struct LocalFact {
     pub stack_offset: i64,
 }
 
+/// A DWARF variable or parameter held in a register.
+#[derive(Clone, Debug)]
+pub struct RegLocalFact {
+    /// Entry of the function the variable belongs to.
+    pub func_addr: u64,
+    pub name: String,
+    pub type_: std::rc::Rc<kuna_decomp::dtype::Datatype>,
+    /// The DWARF register number.
+    pub dwarf_reg: u16,
+    /// The SLEIGH register name (filled by the DWARF pass for the image's ABI).
+    pub reg: String,
+    /// A local: the PC from which it lives in the register. A parameter: its
+    /// index in the prototype.
+    pub start: u64,
+}
+
 /// (kuna `libctypes`) A data symbol whose TYPE the analysis tier knows outright:
 /// the address, the name it is installed under, and the recovered type.
 ///
@@ -570,6 +586,10 @@ pub struct AnalysisOutput {
     /// emits them here instead. The libc and Win32 signature passes all use this
     /// stream for concrete resolver entries. See [`crate::protos`].
     pub prototypes_at: Vec<(u64, kuna_decomp::fspec::PrototypePieces)>,
+    /// DWARF locals held in a register.
+    pub dwarf_reg_locals: Vec<RegLocalFact>,
+    /// DWARF parameters whose entry location is a register.
+    pub dwarf_param_regs: Vec<RegLocalFact>,
     /// DWARF subprograms marked `DW_CC_nocall`, as
     /// `(entry, name, parameter indices with no location)`: the compiler changed
     /// their calling convention and those parameters are no longer passed.
@@ -795,6 +815,8 @@ impl AnalysisOutput {
         self.prototypes.iter_mut().for_each(fix_proto);
         self.prototypes_at.iter_mut().for_each(|(_, p)| fix_proto(p));
         self.dwarf_nocall.iter_mut().for_each(|(_, n, _)| fix(n));
+        self.dwarf_reg_locals.iter_mut().for_each(|l| fix(&mut l.name));
+        self.dwarf_param_regs.iter_mut().for_each(|l| fix(&mut l.name));
         self.arm_float_prototypes.iter_mut().for_each(|(_, p)| fix_proto(p));
         self.main_decl_at.iter_mut().for_each(|(_, p)| fix_proto(p));
         self.cpp_dwarf.symbols.iter_mut().for_each(|s| fix(&mut s.name));
@@ -908,6 +930,8 @@ impl AnalysisOutput {
         self.prototypes.extend(other.prototypes);
         self.prototypes_at.extend(other.prototypes_at);
         self.dwarf_nocall.extend(other.dwarf_nocall);
+        self.dwarf_reg_locals.extend(other.dwarf_reg_locals);
+        self.dwarf_param_regs.extend(other.dwarf_param_regs);
         self.arm_float_prototypes.extend(other.arm_float_prototypes);
         self.main_decl_at.extend(other.main_decl_at);
         self.c_runtime_imports.extend(other.c_runtime_imports);

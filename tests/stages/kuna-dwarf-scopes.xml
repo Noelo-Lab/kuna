@@ -1,0 +1,40 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna-dwarf-scopes: DWARF locals in lexical blocks, and relative to the
+    subprogram's frame base.
+
+    Stage P1 external-refinement (the DWARF pass; refinement of `dwarf`, no
+    option). The fixtures are dwarfscopes_x86_64.c built with gcc -O0 -g and
+    clang -O0 -g. `checksum` declares `char scratch[32]` and `int partial`
+    inside the loop body and `long bonus` inside an if block, so DWARF nests
+    them in DW_TAG_lexical_block scopes. Only direct children used to be read:
+    the 32-byte buffer was an anonymous `char [31]` and the loop counter `v2`.
+    Clang's frame base is RBP, not the CFA; its offsets used to be taken from
+    the CFA, which named the buffer `total`.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/dwarfscopes_gcc_O0_x86_64</com>
+  <com>read symbols</com>
+  <com>load function checksum</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/dwarfscopes_clang_O0_x86_64</com>
+  <com>read symbols</com>
+  <com>load function checksum</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="dwarf scopes #1: the loop-body buffer is named and typed in both builds" min="2" max="2">char scratch \[32\];</stringmatch>
+<stringmatch name="dwarf scopes #2: the loop counter is named" min="2" max="2">for \(i = 0; i &lt; rounds; i = i \+ 1\)</stringmatch>
+<stringmatch name="dwarf scopes #3: clang's RBP frame base puts total on the accumulator, not the buffer" min="1" max="1">total = \(int4?\)strlen\(scratch\) \* \(i \+ 1\) \+ total;</stringmatch>
+<stringmatch name="dwarf scopes #4: no build names the buffer as total" min="0" max="0">strncpy\(\(char \*\)&amp;total</stringmatch>
+</decompilertest>

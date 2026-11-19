@@ -6534,6 +6534,77 @@ fn commit_analysis_output(
         prog.dwarf_locals
             .push((fact.func_addr, fact.name, fact.type_, fact.stack_offset));
     }
+    // 8a. DWARF parameters that arrive in a register,
+    //     where the default model would put them elsewhere (a `regparm` or
+    //     IPA-optimized callee): the function's own decompile takes them as
+    //     `map param` locks, and its parked prototype states the storage for
+    //     its callers. A function the model already describes is left alone,
+    //     and so is one the model gives a hidden return pointer: the two then
+    //     disagree about the return, which input storage cannot settle.
+    let mut by_func: std::collections::BTreeMap<u64, Vec<(i32, String, kuna_decomp::fspec::ParameterPieces)>> =
+        std::collections::BTreeMap::new();
+    for fact in &out.dwarf_param_regs {
+        let Ok(vd) = prog.arch().get_register_varnode(fact.reg.as_bytes()) else { continue };
+        let Some(space) = vd.space.clone() else { continue };
+        let size = fact.type_.get_size() as u64;
+        if size == 0 || size > u64::from(vd.size) {
+            continue;
+        }
+        let offset = if space.is_big_endian() { vd.offset + u64::from(vd.size) - size } else { vd.offset };
+        let piece = kuna_decomp::fspec::ParameterPieces {
+            addr: Address::new(space, offset),
+            type_: Some(Rc::clone(&fact.type_)),
+            flags: kuna_decomp::fspec::parameter_pieces_flags::TYPELOCK | kuna_decomp::fspec::parameter_pieces_flags::NAMELOCK,
+        };
+        by_func.entry(fact.func_addr).or_default().push((fact.start as i32, fact.name.clone(), piece));
+    }
+    for (func, params) in by_func {
+        let entry = Address::new(Rc::clone(code_space), func);
+        let Some(mut pieces) = prog.arch().symboltab.function_proto_pieces_across_scopes(&entry).cloned() else { continue };
+        let modelled = prog.arch().default_fp().and_then(|model| {
+            let mut res = Vec::new();
+            let manager = prog.arch().manage();
+            model.assign_parameter_storage(&pieces, &mut res, true, prog.arch().types(), manager).ok()?;
+            if res.iter().any(|p| p.flags & kuna_decomp::fspec::parameter_pieces_flags::HIDDENRETPARM != 0) {
+                return Some(true);
+            }
+            let inputs: Vec<Address> = res
+                .iter()
+                .skip(1)
+                .filter(|p| p.flags & kuna_decomp::fspec::parameter_pieces_flags::HIDDENRETPARM == 0)
+                .map(|p| p.addr.clone())
+                .collect();
+            Some(params.iter().all(|(i, _, p)| inputs.get(*i as usize) == Some(&p.addr)))
+        });
+        if modelled != Some(false) {
+            continue;
+        }
+        for (index, name, piece) in params {
+            pieces.input_storage.retain(|(i, _)| *i != index);
+            pieces.input_storage.push((index, piece.clone()));
+            let locks = prog.arch_mut().loader_param_locks.entry(entry.clone()).or_default();
+            locks.retain(|(i, _, _)| *i != index);
+            locks.push((index, name, piece));
+        }
+        prog.arch_mut().set_function_prototype_pieces_at(&entry, pieces);
+    }
+    // 8b. Register-held DWARF locals, parked on the
+    //     architecture by function entry and mapped by the decompile at the
+    //     use point of the value the register holds at `start`.
+    for fact in out.dwarf_reg_locals {
+        let Ok(vd) = prog.arch().get_register_varnode(fact.reg.as_bytes()) else { continue };
+        let Some(space) = vd.space.clone() else { continue };
+        let size = fact.type_.get_size() as u64;
+        if size == 0 || size > u64::from(vd.size) {
+            continue;
+        }
+        let offset = if space.is_big_endian() { vd.offset + u64::from(vd.size) - size } else { vd.offset };
+        prog.arch_mut()
+            .dwarf_reg_locals
+            .entry(fact.func_addr)
+            .or_default()
+            .push((fact.name, fact.type_, Address::new(space, offset), fact.start));
+    }
 
     // 9. Source-line comments from the DWARF and CVF trace analyzers.
     //    Each `.debug_line` row's `file:line` is installed into the architecture's

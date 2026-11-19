@@ -1,0 +1,48 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna-dwarf-reglocals: DWARF register locals, inlined-subroutine locals and
+    parameter storage.
+
+    Stage P1 external-refinement (the DWARF pass; refinement of `dwarf`, no
+    option). dwarfregs_x86_64.c built with gcc -O2 -g: `hash` keeps `h` in EAX
+    (a location list), and the inlined `mix` keeps its `t` and `u` in EDX/EAX
+    inside a DW_TAG_inlined_subroutine. dwarfregparm_i386.c built with
+    gcc -m32 -O2 -g: `combine` is `regparm(3)`, so DWARF puts `a`, `b`, `c` in
+    EAX, EDX, ECX at entry while the default i386 model expects them on the
+    stack.
+
+    Before: register-held locals were anonymous, and `combine` read three
+    uninitialized registers (`return (v1 * 7 + v3 * 3) - v2;`) while its caller
+    passed stack garbage. Now the locals carry their DWARF names and `combine`
+    takes its parameters in the registers DWARF states, at the definition and
+    at the call.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/dwarfregs_gcc_O2_x86_64</com>
+  <com>read symbols</com>
+  <com>load function hash</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/dwarfregparm_gcc_O2_i386</com>
+  <com>read symbols</com>
+  <com>load function combine</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function main</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="dwarf reglocals #1: the register local takes its DWARF name" min="1" max="1">int4 h; // eax \| ecx</stringmatch>
+<stringmatch name="dwarf reglocals #2: the inlined mix's locals are named" min="1" max="1">u = t &gt;&gt; 7 \^ t;</stringmatch>
+<stringmatch name="dwarf reglocals #3: combine takes its parameters in their DWARF registers" min="1" max="1">return \(a \* 7 \+ b \* 3\) - c;</stringmatch>
+<stringmatch name="dwarf reglocals #4: and its caller passes them there" min="1" max="1">combine\(argc,argc \+ 1,</stringmatch>
+</decompilertest>

@@ -1887,6 +1887,9 @@ pub struct Architecture {
     /// shape of a console `map param`. The decompile drive seeds a
     /// function's own decompile with them ahead of the console's.
     pub loader_param_locks: std::collections::BTreeMap<Address, Vec<(int4, String, crate::fspec::ParameterPieces)>>,
+    /// Register-held DWARF locals by function entry: `(name, type, storage,
+    /// PC from which the register holds the variable)`.
+    pub dwarf_reg_locals: std::collections::BTreeMap<u64, Vec<(String, Rc<crate::dtype::Datatype>, Address, u64)>>,
     /// (kuna `objcivars`) Type an Objective-C method's `self` as a pointer to the
     /// struct built from its class's ivar list, and fold the `__objc_ivar` offset
     /// variables to their compile-time layout offsets so an ivar access renders
@@ -2614,6 +2617,7 @@ impl Architecture {
             blob_entries: Rc::default(),
             analysis_swifttypes: true,
             loader_param_locks: std::collections::BTreeMap::new(),
+            dwarf_reg_locals: std::collections::BTreeMap::new(),
             analysis_objcivars: true,
             analysis_swiftcall: true,
             loader_proto_models: Rc::default(),
