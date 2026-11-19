@@ -5,6 +5,7 @@
 
 pub mod kuna_aif;
 pub mod kuna_cppsig;
+pub mod kuna_esprom; // (kuna) the Espressif chip whose mask ROM and memory map apply
 pub mod kuna_elfmaindecl; // (kuna) an executable's own main declared from its unlocked analysis
 pub mod kuna_formatstring;
 pub mod kuna_goreg; // (kuna) name+type the goroutine register as the `g` global (docs/multilang.md W4)

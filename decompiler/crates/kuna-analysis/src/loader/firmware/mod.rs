@@ -3,6 +3,8 @@
 
 pub mod containers;
 pub mod cortexm;
+pub mod esp;
+pub mod esprom;
 pub mod svd;
 pub mod tiano;
 pub mod uefifv;
