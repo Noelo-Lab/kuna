@@ -2589,6 +2589,31 @@ long a1, swift.type_metadata *metadata_A, void *witness_A_Hashable)`, `long
 sigfix.Triple.sum()(sigfix.Triple self)` and `void sigfix.Triple.bump(_:)(long a0,
 sigfix.Triple *self)`.
 
+### `swift_async_elf` — Swift concurrency on a stripped image (`swiftcall`)
+
+`swift_async_elf` (x86-64 ELF, 23 KB, stripped) is the fixture for
+`tests/stages/kuna-swiftconcurrency.xml`. Its source `swift_async_elf.swift`
+has an actor (`Counter`), a class with an `async throws` method (`Loader.fetch`),
+and free `async` functions that suspend on a checked continuation
+(`resumeLater`), two `async let`s (`pair`), a task group (`fan`), an actor hop
+(`hop`) and an unstructured `Task` (`spawn`). Built with the swiftly 6.4.2
+toolchain:
+
+```bash
+swiftc -O -parse-as-library -module-name asyncfix swift_async_elf.swift -o swift_async_syms_elf
+llvm-strip --strip-all -o swift_async_elf swift_async_syms_elf
+```
+
+**Pinned VMAs** (`nm` on the unstripped build): `resumeLater(_:)`@`0x5200`
+with its partials `0x3700` (suspend), `0x37b0` (await) and `0x3800` (the last,
+which frees its frame and returns through the context); `hop(_:_:)`'s first
+partial@`0x4110`, which calls no task runtime; `fan(_:)`'s@`0x3b20`
+(`swift_taskGroup_initialize`, then an `async` call with a fresh context);
+the partial@`0x3b00`, which stores a result and returns. The image has 64 `async` entries and partials (every symbol with an async
+function pointer or a `TQn_` / `TYn_` suffix).
+
+SHA-256: `855697099f5d2e5eca602686f72c9182bfb402ab278b98a303c53de7691bf44e`.
+
 ### `swift_infer_elf` — Swift functions the metadata does not bind (`swiftcall`)
 
 `swift_infer_elf` (x86-64 ELF, 11 KB, stripped) is the fixture for
