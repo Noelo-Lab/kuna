@@ -805,8 +805,11 @@ pub fn functional_equality_level(
     if obank.get(op2).expect("funcEqLevel").is_call() {
         return -1;
     }
-    // (kuna syscallregs) each system call's error flag is its own value.
-    if crate::kuna_syscallregs::is_error_flag_op(obank, vbank, op1) {
+    // (kuna syscallregs) each system call's error flag is its own value, (kuna
+    // swiftcall) as is each throwing call's error.
+    if crate::kuna_syscallregs::is_error_flag_op(obank, vbank, op1)
+        || crate::kuna_swifterror::is_error_op(obank, vbank, op1)
+    {
         return -1;
     }
     if opc == OpCode::CPUI_LOAD {

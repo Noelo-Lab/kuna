@@ -804,6 +804,10 @@ fn base_explicit(data: &Funcdata, vn: crate::context::VarnodeId, mut maxref: int
     if crate::kuna_stablenames::holds_retype(data, vn) {
         return -1;
     }
+    // (kuna swiftcall) a throwing call's error is read as one value, named once.
+    if crate::kuna_swifterror::is_error(data, def) {
+        return -1;
+    }
     // def->code()==PIECE && in0 isProtoPartial -> explicit.
     {
         let dop = data.obank().get(def).unwrap();

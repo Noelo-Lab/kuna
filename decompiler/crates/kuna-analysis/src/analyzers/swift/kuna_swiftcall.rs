@@ -39,6 +39,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::rc::Rc;
 
 use kuna_decomp::dtype::Datatype;
+use kuna_decomp::kuna_swiftcall::{SWIFTASYNCCALL, SWIFTASYNCCALL_THROWS, SWIFTCALL, SWIFTCALL_THROWS};
 
 use super::descriptors::{ContextKind, Target, TypeRef};
 use super::kuna_swifttypes::{Registers, Types};
@@ -47,13 +48,14 @@ use crate::demangle::kuna_swift::node::{Kind, Node, NodeRef};
 use crate::demangle::kuna_swift::print::print_full;
 use crate::pass::{AnalysisOutput, InputHintFact, ModelFact};
 
-use kuna_decomp::kuna_swiftcall::{SWIFTCALL, SWIFTCALL_THROWS};
 
 #[derive(Default, Debug)]
 pub struct Stats {
     pub bound: usize,
     pub typed_self: usize,
     pub throws: usize,
+    pub asyncs: usize,
+    pub declared: usize,
 }
 
 /// What a function's `self` is.
@@ -72,9 +74,34 @@ struct Binding {
     conflicted: bool,
 }
 
+/// A Swift argument label as a C identifier: a label that is a C keyword
+/// (`for`, `default`, `while`) gets a trailing underscore.
+fn c_identifier(label: &str) -> String {
+    const C_KEYWORDS: &[&str] = &[
+        "auto", "break", "case", "char", "const", "continue", "default", "do", "double", "else", "enum", "extern",
+        "float", "for", "goto", "if", "inline", "int", "long", "register", "restrict", "return", "short", "signed",
+        "sizeof", "static", "struct", "switch", "typedef", "union", "unsigned", "void", "volatile", "while",
+    ];
+    if C_KEYWORDS.contains(&label) { format!("{label}_") } else { label.to_string() }
+}
+
+/// A symbol-named member's declared signature, for the prototype: the
+/// regular parameters, the trailing ones a witness takes (the `Self`
+/// metadata and the witness table), the return type, and the `self` that
+/// rides in `swiftself` when the member takes one there.
+pub struct Declared {
+    pub params: Vec<(String, Rc<Datatype>)>,
+    pub ret: Rc<Datatype>,
+    pub swiftself: Option<Rc<Datatype>>,
+    /// A struct instance member's `self` by value, the form it takes when
+    /// the body does not read `swiftself` first.
+    pub exploded_self: Option<Rc<Datatype>>,
+}
+
 struct Binder<'t, 'a> {
     types: &'t Types<'a>,
     bound: BTreeMap<u64, Binding>,
+    declared: BTreeMap<u64, (Declared, &'static str)>,
     /// Dotted paths of the local class-bound protocols.
     class_bound: HashSet<String>,
     /// Functions a symbol names as Swift functions of a module, no type's
@@ -217,10 +244,35 @@ impl Binder<'_, '_> {
         for (addr, name) in symbols {
             let Some(tree) = demangle_swift_tree(name) else { continue };
             let [entity] = tree.children.as_slice() else { continue };
-            let Some((owner, is, throws)) = member(entity) else {
-                if entity.kind == Kind::Function && entity.first().is_some_and(|c| c.kind == Kind::Module) {
-                    self.free.push(*addr);
+            // An async function's resume partials are the same function
+            // split at its suspension points: each takes the context.
+            let (entity, partial) = match entity.kind {
+                Kind::AsyncAwaitResumePartialFunction | Kind::AsyncSuspendResumePartialFunction => {
+                    match entity.first() {
+                        Some(inner) => (inner, true),
+                        None => continue,
+                    }
                 }
+                _ => (entity, false),
+            };
+            // A free function: no owner, no `self`.
+            if entity.kind == Kind::Function && entity.first().is_some_and(|c| c.kind == Kind::Module) && !partial {
+                self.free.push(*addr);
+                let throws = throws(entity);
+                let model = match (is_async(entity), throws) {
+                    (true, true) => SWIFTASYNCCALL_THROWS,
+                    (true, false) => SWIFTASYNCCALL,
+                    (false, true) => SWIFTCALL_THROWS,
+                    (false, false) => SWIFTCALL,
+                };
+                if !is_async(entity) {
+                    if let Some(d) = self.declared(entity, SelfIs::Instance, false, None) {
+                        self.declared.insert(*addr, (d, model));
+                    }
+                }
+                continue;
+            }
+            let Some((owner, is, throws)) = member(entity) else {
                 continue;
             };
             let is = if is == SelfIs::Witness && self.is_class_bound_witness(entity) {
@@ -228,7 +280,12 @@ impl Binder<'_, '_> {
             } else {
                 is
             };
-            let model = if throws { SWIFTCALL_THROWS } else { SWIFTCALL };
+            let model = match (partial || is_async(entity), throws) {
+                (true, true) => SWIFTASYNCCALL_THROWS,
+                (true, false) => SWIFTASYNCCALL,
+                (false, true) => SWIFTCALL_THROWS,
+                (false, false) => SWIFTCALL,
+            };
             let value_type = matches!(owner_kind(&owner), Some(Kind::Structure | Kind::Enum));
             if value_type && is == SelfIs::Metatype {
                 continue;
@@ -237,9 +294,228 @@ impl Binder<'_, '_> {
                 Some(path) => self.types.nominal_at(&path).and_then(|a| self.self_type(a, is)),
                 None => None,
             };
-            self.put_with(*addr, model, ty, value_type && is == SelfIs::Instance);
+            self.put_with(*addr, model, ty.clone(), value_type && is == SelfIs::Instance);
+            if !partial && !is_async(entity) {
+                if let Some(d) = self.declared(entity, is, value_type, ty) {
+                    self.declared.insert(*addr, (d, model));
+                }
+            }
         }
     }
+
+    /// The declared signature of `entity`, when every type in it is known
+    /// and the convention places every part: a class member's `self` in
+    /// `swiftself`; a witness's at the value's address, followed by the
+    /// `Self` metadata and the witness table; a struct's or enum's instance
+    /// member not at all (a non-mutating member of a loadable struct takes
+    /// `self` exploded into the argument registers, a mutating one its
+    /// address in `swiftself`, and the name does not say which).
+    fn declared(
+        &self,
+        entity: &NodeRef,
+        is: SelfIs,
+        value_type: bool,
+        self_t: Option<Rc<Datatype>>,
+    ) -> Option<Declared> {
+        let types = self.types;
+        let any = |node: &NodeRef| types.kuna_type(node, u32::MAX, 0);
+        let (mut params, ret) = match entity.kind {
+            Kind::Function | Kind::Allocator | Kind::Constructor => {
+                let (params, ret, trailing) = function_signature(entity)?;
+                let labels = entity.child_of_kind(Kind::LabelList);
+                let mut out = Vec::with_capacity(params.len());
+                for (i, p) in params.iter().enumerate() {
+                    let label = labels
+                        .and_then(|l| l.child(i))
+                        .filter(|l| l.kind == Kind::Identifier)
+                        .map(|l| c_identifier(l.get_text()))
+                        .unwrap_or_else(|| format!("a{i}"));
+                    out.push((label, any(p)?));
+                }
+                // A generic return is written through the indirect result;
+                // its type is the caller's, so the prototype stays
+                // undeclared.
+                if is_dependent(&ret) {
+                    return None;
+                }
+                let ret = if is_void(&ret) { types.tf.get_type_void().ok()? } else { any(&ret)? };
+                // Generic arguments follow the regular ones: the metadata
+                // of each type parameter, then the witness table of each
+                // conformance requirement.
+                let meta_ptr = types
+                    .metadata_struct()
+                    .and_then(|t| types.tf.get_type_pointer(types.md.ptr_size as i32, t, 1).ok());
+                let void_ptr = types
+                    .tf
+                    .get_type_void()
+                    .ok()
+                    .and_then(|v| types.tf.get_type_pointer(types.md.ptr_size as i32, v, 1).ok());
+                for (name, is_metadata) in trailing {
+                    let t = if is_metadata { meta_ptr.clone()? } else { void_ptr.clone()? };
+                    out.push((
+                        format!("{}_{}", if is_metadata { "metadata" } else { "witness" }, c_identifier(&name)),
+                        t,
+                    ));
+                }
+                (out, ret)
+            }
+            Kind::Getter | Kind::Setter => {
+                let storage = entity.first()?;
+                if storage.kind != Kind::Variable {
+                    return None;
+                }
+                let var_t = storage.child_of_kind(Kind::Type)?;
+                if entity.kind == Kind::Getter {
+                    (Vec::new(), any(var_t)?)
+                } else {
+                    (vec![("value".to_string(), any(var_t)?)], types.tf.get_type_void().ok()?)
+                }
+            }
+            Kind::Destructor | Kind::Deallocator => (Vec::new(), types.tf.get_type_void().ok()?),
+            _ => return None,
+        };
+        // A by-value aggregate: Swift explodes up to four scalar words into
+        // registers (the models join them, up to 32 bytes) and passes a
+        // larger one, or one with float words, through its address.
+        for (_, t) in params.iter_mut() {
+            if t.get_metatype() != kuna_decomp::dtype::type_metatype::TYPE_STRUCT {
+                continue;
+            }
+            match eight_byte_words(t) {
+                Some(n) if n <= 4 => {}
+                Some(_) => {
+                    *t = types.tf.get_type_pointer(types.md.ptr_size as i32, Rc::clone(t), 1).ok()?;
+                }
+                None => return None,
+            }
+        }
+        // A free function has no `self`; a member without a known type for
+        // it declares nothing.
+        let free = self_t.is_none()
+            && !value_type
+            && is == SelfIs::Instance
+            && entity.first().is_some_and(|c| c.kind == Kind::Module);
+        let swiftself = if free { None } else { Some(self_t?) };
+        if is == SelfIs::Witness {
+            let meta =
+                types.metadata_struct().and_then(|t| types.tf.get_type_pointer(types.md.ptr_size as i32, t, 1).ok())?;
+            let void = types.tf.get_type_void().ok()?;
+            let void_ptr = types.tf.get_type_pointer(types.md.ptr_size as i32, void, 1).ok()?;
+            params.push(("Self".to_string(), meta));
+            params.push(("witness_table".to_string(), void_ptr));
+        }
+        // A struct's instance member: `self` is its address in `swiftself`
+        // when the member mutates it or the struct is wider than four words,
+        // and the exploded value in the argument registers otherwise; the
+        // name does not say which, so the fact carries both forms and the
+        // commit asks the body (`self_first`).
+        let exploded_self = if value_type && is == SelfIs::Instance {
+            let st = swiftself.as_ref()?.get_ptr_to()?;
+            match eight_byte_words(&st) {
+                Some(n) if n <= 4 => Some(st),
+                Some(_) => None,
+                None => return None,
+            }
+        } else {
+            None
+        };
+        Some(Declared { params, ret, swiftself, exploded_self })
+    }
+}
+
+/// The trailing arguments a generic signature adds: one metadata pointer
+/// per generic parameter (`T`, `U`, … or `T1` at depth 1), one witness
+/// table per conformance requirement.
+fn generic_trailing(sig: &NodeRef) -> Vec<(String, bool)> {
+    let mut out = Vec::new();
+    let mut depth = 0u64;
+    for c in &sig.children {
+        match c.kind {
+            Kind::DependentGenericParamCount => {
+                for i in 0..c.get_index() {
+                    let name = crate::demangle::kuna_swift::parse::generic_parameter_name(depth, i);
+                    out.push((name, true));
+                }
+                depth += 1;
+            }
+            Kind::DependentGenericConformanceRequirement => {
+                let who = c.first().and_then(print_full).unwrap_or_default();
+                let proto = c.child(1).and_then(print_full).unwrap_or_default();
+                let name = format!("{who}_{}", proto.rsplit('.').next().unwrap_or(""));
+                out.push((name, false));
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+/// The parameter types and the return type of a function entity's type,
+/// and the trailing generic arguments of a generic one.
+fn function_signature(entity: &NodeRef) -> Option<(Vec<NodeRef>, NodeRef, Vec<(String, bool)>)> {
+    let mut t = entity.child_of_kind(Kind::Type)?;
+    let mut trailing = Vec::new();
+    let func = loop {
+        let inner = t.first()?;
+        match inner.kind {
+            Kind::Type => t = inner,
+            Kind::DependentGenericType => {
+                trailing = generic_trailing(inner.first()?);
+                t = inner.child(1)?;
+            }
+            Kind::FunctionType | Kind::NoEscapeFunctionType => break inner,
+            _ => return None,
+        }
+    };
+    let args = func.child_of_kind(Kind::ArgumentTuple)?.first()?;
+    let ret = func.child_of_kind(Kind::ReturnType)?.first()?;
+    let params = match args.first() {
+        Some(tuple) if tuple.kind == Kind::Tuple => tuple
+            .children
+            .iter()
+            .map(|e| e.children.iter().find(|c| c.kind == Kind::Type).cloned())
+            .collect::<Option<Vec<_>>>()?,
+        _ => vec![Rc::clone(args)],
+    };
+    Some((params, Rc::clone(ret), trailing))
+}
+
+/// How many eight-byte integer or pointer words a struct is, leaf by leaf
+/// (the words Swift explodes it into); `None` when a leaf is anything else
+/// (a float, a narrow integer, a nested enum), since those take other
+/// registers or pack differently.
+fn eight_byte_words(t: &Rc<Datatype>) -> Option<usize> {
+    use kuna_decomp::dtype::type_metatype::{TYPE_INT, TYPE_PTR, TYPE_STRUCT, TYPE_UINT};
+    match t.get_metatype() {
+        TYPE_INT | TYPE_UINT | TYPE_PTR => (t.get_size() == 8).then_some(1),
+        TYPE_STRUCT => {
+            let mut words = 0;
+            let mut i = 0;
+            let mut end = 0;
+            while let Some(f) = t.get_field(i) {
+                if f.offset != end {
+                    return None;
+                }
+                words += eight_byte_words(&f.field_type)?;
+                end = f.offset + f.field_type.get_size();
+                i += 1;
+            }
+            (end == t.get_size() && words > 0).then_some(words)
+        }
+        _ => None,
+    }
+}
+
+/// A type that is, or holds, a generic parameter.
+fn is_dependent(ty: &NodeRef) -> bool {
+    ty.kind == Kind::DependentGenericParamType
+        || ty.kind == Kind::DependentMemberType
+        || ty.children.iter().any(is_dependent)
+}
+
+/// `()`, the empty tuple.
+fn is_void(ty: &NodeRef) -> bool {
+    ty.first().is_some_and(|t| t.kind == Kind::Tuple && t.children.is_empty())
 }
 
 impl Binder<'_, '_> {
@@ -352,6 +628,25 @@ fn nominal(owner: &NodeRef) -> Option<String> {
     print_full(&Node::with(Kind::Type, vec![n]))
 }
 
+/// Whether the function type of an entity is `async`.
+fn is_async(entity: &NodeRef) -> bool {
+    let Some(mut t) = entity.child_of_kind(Kind::Type) else { return false };
+    loop {
+        let Some(inner) = t.first() else { return false };
+        match inner.kind {
+            Kind::Type => t = inner,
+            Kind::DependentGenericType => match inner.child_of_kind(Kind::Type) {
+                Some(next) => t = next,
+                None => return false,
+            },
+            Kind::FunctionType | Kind::NoEscapeFunctionType => {
+                return inner.children.iter().any(|c| c.kind == Kind::AsyncAnnotation);
+            }
+            _ => return false,
+        }
+    }
+}
+
 /// Whether the function type of an entity throws.
 fn throws(entity: &NodeRef) -> bool {
     let Some(mut t) = entity.child_of_kind(Kind::Type) else { return false };
@@ -386,6 +681,7 @@ pub fn bind(types: &Types, regs: &Registers, symbols: &[(u64, String)], out: &mu
     let mut b = Binder {
         types,
         bound: BTreeMap::new(),
+        declared: BTreeMap::new(),
         class_bound,
         free: Vec::new(),
     };
@@ -395,12 +691,58 @@ pub fn bind(types: &Types, regs: &Registers, symbols: &[(u64, String)], out: &mu
     let mut stats = Stats::default();
     out.swift_types.no_self = std::mem::take(&mut b.free);
     if !b.bound.is_empty() {
-        out.swift_types.regs = Some((regs.self_reg, regs.error_reg));
+        out.swift_types.regs = Some((regs.self_reg, regs.error_reg, regs.async_reg));
+    }
+    let context_t =
+        types.async_context_struct().and_then(|t| types.tf.get_type_pointer(types.md.ptr_size as i32, t, 1).ok());
+    // A body the linker folded across types states no one signature.
+    b.declared.retain(|f, _| !b.bound.get(f).is_some_and(|x| x.conflicted));
+    let declared_addrs: std::collections::BTreeSet<u64> = b.declared.keys().copied().collect();
+    for (f, (d, model)) in b.declared {
+        stats.declared += 1;
+        let self_slot = d.swiftself.is_some().then_some(d.params.len() as i32);
+        let mut intypes: Vec<Rc<Datatype>> = d.params.iter().map(|(_, t)| Rc::clone(t)).collect();
+        let mut innames: Vec<String> = d.params.iter().map(|(n, _)| n.clone()).collect();
+        if let Some(t) = d.swiftself {
+            intypes.push(t);
+            innames.push("self".to_string());
+        }
+        out.swift_types.declared.push(crate::pass::SwiftDeclaredFact {
+            func_addr: f,
+            model,
+            self_slot,
+            self_reg: regs.self_reg,
+            exploded_self: d.exploded_self,
+            pieces: kuna_decomp::fspec::PrototypePieces {
+                name: String::new(),
+                outtype: Some(d.ret),
+                intypes,
+                innames,
+                first_var_arg_slot: -1,
+                output_storage: None,
+                input_storage: Vec::new(),
+                kuna_library_names: None,
+            },
+        });
     }
     for (f, binding) in b.bound {
+        // A declared prototype carries its model and its `self`; a bound
+        // model beside it would displace the declaration's.
+        if declared_addrs.contains(&f) {
+            continue;
+        }
         stats.bound += 1;
-        if binding.model == SWIFTCALL_THROWS {
+        if matches!(binding.model, SWIFTCALL_THROWS | SWIFTASYNCCALL_THROWS) {
             stats.throws += 1;
+        }
+        if matches!(binding.model, SWIFTASYNCCALL | SWIFTASYNCCALL_THROWS) {
+            stats.asyncs += 1;
+            out.swift_types.input_hints.push(InputHintFact {
+                func_addr: f,
+                reg: regs.async_reg,
+                name: "async_context".to_string(),
+                type_: context_t.clone(),
+            });
         }
         out.swift_types.models.push(ModelFact {
             func_addr: f,

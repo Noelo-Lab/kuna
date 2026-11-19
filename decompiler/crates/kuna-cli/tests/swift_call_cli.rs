@@ -3,9 +3,10 @@
 //! `swift_call_elf` is a stripped swiftc build and `swift_call_syms_elf` the
 //! same link with its symbols (fixture README). With `swiftmetadata on` a
 //! class method takes its `self` from the swiftself register, a mutating
-//! struct method found by symbol takes the struct's address, a method hands
-//! its own `self` on to the methods it calls, and a caller that zeroes the
-//! swifterror register before a call keeps the test it makes after it; `--option swiftcall off` restores the C model.
+//! struct method found by symbol takes the struct's address (a non-mutating
+//! one its value), a method hands its own `self` on to the methods it calls,
+//! and a caller that zeroes the swifterror register before a call reads the
+//! error after it as `swift_error()`; `--option swiftcall off` restores the C model.
 
 use crate::common;
 
@@ -29,16 +30,21 @@ fn a_class_method_takes_its_self() {
 #[test]
 fn a_mutating_struct_method_takes_the_struct_address() {
     let out = decompile("swift_call_syms_elf", "0x3660", &[]);
-    assert!(out.contains("callfix.Counter.advance(by:times:)(callfix.Counter *self,long a1,long a2)"), "{out}");
-    assert!(out.contains("self->value = v1 + a2 + self->value;"), "{out}");
+    // Declared from the mangled name; the body reads swiftself first, so
+    // `self` is the struct's address.
+    assert!(out.contains("callfix.Counter.advance(by:times:)(long by,long times,callfix.Counter *self)"), "{out}");
+    assert!(out.contains("self->value = v1 + times + self->value;"), "{out}");
 }
 
 #[test]
 fn a_throwing_call_keeps_its_error_test() {
     let on = decompile("swift_call_syms_elf", "0x3490", &[]);
-    assert!(on.contains("callfix.Counter.advance(by:times:)(a1,a2,3);"), "{on}");
+    assert!(on.contains("callfix.run(_:_:_:)(callfix.Account *a0,callfix.Counter *a1,long a2)"), "{on}");
+    assert!(on.contains("callfix.Counter.advance(by:times:)(a2,3,a1);"), "{on}");
+    assert!(on.contains("v5 = swift_error();"), "{on}");
     assert!(on.contains("swift_release(v5);"), "{on}");
-    assert!(on.contains("callfix.Counter.peek(_:)(a2,a1->field_0x0,a1->field_0x8)"), "{on}");
+    // A non-mutating struct method takes `self` by value.
+    assert!(on.contains("callfix.Counter.peek(_:)(a2,*a1)"), "{on}");
     let off = decompile("swift_call_syms_elf", "0x3490", &["--option", "swiftcall", "off"]);
     assert!(!off.contains("swift_release"), "{off}");
 }
@@ -59,9 +65,10 @@ fn an_arm64_caller_keeps_its_error_test() {
 #[test]
 fn a_method_hands_its_own_self_on() {
     let on = decompile("swift_call_syms_elf", "0x35e0", &[]);
-    assert!(on.contains("v1 = callfix.Account.fee(for:)(self,a1);"), "{on}");
-    assert!(on.contains("return callfix.Account.fee(for:)(self,v2) + v1;"), "{on}");
-    assert!(on.contains("v2 = (*((void **)self->isa)[9])(self);"), "{on}");
+    // The declared prototype from the mangled name puts `self` last.
+    assert!(on.contains("v1 = callfix.Account.fee(for:)(a0,self);"), "{on}");
+    assert!(on.contains("return callfix.Account.fee(for:)(for_,self) + v1;"), "{on}");
+    assert!(on.contains("for_ = (*((void **)self->isa)[9])(self);"), "{on}");
     let off = decompile("swift_call_syms_elf", "0x35e0", &["--option", "swiftcall", "off"]);
     assert!(off.contains("v1 = callfix.Account.fee(for:)(a0);"), "{off}");
 }
