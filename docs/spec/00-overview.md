@@ -2497,8 +2497,8 @@ call is made at this address` — by the console command on the script surface,
 and by `assertions::record_unbound_call_prototypes` against the decompiled
 function on the in-process one. Like `flow`, the directive withdraws the
 `callwide` whole-image proof, which did not see it. A stated prototype locks
-the call's inputs, and `calltargettype` (chapter 05) still types the target of
-such an indirect call from its arguments, so the call stays one C can make.
+the call's inputs, and `calltargettype` (chapter 05) still gives the target of
+such an indirect call the stated type, so the call stays one C can make.
 
 (kuna) **A symbol-scoped directive reaches the register locals too, by mapping a
 Symbol over their storage.** `name`/`type` resolve their target through

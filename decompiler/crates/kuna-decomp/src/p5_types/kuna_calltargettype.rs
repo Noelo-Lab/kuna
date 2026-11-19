@@ -268,7 +268,7 @@ fn prints_as_address(data: &Funcdata, vn: VarnodeId) -> bool {
 
 /// The pointer to a function returning the type of `op`'s output (`void` when it
 /// has none) and taking the types of its arguments, or `None` when one of them
-/// has no C spelling.
+/// has no C spelling.  A prototype stated at the call gives the types instead.
 fn call_type(data: &mut Funcdata, tlst: &dyn TypeFactory, op: OpId) -> Option<Rc<Datatype>> {
     let (out, args, target) = {
         let o = data.obank().get(op)?;
@@ -304,6 +304,14 @@ fn call_type(data: &mut Funcdata, tlst: &dyn TypeFactory, op: OpId) -> Option<Rc
         pieces.innames.push(String::new());
     }
     let nargs = pieces.intypes.len();
+    if let Some(stated) = stated_pieces(data, op) {
+        let returned = stated.outtype.iter().filter(|t| t.get_metatype() != type_metatype::TYPE_VOID);
+        if stated.intypes.len() != nargs || !returned.chain(&stated.intypes).all(|t| spellable(t, t.get_size())) {
+            return None;
+        }
+        pieces.outtype = stated.outtype.or(pieces.outtype);
+        pieces.intypes = stated.intypes;
+    }
     if clobber_is_read(data, op) {
         return None;
     }
@@ -390,16 +398,17 @@ fn passes_like_the_call(data: &Funcdata, op: OpId, built: &FuncProto, nargs: usi
     params && result
 }
 
-/// Was the prototype of the call `op` declared at the call itself (`override
-/// prototype`, the `callproto` assertion) rather than read from a callee or a
-/// format string?  Its arguments then carry the declared types, and the
-/// target is still the untyped value the call goes through.
-fn stated_at_call(data: &Funcdata, op: OpId) -> bool {
-    data.obank().get(op).is_some_and(|o| {
-        let overrides = data.get_override();
-        overrides.find_proto_override(o.get_addr()).is_some_and(|p| p.pieces().is_some())
-            && !overrides.is_format_call(o.get_addr())
-    })
+/// The prototype declared at the call `op` itself (`override prototype`, the
+/// `callproto` assertion), not read from a callee or a format string.  Its
+/// target is still the untyped value the call goes through, and the
+/// declaration is the type that value is called as.
+fn stated_pieces(data: &Funcdata, op: OpId) -> Option<PrototypePieces> {
+    let at = data.obank().get(op)?.get_addr();
+    let overrides = data.get_override();
+    if overrides.is_format_call(at) {
+        return None;
+    }
+    overrides.find_proto_override(at)?.pieces().cloned()
 }
 
 /// The indirect calls a high is the target of, with the type each one states.
@@ -414,7 +423,7 @@ pub fn retype_call_targets(data: &mut Funcdata) {
     let ops: Vec<OpId> = (0..data.num_calls())
         .filter(|&i| {
             let fc = data.get_call_specs(i);
-            (!fc.is_input_locked() || stated_at_call(data, fc.get_op())) && !fc.is_dotdotdot()
+            (!fc.is_input_locked() || stated_pieces(data, fc.get_op()).is_some()) && !fc.is_dotdotdot()
         })
         .map(|i| data.get_call_specs(i).get_op())
         .collect();

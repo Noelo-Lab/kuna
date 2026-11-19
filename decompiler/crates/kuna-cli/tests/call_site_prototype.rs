@@ -41,7 +41,7 @@ fn a_stated_call_through_an_untyped_slot_stays_callable() {
             decompile(surface, &["callproto report::0x13b0 void f(char *, char *, int, int)"]);
         assert_eq!(code, 0, "{surface:?}: {err}");
         assert!(
-            out.contains("(*(void (*)(void *,char *,int,int))*v1)(\"%s %d %d\",a1,a0,a0 + 1);"),
+            out.contains("(*(void (*)(char *,char *,int,int))*v1)(\"%s %d %d\",a1,a0,a0 + 1);"),
             "{surface:?}: {out}"
         );
     }
