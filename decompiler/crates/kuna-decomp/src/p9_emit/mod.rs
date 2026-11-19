@@ -22,6 +22,7 @@ pub(crate) mod kuna_rustboolcast;
 pub(crate) mod kuna_callresult;
 pub(crate) mod kuna_callargextend;
 pub(crate) mod kuna_ruststorevalue;
+mod kuna_ruststorewidth;
 pub(crate) mod kuna_rustptradd;
 pub(crate) mod kuna_rustarrayindex;
 pub(crate) mod kuna_rustarrayaddr;
