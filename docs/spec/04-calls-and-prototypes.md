@@ -9581,6 +9581,15 @@ input-only or output-only declaration keeps its partial-prototype inference;
 only a declaration that also states the return type retypes the symbol. The
 binding lives in `decompiler/crates/kuna-console/src/kuna_qualifiedstorage.rs`.
 
+An output-only declaration also leaves the callee's own input recovery open
+when its IR is rebuilt. `FuncProto::seed_locked_from_pieces` assigns the stated
+output storage and locks its type and model, then releases the empty input
+lock only when the pieces state no input types, names, storage, or variadic
+boundary. The declared return does not turn a physical incoming register read
+into an uninitialized local or a zero-argument signature. A full declaration
+with an explicitly empty parameter list stays locked, and input-only or
+combined input/return declarations keep their existing parameter locks.
+
 A call that reaches such a callee indirectly, through an import slot or a
 constant pointer, becomes direct only once `ActionDeindirect` resolves it
 through `ArchContext::query_function`, which would otherwise hand back the
