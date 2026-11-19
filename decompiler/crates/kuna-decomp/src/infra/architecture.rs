@@ -558,6 +558,11 @@ pub struct Architecture {
     /// (`p2_lift/kuna_chkstkdarwin.rs`), so the argument registers it preserves
     /// keep their values across it. Default on.
     pub chkstk_darwin: bool,
+    /// (kuna `gotonext`) Leave out a `goto` whose target is the block that runs
+    /// next anyway, print one to the block after the enclosing loop or switch as
+    /// `break;`, and keep switch fall-thru chains in case order
+    /// (`p8_structure/kuna_gotonext.rs`). Default on.
+    pub goto_next: bool,
     /// (kuna tee-O2 tail-jumps) Recover a direct `jmp` to another function's
     /// entry (e.g. `jmp setlocale@plt`) as a tail call (CALL + RETURN) instead of
     /// flowing into the callee (`option tailcalljump on|direct`).
@@ -2469,6 +2474,7 @@ impl Architecture {
             realtypes: false,
             ctypes: false, // (kuna) option ctypes; reset_defaults sets the shipped default
             voidtailreturn: false, // (kuna) option voidtailreturn; reset_defaults sets the shipped default
+            goto_next: false, // (kuna) option gotonext; reset_defaults sets the shipped default
             import_data: false,
             cast_implied: false, // (kuna) option castimplied; reset_defaults sets the shipped default
             cast_sign: false, // (kuna) option castsign; reset_defaults sets the shipped default
@@ -2768,6 +2774,7 @@ impl Architecture {
         self.signedness = crate::kuna_typeround::SignPolicy::Auto; // (kuna) default `auto`: a declaration is re-signed only when every signedness-sensitive reader of the value agrees, which makes each surviving cast on it a no-op and leaves every other token byte-identical. 0/675 datatests and PARITY OK on stages; `option signedness upstream` restores the declaration type inference produced
         self.realtypes = true; // (kuna) DIV-6 default-on: real C types for unknowns
         self.ctypes = false; // (kuna) DIV-75: default-OFF in the catalog because the datatest corpus pins `int4`/`float8` spellings in 42 assertions; ON in the `aggressive` and `fast` presets and at every `auto` size, so valid C is the default RENDERING everywhere a real binary is decompiled
+        self.goto_next = true; // (kuna) option gotonext default-on: upstream BlockGoto::gotoPrints; only the spelling of a jump changes; 0/675 datatests
         self.voidtailreturn = true; // (kuna) option voidtailreturn default-on (DIV-98); `option voidtailreturn off` restores the trailing `return;`
         self.import_data = true; // (kuna) option importdata default-on; `option importdata off` keeps the `*dat_<slot>` dereference
         self.cast_implied = true; // (kuna) option castimplied default-on: leaves out only a value-preserving integer conversion C performs itself (argument to a type-locked parameter, assignment to a local or parameter declared that spelling, return, or under another conversion); 1/675 datatest assertion moved (Union #26, the intended form, pinned to upstream by a per-test opt-out), 10 stage assertions moved to the new form, speed within budget; docs/features/castimplied/default-on-evaluation.md
@@ -3530,6 +3537,7 @@ impl Architecture {
         ctx.region_structure = self.region_structure; // regionstructure
         ctx.guard_arm = self.guard_arm; // guardarm
         ctx.loop_continue = self.loop_continue;
+        ctx.goto_next = self.goto_next; // gotonext
         ctx.loop_cond_hoist = self.loop_cond_hoist; // loopcondhoist
         ctx.region_loop_refine = self.region_loop_refine; // regionlooprefine
         ctx.region_edge_order = self.region_edge_order; // regionedgeorder

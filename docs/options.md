@@ -833,6 +833,10 @@ Three tiers:
 | a function that touches thousands of globals between thousands of calls takes gigabytes and minutes to decompile | [`persistcalls`](#persistcalls----off--on---default-65536) |
 | heritage builds millions of INDIRECTs over writable globals that survive dead-code removal | [`persistcalls`](#persistcalls----off--on---default-65536) |
 | a huge initializer or finalizer exhausts memory in assignhigh or merging | [`persistcalls`](#persistcalls----off--on---default-65536) |
+| goto label_N; directly above label_N: | [`gotonext`](#gotonext----on--off-default-on) |
+| switch case falls into the next case through a goto | [`gotonext`](#gotonext----on--off-default-on) |
+| case N: label_X: right after a goto label_X; | [`gotonext`](#gotonext----on--off-default-on) |
+| an if arm ends in a goto to the statement after the if | [`gotonext`](#gotonext----on--off-default-on) |
 
 ## Toggleable transforms
 
@@ -2581,6 +2585,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default at 65,536 guards, the size at which the guards cost a huge function gigabytes and minutes. Set `on` to place the sparse guards in every pass with a call, a larger N or `off` to keep upstream's guard on every persistent global at every call, for example to compare heritage's IR with upstream.
 - **Where / provenance:** P3/call-guard · kuna · performance · gh-1034
 - **Example:** `option persistcalls off`
+
+### `gotonext` -- on | off, default `on`
+
+- **Symptoms:** goto label_N; directly above label_N:; switch case falls into the next case through a goto; case N: label_X: right after a goto label_X;; an if arm ends in a goto to the statement after the if.
+- **What it does:** Leave out a `goto` whose target is the statement that runs next anyway, print a `goto` to the statement after the innermost enclosing loop or switch as `break;`, and drop the label only those gotos reached. Upstream `PrintC::emitBlockGoto` prints a `BlockGoto`'s jump only when `BlockGoto::gotoPrints` holds (the target is not `nextFlowAfter` of the parent chain); kuna printed every such jump, so a switch case falling into the next case and an `if` arm ending in a jump to the statement after the `if` printed `goto label_X;` directly above `label_X:`. `kuna_gotonext` walks the final structured tree at print time, after every structuring pass that edits it, so its view is the printed layout: it reads `nextFlowAfter` with one addition, that a switch case whose body prints no `break;` falls into the next case even when the body is not a `BlockGoto`. A `goto`, `if (c) goto` or bare-goto switch arm whose target is what follows the innermost loop or switch holding it prints as `break;` while `loopbreak_recovery` is on (`scopeBreak` already lowers most of those during `ActionFinalStructure`; the passes that edit the tree after it leave the rest). The case sort also re-derives each fall-thru chain from the case blocks before sorting: `grab_case_basic` read the chained case's switch out-index from sblocks edges, which a case wrapped in its own `BlockGoto` has lost, so a chain was missed or pointed at the case itself and the sort printed that case first under label 0; with the chain right, a case that jumps to another case prints directly before it and falls through. C output only.
+- **When to flip:** On by default: 0/675 datatest assertions move. Flip off to print every `BlockGoto` jump and to sort switch cases by the chains `grab_case_basic` recorded.
+- **Where / provenance:** P8/goto-quality · ghidra · presentation-default · kuna-gotonext
+- **Example:** `option gotonext off`
 
 ## Programmatic use
 

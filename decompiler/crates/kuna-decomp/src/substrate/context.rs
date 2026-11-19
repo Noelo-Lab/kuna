@@ -1093,6 +1093,8 @@ pub struct ArchContext {
     pub loop_cond_hoist: bool,
     /// Preserve secondary natural-loop latches as continues (`loopcontinue`).
     pub loop_continue: bool,
+    /// (kuna `gotonext`) Re-derive switch fall-thru chains before the case sort.
+    pub goto_next: bool,
     /// (kuna) region structurer cyclic loop-successor refinement
     /// (`region_loop_refine`, opt-in default-off).  When set (and
     /// `region_structure` is on), multi-exit / multi-latch / mid-entry loops are
@@ -1674,6 +1676,7 @@ impl ArchContext {
             region_structure: false,     // regionstructure (opt-in default-off)
             guard_arm: false,            // guardarm (opt-in default-off)
             loop_continue: true,
+            goto_next: false,
             loop_cond_hoist: false,      // loopcondhoist (opt-in default-off)
             region_loop_refine: false,   // regionlooprefine (opt-in default-off)
             region_edge_order: false,    // regionedgeorder (opt-in default-off)
