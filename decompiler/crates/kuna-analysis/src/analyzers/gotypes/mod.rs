@@ -23,9 +23,8 @@
 //! harvested type (the metadata declares none), and any caller-signature
 //! recovery. Named non-struct types (a `type MyInt int`) are also skipped —
 //! a bare alias adds no layout knowledge.
-//! Little-endian images: Go 1.18–1.25 32-bit typelinks layouts, and both
-//! typelinks and newer descriptor regions on 64-bit targets. Big-endian images
-//! and 32-bit descriptor regions remain unsupported.
+//! Little-endian 32-bit images use typelinks on Go 1.18–1.26 and consecutive
+//! descriptors on Go 1.27. Little-endian 64-bit targets support both layouts.
 //!
 //! ## Locating moduledata without symbols
 //!
@@ -37,11 +36,11 @@
 //!    `len == cap`, sane length) — true of every moduledata since go1.16;
 //! 2. within the following window, the type metadata VALIDATES AGAINST
 //!    ITSELF, in whichever of its two historical forms is present. Through
-//!    go1.25: a `(types, etypes)` pair plus a `typelinks` slice
+//!    go1.26: a `(types, etypes)` pair plus a `typelinks` slice
 //!    (`len == cap`, sampled entries decode as plausible `_type` records
-//!    inside `[types, etypes)`). From go1.26: the slice is gone — moduledata
+//!    inside `[types, etypes)`). From go1.27: the slice is gone — moduledata
 //!    carries `types, typedesclen, etypes` and the records sit consecutively
-//!    in `[types + 8, types + typedesclen)`, enumerated by advancing each
+//!    in `[types + ptrSize, types + typedesclen)`, enumerated by advancing each
 //!    record's own descriptor size (`internal/abi.Type::DescriptorSize`),
 //!    accepted only when the walk decodes back to back. Field positions are
 //!    NOT hardcoded — runtime field order drifts release to release — the
@@ -139,8 +138,8 @@ struct GoType {
 }
 
 /// The located metadata: the type blob bounds and the reachable `_type`
-/// record offsets — from the `typelinks` slice (go1.18..go1.25) or from the
-/// descriptor-region walk that replaced it (go1.26+).
+/// record offsets — from the `typelinks` slice (go1.18..go1.26) or from the
+/// descriptor-region walk that replaced it (go1.27+).
 struct TypeMeta {
     types: u64,
     etypes: u64,
@@ -278,7 +277,7 @@ fn locate_type_meta(img: &GoImage, anchor: u64) -> Option<TypeMeta> {
     None
 }
 
-/// The go1.26+ `_type` descriptor stride: records sit consecutively in
+/// The go1.27+ `_type` descriptor stride: records sit consecutively in
 /// `[types + ptrSize, types + typedesclen)` and a walker advances by each record's
 /// own descriptor size (`internal/abi.Type::DescriptorSize`, go1.27.2) — the
 /// per-kind wrapper, an optional `UncommonType` (+ its methods), and the
@@ -333,7 +332,7 @@ fn descriptor_stride(img: &GoImage, t: &GoType) -> Option<u64> {
     (stride <= 1_048_576).then_some(stride)
 }
 
-/// Locate the go1.26+ type metadata: the moduledata triple
+/// Locate the go1.27+ type metadata: the moduledata triple
 /// `types, typedesclen, etypes` (the middle word bounds the consecutive
 /// descriptor region that replaced the `typelinks` slice), then enumerate the
 /// records by walking that region with [`descriptor_stride`]. Cross-validated
@@ -691,7 +690,7 @@ impl AnalysisPass for GoTypesPass {
         }
         let version = buildinfo_blob(ctx.file).and_then(version_from_blob);
         let modern_32_bit = !ctx.file.is_64() && version == Some((1, 27));
-        if !ctx.file.is_64() && !modern_32_bit && !matches!(version, Some((1, 18..=25))) {
+        if !ctx.file.is_64() && !modern_32_bit && !matches!(version, Some((1, 18..=26))) {
             return AnalysisOutput::default();
         }
         let img = GoImage::new(ctx.file);

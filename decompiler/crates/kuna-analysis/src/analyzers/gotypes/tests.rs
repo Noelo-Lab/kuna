@@ -236,7 +236,7 @@ fn phase1_name_vocabulary() {
     assert!(!name_ok(""), "empty");
 }
 
-/// Build the go1.26+ shape: NO typelinks slice — the records sit consecutively
+/// Build the go1.27+ shape: NO typelinks slice — the records sit consecutively
 /// in `[types + 8, types + typedesclen)` and moduledata carries the
 /// `types, typedesclen, etypes` triple. Returns `(spans, anchor, types)`.
 fn synth_descriptors() -> (Vec<(u64, Vec<u8>)>, u64, u64) {
@@ -292,7 +292,7 @@ fn synth_descriptors() -> (Vec<(u64, Vec<u8>)>, u64, u64) {
         blob[f + 16..f + 24].copy_from_slice(&off.to_le_bytes());
     }
 
-    // moduledata: pcHeader*, funcnametab slice, pad, then the 1.26+ triple.
+    // moduledata: pcHeader*, funcnametab slice, pad, then the 1.27+ triple.
     let mut md = Vec::new();
     md.extend_from_slice(&H.to_le_bytes());
     md.extend_from_slice(&T.to_le_bytes());
@@ -672,8 +672,8 @@ fn locate_itablinks_slice_follows_pointers() {
 }
 
 #[test]
-fn locate_itab_region_walks_the_go126_contiguous_region() {
-    // go1.26+ form: two consecutive itab records walked by Size(), located via
+fn locate_itab_region_walks_the_go127_contiguous_region() {
+    // go1.27+ form: two consecutive itab records walked by Size(), located via
     // an (itaboffset, itabsize) pair in the moduledata window.
     let (spans0, types, etypes, _itab0, inter, concrete) = synth_itab_blob();
     const R: u64 = 0x270000; // contiguous itab region
