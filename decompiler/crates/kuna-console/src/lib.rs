@@ -37,6 +37,7 @@ pub mod kuna_calleeoverride;
 pub mod kuna_retcallchain;
 pub mod kuna_console;
 pub mod kuna_hightarget;
+pub mod kuna_constformat;
 pub mod kuna_callwide;
 pub mod kuna_declaredbytes;
 pub mod kuna_lazyfuncs;

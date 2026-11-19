@@ -119,6 +119,9 @@ mod thumbswitch_guards;
 #[path = "asserted_enum_layout.rs"]
 mod asserted_enum_layout;
 
+#[path = "assert_format_isolate.rs"]
+mod assert_format_isolate;
+
 #[path = "baseline_cli.rs"]
 mod baseline_cli;
 

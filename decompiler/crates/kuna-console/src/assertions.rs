@@ -21,6 +21,8 @@
 //!   return [<func>::]<storage> <decl>      map return           P4 prototype-source
 //!   name [<func>::]<symbol> <newname>      rename               P9 naming-policy
 //!   type [<func>::]<symbol> <C type>       retype               P5 type-propagation
+//!   format [<func>::]<addr> <fmt> [<val>]  force constant       P9 literal-format
+//!   isolate [<func>::]<symbol>             isolate              P6 merge-aggressiveness
 //!   typedef <C declaration>                parse line           P5
 //!   data <addr> <C typedeclaration>        map address          P5 const-pointer
 //!   comment [<func>::]<addr> <text>        comment instruction  P9
@@ -67,7 +69,7 @@
 //!   a jump into a neighbour.  `callee` states where one indirect call goes,
 //!   so the flow builds it as a direct call to that function
 //!   ([`crate::kuna_calleeoverride`]).
-//! * **Symbol-scoped** (`name`, `type`) can only be applied AFTER a decompile:
+//! * **Symbol-scoped** (`name`, `type`, `format`, `isolate`) can only be applied AFTER a decompile:
 //!   a local like `v2` does not exist until one has run (`rename v2 buf` before
 //!   the first decompile answers `No symbol named: v2`, which is precisely the
 //!   bug that makes today's `--kassert p9 naming-policy` inert).  So
@@ -129,6 +131,11 @@ pub enum Body {
     Name { func: Option<String>, symbol: String, newname: String },
     /// `type [<func>::]<symbol> <C type>` — retype a local.
     Type { func: Option<String>, symbol: String, decl: String },
+    /// `format [<func>::]<addr> hex|dec|oct|bin|char [<value>]` — the constant
+    /// the instruction at `addr` reads is printed in this form.
+    Format { func: Option<String>, addr: u64, format: String, value: Option<u64> },
+    /// `isolate [<func>::]<symbol>` — this local is not merged with others.
+    Isolate { func: Option<String>, symbol: String },
     /// `readonly <addr>+<size>` — the bytes in this range never change at run
     /// time, so a load from it is its initialiser.
     Readonly { addr: u64, size: int4 },
@@ -178,6 +185,8 @@ impl Body {
             Body::Callee { .. } => ("callee", "P2", "flow-classification"),
             Body::Name { .. } => ("name", "P9", "naming-policy"),
             Body::Type { .. } => ("type", "P5", "type-propagation"),
+            Body::Format { .. } => ("format", "P9", "literal-format"),
+            Body::Isolate { .. } => ("isolate", "P6", "merge-aggressiveness"),
             Body::Readonly { .. } => ("readonly", "P1", "code-data-partition"),
             Body::Volatile { .. } => ("volatile", "P1", "code-data-partition"),
             Body::Bytes { .. } => ("bytes", "P1", "code-data-partition"),
@@ -194,7 +203,9 @@ impl Body {
             | Body::Flow { func, .. }
             | Body::Callee { func, .. }
             | Body::Name { func, .. }
-            | Body::Type { func, .. } => func.as_deref(),
+            | Body::Type { func, .. }
+            | Body::Format { func, .. }
+            | Body::Isolate { func, .. } => func.as_deref(),
             _ => None,
         }
     }
@@ -210,6 +221,8 @@ impl Body {
                 | Body::Callee { .. }
                 | Body::Name { .. }
                 | Body::Type { .. }
+                | Body::Format { .. }
+                | Body::Isolate { .. }
         )
     }
 
@@ -230,7 +243,7 @@ impl Body {
     /// Is this directive one that can only be applied to an already-decompiled
     /// function (because the symbol it names does not exist before)?
     fn is_symbol_scoped(&self) -> bool {
-        matches!(self, Body::Name { .. } | Body::Type { .. })
+        matches!(self, Body::Name { .. } | Body::Type { .. } | Body::Format { .. } | Body::Isolate { .. })
     }
 }
 
@@ -1225,6 +1238,15 @@ fn apply_one_symbol_scoped(
             let applied = crate::kuna_hightarget::apply_local(fd, symbol, &newname, Some(ct.clone()), maxduplicates, Some(prog.arch()))?;
             Ok((applied, Some(ct)))
         }
+        Body::Format { addr, format, value, .. } => {
+            let at = code_addr(prog, *addr)?;
+            crate::kuna_constformat::apply(fd, prog.arch(), &at, format, *value, maxduplicates)?;
+            Ok((None, None))
+        }
+        Body::Isolate { symbol, .. } => {
+            crate::kuna_hightarget::isolate_local(fd, symbol, maxduplicates, Some(prog.arch()))?;
+            Ok((None, None))
+        }
         _ => Err("internal: not a symbol-scoped directive".into()),
     }
 }
@@ -1301,6 +1323,25 @@ pub fn verify_printed(prog: &mut ConsoleProgram, fd: &Funcdata, code: &str, expe
             Shown::AppliedAs(note) => Outcome { detail: Some(note), ..directive.applied() },
         };
         prog.set_assertion_outcome(i, outcome);
+    }
+}
+
+/// Refuse each `format` directive bound to `name` that was applied and whose
+/// constant the replayed decompile `fd` does not hold in that form: the
+/// replay finds the constant again by its dataflow hash, and one it cannot
+/// find prints as before.
+pub fn verify_formats(prog: &mut ConsoleProgram, fd: &Funcdata, name: &str, single: bool) {
+    let directives = prog.assertions().to_vec();
+    for (i, directive) in directives.iter().enumerate() {
+        let Body::Format { addr, format, value, .. } = &directive.body else { continue };
+        if !binds_to(&directive.body, name, single) || prog.assertion_outcomes().get(i).is_none_or(|o| o.status != "applied") {
+            continue;
+        }
+        let Ok(at) = code_addr(prog, *addr) else { continue };
+        if !crate::kuna_constformat::holds(fd, &at, format, *value) {
+            let outcome = directive.refused(crate::kuna_constformat::NOT_REPLAYED);
+            prog.set_assertion_outcome(i, outcome);
+        }
     }
 }
 

@@ -2188,8 +2188,12 @@ scalar those sizes keep `undefined<N>` (DIV-48,
 `tests/stages/ghdec-realtypes-pointee.xml`). A genuine `TYPE_VOID` pointee
 is not a residual unknown and never enters the relabel, so the opaque
 `void *` of `free`/`malloc`/`memcpy` is unaffected. Per-symbol format assertions
-(`map convert`, `force datatype`) override the global format at the same
-point ([docs/options.md](../options.md)).
+(`map convert`, `force varnode`, `force constant`, `force datatype`) override
+the global format at the same point ([docs/options.md](../options.md)). `force
+constant <addr> <format> [<value>]`, which the `--assert format` directive
+lowers to, names the constant by the address of the instruction that reads it
+instead of by a dataflow hash or a p-code sequence number (chapter 00, the
+assertion plane).
 
 Signed integer constants are normalized to their declared byte width before
 choosing their sign, magnitude, and numeric base
