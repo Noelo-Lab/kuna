@@ -892,3 +892,6 @@ mod mips_weak_imports;
 
 #[path = "nullable_relocations.rs"]
 mod nullable_relocations;
+
+#[path = "call_site_prototype.rs"]
+mod call_site_prototype;

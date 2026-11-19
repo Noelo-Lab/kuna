@@ -2442,6 +2442,7 @@ lowering) and applied by
 | `comment [<func>::]<addr> <text>` | `comment instruction` | P9 external-refinement |
 | `flow [<func>::]<addr> branch\|call\|callreturn\|return` | `override flow` | P2 flow-classification |
 | `callee [<func>::]<callsite> <name\|address>` | `override indirect` | P2 flow-classification |
+| `callproto [<func>::]<callsite> <C declaration>` | `override prototype` | P4 prototype-source |
 | `name [<func>::]<symbol> <newname>` | `rename` | P9 naming-policy |
 | `type [<func>::]<symbol> <C type>` | `retype` | P5 type-propagation |
 | `format [<func>::]<addr> hex\|dec\|oct\|bin\|char [<value>]` | `force constant` | P9 literal-format |
@@ -2496,7 +2497,8 @@ file. **Program-scoped** directives (`function`, `typedef`, `prototype`,
 (`ConsoleProgram::set_assertions` + `assertions::apply_program_scoped`, called
 from `decompiler/crates/kuna-cli/src/decompile_all.rs (load_program)`), for the
 same reason a declared boundary is: an assertion outranks discovery.
-**Function-scoped** directives (`param`, `return`, `comment`, `flow`) become
+**Function-scoped** directives (`param`, `return`, `comment`, `flow`,
+`callproto`) become
 decompile SEEDS (`assertions::function_seed`), because a prototype fact is
 consumed at flow time and cannot be applied afterwards. **Symbol-scoped** directives (`name`,
 `type`) can only be applied to an already-decompiled function — the local they
@@ -2509,6 +2511,40 @@ the function, so every run without one costs exactly what it did before. The
 script surface (`decompiler/crates/kuna-cli/src/decompile/script.rs (build_script_for_input)`)
 emits the same facts at the same three slots, with the same conditional second
 `decompile`.
+
+(kuna) **`callproto` states the prototype of one call instruction.** A
+`prototype` describes a function and reaches a call through the callee's symbol;
+a call through a pointer or a register has no such symbol, and a variadic
+callback takes different arguments at each call, so the only place the fact can
+be stated is the call itself. The engine has carried that store since the port
+(`Override::insert_proto_override`, consumed by `FlowInfo::build_call_specs`
+when the call spec is created), reachable only from the console's `override
+prototype`. `decompiler/crates/kuna-console/src/kuna_callproto.rs` is the one
+parser both surfaces use: the declaration is the grammar `prototype` takes, the
+trailing `;` is optional, and a parameter may be followed by `@<storage>` in
+the spelling `param` takes, which rides in the pieces' `input_storage` so the
+model places the remaining parameters around it; a `@<storage>` after the
+parameter list is the return's `output_storage`. The override is built under
+the default model (`build_override_proto`; the pieces carry no model), so a
+declaration naming any other calling convention (`__thiscall`) is rejected
+rather than laid out under the wrong one, while an alias of the default model
+with the same `this` handling (`<modelalias>`: `__cdecl` on x86-64 Windows) is
+the default under another name and is accepted; `@<storage>` states a
+non-default placement.
+Two directives for the same call site keep the later one, and the earlier
+reports `rejected` (`assertions::restated_call_prototypes`, used by both
+surfaces). The in-process surface seeds
+the pieces as the drive's per-call-site overrides (`FunctionSeed::proto_overrides`),
+where a stated one outranks a format-string one discovered at the same address,
+and the script surface lowers to `override prototype` in the function slot. A
+call site is an address at which the followed function has a call spec, which
+includes a tail jump treated as a call; any other address is rejected with `No
+call is made at this address` — by the console command on the script surface,
+and by `assertions::record_unbound_call_prototypes` against the decompiled
+function on the in-process one. Like `flow`, the directive withdraws the
+`callwide` whole-image proof, which did not see it. A stated prototype locks
+the call's inputs, and `calltargettype` (chapter 05) still gives the target of
+such an indirect call the stated type, so the call stays one C can make.
 
 (kuna) **A symbol-scoped directive reaches the register locals too, by mapping a
 Symbol over their storage.** `name`/`type` resolve their target through

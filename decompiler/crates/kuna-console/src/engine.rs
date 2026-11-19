@@ -2551,6 +2551,7 @@ impl ConsoleProgram {
         if directives.iter().any(|directive| matches!(directive.body,
             crate::assertions::Body::Flow { .. }
             | crate::assertions::Body::Callee { .. }
+            | crate::assertions::Body::CallProto { .. }
             | crate::assertions::Body::Param { func: None, .. }
             | crate::assertions::Body::Return { func: None, .. }))
         {

@@ -20,6 +20,7 @@
 //!   --assert 'readonly 0x404028+8'
 //!   --assert 'flow 0x1405 return'
 //!   --assert 'callee 0x147a handle_open'
+//!   --assert 'callproto 0x13b0 void f(char *fmt, char *s, int a, int b)'
 //!   --assert 'volatile 0x50000000+4'
 //!   --assert 'bytes 0x43d0c6 8bd581c21f324000'
 //!   --assert 'bytes 0x43d0c6 @notes/stage1.bin'
@@ -156,6 +157,10 @@ pub(crate) fn console_form(
         Body::Callee { func, addr, callee } => match names_another(func, target) {
             Some(f) => return Err(unbindable(&f)),
             None => (Slot::Function, format!("override indirect {addr:#x} {callee}")),
+        },
+        Body::CallProto { func, addr, decl } => match names_another(func, target) {
+            Some(f) => return Err(unbindable(&f)),
+            None => (Slot::Function, format!("override prototype {addr:#x} {}", semicolon(decl))),
         },
         Body::Bytes { addr, data } => {
             let hex: String = data.iter().map(|b| format!("{b:02x}")).collect();
@@ -314,6 +319,23 @@ mod tests {
         );
     }
 
+    /// `callproto` takes a call address and keeps the declaration verbatim,
+    /// storage annotations included.
+    #[test]
+    fn callproto_takes_a_call_address_and_a_declaration() {
+        assert_eq!(
+            one("callproto report::0x13b0 void f(char *, char *s @RSI, int)").body,
+            Body::CallProto {
+                func: Some("report".into()),
+                addr: 0x13b0,
+                decl: "void f(char *, char *s @RSI, int)".into()
+            }
+        );
+        let form = console_form(&one("callproto 13b0 void f(int a)"), Some("report")).unwrap();
+        assert_eq!(form.slot, Slot::Function);
+        assert_eq!(form.line, "override prototype 0x13b0 void f(int a);");
+    }
+
     /// A directive kuna cannot honor must say so rather than be dropped: an
     /// accepted-and-inert assertion is the failure mode this plane exists to end.
     #[test]
@@ -335,6 +357,8 @@ mod tests {
             "callee 0x147a",
             "callee notahex handle_open",
             "callee 0x147a handle_open extra",
+            "callproto 0x13b0",
+            "callproto report void f(void)",
         ] {
             let err = parse_one(spec).expect_err("refuses");
             assert!(err.starts_with("--assert"), "got {err:?} for {spec:?}");
@@ -549,8 +573,8 @@ mod tests {
         assert_eq!(form.line, "map return sub_401c50::%EAX int4");
     }
 
-    /// `comment`, `flow`, `name` and `type` describe the inside of one function
-    /// body, so naming a function this run did not decompile cannot be honoured.
+    /// `comment`, `flow`, `callproto`, `name` and `type` describe the inside of one
+    /// function body, so naming a function this run did not decompile cannot be honoured.
     /// Rejecting says so; applying it to the SELECTED function silently is the
     /// bug.
     #[test]
@@ -560,6 +584,7 @@ mod tests {
             "type sub_401c50::v2 char[16]",
             "comment sub_401c50::0x401c60 checks the maze",
             "flow sub_401c50::0x401c60 return",
+            "callproto sub_401c50::0x401c60 void f(void)",
         ] {
             let d = one(spec);
             let detail = console_form(&d, Some("sub_402020")).expect_err("does not bind");
