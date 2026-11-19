@@ -146,6 +146,10 @@ pub const BUILTIN_MEMSET64: uint4 = 0x1000000d;
 /// (kuna) Built-in id for `builtin_memcmp`, the comparison a `repz cmpsb`
 /// computes (`repstring`).
 pub const BUILTIN_MEMCMP: uint4 = 0x1000000e;
+/// (kuna swiftcall) The error a throwing Swift call left in the error register.
+pub const BUILTIN_SWIFT_ERROR: uint4 = 0x1000000b;
+/// (kuna swiftcall) The error a throwing Swift function hands back.
+pub const BUILTIN_SWIFT_THROW: uint4 = 0x1000000c;
 
 // ---------------------------------------------------------------------------
 // UserOpBase + UserPcodeOp hierarchy (userop.hh:47-318)
@@ -1070,6 +1074,17 @@ impl UserOpManage {
             }
             BUILTIN_KERNEL_BUG => UserPcodeOp::new_unspecialized(b"BUG", BUILTIN_KERNEL_BUG as int4),
             BUILTIN_KERNEL_WARN => UserPcodeOp::new_unspecialized(b"__WARN", BUILTIN_KERNEL_WARN as int4),
+            BUILTIN_SWIFT_ERROR | BUILTIN_SWIFT_THROW => {
+                let ptr_size = types.get_size_of_pointer();
+                let word_size = types.get_default_data_space_word_size();
+                let v_type = types.get_type_void();
+                let ptr_type = types.get_type_pointer(ptr_size, v_type, word_size);
+                if i == BUILTIN_SWIFT_ERROR {
+                    UserPcodeOp::new_datatype(b"swift_error", i as int4, Some(ptr_type), &[])
+                } else {
+                    UserPcodeOp::new_datatype(b"swift_throw", i as int4, None, &[Some(ptr_type)])
+                }
+            }
             _ => return Err(KunaError::lowlevel("Bad built-in userop id")),
         };
         self.builtinmap.insert(i, res);

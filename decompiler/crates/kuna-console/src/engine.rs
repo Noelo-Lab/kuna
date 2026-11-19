@@ -5502,6 +5502,7 @@ fn commit_analysis_output(
             out.swift_types.input_hints = swift.input_hints;
             out.swift_types.no_self = swift.no_self;
             out.swift_types.regs = swift.regs;
+            out.swift_types.declared = swift.declared;
         }
     } else {
         out.swift_types = Default::default();
@@ -6620,18 +6621,70 @@ fn commit_analysis_output(
             locks.retain(|(i, _, _)| *i != fact.index);
             locks.push((fact.index, fact.name.clone(), piece));
         }
+        // (kuna `swiftcall`) Declared prototypes from mangled names: the
+        // pieces parked by address under their model, `self` pinned to the
+        // `swiftself` register as explicit input storage.
+        for fact in &out.swift_types.declared {
+            let Some(model) = prog.arch().get_model(fact.model).cloned() else { continue };
+            let mut pieces = fact.pieces.clone();
+            // A struct member's `self` arrives exploded into the argument
+            // registers unless its body reads `swiftself` first (a mutating
+            // member); a body that never touches the register got it exploded.
+            let by_value = fact.exploded_self.clone().filter(|_| {
+                kuna_analysis::analyzers::swift::self_first(
+                    prog.arch().translate(),
+                    code_space,
+                    fact.self_reg,
+                    fact.func_addr,
+                ) != Some(true)
+            });
+            let self_slot = match (by_value, fact.self_slot) {
+                (Some(t), Some(slot)) => {
+                    if let Some(ty) = pieces.intypes.get_mut(slot as usize) {
+                        *ty = t;
+                    }
+                    None
+                }
+                (_, slot) => slot,
+            };
+            if let Some(slot) = self_slot {
+                let Ok(loc) = prog.arch().get_register_varnode(fact.self_reg.as_bytes()) else {
+                    continue;
+                };
+                let Some(space) = loc.space.clone() else { continue };
+                let Some(ty) = pieces.intypes.get(slot as usize).cloned() else { continue };
+                pieces.input_storage.push((
+                    slot,
+                    kuna_decomp::fspec::ParameterPieces {
+                        addr: Address::new(space, loc.offset),
+                        type_: Some(ty),
+                        flags: kuna_decomp::fspec::parameter_pieces_flags::TYPELOCK
+                            | kuna_decomp::fspec::parameter_pieces_flags::NAMELOCK,
+                    },
+                ));
+            }
+            let a = Address::new(Rc::clone(code_space), fact.func_addr);
+            if let Some((sid, _)) = prog.arch().symboltab.find_function_across_scopes(&a) {
+                pieces.name = prog.arch().symboltab.symbol(sid).get_name().to_string();
+            }
+            prog.arch_mut().set_function_prototype_model_at(&a, model);
+            prog.arch_mut().set_function_prototype_pieces_at(&a, pieces);
+        }
         // (kuna `swiftcall`) Model-only bindings and the unlocked `self`
         // hints, the register again resolved through the language.
         commit_model_facts(prog, code_space, &out.swift_types.models);
         commit_input_hints(prog, code_space, &out.swift_types.input_hints);
-        let throws = prog.arch().get_model(kuna_decomp::kuna_swiftcall::SWIFTCALL_THROWS).cloned();
+        use kuna_decomp::kuna_swiftcall::{SWIFTASYNCCALL, SWIFTASYNCCALL_THROWS, SWIFTCALL, SWIFTCALL_THROWS};
+        let model = |name: &str| prog.arch().get_model(name).cloned();
         let reg = |name: &str| {
             let loc = prog.arch().get_register_varnode(name.as_bytes()).ok()?;
             Some((Address::new(loc.space.clone()?, loc.offset), loc.size as i32))
         };
-        let call = prog.arch().get_model(kuna_decomp::kuna_swiftcall::SWIFTCALL).cloned();
-        if let (Some((self_reg, error_reg)), Some(call), Some(throws)) = (out.swift_types.regs, call, throws) {
-            if let (Some(self_reg), Some(error_reg)) = (reg(self_reg), reg(error_reg)) {
+        let models = (model(SWIFTCALL), model(SWIFTCALL_THROWS), model(SWIFTASYNCCALL), model(SWIFTASYNCCALL_THROWS));
+        if let (Some((self_reg, error_reg, async_reg)), (Some(plain), Some(throws), Some(asynccall), Some(asynccall_throws))) =
+            (out.swift_types.regs, models)
+        {
+            if let (Some(self_reg), Some(error_reg), Some(async_reg)) = (reg(self_reg), reg(error_reg), reg(async_reg)) {
                 let maybe_self = out
                     .swift_types
                     .models
@@ -6643,8 +6696,18 @@ fn commit_analysis_output(
                 prog.arch_mut().loader_swift_abi = Some(Rc::new(kuna_decomp::kuna_swiftcall::SwiftAbi {
                     self_reg,
                     error_reg,
-                    call,
+                    async_reg,
+                    async_context: prog
+                        .arch()
+                        .types()
+                        .find_by_name("swift.AsyncContext")
+                        .ok()
+                        .flatten()
+                        .and_then(|t| prog.arch().types().get_type_pointer(8, t, 1).ok()),
                     throws,
+                    plain,
+                    asynccall,
+                    asynccall_throws,
                     maybe_self,
                     no_self,
                 }));

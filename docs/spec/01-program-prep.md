@@ -6213,10 +6213,15 @@ every other binary's pass list is byte-identical to before the pass existed):
   bit) is a two-field struct named after the instantiation, the payload then
   a one-byte `is_nil` tag; a Clang-imported type (`__C.CGSize`, `__C.NSString`)
   is the C type of that name when the image has one (DWARF, the Objective-C
-  pass), inline for a struct and through a pointer for a class. Any other type
-  — an enum with payloads, an imported value type (`Foundation.Date`), a
-  generic instantiation without a known layout, a tuple, an existential — is
-  `undefined<n>` over the
+  pass), inline for a struct and through a pointer for a class; a tuple is a
+  struct of its elements at their natural alignment, named after the tuple
+  with fields `_0`, `_1`, …; in an image that kept its symbols, a global
+  variable's storage symbol (`$s…vp`) types its data object with the
+  variable's demangled type under the dotted name (`callfix.ctr.step = 2;`,
+  `tests/stages/kuna-swiftglobals.xml`). Any other type — an enum with
+  payloads, an imported value type (`Foundation.Date`), a generic
+  instantiation without a known layout, an existential — is `undefined<n>`
+  over the
   bytes up to the next field, so the layout is always right and the names are
   always real; only the field's own type is withheld. A layout is refused
   whole when the field count disagrees with the descriptor, an offset
@@ -6276,7 +6281,13 @@ every other binary's pass list is byte-identical to before the pass existed):
   and — in an image that kept its symbols — every method, accessor,
   initializer and deinitializer the demangler places in a class, struct or
   enum, directly or through an extension, the throwing ones (a `throws` on the
-  function type) to `__swiftcall_throws`. A static member of a struct or enum
+  function type) to `__swiftcall_throws`, the `async` ones (an `async` on the
+  function type, or an await/suspend resume partial of one) to
+  `__swiftasynccall` / `__swiftasynccall_throws`, which also take the task's
+  context in the `swiftasync` register (x22 / r14; hinted as
+  `swift.AsyncContext *async_context`). Where the whole signature of a
+  symbol-named function maps to kuna types the arm declares its prototype
+  instead of binding the model alone (§4, `swiftcall`). A static member of a struct or enum
   binds nothing: its metatype is thin and passed nowhere. Specializations,
   thunks and closures are left alone. Each binding carries a `self` hint
   (`AnalysisOutput::swift_types.models` / `input_hints` → the decompile
