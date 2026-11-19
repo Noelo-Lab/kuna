@@ -1665,6 +1665,50 @@ kuna functions ./crakersme.exe --summary --json    # 2,820 bytes
 The first call to make on an unknown binary: it answers *where do I start*
 without emitting a function list at all, let alone pseudocode.
 
+For an explicit Rust signature comparison on a linked x86-64 ELF image:
+
+```bash
+kuna functions ./fmt --summary --json --rust-signature-manifest ./rust-signatures.json
+```
+
+The manifest identifies an external corpus, the candidate profiles to compare,
+and the exact bytes of each signature bank. Relative paths resolve from the
+manifest's directory. Nothing is downloaded, renamed, or used to relax compiler
+ABI/layout guards. Matching runs once against the image's final accepted Listing.
+
+```json
+{
+  "corpus": {"identity": "angr/flirt_signatures", "pin": "<immutable corpus revision>"},
+  "candidates": [{"version": "1.88.0", "optimization": 3}],
+  "signatures": [
+    {"path": "inline/1.88.0-O3.sig", "sha256": "<64 lowercase hex digits>",
+     "version": "1.88.0", "optimization": 3, "bank": "inline"},
+    {"path": "no-inline/1.88.0-O3.sig", "sha256": "<64 lowercase hex digits>",
+     "version": "1.88.0", "optimization": 3, "bank": "no-inline"}
+  ]
+}
+```
+
+Unknown or duplicate JSON fields, duplicate candidates/banks/files, invalid
+versions or optimization levels, unrequested profiles, unreadable files, and
+SHA-256 mismatches are errors. Both banks must be present for every requested
+candidate before the report can select a unique profile. An omitted bank is
+reported as `incomplete`; a listed file that cannot be read is an error.
+
+Only this flag adds the top-level `compiler_provenance` and
+`rust_signature_profile` fields. Compiler provenance retains raw `rustc_records`
+and embedded Rust `source_commits`; a compatible signature profile is a separate
+measurement. The profile report contains the manifest hash, corpus identity/pin,
+verified source paths/hashes, candidate and bank scores, matched addresses/names,
+and `status`: `unique`, `ambiguous`, `incomplete`, `no_matches`, `no_candidates`,
+`unsupported`, or `unavailable`. Only `unique` has a `selected_profile`; ties have
+`tied_profiles`. A unique best score does not prove the compiler's nominal version.
+
+The flag requires `functions --summary --json`, cannot be repeated, and does not
+accept raw images, slice/target/ISA selection, image-selection options, assertions,
+or function-definition overrides. Unsupported image formats or unavailable
+analysis retain an explicit report status instead of guessing a profile.
+
 ```json
 {"binary":"…","count":1150,"total":1150,"error":null,"warnings":[],
  "summary":{"entry":{"name","address","address_hex"},

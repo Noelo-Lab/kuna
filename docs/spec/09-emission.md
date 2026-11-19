@@ -3645,7 +3645,13 @@ compiles":
   carry no padding.
 
 A non-C identifier is rewritten by `printc.rs (sanitize_type_name)` (annotated
-`/* renamed from "…" */`), and a later duplicate name emits a
+`/* renamed from "…" */`). Within a C type definition, member and typedef
+declarators use the name written by this rule for their named base type. This
+keeps `elm_tag *p`, `elm_tag *list[2]`, and `elm_tag (*table)[3]` tied to the
+same declared `elm_tag` alias when DWARF names the type `elm.tag`. The C
+declarator still places qualifiers and groups pointer, array, and function
+modifiers as usual. Ordinary declarations keep their existing spelling.
+A later duplicate name emits a
 `/* duplicate type name skipped */` comment instead of a redefinition — the
 first definition wins.
 
