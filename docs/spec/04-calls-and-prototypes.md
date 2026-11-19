@@ -6789,6 +6789,23 @@ bound costs 11.0%. The nested drives do not recurse, and declared or
 already-stated callees are skipped. `protoorder off` decompiles the function
 from its own body alone.
 
+A `decompile-all` that selects part of the binary (`--addr`, `--functions`,
+`--limit` and the triage filters) and `kuna decompile --json` have no
+callee-first order behind them either: `callee_first_decision` takes that order
+only for a whole-program run, and only a callee inside the batch can state
+anything. Their batch drive ran without this bootstrap, so a tail call to a
+callee with no declaration lost every argument it forwards: for an AArch64
+forwarder `ldr x8,[x3]; cbz x8,L; b target` the selected function printed
+`target(); // tail-call` while `kuna decompile` printed
+`target(a0,a1,a2,a3,a4); // tail-call`. Such a batch now runs the same
+bootstrap for each of its functions (`Architecture::kuna_tail_callee_batch`,
+set around the loop by `decompile_entries`), under the same two bounds, and a
+callee stated for one function of the batch is not decompiled again for the
+next. A whole-program run, callee-first or not, does not run it. Over the first
+3000 functions of git 2.54 (x86-64, `decompile-all --limit 3000`) the bootstrap
+changes 133 of the 703 tail-call lines and costs 2.8% more user-mode
+instructions; with no instruction bound it costs 5.0% and changes one line more.
+
 ### (kuna) `passthrough` — the register a function forwards to a callee that reads it
 
 (kuna) `passthrough` (default on,

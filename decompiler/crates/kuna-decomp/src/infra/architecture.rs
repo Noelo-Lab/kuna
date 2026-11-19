@@ -1323,6 +1323,11 @@ pub struct Architecture {
         (int4, uintb),
         std::rc::Rc<crate::kuna_protoorder::RecoveredTypes>,
     >,
+    /// (kuna `protoorder`) A batch drive with no callee-first order behind it
+    /// (a narrowed `decompile-all`, `kuna decompile --json`) states its tail
+    /// callees first as a single-function drive does.  Driver state, not an
+    /// option: the front-end sets it around such a batch.
+    pub kuna_tail_callee_batch: bool,
     /// (kuna `vfpvariadic`) The default model with the variadic return rules,
     /// keyed by the default model it was derived from.
     pub kuna_vfp_variadic: RefCell<Option<(Rc<ProtoModel>, Option<Rc<ProtoModel>>)>>,
@@ -2522,6 +2527,7 @@ impl Architecture {
             kuna_swift_self_first_cache: std::collections::HashMap::new(),
             kuna_callee_forward_cache: std::collections::HashMap::new(),
             kuna_protoorder_types: std::collections::HashMap::new(),
+            kuna_tail_callee_batch: false,
             kuna_vfp_variadic: RefCell::new(None),
             kuna_callee_reginputs: RefCell::new(std::collections::HashMap::new()),
             kuna_custom_reg_callers: Rc::new(std::collections::HashMap::new()),

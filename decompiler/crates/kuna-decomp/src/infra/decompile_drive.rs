@@ -2161,9 +2161,12 @@ fn decompile_func_full_with_objects_inner(
                 && arch.protoorder.is_on()
                 && arch.has_split_records(),
         );
-        // (kuna `protoorder` single-function drive) And it states the prototype
-        // of each callee the function tail-calls before its own pipeline runs.
-        if purpose == DrivePurpose::SingleFunction && CONTRACT_DEPTH.with(|d| d.get()) == 0 {
+        // (kuna `protoorder`) A drive with no callee-first run behind it states
+        // the prototype of each callee the function tail-calls before its own
+        // pipeline runs.
+        if (purpose == DrivePurpose::SingleFunction || arch.kuna_tail_callee_batch)
+            && CONTRACT_DEPTH.with(|d| d.get()) == 0
+        {
             bootstrap_tail_callees(arch, &fd);
         }
         // (kuna `protoorder types`) The parameter types callees decompiled earlier stated.
