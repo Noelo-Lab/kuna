@@ -2242,7 +2242,16 @@ mod tests {
         // and kuna-switchguardmerge / an outlier equality test joins the switch its guard leads to
         // and kuna-switchguardmerge-default / a default chain of equality tests joins its switch
         // and kuna-switchtrim / an unguarded jump table ends where its layout ends
-        assert_eq!(count, 805, "corpus file count drifted");
+        // and kuna-reentereddispatch / a re-entered dispatch keeps every step's store
+        // and kuna-dispatch-values / dispatcher return values survive narrowing and copies
+        // and kuna-addrtable / a writable function-pointer table typed code *[N] (option addrtable)
+        // and kuna-rawpatterns / a headerless image is swept with its language's function-start patterns
+        // and kuna-importvote / an undeclared import takes the arguments its other call sites pass (option importvote)
+        // and kuna-formatcallees / undeclared format functions are typed from their formats (option formatstring)
+        // and kuna-strcpychain / memcpy(d, s, strlen(s) + 1) prints as strcpy(d, s) (option helperroles)
+        // and kuna-objectview / a TE or raw image runs the object-file analysis passes over a rebuilt view (option objectview)
+        // and kuna-aifdataveto / a gap entry the code reads as data is not a function (option aif)
+        assert_eq!(count, 814, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

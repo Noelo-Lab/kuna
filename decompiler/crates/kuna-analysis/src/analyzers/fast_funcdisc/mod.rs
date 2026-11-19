@@ -78,6 +78,7 @@ mod tests {
             addr,
             len: elements.len(),
             elements,
+            read_only: true,
         }
     }
 

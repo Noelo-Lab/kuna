@@ -710,6 +710,16 @@ impl AnalysisPass for GoPclntabPass {
             .into_iter().filter(|f| exec_end(&exec, f.addr).is_some()).collect();
         funcs.sort_unstable_by_key(|f| f.addr);
         out.models = kuna_goabi0::model_facts(ctx, &funcs, &h, header_vma);
+        if ctx.arch.archid == "x86:LE:64:default:golang"
+            && ctx.file.format() == object::BinaryFormat::Elf
+        {
+            let mut receive = funcs.iter().filter(|f| f.name == "runtime.chanrecv2");
+            if let Some(first) = receive.next() {
+                if receive.next().is_none() && funcs.iter().filter(|f| f.addr == first.addr).count() == 1 {
+                    out.go_chanrecv2 = Some(first.addr);
+                }
+            }
+        }
         let addrs: Vec<u64> = funcs.iter().map(|f| f.addr).collect();
         for (i, f) in funcs.into_iter().enumerate() {
             // The next entry (the functab's closing `etext` for the last function) is

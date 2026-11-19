@@ -239,6 +239,17 @@ fn hex_val(c: char) -> Option<u32> {
 struct PatternPairs {
     pre: Vec<Ditted>,
     post: Vec<Ditted>,
+    /// The post action is an unconditional `<possiblefuncstart/>`: a weaker hint
+    /// the caller accepts only where nothing else already describes the bytes.
+    weak: bool,
+}
+
+/// One start the scan found.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Hit {
+    pub vma: u64,
+    /// Found only by a `<possiblefuncstart/>` pair.
+    pub weak: bool,
 }
 
 /// The compiled function-start pattern set for one architecture.
@@ -266,58 +277,71 @@ impl FuncStartPatterns {
     ///
     /// Returns absolute VMAs (`sec_addr + offset`), sorted/deduped.
     pub fn scan(&self, sec_addr: u64, data: &[u8]) -> Vec<u64> {
-        let mut out: Vec<u64> = Vec::new();
+        self.scan_hits(sec_addr, data).into_iter().filter(|h| !h.weak).map(|h| h.vma).collect()
+    }
+
+    /// Every start in `data`, strong and weak. After a start is accepted the
+    /// scan resumes past the prologue that matched, so no second start is
+    /// reported inside it.
+    pub fn scan_hits(&self, sec_addr: u64, data: &[u8]) -> Vec<Hit> {
+        let mut out: Vec<Hit> = Vec::new();
         let n = data.len();
+        let mut resume = 0usize;
         for off in 0..n {
+            if off < resume {
+                continue;
+            }
             let vma = sec_addr + off as u64;
             if vma % self.align != 0 {
                 continue;
             }
             let here = &data[off..];
-            let mut hit = false;
-            // Bare <funcstart/> patterns. A pattern may carry a `*` mark: the bytes
-            // before the mark are *context* that must precede the candidate, and the
-            // candidate is the marked byte. So the full sequence must match starting
-            // at `off - mark`, placing the marked byte at `off`. With `mark == 0`
-            // (no `*`) this is just "the sequence matches at the candidate".
+            // A bare pattern may carry a `*` mark: the bytes before the mark are
+            // context that must precede the candidate, which is the marked byte.
+            let mut hit: Option<(bool, usize)> = None;
             for b in &self.bare {
                 if b.mark <= off && b.matches(&data[off - b.mark..]) {
-                    hit = true;
+                    hit = Some((false, b.len() - b.mark));
                     break;
                 }
             }
-            // <patternpairs>: a post at the candidate + a pre ending at it.
-            if !hit {
+            if hit.is_none() {
                 'pairs: for pp in &self.pairs {
-                    // Find a post matching at the candidate first (cheap reject).
-                    if !pp.post.iter().any(|p| p.matches(here)) {
-                        continue;
-                    }
-                    // Then require a pre matching the bytes immediately before.
+                    let Some(post) = pp.post.iter().find(|p| p.matches(here)) else { continue };
                     for pre in &pp.pre {
                         let plen = pre.len();
-                        if plen <= off {
-                            let pre_slice = &data[off - plen..off];
-                            if pre.matches(pre_slice) {
-                                hit = true;
+                        if plen <= off && pre.matches(&data[off - plen..off]) {
+                            hit = Some((pp.weak, post.len()));
+                            if !pp.weak {
                                 break 'pairs;
                             }
                         }
                     }
                 }
             }
-            if hit {
-                out.push(vma);
+            if let Some((weak, len)) = hit {
+                out.push(Hit { vma, weak });
+                resume = off + len.max(1);
             }
         }
-        out.sort_unstable();
-        out.dedup();
         out
     }
 
     /// True if the set has any usable pattern (so the pass can early-out).
     fn is_empty(&self) -> bool {
         self.pairs.is_empty() && self.bare.is_empty()
+    }
+
+    /// Does any pattern give only a weak (`<possiblefuncstart/>`) start?
+    pub fn has_weak(&self) -> bool {
+        self.pairs.iter().any(|p| p.weak)
+    }
+
+    /// Is every pattern weak? Only such a set (AArch64, PowerPC) uses its weak
+    /// hits: where strong `<funcstart/>` pairs exist they already carry the
+    /// confident shapes, and the weak ones only add starts inside bodies.
+    pub fn only_weak(&self) -> bool {
+        self.bare.is_empty() && !self.pairs.is_empty() && self.pairs.iter().all(|p| p.weak)
     }
 }
 
@@ -379,10 +403,11 @@ fn parse_patternpairs(block: &str, pairs: &mut Vec<PatternPairs>) {
         let after = &rest[a + "<postpatterns>".len()..];
         let Some(b) = after.find("</postpatterns>") else { break };
         let post_block = &after[..b];
-        if post_has_funcstart(post_block) {
+        let strong = post_has_funcstart(post_block);
+        if strong || post_has_possible_funcstart(post_block) {
             let post = collect_data(post_block);
             if !pre.is_empty() && !post.is_empty() {
-                pairs.push(PatternPairs { pre: pre.clone(), post });
+                pairs.push(PatternPairs { pre: pre.clone(), post, weak: !strong });
             }
         }
         rest = &after[b + "</postpatterns>".len()..];
@@ -409,6 +434,14 @@ fn post_has_funcstart(body: &str) -> bool {
         return false;
     }
     true
+}
+
+/// True if a post block's action is an unconditional `<possiblefuncstart/>`
+/// (no `after`/`validcode` attribute, which need a Listing to check).
+fn post_has_possible_funcstart(body: &str) -> bool {
+    let Some(at) = body.find("<possiblefuncstart") else { return false };
+    let tag = &body[at..at + body[at..].find('>').unwrap_or(0)];
+    !tag.contains("after=") && !tag.contains("validcode")
 }
 
 /// Parse one bare `<pattern>` block: if it has an unconditional `<funcstart/>`
@@ -479,12 +512,10 @@ fn compile(xmls: &[&str], align: u64) -> FuncStartPatterns {
 /// `object` architecture + endianness, the analyzer-tier analog of the SLEIGH
 /// language id). Cached per arch so the parse runs once.
 ///
-/// **`None` also when the vendored XMLs parse to an empty set** — i.e. when an
-/// arch's `<patternpairs>` carry only `<possiblefuncstart/>` (AArch64, PowerPC).
-/// Those are a weaker hint Ghidra confirms later with the Listing, not a
-/// byte-decidable function start, so they contribute nothing here (a documented
-/// LOSS). The arches that yield a non-empty set are x86-64, i386, ARM, RISC-V,
-/// and MIPS.
+/// An arch whose `<patternpairs>` carry only `<possiblefuncstart/>` (AArch64,
+/// PowerPC) yields a weak set: [`FuncStartPatterns::scan`] reports none of its
+/// hits, [`FuncStartPatterns::scan_hits`] marks them weak, and the callers take
+/// them only where no unwind or function table describes the bytes.
 pub fn for_arch(
     arch: object::Architecture,
     little_endian: bool,
@@ -532,18 +563,70 @@ pub fn for_arch(
                 cached!(PPCBE, compile(&[PPC_BE], 4))
             }
         }
-        _ => {
-            // Reference the otherwise-unused BE-ARM blob so a future BE-ARM arm can
-            // pick it up without a dead-const warning; no current arch selects it.
-            let _ = ARM_BE;
-            None
-        }
+        _ => None,
     }
+}
+
+/// The pattern set for an object, chosen by its format as well as its
+/// architecture: an ELF or Mach-O x86 image is SysV-compiled, so it takes the
+/// gcc patterns alone rather than the gcc+windows union, and a big-endian ARM
+/// image takes the big-endian ARM patterns.
+pub fn for_object(file: &object::File) -> Option<&'static FuncStartPatterns> {
+    use object::{Architecture as A, BinaryFormat as F};
+    use object::read::Object;
+    fn cached(cell: &'static OnceLock<FuncStartPatterns>, build: impl FnOnce() -> FuncStartPatterns) -> Option<&'static FuncStartPatterns> {
+        Some(cell.get_or_init(build)).filter(|set| !set.is_empty())
+    }
+    static X8664_GCC: OnceLock<FuncStartPatterns> = OnceLock::new();
+    static X86_GCC_ONLY: OnceLock<FuncStartPatterns> = OnceLock::new();
+    static ARMBE: OnceLock<FuncStartPatterns> = OnceLock::new();
+    let sysv = matches!(file.format(), F::Elf | F::MachO);
+    match file.architecture() {
+        A::X86_64 | A::X86_64_X32 if sysv => cached(&X8664_GCC, || compile(&[X86_64_GCC], 1)),
+        A::I386 if sysv => cached(&X86_GCC_ONLY, || compile(&[X86_GCC, X86_GCC_PRE], 1)),
+        A::Arm if !file.is_little_endian() => cached(&ARMBE, || compile(&[ARM_BE], 2)),
+        arch => for_arch(arch, file.is_little_endian()),
+    }
+}
+
+/// [`for_arch`] keyed by a SLEIGH language id (`x86:LE:64:default`,
+/// `ARM:LE:32:v7`, ...), for an image with no object header to name its
+/// architecture.
+pub fn for_language(language_id: &str) -> Option<&'static FuncStartPatterns> {
+    use object::Architecture as A;
+    let mut parts = language_id.split(':');
+    let processor = parts.next()?;
+    let little = parts.next()? == "LE";
+    let size = parts.next().unwrap_or("");
+    let arch = match (processor, size) {
+        ("x86", "64") => A::X86_64,
+        ("x86", "32") => A::I386,
+        ("AARCH64", _) => A::Aarch64,
+        ("ARM", _) => A::Arm,
+        ("RISCV", _) => A::Riscv64,
+        ("MIPS", "64") => A::Mips64,
+        ("MIPS", _) => A::Mips,
+        ("PowerPC", "64") => A::PowerPc64,
+        ("PowerPC", _) => A::PowerPc,
+        _ => return None,
+    };
+    for_arch(arch, little)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn aarch64_possiblefuncstart_pairs_are_weak_hits() {
+        let set = for_arch(object::Architecture::Aarch64, true).expect("AArch64 now has a (weak) set");
+        assert!(set.has_weak());
+        let data = [0xc0, 0x03, 0x5f, 0xd6, 0xfd, 0x7b, 0xbf, 0xa9, 0xfd, 0x03, 0x00, 0x91];
+        let hits = set.scan_hits(0x1000, &data);
+        assert_eq!(hits, vec![Hit { vma: 0x1004, weak: true }]);
+        assert!(set.scan(0x1000, &data).is_empty(), "a weak hit is not a strong start");
+    }
+
 
     #[test]
     fn ditted_hex_and_binary_parse() {
@@ -657,18 +740,15 @@ mod tests {
         ] {
             assert!(for_arch(a, le).is_some(), "{a:?} should have a <funcstart/> pattern set");
         }
-        // AArch64/PPC carry only `<possiblefuncstart/>` patternpairs (+ conditioned
-        // bare patterns) ⇒ no unconditional funcstart ⇒ no set (None), faithfully
-        // (a documented LOSS at this disassembler-free tier, not a bug).
+        // AArch64/PPC carry only `<possiblefuncstart/>` patternpairs: a weak set,
+        // taken only where no unwind table or function table describes the bytes.
         for (a, le) in [
             (object::Architecture::Aarch64, true),
             (object::Architecture::PowerPc64, false),
             (object::Architecture::PowerPc64, true),
         ] {
-            assert!(
-                for_arch(a, le).is_none(),
-                "{a:?} has only <possiblefuncstart/> patternpairs ⇒ no funcstart set"
-            );
+            let set = for_arch(a, le).expect("weak set");
+            assert!(set.has_weak(), "{a:?} has <possiblefuncstart/> patternpairs");
         }
     }
 }

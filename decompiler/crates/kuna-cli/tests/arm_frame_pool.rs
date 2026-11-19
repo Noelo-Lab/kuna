@@ -34,11 +34,12 @@ fn loaded_literal_before_frame_does_not_replace_the_real_entry_or_its_input() {
         assert!(!rows.iter().any(|f| f["address"] == 0x080003fcu64), "literal became code: {doc}");
     }
 
+    // Without the pool check the gap walk accepts the literal as the entry and
+    // its body consumes the caller; `aif`'s data veto then drops that entry
+    // (the literal is loaded as data), so neither address is a function.
     let uncorrected = decompile(&path, "on", "off");
     let rows = uncorrected["functions"].as_array().unwrap();
-    let phantom = rows.iter().find(|f| f["address"] == 0x080003fcu64)
-        .expect("pool check disabled must reproduce the literal prefix");
-    assert!(phantom["code"].as_str().unwrap().contains("return 0;"), "{phantom}");
-    assert!(!rows.iter().any(|f| f["address"] == 0x08000400u64));
+    assert!(!rows.iter().any(|f| f["address"] == 0x080003fcu64), "literal became code: {uncorrected}");
+    assert!(!rows.iter().any(|f| f["address"] == 0x08000400u64), "{uncorrected}");
     std::fs::remove_file(path).unwrap();
 }

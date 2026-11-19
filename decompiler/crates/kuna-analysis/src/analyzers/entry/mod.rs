@@ -324,19 +324,27 @@ impl AnalysisPass for FuncStartPatternPass {
 /// This is the testable seam (drive it over fixture bytes); it parallels
 /// [`collect_entries`] but is the *full-pattern* superset, gated default-off.
 pub fn full_pattern_starts(file: &object::File) -> Vec<u64> {
-    let Some(set) =
-        patterns::for_arch(file.architecture(), file.is_little_endian())
-    else {
+    let Some(set) = patterns::for_object(file) else {
         return Vec::new();
     };
     let execs = executable_sections(file);
     let funcsyms = existing_function_addrs_for_file(file);
     let bodies = sized_function_bodies(file);
+    // A `<possiblefuncstart/>` start is taken only on an ELF and only outside
+    // every FDE body: there the unwind table describes the functions it covers,
+    // and a Mach-O or PE image's own function tables (LC_FUNCTION_STARTS,
+    // .pdata) already list what such a weak hint could add.
+    let weak_ok = set.only_weak() && matches!(file.format(), object::BinaryFormat::Elf);
+    let fde_bodies = if weak_ok { kuna_fdeinterior::scan_fde_bodies(file) } else { Vec::new() };
 
-    // Sweep every executable section with the full pattern set.
     let mut cand: Vec<u64> = Vec::new();
     for (addr, _hi, data) in &execs {
-        cand.extend(set.scan(*addr, data));
+        for hit in set.scan_hits(*addr, data) {
+            if hit.weak && (!weak_ok || kuna_fdeinterior::is_interior(&fde_bodies, hit.vma)) {
+                continue;
+            }
+            cand.push(hit.vma);
+        }
     }
 
     let mut out: Vec<u64> = Vec::new();

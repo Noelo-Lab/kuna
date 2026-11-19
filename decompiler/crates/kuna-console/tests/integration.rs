@@ -96,6 +96,9 @@ mod verify_coff_object;
 #[path = "verify_coldentry.rs"]
 mod verify_coldentry;
 
+#[path = "verify_importvote.rs"]
+mod verify_importvote;
+
 #[path = "verify_cortexmvectors.rs"]
 mod verify_cortexmvectors;
 
@@ -559,3 +562,9 @@ mod verify_bootstrap;
 
 #[path = "mips_weak_imports.rs"]
 mod mips_weak_imports;
+
+#[path = "indirect_dispatch_flow.rs"]
+mod indirect_dispatch_flow;
+
+#[path = "verify_funcchunks.rs"]
+mod verify_funcchunks;

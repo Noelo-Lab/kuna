@@ -103,6 +103,15 @@ pub(crate) fn output_type_local(data: &Funcdata, op: OpId) -> Rc<Datatype> {
                 return t;
             }
         }
+        // (kuna `helperroles`) `strcpy` returns its `char *` destination.
+        if in0_off == crate::userop::BUILTIN_STRCPY as u64 {
+            if let Some(tlst) = arch.types() {
+                let ws = data.get_arch().manage().get_default_data_space().map(|s| s.get_word_size()).unwrap_or(1);
+                if let Ok(ptr) = tlst.get_type_char(1).and_then(|c| tlst.get_type_pointer(out_size, c, ws)) {
+                    return ptr;
+                }
+            }
+        }
     }
     // C++ `TypeOpCall::getOutputLocal` (typeop.cc:722) / `TypeOpCallind::getOutputLocal`
     // (typeop.cc:778): when the resolved `FuncCallSpecs` has a locked (committed)
@@ -169,12 +178,14 @@ fn input_type_local_with(data: &Funcdata, op: OpId, slot: int4, recovered: bool)
         }
     }
 
-    // (kuna strlenscan) `DatatypeUserOp::getInputLocal` for the `strlen` builtin:
-    // its one argument is a `char *`.
+    // (kuna strlenscan, helperroles) `DatatypeUserOp::getInputLocal` for the
+    // `strlen` and `strcpy` builtins: their arguments are `char *`.
     if opcode == OpCode::CPUI_CALLOTHER
-        && slot == 1
-        && o.get_in(0).and_then(|v| data.vbank().get(v)).map(|v| v.get_offset())
-            == Some(crate::userop::BUILTIN_STRLEN as u64)
+        && slot >= 1
+        && o.get_in(0).and_then(|v| data.vbank().get(v)).map(|v| v.get_offset()).is_some_and(|id| {
+            (id == crate::userop::BUILTIN_STRLEN as u64 && slot == 1)
+                || (id == crate::userop::BUILTIN_STRCPY as u64 && slot <= 2)
+        })
     {
         if let Some(tlst) = arch.types() {
             let ws = data.get_arch().manage().get_default_data_space().map(|s| s.get_word_size()).unwrap_or(1);

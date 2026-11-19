@@ -32,6 +32,7 @@
 //!   (ascending) and collect them. kuna substitutes the `[entry, next)` clip for
 //!   `func.getBody()`.
 
+use crate::listing::kuna_funcchunks::ChunkModel;
 use crate::listing::{Insn, Listing};
 
 /// Reconstruct the extent of the function entered at `entry`: the decoded
@@ -51,6 +52,23 @@ pub fn calculate_extent<'a>(listing: &'a Listing, entry: u64) -> Vec<&'a Insn> {
     // instruction map.
     let next = listing.next_function_after(entry).map(|f| f.entry);
     clip_extent(listing.instructions_in_range(entry, next), entry, next)
+}
+
+/// The flow body of the function at `entry` under the chunk model: every
+/// instruction of its main chunk and its tails, in ascending address order --
+/// Ghidra's `func.getBody()` iteration, which the `[entry, next)` clip only
+/// approximates.
+pub fn chunk_extent<'a>(
+    listing: &'a Listing,
+    model: &ChunkModel,
+    entry: u64,
+) -> Vec<&'a Insn> {
+    let mut chunks = model.chunks(entry).unwrap_or_default().to_vec();
+    chunks.sort_unstable();
+    chunks
+        .iter()
+        .flat_map(|&(s, e)| listing.instructions_in_range(s, Some(e)).map(|(_, i)| i))
+        .collect()
 }
 
 /// The pure clip: given the address-ordered `(vma, insn)` stream, keep the

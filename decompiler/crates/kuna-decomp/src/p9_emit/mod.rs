@@ -123,3 +123,5 @@ pub(crate) mod kuna_gostorevalue;
 pub(crate) mod kuna_constantshift;
 
 pub mod kuna_widenedadd;
+
+pub mod kuna_returnselector;

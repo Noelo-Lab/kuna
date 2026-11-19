@@ -795,6 +795,8 @@ pub struct ArchContext {
     pub present_lessequal: bool,
     /// Keep mapped global array bases separate from negative element offsets.
     pub global_array_anchor: bool,
+    /// (kuna `helperroles`) Read by [`RuleStrcpyChain`](crate::kuna_helperrole::RuleStrcpyChain).
+    pub helper_roles: bool,
     /// (kuna) refuse to split a shared RETURN block that stores to GLOBALS
     /// (`retsplitglobal`).  Read by
     /// [`Funcdata::return_split_is_splittable`](crate::funcdata::Funcdata),
@@ -1352,7 +1354,7 @@ pub struct ArchContext {
     pub lazy_entry_starts: Rc<Vec<u64>>,
     /// (kuna) Recover a `BRANCHIND` whose destination is a select over constant
     /// addresses (`option constselectjump`, `p2_lift/kuna_constselectjump.rs`).
-    pub const_select_jump: bool,
+    pub const_select_jump: crate::kuna_constselectjump::ConstSelectMode,
     /// (kuna) Bound a LOAD-table jumptable by an out-of-band CBRANCH range guard
     /// when the basic model's guard analysis could not (C++
     /// `Architecture::switch_guard_bound`, flipped by `option switchguardbound`,
@@ -1603,6 +1605,7 @@ impl ArchContext {
             // registered `enabled=false` is inert there — matching the gate-off
             // unit tests.
             global_array_anchor: false,
+            helper_roles: false,
             ret_split_global: false,     // retsplitglobal (the ArchSeam carries the real default)
             goto_sink: false,            // gotosink (live value copied from the Architecture)
             loop_rotate: false,          // looprotate (live value copied from the Architecture)
@@ -1747,7 +1750,7 @@ impl ArchContext {
             funcptr_align: 0,
             switch_modulo_bound: false, // (kuna) GH-9191 default off (upstream byte-identical)
             lazy_entry_starts: Rc::default(),
-            const_select_jump: false, // (kuna) constant-select indirect branch: default off
+            const_select_jump: crate::kuna_constselectjump::ConstSelectMode::Off, // (kuna) constant-select indirect branch; reset_defaults sets the shipped default
             highslice_guard: false,
             switch_guard_bound: false, // (kuna) angr opt-in default off (upstream byte-identical)
             switch_shared_case: false, // (kuna) angr opt-in default off (upstream byte-identical)

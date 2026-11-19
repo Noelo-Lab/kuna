@@ -424,6 +424,8 @@ pub struct AnalysisOutput {
     pub ppc32_pic_slots: Vec<kuna_decomp::kuna_ppc32piccalls::ImportSlot>,
     /// `(addr, name, kind)` -> seed `Database::add_function` / symbol map.
     pub symbols: Vec<SymFact>,
+    /// Unique AMD64 Go function-table entry of the blocking status receive helper.
+    pub go_chanrecv2: Option<u64>,
     /// Named, sized data globals (the symbol-table / DWARF data objects). Mapped
     /// into the global scope with an `undefined<size>` type so a memory access of
     /// the object renders its NAME (`max_width`) not `dat_<addr>`. See
@@ -446,6 +448,15 @@ pub struct AnalysisOutput {
     /// fragment. Added after the [`Self::fde_bodies`] suppression. Produced only by
     /// [`crate::entry::kuna_coldentry`] (`coldentry`).
     pub fde_interior_entries: Vec<u64>,
+    /// (kuna `aif`) Discovered (not symbol) entries the decoded code reads or
+    /// writes as data; the commit drops them from the entry stream.
+    pub data_vetoed: Vec<u64>,
+    /// (kuna `funcchunks`) Each function's flow body size in bytes (the sum of
+    /// its chunks, shared tails included), by `(entry, bytes)`.
+    pub function_bodies: Vec<(u64, u64)>,
+    /// (kuna) The direct call sites of each PLT import, by stub address.
+    /// Produced only by [`crate::protos::kuna_importvote`] (`importvote`).
+    pub import_call_sites: Vec<(u64, Vec<u64>)>,
     /// (kuna) PDB procedure extents that describe exactly one function, as
     /// `[start, end)`, sorted and disjoint. Applied after [`Self::fde_bodies`],
     /// only where a function is committed at `start` (a `static` function has an
@@ -843,6 +854,7 @@ impl AnalysisOutput {
     /// Fold another output into this one (concatenation; dedup is the driver's job).
     pub fn merge(&mut self, other: AnalysisOutput) {
         self.symbols.extend(other.symbols);
+        self.go_chanrecv2 = self.go_chanrecv2.or(other.go_chanrecv2);
         self.data_objects.extend(other.data_objects);
         self.typed_data.extend(other.typed_data);
         self.go_type_globals.extend(other.go_type_globals);
@@ -857,6 +869,9 @@ impl AnalysisOutput {
         self.entries.extend(other.entries);
         self.fde_bodies.extend(other.fde_bodies);
         self.fde_interior_entries.extend(other.fde_interior_entries);
+        self.data_vetoed.extend(other.data_vetoed);
+        self.function_bodies.extend(other.function_bodies);
+        self.import_call_sites.extend(other.import_call_sites);
         self.pdb_bodies.extend(other.pdb_bodies);
         self.entry_names.extend(other.entry_names);
         self.ppc32_pic_slots.extend(other.ppc32_pic_slots);

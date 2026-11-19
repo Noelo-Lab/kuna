@@ -175,6 +175,9 @@ pub struct RecoveredTypes {
     /// The part of [`Self::reads`] the body reads only by handing the register
     /// on, to a declared parameter or a callee that reads it.
     pub passes: Vec<(Address, int4)>,
+    /// (kuna `importvote`) The statement is an undeclared import's call-site
+    /// vote, not a decompiled body: [`Self::inputs`] are what its callers pass.
+    pub callers_vote: bool,
 }
 
 impl RecoveredTypes {
@@ -1982,7 +1985,7 @@ fn state_recovered_types(
         return Err(Decline::InvalidStorage);
     };
     arch.kuna_protoorder_types
-        .insert(key, Rc::new(RecoveredTypes { inputs, arity_sound, output, result, vararg_tail, reads, passes }));
+        .insert(key, Rc::new(RecoveredTypes { inputs, arity_sound, output, result, vararg_tail, reads, passes, callers_vote: false }));
     Ok(Recovered { pieces, trimmed: 0 })
 }
 

@@ -435,8 +435,16 @@ impl FlowEnvironment for ArchFlowEnv {
         };
         let void = arch.types().get_type_void()?;
         let mut proto = crate::fspec::FuncProto::new();
-        proto.set_internal(model.clone(), void);
-        proto.set_pieces(pieces, Some(model), arch.types(), arch.manage())?;
+        proto.set_internal(model.clone(), void.clone());
+        if pieces.outtype.is_none() && pieces.output_storage.is_none() {
+            // A format-callee override declares no return: recovery decides it.
+            let mut typed = pieces.clone();
+            typed.outtype = Some(void);
+            proto.set_pieces(&typed, Some(model), arch.types(), arch.manage())?;
+            proto.set_output_lock(false);
+        } else {
+            proto.set_pieces(pieces, Some(model), arch.types(), arch.manage())?;
+        }
         // insertProtoOverride marked this an override (locked); `set_pieces` already
         // sets the input/output/model locks.  Flag the override bit so the call
         // spec's `isOverride()` short-circuit (deindirect proto-merge) sees it.
@@ -1358,6 +1366,7 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
         crate::kuna_swiftcall::seed_self_readers(arch, fd);
         // (kuna `zerofillreturn`) And the zero fills, read off the fresh p-code.
         crate::p4_calls::kuna_zerofillreturn::seed(fd);
+        crate::p4_calls::kuna_importvote::seed(arch, fd);
         // (kuna `protoorder types`) And for the parameter types earlier callees stated.
         crate::p4_calls::kuna_protoorder::seed_protoorder_types(arch, fd);
         crate::p4_calls::kuna_callrettype::seed(arch, fd);
@@ -2055,6 +2064,7 @@ fn decompile_func_full_with_objects_inner(
         // high word first.
         crate::kuna_bejoin::seed_wide_returns(arch, &mut fd);
         crate::p4_calls::kuna_callwide::seed(arch, &mut fd);
+        crate::p4_calls::kuna_gochanrecv::seed(arch, &mut fd);
         // (kuna `calleedeadarg`) Take the callee entry-liveness probe the
         // input-trial scoring seam consults, for the same reason and at the same
         // point.
@@ -2080,6 +2090,9 @@ fn decompile_func_full_with_objects_inner(
                 && arch.protoorder.is_on()
                 && arch.has_split_records(),
         );
+        // (kuna `importvote`) An undeclared import a tail call reaches takes
+        // what its other call sites pass.
+        crate::p4_calls::kuna_importvote::seed(arch, &fd);
         // (kuna `protoorder types`) The parameter types callees decompiled earlier stated.
         crate::p4_calls::kuna_protoorder::seed_protoorder_types(arch, &mut fd);
         // (kuna `callrettype`) And the return types they stated.

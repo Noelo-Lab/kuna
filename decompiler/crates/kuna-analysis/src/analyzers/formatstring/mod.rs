@@ -66,6 +66,8 @@ pub mod apply;
 
 pub mod kuna_fmtstatic;
 
+pub mod kuna_fmtcallee;
+
 use std::rc::Rc;
 
 use kuna_base::error::KunaResult;
