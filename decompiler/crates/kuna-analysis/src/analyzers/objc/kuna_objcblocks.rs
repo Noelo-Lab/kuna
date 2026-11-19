@@ -159,7 +159,56 @@ struct Scan<'a> {
     global_refs: Vec<(u64, u64, u64, Option<u64>)>,
 }
 
-impl Scan<'_> {
+impl<'a> Scan<'a> {
+    /// End the function being scanned: its literals with an invoke and its
+    /// `__block` cells are found, and the register and frame state starts over.
+    fn flush(&mut self, sites: &mut Vec<Site>, cells: &mut Vec<ByrefCell>) {
+        let finished = self.done.drain(..).chain(self.pending.drain(..));
+        for mut site in finished {
+            if site.invoke == 0 {
+                continue;
+            }
+            site.captures.sort_by_key(|s| s.off);
+            sites.push(site);
+        }
+        for &(frame, _, depth) in &self.cells {
+            let at = |o: u64| self.stores.iter().find(|s| s.off == frame.wrapping_add(o));
+            let (flags, size) = match (at(16), at(20)) {
+                (Some(Store { width: 8, held: Some(Held::Imm(v)), .. }), _) => ((*v & 0xFFFF_FFFF) as u32, (*v >> 32) as u32),
+                (Some(Store { width: 4, held: Some(Held::Imm(f)), .. }), Some(Store { width: 4, held: Some(Held::Imm(s)), .. })) => (*f as u32, *s as u32),
+                _ => continue,
+            };
+            let value_at = if flags & BLOCK_HAS_COPY_DISPOSE != 0 { 40 } else { 24 };
+            cells.push(ByrefCell { frame, depth, flags, size, value: at(value_at).copied() });
+        }
+        self.cells.clear();
+        self.stores.clear();
+        self.regs = [None; 32];
+        self.fregs = [None; 32];
+        self.fsrc = [None; 32];
+        self.depth = 0;
+    }
+
+    fn new(read_ptr: &'a dyn Fn(u64) -> Option<u64>, is_code: &'a dyn Fn(u64) -> bool, isa_slots: &'a [u64], globals: &'a [u64]) -> Scan<'a> {
+        Scan {
+            regs: [None; 32],
+            fregs: [None; 32],
+            fsrc: [None; 32],
+            stores: Vec::new(),
+            pending: Vec::new(),
+            done: Vec::new(),
+            cells: Vec::new(),
+            depth: 0,
+            last_ret: 0,
+            start: None,
+            read_ptr,
+            is_code,
+            isa_slots,
+            globals,
+            global_refs: Vec::new(),
+        }
+    }
+
     fn held(&self, r: usize) -> Option<Held> {
         if r == 31 { Some(Held::Stack(0)) } else { self.regs[r] }
     }
@@ -180,6 +229,12 @@ impl Scan<'_> {
 
     fn store(&mut self, pc: u64, off: u64, width: u8, float: bool, rt: usize) {
         let held = if float { self.fregs[rt] } else if rt == 31 { Some(Held::Imm(0)) } else { self.regs[rt] };
+        self.store_held(pc, off, width, float, held, if float { self.fsrc[rt] } else { None });
+    }
+
+    /// Record one frame store of `held` (a float register's pool word at
+    /// `pool`) and fill in the literals it lands in.
+    fn store_held(&mut self, pc: u64, off: u64, width: u8, float: bool, held: Option<Held>, pool: Option<u64>) {
         self.stores.retain(|s| s.off != off);
         let store = Store { off, width, float, held };
         self.stores.push(store);
@@ -205,7 +260,7 @@ impl Scan<'_> {
             match (rel, held) {
                 (16, Some(Held::Addr(a))) if site.invoke == 0 && (self.is_code)(a) => site.invoke = a,
                 (24, Some(Held::Addr(a))) if site.descriptor.is_none() && !(self.is_code)(a) => site.descriptor = Some(a),
-                (8, _) if float && width == 8 && site.invoke == 0 => site.flags_at = self.fsrc[rt],
+                (8, _) if float && width == 8 && site.invoke == 0 => site.flags_at = pool,
                 (32..=0x3FF, _) if site.invoke == 0 || !site.captures.iter().any(|s| s.off == off) => {
                     site.captures.retain(|s| s.off != off);
                     site.captures.push(store);
@@ -369,50 +424,8 @@ fn stack_block_sites(
     let mut cells = Vec::new();
     let mut global_refs = Vec::new();
     for &(base, data) in text {
-        let mut scan = Scan {
-            regs: [None; 32],
-            fregs: [None; 32],
-            fsrc: [None; 32],
-            stores: Vec::new(),
-            pending: Vec::new(),
-            done: Vec::new(),
-            cells: Vec::new(),
-            depth: 0,
-            last_ret: 0,
-            start: None,
-            read_ptr,
-            is_code,
-            isa_slots,
-            globals,
-            global_refs: Vec::new(),
-        };
+        let mut scan = Scan::new(read_ptr, is_code, isa_slots, globals);
         let mut next_start = starts.partition_point(|&a| a < base);
-        let flush = |scan: &mut Scan, sites: &mut Vec<Site>, cells: &mut Vec<ByrefCell>| {
-            let finished = scan.done.drain(..).chain(scan.pending.drain(..));
-            for mut site in finished {
-                if site.invoke == 0 {
-                    continue;
-                }
-                site.captures.sort_by_key(|s| s.off);
-                sites.push(site);
-            }
-            for &(frame, _, depth) in &scan.cells {
-                let at = |o: u64| scan.stores.iter().find(|s| s.off == frame.wrapping_add(o));
-                let (flags, size) = match (at(16), at(20)) {
-                    (Some(Store { width: 8, held: Some(Held::Imm(v)), .. }), _) => ((*v & 0xFFFF_FFFF) as u32, (*v >> 32) as u32),
-                    (Some(Store { width: 4, held: Some(Held::Imm(f)), .. }), Some(Store { width: 4, held: Some(Held::Imm(s)), .. })) => (*f as u32, *s as u32),
-                    _ => continue,
-                };
-                let value_at = if flags & BLOCK_HAS_COPY_DISPOSE != 0 { 40 } else { 24 };
-                cells.push(ByrefCell { frame, depth, flags, size, value: at(value_at).copied() });
-            }
-            scan.cells.clear();
-            scan.stores.clear();
-            scan.regs = [None; 32];
-            scan.fregs = [None; 32];
-            scan.fsrc = [None; 32];
-            scan.depth = 0;
-        };
         for (i, c) in data.chunks_exact(4).enumerate() {
             let w = u32::from_le_bytes([c[0], c[1], c[2], c[3]]);
             let pc = base.wrapping_add(4 * i as u64);
@@ -420,18 +433,18 @@ fn stack_block_sites(
                 next_start += 1;
             }
             if starts.get(next_start) == Some(&pc) {
-                flush(&mut scan, &mut sites, &mut cells);
+                scan.flush(&mut sites, &mut cells);
                 scan.start = Some(pc);
                 next_start += 1;
             }
             if is_ret(w) {
-                flush(&mut scan, &mut sites, &mut cells);
+                scan.flush(&mut sites, &mut cells);
                 scan.last_ret = pc;
             } else {
                 scan.step(pc, w);
             }
         }
-        flush(&mut scan, &mut sites, &mut cells);
+        scan.flush(&mut sites, &mut cells);
         global_refs.append(&mut scan.global_refs);
     }
     Found { sites, cells, global_refs }
