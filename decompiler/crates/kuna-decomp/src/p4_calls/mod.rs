@@ -97,6 +97,7 @@ pub mod kuna_bejoinpass; // (kuna) a big-endian pair a call hands back to the RE
 pub(crate) mod kuna_customreturn;
 pub(crate) mod kuna_stackparamalign;
 pub mod kuna_x87emptyreturn;
+pub mod kuna_x87depth; // (kuna) the x87 register-stack depth at each return and after each call
 pub(crate) mod kuna_inputstorage;
 pub mod kuna_inputhints; // (kuna) unlocked names and types for recovered inputs
 pub mod kuna_swiftcall; // (kuna) Swift calls that may throw, and stale swiftself arguments

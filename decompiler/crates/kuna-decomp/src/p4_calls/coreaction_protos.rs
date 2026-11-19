@@ -2416,6 +2416,7 @@ impl Action for ActionPrototypeWarnings {
         // The warning channel (`ActionContext::warnings`) IS realized, but with
         // the placeholder proto there are no errors to report.  Deferred
         // (count stays 0); no warning is emitted.
+        crate::p4_calls::kuna_x87depth::warn(_data);
         0
     }
 }
