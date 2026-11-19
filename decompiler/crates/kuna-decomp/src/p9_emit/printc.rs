@@ -8987,6 +8987,12 @@ impl PrintC {
     /// notation absorbing the deref).  A byte-copy helper's compound initializer
     /// takes the rendered source member's scalar type, so it copies those bits.
     fn op_store_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
+        if self.out_lang == crate::kuna_lang::OutLang::Rust
+            && !self.options.nocasts
+            && self.op_rust_store_width(fd, arch, op)
+        {
+            return;
+        }
         if self.out_lang == crate::kuna_lang::OutLang::C {
             if let Some(mut access) = crate::kuna_stackmem::access(fd, op) {
                 if let Some(target) = access.value.and_then(|value| self.partial_piece_type(fd, arch, value, op, 2))
@@ -9687,6 +9693,11 @@ impl PrintC {
     /// C++ `PrintC::opPtradd` (printc.cc:900).  `ptr[index]` (value), `&ptr[index]`
     /// (array-notation address), or `ptr + index` (plain pointer arithmetic).
     fn op_ptradd_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
+        let raw_address = self.context.is_set(modifiers::RUST_RAW_INDEX_ADDRESS);
+        if raw_address {
+            self.context
+                .set_mods(self.context.mods() & !modifiers::RUST_RAW_INDEX_ADDRESS);
+        }
         if self.out_lang == crate::kuna_lang::OutLang::Go {
             self.op_go_ptradd(fd, arch, op);
             return;
@@ -9705,7 +9716,11 @@ impl PrintC {
             self.push_op(&tokens::SUBSCRIPT, Some(op_key(op)));
         } else if self.options.array_notation() {
             // (kuna) S9 pointer-notation sub-stage: EMIT &base[index].
-            let tok = self.lang_token(&tokens::ADDRESSOF);
+            let tok = if raw_address {
+                &crate::kuna_rustarrayaddr::RAW_ADDRESS
+            } else {
+                self.lang_token(&tokens::ADDRESSOF)
+            };
             self.push_op(tok, Some(op_key(op)));
             self.push_op(&tokens::SUBSCRIPT, Some(op_key(op)));
         } else {
