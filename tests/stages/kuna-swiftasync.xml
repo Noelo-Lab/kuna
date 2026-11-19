@@ -1,0 +1,50 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    The async context on a stripped Swift image (`option swiftcall on|off`).
+
+    Issue: an `async` function and its resume partials take the task's
+    context in the swiftasync register (r14 on x86-64, x22 on arm64), which
+    no name says once the image is stripped; under the C model it is an
+    unnamed register read, `long v3; // r14`.
+
+    Stage / sub-stage: P4 prototype models, the callee rule in the decompile
+    drive (`kuna_swiftcall::callee_evidence`): a body that calls the task
+    runtime's suspension entry points (`swift_task_alloc`,
+    `swift_task_dealloc`, `swift_task_switch`, ...) is `async`; one that calls
+    `swift_willThrow` throws.
+
+    P0 assertion: `option swiftcall on|off` (default on).
+
+    Both passes load `swift_sigs_elf` (the stripped `swift_sigs_syms_elf`)
+    with `swiftmetadata on`. Pass 1 (`option swiftcall off`): the resume partial `sub_3110`
+    reads r14 as an unnamed register. Pass 2 (the default): it takes
+    `async_context`, typed `swift.AsyncContext *` (parent, resume function).
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/swift_sigs_elf</com>
+  <com>option swiftmetadata on</com>
+  <com>option swiftcall off</com>
+  <com>read symbols</com>
+  <com>load addr 0x3110</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/swift_sigs_elf</com>
+  <com>option swiftmetadata on</com>
+  <com>read symbols</com>
+  <com>load addr 0x3110</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="swiftcall off: the resume partial reads its context as an unnamed register" min="1" max="1">sub_3110\(void\)</stringmatch>
+<stringmatch name="swiftcall off: r14 is read without a name" min="1" max="1">int8 \*v1; // r14</stringmatch>
+<stringmatch name="swiftcall on: the resume partial takes its context" min="1" max="1">sub_3110\(swift\.AsyncContext \*async_context\)</stringmatch>
+</decompilertest>

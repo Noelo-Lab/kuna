@@ -1,0 +1,99 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Declared Swift prototypes, the four-register return, the indirect
+    result register and the async context (`option swiftcall on|off`).
+
+    Issue: a Swift image that kept its symbols spells every method's
+    signature in its mangled name, and Swift returns up to four words in
+    registers where C passes a struct of 17 bytes through the indirect
+    result register, takes that register as rax (not rdi) on x86-64, and
+    hands an `async` function its task context in r14; under the C model a
+    three-word return is a `rethidden` pointer in the first argument
+    register, the real first argument slides over, and the context is an
+    unnamed register.
+
+    Stage / sub-stage: P1 external-refinement (`kuna_swiftcall.rs`, the
+    declared prototypes) and P4 prototype models (`kuna_swiftcall::derive_model`).
+
+    P0 assertion: `option swiftcall on|off` (default on).
+
+    Both passes load the real fixture `swift_sigs_syms_elf` (x86-64 ELF,
+    swiftc 6.3, symbols kept) with `swiftmetadata on`. Pass 1 (`option
+    swiftcall off`): `Box.triple(_:)` is recovered as `undefined16 (long a0)`,
+    without its `self` or its struct. Pass 2
+    (the default): it returns `sigfix.Triple` in `rcx:rdx:rax` with its
+    declared `(long a0, sigfix.Box *self)`, `Box.wide(_:)` takes its
+    `sigfix.Wide *rethidden` in rax ahead of `a0`, `Box.slow(_:)` takes
+    `swift.AsyncContext *async_context` with the context's layout, `sum3`
+    takes a three-word struct by value and `sum5` a five-word one by
+    address, `swap2` a tuple in and out, `hashed<A: Hashable>` the metadata
+    and witness table after its arguments, `Triple.sum()` its `self` by value
+    and `Triple.bump(_:)` by address.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/swift_sigs_syms_elf</com>
+  <com>option swiftmetadata on</com>
+  <com>option swiftcall off</com>
+  <com>read symbols</com>
+  <com>load addr 0x3e00</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/swift_sigs_syms_elf</com>
+  <com>option swiftmetadata on</com>
+  <com>read symbols</com>
+  <com>load addr 0x3e00</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x3e30</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x3ea0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x3ee0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x3f70</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x3f80</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x3f60</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x3f40</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x4010</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x3f20</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="swiftcall off: the method is recovered without its self or its struct return" min="1" max="1">undefined16 sigfix\.Box\.triple\(_:\)\(int8 a0\)</stringmatch>
+<stringmatch name="swiftcall on: the declared signature with the struct returned in registers" min="1" max="1">sigfix\.Triple sigfix\.Box\.triple\(_:\)\(int8 a0,sigfix\.Box \*self\)</stringmatch>
+<stringmatch name="swiftcall on: the three words come back in rcx:rdx:rax" min="1" max="1">rcx:rdx:rax</stringmatch>
+<stringmatch name="swiftcall on: a five-word return goes through rax, ahead of the first argument" min="1" max="1">wide\(_:\)\(sigfix\.Wide \*rethidden,int8 a0,sigfix\.Box \*self\)</stringmatch>
+<stringmatch name="swiftcall on: the indirect result is written through the pointer" min="1" max="1">rethidden-&gt;e = 3;</stringmatch>
+<stringmatch name="swiftcall on: an async method takes its task context" min="1" max="1">slow\(_:\)\(swift\.AsyncContext \*async_context,</stringmatch>
+<stringmatch name="swiftcall on: a payload-less enum is a C enum" min="1" max="1">sigfix\.Color sigfix\.Box\.tint\(_:\)\(int8 a0,sigfix\.Box \*self\)</stringmatch>
+<stringmatch name="swiftcall on: an enum case prints by name" min="1" max="1">return red;</stringmatch>
+<stringmatch name="swiftcall on: a three-word struct argument is taken by value" min="1" max="1">sum3\(_:\)\(sigfix\.Triple a0\)</stringmatch>
+<stringmatch name="swiftcall on: a five-word struct argument is taken by address" min="1" max="1">sum5\(_:\)\(sigfix\.Wide \*a0\)</stringmatch>
+<stringmatch name="swiftcall on: a tuple is a struct of its elements" min="1" max="1">\(Swift\.Int,Swift\.Int\) sigfix\.swap2\(_:\)\(\(Swift\.Int,Swift\.Int\) a0\)</stringmatch>
+<stringmatch name="swiftcall on: a generic function takes the metadata and the witness table after its arguments" min="1" max="1">hashed\(_:_:\)\(void \*a0,int8 a1,swift\.type_metadata \*metadata_A,void \*witness_A_Hashable\)</stringmatch>
+<stringmatch name="swiftcall on: a non-mutating struct method takes self by value" min="1" max="1">sigfix\.Triple\.sum\(\)\(sigfix\.Triple self\)</stringmatch>
+<stringmatch name="swiftcall on: a mutating struct method takes self by address" min="1" max="1">sigfix\.Triple\.bump\(_:\)\(int8 a0,sigfix\.Triple \*self\)</stringmatch>
+<stringmatch name="swiftcall on: the async context has its layout" min="1" max="1">async_context\[1\]\.resume_parent = self;</stringmatch>
+</decompilertest>
