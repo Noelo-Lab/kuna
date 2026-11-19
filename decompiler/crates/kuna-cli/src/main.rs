@@ -28,6 +28,7 @@ mod output;
 mod paths;
 mod project_stream;
 mod runtime_hints;
+mod rust_signatures;
 mod skill;
 mod specs;
 mod strings;
