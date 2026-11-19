@@ -614,6 +614,7 @@ One directive per `--assert`, keyed by intent rather than by phase:
 | `data <addr> <C typedeclaration>` | a named, typed global at an address |
 | `comment [<func>::]<addr> <text>` | a comment rendered into the C at that instruction |
 | `flow [<func>::]<addr> branch\|call\|callreturn\|return` | the flow out of this instruction is not what kuna decided |
+| `callee [<func>::]<callsite> <name\|address>` | the indirect call at this instruction goes to this function |
 | `function <start>[-<end>][=<name>]` | the `--define-function` spelling, on this plane |
 | `readonly <addr>+<size>` | the bytes in this range never change at run time |
 | `volatile <addr>+<size>` | device memory: every access is a real access |
@@ -954,6 +955,31 @@ int sub_13c9(void)
 error: --assert "flow 0x1405 call" refused by the pipeline: Could not apply flowoverride (the C below does not show it)
 exit 1
 ```
+
+**`callee` states where an indirect call goes.** kuna prints a call through a
+table or a function pointer as the pointer expression, because the destination
+is not in the code. When you know it, name the call instruction and the
+function, by name or by entry address:
+
+```console
+$ kuna decompile ./ops.so twice
+  v1 = (*(int (*)(unsigned long,unsigned int))**(unsigned long **)&table[(a1 & 3) * 8UL])(a0,a2);
+$ kuna decompile ./ops.so twice --assert 'callee 0x147a handle_open'
+  v1 = handle_open(a0,a2);
+```
+
+The call is rebuilt as a direct call before the function is analysed, so the
+callee's name and prototype apply to its arguments and its result. An indirect
+jump (`jmp *%rax`) is taken as a tail call: a call to the function, then a
+return (no return after a callee that never returns); no switch is recovered
+from it. The statement outranks a destination kuna would recover itself, such
+as the import a `call *slot(%rip)` loads. The directive is rejected when the
+instruction is a direct call, when it is not a call or an indirect jump, and
+when the destination is not a function (declare one first with `function`). A
+second `callee` for the same call site replaces the first, which is reported
+rejected. A call site the function's flow never reaches is refused after the
+decompile, and the run exits non-zero. In the console the same fact is
+`override indirect <callsite> <name|address>`, given after `load function`.
 
 **A `call` override follows the RET-call chain it starts.** `push
 <continuation>; push <target>; ret` is a call written without a `call`

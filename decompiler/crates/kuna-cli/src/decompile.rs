@@ -431,7 +431,7 @@ fn assertion_outcomes(
     selected: Option<&str>,
 ) -> Vec<kuna_console::assertions::Outcome> {
     use kuna_console::assertions::Outcome;
-    directives
+    let mut outcomes: Vec<Outcome> = directives
         .iter()
         .map(|directive| {
             let (kind, phase, subphase) = directive.body.coords();
@@ -461,7 +461,13 @@ fn assertion_outcomes(
                 fatal,
             }
         })
-        .collect()
+        .collect();
+    let applied: Vec<bool> = outcomes.iter().map(|o| o.status == "applied").collect();
+    let binds = |d: &kuna_console::assertions::Directive| crate::assertdecl::console_form(d, selected).is_ok();
+    for i in kuna_console::assertions::restated_callees(directives, |i| applied[i], binds) {
+        outcomes[i] = kuna_console::assertions::restated_callee(&directives[i]);
+    }
+    outcomes
 }
 
 /// The diagnostic the console printed for the command `line`, or `None` when it
@@ -1213,7 +1219,7 @@ fn usage() {
          \n\
          --assert <directive | @file> (repeatable) states a fact the engine could not\n\
          derive.  The vocabulary is function, typedef, prototype, data, param, return,\n\
-         name, type, comment, flow, readonly, volatile, bytes -- for instance\n\
+         name, type, comment, flow, callee, readonly, volatile, bytes -- for instance\n\
          `prototype login int login(char *user,char *pw)`, `type v2 char[16]`,\n\
          `name v2 credbuf`, `readonly 0x404028+8`, `flow 0x1405 return`.\n\
          `bytes <addr> <hex|@FILE>` overlays recovered plaintext -- what a packer\n\

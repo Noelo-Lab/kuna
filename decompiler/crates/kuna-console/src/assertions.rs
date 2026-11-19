@@ -25,6 +25,7 @@
 //!   data <addr> <C typedeclaration>        map address          P5 const-pointer
 //!   comment [<func>::]<addr> <text>        comment instruction  P9
 //!   flow [<func>::]<addr> <flowkind>       override flow        P2 flow-classification
+//!   callee [<func>::]<addr> <name|addr>    override indirect    P2 flow-classification
 //!   function <start>[-<end>][=<name>]      function bounds      P1  (= --define-function)
 //!   readonly <addr>+<size>                 readonly             P1 code-data-partition
 //!   volatile <addr>+<size>                 volatile             P1 code-data-partition
@@ -57,13 +58,15 @@
 //! * **Program-scoped** (`function`, `typedef`, `prototype`, `data`) is applied
 //!   by [`apply_program_scoped`] right after the analysis commit, so a declared
 //!   fact outranks whatever discovery decided.
-//! * **Function-scoped** (`param`, `return`, `comment`, `flow`) is turned into
+//! * **Function-scoped** (`param`, `return`, `comment`, `flow`, `callee`) is turned into
 //!   decompile SEEDS by [`function_seed`] — the facts the drive consumes at flow
 //!   time.  `flow` is the sharpest of them: it reclassifies the flow out of one
 //!   instruction (`branch`, `call`, `callreturn`, `return`), which is how a
 //!   caller corrects a function whose body the flow-follower walked out of — an
 //!   indirect `call *%rdx` that never returns, a tail call kuna read as a call,
-//!   a jump into a neighbour.
+//!   a jump into a neighbour.  `callee` states where one indirect call goes,
+//!   so the flow builds it as a direct call to that function
+//!   ([`crate::kuna_calleeoverride`]).
 //! * **Symbol-scoped** (`name`, `type`) can only be applied AFTER a decompile:
 //!   a local like `v2` does not exist until one has run (`rename v2 buf` before
 //!   the first decompile answers `No symbol named: v2`, which is precisely the
@@ -119,6 +122,9 @@ pub enum Body {
     /// `flow [<func>::]<addr> branch|call|callreturn|return` — the flow out of
     /// this instruction is not what kuna decided it was.
     Flow { func: Option<String>, addr: u64, kind: String },
+    /// `callee [<func>::]<callsite> <name|address>` — the indirect call at this
+    /// instruction goes to this function.
+    Callee { func: Option<String>, addr: u64, callee: String },
     /// `name [<func>::]<symbol> <newname>` — rename a local.
     Name { func: Option<String>, symbol: String, newname: String },
     /// `type [<func>::]<symbol> <C type>` — retype a local.
@@ -169,6 +175,7 @@ impl Body {
             Body::Return { .. } => ("return", "P4", "prototype-source"),
             Body::Comment { .. } => ("comment", "P9", "external-refinement"),
             Body::Flow { .. } => ("flow", "P2", "flow-classification"),
+            Body::Callee { .. } => ("callee", "P2", "flow-classification"),
             Body::Name { .. } => ("name", "P9", "naming-policy"),
             Body::Type { .. } => ("type", "P5", "type-propagation"),
             Body::Readonly { .. } => ("readonly", "P1", "code-data-partition"),
@@ -185,6 +192,7 @@ impl Body {
             | Body::Return { func, .. }
             | Body::Comment { func, .. }
             | Body::Flow { func, .. }
+            | Body::Callee { func, .. }
             | Body::Name { func, .. }
             | Body::Type { func, .. } => func.as_deref(),
             _ => None,
@@ -199,6 +207,7 @@ impl Body {
                 | Body::Return { .. }
                 | Body::Comment { .. }
                 | Body::Flow { .. }
+                | Body::Callee { .. }
                 | Body::Name { .. }
                 | Body::Type { .. }
         )
@@ -210,7 +219,7 @@ impl Body {
     /// a function this run does not decompile: they describe a signature, and a
     /// CALLER needs its callee's signature.  `comment`, `flow`, `name` and `type`
     /// describe the inside of one function body and have no cross-function
-    /// reading at all.
+    /// reading at all, and neither does `callee`.
     pub(crate) fn cross_function_prototype(&self) -> Option<String> {
         match self {
             Body::Param { func, .. } | Body::Return { func, .. } => func.clone(),
@@ -1005,6 +1014,67 @@ pub fn record_rejected_flow_overrides(
     }
 }
 
+/// Downgrade the outcome of every applied `callee` directive bound to `name`
+/// that a later one for the same call site replaced ([`restated_callees`]), or
+/// whose call site the followed flow did not turn into a direct call, as
+/// [`record_rejected_flow_overrides`] does for `flow`.
+pub fn record_rejected_callee_overrides(
+    prog: &mut ConsoleProgram,
+    name: &str,
+    single: bool,
+    fd: &Funcdata,
+) {
+    if !prog.assertions().iter().any(|d| matches!(d.body, Body::Callee { .. })) {
+        return;
+    }
+    let directives = prog.assertions().to_vec();
+    let outcomes = prog.assertion_outcomes();
+    let applied = |i: usize| outcomes.get(i).is_some_and(|o| o.status == "applied");
+    let binds = |d: &Directive| binds_to(&d.body, name, single);
+    let restated = restated_callees(&directives, applied, binds);
+    let refused = fd.kuna_rejected_callee_overrides();
+    for (i, directive) in directives.iter().enumerate() {
+        let Body::Callee { addr, .. } = &directive.body else { continue };
+        if !applied(i) || !binds(directive) {
+            continue;
+        }
+        let outcome = if restated.contains(&i) {
+            restated_callee(directive)
+        } else {
+            let Ok(at) = code_addr(prog, *addr) else { continue };
+            let Some((_, _, reason)) = refused.iter().find(|(site, _, _)| site == &at) else {
+                continue;
+            };
+            directive.refused(reason.clone())
+        };
+        prog.set_assertion_outcome(i, outcome);
+    }
+}
+
+/// The `callee` directives a later one replaces: of those `binds` and `applied`
+/// accept, every one a later one names the same call site after. The call keeps
+/// the destination stated last, as the console's `override indirect` does.
+pub fn restated_callees(
+    directives: &[Directive],
+    applied: impl Fn(usize) -> bool,
+    binds: impl Fn(&Directive) -> bool,
+) -> Vec<usize> {
+    let sites: Vec<Option<u64>> = directives
+        .iter()
+        .enumerate()
+        .map(|(i, d)| match d.body {
+            Body::Callee { addr, .. } if applied(i) && binds(d) => Some(addr),
+            _ => None,
+        })
+        .collect();
+    (0..sites.len()).filter(|&i| sites[i].is_some() && sites[i + 1..].contains(&sites[i])).collect()
+}
+
+/// The outcome of a `callee` a later one for the same call site replaced.
+pub fn restated_callee(directive: &Directive) -> Outcome {
+    directive.rejected("a later callee states this call site again, and that one is applied")
+}
+
 fn seed_one(
     prog: &mut ConsoleProgram,
     body: &Body,
@@ -1082,6 +1152,10 @@ fn seed_one(
                 }
             }
             Ok(())
+        }
+        Body::Callee { addr, callee, .. } => {
+            let at = code_addr(prog, *addr)?;
+            crate::kuna_calleeoverride::plant(prog, entry, &at, callee)
         }
         _ => Err("internal: not a function-scoped directive".into()),
     }

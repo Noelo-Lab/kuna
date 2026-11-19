@@ -67,6 +67,7 @@ pub mod kuna_rustprobestack;
 pub mod kuna_chkstkdarwin; // (kuna) remove the Darwin AArch64 stack probe so the registers it preserves survive it
 
 pub(crate) mod kuna_highslice_guard;
+pub mod kuna_calleeoverride; // (kuna) a caller-stated destination for an indirect call
 pub mod kuna_stubtailcall; // (kuna) a loader-proven lazy-binding stub flows as a tail call
 
 pub mod kuna_ppcpcread;

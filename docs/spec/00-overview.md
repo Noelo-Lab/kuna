@@ -2441,6 +2441,7 @@ lowering) and applied by
 | `return [<func>::]<storage> <C typedeclaration>` | `map return` | P4 prototype-source |
 | `comment [<func>::]<addr> <text>` | `comment instruction` | P9 external-refinement |
 | `flow [<func>::]<addr> branch\|call\|callreturn\|return` | `override flow` | P2 flow-classification |
+| `callee [<func>::]<callsite> <name\|address>` | `override indirect` | P2 flow-classification |
 | `name [<func>::]<symbol> <newname>` | `rename` | P9 naming-policy |
 | `type [<func>::]<symbol> <C type>` | `retype` | P5 type-propagation |
 | `readonly <addr>+<size>` | `readonly` | P1 code-data-partition |
@@ -2935,7 +2936,7 @@ wanted, so silence there is the failure this plane exists to end.
 Durability is caller-carried, as it is for boundaries: `--assert @FILE` is the
 artifact.
 
-A `flow` directive is the sharpest of the four function-scoped ones, and the only
+A `flow` directive is the sharpest of the function-scoped ones, and the only
 one that changes which bytes are in the function at all. P2 classifies the flow
 out of each instruction — branch, call, call-that-does-not-return, return — and
 `FlowInfo::process` consults the per-function `Override` store
@@ -2971,6 +2972,30 @@ the same engine in process, exited 1 on the same command. Every per-function abo
 is now stamped onto the retained `Funcdata` (`set_kuna_pipeline_failure`) so that
 shell names its reason, and the script surface reports the raised abort the way it
 already reported the swallowed one.
+
+A `callee` directive states where one indirect call goes. The engine cannot
+derive the destination of `call *(%rax)`, and it already has the store for it:
+the per-function `Override` keeps an indirect-call redirect, which kuna plants
+itself when it resolves a call and restarts. The directive plants the same
+redirect before flow (`decompiler/crates/kuna-console/src/kuna_calleeoverride.rs
+(plant)`). It first decodes the instruction at the call site and accepts an
+indirect call or an indirect jump; a direct call, any other instruction and a
+destination that is not a function entry are rejected with the reason, and
+nothing is planted. A destination is a function name or a `0x` entry address.
+The fact is parked on the architecture under the entry of the function that
+holds the call, and P2 turns the call into a direct call to the callee, or the
+jump into a tail call (02, *Call sites*). The script surface lowers the
+directive to the console command `override indirect <callsite> <name|address>`
+(`kuna-console/src/ifacedecomp.rs (IfcOverrideIndirect)`), which calls the same
+`plant`. A call site the function's flow does not reach cannot be seen before
+flow, so the engine records it on the `Funcdata` after the follow and both
+surfaces turn that record into a `fatal` rejection, as they do for a refused
+`flow` (`assertions::record_rejected_callee_overrides`, and the console's
+`Rejected override indirect ...` line). The planted redirect is consulted before
+any resolution of kuna's own, so the statement outranks a destination kuna
+would have recovered (the import a GOT-slot call loads). Two `callee`
+directives for one call site leave the later one planted; the same function
+reports the earlier one rejected.
 
 A `call` (or `callreturn`) override carries one more fact with it: the RET-call
 chain it starts. `push <continuation>; push <target>; ret` is a call spelled

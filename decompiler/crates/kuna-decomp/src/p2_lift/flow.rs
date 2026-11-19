@@ -380,6 +380,12 @@ pub trait FlowEnvironment {
         None
     }
 
+    /// (kuna `--assert callee`) Did the caller state where the indirect jump at
+    /// `site` goes? See [`kuna_calleeoverride`](crate::kuna_calleeoverride).
+    fn stated_callee_site(&self, _fd: &Funcdata, _site: &Address) -> bool {
+        false
+    }
+
     /// (kuna `msvcsig`) Does `entry` carry a locked MSVC prototype? Such a callee's
     /// copied prototype gets the stack adjustment its parameter list implies, as
     /// `ActionDefaultParams` gives a declared callee it seeds itself
@@ -3904,6 +3910,10 @@ truncating the fall-through here"
         for op in table_ops {
             let at = self.data.obank().get(op).map_or(0, |o| o.get_addr().get_offset());
             let _scope = crate::decompile_drive::JumpTableScope::enter(at);
+            if !for_inline && self.is_stated_tail_call(op) {
+                self.stated_tail_call(op)?;
+                continue;
+            }
             let mode = if crate::decompile_drive::deadline_passed_in("jump-table recovery") {
                 Ok(None)
             } else {
@@ -3950,6 +3960,29 @@ truncating the fall-through here"
             }
         }
         Ok(new_tables)
+    }
+
+    /// (kuna `--assert callee`) Is the BRANCHIND `op` a jump the caller stated
+    /// the destination function of? It is a tail call, not a switch.
+    fn is_stated_tail_call(&self, op: OpId) -> bool {
+        self.data
+            .obank()
+            .get(op)
+            .is_some_and(|o| self.env.stated_callee_site(&self.data, o.get_addr()))
+    }
+
+    /// (kuna `--assert callee`) Turn the stated BRANCHIND `op` into a call to the
+    /// stated callee followed by a return, or by nothing when the callee never
+    /// returns, as a direct tail call to it is built.
+    fn stated_tail_call(&mut self, op: OpId) -> KunaResult<()> {
+        self.data.op_set_opcode_code(op, OpCode::CPUI_CALLIND);
+        if self.setup_callind_specs(op)? {
+            return Ok(());
+        }
+        let addr = self.data.obank().get(op).expect("stated tail call: stale op").get_addr().clone();
+        let truncop = self.artificial_halt(&addr, 0)?;
+        self.data.op_dead_insert_after(truncop, op);
+        Ok(())
     }
 
     /// Convert a BRANCHIND that could not be recovered into a call or return
