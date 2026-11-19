@@ -3,8 +3,9 @@
 //! directive `callproto [<func>::]<callsite> <C declaration>`.
 //!
 //! The declaration is the grammar `prototype` takes, naming no calling
-//! convention but the default one, which the call is laid out under. Each parameter may
-//! be followed by `@<storage>` in the spelling `param` takes (`RDI`, `%RDI`,
+//! convention but the default one (under any name the compiler spec gives it),
+//! which the call is laid out under. Each parameter may be followed by
+//! `@<storage>` in the spelling `param` takes (`RDI`, `%RDI`,
 //! `[stack,-0x18,8]`); a `@<storage>` after the parameter list places the
 //! return value. A parameter without one is placed by the default convention
 //! around those that have one.
@@ -37,7 +38,16 @@ pub(crate) fn parse(prog: &ConsoleProgram, decl: &str) -> Result<PrototypePieces
     let (mut pieces, model) =
         crate::grammar::parse_protopieces_with_model(&text, prog.arch().types(), org, &models)
             .map_err(|e| e.explain().to_string())?;
-    if !model.is_empty() && prog.arch().default_fp().is_none_or(|m| m.get_name() != model) {
+    let arch = prog.arch();
+    let is_default = |name: &str| {
+        arch.default_fp().is_some_and(|d| {
+            d.get_name() == name
+                || arch
+                    .get_model(name)
+                    .is_some_and(|m| m.is_compatible(d) && m.has_this_pointer() == d.has_this_pointer())
+        })
+    };
+    if !model.is_empty() && !is_default(&model) {
         return Err(format!(
             "a call-site prototype is laid out under the default calling convention and \
              cannot name {model}; place its parameters with @<storage>"

@@ -2494,8 +2494,10 @@ model places the remaining parameters around it; a `@<storage>` after the
 parameter list is the return's `output_storage`. The override is built under
 the default model (`build_override_proto`; the pieces carry no model), so a
 declaration naming any other calling convention (`__thiscall`) is rejected
-rather than laid out under the wrong one; `@<storage>` states a non-default
-placement.
+rather than laid out under the wrong one, while an alias of the default model
+with the same `this` handling (`<modelalias>`: `__cdecl` on x86-64 Windows) is
+the default under another name and is accepted; `@<storage>` states a
+non-default placement.
 Two directives for the same call site keep the later one, and the earlier
 reports `rejected` (`assertions::restated_call_prototypes`, used by both
 surfaces). The in-process surface seeds

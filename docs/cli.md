@@ -1054,11 +1054,12 @@ $ kuna decompile ./vlog.so report --assert 'data 0x2458 void (**logger_slot)(cha
 ```
 
 The call is laid out under the default calling convention, so a declaration
-naming any other (`__thiscall` on x86) is **rejected**. A parameter followed by
-`@<storage>` is read from that storage instead of the place the convention
-gives it (`int a @R8D`, `char *s @[stack,0x8,8]`), and a `@<storage>` after the
-parameter list places the return value; the parameters without one are placed
-by the convention around those that have one. An address where the function
+naming any other (`__thiscall` on x86) is **rejected**; a name the compiler
+spec gives the default one (`__cdecl` on x86-64 Windows) is accepted. A
+parameter followed by `@<storage>` is read from that storage instead of the
+place the convention gives it (`int a @R8D`, `char *s @[stack,0x8,8]`), and a
+`@<storage>` after the parameter list places the return value; the parameters
+without one are placed by the convention around those that have one. An address where the function
 makes no call is **rejected** with `No call is made at this address`, and of
 two directives for one call the later is applied and the earlier **rejected**.
 

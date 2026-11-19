@@ -6,12 +6,20 @@ use crate::common;
 const SLOT: &str = "data 0x2458 void (**logger_slot)(char *fmt, ...)";
 
 fn decompile(surface: &[&str], assertions: &[&str]) -> (String, String, i32) {
-    let image = common::fixture("callproto_x86_64");
+    decompile_in("callproto_x86_64", surface, assertions)
+}
+
+fn decompile_in(fixture: &str, surface: &[&str], assertions: &[&str]) -> (String, String, i32) {
+    let image = common::fixture(fixture);
     let specs = common::repo_root().join("specs");
     let mut args: Vec<&str> = surface.to_vec();
     args.insert(1, &image);
     for assertion in assertions {
-        args.extend(["--assert", assertion]);
+        if assertion.starts_with("--") {
+            args.push(assertion);
+        } else {
+            args.extend(["--assert", assertion]);
+        }
     }
     args.extend(["--sleighpath", specs.to_str().unwrap()]);
     common::run_kuna(&args)
@@ -76,6 +84,18 @@ fn a_named_calling_convention_is_rejected() {
     }
 }
 
+/// `__cdecl` is the x86-64 Windows spec's alias of its default `__fastcall`,
+/// so naming it names the convention the call is laid out under.
+#[test]
+fn the_default_convention_under_an_alias_is_accepted() {
+    let decl = "callproto sub_140001000::0x140001024 void *__cdecl f(void *, unsigned long, void *, void *, unsigned int, unsigned int *)";
+    for surface in [&["decompile", "sub_140001000"][..], &["decompile-all"][..]] {
+        let (_, err, code) = decompile_in("importcall_pe_x86_64.exe", surface, &[decl, "--assert-strict"]);
+        assert_eq!(code, 0, "{surface:?}: {err}");
+        assert!(!err.contains("rejected"), "{surface:?}: {err}");
+    }
+}
+
 #[test]
 fn a_placed_parameter_is_read_from_its_storage() {
     let (out, err, code) = decompile(
@@ -101,6 +121,6 @@ fn an_address_that_is_not_a_call_is_rejected() {
             surface,
             &["callproto report::0x1395 void f(char *)", "--assert-strict"],
         );
-        assert_ne!(strict, 0, "{surface:?}");
+        assert_eq!(strict, 1, "{surface:?}");
     }
 }
