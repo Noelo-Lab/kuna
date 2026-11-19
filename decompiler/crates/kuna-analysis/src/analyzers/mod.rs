@@ -31,3 +31,4 @@ pub mod sourcelang;
 pub mod strings;
 pub mod swift;
 pub mod uefi;
+pub mod cortexmscs;
