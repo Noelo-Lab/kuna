@@ -1,0 +1,39 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Static TLS variables at their thread-pointer offsets (`option tlsnames
+    on|off`).
+
+    Stage P5 type-propagation. The fixture is tlsnames_x86_64.c built with
+    gcc -O1 as a PIE: `bump` reaches three __thread variables local-exec,
+    through fs:[-0x10], fs:[-0x60] and fs:[-0x50] (PT_TLS memsz 0x54, align 16).
+
+    Pass 1 (`tlsnames off`, the bug): offsets off an untyped fs_offset.
+    Pass 2 (default, the fix): the thread pointer is a `__tls_block *` one past
+    the block, and every access is a field of `tls[-1]`.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/tlsnames_gcc_O1_x86_64</com>
+  <com>option tlsnames off</com>
+  <com>read symbols</com>
+  <com>load function bump</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/tlsnames_gcc_O1_x86_64</com>
+  <com>read symbols</com>
+  <com>load function bump</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="TLSNAMES #1: off, a __thread store is an offset off the segment base" min="1" max="1">\*\(int4 \*\)\(v1 \+ -0x10\) = a0;</stringmatch>
+<stringmatch name="TLSNAMES #2: on, the thread pointer is typed one past the TLS block" min="1" max="1">__tls_block \*tls; // fs_offset</stringmatch>
+<stringmatch name="TLSNAMES #3: on, the store names its variable" min="1" max="1">tls\[-1\]\.counter = a0;</stringmatch>
+<stringmatch name="TLSNAMES #4: on, the static variable and the array are named too" min="1" max="1">tls\[-1\]\.hits = tls\[-1\]\.hits \+ 1;</stringmatch>
+</decompilertest>

@@ -780,6 +780,10 @@ pub fn universal_sched(
             // Symbol must exist before heritage creates the input Varnode, which
             // is when its type and name locks are read.
             act!(crate::p5_types::kuna_pebnames::ActionPebNames::boxed("typerecovery")),
+            // (kuna) tlsnames (option `tlsnames`, default on): map the relative
+            // `tls` pointer over the x86 thread-pointer input, before heritage for
+            // the same reason as pebnames.
+            act!(crate::p5_types::kuna_tlsnames::ActionTlsNames::boxed("typerecovery")),
             // (kuna) msvcstrappend (option `msvcstrappend`, default-OFF): collapse
             // an inlined MSVC x64 `std::string` push_back/append capacity diamond
             // into one call.  Here for linuxsyscall's reasons: the diamond is

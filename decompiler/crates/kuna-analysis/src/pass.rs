@@ -431,6 +431,8 @@ pub struct AnalysisOutput {
     /// the object renders its NAME (`max_width`) not `dat_<addr>`. See
     /// [`DataObjectFact`]. Produced by the DWARF pass; empty otherwise.
     pub data_objects: Vec<DataObjectFact>,
+    /// (kuna `tlsnames`) The executable's static TLS block.
+    pub tls_layout: Option<kuna_decomp::kuna_tlsnames::TlsLayout>,
     /// Discovered function entry points (for stripped targets).
     pub entries: Vec<u64>,
     /// (kuna) Function bodies that describe exactly one function, as `[start, end)`.
@@ -856,6 +858,7 @@ impl AnalysisOutput {
         self.symbols.extend(other.symbols);
         self.go_chanrecv2 = self.go_chanrecv2.or(other.go_chanrecv2);
         self.data_objects.extend(other.data_objects);
+        self.tls_layout = self.tls_layout.take().or(other.tls_layout);
         self.typed_data.extend(other.typed_data);
         self.go_type_globals.extend(other.go_type_globals);
         self.go_itabs.extend(other.go_itabs);

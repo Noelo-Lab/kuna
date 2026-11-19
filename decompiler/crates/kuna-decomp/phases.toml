@@ -3981,6 +3981,25 @@ tier = "transform"
 symptoms = "a local commented // gs_offset or // fs_offset is read through constant offsets|an anti-debug check reads *(char *)(*(long long *)(v1 + 0x60) + 2)|PEB fields such as BeingDebugged or NtGlobalFlag render as magic offsets|a thread-local or stack-limit read renders as *(long long *)(v1 + 0x58) or (v1 + 0x10)"
 
 [[settable]]
+option = "tlsnames"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P5"
+subphase = "type-propagation"
+strength = "HARD"
+rewind = "P1"
+issue = "static-tls-names"
+summary = "x86 and x86-64 ELF executables only: name the static TLS variables where code reaches them through the thread pointer. A local-exec access to a __thread variable is a load at a constant offset from the thread pointer (x86-64 `mov eax, fs:[-0x10]`), lowered to FS_OFFSET + -0x10 and rendered as `*(int *)(v1 + -0x10)` off an untyped fs_offset input. The x86 TLS ABIs (variant II) put the executable's TLS block immediately below the thread pointer, so the STT_TLS symbol with value v sits at v - align_up(PT_TLS.p_memsz, PT_TLS.p_align). The loader reads PT_TLS and the defined STT_TLS symbols into a layout; in a function that uses FS_OFFSET (x86-64) or GS_OFFSET (x86) only at constant offsets inside that block, the register input gets a type-locked Symbol `tls`, a pointer relative to a `__tls_block` structure (each TLS symbol a field of its size, the rest holes) that points at the block's end, so the access renders `tls[-1].counter`. A function that also reads the thread control block above the pointer (the fs:[0x28] stack canary), a shared object (whose TLS goes through __tls_get_addr), an image without TLS symbols and every non-x86 target are unchanged."
+use_when = "On by default: an executable's __thread variables read by name (`tls[-1].counter = a0;`) instead of offsets off fs_offset. Flip off to see the raw thread-pointer arithmetic, for example when checking the offsets against the ABI by hand."
+example = "option tlsnames off"
+source_decompiler = "kuna"
+inspiration = "a gcc -O1 PIE whose three __thread variables printed as fs_offset + -0x10, -0x60 and -0x50 although .symtab named all three"
+change_kind = "analysis-enablement"
+tier = "analysis"
+symptoms = "a __thread variable reads as *(int *)(v1 + -0x10) with v1 an fs_offset|thread-local variables of an executable have no names although .symtab has STT_TLS symbols|the TLS block is not modelled"
+
+[[settable]]
 option = "structsynth"
 values = "off|param|locals|nest|all"
 default = "locals"

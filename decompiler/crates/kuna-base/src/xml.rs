@@ -2268,7 +2268,8 @@ mod tests {
         // and kuna-stubbinds / a stripped Mach-O stub is named from the chained bind on its slot (option stubbinds)
         // and kuna-trapaftercall / a ud2 after an x86 call ends the flow at the call
         // and kuna-retpolinethunk / a call to a retpoline thunk is the indirect call it stands for
-        assert_eq!(count, 850, "corpus file count drifted");
+        // and kuna-tlsnames / x86 ELF static TLS variables read as fields of the block below the thread pointer
+        assert_eq!(count, 851, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

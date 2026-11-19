@@ -1212,6 +1212,9 @@ pub struct ArchContext {
     /// loader's user-mode-PE fact: does
     /// [`ActionPebNames`](crate::p5_types::kuna_pebnames::ActionPebNames) act?
     pub peb_names: bool,
+    /// (kuna `tlsnames`) The executable's static TLS block, when the loader
+    /// found one.
+    pub tls_layout: Option<Rc<crate::p5_types::kuna_tlsnames::TlsLayout>>,
     /// (kuna) `option structsynth`: over which bases may
     /// [`ActionStructSynth`](crate::p5_types::kuna_structsynth::ActionStructSynth)
     /// synthesize a structure from constant-offset dereferences?
@@ -1746,6 +1749,7 @@ impl ArchContext {
             syscall_regs_family: None,
             syscall_regs_userops: Vec::new(),
             peb_names: false,
+            tls_layout: None,
             switch_selector_guard: false, // switchselector (opt-in default-off)
             lowered_switch_linear: false, // loweredswitch linear|all
             lowered_switch_tree: false, // loweredswitch tree|all

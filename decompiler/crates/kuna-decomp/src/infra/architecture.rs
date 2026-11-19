@@ -519,6 +519,8 @@ pub struct Architecture {
     /// on an image the loader proved is a Windows user-mode PE) or `on` (any image
     /// with a Windows compiler spec).  See [`kuna_pebnames`](crate::kuna_pebnames).
     pub peb_names: crate::kuna_pebnames::PebNamesMode,
+    /// (kuna `tlsnames`) The static TLS block the loader committed.
+    pub tls_layout: Option<Rc<crate::p5_types::kuna_tlsnames::TlsLayout>>,
     /// (kuna `structsynth`) Over which bases a structure may be synthesized from
     /// constant-offset dereferences: `off` (the default) or `param` (function
     /// parameters).  See [`kuna_structsynth`](crate::kuna_structsynth).
@@ -1458,6 +1460,8 @@ pub struct Architecture {
     /// (kuna) Gate the libgcc DI-mode `__divdi3` contract on SPARC32 BE ELF
     /// (`libgccsigs`); default off.
     pub analysis_libgccsigs: bool,
+    /// (kuna) Gate the static-TLS naming (`tlsnames`); default on.
+    pub analysis_tlsnames: bool,
     /// (kuna) Gate the Go `_type` descriptor globals — the `gotypes` harvest's
     /// typed-data facts (`gotypeglobals`); default on.
     pub analysis_go_type_globals: bool,
@@ -2407,6 +2411,7 @@ impl Architecture {
             image_linux_elf: false, // (kuna) a load-time fact; set by the console's `load file`
             image_apple: false, // (kuna) a load-time fact; set by the console's `load file`
             peb_names: crate::kuna_pebnames::PebNamesMode::Off, // (kuna) option pebnames; reset_defaults sets the shipped default
+            tls_layout: None,
             struct_synth: crate::kuna_structsynth::StructSynthMode::Off, // (kuna) option structsynth; reset_defaults sets the shipped default
             struct_synth_shard: None,
             struct_merge: crate::kuna_structmerge::StructMergeMode::Off, // (kuna) option structmerge; reset_defaults sets the shipped default
@@ -2600,6 +2605,7 @@ impl Architecture {
             // asserted equal by kuna_phases/tests.rs `live_value` parity).
             analysis_noreturn_known: false,
             analysis_libgccsigs: false,
+            analysis_tlsnames: false,
             analysis_go_type_globals: false,
             analysis_libctypes: false,
             analysis_libctypes_glibc: false,
@@ -2921,6 +2927,7 @@ impl Architecture {
         // (kuna) libgcc `__divdi3` contract -- default-OFF: a caller returning
         // arithmetic on the quotient still loses a word.
         self.analysis_libgccsigs = false;
+        self.analysis_tlsnames = true; // (kuna) option tlsnames default-on: x86 ELF executables with STT_TLS symbols only; 0/675 datatests
         // (kuna) Go `_type` descriptor globals -- default-ON: on a Go image the
         // harvested names appear at every allocation/conversion site; a non-Go
         // image produces no facts, so the gate is structurally inert there.
@@ -3673,6 +3680,7 @@ impl Architecture {
             crate::kuna_fastfailnoreturn::archid_is_windows(self.get_description()),
             self.image_windows_user,
         ); // (kuna) pebnames
+        ctx.tls_layout = self.tls_layout.clone(); // (kuna) tlsnames
         ctx.struct_synth = self.struct_synth; // (kuna) structsynth
         ctx.struct_synth_shard = self.struct_synth_shard.clone();
         ctx.struct_merge = self.struct_merge; // (kuna) structmerge

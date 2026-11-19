@@ -3423,6 +3423,7 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // facts are computed at LOAD and COMMITTED only when this gate is on, so
         // `off` renders exactly what the base table alone renders.
         "libgccsigs" => arch.analysis_libgccsigs,
+        "tlsnames" => arch.analysis_tlsnames,
         // (kuna) The LOAD-TIME format-string resolver — a Listing consumer whose
         // per-call-site overrides are computed at the deferred commit point and
         // applied only when the gate asks for the static half (`static` on x86,
@@ -5470,6 +5471,9 @@ fn commit_analysis_output(
     kuna_analysis::dwarf::merge_cpp_symbols(&mut out.symbols, cpp.symbols);
     out.locals.extend(cpp.locals);
     out.cpp_dwarf.prototypes = cpp.prototypes;
+    if let Some(layout) = out.tls_layout.take() {
+        prog.arch_mut().tls_layout = Some(Rc::new(layout));
+    }
     let go_prototypes = if prog.arch().analysis_godwarfsig {
         out.go_dwarf.iter()
             .flat_map(|facts| facts.materialize(prog.arch(), &out.go_pointer_methods))

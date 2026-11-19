@@ -286,6 +286,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "noreturn_known" => on_off(conf.analysis_noreturn_known),
         "godwarfsig" => on_off(conf.analysis_godwarfsig),
         "libgccsigs" => on_off(conf.analysis_libgccsigs),
+        "tlsnames" => on_off(conf.analysis_tlsnames),
         "gotypeglobals" => on_off(conf.analysis_go_type_globals),
         // (kuna `libctypes`) Valued `off|opaque|glibc`, so the live token is the
         // value, not an on/off word.
