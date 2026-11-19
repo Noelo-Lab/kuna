@@ -4015,25 +4015,30 @@ moves.
   only the Go-specific importer may install a source signature. Unsupported
   Go contracts therefore retain inference in compressed and uncompressed files.
 
-  On little-endian AArch64 Go ELF with zlib-compressed DWARF, this importer
-  also accepts a single pointer-to-`int32` input and one signed `int32` or
-  `int64` result. The concrete DWARF definition must have a unique entry
-  and match the linked
-  text function's name and full extent. Require the Go register-ABI producer,
+  On little-endian AArch64 Go ELF with uncompressed or zlib-compressed
+  DWARF, this importer also accepts a single pointer-to-`int32` input and
+  one signed `int32` or `int64` result. The concrete DWARF definition must
+  have a unique entry and match the linked text function's name and full
+  extent. Require the Go register-ABI producer,
   explicit input and result roles, and an X0 location at entry for the input.
   A result location can name X0 or be explicitly empty in the debug record.
   The `abi-internal` model must independently place the pointer in X0 and
   choose the low four or eight bytes of X0 for the result. This preserves
   the `int32` boundary even when a widened `int64` function has the same
   machine body. Explicit prototypes still take precedence at the entry.
+  This recovers the physical signature. Receiver declarations and method
+  call syntax continue to require verified Go pointer method metadata,
+  which currently applies to amd64.
 
-  The AArch64 importer retains bounded raw sections. When enabled, it
-  validates the compressed streams and scans complete Go units for the
-  selected types and direct formals. It counts duplicate definitions before
-  considering the type shape and checks the linked name and extent before
-  reading parameter locations. The generic DWARF importer still uses its
-  ordinary section loading and traversal for every format. AArch64 Go ELF
-  with uncompressed DWARF continues to use the generic path.
+  The AArch64 importer limits the total retained DWARF section size to
+  64 MiB, counting the larger of each stored and decoded size. When
+  enabled, it validates compressed streams and scans complete Go units
+  for the selected types and direct formals. It counts duplicate
+  definitions before considering the type shape and checks the linked
+  name and extent before reading parameter locations. Malformed headers,
+  invalid compressed streams and oversized section sets leave signature
+  inference in place. The generic DWARF importer continues its ordinary
+  section loading and traversal for every format.
 
 
   Accepted inputs occupy the verified Go integer or float register sequence;

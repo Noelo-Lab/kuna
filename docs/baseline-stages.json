@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4789,
-    4789
+    4795,
+    4795
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1208,6 +1208,12 @@
     "data:Go ARM64 DWARF result respects explicit prototype",
     "data:Go ARM64 narrow falling result retains int32 subtraction",
     "data:Go ARM64 narrow rising result retains int32 addition",
+    "data:Go ARM64 plain DWARF off retains inferred result width",
+    "data:Go ARM64 plain DWARF result respects explicit prototype",
+    "data:Go ARM64 plain narrow falling result retains int32 subtraction",
+    "data:Go ARM64 plain narrow rising result retains int32 addition",
+    "data:Go ARM64 plain wide falling twin retains int64 extension",
+    "data:Go ARM64 plain wide rising twin retains int64 extension",
     "data:Go ARM64 wide falling twin retains int64 extension",
     "data:Go ARM64 wide rising twin retains int64 extension",
     "data:Go DWARF signatures off retain the register byte carrier",
