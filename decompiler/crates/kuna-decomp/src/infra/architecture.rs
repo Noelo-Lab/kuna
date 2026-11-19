@@ -1238,6 +1238,10 @@ pub struct Architecture {
     /// (`decompile_drive::is_injected_userop`), not at registration: the payload
     /// is installed at architecture bootstrap, before any `option` line.
     pub cortexmpriv: bool,
+    /// (kuna `acleintrinsics`) On AArch64, lift the memory-tagging instructions
+    /// with their tag effect (`kuna_memtag`) and print the barrier, hint and
+    /// memory-tagging user ops as ACLE intrinsics (`kuna_acleintrinsics`).
+    pub acle_intrinsics: bool,
     /// (kuna `cortexmpriv`) The inject id of the `isCurrentModePrivileged`
     /// callother-fixup this architecture registered, or `None` on a language that
     /// does not declare the user-op. Identifies the one payload
@@ -1682,6 +1686,10 @@ pub struct Architecture {
     /// installs those overrides with an open tail
     /// ([`crate::p4_calls::kuna_formattail`]).
     pub format_override_callpoints: std::collections::BTreeSet<u64>,
+    /// (kuna `--assert callee`) Caller-stated destinations of indirect calls:
+    /// function entry -> call site -> callee entry
+    /// ([`crate::p2_lift::kuna_calleeoverride`]).
+    pub kuna_callee_overrides: std::collections::BTreeMap<Address, std::collections::BTreeMap<Address, Address>>,
     /// (kuna `formatstring`) Which variadic arguments the target passes exactly
     /// as named ones, which bounds what a closed printf/scanf override may
     /// declare. A FACT, written once at `load file` from the image's container;
@@ -2489,6 +2497,7 @@ impl Architecture {
             cast_narrow: false, // (kuna) option castnarrow; reset_defaults sets the shipped default
             decl_order: crate::kuna_declorder::DeclOrder::Name, // (kuna) option declorder; reset_defaults sets the shipped default
             cortexmpriv: false, // (kuna) option cortexmpriv; reset_defaults sets the shipped default
+            acle_intrinsics: false, // (kuna) option acleintrinsics; reset_defaults sets the shipped default
             cortexmpriv_inject: None, // (kuna) set by init_userops_and_fixups when the language declares the user-op
             present_lessequal: false,
             kuna_fn_budget: None,   // (kuna) decompile-all watchdog: no budget by default
@@ -2571,6 +2580,7 @@ impl Architecture {
             format_stack_args: std::rc::Rc::new(std::collections::BTreeMap::new()),
             elfmain_main_decl: None,
             format_override_callpoints: std::collections::BTreeSet::new(),
+            kuna_callee_overrides: std::collections::BTreeMap::new(),
             format_vararg_abi: None, // (kuna) a load-time fact; set by the console's `load file`
             analysis_listing: false,
             analysis_fast_funcdisc: false,
@@ -2792,6 +2802,7 @@ impl Architecture {
         self.decl_order = crate::kuna_declorder::DeclOrder::Natural; // (kuna) option declorder default `natural`: locals declare v1, v2, ..., v10; only the order of declaration lines moves, 0/675 datatest assertions
         self.strlen_scan = true; // (kuna) option strlenscan default-on: an inline repnz scasb length prints as strlen; byte-identical on gcc 11 decbench output, 0/675 datatest assertions
         self.cortexmpriv = true; // (kuna) DIV-99: default-ON; the fixup is registered only on a language that declares the user-op (ARM), so inert elsewhere; "the core is privileged" is a modelling judgement, so `off` audits unprivileged Thread-mode code
+        self.acle_intrinsics = true; // (kuna) option acleintrinsics default-on; reads the AArch64 `ShowMemTag` context and AArch64 user-op names only, so inert on every other target
         self.float_globals = true; // (kuna) option floatglobals default-on
         self.call_target_type = true; // (kuna) option calltargettype default-on; acts only with `ctypes` on, and `option calltargettype off` keeps the upstream `code *` spellings
         self.ptrdepthcap = false; // (kuna) DIV-108: default-OFF in the catalog because it changes INFERRED types and the datatest corpus pins the upstream spellings; ON in the `aggressive` preset, which `auto` selects under 500 KiB, so the cap is the default rendering for every real binary

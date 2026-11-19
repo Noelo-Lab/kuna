@@ -1482,14 +1482,21 @@ states the signature its target must have, and when `calltargettype` is on,
 final one: it runs once, in the one-shot tail, after `ActionNameVars` and
 directly before `ActionSetCasts`, and never feeds the inference lattice or
 `ActionDeindirect`'s forced prototypes. For each indirect call whose prototype
-is neither locked nor variadic it builds `R (*)(A1,..,An)` with
+is neither variadic nor locked, or was stated at the call itself (`override
+prototype`, the `callproto` assertion, which types the call but not the value
+it goes through), it builds `R (*)(A1,..,An)` with
 `TypeFactory::getTypeCode(PrototypePieces)`: `R` is the high type of the call's
 output, or `void` when it has none, and each `Ai` the high type of the argument
 in that slot as it is read there -- except an argument printed inline as an
 address computed from a base (`&v4`, `&a1[2]`, a `PTRSUB` or `PTRADD`), whose C
 type is the base's rather than its own, which takes `void *`. A call any of
 whose types has no C spelling (a partial or union-resolving type, an array, a
-`TYPE_SPACEBASE`, a scalar of a width C has no type for) is skipped.
+`TYPE_SPACEBASE`, a scalar of a width C has no type for) is skipped. A call
+whose prototype was stated at the call takes `R` and the `Ai` from that
+declaration instead (a variadic one its fixed parameters and `...`, the
+arguments past them passed as printed), and the storage its declared
+parameters were given stands in for the argument storage such a call never
+recovers.
 
 The type must also be one a C compiler would pass the same way. Laid out under
 the default model, each parameter of the built prototype has to fall inside the
