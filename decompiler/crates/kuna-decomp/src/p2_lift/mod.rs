@@ -65,6 +65,7 @@ pub mod kuna_returnbranch;
 
 pub mod kuna_rustprobestack;
 pub mod kuna_chkstkdarwin; // (kuna) remove the Darwin AArch64 stack probe so the registers it preserves survive it
+pub mod kuna_vexzeroupper; // (kuna `vexzeroupper`) split the VEX zero-upper ZMM write at the result width
 
 pub(crate) mod kuna_highslice_guard;
 pub mod kuna_calleeoverride; // (kuna) a caller-stated destination for an indirect call

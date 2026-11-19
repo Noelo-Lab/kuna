@@ -2267,7 +2267,8 @@ mod tests {
         // and kuna-opaquepredicate / a comparison constant for every input folds under opaquepredicate
         // and kuna-stubbinds / a stripped Mach-O stub is named from the chained bind on its slot (option stubbinds)
         // and kuna-avxintrinsics / the x86 AVX user-ops print as Intel intrinsics (option avxintrinsics)
-        assert_eq!(count, 849, "corpus file count drifted");
+        // and kuna-vexzeroupper / a VEX write of ymm0 no longer widens the register to zmm0 (option vexzeroupper)
+        assert_eq!(count, 850, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

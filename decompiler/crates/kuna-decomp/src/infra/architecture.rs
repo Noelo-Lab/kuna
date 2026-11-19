@@ -572,6 +572,9 @@ pub struct Architecture {
     /// `break;`, and keep switch fall-thru chains in case order
     /// (`p8_structure/kuna_gotonext.rs`). Default on.
     pub goto_next: bool,
+    /// (kuna `vexzeroupper`) Split each VEX/EVEX zero-upper ZMM write at the
+    /// result's width (`p2_lift/kuna_vexzeroupper.rs`). x86-64 only. Default on.
+    pub vex_zero_upper: bool,
     /// (kuna tee-O2 tail-jumps) Recover a direct `jmp` to another function's
     /// entry (e.g. `jmp setlocale@plt`) as a tail call (CALL + RETURN) instead of
     /// flowing into the callee (`option tailcalljump on|direct`).
@@ -2415,6 +2418,7 @@ impl Architecture {
             image_windows_user: false, // (kuna) a load-time fact; set by the console's `load file`
             chkstk_darwin: false, // (kuna) option chkstkdarwin; reset_defaults sets the shipped default
             type_vote: false, // (kuna) option typevote; reset_defaults sets the shipped default
+            vex_zero_upper: false, // (kuna) option vexzeroupper; reset_defaults sets the shipped default
             tail_call_jumps: false,
             tail_call_tables: false, // (kuna) option tailcalljump; reset_defaults sets the shipped default
             tail_call_frame: false, // (kuna) option tailcallframe; reset_defaults sets the shipped default
@@ -2763,6 +2767,7 @@ impl Architecture {
         self.struct_merge = crate::kuna_structmerge::StructMergeMode::Off; // (kuna) structmerge default `off`: a freshly measured layout that agrees with a held record is answered with the union of the two, so a field one reader proved is kept for the others. Off because at the agreement floor two records that merely begin alike are indistinguishable; `option structmerge siblings` turns it on
         self.field_type = false; // (kuna) option fieldtype default-off: the flip moves which record the layout ledger shares between readers (fields-only layout precision .8713 -> .8693); docs/features/fieldtype/default-on-evaluation.md
         self.struct_headless = crate::kuna_structheadless::StructHeadlessMode::Off; // (kuna) structheadless default `off`: a closed function's parameter read at two or more constant offsets, none of them zero, is declared `struct_N *` with filler over the bytes before its first access; `option structheadless closed` turns it on
+        self.vex_zero_upper = true; // (kuna) option vexzeroupper default-on, x86-64 only: the split writes cover the bytes the one ZMM write covered; 0/675 datatests
         self.chkstk_darwin = true; // (kuna) default-on, Darwin AArch64 only (`image_apple` and an AArch64 language): inert unless a call reaches `___chkstk_darwin`; 0/675 datatests
         self.type_vote = true; // (kuna) default-on: presentation only, types variables that would print undefinedN; signatures unchanged; 0/675 datatests
         self.tail_call_jumps = true; // (kuna) DIV-13 default-on (angr tail-call recovery; per-test opt-out on Long double #1/#2)
@@ -3534,6 +3539,7 @@ impl Architecture {
         ctx.rust_probestack = self.rust_probestack;
         ctx.chkstk_darwin = self.chkstk_darwin && self.image_apple && crate::kuna_chkstkdarwin::applies_to(&self.archid);
         ctx.type_vote = self.type_vote;
+        ctx.vex_zero_upper = self.vex_zero_upper && self.archid.starts_with("x86:LE:64");
         ctx.go_bool = self.go_bool;
         ctx.go_write_barrier = self.go_write_barrier;
         ctx.go_new_type = self.go_new_type;

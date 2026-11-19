@@ -778,6 +778,9 @@ pub struct ArchContext {
     pub chkstk_darwin: bool,
     /// (kuna) `option typevote`; read by [`crate::p5_types::kuna_typevote`].
     pub type_vote: bool,
+    /// (kuna) `option vexzeroupper` on an x86-64 language; read by
+    /// [`crate::p2_lift::kuna_vexzeroupper`].
+    pub vex_zero_upper: bool,
     /// (kuna) `option gobool` mode; read by [`crate::p4_calls::kuna_gobool`].
     /// Copied from the engine `Architecture` in `build_arch_handle`.
     pub go_bool: u8,
@@ -1612,6 +1615,7 @@ impl ArchContext {
             rust_probestack: crate::kuna_rustprobestack::RustProbestackMode::Off,
             chkstk_darwin: false,
             type_vote: false,
+            vex_zero_upper: false,
             // (kuna) `option gobool` default auto; copied the same way.
             go_bool: 1,
             // (kuna) `option gowritebarrier` default auto; the real value is

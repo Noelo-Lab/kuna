@@ -534,3 +534,7 @@ Different namespaces and a longer similarly named function retain their callers.
 `avxintrinsics off` the SLEIGH user-op names print, and at the default they
 print as `_mm256_add_epi32` and `_mm256_fmadd_ps` with the FMA operands in
 intrinsic order.
+
+`kuna-vexzeroupper.xml` decompiles `vpaddd` and `vfmadd132ps` twice: with
+`vexzeroupper off` the `ymm0` operand is a 64-byte local read through
+`SUB6432`, and at the default it is read at its own 32 bytes.
