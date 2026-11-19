@@ -835,6 +835,8 @@ pub struct Architecture {
     /// its return value too (option `mixedtailret`).  See
     /// [`crate::p4_calls::kuna_mixedtailret`].
     pub mixed_tail_ret: bool,
+    /// (kuna `vaarg`) Print the x86-64 SysV va_arg expansion as va_arg(ap, T).
+    pub va_arg: bool,
     /// (kuna `vastart`) Print the x86-64 SysV va_start prologue as va_start(ap, last).
     pub va_start: bool,
     /// (kuna `retpolinethunk`) A retpoline thunk recognized by its body gets the cspec's `x86_indirect_thunk_<reg>` call-fixup.
@@ -2495,6 +2497,7 @@ impl Architecture {
             narrow_ext: crate::kuna_narrowext::NarrowExtMode::Off, // (kuna) option narrowext; reset_defaults sets the shipped default
             pass_through: true, // (kuna) option passthrough; reset_defaults sets the shipped default
             mixed_tail_ret: false, // (kuna) option mixedtailret; reset_defaults sets the shipped default
+            va_arg: false,
             va_start: false,
             retpoline_thunk: false,
             trap_after_call: false,
@@ -2895,6 +2898,7 @@ impl Architecture {
         self.arm_float_return = true; // (kuna) option armfloatreturn: default-ON; inert unless the ELF states the VFP procedure-call standard
         self.pass_through = true; // (kuna) option passthrough default-on: over 574 slices in 25 projects (the 444-slice decbench corpus plus 130 slices of 17 disjoint projects) 4,107 of 4,346 gained parameters are DWARF-confirmed, NONE contradicted, 239 thunks DWARF does not describe, 0 parameters and 0 call arguments lost; the return arm is 5,458 of 5,615 confirmed, its 157 misses all the undecidable `void` tail-call wrapper; docs/features/passthrough/dwarf-confirmation.md
         self.mixed_tail_ret = false; // (kuna) option mixedtailret default-off: a void guard that leaves the value it tested in the return register beside a tail call compiles to the same bytes; see the phases.toml row
+        self.va_arg = true; // (kuna) option vaarg default-on: x86-64 SysV only, needs the offset test with both arms proved equivalent; 0/675 datatests
         self.va_start = true; // (kuna) option vastart default-on: x86-64 SysV only, needs the four va_list field writes in one block; 0/675 datatests
         self.retpoline_thunk = true; // (kuna) option retpolinethunk default-on: x86 only, reads a direct callee's first bytes when it has no fixup; 0/675 datatests
         self.trap_after_call = true; // (kuna) option trapaftercall default-on: x86 only, reads two bytes after a machine call; 0/675 datatests
@@ -3632,6 +3636,7 @@ impl Architecture {
         ctx.arg_clobber = self.arg_clobber; // argclobber
         ctx.pass_through = self.pass_through; // passthrough
         ctx.mixed_tail_ret = self.mixed_tail_ret; // mixedtailret
+        ctx.va_arg = self.va_arg && self.get_description().starts_with("x86:LE:64") && !crate::kuna_fastfailnoreturn::archid_is_windows(self.get_description());
         ctx.va_start = self.va_start && self.get_description().starts_with("x86:LE:64") && !crate::kuna_fastfailnoreturn::archid_is_windows(self.get_description());
         ctx.trap_after_call = self.trap_after_call && self.get_description().starts_with("x86:");
         ctx.readonly_calls = self.readonly_calls;
@@ -4826,8 +4831,9 @@ impl Architecture {
             for id in [BUILTIN_MEMSET16, BUILTIN_MEMSET32, BUILTIN_MEMSET64, BUILTIN_MEMCMP] {
                 userops.register_builtin(id, &adapter)?;
             }
-            // (kuna vastart) the va_list set-up.
+            // (kuna vastart, vaarg) the va_list set-up and read.
             userops.register_builtin(crate::userop::BUILTIN_VA_START, &adapter)?;
+            userops.register_builtin(crate::userop::BUILTIN_VAARG, &adapter)?;
             Ok(())
         })();
         self.userops = userops;

@@ -2270,7 +2270,11 @@ mod tests {
         // and kuna-retpolinethunk / a call to a retpoline thunk is the indirect call it stands for
         // and kuna-tlsnames / x86 ELF static TLS variables read as fields of the block below the thread pointer
         // and kuna-vastart / the x86-64 SysV va_start prologue prints as va_start(ap, last)
-        assert_eq!(count, 852, "corpus file count drifted");
+        // and kuna-vaarg-clang / clang va_arg reads through a va_list pointer print as va_arg(ap, T)
+        // and kuna-vaarg-gcc / gcc va_arg reads through a va_list pointer print as va_arg(ap, T)
+        // and kuna-vaarg-loop-clang / clang va_arg loops on a promoted and a parameter va_list
+        // and kuna-vaarg-loop-gcc / gcc va_arg loops whose tail is copied into each arm
+        assert_eq!(count, 856, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

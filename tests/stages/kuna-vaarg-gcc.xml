@@ -1,0 +1,46 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna `vaarg` stage test (gcc): the x86-64 SysV va_arg read through a va_list
+    pointer. With vaarg off the gp_offset/fp_offset compare, the register save
+    area read and the overflow read print as raw loads, stores and address
+    arithmetic. With vaarg on each function reads one va_arg(a0,T).
+
+    Source, compiled with gcc -O2, linked at 0x100000 (flat .text):
+      #include <stdarg.h>
+      long pop_long(va_list *ap) { return va_arg(*ap, long); }
+      int pop_int(va_list *ap) { return va_arg(*ap, int); }
+      double pop_dbl(va_list *ap) { return va_arg(*ap, double); }
+-->
+<bytechunk space="ram" offset="0x100000">f30f1efa8b0783f82f771589c283c008480357108907488b02c3660f1f440000488b5708488d420848894708488b02c3f30f1efa8b0783f82f771589c283c0084803571089078b02c30f1f8000000000488b5708488d4208488947088b02c390f30f1efa8b47043daf000000771289c283c01048035710894704f20f1002c390488b5708488d420848894708f20f1002c30f1f400066662e0f1f840000000000f30f1efa8b0f83f92f7725488b57108d710889c88937488b040283fe2f772c4801f283c110890f480302c30f1f440000488b4708488d500848895708488b00488d4a0848894f08480302c3488b5708ebee</bytechunk>
+<symbol space="ram" offset="0x100000" name="pop_long"/>
+<symbol space="ram" offset="0x100030" name="pop_int"/>
+<symbol space="ram" offset="0x100060" name="pop_dbl"/>
+</binaryimage>
+<script>
+  <com>option vaarg off</com>
+  <com>lo fu pop_long</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pop_int</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pop_dbl</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option vaarg on</com>
+  <com>lo fu pop_long</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pop_int</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pop_dbl</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="vaarg off: the register save area offset test prints in both pop_long and pop_int" min="2" max="2">0x2f\)</stringmatch>
+<stringmatch name="vaarg off: the double offset test prints in pop_dbl" min="1" max="1">0xaf\)</stringmatch>
+<stringmatch name="vaarg on: one va_arg read per function" min="3" max="3">va_arg\(a0,(long|int|double)\)</stringmatch>
+<stringmatch name="vaarg on: no raw register save area read remains" min="0" max="0">reg_save|field_0x10 \+</stringmatch>
+</decompilertest>

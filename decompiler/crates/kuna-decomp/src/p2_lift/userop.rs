@@ -148,6 +148,8 @@ pub const BUILTIN_MEMSET64: uint4 = 0x1000000d;
 pub const BUILTIN_MEMCMP: uint4 = 0x1000000e;
 /// (kuna) Built-in id for `va_start`, a `va_list` set-up (`vastart`).
 pub const BUILTIN_VA_START: uint4 = 0x10000012;
+/// (kuna) Built-in id for `va_arg` (`vaarg`).
+pub const BUILTIN_VAARG: uint4 = 0x10000013;
 
 // ---------------------------------------------------------------------------
 // UserOpBase + UserPcodeOp hierarchy (userop.hh:47-318)
@@ -1081,6 +1083,7 @@ impl UserOpManage {
                 Some(ptr) => UserPcodeOp::new_datatype(b"va_start", BUILTIN_VA_START as int4, None, &[Some(ptr)]),
                 None => UserPcodeOp::new_unspecialized(b"va_start", BUILTIN_VA_START as int4),
             },
+            BUILTIN_VAARG => UserPcodeOp::new_unspecialized(b"va_arg", BUILTIN_VAARG as int4),
             _ => return Err(KunaError::lowlevel("Bad built-in userop id")),
         };
         self.builtinmap.insert(i, res);

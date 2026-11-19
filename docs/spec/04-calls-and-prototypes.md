@@ -9665,6 +9665,63 @@ stack-guard strip does for the canary slot), so dead-code removes the spills
 and the `al` test, and an unlocked prototype is marked variadic. x86-64 System V language ids only
 (`ctx.va_start`). Exercised by `tests/stages/kuna-vastart.xml`.
 
+**va_arg** (`vaarg`, default on; kuna;
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_vaarg.rs (ActionVaArg)`, run
+in the returnsplit group after `vastart`): the reading side of the same ABI.
+A `va_arg(ap, T)` compiles to a test of the offset into the register save area
+against 48 (176 for a double, `fp_offset`). Below it the register arm reads
+`reg_save_area + offset` and steps the offset by 8 (or 16); otherwise the
+overflow arm reads through `overflow_arg_area` and steps that pointer.
+
+The action collects the `va_list` state into webs: the offset web (the values
+of `gp_offset` or `fp_offset`, through copies, extensions, phis and constant
+steps) and the overflow web. A web comes in three forms. Through a `va_list`
+pointer (a parameter, or a local whose address escapes), each test loads
+`ap->gp_offset` and the arms store the steps back. Register-cached (clang
+loops), one load before the loop feeds a register that the arms step and store
+back. Promoted (a local `va_list` that heritage turned into SSA values, gcc and
+clang at every level), the offset web starts at the `va_start` constant (8 per
+named integer argument, 48 plus 16 per named double) and the overflow web at
+the caller's stack arguments (`SP + 8`). A web member may feed only other
+members, the tests, the read addresses and the stores back to its `ap` field;
+any other reader leaves its tests alone. A read is a LOAD through
+`reg_save_area + offset` (`ap+16` loaded, or a stack address in the promoted
+form), through an overflow member, or through the phi joining the two.
+
+The two arms need not meet at a join: gcc copies the code after the read into
+each arm (a loop's latch, or the rest of the loop: once the offset passes the
+limit gcc runs the overflow reads in a loop of their own). With every read
+taken as an abstract `va_arg`, the action checks that the path from the
+overflow arm behaves as the path from the register arm. It walks the two in
+step over chains of blocks: their loads, stores, calls, reads and returns must
+match one for one, their branch conditions must agree (up to `x < c` against
+`x >= c`, and `==` against `!=`, with the successors swapped to suit), and the
+values they hand to a block both reach must agree. Values match when they are
+the same value from before the arms, or the same operation on matching values.
+A phi at a block where the two paths are out of step is matched to the phi (or
+the value) of the other side that it receives on entry. Another test met on
+the way counts as folded: it goes on to its register arm. That is how gcc's
+overflow loop, which never tests the offset again, matches the register loop
+through the test.
+
+The webs that share a test, a read or a join fold together, or not at all: a
+promoted or register-cached offset is only right while every read that steps
+it is still there. Folding turns every read into the CALLOTHER `va_arg(ap,
+class)`, removes every test's edge to its overflow arm (and the blocks only
+that arm reached), and removes the stores back to `ap`. The promoted form has
+no `ap` to pass: the call's `ap` input is the constant 0, which prints as
+`ap`, and the action adds the `va_start(ap, last)` that the promoted prologue
+lost, at the start of the entry block (`last` as for `vastart`; when no
+integer read gives the named count, the leading argument registers the
+function reads other than to spill them). The function's unlocked prototype
+is marked variadic. The printer writes `va_arg(ap,T)`, `T` the type of the
+call's output, `double` for an SSE read (type inference gives that output
+`double`), `int` or `long` by size for an untyped integer read, and `int` for
+a read narrower than `int` (the argument was promoted); a `va_list` that is an
+array prints `*ap`. x86-64 System V language ids only (`ctx.va_arg`).
+Exercised by `tests/stages/kuna-vaarg-gcc.xml`, `kuna-vaarg-clang.xml`,
+`kuna-vaarg-loop-gcc.xml` and `kuna-vaarg-loop-clang.xml`.
+
 ### Qualified register declarations bind to an entry (`kuna_qualifiedstorage.rs`, `kuna_qualifiedcall.rs`)
 
 The console's qualified `map param <func>::<i>` and `map return <func>::<storage>`

@@ -103,6 +103,7 @@ pub mod kuna_swiftcall; // (kuna) Swift calls that may throw, and stale swiftsel
 pub mod kuna_floatregister;
 pub mod kuna_x87free;
 pub mod kuna_vastart; // (kuna) the x86-64 va_start prologue as va_start(ap, last)
+pub mod kuna_vaarg; // (kuna) the x86-64 va_arg expansion as va_arg(ap, T)
 
 pub mod kuna_callmechanisms;
 pub(crate) mod kuna_registerslots;

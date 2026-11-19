@@ -103,6 +103,15 @@ pub(crate) fn output_type_local(data: &Funcdata, op: OpId) -> Rc<Datatype> {
                 return t;
             }
         }
+        // (kuna `vaarg`) an SSE-class `va_arg` reads a `double`.
+        if in0_off == crate::userop::BUILTIN_VAARG as u64
+            && out_size == 8
+            && o.get_in(2).and_then(|v| data.vbank().get(v)).is_some_and(|v| v.is_constant() && v.get_offset() == 1)
+        {
+            if let Some(Ok(t)) = arch.types().map(|t| t.get_base(8, type_metatype::TYPE_FLOAT)) {
+                return t;
+            }
+        }
     }
     // C++ `TypeOpCall::getOutputLocal` (typeop.cc:722) / `TypeOpCallind::getOutputLocal`
     // (typeop.cc:778): when the resolved `FuncCallSpecs` has a locked (committed)

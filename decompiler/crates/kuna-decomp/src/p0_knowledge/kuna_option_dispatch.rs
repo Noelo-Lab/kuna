@@ -124,6 +124,7 @@ kuna_options! { self, p1;
     "trapaftercall" => on_off!(trap_after_call, "No-return evidence from a trap after a call"),
     "retpolinethunk" => on_off!(retpoline_thunk, "Retpoline thunks recognized by their body"),
     "vastart" => on_off!(va_start, "va_start prologue as one call"),
+    "vaarg" => on_off!(va_arg, "va_arg expansion as one call"),
     "int3pad" => {
         let (mode, msg) = crate::kuna_int3pad::OptionInt3Pad.apply(p1)?;
         self.int3_pad = mode;

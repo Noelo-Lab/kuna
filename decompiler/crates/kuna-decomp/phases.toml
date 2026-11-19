@@ -2595,6 +2595,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "vaarg"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P4"
+subphase = "prototype-source"
+strength = "HARD"
+rewind = "P4"
+issue = "kuna-vaarg"
+summary = "x86-64 System V only: print the va_arg expansion as va_arg(ap, T). A va_arg(ap, T) compiles to an offset test: the register arm reads reg_save_area + offset and steps the offset; the memory arm reads through overflow_arg_area and steps the pointer. Both arms printed. With this on, every read becomes a va_arg(ap, T) CALLOTHER and the memory arms go, whether the va_list is reached through a pointer, cached in a register, or a local that heritage promoted to SSA values (that one prints as ap, with a va_start(ap, last) added); the arms need not rejoin, as long as the path from the memory arm does what the path from the register arm does (gcc copies a loop tail into each arm)."
+use_when = "On (default). Flip off to see the register-save and overflow-pointer steps and the merged address load."
+example = "option vaarg off"
+source_decompiler = "kuna"
+inspiration = "a three-line `long pop_long(va_list *ap) { return va_arg(*ap, long); }` that printed a gp_offset compare, two stepped stores and a merged address load"
+change_kind = "presentation-default"
+tier = "transform"
+symptoms = "va_arg diamond printed as gp_offset/fp_offset checks and register save area or overflow pointer accesses|a variadic function's loop over multiple int/long/double arguments prints as separate gp_offset-checked loads"
+live_field = "va_arg"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "narrowargs"
 values = "off|on|callers"
 default = "callers"
