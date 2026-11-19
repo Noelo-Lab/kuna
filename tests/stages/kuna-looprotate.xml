@@ -1,0 +1,52 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna-looprotate: a guarded do-while loop becomes a while loop
+    (option looprotate).
+
+    Source (clang -O2, x86-64):
+      unsigned f3(unsigned n) { unsigned c = 0; while (n) { c += n &amp; 1; n &gt;&gt;= 1; } return c; }
+      long f4(long *a, long n) { long s = 0; for (long i = 0; i &lt; n; i++) s ^= a[i]; return s; }
+
+    clang tests the loop condition once in front of the loop and again at its
+    bottom: if (!n) return 0; do {...} while (n);
+
+    Stage: P8, ActionLoopRotate: the guard is the tail's condition on the
+    values entering the loop (f3), or the loop counts by one from 0 to an
+    exit at i + 1 == n behind a guard 0 &lt; n, so i + 1 != n is i + 1 &lt; n
+    (f4); the header's MULTIEQUALs move to a new header that tests the
+    condition, and the guard and the tail branch go. The for recovery then
+    prints a for loop.
+
+    Pass 1 (default) prints two for loops and no do-while; pass 2
+    (looprotate off) the guards and the do-while loops.
+-->
+<bytechunk space="ram" offset="0x401000" readonly="true">
+f30f1efa85f67e1989f131c031d266908b34978d347601f048ffc24839d175f0c331c0c36666662e0f1f840000000000f30f1efa85f67e1389f031c90f1f4000880c0f48ffc14839c875f5c30f1f4000f30f1efa31c085ff7411660f1f44000089f983e10101c8d1ef75f5c30f1f4000f30f1efa31c04885f67e1131c90f1f00483304cf48ffc14839ce75f4c30f1f00f30f1efa4156534883ec18488d7c2414be04000000e886ffffffbf00204000be04000000e847ffffff89c3bf07000000e88bffffff4189c64101debf00204000be02000000e896ffffff4c01f04889442408488b442408660f1f840000000000ebfe
+</bytechunk>
+<symbol space="ram" offset="0x401000" name="f1"/>
+<symbol space="ram" offset="0x401030" name="f2"/>
+<symbol space="ram" offset="0x401050" name="f3"/>
+<symbol space="ram" offset="0x401070" name="f4"/>
+<symbol space="ram" offset="0x401090" name="_start"/>
+</binaryimage>
+<script>
+  <com>lo fu f3</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu f4</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option looprotate off</com>
+  <com>lo fu f3</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu f4</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="KUNA-LOOPROTATE #1: the bit-count loop tests at the top (default)" min="1" max="1">for \(; a0; a0 = a0 &gt;&gt; 1\)</stringmatch>
+<stringmatch name="KUNA-LOOPROTATE #2: the counting loop is a for loop up to n (default)" min="1" max="1">for \(\w+ = 0; \w+ &lt; a1; \w+ = \w+ \+ 1\)</stringmatch>
+<stringmatch name="KUNA-LOOPROTATE #3: looprotate off keeps both do-while loops" min="2" max="2">do \{</stringmatch>
+</decompilertest>

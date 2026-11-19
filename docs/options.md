@@ -223,6 +223,8 @@ Three tiers:
 | if (c) goto label_N; ... label_N: where an if around the skipped statements would do | [`gotosink`](#gotosink----on--off-default-on) |
 | label_N: ... if (c) goto label_N; where a do-while would do | [`gotosink`](#gotosink----on--off-default-on) |
 | label_N: ... goto label_N; at the end of a statement run instead of a loop | [`gotosink`](#gotosink----on--off-default-on) |
+| if (n > 0) { i = 0; do { ... } while (i != n); } instead of a for loop | [`looprotate`](#looprotate----on--off-default-on) |
+| a while loop prints as an if around a do-while | [`looprotate`](#looprotate----on--off-default-on) |
 | goto-heavy multi-exit loop where angr recovers a clean while/for with break/continue | [`regionlooprefine`](#regionlooprefine----on--off-default-on) |
 | irreducible or multi-latch loop falls back to raw gotos instead of folding | [`regionlooprefine`](#regionlooprefine----on--off-default-on) |
 | secondary loop exits rendered as gotos rather than break statements | [`regionlooprefine`](#regionlooprefine----on--off-default-on) |
@@ -1317,6 +1319,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On by default: 0/675 datatest assertions move. Measured over 4,072 x86-64 functions (gcc/clang -O2 and gcc -O0 Lua, bzip2; zlib, libexpat, libyaml): 58 functions change, every one with fewer gotos and none with more; gotos 9,069 -> 8,892, labels 3,124 -> 3,076, `continue;` 55 -> 128. Sinking fires rarely after the structurer (it already sinks a local jump): 0 times with the default passes, 3 times with crossjumprevert/gotoreduce/returndup off. Flip off to keep the backward gotos.
 - **Where / provenance:** P8/goto-quality · kuna · structure-recovery · kuna-gotosink
 - **Example:** `option gotosink off`
+
+### `looprotate` -- on | off, default `on`
+
+- **Symptoms:** if (n > 0) { i = 0; do { ... } while (i != n); } instead of a for loop; a while loop prints as an if around a do-while.
+- **What it does:** Rotate a guarded do-while loop into a while loop. Compilers turn while (c) body into if (c) { do body while (c); }; with this on, when the guard is the tail's condition evaluated on the values entering the loop (operands compared op by op), or the loop counts by one from x0 to an exit at i + 1 == n behind a guard x0 < n (then i + 1 != n is i + 1 < n on every iteration), and the code between guard and loop has no side effect and each exit value is available at the top, the header's MULTIEQUALs move to a new header block that tests the condition and the guard's and tail's branches go. The for recovery then prints for (i = 0; i < n; i = i + 1). Two return blocks that return the same thing on the entry values (the guard's return 0, the loop's return c) count as one exit.
+- **When to flip:** On (default). Flip off to see the guard and the do-while the compiler emitted.
+- **Where / provenance:** P8/loop-refinement · kuna · presentation-default · kuna-looprotate
+- **Example:** `option looprotate off`
 
 ### `regionlooprefine` -- on | off, default `on`
 
