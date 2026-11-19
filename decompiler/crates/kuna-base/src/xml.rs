@@ -2241,10 +2241,10 @@ mod tests {
         // and kuna-pow2select, kuna-pow2select-aarch64 / a signed division or remainder by 2^k written as a select
         // and kuna-cmpmerge / two comparisons of the same operands merge into one
         // and kuna-bitidioms, kuna-bitscan / byte swap, rotate, abs, bit reversal and bit-scan idioms
-        // and kuna-mba, kuna-mba-groups / mixed boolean-arithmetic expressions simplify
+        // and kuna-mba, kuna-mba-groups, kuna-mba-solve / mixed boolean-arithmetic expressions simplify
         // and kuna-copyrun, kuna-copyrunself / an unrolled element-copy run prints as memcpy
         // and kuna-alloca / a dynamic stack allocation prints as alloca(n)
-        assert_eq!(count, 810, "corpus file count drifted");
+        assert_eq!(count, 811, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

@@ -1,0 +1,114 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Kuna (MBA with constant operands, shared complements, a complemented sum,
+    a leaf plus a boolean term, bit logic alone): P3 simplification quiescence,
+    option mba (default off). Each function starts with endbr64.
+
+      0x1000 mba_addc: (x ^ 0x3039) + 2*(x & 0x3039)  ==  x + 0x3039   (constant operand)
+          mov eax,edi; xor edi,0x3039; and eax,0x3039; lea eax,[rdi+rax*2]; ret
+      0x1040 mba_mulc: (~x & 0x4d)*(x & ~0x4d) + (x & 0x4d)*(x | 0x4d)  ==  x * 0x4d   (polynomial, constant operand)
+          mov eax,edi; mov edx,edi; not eax; and edx,0xffffffb2; and eax,0x4d; imul eax,edx; mov
+          edx,edi; or edi,0x4d; and edx,0x4d; imul edx,edi; add eax,edx; ret
+      0x1080 mba_lin: 2*(x | y) - (x ^ y) + (x & ~y) - (x & y)  ==  x + (x ^ y)   (leaf plus one boolean term)
+          mov eax,edi; mov edx,edi; or eax,esi; xor edx,esi; add eax,eax; sub eax,edx; mov edx,esi;
+          not edx; and edx,edi; and edi,esi; add eax,edx; sub eax,edi; ret
+      0x10c0 mba_and: (~x | y) - ~x  ==  x & y   (~x has two readers)
+          push rbp; mov rbp,rsp; xor edi,0xffffffff; mov eax,edi; or eax,esi; sub eax,edi; pop rbp;
+          ret
+      0x1100 mba_neg: ~(x - 1) + y  ==  y - x   (complement of a sum)
+          push rbp; mov rbp,rsp; mov eax,edi; sub eax,0x1; xor eax,0xffffffff; add eax,esi; pop rbp;
+          ret
+      0x1140 mba_xor: (~x & y) | (x & ~y)  ==  x ^ y   (bit logic only)
+          push rbp; mov rbp,rsp; mov eax,edi; xor eax,0xffffffff; and eax,esi; xor esi,0xffffffff;
+          and edi,esi; or eax,edi; pop rbp; ret
+      0x1180 mba_orc: (x & 0xff00ff00) + 0x00ff00ff  ==  x | 0x00ff00ff   (constant and its complement)
+          push rbp; mov rbp,rsp; mov eax,edi; and eax,0xff00ff00; add eax,0xff00ff; pop rbp; ret
+
+    Asserts #1-#7 are the off pass: each form prints as written.
+    Asserts #8-#14 are the on pass: each folds.
+-->
+<bytechunk space="ram" offset="0x1000" readonly="true">f30f1efa89f881f73930000025393000008d0447c3</bytechunk>
+<bytechunk space="ram" offset="0x1040" readonly="true">f30f1efa89f889faf7d083e2b283e04d0fafc289fa83cf4d83e24d0fafd701d0c3</bytechunk>
+<bytechunk space="ram" offset="0x1080" readonly="true">f30f1efa89f889fa09f031f201c029d089f2f7d221fa21f701d029f8c3</bytechunk>
+<bytechunk space="ram" offset="0x10c0" readonly="true">f30f1efa554889e583f7ff89f809f029f85dc3</bytechunk>
+<bytechunk space="ram" offset="0x1100" readonly="true">f30f1efa554889e589f883e80183f0ff01f05dc3</bytechunk>
+<bytechunk space="ram" offset="0x1140" readonly="true">f30f1efa554889e589f883f0ff21f083f6ff21f709f85dc3</bytechunk>
+<bytechunk space="ram" offset="0x1180" readonly="true">f30f1efa554889e589f82500ff00ff05ff00ff005dc3</bytechunk>
+<symbol space="ram" offset="0x1000" name="mba_addc"/>
+<symbol space="ram" offset="0x1040" name="mba_mulc"/>
+<symbol space="ram" offset="0x1080" name="mba_lin"/>
+<symbol space="ram" offset="0x10c0" name="mba_and"/>
+<symbol space="ram" offset="0x1100" name="mba_neg"/>
+<symbol space="ram" offset="0x1140" name="mba_xor"/>
+<symbol space="ram" offset="0x1180" name="mba_orc"/>
+</binaryimage>
+<script>
+  <com>parse line extern uint4 mba_addc(uint4 x);</com>
+  <com>parse line extern uint4 mba_mulc(uint4 x);</com>
+  <com>parse line extern uint4 mba_lin(uint4 x,uint4 y);</com>
+  <com>parse line extern uint4 mba_and(uint4 x,uint4 y);</com>
+  <com>parse line extern uint4 mba_neg(uint4 x,uint4 y);</com>
+  <com>parse line extern uint4 mba_xor(uint4 x,uint4 y);</com>
+  <com>parse line extern uint4 mba_orc(uint4 x);</com>
+  <com>option mba off</com>
+  <com>lo fu mba_addc</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mba_mulc</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mba_lin</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mba_and</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mba_neg</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mba_xor</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mba_orc</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option mba on</com>
+  <com>lo fu mba_addc</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mba_mulc</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mba_lin</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mba_and</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mba_neg</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mba_xor</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mba_orc</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="mba solve #1: off keeps (x ^ c) + 2*(x &amp; c)" min="1" max="1">return \(x \^ 0x3039\) \+ \(x &amp; 0x3039\) \* 2;</stringmatch>
+<stringmatch name="mba solve #2: off keeps the product of constant masks" min="1" max="1">\(~x &amp; 0x4d\) \* \(x &amp; 0xffffffb2\)</stringmatch>
+<stringmatch name="mba solve #3: off keeps the or/xor/and sum" min="1" max="1">\(x \| y\) \* 2 - \(x \^ y\)</stringmatch>
+<stringmatch name="mba solve #4: off keeps the shared complement" min="1" max="1">\(x \^ 0xffffffff \| y\) - \(x \^ 0xffffffff\)</stringmatch>
+<stringmatch name="mba solve #5: off keeps the complemented sum" min="1" max="1">\(x - 1U? \^ 0xffffffffU?\) \+ y</stringmatch>
+<stringmatch name="mba solve #6: off keeps the and/or spelling of xor" min="1" max="1">\(x \^ 0xffffffff\) &amp; y \| x &amp; \(y \^ 0xffffffff\)</stringmatch>
+<stringmatch name="mba solve #7: off keeps the mask plus its complement" min="1" max="1">return \(x &amp; 0xff00ff00\) \+ 0xff00ff;</stringmatch>
+<stringmatch name="mba solve #8: on folds a constant operand to x + c" min="1" max="1">return x \+ 0x3039;</stringmatch>
+<stringmatch name="mba solve #9: on folds the polynomial to x * c" min="1" max="1">return x \* 0x4d;</stringmatch>
+<stringmatch name="mba solve #10: on solves a leaf plus one boolean term" min="1" max="1">return \([xy] \^ [xy]\) \+ x;</stringmatch>
+<stringmatch name="mba solve #11: on reads the shared complement as ~x" min="1" max="1">return [xy] &amp; [xy];</stringmatch>
+<stringmatch name="mba solve #12: on reads ~ over a sum as -1 - sum" min="1" max="1">return y - x;</stringmatch>
+<stringmatch name="mba solve #13: on folds bit logic alone by its truth table" min="1" max="1">return [xy] \^ [xy];</stringmatch>
+<stringmatch name="mba solve #14: on folds a mask plus its complement to an or" min="1" max="1">return x \| 0xff00ff;</stringmatch>
+</decompilertest>
