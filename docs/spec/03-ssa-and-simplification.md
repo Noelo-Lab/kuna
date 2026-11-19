@@ -3501,14 +3501,16 @@ is the conversion the instruction performs under that control word.
 
 **opaquepredicate** —
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_opaquepredicate.rs
-(RuleOpaquePredicate)`, oppool1, fires on INT_EQUAL, INT_NOTEQUAL, INT_LESS and
-INT_LESSEQUAL. With `option opaquepredicate on` (default off, on in the
+(RuleOpaquePredicate)`, oppool1, fires on INT_EQUAL, INT_NOTEQUAL, INT_LESS,
+INT_LESSEQUAL, INT_SLESS, INT_SLESSEQUAL and CBRANCH. With `option
+opaquepredicate on` (default off, on in the
 `aggressive` preset) a comparison that has the same result for every input is
 replaced by a `COPY` of that result, and constant-branch removal then deletes
 the arm that never runs. Control-flow obfuscation plants such comparisons in
 front of real code: `x * (x + 1)` is always even, `x * x` is 0 or 1 modulo 4,
 `(x | y) - (x & y)` always equals `x ^ y`. The rule folds only on an exact
-proof, of which there are three.
+proof, of which there are six; the value `globals` adds a seventh step that is
+not a proof.
 
 *Low bits.* Bit `i` of a sum, difference, product, negation, left shift by a
 constant, or bitwise operation depends only on bits `0..=i` of its operands,
@@ -3544,6 +3546,75 @@ inputs); if the difference is the same constant in all of them, the equality
 is always true (difference zero) or always false. An operation that does not
 fit the layer it is met in — a product of two inputs, an `INT_AND` with a mask
 — is itself taken as an input, which only makes the claim proven stronger.
+
+*Narrow inputs* (`kuna_opaquedomain.rs`). The three proofs above read only low
+bits or bitwise structure, so a remainder by 3, a division, a right shift or a
+signed comparison stops them. When the two sides of the comparison are computed
+from constants and from values that are together at most two bytes wide (two
+one-byte values or one two-byte value), the whole tree is evaluated instead:
+every operation by the engine's own p-code behaviour, at its own width, for all
+256 or 65,536 values of the inputs, after a few probes (the extremes of each
+width and the neighbours of the tree's constants) that reject an ordinary
+comparison at once. A value whose definition cannot be evaluated is an input
+if it is narrow enough, and ends the proof otherwise. This is what decides
+`(x * x * x - x) % 3 == 0` and `x * x >= 0` for a zero- or sign-extended byte
+`x`: both are false for some 32-bit `x`, because the product wraps, so no
+proof over a wide input exists. A division or remainder whose divisor is zero
+for some input proves nothing. The tree holds at most 64 operations.
+
+*Implied by a dominating branch* (`kuna_opaqueimplied.rs`). Control that
+reaches a block through one out-edge of a conditional branch knows the result
+of that branch's comparison. The rule walks the immediate dominators of the
+comparison's block (at most 64); each one that ends in a conditional branch
+and whose successor on the dominator chain has no other predecessor
+contributes its comparison and the result along that edge. The Varnodes are SSA values, and a comparison is evaluated again after
+any redefinition of its operands before control returns to the edge, so the
+fact still holds where the later comparison runs. Two kinds of fact are
+combined: the possible orderings (less, equal, greater) of the same two
+Varnodes, and an interval with up to eight excluded points for one Varnode
+against constants. Signed and unsigned orderings are kept apart; only
+equality and inequality carry from one to the other. Inside `if (x > 5)` this
+folds `x <= 5`, `x == 3` and `x < 2`; inside `if (a < b)` it folds `b <= a`.
+Where the lifter built a `<=` from a `<` and an `==`, the facts may decide
+only one of the two, and the other is what prints: `a <= 0` after `a != 0`
+becomes `a <= -1`.
+
+*Identical arms* (`kuna_opaquearms.rs`). A CBRANCH whose two out-edges lead to
+two different blocks, each entered only from the branch and each continuing
+to the same join block, has its condition replaced by a constant when the two
+blocks hold the same operations in the same order (at most 256, a closing
+`BRANCH` aside) and every MULTIEQUAL of the join takes the same value from
+both. Operations are paired by position: opcodes must agree, inputs must be
+the same Varnode, equal constants, the same callee, or outputs of an earlier
+pair, and outputs must have the same storage unless both are temporaries.
+The condition is not examined: whichever arm runs, the same code runs.
+
+*Never-written globals* (`kuna_opaqueglobals.rs`, value `globals` only). The
+narrow-input proof reads a Varnode in the default data space as a constant
+when the analysis tier reports that nothing may write those bytes
+(`decompiler/crates/kuna-analysis/src/listing/kuna_opaqueglobals.rs`). That
+scan is the whole-program walk `floatglobals` takes: every function from its
+entry, registers and stack slots followed as constants. It marks as written
+every byte a store with a known address covers; every slot the image's loader
+reports as filled at run time (`LoadImage::kuna_runtime_written`: an import's
+bind, a `COPY` relocation's object, any relocation kuna does not apply); and
+the surroundings of every data address the program *holds* instead of
+dereferencing on the spot (moved to a register or stack slot, stored, used in
+arithmetic with an unknown result, or found in a pointer-sized word of loaded
+data). A held address inside a named object marks that object. Outside every
+named object it marks the 256 bytes after it that no named object claims. A
+named object wider than 8 bytes that ends at the address or starts within a
+pointer width after it is marked too, for an end pointer and a biased base.
+A read of unmarked bytes yields what the image holds there, or zero where the
+section has no bytes. The scan runs once per run, when the first comparison
+over a global asks, and the function is then decompiled again; it costs about
+0.65 s per MiB of code. Nothing is unmarked when a function exceeded the
+walk's instruction limit, when the image cannot list its loader slots (a
+relocatable object, unread relocation tables, a Mach-O without chained
+fixups), or on a processor the walk does not model. The step is opt-in because
+the scan cannot see a store through a pointer it did not connect to the
+global, code it did not reach, or another module writing the global by name;
+a fold made on it is a statement about the code the scan saw.
 
 *Bounds.* A free Varnode, a value wider than 8 bytes, a third input, or a
 tree of more than 48 operations proves nothing, and the comparison is left as
