@@ -4635,7 +4635,7 @@ line when it loads. `--raw-image` reads the file as bytes and skips all of
 this. `--member`
 applies to `decompile`, `decompile-all`, `decompile-project`,
 `decompile-graph`, `functions`, `disassemble`, `raw-pcode`, `read`, `xrefs`,
-`strings` and `crypto`; `kuna fid build` reads a whole archive itself.
+`strings`, `crypto` and `blobs`; `kuna fid build` reads a whole archive itself.
 
 ## `kuna fid` — function identification by fingerprint
 

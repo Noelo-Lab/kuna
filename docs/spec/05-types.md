@@ -1768,6 +1768,12 @@ Three (kuna) escapes hook exactly here; the first two are always on:
   skip is declined on the same two readings as the function-entry escape
   (`kuna_inferfuncentry.rs (entry_escape_applies)`): the reader is not
   arithmetic, and the function reads that value as a number nowhere else.
+  The escape cannot tell the address from an equal number: a function that
+  never touches the file but returns, stores, passes or compares that value
+  (`return 0x370;` beside a PNG at `0x370`) prints the file's name too, and
+  the return or parameter type becomes `unsigned char *`. Only a file starting
+  in the first page or at a mask-like address is exposed, which in practice
+  means the small shared objects whose read-only data `ld.lld` places first.
   Empty, so inert, under `blobs off`.
 - **(kuna GH-8471)** Thumb function-pointer preservation: a Thumb function pointer
   is `fn|1`; constant-pointer recovery produces `PTRSUB(fn) + 1`, and the

@@ -1,7 +1,7 @@
 /* Embedded files for `kuna blobs` and the `blobs` option: each array is one
  * whole file, except `broken`, a PNG cut before its IEND chunk.
  *
- *   clang -O2 -c embedded_blobs_x86_64.c -o embedded_blobs_x86_64.o
+ *   clang -O2 -fcf-protection=full -c embedded_blobs_x86_64.c -o embedded_blobs_x86_64.o
  *   ld.lld -shared -o embedded_blobs_x86_64.so embedded_blobs_x86_64.o
  *   llvm-strip embedded_blobs_x86_64.so
  */
