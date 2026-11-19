@@ -32,7 +32,7 @@ use crate::dtype::{type_metatype, Datatype, TypeFactory};
 use crate::fspec::PrototypePieces;
 use crate::kuna_callmechanisms::Operation;
 
-pub use format::{java_type_name, simple_class_name, DexFile, EncodedMethod};
+pub use format::{java_type_name, simple_class_name, CatchHandler, DexFile, EncodedMethod, TryItem};
 
 /// Register-space offset of `iv0`, the first designated input register.
 pub const INPUT_REGISTER_START: u64 = 0x100;
@@ -64,6 +64,15 @@ impl std::fmt::Debug for DexModel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("DexModel").field("methods", &self.entries.len()).finish()
     }
+}
+
+/// A `try_item` in image addresses: the covered instructions `[start, end)` and
+/// its catch clauses `(type_idx, handler)` in match order.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TryBlock {
+    pub start: u64,
+    pub end: u64,
+    pub handlers: Vec<(Option<u32>, u64)>,
 }
 
 /// One method with code, as the loader names it.
@@ -162,6 +171,86 @@ impl DexModel {
             to += u64::from(size);
         }
         Some(copies)
+    }
+
+    /// The class of the method whose code starts at `addr`, and its superclass
+    /// (`None` for `java.lang.Object`).
+    pub fn method_class(&self, addr: u64) -> Option<(u32, Option<u32>)> {
+        let id = self.file.method_id(self.entries.get(&addr)?.method_idx)?;
+        let class = self.file.classes.iter().find(|c| c.class_idx == id.class_idx)?;
+        let superclass = (class.superclass_idx != format::NO_INDEX).then_some(class.superclass_idx);
+        Some((id.class_idx, superclass))
+    }
+
+    /// The class that declares method `method_idx`.
+    pub fn method_owner(&self, method_idx: u32) -> Option<u32> {
+        self.file.method_id(method_idx).map(|id| id.class_idx)
+    }
+
+    /// The descriptor of type `idx`.
+    pub fn type_descriptor(&self, idx: u32) -> Option<String> {
+        self.file.type_descriptor(idx)
+    }
+
+    /// The `try_item`s of the method whose code starts at `addr`.
+    pub fn try_blocks(&self, addr: u64) -> Vec<TryBlock> {
+        let Some(code) = self.entries.get(&addr).and_then(|m| m.code) else { return Vec::new() };
+        let Ok(tries) = self.file.tries(&code) else { return Vec::new() };
+        let unit = |u: u32| addr + 2 * u64::from(u);
+        tries
+            .iter()
+            .map(|t| TryBlock {
+                start: unit(t.start),
+                end: unit(t.start + u32::from(t.count)),
+                handlers: t.handlers.iter().map(|h| (h.type_idx, unit(h.addr))).collect(),
+            })
+            .collect()
+    }
+
+    /// The instruction bytes at `addr`, when the file holds them.
+    pub fn bytes_at(&self, addr: u64, len: usize) -> Option<&[u8]> {
+        let off = usize::try_from(addr).ok()?;
+        self.file.bytes().get(off..off.checked_add(len)?)
+    }
+
+    /// The length in bytes of the instruction at `addr`, payloads included.
+    pub fn instruction_size(&self, addr: u64) -> Option<u64> {
+        let head = self.bytes_at(addr, 2)?;
+        let units = match (head[0], head[1]) {
+            (0x00, 0x01..=0x03) => {
+                let word = |k: u64| -> Option<u64> {
+                    let b = self.bytes_at(addr + 2 * k, 2)?;
+                    Some(u64::from(u16::from_le_bytes([b[0], b[1]])))
+                };
+                match head[1] {
+                    0x01 => word(1)? * 2 + 4,
+                    0x02 => word(1)? * 4 + 2,
+                    _ => {
+                        let width = word(1)?;
+                        let size = word(2)? | (word(3)? << 16);
+                        (size * width + 1) / 2 + 4
+                    }
+                }
+            }
+            (op, _) => u64::from(format::opcode_units(op)),
+        };
+        Some(2 * units)
+    }
+
+    /// The simple name of a caught class; the catch-all catches `Throwable`.
+    pub fn catch_type_name(&self, type_idx: Option<u32>) -> String {
+        match type_idx {
+            Some(idx) => simple_class_name(&self.descriptor(idx)),
+            None => "Throwable".to_string(),
+        }
+    }
+
+    /// The descriptor of a caught class; the catch-all catches `Throwable`.
+    pub fn catch_descriptor(&self, type_idx: Option<u32>) -> String {
+        match type_idx {
+            Some(idx) => self.descriptor(idx),
+            None => "Ljava/lang/Throwable;".to_string(),
+        }
     }
 
     /// The Java type of a descriptor, as Ghidra's `DexUtil.toDataType` builds it:

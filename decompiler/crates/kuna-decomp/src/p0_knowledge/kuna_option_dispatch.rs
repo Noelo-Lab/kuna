@@ -634,6 +634,7 @@ kuna_options! { self, p1;
     "dexmodel" => on_off!(dex_model, "DEX constant pool and register payloads"),
     "jumpassist" => on_off!(jump_assist, "jump-assist switch recovery"),
     "javanew" => on_off!(java_new, "Java new T(args) from an allocation and its <init> call"),
+    "javatry" => on_off!(java_try, "Java try/catch from a DEX method's try items"),
     "voidtailreturn" => on_off!(voidtailreturn, "void tail-return elision"),
     "importdata" => on_off!(import_data, "import-slot data-read rendering"),
     "castimplied" => on_off!(cast_implied, "C-implied cast elision"),

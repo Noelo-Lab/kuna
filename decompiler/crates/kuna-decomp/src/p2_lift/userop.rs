@@ -146,6 +146,15 @@ pub const BUILTIN_MEMSET64: uint4 = 0x1000000d;
 /// (kuna) Built-in id for `builtin_memcmp`, the comparison a `repz cmpsb`
 /// computes (`repstring`).
 pub const BUILTIN_MEMCMP: uint4 = 0x1000000e;
+/// (kuna) Built-in id for `java_try`, the opaque test that sends a DEX `try`
+/// block's entry to one of its catch handlers (`javatry`).
+pub const BUILTIN_JAVA_TRY: uint4 = 0x10000080;
+/// (kuna) Built-in id for `java_throws`, the opaque "this instruction threw"
+/// test on a DEX exceptional edge (`javatry`).
+pub const BUILTIN_JAVA_THROWS: uint4 = 0x10000081;
+/// (kuna) Built-in id for `java_caught`, the exception a DEX catch handler
+/// receives (`move-exception`).
+pub const BUILTIN_JAVA_CAUGHT: uint4 = 0x10000082;
 
 // ---------------------------------------------------------------------------
 // UserOpBase + UserPcodeOp hierarchy (userop.hh:47-318)
@@ -834,6 +843,8 @@ pub trait UseropTypeArchitecture {
     fn get_type_char(&self) -> Rc<crate::dtype::Datatype>;
     /// C++ `glb->types->getTypeChar(glb->types->getSizeOfWChar())`.
     fn get_type_wchar(&self) -> Rc<crate::dtype::Datatype>;
+    /// C++ `glb->types->getBase(1,TYPE_BOOL)`.
+    fn get_type_bool(&self) -> Rc<crate::dtype::Datatype>;
 }
 
 // ---------------------------------------------------------------------------
@@ -1075,6 +1086,13 @@ impl UserOpManage {
             }
             BUILTIN_KERNEL_BUG => UserPcodeOp::new_unspecialized(b"BUG", BUILTIN_KERNEL_BUG as int4),
             BUILTIN_KERNEL_WARN => UserPcodeOp::new_unspecialized(b"__WARN", BUILTIN_KERNEL_WARN as int4),
+            BUILTIN_JAVA_TRY => {
+                UserPcodeOp::new_datatype(b"java_try", BUILTIN_JAVA_TRY as int4, Some(types.get_type_bool()), &[])
+            }
+            BUILTIN_JAVA_THROWS => {
+                UserPcodeOp::new_datatype(b"java_throws", BUILTIN_JAVA_THROWS as int4, Some(types.get_type_bool()), &[])
+            }
+            BUILTIN_JAVA_CAUGHT => UserPcodeOp::new_unspecialized(b"java_caught", BUILTIN_JAVA_CAUGHT as int4),
             _ => return Err(KunaError::lowlevel("Bad built-in userop id")),
         };
         self.builtinmap.insert(i, res);

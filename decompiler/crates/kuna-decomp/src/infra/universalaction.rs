@@ -712,6 +712,9 @@ pub fn universal_sched(
             // `rep movs`, `rep stos` and `repz cmpsb`, collapsed into a copy,
             // fill or compare builtin by removing the edge into the body.
             act!(Box::new(crate::kuna_repstring::ActionRepString::new("returnsplit"))),
+            // (kuna) javatry: drop the DEX exceptional edges that bring their
+            // handler no value of its own; the next mainloop splices the halves.
+            act!(crate::kuna_javatry::ActionJavaThrowPrune::boxed("returnsplit")),
             act!(ActionReturnSplit::boxed("returnsplit")),
             // (kuna) angr SAILR gotoless `ReturnDuplicatorHigh` (option `returndup`,
             // default-OFF).  Runs right after ActionReturnSplit (the goto-driven

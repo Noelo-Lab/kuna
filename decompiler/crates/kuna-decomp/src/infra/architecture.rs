@@ -2003,6 +2003,9 @@ pub struct Architecture {
     /// (kuna) Print an allocation and its `<init>` call as `new T(args)` in
     /// Java (option `javanew`).
     pub java_new: bool,
+    /// (kuna) Recover a DEX method's try/catch blocks from its `try_item`s
+    /// (option `javatry`).
+    pub java_try: bool,
     /// Comments for this architecture (C++ `commentdb`).  // STUB(comment.cc)
     pub commentdb: CommentDatabase,
 
@@ -2659,6 +2662,7 @@ impl Architecture {
             dex: None,
             dex_model: true,
             java_new: true,
+            java_try: true,
             commentdb: CommentDatabase::new(),
             // C++ ctor leaves types/print/defaultfp null; init() fills them.
             types: Rc::new(TypeFactoryImpl::new()),
@@ -2778,6 +2782,7 @@ impl Architecture {
         self.persist_calls = Some(crate::p3_dataflow::heritage::PERSIST_CROSS_PRODUCT);
         self.jump_assist = true; // (kuna) option jumpassist default-on: only the Dalvik and JVM specs declare a <jumpassist>, and no datatest uses either
         self.java_new = true; // (kuna) option javanew default-on: changes java-language output only
+        self.java_try = true; // (kuna) option javatry default-on: DEX methods only
         self.dex_model = true; // (kuna) option dexmodel default-on: only a DEX image carries a model, so no other input changes
         self.narrow_args_callers = true; // (kuna) option narrowargs default `callers`: also narrow a 32-bit ARM parameter every caller of a closed function passes narrow, one of them extending it itself
         self.narrow_args = true; // (kuna) option narrowargs default-on: a register parameter whose uses read only its low 1, 2 or 4 bytes is declared that wide, and a callee's stated narrow parameter caps how much of the argument its callers consume (0/675 datatests)
@@ -3405,6 +3410,7 @@ impl Architecture {
         ctx.call_mechanism_reload_only =
             self.call_mechanism_mode == crate::kuna_callmechanisms::CallMechanismMode::Auto;
         ctx.dex = self.dex_model().cloned(); // dexmodel
+        ctx.java_try = self.java_try && ctx.dex.is_some(); // javatry
         if self.jump_assist {
             ctx.jump_assists = Rc::clone(&self.jump_assists); // jumpassist
         }
@@ -4797,7 +4803,16 @@ impl Architecture {
             userops.register_builtin(BUILTIN_KERNEL_WARN, &adapter)?;
             // (kuna repstring) the fills and the compare a repeated string
             // instruction prints as.
-            for id in [BUILTIN_MEMSET16, BUILTIN_MEMSET32, BUILTIN_MEMSET64, BUILTIN_MEMCMP] {
+            for id in [
+                BUILTIN_MEMSET16,
+                BUILTIN_MEMSET32,
+                BUILTIN_MEMSET64,
+                BUILTIN_MEMCMP,
+                // (kuna javatry) the DEX try dispatch, exceptional edge and caught value.
+                crate::userop::BUILTIN_JAVA_TRY,
+                crate::userop::BUILTIN_JAVA_THROWS,
+                crate::userop::BUILTIN_JAVA_CAUGHT,
+            ] {
                 userops.register_builtin(id, &adapter)?;
             }
             Ok(())
@@ -7273,6 +7288,9 @@ impl crate::userop::UseropTypeArchitecture for BuiltinTypeArch {
         self.types
             .get_type_char(self.types.get_size_of_wchar())
             .expect("builtin: getTypeChar(wchar)")
+    }
+    fn get_type_bool(&self) -> Rc<crate::dtype::Datatype> {
+        self.types.get_base(1, type_metatype::TYPE_BOOL).expect("builtin: getBase(BOOL)")
     }
 }
 

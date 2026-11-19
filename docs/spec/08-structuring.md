@@ -587,6 +587,20 @@ collapse governs the result, and its ownership rule is chapter 09's
 *pending-brace ownership* (a nested frame that steals the collapse hoists the
 arm's body onto the then-path).
 
+**(kuna `javatry`) DEX `try` dispatches.** `ActionBlockStructure` drops the
+exceptional `java_throws` edges from the structuring graph after seeding it
+(`p2_lift/kuna_javatry.rs (drop_throws_edges)`), so each catch handler is
+reached only from its `java_try` dispatch (chapter 2), and sends a function with
+a dispatch to `CollapseStructure` instead of the region structurer. There the
+collapse treats the dispatch as the head of a `try`:
+`ruleBlockIfNoExit` tries the handler arm first, so a handler that ends its path
+becomes the `if` clause and the protected code stays in the enclosing list;
+`ruleBlockOr`, `ruleBlockWhileDo` and `ruleBlockDoWhile` never take a dispatch
+block; `ruleBlockCat` never ends a list in a dispatch or in a condition
+following a dispatch `if`, which would make the `try` part of a condition; and
+`LoopBody::find_exit_avoiding` takes a handler as a loop's exit only when no
+other exit qualifies, so a catch inside a loop stays in the loop body.
+
 ## 8.2 The region structurer (angr)
 
 `decompiler/crates/kuna-decomp/src/p8_structure/region_structurer.rs` is the

@@ -462,6 +462,9 @@ Three tiers:
 | a DEX method prints CPOOLREF(...) calls and loads | [`dexmodel`](#dexmodel----on--off-default-on) |
 | a DEX method's parameters print as uninitialized locals | [`dexmodel`](#dexmodel----on--off-default-on) |
 | invoke-range calls lose their arguments | [`dexmodel`](#dexmodel----on--off-default-on) |
+| a DEX method's catch blocks are missing from the output | [`javatry`](#javatry----on--off-default-on) |
+| code after a call that can throw runs on as if nothing could be thrown | [`javatry`](#javatry----on--off-default-on) |
+| throwException(x); return; instead of throw x; | [`javatry`](#javatry----on--off-default-on) |
 | a function that only ever passes its argument to a libc stdio call still declares it long or unsigned long | [`libctypes`](#libctypes----off--opaque--glibc-default-opaque) |
 | a fopen or fdopen result is a void * that nothing can name | [`libctypes`](#libctypes----off--opaque--glibc-default-opaque) |
 | a stat or lstat call fills an untyped void * buffer | [`libctypes`](#libctypes----off--opaque--glibc-default-opaque) |
@@ -720,6 +723,7 @@ Three tiers:
 | swi(0x3d) calls where the program waits for the coprocessor | [`fpuemu`](#fpuemu----off--auto--on-default-auto) |
 | Java output prints v = new(T); followed by v.<init>(args); | [`javanew`](#javanew----on--off-default-on) |
 | a constructor call prints as a method named <init> | [`javanew`](#javanew----on--off-default-on) |
+| a constructor prints as void <init>(...) calling this.<init>(...) | [`javanew`](#javanew----on--off-default-on) |
 | a value stored before an Octeon atomic add is returned instead of the reloaded memory | [`octeoneffects`](#octeoneffects----off--atomic--ordered-default-atomic) |
 | a store read only by a following ll or lld disappears | [`octeoneffects`](#octeoneffects----off--atomic--ordered-default-atomic) |
 | an Octeon fetch-and-add result or old value prints with the wrong width or behind an (int) cast | [`octeoneffects`](#octeoneffects----off--atomic--ordered-default-atomic) |
@@ -1860,6 +1864,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **Where / provenance:** P1/environment-binding · ghidra-upstream · analysis-enablement · kuna-dex-loader
 - **Example:** `option dexmodel off`
 
+### `javatry` -- on | off, default `on`
+
+- **Symptoms:** a DEX method's catch blocks are missing from the output; code after a call that can throw runs on as if nothing could be thrown; throwException(x); return; instead of throw x;.
+- **What it does:** Recover a DEX method's try/catch blocks from its code_item try table and print them as Java try { } catch (T e) { }. Flow enters each catch handler once, from the start of the first range that names it (`java_try`), gives every other throwing instruction in a range an exceptional edge to its handlers (`java_throws`, data flow only: the structurer drops them, and the ones that bring the handler no value of their own are removed), and defines the move-exception register (`java_caught`). Handlers of one try item that are D8 stubs into the same code merge into one multi-type clause. Dalvik's throw becomes a halt, printed as a Java throw statement. A range's statement that cannot throw may print inside the try; a protected tail that can throw but lies outside the range is marked with a comment.
+- **When to flip:** On by default; it changes only DEX input. Turn OFF to see the method without its catch handlers (upstream Ghidra never reaches them).
+- **Where / provenance:** P2/flow-classification · kuna · analysis-enablement · kuna-dex-loader
+- **Example:** `option javatry off`
+
 ### `libctypes` -- off | opaque | glibc, default `opaque`
 
 - **Symptoms:** a function that only ever passes its argument to a libc stdio call still declares it long or unsigned long; a fopen or fdopen result is a void * that nothing can name; a stat or lstat call fills an untyped void * buffer; getopt_long takes a bare (void *)0x... long-option table; readdir returns a void * whose fields are casts and offsets; a stream parameter is void * where the ground truth is FILE *; a FILE * or stat * renders its members as field_0x8 / field_0x30 instead of _IO_read_ptr / st_size; a value loaded out of a named libc struct keeps the cast's type instead of the field's; stdin/stdout/stderr render as an untyped word and their fields as raw offsets ((long)stdout + 0x28); a shared object's stream slot has no name at all (*(long *)(*dat_3fe0 + 0x28)); two functions in one binary disagree about what stdout is, one calling it FILE * and the other a long.
@@ -2394,8 +2406,8 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 
 ### `javanew` -- on | off, default `on`
 
-- **Symptoms:** Java output prints v = new(T); followed by v.<init>(args);; a constructor call prints as a method named <init>.
-- **What it does:** In java-language output, print an allocation and the `<init>` call that initializes it as one `new T(args)` expression. Dalvik allocates with `new-instance` and initializes with a separate `invoke-direct` of `<init>`, which upstream's Java output keeps as two statements (`v = new(T); v.<init>(args);`). The pair folds only when the object reaches nothing but that call before it, in the same basic block; the arguments keep their own statements and order.
+- **Symptoms:** Java output prints v = new(T); followed by v.<init>(args);; a constructor call prints as a method named <init>; a constructor prints as void <init>(...) calling this.<init>(...).
+- **What it does:** In java-language output, print Java's constructor syntax. An allocation and the `<init>` call that initializes it print as one `new T(args)` expression: Dalvik allocates with `new-instance` and initializes with a separate `invoke-direct` of `<init>`, which upstream's Java output keeps as two statements (`v = new(T); v.<init>(args);`). The pair folds only when the object reaches nothing but that call before it, in the same basic block; the arguments keep their own statements and order. A constructor is declared by its class name, its call of another constructor on its own object prints as `this(args)` (same class) or `super(args)` (the superclass), and the implicit no-argument `super()` to java.lang.Object prints nothing.
 - **When to flip:** On by default; it changes only java-language output. Turn OFF to see the bytecode's two steps, or to diff against upstream Ghidra's Java output.
 - **Where / provenance:** P9/readability-rewrites · kuna · presentation-default · kuna-dex-loader
 - **Example:** `option javanew off`

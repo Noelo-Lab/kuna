@@ -1,0 +1,57 @@
+<decompilertest>
+<binaryimage arch="Dalvik:LE:32:DEX_Android12">
+<!--
+    Kuna DEX loader, constructors: P9 Java output, option javanew (default
+    on). The script loads the committed DEX fixture built from
+    tests/stages/fixtures/dex/Tries.java and Base.java and prints Java.
+
+    Asserts #1-#2 are the off pass: the constructor is a method named
+    <init>, and its call of the superclass constructor is this.<init>(...).
+    Asserts #3-#6 are the default pass: the constructor is declared by its
+    class name, the superclass call is super(...), the same-class call is
+    this(...), and the implicit super() to java.lang.Object prints nothing.
+-->
+<bytechunk space="ram" offset="0x0" readonly="true">0e00</bytechunk>
+<symbol space="ram" offset="0x0" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file tests/stages/fixtures/dex/tries.dex</com>
+  <com>option setlanguage java-language</com>
+  <com>option javanew off</com>
+  <com>read symbols</com>
+  <com>load function demo::Tries::&lt;init&gt;_448</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/stages/fixtures/dex/tries.dex</com>
+  <com>option setlanguage java-language</com>
+  <com>read symbols</com>
+  <com>load function demo::Tries::&lt;init&gt;_448</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/stages/fixtures/dex/tries.dex</com>
+  <com>option setlanguage java-language</com>
+  <com>read symbols</com>
+  <com>load function demo::Tries::&lt;init&gt;_42c</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/stages/fixtures/dex/tries.dex</com>
+  <com>option setlanguage java-language</com>
+  <com>read symbols</com>
+  <com>load function demo::Base::&lt;init&gt;_2f4</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="javactor #1: off declares a method named &lt;init&gt;" min="1" max="1">^void &lt;init&gt;_448\(int a1\)</stringmatch>
+<stringmatch name="javactor #2: off calls the superclass constructor as &lt;init&gt;" min="1" max="1">this\.&lt;init&gt;\(a1,"t"\);</stringmatch>
+<stringmatch name="javactor #3: on declares the constructor by its class" min="1" max="1">^Tries\(int a1\)</stringmatch>
+<stringmatch name="javactor #4: on calls the superclass constructor as super" min="1" max="1">^  super\(a1,"t"\);</stringmatch>
+<stringmatch name="javactor #5: on calls a same-class constructor as this" min="1" max="1">^  this\(7\);</stringmatch>
+<stringmatch name="javactor #6: on drops the implicit super() of java.lang.Object" min="1" max="1">^Base\(int a1,String a2\)
+\{
+this\.b = a1;</stringmatch>
+</decompilertest>

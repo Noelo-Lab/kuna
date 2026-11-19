@@ -24,6 +24,10 @@ pub struct ExitLeafFacts {
     pub halt: BTreeMap<BlockId, uint4>,
     /// Start address offset of each block, for the trace only.
     pub addr: BTreeMap<BlockId, u64>,
+    /// (kuna `javatry`) The basic blocks a `java_try` dispatch enters.
+    pub java_handlers: std::collections::BTreeSet<BlockId>,
+    /// (kuna `javatry`) The basic blocks that end in a dispatch.
+    pub java_dispatch: std::collections::BTreeSet<BlockId>,
 }
 
 impl ExitLeafFacts {
