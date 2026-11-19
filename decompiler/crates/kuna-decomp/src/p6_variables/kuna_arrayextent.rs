@@ -1,10 +1,34 @@
-//! (kuna) `arrayextent` recovers indexed frame-storage extents and preserves
-//! existing byte views through runtime-stack allocation recovery.
+//! (kuna) `arrayextent` -- an indexed stack array covers the slots its index
+//! reaches past the four elements upstream assumes.
 //!
-//! `bound` extends indexed storage using known index bits. `on` also includes
-//! contiguous, unlocked, same-width slots only observed through a pointer.
-//! Separately addressed or directly read slots stop extension. Indexed bases
-//! retain a wider extent already produced by upstream layout.
+//! `MapState::gatherOpen` gives the open range at an indexed stack base room
+//! for four elements, and `RangeHint::attempt_join` refuses a fixed hint past
+//! that, so an element the index reaches beyond the fourth is laid out as its
+//! own scalar and the printed subscript runs off the declared array.
+//!
+//! At `bound`, an indexed base whose pointer is the stack base plus constants
+//! plus indices whose known bits bound them (`kuna_storereach.rs
+//! (pointer_pieces)`), and which the function only dereferences, gets room for
+//! every element those dereferences may touch.
+//!
+//! At `on`, an indexed base with no such bound and no range-locked guard over
+//! it also takes each following slot of its element size while that slot
+//! starts exactly where the elements it covers end, starts no other open range,
+//! holds only unlocked hints of its element size and of a type `attempt_join`
+//! accepts, and is never read except through a pointer. A slot the function
+//! writes and never reads directly is only observable through the index, so it
+//! is an element of the array rather than a scalar of its own. When
+//! upstream's merge (`ScopeLocal::restructure`), run over the same sorted hints
+//! with the array at its old length, ends the array at or before the last slot
+//! taken, that slot loses its constant-copy mark, so upstream's constant
+//! absorption (`RangeHint::absorb`) cannot raise the array one element past it
+//! and from there over each following constant-initialised local. Where
+//! upstream's merge reaches further on its own, the array is upstream's.
+//!
+//! With `stackalloc` recovering a runtime reservation, `preserve_stackalloc_bytes`
+//! keeps a byte array the layout had before the recovery over its written
+//! prefix, and declines the recovery when that prefix would cut off bytes a
+//! live side effect still reaches.
 
 use std::rc::Rc;
 
@@ -323,10 +347,17 @@ pub(crate) fn preserve_stackalloc_bytes(
     true
 }
 
-/// Retain wider indexed extents already produced by the original layout.
+/// Before `ScopeLocal::restructure` merges the sorted hints, clear
+/// `COPY_CONSTANT` on the last slot each lengthened array took, unless
+/// upstream's merge of the same hints, with the arrays at their old length,
+/// carries the array past that slot anyway. A constant there would otherwise
+/// let `RangeHint::absorb` raise the array one element past it and from there
+/// over each following constant-initialised local.
 pub(crate) fn settle(state: &mut MapState, space: &Rc<AddrSpace>, types: &dyn TypeFactory) {
     let extended = state.take_extended();
-    if extended.is_empty() { return; }
+    if extended.is_empty() {
+        return;
+    }
     let mut list = state.hints_mut().clone();
     for h in list.iter_mut() {
         if let Some(e) = extended.iter().find(|e| is_lengthened(h, e)) {

@@ -3982,8 +3982,9 @@ the model's own stack offsets from the stack pointer at the call operation
 words that one whole store wrote since the previous call in the block, and that
 lie below the recovered object, are bound. A call short of its register slots
 takes its tail from the stack's first word only on Apple arm64, which passes
-every variadic argument on the stack. Two shapes keep the option-off spelling of
-their outgoing arguments: a tail stored below an object the compiler realigned
-inside the reservation (GCC's `(SP + 15) & ~15`), whose words stay unbound, and
-a call reached both with and without a reservation, whose outgoing words are
-written relative to the merged stack pointer.
+every variadic argument on the stack. A tail these rules do not place keeps the
+option-off spelling: its stores stay in the backing and the call prints short,
+as it does with the option off. Observed: a tail stored below an object the
+compiler realigned inside the reservation (GCC's `(SP + 15) & ~15`) and 32-bit
+PowerPC SysV calls. A call reached both with and without a reservation likewise
+keeps its outgoing words written relative to the merged stack pointer.

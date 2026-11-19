@@ -788,8 +788,10 @@ mod stack_allocations_ia16;
 
 #[path = "stack_allocations_abi.rs"]
 mod stack_allocations_abi;
+
 #[path = "float_nan_quieting.rs"]
 mod float_nan_quieting;
+
 #[path = "storage_load_transfers.rs"]
 mod storage_load_transfers;
 

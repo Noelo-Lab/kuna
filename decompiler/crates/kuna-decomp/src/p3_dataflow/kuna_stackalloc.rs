@@ -1254,9 +1254,6 @@ fn equivalent(
     ) && equivalent(fd, oa.get_in(0).unwrap(), ob.get_in(1).unwrap(), seen)
         && equivalent(fd, oa.get_in(1).unwrap(), ob.get_in(0).unwrap(), seen)
 }
-fn same_origin(fd: &Funcdata, a: &Allocation, b: &Allocation) -> bool {
-    origin_delta(fd, a, b) == Some(0)
-}
 /// Constant displacement of `b` from `a` when both subtract the same amount from one base.
 fn origin_delta(fd: &Funcdata, a: &Allocation, b: &Allocation) -> Option<i128> {
     allocation_delta(fd, a, b, true)
@@ -4006,14 +4003,6 @@ impl FrameOrigins {
         }
     }
 
-    /// Effect transitions use the same dependency graph as SSA transitions.
-    /// Once a store may contribute a frame value, later ownership changes
-    /// cannot erase that contribution.
-    fn add_source(&mut self, equations: &FrameEquations, value: VarnodeId, source: VarnodeId) -> bool {
-        let Some((&target,&source))=equations.index.get(&value).zip(equations.index.get(&source)) else {return false};
-        self.add_edge(target,source)
-    }
-
     fn unknown_effect(&mut self, equations: &FrameEquations, value: VarnodeId) -> bool {
         let Some(&index) = equations.index.get(&value) else { return false };
         self.unknown_index(index)
@@ -4035,14 +4024,6 @@ impl FrameOrigins {
         false
     }
 
-
-    fn manipulated_effect(&mut self, equations: &FrameEquations, value: VarnodeId) -> bool {
-        let Some(&index)=equations.index.get(&value) else {return false};
-        if matches!(self.rule[index],FrameAccessRule::Manipulated) {return false;}
-        self.rule[index]=FrameAccessRule::Manipulated;
-        self.enqueue(index);
-        true
-    }
     fn settle(&mut self) {
         while let Some(index) = self.queue.pop_front() {
             self.queued[index] = false;
@@ -6473,18 +6454,6 @@ fn predates(fd: &Funcdata, mut value: VarnodeId, op: OpId) -> bool {
             continue;
         }
         return dominates_op(fd, def, op);
-    }
-    false
-}
-
-/// Does `value` name `target` through copies and call INDIRECTs?
-fn reaches_value(fd: &Funcdata, mut value: VarnodeId, target: Option<VarnodeId>) -> bool {
-    for _ in 0..256 {
-        if Some(value) == target { return true; }
-        let Some(op) = fd.vbank().get(value).and_then(|node| node.get_def()).and_then(|id| fd.obank().get(id))
-            .filter(|op| matches!(op.code(), OpCode::CPUI_COPY | OpCode::CPUI_INDIRECT)) else { return false };
-        let Some(next) = op.get_in(0) else { return false };
-        value = next;
     }
     false
 }
