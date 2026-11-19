@@ -3882,6 +3882,19 @@ impl SymbolTable {
         ))
     }
 
+    /// Java `Constructor.buildPattern` "operand ... has an issue": an operand
+    /// defined as itself or as a bare operand whose pattern is generated after
+    /// its own.
+    fn operand_before_definition(&self, opid: u32) -> KunaError {
+        let nm = self
+            .symbol(opid)
+            .map(|s| name_text(s.get_name()).to_string())
+            .unwrap_or_default();
+        KunaError::sleigh(format!(
+            "{nm}: operand is defined as itself or an operand that follows it"
+        ))
+    }
+
     /// C++ `Constructor::buildPattern(ostream &s)` driven from the symbol
     /// table.  Generates a [`TokenPattern`] per operand, runs the
     /// constructor's pattern equation, resolves operand offsets, validates
@@ -3934,11 +3947,13 @@ impl SymbolTable {
                     let patexp = self.symbol(tripid)?.get_pattern_expression()?;
                     match patexp {
                         Some(pe) => pe.gen_min_pattern(&oppattern),
-                        None => TokenPattern::new_true(),
+                        None => Some(TokenPattern::new_true()),
                     }
+                    .ok_or_else(|| self.operand_before_definition(opid))?
                 }
             } else if let Some(pe) = operand.get_defining_expression() {
                 pe.gen_min_pattern(&oppattern)
+                    .ok_or_else(|| self.operand_before_definition(opid))?
             } else {
                 let nm = name_text(self.symbol(opid)?.get_name()).to_string();
                 return Err(KunaError::sleigh(format!("{nm}: operand is undefined")));
