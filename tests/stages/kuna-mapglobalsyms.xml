@@ -1,0 +1,65 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Two functions touch one 8-byte global no symbol names: store64 writes all
+    of it, load_high reads its upper 4 bytes. Upstream Funcdata::mapGlobals
+    adds a DAT_ Symbol for the 8-byte group to the global scope while it
+    decompiles store64, so a load_high decompiled after it in the same session
+    reads a piece of that Symbol. Kuna recorded nothing (its per-function
+    GlobalQuery is a snapshot no action can write), so load_high always read a
+    free-standing dat_105004. The same holds for the coverVarnodes names:
+    read_wide reads 8 bytes at the int4 `small` and 4 at small+4, and mapGlobals names that upper half
+    small_4, and read_upper, decompiled next, reads that half alone.
+
+    Stage model: P9 emit, naming-policy (p9_emit/coreaction_render.rs
+    map_globals records the group; p9_emit/kuna_mapglobalsyms.rs persist adds
+    it to the global scope after the function).
+
+    Option: mapglobalsyms (default off). Pass 1 is off, pass 2 on; the same
+    two functions are decompiled in the same order in both.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+48893df94f0000c390909090909090908b05ee4f0000c390909090909090909048a110501000000000008b0c25145010004801c8c390909090909090909090908b042514501000c3
+</bytechunk>
+<bytechunk space="ram" offset="0x105000">
+11223344556677880000000000000000aabbccddeeff0011
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="store64"/>
+<symbol space="ram" offset="0x100010" name="load_high"/>
+<symbol space="ram" offset="0x100020" name="read_wide"/>
+<symbol space="ram" offset="0x100040" name="read_upper"/>
+</binaryimage>
+<script>
+  <com>map address r0x105010 int4 small</com>
+  <com>lo fu store64</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu load_high</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu read_wide</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu read_upper</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option mapglobalsyms on</com>
+  <com>lo fu store64</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu load_high</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu read_wide</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu read_upper</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="MAPGLOBALSYMS #1: off, the later read is a free-standing global" min="1" max="1">return dat_105004;</stringmatch>
+<stringmatch name="MAPGLOBALSYMS #2: on, the later read is a piece of the 8-byte DAT_ Symbol store64 left" min="1" max="1">return \(\(unsigned int \*\)&amp;dat_105000\)\[1\];</stringmatch>
+<stringmatch name="MAPGLOBALSYMS #4: off, the upper half read alone is unnamed storage" min="1" max="1">return dat_105014;</stringmatch>
+<stringmatch name="MAPGLOBALSYMS #5: on, it keeps the cover name read_wide gave it" min="1" max="1">return small_4;</stringmatch>
+<stringmatch name="MAPGLOBALSYMS #3: the first function prints the same in both passes" min="2" max="2">dat_105000 = a0;</stringmatch>
+</decompilertest>

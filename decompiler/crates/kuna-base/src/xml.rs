@@ -2237,7 +2237,9 @@ mod tests {
         // and kuna-dyldimage-merge / dyldimage A+B loads two dyld shared cache images as one program
         // and kuna-blobs / an embedded PNG, GIF, JPEG, zip or gzip is returned by name
         // and kuna-repstring, kuna-repstring-i386 / x86 rep movs/stos/cmpsb print as copy, fill and compare builtins
-        assert_eq!(count, 800, "corpus file count drifted");
+        // and kuna-mapglobals / a global read wider than its Symbol prints as _<symbol> with the overlap warning
+        // and kuna-mapglobalsyms / the global scope keeps the data Symbols mapGlobals creates
+        assert_eq!(count, 802, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

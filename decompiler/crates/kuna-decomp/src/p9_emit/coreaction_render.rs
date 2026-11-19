@@ -1812,16 +1812,97 @@ impl Action for ActionMapGlobals {
         }
         Some(Box::new(ActionMapGlobals { base: self.base.clone() }))
     }
-    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // C++ coreaction.hh:900 — ActionMapGlobals::apply (inline)
-        //   data.mapGlobals(); return 0;
-        //
-        // STUB(W8-funcdata): `Funcdata::mapGlobals` (which promotes discovered
-        // global Varnodes into the global scope) is not on the merged `Funcdata`.
-        // Body transcribed; no change applied (the C++ `return 0` never bumps
-        // count either).
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+        map_globals(data);
         0
     }
+}
+
+/// C++ `Funcdata::mapGlobals` (funcdata_varnode.cc): group the persistent
+/// Varnodes that overlap, and when a group starts inside a global Symbol but
+/// runs past its end, warn and name the group's uncovered interior Varnodes
+/// after the Symbol (`coverVarnodes`). A group no Symbol holds is recorded,
+/// typed like upstream's `DAT_` Symbol (the widest Varnode's type when it spans
+/// the group, else `undefined<N>`), and with `mapglobalsyms` on the driver adds
+/// it to the global scope once the function is done
+/// ([`crate::kuna_mapglobalsyms::persist`]); kuna names it `dat_<addr>` either way.
+fn map_globals(data: &mut Funcdata) {
+    let vbank = data.vbank();
+    let arch = data.get_arch();
+    let locs: Vec<_> = vbank.iter_loc().filter_map(|id| vbank.get(id)).collect();
+    let mut covers: Vec<(Address, int4, String)> = Vec::new();
+    let mut new_globals: Vec<(Address, Rc<crate::dtype::Datatype>)> = Vec::new();
+    let mut inconsistent = false;
+    let mut i = 0;
+    while i < locs.len() {
+        let vn = locs[i];
+        i += 1;
+        if vn.is_free() || !vn.is_persist() {
+            continue;
+        }
+        let addr = vn.get_addr();
+        let mut end = addr.get_offset().wrapping_add(vn.get_size() as u64);
+        let mut maxvn = vn;
+        let mut uncovered: Vec<(&Address, int4)> = Vec::new();
+        while let Some(next) = locs.get(i) {
+            let a = next.get_addr();
+            if !next.is_persist() || !same_space(a, addr) || a.get_offset() >= end {
+                break;
+            }
+            if a != addr {
+                uncovered.push((a, next.get_size()));
+            }
+            end = a.get_offset().wrapping_add(next.get_size() as u64);
+            if next.get_size() > maxvn.get_size() {
+                maxvn = next;
+            }
+            i += 1;
+        }
+        let Some((first, esize, name)) = arch.global_data_symbol_at(addr) else {
+            if arch.mapglobalsyms && arch.global_symbol_extent(addr).is_none() {
+                let size = end.wrapping_sub(addr.get_offset());
+                let exact = maxvn.get_addr() == addr && maxvn.get_size() as u64 == size;
+                let ct = if exact {
+                    Some(Rc::clone(maxvn.get_type()))
+                } else {
+                    arch.types().and_then(|t| t.get_base(size as int4, crate::dtype::type_metatype::TYPE_UNKNOWN).ok())
+                };
+                if let Some(ct) = ct {
+                    new_globals.push((addr.clone(), ct));
+                }
+            }
+            continue;
+        };
+        if end.wrapping_sub(1) <= first.wrapping_add(esize as u64).wrapping_sub(1) {
+            continue;
+        }
+        inconsistent = true;
+        for (k, &(a, s)) in uncovered.iter().enumerate() {
+            if uncovered.get(k + 1).is_some_and(|(next, _)| *next == a) {
+                continue;
+            }
+            let a_end = a.get_offset().wrapping_add(s as u64);
+            let held = arch
+                .global_data_symbol_at(a)
+                .is_some_and(|(f, sz, _)| a_end <= f.wrapping_add(sz as u64))
+                || covers.iter().any(|(c, csz, _)| {
+                    same_space(c, a) && c.get_offset() <= a.get_offset() && a_end <= c.get_offset() + *csz as u64
+                });
+            if !held {
+                let diff = a.get_offset().wrapping_sub(first);
+                covers.push((a.clone(), s, format!("{name}_{diff}")));
+            }
+        }
+    }
+    data.set_global_covers(covers);
+    data.set_new_globals(new_globals);
+    if inconsistent {
+        data.warning_header("Globals starting with '_' overlap smaller symbols at the same address");
+    }
+}
+
+fn same_space(a: &Address, b: &Address) -> bool {
+    a.get_space().map(|s| s.get_index()) == b.get_space().map(|s| s.get_index())
 }
 
 // =============================================================================

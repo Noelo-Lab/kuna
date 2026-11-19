@@ -771,6 +771,8 @@ Three tiers:
 | __stack_chk_guard shows as a dereferenced dat_ address | [`importdata`](#importdata----on--off-default-on) |
 | imported globals are anonymous even though their GOT slot is named | [`importdata`](#importdata----on--off-default-on) |
 | an ELF shared object reads stdout or environ as *dat_<slot> or *stdout_ptr | [`importdata`](#importdata----on--off-default-on) |
+| a global one function accessed whole prints as unrelated dat_ names in another | [`mapglobalsyms`](#mapglobalsyms----on--off-default-off) |
+| later functions do not see the DAT_ symbol an earlier decompile created, unlike upstream decomp_dbg sessions | [`mapglobalsyms`](#mapglobalsyms----on--off-default-off) |
 | a libc argument is cast to the very type the parameter declares, memchr(v10,(int)v4,n) | [`castimplied`](#castimplied----on--off-default-on) |
 | a widening cast assigned to a variable already declared that type, v2 = (long)v1; with long v2 | [`castimplied`](#castimplied----on--off-default-on) |
 | return (unsigned long)v1; from a function declared unsigned long | [`castimplied`](#castimplied----on--off-default-on) |
@@ -2474,6 +2476,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default: a data read through a GOT/IAT import slot names the import -- the stack-protector guard, XPC type objects, global counters -- so `if (*dat_1041cc6c8 == ...)` reads `if (__stack_chk_guard == ...)`, and on an ELF shared object `return *dat_3fe8;` reads `return imported_counter;` and `*stdout_ptr` reads `stdout`. Flip off to keep the slot dereference `*dat_<slot>`, for example to see which slot a read goes through or to diff against Ghidra output.
 - **Where / provenance:** P9/naming-policy · kuna · presentation-default · kuna-importdata
 - **Example:** `option importdata off`
+
+### `mapglobalsyms` -- on | off, default `off`
+
+- **Symptoms:** a global one function accessed whole prints as unrelated dat_ names in another; later functions do not see the DAT_ symbol an earlier decompile created, unlike upstream decomp_dbg sessions.
+- **What it does:** Keep the data Symbol Funcdata::mapGlobals creates for global storage no Symbol holds. Upstream adds a DAT_ Symbol to the global scope for each such group of persistent Varnodes, typed by the widest access when it spans the group and undefined<N> otherwise, and every later function sees it. Kuna's per-function GlobalQuery is a read-only snapshot, so ActionMapGlobals records the groups on the Funcdata and the decompile driver adds them to the global scope, under the dat_<addr> / DAT_%08x name kuna prints them with, once the function is done.
+- **When to flip:** Off by default: the output of a function then depends on which functions were decompiled before it in the same session. Turn on to get upstream's session behaviour: a global a first function read as 8 bytes stays one 8-byte object, so a later function's 4-byte access to its upper half prints as a piece of it (`((unsigned int *)&dat_x)[1]`) instead of a separate dat_<addr+4>.
+- **Where / provenance:** P9/naming-policy · ghidra · presentation-default · kuna-mapglobals-dat-symbols
+- **Example:** `option mapglobalsyms on`
 
 ### `castimplied` -- on | off, default `on`
 

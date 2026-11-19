@@ -1404,6 +1404,10 @@ pub struct ArchContext {
     /// [`Funcdata::fillin_read_only`](crate::funcdata::Funcdata::fillin_read_only).
     /// `false` by default (C++ `Architecture::resetDefaults`).
     pub readonlypropagate: bool,
+    /// (kuna `mapglobalsyms`) Whether `ActionMapGlobals` records a data Symbol
+    /// for each group of global storage no Symbol holds, for the driver to add
+    /// to the global scope once the function is done.
+    pub mapglobalsyms: bool,
     /// (kuna `dynrelocs`) `[start, stop]` (inclusive) offsets whose read-only
     /// contents are foldable even with [`Self::readonlypropagate`] off: the
     /// dynamic-relocation slots the loader filled in that `PT_GNU_RELRO` freezes.
@@ -1747,6 +1751,7 @@ impl ArchContext {
             // C++ Architecture default: readonlypropagate = false (resetDefaults);
             // `option readonly` flips it before the per-function build_arch_handle.
             readonlypropagate: false,
+            mapglobalsyms: false,
             // (kuna) No dynamic-relocation const slots until a real ELF load
             // installs them (see `Architecture::dynreloc_const`).
             dynreloc_const: Rc::new(Vec::new()),
@@ -2074,6 +2079,14 @@ impl ArchContext {
     pub(crate) fn global_symbol_extent(&self, addr: &Address) -> Option<(u64, int4)> {
         self.effective_global_query(addr)
             .and_then(|gq| gq.find_container_entry(addr, 1, &Address::default()).map(|e| (e.first, e.size)))
+    }
+
+    /// The first offset, size and name of the smallest global data Symbol
+    /// whose storage holds `addr`, if any.
+    pub(crate) fn global_data_symbol_at(&self, addr: &Address) -> Option<(u64, int4, String)> {
+        let gq = self.effective_global_query(addr)?;
+        let e = gq.find_container_entry(addr, 1, &Address::default())?;
+        (!e.is_function).then(|| (e.first, e.size, e.symbol_name.clone()))
     }
 
     /// Like [`name_for_global_varnode`](Self::name_for_global_varnode) but also

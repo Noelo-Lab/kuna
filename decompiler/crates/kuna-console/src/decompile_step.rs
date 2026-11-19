@@ -436,6 +436,9 @@ fn decompile_one_prefollowed_once(
     }
     arch.format_override_callpoints.clear();
     arch.readonlypropagate = saved_readonlypropagate;
+    if let Ok(fd) = &result {
+        kuna_decomp::kuna_mapglobalsyms::persist(arch, fd);
+    }
     DecompileStep { result, discovered }
 }
 

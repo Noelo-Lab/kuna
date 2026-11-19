@@ -11070,6 +11070,27 @@ impl PrintC {
                         }
                     }
                 }
+                // C++ `pushSymbolDetail` -> `pushMismatchSymbol` (printc.cc): a global
+                // read wider than its Symbol prints the Symbol's name with a leading
+                // `_` when it starts at the Symbol, else as unnamed storage.
+                let symoff = sym_off.max(0);
+                let name = match &sym_type {
+                    Some(st)
+                        if v.is_persist()
+                            && st.get_metatype() != crate::dtype::type_metatype::TYPE_CODE
+                            && symoff + v.get_size() > st.get_size() =>
+                    {
+                        if symoff == 0 {
+                            format!("_{name}")
+                        } else {
+                            match kuna_unnamed_location_name(arch, v.get_addr(), v.get_size()) {
+                                Some(n) => n,
+                                None => name,
+                            }
+                        }
+                    }
+                    _ => name,
+                };
                 self.push_atom(&Atom::with_op_vn(
                     name,
                     TagType::VarToken,
@@ -11145,7 +11166,7 @@ impl PrintC {
         let name = match if stack_pointer_storage {
             kuna_storage_location_name(&loc)
         } else {
-            kuna_unnamed_location_name(arch, &loc, size)
+            global_overlap_name(fd, &loc, size).or_else(|| kuna_unnamed_location_name(arch, &loc, size))
         } {
             Some(n) => n,
             None => return,
@@ -13285,7 +13306,7 @@ fn kuna_global_naming(spc: &std::rc::Rc<kuna_base::space::AddrSpace>) -> bool {
 /// (kuna) `kunaGlobalDataName(Address)` — `dat_<hex offset>`; ghidra-mode
 /// (`name_style_ghidra`) prints the Ghidra GUI convention `DAT_%08x` instead
 /// (what Java's `isDynamicSymbolName` recognizes as dynamic).
-fn kuna_global_data_name(style: crate::database::KunaNameStyle, off: u64) -> String {
+pub(crate) fn kuna_global_data_name(style: crate::database::KunaNameStyle, off: u64) -> String {
     if style == crate::database::KunaNameStyle::Ghidra {
         return format!("DAT_{off:08x}");
     }
@@ -13366,6 +13387,24 @@ fn kuna_unnamed_location_name(
     use std::fmt::Write;
     let _ = write!(s, "{:0width$x}", loc.get_offset(), width = (2 * spc.get_addr_size()) as usize);
     Some(s)
+}
+
+/// The name of a global with no bound Symbol that `ActionMapGlobals` covered,
+/// or that starts at a smaller Symbol: that Symbol's name with a leading `_`
+/// (C++ `PrintC::pushMismatchSymbol`).
+fn global_overlap_name(fd: &Funcdata, loc: &kuna_base::address::Address, size: int4) -> Option<String> {
+    if !kuna_global_naming(loc.get_space()?) {
+        return None;
+    }
+    if let Some((_, csize, name)) = fd.global_covers().iter().find(|(a, _, _)| a == loc) {
+        return match csize.cmp(&size) {
+            std::cmp::Ordering::Equal => Some(name.clone()),
+            std::cmp::Ordering::Less => Some(format!("_{name}")),
+            std::cmp::Ordering::Greater => None,
+        };
+    }
+    let (start, ssize, name) = fd.get_arch().global_data_symbol_at(loc)?;
+    (start == loc.get_offset() && ssize < size).then(|| format!("_{name}"))
 }
 
 /// Spell an address as storage, without treating a covering register name as a

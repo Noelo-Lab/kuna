@@ -198,6 +198,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "globalarrayanchor" => on_off(conf.global_array_anchor),
         "memsetrecover" => on_off(conf.memset_recover),
         "rodatastring" => on_off(conf.rodata_string),
+        "mapglobalsyms" => on_off(conf.mapglobalsyms),
         "returnpair" => {
             if conf.return_single {
                 "single"

@@ -7,6 +7,7 @@ pub mod comment;
 pub mod coreaction_casts;
 pub mod printlanguage;
 pub mod printc;
+pub mod kuna_mapglobalsyms; // (kuna `mapglobalsyms`) keep mapGlobals' DAT_ Symbols in the global scope
 pub(crate) mod kuna_fieldextract;
 pub mod kuna_partialconcat;
 pub mod kuna_partialaccess;

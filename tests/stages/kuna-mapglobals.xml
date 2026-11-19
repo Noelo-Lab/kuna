@@ -1,0 +1,37 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    mapGlobals: a global read wider than the Symbol at its address.
+
+    Ported from decompiler/cpp/funcdata_varnode.cc (Funcdata::mapGlobals,
+    coverVarnodes) and printc.cc (PrintC::pushMismatchSymbol). When the
+    persistent Varnodes at an address run past the end of the global Symbol
+    there, upstream warns, names each uncovered interior Varnode after the
+    Symbol (`small_4`), and prints the wide read as `_small`. kuna's
+    ActionMapGlobals did nothing, so the wide read printed as the Symbol
+    itself or as `dat_200000`, and no warning was given.
+
+    Authored x86-64 (nasm): g adds the 8-byte value at 0x200000 to the
+    zero-extended 4-byte value at 0x200004; `small` is mapped as an int4 at
+    0x200000.
+
+    Before: `return small + (uint8)dat_200004;` with no warning.
+    Fixed: `return _small + (uint8)small_4;` with the overlap warning.
+
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+48a100002000000000008b0c25040020004801c8c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="g"/>
+</binaryimage>
+<script>
+  <com>map address r0x200000 int4 small</com>
+  <com>lo fu g</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="MAPGLOBALS #1: the overlap warning is given" min="1" max="1">Globals starting with '_' overlap smaller symbols at the same address</stringmatch>
+<stringmatch name="MAPGLOBALS #2: the wide read is the Symbol with a leading underscore" min="1" max="1">return _small \+</stringmatch>
+<stringmatch name="MAPGLOBALS #3: the uncovered upper half is named after the Symbol" min="1" max="1">\(uint8\)small_4;</stringmatch>
+</decompilertest>

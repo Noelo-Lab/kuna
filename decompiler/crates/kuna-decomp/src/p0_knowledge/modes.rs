@@ -568,7 +568,11 @@ mod tests {
               // `libgccsigs` costs a SPARC32 caller that returns arithmetic on
               // the `__divdi3` quotient its low word or its whole return (see its
               // catalog row), so the preset must not turn it on.
-              "libgccsigs"];
+              "libgccsigs",
+              // `mapglobalsyms` makes a function's output depend on which functions
+              // were decompiled before it in the same run; in the preset that would
+              // make every `decompile-all` under 500 KiB order-dependent.
+              "mapglobalsyms"];
 
         /// Default-off options that predate this test and are **not** in the preset,
         /// i.e. are currently unreachable on the default path. Each is a genuine open

@@ -1936,6 +1936,37 @@ lives somewhere the analysis never resolved to a variable, exactly as upstream's
 `stack0x00000008` is (kuna capitalizes the space and drops the `0x` so the
 token is at least a legal C identifier).
 
+**Globals wider than their Symbol.** `coreaction_render.rs (ActionMapGlobals)`
+ports upstream `Funcdata::mapGlobals`. It groups the function's persistent
+Varnodes that overlap in storage order. When a group starts inside a global
+data Symbol but runs past its end, the function gets the header warning
+`Globals starting with '_' overlap smaller symbols at the same address`, and
+each interior Varnode of the group that no Symbol holds is named after the
+Symbol and its byte distance from it (`small_4`, upstream `coverVarnodes`).
+These names live on the function (`Funcdata::global_covers`). For a group no
+Symbol holds, upstream creates a `DAT_` Symbol, typed by the widest Varnode when
+it spans the group and `undefined<N>` otherwise. Kuna records the same group
+(`Funcdata::new_globals`) and names that storage `dat_<addr>` when it prints it.
+
+Upstream adds both kinds of Symbol to the global scope, so every function
+decompiled after this one in the session sees them. Kuna's per-function
+`GlobalQuery` is a snapshot no action can write, so with `option mapglobalsyms
+on` (default off) the decompile driver adds them once the function is done
+(`decompiler/crates/kuna-decomp/src/p9_emit/kuna_mapglobalsyms.rs (persist)`,
+called from `decompile_step.rs`). The names are the ones already printed, and
+storage some Symbol now holds is skipped. The next `build_arch_handle` snapshots
+the new Symbols like any other. After `store64` writes an unnamed 8-byte global,
+a `load_high` decompiled next reads its upper half as a piece of `dat_105000`
+(`((unsigned int *)&dat_105000)[1]`) rather
+than a separate `dat_105004` (`tests/stages/kuna-mapglobalsyms.xml`). The option
+is off by default because it makes a function's output depend on which
+functions were decompiled before it in the same session. A read that starts at a global data
+Symbol but is wider than it prints the Symbol's name with a leading `_`
+(`_small`, upstream `pushMismatchSymbol`); one that starts inside the Symbol
+prints as unnamed storage. Function Symbols take no part: an import slot named
+after its function keeps its plain rendering
+(`tests/stages/kuna-mapglobals.xml`).
+
 One unnamed high-variable case is deliberately canonicalized before that
 choice. If any member is the unaffected input stack pointer, every member uses
 that member's storage-form leaf (`Register0000000000000000` on x86-64), with

@@ -3534,6 +3534,25 @@ live_false = "off"
 symptoms = "a data import read through __got renders *dat_<slot>|__stack_chk_guard shows as a dereferenced dat_ address|imported globals are anonymous even though their GOT slot is named|an ELF shared object reads stdout or environ as *dat_<slot> or *stdout_ptr"
 
 [[settable]]
+option = "mapglobalsyms"
+values = "on|off"
+default = "off"
+destructive = false
+phase = "P9"
+subphase = "naming-policy"
+strength = "HARD"
+rewind = "P9"
+issue = "kuna-mapglobals-dat-symbols"
+summary = "Keep the data Symbol Funcdata::mapGlobals creates for global storage no Symbol holds. Upstream adds a DAT_ Symbol to the global scope for each such group of persistent Varnodes, typed by the widest access when it spans the group and undefined<N> otherwise, and every later function sees it. Kuna's per-function GlobalQuery is a read-only snapshot, so ActionMapGlobals records the groups on the Funcdata and the decompile driver adds them to the global scope, under the dat_<addr> / DAT_%08x name kuna prints them with, once the function is done."
+use_when = "Off by default: the output of a function then depends on which functions were decompiled before it in the same session. Turn on to get upstream's session behaviour: a global a first function read as 8 bytes stays one 8-byte object, so a later function's 4-byte access to its upper half prints as a piece of it (`((unsigned int *)&dat_x)[1]`) instead of a separate dat_<addr+4>."
+example = "option mapglobalsyms on"
+source_decompiler = "ghidra"
+inspiration = "Ghidra Funcdata::mapGlobals discover->addSymbol(DAT_..., ct, addr, usepoint) on the persistent global scope"
+change_kind = "presentation-default"
+tier = "core"
+symptoms = "a global one function accessed whole prints as unrelated dat_ names in another|later functions do not see the DAT_ symbol an earlier decompile created, unlike upstream decomp_dbg sessions"
+
+[[settable]]
 option = "castimplied"
 values = "on|off"
 default = "on"
