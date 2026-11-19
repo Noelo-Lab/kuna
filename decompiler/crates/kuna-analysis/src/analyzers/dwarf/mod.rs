@@ -197,6 +197,14 @@ fn call_frame_cfa(arch: object::Architecture) -> Option<i64> {
     }
 }
 
+/// A global's DWARF type is worth locking when it has a size and says more than
+/// a raw word: not void, not `undefined`, and not an incomplete aggregate.
+fn global_type_is_whole(t: &Datatype) -> bool {
+    t.get_size() > 0
+        && !t.is_incomplete()
+        && !matches!(t.get_metatype(), type_metatype::TYPE_VOID | type_metatype::TYPE_UNKNOWN)
+}
+
 /// Port of `DWARFAnalyzer`: install DWARF function/global names and typed
 /// function signatures from the program's `.debug_*` sections.
 pub struct DwarfPass;
@@ -1260,17 +1268,23 @@ impl AnalysisPass for DwarfPass {
                             // memory access and leave the global `dat_<addr>`). A
                             // type that cannot be sized falls back to 1 (the prior
                             // behavior for the 1-byte globals).
-                            let size = build_datatype(
+                            let ty = build_datatype(
                                 snap.type_ref,
                                 &dies,
                                 types,
                                 word_size,
                                 &mut TypeWalk::new(),
                                 false,
-                            )
-                                .map(|t| t.get_size())
-                                .filter(|&s| s >= 1)
-                                .unwrap_or(1) as u32;
+                            );
+                            if let Some(t) = ty.as_ref().filter(|t| global_type_is_whole(t)) {
+                                out.typed_globals.push(crate::pass::TypedDataFact {
+                                    addr,
+                                    name: snap.name.clone(),
+                                    type_: Rc::clone(t),
+                                });
+                                continue;
+                            }
+                            let size = ty.map(|t| t.get_size()).filter(|&s| s >= 1).unwrap_or(1) as u32;
                             out.data_objects.push(crate::pass::DataObjectFact {
                                 addr,
                                 name: snap.name.clone(),

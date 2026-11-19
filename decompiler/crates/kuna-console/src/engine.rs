@@ -5382,6 +5382,7 @@ fn commit_analysis_output(
         .chain(prog.loader_data_exports.iter().map(|(address, name)| (name.clone(), *address)))
         .chain(out.symbols.iter().filter(|s| s.kind == SymKind::Data).map(|s| (s.name.clone(), s.addr)))
         .chain(out.data_objects.iter().map(|d| (d.name.clone(), d.addr)))
+        .chain(out.typed_globals.iter().map(|d| (d.name.clone(), d.addr)))
         .chain(out.typed_data.iter().map(|d| (d.name.clone(), d.addr)))
         .collect();
     for (name, address) in aliases {
@@ -5395,6 +5396,7 @@ fn commit_analysis_output(
             .chain(prog.global_data_symbols().into_iter().map(|(name,_,_)| name))
             .chain(out.symbols.iter().map(|s| s.name.clone()))
             .chain(out.data_objects.iter().map(|d| d.name.clone()))
+            .chain(out.typed_globals.iter().map(|d| d.name.clone()))
             .chain(out.typed_data.iter().map(|d| d.name.clone())),
         kuna_decomp::kuna_symbolnamechars::symbolnamechars_mode()
             == kuna_decomp::kuna_symbolnamechars::NameChars::Ident,
@@ -5518,8 +5520,12 @@ fn commit_analysis_output(
     //     (`analyzers/dwarf/mod.rs`), so it already lives in `1..=int4::MAX` —
     //     but the two arms must not differ in shape, or the safe one reads as an
     //     endorsement of the unsafe one.
-    for d in &out.data_objects {
-        let addr = Address::new(Rc::clone(code_space), d.addr);
+    //     A global whose debug info declares its type (`out.typed_globals`) takes
+    //     the same arm with that type, typelocked.
+    let untyped = out.data_objects.iter().map(|d| (d.addr, &d.name, Err(d.size)));
+    let typed = out.typed_globals.iter().map(|d| (d.addr, &d.name, Ok(&d.type_)));
+    for (object_addr, object_name, declared) in typed.chain(untyped) {
+        let addr = Address::new(Rc::clone(code_space), object_addr);
         let occupied = {
             let arch = prog.arch();
             match arch.symboltab.get_global_scope() {
@@ -5536,20 +5542,24 @@ fn commit_analysis_output(
         if occupied {
             continue;
         }
-        let ct = prog
-            .arch()
-            .types()
-            .get_base(
-                d.size.clamp(1, int4::MAX as u32) as int4,
+        let mut flags = kuna_decomp::varnode::varnode_flags::namelock;
+        let ct = match declared {
+            Ok(ty) => {
+                flags |= kuna_decomp::varnode::varnode_flags::typelock;
+                Rc::clone(ty)
+            }
+            Err(size) => prog.arch().types().get_base(
+                size.clamp(1, int4::MAX as u32) as int4,
                 kuna_decomp::dtype::type_metatype::TYPE_UNKNOWN,
-            )?;
-        let name = data_names.name(&d.name, d.addr);
+            )?,
+        };
+        let name = data_names.name(object_name, object_addr);
         let arch = prog.arch_mut();
         let (scope, base) =
             arch.symboltab.find_create_scope_from_symbol_name(&name, "::", None, num_spaces)?;
         let (sid, _) =
             arch.symboltab.add_symbol_mapped(scope, &base, ct, &addr, &Address::new_invalid())?;
-        arch.symboltab.set_attribute(sid, kuna_decomp::varnode::varnode_flags::namelock);
+        arch.symboltab.set_attribute(sid, flags);
     }
 
     // 1b. Extra read-only address ranges a pass discovered (`out.readonly`) — e.g.

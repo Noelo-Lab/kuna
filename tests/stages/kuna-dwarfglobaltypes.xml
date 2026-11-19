@@ -1,0 +1,41 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    DWARF global types: a CU-level global keeps the type its DW_AT_type names.
+
+    Stage P1 external-refinement (option dwarf). The fixture is
+    dwarfglobaltypes_x86_64.c built with gcc -O1 -g: `struct config cfg` and
+    `const char *modes[]` are CU-level globals with a DW_OP_addr location.
+
+    The DWARF pass named such a global and used its type only for a size, so
+    the symbol was an untyped undefined<size> and each use re-derived a type:
+    `cfg.flags + cfg.port` printed `*(int4 *)&cfg[0xc] + *(int4 *)&cfg[8]` and
+    `modes[i]` printed `*(char **)&modes[i * 8L]`. A global whose type is
+    sized and complete is now committed with that type, typelocked.
+
+    Single pass (default).
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/dwarfglobaltypes_gcc_O1_x86_64</com>
+  <com>read symbols</com>
+  <com>load function get_port</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function mode_name</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function scaled</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="DWARFGLOBALTYPES #1: a struct global's fields are named" min="1" max="1">return cfg\.flags \+ cfg\.port;</stringmatch>
+<stringmatch name="DWARFGLOBALTYPES #2: a pointer table is indexed by element" min="1" max="1">return modes\[i\];</stringmatch>
+<stringmatch name="DWARFGLOBALTYPES #3: a double field is read as the field" min="1" max="1">\* cfg\.scale;</stringmatch>
+<stringmatch name="DWARFGLOBALTYPES #4: no use is a cast off a byte offset" min="0" max="0">&amp;(cfg|modes)\[</stringmatch>
+</decompilertest>

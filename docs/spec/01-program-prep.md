@@ -4073,8 +4073,23 @@ moves.
   (`pass.rs (DataObjectFact)`) and the commit maps an `undefined<size>` entry —
   namelocked but *not* typelocked, so inference still recovers the real type —
   matching how IDA Pro and Ghidra name symbol-table globals (`max_width`, not
-  `dat_<addr>`). Declaration-only DIEs are skipped so DWARF never fights libproto
-  over imports. `dwarf_lines`
+  `dat_<addr>`). A global whose DWARF type is sized, complete and neither void
+  nor undefined is committed with that type instead, typelocked and namelocked
+  (`pass.rs (TypedDataFact)`, `analyzers/dwarf/mod.rs (global_type_is_whole)`),
+  so `*(int4 *)&cfg[0xc] + *(int4 *)&cfg[8]` reads `cfg.flags + cfg.port` and
+  `*(char **)&modes[i * 8L]` reads `modes[i]`
+  (`tests/stages/kuna-dwarfglobaltypes.xml`); an incomplete aggregate or an
+  unsized type keeps the untyped entry. Both kinds commit at the same step,
+  ahead of the string literals, so a `char greeting[]` global keeps its name.
+  A constant that points inside a typed character array takes the mid-string
+  `char *` shortcut of `coreaction_render.rs (ActionConstantPtr)` only when
+  the bytes are read-only; into a writable buffer it becomes a reference to
+  the object (`(int *)&bytes[0x10]`), which a project header declares. When neither `.comment` nor the other
+  signals name the toolchain, ELF and Mach-O detection falls back to the debug
+  info (`analyzers/sourcelang/kuna_dwarfproducer.rs (dwarf_compiler)`): the
+  first 16 compile units' `DW_AT_language` (Rust, Go, Swift) or
+  `DW_AT_producer` (`rustc`, `clang`, `GNU `) decide. Declaration-only DIEs are
+  skipped so DWARF never fights libproto over imports. `dwarf_lines`
   (`decompiler/crates/kuna-analysis/src/analyzers/dwarf/lines.rs (DwarfLinesPass)`)
   is the separate `.debug_line` pass: each row becomes a `file:line` instruction
   comment in the commentdb; default-off because it changes the output.

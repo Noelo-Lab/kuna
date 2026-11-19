@@ -860,7 +860,11 @@ impl Action for ActionConstantPtr {
                 // the address is read-only and reads to the NUL itself, and falls
                 // back to the integer print if either fails. So the worst case is
                 // today's output.
-                if rampoint != entry.entry_addr {
+                if rampoint != entry.entry_addr
+                    && data.get_arch().query_global_properties(&rampoint, 1, &Address::new_invalid())
+                        & crate::varnode::varnode_flags::readonly
+                        != 0
+                {
                     if let Some(elem) = entry
                         .symbol_type
                         .as_ref()

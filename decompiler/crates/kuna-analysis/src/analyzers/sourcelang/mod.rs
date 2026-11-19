@@ -92,6 +92,9 @@ mod kuna_rustfmtwrite;
 mod kuna_rustfmtio;
 pub use kuna_rustformatters::{formatter_metadata, integer_formatters, primitive_display_formatters, FormatterMetadata};
 
+mod kuna_dwarfproducer;
+pub use kuna_dwarfproducer::dwarf_compiler;
+
 use object::macho::{MachHeader32, MachHeader64};
 use object::read::macho::{
     FatArch, LoadCommandVariant, MachHeader, MachOFatFile32, MachOFatFile64,
@@ -303,7 +306,8 @@ pub fn detect_compiler(file: &object::File, bytes: &[u8]) -> Compiler {
 ///    (`RustSourceLanguage.isRust` rodata path).
 /// 3. **Clang** — `.comment` has a `clang version ...` record (kuna convenience).
 /// 4. **Gcc** — `.comment` has a `GCC: (...)` record (kuna convenience).
-/// 5. **Unknown** otherwise.
+/// 5. The compiler the debug info names ([`dwarf_compiler`]).
+/// 6. **Unknown** otherwise.
 pub fn detect_compiler_elf(file: &object::File) -> Compiler {
     if golang_section_present(file.sections().filter_map(|s| s.name().ok())) {
         return Compiler::Go;
@@ -339,7 +343,7 @@ pub fn detect_compiler_elf(file: &object::File) -> Compiler {
         return Compiler::Gcc;
     }
 
-    Compiler::Unknown
+    dwarf_compiler(file).unwrap_or(Compiler::Unknown)
 }
 
 /// Detect the toolchain that produced a **PE** image.
@@ -414,7 +418,8 @@ pub fn detect_compiler_pe(file: &object::File, bytes: &[u8]) -> Compiler {
 ///    `gcc` model for ABI purposes, but the *source language*/compiler is clang),
 ///    so any Apple-platform Mach-O reports [`Compiler::Clang`].
 /// 4. **Gcc** — a `GCC: (...)` toolchain record (cross-built MinGW-style).
-/// 5. **Unknown** otherwise.
+/// 5. The compiler the debug info names ([`dwarf_compiler`]).
+/// 6. **Unknown** otherwise.
 pub fn detect_compiler_macho(file: &object::File, bytes: &[u8]) -> Compiler {
     if golang_section_present(file.sections().filter_map(|s| s.name().ok())) {
         return Compiler::Go;
@@ -449,7 +454,7 @@ pub fn detect_compiler_macho(file: &object::File, bytes: &[u8]) -> Compiler {
         return Compiler::Clang;
     }
 
-    Compiler::Unknown
+    dwarf_compiler(file).unwrap_or(Compiler::Unknown)
 }
 
 /// Format-neutral fallback for the formats we do not fingerprint (COFF object,
