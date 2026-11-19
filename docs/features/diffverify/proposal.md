@@ -114,11 +114,17 @@ restriction:
 A proof that exhausts the budget is `UNKNOWN(budget)`. The z3 version is pinned, so the
 same function spends the same budget on every machine.
 
-**The machine side's encoding.** kuna can encode it from the SLEIGH p-code, or delegate it
-to angr or binsec, which already execute binaries symbolically under such caps. Both lift
-with their own front-ends, so delegation also makes the proof independent of SLEIGH. The
-decompiled side is always kuna's own encoding of the `Funcdata`: neither tool reads it.
-The tools are external processes, as z3 is.
+**The machine side's encoding.** kuna encodes it from the same SLEIGH p-code that Tier C
+runs, not through angr or binsec:
+- The `Funcdata` is p-code too, so one p-code-to-SMT encoder serves both sides. A second
+  lifter would need glue between two register, memory and calling-convention models, and
+  every glue bug would surface as a false `DIFFERS`.
+- A `sat` model then replays exactly in Tier C. A model that does not replay is an encoder
+  bug, not a disagreement between two lifters.
+- It adds no toolchain and covers every architecture kuna has a SLEIGH spec for.
+
+Independence from SLEIGH is Tier L's job, per instruction, where a lift bug is easier to
+localize than inside a whole-function proof.
 
 - **Outcomes.**
   - `unsat` on a function without loops, or whose loops the bound covers completely,
@@ -176,7 +182,7 @@ already hits that wall (`docs/decbench-loop.md`, Trap 1).
 | C2 | calls by record/replay; rule bisection | bisection names `subvar_zext` on reverted #794; reverting #801 gives `DIFFERS` |
 | C3 | corpus run (decbench binaries), triage of every `DIFFERS` into bug / declared divergence / harness bug | published verdict table |
 | S1 | Tier S for loop-free `AGREES` functions, under the budget | `EQUIVALENT` and `UNKNOWN(budget)` counts on the same corpus; every `sat` replays |
-| S2 | bounded loops; budget baseline and budget-regression flag; optional angr or binsec machine side | `EQUIVALENT(≤k)` counts; a deliberately bloating rule change is flagged by budget alone |
+| S2 | bounded loops; budget baseline and budget-regression flag | `EQUIVALENT(≤k)` counts; a deliberately bloating rule change is flagged by budget alone |
 | L1 | Tier L for x86-64, AArch64, ARM | per-arch mismatch report with skip list |
 | P | separate proposal | — |
 
@@ -221,7 +227,5 @@ No earlier issue or PR proposes a standing semantic check. These overlap in part
    `kuna-verify`?
 4. Does the improvement pipeline treat a new `DIFFERS` as a hard reject immediately, or as
    a reviewer signal first?
-5. Should Tier S's machine side be kuna's own SLEIGH encoding, or angr or binsec? Another
-   lifter makes the proof independent of SLEIGH, but each adds a toolchain to CI.
-6. What tolerance on budget growth counts as a regression, given that `rlimit` is
+5. What tolerance on budget growth counts as a regression, given that `rlimit` is
    deterministic for one z3 version but shifts when z3 is upgraded?
