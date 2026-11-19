@@ -14,6 +14,22 @@ use super::*;
 use crate::printlanguage::{parentheses, ReversePolish};
 
 #[test]
+fn max_line_size_bounds_the_comment_indent_and_survives_markup() {
+    let mut print = PrintC::new();
+    assert!(print.set_line_comment_indent(500).is_ok());
+    assert!(print.set_max_line_size(19).is_err());
+    print.set_max_line_size(40).unwrap();
+    assert!(print.set_line_comment_indent(40).is_err());
+    print.set_line_comment_indent(30).unwrap();
+    print.set_markup(true);
+    assert_eq!(print.emit_mut().get_max_line_size(), -1);
+    print.set_markup(false);
+    assert_eq!(print.emit_mut().get_max_line_size(), 40);
+    print.reset_wire_option_defaults();
+    assert_eq!(print.emit_mut().get_max_line_size(), -1);
+}
+
+#[test]
 fn case_labels_without_ops_keep_their_numeric_value() {
     let mut print = PrintC::new();
     print.set_output_stream();

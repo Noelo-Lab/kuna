@@ -2280,6 +2280,15 @@ impl Default for EmitPrettyPrint {
     }
 }
 
+impl std::fmt::Debug for EmitPrettyPrint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EmitPrettyPrint")
+            .field("maxlinesize", &self.maxlinesize)
+            .field("lowlevel", &self.lowlevel)
+            .finish_non_exhaustive()
+    }
+}
+
 impl EmitPrettyPrint {
     /// C++ `EmitPrettyPrint::EmitPrettyPrint()`.
     ///
