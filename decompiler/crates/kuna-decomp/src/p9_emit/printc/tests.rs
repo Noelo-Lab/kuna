@@ -2441,6 +2441,9 @@ mod w10_printc_cast_render {
     #[path = "rust_integer_assignments.rs"]
     mod rust_integer_assignments;
 
+    #[path = "rust_wrapping_arithmetic.rs"]
+    mod rust_wrapping_arithmetic;
+
     #[path = "rust_boolean_conversions.rs"]
     mod rust_boolean_conversions;
 
