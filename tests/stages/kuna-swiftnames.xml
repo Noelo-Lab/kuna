@@ -1,0 +1,65 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Swift names from code shape (part of `option swiftmetadata on|off`).
+
+    Issue: on a stripped Swift app the metadata pass named class property
+    accessors only by vtable slot (`Module.X.vtable#21.getter` for the lazy
+    getter of a property), local protocol witnesses only by position
+    (`requirement#6`), and left every value witness function and
+    compiler-emitted runtime helper a placeholder.
+
+    Stage / sub-stage: P1 external-refinement, the Swift metadata pass
+    (`kuna-analysis/src/analyzers/swift/kuna_swiftnames.rs`).
+
+    P0 assertion: `option swiftmetadata on|off`.
+
+    Both passes clear the harness architecture and load the real fixture
+    `swift_names_macho` (arm64 Mach-O, swiftc 5.10 for macOS 13, every
+    symbol stripped but `_main`). Pass 1 (`option swiftmetadata off`) shows
+    the placeholders. Pass 2 (on): the lazy getter of `Board.cells` is
+    `namefix.Board.cells.getter`, the `Shape.id` witness of `Dot` is
+    `<namefix.Dot:namefix.Shape>.id.getter` (the member Tile's witness thunk
+    dispatches to), a computed requirement's witness carries its kind, and
+    the runtime helper the getter calls is
+    `___swift_instantiateConcreteTypeFromMangledName`.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/swift_names_macho</com>
+  <com>option swiftmetadata off</com>
+  <com>read symbols</com>
+  <com>load addr 0x1000016ac</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x1000020bc</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/swift_names_macho</com>
+  <com>option swiftmetadata on</com>
+  <com>read symbols</com>
+  <com>load addr 0x1000016ac</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x1000020bc</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x1000020e0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="swiftmetadata off: the lazy getter is a placeholder" min="1" max="1">sub_1000016ac\(</stringmatch>
+<stringmatch name="swiftmetadata off: the runtime helper is a placeholder" min="1" max="1">sub_10000262c\(0x10000c020\)</stringmatch>
+<stringmatch name="swiftmetadata off: the witness is a placeholder" min="1" max="1">sub_1000020bc\(</stringmatch>
+<stringmatch name="swiftmetadata on: the lazy getter is named by its property" min="1" max="1">namefix\.Board\.cells\.getter\(namefix\.Board \*self\)</stringmatch>
+<stringmatch name="swiftmetadata on: the runtime helper is named" min="1" max="1">___swift_instantiateConcreteTypeFromMangledName\(0x10000c020\)</stringmatch>
+<stringmatch name="swiftmetadata on: the witness takes the member a class witness dispatches to" min="1" max="1">&lt;namefix\.Dot:namefix\.Shape&gt;\.id\.getter\(</stringmatch>
+<stringmatch name="swiftmetadata on: a computed requirement's witness carries its kind" min="1" max="1">&lt;namefix\.Dot:namefix\.Shape&gt;\.requirement#3\.getter\(</stringmatch>
+</decompilertest>
