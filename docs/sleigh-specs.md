@@ -36,9 +36,15 @@ kuna specs specs/Ghidra/Processors/Cortus/data/languages/aps3.slaspec   # one sp
 make specs                                                               # all of them
 ```
 
-`kuna specs` is `slacomp`, which has upstream `sleigh_opt`'s command line. In a
-worktree, do not run `make specs`; symlink the main tree's `.sla` files instead
-(`docs/agents.md`, Conventions).
+`kuna specs` is `slacomp`, which has upstream `sleigh_opt`'s command line. It writes
+the `.sla` next to the `.slaspec`, and the write follows a symbolic link.
+
+In a worktree, do not run `make specs`; symlink the main tree's `.sla` files instead
+(`docs/agents.md`, Conventions). That sharing is only for specs the worktree does not
+change. Before compiling a spec the worktree changes, or one whose `.sinc` closure it
+changes, delete that `.sla` link (`rm`, which removes the link and not its target).
+Otherwise the compile overwrites the main tree's file, and every other checkout that
+links to it silently decodes with the changed spec.
 
 To look at what a constructor produces, `kuna raw-pcode <binary> <addr> --count N`
 prints each instruction's bytes, disassembly and p-code before any analysis
@@ -54,11 +60,20 @@ Cortus APS3 (`d3617d648`) is the reference: four files, a README, and one stage 
    so each guessed constructor carries a `# GUESS` comment with its evidence, and the
    README states what is proven (lengths and operand formats for all 256 opcodes) and
    what is not (some mnemonics).
-2. **Never use `unimpl` for an instruction whose length is known.** `unimpl` aborts the
-   enclosing basic block, and with it the whole function. Declare an opaque operation
-   (`define pcodeop aps3_unknown_op;`) and assign its result to the destination
-   register. On Cortus this took the functions with an unimplemented-instruction
-   warning from 24 to 0.
+2. **Choose between `unimpl` and an opaque operation by what is known about the
+   instruction.** kuna turns `unimpl` into an artificial halt: flow stops there and the
+   function is marked truncated. An opaque operation (`define pcodeop
+   aps3_unknown_op;`, its result assigned to the destination register) keeps the
+   function whole. On Cortus this took the functions with an unimplemented-instruction
+   warning from 24 to 0. But an opaque operation is a fallback, not a sound model: it
+   claims the instruction has no effect beyond the outputs the constructor writes.
+   - Use it when the length, the operands and the set of effects are known, and only
+     the computed value is not: a register or flag the instruction writes gets an
+     opaque value too.
+   - Keep `unimpl` when the instruction may change control flow, access memory, or
+     write state the constructor does not name. A fall-through or a missing store there
+     produces a wrong CFG or wrong values with no warning, which is worse than a
+     truncation that says so.
 3. **Measure the `.cspec`, and record the measurement in its comment.** `aps3.cspec`
    gives, per register, the share of call sites that set it and of prologues that save
    it, which is where its argument registers and its callee-saved split come from.
@@ -133,8 +148,11 @@ even when the semantics of the other constructors do not change. To update an en
 cargo test --manifest-path decompiler/Cargo.toml --release -p kuna-slacomp --test compiler_parity
 ```
 
-Keeping the line count stable keeps the other digests stable: the `x86-16` hook in
-`ia.sinc` replaced three blank lines, so the `x86` and `x86-64` digests did not move.
+An edit can leave the other variants' digests unchanged only if their preprocessed
+source is unchanged, line numbers included. The `x86-16` hook in `ia.sinc` met both
+conditions: it is under `@ifdef IA16` and replaced three blank lines, so the `x86` and
+`x86-64` digests did not move. Keeping the line count is a technique for that, not a
+guarantee. Run `compiler_parity` and look at every entry that includes the changed file.
 
 **Shared `.sinc` files reach every language that includes them.** A change meant for
 one variant goes behind a guard: `x86-16.slaspec` defines `IA16`, and the Octeon
