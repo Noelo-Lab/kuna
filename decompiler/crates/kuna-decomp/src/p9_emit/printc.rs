@@ -4351,6 +4351,15 @@ impl PrintC {
                 .get_condition_opcode()
                 .unwrap_or(OpCode::CPUI_BOOL_AND);
 
+            if self.out_lang == crate::kuna_lang::OutLang::Go
+                && opc == OpCode::CPUI_BOOL_AND
+                && crate::p9_emit::kuna_goorderedcompare::redundant_right(fd, arch, b0, b1).is_some()
+                && !self.cond_block_emits_statements(fd, b1)
+            {
+                self.emit_block(fd, arch, b0);
+                return;
+            }
+
             let id = self.emit.open_paren(crate::printlanguage::OPEN_PAREN, 0);
             self.emit_block(fd, arch, b0);
             self.context.push_mod();
