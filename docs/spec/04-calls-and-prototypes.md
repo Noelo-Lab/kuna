@@ -373,6 +373,13 @@ code space also seed pointer flow; chapter 03 describes address-use trimming.
 With the option off neither input is seeded, the stack register stays one wide
 input, and no parameter starts with pointer flow.
 
+The AArch64 Go ABIInternal input stack starts at `SP+8` in the decompiler's
+entry-relative frame. Adjacent spilled eight-byte scalar arguments occupy
+`SP+8` and `SP+16`. The input model uses eight-byte slots, matching these
+arguments' adjacency even though the machine stack pointer is aligned to a
+16-byte boundary. The register inputs, result stack model and other compiler
+conventions keep their own allocation rules.
+
 The model's stack ranges come from the spec too, as upstream `ProtoModel::decode`
 takes them (§6.2): the parameter range is every stack `<pentry>` of `<input>` plus any
 `<paramrange>`, and the local range is the `<localrange>` element

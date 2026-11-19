@@ -2240,7 +2240,8 @@ mod tests {
         // and kuna-reentereddispatch / a re-entered dispatch keeps every step's store
         // and kuna-dispatch-values / dispatcher return values survive narrowing and copies
         // and ghangr-go-paniccheck-return / a returning Go panic check keeps its continuation
-        assert_eq!(count, 820, "corpus file count drifted");
+        // and ghangr-go-aarch64-stack-stride / adjacent eight-byte spills keep their declared inputs
+        assert_eq!(count, 821, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
