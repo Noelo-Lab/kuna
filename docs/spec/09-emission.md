@@ -4580,6 +4580,15 @@ Additional loop probes check merged Boolean locals at assignments, returns and
 stores, with independent result formulas, ordered callback traces and adjacent
 store canaries at both optimization levels zero and two.
 
+### Go floating-point NaN tests
+
+The Go emitter renders a p-code NaN test on a proven `float64` as
+`math.IsNaN(x)`. For `float32` it emits `math.IsNaN(float64(x))` because
+widening preserves whether the operand is NaN. Both forms evaluate their
+operand once. The printer uses the operand's emitted type and requires its
+width to match the p-code input. Values outside these two widths or without
+a proven floating-point type retain the generic operation spelling.
+
 ### Narrow recovered scalar call results
 
 `kuna_callresult.rs` makes the conversion explicit when a Go or Rust caller keeps

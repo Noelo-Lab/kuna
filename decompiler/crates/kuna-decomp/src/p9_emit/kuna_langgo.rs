@@ -939,6 +939,26 @@ impl PrintC {
         self.push_vn_ir_m(fd, arch, scale, op, mods);
     }
 
+    pub(crate) fn op_go_float_nan(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) -> bool {
+        let Some(input) = fd.obank().get(op).and_then(|operation| operation.get_in(0)) else {
+            return false;
+        };
+        let ty = self.go_value_type(fd, arch, input, op);
+        let size = ty.get_size();
+        if ty.get_metatype() != type_metatype::TYPE_FLOAT
+            || !matches!(size, 4 | 8)
+            || fd.vbank().get(input).unwrap().get_size() != size
+        {
+            return false;
+        }
+        self.push_go_call("math.IsNaN", op);
+        if size == 4 {
+            self.push_go_call("float64", op);
+        }
+        self.push_vn_ir(fd, arch, input, op);
+        true
+    }
+
     pub(crate) fn op_go_bit_transfer(
         &mut self,
         fd: &Funcdata,
