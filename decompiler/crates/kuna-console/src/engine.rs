@@ -3515,6 +3515,7 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // `CFStringRef`). Registered here so `off` really skips it; `off`
         // renders the entry exactly as before.
         "cfstrings" => arch.analysis_cfstrings,
+        "iokitclasses" | "osclassinfo" => arch.analysis_iokitclasses,
         // (kuna) PE PDB metadata recovery — default-OFF (output-changing: renames
         // stripped functions to their real PDB names). PE-only + externally gated on
         // a fingerprint-matching `.pdb` (the `kuna_pdb_path` env var). Registered

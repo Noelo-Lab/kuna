@@ -1856,6 +1856,10 @@ pub struct Architecture {
     /// (`cfstrings`); default **on** (renders CFString constants as
     /// `CFSTR("...")` typed `CFStringRef`). Mach-O-only pass.
     pub analysis_cfstrings: bool,
+    /// (kuna) `iokitclasses`: IOKit class and vtable recovery on an XNU kernel
+    /// or kext, and DriverKit class records (a commit-gated analysis pass,
+    /// default on).
+    pub analysis_iokitclasses: bool,
     /// (kuna `cfstrings annotate`) Follow each rendered `CFSTR("...")` with a
     /// comment naming its `__cfstring` entry address. Default **off**.
     pub cfstrings_annotate: bool,
@@ -2591,6 +2595,7 @@ impl Architecture {
             analysis_objc: false,
             analysis_swiftmetadata: false,
             analysis_cfstrings: false,
+            analysis_iokitclasses: false,
             cfstrings_annotate: false,
             cfstring_entries: std::collections::BTreeSet::new(),
             analysis_swifttypes: true,
@@ -2936,6 +2941,7 @@ impl Architecture {
         self.analysis_swiftmetadata = true; // Swift runtime-metadata recovery (inert without swift5_* sections)
         self.analysis_cfstrings = true; // (kuna) Mach-O __cfstring constant-string recovery default-on: Mach-O-only and real-binary-path only, so the XML datatest corpus never runs it (0/675); on an 80 MB third-party arm64 iOS app one decompile is within noise (min 2.324 s off, 2.359 s on, medians 2.442 / 2.372 over 6 interleaved runs)
         self.cfstrings_annotate = false;
+        self.analysis_iokitclasses = true; // (kuna) IOKit class recovery, XNU and DriverKit images only
         self.analysis_swifttypes = true; // Swift type layouts default-on, inert unless swiftmetadata is on
         self.analysis_objcivars = true; // (kuna) ObjC instance structs + typed self + ivar offset fold; inert unless objc is on
         self.analysis_swiftcall = true; // Swift calling convention default-on, inert unless swiftmetadata is on

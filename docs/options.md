@@ -639,6 +639,12 @@ Three tiers:
 | protocol witnesses and class methods of a stripped swift app have no names | [`swiftmetadata`](#swiftmetadata----on--off-default-on) |
 | core-foundation / objc string constants render as dat_<addr> instead of their text | [`cfstrings`](#cfstrings----on--off--annotate-default-on) |
 | a CFSTR(...) argument shows an address in a mach-o | [`cfstrings`](#cfstrings----on--off--annotate-default-on) |
+| a stripped kext shows sub_<addr> for every IOKit method | [`iokitclasses`](#iokitclasses----on--off-default-on) |
+| gMetaClass objects render as dat_<addr> | [`iokitclasses`](#iokitclasses----on--off-default-on) |
+| methods reachable only through a vtable are missing from kuna functions | [`iokitclasses`](#iokitclasses----on--off-default-on) |
+| a kext's vtables are unnamed data | [`iokitclasses`](#iokitclasses----on--off-default-on) |
+| a DriverKit dext's metaclass globals render as dat_<addr> | [`iokitclasses`](#iokitclasses----on--off-default-on) |
+| a dext's class New functions are sub_<addr> | [`iokitclasses`](#iokitclasses----on--off-default-on) |
 | swift struct and class fields render as raw offsets off self | [`swifttypes`](#swifttypes----on--off-default-on) |
 | swift getters named by swiftmetadata take no self parameter | [`swifttypes`](#swifttypes----on--off-default-on) |
 | type metadata accessors return undefined16 | [`swifttypes`](#swifttypes----on--off-default-on) |
@@ -2184,6 +2190,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On (default): a Mach-O (Core Foundation / Objective-C / Swift) binary renders its CFString constants -- a call that passed dat_<addr> renders CFSTR("cfstring hello"). Flip off to see each reference as the __cfstring entry itself (its symbol, or its address on a stripped image). Use annotate when cross-checking against a disassembler or hex view: the entry address stays in the output as a comment.
 - **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-cfstrings
 - **Example:** `option cfstrings annotate`
+
+### `iokitclasses` -- on | off, default `on`
+
+- **Symptoms:** a stripped kext shows sub_<addr> for every IOKit method; gMetaClass objects render as dat_<addr>; methods reachable only through a vtable are missing from kuna functions; a kext's vtables are unnamed data; a DriverKit dext's metaclass globals render as dat_<addr>; a dext's class New functions are sub_<addr>.
+- **What it does:** Mach-O only: recover IOKit C++ classes on an arm64 XNU kernel or kext (an MH_KEXT_BUNDLE, or an image with a __KLD segment), and read the class records of a DriverKit extension (a Mach-O with an __osclassinfo section). Kernel side: the pass traces each __mod_init_func / __init_offsets initializer with a small AArch64 register tracker and collects every direct call whose x1 is a class-name C string: the callee most of those calls share is OSMetaClass::OSMetaClass (found by vote, no symbol needed), and each such call gives a class name, its X::gMetaClass object (x0), its superclass's metaclass (x2) and the instance size (w3). The store the initializer makes into X::gMetaClass right after the call is the X::MetaClass vtable. A class's own vtable is a run of code pointers in a data section, behind two zero header words, whose first twelve slots hold X::getMetaClass() const, a leaf that returns &X::gMetaClass within five instructions. Emits data symbols X::gMetaClass, vtable for X and vtable for X::MetaClass where the image has none; renames placeholder functions OSMetaClass::OSMetaClass, X::getMetaClass, X::MetaClass::~MetaClass / X::MetaClass::alloc, and every vtable method by its owner (the nearest class that is an ancestor of every class whose vtable holds it) and the symbol name of that slot in the owner's nearest named ancestor, else X::vfn_<offset>; and adds every vtable slot as a function entry, so methods reachable only through a vtable are discovered. DriverKit side: __osclassinfo is an array of pointers to OSClassLoadInformation records (0xa0 bytes: description, metaPointer, version, instanceSize, eight reserved words, New, eight more), each pointing at an OSClassDescription (descriptionSize, name[96], superName[96], then the method-option, queue-name and method-name tables). A record is used when it and its description are mapped, descriptionSize is at least the fixed 0x138 bytes, and the name is a C identifier; it yields sized data objects <Name>_Class, <Name>_ClassDescription and g<Name>MetaClass (the global metaPointer points at) and names the New function <Name>_New, adding it as a function entry. Default-on because it is inert on every other image, the XML corpus never runs an analysis pass (0/675), and the kernel side takes about 15 ms on an iOS 16 kernel.
+- **When to flip:** On (default): a kernel or kext gains class-qualified names for metaclass objects, vtables and virtual methods even when stripped, its vtable-only methods become functions, and a DriverKit extension's class records, metaclass globals and New functions carry their class names. Flip off to see only what the symbol table names, or if a non-XNU arm64 image is misdetected.
+- **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-iokitclasses
+- **Example:** `option iokitclasses off`
 
 ### `swifttypes` -- on | off, default `on`
 

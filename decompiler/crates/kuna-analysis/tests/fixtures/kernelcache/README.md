@@ -21,3 +21,18 @@ text.bvx2.lzfse`, and likewise for the other two).
 
 `gen_fileset_calls.py` writes `fileset_calls.macho` (Python 3 only):
 `python3 gen_fileset_calls.py`.
+
+`iokit_kext.macho` (written by `gen_iokit.py`, plain Python 3) is a stripped arm64
+`MH_KEXT_BUNDLE` for the `iokitclasses` pass: one `__mod_init_func` initializer
+registers `Base` and `Derived` through an unnamed constructor and stores their
+metaclass vtables; each class has a vtable with its `getMetaClass()`; `Derived`
+overrides `Base::m2` and adds one method. Only `meta_of_derived`, `Base::m1`,
+`Base::m2`, the two allocators, `alloc_derived` and `alloc_packet` have symbols,
+and pointers are plain absolute words.
+
+`dext_osclassinfo.macho` (written by `gen_dext.py`) is a stripped arm64
+DriverKit-style executable for the `iokitclasses` class-record reader: one
+`__osclassinfo` pointer to an `OSClassLoadInformation` record for `MyDriver`
+(superclass `IOService`, 0x40 bytes) with its `OSClassDescription`, metaclass
+global and `New` function. The layout follows DriverKit's `OSMetaClass.h` record
+declarations.

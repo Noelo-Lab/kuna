@@ -2229,7 +2229,9 @@ mod tests {
         // and kuna-rustversion-commit / a Rust image without .comment gets its release from /rustc/<commit>/ paths
         // and kuna-sharedpush-regparm / a declared list its callee's register reads contradict shares no push
         // and kuna-acleintrinsics / AArch64 MTE tag instructions and barriers print as ACLE intrinsics
-        assert_eq!(count, 790, "corpus file count drifted");
+        // and kuna-iokitclasses / IOKit class and vtable recovery on an XNU kext
+        // and kuna-osclassinfo / DriverKit class records name metaclass globals and New functions
+        assert_eq!(count, 792, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

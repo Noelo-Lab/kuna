@@ -1,0 +1,45 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<!--
+    Kuna `iokitclasses` option (P1 external refinement): DriverKit class
+    records.
+
+    The fixture (gen_dext.py) is a stripped arm64 executable whose
+    __osclassinfo section points at one OSClassLoadInformation record for
+    MyDriver: its metaPointer is a global in __DATA and its New an unnamed
+    function. get_meta reads the global and make tail-calls New.
+
+    Pass 1 (`option iokitclasses off`) is the bug: the global is dat_<addr> and
+    make's tail call is folded away into New's body. Pass 2 (`on`) names the
+    global gMyDriverMetaClass and the function MyDriver_New.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">c0035fd6</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/kernelcache/dext_osclassinfo.macho</com>
+  <com>option iokitclasses off</com>
+  <com>read symbols</com>
+  <com>load function get_meta</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function make</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/kernelcache/dext_osclassinfo.macho</com>
+  <com>option iokitclasses on</com>
+  <com>read symbols</com>
+  <com>load function get_meta</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function make</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="OSCLASSINFO #1: off leaves the metaclass global unnamed" min="1" max="1">return dat_100008000;</stringmatch>
+<stringmatch name="OSCLASSINFO #2: on names the metaclass global from the class record" min="1" max="1">return gMyDriverMetaClass;</stringmatch>
+<stringmatch name="OSCLASSINFO #3: on names the class's New function" min="1" max="1">MyDriver_New\(\); // tail-call</stringmatch>
+</decompilertest>

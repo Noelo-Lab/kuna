@@ -449,6 +449,13 @@ IMG4(IM4P(LZFSE)) wrapper, and its kernel out of a bare IM4P(complzss). The
 fixtures and their generator live in
 `decompiler/crates/kuna-analysis/tests/fixtures/kernelcache/`.
 
+`kuna-iokitclasses.xml` decompiles a stripped synthetic kext
+(`decompiler/crates/kuna-analysis/tests/fixtures/kernelcache/gen_iokit.py`) with
+`iokitclasses` off and on: the OSMetaClass constructor, the metaclass objects and
+a vtable-only override gain their names. `kuna-osclassinfo.xml` does the same for
+a synthetic DriverKit executable (`gen_dext.py`): its metaclass global and `New`
+function take their class's name.
+
 `ghangr-go-pointer-arithmetic-32.xml` and `ghangr-go-pointer-arithmetic-64.xml`
 check live pointer bases through constant, negative and signed dynamic byte
 offsets in Go loads, stores and returns. Integer-address reconstruction remains
