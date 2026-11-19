@@ -2155,10 +2155,11 @@ impl Datatype {
     /// tp->ptrto`, "compare the pointers directly").
     ///
     /// In the C++ TypeFactory every interned data-type is a unique object, so
-    /// this compares already-distinct sub-types by their stored address; the
-    /// resulting tree order is internally consistent within a single factory
-    /// instance (it is rebuilt per run, exactly as in C++).  The Rust analogue
-    /// of the object address is [`Rc::as_ptr`].
+    /// this compares already-distinct sub-types by their stored address.  Heap
+    /// addresses change with the allocator and the run, and the tree order is
+    /// the order a header declares types in, so (kuna) distinct types order by
+    /// id, then (an unnamed type has id 0) by their own dependency order, and
+    /// only then by address ([`Rc::as_ptr`]).
     fn compare_dependency_ptr(a: &Rc<Datatype>, b: &Rc<Datatype>) -> int4 {
         if Rc::ptr_eq(a, b) {
             return 0;
@@ -2171,12 +2172,26 @@ impl Datatype {
         let pa = identity(a);
         let pb = identity(b);
         if pa == pb {
-            0
-        } else if pa < pb {
-            -1
-        } else {
-            1
+            return 0;
         }
+        match a.id.cmp(&b.id).then_with(|| Self::compare_dependency_shape(a, b)).then(pa.cmp(&pb)) {
+            std::cmp::Ordering::Less => -1,
+            _ => 1,
+        }
+    }
+
+    /// The dependency order of two distinct types with equal ids, or `Equal`
+    /// when it does not separate them or the walk is [`SHAPE_DEPTH`] deep.
+    fn compare_dependency_shape(a: &Datatype, b: &Datatype) -> std::cmp::Ordering {
+        thread_local!(static DEPTH: std::cell::Cell<u8> = const { std::cell::Cell::new(0) });
+        let depth = DEPTH.get();
+        if depth >= SHAPE_DEPTH {
+            return std::cmp::Ordering::Equal;
+        }
+        DEPTH.set(depth + 1);
+        let order = a.compare_dependency(b).map_or(std::cmp::Ordering::Equal, |c| c.cmp(&0));
+        DEPTH.set(depth);
+        order
     }
 
     /// Internal-invariant error for a `TypePointer` override reached with a
@@ -4367,6 +4382,11 @@ impl Ord for TreeKey {
         }
     }
 }
+
+/// How many nested unnamed types the dependency order of two distinct types
+/// walks before it falls back to their addresses: a cyclic or shared type
+/// graph cannot make one comparison unbounded.
+const SHAPE_DEPTH: u8 = 8;
 
 /// Mutable interning state of a [`TypeFactoryImpl`] (the C++ `tree`, `nametree`,
 /// `typecache*`, `charcache`).
