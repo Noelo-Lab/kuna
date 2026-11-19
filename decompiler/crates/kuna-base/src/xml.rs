@@ -2270,7 +2270,9 @@ mod tests {
         // and kuna-calleefilledarg-ctramp / a C trampoline that fills rsi keeps the positional rule
         // and kuna-switchextent-a64 / an unchecked AArch64 table ends at the function's next table (option switchextent)
         // and kuna-switchnext-a64 / a byte-masked last table ends at the next function's table (option switchextent)
-        assert_eq!(count, 852, "corpus file count drifted");
+        // and kuna-swiftstr / a Swift string literal's two constant words print as the literal
+        // and kuna-swiftstrcsel / a Swift literal's two words are paired along one branch arm
+        assert_eq!(count, 854, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
