@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4516,
-    4516
+    4520,
+    4520
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -4003,6 +4003,10 @@
     "data:returncopysplit #4: the real copy site still reads the literal's high half per byte",
     "data:returncopysplit #5: the rule-off pass pins the unsplit whole-half rendering",
     "data:returncopysplit #6: every reference to the literal in the transcript is a read (16 in pass 1, 2 in pass 2)",
+    "data:returndup calls #1: the default keeps pick's single call with merged arguments (bug reproduced)",
+    "data:returndup calls #2: the default keeps pick3's single call with merged arguments (bug reproduced)",
+    "data:returndup calls #3: the value gives pick one call per path",
+    "data:returndup calls #4: the value gives pick3 one call per path",
     "data:returnglobal-sparc #1: each function returns its 4-byte int",
     "data:returnglobal-sparc #2: the global left in %o1 is not joined into the return",
     "data:returning callers retain their original calls",
