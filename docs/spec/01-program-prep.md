@@ -1789,7 +1789,21 @@ with the 5-bit Tiano set), and GUID-defined sections for EDK2 LZMA (the
 decoder of `decompiler/crates/kuna-analysis/src/upx/lzma.rs` behind its own
 two-byte property prefix), LZMA with the x86 BCJ filter (decoded as the LZMA
 SDK `x86_Convert`), Tiano and CRC32. Every PE32/TE section is a module named
-by the file's UI section.
+by the file's UI section. `containers.rs (detect)` reads U-Boot
+legacy images, Intel HEX, Motorola S-records, ESP32/ESP8266 application images,
+uClinux bFLT v4 (rebasing GOT entries and relocations past the 64-byte header,
+as `binfmt_flat` does), Qualcomm MBN/SBL wrappers, MediaTek `md1img` (the
+`md1rom` section at 0x90000000 as MIPS32 LE, the LZMA-alone `md1_dbginfo`
+symbol records as function names, a nanoMIPS ROM reported because no SLEIGH
+spec decodes it) and PC BIOS images (a reset vector in the last 16 bytes; the
+last 128 KiB mapped below 1 MiB and entered at F000:FFF0, so a 64 KiB image is
+segment F000 under the raw-image code-segment rule above, or with a 32-bit
+target the whole flash ending at 4 GiB), and returns either one flat image
+(lowest to highest loaded address, gaps filled, at most 256 MiB; an ESP image
+whose segments span more keeps the segments in the entry's 16 MiB window) with
+the processor, base and entries its header states, or the ELF it wraps. The
+CLI stages the flat image in a temporary directory and loads it as a raw image;
+a flat image without a processor is probed for a Cortex-M table at its base.
 
 PE entry discovery and Listing seeds normalize the low bit according to the
 selected decoder before deduplication and naming. A 32-bit ARM decoder clears
