@@ -6185,7 +6185,11 @@ every other binary's pass list is byte-identical to before the pass existed):
   caller-saved registers, except that a constructor returns its `this`); any
   other instruction that writes a register makes it unknown. The constructor
   is the callee most calls share whose `x1` is a class-name C string and whose
-  `w3` is a plausible size, so no symbol is needed. Each such call gives a
+  `w3` is a plausible size, so no symbol is needed. A class with its own zone
+  registers through a second overload that takes three more arguments
+  (`IOSurface` does); any other callee with such a call is accepted as a
+  constructor too when the call is followed, before the next call, by the store
+  of a vtable into the object it built (`mod.rs (constructors)`). Each such call gives a
   class (name, metaclass object, superclass metaclass, instance size); the
   first store into the metaclass object after the call is the metaclass
   vtable. A class's own vtable is a run of code pointers in a data section,
@@ -6229,8 +6233,32 @@ every other binary's pass list is byte-identical to before the pass existed):
   `<Name>_Class`, `<Name>_ClassDescription` and `g<Name>MetaClass` (the global
   `metaPointer` points at), and names `New` `<Name>_New`, adding it as an
   entry. The names come from the records, so nothing is inferred from code.
+  With `iokitclasses on` (the default; `names` stops at the names above) the
+  kernel-side classes are also reported as C++ types
+  (`decompiler/crates/kuna-analysis/src/analyzers/iokit/cxx.rs (cxx_facts)`),
+  in the shape the typed Itanium vtables use, so chapter 05 types them with
+  the same machinery whatever `itaniumrtti` is set to. Each class with a
+  vtable and a name no other class of the image shares gives a record: its
+  instance size, and per slot a field name and the functions the class and its
+  descendants in the image hold there. A slot is named `dtor` and
+  `deleting_dtor` for the first two, else after the method the nearest
+  ancestor's slot names, else after the name of the function the class or a
+  descendant holds there, else `vfn_<i>`; a name an earlier slot of the same
+  vtable took gets the slot index appended (`release_5`, the overload of
+  `release`). The pass also reports the class of `this` for every function a
+  class vtable holds (the nearest class that is an ancestor of every class
+  whose vtable holds it) and for every `C::C` / `C::~C` of a recovered class;
+  the address point of each typed vtable; each metaclass object's own vtable
+  slots; and which `X::MetaClass::alloc` allocates which class. `vtable for X`
+  then covers only the two header words, leaving the slots to the typed
+  object. The arm64e call-site walk (`arm64evcall`) reports, for a call whose
+  vtable pointer was loaded from an `adrp`-addressed object, that object
+  (`kuna_arm64evcall.rs (object_at)`): when it is a metaclass object, the
+  commit resolves the call to the one method that metaclass's own vtable
+  holds in the slot, so `X::gMetaClass.alloc()` is a direct call.
   Stage tests: `tests/stages/kuna-iokitclasses.xml` (a stripped synthetic
-  kext) and `tests/stages/kuna-osclassinfo.xml` (a synthetic DriverKit
+  kext), `tests/stages/kuna-iokitcxx.xml` (the typed classes, `names` against
+  `on`) and `tests/stages/kuna-osclassinfo.xml` (a synthetic DriverKit
   executable), each with the option off and on.
 - **XNU data tables** (kuna, `xnutables`, the same XNU images, default-on;
   `decompiler/crates/kuna-analysis/src/analyzers/iokit/tables.rs`): three kinds

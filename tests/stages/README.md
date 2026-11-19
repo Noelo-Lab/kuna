@@ -473,6 +473,10 @@ a synthetic DriverKit executable (`gen_dext.py`): its metaclass global and `New`
 function take their class's name. `kuna-xnutables.xml` decompiles the kext with
 `xnutables` off and on: a `kalloc_type` view, an `IOExternalMethodDispatch`
 handler and a `__got` slot gain names, and typed allocations their struct.
+`kuna-iokitcxx.xml` decompiles a second kext (`gen_iokitcxx.py`) with
+`iokitclasses` `names` and `on`: a method's `this`, the constructor's vtable
+store, a call through a vtable slot and a metaclass `alloc` take their class's
+types.
 
 `kuna-arm64evcall.xml` decompiles arm64e virtual calls of two userland fixtures
 and a kernel collection with `arm64evcall` off and on: a slot one method fills

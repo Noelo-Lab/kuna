@@ -2247,7 +2247,7 @@ mod tests {
         // and kuna-globalwidth / a symbol-table data object takes the element width its accesses use
         // and kuna-funcboundflow-unwind / fall-through stops at the end of the function's own unwind extent
         // and kuna-vtabletypes / a C++ virtual call reads through a named slot of its class
-        assert_eq!(count, 809, "corpus file count drifted");
+        assert_eq!(count, 810, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

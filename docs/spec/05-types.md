@@ -2975,6 +2975,51 @@ to one) loads the slot from a constant address, the load folds to the method's
 entry, and `ActionDeindirect` makes the call direct (chapter 04):
 `(*_Tr_vptr)(v3,a0)` becomes `Tr::area(v3,a0)`.
 
+### An IOKit class is typed like a C++ class (`kuna_vtabletypes.rs`)
+
+(kuna `iokitclasses on`, the default on an arm64 XNU kernel or kext; inert
+elsewhere.) IOKit C++ in a kernelcache has no RTTI and, in a kext, few symbols,
+so a method read as pointer arithmetic on an untyped first parameter:
+`((unsigned long *)a0)[3]`, a constructor storing a raw constant into
+`field_0x0`, a virtual call `(**(void (**)(void))(*a0 + 0x28))()`. The class
+recovery of chapter 01 knows each class's vtable, its instance size (the
+`OSMetaClass` registration states it) and which function sits in which slot,
+and reports them in the record the typed vtables above use, with the size set.
+
+`install` builds `C_vtbl` as above. A record with a size is a fixed-size class:
+`C` is laid out to that size (up to 0x4000 bytes) with a first field
+`C_vtbl *vtable`, and the rest one field per 8-byte granule: from the
+signature of the class's `kalloc_type` view when a view of that name has the
+class's size (`kuna_kalloctype.rs (granule_fields)`: a pointer granule is a
+`void *`, a data granule an undefined word, padding no field), else undefined
+words. The fields are named `field_0x<off>`. Because the name and size match,
+the structure a typed allocation of the class returns (`view_struct`) is this
+one. The slot words are folded and painted read-only as above.
+
+The commit (`decompiler/crates/kuna-console/src/kuna_iokittypes.rs (commit)`)
+then adds three things. Every function a class vtable holds, and every
+constructor and destructor of a recovered class, gets an input hint for `x0`
+named `this` and typed `C *` (`Architecture::kuna_this_hints`, applied in
+`decompile_drive.rs` when the function has no declared prototype and no
+bound convention). The hint is not a locked prototype: the function's other
+parameters are recovered from its body as before, and a member that never
+reads `x0` declares no `this`. `X::MetaClass::alloc` is declared
+`X *alloc(void *this)` unless it already has a prototype. The slots of each
+typed vtable, from its address point, become a locked data object `C_vtable`
+of type `C_vtbl`, so the constructor's store reads
+`this->vtable = &C_vtable`.
+
+A virtual call on `this` then reads `(*this->vtable->release)(this)`. The call
+stays indirect: a subclass in another image can override the slot. Where
+arm64e resolution lists several candidates for a call and every named one is
+a member with the same method name, the note is `virtual call to release,
+one of 12 overrides` instead of the candidate list
+(`decompile_drive.rs (shared_method)`).
+
+Not typed: a non-virtual member that is not a constructor or destructor (its
+name cannot tell a static member from one taking `this`), and a class whose
+name two classes of the image share.
+
 ### A value returned in a float register is a float (`kuna_floatreg.rs`)
 
 A calling convention that reserves registers for floating point makes the

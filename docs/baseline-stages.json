@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4688,
-    4688
+    4700,
+    4700
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1289,6 +1289,18 @@
     "data:IOKITCLASSES #4: on names the constructor found by vote",
     "data:IOKITCLASSES #5: on names the metaclass object the initializer writes",
     "data:IOKITCLASSES #6: on names the override after the slot it overrides",
+    "data:IOKITCXX #10: on the virtual call goes through the named slot",
+    "data:IOKITCXX #11: on the slot call passes this",
+    "data:IOKITCXX #12: on the alloc returns the class",
+    "data:IOKITCXX #1: names leaves the override's this untyped",
+    "data:IOKITCXX #2: names reads the field by index",
+    "data:IOKITCXX #3: names stores the vtable as a raw constant",
+    "data:IOKITCXX #4: names calls the slot by pointer arithmetic",
+    "data:IOKITCXX #5: names leaves the alloc result an integer",
+    "data:IOKITCXX #6: on types the override's this as its class",
+    "data:IOKITCXX #7: on reads the field of the class's kalloc_type layout",
+    "data:IOKITCXX #8: on the constructor's this is its class",
+    "data:IOKITCXX #9: on the vtable store names the typed vtable",
     "data:ISAMODE #1: no ISA-mode bookkeeping user-op survives into the emitted C",
     "data:ISAMODE #2: the four table-reachable tail-call arms are intact",
     "data:ISAMODE #3: the table-reachable f0 call sites survive the injection",

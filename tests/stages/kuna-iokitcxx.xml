@@ -1,0 +1,71 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<!--
+    Kuna `iokitclasses on` (the typed classes) against `iokitclasses names`
+    on an XNU kext.
+
+    The fixture (gen_iokitcxx.py) is an arm64 MH_KEXT_BUNDLE whose
+    initializer registers Base and Derived (0x30 bytes, a site.Derived
+    kalloc_type view) through an unnamed OSMetaClass constructor. Derived's
+    vtable holds an unnamed override of Base::m2 that reads the field at 0x10;
+    Derived::Derived stores the vtable's address point and a field;
+    Base::twice calls slot 4 of its own vtable; make_derived calls
+    Derived::MetaClass::alloc.
+
+    Pass 1 (`names`) is the bug: the override's this is void *a0 read by
+    index, the constructor stores a raw constant, the virtual call is pointer
+    arithmetic on a0 and the alloc returns nothing. Pass 2 (`on`, the default)
+    types this as its class, the store as this->vtable = &Derived_vtable, the
+    call as a named slot of this->vtable, and the alloc as returning Derived *.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">c0035fd6</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/kernelcache/iokitcxx_kext.macho</com>
+  <com>option iokitclasses names</com>
+  <com>read symbols</com>
+  <com>load addr 0xfffffff007b04190</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function Derived::Derived</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function Base::twice</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function make_derived</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/kernelcache/iokitcxx_kext.macho</com>
+  <com>option iokitclasses on</com>
+  <com>read symbols</com>
+  <com>load addr 0xfffffff007b04190</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function Derived::Derived</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function Base::twice</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function make_derived</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="IOKITCXX #1: names leaves the override's this untyped" min="1" max="1">^unsigned long Derived::m2\(void \*a0\)</stringmatch>
+<stringmatch name="IOKITCXX #2: names reads the field by index" min="1" max="1">return \(\(unsigned long \*\)a0\)\[2\];</stringmatch>
+<stringmatch name="IOKITCXX #3: names stores the vtable as a raw constant" min="1" max="1">a0->field_0x0 = 0xfffffff007b05150;</stringmatch>
+<stringmatch name="IOKITCXX #4: names calls the slot by pointer arithmetic" min="1" max="1">\(\*a0 \+ 0x20\)\)\(a0,7\);</stringmatch>
+<stringmatch name="IOKITCXX #5: names leaves the alloc result an integer" min="1" max="1">\*\(unsigned long \*\)\(Derived::MetaClass::alloc\(gMetaClass\) \+ 8\) = 1;</stringmatch>
+<stringmatch name="IOKITCXX #6: on types the override's this as its class" min="1" max="1">Derived::m2\(Derived \*this\)</stringmatch>
+<stringmatch name="IOKITCXX #7: on reads the field of the class's kalloc_type layout" min="1" max="1">return this->field_0x10;</stringmatch>
+<stringmatch name="IOKITCXX #8: on the constructor's this is its class" min="1" max="1">^void Derived::Derived\(Derived \*this\)</stringmatch>
+<stringmatch name="IOKITCXX #9: on the vtable store names the typed vtable" min="1" max="1">this->vtable = &amp;Derived_vtable;</stringmatch>
+<stringmatch name="IOKITCXX #10: on the virtual call goes through the named slot" min="1" max="1">^void Base::twice\(Base \*this\)</stringmatch>
+<stringmatch name="IOKITCXX #11: on the slot call passes this" min="1" max="1">this->vtable->m2\)\(this,7\);</stringmatch>
+<stringmatch name="IOKITCXX #12: on the alloc returns the class" min="1" max="1">Derived::MetaClass::alloc\(gMetaClass\)->field_0x8 = 1;</stringmatch>
+</decompilertest>
