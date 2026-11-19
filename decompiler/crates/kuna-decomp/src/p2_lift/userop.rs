@@ -139,9 +139,9 @@ pub const BUILTIN_KERNEL_BUG: uint4 = 0x10000009;
 /// handler resumes after (`kernelbug`).
 pub const BUILTIN_KERNEL_WARN: uint4 = 0x1000000a;
 /// (kuna swiftcall) The error a throwing Swift call left in the error register.
-pub const BUILTIN_SWIFT_ERROR: uint4 = 0x1000000b;
+pub const BUILTIN_SWIFT_ERROR: uint4 = 0x100000a0;
 /// (kuna swiftcall) The error a throwing Swift function hands back.
-pub const BUILTIN_SWIFT_THROW: uint4 = 0x1000000c;
+pub const BUILTIN_SWIFT_THROW: uint4 = 0x100000a1;
 
 // ---------------------------------------------------------------------------
 // UserOpBase + UserPcodeOp hierarchy (userop.hh:47-318)
