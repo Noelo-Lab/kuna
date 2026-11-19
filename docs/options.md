@@ -26,6 +26,10 @@ Three tiers:
 | if (!v3) break; v3 -= 1; inside a loop that reads one byte per step | [`strlenscan`](#strlenscan----on--off-default-on) |
 | ~v3 - 1 or ~v3 - 5 where the source computes a string length | [`strlenscan`](#strlenscan----on--off-default-on) |
 | repnz scasb in the disassembly where IDA prints strlen | [`strlenscan`](#strlenscan----on--off-default-on) |
+| a while loop that copies or stores one element per iteration and steps pointers and a count | [`repstring`](#repstring----on--off-default-on) |
+| rep movsq / rep stosd from -Os code printed as a loop instead of memcpy/memset | [`repstring`](#repstring----on--off-default-on) |
+| a struct copy prints as a 16-iteration word loop | [`repstring`](#repstring----on--off-default-on) |
+| a strcmp against a short constant prints as a do/while over two byte pointers and a count | [`repstring`](#repstring----on--off-default-on) |
 | stack string initialisation renders as an array-typed cast such as (char[8])s_addr._0_8_ | [`rodatastring`](#rodatastring----on--off-default-on) |
 | partial-symbol slice assignments like buf._0_9_ = s_addr._16_9_ instead of the string | [`rodatastring`](#rodatastring----on--off-default-on) |
 | a recognized rodata literal never appears in the function that copies it onto the stack | [`rodatastring`](#rodatastring----on--off-default-on) |
@@ -474,6 +478,10 @@ Three tiers:
 | string constants render as raw addresses or unnamed data instead of quoted char[N] literals | [`strings`](#strings----on--off-default-on) |
 | no data symbols at ascii runs in rodata | [`strings`](#strings----on--off-default-on) |
 | four-character commands such as quit, show, bind, or fork render as hexadecimal addresses | [`strings`](#strings----on--off-default-on) |
+| a function returns a bare address that points at an embedded PNG or JPEG | [`blobs`](#blobs----on--off-default-on) |
+| PNG, IHDR or IDATx show up as short string fragments in rodata | [`blobs`](#blobs----on--off-default-on) |
+| an embedded zip or gzip archive renders as dat_ globals with no length | [`blobs`](#blobs----on--off-default-on) |
+| a resource table of images is unnamed data | [`blobs`](#blobs----on--off-default-on) |
 | a wide Windows API argument renders as a one-character string literal | [`widestrings`](#widestrings----on--off-default-on) |
 | LoadLibraryW("n") or FindWindowW("O",0) in the emitted C | [`widestrings`](#widestrings----on--off-default-on) |
 | kuna strings --encoding utf16 reports a literal the decompiled C truncates to its first character | [`widestrings`](#widestrings----on--off-default-on) |
@@ -874,6 +882,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On by default: a string length gcc 9 or older MSVC computed with `repnz scasb` reads `strlen(s)`, taken where the scan was (`v1 = strlen(s);` when it is read twice or before a store). Set it off to see the scan loop SLEIGH lifts the instruction to, as upstream prints it.
 - **Where / provenance:** P3/simplification-quiescence · ida · presentation-default · kuna-strlenscan
 - **Example:** `option strlenscan off`
+
+### `repstring` -- on | off, default `on`
+
+- **Symptoms:** a while loop that copies or stores one element per iteration and steps pointers and a count; rep movsq / rep stosd from -Os code printed as a loop instead of memcpy/memset; a struct copy prints as a 16-iteration word loop; a strcmp against a short constant prints as a do/while over two byte pointers and a count.
+- **What it does:** x86: print a `rep movs` as `builtin_memcpy(dst, src, n * w)`, a `rep stos` as `builtin_memset(dst, c, n * w)` or `builtin_memset16`/`32`/`64(dst, value, n)`, and a `repz cmpsb` as `builtin_memcmp(a, b, n)`. SLEIGH lifts a repeat prefix as a loop inside the one instruction, so a copy, fill or compare a compiler inlines (gcc and clang at `-Os`, gcc's `-minline-all-stringops`, MSVC `/Oi`) printed as `while (n) { *p = *q; n -= 1; ... }` or `do { if (!n) return 1; ... } while (x == y);`. `kuna_repstring` runs in the fullloop tail beside `strlenscan` and matches the two blocks the instruction lifts to on SSA: a head, entered from outside and from the body, that leaves exactly when the count is zero, and a body at the same instruction address that steps the count down by one and each pointer up by the element width (a set direction flag, which steps them down, is declined). A copy or fill body stores one element, loaded through the source or defined before the loop, computes nothing else, and nothing outside the loop reads what it computes; the builtin goes in the head over the values entering the loop, every later read of the count becomes 0 and of a pointer the pointer plus `n * w`, and the edge into the body is removed. A fill is `builtin_memset` when every byte of the value is the same (`stosb` always, a constant such as 0) and the element-wide builtin, whose count is in elements, otherwise. A destination in the function's own frame is declined: the builtin is placed after heritage, so the frame locations it writes would have no definition at it. A compare body loads one byte through each pointer and returns to the head exactly while they are equal (checked for all 65536 pairs); `r = builtin_memcmp(a, b, n)` goes in the head, and each flag read after the loop is rebuilt from `r` by evaluating it over every byte pair: the zero flag is `r == 0`, the carry flag `r < 0`. A flag the head merges must enter the loop already holding its value for equal bytes (gcc's `cmp eax, eax` before the instruction) unless the count is a non-zero constant, and a compare whose final count or pointers are read keeps its loop. The builtins keep the call flag, so they stay ordered against loads, stores and calls, and type their pointer operands `void *`. Inert where no instruction lifts to a loop: 0/675 datatest assertions move.
+- **When to flip:** On by default. Flip off when a `rep movsb` copies forward over its own output on purpose -- an LZ77 decoder's overlapping match copy is defined for the instruction and not for memcpy -- or to see the instruction's loop.
+- **Where / provenance:** P3/simplification-quiescence · kuna · presentation-default · GH-1650
+- **Example:** `option repstring off`
 
 ### `rodatastring` -- on | off, default `on`
 
@@ -1846,6 +1862,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On (default) lays char[N] data at detected strings; off leaves those addresses undefined.
 - **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-strings
 - **Example:** `option strings off`
+
+### `blobs` -- on | off, default `on`
+
+- **Symptoms:** a function returns a bare address that points at an embedded PNG or JPEG; PNG, IHDR or IDATx show up as short string fragments in rodata; an embedded zip or gzip archive renders as dat_ globals with no length; a resource table of images is unnamed data.
+- **What it does:** Plant a data symbol on every whole image or archive file stored in a mapped section: PNG, JPEG, GIF, BMP, ICO, zip, gzip, xz and zstd. A file counts only when its container structure walks to its end, which also gives the exact length (PNG chunks to IEND with every CRC-32, JPEG markers to EOI, GIF blocks to the trailer, the BMP header size against its pixel array, an ICO directory of PNG or DIB images, the zip end record and central directory, a gzip stream inflated to its trailer CRC-32, the xz footer and index CRC-32s, zstd frame and block headers); a truncated file is not one. Each is named <kind>_<addr> (png_2d0) and typed unsigned char[length], where no symbol already covers the address, and the string fragments the string pass finds inside it (PNG, IHDR, IDATx) are not planted. A constant equal to a file's first address is weighed as a pointer even below the pointer lower bound or with the bit pattern of a mask, unless the function also uses that value as a number, so a shared object whose read-only data starts in the first page still returns png_2d0 instead of 0x2d0. Real-image path only. `kuna blobs` lists the same files with the functions that reference them.
+- **When to flip:** On (default) names embedded files and types them as byte arrays; off leaves their addresses as bare constants or dat_ globals and lets the string pass plant the header fragments. Flip off when a plain number in code that never touches the file prints as its name (return png_370; where 0x370 is a size): a file starting in the first page of a small shared object shares its address with ordinary constants.
+- **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-1649-blobs
+- **Example:** `option blobs off`
 
 ### `widestrings` -- on | off, default `on`
 

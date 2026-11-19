@@ -1073,6 +1073,9 @@ pub struct ArchContext {
     pub devectorize_reduction: bool,
     /// (kuna) `strlenscan` — collapse an inline `repnz scasb` length into `strlen`.
     pub strlen_scan: bool,
+    /// (kuna) `repstring` — collapse an x86 `rep movs`/`rep stos`/`repz cmpsb` loop
+    /// into a copy, fill or compare builtin.
+    pub rep_string: bool,
     /// (kuna) region-based (Phoenix/SAILR) structurer: structure the CFG by
     /// walking the [`KunaRegionIdentifier`](crate::p7_regions::kuna_regionid)
     /// region tree and matching Phoenix acyclic schemas instead of running
@@ -1452,6 +1455,9 @@ pub struct ArchContext {
     /// the various pointer-inference arms.  Default-on (C++ `resetDefaults`); `false`
     /// for hand-built fixtures (no constant-pointer recovery exercised).
     pub infer_pointers: bool,
+    /// (kuna `blobs`) The first address of each embedded image or archive,
+    /// shared from the real architecture; empty for fixtures.
+    pub blob_entries: Rc<std::collections::BTreeSet<u64>>,
     /// Ordered list of address spaces in which a constant pointer can be inferred
     /// (C++ `Architecture::inferPtrSpaces`, built by `cacheAddrSpaceProperties` +
     /// the cspec `<global>` push), shared from the real architecture through
@@ -1671,6 +1677,7 @@ impl ArchContext {
             libc_names: false, // libcnames; set from the Architecture
             devectorize_reduction: false, // devectorize (opt-in default-off)
             strlen_scan: false, // strlenscan (live value copied from the Architecture)
+            rep_string: false, // repstring (live value copied from the Architecture)
             region_structure: false,     // regionstructure (opt-in default-off)
             guard_arm: false,            // guardarm (opt-in default-off)
             loop_continue: true,
@@ -1759,6 +1766,7 @@ impl ArchContext {
             // a hand-built fixture never exercises constant-pointer recovery, but
             // the real lift+analyze path overwrites this from the real arch.
             infer_pointers: false,
+            blob_entries: Rc::default(),
             // No inferable spaces until cacheAddrSpaceProperties runs on the real
             // arch and build_arch_handle shares the result.
             infer_ptr_spaces: Vec::new(),

@@ -2,6 +2,7 @@
 
 mod args;
 mod armember;
+mod blobs;
 mod callgraph;
 mod catalog;
 mod crypto;
@@ -57,6 +58,7 @@ const COMMANDS: &[(&str, CommandHandler)] = &[
     ("xrefs", xrefs::run),
     ("strings", strings::run),
     ("crypto", crypto::run),
+    ("blobs", blobs::run),
     ("unpack", unpack::run),
     ("docs", docs::run),
     ("install-skill", |args| args::report(skill::run(args))),
@@ -148,6 +150,7 @@ fn usage() {
          kuna functions <binary> [--isa auto|arm|thumb] [--json] [--jobs N|auto] [--mode auto|reliable|aggressive|fast] [--define-function S[-E][=N]|@FILE]... [--raw-image --target T --base VMA (--entry|--addr VMA)...]\n\
          kuna xrefs <binary> [--isa auto|arm|thumb] (--to <name|0xaddr> | --from <name|0xaddr>) [--json] [--kind call,jump,data,read,write] [--mode auto|reliable|aggressive|fast]\n\
          kuna crypto <binary> [--isa auto|arm|thumb] [--json] [--algorithm SUBSTR] [--section NAME] [--no-xrefs]\n\
+         kuna blobs <binary> [--isa auto|arm|thumb] [--json] [--extract DIR] [--kind png,jpeg,gif,bmp,ico,zip,gzip,xz,zstd] [--section NAME] [--no-xrefs]\n\
          kuna unpack <binary> [-o OUT] [--json]\n\
          kuna unpack <dyld_shared_cache> (--list | --image NAME [-o OUT]) [--json]\n\
          kuna strings <binary> [--isa auto|arm|thumb] [--json] [--min-length N] [--filter REGEX] [--encoding ascii|utf16|all] [--section NAME] [--no-xrefs]\n\
