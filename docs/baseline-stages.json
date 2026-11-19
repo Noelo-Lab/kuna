@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4508,
-    4508
+    4512,
+    4512
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -890,6 +890,10 @@
     "data:GH1628 #7: no stale flag reaches the result",
     "data:GH1628 #8: wr runs vmwrite for its status",
     "data:GH1628 #9: VMPTRST stores the current VMCS pointer",
+    "data:GH1674 #1: f decompiles instead of failing",
+    "data:GH1674 #2: the 16-byte slot is zeroed",
+    "data:GH1674 #3: both registers are 0 on the path that skips the loads",
+    "data:GH1674 #4: the slot reaches the call",
     "data:GH180 #1: the signed guard reads the PRE-add operands and the sum is a separate later expression",
     "data:GH180 #2: exactly one SCARRY8 in the transcript (the jo guard)",
     "data:GH180 #3: the collapsed self-update-then-test rendering does not appear (compound form)",
