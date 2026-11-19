@@ -95,7 +95,7 @@ const IMAGES: &[(&str, &[(&str, &str)])] = &[
         "castnarrow_gcc_O0_x86_64",
         &[
             ("v2 = (unsigned int)v1;", "v2 = v1;"),
-            ("c = (int)a0;", "c = a0;"),
+            ("v1 = toupper((int)a0);", "v1 = toupper(a0);"),
             ("v2 = (short)a0;", "v2 = a0;"),
             ("v1 = (unsigned char)(a0 >> 3);", "v1 = a0 >> 3;"),
             ("*a1 = (char)a0;", "*a1 = a0;"),
@@ -108,7 +108,7 @@ const IMAGES: &[(&str, &[(&str, &str)])] = &[
         "castnarrow_gcc_O2_x86_64",
         &[
             ("v1 = (unsigned int)a0;", "v1 = a0;"),
-            ("v3 = (int)a0;", "v3 = a0;"),
+            ("v2 = (int)a0;", "v2 = a0;"),
             ("v2 = (short)((a0 & 0x7f8) >> 3);", "v2 = (a0 & 0x7f8) >> 3;"),
             ("*a1 = (char)a0;", "*a1 = a0;"),
             ("return (int)x;", "return x;"),

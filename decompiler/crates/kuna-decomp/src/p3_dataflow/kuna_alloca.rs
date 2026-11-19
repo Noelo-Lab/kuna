@@ -539,13 +539,45 @@ impl Rule for RuleAllocaTyped {
             return 0;
         }
         let Some(n) = negated_amount(data, off) else { return 0 };
+        let (keep, copies) = same_move(data, op, base, off, &sp);
+        let Some(kept) = data.obank().get(keep).and_then(|k| k.get_out()) else { return 0 };
         let id = data.new_constant(4, BUILTIN_ALLOCA as uintb);
-        if data.op_set_all_input(op, &[id, n]).is_err() {
+        if data.op_set_all_input(keep, &[id, n]).is_err() {
             return 0;
         }
-        data.op_set_opcode(op, crate::typeop::type_op_for(OpCode::CPUI_CALLOTHER));
+        data.op_set_opcode(keep, crate::typeop::type_op_for(OpCode::CPUI_CALLOTHER));
+        for copy in copies {
+            if data.op_set_all_input(copy, &[kept]).is_ok() {
+                data.op_set_opcode(copy, crate::typeop::type_op_for(OpCode::CPUI_COPY));
+            }
+        }
         1
     }
+}
+
+/// The ops of `op`'s block that make the same stack move `PTRADD(base, off, 1)`
+/// into the stack-pointer register: the first of them, and the others. One
+/// allocation printed twice would read as two.
+fn same_move(data: &Funcdata, op: OpId, base: VarnodeId, off: VarnodeId, sp: &kuna_base::address::Address) -> (OpId, Vec<OpId>) {
+    let order = |id: OpId| data.obank().get(id).map(|o| o.get_seq_num().get_order());
+    let parent = data.obank().get(op).and_then(|o| o.get_parent());
+    let mut all: Vec<OpId> = data.vbank().get(off).map(|v| v.descend_iter().collect()).unwrap_or_default();
+    all.retain(|&d| {
+        d == op
+            || data.obank().get(d).is_some_and(|o| {
+                o.code() == OpCode::CPUI_PTRADD
+                    && o.get_parent() == parent
+                    && o.get_in(1) == Some(off)
+                    && o.get_in(0).is_some_and(|b| same_address(data, b, base))
+                    && o.get_in(2).and_then(|v| data.vbank().get(v)).is_some_and(|s| s.is_constant() && s.get_offset() == 1)
+                    && o.get_out().and_then(|v| data.vbank().get(v)).is_some_and(|v| v.get_addr() == sp)
+            })
+    });
+    all.sort_by_key(|&d| order(d));
+    all.dedup();
+    let keep = all.first().copied().unwrap_or(op);
+    all.retain(|&d| d != keep);
+    (keep, all)
 }
 
 #[cfg(test)]
