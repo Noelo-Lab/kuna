@@ -1,162 +1,178 @@
 # [PROPOSAL] diffverify — differential semantic checking with z3, QEMU and kuna
 
-Status: **proposal** — design only, no implementation before approval.
-Evidence and motivation: `analysis.md` in this folder.
+Status: **proposal**. Design only; nothing is implemented before approval.
+Evidence, coverage estimates and the hard part: `analysis.md` in this folder.
 
 ## What this makes possible
 
-A command that says whether kuna changed what a function computes, and if so, on which
-input:
+A command that says whether kuna changed what a function computes, and on which input:
 
 ```
-$ kuna-verify equiv ins16.o ins16
-ins16  COUNTEREXAMPLE  stage=bandB
-  input   r0=0x00007fff r1=0x00000000
-  lifted  return r1:r0 = 0x0000000080000000
-  final   return (int) = 0x80000000 -> ABI r1:r0 = 0xffffffff80000000
-  rules   bisected to: subvar_zext
+$ kuna-verify check ins16.o ins16          # planned output
+ins16  DIFFERS  (run 3 of 256)
+  input    a0=0x00007fff a1=0x0000   (r0, r1)
+  machine  r1:r0 = 0x0000000080000000
+  kuna     int  0x80000000 -> r1:r0 = 0xffffffff80000000
+  rules    bisected to: subvar_zext
 ```
 
-Run over the corpus, the same command turns "a user noticed a wrong value" into a list
-of functions the engine provably changed. It also gives the automated improvement loops
-a gate: a candidate rule that makes any function stop being equivalent is rejected
-before review.
-
-Today, each such fix brings its own one-off oracle (84 test files compile printed C, 5
-run it under `qemu-user`). None of them is ever run outside its fixture.
+Run over the corpus, it lists the functions where kuna's output provably computes
+something else than the binary. It also gives the automated improvement loops a gate: a
+candidate change that makes a function newly `DIFFERS` is rejected before review.
 
 ## Principles
 
-1. **No home-grown solver or emulator.** z3 decides, QEMU (via Unicorn on hosts without
-   `qemu-user`) executes, and kuna's own `EmulatePcodeCache` replays. kuna owns only the
-   encoding.
-2. **Dev-only.** Everything lives in a new workspace crate, `kuna-verify`, next to
-   `kuna-harness`. The release `kuna` binary does not link it, gains no dependency, and
-   prints byte-identical C. Emitted C does not change, so there is no option row and no
-   DIV entry.
-3. **Unknown is not equivalent.** Every function gets exactly one verdict:
-   `EQUIVALENT`, `COUNTEREXAMPLE`, `UNKNOWN(reason)` or `SKIPPED(reason)`. Timeouts,
-   unsupported ops and loops beyond the bound are `UNKNOWN`. Only `EQUIVALENT` counts as
-   a pass.
-4. **A counterexample must replay.** Every SAT model is replayed concretely: kuna's p-code
-   emulator runs it on the before-graph and the after-graph, and (layer 1 and 3) QEMU runs
-   it on the machine. A model that does not reproduce is reported as an encoder bug, not
-   as a decompiler bug.
-5. **Talk to the solver in SMT-LIB 2 text**, over a subprocess pipe. This avoids building
-   libz3 in the cargo workspace, lets CI `apt install z3`, and lets any verdict be
-   cross-checked with cvc5 or bitwuzla by changing one path.
+1. **No home-grown solver or emulator.** z3 proves, QEMU (through Unicorn where
+   `qemu-user` is unavailable) checks the lift, and kuna's existing emulators execute.
+   kuna owns only the encoding.
+2. **Dev-only.** A new workspace crate, `kuna-verify`, next to `kuna-harness`. The release
+   binary does not link it and its output is byte-identical. Emitted C does not change,
+   so there is no option row or DIV entry.
+3. **Concrete before symbolic.** A difference found by running both sides is a replayable
+   fact and needs no solver. Proof is a second step, only for functions that already
+   agree.
+4. **Unknown is not equivalent.** Verdicts:
+   - `DIFFERS`: a concrete input that disagrees;
+   - `AGREES(n)`: n runs, no difference;
+   - `EQUIVALENT`: proved;
+   - `UNKNOWN(reason)`;
+   - `SKIPPED(reason)`.
 
-## The three layers
+   Only `EQUIVALENT` is a proof. `AGREES` is evidence, and the report says which one it
+   is.
+5. **Declared divergence.** Defaults that knowingly trade fidelity for readability are
+   listed, keyed by option name. #794's x86-64 `RDX:RAX` trim is one example. A
+   difference they explain is reported as `DIVERGES(option)`, not `DIFFERS`. The list
+   is part of the first slice, not an afterthought.
 
-Each layer has a different oracle and catches a different class of bug. They ship as
-separate slices in this order: 2, then 1, then 3.
+## Tier C — run both sides (first)
 
-### Layer 2 — translation validation of the engine (z3) — first
+**Machine side.**
+- Run the function's own machine code from its entry with `EmulatePcodeCache` (SLEIGH
+  p-code over the load image) until it returns.
+- Inputs: a full random ABI state, with seeded edge values (0, -1, sign boundaries, shift
+  counts ≥ width).
+- Pointer arguments point into a mapped scratch region of the same contents on both
+  sides.
 
-**Compares** one function's p-code right after P2 (lifted, pre-heritage) against its
-p-code after Band B (P3–P5 settled), and later after P6.
+**Decompiled side.**
+- Run the final `Funcdata` (after the action tree, before printing) with a graph
+  interpreter built on `EmulatePcodeOp`.
+- The interpreter drives its own control flow, and resolves MULTIEQUAL by the incoming
+  edge.
+- Declared parameters get the values the ABI places in their storage. Any other input the
+  body reads gets a poison value, which catches dropped parameters (#875).
 
-**Encoding.**
-- Inputs: every register and stack slot read before it is written, plus memory as an SMT
-  array.
-- Body: an acyclic CFG is encoded with path predicates. MULTIEQUAL becomes an `ite` over
-  the incoming edge predicates.
-- Outputs, the observables:
-  - the final memory array;
-  - the ordered sequence of call sites, each with its arguments and the memory at the
-    call;
-  - the return value.
-- The after-graph is read through the prototype the decompiler claims (output storage,
-  size, signedness) and mapped back to ABI registers before comparison. This is what
-  makes #794 visible (`analysis.md` §2).
-- Calls are uninterpreted functions of (callee, arguments, memory), returning fresh
-  values and a fresh memory. In slice 2a, a function with calls is `SKIPPED`.
-- CALLOTHER is an uninterpreted function. Floating-point ops are `UNKNOWN` until a later
-  slice uses SMT FP.
+**Observables.**
+- The return value: the decompiled side's value is converted through its claimed C type
+  to ABI storage, which catches #794.
+- Stores outside the function's own frame.
+- The ordered call sequence, each call with its callee and arguments.
 
-**Bisection.** On a counterexample, re-run the decompile with subsets of the rules that
-fired (`count_apply > 0`) disabled, using delta debugging over `disable_rule`. The report
-names the smallest set that restores equivalence.
+**Calls.**
+- The machine side runs a stub at each call. The stub records the call, returns a
+  recorded random value in the return registers, and clobbers caller-saved registers.
+- The decompiled side replays the same values call by call. INDIRECT is a copy unless the
+  recorded effect wrote that storage.
+- A different call sequence is itself `DIFFERS`.
 
-**Snapshot points.** Uses #1699's `on_phase` callbacks if that lands. Otherwise it adds
-the same two observation leaves with an empty-registry fast path. #1699 shows that path
-is byte-identical and no slower on `decompile-all /usr/bin/ls`.
+**Needs no phase hooks.** The machine side reads the binary and the decompiled side reads
+the finished `Funcdata`. Loops are fine: execution is bounded by a step budget, and a run
+that exceeds it is `UNKNOWN`.
 
-**Catches.** P3/P4/P5 rewrites that change values: the 31 + 24 tagged fixes in
-`analysis.md`.
+**Localization.** On `DIFFERS`, re-decompile with subsets of the fired rules
+(`count_apply > 0`) disabled, by delta debugging over `disable_rule`, and report the
+smallest set that removes the difference. Once #1699 lands, per-phase snapshots further
+narrow the difference to P2, Band B or P6.
 
-**Does not catch.**
-- Bugs introduced in P2 itself: both sides share the lift. Layer 1 covers those.
-- P6 merge, P8 structuring and P9 printing bugs: they are not visible in p-code. Layer 3
-  covers those.
+**Sees.** The body-rewrite class (~15 of 56 P3/P4 fixes) and the prototype/ABI class
+(~29), per `analysis.md` §2.
 
-### Layer 1 — the lift against the machine (QEMU/Unicorn)
+**Does not see.**
+- Lift bugs: the machine side shares the SLEIGH lift (Tier L).
+- Type, printing, P6 merge and P8/P9 bugs (Tier P).
 
-**Compares** the effect of one instruction on random machine state:
-- kuna side: SLEIGH p-code run in `EmulatePcodeCache`;
-- machine side: Unicorn (QEMU's TCG as a library; runs on macOS, unlike `qemu-user`).
+## Tier S — prove with z3 (second)
+
+For functions that are `AGREES` and loop-free (or bounded by unrolling), encode the same
+two sides and the same observables as SMT bit-vectors and arrays:
+- calls become uninterpreted functions of (callee, arguments, memory);
+- CALLOTHER becomes an uninterpreted function;
+- floating point stays `UNKNOWN` until a later slice.
+
+z3 runs as a subprocess speaking SMT-LIB 2. That keeps libz3 out of the cargo build, lets
+CI `apt install z3`, and lets any verdict be cross-checked with cvc5 or bitwuzla.
+
+- **Outcomes.**
+  - `unsat` upgrades the function to `EQUIVALENT`.
+  - `sat` must replay in Tier C. A model that does not replay is an encoder bug and is
+    reported as one.
+- **Order.** This tier reuses Tier C's observable definitions, so it is built after they
+  have settled on the corpus.
+
+## Tier L — the lift against the machine (QEMU/Unicorn)
+
+**Compares** one instruction's effect on random state:
+- kuna side: SLEIGH p-code in `EmulatePcodeCache`;
+- machine side: Unicorn, which is QEMU's TCG as a library and runs on macOS, unlike
+  `qemu-user`.
 
 **Inputs.**
-- Instruction bytes come from the corpus binaries' own instruction streams, deduplicated
-  by mnemonic and operand form.
-- States are random, with seeded edge values (0, -1, sign boundaries, shift counts ≥
-  width).
+- Instructions come from the corpus binaries, deduplicated by mnemonic and operand form.
 
-**Compares.** All architectural registers and flags, plus touched memory.
+**Compares.** Registers, flags and touched memory.
 
-**Driver.** A small Rust binary in `kuna-verify` emits per-instruction JSON from the
-kuna side. The comparison is a Python driver, the way `verify_arm.py` already uses
-Unicorn. That keeps Unicorn's C build out of the cargo workspace.
+**Driver.**
+- The kuna side is a small Rust binary that emits JSON.
+- The comparison is a Python driver, as `verify_arm.py` already does with Unicorn. This
+  keeps Unicorn's C build out of the cargo workspace.
 
-**Known noise.** Some flags are architecturally undefined, and some instructions are
-privileged or system-level. These are recorded per architecture in a skip list. They are
-not silently dropped.
+**Known noise.** Architecturally undefined flags and privileged instructions go into a
+per-architecture skip list, not silently dropped.
 
-**Catches.** SLEIGH spec and lift bugs, which are part of the 32 tagged P2 fixes; flow
-and jump-table bugs are not in scope.
+This tier makes Tier C's machine side trustworthy.
 
-### Layer 3 — printed C against the binary (compiler + QEMU) — later, separate proposal
+## Tier P — printed C against the binary (later, separate proposal)
 
-1. Compile the printed C for one function with a generated header for kuna's
+1. Compile one function's printed C with a generated header for kuna's
    `undefinedN`/`intN` types.
-2. Link it into a harness that also calls the original function.
-3. Run both on the same random arguments under `qemu-user` inside the Linux devcontainer
-   (`docs/devcontainer.md`), and compare return values and touched memory.
+2. Link it into a harness next to the original.
+3. Run both under `qemu-user` in the Linux devcontainer.
 
-The decbench corpus ships sources and binaries, so it provides functions with a known
-ground truth.
-
-This is the only layer that sees P6/P8/P9 bugs. It is also the layer most limited by
-printed C that does not compile, and by cross toolchains: decbench's `byte_match` already
-hits that wall (`docs/decbench-loop.md`, Trap 1). Its own proposal will follow after
-layer 2 has run on the corpus.
+It is the only tier that sees type, P6, P8 and P9 bugs. It is also the tier most limited
+by printed C that does not compile, and by cross toolchains. decbench's `byte_match`
+already hits that wall (`docs/decbench-loop.md`, Trap 1).
 
 ## Slices
 
 | slice | scope | done when |
 |---|---|---|
-| 2a | layer 2: leaf, loop-free, integer-only functions; P2 vs Band B; SMT-LIB pipe to z3; concrete replay | verdicts on `tests/datatests` + `tests/stages` fixtures; #794's fixture reverted gives `COUNTEREXAMPLE` |
-| 2b | calls as uninterpreted functions; prototype-projected returns; rule bisection | bisection names `subvar_zext` on the reverted #794 fixture |
-| 2c | loops by bounded unrolling (k configurable, beyond-bound paths → `UNKNOWN`); P6 snapshot | corpus report with per-verdict counts |
-| 1  | layer 1 for x86-64, AArch64, ARM; JSON emitter + Unicorn driver | per-arch mismatch report with a skip list |
-| 3  | separate proposal | — |
+| C1 | Tier C, leaf functions, integer only; ABI projection of returns and parameters; declared-divergence list | reverting #794 gives `DIFFERS` on its fixture; verdict table over `tests/datatests` + `tests/stages` |
+| C2 | calls by record/replay; rule bisection | bisection names `subvar_zext` on reverted #794; reverting #801 gives `DIFFERS` |
+| C3 | corpus run (decbench binaries), triage of every `DIFFERS` into bug / declared divergence / harness bug | published verdict table |
+| S1 | Tier S for loop-free `AGREES` functions | `EQUIVALENT` counts on the same corpus; every `sat` replays |
+| L1 | Tier L for x86-64, AArch64, ARM | per-arch mismatch report with skip list |
+| P | separate proposal | — |
 
-**CI.** `kuna-verify` runs as a non-gating job that publishes a verdict table. It becomes
-a gate only after the `COUNTEREXAMPLE` baseline is empty or explained, using a baseline
-file like `docs/baseline.json`.
+**CI.** The tool runs as a non-gating job that publishes the verdict table. It becomes a
+gate only once the `DIFFERS` set is empty or every entry is a declared divergence, with a
+baseline file like `docs/baseline.json`.
 
 ## Non-goals
 
-- Proving kuna correct. This validates one function per run against its own lift.
-- Changing emitted C, adding options, or shipping z3/QEMU with the release binary.
-- Floating-point equivalence and self-modifying code in the first slices.
+- Proving kuna correct in general. The check is per function, against kuna's own lift
+  (and, through Tier L, against the machine).
+- Changing emitted C, adding options, or shipping z3 or QEMU with the release binary.
+- Floating point and self-modifying code in the first slices.
 
 ## Open questions
 
-1. Should layer 2 depend on #1699 landing, or carry its own two observation leaves?
-2. How should the P2 side model unknown stack contents? One option is a symbolic array
-   with the return-address slot pinned.
-3. Should the verdict table key on `tests/datatests` names, or on (binary, address) pairs
-   from decbench?
-4. Does the improvement pipeline consume `COUNTEREXAMPLE` as a hard reject immediately,
-   or as a reviewer signal first?
+1. Is the final `Funcdata` the right decompiled side, or should C1 already require
+   #1699's Band B snapshot, which is closer to where most bugs are made?
+2. How should the machine side's initial stack be modeled? One option is a fixed
+   return-address sentinel, with the caller's frame as scratch memory that is identical on
+   both sides.
+3. Who owns the declared-divergence list: the option's `phases.toml` row, or a file in
+   `kuna-verify`?
+4. Does the improvement pipeline treat a new `DIFFERS` as a hard reject immediately, or as
+   a reviewer signal first?
