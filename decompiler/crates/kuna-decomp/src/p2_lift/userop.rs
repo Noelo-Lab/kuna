@@ -934,6 +934,11 @@ impl UserOpManage {
         Ok(())
     }
 
+    /// Number of user-op slots (C++ `useroplist.size()`).
+    pub fn num_ops(&self) -> uint4 {
+        self.useroplist.len() as uint4
+    }
+
     /// \brief Retrieve a user-op description object by index (C++
     /// `getOp(uint4)`).
     ///

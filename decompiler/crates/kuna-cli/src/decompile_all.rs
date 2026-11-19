@@ -1993,6 +1993,17 @@ pub fn detected_output_language(
     binary: &str,
     options: &[(String, String)],
 ) -> Option<&'static str> {
+    // (kuna `dexmodel`) Dalvik bytecode is Java's: `PrintJava`, as upstream
+    // selects for the language.
+    if std::fs::File::open(binary)
+        .and_then(|mut file| {
+            let mut head = [0u8; 0x70];
+            std::io::Read::read_exact(&mut file, &mut head).map(|()| head)
+        })
+        .is_ok_and(|head| kuna_analysis::loadimage_dex::is_dex(&head))
+    {
+        return Some("java-language");
+    }
     // A per-run `--option sourcelang` force wins over the image: this policy
     // runs in the parent process, before the loadtime environment is bound
     // onto the engine (sub)process, so the options list is consulted directly.

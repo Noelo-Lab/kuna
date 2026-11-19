@@ -3748,17 +3748,47 @@ Go; compilation and execution are checked for the supported scalar, pointer,
 conversion and control-flow fixtures. Missing types, low-level helpers and
 incomplete ABI recovery still prevent arbitrary output from compiling.
 
-The Java back-end is deliberately not ported:
-`decompiler/crates/kuna-decomp/src/p9_emit/printjava.rs (PrintJava)` is a
-recorded LOSS whose constructor returns an error — upstream `PrintJava` is a
-thin `PrintC` subclass (shared token table and RPN driver, eight overrides for
-object references and `instanceof`), and no oracle datatest selects the
-`java-language` back-end, so Java remains unregistered; C, Rust and Go are the registered output
-languages, with `c-language` the engine default (`printc.rs (CAPABILITY_NAME)`). What *is* live is the Java half of
-the cast strategy, `cast.rs (CastStrategyJava)` — Java's pointer-encoded
-object references change which extensions and pointer conversions are
-representable as casts — kept current alongside `CastStrategyC` so a future
-`PrintJava` port is emitter wiring only.
+**The java-language back-end.** `option setlanguage java-language` selects it;
+the CLI selects it automatically for a DEX file (chapter 00). It follows upstream
+`PrintJava`, which is `PrintC` with a handful of overrides, so here it is a
+profile plus a few `OutLang::Java` arms: `p9_emit/kuna_langjava.rs` holds the
+profile, the type speller and the Java string escapes, and
+`p9_emit/printc/kuna_cpoolprint.rs` the operator forms.
+
+- **Spelling.** A logical right shift prints `>>>` and its assignment form
+  `>>>=` (`TypeOp::selectJavaOperators`), a null pointer prints `null`, and a
+  string escapes as Java does, with `\uXXXX` for anything without a short escape
+  (`kuna_langjava.rs (print_unicode_java)`).
+- **Types.** A Java reference is a pointer in the type system, so the speller
+  (`kuna_langjava.rs (JavaSpeller)`) strips pointer levels: a pointer to a class
+  structure is the class name, and a pointer to a primitive or to another
+  reference is one array dimension (`kuna_langjava.rs (is_array_type)`, upstream
+  `PrintJava::isArrayType`). Core types print as `byte`, `short`, `int`, `long`,
+  `char`, `boolean`, `float`, `double`.
+- **Capabilities.** Java has no comma operator, no integer-as-condition test and
+  no `U`/`L` literal suffixes, so the capability record turns those renderings
+  off. `goto` stays, as in upstream's output.
+- **Members and calls.** A member reached through an object reference prints
+  with `.`; `instanceof` is a binary operator. A call through a method reference
+  prints `object.method(args)`, the object being the call's `this` argument,
+  which the argument list then omits (`kuna_cpoolprint.rs (java_callind_ir)`,
+  upstream `PrintJava::opCallind` and `getHiddenThisSlot`). A LOAD or STORE
+  through a reference prints the referenced value, with `[0]` only for an
+  array reference that is not itself a field, an index or a pool reference
+  (`PrintJava::needZeroArray`).
+- **Signature.** The method name prints without its class path, the `this`
+  parameter is hidden, and an empty parameter list prints `()`.
+- **Casts.** `CastStrategyJava` decides casts (`cast.rs (java_cast_standard)`):
+  a cast between two references is never printed, since Java code converts one
+  only through an explicit `check-cast`.
+
+**Constant-pool operators.** In every language a CPOOLREF prints from its pool
+record (`kuna_cpoolprint.rs (op_cpoolref_ir)`, upstream `opCpoolRefOp`): a string
+as its literal (truncated after 2048 bytes), a class as its name, a method or
+field as its name, qualified by the object it is reached through, or by its class
+when static. `NEW` prints `new T[n]` for an array allocation and `new(T)` for an
+object (`kuna_cpoolprint.rs (op_new_ir)`, upstream `opNewOp`); the constructor
+call follows as its own statement, as in upstream's output.
 
 ## 9.7 Whole-program document renders (`kuna decompile-project`, `kuna decompile-graph`)
 

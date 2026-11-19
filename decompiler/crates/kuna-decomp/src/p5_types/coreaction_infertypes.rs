@@ -104,6 +104,22 @@ pub(crate) fn output_type_local(data: &Funcdata, op: OpId) -> Rc<Datatype> {
             }
         }
     }
+    // C++ `TypeOpCpoolref::getOutputLocal` (typeop.cc:2453): the record's type,
+    // or a boolean for an `instanceof` test.
+    if o.code() == OpCode::CPUI_CPOOLREF {
+        let refs: Vec<u64> = (1..o.num_input())
+            .filter_map(|i| o.get_in(i).and_then(|v| data.vbank().get(v)).map(|v| v.get_offset()))
+            .collect();
+        if let Some(rec) = arch.cpool_record(&refs) {
+            if rec.get_tag() == crate::cpool::cpool_tag::INSTANCE_OF {
+                if let Some(Ok(ty)) = arch.types().map(|t| t.get_base(1, type_metatype::TYPE_BOOL)) {
+                    return ty;
+                }
+            } else if let Some(ty) = rec.get_type() {
+                return Rc::clone(ty);
+            }
+        }
+    }
     // C++ `TypeOpCall::getOutputLocal` (typeop.cc:722) / `TypeOpCallind::getOutputLocal`
     // (typeop.cc:778): when the resolved `FuncCallSpecs` has a locked (committed)
     // output prototype, the call output Varnode's suggested type is the callee's

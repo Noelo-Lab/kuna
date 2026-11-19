@@ -1201,7 +1201,7 @@ fn usage() {
     eprintln!(
         "usage: kuna decompile <binary> <name|0xaddr> [--addr] [--json] [--raw] [--regions] \\\n\
          \x20                     [--no-vars] [--omit aliases,line_mappings,variables,types] \\\n\
-         \x20                     [--language auto|c|rust|go] [--mode auto|reliable|aggressive|fast] \\\n\
+         \x20                     [--language auto|c|rust|go|java] [--mode auto|reliable|aggressive|fast] \\\n\
          \x20                     [--option N V].. [--kassert ARGS].. \\\n\
          \x20                     [--define-function S[-E][=N]|@FILE].. \\\n\
          \x20                     [--assert DIRECTIVE|@FILE].. [--assert-strict] \\\n\

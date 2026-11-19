@@ -322,7 +322,12 @@ pass with inference live.
    p-code property flags, display attributes, and local input/output
    meta-types — with two live upgrades: a CALL/CALLIND whose resolved callee
    prototype is committed suggests the callee's real return/parameter types,
-   which is how a typed argument reaches the caller's stack Varnode.
+   which is how a typed argument reaches the caller's stack Varnode. A CPOOLREF
+   suggests the type its constant-pool record carries, or a boolean for an
+   `instanceof` record (upstream `TypeOpCpoolref::getOutputLocal`): a method
+   reference is a pointer to a code type holding the method's prototype, which
+   `ActionDeindirect` forces onto the call through it (chapter 04), and a field
+   reference is a pointer to the field's type.
 2. **Propagate** (`propagate_one_type`): from each seeded Varnode, a DFS walks
    the def-use graph in both directions, at each edge asking the op's transfer
    function for the outgoing type (`propagate_type`). A pushed type is adopted

@@ -883,6 +883,16 @@ recovered switch table.
   renders as a call; that is the intended rendering for unimplemented semantics
   (ARM `DataMemoryBarrier`, the coprocessor family), and only a *declared* fixup
   makes disappearance the correct outcome.
+- **Dynamic payloads.** A `<pcode dynamic="true"/>` body has no SLEIGH source:
+  Ghidra builds its p-code in Java for each injection site. The Dalvik
+  compiler spec declares one callother-fixup of this kind, `moveRangeToIV`,
+  which an `invoke-*/range` instruction uses to copy a run of frame registers
+  into the input registers `iv0..`. For a DEX image with `option dexmodel` on,
+  `decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (emit_inject)`
+  answers it from `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_dex.rs
+  (emit_range)`: one 4-byte COPY per register, as `InjectPayloadDexRange` emits.
+  Any other dynamic payload still goes to the translator, which fails it on a
+  standalone run (chapter 00).
 - **Call fixups.** A call spec carrying an inject id has its CALL/CALLIND
   replaced by the named call-fixup payload
   (`flow.rs (FlowInfo::inject_sub_function)`); the payload's parameter shift is
@@ -2472,11 +2482,34 @@ conditional *tail call* between two distant function entries keeps the upstream
 When the model is not admitted the branch is truncated to a `CALLIND` carrying
 `"Treating indirect jump as call"` and neither arm is ever decoded.
 
-**What is deliberately absent.** The CALLOTHER-assisted `JumpAssisted` model
-(the `jumpassist` user-op family) and the manual `JumpBasicOverride` model are
-unported shells: `jumptable.rs (JumpTable::set_override)` and the
+**Model 0 — the jump-assist user-op** (`kuna_jumpassist.rs
+(JumpModelAssisted)`, C++ `JumpAssisted`, `option jumpassist`, default on).
+Some instruction sets compute a switch destination the SLEIGH semantics cannot
+spell: Dalvik's `sparse-switch` searches a key/target table, and its constructor
+ends in `goto [switchAssist(key, size, default, base, distance)]`. The processor
+spec's `<jumpassist>` element supplies p-code scripts for the missing step, which
+`architecture.rs (Architecture::init_userops_and_fixups)` decodes with the other
+user-ops and compiles with the rest of the injection library; `kuna_jumpassist.rs
+(JumpAssists::from_library)` keeps the compiled scripts per CALLOTHER index. When
+the BRANCHIND input is written by a CALLOTHER, `recover_model` tries this model
+before JumpBasic. It matches when the user-op has scripts and every argument but
+the first (the switch variable) is a constant. The table size is the size
+script's answer, or the second argument when there is none. Each entry's
+address comes from running the address script on its index, the case label from
+the case script (the index itself without one), and the default destination is
+the default script's answer, appended last. A script runs as upstream's
+`ExecutablePcode::evaluate` does (`kuna_jumpassist.rs (Script::evaluate)`): its
+inputs sit in temporary registers, its p-code is emitted and interpreted, and a
+LOAD reads the load image. Normalization replaces every read of the user-op's
+output with the switch variable and deletes the user-op; guard folding marks
+the last block as the default. With the option off, or when a script cannot be
+evaluated, the destination stays an indirect jump through the user-op and the
+flow treats it as a call.
+
+**What is deliberately absent.** The manual `JumpBasicOverride` model is an
+unported shell: `jumptable.rs (JumpTable::set_override)` and the
 `<basicoverride>` arm of `jumptable.rs (JumpTable::decode)` return errors, and
-`recover_model` walks only JumpBasic/JumpBasic2 and, when `option constselectjump` is `on` or the table is a re-entry retry, the constant-destination model above (Trivial exists only as the label-time fallback).
+`recover_model` walks only the jump-assist model, JumpBasic/JumpBasic2 and, when `option constselectjump` is `on` or the table is a re-entry retry, the constant-destination model above (Trivial exists only as the label-time fallback).
 
 **Multistage recovery.** A flow-time table can come out with a single address
 when the partial clone folds its index to a constant. One case is a stack slot

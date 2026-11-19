@@ -174,6 +174,17 @@ impl CPoolRecord {
         CPoolRecord::default()
     }
 
+    /// (kuna `dexmodel`) A record built directly by a pool that answers queries
+    /// from its own tables, as Ghidra's `ConstantPoolDex` fills a `Record`.
+    pub fn from_parts(
+        tag: uint4,
+        token: Vec<u8>,
+        type_: Rc<Datatype>,
+        byte_data: Option<Vec<uint1>>,
+    ) -> CPoolRecord {
+        CPoolRecord { tag, flags: 0, token, value: 0, type_: Some(type_), byte_data }
+    }
+
     /// Get the type of record (C++ `getTag`).
     pub fn get_tag(&self) -> uint4 {
         self.tag

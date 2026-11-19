@@ -1631,6 +1631,26 @@ dereferences in 136 of 295 functions become 44 (the entry point's PSP reads
 and code that loads DS from memory), and 1,537 named global references replace
 29.
 
+(kuna) **A DEX file is mapped whole at address 0** (`option dexmodel` governs
+what the engine does with it). `decompiler/crates/kuna-analysis/src/loadimage_dex.rs
+(DexLoadImage)` maps the file as one read-only code segment, as Ghidra's
+`DexLoader` maps its `.dex` block; Ghidra also copies each method's
+instructions to a second block, which kuna does not need, so an instruction's
+address is its file offset. The format probe is the `dex\n` magic followed by a
+three-digit version and a NUL. The same dispatcher that routes TE images
+(`decompiler/crates/kuna-console/src/engine.rs (bootstrap_from_image_with_isa)`,
+and `bootstrap_from_file` for the console) routes a DEX file to
+`engine.rs (bootstrap_from_dex_bytes)`, which decodes with
+`Dalvik:LE:32:DEX_Android12` unless `--target` names another Dalvik language,
+installs one function symbol per method with code, named as the DEX model does
+(chapter 00), hands the model to the `Architecture`, and turns on
+`readonlypropagate` for the image. At the analysis commit each method's DEX
+prototype is locked onto its symbol, after the `option` lines, so `dexmodel off`
+also leaves the signatures to recovery. No analysis pass runs over a DEX image:
+the method table is the complete function inventory. A multi-DEX APK is
+several files; each is loaded on its own, and a call into another file's class
+resolves by name through the constant pool but not to a function.
+
 (kuna) **UEFI TE images take a bounded container path of their own.**
 `decompiler/crates/kuna-analysis/src/loadimage_te.rs (TeLoadImage)` parses a
 file the format probe claims. That probe reads more than the `VZ` signature —

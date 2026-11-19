@@ -286,6 +286,10 @@ impl Action for ActionConstbase {
             data.kuna_call_mechanisms.failure = Some(error.to_string());
             return 0;
         }
+        if let Err(error) = crate::kuna_dex::apply_entry(data) {
+            data.kuna_call_mechanisms.failure = Some(error.to_string());
+            return 0;
+        }
 
         // C++ takes a copy; the per-function `glb` skeleton holds a snapshot of the
         // engine track base (taken at `build_arch_handle`), so clone the queried set
