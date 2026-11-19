@@ -33,6 +33,7 @@ pub mod project_stream;
 pub mod classify;
 pub mod funcextent;
 pub mod codedata;
+pub mod kuna_calleeoverride;
 pub mod kuna_retcallchain;
 pub mod kuna_console;
 pub mod kuna_hightarget;

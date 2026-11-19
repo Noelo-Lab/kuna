@@ -1636,6 +1636,11 @@ pub fn register_kuna_commands(status: &mut IfaceStatus) {
         Box::new(crate::ifacedecomp::IfcOverrideBytes),
         &["override", "bytes"],
     );
+    // (kuna) Nor this: where an indirect call goes is the reader's knowledge.
+    status.register_com(
+        Box::new(crate::ifacedecomp::IfcOverrideIndirect),
+        &["override", "indirect"],
+    );
 }
 
 /// Join tokens with single spaces — C++ `joinTokens(tokens,0,tokens.size())`.

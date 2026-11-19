@@ -41,6 +41,12 @@ mod declared_bytes_cli;
 #[path = "argument_errors_cli.rs"]
 mod argument_errors_cli;
 
+#[path = "archive_members_cli.rs"]
+mod archive_members_cli;
+
+#[path = "assert_callee.rs"]
+mod assert_callee;
+
 #[path = "array_member_bits.rs"]
 mod array_member_bits;
 
@@ -64,6 +70,8 @@ mod arm_conditional_switch;
 mod arm_constant_shift;
 #[path = "wide_shift_emission.rs"]
 mod wide_shift_emission;
+#[path = "wrap_add_emission.rs"]
+mod wrap_add_emission;
 
 #[path = "arm_float_arguments.rs"]
 mod arm_float_arguments;

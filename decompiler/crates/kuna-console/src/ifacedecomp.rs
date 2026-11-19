@@ -147,6 +147,12 @@ pub struct IfaceDecompData {
     /// precedent).
     pub pending_flow_overrides:
         std::collections::BTreeMap<String, Vec<(kuna_base::address::Address, kuna_base::types::uint4)>>,
+    /// The `override indirect <callsite> <callee>` commands given, keyed by
+    /// function name, as `(call site, callee as typed)`: what a refusal after
+    /// the decompile is reported against. The facts themselves are parked on
+    /// the architecture.
+    pub pending_callee_overrides:
+        std::collections::BTreeMap<String, Vec<(kuna_base::address::Address, String)>>,
     /// Prototype overrides installed by `override prototype <addr> <decl>`, keyed
     /// by function name.  C++ keeps these on `dcp->fd->getOverride()` (the Funcdata
     /// is reused); the kuna console rebuilds the IR on `decompile`, so the
@@ -343,6 +349,7 @@ impl IfaceDecompData {
         self.pending_prototypes.clear();
         self.pending_prototype_entries.clear();
         self.pending_flow_overrides.clear();
+        self.pending_callee_overrides.clear();
         self.pending_proto_overrides.clear();
         self.pending_param_maps.clear();
         self.local_edit_names.clear();
@@ -2460,6 +2467,19 @@ decomp_command!(
                             kuna_decomp::overrides::Override::type_to_string(*type_)
                         )
                     })
+                    .chain(fd.kuna_rejected_callee_overrides().iter().flat_map(|(site, _, reason)| {
+                        dcp.pending_callee_overrides
+                            .get(&name)
+                            .into_iter()
+                            .flatten()
+                            .filter(move |(at, _)| at == site)
+                            .map(move |(at, callee)| {
+                                format!(
+                                    "Rejected override indirect {:#x} {callee}: {reason}\n",
+                                    at.get_offset()
+                                )
+                            })
+                    }))
                     .chain(format_checks.iter().filter(|(at, format, value)| {
                         !crate::kuna_constformat::holds(&fd, at, format, *value)
                     }).map(|(at, format, value)| {
@@ -3525,6 +3545,35 @@ decomp_command!(
                 crate::kuna_retcallchain::kuna_render_sites(&chained)
             ));
         }
+        Ok(())
+    }
+);
+
+decomp_command!(
+    /// (kuna) `override indirect <callsite> <name|address>`: the indirect call
+    /// at `<callsite>` goes to that function ([`crate::kuna_calleeoverride`]).
+    /// Not a C++ command, so [`crate::kuna_console::register_kuna_commands`]
+    /// registers it.
+    IfcOverrideIndirect,
+    fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
+        let dcp = dcp_mut(status)?;
+        let Some(fd) = dcp.fd.as_ref() else {
+            return Err(IfaceError::execution("No function selected"));
+        };
+        let entry = fd.get_address().clone();
+        let fname = fd.get_name().to_string();
+        let prog = dcp.conf.as_mut().expect("conf present when fd present");
+        let (site, _size) = parse_input_code_address(prog, s).map_err(IfaceError::parse)?;
+        s.skip_ws();
+        let callee = s.read_token();
+        if callee.is_empty() {
+            return Err(IfaceError::parse("Missing callee"));
+        }
+        crate::kuna_calleeoverride::plant(prog, &entry, &site, &callee)
+            .map_err(IfaceError::execution)?;
+        prog.callwide_unavailable("indirect-call override requires a new complete image proof");
+        dcp.pending_callee_overrides.entry(fname).or_default().push((site, callee));
+        status.out("Successfully added override\n");
         Ok(())
     }
 );

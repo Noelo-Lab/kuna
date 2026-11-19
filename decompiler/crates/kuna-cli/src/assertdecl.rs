@@ -19,6 +19,7 @@
 //!   --assert 'name v2 credbuf'
 //!   --assert 'readonly 0x404028+8'
 //!   --assert 'flow 0x1405 return'
+//!   --assert 'callee 0x147a handle_open'
 //!   --assert 'volatile 0x50000000+4'
 //!   --assert 'bytes 0x43d0c6 8bd581c21f324000'
 //!   --assert 'bytes 0x43d0c6 @notes/stage1.bin'
@@ -151,6 +152,10 @@ pub(crate) fn console_form(
         Body::Flow { func, addr, kind } => match names_another(func, target) {
             Some(f) => return Err(unbindable(&f)),
             None => (Slot::Function, format!("override flow {addr:#x} {kind}")),
+        },
+        Body::Callee { func, addr, callee } => match names_another(func, target) {
+            Some(f) => return Err(unbindable(&f)),
+            None => (Slot::Function, format!("override indirect {addr:#x} {callee}")),
         },
         Body::Bytes { addr, data } => {
             let hex: String = data.iter().map(|b| format!("{b:02x}")).collect();
@@ -327,6 +332,9 @@ mod tests {
             "flow 0x1405 goto",
             "flow notahex return",
             "flow 0x1405 return extra",
+            "callee 0x147a",
+            "callee notahex handle_open",
+            "callee 0x147a handle_open extra",
         ] {
             let err = parse_one(spec).expect_err("refuses");
             assert!(err.starts_with("--assert"), "got {err:?} for {spec:?}");
@@ -384,6 +392,10 @@ mod tests {
         assert_eq!(
             lowered("flow 0x1405 return"),
             (Slot::Function, "override flow 0x1405 return".into())
+        );
+        assert_eq!(
+            lowered("callee authenticate::0x147a handle_open"),
+            (Slot::Function, "override indirect 0x147a handle_open".into())
         );
         assert_eq!(lowered("type v2 char[16]"), (Slot::Symbol, "retype v2 char[16]".into()));
         assert_eq!(lowered("name v2 credbuf"), (Slot::Symbol, "rename v2 credbuf".into()));
