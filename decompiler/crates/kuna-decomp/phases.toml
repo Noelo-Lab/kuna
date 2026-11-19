@@ -2113,6 +2113,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "switchguardmerge"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P2"
+subphase = "switch-model"
+strength = "HARD"
+rewind = "P2"
+issue = "kuna-switchguardmerge"
+summary = "Merge an equality test that a switch's range guard (or its default) leads to into the switch as more cases. gcc and clang lower a switch with a far outlier (case 100 beside case 0..6) to a jump table behind a range guard plus `x == 100` tests on the guard's other side, which printed as `if (a0 <= 6) { switch(a0) {...} } if (a0 != 100) return -1; ...`. With this on, the guard is evaluated on the outliers and on every case label (each must keep its path), the blocks on the way must only compute into values nothing outside the function reads, and the default must read the same values either way; then each outlier becomes a case and the guard goes. The same holds for a chain of tests that is the switch's own default (clang). When gcc's repeated unsigned range check landed on case 0 and was folded as the default, the chain's miss becomes the default, provided the standing guards admit only case labels."
+use_when = "On (default). Flip off to see the guard and the separate equality tests the compiler emitted."
+example = "option switchguardmerge off"
+source_decompiler = "kuna"
+inspiration = "gcc -O2 `switch (x) { case 0 ... 6: ...; case 100: ...; case 200: ... }`: a jump table behind `if (a0 <= 6)` and two equality tests after it, where the source has one switch"
+change_kind = "presentation-default"
+tier = "transform"
+symptoms = "a switch with a far outlier case prints as if (x <= N) { switch } if (x == C) ...|a case value outside the jump table is tested after the switch"
+live_field = "switch_guard_merge"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "switchsharedcase"
 values = "on|off"
 default = "on"

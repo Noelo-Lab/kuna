@@ -654,6 +654,9 @@ pub fn universal_sched(
             act!(ActionDeadCode::boxed_narrowing("deadcode")),
             act!(ActionDoNothing::boxed("deadcontrolflow")),
             act!(ActionSwitchNorm::boxed("switchnorm")),
+            // (kuna) switchguardmerge (option `switchguardmerge`, default-on): an
+            // equality test a range guard or the default leads to joins the switch.
+            act!(crate::p2_lift::kuna_switchguardmerge::ActionSwitchGuardMerge::boxed("switchnorm")),
             SchedNode::Action(Box::new(move || {
                 Box::new(crate::kuna_loweredswitch::ActionLowerSwitchDetect::with_store(
                     false,

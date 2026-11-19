@@ -2427,6 +2427,36 @@ flow, and adds `Exceeded maximum restarts with more pending` to the header.
 This is a correctness repair, without an option: before it, such a switch kept
 one case, and its other indexes fell through to the code after the switch.
 
+**Guard merging** (`switchguardmerge`, default on; kuna;
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_switchguardmerge.rs (ActionSwitchGuardMerge)`,
+run after `ActionSwitchNorm`): gcc and clang lower a switch with a far outlier
+(`case 100:` beside `case 0 ... 6:`) to a range guard around the jump table and
+`x == 100` tests on the guard's other side, or (clang) to a chain of such tests
+that the guard folding makes the switch's default. Such a chain is a run of
+single-entry blocks that only compute, into values nothing outside the function
+reads, each testing the switch variable (the BRANCHIND's input) against one
+constant that is not already a case. When the
+chain hangs off a guard, the walk up from the switch passes only blocks that
+compute and guards whose other side is the default, the guard and every block
+on the way are evaluated (`kuna_strlenscan.rs (eval)`) on each constant (it must
+reach the chain, then pass straight to the switch) and on every case label (it
+must stay on the switch side), and the default's MULTIEQUALs must read the same
+value from the chain and the switch. Each constant then becomes a case
+(`add_block_to_switch` and `push_branch`, as guard folding adds a default) and
+the guard's edge to the chain is removed. When the switch's default is one of
+its cases (gcc repeats the range check unsigned right before the table, landing
+on case 0, and guard folding takes that check as the default), the chain's last
+miss becomes the default instead, provided the guards still standing and the
+merged guard together admit only case labels
+(`JumpTable::kuna_standing_guard_range`), so no value the switch sees reached
+the folded default, and every guard on the way rejects to that miss. A chain that is the default ends at
+its last miss: a new block becomes the default's body; a block that is already
+a case becomes the default itself (`JumpTable::kuna_merge_out_edge`), so no
+empty block is left beside it. gcc -O2 `two` (cases 0..6, 100, 200) prints one
+switch instead of `if (a0 <= 6) { switch ... } if (a0 == 100) ...`; on Lua 5.4
+x86-64 five switches gain their outliers (`subexpr` `case 0x7e`, `statement`
+`case 0x3b`, `getgeneric` `case 0x54`), Lua AArch64 and ld.so none.
+
 ### The late check: labels, normalization folding, guard folding
 
 A table recovered mid-simplification may disagree with fully-simplified
