@@ -29,6 +29,7 @@
 
 pub mod descriptors;
 pub mod kuna_swiftcall;
+pub mod kuna_swiftruntime;
 pub mod kuna_swifttypes;
 
 #[cfg(test)]
