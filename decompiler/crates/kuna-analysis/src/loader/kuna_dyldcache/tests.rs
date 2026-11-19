@@ -236,9 +236,31 @@ fn sections_stop_at_the_segment_command() {
     put(&mut seg, 64, &1_000_000u32.to_le_bytes());
     let mut cmds = seg;
     cmds.resize(72 + 80 * 1000, 0xAA);
-    let layout = extract::tests_parse_layout(0x1000, vec![0; 32], cmds);
+    let layout = extract::tests_parse_layout(0x1000, extract::WIDE, vec![0; 32], cmds);
     assert_eq!(layout.segments.len(), 1);
     assert!(layout.segments[0].sections.is_empty());
+}
+
+/// A 32-bit image (arm64_32) keeps its segments in `LC_SEGMENT` commands with
+/// 32-bit fields and 68-byte sections.
+#[test]
+fn a_32_bit_image_reads_its_narrow_segment_and_section() {
+    let mut cmds = 1u32.to_le_bytes().to_vec();
+    cmds.extend((56u32 + 68).to_le_bytes());
+    cmds.extend(b"__DATA_CONST\0\0\0\0");
+    for field in [0x1a09_4000u32, 0x4000, 0x8000, 0x4000, 3, 3, 1, 0] {
+        cmds.extend(field.to_le_bytes());
+    }
+    cmds.extend(b"__got\0\0\0\0\0\0\0\0\0\0\0");
+    cmds.extend(b"__DATA_CONST\0\0\0\0");
+    for field in [0x1a09_4010u32, 0x20, 0x8010, 2, 0, 0, 6, 5, 0] {
+        cmds.extend(field.to_le_bytes());
+    }
+    let layout = extract::tests_parse_layout(0x1a09_0000, extract::NARROW, vec![0; 28], cmds);
+    let seg = &layout.segments[0];
+    assert_eq!((seg.name.as_str(), seg.vmaddr, seg.vmsize, seg.fileoff, seg.filesize), ("__DATA_CONST", 0x1a09_4000, 0x4000, 0x8000, 0x4000));
+    let sec = &seg.sections[0];
+    assert_eq!((sec.sectname.as_str(), sec.addr, sec.size, sec.section_type(), sec.reserved1), ("__got", 0x1a09_4010, 0x20, 6, 5));
 }
 
 /// Image entries that all name one long path copy it at most once per byte of

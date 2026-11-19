@@ -2143,6 +2143,7 @@ pub(crate) fn compose_language_id(arch: Architecture, endian: &str, model: Optio
         Architecture::X86_64 => format!("x86:LE:64:default:{}", model.unwrap_or("gcc")),
         Architecture::I386 => format!("x86:LE:32:default:{}", model.unwrap_or("gcc")),
         Architecture::Aarch64 => format!("AARCH64:{endian}:64:v8A:{}", model.unwrap_or("default")),
+        Architecture::Aarch64_Ilp32 => format!("AARCH64:{endian}:32:ilp32:{}", model.unwrap_or("default")),
         Architecture::Arm => format!("ARM:{endian}:32:v8:{}", model.unwrap_or("default")),
         Architecture::Mips => format!("MIPS:{endian}:32:default:{}", model.unwrap_or("default")),
         Architecture::PowerPc => {

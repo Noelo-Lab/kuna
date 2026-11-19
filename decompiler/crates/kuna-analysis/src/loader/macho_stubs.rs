@@ -189,7 +189,9 @@ where
         for xref in super::kuna_dyldcache::xrefs::read_note(bytes) {
             match xref.kind {
                 XrefKind::Data => continue,
-                XrefKind::Slot => out.import_slots.push((xref.addr, xref.addr.saturating_add(8))),
+                XrefKind::Slot => {
+                    out.import_slots.push((xref.addr, xref.addr.saturating_add(std::mem::size_of::<Mach::Word>() as u64)))
+                }
                 XrefKind::Call => {}
             }
             out.imports.push(ImportSym {

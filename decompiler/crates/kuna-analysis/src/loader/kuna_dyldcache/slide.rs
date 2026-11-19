@@ -14,6 +14,10 @@
 //!   target as 8 high bits at 43 and 43 low bits; an authenticated one keeps a
 //!   32-bit offset from the cache base (`auth_value_add`) and drops its
 //!   diversity and key, which the decompiler does not model.
+//! - v4 (32-bit caches: armv7k, arm64_32) keeps the link in the top two bits of
+//!   a 32-bit word. A value with no bits above 15 is a small positive integer and
+//!   one whose bits 15..29 are all set a small negative one (sign-extended);
+//!   anything else is a pointer, plus `value_add`.
 //! - v5 (arm64e, iOS 18+) packs a 34-bit runtime offset from `value_add` and an
 //!   11-bit link at bit 52; a plain pointer carries its top byte at bit 34.
 
@@ -30,6 +34,7 @@ enum Kind {
     V1,
     V2 { extras: Vec<u16>, delta_mask: u64, value_add: u64 },
     V3 { auth_value_add: u64 },
+    V4 { extras: Vec<u16>, delta_mask: u32, value_add: u32 },
     V5 { value_add: u64 },
 }
 
@@ -38,6 +43,10 @@ const V2_EXTRA: u16 = 0x8000;
 const V2_END: u16 = 0x8000;
 const V2_INDEX: u16 = 0x3FFF;
 const V3_NO_REBASE: u16 = 0xFFFF;
+const V4_NO_REBASE: u16 = 0xFFFF;
+const V4_EXTRA: u16 = 0x8000;
+const V4_END: u16 = 0x8000;
+const V4_INDEX: u16 = 0x7FFF;
 const MAX_CHAIN: usize = 1 << 14;
 /// Caches use 4 KiB or 16 KiB pages; a larger one would make every slid read
 /// that many bytes.
@@ -81,6 +90,15 @@ impl SlideInfo {
                 page_size,
                 starts: u16s(raw, 24, u32_at(raw, 8) as usize)?,
                 kind: Kind::V3 { auth_value_add: u64_at(raw, 16) },
+            },
+            4 if raw.len() >= 40 => SlideInfo {
+                page_size,
+                starts: u16s(raw, u32_at(raw, 8) as usize, u32_at(raw, 12) as usize)?,
+                kind: Kind::V4 {
+                    extras: u16s(raw, u32_at(raw, 16) as usize, u32_at(raw, 20) as usize)?,
+                    delta_mask: u64_at(raw, 24) as u32,
+                    value_add: u64_at(raw, 32) as u32,
+                },
             },
             5 => SlideInfo {
                 page_size,
@@ -128,6 +146,21 @@ impl SlideInfo {
                         chain64(page, start as usize, 51, |raw| v3_target(raw, *auth_value_add));
                     }
                 }
+                Kind::V4 { extras, delta_mask, value_add } => {
+                    if start == V4_NO_REBASE {
+                        continue;
+                    }
+                    if start & V4_EXTRA == 0 {
+                        v4_chain(page, (start & V4_INDEX) as usize * 4, *delta_mask, *value_add);
+                        continue;
+                    }
+                    for &extra in extras.iter().skip((start & V4_INDEX) as usize).take(MAX_CHAIN) {
+                        v4_chain(page, (extra & V4_INDEX) as usize * 4, *delta_mask, *value_add);
+                        if extra & V4_END != 0 {
+                            break;
+                        }
+                    }
+                }
                 Kind::V5 { value_add } => {
                     if start != V3_NO_REBASE {
                         chain64(page, start as usize, 52, |raw| v5_target(raw, *value_add));
@@ -150,6 +183,30 @@ fn v2_chain(page: &mut [u8], mut offset: usize, delta_mask: u64, value_add: u64)
         if value != 0 {
             value = value.wrapping_add(value_add);
         }
+        slot.copy_from_slice(&value.to_le_bytes());
+        if delta == 0 {
+            return;
+        }
+        offset += delta;
+    }
+}
+
+fn v4_chain(page: &mut [u8], mut offset: usize, delta_mask: u32, value_add: u32) {
+    let shift = delta_mask.trailing_zeros().saturating_sub(2);
+    for _ in 0..MAX_CHAIN {
+        let Some(slot) = page.get_mut(offset..offset + 4) else {
+            return;
+        };
+        let raw = u32::from_le_bytes(slot.try_into().unwrap());
+        let delta = (raw & delta_mask).checked_shr(shift).unwrap_or(0) as usize;
+        let value = raw & !delta_mask;
+        let value = if value & 0xFFFF_8000 == 0 {
+            value
+        } else if value & 0x3FFF_8000 == 0x3FFF_8000 {
+            value | 0xC000_0000
+        } else {
+            value.wrapping_add(value_add)
+        };
         slot.copy_from_slice(&value.to_le_bytes());
         if delta == 0 {
             return;
@@ -282,6 +339,28 @@ mod tests {
     #[test]
     fn v1_needs_no_rewrite_and_unknown_versions_are_refused() {
         assert!(SlideInfo::parse(&blob(1, 0, &[0; 16])).unwrap().is_none());
-        assert!(SlideInfo::parse(&blob(4, 0x1000, &[0; 32])).is_err());
+        assert!(SlideInfo::parse(&blob(6, 0x1000, &[0; 32])).is_err());
+    }
+
+    #[test]
+    fn v4_keeps_small_values_and_sign_extends_small_negatives() {
+        let mut header = Vec::new();
+        for v in [40u32, 1, 42, 0] {
+            header.extend(v.to_le_bytes());
+        }
+        header.extend(0xC000_0000u64.to_le_bytes());
+        header.extend(0x1A00_0000u64.to_le_bytes());
+        header.extend(0u16.to_le_bytes());
+        let info = SlideInfo::parse(&blob(4, 0x1000, &header)).unwrap().unwrap();
+        let link = |bytes: u32| (bytes / 4) << 30;
+        let mut page = vec![0u8; 0x1000];
+        for (off, raw) in [(0usize, link(4) | 0x0012_3450), (4, link(4) | 0x7FF0), (8, 0x3FFF_FFF0)] {
+            page[off..off + 4].copy_from_slice(&raw.to_le_bytes());
+        }
+        info.apply(&mut page, 0);
+        let word = |off: usize| u32::from_le_bytes(page[off..off + 4].try_into().unwrap());
+        assert_eq!(word(0), 0x1A12_3450, "a pointer gets value_add");
+        assert_eq!(word(4), 0x7FF0, "a small positive value is kept");
+        assert_eq!(word(8), 0xFFFF_FFF0, "a small negative value is sign-extended");
     }
 }

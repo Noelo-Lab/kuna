@@ -1288,6 +1288,14 @@ recipe, toolchain and SHA-256s in `macho_ptrslots_arm64.provenance`. Pinned by
 `loadimage_object.rs (macho_chained_fixups_are_applied_to_the_image)`,
 `chained.rs (fixture_rebases_and_binds)` and `tests/verify_dynrelocs_gate.rs`.
 
+### `macho_arm64_32` — a thin arm64_32 (watchOS, ILP32) executable
+
+`macho_arm64_32` (~33 KB) is `macho_arm64_32.c` built for
+`arm64_32-apple-watchos7.0`; its header has the commands. A 28-byte
+`mach_header`, `LC_SEGMENT` commands and 4-byte pointers: the witness that an
+arm64_32 Mach-O loads as `AARCH64:LE:32:ilp32`
+(`tests/stages/kuna-macho-arm64-32.xml`).
+
 ### `macho_bindslots_arm64` — data pointers bound to imports
 
 `macho_bindslots_arm64` (arm64, 33 KB) has two `__DATA,__data` pointers bound by

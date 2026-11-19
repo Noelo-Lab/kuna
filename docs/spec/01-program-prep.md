@@ -1403,11 +1403,23 @@ slide zero (`kuna_dyldcache/slide.rs (SlideInfo::apply)`). v2 chains carry a
 `delta_mask` link plus `value_add`, and a page may list several chains in an
 extras array. v3 chains carry an 11-bit link at bit 51: plain pointers keep a
 51-bit target with a top byte, and authenticated ones keep a 32-bit offset
-from `auth_value_add`. v5 chains carry a 34-bit runtime offset from
-`value_add` and the link at bit 52. Each slot therefore holds its unslid
+from `auth_value_add`. v4 chains (32-bit caches) keep the link in the top two
+bits of a 32-bit word: a value with no bits above 15 is a small positive
+integer, one whose bits 15 to 29 are all set a small negative one
+(sign-extended), and anything else is a pointer plus `value_add`. v5 chains
+carry a 34-bit runtime offset from `value_add` and the link at bit 52. Each
+slot therefore holds its unslid
 target; the PAC key and diversity of an auth pointer are dropped, because the
-decompiler does not model them. v1 needs no rewrite at slide zero, and v4
-(32-bit caches) is refused by name. The cache's images share one `__LINKEDIT`,
+decompiler does not model them. v1 needs no rewrite at slide zero. A 32-bit
+cache (`arm64_32` on watchOS) holds 32-bit Mach-O images: a 28-byte header,
+`LC_SEGMENT` commands with 32-bit fields and 68-byte sections, 12-byte nlists
+and 4-byte pointer slots. The rebuild reads and writes either layout through
+one table of field offsets (`extract.rs (Width)`), the local-symbols file's
+nlists follow the cache's width, and a stub's `ldr w` is followed like its
+`ldr x`. An `arm64_32` Mach-O, thin or rebuilt from a cache, loads as
+`AARCH64:LE:32:ilp32` (`loadimage_object.rs (compose_language_id)`). On the
+watchOS 10.0.1 cache of a Watch5,1, `libobjc.A.dylib` rebuilds, lists 1,073
+functions and decompiles with its cross-image calls named. The cache's images share one `__LINKEDIT`,
 so the image gets a private one. It holds the image's nlists, a compact string
 table read in spans around the names actually used (the shared pool is tens of
 megabytes and an image's names are scattered through it), the indirect-symbol

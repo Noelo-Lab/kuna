@@ -105,15 +105,19 @@ pub fn decode(blob: &[u8]) -> Vec<Xref> {
         .collect()
 }
 
-/// The cross-image references a thin 64-bit Mach-O carries in its
+/// The cross-image references a thin little-endian Mach-O carries in its
 /// `kuna.dyld.xrefs` note; empty for any other input.
 pub fn read_note(bytes: &[u8]) -> Vec<Xref> {
-    const MH_MAGIC_64: u32 = 0xfeed_facf;
-    if bytes.len() < 32 || u32_at(bytes, 0) != MH_MAGIC_64 {
+    if bytes.len() < 32 {
         return Vec::new();
     }
+    let header = match u32_at(bytes, 0) {
+        0xfeed_facf => 32,
+        0xfeed_face => 28,
+        _ => return Vec::new(),
+    };
     let (ncmds, sizeofcmds) = (u32_at(bytes, 16) as usize, u32_at(bytes, 20) as usize);
-    let Some(cmds) = bytes[32..].get(..sizeofcmds) else {
+    let Some(cmds) = bytes[header..].get(..sizeofcmds) else {
         return Vec::new();
     };
     let mut at = 0usize;
@@ -200,8 +204,9 @@ pub(super) fn collect<'v>(
                 } else {
                     &[]
                 };
-                for (i, p) in bytes.chunks_exact(8).enumerate() {
-                    let value = u64_at(p, 0);
+                let ptr = layout.width.ptr();
+                for (i, p) in bytes.chunks_exact(ptr).enumerate() {
+                    let value = if ptr == 8 { u64_at(p, 0) } else { u64::from(u32_at(p, 0)) };
                     if value == 0 || layout.holds(value) {
                         continue;
                     }
@@ -209,7 +214,7 @@ pub(super) fn collect<'v>(
                     if typed && entry.is_some_and(|&e| e & INDIRECT_LOCAL_OR_ABS == 0) {
                         continue;
                     }
-                    slots.push((sec.addr + i as u64 * 8, value));
+                    slots.push((sec.addr.wrapping_add((i * ptr) as u64), value));
                 }
             }
         }
@@ -309,7 +314,7 @@ fn sign_extend(v: u32, bits: u32) -> i64 {
 }
 
 /// Follow the stub at `addr` to the address it jumps to: up to four
-/// instructions of `adrp`, `add`, `ldr` (through slid data) ending in `br`,
+/// instructions of `adrp`, `add`, `ldr` x or w (through slid data) ending in `br`,
 /// `braa`/`brab` or `braaz`/`brabz`. `None` for anything else.
 fn follow_stub(cache: &DyldCache, addr: u64) -> Option<u64> {
     let code = cache.read_va(addr, 16).ok()?;
@@ -329,6 +334,9 @@ fn follow_stub(cache: &DyldCache, addr: u64) -> Option<u64> {
         } else if w & 0xFFC0_0000 == 0xF940_0000 {
             let slot = regs[rn]?.wrapping_add((((w >> 10) & 0xFFF) as u64) * 8);
             regs[rd] = Some(u64_at(&cache.read_slid(slot, 8).ok()?, 0));
+        } else if w & 0xFFC0_0000 == 0xB940_0000 {
+            let slot = regs[rn]?.wrapping_add((((w >> 10) & 0xFFF) as u64) * 4);
+            regs[rd] = Some(u64::from(u32_at(&cache.read_slid(slot, 4).ok()?, 0)));
         } else if w & 0xFFFF_FC1F == 0xD61F_0000 || w & 0xFFFF_F800 == 0xD71F_0800 || w & 0xFFFF_F81F == 0xD61F_081F {
             return regs[rn];
         } else {

@@ -157,6 +157,8 @@ struct LocalSymbols {
 /// An opened dyld shared cache.
 pub struct DyldCache {
     files: Vec<CacheFile>,
+    /// A 64-bit cache; `arm64_32`, `armv7k` and `i386` caches hold 32-bit images.
+    wide: bool,
     mappings: Vec<Mapping>,
     images: Vec<CacheImage>,
     base: u64,
@@ -314,8 +316,11 @@ impl DyldCache {
         let total_len: u64 = files.iter().map(|f| f.len).sum();
         mappings.retain(|m| m.size != 0);
         mappings.sort_by_key(|m| m.address);
+        let arch = h.arch();
+        let wide = !(arch == "arm64_32" || arch.starts_with("armv") || arch == "i386");
         Ok(DyldCache {
             files,
+            wide,
             mappings,
             images,
             base,
@@ -527,14 +532,17 @@ impl DyldCache {
         };
         self.charge(count as u64 * NLIST_RETAINED)?;
         let file = &self.files[locals.file];
-        let raw = file.read_at(locals.nlist_offset.saturating_add(start as u64 * 16), count as usize * 16)?;
+        let size = if self.wide { 16 } else { 12 };
+        let raw =
+            file.read_at(locals.nlist_offset.saturating_add(start as u64 * size as u64), count as usize * size)?;
         let pool = StringPool::read(
             &|off, len| file.read_at(locals.strings_offset.saturating_add(off), len),
+            size,
             locals.strings_size,
             &raw,
             &|n| self.charge(n),
         )?;
-        extract::Nlist::parse_all(&raw, &pool, &|n| self.charge(n))
+        extract::Nlist::parse_all(&raw, size, &pool, &|n| self.charge(n))
     }
 }
 
@@ -608,14 +616,15 @@ pub(crate) struct StringPool {
 
 impl StringPool {
     /// Read, through `read(offset, len)`, the spans of a `size`-byte pool that
-    /// `nlists` name.
+    /// the `nlist_size`-byte `nlists` name.
     pub(crate) fn read(
         read: &dyn Fn(u64, usize) -> Result<Vec<u8>, String>,
+        nlist_size: usize,
         size: u64,
         nlists: &[u8],
         charge: &dyn Fn(u64) -> Result<(), String>,
     ) -> Result<StringPool, String> {
-        Self::read_at(read, size, nlists.chunks_exact(16).map(|n| u32_at(n, 0) as u64), charge)
+        Self::read_at(read, size, nlists.chunks_exact(nlist_size).map(|n| u32_at(n, 0) as u64), charge)
     }
 
     /// Read the spans of a `size`-byte pool around the strings at `offsets`.
