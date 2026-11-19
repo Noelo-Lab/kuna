@@ -2226,7 +2226,9 @@ mod tests {
         // and kuna-kernelbug / a Linux kernel __bug_table trap prints as __WARN(file,line) or BUG()
         // and kuna-kernelcacheboot / an Auxiliary kernel collection resolved against its boot collection (option kernelcache-boot)
         // and gh1674-subpiece-shadow-wide-const / a subpiece shadow 8 bytes into a 16-byte constant reads 0
-        assert_eq!(count, 784, "corpus file count drifted");
+        // and kuna-wrapadd / wrapadd wraps a widened four-byte sum before its extension
+        // and kuna-rustversion-commit / a Rust image without .comment gets its release from /rustc/<commit>/ paths
+        assert_eq!(count, 789, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

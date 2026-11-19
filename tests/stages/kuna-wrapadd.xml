@@ -1,0 +1,81 @@
+<decompilertest>
+<binaryimage arch="MIPS:BE:64:default">
+<bytechunk space="ram" offset="0x100000" readonly="true">03e0000800000000</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<!--
+  kuna wrapadd: a four-byte addition the machine wraps at 32 bits before a
+  64-bit sign extension prints as `value + 1` over a signed int, which
+  overflows (undefined C) at INT32_MAX. P9 emission / cast-policy; P0
+  assertion `option wrapadd`. Two passes over LLVM objects for x86-64,
+  AArch64, PowerPC64 and MIPS64 (tests/fixtures/wide-integer-emission/shift.c,
+  `word_wrap`): the default (off) keeps upstream's spelling; on adds the
+  unsigned conversion and restores the signed result. The CLI companion
+  wrap_add_emission.rs executes the on output under UBSan at O0/O2.
+-->
+<script>
+<com>clear architecture</com>
+<com>load file tests/fixtures/wide-integer-emission/x86-64.elf</com>
+<com>read symbols</com>
+<com>map prototype word_wrap long long word_wrap(int value);</com>
+<com>lo fu word_wrap</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/wide-integer-emission/aarch64.elf</com>
+<com>read symbols</com>
+<com>map prototype word_wrap long long word_wrap(int value);</com>
+<com>lo fu word_wrap</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/wide-integer-emission/ppc64.elf</com>
+<com>read symbols</com>
+<com>map prototype word_wrap long long word_wrap(int value);</com>
+<com>lo fu word_wrap</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/wide-integer-emission/mips64.elf</com>
+<com>read symbols</com>
+<com>map prototype word_wrap long long word_wrap(int value);</com>
+<com>lo fu word_wrap</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/wide-integer-emission/x86-64.elf</com>
+<com>read symbols</com>
+<com>option wrapadd on</com>
+<com>map prototype word_wrap long long word_wrap(int value);</com>
+<com>lo fu word_wrap</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/wide-integer-emission/aarch64.elf</com>
+<com>read symbols</com>
+<com>option wrapadd on</com>
+<com>map prototype word_wrap long long word_wrap(int value);</com>
+<com>lo fu word_wrap</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/wide-integer-emission/ppc64.elf</com>
+<com>read symbols</com>
+<com>option wrapadd on</com>
+<com>map prototype word_wrap long long word_wrap(int value);</com>
+<com>lo fu word_wrap</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/wide-integer-emission/mips64.elf</com>
+<com>read symbols</com>
+<com>option wrapadd on</com>
+<com>map prototype word_wrap long long word_wrap(int value);</com>
+<com>lo fu word_wrap</com>
+<com>decompile</com>
+<com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="wrapadd #1: the default keeps the signed sum" min="4" max="4">return value \+ 1;</stringmatch>
+<stringmatch name="wrapadd #2: on wraps the unsigned sum before the sign extension" min="4" max="4">return \(int4\)\(\(uint4\)value \+ 1\);</stringmatch>
+</decompilertest>
