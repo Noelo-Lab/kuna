@@ -693,6 +693,10 @@ Three tiers:
 | warning text wanted inline at the end of the statement it describes | [`warnstyle`](#warnstyle----inline--banner-default-inline) |
 | terse warning slugs unwanted; full upstream warning text needed | [`warnstyle`](#warnstyle----inline--banner-default-inline) |
 | warning style needs to match upstream ghidra for diffing | [`warnstyle`](#warnstyle----inline--banner-default-inline) |
+| an AArch64 function that tags a pointer (irg, addg) decompiles to return a0 | [`acleintrinsics`](#acleintrinsics----on--off-default-on) |
+| stg, st2g or stzg leave no trace in the output of MTE-hardened AArch64 code | [`acleintrinsics`](#acleintrinsics----on--off-default-on) |
+| DataMemoryBarrier(2,3) or DataSynchronizationBarrier(3,3,0) where the source called __dmb or __dsb | [`acleintrinsics`](#acleintrinsics----on--off-default-on) |
+| WaitForInterrupt() or Yield() where the source called __wfi or __yield | [`acleintrinsics`](#acleintrinsics----on--off-default-on) |
 | a DOS program's float code decompiles as calls through swi(0x35) and other INT 34h-3Dh vectors | [`fpuemu`](#fpuemu----off--auto--on-default-auto) |
 | Control flow encountered bad instruction data in a DOS function that does float math | [`fpuemu`](#fpuemu----off--auto--on-default-auto) |
 | a phantom function starts inside an INT 35h instruction's operand bytes | [`fpuemu`](#fpuemu----off--auto--on-default-auto) |
@@ -826,6 +830,9 @@ Three tiers:
 | a signed ARM shift overflows into the sign bit in recompiled output | [`armconstshift`](#armconstshift----off--on--all-default-off) |
 | UBSan reports a left shift of a negative 64-bit value in recompiled output | [`armconstshift`](#armconstshift----off--on--all-default-off) |
 | a sign-extended 32-bit value shifted left into the sign bit of a 64-bit result | [`armconstshift`](#armconstshift----off--on--all-default-off) |
+| UBSan reports a signed integer overflow in a recompiled 32-bit addition | [`wrapadd`](#wrapadd----on--off-default-off) |
+| a sign-extended 32-bit sum differs from the binary at INT32_MAX in recompiled output | [`wrapadd`](#wrapadd----on--off-default-off) |
+| (long)(a + 1) where the machine wraps at 32 bits | [`wrapadd`](#wrapadd----on--off-default-off) |
 | a function that reads many constant globals between calls exhausts memory during heritage | [`readonlycalls`](#readonlycalls----off--on---default-65536) |
 | decompile of a huge function is killed before the first jump table is recovered | [`readonlycalls`](#readonlycalls----off--on---default-65536) |
 | thousands of INDIRECTs over read-only globals survive in a large function's IR | [`readonlycalls`](#readonlycalls----off--on---default-65536) |
@@ -2310,6 +2317,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **Where / provenance:** P9/warning-style · kuna · presentation-default · kuna-cnorm-fmt
 - **Example:** `option warnstyle banner`
 
+### `acleintrinsics` -- on | off, default `on`
+
+- **Symptoms:** an AArch64 function that tags a pointer (irg, addg) decompiles to return a0; stg, st2g or stzg leave no trace in the output of MTE-hardened AArch64 code; DataMemoryBarrier(2,3) or DataSynchronizationBarrier(3,3,0) where the source called __dmb or __dsb; WaitForInterrupt() or Yield() where the source called __wfi or __yield.
+- **What it does:** On AArch64, lift the memory-tagging (MTE) instructions with their tag effect and print the barrier, hint and memory-tagging user ops as the ACLE intrinsics of <arm_acle.h>. The vendored AARCH64.pspec leaves the ShowMemTag context at 0, under which irg, addg, subg, gmi and ldg lift as a plain pointer copy or add and the stg family as nothing or a plain store, so __arm_mte_create_random_tag(p, 0) decompiled to return p. On sets ShowMemTag to 1 over the code space before a function is lifted; only the memory-tagging constructors read that context, so code without those instructions lifts exactly as before. Each tag instruction is then one user op whose result is the tagged pointer: irg prints __arm_mte_create_random_tag(p, mask), addg and subg __arm_mte_increment_tag(p + n, k), gmi __arm_mte_exclude_tag(p, mask), ldg x, [x] __arm_mte_get_tag(p), and stg x, [x] (and each granule st2g, stzg, stz2g and stgp tag) __arm_mte_set_tag(p). A tag load or store whose pointer and granule address differ has no ACLE spelling and keeps its user-op name, LoadPtrTag(p, addr) or StorePtrTag(addr, p). The alignment fault stg raises on a misaligned address is not modelled as a branch. Independently of MTE, DataMemoryBarrier(domain, types) prints __dmb(CRm) with the two operands recombined into the 4-bit CRm the intrinsic takes, DataSynchronizationBarrier likewise __dsb(CRm) (the nXS forms keep their name), InstructionSynchronizationBarrier() prints __isb(CRm) with CRm read from the instruction, and WaitForInterrupt, WaitForEvent, Yield, SendEvent and SendEventLocally print __wfi(), __wfe(), __yield(), __sev() and __sevl(). The rewrite is keyed on the user-op name and changes only the spelling of the call.
+- **When to flip:** On by default on AArch64 and inert on every other target: the output names the intrinsic the source called, and a pointer that was tagged is the result of a call instead of an unchanged copy. Flip off to read barriers and hints under their SLEIGH instruction names with the domain and type operands separate, or to read MTE-hardened code (for example a stack-tagging build, which tags every address-taken local) as if the core had no tags.
+- **Where / provenance:** P9/naming-policy · kuna · correctness-fix · kuna-acleintrinsics
+- **Example:** `option acleintrinsics off`
+
 ### `fpuemu` -- off | auto | on, default `auto`
 
 - **Symptoms:** a DOS program's float code decompiles as calls through swi(0x35) and other INT 34h-3Dh vectors; Control flow encountered bad instruction data in a DOS function that does float math; a phantom function starts inside an INT 35h instruction's operand bytes; swi(0x3d) calls where the program waits for the coprocessor.
@@ -2565,6 +2580,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** Turn on when the emitted C must be free of signed-shift undefined behavior, e.g. before recompiling it with sanitizers or comparing it against the binary; use `all` for 64-bit code on any architecture. Off by default because the conversion adds a cast pair to every ARM sign-bit test such as `x << 0x18 < 0`, which firmware uses for nearly every register flag check, and to every scaled 64-bit index.
 - **Where / provenance:** P9/cast-policy · kuna · correctness-fix · arm-fixed-signed-lsl
 - **Example:** `option armconstshift on`
+
+### `wrapadd` -- on | off, default `off`
+
+- **Symptoms:** UBSan reports a signed integer overflow in a recompiled 32-bit addition; a sign-extended 32-bit sum differs from the binary at INT32_MAX in recompiled output; (long)(a + 1) where the machine wraps at 32 bits.
+- **What it does:** Print a four-byte addition whose result a wider sign extension observes, through a return, a store or a comparison, as an addition of its unsigned conversion, `(int)((unsigned int)a + b)`, so the emitted C wraps at 32 bits exactly as the machine word does instead of overflowing a signed int, which is undefined and lets a compiler compute the sum at 64 bits. Applies on every architecture when the printed operands are signed four-byte integers or literals and the output language is C. Each operand prints once and other readers are unchanged; an already unsigned literal, address-only uses and library lengths keep their spelling.
+- **When to flip:** Turn on when the emitted C must be free of signed-overflow undefined behavior, e.g. before recompiling it with sanitizers or comparing it against the binary; MIPS `addiu` and RISC-V `addw` results that are sign-extended into 64-bit registers are the usual source. Off by default because the casts land on every widened int sum such as `return a0 + 3;`.
+- **Where / provenance:** P9/cast-policy · kuna · correctness-fix · widened-signed-add
+- **Example:** `option wrapadd on`
 
 ### `readonlycalls` -- off | on | <n>, default `65536`
 

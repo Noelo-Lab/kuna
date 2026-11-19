@@ -42,6 +42,7 @@ kuna_options! { self, p1;
         self.present_lessequal = form.present_lessequal();
         Ok(msg)
     },
+    "wrapadd" => on_off!(wrap_add, "Wrapping four-byte addition before a wider sign extension"),
     "armconstshift" => {
         let (mode, msg) = crate::p9_emit::kuna_armconstantshift::OptionArmConstShift.apply(p1)?;
         self.arm_constant_shift = mode;
@@ -693,6 +694,7 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "cortexmpriv" => on_off!(cortexmpriv, "Cortex-M privileged-mode guard folding"),
+    "acleintrinsics" => on_off!(acle_intrinsics, "AArch64 ACLE intrinsics"),
     "dedupvardecls" => {
         let (val, msg) = crate::kuna_dedupvardecls::OptionDedupVarDecls.apply(p1)?;
         self.dedup_var_decls = val;

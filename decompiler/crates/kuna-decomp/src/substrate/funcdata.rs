@@ -441,6 +441,9 @@ pub struct Funcdata {
     /// is what lets the front-ends report the rejection (`--assert` ledger, exit
     /// code) while still emitting the C.
     kuna_rejected_flow: Vec<(Address, kuna_base::types::uint4, String)>,
+    /// (kuna `--assert callee`) The caller-stated indirect-call destinations
+    /// the followed flow did not apply, as `(call site, callee, reason)`.
+    kuna_rejected_callee: Vec<(Address, Address, String)>,
     /// (kuna `--assert`) The local-scope Symbols the `name`/`type` directives
     /// applied to THIS pass renamed, retyped or created, each keyed back to the
     /// identifier the pass printed for its variable.  A rebuilt `Funcdata` starts
@@ -841,6 +844,7 @@ impl Funcdata {
             kuna_call_mechanisms: Default::default(),
             kuna_fspec_handles: Vec::new(),
             kuna_rejected_flow: Vec::new(),
+            kuna_rejected_callee: Vec::new(),
             kuna_directive_symbols: Vec::new(),
             kuna_prior_names: Default::default(),
             kuna_default_name_end: 1,
@@ -1070,6 +1074,21 @@ impl Funcdata {
     /// (kuna) The flow overrides this function's flow follow refused.
     pub fn kuna_rejected_flow_overrides(&self) -> &[(Address, kuna_base::types::uint4, String)] {
         &self.kuna_rejected_flow
+    }
+
+    /// (kuna) Record a stated indirect-call destination the flow did not apply.
+    /// Idempotent per call site.
+    pub fn note_rejected_callee_override(&mut self, site: Address, callee: Address, reason: &str) {
+        if self.kuna_rejected_callee.iter().any(|(s, _, _)| s == &site) {
+            return;
+        }
+        self.kuna_rejected_callee.push((site, callee, reason.to_string()));
+    }
+
+    /// (kuna) The stated indirect-call destinations this function's flow did
+    /// not apply.
+    pub fn kuna_rejected_callee_overrides(&self) -> &[(Address, Address, String)] {
+        &self.kuna_rejected_callee
     }
 
     /// (kuna `--assert`) The Symbols a `name`/`type` directive touched on this pass.
@@ -4134,9 +4153,11 @@ impl Funcdata {
     /// op's parent, splice it onto the per-op intrusive basic-block list before
     /// `before`, then compute `ordbefore`/`ordafter` from neighbours and either
     /// set an overflow-safe midpoint or recompute the whole order. An append that
-    /// finds no room renumbers into the lower half of the order space, so later
-    /// appends do not renumber the block again every few ops. The BRANCHIND
-    /// `f_switch_out` mark is applied via the block flags.
+    /// finds no room renumbers into the lower half of the order space, and an
+    /// append that makes a block 256 ops or longer takes a gap that shrinks with
+    /// the block's length, so each renumbering leaves room for as many appends as
+    /// the block already holds and building a block stays linear in its ops.
+    /// The BRANCHIND `f_switch_out` mark is applied via the block flags.
     pub fn bb_insert_op(&mut self, op: OpId, bl: BlockId, before: Option<OpId>) {
         if self.op_is_call_or_store(op) {
             self.affecting_ops_changed();
@@ -4174,7 +4195,8 @@ impl Funcdata {
         // on overflow) else the order of the op we inserted before.
         let ordafter: uintm = match before {
             None => {
-                let oa = ordbefore.wadd(0x1000000);
+                let gap = (uintm::MAX / self.bb_op_len(bl) as uintm).min(0x1000000);
+                let oa = ordbefore.wadd(gap);
                 if oa <= ordbefore {
                     uintm::MAX
                 } else {
@@ -6612,14 +6634,14 @@ mod tests {
         let mut fd = build_fd();
         let (block, _) = make_block_with_ops(&mut fd, 1);
         let start = fd.affecting_ops_revision();
-        for i in 0..20_000u64 {
+        for i in 0..200_000u64 {
             let op = fd.obank.create_at(1, Address::new(ram_space(&fd), 0x2000 + i));
             fd.obank.change_opcode(op, TypeOp::new(OpCode::CPUI_COPY, 0, "COPY"));
             fd.bb_insert_op(op, block, None);
         }
         assert_strict_block_order(&fd, block);
         let renumbers = fd.affecting_ops_revision() - start;
-        assert!(renumbers <= 100, "{renumbers} renumbers");
+        assert!(renumbers <= 16, "{renumbers} renumbers");
     }
 
     #[test]

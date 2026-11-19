@@ -1482,14 +1482,21 @@ states the signature its target must have, and when `calltargettype` is on,
 final one: it runs once, in the one-shot tail, after `ActionNameVars` and
 directly before `ActionSetCasts`, and never feeds the inference lattice or
 `ActionDeindirect`'s forced prototypes. For each indirect call whose prototype
-is neither locked nor variadic it builds `R (*)(A1,..,An)` with
+is neither variadic nor locked, or was stated at the call itself (`override
+prototype`, the `callproto` assertion, which types the call but not the value
+it goes through), it builds `R (*)(A1,..,An)` with
 `TypeFactory::getTypeCode(PrototypePieces)`: `R` is the high type of the call's
 output, or `void` when it has none, and each `Ai` the high type of the argument
 in that slot as it is read there -- except an argument printed inline as an
 address computed from a base (`&v4`, `&a1[2]`, a `PTRSUB` or `PTRADD`), whose C
 type is the base's rather than its own, which takes `void *`. A call any of
 whose types has no C spelling (a partial or union-resolving type, an array, a
-`TYPE_SPACEBASE`, a scalar of a width C has no type for) is skipped.
+`TYPE_SPACEBASE`, a scalar of a width C has no type for) is skipped. A call
+whose prototype was stated at the call takes `R` and the `Ai` from that
+declaration instead (a variadic one its fixed parameters and `...`, the
+arguments past them passed as printed), and the storage its declared
+parameters were given stands in for the argument storage such a call never
+recovers.
 
 The type must also be one a C compiler would pass the same way. Laid out under
 the default model, each parameter of the built prototype has to fall inside the
@@ -3461,6 +3468,15 @@ to bound the case count (chapter 02), and (b) the boolean-expression melding
 rule `decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_1.rs
 (RuleRangeMeld)`, which pulls two comparison ranges back to a common Varnode
 and intersects/unions them into one comparison.
+
+A Varnode's non-zero mask is itself a range: `set_nz_mask` turns a mask with
+one run of set bits into `[0, mask + stride)` with the stride `2^k`, `k` being
+the mask's lowest set bit. The step is a 32-bit signed integer, so the largest
+stride it holds is `2^30`. A mask whose lowest set bit is higher (the value of
+`x << 35` in a 64-bit register, the form a RISC-V bit test takes) forms no
+range: `set_nz_mask` reports failure and the guard analysis keeps the range it
+pulled back, without the mask's refinement. Upstream shifts the 32-bit step by
+`k` unchecked, which is undefined for `k >= 32`.
 
 **The value-set solver.** On top of `CircleRange` sits an abstract
 interpretation layer (`ValueSet`, `ValueSetSolver`, same file): a

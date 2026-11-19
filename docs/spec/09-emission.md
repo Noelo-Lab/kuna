@@ -1622,6 +1622,35 @@ default spelling and the converted one on x86-64, AArch64, PowerPC64 and MIPS64
 objects from `tests/fixtures/wide-integer-emission/`; `kuna-cli/tests/wide_shift_emission.rs`
 executes the emitted C at O0/O2 under UBSan over signed boundary bit patterns.
 
+**(kuna) Wrapping widened additions — `option wrapadd`.** A four-byte addition
+whose result a wider sign extension observes, such as MIPS `addiu` or RISC-V
+`addw` feeding a 64-bit register, wraps at 32 bits on the machine. Printed as
+`(long)(a + 1)` over signed operands, the C addition overflows an `int` instead,
+which is undefined: UBSan reports it and a compiler may compute the sum at 64
+bits. With the option on,
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_widenedadd.rs (plan)` finds such
+an `INT_ADD`: a four-byte output, operands that print as signed four-byte
+integers (or one of them a four-byte literal), and a bounded COPY/CAST reader
+chain into a wider `INT_SEXT` whose value reaches a return, a store or a
+comparison. The printer then adds the left operand's unsigned conversion and
+restores a signed result: `(int)((unsigned int)a + 1)`. Each operand prints once
+and the IR is unchanged. The conversion is the addition's own spelling, so a sum
+printed inline at several readers is converted at each of them, and a compound
+`x += 1` prints as `x = (int)((unsigned int)x + 1)`. Address-only uses and
+library lengths keep their pointer and domain handling, and a U-suffixed literal
+already makes the addition wrap. Only the top-level addition is repaired: an
+operand keeps its own spelling, so in `(int)((unsigned int)(a + b) + c)` the
+inner `a + b` can still overflow. A subtraction of two values (`INT_SUB`), a
+product, and a sum that reaches its sign extension through a phi or is only
+zero-extended keep their signed form. The option is off by default because the
+casts land on every widened int sum, loop counters included: over 441 x86-64,
+AArch64, ARM, PowerPC64, MIPS64 and RISC-V 64 binaries it adds about 1.3 casts
+per 1,000 output lines (5.7 on MIPS64, 4.2 on RISC-V 64, under 0.3 elsewhere).
+`tests/stages/kuna-wrapadd.xml` pins both spellings on x86-64, AArch64,
+PowerPC64 and MIPS64 objects from `tests/fixtures/wide-integer-emission/`, and
+`kuna-cli/tests/wrap_add_emission.rs` executes the `on` output at O0/O2 under
+UBSan at `INT32_MAX` and `UINT32_MAX`.
+
 **Every label labels a statement.** Label placement in the printed C is valid
 C99/C11/C17 and does not rely on C23. In those dialects a label is part of a
 labeled statement, so `case 2:`, `default:` or `label_10ad:` directly before a
@@ -2159,8 +2188,12 @@ scalar those sizes keep `undefined<N>` (DIV-48,
 `tests/stages/ghdec-realtypes-pointee.xml`). A genuine `TYPE_VOID` pointee
 is not a residual unknown and never enters the relabel, so the opaque
 `void *` of `free`/`malloc`/`memcpy` is unaffected. Per-symbol format assertions
-(`map convert`, `force datatype`) override the global format at the same
-point ([docs/options.md](../options.md)).
+(`map convert`, `force varnode`, `force constant`, `force datatype`) override
+the global format at the same point ([docs/options.md](../options.md)). `force
+constant <addr> <format> [<value>]`, which the `--assert format` directive
+lowers to, names the constant by the address of the instruction that reads it
+instead of by a dataflow hash or a p-code sequence number (chapter 00, the
+assertion plane).
 
 Signed integer constants are normalized to their declared byte width before
 choosing their sign, magnitude, and numeric base
@@ -4638,6 +4671,55 @@ Rust forbids raw spellings of `_`, `crate`, `self`, `Self`, and `super`, so thos
 are excluded. This correction applies only to functional machine-operation
 calls, not to unrelated type, variable, namespace, or symbol naming.
 
+### AArch64 ACLE intrinsics (`acleintrinsics`)
+
+**(kuna) `option acleintrinsics on|off`, default on, AArch64 only,
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_acleintrinsics.rs
+(intrinsic)`; Kuna #1626.** A functional `CALLOTHER` prints under the name
+its SLEIGH spec gave the user op, which describes the instruction:
+`DataMemoryBarrier(2,3)`, `WaitForInterrupt()`. The source called an
+intrinsic of `<arm_acle.h>`, `__dmb(11)` or `__wfi()`. `op_callother_ir`
+asks `intrinsic` first, and when it answers prints that name and argument
+list instead. The rewrite is keyed on the user-op name, applies only to an
+`AARCH64:` language, and changes only the spelling of the call: the op, its
+operands and their expressions are the ones the user-op name would print.
+
+| user op | prints as |
+|---|---|
+| `DataMemoryBarrier(domain, types)` | `__dmb(domain << 2 \| types)` |
+| `DataSynchronizationBarrier(domain, types, 0)` | `__dsb(domain << 2 \| types)` |
+| `InstructionSynchronizationBarrier()` | `__isb(CRm)` |
+| `WaitForInterrupt()`, `WaitForEvent()` | `__wfi()`, `__wfe()` |
+| `Yield()`, `SendEvent()`, `SendEventLocally()` | `__yield()`, `__sev()`, `__sevl()` |
+| `RandomizePtrTag_Exclude(p, mask)` | `__arm_mte_create_random_tag(p, mask)` |
+| `AddPtrTag(p, k)` | `__arm_mte_increment_tag(p, k)` |
+| `ExcludePtrTag(p, mask)` | `__arm_mte_exclude_tag(p, mask)` |
+| `LoadPtrTag(p, p)` | `__arm_mte_get_tag(p)` |
+| `StorePtrTag(p, p)` | `__arm_mte_set_tag(p)` |
+
+The spec splits a barrier's 4-bit `CRm` field into a two-bit domain and a
+two-bit type operand; the intrinsic takes the field, so the two constants
+recombine and print in decimal, the way the source wrote them. `isb`'s user
+op carries no operand, so its `CRm` is read from the instruction's encoding
+at the op's address; when the bytes cannot be read the SLEIGH name stays. A
+`dsb` with the `nXS` qualifier, the timed `wfet`/`wfit` forms, and every
+operand count other than the one listed keep their names, since no
+intrinsic has that meaning.
+
+`__arm_mte_get_tag(p)` and `__arm_mte_set_tag(p)` load or store the tag of
+the granule `p` itself points to. `ldg x1, [x0]` and `stg x1, [x0]` name a
+different granule and have no ACLE spelling, so the rewrite applies only when
+the pointer operand and the address operand are the same value: one varnode,
+or two results of the same address arithmetic (`COPY`, `CAST`, `INT_ADD`,
+`PTRSUB`, `PTRADD`) over equal inputs, two levels deep, which is how two
+reads of one frame address arrive. Otherwise the call prints as
+`LoadPtrTag(p, address)` or `StorePtrTag(address, p)`. `st2g x0, [x0]`
+therefore prints `__arm_mte_set_tag(a0);` for its first granule and
+`StorePtrTag(a0 + 0x10,a0);` for its second. The memory-tagging user ops
+exist only when the same option has set the `ShowMemTag` context (chapter
+02). `off` restores the SLEIGH names and the tag-free lift. Pinned by
+`tests/stages/kuna-acleintrinsics.xml`.
+
 ### Rust formatting macros
 
 The option `rustfmt` (`off|on|all`, default `on`) decides which verified Rust
@@ -4961,8 +5043,26 @@ rendered declaration type; implied field pointers use their read-facing type.
 The emitter restores its expression modifiers after rendering the value.
 Cast suppression retains its existing output. Enums, floats, booleans,
 pointers used as values, mismatched widths and unsupported integer widths
-retain their prior paths. This conversion does not change memory-operation
-widths or repair raw-pointer indexing.
+retain their prior paths in this conversion.
+
+`kuna_ruststorewidth.rs` uses the STORE value varnode's byte count to determine
+the physical write width. When a primitive value or the destination pointee
+disagrees with that width, Rust output converts the value to an unsigned
+integer of the physical width and calls `core::ptr::write_unaligned` at the same
+address. The supported widths are 1, 2, 4, 8 and 16 bytes, including unknown
+16-byte integers as `u128`. It checks through implied, same-size pointer
+conversions because a typed pointer cast can hide a narrower destination and
+require alignment the physical store did not require. A proven exact record
+field, array place or indexed array element supplies its raw address without
+borrowing it. The write
+evaluates the converted value before the address, once each, just like a Rust
+assignment.
+
+Matching scalar widths keep the existing output. An unproven place, aggregate,
+float or enum mismatch stays visible with a diagnostic and no scalar cast.
+The width repair applies only to ordinary, byte-addressed stores through
+32- or 64-bit addresses, excluding known volatile storage, and follows the
+existing Rust cast suppression setting. C and Go keep their existing paths.
 
 
 ### Rust raw-pointer indices

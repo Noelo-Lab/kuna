@@ -431,7 +431,7 @@ fn assertion_outcomes(
     selected: Option<&str>,
 ) -> Vec<kuna_console::assertions::Outcome> {
     use kuna_console::assertions::Outcome;
-    directives
+    let mut outcomes: Vec<Outcome> = directives
         .iter()
         .map(|directive| {
             let (kind, phase, subphase) = directive.body.coords();
@@ -461,7 +461,16 @@ fn assertion_outcomes(
                 fatal,
             }
         })
-        .collect()
+        .collect();
+    let applied: Vec<bool> = outcomes.iter().map(|o| o.status == "applied").collect();
+    let binds = |d: &kuna_console::assertions::Directive| crate::assertdecl::console_form(d, selected).is_ok();
+    for i in kuna_console::assertions::restated_callees(directives, |i| applied[i], binds) {
+        outcomes[i] = kuna_console::assertions::restated_callee(&directives[i]);
+    }
+    for i in kuna_console::assertions::restated_call_prototypes(directives, |i| applied[i], binds) {
+        outcomes[i] = kuna_console::assertions::restated(&directives[i]);
+    }
+    outcomes
 }
 
 /// The diagnostic the console printed for the command `line`, or `None` when it
@@ -546,6 +555,14 @@ fn print_command_failure(out: &str) -> Option<String> {
         Some(reason) if reason != SCRIPT_NOT_REACHED => Some(reason),
         _ => None,
     }
+}
+
+/// The engine's panic, as `<location> <message>`, read off its stderr.
+fn engine_panic(stderr: &str) -> Option<String> {
+    let mut lines = stderr.lines();
+    let at = lines.find_map(|line| line.split_once("panicked at ").map(|(_, at)| at.trim()))?;
+    let message = lines.next().map(str::trim).unwrap_or_default();
+    Some(format!("{} {message}", at.trim_end_matches(':')).trim_end().to_string())
 }
 
 /// The function the console last announced (`Decompiling <name>`), so a failure
@@ -775,6 +792,10 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
             if let Some(reason) = print_command_failure(&stdout_text) {
                 let func = decompiling_name(&stdout_text).unwrap_or_else(|| args.target.clone());
                 return Err((format!("decompilation failed for {func} in {binary}: {reason}"), false));
+            }
+            if let Some(panic) = engine_panic(&stderr_text) {
+                let func = decompiling_name(&stdout_text).unwrap_or_else(|| args.target.clone());
+                return Err((format!("decompiler panicked on {func} in {binary}: {panic}"), false));
             }
             return Err((
                 format!(
@@ -1201,9 +1222,13 @@ fn usage() {
          \n\
          --assert <directive | @file> (repeatable) states a fact the engine could not\n\
          derive.  The vocabulary is function, typedef, prototype, data, param, return,\n\
-         name, type, comment, flow, readonly, volatile, bytes -- for instance\n\
-         `prototype login int login(char *user,char *pw)`, `type v2 char[16]`,\n\
+         name, type, format, isolate, comment, flow, callee, callproto, readonly, volatile,\n\
+         bytes -- for instance `prototype login int login(char *user,char *pw)`,\n\
+         `type v2 char[16]`,\n\
          `name v2 credbuf`, `readonly 0x404028+8`, `flow 0x1405 return`.\n\
+         `format <addr> hex|dec|oct|bin|char [<value>]` sets the form the constant\n\
+         read at <addr> is printed in; `isolate <symbol>` keeps a local from being\n\
+         merged with another.\n\
          `bytes <addr> <hex|@FILE>` overlays recovered plaintext -- what a packer\n\
          writes over itself -- onto the loaded image; the file on disk is untouched.\n\
          @FILE holds one per line with `#` comments, which is what makes an override\n\
@@ -1385,6 +1410,16 @@ fn decompile_json(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn engine_panic_is_read_off_stderr() {
+        let stderr = "note\n\nthread 'main' (7) panicked at crates/x/src/y.rs:885:9:\nattempt to shift left with overflow\nstack backtrace:\n";
+        assert_eq!(
+            super::engine_panic(stderr).as_deref(),
+            Some("crates/x/src/y.rs:885:9 attempt to shift left with overflow")
+        );
+        assert_eq!(super::engine_panic("Decompilation complete\n"), None);
+    }
+
     #[test]
     fn temporary_output_paths_have_independent_owned_lifetimes() {
         let first = super::temp_path("kuna_c_test_", ".c").unwrap();
@@ -2088,6 +2123,38 @@ Execution error: No symbol named: v9
         assert_eq!(report[0].status, "applied");
         assert_eq!(report[1].status, "rejected");
         assert_eq!(report[1].detail.as_deref(), Some("No symbol named: v9"));
+    }
+
+    /// Two `callproto` directives for one call: the console keeps the later
+    /// prototype, so the earlier is rejected rather than reported applied. A later
+    /// one the console refused replaces nothing.
+    #[test]
+    fn a_restated_call_prototype_rejects_the_earlier_one() {
+        let parse = |specs: &[&str]| -> Vec<_> {
+            specs.iter().map(|spec| crate::assertdecl::parse_one(spec).expect("parses")).collect()
+        };
+        let directives =
+            parse(&["callproto 0x13b0 void f(char *)", "callproto report::0x13b0 void g(char *, int)"]);
+        let transcript = "\
+[decomp]> override prototype 0x13b0 void f(char *);
+Successfully added override
+[decomp]> override prototype 0x13b0 void g(char *, int);
+Successfully added override
+";
+        let report = super::assertion_outcomes(transcript, &directives, Some("report"));
+        assert_eq!(report[0].status, "rejected");
+        assert!(report[0].detail.as_deref().unwrap_or_default().contains("later callproto"));
+        assert_eq!(report[1].status, "applied");
+        let directives = parse(&["callproto 0x13b0 void f(char *)", "callproto 0x13b0 void g(nosuch)"]);
+        let transcript = "\
+[decomp]> override prototype 0x13b0 void f(char *);
+Successfully added override
+[decomp]> override prototype 0x13b0 void g(nosuch);
+Execution error: Syntax error
+";
+        let report = super::assertion_outcomes(transcript, &directives, Some("report"));
+        assert_eq!(report[0].status, "applied");
+        assert_eq!(report[1].status, "rejected");
     }
 
     /// A script that never reached a directive did not apply it, and saying so is

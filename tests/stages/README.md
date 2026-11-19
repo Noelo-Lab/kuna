@@ -23,6 +23,11 @@ and narrowed callback results. Its CLI companion compiles complete C and Rust
 output under the same asserted prototypes and checks every byte value and call
 counts. The original fixture is only decompiled.
 
+`kuna-callproto.xml` checks a tail jump through a variadic function pointer with
+nothing stated, with a call-site prototype, and with one parameter placed in a
+register. Its CLI companion covers both decompile surfaces and the rejection of
+an address that is not a call.
+
 `kuna-e500-call-slots.xml` compares disabled and automatic call-overlap guards
 for scalar arguments and results inside e500's wide registers, and decompiles a
 conditional tail-call wrapper with `exclusivecallret` off and on. The CLI tests
@@ -142,6 +147,8 @@ writeup, not here.
 | `gh831-riscv-fpmove.xml`, `gh831-riscv32-fpmove.xml` | [Kuna #831](https://github.com/Noelo-Lab/kuna/issues/831) | P2 p-code lift (RISCV spec-fix, no option) | `fmv.x.d`/`fmv.x.w` read the FP register itself, and `fmv.x.w`/`fcvt.w*` write the integer register (sign-extended on RV64) |
 | `kuna-fcvtround-a64.xml` | [Kuna #1535](https://github.com/Noelo-Lab/kuna/issues/1535) | P2 p-code lift (AArch64 spec-fix, no option) + P5 typing of its rounding user ops (`p5_types/kuna_roundingops.rs`) | `fcvt{a,m,n,p}{s,u}` and `frint*` round in their own mode (`FLOAT_FLOOR`/`FLOAT_CEIL`/`FLOAT_ROUND`, typed `FLOAT_ROUNDEVEN`/`FLOAT_TRUNC`/`FLOAT_RINT`/`FLOAT_NEARBYINT`), so the issue's floor/ceil interpolation branch survives; `frint32/64*` zero the register bits above the result |
 | `kuna-pacflow-a64.xml` | [Kuna #1621](https://github.com/Noelo-Lab/kuna/issues/1621) | P2 p-code lift (AArch64 spec-fix, no option) | with `ShowPAC=0` a `pac*`/`aut*`/`xpac*` that writes a general register lifts to a pass-through copy (`Rd = Rd`) instead of nothing, so a function whose only write to `x0` is the signing returns its pointer instead of decompiling as `void`; the `x30`/`sp` and branch forms stay empty |
+| `kuna-rustversion-commit.xml` | [Kuna #1639](https://github.com/Noelo-Lab/kuna/issues/1639) | P0 knowledge (loader image facts, Rust compiler version; no option) | a Rust image without a `.comment` record takes its stable release from the commit in its `/rustc/<commit>/library/...` source paths, so the 1.93 `rustfmt` argument recovery still applies |
+| `kuna-acleintrinsics.xml` | [Kuna #1626](https://github.com/Noelo-Lab/kuna/issues/1626) | P9 naming-policy + P2 context paint (`option acleintrinsics`, AArch64 only, default on) | pass 1 (`off`): `irg`/`addg` return the argument unchanged, `stg` leaves nothing, barriers and hints print as `DataMemoryBarrier(2,3)` / `WaitForInterrupt()`; pass 2 (default): `__arm_mte_create_random_tag(a0,0)` produces the returned pointer, `__dmb(11)`, `__dsb(15)`, `__isb(15)`, `__wfi()`, `__arm_mte_increment_tag`, `__arm_mte_exclude_tag`, `__arm_mte_get_tag`, `__arm_mte_set_tag`; a tag load or store of another granule keeps `LoadPtrTag` / `StorePtrTag` |
 
 | `gh6904-ppc-e500-concat44.xml` | [GH-6904](https://github.com/NationalSecurityAgency/ghidra/issues/6904) | P-code lift (PowerPC e500 spec-fix, no option) | `or`/`or.` (`mr`/`mr.`) zero-extend their 32-bit result on the 64-bit-register e500, killing spurious CONCAT44 at function boundaries (partial) |
 
@@ -458,3 +465,9 @@ the complete emitted functions with Go pointer checks and full-array canaries.
 with FDE ownership disabled it remains a call; with ownership enabled the
 complete body returns `a0 * 3 + 7`. The fixture generator is
 `decompiler/crates/kuna-cli/tests/fixtures/elf_unwind_fixture.rs`.
+
+`kuna-assert-callee.xml` checks `override indirect`: an indirect call and an
+indirect tail jump each print as a direct call to the stated function, and the
+tail call to a callee marked no-return ends the function with no return. The CLI
+companion covers `--assert callee` on both surfaces and every refusal. The
+fixture source is `decompiler/crates/kuna-cli/tests/fixtures/assert_callee.c`.
