@@ -3684,6 +3684,20 @@ also covers length-bounded Go string arguments rewritten by `fatstr`; their
 separate length operand is unchanged. A Go string value cannot be converted
 directly to `unsafe.Pointer`.
 
+On AMD64 Go ELF with `godwarfsig`, a guarded one-byte load may render as
+`unsafe.String(data, length)[index]`
+(`decompiler/crates/kuna-decomp/src/p9_emit/kuna_gostringindex.rs`).
+The effective locked definition must still carry the single verified
+Go string formal. Explicit local prototypes or parameter maps withhold
+the rewrite even if their physical words look identical. The leaf must
+branch on a full-width unsigned comparison of the original index and length.
+Only the passing exit may load through the original data input and that
+same index at unit stride. Its sibling returns a byte input and never
+constructs the string. Unmatched layouts, observable pointer uses,
+independent pointer and count inputs, and unguarded loads keep the raw
+expression. C and Rust use the raw expression. The definition, public
+prototype, and all calls still use the two original ABI words.
+
 Go has neither ternary nor comma expressions. Recovered if diamonds remain
 statements. A short-circuit operand with leading statements evaluates those
 inside a `func() bool { ...; return condition }()` operand, so skipped operands

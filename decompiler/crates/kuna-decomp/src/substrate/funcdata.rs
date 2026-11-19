@@ -646,6 +646,7 @@ pub struct Funcdata {
     /// take, when it is an executable's own `main`. See [`crate::kuna_elfmaindecl`].
     kuna_elfmain: Option<std::rc::Rc<crate::kuna_elfmaindecl::Runtime>>,
     pub(crate) kuna_go_receiver: Option<crate::kuna_gopointermethod::Receiver>,
+    go_string_input: Option<Box<crate::kuna_gostringinput::GoStringInput>>,
     /// (kuna `swiftcall`) Names and types for the inputs this function's
     /// analysis recovers. See [`crate::kuna_inputhints`].
     kuna_input_hints: Option<std::rc::Rc<Vec<crate::kuna_inputhints::InputHint>>>,
@@ -901,6 +902,7 @@ impl Funcdata {
             kuna_callerargs: None,
             kuna_elfmain: None,
             kuna_go_receiver: None,
+            go_string_input: None,
             kuna_input_hints: None,
             kuna_calleevote_closed: false,
             kuna_elemptr_blocked: None,
@@ -1655,6 +1657,14 @@ impl Funcdata {
     /// (kuna `elfmain`) The C runtime's `main` declaration for this function.
     pub fn kuna_elfmain(&self) -> Option<&crate::kuna_elfmaindecl::Runtime> {
         self.kuna_elfmain.as_deref()
+    }
+
+    pub(crate) fn set_go_string_input(&mut self, formal: Option<crate::kuna_gostringinput::GoStringInput>) {
+        self.go_string_input = formal.map(Box::new);
+    }
+
+    pub(crate) fn go_string_input(&self) -> Option<&crate::kuna_gostringinput::GoStringInput> {
+        self.go_string_input.as_deref()
     }
 
     /// (kuna `swiftcall`) Seed the input hints. See [`crate::kuna_inputhints`].

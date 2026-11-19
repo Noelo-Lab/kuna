@@ -4045,9 +4045,14 @@ moves.
   `<formal>_len`. Calls keep both words of each input and explicit function
   and call-site prototypes retain precedence. Ambiguous names, missing or
   partial locations, conflicting types, and unsupported contracts fall back
-  to inference for the entire function. The import leaves byte
-  loads and bounds control flow to their existing passes. Slice layouts, string
-  results, and reconstruction of a source-level `string` remain outside this arm.
+  to inference for the entire function. An accepted single string input also
+  records the exact function entry, source formal, physical slot indexes, and
+  register storage beside the committed DWARF prototype. Replacing the
+  declaration clears that record even when all displayed physical types and
+  names agree. P9 may use it for a guarded byte read after checking the
+  effective definition. The imported definition and all calls keep their
+  physical words. Slice layouts, string results, and grouping these inputs
+  into a source-level parameter remain outside this arm.
 
   Paired results are part of this importer (formerly the separate
   `gopairreturns` option) and follow the target-gated `godwarfsig` default.

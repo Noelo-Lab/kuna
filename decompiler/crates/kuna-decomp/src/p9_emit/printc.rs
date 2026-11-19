@@ -9044,6 +9044,17 @@ impl PrintC {
     /// as an explicit `*ptr`.  A statement LOAD through the byte-copy helper copies
     /// straight into its printed destination member's scalar type.
     fn op_load_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
+        if self.out_lang == crate::kuna_lang::OutLang::Go {
+            if let Some(view) = super::kuna_gostringindex::prove(fd, op) {
+                self.push_op(&tokens::SUBSCRIPT, Some(op_key(op)));
+                self.push_go_call("unsafe.String", op);
+                self.push_op(&tokens::COMMA, Some(op_key(op)));
+                self.push_vn_ir(fd, arch, view.data, op);
+                self.push_vn_ir(fd, arch, view.len, op);
+                self.push_vn_ir(fd, arch, view.index, op);
+                return;
+            }
+        }
         if self.out_lang == crate::kuna_lang::OutLang::C {
             if let Some(mut access) = crate::kuna_stackmem::access(fd, op) {
                 if self.stmt_op == Some(op) {
