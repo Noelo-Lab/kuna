@@ -13948,6 +13948,9 @@ fn to_emit_hl(hl: crate::printlanguage::SyntaxHighlight) -> SyntaxHighlight {
 #[path = "kuna_rustarrayinit.rs"]
 mod kuna_rustarrayinit;
 
+#[path = "kuna_rustoption_niche.rs"]
+mod kuna_rustoption_niche;
+
 #[cfg(test)]
 mod tests;
 

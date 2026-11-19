@@ -204,7 +204,7 @@ impl PrintC {
             return false;
         };
         let Some((call, some)) = pattern(fd, arch, branch) else {
-            return false;
+            return self.emit_rust_niche_option_condition(fd, arch, branch);
         };
         self.emit.print("let", SyntaxHighlight::KeywordColor);
         self.emit.spaces(1, 0);

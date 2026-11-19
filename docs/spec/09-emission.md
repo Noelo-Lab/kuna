@@ -3360,6 +3360,31 @@ What differs, and why each is a language fact rather than a preference:
   in the same condition with the original branch bodies. Explicit prototypes
   retain priority. Unresolved or indirect calls, different layouts, narrowed
   or shared results, and absent DWARF keep the ordinary condition rendering.
+- **Named reference Option condition.** The independent
+  `p9_emit/kuna_rustoption_niche.rs` path corrects the null test of a named
+  AMD64 Rust `core::option::Option<&u64>` input. The imported `VariantLayout`
+  must describe an eight-byte union, an eight-byte discriminator at offset
+  zero, a fieldless `None` selected by zero, and the default `Some` containing
+  exactly one eight-byte pointer to an unsigned eight-byte integer at offset
+  zero. The complete declared input, mapped symbol and payload types must
+  agree with exactly one live prototype parameter at the same physical
+  address and width. Relative pointers and hidden or indirect parameter
+  storage are refused. The union scorer's read-facing choice of `Some` is
+  not an owner type.
+  A nonvolatile, nonpersistent input with one high-variable instance and one
+  reader can become `if let ::core::option::Option::Some(_) = value`, or the
+  qualified `None` pattern. The final equality/inequality, bounded implied
+  Boolean negation chain and branch polarity select the pattern; each
+  intermediate has only its expected reader. The emitted owner name follows
+  ordinary explicit renames. Keyword names and names the current Rust
+  variable-token path would sanitize are refused. The rule changes
+  only the condition spelling and retains both branch bodies. It does not
+  infer an Option from a pointer or integer. Explicit parameter types remain
+  authoritative; absent metadata, other languages, aliased or partial names,
+  shared inputs, consumed payloads, saved conditions and other layouts keep
+  their existing rendering. Single-word returned Options and construction of
+  Option values remain separate from this named-input path and from the
+  tagged scalar-pair rule above.
 - **Literals** no `U`/`L`/`LL` suffixes (Rust infers the literal type, and naming
   a width here would assert one this site does not know); `b'a'` for a 1-byte
   character constant with a printable spelling and the integer otherwise, since
