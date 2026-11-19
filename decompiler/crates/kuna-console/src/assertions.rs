@@ -1014,8 +1014,9 @@ pub fn record_rejected_flow_overrides(
     }
 }
 
-/// Downgrade the outcome of every `callee` directive bound to `name` whose call
-/// site the followed flow did not turn into a direct call, as
+/// Downgrade the outcome of every applied `callee` directive bound to `name`
+/// that a later one for the same call site replaced ([`restated_callees`]), or
+/// whose call site the followed flow did not turn into a direct call, as
 /// [`record_rejected_flow_overrides`] does for `flow`.
 pub fn record_rejected_callee_overrides(
     prog: &mut ConsoleProgram,
@@ -1023,23 +1024,55 @@ pub fn record_rejected_callee_overrides(
     single: bool,
     fd: &Funcdata,
 ) {
-    let refused = fd.kuna_rejected_callee_overrides();
-    if refused.is_empty() {
+    if !prog.assertions().iter().any(|d| matches!(d.body, Body::Callee { .. })) {
         return;
     }
     let directives = prog.assertions().to_vec();
+    let outcomes = prog.assertion_outcomes();
+    let applied = |i: usize| outcomes.get(i).is_some_and(|o| o.status == "applied");
+    let binds = |d: &Directive| binds_to(&d.body, name, single);
+    let restated = restated_callees(&directives, applied, binds);
+    let refused = fd.kuna_rejected_callee_overrides();
     for (i, directive) in directives.iter().enumerate() {
         let Body::Callee { addr, .. } = &directive.body else { continue };
-        if !binds_to(&directive.body, name, single) {
+        if !applied(i) || !binds(directive) {
             continue;
         }
-        let Ok(at) = code_addr(prog, *addr) else { continue };
-        let Some((_, _, reason)) = refused.iter().find(|(site, _, _)| site == &at) else {
-            continue;
+        let outcome = if restated.contains(&i) {
+            restated_callee(directive)
+        } else {
+            let Ok(at) = code_addr(prog, *addr) else { continue };
+            let Some((_, _, reason)) = refused.iter().find(|(site, _, _)| site == &at) else {
+                continue;
+            };
+            directive.refused(reason.clone())
         };
-        let outcome = directive.refused(reason.clone());
         prog.set_assertion_outcome(i, outcome);
     }
+}
+
+/// The `callee` directives a later one replaces: of those `binds` and `applied`
+/// accept, every one a later one names the same call site after. The call keeps
+/// the destination stated last, as the console's `override indirect` does.
+pub fn restated_callees(
+    directives: &[Directive],
+    applied: impl Fn(usize) -> bool,
+    binds: impl Fn(&Directive) -> bool,
+) -> Vec<usize> {
+    let sites: Vec<Option<u64>> = directives
+        .iter()
+        .enumerate()
+        .map(|(i, d)| match d.body {
+            Body::Callee { addr, .. } if applied(i) && binds(d) => Some(addr),
+            _ => None,
+        })
+        .collect();
+    (0..sites.len()).filter(|&i| sites[i].is_some() && sites[i + 1..].contains(&sites[i])).collect()
+}
+
+/// The outcome of a `callee` a later one for the same call site replaced.
+pub fn restated_callee(directive: &Directive) -> Outcome {
+    directive.rejected("a later callee states this call site again, and that one is applied")
 }
 
 fn seed_one(

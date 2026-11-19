@@ -764,10 +764,11 @@ creates the `Funcdata`. `setup_callind_specs` then makes the named CALLIND a
 direct CALL, so the callee's name and its declared prototype apply. A named
 BRANCHIND is a tail call: `recover_jump_tables` asks the environment
 (`FlowEnvironment::stated_callee_site`) before it tries a table, and for a
-stated site it goes straight to `truncate_indirect_jump` in the thunk mode,
-which builds the CALLIND, the direct call and the return with no warning.
+stated site `flow.rs (FlowInfo::stated_tail_call)` builds the CALLIND, the
+direct call and, unless the callee never returns, the return, with no warning.
 After the follow, `kuna_calleeoverride.rs (audit)` looks for a direct call to
-the stated callee at each site and records every site that has none on the
+the stated callee (or, for a PLT stub, to the definition the stub binds) at
+each site and records every site that has none on the
 `Funcdata` (`note_rejected_callee_override`); the front-ends report those as
 refused directives. A function with no parked fact pays one map lookup.
 

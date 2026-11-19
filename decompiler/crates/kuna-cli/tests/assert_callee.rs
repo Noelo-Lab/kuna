@@ -100,3 +100,35 @@ fn a_malformed_statement_is_a_usage_error() {
         assert!(text(&out.stderr).contains("callee"), "{directive}");
     }
 }
+
+#[test]
+fn a_plt_stub_destination_is_applied() {
+    for extra in [&[][..], &["--json"][..]] {
+        let mut args = vec!["decompile", "twice", "--assert", "callee 0x147a 0x14c0"];
+        args.extend_from_slice(extra);
+        let out = kuna(&args);
+        let stdout = text(&out.stdout);
+        assert!(out.status.success(), "{stdout}\n{}", text(&out.stderr));
+        assert!(stdout.contains("v1 = handle_open(a0,a2);"), "{stdout}");
+    }
+}
+
+#[test]
+fn a_restated_call_site_keeps_the_later_destination() {
+    for extra in [&[][..], &["--json"][..]] {
+        let mut args = vec![
+            "decompile",
+            "twice",
+            "--assert",
+            "callee 0x147a dispatch",
+            "--assert",
+            "callee 0x147a handle_open",
+        ];
+        args.extend_from_slice(extra);
+        let out = kuna(&args);
+        let all = format!("{}{}", text(&out.stdout), text(&out.stderr));
+        assert!(out.status.success(), "{all}");
+        assert!(all.contains("v1 = handle_open(a0,a2);"), "{all}");
+        assert!(all.contains("a later callee states this call site again"), "{all}");
+    }
+}

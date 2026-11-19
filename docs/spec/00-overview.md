@@ -2939,7 +2939,11 @@ directive to the console command `override indirect <callsite> <name|address>`
 flow, so the engine records it on the `Funcdata` after the follow and both
 surfaces turn that record into a `fatal` rejection, as they do for a refused
 `flow` (`assertions::record_rejected_callee_overrides`, and the console's
-`Rejected override indirect ...` line).
+`Rejected override indirect ...` line). The planted redirect is consulted before
+any resolution of kuna's own, so the statement outranks a destination kuna
+would have recovered (the import a GOT-slot call loads). Two `callee`
+directives for one call site leave the later one planted; the same function
+reports the earlier one rejected.
 
 A `call` (or `callreturn`) override carries one more fact with it: the RET-call
 chain it starts. `push <continuation>; push <target>; ret` is a call spelled

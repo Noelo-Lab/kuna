@@ -452,6 +452,7 @@ complete body returns `a0 * 3 + 7`. The fixture generator is
 `decompiler/crates/kuna-cli/tests/fixtures/elf_unwind_fixture.rs`.
 
 `kuna-assert-callee.xml` checks `override indirect`: an indirect call and an
-indirect tail jump each print as a direct call to the stated function. The CLI
+indirect tail jump each print as a direct call to the stated function, and the
+tail call to a callee marked no-return ends the function with no return. The CLI
 companion covers `--assert callee` on both surfaces and every refusal. The
 fixture source is `decompiler/crates/kuna-cli/tests/fixtures/assert_callee.c`.

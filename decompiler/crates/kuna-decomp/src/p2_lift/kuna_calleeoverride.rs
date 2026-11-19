@@ -53,7 +53,7 @@ pub fn audit(arch: &Architecture, fd: &mut Funcdata) {
 fn calls_directly(fd: &Funcdata, site: &Address, callee: &Address) -> bool {
     (0..fd.num_calls()).any(|i| {
         let spec = fd.get_call_specs(i);
-        spec.get_entry_address() == callee
+        (spec.get_entry_address() == callee || spec.plt_stub() == Some(callee))
             && fd.obank().get(spec.get_op()).is_some_and(|op| op.get_addr() == site)
     })
 }

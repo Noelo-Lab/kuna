@@ -971,11 +971,14 @@ $ kuna decompile ./ops.so twice --assert 'callee 0x147a handle_open'
 The call is rebuilt as a direct call before the function is analysed, so the
 callee's name and prototype apply to its arguments and its result. An indirect
 jump (`jmp *%rax`) is taken as a tail call: a call to the function, then a
-return; no switch is recovered from it. The directive is rejected when the
+return (no return after a callee that never returns); no switch is recovered
+from it. The statement outranks a destination kuna would recover itself, such
+as the import a `call *slot(%rip)` loads. The directive is rejected when the
 instruction is a direct call, when it is not a call or an indirect jump, and
 when the destination is not a function (declare one first with `function`). A
-call site the function's flow never reaches is refused after the decompile,
-and the run exits non-zero. In the console the same fact is
+second `callee` for the same call site replaces the first, which is reported
+rejected. A call site the function's flow never reaches is refused after the
+decompile, and the run exits non-zero. In the console the same fact is
 `override indirect <callsite> <name|address>`, given after `load function`.
 
 **A `call` override follows the RET-call chain it starts.** `push
