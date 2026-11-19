@@ -797,6 +797,39 @@ recovery. Nothing about trial scoring changes — a stack trial still has to rea
 `fillin_map` active on its own evidence — so the option can keep an argument the
 recovery already believed in but never invent one.
 
+That leaves the variadic callee nothing declares: XNU's `panic`, `IOLog`, a
+program's own logger. Its prototype is unlocked, so the split never happens and
+`panic("... @%s:%d")` loses the two arguments the caller stored at `[sp]` and
+`[sp+8]`. On an Apple AArch64 image
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_darwinvarargs.rs` (always on,
+part of the same rule) reads the callee's own answer. Apple's `va_start` is the
+address of the first stack argument, which is the stack pointer at the call: the
+callee forms it (`add x8, x29, #0x10` over a frame of `0x10` below the pointer)
+and stores it or hands it to `vprintf`. Before the action pipeline runs, a
+straight-line decode of each direct callee's entry block (at most 24
+instructions, cached per run) tracks the values that are the entry stack pointer
+plus a constant through `COPY`, `INT_ADD` and `INT_SUB`, and marks the callee
+variadic when one at or above the entry stack pointer is stored, or sits in a
+register other than the stack pointer at the first call or branch. A
+non-variadic function reads a named stack parameter with a load and never keeps
+the address of its incoming argument area, so it is not marked.
+`ActionActiveParam` then splits a call to a marked callee exactly as it splits a
+declared `...` call; the arguments still need the caller's stores to their
+outgoing slots, so the count is whatever the caller wrote and nothing is added
+for a slot it did not. The rule applies only when the loader identified the
+image as Apple (`format_vararg_abi` is the stack-only convention) on AArch64, or
+the Apple-silicon SLEIGH variant is loaded. AAPCS64 ELF, where variadic
+arguments go in `x1`–`x7`, is untouched. On such a target the same module also
+finishes a *declared* variadic call (`keep_stack_tail`, after `fillin_map`): a
+locked `...` prototype reopens trial recovery over every register of the model,
+so a value the caller merely left in a register scored as a variadic argument.
+At an `objc_msgSend$<sel>` stub, which loads the selector into `x1` itself, the
+caller's stale `x1` became an argument and the gap filling dropped the fixed
+format in `x2`. Apple passes no variadic argument in a register, so every
+fixed-position trial is kept and every other register trial is dropped; the
+stack tail is left as scored. `tests/stages/kuna-darwinvarargs.xml` pins both
+targets.
+
 The same two rules are also what `ActionInputPrototype` runs the function's
 **own** input Varnodes through, and there the premise behind step 4 does not
 hold. At a call site an active trial is a caller-side inference — an argument

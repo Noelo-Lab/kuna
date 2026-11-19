@@ -45,6 +45,7 @@ pub mod kuna_spillargtrial;
 pub mod kuna_stackaddrargtrial;
 pub mod kuna_zeroidiomuse; // (kuna) a self-cancelling `xor r,r` is not a competing use of the value it eats
 pub mod kuna_varargstackargs; // (kuna) the variadic call's stack tail is its own fillinMap section
+pub mod kuna_darwinvarargs; // (kuna) a callee running Apple's va_start is variadic at its call sites
 pub mod kuna_argclobber; // (kuna) drop a trailing register argument a previous call's clobber put there
 pub mod kuna_passthrough; // (kuna) a register forwarded untouched to a callee that reads it is a parameter
 pub mod kuna_pltlocal; // (kuna) a call through a PLT stub bound to the image's own definition calls that definition

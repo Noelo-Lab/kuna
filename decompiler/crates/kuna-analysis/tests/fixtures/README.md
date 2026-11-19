@@ -1005,6 +1005,23 @@ partial access whose left side must render as a store
 SHA-256 in `macho_datawidth_arm64.provenance`. Pinned by
 `kuna-cli/tests/name_miss_cli.rs (a_macho_global_reads_by_name_at_its_width)`.
 
+`darwinvarargs_macho_arm64` (arm64 Mach-O, 50 KB, SHA-256
+`8bd5b9dfebb17d9d0ef74b33b165f82ad87a311be71688a22dcc9639517c6cdb`) and
+`darwinvarargs_aarch64` (AArch64 ELF, 1.9 KB, SHA-256
+`80cdf3ffff3868f4fce25ce2441f494f55c125041ab19cdf66434f2c0cedf521`) are built from
+`darwinvarargs.c`: `check` calls `report(fmt, file, line)`, whose body runs
+`va_start`, and `sum9`, whose ninth argument is on the stack. The Mach-O passes
+`file` and `line` at `[sp]` and `[sp+8]` (Apple's variadic rule); the ELF passes
+them in `x1` and `x2` (AAPCS64). Recipe (clang/LLD 22.1.8, no SDK):
+
+    clang -target arm64-apple-macos11 -O2 -g0 -c darwinvarargs.c -o m.o
+    ld64.lld -arch arm64 -platform_version macos 11.0 11.0 -undefined dynamic_lookup \
+             -e _main -o darwinvarargs_macho_arm64 m.o
+    clang -target aarch64-linux-gnu -O2 -g0 -c darwinvarargs.c -o e.o
+    ld.lld --unresolved-symbols=ignore-all -e main -o darwinvarargs_aarch64 e.o
+
+Pinned by `tests/stages/kuna-darwinvarargs.xml`.
+
 `macho_trie_exports_arm64` and `macho_trie_exports_info_arm64` (arm64, 33 KB
 each) are GH #1349's witnesses: dylibs stripped of every `nlist` entry whose export
 trie still names `_audit_exported_function`@`0x328`, `_audit_caller`@`0x340` and
