@@ -11,6 +11,15 @@ Inputs for the `kernelcache` option (`loader/kuna_kernelcache`), and for
 | `fileset_calls.macho` | a two-entry arm64 MH_FILESET at arm64e-kernelcache addresses (base `0xfffffe0007004000`, no fixup table): `com.apple.kernel` (`kernel_main` calls `kernel_add`) and `com.example.driver.PMGR` (`pmgr_set_perf_state` calls `pmgr_wait_pending` from four `bl` sites and `kernel_add` from one; `pmgr_idle_enter` calls `pmgr_wait_pending` with a backward `bl`). Each entry has one `__TEXT,__cstring` string. For `kuna-cli/tests/xrefs_fileset_entry.rs` |
 | `kernelcache.img4` | IMG4 { IM4P `krnl` { LZFSE(`fileset.macho`) }, IM4M stub } |
 | `kernelcache.lzss.im4p` | a bare IM4P whose payload is a `complzss` container of `fileset.macho` |
+| `fileset_vcall.macho` | a two-entry MH_FILESET whose kext overrides a kernel vtable slot (below) |
+
+`fileset_vcall.macho` (written by `gen_vcall.py`, plain Python 3) is a two-entry
+arm64 MH_FILESET for `arm64evcall`: the kernel's vtable `{Base_m0, Base_m1}`
+and the kext's `{Base_m0, Widget_m1}`, every slot an authenticated
+`DYLD_CHAINED_PTR_64_KERNEL_CACHE` rebase (IA, address-diversified, 0x1000 for
+slot 0 and 0x2001 for slot 1), and two kernel call sites: `kernel_vcall_m0`
+(slot 0, pre-index `ldr`) and `kernel_vcall_m1` (slot 1, `mov x17, #8; add
+x16, x16, x17`).
 
 `gen_fileset.py` writes `fileset.macho`, `kernelcache.img4` and
 `kernelcache.lzss.im4p` (Python 3 plus the reference `lzfse` CLI on `PATH`,

@@ -1310,14 +1310,15 @@ fn parse_kind(k: &str) -> Result<XrefKind, String> {
         "data" => Ok(XrefKind::Data),
         "read" => Ok(XrefKind::Read),
         "write" => Ok(XrefKind::Write),
-        other => Err(format!("unknown --kind {other:?} (call, jump, data, read, write, pointer)")),
+        "vcall" => Ok(XrefKind::VirtualCall),
+        other => Err(format!("unknown --kind {other:?} (call, jump, data, read, write, vcall, pointer)")),
     }
 }
 
 fn usage() {
     eprintln!(
         "usage: kuna xrefs <binary> (--to <name|0xaddr> | --from <name|0xaddr>) [--json] \\\n\
-         \x20                  [--kind call,jump,data,read,write,pointer] [--mode auto|reliable|aggressive|fast] \\\n\
+         \x20                  [--kind call,jump,data,read,write,vcall,pointer] [--mode auto|reliable|aggressive|fast] \\\n\
          \x20                  [--option N V].. [--isa auto|arm|thumb] [--slice ARCH] [--target T] [--sleighpath D]\n\
          \n\
          --to    everything that references the target (call sites, branches, data references).\n\

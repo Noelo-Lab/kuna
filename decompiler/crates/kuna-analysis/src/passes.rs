@@ -470,6 +470,7 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
     // walk does not cover.
     if format == object::BinaryFormat::MachO {
         passes.push(Box::new(crate::loader::kuna_authptrcall::AuthPtrCallPass));
+        passes.push(Box::new(crate::rtti::kuna_arm64evcall::Arm64eVcallPass));
     }
 
     // S1 MSVC RTTI / vftable recovery (RttiPass): on a Windows PE, parse the
@@ -1989,7 +1990,7 @@ mod tests {
         assert!(macho.contains(&"objc"), "Mach-O must carry the objc pass");
         // Compare the format-neutral base after dropping each format's gated
         // additions: `itaniumrtti` and `elfgotimports` for ELF and `peimportcall`,
-        // `authptrcall`, `cfstrings`, the IOKit passes and `objc` for Mach-O.
+        // `authptrcall`, `arm64evcall`, `cfstrings`, the IOKit passes and `objc` for Mach-O.
         let elf_neutral: Vec<&str> = elf
             .iter()
             .copied()
@@ -1998,7 +1999,7 @@ mod tests {
         let macho_neutral: Vec<&str> = macho
             .iter()
             .copied()
-            .filter(|&p| !matches!(p, "peimportcall" | "authptrcall" | "cfstrings" | "iokitclasses" | "osclassinfo" | "xnutables" | "objc"))
+            .filter(|&p| !matches!(p, "peimportcall" | "authptrcall" | "arm64evcall" | "cfstrings" | "iokitclasses" | "osclassinfo" | "xnutables" | "objc"))
             .collect();
         assert!(!elf_neutral.contains(&"itaniumrtti"));
         assert_eq!(

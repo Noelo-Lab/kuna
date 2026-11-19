@@ -557,6 +557,9 @@ pub struct AnalysisOutput {
     /// `kalloc_type_view` / `kalloc_type_var_view`; the engine types a typed
     /// allocator's result by the view it is passed.
     pub kalloc_types: Vec<(u64, kuna_decomp::kuna_kalloctype::KallocView)>,
+    /// (kuna `arm64evcall`) arm64e virtual call sites and the methods their
+    /// vtable slot can hold. See [`crate::rtti::kuna_arm64evcall`].
+    pub vcall_sites: Vec<crate::rtti::kuna_arm64evcall::VcallSite>,
     /// Library prototypes declaring a `float` or `double` that an ARM image
     /// holds back, by name (`None`) or by entry address: whether the image
     /// returns a `double` whole depends on `armfloatreturn`, which is set after
@@ -865,6 +868,7 @@ impl AnalysisOutput {
         self.prototypes.extend(other.prototypes);
         self.prototypes_at.extend(other.prototypes_at);
         self.kalloc_types.extend(other.kalloc_types);
+        self.vcall_sites.extend(other.vcall_sites);
         self.arm_float_prototypes.extend(other.arm_float_prototypes);
         self.main_decl_at.extend(other.main_decl_at);
         self.c_runtime_imports.extend(other.c_runtime_imports);

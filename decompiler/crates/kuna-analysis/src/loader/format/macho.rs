@@ -36,7 +36,7 @@ use super::{FormatKind, ImportSym, ObjectFormat};
 /// Mach-O format impl because it is loader infra shared by the ObjC walk (and any
 /// future chained-fixup consumer), keyed off the same typed Mach-O re-parse.
 pub mod chained;
-pub use chained::{resolve_chained_fixups, ChainedBind, ChainedFixups};
+pub use chained::{resolve_chained_fixups, AuthContext, ChainedBind, ChainedFixups};
 /// The classic `LC_DYLD_INFO` bind-opcode replay: which slots an imported symbol
 /// fills on an image that predates chained fixups.
 pub mod dyldinfo;

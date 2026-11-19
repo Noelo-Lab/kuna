@@ -189,6 +189,22 @@ fn not_a_result_buffer(
     };
     leaves.iter().any(|&l| data.kuna_hiddenret_vetoed(l))
         || (!leaves.is_empty() && leaves.iter().all(null_page))
+        || branches_through(data, call, addr, size)
+}
+
+/// (kuna `arm64evcall`) Is `[addr, addr+size)` the register a resolved virtual
+/// call branched through? It holds the callee's own address (`ldr x8, [x16];
+/// blraa x8, x17`), which no callee returns through.
+fn branches_through(data: &Funcdata, call: &FuncCallSpecs, addr: &Address, size: int4) -> bool {
+    let arch = data.get_arch();
+    if arch.vcall_targets.is_empty() {
+        return false;
+    }
+    let Some(site) = data.obank().get(call.get_op()).map(|o| o.get_addr().get_offset()) else { return false };
+    let Some(vcall) = arch.vcall_targets.get(&site).filter(|v| v.targets.len() == 1) else { return false };
+    let Some(space) = addr.get_space() else { return false };
+    use crate::database::TranslateAccess;
+    arch.get_register_name(space, addr.get_offset(), size).eq_ignore_ascii_case(&format!("x{}", vcall.register))
 }
 
 /// Rescore trial `trial` of call `call_idx` no-use when it is an ACTIVE trial on

@@ -1413,6 +1413,8 @@ pub struct ArchContext {
     pub dynreloc_const: Rc<Vec<(u64, u64)>>,
     /// (kuna `xnutables`) What each kalloc_type view allocates, by view address.
     pub kuna_kalloc_types: Rc<crate::kuna_kalloctype::KallocTypes>,
+    /// (kuna `arm64evcall`) The architecture's resolved arm64e virtual calls.
+    pub vcall_targets: Rc<std::collections::BTreeMap<u64, crate::architecture::VcallTargets>>,
     /// (kuna `litpoolconst`) `[start, stop]` (inclusive) offsets of the image's
     /// executable, non-writable, file-backed regions — the instruction stream, and
     /// so the literal pools embedded in it. A read entirely inside one is foldable
@@ -1746,6 +1748,7 @@ impl ArchContext {
             // installs them (see `Architecture::dynreloc_const`).
             dynreloc_const: Rc::new(Vec::new()),
             kuna_kalloc_types: Rc::default(),
+            vcall_targets: Rc::default(),
             // (kuna) No executable read-only ranges until a real object load
             // installs them (see `Architecture::litpool_const`).
             litpool_const: Rc::new(Vec::new()),

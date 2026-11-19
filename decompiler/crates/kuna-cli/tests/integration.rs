@@ -886,3 +886,6 @@ mod mips_weak_imports;
 
 #[path = "nullable_relocations.rs"]
 mod nullable_relocations;
+
+#[path = "arm64e_vcall_xrefs.rs"]
+mod arm64e_vcall_xrefs;

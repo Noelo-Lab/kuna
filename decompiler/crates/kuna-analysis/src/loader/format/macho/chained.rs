@@ -98,6 +98,19 @@ pub struct ChainedBind {
     pub weak: bool,
 }
 
+/// How dyld signs an authenticated chained pointer at load: the key, whether
+/// the slot address is blended into the discriminator, and the 16-bit constant
+/// diversifier. A C++ virtual-function slot carries the hash of the method's
+/// mangled name here, so the same method has the same diversifier in every
+/// vtable and at every call site.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AuthContext {
+    /// `0` IA, `1` IB, `2` DA, `3` DB.
+    pub key: u8,
+    pub addr_div: bool,
+    pub diversity: u16,
+}
+
 /// One decoded chain entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Fixup {
@@ -124,6 +137,9 @@ pub struct ChainedFixups {
     rebases: Vec<(u64, u64)>,
     /// `(slot_vma, import)` for every **bind** fixup, sorted by slot.
     binds: Vec<(u64, ChainedBind)>,
+    /// `(slot_vma, signing context)` for every authenticated entry, rebase or
+    /// bind, sorted by slot.
+    auth: Vec<(u64, AuthContext)>,
     /// The slot width in bytes: 4 for `DYLD_CHAINED_PTR_32`, else 8.
     width: u8,
     /// `[vmaddr, vmaddr + vmsize)` of every segment flagged `SG_READ_ONLY`.
@@ -180,6 +196,11 @@ impl ChainedFixups {
         self.rebases.iter().copied()
     }
 
+    /// Every authenticated entry as `(slot, signing context)`, in slot order.
+    pub fn auth_slots(&self) -> impl Iterator<Item = (u64, AuthContext)> + '_ {
+        self.auth.iter().copied()
+    }
+
     /// Every bind as `(slot, import)`, in slot order.
     pub fn binds(&self) -> impl Iterator<Item = (u64, &ChainedBind)> + '_ {
         self.binds.iter().map(|(slot, bind)| (*slot, bind))
@@ -209,6 +230,8 @@ impl ChainedFixups {
         self.rebases.dedup_by_key(|(slot, _)| *slot);
         self.binds.sort_by_key(|(slot, _)| *slot);
         self.binds.dedup_by_key(|(slot, _)| *slot);
+        self.auth.sort_by_key(|&(slot, _)| slot);
+        self.auth.dedup_by_key(|(slot, _)| *slot);
     }
 
     /// The width in bytes of every fixup slot this image carries.
@@ -697,6 +720,9 @@ fn walk_chain(
             out.damaged(|| format!("a fixup chain reaches 0x{va:x}, past the end of the file"));
             return true;
         };
+        if let Some(ctx) = auth_context(raw, format.pointer_format) {
+            out.auth.push((va, ctx));
+        }
         if let Some((next, level, offset)) = kernel_cache_rebase(raw, format.pointer_format) {
             out.kernel_cache.push((va, level, offset));
             if next == 0 {
@@ -800,6 +826,27 @@ fn decode_ptr(raw: u64, format: &Format) -> (u64, Option<Fixup>) {
         }
         _ => (0, None),
     }
+}
+
+/// The signing context of an authenticated arm64e or kernel-cache entry: `auth`
+/// (bit 63) set, key in bits 49..50, address diversity bit 48, diversifier in
+/// bits 32..47. The layout is shared by the auth rebase and auth bind of every
+/// arm64e format and by `dyld_chained_ptr_64_kernel_cache_rebase`.
+fn auth_context(raw: u64, pointer_format: u16) -> Option<AuthContext> {
+    let signed = matches!(
+        pointer_format,
+        ptr_format::ARM64E
+            | ptr_format::ARM64E_USERLAND
+            | ptr_format::ARM64E_USERLAND24
+            | ptr_format::ARM64E_KERNEL
+            | ptr_format::ARM64E_FIRMWARE
+            | ptr_format::PTR_64_KERNEL_CACHE
+    );
+    (signed && (raw >> 63) & 1 == 1).then(|| AuthContext {
+        key: ((raw >> 49) & 3) as u8,
+        addr_div: (raw >> 48) & 1 == 1,
+        diversity: ((raw >> 32) & 0xFFFF) as u16,
+    })
 }
 
 /// `dyld_chained_ptr_64_kernel_cache_rebase` (`PTR_64_KERNEL_CACHE`,

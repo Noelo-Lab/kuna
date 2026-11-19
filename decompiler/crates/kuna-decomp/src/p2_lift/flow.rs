@@ -380,6 +380,14 @@ pub trait FlowEnvironment {
         None
     }
 
+    /// (kuna `arm64evcall`) The direct callee of the arm64e virtual call at
+    /// `site` when its vtable slot holds one method in this image, or a note
+    /// naming the candidates when it holds several. The default shell knows
+    /// none.
+    fn vcall_resolution(&self, _site: &Address) -> (Option<Address>, Option<String>) {
+        (None, None)
+    }
+
     /// (kuna `msvcsig`) Does `entry` carry a locked MSVC prototype? Such a callee's
     /// copied prototype gets the stack adjustment its parameter list implies, as
     /// `ActionDefaultParams` gives a declared callee it seeds itself
@@ -3071,6 +3079,13 @@ truncating the fall-through here"
         let mut direct = self.data.get_override().find_indirect_override(&op_addr).cloned();
         if direct.is_none() {
             direct = self.env.msvc_import_slot(&self.data, op);
+        }
+        if direct.is_none() {
+            let (vcall, note) = self.env.vcall_resolution(&op_addr);
+            direct = vcall;
+            if let Some(note) = note {
+                self.data.warning(&note, &op_addr);
+            }
         }
 
         // C++ flow.cc:730-731: `if (fc != 0 && fc->getEntryAddress() ==

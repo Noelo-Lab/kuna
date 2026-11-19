@@ -2800,6 +2800,78 @@ commit and `ActionDeindirect` then treat the slot exactly like a `__got` slot.
 A bind with a nonzero addend points inside the import rather than at it, so it
 is skipped.
 
+arm64e virtual calls are resolved by their signing context
+(`decompiler/crates/kuna-analysis/src/analyzers/rtti/kuna_arm64evcall.rs (resolve_signed)`,
+`arm64evcall`, Mach-O only, default on). arm64e signs every C++ vtable slot
+and every Swift class vtable entry with key IA, address diversity and a 16-bit
+diversifier, the hash of the method's mangled name. The chained-fixup
+resolver keeps that context for every authenticated entry
+(`decompiler/crates/kuna-analysis/src/loader/format/macho/chained.rs (AuthContext)`),
+and a call site re-materializes the same constant to authenticate the loaded
+slot: `movk x17, #d, lsl #48; blraa x8, x17`. So `(word offset from the
+address point, diversifier)` names a method without any class type.
+
+The index (`decompiler/crates/kuna-analysis/src/analyzers/rtti/kuna_arm64evcall.rs (Index)`)
+has two sources. A Swift class metadata is found by its `Description` field,
+signed key DA, address-diversified, diversifier `0xAE86`, 0x40 bytes past the
+metadata's address point; `classSize` and `classAddressPoint` just before it
+bound the metadata, and every IA-signed slot in it is filed under its word
+offset from the address point. Every other run of consecutive IA-signed,
+address-diversified slots in a `__const` section is a C++ vtable, whose
+address point is its first method, so it is filed under `(index in run,
+diversifier)`. A slot bound to another image, and a slot holding
+`__cxa_pure_virtual` or `__cxa_deleted_virtual`, keeps its place in the run
+but adds no method.
+
+The pass then walks back up to 24 raw A64 words from each `blraa`/`braa` with
+a register modifier; the walk reads instruction words because the lifted
+p-code no longer carries the modifier. When the modifier's last write is the
+`movk` that sets the diversifier, the walk follows the slot address along
+`mov` copies, `add #imm`, `add` of a register a `movz` (and its `movk`s) set,
+and pre-index `ldr` writebacks. It ends at the authenticated vtable-pointer
+load (`autda`, `autdb`, `autdza`, `autdzb`, `ldraa`), which gives an index
+key, or at an `adrp`, which gives the slot's fixed address: a static vtable
+or a signed global. When the modifier's last write is a plain `movz #d`, the
+discriminator is a constant and the slot is the one the called register was
+loaded from, when that load's base is an `adrp` (plus `add #imm`). A fixed
+slot resolves only if its own fixup is signed IA with the same diversifier
+and address diversity, and it sits in a `__const` section or a `*CONST`
+segment, where the load-time target is the only one the slot ever holds. A
+slot in writable data is left alone. Any branch on the way, or any other
+write to the tracked register, gives up. The one branch stepped over is the
+`b.cond #8` across a `brk` that a kext's checked authentication puts between
+the vtable-pointer load and the slot load (`autda x16, x17; mov x17, x16;
+xpacd x17; cmp x16, x17; b.eq #8; brk #0xc472`), since its other path traps.
+
+A kernelcache entry is cut out of its collection after the collection's
+chained fixups are applied, so the entry's own image keeps no signing
+context. The collection's signed slots, with every entry's `__const` and
+read-only sections, are kept beside the image instead
+(`decompiler/crates/kuna-analysis/src/loader/kuna_kernelcache/fileset.rs (signed_image)`),
+and the entry's call sites are resolved against all of them. So a kernel
+call through a slot that a kext overrides names the kext's method too.
+
+The result is committed as `call site → methods`. When flow builds the
+CALLIND at such a site and the slot holds one method, the call is built as a
+direct call to it
+(`decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (vcall_resolution)`).
+When it holds several, the call keeps its indirect form and gets a warning
+naming the candidates. A unique method is unique within the image, or the
+kernel collection, only: a plugin or a third-party kext built against it
+could override the method. The reference walk
+(`decompiler/crates/kuna-analysis/src/listing/xrefs.rs (XrefKind)`) reads the
+same table: a site with one method is a `call` edge to it, a site with
+several a `vcall` edge to each, and every method in the image's code is
+walked as a function.
+On an iOS 16.4.1 `debugserver` 245 call sites gain a candidate note, and
+decompiling the whole image takes 51.6 s with the pass on against 53.7 s off
+(run-to-run noise). On the IOAccessoryManager kext of that release's
+kernelcache, resolved against the collection, the anonymous slot calls fall
+from 4,145 to 2,549 and the `(*dat_…)()` calls through a static slot from 155
+to 75 (`IOPort::start(a0,a1)`), in 20.4 s against 19.6 s.
+Stage test: `tests/stages/kuna-arm64evcall.xml`, each of three fixtures with the
+option off and on.
+
 Two arch-marker passes paint **decode context** rather than names, because a wrong
 decode mode is unrecoverable downstream. `decompiler/crates/kuna-analysis/src/loader/arm_markers.rs
 (ArmMarkerPass)` (`arm_markers`) ports ARM's `ARM_ElfExtension`/`ArmSymbolAnalyzer`:

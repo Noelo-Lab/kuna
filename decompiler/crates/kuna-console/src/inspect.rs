@@ -258,7 +258,7 @@ pub fn function_xrefs(prog: &ConsoleProgram, file: &object::File, entry: u64) ->
             instruction: r.instruction.clone(),
         };
         match r.kind {
-            XrefKind::Call | XrefKind::Jump => out.callees.push(row),
+            XrefKind::Call | XrefKind::Jump | XrefKind::VirtualCall => out.callees.push(row),
             XrefKind::Data | XrefKind::Read | XrefKind::Write => out.data_refs.push(row),
         }
     }

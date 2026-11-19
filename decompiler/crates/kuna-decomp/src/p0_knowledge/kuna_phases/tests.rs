@@ -56,13 +56,13 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_221() {
-    assert_eq!(kuna_num_settables(), 221);
-    assert_eq!(SETTABLE_TABLE.len(), 221);
+fn settable_count_is_222() {
+    assert_eq!(kuna_num_settables(), 222);
+    assert_eq!(SETTABLE_TABLE.len(), 222);
 }
 
 #[test]
-fn tier_counts_are_45_core_120_transform_56_analysis() {
+fn tier_counts_are_45_core_120_transform_57_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -74,7 +74,7 @@ fn tier_counts_are_45_core_120_transform_56_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (45, 120, 56));
+    assert_eq!((core, transform, analysis), (45, 120, 57));
 }
 
 #[test]
@@ -420,6 +420,8 @@ fn option_values_live_value_present_for_76() {
         "iokitclasses",
         // (kuna) XNU data tables -- the same console-side gate. Default-on.
         "xnutables",
+        // (kuna) arm64e virtual-call resolution -- the same console-side gate.
+        "arm64evcall",
         // (kuna) The Swift type-layout arm's gate, read inside that pass.
         "swifttypes",
         // (kuna) Objective-C instance layouts — same commit-side gate as `objc`.
@@ -1098,7 +1100,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `acleintrinsics`; its P9 row sits after `cortexmpriv`.
     // +1 for `iokitclasses`, beside `cfstrings`.
     // +1 for `xnutables`, beside `iokitclasses`.
-    assert_eq!(json.matches("},\n").count(), 220);
+    // +1 for `arm64evcall`, beside `iokitclasses`.
+    assert_eq!(json.matches("},\n").count(), 221);
 }
 
 #[test]

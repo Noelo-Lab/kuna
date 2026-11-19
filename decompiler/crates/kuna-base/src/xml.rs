@@ -2232,7 +2232,8 @@ mod tests {
         // and kuna-iokitclasses / IOKit class and vtable recovery on an XNU kext
         // and kuna-osclassinfo / DriverKit class records name metaclass globals and New functions
         // and kuna-xnutables / kalloc_type views, IOExternalMethodDispatch tables and got slots on an XNU kext
-        assert_eq!(count, 793, "corpus file count drifted");
+        // and kuna-arm64evcall / arm64e virtual calls resolved by pointer-auth discriminator
+        assert_eq!(count, 794, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

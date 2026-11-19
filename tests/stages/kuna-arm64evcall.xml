@@ -1,0 +1,119 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<!--
+    arm64e virtual calls resolved by pointer-auth discriminator
+    (`option arm64evcall on|off`).
+
+    Issue: an arm64e C++ virtual call loads its target from a vtable slot and
+    authenticates it with `blraa`/`braa`, so it renders as
+    `(**(code **)(*obj + off))(...)` with no hint of the method.
+
+    Stage / sub-stage: P1 external-refinement. `analyzers/rtti/kuna_arm64evcall.rs`
+    indexes every run of IA-signed, address-diversified `__const` slots by
+    (index in run, diversifier) from the chained fixups, walks back from each
+    call to its `movk #d, lsl #48` and the authenticated vtable-pointer load,
+    and the flow builds the CALLIND as a direct call when the slot holds one
+    method, or warns with the candidates when it holds several.
+
+    P0 assertion: `option arm64evcall on|off`.
+
+    The XML wrapper only supplies the harness architecture; every pass loads
+    a fixture through the object bootstrap (see the fixtures READMEs):
+    `macho_arm64e_vcall` (two vtables `{A_f, A_g}` and `{B_f, A_g}`),
+    `macho_arm64e_vcall_shapes` (a slot 32 words in, reached by adding a
+    constant register, and a Swift class metadata located by its signed
+    `Description`), and the kernel collection `kernelcache/fileset_vcall.macho`
+    (a kernel vtable `{Base_m0, Base_m1}` and a kext vtable
+    `{Base_m0, Widget_m1}`), loaded at its kernel entry.
+
+    Passes 1, 3 and 5 (`option arm64evcall off`) reproduce the BUG: every call
+    is an anonymous slot call.
+    Passes 2, 4 and 6 (`option arm64evcall on`, the shipped default) are the
+    FIX: `_call_g` calls `_A_g` (slot 1 holds it in both vtables) and `_call_f`
+    names its two candidates; `_call_big` calls `_C_m`, `_call_swift`
+    `_S_m2` and `_call_swift_m3` `_S_m3` with no argument (the method pointer
+    left in `x8` is not a hidden-return buffer); the kernel's slot-0 call is `Base_m0`, and its slot-1 call names
+    the kext's override, which only the whole collection's slots show (the
+    entry's own image keeps no signing context once the collection's fixups
+    are applied).
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_arm64e_vcall</com>
+  <com>option arm64evcall off</com>
+  <com>read symbols</com>
+  <com>load function _call_f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function _call_g</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_arm64e_vcall</com>
+  <com>read symbols</com>
+  <com>load function _call_f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function _call_g</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_arm64e_vcall_shapes</com>
+  <com>option arm64evcall off</com>
+  <com>read symbols</com>
+  <com>load function _call_big</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function _call_swift</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_arm64e_vcall_shapes</com>
+  <com>read symbols</com>
+  <com>load function _call_big</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function _call_swift</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function _call_swift_m3</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/kernelcache/fileset_vcall.macho</com>
+  <com>option arm64evcall off</com>
+  <com>read symbols</com>
+  <com>load function kernel_vcall_m0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function kernel_vcall_m1</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/kernelcache/fileset_vcall.macho</com>
+  <com>read symbols</com>
+  <com>load function kernel_vcall_m0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function kernel_vcall_m1</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="ARM64EVCALL #1: off leaves the slot-1 calls anonymous (image and kernel)" min="2" max="2">\(\*a0 \+ 8\)\)\(\); // jump-as-call</stringmatch>
+<stringmatch name="ARM64EVCALL #2: on calls the one method slot 1 holds" min="1" max="1">  _A_g\(\);</stringmatch>
+<stringmatch name="ARM64EVCALL #3: on names both candidates of the overridden slot" min="1" max="1">virtual call to one of 2 methods: _A_f, _B_f</stringmatch>
+<stringmatch name="ARM64EVCALL #4: off leaves the far slot (offset added from a register) anonymous" min="1" max="1">\(\*a0 \+ 0x100\)\)\(\);</stringmatch>
+<stringmatch name="ARM64EVCALL #5: on calls the one method the far slot holds" min="1" max="1">^  _C_m\(\);</stringmatch>
+<stringmatch name="ARM64EVCALL #6: off leaves the Swift class method call anonymous" min="1" max="1">\(\*v1 \+ 0x58\)\)\(\);</stringmatch>
+<stringmatch name="ARM64EVCALL #7: on calls the Swift method its class metadata holds" min="1" max="1">^  _S_m2\(\); // jump-as-call</stringmatch>
+<stringmatch name="ARM64EVCALL #8: off leaves the slot-0 calls anonymous (image and kernel)" min="2" max="2">\(\*\*\(code \*\*\)\*a0\)\(\); // jump-as-call</stringmatch>
+<stringmatch name="ARM64EVCALL #9: on the kernel calls the method both entries' vtables hold" min="1" max="1">^  Base_m0\(\);</stringmatch>
+<stringmatch name="ARM64EVCALL #10: on the kernel names the kext's override among the candidates" min="1" max="1">virtual call to one of 2 methods: Base_m1, sub_fffffff007007800</stringmatch>
+<stringmatch name="ARM64EVCALL #11: on the register the resolved call branched through is no argument" min="1" max="1">^  _S_m3\(\);</stringmatch>
+</decompilertest>

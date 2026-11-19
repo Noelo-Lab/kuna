@@ -514,6 +514,39 @@ impl FlowEnvironment for ArchFlowEnv {
         }
         crate::kuna_msvcimportcall::locked_import_slot(fd, op, locked)
     }
+    fn vcall_resolution(&self, site: &Address) -> (Option<Address>, Option<String>) {
+        let arch = self.arch();
+        let (Some(targets), Some(space)) =
+            (arch.kuna_vcall_targets.get(&site.get_offset()).map(|v| &v.targets), site.get_space())
+        else {
+            return (None, None);
+        };
+        let at = |t: u64| Address::new(Rc::clone(space), t);
+        if let [only] = targets.as_slice() {
+            return (Some(at(*only)), None);
+        }
+        const SHOWN: usize = 6;
+        let mut names: Vec<String> = Vec::new();
+        let mut named = 0;
+        for &t in targets {
+            if names.len() == SHOWN {
+                break;
+            }
+            let name = arch
+                .symboltab
+                .function_display_name_across_scopes(&at(t))
+                .unwrap_or_else(|| arch.name_function(&at(t)));
+            if !names.contains(&name) {
+                names.push(name);
+            }
+            named += 1;
+        }
+        let more = match targets.len() - named {
+            0 => String::new(),
+            n => format!(" and {n} more"),
+        };
+        (None, Some(format!("virtual call to one of {} methods: {}{more}", targets.len(), names.join(", "))))
+    }
     fn msvc_locked_entry(&self, entry: &Address) -> bool {
         let locked = &self.arch().msvcsig_import_slots;
         !locked.is_empty()

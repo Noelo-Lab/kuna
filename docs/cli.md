@@ -2611,6 +2611,14 @@ selected address, and stderr says so with
 Flags: `--json`, `--kind call,jump,data,read,write,pointer` (repeatable-by-comma
 filter), plus the shared `--mode`, `--option N V`, `--slice`, `--target`, `--sleighpath`.
 
+On arm64e an authenticated virtual call (`blraa x8, x17`) has no static target
+in its own bytes, but `arm64evcall` (default on) resolves it from the vtable
+slot's pointer-auth discriminator. When the slot holds one method of the image
+(or, for a kernelcache entry, of the whole collection) the site is a `call` edge
+to it; when it holds several, the site gets one `vcall` edge to each candidate
+(`--kind vcall`). `--to` a method therefore lists the virtual call sites that
+may reach it.
+
 **A pointer stored in data is a `pointer` row, not an instruction xref.** The
 `xrefs` rows are references an instruction makes. A word in `.data` that holds a
 function's address (an initialized function pointer, a vtable or callback table
@@ -4288,7 +4296,7 @@ emitted. Two runs of one command are byte-identical.
 | `hasIndirectCalls` | The body contains a computed call (`CALLIND`). It files no edge when its destination is computed at run time; a `call qword ptr [slot]` through a fixed slot does file one, and sets this flag too, as does a call through a register loaded from that slot (`ldr x16,[x16,…]; blr x16`, `mov rax,[rip+slot]; call rax`). An indirect *branch* is not one — see `forwardsTo`. The call site is attributed to the row that contains it, the same rule that decides which function `kuna xrefs --from` lists an instruction under. |
 | `forwardsTo` | Where a forwarding entry sends control: the destination of a direct lone jump, or the fixed pointer slot an indirect one reads. A non-null target is also a row and a `jump` edge endpoint. The slot half needs the jump to name it as a decode-time constant, which an x86 `jmp [rip+disp]` stub does (an x86-64 Mach-O `__stubs` entry forwards to its `__la_symbol_ptr` or `__got` slot) and an AArch64 `adrp`/`ldr`/`br x16` stub does not — an arm64 Mach-O `__stubs` entry is therefore `kind` `thunk` with a `null` `forwardsTo`, and the import slot it reaches is a row of its own found by name. `null` for anything that does not forward. |
 | `isEntryPoint` | This row is the image's declared entry point, resolved through the inventory so an ARM `e_entry` carrying the Thumb mode bit still lands on it, and rebased so a Mach-O `LC_MAIN` — which states a `__TEXT`-relative file offset rather than a VMA — marks the row it names. A format that declares no entry point marks no row. |
-| `edges[].kind` | The `kuna xrefs` kind, so the two surfaces cannot disagree: `call` a call, direct or through the fixed slot an imported API is called through; `jump` a tail call or a branch into a neighbouring entry; `data` an address handed to something else to call — the edge that gives `main` a caller, since `_start` passes it to `__libc_start_main` as a pointer rather than calling it. A caller that both calls and mentions one callee gets one edge carrying the strongest of the two. |
+| `edges[].kind` | The `kuna xrefs` kind, so the two surfaces cannot disagree: `call` a call, direct or through the fixed slot an imported API is called through; `jump` a tail call or a branch into a neighbouring entry; `data` an address handed to something else to call — the edge that gives `main` a caller, since `_start` passes it to `__libc_start_main` as a pointer rather than calling it; `vcall` an arm64e virtual call whose vtable slot holds the callee among several methods. A caller that both calls and mentions one callee gets one edge carrying the strongest of the two. |
 | `edges[].calleeOrder` | Contiguous and zero-based per caller, in first-reference order, deduplicated on the callee. |
 
 Rows are entry-VMA ordered, and each caller's edges follow that caller's order.

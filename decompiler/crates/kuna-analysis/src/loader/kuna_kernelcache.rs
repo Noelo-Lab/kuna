@@ -13,6 +13,8 @@
 
 use kuna_decomp::kuna_kernelcache::KernelcacheChoice;
 
+use crate::rtti::kuna_arm64evcall::SignedImage;
+
 pub use fileset::FilesetMap;
 
 mod fileset;
@@ -43,6 +45,9 @@ fn decode_limit(input_len: usize, declared: Option<usize>) -> usize {
 pub struct Peeled {
     pub bytes: Vec<u8>,
     pub note: Option<String>,
+    /// A kernel collection's signed pointer slots, whose signing context the
+    /// applied fixups no longer carry in `bytes`.
+    pub signed: Option<SignedImage>,
     pub fileset: Option<FilesetMap>,
 }
 
@@ -55,7 +60,7 @@ pub fn is_container(bytes: &[u8]) -> bool {
 /// neither a container nor an `MH_FILESET` comes back unchanged.
 pub fn peel(bytes: Vec<u8>, choice: &KernelcacheChoice) -> Result<Peeled, String> {
     if *choice == KernelcacheChoice::Off {
-        return Ok(Peeled { bytes, note: None, fileset: None });
+        return Ok(Peeled { bytes, note: None, signed: None, fileset: None });
     }
     let mut notes = Vec::new();
     let bytes = if is_container(&bytes) {
@@ -65,15 +70,15 @@ pub fn peel(bytes: Vec<u8>, choice: &KernelcacheChoice) -> Result<Peeled, String
     } else {
         bytes
     };
-    let (bytes, map) = if fileset::is_fileset(&bytes) {
-        let (image, note, map) = fileset::extract(bytes, choice)?;
+    let (bytes, signed, map) = if fileset::is_fileset(&bytes) {
+        let (image, note, signed, map) = fileset::extract(bytes, choice)?;
         notes.push(note);
-        (image, Some(map))
+        (image, (!signed.slots.is_empty()).then_some(signed), Some(map))
     } else {
-        (bytes, None)
+        (bytes, None, None)
     };
     let note = (!notes.is_empty()).then(|| notes.join("; "));
-    Ok(Peeled { bytes, note, fileset: map })
+    Ok(Peeled { bytes, note, signed, fileset: map })
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

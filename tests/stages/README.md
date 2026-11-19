@@ -458,6 +458,10 @@ function take their class's name. `kuna-xnutables.xml` decompiles the kext with
 `xnutables` off and on: a `kalloc_type` view, an `IOExternalMethodDispatch`
 handler and a `__got` slot gain names, and typed allocations their struct.
 
+`kuna-arm64evcall.xml` decompiles arm64e virtual calls of two userland fixtures
+and a kernel collection with `arm64evcall` off and on: a slot one method fills
+becomes a direct call, an overridden one names its candidates.
+
 `ghangr-go-pointer-arithmetic-32.xml` and `ghangr-go-pointer-arithmetic-64.xml`
 check live pointer bases through constant, negative and signed dynamic byte
 offsets in Go loads, stores and returns. Integer-address reconstruction remains

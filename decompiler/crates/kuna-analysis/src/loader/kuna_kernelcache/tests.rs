@@ -247,6 +247,28 @@ fn truncated_fileset_entry_header_is_refused() {
     assert!(peel(image, &KernelcacheChoice::Entry("Widget".into())).is_err());
 }
 
+/// A kernel entry keeps its collection's signed slots beside the image, so
+/// its virtual calls resolve against every entry's vtables: slot 0 holds
+/// `Base_m0` in both, slot 1 `Base_m1` in the kernel and `Widget_m1` in the
+/// kext. The cut-out image alone has no signing context left.
+#[test]
+fn fileset_signed_slots_resolve_kernel_virtual_calls() {
+    use crate::rtti::kuna_arm64evcall::{resolve, resolve_signed, VcallSite};
+    let base = 0xffff_fff0_0700_4000u64;
+    let kernel = peel(fixture("fileset_vcall.macho"), &KernelcacheChoice::Auto).unwrap();
+    let signed = kernel.signed.expect("signed slots");
+    assert_eq!(signed.slots.len(), 4);
+    let file = object::File::parse(kernel.bytes.as_slice()).unwrap();
+    assert!(resolve(&file, &kernel.bytes).is_empty());
+    assert_eq!(
+        resolve_signed(&file, &signed),
+        vec![
+            VcallSite { site: base + 0x302c, register: 8, targets: vec![base + 0x3000] },
+            VcallSite { site: base + 0x3054, register: 8, targets: vec![base + 0x3008, base + 0x3800] },
+        ]
+    );
+}
+
 /// A standalone kext's absolute symbols are not read as collection-bound
 /// imports; the same kext carved from its collection keeps them.
 #[test]

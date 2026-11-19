@@ -3517,6 +3517,7 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         "cfstrings" => arch.analysis_cfstrings,
         "iokitclasses" | "osclassinfo" => arch.analysis_iokitclasses,
         "xnutables" => arch.analysis_xnutables,
+        "arm64evcall" => arch.analysis_arm64evcall,
         // (kuna) PE PDB metadata recovery — default-OFF (output-changing: renames
         // stripped functions to their real PDB names). PE-only + externally gated on
         // a fingerprint-matching `.pdb` (the `kuna_pdb_path` env var). Registered
@@ -4792,6 +4793,7 @@ pub(crate) fn bootstrap_object(
     let target = kuna_analysis::loadimage_object::explicit_language_target(target).unwrap_or("");
     let registry = build_registry();
 
+    let mut signed_slots = None;
     let (bytes, load_notes) = match kuna_analysis::image_bytes::ImageBytes::map_thin_macho(path)? {
         Some(bytes) => (bytes, Vec::new()),
         None => {
@@ -4810,6 +4812,7 @@ pub(crate) fn bootstrap_object(
             if let Some(note) = &peeled.note {
                 kuna_base::notes::say_once(path, &format!("[kuna] {note}"));
             }
+            signed_slots = peeled.signed;
             let bytes = peeled.bytes;
             // (PR-8) Mach-O fat / universal (`0xcafebabe`) peel: `object::File::parse`
             // is a thin, single-arch view and cannot parse a fat header, so a universal
@@ -4972,6 +4975,19 @@ pub(crate) fn bootstrap_object(
         sleigh.base().unwrap().translate(),
     );
     pending_analysis.extend(input_isa_stash(input_context_paints));
+    // (kuna `arm64evcall`) A kernelcache entry's signed slots lost their signing
+    // context when the collection was fixed up; its virtual calls are resolved
+    // against the whole collection's slots instead.
+    if let Some(signed) = &signed_slots {
+        if let Ok(file) = kuna_analysis::loadimage_object::parse_object(&bytes) {
+            let vcall_sites = kuna_analysis::rtti::kuna_arm64evcall::resolve_signed(&file, signed);
+            pending_analysis.retain(|(id, _)| *id != "arm64evcall");
+            pending_analysis.push((
+                "arm64evcall",
+                kuna_analysis::pass::AnalysisOutput { vcall_sites, ..Default::default() },
+            ));
+        }
+    }
     let mut nullable = std::collections::BTreeMap::<u64, Vec<_>>::new();
     for record in loader.nullable_relocations() {
         nullable.entry(record.field).or_default().push(record.clone());
@@ -5483,6 +5499,13 @@ fn commit_analysis_output(
                     .set_attribute(sid, kuna_decomp::varnode::varnode_flags::namelock);
             }
         }
+    }
+
+    // 1--. (kuna `arm64evcall`) The methods each arm64e virtual call site's slot
+    //      can hold; flow reads them when it builds the CALLIND.
+    for v in &out.vcall_sites {
+        let call = kuna_decomp::architecture::VcallTargets { register: v.register, targets: v.targets.clone() };
+        Rc::make_mut(&mut prog.arch_mut().kuna_vcall_targets).insert(v.site, call);
     }
 
     // 1-. (kuna `elfgotimports`) The import a loader import slot holds. A

@@ -237,6 +237,15 @@ impl CommentDatabase {
 // Architecture
 // ---------------------------------------------------------------------------
 
+/// (kuna `arm64evcall`) What an arm64e virtual call site's slot can hold.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct VcallTargets {
+    /// The general register the call branches through (`blraa x8, x17`: 8).
+    pub register: u8,
+    /// Every method the slot can hold, sorted.
+    pub targets: Vec<u64>,
+}
+
 /// \brief Manager for all the major decompiler subsystems (C++ `class
 /// Architecture : public AddrSpaceManager`, `architecture.hh:165`).
 ///
@@ -302,6 +311,9 @@ pub struct Architecture {
     /// (kuna `xnutables`) What each kalloc_type view allocates, by view
     /// address, handed over by the XNU table analysis; empty elsewhere.
     pub kuna_kalloc_types: Rc<crate::kuna_kalloctype::KallocTypes>,
+    /// (kuna `arm64evcall`) `call site → methods its vtable slot can hold`,
+    /// handed over by the arm64e virtual-call analysis; empty elsewhere.
+    pub kuna_vcall_targets: Rc<std::collections::BTreeMap<u64, VcallTargets>>,
     /// (kuna `pltlocal`) `(stub, definition)` for each PLT stub the image's own
     /// dynamic relocations bind to a function it defines, ascending by stub
     /// (`ObjectLoadImage::plt_local_targets`). Installed by the ELF bootstrap;
@@ -1866,6 +1878,9 @@ pub struct Architecture {
     /// (kuna) `xnutables`: kalloc_type views, IOExternalMethodDispatch tables and
     /// unnamed pointer slots on an XNU kernel or kext (default on).
     pub analysis_xnutables: bool,
+    /// (kuna) Gate the arm64e virtual-call resolution (`arm64evcall`); default
+    /// on, Mach-O only.
+    pub analysis_arm64evcall: bool,
     /// (kuna `cfstrings annotate`) Follow each rendered `CFSTR("...")` with a
     /// comment naming its `__cfstring` entry address. Default **off**.
     pub cfstrings_annotate: bool,
@@ -2300,6 +2315,7 @@ impl Architecture {
             readonlypropagate: false,
             dynreloc_const: Rc::new(Vec::new()),
             kuna_kalloc_types: Rc::default(),
+            kuna_vcall_targets: Rc::default(),
             plt_local: Rc::new(Vec::new()),
             litpool_const: Rc::new(Vec::new()),
             arm_pool_extents: Rc::new(Vec::new()),
@@ -2604,6 +2620,7 @@ impl Architecture {
             analysis_cfstrings: false,
             analysis_iokitclasses: false,
             analysis_xnutables: false,
+            analysis_arm64evcall: false,
             cfstrings_annotate: false,
             cfstring_entries: std::collections::BTreeSet::new(),
             analysis_swifttypes: true,
@@ -2951,6 +2968,7 @@ impl Architecture {
         self.cfstrings_annotate = false;
         self.analysis_iokitclasses = true; // (kuna) IOKit class recovery, XNU and DriverKit images only
         self.analysis_xnutables = true; // (kuna) XNU data tables, XNU images only
+        self.analysis_arm64evcall = true; // (kuna) arm64e virtual calls by pointer-auth discriminator; Mach-O only
         self.analysis_swifttypes = true; // Swift type layouts default-on, inert unless swiftmetadata is on
         self.analysis_objcivars = true; // (kuna) ObjC instance structs + typed self + ivar offset fold; inert unless objc is on
         self.analysis_swiftcall = true; // Swift calling convention default-on, inert unless swiftmetadata is on
@@ -3679,6 +3697,7 @@ impl Architecture {
         // propagation still off. `Rc` clone: the list is built once at load.
         ctx.dynreloc_const = Rc::clone(&self.dynreloc_const);
         ctx.kuna_kalloc_types = Rc::clone(&self.kuna_kalloc_types);
+        ctx.vcall_targets = Rc::clone(&self.kuna_vcall_targets);
         ctx.litpool_const = Rc::clone(&self.litpool_const);
         // Carry the data-type-splitting toggle bits (C++ `glb->split_datatype_config`)
         // so `SplitDatatype` / `RuleSplit{Copy,Load,Store}` reach them per function.

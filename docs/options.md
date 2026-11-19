@@ -639,6 +639,10 @@ Three tiers:
 | protocol witnesses and class methods of a stripped swift app have no names | [`swiftmetadata`](#swiftmetadata----on--off-default-on) |
 | core-foundation / objc string constants render as dat_<addr> instead of their text | [`cfstrings`](#cfstrings----on--off--annotate-default-on) |
 | a CFSTR(...) argument shows an address in a mach-o | [`cfstrings`](#cfstrings----on--off--annotate-default-on) |
+| an arm64e virtual call renders as (**(code **)(*obj + 0x18))(obj) with no hint of the method | [`arm64evcall`](#arm64evcall----on--off-default-on) |
+| c++ method calls in an ios binary or kernelcache are all anonymous function-pointer calls | [`arm64evcall`](#arm64evcall----on--off-default-on) |
+| swift class method calls on arm64e are anonymous slot calls | [`arm64evcall`](#arm64evcall----on--off-default-on) |
+| kuna xrefs --to a virtual method finds no callers | [`arm64evcall`](#arm64evcall----on--off-default-on) |
 | a stripped kext shows sub_<addr> for every IOKit method | [`iokitclasses`](#iokitclasses----on--off-default-on) |
 | gMetaClass objects render as dat_<addr> | [`iokitclasses`](#iokitclasses----on--off-default-on) |
 | methods reachable only through a vtable are missing from kuna functions | [`iokitclasses`](#iokitclasses----on--off-default-on) |
@@ -2194,6 +2198,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On (default): a Mach-O (Core Foundation / Objective-C / Swift) binary renders its CFString constants -- a call that passed dat_<addr> renders CFSTR("cfstring hello"). Flip off to see each reference as the __cfstring entry itself (its symbol, or its address on a stripped image). Use annotate when cross-checking against a disassembler or hex view: the entry address stays in the output as a comment.
 - **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-cfstrings
 - **Example:** `option cfstrings annotate`
+
+### `arm64evcall` -- on | off, default `on`
+
+- **Symptoms:** an arm64e virtual call renders as (**(code **)(*obj + 0x18))(obj) with no hint of the method; c++ method calls in an ios binary or kernelcache are all anonymous function-pointer calls; swift class method calls on arm64e are anonymous slot calls; kuna xrefs --to a virtual method finds no callers.
+- **What it does:** Mach-O arm64e only: resolve virtual calls by their pointer-auth discriminator. arm64e signs every C++ vtable slot and Swift class vtable entry with key IA, address diversity and a 16-bit constant, the hash of the method's mangled name; the constant survives in each slot's LC_DYLD_CHAINED_FIXUPS entry and is re-materialized at every call site (movk x17, #d, lsl #48; blraa x8, x17). So (word offset from the address point, diversifier) names a method without any class type. The analysis tier files every Swift class metadata (found by its DA-signed Description field) by offset from its address point and every other run of consecutive IA-signed, address-diversified __const slots by index in run, skipping __cxa_pure_virtual/__cxa_deleted_virtual and slots bound to another image. It walks back up to 24 raw A64 words from each blraa/braa with a register modifier to the movk, summing mov, add #imm, add of a movz constant and pre-index ldr writebacks, to the authenticated vtable-pointer load (autda/autdb/autdza/autdzb/ldraa) or to an adrp, a fixed slot; a plain mov #d modifier is a constant discriminator on the slot the target was loaded from. A fixed slot resolves through its own fixup when it is read-only and signed the same way. A kernelcache entry is resolved against the whole collection's signed slots, kept beside the cut-out image. When the slot holds one method the CALLIND is built as a direct call to it; when it holds several, the call gets a warning naming the candidates. kuna xrefs files a call edge for one method and a vcall edge to each of several. Default-on because it is inert on any image without IA-signed slots and the XML corpus never runs an analysis pass (0/675).
+- **When to flip:** On by default: an arm64e virtual call whose slot one class of this image (or, for a kernelcache entry, of the whole collection) fills reads as that method's call, and an overridden one names its candidates. Flip off to see every virtual call as (**(code **)(*obj + off))(...). The unique-target case trusts that no other image overrides the method; a plugin or a third-party kext built against this image could. Inert on any image without IA-signed slots.
+- **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-apple-arm64evcall
+- **Example:** `option arm64evcall off`
 
 ### `iokitclasses` -- on | off, default `on`
 
