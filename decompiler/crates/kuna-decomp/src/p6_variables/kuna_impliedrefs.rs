@@ -68,17 +68,32 @@ fn parse_bound(p1: &str, what: &str) -> KunaResult<int4> {
 
 /// The `impliedrefs <n>` ArchOption: how many times a computed value may be read
 /// and still be inlined at each use (C++ `Architecture::max_implied_ref`).
+/// `<n>:<w>` adds a weight: a value read more than `n` times still prints
+/// inline while its terms times its readers is at most `w`
+/// (`Architecture::implied_weight`).
 pub struct OptionImpliedRefs;
 
 impl OptionImpliedRefs {
     /// The option name.
     pub const NAME: &'static str = "impliedrefs";
 
-    /// Parse the descendant bound into the value written to
-    /// `Architecture::max_implied_ref`, plus a confirmation message.
-    pub fn apply(&self, p1: &str) -> KunaResult<(int4, String)> {
-        let val = parse_bound(p1, "implied-reference bound")?;
-        Ok((val, format!("Implied-reference bound set to {val}")))
+    /// Parse the descendant bound and the optional weight into the values
+    /// written to `Architecture::max_implied_ref` and
+    /// `Architecture::implied_weight`, plus a confirmation message.
+    pub fn apply(&self, p1: &str) -> KunaResult<(int4, int4, String)> {
+        let (bound, weight) = match p1.trim().split_once(':') {
+            Some((bound, weight)) => (bound, Some(weight)),
+            None => (p1, None),
+        };
+        let val = parse_bound(bound, "implied-reference bound")?;
+        let Some(weight) = weight else {
+            return Ok((val, 0, format!("Implied-reference bound set to {val}")));
+        };
+        let weight = parse_bound(weight, "implied-expression weight")?;
+        if weight < 2 {
+            return Err(KunaError::parse(format!("Bad implied-expression weight: {weight} is below 2")));
+        }
+        Ok((val, weight, format!("Implied-reference bound set to {val}; an expression prints inline while its terms times its readers is at most {weight}")))
     }
 }
 
@@ -108,14 +123,18 @@ mod tests {
         // `infra/architecture/tests.rs::reset_defaults_internal_matches_cpp`
         // pins the live fields at 2; these are the catalog defaults for them.
         assert_eq!(OptionImpliedRefs.apply("2").expect("2 parses").0, 2);
+        assert_eq!(OptionImpliedRefs.apply("2").expect("2 parses").1, 0);
         assert_eq!(OptionTermDup.apply("2").expect("2 parses").0, 2);
     }
 
     #[test]
     fn a_higher_bound_parses_and_confirms() {
-        let (val, msg) = OptionImpliedRefs.apply("4").expect("4 parses");
-        assert_eq!(val, 4);
+        let (val, weight, msg) = OptionImpliedRefs.apply("4").expect("4 parses");
+        assert_eq!((val, weight), (4, 0));
         assert!(msg.contains('4'), "message names the value: {msg}");
+        let (val, weight, msg) = OptionImpliedRefs.apply("2:8").expect("2:8 parses");
+        assert_eq!((val, weight), (2, 8));
+        assert!(msg.contains('8'), "message names the weight: {msg}");
         let (val, msg) = OptionTermDup.apply("3").expect("3 parses");
         assert_eq!(val, 3);
         assert!(msg.contains('3'), "message names the value: {msg}");
@@ -125,6 +144,9 @@ mod tests {
 
     #[test]
     fn a_bad_bound_is_refused() {
+        for bad in ["2:", "2:1", "2:x", ":8", "2:8:9"] {
+            assert!(OptionImpliedRefs.apply(bad).is_err(), "impliedrefs {bad:?} must be refused");
+        }
         for bad in ["", "-1", "wide", "1000001", "2.5"] {
             assert!(
                 OptionImpliedRefs.apply(bad).is_err(),

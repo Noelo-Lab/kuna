@@ -30,6 +30,9 @@ Three tiers:
 | rep movsq / rep stosd from -Os code printed as a loop instead of memcpy/memset | [`repstring`](#repstring----on--off-default-on) |
 | a struct copy prints as a 16-iteration word loop | [`repstring`](#repstring----on--off-default-on) |
 | a strcmp against a short constant prints as a do/while over two byte pointers and a count | [`repstring`](#repstring----on--off-default-on) |
+| the same arithmetic expression on the same values is computed twice into two temporaries | [`latecse`](#latecse----on--off-default-off) |
+| v1 = a + b * 4; ... v2 = a + b * 4; where one would do | [`latecse`](#latecse----on--off-default-off) |
+| duplicated address arithmetic in both arms of an if | [`latecse`](#latecse----on--off-default-off) |
 | stack string initialisation renders as an array-typed cast such as (char[8])s_addr._0_8_ | [`rodatastring`](#rodatastring----on--off-default-on) |
 | partial-symbol slice assignments like buf._0_9_ = s_addr._16_9_ instead of the string | [`rodatastring`](#rodatastring----on--off-default-on) |
 | a recognized rodata literal never appears in the function that copies it onto the stack | [`rodatastring`](#rodatastring----on--off-default-on) |
@@ -279,10 +282,12 @@ Three tiers:
 | call result spilled to a temp used exactly once: v5 = f(); if (v5 < 0) | [`foldcallret`](#foldcallret----on--off-default-on) |
 | single-use call return not inlined into its use site | [`foldcallret`](#foldcallret----on--off-default-on) |
 | flip off to force every call output into a named temporary (ghidra style) | [`foldcallret`](#foldcallret----on--off-default-on) |
-| too many single-use temporaries: v7 = v3 + 8 declared and read once | [`impliedrefs`](#impliedrefs----2--3--4---default-2) |
-| a value read three times is written out three times instead of being declared | [`impliedrefs`](#impliedrefs----2--3--4---default-2) |
-| want to ablate the implied-expression threshold without rebuilding | [`impliedrefs`](#impliedrefs----2--3--4---default-2) |
-| expressions are too deeply nested to read and every sub-term should get a name | [`impliedrefs`](#impliedrefs----2--3--4---default-2) |
+| too many single-use temporaries: v7 = v3 + 8 declared and read once | [`impliedrefs`](#impliedrefs----2--3--4-----default-2) |
+| a value read three times is written out three times instead of being declared | [`impliedrefs`](#impliedrefs----2--3--4-----default-2) |
+| want to ablate the implied-expression threshold without rebuilding | [`impliedrefs`](#impliedrefs----2--3--4-----default-2) |
+| expressions are too deeply nested to read and every sub-term should get a name | [`impliedrefs`](#impliedrefs----2--3--4-----default-2) |
+| a tiny expression such as a0 + 1 read three times gets its own temporary | [`impliedrefs`](#impliedrefs----2--3--4-----default-2) |
+| want small shared expressions printed inline and large ones kept in a variable | [`impliedrefs`](#impliedrefs----2--3--4-----default-2) |
 | a two-term expression is declared as a temporary instead of being inlined at its two uses | [`termdup`](#termdup----2--3--4---default-2) |
 | want to ablate the term-duplication threshold without rebuilding | [`termdup`](#termdup----2--3--4---default-2) |
 | raising impliedrefs did not inline an expression because the expression itself is too wide | [`termdup`](#termdup----2--3--4---default-2) |
@@ -898,6 +903,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **Where / provenance:** P3/simplification-quiescence · kuna · presentation-default · GH-1650
 - **Example:** `option repstring off`
 
+### `latecse` -- on | off, default `off`
+
+- **Symptoms:** the same arithmetic expression on the same values is computed twice into two temporaries; v1 = a + b * 4; ... v2 = a + b * 4; where one would do; duplicated address arithmetic in both arms of an if.
+- **What it does:** Merge identical pure ops that read the same varnode once the rule pools settle: for every varnode with more than one reader, the readers `get_cse_hash` accepts (unary or binary, no COPY, LOAD, call or other effect) go through `Funcdata::cse_eliminate_list`, which keeps one op in a block dominating both and reads its output at both. An op whose value is a LOAD or STORE address is skipped: type recovery turns each such use into its own field or element access. Runs once per function in group `unreachable` (a rule that later splits the shared value again would otherwise alternate with it); upstream merges only MULTIEQUALs (ActionMultiCse) and SUBPIECE/INT_SRIGHT (RuleSelectCse).
+- **When to flip:** Turn on to see a value the source computed once and the compiler recomputed print once: `return sink((a0 + a1) * a2) + (a0 + a1) * a2;` prints `v1 = (a0 + a1) * a2; return sink(v1) + v1;`. Default off: over 4,072 x86-64 functions it changes 560 (many through synthesized struct numbering), and the shared values become explicit temporaries, so output grows (lines 180,432 -> 180,724, gotos 8,892 -> 8,940).
+- **Where / provenance:** P3/simplification-quiescence · kuna · transform · kuna-latecse
+- **Example:** `option latecse on`
+
 ### `rodatastring` -- on | off, default `on`
 
 - **Symptoms:** stack string initialisation renders as an array-typed cast such as (char[8])s_addr._0_8_; partial-symbol slice assignments like buf._0_9_ = s_addr._16_9_ instead of the string; a recognized rodata literal never appears in the function that copies it onto the stack; builtin_strncpy call where the individual slice assignments are wanted (flip off).
@@ -1458,13 +1471,13 @@ The control surface: each of these can make output worse on the wrong source sha
 - **Where / provenance:** P6/explicit-marking · angr · presentation-default · angr-call-return-variable-folding
 - **Example:** `option foldcallret on`
 
-### `impliedrefs` -- 2 | 3 | 4 | <n>, default `2`
+### `impliedrefs` -- 2 | 3 | 4 | <n> | <n>:<w>, default `2`
 
-- **Symptoms:** too many single-use temporaries: v7 = v3 + 8 declared and read once; a value read three times is written out three times instead of being declared; want to ablate the implied-expression threshold without rebuilding; expressions are too deeply nested to read and every sub-term should get a name.
-- **What it does:** How many times a computed value may be read and still be inlined at each use instead of being declared as its own local. ActionMarkExplicit::baseExplicit counts a Varnode's descendants and forces the value explicit once the count exceeds this bound, so the bound is exactly the line between `v3 = a + b;` used three times and `a + b` written out three times. It shipped as a hard-coded 2 whose own upstream comment reads `2 is best, in specific cases a higher number might be good`, with no way to reach it from a command. Raising it trades declarations for expression size: measured on coreutils fmt -O2 (decompile-all, 151 functions), the emitted C declares 369 locals at the shipped 2, 366 at 3 and 363 at 4, and in the other direction 384 at 1 and 630 at 0, where nothing stays implied and every computation gets its own statement. The bound is a program-wide tunable, not private to the explicit-marking pass: BlockBasic::isComplex (the `ruleBlockOr` OR-clause absorb test) and `condfold`'s printed-width test read the same field, so raising it also lets a slightly larger block fold into a condition.
-- **When to flip:** An ablation lever, and a readability knob for a listing that is either too fragmented or too dense. Raise to 3 or 4 when kuna declares a swarm of single-expression temporaries that each carry no meaning (`v7 = v3 + 8;` read three times); lower to 1 to force every multiply-read value into a named local when you are hand-tracing data flow, or to 0 to see one statement per computation. Leave at the shipped 2 for output that matches every other kuna run and the datatest baselines -- this is a per-run judgement, not a defect fix, so nothing here is more correct than the default.
+- **Symptoms:** too many single-use temporaries: v7 = v3 + 8 declared and read once; a value read three times is written out three times instead of being declared; want to ablate the implied-expression threshold without rebuilding; expressions are too deeply nested to read and every sub-term should get a name; a tiny expression such as a0 + 1 read three times gets its own temporary; want small shared expressions printed inline and large ones kept in a variable.
+- **What it does:** How many times a computed value may be read and still be inlined at each use instead of being declared as its own local. ActionMarkExplicit::baseExplicit counts a Varnode's descendants and forces the value explicit once the count exceeds this bound, so the bound is exactly the line between `v3 = a + b;` used three times and `a + b` written out three times. It shipped as a hard-coded 2 whose own upstream comment reads `2 is best, in specific cases a higher number might be good`, with no way to reach it from a command. Raising it trades declarations for expression size: measured on coreutils fmt -O2 (decompile-all, 151 functions), the emitted C declares 369 locals at the shipped 2, 366 at 3 and 363 at 4, and in the other direction 384 at 1 and 630 at 0, where nothing stays implied and every computation gets its own statement. The bound is a program-wide tunable, not private to the explicit-marking pass: BlockBasic::isComplex (the `ruleBlockOr` OR-clause absorb test) and `condfold`'s printed-width test read the same field, so raising it also lets a slightly larger block fold into a condition. The `<n>:<w>` form adds a weight: a value read more than `n` times is still inlined while its terms (the explicit variables and constants its expression re-prints) times its readers is at most `w`, so a small expression read three or four times prints at each use and a large one keeps its temporary; `w` is the one bound that trades expression size against reader count, where `n` and `termdup` bound each alone. ActionMarkExplicit takes a varnode with at most `w` readers as a multi-reader candidate and caps its duplicated terms at min(termdup, w / readers).
+- **When to flip:** An ablation lever, and a readability knob for a listing that is either too fragmented or too dense. Raise to 3 or 4 when kuna declares a swarm of single-expression temporaries that each carry no meaning (`v7 = v3 + 8;` read three times); lower to 1 to force every multiply-read value into a named local when you are hand-tracing data flow, or to 0 to see one statement per computation. Set `2:8` to inline a two-term sum read four times (`sink(a0 + a1); sink(a0 + a1);` instead of `v1 = a0 + a1; sink(v1); sink(v1);`) while a wider or more-read expression still gets its temporary. Leave at the shipped 2 for output that matches every other kuna run and the datatest baselines -- this is a per-run judgement, not a defect fix, so nothing here is more correct than the default.
 - **Where / provenance:** P6/explicit-marking · ghidra-upstream · opt-in-tool · kuna-impliedrefs
-- **Example:** `option impliedrefs 4`
+- **Example:** `option impliedrefs 2:8`
 
 ### `termdup` -- 2 | 3 | 4 | <n>, default `2`
 

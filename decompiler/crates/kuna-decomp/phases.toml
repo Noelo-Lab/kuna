@@ -1603,6 +1603,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "latecse"
+values = "on|off"
+default = "off"
+destructive = false
+phase = "P3"
+subphase = "simplification-quiescence"
+strength = "HARD"
+rewind = "P3"
+issue = "kuna-latecse"
+summary = "Merge identical pure ops that read the same varnode once the rule pools settle: for every varnode with more than one reader, the readers `get_cse_hash` accepts (unary or binary, no COPY, LOAD, call or other effect) go through `Funcdata::cse_eliminate_list`, which keeps one op in a block dominating both and reads its output at both. An op whose value is a LOAD or STORE address is skipped: type recovery turns each such use into its own field or element access. Runs once per function in group `unreachable` (a rule that later splits the shared value again would otherwise alternate with it); upstream merges only MULTIEQUALs (ActionMultiCse) and SUBPIECE/INT_SRIGHT (RuleSelectCse)."
+use_when = "Turn on to see a value the source computed once and the compiler recomputed print once: `return sink((a0 + a1) * a2) + (a0 + a1) * a2;` prints `v1 = (a0 + a1) * a2; return sink(v1) + v1;`. Default off: over 4,072 x86-64 functions it changes 560 (many through synthesized struct numbering), and the shared values become explicit temporaries, so output grows (lines 180,432 -> 180,724, gotos 8,892 -> 8,940)."
+example = "option latecse on"
+source_decompiler = "kuna"
+inspiration = "Duplicated pure expressions printed as separate temporaries where the source wrote the expression once"
+change_kind = "transform"
+tier = "transform"
+symptoms = "the same arithmetic expression on the same values is computed twice into two temporaries|v1 = a + b * 4; ... v2 = a + b * 4; where one would do|duplicated address arithmetic in both arms of an if"
+live_field = "late_cse"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "rodatastring"
 values = "on|off"
 default = "on"
@@ -3279,7 +3301,7 @@ symptoms = "call result spilled to a temp used exactly once: v5 = f(); if (v5 < 
 
 [[settable]]
 option = "impliedrefs"
-values = "2|3|4|<n>"
+values = "2|3|4|<n>|<n>:<w>"
 default = "2"
 destructive = false
 phase = "P6"
@@ -3287,14 +3309,14 @@ subphase = "explicit-marking"
 rewind = "P6"
 strength = "HARD"
 issue = "kuna-impliedrefs"
-summary = "How many times a computed value may be read and still be inlined at each use instead of being declared as its own local. ActionMarkExplicit::baseExplicit counts a Varnode's descendants and forces the value explicit once the count exceeds this bound, so the bound is exactly the line between `v3 = a + b;` used three times and `a + b` written out three times. It shipped as a hard-coded 2 whose own upstream comment reads `2 is best, in specific cases a higher number might be good`, with no way to reach it from a command. Raising it trades declarations for expression size: measured on coreutils fmt -O2 (decompile-all, 151 functions), the emitted C declares 369 locals at the shipped 2, 366 at 3 and 363 at 4, and in the other direction 384 at 1 and 630 at 0, where nothing stays implied and every computation gets its own statement. The bound is a program-wide tunable, not private to the explicit-marking pass: BlockBasic::isComplex (the `ruleBlockOr` OR-clause absorb test) and `condfold`'s printed-width test read the same field, so raising it also lets a slightly larger block fold into a condition."
-use_when = "An ablation lever, and a readability knob for a listing that is either too fragmented or too dense. Raise to 3 or 4 when kuna declares a swarm of single-expression temporaries that each carry no meaning (`v7 = v3 + 8;` read three times); lower to 1 to force every multiply-read value into a named local when you are hand-tracing data flow, or to 0 to see one statement per computation. Leave at the shipped 2 for output that matches every other kuna run and the datatest baselines -- this is a per-run judgement, not a defect fix, so nothing here is more correct than the default."
-example = "option impliedrefs 4"
+summary = "How many times a computed value may be read and still be inlined at each use instead of being declared as its own local. ActionMarkExplicit::baseExplicit counts a Varnode's descendants and forces the value explicit once the count exceeds this bound, so the bound is exactly the line between `v3 = a + b;` used three times and `a + b` written out three times. It shipped as a hard-coded 2 whose own upstream comment reads `2 is best, in specific cases a higher number might be good`, with no way to reach it from a command. Raising it trades declarations for expression size: measured on coreutils fmt -O2 (decompile-all, 151 functions), the emitted C declares 369 locals at the shipped 2, 366 at 3 and 363 at 4, and in the other direction 384 at 1 and 630 at 0, where nothing stays implied and every computation gets its own statement. The bound is a program-wide tunable, not private to the explicit-marking pass: BlockBasic::isComplex (the `ruleBlockOr` OR-clause absorb test) and `condfold`'s printed-width test read the same field, so raising it also lets a slightly larger block fold into a condition. The `<n>:<w>` form adds a weight: a value read more than `n` times is still inlined while its terms (the explicit variables and constants its expression re-prints) times its readers is at most `w`, so a small expression read three or four times prints at each use and a large one keeps its temporary; `w` is the one bound that trades expression size against reader count, where `n` and `termdup` bound each alone. ActionMarkExplicit takes a varnode with at most `w` readers as a multi-reader candidate and caps its duplicated terms at min(termdup, w / readers)."
+use_when = "An ablation lever, and a readability knob for a listing that is either too fragmented or too dense. Raise to 3 or 4 when kuna declares a swarm of single-expression temporaries that each carry no meaning (`v7 = v3 + 8;` read three times); lower to 1 to force every multiply-read value into a named local when you are hand-tracing data flow, or to 0 to see one statement per computation. Set `2:8` to inline a two-term sum read four times (`sink(a0 + a1); sink(a0 + a1);` instead of `v1 = a0 + a1; sink(v1); sink(v1);`) while a wider or more-read expression still gets its temporary. Leave at the shipped 2 for output that matches every other kuna run and the datatest baselines -- this is a per-run judgement, not a defect fix, so nothing here is more correct than the default."
+example = "option impliedrefs 2:8"
 source_decompiler = "ghidra-upstream"
 inspiration = "Ghidra's own `Architecture::max_implied_ref` comment: `2 is best, in specific cases a higher number might be good` -- a tunable upstream expects to be edited, reachable only by recompiling until now"
 change_kind = "opt-in-tool"
 tier = "transform"
-symptoms = "too many single-use temporaries: v7 = v3 + 8 declared and read once|a value read three times is written out three times instead of being declared|want to ablate the implied-expression threshold without rebuilding|expressions are too deeply nested to read and every sub-term should get a name"
+symptoms = "too many single-use temporaries: v7 = v3 + 8 declared and read once|a value read three times is written out three times instead of being declared|want to ablate the implied-expression threshold without rebuilding|expressions are too deeply nested to read and every sub-term should get a name|a tiny expression such as a0 + 1 read three times gets its own temporary|want small shared expressions printed inline and large ones kept in a variable"
 
 [[settable]]
 option = "termdup"

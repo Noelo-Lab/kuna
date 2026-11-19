@@ -455,6 +455,7 @@ kuna_options! { self, p1;
     "devectorize" => on_off!(devectorize_reduction, "Vectorized reduction re-roll"),
     "strlenscan" => on_off!(strlen_scan, "inline repnz scasb string length as strlen"),
     "repstring" => on_off!(rep_string, "rep movs/stos/cmps loops as copy, fill and compare builtins"),
+    "latecse" => on_off!(late_cse, "late common-subexpression elimination"),
     "regionstructure" => {
         let (val, msg) =
             crate::p8_structure::region_structurer::OptionRegionStructure.apply(p1)?;
@@ -576,8 +577,9 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "impliedrefs" => {
-        let (val, msg) = crate::kuna_impliedrefs::OptionImpliedRefs.apply(p1)?;
+        let (val, weight, msg) = crate::kuna_impliedrefs::OptionImpliedRefs.apply(p1)?;
         self.max_implied_ref = val;
+        self.implied_weight = weight;
         Ok(msg)
     },
     "termdup" => {

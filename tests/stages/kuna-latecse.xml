@@ -1,0 +1,51 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Late common-subexpression elimination (`option latecse on|off`, default
+    off; P3 simplification-quiescence, `kuna_latecse`) and the weight form of
+    `impliedrefs` (`option impliedrefs <n>:<w>`; P6 explicit-marking,
+    `ActionMarkExplicit`).
+
+    Hand-written x86-64 (nasm): `twice` computes (a + b) * c once before a call and again after
+    it, from callee-saved registers, and returns the call's result plus the
+    second copy; `small` computes a + b once into rbx and passes it to three
+    calls before returning it.
+
+    Pass 1 is the shipped default: the two copies in `twice` print twice, and
+    `small`'s sum, read four times, is declared as a temporary. Pass 2 turns
+    `latecse` on: the second copy in `twice` reads the first. Pass 3 sets
+    `impliedrefs 2:8`: `small`'s two-term sum read four times (weight 8)
+    prints at every use instead of being declared.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+8d4701c390909090909090909090909053415441554189fc4189f589d3438d042c0fafc389c7e8d5ffffff438d0c2c0fafcb01c8415d415c5bc3909090909090538d1c3789dfe8b5ffffff89dfe8aeffffff89dfe8a7ffffff89d85bc3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="sink"/>
+<symbol space="ram" offset="0x100010" name="twice"/>
+<symbol space="ram" offset="0x100040" name="small"/>
+</binaryimage>
+<script>
+  <com>lo fu twice</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu small</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option latecse on</com>
+  <com>lo fu twice</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option latecse off</com>
+  <com>option impliedrefs 2:8</com>
+  <com>lo fu small</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="LATECSE #1: off, the product is computed twice" min="1" max="1">return sink\(\(a0 \+ a1\) \* a2\) \+ \(a0 \+ a1\) \* a2;</stringmatch>
+<stringmatch name="LATECSE #2: on, the second copy reads the first" min="1" max="1">a2 = \(a0 \+ a1\) \* a2;</stringmatch>
+<stringmatch name="LATECSE #3: on, the call and the return share the one value" min="1" max="1">return sink\(a2\) \+ a2;</stringmatch>
+<stringmatch name="IMPLIEDWEIGHT #1: at the shipped 2, the sum read four times is a temporary" min="1" max="1">a0 \+= a1;</stringmatch>
+<stringmatch name="IMPLIEDWEIGHT #2: at 2:8, the two-term sum prints at each of its three calls" min="3" max="3">sink\(a0 \+ a1\);</stringmatch>
+<stringmatch name="IMPLIEDWEIGHT #3: and at the return" min="1" max="1">return a0 \+ a1;</stringmatch>
+</decompilertest>

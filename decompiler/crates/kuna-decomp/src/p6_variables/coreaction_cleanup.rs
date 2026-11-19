@@ -1040,7 +1040,11 @@ impl Action for ActionMarkExplicit {
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.cc:3340 — ActionMarkExplicit::apply.
-        let maxref = data.get_arch().max_implied_ref;
+        // (kuna `impliedrefs <n>:<w>`) Under a weight an expression with more
+        // readers than `max_implied_ref` is still a candidate; process_multiplier
+        // then caps its terms at weight / readers.
+        let weight = data.get_arch().implied_weight;
+        let maxref = data.get_arch().max_implied_ref.max(weight);
         // beginDef()..beginDef(0): iterate the non-free (input|written) varnodes.
         let candidates: Vec<crate::context::VarnodeId> = data
             .vbank()
@@ -1080,7 +1084,13 @@ impl Action for ActionMarkExplicit {
         for &vn in &multlist {
             // Mark may have been cleared by multipleInteraction.
             if data.vbank().get(vn).map(|v| v.is_mark()).unwrap_or(false) {
-                process_multiplier(data, vn, maxdup);
+                let max = if weight > 0 {
+                    let readers = data.vbank().get(vn).map_or(1, |v| v.descend_iter().count() as int4).max(1);
+                    maxdup.min(weight / readers)
+                } else {
+                    maxdup
+                };
+                process_multiplier(data, vn, max);
             }
         }
         // Clear the marks set above so no stray Varnode::mark escapes into later

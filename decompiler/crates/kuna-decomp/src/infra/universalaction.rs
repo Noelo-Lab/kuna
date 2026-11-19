@@ -635,6 +635,7 @@ pub fn universal_sched(
             act!(ActionNodeJoin::boxed("nodejoin")),
             act!(Box::new(crate::condexe::ActionConditionalExe::new("conditionalexe"))),
             act!(ActionConditionalConst::boxed("analysis")),
+            act!(crate::p3_dataflow::kuna_latecse::ActionLateCse::boxed("unreachable")),
         ],
     };
 

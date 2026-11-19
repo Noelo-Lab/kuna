@@ -718,6 +718,9 @@ pub struct ArchContext {
     /// explicit (C++ `Architecture::max_implied_ref`, default 2).  Drives
     /// `ActionMarkExplicit::baseExplicit`.
     pub max_implied_ref: int4,
+    /// (kuna) `impliedrefs <n>:<w>` — terms times readers an expression may
+    /// print inline past the reader bound; 0 = the reader bound alone.
+    pub implied_weight: int4,
     /// Maximum number of duplicating terms allowed in an implied expression
     /// before the multi-descendant Varnode is forced explicit (C++
     /// `Architecture::max_term_duplication`, default 2).  Drives
@@ -1079,6 +1082,8 @@ pub struct ArchContext {
     /// (kuna) `repstring` — collapse an x86 `rep movs`/`rep stos`/`repz cmpsb` loop
     /// into a copy, fill or compare builtin.
     pub rep_string: bool,
+    /// (kuna) `latecse` — merge identical pure ops that read the same varnode once the rules settle.
+    pub late_cse: bool,
     /// (kuna) region-based (Phoenix/SAILR) structurer: structure the CFG by
     /// walking the [`KunaRegionIdentifier`](crate::p7_regions::kuna_regionid)
     /// region tree and matching Phoenix acyclic schemas instead of running
@@ -1556,6 +1561,7 @@ impl ArchContext {
             trim_recurse_max: 5,
             // C++ Architecture default: max_implied_ref = 2 (resetDefaults).
             max_implied_ref: 2,
+            implied_weight: 0,
             // C++ Architecture default: max_term_duplication = 2 (resetDefaults).
             max_term_duplication: 2,
             return_single: false,
@@ -1686,6 +1692,7 @@ impl ArchContext {
             devectorize_reduction: false, // devectorize (opt-in default-off)
             strlen_scan: false, // strlenscan (live value copied from the Architecture)
             rep_string: false, // repstring (live value copied from the Architecture)
+            late_cse: false, // latecse (live value copied from the Architecture)
             region_structure: false,     // regionstructure (opt-in default-off)
             guard_arm: false,            // guardarm (opt-in default-off)
             loop_continue: true,

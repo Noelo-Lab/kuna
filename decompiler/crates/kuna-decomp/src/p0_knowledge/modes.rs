@@ -576,7 +576,10 @@ mod tests {
               // `contextnames` renames loop counters and returned locals that the
               // CLI tests of other features, which run under `auto`, spell as
               // `vN`; it joins the preset once those are re-pinned.
-              "contextnames"];
+              "contextnames",
+              // `latecse` turns every merged expression into an explicit temporary,
+              // so the output grows (see its catalog row); not a preset default.
+              "latecse"];
 
         /// Default-off options that predate this test and are **not** in the preset,
         /// i.e. are currently unreachable on the default path. Each is a genuine open

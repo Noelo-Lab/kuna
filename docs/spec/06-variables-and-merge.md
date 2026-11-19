@@ -533,6 +533,15 @@ this pass: `funcdata_block.rs (Funcdata::bb_is_complex)` — upstream
 (CollapseStructure::rule_block_or)` — and `kuna_condfold.rs` read the same field
 to bound how many printed statements a condition block may carry, so
 `impliedrefs` loosens those two structure tests along with the marking.
+`option impliedrefs <n>:<w>` adds a weight (`Architecture::implied_weight`,
+default 0 = none) that trades the two bounds against each other: a value with
+more readers than `n` but at most `w` is still a multi-reader candidate, and
+`process_multiplier` caps its duplicated terms at `min(termdup, w / readers)`,
+so an expression prints inline at every reader while its terms times its
+readers stays within `w`. At `2:8` a two-term sum read four times prints at
+each use (`sink(a0 + a1); sink(a0 + a1); sink(a0 + a1); return a0 + a1;`)
+where the shipped `2` declares `v1 = a0 + a1;`; a wider or more-read
+expression keeps its temporary (`tests/stages/kuna-latecse.xml`).
 
 `coreaction_cleanup.rs (ActionMarkImplied)` then walks each
 remaining Varnode's expression tree depth-first and marks it implied unless

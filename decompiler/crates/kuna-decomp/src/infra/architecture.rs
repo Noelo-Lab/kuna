@@ -278,6 +278,10 @@ pub struct Architecture {
     pub trim_recurse_max: int4,
     /// Maximum number of references to an implied var (C++ `max_implied_ref`).
     pub max_implied_ref: int4,
+    /// (kuna `impliedrefs <n>:<w>`) An expression read more than `max_implied_ref`
+    /// times still prints inline while its terms times its readers is at most
+    /// this; 0 = the reader bound alone.
+    pub implied_weight: int4,
     /// Max terms duplicated without a new variable (C++ `max_term_duplication`).
     pub max_term_duplication: int4,
     /// Maximum "integer" type size before creating an array type
@@ -922,6 +926,9 @@ pub struct Architecture {
     /// copy, fill or compare builtin (option `repstring`).  See
     /// [`crate::p3_dataflow::kuna_repstring`].
     pub rep_string: bool,
+    /// (kuna) Merge identical pure ops that read the same varnode once the rules
+    /// settle (option `latecse`).  See [`crate::p3_dataflow::kuna_latecse`].
+    pub late_cse: bool,
     /// (kuna) Region-based (Phoenix/SAILR) structurer: structure the CFG by
     /// walking the [`KunaRegionIdentifier`](crate::p7_regions::kuna_regionid)
     /// region tree and matching Phoenix acyclic schemas instead of running
@@ -2304,6 +2311,7 @@ impl Architecture {
 
             trim_recurse_max: 0,
             max_implied_ref: 0,
+            implied_weight: 0,
             max_term_duplication: 0,
             max_basetype_size: 0,
             min_funcsymbol_size: 1,
@@ -2465,6 +2473,7 @@ impl Architecture {
             devectorize_reduction: false, // (kuna) option devectorize (opt-in default-off)
             strlen_scan: false, // (kuna) option strlenscan; reset_defaults sets the shipped default
             rep_string: false, // (kuna) option repstring; reset_defaults sets the shipped default
+            late_cse: false, // (kuna) option latecse; reset_defaults sets the shipped default
             region_structure: true,
             guard_arm: false,
             loop_continue: true,
@@ -2693,6 +2702,7 @@ impl Architecture {
     pub fn reset_defaults_internal(&mut self) {
         self.trim_recurse_max = 5;
         self.max_implied_ref = 2; // 2 is best, in specific cases a higher number might be good
+        self.implied_weight = 0; // (kuna) option impliedrefs <n>:<w>; the reader bound alone by default
         self.max_term_duplication = 2; // 2 and 3 (4) are reasonable
         self.max_basetype_size = 10; // Needs to be 8 or bigger
         self.flowoptions = flow_flags::error_toomanyinstructions;
@@ -2817,6 +2827,7 @@ impl Architecture {
         self.decl_order = crate::kuna_declorder::DeclOrder::Natural; // (kuna) option declorder default `natural`: locals declare v1, v2, ..., v10; only the order of declaration lines moves, 0/675 datatest assertions
         self.strlen_scan = true; // (kuna) option strlenscan default-on: an inline repnz scasb length prints as strlen; byte-identical on gcc 11 decbench output, 0/675 datatest assertions
         self.rep_string = true; // (kuna) option repstring default-on: an x86 rep movs/stos/cmpsb loop prints as a copy, fill or compare builtin; inert off x86, 0/675 datatest assertions
+        self.late_cse = false; // (kuna) option latecse default-off: the shared values become explicit temporaries, so output grows
         self.cortexmpriv = true; // (kuna) DIV-99: default-ON; the fixup is registered only on a language that declares the user-op (ARM), so inert elsewhere; "the core is privileged" is a modelling judgement, so `off` audits unprivileged Thread-mode code
         self.acle_intrinsics = true; // (kuna) option acleintrinsics default-on; reads the AArch64 `ShowMemTag` context and AArch64 user-op names only, so inert on every other target
         self.float_globals = true; // (kuna) option floatglobals default-on
@@ -3439,6 +3450,7 @@ impl Architecture {
             .or_else(|| self.translate.probe_register_varnode(b"ra"));
         ctx.trim_recurse_max = self.trim_recurse_max;
         ctx.max_implied_ref = self.max_implied_ref;
+        ctx.implied_weight = self.implied_weight;
         ctx.max_term_duplication = self.max_term_duplication;
         ctx.return_single = self.return_single;
         let ids = |names: &[&[u8]]| -> Vec<kuna_base::types::uint4> {
@@ -3571,6 +3583,7 @@ impl Architecture {
         ctx.devectorize_reduction = self.devectorize_reduction; // devectorize
         ctx.strlen_scan = self.strlen_scan; // strlenscan
         ctx.rep_string = self.rep_string; // repstring
+        ctx.late_cse = self.late_cse; // latecse
         ctx.region_structure = self.region_structure; // regionstructure
         ctx.guard_arm = self.guard_arm; // guardarm
         ctx.loop_continue = self.loop_continue;

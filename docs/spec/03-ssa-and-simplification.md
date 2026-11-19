@@ -3443,6 +3443,28 @@ loop with `~v3 - 1`. `kuna-cli/tests/strlenscan_round_trip.rs` prints gcc 9
 x86-64 ones beside the source, with buffers whose bytes past the terminator are
 not zero, to check each printed function computes the same values.
 
+**Late common-subexpression elimination** (`option latecse`, default **off**)
+— `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_latecse.rs
+(ActionLateCse)`, once per function in group `unreachable`, after the
+`mainloop` pools settle. Upstream merges two ops that compute the same value
+from the same inputs only for MULTIEQUALs (`ActionMultiCse`) and
+SUBPIECE/INT_SRIGHT (`RuleSelectCse`); an arithmetic or logical expression the
+source wrote once and the compiler recomputed prints twice. For every varnode
+with more than one reader, the readers `get_cse_hash` accepts (pure unary or
+binary ops, no COPY, LOAD, call or other effect) go through
+`Funcdata::cse_eliminate_list`, which keeps one op in a block dominating both
+and reads its output at both. An op whose value is a LOAD or STORE address is
+skipped, because type recovery turns each such use into its own field or
+element access, which one shared temporary would hide. Once per function,
+because a rule that splits a shared value again would otherwise alternate with
+it in the repeating fullloop. `tests/stages/kuna-latecse.xml`: `(a + b) * c`
+computed before and after a call prints twice by default and once, assigned
+to a local the call and the return both read, with the option on. The merge is
+repeated (at most eight rounds) until nothing merges, because merging two reads
+of a value exposes the identical ops over their outputs one layer at a time.
+Off by default: the merged values become explicit temporaries, so the output
+grows (over 4,072 x86-64 functions, 560 change; lines 180,432 -> 180,724).
+
 **Inline copies, fills and compares** (`option repstring`, default **on**) —
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_repstring.rs
 (ActionRepString)`, in the fullloop tail right after `strlenscan`. On x86 a

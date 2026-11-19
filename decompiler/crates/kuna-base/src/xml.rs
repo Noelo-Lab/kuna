@@ -2241,7 +2241,8 @@ mod tests {
         // and kuna-mapglobalsyms / the global scope keeps the data Symbols mapGlobals creates
         // and kuna-contextnames / loop counters and returned locals are named
         // and kuna-strcodelen / a Rust &str literal only code references is bounded by the length the code loads
-        assert_eq!(count, 804, "corpus file count drifted");
+        // and kuna-latecse / identical pure ops merge once the rules settle, and impliedrefs <n>:<w> inlines a small shared sum
+        assert_eq!(count, 805, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
