@@ -129,7 +129,7 @@ fn an_unselected_member_is_refused_with_the_member_names() {
     let object = common::fixture("entry_selectors_x86_64.o");
     let (_, stderr, code) = kuna(&["functions", &object, "--member", "sq.o"]);
     assert_eq!(code, 2);
-    assert!(stderr.contains("--member applies to an ar archive input"), "{stderr}");
+    assert!(stderr.contains("--member applies to an archive input"), "{stderr}");
 }
 
 #[test]

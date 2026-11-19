@@ -2,7 +2,8 @@
 //! uImage, Intel HEX, S-record, ESP image, bFLT, Qualcomm MBN, MediaTek
 //! md1img, PC BIOS image), gets the `--raw-image --target --base --entry`
 //! arguments it would otherwise need by hand
-//! (`kuna_analysis::loader::firmware`). `--svd FILE` adds a CMSIS-SVD
+//! (`kuna_analysis::loader::firmware`). A U-Boot FIT image selected as an
+//! archive member (`armember`) arrives already flattened. `--svd FILE` adds a CMSIS-SVD
 //! device's peripherals as typed volatile globals and its interrupt names.
 //!
 //! Runs before the subcommand parses its arguments, for the subcommands that
@@ -14,7 +15,7 @@ use std::path::{Path, PathBuf};
 
 use kuna_analysis::loader::firmware::{containers, cortexm, svd};
 
-const RAW_COMMANDS: [&str; 4] = ["decompile", "decompile-all", "decompile-project", "functions"];
+pub(crate) const RAW_COMMANDS: [&str; 4] = ["decompile", "decompile-all", "decompile-project", "functions"];
 const CORTEX_TARGET: &str = "ARM:LE:32:Cortex";
 /// The ARMv7-M/ARMv8-M Device memory regions: Peripheral and System (PPB).
 const DEVICE_REGIONS: [&str; 2] = ["0x40000000+0x20000000", "0xe0000000+0x20000000"];
@@ -45,8 +46,13 @@ fn value(args: &[String], flag: &str) -> Option<String> {
 /// Rewrite `args` with the firmware layout filled in; unchanged when nothing
 /// applies. The returned guard owns the staged image of a container, if any.
 /// An unreadable or malformed `--svd` file is an error, and so is a
-/// recognized container whose payload cannot be laid out.
-pub(crate) fn prepare(sub: &str, args: &mut Vec<String>) -> Result<Option<tempfile::TempDir>, String> {
+/// recognized container whose payload cannot be laid out. `member` is the
+/// flat image of a container member the arguments already selected.
+pub(crate) fn prepare(
+    sub: &str,
+    args: &mut Vec<String>,
+    member: Option<containers::Flat>,
+) -> Result<Option<tempfile::TempDir>, String> {
     let svd_file = take_flag(args, "--svd");
     if !RAW_COMMANDS.contains(&sub) {
         return match svd_file {
@@ -59,11 +65,11 @@ pub(crate) fn prepare(sub: &str, args: &mut Vec<String>) -> Result<Option<tempfi
         None => None,
     };
     let Some(binary) = args.first().filter(|a| !a.starts_with("--")).cloned() else { return Ok(None) };
-    if is_object(&binary) {
+    if member.is_none() && is_object(&binary) {
         return Ok(None);
     }
     let Ok(bytes) = std::fs::read(&binary) else { return Ok(None) };
-    let image = match peel_container(&binary, bytes, args)? {
+    let image = match peel_container(&binary, bytes, args, member)? {
         Peeled::Object(dir) => return Ok(Some(dir)),
         Peeled::Raw(image) => image,
     };
@@ -94,12 +100,21 @@ pub(crate) fn prepare(sub: &str, args: &mut Vec<String>) -> Result<Option<tempfi
 /// Replace a container by what it holds: the wrapped object file, or a flat
 /// image staged as a raw image with the processor, base and entries its
 /// header states. A file that is no container is the image itself.
-fn peel_container(binary: &str, bytes: Vec<u8>, args: &mut Vec<String>) -> Result<Peeled, String> {
+fn peel_container(
+    binary: &str,
+    bytes: Vec<u8>,
+    args: &mut Vec<String>,
+    member: Option<containers::Flat>,
+) -> Result<Peeled, String> {
     let as_is = |bytes| Ok(Peeled::Raw(Image { bytes, base: None, entries: Vec::new(), staged: None }));
     if has(args, "--raw-image") {
         return as_is(bytes);
     }
-    let flat = match containers::detect(&bytes)? {
+    let found = match member {
+        Some(flat) => Some(containers::Container::Flat(flat)),
+        None => containers::detect(&bytes)?,
+    };
+    let flat = match found {
         None => return as_is(bytes),
         Some(containers::Container::Embedded { format, bytes: inner }) => {
             eprintln!("[kuna firmware] {format}: loading the ELF it wraps ({} bytes)", inner.len());

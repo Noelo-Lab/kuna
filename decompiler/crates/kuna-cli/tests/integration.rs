@@ -43,6 +43,9 @@ mod declared_bytes_cli;
 #[path = "argument_errors_cli.rs"]
 mod argument_errors_cli;
 
+#[path = "archive_inputs_cli.rs"]
+mod archive_inputs_cli;
+
 #[path = "archive_members_cli.rs"]
 mod archive_members_cli;
 

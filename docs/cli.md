@@ -4959,7 +4959,7 @@ missing. Like
 `kernelcache`, the option applies to the whole invocation and overrides
 `KUNA_KERNELCACHE_BOOT`.
 
-## `--member NAME` — one member of an `ar` archive
+## `--member NAME` — one member of an archive
 
 A static library (`libfoo.a`) is an `ar` archive of relocatable objects, and
 every kuna surface works on one of them. Pass the archive as the binary and name
@@ -5024,6 +5024,54 @@ this. `--member`
 applies to `decompile`, `decompile-all`, `decompile-project`,
 `decompile-graph`, `functions`, `disassemble`, `raw-pcode`, `read`, `xrefs`,
 `strings`, `crypto` and `blobs`; `kuna fid build` reads a whole archive itself.
+
+### tar, zip and U-Boot FIT inputs
+
+A tar archive (plain or gzip-compressed), a zip archive and a U-Boot FIT image
+take the same spellings. A member is named by the path the archive stores, or
+by the name of its `/images` node in a FIT:
+
+```
+$ kuna functions objs.tar --member
+sq.o	1064
+notes.txt	14
+lib/cube.o	1064
+$ kuna decompile objs.zip --member lib/cube.o cube
+$ kuna decompile objs.tar.gz:sq.o sq
+$ kuna decompile objs.zip cube            # the member defining cube
+```
+
+Zip members are read from the central directory, stored or deflated (other
+methods and encrypted members are listed, and refused when selected); an
+inflated member is checked against its size and CRC-32. Tar members are the
+regular files, under their `ustar` prefix, GNU long name or pax `path`.
+
+A FIT listing adds what each image node states, and `--json` carries the same
+as `type`, `arch`, `os`, `compression`, `load` and `entry`:
+
+```
+$ kuna functions fit.itb --member
+kernel-1	100	type=kernel	arch=arm64	os=linux	compression=gzip	load=0x80080000	entry=0x8008000c
+fdt-1	137	type=flat_dt	arch=arm64	compression=none
+$ kuna decompile-all fit.itb
+note: fit.itb: using member kernel-1 of the default configuration
+[kuna firmware] U-Boot FIT image: 100 bytes at 0x80080000, target AARCH64:LE:64:v8A, entries [8008000c]
+```
+
+With no member named, a FIT loads the `kernel` (else the `firmware`) of its
+default configuration, else its only image with a load address. An image with
+a `load` property that is not itself an object file is loaded as a raw image
+at that address, with the processor its `arch` names and its `entry` as the
+entry point, exactly as a U-Boot legacy image is (`decompile`,
+`decompile-all`, `decompile-project` and `functions`, with the FIT as the
+first argument); `gzip` data is inflated, and an image under another
+compression is listed and refused when selected. Image data may be inline or
+external (`data-offset`, `data-position`).
+
+A tar or zip archive that holds no object file is left to the loader unless a
+member is named, so it fails as it did before. A gzip stream that is not a
+tar, and a device tree with no `/images` node, are not archives. A decoded member is
+limited to 1 GiB.
 
 ## `kuna fid` — function identification by fingerprint
 

@@ -97,8 +97,9 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    let _staged = match armember::resolve(sub, &mut rest) {
-        Ok(armember::Resolved::Run(staged)) => staged,
+    let (_staged, flat) = match armember::resolve(sub, &mut rest) {
+        Ok(armember::Resolved::Run(staged)) => (staged, None),
+        Ok(armember::Resolved::Flat(flat)) => (None, Some(*flat)),
         Ok(armember::Resolved::Done(code)) => return ExitCode::from(code as u8),
         Err(e) => {
             eprintln!("error: {e}");
@@ -107,7 +108,7 @@ fn main() -> ExitCode {
     };
     loadtime::export_image_selection(&rest);
     followimages::apply(sub, &mut rest, follow_limit);
-    let _firmware = match rawfront::prepare(sub, &mut rest) {
+    let _firmware = match rawfront::prepare(sub, &mut rest, flat) {
         Ok(staged) => staged,
         Err(e) => {
             eprintln!("error: {e}");
@@ -184,7 +185,7 @@ fn usage() {
          --image NAME[+NAME...] (any subcommand): load those images of a dyld shared cache\n\
          --follow-images N (decompile, disassemble, xrefs): also load up to N images holding\n\
          a requested address outside them (default 2)\n\
-         --member [NAME] (any <binary> that is an ar archive): load that member, or list the members when no NAME follows; <lib.a>:NAME is the same selection"
+         --member [NAME] (any <binary> that is an ar, tar or zip archive or a U-Boot FIT image): load that member, or list the members when no NAME follows; <lib.a>:NAME is the same selection"
     );
 }
 
