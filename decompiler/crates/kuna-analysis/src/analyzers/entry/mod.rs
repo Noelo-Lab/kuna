@@ -100,6 +100,12 @@ pub mod kuna_fdeinterior;
 pub mod kuna_pdatainterior;
 pub mod kuna_pereloccode;
 mod macho_entry;
+
+/// Every Mach-O function start the loader knows (`LC_FUNCTION_STARTS`, the
+/// entry, the exports, the initializers), unsorted.
+pub(crate) fn macho_function_starts(file: &object::File, bytes: &[u8]) -> Vec<u64> {
+    macho_entry::macho_entry_candidates(file, bytes)
+}
 pub mod patterns;
 mod pe_entry;
 

@@ -120,11 +120,11 @@ pub fn struct_type(encoding: &str, tctx: &TypeCtx) -> Option<Rc<Datatype>> {
         Some(_) => return None,
         None => types.kuna_declare_record(name, false).ok()?,
     };
-    let members = struct_members(encoding)?;
+    let members = struct_leaves(encoding)?;
     let names = member_names(name);
     let mut fields = Vec::new();
     let mut offset = 0i32;
-    for (k, code) in members.iter().enumerate() {
+    for (k, (quoted, code)) in members.iter().enumerate() {
         let ty = Parser::new(code).next_type(tctx)?;
         let size = ty.get_size();
         if size <= 0 {
@@ -132,7 +132,10 @@ pub fn struct_type(encoding: &str, tctx: &TypeCtx) -> Option<Rc<Datatype>> {
         }
         let align = size.min(tctx.ptr_size);
         offset = (offset + align - 1) / align * align;
-        let field = names.get(k).map(|n| n.to_string()).unwrap_or_else(|| format!("field_{k}"));
+        let field = quoted
+            .clone()
+            .or_else(|| names.get(k).map(|n| n.to_string()))
+            .unwrap_or_else(|| format!("field_{k}"));
         fields.push(TypeField::new(offset, offset, field, ty));
         offset += size;
     }
@@ -155,10 +158,17 @@ pub fn struct_name(encoding: &str) -> Option<&str> {
 /// member whatever it points to (`{S=^{T=ii}q}` → `^{T=ii} q`). `None` for a
 /// malformed layout or one nested deeper than [`MAX_STRUCT_DEPTH`].
 pub fn struct_members(encoding: &str) -> Option<Vec<String>> {
-    struct_members_at(encoding, 0)
+    Some(struct_leaves(encoding)?.into_iter().map(|(_, c)| c).collect())
 }
 
-fn struct_members_at(encoding: &str, level: usize) -> Option<Vec<String>> {
+/// The leaf members of a struct encoding with the names an ivar encoding
+/// quotes (`{CGRect="origin"{CGPoint="x"d"y"d}…}` → `[(x, d), (y, d), …]`),
+/// nested structs flattened; a method encoding quotes none.
+pub fn struct_leaves(encoding: &str) -> Option<Vec<(Option<String>, String)>> {
+    struct_leaves_at(encoding, 0)
+}
+
+fn struct_leaves_at(encoding: &str, level: usize) -> Option<Vec<(Option<String>, String)>> {
     if level > MAX_STRUCT_DEPTH {
         return None;
     }
@@ -167,13 +177,21 @@ fn struct_members_at(encoding: &str, level: usize) -> Option<Vec<String>> {
     let mut out = Vec::new();
     let mut p = Parser::new(members);
     while !p.at_end() {
+        let mut name = None;
+        if p.peek() == Some(b'"') {
+            let start = p.pos + 1;
+            let end = start + members[start..].find('"')?;
+            name = Some(members[start..end].to_string());
+            p.pos = end + 1;
+        }
         if p.peek() == Some(b'{') {
             let start = p.pos;
             p.pos += 1;
             p.skip_balanced(b'{', b'}');
-            out.extend(struct_members_at(&members[start..p.pos], level + 1)?);
+            let inner = struct_leaves_at(&members[start..p.pos], level + 1)?;
+            out.extend(inner.into_iter().map(|(n, c)| (n.or_else(|| name.clone()), c)));
         } else {
-            out.push(p.type_text()?);
+            out.push((name, p.type_text()?));
         }
     }
     (!out.is_empty()).then_some(out)
@@ -235,6 +253,17 @@ impl<'a> TypeCtx<'a> {
     /// that name when one exists, else a declared record so a pointer built
     /// before the class's layout lands (`kuna_objcivars`) reads the completion
     /// afterwards; a plain `void*` if the record cannot be created.
+    /// `Block_layout *`, built once.
+    fn block_ptr(&self) -> Option<Rc<Datatype>> {
+        if let Some(t) = self.opaque.borrow().get("@?") {
+            return Some(Rc::clone(t));
+        }
+        let layout = super::kuna_objcblocks::block_layout(self)?;
+        let ptr = self.types.get_type_pointer(self.ptr_size, layout, self.word_size).ok()?;
+        self.opaque.borrow_mut().insert("@?".to_string(), Rc::clone(&ptr));
+        Some(ptr)
+    }
+
     pub(super) fn opaque_ptr(&self, struct_name: &str) -> Option<Rc<Datatype>> {
         if let Some(t) = self.opaque.borrow().get(struct_name) {
             return Some(Rc::clone(t));
@@ -355,12 +384,18 @@ impl<'a> Parser<'a> {
             }
             // `@` = id (object pointer) → an opaque `objc_object*`; an ivar's
             // `@"NSString"` names the class, so the pointee is that opaque type;
-            // `@?` is a block, modelled as `void*`.
+            // `@?` is a block, a `Block_layout *`.
             b'@' => {
                 if self.peek() == Some(b'?') {
                     self.pos += 1;
-                    let v = types.get_type_void().ok()?;
-                    types.get_type_pointer(ptr_size, v, word_size).ok()?
+                    self.skip_block_signature();
+                    match tctx.block_ptr() {
+                        Some(t) => t,
+                        None => {
+                            let v = types.get_type_void().ok()?;
+                            types.get_type_pointer(ptr_size, v, word_size).ok()?
+                        }
+                    }
                 } else {
                     match self.quoted_class_name() {
                         Some(class) => tctx.opaque_ptr(&class)?,
@@ -391,19 +426,34 @@ impl<'a> Parser<'a> {
             // bitfield: name-level-opaque — skip the body and yield a void* / void
             // placeholder (the dwarf recursion-cap posture). Reconstructing the
             // nested layout is the deferred field-level scope.
+            // A struct by value is the struct the encoding spells
+            // (`{CGRect={CGPoint=dd}{CGSize=dd}}` → `CGRect {x, y, width, height}`);
+            // an unnamed or malformed one stays an opaque void.
             b'{' => {
+                let start = self.pos - 1;
                 self.skip_balanced(b'{', b'}');
-                // A struct value passed/returned by value is opaque here; model it
-                // as void (size unknown without field reconstruction).
-                types.get_type_void().ok()?
+                let text = std::str::from_utf8(&self.bytes[start..self.pos]).ok()?;
+                struct_type(text, tctx).or_else(|| types.get_type_void().ok())?
             }
             b'(' => {
                 self.skip_balanced(b'(', b')');
                 types.get_type_void().ok()?
             }
+            // `[<n><type>]`: an array of n elements.
             b'[' => {
+                let start = self.pos;
                 self.skip_balanced(b'[', b']');
-                types.get_type_void().ok()?
+                if self.pos == start || self.bytes[self.pos - 1] != b']' {
+                    return None;
+                }
+                let inner = std::str::from_utf8(&self.bytes[start..self.pos - 1]).ok()?;
+                let digits = inner.bytes().take_while(u8::is_ascii_digit).count();
+                let count: i32 = inner[..digits].parse().ok()?;
+                let elem = Parser::new(&inner[digits..]).next_type(tctx)?;
+                if count <= 0 || elem.get_size() <= 0 || count.checked_mul(elem.get_size()).is_none_or(|n| n > 1 << 20) {
+                    return None;
+                }
+                types.get_type_array(count, elem).ok()?
             }
             b'b' => {
                 // bitfield `b<width>`: consume the width digits, model as uint.
@@ -456,6 +506,7 @@ impl<'a> Parser<'a> {
             b'@' => {
                 if self.quoted_class_name().is_none() && self.peek() == Some(b'?') {
                     self.pos += 1;
+                    self.skip_block_signature();
                 }
             }
             b'c' | b'C' | b's' | b'S' | b'i' | b'I' | b'l' | b'L' | b'q' | b'Q' | b'f' | b'd' | b'B' | b'v'
@@ -463,6 +514,15 @@ impl<'a> Parser<'a> {
             _ => return None,
         }
         Some(std::str::from_utf8(&self.bytes[start..self.pos]).ok()?.to_string())
+    }
+
+    /// An extended block encoding spells its own signature after `@?`
+    /// (`@?<v@?q>`); it is part of the one type.
+    fn skip_block_signature(&mut self) {
+        if self.peek() == Some(b'<') {
+            self.pos += 1;
+            self.skip_balanced(b'<', b'>');
+        }
     }
 
     /// Skip a balanced `open`…`close` run (for `{...}` / `(...)` / `[...]`),
@@ -587,6 +647,45 @@ mod tests {
         let deep = format!("{}i", "^".repeat(MAX_POINTER_DEPTH + 1));
         assert!(decode_ivar_type(&deep, &tctx).is_none());
         assert!(decode_ivar_type("^^i", &tctx).is_some());
+    }
+
+    /// A block is a `Block_layout *`; an extended encoding's spelled block
+    /// signature (`@?<v@?q>`) is part of the one type.
+    #[test]
+    fn blocks_are_block_layouts() {
+        let f = factory();
+        let tctx = TypeCtx::new(&f, 8, 1);
+        let t = decode_ivar_type("@?", &tctx).unwrap();
+        assert_eq!(t.get_ptr_to().unwrap().get_name(), "Block_layout");
+        let p = decode_method("-[C a:]", "v24@0:8@?<v@?q>16", &tctx, None).unwrap();
+        assert_eq!(p.intypes.len(), 3);
+        assert_eq!(p.intypes[2].get_ptr_to().unwrap().get_name(), "Block_layout");
+        let (_, args) = split_method("v24@0:8@?<v@?q>16").unwrap();
+        assert_eq!(args, ["@", ":", "@?<v@?q>"]);
+    }
+
+    /// A struct by value is the struct the encoding spells; an array is an array;
+    /// an unnamed struct and a union stay opaque.
+    #[test]
+    fn by_value_aggregates_are_types() {
+        let f = factory();
+        let tctx = TypeCtx::new(&f, 8, 1);
+        let t = decode_ivar_type("{CGRect={CGPoint=dd}{CGSize=dd}}", &tctx).unwrap();
+        assert_eq!(t.get_name(), "CGRect");
+        assert_eq!(t.get_size(), 32);
+        let leaves = struct_leaves("{Pair=\"lo\"{Half=\"a\"i\"b\"i}\"hi\"q}").unwrap();
+        assert_eq!(leaves, vec![(Some("a".into()), "i".into()), (Some("b".into()), "i".into()), (Some("hi".into()), "q".into())]);
+        assert_eq!(struct_members("{CGRect=\"origin\"{CGPoint=\"x\"d\"y\"d}\"size\"{CGSize=\"width\"d\"height\"d}}").unwrap(), vec!["d".to_string(); 4]);
+        let a = decode_ivar_type("[4i]", &tctx).unwrap();
+        assert_eq!(a.get_metatype(), type_metatype::TYPE_ARRAY);
+        assert_eq!(a.get_size(), 16);
+        let p = decode_method("-[C setFrame:]", "v48@0:8{CGRect=dddd}16", &tctx, None).unwrap();
+        assert_eq!(p.intypes[2].get_name(), "CGRect");
+        assert_eq!(decode_ivar_type("{?=ii}", &tctx).unwrap().get_metatype(), type_metatype::TYPE_VOID);
+        assert_eq!(decode_ivar_type("(u=id)", &tctx).unwrap().get_metatype(), type_metatype::TYPE_VOID);
+        assert!(decode_ivar_type("[0i]", &tctx).is_none());
+        assert!(decode_ivar_type("[", &tctx).is_none(), "an unterminated array");
+        assert!(decode_ivar_type("[4", &tctx).is_none());
     }
 
     #[test]

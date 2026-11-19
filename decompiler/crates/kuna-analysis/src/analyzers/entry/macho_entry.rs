@@ -26,7 +26,7 @@ use object::{Architecture, Endianness, FileKind};
 ///
 /// The caller (`super::collect_entries`) does the exec-section / funcsym-dedup
 /// filtering; this only produces raw candidate VMAs.
-pub(super) fn macho_entry_candidates(file: &object::File, bytes: &[u8]) -> Vec<u64> {
+pub(crate) fn macho_entry_candidates(file: &object::File, bytes: &[u8]) -> Vec<u64> {
     let mut out: Vec<u64> = Vec::new();
 
     // Oracle 4 (exports): a named export is also a function start. Address only;

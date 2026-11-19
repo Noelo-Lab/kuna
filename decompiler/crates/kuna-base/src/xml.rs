@@ -2233,7 +2233,10 @@ mod tests {
         // and kuna-assert-format-isolate / a constant's format set by its instruction, and an isolated local
         // and kuna-objcarc / Objective-C ARC bookkeeping calls are hidden as the copies and stores they stand for
         // and kuna-objcoutlinedresult / an outlined objc_retain_x<N> returns in x0
-        assert_eq!(count, 794, "corpus file count drifted");
+        // and kuna-objcstructs / by-value structs and arrays in Objective-C type encodings, global block literals
+        // and kuna-objcblocks / stack blocks: the invoke named and typed, captures and __block cells typed
+        // and kuna-objcblocks2 / block invokes carry Clang's names, the flags pool folds, a block parameter is a Block_layout *
+        assert_eq!(count, 797, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
