@@ -10,7 +10,8 @@
   "owning_crate": "decompiler/crates/kuna-verify",
   "external_tools": [
     "z3 (SMT-LIB 2 over a pipe)",
-    "Unicorn / qemu-user"
+    "Unicorn / qemu-user",
+    "angr or binsec (optional, Tier S machine side)"
   ],
   "first_slice": "C1",
   "motivating_fix": "https://github.com/Noelo-Lab/kuna/pull/794",
@@ -19,7 +20,7 @@
   ],
   "tiers": {
     "C": "concrete: SLEIGH emulation of the binary vs the final Funcdata",
-    "S": "z3 proof over SMT-LIB 2",
+    "S": "z3 proof over SMT-LIB 2 under a deterministic budget (rlimit, unroll and query caps); bounded loops; budget regressions flagged",
     "L": "SLEIGH lift vs Unicorn/qemu-user",
     "P": "printed C vs binary (separate proposal)"
   },

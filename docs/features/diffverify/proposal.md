@@ -35,11 +35,12 @@ candidate change that makes a function newly `DIFFERS` is rejected before review
    - `DIFFERS`: a concrete input that disagrees;
    - `AGREES(n)`: n runs, no difference;
    - `EQUIVALENT`: proved;
-   - `UNKNOWN(reason)`;
+   - `EQUIVALENT(≤k)`: proved for inputs that iterate each loop at most k times;
+   - `UNKNOWN(reason)`, including `UNKNOWN(budget)`;
    - `SKIPPED(reason)`.
 
-   Only `EQUIVALENT` is a proof. `AGREES` is evidence, and the report says which one it
-   is.
+   Only `EQUIVALENT` is a proof. `AGREES` and `EQUIVALENT(≤k)` are evidence, and the
+   report says which one it is.
 5. **Declared divergence.** Defaults that knowingly trade fidelity for readability are
    listed, keyed by option name. #794's x86-64 `RDX:RAX` trim is one example. A
    difference they explain is reported as `DIVERGES(option)`, not `DIFFERS`. The list
@@ -94,19 +95,43 @@ narrow the difference to P2, Band B or P6.
 
 ## Tier S — prove with z3 (second)
 
-For functions that are `AGREES` and loop-free (or bounded by unrolling), encode the same
-two sides and the same observables as SMT bit-vectors and arrays:
+For functions that are `AGREES`, encode the same two sides and the same observables as SMT
+bit-vectors and arrays:
 - calls become uninterpreted functions of (callee, arguments, memory);
 - CALLOTHER becomes an uninterpreted function;
+- loops are unrolled up to a bound k on both sides;
 - floating point stays `UNKNOWN` until a later slice.
 
 z3 runs as a subprocess speaking SMT-LIB 2. That keeps libz3 out of the cargo build, lets
 CI `apt install z3`, and lets any verdict be cross-checked with cvc5 or bitwuzla.
 
+**Budget.** Every proof runs under a deterministic budget instead of a structural
+restriction:
+- z3's `rlimit` (its resource counter, stable across runs for one z3 version);
+- caps on unrolling depth and on the number of queries per function;
+- wall-clock time only as a safety net, never as the measure.
+
+A proof that exhausts the budget is `UNKNOWN(budget)`. The z3 version is pinned, so the
+same function spends the same budget on every machine.
+
+**The machine side's encoding.** kuna can encode it from the SLEIGH p-code, or delegate it
+to angr or binsec, which already execute binaries symbolically under such caps. Both lift
+with their own front-ends, so delegation also makes the proof independent of SLEIGH. The
+decompiled side is always kuna's own encoding of the `Funcdata`: neither tool reads it.
+The tools are external processes, as z3 is.
+
 - **Outcomes.**
-  - `unsat` upgrades the function to `EQUIVALENT`.
+  - `unsat` on a function without loops, or whose loops the bound covers completely,
+    upgrades it to `EQUIVALENT`.
+  - `unsat` with a loop the bound does not cover gives `EQUIVALENT(≤k)`: equivalent for
+    every input that iterates at most k times. It is reported as bounded, never as a
+    proof.
   - `sat` must replay in Tier C. A model that does not replay is an encoder bug and is
     reported as one.
+- **Budget as a regression signal.** The budget each function spends is recorded in the
+  baseline. A function that proved within budget and now exhausts it, or whose spend grows
+  past a tolerance, is flagged even though no value changed: the decompiled output got
+  harder to reason about, which is itself a regression.
 - **Order.** This tier reuses Tier C's observable definitions, so it is built after they
   have settled on the corpus.
 
@@ -150,7 +175,8 @@ already hits that wall (`docs/decbench-loop.md`, Trap 1).
 | C1 | Tier C, leaf functions, integer only; ABI projection of returns and parameters; declared-divergence list | reverting #794 gives `DIFFERS` on its fixture; verdict table over `tests/datatests` + `tests/stages` |
 | C2 | calls by record/replay; rule bisection | bisection names `subvar_zext` on reverted #794; reverting #801 gives `DIFFERS` |
 | C3 | corpus run (decbench binaries), triage of every `DIFFERS` into bug / declared divergence / harness bug | published verdict table |
-| S1 | Tier S for loop-free `AGREES` functions | `EQUIVALENT` counts on the same corpus; every `sat` replays |
+| S1 | Tier S for loop-free `AGREES` functions, under the budget | `EQUIVALENT` and `UNKNOWN(budget)` counts on the same corpus; every `sat` replays |
+| S2 | bounded loops; budget baseline and budget-regression flag; optional angr or binsec machine side | `EQUIVALENT(≤k)` counts; a deliberately bloating rule change is flagged by budget alone |
 | L1 | Tier L for x86-64, AArch64, ARM | per-arch mismatch report with skip list |
 | P | separate proposal | — |
 
@@ -195,3 +221,7 @@ No earlier issue or PR proposes a standing semantic check. These overlap in part
    `kuna-verify`?
 4. Does the improvement pipeline treat a new `DIFFERS` as a hard reject immediately, or as
    a reviewer signal first?
+5. Should Tier S's machine side be kuna's own SLEIGH encoding, or angr or binsec? Another
+   lifter makes the proof independent of SLEIGH, but each adds a toolchain to CI.
+6. What tolerance on budget growth counts as a regression, given that `rlimit` is
+   deterministic for one z3 version but shifts when z3 is upgraded?
