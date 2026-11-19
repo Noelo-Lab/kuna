@@ -68,6 +68,10 @@ pub struct VcallSite {
     pub register: u8,
     /// Every function a vtable of this image holds at the slot, sorted.
     pub targets: Vec<u64>,
+    /// `(object, word)` when the vtable pointer was loaded from a fixed
+    /// object (an `adrp`-addressed global, such as an IOKit `gMetaClass`) at
+    /// a slot `word` words past its address point.
+    pub object: Option<(u64, u32)>,
 }
 
 /// The authenticated pointer slots of an image and the sections that matter
@@ -167,7 +171,7 @@ pub fn resolve_signed(file: &object::File, signed: &SignedImage) -> Vec<VcallSit
     let mut out = Vec::new();
     for section in file.sections().filter(is_code) {
         let Ok(data) = section.data() else { continue };
-        for (site, register, slot) in call_sites(section.address(), data) {
+        for (site, register, slot, object) in call_sites_with_objects(section.address(), data) {
             let targets = match slot {
                 Slot::Relative { word, diversity } => index.methods.get(&(word, diversity)).cloned(),
                 Slot::Fixed { addr, diversity, addr_div } => {
@@ -175,7 +179,11 @@ pub fn resolve_signed(file: &object::File, signed: &SignedImage) -> Vec<VcallSit
                 }
             };
             if let Some(targets) = targets {
-                out.push(VcallSite { site, register, targets });
+                let object = match slot {
+                    Slot::Relative { word, .. } => object.map(|o| (o, word)),
+                    Slot::Fixed { .. } => None,
+                };
+                out.push(VcallSite { site, register, targets, object });
             }
         }
     }
@@ -304,6 +312,12 @@ pub enum Slot {
 /// Every `blraa`/`braa Xn, Xm` in `code` (mapped at `base`) whose modifier the
 /// backward walk traces to a slot, as `(site, n, slot)`.
 pub fn call_sites(base: u64, code: &[u8]) -> Vec<(u64, u8, Slot)> {
+    call_sites_with_objects(base, code).into_iter().map(|(site, rn, slot, _)| (site, rn, slot)).collect()
+}
+
+/// [`call_sites`], each with the fixed object a relative slot's vtable
+/// pointer was loaded from, when an `adrp` addresses it.
+pub fn call_sites_with_objects(base: u64, code: &[u8]) -> Vec<(u64, u8, Slot, Option<u64>)> {
     let words: Vec<u32> = code.chunks_exact(4).map(|w| u32::from_le_bytes([w[0], w[1], w[2], w[3]])).collect();
     let mut out = Vec::new();
     for (i, &w) in words.iter().enumerate() {
@@ -313,8 +327,9 @@ pub fn call_sites(base: u64, code: &[u8]) -> Vec<(u64, u8, Slot)> {
         let lo = i.saturating_sub(MAX_WALK);
         let window = Window { words: &words[lo..i], base: base + 4 * lo as u64 };
         let rn = ((w >> 5) & 31) as u8;
-        if let Some(slot) = window.trace(rn, (w & 31) as u8) {
-            out.push((base + 4 * i as u64, rn, slot));
+        let mut object = None;
+        if let Some(slot) = window.trace(rn, (w & 31) as u8, &mut object) {
+            out.push((base + 4 * i as u64, rn, slot, object));
         }
     }
     out
@@ -336,10 +351,10 @@ impl Window<'_> {
     /// `mov #d` is a constant discriminator: the slot is then the one `rn` was
     /// loaded from, when its base is an `adrp`. Any branch, or any other write
     /// to the tracked register, ends the walk with no answer.
-    fn trace(&self, rn: u8, rm: u8) -> Option<Slot> {
+    fn trace(&self, rn: u8, rm: u8, object: &mut Option<u64>) -> Option<Slot> {
         let (at, w) = self.def(self.words.len(), rm)?;
         if w & 0xFFE0_0000 == 0xF2E0_0000 {
-            return self.blended(at, rm, ((w >> 5) & 0xFFFF) as u16);
+            return self.blended(at, rm, ((w >> 5) & 0xFFFF) as u16, object);
         }
         if w & 0xFFE0_0000 == 0xD280_0000 {
             let diversity = ((w >> 5) & 0xFFFF) as u16;
@@ -354,7 +369,7 @@ impl Window<'_> {
         None
     }
 
-    fn blended(&self, end: usize, mut tracked: u8, diversity: u16) -> Option<Slot> {
+    fn blended(&self, end: usize, mut tracked: u8, diversity: u16, object: &mut Option<u64>) -> Option<Slot> {
         let mut offset: i64 = 0;
         for j in (0..end).rev() {
             let w = self.words[j];
@@ -382,6 +397,7 @@ impl Window<'_> {
                 if offset < 0 || offset % 8 != 0 {
                     return None;
                 }
+                *object = self.object_at(j, w);
                 return Some(Slot::Relative { word: u32::try_from(offset / 8).ok()?, diversity });
             } else if w & 0x9F00_0000 == 0x9000_0000 {
                 let addr = adrp_page(w, self.base + 4 * j as u64).checked_add_signed(offset)?;
@@ -391,6 +407,25 @@ impl Window<'_> {
             }
         }
         None
+    }
+
+    /// The fixed object whose first word the authentication at word `j`
+    /// checks: `ldraa xd, [xn]`, or `autd* xd` of an `ldr xd, [xn]`, with
+    /// `xn` an `adrp` address.
+    fn object_at(&self, j: usize, w: u32) -> Option<u64> {
+        let base = if w & 0xFF20_0400 == 0xF820_0400 {
+            if (w >> 12) & 0x1FF != 0 || (w >> 22) & 1 != 0 {
+                return None;
+            }
+            ((w >> 5) & 31) as u8
+        } else {
+            let (at, load) = self.def(j, (w & 31) as u8)?;
+            if load & 0xFFFF_FC00 != 0xF940_0000 {
+                return None;
+            }
+            return self.page_base(at, ((load >> 5) & 31) as u8, 0);
+        };
+        self.page_base(j, base, 0)
     }
 
     /// Does word `j` end a backward walk? Every branch does, except the
@@ -498,6 +533,28 @@ mod tests {
 
     fn bytes(code: &[u32]) -> Vec<u8> {
         code.iter().flat_map(|w| w.to_le_bytes()).collect()
+    }
+
+    /// (kuna `iokitclasses on`) A virtual call on a metaclass object: the vtable
+    /// pointer loaded from an `adrp`-addressed global reports that object.
+    #[test]
+    fn reports_the_fixed_object_a_vtable_pointer_was_loaded_from() {
+        let code = [
+            0x90000000, // adrp  x0, 0x0
+            0x91010000, // add   x0, x0, #0x40
+            0xf9400010, // ldr   x16, [x0]
+            0xaa0003f1, // mov   x17, x0
+            0xf2ec69f1, // movk  x17, #0x634f, lsl #48
+            0xdac11a30, // autda x16, x17
+            0xf8468e08, // ldr   x8, [x16, #0x68]!
+            0xaa1003f1, // mov   x17, x16
+            0xf2e88891, // movk  x17, #0x4444, lsl #48
+            0xd73f0911, // blraa x8, x17
+        ];
+        assert_eq!(
+            call_sites_with_objects(0x1000, &bytes(&code)),
+            vec![(0x1024, 8, Slot::Relative { word: 13, diversity: 0x4444 }, Some(0x1040))]
+        );
     }
 
     /// debugserver's virtual call: the vtable pointer authenticated with `autda`,
@@ -627,8 +684,8 @@ mod tests {
         assert_eq!(
             fixture("macho_arm64e_vcall"),
             vec![
-                VcallSite { site: 0x10000035c, register: 8, targets: vec![0x100000328, 0x100000338] },
-                VcallSite { site: 0x10000037c, register: 8, targets: vec![0x100000330] },
+                VcallSite { site: 0x10000035c, register: 8, targets: vec![0x100000328, 0x100000338], object: None },
+                VcallSite { site: 0x10000037c, register: 8, targets: vec![0x100000330], object: None },
             ]
         );
     }
@@ -641,11 +698,11 @@ mod tests {
         assert_eq!(
             fixture("macho_arm64e_vcall_shapes"),
             vec![
-                VcallSite { site: 0x100000480, register: 8, targets: vec![0x100000410] },
-                VcallSite { site: 0x1000004a0, register: 8, targets: vec![0x100000428] },
-                VcallSite { site: 0x1000004c4, register: 8, targets: vec![0x100000430] },
-                VcallSite { site: 0x1000004e4, register: 9, targets: vec![0x100000440] },
-                VcallSite { site: 0x10000050c, register: 9, targets: vec![0x100000450] },
+                VcallSite { site: 0x100000480, register: 8, targets: vec![0x100000410], object: None },
+                VcallSite { site: 0x1000004a0, register: 8, targets: vec![0x100000428], object: None },
+                VcallSite { site: 0x1000004c4, register: 8, targets: vec![0x100000430], object: None },
+                VcallSite { site: 0x1000004e4, register: 9, targets: vec![0x100000440], object: None },
+                VcallSite { site: 0x10000050c, register: 9, targets: vec![0x100000450], object: None },
             ]
         );
     }

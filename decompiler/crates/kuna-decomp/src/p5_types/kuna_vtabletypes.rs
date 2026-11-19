@@ -30,6 +30,7 @@
 //! A class whose structure is already complete (DWARF laid it out) or whose
 //! `C_vtbl` name is taken is left alone.
 
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use kuna_base::error::KunaResult;
@@ -39,6 +40,7 @@ use kuna_base::address::Address;
 use crate::architecture::Architecture;
 use crate::dtype::{flags, type_metatype, Datatype, TypeField};
 use crate::fspec::PrototypePieces;
+use crate::kuna_kalloctype::KallocView;
 use kuna_base::space::AddrSpace;
 
 /// One polymorphic class's primary vtable, as the RTTI recovery found it.
@@ -52,6 +54,10 @@ pub struct VtableClass {
     /// The non-virtual bases at a nonzero offset, as `(structure name, offset)`:
     /// each has a vptr of its own there.
     pub bases: Vec<(String, i64)>,
+    /// The instance size when the class registers one (an IOKit class's
+    /// `OSMetaClass` size), else 0. A sized class is laid out to that size
+    /// with its first field named `vtable`.
+    pub size: u64,
 }
 
 /// One slot of a [`VtableClass`].
@@ -67,9 +73,16 @@ pub struct VtableSlot {
 /// The most slots a vtable is typed with; a longer one is left untyped.
 const MAX_SLOTS: usize = 4096;
 
+/// The largest sized class laid out field by field (one field per 8 bytes).
+const MAX_SIZED: int4 = 0x4000;
+
 /// Install the vtable and class structures for `classes`; returns how many
 /// classes were typed. A class is typed after the bases it embeds.
 pub fn install(arch: &Architecture, space: &Rc<AddrSpace>, classes: &[VtableClass]) -> KunaResult<usize> {
+    let mut views: HashMap<&str, &KallocView> = HashMap::new();
+    for v in arch.kuna_kalloc_types.values().filter(|v| !v.pointers) {
+        views.entry(v.name.as_str()).or_insert(v);
+    }
     let names: std::collections::HashSet<&str> = classes.iter().map(|c| c.class.as_str()).collect();
     let mut pending: Vec<&VtableClass> = classes.iter().collect();
     let mut typed = 0;
@@ -82,13 +95,13 @@ pub fn install(arch: &Architecture, space: &Rc<AddrSpace>, classes: &[VtableClas
             });
             if blocked && before > 1 {
                 waiting.push(c);
-            } else if install_class(arch, space, c)? {
+            } else if install_class(arch, space, c, &views)? {
                 typed += 1;
             }
         }
         if waiting.len() == before {
             for c in waiting {
-                typed += usize::from(install_class(arch, space, c)?);
+                typed += usize::from(install_class(arch, space, c, &views)?);
             }
             break;
         }
@@ -97,7 +110,12 @@ pub fn install(arch: &Architecture, space: &Rc<AddrSpace>, classes: &[VtableClas
     Ok(typed)
 }
 
-fn install_class(arch: &Architecture, space: &Rc<AddrSpace>, c: &VtableClass) -> KunaResult<bool> {
+fn install_class(
+    arch: &Architecture,
+    space: &Rc<AddrSpace>,
+    c: &VtableClass,
+    views: &HashMap<&str, &KallocView>,
+) -> KunaResult<bool> {
     let types = arch.types();
     let ptr = types.get_size_of_pointer();
     let ws = space.get_word_size();
@@ -124,6 +142,15 @@ fn install_class(arch: &Architecture, space: &Rc<AddrSpace>, c: &VtableClass) ->
     let size = c.slots.len() as int4 * ptr;
     let vtbl = types.set_fields_struct_raw(&vtbl, fields, Vec::new(), size, ptr, flags::variable_length)?;
     let vptr = types.get_type_pointer(ptr, vtbl, ws)?;
+    if let Some(size) = int4::try_from(c.size).ok().filter(|&s| s >= ptr && s <= MAX_SIZED) {
+        let signature = views.get(c.class.as_str()).filter(|v| u64::from(v.size) == c.size).map_or("", |v| v.signature.as_str());
+        let mut fields = vec![TypeField::new(0, 0, "vtable", vptr)];
+        for f in crate::kuna_kalloctype::granule_fields(types, signature, true, ptr, size).unwrap_or_default() {
+            fields.push(TypeField::new(fields.len() as int4, f.offset, f.name, f.field_type));
+        }
+        types.set_fields_struct_raw(&class, fields, Vec::new(), size, ptr, 0)?;
+        return Ok(true);
+    }
     let mut fields = vec![TypeField::new(0, 0, "vptr", vptr)];
     let mut size = ptr;
     for (name, off) in &c.bases {

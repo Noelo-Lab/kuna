@@ -968,7 +968,17 @@ kuna_options! { self, p1;
         let state = if annotate { "on, annotated" } else if pass { "on" } else { "off" };
         Ok(format!("Mach-O __cfstring constant-string recovery pass turned {state}"))
     },
-    "iokitclasses" => on_off!(analysis_iokitclasses, "IOKit class and vtable recovery"),
+    "iokitclasses" => {
+        let (names, types) = match p1 {
+            "on" => (true, true),
+            "names" => (true, false),
+            "off" => (false, false),
+            other => return Err(KunaError::parse(format!("iokitclasses takes on|names|off, not {other:?}"))),
+        };
+        self.analysis_iokitclasses = names;
+        self.analysis_iokittypes = types;
+        Ok(format!("IOKit class and vtable recovery set to {p1}"))
+    },
     "arm64evcall" => on_off!(analysis_arm64evcall, "arm64e virtual-call resolution"),
     "xnutables" => on_off!(analysis_xnutables, "XNU kalloc_type view and dispatch table recovery"),
     "blobs" => on_off!(analysis_blobs, "Embedded image and archive data symbols"),

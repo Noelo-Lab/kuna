@@ -51,6 +51,14 @@ with no indirect-symbol entry holding `Base::m1` that the function at
 `Base::m2`, the two allocators, `alloc_derived` and `alloc_packet` have symbols,
 and pointers are plain absolute words.
 
+`iokitcxx_kext.macho` (written by `gen_iokitcxx.py`, plain Python 3) is an arm64
+`MH_KEXT_BUNDLE` for the typed classes of `iokitclasses on`: one initializer
+registers `Base` (0x18 bytes) and `Derived` (0x30 bytes, with a `site.Derived`
+`kalloc_type` view); `Derived`'s vtable holds an unnamed override of `Base::m2`
+that reads the field at 0x10, `Derived::Derived` stores the vtable's address
+point, `Base::twice` calls slot 4 of its own vtable, and `make_derived` calls
+`Derived::MetaClass::alloc`.
+
 `prelinked_merged.macho`, `prelinked_split.macho` and `chainstarts.macho`
 (written by `gen_prelinked.py`, plain Python 3) are pre-fileset images: an iOS
 12-14 style kernel with a merged kext found through `__kmod_start` and every

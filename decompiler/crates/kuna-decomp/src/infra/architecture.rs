@@ -1897,6 +1897,13 @@ pub struct Architecture {
     /// or kext, and DriverKit class records (a commit-gated analysis pass,
     /// default on).
     pub analysis_iokitclasses: bool,
+    /// (kuna `iokitclasses on`) Type the recovered IOKit classes like Itanium
+    /// vtables (a sized `C` whose first field is `C_vtbl *vtable`) and give
+    /// each virtual member, constructor and destructor a `C *this` input
+    /// hint; see [`crate::kuna_vtabletypes`]. Off under `iokitclasses names`.
+    pub analysis_iokittypes: bool,
+    /// (kuna `iokitclasses on`) The `this` input hints, by function entry.
+    pub kuna_this_hints: std::collections::BTreeMap<Address, Rc<Vec<crate::kuna_inputhints::InputHint>>>,
     /// (kuna) `xnutables`: kalloc_type views, IOExternalMethodDispatch tables and
     /// unnamed pointer slots on an XNU kernel or kext (default on).
     pub analysis_xnutables: bool,
@@ -2654,6 +2661,8 @@ impl Architecture {
             analysis_swiftmetadata: false,
             analysis_cfstrings: false,
             analysis_iokitclasses: false,
+            analysis_iokittypes: false,
+            kuna_this_hints: std::collections::BTreeMap::new(),
             analysis_xnutables: false,
             analysis_arm64evcall: false,
             cfstrings_annotate: false,
@@ -3007,6 +3016,7 @@ impl Architecture {
         self.analysis_cfstrings = true; // (kuna) Mach-O __cfstring constant-string recovery default-on: Mach-O-only and real-binary-path only, so the XML datatest corpus never runs it (0/675); on an 80 MB third-party arm64 iOS app one decompile is within noise (min 2.324 s off, 2.359 s on, medians 2.442 / 2.372 over 6 interleaved runs)
         self.cfstrings_annotate = false;
         self.analysis_iokitclasses = true; // (kuna) IOKit class recovery, XNU and DriverKit images only
+        self.analysis_iokittypes = true;
         self.analysis_xnutables = true; // (kuna) XNU data tables, XNU images only
         self.analysis_arm64evcall = true; // (kuna) arm64e virtual calls by pointer-auth discriminator; Mach-O only
         self.analysis_blobs = true; // (kuna) embedded image/archive data symbols; real-binary-path only
@@ -3556,7 +3566,7 @@ impl Architecture {
             .filter_map(|nm| self.userops.get_op_by_name(nm).map(|u| u.get_index() as kuna_base::types::uint4))
             .collect();
         ctx.return_branch = self.return_branch; // returnbranch
-        ctx.vtable_types = self.analysis_vtabletypes;
+        ctx.vtable_types = self.analysis_vtabletypes || !self.kuna_this_hints.is_empty();
         ctx.kuna_unwind_extents = Rc::clone(&self.kuna_unwind_extents);
         ctx.index_rescale = self.index_rescale;
         ctx.recover_array_stride = self.recover_array_stride; // GH-8724 arraystride

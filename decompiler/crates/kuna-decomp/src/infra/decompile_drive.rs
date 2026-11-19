@@ -544,6 +544,11 @@ impl FlowEnvironment for ArchFlowEnv {
             }
             named += 1;
         }
+        if !arch.kuna_this_hints.is_empty() {
+            if let Some(method) = shared_method(targets.iter().map(|&t| arch.symboltab.function_display_name_across_scopes(&at(t)))) {
+                return (None, Some(format!("virtual call to {method}, one of {} overrides", targets.len())));
+            }
+        }
         let more = match targets.len() - named {
             0 => String::new(),
             n => format!(" and {n} more"),
@@ -826,6 +831,29 @@ impl kuna_sleigh::translate::PcodeEmit for RawOpCollector {
             ins: vars.to_vec(),
         });
     }
+}
+
+/// (kuna `iokitclasses on`) The method every named candidate of a virtual
+/// call overrides: the one unqualified name all their `Class::method` names
+/// share. `None` when a named candidate is not a class member, two disagree,
+/// or none is named.
+fn shared_method(names: impl Iterator<Item = Option<String>>) -> Option<String> {
+    let mut shared: Option<String> = None;
+    for name in names.flatten() {
+        if name.starts_with("sub_") || name.starts_with("FUN_") {
+            continue;
+        }
+        let (_, method) = name.rsplit_once("::")?;
+        if method.is_empty() || method.starts_with('~') {
+            return None;
+        }
+        match &shared {
+            None => shared = Some(method.to_string()),
+            Some(m) if m == method => {}
+            Some(_) => return None,
+        }
+    }
+    shared
 }
 
 /// (kuna `calltrampoline`) Decode the straight-line run starting at `entry`
@@ -2054,6 +2082,10 @@ fn decompile_func_full_with_objects_inner(
             proto.set_model(Some(model));
             proto.set_model_lock(true);
             fd.kuna_set_input_hints(input_hints.clone());
+        } else if mapped_params.is_empty() {
+            // (kuna `iokitclasses on`) A class member's `this`, typed without
+            // locking the signature it is the only known part of.
+            fd.kuna_set_input_hints(arch.kuna_this_hints.get(&entry_addr).cloned());
         }
         // Re-seed any console `map param <i> <addr> <typedecl>` storage locks (lost
         // when the IR is rebuilt, like `pending_proto`/`mapped_symbols`).  This makes

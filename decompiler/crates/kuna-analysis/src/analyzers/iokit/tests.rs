@@ -218,3 +218,32 @@ fn real_kernelcache_tables() {
         views.data_objects.len(), views.kalloc_types.len(), dispatch.typed_data.len() + dispatch.data_objects.len(),
         dispatch.fid_names.len(), t.elapsed());
 }
+
+/// (kuna `iokitclasses on`) `iokitcxx_kext.macho`: Derived's vtable is typed with
+/// slots named from the inherited method names, sized to its registration,
+/// and every vtable member and the constructor take their class's `this`.
+#[test]
+fn cxx_facts_type_the_classes_and_their_members() {
+    const C: u64 = 0xffff_fff0_07b0_0000;
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/kernelcache/iokitcxx_kext.macho");
+    let bytes = std::fs::read(path).unwrap();
+    let file = object::File::parse(&*bytes).unwrap();
+    let img = MachoImage::with_fixups(&file, resolve_chained_fixups(&file, &bytes));
+    let rec = recover(&file, &img);
+    let facts = rec.cxx_facts(&rec.known_names());
+    let derived = facts.vtables.classes.iter().find(|c| c.class == "Derived").unwrap();
+    let names: Vec<&str> = derived.slots.iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(names, ["dtor", "deleting_dtor", "getMetaClass", "release", "m2", "twice"]);
+    assert_eq!(derived.size, 0x30);
+    assert_eq!(derived.slots[4].targets, vec![C + 0x4190]);
+    let base = facts.vtables.classes.iter().find(|c| c.class == "Base").unwrap();
+    assert_eq!(base.slots[4].targets, vec![C + 0x4110, C + 0x4190], "own first, then the override");
+    let this: HashMap<u64, &str> = facts.this_types.iter().map(|(f, c)| (*f, c.as_str())).collect();
+    assert_eq!(this.get(&(C + 0x4190)), Some(&"Derived"), "the override");
+    assert_eq!(this.get(&(C + 0x4100)), Some(&"Base"), "the inherited method");
+    assert_eq!(this.get(&(C + 0x41a0)), Some(&"Derived"), "the named constructor");
+    assert_eq!(this.get(&(C + 0x41c0)), Some(&"Base"), "a method both vtables hold");
+    assert_eq!(this.get(&(C + 0x4200)), None, "a free function");
+    assert_eq!(facts.vtable_points, vec![(C + 0x5110, "Base".to_string()), (C + 0x5150, "Derived".to_string())]);
+    assert_eq!(facts.allocs, vec![(C + 0x4140, "Base".to_string()), (C + 0x4170, "Derived".to_string())]);
+}

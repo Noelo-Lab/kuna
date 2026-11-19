@@ -531,6 +531,9 @@ pub struct AnalysisOutput {
     /// (kuna `itaniumrtti`) The recovered C++ vtables to type. See
     /// [`crate::rtti::kuna_vtabletypes`].
     pub cpp_vtables: crate::rtti::kuna_vtabletypes::VtableFacts,
+    /// (kuna `iokitclasses on`) The IOKit classes to type like `cpp_vtables`, and
+    /// the class each member's `this` points to. See [`crate::iokit`].
+    pub iokit_cxx: crate::iokit::IokitCxxFacts,
     /// Detected NUL-terminated string literals (a typed `char[N]` per address).
     pub strings: Vec<StringFact>,
     /// (kuna `fatstr`) Length-BOUNDED string literals recovered from static
@@ -886,6 +889,12 @@ impl AnalysisOutput {
         self.import_slot_names.extend(other.import_slot_names);
         self.cpp_vtables.classes.extend(other.cpp_vtables.classes);
         self.cpp_vtables.slot_ranges.extend(other.cpp_vtables.slot_ranges);
+        self.iokit_cxx.vtables.classes.extend(other.iokit_cxx.vtables.classes);
+        self.iokit_cxx.vtables.slot_ranges.extend(other.iokit_cxx.vtables.slot_ranges);
+        self.iokit_cxx.this_types.extend(other.iokit_cxx.this_types);
+        self.iokit_cxx.vtable_points.extend(other.iokit_cxx.vtable_points);
+        self.iokit_cxx.meta_slots.extend(other.iokit_cxx.meta_slots);
+        self.iokit_cxx.allocs.extend(other.iokit_cxx.allocs);
         self.strings.extend(other.strings);
         self.bounded_strings.extend(other.bounded_strings);
         self.wide_strings.extend(other.wide_strings);

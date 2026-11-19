@@ -22,9 +22,11 @@
 //! never discovered).
 
 mod a64;
+mod cxx;
 pub mod osclassinfo;
 mod tables;
 
+pub use cxx::IokitCxxFacts;
 pub use osclassinfo::OsClassInfoPass;
 pub use tables::XnuTablesPass;
 
@@ -69,7 +71,11 @@ impl AnalysisPass for IokitClassesPass {
         }
         let img = MachoImage::with_fixups(ctx.file, resolve_chained_fixups(ctx.file, ctx.bytes));
         let classes = recover(ctx.file, &img);
-        classes.emit(&mut out);
+        let typed = ctx.arch.analysis_iokittypes;
+        classes.emit(&mut out, typed);
+        if typed {
+            out.iokit_cxx = classes.cxx_facts(&classes.known_names());
+        }
         out
     }
 }
@@ -438,7 +444,10 @@ impl Recovered {
         out
     }
 
-    fn emit(&self, out: &mut AnalysisOutput) {
+    /// Emit the names and entries. When the classes are `typed`, a class's
+    /// `vtable for X` covers only its two header words: the slots from the
+    /// address point on are the typed `X_vtable` the commit installs.
+    fn emit(&self, out: &mut AnalysisOutput, typed: bool) {
         let meta_size = self.meta_size();
         let mut data = |addr: u64, name: String, size: u32| {
             if !self.names.contains_key(&addr) {
@@ -448,7 +457,8 @@ impl Recovered {
         for c in &self.classes {
             data(c.meta, format!("{}::gMetaClass", c.name), meta_size);
             if let Some((slot0, slots)) = &c.vtable {
-                data(slot0 - 16, format!("vtable for {}", c.name), 16 + 8 * slots.len() as u32);
+                let size = if typed { 16 } else { 16 + 8 * slots.len() as u32 };
+                data(slot0 - 16, format!("vtable for {}", c.name), size);
             }
             if let Some(slots) = c.meta_vtable.and_then(|v| self.meta_vtables.get(&v)) {
                 data(c.meta_vtable.unwrap() - 16, format!("vtable for {}::MetaClass", c.name), 16 + 8 * slots.len() as u32);

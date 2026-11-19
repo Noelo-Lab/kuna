@@ -65,12 +65,23 @@ pub fn view_struct(types: &dyn TypeFactory, v: &KallocView) -> Option<Rc<Datatyp
         let same = existing.get_metatype() == type_metatype::TYPE_STRUCT && !existing.is_incomplete() && existing.get_size() == size;
         return same.then_some(existing);
     }
+    let fields = granule_fields(types, &v.signature, v.is_class, 0, size)?;
+    let align = if size % 8 == 0 { 8 } else if size % 4 == 0 { 4 } else { 1 };
+    let shell = types.get_type_struct(&v.name).ok()?;
+    types.set_fields_struct_raw(&shell, fields, Vec::new(), size, align, 0).ok()
+}
+
+/// The fields `signature` lays out over `[from, size)`: one per granule
+/// (`field_0x<off>`, a `void *` for a pointer granule, else an undefined
+/// word or a byte array for a short tail), padding granules skipped. A
+/// class's pointer granule at offset 0 is its `vtable`.
+pub fn granule_fields(types: &dyn TypeFactory, signature: &str, is_class: bool, from: i32, size: i32) -> Option<Vec<TypeField>> {
     let ptr = types.get_type_pointer(8, types.get_type_void().ok()?, 1).ok()?;
     let word = types.get_base(8, type_metatype::TYPE_UNKNOWN).ok()?;
     let byte = types.get_base(1, type_metatype::TYPE_UNKNOWN).ok()?;
     let mut fields = Vec::new();
-    let mut granules = v.signature.chars();
-    let mut off = 0i32;
+    let mut granules = signature.chars().skip(usize::try_from(from / 8).ok()?);
+    let mut off = from;
     while off < size {
         let kind = granules.next().unwrap_or('2');
         let len = (size - off).min(8);
@@ -83,13 +94,11 @@ pub fn view_struct(types: &dyn TypeFactory, v: &KallocView) -> Option<Rc<Datatyp
             _ if len == 8 => Rc::clone(&word),
             _ => types.get_type_array(len, Rc::clone(&byte)).ok()?,
         };
-        let field = if off == 0 && v.is_class && kind == '1' { "vtable".to_string() } else { format!("field_0x{off:x}") };
+        let field = if off == 0 && is_class && kind == '1' { "vtable".to_string() } else { format!("field_0x{off:x}") };
         fields.push(TypeField::new(fields.len() as i32, off, field, ty));
         off += len;
     }
-    let align = if size % 8 == 0 { 8 } else if size % 4 == 0 { 4 } else { 1 };
-    let shell = types.get_type_struct(&v.name).ok()?;
-    types.set_fields_struct_raw(&shell, fields, Vec::new(), size, align, 0).ok()
+    Some(fields)
 }
 
 /// `TypeOpCall::getOutputLocal` for a typed allocation: a pointer to what the

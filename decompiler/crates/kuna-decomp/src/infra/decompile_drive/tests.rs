@@ -354,3 +354,19 @@ fn region_identification_stops_at_the_budget_and_names_itself() {
     assert!(build().compute().is_err());
     assert_eq!(budget_site().as_deref(), Some("region identification"));
 }
+
+/// (kuna `iokitclasses on`) Candidates that all override one method collapse to
+/// its name; unnamed ones do not count, and two names or a non-member do
+/// not collapse.
+#[test]
+fn shared_method_names_the_one_method_every_candidate_overrides() {
+    let names = |v: &[Option<&str>]| v.iter().map(|n| n.map(str::to_string)).collect::<Vec<_>>().into_iter();
+    assert_eq!(
+        super::shared_method(names(&[Some("OSMetaClass::release"), Some("OSObject::release"), Some("sub_fffffff00865dfd0"), None])),
+        Some("release".to_string())
+    );
+    assert_eq!(super::shared_method(names(&[Some("A::f"), Some("B::g")])), None);
+    assert_eq!(super::shared_method(names(&[Some("_A_f"), Some("_B_f")])), None);
+    assert_eq!(super::shared_method(names(&[Some("sub_1000"), None])), None);
+    assert_eq!(super::shared_method(names(&[Some("A::~A"), Some("B::~B")])), None);
+}
