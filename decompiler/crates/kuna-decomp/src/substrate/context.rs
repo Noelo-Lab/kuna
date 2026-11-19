@@ -800,6 +800,9 @@ pub struct ArchContext {
     /// [`Funcdata::return_split_is_splittable`](crate::funcdata::Funcdata),
     /// the predicate both `ActionReturnSplit` and `ActionReturnDup` consult.
     pub ret_split_global: bool,
+    /// (kuna) `gotosink` — turn a backward goto into a loop and sink `if (c) goto L`
+    /// over the statements it skips.
+    pub goto_sink: bool,
     /// (kuna) `retsplitlimit`, read by `Funcdata::return_split_apply`.
     pub ret_split_limit: Option<u64>,
 
@@ -1595,6 +1598,7 @@ impl ArchContext {
             // unit tests.
             global_array_anchor: false,
             ret_split_global: false,     // retsplitglobal (the ArchSeam carries the real default)
+            goto_sink: false,            // gotosink (live value copied from the Architecture)
             ret_split_limit: None,       // retsplitlimit (the ArchSeam carries the real default)
             simd_shuffle_userops: Vec::new(),
             x87_float_to_int_userops: Vec::new(),

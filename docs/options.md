@@ -220,6 +220,9 @@ Three tiers:
 | one source loop emitted as multiple nested infinite loops | [`loopcontinue`](#loopcontinue----on--off-default-on) |
 | early continues emitted as retry loops | [`loopcontinue`](#loopcontinue----on--off-default-on) |
 | accept and fork retries obscure a server's main loop | [`loopcontinue`](#loopcontinue----on--off-default-on) |
+| if (c) goto label_N; ... label_N: where an if around the skipped statements would do | [`gotosink`](#gotosink----on--off-default-on) |
+| label_N: ... if (c) goto label_N; where a do-while would do | [`gotosink`](#gotosink----on--off-default-on) |
+| label_N: ... goto label_N; at the end of a statement run instead of a loop | [`gotosink`](#gotosink----on--off-default-on) |
 | goto-heavy multi-exit loop where angr recovers a clean while/for with break/continue | [`regionlooprefine`](#regionlooprefine----on--off-default-on) |
 | irreducible or multi-latch loop falls back to raw gotos instead of folding | [`regionlooprefine`](#regionlooprefine----on--off-default-on) |
 | secondary loop exits rendered as gotos rather than break statements | [`regionlooprefine`](#regionlooprefine----on--off-default-on) |
@@ -1306,6 +1309,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** A single source loop with early continues decompiles as nested infinite retry loops, as in a server accept/fork loop. Flip off to restore CollapseStructure's original loop-schema precedence.
 - **Where / provenance:** P8/goto-quality · kuna · structure-recovery · server-main-nested-retry-loops
 - **Example:** `option loopcontinue on`
+
+### `gotosink` -- on | off, default `on`
+
+- **Symptoms:** if (c) goto label_N; ... label_N: where an if around the skipped statements would do; label_N: ... if (c) goto label_N; where a do-while would do; label_N: ... goto label_N; at the end of a statement run instead of a loop.
+- **What it does:** Two print-tree rewrites of a structured statement list, run after every other structuring pass. Backward goto: `L: S1..Sk; goto L;` becomes `while( true ) { S1..Sk }` (the trailing jump is then the loop's back edge and prints nothing), and `L: S1..Sk; if (c) goto L;` becomes `do { S1..Sk } while (c);`; in the infinite loop every other jump to `L` whose innermost loop is the new one prints as `continue;`. A run with a `break;` or `continue;` that no loop or switch inside it encloses is left alone, because the new loop would capture it. Sinking: `if (c) goto L; S1..Sk; L: T` with the `if` and `L` in one list becomes `if (!c) { S1..Sk } L: T` (at most 16 components, the condition one basic block whose branch is negated). Before both, every BlockList that is a member of a list is spliced into it (a jump that named the list names its first member), so statements that print as one sequence are siblings. Labels no jump reaches any more are released.
+- **When to flip:** On by default: 0/675 datatest assertions move. Measured over 4,072 x86-64 functions (gcc/clang -O2 and gcc -O0 Lua, bzip2; zlib, libexpat, libyaml): 58 functions change, every one with fewer gotos and none with more; gotos 9,069 -> 8,892, labels 3,124 -> 3,076, `continue;` 55 -> 128. Sinking fires rarely after the structurer (it already sinks a local jump): 0 times with the default passes, 3 times with crossjumprevert/gotoreduce/returndup off. Flip off to keep the backward gotos.
+- **Where / provenance:** P8/goto-quality · kuna · structure-recovery · kuna-gotosink
+- **Example:** `option gotosink off`
 
 ### `regionlooprefine` -- on | off, default `on`
 

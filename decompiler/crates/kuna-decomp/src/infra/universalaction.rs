@@ -882,6 +882,10 @@ pub fn universal_sched(
             // final: the Cover legality test sees the variable's complete live range,
             // and no merge or structuring decision can be perturbed by the move --
             // only which basic block's statement list holds the COPY changes.
+            // (kuna) gotosink (option `gotosink`, default-on): after every other
+            // tree edit, a backward goto becomes a loop and an if-goto over a run
+            // becomes an if around it.
+            act!(crate::p8_structure::kuna_gotosink::ActionGotoSink::boxed("blockrecovery")),
             act!(crate::p6_variables::kuna_paramcopyhoist::ActionParamCopyHoist::boxed("merge")),
             act!(ActionPrototypeWarnings::boxed("protorecovery")),
             act!(ActionStop::boxed("base")),
