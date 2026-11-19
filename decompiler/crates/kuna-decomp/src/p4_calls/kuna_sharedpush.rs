@@ -20,7 +20,11 @@
 //! * the declared call has a parameter at the trial's call-relative address and
 //!   size, and both calls sit at the same stack offset: the push is an argument
 //!   the declared callee takes, at the position the other callee is entered
-//!   with it, and never deeper;
+//!   with it, and never deeper. A declared list that places no parameter in a
+//!   register, for a callee whose own entry reads EAX, ECX or EDX before writing
+//!   it, is not the callee's convention and says nothing about the slot (GCC
+//!   passes a static function's arguments in EAX, EDX and ECX while its debug
+//!   information still lists them as ordinary parameters);
 //! * the slot is written by the push (not a merge or a call's side effect), the
 //!   push and the two calls sit in three distinct blocks, and neither call's
 //!   block reaches the other's without passing through the push's block;
@@ -46,7 +50,7 @@ use kuna_base::space::spacetype;
 use kuna_num::opcodes::OpCode;
 
 use crate::context::{BlockId, OpId, VarnodeId};
-use crate::fspec::{ParamTrial, OFFSET_UNKNOWN};
+use crate::fspec::{FuncCallSpecs, ParamTrial, OFFSET_UNKNOWN};
 use crate::funcdata::Funcdata;
 use crate::p4_calls::kuna_exclusivearguse::MAX_VISIT;
 
@@ -115,10 +119,20 @@ pub(crate) fn declared_arm_shares(
     if !fc.proto().get_param(j - 1).is_some_and(|p| p.get_address() == *addr && p.get_size() == trial.get_size()) {
         return false;
     }
+    if fc.callee_reads_arg_register() && !declares_register_parameter(fc) {
+        return false;
+    }
     let (Some(mb), Some(ob), Some(wall)) = (m.get_parent(), o.get_parent(), push.get_parent()) else {
         return false;
     };
     mb != wall && apart(data, mb, ob, wall) && only_reader(data, slot, opmatch, op, mb, wall)
+}
+
+/// Does the call's declared parameter list place any parameter outside the stack?
+fn declares_register_parameter(fc: &FuncCallSpecs) -> bool {
+    (0..fc.proto().num_params()).filter_map(|i| fc.proto().get_param(i)).any(|p| {
+        p.get_address().get_space().is_some_and(|s| s.get_type() != spacetype::IPTR_SPACEBASE)
+    })
 }
 
 /// Distinct blocks, neither reaching the other without entering `wall`.

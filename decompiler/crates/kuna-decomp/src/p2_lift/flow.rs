@@ -501,6 +501,12 @@ pub trait FlowEnvironment {
         None
     }
 
+    /// Does the function at the direct-call `entry` read EAX, ECX or EDX before
+    /// writing it? See [`crate::p4_calls::kuna_calleereginputs`].
+    fn query_call_reads_arg_register(&self, _entry: &Address) -> bool {
+        false
+    }
+
     /// The extrapop the returns of the function at the direct-call `entry`
     /// state. See [`crate::p4_calls::kuna_calleepurge`].
     fn query_call_extra_pop(&self, _entry: &Address) -> Option<int4> {
@@ -3165,6 +3171,7 @@ truncating the fall-through here"
         }
         if !indirect && !callee.is_invalid() {
             fc.set_callee_reg_model(self.env.query_call_register_model(&callee));
+            fc.set_callee_reads_arg_register(self.env.query_call_reads_arg_register(&callee));
             fc.set_callee_purge(self.env.query_call_extra_pop(&callee));
             let call_at = self.data.obank().get(op).map(|o| o.get_addr().clone());
             if let Some(call_at) = call_at {

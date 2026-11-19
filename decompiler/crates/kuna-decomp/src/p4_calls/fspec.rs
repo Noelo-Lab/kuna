@@ -6870,6 +6870,9 @@ pub struct FuncCallSpecs {
     /// (kuna) The model the direct callee's register inputs select. See
     /// [`crate::p4_calls::kuna_calleereginputs`].
     callee_reg_model: Option<Rc<ProtoModel>>,
+    /// (kuna) The direct callee reads EAX, ECX or EDX before writing it. See
+    /// [`crate::p4_calls::kuna_calleereginputs`].
+    callee_reads_arg_register: bool,
     /// (kuna) The extrapop the direct callee's own returns state. See
     /// [`crate::p4_calls::kuna_calleepurge`].
     callee_purge: Option<int4>,
@@ -6924,6 +6927,7 @@ impl FuncCallSpecs {
             jump_target_storage: None,       // (kuna) tailcalljump
             plt_stub: None,                  // (kuna) pltlocal
             callee_reg_model: None,
+            callee_reads_arg_register: false,
             callee_purge: None,
             callee_stack_arg_bytes: None,
             callee_moves_stack: false,
@@ -6963,6 +6967,7 @@ impl FuncCallSpecs {
         res.jump_target_storage = self.jump_target_storage.clone();
         res.plt_stub = self.plt_stub.clone();
         res.callee_reg_model = self.callee_reg_model.clone();
+        res.callee_reads_arg_register = self.callee_reads_arg_register;
         res.callee_purge = self.callee_purge;
         res.callee_stack_arg_bytes = self.callee_stack_arg_bytes;
         res.callee_moves_stack = self.callee_moves_stack;
@@ -7333,6 +7338,16 @@ impl FuncCallSpecs {
     /// Record the model the direct callee's register inputs select.
     pub fn set_callee_reg_model(&mut self, model: Option<Rc<ProtoModel>>) {
         self.callee_reg_model = model;
+    }
+
+    /// Does the direct callee read EAX, ECX or EDX before writing it?
+    pub fn callee_reads_arg_register(&self) -> bool {
+        self.callee_reads_arg_register
+    }
+
+    /// Record whether the direct callee reads EAX, ECX or EDX before writing it.
+    pub fn set_callee_reads_arg_register(&mut self, reads: bool) {
+        self.callee_reads_arg_register = reads;
     }
 
     /// The extrapop the direct callee's own returns state, if read.
