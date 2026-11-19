@@ -1789,7 +1789,16 @@ analysis retain an explicit report status instead of guessing a profile.
   | `autoit` | `AU3!EA06`/`AU3!EA05` in a PE | `AutoIt compiled script: extract the script with autoit-ripper` |
   | `upx` / `neolite` / `pklite` | `UPX0`/`UPX1` sections, `UPX!` in the first 4 KiB or a UPX PackHeader; the NEOLite stub; a PKLITE stub at the DOS entry point | `UPX packed: run 'kuna unpack'` |
   | `twinbasic` / `vb6` | `twinBASIC` / an `MSVBVM60.DLL` import name in a PE | the runtime model and what to use for P-Code |
-  | `go` / `rust` | the toolchain verdict the loader already makes | informational (`actionable: false`) |
+  | `go` / `rust` | the toolchain verdict the loader already makes | informational (`actionable: false`); a `rust` row says `Rust binary (rustc 1.95.0): …` when the compiler is known |
+
+  A `rust` row carries two more facts. `version` is the compiler release: the
+  `rustc version` record of `.comment` (prerelease suffix kept, `1.89.0-nightly`),
+  or, when the image has no such record, the stable release whose commit its
+  standard library source paths name (`/rustc/<commit>/library/...`); `null`
+  when neither identifies one release. `crates` lists the registry dependencies
+  the image names in `registry/src/<index>/<crate>-<version>/` source paths, as
+  sorted `{name,version}` rows (`[]` when it names none). Only crates that left
+  a source path in the image appear, so the list is a lower bound.
 
   The PE walk does not insist on the `MZ` magic, so an image whose DOS header
   was damaged is still named even though it does not load. Every other
@@ -1803,7 +1812,8 @@ analysis retain an explicit report status instead of guessing a profile.
   ```
 
   `--summary` prints no note unless the load itself fails; the text form lists
-  the rows as `runtime\t<id>\t<hint>` lines.
+  the rows as `runtime\t<id>\t<hint>` lines, each `rust` row followed by one
+  `crate\t<name>\t<version>` line per crate.
 
 Without `--json` the same measurements print as tab-separated lines. `--summary`
 is accepted on `decompile-all` too, where it short-circuits the decompile loop

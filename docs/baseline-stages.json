@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4537,
-    4537
+    4540,
+    4540
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -3064,6 +3064,8 @@
     "data:codescalar #4: the store is a plain assignment",
     "data:codescalar #5: the POINTER keeps its code type, so the indirect call still renders",
     "data:codescalar #6: the data control is untouched -- its pointer was never a code pointer",
+    "data:commit-identified release recovers repeated indices",
+    "data:commit-identified release recovers the decimal print",
     "data:computed and stored interior entries retain returning calls",
     "data:computed branches and callee fallthrough retain their return",
     "data:computed interior entry retains returning tail call",
@@ -3710,6 +3712,7 @@
     "data:no call retains the old high return half",
     "data:no call retains the old low return half",
     "data:no fabricated zero multiplication",
+    "data:no runtime print sink remains",
     "data:no shifted field store",
     "data:no unrecovered transfer",
     "data:nodejoin #1: shared exit emits a complete body",

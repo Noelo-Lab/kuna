@@ -597,6 +597,9 @@ fn summary_text(
     }
     for h in &summary.runtime {
         let _ = writeln!(out, "runtime\t{}\t{}", h.id, h.hint);
+        for (name, version) in h.crates.iter().flatten() {
+            let _ = writeln!(out, "crate\t{name}\t{version}");
+        }
     }
     crate::limits::write_text(&mut out, &summary.limits, display_address);
     out
