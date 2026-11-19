@@ -158,6 +158,25 @@ already hits that wall (`docs/decbench-loop.md`, Trap 1).
 gate only once the `DIFFERS` set is empty or every entry is a declared divergence, with a
 baseline file like `docs/baseline.json`.
 
+## Related work in this repository
+
+No earlier issue or PR proposes a standing semantic check. These overlap in part:
+
+- **#1534 (Pushan, open).** It brings a symbolic p-code emulator over a hash-consed
+  expression arena into `p2_lift/`. That emulator decides guards by case-splitting boolean
+  atoms and has no SMT solver, so it cannot prove two functions equivalent, and Tier S
+  still needs z3. If #1534 lands, its expression arena is a candidate for Tier S's
+  encoding side, before the SMT-LIB printer.
+- **#1641 / #1699 (open).** Phase hooks. Tier C does not need them; they would localize
+  a `DIFFERS` to P2, Band B or P6 (open question 1).
+- **#317 (merged).** The ghidra-sim harness diffs kuna's **text** against the Ghidra GUI
+  path. It checks fidelity to Ghidra, not what the code computes.
+- **Per-PR compile-and-compare oracles** (#677, #773, #942, #974, #1009, #1154 and others).
+  Each compiles the printed C for its own fixture and compares it with the source. Tier P
+  generalizes them; Tier C covers much of the same ground without a compiler.
+- **DecBench `byte_match`.** It recompiles printed C and scores byte similarity. A high
+  score does not show that the function computes the same values.
+
 ## Non-goals
 
 - Proving kuna correct in general. The check is per function, against kuna's own lift
