@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4786,
-    4786
+    4789,
+    4789
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1181,6 +1181,7 @@
     "data:Go AArch64 bare SDIV still computes its quotient",
     "data:Go AArch64 compiler division keeps the original fail edge in default and audit modes",
     "data:Go AArch64 compiler division prints its terminal panic in both modes",
+    "data:Go AArch64 consecutive signed eight-byte arguments both use their declared stack names",
     "data:Go AArch64 divide guard recognizes the exact ABI0 helper",
     "data:Go AArch64 first recursive result survives the spill",
     "data:Go AArch64 ordinary bounds folding still keeps the indexed access",
@@ -1189,6 +1190,8 @@
     "data:Go AArch64 scalar recursion retains its base case",
     "data:Go AArch64 scalar recursion retains its input",
     "data:Go AArch64 second call reuses n and the first result",
+    "data:Go AArch64 the previous scalar still uses the last argument register",
+    "data:Go AArch64 two scalar spills enter at adjacent stack words",
     "data:Go ABI0 auto binds the operands in the callee",
     "data:Go ABI0 auto preserves reversed caller operands",
     "data:Go ABI0 auto recovers both stack parameters",
