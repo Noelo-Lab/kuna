@@ -451,6 +451,9 @@ Three tiers:
 | an arm64 macOS function with a large frame or a variable-length array prints with a (void) parameter list | [`chkstkdarwin`](#chkstkdarwin----on--off-default-on-destructive-opt-in) |
 | a variable-length array is sized from a register nothing assigns after __chkstk_darwin() | [`chkstkdarwin`](#chkstkdarwin----on--off-default-on-destructive-opt-in) |
 | __chkstk_darwin is called with arguments it does not take | [`chkstkdarwin`](#chkstkdarwin----on--off-default-on-destructive-opt-in) |
+| a function calls _OUTLINED_FUNCTION_<n>(...) with arguments that make no sense | [`outlinedinline`](#outlinedinline----on--off-default-on) |
+| a function body is a string of OUTLINED_FUNCTION calls | [`outlinedinline`](#outlinedinline----on--off-default-on) |
+| an arm64 function ends in a tail call to OUTLINED_FUNCTION_<n> instead of the call it makes | [`outlinedinline`](#outlinedinline----on--off-default-on) |
 | a DOS program's globals print as *(short *)0x308e near-pointer dereferences instead of named globals | [`mzdgroup`](#mzdgroup----on--off-default-on) |
 | every function of an MS-DOS executable declares an unsigned short local commented // ds | [`mzdgroup`](#mzdgroup----on--off-default-on) |
 | the same DOS global gets no shared name across functions | [`mzdgroup`](#mzdgroup----on--off-default-on) |
@@ -1804,6 +1807,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On by default. Keep it on for macOS and iOS arm64 binaries: a function with a large frame or a variable-length array otherwise prints `v = __chkstk_darwin();`, loses the parameters it reads after the probe, or sizes a stack allocation from a register nothing assigns. Flip OFF to see the probe calls again, for instance to find the functions that allocate more than a page of stack.
 - **Where / provenance:** P2/flow-classification · kuna · structure-recovery · kuna-chkstkdarwin
 - **Example:** `option chkstkdarwin off`
+
+### `outlinedinline` -- on | off, default `on`
+
+- **Symptoms:** a function calls _OUTLINED_FUNCTION_<n>(...) with arguments that make no sense; a function body is a string of OUTLINED_FUNCTION calls; an arm64 function ends in a tail call to OUTLINED_FUNCTION_<n> instead of the call it makes.
+- **What it does:** Inline clang's MachineOutliner fragments into their callers. At -Oz, and in much Swift and Apple system code, the outliner moves instruction sequences that repeat across functions into shared OUTLINED_FUNCTION_<n> fragments and calls them with bl, or ends a caller with b. A fragment is not a function of the source: it has no frame, reads and writes the caller's registers, and a caller split across fragments reads as opaque calls that hide its data flow (`return _OUTLINED_FUNCTION_0() + 3;` for `return (a0 + a1) * 2 + 3;`). When the symbols are committed, every function symbol named OUTLINED_FUNCTION_<n> (any number of leading underscores) is flagged inline, which is what `option inline <name>` does, so flow splices the fragment into each caller. A tail call to a fragment, or a call nothing follows, keeps the fragment's own RETURN as the caller's instead of being refused for having no return site. A fragment whose flow reaches unmapped memory (in a dyld shared cache image, one that tail-branches into another library) is not inlined and stays a call. Name based, so inert on any image without such a symbol; a stripped image keeps its fragments as calls.
+- **When to flip:** On by default. Keep it on: a caller reads as one body, with the fragment's arithmetic and its tail call in place. Flip OFF to see the fragments as calls, for instance to count how much of a binary the outliner shares.
+- **Where / provenance:** P2/inline-inject · kuna · structure-recovery · kuna-outlinedinline
+- **Example:** `option outlinedinline off`
 
 ## Analysis & loader passes
 

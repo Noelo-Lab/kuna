@@ -1,0 +1,62 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<!--
+    MachineOutliner fragments inlined into their callers
+    (`option outlinedinline on|off`, default on).
+
+    Issue: clang's MachineOutliner moves instruction sequences that repeat
+    across functions into shared `OUTLINED_FUNCTION_<n>` fragments. A fragment
+    has no frame and reads and writes its caller's registers, so a caller
+    printed as opaque calls: `_OUTLINED_FUNCTION_0()` with no arguments where
+    the source added two parameters, and a tail call to a fragment in place of
+    the `exit(7)` the fragment makes.
+
+    Stage / sub-stage: P2 inline-inject. The analysis commit flags each
+    function symbol named `OUTLINED_FUNCTION_<n>` inline
+    (`p2_lift/kuna_outlinedinline.rs`), so flow splices it into the caller; the
+    hard-model inliner keeps a fragment's own RETURN when the caller tail-calls
+    it or nothing follows the call.
+
+    P0 assertion: `option outlinedinline on|off`, set after `load file` and
+    before the `read symbols` that commits the flags.
+
+    The XML wrapper only supplies the harness architecture; both passes load
+    the plain arm64 `macho_arm64_outlined` fixture (see the fixtures README).
+
+    Pass 1 (off) reproduces the BUG: `_sum2` returns
+    `_OUTLINED_FUNCTION_0() + 3` and `_bail` tail-calls `_OUTLINED_FUNCTION_1`.
+    Pass 2 (the default) is the FIX: `_sum2` returns `(a0 + a1) * 2 + 3` and
+    `_bail` calls `exit(7)`.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_arm64_outlined</com>
+  <com>option outlinedinline off</com>
+  <com>read symbols</com>
+  <com>load function _sum2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function _bail</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_arm64_outlined</com>
+  <com>read symbols</com>
+  <com>load function _sum2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function _bail</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="OUTLINEDINLINE #1: off calls the fragment" min="1" max="1">return _OUTLINED_FUNCTION_0\(.*\) \+ 3;</stringmatch>
+<stringmatch name="OUTLINEDINLINE #2: on inlines the fragment's arithmetic" min="1" max="1">return \(a0 \+ a1\) \* 2 \+ 3;</stringmatch>
+<stringmatch name="OUTLINEDINLINE #3: off tail-calls the fragment" min="1" max="1">_OUTLINED_FUNCTION_1\(</stringmatch>
+<stringmatch name="OUTLINEDINLINE #4: on inlines the tail-called fragment" min="1" max="1">exit\(7\);</stringmatch>
+</decompilertest>

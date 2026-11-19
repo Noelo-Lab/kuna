@@ -3860,3 +3860,30 @@ deletes a real call and the stack-overflow fault its page touches can raise.
 Through an arm64e `__auth_ptr` slot (`adrp x16; ldr x16,[x16,#off]; blraaz x16`,
 named by `authptrcall`) the same walk matches, since the slot carries the
 import's function symbol. `off` keeps the call.
+
+## MachineOutliner fragments (`outlinedinline`)
+
+At `-Oz`, and in much Swift and Apple system code, clang's MachineOutliner
+moves instruction sequences that repeat across functions into shared
+`OUTLINED_FUNCTION_<n>` fragments. A caller reaches a fragment with `bl`, or
+ends by branching to one. A fragment has no frame of its own and reads and
+writes its caller's registers, so a caller split across fragments printed as
+opaque calls: `return _OUTLINED_FUNCTION_0() + 3;` where the source computed
+`(a0 + a1) * 2 + 3`.
+
+With `option outlinedinline` on (the default), the analysis commit flags every
+function symbol named `OUTLINED_FUNCTION_<n>` (any number of leading
+underscores, `decompiler/crates/kuna-decomp/src/p2_lift/kuna_outlinedinline.rs
+(is_outlined_name)`) inline, which is what `option inline <name>` does. Flow
+then splices the fragment into each caller through the inliner (§2.1). The
+hard-model inliner refuses two shapes that are the common ones here: a tail
+call (`b OUTLINED_FUNCTION_n` lifts to a CALL with a RETURN at its own address,
+so there is no distinct return address) and a call nothing follows (the
+fragment ends its caller by tail-calling a no-return routine). For a fragment
+both are accepted (`flow.rs (ends_without_return_site)`), and the clone keeps
+the fragment's own RETURN as the caller's. A fragment whose flow reaches
+unmapped memory, which happens in a dyld shared cache image when it
+tail-branches into another library, is not inlined and stays a call. The
+detection is by name, so an image without such a symbol is untouched and a
+stripped image keeps its fragments as calls. `off` keeps every fragment a
+call. Pinned by `tests/stages/kuna-outlinedinline.xml`.

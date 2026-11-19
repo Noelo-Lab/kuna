@@ -1283,6 +1283,23 @@ recipe, toolchain and SHA-256s in `macho_ptrslots_arm64.provenance`. Pinned by
 `loadimage_object.rs (macho_chained_fixups_are_applied_to_the_image)`,
 `chained.rs (fixture_rebases_and_binds)` and `tests/verify_dynrelocs_gate.rs`.
 
+### `macho_arm64_outlined` — MachineOutliner fragments
+
+`macho_arm64_outlined` (plain arm64, ~33 KB) is `macho_arm64_outlined.s` linked
+as-is:
+
+```bash
+clang -target arm64-apple-macos11 -c macho_arm64_outlined.s -o o.o
+ld64.lld -arch arm64 -platform_version macos 11.0 11.0 -fixup_chains \
+         -undefined dynamic_lookup -e _main -o macho_arm64_outlined o.o
+```
+
+`_OUTLINED_FUNCTION_0` (`0x1000003a0`) is `(w0 + w1) * 2; ret`, called by
+`_sum2` (`0x1000003b4`). `_OUTLINED_FUNCTION_1` (`0x1000003ac`) is
+`mov w0, #7; b _exit`, tail-called by `_bail` (`0x1000003cc`). `_probe`
+(`0x100000378`) keeps its argument in x8 across `bl ___chkstk_darwin`. The
+`outlinedinline` witness (`tests/stages/kuna-outlinedinline.xml`).
+
 ### `macho_objc_refs_arm64` — selector, class and super references + `__objc_stubs`
 
 `macho_objc_refs_arm64` (arm64, ~50 KB) is the fixture for the ObjC reference-slot

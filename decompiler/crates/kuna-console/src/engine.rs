@@ -5490,6 +5490,18 @@ fn commit_analysis_output(
         }
     }
 
+    // 1--. (kuna `outlinedinline`) Flag clang's MachineOutliner fragments inline,
+    //      so flow splices each into its callers.
+    if prog.arch().outlined_inline {
+        let fragments: Vec<Address> = prog
+            .symbols
+            .iter()
+            .filter(|s| kuna_decomp::kuna_outlinedinline::is_outlined_name(&s.name))
+            .map(|s| s.addr.clone())
+            .collect();
+        kuna_decomp::kuna_outlinedinline::mark_inline(prog.arch_mut(), &fragments);
+    }
+
     // 1-. (kuna `elfgotimports`) The import a loader import slot holds. A
     //     `FunctionSymbol` in the symbol table, exactly as the format's own import
     //     names are, so `query_function` resolves a read or a call through the slot;
