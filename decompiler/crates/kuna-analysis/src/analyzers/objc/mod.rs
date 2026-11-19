@@ -58,6 +58,7 @@ mod kuna_objccache;
 pub mod kuna_objcdirect;
 pub mod kuna_objcivars;
 mod kuna_objcruntime;
+mod kuna_objcblocks;
 pub mod kuna_objcprops;
 pub mod kuna_objcprotos;
 pub mod kuna_objcrefs;
@@ -238,6 +239,16 @@ impl AnalysisPass for ObjcMetadataPass {
             }
         }
         let refs = kuna_objcrefs::emit(&img, ctx.file, ctx.arch, &tctx, &mut selectors, &mut out);
+        let globals = kuna_objcblocks::emit(&img, ctx.file, &tctx, &mut out);
+        {
+            use object::ObjectSymbol;
+            let mut creators: Vec<(u64, String)> = out.fid_names.iter().map(|f| (f.addr, f.name.clone())).collect();
+            creators.extend(ctx.file.symbols().filter(|s| s.kind() == object::SymbolKind::Text && s.address() != 0).filter_map(|s| {
+                let name = s.name().ok()?;
+                Some((s.address(), name.strip_prefix('_').unwrap_or(name).to_string()))
+            }));
+            kuna_objcblocks::stack_blocks(&img, ctx.file, ctx.bytes, &tctx, &creators, &globals, &mut out);
+        }
 
         // A chained slot holds its packed fixup word until `dynrelocs` unpacks it
         // at load.
