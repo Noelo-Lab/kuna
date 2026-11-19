@@ -455,6 +455,10 @@ Three tiers:
 | an arm64 macOS function with a large frame or a variable-length array prints with a (void) parameter list | [`chkstkdarwin`](#chkstkdarwin----on--off-default-on-destructive-opt-in) |
 | a variable-length array is sized from a register nothing assigns after __chkstk_darwin() | [`chkstkdarwin`](#chkstkdarwin----on--off-default-on-destructive-opt-in) |
 | __chkstk_darwin is called with arguments it does not take | [`chkstkdarwin`](#chkstkdarwin----on--off-default-on-destructive-opt-in) |
+| an Objective-C method is mostly objc_retain/objc_release lines | [`objcarc`](#objcarc----on--off-default-on) |
+| objc_retainAutoreleasedReturnValue() rendered with no argument and its result typed unsigned long | [`objcarc`](#objcarc----on--off-default-on) |
+| objc_storeStrong(&self->field, x) where an assignment is meant | [`objcarc`](#objcarc----on--off-default-on) |
+| objc_retain_x19() or objc_release_x20() printed with no argument | [`objcarc`](#objcarc----on--off-default-on) |
 | a DOS program's globals print as *(short *)0x308e near-pointer dereferences instead of named globals | [`mzdgroup`](#mzdgroup----on--off-default-on) |
 | every function of an MS-DOS executable declares an unsigned short local commented // ds | [`mzdgroup`](#mzdgroup----on--off-default-on) |
 | the same DOS global gets no shared name across functions | [`mzdgroup`](#mzdgroup----on--off-default-on) |
@@ -1826,6 +1830,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On by default. Keep it on for macOS and iOS arm64 binaries: a function with a large frame or a variable-length array otherwise prints `v = __chkstk_darwin();`, loses the parameters it reads after the probe, or sizes a stack allocation from a register nothing assigns. Flip OFF to see the probe calls again, for instance to find the functions that allocate more than a page of stack.
 - **Where / provenance:** P2/flow-classification · kuna · structure-recovery · kuna-chkstkdarwin
 - **Example:** `option chkstkdarwin off`
+
+### `objcarc` -- on | off, default `on`
+
+- **Symptoms:** an Objective-C method is mostly objc_retain/objc_release lines; objc_retainAutoreleasedReturnValue() rendered with no argument and its result typed unsigned long; objc_storeStrong(&self->field, x) where an assignment is meant; objc_retain_x19() or objc_release_x20() printed with no argument.
+- **What it does:** Objective-C images only (inert unless the image names an ARC runtime entry point): hide ARC bookkeeping. An ARC-compiled method is strewn with `objc_retain(x)`, `objc_release(x)`, `v = objc_retainAutoreleasedReturnValue(v)` and `objc_storeStrong(&slot, x)`; with the runtime entry points untyped the value they hand on is also lost (`v2 = objc_retainAutoreleasedReturnValue();` with no argument). Synthesized `<callfixup>` payloads (`p2_lift/kuna_objcarc.rs`, the mechanism of the MSVC `__ftol` fixup) replace each call with what it stands for in p-code: a pass-through (`objc_retain`, `objc_autorelease*`, `objc_retainAutoreleasedReturnValue`, `objc_claimAutoreleasedReturnValue`, `objc_retainBlock`, …) is an incidental copy so its result keeps the argument's variable, `objc_release` has no effect, `objc_storeStrong(slot, value)` is the store `*slot = value`, and clang's outlined arm64 `objc_retain_x<N>`/`objc_release_x<N>` (the object in `x<N>`, a retain's result in `x0`) are the same per register. The payloads are registered for arm64 and x86-64 (the x86-64 bodies pop the CALL's pushed return address); the install is by name on the image's import stubs and local symbols. Off, every ARC call is shown as the call it is. With `objc` on, every imported runtime entry point also carries its header prototype in either setting (`id objc_retain(id)`, `id objc_alloc_init(Class)`, `void objc_storeStrong(id *, id)`).
+- **When to flip:** On by default: an Objective-C method otherwise reads as retain/release traffic around the few lines that do the work, or an ARC helper call shows no argument and the value it returned is missing. Flip OFF to audit the reference counting itself.
+- **Where / provenance:** P2/flow-classification · kuna · presentation-default · kuna-objcarc
+- **Example:** `option objcarc off`
 
 ## Analysis & loader passes
 

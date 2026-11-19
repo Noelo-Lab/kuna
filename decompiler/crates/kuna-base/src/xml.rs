@@ -2242,7 +2242,9 @@ mod tests {
         // and ghangr-go-paniccheck-return / a returning Go panic check keeps its continuation
         // and ghangr-go-aarch64-stack-stride / adjacent eight-byte spills keep their declared inputs
         // and ghangr-go-mcall-resumption / a scheduler switch preserves its caller's continuation
-        assert_eq!(count, 824, "corpus file count drifted");
+        // and kuna-objcarc / Objective-C ARC bookkeeping calls are hidden as the copies and stores they stand for
+        // and kuna-objcoutlinedresult / an outlined objc_retain_x<N> returns in x0
+        assert_eq!(count, 826, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
