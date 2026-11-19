@@ -175,6 +175,11 @@ pub struct IfaceDecompData {
         String,
         Vec<(kuna_base::types::int4, String, kuna_decomp::fspec::ParameterPieces)>,
     >,
+    /// Explicit stable local renames and retypes, keyed by the function's entry.
+    pub local_edit_names: std::collections::BTreeMap<
+        kuna_base::address::Address,
+        kuna_decomp::kuna_stablenames::PriorNames,
+    >,
     /// (kuna) What the last `load function` / `load addr` followed, so the very
     /// next `decompile` can adopt that IR instead of following the same flow a
     /// second time.  See [`PristineFlow`].
@@ -301,6 +306,34 @@ impl IfaceDecompData {
         })
     }
 
+    fn remember_local_edit(&mut self) {
+        let Some(fd) = self.fd.as_ref() else { return };
+        let names = kuna_decomp::kuna_stablenames::carry(fd);
+        if names.renames.is_empty() && names.symbol_renames.is_empty() && names.retypes.is_empty() {
+            self.local_edit_names.remove(fd.get_address());
+        } else {
+            self.local_edit_names.insert(fd.get_address().clone(), names);
+        }
+    }
+
+    fn local_names_for_rebuild(&self) -> kuna_decomp::kuna_stablenames::PriorNames {
+        let Some(fd) = self.fd.as_ref() else { return Default::default() };
+        let names = kuna_decomp::kuna_stablenames::carry(fd);
+        if names.is_empty() {
+            self.local_edit_names.get(fd.get_address()).cloned().unwrap_or(names)
+        } else {
+            names
+        }
+    }
+
+    fn select_loaded_function(&mut self, fd: Funcdata) {
+        let entry = fd.get_address();
+        if self.fd.as_ref().is_some_and(|current| current.get_address() == entry) {
+            self.local_edit_names.remove(entry);
+        }
+        self.fd = Some(fd);
+    }
+
     /// C++ `IfaceDecompData::clearArchitecture()`.
     ///
     /// Upstream keeps prototypes, overrides and storage locks on the
@@ -316,6 +349,7 @@ impl IfaceDecompData {
         self.pending_callee_overrides.clear();
         self.pending_proto_overrides.clear();
         self.pending_param_maps.clear();
+        self.local_edit_names.clear();
         self.pristine_flow = None;
         self.stopped_flow = None;
         self.pending_local_checks.clear();
@@ -1330,7 +1364,7 @@ decomp_command!(
             size: declared,
             flow_overrides,
         });
-        dcp.fd = Some(fd);
+        dcp.select_loaded_function(fd);
         dcp.pending_local_checks.clear();
         dcp.printed_checks = None;
         Ok(())
@@ -1434,7 +1468,7 @@ decomp_command!(
             size: declared,
             flow_overrides,
         });
-        dcp.fd = Some(fd);
+        dcp.select_loaded_function(fd);
         dcp.pending_local_checks.clear();
         dcp.printed_checks = None;
         Ok(())
@@ -2231,11 +2265,7 @@ decomp_command!(
             }
             carried
         };
-        let prior_names = dcp_mut(status)?
-            .fd
-            .as_ref()
-            .map(kuna_decomp::kuna_stablenames::carry)
-            .unwrap_or_default();
+        let prior_names = dcp_mut(status)?.local_names_for_rebuild();
         let (check_lines, expected) = {
             let dcp = dcp_mut(status)?;
             let pending = std::mem::take(&mut dcp.pending_local_checks);
@@ -2947,6 +2977,7 @@ decomp_command!(
         };
         let symbol = crate::kuna_hightarget::apply_local(fd, &oldname, &newname, None, maxduplicates, arch)
             .map_err(IfaceError::execution)?;
+        dcp.remember_local_edit();
         if let Some(symbol) = symbol {
             dcp.pending_local_checks.push((format!("rename {oldname} {newname}"), symbol, None));
         }
@@ -3003,6 +3034,7 @@ decomp_command!(
         };
         let symbol = crate::kuna_hightarget::apply_local(fd, &name, &newname, Some(ct.clone()), maxduplicates, arch)
             .map_err(IfaceError::execution)?;
+        dcp.remember_local_edit();
         if let Some(symbol) = symbol {
             dcp.pending_local_checks.push((format!("retype {name} {}", typetext.trim()), symbol, Some(ct)));
         }

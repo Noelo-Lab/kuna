@@ -1,0 +1,49 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Kuna #1674: a 16-byte zeroed stack slot whose high quadword is also written
+    from a register that is 0 on one path.
+
+      f: push rbp; mov rbp,rsp; sub rsp,0x20
+         mov rax,[rdi+0x78]
+         pxor xmm0,xmm0; movaps [rbp-0x20],xmm0
+         test rax,rax; je 3f
+         mov rdx,[rax+8]; mov rsi,[rax+0x10]
+         movq xmm0,rdx; movq xmm4,rsi; punpcklqdq xmm0,xmm4
+         movaps [rbp-0x20],xmm0
+      1: cmp qword [rdi+0xe0],0; je 2f
+         sub rsi,[rdi+0x50]; mov [rbp-0x18],rsi
+      2: lea rdi,[rbp-0x20]; call g; leave; ret
+      3: xor esi,esi; xor edx,edx; jmp 1b
+
+    This is the shape of _dl_relocate_object in the mcount_x86_64 fixture.
+    The merge intersection test asks whether the 8-byte constant 0 in rsi is a
+    partial copy shadow of the 16-byte constant 0 at byte offset 8.
+    Varnode::findSubpieceShadow answered by shifting the 64-bit constant right
+    by 64 bits: a panic in a build with overflow checks (the function printed
+    as an empty body with a failure warning), an unreported wrapped shift
+    count otherwise.  A constant wider than 8 bytes holds zero above bit 63,
+    so the truncation now reads 0 there.
+
+    Stage / sub-stage: P6 merge (cover intersection, partial copy shadow),
+    always on.
+-->
+<bytechunk space="ram" offset="0x401000">
+554889e54883ec20488b4778660fefc00f2945e04885c07437488b5008488b70
+1066480f6ec266480f6ee6660f6cc40f2945e04883bfe0000000007408482b77
+50488975e8488d7de0e808000000c9c331f631d2ebdd488b0748034708c3
+</bytechunk>
+<symbol space="ram" offset="0x401000" name="f"/>
+<symbol space="ram" offset="0x401056" name="g"/>
+</binaryimage>
+<script>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GH1674 #1: f decompiles instead of failing" min="0" max="0">decompilation failed|shift right with overflow</stringmatch>
+<stringmatch name="GH1674 #2: the 16-byte slot is zeroed" min="1" max="1">memset\(.*,0,0x10\);</stringmatch>
+<stringmatch name="GH1674 #3: both registers are 0 on the path that skips the loads" min="2" max="2">^ +v\d+ = 0;</stringmatch>
+<stringmatch name="GH1674 #4: the slot reaches the call" min="1" max="1">g\(</stringmatch>
+</decompilertest>

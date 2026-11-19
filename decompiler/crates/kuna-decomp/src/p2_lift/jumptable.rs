@@ -959,6 +959,17 @@ fn matching_constants(fd: &Funcdata, vn1: VarnodeId, vn2: VarnodeId) -> bool {
 // JumpValues iterator family (jumptable.hh:166-231, jumptable.cc:261-388)
 // ---------------------------------------------------------------------------
 
+/// (kuna) Fails a walk over a switch variable's values once the per-function
+/// budget is spent, so a model with a long range ends with its drive: every
+/// recovery loop advances through [`JumpValues::next`].
+fn walk_within_budget() -> KunaResult<()> {
+    if !crate::decompile_drive::budget_probe() {
+        return Ok(());
+    }
+    crate::decompile_drive::note_budget_site(|| "jump-table value walk".to_string());
+    Err(KunaError::lowlevel("Jumptable value walk ran past the per-function budget"))
+}
+
 /// An iterator over values a switch variable can take (C++ `JumpValues`,
 /// `jumptable.hh:166`).
 ///
@@ -1134,6 +1145,7 @@ impl JumpValues for JumpValuesRange {
     }
 
     fn next(&mut self) -> KunaResult<bool> {
+        walk_within_budget()?;
         if let Some(values) = &self.explicit_values {
             if self.explicit_index + 1 >= values.len() {
                 return Ok(false);
@@ -1271,6 +1283,7 @@ impl JumpValues for JumpValuesRangeDefault {
         if self.lastvalue {
             return Ok(false);
         }
+        walk_within_budget()?;
         let mut cv = self.base.curval;
         if self.base.range.get_next(&mut cv) {
             self.base.curval = cv;
@@ -2560,6 +2573,88 @@ impl JumpBasicModel {
                 self.jrange = Some(Box::new(exact));
                 return;
             }
+        }
+        self.end_table_at_selector_map(fd, selector_vn);
+    }
+
+    /// (kuna) The bytes the selector's map occupies, as the first and last
+    /// byte offsets in its space: the LOAD addresses at the two ends of the
+    /// nearest upstream index range a guard bounds without wrapping.
+    fn selector_map_extent(&self, fd: &Funcdata, selector_vn: VarnodeId) -> Option<(Rc<AddrSpace>, uintb, uintb)> {
+        let load = fd.obank().get(fd.vbank().get(selector_vn)?.get_def()?)?;
+        let ptr_vn = load.get_in(1)?;
+        let space_index = fd.vbank().get(load.get_in(0)?)?.get_offset();
+        let space = fd.get_arch().manage().get_space(i32::try_from(space_index).ok()?)?.clone();
+        let last_byte = (fd.vbank().get(selector_vn)?.get_size() as uintb).checked_sub(1)?;
+        for pos in self.varnode_index + 1..self.path_meld.num_common_varnode() {
+            let start_vn = self.path_meld.get_varnode(pos);
+            let (mut range, _) = Self::width_range(fd, start_vn);
+            let unguarded = range.get_size();
+            crate::kuna_switchguardrange::intersect(fd, &self.selectguards, start_vn, &mut range);
+            if range.is_empty() || range.get_size() >= unguarded || range.get_min() > range.get_max() {
+                continue;
+            }
+            let Some(start_op) = self.path_meld.get_earliest_op(pos) else {
+                continue;
+            };
+            let address = |index: uintb| {
+                let mut emul = EmulateFunction::new(fd);
+                for &(seed_vn, seed_val) in self.loop_carried_seeds.iter() {
+                    emul.seed_varnode_value(seed_vn, seed_val);
+                }
+                emul.emulate_path(index, &self.path_meld, start_op, start_vn).ok()?;
+                let raw = emul.emulated_value(ptr_vn)?;
+                Some(AddrSpace::address_to_byte(raw, space.get_word_size()))
+            };
+            let (Some(a), Some(b)) = (address(range.get_min()), address(range.get_max())) else {
+                continue;
+            };
+            let end = a.max(b).checked_add(last_byte)?;
+            return Some((space, a.min(b), end));
+        }
+        None
+    }
+
+    /// (kuna) End the table at the selector value whose row would be read
+    /// from the selector's own map: the map's bytes are selector values, not
+    /// rows, so the table cannot continue through them. Used when the map's
+    /// values could not be proven, which leaves the selector its whole range.
+    fn end_table_at_selector_map(&mut self, fd: &Funcdata, selector_vn: VarnodeId) {
+        let Some((space, first, last)) = self.selector_map_extent(fd, selector_vn) else {
+            return;
+        };
+        let mut values = self.jrange().clone_box();
+        let (Some(start_op), Some(start_vn)) = (values.get_start_op(), values.get_start_varnode()) else {
+            return;
+        };
+        let mut kept: int4 = 0;
+        let mut more = values.initialize_for_reading();
+        while more {
+            let mut emul = EmulateFunction::new(fd);
+            for &(seed_vn, seed_val) in self.loop_carried_seeds.iter() {
+                emul.seed_varnode_value(seed_vn, seed_val);
+            }
+            emul.set_load_collect(true);
+            let emulated = emul.emulate_path(values.get_value(), &self.path_meld, start_op, start_vn);
+            let loads = emul.take_loadpoints().unwrap_or_default();
+            let in_map = loads.iter().any(|row| {
+                let start = row.addr.get_offset();
+                let size = (row.size.max(1) as uintb).saturating_mul(row.num.max(1) as uintb);
+                row.addr.get_space().is_some_and(|s| s.get_index() == space.get_index())
+                    && start <= last
+                    && start.saturating_add(size - 1) >= first
+            });
+            if in_map {
+                if kept > 0 {
+                    self.jrange_range_mut().truncate(kept);
+                }
+                return;
+            }
+            if emulated.is_err() {
+                return;
+            }
+            kept += 1;
+            more = values.next().unwrap_or(false);
         }
     }
 

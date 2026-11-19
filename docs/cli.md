@@ -1691,6 +1691,50 @@ kuna functions ./crakersme.exe --summary --json    # 2,820 bytes
 The first call to make on an unknown binary: it answers *where do I start*
 without emitting a function list at all, let alone pseudocode.
 
+For an explicit Rust signature comparison on a linked x86-64 ELF image:
+
+```bash
+kuna functions ./fmt --summary --json --rust-signature-manifest ./rust-signatures.json
+```
+
+The manifest identifies an external corpus, the candidate profiles to compare,
+and the exact bytes of each signature bank. Relative paths resolve from the
+manifest's directory. Nothing is downloaded, renamed, or used to relax compiler
+ABI/layout guards. Matching runs once against the image's final accepted Listing.
+
+```json
+{
+  "corpus": {"identity": "angr/flirt_signatures", "pin": "<immutable corpus revision>"},
+  "candidates": [{"version": "1.88.0", "optimization": 3}],
+  "signatures": [
+    {"path": "inline/1.88.0-O3.sig", "sha256": "<64 lowercase hex digits>",
+     "version": "1.88.0", "optimization": 3, "bank": "inline"},
+    {"path": "no-inline/1.88.0-O3.sig", "sha256": "<64 lowercase hex digits>",
+     "version": "1.88.0", "optimization": 3, "bank": "no-inline"}
+  ]
+}
+```
+
+Unknown or duplicate JSON fields, duplicate candidates/banks/files, invalid
+versions or optimization levels, unrequested profiles, unreadable files, and
+SHA-256 mismatches are errors. Both banks must be present for every requested
+candidate before the report can select a unique profile. An omitted bank is
+reported as `incomplete`; a listed file that cannot be read is an error.
+
+Only this flag adds the top-level `compiler_provenance` and
+`rust_signature_profile` fields. Compiler provenance retains raw `rustc_records`
+and embedded Rust `source_commits`; a compatible signature profile is a separate
+measurement. The profile report contains the manifest hash, corpus identity/pin,
+verified source paths/hashes, candidate and bank scores, matched addresses/names,
+and `status`: `unique`, `ambiguous`, `incomplete`, `no_matches`, `no_candidates`,
+`unsupported`, or `unavailable`. Only `unique` has a `selected_profile`; ties have
+`tied_profiles`. A unique best score does not prove the compiler's nominal version.
+
+The flag requires `functions --summary --json`, cannot be repeated, and does not
+accept raw images, slice/target/ISA selection, image-selection options, assertions,
+or function-definition overrides. Unsupported image formats or unavailable
+analysis retain an explicit report status instead of guessing a profile.
+
 ```json
 {"binary":"…","count":1150,"total":1150,"error":null,"warnings":[],
  "summary":{"entry":{"name","address","address_hex"},
@@ -1771,7 +1815,16 @@ without emitting a function list at all, let alone pseudocode.
   | `autoit` | `AU3!EA06`/`AU3!EA05` in a PE | `AutoIt compiled script: extract the script with autoit-ripper` |
   | `upx` / `neolite` / `pklite` | `UPX0`/`UPX1` sections, `UPX!` in the first 4 KiB or a UPX PackHeader; the NEOLite stub; a PKLITE stub at the DOS entry point | `UPX packed: run 'kuna unpack'` |
   | `twinbasic` / `vb6` | `twinBASIC` / an `MSVBVM60.DLL` import name in a PE | the runtime model and what to use for P-Code |
-  | `go` / `rust` | the toolchain verdict the loader already makes | informational (`actionable: false`) |
+  | `go` / `rust` | the toolchain verdict the loader already makes | informational (`actionable: false`); a `rust` row says `Rust binary (rustc 1.95.0): …` when the compiler is known |
+
+  A `rust` row carries two more facts. `version` is the compiler release: the
+  `rustc version` record of `.comment` (prerelease suffix kept, `1.89.0-nightly`),
+  or, when the image has no such record, the stable release whose commit its
+  standard library source paths name (`/rustc/<commit>/library/...`); `null`
+  when neither identifies one release. `crates` lists the registry dependencies
+  the image names in `registry/src/<index>/<crate>-<version>/` source paths, as
+  sorted `{name,version}` rows (`[]` when it names none). Only crates that left
+  a source path in the image appear, so the list is a lower bound.
 
   The PE walk does not insist on the `MZ` magic, so an image whose DOS header
   was damaged is still named even though it does not load. Every other
@@ -1785,7 +1838,8 @@ without emitting a function list at all, let alone pseudocode.
   ```
 
   `--summary` prints no note unless the load itself fails; the text form lists
-  the rows as `runtime\t<id>\t<hint>` lines.
+  the rows as `runtime\t<id>\t<hint>` lines, each `rust` row followed by one
+  `crate\t<name>\t<version>` line per crate.
 
 Without `--json` the same measurements print as tab-separated lines. `--summary`
 is accepted on `decompile-all` too, where it short-circuits the decompile loop
@@ -4468,6 +4522,72 @@ explanation, also printed as a `note:` line:
 ```
 note: 0xfffffe0007007000 is in the MH_FILESET entry com.apple.kernel, not in com.example.driver.PMGR, the entry loaded: only references made from com.example.driver.PMGR are listed; `--option kernelcache com.apple.kernel` loads that entry
 ```
+
+## `--member NAME` — one member of an `ar` archive
+
+A static library (`libfoo.a`) is an `ar` archive of relocatable objects, and
+every kuna surface works on one of them. Pass the archive as the binary and name
+the member with `--member NAME`, or spell both as one path, `libfoo.a:NAME`.
+`--member` with no name after it (last, or before another flag) lists the
+members with their sizes; with `--json` the listing is
+`{archive, members: [{name, size, object}]}`, where `object` says whether the
+member is an object file kuna can load. A name the archive stores more than
+once (common in static libraries built from several directories) is listed and
+selected as `NAME#K`, its K-th occurrence: `--member cpu.o#2`. An argument
+that is an existing file is never split at a `:`.
+
+```
+$ kuna functions libm2.a --member
+a1.o	1064
+a2.o	1064
+$ kuna decompile libm2.a --member a2.o cube
+$ kuna decompile libm2.a:a2.o cube
+```
+
+Without a member, an archive of one object loads it. Otherwise the member is
+the one that defines a symbol the arguments spell, and a `note:` line on stderr
+names it:
+
+```
+$ kuna decompile libm2.a cube
+note: libm2.a: using member a2.o
+int cube(int a0)
+{
+  return a0 * a0 * a0;
+}
+```
+
+When no member, or more than one, defines such a symbol, the run exits `2` and
+lists the object members to choose from. An unknown member name, and `--member`
+on an input that is not an archive, also exit `2`.
+
+`kuna functions <lib.a>` with no member lists every object member, each name
+prefixed with its member (also when the archive holds only one):
+
+```
+$ kuna functions libm2.a
+0x400000	a1.o:sq
+0x400000	a2.o:cube
+```
+
+With `--json` that is `{archive, members: [{member, functions}]}`, where
+`functions` is the member's own `kuna functions --json` document. A member
+that does not load is skipped with a `note:` line. `--summary` describes one
+image, so it needs a member.
+
+The selected member is loaded exactly as the same `.o` file is: its relocations
+are applied, and a call into another member stays an external reference,
+because members are not linked against each other. The member is written to a
+temporary file for the run (`<tmp>/kuna_ar_*/<archive>/<member>`), removed on
+exit, and a `binary` field in JSON output names that file. A thin archive
+stores only member paths, so its members load from their own files: each path
+is resolved against the archive's directory as `ar` does, only a regular file
+is read, and a member whose path leaves that directory is named in a `note:`
+line when it loads. `--raw-image` reads the file as bytes and skips all of
+this. `--member`
+applies to `decompile`, `decompile-all`, `decompile-project`,
+`decompile-graph`, `functions`, `disassemble`, `raw-pcode`, `read`, `xrefs`,
+`strings` and `crypto`; `kuna fid build` reads a whole archive itself.
 
 ## `kuna fid` — function identification by fingerprint
 

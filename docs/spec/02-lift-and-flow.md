@@ -157,6 +157,48 @@ equals the original. On an iOS system daemon and three jailbreak dylibs
 byte-identical. This is a SLEIGH correctness repair, without an inference
 option.
 
+The AArch64 memory-tagging (MTE) instructions lift with their tag effect
+(`option acleintrinsics on|off`, default on, AArch64 only; Kuna #1626).
+`AARCH64.pspec` leaves the `ShowMemTag` context at 0, and under it
+`specs/Ghidra/Processors/AARCH64/data/languages/AARCH64base.sinc` lifts
+`irg` as a copy, `addg` and `subg` as a plain add, `gmi` as a copy of its
+mask, `ldg` and `stg`/`st2g` as nothing, and `stzg`/`stz2g`/`stgp` as their
+data store alone. The lift is then false about the program:
+`return __arm_mte_create_random_tag(p, 0);` is `irg x0, x0; ret` and
+decompiled to `return a0;`, and a function that only tags memory decompiled
+to an empty `void f(void)`.
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_memtag.rs (paint)` runs
+before each function's flow and makes the context agree with the option: it
+reads `ShowMemTag` at the function entry and, when that differs, sets the
+default and paints the whole code space. Only the memory-tagging
+constructors read that context, so every other instruction decodes and lifts
+exactly as before, and a language without the variable (every non-AArch64
+one) is left alone. `off` paints it back to 0, so one session can lift the
+same function both ways.
+
+The `ShowMemTag=1` constructors are kuna's, not upstream's. Upstream kept
+the destination register an untouched copy and put the tag operation in a
+user op with no output, to keep the pointer's data flow; the output then
+still read `return a0;` after a detached `RandomizePtrTag_Exclude(a0, ..)`
+statement. Here the tagged pointer is the user op's result:
+`Rd = RandomizePtrTag_Exclude(Rn, Xm)` for `irg` (zero when `Xm` is absent),
+`Rd = AddPtrTag(Rn +/- imm, tag_offset)` for `addg` and `subg`, both of which
+advance the tag, `Rd = ExcludePtrTag(Rn, Rm)` for `gmi`,
+`Rt = LoadPtrTag(Rt, address)` for `ldg`, and `StorePtrTag(address, Rt)` for
+each granule `stg`, `st2g`, `stzg`, `stz2g` and `stgp` tag (`stgp` takes the
+tag from the address itself). `GCR_EL1.Exclude`, which `irg`, `addg` and
+`subg` also honour, is part of those ops' meaning and is not an operand. The
+`stg` family raises an alignment fault on an address that is not
+granule-aligned; upstream modelled it as a branch to `AlignmentFault()`
+before each store, a block and two edges that are in no source and that
+cost the function its return value, so the fault is not modelled. The
+EL1-only bulk forms `ldgm`, `stgm` and `stzgm` keep upstream's
+`ShowMemTag=1` bodies, so with the option on they lift as loops of
+`LoadMemTag` / `StoreMemTag` over a block whose size is read from `GMID_EL1`
+(`DCZID_EL0` for `stzgm`); under `ShowMemTag=0` `ldgm` reads as zero and
+`stgm`/`stzgm` store no tag. Chapter 09 prints the tag ops of the single-granule forms as ACLE
+intrinsics.
+
 SPARC integer branch conditions snapshot the ICC/XCC carry, negative, and
 overflow flags before expanding the delay slot. A flag-writing slot still
 publishes its new flags to subsequent instructions, but cannot change the
@@ -2144,6 +2186,27 @@ the case targets.
    addresses they named. A candidate stops as soon as its values cover the
    selector's whole range, since it can no longer narrow it: a 65,536-entry
    map that names all 256 rows in its first 256 bytes costs 256 emulations.
+   When no candidate proves a domain (the index takes more values than the
+   budget, or the map is not read-only), the selector keeps its whole range,
+   but the table still cannot run through the map: the map's bytes are
+   selector values, not rows. `jumptable.rs
+   (JumpBasicModel::end_table_at_selector_map)` finds the bytes the map
+   occupies and ends the table at the first selector value whose row would be
+   read from them. The map's extent comes from the nearest upstream index that
+   a guard bounds to a range that does not wrap: the path is emulated at the
+   range's two ends and the selector LOAD's addresses there are the map's
+   first and last (`jumptable.rs (JumpBasicModel::selector_map_extent)`). Only
+   addresses are used, never the map's values, so this needs no read-only
+   proof. Each selector value is then emulated in order with its LOADs
+   collected; the first one that reads a byte of the map ends the table, and
+   the earlier values keep their rows. A table whose first row already lies
+   in the map is left alone. The `selector_domain.S` fixture places a
+   three-row table directly before its byte map, as MSVC lays out its
+   two-stage tables; with a 70,000-entry or writable map, rows 3 to 255 were
+   read from the map and from the bytes after it, and flow left for the
+   addresses they named. Only the selector's own map ends the table: a map
+   placed before the table, another switch's map after it, or padding between
+   table and map is still read as rows.
    **Stranded rows.** The smallest range can belong to a variable in front of
    a map: in `switch (map[mode])` one guard bounds `mode` and a second bounds
    `map[mode] - 8` to the table, and `mode`'s range is the smaller. A value of

@@ -554,6 +554,14 @@ fn print_command_failure(out: &str) -> Option<String> {
     }
 }
 
+/// The engine's panic, as `<location> <message>`, read off its stderr.
+fn engine_panic(stderr: &str) -> Option<String> {
+    let mut lines = stderr.lines();
+    let at = lines.find_map(|line| line.split_once("panicked at ").map(|(_, at)| at.trim()))?;
+    let message = lines.next().map(str::trim).unwrap_or_default();
+    Some(format!("{} {message}", at.trim_end_matches(':')).trim_end().to_string())
+}
+
 /// The function the console last announced (`Decompiling <name>`), so a failure
 /// report names the same function the JSON surface's does.
 fn decompiling_name(out: &str) -> Option<String> {
@@ -781,6 +789,10 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
             if let Some(reason) = print_command_failure(&stdout_text) {
                 let func = decompiling_name(&stdout_text).unwrap_or_else(|| args.target.clone());
                 return Err((format!("decompilation failed for {func} in {binary}: {reason}"), false));
+            }
+            if let Some(panic) = engine_panic(&stderr_text) {
+                let func = decompiling_name(&stdout_text).unwrap_or_else(|| args.target.clone());
+                return Err((format!("decompiler panicked on {func} in {binary}: {panic}"), false));
             }
             return Err((
                 format!(
@@ -1391,6 +1403,16 @@ fn decompile_json(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn engine_panic_is_read_off_stderr() {
+        let stderr = "note\n\nthread 'main' (7) panicked at crates/x/src/y.rs:885:9:\nattempt to shift left with overflow\nstack backtrace:\n";
+        assert_eq!(
+            super::engine_panic(stderr).as_deref(),
+            Some("crates/x/src/y.rs:885:9 attempt to shift left with overflow")
+        );
+        assert_eq!(super::engine_panic("Decompilation complete\n"), None);
+    }
+
     #[test]
     fn temporary_output_paths_have_independent_owned_lifetimes() {
         let first = super::temp_path("kuna_c_test_", ".c").unwrap();
