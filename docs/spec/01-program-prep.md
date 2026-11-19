@@ -10569,6 +10569,20 @@ re-read below; the slice and the search used to stop at eight instructions and
 at the first call. ssh `-O2`'s dispatch at `0x42a26` in `main` read 9 of its 13
 cases on the old walk and reads all 13 now.
 
+*Compact tables* (AArch64; no option;
+`decompiler/crates/kuna-analysis/src/listing/kuna_switchtable.rs (compact_targets)`).
+clang and gcc lower a dense AArch64 switch to a table of byte or halfword
+offsets counted in instructions: `ldrb w, [table, idx]; adr x, base;
+add x, x, w, lsl #2; br x` (gcc writes the add as `uxtb #2` or `sxtb #2`). The
+fold knew a 32-bit delta added to a base and a Thumb doubled offset but no
+shifted entry, so it read no case of such a table, and a function called only
+from a case had no caller. On an AArch64 image the fold now carries a zero- or
+sign-extended entry through a left shift by one to three and through an add of
+a constant base, and reads each case as `base + (entry << shift)`, under the
+same range-check, mask, executable-section and minimum-entry rules as the other
+shapes; the slice also follows that shift. Pinned by the `compacttable_aarch64`
+fixture in `decompiler/crates/kuna-cli/tests/xrefs_switch_case_calls.rs`.
+
 *The `-O0` chain.* gcc spends seven instructions between its `ja` and the jump:
 `mov %eax,%eax; lea 0(,%rax,4),%rdx; lea jt(%rip),%rax; mov (%rdx,%rax,1),%eax;
 cltq; lea jt(%rip),%rdx; add %rdx,%rax`. The table base sits in the *unscaled*
