@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4746,
-    4746
+    4752,
+    4752
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1199,11 +1199,15 @@
     "data:Go AMD64 compiler division keeps its helper only in audit mode",
     "data:Go AMD64 compiler division retains source division in both modes",
     "data:Go DWARF signatures off retain the register byte carrier",
+    "data:Go array byte read uses the original pointer address",
+    "data:Go array byte store writes through the original pointer",
     "data:Go array extraction evaluates the producer once",
     "data:Go array extraction has no opaque subpiece helper",
     "data:Go array extraction matches inferred unsigned store pointees",
     "data:Go array extraction reads both signed result words",
     "data:Go array extraction retains the complete call result",
+    "data:Go array through a loaded pointer keeps precisely that load",
+    "data:Go array word read scales the original pointer by two bytes",
     "data:Go boolean widening has an explicit zero or one value",
     "data:Go bottom-tested loop skips only its first condition",
     "data:Go byte string pointers retain a terminating zero",
@@ -1239,7 +1243,9 @@
     "data:Go paired nested call evaluates outside adapter parameter scope",
     "data:Go paired returns project both fields",
     "data:Go paired signatures preserve both source integer results",
+    "data:Go pointer element keeps word stride and pointer result",
     "data:Go pointer indexing retains byte scaling",
+    "data:Go real pointer valued load remains a dereference",
     "data:Go record type in its own package is unqualified",
     "data:Go register result retains a sixteen-byte carrier",
     "data:Go result formals never become generic inputs",

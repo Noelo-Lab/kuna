@@ -917,6 +917,46 @@ impl PrintC {
         fd.vn_type_read_facing(vn, op)
     }
 
+    /// Go pointer arithmetic needs the address of the array itself.
+    fn go_array_element_base(
+        &self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        base: VarnodeId,
+        op: OpId,
+    ) -> Option<(VarnodeId, OpId)> {
+        let value = fd.vbank().get(base)?;
+        let def = value.get_def()?;
+        let projection = fd.obank().get(def)?;
+        if !value.is_implied()
+            || value.is_volatile()
+            || projection.code() != kuna_num::opcodes::OpCode::CPUI_PTRSUB
+        {
+            return None;
+        }
+        let referent = projection.get_in(0)?;
+        let offset = fd.vbank().get(projection.get_in(1)?)?;
+        if !offset.is_constant()
+            || offset.get_offset() != 0
+            || fd.vbank().get(referent)?.get_size() != value.get_size()
+        {
+            return None;
+        }
+        let from = self.go_value_type(fd, arch, referent, def);
+        let to = self.go_value_type(fd, arch, base, op);
+        if [&from, &to].iter().any(|ty| {
+            ty.get_metatype() != type_metatype::TYPE_PTR
+                || ty.is_formal_pointer_rel()
+                || ty.get_word_size() != Some(1)
+                || ty.get_size() != value.get_size()
+        }) {
+            return None;
+        }
+        let array = from.get_ptr_to()?;
+        let width = array.get_array_base()?.get_size();
+        (width > 0 && width == to.get_ptr_to()?.get_size()).then_some((referent, def))
+    }
+
     pub(crate) fn op_go_ptradd(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
         let Some(operation) = fd.obank().get(op) else {
             return;
@@ -932,7 +972,10 @@ impl PrintC {
             return;
         };
         let target = fd.vn_type_def_facing(output);
-        let source = self.go_value_type(fd, arch, base, op);
+        let (base, base_read) = self
+            .go_array_element_base(fd, arch, base, op)
+            .unwrap_or((base, op));
+        let source = self.go_value_type(fd, arch, base, base_read);
         let value = self
             .context
             .is_set(modifiers::PRINT_LOAD_VALUE | modifiers::PRINT_STORE_VALUE);
@@ -951,7 +994,7 @@ impl PrintC {
         ) {
             self.push_go_call("uintptr", op);
         }
-        self.push_vn_ir_m(fd, arch, base, op, mods);
+        self.push_vn_ir_m(fd, arch, base, base_read, mods);
         self.push_op(&tokens::MULTIPLY, Some(op_key(op)));
         self.push_vn_ir_m(fd, arch, index, op, mods);
         self.push_vn_ir_m(fd, arch, scale, op, mods);

@@ -3598,6 +3598,15 @@ carrier; that member retains its existing type error even when its surrounding
 pointer arithmetic is corrected.
 The diagnostic `nocastprinting` setting retains its existing behavior.
 
+Go `PTRADD` can use a zero-offset `PTRSUB` that exposes the first element
+of a fixed array. For an implied projection with equal-width byte-addressed
+pointers and matching element width, the `unsafe.Add` base is the original
+array pointer. Converting the address directly avoids dereferencing the
+array and relies on Go's pointer conversion, since an array value has no
+implicit pointer conversion. The original scale and enclosing load or store
+still determine the byte offset and access. A pointer loaded from memory
+remains a load and is evaluated once.
+
 A Go record address at a positive byte offset before its first known field
 uses the same `unsafe.Add` form for a named, complete record with a native
 pointer base. The address keeps the original pointer and byte offset, and any
