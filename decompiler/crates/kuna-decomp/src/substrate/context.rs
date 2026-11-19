@@ -795,11 +795,20 @@ pub struct ArchContext {
     pub present_lessequal: bool,
     /// Keep mapped global array bases separate from negative element offsets.
     pub global_array_anchor: bool,
+    /// (kuna `helperroles`) Read by [`RuleStrcpyChain`](crate::kuna_helperrole::RuleStrcpyChain).
+    pub helper_roles: bool,
     /// (kuna) refuse to split a shared RETURN block that stores to GLOBALS
     /// (`retsplitglobal`).  Read by
     /// [`Funcdata::return_split_is_splittable`](crate::funcdata::Funcdata),
     /// the predicate both `ActionReturnSplit` and `ActionReturnDup` consult.
     pub ret_split_global: bool,
+    /// (kuna) `gotosink` — turn a backward goto into a loop and sink `if (c) goto L`
+    /// over the statements it skips.
+    pub goto_sink: bool,
+    /// (kuna) `looprotate` — a guarded do-while loop becomes a while loop.
+    pub loop_rotate: bool,
+    /// (kuna) `switchguardmerge` — merge an equality guard into its switch.
+    pub switch_guard_merge: bool,
     /// (kuna) `retsplitlimit`, read by `Funcdata::return_split_apply`.
     pub ret_split_limit: Option<u64>,
 
@@ -1375,6 +1384,8 @@ pub struct ArchContext {
     /// multi-predecessor unrolled-guard walk.  `false` (default off / upstream
     /// byte-identical).
     pub switch_multi_pred: bool,
+    /// (kuna) `Architecture::switch_trim`, flipped by `option switchtrim`.
+    pub switch_trim: bool,
     /// (kuna) Recover the interleaved jump tables of an MSVC optimized
     /// memcpy/memmove by making the jump-table-recovery partial clone's
     /// `collect_edges` SKIP a recovered sibling table's case-target edge whose
@@ -1596,7 +1607,11 @@ impl ArchContext {
             // registered `enabled=false` is inert there — matching the gate-off
             // unit tests.
             global_array_anchor: false,
+            helper_roles: false,
             ret_split_global: false,     // retsplitglobal (the ArchSeam carries the real default)
+            goto_sink: false,            // gotosink (live value copied from the Architecture)
+            loop_rotate: false,          // looprotate (live value copied from the Architecture)
+            switch_guard_merge: false,   // switchguardmerge (live value copied from the Architecture)
             ret_split_limit: None,       // retsplitlimit (the ArchSeam carries the real default)
             simd_shuffle_userops: Vec::new(),
             x87_float_to_int_userops: Vec::new(),
@@ -1743,6 +1758,7 @@ impl ArchContext {
             switch_guard_bound: false, // (kuna) angr opt-in default off (upstream byte-identical)
             switch_shared_case: false, // (kuna) angr opt-in default off (upstream byte-identical)
             switch_multi_pred: false, // (kuna) angr opt-in default off (upstream byte-identical)
+            switch_trim: false,
             unrolled_guard: false, // (kuna) angr opt-in default off (upstream byte-identical)
             jumptable_share_partial: true, // (kuna) DIV: upstream stageJumpTable shape
             dead_cascade: Some(crate::p3_dataflow::kuna_deadcascade::DEFAULT_PASSES),

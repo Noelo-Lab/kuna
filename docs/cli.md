@@ -1423,11 +1423,12 @@ $ kuna functions fw.bin --json --raw-image \
 `decompile-all` decompiles the discovered inventory, not just the seed. `--addr`
 still does both, so it remains the way to narrow a raw run to named addresses.
 A function no direct call reaches and no seed names is still undiscovered;
-`--define-function` asserts it. Named `--functions`, section-relative selectors,
-`--slice`, `--summary`, and `--reachable-from` are rejected. Support is limited
-to `decompile` (text and JSON), `decompile-all`, `functions`, and
-`decompile-project`; `decompile-graph`, `disassemble`/`read`, `xrefs`, and
-`strings` require object metadata. A headerless file used without `--raw-image`
+`--define-function` asserts it. Named `--functions`, section-relative selectors
+and `--slice` are rejected. Support covers `decompile` (text and JSON),
+`decompile-all`, `functions` (`--summary` and `--reachable-from` included),
+`decompile-project` and `decompile-graph`. For a byte-addressed target the
+call graph and the analysis passes read an ELF view of the image (`objectview`).
+`disassemble`/`read`, `xrefs` and `strings` take no raw-image flags. A headerless file used without `--raw-image`
 reports the required raw-image command shape, including when its first byte is
 `<`; only a parsed document containing `<binaryimage>` is treated as XML. Quoted
 console filenames preserve paths containing whitespace; the interactive spelling
@@ -1629,8 +1630,8 @@ It is a whole-binary surface only: `kuna decompile` forks one `decomp_dbg` per
 function and cannot see what another function's decompile stated, so the two
 surfaces may disagree about a call's argument types. A run narrowed by
 `--functions`, `--addr` or a triage filter, one that selects a single function,
-or a `--raw-image` run (which has no call graph), decompiles in address order and
-builds no call graph, unless the option is given by name; then it orders the selection and says on stderr that a callee
+or a `--raw-image` run, decompiles in address order and builds no call graph,
+unless the option is given by name; then it orders the selection and says on stderr that a callee
 outside it states nothing. An explicit `--option protoorder` is refused alongside
 `--jobs N` (a statement is per-load state that does not cross a worker process);
 a `--jobs` run that does not ask for it states nothing and says so on stderr, so

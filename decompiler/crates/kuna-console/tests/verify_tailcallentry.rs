@@ -48,6 +48,22 @@ fn fixture() -> PathBuf {
     repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/cortexm_tailcall_le32")
 }
 
+/// `tailcall_x86_64` (stripped, source `tailcall_x86_64.s`): `helper`@0x40101f
+/// is reached only by the tail `jmp` that ends `f`@0x401012, across `g`@0x401019.
+fn x86_fixture() -> PathBuf {
+    repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/tailcall_x86_64")
+}
+
+const X86_HELPER: &str = "sub_40101f";
+
+/// `tailcall_aarch64` (stripped, source `tailcall_aarch64.s`): the same shape,
+/// `helper`@0x210144 reached only by the tail `b` that ends `f`@0x210134.
+fn aarch64_fixture() -> PathBuf {
+    repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/tailcall_aarch64")
+}
+
+const AARCH64_HELPER: &str = "sub_210144";
+
 /// `_start` — the ELF entry, and the only seeded root.
 const START: &str = "sub_8008000";
 /// `helper` — discovered through `_start`'s `BL`.
@@ -69,9 +85,13 @@ const TAIL_VMA: u64 = 0x0800_8020;
 /// Bootstrap the fixture with the Listing tier on, optionally flipping `tailcallentry` on
 /// before the deferred commit (the live-CLI ordering).
 fn bootstrap(on: bool) -> kuna_console::engine::ConsoleProgram {
+    bootstrap_image(&fixture(), on)
+}
+
+fn bootstrap_image(image: &PathBuf, on: bool) -> kuna_console::engine::ConsoleProgram {
     let specs = repo_root().join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
-    let bin = fixture().to_str().expect("UTF-8 fixture path").to_string();
+    let bin = image.to_str().expect("UTF-8 fixture path").to_string();
     let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
         .expect("bootstrap fixture with built processor specs");
     prog.arch_mut().set_kuna_option("listing", "on").expect("listing flips on");
@@ -101,6 +121,26 @@ fn decompile(prog: kuna_console::engine::ConsoleProgram, func: &str) -> String {
         execute(&mut status);
     }
     status.optr.clone()
+}
+
+/// The same two passes on x86-64: the tail `jmp` from `f` to `helper` across
+/// `g` makes `helper` a function only with the option on.
+#[test]
+fn tailcallentry_recovers_an_x86_64_tail_called_helper() {
+    assert!(bootstrap_image(&x86_fixture(), false).lookup_symbol(X86_HELPER).is_none(), "off: the walk absorbs the helper into f");
+    let on = bootstrap_image(&x86_fixture(), true);
+    assert!(on.lookup_symbol(X86_HELPER).is_some(), "on: the tail-called helper is a function");
+    let body = decompile(on, X86_HELPER);
+    assert!(body.contains("+ 1"), "the helper decompiles to its own body, got:\n{body}");
+}
+
+#[test]
+fn tailcallentry_recovers_an_aarch64_tail_called_helper() {
+    assert!(bootstrap_image(&aarch64_fixture(), false).lookup_symbol(AARCH64_HELPER).is_none(), "off: the walk absorbs the helper into f");
+    let on = bootstrap_image(&aarch64_fixture(), true);
+    assert!(on.lookup_symbol(AARCH64_HELPER).is_some(), "on: the tail-called helper is a function");
+    let body = decompile(on, AARCH64_HELPER);
+    assert!(body.contains("+ 1"), "the helper decompiles to its own body, got:\n{body}");
 }
 
 /// Pass 1 — THE BUG. The walk treats the unconditional `B` at `_start+4` as a

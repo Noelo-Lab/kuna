@@ -1,0 +1,47 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    A headerless image (gcc -O0 .text of a no-pie build at 0x401000) whose
+    first three functions are reached only through a function-pointer table,
+    so the raw-image call-target walk from the one entry seed never finds
+    them. Their prologues follow a `ret` / `pop rbp`, which the x86-64
+    function-start patterns accept, but the pattern pass ran only on images
+    with an object header.
+
+    Stage model: P1 program-prep, code-data-partition (engine.rs
+    discover_raw_entries sweeps the executable bytes with the pattern set of
+    the target's language, patterns/mod.rs for_language, and seeds the walk).
+
+    Option: funcstart_patterns (off by default; the decompile-all driver turns
+    it on for a headerless image). Pass 1 is off: the inventory is the seed
+    alone. Pass 2 is on: the two table-reached functions are in it and load by
+    name.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load raw x86:LE:64:default 0x401000 0x401055 tests/stages/fixtures/rawpatterns/raw-fp-x86-64.bin</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>clear architecture</com>
+  <com>load raw x86:LE:64:default 0x401000 0x401055 tests/stages/fixtures/rawpatterns/raw-fp-x86-64.bin</com>
+  <com>option funcstart_patterns on</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>load function sub_401015</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function sub_401043</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="RAWPATTERNS #1: the seed is in the inventory either way" min="2" max="2">0x401055 sub_401055</stringmatch>
+<stringmatch name="RAWPATTERNS #2: off, the table-reached functions are not" min="1" max="1">0x401015 sub_401015</stringmatch>
+<stringmatch name="RAWPATTERNS #3: on, the pattern sweep adds the loop function" min="1" max="1">sub_401015\(</stringmatch>
+<stringmatch name="RAWPATTERNS #4: on, and the xor function" min="1" max="1">sub_401043\(</stringmatch>
+</decompilertest>

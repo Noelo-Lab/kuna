@@ -2212,6 +2212,9 @@ pub struct JumpBasicModel {
     /// emulation before each `build_addresses` path walk.  Empty for every model
     /// the basic recovery handles directly.
     loop_carried_seeds: Vec<(VarnodeId, uintb)>,
+    /// (kuna `switchtrim`) The range was opened to `[0, jumptablemax)` for a
+    /// table no guard bounds; the rows end where the table's layout does.
+    trim_rows: bool,
 }
 
 impl JumpBasicModel {
@@ -2233,12 +2236,40 @@ impl JumpBasicModel {
             orig_path_meld: PathMeld::new(),
             is_partial: false,
             loop_carried_seeds: Vec::new(),
+            trim_rows: false,
         }
     }
 
     /// Get the possible paths to the switch (C++ `getPathMeld`).
     pub fn get_path_meld(&self) -> &PathMeld {
         &self.path_meld
+    }
+
+    /// (kuna `switchguardmerge`) The values of `vn` the guards not folded into
+    /// the switch, and the CBRANCH blocks `guards` on the side of their out-edge
+    /// `toward`, still let through to it.
+    pub fn kuna_standing_guard_range(&self, fd: &Funcdata, vn: VarnodeId, guards: &[(BlockId, BlockId)]) -> Option<CircleRange> {
+        let (mut rng, _) = Self::width_range(fd, vn);
+        let mut standing: Vec<GuardRecord> = self.selectguards.iter().filter(|g| g.get_branch().is_some()).cloned().collect();
+        for &(block, toward) in guards {
+            let cbranch = fd.bb_op_tail(block)?;
+            let op = fd.obank().get(cbranch)?;
+            if op.code() != OpCode::CPUI_CBRANCH {
+                return None;
+            }
+            let indpath = (0..2).find(|&i| fd.bblocks_ref().block(block).get_out(i) == toward)?;
+            let mut guard_vn = op.get_in(1)?;
+            let mut guard_rng = CircleRange::new_bool((indpath == 1) != op.is_boolean_flip());
+            standing.push(GuardRecord::new(fd, cbranch, cbranch, indpath, guard_rng.clone(), guard_vn, false));
+            for _ in 0..2 {
+                let Some(read_op) = fd.vbank().get(guard_vn).and_then(|n| n.get_def()) else { break };
+                let Some(newvn) = circlerange_pull_back(fd, &mut guard_rng, read_op, !self.is_partial) else { break };
+                guard_vn = newvn;
+                standing.push(GuardRecord::new(fd, cbranch, read_op, indpath, guard_rng.clone(), guard_vn, false));
+            }
+        }
+        crate::kuna_switchguardrange::intersect(fd, &standing, vn, &mut rng);
+        Some(rng)
     }
 
     /// The normalized value iterator (C++ `getValueRange`).
@@ -3170,10 +3201,31 @@ impl JumpBasicModel {
                 self.mark_foldable_guards(fd);
                 return Ok(true);
             }
+            if unbounded && fd.get_arch().switch_trim && self.kuna_try_trimmed_table(fd, maxtablesize) {
+                return Ok(true);
+            }
             return Ok(false);
         }
         self.mark_foldable_guards(fd);
         Ok(true)
+    }
+
+    /// (kuna `switchtrim`) Open an unbounded single-LOAD table to
+    /// `[0, maxtablesize)` and let the sanity check end it where its layout
+    /// does (see [`crate::p2_lift::kuna_switchtrim`]).
+    fn kuna_try_trimmed_table(&mut self, fd: &Funcdata, maxtablesize: uint4) -> bool {
+        let loads = (0..self.path_meld.num_ops())
+            .filter(|&i| self.path_meld.get_op(i).and_then(|op| fd.obank().get(op)).is_some_and(|o| o.code() == OpCode::CPUI_LOAD))
+            .count();
+        if loads != 1 || maxtablesize < 2 || !self.selectguards.is_empty() || self.jrange().get_size() <= 0xffff {
+            return false;
+        }
+        let Some(start_vn) = self.jrange().get_start_varnode() else { return false };
+        let Some(vsize) = fd.vbank().get(start_vn).map(|v| v.get_size()) else { return false };
+        let jr = self.jrange_range_mut();
+        jr.set_range(CircleRange::new(0, maxtablesize as uintb, vsize, 1));
+        self.trim_rows = true;
+        true
     }
 
     /// (kuna) GH-9191: bound a LOAD-table jump-table by a modulo/and-mask on its
@@ -4718,15 +4770,26 @@ impl JumpBasicModel {
             let startvn = jr
                 .get_start_varnode()
                 .ok_or_else(|| KunaError::lowlevel("buildAddresses: no start vn"))?;
-            let raw = emul.emulate_path(val, &self.path_meld, startop, startvn)?;
+            let raw = match emul.emulate_path(val, &self.path_meld, startop, startvn) {
+                Ok(raw) => raw,
+                Err(_) if self.trim_rows && !addresstable.is_empty() => break,
+                Err(e) => return Err(e),
+            };
             addresstable.push(Self::destination(&spc, mask, raw));
             if let Some(lc) = loadcounts.as_mut() {
                 let count = emul
                     .loadpoints_len()
                     .ok_or_else(|| KunaError::lowlevel("buildAddresses: loadcounts without loadpoints"))?;
+                let stalled = lc.last().is_some_and(|&prev| prev as usize >= count) || count == 0;
                 lc.push(count as int4);
+                if self.trim_rows && (stalled || raw == 0) {
+                    break;
+                }
             }
             notdone = jr.next()?;
+        }
+        if self.trim_rows && addresstable.len() < 2 {
+            return Err(KunaError::lowlevel("switchtrim: fewer than two table rows"));
         }
         // Hand back any collected LOAD records.
         if let Some(lp) = loadpoints.as_mut() {
@@ -5079,6 +5142,12 @@ impl JumpModel for JumpBasicModel {
             return Ok(true);
         }
         let mut i = Self::reasonable_rows(fd, addresstable);
+        if self.trim_rows {
+            i = i.min(crate::p2_lift::kuna_switchtrim::trimmed_rows(fd, addresstable, loadpoints, loadcounts));
+            if i < 2 {
+                return Ok(false);
+            }
+        }
         if i == 0 {
             return Ok(false);
         }
@@ -5112,6 +5181,7 @@ impl JumpModel for JumpBasicModel {
         // C++ JumpBasic::clone only clones the JumpValues iterator.
         let mut res = JumpBasicModel::new();
         res.is_model2 = self.is_model2;
+        res.trim_rows = self.trim_rows;
         if let Some(jr) = &self.jrange {
             res.jrange = Some(jr.clone_box());
         }
@@ -5131,6 +5201,7 @@ impl JumpModel for JumpBasicModel {
         self.extravn = None;
         self.orig_path_meld.clear();
         self.loop_carried_seeds.clear();
+        self.trim_rows = false;
     }
 
     fn take_rebuild(&mut self) -> bool {
@@ -5944,6 +6015,52 @@ impl JumpTable {
         Ok(())
     }
 
+    /// (kuna `switchguardmerge`) The values of `vn` the guards not folded into
+    /// the switch, and the CBRANCH blocks `guards` on the side of their out-edge
+    /// `toward`, still let through, when the basic model recovered it.
+    pub fn kuna_standing_guard_range(&self, fd: &Funcdata, vn: VarnodeId, guards: &[(BlockId, BlockId)]) -> Option<CircleRange> {
+        self.jmodel
+            .as_ref()
+            .and_then(|m| m.as_any().downcast_ref::<JumpBasicModel>())
+            .and_then(|m| m.kuna_standing_guard_range(fd, vn, guards))
+    }
+
+    /// (kuna `switchguardmerge`) Fold out-edge `from` into out-edge `into`:
+    /// every table entry reaching `from` now reaches `into` (at `into_addr`),
+    /// and the out-edges after `from` move down one, as removing that edge
+    /// leaves them.
+    pub fn kuna_merge_out_edge(&mut self, from: int4, into: int4, into_addr: &Address) {
+        let shift = |p: int4| if p > from { p - 1 } else { p };
+        for pair in &self.block2addr {
+            if pair.block_position == from {
+                self.addresstable[pair.address_index as usize] = into_addr.clone();
+            }
+        }
+        for pair in &mut self.block2addr {
+            if pair.block_position == from {
+                pair.block_position = into;
+            }
+            pair.block_position = shift(pair.block_position);
+        }
+        self.block2addr.sort();
+        for (pos, _) in &mut self.case_values {
+            if *pos == from {
+                *pos = into;
+            }
+            *pos = shift(*pos);
+        }
+        self.case_values.sort();
+        self.case_values.dedup();
+        for edge in [&mut self.default_block, &mut self.last_block] {
+            if *edge == from {
+                *edge = into;
+            }
+            if *edge >= 0 {
+                *edge = shift(*edge);
+            }
+        }
+    }
+
     /// Return the number of address table entries that target the given block
     /// (C++ `JumpTable::numIndicesByBlock`, `jumptable.cc:2588`).
     pub fn num_indices_by_block(&self, fd: &Funcdata, bl: BlockId) -> KunaResult<int4> {
@@ -6241,7 +6358,10 @@ impl JumpTable {
     /// the `jumpassist` userop family — `// STUB(W4)`, recorded as a loss).  Each
     /// model's `recoverModel` emulation-drives the index range over the landed
     /// [`EmulateFunction`].  (kuna) A basic model rejected because it cannot
-    /// label the matched flow-time `rows` ends the walk with no model.
+    /// label the matched flow-time `rows` ends the walk with no model.  A basic
+    /// model that only matched by `switchtrim` opening an unguarded table yields
+    /// to `JumpBasic2` when that model bounds the switch through a default path
+    /// (an AArch64 hardened `cmp; csel xI, xI, xzr, ls` clamp).
     fn recover_model(
         &mut self,
         fd: &mut Funcdata,
@@ -6264,7 +6384,6 @@ impl JumpTable {
         // STUB(W4): the CALLOTHER `JumpAssisted` (jumpassist userop) model — not
         // yet ported (needs pcodeinjectlib/ExecutablePcode).  Recorded as a loss;
         // the basic models cover the corpus switches.
-
         // Try the basic model.
         let mut jbasic = JumpBasicModel::new();
         jbasic.label_rows = rows;
@@ -6276,11 +6395,11 @@ impl JumpTable {
         }
         // Stash the basic model's path-meld for model 2's piggyback.
         let basic_path = jbasic.get_path_meld().clone();
-        if basic_ok {
+        if basic_ok && !jbasic.trim_rows {
             self.jmodel = Some(Box::new(jbasic));
             return Ok(());
         }
-        if jbasic.rows_rejected {
+        if !basic_ok && jbasic.rows_rejected {
             self.drop_model_for_rows(fd, true);
             return Ok(());
         }
@@ -6295,6 +6414,10 @@ impl JumpTable {
         }
         if m2_ok {
             self.jmodel = Some(Box::new(jbasic2));
+            return Ok(());
+        }
+        if basic_ok {
+            self.jmodel = Some(Box::new(jbasic));
             return Ok(());
         }
         // (kuna) Neither value-range model could bound the destination.  When
@@ -6386,7 +6509,19 @@ impl JumpTable {
             r?;
             crate::decompile_drive::deadline_passed_in("jump-table address emulation");
             let bounded = self.flow_bounded_values(fd);
-            self.sanity_check(fd, None)?;
+            let trim = self
+                .jmodel
+                .as_ref()
+                .and_then(|m| m.as_any().downcast_ref::<JumpBasicModel>())
+                .is_some_and(|m| m.trim_rows);
+            if trim {
+                self.loadpoints = loads.clone();
+                let checked = self.sanity_check(fd, Some(&loadcounts));
+                self.loadpoints.clear();
+                checked?;
+            } else {
+                self.sanity_check(fd, None)?;
+            }
             let cut = self.cut_rows_dispatched(fd, bounded, loadcounts.len());
             self.row_loads =
                 Self::kept_row_loads(loads, &loadcounts, self.addresstable.len(), &cut);

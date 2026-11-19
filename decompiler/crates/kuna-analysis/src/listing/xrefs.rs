@@ -432,6 +432,24 @@ impl XrefIndex {
         self.veneers.iter().map(|(&entry, veneer)| (entry, veneer.slot)).collect()
     }
 
+    /// (kuna `addrtable`) File each slot of an absolute pointer table as a
+    /// [`XrefKind::Data`] reference from the slot to the code it holds, the
+    /// reference Ghidra's `AddressTable.makeTable` creates. A slot is data, so it
+    /// is not attributed to any function.
+    fn file_pointer_tables(&mut self, tables: &[crate::addrtable::AddrTable], width: u64) {
+        for table in tables {
+            for (slot, &to) in (table.addr..).step_by(width as usize).zip(&table.elements) {
+                let r = Xref { from: slot, to, kind: XrefKind::Data, instruction: format!("addr 0x{to:x}") };
+                let incoming = self.by_target.entry(to).or_default();
+                incoming.push(r.clone());
+                sort_dedup(incoming, true);
+                let outgoing = self.by_source.entry(slot).or_default();
+                outgoing.push(r);
+                sort_dedup(outgoing, false);
+            }
+        }
+    }
+
     /// Everything the single instruction at `vma` references.
     pub fn refs_from_instruction(&self, vma: u64) -> &[Xref] {
         self.by_source.get(&vma).map_or(&[], Vec::as_slice)
@@ -1572,6 +1590,10 @@ fn descend(
     let mut index = st.finish(veneers, preserve_bodies);
     if !measure {
         index.flow = None;
+    }
+    if arch.analysis_addrtable && sections_are_runtime {
+        let width = crate::addrtable::ptr_width(file);
+        index.file_pointer_tables(&crate::addrtable::scan_address_tables(file, 2, width), width as u64);
     }
     index.stopped = stopped;
     index

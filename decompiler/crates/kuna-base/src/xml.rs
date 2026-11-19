@@ -2237,12 +2237,25 @@ mod tests {
         // and kuna-dyldimage-merge / dyldimage A+B loads two dyld shared cache images as one program
         // and kuna-blobs / an embedded PNG, GIF, JPEG, zip or gzip is returned by name
         // and kuna-repstring, kuna-repstring-i386 / x86 rep movs/stos/cmpsb print as copy, fill and compare builtins
+        // and kuna-gotosink / backward gotos become loops, a jump over a run becomes an if
+        // and kuna-looprotate / a guarded do-while loop becomes a while loop
+        // and kuna-switchguardmerge / an outlier equality test joins the switch its guard leads to
+        // and kuna-switchguardmerge-default / a default chain of equality tests joins its switch
+        // and kuna-switchtrim / an unguarded jump table ends where its layout ends
         // and kuna-reentereddispatch / a re-entered dispatch keeps every step's store
         // and kuna-dispatch-values / dispatcher return values survive narrowing and copies
+        // and kuna-addrtable / a writable function-pointer table typed code *[N] (option addrtable)
+        // and kuna-rawpatterns / a headerless image is swept with its language's function-start patterns
+        // and kuna-importvote / an undeclared import takes the arguments its other call sites pass (option importvote)
+        // and kuna-formatcallees / undeclared format functions are typed from their formats (option formatstring)
+        // and kuna-strcpychain / memcpy(d, s, strlen(s) + 1) prints as strcpy(d, s) (option helperroles)
+        // and kuna-objectview / a TE or raw image runs the object-file analysis passes over a rebuilt view (option objectview)
+        // and kuna-aifdataveto / a gap entry the code reads as data is not a function (option aif)
         // and ghangr-go-paniccheck-return / a returning Go panic check keeps its continuation
         // and ghangr-go-aarch64-stack-stride / adjacent eight-byte spills keep their declared inputs
         // and ghangr-go-mcall-resumption / a scheduler switch preserves its caller's continuation
-        assert_eq!(count, 824, "corpus file count drifted");
+        // and kuna-relswitch-a64 / an arm64e hardened jump table is a switch, and its inline table no function
+        assert_eq!(count, 837, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

@@ -251,7 +251,9 @@ pub fn stated_width(data: &Funcdata, fc: &FuncCallSpecs, addr: &Address, size: i
         return data.get_func_proto().possible_input_param(addr, width).then_some(width);
     }
     let takes = |a: &Address, s: int4, strict: bool| crate::kuna_entryreads::callee_takes(data, entry, a, s, strict);
-    let read = if stated.arity_sound {
+    let read = if stated.callers_vote {
+        true
+    } else if stated.arity_sound {
         takes(addr, size, false)
     } else {
         takes(addr, size, true) && stated.inputs.iter().filter(|(a, _, _)| is_register(a)).all(|(a, s, _)| takes(a, *s, true))

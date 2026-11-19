@@ -1,0 +1,61 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna-switchguardmerge-default: the switch's default is the outlier test
+    (option switchguardmerge).
+
+    Source (x86-64, clang -O2):
+      unsigned uns(unsigned x) {
+        switch (x) {
+        case 10: return f0(x); ... case 16: return f6(x);
+        case 1000: return f8(x + 1);
+        default: return 7;
+        }
+      }
+
+    clang sends every value outside 10..16 to a block testing x == 1000, which
+    the guard folding makes the switch's default.
+
+    Stage: P2/switchnorm, ActionSwitchGuardMerge: an equality chain that is
+    the switch's default (entered from the switch alone) becomes cases, and
+    its last miss the default.
+
+    Pass 1 (default) prints case 1000 and default: return 7; pass 2
+    (switchguardmerge off) the test after the switch.
+-->
+<bytechunk space="ram" offset="0x401000" readonly="true">
+f30f1efa8d043fc30f1f840000000000f30f1efa8d047fc30f1f840000000000f30f1efa8d04bd00000000c30f1f4000f30f1efa8d04bfc30f1f840000000000f30f1efa01ff8d047fc3660f1f440000f30f1efa8d04fd0000000029f8c36690f30f1efa8d04fd00000000c30f1f4000f30f1efa8d04ffc30f1f840000000000f30f1efa01ff8d04bfc3660f1f440000f30f1efa8d04bf8d0447c30f1f440000f30f1efac1e7028d047fc30f1f440000f30f1efa8d047f8d0487c30f1f440000f30f1efa83ff06771189f83eff24c50020400031ffe926ffffff83ff64742681ffc80000007550bfc8000000e99fffffffbf04000000e945ffffffbf02000000e91bffffffbf65000000e971ffffffbf03000000e917ffffffbf01000000e9edfeffffbf05000000e923ffffffbf06000000e929ffffffb8ffffffffc30f1f00f30f1efa83ff06771189f83eff24c53820400031ffe9a6feffffc705441f00000100000083ff64750abf64000000e90dffffffb8ffffffffc3bf04000000e9bdfeffffbf02000000e993feffffbf03000000e999feffffbf01000000e96ffeffffbf05000000e9a5feffffbf06000000e9abfeffff66662e0f1f840000000000f30f1efa8d47f683f80677123eff24c570204000bf0a000000e922feffff81ffe80300007546bfe9030000e990feffffbf0e000000e946feffffbf0c000000e91cfeffffbf0d000000e922feffffbf0b000000e9f8fdffffbf0f000000e92efeffffbf10000000e934feffffb807000000c366666666662e0f1f840000000000f30f1efa5553508b3c2500100000e86dfeffff89c3bf01000000e8e1feffff89c5bf03000000e855ffffff01e801d8894424048b442404660f1f840000000000ebfe
+</bytechunk>
+<bytechunk space="ram" offset="0x402000" readonly="true">
+d3104000000000001911400000000000fb104000000000000f11400000000000f11040000000000023114000000000002d114000000000005311400000000000971140000000000083114000000000008d114000000000007911400000000000a111400000000000ab11400000000000d4114000000000000e12400000000000fa114000000000000412400000000000f01140000000000018124000000000002212400000000000
+</bytechunk>
+<symbol space="ram" offset="0x401000" name="f0"/>
+<symbol space="ram" offset="0x401010" name="f1"/>
+<symbol space="ram" offset="0x4010a0" name="f10"/>
+<symbol space="ram" offset="0x4010b0" name="f11"/>
+<symbol space="ram" offset="0x401020" name="f2"/>
+<symbol space="ram" offset="0x401030" name="f3"/>
+<symbol space="ram" offset="0x401040" name="f4"/>
+<symbol space="ram" offset="0x401050" name="f5"/>
+<symbol space="ram" offset="0x401060" name="f6"/>
+<symbol space="ram" offset="0x401070" name="f7"/>
+<symbol space="ram" offset="0x401080" name="f8"/>
+<symbol space="ram" offset="0x401090" name="f9"/>
+<symbol space="ram" offset="0x401140" name="side"/>
+<symbol space="ram" offset="0x401240" name="_start"/>
+<symbol space="ram" offset="0x4010c0" name="two"/>
+<symbol space="ram" offset="0x4011c0" name="uns"/>
+</binaryimage>
+<script>
+  <com>lo fu uns</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option switchguardmerge off</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="KUNA-SWITCHGUARDMERGE-DEFAULT #1: the outlier is a case (default)" min="1" max="1">case 1000:</stringmatch>
+<stringmatch name="KUNA-SWITCHGUARDMERGE-DEFAULT #2: the last miss is the default (default)" min="1" max="1">default:</stringmatch>
+<stringmatch name="KUNA-SWITCHGUARDMERGE-DEFAULT #3: switchguardmerge off tests the outlier after the switch" min="1" max="1">if \(a0 != 1000\)</stringmatch>
+</decompilertest>

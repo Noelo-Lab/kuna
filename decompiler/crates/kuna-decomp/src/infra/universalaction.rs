@@ -374,6 +374,7 @@ pub fn universal_sched(
         rrow!("constspaceload", "analysis", crate::kuna_constspaceload::RuleConstSpaceLoad::with_group("analysis")),
         rrow!("x87truncate", "analysis", crate::kuna_x87truncate::RuleX87Truncate::new("analysis")),
         rrow!("gobool", "analysis", crate::kuna_gobool::RuleGoBoolReturn::with_group(false, "analysis")),
+        rrow!("strcpychain", "analysis", crate::kuna_helperrole::RuleStrcpyChain::new("analysis")),
         rrow!("boolsignless", "analysis", crate::kuna_flagcompare::RuleBoolSignLess::with_group("analysis")),
         rrow!("sborrowge", "analysis", crate::kuna_flagcompare::RuleSborrowGe::with_group("analysis")),
         rrow!("shiftcompare", "analysis", crate::ruleaction_2::RuleShiftCompare),
@@ -627,6 +628,10 @@ pub fn universal_sched(
             stackstall,
             act!(crate::p6_variables::kuna_savedregisterspills::ActionRestrictLocalSavedLanes::boxed()),
             act!(ActionRedundBranch::boxed("deadcontrolflow")),
+            // (kuna) looprotate (option `looprotate`, default-on): a guarded
+            // do-while whose guard is the tail's test on the entry values gets a
+            // new header that tests first, so the structurer sees a while loop.
+            act!(crate::p8_structure::kuna_looprotate::ActionLoopRotate::boxed("blockrecovery")),
             act!(ActionBlockStructure::boxed("blockrecovery")),
             act!(ActionConstantPtr::boxed("typerecovery")),
             SchedNode::Pool { flags: REPEAT, name: "oppool2", rules: oppool2_rules },
@@ -650,6 +655,9 @@ pub fn universal_sched(
             act!(ActionDeadCode::boxed_narrowing("deadcode")),
             act!(ActionDoNothing::boxed("deadcontrolflow")),
             act!(ActionSwitchNorm::boxed("switchnorm")),
+            // (kuna) switchguardmerge (option `switchguardmerge`, default-on): an
+            // equality test a range guard or the default leads to joins the switch.
+            act!(crate::p2_lift::kuna_switchguardmerge::ActionSwitchGuardMerge::boxed("switchnorm")),
             SchedNode::Action(Box::new(move || {
                 Box::new(crate::kuna_loweredswitch::ActionLowerSwitchDetect::with_store(
                     false,
@@ -883,6 +891,10 @@ pub fn universal_sched(
             // final: the Cover legality test sees the variable's complete live range,
             // and no merge or structuring decision can be perturbed by the move --
             // only which basic block's statement list holds the COPY changes.
+            // (kuna) gotosink (option `gotosink`, default-on): after every other
+            // tree edit, a backward goto becomes a loop and an if-goto over a run
+            // becomes an if around it.
+            act!(crate::p8_structure::kuna_gotosink::ActionGotoSink::boxed("blockrecovery")),
             act!(crate::p6_variables::kuna_paramcopyhoist::ActionParamCopyHoist::boxed("merge")),
             act!(ActionPrototypeWarnings::boxed("protorecovery")),
             act!(ActionStop::boxed("base")),

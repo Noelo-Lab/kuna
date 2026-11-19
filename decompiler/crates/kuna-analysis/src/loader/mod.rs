@@ -75,6 +75,7 @@ mod kuna_sparc_relcode;
 // (kuna) `relocrebase`: rebase the load-time analysis facts of a relocatable
 // object into the loaded image's address space (GH-289).
 pub mod kuna_relocrebase;
+pub mod kuna_objectview;
 pub(crate) mod le;
 // (kuna) `dynrelocs`: apply a LINKED image's dynamic relocations (.rela.dyn /
 // .rel.dyn / .rela.plt) so a GOT slot holds the value the run-time loader

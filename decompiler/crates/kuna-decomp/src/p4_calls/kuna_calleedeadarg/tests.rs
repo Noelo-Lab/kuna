@@ -198,6 +198,7 @@ fn a_target_takes_only_what_it_stated() {
         vararg_tail: vec![rsi],
         reads: Vec::new(),
         passes: Vec::new(),
+        callers_vote: false,
     };
     // `edi` is a read of the stated `rdi`.
     assert!(takes(&stated, &(3, 0x38, 4)));

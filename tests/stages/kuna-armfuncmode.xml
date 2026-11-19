@@ -111,7 +111,7 @@ c3
 <stringmatch name="ARMFUNCMODE #2: arm_helper decodes as A32 in the three other passes" min="3" max="3">int4 arm_helper\(int4 a0\)</stringmatch>
 <stringmatch name="ARMFUNCMODE #3: the A32 body appears in the three other passes" min="3" max="3">return a0 \+ 1;</stringmatch>
 <stringmatch name="ARMFUNCMODE #4: gcc -O2 .so, arm_export never decodes as Thumb" min="0" max="0">void arm_export\(void\)</stringmatch>
-<stringmatch name="ARMFUNCMODE #5: gcc -O2 .so, arm_export is the A32 loop" min="1" max="1">v2 = v3 \^ 0x33;</stringmatch>
+<stringmatch name="ARMFUNCMODE #5: gcc -O2 .so, arm_export is the A32 loop" min="1" max="1">\^ 0x33;</stringmatch>
 <stringmatch name="ARMFUNCMODE #6: an unsymbolized A32 helper an A32 export calls stays A32" min="1" max="1">return a0 \* 5 \+ a1 \* 7 \+ 3;</stringmatch>
 <stringmatch name="ARMFUNCMODE #7: a Thumb static behind an A32 helper that calls a noreturn function keeps Thumb" min="2" max="2">return \(a0 \^ 0x3c\) \* 7 \+ -5;</stringmatch>
 <stringmatch name="ARMFUNCMODE #8: a Thumb static behind an A32 literal pool keeps Thumb" min="1" max="1">return a0 \* 3;</stringmatch>

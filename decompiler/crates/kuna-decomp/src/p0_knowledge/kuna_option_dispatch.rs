@@ -101,6 +101,7 @@ kuna_options! { self, p1;
     },
     "returnbranch" => on_off!(return_branch, "Computed jumps through the return register"),
     "globalarrayanchor" => on_off!(global_array_anchor, "Global array anchor preservation"),
+    "helperroles" => on_off!(helper_roles, "Role-tagged helper-call rewrites"),
     "signedness" => {
         let (val, msg) = crate::kuna_typeround::OptionSignedness.apply(p1)?;
         self.signedness = val;
@@ -112,6 +113,9 @@ kuna_options! { self, p1;
         self.ret_split_global = val;
         Ok(msg)
     },
+    "gotosink" => on_off!(goto_sink, "goto sinking and backward-goto loops"),
+    "looprotate" => on_off!(loop_rotate, "Guarded do-while loops rotated to while loops"),
+    "switchguardmerge" => on_off!(switch_guard_merge, "Equality guards merged into their switch"),
     "retsplitlimit" => {
         let (val, msg) =
             crate::p8_structure::kuna_retsplitlimit::OptionRetSplitLimit.apply(p1)?;
@@ -325,6 +329,7 @@ kuna_options! { self, p1;
     "highsliceguard" => on_off!(highslice_guard, "High-byte slice jump-table guard"),
     "switchsharedcase" => on_off!(switch_shared_case, "Switch loop-carried-guard table"),
     "switchmultipred" => on_off!(switch_multi_pred, "Switch multi-predecessor unrolled-guard table"),
+    "switchtrim" => on_off!(switch_trim, "Unguarded jump-table recovery with layout trimming"),
     "unrolledguard" => on_off!(unrolled_guard, "Interleaved unrolled-guard jump-table partial-flow recovery"),
     "jtsharepartial" => on_off!(jumptable_share_partial, "Shared jump-table partial sub-decompilation"),
     "deadcascade" => {
@@ -778,6 +783,7 @@ kuna_options! { self, p1;
     "unwindstarts" => {
         on_off!(analysis_unwindstarts, "Mach-O __unwind_info function-start discovery")
     },
+    "importvote" => on_off!(analysis_importvote, "Undeclared import call-site vote"),
     "funcstart_patterns" => {
         on_off!(analysis_funcstart_patterns, "Full byte-pattern function-start pass")
     },
@@ -913,6 +919,9 @@ kuna_options! { self, p1;
         analysis_lazyfuncs,
         "Materialize Function objects on demand instead of one per entry"
     ),
+    "objectview" => {
+        on_off!(analysis_objectview, "Object-file analysis passes on TE and raw images")
+    },
     "noreturn_disc" => {
         on_off!(analysis_noreturn_disc, "Discovered-no-return Listing consumer")
     },
@@ -949,6 +958,9 @@ kuna_options! { self, p1;
     },
     "tailcallentry" => {
         on_off!(analysis_tailcallentry, "Tail-call function-entry recovery Listing consumer")
+    },
+    "funcchunks" => {
+        on_off!(analysis_funcchunks, "Function chunk bodies (main chunk + shared tails)")
     },
     "objc" => on_off!(analysis_objc, "Mach-O Objective-C metadata recovery pass"),
     "swiftmetadata" => on_off!(analysis_swiftmetadata, "Swift runtime-metadata recovery pass"),

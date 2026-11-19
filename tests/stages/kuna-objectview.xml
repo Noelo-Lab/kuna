@@ -1,0 +1,58 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    A UEFI TE image and a headerless raw image ran none of the object-file
+    analysis passes: every pass starts from an object::File and neither
+    container has one. Their strings were bare addresses and the deferred
+    Listing tier never ran.
+
+    Stage model: P1 program-prep, code-data-partition
+    (loader/kuna_objectview.rs rebuilds a PE view of the TE and an ELF view of
+    the raw image; engine.rs run_object_view_passes runs the pass list over it
+    at the commit).
+
+    Option: objectview (default on). Pass 1 of each container is the option
+    off (the bug), pass 2 the default.
+
+    Fixtures: tests/stages/fixtures/objectview, the same linked .text/.rodata
+    of objectview.c as a flat image and as a TE (gen_objectview.py). The
+    20-character string at 0x402000 is read at entry+4.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file tests/stages/fixtures/objectview/objectview.te</com>
+  <com>option objectview off</com>
+  <com>read symbols</com>
+  <com>load addr 0x401020</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/stages/fixtures/objectview/objectview.te</com>
+  <com>read symbols</com>
+  <com>load addr 0x401020</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load raw x86:LE:64:default:gcc 0x401000 0x401020 tests/stages/fixtures/objectview/objectview.bin</com>
+  <com>option objectview off</com>
+  <com>read symbols</com>
+  <com>load addr 0x401020</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load raw x86:LE:64:default:gcc 0x401000 0x401020 tests/stages/fixtures/objectview/objectview.bin</com>
+  <com>read symbols</com>
+  <com>load addr 0x401020</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="OBJECTVIEW #1: off, the TE entry keeps a bare address" min="1" max="1">v1 = \*\(char \*\)\(v2 \+ 0x402000LL\);</stringmatch>
+<stringmatch name="OBJECTVIEW #2: on, the TE string is a literal" min="1" max="1">v1 = "hello from a TE image"\[v2\];</stringmatch>
+<stringmatch name="OBJECTVIEW #4: off, the raw image keeps a bare address" min="1" max="1">v1 = \*\(char \*\)\(a0 \+ 0x402000L\);</stringmatch>
+<stringmatch name="OBJECTVIEW #5: on, the raw image names the detected string" min="1" max="1">v1 = s_402000\[a0\];</stringmatch>
+</decompilertest>

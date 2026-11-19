@@ -1,0 +1,70 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna-switchguardmerge: a switch with far outliers (option switchguardmerge).
+
+    Source (x86-64, -O2):
+      int two(int x) {
+        switch (x) {
+        case 0: return f0(x); ... case 6: return f6(x);
+        case 100: return f8(x + 1); case 200: return f9(x);
+        }
+        return -1;
+      }
+
+    gcc guards the jump table with x <= 6 and 0 <= x, repeats the range check
+    unsigned (x >u 6 lands on case 0, which the recovery folds as the default),
+    and tests 100 and 200 on the first guard's other side, so the switch prints
+    as if (a0 <= 6) { if (0 <= a0) { switch ... } } if (a0 == 100) ...
+
+    Stage: P2/switchnorm, ActionSwitchGuardMerge: the guard is evaluated on
+    the outliers and on every case label, the standing guards admit only case
+    labels, the equality chain becomes two more cases, the chain's miss becomes
+    the default, and the guard is removed. side() stores to a global on the
+    way to its test, so it is left alone.
+
+    Pass 1 (default) prints one switch with case 100 and case 200; pass 2
+    (switchguardmerge off) the guard and the separate tests.
+-->
+<bytechunk space="ram" offset="0x401000" readonly="true">
+f30f1efa8d043fc30f1f840000000000f30f1efa8d047fc30f1f840000000000f30f1efa8d04bd00000000c30f1f4000f30f1efa8d04bfc30f1f840000000000f30f1efa8d047f01c0c3660f1f440000f30f1efa8d04fd0000000029f8c36690f30f1efa8d04fd00000000c30f1f4000f30f1efa8d04ffc30f1f840000000000f30f1efa8d04bf01c0c3660f1f440000f30f1efa8d04bf8d0447c30f1f440000f30f1efa8d047fc1e002c30f1f440000f30f1efa8d047f8d0487c30f1f440000f30f1efa83ff067f1f85ff0f88af00000083ff060f879600000089ff3eff24fd002040000f1f400083ff64747381ffc80000000f8587000000bfc8000000eb90bf06000000e956ffffff660f1f440000bf01000000e9f6feffff660f1f440000bf02000000e9f6feffff660f1f440000bf03000000e9f6feffff660f1f440000bf04000000e9f6feffff660f1f440000bf05000000e9f6feffff660f1f440000bf65000000e916ffffff660f1f44000031ffe989feffff660f1f840000000000b8ffffffffc3662e0f1f840000000000f30f1efa83ff06770f89ff3eff24fd382040000f1f440000c7054e1e00000100000083ff647571e9c4feffff0f1f4000bf06000000e996feffff660f1f440000bf01000000e936feffff660f1f440000bf02000000e936feffff660f1f440000bf03000000e936feffff660f1f440000bf04000000e936feffff660f1f440000bf05000000e936feffff31ffe9dffdffff0f1f8000000000b8ffffffffc36690f30f1efa83ff100f878300000083ff090f869200000083ef0b83ff050f878e0000003eff24fd70204000660f1f440000bf0e000000e9d6fdffff660f1f440000bf10000000e9e6fdffff660f1f440000bf0f000000e9c6fdffff660f1f440000bf0b000000e976fdffff660f1f440000bf0c000000e976fdffff660f1f440000bf0d000000e976fdffff660f1f44000081ffe80300007510bfe9030000e9aefdffff660f1f440000b807000000c36690bf0a000000e916fdffff660f1f440000f30f1efa50584883ec108b3c2500100000e8bafdffffbf0100000089c2e87efeffffbf0300000001c2e812ffffff01c28954240c8b44240cebfe
+</bytechunk>
+<bytechunk space="ram" offset="0x402000" readonly="true">
+70114000000000001011400000000000201140000000000030114000000000004011400000000000501140000000000000114000000000001a12400000000000d011400000000000e011400000000000f01140000000000000124000000000001012400000000000c0114000000000009012400000000000a012400000000000b012400000000000601240000000000080124000000000007012400000000000
+</bytechunk>
+<symbol space="ram" offset="0x401000" name="f0"/>
+<symbol space="ram" offset="0x401010" name="f1"/>
+<symbol space="ram" offset="0x4010a0" name="f10"/>
+<symbol space="ram" offset="0x4010b0" name="f11"/>
+<symbol space="ram" offset="0x401020" name="f2"/>
+<symbol space="ram" offset="0x401030" name="f3"/>
+<symbol space="ram" offset="0x401040" name="f4"/>
+<symbol space="ram" offset="0x401050" name="f5"/>
+<symbol space="ram" offset="0x401060" name="f6"/>
+<symbol space="ram" offset="0x401070" name="f7"/>
+<symbol space="ram" offset="0x401080" name="f8"/>
+<symbol space="ram" offset="0x401090" name="f9"/>
+<symbol space="ram" offset="0x401190" name="side"/>
+<symbol space="ram" offset="0x4012f0" name="_start"/>
+<symbol space="ram" offset="0x4010c0" name="two"/>
+<symbol space="ram" offset="0x401230" name="uns"/>
+</binaryimage>
+<script>
+  <com>lo fu two</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu side</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option switchguardmerge off</com>
+  <com>lo fu two</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="KUNA-SWITCHGUARDMERGE #1: the outliers are cases of the switch (default)" min="1" max="1">case 100:</stringmatch>
+<stringmatch name="KUNA-SWITCHGUARDMERGE #2: both outliers are cases (default)" min="1" max="1">case 200:</stringmatch>
+<stringmatch name="KUNA-SWITCHGUARDMERGE #3: switchguardmerge off keeps the range guard" min="1" max="1">if \(a0 &lt;= 6\)</stringmatch>
+<stringmatch name="KUNA-SWITCHGUARDMERGE #4: one switch per function" min="3" max="3">switch\(a0\)</stringmatch>
+<stringmatch name="KUNA-SWITCHGUARDMERGE #5: a global store on the way to the test keeps it outside the switch (side), and the test prints with the option off (two)" min="2" max="2">if \(a0 != 100\)</stringmatch>
+</decompilertest>

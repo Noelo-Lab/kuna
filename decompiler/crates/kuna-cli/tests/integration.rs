@@ -906,5 +906,14 @@ mod nullable_relocations;
 #[path = "call_site_prototype.rs"]
 mod call_site_prototype;
 
+#[path = "addrtable_xrefs.rs"]
+mod addrtable_xrefs;
+
+#[path = "aif_data_veto.rs"]
+mod aif_data_veto;
+
+#[path = "funcchunks_cli.rs"]
+mod funcchunks_cli;
+
 #[path = "xrefs_immutable_got.rs"]
 mod xrefs_immutable_got;

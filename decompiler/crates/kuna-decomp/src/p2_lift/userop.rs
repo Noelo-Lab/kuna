@@ -146,6 +146,8 @@ pub const BUILTIN_MEMSET64: uint4 = 0x1000000d;
 /// (kuna) Built-in id for `builtin_memcmp`, the comparison a `repz cmpsb`
 /// computes (`repstring`).
 pub const BUILTIN_MEMCMP: uint4 = 0x1000000e;
+/// (kuna) Built-in id for `strcpy` (`helperroles`).
+pub const BUILTIN_STRCPY: uint4 = 0x10000040;
 
 // ---------------------------------------------------------------------------
 // UserOpBase + UserPcodeOp hierarchy (userop.hh:47-318)
@@ -1070,6 +1072,13 @@ impl UserOpManage {
             }
             BUILTIN_KERNEL_BUG => UserPcodeOp::new_unspecialized(b"BUG", BUILTIN_KERNEL_BUG as int4),
             BUILTIN_KERNEL_WARN => UserPcodeOp::new_unspecialized(b"__WARN", BUILTIN_KERNEL_WARN as int4),
+            BUILTIN_STRCPY => {
+                let ptr_size = types.get_size_of_pointer();
+                let word_size = types.get_default_data_space_word_size();
+                let c_type = types.get_type_char();
+                let ptr_type = types.get_type_pointer(ptr_size, c_type, word_size);
+                UserPcodeOp::new_datatype(b"strcpy", BUILTIN_STRCPY as int4, Some(Rc::clone(&ptr_type)), &[Some(Rc::clone(&ptr_type)), Some(ptr_type)])
+            }
             _ => return Err(KunaError::lowlevel("Bad built-in userop id")),
         };
         self.builtinmap.insert(i, res);

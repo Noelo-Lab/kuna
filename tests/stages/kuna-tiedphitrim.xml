@@ -185,6 +185,8 @@ b801000000c3
 <symbol space="ram" offset="0x315f0" name="use9"/>
 </binaryimage>
 <script>
+  <!-- this test pins the loop shape the compiler emitted; looprotate would move the test to the top -->
+  <com>option looprotate off</com>
   <com>lo fu sum_msvc</com>
   <com>decompile</com>
   <com>print C</com>

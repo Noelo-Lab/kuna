@@ -4699,6 +4699,29 @@ pointer that is still an unresolved frame-derived expression keeps the INDIRECT
 too, until the merge resolves. Elsewhere such a pointer is usually a cursor into
 a local buffer, and it defers to the mark.
 
+### (kuna) `importvote` — an undeclared import takes what its callers pass
+
+A tail jump to an import (`add esi,1; jmp ext3@plt`) forwards every argument
+register the function leaves untouched, and nothing in the function names them.
+When no libc, Win32, DWARF or demangled declaration reaches the import, the
+forwarded `rdx` was no argument, and the result was dropped too:
+`void g(a0,a1) { ext3(a0,a1 + 1); }`. The import has no body, but the image calls
+it elsewhere. On an x86-64 ELF the analysis tier records every direct
+`call rel32` to a PLT stub (`kuna-analysis/src/analyzers/protos/kuna_importvote.rs`,
+a byte scan). When a function tail-calls an import that no declaration and no
+statement reached, the drive decodes a window around each of that import's call
+sites (`p4_calls/kuna_importvote.rs (seed)`). The window holds the instructions
+since the previous call or branch (at most 16 back, decoded forward from the
+earliest start that lands exactly on the call) and up to 8 after it. A site's
+arity runs through the last SysV argument register it writes; an earlier one it
+leaves alone is its own parameter passed through. A site reads the result when
+the return register is read before it is written after the call. The import's
+vote is the largest site arity, and whether any site reads the result. The vote
+is stated as a `protoorder` statement marked `callers_vote` (pointer-width
+registers of undecided type). `passthrough` takes such a statement's registers
+without asking for a body that reads them, so the forwarder becomes
+`int g(a0,a1,a2) { return ext3(a0,(unsigned int)(a1 + 1),a2); }`.
+
 ### (kuna) `swiftcall` — Swift's `self` and error registers
 
 Swift's convention adds registers the C model has no row for: `swiftself` (x20
@@ -9650,3 +9673,18 @@ never resume their caller, including their ABI wrappers. Disabling `gobounds`
 leaves the no-return decision to the existing `gonoreturn` analysis facts, so
 turning off both options preserves the original flow for auditing. Similar
 application names and explicit type-assertion panics are outside this list.
+
+**Helper-call roles** (`helperroles`, default on; kuna;
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_helperrole.rs (role_of)`,
+`(RuleStrcpyChain)`): a `CALL` is tagged with a role (memcpy, memmove, memset,
+memcmp, strlen, strcpy, strncpy, strcmp) from its callee's name with decorations
+stripped (`_memcpy`, `j_strlen`, `__imp_memcpy`, `memcpy@GLIBC`, a `builtin_`
+prefix), and a `CALLOTHER` from its builtin id (the copy, fill, strlen and strcpy
+builtins), so a rewrite matches on what a call does, not on which spelling of it
+the image used. `RuleStrcpyChain` reads the roles: `memcpy(d, s, strlen(s) + 1)`
+becomes the typed builtin `strcpy(d, s)` (`char *` in and out) when the length's
+source and the copy's source are one value through copies, extensions and the
+`INDIRECT`s a call leaves on a preserved register; the call spec of a rewritten
+`CALL` is deleted, and a `strlen` whose length nobody reads is removed (it has no
+other effect). On `-O2 -fno-builtin` `dup_into` the two calls print as
+`strcpy(a0,a1)`. Pinned by `tests/stages/kuna-strcpychain.xml`.

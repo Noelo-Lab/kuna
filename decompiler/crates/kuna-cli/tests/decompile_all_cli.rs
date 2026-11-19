@@ -919,6 +919,34 @@ fn arm_thumb_pe_functions_and_address_decompile() {
     assert!(stdout.contains("0x401000"), "{stdout}");
 }
 
+/// The entry's direct callees, and theirs, are functions of a TE image too,
+/// through the headerless-image discovery as well as through the PE view.
+#[test]
+fn te_image_discovers_the_entrys_call_closure() {
+    let code = [
+        0xe8, 0x0b, 0x00, 0x00, 0x00, 0xe8, 0x16, 0x00, 0x00, 0x00, 0xc3, 0xcc, 0xcc, 0xcc,
+        0xcc, 0xcc, 0xb8, 0x01, 0x00, 0x00, 0x00, 0xc3, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc,
+        0xcc, 0xcc, 0xcc, 0xcc, 0xe8, 0xeb, 0xff, 0xff, 0xff, 0x83, 0xc0, 0x01, 0xc3,
+    ];
+    let bytes = kuna_analysis::loadimage_te::synthetic::TeImage::arm(&code)
+        .machine(object::pe::IMAGE_FILE_MACHINE_AMD64)
+        .build();
+    let path = common::scratch_file("cli-calls", "te");
+    std::fs::write(&path, bytes).unwrap();
+    let binary = path.to_string_lossy().into_owned();
+    let sp = specs();
+
+    for extra in [&[][..], &["--option", "objectview", "off"][..]] {
+        let mut args = vec!["functions", binary.as_str(), "--sleighpath", sp.as_str()];
+        args.extend_from_slice(extra);
+        let (stdout, stderr, ok) = run_kuna(&args);
+        assert!(ok, "TE functions failed: {stderr}");
+        for entry in ["0x401000", "0x401010", "0x401020"] {
+            assert!(stdout.contains(entry), "{entry} missing:\n{stdout}");
+        }
+    }
+}
+
 #[test]
 fn te_image_auto_detects_entry_mapping_and_thumb_context() {
     let path = write_thumb_te();
@@ -933,12 +961,7 @@ fn te_image_auto_detects_entry_mapping_and_thumb_context() {
         stdout.contains("\"address_hex\": \"0x401000\""),
         "{stdout}"
     );
-    // An inventory of one is reported, not left to be inferred — on a plain
-    // run, with no options asking for the discovery tier.
-    assert!(
-        stderr.contains("no object-file view, so function discovery cannot run"),
-        "a TE inventory must say why it is only the entry: {stderr}"
-    );
+    assert!(!stderr.contains("[kuna te]"), "{stderr}");
 
     let (stdout, stderr, ok) = run_kuna(&[
         "functions",
@@ -969,7 +992,7 @@ fn te_image_auto_detects_entry_mapping_and_thumb_context() {
     ]);
     assert!(ok, "TE functions with ghidra names failed: {stderr}");
     assert!(stdout.contains("\"count\": 1"), "{stdout}");
-    assert!(stdout.contains("\"name\": \"func_0x00401000\""), "{stdout}");
+    assert!(stdout.contains("\"func_0x00401000\""), "{stdout}");
 
     let (stdout, stderr, ok) = run_kuna(&[
         "read",
@@ -1049,13 +1072,12 @@ fn te_image_auto_detects_entry_mapping_and_thumb_context() {
 }
 
 #[test]
-fn te_object_view_commands_report_capability_errors() {
+fn te_object_view_commands_read_the_pe_view() {
     let path = write_thumb_te();
     let binary = path.to_string_lossy().into_owned();
     let sp = specs();
 
-    // Every object-view consumer answers with the same capability error, never
-    // the object crate's own parse failure.
+    // Every object-view consumer reads the TE through its PE view.
     for (command, flag) in [
         ("functions", vec!["--summary"]),
         ("functions", vec!["--reachable-from", "0x401000"]),
@@ -1068,12 +1090,7 @@ fn te_object_view_commands_report_capability_errors() {
         let mut args = vec![command, &binary, "--sleighpath", &sp];
         args.extend(flag);
         let (_stdout, stderr, ok) = run_kuna(&args);
-        assert!(!ok, "TE {command} unexpectedly succeeded");
-        assert!(
-            stderr.contains("UEFI TE input has no object-file view"),
-            "unexpected TE diagnostic from {command}: {stderr}"
-        );
-        assert!(!stderr.contains("Unknown file magic"), "leaked object parser error: {stderr}");
+        assert!(ok, "TE {command} failed: {stderr}");
     }
     std::fs::remove_file(path).unwrap();
 }
@@ -1784,8 +1801,8 @@ fn raw_image_discovers_called_functions_beyond_its_seeds() {
     assert!(ok, "raw decompile-all failed: {stderr}");
     assert!(stdout.contains("\"count\": 3"), "{stdout}");
     assert!(stdout.contains("return 7;"), "the sweep-only body must decompile:\n{stdout}");
-    // A raw image has no call graph, so the default `protoorder` stays out of the
-    // way silently; naming the option is what makes it say it had nothing to order.
+    // The default `protoorder` stays off on a raw image; named, it orders the
+    // call graph the raw image's ELF view (`objectview`) gives it.
     assert!(!stderr.contains("protoorder"), "the default spoke on a raw image:\n{stderr}");
     let (named, stderr, ok) = run_kuna(&[
         "decompile-all", &binary, "--json", "--raw-image", "--target", target,
@@ -1793,8 +1810,8 @@ fn raw_image_discovers_called_functions_beyond_its_seeds() {
         "--sleighpath", &sp,
     ]);
     assert!(ok, "raw decompile-all --option protoorder types failed: {stderr}");
-    assert!(stderr.contains("--option protoorder: no call graph"), "{stderr}");
-    assert_eq!(named, stdout, "naming protoorder moved a raw image's output");
+    assert!(!stderr.contains("no call graph"), "{stderr}");
+    assert!(named.contains("\"count\": 3") && named.contains("return 7;"), "{named}");
 
     // `--addr` still narrows a raw run to the addresses named.
     let (stdout, stderr, ok) = run_kuna(&[
@@ -2045,8 +2062,9 @@ fn raw_image_rejects_missing_metadata_and_object_only_surfaces() {
          "--raw-image requires --target"),
         (&["functions", &binary, "--raw-image", "--target", target, "--entry", "0"],
          "--raw-image requires --base"),
-        (&["functions", &binary, "--raw-image", "--target", target, "--base", "0"],
-         "--raw-image requires at least one"),
+        (&["functions", &binary, "--raw-image", "--target", target, "--base", "0",
+           "--option", "funcstart_patterns", "off"],
+         "--raw-image with funcstart_patterns off requires at least one"),
         (&["functions", &binary, "--base", "0"], "--base requires --raw-image"),
         (&["functions", &binary, "--entry", "0"], "--entry requires --raw-image"),
         (&["functions", &binary, "--raw-image", "--target", target, "--base", "0",
@@ -2057,10 +2075,6 @@ fn raw_image_rejects_missing_metadata_and_object_only_surfaces() {
            "--addr", ".text+0"], "raw image entries must be numeric"),
         (&["functions", &binary, "--raw-image", "--target", target, "--base", "0",
            "--entry", "0", "--slice", "arm"], "--slice does not apply"),
-        (&["decompile-all", &binary, "--raw-image", "--target", target, "--base", "0",
-           "--entry", "0", "--summary"], "require object-file metadata"),
-        (&["decompile-graph", &binary, "--raw-image", "--target", target, "--base", "0",
-           "--entry", "0"], "not supported by decompile-graph"),
         (&["disassemble", &binary, "0", "--raw-image", "--target", target, "--base", "0"],
          "unknown option --raw-image"),
     ];
@@ -2074,6 +2088,18 @@ fn raw_image_rejects_missing_metadata_and_object_only_surfaces() {
     assert!(!ok, "headerless input without raw flags unexpectedly loaded");
     assert!(stderr.contains("--raw-image") && stderr.contains("--base"),
             "unknown-format diagnostic omitted raw guidance: {stderr}");
+
+    for args in [
+        vec!["decompile-all", &binary, "--raw-image", "--target", target, "--base", "0",
+             "--entry", "0", "--isa", "thumb", "--summary"],
+        vec!["functions", &binary, "--raw-image", "--target", target, "--base", "0",
+             "--entry", "0", "--isa", "thumb", "--reachable-from", "0"],
+        vec!["decompile-graph", &binary, "--raw-image", "--target", target, "--base", "0",
+             "--entry", "0", "--isa", "thumb"],
+    ] {
+        let (_stdout, stderr, ok) = run_kuna(&args);
+        assert!(ok, "{args:?} read no ELF view: {stderr}");
+    }
 
     let (_stdout, stderr, ok) = run_kuna(&[
         "decompile", &binary, "main", "--raw-image", "--target", target, "--base", "0",

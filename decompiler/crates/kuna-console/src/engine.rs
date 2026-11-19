@@ -618,6 +618,10 @@ pub struct ConsoleProgram {
     /// there. Empty/`None` when the listing flag is off ⇒ zero cost.
     analysis_image:
         Option<(String, kuna_analysis::image_bytes::ImageBytes, kuna_analysis::loader::ImportProofMemo)>,
+    /// (kuna `objectview`) The PE view of a TE image or the ELF view of a raw
+    /// one, kept for the CLI's object-file consumers once the commit has taken
+    /// [`Self::analysis_image`].
+    object_view: Option<Rc<[u8]>>,
     /// (kuna `armframes`) The whole-image frame recovery: set before the commit,
     /// it is replayed instead of searched; after it, the record that commit made.
     arm_frames: Option<kuna_analysis::aif::kuna_framereplay::ArmFrameReplay>,
@@ -660,6 +664,8 @@ pub struct ConsoleProgram {
     /// Non-zero sizes only: a bare declaration with no extent leaves the entry
     /// unbounded, which is the engine-wide `UNBOUNDED_SIZE` default.
     declared_extents: BTreeMap<u64, int4>,
+    /// (kuna `funcchunks`) Flow body sizes from the chunk model, by entry.
+    function_bodies: BTreeMap<u64, u64>,
     /// (kuna) **Caller-declared function entries**, entry VMA — every address a
     /// caller asserted a function at through `function bounds` /
     /// `--define-function`, extent or no extent.
@@ -1070,6 +1076,13 @@ impl ConsoleProgram {
             &crate::funcextent::spans(&self.sections(), &self.segments()),
         );
         self.bound_entries_by_flow(&mut entries);
+        // (kuna `funcchunks`) The chunk model's flow body, where one was built,
+        // replaces the clip's upper bound.
+        for entry in &mut entries {
+            if let Some(&body) = self.function_bodies.get(&entry.addr.get_offset()) {
+                entry.size = body;
+            }
+        }
         // A caller-declared extent is an assertion, not a guess: it outranks the
         // clip everywhere the clip is reported (`declared_extents`).
         if self.has_declared_extents() {
@@ -2878,9 +2891,25 @@ impl ConsoleProgram {
             .filter(|(_, _, flags)| flags & section_flags::CODE != 0)
             .map(|(addr, size, _)| (addr, addr.saturating_add(size)))
             .collect();
-        let seeds: Vec<u64> =
+        let mut seeds: Vec<u64> =
             self.pending_synthetic_entries.iter().map(|addr| addr.get_offset()).collect();
-        let known: BTreeSet<u64> = seeds.iter().copied().collect();
+        // (kuna `funcstart_patterns`) The prologue patterns of the target's
+        // language, swept over the same executable bytes, seed the walk too.
+        if self.arch().analysis_funcstart_patterns {
+            if let Some(set) = kuna_analysis::entry::patterns::for_language(self.arch().get_description()) {
+                for &(lo, hi) in &exec {
+                    let Ok(size) = usize::try_from(hi - lo) else { continue };
+                    if let Some(bytes) = self.read_bytes(lo, size) {
+                        let weak_ok = set.only_weak();
+                        seeds.extend(set.scan_hits(lo, &bytes).into_iter().filter(|h| weak_ok || !h.weak).map(|h| h.vma));
+                    }
+                }
+                seeds.sort_unstable();
+                seeds.dedup();
+            }
+        }
+        let mut known: BTreeSet<u64> =
+            self.pending_synthetic_entries.iter().map(|addr| addr.get_offset()).collect();
         let found = {
             let arch = self.arch();
             let mz = self.mz_evidence.as_ref();
@@ -2893,15 +2922,54 @@ impl ConsoleProgram {
                 mz,
             )
         };
-        for &vma in &found.entries {
-            if known.contains(&vma) {
-                continue;
+        for vma in found.entries.iter().copied().chain(seeds) {
+            if known.insert(vma) {
+                self.pending_synthetic_entries.push(Address::new(Rc::clone(&code_space), vma));
             }
-            self.pending_synthetic_entries.push(Address::new(Rc::clone(&code_space), vma));
         }
         self.flow_ends = found.flow_ends;
         self.arch_mut().dos_exit_sites = found.dos_exits.sites;
         found.dos_exits.noreturn
+    }
+
+    /// (kuna `objectview`) Run the object-file pass list over the PE / ELF view a
+    /// TE or raw bootstrap stashed in [`Self::analysis_image`], so its facts join
+    /// the gated commit like an object image's. With the gate off the view is
+    /// dropped, and the deferred Listing tier below declines as before.
+    fn run_object_view_passes(&mut self) {
+        if !matches!(self.container, ProgramContainer::Raw | ProgramContainer::Te) {
+            return;
+        }
+        if !self.arch().analysis_objectview {
+            self.analysis_image = None;
+            return;
+        }
+        let Some((path, bytes, _)) = self.analysis_image.as_ref() else { return };
+        let target = self.arch.arch_id().to_string();
+        let Ok(image) = ObjectLoadImage::from_bytes_silent_with_target(path, bytes, &target) else {
+            return;
+        };
+        let arch = self.arch();
+        let split = kuna_analysis::passes::run_default_analyses_per_pass(bytes, &image, arch, arch.translate());
+        self.pending_analysis.extend(split);
+    }
+
+    /// (kuna `objectview`) Stash the PE view of a TE image or the ELF view of a
+    /// raw one as the analysis image, and keep it for the CLI's object-file
+    /// consumers once the commit has taken the stash.
+    fn set_object_view(&mut self, path: &str, view: Option<Vec<u8>>) {
+        self.object_view = view.as_deref().map(Rc::from);
+        self.analysis_image = view.map(|view| {
+            let bytes = kuna_analysis::image_bytes::ImageBytes::from(view);
+            let memo = kuna_analysis::loader::ImportProofScope::enter(&bytes).memo();
+            (path.to_string(), bytes, memo)
+        });
+    }
+
+    /// (kuna `objectview`) The PE view of a TE image or the ELF view of a
+    /// byte-addressed raw one; `None` for an object image, which is its own.
+    pub fn object_view(&self) -> Option<&[u8]> {
+        self.object_view.as_deref()
     }
 
     /// (kuna) Commit the stashed per-pass analysis facts, gated by the per-pass
@@ -2935,35 +3003,7 @@ impl ConsoleProgram {
         if apply_rust_names && (self.rust_profile_image_modified || self.analysis_image.is_none()) {
             return Err(KunaError::lowlevel("Rust signature application requires an unmodified object image before its analysis commit"));
         }
-        if !self.pending_synthetic_entries.is_empty() {
-            // (kuna `rawdiscover`) A headerless image reaches this point holding
-            // only the `--entry` addresses the caller typed, because the
-            // object-file discovery tier below declines without an
-            // `object::File`. Discover the rest first, so the entries it finds
-            // are named and installed by the same loop.
-            let dos_noreturn = if self.container == ProgramContainer::Raw {
-                self.discover_raw_entries()
-            } else {
-                Vec::new()
-            };
-            let entries = std::mem::take(&mut self.pending_synthetic_entries);
-            let symbols = entries
-                .into_iter()
-                .map(|addr| ProgramSymbol {
-                    ordinal: 0,
-                    name: self.arch().name_function(&addr),
-                    addr,
-                    object_location: None,
-                    binding: None,
-                    provenance: EntryProvenance::Mapped,
-                })
-                .collect::<Vec<_>>();
-            for symbol in symbols {
-                self.symbols.push(symbol);
-            }
-            self.read_loader_symbols()?;
-            self.mark_no_return(&dos_noreturn);
-        }
+        self.run_object_view_passes();
         // (kuna `entrythumbflow`) The entry-reachable Thumb walk, taken out of
         // the pending slot BEFORE it runs so a failure cannot leave it armed for
         // the next commit. Its paints join the gated stash under their own id.
@@ -3020,18 +3060,37 @@ impl ConsoleProgram {
                 self.pending_analysis.push(("entrythumbflow", output));
             }
         }
-        // A TE image has no `object::File`, so the discovery tier cannot run
-        // over it at all: say so once rather than report an inventory of one in
-        // silence. Stated unconditionally because it is a property of the
-        // container, not of this run's options.
-        if self.container == ProgramContainer::Te {
-            let path = self.image_path();
-            kuna_base::notes::say_once(
-                &path,
-                &format!(
-                    "[kuna te] {path}: a UEFI TE image has no object-file view, so function discovery cannot run; the inventory is the container entry plus any declared boundaries"
-                ),
-            );
+        if !self.pending_synthetic_entries.is_empty()
+            || matches!(self.container, ProgramContainer::Raw | ProgramContainer::Te)
+        {
+            // (kuna `rawdiscover`) A headerless or TE image reaches this point
+            // holding only the `--entry` addresses or the container entry,
+            // because the object-file discovery tier below declines without an
+            // `object::File`. Discover the rest first, after the entry Thumb walk
+            // has painted the decode mode, so the entries it finds are named and
+            // installed by the same loop.
+            let dos_noreturn = if matches!(self.container, ProgramContainer::Raw | ProgramContainer::Te) {
+                self.discover_raw_entries()
+            } else {
+                Vec::new()
+            };
+            let entries = std::mem::take(&mut self.pending_synthetic_entries);
+            let symbols = entries
+                .into_iter()
+                .map(|addr| ProgramSymbol {
+                    ordinal: 0,
+                    name: self.arch().name_function(&addr),
+                    addr,
+                    object_location: None,
+                    binding: None,
+                    provenance: EntryProvenance::Mapped,
+                })
+                .collect::<Vec<_>>();
+            for symbol in symbols {
+                self.symbols.push(symbol);
+            }
+            self.read_loader_symbols()?;
+            self.mark_no_return(&dos_noreturn);
         }
         if self.pending_analysis.is_empty() && self.loader_data_objects.is_empty()
             && rust_profile_request.is_none()
@@ -3216,6 +3275,9 @@ impl ConsoleProgram {
                     if merged.fid_names.iter().any(|m| m.by_signature) {
                         zero_size_data_names =
                             kuna_analysis::flirt::kuna_elf_data_names::zero_size_data_names(&bytes);
+                    }
+                    if self.arch().analysis_addrtable {
+                        merged.merge(kuna_analysis::passes::run_addrtable(&bytes, self.arch()));
                     }
             }
         } else {
@@ -3456,6 +3518,7 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // single-function FDE bodies and the commit rejects any discovered entry
         // strictly inside one. Default-ON; with the gate off the fact stream is
         // dropped here and the discovery set is exactly what it was before.
+        "importvote" => arch.analysis_importvote,
         // (kuna) PDB-procedure-interior entry suppression — the extents come out of
         // the `.pdb`, so switching `pdb` off withdraws them too.
         "pdbinterior" => arch.analysis_pdb,
@@ -3537,6 +3600,7 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // functions, so it changes emitted C by construction). Listing consumer;
         // the live gate is the pre-invocation check in `run_listing_consumers`.
         "tailcallentry" => arch.analysis_tailcallentry,
+        "funcchunks" => arch.analysis_funcchunks,
         // (kuna) Mach-O Objective-C metadata recovery — default-OFF (output-changing:
         // renames IMP functions + adds class/selector symbols). Registered here so it
         // is gated by `analysis_objc` rather than running by the fail-open default.
@@ -4253,6 +4317,7 @@ fn empty_program(
         rust_profile_image_modified: false,
         rust_profile_report: None,
         analysis_image: None,
+        object_view: None,
         arm_frames: None,
         loader_data_objects: Vec::new(),
         loader_data_exports: Vec::new(),
@@ -4260,6 +4325,7 @@ fn empty_program(
         flow_ends: None,
         data_name_aliases: HashMap::new(),
         declared_extents: BTreeMap::new(),
+        function_bodies: BTreeMap::new(),
         declared_entries: BTreeSet::new(),
         declared_names: BTreeMap::new(),
         declared_bytes: BTreeMap::new(),
@@ -4318,11 +4384,6 @@ pub(crate) fn bootstrap_raw_image(
     if target.trim().is_empty() {
         return Err(KunaError::lowlevel(
             "raw image input requires --target <SLEIGH-language-id>",
-        ));
-    }
-    if entries.is_empty() {
-        return Err(KunaError::lowlevel(
-            "raw image input requires at least one --entry or --addr",
         ));
     }
 
@@ -4437,6 +4498,14 @@ pub(crate) fn bootstrap_raw_image(
     prog.pending_analysis = input_isa_stash(input_context_paints);
     prog.analysis_code_space = Some(code_space);
     prog.raw_address_units = Some((word_size, arm32));
+    if word_size == 1 {
+        let entry = prog.pending_synthetic_entries.first().map_or(image_base, Address::get_offset);
+        let language = prog.arch.arch_id().to_string();
+        let view = std::fs::read(path).ok().and_then(|bytes| {
+            kuna_analysis::loader::kuna_objectview::raw_as_elf(&bytes, image_base, entry, &language)
+        });
+        prog.set_object_view(path, view);
+    }
     Ok(prog)
 }
 
@@ -4744,6 +4813,7 @@ pub(crate) fn bootstrap_te_bytes(
         entry,
     });
     program.analysis_code_space = Some(code_space);
+    program.set_object_view(path, kuna_analysis::loader::kuna_objectview::te_as_pe(bytes));
     apply_readonly_ranges(&mut program, &readonly_ranges);
     program.arch_mut().litpool_const = Rc::new(litpool_const);
     Ok(program)
@@ -5332,12 +5402,16 @@ fn commit_model_facts(
 fn commit_analysis_output(
     prog: &mut ConsoleProgram,
     code_space: &Rc<AddrSpace>,
-    out: kuna_analysis::pass::AnalysisOutput,
+    mut out: kuna_analysis::pass::AnalysisOutput,
     zero_size_data_names: Vec<String>,
 ) -> KunaResult<()> {
     use kuna_analysis::pass::SymKind;
 
     let num_spaces = prog.arch().manage().num_spaces();
+    if !out.data_vetoed.is_empty() {
+        let vetoed: BTreeSet<u64> = out.data_vetoed.iter().copied().collect();
+        out.entries.retain(|e| !vetoed.contains(e));
+    }
 
     // 0. (kuna `cppproto`) The DWARF C++ arm's facts, stashed apart by the
     //    producing pass: they fold into the normal symbol/local streams below and
@@ -5820,11 +5894,16 @@ fn commit_analysis_output(
         let stack_idx = prog.arch().manage().get_stack_space().map(|sp| sp.get_index());
         if let (Some(model), Some(stack_idx)) = (model, stack_idx) {
             let mut map: std::collections::BTreeMap<u64, usize> = std::collections::BTreeMap::new();
+            let void = prog.arch().types().get_type_void().ok();
             for site in &out.format_sites {
                 let mut res = Vec::new();
+                let mut pieces = site.pieces.clone();
+                if pieces.outtype.is_none() {
+                    pieces.outtype = void.clone();
+                }
                 if model
                     .assign_parameter_storage(
-                        &site.pieces,
+                        &pieces,
                         &mut res,
                         true,
                         prog.arch().types(),
@@ -5867,6 +5946,11 @@ fn commit_analysis_output(
     //     the placeholder. A held name (`signature_vetoes`, a `fid strict`
     //     match without specific-hash support) joins that check but never
     //     applies alone.
+    for &(entry, body) in &out.function_bodies {
+        if body > 0 {
+            prog.function_bodies.insert(entry, body);
+        }
+    }
     use kuna_analysis::pass::FidMatch;
     let (mut fids, guesses): (Vec<FidMatch>, Vec<FidMatch>) =
         out.fid_names.iter().cloned().partition(|m| !m.by_signature);
@@ -6380,6 +6464,15 @@ fn commit_analysis_output(
         if let Some(receiver) = fact.pointer_receiver {
             prog.arch_mut().symboltab.attach_go_pointer_receiver(&a, receiver);
         }
+    }
+
+    // 5e. (kuna `importvote`) The call sites of every PLT import, read by the
+    //     engine when a function tail-calls one no declaration reached.
+    let space = code_space.get_index();
+    let sites: std::collections::HashMap<(i32, u64), Vec<u64>> =
+        out.import_call_sites.into_iter().map(|(stub, sites)| ((space, stub), sites)).collect();
+    if !sites.is_empty() {
+        prog.arch_mut().kuna_import_sites = Rc::new(sites);
     }
 
     // 6. Processor-context decode-mode paints (the kuna analog of ARM's

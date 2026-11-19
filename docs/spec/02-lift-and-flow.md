@@ -2506,6 +2506,36 @@ flow, and adds `Exceeded maximum restarts with more pending` to the header.
 This is a correctness repair, without an option: before it, such a switch kept
 one case, and its other indexes fell through to the code after the switch.
 
+**Guard merging** (`switchguardmerge`, default on; kuna;
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_switchguardmerge.rs (ActionSwitchGuardMerge)`,
+run after `ActionSwitchNorm`): gcc and clang lower a switch with a far outlier
+(`case 100:` beside `case 0 ... 6:`) to a range guard around the jump table and
+`x == 100` tests on the guard's other side, or (clang) to a chain of such tests
+that the guard folding makes the switch's default. Such a chain is a run of
+single-entry blocks that only compute, into values nothing outside the function
+reads, each testing the switch variable (the BRANCHIND's input) against one
+constant that is not already a case. When the
+chain hangs off a guard, the walk up from the switch passes only blocks that
+compute and guards whose other side is the default, the guard and every block
+on the way are evaluated (`kuna_strlenscan.rs (eval)`) on each constant (it must
+reach the chain, then pass straight to the switch) and on every case label (it
+must stay on the switch side), and the default's MULTIEQUALs must read the same
+value from the chain and the switch. Each constant then becomes a case
+(`add_block_to_switch` and `push_branch`, as guard folding adds a default) and
+the guard's edge to the chain is removed. When the switch's default is one of
+its cases (gcc repeats the range check unsigned right before the table, landing
+on case 0, and guard folding takes that check as the default), the chain's last
+miss becomes the default instead, provided the guards still standing and the
+merged guard together admit only case labels
+(`JumpTable::kuna_standing_guard_range`), so no value the switch sees reached
+the folded default, and every guard on the way rejects to that miss. A chain that is the default ends at
+its last miss: a new block becomes the default's body; a block that is already
+a case becomes the default itself (`JumpTable::kuna_merge_out_edge`), so no
+empty block is left beside it. gcc -O2 `two` (cases 0..6, 100, 200) prints one
+switch instead of `if (a0 <= 6) { switch ... } if (a0 == 100) ...`; on Lua 5.4
+x86-64 five switches gain their outliers (`subexpr` `case 0x7e`, `statement`
+`case 0x3b`, `getgeneric` `case 0x54`), Lua AArch64 and ld.so none.
+
 ### The late check: labels, normalization folding, guard folding
 
 A table recovered mid-simplification may disagree with fully-simplified
@@ -3010,6 +3040,38 @@ condition it tolerates does not arise at all — there is one partial, built bef
 any sibling recovered — and the memcpy witness recovers all sixteen dispatches
 with this gate off, so the two settings are paired: turn `unrolledguard` on only
 together with `jtsharepartial off`.
+
+**`switchtrim`, default on** — the last bound extension, for a table that no
+guard bounds at all: no guard was found and the index range is wider than
+`0xffff`. A switch with an unreachable default
+(`__builtin_unreachable()`, an enum the compiler trusts) dispatches through
+`jmp [table + idx*8]` with no range check, so the index range is its whole
+width and every extension above declines. After they have, a table whose path
+holds exactly one `LOAD` has its range opened to `[0, jumptablemax)`
+(`jumptable.rs (kuna_try_trimmed_table)`). Emulation stops at the first row it
+cannot read instead of failing the table, and the sanity check keeps the rows
+before the first one that breaks the table's layout
+(`kuna_switchtrim.rs (trimmed_rows)`): a row
+that points into the table's own bytes, a row read at or above the lowest code
+address an earlier row jumps to (an inline table cannot run into the code it
+dispatches to), or, on an object load, a row that points outside the image's
+executable memory, plus upstream's zero / far-and-unloaded rule. Every row
+must read its own table entry, above the previous row's, so a range opened on
+a value that is not the table index (the loaded entry itself, when the index
+feeds an image-base add) reads no table at all. Fewer than two rows is no
+table, and the jump stays a computed call. A bounded table
+never reaches this arm. A trimmed basic model is only a fallback: the
+default-path model (`JumpBasic2`) is tried first and wins when it bounds the
+switch (`jumptable.rs (recover_model)`). An AArch64 hardened jump table
+(arm64e, clang `-faarch64-jump-table-hardening`, Swift enum dispatch) clamps
+its index with `cmp x16, #N-1; csel x16, x16, xzr, ls` instead of branching to
+a default, so the switch variable is a `MULTIEQUAL` of the index and the
+constant 0 and the basic model sees no guard. A trimmed arm that took that
+unbounded `MULTIEQUAL` first would read past the table into the code after
+it, fail its sanity check, and leave the switch a
+`(*(code *)(*(int *)&table[i * 4] + base))()` computed call; model 2 recovers
+it as `switch(a0 >> 0x3e)` with every case
+(`tests/stages/kuna-relswitch-a64.xml`).
 
 ## 2.4 No-return at lift time
 
