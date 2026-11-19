@@ -5973,7 +5973,8 @@ impl PrintC {
             return false;
         }
         if self.out_lang == crate::kuna_lang::OutLang::Rust && !self.options.nocasts
-            && (crate::kuna_rustsigned::plan(fd, op).is_some()
+            && (self.rust_wrapping_plan(fd, arch, op).is_some()
+                || crate::kuna_rustsigned::plan(fd, op).is_some()
                 || self.rust_integer_binary_plan(fd, arch, op).is_some())
         {
             return false;
@@ -6492,6 +6493,7 @@ impl PrintC {
             return;
         }
         if self.out_lang == crate::kuna_lang::OutLang::Rust && !self.options.nocasts {
+            if self.op_rust_wrapping(fd, arch, op) { return; }
             if self.op_rust_integer_binary(fd, arch, tok, op) { return; }
             if let Some(plan) = crate::kuna_rustsigned::plan(fd, op) {
                 self.emit_rust_signed_text(fd, arch, tok, op, plan);
@@ -6727,6 +6729,11 @@ impl PrintC {
 
     /// C++ `PrintLanguage::opUnary` over the IR (printlanguage.cc:573).
     fn op_unary_ir(&mut self, fd: &Funcdata, arch: &Architecture, tok: &'static OpToken, op: OpId) {
+        if self.out_lang == crate::kuna_lang::OutLang::Rust && !self.options.nocasts
+            && self.op_rust_wrapping(fd, arch, op)
+        {
+            return;
+        }
         self.push_op(tok, Some(op_key(op)));
         if let Some(v0) = fd.obank().get(op).and_then(|o| o.get_in(0)) {
             self.push_vn_ir(fd, arch, v0, op);
