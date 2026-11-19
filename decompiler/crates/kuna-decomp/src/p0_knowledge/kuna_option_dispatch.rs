@@ -472,6 +472,7 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "loopcontinue" => on_off!(loop_continue, "Secondary loop-latch continue recovery"),
+    "postinc" => on_off!(post_increment, "Pointer steps folded into *p++"),
     "regionlooprefine" => on_off!(
         region_loop_refine,
         "Region structurer multi-exit/irreducible loop-successor refinement"

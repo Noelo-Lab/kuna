@@ -237,6 +237,9 @@ pub mod pcodeop_addlflags {
     /// value from before a call left unguarded. Set by `Heritage::guard_calls`;
     /// a merge copy of its input or its collapse restarts the function.
     pub const kuna_persist_stale: uint4 = 0x4000000;
+    /// (kuna `postinc`) This LOAD or STORE prints its pointer as `p++` and the
+    /// increment after it prints nothing. Set by [`crate::p9_emit::kuna_postinc`].
+    pub const kuna_postinc: uint4 = 0x8000000;
 }
 
 // ---------------------------------------------------------------------------

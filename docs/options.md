@@ -14,6 +14,7 @@ Three tiers:
 
 | If the output shows... | Try |
 |---|---|
+| a string or buffer loop prints v = *p; p = &p[1]; instead of v = *p++; | [`postinc`](#postinc----on--off-default-on) |
 | the signature says FILE * or struct_0 * and nothing says what the fields are | [`structdefs`](#structdefs----on--off-default-off) |
 | a field access like f->_flags with no layout anywhere in the output | [`structdefs`](#structdefs----on--off-default-off) |
 | you have to run decompile-project just to read the .h for one function's struct | [`structdefs`](#structdefs----on--off-default-off) |
@@ -837,6 +838,14 @@ Three tiers:
 ## Toggleable transforms
 
 The control surface: each of these can make output worse on the wrong source shape, so each stays flippable.
+
+### `postinc` -- on | off, default `on`
+
+- **Symptoms:** a string or buffer loop prints v = *p; p = &p[1]; instead of v = *p++;.
+- **What it does:** Fold a pointer step that follows the statement dereferencing the pointer into a post-increment: `v = *p; p = &p[1];` prints `v = *p++;` and `*d = c; d = &d[1];` prints `*d++ = c;`. The step (INT_ADD or PTRADD of a constant c, output and input the same variable) folds only when the stepped value is read by exactly one other op, a LOAD or STORE of c bytes through it, the pointer's element is c bytes, and the statement holding that LOAD or STORE is printed right before the step in the same block. C output only.
+- **When to flip:** On (default). Flip off to see each pointer step as its own statement.
+- **Where / provenance:** P9/pointer-notation · kuna · presentation-default · kuna-postinc
+- **Example:** `option postinc off`
 
 ### `structdefs` -- on | off, default `off`
 

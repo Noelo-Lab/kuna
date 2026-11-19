@@ -293,13 +293,14 @@
 0286                  calltargettype
 0287        !         setcasts
 0288                  finalstructure
-0289                  gotoreduce
-0290                  taildup
-0291                  ifelseflatten
-0292                  crossjumprevert
-0293                  dedupitetail
-0294                  iteregion
-0295                  iteboolean
-0296                  paramcopyhoist
-0297        !         prototypewarnings
-0298                  stop
+0289                  postinc
+0290                  gotoreduce
+0291                  taildup
+0292                  ifelseflatten
+0293                  crossjumprevert
+0294                  dedupitetail
+0295                  iteregion
+0296                  iteboolean
+0297                  paramcopyhoist
+0298        !         prototypewarnings
+0299                  stop

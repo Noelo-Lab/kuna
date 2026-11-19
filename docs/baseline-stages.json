@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4516,
-    4516
+    4521,
+    4521
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1338,6 +1338,11 @@
     "data:KUNA-PICBASE #1: the XML path renders the source form x <= 8",
     "data:KUNA-PIPELINE #1: pipeline list names the variants with decompile current",
     "data:KUNA-PIPELINE #2: reduced normalize variant produces no structuring",
+    "data:KUNA-POSTINC #1: the step folds into the load (default)",
+    "data:KUNA-POSTINC #2: the step folds into the store (default)",
+    "data:KUNA-POSTINC #3: a step through a copy the loop compares is left",
+    "data:KUNA-POSTINC #4: postinc off keeps each step as its own statement",
+    "data:KUNA-POSTINC #5: postinc off prints no post-increment",
     "data:KUNA-QUALITY #1: full pipeline reports the single if-goto edge (before and after the sub-query)",
     "data:KUNA-QUALITY #2: unstructured total is the goto-count quality signal",
     "data:KUNA-REGIONS #1: region tree finds the single-block self-loop as a cyclic region at 0x3e0",
