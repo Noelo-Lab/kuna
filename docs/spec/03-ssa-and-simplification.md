@@ -3871,7 +3871,13 @@ shape check decides which trees the table theorem covers.
 **Collecting.** The rule fires on an `INT_ADD`, `INT_SUB`, `INT_2COMP`,
 `INT_MULT`, `INT_AND`, `INT_OR`, `INT_XOR` or `INT_NEGATE`. A defining op of the
 same set is inlined when its output has one reader; anything else is a leaf, up
-to six distinct leaves and 48 nodes. The rule also fires below the root of a
+to six distinct leaves and 48 nodes. When that tree does not fold and it met a
+bitwise op with several readers, the tree is collected once more with those ops
+inlined too (a sum with several readers stays a leaf, its own tree is
+simplified where it is computed): a compiler shares `~x` or `x & y` between the terms of one expression, and
+as a leaf the shared value hides the identity (`(~x | y) - ~x` is `x & y` only
+when `~x` is read as the complement of `x`). The first collection wins when it
+folds, so a shared value that can stay a leaf stays one. The rule also fires below the root of a
 larger tree: an obfuscated sum is often xor-ed with a key, which makes the
 whole tree non-linear while the sum itself is linear. Every rewrite strictly
 lowers the op count, so repeated firing terminates. The op count treats a
@@ -3881,10 +3887,31 @@ trade the forms forever. `INT_XOR` with all ones is read as `~`. `INT_MULT` by a
 constant is a scaled term; `INT_MULT` of two non-constants is a product, for the
 polynomial path below.
 
+Three readings widen what counts as a leaf or a term:
+
+- **A constant operand of `&`, `|` or `^` is a leaf.** The identities hold for
+  every value of a leaf, so they hold for the constant: `(x ^ 0x3039) + 2*(x &
+  0x3039)` is `x + 0x3039`. A constant whose complement is already a leaf is
+  that leaf complemented (`x & 0xffffffb2` next to `x & 0x4d`), and so is an
+  added constant that equals a constant leaf or its complement:
+  `(x & 0xff00ff00) + 0x00ff00ff` is `x | 0x00ff00ff`. A constant that is only
+  added or multiplied stays a plain number.
+- **An arithmetic op read by a bitwise op is a leaf.** `((x + y) | z) - ((x + y)
+  & z)` is then a linear tree of two leaves, and the sum below it is simplified
+  when the rule fires on it.
+- **`~` over an arithmetic term is `-1 - term`.** That is exact at every width
+  and keeps the tree linear: `~(x - 1) + y` is `y - x`.
+
 **The shape.** The tree must be linear: `+`, `-`, negation and multiplication by
 a constant over bitwise subterms (`&`, `|`, `^`, `~`) that contain only leaves.
-It must also contain at least one arithmetic op and one bitwise op, so plain
-arithmetic and plain bit logic are left to the other rules.
+It must also contain at least one bitwise op, so plain arithmetic is left to
+the other rules. A tree of bitwise ops alone (`(~x & y) | (x & ~y)`, the
+obfuscators' spelling of `x ^ y`) is replaced by the smallest expression of its
+truth table when it has three or more ops and at most three leaves; a larger
+one is left to the other rules. A replacement that keeps the tree's bitwise
+terms and only regroups the sum around them (`(n & m) + (k + 0x30) - 0x30`
+with a shared `k + 0x30`) is refused as plain arithmetic; so is one that would
+count on removing an op another reader keeps.
 
 **Coefficients.** The tree is evaluated at the `2^n` points with every leaf 0 or
 1, at the root's width. A Möbius inversion over those values gives the
@@ -3897,11 +3924,19 @@ function's empty-set term is all ones, which is -1 at every width.
 - a linear sum of the leaves, when every multi-leaf coefficient is 0
   (`(x ^ y) + 2*(x & y)` gives `x + y`);
 - `k + Σ c_j·g_j + Σ c_i·z_i`: the multi-leaf terms are split into groups of
-  leaves that share a term, and each group must be one boolean function `g_j`
-  of its leaves times a constant. That holds when the group's part takes only
-  two values on its 0/1 points; the truth table of `g_j` is where it takes the
-  non-zero one (or its complement, with the constant negated, whichever prints
-  smaller). The leaves in no group stay a linear sum. Examples:
+  leaves that share a term, and each group is solved on its own as
+  `w·g + Σ c_j·x_j`, one boolean function `g` of its leaves times a weight plus
+  a multiple of each leaf. The weight `w` is tried from the values the group's
+  part takes on its 0/1 points (at most eight), and each leaf's `c_j` is 0, the
+  leaf's own value `F_j` or `F_j - w`; a choice stands when what is left after
+  taking `Σ c_j·x_j` away takes only the values 0 and `w`. The truth table of
+  `g` is where it takes `w` (or its complement, with the weight negated,
+  whichever prints smaller). All `c_j = 0` is tried first and the choice with
+  the fewest ops is kept: `2*(x | y) - (x ^ y) + (x & ~y) - (x & y)`, which has
+  values 2, 1, 1 at `x`, `y`, `x & y`, gives `x + (x ^ y)` with `w = 1`,
+  `c_x = F_x - w`. A group of five or six leaves tries `c_j = 0` only. A group
+  with no such form keeps its conjunction terms and the other groups are still
+  solved. The leaves in no group stay a linear sum. Examples:
   `(x & ~y) + y + z` gives `(x | y) + z`;
   `(x & y) + (x & z) - (x & y & z)` gives `x & (y | z)`;
   `(a ^ b) + 2*(a & b) + (c & ~d) + d + (e | f) - (e & f)` gives
@@ -3941,8 +3976,12 @@ pseudo-random full-width evaluations agree with it. The new ops go before the
 root, and the root becomes a `COPY` of the result; dead-code elimination removes
 the old tree. Pinned by `tests/stages/kuna-mba.xml` (two leaves) and
 `tests/stages/kuna-mba-groups.xml` (a four-leaf group, six leaves in three
-groups, and the polynomial). An intermediate with two readers is a leaf, so a
-compiler's common-subexpression sharing can hide a larger group. Cost with
+groups, and the polynomial) and `tests/stages/kuna-mba-solve.xml` (constant
+operands, a shared complement, a complemented sum, a leaf plus a boolean term,
+bit logic alone). A subtree of the replacement that the old tree already
+computes reuses that varnode. Not done: a narrower op under a zero extension
+(`uint8_t` operands promoted to `int`) is a size change, and the tree stops
+there. Cost with
 the option on: +0.67% instructions over `/usr/bin/patchelf` decompile-all, with
 no function changed. Not done: the I/O-fingerprint oracle for expressions that
 are neither linear nor polynomial MBA.
