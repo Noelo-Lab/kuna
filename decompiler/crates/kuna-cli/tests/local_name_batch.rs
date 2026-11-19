@@ -310,7 +310,7 @@ fn a_source_name_of_the_default_form_keeps_it() {
         ("same_kind", &["int4 same_kind(item *v1,item *v2)", "int4 v3; // eax"][..]),
         (
             "widest",
-            &["int8 v1; // stack - 0x18", "int4 v3; // stack - 0x1c", "v1 = *values;"][..],
+            &["int8 v1; // stack - 0x18", "int4 i; // stack - 0x1c", "v1 = *values;"][..],
         ),
     ] {
         let (code, rejected) = decompile_fixture("dwarfvnames_x86_64", function, &[]);

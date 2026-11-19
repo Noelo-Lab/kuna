@@ -63,9 +63,9 @@ const CASES = [
     for (let i = 1; i <= 10; i++) s.addRaw(`prototype ${SUM} long sum_to(int v${i})`);
   }, (code) => /sum_to\(int v10\)/.test(code)],
   ['a rename that frees a name, then the rename that takes it', 'sum_to', (s) => {
-    s.setVar(SUM, 'v1', { name: 'i' });
-    s.setVar(SUM, 'acc', { name: 'v1' });
-  }, (code) => /\bint i;/.test(code)],
+    s.setVar(SUM, 'i', { name: 'k' });
+    s.setVar(SUM, 'acc', { name: 'i' });
+  }, (code) => /\bint k;/.test(code) && /\blong i;/.test(code)],
   ['a rename the printer suffixed, then edits by the suffixed name', 'main', (s) => {
     s.setVar(LONG_MAIN, 'v7', { name: 'score' });
     s.setVar(LONG_MAIN, 'score_1', { name: 'points' });

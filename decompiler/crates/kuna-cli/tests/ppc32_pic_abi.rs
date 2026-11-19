@@ -1150,11 +1150,11 @@ fn abi_load_scopes_share_one_proof_per_buffer_and_retain_nothing() {
 
 /// `abi`, `on` and the named stub's `noreturn_known` contract share one no-return
 /// list. A call that ends its function at a stub is terminal in both modes for a
-/// listed import, and returning in both for one only an ABI document lists.
+/// listed import, and returning in both for one the list does not name.
 #[test]
 fn abi_and_on_agree_on_which_imports_never_return() {
     for little in [false, true] {
-        for (name, terminal) in [("err", true), ("abort", true), ("__cxa_rethrow", false)] {
+        for (name, terminal) in [("err", true), ("abort", true), ("__cxa_begin_catch", false)] {
             let mut f = Fixture::new(Plt::Short);
             f.pic_collision = true;
             f.little = little;
