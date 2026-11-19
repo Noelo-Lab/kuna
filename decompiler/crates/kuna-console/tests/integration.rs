@@ -339,6 +339,8 @@ mod verify_swiftmetadata;
 mod verify_swifttypes;
 #[path = "verify_swiftcall.rs"]
 mod verify_swiftcall;
+#[path = "verify_swiftnames.rs"]
+mod verify_swiftnames;
 
 #[path = "verify_importdata.rs"]
 mod verify_importdata;

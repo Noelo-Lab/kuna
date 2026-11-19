@@ -146,6 +146,8 @@ pub struct Context {
     pub num_empty_cases: u32,
     /// A class's mangled superclass type name.
     pub superclass_type: Option<u64>,
+    /// A class's vtable position in its metadata, in pointer-sized words.
+    pub vtable_offset: u32,
     pub vtable: Vec<VTableEntry>,
     pub overrides: Vec<OverrideEntry>,
     /// A protocol's requirement rows: `(descriptor address, default
@@ -469,6 +471,7 @@ impl<'a> Reader<'a> {
             num_payload_cases: 0,
             num_empty_cases: 0,
             superclass_type: None,
+            vtable_offset: 0,
             vtable: Vec::new(),
             overrides: Vec::new(),
             requirements: Vec::new(),
@@ -570,7 +573,7 @@ impl<'a> Reader<'a> {
             _ => {}
         }
         if specific & (1 << 15) != 0 {
-            let _vtable_offset = self.img.read_u32(at)?;
+            ctx.vtable_offset = self.img.read_u32(at)?;
             let size = self.img.read_u32(at.wrapping_add(4))?;
             if size > MAX_VTABLE {
                 return None;
