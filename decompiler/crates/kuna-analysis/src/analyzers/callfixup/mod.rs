@@ -104,6 +104,9 @@ pub fn target_fixup_map(arch: &Architecture) -> Vec<(String, String)> {
         let Ok(fixup_name) = std::str::from_utf8(&cf.payload.core.name) else {
             continue;
         };
+        if fixup_name.starts_with(kuna_decomp::kuna_objcarc::FIXUP_PREFIX) && !arch.objc_arc {
+            continue;
+        }
         for target in &cf.target_symbol_names {
             if let Ok(target) = std::str::from_utf8(target) {
                 map.push((target.to_string(), fixup_name.to_string()));
@@ -144,7 +147,7 @@ pub fn call_fixup_name_for_function<'a>(
 /// commit's `query_global_function` resolves the FunctionSymbol that actually
 /// exists and re-derives the fixup the same way (mirrors `noreturn`). Shared by
 /// [`AnalysisPass::run`] and the unit tests.
-fn scan_call_fixups(file: &object::File, arch: &Architecture) -> AnalysisOutput {
+fn scan_call_fixups(file: &object::File, bytes: &[u8], arch: &Architecture) -> AnalysisOutput {
     let mut out = AnalysisOutput::default();
     // Format-agnostic (PR-10): a cspec `<callfixup>` `<target>` is a function NAME
     // (`mcount`/`__fentry__`/`__x86_indirect_thunk_*`), matched against the object's
@@ -174,7 +177,21 @@ fn scan_call_fixups(file: &object::File, arch: &Architecture) -> AnalysisOutput 
             continue;
         };
         if call_fixup_name_for_function(&n, &map).is_some() && seen.insert(n.clone()) {
-            out.call_fixups.push(crate::pass::CallFixupFact { func_name: n });
+            out.call_fixups.push(crate::pass::CallFixupFact { func_name: n, addr: None });
+        }
+    }
+    // A Mach-O import is a `__stubs` entry (and a pointer slot) the loader names
+    // after the symbol without its leading underscore; the FunctionSymbol there
+    // keeps its `sub_` name under that alias, so the fact carries the address.
+    if file.format() == object::BinaryFormat::MachO {
+        for imp in crate::loader::macho_stubs::resolve_macho_imports(file, bytes) {
+            if imp.kind != crate::loader::format::ImportSymKind::Import {
+                continue;
+            }
+            let Ok(n) = String::from_utf8(imp.name) else { continue };
+            if call_fixup_name_for_function(&n, &map).is_some() {
+                out.call_fixups.push(crate::pass::CallFixupFact { func_name: n, addr: Some(imp.addr) });
+            }
         }
     }
     out
@@ -197,7 +214,7 @@ impl AnalysisPass for CallFixupPass {
     }
 
     fn run(&self, ctx: &AnalysisCtx) -> AnalysisOutput {
-        let mut out = scan_call_fixups(ctx.file, ctx.arch);
+        let mut out = scan_call_fixups(ctx.file, ctx.bytes, ctx.arch);
         kuna_msvcftolsig::scan(ctx.file, &mut out);
         out
     }

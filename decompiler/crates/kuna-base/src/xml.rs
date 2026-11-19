@@ -2266,7 +2266,9 @@ mod tests {
         // and kuna-gotypenames / Go type descriptors and itabs named as the linker spells them, go1.16 on
         // and kuna-opaquepredicate / a comparison constant for every input folds under opaquepredicate
         // and kuna-stubbinds / a stripped Mach-O stub is named from the chained bind on its slot (option stubbinds)
-        assert_eq!(count, 848, "corpus file count drifted");
+        // and kuna-objcarc / Objective-C ARC bookkeeping calls are hidden as the copies and stores they stand for
+        // and kuna-objcoutlinedresult / an outlined objc_retain_x<N> returns in x0
+        assert_eq!(count, 850, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

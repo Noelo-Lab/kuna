@@ -6653,8 +6653,20 @@ fn commit_analysis_output(
     //    registered fixup or no matching FunctionSymbol is a silent no-op.
     if !out.call_fixups.is_empty() {
         for fact in &out.call_fixups {
-            let Ok(sid) = prog.arch().query_global_function(&fact.func_name) else {
-                continue;
+            let sid = match fact.addr {
+                Some(addr) => {
+                    let a = Address::new(Rc::clone(code_space), addr);
+                    let arch = prog.arch();
+                    let Some(scope) = arch.symboltab.get_global_scope() else { continue };
+                    match arch.symboltab.find_function(scope, &a) {
+                        Some(sid) => sid,
+                        None => continue,
+                    }
+                }
+                None => match prog.arch().query_global_function(&fact.func_name) {
+                    Ok(sid) => sid,
+                    Err(_) => continue,
+                },
             };
             install_named_call_fixup(prog.arch_mut(), sid, &fact.func_name);
         }
