@@ -6444,6 +6444,46 @@ every other binary's pass list is byte-identical to before the pass existed):
   (that is what `xgettext`'s `c-format` check enforces), and without the hop the
   pass finds almost nothing in coreutils, grep, tar or findutils.
 
+  **Format functions no table declares** (part of `formatstring` whenever the
+  load-time resolver runs; `analyzers/formatstring/kuna_fmtcallee.rs (infer)`).
+  A program's own logger,
+  `die` or `xasprintf` takes a format too, and nothing declares it. The same
+  pass types its calls once it has decided which callees are format functions
+  and in which direction, printf-like or scanf-like. A callee qualifies by its
+  name, when the name contains `printf` or `scanf` and no table knows it (the
+  `v`-prefixed `va_list` forms and the wide-character forms excluded), or by
+  its body: a function of the image that calls or tail-jumps to a `va_list`
+  library function of either family (`vfprintf`, `__vsnprintf_chk`,
+  `vsscanf`, `vsyslog`, ...), directly or through one more function of the
+  image that does. Only a function holding a `va_list` makes that call, and the
+  library function gives the direction. On x86-64 System V the body must also
+  read `AL` at its entry before writing it: the caller of a variadic function
+  passes the number of vector registers it used there, and a variadic prologue
+  tests it before it spills `xmm0`-`xmm7`. `xor eax,eax` is a write. That
+  test is what keeps out a `va_list` helper like `vlog(int, const char *,
+  va_list)` and a function that only calls a format function, such as `note(const
+  char *what) { log_msg(0, "%s", what); }`. Its call `note("50% done")` would
+  otherwise read `% d` as a conversion and invent an argument.
+
+  At each call edge the first of the first four integer argument slots that
+  holds a constant pointer to a NUL-terminated string in a read-only section is
+  taken as the format, folded by the same window and `gettext` hop. A site whose first
+  such string has no `%` is not typed. All typed sites of one callee must name
+  the same slot, or the callee is dropped. On System V a site whose `AL` folds
+  to a constant must pass as many vector registers as the format has floating
+  conversions. The override is built like a library one, with three
+  differences: the slots before the format are untyped values, each as wide as
+  the call's own block last wrote it (an `int` in `edi` is four bytes, so it
+  prints without a widening cast; a full register when the block does not write
+  it); the return type is left to recovery
+  (`decompile_drive.rs (ArchFlowEnv::build_override_proto)` seeds `void` and
+  unlocks the output); and an untyped slot of a format call declares no integer
+  contract to the cast printer (`p9_emit/kuna_unknowncasts.rs`). The callee's
+  own prototype is not changed: parking a variadic declaration on it split the
+  register-save locals of its own body. With a DWARF declaration of the callee,
+  the site override still replaces it, so the slots before the format lose
+  their declared types (a known limit).
+
   A parked override is consumed at flow time, so a function that has one never
   adopts IR that was followed before the park.
 

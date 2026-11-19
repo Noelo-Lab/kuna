@@ -435,8 +435,16 @@ impl FlowEnvironment for ArchFlowEnv {
         };
         let void = arch.types().get_type_void()?;
         let mut proto = crate::fspec::FuncProto::new();
-        proto.set_internal(model.clone(), void);
-        proto.set_pieces(pieces, Some(model), arch.types(), arch.manage())?;
+        proto.set_internal(model.clone(), void.clone());
+        if pieces.outtype.is_none() && pieces.output_storage.is_none() {
+            // A format-callee override declares no return: recovery decides it.
+            let mut typed = pieces.clone();
+            typed.outtype = Some(void);
+            proto.set_pieces(&typed, Some(model), arch.types(), arch.manage())?;
+            proto.set_output_lock(false);
+        } else {
+            proto.set_pieces(pieces, Some(model), arch.types(), arch.manage())?;
+        }
         // insertProtoOverride marked this an override (locked); `set_pieces` already
         // sets the input/output/model locks.  Flag the override bit so the call
         // spec's `isOverride()` short-circuit (deindirect proto-merge) sees it.
