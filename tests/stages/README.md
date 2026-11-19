@@ -429,6 +429,11 @@ overwrites a writable relocation slot, across off/on/off option toggles.
 compressed cross-unit references, result roles, caller propagation and a wrong-register
 control. Its console companion executes hermetic and native recovered Go bodies.
 
+`ghangr-go-dwarf-string-inputs.xml` checks the two physical Go string input
+words, the ABI slot after an earlier scalar, numeric byte iteration, a retained
+bounds branch, and explicit prototype precedence. The stage also exercises
+malformed pairs and a word-identical scalar signature.
+
 `ghangr-go-pair-results.xml` checks opt-in paired 64-bit Go integer results,
 ordinary local struct storage, destructuring calls and nested result selection.
 Its console companion covers the option gate, malformed cross-unit DWARF,

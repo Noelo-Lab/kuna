@@ -31,7 +31,10 @@ enum Location {
     Unavailable,
     Register(u16),
     EmptyEntryRegister(u16),
+    RegisterPair([u16; 2]),
 }
+
+mod kuna_gostringinput;
 
 #[derive(Clone, Default)]
 struct Extra {
@@ -138,6 +141,16 @@ fn simple_location(expression: gimli::Expression<Reader<'_>>, encoding: gimli::E
     match (operations.next(), operations.next()) {
         (Ok(None), Ok(None)) => Location::Unavailable,
         (Ok(Some(gimli::Operation::Register { register })), Ok(None)) => Location::Register(register.0),
+        (Ok(Some(gimli::Operation::Register { register: first })),
+            Ok(Some(gimli::Operation::Piece { size_in_bits: 64, bit_offset: None }))) => {
+            match (operations.next(), operations.next(), operations.next()) {
+                (Ok(Some(gimli::Operation::Register { register: second })),
+                    Ok(Some(gimli::Operation::Piece { size_in_bits: 64, bit_offset: None })), Ok(None)) => {
+                    Location::RegisterPair([first.0, second.0])
+                }
+                _ => Location::Unsupported,
+            }
+        }
         _ => Location::Unsupported,
     }
 }
@@ -349,7 +362,29 @@ impl Facts {
         let mut output_count = 0;
         let mut int_error = false;
         let (mut integers, mut floats) = (0, 0);
+        let mut string_input = false;
         for (parameter, location, result) in parameters {
+            if let Location::RegisterPair(registers) = location {
+                if result || string_input || !unique || output_count != 0
+                    || parameter.name.is_empty() || parameter.name == "_"
+                {
+                    return None;
+                }
+                let [first, second] = INTEGER_REGISTERS.get(integers..integers + 2)? else {
+                    return None;
+                };
+                if registers != [first.0, second.0] { return None; }
+                let fields = self.string_input_fields(parameter.type_ref?)?;
+                let source = sanitize_symbol_name(&parameter.name, self.names);
+                for ((offset, register), suffix) in fields.into_iter().zip([first.1, second.1]).zip(["data", "len"]) {
+                    inputs.push((offset, self.scalar(offset, &mut BTreeSet::new(), &mut 256)?));
+                    names.push(format!("{source}_{suffix}"));
+                    expected.push(register);
+                }
+                integers += 2;
+                string_input = true;
+                continue;
+            }
             let location = match location {
                 Location::EmptyEntryRegister(register) if !result => Location::Register(register),
                 Location::EmptyEntryRegister(_) => return None,
@@ -386,6 +421,12 @@ impl Facts {
                 inputs.push((parameter.type_ref?, scalar));
                 names.push(sanitize_symbol_name(&parameter.name, self.names).into_owned());
                 expected.push(register);
+            }
+        }
+        if string_input {
+            let mut unique_names = BTreeSet::new();
+            if output_count > 1 || names.iter().any(|name| !unique_names.insert(name)) {
+                return None;
             }
         }
         if output_count == 2 && outputs.iter().flatten().any(|(_, scalar, _)| scalar.size != 8

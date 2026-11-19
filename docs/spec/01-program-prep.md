@@ -4034,6 +4034,19 @@ moves.
   must still match the validated graph; a generic void-pointer fallback cannot
   silently satisfy a typed contract.
 
+  A unique function with a scalar or void result may also import one Go string
+  input as its two ABI words. The input needs a Go kind-24, 16-byte descriptor
+  with a byte pointer at offset zero and a signed machine-width length at offset
+  eight. Its entry location must contain two ordered eight-byte register pieces
+  in consecutive expected integer slots. Both slots go through the ordinary
+  scalar storage checks. The output names the pointer `<formal>_data` and the
+  length `<formal>_len` and keeps both as separate parameters. Calls keep that
+  two-word representation and explicit function and call-site prototypes retain
+  precedence. Ambiguous names, missing or partial locations, conflicting types,
+  and unsupported contracts fall back to inference. The import leaves byte
+  loads and bounds control flow to their existing passes. Slice layouts, string
+  results, and reconstruction of a source-level `string` remain outside this arm.
+
   Paired results are part of this importer (formerly the separate
   `gopairreturns` option) and follow the target-gated `godwarfsig` default.
   Exactly two signed or unsigned 64-bit integer
