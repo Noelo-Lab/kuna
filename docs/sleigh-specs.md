@@ -77,6 +77,42 @@ Cortus APS3 (`d3617d648`) is the reference: four files, a README, and one stage 
 Adding the new spec to the compiler oracle (below) is optional; the Octeon variants did,
 Cortus did not.
 
+## Adapting a third-party module
+
+Community SLEIGH modules exist for many processors Ghidra lacks (the backlog in #1789
+lists them with their licenses). Starting from one is fine when its license allows it:
+
+- **Apache-2.0, MIT, BSD or ISC**: adapt it. Keep its copyright headers, and add a
+  paragraph to `NOTICE` that names the project, its URL, its license and the directory
+  it went into, reproducing the license text when the license requires it (the deark
+  paragraph is the model).
+- **No license, or one that is unclear** (WTFPL, "all rights reserved", a missing
+  `LICENSE` file): do not copy from it. Read it for its approach, and write the module
+  from the processor manual.
+
+Record in the module's README the upstream repository and the commit it was taken from,
+and what kuna changed. The checks in the next section apply in full: a community
+module's quality varies, and having been published is not evidence that its p-code is
+right.
+
+## Checking a new module
+
+`slacomp` accepting a spec says nothing about its semantics. A PR that adds or largely
+rewrites a module states which oracle it was checked against and what was measured.
+From strongest to weakest:
+
+| oracle | what it checks | the PR reports |
+|---|---|---|
+| execution: QEMU, Unicorn, or a binutils-gdb `sim/` simulator | registers, flags and memory after each instruction | instruction forms whose state matches from random inputs, and why each of the rest differs (#1703 compares 1,047 s390x forms against Unicorn) |
+| a reference CPU core in MAME | the same, through MAME's debugger | the same |
+| a reference disassembler (`objdump`, `llvm-objdump`) | decode and operand syntax only | mnemonic agreement over real code or assembler-generated vectors (#1700, #1703) |
+| the ISA manual alone | nothing automatic | hand-checked instruction vectors |
+
+A disassembler oracle does not check flags, carry and borrow, delay slots or bank
+switching, so those still need vectors from the manual. Vectors become a stage test:
+instruction bytes in `<bytechunk>`s, one function per behavior, with the expected
+p-code effect in the comment, as `tests/stages/cortus-aps3-constructors.xml` does.
+
 ## Changing a vendored spec
 
 A constructor that produces wrong p-code is a strict correctness fix. It ships with no
