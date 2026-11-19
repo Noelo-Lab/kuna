@@ -338,6 +338,8 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         Box::new(crate::callfixup::CallFixupPass),
         // (kuna `kernelbug`) A Linux kernel image's `__bug_table`; inert elsewhere.
         Box::new(crate::kernelbug::KernelBugPass),
+        // (kuna `blobs`) Embedded images and archives, committed unless `blobs off`.
+        Box::new(crate::blobs::BlobPass),
         // (kuna `thunkentry`) An MSVC incremental-link table's stubs and targets.
         Box::new(crate::listing::kuna_thunkentry::IncrementalLinkPass),
         // (kuna) The MSVC x87 one-operand intrinsics take ST0 and return in ST0.
@@ -1388,6 +1390,24 @@ pub fn run_listing_consumers_replaying_observed(
                 &crate::aif::kuna_poolentry::wide,
             );
             out.push(("poolextents", pe_out));
+        }
+    }
+
+    // (kuna `globalwidth`) The access width of each symbol-table data object.
+    if arch.analysis_listing && arch.analysis_globalwidth {
+        if let (Some(code), Some(data)) = (arch.manage().get_default_code_space(), arch.manage().get_default_data_space()) {
+            use object::read::{Object, ObjectSymbol};
+            let objects: Vec<(u64, u64)> = file
+                .symbols()
+                .chain(file.dynamic_symbols())
+                .filter(|s| s.kind() == object::SymbolKind::Data && s.address() != 0 && s.size() > 0)
+                .map(|s| (s.address(), s.size()))
+                .collect();
+            let family = arch.archid.split(':').next().unwrap_or_default();
+            let mut gw_out = AnalysisOutput::default();
+            gw_out.global_widths =
+                crate::listing::kuna_accesswidth::access_widths(&listing, translate, family, code, data, &objects);
+            out.push(("globalwidth", gw_out));
         }
     }
 

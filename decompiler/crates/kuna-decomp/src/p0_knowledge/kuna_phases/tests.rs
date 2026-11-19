@@ -56,13 +56,13 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_222() {
-    assert_eq!(kuna_num_settables(), 222);
-    assert_eq!(SETTABLE_TABLE.len(), 222);
+fn settable_count_is_227() {
+    assert_eq!(kuna_num_settables(), 227);
+    assert_eq!(SETTABLE_TABLE.len(), 227);
 }
 
 #[test]
-fn tier_counts_are_45_core_120_transform_57_analysis() {
+fn tier_counts_are_45_core_122_transform_60_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -74,7 +74,7 @@ fn tier_counts_are_45_core_120_transform_57_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (45, 120, 57));
+    assert_eq!((core, transform, analysis), (45, 122, 60));
 }
 
 #[test]
@@ -422,6 +422,8 @@ fn option_values_live_value_present_for_76() {
         "xnutables",
         // (kuna) arm64e virtual-call resolution -- the same console-side gate.
         "arm64evcall",
+        // (kuna) Embedded image and archive data symbols: a commit-side gate.
+        "blobs",
         // (kuna) The Swift type-layout arm's gate, read inside that pass.
         "swifttypes",
         // (kuna) Objective-C instance layouts — same commit-side gate as `objc`.
@@ -465,6 +467,9 @@ fn option_values_live_value_present_for_76() {
         // (kuna) Apple kernelcache unwrapping + MH_FILESET entry choice -- a
         // LOAD-time gate read from `KUNA_KERNELCACHE`. Default auto.
         "kernelcache",
+        // (kuna) Where a kernel collection's linked collections are found -- a
+        // LOAD-time gate read from `KUNA_KERNELCACHE_BOOT`. Default auto.
+        "kernelcache-boot",
     ];
     let mut with_live = 0;
     for i in 0..kuna_num_settables() {
@@ -848,7 +853,8 @@ fn option_values_live_value_present_for_76() {
     // field with no `live_field`.
     // 75 -> 76: +1 for `wrapadd` (live_field = wrap_add).
     // +1 for `acleintrinsics` (live_field = acle_intrinsics).
-    assert_eq!(with_live, 77);
+    // +1 for `repstring` (live_field = rep_string).
+    assert_eq!(with_live, 80);
 }
 
 #[test]
@@ -1101,7 +1107,10 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `iokitclasses`, beside `cfstrings`.
     // +1 for `xnutables`, beside `iokitclasses`.
     // +1 for `arm64evcall`, beside `iokitclasses`.
-    assert_eq!(json.matches("},\n").count(), 221);
+    // +1 for `kernelcache-boot`; its P1 row sits after `kernelcache`.
+    // +1 for `blobs`; its P1 row sits after `strings`.
+    // +1 for `repstring`; its P3 row sits after `strlenscan`.
+    assert_eq!(json.matches("},\n").count(), 226);
 }
 
 #[test]

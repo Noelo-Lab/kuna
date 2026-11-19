@@ -522,7 +522,7 @@ parse, so an image whose table is usable is passed on byte for byte; the rewrite
 kept only if the rewritten copy actually parses, so corruption elsewhere still
 reports `object`'s own error rather than a misleading one about the section table.
 What was dropped, and what survived it, is reported on stderr. The CLI surfaces
-that parse the image themselves rather than through the loader (`strings`, `crypto`,
+that parse the image themselves rather than through the loader (`strings`, `crypto`, `blobs`,
 `xrefs`, `decompile-graph`, the call graph) read it through the same normalization
 (`elf_shdr (read_image)`), so a recovered image is recovered everywhere.
 
@@ -731,6 +731,21 @@ which both name data objects from the symbol table independently of any debug
 info, and it is what makes `fprintf(stderr, ...)` read as an error path instead
 of `fprintf(dat_61a0, ...)` on a stripped binary (GH-184). The stream is
 collected at `load file` but committed at `read symbols` (DIV-26/DIV-76).
+
+**Data-object width** (`globalwidth`, default-on; kuna;
+`decompiler/crates/kuna-analysis/src/listing/kuna_accesswidth.rs (access_widths)`):
+such an object has a size but no type, so mapped as `undefined<size>` an element
+access renders as `*(short *)&g3[(i & 7) * 2UL]`. Over the decoded Listing every
+`LOAD`/`STORE` whose address is a constant or a constant plus something, and
+every direct data-space operand (branch and call targets excluded), that lands
+in an object is read at the width of the value moved. An object all of whose
+accesses use one width `w` that divides its size, with some access indexed or
+past the first element, is mapped as `undefined<w>[size / w]` instead; a lone
+narrowing read (`(int)g1` of a `long`) and an object read at two widths change
+nothing, and neither does an object some instruction moves through a
+floating-point or vector register: its elements are floats, and an integer
+element would print each read as a conversion. The facts need the Listing (`option listing`), so without it every
+object keeps `undefined<size>`.
 
 A PE image has no sized data symbols, but its export directory names data too:
 `msvcrt.dll` exports `_iob`, `_environ` and `__argc`, and a COM DLL exports its
@@ -1276,10 +1291,55 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   a System collection or an Auxiliary one built without a System collection,
   told apart by whichever of levels 1 and 3 its chains name (neither can point
   into the other's level). With no plist, or chains naming both, the level is
-  unknown and no kernel-collection target is written; targets at other levels
-  are never written
-  (`decompiler/crates/kuna-analysis/src/loader/format/macho/chained.rs (resolve_kernel_cache_levels)`)
-  — and one entry is cut out as a thin Mach-O by copying
+  unknown and no kernel-collection target is written; a target at another
+  level is kept aside with its level and offset, and counted as damage of the
+  walk, because only the file of that collection holds its base
+  (`decompiler/crates/kuna-analysis/src/loader/format/macho/chained.rs (resolve_kernel_cache_levels)`).
+  Those targets are what a macOS System or Auxiliary collection
+  (`SystemKernelExtensions.kc`, `AuxiliaryKernelExtensions.kc`) uses for every
+  pointer into the kernel: a kext's call slots, the vtables and metaclass
+  pointers its classes inherit. `kernelcache-boot` (kuna, default `auto`,
+  env-bridged through `KUNA_KERNELCACHE_BOOT`) resolves them from the other
+  file. The plist names each linked collection by UUID, `_BootKCID` for level 0
+  and `_PageableKCID` for level 1, as a 16-byte base64 `<data>` value. `auto`
+  takes the first 4096 entries the directory of the input lists, in name
+  order, keeps the regular files other than the input whose first 16 bytes are an
+  `MH_FILESET` header (at most 16), and reads each whole until every wanted
+  UUID is found; a path value names one regular file, which may be an IMG4 or
+  IM4P container, or a directory searched the same way; `off` reads no other
+  file. A candidate is the linked collection only if
+  its `LC_UUID` or its own plist's `_PrelinkKCID` equals the wanted UUID, so a
+  boot collection from another build is never used: its offsets would land on
+  other functions. For a match, each slot gets the linked file's base (its
+  lowest file-backed segment address, the rule the own level uses) plus the
+  offset, pointer-authentication bits dropped. Then each such address that a
+  section symbol of the linked file defines inside an instruction-bearing
+  section is named: the kernel entry's symbol tables are read before the
+  kexts', each distinct entry header once, under the same work budget as the
+  bind below
+  (`decompiler/crates/kuna-analysis/src/loader/kuna_kernelcache/linked.rs (resolve)`).
+  The names reach the loaded entry as symbols of its own: its symbol table is
+  copied to the end of the file with one `N_ABS | N_EXT` symbol per named
+  address after it, the names follow, and the entry's `LC_SYMTAB` is pointed at
+  the copy, its string table keeping its offset and growing to reach the new
+  names
+  (`decompiler/crates/kuna-analysis/src/loader/kuna_kernelcache/fileset.rs (append_bound_symbols)`).
+  That is the form the collection bind below leaves an import in. The builder
+  of a collection turns each bind of a kext's symbol-pointer sections (`__got`,
+  `__auth_got`) and of `__auth_ptr` into a rebase, so after the peel the value
+  of such a slot is the only record of what it is bound to: the import walk
+  makes each 8-byte slot of those sections that holds a bound import's address,
+  and that the indirect-symbol table did not name, an import slot of that
+  function
+  (`decompiler/crates/kuna-analysis/src/loader/macho_stubs.rs (push_kext_bound_slots)`),
+  and a call through it prints the kernel function's name. A data target (a
+  vtable, a metaclass object) is rebased and not named. The load note states,
+  per level, how many pointers were rebased from which file and how many
+  functions were named, or how many stay unresolved and why (the option is off,
+  the plist carries no UUID for the level, no file with that UUID was found).
+  An unresolved slot keeps its packed word. A collection with no target at
+  another level reads no other file, so every other input is unaffected.
+  Then one entry is cut out as a thin Mach-O by copying
   its header and load commands to file offset 0. Nothing else moves: every
   entry's file offsets are already absolute in the collection, so its
   segments, symbol table and indirect-symbol table read correctly in place. The
@@ -1479,6 +1539,62 @@ On the iOS 16.4.1 arm64e cache (44 sub-caches) and the iOS 14.8 arm64 cache
 rebuilt `__text` of an image matches an independent extraction of the same
 build byte for byte, and its data differs only where that extraction left
 chained pointers undecoded.
+
+A `dyldimage` value may join several names with `+`
+(`Foundation+CoreFoundation`), and the loader then works on all of them as one
+program, so a call from one image into another can be followed without a
+second run. `kuna_dyldcache.rs (DyldCache::select_all)` resolves each name the
+way a single one is resolved; since `+` also occurs inside install names
+(`libc++.1.dylib`, `libc++abi.dylib`), `kuna_dyldcache.rs (select_images)`
+takes from each piece the longest run of `+`-joined pieces that names an
+image, a run ending only at the end of the value or before a non-empty piece,
+so `libc++.1.dylib` stays one image and `libc++` is not read as `libc`. Then
+`kuna_dyldcache/merge.rs (DyldCache::extract_merged)` rebuilds each image on
+its own, as above, and joins the results into one thin Mach-O (an entry named
+twice, or two entries sharing a header, count once, and one image is rebuilt
+exactly as before). The joined file opens with a header page of its own,
+because the segment commands of several images need not fit in the padding
+before the first section of one (the rebuilt Foundation of iOS 16.4.1 has
+2,808 bytes spare and CoreFoundation's segment commands take 4,904). Every non-`__LINKEDIT` segment follows at its
+cache address, images in address order, and one `__LINKEDIT` closes the file.
+It holds one symbol table, ordered as `LC_DYSYMTAB` requires (locals, external
+definitions, undefined symbols), in which each symbol's section ordinal is
+moved past the sections of the images before it. A Mach-O symbol names its
+section in one byte, so the images may hold at most 255 sections together and
+a larger selection is refused with that count. The indirect-symbol tables are
+concatenated, their entries renumbered to the merged symbol table, and the
+`reserved1` of every stub, symbol-pointer and thread-local-pointer section is
+moved to its image's part. The function starts of all images are decoded,
+sorted and written as one table counted from the lowest `__TEXT`, and
+`macho_entry.rs (walk)` counts from the first `__TEXT` command for that reason.
+The `kuna.dyld.xrefs` notes are joined, without the call targets that now lie
+inside a loaded image (the image's own symbol names them). The identity
+commands (`LC_ID_DYLIB`, `LC_UUID`, the dylib list) are those of the image
+named first. Export tries and data-in-code are not carried: every export of a
+cache image is also an external definition in its symbol table. A joined
+Mach-O holds one `__objc_classlist`, `__cfstring`, `__swift5_types` (and so
+on) per image, so the ObjC, CFString and Swift passes read every section of a
+name (`objc/sections.rs (sections_named)`), not the first. On the iOS 16.4.1
+cache, `Foundation+CoreFoundation` lists exactly the 50,742 and 11,166
+functions the two images list alone. In a sample of 24 functions (12 from
+each image) the decompiled text matched the single-image text except in two
+ways: a reference into the other image now resolves to its symbol, and a
+local may be renamed where its name collides with a symbol of the other image
+(`ptr` became `ptr_2`). A call through a stub island still renders as a named
+import of the calling image.
+
+The CLI widens the selection on demand
+(`decompiler/crates/kuna-cli/src/followimages.rs (apply)`). Before `decompile`,
+`disassemble` or `xrefs` loads a cache, each `0x` address of the request that
+the selected images do not hold is looked up in the segment ranges of every
+image (`kuna_dyldcache.rs (follow_images)`), and the image that holds it is
+appended to the selection, up to `--follow-images N` images (default 2; 0
+turns the lookup off). A stub-island address belongs to no image; for
+`decompile` and `disassemble` the stub is followed (up to four hops, the same
+walk that names cross-image calls) and the request is rewritten to the
+function it jumps to. `xrefs` leaves such an address alone, since the island is
+what the call sites reference. Each step prints a `[kuna]` note on stderr,
+and past the limit the note names the image to add.
 
 An explicit target changes only language selection: the parsed container still
 owns section mapping, image base, symbols, and imports. Container header class is
@@ -5045,6 +5161,42 @@ moves.
   in the table whatever the section count. The 14,223 entries of
   a 7.3 x86-64 `vmlinux` read in under 0.2 s. Committed sorted by trap address
   onto `Architecture::kernel_bug_sites`.
+- **Embedded images and archives** (`blobs on|off`, default on;
+  `decompiler/crates/kuna-analysis/src/analyzers/blobs/mod.rs (BlobPass)`): a
+  program that ships a logo, an icon set or a packed resource stores the whole
+  file in a data section, where it showed only as the string fragments of its
+  header (`PNG`, `IHDR`, `IDATx`) and as a bare address in the code that hands
+  it out. The pass searches every mapped, file-backed section for nine magic
+  numbers (`blobs/mod.rs (scan)`) and keeps a candidate only when its container
+  structure walks to its end, which is also what gives the exact length. A PNG
+  is its chunks from `IHDR` to `IEND` with every chunk CRC-32 checked and an
+  `IDAT` present; a JPEG its marker segments to `EOI` after a frame header and
+  a scan, skipping the entropy-coded bytes; a GIF its blocks to the trailer
+  after at least one image; a BMP a header whose file size equals the pixel
+  array its DIB header describes; an ICO a directory whose images follow it
+  back to back, each a PNG or a DIB of the entry's dimensions
+  (`blobs/images.rs`). A zip is found from its end-of-central-directory
+  record, whose directory must sit right before it and name a local header for
+  every entry, so a stub in front of the archive is not part of it and a zip64
+  archive is not reported; a gzip member is inflated into a discarded buffer to
+  check the trailer's CRC-32 and length, the one kind whose length cannot be
+  known otherwise; an xz stream needs a footer and an index whose CRC-32s match
+  and whose index sums to the bytes between header and index; a zstd frame is
+  its frame and block headers to the last block, with a compressed block whose
+  literals and sequences headers fit it, or raw and RLE blocks that sum to the
+  declared content size (`blobs/archives.rs`). No pixels are decoded. A
+  truncated file is not a blob, and a file stored inside an earlier-starting
+  one (a PNG in a zip, a PNG in an ICO) is not reported separately. The image
+  is hostile input: every read is bounds-checked and the bytes one scan may
+  walk are capped at sixteen times the section, after which it returns what it
+  has. The commit (`decompiler/crates/kuna-console/src/kuna_blobdata.rs
+  (commit)`) runs after every other data source, so a DWARF global or a
+  symbol-table object keeps the address; where nothing covers it the blob
+  becomes `<kind>_<addr>` (`png_3c0`), an `unsigned char[length]` with name and
+  type locked, and the string facts that fall inside any blob are not planted.
+  Each blob's first address is also recorded for constant-pointer recovery
+  (chapter 05, `blobs`). `kuna blobs` runs the same scan as an inventory, with
+  the functions that reference each file.
 - **x87 intrinsics** (`x87intrinsics`, always on, i386 only;
   `decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_x87intrinsics.rs
   (X87IntrinsicPass)`): binds the MSVC one-operand x87 math intrinsics to the
@@ -5471,6 +5623,25 @@ every other binary's pass list is byte-identical to before the pass existed):
   so no anchor exists and the output is empty. Independent code-pointer-run scanning
   — which would find such vtables heuristically — is deliberately **not** part of
   this pass.
+- **(kuna) Typed vtables** (`itaniumrtti on`, opt-in; `names`, the default,
+  stops at the labels above;
+  `decompiler/crates/kuna-analysis/src/analyzers/rtti/kuna_vtabletypes.rs`): the
+  facts chapter 05's vtable typing installs, read from the same recovered graph
+  (`kuna_itaniumrtti.rs (recover_graph)`). Per polymorphic class the pass
+  reports the primary vtable's slots and, per slot, the function the class
+  holds and every override: the same slot of each derived class's sub-vtable
+  for the class's subobject (the primary one for a base at offset 0, the
+  secondary one at the base's displacement otherwise). A class the image never
+  instantiates (an abstract base whose constructor was inlined away) has no
+  vtable of its own and gets the prefix all its derived views share. A slot is
+  named for the method its symbol demangles to; a destructor slot is `dtor`, or
+  `deleting_dtor` for the `D0` variant, and a `this`-adjusting thunk
+  (`_ZThn16_…`, `_ZTv0_n24_…`) names the method it forwards to. The class's
+  structure name is the one the demangled signatures give `this`, the innermost
+  component without template arguments; two classes with the same such name
+  are both skipped. It also reports every sub-vtable's slot words. A function
+  a vtable holds is known to be a virtual member, so its inferred-tier
+  demangled declaration with `this` (`cppsig`) is applied as if proven.
 - **Objective-C** (`objc`, Mach-O-only, on by default and inert elsewhere;
   `decompiler/crates/kuna-analysis/src/analyzers/objc/mod.rs`): walk
   `__objc_classlist` → `class_t` → `class_ro_t` → method lists (both absolute and
@@ -5679,6 +5850,49 @@ every other binary's pass list is byte-identical to before the pass existed):
     The 1.9 MB app: 2,897 → 1,221 argument-less stub calls; an 84 MB app sample: 32 → 4, 60 of
     265 stub calls change shape (`setTransitioningDelegate:(v3, delegate)`,
     `presentViewController:animated:completion:(vc, (UIViewController *)v10, 1, NULL)`).
+  - **A dyld shared cache image**
+    (`decompiler/crates/kuna-analysis/src/analyzers/objc/kuna_objccache.rs (CacheReader)`,
+    `decompiler/crates/kuna-analysis/src/loader/kuna_dyldcache.rs (objc_selector_base)`,
+    kuna, no option: it rides `objc`): an image rebuilt out of a cache keeps
+    its own sections, but the cache builder moved the rest of its metadata. A
+    small method list holds its selectors as offsets from the cache's *selector
+    base* (`entsizeAndFlags & 0x40000000`) and, under `0x20000000`, its type
+    strings too. The strings and the `__objc_selrefs` targets live in libobjc's
+    `__OBJC_RO` region, outside the image. `class_ro_t.baseMethods` with its low
+    bit set names a relative list of lists (`entsize 8`; each entry's `>> 16` is
+    the list's offset from the entry, its low 16 bits an image index), the shape
+    of preattached categories. When the image under analysis was loaded from a
+    cache (`AnalysisCtx::image_path` opens it), `MachoImage::with_cache` reads
+    every address outside the image's own sections through the cache, one slid
+    page at a time with pointers unslid, each page read once and each read
+    charged to the walk budget. `methods.rs (read_small_direct)` resolves the
+    two flags from the base and `classt.rs (method_lists)` walks the list of
+    lists. The base comes from the `ObjCOptimizationHeader` the cache header
+    names (`objcOptsOffset`; `relativeMethodSelectorBaseAddressOffset` at
+    +0x30, an offset from the cache base), else from libobjc's `objc_opt_t`
+    (`__objc_opt_ro`, version 16 on, the same field at +0x28 as a signed offset
+    from the record) on an older cache. A method whose IMP lies outside the image, a
+    category of another image preattached to this image's class, is named at
+    that address as an import (`AnalysisOutput::import_slot_names`) and makes
+    no function. Class, super and protocol reference slots hold plain pointers
+    into other images, so the same reads name them; the cache's hash tables are
+    not consulted.
+    Two readings apply to every Mach-O, and a cache is where they show. The
+    entry size of a method list is `entsizeAndFlags & 0xfffc`: the two low bits
+    are the uniqued and sorted flags, which the cache builder sets on disk, and
+    reading them as size walks 15-byte records. And the linker merges the
+    categories of a class into one, so the metadata names only the merged
+    category while the symbol keeps the original (`-[NSObject(NSKeyValueCoding)
+    valueForKeyPath:]` against a metadata `NSObject(Foundation)`); a symbol at
+    the IMP that spells the same class and selector is the label
+    (`sections.rs (MachoImage::method_symbol)`), which is also what lets the
+    prototype reach a function the symbol table already named.
+    Foundation out of an iOS 16.4 arm64e cache: 3,979 `objc_msgSend$<sel>` stubs
+    named (none before), every selector, class, super and protocol reference
+    slot named (6,050, 566, 481 and 33), `self` and `_cmd` typed on its methods.
+    `tests/stages/kuna-dyldcacheobjc.xml` runs the two synthetic caches of
+    `dyld_cache_objc.py`, one with the header and one with only the
+    `objc_opt_t`.
   Decoding every method's encoding asks the type factory for `objc_object *`
   once per argument, and the factory finds a type by name with a linear scan of
   every type it holds; with thousands of class structs interned that scan is no
@@ -6269,6 +6483,17 @@ every other binary's pass list is byte-identical to before the pass existed):
   signature guesses (`FidMatch::by_signature`): the commit applies the metadata
   renames (PDB, Objective-C, Swift) first, so a guess never replaces one, and
   applies a guess only when every FID and FLIRT name at that address agrees.
+  A supplied function name is protected even when it resembles a `sub_` or
+  `FUN_` placeholder. Before replacing a discovery placeholder, the engine
+  checks both the signature spelling and its loader-style canonical spelling
+  for existing name ownership. A collision leaves the placeholder and the
+  established name available at their original addresses.
+  A defined ELF object label inside an allocated, mapped section reserves its
+  spelling for this check even when its declared size is zero. Its name
+  provides ownership evidence only and supplies no data object extent.
+  Eligible signature proposals at different entries that share a raw or
+  canonical spelling all keep their placeholders. Ownership is checked before
+  any of the proposals are installed, so traversal order cannot choose an owner.
   When the two passes disagree, the function keeps its placeholder rather than
   taking whichever name sorts first.
   Measured on stripped static programs against their unstripped twins (right/wrong
@@ -6326,6 +6551,34 @@ every other binary's pass list is byte-identical to before the pass existed):
   statuses, with the verified external manifest/source identities. These fields
   are absent unless requested; stable compiler and formatter-layout facts remain
   separate. Malformed manifests and hash mismatches fail before image analysis.
+  The separate `--apply-rust-signatures PATH` request explicitly trusts the same
+  hashed manifest for names. It is available on `functions` and one-function
+  `decompile`, whose text and JSON forms share the in-process load. Application
+  consumes the final accepted Listing once before selection; inventory uses the
+  same analysis defaults as decompilation, and selecting an address does not
+  implicitly disable discovery. Explicit analysis options still apply.
+  `decompiler/crates/kuna-analysis/src/analyzers/flirt/kuna_rustprofiles/kuna_application.rs`
+  requires a positive unique profile after every requested candidate is complete.
+  Each proposal must have the exact same raw symbol and address in both banks of
+  that profile. The maximum bank score alone authorizes no names. Empty agreement,
+  unresolved profiles, unavailable analysis and unsupported images fail explicitly.
+  Agreed pairs become ordinary signature `FidMatch` records, sanitized before
+  merging with all other analysis output. The normal commit requires an existing
+  discovered function and arbitrates metadata, loader ownership, raw/canonical
+  name collisions, other FID/FLIRT guesses and vetoes. Agreement proposes a name;
+  it does not bypass those refusals or imply types, ABI, compiler identity or
+  side effects. The ordinary runtime version and registry-crate fields remain
+  sourced from the image, independently of the selected signature profile.
+  Later caller declarations and assertions keep their precedence.
+  Bytes overlays are refused before loading, and the console independently
+  declines application after an effective overlay. Archive inputs are refused
+  before member selection or fan-out, including an archive holding linked ELF
+  members. Ordinary archive commands retain their behavior. Slice/target/ISA and
+  image-selection overrides are refused. Batch and worker application is not
+  supported: ordinary inventory replay cannot replace existing placeholders or
+  preserve all accepted aliases without a separate image-bound fact transport.
+  No request changes the normal load. Report-only requests retain their original
+  shape and behavior and cannot be combined with application in the same run.
 - **Format strings** (`formatstring off|static|full`, default `static`;
   `decompiler/crates/kuna-analysis/src/analyzers/formatstring/mod.rs`): what a
   `printf`/`scanf`-family call does with its variadic arguments is stated by its

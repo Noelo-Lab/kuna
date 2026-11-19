@@ -31,6 +31,7 @@
 //! is precisely what `readLoaderSymbols` reads).
 
 mod lazy_inventory;
+mod kuna_signature_names;
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -603,6 +604,8 @@ pub struct ConsoleProgram {
     /// pass did not run or no database was configured.
     fid_databases: Vec<kuna_analysis::fid::kuna_fidapply::FidDbReport>,
     rust_profile_request: Option<RustProfileRequest>,
+    rust_profile_apply: bool,
+    rust_profile_image_modified: bool,
     rust_profile_report: Option<RustProfileReport>,
     /// (kuna) The image bytes + path stashed at load for the **deferred Listing
     /// build** (the Listing/xref PR6 build-timing fix). The Listing is gated on
@@ -805,8 +808,15 @@ impl ConsoleProgram {
 
     /// Request one read-only observation of the next accepted image Listing.
     pub fn request_rust_profiles(&mut self, request: RustProfileRequest) {
+        self.rust_profile_apply = false;
         self.rust_profile_request = Some(request);
         self.rust_profile_report = Some(RustProfileReport::unavailable());
+    }
+
+    /// Offer caller-verified trusted banks through ordinary name arbitration, once per image.
+    pub fn request_rust_signature_names(&mut self, request: RustProfileRequest) {
+        self.request_rust_profiles(request);
+        self.rust_profile_apply = true;
     }
 
     pub fn rust_profile_report(&self) -> Option<&RustProfileReport> {
@@ -2550,6 +2560,8 @@ impl ConsoleProgram {
     pub fn set_assertions(&mut self, directives: Vec<crate::assertions::Directive>) {
         if directives.iter().any(|directive| matches!(directive.body,
             crate::assertions::Body::Flow { .. }
+            | crate::assertions::Body::Callee { .. }
+            | crate::assertions::Body::CallProto { .. }
             | crate::assertions::Body::Param { func: None, .. }
             | crate::assertions::Body::Return { func: None, .. }))
         {
@@ -2802,6 +2814,7 @@ impl ConsoleProgram {
     /// Add a successfully applied byte overlay to the deferred walk, clipped
     /// to executable mappings. Unwritten virtual tails remain outside its ranges.
     pub(crate) fn note_materialized_bytes(&mut self, addr: &Address, size: usize) {
+        self.rust_profile_image_modified = true;
         self.callwide_unavailable("effective byte overlays require a new complete image proof");
         if self.pending_entry_thumb.is_none()
             || !self.analysis_code_space.as_ref().zip(addr.get_space())
@@ -2918,6 +2931,10 @@ impl ConsoleProgram {
     pub fn commit_pending_analysis(&mut self) -> KunaResult<()> {
         let _load = self.arch().load_scope();
         let rust_profile_request = self.rust_profile_request.take();
+        let apply_rust_names = std::mem::take(&mut self.rust_profile_apply);
+        if apply_rust_names && (self.rust_profile_image_modified || self.analysis_image.is_none()) {
+            return Err(KunaError::lowlevel("Rust signature application requires an unmodified object image before its analysis commit"));
+        }
         if !self.pending_synthetic_entries.is_empty() {
             // (kuna `rawdiscover`) A headerless image reaches this point holding
             // only the `--entry` addresses the caller typed, because the
@@ -3051,6 +3068,7 @@ impl ConsoleProgram {
         // Filter by the per-pass enable flags (default-on, set by the user's
         // `--option <id> on|off`), then merge the survivors in pass order.
         let mut merged = kuna_analysis::pass::AnalysisOutput::default();
+        let mut zero_size_data_names = Vec::new();
         let mut input_context_paints = Vec::new();
         for (id, out) in pending {
             if id == "input_isa" {
@@ -3081,6 +3099,9 @@ impl ConsoleProgram {
                 let profile_request = if rust_profile_request.is_some() {
                     match RustProfileReport::reject_unsupported(&bytes) {
                         Some(report) => {
+                            if apply_rust_names {
+                                return Err(KunaError::lowlevel("unsupported image: Rust signature application requires a linked little-endian x86-64 ELF image"));
+                            }
                             self.rust_profile_report = Some(report);
                             None
                         }
@@ -3156,7 +3177,16 @@ impl ConsoleProgram {
                             observer,
                         );
                         if profile_request.is_some() {
-                            self.rust_profile_report = Some(rust_report.unwrap_or_else(|| RustProfileReport::unavailable_for(&bytes)));
+                            let report = rust_report.unwrap_or_else(|| RustProfileReport::unavailable_for(&bytes));
+                            if apply_rust_names {
+                                let profile = report.report.as_ref().ok_or_else(|| KunaError::lowlevel(
+                                    report.error.as_deref().unwrap_or("Rust signature profile is unavailable")))?;
+                                let mut names = kuna_analysis::pass::AnalysisOutput::default();
+                                names.fid_names = profile.agreed_names().map_err(KunaError::lowlevel)?;
+                                names.sanitize_names(kuna_decomp::kuna_symbolnamechars::symbolnamechars_mode());
+                                merged.merge(names);
+                            }
+                            self.rust_profile_report = Some(report);
                         }
                         for (id, mut out) in consumer_out {
                             if let Some(record) = out.arm_frames.take() {
@@ -3183,6 +3213,10 @@ impl ConsoleProgram {
                             self.arch(),
                         ));
                     }
+                    if merged.fid_names.iter().any(|m| m.by_signature) {
+                        zero_size_data_names =
+                            kuna_analysis::flirt::kuna_elf_data_names::zero_size_data_names(&bytes);
+                    }
             }
         } else {
             // Both deferred passes off: drop the stash (no deferred build).
@@ -3201,6 +3235,11 @@ impl ConsoleProgram {
         // ranges.
         let mut fde_bodies = std::mem::take(&mut merged.fde_bodies);
         fde_bodies.sort_unstable();
+        // (kuna `funcboundflow`) A PE function's `.pdata` record can be one chunk
+        // of a chained function, so only the other images' extents bound flow.
+        if !self.arch().get_description().contains("windows") {
+            self.arch_mut().kuna_unwind_extents = Rc::new(fde_bodies.clone());
+        }
         kuna_analysis::entry::kuna_fdeinterior::suppress_interior_entries(
             &mut merged.entries,
             &fde_bodies,
@@ -3215,7 +3254,7 @@ impl ConsoleProgram {
         suppress_pdb_interior_entries(self.arch(), &code_space, &mut merged);
         merged.context_paints.extend(input_context_paints);
         self.fid_databases = std::mem::take(&mut merged.fid_databases);
-        let committed = commit_analysis_output(self, &code_space, merged);
+        let committed = commit_analysis_output(self, &code_space, merged, zero_size_data_names);
         self.stash_float_scan();
         committed
     }
@@ -3467,6 +3506,7 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         "addrtable" => arch.analysis_addrtable,
         "operand_refs" => arch.analysis_operand_refs,
         "listing" => arch.analysis_listing,
+        "globalwidth" => arch.analysis_globalwidth,
         "fast_funcdisc" => arch.analysis_fast_funcdisc,
         "noreturn_disc" => arch.analysis_noreturn_disc,
         // (kuna, GH-312) The positive-evidence-only tally has no fact stream of its
@@ -3518,6 +3558,7 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         "iokitclasses" | "osclassinfo" => arch.analysis_iokitclasses,
         "xnutables" => arch.analysis_xnutables,
         "arm64evcall" => arch.analysis_arm64evcall,
+        "blobs" => arch.analysis_blobs,
         // (kuna) PE PDB metadata recovery — default-OFF (output-changing: renames
         // stripped functions to their real PDB names). PE-only + externally gated on
         // a fingerprint-matching `.pdb` (the `kuna_pdb_path` env var). Registered
@@ -4217,6 +4258,8 @@ fn empty_program(
         libctypes_refused: false,
         fid_databases: Vec::new(),
         rust_profile_request: None,
+        rust_profile_apply: false,
+        rust_profile_image_modified: false,
         rust_profile_report: None,
         analysis_image: None,
         arm_frames: None,
@@ -4819,7 +4862,7 @@ pub(crate) fn bootstrap_object(
             // (kuna `kernelcache`) IMG4 / IM4P / LZFSE / complzss unwrapping and MH_FILESET
             // entry selection, ahead of every other normalization.
             let choice = kuna_decomp::kuna_kernelcache::KernelcacheChoice::in_force();
-            let peeled = kuna_analysis::loader::kuna_kernelcache::peel(bytes, &choice)
+            let peeled = kuna_analysis::loader::kuna_kernelcache::peel_file(Path::new(path), bytes, &choice)
                 .map_err(KunaError::lowlevel)?;
             if let Some(note) = &peeled.note {
                 kuna_base::notes::say_once(path, &format!("[kuna] {note}"));
@@ -5326,6 +5369,7 @@ fn commit_analysis_output(
     prog: &mut ConsoleProgram,
     code_space: &Rc<AddrSpace>,
     out: kuna_analysis::pass::AnalysisOutput,
+    zero_size_data_names: Vec<String>,
 ) -> KunaResult<()> {
     use kuna_analysis::pass::SymKind;
 
@@ -5394,6 +5438,22 @@ fn commit_analysis_output(
     } else {
         (Vec::new(), Vec::new())
     };
+    // (kuna `itaniumrtti`) A function a vtable slot holds is a virtual member,
+    // so its implicit `this` is certain: an inferred-tier declaration of one
+    // that takes `this` is as good as a proven one.
+    if prog.arch().analysis_vtabletypes {
+        let held: std::collections::HashSet<u64> = out
+            .cpp_vtables
+            .classes
+            .iter()
+            .flat_map(|c| c.slots.iter().flat_map(|s| s.targets.iter().copied()))
+            .collect();
+        let (members, rest): (Vec<_>, Vec<_>) = std::mem::take(&mut out.cpp_sig.inferred)
+            .into_iter()
+            .partition(|(addr, pieces)| held.contains(addr) && pieces.innames.first().is_some_and(|n| n == "this"));
+        out.cpp_sig.proven.extend(members);
+        out.cpp_sig.inferred = rest;
+    }
     let cppsig_protos = if cppsig_mode.enabled() {
         kuna_analysis::demangle::kuna_cppsig::select(
             std::mem::take(&mut out.cpp_sig),
@@ -5403,6 +5463,8 @@ fn commit_analysis_output(
         Vec::new()
     };
     let out = out;
+    let signature_names =
+        kuna_signature_names::SignatureNames::collect(prog, &out, zero_size_data_names);
 
     // Keep lookup identities even when richer debug information wins the map;
     // a spelling shared by several objects resolves to its lowest address.
@@ -5465,6 +5527,28 @@ fn commit_analysis_output(
         }
         ranges.sort_unstable();
         prog.arch_mut().dynreloc_const = Rc::new(ranges);
+    }
+    // 0e. (kuna `itaniumrtti`) The vtable slot words, the same way: a load of a
+    //     slot through a constant vtable address folds to the method it holds,
+    //     so a call on an object whose vptr store the function can see becomes
+    //     a direct call. Painted before the vptr labels are mapped at 1.
+    if prog.arch().analysis_vtabletypes && !out.cpp_vtables.slot_ranges.is_empty() {
+        let mut ranges = prog.arch().dynreloc_const.as_ref().clone();
+        for &(first, last) in &out.cpp_vtables.slot_ranges {
+            let begin = Address::new(Rc::clone(code_space), first);
+            let end = Address::new(Rc::clone(code_space), last + 1);
+            prog.arch_mut().symboltab.set_property_range(kuna_decomp::varnode::varnode_flags::readonly, &begin, &end);
+            ranges.push((first, last));
+        }
+        ranges.sort_unstable();
+        let mut merged: Vec<(u64, u64)> = Vec::with_capacity(ranges.len());
+        for (lo, hi) in ranges {
+            match merged.last_mut() {
+                Some(last) if lo <= last.1.saturating_add(1) => last.1 = last.1.max(hi),
+                _ => merged.push((lo, hi)),
+            }
+        }
+        prog.arch_mut().dynreloc_const = Rc::new(merged);
     }
 
     // 1. Extra symbols a pass discovered. Function symbols install like the
@@ -5877,21 +5961,31 @@ fn commit_analysis_output(
         let name = names.into_iter().next()?;
         Some(FidMatch { addr, name, by_signature: true })
     }));
+    let mut signature_renames = Vec::new();
     for m in &fids {
         let addr = Address::new(Rc::clone(code_space), m.addr);
         let sid = prog.arch().symboltab.find_function_across_scopes(&addr).map(|(sid, _)| sid);
         if let Some(sid) = sid {
-            // The label gate: only rename an engine placeholder.
-            let is_placeholder = {
-                let cur = prog.arch().symboltab.symbol(sid).get_name();
-                is_generic_placeholder_name(cur)
-            };
-            if is_placeholder {
-                prog.arch_mut().symboltab.rename_symbol(sid, &m.name)?;
-                // Make the new name resolvable by `load function <name>` (the same
-                // name->addr binding the entry/symbol arms register).
-                prog.register_symbol(&m.name, addr);
+            if !is_generic_placeholder_name(prog.arch().symboltab.symbol(sid).get_name()) {
+                continue;
             }
+            if m.by_signature {
+                if !signature_names.blocks(prog, m.addr, &m.name) {
+                    signature_renames.push((addr, sid, m.name.as_str()));
+                }
+                continue;
+            }
+            prog.arch_mut().symboltab.rename_symbol(sid, &m.name)?;
+            prog.register_symbol(&m.name, addr);
+        }
+    }
+    let contested = kuna_signature_names::contested_addresses(signature_renames.iter().map(
+        |(addr, _, name)| (prog.thumb_normalized(addr.get_offset()), *name),
+    ));
+    for (addr, sid, name) in signature_renames {
+        if !contested.contains(&prog.thumb_normalized(addr.get_offset())) {
+            prog.arch_mut().symboltab.rename_symbol(sid, name)?;
+            prog.register_symbol(name, addr);
         }
     }
 
@@ -5946,6 +6040,7 @@ fn commit_analysis_output(
     //    produced for the same address (the measured witness: three adjacent
     //    unterminated literals read back as one 39-byte string). A bounded
     //    fact's `len` is the exact element count — there is no terminator.
+    let blob_extents = crate::kuna_blobdata::Extents::new(&out.blobs);
     let wide = if prog.arch().analysis_widestrings { out.wide_strings.as_slice() } else { &[] };
     let wide32 =
         if prog.arch().analysis_widestrings32 { out.wide_strings32.as_slice() } else { &[] };
@@ -5960,6 +6055,9 @@ fn commit_analysis_output(
         .chain(wide.iter().map(|f| (f, 2u32)))
         .chain(out.strings.iter().map(|f| (f, 1u32)))
     {
+        if blob_extents.contains(fact.addr) {
+            continue;
+        }
         let addr = Address::new(Rc::clone(code_space), fact.addr);
         // Conservative guard: skip an address that already carries a symbol (an
         // existing data/function symbol must not be shadowed). Ghidra likewise
@@ -6166,6 +6264,7 @@ fn commit_analysis_output(
     //     symbols`; the stash is drained so a second `read symbols` does not
     //     re-commit.
     let loader_data_objects = std::mem::take(&mut prog.loader_data_objects);
+    let global_widths: std::collections::BTreeMap<u64, u32> = out.global_widths.iter().copied().collect();
     for (sym_addr, name, size) in &loader_data_objects {
         let addr = Address::new(Rc::clone(code_space), *sym_addr);
         let occupied = {
@@ -6194,13 +6293,15 @@ fn commit_analysis_output(
         // NEGATIVE size that indexed the type factory's cache out of bounds and
         // took the process down. A declared extent is never trusted to be
         // representable. GH-339.
-        let ct = prog
-            .arch()
-            .types()
-            .get_base(
-                (*size).clamp(1, int4::MAX as u64) as int4,
-                kuna_decomp::dtype::type_metatype::TYPE_UNKNOWN,
-            )?;
+        let clamped = (*size).clamp(1, int4::MAX as u64) as int4;
+        let width = global_widths.get(sym_addr).copied().unwrap_or(0) as int4;
+        let ct = if width > 0 && width < clamped && clamped % width == 0 {
+            let types = prog.arch().types();
+            let elem = types.get_base(width, kuna_decomp::dtype::type_metatype::TYPE_UNKNOWN)?;
+            types.get_type_array(clamped / width, elem)?
+        } else {
+            prog.arch().types().get_base(clamped, kuna_decomp::dtype::type_metatype::TYPE_UNKNOWN)?
+        };
         let name = data_names.name(name, *sym_addr);
         let arch = prog.arch_mut();
         let (scope, base) =
@@ -6209,6 +6310,10 @@ fn commit_analysis_output(
             arch.symboltab.add_symbol_mapped(scope, &base, ct, &addr, &Address::new_invalid())?;
         arch.symboltab.set_attribute(sid, kuna_decomp::varnode::varnode_flags::namelock);
     }
+
+    // 4c. (kuna `blobs`) Embedded images and archives, last so every named or
+    //     typed claim on the address is kept.
+    crate::kuna_blobdata::commit(prog, code_space, &out.blobs, &mut data_names, num_spaces)?;
 
     // 4b. The C runtime declaration `elfmain` has for an executable's own
     //     `main`. Not parked on the symbol: the drive locks only its `int`
@@ -6351,6 +6456,12 @@ fn commit_analysis_output(
     for (addr, pieces) in go_prototypes {
         let a = Address::new(Rc::clone(code_space), addr);
         prog.arch_mut().set_function_prototype_pieces_at(&a, pieces);
+    }
+
+    // 5f. (kuna `itaniumrtti`) The typed vtables, after every prototype source
+    //     above so a slot's function pointer carries the methods' signature.
+    if prog.arch().analysis_vtabletypes {
+        kuna_decomp::kuna_vtabletypes::install(prog.arch(), code_space, &out.cpp_vtables.classes)?;
     }
 
     // 6. Processor-context decode-mode paints (the kuna analog of ARM's

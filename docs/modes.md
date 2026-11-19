@@ -117,7 +117,7 @@ build failure. The options it enables:
   Listing-consuming passes — `fid`, `aif`, the discovered-no-return family),
   `fast_funcdisc`, `eh_frame_full`, `funcstart_patterns`, `addrtable`,
   `operand_refs`, `widestrings32` (4-byte `wchar_t`/`char32_t` literals),
-  `fid`, `rtti`, `itaniumrtti`, `aif` (at `strict`, the aligned gap cursor; its
+  `fid`, `rtti`, `aif` (at `strict`, the aligned gap cursor; its
   `precise` value adds upstream's corroboration test, which costs more real
   functions than it removes phantoms, and no mode sets it), `objc`, `cfstrings`,
   `pdb`, `macho-arm64e`
@@ -131,8 +131,7 @@ build failure. The options it enables:
 `returndup` (DIV-54), `pdb` (DIV-129), `cfstrings`, the presentation defaults
 (`partialaccess`, `voidtailreturn`, `importdata`, `calltargettype`, `libcnames`)
 and the target-gated passes (`sparcstructret`, `v850indirectbranch`,
-`cortexmpriv`, `x64syscall`, `armfloatreturn`/`armfloatargs`, `rtti`,
-`itaniumrtti`, `objc`, `swiftmetadata`, `macho-arm64e` and the four ARM entry
+`cortexmpriv`, `x64syscall`, `armfloatreturn`/`armfloatargs`, `rtti`, `objc`, `swiftmetadata`, `macho-arm64e` and the four ARM entry
 passes) became shipped defaults and are deliberately kept on the list: the
 preset **owns** the option, so an earlier
 `--option returndup off` on the same command line is re-enabled by

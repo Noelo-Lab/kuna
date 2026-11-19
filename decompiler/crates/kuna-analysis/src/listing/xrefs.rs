@@ -323,6 +323,11 @@ impl XrefIndex {
         self.by_target.get(&vma).map_or(&[], Vec::as_slice)
     }
 
+    /// Every reference to an address in `range`, in target then source order.
+    pub fn refs_into(&self, range: std::ops::Range<u64>) -> impl Iterator<Item = &Xref> {
+        self.by_target.range(range).flat_map(|(_, refs)| refs)
+    }
+
     /// Everything that references the *callable* `vma` names, rather than the
     /// literal address: [`refs_to`](Self::refs_to) taken over `vma`'s whole
     /// [`alias_class`](Self::alias_class), with the forwarding jumps that join

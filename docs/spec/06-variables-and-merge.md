@@ -255,6 +255,22 @@ determines how aggressive the merge may be:
   (`varmap.rs (ScopeLocal::has_isolated_symbols)`) because
   `set_symbol_isolated` is the only route the `ISOLATE` dispflag has into a
   function-local scope. Neither shortcut changes an answer.
+
+  An isolation stated on one decompile has to hold in the next, which builds
+  its Symbols again. A register local's isolated Symbol is seeded with its
+  use point and keeps the flag. A stack local's Symbol is rebuilt by the frame
+  layout, and a parameter's Symbol does not exist until after the merges have
+  run, so neither can carry a flag to the merge. `kuna_isolated.rs (carried)`
+  records the storage and width of each isolated Symbol that is a parameter or
+  holds its storage for the whole function, the replay hands the set to the
+  next decompile with the previous numbering (`kuna_stablenames.rs (carry)`),
+  and `kuna_isolated.rs (holds)` answers the isolated test for a variable that
+  holds the function input or the address-tied storage of one. The set is
+  empty unless an `isolate` named such a local, and the test then costs one
+  emptiness check. With `isolate a0`, a parameter whose register the function
+  goes on to reuse (`a0 *= 3;`) keeps its value and the product gets its own
+  local (`v2 = a0 * 3;`); `tests/stages/kuna-assert-format-isolate.xml` pins
+  both, and that the isolation survives a later rename and decompile.
 - `merge.rs (Merge::merge_test_speculative)` — additionally: nothing
   persistent, no inputs, nothing address-tied. Purely cosmetic merges never
   touch storage that has an ABI or memory identity.
@@ -1793,7 +1809,11 @@ the other hint entirely. Non-intersecting neighbors may still *join* into one
 array when an open hint's element type and alignment continue
 (`varmap.rs (RangeHint::attempt_join)`, including absorbing constant-only
 COPY ranges). Every surviving range becomes a Symbol in the local scope
-(`adjust_fit`/`create_entry`), and `funcdata_spacebase.rs
+(`adjust_fit`/`create_entry`), an array of its type when the range holds more
+than one element. (kuna `itaniumrtti on`) A variable-length structure is never
+made an array element: a C++ class whose object size nothing states (chapter
+05) is one object of unknown extent, so a 240-byte stack object passed as
+`MainLoopPosix *` is `MainLoopPosix v30`, not `MainLoopPosix v30 [30]`. And `funcdata_spacebase.rs
 (Funcdata::sync_varnodes_with_symbols)` paints the resulting
 `mapped`/`addrtied`/`addrforce`/`nolocalalias` flags (and, in the final sync
 only, data-types) onto the Varnodes. Unmapped locations gain `nolocalalias`

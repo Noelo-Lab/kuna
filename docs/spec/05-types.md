@@ -1482,14 +1482,21 @@ states the signature its target must have, and when `calltargettype` is on,
 final one: it runs once, in the one-shot tail, after `ActionNameVars` and
 directly before `ActionSetCasts`, and never feeds the inference lattice or
 `ActionDeindirect`'s forced prototypes. For each indirect call whose prototype
-is neither locked nor variadic it builds `R (*)(A1,..,An)` with
+is neither variadic nor locked, or was stated at the call itself (`override
+prototype`, the `callproto` assertion, which types the call but not the value
+it goes through), it builds `R (*)(A1,..,An)` with
 `TypeFactory::getTypeCode(PrototypePieces)`: `R` is the high type of the call's
 output, or `void` when it has none, and each `Ai` the high type of the argument
 in that slot as it is read there -- except an argument printed inline as an
 address computed from a base (`&v4`, `&a1[2]`, a `PTRSUB` or `PTRADD`), whose C
 type is the base's rather than its own, which takes `void *`. A call any of
 whose types has no C spelling (a partial or union-resolving type, an array, a
-`TYPE_SPACEBASE`, a scalar of a width C has no type for) is skipped.
+`TYPE_SPACEBASE`, a scalar of a width C has no type for) is skipped. A call
+whose prototype was stated at the call takes `R` and the `Ai` from that
+declaration instead (a variadic one its fixed parameters and `...`, the
+arguments past them passed as printed), and the storage its declared
+parameters were given stands in for the argument storage such a call never
+recovers.
 
 The type must also be one a C compiler would pass the same way. Laid out under
 the default model, each parameter of the built prototype has to fall inside the
@@ -1716,7 +1723,7 @@ recovered as a pointer into the declaration when its sink is typed as a
 pointer, and otherwise prints as the bare address, the same as for an
 aggregate the DWARF tier declared.
 
-Two (kuna) escapes hook exactly here, both always on:
+Three (kuna) escapes hook exactly here; the first two are always on:
 
 - **(kuna GH-6930)** The function-entry escape: the
   bit-transitions rejection is skipped when the constant resolves *exactly* to
@@ -1756,6 +1763,25 @@ Two (kuna) escapes hook exactly here, both always on:
   number *anywhere*, which `ActionConstantPtr::apply` collects once per pass from
   the constant snapshot it already takes
   (`decompiler/crates/kuna-decomp/src/p9_emit/coreaction_render.rs`).
+- **(kuna `blobs`)** The embedded-file escape: a constant equal to the first
+  address of an embedded image or archive (chapter 01, `blobs`) skips both the
+  pointer-lower-bound rejection and the bit-transitions rejection
+  (`decompiler/crates/kuna-decomp/src/p9_emit/coreaction_render.rs
+  (is_pointer)`). A shared object linked at base zero keeps its read-only data
+  in the first page, below the bound every x86 processor spec sets, so the
+  function returning a PNG at `0x2d0` printed `return 0x2d0;` whether or not a
+  symbol named the array; and `0x3c0` is a single run of set bits. The address
+  set is exact starts only, shared from `Architecture::blob_entries`, and the
+  skip is declined on the same two readings as the function-entry escape
+  (`kuna_inferfuncentry.rs (entry_escape_applies)`): the reader is not
+  arithmetic, and the function reads that value as a number nowhere else.
+  The escape cannot tell the address from an equal number: a function that
+  never touches the file but returns, stores, passes or compares that value
+  (`return 0x370;` beside a PNG at `0x370`) prints the file's name too, and
+  the return or parameter type becomes `unsigned char *`. Only a file starting
+  in the first page or at a mask-like address is exposed, which in practice
+  means the small shared objects whose read-only data `ld.lld` places first.
+  Empty, so inert, under `blobs off`.
 - **(kuna GH-8471)** Thumb function-pointer preservation: a Thumb function pointer
   is `fn|1`; constant-pointer recovery produces `PTRSUB(fn) + 1`, and the
   simplification rule that normally deletes out-of-bounds PTRSUBs would
@@ -2902,6 +2928,53 @@ reads prints only the lanes it uses. Two such ops are never merged, and a
 constant operand is not folded. This is a correction, not an option: the ops
 compute on floats by definition.
 
+### A C++ virtual call goes through a named slot of its class (`kuna_vtabletypes.rs`)
+
+(kuna `itaniumrtti on`; the default `names` leaves the types out, because a
+function whose calls fold to direct calls below is decompiled again.) An Itanium
+virtual call is two loads and a CALLIND: the object's first word is the vtable
+pointer, and the method is the word a fixed offset past the vtable's address
+point. With the receiver typed only as a pointer to an empty class shell (the
+`IShape *` a demangled signature gives, chapter 04), nothing names either
+load, and gcc's `s->area(n)` prints
+`(*(code *)**(unsigned long **)a0)(a0,...)`, its arguments left to the
+CALLIND's trial scoring.
+
+The analysis tier (chapter 01, typed vtables) reports, per polymorphic class,
+the primary vtable's slots, and for each slot every function the class or a
+derived class holds there. At the commit,
+`decompiler/crates/kuna-decomp/src/p5_types/kuna_vtabletypes.rs (install)` builds
+`C_vtbl`, a structure with one function-pointer field per slot named for the
+method (`area`, `dtor`, `deleting_dtor`, or `vfn_<i>` when no symbol names it),
+and completes the class structure `C` with a first field `C_vtbl *vptr` and
+each non-virtual base at a nonzero offset embedded at that offset (so `MI`'s
+`M2` subobject is `&a0->M2`, whose own `vptr` is `M2_vtbl *`). Both records are
+variable-length: nothing says how large the object is, and a fixed size would
+make an access past the last field an array index (`&a0[2]`) rather than a byte
+offset. A virtual-base subobject has no fixed offset and is not embedded. Both
+names are declared records (`kuna_declare_record`), and the demangled
+signatures declare their class shells the same way, so the completion reaches
+every `C *` already built. A class whose structure DWARF has completed is left
+alone.
+
+A slot's field carries a prototype when every target with a known one agrees on
+the return type and on the parameters after `this`
+(`kuna_vtabletypes.rs (agreed_prototype)`); `this` becomes `C *`. The CALLIND
+reads that field, so the call takes the prototype as any call through a typed
+function pointer does and keeps its arguments: `(*a0->vptr->area)(a0,a1)`.
+Itanium mangling has no return type, so a slot whose methods have no DWARF
+prototype has an unknown return; the call's result is recovered as before, but a
+variable holding the slot's pointer is declared returning `void`. Where no
+target has a prototype (a stripped image), the field is a plain `code *` and the
+call's arguments come from trial scoring.
+
+The slot words themselves are folded: the commit marks each sub-vtable's slot
+array read-only and adds it to the `dynrelocs` fold set (chapter 03). A call on
+an object whose vptr store the function can see (a stack object, or a reference
+to one) loads the slot from a constant address, the load folds to the method's
+entry, and `ActionDeindirect` makes the call direct (chapter 04):
+`(*_Tr_vptr)(v3,a0)` becomes `Tr::area(v3,a0)`.
+
 ### A value returned in a float register is a float (`kuna_floatreg.rs`)
 
 A calling convention that reserves registers for floating point makes the
@@ -3921,3 +3994,22 @@ drives them (`decompiler/crates/kuna-decomp/src/p3_dataflow/heritage.rs
 (Heritage::heritage)`) is a documented stub — inert for every architecture
 without split records, which is the entire current test surface, so no live
 output depends on it yet.
+
+**Index rescaling** (`indexrescale`, default on; kuna;
+`decompiler/crates/kuna-decomp/src/p5_types/kuna_indexrescale.rs (ActionIndexRescale)`,
+right after `ActionInferTypes` in the main loop): an `INT_ADD(p, w)` whose `p`
+points to `k`-byte elements (`k > 1`) starts a web from `w` through
+MULTIEQUAL, INDIRECT, COPY and constant steps. The web is rescaled when every
+member is written by a COPY of a constant, a step by a constant, or a join of
+members, every constant is an exact signed multiple of `k`, and every reader is
+one of those writes, an `INT_ADD` with a base pointing to `k`-byte elements, or
+an equality or ordering compare with a multiple of `k`; no member is an input,
+free, address-tied or persistent. A base that is the address of a structure
+field other than an array is refused (`scalar_field`: the offset picks a field,
+not an element). The constants are divided by `k`, each add becomes
+`PTRADD(p, w, k)`, which prints as `p[w]`, and compares take the divided
+constant; this relies on the byte offset not wrapping. gcc -O2
+`rule[two ? 3 : 1] = v` prints `a0[v1] = a1;` with `v1 = 1;` and `v1 = 3;`
+instead of `*(uint4 *)((long)a0 + v1) = a1;` with `v1 = 4;` and `v1 = 0xc;`. A
+pointer that steps by the element size is not this case, and a byte offset
+also used in other arithmetic is left.

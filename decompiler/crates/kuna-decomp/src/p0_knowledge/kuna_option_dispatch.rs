@@ -100,6 +100,8 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "returnbranch" => on_off!(return_branch, "Computed jumps through the return register"),
+    "globalwidth" => on_off!(analysis_globalwidth, "Data-object typing from access width"),
+    "indexrescale" => on_off!(index_rescale, "Byte offsets rescaled to element indexes"),
     "globalarrayanchor" => on_off!(global_array_anchor, "Global array anchor preservation"),
     "signedness" => {
         let (val, msg) = crate::kuna_typeround::OptionSignedness.apply(p1)?;
@@ -454,6 +456,7 @@ kuna_options! { self, p1;
     },
     "devectorize" => on_off!(devectorize_reduction, "Vectorized reduction re-roll"),
     "strlenscan" => on_off!(strlen_scan, "inline repnz scasb string length as strlen"),
+    "repstring" => on_off!(rep_string, "rep movs/stos/cmps loops as copy, fill and compare builtins"),
     "regionstructure" => {
         let (val, msg) =
             crate::p8_structure::region_structurer::OptionRegionStructure.apply(p1)?;
@@ -834,6 +837,12 @@ kuna_options! { self, p1;
         self.load_options_mut().kernelcache = choice;
         Ok(msg)
     },
+    "kernelcache-boot" => {
+        let (choice, msg) = crate::kuna_kernelcacheboot::parse_kernelcache_boot(p1)?;
+        crate::kuna_kernelcacheboot::set_kernelcache_boot_env(&choice);
+        self.load_options_mut().kernelcache_boot = choice;
+        Ok(msg)
+    },
     "dyldimage" => {
         self.load_options_mut().dyldimage =
             crate::kuna_dyldcache::image_name(p1).map(str::to_string);
@@ -926,7 +935,15 @@ kuna_options! { self, p1;
     "flirt" => on_off!(analysis_flirt, "FLIRT signature matcher Listing consumer"),
     "rtti" => on_off!(analysis_rtti, "MSVC RTTI / vftable class-name recovery pass"),
     "itaniumrtti" => {
-        on_off!(analysis_itaniumrtti, "Itanium (GCC/Clang) RTTI / vtable recovery pass")
+        let (names, types) = match p1 {
+            "on" => (true, true),
+            "names" => (true, false),
+            "off" => (false, false),
+            other => return Err(KunaError::parse(format!("itaniumrtti takes on|names|off, not {other:?}"))),
+        };
+        self.analysis_itaniumrtti = names;
+        self.analysis_vtabletypes = types;
+        Ok(format!("Itanium (GCC/Clang) RTTI / vtable recovery pass set to {p1}"))
     },
     "aif" => {
         let (mode, msg) = crate::kuna_aif::parse_aif_mode(p1)?;
@@ -954,6 +971,7 @@ kuna_options! { self, p1;
     "iokitclasses" => on_off!(analysis_iokitclasses, "IOKit class and vtable recovery"),
     "arm64evcall" => on_off!(analysis_arm64evcall, "arm64e virtual-call resolution"),
     "xnutables" => on_off!(analysis_xnutables, "XNU kalloc_type view and dispatch table recovery"),
+    "blobs" => on_off!(analysis_blobs, "Embedded image and archive data symbols"),
     "swifttypes" => on_off!(analysis_swifttypes, "Swift type layouts from static metadata"),
     "objcivars" => {
         let val = on_or_off(p1)?;

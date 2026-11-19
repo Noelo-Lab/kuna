@@ -2224,6 +2224,7 @@ mod tests {
         // and gh1627-x86-senduipi-gatherpf / SENDUIPI is not RDRAND and VGATHERPF indexes with a ZMM register
         // and gh1628-x86-vmx-decode-flags / VMREAD/VMWRITE decode without REX.W and VMX instructions set CF/ZF
         // and kuna-kernelbug / a Linux kernel __bug_table trap prints as __WARN(file,line) or BUG()
+        // and kuna-kernelcacheboot / an Auxiliary kernel collection resolved against its boot collection (option kernelcache-boot)
         // and gh1674-subpiece-shadow-wide-const / a subpiece shadow 8 bytes into a 16-byte constant reads 0
         // and kuna-wrapadd / wrapadd wraps a widened four-byte sum before its extension
         // and kuna-rustversion-commit / a Rust image without .comment gets its release from /rustc/<commit>/ paths
@@ -2235,7 +2236,18 @@ mod tests {
         // and kuna-arm64evcall / arm64e virtual calls resolved by pointer-auth discriminator
         // and kuna-kernelcache-merge / several fileset entries load as one image
         // and kuna-prelinked / pre-fileset kernelcaches: threaded pointers rebased, kexts cut out
-        assert_eq!(count, 796, "corpus file count drifted");
+        // and kuna-assert-callee / a stated destination makes an indirect call direct
+        // and kuna-assert-format-isolate / a constant's format set by its instruction, and an isolated local
+        // and kuna-callproto / one call through a pointer is given its own prototype
+        // and kuna-dyldcacheobjc / a dyld shared cache image's ObjC metadata is read through the cache
+        // and kuna-dyldimage-merge / dyldimage A+B loads two dyld shared cache images as one program
+        // and kuna-blobs / an embedded PNG, GIF, JPEG, zip or gzip is returned by name
+        // and kuna-repstring, kuna-repstring-i386 / x86 rep movs/stos/cmpsb print as copy, fill and compare builtins
+        // and kuna-indexrescale / a byte offset into an array becomes an element index
+        // and kuna-globalwidth / a symbol-table data object takes the element width its accesses use
+        // and kuna-funcboundflow-unwind / fall-through stops at the end of the function's own unwind extent
+        // and kuna-vtabletypes / a C++ virtual call reads through a named slot of its class
+        assert_eq!(count, 809, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

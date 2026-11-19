@@ -419,6 +419,10 @@ pub struct Architecture {
     /// Single-function bodies (FDEs, or Go `pclntab` extents) whose interiors the
     /// loader suppressed as separate entries.
     pub kuna_function_bodies: Vec<(u64, u64)>,
+    /// (kuna `funcboundflow`) Every single-function unwind-table extent
+    /// (`.eh_frame` FDE, Go `functab`), sorted; fall-through stops at the end of
+    /// the function's own.
+    pub kuna_unwind_extents: Rc<Vec<(u64, u64)>>,
     /// (kuna `floatglobals`) The scan's answer, once a function asked for it.
     pub kuna_float_globals: Option<Rc<crate::kuna_floatglobals::FloatGlobals>>,
     /// (kuna `floatglobals`, `callerreads`) The run decompiles more than one
@@ -489,6 +493,10 @@ pub struct Architecture {
     /// (kuna `returnbranch`) Flow a RETURN with a proven constant target as an
     /// indirect branch; see [`crate::context::ArchContext::return_branch`].
     pub return_branch: bool,
+    /// (kuna `globalwidth`) Type symbol-table data objects from their access width.
+    pub analysis_globalwidth: bool,
+    /// (kuna `indexrescale`) A byte offset into an array becomes an element index.
+    pub index_rescale: bool,
     /// (kuna GH-8817) Reclassify V850 `jmp [reg]` CALLIND to BRANCHIND
     /// (C++ `v850_indirect_branch`).
     pub v850_indirect_branch: bool,
@@ -926,6 +934,10 @@ pub struct Architecture {
     /// (kuna) Collapse an inline `repnz scasb` string length into `strlen`
     /// (option `strlenscan`).  See [`crate::p3_dataflow::kuna_strlenscan`].
     pub strlen_scan: bool,
+    /// (kuna) Collapse an x86 `rep movs`/`rep stos`/`repz cmpsb` loop into a
+    /// copy, fill or compare builtin (option `repstring`).  See
+    /// [`crate::p3_dataflow::kuna_repstring`].
+    pub rep_string: bool,
     /// (kuna) Region-based (Phoenix/SAILR) structurer: structure the CFG by
     /// walking the [`KunaRegionIdentifier`](crate::p7_regions::kuna_regionid)
     /// region tree and matching Phoenix acyclic schemas instead of running
@@ -1701,6 +1713,10 @@ pub struct Architecture {
     /// installs those overrides with an open tail
     /// ([`crate::p4_calls::kuna_formattail`]).
     pub format_override_callpoints: std::collections::BTreeSet<u64>,
+    /// (kuna `--assert callee`) Caller-stated destinations of indirect calls:
+    /// function entry -> call site -> callee entry
+    /// ([`crate::p2_lift::kuna_calleeoverride`]).
+    pub kuna_callee_overrides: std::collections::BTreeMap<Address, std::collections::BTreeMap<Address, Address>>,
     /// (kuna `formatstring`) Which variadic arguments the target passes exactly
     /// as named ones, which bounds what a closed printf/scanf override may
     /// declare. A FACT, written once at `load file` from the image's container;
@@ -1813,6 +1829,12 @@ pub struct Architecture {
     /// (output-changing: it adds named data and function symbols);
     /// `--option itaniumrtti on` enables it.
     pub analysis_itaniumrtti: bool,
+    /// (kuna `itaniumrtti on`) Type each recovered Itanium vtable as a `C_vtbl`
+    /// structure of named method pointers, give the class structure a `vptr`
+    /// field of that type, and fold a load of a vtable slot to the method it
+    /// holds; see [`crate::kuna_vtabletypes`]. Off under `itaniumrtti names`,
+    /// the default.
+    pub analysis_vtabletypes: bool,
     /// (kuna) The Aggressive Instruction Finder gap-walk (`aif`), the third
     /// Listing/xref consumer; default **off**. The kuna analog of Ghidra's
     /// `AggressiveInstructionFinderAnalyzer` (which ships `setDefaultEnablement(false)`
@@ -1887,6 +1909,13 @@ pub struct Architecture {
     /// (kuna `cfstrings`) The `__cfstring` entry addresses the commit seeded, so
     /// the printer renders a literal at one of them as `CFSTR("...")`.
     pub cfstring_entries: std::collections::BTreeSet<u64>,
+    /// (kuna) `option blobs` — plant each embedded image or archive the
+    /// `blobs` pass found as a `<kind>_<addr>` data symbol typed
+    /// `unsigned char[len]`. Default **on**; real-binary-path only.
+    pub analysis_blobs: bool,
+    /// (kuna `blobs`) The first address of each committed blob. A constant equal
+    /// to one is weighed as a pointer even below the space's pointer lower bound.
+    pub blob_entries: Rc<std::collections::BTreeSet<u64>>,
     /// (kuna) Gate the Swift type-layout arm of the metadata pass
     /// (`swifttypes`): struct and class layouts from static type metadata,
     /// typed metadata records, accessor prototypes and the register-pinned
@@ -2342,6 +2371,7 @@ impl Architecture {
             float_globals: true, // (kuna) option floatglobals; reset_defaults sets the shipped default
             kuna_float_scan: None,
             kuna_function_bodies: Vec::new(),
+            kuna_unwind_extents: Rc::new(Vec::new()),
             kuna_float_globals: None,
             kuna_float_scan_batch: false,
             kuna_call_returns: Vec::new(),
@@ -2362,6 +2392,8 @@ impl Architecture {
             callee_reginputs: true, // (kuna) option calleereginputs; default on, inert off x86-32 Windows
             callee_reginputs_custom: false, // (kuna) option calleereginputs `custom`; reset_defaults sets the shipped default
             return_branch: false, // (kuna) option returnbranch; reset_defaults sets the shipped default
+            analysis_globalwidth: false,
+            index_rescale: false,
             v850_indirect_branch: false,
             int3_pad: crate::kuna_int3pad::Int3PadMode::Off, // (kuna) option int3pad; reset_defaults sets the shipped default
             x64_syscall: crate::kuna_x64syscall::X64SyscallMode::Off, // (kuna) option x64syscall; reset_defaults sets the shipped default
@@ -2467,6 +2499,7 @@ impl Architecture {
             array_size: 0, // (kuna) option arraysize; reset_defaults sets the shipped default
             devectorize_reduction: false, // (kuna) option devectorize (opt-in default-off)
             strlen_scan: false, // (kuna) option strlenscan; reset_defaults sets the shipped default
+            rep_string: false, // (kuna) option repstring; reset_defaults sets the shipped default
             region_structure: true,
             guard_arm: false,
             loop_continue: true,
@@ -2596,6 +2629,7 @@ impl Architecture {
             format_stack_args: std::rc::Rc::new(std::collections::BTreeMap::new()),
             elfmain_main_decl: None,
             format_override_callpoints: std::collections::BTreeSet::new(),
+            kuna_callee_overrides: std::collections::BTreeMap::new(),
             format_vararg_abi: None, // (kuna) a load-time fact; set by the console's `load file`
             analysis_listing: false,
             analysis_fast_funcdisc: false,
@@ -2612,6 +2646,7 @@ impl Architecture {
             analysis_flirt: false,
             analysis_rtti: false,
             analysis_itaniumrtti: false,
+            analysis_vtabletypes: false,
             analysis_aif: crate::kuna_aif::AifMode::Off,
             analysis_aifpoolslide: true,
             analysis_tailcallentry: false,
@@ -2623,6 +2658,8 @@ impl Architecture {
             analysis_arm64evcall: false,
             cfstrings_annotate: false,
             cfstring_entries: std::collections::BTreeSet::new(),
+            analysis_blobs: false,
+            blob_entries: Rc::default(),
             analysis_swifttypes: true,
             loader_param_locks: std::collections::BTreeMap::new(),
             analysis_objcivars: true,
@@ -2817,6 +2854,7 @@ impl Architecture {
         self.cast_narrow = true; // (kuna) option castnarrow default-on: leaves out only an integer truncation or sign change that an assignment, store, trusted argument or return of exactly the cast's type performs itself
         self.decl_order = crate::kuna_declorder::DeclOrder::Natural; // (kuna) option declorder default `natural`: locals declare v1, v2, ..., v10; only the order of declaration lines moves, 0/675 datatest assertions
         self.strlen_scan = true; // (kuna) option strlenscan default-on: an inline repnz scasb length prints as strlen; byte-identical on gcc 11 decbench output, 0/675 datatest assertions
+        self.rep_string = true; // (kuna) option repstring default-on: an x86 rep movs/stos/cmpsb loop prints as a copy, fill or compare builtin; inert off x86, 0/675 datatest assertions
         self.cortexmpriv = true; // (kuna) DIV-99: default-ON; the fixup is registered only on a language that declares the user-op (ARM), so inert elsewhere; "the core is privileged" is a modelling judgement, so `off` audits unprivileged Thread-mode code
         self.acle_intrinsics = true; // (kuna) option acleintrinsics default-on; reads the AArch64 `ShowMemTag` context and AArch64 user-op names only, so inert on every other target
         self.float_globals = true; // (kuna) option floatglobals default-on
@@ -2846,6 +2884,8 @@ impl Architecture {
         self.calleevote = crate::kuna_calleevote::CalleeVoteMode::Fields; // (kuna) option calleevote default `fields`: on a whole-binary run a parameter every known caller passes the same committed pointer to takes it, and a closed function's lone field is a record field; inert without a callee-first pass
         self.protoorder = crate::kuna_protoorder::ProtoOrderMode::Cycles; // (kuna) option protoorder default `cycles`: the callee's recovered parameter types reach its call sites as a vote, with no lock and no arity change, and a function in a recursive component states its types too (`types` is the same without them); `lock` also states the arity and stays opt-in
         self.return_branch = true; // (kuna) option returnbranch default-on: 0/675 datatest assertions move; restore the spec's RETURN with `option returnbranch off`
+        self.analysis_globalwidth = true;
+        self.index_rescale = true;
         self.analyze_for_loops = true;
         self.present_lessequal = true; // (kuna) DIV-2 default-on (GH-558)
         self.readonlypropagate = false;
@@ -2969,6 +3009,7 @@ impl Architecture {
         self.analysis_iokitclasses = true; // (kuna) IOKit class recovery, XNU and DriverKit images only
         self.analysis_xnutables = true; // (kuna) XNU data tables, XNU images only
         self.analysis_arm64evcall = true; // (kuna) arm64e virtual calls by pointer-auth discriminator; Mach-O only
+        self.analysis_blobs = true; // (kuna) embedded image/archive data symbols; real-binary-path only
         self.analysis_swifttypes = true; // Swift type layouts default-on, inert unless swiftmetadata is on
         self.analysis_objcivars = true; // (kuna) ObjC instance structs + typed self + ivar offset fold; inert unless objc is on
         self.analysis_swiftcall = true; // Swift calling convention default-on, inert unless swiftmetadata is on
@@ -3515,6 +3556,9 @@ impl Architecture {
             .filter_map(|nm| self.userops.get_op_by_name(nm).map(|u| u.get_index() as kuna_base::types::uint4))
             .collect();
         ctx.return_branch = self.return_branch; // returnbranch
+        ctx.vtable_types = self.analysis_vtabletypes;
+        ctx.kuna_unwind_extents = Rc::clone(&self.kuna_unwind_extents);
+        ctx.index_rescale = self.index_rescale;
         ctx.recover_array_stride = self.recover_array_stride; // GH-8724 arraystride
         ctx.memset_recover = self.memset_recover; // GH-9230/1537 memsetrecover
         ctx.rodata_string = self.rodata_string; // (kuna) rodatastring
@@ -3571,6 +3615,7 @@ impl Architecture {
         ctx.libc_names = self.libc_names; // libcnames
         ctx.devectorize_reduction = self.devectorize_reduction; // devectorize
         ctx.strlen_scan = self.strlen_scan; // strlenscan
+        ctx.rep_string = self.rep_string; // repstring
         ctx.region_structure = self.region_structure; // regionstructure
         ctx.guard_arm = self.guard_arm; // guardarm
         ctx.loop_continue = self.loop_continue;
@@ -3752,6 +3797,7 @@ impl Architecture {
         // `glb`) can rewrite a mapped global-constant address into a typed
         // `PTRSUB(spacebase,off)`.
         ctx.infer_pointers = self.infer_pointers;
+        ctx.blob_entries = Rc::clone(&self.blob_entries);
         ctx.infer_ptr_spaces = self.infer_ptr_spaces.clone();
         // Snapshot the tracked-register database (C++ `glb->context`'s track base,
         // populated by `set track`) so `ActionConstbase` can query it for the
@@ -4687,7 +4733,8 @@ impl Architecture {
     /// front-loaded here).
     fn register_string_builtins(&mut self) -> KunaResult<()> {
         use crate::userop::{
-            BUILTIN_KERNEL_BUG, BUILTIN_KERNEL_WARN, BUILTIN_MEMCPY, BUILTIN_MEMSET,
+            BUILTIN_KERNEL_BUG, BUILTIN_KERNEL_WARN, BUILTIN_MEMCMP, BUILTIN_MEMCPY, BUILTIN_MEMSET,
+            BUILTIN_MEMSET16, BUILTIN_MEMSET32, BUILTIN_MEMSET64,
             BUILTIN_STRINGDATA, BUILTIN_STRLEN, BUILTIN_STRNCPY, BUILTIN_SYSCALL_ERROR,
             BUILTIN_VOLATILE_READ, BUILTIN_VOLATILE_WRITE, BUILTIN_WCSNCPY,
         };
@@ -4725,6 +4772,11 @@ impl Architecture {
             // (kuna kernelbug) the Linux `__bug_table` trap statements.
             userops.register_builtin(BUILTIN_KERNEL_BUG, &adapter)?;
             userops.register_builtin(BUILTIN_KERNEL_WARN, &adapter)?;
+            // (kuna repstring) the fills and the compare a repeated string
+            // instruction prints as.
+            for id in [BUILTIN_MEMSET16, BUILTIN_MEMSET32, BUILTIN_MEMSET64, BUILTIN_MEMCMP] {
+                userops.register_builtin(id, &adapter)?;
+            }
             Ok(())
         })();
         self.userops = userops;

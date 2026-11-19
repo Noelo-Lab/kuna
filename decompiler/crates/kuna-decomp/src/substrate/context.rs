@@ -823,6 +823,13 @@ pub struct ArchContext {
     /// prefix proves constant flows as an indirect branch
     /// ([`crate::kuna_returnbranch`]). Off keeps the spec's RETURN.
     pub return_branch: bool,
+    /// (kuna `itaniumrtti on`) A call made direct by an indirect-call override
+    /// does not take the register that carried its target as an argument.
+    pub vtable_types: bool,
+    /// (kuna `funcboundflow`) `Architecture::kuna_unwind_extents`.
+    pub kuna_unwind_extents: Rc<Vec<(u64, u64)>>,
+    /// (kuna `indexrescale`) A byte offset into an array becomes an element index.
+    pub index_rescale: bool,
     /// (kuna) GH-8724: re-express a strided-induction offset as counter*stride
     /// (C++ `recover_array_stride`, DIV-3 default-on).  Read by
     /// [`RuleArrayStride`](crate::kuna_arraystride::RuleArrayStride).
@@ -1073,6 +1080,9 @@ pub struct ArchContext {
     pub devectorize_reduction: bool,
     /// (kuna) `strlenscan` — collapse an inline `repnz scasb` length into `strlen`.
     pub strlen_scan: bool,
+    /// (kuna) `repstring` — collapse an x86 `rep movs`/`rep stos`/`repz cmpsb` loop
+    /// into a copy, fill or compare builtin.
+    pub rep_string: bool,
     /// (kuna) region-based (Phoenix/SAILR) structurer: structure the CFG by
     /// walking the [`KunaRegionIdentifier`](crate::p7_regions::kuna_regionid)
     /// region tree and matching Phoenix acyclic schemas instead of running
@@ -1456,6 +1466,9 @@ pub struct ArchContext {
     /// the various pointer-inference arms.  Default-on (C++ `resetDefaults`); `false`
     /// for hand-built fixtures (no constant-pointer recovery exercised).
     pub infer_pointers: bool,
+    /// (kuna `blobs`) The first address of each embedded image or archive,
+    /// shared from the real architecture; empty for fixtures.
+    pub blob_entries: Rc<std::collections::BTreeSet<u64>>,
     /// Ordered list of address spaces in which a constant pointer can be inferred
     /// (C++ `Architecture::inferPtrSpaces`, built by `cacheAddrSpaceProperties` +
     /// the cspec `<global>` push), shared from the real architecture through
@@ -1599,6 +1612,9 @@ impl ArchContext {
             x87_integer_userops: Vec::new(),
             float_rounding_userops: Vec::new(),
             return_branch: false,        // returnbranch
+            vtable_types: false,
+            kuna_unwind_extents: Rc::new(Vec::new()),
+            index_rescale: false,
             recover_array_stride: false, // GH-8724 arraystride
             memset_recover: false,       // GH-9230/1537 memsetrecover
             rodata_string: false,        // (kuna) rodatastring
@@ -1675,6 +1691,7 @@ impl ArchContext {
             libc_names: false, // libcnames; set from the Architecture
             devectorize_reduction: false, // devectorize (opt-in default-off)
             strlen_scan: false, // strlenscan (live value copied from the Architecture)
+            rep_string: false, // repstring (live value copied from the Architecture)
             region_structure: false,     // regionstructure (opt-in default-off)
             guard_arm: false,            // guardarm (opt-in default-off)
             loop_continue: true,
@@ -1765,6 +1782,7 @@ impl ArchContext {
             // a hand-built fixture never exercises constant-pointer recovery, but
             // the real lift+analyze path overwrites this from the real arch.
             infer_pointers: false,
+            blob_entries: Rc::default(),
             // No inferable spaces until cacheAddrSpaceProperties runs on the real
             // arch and build_arch_handle shares the result.
             infer_ptr_spaces: Vec::new(),

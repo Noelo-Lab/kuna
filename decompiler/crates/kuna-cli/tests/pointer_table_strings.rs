@@ -7,7 +7,15 @@ use std::process::Command;
 
 const FUNCS: &str = "call,pass,keep";
 
-const DECLS: &str = "extern char tbl[];\nvoid pick();\n";
+/// `tbl` as the printed C indexes it: by element once its width is known
+/// (`globalwidth`), by byte through `&tbl[i * 8]` when it is not.
+fn decls(printed: &str) -> &'static str {
+    if printed.contains("&tbl[") {
+        "extern char tbl[];\nvoid pick();\n"
+    } else {
+        "extern void *tbl[];\nvoid pick();\n"
+    }
+}
 
 const WANT: &str = "call 0 11\npass 0 11\ncall 1 22\npass 1 22\ncall 2 33\npass 2 33\nkeep 1\n";
 
@@ -46,7 +54,7 @@ fn a_pointer_table_with_printable_entries_round_trips() {
         let callable = printed.replace("(**(void **)", "(**(void (**)(void))");
         let src = common::scratch_file(fixture, "c");
         let exe = common::scratch_file(fixture, "exe");
-        std::fs::write(&src, format!("{DECLS}{callable}")).unwrap();
+        std::fs::write(&src, format!("{}{callable}", decls(&printed))).unwrap();
         for cc in &compilers {
             for level in ["-O0", "-O2"] {
                 let out = Command::new(cc)
@@ -86,7 +94,7 @@ fn a_pointer_table_at_a_printable_base_is_not_a_string() {
         common::run_kuna(&["decompile-all", &common::fixture(fixture), "--functions", FUNCS]);
     assert_eq!(code, 0, "{fixture}: {stderr}");
     assert!(!printed.contains('"'), "{fixture}: the table prints as a string literal:\n{printed}");
-    for want in ["&tbl[a0 * 4]", "pick(tbl,a0);", "*a0 = (unsigned int)tbl;"] {
+    for want in ["tbl[a0])()", "pick(tbl,a0);", "*a0 = (unsigned int)tbl;"] {
         assert!(printed.contains(want), "{fixture}: missing `{want}`:\n{printed}");
     }
 }

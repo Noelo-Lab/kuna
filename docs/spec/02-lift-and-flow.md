@@ -770,7 +770,12 @@ calls, with identical observable result â€” the analysis path locks callee
 signatures before flow runs). A CALLIND keeps its computed target as input 0
 (`setup_callind_specs`) unless a previous decompilation pass planted an
 indirect override (de-indirection), which converts it to a direct CALL before
-the spec is built. (kuna `msvcsig`) One more CALLIND is made direct there: a
+the spec is built. (kuna `itaniumrtti on`) With the typed vtables on, the
+register the CALLIND read its target from
+(`flow.rs (FlowInfo::jump_target_carrier)`) is recorded on the new spec, so the
+trial scoring of chapter 04 does not take it as an argument: a virtual call
+de-indirected through a folded vtable slot (chapter 05) loaded the method's
+address into that register only to jump through it. (kuna `msvcsig`) One more CALLIND is made direct there: a
 call through an import slot whose MSVC-declared prototype the analysis commit
 locked onto the import symbol (01, `msvcsig`)
 (`decompiler/crates/kuna-decomp/src/p2_lift/kuna_msvcimportcall.rs
@@ -796,6 +801,24 @@ itself
 (resolve_declared_extra_pop)`), so a
 `__thiscall` or `__stdcall` import pops what its declaration says instead of
 what the push run in front of it suggests.
+
+(kuna `--assert callee`) The reader can plant the same indirect override. A
+front-end parks `call site -> callee entry` facts on the architecture, keyed
+by the entry of the function that holds the call, and
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_calleeoverride.rs (seed)`
+copies a function's facts into its `Override` store when the flow build
+creates the `Funcdata`. `setup_callind_specs` then makes the named CALLIND a
+direct CALL, so the callee's name and its declared prototype apply. A named
+BRANCHIND is a tail call: `recover_jump_tables` asks the environment
+(`FlowEnvironment::stated_callee_site`) before it tries a table, and for a
+stated site `flow.rs (FlowInfo::stated_tail_call)` builds the CALLIND, the
+direct call and, unless the callee never returns, the return, with no warning.
+After the follow, `kuna_calleeoverride.rs (audit)` looks for a direct call to
+the stated callee (or, for a PLT stub, to the definition the stub binds) at
+each site and records every site that has none on the
+`Funcdata` (`note_rejected_callee_override`); the front-ends report those as
+refused directives. A function with no parked fact pays one map lookup.
+
 `flow.rs (FlowInfo::check_for_flow_modification)` then
 applies the callee's flow effects: an *inline* callee queues the op for
 injection; a *no-return* callee gets an artificial halt planted directly after
@@ -1332,6 +1355,25 @@ render. The pools are a fact of the Listing (`option listing`), so without it â€
 call is bounded at a pool; an inlined callee's nested flow is not re-walked, so the
 bound does not apply inside an inline; and a code space that is not byte-addressed
 keeps every fall-through.
+
+The same bound holds at the end of the function's own unwind-table extent
+(`flow.rs (FlowInfo::leaves_own_unwind_extent)`). An `.eh_frame` FDE or a Go
+`functab` entry (the extents the analysis tier hands `fdeinterior`) states
+where its function ends; a PE `.pdata` record is not used, because it can be
+one chunk of a chained function. A call to an import that kuna cannot know
+never returns (`call mydie@plt` as a function's last instruction,
+`call [GOT _Unwind_Resume]` closing a cleanup rung) is taken to return, and
+flow then walks off the function's end into whatever bytes follow: the next
+cleanup rung, padding, or code no known entry names, which the entry test
+above cannot bound. When the function's entry starts a single-function
+extent and an instruction that ends in an unconditional call
+(`flow.rs (FlowInfo::ends_in_unconditional_call)`) would fall through to an
+address at or past the extent's end, the walk is truncated the way it is at
+a foreign entry, and the warning says the fall-through left the unwind
+extent. Only a call is bounded this way: hand-written assembly gives a short
+entry stub its own FDE and falls out of it into the shared body, and that
+fall-through is kept. A declared extent (`--define-function S-E`) still
+wins.
 
 The cutoff address itself maps to the no-return halt inserted by the truncating
 fall-through. This lets `target` walk across already-decoded instructions that

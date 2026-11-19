@@ -2188,8 +2188,12 @@ scalar those sizes keep `undefined<N>` (DIV-48,
 `tests/stages/ghdec-realtypes-pointee.xml`). A genuine `TYPE_VOID` pointee
 is not a residual unknown and never enters the relabel, so the opaque
 `void *` of `free`/`malloc`/`memcpy` is unaffected. Per-symbol format assertions
-(`map convert`, `force datatype`) override the global format at the same
-point ([docs/options.md](../options.md)).
+(`map convert`, `force varnode`, `force constant`, `force datatype`) override
+the global format at the same point ([docs/options.md](../options.md)). `force
+constant <addr> <format> [<value>]`, which the `--assert format` directive
+lowers to, names the constant by the address of the instruction that reads it
+instead of by a dataflow hash or a p-code sequence number (chapter 00, the
+assertion plane).
 
 Signed integer constants are normalized to their declared byte width before
 choosing their sign, magnitude, and numeric base
@@ -3514,6 +3518,13 @@ carrier; that member retains its existing type error even when its surrounding
 pointer arithmetic is corrected.
 The diagnostic `nocastprinting` setting retains its existing behavior.
 
+A Go record address at a positive byte offset before its first known field
+uses the same `unsafe.Add` form for a named, complete record with a native
+pointer base. The address keeps the original pointer and byte offset, and any
+surrounding load or conversion still supplies its original width. The rule
+does not create a field in padding or apply to a relative base, a direct
+dereference already folded into a member expression, or suppressed casts.
+
 `p9_emit/kuna_gobyteview.rs` makes bounded artificial members of byte-array
 storage usable under Go output. A final unnamed piece covering the whole array
 reads or writes the array value directly. A one-, two-, four- or eight-byte
@@ -4022,9 +4033,10 @@ the header declares the global; and for a pointer to code. An `undefinedN` direc
 read is accepted against an unsigned integer of the same size, since that is the
 C type the export's prelude defines it as. A `void *` constant needs one more
 thing: the declared object's pointer must convert to `void *` exactly as the
-cast did, which C does for an argument, a returned value, a copy or store into
-`void *` storage and an equality test against another `void *`, and does not for
-a compare against a pointer of another type. An address the function only ever
+cast did, which C does for an argument (including a `void *` operand of a
+`repstring` copy, fill or compare builtin, 03-ssa §3.5), a returned value, a copy
+or store into `void *` storage and an equality test against another `void *`, and
+does not for a compare against a pointer of another type. An address the function only ever
 uses through `void *` is declared at the one type it reads the storage at
 directly (`Plan::direct_type_at`), or as the unknown byte.
 

@@ -90,6 +90,20 @@ pub struct StringFact {
     pub len: u32,
 }
 
+/// (kuna `blobs`) An embedded image or archive: `len` bytes at `addr` that
+/// walk as one whole file of `kind`. The commit plants it as `<kind>_<addr>`,
+/// an `unsigned char[len]`, wherever no symbol already covers the address.
+/// Produced by [`crate::analyzers::blobs`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BlobFact {
+    /// Virtual address of the file's first byte.
+    pub addr: u64,
+    /// The file's exact length in bytes.
+    pub len: u64,
+    /// Which container it is.
+    pub kind: crate::analyzers::blobs::BlobKind,
+}
+
 /// A Mach-O Core Foundation constant string (`__cfstring` entry). The entry is a
 /// `CFString` struct (isa, flags, char pointer, length); `bytes` is the UTF-8 of
 /// the string its char pointer targets, already resolved through chained fixups
@@ -427,6 +441,9 @@ pub struct AnalysisOutput {
     /// every function), so the list is empty whenever their gates are off and the
     /// suppression is a no-op.
     pub fde_bodies: Vec<(u64, u64)>,
+    /// (kuna `globalwidth`) The one width each sized data object is read and
+    /// written with, as `(object address, width)`.
+    pub global_widths: Vec<(u64, u32)>,
     /// (kuna) Function entries strictly inside an FDE body that the image itself
     /// enters from outside it — the extra entry points of a multi-entry `.cold`
     /// fragment. Added after the [`Self::fde_bodies`] suppression. Produced only by
@@ -511,6 +528,9 @@ pub struct AnalysisOutput {
     /// the import, but never registered in the function inventory: the slot is a
     /// pointer word, not a function.
     pub import_slot_names: Vec<(u64, String)>,
+    /// (kuna `itaniumrtti`) The recovered C++ vtables to type. See
+    /// [`crate::rtti::kuna_vtabletypes`].
+    pub cpp_vtables: crate::rtti::kuna_vtabletypes::VtableFacts,
     /// Detected NUL-terminated string literals (a typed `char[N]` per address).
     pub strings: Vec<StringFact>,
     /// (kuna `fatstr`) Length-BOUNDED string literals recovered from static
@@ -535,6 +555,9 @@ pub struct AnalysisOutput {
     /// types each entry an opaque `struct __CFString` and pre-seeds the
     /// `StringManager`, so a reference renders the literal. Produced by [`crate::analyzers::cfstring`].
     pub cfstrings: Vec<CFStringFact>,
+    /// (kuna `blobs`) Embedded images and archives, each a whole file with an
+    /// exact length. Produced by [`crate::analyzers::blobs`].
+    pub blobs: Vec<BlobFact>,
     /// Library-function prototypes to seed onto matching FunctionSymbols (the kuna
     /// analog of Ghidra's `ApplyDataArchiveAnalyzer` / `.gdt` archives). Each is
     /// parked on its named callee via `set_function_prototype_pieces`, so a caller
@@ -846,6 +869,7 @@ impl AnalysisOutput {
         self.swift_types.regs = self.swift_types.regs.or(other.swift_types.regs);
         self.entries.extend(other.entries);
         self.fde_bodies.extend(other.fde_bodies);
+        self.global_widths.extend(other.global_widths);
         self.fde_interior_entries.extend(other.fde_interior_entries);
         self.pdb_bodies.extend(other.pdb_bodies);
         self.entry_names.extend(other.entry_names);
@@ -860,11 +884,14 @@ impl AnalysisOutput {
         self.objc_self_types.extend(other.objc_self_types);
         self.externref.extend(other.externref);
         self.import_slot_names.extend(other.import_slot_names);
+        self.cpp_vtables.classes.extend(other.cpp_vtables.classes);
+        self.cpp_vtables.slot_ranges.extend(other.cpp_vtables.slot_ranges);
         self.strings.extend(other.strings);
         self.bounded_strings.extend(other.bounded_strings);
         self.wide_strings.extend(other.wide_strings);
         self.wide_strings32.extend(other.wide_strings32);
         self.cfstrings.extend(other.cfstrings);
+        self.blobs.extend(other.blobs);
         self.prototypes.extend(other.prototypes);
         self.prototypes_at.extend(other.prototypes_at);
         self.kalloc_types.extend(other.kalloc_types);

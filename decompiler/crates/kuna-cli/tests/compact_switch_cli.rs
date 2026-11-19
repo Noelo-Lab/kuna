@@ -778,7 +778,7 @@ fn source_decompile(fixture: &SourceFixture) -> String {
     command
         .arg("decompile-all")
         .arg(fixtures().join(fixture.name))
-        .args(["--addr", fixture.pick, "--sleighpath"])
+        .args(["--addr", fixture.pick, "--option", "globalwidth", "off", "--sleighpath"])
         .arg(specs());
     printed(command)
 }

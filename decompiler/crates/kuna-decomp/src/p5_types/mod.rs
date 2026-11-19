@@ -3,6 +3,8 @@
 //! Stage-aligned module group; declared flatly at the crate root via re-export in
 //! `lib.rs` so public paths (`kuna_decomp::<module>`) are unchanged.
 
+pub mod kuna_indexrescale;
+pub mod kuna_vtabletypes;
 pub mod funcdata_union;
 pub mod kuna_thumbfuncptr;
 pub mod kuna_inferfuncentry;

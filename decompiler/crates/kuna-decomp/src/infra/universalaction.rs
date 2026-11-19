@@ -616,6 +616,7 @@ pub fn universal_sched(
             // propagation nor structsynth can replace them.
             act!(crate::kuna_sitetypelock::ActionSiteTypeLock::boxed("typerecovery")),
             act!(ActionInferTypes::boxed("typerecovery")),
+            act!(crate::kuna_indexrescale::ActionIndexRescale::boxed("typerecovery")),
             // (kuna) structsynth: once propagation has settled, complete a
             // `struct_N` over a pointer parameter dereferenced at two or more
             // constant offsets and type-lock the parameter to it.  It sits here
@@ -708,6 +709,10 @@ pub fn universal_sched(
             // passes above: mainloop has settled the count and the searched byte
             // to constants, and the repeating fullloop folds what it leaves.
             act!(Box::new(crate::kuna_strlenscan::ActionStrlenScan::new(false, "returnsplit"))),
+            // (kuna) repstring (option `repstring`): the same loop shape for
+            // `rep movs`, `rep stos` and `repz cmpsb`, collapsed into a copy,
+            // fill or compare builtin by removing the edge into the body.
+            act!(Box::new(crate::kuna_repstring::ActionRepString::new("returnsplit"))),
             act!(ActionReturnSplit::boxed("returnsplit")),
             // (kuna) angr SAILR gotoless `ReturnDuplicatorHigh` (option `returndup`,
             // default-OFF).  Runs right after ActionReturnSplit (the goto-driven

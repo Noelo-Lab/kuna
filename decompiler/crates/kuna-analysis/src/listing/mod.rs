@@ -34,6 +34,7 @@ mod kuna_insnindex;
 mod kuna_insnstore;
 pub mod context;
 pub mod decode;
+pub mod kuna_accesswidth;
 pub mod kuna_callbackentry;
 pub mod kuna_callerreads;
 pub mod kuna_poolextents;

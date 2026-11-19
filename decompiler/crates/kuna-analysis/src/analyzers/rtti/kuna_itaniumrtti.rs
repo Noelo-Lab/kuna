@@ -144,18 +144,20 @@ impl Flavor {
 
 /// A decoded Itanium typeinfo object.
 #[derive(Clone, Debug)]
-struct TypeInfo {
+pub(super) struct TypeInfo {
     /// VMA of the typeinfo object (`_ZTI<C>`).
-    addr: u64,
+    pub(super) addr: u64,
     /// VMA of its NUL-terminated type-name string (`_ZTS<C>`).
     name_addr: u64,
     /// The demangled qualified class name (`leveldb::Env`, `Widget`).
     class: String,
+    /// The demangled class name before sanitizing (`Vec<int>`).
+    pub(super) demangled: String,
     /// Direct base classes as `(base typeinfo VMA, byte displacement of the base
     /// subobject within this class)`. Empty for [`Flavor::Class`]. The displacement
     /// is the Itanium `offset_flags >> 8` for a vmi base and 0 for an si base —
     /// the datum the MSVC sibling pass discards with its `pmd` fields.
-    bases: Vec<(u64, i64)>,
+    pub(super) bases: Vec<(u64, i64)>,
     /// Byte extent of the object, used to reject a pointer *inside* a typeinfo from
     /// being read as a vtable header.
     size: u64,
@@ -164,21 +166,21 @@ struct TypeInfo {
 /// A recovered sub-vtable: one polymorphic base subobject's slice of a `_ZTV<C>`
 /// object.
 #[derive(Clone, Debug)]
-struct SubVtable {
+pub(super) struct SubVtable {
     /// VMA of the sub-vtable's `offset-to-top` word — what `_ZTV<C>` names for the
     /// primary, and what a secondary base subobject's vptr is derived from.
     header: u64,
     /// VMA of the first virtual slot (the value an object's vptr holds).
-    first_slot: u64,
+    pub(super) first_slot: u64,
     /// The `offset-to-top` displacement: 0 for the primary sub-vtable, negative for
     /// a secondary (the byte distance back to the most-derived object's start).
-    offset_to_top: i64,
+    pub(super) offset_to_top: i64,
     /// The typeinfo (hence the most-derived class) this sub-vtable belongs to.
-    typeinfo: u64,
+    pub(super) typeinfo: u64,
     /// The virtual-method target VAs, in slot order. A slot filled by the dynamic
     /// loader (an imported method) is recorded as `None` so slot INDICES stay
     /// faithful to the ABI while carrying no name.
-    slots: Vec<Option<u64>>,
+    pub(super) slots: Vec<Option<u64>>,
 }
 
 /// The Itanium (GCC/Clang) RTTI + vtable recovery pass (gate id `itaniumrtti`).
@@ -199,6 +201,7 @@ impl AnalysisPass for ItaniumRttiPass {
         let mut out = AnalysisOutput::default();
         if let Some((typeinfos, subs, rk)) = recover_graph(ctx) {
             emit(&typeinfos, &subs, &rk, &mut out);
+            out.cpp_vtables = super::kuna_vtabletypes::vtable_facts(ctx.file, &typeinfos, &subs, &rk);
         }
         out
     }
@@ -362,7 +365,7 @@ fn decode_typeinfos(
     const MAX_NAME: usize = 4096;
 
     let ptr = rk.ptr_size() as u64;
-    let mut named: Vec<(u64, Option<Flavor>, u64, String)> = Vec::new();
+    let mut named: Vec<(u64, Option<Flavor>, u64, String, String)> = Vec::new();
     for &(addr, flavor) in candidates {
         let Some(name_addr) = read_ptr(img, rk, addr + ptr) else {
             continue;
@@ -370,22 +373,22 @@ fn decode_typeinfos(
         let Some(mangled) = img.read_cstr(name_addr, MAX_NAME) else {
             continue;
         };
-        let Some(class) = demangle_typeinfo_name(&mangled).map(|c| sanitize_class_name(&c))
-        else {
+        let Some(demangled) = demangle_typeinfo_name(&mangled) else {
             continue;
         };
+        let class = sanitize_class_name(&demangled);
         if class.is_empty() {
             continue;
         }
-        named.push((addr, flavor, name_addr, class));
+        named.push((addr, flavor, name_addr, class, demangled));
     }
     let accepted: HashSet<u64> = named.iter().map(|&(a, ..)| a).collect();
 
     let mut out = Vec::new();
-    for (addr, flavor, name_addr, class) in named {
+    for (addr, flavor, name_addr, class, demangled) in named {
         let flavor = flavor.unwrap_or_else(|| sniff_flavor(img, rk, addr, &accepted));
         let (bases, size) = read_bases(img, rk, addr, flavor, &accepted);
-        out.push(TypeInfo { addr, name_addr, class, bases, size });
+        out.push(TypeInfo { addr, name_addr, class, demangled, bases, size });
     }
     out
 }
@@ -910,6 +913,7 @@ mod tests {
             addr: 0x7080,
             name_addr: 0x5000,
             class: "Drawable".into(),
+            demangled: "Drawable".into(),
             bases: vec![],
             size: 16,
         };
@@ -917,6 +921,7 @@ mod tests {
             addr: 0x70c0,
             name_addr: 0x5020,
             class: "Widget".into(),
+            demangled: "Widget".into(),
             bases: vec![(0x7080, 16)],
             size: 56,
         };

@@ -44,6 +44,9 @@ mod argument_errors_cli;
 #[path = "archive_members_cli.rs"]
 mod archive_members_cli;
 
+#[path = "assert_callee.rs"]
+mod assert_callee;
+
 #[path = "array_member_bits.rs"]
 mod array_member_bits;
 
@@ -116,6 +119,9 @@ mod thumbswitch_guards;
 #[path = "asserted_enum_layout.rs"]
 mod asserted_enum_layout;
 
+#[path = "assert_format_isolate.rs"]
+mod assert_format_isolate;
+
 #[path = "baseline_cli.rs"]
 mod baseline_cli;
 
@@ -156,6 +162,8 @@ mod caller_stack_cli;
 mod castnarrow_round_trip;
 #[path = "strlenscan_round_trip.rs"]
 mod strlenscan_round_trip;
+#[path = "repstring_round_trip.rs"]
+mod repstring_round_trip;
 
 #[path = "coff_strings.rs"]
 mod coff_strings;
@@ -173,6 +181,9 @@ mod contiguous_byte_frame;
 
 #[path = "cookie_pointer_return_271.rs"]
 mod cookie_pointer_return_271;
+
+#[path = "blobs_cli.rs"]
+mod blobs_cli;
 
 #[path = "crypto_cli.rs"]
 mod crypto_cli;
@@ -575,6 +586,9 @@ mod xrefs_data_refs_cli;
 #[path = "xrefs_fileset_entry.rs"]
 mod xrefs_fileset_entry;
 
+#[path = "dyld_follow_images.rs"]
+mod dyld_follow_images;
+
 #[path = "xrefs_got_call.rs"]
 mod xrefs_got_call;
 
@@ -889,3 +903,6 @@ mod nullable_relocations;
 
 #[path = "arm64e_vcall_xrefs.rs"]
 mod arm64e_vcall_xrefs;
+
+#[path = "call_site_prototype.rs"]
+mod call_site_prototype;

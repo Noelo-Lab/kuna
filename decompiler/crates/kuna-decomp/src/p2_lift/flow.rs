@@ -388,6 +388,12 @@ pub trait FlowEnvironment {
         (None, None)
     }
 
+    /// (kuna `--assert callee`) Did the caller state where the indirect jump at
+    /// `site` goes? See [`kuna_calleeoverride`](crate::kuna_calleeoverride).
+    fn stated_callee_site(&self, _fd: &Funcdata, _site: &Address) -> bool {
+        false
+    }
+
     /// (kuna `msvcsig`) Does `entry` carry a locked MSVC prototype? Such a callee's
     /// copied prototype gets the stack adjustment its parameter list implies, as
     /// `ActionDefaultParams` gives a declared callee it seeds itself
@@ -1888,6 +1894,17 @@ following this call as a branch"
         )
     }
 
+    /// (kuna `funcboundflow`) Does fall-through to `next` leave the unwind-table
+    /// extent (`.eh_frame` FDE, Go `functab`) that starts at this function's
+    /// entry? The extent is the compiler's own statement of where the function
+    /// ends, so a call whose return address is past it does not return.
+    fn leaves_own_unwind_extent(&self, next: &Address) -> bool {
+        let entry = self.data.get_address().get_offset();
+        let extents = &self.data.get_arch().kuna_unwind_extents;
+        let i = extents.partition_point(|&(start, _)| start < entry);
+        extents.get(i).is_some_and(|&(start, end)| start == entry && next.get_offset() >= end)
+    }
+
     /// Is `addr` part of this function's caller-declared extent?  `get_size()`
     /// is nonzero only when `function bounds` / `--define-function START-END`
     /// supplied an explicit size; the `baddr`/`eaddr` pair is the same range the
@@ -2154,7 +2171,12 @@ truncating the fall-through here"
                 Some(t) if t > next => Some((next.clone(), t)),
                 _ => None,
             };
-            if self.is_funcbound_fallthru(&next) {
+            let entry_bound = self.is_funcbound_fallthru(&next);
+            let unwind_bound = !entry_bound
+                && ends_in_call
+                && !self.is_inside_declared_extent(&next)
+                && self.leaves_own_unwind_extent(&next);
+            if entry_bound || unwind_bound {
                 // (kuna funcboundflow) Fall-through has reached the entry of the
                 // next function -- the callee just executed (an unnamed static
                 // `exit`/`abort`/`die()` wrapper kuna could not prove no-return)
@@ -2193,11 +2215,13 @@ truncating the fall-through here"
                 if needs_halt {
                     self.visited.insert(next.clone(), VisitStat { seqnum: seq, size: 1 });
                 }
+                let text = if unwind_bound {
+                    "funcboundflow: fall-through left the function's unwind extent; truncating flow here"
+                } else {
+                    "funcboundflow: fall-through reached the next function entry; truncating flow here"
+                };
                 self.funcbound_cutoffs.insert(next);
-                self.data.warning(
-                    "funcboundflow: fall-through reached the next function entry; truncating flow here",
-                    curaddr,
-                );
+                self.data.warning(text, curaddr);
                 isfallthru = false;
             } else if ends_in_call && self.is_pool_fallthru(&next) {
                 // (kuna funcboundflow) The call's fall-through is the function's
@@ -3077,6 +3101,10 @@ truncating the fall-through here"
             .map(|o| o.get_addr().clone())
             .unwrap_or_default();
         let mut direct = self.data.get_override().find_indirect_override(&op_addr).cloned();
+        let carrier = direct
+            .as_ref()
+            .filter(|_| self.data.get_arch().vtable_types)
+            .and_then(|_| self.jump_target_carrier(op));
         if direct.is_none() {
             direct = self.env.msvc_import_slot(&self.data, op);
         }
@@ -3103,6 +3131,9 @@ truncating the fall-through here"
             // exactly as flow.cc:735-739 does after `applyIndirect`/`applyPrototype`.
             self.data.op_set_opcode_code(op, OpCode::CPUI_CALL);
             self.build_call_specs(op, entry.clone(), false)?;
+            if let (Some(storage), Some(idx)) = (carrier, self.data.get_call_specs_index(op)) {
+                self.data.get_call_specs_mut(idx).set_jump_target_storage(storage);
+            }
             self.qlst_count += 1;
             return self.check_for_flow_modification(op, &entry);
         }
@@ -3919,6 +3950,10 @@ truncating the fall-through here"
         for op in table_ops {
             let at = self.data.obank().get(op).map_or(0, |o| o.get_addr().get_offset());
             let _scope = crate::decompile_drive::JumpTableScope::enter(at);
+            if !for_inline && self.is_stated_tail_call(op) {
+                self.stated_tail_call(op)?;
+                continue;
+            }
             let mode = if crate::decompile_drive::deadline_passed_in("jump-table recovery") {
                 Ok(None)
             } else {
@@ -3965,6 +4000,29 @@ truncating the fall-through here"
             }
         }
         Ok(new_tables)
+    }
+
+    /// (kuna `--assert callee`) Is the BRANCHIND `op` a jump the caller stated
+    /// the destination function of? It is a tail call, not a switch.
+    fn is_stated_tail_call(&self, op: OpId) -> bool {
+        self.data
+            .obank()
+            .get(op)
+            .is_some_and(|o| self.env.stated_callee_site(&self.data, o.get_addr()))
+    }
+
+    /// (kuna `--assert callee`) Turn the stated BRANCHIND `op` into a call to the
+    /// stated callee followed by a return, or by nothing when the callee never
+    /// returns, as a direct tail call to it is built.
+    fn stated_tail_call(&mut self, op: OpId) -> KunaResult<()> {
+        self.data.op_set_opcode_code(op, OpCode::CPUI_CALLIND);
+        if self.setup_callind_specs(op)? {
+            return Ok(());
+        }
+        let addr = self.data.obank().get(op).expect("stated tail call: stale op").get_addr().clone();
+        let truncop = self.artificial_halt(&addr, 0)?;
+        self.data.op_dead_insert_after(truncop, op);
+        Ok(())
     }
 
     /// Convert a BRANCHIND that could not be recovered into a call or return
