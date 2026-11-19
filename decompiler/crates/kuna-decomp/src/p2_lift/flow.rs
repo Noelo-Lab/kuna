@@ -1886,6 +1886,17 @@ following this call as a branch"
         )
     }
 
+    /// (kuna `funcboundflow`) Does fall-through to `next` leave the unwind-table
+    /// extent (`.eh_frame` FDE, Go `functab`) that starts at this function's
+    /// entry? The extent is the compiler's own statement of where the function
+    /// ends, so a call whose return address is past it does not return.
+    fn leaves_own_unwind_extent(&self, next: &Address) -> bool {
+        let entry = self.data.get_address().get_offset();
+        let extents = &self.data.get_arch().kuna_unwind_extents;
+        let i = extents.partition_point(|&(start, _)| start < entry);
+        extents.get(i).is_some_and(|&(start, end)| start == entry && next.get_offset() >= end)
+    }
+
     /// Is `addr` part of this function's caller-declared extent?  `get_size()`
     /// is nonzero only when `function bounds` / `--define-function START-END`
     /// supplied an explicit size; the `baddr`/`eaddr` pair is the same range the
@@ -2152,7 +2163,12 @@ truncating the fall-through here"
                 Some(t) if t > next => Some((next.clone(), t)),
                 _ => None,
             };
-            if self.is_funcbound_fallthru(&next) {
+            let entry_bound = self.is_funcbound_fallthru(&next);
+            let unwind_bound = !entry_bound
+                && ends_in_call
+                && !self.is_inside_declared_extent(&next)
+                && self.leaves_own_unwind_extent(&next);
+            if entry_bound || unwind_bound {
                 // (kuna funcboundflow) Fall-through has reached the entry of the
                 // next function -- the callee just executed (an unnamed static
                 // `exit`/`abort`/`die()` wrapper kuna could not prove no-return)
@@ -2191,11 +2207,13 @@ truncating the fall-through here"
                 if needs_halt {
                     self.visited.insert(next.clone(), VisitStat { seqnum: seq, size: 1 });
                 }
+                let text = if unwind_bound {
+                    "funcboundflow: fall-through left the function's unwind extent; truncating flow here"
+                } else {
+                    "funcboundflow: fall-through reached the next function entry; truncating flow here"
+                };
                 self.funcbound_cutoffs.insert(next);
-                self.data.warning(
-                    "funcboundflow: fall-through reached the next function entry; truncating flow here",
-                    curaddr,
-                );
+                self.data.warning(text, curaddr);
                 isfallthru = false;
             } else if ends_in_call && self.is_pool_fallthru(&next) {
                 // (kuna funcboundflow) The call's fall-through is the function's

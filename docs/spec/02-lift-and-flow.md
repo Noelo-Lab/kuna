@@ -1351,6 +1351,25 @@ call is bounded at a pool; an inlined callee's nested flow is not re-walked, so 
 bound does not apply inside an inline; and a code space that is not byte-addressed
 keeps every fall-through.
 
+The same bound holds at the end of the function's own unwind-table extent
+(`flow.rs (FlowInfo::leaves_own_unwind_extent)`). An `.eh_frame` FDE or a Go
+`functab` entry (the extents the analysis tier hands `fdeinterior`) states
+where its function ends; a PE `.pdata` record is not used, because it can be
+one chunk of a chained function. A call to an import that kuna cannot know
+never returns (`call mydie@plt` as a function's last instruction,
+`call [GOT _Unwind_Resume]` closing a cleanup rung) is taken to return, and
+flow then walks off the function's end into whatever bytes follow: the next
+cleanup rung, padding, or code no known entry names, which the entry test
+above cannot bound. When the function's entry starts a single-function
+extent and an instruction that ends in an unconditional call
+(`flow.rs (FlowInfo::ends_in_unconditional_call)`) would fall through to an
+address at or past the extent's end, the walk is truncated the way it is at
+a foreign entry, and the warning says the fall-through left the unwind
+extent. Only a call is bounded this way: hand-written assembly gives a short
+entry stub its own FDE and falls out of it into the shared body, and that
+fall-through is kept. A declared extent (`--define-function S-E`) still
+wins.
+
 The cutoff address itself maps to the no-return halt inserted by the truncating
 fall-through. This lets `target` walk across already-decoded instructions that
 generated no p-code and terminate at the proven boundary. It does not mark the

@@ -404,6 +404,10 @@ pub struct Architecture {
     /// Single-function bodies (FDEs, or Go `pclntab` extents) whose interiors the
     /// loader suppressed as separate entries.
     pub kuna_function_bodies: Vec<(u64, u64)>,
+    /// (kuna `funcboundflow`) Every single-function unwind-table extent
+    /// (`.eh_frame` FDE, Go `functab`), sorted; fall-through stops at the end of
+    /// the function's own.
+    pub kuna_unwind_extents: Rc<Vec<(u64, u64)>>,
     /// (kuna `floatglobals`) The scan's answer, once a function asked for it.
     pub kuna_float_globals: Option<Rc<crate::kuna_floatglobals::FloatGlobals>>,
     /// (kuna `floatglobals`, `callerreads`) The run decompiles more than one
@@ -2334,6 +2338,7 @@ impl Architecture {
             float_globals: true, // (kuna) option floatglobals; reset_defaults sets the shipped default
             kuna_float_scan: None,
             kuna_function_bodies: Vec::new(),
+            kuna_unwind_extents: Rc::new(Vec::new()),
             kuna_float_globals: None,
             kuna_float_scan_batch: false,
             kuna_call_returns: Vec::new(),
@@ -3511,6 +3516,7 @@ impl Architecture {
             .filter_map(|nm| self.userops.get_op_by_name(nm).map(|u| u.get_index() as kuna_base::types::uint4))
             .collect();
         ctx.return_branch = self.return_branch; // returnbranch
+        ctx.kuna_unwind_extents = Rc::clone(&self.kuna_unwind_extents);
         ctx.index_rescale = self.index_rescale;
         ctx.recover_array_stride = self.recover_array_stride; // GH-8724 arraystride
         ctx.memset_recover = self.memset_recover; // GH-9230/1537 memsetrecover

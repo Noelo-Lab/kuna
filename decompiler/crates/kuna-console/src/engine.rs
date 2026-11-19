@@ -3235,6 +3235,11 @@ impl ConsoleProgram {
         // ranges.
         let mut fde_bodies = std::mem::take(&mut merged.fde_bodies);
         fde_bodies.sort_unstable();
+        // (kuna `funcboundflow`) A PE function's `.pdata` record can be one chunk
+        // of a chained function, so only the other images' extents bound flow.
+        if !self.arch().get_description().contains("windows") {
+            self.arch_mut().kuna_unwind_extents = Rc::new(fde_bodies.clone());
+        }
         kuna_analysis::entry::kuna_fdeinterior::suppress_interior_entries(
             &mut merged.entries,
             &fde_bodies,

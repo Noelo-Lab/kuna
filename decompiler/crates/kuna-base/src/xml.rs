@@ -2239,7 +2239,8 @@ mod tests {
         // and kuna-repstring, kuna-repstring-i386 / x86 rep movs/stos/cmpsb print as copy, fill and compare builtins
         // and kuna-indexrescale / a byte offset into an array becomes an element index
         // and kuna-globalwidth / a symbol-table data object takes the element width its accesses use
-        assert_eq!(count, 801, "corpus file count drifted");
+        // and kuna-funcboundflow-unwind / fall-through stops at the end of the function's own unwind extent
+        assert_eq!(count, 802, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
