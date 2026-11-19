@@ -4582,6 +4582,42 @@ explanation, also printed as a `note:` line:
 note: 0xfffffe0007007000 is in the MH_FILESET entry com.apple.kernel, not in com.example.driver.PMGR, the entry loaded: only references made from com.example.driver.PMGR are listed; `--option kernelcache com.apple.kernel` loads that entry
 ```
 
+### `--option kernelcache-boot PATH` — the collections a System or Auxiliary collection links
+
+A macOS `AuxiliaryKernelExtensions.kc` (third-party kexts) or
+`SystemKernelExtensions.kc` points into the boot collection with fixups that
+are offsets from the boot collection's base, so it cannot be resolved from its
+own bytes. kuna looks in the directory of the input for the collection whose
+UUID the input's `__PRELINK_INFO` names (`_BootKCID`, and `_PageableKCID` for
+the System collection), rebases those pointers against it and names the kernel
+functions they reach:
+
+```
+$ ls
+AuxiliaryKernelExtensions.kc  BootKernelExtensions.kc
+$ kuna decompile AuxiliaryKernelExtensions.kc gadget_start
+[kuna] MH_FILESET: loaded com.example.driver.Gadget (entry 1 of 1, 1 chained-fixup pointers rebased, 2 pointers into the boot collection rebased from BootKernelExtensions.kc (2 functions named)); ...
+void gadget_start(unsigned long a0)
+{
+  kernel_add(a0,7);
+}
+```
+
+On a Mac the two files are `/Library/KernelCollections/AuxiliaryKernelExtensions.kc`
+and `/System/Library/KernelCollections/BootKernelExtensions.kc`.
+
+Only an input with pointers into another collection reads any other file.
+`auto` then opens the regular files of the input's directory (at most 4096
+entries) for their first 16 bytes, and reads whole only the `MH_FILESET` ones
+(at most 16, never the input itself) until the UUID matches; the load note
+names the file it used. `--option kernelcache-boot PATH` names the file (raw,
+or an IMG4 / IM4P container) or a directory to search instead; `off` reads no
+other file. A file with a different UUID is not used. When no file matches,
+the pointers stay unresolved and the note says how many and which UUID is
+missing. Like
+`kernelcache`, the option applies to the whole invocation and overrides
+`KUNA_KERNELCACHE_BOOT`.
+
 ## `--member NAME` — one member of an `ar` archive
 
 A static library (`libfoo.a`) is an `ar` archive of relocatable objects, and

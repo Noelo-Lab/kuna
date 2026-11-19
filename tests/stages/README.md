@@ -454,6 +454,10 @@ bare MH_FILESET with `kernelcache off` (one image, no symbols), its kext out of 
 IMG4(IM4P(LZFSE)) wrapper, and its kernel out of a bare IM4P(complzss). The
 fixtures and their generator live in
 `decompiler/crates/kuna-analysis/tests/fixtures/kernelcache/`.
+`kuna-kernelcacheboot.xml` loads the kext of a synthetic Auxiliary collection
+twice: with `kernelcache-boot off` its calls into the kernel go through
+unresolved slots, and by default they are named from the boot collection that
+sits beside it (`linked/` in the same fixture directory).
 
 `ghangr-go-pointer-arithmetic-32.xml` and `ghangr-go-pointer-arithmetic-64.xml`
 check live pointer bases through constant, negative and signed dynamic byte

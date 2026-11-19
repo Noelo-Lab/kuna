@@ -56,13 +56,13 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_219() {
-    assert_eq!(kuna_num_settables(), 219);
-    assert_eq!(SETTABLE_TABLE.len(), 219);
+fn settable_count_is_220() {
+    assert_eq!(kuna_num_settables(), 220);
+    assert_eq!(SETTABLE_TABLE.len(), 220);
 }
 
 #[test]
-fn tier_counts_are_45_core_120_transform_54_analysis() {
+fn tier_counts_are_45_core_120_transform_55_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -74,7 +74,7 @@ fn tier_counts_are_45_core_120_transform_54_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (45, 120, 54));
+    assert_eq!((core, transform, analysis), (45, 120, 55));
 }
 
 #[test]
@@ -458,6 +458,9 @@ fn option_values_live_value_present_for_76() {
         // (kuna) Apple kernelcache unwrapping + MH_FILESET entry choice -- a
         // LOAD-time gate read from `KUNA_KERNELCACHE`. Default auto.
         "kernelcache",
+        // (kuna) Where a kernel collection's linked collections are found -- a
+        // LOAD-time gate read from `KUNA_KERNELCACHE_BOOT`. Default auto.
+        "kernelcache-boot",
     ];
     let mut with_live = 0;
     for i in 0..kuna_num_settables() {
@@ -1091,7 +1094,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `chkstkdarwin`, its P2 row after `msvcftol`.
     // +1 for `calleeargs`; its P4 row sits after `argclobber`.
     // +1 for `acleintrinsics`; its P9 row sits after `cortexmpriv`.
-    assert_eq!(json.matches("},\n").count(), 218);
+    // +1 for `kernelcache-boot`; its P1 row sits after `kernelcache`.
+    assert_eq!(json.matches("},\n").count(), 219);
 }
 
 #[test]

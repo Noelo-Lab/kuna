@@ -24,6 +24,7 @@ pub mod kuna_ppcapu;
 // (kuna) Apple firmware container / kernel-collection entry selection (load-time,
 // env-bridged).
 pub mod kuna_kernelcache;
+pub mod kuna_kernelcacheboot;
 // (kuna) PE chained-`UNWIND_INFO` `.pdata` entry suppression option gate
 // (load-time, env-bridged).
 // (kuna) x86-64 PE REX-prefixed tail-jump import-thunk rejection option gate

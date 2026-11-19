@@ -834,6 +834,12 @@ kuna_options! { self, p1;
         self.load_options_mut().kernelcache = choice;
         Ok(msg)
     },
+    "kernelcache-boot" => {
+        let (choice, msg) = crate::kuna_kernelcacheboot::parse_kernelcache_boot(p1)?;
+        crate::kuna_kernelcacheboot::set_kernelcache_boot_env(&choice);
+        self.load_options_mut().kernelcache_boot = choice;
+        Ok(msg)
+    },
     "dyldimage" => {
         self.load_options_mut().dyldimage =
             crate::kuna_dyldcache::image_name(p1).map(str::to_string);

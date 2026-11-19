@@ -656,6 +656,10 @@ Three tiers:
 | kuna functions on a decompressed MH_FILESET kernelcache finds no functions | [`kernelcache`](#kernelcache----auto--off---default-auto) |
 | a kext cannot be selected out of a kernel collection | [`kernelcache`](#kernelcache----auto--off---default-auto) |
 | pointers in a kernelcache read as packed chained-fixup words instead of addresses | [`kernelcache`](#kernelcache----auto--off---default-auto) |
+| a kext in an Auxiliary kernel collection calls the kernel through a raw number instead of a named function | [`kernelcache-boot`](#kernelcache-boot----auto--off---default-auto) |
+| pointers into the boot kernel collection read as packed chained-fixup words | [`kernelcache-boot`](#kernelcache-boot----auto--off---default-auto) |
+| vtable and metaclass pointers of a third-party kext are not addresses | [`kernelcache-boot`](#kernelcache-boot----auto--off---default-auto) |
+| AuxiliaryKernelExtensions.kc or SystemKernelExtensions.kc loads with unresolved kernel references | [`kernelcache-boot`](#kernelcache-boot----auto--off---default-auto) |
 | go functions lose source parameters despite dwarf | [`godwarfsig`](#godwarfsig----on--off-default-on) |
 | go identity function decompiles as void | [`godwarfsig`](#godwarfsig----on--off-default-on) |
 | go result parameters appear as inputs | [`godwarfsig`](#godwarfsig----on--off-default-on) |
@@ -2224,6 +2228,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** Auto (default): `kuna functions kernelcache` lists the kernel's functions with their symbol names; `--option kernelcache com.apple.iokit.IOSurface` loads that kext instead, its direct calls into the kernel named after the kernel functions they reach; `--option kernelcache list` stops with the list of every entry id. Flip off to pass the bytes through untouched: an IMG4 is then an unrecognized format and a bare MH_FILESET loads as one image with no code sections.
 - **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-kernelcache
 - **Example:** `--option kernelcache com.apple.iokit.IOSurface`
+
+### `kernelcache-boot` -- auto | off | <path>, default `auto`
+
+- **Symptoms:** a kext in an Auxiliary kernel collection calls the kernel through a raw number instead of a named function; pointers into the boot kernel collection read as packed chained-fixup words; vtable and metaclass pointers of a third-party kext are not addresses; AuxiliaryKernelExtensions.kc or SystemKernelExtensions.kc loads with unresolved kernel references.
+- **What it does:** Apple kernel collections only: resolve the pointers a System or Auxiliary collection (macOS SystemKernelExtensions.kc, AuxiliaryKernelExtensions.kc) holds into the collections it was linked against. A DYLD_CHAINED_PTR_64_KERNEL_CACHE or X86_64_KERNEL_CACHE rebase names a cache level, and a target at level 0 (the boot collection) or 1 (the System collection) is an offset from the base of that other file, so the collection alone cannot say where it points: the slot would keep its packed chain word, and a call through it, or a vtable or metaclass pointer it holds, prints as a raw number. The collection's __PRELINK_INFO plist names each file it needs by UUID (_BootKCID, _PageableKCID). kuna reads the MH_FILESET files in the directory of the input (`auto`), or the file or directory the value names (a file may be an IMG4/IM4P container), takes the one whose LC_UUID or _PrelinkKCID is that UUID, writes base + offset into every such slot, and gives each target that a section symbol of the linked file defines inside code that symbol's name as an import of the loaded kext (the kernel's symbol before a kext's); a `__got`, `__auth_got` or `__auth_ptr` slot holding such an address is that import's slot, so a call through it is a call to the named function. A file with another UUID is never used. The load note counts, per level, the pointers rebased and functions named, or the pointers left unresolved and why. Inert on every input that is not a kernel collection pointing into another one. Loader-tier: read through the KUNA_KERNELCACHE_BOOT env var, because the image is built inside load file.
+- **When to flip:** Auto (default): with BootKernelExtensions.kc copied next to AuxiliaryKernelExtensions.kc, a kext's calls into the kernel through its pointer slots print the kernel function's name. Give a path when the boot collection lives elsewhere (`--option kernelcache-boot /System/Library/KernelCollections`). Flip off to read no file but the input: the slots into other collections stay unresolved and the load note counts them.
+- **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-kernelcache-boot
+- **Example:** `--option kernelcache-boot /System/Library/KernelCollections/BootKernelExtensions.kc`
 
 ### `godwarfsig` -- on | off, default `on`
 
