@@ -3947,3 +3947,22 @@ drives them (`decompiler/crates/kuna-decomp/src/p3_dataflow/heritage.rs
 (Heritage::heritage)`) is a documented stub — inert for every architecture
 without split records, which is the entire current test surface, so no live
 output depends on it yet.
+
+**Index rescaling** (`indexrescale`, default on; kuna;
+`decompiler/crates/kuna-decomp/src/p5_types/kuna_indexrescale.rs (ActionIndexRescale)`,
+right after `ActionInferTypes` in the main loop): an `INT_ADD(p, w)` whose `p`
+points to `k`-byte elements (`k > 1`) starts a web from `w` through
+MULTIEQUAL, INDIRECT, COPY and constant steps. The web is rescaled when every
+member is written by a COPY of a constant, a step by a constant, or a join of
+members, every constant is an exact signed multiple of `k`, and every reader is
+one of those writes, an `INT_ADD` with a base pointing to `k`-byte elements, or
+an equality or ordering compare with a multiple of `k`; no member is an input,
+free, address-tied or persistent. A base that is the address of a structure
+field other than an array is refused (`scalar_field`: the offset picks a field,
+not an element). The constants are divided by `k`, each add becomes
+`PTRADD(p, w, k)`, which prints as `p[w]`, and compares take the divided
+constant; this relies on the byte offset not wrapping. gcc -O2
+`rule[two ? 3 : 1] = v` prints `a0[v1] = a1;` with `v1 = 1;` and `v1 = 3;`
+instead of `*(uint4 *)((long)a0 + v1) = a1;` with `v1 = 4;` and `v1 = 0xc;`. A
+pointer that steps by the element size is not this case, and a byte offset
+also used in other arithmetic is left.

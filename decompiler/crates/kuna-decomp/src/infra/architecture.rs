@@ -474,6 +474,8 @@ pub struct Architecture {
     /// (kuna `returnbranch`) Flow a RETURN with a proven constant target as an
     /// indirect branch; see [`crate::context::ArchContext::return_branch`].
     pub return_branch: bool,
+    /// (kuna `indexrescale`) A byte offset into an array becomes an element index.
+    pub index_rescale: bool,
     /// (kuna GH-8817) Reclassify V850 `jmp [reg]` CALLIND to BRANCHIND
     /// (C++ `v850_indirect_branch`).
     pub v850_indirect_branch: bool,
@@ -2350,6 +2352,7 @@ impl Architecture {
             callee_reginputs: true, // (kuna) option calleereginputs; default on, inert off x86-32 Windows
             callee_reginputs_custom: false, // (kuna) option calleereginputs `custom`; reset_defaults sets the shipped default
             return_branch: false, // (kuna) option returnbranch; reset_defaults sets the shipped default
+            index_rescale: false,
             v850_indirect_branch: false,
             int3_pad: crate::kuna_int3pad::Int3PadMode::Off, // (kuna) option int3pad; reset_defaults sets the shipped default
             x64_syscall: crate::kuna_x64syscall::X64SyscallMode::Off, // (kuna) option x64syscall; reset_defaults sets the shipped default
@@ -2836,6 +2839,7 @@ impl Architecture {
         self.calleevote = crate::kuna_calleevote::CalleeVoteMode::Fields; // (kuna) option calleevote default `fields`: on a whole-binary run a parameter every known caller passes the same committed pointer to takes it, and a closed function's lone field is a record field; inert without a callee-first pass
         self.protoorder = crate::kuna_protoorder::ProtoOrderMode::Cycles; // (kuna) option protoorder default `cycles`: the callee's recovered parameter types reach its call sites as a vote, with no lock and no arity change, and a function in a recursive component states its types too (`types` is the same without them); `lock` also states the arity and stays opt-in
         self.return_branch = true; // (kuna) option returnbranch default-on: 0/675 datatest assertions move; restore the spec's RETURN with `option returnbranch off`
+        self.index_rescale = true;
         self.analyze_for_loops = true;
         self.present_lessequal = true; // (kuna) DIV-2 default-on (GH-558)
         self.readonlypropagate = false;
@@ -3503,6 +3507,7 @@ impl Architecture {
             .filter_map(|nm| self.userops.get_op_by_name(nm).map(|u| u.get_index() as kuna_base::types::uint4))
             .collect();
         ctx.return_branch = self.return_branch; // returnbranch
+        ctx.index_rescale = self.index_rescale;
         ctx.recover_array_stride = self.recover_array_stride; // GH-8724 arraystride
         ctx.memset_recover = self.memset_recover; // GH-9230/1537 memsetrecover
         ctx.rodata_string = self.rodata_string; // (kuna) rodatastring

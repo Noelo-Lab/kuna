@@ -1,0 +1,44 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna-indexrescale: a byte offset into an array becomes an element index
+    (option indexrescale).
+
+    Source (gcc -O2, x86-64):
+      void fill(int *rule, int v, int two) {
+        rule[0] = v;
+        if (two) { rule[1] = v; rule[2] = v; }
+        rule[two ? 3 : 1] = v;
+        rule[4] = v;
+      }
+
+    gcc keeps the selected element as a byte offset, 4 or 0xc, and adds it to
+    rule, which printed as *(uint4 *)((long)a0 + v1) = a1.
+
+    Stage: P5, ActionIndexRescale: the offset's web is written only by
+    constants that are multiples of 4 and read only as an offset from an int
+    pointer, so the constants become 1 and 3 and the add a PTRADD.
+
+    Pass 1 (default) prints a0[v1] = a1; pass 2 (indexrescale off) the byte
+    offset.
+-->
+<bytechunk space="ram" offset="0x401000" readonly="true">
+f30f1efa8937b80400000085d2740b897704b80c000000897708893407897710c30f1f400066662e0f1f840000000000f30f1efa488d470631c94883c71e0fb71083e2206683fa0183d9ff4883c0084839f875ea89c8c3660f1f840000000000f30f1efa5058660fefc0ba01000000be010000004883ec58488d7c24100f294424300f29442440e874ffffff488d7c2430e89affffff0344241c8944240c8b44240cebfe
+</bytechunk>
+<symbol space="ram" offset="0x401000" name="fill"/>
+<symbol space="ram" offset="0x401030" name="scan"/>
+<symbol space="ram" offset="0x401060" name="_start"/>
+</binaryimage>
+<script>
+  <com>lo fu fill</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option indexrescale off</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="KUNA-INDEXRESCALE #1: the selected element is an index (default)" min="1" max="1">a0\[v1\] = a1;</stringmatch>
+<stringmatch name="KUNA-INDEXRESCALE #2: the index constants are element counts (default)" min="1" max="1">v1 = 3;</stringmatch>
+<stringmatch name="KUNA-INDEXRESCALE #3: indexrescale off keeps the byte offset" min="1" max="1">a0 \+ v1\) = a1;</stringmatch>
+</decompilertest>

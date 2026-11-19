@@ -823,6 +823,8 @@ pub struct ArchContext {
     /// prefix proves constant flows as an indirect branch
     /// ([`crate::kuna_returnbranch`]). Off keeps the spec's RETURN.
     pub return_branch: bool,
+    /// (kuna `indexrescale`) A byte offset into an array becomes an element index.
+    pub index_rescale: bool,
     /// (kuna) GH-8724: re-express a strided-induction offset as counter*stride
     /// (C++ `recover_array_stride`, DIV-3 default-on).  Read by
     /// [`RuleArrayStride`](crate::kuna_arraystride::RuleArrayStride).
@@ -1601,6 +1603,7 @@ impl ArchContext {
             x87_integer_userops: Vec::new(),
             float_rounding_userops: Vec::new(),
             return_branch: false,        // returnbranch
+            index_rescale: false,
             recover_array_stride: false, // GH-8724 arraystride
             memset_recover: false,       // GH-9230/1537 memsetrecover
             rodata_string: false,        // (kuna) rodatastring

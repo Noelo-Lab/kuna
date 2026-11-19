@@ -1801,6 +1801,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "indexrescale"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P5"
+subphase = "type-propagation"
+strength = "HARD"
+rewind = "P5"
+issue = "kuna-indexrescale"
+summary = "Rescale a byte offset into an array to an element index. When a variable's web (joined through MULTIEQUAL, INDIRECT, COPY and constant steps) is written only by constants and steps that are multiples of k and read only as an offset added to a pointer to k-byte elements (not the address of a non-array structure field), by its own steps, or by compares with multiples of k, its constants are divided by k and each add becomes PTRADD(p, i, k): *(int *)((long)rule + v2) with v2 = 4 / v2 = 0xc prints rule[v2] with v2 = 1 / v2 = 3. Assumes the byte offset does not wrap, as an array offset does."
+use_when = "On (default). Flip off to see the byte offsets the compiler kept."
+example = "--option indexrescale off"
+source_decompiler = "kuna"
+inspiration = "gcc -O2 keeps a selected or stepped array element as a byte offset in a register and adds it to the base"
+change_kind = "presentation-default"
+tier = "transform"
+symptoms = "*(int *)((long)p + v1) where v1 only takes multiples of 4|a loop steps an offset by the element size and adds it to the base"
+live_field = "index_rescale"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "funcboundflow"
 values = "on|off"
 default = "on"

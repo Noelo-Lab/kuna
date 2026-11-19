@@ -58,6 +58,8 @@ Three tiers:
 | a function ends at jr $ra right after loading $ra with a constant address | [`returnbranch`](#returnbranch----on--off-default-on) |
 | stores and calls after a computed jump through the return register are missing | [`returnbranch`](#returnbranch----on--off-default-on) |
 | a MIPS function that reuses $ra as a jump register decompiles to an empty body | [`returnbranch`](#returnbranch----on--off-default-on) |
+| *(int *)((long)p + v1) where v1 only takes multiples of 4 | [`indexrescale`](#indexrescale----on--off-default-on) |
+| a loop steps an offset by the element size and adds it to the base | [`indexrescale`](#indexrescale----on--off-default-on) |
 | a function's tail is really the body of the NEXT function | [`funcboundflow`](#funcboundflow----on--off-default-on) |
 | dead/garbage code after a call to a die()/fatal()/throw wrapper that never returns | [`funcboundflow`](#funcboundflow----on--off-default-on) |
 | two adjacent functions merged into one, the second also decompiled on its own | [`funcboundflow`](#funcboundflow----on--off-default-on) |
@@ -954,6 +956,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On by default: 0/675 datatest assertions move. Flip off to compare with upstream's return classification, or when the proven constant is not code this function continues at: a target that is another function's entry shows that function's body inside this one, and a target in a segment's zero fill can fail the whole function.
 - **Where / provenance:** P2/flow-classification · kuna · correctness-fix · mips-ra-jump
 - **Example:** `option returnbranch off`
+
+### `indexrescale` -- on | off, default `on`
+
+- **Symptoms:** *(int *)((long)p + v1) where v1 only takes multiples of 4; a loop steps an offset by the element size and adds it to the base.
+- **What it does:** Rescale a byte offset into an array to an element index. When a variable's web (joined through MULTIEQUAL, INDIRECT, COPY and constant steps) is written only by constants and steps that are multiples of k and read only as an offset added to a pointer to k-byte elements (not the address of a non-array structure field), by its own steps, or by compares with multiples of k, its constants are divided by k and each add becomes PTRADD(p, i, k): *(int *)((long)rule + v2) with v2 = 4 / v2 = 0xc prints rule[v2] with v2 = 1 / v2 = 3. Assumes the byte offset does not wrap, as an array offset does.
+- **When to flip:** On (default). Flip off to see the byte offsets the compiler kept.
+- **Where / provenance:** P5/type-propagation · kuna · presentation-default · kuna-indexrescale
+- **Example:** `--option indexrescale off`
 
 ### `funcboundflow` -- on | off, default `on`
 
