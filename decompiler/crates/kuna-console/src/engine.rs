@@ -2438,9 +2438,9 @@ impl ConsoleProgram {
     /// `this` and the parameters in the input registers, the DEX types, the
     /// `__thiscall` model for an instance method.
     fn lock_dex_prototypes(&mut self) {
-        let Some(model) = self.arch().dex_model().cloned() else { return };
+        let models = self.arch().dex_models().to_vec();
         let Some(space) = self.arch().manage().get_default_code_space().cloned() else { return };
-        for function in model.functions() {
+        for (model, function) in models.iter().flat_map(|m| m.functions().into_iter().map(move |f| (m, f))) {
             let Ok((pieces, name)) =
                 model.method_prototype(function.method_idx, function.is_static, false, self.arch().types())
             else {
@@ -4664,23 +4664,29 @@ fn reader_is_te_image(reader: &mut impl std::io::Read) -> std::io::Result<bool> 
     }
 }
 
-/// The file's bytes when its header is a DEX header. Only the header is read
-/// before the whole file is.
+/// The file's bytes when it is a DEX input: a DEX, compact DEX, ODEX or VDEX
+/// header, a zip that holds a `classes.dex` (an APK), or an ELF with an
+/// `oatdata` symbol (an OAT file). Only the header is read before the whole
+/// file is.
 fn file_dex_image(path: &str) -> Option<Vec<u8>> {
+    use kuna_analysis::loadimage_dex::{is_dex, is_dex_image, is_odex, is_vdex};
     use std::io::Read;
     let mut prefix = [0u8; 0x70];
-    std::fs::File::open(path)
-        .and_then(|mut file| file.read_exact(&mut prefix))
-        .is_ok_and(|()| kuna_analysis::loadimage_dex::is_dex(&prefix))
-        .then(|| std::fs::read(path).ok())
-        .flatten()
+    let Ok(mut file) = std::fs::File::open(path) else { return None };
+    file.read_exact(&mut prefix).ok()?;
+    let container = prefix.starts_with(b"PK\x03\x04") || prefix.starts_with(b"\x7fELF");
+    if !container && !is_dex(&prefix) && !is_odex(&prefix) && !is_vdex(&prefix) {
+        return None;
+    }
+    let bytes = std::fs::read(path).ok()?;
+    is_dex_image(&bytes).then_some(bytes)
 }
 
-/// (kuna `dexmodel`) Bootstrap a DEX file: the file mapped read-only at
-/// address 0 for the Dalvik spec, one function per method with code, and the
-/// [`kuna_decomp::kuna_dex::DexModel`] the engine asks for constant-pool
-/// records and register payloads. The method prototypes are locked at the
-/// analysis commit, after the `option` lines.
+/// (kuna `dexmodel`) Bootstrap a DEX file, or an APK's `classes*.dex` files:
+/// each mapped read-only for the Dalvik spec, one function per method with
+/// code, and a [`kuna_decomp::kuna_dex::DexModel`] per file that the engine
+/// asks for constant-pool records and register payloads. The method
+/// prototypes are locked at the analysis commit, after the `option` lines.
 pub fn bootstrap_from_dex_bytes(
     path: &str,
     bytes: Vec<u8>,
@@ -4698,22 +4704,16 @@ pub(crate) fn bootstrap_dex_bytes(
 ) -> KunaResult<ConsoleProgram> {
     let target = kuna_analysis::loadimage_object::explicit_language_target(target).unwrap_or("");
     let registry = build_registry();
-    let model = Rc::new(kuna_decomp::kuna_dex::DexModel::parse(bytes)?);
-    let mut loader = kuna_analysis::loadimage_dex::DexLoadImage::new(path, Rc::clone(&model));
-    let mut sleigh = build_sleigh_for_loader(
-        path,
-        target,
-        languages,
-        &registry,
-        kuna_analysis::loadimage_dex::DEX_LANGUAGE,
-        None,
-    )?;
+    let language = kuna_analysis::loadimage_dex::dex_language(&bytes);
+    let models = kuna_analysis::loadimage_dex::load_dex_models(bytes)?;
+    let mut loader = kuna_analysis::loadimage_dex::DexLoadImage::new(path, models.clone()).with_language(language);
+    let mut sleigh = build_sleigh_for_loader(path, target, languages, &registry, language, None)?;
     let code_space = default_code_space(&sleigh)?;
     loader.attach_to_space(Rc::clone(&code_space));
     let readonly_ranges = loader_readonly_ranges(&loader, sleigh.base().unwrap().manage());
-    let symbols = model
-        .functions()
-        .into_iter()
+    let symbols = models
+        .iter()
+        .flat_map(|model| model.functions())
         .map(|function| ProgramSymbol {
             ordinal: 0,
             name: function.name,
@@ -4725,7 +4725,7 @@ pub(crate) fn bootstrap_dex_bytes(
         .collect();
     let arch = sleigh.base_mut().unwrap();
     arch.set_loader(Box::new(loader));
-    arch.dex = Some(model);
+    arch.dex = models;
     // The file is immutable at run time, so a switch payload's key and size
     // fold to the constants a jump-table model needs.
     arch.readonlypropagate = true;
@@ -6844,7 +6844,7 @@ pub(crate) fn classify_file(path: &str) -> KunaResult<FileInput> {
     if is_te_image(&bytes) {
         return Ok(FileInput::Te(bytes));
     }
-    if kuna_analysis::loadimage_dex::is_dex(&bytes) {
+    if kuna_analysis::loadimage_dex::is_dex_image(&bytes) {
         return Ok(FileInput::Dex(bytes));
     }
     if is_object_binary(&bytes) || is_apple_container(&bytes) {

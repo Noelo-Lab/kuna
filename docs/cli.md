@@ -1374,8 +1374,8 @@ object-file view and refuse it with a capability error, as for a TE.
 
 ### DEX files
 
-A `.dex` file (Android bytecode, `dex\n035`..`039`) loads like any other
-image: the file is mapped at address 0, every method with code is a function
+A `.dex` file (Android bytecode, `dex\n035`..`039`) or an `.apk` loads like any
+other image: the file is mapped at address 0, every method with code is a function
 named `pkg::Class::method` (a method name shared by several overloads gets
 `_<addr>` appended), and its DEX prototype is its signature. The output
 language defaults to Java (`--language c` gives C).
@@ -1403,9 +1403,13 @@ pool, a method's arguments are read from its input registers, and
 and the constructor call that initializes it print as one `new T(args)` when
 they sit together in a basic block; `--option javanew off` prints the bytecode's
 two steps, `v = new(T); v.<init>(args);`. The language is `Dalvik:LE:32:DEX_Android12`; `--target` selects another
-`Dalvik:` language. An APK is a zip: extract its `classes*.dex` and load each one;
-a call into a class defined in another of them prints by name. CDEX, ODEX, OAT
-and VDEX files are not supported.
+`Dalvik:` language. An APK loads directly: its `classes.dex`, `classes2.dex`, ...
+are inflated and mapped one after another, each at a 64 KiB boundary, so one
+run covers the whole app and a call from one file into a class of another
+prints by name. The on-device forms load the same way: a compact DEX file
+(`cdex`), an ODEX (`dey\n`, decoded with `Dalvik:LE:32:ODEX_KitKat`), a
+version-027 VDEX, and an OAT file (an ELF whose `oatdata` embeds the DEX files,
+up to Android 7).
 
 ### Headerless raw images
 
@@ -2980,6 +2984,22 @@ they compose one. How far the table runs comes from the switch's own range check
 back are indistinguishable from one long one. Without a range check to read, nothing
 is followed. This is what puts the callees inside a `switch` on
 `kuna decompile-graph`'s callee list.
+
+A DEX file or an APK has no object-file view, so `kuna xrefs` answers for it from
+the `invoke` call graph instead (`kuna_dex/links.rs`): every method reference is
+resolved across the APK's DEX files to the method it runs, through the
+superclass chain for an inherited method. `--to <method>` lists the call sites in
+every file; `--from <method>` lists what the method calls, a framework method no
+loaded file defines appearing by name with `-` for its address. `call` is the
+only kind.
+
+```console
+$ kuna xrefs two.apk --to demo::Hello::add
+# 4 references to demo::Hello::add @ 0x368
+0x458	call	demo::Hello::many	invoke-static demo.Hello.add(II)I
+...
+0x1016c	call	demo::Other::twice	invoke-static demo.Hello.add(II)I
+```
 
 A target nothing references is exit `0` with `count: 0` — an answer, not a
 failure. A name that resolves to nothing is exit `1` with the reason on stderr; a

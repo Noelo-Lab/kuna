@@ -28,7 +28,7 @@ impl PrintC {
             Some(out) => Atom::with_op_vn(text, tag, hl, op_key(op), vn_key(out)),
             None => Atom::with_op(text, tag, hl, op_key(op)),
         };
-        let Some(rec) = arch.cpool_record(&refs) else {
+        let Some(rec) = fd.get_arch().cpool_record(&refs) else {
             self.push_atom(&atom("UNKNOWNREF".to_string(), TagType::Syntax, SyntaxHighlight::const_color));
             return;
         };

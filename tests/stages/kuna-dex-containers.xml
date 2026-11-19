@@ -1,0 +1,57 @@
+<decompilertest>
+<binaryimage arch="Dalvik:LE:32:DEX_Android12">
+<!--
+    Kuna DEX loader, container formats: P1 environment binding. The fixtures
+    come from tests/stages/fixtures/dex/containers.py (hello.dex and
+    tries.dex rewrapped). Before, none of these loaded: kuna knew only DEX
+    files and APKs.
+
+    #1: an ODEX (dey\n, DexOptHeader) loads its embedded DEX, decoded with
+    the ODEX_KitKat language. #2: a version-027 VDEX's DEX section. #3: an
+    OAT file (ELF, oatdata) that embeds its DEX. #4: a compact DEX file,
+    packed code items and data offsets from data_off, down to its try items.
+-->
+<bytechunk space="ram" offset="0x0" readonly="true">0e00</bytechunk>
+<symbol space="ram" offset="0x0" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file tests/stages/fixtures/dex/hello.odex</com>
+  <com>option setlanguage java-language</com>
+  <com>read symbols</com>
+  <com>load function demo::Hello::add</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/stages/fixtures/dex/hello.vdex</com>
+  <com>option setlanguage java-language</com>
+  <com>read symbols</com>
+  <com>load function demo::Hello::greet</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/stages/fixtures/dex/hello.oat</com>
+  <com>option setlanguage java-language</com>
+  <com>read symbols</com>
+  <com>load function demo::Hello::getValue</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/stages/fixtures/dex/tries.cdex</com>
+  <com>option setlanguage java-language</com>
+  <com>read symbols</com>
+  <com>load function demo::Tries::twoCatches</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="dex containers #1: an ODEX's method decompiles" min="1" max="1">^int add\(int a0,int a1\)
+\{
+return a0 \+ a1;</stringmatch>
+<stringmatch name="dex containers #2: a VDEX's DEX section decompiles" min="1" max="1">v1 = v1\.append\("Hello, "\);</stringmatch>
+<stringmatch name="dex containers #3: an OAT's embedded DEX decompiles" min="1" max="1">return this\.value \+ Hello\.counter;</stringmatch>
+<stringmatch name="dex containers #4: a compact DEX keeps its code items and try items" min="1" max="1">catch \(NumberFormatException e\) \{
+v1 = -1;
+\}
+catch \(ArrayIndexOutOfBoundsException e\) \{</stringmatch>
+</decompilertest>

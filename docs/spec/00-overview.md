@@ -3697,7 +3697,8 @@ and an agent writes:
   restart trigger records *why* (§0.7). Observability only.
 - **The DEX model** (kuna, `option dexmodel`)
   (`decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_dex.rs (DexModel)`): the
-  parsed DEX file a DEX image carries on its `Architecture`, answering what the
+  parsed DEX file a DEX image carries on its `Architecture` (one per file of an
+  APK, each with the base it is mapped at), answering what the
   Dalvik spec leaves to the loading program, which in Ghidra is its Java side.
   It names the functions (`DexModel::functions`: `pkg::Class::method`, with
   `_<addr>` on each member of an overload set), gives each method's prototype

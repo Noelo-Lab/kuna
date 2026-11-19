@@ -106,6 +106,8 @@ Three tiers:
 | indirect jump renders as a computed (code *)() call whose destinations are already constants in the emitted C | [`constselectjump`](#constselectjump----off--reentry--on-default-reentry-destructive-opt-in) |
 | 'Treating indirect jump as call' on a CMOV/predicated dispatch | [`constselectjump`](#constselectjump----off--reentry--on-default-reentry-destructive-opt-in) |
 | the body behind a conditional indirect branch is never decoded | [`constselectjump`](#constselectjump----off--reentry--on-default-reentry-destructive-opt-in) |
+| a Dalvik sparse-switch prints as switchAssist(...) followed by a computed call | [`jumpassist`](#jumpassist----on--off-default-on) |
+| 'jump-as-call' on a switchAssist or lookupswitch user-op | [`jumpassist`](#jumpassist----on--off-default-on) |
 | 'Too many branches' jumptable failure where a cbranch range guard bounds the index | [`switchguardbound`](#switchguardbound----on--off-default-off-destructive-opt-in) |
 | computed (code *)() call at a gcc sub/ja guarded dispatch with the index spilled to the stack | [`switchguardbound`](#switchguardbound----on--off-default-off-destructive-opt-in) |
 | narrow comparison after a logical right shift does not bound a jump table | [`highsliceguard`](#highsliceguard----on--off-default-off) |
