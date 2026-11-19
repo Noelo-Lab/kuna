@@ -3418,6 +3418,12 @@ fn emit_inject(
             );
             engine.emit_payload(payload, tpl, context, emit)
         }
+        None if arch.dex_model().is_some()
+            && payload.core().get_type() == crate::pcodeinject::CALLOTHERFIXUP_TYPE
+            && payload.core().get_name() == b"moveRangeToIV" =>
+        {
+            crate::kuna_dex::emit_range(context, emit)
+        }
         None => arch.translate().fetch_inject_pcode(
             payload.core().get_name(),
             payload.core().get_type(),

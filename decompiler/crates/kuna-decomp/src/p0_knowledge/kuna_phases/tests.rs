@@ -56,13 +56,13 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_222() {
-    assert_eq!(kuna_num_settables(), 222);
-    assert_eq!(SETTABLE_TABLE.len(), 222);
+fn settable_count_is_224() {
+    assert_eq!(kuna_num_settables(), 224);
+    assert_eq!(SETTABLE_TABLE.len(), 224);
 }
 
 #[test]
-fn tier_counts_are_45_core_121_transform_56_analysis() {
+fn tier_counts_are_45_core_122_transform_57_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -74,7 +74,7 @@ fn tier_counts_are_45_core_121_transform_56_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (45, 121, 56));
+    assert_eq!((core, transform, analysis), (45, 122, 57));
 }
 
 #[test]
@@ -264,7 +264,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_76() {
+fn option_values_live_value_present_for_79() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -854,7 +854,8 @@ fn option_values_live_value_present_for_76() {
     // +1 for `repstring` (live_field = rep_string).
     // -1: `constselectjump` became three-valued (off|reentry|on) over an
     // enum field with no `live_field`.
-    assert_eq!(with_live, 77);
+    // +2 for `dexmodel` and `jumpassist` (dex_model, jump_assist).
+    assert_eq!(with_live, 79);
 }
 
 #[test]
@@ -1107,7 +1108,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `kernelcache-boot`; its P1 row sits after `kernelcache`.
     // +1 for `blobs`; its P1 row sits after `strings`.
     // +1 for `repstring`; its P3 row sits after `strlenscan`.
-    assert_eq!(json.matches("},\n").count(), 221);
+    // +2 for `dexmodel` and `jumpassist`; their rows sit beside `constselectjump`.
+    assert_eq!(json.matches("},\n").count(), 223);
 }
 
 #[test]

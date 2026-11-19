@@ -46,6 +46,10 @@ for scalar arguments and results inside e500's wide registers, and decompiles a
 conditional tail-call wrapper with `exclusivecallret` off and on. The CLI tests
 cover both byte orders and execute the recovered wrappers.
 
+`kuna-dex.xml` loads the committed DEX fixture (`fixtures/dex/hello.dex`, built
+from `fixtures/dex/Hello.java` as its header says) and checks the Java output
+with `dexmodel` and `jumpassist` off and on.
+
 `kuna-callwide.xml` loads the committed sealed MIPS32-BE ELF and checks the
 four-byte OFF result against the proved eight-byte result and high-piece callers.
 Its CLI companion executes the original bytes and untouched emitted C/header

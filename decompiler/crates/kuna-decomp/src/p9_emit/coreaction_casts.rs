@@ -1268,7 +1268,9 @@ impl Funcdata {
             Some(t) => t as Rc<dyn crate::dtype::TypeFactory>,
             None => return 0,
         };
-        let strat = CastStrategyC::new(tlst).with_record_identity(self.get_arch().call_target_c);
+        let strat = CastStrategyC::new(tlst)
+            .with_record_identity(self.get_arch().call_target_c)
+            .with_java(self.get_arch().java_casts);
 
         let mut count: int4 = 0;
         // Follow data flow: basic blocks in dominance order, ops in block order.

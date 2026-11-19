@@ -1891,14 +1891,38 @@ impl Rule for RuleTransformCpool {
         if data.obank().get(op).expect("RuleTransformCpool: stale op").is_cpool_transformed() {
             return 0;
         }
-        // STUB(W4): data.opMarkCpoolTransformed(op) marks the visit, then the body
-        // looks up `data.getArch()->cpool->getRecord(refs)` and rewrites the op
-        // (COPY of the primitive, calculated-bool mark, or tag-append).  The
-        // constant-pool record store (`glb->cpool`, W4) and the
-        // updateType/markCalculatedBool surfaces are unported.  The
-        // already-visited guard is ported; the lookup/rewrite is deferred.
-        // returning 0 here avoids claiming a change we did not make.)
-        0
+        data.obank_mut()
+            .get_mut(op)
+            .expect("RuleTransformCpool: stale op")
+            .set_additional_flag(crate::op::pcodeop_addlflags::is_cpool_transformed);
+        let refs: Vec<uintb> = (1..op_num_input(data, op))
+            .filter_map(|i| op_in(data, op, i))
+            .map(|vn| data.vbank().get(vn).expect("RuleTransformCpool: stale vn").get_offset())
+            .collect();
+        let Some(rec) = data.get_arch().cpool_record(&refs) else { return 1 };
+        if rec.get_tag() == crate::cpool::cpool_tag::INSTANCE_OF {
+            data.op_mark_calculated_bool(op);
+        } else if rec.get_tag() == crate::cpool::cpool_tag::PRIMITIVE {
+            let out = data.obank().get(op).and_then(|o| o.get_out()).expect("RuleTransformCpool: no output");
+            let sz = data.vbank().get(out).expect("RuleTransformCpool: stale out").get_size();
+            let cvn = data.new_constant(sz, rec.get_value() & calc_mask(sz));
+            if let Some(ty) = rec.get_type() {
+                data.vbank_mut()
+                    .get_mut(cvn)
+                    .expect("RuleTransformCpool: stale constant")
+                    .update_type_locked(std::rc::Rc::clone(ty), true, true);
+            }
+            while op_num_input(data, op) > 1 {
+                data.op_remove_input(op, op_num_input(data, op) - 1);
+            }
+            data.op_set_opcode_code(op, OpCode::CPUI_COPY);
+            data.op_set_input(op, cvn, 0).expect("RuleTransformCpool: opSetInput");
+            return 1;
+        }
+        let tag = data.new_constant(4, uintb::from(rec.get_tag()));
+        let slot = op_num_input(data, op);
+        data.op_insert_input(op, tag, slot).expect("RuleTransformCpool: opInsertInput");
+        1
     }
 }
 

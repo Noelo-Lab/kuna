@@ -459,6 +459,9 @@ Three tiers:
 | every function of an MS-DOS executable declares an unsigned short local commented // ds | [`mzdgroup`](#mzdgroup----on--off-default-on) |
 | the same DOS global gets no shared name across functions | [`mzdgroup`](#mzdgroup----on--off-default-on) |
 | a near string pointer in a DOS program resolves to a low address instead of its data segment | [`mzdgroup`](#mzdgroup----on--off-default-on) |
+| a DEX method prints CPOOLREF(...) calls and loads | [`dexmodel`](#dexmodel----on--off-default-on) |
+| a DEX method's parameters print as uninitialized locals | [`dexmodel`](#dexmodel----on--off-default-on) |
+| invoke-range calls lose their arguments | [`dexmodel`](#dexmodel----on--off-default-on) |
 | a function that only ever passes its argument to a libc stdio call still declares it long or unsigned long | [`libctypes`](#libctypes----off--opaque--glibc-default-opaque) |
 | a fopen or fdopen result is a void * that nothing can name | [`libctypes`](#libctypes----off--opaque--glibc-default-opaque) |
 | a stat or lstat call fills an untyped void * buffer | [`libctypes`](#libctypes----off--opaque--glibc-default-opaque) |
@@ -1042,6 +1045,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** `reentry` is on by default: 0/675 datatest assertions move. Flip `off` to compare with upstream, which keeps only the first target of a re-entered dispatch. Turn `on` when an indirect jump renders as a computed `(*v)()` call carrying a 'Treating indirect jump as call' warning while the destinations are already visible as address constants in the emitted C, and the code behind them is missing. DESTRUCTIVE as a global default: a conditional TAIL CALL selecting between two nearby function entries is the same shape, and recovering it splices both callee bodies into the caller; `reentry` never recovers a select that is not re-entered.
 - **Where / provenance:** P2/switch-model · kuna · structure-recovery · re-conditional-indirect-branches-hide
 - **Example:** `option constselectjump off`
+
+### `jumpassist` -- on | off, default `on`
+
+- **Symptoms:** a Dalvik sparse-switch prints as switchAssist(...) followed by a computed call; 'jump-as-call' on a switchAssist or lookupswitch user-op.
+- **What it does:** Recover a switch whose destination a `<jumpassist>` user-op computes (upstream `JumpAssisted`): the processor spec's `<case_pcode>`, `<addr_pcode>`, `<default_pcode>` and `<size_pcode>` scripts are evaluated over the load image to build the case labels and the address table, and the user-op is replaced by its switch variable. Dalvik's `sparse-switch` and the JVM's `lookupswitch`/`tableswitch` use it.
+- **When to flip:** On by default; only the Dalvik and JVM processor specs declare a `<jumpassist>`. Turn OFF to see the indirect jump through the user-op, rendered as a call.
+- **Where / provenance:** P2/switch-model · ghidra-upstream · structure-recovery · kuna-dex-loader
+- **Example:** `option jumpassist off`
 
 ### `switchguardbound` -- on | off, default `off` (destructive opt-in)
 
@@ -1838,6 +1849,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** Leave on: an MS-DOS program compiled by Turbo C, Microsoft C, MASM or a similar toolchain (anything that sets DS to its data segment at startup and keeps it there) prints its globals as named `dat_` globals at their linear address. Turn off for a program whose functions run with different data segments in DS (hand-written assembly that switches DS between segments around its calls, interrupt handlers entered with the interrupted program's DS), where a function entered with another DS would name the wrong bytes; off prints each near access as the raw DS offset.
 - **Where / provenance:** P1/environment-binding · kuna · analysis-enablement · kuna-1288-mzdgroup
 - **Example:** `kuna decompile-all dazzle.exe --option mzdgroup off`
+
+### `dexmodel` -- on | off, default `on`
+
+- **Symptoms:** a DEX method prints CPOOLREF(...) calls and loads; a DEX method's parameters print as uninitialized locals; invoke-range calls lose their arguments.
+- **What it does:** Answer the Dalvik spec's questions from the loaded DEX file: resolve each `cpool` operator to the method, field, string or type it names (Ghidra's `ConstantPoolDex`), copy a method's arguments from the input registers into its frame at entry (`InjectPayloadDexParameters`), and copy an `invoke-*/range` register run into the input registers (`InjectPayloadDexRange`). Calls take the callee's DEX prototype, fields and strings print by name.
+- **When to flip:** On by default; only a DEX image carries a model, so no other input changes. Turn OFF to see the bare SLEIGH lifting of a DEX method: raw `CPOOLREF(...)` operators and arguments read as uninitialized frame registers.
+- **Where / provenance:** P1/environment-binding · ghidra-upstream · analysis-enablement · kuna-dex-loader
+- **Example:** `option dexmodel off`
 
 ### `libctypes` -- off | opaque | glibc, default `opaque`
 

@@ -631,6 +631,8 @@ kuna_options! { self, p1;
         self.call_mechanism_mode = mode;
         Ok(msg)
     },
+    "dexmodel" => on_off!(dex_model, "DEX constant pool and register payloads"),
+    "jumpassist" => on_off!(jump_assist, "jump-assist switch recovery"),
     "voidtailreturn" => on_off!(voidtailreturn, "void tail-return elision"),
     "importdata" => on_off!(import_data, "import-slot data-read rendering"),
     "castimplied" => on_off!(cast_implied, "C-implied cast elision"),

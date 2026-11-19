@@ -6261,9 +6261,23 @@ impl JumpTable {
             // Otherwise this is an old attempt we should remove.
             self.jmodel = None;
         }
-        // STUB(W4): the CALLOTHER `JumpAssisted` (jumpassist userop) model — not
-        // yet ported (needs pcodeinjectlib/ExecutablePcode).  Recorded as a loss;
-        // the basic models cover the corpus switches.
+        // C++: a destination computed by a CALLOTHER tries `JumpAssisted` first.
+        let callother = fd
+            .obank()
+            .get(indirect)
+            .and_then(|o| o.get_in(0))
+            .and_then(|vn| fd.vbank().get(vn))
+            .filter(|v| v.is_written())
+            .and_then(|v| v.get_def())
+            .and_then(|def| fd.obank().get(def))
+            .is_some_and(|def| def.code() == OpCode::CPUI_CALLOTHER);
+        if callother {
+            let mut jassisted = crate::kuna_jumpassist::JumpModelAssisted::new();
+            if jassisted.recover_model(fd, indirect, self.addresstable.len() as uint4, max_table_size)? {
+                self.jmodel = Some(Box::new(jassisted));
+                return Ok(());
+            }
+        }
 
         // Try the basic model.
         let mut jbasic = JumpBasicModel::new();

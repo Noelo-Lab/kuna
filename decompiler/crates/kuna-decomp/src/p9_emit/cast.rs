@@ -371,6 +371,7 @@ pub struct CastStrategyC {
     tlst: Rc<dyn TypeFactory>,
     promote_size: int4,
     record_identity: bool,
+    java: bool,
 }
 
 impl CastStrategyC {
@@ -378,13 +379,20 @@ impl CastStrategyC {
     /// cast.cc:23-28): `promoteSize = tlst->getSizeOfInt()`.
     pub fn new(tlst: Rc<dyn TypeFactory>) -> CastStrategyC {
         let promote_size = tlst.get_size_of_int();
-        CastStrategyC { tlst, promote_size, record_identity: false }
+        CastStrategyC { tlst, promote_size, record_identity: false, java: false }
     }
 
     /// (kuna `calltargettype`) Treat a record's declaration and its completed
     /// definition as one type ([`same_record`](crate::kuna_calltargettype::same_record)).
     pub fn with_record_identity(mut self, on: bool) -> CastStrategyC {
         self.record_identity = on;
+        self
+    }
+
+    /// (kuna) Decide casts as `CastStrategyJava` does: object references are
+    /// pointers that never need one.
+    pub fn with_java(mut self, on: bool) -> CastStrategyC {
+        self.java = on;
         self
     }
 }
@@ -679,6 +687,9 @@ impl CastStrategy for CastStrategyC {
         care_uint_int: bool,
         care_ptr_uint: bool,
     ) -> Option<Rc<Datatype>> {
+        if self.java {
+            return java_cast_standard(reqtype, curtype, care_uint_int);
+        }
         // Generic casting rules that apply for most ops
         if Rc::ptr_eq(curtype, reqtype) {
             return None; // Types are equal, no cast required
@@ -931,6 +942,9 @@ impl CastStrategy for CastStrategyC {
 
     // C++ CastStrategyC::isZextCast (cast.cc:457-469).
     fn is_zext_cast(&self, outtype: &Datatype, intype: &Datatype) -> bool {
+        if self.java {
+            return java_is_zext_cast(outtype, intype);
+        }
         let metaout = outtype.get_metatype();
         if metaout != type_metatype::TYPE_UINT && metaout != type_metatype::TYPE_INT {
             return false;
@@ -947,9 +961,8 @@ impl CastStrategy for CastStrategyC {
 
 /// Casting strategy specific to the Java language (C++ `CastStrategyJava`,
 /// cast.hh:198-202).  Nearly identical to C, but accounts for how object
-/// references are encoded as pointer data-types.  Shared with the (deferred)
-/// `printjava` back-end: `cast.cc` defines this class, and it is kept here so the
-/// Java cast surface is complete even though `PrintJava` itself is deferred.
+/// references are encoded as pointer data-types.  The java-language output
+/// reaches the same rules through `CastStrategyC::with_java`.
 ///
 /// Only `cast_standard` and `is_zext_cast` differ from C; the rest inherit
 /// `CastStrategyC` behavior (C++ `CastStrategyJava : public CastStrategyC`).
@@ -1031,7 +1044,6 @@ impl CastStrategy for CastStrategyJava {
         self.inner.is_sext_cast(outtype, intype)
     }
 
-    // C++ CastStrategyJava::castStandard (cast.cc:471-531).
     fn cast_standard(
         &self,
         reqtype: &Rc<Datatype>,
@@ -1039,119 +1051,133 @@ impl CastStrategy for CastStrategyJava {
         care_uint_int: bool,
         _care_ptr_uint: bool,
     ) -> Option<Rc<Datatype>> {
-        if Rc::ptr_eq(curtype, reqtype) {
-            return None; // Types are equal, no cast required
-        }
-        // Java has no typedef/pointer-chain stripping: reqbase == reqtype,
-        // curbase == curtype throughout.
-        let reqbase = reqtype;
-        let curbase = curtype;
-        if reqbase.get_metatype() == type_metatype::TYPE_PTR
-            || curbase.get_metatype() == type_metatype::TYPE_PTR
-        {
-            return None; // There must be explicit cast op between objects, so assume no cast necessary
-        }
-
-        if reqbase.get_metatype() == type_metatype::TYPE_VOID
-            || curtype.get_metatype() == type_metatype::TYPE_VOID
-        {
-            return None; // Don't cast from or to VOID
-        }
-        if reqbase.get_size() != curbase.get_size() {
-            return Some(Rc::clone(reqtype)); // Always cast change in size
-        }
-        match reqbase.get_metatype() {
-            type_metatype::TYPE_UNKNOWN
-            | type_metatype::TYPE_PARTIALSTRUCT
-            | type_metatype::TYPE_PARTIALUNION => {
-                // As they are ultimately stripped, treat partials as undefined
-                return None;
-            }
-            type_metatype::TYPE_UINT => {
-                if !care_uint_int {
-                    let meta = curbase.get_metatype();
-                    // Note: meta can be TYPE_UINT if curbase is typedef/enumerated
-                    if meta == type_metatype::TYPE_UNKNOWN
-                        || meta == type_metatype::TYPE_INT
-                        || meta == type_metatype::TYPE_UINT
-                        || meta == type_metatype::TYPE_BOOL
-                        || meta == type_metatype::TYPE_PARTIALSTRUCT
-                        || meta == type_metatype::TYPE_PARTIALUNION
-                    {
-                        return None;
-                    }
-                } else {
-                    let meta = curbase.get_metatype();
-                    if meta == type_metatype::TYPE_UINT || meta == type_metatype::TYPE_BOOL {
-                        // Can be TYPE_UINT for typedef/enumerated
-                        return None;
-                    }
-                }
-            }
-            type_metatype::TYPE_INT => {
-                if !care_uint_int {
-                    let meta = curbase.get_metatype();
-                    // Note: meta can be TYPE_INT if curbase is an enumerated type
-                    if meta == type_metatype::TYPE_UNKNOWN
-                        || meta == type_metatype::TYPE_INT
-                        || meta == type_metatype::TYPE_UINT
-                        || meta == type_metatype::TYPE_BOOL
-                        || meta == type_metatype::TYPE_PARTIALSTRUCT
-                        || meta == type_metatype::TYPE_PARTIALUNION
-                    {
-                        return None;
-                    }
-                } else {
-                    let meta = curbase.get_metatype();
-                    if meta == type_metatype::TYPE_INT || meta == type_metatype::TYPE_BOOL {
-                        return None; // Can be TYPE_INT for typedef/enumerated/char
-                    }
-                }
-            }
-            type_metatype::TYPE_CODE => {
-                if curbase.get_metatype() == type_metatype::TYPE_CODE {
-                    // Don't cast between function pointer and generic code pointer
-                    if code_prototype_is_null(reqbase) {
-                        return None;
-                    }
-                    if code_prototype_is_null(curbase) {
-                        return None;
-                    }
-                }
-            }
-            _ => {}
-        }
-
-        Some(Rc::clone(reqtype))
+        java_cast_standard(reqtype, curtype, care_uint_int)
     }
 
-    // C++ CastStrategyJava::isZextCast (cast.cc:533-544).
     fn is_zext_cast(&self, outtype: &Datatype, intype: &Datatype) -> bool {
-        let outmeta = outtype.get_metatype();
-        if outmeta != type_metatype::TYPE_INT
-            && outmeta != type_metatype::TYPE_UINT
-            && outmeta != type_metatype::TYPE_BOOL
-        {
-            return false;
-        }
-        let inmeta = intype.get_metatype();
-        if inmeta != type_metatype::TYPE_INT
-            && inmeta != type_metatype::TYPE_UINT
-            && inmeta != type_metatype::TYPE_BOOL
-        {
-            return false; // Non-integer types, print functional ZEXT
-        }
-        if intype.get_size() == 2 && !intype.is_char_print() {
-            return false; // cast is not zext for short
-        }
-        if intype.get_size() == 1 && inmeta == type_metatype::TYPE_INT {
-            return false; // cast is not zext for byte
-        }
-        if intype.get_size() >= 4 {
-            return false; // cast is not zext for int and long
-        }
-        true
+        java_is_zext_cast(outtype, intype)
     }
+}
+
+// C++ CastStrategyJava::castStandard (cast.cc:471-531).
+fn java_cast_standard(
+    reqtype: &Rc<Datatype>,
+    curtype: &Rc<Datatype>,
+    care_uint_int: bool,
+) -> Option<Rc<Datatype>> {
+    if Rc::ptr_eq(curtype, reqtype) {
+        return None; // Types are equal, no cast required
+    }
+    // Java has no typedef/pointer-chain stripping: reqbase == reqtype,
+    // curbase == curtype throughout.
+    let reqbase = reqtype;
+    let curbase = curtype;
+    if reqbase.get_metatype() == type_metatype::TYPE_PTR
+        || curbase.get_metatype() == type_metatype::TYPE_PTR
+    {
+        return None; // There must be explicit cast op between objects, so assume no cast necessary
+    }
+
+    if reqbase.get_metatype() == type_metatype::TYPE_VOID
+        || curtype.get_metatype() == type_metatype::TYPE_VOID
+    {
+        return None; // Don't cast from or to VOID
+    }
+    if reqbase.get_size() != curbase.get_size() {
+        return Some(Rc::clone(reqtype)); // Always cast change in size
+    }
+    match reqbase.get_metatype() {
+        type_metatype::TYPE_UNKNOWN
+        | type_metatype::TYPE_PARTIALSTRUCT
+        | type_metatype::TYPE_PARTIALUNION => {
+            // As they are ultimately stripped, treat partials as undefined
+            return None;
+        }
+        type_metatype::TYPE_UINT => {
+            if !care_uint_int {
+                let meta = curbase.get_metatype();
+                // Note: meta can be TYPE_UINT if curbase is typedef/enumerated
+                if meta == type_metatype::TYPE_UNKNOWN
+                    || meta == type_metatype::TYPE_INT
+                    || meta == type_metatype::TYPE_UINT
+                    || meta == type_metatype::TYPE_BOOL
+                    || meta == type_metatype::TYPE_PARTIALSTRUCT
+                    || meta == type_metatype::TYPE_PARTIALUNION
+                {
+                    return None;
+                }
+            } else {
+                let meta = curbase.get_metatype();
+                if meta == type_metatype::TYPE_UINT || meta == type_metatype::TYPE_BOOL {
+                    // Can be TYPE_UINT for typedef/enumerated
+                    return None;
+                }
+            }
+        }
+        type_metatype::TYPE_INT => {
+            if !care_uint_int {
+                let meta = curbase.get_metatype();
+                // Note: meta can be TYPE_INT if curbase is an enumerated type
+                if meta == type_metatype::TYPE_UNKNOWN
+                    || meta == type_metatype::TYPE_INT
+                    || meta == type_metatype::TYPE_UINT
+                    || meta == type_metatype::TYPE_BOOL
+                    || meta == type_metatype::TYPE_PARTIALSTRUCT
+                    || meta == type_metatype::TYPE_PARTIALUNION
+                {
+                    return None;
+                }
+            } else {
+                let meta = curbase.get_metatype();
+                if meta == type_metatype::TYPE_INT || meta == type_metatype::TYPE_BOOL {
+                    return None; // Can be TYPE_INT for typedef/enumerated/char
+                }
+            }
+        }
+        type_metatype::TYPE_CODE => {
+            if curbase.get_metatype() == type_metatype::TYPE_CODE {
+                // Don't cast between function pointer and generic code pointer
+                if code_prototype_is_null(reqbase) {
+                    return None;
+                }
+                if code_prototype_is_null(curbase) {
+                    return None;
+                }
+            }
+        }
+        _ => {}
+    }
+
+    Some(Rc::clone(reqtype))
+}
+
+
+// C++ CastStrategyJava::isZextCast (cast.cc:533-544).
+fn java_is_zext_cast(outtype: &Datatype, intype: &Datatype) -> bool {
+    let outmeta = outtype.get_metatype();
+    if outmeta != type_metatype::TYPE_INT
+        && outmeta != type_metatype::TYPE_UINT
+        && outmeta != type_metatype::TYPE_BOOL
+    {
+        return false;
+    }
+    let inmeta = intype.get_metatype();
+    if inmeta != type_metatype::TYPE_INT
+        && inmeta != type_metatype::TYPE_UINT
+        && inmeta != type_metatype::TYPE_BOOL
+    {
+        return false; // Non-integer types, print functional ZEXT
+    }
+    if intype.get_size() == 2 && !intype.is_char_print() {
+        return false; // cast is not zext for short
+    }
+    if intype.get_size() == 1 && inmeta == type_metatype::TYPE_INT {
+        return false; // cast is not zext for byte
+    }
+    if intype.get_size() >= 4 {
+        return false; // cast is not zext for int and long
+    }
+    true
 }
 
 /// `reqptr->getSpace() != curptr->getSpace()` — pointer identity of the bound
