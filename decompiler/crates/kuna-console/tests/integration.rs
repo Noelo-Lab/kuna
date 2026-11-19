@@ -216,6 +216,8 @@ mod verify_go_pclntab;
 mod verify_go_noreturn_stripped;
 #[path = "verify_go_morestack.rs"]
 mod verify_go_morestack;
+#[path = "verify_go_mcall.rs"]
+mod verify_go_mcall;
 #[path = "verify_fatstr_records.rs"]
 mod verify_fatstr_records;
 #[path = "verify_go_writebarrier.rs"]

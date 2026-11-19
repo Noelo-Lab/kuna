@@ -5,6 +5,10 @@ falls through to the terminal `runtime.gopanic` call. It also checks the
 helper's conditional throw and shows the caller's sentinel with the known
 no-return analysis disabled.
 
+`ghangr-go-mcall-resumption.xml` checks the continuation after a Go scheduler
+switch, independent terminal propagation through a lookalike wrapper, and
+explicit function and call-site overrides.
+
 `kuna-go-atomic-return.xml` checks exact AMD64 Go direct-return atomic additions,
 including old-value, flag, branch, memory-effect and width refusals. The same
 bytes retain C/Rust rendering and the non-Go source control.
