@@ -1,0 +1,67 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<!--
+    Objective-C ARC bookkeeping (`option objcarc on|off`).
+
+    Issue: an ARC-compiled method reads as retain/release traffic around the few
+    lines that do the work, and with the runtime entry points untyped the value
+    an ARC helper hands on is lost. `-[Holder total:]` of the fixture (clang
+    -fobjc-arc -O2) printed `objc_retain(arg1); ... objc_msgSend(arg1,sel_inner);
+    v2 = objc_retainAutoreleasedReturnValue(); objc_release(arg1); ...
+    objc_release(v2);` - the autoreleased return value arrived in a call with no
+    argument and an `unsigned long` result. In an iOS app every method
+    carries the same pattern through clang's outlined `objc_retain_x19()` /
+    `objc_release_x20()`, shown with no argument at all.
+
+    Fix: `p2_lift/kuna_objcarc.rs` registers `<callfixup>` payloads (the msvcftol
+    mechanism) for the runtime's pass-through helpers (an incidental copy), for
+    `objc_release` (no effect), for `objc_storeStrong` (the store) and for the
+    outlined `objc_retain_x<N>`/`objc_release_x<N>`; the call-fixup installer
+    tags a Mach-O's import stubs by address. `analyzers/objc/kuna_objcruntime.rs`
+    gives every imported runtime entry point its header prototype, so with the
+    calls shown they carry their argument and result.
+
+    Pass 1 (default, `objcarc on`): the three methods are the work alone -
+    `v1 = objc_msgSend(arg1,sel_count); v2 = objc_msgSend(arg1,sel_inner);
+    return objc_msgSend(v2,sel_count) + v1;`, `self->slot = (Base *)arg1;`.
+    Pass 2 (`objcarc off`): the calls are shown, typed -
+    `obj = objc_retainAutoreleasedReturnValue((objc_object *)objc_msgSend(arg1,sel_inner));`.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_objc_arc_arm64</com>
+  <com>option objc on</com>
+  <com>read symbols</com>
+  <com>load addr 0x1000007ec</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x100000870</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x100000798</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_objc_arc_arm64</com>
+  <com>option objc on</com>
+  <com>option objcarc off</com>
+  <com>read symbols</com>
+  <com>load addr 0x1000007ec</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="OBJCARC #1: default hides the retain of the argument" min="1" max="1">objc_retain\(arg1\);</stringmatch>
+<stringmatch name="OBJCARC #2: default keeps the autoreleased return value as the message's result" min="1" max="1">v2 = objc_msgSend\(arg1,sel_inner\);</stringmatch>
+<stringmatch name="OBJCARC #3: default drops every release (two in total:, one in make)" min="2" max="2">objc_release\(</stringmatch>
+<stringmatch name="OBJCARC #4: the ivar store is an assignment (storeStrong inlined by -O2, retain/release hidden)" min="1" max="1">self->slot = \(Base \*\)arg1;</stringmatch>
+<stringmatch name="OBJCARC #5: the autorelease-return pass-through is the returned value (a Base * handed back as the id the method declares)" min="1" max="1">return \(objc_object \*\)v1; // tail-call</stringmatch>
+<stringmatch name="OBJCARC #6: objc_alloc_init carries its class argument through the runtime prototype" min="2" max="2">objc_alloc_init\(\(objc_class \*\)_OBJC_CLASS_\$_Base\)</stringmatch>
+<stringmatch name="OBJCARC #7: off shows the ARC helper with its argument and result" min="1" max="1">obj = objc_retainAutoreleasedReturnValue\(\(objc_object \*\)objc_msgSend\(arg1,sel_inner\)\);</stringmatch>
+<stringmatch name="OBJCARC #8: no header line per hidden call" min="0" max="0">injected</stringmatch>
+</decompilertest>

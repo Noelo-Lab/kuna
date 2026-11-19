@@ -1008,6 +1008,23 @@ partial access whose left side must render as a store
 SHA-256 in `macho_datawidth_arm64.provenance`. Pinned by
 `kuna-cli/tests/name_miss_cli.rs (a_macho_global_reads_by_name_at_its_width)`.
 
+`darwinvarargs_macho_arm64` (arm64 Mach-O, 50 KB, SHA-256
+`8bd5b9dfebb17d9d0ef74b33b165f82ad87a311be71688a22dcc9639517c6cdb`) and
+`darwinvarargs_aarch64` (AArch64 ELF, 1.9 KB, SHA-256
+`80cdf3ffff3868f4fce25ce2441f494f55c125041ab19cdf66434f2c0cedf521`) are built from
+`darwinvarargs.c`: `check` calls `report(fmt, file, line)`, whose body runs
+`va_start`, and `sum9`, whose ninth argument is on the stack. The Mach-O passes
+`file` and `line` at `[sp]` and `[sp+8]` (Apple's variadic rule); the ELF passes
+them in `x1` and `x2` (AAPCS64). Recipe (clang/LLD 22.1.8, no SDK):
+
+    clang -target arm64-apple-macos11 -O2 -g0 -c darwinvarargs.c -o m.o
+    ld64.lld -arch arm64 -platform_version macos 11.0 11.0 -undefined dynamic_lookup \
+             -e _main -o darwinvarargs_macho_arm64 m.o
+    clang -target aarch64-linux-gnu -O2 -g0 -c darwinvarargs.c -o e.o
+    ld.lld --unresolved-symbols=ignore-all -e main -o darwinvarargs_aarch64 e.o
+
+Pinned by `tests/stages/kuna-darwinvarargs.xml`.
+
 `macho_trie_exports_arm64` and `macho_trie_exports_info_arm64` (arm64, 33 KB
 each) are GH #1349's witnesses: dylibs stripped of every `nlist` entry whose export
 trie still names `_audit_exported_function`@`0x328`, `_audit_caller`@`0x340` and
@@ -1430,6 +1447,211 @@ clang -target arm64-apple-macos11 -O1 -c macho_gotdata_local.c -o m.o
 "$LLD" -arch arm64 -platform_version macos 11.0 11.0 -undefined dynamic_lookup \
        -e _main -o macho_gotdata_local m.o
 ```
+
+### `macho_objc_arc_arm64` — ARC bookkeeping (`objcarc`)
+
+`macho_objc_arc_arm64` (arm64, ~50 KB) is the fixture for
+`tests/stages/kuna-objcarc.xml`: `macho_objc_arc.m` compiled with `-fobjc-arc
+-O2`, so the runtime calls are the compiler's own — `objc_retain`,
+`objc_release`, `objc_retainAutoreleasedReturnValue`,
+`objc_autoreleaseReturnValue`, `objc_storeStrong`, `objc_alloc_init`. Two root
+classes: `Base` (`count`, `inner`) and `Holder` (`slot`) with `-make` (two
+alloc/init chains), `-total:` (two message sends whose autoreleased result is
+retained and released) and `-keep:` (an ivar store). Same recipe as
+`macho_objc_refs_arm64` (chained fixups, fast stubs, `-x`):
+
+```bash
+clang -target arm64-apple-macos11 -fobjc-arc -O2 -c macho_objc_arc.m -o m.o
+LLD=$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin/gcc-ld/ld64.lld
+"$LLD" -arch arm64 -platform_version macos 11.0 11.0 -fixup_chains -objc_stubs_fast \
+       -undefined dynamic_lookup -x -e _main -o macho_objc_arc_arm64 m.o
+```
+
+**Pinned VMAs:** IMP `-[Holder make]`@`0x100000798`, `-[Holder total:]`@`0x1000007ec`,
+`-[Holder keep:]`@`0x100000870`; stubs `objc_release`@`0x1000008b0`,
+`objc_retain`@`0x1000008bc`, `objc_retainAutoreleasedReturnValue`@`0x1000008f8`.
+With `--option objc on` (default `objcarc`) `-total:` is
+`v1 = objc_msgSend(arg1,sel_count); v2 = objc_msgSend(arg1,sel_inner); return objc_msgSend(v2,sel_count) + v1;`;
+with `--option objcarc off` the five ARC calls are shown with their arguments.
+
+### `macho_objc_outlined_retain_arm64` — outlined `objc_retain_x19` returns in `x0` (`objcarc`, `objc`)
+
+`macho_objc_outlined_retain_arm64` (arm64 Mach-O, 50 KB) with its source
+`macho_objc_outlined_retain_arm64.s` is the fixture for
+`tests/stages/kuna-objcoutlinedresult.xml`. Clang does not outline ARC retains
+from source here, so the source is hand-written arm64 assembly: `_holder_viewDidLoad`
+keeps its `self` in x19, calls an accessor that clobbers x0, builds the objc_super
+and calls `bl _objc_retain_x19`, then `mov x20, x0` and passes x20 to
+`_holder_vtable7`. Linked with `ld64.lld` (no SDK needed):
+
+```bash
+clang -target arm64-apple-macos11 -c macho_objc_outlined_retain_arm64.s -o m.o
+ld64.lld -arch arm64 -platform_version macos 11.0 11.0 -undefined dynamic_lookup -e _main \
+  -o macho_objc_outlined_retain_arm64 m.o
+```
+
+SHA-256 `5e19f8a0c35206fe0ffa3a1b68c6d3414a4152b38ad3234f3d82fa14914f6b8a`. The
+import stub `_objc_retain_x19` sits at `0x100000510`, the entry at `0x1000004c4`.
+Before the fix the call read `_holder_vtable7((void *)_holder_type_accessor())`;
+the retain's result is in x0, so with `objcarc` on the call takes the entry's `a0`,
+and with `objcarc off` it reads `_holder_vtable7(objc_retain_x19(a0))`.
+
+### `macho_objc_structs_arm64` — by-value aggregates and a global block
+
+`macho_objc_structs_arm64` (arm64, ~50 KB) is the fixture for
+`tests/stages/kuna-objcstructs.xml`: `macho_objc_structs.m` has a root class
+`Shape` with a `CGRect frame` ivar (encoding
+`{CGRect="origin"{CGPoint="x"d"y"d}"size"{CGSize="width"d"height"d}}`), an
+`int counts[4]` ivar (`[4i]`), a `long total`, `-setFrame:(CGRect)` (argument
+encoding `{CGRect={CGPoint=dd}{CGSize=dd}}`), `-area` and `-countAt:`; plus a
+file-scope global block `scale` (`_NSConcreteGlobalBlock`, descriptor with a
+`q16@?0q8` signature) and `apply()` calling through it. Same recipe as
+`macho_objc_arc_arm64` without `-objc_stubs_fast`, at `-O1`:
+
+```bash
+clang -target arm64-apple-macos11 -fobjc-arc -O1 -c macho_objc_structs.m -o m.o
+LLD=$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin/gcc-ld/ld64.lld
+"$LLD" -arch arm64 -platform_version macos 11.0 11.0 -fixup_chains \
+       -undefined dynamic_lookup -x -e _main -o macho_objc_structs_arm64 m.o
+```
+
+**Pinned VMAs:** `-[Shape setFrame:]`@`0x1000006e0`, `-[Shape area]`@`0x1000006f8`,
+`-[Shape countAt:]`@`0x100000704`, block invoke@`0x10000071c`, `apply`@`0x100000724`.
+With `--option objc on`: `(self->frame).width * (self->frame).height`,
+`-[Shape setFrame:](Shape *self, objc_selector *_cmd, CGRect arg1)`,
+`self->counts[arg1 & 3]`, `long block_invoke_10000071c(Block_layout *block, long arg1)`.
+
+### `macho_objc_structabi_arm64` — aggregates passed and returned by value
+
+`macho_objc_structabi_arm64` (arm64, ~50 KB) is the fixture for
+`tests/stages/kuna-objcstructabi.xml`: `macho_objc_structabi.m` has a root
+class `Shape` whose methods pass and return aggregates by value: a homogeneous
+floating-point aggregate (`CGRect`, `UIEdgeInsets`), an integer pair
+(`_NSRange`), aggregates past 16 bytes as an argument and as a return
+(`CGAffineTransform`, and `Mixed` with a `[4d]` member), a union
+(`(Word=qf)`), bit-fields (`{Flags=b3b5S}`), an unnamed struct (`{?=ii}`) and a
+pointer to a struct. Same recipe as `macho_objc_structs_arm64`:
+
+```bash
+clang -target arm64-apple-macos11 -fobjc-arc -O1 -c macho_objc_structabi.m -o m.o
+LLD=$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin/gcc-ld/ld64.lld
+"$LLD" -arch arm64 -platform_version macos 11.0 11.0 -fixup_chains \
+       -undefined dynamic_lookup -x -e _main -o macho_objc_structabi_arm64 m.o
+```
+
+**Pinned VMAs:** `-[Shape setFrame:]`@`0x100000640`, `-[Shape frame]`@`0x100000658`,
+`-[Shape range]`@`0x100000664`, `-[Shape setRange:scale:]`@`0x100000670`,
+`-[Shape inset:by:]`@`0x100000680`, `-[Shape transform]`@`0x100000690`,
+`-[Shape setTransform:tag:]`@`0x1000006a4`, `-[Shape mixed]`@`0x1000006bc`,
+`-[Shape weigh:at:]`@`0x1000006d0`, `-[Shape word:]`@`0x1000006f0`,
+`-[Shape flags:]`@`0x1000006fc`, `-[Shape span:]`@`0x100000708`,
+`-[Shape width:]`@`0x100000714`.
+
+### `macho_objc_blocks_arm64` — stack blocks, captures, a `__block` cell
+
+`macho_objc_blocks_arm64` (arm64, ~50 KB) is the fixture for
+`tests/stages/kuna-objcblocks.xml`: `macho_objc_blocks.m` has a root class
+`Runner` whose `-maker:` builds a block capturing a local on its frame
+(`_NSConcreteStackBlock`; at `-O2` the linker relaxes the isa load to
+`ldr x9, <literal>` and the invoke/descriptor to `adr`) and whose
+`-tally:scale:` builds one capturing `self` (an object: the copy helper
+`objc_retain`s it), a `__block long` (a `Block_byref` cell built on the frame,
+`_Block_object_assign` flags 8 in the copy helper), a `double` and an `int`;
+both send the block to `-run:with:`. Same recipe as `macho_objc_structs_arm64`
+at `-O2`:
+
+```bash
+clang -target arm64-apple-macos11 -fobjc-arc -O2 -c macho_objc_blocks.m -o m.o
+LLD=$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin/gcc-ld/ld64.lld
+"$LLD" -arch arm64 -platform_version macos 11.0 11.0 -fixup_chains \
+       -undefined dynamic_lookup -x -e _main -o macho_objc_blocks_arm64 m.o
+```
+
+**Pinned VMAs:** `-[Runner maker:]`@`0x100000804` (invoke@`0x100000864`),
+`-[Runner tally:scale:]`@`0x100000878` (invoke@`0x100000930`, copy helper@`0x100000990`),
+`_NSConcreteStackBlock` slot@`0x100004008`. With `--option objc on` the second
+invoke is `long __22-[Runner tally:scale:]_block_invoke(Block_layout_100000930 *block, long arg1)`
+over `struct Block_layout_100000930 { Block_layout block; objc_object *capture_0; Block_byref_32_8 *capture_1; double capture_2; int capture_3; }`,
+reading `block->capture_1->forwarding->value`; the creator shows
+`block.block.invoke = …`, `block.capture_1 = &cell_1`, `cell_1.forwarding = block.capture_1`.
+
+### `macho_objc_blocks2_arm64` — block naming, the flags pool, block parameters
+
+`macho_objc_blocks2_arm64` (arm64, ~50 KB) is the fixture for
+`tests/stages/kuna-objcblocks2.xml`: `macho_objc_blocks2.m` has
+a root class `Chain` whose `-build:` builds three stack blocks, sending each
+to `-call:with:` before building the next, so the flags word the first two
+share stays in `d8` (loaded once from a `__text` literal pool) across the
+calls; the third captures `self` (copy/dispose helpers). `-call:with:` calls
+its block parameter. The C function `sum` builds a block whose invoke builds
+a nested one, and `pick` passes a global block (`_NSConcreteGlobalBlock`).
+Same recipe as `macho_objc_blocks_arm64`:
+
+```bash
+clang -target arm64-apple-macos11 -fobjc-arc -O2 -c macho_objc_blocks2.m -o m.o
+LLD=$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin/gcc-ld/ld64.lld
+"$LLD" -arch arm64 -platform_version macos 11.0 11.0 -fixup_chains \
+       -undefined dynamic_lookup -x -e _main -o macho_objc_blocks2_arm64 m.o
+```
+
+**Pinned VMAs:** `-[Chain call:with:]`@`0x100000780`, `-[Chain build:]`@`0x1000007b4`
+(invokes @`0x1000008a0`, `0x1000008ac`, `0x1000008b8`; copy helper @`0x1000008c4`),
+`_sum`@`0x1000008d4` (invoke @`0x100000924`, nested @`0x100000978`), `_pick`@`0x100000988`
+(global invoke @`0x100000994`), flags pool @`0x1000009e0`, `_NSConcreteStackBlock`
+slot @`0x100004008`. With `objc on` the invokes are `__15-[Chain build:]_block_invoke`,
+`_2`, `_3`, `__sum_block_invoke`, `__sum_block_invoke_2`, `__pick_block_invoke`.
+
+### `macho_objc_stubagree_arm64` — a stub typed only from agreeing declarations
+
+`macho_objc_stubagree_arm64` (arm64, ~50 KB) is the fixture for stub typing
+(`analyzers/objc/kuna_objcrefs.rs (stub_encoding)`, stage test
+`tests/stages/kuna-objcstubagree.xml`). Source `macho_objc_stubagree.m`: protocol
+`Measured` declares `-(double)length` and nothing implements it (`measured`
+references it so its metadata is emitted); root class `Ruler` implements
+`-(double)tag`; `Str` is declared and never implemented, its `length` and `tag`
+returning integers; `validate(s, t, err)` sends `[s length]` and `[t tag]`, each
+routed through a linker stub, and passes each result to the external `check`
+with three more arguments. The `.s` is `clang -S` output with both selref loads
+dropped and each `bl _objc_msgSend` replaced by `bl "_objc_msgSend$<sel>"` (and
+the two `.loh AdrpLdr` lines naming the dropped loads deleted):
+
+```bash
+clang -target arm64-apple-macos11 -fno-objc-arc -O1 -S macho_objc_stubagree.m -o macho_objc_stubagree_arm64.s
+# edit: route the `length` and `tag` sends through `_objc_msgSend$<sel>`
+clang -target arm64-apple-macos11 -c macho_objc_stubagree_arm64.s -o sa.o
+ld64.lld -arch arm64 -platform_version macos 11.0 11.0 -fixup_chains -objc_stubs_fast \
+         -undefined dynamic_lookup -x -e _main -o macho_objc_stubagree_arm64 sa.o
+```
+
+**Pinned VMAs:** `_validate`@`0x1000007e4`, `__objc_stubs`@`0x100000860` (two
+32-byte entries), `__objc_protolist`@`0x100004010`. With `objc on` `validate` reads
+`check(v1,a2,1,"empty name")`; with `option objcsdk
+decompiler/crates/kuna-analysis/tests/fixtures/objc_sdk` (whose `Widget.h` declares
+an `NSInteger tag`) also `check(objc_msgSend$tag(a1),a2,2,"bad tag")`.
+
+### `macho_oslog_arm64` — Apple unified-logging call sites (`oslog`)
+
+`macho_oslog_arm64` (arm64, ~34 KB) is a self-contained Mach-O whose four
+functions log through `_os_log_impl` the way the SDK's `os_log` macros do, for
+`tests/stages/kuna-oslog.xml`. Source `macho_oslog.c` restates the macro: an
+`os_log_type_enabled` guard, the format string in
+`__TEXT,__oslogstring,cstring_literals`, a buffer filled by clang's
+`__builtin_os_log_format`, and `_os_log_impl(&__dso_handle, log, type, fmt, buf,
+size)`. No SDK is needed; `ld64.lld` keeps the separate literal section only with
+`--separate-cstring-literal-sections`:
+
+```bash
+clang -target arm64-apple-macos11 -O1 -c macho_oslog.c -o oslog.o
+LLD=$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin/gcc-ld/ld64.lld
+"$LLD" -arch arm64 -platform_version macos 11.0 11.0 -fixup_chains -undefined dynamic_lookup \
+       --separate-cstring-literal-sections -e _log_plain -o macho_oslog_arm64 oslog.o
+```
+
+**Pinned VMAs:** `_log_code`@`0x100000418` (one int, 8-byte buffer),
+`_log_pair`@`0x1000004a8` (a long and a string, the string an unaligned store at
+buffer offset 14), `_log_private`@`0x100000554` (a private string and an int),
+`_log_plain`@`0x100000600` (no arguments); the format strings start at
+`0x10000067c` in `__oslogstring`; `__mh_execute_header`@`0x100000000`.
 
 ### `swift_metadata_elf` — a stripped Swift executable (`swiftmetadata`)
 

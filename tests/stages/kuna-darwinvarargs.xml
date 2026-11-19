@@ -1,0 +1,51 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<!--
+    kuna issue testcase: on an Apple AArch64 image a callee whose own body runs
+    va_start is variadic at its call sites (a strict fix, no option).
+
+    Issue:      an iOS 16.4.1 kernelcache rendered
+                `panic("NULL vnode passed to vnode_initialize @%s:%d");` while
+                the caller stores both arguments with `stp x8, x9, [sp]`.
+                Apple's arm64 ABI passes every variadic argument on the stack
+                from [sp]; the variadic stack-section split scores that tail
+                only for a callee whose prototype says `...`, and nothing
+                declares panic.
+    Stage:      P4 active-input trial scoring (`p4_calls/kuna_darwinvarargs.rs`
+                marks the callee from its entry block: Apple's va_start keeps
+                the address entry-sp + 0 in a variable).
+
+    The XML wrapper only provides the harness architecture.  Every pass clears
+    it and loads `darwinvarargs_macho_arm64` (arm64 Mach-O) or
+    `darwinvarargs_aarch64` (AArch64 ELF), both built from `darwinvarargs.c`
+    beside them.  `_check` calls `_report(fmt, file, line)`, whose body runs
+    va_start, with file and line stored at [sp] and [sp+8], and calls
+    `_sum9`, a non-variadic callee whose ninth argument is on the stack.
+
+    Pass 1 (Mach-O) recovers both stack arguments.
+    Pass 2 (ELF): AAPCS64 passes the variadic arguments in x1 and x2, and the
+    call reads them there as before.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/darwinvarargs_macho_arm64</com>
+  <com>load function _check</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/darwinvarargs_aarch64</com>
+  <com>load function check</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="KUNA-DARWINVARARGS #1: the stack-passed variadic arguments are not dropped" min="0" max="0">_report\("NULL passed @%s:%ld"\);</stringmatch>
+<stringmatch name="KUNA-DARWINVARARGS #2: both arguments the caller stored at [sp] and [sp+8] are recovered" min="1" max="1">_report\("NULL passed @%s:%ld",a1,a2\);</stringmatch>
+<stringmatch name="KUNA-DARWINVARARGS #3: AAPCS64 ELF keeps its register-passed variadic arguments" min="1" max="1">[^_]report\("NULL passed @%s:%ld",a1,a2\);</stringmatch>
+<stringmatch name="KUNA-DARWINVARARGS #4: the non-variadic callee keeps its stack argument in both passes" min="2" max="2">sum9\(v1,1,2,3,4,5,6,7,a2\);</stringmatch>
+</decompilertest>

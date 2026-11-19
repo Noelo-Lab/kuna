@@ -1,0 +1,97 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<!--
+    Objective-C message sends typed and resolved by their receiver
+    (`option objcresolve on|call|off`).
+
+    Issue: a message send names its selector but not its method, and the
+    runtime entry points are typed once for every receiver. `-[Holder make]` of
+    the ARC fixture printed `objc_object *v1 = objc_alloc_init(_OBJC_CLASS_$_Base);
+    objc_msgSend(v1,sel_setInner_,objc_alloc_init(...));` - the alloc/init
+    result an `id`, the send an opaque runtime call although `-[Base setInner:]`
+    is a method of the image. `-[Holder innerCount]` of the types fixture sent
+    `objc_msgSend(self->inner,sel_count)` to an ivar typed `Base *` and
+    `objc_msgSend$inner(self)` to a `Holder *`.
+
+    Fix: the ObjC analysis hands the engine its class table (own methods,
+    superclass, class_t and selector addresses; `p5_types/kuna_objcresolve.rs`).
+    P5 `TypeOpCall::getOutputLocal` answers for `alloc`/`new`/`objc_alloc*` on a
+    folded class reference with that class's pointer and for `init.../self/
+    retain/autorelease/copy` with the receiver's class; a send whose receiver's
+    class is known prints the method found along the superclass chain as its
+    callee. Under `call` a second decompile sends the CALL to that IMP
+    (`FlowInfo::setup_call_specs` retarget), so the call carries the method's
+    prototype.
+
+    Pass 1 (off): `objc_object *v1`, `objc_msgSend(v1,sel_setInner_,...)`,
+    `objc_msgSend(self->inner,sel_count)`. Pass 2 (default): `Base *v1`,
+    `-[Base setInner:](v1,sel_setInner_,...)`, `-[Base count](self->inner,sel_count)`,
+    `-[Holder inner](...)`. Pass 3 (`call`): the same calls with the method's
+    declared parameter types, `-[Base setInner:](v1,(objc_selector *)sel_setInner_,(objc_object *)...)`.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_objc_arc_arm64</com>
+  <com>option objc on</com>
+  <com>option objcresolve off</com>
+  <com>read symbols</com>
+  <com>load addr 0x100000798</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_objc_types_arm64</com>
+  <com>option objc on</com>
+  <com>option objcresolve off</com>
+  <com>read symbols</com>
+  <com>load addr 0x100000740</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_objc_arc_arm64</com>
+  <com>option objc on</com>
+  <com>read symbols</com>
+  <com>load addr 0x100000798</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_objc_types_arm64</com>
+  <com>option objc on</com>
+  <com>read symbols</com>
+  <com>load addr 0x100000740</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_objc_arc_arm64</com>
+  <com>option objc on</com>
+  <com>option objcresolve call</com>
+  <com>read symbols</com>
+  <com>load addr 0x100000798</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_objc_types_arm64</com>
+  <com>option objc on</com>
+  <com>option objcresolve call</com>
+  <com>read symbols</com>
+  <com>load addr 0x100000740</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="OBJCRESOLVE #1: off, the alloc/init result is an id" min="1" max="1">objc_object \*v1; // x0 \| x19</stringmatch>
+<stringmatch name="OBJCRESOLVE #2: off, the send to it is the runtime entry point" min="1" max="1">objc_msgSend\(v1,sel_setInner_,</stringmatch>
+<stringmatch name="OBJCRESOLVE #3: off, the send to a typed ivar is the runtime entry point" min="1" max="1">objc_msgSend\(self->inner,sel_count\)</stringmatch>
+<stringmatch name="OBJCRESOLVE #4: on and call, objc_alloc_init on the class reference returns Base *" min="2" max="2">Base \*v1; // x0 \| x19</stringmatch>
+<stringmatch name="OBJCRESOLVE #5: default, the send to the Base * names the method" min="1" max="1">-\[Base setInner:\]\(v1,sel_setInner_,</stringmatch>
+<stringmatch name="OBJCRESOLVE #6: default, the send to the typed ivar names the method" min="1" max="1">-\[Base count\]\(self->inner,sel_count\)</stringmatch>
+<stringmatch name="OBJCRESOLVE #7: on and call, the stub send to self names the method" min="2" max="2">-\[Holder inner\]\(</stringmatch>
+<stringmatch name="OBJCRESOLVE #8: default, the getter's result (Base *, from its property) resolves its own send" min="1" max="1">-\[Base count\]\(v3,sel_count\)</stringmatch>
+<stringmatch name="OBJCRESOLVE #9: call, the retargeted call carries the method's declared parameter types" min="1" max="1">-\[Base setInner:\]\(v1,\(objc_selector \*\)sel_setInner_,\(objc_object \*\)objc_alloc_init</stringmatch>
+<stringmatch name="OBJCRESOLVE #10: call, the send to the typed ivar goes to the method" min="1" max="1">-\[Base count\]\(self->inner,\(objc_selector \*\)sel_count\)</stringmatch>
+<stringmatch name="OBJCRESOLVE #11: call, the stub send to self goes to the method with self typed (no cast)" min="1" max="1">-\[Holder inner\]\(self\)</stringmatch>
+</decompilertest>

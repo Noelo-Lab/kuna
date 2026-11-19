@@ -191,6 +191,13 @@ impl FlowEnvironment for ArchFlowEnv {
     fn query_call_no_return_at(&self, entry: &Address, call: &Address, fallthrough: &Address) -> bool {
         crate::p4_calls::kuna_calleenoreturn::is_proxy_no_return_at(self.arch(), entry, call, fallthrough)
     }
+    fn query_call_retarget(&self, callsite: &Address) -> Option<Address> {
+        let imp = *self.arch().kuna_objc_retargets.get(&callsite.get_offset())?;
+        Some(Address::new(Rc::clone(callsite.get_space()?), imp))
+    }
+    fn query_call_site_pieces(&self, callsite: &Address) -> Option<crate::fspec::PrototypePieces> {
+        self.arch().kuna_objc_site_pieces.get(&callsite.get_offset()).cloned()
+    }
 
     fn funcbound_flow_enabled(&self) -> bool {
         // (kuna funcboundflow) the Architecture-owned gate (`option funcboundflow`).
@@ -1355,6 +1362,7 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
         // (kuna `calleedeadarg`) Same story for the entry-liveness probe the
         // input-trial scoring seam consults.
         crate::p4_calls::kuna_calleedeadarg::seed_callee_entry_dead(arch, fd);
+        crate::p4_calls::kuna_darwinvarargs::seed(arch, fd);
         crate::kuna_swiftcall::seed_self_readers(arch, fd);
         // (kuna `zerofillreturn`) And the zero fills, read off the fresh p-code.
         crate::p4_calls::kuna_zerofillreturn::seed(fd);
@@ -2084,6 +2092,7 @@ fn decompile_func_full_with_objects_inner(
         // input-trial scoring seam consults, for the same reason and at the same
         // point.
         crate::p4_calls::kuna_calleedeadarg::seed_callee_entry_dead(arch, &mut fd);
+        crate::p4_calls::kuna_darwinvarargs::seed(arch, &mut fd);
         // (kuna `swiftcall`) Which direct callees do not read `swiftself`, for
         // the stale-`self` test at the same seam.
         crate::kuna_swiftcall::seed_self_readers(arch, &mut fd);

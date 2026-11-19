@@ -1,0 +1,72 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<!--
+    Apple unified-logging call sites (`option oslog on|off`) and Mach-O
+    literal pools other than `__cstring`.
+
+    Issue: an `os_log` macro packs its arguments into a stack buffer (summary
+    byte, count byte, then per argument a descriptor byte, a size byte and the
+    value) and calls `_os_log_impl(&__dso_handle, log, type, fmt, buf, size)`.
+    On iOS 16.4.1 trustd every log statement read
+    `v1 = 0x4000100; v8 = v2; _os_log_impl(0x100000000,v3,0,s_10006c0cf,&v1,8);`:
+    the format string in `__TEXT,__oslogstring` printed as its symbol, the
+    arguments were raw buffer stores, and the dso was a bare address.
+
+    Stage / sub-stage: P1 (the Mach-O loader's section classification,
+    `kuna-analysis/src/loader/format/macho.rs`: an `S_CSTRING_LITERALS` section
+    is read-only data) and P9 presentation (`p9_emit/kuna_oslog.rs`).
+
+    P0 assertion: `option oslog on|off` (default on), a print-time gate.
+
+    The XML wrapper only supplies the harness architecture. Both passes load the
+    real arm64 Mach-O fixture `macho_oslog_arm64` (built from `macho_oslog.c`
+    with clang's `__builtin_os_log_format`, see the fixtures README; the format
+    strings are in `__TEXT,__oslogstring`). `_log_code` @0x100000418 logs one
+    int, `_log_pair` @0x1000004a8 a long and a string (the string written as an
+    unaligned 8-byte store), `_log_plain` @0x100000600 no arguments.
+
+    Pass 1 (`option oslog off`, the BUG for the call shape): the format string
+    is a literal (the literal-pool fix is unconditional), the header and value
+    stores print and the call passes `0x100000000,...,&v1,8`. Pass 2
+    (`option oslog on`, the default, the FIX): the call prints
+    `_os_log_impl(&__mh_execute_header,a0,0x10,"failed to read parents: %d",a1)`
+    with no buffer stores.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_oslog_arm64</com>
+  <com>read symbols</com>
+  <com>option oslog off</com>
+  <com>load addr 0x100000418</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x1000004a8</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x100000600</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option oslog on</com>
+  <com>load addr 0x100000418</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x1000004a8</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x100000600</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="oslogstring format strings print as literals" min="2" max="2">"failed to read parents: %d"</stringmatch>
+<stringmatch name="no format string prints as its symbol" min="0" max="0">s_10000067c|s_100000697|s_1000006ce</stringmatch>
+<stringmatch name="off keeps the raw buffer call" min="3" max="3">_os_log_impl\(0x100000000,</stringmatch>
+<stringmatch name="off keeps the header store" min="1" max="1">= 0x4000100;</stringmatch>
+<stringmatch name="on prints the int argument" min="1" max="1">_os_log_impl\(&amp;__mh_execute_header,a0,0x10,"failed to read parents: %d",a1\);</stringmatch>
+<stringmatch name="on prints the long and the unaligned string argument" min="1" max="1">_os_log_impl\(&amp;__mh_execute_header,a0,0,"loaded %ld entries from %s",a1,a2\);</stringmatch>
+<stringmatch name="on prints a call without arguments" min="1" max="1">_os_log_impl\(&amp;__mh_execute_header,dat_100004020,0,"no arguments here"\);</stringmatch>
+</decompilertest>

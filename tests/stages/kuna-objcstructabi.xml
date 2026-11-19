@@ -1,0 +1,87 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<!--
+    Objective-C methods that pass or return an aggregate by value.
+
+    Issue: a method whose type encoding spells a union (`(Word=qf)`) or a
+    struct with no name (`{?=ii}`) by value decoded that argument to void, so
+    the method lost its whole prototype: `long -[Shape word:](void *a0,
+    unsigned long a1, long a2)` reading `((long *)a0)[0x12]`, with no `self`.
+    A struct with bit-fields (`{Flags=b3b5S}`) was laid out with one 4-byte
+    word per bit-field, 12 bytes for a 4-byte struct, so the model placed it in
+    two registers.
+
+    Fix: `encoding.rs (struct_type)` builds the struct or union the encoding
+    spells with the C layout of its members (natural alignment, a run of
+    bit-fields as the bytes it packs into, union members at offset zero), names
+    an unnamed one from its member codes, and the calling convention's own
+    rules place it: a homogeneous floating-point aggregate in d0..d3, up to 16
+    bytes in x registers, anything larger by pointer, and a return past 16
+    bytes through x8.
+
+    One pass, the fixed output.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_objc_structabi_arm64</com>
+  <com>read symbols</com>
+  <com>load addr 0x100000640</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x100000658</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x100000664</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x100000670</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x100000680</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x100000690</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x1000006a4</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x1000006d0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x1000006f0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x1000006fc</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x100000708</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x100000714</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="OBJCSTRUCTABI #1: a union argument keeps the prototype" min="1" max="1">int8 -\[Shape word:\]\(Shape \*self,objc_selector \*_cmd,Word arg1\)</stringmatch>
+<stringmatch name="OBJCSTRUCTABI #2: the union is read by member and self by ivar" min="1" max="1">return self->total \+ arg1\.field_0;</stringmatch>
+<stringmatch name="OBJCSTRUCTABI #3: an unnamed struct is named from its member codes" min="1" max="1">int4 -\[Shape span:\]\(Shape \*self,objc_selector \*_cmd,struct_ii arg1\)</stringmatch>
+<stringmatch name="OBJCSTRUCTABI #4: its two halves are fields of one register" min="1" max="1">return arg1\.field_1 - arg1\.field_0;</stringmatch>
+<stringmatch name="OBJCSTRUCTABI #5: a struct of bit-fields is one 4-byte argument" min="1" max="1">\(\(uint4\)arg1 >> 3 &amp; 0x1f\) \+ \(\(uint4\)arg1 >> 0x10\)</stringmatch>
+<stringmatch name="OBJCSTRUCTABI #6: a CGRect return comes back in d0..d3" min="1" max="1">CGRect -\[Shape frame\]\(Shape \*self,objc_selector \*_cmd\)</stringmatch>
+<stringmatch name="OBJCSTRUCTABI #7: an NSRange return comes back in x0 and x1" min="1" max="1">_NSRange -\[Shape range\]\(Shape \*self,objc_selector \*_cmd\)</stringmatch>
+<stringmatch name="OBJCSTRUCTABI #8: an integer argument follows an NSRange" min="1" max="1">\(self->range\)\.location = arg1\.location \* arg2;</stringmatch>
+<stringmatch name="OBJCSTRUCTABI #9: a double follows four doubles of UIEdgeInsets" min="1" max="1">return \(\(arg1\.top \+ arg1\.bottom\) \* arg2 - arg1\.left\) - arg1\.right;</stringmatch>
+<stringmatch name="OBJCSTRUCTABI #10: a 48-byte return is written through x8" min="1" max="1">void -\[Shape transform\]\(CGAffineTransform \*rethidden,Shape \*self,objc_selector \*_cmd\)</stringmatch>
+<stringmatch name="OBJCSTRUCTABI #11: a 48-byte argument is read through its pointer" min="1" max="1">\(self->xform\)\.d = arg1\.d;</stringmatch>
+<stringmatch name="OBJCSTRUCTABI #12: an array member is indexed" min="1" max="1">return arg1\.weights\[arg2 &amp; 3\] \* \(float8\)\(int8\)arg1\.tag;</stringmatch>
+<stringmatch name="OBJCSTRUCTABI #13: a pointer to a struct reads its field" min="1" max="1">return arg1->width;</stringmatch>
+<stringmatch name="OBJCSTRUCTABI #14: the CGRect argument is copied field by field" min="1" max="1">\(self->frame\)\.height = arg1\.height;</stringmatch>
+<stringmatch name="OBJCSTRUCTABI #15: both register returns are one whole value" min="2" max="2">return self->(frame|range);</stringmatch>
+<stringmatch name="OBJCSTRUCTABI #16: no method of the class loses self" min="0" max="0">\(void \*a0</stringmatch>
+</decompilertest>
