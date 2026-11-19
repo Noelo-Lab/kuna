@@ -71,6 +71,7 @@ fn folded_functions_are_named_without_a_false_owner() {
         insn_align: 1,
         claims: Default::default(),
         budget: std::cell::Cell::new(usize::MAX),
+        names: Default::default(),
     };
     let claim = |addr: u64, name: &str, owner: &str, req: Option<(&str, &str)>, getter: bool| {
         namer.claim(
@@ -184,6 +185,7 @@ fn a_claim_needs_a_plausible_function_start() {
             insn_align,
             claims: Default::default(),
             budget: std::cell::Cell::new(usize::MAX),
+        names: Default::default(),
         };
         for (k, addr) in [0x1000u64, 0x1008, 0x1022, 0x1040].into_iter().enumerate() {
             namer.claim(addr, format!("M.A.vtable#{k}.getter"), "M.A", None, true);
@@ -222,6 +224,7 @@ fn fixture_claims_are_outside_stated_bodies() {
             insn_align: 1,
             claims: Default::default(),
             budget: std::cell::Cell::new(usize::MAX),
+        names: Default::default(),
         };
         let mut out = AnalysisOutput::default();
         namer.emit(&mut out);
@@ -250,6 +253,7 @@ fn repeated_names_take_the_next_free_suffix() {
         insn_align: 1,
         claims: Default::default(),
         budget: std::cell::Cell::new(usize::MAX),
+        names: Default::default(),
     };
     let one = |addr: u64, name: &str| namer.claim(addr, name.to_string(), "M.A", None, false);
     one(0x1000, "X");
@@ -360,6 +364,7 @@ fn names(bytes: &[u8], budget: usize) -> AnalysisOutput {
         insn_align: insn_align(&file),
         claims: Default::default(),
         budget: std::cell::Cell::new(budget),
+        names: Default::default(),
     };
     let mut out = AnalysisOutput::default();
     namer.emit(&mut out);
