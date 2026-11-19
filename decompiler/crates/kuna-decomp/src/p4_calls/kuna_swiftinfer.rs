@@ -15,6 +15,16 @@
 //!   written. It decompiles under `__swiftcall` with the input named
 //!   `swiftself`, and a direct call to it passes the register
 //!   ([`callee_model`]).
+//! * A function that reads `swiftasync` (x22 / r14) on entry, for anything
+//!   but saving it, is `async` ([`seed`]): the register holds its context,
+//!   which a resume partial that only loads its frame and returns through
+//!   the context reads without calling the task runtime. It decompiles under
+//!   `__swiftasynccall` with the input named `async_context`, and a direct
+//!   call to it (a tail call: an `async` function hands the context on)
+//!   passes the register ([`async_callee_model`]). So does an indirect
+//!   tail call it makes ([`async_tail_call`]): a call through a witness or
+//!   a closure's function pointer, and the return, which is a jump to the
+//!   resume function the context holds.
 //! * A call after which the caller tests `swifterror` while the register still
 //!   holds the caller's own entry value returns an error in it
 //!   ([`error_passing_call`]): the caller hands on the zero its own caller
@@ -187,48 +197,78 @@ fn probe_reads<T: kuna_sleigh::translate::Translate + ?Sized>(tr: &T, entry: &Ad
     false
 }
 
-/// Does the body at `entry` read `swiftself` before writing it, other than to
-/// save it? Cached per entry for the run.
-fn reads_self(arch: &mut crate::architecture::Architecture, entry: &Address) -> bool {
+/// The Swift register a body is probed for.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Probe {
+    SelfReg,
+    AsyncReg,
+}
+
+/// Does the body at `entry` read the probed register before writing it,
+/// other than to save it? Cached per entry for the run.
+fn reads_entry(arch: &mut crate::architecture::Architecture, entry: &Address, probe: Probe) -> bool {
     let Some(abi) = arch.loader_swift_abi.clone() else { return false };
     let Some(k) = key(entry) else { return false };
     if entry.is_invalid() {
         return false;
     }
-    if let Some(&r) = arch.kuna_swift_self_reads.get(&k) {
+    let cached = match probe {
+        Probe::SelfReg => arch.kuna_swift_self_reads.get(&k),
+        Probe::AsyncReg => arch.kuna_swift_async_reads.get(&k),
+    };
+    if let Some(&r) = cached {
         return r;
     }
-    let reg = VarnodeData {
-        space: abi.self_reg.0.get_space().cloned(),
-        offset: abi.self_reg.0.get_offset(),
-        size: abi.self_reg.1 as u32,
+    let (addr, size) = match probe {
+        Probe::SelfReg => &abi.self_reg,
+        Probe::AsyncReg => &abi.async_reg,
     };
+    let reg = VarnodeData { space: addr.get_space().cloned(), offset: addr.get_offset(), size: *size as u32 };
     let r = probe_reads(arch.translate(), entry, &reg);
-    arch.kuna_swift_self_reads.insert(k, r);
+    match probe {
+        Probe::SelfReg => arch.kuna_swift_self_reads.insert(k, r),
+        Probe::AsyncReg => arch.kuna_swift_async_reads.insert(k, r),
+    };
     r
 }
 
-/// Whether the function itself, which the analysis did not bind, reads
-/// `swiftself`; and, for its direct callees, which of them do.
-pub fn seed(arch: &mut crate::architecture::Architecture, data: &mut Funcdata) -> bool {
+fn is_async_model(m: &ProtoModel) -> bool {
+    m.get_name().starts_with(crate::kuna_swiftcall::SWIFTASYNCCALL)
+}
+
+/// Whether the function itself reads `swiftself` (when the analysis did not
+/// bind it) and `swiftasync` (when nothing bound it `async`) on entry; and,
+/// for its direct callees, which of them read either.
+pub fn seed(arch: &mut crate::architecture::Architecture, data: &mut Funcdata) -> (bool, bool) {
     if !enabled(arch) {
-        return false;
+        return (false, false);
     }
     let mut callees = BTreeSet::new();
+    let mut async_callees = BTreeSet::new();
     for i in 0..data.num_calls() {
         let e = data.get_call_specs(i).get_entry_address().clone();
         let Some(k) = key(&e) else { continue };
-        if e.is_invalid() || arch.loader_proto_models.contains_key(&k) || callees.contains(&k) {
+        if e.is_invalid() || callees.contains(&k) || async_callees.contains(&k) {
             continue;
         }
-        if reads_self(arch, &e) {
+        let bound = arch.loader_proto_models.get(&k).cloned();
+        if !bound.as_ref().is_some_and(|m| !m.get_name().starts_with("__swift") || is_async_model(m))
+            && reads_entry(arch, &e, Probe::AsyncReg)
+        {
+            async_callees.insert(k);
+        }
+        if bound.is_none() && reads_entry(arch, &e, Probe::SelfReg) {
             callees.insert(k);
         }
     }
     data.kuna_set_swift_self_callees(callees);
+    data.kuna_set_swift_async_callees(async_callees);
     let own = data.get_address().clone();
-    let Some(k) = key(&own) else { return false };
-    !arch.loader_proto_models.contains_key(&k) && reads_self(arch, &own)
+    let Some(k) = key(&own) else { return (false, false) };
+    let bound = arch.loader_proto_models.get(&k).cloned();
+    let reads_async = !bound.as_ref().is_some_and(|m| !m.get_name().starts_with("__swift") || is_async_model(m))
+        && reads_entry(arch, &own, Probe::AsyncReg);
+    (bound.is_none() && reads_entry(arch, &own, Probe::SelfReg), reads_async)
 }
 
 /// The input hint that names the `swiftself` input of a function [`seed`] found.
@@ -247,6 +287,66 @@ pub fn callee_model(data: &Funcdata, idx: int4) -> Option<Rc<ProtoModel>> {
     let abi = data.get_arch().swift_abi.as_ref()?;
     let k = key(data.get_call_specs(idx).get_entry_address())?;
     data.kuna_swift_self_callees().contains(&k).then(|| Rc::clone(&abi.plain))
+}
+
+/// `__swiftasynccall` for an indirect jump out of an `async` function that
+/// the flow made a call: the function it awaits, or its return to the resume
+/// function of its context. Either takes the context register.
+pub fn async_tail_call(data: &Funcdata, call: OpId) -> Option<Rc<ProtoModel>> {
+    let abi = data.get_arch().swift_abi.as_ref()?;
+    let own = data.get_func_proto();
+    if !own.has_model() || !is_async_model(own.model()) {
+        return None;
+    }
+    let indirect = data.obank().get(call).is_some_and(|op| op.code() == OpCode::CPUI_CALLIND);
+    (indirect && is_tail_call(data, call)).then(|| abi.model(true, false))
+}
+
+/// Is `call` a jump the flow made a call, followed by the return it planted
+/// at the same address?
+fn is_tail_call(data: &Funcdata, call: OpId) -> bool {
+    let Some(op) = data.obank().get(call) else { return false };
+    let next = op.basic_neighbours().1.and_then(|n| data.obank().get(n));
+    next.is_some_and(|n| n.code() == OpCode::CPUI_RETURN && n.get_addr() == op.get_addr())
+}
+
+/// Is the trial in `addr`/`size` the `swiftasync` register of a call under
+/// an `async` model? An `async` callee always takes its context, which the
+/// caller's own, handed on untouched, would not show as an argument.
+pub fn passes_context(data: &Funcdata, idx: int4, addr: &Address, size: int4) -> bool {
+    let Some(abi) = data.get_arch().swift_abi.as_ref() else { return false };
+    let proto = data.get_call_specs(idx).proto();
+    addr == &abi.async_reg.0 && size == abi.async_reg.1 && proto.has_model() && is_async_model(proto.model())
+}
+
+/// Is input `slot` of call `idx` the value an `async` function's indirect
+/// tail call jumps through? The scratch register holding the resume function
+/// or the awaited function's address is not also its argument.
+pub fn carries_async_target(data: &Funcdata, idx: int4, slot: int4) -> bool {
+    let call = data.get_call_specs(idx);
+    if data.get_arch().swift_abi.is_none() || !call.proto().has_model() || !is_async_model(call.proto().model()) {
+        return false;
+    }
+    let Some(op) = data.obank().get(call.get_op()).filter(|op| op.code() == OpCode::CPUI_CALLIND) else {
+        return false;
+    };
+    let root = |vn: VarnodeId| {
+        let def = data.vbank().get(vn).and_then(|v| v.get_def()).and_then(|d| data.obank().get(d));
+        def.filter(|d| d.code() == OpCode::CPUI_COPY).and_then(|d| d.get_in(0)).unwrap_or(vn)
+    };
+    match (op.get_in(0), op.get_in(slot)) {
+        (Some(target), Some(arg)) => slot != 0 && root(target) == root(arg),
+        _ => false,
+    }
+}
+
+/// `__swiftasynccall` for the direct call `idx` when its callee reads
+/// `swiftasync`, throwing when the model bound to it does.
+pub fn async_callee_model(data: &Funcdata, idx: int4, bound: Option<&Rc<ProtoModel>>) -> Option<Rc<ProtoModel>> {
+    let abi = data.get_arch().swift_abi.as_ref()?;
+    let k = key(data.get_call_specs(idx).get_entry_address())?;
+    let throws = bound.is_some_and(|m| m.get_name().ends_with("_throws"));
+    data.kuna_swift_async_callees().contains(&k).then(|| abi.model(true, throws))
 }
 
 /// Does `op` read `(reg, size)` other than as the value it stores?
