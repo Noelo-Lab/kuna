@@ -617,6 +617,8 @@ Three tiers:
 | a dyld_shared_cache file is rejected as an unrecognized input format | [`dyldimage`](#dyldimage----none---default-none) |
 | cannot decompile an ios or macos system library because it only exists inside the dyld shared cache | [`dyldimage`](#dyldimage----none---default-none) |
 | dyld shared cache holds N images; choose one with --image | [`dyldimage`](#dyldimage----none---default-none) |
+| address is not mapped in this input for a callee in another image of the dyld shared cache | [`dyldimage`](#dyldimage----none---default-none) |
+| following a call from one cache image into another needs a second run | [`dyldimage`](#dyldimage----none---default-none) |
 | calls in a dyld shared cache image render as sub_<addr> into a __TEXT_STUBS island | [`dyldcrossrefs`](#dyldcrossrefs----on--off-default-on) |
 | a cache image's __got loads name nothing | [`dyldcrossrefs`](#dyldcrossrefs----on--off-default-on) |
 | cross-library calls of an ios framework have no names | [`dyldcrossrefs`](#dyldcrossrefs----on--off-default-on) |
@@ -656,6 +658,10 @@ Three tiers:
 | kuna functions on a decompressed MH_FILESET kernelcache finds no functions | [`kernelcache`](#kernelcache----auto--off---default-auto) |
 | a kext cannot be selected out of a kernel collection | [`kernelcache`](#kernelcache----auto--off---default-auto) |
 | pointers in a kernelcache read as packed chained-fixup words instead of addresses | [`kernelcache`](#kernelcache----auto--off---default-auto) |
+| a kext in an Auxiliary kernel collection calls the kernel through a raw number instead of a named function | [`kernelcache-boot`](#kernelcache-boot----auto--off---default-auto) |
+| pointers into the boot kernel collection read as packed chained-fixup words | [`kernelcache-boot`](#kernelcache-boot----auto--off---default-auto) |
+| vtable and metaclass pointers of a third-party kext are not addresses | [`kernelcache-boot`](#kernelcache-boot----auto--off---default-auto) |
+| AuxiliaryKernelExtensions.kc or SystemKernelExtensions.kc loads with unresolved kernel references | [`kernelcache-boot`](#kernelcache-boot----auto--off---default-auto) |
 | go functions lose source parameters despite dwarf | [`godwarfsig`](#godwarfsig----on--off-default-on) |
 | go identity function decompiles as void | [`godwarfsig`](#godwarfsig----on--off-default-on) |
 | go result parameters appear as inputs | [`godwarfsig`](#godwarfsig----on--off-default-on) |
@@ -840,9 +846,6 @@ Three tiers:
 | a function that touches thousands of globals between thousands of calls takes gigabytes and minutes to decompile | [`persistcalls`](#persistcalls----off--on---default-65536) |
 | heritage builds millions of INDIRECTs over writable globals that survive dead-code removal | [`persistcalls`](#persistcalls----off--on---default-65536) |
 | a huge initializer or finalizer exhausts memory in assignhigh or merging | [`persistcalls`](#persistcalls----off--on---default-65536) |
-| runtime-sized buffer accesses below a fixed local array | [`stackalloc`](#stackalloc----on--off-default-off) |
-| dynamic stack memory is overwritten by a generated call | [`stackalloc`](#stackalloc----on--off-default-off) |
-| undeclared Stack location after variable stack subtraction | [`stackalloc`](#stackalloc----on--off-default-off) |
 
 ## Toggleable transforms
 
@@ -2124,11 +2127,11 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-multilang-gotypeglobals
 - **Example:** `option gotypeglobals off`
 
-### `dyldimage` -- none | <install-name>, default `none`
+### `dyldimage` -- none | <install-name>[+<install-name>...], default `none`
 
-- **Symptoms:** a dyld_shared_cache file is rejected as an unrecognized input format; cannot decompile an ios or macos system library because it only exists inside the dyld shared cache; dyld shared cache holds N images; choose one with --image.
-- **What it does:** Choose which image of a dyld shared cache to load. A cache (dyld_shared_cache_arm64e and its sub-caches .01, .27.dylddata, .44.dyldlinkedit, ... and .symbols beside it) holds every system library of an iOS or macOS release; kuna rebuilds the chosen image as a standalone thin Mach-O before anything parses it, so the loader, the analysis passes and every surface see an ordinary Mach-O. The rebuild keeps each segment at its cache address, applies the cache's slide info (v2, v3 with arm64e auth pointers, v5) at slide zero so every rebased pointer reads as its unslid target, and gives the image a private __LINKEDIT with its own symbol table, the local symbols the cache moved to its .symbols file in place of the <redacted> placeholders, the renumbered indirect-symbol table, and copies of the export trie, function starts and data-in-code. The name matches a full install name (/usr/lib/libobjc.A.dylib), else a unique basename (libobjc.A.dylib, CoreFoundation), else a unique basename without its last extension (libobjc.A). `none` (default) loads the image of a one-image cache and refuses a larger one with the image count. The image is rebuilt inside `load file`, so the choice travels as the KUNA_DYLD_IMAGE environment variable; the CLI's global `--image NAME` sets it for every subcommand, and the console sets it with `option dyldimage NAME` before `load file`, accepted before any image is loaded. `kuna unpack <cache> --list` lists the images and `kuna unpack <cache> --image NAME` writes the rebuilt Mach-O.
-- **When to flip:** Set it (or pass --image) whenever the input is a dyld shared cache: kuna decompile dyld_shared_cache_arm64e --image CoreFoundation CFStringCreateCopy. Not used for any other input.
+- **Symptoms:** a dyld_shared_cache file is rejected as an unrecognized input format; cannot decompile an ios or macos system library because it only exists inside the dyld shared cache; dyld shared cache holds N images; choose one with --image; address is not mapped in this input for a callee in another image of the dyld shared cache; following a call from one cache image into another needs a second run.
+- **What it does:** Choose which image of a dyld shared cache to load. A cache (dyld_shared_cache_arm64e and its sub-caches .01, .27.dylddata, .44.dyldlinkedit, ... and .symbols beside it) holds every system library of an iOS or macOS release; kuna rebuilds the chosen image as a standalone thin Mach-O before anything parses it, so the loader, the analysis passes and every surface see an ordinary Mach-O. The rebuild keeps each segment at its cache address, applies the cache's slide info (v2, v3 with arm64e auth pointers, v5) at slide zero so every rebased pointer reads as its unslid target, and gives the image a private __LINKEDIT with its own symbol table, the local symbols the cache moved to its .symbols file in place of the <redacted> placeholders, the renumbered indirect-symbol table, and copies of the export trie, function starts and data-in-code. The name matches a full install name (/usr/lib/libobjc.A.dylib), else a unique basename (libobjc.A.dylib, CoreFoundation), else a unique basename without its last extension (libobjc.A). `none` (default) loads the image of a one-image cache and refuses a larger one with the image count. The image is rebuilt inside `load file`, so the choice travels as the KUNA_DYLD_IMAGE environment variable; the CLI's global `--image NAME` sets it for every subcommand, and the console sets it with `option dyldimage NAME` before `load file`, accepted before any image is loaded. `kuna unpack <cache> --list` lists the images and `kuna unpack <cache> --image NAME` writes the rebuilt Mach-O. Several names joined by `+` (Foundation+CoreFoundation) load several images as one program: each is rebuilt on its own and the results are joined into one thin Mach-O, every segment at its cache address, images in address order, with one symbol table (section ordinals renumbered), one indirect-symbol table, one function-starts table and one cross-image reference note, so a function of either image decompiles in the same run and the analysis passes read the ObjC, Swift and CFString sections of every image. The identity commands (LC_ID_DYLIB, the dylib list) are those of the image named first. The joined images may hold at most 255 sections together, the most a Mach-O symbol can index. The CLI also widens the selection on demand: `decompile`, `disassemble` and `xrefs` look each 0x address of the request up in the cache's image ranges and add the image that holds it, up to `--follow-images N` images (default 2, 0 turns it off), and `decompile` and `disassemble` first follow a stub-island address to the function the stub jumps to.
+- **When to flip:** Set it (or pass --image) whenever the input is a dyld shared cache: kuna decompile dyld_shared_cache_arm64e --image CoreFoundation CFStringCreateCopy. Join names with + to follow calls from one image into another without a second run: --image Foundation+CoreFoundation. Not used for any other input.
 - **Where / provenance:** P1/environment-binding · kuna · analysis-enablement · kuna-apple-dyldcache
 - **Example:** `option dyldimage /usr/lib/libobjc.A.dylib`
 
@@ -2227,6 +2230,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** Auto (default): `kuna functions kernelcache` lists the kernel's functions with their symbol names; `--option kernelcache com.apple.iokit.IOSurface` loads that kext instead, its direct calls into the kernel named after the kernel functions they reach; `--option kernelcache list` stops with the list of every entry id. Flip off to pass the bytes through untouched: an IMG4 is then an unrecognized format and a bare MH_FILESET loads as one image with no code sections.
 - **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-kernelcache
 - **Example:** `--option kernelcache com.apple.iokit.IOSurface`
+
+### `kernelcache-boot` -- auto | off | <path>, default `auto`
+
+- **Symptoms:** a kext in an Auxiliary kernel collection calls the kernel through a raw number instead of a named function; pointers into the boot kernel collection read as packed chained-fixup words; vtable and metaclass pointers of a third-party kext are not addresses; AuxiliaryKernelExtensions.kc or SystemKernelExtensions.kc loads with unresolved kernel references.
+- **What it does:** Apple kernel collections only: resolve the pointers a System or Auxiliary collection (macOS SystemKernelExtensions.kc, AuxiliaryKernelExtensions.kc) holds into the collections it was linked against. A DYLD_CHAINED_PTR_64_KERNEL_CACHE or X86_64_KERNEL_CACHE rebase names a cache level, and a target at level 0 (the boot collection) or 1 (the System collection) is an offset from the base of that other file, so the collection alone cannot say where it points: the slot would keep its packed chain word, and a call through it, or a vtable or metaclass pointer it holds, prints as a raw number. The collection's __PRELINK_INFO plist names each file it needs by UUID (_BootKCID, _PageableKCID). kuna reads the MH_FILESET files in the directory of the input (`auto`), or the file or directory the value names (a file may be an IMG4/IM4P container), takes the one whose LC_UUID or _PrelinkKCID is that UUID, writes base + offset into every such slot, and gives each target that a section symbol of the linked file defines inside code that symbol's name as an import of the loaded kext (the kernel's symbol before a kext's); a `__got`, `__auth_got` or `__auth_ptr` slot holding such an address is that import's slot, so a call through it is a call to the named function. A file with another UUID is never used. The load note counts, per level, the pointers rebased and functions named, or the pointers left unresolved and why. Inert on every input that is not a kernel collection pointing into another one. Loader-tier: read through the KUNA_KERNELCACHE_BOOT env var, because the image is built inside load file.
+- **When to flip:** Auto (default): with BootKernelExtensions.kc copied next to AuxiliaryKernelExtensions.kc, a kext's calls into the kernel through its pointer slots print the kernel function's name. Give a path when the boot collection lives elsewhere (`--option kernelcache-boot /System/Library/KernelCollections`). Flip off to read no file but the input: the slots into other collections stay unresolved and the load note counts them.
+- **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-kernelcache-boot
+- **Example:** `--option kernelcache-boot /System/Library/KernelCollections/BootKernelExtensions.kc`
 
 ### `godwarfsig` -- on | off, default `on`
 
@@ -2607,14 +2618,6 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default at 65,536 guards, the size at which the guards cost a huge function gigabytes and minutes. Set `on` to place the sparse guards in every pass with a call, a larger N or `off` to keep upstream's guard on every persistent global at every call, for example to compare heritage's IR with upstream.
 - **Where / provenance:** P3/call-guard · kuna · performance · gh-1034
 - **Example:** `option persistcalls off`
-
-### `stackalloc` -- on | off, default `off`
-
-- **Symptoms:** runtime-sized buffer accesses below a fixed local array; dynamic stack memory is overwritten by a generated call; undeclared Stack location after variable stack subtraction.
-- **What it does:** Recover runtime-sized 16-, 32- and 64-bit stack storage across control flow. Emit function-lifetime compiler alloca or a proved shorter lexical VLA, retain native reservation and restoration witnesses, and bound outgoing accesses by SSA analysis.
-- **When to flip:** Enable for ordinary runtime stack buffers printed below a fixed local array or as undeclared Stack locations. Handles conditional/repeated allocations, paired pointer/counter probes and proved saved-stack relationships. Proved shorter lifetimes become nested aligned VLAs; missing lifetime proofs decline recovery, not expired alloca storage. Uses the ABI stack pointer on x86, AMD64, ARM/Thumb, AArch64, RISC-V32/64, SPARC32/64, PPC32/64 and MIPS32/64, in both supported endians. Bounds both sides of each allocation and preserves the SPARC V9 stack bias. Unknown stack effects, unbounded outgoing-area cycles and exhausted proof budgets decline recovery; a declined function prints as with the option off, sometimes with a header note. GCC stack-clash probes (-fstack-clash-protection, the Ubuntu, Debian and Fedora default) are declined, so those builds mostly print as off. Saved-context switching is outside this model. No --mode turns it on; when on it costs roughly 3-10% more decompile CPU.
-- **Where / provenance:** P3/stack-pointer-flow · kuna · correctness-fix · kuna-stackalloc
-- **Example:** `option stackalloc on`
 
 ## Programmatic use
 

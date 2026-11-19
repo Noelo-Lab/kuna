@@ -617,6 +617,7 @@ One directive per `--assert`, keyed by intent rather than by phase:
 | `comment [<func>::]<addr> <text>` | a comment rendered into the C at that instruction |
 | `flow [<func>::]<addr> branch\|call\|callreturn\|return` | the flow out of this instruction is not what kuna decided |
 | `callee [<func>::]<callsite> <name\|address>` | the indirect call at this instruction goes to this function |
+| `callproto [<func>::]<callsite> <C declaration>` | the arguments and return of the one call made by the instruction at `<callsite>` |
 | `function <start>[-<end>][=<name>]` | the `--define-function` spelling, on this plane |
 | `readonly <addr>+<size>` | the bytes in this range never change at run time |
 | `volatile <addr>+<size>` | device memory: every access is a real access |
@@ -1098,9 +1099,33 @@ render different arguments. Slots may be declared in any order and one you do
 not name is `undefined`; declaring them all is the same statement as a
 `prototype` directive with the storage added.
 
-`comment`, `flow`, `name` and `type` describe the inside of one function body
-and have no cross-function reading, so qualifying one with a function this run
-did not decompile is **rejected** — with a `warning:` line naming it, and a
+**`callproto` states one call.** `prototype` describes a function and `data` can
+type a function-pointer global, but a call through a pointer or a register has
+no callee symbol to carry a signature, and a variadic callback takes different
+arguments at each call. `callproto` gives the call made by one instruction its
+own declaration, in the grammar `prototype` takes:
+
+```console
+$ kuna decompile ./vlog.so report --assert 'data 0x2458 void (**logger_slot)(char *fmt, ...)'
+  (**v1)("%s %d %d",a1,(unsigned long)a0,(unsigned long)(a0 + 1),*v1); // jump-as-call
+$ kuna decompile ./vlog.so report --assert 'data 0x2458 void (**logger_slot)(char *fmt, ...)' \
+      --assert 'callproto 0x13b0 void f(char *fmt, char *s, int a, int b)'
+  (**v1)("%s %d %d",a1,a0,a0 + 1); // jump-as-call
+```
+
+The call is laid out under the default calling convention, so a declaration
+naming any other (`__thiscall` on x86) is **rejected**; a name the compiler
+spec gives the default one (`__cdecl` on x86-64 Windows) is accepted. A
+parameter followed by `@<storage>` is read from that storage instead of the
+place the convention gives it (`int a @R8D`, `char *s @[stack,0x8,8]`), and a
+`@<storage>` after the parameter list places the return value; the parameters
+without one are placed by the convention around those that have one. An address where the function
+makes no call is **rejected** with `No call is made at this address`, and of
+two directives for one call the later is applied and the earlier **rejected**.
+
+`comment`, `flow`, `callproto`, `name` and `type` describe the inside of one
+function body and have no cross-function reading, so qualifying one with a
+function this run did not decompile is **rejected** — with a `warning:` line naming it, and a
 non-zero exit under `--assert-strict` — rather than quietly applied to the
 function that was selected.
 
@@ -4499,7 +4524,7 @@ same file all describe the same slice.
 ## `--image NAME` — one image of a dyld shared cache
 
 A dyld shared cache (`dyld_shared_cache_arm64e` and the sub-caches beside it)
-holds thousands of images, and every kuna surface works on one of them. Pass the
+holds thousands of images, and every kuna surface works on the ones you name. Pass the
 main cache file as the binary and name the image with `--image`: a full install
 name (`/usr/lib/libobjc.A.dylib`), else a unique basename (`libobjc.A.dylib`,
 `CoreFoundation`), else a unique basename without its last extension (`libobjc.A`).
@@ -4525,6 +4550,48 @@ island addresses instead. `--image` is global: it applies to every subcommand
 and is passed to the `decomp_dbg` subprocess through `KUNA_DYLD_IMAGE`. The
 console spells it `option dyldimage NAME`, given before `load file`; it is
 accepted before any image is loaded.
+
+### Several images, and `--follow-images N`
+
+A call followed out of one image ends in another. Join image names with `+` to
+load them as one program:
+
+```
+$ kuna decompile dyld_shared_cache_arm64e --image Foundation+CoreFoundation __NSLogv
+$ kuna decompile dyld_shared_cache_arm64e --image Foundation+CoreFoundation 0x1870ac53c --addr
+```
+
+A `+` that is part of an image's own name does not split it: `--image
+libc++.1.dylib` is one image and `--image libc++.1.dylib+libc++abi` two. The
+longest run of `+`-joined pieces that names an image wins, and `libc++` alone
+names no image (it is not read as `libc`).
+
+Each image is rebuilt on its own and the results are joined into one thin
+Mach-O: every segment at its cache address, one symbol table, one
+indirect-symbol table, one function-starts table. `functions` lists the
+functions of every image, and `kuna unpack --image A+B` writes the joined file.
+The joined images may hold at most 255 sections together (a Mach-O symbol names
+its section in one byte); four or five large frameworks fit.
+
+`decompile`, `disassemble` and `xrefs` also load an image on demand. Each `0x`
+address of the request that lies outside the loaded images is looked up in the
+cache's image ranges, and the image that holds it is added, with a note on
+stderr:
+
+```
+$ kuna decompile dyld_shared_cache_arm64e --image Foundation 0x186db0400 --addr
+[kuna] 0x186db0400 is a stub for 0x1870ac53c, which lies in /System/Library/Frameworks/CoreFoundation.framework/CoreFoundation; loading that image too
+void __CFLogvEx3(...)
+```
+
+A stub-island address belongs to no image, so `decompile` and `disassemble`
+follow the stub to the function it jumps to and answer for that function.
+`xrefs` does not: the island is the address the call sites reference.
+`--follow-images N` (global, default 2) bounds how many images one request may
+add; `--follow-images 0` turns the lookup off, and the request then fails with
+"not mapped in this input" and a note naming the image to add. A call through
+a stub island still renders as a named import of the calling image, so `xrefs
+--to` the callee's own address lists the direct calls only.
 
 ## `--option kernelcache ID` — one entry of an Apple kernel collection
 
@@ -4556,6 +4623,42 @@ explanation, also printed as a `note:` line:
 ```
 note: 0xfffffe0007007000 is in the MH_FILESET entry com.apple.kernel, not in com.example.driver.PMGR, the entry loaded: only references made from com.example.driver.PMGR are listed; `--option kernelcache com.apple.kernel` loads that entry
 ```
+
+### `--option kernelcache-boot PATH` — the collections a System or Auxiliary collection links
+
+A macOS `AuxiliaryKernelExtensions.kc` (third-party kexts) or
+`SystemKernelExtensions.kc` points into the boot collection with fixups that
+are offsets from the boot collection's base, so it cannot be resolved from its
+own bytes. kuna looks in the directory of the input for the collection whose
+UUID the input's `__PRELINK_INFO` names (`_BootKCID`, and `_PageableKCID` for
+the System collection), rebases those pointers against it and names the kernel
+functions they reach:
+
+```
+$ ls
+AuxiliaryKernelExtensions.kc  BootKernelExtensions.kc
+$ kuna decompile AuxiliaryKernelExtensions.kc gadget_start
+[kuna] MH_FILESET: loaded com.example.driver.Gadget (entry 1 of 1, 1 chained-fixup pointers rebased, 2 pointers into the boot collection rebased from BootKernelExtensions.kc (2 functions named)); ...
+void gadget_start(unsigned long a0)
+{
+  kernel_add(a0,7);
+}
+```
+
+On a Mac the two files are `/Library/KernelCollections/AuxiliaryKernelExtensions.kc`
+and `/System/Library/KernelCollections/BootKernelExtensions.kc`.
+
+Only an input with pointers into another collection reads any other file.
+`auto` then opens the regular files of the input's directory (at most 4096
+entries) for their first 16 bytes, and reads whole only the `MH_FILESET` ones
+(at most 16, never the input itself) until the UUID matches; the load note
+names the file it used. `--option kernelcache-boot PATH` names the file (raw,
+or an IMG4 / IM4P container) or a directory to search instead; `off` reads no
+other file. A file with a different UUID is not used. When no file matches,
+the pointers stay unresolved and the note says how many and which UUID is
+missing. Like
+`kernelcache`, the option applies to the whole invocation and overrides
+`KUNA_KERNELCACHE_BOOT`.
 
 ## `--member NAME` — one member of an `ar` archive
 

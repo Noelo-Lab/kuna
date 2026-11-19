@@ -2551,6 +2551,7 @@ impl ConsoleProgram {
         if directives.iter().any(|directive| matches!(directive.body,
             crate::assertions::Body::Flow { .. }
             | crate::assertions::Body::Callee { .. }
+            | crate::assertions::Body::CallProto { .. }
             | crate::assertions::Body::Param { func: None, .. }
             | crate::assertions::Body::Return { func: None, .. }))
         {
@@ -4804,7 +4805,7 @@ pub(crate) fn bootstrap_object(
             // (kuna `kernelcache`) IMG4 / IM4P / LZFSE / complzss unwrapping and MH_FILESET
             // entry selection, ahead of every other normalization.
             let choice = kuna_decomp::kuna_kernelcache::KernelcacheChoice::in_force();
-            let peeled = kuna_analysis::loader::kuna_kernelcache::peel(bytes, &choice)
+            let peeled = kuna_analysis::loader::kuna_kernelcache::peel_file(Path::new(path), bytes, &choice)
                 .map_err(KunaError::lowlevel)?;
             if let Some(note) = &peeled.note {
                 kuna_base::notes::say_once(path, &format!("[kuna] {note}"));
