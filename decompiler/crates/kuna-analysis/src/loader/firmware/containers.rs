@@ -136,7 +136,7 @@ fn uimage(b: &[u8]) -> Result<Container, String> {
 }
 
 /// MIPS byte order by which reading finds more `jr ra` (0x03e00008).
-fn mips_endian(code: &[u8]) -> &'static str {
+pub(super) fn mips_endian(code: &[u8]) -> &'static str {
     let count = |be: bool| {
         code.chunks_exact(4)
             .filter(|w| {

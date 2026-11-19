@@ -1805,6 +1805,31 @@ the processor, base and entries its header states, or the ELF it wraps. The
 CLI stages the flat image in a temporary directory and loads it as a raw image;
 a flat image without a processor is probed for a Cortex-M table at its base.
 
+`bundles.rs (Bundle::parse)` lists the members of the inputs that hold several
+images, without decoding them. A tar archive is recognized by its first
+header's checksum, so a pre-POSIX archive without the `ustar` magic is one
+too; members are the regular files up to the first all-zero block, named by
+the `ustar` prefix and name, a GNU long-name record or a pax `path` record,
+with sizes in octal or the base-256 form. A gzip stream whose first 512
+inflated bytes are a tar header is inflated whole and read as that tar. A zip
+archive is read from its central directory (the end record is searched in the
+last 64 KiB; the zip64 end record and extended-information field are
+followed); a member's data is located through its local header, stored (0) and
+deflate (8) members decode, and an inflated member must match its stated size
+and CRC-32. A flattened device tree with an `/images` node is a U-Boot FIT:
+each child node is a member with its `type`, `arch`, `os`, `compression`,
+`load` and `entry` properties (one or two cells), its data inline (`data`) or
+external (`data-position`, or `data-offset` from the 4-byte-aligned end of the
+tree, with `data-size`), and the member the default configuration's `kernel`
+(else `firmware`) property names is the default. `Bundle::flat` turns an image
+with a load address into the same flat image a U-Boot legacy image becomes,
+with the processor from `arch`, the base from `load` and the entry from
+`entry`; `gzip` data is inflated and any other compression is refused when the
+member is selected. Offsets, sizes and counts come from the input and are
+checked against it: a decoded member is at most 1 GiB, a listing at most
+2^20 members, a device tree at most 32 levels deep. Member selection is the
+CLI's (chapter [00](00-overview.md), `armember.rs (resolve)`).
+
 PE entry discovery and Listing seeds normalize the low bit according to the
 selected decoder before deduplication and naming. A 32-bit ARM decoder clears
 the Thumb bit; a non-ARM override preserves an odd address even when the header
