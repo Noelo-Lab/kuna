@@ -39,5 +39,5 @@ c3
 <stringmatch name="UEFI #2: on, the entry carries the specification's prototype" min="1" max="1">EFI_STATUS _ModuleEntryPoint\(EFI_HANDLE ImageHandle,EFI_SYSTEM_TABLE \*SystemTable\)</stringmatch>
 <stringmatch name="UEFI #3: on, the boot-services table is read as a member" min="1" max="1">= SystemTable-&gt;BootServices;</stringmatch>
 <stringmatch name="UEFI #4: on, the service is a member call and its GUID argument is named" min="1" max="1">\(\*v1-&gt;LocateProtocol\)\(&amp;gEfiDevicePathUtilitiesProtocolGuid,</stringmatch>
-<stringmatch name="UEFI #5: on, the protocol GUIDs of the install call are named" min="1" max="1">&amp;gEfiDriverBindingProtocolGuid,0x1920,&amp;gEfiComponentNameProtocolGuid</stringmatch>
+<stringmatch name="UEFI #5: on, the protocol GUIDs of the install call are named" min="1" max="1">&amp;gEfiDriverBindingProtocolGuid,&amp;gDriverBinding,&amp;gEfiComponentNameProtocolGuid</stringmatch>
 </decompilertest>

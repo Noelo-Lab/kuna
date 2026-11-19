@@ -67,6 +67,7 @@ pub mod kuna_dwarfvariants;
 pub mod kuna_symbolnamerepair;
 // (kuna) Symbol-name character sanitizer + option gate (load-time, env-bridged).
 pub mod kuna_symbolnamechars;
+pub mod kuna_uefiprotocols; // (kuna `uefi`) the interface instances an EFI module installs
 // (kuna) Symbol-name scope-path resource bound (load-time, env-bridged): the
 // ceiling on how many Scopes one qualified symbol name may nest.
 pub mod kuna_symbolnamebound;

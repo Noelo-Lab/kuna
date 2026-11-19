@@ -3146,6 +3146,11 @@ impl ConsoleProgram {
                             merged.merge(out);
                         }
                     }
+                    // (kuna `uefi`) UEFI module markup decodes the module, so it
+                    // runs here; it declines everything but an EFI-subsystem PE.
+                    if analysis_pass_enabled(self.arch(), "uefi") {
+                        merged.merge(kuna_analysis::passes::run_uefi(&bytes, self.arch(), image_path));
+                    }
                     // Deferred Listing build + consumer/fast-inventory run, gated
                     // on the matching option. The call-fixup seed list is the names
                     // the load-time pass flagged resolved to addresses via the
@@ -5928,6 +5933,14 @@ fn commit_analysis_output(
         }
         prog.arch_mut().format_call_overrides = parked;
     }
+
+    // (kuna) Park the prototypes a pass stated for single call instructions
+    // (`kuna_decomp::kuna_callsiteproto`) and the interface instances the
+    // `uefi` pass found installed.
+    for (site, pieces) in &out.call_prototypes {
+        prog.arch_mut().kuna_callsite_protos.entry(*site).or_insert_with(|| pieces.clone());
+    }
+    prog.arch_mut().kuna_uefi_installs.clone_from(&out.uefi_installs);
 
     // (kuna `pushpadread`) The stack-argument count per format call site, carried
     // for the callee-body probe (not the varargs typing above, so independent of

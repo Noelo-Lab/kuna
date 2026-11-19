@@ -419,6 +419,10 @@ impl FlowEnvironment for ArchFlowEnv {
         String::from_utf8_lossy(&arch.pcodeinjectlib.base.get_call_fixup_name(inject_id)).into_owned()
     }
 
+    fn call_site_prototype(&self, site: &Address) -> Option<crate::fspec::PrototypePieces> {
+        crate::kuna_callsiteproto::parked(self.arch(), site)
+    }
+
     fn build_override_proto(
         &self,
         pieces: &crate::fspec::PrototypePieces,

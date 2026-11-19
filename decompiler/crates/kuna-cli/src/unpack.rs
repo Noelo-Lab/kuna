@@ -4,7 +4,7 @@
 //! ```text
 //!   kuna unpack <binary> [-o OUT] [--json]
 //!   kuna unpack <dyld_shared_cache> (--list | --image NAME [-o OUT]) [--json]
-//!   kuna unpack <uefi-firmware.fd> [--list] [-o DIR] [--json]
+//!   kuna unpack <uefi-firmware.fd> [--list | --protocols] [-o DIR] [--json]
 //!   kuna unpack <binary> --raw-lzma START:END [--lzma-props P] [--raw-offsets]
 //! ```
 //!
@@ -51,6 +51,7 @@ use std::path::PathBuf;
 
 use kuna_analysis::neolite::{self, NeoliteError};
 use kuna_analysis::pklite::{self, PkliteError};
+use kuna_analysis::uefi::index as uefi_index;
 use kuna_analysis::upx::lzma;
 use kuna_analysis::upx::{self, UpxError};
 use object::{Object, ObjectSection};
@@ -74,6 +75,8 @@ struct Args {
     output: Option<String>,
     json: bool,
     list: bool,
+    /// Index which module of a firmware volume installs which protocol.
+    protocols: bool,
     raw: Option<RawLzma>,
 }
 
@@ -735,9 +738,21 @@ fn num(v: u64) -> Json {
     Json::Number(v.to_string())
 }
 
+/// The interface instances the module at `path` installs; none when it does
+/// not load.
+fn module_installs(path: &std::path::Path) -> Vec<kuna_decomp::kuna_uefiprotocols::InstalledInterface> {
+    crate::decompile_all::uefi_installs(path).unwrap_or_else(|e| {
+        eprintln!("warning: {}: {e}", path.display());
+        Vec::new()
+    })
+}
+
 /// A UEFI firmware image: write every PE32/TE module of every volume to
 /// `<binary>.modules/` (or `-o DIR`) as `<name>.efi` / `<name>.te`; `--list`
-/// only lists them.
+/// only lists them. Beside the modules goes the index the `uefi` pass reads
+/// (`kuna_analysis::uefi::index`): each module's FFS file type and, with
+/// `--protocols`, the interfaces it installs. The file types are written
+/// first, so each module is loaded as the phase its file type names.
 fn run_firmware_volume(args: &Args, image: &[u8]) -> i32 {
     use kuna_analysis::loader::firmware::uefifv;
     let walk = uefifv::walk(image);
@@ -765,6 +780,26 @@ fn run_firmware_volume(args: &Args, image: &[u8]) -> i32 {
         }
         rows.push((file, m));
     }
+    let index = (!args.list).then(|| dir.join(uefi_index::FILE_NAME));
+    if let Some(path) = &index {
+        let mut records: Vec<uefi_index::ModuleRecord> = rows
+            .iter()
+            .map(|(file, m)| uefi_index::ModuleRecord { file: file.clone(), file_type: m.file_type, installs: Vec::new() })
+            .collect();
+        let mut written = std::fs::write(path, uefi_index::render(&records));
+        if args.protocols && written.is_ok() {
+            for (record, (file, m)) in records.iter_mut().zip(&rows) {
+                if !m.te {
+                    record.installs = module_installs(&dir.join(file));
+                }
+            }
+            written = std::fs::write(path, uefi_index::render(&records));
+        }
+        if let Err(e) = written {
+            eprintln!("error: could not write {}: {e}", path.display());
+            return 1;
+        }
+    }
     let text = if args.json {
         let items: Vec<Json> = rows
             .iter()
@@ -786,6 +821,7 @@ fn run_firmware_volume(args: &Args, image: &[u8]) -> i32 {
             ("modules".into(), Json::Array(items)),
             ("undecoded".into(), Json::Array(undecoded)),
             ("directory".into(), if args.list { Json::Null } else { Json::Str(dir.display().to_string()) }),
+            ("index".into(), index.as_ref().map_or(Json::Null, |p| Json::Str(p.display().to_string()))),
         ]);
         format!("{}\n", dumps_indent2(&out))
     } else {
@@ -814,6 +850,7 @@ fn parse_args(argv: &[String]) -> Result<Option<Args>, String> {
     let mut output: Option<String> = None;
     let mut json = false;
     let mut list = false;
+    let mut protocols = false;
     let mut range: Option<(u64, u64)> = None;
     let mut offsets = false;
     let mut props: Option<(u8, u8, u8)> = None;
@@ -823,6 +860,7 @@ fn parse_args(argv: &[String]) -> Result<Option<Args>, String> {
         match argv[i].as_str() {
             "--json" => json = true,
             "--list" => list = true,
+            "--protocols" => protocols = true,
             "--raw-lzma" => {
                 i += 1;
                 let spec = argv.get(i).ok_or_else(|| {
@@ -879,7 +917,7 @@ fn parse_args(argv: &[String]) -> Result<Option<Args>, String> {
         }
     }
     let raw = range.map(|(start, end)| RawLzma { start, end, offsets, props, max });
-    Ok(Some(Args { binary, output, json, list, raw }))
+    Ok(Some(Args { binary, output, json, list, protocols, raw }))
 }
 
 /// `START:END` (end exclusive) or `START+LENGTH`. Endpoints are hexadecimal by
@@ -948,7 +986,7 @@ fn parse_props(spec: &str) -> Result<(u8, u8, u8), String> {
 fn usage() {
     eprintln!("usage: kuna unpack <binary> [-o OUT] [--json]");
     eprintln!("       kuna unpack <dyld_shared_cache> (--list | --image NAME [-o OUT]) [--json]");
-    eprintln!("       kuna unpack <uefi-firmware.fd> [--list] [-o DIR] [--json]");
+    eprintln!("       kuna unpack <uefi-firmware.fd> [--list | --protocols] [-o DIR] [--json]");
     eprintln!(
         "       kuna unpack <binary> --raw-lzma START:END [--lzma-props pb,lp,lc] \\\n                                    [--raw-offsets] [--raw-max-size N] [-o OUT] [--json]"
     );
@@ -961,5 +999,9 @@ fn usage() {
     eprintln!("                         take it as pb,lp,lc (or as those two bytes, in hex).");
     eprintln!("  --raw-offsets          the range endpoints are file offsets, not addresses.");
     eprintln!("  --raw-max-size N       cap a length-less decode at N bytes (default 512 MiB).");
+    eprintln!("  --protocols            a UEFI firmware image: also load every module written and");
+    eprintln!("                         record, in the directory's index, which module installs");
+    eprintln!("                         which protocol or PPI, so a lookup in one module names");
+    eprintln!("                         the module that implements it.");
     eprintln!("  --json                 emit {{binary,output,packer,..}} describing what was unpacked.");
 }
