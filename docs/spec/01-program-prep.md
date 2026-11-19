@@ -6309,6 +6309,12 @@ every other binary's pass list is byte-identical to before the pass existed):
   preserve all accepted aliases without a separate image-bound fact transport.
   No request changes the normal load. Report-only requests retain their original
   shape and behavior and cannot be combined with application in the same run.
+  `kuna rust-signatures check` validates a local installed or explicit manifest
+  before any image is opened. The command uses the same hash, signature format
+  and applicability checks as a report and requires both banks for every
+  candidate to indicate availability. The check reads only the requested
+  manifest location and its referenced banks. Reports and application each
+  obtain their own explicit manifest inputs.
 - **Format strings** (`formatstring off|static|full`, default `static`;
   `decompiler/crates/kuna-analysis/src/analyzers/formatstring/mod.rs`): what a
   `printf`/`scanf`-family call does with its variadic arguments is stated by its
