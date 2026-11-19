@@ -1527,7 +1527,7 @@ fn bootstrap_split_callees(
             break;
         }
         *budget -= 1;
-        if let Some((stated, calls)) = recover_one_contract(arch, &prior, &entry) {
+        if let Some((stated, calls)) = recover_one_contract(arch, &prior, &entry, None) {
             recovered.push((entry, stated, calls));
         }
     }
@@ -1561,6 +1561,56 @@ fn bootstrap_split_callees(
     }
 }
 
+/// How many tail-called callees a single-function drive decompiles first.
+const MAX_TAIL_CONTRACTS: usize = 4;
+
+/// The most instructions a tail-called callee may have to be decompiled first.
+const MAX_TAIL_CALLEE_INSTRUCTIONS: u32 = 512;
+
+/// State the recovered prototype of every callee `root` tail-calls (a CALL the
+/// flow followed with its artificial RETURN at the same address), so the tail
+/// call passes through the callee's arguments and result the way a
+/// callee-first `decompile-all` sees them.  At most [`MAX_TAIL_CONTRACTS`]
+/// callees of at most [`MAX_TAIL_CALLEE_INSTRUCTIONS`] instructions are tried.
+/// Inert under `protoorder off`.
+fn bootstrap_tail_callees(arch: &mut Architecture, root: &Funcdata) {
+    if !arch.protoorder.is_on() || root.num_calls() == 0 {
+        return;
+    }
+    let returns: Vec<Address> = root
+        .obank()
+        .iter_all()
+        .filter_map(|(_, op)| {
+            root.obank().get(op).filter(|o| o.code() == OpCode::CPUI_RETURN).map(|o| o.get_addr().clone())
+        })
+        .collect();
+    let tails: Vec<Address> = (0..root.num_calls())
+        .filter_map(|i| {
+            let fc = root.get_call_specs(i);
+            let at = root.obank().get(fc.get_op())?.get_addr().clone();
+            returns.contains(&at).then(|| fc.get_entry_address().clone())
+        })
+        .collect();
+    let entries = eligible_callees(arch, tails, root.get_address());
+    if entries.is_empty() {
+        return;
+    }
+    let prior = std::mem::take(&mut arch.kuna_protoorder_types);
+    let mut stated = Vec::new();
+    for entry in entries.into_iter().take(MAX_TAIL_CONTRACTS) {
+        if deadline_passed() {
+            break;
+        }
+        if let Some((Some(types), _)) = recover_one_contract(arch, &prior, &entry, Some(MAX_TAIL_CALLEE_INSTRUCTIONS)) {
+            if let Some(key) = crate::p4_calls::kuna_protoorder::stated_key(&entry) {
+                stated.push((key, types));
+            }
+        }
+    }
+    arch.kuna_protoorder_types = prior;
+    arch.kuna_protoorder_types.extend(stated);
+}
+
 /// Decompile one callee far enough to state its recovered parameter types, then
 /// restore the caller's drive state.  The restored state is the per-drive
 /// switches the callee drive rewrites; the statements are handed back explicitly
@@ -1569,11 +1619,13 @@ fn bootstrap_split_callees(
 /// nested drive, so its flow/pipeline comments never enter the comment database,
 /// and the one-shot staged prototype list was consumed by the outer drive.  A
 /// panic or a declined recovery leaves the table untouched.  The callee sees only
-/// `prior` statements, never one this pass just parked.
+/// `prior` statements, never one this pass just parked.  With `instruction_limit`
+/// a larger callee fails while its flow is followed and states nothing.
 fn recover_one_contract(
     arch: &mut Architecture,
     prior: &StatedMap,
     entry: &Address,
+    instruction_limit: Option<u32>,
 ) -> Option<(Option<Rc<crate::kuna_protoorder::RecoveredTypes>>, Vec<Address>)> {
     arch.kuna_protoorder_types = prior.clone();
     let saved_deadline = arch.kuna_fn_deadline;
@@ -1588,6 +1640,10 @@ fn recover_one_contract(
     let saved_format_sites = std::mem::take(&mut arch.format_override_callpoints);
     let saved_readonly = arch.readonlypropagate;
     let name = format!("sub_{:x}", entry.get_offset());
+    if let Some(limit) = instruction_limit {
+        arch.max_instructions = arch.max_instructions.min(limit);
+        arch.flowoptions |= crate::flow::flow_flags::error_toomanyinstructions;
+    }
     CONTRACT_DEPTH.with(|depth| depth.set(depth.get() + 1));
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let callee = decompile_func(arch, &name, entry.clone(), 0).ok()?;
@@ -2105,6 +2161,11 @@ fn decompile_func_full_with_objects_inner(
                 && arch.protoorder.is_on()
                 && arch.has_split_records(),
         );
+        // (kuna `protoorder` single-function drive) And it states the prototype
+        // of each callee the function tail-calls before its own pipeline runs.
+        if purpose == DrivePurpose::SingleFunction && CONTRACT_DEPTH.with(|d| d.get()) == 0 {
+            bootstrap_tail_callees(arch, &fd);
+        }
         // (kuna `protoorder types`) The parameter types callees decompiled earlier stated.
         crate::p4_calls::kuna_protoorder::seed_protoorder_types(arch, &mut fd);
         // (kuna `callrettype`) And the return types they stated.

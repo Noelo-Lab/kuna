@@ -6767,6 +6767,28 @@ not refused; it states nothing and says so on stderr, since its call-argument
 types can then differ from the serial run's, and `--option protoorder off` on
 both makes them byte-identical.
 
+A single-function `kuna decompile` does state two kinds of callee before its own
+pipeline finishes. The callees its call sites pass preferred-split storage to are
+described with `option protoorder`'s use guidance. The other kind is the callees
+it tail-calls. For a thunk that is all tail call (`xor esi,esi; jmp target`)
+nothing in the function reads the return register after the call, so the call
+kept no output and the thunk printed `void thunk(a0) { target(a0,0); }`, while
+every caller used the value and `decompile-all` printed `return target(a0,NULL)`.
+A forwarder (`add esi,1; jmp helper`) lost the third argument it passes through
+untouched in `EDX` the same way. Before the pipeline runs, the drive finds each
+CALL the flow made from a tail jump (a CALL with an artificial `RETURN` at its
+own address), decompiles those callees in a nested drive
+(`decompile_drive.rs (bootstrap_tail_callees)`), and states each one's recovered
+prototype as a callee-first run parks it: the types, the arity where it is
+sound, the output and the forwarded inputs. At most four callees are tried, and
+a callee of more than 512 instructions stops while its flow is followed and
+states nothing, which bounds the cost: over 40 tail-calling functions of gawk,
+decompiled one at a time, the bound costs 2.0% more user-mode instructions and
+keeps 261 of the 265 output lines the unbounded bootstrap changes, where no
+bound costs 11.0%. The nested drives do not recurse, and declared or
+already-stated callees are skipped. `protoorder off` decompiles the function
+from its own body alone.
+
 ### (kuna) `passthrough` — the register a function forwards to a callee that reads it
 
 (kuna) `passthrough` (default on,
