@@ -2407,7 +2407,7 @@ symptoms = "a Rust Result or Option producer recovers as bool and the payload re
 
 [[settable]]
 option = "loweredswitch"
-values = "on|off"
+values = "on|off|linear|tree|all"
 default = "on"
 destructive = false
 phase = "P2"
@@ -2415,14 +2415,14 @@ subphase = "switch-model"
 strength = "HARD"
 rewind = "P2"
 issue = "angr-LoweredSwitchSimplifier"
-summary = "Reconstruct a compiler-lowered comparison cascade (a GCC binary-search if/else tree over one variable) back into a switch with a synthesized BRANCHIND + jump-table (the S2 artifact Ghidra renders switches from). The re-roll carries the cascade's range-comparison signedness onto every label, labels every case value, is installed only when it dispatches on the value the cascade compared (or is withdrawn) and routes every value and keeps every statement as its compare tree does, and is tried behind every head on the switch variable, not only the first."
-use_when = "On by default (DIV-4); the required binary-search-structure guard (a range/jle split) keeps it off hand-written linear if/else-if chains. Set OFF to restore the upstream if/else-if rendering of a lowered switch. The exactness, every-head, signedness and value guards are the only way the re-roll runs and have no switch of their own."
+summary = "Reconstruct a compiler-lowered comparison cascade (a GCC binary-search if/else tree over one variable) back into a switch with a synthesized BRANCHIND + jump-table (the S2 artifact Ghidra renders switches from). The re-roll carries the cascade's range-comparison signedness onto every label, labels every case value, is installed only when it dispatches on the value the cascade compared (or is withdrawn) and routes every value and keeps every statement as its compare tree does, and is tried behind every head on the switch variable, not only the first. `on` takes a binary-search cascade of 3 to 16 cases. `linear` also takes a linear chain of 3 to 16 equality tests with no range split, when every case body is entered only from the chain and dominated by its head and the labels print the same signed or unsigned. `tree` takes a binary-search cascade of 2 to 64 cases. `all` is both."
+use_when = "On by default (DIV-4); the required binary-search-structure guard (a range/jle split) keeps it off hand-written linear if/else-if chains. Set OFF to restore the upstream if/else-if rendering of a lowered switch. Set `linear` when nested `if (v != 5) { if (v != 2) ...` tests on one variable stand for a small switch (clang lowers a three- or four-case switch that way); it is not the default because an if/else-if chain the author wrote re-rolls too. Set `tree` on a gcc -O0 binary whose dense switch of more than 16 cases prints as a deep if/else tree; the 16-case cap is the default because a very wide synthesized switch can leave the structurer with unstructured case edges. A switch installed for a function stays when the value is narrowed later in the same session, so compare `on` before the wider value. The exactness, every-head, signedness and value guards are the only way the re-roll runs and have no switch of their own."
 example = "option loweredswitch off"
 source_decompiler = "angr"
 inspiration = "angr LoweredSwitchSimplifier (angr/analyses/decompiler/optimization_passes); test_decompiler.py switch-lowering cases"
 change_kind = "structure-recovery"
 tier = "transform"
-symptoms = "switch rendered as nested if/else-if compare tree over one variable|binary-search cascade of constant compares where source had a switch|flip off to keep the compiler's lowered compare-tree rendering"
+symptoms = "switch rendered as nested if/else-if compare tree over one variable|a three- or four-case switch renders as a chain of if (v != 3) { if (v != 2) ... } tests on one variable|a deep if/else tree on one variable with an equality test at every leaf where the source had a dense switch of 17 or more cases|binary-search cascade of constant compares where source had a switch|flip off to keep the compiler's lowered compare-tree rendering"
 
 [[settable]]
 option = "callmechanisms"

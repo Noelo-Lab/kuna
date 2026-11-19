@@ -2765,6 +2765,35 @@ the first head, as before, but never introduced by a later one. A record's
 dispatch value is then subject to the value check like any other. Measured
 byte-identical on the 675-assertion datatest corpus when the check was introduced.
 
+### Linear chains and wider trees — `loweredswitch linear|tree|all`, opt-in
+
+`kuna_loweredswitch.rs (recover_cascade)` records a cascade only after it has
+seen a range node, because a chain of equality tests with no binary-search
+split reads as a hand-written if/else-if, and it takes three to sixteen cases
+(the cap keeps the structurer from being handed a switch so wide that some case
+edges end up as unstructured gotos). Two values of the option widen that.
+
+`linear` also accepts a chain with no range node. clang lowers a switch of
+three or four cases exactly that way, and an if/else-if chain on one variable
+is a switch in all but syntax. The chain still needs three to sixteen cases.
+Each case body must be entered only from the chain and be dominated by the
+chain head: a chain the compiler copied into two paths keeps its ifs, since
+re-rolling one copy would split what the two share. With no range comparison to
+prove the signedness of the labels, an extension on the path to the selector
+decides it; with none, no case value may have the sign bit set, so every label
+prints the same either way. It is not the default because the author's own
+if/else-if chain re-rolls too.
+
+`tree` moves the limits of a cascade that does have a range node to two and
+sixty-four cases. gcc at -O0 lowers a sparse switch to a compare tree with no
+jump table whatever its size, so a switch of seventeen or more cases otherwise
+stays a deep if/else tree. A linear chain is not affected.
+
+`all` is both. Every other check of the recovery still applies under each
+value: one shared default sink, the value check, the exactness check and the
+every-head rule. The re-roll is installed through the same restart, so a switch
+installed for a function stays if the value is narrowed later in the session.
+
 ### Bound extensions: rescuing an unboundable table
 
 Four gated extensions run, in this order, only when JumpBasic's range exceeds

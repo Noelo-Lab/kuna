@@ -142,9 +142,11 @@ Three tiers:
 | store through a take-address-of-local pointer dropped as dead so the later read is garbage | [`stackalias`](#stackalias----on--off-default-off-destructive-opt-in) |
 | bogus (*pcVar1)() indirect call after calling a struct-returning function on sparc | [`sparcstructret`](#sparcstructret----on--off-default-on) |
 | function tail dropped after a sparc call followed by unimp | [`sparcstructret`](#sparcstructret----on--off-default-on) |
-| switch rendered as nested if/else-if compare tree over one variable | [`loweredswitch`](#loweredswitch----on--off-default-on) |
-| binary-search cascade of constant compares where source had a switch | [`loweredswitch`](#loweredswitch----on--off-default-on) |
-| flip off to keep the compiler's lowered compare-tree rendering | [`loweredswitch`](#loweredswitch----on--off-default-on) |
+| switch rendered as nested if/else-if compare tree over one variable | [`loweredswitch`](#loweredswitch----on--off--linear--tree--all-default-on) |
+| a three- or four-case switch renders as a chain of if (v != 3) { if (v != 2) ... } tests on one variable | [`loweredswitch`](#loweredswitch----on--off--linear--tree--all-default-on) |
+| a deep if/else tree on one variable with an equality test at every leaf where the source had a dense switch of 17 or more cases | [`loweredswitch`](#loweredswitch----on--off--linear--tree--all-default-on) |
+| binary-search cascade of constant compares where source had a switch | [`loweredswitch`](#loweredswitch----on--off--linear--tree--all-default-on) |
+| flip off to keep the compiler's lowered compare-tree rendering | [`loweredswitch`](#loweredswitch----on--off--linear--tree--all-default-on) |
 | values below an x87 call are read from the wrong register-stack positions after consecutive calls | [`callmechanisms`](#callmechanisms----off--auto--on-default-auto) |
 | a store the compiler spec says a callee always makes is missing after the call | [`callmechanisms`](#callmechanisms----off--auto--on-default-auto) |
 | a custom compiler spec's uponentry or uponreturn p-code has no effect on the output | [`callmechanisms`](#callmechanisms----off--auto--on-default-auto) |
@@ -1126,11 +1128,11 @@ The control surface: each of these can make output worse on the wrong source sha
 - **Where / provenance:** P2/flow-classification · ghidra-upstream · opt-in-tool · GH-6882
 - **Example:** `option sparcstructret on`
 
-### `loweredswitch` -- on | off, default `on`
+### `loweredswitch` -- on | off | linear | tree | all, default `on`
 
-- **Symptoms:** switch rendered as nested if/else-if compare tree over one variable; binary-search cascade of constant compares where source had a switch; flip off to keep the compiler's lowered compare-tree rendering.
-- **What it does:** Reconstruct a compiler-lowered comparison cascade (a GCC binary-search if/else tree over one variable) back into a switch with a synthesized BRANCHIND + jump-table (the S2 artifact Ghidra renders switches from). The re-roll carries the cascade's range-comparison signedness onto every label, labels every case value, is installed only when it dispatches on the value the cascade compared (or is withdrawn) and routes every value and keeps every statement as its compare tree does, and is tried behind every head on the switch variable, not only the first.
-- **When to flip:** On by default (DIV-4); the required binary-search-structure guard (a range/jle split) keeps it off hand-written linear if/else-if chains. Set OFF to restore the upstream if/else-if rendering of a lowered switch. The exactness, every-head, signedness and value guards are the only way the re-roll runs and have no switch of their own.
+- **Symptoms:** switch rendered as nested if/else-if compare tree over one variable; a three- or four-case switch renders as a chain of if (v != 3) { if (v != 2) ... } tests on one variable; a deep if/else tree on one variable with an equality test at every leaf where the source had a dense switch of 17 or more cases; binary-search cascade of constant compares where source had a switch; flip off to keep the compiler's lowered compare-tree rendering.
+- **What it does:** Reconstruct a compiler-lowered comparison cascade (a GCC binary-search if/else tree over one variable) back into a switch with a synthesized BRANCHIND + jump-table (the S2 artifact Ghidra renders switches from). The re-roll carries the cascade's range-comparison signedness onto every label, labels every case value, is installed only when it dispatches on the value the cascade compared (or is withdrawn) and routes every value and keeps every statement as its compare tree does, and is tried behind every head on the switch variable, not only the first. `on` takes a binary-search cascade of 3 to 16 cases. `linear` also takes a linear chain of 3 to 16 equality tests with no range split, when every case body is entered only from the chain and dominated by its head and the labels print the same signed or unsigned. `tree` takes a binary-search cascade of 2 to 64 cases. `all` is both.
+- **When to flip:** On by default (DIV-4); the required binary-search-structure guard (a range/jle split) keeps it off hand-written linear if/else-if chains. Set OFF to restore the upstream if/else-if rendering of a lowered switch. Set `linear` when nested `if (v != 5) { if (v != 2) ...` tests on one variable stand for a small switch (clang lowers a three- or four-case switch that way); it is not the default because an if/else-if chain the author wrote re-rolls too. Set `tree` on a gcc -O0 binary whose dense switch of more than 16 cases prints as a deep if/else tree; the 16-case cap is the default because a very wide synthesized switch can leave the structurer with unstructured case edges. A switch installed for a function stays when the value is narrowed later in the same session, so compare `on` before the wider value. The exactness, every-head, signedness and value guards are the only way the re-roll runs and have no switch of their own.
 - **Where / provenance:** P2/switch-model · angr · structure-recovery · angr-LoweredSwitchSimplifier
 - **Example:** `option loweredswitch off`
 
