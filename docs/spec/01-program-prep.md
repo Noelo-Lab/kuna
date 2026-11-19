@@ -10608,7 +10608,34 @@ a `_gfortran_` prefix), widened by a Rust wildcard list (`core::panicking::panic
 `handle_alloc_error`, `rust_begin_unwind`) or a Go exact list (`runtime.gopanic`,
 `runtime.throw`, `runtime.goexit`, …) when source-language detection fires (§1.4),
 or replaced by the PE/Mach-O list (`__fastfail`, `_invoke_watson`, the same GNU
-Fortran block, plus the shared C names) off-ELF. The scan mirrors the exact symbol
+Fortran block, plus the shared C names) off-ELF. (kuna) Each list also carries a
+block of names a public declaration marks no-return and the vendored list lacked,
+its source named in the comment above it: on ELF, glibc's `_Exit`, `thrd_exit`
+and `__pthread_unwind_next`, libstdc++'s and libc++abi's `__cxa_rethrow`,
+`__cxa_bad_typeid`, `__cxa_pure_virtual`, `__cxa_deleted_virtual` and
+`__cxa_throw_bad_array_new_length`, `std::unexpected`, `std::rethrow_exception`,
+`std::nested_exception::rethrow_nested`, `std::throw_with_nested` and the
+`<optional>`/`<variant>`/`<format>` throw helpers, and libc++'s `std::__1`
+throw helpers in their mangled spelling; off-ELF the same C++ runtime names and
+the Darwin ones (`_Exit`, `longjmp`, `siglongjmp`, `pthread_exit`, the `err`
+family, `__assert_rtn`, `dispatch_main`, `objc_exception_throw`,
+`objc_exception_rethrow`, `objc_terminate`); on Go, the calls the Go compiler
+ends a block at or lowers bounds and SIMD panics to (`runtime.block`,
+`runtime.panicrangestate`, `runtime.panicBounds`, `runtime.panicExtend`,
+`runtime.panicSimdImm` and the `panicBounds64`/`32`/`32X` helpers) and `os.Exit`.
+glibc's `__assert` is left out: stripped of its underscores it would name a
+program's own returning `assert`. The Rust list's mangled prefixes only match
+legacy symbols (`_ZN4core9panicking5panic17h...`), and current rustc emits v0
+symbols (`_RNvNtCs..._4core9panicking5panic`) whose crate hash sits mid-name, so
+it also carries Rust paths — `core::panicking::panic_fmt`,
+`core::option::unwrap_failed`, `core::slice::index::slice_index_fail`, the
+`panic_const::panic_const_*` family and the rest of the `-> !` functions of
+core, alloc and std. For a Rust ELF each symbol is demangled without its hash
+(`{:#}`), a trailing generic argument list is dropped
+(`core::panicking::assert_failed::<i64, i64>` names
+`core::panicking::assert_failed`), and the path is compared against those
+entries; an item nested inside a listed function (`<begin_panic::Payload as
+PanicPayload>::as_str`) never matches. The scan mirrors the exact symbol
 streams the loader installs and emits the *install* address — for a UND import, the
 PLT-stub address, since the `.dynsym` entry is address 0 and demangling means a
 raw-name lookup would miss. One name is matched only as an import and only as

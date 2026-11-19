@@ -103,6 +103,64 @@ throw_out_of_range_fmt
 throw_bad_function_call
 throw_bad_array_new_length
 
+# (kuna) Declared no-return in the host's public headers and missing above.
+# glibc 2.43 /usr/include: stdlib.h `_Exit`, threads.h `thrd_exit`, pthread.h
+# `__pthread_unwind_next` (all `__attribute__ ((__noreturn__))`). assert.h's
+# `__assert` is left out: stripped to `assert` it would also name a program's
+# own returning `assert`.
+Exit
+thrd_exit
+pthread_unwind_next
+# libstdc++ (GCC 15 g++-v15): cxxabi.h `__cxa_rethrow`/`__cxa_bad_typeid`/
+# `__cxa_pure_virtual`/`__cxa_deleted_virtual`/`__cxa_throw_bad_array_new_length`,
+# <exception> `std::unexpected`, bits/exception_ptr.h `std::rethrow_exception`,
+# bits/nested_exception.h `std::nested_exception::rethrow_nested` and
+# `std::throw_with_nested`, <optional> `std::__throw_bad_optional_access`,
+# <variant> `std::__throw_bad_variant_access`, <format> `std::__throw_format_error`.
+# The same cxxabi.h set is declared `_LIBCXXABI_NORETURN` by libc++abi.
+cxa_rethrow
+cxa_bad_typeid
+cxa_pure_virtual
+cxa_deleted_virtual
+cxa_throw_bad_array_new_length
+ZSt10unexpectedv
+ZSt17rethrow_exception*
+rethrow_exception
+ZNKSt16nested_exception14rethrow_nestedEv
+ZSt17throw_with_nested*
+throw_with_nested
+ZSt27__throw_bad_optional_access*
+throw_bad_optional_access
+ZSt26__throw_bad_variant_access*
+throw_bad_variant_access
+ZSt20__throw_format_error*
+throw_format_error
+# libc++ (LLVM libc++ 15 headers, as shipped in the iPhoneOS 16.5 SDK): the
+# `_LIBCPP_NORETURN` helpers in the `std::__1` ABI namespace (<stdexcept>, <new>,
+# <system_error>, <typeinfo>, <optional>, <variant>, <any>, <functional>,
+# <future>, <ios>, <memory>, <regex>, <__verbose_abort>). Mangled spellings only:
+# the namespace guard keeps `std::__1::...` out of the demangled matcher.
+ZNSt3__119__throw_logic_error*
+ZNSt3__120__throw_domain_error*
+ZNSt3__124__throw_invalid_argument*
+ZNSt3__120__throw_length_error*
+ZNSt3__120__throw_out_of_range*
+ZNSt3__119__throw_range_error*
+ZNSt3__122__throw_overflow_error*
+ZNSt3__123__throw_underflow_error*
+ZNSt3__121__throw_runtime_error*
+ZNSt3__120__throw_system_error*
+ZNSt3__116__throw_bad_cast*
+ZNSt3__127__throw_bad_optional_access*
+ZNSt3__126__throw_bad_variant_access*
+ZNSt3__120__throw_bad_any_cast*
+ZNSt3__125__throw_bad_function_call*
+ZNSt3__120__throw_future_error*
+ZNSt3__115__throw_failure*
+ZNSt3__120__throw_bad_weak_ptr*
+ZNSt3__119__throw_regex_error*
+ZNSt3__122__libcpp_verbose_abort*
+
 # GNU Fortran fatal runtime diagnostics
 _gfortran_runtime_error
 _gfortran_runtime_error_at

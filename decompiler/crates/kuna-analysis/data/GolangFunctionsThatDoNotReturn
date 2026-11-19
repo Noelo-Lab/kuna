@@ -129,3 +129,21 @@ runtime.Goexit
 
 runtime.sigpanic
 runtime.sigpanic0.abi0
+
+# (kuna) From the Go 1.26 sources: the calls cmd/compile/internal/ssagen/ssa.go
+# ends a block at (`runtime.block`, `runtime.panicrangestate`, beside the
+# panicunsafe*/panicmakeslice*/gopanic/panicwrap names above), the bounds and
+# SIMD panics the same file looks up (`runtime.panicBounds`,
+# `runtime.panicExtend`, `runtime.panicSimdImm`, whose bodies in
+# runtime/panic.go and the panicBounds64/32/32X helpers they reach end in
+# panic), and `os.Exit`, which cmd/compile/internal/inline/inlheur treats as an
+# exit call.
+runtime.block
+runtime.panicrangestate
+runtime.panicBounds
+runtime.panicBounds64
+runtime.panicBounds32
+runtime.panicBounds32X
+runtime.panicExtend
+runtime.panicSimdImm
+os.Exit
