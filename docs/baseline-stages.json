@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4528,
-    4528
+    4533,
+    4533
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1123,6 +1123,11 @@
     "data:GUARDARM #2: ON keeps the guard flat with the fatal call as its clause (pass 2 only)",
     "data:GUARDARM #3: the no-return clause call is emitted in BOTH passes",
     "data:Global aggregate fields do not become locals",
+    "data:Go AArch64 first recursive result survives the spill",
+    "data:Go AArch64 recursion returns the combined scalar",
+    "data:Go AArch64 scalar recursion retains its base case",
+    "data:Go AArch64 scalar recursion retains its input",
+    "data:Go AArch64 second call reuses n and the first result",
     "data:Go ABI0 auto binds the operands in the callee",
     "data:Go ABI0 auto preserves reversed caller operands",
     "data:Go ABI0 auto recovers both stack parameters",
