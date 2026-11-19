@@ -19,6 +19,7 @@ pub(crate) mod kuna_stackwordtypes;
 pub mod kuna_memsetsequence;
 pub mod kuna_rodatastring;
 pub mod kuna_fatstr; // (kuna) length-carried (ptr,len) string literals (docs/multilang.md W3/W4)
+pub mod kuna_swiftstr; // (kuna) Swift two-word string literals
 pub mod kuna_ptrdepth;
 pub mod kuna_codescalar;
 pub mod kuna_calltargettype; // (kuna) an indirect call's target takes the function-pointer type the call states
