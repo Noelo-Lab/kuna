@@ -2379,14 +2379,16 @@ last entry; a dominance check (`check_normal_dominance`) decides whether the
 normalization walk can proceed past the join.
 
 **Model 3 — the constant destination set** (`kuna_constselectjump.rs
-(JumpModelConstSelect)`, kuna, `option constselectjump`, default off). Both
+(JumpModelConstSelect)`, kuna, `option constselectjump`; `on` admits it for
+every table, the default `reentry` only for the re-entry retry described
+under re-entered indirect dispatches above). Both
 models above are value-range models over one switch variable, and
 `jumptable.rs (JumpBasic::isprune)` stops the backward walk at any marker op, so
 a destination computed by a conditional move — `CMOVZ R11,R10; JMP R11` over two
 `LEA`-loaded code addresses — leaves the MULTIEQUAL output as the normalized
 variable with nothing to bound it. The destination set is not lost there, it is
 simply never promoted into the CFG: every reaching definition is already a
-literal address. When the option is on and both value-range models have
+literal address. When the model is admitted and both value-range models have
 declined, `kuna_constselectjump.rs (kuna_collect_const_destinations)` walks the
 MULTIEQUAL/COPY web behind the BRANCHIND input; if every reaching definition is
 a constant, the set becomes a fixed address table whose case labels are the
@@ -2397,14 +2399,14 @@ already handles. Every destination must also sit within `0xffff` of the branch �
 the same intraprocedural-vs-thunk yardstick `sanity_check` uses above — so a
 conditional *tail call* between two distant function entries keeps the upstream
 `CALLIND` rendering rather than splicing both callee bodies into the caller.
-Without the option the branch is truncated to a `CALLIND` carrying
+When the model is not admitted the branch is truncated to a `CALLIND` carrying
 `"Treating indirect jump as call"` and neither arm is ever decoded.
 
 **What is deliberately absent.** The CALLOTHER-assisted `JumpAssisted` model
 (the `jumpassist` user-op family) and the manual `JumpBasicOverride` model are
 unported shells: `jumptable.rs (JumpTable::set_override)` and the
 `<basicoverride>` arm of `jumptable.rs (JumpTable::decode)` return errors, and
-`recover_model` walks only JumpBasic/JumpBasic2 and, when `option constselectjump` is on, the constant-destination model above (Trivial exists only as the label-time fallback).
+`recover_model` walks only JumpBasic/JumpBasic2 and, when `option constselectjump` is `on` or the table is a re-entry retry, the constant-destination model above (Trivial exists only as the label-time fallback).
 
 **Multistage recovery.** A flow-time table can come out with a single address
 when the partial clone folds its index to a constant. One case is a stack slot
