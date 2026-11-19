@@ -6873,6 +6873,18 @@ trial, the stated parameter and the widest body read starting at `R` — so a
 parameter recovered as `rdi` but read as `edi` is passed, and becomes the
 caller's parameter, as an `int`, through a truncating `SUBPIECE`.
 
+**Go stack-growth spills.** On AMD64 Go ABIInternal, a stack-growth arm can
+mention a forwarded register only to spill and restore it. The initial
+passthrough claim sees those mentions, but removing the arm before heritage
+would leave the register with no reader and therefore no call trial. When
+`gomorestack` successfully removes this arm and exactly one call remains, P4
+offers the ordinary input claim again before heritage. A removed input use can
+leave an unreferenced Varnode in the bank, so only nodes with a definition or
+remaining readers count as touches for this retry. It requires the existing
+callee statement and first-call checks, a full-width general-purpose register
+and an unlocked ABIInternal caller and callee. Existing claims and live
+register touches are kept. The retry adds argument trials only.
+
 **What a body takes.** The entry walk ends at the first CALL and gives up on a
 body too large for its bound, so on its own it answered "not read" for most of
 what a forwarder hands on: grep -O2 `bmexec` printed `bmexec_trans()` for
