@@ -12681,6 +12681,18 @@ pub(crate) fn sanitize_type_name(name: &str) -> std::borrow::Cow<'_, str> {
     std::borrow::Cow::Owned(s)
 }
 
+/// The name declared in the type-definition block, shared by its uses.
+pub(crate) fn c_type_definition_name(ct: &crate::dtype::Datatype) -> Option<std::borrow::Cow<'_, str>> {
+    use crate::dtype::DatatypeKind;
+    if ct.is_core_type() || ct.get_name().is_empty() || ct.has_stripped() {
+        return None;
+    }
+    (ct.get_typedef().is_some()
+        || matches!(&ct.kind, DatatypeKind::Struct { .. } | DatatypeKind::Union { .. })
+        || ct.is_enum_type())
+        .then(|| sanitize_type_name(ct.get_name()))
+}
+
 /// (kuna, GH-340) Make `raw` safe to interpolate into a `/* … */` comment.
 ///
 /// The `/* renamed from "<raw>" */` note prints the type name a binary actually
@@ -12761,6 +12773,7 @@ pub(crate) fn compose_type_body(
     rt: RealTypeCtx,
 ) -> String {
     use crate::dtype::DatatypeKind;
+    let rt = rt.for_type_definition();
     let mut out = String::new();
     match &ct.kind {
         DatatypeKind::Struct { field, bitfield } => {
@@ -12862,7 +12875,7 @@ pub(crate) fn compose_typedef_line(
     name: &str,
     rt: RealTypeCtx,
 ) -> String {
-    format!("typedef {};\n", field_decl_text(base, name, rt.clone()))
+    format!("typedef {};\n", field_decl_text(base, name, rt.for_type_definition()))
 }
 
 /// (kuna) The full `docTypeDefinitions` walk over an already
@@ -12882,22 +12895,14 @@ pub(crate) fn render_type_definitions(
     let is_composite = |ct: &Rc<Datatype>| {
         matches!(&ct.kind, DatatypeKind::Struct { .. } | DatatypeKind::Union { .. })
     };
-    // A type this emitter renders: user-defined (non-core), named, not an
-    // internal partial (`has_stripped`), and a typedef / struct / union / enum.
-    let relevant = |ct: &Rc<Datatype>| {
-        !ct.is_core_type()
-            && !ct.get_name().is_empty()
-            && !ct.has_stripped()
-            && (ct.get_typedef().is_some() || is_composite(ct) || ct.is_enum_type())
-    };
-
     // Which sanitized composite tag names have a COMPLETE definition somewhere
     // (drives the `/* opaque */` annotation on forward-only names).
     let mut complete_names: HashSet<String> = HashSet::new();
     for ct in deporder {
-        if relevant(ct) && is_composite(ct) && ct.get_typedef().is_none() && !ct.is_incomplete()
-        {
-            complete_names.insert(sanitize_type_name(ct.get_name()).into_owned());
+        if is_composite(ct) && ct.get_typedef().is_none() && !ct.is_incomplete() {
+            if let Some(name) = c_type_definition_name(ct) {
+                complete_names.insert(name.into_owned());
+            }
         }
     }
 
@@ -12906,11 +12911,11 @@ pub(crate) fn render_type_definitions(
     // -- Pass 1: the forward-declaration block (every struct/union tag). -----
     let mut fwd: HashSet<String> = HashSet::new();
     for ct in deporder {
-        if !relevant(ct) || !is_composite(ct) || ct.get_typedef().is_some() {
+        if !is_composite(ct) || ct.get_typedef().is_some() {
             continue;
         }
+        let Some(name) = c_type_definition_name(ct) else { continue };
         let raw = ct.get_name();
-        let name = sanitize_type_name(raw);
         if !fwd.insert(name.to_string()) {
             continue; // one forward declaration per tag name
         }
@@ -12931,11 +12936,8 @@ pub(crate) fn render_type_definitions(
     // -- Pass 2: bodies in dependency order. ---------------------------------
     let mut defined: HashSet<String> = HashSet::new();
     for ct in deporder {
-        if !relevant(ct) {
-            continue;
-        }
+        let Some(name) = c_type_definition_name(ct) else { continue };
         let raw = ct.get_name();
-        let name = sanitize_type_name(raw);
         if let Some(base) = ct.get_typedef() {
             // A typedef (of anything, including a composite clone — checked
             // FIRST since the clone carries the base's kind).  The struct-tag
@@ -13019,6 +13021,7 @@ impl RealTypeCtx {
             long_is_8: arch.types().get_size_of_long() == 8,
             ctypes: arch.ctypes,
             model: crate::kuna_ctypes::CDataModel::from_types(&*arch.types()),
+            c_type_definition: false,
             go_package: None,
             go_pair_types: (lang == crate::kuna_lang::OutLang::Go
                 && arch.analysis_godwarfsig).then(|| arch.types_rc()),
