@@ -2566,3 +2566,35 @@ before its block for `take`, and `unsettled`@`0x4012c0` calls the `__stdcall`
 block for `take`. Source and recipe in `byvalreuse_pe_i386.s`: clang 17 and lld-link 17 (the
 `swift:6.0-jammy` Docker image ships both) reproduce it byte for byte; Ubuntu's clang 14
 does not. Used by `tests/stages/kuna-repframecopy.xml` (#14-#21).
+
+`noreturn_names_x86_64` (ELF x86-64 PIE, source `noreturn_names_x86_64.cc`),
+`rust_noreturn_v0_x86_64` (static `no_std` ELF x86-64, source
+`rust_noreturn_v0_x86_64.rs`) and `rust_noreturn_pie_x86_64` (the same Rust source
+linked as a PIE, whose calls go through `.got` words) are the no-return name
+fixtures (`tests/stages/kuna-noreturn-names.xml`). The first ends `quit_now`,
+`quit_thread` and `replay` in `_Exit`, `thrd_exit` and `std::rethrow_exception`;
+the Rust ones are rustc output with v0 symbols, and `opt`, `sum` and `add` end
+their failure paths in `core::option::unwrap_failed`,
+`core::slice::index::slice_index_fail` and
+`core::panicking::panic_const::panic_const_add_overflow`.
+
+```bash
+g++ -std=c++17 -O2 -fno-reorder-blocks-and-partition -Wl,--build-id=none \
+    -o noreturn_names_x86_64 noreturn_names_x86_64.cc
+rustc --edition 2021 -C opt-level=2 -C overflow-checks=on -C panic=abort \
+    -C relocation-model=static -C link-arg=-nostartfiles -C link-arg=-nostdlib \
+    -C link-arg=-static -C link-arg=-Wl,--build-id=none -C strip=debuginfo \
+    -o rust_noreturn_v0_x86_64 rust_noreturn_v0_x86_64.rs
+rustc --edition 2021 -C opt-level=2 -C overflow-checks=on -C panic=abort -C relocation-model=pie \
+    -C link-arg=-nostartfiles -C link-arg=-nostdlib -C link-arg=-Wl,--build-id=none \
+    -C link-arg=-Wl,-z,relro,-z,now -C strip=debuginfo \
+    -o rust_noreturn_pie_x86_64 rust_noreturn_pie_x86_64.rs
+```
+
+`elf_got_noreturn_x86_64` (source `elf_got_noreturn_x86_64.c`, gcc -O2 -fPIC -pie
+-fno-plt), `elf_got_slotaddr_x86_64` (source `elf_got_slotaddr_x86_64.s`) and
+`elf_got_noreturn_aarch64` (sources `elf_got_noreturn_aarch64.c` and
+`elf_got_noreturn_aarch64_stub.c`, clang -O2 -fPIC -fno-plt, lld) are the
+`.got` import-slot call fixtures (`tests/stages/kuna-elfgot-noreturn.xml`): calls
+to `abort` and `exit` through their GLOB_DAT slots, a function-pointer table in
+`.data.rel.ro` that must stay a table, and code that takes a slot's address.

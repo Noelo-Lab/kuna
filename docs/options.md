@@ -555,6 +555,8 @@ Three tiers:
 | a glibc math/mem/str wrapper tail-jumps to `(*dat_...)(...)` with the callee dropped | [`ifuncfpret`](#ifuncfpret----on--off-default-on) |
 | an x86-64 IFUNC .plt.sec stub is not a discovered function | [`ifuncfpret`](#ifuncfpret----on--off-default-on) |
 | xmm0 read uninitialized after calling a void-typed ifunc-dispatching wrapper | [`ifuncfpret`](#ifuncfpret----on--off-default-on) |
+| a stripped distribution binary prints sub_<addr> for every function although its debug package is installed | [`debuglink`](#debuglink----on--off-default-on) |
+| a binary split with objcopy --only-keep-debug decompiles without the names in its .debug file | [`debuglink`](#debuglink----on--off-default-on) |
 | SPE instructions in a PowerPC ELF decode as AltiVec vector operations | [`ppcapu`](#ppcapu----on--off-default-off) |
 | an e500 function that adds two 64-bit SPE registers renders vectorAddUnsignedByteSaturate on 16-byte locals | [`ppcapu`](#ppcapu----on--off-default-off) |
 | a -g binary still shows default names and inferred types | [`dwarf`](#dwarf----on--off-default-on) |
@@ -1998,6 +2000,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On by default: a glibc math/mem/str wrapper (e.g. sub_15620 / log) that tail-jumps to an IFUNC stub names the stub `ifunc_<resolver>` and recovers the tail call instead of rendering `(*dat_...)(...)` with the callee dropped. The names are synthetic -- `ifunc_<resolver>` says which resolver fills the slot, not which implementation it picks -- and the FP return type of such a call is still the follow-up's. Inert on every non-x86-64 image and on an x86-64 ELF with no IRELATIVE relocation. Flip off to leave the stubs unnamed.
 - **Where / provenance:** P1/external-refinement · ida · correctness-fix · interp-bee-ifunc-fpret
 - **Example:** `option ifuncfpret on`
+
+### `debuglink` -- on | off, default `on`
+
+- **Symptoms:** a stripped distribution binary prints sub_<addr> for every function although its debug package is installed; a binary split with objcopy --only-keep-debug decompiles without the names in its .debug file.
+- **What it does:** ELF only (inert elsewhere): name a stripped ELF's functions, and read its DWARF, from its separate debug file: the companion its GNU build-id note names (<dir>/.build-id/xx/rest.debug, build-id checked) or its .gnu_debuglink names (next to the image, in its .debug/ directory, or under <dir>/<image directory>/, CRC32 checked), with <dir> each entry of KUNA_DEBUG_DIRS then /usr/lib/debug. Only an image without its own .symtab takes the names, and an address that already has a name keeps it; only an image without .debug_info takes the DWARF. A companion that fails its check is ignored. Loader-tier: read via the KUNA_DEBUGLINK env var (symbols are read at load file).
+- **When to flip:** On by default: a stripped system binary whose debug package or debuginfod cache is installed decompiles with its real function names, parameters and locals instead of sub_<addr>. Turn OFF to see only what the image itself carries, or when a mismatched debug directory is in KUNA_DEBUG_DIRS.
+- **Where / provenance:** P1/environment-binding · kuna · analysis-enablement · kuna-elf-debuglink
+- **Example:** `option debuglink off`
 
 ### `ppcapu` -- on | off, default `off`
 

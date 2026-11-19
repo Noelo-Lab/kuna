@@ -25,3 +25,70 @@ rust_drop_panic
 rust_begin_unwind
 rg_oom
 abort
+
+# (kuna) Rust paths, matched against the hash-less demangling of a legacy
+# (`_ZN...17h<hash>E`) or v0 (`_RNv...`) symbol, so they hold across the
+# mangling switch and across hashes. Each is declared `-> !` in the Rust
+# 1.98.1 and 1.85.0 standard library sources (core/src/panicking.rs, option.rs,
+# result.rs, slice/index.rs, str/mod.rs, cell.rs, num/mod.rs;
+# alloc/src/alloc.rs, raw_vec/mod.rs; std/src/process.rs, panicking.rs,
+# panic.rs, alloc.rs, sys/exit.rs, sys/pal/unix/mod.rs). A generic
+# function's `::<...>` arguments are dropped before the comparison, so a path
+# names every instantiation and never an item nested inside the function;
+# `panic_const::panic_const_*` is the `panic_const!` macro, every expansion of
+# which is `-> !`.
+core::panicking::panic
+core::panicking::panic_fmt
+core::panicking::panic_nounwind
+core::panicking::panic_nounwind_fmt
+core::panicking::panic_nounwind_nobacktrace
+core::panicking::panic_explicit
+core::panicking::unreachable_display
+core::panicking::panic_str_2015
+core::panicking::panic_display
+core::panicking::panic_bounds_check
+core::panicking::panic_misaligned_pointer_dereference
+core::panicking::panic_null_pointer_dereference
+core::panicking::panic_invalid_enum_construction
+core::panicking::panic_cannot_unwind
+core::panicking::panic_in_cleanup
+core::panicking::const_panic_fmt
+core::panicking::assert_failed
+core::panicking::assert_matches_failed
+core::panicking::panic_const::panic_const_*
+core::option::unwrap_failed
+core::option::expect_failed
+core::result::unwrap_failed
+core::slice::index::slice_index_fail
+core::slice::index::slice_start_index_len_fail
+core::slice::index::slice_end_index_len_fail
+core::slice::index::slice_index_order_fail
+core::slice::index::slice_start_index_overflow_fail
+core::slice::index::slice_end_index_overflow_fail
+core::str::slice_error_fail
+core::str::slice_error_fail_ct
+core::str::slice_error_fail_rt
+core::cell::panic_already_borrowed
+core::cell::panic_already_mutably_borrowed
+core::num::from_ascii_radix_panic
+alloc::alloc::handle_alloc_error
+alloc::alloc::handle_alloc_error::ct_error
+alloc::alloc::handle_alloc_error::rt_error
+alloc::raw_vec::capacity_overflow
+alloc::raw_vec::handle_error
+std::process::abort
+std::process::exit
+std::process::ExitCode::exit_process
+std::sys::exit::exit
+std::sys::pal::unix::abort_internal
+std::alloc::rust_oom
+std::panic::panic_any
+std::panic::resume_unwind
+std::panicking::resume_unwind
+std::panicking::begin_panic
+std::panicking::begin_panic_handler
+std::panicking::panic_handler
+std::panicking::rust_panic_with_hook
+std::panicking::panic_with_hook
+std::panicking::rust_panic_without_hook
+std::panicking::rust_panic

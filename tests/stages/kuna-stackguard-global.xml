@@ -1,0 +1,57 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<!--
+    kuna-stackguard-global: an AArch64 stack-protector canary read from the global
+    __stack_chk_guard, not from a TLS slot.
+
+    Source (clang, target aarch64-linux-gnu, -O2 -fstack-protector-all):
+      int guarded(int n) { char buf[64]; return fill(buf, n & 63) + 1; }
+
+      0x210298  sub sp,sp,#0x60 ; adrp x9,0x220000 ; ... ldr x9,[x9,#0x310]
+                stur x9,[x29,#-8] ; bl fill ; adrp x8,0x220000 ; ldur x9,[x29,#-8]
+                ldr x8,[x8,#0x310] ; cmp x8,x9 ; b.ne 0x2102e4 ; ... ret
+      0x2102e4  bl __stack_chk_fail
+
+    Stage: P7 edge-virtualization, `stackguard`: an unwritten read of a global
+    named __stack_chk_guard (through the INDIRECT the call adds) counts as a
+    canary source.
+
+    Pass 1 (default) strips the compare and the __stack_chk_fail branch.
+    Pass 2 (stackguard off) keeps them.
+
+    A last load is the linked fixture stackguard_global_aarch64 (source beside
+    it), where the guard is an import and its address is read from the .got
+    slot named for it: the check is stripped there too.
+-->
+<bytechunk space="ram" offset="0x210178" readonly="true">
+000000140000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000ff8301d189000090e803002afd7b05a9298941f9fd430191e023009101150012a9831ff8b0ffff9788000090a9835ff8088941f91f0109eba1000054fd7b45a900040011ff830191c0035fd6a5ffff97
+</bytechunk>
+<bytechunk space="ram" offset="0x220310">
+785634125a5a5a5a
+</bytechunk>
+<symbol space="ram" offset="0x210178" name="__stack_chk_fail"/>
+<symbol space="ram" offset="0x21017c" name="fill"/>
+<symbol space="ram" offset="0x210298" name="guarded"/>
+</binaryimage>
+<script>
+  <com>map addr r0x220310 unsigned long __stack_chk_guard</com>
+  <com>lo fu guarded</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option stackguard off</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/stackguard_global_aarch64</com>
+  <com>option stackguard on</com>
+  <com>read symbols</com>
+  <com>load function main</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="KUNA-STACKGUARD-GLOBAL #1: stackguard off keeps the __stack_chk_fail call" min="1" max="1">__stack_chk_fail\(</stringmatch>
+<stringmatch name="KUNA-STACKGUARD-GLOBAL #2: stackguard off keeps the compare against the global" min="2" max="2">__stack_chk_guard</stringmatch>
+<stringmatch name="KUNA-STACKGUARD-GLOBAL #3: every pass returns fill(...) + 1" min="3" max="3">fill\(</stringmatch>
+<stringmatch name="KUNA-STACKGUARD-GLOBAL #4: a guard read through its .got slot is stripped" min="1" max="1">return fill\(v1,c &amp; 0x3f\) \+ 1;</stringmatch>
+</decompilertest>

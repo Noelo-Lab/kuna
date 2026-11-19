@@ -1,0 +1,105 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    No-return names from public declarations (`noreturn_known`).
+
+    Issue: the vendored no-return lists lacked functions that public headers
+    and sources declare never to return, so a call to one kept a fall-through
+    into whatever followed it: glibc `_Exit` and `thrd_exit`, libstdc++
+    `std::rethrow_exception`, and every Rust panic helper under v0 mangling,
+    the default of current rustc, whose `_RNv...` symbols the legacy
+    `_ZN...17h` prefixes in the Rust list never match.
+
+    Stage / sub-stage: P1 external-refinement (`kuna-analysis`
+    `loader/noreturn.rs` and the lists under `kuna-analysis/data/`).
+
+    P0 assertion: `option noreturn_known on|off`.
+
+    Fixtures: `noreturn_names_x86_64` (g++ -O2, source
+    `noreturn_names_x86_64.cc`) and `rust_noreturn_v0_x86_64` (rustc 1.98.1
+    -C opt-level=2 -C overflow-checks=on, a `no_std` image, source
+    `rust_noreturn_v0_x86_64.rs`).
+
+    A last load is `rust_noreturn_pie_x86_64`, the same source linked as a PIE,
+    whose calls reach the panic helpers through `R_X86_64_RELATIVE` `.got`
+    slots: the bound call takes the helper's no-return flag.
+
+    Pass 1 (`noreturn_known off`) is the BUG: no call is marked no-return, the C++
+    functions are truncated at the next entry and the Rust ones run into their
+    int3 padding. Pass 2 (default) is the FIX: every listed call is no-return.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/noreturn_names_x86_64</com>
+  <com>option noreturn_known off</com>
+  <com>read symbols</com>
+  <com>load function quit_now</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function quit_thread</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function replay</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/noreturn_names_x86_64</com>
+  <com>read symbols</com>
+  <com>load function quit_now</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function quit_thread</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function replay</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/rust_noreturn_v0_x86_64</com>
+  <com>option noreturn_known off</com>
+  <com>read symbols</com>
+  <com>load function opt</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function sum</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function add</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/rust_noreturn_v0_x86_64</com>
+  <com>read symbols</com>
+  <com>load function opt</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function sum</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function add</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/rust_noreturn_pie_x86_64</com>
+  <com>read symbols</com>
+  <com>load function opt</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="NORETURNNAMES #1: _Exit ends the flow" min="1" max="1">^\s*_Exit\(\); // no-return$</stringmatch>
+<stringmatch name="NORETURNNAMES #2: thrd_exit ends the flow" min="1" max="1">^\s*thrd_exit\(\); // no-return$</stringmatch>
+<stringmatch name="NORETURNNAMES #3: std::rethrow_exception ends the flow" min="1" max="1">std::rethrow_exception\(&amp;v1\); // no-return$</stringmatch>
+<stringmatch name="NORETURNNAMES #4: off, _Exit and thrd_exit run to the next entry" min="2" max="2">funcboundflow: fall-through reached the next function entry</stringmatch>
+<stringmatch name="NORETURNNAMES #9: off, replay runs on into its landing pad" min="1" max="1">_Unwind_Resume\(v1\);</stringmatch>
+<stringmatch name="NORETURNNAMES #5: v0 core::option::unwrap_failed ends the flow" min="1" max="1">core::option::unwrap_failed\(0x2003f8\); // no-return$</stringmatch>
+<stringmatch name="NORETURNNAMES #6: v0 core::slice::index::slice_index_fail ends the flow" min="1" max="1">core::slice::index::slice_index_fail\(0,a2,a1,0x200428\); // no-return$</stringmatch>
+<stringmatch name="NORETURNNAMES #7: v0 panic_const_add_overflow ends the flow in all three, and in the PIE" min="4" max="4">core::panicking::panic_const::panic_const_add_overflow\(0x[0-9a-f]+\); // no-return$</stringmatch>
+<stringmatch name="NORETURNNAMES #10: through a RELRO .got slot the panic helper ends the flow" min="1" max="1">core::option::unwrap_failed\(0x3b00\); // no-return$</stringmatch>
+<stringmatch name="NORETURNNAMES #8: off, the Rust calls run into their int3 padding" min="3" max="3">// int3-pad x</stringmatch>
+</decompilertest>

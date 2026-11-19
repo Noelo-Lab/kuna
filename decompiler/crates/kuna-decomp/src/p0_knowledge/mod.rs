@@ -15,6 +15,8 @@ pub mod kuna_restartlog;
 pub mod kuna_ppc32picimports;
 // (kuna) x86-64 IFUNC (IRELATIVE) PLT-stub naming option gate (load-time, env-bridged).
 pub mod kuna_ifuncfpret;
+// (kuna) Separate debug file lookup option gate (load-time, env-bridged).
+pub mod kuna_debuglink;
 // (kuna) arm64e Mach-O AppleSilicon spec selection option gate (load-time, env-bridged).
 pub mod kuna_macho_arm64e;
 // (kuna) PowerPC APU-note language selection option gate (load-time, env-bridged).

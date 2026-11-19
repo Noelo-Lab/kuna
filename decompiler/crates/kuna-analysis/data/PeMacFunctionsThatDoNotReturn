@@ -22,6 +22,65 @@ invalid_parameter_noinfo_noreturn
 terminate
 abort_handler4
 
+# (kuna) Darwin no-return declarations from the iPhoneOS 16.5 SDK's public
+# headers (usr/include): stdlib.h `_Exit`, setjmp.h `longjmp`/`_longjmp`/
+# `siglongjmp`, pthread/pthread.h `pthread_exit`, err.h `err`/`verr`/`errc`/
+# `verrc`/`errx`/`verrx` (all `__dead2`), assert.h `__assert_rtn`,
+# dispatch/queue.h `dispatch_main` (`DISPATCH_NORETURN`), objc/objc-exception.h
+# `objc_exception_throw`/`objc_exception_rethrow`/`objc_terminate`
+# (`OBJC_NORETURN`).
+Exit
+longjmp
+siglongjmp
+pthread_exit
+err
+verr
+errc
+verrc
+errx
+verrx
+assert_rtn
+dispatch_main
+objc_exception_throw
+objc_exception_rethrow
+objc_terminate
+# libc++abi c++/v1/cxxabi.h (`_LIBCXXABI_NORETURN`) and libc++ <exception>,
+# <new> and the `std::__1` helpers (`_LIBCPP_NORETURN`), same SDK.
+cxa_throw
+cxa_rethrow
+cxa_bad_cast
+cxa_bad_typeid
+cxa_throw_bad_array_new_length
+cxa_pure_virtual
+cxa_deleted_virtual
+ZSt9terminatev
+ZSt10unexpectedv
+ZSt17rethrow_exception*
+ZNKSt16nested_exception14rethrow_nestedEv
+ZSt17throw_with_nested*
+ZSt17__throw_bad_alloc*
+ZSt28__throw_bad_array_new_length*
+ZNSt3__119__throw_logic_error*
+ZNSt3__120__throw_domain_error*
+ZNSt3__124__throw_invalid_argument*
+ZNSt3__120__throw_length_error*
+ZNSt3__120__throw_out_of_range*
+ZNSt3__119__throw_range_error*
+ZNSt3__122__throw_overflow_error*
+ZNSt3__123__throw_underflow_error*
+ZNSt3__121__throw_runtime_error*
+ZNSt3__120__throw_system_error*
+ZNSt3__116__throw_bad_cast*
+ZNSt3__127__throw_bad_optional_access*
+ZNSt3__126__throw_bad_variant_access*
+ZNSt3__120__throw_bad_any_cast*
+ZNSt3__125__throw_bad_function_call*
+ZNSt3__120__throw_future_error*
+ZNSt3__115__throw_failure*
+ZNSt3__120__throw_bad_weak_ptr*
+ZNSt3__119__throw_regex_error*
+ZNSt3__122__libcpp_verbose_abort*
+
 # GNU Fortran fatal runtime diagnostics
 _gfortran_runtime_error
 _gfortran_runtime_error_at

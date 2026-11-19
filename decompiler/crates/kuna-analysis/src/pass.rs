@@ -211,6 +211,22 @@ pub struct LocalFact {
     pub stack_offset: i64,
 }
 
+/// A DWARF variable or parameter held in a register.
+#[derive(Clone, Debug)]
+pub struct RegLocalFact {
+    /// Entry of the function the variable belongs to.
+    pub func_addr: u64,
+    pub name: String,
+    pub type_: std::rc::Rc<kuna_decomp::dtype::Datatype>,
+    /// The DWARF register number.
+    pub dwarf_reg: u16,
+    /// The SLEIGH register name (filled by the DWARF pass for the image's ABI).
+    pub reg: String,
+    /// A local: the PC from which it lives in the register. A parameter: its
+    /// index in the prototype.
+    pub start: u64,
+}
+
 /// (kuna `libctypes`) A data symbol whose TYPE the analysis tier knows outright:
 /// the address, the name it is installed under, and the recovered type.
 ///
@@ -570,6 +586,14 @@ pub struct AnalysisOutput {
     /// emits them here instead. The libc and Win32 signature passes all use this
     /// stream for concrete resolver entries. See [`crate::protos`].
     pub prototypes_at: Vec<(u64, kuna_decomp::fspec::PrototypePieces)>,
+    /// DWARF locals held in a register.
+    pub dwarf_reg_locals: Vec<RegLocalFact>,
+    /// DWARF parameters whose entry location is a register.
+    pub dwarf_param_regs: Vec<RegLocalFact>,
+    /// DWARF subprograms marked `DW_CC_nocall`, as
+    /// `(entry, name, parameter indices with no location)`: the compiler changed
+    /// their calling convention and those parameters are no longer passed.
+    pub dwarf_nocall: Vec<(u64, String, Vec<usize>)>,
     /// Library prototypes declaring a `float` or `double` that an ARM image
     /// holds back, by name (`None`) or by entry address: whether the image
     /// returns a `double` whole depends on `armfloatreturn`, which is set after
@@ -732,6 +756,30 @@ impl AnalysisOutput {
     /// alone deliberately: it is emitted inside a `/* … */` by the printer, and
     /// escaping THAT belongs with the printer's comment emission, not with a
     /// symbol-name gate.
+    /// Drop the parameters a `DW_CC_nocall` subprogram no
+    /// longer receives from its DWARF prototype, by name and by entry address.
+    pub fn apply_dwarf_nocall(&mut self) {
+        fn drop_params(p: &mut kuna_decomp::fspec::PrototypePieces, dropped: &[usize]) {
+            if dropped.iter().any(|&i| i >= p.intypes.len()) {
+                return;
+            }
+            for &i in dropped.iter().rev() {
+                p.intypes.remove(i);
+                if i < p.innames.len() {
+                    p.innames.remove(i);
+                }
+            }
+            if p.first_var_arg_slot >= 0 {
+                p.first_var_arg_slot -= dropped.iter().filter(|&&i| (i as i32) < p.first_var_arg_slot).count() as i32;
+            }
+        }
+        let unique: std::collections::BTreeSet<_> = self.dwarf_nocall.iter().collect();
+        for (addr, name, dropped) in unique {
+            self.prototypes.iter_mut().filter(|p| &p.name == name).for_each(|p| drop_params(p, dropped));
+            self.cpp_dwarf.prototypes.iter_mut().filter(|(a, _)| a == addr).for_each(|(_, p)| drop_params(p, dropped));
+        }
+    }
+
     pub fn sanitize_names(&mut self, mode: NameChars) {
         self.go_dwarf.iter_mut().for_each(|facts| facts.sanitize_names(mode));
         if mode == NameChars::Off {
@@ -766,6 +814,9 @@ impl AnalysisOutput {
         self.fallback_names.iter_mut().for_each(|f| fix(&mut f.name));
         self.prototypes.iter_mut().for_each(fix_proto);
         self.prototypes_at.iter_mut().for_each(|(_, p)| fix_proto(p));
+        self.dwarf_nocall.iter_mut().for_each(|(_, n, _)| fix(n));
+        self.dwarf_reg_locals.iter_mut().for_each(|l| fix(&mut l.name));
+        self.dwarf_param_regs.iter_mut().for_each(|l| fix(&mut l.name));
         self.arm_float_prototypes.iter_mut().for_each(|(_, p)| fix_proto(p));
         self.main_decl_at.iter_mut().for_each(|(_, p)| fix_proto(p));
         self.cpp_dwarf.symbols.iter_mut().for_each(|s| fix(&mut s.name));
@@ -878,6 +929,9 @@ impl AnalysisOutput {
         self.blobs.extend(other.blobs);
         self.prototypes.extend(other.prototypes);
         self.prototypes_at.extend(other.prototypes_at);
+        self.dwarf_nocall.extend(other.dwarf_nocall);
+        self.dwarf_reg_locals.extend(other.dwarf_reg_locals);
+        self.dwarf_param_regs.extend(other.dwarf_param_regs);
         self.arm_float_prototypes.extend(other.arm_float_prototypes);
         self.main_decl_at.extend(other.main_decl_at);
         self.c_runtime_imports.extend(other.c_runtime_imports);

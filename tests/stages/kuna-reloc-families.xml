@@ -1,0 +1,57 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default">
+<!--
+    kuna-reloc-families: instruction relocation families of relocatable
+    objects, and the GOT a PIC object addresses.
+
+    Stage: P1 relocatable-object layout (`loader/reloc_apply.rs`,
+    `loader/reloc_object.rs`; fixes, no option). Objects built from
+    tests/fixtures/relocs/t.c and a64.s as their headers say. Each family
+    below was "unsupported" and its field kept the assembler's placeholder:
+    the AArch64 short forms looped on themselves, RISC-V HI20/LO12 data read
+    as address 0 and its tail call became a switch, and a PIC object's GOT
+    load read `dat_4803e183f9893801`.
+
+    #1-#2 AArch64 ADR_PREL_LO21, LD_PREL_LO19, MOVW_UABS_G1/G0_NC, CONDBR19,
+    TSTBR14. #3-#5 RISC-V HI20/LO12_I/LO12_S and CALL (a tail call to an
+    extern). #6 x86-64 GOTPCREL/REX_GOTPCRELX and AArch64 ADR_GOT_PAGE /
+    LD64_GOT_LO12_NC through a synthesized read-only GOT.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/relocs/a64.o</com>
+  <com>read symbols</com>
+  <com>load function probe</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/relocs/riscv64.o</com>
+  <com>read symbols</com>
+  <com>load function pick</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/relocs/x64pic.o</com>
+  <com>read symbols</com>
+  <com>load function pick</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/relocs/a64pic.o</com>
+  <com>read symbols</com>
+  <com>load function pick</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="relocs #1: AArch64 ADR, literal load and MOVW reach the extern data" min="1" max="1">return \(uint4\)\(dat_402004 \+ dat_402010 \+ dat_402008\);</stringmatch>
+<stringmatch name="relocs #2: AArch64 CBZ/TBNZ/B.cond reach their global labels" min="1" max="1">if \(a0 &gt;&gt; 3 &amp; 1\) \{</stringmatch>
+<stringmatch name="relocs #3: RISC-V HI20/LO12 resolve the global" min="1" max="1">counter \+= \(int4\)a0;</stringmatch>
+<stringmatch name="relocs #4: RISC-V auipc+jr to an extern is a tail call" min="1" max="1">v3 = ext_fn\(\(int8\)-\(int4\)a0\); // tail-call</stringmatch>
+<stringmatch name="relocs #5: the local table is reached in all three C objects" min="3" max="3">local_tab\[\(a0 &amp; 3\) \* 4(UL)?\]</stringmatch>
+<stringmatch name="relocs #6: x86-64 GOTPCRELX and AArch64 GOT page/offset reach the named global" min="2" max="2">counter \+= a0;</stringmatch>
+<stringmatch name="relocs #7: no field keeps the assembler's placeholder" min="0" max="0">dat_(0|8|4803e183f9893801|9000000837f80200)\b</stringmatch>
+</decompilertest>

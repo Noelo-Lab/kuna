@@ -2033,6 +2033,9 @@ fn decompile_func_full_with_objects_inner(
         // `type varnode %REG(pc)` symbols, e.g. retstruct's `tmp`) WITH their use
         // address so `linkSymbol`'s usepoint query binds them at the scoped read.
         fd.seed_usepoint_symbols(usepoint_symbols);
+        if let Some(specs) = arch.dwarf_reg_locals.get(&entry_addr.get_offset()) {
+            fd.seed_dwarf_register_locals(specs);
+        }
         // Re-seed the console-added dynamic (`map hash`) symbols (likewise lost).
         fd.seed_dynamic_symbols(dynamic_symbols);
         // (ghidra-mode, Phase 4) Seed the staged name recommendations (the

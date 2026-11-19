@@ -79,6 +79,7 @@ pub(crate) mod le;
 // (kuna) `dynrelocs`: apply a LINKED image's dynamic relocations (.rela.dyn /
 // .rel.dyn / .rela.plt) so a GOT slot holds the value the run-time loader
 // would write, and report the PT_GNU_RELRO-frozen slots as constant.
+pub mod elf_debuglink;
 pub mod kuna_dynrelocs;
 // (kuna `dynrelocs`) The MIPS primary-GOT slots the dynamic linker fills with an
 // address the image defines, reported constant.

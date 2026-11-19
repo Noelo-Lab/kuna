@@ -2828,6 +2828,71 @@ impl Funcdata {
         }
     }
 
+    /// Map each DWARF register local `(name, type, storage,
+    /// start)` at the use point the value its register holds at `start` will
+    /// have once heritage has run: `start` itself when it begins a basic block
+    /// (the block's phi, the use point of a loop-carried value), otherwise the
+    /// last write covering the storage at or before `start`, at most 16 bytes
+    /// earlier (the defining instruction). A local whose write is not found,
+    /// or whose name is already taken, is skipped.
+    pub fn seed_dwarf_register_locals(&mut self, specs: &[(String, std::rc::Rc<crate::dtype::Datatype>, Address, u64)]) {
+        use crate::varnode::varnode_flags;
+        let starts: std::collections::BTreeSet<u64> =
+            (0..self.bblocks_get_size()).map(|i| self.bblocks_block_start(self.bblocks_get_block(i)).get_offset()).collect();
+        let mut found = Vec::new();
+        for (name, ty, storage, start) in specs {
+            let up = if starts.contains(start) {
+                Some(Address::new(std::rc::Rc::clone(self.get_address().get_space().expect("code space")), *start))
+            } else {
+                let end = storage.get_offset() + ty.get_size() as u64;
+                let mut best: Option<Address> = None;
+                for vn in self.vbank().iter_loc() {
+                    let Some(v) = self.vbank().get(vn) else { continue };
+                    let covers = v.get_addr().get_space().map(|s| s.get_index()) == storage.get_space().map(|s| s.get_index())
+                        && v.get_addr().get_offset() <= storage.get_offset()
+                        && v.get_addr().get_offset() + v.get_size() as u64 >= end;
+                    if !v.is_written() || !covers {
+                        continue;
+                    }
+                    let up = self.vn_use_point(vn);
+                    let at = up.get_offset();
+                    if at < *start && start - at <= 16 && best.as_ref().is_none_or(|b| at > b.get_offset()) {
+                        best = Some(up);
+                    }
+                }
+                best
+            };
+            if let Some(up) = up {
+                found.push((name.clone(), std::rc::Rc::clone(ty), storage.clone(), up));
+            }
+        }
+        let mut seeded = Vec::new();
+        if let Some(lm) = self.localmap.as_mut() {
+            for (name, ty, storage, up) in found {
+                if lm.local_name_used(&name) {
+                    continue;
+                }
+                let size = ty.get_size();
+                if let Ok(sym) = lm.add_symbol(&name, ty, &storage, &up) {
+                    lm.set_attribute(sym, varnode_flags::namelock | varnode_flags::typelock);
+                    seeded.push((storage, size, up));
+                }
+            }
+        }
+        if seeded.is_empty() {
+            return;
+        }
+        let values: Vec<_> = self.vbank().iter_loc().collect();
+        for vn in values {
+            let Some(value) = self.vbank().get(vn) else { continue };
+            let (addr, size) = (value.get_addr().clone(), value.get_size());
+            let usepoint = self.vn_use_point(vn);
+            if seeded.iter().any(|(s, sz, up)| *s == addr && *sz == size && *up == usepoint) {
+                self.set_varnode_properties(vn);
+            }
+        }
+    }
+
     /// Re-create the given usepoint-scoped console Symbols (the register-storage
     /// `type varnode %REG(pc)` symbols) in this function's local scope, mapping each
     /// at its recorded **use address** so its `SymbolEntry::uselimit` is restored.

@@ -1119,6 +1119,29 @@ impl ObjectLoadImage {
             }
         }
 
+        // (kuna `debuglink`) A stripped ELF's function names from the debug
+        // companion its build-id or `.gnu_debuglink` names.
+        if is_elf && kuna_decomp::kuna_debuglink::debuglink_enabled() {
+            let (symbols, source) = crate::loader::elf_debuglink::companion_symbols(
+                &file,
+                Some(std::path::Path::new(filename)).filter(|p| p.is_file()),
+            );
+            let mut added = 0usize;
+            for (addr, name) in symbols {
+                let addr = elfv1.code_address(addr);
+                if seen.insert(addr) {
+                    funcsyms.push(FuncSym { addr, name: demangle_funcsym_name(name, namechars), size: 0 });
+                    added += 1;
+                }
+            }
+            if let (Some(source), true) = (source, emit_diagnostics && added != 0) {
+                kuna_base::notes::say_once(
+                    filename,
+                    &format!("[kuna debuglink] {filename}: {added} function names from {source}"),
+                );
+            }
+        }
+
         if !elfv1.0.is_empty() {
             let mut aliases = HashSet::new();
             funcsyms.retain(|s| aliases.insert((s.addr, s.name.clone())));

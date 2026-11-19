@@ -1582,6 +1582,10 @@ pub struct Architecture {
     /// (`tailcalljump`). Read through the [`crate::kuna_ifuncfpret`] **env var**
     /// (the PLT map is baked at `load file`); this bool is for catalog visibility.
     pub analysis_ifuncfpret: bool,
+    /// (kuna) Name a stripped ELF from its separate debug file (`debuglink`);
+    /// read through [`crate::kuna_debuglink`]'s env var at `load file`, kept
+    /// here for the catalog's live value.
+    pub analysis_debuglink: bool,
     /// (kuna) Gate e500 selection from a PowerPC ELF APU note (`ppcapu`); default
     /// off. Read through the [`crate::kuna_ppcapu`] **env var** (the language is
     /// chosen at `load file`); this bool is for catalog visibility.
@@ -1887,6 +1891,9 @@ pub struct Architecture {
     /// shape of a console `map param`. The decompile drive seeds a
     /// function's own decompile with them ahead of the console's.
     pub loader_param_locks: std::collections::BTreeMap<Address, Vec<(int4, String, crate::fspec::ParameterPieces)>>,
+    /// Register-held DWARF locals by function entry: `(name, type, storage,
+    /// PC from which the register holds the variable)`.
+    pub dwarf_reg_locals: std::collections::BTreeMap<u64, Vec<(String, Rc<crate::dtype::Datatype>, Address, u64)>>,
     /// (kuna `objcivars`) Type an Objective-C method's `self` as a pointer to the
     /// struct built from its class's ivar list, and fold the `__objc_ivar` offset
     /// variables to their compile-time layout offsets so an ivar access renders
@@ -2568,6 +2575,7 @@ impl Architecture {
             analysis_ppc32picimports: Default::default(),
             ppc32_pic_imports: Default::default(),
             analysis_ifuncfpret: true, // (kuna) option ifuncfpret, default on (x86-64 IRELATIVE slots only)
+            analysis_debuglink: true, // (kuna) option debuglink, default on (stripped ELF with a findable companion only)
             analysis_ppcapu: false, // (kuna) option ppcapu, default off (opt-in)
             analysis_goabi: false, // (kuna) option goabi; reset_defaults sets the shipped default (auto)
             analysis_symbolnamechars: crate::kuna_symbolnamechars::NameChars::Off,
@@ -2614,6 +2622,7 @@ impl Architecture {
             blob_entries: Rc::default(),
             analysis_swifttypes: true,
             loader_param_locks: std::collections::BTreeMap::new(),
+            dwarf_reg_locals: std::collections::BTreeMap::new(),
             analysis_objcivars: true,
             analysis_swiftcall: true,
             loader_proto_models: Rc::default(),

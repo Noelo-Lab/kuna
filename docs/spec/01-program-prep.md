@@ -922,7 +922,24 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   `.toc + 0x8000`; an object with no `.toc` (medium-model code that reaches its
   data through `@toc@ha`/`@toc@l` halves) still has the one the linker's `.got`
   would give it, 256-aligned after the other sections, plus `0x8000`. An
-  undefined `.TOC.` resolves to that base.
+  undefined `.TOC.` resolves to that base. AArch64 also covers `ADR_PREL_LO21`,
+  `LD_PREL_LO19`, `CONDBR19`, `TSTBR14` and `MOVW_UABS_G0..G3` (the checked
+  groups range-checked). RISC-V covers `HI20`/`LO12_I`/`LO12_S`,
+  `PCREL_HI20`/`PCREL_LO12_I`/`PCREL_LO12_S`, the 8-byte `CALL`/`CALL_PLT`
+  `auipc`+`jalr` pair, `BRANCH`, `JAL`, the two compressed branches, the
+  `ADD`/`SUB`/`SET` data families and `32_PCREL`; `RELAX` and `ALIGN` are no-ops,
+  since the layout keeps the assembler's bytes. A `PCREL_LO12` names the label of
+  its `auipc` rather than the target, so each section's `PCREL_HI20` values are
+  kept by place and the low half takes the low twelve bits of that value.
+  A relocation that addresses its target's GOT slot (x86-64 `GOTPCREL`,
+  `GOTPCRELX` and `REX_GOTPCRELX`, AArch64 `ADR_GOT_PAGE` and
+  `LD64_GOT_LO12_NC`, RISC-V `GOT_HI20`, ARM `GOT_PREL`;
+  `reloc_apply.rs (RelocationSpec::via_got)`) has no GOT to address in a
+  pre-link object, so `reloc_object.rs (layout_relocatable)` synthesizes one:
+  a read-only section after the laid-out ones with one pointer-sized slot per
+  distinct target holding that target's address, reported as the layout's
+  `got_range`. The field is resolved against the slot, so the load through it
+  folds to the target and a PIC object's `counter += x` reads `counter`.
   MIPS relocations go through
   `decompiler/crates/kuna-analysis/src/loader/kuna_mipsreloc.rs (Gp)`. An o32
   or N32 REL object keeps each addend in the field it patches, so a `HI16`, or a
@@ -1631,6 +1648,24 @@ dereferences in 136 of 295 functions become 44 (the entry point's PSP reads
 and code that loads DS from memory), and 1,537 named global references replace
 29.
 
+(kuna) **A stripped ELF's separate debug information** (`debuglink`,
+default on, a load-time gate read through `KUNA_DEBUGLINK`). Distributions
+strip their binaries and ship the symbol table and DWARF in a separate file.
+When the image has no `.symtab`,
+`decompiler/crates/kuna-analysis/src/loader/elf_debuglink.rs (companion_symbols)`
+looks for that file the way gdb does: the GNU build-id note names
+`<dir>/.build-id/<xx>/<rest>.debug`, accepted only if its own build-id matches,
+and `.gnu_debuglink` names a file next to the image, in its `.debug/`
+directory, or under `<dir>/<image's directory>/`, accepted only if its CRC32
+matches. `<dir>` is each entry of `KUNA_DEBUG_DIRS`, then `/usr/lib/debug`. A
+debuglink name with a directory component is refused, and a candidate over
+1 GiB is not read. The companion's defined function symbols join the loader's
+function symbols; an address that already has a name keeps it. When the image
+has no `.debug_info`, the DWARF pass (§1.6) runs over the same companion
+(`elf_debuglink.rs (find_companion)`): its addresses are the image's own, so
+prototypes, parameters and locals apply unchanged. With `debuglink off` only
+what the image itself carries is read.
+
 (kuna) **UEFI TE images take a bounded container path of their own.**
 `decompiler/crates/kuna-analysis/src/loadimage_te.rs (TeLoadImage)` parses a
 file the format probe claims. That probe reads more than the `VZ` signature —
@@ -2282,7 +2317,13 @@ funcsym stream:
   callee that is a *named function in the very same image*. Zero is not an
   ambiguity to be judged; it is a byte the run-time image never holds.
   `decompiler/crates/kuna-analysis/src/loader/kuna_dynrelocs.rs (resolve)` walks
-  `.rela.dyn`/`.rel.dyn`/`.rela.plt` and computes the value the dynamic loader
+  `.rela.dyn`/`.rel.dyn`/`.rela.plt`, or, when the section table names no
+  dynamic relocation table (stripped or zeroed section headers), the
+  `DT_RELA`, `DT_REL` and `DT_JMPREL` tables `PT_DYNAMIC` names, with symbols
+  read from `DT_SYMTAB`
+  (`kuna_dynrelocs.rs (segment_relocations)`,
+  `decompiler/crates/kuna-analysis/src/loader/elf_dynseg.rs (dynamic_relocations)`),
+  the way the run-time loader finds them, and computes the value the dynamic loader
   would store: for `RELATIVE` the image's load bias plus the addend (kuna maps a
   linked image at the vaddrs it declares, so the bias is zero and the value is the
   addend); for `GLOB_DAT`/`JUMP_SLOT` the symbol's address, **and only when that
@@ -2841,7 +2882,16 @@ the resolved callee's no-return flag onto the prototype it hands `ActionDeindire
 dropped it, where upstream returns the callee's live `Funcdata`), which is what makes
 the deindirect schedule the restart whose re-flow plants the artificial halt. The
 extra upstream Win32 no-return-name list remains on the PE/COFF arm only. An ELF
-image runs no such pass, but a MIPS relocatable object's loader makes import
+`.got` import slot (`elfgotimports`) named `abort`, `exit` or `_Unwind_Resume`
+takes the base ELF no-return list's fact at the slot address, like a PLT stub
+(`decompiler/crates/kuna-analysis/src/loader/noreturn.rs (scan_noreturn)`), so a
+`-fno-plt` call through it ends its path. Code that takes the slot's *address*
+(`lea slot(%rip)`, then `call *(%rax)`) keeps the constant: `ActionConstantPtr`
+(`decompiler/crates/kuna-decomp/src/p9_emit/coreaction_render.rs (is_pointer)`)
+declines a code Symbol whose address carries `externref`, because the slot and
+the function share one Symbol and the function's name would state the wrong
+value. An ELF
+image runs no `peimportcall` pass, but a MIPS relocatable object's loader makes import
 slots, the GOT entry of each undefined weak function: the engine stashes the
 loader's ranges under this pass's id
 (`decompiler/crates/kuna-console/src/engine.rs (object_import_slot_stash)`), so
@@ -4166,8 +4216,45 @@ moves.
   location may include `DW_OP_plus_uconst` displacements, as emitted for interior
   equivalence views. Each unsigned LEB128 operand is decoded and added without
   signed overflow; truncated operands and dereference, piece, register, or value
-  expressions remain outside this fixed-local path. Nested lexical-block locals
-  and composite locations are a documented loss. (ida) The
+  expressions remain outside this fixed-local path. The offset is relative to
+  the subprogram's `DW_AT_frame_base`
+  (`decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_dwarfscopes.rs (frame_base_offset)`):
+  gcc's `DW_OP_call_frame_cfa` is `call_frame_cfa`; clang's frame-pointer
+  bases are where the standard prologue leaves them, RBP on x86-64 16 bytes
+  below the CFA, EBP on i386 8 below, x29 on AArch64 16 below, s0 on RISC-V at
+  the CFA; any other register base (an `-fomit-frame-pointer` RSP) moves with
+  the body, so that function gets no DWARF stack locals. Every clang -O0 local
+  used to be placed 16 bytes off and named the wrong slot. Locals nested in
+  `DW_TAG_lexical_block` scopes at any depth are collected in document order
+  like direct children, and a variable whose location is a location list takes
+  the stack slot when every frame-relative entry of the list names the same one;
+  a composite whose `DW_OP_piece` parts are consecutive frame slots is the
+  first slot (`kuna_dwarfscopes.rs (piece_frame_offset)`). Inlined subroutines
+  are walked like lexical blocks, their variables named through
+  `DW_AT_abstract_origin`, a repeated name in one function suffixed `_2`, `_3`
+  (`scope_vars`, `LocalNames`). A variable held in one register (a whole-function
+  `DW_OP_reg<n>`/`DW_OP_regx`, or the longest single-register entry of its
+  location list, `register_location`) becomes a `pass.rs (RegLocalFact)`; the
+  DWARF register number is turned into the SLEIGH name by the psABI tables in
+  `register_name` (x86-64, i386, AArch64, ARM, RISC-V, MIPS, PowerPC). The
+  commit parks them on the architecture by function entry, and the decompile
+  (`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs (seed_dwarf_register_locals)`)
+  maps each as a namelocked, typelocked local at the use point its value will
+  have after heritage: the range's start when it begins a basic block (a
+  loop-carried value's phi), otherwise the last raw write covering the storage
+  strictly before the start and at most 16 bytes earlier (the defining
+  instruction); the matching raw varnodes have their properties refreshed, as
+  for a console `type varnode`. A parameter whose location at the entry PC is a
+  single register (`entry_storage`) is locked to that register when the
+  default model would put some parameter of the function elsewhere and gives it
+  no hidden return pointer (the commit asks the model with
+  `assign_parameter_storage`): locked twice, as a `map param` lock for the
+  function's own decompile and as explicit input storage on the prototype its
+  callers read, so a `regparm(3)` callee and its call sites agree. A function the
+  model already describes keeps its model-derived storage, and a
+  `DW_CC_nocall` subprogram is left to the changed-convention rule below. A
+  composite held in several registers (a struct split across RDI:RSI) is not
+  mapped; it would need a local symbol at a join-space address. The
   data-global fix (DIV-24): a global used to be mapped with a size-1 type, so any
   multi-byte access queried `queryContainer(addr, 4)` past it and rendered
   `dat_<addr>`; the pass now resolves `DW_AT_type` to a byte size
@@ -4213,6 +4300,25 @@ moves.
   are stashed apart from the generic ones and merged at the commit. (Struct/class **fields** are the
   sibling `dwarfstructs` increment below; before it, a class stayed a named opaque
   and `this->balance` printed as an offset.)
+- **Changed-convention prototypes** (no option,
+  `decompiler/crates/kuna-analysis/src/pass.rs (apply_dwarf_nocall)`). A DWARF
+  prototype is applied locked, so its parameter list decides which registers a
+  function reads. Clang's dead-argument elimination rewrites an internal
+  function's convention: an unused or constant parameter is removed, the
+  remaining ones move into the earlier argument slots, and the subprogram is
+  marked `DW_AT_calling_convention DW_CC_nocall`. The DWARF still lists every
+  source parameter; a removed one has no `DW_AT_location` (a constant one has
+  `DW_AT_const_value` instead). Both DWARF arms record, for a `DW_CC_nocall`
+  subprogram, the positions of its location-less parameters, and the commit
+  removes those parameters from the by-name and the by-address prototype before
+  either is parked. `work(int *p,int unused,int k)` then decompiles as
+  `work(int *p,int k)` with the loop bound read as `k`, and its callers pass two
+  arguments instead of an undefined third. The return type is kept, because
+  DWARF does not say whether the return value was removed too. GCC's IPA clones
+  (`.constprop`, `.isra`, `.part`) need no such rule: they are concrete instances
+  linked by `DW_AT_abstract_origin`, which neither arm follows, so a clone never
+  receives the source prototype.
+
   At the enabled commit boundary,
   `decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_cppnames.rs`
   also reconciles a qualified
@@ -10562,7 +10668,34 @@ a `_gfortran_` prefix), widened by a Rust wildcard list (`core::panicking::panic
 `handle_alloc_error`, `rust_begin_unwind`) or a Go exact list (`runtime.gopanic`,
 `runtime.throw`, `runtime.goexit`, …) when source-language detection fires (§1.4),
 or replaced by the PE/Mach-O list (`__fastfail`, `_invoke_watson`, the same GNU
-Fortran block, plus the shared C names) off-ELF. The scan mirrors the exact symbol
+Fortran block, plus the shared C names) off-ELF. (kuna) Each list also carries a
+block of names a public declaration marks no-return and the vendored list lacked,
+its source named in the comment above it: on ELF, glibc's `_Exit`, `thrd_exit`
+and `__pthread_unwind_next`, libstdc++'s and libc++abi's `__cxa_rethrow`,
+`__cxa_bad_typeid`, `__cxa_pure_virtual`, `__cxa_deleted_virtual` and
+`__cxa_throw_bad_array_new_length`, `std::unexpected`, `std::rethrow_exception`,
+`std::nested_exception::rethrow_nested`, `std::throw_with_nested` and the
+`<optional>`/`<variant>`/`<format>` throw helpers, and libc++'s `std::__1`
+throw helpers in their mangled spelling; off-ELF the same C++ runtime names and
+the Darwin ones (`_Exit`, `longjmp`, `siglongjmp`, `pthread_exit`, the `err`
+family, `__assert_rtn`, `dispatch_main`, `objc_exception_throw`,
+`objc_exception_rethrow`, `objc_terminate`); on Go, the calls the Go compiler
+ends a block at or lowers bounds and SIMD panics to (`runtime.block`,
+`runtime.panicrangestate`, `runtime.panicBounds`, `runtime.panicExtend`,
+`runtime.panicSimdImm` and the `panicBounds64`/`32`/`32X` helpers) and `os.Exit`.
+glibc's `__assert` is left out: stripped of its underscores it would name a
+program's own returning `assert`. The Rust list's mangled prefixes only match
+legacy symbols (`_ZN4core9panicking5panic17h...`), and current rustc emits v0
+symbols (`_RNvNtCs..._4core9panicking5panic`) whose crate hash sits mid-name, so
+it also carries Rust paths — `core::panicking::panic_fmt`,
+`core::option::unwrap_failed`, `core::slice::index::slice_index_fail`, the
+`panic_const::panic_const_*` family and the rest of the `-> !` functions of
+core, alloc and std. For a Rust ELF each symbol is demangled without its hash
+(`{:#}`), a trailing generic argument list is dropped
+(`core::panicking::assert_failed::<i64, i64>` names
+`core::panicking::assert_failed`), and the path is compared against those
+entries; an item nested inside a listed function (`<begin_panic::Payload as
+PanicPayload>::as_str`) never matches. The scan mirrors the exact symbol
 streams the loader installs and emits the *install* address — for a UND import, the
 PLT-stub address, since the `.dynsym` entry is address 0 and demangling means a
 raw-name lookup would miss. One name is matched only as an import and only as
@@ -10681,6 +10814,16 @@ an unresolved jump, or an unmodelled escaping path. Without a known or explicit
 no-return fact, a call followed by INT3 alone does not establish that its callee
 cannot return. The existing `listing`, `noreturn_propagate`, and `noreturn_reach`
 gates still control this inference.
+
+A seed need not be a function: an import a `-fno-plt` build reaches only through
+its `.got` slot is flagged at the slot's address (§1.3), and the call through it
+names no target the Listing can see. `terminal_slot_calls` therefore decodes each
+x86 `call [rip+disp32]` (x86-64) or `call [abs32]` (i386), `notrack` allowed, and
+each AArch64 `blr xN` whose register an `adrp`/`ldr` pair at most four instructions
+earlier loaded from the slot, whose static target is unknown, and a call whose slot
+is a no-return seed ends its
+path in both rules exactly as a call to a terminal function does, so a `die()`
+ending in `exit()` through the GOT is concluded no-return as its PLT twin is.
 
 Two rules fold into the same fixpoint, both Ghidra-derived:
 

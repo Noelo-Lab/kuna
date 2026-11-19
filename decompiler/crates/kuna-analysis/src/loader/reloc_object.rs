@@ -253,9 +253,10 @@ pub struct RelocLayout {
     pub extern_range: Option<(u64, u64)>,
     /// Half-open extent of allocated ELF COMMON storage, separate from extern slots.
     pub common_range: Option<(u64, u64)>,
-    /// Half-open extent of a MIPS object's synthetic GOT: its entries hold what
-    /// the relocations put there and nothing else writes them, except its
-    /// [`Self::import_slots`].
+    /// Half-open extent of the synthetic GOT — a MIPS object's `$gp`-relative
+    /// one, or the read-only slots synthesized for other architectures'
+    /// GOT-addressing relocations: its entries hold what the relocations put
+    /// there and nothing else writes them, except its [`Self::import_slots`].
     pub got_range: Option<(u64, u64)>,
     /// A MIPS object's synthetic `$gp`.
     pub gp: Option<u64>,
@@ -393,6 +394,27 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
         _ => false,
     };
 
+    // A synthesized GOT for the relocations that address a symbol's GOT slot
+    // (`GOTPCREL*`, `ADR_GOT_PAGE`, `GOT_HI20`, ...): a pre-link object has none.
+    // One read-only slot per target holds its address, so a load through the
+    // slot folds to the target. Sized by the number of such relocations. MIPS
+    // takes its own `$gp`-relative GOT above instead.
+    let pointer = if file.is_64() { 8u64 } else { 4 };
+    let synth_got_relocs = laid
+        .iter()
+        .filter_map(|l| file.section_by_index(l.index).ok())
+        .flat_map(|sec| sec.relocations().collect::<Vec<_>>())
+        .filter(|(_, reloc)| {
+            reloc_apply::classify(architecture, reloc).is_ok_and(|spec| spec.is_some_and(|s| s.via_got()))
+        })
+        .count() as u64;
+    let synth_got_base = align_up(cursor, 16);
+    if synth_got_relocs != 0 {
+        cursor = synth_got_base + synth_got_relocs * pointer;
+    }
+    let mut synth_got_slots: HashMap<u64, u64> = HashMap::new();
+    let mut synth_got_order: Vec<u64> = Vec::new();
+
     // Externs (undefined referenced symbols) live in a synthetic area above the
     // laid-out sections — the angr extern-object analog.  Allocated on demand.
     let mut extern_cursor = align_up(cursor.wrapping_add(0x1000), 0x1000);
@@ -514,6 +536,9 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
                 little_endian,
             ));
         }
+        // RISC-V `PCREL_HI20` values by place, for the `PCREL_LO12_*` that name
+        // their label.
+        let mut riscv_hi: HashMap<u64, i128> = HashMap::new();
         for (offset, reloc) in relocs {
             let r_type = kuna_mipsreloc::r_type_of(&reloc);
             let spec = match reloc_apply::classify(architecture, &reloc) {
@@ -628,17 +653,41 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
                 continue;
             };
             let place = sec_vma.wrapping_add(offset);
+            let symbol = if spec.is_riscv_pcrel_lo() {
+                match riscv_hi.get(&target.address) {
+                    Some(value) => *value as u64,
+                    None => {
+                        diagnostics.record(
+                            architecture,
+                            r_type,
+                            RelocationFailure::UnresolvedTarget,
+                            sec_vma,
+                            offset,
+                        );
+                        continue;
+                    }
+                }
+            } else if spec.via_got() {
+                *synth_got_slots.entry(target.address).or_insert_with(|| {
+                    synth_got_order.push(target.address);
+                    synth_got_base + (synth_got_order.len() as u64 - 1) * pointer
+                })
+            } else {
+                target.address
+            };
             if let Err(reason) = reloc_apply::apply(
                 spec,
                 &reloc,
                 &mut laid[li].data[off..end],
                 little_endian,
-                target.address,
+                symbol,
                 place,
                 target.thumb,
                 toc,
             ) {
                 diagnostics.record(architecture, r_type, reason, sec_vma, offset);
+            } else if spec.is_riscv_pcrel_hi() {
+                riscv_hi.insert(place, reloc_apply::riscv_pcrel_hi_value(&reloc, symbol, place));
             }
         }
     }
@@ -774,6 +823,26 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
         }
     }
 
+    let synth_got_range = (!synth_got_order.is_empty()).then(|| {
+        let mut data = Vec::with_capacity(synth_got_order.len() * pointer as usize);
+        for target in &synth_got_order {
+            let bytes = if little_endian { target.to_le_bytes() } else { target.to_be_bytes() };
+            if little_endian {
+                data.extend_from_slice(&bytes[..pointer as usize]);
+            } else {
+                data.extend_from_slice(&bytes[8 - pointer as usize..]);
+            }
+        }
+        let size = data.len() as u64;
+        laid.push(LaidSection {
+            index: SectionIndex(0),
+            vma: synth_got_base,
+            size,
+            flags: kuna_sleigh::loadimage::section_flags::DATA | kuna_sleigh::loadimage::section_flags::READONLY,
+            data,
+        });
+        (synth_got_base, synth_got_base + size)
+    });
     let mut segments: Vec<(u64, Vec<u8>)> = laid.iter().map(|l| (l.vma, l.data.clone())).collect();
     let mut sections: Vec<(u64, u64, u32)> = laid.iter().map(|l| (l.vma, l.size, l.flags)).collect();
     if extern_cursor > weak_storage_start {
@@ -799,7 +868,7 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
             sections.sort_by_key(|s| s.0);
             Some((base, base + g.size()))
         }
-        _ => None,
+        _ => synth_got_range,
     };
     let extern_range = extern_order
         .iter()

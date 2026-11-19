@@ -28,6 +28,11 @@
 //!   the Go list at `data/GolangFunctionsThatDoNotReturn`) is parsed **in addition**
 //!   to the base ELF list. See [`NoReturnKnownPass::for_compiler`].
 //!
+//! Rust paths: the Rust list's mangled prefixes match only legacy symbols, so it
+//! also lists hash-less Rust paths (`core::option::unwrap_failed`), compared
+//! against the demangling of each symbol of a Rust ELF ([`rust_path`]) so a v0
+//! symbol matches too.
+//!
 //! Effect: marking `exit`/`abort`/… no-return inserts an artificial halt at the
 //! call site (the engine's `flow.rs` artificialHalt path), so the dead
 //! fall-through after a tail `exit()` disappears from the decompiled output. For
@@ -172,6 +177,39 @@ pub(crate) fn name_matches(name: &str, exact: &[String], wildcard: &[String]) ->
     exact.iter().any(|e| e == stripped) || wildcard.iter().any(|w| stripped.starts_with(w.as_str()))
 }
 
+/// The hash-less Rust path of a legacy or v0 mangled `name`, with a trailing
+/// generic argument list removed: `_ZN4core6option13unwrap_failed17h..E` and
+/// `_RNvNtCs.._4core6option13unwrap_failed` are both `core::option::unwrap_failed`,
+/// and `core::panicking::assert_failed::<i64, i64>` is `core::panicking::assert_failed`.
+fn rust_path(name: &str) -> Option<String> {
+    let mut path = format!("{:#}", rustc_demangle::try_demangle(name).ok()?);
+    if path.ends_with('>') {
+        let mut depth = 0usize;
+        for (i, c) in path.char_indices().rev() {
+            match c {
+                '>' => depth += 1,
+                '<' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        if path[..i].ends_with("::") {
+                            path.truncate(i - 2);
+                        }
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    Some(path)
+}
+
+/// Does a Rust path match one of the list's `::` entries?
+fn path_matches(path: &str, exact: &[String], wildcard: &[String]) -> bool {
+    exact.iter().any(|e| e == path)
+        || wildcard.iter().any(|w| w.contains("::") && path.starts_with(w.as_str()))
+}
+
 /// Scan an ELF object's FUNC symbols (`.symtab` + `.dynsym`) for known no-return
 /// names. Emits a [`NoReturnFact`] carrying the symbol **address** alongside its
 /// **original installed name** (not the stripped form) for each hit. The address
@@ -220,9 +258,12 @@ fn scan_noreturn(file: &object::File, bytes: &[u8], compiler: Compiler) -> Analy
         // Any other (unsupported) format: no list, no facts.
         _ => return out,
     };
+    let rust_paths = compiler == Compiler::Rustc && file.format() == object::BinaryFormat::Elf;
     let mut seen = std::collections::HashSet::new();
     let mut emit = |out: &mut AnalysisOutput, addr: u64, n: String| {
-        if name_matches(&n, &exact, &wildcard) && seen.insert((addr, n.clone())) {
+        let hit = name_matches(&n, &exact, &wildcard)
+            || (rust_paths && rust_path(&n).is_some_and(|p| path_matches(&p, &exact, &wildcard)));
+        if hit && seen.insert((addr, n.clone())) {
             out.noreturn.push(NoReturnFact { addr, name: n });
         }
     };
@@ -262,6 +303,13 @@ fn scan_noreturn(file: &object::File, bytes: &[u8], compiler: Compiler) -> Analy
     for p in crate::loader::format::resolve_imports(file, bytes) {
         let Ok(n) = String::from_utf8(p.name) else { continue };
         emit(&mut out, p.addr, n);
+    }
+
+    // 3. `.got` import slots (`kuna_elfgotimports`): a `-fno-plt` call is
+    //    `call *slot(%rip)`, so the import's only FunctionSymbol sits at the slot.
+    for (slot, name) in crate::loader::kuna_elfgotimports::resolve(file) {
+        let Ok(n) = String::from_utf8(name) else { continue };
+        emit(&mut out, slot, n);
     }
     out
 }
@@ -305,6 +353,50 @@ mod tests {
     }
 
     #[test]
+    fn public_header_no_return_names_are_listed() {
+        let (exact, wildcard) = sets();
+        for name in [
+            "_Exit",
+            "thrd_exit",
+            "__pthread_unwind_next",
+            "__cxa_rethrow",
+            "__cxa_pure_virtual",
+            "_ZSt10unexpectedv",
+            "_ZSt17rethrow_exceptionNSt15__exception_ptr13exception_ptrE",
+            "_ZSt27__throw_bad_optional_accessv",
+            "_ZNSt3__120__throw_length_errorB6v15006EPKc",
+        ] {
+            assert!(name_matches(name, &exact, &wildcard), "{name}");
+        }
+        assert!(!name_matches("__assert", &exact, &wildcard));
+        let (exact, wildcard) = parse_list(PE_MAC_NORETURN_LIST);
+        for name in ["_objc_exception_throw", "_dispatch_main", "___cxa_rethrow", "__ZNSt3__121__throw_runtime_errorEPKc"] {
+            assert!(name_matches(name, &exact, &wildcard), "{name}");
+        }
+        let (exact, wildcard) = parse_list(crate::sourcelang::golang_noreturn_list());
+        for name in ["os.Exit", "runtime.panicBounds", "runtime.block"] {
+            assert!(name_matches(name, &exact, &wildcard), "{name}");
+        }
+    }
+
+    #[test]
+    fn rust_paths_match_either_mangling_and_drop_generic_arguments() {
+        let (exact, wildcard) = parse_list(crate::sourcelang::rust_noreturn_list());
+        let hit = |raw: &str| rust_path(raw).is_some_and(|p| path_matches(&p, &exact, &wildcard));
+        assert!(hit("_RNvNtNtCsgxBkk5gSRhY_4core9panicking11panic_const24panic_const_add_overflow"));
+        assert!(hit("_ZN4core6option13unwrap_failed17ha2239fe7bcf32a06E"));
+        assert!(hit("_RINvNtCsgxBkk5gSRhY_4core9panicking13assert_failedllECs9k3SxhrAWiO_3std"));
+        assert_eq!(
+            rust_path("_RINvNtCsgxBkk5gSRhY_4core9panicking13assert_failedllECs9k3SxhrAWiO_3std").as_deref(),
+            Some("core::panicking::assert_failed")
+        );
+        assert!(!hit(
+            "_RNvYINtNvNtCs9k3SxhrAWiO_3std9panicking11begin_panic7PayloadReENtNtCsgxBkk5gSRhY_4core5panic12PanicPayload6as_strB9_"
+        ));
+        assert!(!hit("_ZN3std9panicking12default_hook17h24e207139139d40aE"));
+    }
+
+    #[test]
     fn fortran_fatal_diagnostics_exclude_recoverable_errors() {
         for list in [ELF_NORETURN_LIST, PE_MAC_NORETURN_LIST] {
             let (exact, wildcard) = parse_list(list);
@@ -322,11 +414,12 @@ mod tests {
     #[test]
     fn list_parses_to_exact_names_and_cxx_throw_wildcards() {
         let (exact, wildcard) = sets();
-        // Upstream's ELF list ships no wildcards; the only ones are the kuna
-        // DIV-78 mangled `_ZSt<len>__throw_<name>*` prefixes.
+        // Upstream's ELF list ships no wildcards; the only ones are kuna's
+        // mangled `std::` / `std::__1::` function-name prefixes, which an
+        // Itanium encoding keeps from reaching any other symbol.
         assert!(
-            wildcard.iter().all(|w| w.starts_with("ZSt") && w.contains("__throw_")),
-            "the only ELF-list wildcards are the DIV-78 std::__throw_* mangled prefixes: {wildcard:?}"
+            wildcard.iter().all(|w| w.starts_with("ZSt") || w.starts_with("ZNSt3__1")),
+            "the only ELF-list wildcards are mangled std:: prefixes: {wildcard:?}"
         );
         for want in ["exit", "abort", "stack_chk_fail", "assert_fail", "pthread_exit"] {
             assert!(exact.iter().any(|e| e == want), "missing {want}");
