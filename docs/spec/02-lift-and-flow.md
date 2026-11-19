@@ -291,6 +291,31 @@ is selector*0x10000 + offset, so a near branch keeps the selector and wraps the
 offset, as upstream computes it. This is a SLEIGH correctness repair, without
 an inference option.
 
+(kuna) CIL has a language of its own,
+`specs/Ghidra/Processors/CIL/data/languages/CIL.slaspec`
+(`CIL:LE:64:default`), for the managed assemblies the `cil` loader maps
+(chapter 01). The evaluation stack is the registers `s0`..`s63`: slot *i* is
+always the same register, so heritage puts the stack in SSA form and an
+expression left on it across a branch joins as a phi. An instruction reaches
+its operands through the depth `sd` of the decode context `cilctx`, which the
+loader paints (`decompiler/crates/kuna-analysis/src/loadimage_cil/body.rs
+(type_body)`), and picks its p-code by the operand class `k`: `add` is an
+`INT_ADD` of the low four bytes for int32, of all eight for int64 and a
+`FLOAT_ADD` for a float. Every slot is eight bytes, an int32 kept
+sign-extended and a float32 zero-extended, so a copy, an argument and a
+result need no class. An instruction with `ok` 0, which is every one the
+loader did not paint, is `unimpl`. Arguments are `a0`..`a15` and the result
+is `rv`. A method's arguments are its own across a call, so a call saves the
+registers it passes in `sv0`..`sv15` and restores them after, and the
+compiler spec states the argument and stack registers unaffected. Locals are
+8-byte cells below `SP`, which never moves, so `ldloca` is an address in the
+frame. A call's operand is the address the loader rewrote its token to. A
+managed array reference points at element 0, so `ldelem` is a load at
+`array + index * size`; `ldlen`, `newarr`, `newobj`, `box`, `unbox` and
+`isinst` are user operators, since their semantics are the runtime's.
+`switch` decodes as its opcode and count only and jumps through the table of
+offsets that follows, which the jump-table recovery reads.
+
 A DOS program built by Microsoft's or Borland's compilers for the 8087
 emulator carries no x87 opcodes: the linker's emulator fixups turn each `WAIT`
 and ESC opcode pair into a software interrupt that the emulator services or,

@@ -1,0 +1,642 @@
+# CIL: the ECMA-335 Common Intermediate Language of managed .NET assemblies.
+#
+# CIL is a stack machine whose instructions name no operand types and whose
+# calls name a metadata token. Neither is decidable from the instruction
+# bytes, so the kuna loader (kuna-analysis/src/loadimage_cil.rs) decides both
+# before decoding: it paints the decode context `cilctx` over every reachable
+# instruction with the evaluation-stack depth (`sd`), the operand class (`k`)
+# and a call's argument count (`na`), and it rewrites each token operand to
+# the address it resolves to. An instruction the loader did not paint has
+# `ok=0` and is unimplemented.
+#
+# The evaluation stack is the registers s0..s63: slot i is always the same
+# register, so the stack is in SSA form after heritage. Every slot is 8 bytes;
+# an int32 is kept sign-extended and a float32 zero-extended. Arguments are
+# a0..a15 (a call saves the ones it passes in sv0..sv15 and restores them),
+# locals are 8-byte cells below SP, and SP never moves.
+#
+# Operand classes. For a load or a store, `k` is the width and extension of
+# the location: 0 int32, 1 eight bytes, 2 uint8, 3 int8, 4 uint16, 5 int16,
+# 6 float32. For arithmetic, a comparison or a conversion it is the type of
+# the operands: 0 int32, 1 int64 or native, 4 float32, 5 float64. For a call
+# it is the load class of the result, 15 for none.
+
+define endian=little;
+define alignment=1;
+
+define space ram      type=ram_space      size=8 default;
+define space register type=register_space size=4;
+
+define register offset=0x0  size=8 [ PC SP ra rv ];
+define register offset=0x18 size=4 [ rv4 ];
+define register offset=0x18 size=2 [ rv2 ];
+define register offset=0x18 size=1 [ rv1 ];
+define register offset=0x100 size=8 [ a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 ];
+define register offset=0x200 size=8 [ sv0 sv1 sv2 sv3 sv4 sv5 sv6 sv7 sv8 sv9 sv10 sv11 sv12 sv13 sv14 sv15 ];
+define register offset=0x1000 size=8 [ s0 s1 s2 s3 s4 s5 s6 s7 s8 s9 s10 s11 s12 s13 s14 s15 s16 s17 s18 s19 s20 s21 s22 s23 s24 s25 s26 s27 s28 s29 s30 s31 s32 s33 s34 s35 s36 s37 s38 s39 s40 s41 s42 s43 s44 s45 s46 s47 s48 s49 s50 s51 s52 s53 s54 s55 s56 s57 s58 s59 s60 s61 s62 s63 ];
+define register offset=0x4000 size=4 [ contextreg ];
+
+define context contextreg
+  cilctx = (0,31) noflow
+  sd     = (0,5)  noflow
+  k      = (6,9)  noflow
+  na     = (12,16) noflow
+  ok     = (17,17) noflow
+;
+
+define token opbyte (8)
+  op  = (0,7)
+  lo2 = (0,1)
+  lo4 = (0,3)
+;
+define token op2byte (8) xop = (0,7);
+define token imm8 (8)
+  ub = (0,7)
+  sb = (0,7) signed
+;
+define token imm16 (16) uw = (0,15);
+define token imm32 (32)
+  ud  = (0,31)
+  sdw = (0,31) signed
+;
+define token imm64 (64) uq = (0,63);
+
+define pcodeop ldlen;
+define pcodeop newarr;
+define pcodeop newobj;
+define pcodeop box;
+define pcodeop unbox;
+define pcodeop isinst;
+define pcodeop fmod;
+
+# The stack slot the instruction pushes into (P) and the slots below the top:
+# T1 is the top, T2 the one under it.
+P: o is sd [ o = 0x1000 + sd * 8; ] { export *[register]:8 o; }
+T1: o is sd [ o = 0x1000 + (sd - 1) * 8; ] { export *[register]:8 o; }
+T2: o is sd [ o = 0x1000 + (sd - 2) * 8; ] { export *[register]:8 o; }
+T3: o is sd [ o = 0x1000 + (sd - 3) * 8; ] { export *[register]:8 o; }
+T4: o is sd [ o = 0x1000 + (sd - 4) * 8; ] { export *[register]:8 o; }
+T5: o is sd [ o = 0x1000 + (sd - 5) * 8; ] { export *[register]:8 o; }
+T6: o is sd [ o = 0x1000 + (sd - 6) * 8; ] { export *[register]:8 o; }
+T7: o is sd [ o = 0x1000 + (sd - 7) * 8; ] { export *[register]:8 o; }
+T8: o is sd [ o = 0x1000 + (sd - 8) * 8; ] { export *[register]:8 o; }
+T9: o is sd [ o = 0x1000 + (sd - 9) * 8; ] { export *[register]:8 o; }
+T10: o is sd [ o = 0x1000 + (sd - 10) * 8; ] { export *[register]:8 o; }
+T11: o is sd [ o = 0x1000 + (sd - 11) * 8; ] { export *[register]:8 o; }
+T12: o is sd [ o = 0x1000 + (sd - 12) * 8; ] { export *[register]:8 o; }
+T13: o is sd [ o = 0x1000 + (sd - 13) * 8; ] { export *[register]:8 o; }
+T14: o is sd [ o = 0x1000 + (sd - 14) * 8; ] { export *[register]:8 o; }
+T15: o is sd [ o = 0x1000 + (sd - 15) * 8; ] { export *[register]:8 o; }
+T16: o is sd [ o = 0x1000 + (sd - 16) * 8; ] { export *[register]:8 o; }
+
+# A call's arguments, the deepest first, and the slot its result replaces.
+Args: is na=0 { }
+Args: is na=1 & T1 { sv0 = a0; a0 = T1; }
+Args: is na=2 & T2 & T1 { sv0 = a0; sv1 = a1; a0 = T2; a1 = T1; }
+Args: is na=3 & T3 & T2 & T1 { sv0 = a0; sv1 = a1; sv2 = a2; a0 = T3; a1 = T2; a2 = T1; }
+Args: is na=4 & T4 & T3 & T2 & T1 { sv0 = a0; sv1 = a1; sv2 = a2; sv3 = a3; a0 = T4; a1 = T3; a2 = T2; a3 = T1; }
+Args: is na=5 & T5 & T4 & T3 & T2 & T1 { sv0 = a0; sv1 = a1; sv2 = a2; sv3 = a3; sv4 = a4; a0 = T5; a1 = T4; a2 = T3; a3 = T2; a4 = T1; }
+Args: is na=6 & T6 & T5 & T4 & T3 & T2 & T1 { sv0 = a0; sv1 = a1; sv2 = a2; sv3 = a3; sv4 = a4; sv5 = a5; a0 = T6; a1 = T5; a2 = T4; a3 = T3; a4 = T2; a5 = T1; }
+Args: is na=7 & T7 & T6 & T5 & T4 & T3 & T2 & T1 { sv0 = a0; sv1 = a1; sv2 = a2; sv3 = a3; sv4 = a4; sv5 = a5; sv6 = a6; a0 = T7; a1 = T6; a2 = T5; a3 = T4; a4 = T3; a5 = T2; a6 = T1; }
+Args: is na=8 & T8 & T7 & T6 & T5 & T4 & T3 & T2 & T1 { sv0 = a0; sv1 = a1; sv2 = a2; sv3 = a3; sv4 = a4; sv5 = a5; sv6 = a6; sv7 = a7; a0 = T8; a1 = T7; a2 = T6; a3 = T5; a4 = T4; a5 = T3; a6 = T2; a7 = T1; }
+Args: is na=9 & T9 & T8 & T7 & T6 & T5 & T4 & T3 & T2 & T1 { sv0 = a0; sv1 = a1; sv2 = a2; sv3 = a3; sv4 = a4; sv5 = a5; sv6 = a6; sv7 = a7; sv8 = a8; a0 = T9; a1 = T8; a2 = T7; a3 = T6; a4 = T5; a5 = T4; a6 = T3; a7 = T2; a8 = T1; }
+Args: is na=10 & T10 & T9 & T8 & T7 & T6 & T5 & T4 & T3 & T2 & T1 { sv0 = a0; sv1 = a1; sv2 = a2; sv3 = a3; sv4 = a4; sv5 = a5; sv6 = a6; sv7 = a7; sv8 = a8; sv9 = a9; a0 = T10; a1 = T9; a2 = T8; a3 = T7; a4 = T6; a5 = T5; a6 = T4; a7 = T3; a8 = T2; a9 = T1; }
+Args: is na=11 & T11 & T10 & T9 & T8 & T7 & T6 & T5 & T4 & T3 & T2 & T1 { sv0 = a0; sv1 = a1; sv2 = a2; sv3 = a3; sv4 = a4; sv5 = a5; sv6 = a6; sv7 = a7; sv8 = a8; sv9 = a9; sv10 = a10; a0 = T11; a1 = T10; a2 = T9; a3 = T8; a4 = T7; a5 = T6; a6 = T5; a7 = T4; a8 = T3; a9 = T2; a10 = T1; }
+Args: is na=12 & T12 & T11 & T10 & T9 & T8 & T7 & T6 & T5 & T4 & T3 & T2 & T1 { sv0 = a0; sv1 = a1; sv2 = a2; sv3 = a3; sv4 = a4; sv5 = a5; sv6 = a6; sv7 = a7; sv8 = a8; sv9 = a9; sv10 = a10; sv11 = a11; a0 = T12; a1 = T11; a2 = T10; a3 = T9; a4 = T8; a5 = T7; a6 = T6; a7 = T5; a8 = T4; a9 = T3; a10 = T2; a11 = T1; }
+Args: is na=13 & T13 & T12 & T11 & T10 & T9 & T8 & T7 & T6 & T5 & T4 & T3 & T2 & T1 { sv0 = a0; sv1 = a1; sv2 = a2; sv3 = a3; sv4 = a4; sv5 = a5; sv6 = a6; sv7 = a7; sv8 = a8; sv9 = a9; sv10 = a10; sv11 = a11; sv12 = a12; a0 = T13; a1 = T12; a2 = T11; a3 = T10; a4 = T9; a5 = T8; a6 = T7; a7 = T6; a8 = T5; a9 = T4; a10 = T3; a11 = T2; a12 = T1; }
+Args: is na=14 & T14 & T13 & T12 & T11 & T10 & T9 & T8 & T7 & T6 & T5 & T4 & T3 & T2 & T1 { sv0 = a0; sv1 = a1; sv2 = a2; sv3 = a3; sv4 = a4; sv5 = a5; sv6 = a6; sv7 = a7; sv8 = a8; sv9 = a9; sv10 = a10; sv11 = a11; sv12 = a12; sv13 = a13; a0 = T14; a1 = T13; a2 = T12; a3 = T11; a4 = T10; a5 = T9; a6 = T8; a7 = T7; a8 = T6; a9 = T5; a10 = T4; a11 = T3; a12 = T2; a13 = T1; }
+Args: is na=15 & T15 & T14 & T13 & T12 & T11 & T10 & T9 & T8 & T7 & T6 & T5 & T4 & T3 & T2 & T1 { sv0 = a0; sv1 = a1; sv2 = a2; sv3 = a3; sv4 = a4; sv5 = a5; sv6 = a6; sv7 = a7; sv8 = a8; sv9 = a9; sv10 = a10; sv11 = a11; sv12 = a12; sv13 = a13; sv14 = a14; a0 = T15; a1 = T14; a2 = T13; a3 = T12; a4 = T11; a5 = T10; a6 = T9; a7 = T8; a8 = T7; a9 = T6; a10 = T5; a11 = T4; a12 = T3; a13 = T2; a14 = T1; }
+Args: is na=16 & T16 & T15 & T14 & T13 & T12 & T11 & T10 & T9 & T8 & T7 & T6 & T5 & T4 & T3 & T2 & T1 { sv0 = a0; sv1 = a1; sv2 = a2; sv3 = a3; sv4 = a4; sv5 = a5; sv6 = a6; sv7 = a7; sv8 = a8; sv9 = a9; sv10 = a10; sv11 = a11; sv12 = a12; sv13 = a13; sv14 = a14; sv15 = a15; a0 = T16; a1 = T15; a2 = T14; a3 = T13; a4 = T12; a5 = T11; a6 = T10; a7 = T9; a8 = T8; a9 = T7; a10 = T6; a11 = T5; a12 = T4; a13 = T3; a14 = T2; a15 = T1; }
+
+# The same for a constructor, whose instance is a0.
+CtorArgs: is na=0 { sv0 = a0; }
+CtorArgs: is na=1 & T1 { sv0 = a0; sv1 = a1; a1 = T1; }
+CtorArgs: is na=2 & T2 & T1 { sv0 = a0; sv1 = a1; sv2 = a2; a1 = T2; a2 = T1; }
+CtorArgs: is na=3 & T3 & T2 & T1 { sv0 = a0; sv1 = a1; sv2 = a2; sv3 = a3; a1 = T3; a2 = T2; a3 = T1; }
+CtorArgs: is na=4 & T4 & T3 & T2 & T1 { sv0 = a0; sv1 = a1; sv2 = a2; sv3 = a3; sv4 = a4; a1 = T4; a2 = T3; a3 = T2; a4 = T1; }
+CtorArgs: is na=5 & T5 & T4 & T3 & T2 & T1 { sv0 = a0; sv1 = a1; sv2 = a2; sv3 = a3; sv4 = a4; sv5 = a5; a1 = T5; a2 = T4; a3 = T3; a4 = T2; a5 = T1; }
+CtorArgs: is na=6 & T6 & T5 & T4 & T3 & T2 & T1 { sv0 = a0; sv1 = a1; sv2 = a2; sv3 = a3; sv4 = a4; sv5 = a5; sv6 = a6; a1 = T6; a2 = T5; a3 = T4; a4 = T3; a5 = T2; a6 = T1; }
+CtorArgs: is na=7 & T7 & T6 & T5 & T4 & T3 & T2 & T1 { sv0 = a0; sv1 = a1; sv2 = a2; sv3 = a3; sv4 = a4; sv5 = a5; sv6 = a6; sv7 = a7; a1 = T7; a2 = T6; a3 = T5; a4 = T4; a5 = T3; a6 = T2; a7 = T1; }
+CtorArgs: is na=8 & T8 & T7 & T6 & T5 & T4 & T3 & T2 & T1 { sv0 = a0; sv1 = a1; sv2 = a2; sv3 = a3; sv4 = a4; sv5 = a5; sv6 = a6; sv7 = a7; sv8 = a8; a1 = T8; a2 = T7; a3 = T6; a4 = T5; a5 = T4; a6 = T3; a7 = T2; a8 = T1; }
+CtorArgs: is na=9 & T9 & T8 & T7 & T6 & T5 & T4 & T3 & T2 & T1 { sv0 = a0; sv1 = a1; sv2 = a2; sv3 = a3; sv4 = a4; sv5 = a5; sv6 = a6; sv7 = a7; sv8 = a8; sv9 = a9; a1 = T9; a2 = T8; a3 = T7; a4 = T6; a5 = T5; a6 = T4; a7 = T3; a8 = T2; a9 = T1; }
+CtorArgs: is na=10 & T10 & T9 & T8 & T7 & T6 & T5 & T4 & T3 & T2 & T1 { sv0 = a0; sv1 = a1; sv2 = a2; sv3 = a3; sv4 = a4; sv5 = a5; sv6 = a6; sv7 = a7; sv8 = a8; sv9 = a9; sv10 = a10; a1 = T10; a2 = T9; a3 = T8; a4 = T7; a5 = T6; a6 = T5; a7 = T4; a8 = T3; a9 = T2; a10 = T1; }
+CtorArgs: is na=11 & T11 & T10 & T9 & T8 & T7 & T6 & T5 & T4 & T3 & T2 & T1 { sv0 = a0; sv1 = a1; sv2 = a2; sv3 = a3; sv4 = a4; sv5 = a5; sv6 = a6; sv7 = a7; sv8 = a8; sv9 = a9; sv10 = a10; sv11 = a11; a1 = T11; a2 = T10; a3 = T9; a4 = T8; a5 = T7; a6 = T6; a7 = T5; a8 = T4; a9 = T3; a10 = T2; a11 = T1; }
+CtorArgs: is na=12 & T12 & T11 & T10 & T9 & T8 & T7 & T6 & T5 & T4 & T3 & T2 & T1 { sv0 = a0; sv1 = a1; sv2 = a2; sv3 = a3; sv4 = a4; sv5 = a5; sv6 = a6; sv7 = a7; sv8 = a8; sv9 = a9; sv10 = a10; sv11 = a11; sv12 = a12; a1 = T12; a2 = T11; a3 = T10; a4 = T9; a5 = T8; a6 = T7; a7 = T6; a8 = T5; a9 = T4; a10 = T3; a11 = T2; a12 = T1; }
+CtorArgs: is na=13 & T13 & T12 & T11 & T10 & T9 & T8 & T7 & T6 & T5 & T4 & T3 & T2 & T1 { sv0 = a0; sv1 = a1; sv2 = a2; sv3 = a3; sv4 = a4; sv5 = a5; sv6 = a6; sv7 = a7; sv8 = a8; sv9 = a9; sv10 = a10; sv11 = a11; sv12 = a12; sv13 = a13; a1 = T13; a2 = T12; a3 = T11; a4 = T10; a5 = T9; a6 = T8; a7 = T7; a8 = T6; a9 = T5; a10 = T4; a11 = T3; a12 = T2; a13 = T1; }
+CtorArgs: is na=14 & T14 & T13 & T12 & T11 & T10 & T9 & T8 & T7 & T6 & T5 & T4 & T3 & T2 & T1 { sv0 = a0; sv1 = a1; sv2 = a2; sv3 = a3; sv4 = a4; sv5 = a5; sv6 = a6; sv7 = a7; sv8 = a8; sv9 = a9; sv10 = a10; sv11 = a11; sv12 = a12; sv13 = a13; sv14 = a14; a1 = T14; a2 = T13; a3 = T12; a4 = T11; a5 = T10; a6 = T9; a7 = T8; a8 = T7; a9 = T6; a10 = T5; a11 = T4; a12 = T3; a13 = T2; a14 = T1; }
+CtorArgs: is na=15 & T15 & T14 & T13 & T12 & T11 & T10 & T9 & T8 & T7 & T6 & T5 & T4 & T3 & T2 & T1 { sv0 = a0; sv1 = a1; sv2 = a2; sv3 = a3; sv4 = a4; sv5 = a5; sv6 = a6; sv7 = a7; sv8 = a8; sv9 = a9; sv10 = a10; sv11 = a11; sv12 = a12; sv13 = a13; sv14 = a14; sv15 = a15; a1 = T15; a2 = T14; a3 = T13; a4 = T12; a5 = T11; a6 = T10; a7 = T9; a8 = T8; a9 = T7; a10 = T6; a11 = T5; a12 = T4; a13 = T3; a14 = T2; a15 = T1; }
+
+# A callee's arguments are its own: the registers a call passes in are
+# saved before it and restored after, so ldarg reads the method's argument.
+Restore: is na=0 { }
+Restore: is na=1 { a0 = sv0; }
+Restore: is na=2 { a0 = sv0; a1 = sv1; }
+Restore: is na=3 { a0 = sv0; a1 = sv1; a2 = sv2; }
+Restore: is na=4 { a0 = sv0; a1 = sv1; a2 = sv2; a3 = sv3; }
+Restore: is na=5 { a0 = sv0; a1 = sv1; a2 = sv2; a3 = sv3; a4 = sv4; }
+Restore: is na=6 { a0 = sv0; a1 = sv1; a2 = sv2; a3 = sv3; a4 = sv4; a5 = sv5; }
+Restore: is na=7 { a0 = sv0; a1 = sv1; a2 = sv2; a3 = sv3; a4 = sv4; a5 = sv5; a6 = sv6; }
+Restore: is na=8 { a0 = sv0; a1 = sv1; a2 = sv2; a3 = sv3; a4 = sv4; a5 = sv5; a6 = sv6; a7 = sv7; }
+Restore: is na=9 { a0 = sv0; a1 = sv1; a2 = sv2; a3 = sv3; a4 = sv4; a5 = sv5; a6 = sv6; a7 = sv7; a8 = sv8; }
+Restore: is na=10 { a0 = sv0; a1 = sv1; a2 = sv2; a3 = sv3; a4 = sv4; a5 = sv5; a6 = sv6; a7 = sv7; a8 = sv8; a9 = sv9; }
+Restore: is na=11 { a0 = sv0; a1 = sv1; a2 = sv2; a3 = sv3; a4 = sv4; a5 = sv5; a6 = sv6; a7 = sv7; a8 = sv8; a9 = sv9; a10 = sv10; }
+Restore: is na=12 { a0 = sv0; a1 = sv1; a2 = sv2; a3 = sv3; a4 = sv4; a5 = sv5; a6 = sv6; a7 = sv7; a8 = sv8; a9 = sv9; a10 = sv10; a11 = sv11; }
+Restore: is na=13 { a0 = sv0; a1 = sv1; a2 = sv2; a3 = sv3; a4 = sv4; a5 = sv5; a6 = sv6; a7 = sv7; a8 = sv8; a9 = sv9; a10 = sv10; a11 = sv11; a12 = sv12; }
+Restore: is na=14 { a0 = sv0; a1 = sv1; a2 = sv2; a3 = sv3; a4 = sv4; a5 = sv5; a6 = sv6; a7 = sv7; a8 = sv8; a9 = sv9; a10 = sv10; a11 = sv11; a12 = sv12; a13 = sv13; }
+Restore: is na=15 { a0 = sv0; a1 = sv1; a2 = sv2; a3 = sv3; a4 = sv4; a5 = sv5; a6 = sv6; a7 = sv7; a8 = sv8; a9 = sv9; a10 = sv10; a11 = sv11; a12 = sv12; a13 = sv13; a14 = sv14; }
+Restore: is na=16 { a0 = sv0; a1 = sv1; a2 = sv2; a3 = sv3; a4 = sv4; a5 = sv5; a6 = sv6; a7 = sv7; a8 = sv8; a9 = sv9; a10 = sv10; a11 = sv11; a12 = sv12; a13 = sv13; a14 = sv14; a15 = sv15; }
+CtorRestore: is na=0 { a0 = sv0; }
+CtorRestore: is na=1 { a0 = sv0; a1 = sv1; }
+CtorRestore: is na=2 { a0 = sv0; a1 = sv1; a2 = sv2; }
+CtorRestore: is na=3 { a0 = sv0; a1 = sv1; a2 = sv2; a3 = sv3; }
+CtorRestore: is na=4 { a0 = sv0; a1 = sv1; a2 = sv2; a3 = sv3; a4 = sv4; }
+CtorRestore: is na=5 { a0 = sv0; a1 = sv1; a2 = sv2; a3 = sv3; a4 = sv4; a5 = sv5; }
+CtorRestore: is na=6 { a0 = sv0; a1 = sv1; a2 = sv2; a3 = sv3; a4 = sv4; a5 = sv5; a6 = sv6; }
+CtorRestore: is na=7 { a0 = sv0; a1 = sv1; a2 = sv2; a3 = sv3; a4 = sv4; a5 = sv5; a6 = sv6; a7 = sv7; }
+CtorRestore: is na=8 { a0 = sv0; a1 = sv1; a2 = sv2; a3 = sv3; a4 = sv4; a5 = sv5; a6 = sv6; a7 = sv7; a8 = sv8; }
+CtorRestore: is na=9 { a0 = sv0; a1 = sv1; a2 = sv2; a3 = sv3; a4 = sv4; a5 = sv5; a6 = sv6; a7 = sv7; a8 = sv8; a9 = sv9; }
+CtorRestore: is na=10 { a0 = sv0; a1 = sv1; a2 = sv2; a3 = sv3; a4 = sv4; a5 = sv5; a6 = sv6; a7 = sv7; a8 = sv8; a9 = sv9; a10 = sv10; }
+CtorRestore: is na=11 { a0 = sv0; a1 = sv1; a2 = sv2; a3 = sv3; a4 = sv4; a5 = sv5; a6 = sv6; a7 = sv7; a8 = sv8; a9 = sv9; a10 = sv10; a11 = sv11; }
+CtorRestore: is na=12 { a0 = sv0; a1 = sv1; a2 = sv2; a3 = sv3; a4 = sv4; a5 = sv5; a6 = sv6; a7 = sv7; a8 = sv8; a9 = sv9; a10 = sv10; a11 = sv11; a12 = sv12; }
+CtorRestore: is na=13 { a0 = sv0; a1 = sv1; a2 = sv2; a3 = sv3; a4 = sv4; a5 = sv5; a6 = sv6; a7 = sv7; a8 = sv8; a9 = sv9; a10 = sv10; a11 = sv11; a12 = sv12; a13 = sv13; }
+CtorRestore: is na=14 { a0 = sv0; a1 = sv1; a2 = sv2; a3 = sv3; a4 = sv4; a5 = sv5; a6 = sv6; a7 = sv7; a8 = sv8; a9 = sv9; a10 = sv10; a11 = sv11; a12 = sv12; a13 = sv13; a14 = sv14; }
+CtorRestore: is na=15 { a0 = sv0; a1 = sv1; a2 = sv2; a3 = sv3; a4 = sv4; a5 = sv5; a6 = sv6; a7 = sv7; a8 = sv8; a9 = sv9; a10 = sv10; a11 = sv11; a12 = sv12; a13 = sv13; a14 = sv14; a15 = sv15; }
+
+Res: is na=0 & P { export P; }
+Res: is na=1 & T1 { export T1; }
+Res: is na=2 & T2 { export T2; }
+Res: is na=3 & T3 { export T3; }
+Res: is na=4 & T4 { export T4; }
+Res: is na=5 & T5 { export T5; }
+Res: is na=6 & T6 { export T6; }
+Res: is na=7 & T7 { export T7; }
+Res: is na=8 & T8 { export T8; }
+Res: is na=9 & T9 { export T9; }
+Res: is na=10 & T10 { export T10; }
+Res: is na=11 & T11 { export T11; }
+Res: is na=12 & T12 { export T12; }
+Res: is na=13 & T13 { export T13; }
+Res: is na=14 & T14 { export T14; }
+Res: is na=15 & T15 { export T15; }
+Res: is na=16 & T16 { export T16; }
+
+Rel8:  dest is sb  [ dest = inst_next + sb; ]  { export *:8 dest; }
+Rel32: dest is sdw [ dest = inst_next + sdw; ] { export *:8 dest; }
+Abs:   ud   is ud  { export *:8 ud; }
+
+# The runtime helper a throw calls; the loader declares it no-return.
+Throw: dest is epsilon [ dest = 0x1000; ] { export *:8 dest; }
+
+# The index a short form (ldarg.0 .. ldarg.3, ldloc.0 .., stloc.0 ..) holds
+# in its opcode.
+Short: n is lo2 [ n = (lo2 + 2) & 3; ] { export *[const]:8 n; }
+
+# Argument registers by size, for the short, the 8-bit and the 16-bit index.
+As1: o is lo2 [ o = 0x100 + ((lo2 + 2) & 3) * 8; ] { export *[register]:1 o; }
+Ab1: o is ub  [ o = 0x100 + ub * 8; ] { export *[register]:1 o; }
+Aw1: o is uw  [ o = 0x100 + uw * 8; ] { export *[register]:1 o; }
+As2: o is lo2 [ o = 0x100 + ((lo2 + 2) & 3) * 8; ] { export *[register]:2 o; }
+Ab2: o is ub  [ o = 0x100 + ub * 8; ] { export *[register]:2 o; }
+Aw2: o is uw  [ o = 0x100 + uw * 8; ] { export *[register]:2 o; }
+As4: o is lo2 [ o = 0x100 + ((lo2 + 2) & 3) * 8; ] { export *[register]:4 o; }
+Ab4: o is ub  [ o = 0x100 + ub * 8; ] { export *[register]:4 o; }
+Aw4: o is uw  [ o = 0x100 + uw * 8; ] { export *[register]:4 o; }
+As8: o is lo2 [ o = 0x100 + ((lo2 + 2) & 3) * 8; ] { export *[register]:8 o; }
+Ab8: o is ub  [ o = 0x100 + ub * 8; ] { export *[register]:8 o; }
+Aw8: o is uw  [ o = 0x100 + uw * 8; ] { export *[register]:8 o; }
+
+# The address of a local: cell n is at SP - 8*(n+1).
+Ls: Short is Short { local a:8 = SP - (Short + 1) * 8; export a; }
+Lb: ub    is ub    { local a:8 = SP - (ub + 1) * 8; export a; }
+Lw: uw    is uw    { local a:8 = SP - (uw + 1) * 8; export a; }
+
+# A static field by size.
+SF1: ud is ud { export *:1 ud; }
+SF2: ud is ud { export *:2 ud; }
+SF4: ud is ud { export *:4 ud; }
+SF8: ud is ud { export *:8 ud; }
+
+Small: v is lo4 [ v = lo4 - 6; ] { export *[const]:8 v; }
+SwitchEnd: dest is ud [ dest = inst_next + 4 * ud; ] { export *:8 dest; }
+
+:unsupported is ok=0 & op unimpl
+
+with : ok=1 {
+
+:nop   is op=0x00 { }
+:break is op=0x01 { }
+
+:ldarg Short is op>=0x02 & op<=0x05 & Short & As4 & k=0 & P { P = sext(As4); }
+:ldarg Short is op>=0x02 & op<=0x05 & Short & As8 & k=1 & P { P = As8; }
+:ldarg Short is op>=0x02 & op<=0x05 & Short & As1 & k=2 & P { P = zext(As1); }
+:ldarg Short is op>=0x02 & op<=0x05 & Short & As1 & k=3 & P { P = sext(As1); }
+:ldarg Short is op>=0x02 & op<=0x05 & Short & As2 & k=4 & P { P = zext(As2); }
+:ldarg Short is op>=0x02 & op<=0x05 & Short & As2 & k=5 & P { P = sext(As2); }
+:ldarg Short is op>=0x02 & op<=0x05 & Short & As4 & k=6 & P { P = zext(As4); }
+:ldarg.s ub is op=0x0e; ub & Ab4 & k=0 & P { P = sext(Ab4); }
+:ldarg.s ub is op=0x0e; ub & Ab8 & k=1 & P { P = Ab8; }
+:ldarg.s ub is op=0x0e; ub & Ab1 & k=2 & P { P = zext(Ab1); }
+:ldarg.s ub is op=0x0e; ub & Ab1 & k=3 & P { P = sext(Ab1); }
+:ldarg.s ub is op=0x0e; ub & Ab2 & k=4 & P { P = zext(Ab2); }
+:ldarg.s ub is op=0x0e; ub & Ab2 & k=5 & P { P = sext(Ab2); }
+:ldarg.s ub is op=0x0e; ub & Ab4 & k=6 & P { P = zext(Ab4); }
+:ldarg uw is op=0xfe; xop=0x09; uw & Aw4 & k=0 & P { P = sext(Aw4); }
+:ldarg uw is op=0xfe; xop=0x09; uw & Aw8 & k=1 & P { P = Aw8; }
+:ldarg uw is op=0xfe; xop=0x09; uw & Aw1 & k=2 & P { P = zext(Aw1); }
+:ldarg uw is op=0xfe; xop=0x09; uw & Aw1 & k=3 & P { P = sext(Aw1); }
+:ldarg uw is op=0xfe; xop=0x09; uw & Aw2 & k=4 & P { P = zext(Aw2); }
+:ldarg uw is op=0xfe; xop=0x09; uw & Aw2 & k=5 & P { P = sext(Aw2); }
+:ldarg uw is op=0xfe; xop=0x09; uw & Aw4 & k=6 & P { P = zext(Aw4); }
+:starg.s ub is op=0x10; ub & Ab4 & (k=0 | k=6) & T1 { Ab4 = T1:4; }
+:starg.s ub is op=0x10; ub & Ab8 & (k=1) & T1 { Ab8 = T1; }
+:starg.s ub is op=0x10; ub & Ab1 & (k=2 | k=3) & T1 { Ab1 = T1:1; }
+:starg.s ub is op=0x10; ub & Ab2 & (k=4 | k=5) & T1 { Ab2 = T1:2; }
+:starg uw is op=0xfe; xop=0x0b; uw & Aw4 & (k=0 | k=6) & T1 { Aw4 = T1:4; }
+:starg uw is op=0xfe; xop=0x0b; uw & Aw8 & (k=1) & T1 { Aw8 = T1; }
+:starg uw is op=0xfe; xop=0x0b; uw & Aw1 & (k=2 | k=3) & T1 { Aw1 = T1:1; }
+:starg uw is op=0xfe; xop=0x0b; uw & Aw2 & (k=4 | k=5) & T1 { Aw2 = T1:2; }
+:ldloc Ls is op>=0x06 & op<=0x09 & Ls & k=0 & P { P = sext(*:4 Ls); }
+:ldloc Ls is op>=0x06 & op<=0x09 & Ls & k=1 & P { P = *:8 Ls; }
+:ldloc Ls is op>=0x06 & op<=0x09 & Ls & k=2 & P { P = zext(*:1 Ls); }
+:ldloc Ls is op>=0x06 & op<=0x09 & Ls & k=3 & P { P = sext(*:1 Ls); }
+:ldloc Ls is op>=0x06 & op<=0x09 & Ls & k=4 & P { P = zext(*:2 Ls); }
+:ldloc Ls is op>=0x06 & op<=0x09 & Ls & k=5 & P { P = sext(*:2 Ls); }
+:ldloc Ls is op>=0x06 & op<=0x09 & Ls & k=6 & P { P = zext(*:4 Ls); }
+:ldloc.s Lb is op=0x11; Lb & k=0 & P { P = sext(*:4 Lb); }
+:ldloc.s Lb is op=0x11; Lb & k=1 & P { P = *:8 Lb; }
+:ldloc.s Lb is op=0x11; Lb & k=2 & P { P = zext(*:1 Lb); }
+:ldloc.s Lb is op=0x11; Lb & k=3 & P { P = sext(*:1 Lb); }
+:ldloc.s Lb is op=0x11; Lb & k=4 & P { P = zext(*:2 Lb); }
+:ldloc.s Lb is op=0x11; Lb & k=5 & P { P = sext(*:2 Lb); }
+:ldloc.s Lb is op=0x11; Lb & k=6 & P { P = zext(*:4 Lb); }
+:ldloc Lw is op=0xfe; xop=0x0c; Lw & k=0 & P { P = sext(*:4 Lw); }
+:ldloc Lw is op=0xfe; xop=0x0c; Lw & k=1 & P { P = *:8 Lw; }
+:ldloc Lw is op=0xfe; xop=0x0c; Lw & k=2 & P { P = zext(*:1 Lw); }
+:ldloc Lw is op=0xfe; xop=0x0c; Lw & k=3 & P { P = sext(*:1 Lw); }
+:ldloc Lw is op=0xfe; xop=0x0c; Lw & k=4 & P { P = zext(*:2 Lw); }
+:ldloc Lw is op=0xfe; xop=0x0c; Lw & k=5 & P { P = sext(*:2 Lw); }
+:ldloc Lw is op=0xfe; xop=0x0c; Lw & k=6 & P { P = zext(*:4 Lw); }
+:stloc Ls is op>=0x0a & op<=0x0d & Ls & (k=0 | k=6) & T1 { *:4 Ls = T1:4; }
+:stloc Ls is op>=0x0a & op<=0x0d & Ls & (k=1) & T1 { *:8 Ls = T1; }
+:stloc Ls is op>=0x0a & op<=0x0d & Ls & (k=2 | k=3) & T1 { *:1 Ls = T1:1; }
+:stloc Ls is op>=0x0a & op<=0x0d & Ls & (k=4 | k=5) & T1 { *:2 Ls = T1:2; }
+:stloc.s Lb is op=0x13; Lb & (k=0 | k=6) & T1 { *:4 Lb = T1:4; }
+:stloc.s Lb is op=0x13; Lb & (k=1) & T1 { *:8 Lb = T1; }
+:stloc.s Lb is op=0x13; Lb & (k=2 | k=3) & T1 { *:1 Lb = T1:1; }
+:stloc.s Lb is op=0x13; Lb & (k=4 | k=5) & T1 { *:2 Lb = T1:2; }
+:stloc Lw is op=0xfe; xop=0x0e; Lw & (k=0 | k=6) & T1 { *:4 Lw = T1:4; }
+:stloc Lw is op=0xfe; xop=0x0e; Lw & (k=1) & T1 { *:8 Lw = T1; }
+:stloc Lw is op=0xfe; xop=0x0e; Lw & (k=2 | k=3) & T1 { *:1 Lw = T1:1; }
+:stloc Lw is op=0xfe; xop=0x0e; Lw & (k=4 | k=5) & T1 { *:2 Lw = T1:2; }
+:ldloca.s Lb is op=0x12; Lb & P { P = Lb; }
+:ldloca Lw   is op=0xfe; xop=0x0d; Lw & P { P = Lw; }
+
+:ldnull      is op=0x14 & P { P = 0; }
+:ldc.i4.m1   is op=0x15 & P { P = -1; }
+:ldc.i4 Small is op>=0x16 & op<=0x1e & Small & P { P = Small; }
+:ldc.i4.s sb is op=0x1f; sb & P { P = sb; }
+:ldc.i4 sdw  is op=0x20; sdw & P { P = sdw; }
+:ldc.i8 uq   is op=0x21; uq & P { P = uq; }
+:ldc.r4 ud   is op=0x22; ud & P { P = ud; }
+:ldc.r8 uq   is op=0x23; uq & P { P = uq; }
+:dup         is op=0x25 & P & T1 { P = T1; }
+:pop         is op=0x26 { }
+
+:call Abs is op=0x28; Abs & Args & Restore & k=15 { build Args; call Abs; build Restore; }
+:call Abs is op=0x28; Abs & Args & Restore & Res & k=0 { build Args; call Abs; build Restore; Res = sext(rv4); }
+:call Abs is op=0x28; Abs & Args & Restore & Res & k=1 { build Args; call Abs; build Restore; Res = rv; }
+:call Abs is op=0x28; Abs & Args & Restore & Res & k=2 { build Args; call Abs; build Restore; Res = zext(rv1); }
+:call Abs is op=0x28; Abs & Args & Restore & Res & k=3 { build Args; call Abs; build Restore; Res = sext(rv1); }
+:call Abs is op=0x28; Abs & Args & Restore & Res & k=4 { build Args; call Abs; build Restore; Res = zext(rv2); }
+:call Abs is op=0x28; Abs & Args & Restore & Res & k=5 { build Args; call Abs; build Restore; Res = sext(rv2); }
+:call Abs is op=0x28; Abs & Args & Restore & Res & k=6 { build Args; call Abs; build Restore; Res = zext(rv4); }
+:callvirt Abs is op=0x6f; Abs & Args & Restore & k=15 { build Args; call Abs; build Restore; }
+:callvirt Abs is op=0x6f; Abs & Args & Restore & Res & k=0 { build Args; call Abs; build Restore; Res = sext(rv4); }
+:callvirt Abs is op=0x6f; Abs & Args & Restore & Res & k=1 { build Args; call Abs; build Restore; Res = rv; }
+:callvirt Abs is op=0x6f; Abs & Args & Restore & Res & k=2 { build Args; call Abs; build Restore; Res = zext(rv1); }
+:callvirt Abs is op=0x6f; Abs & Args & Restore & Res & k=3 { build Args; call Abs; build Restore; Res = sext(rv1); }
+:callvirt Abs is op=0x6f; Abs & Args & Restore & Res & k=4 { build Args; call Abs; build Restore; Res = zext(rv2); }
+:callvirt Abs is op=0x6f; Abs & Args & Restore & Res & k=5 { build Args; call Abs; build Restore; Res = sext(rv2); }
+:callvirt Abs is op=0x6f; Abs & Args & Restore & Res & k=6 { build Args; call Abs; build Restore; Res = zext(rv4); }
+:newobj Abs is op=0x73; Abs & CtorArgs & CtorRestore & Res { local obj:8 = newobj(); build CtorArgs; a0 = obj; call Abs; build CtorRestore; Res = obj; }
+
+:ret is op=0x2a & k=15 { return [ra]; }
+:ret is op=0x2a & k=0 & T1 { rv = T1; return [ra]; }
+
+:br.s Rel8      is op=0x2b; Rel8  { goto Rel8; }
+:br Rel32       is op=0x38; Rel32 { goto Rel32; }
+:brfalse.s Rel8 is op=0x2c; Rel8  & k=0 & T1 { if (T1:4 == 0) goto Rel8; }
+:brfalse.s Rel8 is op=0x2c; Rel8  & k=1 & T1 { if (T1 == 0) goto Rel8; }
+:brtrue.s Rel8  is op=0x2d; Rel8  & k=0 & T1 { if (T1:4 != 0) goto Rel8; }
+:brtrue.s Rel8  is op=0x2d; Rel8  & k=1 & T1 { if (T1 != 0) goto Rel8; }
+:brfalse Rel32  is op=0x39; Rel32 & k=0 & T1 { if (T1:4 == 0) goto Rel32; }
+:brfalse Rel32  is op=0x39; Rel32 & k=1 & T1 { if (T1 == 0) goto Rel32; }
+:brtrue Rel32   is op=0x3a; Rel32 & k=0 & T1 { if (T1:4 != 0) goto Rel32; }
+:brtrue Rel32   is op=0x3a; Rel32 & k=1 & T1 { if (T1 != 0) goto Rel32; }
+
+:beq.s Rel8 is op=0x2e; Rel8 & k=0 & T2 & T1 { if (T2:4 == T1:4) goto Rel8; }
+:beq.s Rel8 is op=0x2e; Rel8 & k=1 & T2 & T1 { if (T2 == T1) goto Rel8; }
+:beq.s Rel8 is op=0x2e; Rel8 & k=4 & T2 & T1 { if (T2:4 f== T1:4) goto Rel8; }
+:beq.s Rel8 is op=0x2e; Rel8 & k=5 & T2 & T1 { if (T2 f== T1) goto Rel8; }
+:beq Rel32 is op=0x3b; Rel32 & k=0 & T2 & T1 { if (T2:4 == T1:4) goto Rel32; }
+:beq Rel32 is op=0x3b; Rel32 & k=1 & T2 & T1 { if (T2 == T1) goto Rel32; }
+:beq Rel32 is op=0x3b; Rel32 & k=4 & T2 & T1 { if (T2:4 f== T1:4) goto Rel32; }
+:beq Rel32 is op=0x3b; Rel32 & k=5 & T2 & T1 { if (T2 f== T1) goto Rel32; }
+:bge.s Rel8 is op=0x2f; Rel8 & k=0 & T2 & T1 { if (T2:4 s>= T1:4) goto Rel8; }
+:bge.s Rel8 is op=0x2f; Rel8 & k=1 & T2 & T1 { if (T2 s>= T1) goto Rel8; }
+:bge.s Rel8 is op=0x2f; Rel8 & k=4 & T2 & T1 { if (T2:4 f>= T1:4) goto Rel8; }
+:bge.s Rel8 is op=0x2f; Rel8 & k=5 & T2 & T1 { if (T2 f>= T1) goto Rel8; }
+:bge Rel32 is op=0x3c; Rel32 & k=0 & T2 & T1 { if (T2:4 s>= T1:4) goto Rel32; }
+:bge Rel32 is op=0x3c; Rel32 & k=1 & T2 & T1 { if (T2 s>= T1) goto Rel32; }
+:bge Rel32 is op=0x3c; Rel32 & k=4 & T2 & T1 { if (T2:4 f>= T1:4) goto Rel32; }
+:bge Rel32 is op=0x3c; Rel32 & k=5 & T2 & T1 { if (T2 f>= T1) goto Rel32; }
+:bgt.s Rel8 is op=0x30; Rel8 & k=0 & T2 & T1 { if (T2:4 s> T1:4) goto Rel8; }
+:bgt.s Rel8 is op=0x30; Rel8 & k=1 & T2 & T1 { if (T2 s> T1) goto Rel8; }
+:bgt.s Rel8 is op=0x30; Rel8 & k=4 & T2 & T1 { if (T2:4 f> T1:4) goto Rel8; }
+:bgt.s Rel8 is op=0x30; Rel8 & k=5 & T2 & T1 { if (T2 f> T1) goto Rel8; }
+:bgt Rel32 is op=0x3d; Rel32 & k=0 & T2 & T1 { if (T2:4 s> T1:4) goto Rel32; }
+:bgt Rel32 is op=0x3d; Rel32 & k=1 & T2 & T1 { if (T2 s> T1) goto Rel32; }
+:bgt Rel32 is op=0x3d; Rel32 & k=4 & T2 & T1 { if (T2:4 f> T1:4) goto Rel32; }
+:bgt Rel32 is op=0x3d; Rel32 & k=5 & T2 & T1 { if (T2 f> T1) goto Rel32; }
+:ble.s Rel8 is op=0x31; Rel8 & k=0 & T2 & T1 { if (T2:4 s<= T1:4) goto Rel8; }
+:ble.s Rel8 is op=0x31; Rel8 & k=1 & T2 & T1 { if (T2 s<= T1) goto Rel8; }
+:ble.s Rel8 is op=0x31; Rel8 & k=4 & T2 & T1 { if (T2:4 f<= T1:4) goto Rel8; }
+:ble.s Rel8 is op=0x31; Rel8 & k=5 & T2 & T1 { if (T2 f<= T1) goto Rel8; }
+:ble Rel32 is op=0x3e; Rel32 & k=0 & T2 & T1 { if (T2:4 s<= T1:4) goto Rel32; }
+:ble Rel32 is op=0x3e; Rel32 & k=1 & T2 & T1 { if (T2 s<= T1) goto Rel32; }
+:ble Rel32 is op=0x3e; Rel32 & k=4 & T2 & T1 { if (T2:4 f<= T1:4) goto Rel32; }
+:ble Rel32 is op=0x3e; Rel32 & k=5 & T2 & T1 { if (T2 f<= T1) goto Rel32; }
+:blt.s Rel8 is op=0x32; Rel8 & k=0 & T2 & T1 { if (T2:4 s< T1:4) goto Rel8; }
+:blt.s Rel8 is op=0x32; Rel8 & k=1 & T2 & T1 { if (T2 s< T1) goto Rel8; }
+:blt.s Rel8 is op=0x32; Rel8 & k=4 & T2 & T1 { if (T2:4 f< T1:4) goto Rel8; }
+:blt.s Rel8 is op=0x32; Rel8 & k=5 & T2 & T1 { if (T2 f< T1) goto Rel8; }
+:blt Rel32 is op=0x3f; Rel32 & k=0 & T2 & T1 { if (T2:4 s< T1:4) goto Rel32; }
+:blt Rel32 is op=0x3f; Rel32 & k=1 & T2 & T1 { if (T2 s< T1) goto Rel32; }
+:blt Rel32 is op=0x3f; Rel32 & k=4 & T2 & T1 { if (T2:4 f< T1:4) goto Rel32; }
+:blt Rel32 is op=0x3f; Rel32 & k=5 & T2 & T1 { if (T2 f< T1) goto Rel32; }
+:bne.un.s Rel8 is op=0x33; Rel8 & k=0 & T2 & T1 { if (T2:4 != T1:4) goto Rel8; }
+:bne.un.s Rel8 is op=0x33; Rel8 & k=1 & T2 & T1 { if (T2 != T1) goto Rel8; }
+:bne.un.s Rel8 is op=0x33; Rel8 & k=4 & T2 & T1 { if (T2:4 f!= T1:4) goto Rel8; }
+:bne.un.s Rel8 is op=0x33; Rel8 & k=5 & T2 & T1 { if (T2 f!= T1) goto Rel8; }
+:bne.un Rel32 is op=0x40; Rel32 & k=0 & T2 & T1 { if (T2:4 != T1:4) goto Rel32; }
+:bne.un Rel32 is op=0x40; Rel32 & k=1 & T2 & T1 { if (T2 != T1) goto Rel32; }
+:bne.un Rel32 is op=0x40; Rel32 & k=4 & T2 & T1 { if (T2:4 f!= T1:4) goto Rel32; }
+:bne.un Rel32 is op=0x40; Rel32 & k=5 & T2 & T1 { if (T2 f!= T1) goto Rel32; }
+:bge.un.s Rel8 is op=0x34; Rel8 & k=0 & T2 & T1 { if (T2:4 >= T1:4) goto Rel8; }
+:bge.un.s Rel8 is op=0x34; Rel8 & k=1 & T2 & T1 { if (T2 >= T1) goto Rel8; }
+:bge.un.s Rel8 is op=0x34; Rel8 & k=4 & T2 & T1 { if (!(T2:4 f< T1:4)) goto Rel8; }
+:bge.un.s Rel8 is op=0x34; Rel8 & k=5 & T2 & T1 { if (!(T2 f< T1)) goto Rel8; }
+:bge.un Rel32 is op=0x41; Rel32 & k=0 & T2 & T1 { if (T2:4 >= T1:4) goto Rel32; }
+:bge.un Rel32 is op=0x41; Rel32 & k=1 & T2 & T1 { if (T2 >= T1) goto Rel32; }
+:bge.un Rel32 is op=0x41; Rel32 & k=4 & T2 & T1 { if (!(T2:4 f< T1:4)) goto Rel32; }
+:bge.un Rel32 is op=0x41; Rel32 & k=5 & T2 & T1 { if (!(T2 f< T1)) goto Rel32; }
+:bgt.un.s Rel8 is op=0x35; Rel8 & k=0 & T2 & T1 { if (T2:4 > T1:4) goto Rel8; }
+:bgt.un.s Rel8 is op=0x35; Rel8 & k=1 & T2 & T1 { if (T2 > T1) goto Rel8; }
+:bgt.un.s Rel8 is op=0x35; Rel8 & k=4 & T2 & T1 { if (!(T2:4 f<= T1:4)) goto Rel8; }
+:bgt.un.s Rel8 is op=0x35; Rel8 & k=5 & T2 & T1 { if (!(T2 f<= T1)) goto Rel8; }
+:bgt.un Rel32 is op=0x42; Rel32 & k=0 & T2 & T1 { if (T2:4 > T1:4) goto Rel32; }
+:bgt.un Rel32 is op=0x42; Rel32 & k=1 & T2 & T1 { if (T2 > T1) goto Rel32; }
+:bgt.un Rel32 is op=0x42; Rel32 & k=4 & T2 & T1 { if (!(T2:4 f<= T1:4)) goto Rel32; }
+:bgt.un Rel32 is op=0x42; Rel32 & k=5 & T2 & T1 { if (!(T2 f<= T1)) goto Rel32; }
+:ble.un.s Rel8 is op=0x36; Rel8 & k=0 & T2 & T1 { if (T2:4 <= T1:4) goto Rel8; }
+:ble.un.s Rel8 is op=0x36; Rel8 & k=1 & T2 & T1 { if (T2 <= T1) goto Rel8; }
+:ble.un.s Rel8 is op=0x36; Rel8 & k=4 & T2 & T1 { if (!(T2:4 f> T1:4)) goto Rel8; }
+:ble.un.s Rel8 is op=0x36; Rel8 & k=5 & T2 & T1 { if (!(T2 f> T1)) goto Rel8; }
+:ble.un Rel32 is op=0x43; Rel32 & k=0 & T2 & T1 { if (T2:4 <= T1:4) goto Rel32; }
+:ble.un Rel32 is op=0x43; Rel32 & k=1 & T2 & T1 { if (T2 <= T1) goto Rel32; }
+:ble.un Rel32 is op=0x43; Rel32 & k=4 & T2 & T1 { if (!(T2:4 f> T1:4)) goto Rel32; }
+:ble.un Rel32 is op=0x43; Rel32 & k=5 & T2 & T1 { if (!(T2 f> T1)) goto Rel32; }
+:blt.un.s Rel8 is op=0x37; Rel8 & k=0 & T2 & T1 { if (T2:4 < T1:4) goto Rel8; }
+:blt.un.s Rel8 is op=0x37; Rel8 & k=1 & T2 & T1 { if (T2 < T1) goto Rel8; }
+:blt.un.s Rel8 is op=0x37; Rel8 & k=4 & T2 & T1 { if (!(T2:4 f>= T1:4)) goto Rel8; }
+:blt.un.s Rel8 is op=0x37; Rel8 & k=5 & T2 & T1 { if (!(T2 f>= T1)) goto Rel8; }
+:blt.un Rel32 is op=0x44; Rel32 & k=0 & T2 & T1 { if (T2:4 < T1:4) goto Rel32; }
+:blt.un Rel32 is op=0x44; Rel32 & k=1 & T2 & T1 { if (T2 < T1) goto Rel32; }
+:blt.un Rel32 is op=0x44; Rel32 & k=4 & T2 & T1 { if (!(T2:4 f>= T1:4)) goto Rel32; }
+:blt.un Rel32 is op=0x44; Rel32 & k=5 & T2 & T1 { if (!(T2 f>= T1)) goto Rel32; }
+
+# The table of 32-bit offsets follows the count; they are relative to its end.
+:switch ud is op=0x45; ud & SwitchEnd & T1 {
+  local index:8 = zext(T1:4);
+  if (index >= ud) goto SwitchEnd;
+  local offset:4 = *:4 (inst_next + index * 4);
+  local target:8 = inst_next + 4 * ud + sext(offset);
+  goto [target];
+}
+
+:ldind.i1 is op=0x46 & T1 { T1 = sext(*:1 T1); }
+:ldind.u1 is op=0x47 & T1 { T1 = zext(*:1 T1); }
+:ldind.i2 is op=0x48 & T1 { T1 = sext(*:2 T1); }
+:ldind.u2 is op=0x49 & T1 { T1 = zext(*:2 T1); }
+:ldind.i4 is op=0x4a & T1 { T1 = sext(*:4 T1); }
+:ldind.u4 is op=0x4b & T1 { T1 = sext(*:4 T1); }
+:ldind.i8 is op=0x4c & T1 { T1 = *:8 T1; }
+:ldind.i is op=0x4d & T1 { T1 = *:8 T1; }
+:ldind.r4 is op=0x4e & T1 { T1 = zext(*:4 T1); }
+:ldind.r8 is op=0x4f & T1 { T1 = *:8 T1; }
+:ldind.ref is op=0x50 & T1 { T1 = *:8 T1; }
+:stind.ref is op=0x51 & T2 & T1 { *:8 T2 = T1; }
+:stind.i1 is op=0x52 & T2 & T1 { *:1 T2 = T1:1; }
+:stind.i2 is op=0x53 & T2 & T1 { *:2 T2 = T1:2; }
+:stind.i4 is op=0x54 & T2 & T1 { *:4 T2 = T1:4; }
+:stind.i8 is op=0x55 & T2 & T1 { *:8 T2 = T1; }
+:stind.r4 is op=0x56 & T2 & T1 { *:4 T2 = T1:4; }
+:stind.r8 is op=0x57 & T2 & T1 { *:8 T2 = T1; }
+:stind.i is op=0xdf & T2 & T1 { *:8 T2 = T1; }
+
+:add is op=0x58 & k=0 & T2 & T1 { T2 = sext(T2:4 + T1:4); }
+:add is op=0x58 & k=1 & T2 & T1 { T2 = T2 + T1; }
+:add is op=0x58 & k=4 & T2 & T1 { local r:4 = T2:4 f+ T1:4; T2 = zext(r); }
+:add is op=0x58 & k=5 & T2 & T1 { T2 = T2 f+ T1; }
+:sub is op=0x59 & k=0 & T2 & T1 { T2 = sext(T2:4 - T1:4); }
+:sub is op=0x59 & k=1 & T2 & T1 { T2 = T2 - T1; }
+:sub is op=0x59 & k=4 & T2 & T1 { local r:4 = T2:4 f- T1:4; T2 = zext(r); }
+:sub is op=0x59 & k=5 & T2 & T1 { T2 = T2 f- T1; }
+:mul is op=0x5a & k=0 & T2 & T1 { T2 = sext(T2:4 * T1:4); }
+:mul is op=0x5a & k=1 & T2 & T1 { T2 = T2 * T1; }
+:mul is op=0x5a & k=4 & T2 & T1 { local r:4 = T2:4 f* T1:4; T2 = zext(r); }
+:mul is op=0x5a & k=5 & T2 & T1 { T2 = T2 f* T1; }
+:div is op=0x5b & k=0 & T2 & T1 { T2 = sext(T2:4 s/ T1:4); }
+:div is op=0x5b & k=1 & T2 & T1 { T2 = T2 s/ T1; }
+:div is op=0x5b & k=4 & T2 & T1 { local r:4 = T2:4 f/ T1:4; T2 = zext(r); }
+:div is op=0x5b & k=5 & T2 & T1 { T2 = T2 f/ T1; }
+:div.un is op=0x5c & k=0 & T2 & T1 { T2 = sext(T2:4 / T1:4); }
+:div.un is op=0x5c & k=1 & T2 & T1 { T2 = T2 / T1; }
+:rem is op=0x5d & k=0 & T2 & T1 { T2 = sext(T2:4 s% T1:4); }
+:rem is op=0x5d & k=1 & T2 & T1 { T2 = T2 s% T1; }
+:rem is op=0x5d & k=4 & T2 & T1 { local r:4 = fmod(T2:4, T1:4); T2 = zext(r); }
+:rem is op=0x5d & k=5 & T2 & T1 { T2 = fmod(T2, T1); }
+:rem.un is op=0x5e & k=0 & T2 & T1 { T2 = sext(T2:4 % T1:4); }
+:rem.un is op=0x5e & k=1 & T2 & T1 { T2 = T2 % T1; }
+:and is op=0x5f & k=0 & T2 & T1 { T2 = sext(T2:4 & T1:4); }
+:and is op=0x5f & k=1 & T2 & T1 { T2 = T2 & T1; }
+:or is op=0x60 & k=0 & T2 & T1 { T2 = sext(T2:4 | T1:4); }
+:or is op=0x60 & k=1 & T2 & T1 { T2 = T2 | T1; }
+:xor is op=0x61 & k=0 & T2 & T1 { T2 = sext(T2:4 ^ T1:4); }
+:xor is op=0x61 & k=1 & T2 & T1 { T2 = T2 ^ T1; }
+:shl is op=0x62 & k=0 & T2 & T1 { T2 = sext(T2:4 << T1:4); }
+:shl is op=0x62 & k=1 & T2 & T1 { T2 = T2 << T1:4; }
+:shr is op=0x63 & k=0 & T2 & T1 { T2 = sext(T2:4 s>> T1:4); }
+:shr is op=0x63 & k=1 & T2 & T1 { T2 = T2 s>> T1:4; }
+:shr.un is op=0x64 & k=0 & T2 & T1 { T2 = sext(T2:4 >> T1:4); }
+:shr.un is op=0x64 & k=1 & T2 & T1 { T2 = T2 >> T1:4; }
+:neg is op=0x65 & k=0 & T1 { T1 = sext(-T1:4); }
+:neg is op=0x65 & k=1 & T1 { T1 = -T1; }
+:neg is op=0x65 & k=4 & T1 { local r:4 = f- T1:4; T1 = zext(r); }
+:neg is op=0x65 & k=5 & T1 { T1 = f- T1; }
+:not is op=0x66 & k=0 & T1 { T1 = sext(~T1:4); }
+:not is op=0x66 & k=1 & T1 { T1 = ~T1; }
+
+:conv.i1 is op=0x67 & (k=0 | k=1) & T1 { T1 = sext(T1:1); }
+:conv.i1 is op=0x67 & k=4 & T1 { local t:4 = trunc(T1:4); T1 = sext(t:1); }
+:conv.i1 is op=0x67 & k=5 & T1 { local t:4 = trunc(T1); T1 = sext(t:1); }
+:conv.i2 is op=0x68 & (k=0 | k=1) & T1 { T1 = sext(T1:2); }
+:conv.i2 is op=0x68 & k=4 & T1 { local t:4 = trunc(T1:4); T1 = sext(t:2); }
+:conv.i2 is op=0x68 & k=5 & T1 { local t:4 = trunc(T1); T1 = sext(t:2); }
+:conv.u1 is op=0xd2 & (k=0 | k=1) & T1 { T1 = zext(T1:1); }
+:conv.u1 is op=0xd2 & k=4 & T1 { local t:4 = trunc(T1:4); T1 = zext(t:1); }
+:conv.u1 is op=0xd2 & k=5 & T1 { local t:4 = trunc(T1); T1 = zext(t:1); }
+:conv.u2 is op=0xd1 & (k=0 | k=1) & T1 { T1 = zext(T1:2); }
+:conv.u2 is op=0xd1 & k=4 & T1 { local t:4 = trunc(T1:4); T1 = zext(t:2); }
+:conv.u2 is op=0xd1 & k=5 & T1 { local t:4 = trunc(T1); T1 = zext(t:2); }
+:conv.i4 is op=0x69 & (k=0 | k=1) & T1 { T1 = sext(T1:4); }
+:conv.i4 is op=0x69 & k=4 & T1 { local t:4 = trunc(T1:4); T1 = sext(t); }
+:conv.i4 is op=0x69 & k=5 & T1 { local t:4 = trunc(T1); T1 = sext(t); }
+:conv.u4 is op=0x6d & (k=0 | k=1) & T1 { T1 = sext(T1:4); }
+:conv.u4 is op=0x6d & k=4 & T1 { local t:8 = trunc(T1:4); T1 = sext(t:4); }
+:conv.u4 is op=0x6d & k=5 & T1 { local t:8 = trunc(T1); T1 = sext(t:4); }
+:conv.i8 is op=0x6a & k=0 & T1 { T1 = sext(T1:4); }
+:conv.i8 is op=0x6a & k=1 { }
+:conv.i8 is op=0x6a & k=4 & T1 { T1 = trunc(T1:4); }
+:conv.i8 is op=0x6a & k=5 & T1 { T1 = trunc(T1); }
+:conv.i is op=0xd3 & k=0 & T1 { T1 = sext(T1:4); }
+:conv.i is op=0xd3 & k=1 { }
+:conv.i is op=0xd3 & k=4 & T1 { T1 = trunc(T1:4); }
+:conv.i is op=0xd3 & k=5 & T1 { T1 = trunc(T1); }
+:conv.u8 is op=0x6e & k=0 & T1 { T1 = zext(T1:4); }
+:conv.u8 is op=0x6e & k=1 { }
+:conv.u8 is op=0x6e & k=4 & T1 { T1 = trunc(T1:4); }
+:conv.u8 is op=0x6e & k=5 & T1 { T1 = trunc(T1); }
+:conv.u is op=0xe0 & k=0 & T1 { T1 = zext(T1:4); }
+:conv.u is op=0xe0 & k=1 { }
+:conv.u is op=0xe0 & k=4 & T1 { T1 = trunc(T1:4); }
+:conv.u is op=0xe0 & k=5 & T1 { T1 = trunc(T1); }
+:conv.r4 is op=0x6b & k=0 & T1 { local r:4 = int2float(T1:4); T1 = zext(r); }
+:conv.r4 is op=0x6b & k=1 & T1 { local r:4 = int2float(T1); T1 = zext(r); }
+:conv.r4 is op=0x6b & k=4 { }
+:conv.r4 is op=0x6b & k=5 & T1 { local r:4 = float2float(T1); T1 = zext(r); }
+:conv.r8 is op=0x6c & k=0 & T1 { T1 = int2float(T1:4); }
+:conv.r8 is op=0x6c & k=1 & T1 { T1 = int2float(T1); }
+:conv.r8 is op=0x6c & k=4 & T1 { T1 = float2float(T1:4); }
+:conv.r8 is op=0x6c & k=5 { }
+:conv.r.un is op=0x76 & k=0 & T1 { local z:8 = zext(T1:4); T1 = int2float(z); }
+:conv.r.un is op=0x76 & k=1 & T1 { local z:16 = zext(T1); T1 = int2float(z); }
+
+:ceq is op=0xfe; xop=0x01 & k=0 & T2 & T1 { T2 = zext(T2:4 == T1:4); }
+:ceq is op=0xfe; xop=0x01 & k=1 & T2 & T1 { T2 = zext(T2 == T1); }
+:ceq is op=0xfe; xop=0x01 & k=4 & T2 & T1 { T2 = zext(T2:4 f== T1:4); }
+:ceq is op=0xfe; xop=0x01 & k=5 & T2 & T1 { T2 = zext(T2 f== T1); }
+:cgt is op=0xfe; xop=0x02 & k=0 & T2 & T1 { T2 = zext(T2:4 s> T1:4); }
+:cgt is op=0xfe; xop=0x02 & k=1 & T2 & T1 { T2 = zext(T2 s> T1); }
+:cgt is op=0xfe; xop=0x02 & k=4 & T2 & T1 { T2 = zext(T2:4 f> T1:4); }
+:cgt is op=0xfe; xop=0x02 & k=5 & T2 & T1 { T2 = zext(T2 f> T1); }
+:cgt.un is op=0xfe; xop=0x03 & k=0 & T2 & T1 { T2 = zext(T2:4 > T1:4); }
+:cgt.un is op=0xfe; xop=0x03 & k=1 & T2 & T1 { T2 = zext(T2 > T1); }
+:cgt.un is op=0xfe; xop=0x03 & k=4 & T2 & T1 { T2 = zext(!(T2:4 f<= T1:4)); }
+:cgt.un is op=0xfe; xop=0x03 & k=5 & T2 & T1 { T2 = zext(!(T2 f<= T1)); }
+:clt is op=0xfe; xop=0x04 & k=0 & T2 & T1 { T2 = zext(T2:4 s< T1:4); }
+:clt is op=0xfe; xop=0x04 & k=1 & T2 & T1 { T2 = zext(T2 s< T1); }
+:clt is op=0xfe; xop=0x04 & k=4 & T2 & T1 { T2 = zext(T2:4 f< T1:4); }
+:clt is op=0xfe; xop=0x04 & k=5 & T2 & T1 { T2 = zext(T2 f< T1); }
+:clt.un is op=0xfe; xop=0x05 & k=0 & T2 & T1 { T2 = zext(T2:4 < T1:4); }
+:clt.un is op=0xfe; xop=0x05 & k=1 & T2 & T1 { T2 = zext(T2 < T1); }
+:clt.un is op=0xfe; xop=0x05 & k=4 & T2 & T1 { T2 = zext(!(T2:4 f>= T1:4)); }
+:clt.un is op=0xfe; xop=0x05 & k=5 & T2 & T1 { T2 = zext(!(T2 f>= T1)); }
+
+:ldstr Abs     is op=0x72; Abs & P { P = &Abs; }
+:ldtoken ud    is op=0xd0; ud & P { P = ud; }
+:ldftn Abs     is op=0xfe; xop=0x06; Abs & P { P = &Abs; }
+:castclass ud  is op=0x74; ud { }
+:isinst ud     is op=0x75; ud & T1 { T1 = isinst(T1); }
+:box ud        is op=0x8c; ud & T1 { T1 = box(T1); }
+:unbox.any ud  is op=0xa5; ud & k=0 & T1 { local v:4 = unbox(T1); T1 = sext(v); }
+:unbox.any ud  is op=0xa5; ud & k=1 & T1 { T1 = unbox(T1); }
+:throw         is op=0x7a & T1 & Throw { a0 = T1; call Throw; }
+
+:ldsfld SF4 is op=0x7e; SF4 & k=0 & P { P = sext(SF4); }
+:ldsfld SF8 is op=0x7e; SF8 & k=1 & P { P = SF8; }
+:ldsfld SF1 is op=0x7e; SF1 & k=2 & P { P = zext(SF1); }
+:ldsfld SF1 is op=0x7e; SF1 & k=3 & P { P = sext(SF1); }
+:ldsfld SF2 is op=0x7e; SF2 & k=4 & P { P = zext(SF2); }
+:ldsfld SF2 is op=0x7e; SF2 & k=5 & P { P = sext(SF2); }
+:ldsfld SF4 is op=0x7e; SF4 & k=6 & P { P = zext(SF4); }
+:stsfld SF4 is op=0x80; SF4 & (k=0 | k=6) & T1 { SF4 = T1:4; }
+:stsfld SF8 is op=0x80; SF8 & (k=1) & T1 { SF8 = T1; }
+:stsfld SF1 is op=0x80; SF1 & (k=2 | k=3) & T1 { SF1 = T1:1; }
+:stsfld SF2 is op=0x80; SF2 & (k=4 | k=5) & T1 { SF2 = T1:2; }
+:ldsflda Abs is op=0x7f; Abs & P { P = &Abs; }
+
+# An instance field: the loader rewrites the token to the field's offset in
+# the layout it gave the class.
+:ldfld ud is op=0x7b; ud & k=0 & T1 { local p:8 = T1 + ud; T1 = sext(*:4 p); }
+:ldfld ud is op=0x7b; ud & k=1 & T1 { local p:8 = T1 + ud; T1 = *:8 p; }
+:ldfld ud is op=0x7b; ud & k=2 & T1 { local p:8 = T1 + ud; T1 = zext(*:1 p); }
+:ldfld ud is op=0x7b; ud & k=3 & T1 { local p:8 = T1 + ud; T1 = sext(*:1 p); }
+:ldfld ud is op=0x7b; ud & k=4 & T1 { local p:8 = T1 + ud; T1 = zext(*:2 p); }
+:ldfld ud is op=0x7b; ud & k=5 & T1 { local p:8 = T1 + ud; T1 = sext(*:2 p); }
+:ldfld ud is op=0x7b; ud & k=6 & T1 { local p:8 = T1 + ud; T1 = zext(*:4 p); }
+:stfld ud is op=0x7d; ud & (k=0 | k=6) & T2 & T1 { local p:8 = T2 + ud; *:4 p = T1:4; }
+:stfld ud is op=0x7d; ud & (k=1) & T2 & T1 { local p:8 = T2 + ud; *:8 p = T1; }
+:stfld ud is op=0x7d; ud & (k=2 | k=3) & T2 & T1 { local p:8 = T2 + ud; *:1 p = T1:1; }
+:stfld ud is op=0x7d; ud & (k=4 | k=5) & T2 & T1 { local p:8 = T2 + ud; *:2 p = T1:2; }
+:ldflda ud is op=0x7c; ud & T1 { T1 = T1 + ud; }
+
+# A managed array reference points at element 0; its length is the ldlen operator.
+:ldlen is op=0x8e & T1 { T1 = ldlen(T1); }
+:newarr ud is op=0x8d; ud & k=0 & T1 { T1 = newarr(T1, 1:4); }
+:ldelema ud is op=0x8f; ud & k=0 & T2 & T1 { T2 = T2 + T1 * 1; }
+:newarr ud is op=0x8d; ud & k=1 & T1 { T1 = newarr(T1, 2:4); }
+:ldelema ud is op=0x8f; ud & k=1 & T2 & T1 { T2 = T2 + T1 * 2; }
+:newarr ud is op=0x8d; ud & k=2 & T1 { T1 = newarr(T1, 4:4); }
+:ldelema ud is op=0x8f; ud & k=2 & T2 & T1 { T2 = T2 + T1 * 4; }
+:newarr ud is op=0x8d; ud & k=3 & T1 { T1 = newarr(T1, 8:4); }
+:ldelema ud is op=0x8f; ud & k=3 & T2 & T1 { T2 = T2 + T1 * 8; }
+:ldelem.i1 is op=0x90 & T2 & T1 { local p:8 = T2 + T1 * 1; T2 = sext(*:1 p); }
+:ldelem.u1 is op=0x91 & T2 & T1 { local p:8 = T2 + T1 * 1; T2 = zext(*:1 p); }
+:ldelem.i2 is op=0x92 & T2 & T1 { local p:8 = T2 + T1 * 2; T2 = sext(*:2 p); }
+:ldelem.u2 is op=0x93 & T2 & T1 { local p:8 = T2 + T1 * 2; T2 = zext(*:2 p); }
+:ldelem.i4 is op=0x94 & T2 & T1 { local p:8 = T2 + T1 * 4; T2 = sext(*:4 p); }
+:ldelem.u4 is op=0x95 & T2 & T1 { local p:8 = T2 + T1 * 4; T2 = sext(*:4 p); }
+:ldelem.i8 is op=0x96 & T2 & T1 { local p:8 = T2 + T1 * 8; T2 = *:8 p; }
+:ldelem.i is op=0x97 & T2 & T1 { local p:8 = T2 + T1 * 8; T2 = *:8 p; }
+:ldelem.r4 is op=0x98 & T2 & T1 { local p:8 = T2 + T1 * 4; T2 = zext(*:4 p); }
+:ldelem.r8 is op=0x99 & T2 & T1 { local p:8 = T2 + T1 * 8; T2 = *:8 p; }
+:ldelem.ref is op=0x9a & T2 & T1 { local p:8 = T2 + T1 * 8; T2 = *:8 p; }
+:ldelem ud is op=0xa3; ud & k=0 & T2 & T1 { local p:8 = T2 + T1 * 4; T2 = sext(*:4 p); }
+:ldelem ud is op=0xa3; ud & k=1 & T2 & T1 { local p:8 = T2 + T1 * 8; T2 = *:8 p; }
+:ldelem ud is op=0xa3; ud & k=2 & T2 & T1 { local p:8 = T2 + T1 * 1; T2 = zext(*:1 p); }
+:ldelem ud is op=0xa3; ud & k=3 & T2 & T1 { local p:8 = T2 + T1 * 1; T2 = sext(*:1 p); }
+:ldelem ud is op=0xa3; ud & k=4 & T2 & T1 { local p:8 = T2 + T1 * 2; T2 = zext(*:2 p); }
+:ldelem ud is op=0xa3; ud & k=5 & T2 & T1 { local p:8 = T2 + T1 * 2; T2 = sext(*:2 p); }
+:ldelem ud is op=0xa3; ud & k=6 & T2 & T1 { local p:8 = T2 + T1 * 4; T2 = zext(*:4 p); }
+:stelem.i is op=0x9b & T3 & T2 & T1 { local p:8 = T3 + T2 * 8; *:8 p = T1; }
+:stelem.i1 is op=0x9c & T3 & T2 & T1 { local p:8 = T3 + T2 * 1; *:1 p = T1:1; }
+:stelem.i2 is op=0x9d & T3 & T2 & T1 { local p:8 = T3 + T2 * 2; *:2 p = T1:2; }
+:stelem.i4 is op=0x9e & T3 & T2 & T1 { local p:8 = T3 + T2 * 4; *:4 p = T1:4; }
+:stelem.i8 is op=0x9f & T3 & T2 & T1 { local p:8 = T3 + T2 * 8; *:8 p = T1; }
+:stelem.r4 is op=0xa0 & T3 & T2 & T1 { local p:8 = T3 + T2 * 4; *:4 p = T1:4; }
+:stelem.r8 is op=0xa1 & T3 & T2 & T1 { local p:8 = T3 + T2 * 8; *:8 p = T1; }
+:stelem.ref is op=0xa2 & T3 & T2 & T1 { local p:8 = T3 + T2 * 8; *:8 p = T1; }
+:stelem ud is op=0xa4; ud & (k=0 | k=6) & T3 & T2 & T1 { local p:8 = T3 + T2 * 4; *:4 p = T1:4; }
+:stelem ud is op=0xa4; ud & (k=1) & T3 & T2 & T1 { local p:8 = T3 + T2 * 8; *:8 p = T1; }
+:stelem ud is op=0xa4; ud & (k=2 | k=3) & T3 & T2 & T1 { local p:8 = T3 + T2 * 1; *:1 p = T1:1; }
+:stelem ud is op=0xa4; ud & (k=4 | k=5) & T3 & T2 & T1 { local p:8 = T3 + T2 * 2; *:2 p = T1:2; }
+
+:ckfinite        is op=0xc3 { }
+:unaligned. ub   is op=0xfe; xop=0x12; ub { }
+:volatile.       is op=0xfe; xop=0x13 { }
+:tail.           is op=0xfe; xop=0x14 { }
+:constrained. ud is op=0xfe; xop=0x16; ud { }
+:readonly.       is op=0xfe; xop=0x1e { }
+
+}

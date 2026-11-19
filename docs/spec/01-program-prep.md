@@ -1663,6 +1663,96 @@ dereferences in 136 of 295 functions become 44 (the entry point's PSP reads
 and code that loads DS from memory), and 1,537 named global references replace
 29.
 
+(kuna) **A managed .NET assembly loads from its CIL method bodies** (`cil`,
+default on, a PE with a CLI header only). The native code of a managed PE is
+one jump to `_CorExeMain`; the program is ECMA-335 metadata and CIL, so read
+as x86 the image has one function. The dispatcher
+(`decompiler/crates/kuna-console/src/engine.rs (bootstrap_cil)`) takes a file
+whose PE data directory 14 names a CLI header, whose metadata reads and which
+has at least one method body, unless the caller names a target language or
+sets `cil off`
+(`decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_cil.rs (cil_enabled)`);
+every other input keeps the object path. The image
+(`decompiler/crates/kuna-analysis/src/loadimage_cil.rs (CilImage)`) is the PE
+mapped by RVA at 0x400000, through the raw-image path as the language
+`CIL:LE:64:default`. Only the extent the file backs is mapped, and a section
+table that spreads that extent past 64 times the file size (the alignment
+ratio of a managed image is 16) or past 1 GiB is refused, so a small file
+cannot ask for a large allocation.
+`decompiler/crates/kuna-analysis/src/loadimage_cil/metadata.rs (Metadata)`
+reads the metadata root, the `#Strings`, `#US` and `#Blob` heaps and every
+table of the `#~` stream: the row size of a table depends on the row counts of
+the tables its columns index, so all 45 schemas are stated even though the
+loader consumes eleven. Each method with a body is one function. It starts at
+the first instruction, after the tiny or fat header, is named
+`Namespace.Type::Method` (a nested type under its enclosing type, joined with
+`.`), and takes its prototype from its signature
+(`decompiler/crates/kuna-analysis/src/loadimage_cil/sig.rs (method_sig)`): a
+reference is a pointer, an array reference a pointer to its element, a string
+a pointer to UTF-16 text, an enum its underlying type. Overloads share a
+name and are told apart by address.
+
+CIL leaves two things out of the instruction bytes that a decoder needs, and
+the loader supplies both before anything is decoded. The first is operand
+types: `add` adds whatever the evaluation stack holds.
+`decompiler/crates/kuna-analysis/src/loadimage_cil/body.rs (type_body)` walks
+each body's control flow from its first instruction carrying the stack as a
+list of kinds (int32, int64 or native or reference, float32, float64), as the
+verifier does, and records for each reached instruction the depth before it,
+the class of its operands and a call's argument count. Those are painted over
+the instruction as the decode context `cilctx`; an instruction the walk did
+not reach keeps the default and decodes as unimplemented. The second is what
+a metadata token names. Each token operand is rewritten in the mapped image:
+a `call`, `callvirt`, `newobj` or `ldftn` to the address of the method, a
+static field access to the field's address, an instance field access to the
+field's offset, `ldstr` to a NUL-terminated UTF-16 copy of the `#US` string
+laid out after the image, and `ldtoken` of a field with initial data to that
+data. A method of another assembly, or one with no body, gets an address in an
+unmapped range from 0x10000; it is named and prototyped but is not a function
+of the inventory. A generic parameter in the signature of such a member is
+replaced by the argument its `TypeSpec` parent or `MethodSpec` instantiates it
+with, so `List<int>::get_Item` returns an int32. `throw` calls a no-return
+helper at 0x1000.
+
+The runtime, not the image, lays out a class, so the loader gives each class
+of the assembly a layout of its own (`CilImage::layout`): the instance fields
+in declaration order, each at the next naturally aligned offset after an
+8-byte object header or after a base class of the same assembly, and from
+offset 0 in a value type. The same layout becomes a struct type the method's
+`this` and every reference of that class point at, so a field access prints
+`this->field` and the offset never shows. A class with an explicit layout, an
+interface and an enum get none, and an access to a field of one refuses the
+body.
+
+A body the walk cannot follow is refused whole and left unpainted, so it is
+listed and decodes as unimplemented instead of as a guess: one with an
+exception-handling clause (a `finally` runs on every exit, which a branch
+does not say), a value type on the stack whose size the assembly does not
+give, `ldarga`, `calli`, `jmp`, a checked conversion or arithmetic (`.ovf`),
+`localloc`, the object-copy instructions, a vararg call site, more than 16
+arguments or 64 stack slots, and a stack that differs between two paths into
+one instruction. Two methods may share one body, but a body whose bytes only
+partly coincide with another's is refused as well: every body is typed from
+the bytes as the file holds them, before any token is rewritten, and two
+overlapping bodies would otherwise paint and rewrite each other.
+
+A method's extent is its body. The bytes between two bodies are the next
+method's header and alignment, and metadata follows the last one, so the
+bootstrap states each method's end and the inventory, the listing and the
+size filters report the body's own length instead of the distance to the
+next entry. A stated end is not a flow that stopped short, so the notes a
+real-mode image prints about one (`ConsoleProgram::extent_cut_by_flow`) stay
+silent. The load image
+(`decompiler/crates/kuna-analysis/src/loadimage_cil/image.rs (CilLoadImage)`)
+answers every read as the raw image does and replaces its section table: the
+raw image is one buffer, which its loader reports as one code section, while
+here the method bodies of each PE section are one code run and the PE
+headers, the CLI header, the metadata and what the loader lays out after the
+image are data. A sweep of the code sections, as the project export's
+assembly listing makes, therefore lists the methods and the few header bytes
+between them rather than the whole file. The string inventory still scans
+the PE's sections, so it lists the names in the metadata heaps.
+
 (kuna) **UEFI TE images take a bounded container path of their own.**
 `decompiler/crates/kuna-analysis/src/loadimage_te.rs (TeLoadImage)` parses a
 file the format probe claims. That probe reads more than the `VZ` signature —

@@ -5088,6 +5088,25 @@ tier = "analysis"
 symptoms = "calls in a dyld shared cache image render as sub_<addr> into a __TEXT_STUBS island|a cache image's __got loads name nothing|cross-library calls of an ios framework have no names"
 
 [[settable]]
+option = "cil"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P1"
+subphase = "environment-binding"
+strength = "HARD"
+rewind = "P1"
+issue = "kuna-1633"
+summary = "A managed .NET assembly (a PE with a CLI header) decodes from its CIL method bodies. The PE's only native code is the jump to _CorExeMain; the program is ECMA-335 metadata and CIL, which kuna used to leave unread. With the option on (default) the loader maps the PE by RVA at 0x400000 as the CIL:LE:64:default language, reads the metadata tables and heaps, and makes one function per method body, named Namespace.Type::Method and prototyped from its signature. CIL names no operand types and its calls name metadata tokens, so the loader walks each body as the verifier does, paints the evaluation-stack depth and operand class over every instruction as decode context, and rewrites each token operand to the address of the method, static field, instance-field offset or string it resolves to. The evaluation stack lifts to the registers s0..s63, arguments to a0..a15 and locals to cells below SP; managed arrays index from element 0 and ldlen, newarr, newobj, box, unbox and isinst are operators. Classes of the assembly get struct types laid out from their field order, so a field access renders this->field. A body the walk does not cover (an exception-handling clause, a value type on the stack, ldarga, a checked conversion, calli) is listed and decodes as unimplemented instead of as a guess. Inert on every input without a CLI header, and on an explicit --target."
+use_when = "Leave on: `kuna functions` and `decompile-all` cover the managed methods of a .NET Framework, .NET Core or Unity assembly. Turn off (or pass --target) to read the PE as native code, for example the ReadyToRun or mixed-mode native code beside the CIL."
+example = "option cil off"
+source_decompiler = "kuna"
+inspiration = "ECMA-335 partitions II (metadata) and III (CIL); the verifier's stack-state walk (III.1.8)"
+change_kind = "analysis-enablement"
+tier = "analysis"
+symptoms = "managed .NET assembly: native decompilation shows only the stub|kuna functions lists only _CorExeMain for a .dll or .exe built by dotnet|a c# or unity Assembly-CSharp.dll decompiles to a single jump"
+
+[[settable]]
 option = "sourcelang"
 values = "auto|c|rust|go|swift"
 default = "auto"

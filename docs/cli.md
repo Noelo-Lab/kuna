@@ -1997,7 +1997,7 @@ function application uses the in-process engine for text and JSON and rejects
 
   | `id` | Recognized by | `hint` |
   |---|---|---|
-  | `dotnet` | PE data directory 14 (CLR header) non-zero | `managed .NET assembly: native decompilation shows only the stub; use ilspycmd` |
+  | `dotnet` | PE data directory 14 (CLR header) non-zero | `managed .NET assembly: decompiled from its CIL method bodies; a body the lift does not cover is marked unimplemented` (not actionable), or with `--option cil off` or `--target`: `managed .NET assembly: native decompilation shows only the stub; the default `--option cil on` without --target decompiles its methods` |
   | `nativeaot` | an ELF with sections named `__managedcode` and `.dotnet_eh_table`, or a PE that exports `DotNetRuntimeDebugHeader` or has `.unbox` and `.modules` sections; `version` is the ILC release in the `.comment` section | `NativeAOT (ILC 10.0.2) image: native code from C#; decompiles as native C, but method names need the .dbg sidecar or a NativeAOT metadata tool` |
   | `pyinstaller` | the `MEI\x0c\x0b\x0a\x0b\x0e` CArchive cookie; `version` is its Python version | `PyInstaller bundle (Python 3.12): extract with pyinstxtractor-ng` |
   | `nuitka` | `NUITKA_ONEFILE_PARENT` / `__nuitka_binary_dir` | `Nuitka-compiled Python: …; extract a onefile payload with nuitka-extractor` |

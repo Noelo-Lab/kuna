@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<language_definitions>
+  <language processor="CIL"
+            endian="little"
+            size="64"
+            variant="default"
+            version="1.0"
+            slafile="CIL.sla"
+            processorspec="CIL.pspec"
+            id="CIL:LE:64:default">
+    <description>ECMA-335 Common Intermediate Language</description>
+    <compiler name="default" spec="CIL.cspec" id="default"/>
+  </language>
+</language_definitions>

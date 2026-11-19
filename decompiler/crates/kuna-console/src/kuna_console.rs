@@ -313,6 +313,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
             }
         }
         "dyldcrossrefs" => on_off(kuna_decomp::kuna_dyldcache::dyldcrossrefs_enabled()),
+        "cil" => on_off(kuna_decomp::kuna_cil::cil_enabled()),
         // (kuna `symbolnamechars`) Three-valued, so it reports its own token.
         "symbolnamechars" => conf.analysis_symbolnamechars.as_str(),
         "dwarf" => on_off(conf.analysis_dwarf),
