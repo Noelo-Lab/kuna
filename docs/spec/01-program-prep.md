@@ -922,7 +922,24 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   `.toc + 0x8000`; an object with no `.toc` (medium-model code that reaches its
   data through `@toc@ha`/`@toc@l` halves) still has the one the linker's `.got`
   would give it, 256-aligned after the other sections, plus `0x8000`. An
-  undefined `.TOC.` resolves to that base.
+  undefined `.TOC.` resolves to that base. AArch64 also covers `ADR_PREL_LO21`,
+  `LD_PREL_LO19`, `CONDBR19`, `TSTBR14` and `MOVW_UABS_G0..G3` (the checked
+  groups range-checked). RISC-V covers `HI20`/`LO12_I`/`LO12_S`,
+  `PCREL_HI20`/`PCREL_LO12_I`/`PCREL_LO12_S`, the 8-byte `CALL`/`CALL_PLT`
+  `auipc`+`jalr` pair, `BRANCH`, `JAL`, the two compressed branches, the
+  `ADD`/`SUB`/`SET` data families and `32_PCREL`; `RELAX` and `ALIGN` are no-ops,
+  since the layout keeps the assembler's bytes. A `PCREL_LO12` names the label of
+  its `auipc` rather than the target, so each section's `PCREL_HI20` values are
+  kept by place and the low half takes the low twelve bits of that value.
+  A relocation that addresses its target's GOT slot (x86-64 `GOTPCREL`,
+  `GOTPCRELX` and `REX_GOTPCRELX`, AArch64 `ADR_GOT_PAGE` and
+  `LD64_GOT_LO12_NC`, RISC-V `GOT_HI20`, ARM `GOT_PREL`;
+  `reloc_apply.rs (RelocationSpec::via_got)`) has no GOT to address in a
+  pre-link object, so `reloc_object.rs (layout_relocatable)` synthesizes one:
+  a read-only section after the laid-out ones with one pointer-sized slot per
+  distinct target holding that target's address, reported as the layout's
+  `got_range`. The field is resolved against the slot, so the load through it
+  folds to the target and a PIC object's `counter += x` reads `counter`.
   MIPS relocations go through
   `decompiler/crates/kuna-analysis/src/loader/kuna_mipsreloc.rs (Gp)`. An o32
   or N32 REL object keeps each addend in the field it patches, so a `HI16`, or a
