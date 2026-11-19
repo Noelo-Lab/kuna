@@ -107,10 +107,13 @@ fn main() -> ExitCode {
     };
     loadtime::export_image_selection(&rest);
     followimages::apply(sub, &mut rest, follow_limit);
-    if let Err(e) = rawfront::prepare(sub, &mut rest) {
-        eprintln!("error: {e}");
-        return ExitCode::from(2);
-    }
+    let _firmware = match rawfront::prepare(sub, &mut rest) {
+        Ok(staged) => staged,
+        Err(e) => {
+            eprintln!("error: {e}");
+            return ExitCode::from(2);
+        }
+    };
     let rest = rest.as_slice();
     runtime_hints::note_for_invocation(sub, rest);
     let code = match sub {

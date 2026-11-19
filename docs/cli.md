@@ -1609,6 +1609,34 @@ $ kuna decompile-all stm32.bin --svd STM32F401.svd
 [kuna firmware] SVD STM32F401: 52 peripherals, 85 interrupts
 ```
 
+### Firmware containers
+
+A file that is not an object file is also tried as a firmware container
+(`kuna_analysis::loader::firmware::containers`) by the same four subcommands.
+Each is flattened into a staged raw image (removed when the run ends) and
+given the arguments its header states:
+
+| container | recognized by | processor | base / entries |
+|---|---|---|---|
+| U-Boot legacy uImage | magic `27 05 19 56` | `ih_arch` (ARM, AArch64, x86, MIPS with the byte order that finds more `jr ra`, PowerPC, SH, SPARC, m68k, Xtensa, RISC-V) | `ih_load`, `ih_ep` (odd ARM entry: Thumb); gzip payloads inflated |
+| Intel HEX | every line a checksummed `:` record | `--target` or the Cortex-M probe | lowest address; type 03/05 records |
+| Motorola S-record | every line a checksummed `S0`-`S9` record | `--target` or the Cortex-M probe | lowest address; S7/S8/S9 |
+| ESP32 / ESP8266 app image | `E9`, segment table | chip id: Xtensa (ESP32, S2, S3, ESP8266) or RISC-V (C2, C3, C6, H2, P4) | lowest segment; header entry |
+| uClinux bFLT v4 | `bFLT` | ColdFire unless `--target` | 0; header entry; GOT and relocations rebased past the 64-byte header |
+| Qualcomm MBN / SBL / GPT image | SBL codeword, MBN header, `EFI PART` | the wrapped ELF's | the ELF is loaded as is |
+| MediaTek `md1img` | chained `0x58881688` section headers | MIPS32 LE (a nanoMIPS `md1rom` is reported: no SLEIGH spec decodes it) | `md1rom` at 0x90000000; `md1_dbginfo` (LZMA) symbols name functions |
+| PC BIOS / flash image | the last 16 bytes are a far jump to segment F000+, a near jump or a backward short jump (after `nop`/`wbinvd`) | `x86:LE:16:Real Mode` | the last 128 KiB below 1 MiB, entry F000:FFF0 (a 64 KiB image is segment F000, see the real-mode rule above); with `--target x86:LE:32:...` the whole flash ending at 4 GiB |
+
+A flat image whose processor the container does not state is probed for a
+Cortex-M vector table like a raw dump, at the container's base.
+
+```sh
+$ kuna decompile-all stm32.hex --svd STM32F401.svd
+[kuna firmware] Intel HEX: 516 bytes at 0x8000000, target (from --target or the vector table), entries []
+[kuna firmware] Cortex-M vector table: base 0x8000000, initial SP 0x20005000, 4 handlers, reset 0x8000174
+[kuna firmware] SVD STM32F401: 52 peripherals, 85 interrupts
+```
+
 ## `kuna decompile-all` / `kuna functions` — whole binary, machine-readable
 
 ```bash
