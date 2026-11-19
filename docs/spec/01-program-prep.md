@@ -1447,6 +1447,62 @@ rebuilt `__text` of an image matches an independent extraction of the same
 build byte for byte, and its data differs only where that extraction left
 chained pointers undecoded.
 
+A `dyldimage` value may join several names with `+`
+(`Foundation+CoreFoundation`), and the loader then works on all of them as one
+program, so a call from one image into another can be followed without a
+second run. `kuna_dyldcache.rs (DyldCache::select_all)` resolves each name the
+way a single one is resolved; since `+` also occurs inside install names
+(`libc++.1.dylib`, `libc++abi.dylib`), `kuna_dyldcache.rs (select_images)`
+takes from each piece the longest run of `+`-joined pieces that names an
+image, a run ending only at the end of the value or before a non-empty piece,
+so `libc++.1.dylib` stays one image and `libc++` is not read as `libc`. Then
+`kuna_dyldcache/merge.rs (DyldCache::extract_merged)` rebuilds each image on
+its own, as above, and joins the results into one thin Mach-O (an entry named
+twice, or two entries sharing a header, count once, and one image is rebuilt
+exactly as before). The joined file opens with a header page of its own,
+because the segment commands of several images need not fit in the padding
+before the first section of one (the rebuilt Foundation of iOS 16.4.1 has
+2,808 bytes spare and CoreFoundation's segment commands take 4,904). Every non-`__LINKEDIT` segment follows at its
+cache address, images in address order, and one `__LINKEDIT` closes the file.
+It holds one symbol table, ordered as `LC_DYSYMTAB` requires (locals, external
+definitions, undefined symbols), in which each symbol's section ordinal is
+moved past the sections of the images before it. A Mach-O symbol names its
+section in one byte, so the images may hold at most 255 sections together and
+a larger selection is refused with that count. The indirect-symbol tables are
+concatenated, their entries renumbered to the merged symbol table, and the
+`reserved1` of every stub, symbol-pointer and thread-local-pointer section is
+moved to its image's part. The function starts of all images are decoded,
+sorted and written as one table counted from the lowest `__TEXT`, and
+`macho_entry.rs (walk)` counts from the first `__TEXT` command for that reason.
+The `kuna.dyld.xrefs` notes are joined, without the call targets that now lie
+inside a loaded image (the image's own symbol names them). The identity
+commands (`LC_ID_DYLIB`, `LC_UUID`, the dylib list) are those of the image
+named first. Export tries and data-in-code are not carried: every export of a
+cache image is also an external definition in its symbol table. A joined
+Mach-O holds one `__objc_classlist`, `__cfstring`, `__swift5_types` (and so
+on) per image, so the ObjC, CFString and Swift passes read every section of a
+name (`objc/sections.rs (sections_named)`), not the first. On the iOS 16.4.1
+cache, `Foundation+CoreFoundation` lists exactly the 50,742 and 11,166
+functions the two images list alone. In a sample of 24 functions (12 from
+each image) the decompiled text matched the single-image text except in two
+ways: a reference into the other image now resolves to its symbol, and a
+local may be renamed where its name collides with a symbol of the other image
+(`ptr` became `ptr_2`). A call through a stub island still renders as a named
+import of the calling image.
+
+The CLI widens the selection on demand
+(`decompiler/crates/kuna-cli/src/followimages.rs (apply)`). Before `decompile`,
+`disassemble` or `xrefs` loads a cache, each `0x` address of the request that
+the selected images do not hold is looked up in the segment ranges of every
+image (`kuna_dyldcache.rs (follow_images)`), and the image that holds it is
+appended to the selection, up to `--follow-images N` images (default 2; 0
+turns the lookup off). A stub-island address belongs to no image; for
+`decompile` and `disassemble` the stub is followed (up to four hops, the same
+walk that names cross-image calls) and the request is rewritten to the
+function it jumps to. `xrefs` leaves such an address alone, since the island is
+what the call sites reference. Each step prints a `[kuna]` note on stderr,
+and past the limit the note names the image to add.
+
 An explicit target changes only language selection: the parsed container still
 owns section mapping, image base, symbols, and imports. Container header class is
 independent of decoder instruction width, so ELF32 can be decoded with a 16-bit

@@ -4524,7 +4524,7 @@ same file all describe the same slice.
 ## `--image NAME` — one image of a dyld shared cache
 
 A dyld shared cache (`dyld_shared_cache_arm64e` and the sub-caches beside it)
-holds thousands of images, and every kuna surface works on one of them. Pass the
+holds thousands of images, and every kuna surface works on the ones you name. Pass the
 main cache file as the binary and name the image with `--image`: a full install
 name (`/usr/lib/libobjc.A.dylib`), else a unique basename (`libobjc.A.dylib`,
 `CoreFoundation`), else a unique basename without its last extension (`libobjc.A`).
@@ -4550,6 +4550,48 @@ island addresses instead. `--image` is global: it applies to every subcommand
 and is passed to the `decomp_dbg` subprocess through `KUNA_DYLD_IMAGE`. The
 console spells it `option dyldimage NAME`, given before `load file`; it is
 accepted before any image is loaded.
+
+### Several images, and `--follow-images N`
+
+A call followed out of one image ends in another. Join image names with `+` to
+load them as one program:
+
+```
+$ kuna decompile dyld_shared_cache_arm64e --image Foundation+CoreFoundation __NSLogv
+$ kuna decompile dyld_shared_cache_arm64e --image Foundation+CoreFoundation 0x1870ac53c --addr
+```
+
+A `+` that is part of an image's own name does not split it: `--image
+libc++.1.dylib` is one image and `--image libc++.1.dylib+libc++abi` two. The
+longest run of `+`-joined pieces that names an image wins, and `libc++` alone
+names no image (it is not read as `libc`).
+
+Each image is rebuilt on its own and the results are joined into one thin
+Mach-O: every segment at its cache address, one symbol table, one
+indirect-symbol table, one function-starts table. `functions` lists the
+functions of every image, and `kuna unpack --image A+B` writes the joined file.
+The joined images may hold at most 255 sections together (a Mach-O symbol names
+its section in one byte); four or five large frameworks fit.
+
+`decompile`, `disassemble` and `xrefs` also load an image on demand. Each `0x`
+address of the request that lies outside the loaded images is looked up in the
+cache's image ranges, and the image that holds it is added, with a note on
+stderr:
+
+```
+$ kuna decompile dyld_shared_cache_arm64e --image Foundation 0x186db0400 --addr
+[kuna] 0x186db0400 is a stub for 0x1870ac53c, which lies in /System/Library/Frameworks/CoreFoundation.framework/CoreFoundation; loading that image too
+void __CFLogvEx3(...)
+```
+
+A stub-island address belongs to no image, so `decompile` and `disassemble`
+follow the stub to the function it jumps to and answer for that function.
+`xrefs` does not: the island is the address the call sites reference.
+`--follow-images N` (global, default 2) bounds how many images one request may
+add; `--follow-images 0` turns the lookup off, and the request then fails with
+"not mapped in this input" and a note naming the image to add. A call through
+a stub island still renders as a named import of the calling image, so `xrefs
+--to` the callee's own address lists the direct calls only.
 
 ## `--option kernelcache ID` — one entry of an Apple kernel collection
 
