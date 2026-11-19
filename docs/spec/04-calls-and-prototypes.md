@@ -4941,6 +4941,53 @@ reloads the callee-saved register for its own reasons before a call that
 does not read it — a value witness's `destroy`, called with the value and
 its metadata in the argument registers — and that value is no `self` there.
 
+**The Swift convention of unbound functions**
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_swiftinfer.rs`, part of
+`swiftcall`). The metadata arm binds the Swift models only to functions Swift metadata places
+in a type. A closure, a partial-apply forwarder, a thunk, a free function or a
+stripped method keeps the C model, under which `swiftself` and `swifterror`
+are preserved registers the function never takes. Every other convention
+preserves both registers, so a function's own code says when it follows
+Swift's. The rules below apply only in an image whose metadata pass bound the
+convention (`SwiftAbi` present) and add nothing to a function the analysis
+bound or declared.
+
+*A body that reads `swiftself` takes it.* The decompile drive decodes the
+function and each of its direct callees from their entries (`probe_reads`,
+cached per entry for the run), following every path up to its first call,
+return, indirect branch or write of the register, and at most 256
+instructions. A read of the register on such a path is evidence unless it only
+stores the register: a `STORE` of it, or of the temporary its own instruction
+copied it into (an AArch64 `stp x20, x19`, an x86 `push %r13`). No C or
+Objective-C function reads a preserved register it has not written for
+anything else. A function whose own body reads it decompiles under
+`__swiftcall` (or the throwing or `async` model its callees state), locked
+like a metadata binding, with an input hint naming the register's parameter
+`swiftself` (`seed`, `self_hint`); a direct call to a
+callee whose body reads it is recovered under `__swiftcall`
+(`callee_model`, after the metadata binding in `ActionDefaultParams`'s
+model choice), so the call passes the register.
+
+*A call the caller tests the error register after returns an error.* A
+throwing function hands its incoming `swifterror` value (zero by contract) on
+to a throwing callee without storing zero first, so `throwing_call`'s zeroing
+store is not there. A call after which, in its own block and before any other
+call, write or return, the caller reads the error register other than to store
+it, while no op on any path from the entry to the call writes the register
+(the walk back over the predecessors is bounded at 64 blocks), takes
+`__swiftcall_throws` (`error_passing_call`): under the C model that read would
+be of the caller's own unwritten preserved register.
+
+*A two-word result read apart is a pair.* A call result in a join of two
+registers, 16 bytes, every reader of which is a `SUBPIECE` taking one whole
+8-byte word and both words read, of a call not named as a C or Objective-C
+function (`objc_msgSend…`, `-[C m]`, a plain C identifier other than `sub_`),
+gets the call-output local type `swift.pair`,
+a structure of two `undefined8` fields `_0` and `_1`
+(`pair_output_type`, consulted by `TypeOpCall::getOutputLocal`'s unlocked
+arm). The words then print as `v1._0` / `v1._1` instead of
+`SUB168(v1,0)` / `SUB168(v1,8)`. Pinned by `tests/stages/kuna-swiftinfer.xml`.
+
 ### (kuna) An MSVC by-value class sized at the call (`kuna_msvcbyval.rs`)
 
 An MSVC name states every parameter's type but not the size of a class passed by
