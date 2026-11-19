@@ -448,6 +448,12 @@ bare MH_FILESET with `kernelcache off` (one image, no symbols), its kext out of 
 IMG4(IM4P(LZFSE)) wrapper, and its kernel out of a bare IM4P(complzss). The
 fixtures and their generator live in
 `decompiler/crates/kuna-analysis/tests/fixtures/kernelcache/`.
+`kuna-kernelcache-merge.xml` loads the same collection's kext alone and then
+with the kernel as one image (`kernelcache com.apple.kernel,Widget`): the
+merged image names the kernel object the kext points at.
+`kuna-prelinked.xml` loads two pre-fileset kernels (`gen_prelinked.py`): one
+whose pointers are threaded through `__thread_starts`, with `kernelcache` off
+and `auto`, and one whose stripped kext is cut out of `__PRELINK_TEXT`.
 
 `kuna-iokitclasses.xml` decompiles a stripped synthetic kext
 (`decompiler/crates/kuna-analysis/tests/fixtures/kernelcache/gen_iokit.py`) with

@@ -45,12 +45,15 @@ kernel_code = [0x0B010000, RET,                                  # w0 = w0 + w1
 widget_start = KEXT_TEXT
 widget_name = KEXT_TEXT + 24
 widget_via_stub = KEXT_TEXT + 36
+widget_kernel_table = KEXT_TEXT + 60
 stub = KEXT_TEXT + 0x100
 kext_code = [0xA9BF7BFD, 0x910003FD, 0x528000E1,                  # frame; w1 = 7
              bl(widget_start + 12, kernel_add), 0xA8C17BFD, RET,   # direct kernel_add(w0, 7)
              adrp(0, widget_name, KEXT_CONST), ldr(0, 0, KEXT_CONST % PAGE), RET,
              0xA9BF7BFD, 0x910003FD, 0x52800101,                  # frame; w1 = 8
-             bl(widget_via_stub + 12, stub), 0xA8C17BFD, RET]      # kernel_add(w0, 8) via __stubs
+             bl(widget_via_stub + 12, stub), 0xA8C17BFD, RET,      # kernel_add(w0, 8) via __stubs
+             adrp(0, widget_kernel_table, KERNEL_CONST),          # &kernel_table, a kernel data object
+             0x91000000 | ((KERNEL_CONST % PAGE) << 10), RET]
 stub_code = [adrp(16, stub, KEXT_GOT), ldr(16, 16, KEXT_GOT % PAGE), BR_X16]
 
 def section(seg, name, addr, size, offset, flags=0, r1=0, r2=0):
@@ -69,7 +72,7 @@ def header(filetype, cmds, subtype=0, flags=0):
 
 # Shared LINKEDIT: string pool, two symbol tables, the indirect table, fixups.
 names = [b"_kernel_add", b"_kernel_dispatch", b"_kernel_table", b"_widget_start", b"_widget_name",
-         b"_widget_via_stub"]
+         b"_widget_via_stub", b"_widget_kernel_table"]
 strtab = b"\0"
 stroff_of = {}
 for n in names:
@@ -87,6 +90,7 @@ kernel_syms = [nlist(b"_kernel_add", N_SECT_EXT, 1, BASE + kernel_add),
 kext_syms = [nlist(b"_widget_start", N_SECT_EXT, 2, BASE + widget_start),
              nlist(b"_widget_name", N_SECT_EXT, 2, BASE + widget_name),
              nlist(b"_widget_via_stub", N_SECT_EXT, 2, BASE + widget_via_stub),
+             nlist(b"_widget_kernel_table", N_SECT_EXT, 2, BASE + widget_kernel_table),
              nlist(b"_kernel_add", N_UNDF_EXT, 0, 0)]
 
 def kc_ptr(target, nxt, auth=False, diversity=0):
@@ -113,7 +117,7 @@ def put(blob):
 fixups_off = put(fixups)
 kernel_symoff = put(b"".join(kernel_syms))
 kext_symoff = put(b"".join(kext_syms))
-indirect_off = put(u32(3, 3))
+indirect_off = put(u32(4, 4))
 stroff = put(strtab)
 linkedit_size = len(linkedit)
 
@@ -144,7 +148,7 @@ kext_cmds = [
              section(b"__DATA_CONST", b"__const", KEXT_CONST, 8, KEXT_CONST)], prot=1),
     linkedit_seg(),
     symtab(kext_symoff, len(kext_syms)),
-    dysymtab(3, 1, indirect_off, 2),
+    dysymtab(4, 1, indirect_off, 2),
 ]
 
 def fileset_entry(addr, name):

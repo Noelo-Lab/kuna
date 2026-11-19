@@ -4474,7 +4474,7 @@ and is passed to the `decomp_dbg` subprocess through `KUNA_DYLD_IMAGE`. The
 console spells it `option dyldimage NAME`, given before `load file`; it is
 accepted before any image is loaded.
 
-## `--option kernelcache ID` — one entry of an Apple kernel collection
+## `--option kernelcache ID` — entries of an Apple kernel collection
 
 An iOS or macOS kernelcache is an `MH_FILESET`: the kernel and every kext, each
 with its own Mach-O header, in one file (raw, or inside an IMG4 / IM4P
@@ -4487,6 +4487,14 @@ applies to the whole invocation: `functions`, `decompile`, `disassemble`,
 the option spelling of `--image`. Given more than once, the last one wins. The
 option overrides `KUNA_KERNELCACHE` (or `KUNA_DYLD_IMAGE`) set in the
 environment, and `--option dyldimage` overrides `--image`.
+
+A comma-separated list (`--option kernelcache com.apple.kernel,IOSurface`) or
+`all` loads several entries as one image, so a kext's references into the
+kernel name the kernel's functions and objects and the kernel's code
+decompiles beside it. A pre-fileset kernelcache (iOS 14 and earlier) takes the
+same values: its threaded pointers are rebased first, `auto` loads the kernel,
+`list` prints the kexts its `__PRELINK_INFO` plist names, and a kext id cuts
+that kext out.
 
 ```
 $ kuna xrefs fileset_calls.macho --to pmgr_wait_pending --option kernelcache com.example.driver.PMGR

@@ -1,0 +1,49 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<!--
+    Kuna `kernelcache` option, several entries in one image (P1 code-data
+    partition). The fixture is the two-entry kernel collection from
+    gen_fileset.py wrapped in IMG4; the kext's widget_kernel_table returns the
+    address of the kernel's kernel_table.
+
+    Pass 1 (`option kernelcache Widget`) is the bug: the kext loads alone, so
+    the kernel object it points at is a bare address. Pass 2 (`option
+    kernelcache com.apple.kernel,Widget`) loads both entries as one image: the
+    pointer names kernel_table, the kernel's own code decompiles, and the
+    kext's __stubs call through the merged indirect-symbol table still names
+    kernel_add.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">c0035fd6</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/kernelcache/fileset.macho</com>
+  <com>option kernelcache Widget</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/kernelcache/kernelcache.img4</com>
+  <com>read symbols</com>
+  <com>load function widget_kernel_table</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option kernelcache com.apple.kernel,Widget</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/kernelcache/kernelcache.img4</com>
+  <com>read symbols</com>
+  <com>load function widget_kernel_table</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0xfffffff007007000</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function widget_via_stub</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option kernelcache auto</com>
+  <com>quit</com>
+</script>
+<stringmatch name="KERNELCACHE-MERGE #1: the kext alone points at a bare kernel address" min="1" max="1">return 0xfffffff007008000;</stringmatch>
+<stringmatch name="KERNELCACHE-MERGE #2: kernel and kext in one image name the kernel object" min="1" max="1">return &amp;_kernel_table;</stringmatch>
+<stringmatch name="KERNELCACHE-MERGE #3: the kernel's code decompiles in the merged image" min="1" max="1">return a0 \+ a1;</stringmatch>
+<stringmatch name="KERNELCACHE-MERGE #4: the merged indirect table still names the kext's __stubs call" min="1" max="1">^  kernel_add\(a0,8\);</stringmatch>
+</decompilertest>

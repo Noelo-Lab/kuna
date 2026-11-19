@@ -1328,6 +1328,84 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   the address it was asked about is in another entry, naming it, or in none:
   for `--to` the rows are only the loaded entry's references to it, and for
   `--from` nothing was decoded there.
+  A comma-separated list of entries, or `all`, loads several entries as one
+  image
+  (`decompiler/crates/kuna-analysis/src/loader/kuna_kernelcache/fileset/merge.rs (merge)`):
+  their segment commands are concatenated at their collection addresses (one
+  shared `__LINKEDIT` kept), and a symbol table, indirect-symbol table and
+  `LC_FUNCTION_STARTS` are rebuilt behind the collection. The entries' symbols
+  are renumbered into one local / external-defined / undefined order; a
+  symbol's section ordinal moves to the merged section list, or, past the 255
+  ordinals an `nlist` can name, to the first merged section of the same kind
+  (code or data), since only the kind is read from it; and each stub or
+  pointer section's `reserved1` moves to its entry's part of the merged
+  indirect table. The rebuilt header goes in front of the collection, so every
+  file offset moves by the header's page-rounded size; the kernel's
+  `LC_UNIXTHREAD`, `LC_UUID` and version commands are kept. The collection's
+  `__BRANCH_STUBS` / `__BRANCH_GOTS` segments, where a release cache's
+  cross-entry branches land, are added to whatever is loaded, which sends even
+  a single entry through this path when they exist; a single entry keeps its
+  entry map either way. A load command must lie inside the file and be large
+  enough for the fields read from it, and a segment command for every section
+  its header declares, or the header is refused
+  (`decompiler/crates/kuna-analysis/src/loader/kuna_kernelcache/fileset.rs (load_commands)`).
+  On the iOS 16.4.1 collection, `kernelcache com.apple.kernel,IOSurface`
+  lists 20,025 functions in 6.2 s against 5.9 s for the kernel alone, and a
+  kext constructor that printed `*(unsigned long *)OSObject::OSObject() = …`
+  alone prints `OSObject::OSObject(a0); *a0 = …` once the kernel's body is in
+  the image. `list` follows each entry id with what the collection's
+  `__PRELINK_INFO,__info` plist says of it (version, load address, the
+  `IOClass` of each of its `IOKitPersonalities`;
+  `decompiler/crates/kuna-analysis/src/loader/kuna_kernelcache/fileset/prelink.rs (kexts)`,
+  a small XML plist reader that resolves `ID`/`IDREF`).
+  A pre-fileset (prelinked) kernelcache is one `MH_EXECUTE` kernel that
+  carries its kexts
+  (`decompiler/crates/kuna-analysis/src/loader/kuna_kernelcache/fileset/prelinked.rs (rebase)`).
+  Its pointers are not in a fixup table but threaded through the words
+  themselves: `__TEXT,__thread_starts` (iOS 12-14) opens with a word whose bit
+  0 picks a 4- or 8-byte hop unit, then lists each chain's offset from the
+  image base up to `0xffffffff`. A chain word with bit 62 clear is a rebase:
+  authenticated (bit 63) it holds a 32-bit offset from the base, otherwise a
+  43-bit sign-extended address with its top byte in bits 43..50, as xnu's
+  `rebase_threaded_starts` reads it; bits 51..61 hop to the next word.
+  `__TEXT,__chain_starts`, which `ld -static -fixup_chains` writes for static
+  firmware images, holds a pointer format, a count and each chain's offset
+  from the base, and its chains are walked by the `LC_DYLD_CHAINED_FIXUPS`
+  decoder
+  (`decompiler/crates/kuna-analysis/src/loader/format/macho/chained.rs (chain_starts_rebases)`).
+  Every rebase is written into its slot before anything reads the image, so
+  `auto`, which loads the kernel, already sees real pointers; such an image
+  is read into an owned copy rather than mapped. The kexts come in two
+  layouts (`fileset/prelinked.rs (entries)`). Up to iOS 11 each is a whole
+  Mach-O in `__PRELINK_TEXT` at the plist's `_PrelinkExecutableLoadAddr`, its
+  segments spread over the `__PLK_*` and `__PRELINK_DATA` ranges, its file
+  offsets relative to its own header and not always consistent; from iOS 12
+  they are merged into the kernel's own segments, `__PRELINK_INFO,__kmod_start`
+  points at each one's header, which describes only its `__TEXT_EXEC`, and the
+  plist names it by `ModuleIndex` (failing that, `__kmod_info`'s `kmod_info_t`
+  name does). Each kext header's segment and section offsets are rewritten to
+  the absolute offsets of their addresses, and a merged kext's code sections
+  get the instruction flags its stripped header no longer carries. `list`
+  prints these entries, and a kext is chosen by the same names as in a fileset
+  (`fileset/prelinked.rs (cut)`). On a merged cache the kernel already holds
+  every kext, and a kext alone keeps the kernel's non-code segments beside
+  its own code, because they hold its data. On an older cache a stripped kext
+  has no symbols and untyped `__got` / `__stubs` sections, so each one chosen
+  gets a symbol table of the kernel symbols its `__got` slots, stubs and `bl`s
+  reach, each absolute at the kernel address in the undefined range, where a
+  fileset kext's bound imports sit, plus an indirect-symbol table for those
+  sections, which are retyped to non-lazy pointers and 12- (16-, for
+  `__auth_stubs`) byte stubs; the import walk then names its stubs and slots
+  after the kernel functions they reach. Several entries, or `all`, go through
+  the same `merge` as a fileset's, the kernel's `__PRELINK` segments dropped
+  so nothing is mapped twice. Measured: an iOS 14.8 A12 cache has 338,665
+  threaded pointers, and its kernel's 104,241 functions go from no
+  class-qualified name to 37,000 (`iokitclasses` reads the rebased vtables),
+  in 22.0 s against 20.4 s with the option off; its IOSurface loads alone in
+  0.3 s. An iOS 11.4.1 A10 cache lists 197 entries, and its stripped
+  IOSurface loads in 0.2 s with its calls named `IORecursiveLockLock`,
+  `lck_mtx_lock`, `IOLog` and so on. Stage tests:
+  `tests/stages/kuna-kernelcache-merge.xml` and `tests/stages/kuna-prelinked.xml`.
 
 (kuna) **dyld shared cache.** A cache file is not an object file: it is a main
 file starting `dyld_v1`, sub-caches beside it (`.01`, `.27.dylddata`,

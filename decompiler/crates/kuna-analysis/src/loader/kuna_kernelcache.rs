@@ -56,8 +56,15 @@ pub fn is_container(bytes: &[u8]) -> bool {
     der_magic(bytes).is_some() || lzss::is_complzss(bytes) || lzfse::is_lzfse(bytes)
 }
 
-/// Unwrap a container and select one fileset entry, per `choice`. Input that is
-/// neither a container nor an `MH_FILESET` comes back unchanged.
+/// Is `bytes` a pre-fileset (prelinked) kernelcache, whose threaded or chained
+/// pointers [`peel`] rebases in an owned copy?
+pub fn is_prelinked(bytes: &[u8]) -> bool {
+    fileset::is_prelinked(bytes)
+}
+
+/// Unwrap a container and select the fileset entries `choice` names, or rebase
+/// a pre-fileset kernelcache and cut its chosen kexts out. Any other input
+/// comes back unchanged.
 pub fn peel(bytes: Vec<u8>, choice: &KernelcacheChoice) -> Result<Peeled, String> {
     if *choice == KernelcacheChoice::Off {
         return Ok(Peeled { bytes, note: None, signed: None, fileset: None });
@@ -73,9 +80,11 @@ pub fn peel(bytes: Vec<u8>, choice: &KernelcacheChoice) -> Result<Peeled, String
     let (bytes, signed, map) = if fileset::is_fileset(&bytes) {
         let (image, note, signed, map) = fileset::extract(bytes, choice)?;
         notes.push(note);
-        (image, (!signed.slots.is_empty()).then_some(signed), Some(map))
+        (image, (!signed.slots.is_empty()).then_some(signed), map)
     } else {
-        (bytes, None, None)
+        let (image, note) = fileset::legacy(bytes, choice)?;
+        notes.extend(note);
+        (image, None, None)
     };
     let note = (!notes.is_empty()).then(|| notes.join("; "));
     Ok(Peeled { bytes, note, signed, fileset: map })

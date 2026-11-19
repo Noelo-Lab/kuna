@@ -1,10 +1,16 @@
 //! `MH_FILESET` kernel collections: list the `LC_FILESET_ENTRY` images and cut
 //! one out as a standalone thin Mach-O.
 
+use std::collections::HashMap;
+
 use kuna_decomp::kuna_kernelcache::KernelcacheChoice;
 
 use crate::loader::format::macho::{resolve_chained_fixups, ChainedFixups};
 use crate::rtti::kuna_arm64evcall::SignedImage;
+
+mod merge;
+mod prelink;
+mod prelinked;
 
 const MH_MAGIC_64: u32 = 0xfeed_facf;
 const MH_EXECUTE: u32 = 0x2;
@@ -28,6 +34,51 @@ pub(super) struct FilesetEntry {
     pub(super) fileoff: u64,
     /// `MH_EXECUTE` for the kernel, `MH_KEXT_BUNDLE` for a kext.
     pub(super) filetype: u32,
+}
+
+/// A pre-fileset (prelinked) kernelcache, or a static image with threaded or
+/// chained pointers: the pointers are rebased, then `auto` loads the kernel
+/// (with every kext, on a cache that merged them into it), `list` prints the
+/// kexts the cache holds, and kexts are chosen as in a fileset.
+pub(super) fn legacy(mut bytes: Vec<u8>, choice: &KernelcacheChoice) -> Result<(Vec<u8>, Option<String>), String> {
+    if !prelinked::is_prelinked(&bytes) {
+        return Ok((bytes, None));
+    }
+    let rebased = prelinked::rebase(&mut bytes);
+    let info = prelink::kexts(&bytes).unwrap_or_default();
+    let KernelcacheChoice::Entry(name) = choice else {
+        let note = (rebased > 0 || !info.is_empty()).then(|| {
+            let kexts = if info.is_empty() {
+                String::new()
+            } else {
+                format!("; {} kexts listed in __PRELINK_INFO (--option kernelcache list)", info.len())
+            };
+            format!("prelinked kernelcache: {rebased} threaded/chained pointers rebased{kexts}")
+        });
+        return Ok((bytes, note));
+    };
+    let (all, merged) = prelinked::entries(&mut bytes, &info);
+    if name == "list" {
+        let by_id: HashMap<&str, &prelink::KextInfo> = info.iter().map(|k| (k.id.as_str(), k)).collect();
+        let lines: Vec<String> =
+            all.iter().map(|e| by_id.get(e.id.as_str()).map_or_else(|| e.id.clone(), |k| prelink::describe(k))).collect();
+        return Err(format!(
+            "prelinked kernelcache entries ({}{}):\n{}",
+            all.len(),
+            if merged { ", kexts merged into the kernel" } else { "" },
+            lines.join("\n")
+        ));
+    }
+    let chosen = select_many(&all, choice)?;
+    let ids: Vec<&str> = chosen.iter().map(|&i| all[i].id.as_str()).collect();
+    let shown = if ids.len() > 4 { format!("{} entries", ids.len()) } else { ids.join(", ") };
+    let image = prelinked::cut(bytes, &all, merged, &chosen)?;
+    let note = format!("prelinked kernelcache: loaded {shown} ({rebased} threaded/chained pointers rebased)");
+    Ok((image, Some(note)))
+}
+
+pub(super) fn is_prelinked(bytes: &[u8]) -> bool {
+    prelinked::is_prelinked(bytes)
 }
 
 pub(super) fn is_fileset(bytes: &[u8]) -> bool {
@@ -91,25 +142,45 @@ struct Segment {
     filesize: u64,
 }
 
-/// `(cmd, offset)` of each load command of the 64-bit header at `at`.
+/// `(cmd, offset)` of each load command of the 64-bit header at `at`. A command
+/// must lie inside the file and be large enough for the fields read from it.
 fn load_commands(bytes: &[u8], at: usize) -> Option<Vec<(u32, usize)>> {
     if rd_u32(bytes, at)? != MH_MAGIC_64 {
         return None;
     }
     let ncmds = rd_u32(bytes, at + 16)? as usize;
-    let end = at.checked_add(HEADER_LEN)?.checked_add(rd_u32(bytes, at + 20)? as usize)?;
+    let end = at.checked_add(HEADER_LEN)?.checked_add(rd_u32(bytes, at + 20)? as usize)?.min(bytes.len());
     let mut out = Vec::with_capacity(ncmds.min(4096));
     let mut p = at + HEADER_LEN;
     for _ in 0..ncmds {
         let cmd = rd_u32(bytes, p)?;
         let size = rd_u32(bytes, p + 4)? as usize;
-        if size < 8 || p.checked_add(size)? > end {
+        if p.checked_add(size)? > end || !command_fits(bytes, cmd, p, size) {
             return None;
         }
         out.push((cmd, p));
         p += size;
     }
     Some(out)
+}
+
+const SEGMENT_CMD_LEN: usize = 72;
+const LC_FUNCTION_STARTS_CMD: u32 = 0x26;
+
+/// Whether the command at `p` of `size` bytes holds the fields its kind is read
+/// for, and for a segment, every section its header declares.
+fn command_fits(bytes: &[u8], cmd: u32, p: usize, size: usize) -> bool {
+    match cmd {
+        LC_SEGMENT_64 => {
+            size >= SEGMENT_CMD_LEN
+                && rd_u32(bytes, p + 64).is_some_and(|n| SEGMENT_CMD_LEN + n as usize * SECTION_LEN <= size)
+        }
+        LC_SYMTAB => size >= 24,
+        LC_DYSYMTAB => size >= 80,
+        LC_FILESET_ENTRY => size >= 32,
+        LC_FUNCTION_STARTS_CMD | 0x1d | 0x1e | 0x29 | 0x2b | 0x2e | 0x33 | 0x34 => size >= 16,
+        _ => size >= 8,
+    }
 }
 
 fn segments(bytes: &[u8], at: usize) -> Option<Vec<Segment>> {
@@ -146,6 +217,35 @@ pub(super) fn entries(bytes: &[u8]) -> Option<Vec<FilesetEntry>> {
             })
         })
         .collect()
+}
+
+/// The entries `choice` names: `all`, a comma-separated list, or one entry.
+fn select_many(all: &[FilesetEntry], choice: &KernelcacheChoice) -> Result<Vec<usize>, String> {
+    let chosen = select_entries(all, choice)?;
+    if chosen.is_empty() {
+        return Err("the MH_FILESET names no entry to load".into());
+    }
+    Ok(chosen)
+}
+
+fn select_entries(all: &[FilesetEntry], choice: &KernelcacheChoice) -> Result<Vec<usize>, String> {
+    let position = |e: &FilesetEntry| all.iter().position(|a| a.fileoff == e.fileoff).unwrap_or(0);
+    match choice {
+        KernelcacheChoice::Entry(name) if name == "all" => Ok((0..all.len()).collect()),
+        KernelcacheChoice::Entry(name) if name.contains(',') => {
+            let mut out = Vec::new();
+            for part in name.split(',').filter(|p| !p.is_empty()) {
+                let one = KernelcacheChoice::Entry(part.to_string());
+                let i = position(select(all, &one)?);
+                if !out.contains(&i) {
+                    out.push(i);
+                }
+            }
+            out.sort_unstable();
+            Ok(out)
+        }
+        _ => Ok(vec![position(select(all, choice)?)]),
+    }
 }
 
 fn select<'a>(all: &'a [FilesetEntry], choice: &KernelcacheChoice) -> Result<&'a FilesetEntry, String> {
@@ -195,17 +295,39 @@ fn select<'a>(all: &'a [FilesetEntry], choice: &KernelcacheChoice) -> Result<&'a
 
 /// Cut the chosen entry out of a kernel collection: rebase every chained-fixup
 /// pointer slot, then copy the entry's header and load commands to offset 0.
+/// Several entries, or one entry of a collection with branch-stub segments,
+/// are rebuilt as one image instead ([`merge::merge`]); only a single entry
+/// keeps its entry map.
 /// The collection's signed slots come back beside the image, since rebasing
 /// strips their signing context from it.
 pub(super) fn extract(
     mut bytes: Vec<u8>,
     choice: &KernelcacheChoice,
-) -> Result<(Vec<u8>, String, SignedImage, FilesetMap), String> {
+) -> Result<(Vec<u8>, String, SignedImage, Option<FilesetMap>), String> {
     let all = entries(&bytes).ok_or("malformed MH_FILESET load commands")?;
-    let entry = select(&all, choice)?.clone();
-    let index = all.iter().position(|e| e.fileoff == entry.fileoff).unwrap_or(0);
-    let map = fileset_map(&bytes, &all, index);
+    if *choice == KernelcacheChoice::Entry("list".into()) {
+        let info: HashMap<String, prelink::KextInfo> =
+            prelink::kexts(&bytes).unwrap_or_default().into_iter().map(|k| (k.id.clone(), k)).collect();
+        let lines: Vec<String> =
+            all.iter().map(|e| info.get(&e.id).map_or_else(|| e.id.clone(), prelink::describe)).collect();
+        return Err(format!("MH_FILESET entries ({}):\n{}", all.len(), lines.join("\n")));
+    }
+    let chosen = select_many(&all, choice)?;
+    let index = chosen[0];
+    let map = (chosen.len() == 1).then(|| fileset_map(&bytes, &all, index));
     let (applied, signed) = apply_fixups(&mut bytes, &all)?;
+    let branch = merge::branch_segments(&bytes).len();
+    if chosen.len() > 1 || branch > 0 {
+        let ids: Vec<&str> = chosen.iter().map(|&i| all[i].id.as_str()).collect();
+        let shown = if ids.len() > 4 { format!("{} entries", ids.len()) } else { ids.join(", ") };
+        let image = merge::merge(bytes, &all, &chosen)?;
+        let note = format!(
+            "MH_FILESET: loaded {shown} as one image ({applied} chained-fixup pointers rebased, \
+             {branch} branch-stub segments mapped)"
+        );
+        return Ok((image, note, signed, map));
+    }
+    let entry = all[index].clone();
 
     let at = usize::try_from(entry.fileoff).map_err(|_| "fileset entry offset out of range")?;
     let sizeofcmds = rd_u32(&bytes, at + 20).ok_or("truncated fileset entry header")? as usize;
@@ -415,7 +537,7 @@ fn signed_image(bytes: &[u8], all: &[FilesetEntry], fixups: &ChainedFixups) -> S
             }
             let nsects = rd_u32(bytes, p + 64).unwrap_or(0) as usize;
             for k in 0..nsects.min(256) {
-                let s = p + SEGMENT_LEN + k * SECTION_LEN;
+                let s = p + 72 + k * 80;
                 let (Some(name), Some(segment), Some(addr), Some(size), Some(flags)) = (
                     bytes.get(s..s + 16),
                     bytes.get(s + 16..s + 32),
@@ -535,8 +657,8 @@ mod tests {
         assert!(elapsed < std::time::Duration::from_secs(5), "shared-tail headers took {elapsed:?}");
     }
 
-    /// A segment's sections are read only as far as its own `cmdsize` holds
-    /// them, so one 72-byte command claiming a million sections adds none.
+    /// A segment command must hold every section its header declares, so one
+    /// 72-byte command claiming a million sections is refused whole.
     #[test]
     fn sections_stop_at_the_segment_command() {
         let mut image = vec![0u8; 0x1000];
@@ -549,10 +671,7 @@ mod tests {
         for off in (at + 32 + SEGMENT_LEN..image.len()).step_by(4) {
             image[off..off + 4].copy_from_slice(&S_ATTR_SOME_INSTRUCTIONS.to_le_bytes());
         }
-        let cmds = load_commands(&image, at).unwrap();
-        let mut work = 1 << 20;
-        assert_eq!(code_ranges(&image, &cmds, &mut work), Some(Vec::new()));
-        assert_eq!(work, 1 << 20, "no section was visited");
+        assert!(load_commands(&image, at).is_none());
     }
 
     /// Undefined symbols that all read one long unterminated name copy it at

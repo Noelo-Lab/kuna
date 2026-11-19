@@ -7,7 +7,7 @@ Inputs for the `kernelcache` option (`loader/kuna_kernelcache`), and for
 |---|---|
 | `text.bin`, `small.bin`, `random.bin` | plain inputs |
 | `text.bvx2.lzfse`, `small.bvxn.lzfse`, `random.raw.lzfse` | the same inputs encoded by the reference `lzfse -encode` (github.com/lzfse/lzfse); the encoder picks an FSE (`bvx2`), LZVN (`bvxn`) or stored (`bvx-`) block by size and entropy |
-| `fileset.macho` | a two-entry arm64 MH_FILESET: `com.apple.kernel` (`kernel_add`, `kernel_dispatch`, `kernel_table`) and `com.example.driver.Widget` (`widget_start` calls `kernel_add` with a direct `bl`, `widget_via_stub` through `__stubs`/`__got`, `widget_name` returns a `__const` pointer). One `DYLD_CHAINED_PTR_64_KERNEL_CACHE` table rebases three slots, one of them authenticated. A `__PRELINK_INFO` segment (no section header, so `kernelcache off` still maps the top-level segments) holding a plist with only `_PrelinkKCID` marks it a boot collection (cache level 0); its comment line is padding a test overwrites with link keys |
+| `fileset.macho` | a two-entry arm64 MH_FILESET: `com.apple.kernel` (`kernel_add`, `kernel_dispatch`, `kernel_table`) and `com.example.driver.Widget` (`widget_start` calls `kernel_add` with a direct `bl`, `widget_via_stub` through `__stubs`/`__got`, `widget_name` returns a `__const` pointer, `widget_kernel_table` returns the address of the kernel's `kernel_table`). One `DYLD_CHAINED_PTR_64_KERNEL_CACHE` table rebases three slots, one of them authenticated. A `__PRELINK_INFO` segment (no section header, so `kernelcache off` still maps the top-level segments) holding a plist with only `_PrelinkKCID` marks it a boot collection (cache level 0); its comment line is padding a test overwrites with link keys |
 | `fileset_calls.macho` | a two-entry arm64 MH_FILESET at arm64e-kernelcache addresses (base `0xfffffe0007004000`, no fixup table): `com.apple.kernel` (`kernel_main` calls `kernel_add`) and `com.example.driver.PMGR` (`pmgr_set_perf_state` calls `pmgr_wait_pending` from four `bl` sites and `kernel_add` from one; `pmgr_idle_enter` calls `pmgr_wait_pending` with a backward `bl`). Each entry has one `__TEXT,__cstring` string. For `kuna-cli/tests/xrefs_fileset_entry.rs` |
 | `kernelcache.img4` | IMG4 { IM4P `krnl` { LZFSE(`fileset.macho`) }, IM4M stub } |
 | `kernelcache.lzss.im4p` | a bare IM4P whose payload is a `complzss` container of `fileset.macho` |
@@ -46,6 +46,15 @@ with no indirect-symbol entry holding `Base::m1` that the function at
 `0xfffffff007a04260` branches through. Only `meta_of_derived`, `Base::m1`,
 `Base::m2`, the two allocators, `alloc_derived` and `alloc_packet` have symbols,
 and pointers are plain absolute words.
+
+`prelinked_merged.macho`, `prelinked_split.macho` and `chainstarts.macho`
+(written by `gen_prelinked.py`, plain Python 3) are pre-fileset images: an iOS
+12-14 style kernel with a merged kext found through `__kmod_start` and every
+pointer threaded through `__thread_starts` (four of them the handlers of an
+`IOExternalMethodDispatch` table); an iOS 11 style kernel with a stripped kext
+in `__PRELINK_TEXT` whose `__got` / `__stubs` are untyped and whose plist has no
+`<plist>` wrapper; and a static firmware-style image with one
+`DYLD_CHAINED_PTR_ARM64E_KERNEL` chain in `__chain_starts`.
 
 `dext_osclassinfo.macho` (written by `gen_dext.py`) is a stripped arm64
 DriverKit-style executable for the `iokitclasses` class-record reader: one

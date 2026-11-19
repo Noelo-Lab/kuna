@@ -623,16 +623,8 @@ fn walk_segment(
         return out.damaged(|| format!("the segment chain starts at blob offset 0x{p:x} give page size 0"));
     }
 
-    let stride: u64 = match pointer_format {
-        ptr_format::ARM64E | ptr_format::ARM64E_USERLAND | ptr_format::ARM64E_USERLAND24 => 8,
-        ptr_format::PTR_64
-        | ptr_format::PTR_64_OFFSET
-        | ptr_format::PTR_32
-        | ptr_format::ARM64E_KERNEL
-        | ptr_format::ARM64E_FIRMWARE
-        | ptr_format::PTR_64_KERNEL_CACHE => 4,
-        ptr_format::X86_64_KERNEL_CACHE => 1,
-        _ => return out.damaged(|| format!("chained pointer format {pointer_format} is not decoded")),
+    let Some(stride) = chain_stride(pointer_format) else {
+        return out.damaged(|| format!("chained pointer format {pointer_format} is not decoded"));
     };
     out.width = if pointer_format == ptr_format::PTR_32 { 4 } else { 8 };
     let format = Format { pointer_format, imagebase, max_valid_pointer };
@@ -677,6 +669,56 @@ fn walk_segment(
             overflow += 1;
         }
     }
+}
+
+/// The chain stride of a decoded pointer format: arm64e userland formats hop in
+/// 8-byte units, the 64-bit generic and kernel formats in 4-byte units
+/// (fixup-chains.h).
+fn chain_stride(pointer_format: u16) -> Option<u64> {
+    match pointer_format {
+        ptr_format::ARM64E | ptr_format::ARM64E_USERLAND | ptr_format::ARM64E_USERLAND24 => Some(8),
+        ptr_format::PTR_64
+        | ptr_format::PTR_64_OFFSET
+        | ptr_format::PTR_32
+        | ptr_format::ARM64E_KERNEL
+        | ptr_format::ARM64E_FIRMWARE
+        | ptr_format::PTR_64_KERNEL_CACHE => Some(4),
+        ptr_format::X86_64_KERNEL_CACHE => Some(1),
+        _ => None,
+    }
+}
+
+/// (kuna) The rebases of a static image's `__TEXT,__chain_starts` blob
+/// (`dyld_chained_starts_offsets`: `u32 pointer_format, u32 starts_count, u32
+/// chain_starts[]`, each an offset from the image base), as `ld -static
+/// -fixup_chains` writes it for firmware images. `segments` are `(vmaddr,
+/// fileoff, filesize)`. Each rebase is `(slot, target, width)`, the width 4
+/// for the 32-bit format.
+pub fn chain_starts_rebases(
+    file: &[u8],
+    segments: &[(u64, u64, u64)],
+    imagebase: u64,
+    starts: &[u8],
+) -> Vec<(u64, u64, usize)> {
+    let segs: Vec<SegInfo> =
+        segments.iter().map(|&(vmaddr, fileoff, filesize)| SegInfo { vmaddr, fileoff, filesize }).collect();
+    let (Some(format), Some(count)) = (rd_u32(starts, 0), rd_u32(starts, 4)) else { return Vec::new() };
+    let Ok(pointer_format) = u16::try_from(format) else { return Vec::new() };
+    let Some(stride) = chain_stride(pointer_format) else { return Vec::new() };
+    let format = Format { pointer_format, imagebase, max_valid_pointer: 0 };
+    let mut out = ChainedFixups::default();
+    let mut walk = Walk::new(&segs, file, starts);
+    let mut binds = Vec::new();
+    for i in 0..(count as usize).min(starts.len() / 4) {
+        let Some(offset) = rd_u32(starts, 8 + 4 * i) else { break };
+        if !walk.start() {
+            break;
+        }
+        walk_chain(&mut walk, imagebase.wrapping_add(u64::from(offset)), stride, &format, &mut out, &mut binds);
+    }
+    let width = if pointer_format == ptr_format::PTR_32 { 4 } else { 8 };
+    out.sort_slots();
+    out.rebases.into_iter().map(|(va, target)| (va, target, width)).collect()
 }
 
 /// What [`decode_ptr`] needs to know about a segment's pointers.

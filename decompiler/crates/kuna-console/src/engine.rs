@@ -4794,7 +4794,19 @@ pub(crate) fn bootstrap_object(
     let registry = build_registry();
 
     let mut signed_slots = None;
-    let (bytes, load_notes) = match kuna_analysis::image_bytes::ImageBytes::map_thin_macho(path)? {
+    let mapped = match kuna_analysis::image_bytes::ImageBytes::map_thin_macho(path)? {
+        // A prelinked kernelcache takes the owned path, where the `kernelcache`
+        // peel rebases its pointers in place.
+        Some(bytes)
+            if kuna_decomp::kuna_kernelcache::KernelcacheChoice::in_force()
+                != kuna_decomp::kuna_kernelcache::KernelcacheChoice::Off
+                && kuna_analysis::loader::kuna_kernelcache::is_prelinked(&bytes) =>
+        {
+            None
+        }
+        other => other,
+    };
+    let (bytes, load_notes) = match mapped {
         Some(bytes) => (bytes, Vec::new()),
         None => {
             // Read the image bytes once: reused for the loader AND the analysis-pass
