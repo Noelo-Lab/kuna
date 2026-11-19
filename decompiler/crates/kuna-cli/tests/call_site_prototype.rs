@@ -84,6 +84,16 @@ fn a_named_calling_convention_is_rejected() {
     }
 }
 
+/// A variadic declaration types the target too: its fixed parameters and `...`.
+#[test]
+fn a_stated_variadic_call_stays_callable() {
+    for surface in [&["decompile", "report"][..], &["decompile-all"][..]] {
+        let (out, err, code) = decompile(surface, &["callproto report::0x13b0 void f(char *, ...)"]);
+        assert_eq!(code, 0, "{surface:?}: {err}");
+        assert!(out.contains("(*(void (*)(char *,...))*v1)(\"%s %d %d\",a1,"), "{surface:?}: {out}");
+    }
+}
+
 /// `__cdecl` is the x86-64 Windows spec's alias of its default `__fastcall`,
 /// so naming it names the convention the call is laid out under.
 #[test]

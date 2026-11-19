@@ -305,12 +305,16 @@ fn call_type(data: &mut Funcdata, tlst: &dyn TypeFactory, op: OpId) -> Option<Rc
     }
     let nargs = pieces.intypes.len();
     if let Some(stated) = stated_pieces(data, op) {
+        let fixed = stated.intypes.len();
+        let arity = if stated.first_var_arg_slot >= 0 { fixed <= nargs } else { fixed == nargs };
         let returned = stated.outtype.iter().filter(|t| t.get_metatype() != type_metatype::TYPE_VOID);
-        if stated.intypes.len() != nargs || !returned.chain(&stated.intypes).all(|t| spellable(t, t.get_size())) {
+        if !arity || !returned.chain(&stated.intypes).all(|t| spellable(t, t.get_size())) {
             return None;
         }
         pieces.outtype = stated.outtype.or(pieces.outtype);
         pieces.intypes = stated.intypes;
+        pieces.innames.truncate(fixed);
+        pieces.first_var_arg_slot = stated.first_var_arg_slot;
     }
     if clobber_is_read(data, op) {
         return None;
@@ -325,7 +329,7 @@ fn call_type(data: &mut Funcdata, tlst: &dyn TypeFactory, op: OpId) -> Option<Rc
         None => tlst.get_type_code_proto(&pieces),
     }
     .ok()?;
-    if !passes_like_the_call(data, op, code.get_code_prototype()?, nargs, out) {
+    if !passes_like_the_call(data, op, code.get_code_prototype()?, pieces.intypes.len(), out) {
         return None;
     }
     let size = data.vbank().get(target)?.get_size();
@@ -423,7 +427,7 @@ pub fn retype_call_targets(data: &mut Funcdata) {
     let ops: Vec<OpId> = (0..data.num_calls())
         .filter(|&i| {
             let fc = data.get_call_specs(i);
-            (!fc.is_input_locked() || stated_pieces(data, fc.get_op()).is_some()) && !fc.is_dotdotdot()
+            (!fc.is_input_locked() && !fc.is_dotdotdot()) || stated_pieces(data, fc.get_op()).is_some()
         })
         .map(|i| data.get_call_specs(i).get_op())
         .collect();
