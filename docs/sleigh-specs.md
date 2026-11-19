@@ -6,6 +6,11 @@ kuna decodes every instruction through the SLEIGH processor modules under
 modules Ghidra does not have (Cortus APS3). This page covers both kinds of work and
 the places that have to change with them. Concrete examples are cited by commit.
 
+For the SLEIGH language itself (tokens, constructors, context, p-code semantics), read
+Ghidra's manual: <https://ghidra.re/ghidra_docs/languages/html/sleigh.html>. `slacomp`
+compiles the same language, so it applies unchanged. This page covers only what is
+specific to kuna.
+
 ## The files of a module
 
 A module lives in `specs/Ghidra/Processors/<P>/data/languages/`:
