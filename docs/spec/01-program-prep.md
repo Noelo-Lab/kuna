@@ -4213,6 +4213,25 @@ moves.
   are stashed apart from the generic ones and merged at the commit. (Struct/class **fields** are the
   sibling `dwarfstructs` increment below; before it, a class stayed a named opaque
   and `this->balance` printed as an offset.)
+- **Changed-convention prototypes** (no option,
+  `decompiler/crates/kuna-analysis/src/pass.rs (apply_dwarf_nocall)`). A DWARF
+  prototype is applied locked, so its parameter list decides which registers a
+  function reads. Clang's dead-argument elimination rewrites an internal
+  function's convention: an unused or constant parameter is removed, the
+  remaining ones move into the earlier argument slots, and the subprogram is
+  marked `DW_AT_calling_convention DW_CC_nocall`. The DWARF still lists every
+  source parameter; a removed one has no `DW_AT_location` (a constant one has
+  `DW_AT_const_value` instead). Both DWARF arms record, for a `DW_CC_nocall`
+  subprogram, the positions of its location-less parameters, and the commit
+  removes those parameters from the by-name and the by-address prototype before
+  either is parked. `work(int *p,int unused,int k)` then decompiles as
+  `work(int *p,int k)` with the loop bound read as `k`, and its callers pass two
+  arguments instead of an undefined third. The return type is kept, because
+  DWARF does not say whether the return value was removed too. GCC's IPA clones
+  (`.constprop`, `.isra`, `.part`) need no such rule: they are concrete instances
+  linked by `DW_AT_abstract_origin`, which neither arm follows, so a clone never
+  receives the source prototype.
+
   At the enabled commit boundary,
   `decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_cppnames.rs`
   also reconciles a qualified

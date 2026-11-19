@@ -266,6 +266,8 @@ struct DieSnap {
     prototyped: bool,
     /// True if the DIE carries a `DW_AT_location` (a global var has a real address).
     has_location: bool,
+    /// `DW_AT_calling_convention` is `DW_CC_nocall`.
+    nocall: bool,
     /// `DW_OP_addr` operand of a simple `DW_AT_location`, if that is its form.
     addr_location: Option<u64>,
     /// The resolved signed frame offset of `DW_OP_fbreg` with optional unsigned
@@ -319,6 +321,7 @@ impl DieSnap {
             declaration: false,
             prototyped: false,
             has_location: false,
+            nocall: false,
             addr_location: None,
             fbreg_location: None,
             indirect_parameter: false,
@@ -487,6 +490,12 @@ fn snapshot_unit_with_go(
         }
         if matches!(entry.attr_value(gimli::DW_AT_prototyped), Some(gimli::AttributeValue::Flag(true))) {
             snap.prototyped = true;
+        }
+        if matches!(
+            entry.attr_value(gimli::DW_AT_calling_convention),
+            Some(gimli::AttributeValue::CallingConvention(gimli::DW_CC_nocall))
+        ) {
+            snap.nocall = true;
         }
         if let Some(loc) = entry.attr_value(gimli::DW_AT_location) {
             snap.has_location = true;
@@ -1033,6 +1042,32 @@ fn build_pieces(
     })
 }
 
+/// Record which parameters of a `DW_CC_nocall` subprogram carry no location.
+/// The compiler changed such a function's convention (clang's dead-argument
+/// elimination on an internal function): a parameter it removed is still
+/// listed but has no `DW_AT_location`, and the remaining ones moved into the
+/// earlier argument slots.
+fn note_nocall(
+    sub: &DieSnap,
+    low_pc: u64,
+    name: &str,
+    params: impl Iterator<Item = usize>,
+    dies: &BTreeMap<usize, DieSnap>,
+    out: &mut Vec<(u64, String, Vec<usize>)>,
+) {
+    if !sub.nocall {
+        return;
+    }
+    let dropped: Vec<usize> = params
+        .enumerate()
+        .filter(|(_, p)| dies.get(p).is_some_and(|d| !d.has_location))
+        .map(|(i, _)| i)
+        .collect();
+    if !dropped.is_empty() {
+        out.push((low_pc, name.to_string(), dropped));
+    }
+}
+
 /// Collect the named, typed stack locals of a defined subprogram: each
 /// direct `DW_TAG_variable` / `DW_TAG_formal_parameter` child carrying a single
 /// `DW_OP_fbreg <off>` location becomes a [`LocalFact`](crate::pass::LocalFact) at stack offset
@@ -1195,6 +1230,10 @@ impl AnalysisPass for DwarfPass {
                             {
                                 kuna_dwarflinkage::append(snap, &dies, &pieces, &linkage_imports, &linkage_definitions, &mut out.prototypes_at);
                                 out.prototypes.push(pieces);
+                                let params = snap.children.iter().copied().filter(|c| {
+                                    dies.get(c).is_some_and(|d| d.tag == gimli::DW_TAG_formal_parameter)
+                                });
+                                note_nocall(snap, low_pc, &snap.name, params, &dies, &mut out.dwarf_nocall);
                             }
                             // subtask 3: named, typed stack LOCALS. Each direct
                             // `DW_TAG_variable`/`DW_TAG_formal_parameter` child with a
@@ -1230,6 +1269,7 @@ impl AnalysisPass for DwarfPass {
                             signatures.then(|| kuna_cppproto::build_pieces(&res, &dies, types, word_size)).flatten()
                         {
                             kuna_dwarflinkage::append(snap, &dies, &pieces, &linkage_imports, &linkage_definitions, &mut out.cpp_dwarf.prototypes);
+                            note_nocall(snap, low_pc, &pieces.name, res.params.iter().copied(), &dies, &mut out.dwarf_nocall);
                             out.cpp_dwarf.prototypes.push((low_pc, pieces));
                         }
                         if res.chased {

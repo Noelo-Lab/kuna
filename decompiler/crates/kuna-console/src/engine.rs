@@ -5315,6 +5315,7 @@ fn commit_analysis_output(
     //    producing pass: they fold into the normal symbol/local streams below and
     //    their address-keyed prototypes are applied at step 5a.
     let mut out = out;
+    out.apply_dwarf_nocall();
     for slot in std::mem::take(&mut out.ppc32_pic_slots) {
         prog.arch_mut().ppc32_pic_imports.insert(slot.address, slot);
     }
