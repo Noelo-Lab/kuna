@@ -1,0 +1,71 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna alloca: a variable-length array, plain and under stack-clash
+    protection.
+
+    vla (gcc -O2 -fstack-clash-protection, the Ubuntu default):
+
+        void use(char *p, int n);
+        int vla(int n) { char buf[n]; use(buf, n); return buf[n/2]; }
+
+        401155  movsxd rax,edi; mov rdx,rax; add rax,15
+        401162  mov rsi,rax; and rsi,-0x1000      ; page part of the size
+        401169  mov rcx,rsp; mov rbp,rsp; sub rcx,rsi
+        401172  cmp rsp,rcx; je 40118c            ; guard
+        401177  sub rsp,0x1000; or qword [rsp+0xff8],0; cmp rsp,rcx; jne 401177
+        40118c  and eax,0xff0; sub rsp,rax        ; remainder
+        401194  test rax,rax; jne 4011b8          ; probe the remainder too
+        40119b  mov rdi,rsp; ... call use
+        4011ae  movsx eax,byte [rsp+rax]
+
+    The allocation printed as stack arithmetic around a probe loop
+    (`while (v9 != v5) { ... *(unsigned long *)&v2[-8] = ... }`, then
+    `use((long)v7 + v1,a0)`).
+
+    vla2 (gcc -O2, no stack-clash protection):
+      int vla2(int n) { char buf[n]; return use2(buf, n); }
+      movslq %edi,%rax ; add $0xf,%rax ; and $-16,%rax ; sub %rax,%rsp ; mov %rsp,%rdi ; call use2
+
+    Stage: P3 dataflow (RuleAlloca, RuleAllocaProbe, RuleAllocaTyped) and the
+    raw `sub rsp,reg` rewrite at ActionStart, option alloca off|on. Pass 1
+    (off) pins the bug, pass 2 (on, the default) the fix.
+-->
+<bytechunk space="ram" offset="0x401140">
+f30f1efac3
+</bytechunk>
+<bytechunk space="ram" offset="0x401150">
+f30f1efa554863c74889c24883c00f4889c64881e600f0ffff4889e14889e54829f14839cc74154881ec0010000048838c24f80f0000004839cc75eb25f00f00004829c44885c0751f89d04889e789d6e89bffffffc1e81f01d0d1f848980fbe0404c9c30f1f400048834c04f800ebd9
+</bytechunk>
+<bytechunk space="ram" offset="0x402000" readonly="true">
+f30f1efa4088374863f60fbe4437ffc3f30f1efa554863c74889c64883c00f4883e0f04889e54829c44889e7e8cfffffffc9c3
+</bytechunk>
+<symbol space="ram" offset="0x401140" name="use"/>
+<symbol space="ram" offset="0x401150" name="vla"/>
+<symbol space="ram" offset="0x402000" name="use2"/>
+<symbol space="ram" offset="0x402010" name="vla2"/>
+</binaryimage>
+<script>
+  <com>option alloca off</com>
+  <com>lo fu vla</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu vla2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option alloca on</com>
+  <com>lo fu vla</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu vla2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="ALLOCA #1: off, the probe loop is printed" min="1" max="1">while \(</stringmatch>
+<stringmatch name="ALLOCA #2: on, the allocation is alloca of the requested size" min="1" max="1">(\w+) = alloca\(\(\w+\)a0\);</stringmatch>
+<stringmatch name="ALLOCA #3: on, use receives the buffer" min="1" max="1">use\(v\d+,a0\);</stringmatch>
+<stringmatch name="ALLOCA #4: alloca appears once per function" min="2" max="2">alloca\(</stringmatch>
+<stringmatch name="ALLOCA #5: off, the plain stack move stays stack arithmetic" min="1" max="1">use2\(&amp;\(&amp;Stackfffffffffffffff8\)\[-\(.*a0.*\)\],.*a0\);</stringmatch>
+<stringmatch name="ALLOCA #6: on, the plain stack move is alloca of the requested size" min="1" max="1">use2\(alloca\(.*a0\),.*a0\);</stringmatch>
+</decompilertest>

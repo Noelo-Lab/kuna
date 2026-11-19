@@ -1,0 +1,85 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna `pow2select`: signed `x / 2^k` rounds toward zero, so gcc biases a
+    negative x by 2^k - 1 and selects the biased value with a cmov, which
+    lifts as a branch and a MULTIEQUAL: `v = x + 3; if (0 <= x) v = x;
+    return v >> 2;`.  With the option on (the default) the shift is
+    rewritten to `x / 4` when the branch provably sends every positive x to
+    the unbiased input and every negative x to the biased one.
+
+    Stage / sub-stage: P3 "simplification-quiescence", option
+    `pow2select on|off`.
+
+    The bytes are decompiler/crates/kuna-analysis/tests/fixtures/pow2select.c
+    built by gcc 15.3 at -O2 -fno-pie -no-pie -nostartfiles (x86-64 SysV).
+    near1 tests x > 5 and near3 biases by 7 before a shift by 2; neither is a
+    division and both keep their select.  Pass 1 is the default, pass 2
+    `option pow2select off`.
+-->
+<bytechunk space="ram" offset="0x401000">
+f30f1efa85ff8d47030f49c7c1f802c3f30f1efa4885ff488d471f480f49c748c1f805c39066662e0f1f840000000000f30f1efa89fac1fa1fc1ea1d8d041783
+e00729d0c366662e0f1f840000000000f30f1efa89fac1ea1f8d041783e00129d0c30f1f0066662e0f1f840000000000f30f1efa83ff068d47030f4dc7c1f802
+c30f1f400066662e0f1f840000000000f30f1efa85ff8d47070f49c7c1f802c3f30f1efa89fa89f8f7da83e00783e207f7da83fffb0f4ec2c3
+</bytechunk>
+<symbol space="ram" offset="0x401000" name="div4"/>
+<symbol space="ram" offset="0x401010" name="ldiv32"/>
+<symbol space="ram" offset="0x401030" name="mod8"/>
+<symbol space="ram" offset="0x401050" name="mod2"/>
+<symbol space="ram" offset="0x401070" name="near1"/>
+<symbol space="ram" offset="0x401090" name="near3"/>
+<symbol space="ram" offset="0x4010a0" name="near4"/>
+</binaryimage>
+<script>
+  <com>lo fu div4</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ldiv32</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mod8</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mod2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu near1</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu near3</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu near4</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option pow2select off</com>
+  <com>lo fu div4</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ldiv32</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mod8</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mod2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu near1</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu near3</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu near4</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="pow2select #1: x / 4 written as a cmov select prints as a division" min="1" max="1">^  return a0 / 4;$</stringmatch>
+<stringmatch name="pow2select #2: the 64-bit x / 32 too" min="1" max="1">^  return a0 / 0x20;$</stringmatch>
+<stringmatch name="pow2select #3: with the option off the select prints" min="1" max="1">^  v1 = a0 \+ 3;$
+^  if \(0 &lt;= a0\)$
+^    v1 = a0;$
+^  return v1 &gt;&gt; 2;$</stringmatch>
+<stringmatch name="pow2select #4: near1 (tests x &gt; 5) and near3 (biases by 7) keep their select in both passes" min="5" max="5">^  return v1 &gt;&gt; 2;$</stringmatch>
+</decompilertest>

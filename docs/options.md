@@ -30,6 +30,28 @@ Three tiers:
 | rep movsq / rep stosd from -Os code printed as a loop instead of memcpy/memset | [`repstring`](#repstring----on--off-default-on) |
 | a struct copy prints as a 16-iteration word loop | [`repstring`](#repstring----on--off-default-on) |
 | a strcmp against a short constant prints as a do/while over two byte pointers and a count | [`repstring`](#repstring----on--off-default-on) |
+| an inner test that an outer test already decides is printed | [`rangefold`](#rangefold----on--off-default-on) |
+| if (x < 10) { if (x > 20) ... } keeps the dead branch | [`rangefold`](#rangefold----on--off-default-on) |
+| x & 0xff kept on a value an earlier range check bounds below 256 | [`rangefold`](#rangefold----on--off-default-on) |
+| a range check repeated inside the branch of the same check | [`rangefold`](#rangefold----on--off-default-on) |
+| v = x + 3; if (0 <= x) v = x; return v >> 2; where the source divides by 4 | [`pow2select`](#pow2select----on--off-default-on) |
+| a signed remainder by a power of two prints as a select between x & m and -(-x & m) | [`pow2select`](#pow2select----on--off-default-on) |
+| (x + ((unsigned)(x >> 31) >> 30)) >> 2 instead of x / 4 | [`pow2select`](#pow2select----on--off-default-on) |
+| a < b or a == b printed as two tests where a <= b would do | [`cmpmerge`](#cmpmerge----on--off-default-off) |
+| a0 != a1 && !(a0 < a1) on floats | [`cmpmerge`](#cmpmerge----on--off-default-off) |
+| two branches in a row test the same value against neighbouring constants and jump to one place | [`cmpmerge`](#cmpmerge----on--off-default-off) |
+| x == 3 or 3 < x printed as two tests | [`cmpmerge`](#cmpmerge----on--off-default-off) |
+| a byte swap prints as four masked shifts ORed together | [`bitidioms`](#bitidioms----on--off-default-on) |
+| a rotate prints as a pair of opposite shifts ORed together | [`bitidioms`](#bitidioms----on--off-default-on) |
+| bswap or rev instructions decompile to shift and mask soup | [`bitidioms`](#bitidioms----on--off-default-on) |
+| hash or crc code full of paired shifts | [`bitidioms`](#bitidioms----on--off-default-on) |
+| obfuscated arithmetic such as (a ^ b) + (a & b) * 2 instead of a + b | [`mba`](#mba----on--off-default-off) |
+| xor and and terms combined with additions and multiplications by 2 | [`mba`](#mba----on--off-default-off) |
+| ollvm or tigress instruction substitution in the output | [`mba`](#mba----on--off-default-off) |
+| a product of and/or terms that hides a plain multiplication | [`mba`](#mba----on--off-default-off) |
+| a struct copy prints as eight paired assignments through a register | [`copyrun`](#copyrun----on--off-default-on) |
+| *a0 = *a1; a0[1] = v1; ... for a fixed-size memcpy | [`copyrun`](#copyrun----on--off-default-on) |
+| SSE xmm0 lanes shuttle a buffer one word at a time | [`copyrun`](#copyrun----on--off-default-on) |
 | stack string initialisation renders as an array-typed cast such as (char[8])s_addr._0_8_ | [`rodatastring`](#rodatastring----on--off-default-on) |
 | partial-symbol slice assignments like buf._0_9_ = s_addr._16_9_ instead of the string | [`rodatastring`](#rodatastring----on--off-default-on) |
 | a recognized rodata literal never appears in the function that copies it onto the stack | [`rodatastring`](#rodatastring----on--off-default-on) |
@@ -455,6 +477,10 @@ Three tiers:
 | an arm64 macOS function with a large frame or a variable-length array prints with a (void) parameter list | [`chkstkdarwin`](#chkstkdarwin----on--off-default-on-destructive-opt-in) |
 | a variable-length array is sized from a register nothing assigns after __chkstk_darwin() | [`chkstkdarwin`](#chkstkdarwin----on--off-default-on-destructive-opt-in) |
 | __chkstk_darwin is called with arguments it does not take | [`chkstkdarwin`](#chkstkdarwin----on--off-default-on-destructive-opt-in) |
+| __udivdi3 / __divdi3 / __umoddi3 / __moddi3 called with four 32-bit words instead of a / b | [`arithhelpers`](#arithhelpers----on--off-default-on) |
+| __aeabi_uldivmod() / __aeabi_idiv() / __aeabi_lmul() called with missing or reordered arguments on ARM | [`arithhelpers`](#arithhelpers----on--off-default-on) |
+| __alldiv / __allrem called and the caller returns void on an MSVC x86-32 image | [`arithhelpers`](#arithhelpers----on--off-default-on) |
+| a 64-bit division on a 32-bit target prints as a helper call | [`arithhelpers`](#arithhelpers----on--off-default-on) |
 | a DOS program's globals print as *(short *)0x308e near-pointer dereferences instead of named globals | [`mzdgroup`](#mzdgroup----on--off-default-on) |
 | every function of an MS-DOS executable declares an unsigned short local commented // ds | [`mzdgroup`](#mzdgroup----on--off-default-on) |
 | the same DOS global gets no shared name across functions | [`mzdgroup`](#mzdgroup----on--off-default-on) |
@@ -707,6 +733,11 @@ Three tiers:
 | warning text wanted inline at the end of the statement it describes | [`warnstyle`](#warnstyle----inline--banner-default-inline) |
 | terse warning slugs unwanted; full upstream warning text needed | [`warnstyle`](#warnstyle----inline--banner-default-inline) |
 | warning style needs to match upstream ghidra for diffing | [`warnstyle`](#warnstyle----inline--banner-default-inline) |
+| a variable-length array renders as negative indexing off a stack symbol | [`alloca`](#alloca----on--off-default-on) |
+| alloca renders as stack pointer arithmetic | [`alloca`](#alloca----on--off-default-on) |
+| a while loop assigns a stack word to itself (stack-clash probe) | [`alloca`](#alloca----on--off-default-on) |
+| use(&(&Stack...)[v1]) where the source passes a VLA | [`alloca`](#alloca----on--off-default-on) |
+| the size of a dynamic allocation appears rounded to 16 in the C | [`alloca`](#alloca----on--off-default-on) |
 | an AArch64 function that tags a pointer (irg, addg) decompiles to return a0 | [`acleintrinsics`](#acleintrinsics----on--off-default-on) |
 | stg, st2g or stzg leave no trace in the output of MTE-hardened AArch64 code | [`acleintrinsics`](#acleintrinsics----on--off-default-on) |
 | DataMemoryBarrier(2,3) or DataSynchronizationBarrier(3,3,0) where the source called __dmb or __dsb | [`acleintrinsics`](#acleintrinsics----on--off-default-on) |
@@ -890,6 +921,54 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On by default. Flip off when a `rep movsb` copies forward over its own output on purpose -- an LZ77 decoder's overlapping match copy is defined for the instruction and not for memcpy -- or to see the instruction's loop.
 - **Where / provenance:** P3/simplification-quiescence · kuna · presentation-default · GH-1650
 - **Example:** `option repstring off`
+
+### `rangefold` -- on | off, default `on`
+
+- **Symptoms:** an inner test that an outer test already decides is printed; if (x < 10) { if (x > 20) ... } keeps the dead branch; x & 0xff kept on a value an earlier range check bounds below 256; a range check repeated inside the branch of the same check.
+- **What it does:** Fold a comparison, and an `& (2^k - 1)` mask, whose outcome the ranges dominating branches establish already fixes. A conditional branch on `V cmp K` bounds `V` in every block one of its out-edges controls -- the edge's target dominates the block and is entered only through that edge (`FlowBlock::restrictedByConditional`, the test `ActionConditionalConst` uses). Upstream propagates only the `V == K` case, as a constant. `kuna_rangefold` keeps a `CircleRange` per such edge, pulled back through the comparison and then through up to three `COPY`, `INT_ZEXT`, `INT_SEXT`, `INT_ADD`/`INT_SUB`-constant ops that defined `V`, and intersects every range whose edge controls a block. In that block a comparison of `V` against a constant that is true (or false) on the whole range becomes the constant, and `ActionDeterminedBranch` removes a branch on it; `V & M` with `M = 2^k - 1` and the range inside `[0, M]` becomes `V`. `V` is an SSA value, so the range holds at every read in the block. Runs right after `ActionConditionalConst`, in the action group `unreachable` with `ActionDeterminedBranch`, so the reduced jump-table pipeline never sees a guard folded away.
+- **When to flip:** On by default: 0/675 datatest assertions move and the speed is unchanged (lua -O0: user time within run-to-run noise). Flip off to see a test that an enclosing test already decides, e.g. to compare against a listing. Measured over 4,072 functions in ten x86-64 binaries (gcc/clang -O2 and gcc -O0 builds of Lua 5.4.8 and bzip2 1.0.8, -O2 zlib 1.3.2, system libexpat and libyaml): 71 functions change; `if` statements 22,188 -> 22,043, gotos 9,853 -> 9,840, lines 184,891 -> 184,573. Most folds are -O0 binary-search switch ladders (`if (v != 0x31) { if (0x31 < v) ...` after `!(0x32 < v)`), retests of the same value after a short-circuit, and repeated null checks. Four functions gain one goto: a test the compiler duplicated into two predecessors is decided in one copy only, so the copies no longer merge.
+- **Where / provenance:** P3/simplification-quiescence · kuna · transform · kuna-rangefold
+- **Example:** `option rangefold off`
+
+### `pow2select` -- on | off, default `on`
+
+- **Symptoms:** v = x + 3; if (0 <= x) v = x; return v >> 2; where the source divides by 4; a signed remainder by a power of two prints as a select between x & m and -(-x & m); (x + ((unsigned)(x >> 31) >> 30)) >> 2 instead of x / 4.
+- **What it does:** Rewrite a signed division or remainder by a power of two that the compiler wrote as a select or a sign-mask shift. Signed `x / 2^k` rounds toward zero, so a negative x is biased by `2^k - 1` before the arithmetic shift. With a conditional move (x86-64 cmov, AArch64 csel) the bias lifts as a branch and a MULTIEQUAL, printed `v = x + 3; if (0 <= x) v = x; return v >> 2;`; the -O0 branch form is the same graph. AArch64 writes `x % 2^k` with csneg as a select between `x & m` and `-(-x & m)` (`-(x & 1)` for `x % 2`). ARM writes the division as `(x + ((x s>> 31) >> (32 - k))) s>> k`. `RuleSelectDiv` (oppool1) rewrites the shift to `x / 2^k` and replaces the MULTIEQUAL of the remainder with `x % 2^k`. A select is taken only when the CBRANCH of the MULTIEQUAL block's immediate dominator sends each input down its own out-edge (directly or through one block between) and compares x or -x against a constant whose CircleRange pull-back puts every positive x on the unbiased input and every negative x on the other; at x = 0 and the most negative x both inputs agree, so either edge is fine. Inputs are matched through COPY chains.
+- **When to flip:** On by default: 0/675 datatest assertions move; four stage assertions that pinned the select (`kuna-storealias` #1/#2/#4, `kuna-globalvalue` #17, whose fixtures return `gi / 16`) now read the division. Flip off to see the select or shift the compiler emitted. Measured over 4,072 functions in ten x86-64 binaries (gcc/clang -O2 and gcc -O0 Lua 5.4.8 and bzip2 1.0.8, -O2 zlib, libexpat, libyaml): 15 functions change, ` / ` 142 -> 166, `if` statements 22,188 -> 22,163, lines 184,891 -> 184,802, e.g. bzip2 sendMTFValues `nBytes / 8` and fallbackSort `nblock / 32`. Near misses (a test other than the sign, a bias other than 2^k - 1, `-(-x & 7)` chosen only below -4) keep their select.
+- **Where / provenance:** P3/simplification-quiescence · kuna · transform · kuna-pow2select
+- **Example:** `option pow2select off`
+
+### `cmpmerge` -- on | off, default `off`
+
+- **Symptoms:** a < b or a == b printed as two tests where a <= b would do; a0 != a1 && !(a0 < a1) on floats; two branches in a row test the same value against neighbouring constants and jump to one place; x == 3 or 3 < x printed as two tests.
+- **What it does:** Merge two comparisons of the same operands into one. A comparison's outcome is a set of the relations LT, EQ, GT (and UN, unordered, for floats); two of them combined by `||`, `&&` or `^` are the union, intersection or symmetric difference of their sets, and fold when that set is one comparison, its negation, a constant, or one of the two inputs. A comparison of one varnode against two constants is a pair of CircleRanges instead, which folds when the combined range is one strict comparison against a constant (`c - 1 < v`, `v < c`, `==`, `!=`, signed or unsigned), keeping the `<=` presentation when an input was written with it. `RuleCompareMerge` (oppool1) folds BOOL_OR / BOOL_AND / BOOL_XOR of two comparisons. `ActionBranchMerge` (group unreachable) folds a CBRANCH whose one successor is a single-predecessor block holding nothing but a second test of the same operands that shares the first branch's other target: the first branch takes the merged test and the second can no longer reach the shared target, so ActionDeterminedBranch removes its edge. Signed and unsigned orderings never mix; floats keep unordered results (`a != b && !(a < b)` is `!(a <= b)`, not `a > b`).
+- **When to flip:** Turn on to print `a <= b` for `a < b || a == b`, `(unsigned)v >= 8` for `v < 0 || 8 <= v`, and `!(a <= b)` for a float `a != b && !(a < b)`, mostly in -O0 code where each test is its own branch. Default off: the merged forms move 5/675 datatest assertions (an AArch64 ccmp `val <= 9` that becomes `val < 10`, bitfield and signed-byte tests). x86-64 gcc -O0: `if ((a1 <= a0) && (a0 != a1)) return 0;` becomes `if (a1 < a0) return 0;` and `if ((!(a1 < a0)) && (a0 != a1))` on doubles becomes `if (!(a1 <= a0))`.
+- **Where / provenance:** P3/simplification-quiescence · kuna · transform · kuna-cmpmerge
+- **Example:** `option cmpmerge on`
+
+### `bitidioms` -- on | off, default `on`
+
+- **Symptoms:** a byte swap prints as four masked shifts ORed together; a rotate prints as a pair of opposite shifts ORed together; bswap or rev instructions decompile to shift and mask soup; hash or crc code full of paired shifts.
+- **What it does:** Fold a byte swap or a constant rotate written out as shifts, masks and ORs into a call: bswap(x) when every leaf of an INT_OR tree moves whole bytes of the same x so that byte i lands in byte N-1-i (2, 4 or 8 bytes, each destination byte exactly once; masks, shifts and zero-extended byte pieces accepted), and rotl(x, n) for (x << n) | (x >> (W - n)) with a constant n. SLEIGH lifts bswap/rev and rol/ror into exactly that shift form, and compilers emit it for the portable C, so the decompiled C showed four masked shifts where the source said __builtin_bswap32. It also folds the cmov/cneg lowering of x < 0 ? -x : x (a MULTIEQUAL of x and -x chosen by a sign test, checked at x = -5 and x = 5) into abs(x) / labs(x), an AArch64 rbit + clz (LZCOUNT of a full bit reversal) into ctz(x), a full bit reversal into bitreverse(x), and the loop SLEIGH lifts x86 bsf/tzcnt/bsr to into ctz(x) / LZCOUNT(x) ^ (W-1), proved by running the loop on every single-bit and several mixed sources. A rotate whose reader masks away one of its two halves is left to the shift rules (PowerPC rlwinm/rldic write shifts as rotate-and-mask).
+- **When to flip:** On (default). Flip off to see the raw shift-and-mask expressions, the cmov/cneg abs diamond and the one-instruction bsf/bsr loops, for example to check which bits a hand-written partial swap moves.
+- **Where / provenance:** P3/simplification-quiescence · kuna · presentation-default · kuna-bitidioms
+- **Example:** `--option bitidioms off`
+
+### `mba` -- on | off, default `off`
+
+- **Symptoms:** obfuscated arithmetic such as (a ^ b) + (a & b) * 2 instead of a + b; xor and and terms combined with additions and multiplications by 2; ollvm or tigress instruction substitution in the output; a product of and/or terms that hides a plain multiplication.
+- **What it does:** Simplify mixed boolean-arithmetic (MBA) expressions, the obfuscation that hides `x + y` as `(x ^ y) + 2*(x & y)`. RuleMbaSimplify collects the tree under an arithmetic root (interior ops with one reader inlined, up to 6 distinct leaves) with at least one arithmetic and one bitwise op. A linear MBA (+, -, negation and multiplication by a constant over bitwise subterms of leaves) is evaluated on the 2^n points where each leaf is 0 or 1 and Möbius-inverted into conjunction-basis coefficients; agreement on those points implies equality at every width, so no SMT solver is needed. The multi-leaf terms are split into groups of leaves that share a term, each group rewritten as c*g for one boolean function g (the smallest table expression for up to 3 leaves; for 4 to 6, the cheapest disjoint bi-decomposition or Shannon expansion). A polynomial MBA (a product of two non-constant terms) is multiplied out over the conjunction basis and rebuilt from that normal form, so `(x & y) * (x | y) + (x & ~y) * (~x & y)` becomes `x * y`. A replacement is applied only when it has fewer ops (a multiply by -1 is free, the IR spelling of a subtraction) and 64 pseudo-random full-width evaluations agree.
+- **When to flip:** Off by default. Turn it on for obfuscated code (Tigress, OLLVM substitution) whose arithmetic reads as xor/and/or soup, such as `(a0 ^ a1) + (a0 & a1) * 2`.
+- **Where / provenance:** P3/simplification-quiescence · kuna · new-analysis · kuna-mba
+- **Example:** `--option mba on`
+
+### `copyrun` -- on | off, default `on`
+
+- **Symptoms:** a struct copy prints as eight paired assignments through a register; *a0 = *a1; a0[1] = v1; ... for a fixed-size memcpy; SSE xmm0 lanes shuttle a buffer one word at a time.
+- **What it does:** Print an unrolled run of element copies as `builtin_memcpy(dst, src, n)`. A compiler expands a fixed-size copy (a struct assignment, `memcpy` with a constant length) into loads and stores of its widest registers -- SSE `movdqu`/`movups` pairs, 8- or 4-byte moves -- which printed one assignment per element (`*a0 = *a1; a0[1] = v1; ...`). `kuna_copyrun` runs in the fullloop tail and groups the STOREs of each basic block whose value is a LOAD of the same width in the same block, through copies read by nothing else. Pointers are read as a base plus a constant (through COPY, CAST, `INT_ADD` or `PTRSUB` of a constant, `PTRADD` of a constant index), and stores group when their destinations share a base, their sources share a base, and each pair's destination offset minus its source offset is the same. A group is rewritten only when the bytes its stores write form one contiguous range (stores may overlap: gcc copies 31 bytes with 8-byte moves at 0, 8, 15 and 23); it has at least three stores, or two covering 32 bytes, so a two-word assignment keeps its statements; nothing between its first and last op reads or writes memory or calls; the two ranges do not overlap when the bases are the same pointer; and the destination is not in the function's own frame (the builtin is placed after heritage). The builtin is placed at the last store, the stores, loads and copies are destroyed, and an INDIRECT heritage hung on one of the stores is moved onto the builtin. 0/675 datatest assertions and the stage corpus do not move; over 10 stripped x86-64 /usr/bin binaries 5 functions change (make, sed, wget), each a run replaced by one call, among them wget's hash-block buffering `memcpy(ctx + 0x1c, p, 0x40)`.
+- **When to flip:** On by default. Flip off to see the element moves, or when the two buffers may overlap through different pointers: the run copies in program order, which memcpy does not promise.
+- **Where / provenance:** P3/simplification-quiescence · kuna · presentation-default · kuna-copyrun
+- **Example:** `option copyrun off`
 
 ### `rodatastring` -- on | off, default `on`
 
@@ -1827,6 +1906,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **Where / provenance:** P2/flow-classification · kuna · structure-recovery · kuna-chkstkdarwin
 - **Example:** `option chkstkdarwin off`
 
+### `arithhelpers` -- on | off, default `on`
+
+- **Symptoms:** __udivdi3 / __divdi3 / __umoddi3 / __moddi3 called with four 32-bit words instead of a / b; __aeabi_uldivmod() / __aeabi_idiv() / __aeabi_lmul() called with missing or reordered arguments on ARM; __alldiv / __allrem called and the caller returns void on an MSVC x86-32 image; a 64-bit division on a 32-bit target prints as a helper call.
+- **What it does:** Replace a call to a 32-bit target's arithmetic runtime helper with the operation it implements, via synthesized `<callfixup>` payloads, so it prints as the C operator. x86-32: libgcc's cdecl `__udivdi3`, `__divdi3`, `__umoddi3`, `__moddi3`, `__muldi3`, `__ashldi3`, `__lshrdi3`, `__ashrdi3`, `__negdi2`, `__udivmoddi4` and `__divmoddi4` (operands read from the stack above the popped return address, the remainder of the divmod pair stored through the pointer argument) and the MSVC CRT's __stdcall `_alldiv`, `_aulldiv`, `_allrem`, `_aullrem`, `_allmul`, `_alldvrm`, `_aulldvrm` (which also pop their 16 argument bytes; the dvrm pair returns the remainder in EBX:ECX) and register-argument `_allshl`, `_allshr`, `_aullshr` (EDX:EAX by CL). 32-bit ARM, either byte order: the run-time ABI's `__aeabi_uldivmod`/`__aeabi_ldivmod` (quotient in r0:r1, remainder in r2:r3), `__aeabi_uidivmod`/`__aeabi_idivmod`, `__aeabi_uidiv`, `__aeabi_idiv`, `__aeabi_lmul`, `__aeabi_llsl`, `__aeabi_llsr`, `__aeabi_lasr`, and libgcc's DI-mode helpers and `__udivsi3`, `__divsi3`, `__umodsi3`, `__modsi3`, with a `long long` in r0:r1 / r2:r3 low word first on little-endian and high word first on big-endian. Each helper is also targeted with one more leading underscore (COFF and Mach-O spell `__udivdi3` as `___udivdi3`). Off, the call keeps an inferred prototype: four 32-bit words for two `long long` operands (`__divdi3((unsigned int)a,a._4_4_,(unsigned int)b,b._4_4_)`), a dropped divisor (`__aeabi_idiv(a)`), or, on a __stdcall helper whose 16 popped bytes the caller does not know about, a `void` caller. The install also probes every function name the analysis passes recover (PDB, DWARF, FID), not only the object file's symbols, and tags every FunctionSymbol of a matched name, so an MSVC image whose PDB alone names `__alldiv` and a Thumb helper with an `entry|1` twin are covered.
+- **When to flip:** A 32-bit x86 or ARM caller shows `__udivdi3(...)`, `__aeabi_uldivmod()`, `__aeabi_idiv(a)` or `__alldiv(a0,a1,a2,a3)` where the source has `/`, `%`, `*` or a shift on `long long` (or an `int` division on ARM). On by default; flip OFF to see the helper calls.
+- **Where / provenance:** P2/flow-classification · kuna · correctness-fix · kuna-arithhelpers
+- **Example:** `option arithhelpers off`
+
 ## Analysis & loader passes
 
 Program-prep enablement: what is discovered, decoded, and named before any function is decompiled.
@@ -2354,6 +2441,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** Inline by default (DIV-38): usage(1); // no-return, if (v8) { // branch-flip, prototype-line // early-return x3. Flip to banner to reproduce upstream Ghidra's full warning text or to grep for the long-form messages. Unknown warning texts keep their full text behind a warn: marker; user/dwarf_lines comments always keep banner lines.
 - **Where / provenance:** P9/warning-style · kuna · presentation-default · kuna-cnorm-fmt
 - **Example:** `option warnstyle banner`
+
+### `alloca` -- on | off, default `on`
+
+- **Symptoms:** a variable-length array renders as negative indexing off a stack symbol; alloca renders as stack pointer arithmetic; a while loop assigns a stack word to itself (stack-clash probe); use(&(&Stack...)[v1]) where the source passes a VLA; the size of a dynamic allocation appears rounded to 16 in the C.
+- **What it does:** Print a dynamic stack allocation as `alloca(size)`. `alloca(n)` and a variable-length array lower the stack pointer by the size rounded up to 16 (`(n + 15) & -16`, `n + 0x17 >> 4 << 4`), which printed as stack arithmetic: `use(&(&Stackfffffffffffffff8)[v1],a0)` with `v1 = -((long)a0 + 0xfU & 0xfffffffffffffff0)`. Under stack-clash protection (the Ubuntu gcc default, and clang -fstack-clash-protection) the allocation is a page-at-a-time probe loop (`sub rsp,0x1000; or qword [rsp+0xff8],0`) plus a probed remainder (`and eax,0xff0; sub rsp,rax`), which printed as a `while` loop of self-assignments. Before heritage `sp = sp - reg` becomes `sp = alloca(reg)` unless the block loaded the register as a constant (a fixed frame behind __chkstk); in the rules, an `INT_ADD` of a stack pointer and the negated non-constant size becomes `alloca(size)` (clang computes the new stack pointer in another register), the size is taken back to `n` when the round-up or the stack-clash remainder mask is recognized, the realignment of the result is dropped, the probes (a store back of the word just loaded from a stack or alloca address) are removed, and the guard in front of the probe loop is pinned to skip it, which leaves the loop unreachable. A stack move neither form caught before types were in -- the typed `PTRADD(stack pointer, -n, 1)` written back to the stack-pointer register -- becomes `alloca(n)` as well. The result is typed `void *`. Result: `v3 = alloca((long)a0); v1 = use(v3,a0); return ((char *)v3)[...]`. The stack-relative arguments an i386 caller pushes after a dynamic allocation stay unrecovered, as they were: the stack model has one frame base, and after the allocation the stack pointer is not that base plus a constant.
+- **When to flip:** On by default. The OFF symptom is a VLA or alloca rendered as `&(&Stackfffffffffffffff8)[-(n + 0xf & ...)]`, or under stack-clash protection a `while` loop whose body assigns a stack word to itself. Flip off to see the allocation as compiled.
+- **Where / provenance:** P3/stack-pointer-normalization · kuna · type-inference · kuna-alloca
+- **Example:** `option alloca off`
 
 ### `acleintrinsics` -- on | off, default `on`
 

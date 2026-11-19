@@ -561,6 +561,11 @@ pub struct Architecture {
     /// (`p2_lift/kuna_chkstkdarwin.rs`), so the argument registers it preserves
     /// keep their values across it. Default on.
     pub chkstk_darwin: bool,
+    /// (kuna `arithhelpers`) Install the arithmetic runtime-helper call-fixups
+    /// (`p2_lift/kuna_arithhelpers.rs`) so a 32-bit call to `__udivdi3`,
+    /// `__aeabi_uldivmod`, `_alldiv`, ... prints as the C operator it implements.
+    /// Read by the analysis-tier call-fixup installer. Default on.
+    pub arith_helpers: bool,
     /// (kuna tee-O2 tail-jumps) Recover a direct `jmp` to another function's
     /// entry (e.g. `jmp setlocale@plt`) as a tail call (CALL + RETURN) instead of
     /// flowing into the callee (`option tailcalljump on|direct`).
@@ -915,6 +920,31 @@ pub struct Architecture {
     /// copy, fill or compare builtin (option `repstring`).  See
     /// [`crate::p3_dataflow::kuna_repstring`].
     pub rep_string: bool,
+    /// (kuna) Fold a comparison or mask whose outcome the ranges dominating
+    /// branches establish fixes (option `rangefold`).  See
+    /// [`crate::p3_dataflow::kuna_rangefold`].
+    pub range_fold: bool,
+    /// (kuna) Rewrite a signed division or remainder by a power of two written as a
+    /// select or a sign-mask shift (option `pow2select`).  See
+    /// [`crate::p3_dataflow::kuna_selectdiv`].
+    pub pow2_select: bool,
+    /// (kuna) Merge two comparisons of the same operands, combined by a boolean op or
+    /// by two branches in a row, into one (option `cmpmerge`).  See
+    /// [`crate::p3_dataflow::kuna_cmpmerge`].
+    pub cmp_merge: bool,
+    /// (kuna) Fold shift/OR byte swaps, rotates, abs diamonds, bit reversals and
+    /// bit-scan loops into `bswap` / `rotl` / `abs` / `bitreverse` / `ctz`
+    /// (option `bitidioms`).  See [`crate::p3_dataflow::kuna_bitidioms`].
+    pub bit_idioms: bool,
+    /// (kuna) Collapse an unrolled element-copy run into `memcpy` (option
+    /// `copyrun`).  See [`crate::p3_dataflow::kuna_copyrun`].
+    pub copy_run: bool,
+    /// (kuna) Print a dynamic stack allocation as `alloca(size)` (option `alloca`).
+    /// See [`crate::p3_dataflow::kuna_alloca`].
+    pub alloca_calls: bool,
+    /// (kuna) Simplify mixed boolean-arithmetic expressions (option `mba`).  See
+    /// [`crate::p3_dataflow::kuna_mba`].
+    pub mba: bool,
     /// (kuna) Region-based (Phoenix/SAILR) structurer: structure the CFG by
     /// walking the [`KunaRegionIdentifier`](crate::p7_regions::kuna_regionid)
     /// region tree and matching Phoenix acyclic schemas instead of running
@@ -2370,6 +2400,7 @@ impl Architecture {
             field_type: false, // (kuna) option fieldtype; reset_defaults sets the shipped default
             image_windows_user: false, // (kuna) a load-time fact; set by the console's `load file`
             chkstk_darwin: false, // (kuna) option chkstkdarwin; reset_defaults sets the shipped default
+            arith_helpers: false, // (kuna) option arithhelpers; reset_defaults sets the shipped default
             tail_call_jumps: false,
             tail_call_tables: false, // (kuna) option tailcalljump; reset_defaults sets the shipped default
             tail_call_frame: false, // (kuna) option tailcallframe; reset_defaults sets the shipped default
@@ -2456,6 +2487,13 @@ impl Architecture {
             devectorize_reduction: false, // (kuna) option devectorize (opt-in default-off)
             strlen_scan: false, // (kuna) option strlenscan; reset_defaults sets the shipped default
             rep_string: false, // (kuna) option repstring; reset_defaults sets the shipped default
+            range_fold: false, // (kuna) option rangefold; reset_defaults sets the shipped default
+            pow2_select: false, // (kuna) option pow2select; reset_defaults sets the shipped default
+            cmp_merge: false, // (kuna) option cmpmerge; reset_defaults sets the shipped default
+            bit_idioms: false, // (kuna) option bitidioms; reset_defaults sets the shipped default
+            copy_run: false, // (kuna) option copyrun; reset_defaults sets the shipped default
+            alloca_calls: false, // (kuna) option alloca; reset_defaults sets the shipped default
+            mba: false, // (kuna) option mba; reset_defaults sets the shipped default
             region_structure: true,
             guard_arm: false,
             loop_continue: true,
@@ -2707,6 +2745,7 @@ impl Architecture {
         self.field_type = false; // (kuna) option fieldtype default-off: the flip moves which record the layout ledger shares between readers (fields-only layout precision .8713 -> .8693); docs/features/fieldtype/default-on-evaluation.md
         self.struct_headless = crate::kuna_structheadless::StructHeadlessMode::Off; // (kuna) structheadless default `off`: a closed function's parameter read at two or more constant offsets, none of them zero, is declared `struct_N *` with filler over the bytes before its first access; `option structheadless closed` turns it on
         self.chkstk_darwin = true; // (kuna) default-on, Darwin AArch64 only (`image_apple` and an AArch64 language): inert unless a call reaches `___chkstk_darwin`; 0/675 datatests
+        self.arith_helpers = true; // (kuna) default-on: x86-32 and ARM32 only, inert unless the binary names a helper; 0/675 datatests name one
         self.tail_call_jumps = true; // (kuna) DIV-13 default-on (angr tail-call recovery; per-test opt-out on Long double #1/#2)
         self.tail_call_tables = true; // (kuna) GH-781 default `tailcalljump on`: a veneer whose one destination is another function's entry is a tail call when the destination is outside a declared extent, or the callee's prototype is stated and its return value (if any) reaches a stated output. 0/675 byte-identical on the datatest corpus; `option tailcalljump direct` restores the flow into the destination
         self.tail_call_frame = true; // (kuna) DIV-109 default-on: REMOVES CODE. A direct jmp preceded by a teardown of exactly the entry block's frame is a tail call even when the callee was never discovered. Byte-identical (0/675) on the datatest corpus; restore the flow-into-the-callee decode with `option tailcallframe off`
@@ -2807,6 +2846,11 @@ impl Architecture {
         self.decl_order = crate::kuna_declorder::DeclOrder::Natural; // (kuna) option declorder default `natural`: locals declare v1, v2, ..., v10; only the order of declaration lines moves, 0/675 datatest assertions
         self.strlen_scan = true; // (kuna) option strlenscan default-on: an inline repnz scasb length prints as strlen; byte-identical on gcc 11 decbench output, 0/675 datatest assertions
         self.rep_string = true; // (kuna) option repstring default-on: an x86 rep movs/stos/cmpsb loop prints as a copy, fill or compare builtin; inert off x86, 0/675 datatest assertions
+        self.range_fold = true; // (kuna) option rangefold default-on: folds only a comparison or mask a dominating branch's range decides; 0/675 datatest assertions, speed within noise; see docs/spec/03-ssa-and-simplification.md
+        self.pow2_select = true; // (kuna) option pow2select default-on: rewrites only a select or sign-mask shift proved equal to x / 2^k or x % 2^k; 0/675 datatest assertions; see docs/spec/03-ssa-and-simplification.md
+        self.bit_idioms = true; // (kuna) option bitidioms default-on: folds only a proved byte swap, rotate, abs, bit reversal or bit-scan loop; 0/675 datatest assertions; see docs/spec/03-ssa-and-simplification.md
+        self.copy_run = true; // (kuna) option copyrun default-on: an unrolled element-copy run prints as memcpy; 0/675 datatest assertions
+        self.alloca_calls = true; // (kuna) option alloca default-on: a dynamic stack move prints as alloca(size); 0/675 datatest assertions
         self.cortexmpriv = true; // (kuna) DIV-99: default-ON; the fixup is registered only on a language that declares the user-op (ARM), so inert elsewhere; "the core is privileged" is a modelling judgement, so `off` audits unprivileged Thread-mode code
         self.acle_intrinsics = true; // (kuna) option acleintrinsics default-on; reads the AArch64 `ShowMemTag` context and AArch64 user-op names only, so inert on every other target
         self.float_globals = true; // (kuna) option floatglobals default-on
@@ -3560,6 +3604,13 @@ impl Architecture {
         ctx.devectorize_reduction = self.devectorize_reduction; // devectorize
         ctx.strlen_scan = self.strlen_scan; // strlenscan
         ctx.rep_string = self.rep_string; // repstring
+        ctx.range_fold = self.range_fold; // rangefold
+        ctx.pow2_select = self.pow2_select; // pow2select
+        ctx.cmp_merge = self.cmp_merge; // cmpmerge
+        ctx.bit_idioms = self.bit_idioms; // bitidioms
+        ctx.copy_run = self.copy_run; // copyrun
+        ctx.alloca_calls = self.alloca_calls; // alloca
+        ctx.mba = self.mba; // mba
         ctx.region_structure = self.region_structure; // regionstructure
         ctx.guard_arm = self.guard_arm; // guardarm
         ctx.loop_continue = self.loop_continue;
@@ -4403,8 +4454,9 @@ impl Architecture {
     }
 
     /// (kuna) Register the synthesized MSVC `__ftol`-family call-fixup
-    /// (`p2_lift::kuna_msvcftol`) alongside the cspec's own `<callfixup>`
-    /// elements, so `parse_inject_all` compiles it with the rest.  A registered
+    /// (`p2_lift::kuna_msvcftol`) and the arithmetic runtime-helper fixups
+    /// (`p2_lift::kuna_arithhelpers`, option `arithhelpers`) alongside the cspec's
+    /// own `<callfixup>` elements, so `parse_inject_all` compiles them with the rest.  A registered
     /// payload is inert until the analysis-tier `callfixup` pass installs it at
     /// `read symbols`.
     ///
@@ -4421,19 +4473,19 @@ impl Architecture {
         if self.translate.as_sleigh().is_none() {
             return Ok(());
         }
-        let code_addr_size = self
-            .manage()
-            .get_default_code_space()
-            .map(|s| s.get_addr_size() as int4)
-            .unwrap_or(0);
+        let code_space = self.manage().get_default_code_space();
+        let code_addr_size = code_space.as_ref().map(|s| s.get_addr_size() as int4).unwrap_or(0);
+        let big_endian = code_space.as_ref().map(|s| s.is_big_endian()).unwrap_or(false);
         let resolve = |nm: &[u8]| self.translate.probe_register_varnode(nm).is_some();
-        if !crate::kuna_msvcftol::language_is_x86_32(resolve, code_addr_size) {
+        let ftol = crate::kuna_msvcftol::language_is_x86_32(resolve, code_addr_size);
+        let helpers = crate::kuna_arithhelpers::helper_abi(resolve, code_addr_size, big_endian);
+        if !ftol && helpers.is_none() {
             return Ok(());
         }
         let manager = self.translate.manager_rc();
         let mut registry = IdRegistry::with_base_ids();
         crate::pcodeinject::register_ids(&mut registry);
-        crate::kuna_msvcftol::decode_payload(|root| {
+        let mut register = |root: &Rc<kuna_base::xml::Element>| {
             let mut decoder = XmlDecode::new_with_root(&manager, &registry, root, 0);
             self.pcodeinjectlib.decode_inject(
                 b" : kuna compiler helpers",
@@ -4442,7 +4494,14 @@ impl Architecture {
                 &mut decoder,
             )?;
             Ok(())
-        })
+        };
+        if ftol {
+            crate::kuna_msvcftol::decode_payload(&mut register)?;
+        }
+        if let Some(abi) = helpers {
+            crate::kuna_arithhelpers::decode_payloads(abi, &mut register)?;
+        }
+        Ok(())
     }
 
     /// Initialize the user-op table and decode the cspec `<callotherfixup>`
@@ -4679,6 +4738,8 @@ impl Architecture {
             BUILTIN_MEMSET16, BUILTIN_MEMSET32, BUILTIN_MEMSET64,
             BUILTIN_STRINGDATA, BUILTIN_STRLEN, BUILTIN_STRNCPY, BUILTIN_SYSCALL_ERROR,
             BUILTIN_VOLATILE_READ, BUILTIN_VOLATILE_WRITE, BUILTIN_WCSNCPY,
+            BUILTIN_ABS, BUILTIN_BITREV, BUILTIN_BSWAP, BUILTIN_CTZ, BUILTIN_LABS, BUILTIN_ROTL,
+            BUILTIN_ALLOCA,
         };
         // Split the &mut userops borrow from the &self type-factory read by
         // building a small adapter over the (already-populated) factory.
@@ -4719,6 +4780,12 @@ impl Architecture {
             for id in [BUILTIN_MEMSET16, BUILTIN_MEMSET32, BUILTIN_MEMSET64, BUILTIN_MEMCMP] {
                 userops.register_builtin(id, &adapter)?;
             }
+            // (kuna bitidioms) byte swap, rotate, abs, bit reversal and trailing-zero count.
+            for id in [BUILTIN_BSWAP, BUILTIN_ROTL, BUILTIN_ABS, BUILTIN_LABS, BUILTIN_BITREV, BUILTIN_CTZ] {
+                userops.register_builtin(id, &adapter)?;
+            }
+            // (kuna alloca) a dynamic stack allocation.
+            userops.register_builtin(BUILTIN_ALLOCA, &adapter)?;
             Ok(())
         })();
         self.userops = userops;

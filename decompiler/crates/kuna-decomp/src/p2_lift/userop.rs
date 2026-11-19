@@ -146,6 +146,20 @@ pub const BUILTIN_MEMSET64: uint4 = 0x1000000d;
 /// (kuna) Built-in id for `builtin_memcmp`, the comparison a `repz cmpsb`
 /// computes (`repstring`).
 pub const BUILTIN_MEMCMP: uint4 = 0x1000000e;
+/// (kuna) Built-in id for `bswap`, a byte reversal (`bitidioms`).
+pub const BUILTIN_BSWAP: uint4 = 0x10000014;
+/// (kuna) Built-in id for `rotl`, a left rotate by a constant (`bitidioms`).
+pub const BUILTIN_ROTL: uint4 = 0x10000015;
+/// (kuna) Built-in id for `abs` (`bitidioms`).
+pub const BUILTIN_ABS: uint4 = 0x10000016;
+/// (kuna) Built-in id for `labs`, the 64-bit `abs` (`bitidioms`).
+pub const BUILTIN_LABS: uint4 = 0x10000017;
+/// (kuna) Built-in id for `bitreverse` (`bitidioms`).
+pub const BUILTIN_BITREV: uint4 = 0x10000018;
+/// (kuna) Built-in id for `ctz`, the count of trailing zero bits (`bitidioms`).
+pub const BUILTIN_CTZ: uint4 = 0x10000019;
+/// (kuna) Built-in id for `alloca`, a dynamic stack allocation (`alloca`).
+pub const BUILTIN_ALLOCA: uint4 = 0x1000001a;
 
 // ---------------------------------------------------------------------------
 // UserOpBase + UserPcodeOp hierarchy (userop.hh:47-318)
@@ -1070,6 +1084,22 @@ impl UserOpManage {
             }
             BUILTIN_KERNEL_BUG => UserPcodeOp::new_unspecialized(b"BUG", BUILTIN_KERNEL_BUG as int4),
             BUILTIN_KERNEL_WARN => UserPcodeOp::new_unspecialized(b"__WARN", BUILTIN_KERNEL_WARN as int4),
+            BUILTIN_BSWAP => UserPcodeOp::new_unspecialized(b"bswap", BUILTIN_BSWAP as int4),
+            BUILTIN_ROTL => UserPcodeOp::new_unspecialized(b"rotl", BUILTIN_ROTL as int4),
+            BUILTIN_ABS | BUILTIN_LABS => {
+                let int_type = types.get_base_int(if i == BUILTIN_ABS { 4 } else { 8 });
+                let name: &[u8] = if i == BUILTIN_ABS { b"abs" } else { b"labs" };
+                UserPcodeOp::new_datatype(name, i as int4, Some(Rc::clone(&int_type)), &[Some(int_type)])
+            }
+            BUILTIN_BITREV => UserPcodeOp::new_unspecialized(b"bitreverse", BUILTIN_BITREV as int4),
+            BUILTIN_CTZ => UserPcodeOp::new_unspecialized(b"ctz", BUILTIN_CTZ as int4),
+            BUILTIN_ALLOCA => {
+                let ptr_size = types.get_size_of_pointer();
+                let word_size = types.get_default_data_space_word_size();
+                let ptr_type = types.get_type_pointer(ptr_size, types.get_type_void(), word_size);
+                let size_type = types.get_base_int(ptr_size);
+                UserPcodeOp::new_datatype(b"alloca", BUILTIN_ALLOCA as int4, Some(ptr_type), &[Some(size_type)])
+            }
             _ => return Err(KunaError::lowlevel("Bad built-in userop id")),
         };
         self.builtinmap.insert(i, res);

@@ -6536,12 +6536,23 @@ fn commit_analysis_output(
     //    check (`CallFixupAnalyzer.java:89`): only set when no fixup is already
     //    parked, so a hand-applied `fixup apply` is never clobbered. A name with no
     //    registered fixup or no matching FunctionSymbol is a silent no-op.
-    if !out.call_fixups.is_empty() {
-        for fact in &out.call_fixups {
-            let Ok(sid) = prog.arch().query_global_function(&fact.func_name) else {
-                continue;
-            };
-            install_named_call_fixup(prog.arch_mut(), sid, &fact.func_name);
+    //    Function names recovered by the analysis passes (PDB, DWARF, FID) are
+    //    probed too, as Ghidra's analyzer probes every program function: an MSVC
+    //    image names its CRT helpers only in its PDB. Every FunctionSymbol of a
+    //    name is tagged: an ARM Thumb helper also has an `entry|1` twin.
+    let fixup_names: std::collections::BTreeSet<&str> = out
+        .call_fixups
+        .iter()
+        .map(|fact| fact.func_name.as_str())
+        .chain(out.symbols.iter().filter(|s| s.kind == SymKind::Function).map(|s| s.name.as_str()))
+        .collect();
+    if !fixup_names.is_empty() {
+        if let Some(scope) = prog.arch().symboltab.get_global_scope() {
+            for func_name in fixup_names {
+                for sid in prog.arch().symboltab.query_by_name(scope, func_name) {
+                    install_named_call_fixup(prog.arch_mut(), sid, func_name);
+                }
+            }
         }
     }
 

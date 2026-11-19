@@ -1076,6 +1076,20 @@ pub struct ArchContext {
     /// (kuna) `repstring` — collapse an x86 `rep movs`/`rep stos`/`repz cmpsb` loop
     /// into a copy, fill or compare builtin.
     pub rep_string: bool,
+    /// (kuna) `rangefold` — fold comparisons and masks a dominating branch decides.
+    pub range_fold: bool,
+    /// (kuna) `pow2select` — rewrite a power-of-two signed division or remainder written as a select.
+    pub pow2_select: bool,
+    /// (kuna) `cmpmerge` — merge two comparisons of the same operands into one.
+    pub cmp_merge: bool,
+    /// (kuna) `bitidioms` — byte swap, rotate, abs, bit reversal and bit-scan idioms.
+    pub bit_idioms: bool,
+    /// (kuna) `copyrun` — collapse an unrolled element-copy run into `memcpy`.
+    pub copy_run: bool,
+    /// (kuna) `alloca` — print a dynamic stack allocation as `alloca(size)`.
+    pub alloca_calls: bool,
+    /// (kuna) `mba` — simplify mixed boolean-arithmetic expressions.
+    pub mba: bool,
     /// (kuna) region-based (Phoenix/SAILR) structurer: structure the CFG by
     /// walking the [`KunaRegionIdentifier`](crate::p7_regions::kuna_regionid)
     /// region tree and matching Phoenix acyclic schemas instead of running
@@ -1678,6 +1692,13 @@ impl ArchContext {
             devectorize_reduction: false, // devectorize (opt-in default-off)
             strlen_scan: false, // strlenscan (live value copied from the Architecture)
             rep_string: false, // repstring (live value copied from the Architecture)
+            range_fold: false, // rangefold (live value copied from the Architecture)
+            pow2_select: false, // pow2select (live value copied from the Architecture)
+            cmp_merge: false, // cmpmerge (live value copied from the Architecture)
+            bit_idioms: false, // bitidioms (live value copied from the Architecture)
+            copy_run: false, // copyrun (live value copied from the Architecture)
+            alloca_calls: false, // alloca (live value copied from the Architecture)
+            mba: false, // mba (live value copied from the Architecture)
             region_structure: false,     // regionstructure (opt-in default-off)
             guard_arm: false,            // guardarm (opt-in default-off)
             loop_continue: true,

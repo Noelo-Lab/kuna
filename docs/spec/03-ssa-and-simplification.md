@@ -3535,6 +3535,169 @@ global `map address` names, which prints `builtin_memset(gfill,0,0x80)`.
 compiles the printed x86-64 functions beside the source and checks they compute
 the same values.
 
+**Range folding** (`option rangefold`, default **on**) —
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_rangefold.rs
+(ActionRangeFold)`, right after `ActionConditionalConst`, in the action group
+`unreachable` with `ActionDeterminedBranch`: the reduced `jumptable` pipeline
+that recovers a switch reads its bounds check, which this pass may decide
+away, so it does not run there. Conditional
+constants use only the `x == k` edge; a branch on any comparison of a varnode
+against a constant bounds the varnode on both edges. For every CBRANCH block
+whose condition is such a comparison (through any `BOOL_NEGATE`s), and for each
+out-edge whose target the condition restricts (`restricted_by_conditional`,
+and the target does not dominate the branch), the pass pulls the edge's
+boolean value back through the comparison into a `CircleRange`
+(`CircleRange::pull_back_binary`). It then pulls that range back through up
+to three ops that defined the varnode -- `COPY`, `INT_ZEXT`, `INT_SEXT`, and
+`INT_ADD`/`INT_SUB` of a constant -- and records a fact for each varnode on
+the way. In a block, the range of a varnode is the intersection of every fact
+whose edge target dominates the block; an intersection `CircleRange` cannot
+represent keeps the narrower operand it already had, which is still sound.
+
+Two reads of a bounded varnode fold:
+
+- a comparison against a constant that holds (or fails) for every value in the
+  range becomes `COPY` of the boolean constant, and the next
+  `ActionDeterminedBranch` removes a branch on it;
+- `V & M`, with `M = 2^k - 1` and the range inside `[0, M]`, becomes
+  `COPY V`.
+
+The varnode is an SSA value, so its range at the top of a block holds at every
+read in the block; the same restriction test is what makes `ActionConditionalConst`
+sound. On -O0 code the pass mostly removes the re-tests of a binary-search
+switch ladder; on -O2 code, a value tested twice after a short-circuit and
+repeated null checks. Folding a test the compiler duplicated into two
+predecessors can decide one copy only, which can leave a goto where the
+copies used to merge.
+
+**pow2select** —
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_selectdiv.rs
+(RuleSelectDiv)` (oppool1, group `analysis`), option `pow2select`, default
+**on**. Signed `x / 2^k` rounds toward zero, so the compiler adds `2^k - 1` to
+a negative `x` before the arithmetic shift. Upstream's division rules
+recognize the bias when it is computed from the sign bit with shifts and
+masks; a compiler that selects the biased value with a conditional move
+(x86-64 `cmov`, AArch64 `csel`, or a plain branch at -O0) leaves a
+MULTIEQUAL that no rule reads: `v = x + 3; if (0 <= x) v = x; return v >> 2;`.
+AArch64 writes `x % 2^k` with `csneg` as a select between `x & m` and
+`-(-x & m)`, and ARM writes the division as
+`(x + ((x s>> 31) >> (32 - k))) s>> k`. The rule matches on `INT_SRIGHT`
+(the division forms) and on `MULTIEQUAL` (the remainder):
+
+- a shift by `k` of `INT_ADD(x, (x s>> (n-1)) >> (n-k))` becomes
+  `INT_SDIV(x, 2^k)`;
+- a shift by `k` of a two-input MULTIEQUAL of `x` and `x + (2^k - 1)` becomes
+  `INT_SDIV(x, 2^k)`;
+- a two-input MULTIEQUAL of `x & m` and `-(-x & m)` (or `-(x & 1)` when
+  `m = 1`), `m = 2^k - 1`, is replaced by `INT_SREM(x, m + 1)` placed after
+  the block's MULTIEQUALs.
+
+A select is taken only when its condition provably decides by sign. The
+MULTIEQUAL block's immediate dominator must end in a CBRANCH, each input must
+arrive on its own out-edge of that branch (directly, or through one block that
+the branch alone enters and that leads only to the MULTIEQUAL block), and the
+condition must compare `x` or `-x` against a constant. Pulling each edge's
+boolean back through the comparison (and through `INT_2COMP` for `-x`) gives
+the set of `x` sent down it; every positive `x` must reach the unbiased input
+(`x`, or `x & m`) and every negative `x` the other. At `x = 0` and at the
+most negative `x` both inputs hold the same value, so those two values may go
+either way. Varnodes are compared through their `COPY` chains.
+
+**cmpmerge** — `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_cmpmerge.rs
+(RuleCompareMerge, ActionBranchMerge)`, option `cmpmerge`, default off.
+A comparison of `a` and `b` is the set of relations that make it true: `LT`,
+`EQ`, `GT` for integers, plus `UN` (unordered) for floats, so `!=` is
+`LT|GT` on integers and `LT|GT|UN` on floats, and a `BOOL_NEGATE`
+complements the set. Two comparisons of the same operands (in either order;
+constants compare by value) combined by `BOOL_OR`, `BOOL_AND` or `BOOL_XOR`
+are the union, intersection or symmetric difference of their sets.
+`RuleCompareMerge` (oppool1) rewrites the combining op when the result is
+empty or full (a constant), equal to one input (a copy of it), or one
+comparison or the negation of one; signed and unsigned orderings never mix,
+and a float result stays exact under NaN (`a != b && !(a < b)` is
+`!(a <= b)`, never `a > b`). When both inputs compare the same varnode
+against constants, the inputs are `CircleRange` pull-backs instead, and their
+union or intersection folds when it is one strict comparison against a
+constant (`v < c`, `c - 1 < v`, `==`, `!=`, unsigned or signed); the result
+op carries `canonical_lessequal` when an input was written with `<=`, so
+`ActionPresentCompareForm` prints it the same way.
+
+`ActionBranchMerge` (group `unreachable`, after `ActionRangeFold`) applies the
+same algebra to two branches in a row: a CBRANCH block one of whose
+successors has it as its only predecessor, holds nothing but a second CBRANCH
+whose inputs are computed outside it (no call, load or store, every other op
+read only inside the block), and shares the first branch's other target. The
+path reaches the shared target exactly when the union of the two "to the
+shared target" sets holds, so the first branch takes the merged test and the
+second branch's condition becomes the constant that sends it the other way;
+`ActionDeterminedBranch` then removes the dead edge.
+
+**bitidioms** (kuna) —
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_bitidioms.rs (RuleBitIdioms)`,
+`(RuleIntAbs)` and `(ActionBitScanLoop)`, live gate `bit_idioms`
+(`option bitidioms`, default on). On an `INT_OR` the rule follows where each bit
+of the result comes from, through constant shifts, masks, ORs of disjoint bits,
+zero extensions and `SUBPIECE`s; when byte `i` of one source `x` of the same size
+lands in byte `N - 1 - i` the `INT_OR` becomes `bswap(x)`, and when bit `i` lands
+in bit `W - 1 - i` it becomes `bitreverse(x)`. Otherwise
+`(x << n) | (x >> (W - n))` with a constant `n` becomes `rotl(x, n)`, unless a
+reader masks away every bit of one of the two halves (PowerPC `rlwinm`/`rldic`
+write shifts as rotate-and-mask, and the shift rules fold those further; a mask
+not yet constant waits for the next pass). The mask may sit past a zero extension
+or a `PIECE` the AND was pushed onto, read at the rotate's bit position; a
+`rotl` formed before such a mask appeared is turned back into its two shifts. A `rotl(v, k)` whose `v` is a partial
+reversal the rotate completes becomes `bswap`/`bitreverse` on a later visit,
+because AArch64 `rev`/`rbit` lift to staged swaps whose last stage can fold
+first. `LZCOUNT(bitreverse(x))`, AArch64's `rbit` + `clz` spelling of
+`__builtin_ctz`, becomes `ctz(x)`. `RuleIntAbs` turns a two-input MULTIEQUAL of
+`x` and `-x` into `abs(x)` (`labs` at 8 bytes) when the branch that picks between
+them is a signed compare of `x` or `-x` with constants that chooses `-x` at
+`x = -5` and `x` at `x = 5`: the `neg; cmovs` and `cmp; cneg` lowerings of
+`x < 0 ? -x : x`. `ActionBitScanLoop` (group `returnsplit`, next to `strlenscan`)
+takes the one-instruction loop SLEIGH lifts x86 `bsf`/`tzcnt`/`bsr` to (a head and
+a body whose ops all carry one instruction address), runs it on every single-bit
+source and several mixed ones, and when the counter it hands to the exit is the
+lowest (or highest) set bit index on all of them and nothing else leaves the
+loop, replaces the counter's uses after the loop with `ctz(x)` (or
+`LZCOUNT(x) ^ (W - 1)`) and removes the edge into the body. The builtins are
+`BUILTIN_BSWAP`, `BUILTIN_ROTL`, `BUILTIN_BITREV`, `BUILTIN_CTZ` (unspecialised)
+and `BUILTIN_ABS`/`BUILTIN_LABS` (typed `int`/`long`).
+
+**Unrolled copies** (`option copyrun`, default **on**) —
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_copyrun.rs (ActionCopyRun)`,
+in the fullloop tail with the other edge-removal strippers. A fixed-size copy (a struct
+assignment, a constant-length `memcpy`) is expanded by the compiler into loads
+and stores of its widest registers, which printed one assignment per element.
+The action groups the STOREs of each basic block whose value is a LOAD of the
+same width in the same block, through COPYs that nothing else reads. A pointer
+is read as a base plus a constant, through COPY, CAST, `INT_ADD` or `PTRSUB` of
+a constant and `PTRADD` of a constant index; stores group when their
+destinations share a base, their sources share a base, and every pair's
+destination offset minus its source offset is the same. A group is rewritten
+when the bytes its stores write are one contiguous range (stores may overlap,
+as gcc's 31-byte copy with 8-byte moves at 0, 8, 15 and 23 does), it has at
+least three stores or two covering 32 bytes (two SSE moves), so a two-word
+assignment keeps its two statements, nothing between its first and last op
+reads or writes memory or calls, the ranges do not overlap when both bases are
+the same pointer, and the destination is not in the function's own frame (a builtin
+placed after heritage would leave the frame locations it writes without a
+definition). `builtin_memcpy(base + lo, base' + lo', n)` is
+placed at the last store and the stores, loads and copies are destroyed. The
+`INDIRECT`s heritage hung on the stores (an address-taken local or a global the
+destination may alias) form one chain per storage location, one link per
+store, each reading the one before; each chain is folded to a single
+`INDIRECT` on the builtin that reads the chain's first input, and the other
+links are destroyed. Moving every link onto the one builtin instead would hang
+several `INDIRECT`s of one location on one op with overlapping values, which
+the merge cannot join, so the location printed a self-assignment per link
+(`dat_x = dat_x;` around every guarded `swift_once` of a Swift accessor). A
+run whose chain is broken, or whose intermediate value has a reader other
+than the next link, is not rewritten. The run copies element by element in program order, which `memcpy`
+does not promise for buffers that overlap through different pointers; the
+rewrite cannot see that, which is what the option is for.
+
+**alloca** (kuna) — `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_alloca.rs (rewrite_raw, RuleAlloca, RuleAllocaProbe, RuleAllocaTyped)`, group `analysis`, live gate `alloca_calls` (`option alloca`, default on). A dynamic stack allocation becomes `alloca(size)` (builtin `BUILTIN_ALLOCA`, output typed `void *`). At `ActionStart`, before heritage, `sp = sp - reg` (directly, or through the temporary SLEIGH stages it in) becomes `sp = alloca(reg)`, unless the same block loaded the register as a constant: `mov eax,N; call __chkstk; sub rsp,rax` is a fixed frame. Rewriting the raw op gives the stack pointer one definition that later rules cannot duplicate. `RuleAlloca` then takes the size back to the `n` the source wrote when it is the round-up `(n + c) & -a` (`a` from 4 to 64, `c` below 64, also as `>> k << k`, through the zero extension a 32-bit `and` adds) or the stack-clash remainder `(n + c) & (p - a)`. It also rewrites an `INT_ADD` of a stack-pointer value (the entry stack pointer, or an earlier `alloca` result, plus constants) and the negation of a non-constant rounded size, which is how clang computes the new stack pointer in another register first, and it drops the realignment `(alloca(n) + c) & -a` of the result. It leaves that `INT_ADD` alone when its result meets another stack-derived pointer in a `MULTIEQUAL` (`p = n > k ? alloca(n) : buf`), because the frame array `buf` is laid out from the stack arithmetic the merge sees. Under stack-clash protection the page part is taken by a probe loop guarded by `sp == limit`. `RuleAllocaProbe` removes each probe, a store back of the word just loaded from the same stack-derived address (`or qword [rsp+0xff8],0`, `xor qword [rsp],0`). It also pins a guard that compares a stack pointer with the loop's limit (an `alloca` result, or the stack pointer less the page part) to the successor that does not test the limit again, which makes the loop unreachable. A stack move neither the raw rewrite nor `RuleAlloca` caught before types were in is still the typed `PTRADD(stack pointer, -n, 1)` written back to the stack-pointer register; `RuleAllocaTyped` turns that, when `n` is not a constant, into `alloca(n)` as well. The stack arguments an i386 caller pushes after the allocation stay unrecovered, as before, because the stack model has one frame base and after the allocation the stack pointer is not that base plus a constant. Exercised by `tests/stages/kuna-alloca.xml`.
+
 **constspaceload** (repipe `arm-neon-zero-initialization`) —
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_constspaceload.rs
 (RuleConstSpaceLoad)`, oppool1, fires on LOAD. *Pattern:* a LOAD whose space
@@ -3693,6 +3856,96 @@ into it supplied that second name, so the repetition survived.
 Always on. Upstream Ghidra's rendering prints the same `undefined1 auVarN [16]`
 blobs — this is a deliberate readability divergence, not a fidelity fix, and it
 is inert on every function with no wide multiply.
+
+### (kuna) MBA simplification — `option mba`, default off
+
+**`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_mba.rs (RuleMbaSimplify)`,
+in oppool1 after `boolsignshift`.** Obfuscators hide `x + y` as
+`(x ^ y) + 2*(x & y)`, `x | y` as `(x & ~y) + y`, and so on. Each of these is a
+*linear mixed boolean-arithmetic* expression: an integer combination of bitwise
+functions of the same variables. For that class, two expressions are equal at
+every width when they agree on the inputs where each variable is 0 or 1 (the
+result behind SiMBA). An SMT proof of each candidate is unnecessary here: the
+shape check decides which trees the table theorem covers.
+
+**Collecting.** The rule fires on an `INT_ADD`, `INT_SUB`, `INT_2COMP`,
+`INT_MULT`, `INT_AND`, `INT_OR`, `INT_XOR` or `INT_NEGATE`. A defining op of the
+same set is inlined when its output has one reader; anything else is a leaf, up
+to six distinct leaves and 48 nodes. The rule also fires below the root of a
+larger tree: an obfuscated sum is often xor-ed with a key, which makes the
+whole tree non-linear while the sum itself is linear. Every rewrite strictly
+lowers the op count, so repeated firing terminates. The op count treats a
+multiply by -1 as free: `a + b * -1` is the IR's own spelling of `a - b`, and a
+core rule turns one into the other, so counting it would make the two rules
+trade the forms forever. `INT_XOR` with all ones is read as `~`. `INT_MULT` by a
+constant is a scaled term; `INT_MULT` of two non-constants is a product, for the
+polynomial path below.
+
+**The shape.** The tree must be linear: `+`, `-`, negation and multiplication by
+a constant over bitwise subterms (`&`, `|`, `^`, `~`) that contain only leaves.
+It must also contain at least one arithmetic op and one bitwise op, so plain
+arithmetic and plain bit logic are left to the other rules.
+
+**Coefficients.** The tree is evaluated at the `2^n` points with every leaf 0 or
+1, at the root's width. A Möbius inversion over those values gives the
+coefficients `b_S` of the conjunction basis:
+`f = b_∅ + Σ_{S≠∅} b_S · AND(S)`. The constant term is plain, because a bitwise
+function's empty-set term is all ones, which is -1 at every width.
+
+**Candidates.** The cheapest of these is kept:
+
+- a linear sum of the leaves, when every multi-leaf coefficient is 0
+  (`(x ^ y) + 2*(x & y)` gives `x + y`);
+- `k + Σ c_j·g_j + Σ c_i·z_i`: the multi-leaf terms are split into groups of
+  leaves that share a term, and each group must be one boolean function `g_j`
+  of its leaves times a constant. That holds when the group's part takes only
+  two values on its 0/1 points; the truth table of `g_j` is where it takes the
+  non-zero one (or its complement, with the constant negated, whichever prints
+  smaller). The leaves in no group stay a linear sum. Examples:
+  `(x & ~y) + y + z` gives `(x | y) + z`;
+  `(x & y) + (x & z) - (x & y & z)` gives `x & (y | z)`;
+  `(a ^ b) + 2*(a & b) + (c & ~d) + d + (e | f) - (e & f)` gives
+  `a + b + (c | d) + (e ^ f)`, three groups over six leaves.
+  - **Up to three leaves:** `g` is the smallest expression of its truth table.
+    The smallest expression of every two- and three-variable boolean function
+    (14 and 254 of them; at most five ops) is found once per process by growing
+    expressions from the leaves with `&`, `|`, `^` and `~`, in truth-table order
+    so ties break the same way every run.
+  - **Four to six leaves:** `g` is synthesized, memoized per truth table, as
+    the cheapest of two forms. One is a disjoint bi-decomposition `gA | gB`,
+    `gA & gB` or `gA ^ gB` over a split of the leaves into two sets. OR exists
+    exactly when the table equals the OR of its universal projections onto the
+    two sets, AND when it equals the AND of its existential ones, and XOR when
+    the cofactors on one side differ by a constant; each part is synthesized in
+    turn. The other is a Shannon expansion `x ? f1 : f0` on each leaf, written
+    `(x & f1) | (f0 & ~x)` or `f0 ^ (x & (f0 ^ f1))`. So
+    `(x & y) + (z & w) - (x & y & z & w)` gives `x & y | z & w`;
+- the conjunction sum itself.
+
+**Polynomial MBA.** A tree with a product of two non-constant terms
+(`(x & y) * (x | y) + (x & ~y) * (~x & y)`) is not linear, so the truth table
+does not decide it. But each bitwise subterm still equals its conjunction-basis
+sum at full width, because bits are independent. So the tree multiplies out
+into a polynomial whose variables are the conjunctions `AND(S)`; this is
+MBA-Blast's normalization. Equal polynomials mean equal trees. That is sound,
+not complete: the conjunctions are not independent variables, so some equal
+trees have different polynomials. The normal form is rebuilt from the
+polynomial: its degree-0 and degree-1 part through the candidates above, and
+each higher-degree monomial as a product of conjunctions with its coefficient.
+The example gives `x * y`. The degree is capped at 4 and the polynomial at 128
+monomials. A bitwise operator over arithmetic (`(x + y) & z`) has no polynomial,
+so the rule leaves that tree alone.
+
+The replacement is applied only when it has fewer ops than the tree and 64
+pseudo-random full-width evaluations agree with it. The new ops go before the
+root, and the root becomes a `COPY` of the result; dead-code elimination removes
+the old tree. Pinned by `tests/stages/kuna-mba.xml` (two leaves) and
+`tests/stages/kuna-mba-groups.xml` (a four-leaf group, six leaves in three
+groups, and the polynomial). An intermediate with two readers is a leaf, so a
+compiler's common-subexpression sharing can hide a larger group. Cost with
+the option on: +0.67% instructions over `/usr/bin/patchelf` decompile-all, with
+no function changed. Not done: the I/O-fingerprint oracle for expressions that
+are neither linear nor polynomial MBA.
 
 ## 3.6 Early passes
 

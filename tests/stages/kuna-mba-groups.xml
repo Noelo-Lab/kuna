@@ -1,0 +1,57 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Kuna (MBA without SMT): P3 simplification
+    quiescence, option mba (default off). The groups and polynomial half.
+
+      0x1000 mba4 (hand-assembled, subterms recomputed as an obfuscator emits
+             them): (x & y) + (z & w) - (x & y & z & w)  ==  (x & y) | (z & w)
+             one boolean function of four leaves (bi-decomposed)
+      0x1040 mba6 (gcc -O2): (a ^ b) + 2*(a & b) + (c & ~d) + d + (e | f) - (e & f)
+             ==  a + b + (c | d) + (e ^ f): six leaves in three groups
+      0x1080 mbapoly (gcc -O2): (x & y) * (x | y) + (x & ~y) * (~x & y)  ==  x * y
+             a polynomial MBA, normalized over the conjunction basis
+
+    Asserts #1-#3 are the off pass: each prints as written.
+    Asserts #4-#6 are the on pass: each folds.
+-->
+<bytechunk space="ram" offset="0x1000" readonly="true">89f821f04189d04121c84401c04189f94121f14121d14121c94429c8c3</bytechunk>
+<bytechunk space="ram" offset="0x1040" readonly="true">4589c289c84509c8f7d14521ca21d189fa21f74429d031f24401c001c801d08d0478c3</bytechunk>
+<bytechunk space="ram" offset="0x1080" readonly="true">89f089faf7d0f7d221f821f20fafc289fa09f721f20fafd701d0c3</bytechunk>
+<symbol space="ram" offset="0x1000" name="mba4"/>
+<symbol space="ram" offset="0x1040" name="mba6"/>
+<symbol space="ram" offset="0x1080" name="mbapoly"/>
+</binaryimage>
+<script>
+  <com>parse line extern uint4 mba4(uint4 x,uint4 y,uint4 z,uint4 w);</com>
+  <com>parse line extern uint4 mba6(uint4 a,uint4 b,uint4 c,uint4 d,uint4 e,uint4 f);</com>
+  <com>parse line extern uint4 mbapoly(uint4 x,uint4 y);</com>
+  <com>option mba off</com>
+  <com>lo fu mba4</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mba6</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mbapoly</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option mba on</com>
+  <com>lo fu mba4</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mba6</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mbapoly</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="mba groups #1: off keeps the four-leaf form" min="1" max="1">- \(x &amp; y &amp; z &amp; w\);</stringmatch>
+<stringmatch name="mba groups #2: off keeps the six-leaf form" min="1" max="1">\(a \^ b\) \+ \(a &amp; b\) \* 2;</stringmatch>
+<stringmatch name="mba groups #3: off keeps the polynomial form" min="1" max="1">\* \(x \| y\)</stringmatch>
+<stringmatch name="mba groups #4: on folds the four-leaf group to one boolean function" min="1" max="1">return [xyzw] &amp; [xyzw] \| [xyzw] &amp; [xyzw];</stringmatch>
+<stringmatch name="mba groups #5: on folds six leaves to a + b + (c | d) + (e ^ f)" min="1" max="1">return \([ef] \^ [ef]\) \+ \([cd] \| [cd]\) \+ [ab] \+ [ab];</stringmatch>
+<stringmatch name="mba groups #6: on normalizes the polynomial to x * y" min="1" max="1">return [xy] \* [xy];</stringmatch>
+</decompilertest>

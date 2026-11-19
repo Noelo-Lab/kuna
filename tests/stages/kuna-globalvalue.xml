@@ -129,7 +129,7 @@
 <stringmatch name="globalvalue #14: the joined value is stored from its own variable" min="1" max="1">usink = a[0-9]+;</stringmatch>
 <stringmatch name="globalvalue #15: a short compare a fold rewrote reads the value" min="3" max="3">v1 = \(int2\)\(a0 \* 3\) == -1;</stringmatch>
 <stringmatch name="globalvalue #16: no short compare reads the global back" min="0" max="0">hsink == </stringmatch>
-<stringmatch name="globalvalue #17: the load after a pointer store reads the global" min="1" max="1">if \(gre &lt;= -1\)</stringmatch>
+<stringmatch name="globalvalue #17: the load after a pointer store reads the global" min="1" max="1">return gre / 0x10;</stringmatch>
 <stringmatch name="globalvalue #18: the register use keeps the value and the load reads the global" min="1" max="1">\(\(uint4\)\(a0 \* 3\) &gt;&gt; 4\) \+ \(\(int4\)gre &gt;&gt; 4\)</stringmatch>
 <stringmatch name="globalvalue #19: the load copied to another global reads the global" min="1" max="1">gre2 = gre;</stringmatch>
 <stringmatch name="globalvalue #21: the range check loads the strtoul result back from the global" min="1" max="1">\(res &lt;= 0xff\)</stringmatch>

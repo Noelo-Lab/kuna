@@ -172,6 +172,7 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "chkstkdarwin" => on_off!(chkstk_darwin, "Darwin stack-probe call removal"),
+    "arithhelpers" => on_off!(arith_helpers, "arithmetic runtime-helper call-fixups"),
     "tailcalljump" => {
         let (jumps, tables, msg) = crate::kuna_tailcalljump::tail_call_mode(p1)?;
         self.tail_call_jumps = jumps;
@@ -455,6 +456,13 @@ kuna_options! { self, p1;
     "devectorize" => on_off!(devectorize_reduction, "Vectorized reduction re-roll"),
     "strlenscan" => on_off!(strlen_scan, "inline repnz scasb string length as strlen"),
     "repstring" => on_off!(rep_string, "rep movs/stos/cmps loops as copy, fill and compare builtins"),
+    "rangefold" => on_off!(range_fold, "dominating-range folding"),
+    "pow2select" => on_off!(pow2_select, "power-of-two division select recovery"),
+    "cmpmerge" => on_off!(cmp_merge, "comparison merge"),
+    "bitidioms" => on_off!(bit_idioms, "byte-swap, rotate, abs and bit-scan idioms"),
+    "mba" => on_off!(mba, "mixed boolean-arithmetic simplification"),
+    "copyrun" => on_off!(copy_run, "unrolled element-copy runs as memcpy"),
+    "alloca" => on_off!(alloca_calls, "dynamic stack allocation as alloca(size)"),
     "regionstructure" => {
         let (val, msg) =
             crate::p8_structure::region_structurer::OptionRegionStructure.apply(p1)?;

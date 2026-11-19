@@ -1,0 +1,53 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<!--
+    kuna-bitidioms: a byte swap and a rotate written out as shifts and ORs.
+
+    Source (clang -O2, AArch64):
+      unsigned swap32(unsigned x) { return (x >> 24) | ((x >> 8) & 0xff00) | ((x << 8) & 0xff0000) | (x << 24); }
+      unsigned rot13(unsigned x)  { return (x << 13) | (x >> 19); }
+      unsigned long swap64(unsigned long x) { return __builtin_bswap64(x); }
+
+      0x100000  rev  w0, w0 ; ret
+      0x100008  ror  w0, w0, #19 ; ret
+      0x100010  rev  x0, x0 ; ret
+
+    SLEIGH lifts `rev` to a staged swap (bytes within halfwords, then
+    halfwords, then the two halves) and `ror` to a shift pair. Stage: P3
+    simplification-quiescence, option `bitidioms` (RuleBitIdioms follows the
+    bytes through shifts, masks and ORs).
+
+    Pass 1 (default, bitidioms on) prints bswap(...) twice and rotl(x,0xd) once.
+    Pass 2 (bitidioms off) shows the shift-and-mask expressions.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+0008c05ac0035fd6004c8013c0035fd6000cc0dac0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="swap32"/>
+<symbol space="ram" offset="0x100008" name="rot13"/>
+<symbol space="ram" offset="0x100010" name="swap64"/>
+</binaryimage>
+<script>
+  <com>lo fu swap32</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu rot13</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu swap64</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option bitidioms off</com>
+  <com>lo fu swap32</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu rot13</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="KUNA-BITIDIOMS #1: the staged rev swaps fold to bswap (default)" min="2" max="2">return bswap\(</stringmatch>
+<stringmatch name="KUNA-BITIDIOMS #2: ror folds to rotl by 13 (default)" min="1" max="1">rotl\(\w+,0xd\)</stringmatch>
+<stringmatch name="KUNA-BITIDIOMS #3: bitidioms off keeps the rotate as a shift pair" min="1" max="1">&lt;&lt; 0xd</stringmatch>
+<stringmatch name="KUNA-BITIDIOMS #4: bitidioms off keeps the halfword stage of the swap" min="1" max="2">0xff00ff</stringmatch>
+</decompilertest>

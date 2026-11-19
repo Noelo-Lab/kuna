@@ -1,0 +1,60 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna `cmpmerge`: two comparisons of the same operands, combined by a
+    boolean op or by two branches in a row to one target, often state one
+    relation.  gcc -O0 compiles `a < b || a == b` as two branches, which
+    print as `(a1 <= a0) && (a0 != a1)`; on doubles `a > b || a == b` and
+    `a != b && !(a < b)` print as and-ands of two compares.  With the option
+    on, each relation is a set of LT, EQ, GT and (floats) UN, and the pair
+    folds into one comparison or its negation; floats keep the unordered
+    outcome.  Default off: the merged forms move datatest assertions.
+
+    Stage / sub-stage: P3 "simplification-quiescence", option
+    `cmpmerge on|off`.
+
+    The bytes are decompiler/crates/kuna-analysis/tests/fixtures/cmpmerge.c
+    built by gcc 15.3 at -O0 -fno-pie -no-pie -nostartfiles (x86-64).
+    Pass 1 is the default (off), pass 2 `option cmpmerge on`.
+-->
+<bytechunk space="ram" offset="0x401000">
+f30f1efa554889e5897dfc8b55fc89d0c1e00329d083c0035dc3f30f1efa554889e54883ec08897dfc8975f88b45fc3b45f87c088b45fc3b45f8750cbf010000
+00e8baffffffeb05b800000000c9c3f30f1efa554889e54883ec08897dfc837dfc037406837dfc037e0cbf02000000e88cffffffeb05b801000000c9c3f30f1e
+fa554889e54883ec10f20f1145f8f20f114df0f20f1045f8660f2f45f07718f20f1045f8660f2e45f07a18f20f1045f8660f2e45f0750cbf03000000e83fffff
+ffeb05b802000000c9c3f30f1efa554889e5f20f1145f8f20f114df0f20f1045f8660f2e45f07a0cf20f1045f8660f2e45f0741bf20f1045f0660f2f45f80f97
+c083f00184c07407b801000000eb05b8000000005dc3f30f1efa554889e5897dfc8975f88b45fc3945f80f93c00fb6c05dc3
+</bytechunk>
+<symbol space="ram" offset="0x401000" name="sink"/>
+<symbol space="ram" offset="0x40101a" name="le"/>
+<symbol space="ram" offset="0x40104f" name="ge3"/>
+<symbol space="ram" offset="0x40107d" name="fge"/>
+<symbol space="ram" offset="0x4010ca" name="fnle"/>
+<symbol space="ram" offset="0x401116" name="ule"/>
+</binaryimage>
+<script>
+  <com>lo fu le</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fge</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fnle</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option cmpmerge on</com>
+  <com>lo fu le</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fge</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fnle</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="cmpmerge #1: by default the two integer branches print as an and-and" min="1" max="1">if \(\(a1 &lt;= a0\) &amp;&amp; \(a0 != a1\)\)</stringmatch>
+<stringmatch name="cmpmerge #2: merged, a &lt; b || a == b is one test" min="1" max="1">^  if \(a1 &lt; a0\)$</stringmatch>
+<stringmatch name="cmpmerge #3: merged on doubles, the unordered outcome stays (not a1 &gt; a0)" min="1" max="1">^  if \(!\(a1 &lt;= a0\)\)$</stringmatch>
+<stringmatch name="cmpmerge #4: a != b &amp;&amp; !(a &lt; b) on doubles is !(a &lt;= b)" min="1" max="1">^  return !\(a0 &lt;= a1\);$</stringmatch>
+<stringmatch name="cmpmerge #5: the float and-ands print only with the option off" min="2" max="2">!= a1\) &amp;&amp; \(!\(a0 &lt; a1\)\)|\(!\(a1 &lt; a0\)\) &amp;&amp; \(a0 != a1\)</stringmatch>
+</decompilertest>

@@ -918,6 +918,44 @@ recovered switch table.
   test's cheap half is the code-space width, which ARM32/MIPS32/PPC32 all pass).
   The analysis-tier call-fixup installer tags the payload onto its targets at
   `read symbols`.
+- **Arithmetic runtime helpers.** `decompiler/crates/kuna-decomp/src/p2_lift/kuna_arithhelpers.rs`
+  registers one more family of kuna-owned call fixups beside `kuna_msvcftol`'s,
+  through the same `decode_kuna_call_fixups` seam: the helpers a 32-bit target
+  calls for an operation it has no instruction for. Their contracts are
+  documented outside any decompiler (the libgcc manual's integer library
+  routines, the Arm run-time ABI, the MSVC CRT as Wine implements it), so each
+  helper's body is simply the operation: `__udivdi3` becomes `r:8 = a / b`
+  written to the return registers, and the caller prints `a / b` after normal
+  simplification. Off (`option arithhelpers off`), the call keeps the prototype
+  inference gives it — two `long long` operands as four 32-bit words, a dropped
+  `__aeabi_idiv` divisor, or a `void` caller when a `__stdcall` helper's popped
+  16 bytes confuse its stack frame. `helper_abi` picks the convention from the
+  registers the bodies name at a 4-byte code space. On x86-32 the libgcc
+  helpers are cdecl: the body pops the return address the `CALL` pushed, reads
+  the operands from the stack above it, and writes `EDX:EAX`; `__divmoddi4` and
+  `__udivmoddi4` also store the remainder through their pointer argument. The
+  MSVC `_alldiv`, `_aulldiv`, `_allrem`, `_aullrem`, `_allmul`, `_alldvrm` and
+  `_aulldvrm` are `__stdcall` and also pop their 16 argument bytes (the dvrm
+  pair returns the remainder in `EBX:ECX`), and `_allshl`, `_allshr`, `_aullshr`
+  shift `EDX:EAX` by `CL`. On 32-bit ARM a `long long` travels in r0:r1 and
+  r2:r3, low word in the lower register on little-endian and in the higher one
+  on big-endian, and a shift count in r2; `__aeabi_uldivmod`/`__aeabi_ldivmod`
+  and `__aeabi_uidivmod`/`__aeabi_idivmod` write both quotient and remainder, and
+  dead-code elimination keeps the one the caller reads. The libgcc 32-bit
+  division helpers (`__divsi3`, `__udivsi3`, `__modsi3`, `__umodsi3`) share the
+  ARM table. A p-code shift by the operand width or more yields zero (or the
+  sign), which is what the MSVC shift helpers compute for counts of 64 and
+  over; the libgcc and AEABI helpers leave those counts undefined, as C does.
+  Each helper is targeted both as spelled and with one more leading
+  underscore, because the installer only ever prepends underscores to a
+  function name and COFF and Mach-O spell the C name `__udivdi3` as
+  `___udivdi3`. Two install changes make the helpers reachable where their
+  names are: the console's commit of the call-fixup facts also probes every
+  function name an analysis pass recovered (an MSVC image names its CRT helpers
+  only in its PDB), and it tags every FunctionSymbol of a matched name (a Thumb
+  helper also has an `entry|1` twin, and its calls resolve to the even entry).
+  The gate (`option arithhelpers`, default on) is on the install: the payloads
+  are always registered, the installer skips them when the option is off.
 - **kuna-owned callother fixups.** The same freedom applies to the user-op side.
   `decompiler/crates/kuna-decomp/src/p2_lift/kuna_cortexmpriv.rs` supplies a
   `<callotherfixup>` body for the ARM user op `isCurrentModePrivileged`, which

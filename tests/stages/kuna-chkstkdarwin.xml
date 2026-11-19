@@ -97,10 +97,10 @@ c0035fd6
 </script>
 <stringmatch name="CHKSTKDARWIN #1: off, all three functions assign the probe's result; on, none calls it" min="3" max="3">= __chkstk_darwin\(\);</stringmatch>
 <stringmatch name="CHKSTKDARWIN #2: off, big_frame loses its parameter" min="1" max="1">int4 _big_frame\(void\)</stringmatch>
-<stringmatch name="CHKSTKDARWIN #3: off, vla_last sizes its array from an x1 nothing assigns" min="1" max="1">int8 v4; // x1</stringmatch>
+<stringmatch name="CHKSTKDARWIN #3: off, vla_last sizes its array from an x1 nothing assigns" min="1" max="1">int8 v2; // x1</stringmatch>
 <stringmatch name="CHKSTKDARWIN #4: on, big_frame takes k and indexes the frame with it" min="1" max="1">int4 _big_frame\(int4 a0\)</stringmatch>
 <stringmatch name="CHKSTKDARWIN #5: on, vla_last takes the index and the size" min="1" max="1">_vla_last\(int4 a0,int8 a1\)</stringmatch>
-<stringmatch name="CHKSTKDARWIN #6: on, the array is sized from the size parameter" min="1" max="1">0xfffffffffffffff0 - \(a1 \+ 0xfU &amp; 0xfffffffffffffff0\)</stringmatch>
+<stringmatch name="CHKSTKDARWIN #6: on, the array is allocated from the size parameter" min="1" max="1">v1 = alloca\(a1\);</stringmatch>
 <stringmatch name="CHKSTKDARWIN #7: on, the stub-called probe keeps x0 and x1" min="1" max="1">int8 _probe_stub\(int8 a0,int8 a1\)</stringmatch>
 <stringmatch name="CHKSTKDARWIN #8: off and on, the __stubs entry still jumps to the probe" min="2" max="2">__chkstk_darwin\(\); // jump-as-call</stringmatch>
 <stringmatch name="CHKSTKDARWIN #9: arm64e, the probe called through its __auth_ptr slot (blraaz x16) is removed and big_e keeps k" min="1" max="1">int4 _big_e\(int4 a0\)</stringmatch>

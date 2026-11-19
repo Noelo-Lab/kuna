@@ -164,6 +164,8 @@ mod castnarrow_round_trip;
 mod strlenscan_round_trip;
 #[path = "repstring_round_trip.rs"]
 mod repstring_round_trip;
+#[path = "copyrun_round_trip.rs"]
+mod copyrun_round_trip;
 
 #[path = "coff_strings.rs"]
 mod coff_strings;
@@ -313,6 +315,9 @@ mod library_names;
 
 #[path = "libgcc_divdi3.rs"]
 mod libgcc_divdi3;
+
+#[path = "arithhelpers.rs"]
+mod arithhelpers;
 
 #[path = "rettriangle_round_trip.rs"]
 mod rettriangle_round_trip;

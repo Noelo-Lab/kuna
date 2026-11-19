@@ -1,0 +1,60 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna `rangefold`: a conditional branch on `V cmp K` bounds `V` in every
+    block one of its out-edges controls.  A comparison of `V` against a
+    constant whose outcome those ranges fix folds to `true` or `false`, so the
+    branch on it goes away, and `V & 0xff` on a `V` the ranges keep below 256
+    folds to `V`.
+
+    Stage / sub-stage: P3 "simplification-quiescence".  The P0 assertion
+    `option rangefold on|off` decides the fold; on is the default.
+
+    The bytes are decompiler/crates/kuna-analysis/tests/fixtures/rangefold.c
+    built by gcc 15.3 at -O0 -fno-pie -no-pie -nostartfiles (x86-64 SysV):
+    nested (`if (x < 10) { if (x > 20) ... }`), masked (`x & 0xff` under
+    `x < 16`) and digit (a test of `c > '9'` inside `c >= '0' && c <= '9'`).
+
+    Pass 1 runs with no option line, the shipped default (on).  Pass 2
+    (`option rangefold off`) prints the decided tests.
+-->
+<bytechunk space="ram" offset="0x401000">
+f30f1efa554889e5897dfc8b55fc89d0c1e00329d083c0035dc3f30f1efa554889e54883ec08897dfc837dfc097f1e837dfc147e0cbf01000000e8c1ffffffeb
+11bf02000000e8b5ffffffeb05b800000000c9c3f30f1efa554889e5897dfc488975f0837dfc0f77198b45fc0fb6c0488d148500000000488b45f04801d08b00
+eb05b8ffffffff5dc3f30f1efa554889e54883ec0889f88845fc807dfc2f761c807dfc397716807dfc397607b8ffffffffeb140fb645fc83e830eb0b0fb645fc
+89c7e839ffffffc9c3
+</bytechunk>
+<symbol space="ram" offset="0x401000" name="sink"/>
+<symbol space="ram" offset="0x40101a" name="nested"/>
+<symbol space="ram" offset="0x401054" name="masked"/>
+<symbol space="ram" offset="0x401089" name="digit"/>
+</binaryimage>
+<script>
+  <com>lo fu nested</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu masked</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu digit</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option rangefold off</com>
+  <com>lo fu nested</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu masked</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu digit</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="rangefold #1: x &gt; 20 inside x &lt; 10 is decided false, so its branch and sink(1) go" min="1" max="1">^  if \(a0 &lt;= 9\)$
+^    return sink\(2\);$</stringmatch>
+<stringmatch name="rangefold #2: the mask on an index the guard keeps below 16 goes" min="1" max="1">return a1\[a0\];$</stringmatch>
+<stringmatch name="rangefold #3: the decided inner test is printed only with the option off" min="1" max="1">if \(0x15 &lt;= a0\)</stringmatch>
+<stringmatch name="rangefold #4: off, the mask stays" min="1" max="1">return a1\[a0 &amp; 0xff\];$</stringmatch>
+<stringmatch name="rangefold #5: c &gt; '9' inside '0' &lt;= c &lt;= '9' is printed only with the option off" min="1" max="1">if \(0x3a &lt;= a0\)</stringmatch>
+<stringmatch name="rangefold #6: sink(1) is called only in the off pass" min="1" max="1">sink\(1\)</stringmatch>
+</decompilertest>

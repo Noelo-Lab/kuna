@@ -373,6 +373,14 @@ pub fn universal_sched(
         rrow!("simdshufflelane", "analysis", crate::kuna_simdlane::RuleSimdShuffleLane::with_group("analysis")),
         rrow!("constspaceload", "analysis", crate::kuna_constspaceload::RuleConstSpaceLoad::with_group("analysis")),
         rrow!("x87truncate", "analysis", crate::kuna_x87truncate::RuleX87Truncate::new("analysis")),
+        rrow!("selectdiv", "analysis", crate::kuna_selectdiv::RuleSelectDiv::new("analysis")),
+        rrow!("comparemerge", "analysis", crate::kuna_cmpmerge::RuleCompareMerge::new("analysis")),
+        rrow!("bitidioms", "analysis", crate::kuna_bitidioms::RuleBitIdioms::new("analysis")),
+        rrow!("intabs", "analysis", crate::kuna_bitidioms::RuleIntAbs::new("analysis")),
+        rrow!("mba", "analysis", crate::kuna_mba::RuleMbaSimplify::new("analysis")),
+        rrow!("alloca", "analysis", crate::kuna_alloca::RuleAlloca::new("analysis")),
+        rrow!("allocaprobe", "analysis", crate::kuna_alloca::RuleAllocaProbe::new("analysis")),
+        rrow!("allocatyped", "analysis", crate::kuna_alloca::RuleAllocaTyped::new("analysis")),
         rrow!("gobool", "analysis", crate::kuna_gobool::RuleGoBoolReturn::with_group(false, "analysis")),
         rrow!("boolsignless", "analysis", crate::kuna_flagcompare::RuleBoolSignLess::with_group("analysis")),
         rrow!("sborrowge", "analysis", crate::kuna_flagcompare::RuleSborrowGe::with_group("analysis")),
@@ -635,6 +643,8 @@ pub fn universal_sched(
             act!(ActionNodeJoin::boxed("nodejoin")),
             act!(Box::new(crate::condexe::ActionConditionalExe::new("conditionalexe"))),
             act!(ActionConditionalConst::boxed("analysis")),
+            act!(crate::p3_dataflow::kuna_rangefold::ActionRangeFold::boxed("unreachable")),
+            act!(crate::p3_dataflow::kuna_cmpmerge::ActionBranchMerge::boxed("unreachable")),
         ],
     };
 
@@ -693,6 +703,9 @@ pub fn universal_sched(
                 false,
                 "returnsplit"
             ))),
+            // (kuna) copyrun (option `copyrun`): an unrolled run of element
+            // copies within one block, collapsed into memcpy.
+            act!(Box::new(crate::kuna_copyrun::ActionCopyRun::new("returnsplit"))),
             // (kuna) devectorize (option `devectorize`, default-OFF): re-roll a
             // vectorized integer reduction -- guard, stride loop with one
             // accumulator per lane, fold, scalar remainder loop -- into its scalar
@@ -712,6 +725,9 @@ pub fn universal_sched(
             // `rep movs`, `rep stos` and `repz cmpsb`, collapsed into a copy,
             // fill or compare builtin by removing the edge into the body.
             act!(Box::new(crate::kuna_repstring::ActionRepString::new("returnsplit"))),
+            // (kuna) bitidioms: the one-instruction bsf/tzcnt/bsr loop becomes
+            // ctz / LZCOUNT, removed the same way.
+            act!(Box::new(crate::kuna_bitidioms::ActionBitScanLoop::new("returnsplit"))),
             act!(ActionReturnSplit::boxed("returnsplit")),
             // (kuna) angr SAILR gotoless `ReturnDuplicatorHigh` (option `returndup`,
             // default-OFF).  Runs right after ActionReturnSplit (the goto-driven

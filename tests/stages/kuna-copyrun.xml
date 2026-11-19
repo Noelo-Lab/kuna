@@ -1,0 +1,68 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Unrolled element copies as memcpy (`option copyrun on|off`, default on;
+    stage P3, a late fullloop pass).
+
+    The fixture is copyrun.c (gcc -O2, x86-64: struct assignments and a
+    31-byte memcpy gcc expands into SSE and overlapping 8-byte moves).
+
+    The first pass (`option copyrun off`) prints one assignment per element.
+    The second (the shipped default) prints one builtin_memcpy per run: 64
+    bytes, the same 64 bytes into the second half of one struct, and the 31
+    bytes the overlapping moves cover. A
+    two-word copy keeps its two assignments, and a copy into a frame local
+    (`local`) keeps its loads.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/copyrun_x86_64</com>
+  <com>option copyrun off</com>
+  <com>read symbols</com>
+  <com>load function copy_struct</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function shift</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function copy31</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function small</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function local</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/copyrun_x86_64</com>
+  <com>read symbols</com>
+  <com>load function copy_struct</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function shift</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function copy31</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function small</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function local</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="COPYRUN #1: off, every element is its own assignment" min="1" max="1">a0\[0xf\] = a0\[7\];</stringmatch>
+<stringmatch name="COPYRUN #2: on, a 64-byte struct copy is one memcpy" min="1" max="1">builtin_memcpy\(a0,a1,0x40\);</stringmatch>
+<stringmatch name="COPYRUN #3: on, a copy within one struct offsets its destination" min="1" max="1">builtin_memcpy\(\(void \*\)\(\(\w+\)a0 \+ 0x40\),a0,0x40\);</stringmatch>
+<stringmatch name="COPYRUN #4: on, overlapping 8-byte moves cover 31 bytes" min="1" max="1">builtin_memcpy\(a0,a1,0x1f\);</stringmatch>
+<stringmatch name="COPYRUN #6: a two-word copy keeps its assignments" min="2" max="2">a0->field_0x8 = a1->field_0x8;</stringmatch>
+<stringmatch name="COPYRUN #7: a copy into a frame local keeps its loads" min="2" max="2">v8 = a0\[7\];</stringmatch>
+</decompilertest>
