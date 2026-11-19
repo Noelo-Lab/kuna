@@ -1638,7 +1638,13 @@ address the written-slot guard guards, every 256 new values a pointer walk of
 (`decompiler/crates/kuna-decomp/src/p6_variables/merge.rs (Merge::budget)`,
 chapter 06), every 1024 seeds the implied-variable walk visits
 (`decompiler/crates/kuna-decomp/src/p6_variables/coreaction_cleanup.rs
-(MARK_IMPLIED_PROBE_STRIDE)`), before each region attempt of region identification (chapter
+(MARK_IMPLIED_PROBE_STRIDE)`), every 256 Varnodes the dead-code sweep visits
+(`decompiler/crates/kuna-decomp/src/p9_emit/coreaction_render.rs
+(SWEEP_DEADLINE_STRIDE)`: destroying a dead operation unlinks it from each
+input's reader list, which is linear in that list, so a function whose dead
+operations all read one Varnode sweeps in quadratic time and the sweep stops
+where the budget ends, leaving the rest of the dead operations in place),
+before each region attempt of region identification (chapter
 07), before each call-argument trial `ActionActiveParam` scores and every 256
 steps of the trial's use walks (chapter 04), and again after the final layout checks: the drive
 publishes its deadline to
