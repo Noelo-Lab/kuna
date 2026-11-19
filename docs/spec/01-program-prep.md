@@ -6208,6 +6208,34 @@ every other binary's pass list is byte-identical to before the pass existed):
   statuses, with the verified external manifest/source identities. These fields
   are absent unless requested; stable compiler and formatter-layout facts remain
   separate. Malformed manifests and hash mismatches fail before image analysis.
+  The separate `--apply-rust-signatures PATH` request explicitly trusts the same
+  hashed manifest for names. It is available on `functions` and one-function
+  `decompile`, whose text and JSON forms share the in-process load. Application
+  consumes the final accepted Listing once before selection; inventory uses the
+  same analysis defaults as decompilation, and selecting an address does not
+  implicitly disable discovery. Explicit analysis options still apply.
+  `decompiler/crates/kuna-analysis/src/analyzers/flirt/kuna_rustprofiles/kuna_application.rs`
+  requires a positive unique profile after every requested candidate is complete.
+  Each proposal must have the exact same raw symbol and address in both banks of
+  that profile. The maximum bank score alone authorizes no names. Empty agreement,
+  unresolved profiles, unavailable analysis and unsupported images fail explicitly.
+  Agreed pairs become ordinary signature `FidMatch` records, sanitized before
+  merging with all other analysis output. The normal commit requires an existing
+  discovered function and arbitrates metadata, loader ownership, raw/canonical
+  name collisions, other FID/FLIRT guesses and vetoes. Agreement proposes a name;
+  it does not bypass those refusals or imply types, ABI, compiler identity or
+  side effects. The ordinary runtime version and registry-crate fields remain
+  sourced from the image, independently of the selected signature profile.
+  Later caller declarations and assertions keep their precedence.
+  Bytes overlays are refused before loading, and the console independently
+  declines application after an effective overlay. Archive inputs are refused
+  before member selection or fan-out, including an archive holding linked ELF
+  members. Ordinary archive commands retain their behavior. Slice/target/ISA and
+  image-selection overrides are refused. Batch and worker application is not
+  supported: ordinary inventory replay cannot replace existing placeholders or
+  preserve all accepted aliases without a separate image-bound fact transport.
+  No request changes the normal load. Report-only requests retain their original
+  shape and behavior and cannot be combined with application in the same run.
 - **Format strings** (`formatstring off|static|full`, default `static`;
   `decompiler/crates/kuna-analysis/src/analyzers/formatstring/mod.rs`): what a
   `printf`/`scanf`-family call does with its variadic arguments is stated by its
