@@ -2267,7 +2267,8 @@ mod tests {
         // and kuna-opaquepredicate / a comparison constant for every input folds under opaquepredicate
         // and kuna-stubbinds / a stripped Mach-O stub is named from the chained bind on its slot (option stubbinds)
         // and kuna-trapaftercall / a ud2 after an x86 call ends the flow at the call
-        assert_eq!(count, 849, "corpus file count drifted");
+        // and kuna-retpolinethunk / a call to a retpoline thunk is the indirect call it stands for
+        assert_eq!(count, 850, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

@@ -54,6 +54,7 @@ pub mod kuna_msvcimportcall; // (kuna `msvcsig`) a call through an import slot w
 pub mod kuna_mipsunaligned; // (kuna) lift a MIPS lwl/lwr-style unaligned pair as one whole access
 pub mod kuna_memtag; // (kuna) lift the AArch64 memory-tagging instructions with their tag effect
 pub mod kuna_int3pad; // (kuna) name the int3 pad control ran into instead of printing it as a call through swi()
+pub mod kuna_retpolinethunk; // (kuna) a retpoline thunk recognized by its body is `call *%reg`
 pub mod kuna_brktrap; // (kuna) an AArch64 brk compiler trap ends the flow instead of returning through SoftwareBreakpoint
 pub mod kuna_kernelbug; // (kuna) a Linux kernel __bug_table trap prints as BUG() or __WARN(file,line)
 pub mod kuna_decodehalt; // (kuna) a halt planted where the decode failed says so instead of printing as an ordinary return

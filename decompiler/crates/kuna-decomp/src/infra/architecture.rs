@@ -833,6 +833,8 @@ pub struct Architecture {
     /// its return value too (option `mixedtailret`).  See
     /// [`crate::p4_calls::kuna_mixedtailret`].
     pub mixed_tail_ret: bool,
+    /// (kuna `retpolinethunk`) A retpoline thunk recognized by its body gets the cspec's `x86_indirect_thunk_<reg>` call-fixup.
+    pub retpoline_thunk: bool,
     /// (kuna `trapaftercall`) A `ud2` after an x86 call marks the call site no-return.
     pub trap_after_call: bool,
     /// (kuna) Recover whole scalar VFP returns and double arguments on an ARM
@@ -2486,6 +2488,7 @@ impl Architecture {
             narrow_ext: crate::kuna_narrowext::NarrowExtMode::Off, // (kuna) option narrowext; reset_defaults sets the shipped default
             pass_through: true, // (kuna) option passthrough; reset_defaults sets the shipped default
             mixed_tail_ret: false, // (kuna) option mixedtailret; reset_defaults sets the shipped default
+            retpoline_thunk: false,
             trap_after_call: false,
             readonly_calls: Some(crate::p3_dataflow::heritage::READONLY_CROSS_PRODUCT),
             persist_calls: Some(crate::p3_dataflow::heritage::PERSIST_CROSS_PRODUCT),
@@ -2883,6 +2886,7 @@ impl Architecture {
         self.arm_float_return = true; // (kuna) option armfloatreturn: default-ON; inert unless the ELF states the VFP procedure-call standard
         self.pass_through = true; // (kuna) option passthrough default-on: over 574 slices in 25 projects (the 444-slice decbench corpus plus 130 slices of 17 disjoint projects) 4,107 of 4,346 gained parameters are DWARF-confirmed, NONE contradicted, 239 thunks DWARF does not describe, 0 parameters and 0 call arguments lost; the return arm is 5,458 of 5,615 confirmed, its 157 misses all the undecidable `void` tail-call wrapper; docs/features/passthrough/dwarf-confirmation.md
         self.mixed_tail_ret = false; // (kuna) option mixedtailret default-off: a void guard that leaves the value it tested in the return register beside a tail call compiles to the same bytes; see the phases.toml row
+        self.retpoline_thunk = true; // (kuna) option retpolinethunk default-on: x86 only, reads a direct callee's first bytes when it has no fixup; 0/675 datatests
         self.trap_after_call = true; // (kuna) option trapaftercall default-on: x86 only, reads two bytes after a machine call; 0/675 datatests
         self.kuna_calleeargs = true;
         self.arg_clobber = true; // (kuna) option argclobber default-on: the drop now needs the callee's own RECOVERED prototype to say the register is free (`protoorder` parks it), so it is inert wherever no callee was decompiled first; 0/675 datatest assertions, PARITY OK on stages, no scored type_match change, measured in docs/features/argclobber/record.json

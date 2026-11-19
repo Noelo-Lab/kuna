@@ -304,7 +304,11 @@ impl FlowEnvironment for ArchFlowEnv {
                 }
             }
         }
-        arch.symboltab.function_inject_id_across_scopes(entry)
+        let id = arch.symboltab.function_inject_id_across_scopes(entry);
+        if id >= 0 {
+            return id;
+        }
+        crate::p2_lift::kuna_retpolinethunk::inject_id(arch, entry)
     }
     fn build_inline_funcdata(&self, entry: &Address) -> KunaResult<Option<Funcdata>> {
         // C++ `Funcdata::inlineFlow` builds a fresh FlowInfo over the queried

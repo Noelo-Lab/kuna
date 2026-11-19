@@ -1,0 +1,55 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna retpolinethunk: a call through a retpoline thunk is an indirect call.
+
+    Source (clang -O2 -mretpoline):
+
+        typedef int (*fn)(int);
+        int a1(int x) { return x + 1; }
+        int a2(int x) { return x * 3; }
+        fn tab[2] = { a1, a2 };
+        int callit(int k, int v) { return tab[k & 1](v) + 5; }
+
+        401138  mov  r11,[tab + rdi*8]
+        401140  mov  edi,esi
+        401142  call 401160              ; __llvm_retpoline_r11
+        401160  call 401170
+        401165  pause; lfence; jmp 401165
+        401170  mov  [rsp],r11           ; return into the target
+        401174  ret
+
+    The thunk is left unnamed here, as in a stripped image. x86-64-gcc.cspec
+    has the x86_indirect_thunk_r11 fixup for exactly this body, but the fixup
+    installer applies it by gcc's thunk name, so the call printed as a call of
+    the thunk and the pointer loaded into r11 was lost.
+
+    Stage: P2 flow (the callee's inject id), option retpolinethunk off|on.
+    Pass 1 (off) pins the bug, pass 2 (on, the default) the fix.
+-->
+<bytechunk space="ram" offset="0x401130">
+f30f1efa5083e7014c8b1cfd1040400089f7e81900000083c00559c3
+</bytechunk>
+<bytechunk space="ram" offset="0x401160">
+e80b000000f3900faee8ebf90f1f40004c891c24c3
+</bytechunk>
+<bytechunk space="ram" offset="0x404010">
+10114000000000002011400000000000
+</bytechunk>
+<symbol space="ram" offset="0x401130" name="callit"/>
+<symbol space="ram" offset="0x404010" name="tab"/>
+</binaryimage>
+<script>
+  <com>option retpolinethunk off</com>
+  <com>lo fu callit</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option retpolinethunk on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="RETPOLINETHUNK #1: off, the thunk is called and the pointer is lost" min="1" max="1">sub_401160\(</stringmatch>
+<stringmatch name="RETPOLINETHUNK #2: on, the call goes through the loaded pointer" min="1" max="1">return \(\*\w+\)\(\w+\) \+ 5;</stringmatch>
+<stringmatch name="RETPOLINETHUNK #3: on, the pointer comes from the table" min="1" max="1">\w+ = \*\([^\n]*tab\[</stringmatch>
+</decompilertest>

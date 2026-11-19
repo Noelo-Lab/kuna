@@ -1588,6 +1588,23 @@ read this way, because anti-debug code returns into an `int3` pad on purpose
 (`int3pad` above). The evidence is per call site and x86 language ids only
 (`ctx.trap_after_call`). Exercised by `tests/stages/kuna-trapaftercall.xml`.
 
+**(kuna) A retpoline thunk is an indirect call — `option retpolinethunk`,
+default on, `decompiler/crates/kuna-decomp/src/p2_lift/kuna_retpolinethunk.rs
+(thunk_register)`.** `-mretpoline` (clang) and `-mindirect-branch=thunk` (gcc)
+compile each indirect call into a direct call to a per-register thunk, `call 1f;
+2: pause; lfence; jmp 2b; 1: mov %reg,(%rsp); ret`, which returns into the
+target the register holds. The cspecs model it as the `x86_indirect_thunk_<reg>`
+call-fixups, which the call-fixup installer tags onto functions by gcc's thunk
+name only; clang names its thunks `__llvm_retpoline_<reg>`, and a stripped image
+names neither. When the flow builder asks for a direct callee's inject id and
+the callee has none, the decompile driver (`decompile_drive.rs
+(query_call_inject_id)`) reads the callee's first bytes: an `E8` call over the
+`F3 90 0F AE E8 EB F9` spin to a `[REX] 89 /r 24` store of a register over the
+return address followed by `C3`. The register picks the
+`x86_indirect_thunk_<reg>` fixup, which is then injected like any other
+call-fixup. x86 language ids only; a register the cspec has no fixup for keeps
+the plain call. Exercised by `tests/stages/kuna-retpolinethunk.xml`.
+
 **(kuna) A compiler's AArch64 `brk` trap ends the flow — always on,
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_brktrap.rs
 (is_brk_trap_branchind)`.** AArch64 SLEIGH lowers `BRK #imm16` to `pc =

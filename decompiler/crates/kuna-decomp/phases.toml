@@ -1993,6 +1993,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "retpolinethunk"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P2"
+subphase = "flow-classification"
+strength = "HARD"
+rewind = "P2"
+issue = "retpoline-thunk-body"
+summary = "Read a call to a retpoline thunk as the indirect call it stands for. `-mretpoline` (clang) and `-mindirect-branch=thunk` (gcc) compile every indirect call into a direct call to a per-register thunk, `call 1f; 2: pause; lfence; jmp 2b; 1: mov %reg,(%rsp); ret`, which returns into the target held in the register. The cspecs carry that effect as the `x86_indirect_thunk_<reg>` call-fixups and the call-fixup installer applies them by the name gcc gives the thunk, but clang names its thunks `__llvm_retpoline_<reg>` and a stripped image names neither, so the call printed as `__llvm_retpoline_r11(a1)`, a call of the thunk itself with the target lost. When a direct callee has no fixup of its own, the flow builder reads its first bytes for that shape (E8 call over the pause/lfence spin to a `[REX] 89 /r 24; C3` store of the register over the return address) and applies the `x86_indirect_thunk_<reg>` fixup the register names. x86 language ids only; a register with no fixup in the cspec keeps the plain call."
+use_when = "On by default. The OFF symptom is a binary built with -mretpoline (or a stripped gcc -mindirect-branch=thunk build) where every function-pointer call renders as a call of `__llvm_retpoline_r11`/`sub_<thunk>` and the pointer it loads into r11 is lost. Flip off to see the thunk calls."
+example = "option retpolinethunk off"
+source_decompiler = "kuna"
+inspiration = "a clang -mretpoline build whose function-pointer calls printed as __llvm_retpoline_r11(a1), although the cspec already carries the x86_indirect_thunk_r11 fixup for that body"
+change_kind = "correctness-fix"
+tier = "core"
+symptoms = "a function-pointer call renders as a call of __llvm_retpoline_r11|a call of a stripped retpoline thunk sub_<addr> loses the called pointer|the pointer loaded into r11 before a call is never used"
+live_field = "retpoline_thunk"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "x64syscall"
 values = "off|on|abi"
 default = "on"
