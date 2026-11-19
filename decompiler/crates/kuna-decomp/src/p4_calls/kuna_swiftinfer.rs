@@ -340,11 +340,16 @@ pub fn carries_async_target(data: &Funcdata, idx: int4, slot: int4) -> bool {
     }
 }
 
-/// `__swiftasynccall` for the direct call `idx` when its callee reads
-/// `swiftasync`, throwing when the model bound to it does.
+/// `__swiftasynccall` for the direct call `idx` when its callee is an import
+/// whose name says `async`, or reads `swiftasync` (throwing when the model
+/// bound to it does).
 pub fn async_callee_model(data: &Funcdata, idx: int4, bound: Option<&Rc<ProtoModel>>) -> Option<Rc<ProtoModel>> {
     let abi = data.get_arch().swift_abi.as_ref()?;
-    let k = key(data.get_call_specs(idx).get_entry_address())?;
+    let fc = data.get_call_specs(idx);
+    if let Some(&throws) = abi.async_names.get(fc.get_name()) {
+        return Some(abi.model(true, throws));
+    }
+    let k = key(fc.get_entry_address())?;
     let throws = bound.is_some_and(|m| m.get_name().ends_with("_throws"));
     data.kuna_swift_async_callees().contains(&k).then(|| abi.model(true, throws))
 }

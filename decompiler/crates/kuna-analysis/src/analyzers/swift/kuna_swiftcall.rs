@@ -43,7 +43,7 @@ use kuna_decomp::kuna_swiftcall::{SWIFTASYNCCALL, SWIFTASYNCCALL_THROWS, SWIFTCA
 
 use super::descriptors::{ContextKind, Target, TypeRef};
 use super::kuna_swifttypes::{Registers, Types};
-use crate::demangle::kuna_swift::demangle_swift_tree;
+use crate::demangle::kuna_swift::{demangle_swift_name, demangle_swift_tree};
 use crate::demangle::kuna_swift::node::{Kind, Node, NodeRef};
 use crate::demangle::kuna_swift::print::print_full;
 use crate::pass::{AnalysisOutput, InputHintFact, ModelFact};
@@ -669,6 +669,32 @@ fn throws(entity: &NodeRef) -> bool {
     }
 }
 
+/// The imported functions whose mangled names say `async`, under that name
+/// and the one it is shown by, with whether they throw: a call through an
+/// import stub has no body to read the `swiftasync` register in.
+pub fn async_imports<'a>(names: impl Iterator<Item = &'a str>) -> Vec<(String, bool)> {
+    let mut out = std::collections::BTreeMap::new();
+    for name in names {
+        let Some(tree) = demangle_swift_tree(name) else { continue };
+        let [entity] = tree.children.as_slice() else { continue };
+        let entity = match entity.kind {
+            Kind::Static => match entity.first() {
+                Some(inner) => inner,
+                None => continue,
+            },
+            _ => entity,
+        };
+        if matches!(entity.kind, Kind::Function | Kind::Allocator | Kind::Constructor) && is_async(entity) {
+            let throws = throws(entity);
+            out.insert(name.to_string(), throws);
+            if let Some(shown) = demangle_swift_name(name) {
+                out.insert(shown, throws);
+            }
+        }
+    }
+    out.into_iter().collect()
+}
+
 /// Bind the convention to every member the image names, and hint `self`.
 pub fn bind(types: &Types, regs: &Registers, symbols: &[(u64, String)], out: &mut AnalysisOutput) -> Stats {
     let class_bound = types
@@ -779,5 +805,22 @@ mod tests {
         assert!(member_of("$s1m1KC1vSivW") == Some((SelfIs::Instance, false)));
         assert!(member_of("$s1m1SV1wSivW") == Some((SelfIs::Instance, false)));
         assert!(member_of("$s1m1gSivW").is_none());
+    }
+
+    #[test]
+    fn async_imports_are_named_both_ways() {
+        let names = [
+            "$sScTss5NeverORszABRs_rlE5yieldyyYaFZ",
+            "$sScTss5NeverORszABRs_rlE5sleep11nanosecondsys6UInt64V_tYaKFZ",
+            "$sSS9hasPrefixySbSSF",
+            "swift_task_alloc",
+        ];
+        let found = async_imports(names.into_iter());
+        let get = |n: &str| found.iter().find(|(name, _)| name == n).map(|(_, throws)| *throws);
+        assert_eq!(get(names[0]), Some(false));
+        assert_eq!(get(names[1]), Some(true));
+        assert_eq!(get("Swift.Task.yield()"), Some(false));
+        assert_eq!(get(names[2]), None);
+        assert_eq!(found.len(), 4);
     }
 }

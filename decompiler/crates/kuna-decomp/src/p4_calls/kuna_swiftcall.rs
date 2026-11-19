@@ -65,6 +65,9 @@ pub struct SwiftAbi {
     pub self_reg: (Address, int4),
     pub error_reg: (Address, int4),
     pub async_reg: (Address, int4),
+    /// The imported functions whose mangled names say `async`, with whether
+    /// they throw.
+    pub async_names: std::collections::BTreeMap<String, bool>,
     /// `swift.AsyncContext *`, the context's type.
     pub async_context: Option<Rc<crate::dtype::Datatype>>,
     pub throws: Rc<ProtoModel>,
