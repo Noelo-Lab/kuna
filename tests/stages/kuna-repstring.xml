@@ -20,6 +20,12 @@
     length), same5 (no flags set up before the instruction) and mismatch (the
     final pointer is returned, so it is no memcmp).
 
+    zero_g (0x201400) is not from the fixture: it is gcc 15.3's
+    `-O2 -mstringop-strategy=rep_8byte` code for
+    `char gfill[128]; void zero_g(void) { memset(gfill, 0, 128); gfill[5] = 'x'; }`
+    linked at 0x201400 with gfill at 0x203000, which `map address` names; the
+    fill's destination is the global, so it prints as `gfill`.
+
     Pass 1 runs with no option line, so it pins the shipped default.  Pass 2
     (`option repstring off`) reproduces the bug: every instruction is a loop.
 -->
@@ -42,8 +48,13 @@ b6c0c34889f8ba050000004889f7b9050000004889c64839d2f3a60f97c01c000fbec0c34889f8ba
 <symbol space="ram" offset="0x2012e4" name="same_n"/>
 <symbol space="ram" offset="0x2012fc" name="same5"/>
 <symbol space="ram" offset="0x20130d" name="mismatch"/>
+<bytechunk space="ram" offset="0x201400">
+b91000000031c0bf00302000f348abc605ef1b000078c3
+</bytechunk>
+<symbol space="ram" offset="0x201400" name="zero_g"/>
 </binaryimage>
 <script>
+  <com>map address r0x203000 char gfill[128]</com>
   <com>lo fu fill32</com>
   <com>decompile</com>
   <com>print C</com>
@@ -75,6 +86,9 @@ b6c0c34889f8ba050000004889f7b9050000004889c64839d2f3a60f97c01c000fbec0c34889f8ba
   <com>decompile</com>
   <com>print C</com>
   <com>lo fu mismatch</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu zero_g</com>
   <com>decompile</com>
   <com>print C</com>
   <com>option repstring off</com>
@@ -111,6 +125,9 @@ b6c0c34889f8ba050000004889f7b9050000004889c64839d2f3a60f97c01c000fbec0c34889f8ba
   <com>lo fu mismatch</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu zero_g</com>
+  <com>decompile</com>
+  <com>print C</com>
 </script>
 <stringmatch name="repstring #1: with no option line (the shipped default) a fill of a mixed word is a 4-byte fill" min="1" max="1">^  builtin_memset32\(a0,0x1020304,</stringmatch>
 <stringmatch name="repstring #2: a fill of zero words is a memset of n * 4 bytes" min="1" max="1">^  builtin_memset\(a0,0,a1 \* 4UL\);</stringmatch>
@@ -122,8 +139,10 @@ b6c0c34889f8ba050000004889f7b9050000004889c64839d2f3a60f97c01c000fbec0c34889f8ba
 ^  return \(char\)\(\(0 &lt; v1\) - \(v1 &lt; 0\)\);</stringmatch>
 <stringmatch name="repstring #8: a compare of a run-time length" min="1" max="1">^  return builtin_memcmp\(a0,a1,a2\) == 0;</stringmatch>
 <stringmatch name="repstring #9: a compare with no flags set before it, of a constant length" min="1" max="1">^  return builtin_memcmp\(a0,a1,5\) == 0;</stringmatch>
-<stringmatch name="repstring #10: ten builtins in the default pass, none with the option off" min="10" max="10">builtin_mem</stringmatch>
+<stringmatch name="repstring #10: eleven builtins in the default pass, none with the option off" min="11" max="11">builtin_mem</stringmatch>
 <stringmatch name="repstring #11: a compare whose final pointer is returned keeps its loop by default, as do four compares with the option off" min="5" max="5">^  \} while \(v2 == v4\);</stringmatch>
-<stringmatch name="repstring #12: with the option off every copy and fill is an element loop -- the bug" min="5" max="5">^  while \(</stringmatch>
+<stringmatch name="repstring #12: with the option off every copy and fill is an element loop -- the bug" min="6" max="6">^  while \(</stringmatch>
 <stringmatch name="repstring #13: and an ordered compare is a loop over two flags -- the bug" min="2" max="2">^  \} while \(v5\);</stringmatch>
+<stringmatch name="repstring #14: a fill of a named global names the global, not its address" min="1" max="1">^  builtin_memset\(gfill,0,0x80\);</stringmatch>
+<stringmatch name="repstring #15: with the option off the fill loop starts at the same global" min="1" max="1">^  v[0-9]+ = gfill;$</stringmatch>
 </decompilertest>

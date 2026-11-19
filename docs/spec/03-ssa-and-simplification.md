@@ -3515,13 +3515,23 @@ and calls around them, as `strlen` does. `p5_types/coreaction_infertypes.rs
 operands: `void *` for a copy or fill, a pointer to the element for
 `builtin_memset16`/`32`/`64`, and `char *` for a compare, so that a constant
 operand prints as the string it points at (`builtin_memcmp(a0,"-",2) == 0` for
-gcc's inlined `strcmp(s, "-") == 0`). `tests/stages/kuna-repstring.xml` and
-`kuna-repstring-i386.xml` run gcc 15 `-Os -minline-all-stringops` builds of
+gcc's inlined `strcmp(s, "-") == 0`). Those same operands count as pointer
+readers when a constant address is named: `ActionConstantPtr`
+(`p9_emit/coreaction_render.rs (is_pointer)`) binds one that lands exactly on a
+global symbol, as it does for the `COPY` into the destination register the loop
+read it through, so a fill of `buf` prints `builtin_memset(buf,0,0x1118)` rather
+than `builtin_memset((void *)0x4042c0,0,0x1118)`, and `globalref` (09-emission
+§9.9) names an unnamed one `&dat_<addr>`, since passing that address as a
+`void *` operand converts exactly as the cast did.
+`tests/stages/kuna-repstring.xml` and `kuna-repstring-i386.xml` run gcc 15
+`-Os -minline-all-stringops` builds of
 `kuna-analysis/tests/fixtures/repstring.c` in both passes: fills of a mixed
 word, of zero words and of a byte, a copy, a copy whose final pointer is
 returned, compares used for equality, for order and with a run-time length, a
 compare with no flags set up before it, and a compare whose final pointer is
-returned, which keeps its loop. `kuna-cli/tests/repstring_round_trip.rs`
+returned, which keeps its loop; the x86-64 file adds a gcc 15 `-O2` fill of a
+global `map address` names, which prints `builtin_memset(gfill,0,0x80)`.
+`kuna-cli/tests/repstring_round_trip.rs`
 compiles the printed x86-64 functions beside the source and checks they compute
 the same values.
 
