@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4668,
-    4668
+    4675,
+    4675
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2191,6 +2191,13 @@
     "data:Rust physical store: word field is addressed without borrowing",
     "data:Rust pointer array address keeps pointer elements",
     "data:Rust pointer index cast suppression keeps diagnostic output",
+    "data:Rust process exit keeps both exit codes and terminates",
+    "data:Rust process exit keeps the ordinary returning arm",
+    "data:Rust process exit keeps the store after returning helpers",
+    "data:Rust process exit leaves the longer function name returning",
+    "data:Rust process exit leaves the other namespace returning",
+    "data:Rust process exit never falls into the dead trap",
+    "data:Rust process exit retains its conditional store",
     "data:Rust raw array address keeps callback order",
     "data:Rust raw array address preserves literal width",
     "data:Rust raw array address preserves result pointer casts",

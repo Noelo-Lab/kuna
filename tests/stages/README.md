@@ -484,3 +484,7 @@ indirect tail jump each print as a direct call to the stated function, and the
 tail call to a callee marked no-return ends the function with no return. The CLI
 companion covers `--assert callee` on both surfaces and every refusal. The
 fixture source is `decompiler/crates/kuna-cli/tests/fixtures/assert_callee.c`.
+
+`kuna-rust-process-exit.xml` preserves exit status and preceding stores while
+removing dead trap flow after a known Rust standard-library process exit.
+Different namespaces and a longer similarly named function retain their callers.
