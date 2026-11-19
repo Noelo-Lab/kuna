@@ -2278,7 +2278,24 @@ classified:
   call-relative address and size, and both calls sit at the same stack offset, so
   the push is an argument the declared callee takes, at the same position as the
   other callee is entered with it; a push that sits deeper in one call's area than
-  in the other's does not qualify. The slot is written by an operation that is not a
+  in the other's does not qualify. That parameter is evidence only where the callee
+  can take a stack argument at the slot. Every x86-32 convention passes the leading
+  parameters in registers (`regparm` in `EAX`, `EDX`, `ECX`; `__fastcall` in `ECX`,
+  `EDX`; `__thiscall` in `ECX`), so when the declared list places every parameter on
+  the stack while the direct callee's own entry reads `r` of `EAX`, `ECX` and `EDX`
+  before writing them (the straight-line walk of `kuna_calleereginputs`, x86-32
+  Windows), its stack arguments are at most the declared parameters after the first
+  `r`, and a slot above them is not one. GCC passes a static function's arguments in
+  registers while its debug information lists them as ordinary parameters: wine's
+  `MSVCRT_longjmp` calls `msvcrt_local_unwind2` (frame, trylevel and ebp in `EAX`,
+  `EDX`, `ECX`) on one arm, after `push edx; push edx` re-reserves the outgoing area,
+  and an indirect `__stdcall` call on the other arm read the padding slot the
+  declared list put the second parameter on, printing
+  `(*jmp->UnwindFunc)(jmp,frame)`. A MinGW `__thiscall` member declared from its
+  mangled name with `this` on the stack reads only `ECX`, so its one real stack
+  argument still qualifies, and the virtual call GCC's speculative devirtualization
+  leaves on the other arm keeps it. The declared call's own line still reads the
+  slots its declared list names. The slot is written by an operation that is not a
   `MULTIEQUAL` or an `INDIRECT`, which is the push; the push and the two calls sit
   in three distinct blocks, and neither call's block reaches the other's without
   passing through the push's block. A path that avoids the push's block would run

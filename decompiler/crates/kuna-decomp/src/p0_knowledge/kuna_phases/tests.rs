@@ -839,6 +839,7 @@ fn option_values_live_value_present_for_76() {
     // `kuna_live_value`, like `narrowargs`/`protoorder`.
     // 75 -> 74: `armconstshift` became three-valued (off|on|all) over an enum
     // field with no `live_field`.
+    // 75 -> 76: +1 for `wrapadd` (live_field = wrap_add).
     // +1 for `acleintrinsics` (live_field = acle_intrinsics).
     assert_eq!(with_live, 76);
 }

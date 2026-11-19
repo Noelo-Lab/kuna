@@ -6002,6 +6002,8 @@ impl PrintC {
         {
             return false;
         }
+        if self.out_lang == crate::kuna_lang::OutLang::C
+            && self.widened_add_plan(fd, arch, op).is_some() { return false; }
         // (kuna) `x += -c` reads poorly: when the INT_ADD addend is a plain
         // negative signed constant (no equate/display override, not char-typed,
         // not the unnegatable type minimum), render `x -= c` with the negated
@@ -6462,6 +6464,16 @@ impl PrintC {
                 self.emit_arm_register_lsl(fd, arch, op, plan);
                 return;
             }
+            if let Some(plan) = self.widened_add_plan(fd, arch, op) {
+                if let Some(ty) = &plan.signed { self.push_cast_open(ty, op); }
+                self.push_op(tok, Some(op_key(op)));
+                self.push_cast_open(&plan.unsigned, op);
+                self.push_vn_ir(fd, arch, plan.lhs, op);
+                self.push_cast_close(&plan.unsigned);
+                self.push_vn_ir(fd, arch, plan.rhs, op);
+                if let Some(ty) = &plan.signed { self.push_cast_close(ty); }
+                return;
+            }
             if tok.print1 == "<<" {
                 if let Some(plan) = crate::p9_emit::kuna_armconstantshift::plan_arm_constant_lsl(fd, arch, op)
                     .or_else(|| self.fixed64_shift_plan(fd, arch, op)) {
@@ -6619,6 +6631,13 @@ impl PrintC {
         -> Option<crate::p9_emit::kuna_constantshift::ConstantLslPlan>
     {
         crate::p9_emit::kuna_constantshift::plan_fixed64_lsl(fd, arch, op,
+            |vn| self.printed_operand_type(fd, vn, op))
+    }
+
+    fn widened_add_plan(&self, fd: &Funcdata, arch: &Architecture, op: OpId)
+        -> Option<crate::p9_emit::kuna_widenedadd::WidenedAddPlan>
+    {
+        crate::p9_emit::kuna_widenedadd::plan(fd, arch, op,
             |vn| self.printed_operand_type(fd, vn, op))
     }
 
@@ -9010,6 +9029,12 @@ impl PrintC {
     /// notation absorbing the deref).  A byte-copy helper's compound initializer
     /// takes the rendered source member's scalar type, so it copies those bits.
     fn op_store_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
+        if self.out_lang == crate::kuna_lang::OutLang::Rust
+            && !self.options.nocasts
+            && self.op_rust_store_width(fd, arch, op)
+        {
+            return;
+        }
         if self.out_lang == crate::kuna_lang::OutLang::C {
             if let Some(mut access) = crate::kuna_stackmem::access(fd, op) {
                 if let Some(target) = access.value.and_then(|value| self.partial_piece_type(fd, arch, value, op, 2))
@@ -9710,6 +9735,11 @@ impl PrintC {
     /// C++ `PrintC::opPtradd` (printc.cc:900).  `ptr[index]` (value), `&ptr[index]`
     /// (array-notation address), or `ptr + index` (plain pointer arithmetic).
     fn op_ptradd_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
+        let raw_address = self.context.is_set(modifiers::RUST_RAW_INDEX_ADDRESS);
+        if raw_address {
+            self.context
+                .set_mods(self.context.mods() & !modifiers::RUST_RAW_INDEX_ADDRESS);
+        }
         if self.out_lang == crate::kuna_lang::OutLang::Go {
             self.op_go_ptradd(fd, arch, op);
             return;
@@ -9728,7 +9758,11 @@ impl PrintC {
             self.push_op(&tokens::SUBSCRIPT, Some(op_key(op)));
         } else if self.options.array_notation() {
             // (kuna) S9 pointer-notation sub-stage: EMIT &base[index].
-            let tok = self.lang_token(&tokens::ADDRESSOF);
+            let tok = if raw_address {
+                &crate::kuna_rustarrayaddr::RAW_ADDRESS
+            } else {
+                self.lang_token(&tokens::ADDRESSOF)
+            };
             self.push_op(tok, Some(op_key(op)));
             self.push_op(&tokens::SUBSCRIPT, Some(op_key(op)));
         } else {
@@ -12723,6 +12757,18 @@ pub(crate) fn sanitize_type_name(name: &str) -> std::borrow::Cow<'_, str> {
     std::borrow::Cow::Owned(s)
 }
 
+/// The name declared in the type-definition block, shared by its uses.
+pub(crate) fn c_type_definition_name(ct: &crate::dtype::Datatype) -> Option<std::borrow::Cow<'_, str>> {
+    use crate::dtype::DatatypeKind;
+    if ct.is_core_type() || ct.get_name().is_empty() || ct.has_stripped() {
+        return None;
+    }
+    (ct.get_typedef().is_some()
+        || matches!(&ct.kind, DatatypeKind::Struct { .. } | DatatypeKind::Union { .. })
+        || ct.is_enum_type())
+        .then(|| sanitize_type_name(ct.get_name()))
+}
+
 /// (kuna, GH-340) Make `raw` safe to interpolate into a `/* … */` comment.
 ///
 /// The `/* renamed from "<raw>" */` note prints the type name a binary actually
@@ -12803,6 +12849,7 @@ pub(crate) fn compose_type_body(
     rt: RealTypeCtx,
 ) -> String {
     use crate::dtype::DatatypeKind;
+    let rt = rt.for_type_definition();
     let mut out = String::new();
     match &ct.kind {
         DatatypeKind::Struct { field, bitfield } => {
@@ -12904,7 +12951,7 @@ pub(crate) fn compose_typedef_line(
     name: &str,
     rt: RealTypeCtx,
 ) -> String {
-    format!("typedef {};\n", field_decl_text(base, name, rt.clone()))
+    format!("typedef {};\n", field_decl_text(base, name, rt.for_type_definition()))
 }
 
 /// (kuna) The full `docTypeDefinitions` walk over an already
@@ -12924,22 +12971,14 @@ pub(crate) fn render_type_definitions(
     let is_composite = |ct: &Rc<Datatype>| {
         matches!(&ct.kind, DatatypeKind::Struct { .. } | DatatypeKind::Union { .. })
     };
-    // A type this emitter renders: user-defined (non-core), named, not an
-    // internal partial (`has_stripped`), and a typedef / struct / union / enum.
-    let relevant = |ct: &Rc<Datatype>| {
-        !ct.is_core_type()
-            && !ct.get_name().is_empty()
-            && !ct.has_stripped()
-            && (ct.get_typedef().is_some() || is_composite(ct) || ct.is_enum_type())
-    };
-
     // Which sanitized composite tag names have a COMPLETE definition somewhere
     // (drives the `/* opaque */` annotation on forward-only names).
     let mut complete_names: HashSet<String> = HashSet::new();
     for ct in deporder {
-        if relevant(ct) && is_composite(ct) && ct.get_typedef().is_none() && !ct.is_incomplete()
-        {
-            complete_names.insert(sanitize_type_name(ct.get_name()).into_owned());
+        if is_composite(ct) && ct.get_typedef().is_none() && !ct.is_incomplete() {
+            if let Some(name) = c_type_definition_name(ct) {
+                complete_names.insert(name.into_owned());
+            }
         }
     }
 
@@ -12948,11 +12987,11 @@ pub(crate) fn render_type_definitions(
     // -- Pass 1: the forward-declaration block (every struct/union tag). -----
     let mut fwd: HashSet<String> = HashSet::new();
     for ct in deporder {
-        if !relevant(ct) || !is_composite(ct) || ct.get_typedef().is_some() {
+        if !is_composite(ct) || ct.get_typedef().is_some() {
             continue;
         }
+        let Some(name) = c_type_definition_name(ct) else { continue };
         let raw = ct.get_name();
-        let name = sanitize_type_name(raw);
         if !fwd.insert(name.to_string()) {
             continue; // one forward declaration per tag name
         }
@@ -12973,11 +13012,8 @@ pub(crate) fn render_type_definitions(
     // -- Pass 2: bodies in dependency order. ---------------------------------
     let mut defined: HashSet<String> = HashSet::new();
     for ct in deporder {
-        if !relevant(ct) {
-            continue;
-        }
+        let Some(name) = c_type_definition_name(ct) else { continue };
         let raw = ct.get_name();
-        let name = sanitize_type_name(raw);
         if let Some(base) = ct.get_typedef() {
             // A typedef (of anything, including a composite clone — checked
             // FIRST since the clone carries the base's kind).  The struct-tag
@@ -13061,6 +13097,7 @@ impl RealTypeCtx {
             long_is_8: arch.types().get_size_of_long() == 8,
             ctypes: arch.ctypes,
             model: crate::kuna_ctypes::CDataModel::from_types(&*arch.types()),
+            c_type_definition: false,
             go_package: None,
             go_pair_types: (lang == crate::kuna_lang::OutLang::Go
                 && arch.analysis_godwarfsig).then(|| arch.types_rc()),
