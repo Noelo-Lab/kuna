@@ -1282,6 +1282,9 @@ pub struct Architecture {
         (int4, uintb),
         std::rc::Rc<crate::kuna_rustabi::CalleeReturnWrites>,
     >,
+    /// (kuna `importvote`) The direct call sites of each PLT import, by stub
+    /// `(space index, offset)`, committed by the analysis tier.
+    pub kuna_import_sites: Rc<std::collections::HashMap<(int4, u64), Vec<u64>>>,
     /// (kuna `bejoin evidence`) Per-image cache of the wide-return proof
     /// ([`crate::kuna_bejoin::seed_wide_returns`]): the model's pair, each
     /// function's verdict, keyed by its `(space index, entry offset)` so a
@@ -1499,6 +1502,8 @@ pub struct Architecture {
     /// other than `main`. Off restores the `sub_<addr>` / width-only form
     /// exactly.
     pub analysis_elfmain: bool,
+    /// (kuna) State an undeclared import's call-site vote (option `importvote`).
+    pub analysis_importvote: bool,
     /// (kuna) Gate the **full byte-pattern function-start** pass
     /// (`funcstart_patterns`); default **off** (output-changing: it discovers more
     /// functions). The faithful port of Ghidra's `FunctionStartAnalyzer` over the
@@ -2514,6 +2519,7 @@ impl Architecture {
             kuna_fn_budget: None,   // (kuna) decompile-all watchdog: no budget by default
             kuna_fn_deadline: None, // (kuna) set per drive from kuna_fn_budget
             kuna_callee_write_cache: std::collections::HashMap::new(),
+            kuna_import_sites: Rc::new(std::collections::HashMap::new()),
             kuna_wide: crate::kuna_bejoin::WideCache::default(),
             kuna_callwide: crate::p4_calls::kuna_callwide::ProofSlot::default(),
             kuna_callee_dead_cache: std::collections::HashMap::new(),
@@ -2564,6 +2570,7 @@ impl Architecture {
             analysis_entry_disc: false,
             analysis_eh_frame_full: false,
             analysis_unwindstarts: false,
+            analysis_importvote: false,
             analysis_funcstart_patterns: false,
             analysis_armframes: true,
             analysis_armframes_full: false,
@@ -2911,6 +2918,7 @@ impl Architecture {
         // (opt-in, output-changing: adds the unwind-recorded function starts).
         self.analysis_unwindstarts = true; // Mach-O __unwind_info function starts (Mach-O-only pass)
         // (kuna) DIV-61 `.eh_frame` FDE-interior entry suppression — default-ON.
+        self.analysis_importvote = true; // (kuna) an undeclared import takes what its other call sites pass
         // (kuna) `.pdata` RUNTIME_FUNCTION-interior entry suppression — default-ON.
         // (kuna) PDB-procedure-interior entry suppression — default-ON.
         self.analysis_funcstart_patterns = false; // full byte-pattern starts default-off (output-changing)

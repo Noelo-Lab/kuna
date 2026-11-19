@@ -21,7 +21,7 @@ fn argument(source: Rc<Datatype>, target: Rc<Datatype>, zext: bool) -> (Funcdata
     fd.push_call_specs(call);
     let recovered = crate::kuna_protoorder::RecoveredTypes {
         inputs: vec![(storage, target.get_size(), target)], arity_sound: false,
-        output: None, result: None, vararg_tail: Vec::new(), reads: Vec::new(), passes: Vec::new(),
+        output: None, result: None, vararg_tail: Vec::new(), reads: Vec::new(), passes: Vec::new(), callers_vote: false,
     };
     fd.kuna_set_protoorder_types(&entry, Rc::new(recovered));
     (fd, operation)

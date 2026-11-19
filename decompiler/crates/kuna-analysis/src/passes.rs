@@ -601,6 +601,7 @@ fn deferred_entry_passes() -> Vec<Box<dyn AnalysisPass>> {
     vec![
         Box::new(crate::entry::FuncStartPatternPass),
         Box::new(crate::entry::kuna_coldentry::ColdEntryPass),
+        Box::new(crate::protos::kuna_importvote::ImportVotePass),
     ]
 }
 

@@ -15,6 +15,7 @@ pub mod kuna_calleereadarg; // (kuna) keep a refused argument the callee's own b
 pub mod kuna_zerofillreturn; // (kuna) the zero a narrow write leaves in a returned q register's upper half is no part of the value
 pub mod kuna_zerocallregs; // (kuna) a register a -fzero-call-used-regs epilogue clears is no part of the return value
 pub mod kuna_calleepreserves; // (kuna) the decoded callee's writes narrow the cspec killedbycall set
+pub mod kuna_importvote; // (kuna) an undeclared import takes what its other call sites pass
 pub mod kuna_callretpair; // (kuna) complete the two-register CALL output arm on any image, not just a Rust one
 pub mod kuna_x87intrinsic; // (kuna) the MSVC x87 one-operand intrinsics' ST0 model
 pub mod kuna_calleereginputs; // (kuna) an x86-32 callee's register inputs choose its model

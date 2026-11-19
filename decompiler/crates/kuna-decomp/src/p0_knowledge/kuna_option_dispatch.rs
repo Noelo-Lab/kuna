@@ -778,6 +778,7 @@ kuna_options! { self, p1;
     "unwindstarts" => {
         on_off!(analysis_unwindstarts, "Mach-O __unwind_info function-start discovery")
     },
+    "importvote" => on_off!(analysis_importvote, "Undeclared import call-site vote"),
     "funcstart_patterns" => {
         on_off!(analysis_funcstart_patterns, "Full byte-pattern function-start pass")
     },
