@@ -8755,6 +8755,20 @@ symbol address. Two prefixes are not recognised: a frame size whose low ten bits
 are zero, which GCC builds with a lone `sethi`, and SPARC64's `sethi; xor`, since
 the pass runs only where `%g1` is four bytes.
 
+(kuna) No gap entry starts on bytes the program reads or writes as data
+(`decompiler/crates/kuna-analysis/src/listing/kuna_aifdataveto.rs (data_targets)`,
+part of `aif`). A table, a literal or a variable laid out in `.text` can decode
+as a plausible function (a jump table whose entries read as `push rbp; mov
+rbp,rsp`), and the gap walk accepts it on its bytes alone. The decoded Listing
+says what the program does with those bytes: every `LOAD`/`STORE` through a
+constant or a constant plus something, and every direct data-space operand, is a
+data target. A gap entry whose first instruction spans one is dropped, and so is
+any other discovered (not symbol) entry that lands on one, at the commit. Only
+the entry's own first instruction is tested, so a function whose body holds an
+inline constant pool is kept. On stripped Lua (x86-64, AArch64), ld.so, llvm-nm
+and llvm-objdump it removes nothing; the function-shaped table in
+`tests/stages/kuna-aifdataveto.xml` goes. Inert without the Listing and `aif`.
+
 (kuna, GH-299) No gap entry starts on a literal-pool word: `aifpoolslide`
 (default-on; `decompiler/crates/kuna-analysis/src/analyzers/aif/kuna_aifpoolslide.rs`).
 ARM code keeps its constants in pools right after the code that loads them, so a

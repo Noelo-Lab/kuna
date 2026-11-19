@@ -908,3 +908,6 @@ mod call_site_prototype;
 
 #[path = "addrtable_xrefs.rs"]
 mod addrtable_xrefs;
+
+#[path = "aif_data_veto.rs"]
+mod aif_data_veto;
