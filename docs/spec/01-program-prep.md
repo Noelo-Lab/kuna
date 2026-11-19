@@ -4035,7 +4035,8 @@ moves.
   silently satisfy a typed contract.
 
   Paired results are part of this importer (formerly the separate
-  `gopairreturns` option); it remains off by default. Exactly two signed or unsigned 64-bit integer
+  `gopairreturns` option) and follow the target-gated `godwarfsig` default.
+  Exactly two signed or unsigned 64-bit integer
   results may follow the scalar inputs. Result allocation restarts independently
   at RAX and RBX. Explicit result locations must name those registers in source
   order; unavailable locations still require the compiler and complete type
@@ -4051,6 +4052,34 @@ moves.
   The facet stores signedness, never interned type references. Existing names
   require matching metadata and complete layout; unrelated names or stale
   metadata cannot be overwritten. No metatype or pcode output count changes.
+
+  A separate bounded result proof
+  (`decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_godwarfsig/kuna_goerror.rs`)
+  accepts an actual Go `int` followed by `error`. The first type must name
+  signed eight-byte `int` with Go kind 2. The second must resolve through an
+  `error` typedef carrying interface kind 20 to the sixteen-byte
+  `runtime.iface` struct, kind 25, with exactly `tab` at zero and `data` at
+  eight. The table is an eight-byte pointer to the named 32-byte runtime
+  `runtime.itab` or `internal/abi.ITab` struct; its internals remain opaque.
+  The data is an eight-byte `unsafe.Pointer`. Alias walks are bounded and
+  refuse cycles, conflicting kinds, incomplete declarations, qualifiers,
+  bitfields and inconsistent extents. The composite result requires an
+  explicitly empty result location: neither missing location metadata nor a
+  lone register proves its two words. The complete ordered function contract,
+  unique entry, producer, input checks and ABI model gates still apply.
+
+  Storage assignment must prove the zero-flag 24-byte join RCX/RBX/RAX before
+  interning `__kuna_go_int_error_result`. This ordinary struct contains the
+  signed integer `result0` and separate opaque pointers `error_tab` and
+  `error_data` at offsets zero, eight and sixteen. Its `GoIntErrorResults`
+  facet validates the complete storage and protects reserved-name reuse;
+  existing conflicting types or stale metadata are refused. Definitions and
+  calls consume the same raw carrier through the normal prototype importer.
+  Table and data stay separate, preserving the distinction between nil and
+  typed nil. This does not infer `error` from register count, reinterpret
+  data as a nil discriminator, or introduce high-level Go error syntax.
+  Stripped images, arbitrary interfaces and other composite results retain
+  inference. With `godwarfsig off`, this carrier and its metadata are absent.
 
   Native Go zlib debug sections are retained compressed at load time. Their
   combined stored/declared extents are bounded to 64 MiB and are inflated only

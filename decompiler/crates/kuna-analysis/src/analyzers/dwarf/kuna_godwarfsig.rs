@@ -13,6 +13,8 @@ use kuna_decomp::kuna_symbolnamechars::{sanitize_symbol_name, NameChars};
 use super::{build_datatype, kuna_dwarfbyref, DieSnap, Reader, TypeWalk};
 use object::{Object, ObjectSection};
 
+mod kuna_goerror;
+
 const INTEGER_REGISTERS: &[(u16, &str)] = &[
     (0, "RAX"), (3, "RBX"), (2, "RCX"), (5, "RDI"), (4, "RSI"),
     (8, "R8"), (9, "R9"), (10, "R10"), (11, "R11"),
@@ -317,8 +319,9 @@ impl Facts {
         let mut expected = Vec::new();
         let mut inputs = Vec::new();
         let mut names = Vec::new();
-        let mut outputs = [None, None];
+        let mut outputs: [Option<(usize, Scalar, &str)>; 2] = [None, None];
         let mut output_count = 0;
+        let mut int_error = false;
         let (mut integers, mut floats) = (0, 0);
         for (parameter, location, result) in parameters {
             let location = match location {
@@ -326,7 +329,16 @@ impl Facts {
                 Location::EmptyEntryRegister(_) => return None,
                 location => location,
             };
-            let scalar = self.scalar(parameter.type_ref?, &mut BTreeSet::new(), &mut 256)?;
+            let type_ref = parameter.type_ref?;
+            if result && output_count == 1 && unique
+                && self.int_error_results(outputs[0]?.0, type_ref)
+            {
+                if location != Location::Unavailable { return None; }
+                int_error = true;
+                output_count = 2;
+                continue;
+            }
+            let scalar = self.scalar(type_ref, &mut BTreeSet::new(), &mut 256)?;
             let registers = if scalar.float { FLOAT_REGISTERS } else { INTEGER_REGISTERS };
             if result {
                 let index = output_count;
@@ -370,7 +382,16 @@ impl Facts {
                 *slot = Some(materialize(offset, scalar)?);
             }
         }
-        let outtype = match &outtypes {
+        let error_pointer = if int_error {
+            Some(types.get_type_pointer(8, types.get_type_void().ok()?, 1).ok()?)
+        } else {
+            None
+        };
+        let outtype = if let Some(pointer) = &error_pointer {
+            let mut storage = Datatype::new_with_align(24, 8, type_metatype::TYPE_STRUCT);
+            storage.set_struct_fields(kuna_goerror::fields(outtypes[0].as_ref()?, pointer), Vec::new(), 24, 8);
+            Rc::new(storage)
+        } else { match &outtypes {
             [None, None] => types.get_type_void().ok()?,
             [Some(single), None] => Rc::clone(single),
             [Some(first), Some(second)] => {
@@ -379,7 +400,7 @@ impl Facts {
                 Rc::new(storage)
             }
             _ => return None,
-        };
+        }};
         let mut pieces = PrototypePieces {
             name: sanitize_symbol_name(name, self.names).into_owned(),
             outtype: Some(outtype), intypes, innames: names, first_var_arg_slot: -1,
@@ -391,8 +412,32 @@ impl Facts {
         for ((slot, register), ty) in assigned.iter().skip(1).zip(expected).zip(&pieces.intypes) {
             if !storage_matches(arch, slot, register, ty) { return None; }
         }
-        if let [Some((_, _, register)), None] = &outputs {
-            if !storage_matches(arch, &assigned[0], register, pieces.outtype.as_ref()?) { return None; }
+        if !int_error {
+            if let [Some((_, _, register)), None] = &outputs {
+                if !storage_matches(arch, &assigned[0], register, pieces.outtype.as_ref()?) { return None; }
+            }
+        }
+        if let Some(pointer) = &error_pointer {
+            if !kuna_goerror::storage_matches(arch, &assigned[0]) { return None; }
+            let name = "__kuna_go_int_error_result";
+            let facet = LangFacet::GoIntErrorResults;
+            let outtype = match types.find_by_name(name).ok()? {
+                Some(existing) => {
+                    if types.kuna_lang_facet(name).as_ref() != Some(&facet)
+                        || facet.go_int_error_fields(&existing).is_none() { return None; }
+                    existing
+                }
+                None => {
+                    if types.kuna_lang_facet(name).is_some() { return None; }
+                    let shell = types.get_type_struct(name).ok()?;
+                    let fields = kuna_goerror::fields(outtypes[0].as_ref()?, pointer);
+                    let result = types.set_fields_struct_raw(&shell, fields, Vec::new(), 24, 8, 0).ok()?;
+                    facet.go_int_error_fields(&result)?;
+                    types.kuna_register_lang_facet(name, facet).ok()?;
+                    result
+                }
+            };
+            pieces.outtype = Some(outtype);
         }
         if let [Some(first), Some(second)] = &outtypes {
             let signed = [first, second].map(|ty| ty.get_metatype() == type_metatype::TYPE_INT);
