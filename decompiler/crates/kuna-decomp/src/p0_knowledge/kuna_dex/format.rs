@@ -18,12 +18,18 @@ pub const ACC_CONSTRUCTOR: u32 = 0x1_0000;
 const HEADER_SIZE: usize = 0x70;
 const ENDIAN_CONSTANT: u32 = 0x1234_5678;
 
-/// Is `bytes` a DEX file: `dex\n` followed by a three-digit version and NUL?
+/// Is `bytes` a DEX file: `dex\n` followed by a three-digit version and NUL,
+/// or a compact DEX file (`cdex` and the version)?
 pub fn is_dex(bytes: &[u8]) -> bool {
     bytes.len() >= HEADER_SIZE
-        && bytes.starts_with(b"dex\n")
+        && (bytes.starts_with(b"dex\n") || bytes.starts_with(b"cdex"))
         && bytes[4..7].iter().all(u8::is_ascii_digit)
         && bytes[7] == 0
+}
+
+/// Is `bytes` a compact DEX file, ART's on-device form (`compact_dex_file.h`)?
+pub fn is_compact_dex(bytes: &[u8]) -> bool {
+    is_dex(bytes) && bytes.starts_with(b"cdex")
 }
 
 /// One `method_id_item`.
@@ -130,6 +136,10 @@ pub struct DexFile {
     fields: Table,
     methods: Table,
     pub classes: Vec<ClassDef>,
+    /// A compact DEX file's code items are packed, and its data offsets
+    /// (strings, type lists, class data, code) count from `data_off`.
+    compact: bool,
+    data_base: usize,
 }
 
 fn bad(what: &str) -> KunaError {
@@ -240,6 +250,8 @@ impl DexFile {
         let fields = table(0x50, 8, "field_ids")?;
         let methods = table(0x58, 8, "method_ids")?;
         let class_defs = table(0x60, 32, "class_defs")?;
+        let compact = bytes.starts_with(b"cdex");
+        let data_base = if compact { u32_at(&bytes, 0x6c)? as usize } else { 0 };
         let mut dex = DexFile {
             bytes,
             version,
@@ -249,6 +261,8 @@ impl DexFile {
             fields,
             methods,
             classes: Vec::with_capacity(class_defs.count),
+            compact,
+            data_base,
         };
         for index in 0..class_defs.count {
             let class = dex.read_class_def(class_defs.off + index * 32)?;
@@ -274,7 +288,7 @@ impl DexFile {
         if data_off == 0 {
             return Ok(class);
         }
-        let mut pos = data_off;
+        let mut pos = self.data_base + data_off;
         let static_fields = uleb128(b, &mut pos)?;
         let instance_fields = uleb128(b, &mut pos)?;
         let direct = uleb128(b, &mut pos)?;
@@ -289,7 +303,7 @@ impl DexFile {
                 method_idx = method_idx.wrapping_add(uleb128(b, &mut pos)?);
                 let access_flags = uleb128(b, &mut pos)?;
                 let code_off = uleb128(b, &mut pos)? as usize;
-                let code = if code_off == 0 { None } else { Some(self.read_code_item(code_off)?) };
+                let code = if code_off == 0 { None } else { Some(self.read_code_item(self.data_base + code_off)?) };
                 class.methods.push(EncodedMethod { method_idx, access_flags, code });
             }
         }
@@ -298,13 +312,55 @@ impl DexFile {
 
     fn read_code_item(&self, at: usize) -> KunaResult<CodeItem> {
         let b = &self.bytes;
-        let item = CodeItem {
-            registers_size: u16_at(b, at)?,
-            ins_size: u16_at(b, at + 2)?,
-            outs_size: u16_at(b, at + 4)?,
-            tries_size: u16_at(b, at + 6)?,
-            insns_units: u32_at(b, at + 12)?,
-            insns_off: (at + 16) as u32,
+        let item = if self.compact {
+            // `CompactDexFile::CodeItem::DecodeFields`: four 4-bit sizes and an
+            // 11-bit instruction count, with a preheader of 16-bit additions
+            // stored just before the item for values that do not fit.
+            let fields = u16_at(b, at)?;
+            let count_and_flags = u16_at(b, at + 2)?;
+            let mut registers = (fields >> 12) & 0xf;
+            let mut ins = (fields >> 8) & 0xf;
+            let mut outs = (fields >> 4) & 0xf;
+            let mut tries = fields & 0xf;
+            let mut insns = u32::from(count_and_flags >> 5);
+            let mut pre = at;
+            let mut back = || -> KunaResult<u16> {
+                pre = pre.checked_sub(2).ok_or_else(|| bad("code item preheader"))?;
+                u16_at(b, pre)
+            };
+            if count_and_flags & 0x10 != 0 {
+                insns += u32::from(back()?);
+                insns += u32::from(back()?) << 16;
+            }
+            if count_and_flags & 0x1 != 0 {
+                registers += back()?;
+            }
+            if count_and_flags & 0x2 != 0 {
+                ins += back()?;
+            }
+            if count_and_flags & 0x4 != 0 {
+                outs += back()?;
+            }
+            if count_and_flags & 0x8 != 0 {
+                tries += back()?;
+            }
+            CodeItem {
+                registers_size: registers + ins,
+                ins_size: ins,
+                outs_size: outs,
+                tries_size: tries,
+                insns_units: insns,
+                insns_off: (at + 4) as u32,
+            }
+        } else {
+            CodeItem {
+                registers_size: u16_at(b, at)?,
+                ins_size: u16_at(b, at + 2)?,
+                outs_size: u16_at(b, at + 4)?,
+                tries_size: u16_at(b, at + 6)?,
+                insns_units: u32_at(b, at + 12)?,
+                insns_off: (at + 16) as u32,
+            }
         };
         let end = (item.insns_off as u64) + u64::from(item.insns_units) * 2;
         if end > b.len() as u64 || item.ins_size > item.registers_size {
@@ -359,7 +415,7 @@ impl DexFile {
             return None;
         }
         let data = u32_at(&self.bytes, self.strings.off + idx * 4).ok()? as usize;
-        let mut pos = data;
+        let mut pos = self.data_base + data;
         uleb128(&self.bytes, &mut pos).ok()?;
         Some(mutf8(self.bytes.get(pos..)?))
     }
@@ -409,6 +465,7 @@ impl DexFile {
         let params_off = u32_at(&self.bytes, at + 8).ok()? as usize;
         let mut parameters = Vec::new();
         if params_off != 0 {
+            let params_off = self.data_base + params_off;
             let size = u32_at(&self.bytes, params_off).ok()? as usize;
             if params_off + 4 + size * 2 > self.bytes.len() {
                 return None;

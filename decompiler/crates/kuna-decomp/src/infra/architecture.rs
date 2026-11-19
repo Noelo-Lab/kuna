@@ -1996,8 +1996,9 @@ pub struct Architecture {
     jump_assists: Rc<crate::kuna_jumpassist::JumpAssists>,
     /// (kuna) Recover switches from a jump-assist user-op (option `jumpassist`).
     pub jump_assist: bool,
-    /// (kuna `dexmodel`) The loaded DEX file, when the image is one.
-    pub dex: Option<Rc<crate::kuna_dex::DexModel>>,
+    /// (kuna `dexmodel`) The loaded DEX files, when the image is one (or an
+    /// APK holding several).
+    pub dex: Vec<Rc<crate::kuna_dex::DexModel>>,
     /// (kuna) Hand [`Self::dex`] to the engine (option `dexmodel`).
     pub dex_model: bool,
     /// (kuna) Print an allocation and its `<init>` call as `new T(args)` in
@@ -2659,7 +2660,7 @@ impl Architecture {
             image_elfv1_toc: false, // (kuna) a load-time fact; set by the console's `load file`
             jump_assists: Rc::default(),
             jump_assist: true,
-            dex: None,
+            dex: Vec::new(),
             dex_model: true,
             java_new: true,
             java_try: true,
@@ -3305,15 +3306,13 @@ impl Architecture {
             .ok_or_else(|| KunaError::recov(format!("Unknown function name: {name}")))
     }
 
-    /// (kuna `dexmodel`) The DEX model the engine may consult.
-    pub fn dex_model(&self) -> Option<&Rc<crate::kuna_dex::DexModel>> {
-        self.dex.as_ref().filter(|_| self.dex_model)
-    }
-
-    /// (kuna `dexmodel`) The constant-pool record for `refs` (C++
-    /// `glb->cpool->getRecord`).  Only a DEX image has a pool.
-    pub fn cpool_record(&self, refs: &[u64]) -> Option<Rc<crate::cpool::CPoolRecord>> {
-        self.dex_model()?.record(refs, self.types())
+    /// (kuna `dexmodel`) The DEX models the engine may consult.
+    pub fn dex_models(&self) -> &[Rc<crate::kuna_dex::DexModel>] {
+        if self.dex_model {
+            &self.dex
+        } else {
+            &[]
+        }
     }
 
     /// Park a source-declared prototype on the named global FunctionSymbol (C++
@@ -3409,7 +3408,9 @@ impl Architecture {
         ctx.call_mechanism_effects = self.call_mechanism_mode.fires(self.image_elfv1_toc); // callmechanisms
         ctx.call_mechanism_reload_only =
             self.call_mechanism_mode == crate::kuna_callmechanisms::CallMechanismMode::Auto;
-        ctx.dex = self.dex_model().cloned(); // dexmodel
+        ctx.dex = entry.and_then(|addr| {
+            self.dex_models().iter().find(|model| model.contains(addr.get_offset())).cloned()
+        }); // dexmodel
         ctx.java_try = self.java_try && ctx.dex.is_some(); // javatry
         if self.jump_assist {
             ctx.jump_assists = Rc::clone(&self.jump_assists); // jumpassist

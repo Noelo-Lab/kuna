@@ -16,6 +16,7 @@
 //! `dexmodel` is on.
 
 pub mod format;
+pub mod links;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -52,9 +53,13 @@ mod tag {
     pub const INSTANCEOF: u64 = 8;
 }
 
-/// A parsed DEX file plus the caches the engine's queries fill.
+/// A parsed DEX file, where it is mapped, and the caches the engine's queries
+/// fill.
 pub struct DexModel {
     pub file: DexFile,
+    /// Address of the file's first byte. An APK's `classes*.dex` files are
+    /// mapped one after another.
+    pub base: u64,
     entries: HashMap<u64, EncodedMethod>,
     records: RefCell<HashMap<(u64, u64), Option<Rc<CPoolRecord>>>>,
     types: RefCell<HashMap<String, Rc<Datatype>>>,
@@ -78,7 +83,7 @@ pub struct TryBlock {
 /// One method with code, as the loader names it.
 #[derive(Clone, Debug)]
 pub struct DexFunction {
-    /// Byte address of the first instruction (the file is mapped at 0).
+    /// Byte address of the first instruction.
     pub addr: u64,
     /// `pkg::Class::method`, with `_<addr>` added to each member of an
     /// overload set.
@@ -88,30 +93,49 @@ pub struct DexFunction {
 }
 
 impl DexModel {
-    pub fn new(file: DexFile) -> DexModel {
+    pub fn new(file: DexFile, base: u64) -> DexModel {
         let mut entries = HashMap::new();
         for class in &file.classes {
             for method in &class.methods {
                 if let Some(code) = method.code {
-                    entries.insert(u64::from(code.insns_off), *method);
+                    entries.insert(base + u64::from(code.insns_off), *method);
                 }
             }
         }
         DexModel {
             file,
+            base,
             entries,
             records: RefCell::new(HashMap::new()),
             types: RefCell::new(HashMap::new()),
         }
     }
 
-    /// Parse `bytes` as a DEX file.
-    pub fn parse(bytes: Vec<u8>) -> KunaResult<DexModel> {
-        Ok(DexModel::new(DexFile::parse(bytes)?))
+    /// Parse `bytes` as a DEX file mapped at `base`.
+    pub fn parse(bytes: Vec<u8>, base: u64) -> KunaResult<DexModel> {
+        Ok(DexModel::new(DexFile::parse(bytes)?, base))
+    }
+
+    /// Does the file's mapping hold `addr`?
+    pub fn contains(&self, addr: u64) -> bool {
+        addr.checked_sub(self.base).is_some_and(|off| off < self.file.bytes().len() as u64)
     }
 
     fn string(&self, idx: u32) -> String {
         self.file.string(idx).unwrap_or_else(|| format!("string_{idx:x}"))
+    }
+
+    /// `(class descriptor, name, prototype descriptor)` of method `method_idx`.
+    pub fn method_key(&self, method_idx: u32) -> Option<(String, String, String)> {
+        let id = self.file.method_id(method_idx)?;
+        let proto = self.file.proto_id(id.proto_idx)?;
+        let mut desc = String::from("(");
+        for param in &proto.parameters {
+            desc.push_str(&self.descriptor(*param));
+        }
+        desc.push(')');
+        desc.push_str(&self.descriptor(proto.return_type_idx));
+        Some((self.descriptor(id.class_idx), self.string(id.name_idx), desc))
     }
 
     fn descriptor(&self, type_idx: u32) -> String {
@@ -130,7 +154,7 @@ impl DexModel {
                 let Some(code) = method.code else { continue };
                 let Some(id) = self.file.method_id(method.method_idx) else { continue };
                 out.push(DexFunction {
-                    addr: u64::from(code.insns_off),
+                    addr: self.base + u64::from(code.insns_off),
                     name: format!("{}::{}", self.class_scope(id.class_idx), self.string(id.name_idx)),
                     method_idx: method.method_idx,
                     is_static: method.is_static(),
@@ -209,7 +233,7 @@ impl DexModel {
 
     /// The instruction bytes at `addr`, when the file holds them.
     pub fn bytes_at(&self, addr: u64, len: usize) -> Option<&[u8]> {
-        let off = usize::try_from(addr).ok()?;
+        let off = usize::try_from(addr.checked_sub(self.base)?).ok()?;
         self.file.bytes().get(off..off.checked_add(len)?)
     }
 
@@ -368,7 +392,7 @@ impl DexModel {
             }
             tag::CLASSREF | tag::INSTANCEOF => {
                 let (ty, token) = if index32 >= self.file.num_types() as u32 {
-                    (types.get_base(1, type_metatype::TYPE_UNKNOWN)?, "<none>".to_string())
+                    (types.get_base(4, type_metatype::TYPE_UNKNOWN)?, "<none>".to_string())
                 } else {
                     let descriptor = self.descriptor(index32);
                     let token = if descriptor.starts_with('L') {
@@ -390,10 +414,12 @@ impl DexModel {
                 types.get_base(4, type_metatype::TYPE_INT)?,
                 None,
             ),
+            // Upstream types `super` as a 1-byte `undefined`; a register-wide
+            // one keeps the object reference it stands for free of a cast.
             tag::SUPER => CPoolRecord::from_parts(
                 cpool_tag::POINTER_METHOD,
                 b"super".to_vec(),
-                types.get_base(1, type_metatype::TYPE_UNKNOWN)?,
+                types.get_base(4, type_metatype::TYPE_UNKNOWN)?,
                 None,
             ),
             _ => return Ok(None),

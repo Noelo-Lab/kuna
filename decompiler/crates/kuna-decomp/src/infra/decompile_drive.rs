@@ -3418,7 +3418,7 @@ fn emit_inject(
             );
             engine.emit_payload(payload, tpl, context, emit)
         }
-        None if arch.dex_model().is_some()
+        None if !arch.dex_models().is_empty()
             && payload.core().get_type() == crate::pcodeinject::CALLOTHERFIXUP_TYPE
             && payload.core().get_name() == b"moveRangeToIV" =>
         {

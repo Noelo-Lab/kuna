@@ -2245,7 +2245,9 @@ mod tests {
         // and kuna-dex / a DEX file's constant pool, entry copies and sparse switches
         // and kuna-dex-javanew / an allocation and its <init> call as new T(args)
         // and kuna-dex-javatry + kuna-dex-javactor / DEX try/catch and constructors as Java
-        assert_eq!(count, 828, "corpus file count drifted");
+        // and kuna-dex-apk + kuna-dex-containers / an APK's classes*.dex files mapped one after another,
+        assert_eq!(count, 830, "corpus file count drifted");
+        // compact DEX, ODEX, VDEX and OAT-embedded DEX
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
