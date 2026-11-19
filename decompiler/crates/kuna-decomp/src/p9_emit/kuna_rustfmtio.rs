@@ -150,13 +150,17 @@ pub(crate) fn recover(fd: &Funcdata, arch: &Architecture, id: OpId) -> Option<Pl
 }
 
 fn profile_unchanged(fd: &Funcdata, profile: &WriterProfile) -> bool {
+    spans_unchanged(fd, &profile.protected, profile.relro)
+}
+
+pub(crate) fn spans_unchanged(fd: &Funcdata, spans: &[ImageSpan], relro: Option<(u64, u64)>) -> bool {
     let Some(space) = fd.get_arch().manage().get_default_data_space() else {
         return false;
     };
-    if space.get_addr_size() != 8 || space.is_big_endian() || profile.protected.is_empty() {
+    if space.get_addr_size() != 8 || space.is_big_endian() || spans.is_empty() {
         return false;
     }
-    for span in &profile.protected {
+    for span in spans {
         let Some(end) = span.address.checked_add(span.bytes.len() as u64) else {
             return false;
         };
@@ -166,9 +170,7 @@ fn profile_unchanged(fd: &Funcdata, profile: &WriterProfile) -> bool {
         for offset in span.address..end {
             let address = Address::new(Rc::clone(space), offset);
             let flags = fd.get_arch().query_global_range_properties(&address);
-            let relro = profile
-                .relro
-                .is_some_and(|(lo, hi)| lo <= offset && offset < hi);
+            let relro = relro.is_some_and(|(lo, hi)| lo <= offset && offset < hi);
             if flags & varnode_flags::volatil != 0
                 || (flags & varnode_flags::readonly == 0 && !relro)
             {
