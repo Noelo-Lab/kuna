@@ -1,0 +1,21 @@
+{
+  "state": "proposal",
+  "opportunity": "test_go_closures::main.scaler.func1",
+  "test_name": "test_go_closures",
+  "selector": "main.scaled.func1",
+  "func_addr": "0x47dc00",
+  "option": "godwarfsig",
+  "change_kind": "analysis-enablement",
+  "source_decompiler": "angr",
+  "baseline_commit": "856a89603ce46ad99a4db5e0f891d0bb6140964c",
+  "stock_cli_sha256": "7423ad68000a5b2a2f7ff393739dea7b101ebd23cf3c15b1e6a30c12fcc54a98",
+  "reference_angr_commit": "6afa0c79a83d9f677a46b0275cdb63bf16c1979e",
+  "scope": "Go AMD64 one compiler-verified signed-word capture at leaf entry",
+  "stock_evidence": {
+    "authored_compilers": ["go1.22.10", "go1.27.2"],
+    "named_capture": "unbound RDX",
+    "indirect_call": "Go compiler rejects the emitted entry-PC conversion",
+    "manual_leaf_observations": 6
+  },
+  "candidate_validation": null
+}
