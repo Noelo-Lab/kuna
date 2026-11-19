@@ -13,6 +13,9 @@ use sha2::{Digest, Sha256};
 use crate::jsonfmt::Json;
 
 mod kuna_comment_profile;
+mod kuna_installed_manifest;
+
+pub(crate) use kuna_installed_manifest::run;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]

@@ -1801,6 +1801,21 @@ accept raw images, slice/target/ISA selection, image-selection options, assertio
 or function-definition overrides. Unsupported image formats or unavailable
 analysis retain an explicit report status instead of guessing a profile.
 
+Use `kuna rust-signatures check --json` to check a locally provisioned corpus
+without opening an image. An explicit `--manifest PATH` overrides the default
+manifest. The default is `kuna/rust-signatures/x86_64/linux/manifest.json` in
+the user data directory. On Linux this is an absolute `XDG_DATA_HOME` or
+`$HOME/.local/share`. macOS uses `$HOME/Library/Application Support` and Windows
+uses `LOCALAPPDATA`.
+
+The check verifies the manifest's format, hashes and banks. It returns
+`ready` and exits zero when both banks are present for every requested profile.
+`absent`, `incomplete` and `invalid` exit nonzero. A validated manifest's
+inventory includes the corpus identity, manifest hash and the profile and
+verified bank counts. Install the manifest and its bank files locally before
+checking them. Analysis still takes an explicit manifest path for either
+reporting or application.
+
 To apply names from a manifest you trust, request application separately:
 
 ```bash

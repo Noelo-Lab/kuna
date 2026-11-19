@@ -839,3 +839,105 @@ fn application_refuses_archive_fanout_and_member_paths_before_loading() {
         refuse(&args, &["standalone linked elf"]);
     }
 }
+
+#[test]
+fn installed_corpus_check_validates_the_default_and_explicit_paths() {
+    let (temp, image, manifest) = fixture();
+    let data = temp.path().join("user-data");
+    let install_base = if cfg!(target_os = "macos") {
+        data.join("Library/Application Support")
+    } else {
+        data.clone()
+    };
+    let installed = install_base.join("kuna/rust-signatures/x86_64/linux/manifest.json");
+    let specs = common::repo_root().join("specs");
+    let run = |args: &[&str], code| {
+        let result = std::process::Command::new(env!("CARGO_BIN_EXE_kuna"))
+            .env("HOME", &data)
+            .env("LOCALAPPDATA", &data)
+            .env("XDG_DATA_HOME", &data)
+            .env("SLEIGHHOME", &specs)
+            .env("KUNA_SPECS", &specs)
+            .args(args)
+            .output()
+            .unwrap();
+        assert_eq!(
+            result.status.code(),
+            Some(code),
+            "{args:?}: {:?}",
+            result.stderr
+        );
+        serde_json::from_slice::<Value>(&result.stdout).unwrap()
+    };
+    let check = |path: Option<&std::path::Path>, code| {
+        let mut args = vec!["rust-signatures", "check", "--json"];
+        if let Some(path) = path {
+            args.extend(["--manifest", path.to_str().unwrap()]);
+        }
+        run(&args, code)
+    };
+    let plain_args = [
+        "functions",
+        image.to_str().unwrap(),
+        "--summary",
+        "--json",
+        "--option",
+        "flirt",
+        "off",
+    ];
+    let mut report_args = plain_args.to_vec();
+    report_args.extend(["--rust-signature-manifest", manifest.to_str().unwrap()]);
+    assert_eq!(check(None, 1)["status"], "absent");
+    assert!(!data.exists());
+    let plain = run(&plain_args, 0);
+    let report = run(&report_args, 0);
+    assert_eq!(report["rust_signature_profile"]["status"], "unique");
+
+    let parent = installed.parent().unwrap();
+    std::fs::create_dir_all(parent).unwrap();
+    for bank in ["inline.sig", "no-inline.sig"] {
+        std::fs::copy(temp.path().join(bank), parent.join(bank)).unwrap();
+    }
+    std::fs::copy(&manifest, &installed).unwrap();
+    let ready = check(None, 0);
+    assert_eq!(ready["status"], "ready");
+    assert_eq!(
+        ready["manifest_path"],
+        installed.canonicalize().unwrap().to_string_lossy().as_ref()
+    );
+    assert_eq!(ready["inventory"]["profile_count"], 1);
+    assert_eq!(ready["inventory"]["verified_bank_count"], 2);
+    assert_eq!(
+        ready["inventory"]["manifest_sha256"],
+        report["rust_signature_profile"]["provenance"]["manifest_sha256"]
+    );
+    assert_eq!(run(&plain_args, 0), plain);
+    assert_eq!(run(&report_args, 0), report);
+    assert_eq!(
+        check(Some(&manifest), 0)["manifest_path"],
+        manifest.canonicalize().unwrap().to_string_lossy().as_ref()
+    );
+    let missing = temp.path().join("absent.json");
+    let absent = check(Some(&missing), 1);
+    assert_eq!(absent["status"], "absent");
+    assert_eq!(absent["manifest_path"], missing.to_string_lossy().as_ref());
+
+    let mut changed: Value = serde_json::from_slice(&std::fs::read(&manifest).unwrap()).unwrap();
+    let bad = temp.path().join("bad.json");
+    changed["signatures"][1]["sha256"] = json!("0".repeat(64));
+    std::fs::write(&bad, changed.to_string()).unwrap();
+    let invalid = check(Some(&bad), 1);
+    assert_eq!(invalid["status"], "invalid");
+    assert!(invalid["reason"]
+        .as_str()
+        .unwrap()
+        .contains("SHA-256 mismatch"));
+    changed["signatures"].as_array_mut().unwrap().pop();
+    std::fs::write(&installed, changed.to_string()).unwrap();
+    let partial = check(None, 1);
+    assert_eq!(partial["status"], "incomplete");
+    assert_eq!(partial["inventory"]["verified_bank_count"], 1);
+
+    assert_eq!(run(&plain_args, 0), plain);
+    assert_eq!(run(&report_args, 0), report);
+}

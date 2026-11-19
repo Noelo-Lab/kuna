@@ -67,6 +67,7 @@ const COMMANDS: &[(&str, CommandHandler)] = &[
     ("modes", cmd_modes),
     ("specs", specs::run),
     ("fid", fid::run),
+    ("rust-signatures", rust_signatures::run),
 ];
 
 fn main() -> ExitCode {
@@ -165,6 +166,7 @@ fn usage() {
          kuna specs [-a <dir>] [<slaspec>...] [--diff]\n\
          kuna fid build <lib.a|*.o ...> -o <out.fid> --lang <id> --cspec <id>\n\
          kuna fid query <binary> --db <file.fid> --addr <address> [--addr <address> ...] --json\n\
+         kuna rust-signatures check [--manifest PATH] [--json]\n\
          kuna --version\n\
          \n\
          --image NAME[+NAME...] (any subcommand): load those images of a dyld shared cache\n\
