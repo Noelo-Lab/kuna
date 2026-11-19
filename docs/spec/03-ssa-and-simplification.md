@@ -3570,6 +3570,39 @@ repeated null checks. Folding a test the compiler duplicated into two
 predecessors can decide one copy only, which can leave a goto where the
 copies used to merge.
 
+**pow2select** —
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_selectdiv.rs
+(RuleSelectDiv)` (oppool1, group `analysis`), option `pow2select`, default
+**on**. Signed `x / 2^k` rounds toward zero, so the compiler adds `2^k - 1` to
+a negative `x` before the arithmetic shift. Upstream's division rules
+recognize the bias when it is computed from the sign bit with shifts and
+masks; a compiler that selects the biased value with a conditional move
+(x86-64 `cmov`, AArch64 `csel`, or a plain branch at -O0) leaves a
+MULTIEQUAL that no rule reads: `v = x + 3; if (0 <= x) v = x; return v >> 2;`.
+AArch64 writes `x % 2^k` with `csneg` as a select between `x & m` and
+`-(-x & m)`, and ARM writes the division as
+`(x + ((x s>> 31) >> (32 - k))) s>> k`. The rule matches on `INT_SRIGHT`
+(the division forms) and on `MULTIEQUAL` (the remainder):
+
+- a shift by `k` of `INT_ADD(x, (x s>> (n-1)) >> (n-k))` becomes
+  `INT_SDIV(x, 2^k)`;
+- a shift by `k` of a two-input MULTIEQUAL of `x` and `x + (2^k - 1)` becomes
+  `INT_SDIV(x, 2^k)`;
+- a two-input MULTIEQUAL of `x & m` and `-(-x & m)` (or `-(x & 1)` when
+  `m = 1`), `m = 2^k - 1`, is replaced by `INT_SREM(x, m + 1)` placed after
+  the block's MULTIEQUALs.
+
+A select is taken only when its condition provably decides by sign. The
+MULTIEQUAL block's immediate dominator must end in a CBRANCH, each input must
+arrive on its own out-edge of that branch (directly, or through one block that
+the branch alone enters and that leads only to the MULTIEQUAL block), and the
+condition must compare `x` or `-x` against a constant. Pulling each edge's
+boolean back through the comparison (and through `INT_2COMP` for `-x`) gives
+the set of `x` sent down it; every positive `x` must reach the unbiased input
+(`x`, or `x & m`) and every negative `x` the other. At `x = 0` and at the
+most negative `x` both inputs hold the same value, so those two values may go
+either way. Varnodes are compared through their `COPY` chains.
+
 **constspaceload** (repipe `arm-neon-zero-initialization`) —
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_constspaceload.rs
 (RuleConstSpaceLoad)`, oppool1, fires on LOAD. *Pattern:* a LOAD whose space

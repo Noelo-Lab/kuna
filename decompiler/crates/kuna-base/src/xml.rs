@@ -2237,8 +2237,9 @@ mod tests {
         // and kuna-dyldimage-merge / dyldimage A+B loads two dyld shared cache images as one program
         // and kuna-blobs / an embedded PNG, GIF, JPEG, zip or gzip is returned by name
         // and kuna-repstring, kuna-repstring-i386 / x86 rep movs/stos/cmpsb print as copy, fill and compare builtins
-        assert_eq!(count, 800, "corpus file count drifted");
+        assert_eq!(count, 802, "corpus file count drifted");
         // and kuna-rangefold / a test or mask a dominating branch's range decides
+        // and kuna-pow2select, kuna-pow2select-aarch64 / a signed division or remainder by 2^k written as a select
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

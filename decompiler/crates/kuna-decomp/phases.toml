@@ -1625,6 +1625,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "pow2select"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P3"
+subphase = "simplification-quiescence"
+strength = "HARD"
+rewind = "P3"
+issue = "kuna-pow2select"
+summary = "Rewrite a signed division or remainder by a power of two that the compiler wrote as a select or a sign-mask shift. Signed `x / 2^k` rounds toward zero, so a negative x is biased by `2^k - 1` before the arithmetic shift. With a conditional move (x86-64 cmov, AArch64 csel) the bias lifts as a branch and a MULTIEQUAL, printed `v = x + 3; if (0 <= x) v = x; return v >> 2;`; the -O0 branch form is the same graph. AArch64 writes `x % 2^k` with csneg as a select between `x & m` and `-(-x & m)` (`-(x & 1)` for `x % 2`). ARM writes the division as `(x + ((x s>> 31) >> (32 - k))) s>> k`. `RuleSelectDiv` (oppool1) rewrites the shift to `x / 2^k` and replaces the MULTIEQUAL of the remainder with `x % 2^k`. A select is taken only when the CBRANCH of the MULTIEQUAL block's immediate dominator sends each input down its own out-edge (directly or through one block between) and compares x or -x against a constant whose CircleRange pull-back puts every positive x on the unbiased input and every negative x on the other; at x = 0 and the most negative x both inputs agree, so either edge is fine. Inputs are matched through COPY chains."
+use_when = "On by default: 0/675 datatest assertions move; four stage assertions that pinned the select (`kuna-storealias` #1/#2/#4, `kuna-globalvalue` #17, whose fixtures return `gi / 16`) now read the division. Flip off to see the select or shift the compiler emitted. Measured over 4,072 functions in ten x86-64 binaries (gcc/clang -O2 and gcc -O0 Lua 5.4.8 and bzip2 1.0.8, -O2 zlib, libexpat, libyaml): 15 functions change, ` / ` 142 -> 166, `if` statements 22,188 -> 22,163, lines 184,891 -> 184,802, e.g. bzip2 sendMTFValues `nBytes / 8` and fallbackSort `nblock / 32`. Near misses (a test other than the sign, a bias other than 2^k - 1, `-(-x & 7)` chosen only below -4) keep their select."
+example = "option pow2select off"
+source_decompiler = "kuna"
+inspiration = "gcc -O2 x86-64 `int div4(int x) { return x / 4; }` printed `v1 = a0 + 3; if (0 <= a0) v1 = a0; return v1 >> 2;`; clang AArch64 `x % 8` printed as a select between `a0 & 7` and `-(-a0 & 7)`; clang ARMv7 `x / 4` printed the sign-mask shift"
+change_kind = "transform"
+tier = "transform"
+symptoms = "v = x + 3; if (0 <= x) v = x; return v >> 2; where the source divides by 4|a signed remainder by a power of two prints as a select between x & m and -(-x & m)|(x + ((unsigned)(x >> 31) >> 30)) >> 2 instead of x / 4"
+live_field = "pow2_select"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "rodatastring"
 values = "on|off"
 default = "on"

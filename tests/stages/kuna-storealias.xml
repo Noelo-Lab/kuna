@@ -161,14 +161,14 @@
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="storealias #1: load, the parameter stored to gi stands in for the load after the pointer store" min="1" max="1">v1 = a0 \+ 0xf;</stringmatch>
+<stringmatch name="storealias #1: load, the parameter stored to gi stands in for the load after the pointer store" min="1" max="1">return a0 / 0x10;</stringmatch>
 <stringmatch name="storealias #2: default, that load reads gi" min="1" max="1">\*a1 = a2;
-  v1 = gi \+ 0xf;</stringmatch>
+  return gi / 0x10;</stringmatch>
 <stringmatch name="storealias #3: load, the constant stored to gi folds the load away" min="1" max="1">gi = 5;
   \*a0 = a1;
   return 0;</stringmatch>
 <stringmatch name="storealias #4: default, the load after the constant's store stays a load" min="1" max="1">\*a0 = a1;
-  v1 = gi \+ 0xf;</stringmatch>
+  return gi / 0x10;</stringmatch>
 <stringmatch name="storealias #5: load, a value used once is computed again for the load" min="1" max="1">return a0 \* 3 >> 4;</stringmatch>
 <stringmatch name="storealias #6: default, the load of that value reads gi" min="1" max="1">return gi >> 4;</stringmatch>
 <stringmatch name="storealias #7: load, a value read before the pointer store prints as a read after it" min="1" max="1">\*a0 = a1;

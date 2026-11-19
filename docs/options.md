@@ -34,6 +34,9 @@ Three tiers:
 | if (x < 10) { if (x > 20) ... } keeps the dead branch | [`rangefold`](#rangefold----on--off-default-on) |
 | x & 0xff kept on a value an earlier range check bounds below 256 | [`rangefold`](#rangefold----on--off-default-on) |
 | a range check repeated inside the branch of the same check | [`rangefold`](#rangefold----on--off-default-on) |
+| v = x + 3; if (0 <= x) v = x; return v >> 2; where the source divides by 4 | [`pow2select`](#pow2select----on--off-default-on) |
+| a signed remainder by a power of two prints as a select between x & m and -(-x & m) | [`pow2select`](#pow2select----on--off-default-on) |
+| (x + ((unsigned)(x >> 31) >> 30)) >> 2 instead of x / 4 | [`pow2select`](#pow2select----on--off-default-on) |
 | stack string initialisation renders as an array-typed cast such as (char[8])s_addr._0_8_ | [`rodatastring`](#rodatastring----on--off-default-on) |
 | partial-symbol slice assignments like buf._0_9_ = s_addr._16_9_ instead of the string | [`rodatastring`](#rodatastring----on--off-default-on) |
 | a recognized rodata literal never appears in the function that copies it onto the stack | [`rodatastring`](#rodatastring----on--off-default-on) |
@@ -902,6 +905,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On by default: 0/675 datatest assertions move and the speed is unchanged (lua -O0: user time within run-to-run noise). Flip off to see a test that an enclosing test already decides, e.g. to compare against a listing. Measured over 4,072 functions in ten x86-64 binaries (gcc/clang -O2 and gcc -O0 builds of Lua 5.4.8 and bzip2 1.0.8, -O2 zlib 1.3.2, system libexpat and libyaml): 71 functions change; `if` statements 22,188 -> 22,043, gotos 9,853 -> 9,840, lines 184,891 -> 184,573. Most folds are -O0 binary-search switch ladders (`if (v != 0x31) { if (0x31 < v) ...` after `!(0x32 < v)`), retests of the same value after a short-circuit, and repeated null checks. Four functions gain one goto: a test the compiler duplicated into two predecessors is decided in one copy only, so the copies no longer merge.
 - **Where / provenance:** P3/simplification-quiescence · kuna · transform · kuna-rangefold
 - **Example:** `option rangefold off`
+
+### `pow2select` -- on | off, default `on`
+
+- **Symptoms:** v = x + 3; if (0 <= x) v = x; return v >> 2; where the source divides by 4; a signed remainder by a power of two prints as a select between x & m and -(-x & m); (x + ((unsigned)(x >> 31) >> 30)) >> 2 instead of x / 4.
+- **What it does:** Rewrite a signed division or remainder by a power of two that the compiler wrote as a select or a sign-mask shift. Signed `x / 2^k` rounds toward zero, so a negative x is biased by `2^k - 1` before the arithmetic shift. With a conditional move (x86-64 cmov, AArch64 csel) the bias lifts as a branch and a MULTIEQUAL, printed `v = x + 3; if (0 <= x) v = x; return v >> 2;`; the -O0 branch form is the same graph. AArch64 writes `x % 2^k` with csneg as a select between `x & m` and `-(-x & m)` (`-(x & 1)` for `x % 2`). ARM writes the division as `(x + ((x s>> 31) >> (32 - k))) s>> k`. `RuleSelectDiv` (oppool1) rewrites the shift to `x / 2^k` and replaces the MULTIEQUAL of the remainder with `x % 2^k`. A select is taken only when the CBRANCH of the MULTIEQUAL block's immediate dominator sends each input down its own out-edge (directly or through one block between) and compares x or -x against a constant whose CircleRange pull-back puts every positive x on the unbiased input and every negative x on the other; at x = 0 and the most negative x both inputs agree, so either edge is fine. Inputs are matched through COPY chains.
+- **When to flip:** On by default: 0/675 datatest assertions move; four stage assertions that pinned the select (`kuna-storealias` #1/#2/#4, `kuna-globalvalue` #17, whose fixtures return `gi / 16`) now read the division. Flip off to see the select or shift the compiler emitted. Measured over 4,072 functions in ten x86-64 binaries (gcc/clang -O2 and gcc -O0 Lua 5.4.8 and bzip2 1.0.8, -O2 zlib, libexpat, libyaml): 15 functions change, ` / ` 142 -> 166, `if` statements 22,188 -> 22,163, lines 184,891 -> 184,802, e.g. bzip2 sendMTFValues `nBytes / 8` and fallbackSort `nblock / 32`. Near misses (a test other than the sign, a bias other than 2^k - 1, `-(-x & 7)` chosen only below -4) keep their select.
+- **Where / provenance:** P3/simplification-quiescence · kuna · transform · kuna-pow2select
+- **Example:** `option pow2select off`
 
 
 ### `rodatastring` -- on | off, default `on`
