@@ -5370,6 +5370,35 @@ every other binary's pass list is byte-identical to before the pass existed):
     method defines, or whose arguments would need the stack, keeps the untyped
     call-site inference.
 
+    One stub serves every receiver of its selector, so its prototype is a claim
+    about all of them, and a wrong return register is the costly error: a
+    protocol of the image declaring `- (double)length` typed
+    `objc_msgSend$length` as returning in `d0` for every sender, so after
+    `[name length]` on a string `x0` read as dead and the next call lost all its
+    arguments (`objc_msgSend$length(arg3); if (sub_103434eb4())`). The stub
+    therefore takes the image's agreed spelling
+    (`decompiler/crates/kuna-analysis/src/analyzers/objc/kuna_objcrefs.rs (stub_encoding)`)
+    only when, if the SDK headers of `objcsdk` spell the selector, they place
+    its return and every argument in the same register class: integer, pointer,
+    object and selector all `x`, floating-point `d`, a by-value struct its own
+    layout (`Q` and `q` agree, `d` and `Q` do not). A selector only a protocol
+    of the image declares, with no class or category of the image implementing
+    it, is promised to conformers the image need not hold, so when its return
+    is floating-point or a struct it also needs the headers to spell it alike:
+    that is the return that hides `x0` from a framework class answering the
+    same selector there. A protocol-only `x` or `void` return keeps typing the
+    stub. Headers that cannot spell a selector neither confirm nor refute it.
+    One the image declares nowhere still takes the headers' spelling. Anything
+    else keeps the untyped call-site inference, which recovers the return from
+    its use: `v4 = objc_msgSend$length(arg1); if (sub_103434eb4(v4,arg6,1,…))`.
+    Without headers an implemented declaration is the only evidence and still
+    types the stub, so a framework class answering the same selector
+    differently stays mistyped until `objcsdk` names the SDK. An untyped stub
+    takes only the arguments the call site shows, so a receiver the caller
+    never moved (its own incoming `x0`) is not listed:
+    `v1 = objc_msgSend$length();`. A strict fix, no option;
+    `tests/stages/kuna-objcstubagree.xml` pins it.
+
   The rebase slots of the three ref sections are also reported constant
   (`AnalysisOutput::const_ranges`). dyld fills them once before any code runs
   and nothing rewrites them — Ghidra's `ObjectiveC2_ClassAnalyzer` marks the same
@@ -5506,7 +5535,8 @@ every other binary's pass list is byte-identical to before the pass existed):
     `NSString *`-backed typed enum resolve — and spells each declaration as the
     type encoding the runtime metadata would carry (`v@:d` for
     `setAlpha:(CGFloat)`), so it rides the one selector → prototype path; the
-    image's own declarations always win. A class-pointer argument keeps its
+    image's own declarations win unless the headers place a selector's return
+    or arguments in different registers (the stub rule above). A class-pointer argument keeps its
     class (`@"UIView"`), a block is `@?`, an `id<P>` is `@`; a type the reader
     cannot encode (an unknown struct, a function pointer) makes the selector
     unusable rather than guessed, and a selector declared two ways across
