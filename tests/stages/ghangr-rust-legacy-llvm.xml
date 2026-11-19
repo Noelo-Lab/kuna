@@ -33,7 +33,7 @@
 <stringmatch name="Rust LLVM suffix and ordinary name share the decoded closure scope" min="2" max="2">^unsigned long std::rt::lang_start_internal::\{\{closure\}\}\(void\)</stringmatch>
 <stringmatch name="Rust LLVM suffix leaves no escaped closure identifier" min="0" max="0">^unsigned long std::rt::lang_start_internal::_\$u7b\$</stringmatch>
 <stringmatch name="Rust LLVM recognition preserves the ordinary C++ name" min="1" max="1">^unsigned long demo::foo\(void\)</stringmatch>
-<stringmatch name="Rust LLVM recognition preserves existing uppercase hash treatment" min="2" max="2">^unsigned long demo\(void\)</stringmatch>
+<stringmatch name="Rust LLVM recognition preserves existing uppercase hash treatment" min="2" max="2">^unsigned long demo::hABCDEF0123456789\(void\)</stringmatch>
 <stringmatch name="Rust LLVM recognition preserves malformed legacy names" min="1" max="1">^unsigned long _ZN999bad17h0123456789abcdefE\.llvm\.9325873435131735662\(void\)</stringmatch>
 <stringmatch name="Rust LLVM recognition preserves unsupported suffix handling" min="1" max="1">^unsigned long demo::keep\(void\)</stringmatch>
 <stringmatch name="Rust LLVM name recovery preserves all authored bodies" min="7" max="7">^  return 0;</stringmatch>

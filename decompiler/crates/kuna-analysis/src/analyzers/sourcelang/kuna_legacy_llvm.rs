@@ -7,8 +7,7 @@ pub(super) fn stem(name: &str) -> Option<&str> {
         || !suffix
             .bytes()
             .all(|b| matches!(b, b'A'..=b'F' | b'0'..=b'9' | b'@'))
-        || hash.len() != 16
-        || !hash.bytes().all(|b| matches!(b, b'a'..=b'f' | b'0'..=b'9'))
+        || !super::is_legacy_rust_hash_digits(hash)
         || rustc_demangle::try_demangle(name).is_err()
     {
         return None;
@@ -60,7 +59,7 @@ mod tests {
             assert!(!crate::sourcelang::is_rust_mangled(&name), "{name}");
         }
         assert!(crate::sourcelang::is_rust_mangled(CLOSURE));
-        assert!(crate::sourcelang::is_rust_mangled(
+        assert!(!crate::sourcelang::is_rust_mangled(
             "_ZN4demo17hABCDEF0123456789E"
         ));
     }
