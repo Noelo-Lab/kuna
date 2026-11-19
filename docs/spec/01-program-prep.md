@@ -4077,6 +4077,38 @@ moves.
   spellings the libc tables carry are `__stdcall` WinSock exports and keep the
   default. Only where the default model's `extrapop` is unknown and the spec
   registers a `__cdecl` model of its own, so x86-64 and every ELF are untouched.
+- **(kuna) UEFI module markup** (`uefi`, default on,
+  `decompiler/crates/kuna-analysis/src/analyzers/uefi/mod.rs (UefiPass)`):
+  a PE image whose optional-header `Subsystem` is 10..13 (EFI application, boot
+  service driver, runtime driver, ROM) is a UEFI module, and its entry point is
+  `EFI_STATUS _ModuleEntryPoint(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE
+  *SystemTable)`. The pass names the entry (as a symbol, and as a rename of the
+  engine placeholder the PE entry already carries) and parks that prototype on
+  it by address. The EFI types are built in Rust from the UEFI and PI
+  specifications (`decompiler/crates/kuna-analysis/src/analyzers/uefi/types.rs`):
+  `EFI_GUID`, `EFI_TABLE_HEADER`, `EFI_SYSTEM_TABLE`, `EFI_BOOT_SERVICES`,
+  `EFI_RUNTIME_SERVICES`, `EFI_DXE_SERVICES`, `EFI_PEI_SERVICES`, the console
+  text protocols and `EFI_CONFIGURATION_TABLE`, laid out with natural alignment
+  at the image's pointer width, with `EFI_STATUS`/`EFI_TPL`/`EFI_HANDLE`/
+  `EFI_EVENT`/`EFI_PHYSICAL_ADDRESS` as typedefs and every service member a
+  function pointer with its specification prototype, so a boot-services call
+  renders as `(*v1->LocateProtocol)(&guid,NULL,&iface)`. A `This` parameter is
+  `VOID *`, because a completed structure cannot hold a pointer to itself. Three
+  data facts follow. Every 16-byte value at 4-byte alignment in a data section
+  that equals a GUID declared in the EDK2 package files
+  (`decompiler/crates/kuna-analysis/src/analyzers/uefi/guids.txt`, 965 names
+  from edk2-stable202505, excluding values with eight or more zero bytes such as
+  `gZeroGuid`) becomes an `EFI_GUID` named after it, with a numeric suffix on a
+  repeat. Every 8-byte-aligned `EFI_TABLE_HEADER` signature in a data section
+  (`IBI SYST`, `BOOTSERV`, `RUNTSERV`, `DXE_SERV`, `PEI SERV`) types the table a
+  core module defines statically (`mBootServices`, ...). Every ARM PEI-services
+  getter (Thumb `mrc p15,0,r0,c13,c0,2; bx lr`, the A32 form, AArch64 `mrs x0,
+  tpidr_el0; ret`) in a code section becomes `ArmReadTpidrurw` returning
+  `EFI_PEI_SERVICES **`. A typed data fact outranks a string literal the string
+  scan found inside it (a table's signature reads as text), so the commit
+  (`decompiler/crates/kuna-console/src/engine.rs (commit_analysis_output)`)
+  skips such a string. The pass does not track the values the entry stores into
+  `gBS`/`gST`/`gRT`; those globals keep the type their first store implies.
 - **(kuna) Declared names** (`declaredlibcproto`,
   `decompiler/crates/kuna-analysis/src/analyzers/protos/mod.rs (declared_libc_prototype)`,
   consulted from `decompiler/crates/kuna-console/src/engine.rs (ConsoleProgram::declare_function)`):
