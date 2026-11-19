@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4695,
-    4695
+    4702,
+    4702
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -3352,7 +3352,9 @@
     "data:exact signed32-to-double intermediate still combines",
     "data:executable literal retains reachable return",
     "data:explicit callsite prototype overrides the recovered input pair",
+    "data:explicit function authority replaces the names of both source strings",
     "data:explicit function prototype overrides both source word names",
+    "data:explicit site authority overrides the words of both source strings",
     "data:exponent trait recovers with its static specification",
     "data:exported return tokens and callee outputs retain their continuations",
     "data:fieldtype #10: the end pointers take the walking pointers' type, so the loop test needs no cast in either pass",
@@ -3754,6 +3756,7 @@
     "data:logical shift retains unsigned destination",
     "data:loop initial and backedge definitions share a family",
     "data:low address outside pointer inference range still folds",
+    "data:malformed second headers and excess pairs leave the entire prototype inferred",
     "data:marker has no executable trap",
     "data:mipsgot-local #1: c_add calls add64",
     "data:mipsgot-local #1b: c_add stores to sink64",
@@ -4552,6 +4555,10 @@
     "data:two indices retain the array anchor",
     "data:two signed indices retain base",
     "data:two string arguments preserve order",
+    "data:two string import off retains all inferred words",
+    "data:two strings advance past the scalar without consuming the float bank",
+    "data:two verified string pairs retain physical argument order at a call",
+    "data:two verified strings retain all four typed physical words",
     "data:unbiased indexing stays unchanged",
     "data:unchanged contents reuse one logical pointer at both calls",
     "data:uncompressed invalid result stays uninferred",
