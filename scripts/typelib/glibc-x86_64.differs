@@ -1,0 +1,141 @@
+# Entries of the musl 1.2.6 library that glibc 2.43 (x86_64) declares
+# differently, binds to another symbol, or lacks: F a function, T a typedef,
+# S a record. A type glibc holds as an integer or a record is followed by that
+# integer or by the record's size and alignment. Written by gen_musl.py
+# --measure-glibc.
+F __assert_fail
+F __flt_rounds
+F __fpurge
+F __freadahead
+F __freadptr
+F __freadptrinc
+F __fseterr
+F _flush_cache
+F _pthread_cleanup_pop
+F _pthread_cleanup_push
+F basename
+F bsd_signal
+F cachectl
+F cacheflush
+F encrypt
+F fanotify_mark
+F fgetln
+F fscanf
+F fwscanf
+F getdents
+F getutent
+F getutid
+F getutline
+F ioctl
+F isastream
+F issetugid
+F makecontext
+F membarrier
+F posix_close
+F posix_getdents
+F pow10
+F pow10f
+F pow10l
+F prlimit
+F pthread_getaffinity_np
+F pthread_setaffinity_np
+F ptrace
+F pututline
+F recvmmsg
+F res_init
+F scanf
+F sendmmsg
+F setcontext
+F setkey
+F sigpause
+F sigsetjmp
+F sscanf
+F stime
+F strerror_r
+F strtoimax
+F strtol
+F strtoll
+F strtoul
+F strtoull
+F strtoumax
+F swapcontext
+F swscanf
+F tcgetwinsize
+F tcsetwinsize
+F updwtmp
+F vfscanf
+F vfwscanf
+F vscanf
+F vsscanf
+F vswscanf
+F vwscanf
+F wcstoimax
+F wcstol
+F wcstoll
+F wcstoul
+F wcstoull
+F wcstoumax
+F wscanf
+S Elf32_Phdr	32,4
+S Elf64_Phdr	56,8
+S _G_fpos64_t
+S __fsid_t
+S __mbstate_t
+S __ptcb
+S __res_state	568,8
+S __sigset_t
+S _fpstate	512,8
+S bandinfo
+S cmsghdr	16,8
+S crypt_data	32768,1
+S ether_header	14,1
+S ethhdr	14,1
+S ipc_perm	48,8
+S lastlog	292,4
+S msghdr	56,8
+S ntptimeval	72,8
+S posix_dent
+S pthread_rwlockattr_t	8,8
+S re_pattern_buffer	64,8
+S regmatch_t	8,4
+S rusage	144,8
+S sched_param	4,4
+S sem_t	32,8
+S semid_ds	104,8
+S sigaltstack
+S sigevent	64,8
+S str_list
+S str_mlist
+S strbuf
+S strfdinsert
+S strioctl
+S strpeek
+S strrecvfd
+S sysinfo	112,8
+S tcp_info	280,8
+S tftphdr	5,1
+S ucontext
+S utmpx	384,4
+T ACTION	unsigned int
+T VISIT	unsigned int
+T __isoc_va_list
+T __jmp_buf
+T fd_mask	long
+T fpos_t	16,8
+T fpregset_t	unsigned long
+T fsid_t	8,4
+T idtype_t	unsigned int
+T int_fast16_t	long
+T int_fast32_t	long
+T mbstate_t	8,4
+T ns_key_types
+T once_flag	4,4
+T pthread_t	unsigned long
+T reclen_t
+T regoff_t	int
+T sigset_t	128,8
+T stack_t	24,8
+T thrd_t	unsigned long
+T ucontext_t	968,8
+T uint_fast16_t	unsigned long
+T uint_fast32_t	unsigned long

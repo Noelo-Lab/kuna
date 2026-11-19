@@ -1,0 +1,3556 @@
+kuna-typelib 1
+target linux x86_64
+source musl 1.2.6
+T ACTION m=unsigned int	int
+T DIR *	struct __dirstream
+T ENTRY *	struct entry
+T Elf32_Addr *	uint32_t
+T Elf32_Conflict *	Elf32_Addr
+T Elf32_Half *	uint16_t
+T Elf32_Off *	uint32_t
+T Elf32_Relr *	Elf32_Word
+T Elf32_Section *	uint16_t
+T Elf32_Sword *	int32_t
+T Elf32_Sxword *	int64_t
+T Elf32_Versym *	Elf32_Half
+T Elf32_Word *	uint32_t
+T Elf32_Xword *	uint64_t
+T Elf64_Addr *	uint64_t
+T Elf64_Half *	uint16_t
+T Elf64_Off *	uint64_t
+T Elf64_Relr *	Elf64_Xword
+T Elf64_Section *	uint16_t
+T Elf64_Sword *	int32_t
+T Elf64_Sxword *	int64_t
+T Elf64_Versym *	Elf64_Half
+T Elf64_Word *	uint32_t
+T Elf64_Xword *	uint64_t
+T Elf_Symndx *	uint32_t
+T FILE *	struct _IO_FILE
+T Sg_io_hdr *	struct sg_io_hdr
+T Sg_io_vec *	struct sg_io_vec
+T Sg_req_info *	struct sg_req_info
+T Sg_scsi_id *	struct sg_scsi_id
+T VISIT m=unsigned int	int
+T __isoc_va_list m	void *
+T __jmp_buf m	unsigned long[8]
+T blkcnt_t *	long
+T blksize_t *	long
+T caddr_t *	char *
+T cc_t *	unsigned char
+T char16_t *	unsigned short
+T char32_t *	unsigned int
+T clock_t *	long
+T clockid_t *	int
+T comp_t *	uint16_t
+T cookie_close_function_t *	int (void *)
+T cookie_io_functions_t *	struct _IO_cookie_io_functions_t
+T cookie_read_function_t *	ssize_t (void *, char *, size_t)
+T cookie_seek_function_t *	int (void *, off_t *, int)
+T cookie_write_function_t *	ssize_t (void *, const char *, size_t)
+T dev_t *	unsigned long
+T double_t *	double
+T elf_fpregset_t *	struct user_fpregs_struct
+T elf_greg_t *	unsigned long long
+T elf_gregset_t *	unsigned long long[27]
+T epoll_data_t *	union epoll_data
+T eventfd_t *	uint64_t
+T fd_mask m=long	unsigned long
+T fexcept_t *	unsigned short
+T float_t *	float
+T fpos_t m=16,8	union _G_fpos64_t
+T fpregset_t m=unsigned long	struct _fpstate *
+T fsblkcnt_t *	unsigned long
+T fsfilcnt_t *	unsigned long
+T fsid_t m=8,4	struct __fsid_t
+T gid_t *	unsigned int
+T greg_t *	long long
+T gregset_t *	long long[23]
+T iconv_t *	void *
+T id_t *	unsigned int
+T idtype_t m=unsigned int	int
+T in_addr_t *	uint32_t
+T in_port_t *	uint16_t
+T ino_t *	unsigned long
+T int16_t *	short
+T int32_t *	int
+T int64_t *	long
+T int8_t *	signed char
+T int_fast16_t m=long	int32_t
+T int_fast32_t m=long	int32_t
+T int_fast64_t *	int64_t
+T int_fast8_t *	int8_t
+T int_least16_t *	int16_t
+T int_least32_t *	int32_t
+T int_least64_t *	int64_t
+T int_least8_t *	int8_t
+T intmax_t *	long
+T intptr_t *	long
+T jmp_buf *	struct __jmp_buf_tag[1]
+T key_t *	int
+T locale_t *	struct __locale_struct *
+T lwpid_t *	pid_t
+T mbstate_t m=8,4	struct __mbstate_t
+T mode_t *	unsigned int
+T mqd_t *	int
+T msglen_t *	unsigned long
+T msgqnum_t *	unsigned long
+T n_long *	uint32_t
+T n_short *	uint16_t
+T n_time *	uint32_t
+T nfds_t *	unsigned long
+T nl_catd *	void *
+T nl_item *	int
+T nlink_t *	unsigned long
+T ns_cert_types *	unsigned int
+T ns_class *	unsigned int
+T ns_flag *	unsigned int
+T ns_key_types m	unsigned int
+T ns_msg *	struct __ns_msg
+T ns_opcode *	unsigned int
+T ns_rcode *	unsigned int
+T ns_rr *	struct __ns_rr
+T ns_sect *	unsigned int
+T ns_type *	unsigned int
+T ns_update_operation *	unsigned int
+T off_t *	long
+T once_flag m=4,4	int
+T pid_t *	int
+T prfpregset_t *	elf_fpregset_t
+T prgregset_t *	elf_gregset_t
+T prpsinfo_t *	struct elf_prpsinfo
+T prstatus_t *	struct elf_prstatus
+T psaddr_t *	void *
+T pthread_key_t *	unsigned int
+T pthread_once_t *	int
+T pthread_spinlock_t *	int
+T pthread_t m=unsigned long	struct __pthread *
+T ptrdiff_t *	long
+T quad_t *	long long
+T reclen_t m	unsigned short
+T regex_t *	struct re_pattern_buffer
+T register_t *	long
+T regoff_t m=int	long
+T res_state *	struct __res_state *
+T rlim_t *	unsigned long long
+T sa_family_t *	unsigned short
+T sg_io_hdr_t *	struct sg_io_hdr
+T sg_iovec_t *	struct sg_iovec
+T sg_req_info_t *	struct sg_req_info
+T shmatt_t *	unsigned long
+T sig_atomic_t *	int
+T sig_t *	void (*)(int)
+T sighandler_t *	void (*)(int)
+T sigjmp_buf *	jmp_buf
+T sigset_t m=128,8	struct __sigset_t
+T size_t *	unsigned long
+T socklen_t *	unsigned int
+T speed_t *	unsigned int
+T ssize_t *	long
+T stack_t m=24,8	struct sigaltstack
+T suseconds_t *	long
+T tcflag_t *	unsigned int
+T tcp_seq *	uint32_t
+T thrd_start_t *	int (*)(void *)
+T thrd_t m=unsigned long	struct __pthread *
+T time_t *	long
+T timer_t *	void *
+T tss_dtor_t *	void (*)(void *)
+T tss_t *	unsigned int
+T u_char *	unsigned char
+T u_int *	unsigned int
+T u_int16_t *	unsigned short
+T u_int32_t *	unsigned int
+T u_int64_t *	unsigned long
+T u_int8_t *	unsigned char
+T u_long *	unsigned long
+T u_quad_t *	unsigned long long
+T u_short *	unsigned short
+T ucontext_t m=968,8	struct ucontext
+T uid_t *	unsigned int
+T uint *	unsigned int
+T uint16_t *	unsigned short
+T uint32_t *	unsigned int
+T uint64_t *	unsigned long
+T uint8_t *	unsigned char
+T uint_fast16_t m=unsigned long	uint32_t
+T uint_fast32_t m=unsigned long	uint32_t
+T uint_fast64_t *	uint64_t
+T uint_fast8_t *	uint8_t
+T uint_least16_t *	uint16_t
+T uint_least32_t *	uint32_t
+T uint_least64_t *	uint64_t
+T uint_least8_t *	uint8_t
+T uintmax_t *	unsigned long
+T uintptr_t *	unsigned long
+T ulong *	unsigned long
+T useconds_t *	unsigned int
+T ushort *	unsigned short
+T va_list *	void *
+T wchar_t *	int
+T wctrans_t *	const int *
+T wctype_t *	unsigned long
+T wint_t *	unsigned int
+S Dl_info * 32 8
+ 0 dli_fname	const char *
+ 8 dli_fbase	void *
+ 16 dli_sname	const char *
+ 24 dli_saddr	void *
+S Elf32_Chdr * 12 4
+ 0 ch_type	Elf32_Word
+ 4 ch_size	Elf32_Word
+ 8 ch_addralign	Elf32_Word
+S Elf32_Dyn * 8 4
+ 0 d_tag	Elf32_Sword
+ 4 d_un	Elf32_Dyn__d_un
+U Elf32_Dyn__d_un * 4 4
+ 0 d_val	Elf32_Word
+ 0 d_ptr	Elf32_Addr
+S Elf32_Ehdr * 52 4
+ 0 e_ident	unsigned char[16]
+ 16 e_type	Elf32_Half
+ 18 e_machine	Elf32_Half
+ 20 e_version	Elf32_Word
+ 24 e_entry	Elf32_Addr
+ 28 e_phoff	Elf32_Off
+ 32 e_shoff	Elf32_Off
+ 36 e_flags	Elf32_Word
+ 40 e_ehsize	Elf32_Half
+ 42 e_phentsize	Elf32_Half
+ 44 e_phnum	Elf32_Half
+ 46 e_shentsize	Elf32_Half
+ 48 e_shnum	Elf32_Half
+ 50 e_shstrndx	Elf32_Half
+S Elf32_Lib * 20 4
+ 0 l_name	Elf32_Word
+ 4 l_time_stamp	Elf32_Word
+ 8 l_checksum	Elf32_Word
+ 12 l_version	Elf32_Word
+ 16 l_flags	Elf32_Word
+S Elf32_Move * 24 8
+ 0 m_value	Elf32_Xword
+ 8 m_info	Elf32_Word
+ 12 m_poffset	Elf32_Word
+ 16 m_repeat	Elf32_Half
+ 18 m_stride	Elf32_Half
+S Elf32_Nhdr * 12 4
+ 0 n_namesz	Elf32_Word
+ 4 n_descsz	Elf32_Word
+ 8 n_type	Elf32_Word
+S Elf32_Phdr m=32,4 32 4
+ 0 p_type	Elf32_Word
+ 4 p_offset	Elf32_Off
+ 8 p_vaddr	Elf32_Addr
+ 12 p_paddr	Elf32_Addr
+ 16 p_filesz	Elf32_Word
+ 20 p_memsz	Elf32_Word
+ 24 p_flags	Elf32_Word
+ 28 p_align	Elf32_Word
+S Elf32_RegInfo * 24 4
+ 0 ri_gprmask	Elf32_Word
+ 4 ri_cprmask	Elf32_Word[4]
+ 20 ri_gp_value	Elf32_Sword
+S Elf32_Rel * 8 4
+ 0 r_offset	Elf32_Addr
+ 4 r_info	Elf32_Word
+S Elf32_Rela * 12 4
+ 0 r_offset	Elf32_Addr
+ 4 r_info	Elf32_Word
+ 8 r_addend	Elf32_Sword
+S Elf32_Shdr * 40 4
+ 0 sh_name	Elf32_Word
+ 4 sh_type	Elf32_Word
+ 8 sh_flags	Elf32_Word
+ 12 sh_addr	Elf32_Addr
+ 16 sh_offset	Elf32_Off
+ 20 sh_size	Elf32_Word
+ 24 sh_link	Elf32_Word
+ 28 sh_info	Elf32_Word
+ 32 sh_addralign	Elf32_Word
+ 36 sh_entsize	Elf32_Word
+S Elf32_Sym * 16 4
+ 0 st_name	Elf32_Word
+ 4 st_value	Elf32_Addr
+ 8 st_size	Elf32_Word
+ 12 st_info	unsigned char
+ 13 st_other	unsigned char
+ 14 st_shndx	Elf32_Section
+S Elf32_Syminfo * 4 2
+ 0 si_boundto	Elf32_Half
+ 2 si_flags	Elf32_Half
+S Elf32_Verdaux * 8 4
+ 0 vda_name	Elf32_Word
+ 4 vda_next	Elf32_Word
+S Elf32_Verdef * 20 4
+ 0 vd_version	Elf32_Half
+ 2 vd_flags	Elf32_Half
+ 4 vd_ndx	Elf32_Half
+ 6 vd_cnt	Elf32_Half
+ 8 vd_hash	Elf32_Word
+ 12 vd_aux	Elf32_Word
+ 16 vd_next	Elf32_Word
+S Elf32_Vernaux * 16 4
+ 0 vna_hash	Elf32_Word
+ 4 vna_flags	Elf32_Half
+ 6 vna_other	Elf32_Half
+ 8 vna_name	Elf32_Word
+ 12 vna_next	Elf32_Word
+S Elf32_Verneed * 16 4
+ 0 vn_version	Elf32_Half
+ 2 vn_cnt	Elf32_Half
+ 4 vn_file	Elf32_Word
+ 8 vn_aux	Elf32_Word
+ 12 vn_next	Elf32_Word
+S Elf32_auxv_t * 8 4
+ 0 a_type	uint32_t
+ 4 a_un	Elf32_auxv_t__a_un
+U Elf32_auxv_t__a_un * 4 4
+ 0 a_val	uint32_t
+U Elf32_gptab * 8 4
+ 0 gt_header	Elf32_gptab__gt_header
+ 0 gt_entry	Elf32_gptab__gt_entry
+S Elf32_gptab__gt_entry * 8 4
+ 0 gt_g_value	Elf32_Word
+ 4 gt_bytes	Elf32_Word
+S Elf32_gptab__gt_header * 8 4
+ 0 gt_current_g_value	Elf32_Word
+ 4 gt_unused	Elf32_Word
+S Elf64_Chdr * 24 8
+ 0 ch_type	Elf64_Word
+ 4 ch_reserved	Elf64_Word
+ 8 ch_size	Elf64_Xword
+ 16 ch_addralign	Elf64_Xword
+S Elf64_Dyn * 16 8
+ 0 d_tag	Elf64_Sxword
+ 8 d_un	Elf64_Dyn__d_un
+U Elf64_Dyn__d_un * 8 8
+ 0 d_val	Elf64_Xword
+ 0 d_ptr	Elf64_Addr
+S Elf64_Ehdr * 64 8
+ 0 e_ident	unsigned char[16]
+ 16 e_type	Elf64_Half
+ 18 e_machine	Elf64_Half
+ 20 e_version	Elf64_Word
+ 24 e_entry	Elf64_Addr
+ 32 e_phoff	Elf64_Off
+ 40 e_shoff	Elf64_Off
+ 48 e_flags	Elf64_Word
+ 52 e_ehsize	Elf64_Half
+ 54 e_phentsize	Elf64_Half
+ 56 e_phnum	Elf64_Half
+ 58 e_shentsize	Elf64_Half
+ 60 e_shnum	Elf64_Half
+ 62 e_shstrndx	Elf64_Half
+S Elf64_Lib * 20 4
+ 0 l_name	Elf64_Word
+ 4 l_time_stamp	Elf64_Word
+ 8 l_checksum	Elf64_Word
+ 12 l_version	Elf64_Word
+ 16 l_flags	Elf64_Word
+S Elf64_Move * 32 8
+ 0 m_value	Elf64_Xword
+ 8 m_info	Elf64_Xword
+ 16 m_poffset	Elf64_Xword
+ 24 m_repeat	Elf64_Half
+ 26 m_stride	Elf64_Half
+S Elf64_Nhdr * 12 4
+ 0 n_namesz	Elf64_Word
+ 4 n_descsz	Elf64_Word
+ 8 n_type	Elf64_Word
+S Elf64_Phdr m=56,8 56 8
+ 0 p_type	Elf64_Word
+ 4 p_flags	Elf64_Word
+ 8 p_offset	Elf64_Off
+ 16 p_vaddr	Elf64_Addr
+ 24 p_paddr	Elf64_Addr
+ 32 p_filesz	Elf64_Xword
+ 40 p_memsz	Elf64_Xword
+ 48 p_align	Elf64_Xword
+S Elf64_Rel * 16 8
+ 0 r_offset	Elf64_Addr
+ 8 r_info	Elf64_Xword
+S Elf64_Rela * 24 8
+ 0 r_offset	Elf64_Addr
+ 8 r_info	Elf64_Xword
+ 16 r_addend	Elf64_Sxword
+S Elf64_Shdr * 64 8
+ 0 sh_name	Elf64_Word
+ 4 sh_type	Elf64_Word
+ 8 sh_flags	Elf64_Xword
+ 16 sh_addr	Elf64_Addr
+ 24 sh_offset	Elf64_Off
+ 32 sh_size	Elf64_Xword
+ 40 sh_link	Elf64_Word
+ 44 sh_info	Elf64_Word
+ 48 sh_addralign	Elf64_Xword
+ 56 sh_entsize	Elf64_Xword
+S Elf64_Sym * 24 8
+ 0 st_name	Elf64_Word
+ 4 st_info	unsigned char
+ 5 st_other	unsigned char
+ 6 st_shndx	Elf64_Section
+ 8 st_value	Elf64_Addr
+ 16 st_size	Elf64_Xword
+S Elf64_Syminfo * 4 2
+ 0 si_boundto	Elf64_Half
+ 2 si_flags	Elf64_Half
+S Elf64_Verdaux * 8 4
+ 0 vda_name	Elf64_Word
+ 4 vda_next	Elf64_Word
+S Elf64_Verdef * 20 4
+ 0 vd_version	Elf64_Half
+ 2 vd_flags	Elf64_Half
+ 4 vd_ndx	Elf64_Half
+ 6 vd_cnt	Elf64_Half
+ 8 vd_hash	Elf64_Word
+ 12 vd_aux	Elf64_Word
+ 16 vd_next	Elf64_Word
+S Elf64_Vernaux * 16 4
+ 0 vna_hash	Elf64_Word
+ 4 vna_flags	Elf64_Half
+ 6 vna_other	Elf64_Half
+ 8 vna_name	Elf64_Word
+ 12 vna_next	Elf64_Word
+S Elf64_Verneed * 16 4
+ 0 vn_version	Elf64_Half
+ 2 vn_cnt	Elf64_Half
+ 4 vn_file	Elf64_Word
+ 8 vn_aux	Elf64_Word
+ 12 vn_next	Elf64_Word
+S Elf64_auxv_t * 16 8
+ 0 a_type	uint64_t
+ 8 a_un	Elf64_auxv_t__a_un
+U Elf64_auxv_t__a_un * 8 8
+ 0 a_val	uint64_t
+S Elf_MIPS_ABIFlags_v0 * 24 4
+ 0 version	Elf32_Half
+ 2 isa_level	unsigned char
+ 3 isa_rev	unsigned char
+ 4 gpr_size	unsigned char
+ 5 cpr1_size	unsigned char
+ 6 cpr2_size	unsigned char
+ 7 fp_abi	unsigned char
+ 8 isa_ext	Elf32_Word
+ 12 ases	Elf32_Word
+ 16 flags1	Elf32_Word
+ 20 flags2	Elf32_Word
+S Elf_Options * 8 4
+ 0 kind	unsigned char
+ 1 size	unsigned char
+ 2 section	Elf32_Section
+ 4 info	Elf32_Word
+S Elf_Options_Hw * 8 4
+ 0 hwp_flags1	Elf32_Word
+ 4 hwp_flags2	Elf32_Word
+S FTW * 8 4
+ 0 base	int
+ 4 level	int
+S HEADER * 12 4
+U _G_fpos64_t m 16 8
+S _IO_cookie_io_functions_t * 32 8
+ 0 read	cookie_read_function_t *
+ 8 write	cookie_write_function_t *
+ 16 seek	cookie_seek_function_t *
+ 24 close	cookie_close_function_t *
+S __fsid_t m 8 4
+S __jmp_buf_tag * 200 8
+S __mbstate_t m 8 4
+S __ns_msg * 80 8
+ 0 _msg	const unsigned char *
+ 8 _eom	const unsigned char *
+ 16 _id	uint16_t
+ 18 _flags	uint16_t
+ 20 _counts	uint16_t[4]
+ 32 _sections	const unsigned char *[4]
+ 64 _sect	ns_sect
+ 68 _rrnum	int
+ 72 _msg_ptr	const unsigned char *
+S __ns_rr * 1048 8
+ 0 name	char[1025]
+ 1026 type	uint16_t
+ 1028 rr_class	uint16_t
+ 1032 ttl	uint32_t
+ 1036 rdlength	uint16_t
+ 1040 rdata	const unsigned char *
+S __ptcb m 24 8
+S __ptrace_peeksiginfo_args * 16 8
+ 0 off	uint64_t
+ 8 flags	uint32_t
+ 12 nr	int32_t
+S __ptrace_rseq_configuration * 24 8
+ 0 rseq_abi_pointer	uint64_t
+ 8 rseq_abi_size	uint32_t
+ 12 signature	uint32_t
+ 16 flags	uint32_t
+ 20 pad	uint32_t
+S __ptrace_seccomp_metadata * 16 8
+ 0 filter_off	uint64_t
+ 8 flags	uint64_t
+S __ptrace_syscall_info * 88 8
+ 0 op	uint8_t
+ 4 arch	uint32_t
+ 8 instruction_pointer	uint64_t
+ 16 stack_pointer	uint64_t
+ 24 entry	__ptrace_syscall_info__entry
+ 24 exit	__ptrace_syscall_info__exit
+ 24 seccomp	__ptrace_syscall_info__seccomp
+S __ptrace_syscall_info__entry * 56 8
+ 0 nr	uint64_t
+ 8 args	uint64_t[6]
+S __ptrace_syscall_info__exit * 16 8
+ 0 rval	int64_t
+ 8 is_error	uint8_t
+S __ptrace_syscall_info__seccomp * 64 8
+ 0 nr	uint64_t
+ 8 args	uint64_t[6]
+ 56 ret_data	uint32_t
+S __res_state m=568,8 568 8
+ 0 retrans	int
+ 4 retry	int
+ 8 options	unsigned long
+ 16 nscount	int
+ 20 nsaddr_list	struct sockaddr_in[3]
+ 68 id	unsigned short
+ 72 dnsrch	char *[7]
+ 128 defdname	char[256]
+ 384 pfcode	unsigned long
+ 396 sort_list	__res_state__sort_list[10]
+ 480 qhook	void *
+ 488 rhook	void *
+ 496 res_h_errno	int
+ 500 _vcsock	int
+ 504 _flags	unsigned int
+ 512 _u	__res_state___u
+U __res_state___u * 56 8
+ 0 pad	char[52]
+ 0 _ext	__res_state___u___ext
+S __res_state___u___ext * 56 8
+ 0 nscount	uint16_t
+ 2 nsmap	uint16_t[3]
+ 8 nssocks	int[3]
+ 20 nscount6	uint16_t
+ 22 nsinit	uint16_t
+ 24 nsaddrs	struct sockaddr_in6 *[3]
+ 48 _initstamp	unsigned int[2]
+S __res_state__sort_list * 8 4
+ 0 addr	struct in_addr
+ 4 mask	uint32_t
+S __sigset_t m 128 8
+S _fpstate m=512,8 512 8
+ 0 cwd	unsigned short
+ 2 swd	unsigned short
+ 4 ftw	unsigned short
+ 6 fop	unsigned short
+ 8 rip	unsigned long long
+ 16 rdp	unsigned long long
+ 24 mxcsr	unsigned int
+ 28 mxcr_mask	unsigned int
+ 32 _st	_fpstate___st[8]
+ 160 _xmm	_fpstate___xmm[16]
+ 416 padding	unsigned int[24]
+S _fpstate___st m 16 2
+ 0 significand	unsigned short[4]
+ 8 exponent	unsigned short
+ 10 padding	unsigned short[3]
+S _fpstate___xmm m 16 4
+ 0 element	unsigned int[4]
+S _ns_flagdata * 8 4
+ 0 mask	int
+ 4 shift	int
+S acct * 64 4
+ 0 ac_flag	char
+ 2 ac_uid	uint16_t
+ 4 ac_gid	uint16_t
+ 6 ac_tty	uint16_t
+ 8 ac_btime	uint32_t
+ 12 ac_utime	comp_t
+ 14 ac_stime	comp_t
+ 16 ac_etime	comp_t
+ 18 ac_mem	comp_t
+ 20 ac_io	comp_t
+ 22 ac_rw	comp_t
+ 24 ac_minflt	comp_t
+ 26 ac_majflt	comp_t
+ 28 ac_swaps	comp_t
+ 32 ac_exitcode	uint32_t
+ 36 ac_comm	char[17]
+ 53 ac_pad	char[10]
+S acct_v3 * 64 4
+ 0 ac_flag	char
+ 1 ac_version	char
+ 2 ac_tty	uint16_t
+ 4 ac_exitcode	uint32_t
+ 8 ac_uid	uint32_t
+ 12 ac_gid	uint32_t
+ 16 ac_pid	uint32_t
+ 20 ac_ppid	uint32_t
+ 24 ac_btime	uint32_t
+ 28 ac_etime	float
+ 32 ac_utime	comp_t
+ 34 ac_stime	comp_t
+ 36 ac_mem	comp_t
+ 38 ac_io	comp_t
+ 40 ac_rw	comp_t
+ 42 ac_minflt	comp_t
+ 44 ac_majflt	comp_t
+ 46 ac_swaps	comp_t
+ 48 ac_comm	char[16]
+S addrinfo * 48 8
+ 0 ai_flags	int
+ 4 ai_family	int
+ 8 ai_socktype	int
+ 12 ai_protocol	int
+ 16 ai_addrlen	socklen_t
+ 24 ai_addr	struct sockaddr *
+ 32 ai_canonname	char *
+ 40 ai_next	struct addrinfo *
+S aiocb * 168 8
+ 0 aio_fildes	int
+ 4 aio_lio_opcode	int
+ 8 aio_reqprio	int
+ 16 aio_buf	void *
+ 24 aio_nbytes	size_t
+ 32 aio_sigevent	struct sigevent
+ 128 aio_offset	off_t
+S ar_hdr * 60 1
+ 0 ar_name	char[16]
+ 16 ar_date	char[12]
+ 28 ar_uid	char[6]
+ 34 ar_gid	char[6]
+ 40 ar_mode	char[8]
+ 48 ar_size	char[10]
+ 58 ar_fmag	char[2]
+S arpd_request * 40 8
+ 0 req	unsigned short
+ 4 ip	uint32_t
+ 8 dev	unsigned long
+ 16 stamp	unsigned long
+ 24 updated	unsigned long
+ 32 ha	unsigned char[7]
+S arphdr * 8 2
+ 0 ar_hrd	uint16_t
+ 2 ar_pro	uint16_t
+ 4 ar_hln	uint8_t
+ 5 ar_pln	uint8_t
+ 6 ar_op	uint16_t
+S arpreq * 68 4
+ 0 arp_pa	struct sockaddr
+ 16 arp_ha	struct sockaddr
+ 32 arp_flags	int
+ 36 arp_netmask	struct sockaddr
+ 52 arp_dev	char[16]
+S arpreq_old * 52 4
+ 0 arp_pa	struct sockaddr
+ 16 arp_ha	struct sockaddr
+ 32 arp_flags	int
+ 36 arp_netmask	struct sockaddr
+S bandinfo m 8 4
+ 0 bi_pri	unsigned char
+ 4 bi_flag	int
+S ccs_modesel_head * 12 1
+ 0 _r1	unsigned char
+ 1 medium	unsigned char
+ 2 _r2	unsigned char
+ 3 block_desc_length	unsigned char
+ 4 density	unsigned char
+ 5 number_blocks_hi	unsigned char
+ 6 number_blocks_med	unsigned char
+ 7 number_blocks_lo	unsigned char
+ 8 _r3	unsigned char
+ 9 block_length_hi	unsigned char
+ 10 block_length_med	unsigned char
+ 11 block_length_lo	unsigned char
+S cmsghdr m=16,8 16 4
+ 0 cmsg_len	socklen_t
+ 8 cmsg_level	int
+ 12 cmsg_type	int
+S cnd_t * 48 8
+ 0 __u	cnd_t____u
+U cnd_t____u * 48 8
+S cpu_set_t * 128 8
+S crypt_data m=32768,1 260 4
+ 0 initialized	int
+S dirent * 280 8
+ 0 d_ino	ino_t
+ 8 d_off	off_t
+ 16 d_reclen	unsigned short
+ 18 d_type	unsigned char
+ 19 d_name	char[256]
+S div_t * 8 4
+ 0 quot	int
+ 4 rem	int
+S dl_phdr_info * 64 8
+ 0 dlpi_addr	Elf64_Addr
+ 8 dlpi_name	const char *
+ 16 dlpi_phdr	const Elf64_Phdr *
+ 24 dlpi_phnum	Elf64_Half
+ 32 dlpi_adds	unsigned long long
+ 40 dlpi_subs	unsigned long long
+ 48 dlpi_tls_modid	size_t
+ 56 dlpi_tls_data	void *
+S dqblk * 72 8
+ 0 dqb_bhardlimit	uint64_t
+ 8 dqb_bsoftlimit	uint64_t
+ 16 dqb_curspace	uint64_t
+ 24 dqb_ihardlimit	uint64_t
+ 32 dqb_isoftlimit	uint64_t
+ 40 dqb_curinodes	uint64_t
+ 48 dqb_btime	uint64_t
+ 56 dqb_itime	uint64_t
+ 64 dqb_valid	uint32_t
+S dqinfo * 24 8
+ 0 dqi_bgrace	uint64_t
+ 8 dqi_igrace	uint64_t
+ 16 dqi_flags	uint32_t
+ 20 dqi_valid	uint32_t
+S elf_prpsinfo * 136 8
+ 0 pr_state	char
+ 1 pr_sname	char
+ 2 pr_zomb	char
+ 3 pr_nice	char
+ 8 pr_flag	unsigned long
+ 16 pr_uid	unsigned int
+ 20 pr_gid	unsigned int
+ 24 pr_pid	int
+ 28 pr_ppid	int
+ 32 pr_pgrp	int
+ 36 pr_sid	int
+ 40 pr_fname	char[16]
+ 56 pr_psargs	char[80]
+S elf_prstatus * 336 8
+ 0 pr_info	struct elf_siginfo
+ 12 pr_cursig	short
+ 16 pr_sigpend	unsigned long
+ 24 pr_sighold	unsigned long
+ 32 pr_pid	pid_t
+ 36 pr_ppid	pid_t
+ 40 pr_pgrp	pid_t
+ 44 pr_sid	pid_t
+ 48 pr_utime	elf_prstatus__pr_utime
+ 64 pr_stime	elf_prstatus__pr_stime
+ 80 pr_cutime	elf_prstatus__pr_cutime
+ 96 pr_cstime	elf_prstatus__pr_cstime
+ 112 pr_reg	elf_gregset_t
+ 328 pr_fpvalid	int
+S elf_prstatus__pr_cstime * 16 8
+ 0 tv_sec	long
+ 8 tv_usec	long
+S elf_prstatus__pr_cutime * 16 8
+ 0 tv_sec	long
+ 8 tv_usec	long
+S elf_prstatus__pr_stime * 16 8
+ 0 tv_sec	long
+ 8 tv_usec	long
+S elf_prstatus__pr_utime * 16 8
+ 0 tv_sec	long
+ 8 tv_usec	long
+S elf_siginfo * 12 4
+ 0 si_signo	int
+ 4 si_code	int
+ 8 si_errno	int
+S entry * 16 8
+ 0 key	char *
+ 8 data	void *
+U epoll_data * 8 8
+ 0 ptr	void *
+ 0 fd	int
+ 0 u32	uint32_t
+ 0 u64	uint64_t
+S epoll_event * 12 1
+ 0 events	uint32_t
+ 4 data	epoll_data_t
+S epoll_params * 8 4
+ 0 busy_poll_usecs	uint32_t
+ 4 busy_poll_budget	uint16_t
+ 6 prefer_busy_poll	uint8_t
+S ether_addr * 6 1
+ 0 ether_addr_octet	uint8_t[6]
+S ether_arp * 28 2
+ 0 ea_hdr	struct arphdr
+ 8 arp_sha	uint8_t[6]
+ 14 arp_spa	uint8_t[4]
+ 18 arp_tha	uint8_t[6]
+ 24 arp_tpa	uint8_t[4]
+S ether_header m=14,1 14 2
+ 0 ether_dhost	uint8_t[6]
+ 6 ether_shost	uint8_t[6]
+ 12 ether_type	uint16_t
+S ethhdr m=14,1 14 2
+ 0 h_dest	uint8_t[6]
+ 6 h_source	uint8_t[6]
+ 12 h_proto	uint16_t
+S f_owner_ex * 8 4
+ 0 type	int
+ 4 pid	pid_t
+S fanotify_event_info_fid * 12 4
+ 0 hdr	struct fanotify_event_info_header
+ 4 fsid	fsid_t
+S fanotify_event_info_header * 4 2
+ 0 info_type	unsigned char
+ 1 pad	unsigned char
+ 2 len	unsigned short
+S fanotify_event_metadata * 24 8
+ 0 event_len	unsigned int
+ 4 vers	unsigned char
+ 5 reserved	unsigned char
+ 6 metadata_len	unsigned short
+ 8 mask	unsigned long long
+ 16 fd	int
+ 20 pid	int
+S fanotify_response * 8 4
+ 0 fd	int
+ 4 response	unsigned int
+S fd_set * 128 8
+ 0 fds_bits	unsigned long[16]
+S fenv_t * 32 4
+S file_handle * 8 4
+ 0 handle_bytes	unsigned int
+ 4 handle_type	int
+S flock * 32 8
+ 0 l_type	short
+ 2 l_whence	short
+ 8 l_start	off_t
+ 16 l_len	off_t
+ 24 l_pid	pid_t
+S glob_t * 72 8
+ 0 gl_pathc	size_t
+ 8 gl_pathv	char **
+ 16 gl_offs	size_t
+S group * 32 8
+ 0 gr_name	char *
+ 8 gr_passwd	char *
+ 16 gr_gid	gid_t
+ 24 gr_mem	char **
+S group_filter * 272 8
+ 0 gf_interface	uint32_t
+ 8 gf_group	struct sockaddr_storage
+ 136 gf_fmode	uint32_t
+ 140 gf_numsrc	uint32_t
+ 144 gf_slist	struct sockaddr_storage[1]
+S group_req * 136 8
+ 0 gr_interface	uint32_t
+ 8 gr_group	struct sockaddr_storage
+S group_source_req * 264 8
+ 0 gsr_interface	uint32_t
+ 8 gsr_group	struct sockaddr_storage
+ 136 gsr_source	struct sockaddr_storage
+S hostent * 32 8
+ 0 h_name	char *
+ 8 h_aliases	char **
+ 16 h_addrtype	int
+ 20 h_length	int
+ 24 h_addr_list	char **
+S hsearch_data * 16 8
+S icmp * 28 4
+ 0 icmp_type	uint8_t
+ 1 icmp_code	uint8_t
+ 2 icmp_cksum	uint16_t
+ 4 icmp_hun	icmp__icmp_hun
+ 8 icmp_dun	icmp__icmp_dun
+S icmp6_filter * 32 4
+ 0 icmp6_filt	uint32_t[8]
+S icmp6_hdr * 8 4
+ 0 icmp6_type	uint8_t
+ 1 icmp6_code	uint8_t
+ 2 icmp6_cksum	uint16_t
+ 4 icmp6_dataun	icmp6_hdr__icmp6_dataun
+U icmp6_hdr__icmp6_dataun * 4 4
+ 0 icmp6_un_data32	uint32_t[1]
+ 0 icmp6_un_data16	uint16_t[2]
+ 0 icmp6_un_data8	uint8_t[4]
+S icmp6_router_renum * 16 4
+ 0 rr_hdr	struct icmp6_hdr
+ 8 rr_segnum	uint8_t
+ 9 rr_flags	uint8_t
+ 10 rr_maxdelay	uint16_t
+ 12 rr_reserved	uint32_t
+U icmp__icmp_dun * 20 4
+ 0 id_ts	icmp__icmp_dun__id_ts
+ 0 id_ip	icmp__icmp_dun__id_ip
+ 0 id_radv	struct icmp_ra_addr
+ 0 id_mask	uint32_t
+ 0 id_data	uint8_t[1]
+S icmp__icmp_dun__id_ip * 20 4
+ 0 idi_ip	struct ip
+S icmp__icmp_dun__id_ts * 12 4
+ 0 its_otime	uint32_t
+ 4 its_rtime	uint32_t
+ 8 its_ttime	uint32_t
+U icmp__icmp_hun * 4 4
+ 0 ih_pptr	uint8_t
+ 0 ih_gwaddr	struct in_addr
+ 0 ih_idseq	struct ih_idseq
+ 0 ih_void	uint32_t
+ 0 ih_pmtu	struct ih_pmtu
+ 0 ih_rtradv	struct ih_rtradv
+S icmp_ra_addr * 8 4
+ 0 ira_addr	uint32_t
+ 4 ira_preference	uint32_t
+S icmphdr * 8 4
+ 0 type	uint8_t
+ 1 code	uint8_t
+ 2 checksum	uint16_t
+ 4 un	icmphdr__un
+U icmphdr__un * 4 4
+ 0 echo	icmphdr__un__echo
+ 0 gateway	uint32_t
+ 0 frag	icmphdr__un__frag
+ 0 reserved	uint8_t[4]
+S icmphdr__un__echo * 4 2
+ 0 id	uint16_t
+ 2 sequence	uint16_t
+S icmphdr__un__frag * 4 2
+ 2 mtu	uint16_t
+S if_nameindex * 16 8
+ 0 if_index	unsigned int
+ 8 if_name	char *
+S ifaddr * 48 8
+ 0 ifa_addr	struct sockaddr
+ 16 ifa_ifu	ifaddr__ifa_ifu
+ 32 ifa_ifp	struct iface *
+ 40 ifa_next	struct ifaddr *
+U ifaddr__ifa_ifu * 16 2
+ 0 ifu_broadaddr	struct sockaddr
+ 0 ifu_dstaddr	struct sockaddr
+S ifaddrs * 56 8
+ 0 ifa_next	struct ifaddrs *
+ 8 ifa_name	char *
+ 16 ifa_flags	unsigned int
+ 24 ifa_addr	struct sockaddr *
+ 32 ifa_netmask	struct sockaddr *
+ 40 ifa_ifu	ifaddrs__ifa_ifu
+ 48 ifa_data	void *
+U ifaddrs__ifa_ifu * 8 8
+ 0 ifu_broadaddr	struct sockaddr *
+ 0 ifu_dstaddr	struct sockaddr *
+S ifconf * 16 8
+ 0 ifc_len	int
+ 8 ifc_ifcu	ifconf__ifc_ifcu
+U ifconf__ifc_ifcu * 8 8
+ 0 ifcu_buf	char *
+ 0 ifcu_req	struct ifreq *
+S ifmap * 24 8
+ 0 mem_start	unsigned long
+ 8 mem_end	unsigned long
+ 16 base_addr	unsigned short
+ 18 irq	unsigned char
+ 19 dma	unsigned char
+ 20 port	unsigned char
+S ifreq * 40 8
+ 0 ifr_ifrn	ifreq__ifr_ifrn
+ 16 ifr_ifru	ifreq__ifr_ifru
+U ifreq__ifr_ifrn * 16 1
+ 0 ifrn_name	char[16]
+U ifreq__ifr_ifru * 24 8
+ 0 ifru_addr	struct sockaddr
+ 0 ifru_dstaddr	struct sockaddr
+ 0 ifru_broadaddr	struct sockaddr
+ 0 ifru_netmask	struct sockaddr
+ 0 ifru_hwaddr	struct sockaddr
+ 0 ifru_flags	short
+ 0 ifru_ivalue	int
+ 0 ifru_mtu	int
+ 0 ifru_map	struct ifmap
+ 0 ifru_slave	char[16]
+ 0 ifru_newname	char[16]
+ 0 ifru_data	char *
+S igmp * 8 4
+ 0 igmp_type	uint8_t
+ 1 igmp_code	uint8_t
+ 2 igmp_cksum	uint16_t
+ 4 igmp_group	struct in_addr
+S ih_idseq * 4 2
+ 0 icd_id	uint16_t
+ 2 icd_seq	uint16_t
+S ih_pmtu * 4 2
+ 0 ipm_void	uint16_t
+ 2 ipm_nextmtu	uint16_t
+S ih_rtradv * 4 2
+ 0 irt_num_addrs	uint8_t
+ 1 irt_wpa	uint8_t
+ 2 irt_lifetime	uint16_t
+S imaxdiv_t * 16 8
+ 0 quot	intmax_t
+ 8 rem	intmax_t
+S in6_addr * 16 4
+ 0 __in6_union	in6_addr____in6_union
+U in6_addr____in6_union * 16 4
+S in6_pktinfo * 20 4
+ 0 ipi6_addr	struct in6_addr
+ 16 ipi6_ifindex	unsigned int
+S in6_rtmsg * 80 8
+ 0 rtmsg_dst	struct in6_addr
+ 16 rtmsg_src	struct in6_addr
+ 32 rtmsg_gateway	struct in6_addr
+ 48 rtmsg_type	uint32_t
+ 52 rtmsg_dst_len	uint16_t
+ 54 rtmsg_src_len	uint16_t
+ 56 rtmsg_metric	uint32_t
+ 64 rtmsg_info	unsigned long
+ 72 rtmsg_flags	uint32_t
+ 76 rtmsg_ifindex	int
+S in_addr * 4 4
+ 0 s_addr	in_addr_t
+S in_pktinfo * 12 4
+ 0 ipi_ifindex	int
+ 4 ipi_spec_dst	struct in_addr
+ 8 ipi_addr	struct in_addr
+S inotify_event * 16 4
+ 0 wd	int
+ 4 mask	uint32_t
+ 8 cookie	uint32_t
+ 12 len	uint32_t
+S iovec * 16 8
+ 0 iov_base	void *
+ 8 iov_len	size_t
+S ip * 20 4
+ 1 ip_tos	uint8_t
+ 2 ip_len	uint16_t
+ 4 ip_id	uint16_t
+ 6 ip_off	uint16_t
+ 8 ip_ttl	uint8_t
+ 9 ip_p	uint8_t
+ 10 ip_sum	uint16_t
+ 12 ip_src	struct in_addr
+ 16 ip_dst	struct in_addr
+S ip6_dest * 2 1
+ 0 ip6d_nxt	uint8_t
+ 1 ip6d_len	uint8_t
+S ip6_ext * 2 1
+ 0 ip6e_nxt	uint8_t
+ 1 ip6e_len	uint8_t
+S ip6_frag * 8 4
+ 0 ip6f_nxt	uint8_t
+ 1 ip6f_reserved	uint8_t
+ 2 ip6f_offlg	uint16_t
+ 4 ip6f_ident	uint32_t
+S ip6_hbh * 2 1
+ 0 ip6h_nxt	uint8_t
+ 1 ip6h_len	uint8_t
+S ip6_hdr * 40 4
+ 0 ip6_ctlun	ip6_hdr__ip6_ctlun
+ 8 ip6_src	struct in6_addr
+ 24 ip6_dst	struct in6_addr
+U ip6_hdr__ip6_ctlun * 8 4
+ 0 ip6_un1	struct ip6_hdrctl
+ 0 ip6_un2_vfc	uint8_t
+S ip6_hdrctl * 8 4
+ 0 ip6_un1_flow	uint32_t
+ 4 ip6_un1_plen	uint16_t
+ 6 ip6_un1_nxt	uint8_t
+ 7 ip6_un1_hlim	uint8_t
+S ip6_mtuinfo * 32 4
+ 0 ip6m_addr	struct sockaddr_in6
+ 28 ip6m_mtu	uint32_t
+S ip6_opt * 2 1
+ 0 ip6o_type	uint8_t
+ 1 ip6o_len	uint8_t
+S ip6_opt_jumbo * 6 1
+ 0 ip6oj_type	uint8_t
+ 1 ip6oj_len	uint8_t
+ 2 ip6oj_jumbo_len	uint8_t[4]
+S ip6_opt_nsap * 4 1
+ 0 ip6on_type	uint8_t
+ 1 ip6on_len	uint8_t
+ 2 ip6on_src_nsap_len	uint8_t
+ 3 ip6on_dst_nsap_len	uint8_t
+S ip6_opt_router * 4 1
+ 0 ip6or_type	uint8_t
+ 1 ip6or_len	uint8_t
+ 2 ip6or_value	uint8_t[2]
+S ip6_opt_tunnel * 3 1
+ 0 ip6ot_type	uint8_t
+ 1 ip6ot_len	uint8_t
+ 2 ip6ot_encap_limit	uint8_t
+S ip6_rthdr * 4 1
+ 0 ip6r_nxt	uint8_t
+ 1 ip6r_len	uint8_t
+ 2 ip6r_type	uint8_t
+ 3 ip6r_segleft	uint8_t
+S ip6_rthdr0 * 8 4
+ 0 ip6r0_nxt	uint8_t
+ 1 ip6r0_len	uint8_t
+ 2 ip6r0_type	uint8_t
+ 3 ip6r0_segleft	uint8_t
+ 4 ip6r0_reserved	uint8_t
+ 5 ip6r0_slmap	uint8_t[3]
+S ip_mreq * 8 4
+ 0 imr_multiaddr	struct in_addr
+ 4 imr_interface	struct in_addr
+S ip_mreq_source * 12 4
+ 0 imr_multiaddr	struct in_addr
+ 4 imr_interface	struct in_addr
+ 8 imr_sourceaddr	struct in_addr
+S ip_mreqn * 12 4
+ 0 imr_multiaddr	struct in_addr
+ 4 imr_address	struct in_addr
+ 8 imr_ifindex	int
+S ip_msfilter * 20 4
+ 0 imsf_multiaddr	struct in_addr
+ 4 imsf_interface	struct in_addr
+ 8 imsf_fmode	uint32_t
+ 12 imsf_numsrc	uint32_t
+ 16 imsf_slist	struct in_addr[1]
+S ip_opts * 44 4
+ 0 ip_dst	struct in_addr
+ 4 ip_opts	char[40]
+S ip_timestamp * 40 4
+ 0 ipt_code	uint8_t
+ 1 ipt_len	uint8_t
+ 2 ipt_ptr	uint8_t
+ 4 data	uint32_t[9]
+S ipc_perm m=48,8 48 8
+ 0 key	key_t
+ 4 uid	uid_t
+ 8 gid	gid_t
+ 12 cuid	uid_t
+ 16 cgid	gid_t
+ 20 mode	mode_t
+ 24 seq	int
+S iphdr * 20 4
+ 1 tos	uint8_t
+ 2 tot_len	uint16_t
+ 4 id	uint16_t
+ 6 frag_off	uint16_t
+ 8 ttl	uint8_t
+ 9 protocol	uint8_t
+ 10 check	uint16_t
+ 12 saddr	uint32_t
+ 16 daddr	uint32_t
+S ipv6_mreq * 20 4
+ 0 ipv6mr_multiaddr	struct in6_addr
+ 16 ipv6mr_interface	unsigned int
+S itimerspec * 32 8
+ 0 it_interval	struct timespec
+ 16 it_value	struct timespec
+S itimerval * 32 8
+ 0 it_interval	struct timeval
+ 16 it_value	struct timeval
+S lastlog m=292,4 296 8
+ 0 ll_time	time_t
+ 8 ll_line	char[32]
+ 40 ll_host	char[256]
+S lconv * 96 8
+ 0 decimal_point	char *
+ 8 thousands_sep	char *
+ 16 grouping	char *
+ 24 int_curr_symbol	char *
+ 32 currency_symbol	char *
+ 40 mon_decimal_point	char *
+ 48 mon_thousands_sep	char *
+ 56 mon_grouping	char *
+ 64 positive_sign	char *
+ 72 negative_sign	char *
+ 80 int_frac_digits	char
+ 81 frac_digits	char
+ 82 p_cs_precedes	char
+ 83 p_sep_by_space	char
+ 84 n_cs_precedes	char
+ 85 n_sep_by_space	char
+ 86 p_sign_posn	char
+ 87 n_sign_posn	char
+ 88 int_p_cs_precedes	char
+ 89 int_p_sep_by_space	char
+ 90 int_n_cs_precedes	char
+ 91 int_n_sep_by_space	char
+ 92 int_p_sign_posn	char
+ 93 int_n_sign_posn	char
+S ldiv_t * 16 8
+ 0 quot	long
+ 8 rem	long
+S linger * 8 4
+ 0 l_onoff	int
+ 4 l_linger	int
+S link_map * 40 8
+ 0 l_addr	Elf64_Addr
+ 8 l_name	char *
+ 16 l_ld	Elf64_Dyn *
+ 24 l_next	struct link_map *
+ 32 l_prev	struct link_map *
+S lldiv_t * 16 8
+ 0 quot	long long
+ 8 rem	long long
+S max_align_t * 32 16
+S mcontext_t * 256 8
+ 0 gregs	gregset_t
+ 184 fpregs	fpregset_t
+S mld_hdr * 24 4
+ 0 mld_icmp6_hdr	struct icmp6_hdr
+ 8 mld_addr	struct in6_addr
+S mmsghdr * 64 8
+ 0 msg_hdr	struct msghdr
+ 56 msg_len	unsigned int
+S mntent * 40 8
+ 0 mnt_fsname	char *
+ 8 mnt_dir	char *
+ 16 mnt_type	char *
+ 24 mnt_opts	char *
+ 32 mnt_freq	int
+ 36 mnt_passno	int
+S mq_attr * 64 8
+ 0 mq_flags	long
+ 8 mq_maxmsg	long
+ 16 mq_msgsize	long
+ 24 mq_curmsgs	long
+S msgbuf * 16 8
+ 0 mtype	long
+ 8 mtext	char[1]
+S msghdr m=56,8 56 8
+ 0 msg_name	void *
+ 8 msg_namelen	socklen_t
+ 16 msg_iov	struct iovec *
+ 24 msg_iovlen	int
+ 32 msg_control	void *
+ 40 msg_controllen	socklen_t
+ 48 msg_flags	int
+S msginfo * 32 4
+ 0 msgpool	int
+ 4 msgmap	int
+ 8 msgmax	int
+ 12 msgmnb	int
+ 16 msgmni	int
+ 20 msgssz	int
+ 24 msgtql	int
+ 28 msgseg	unsigned short
+S msqid_ds * 120 8
+ 0 msg_perm	struct ipc_perm
+ 48 msg_stime	time_t
+ 56 msg_rtime	time_t
+ 64 msg_ctime	time_t
+ 72 msg_cbytes	unsigned long
+ 80 msg_qnum	msgqnum_t
+ 88 msg_qbytes	msglen_t
+ 96 msg_lspid	pid_t
+ 100 msg_lrpid	pid_t
+S mt_tape_info * 16 8
+ 0 t_type	long
+ 8 t_name	char *
+S mtconfiginfo * 48 8
+ 0 mt_type	long
+ 8 ifc_type	long
+ 16 irqnr	unsigned short
+ 18 dmanr	unsigned short
+ 20 port	unsigned short
+ 24 debug	unsigned long
+ 34 reserved	char[10]
+S mtget * 48 8
+ 0 mt_type	long
+ 8 mt_resid	long
+ 16 mt_dsreg	long
+ 24 mt_gstat	long
+ 32 mt_erreg	long
+ 40 mt_fileno	int
+ 44 mt_blkno	int
+S mtop * 8 4
+ 0 mt_op	short
+ 4 mt_count	int
+S mtpos * 8 8
+ 0 mt_blkno	long
+S mtx_t * 40 8
+ 0 __u	mtx_t____u
+U mtx_t____u * 40 8
+S nd_neighbor_advert * 24 4
+ 0 nd_na_hdr	struct icmp6_hdr
+ 8 nd_na_target	struct in6_addr
+S nd_neighbor_solicit * 24 4
+ 0 nd_ns_hdr	struct icmp6_hdr
+ 8 nd_ns_target	struct in6_addr
+S nd_opt_adv_interval * 8 4
+ 0 nd_opt_adv_interval_type	uint8_t
+ 1 nd_opt_adv_interval_len	uint8_t
+ 2 nd_opt_adv_interval_reserved	uint16_t
+ 4 nd_opt_adv_interval_ival	uint32_t
+S nd_opt_hdr * 2 1
+ 0 nd_opt_type	uint8_t
+ 1 nd_opt_len	uint8_t
+S nd_opt_home_agent_info * 8 2
+ 0 nd_opt_home_agent_info_type	uint8_t
+ 1 nd_opt_home_agent_info_len	uint8_t
+ 2 nd_opt_home_agent_info_reserved	uint16_t
+ 4 nd_opt_home_agent_info_preference	uint16_t
+ 6 nd_opt_home_agent_info_lifetime	uint16_t
+S nd_opt_mtu * 8 4
+ 0 nd_opt_mtu_type	uint8_t
+ 1 nd_opt_mtu_len	uint8_t
+ 2 nd_opt_mtu_reserved	uint16_t
+ 4 nd_opt_mtu_mtu	uint32_t
+S nd_opt_prefix_info * 32 4
+ 0 nd_opt_pi_type	uint8_t
+ 1 nd_opt_pi_len	uint8_t
+ 2 nd_opt_pi_prefix_len	uint8_t
+ 3 nd_opt_pi_flags_reserved	uint8_t
+ 4 nd_opt_pi_valid_time	uint32_t
+ 8 nd_opt_pi_preferred_time	uint32_t
+ 12 nd_opt_pi_reserved2	uint32_t
+ 16 nd_opt_pi_prefix	struct in6_addr
+S nd_opt_rd_hdr * 8 4
+ 0 nd_opt_rh_type	uint8_t
+ 1 nd_opt_rh_len	uint8_t
+ 2 nd_opt_rh_reserved1	uint16_t
+ 4 nd_opt_rh_reserved2	uint32_t
+S nd_redirect * 40 4
+ 0 nd_rd_hdr	struct icmp6_hdr
+ 8 nd_rd_target	struct in6_addr
+ 24 nd_rd_dst	struct in6_addr
+S nd_router_advert * 16 4
+ 0 nd_ra_hdr	struct icmp6_hdr
+ 8 nd_ra_reachable	uint32_t
+ 12 nd_ra_retransmit	uint32_t
+S nd_router_solicit * 8 4
+ 0 nd_rs_hdr	struct icmp6_hdr
+S netent * 24 8
+ 0 n_name	char *
+ 8 n_aliases	char **
+ 16 n_addrtype	int
+ 20 n_net	uint32_t
+S ns_tcp_tsig_state * 544 8
+ 0 counter	int
+ 8 key	struct dst_key *
+ 16 ctx	void *
+ 24 sig	unsigned char[512]
+ 536 siglen	int
+S ns_tsig_key * 2072 8
+ 0 name	char[1025]
+ 1025 alg	char[1025]
+ 2056 data	unsigned char *
+ 2064 len	int
+S ntptimeval m=72,8 32 8
+ 0 time	struct timeval
+ 16 maxerror	long
+ 24 esterror	long
+S option * 32 8
+ 0 name	const char *
+ 8 has_arg	int
+ 16 flag	int *
+ 24 val	int
+S packet_mreq * 16 4
+ 0 mr_ifindex	int
+ 4 mr_type	unsigned short
+ 6 mr_alen	unsigned short
+ 8 mr_address	unsigned char[8]
+S passwd * 48 8
+ 0 pw_name	char *
+ 8 pw_passwd	char *
+ 16 pw_uid	uid_t
+ 20 pw_gid	gid_t
+ 24 pw_gecos	char *
+ 32 pw_dir	char *
+ 40 pw_shell	char *
+S pollfd * 8 4
+ 0 fd	int
+ 4 events	short
+ 6 revents	short
+S posix_dent m 24 8
+ 0 d_ino	ino_t
+ 8 d_off	off_t
+ 16 d_reclen	reclen_t
+ 18 d_type	unsigned char
+S posix_spawn_file_actions_t * 80 8
+S posix_spawnattr_t * 336 8
+S prctl_mm_map * 104 8
+ 0 start_code	uint64_t
+ 8 end_code	uint64_t
+ 16 start_data	uint64_t
+ 24 end_data	uint64_t
+ 32 start_brk	uint64_t
+ 40 brk	uint64_t
+ 48 start_stack	uint64_t
+ 56 arg_start	uint64_t
+ 64 arg_end	uint64_t
+ 72 env_start	uint64_t
+ 80 env_end	uint64_t
+ 88 auxv	uint64_t *
+ 96 auxv_size	uint32_t
+ 100 exe_fd	uint32_t
+S protoent * 24 8
+ 0 p_name	char *
+ 8 p_aliases	char **
+ 16 p_proto	int
+S pthread_attr_t * 56 8
+ 0 __u	pthread_attr_t____u
+U pthread_attr_t____u * 56 8
+S pthread_barrier_t * 32 8
+ 0 __u	pthread_barrier_t____u
+U pthread_barrier_t____u * 32 8
+S pthread_barrierattr_t * 4 4
+S pthread_cond_t * 48 8
+ 0 __u	pthread_cond_t____u
+U pthread_cond_t____u * 48 8
+S pthread_condattr_t * 4 4
+S pthread_mutex_t * 40 8
+ 0 __u	pthread_mutex_t____u
+U pthread_mutex_t____u * 40 8
+S pthread_mutexattr_t * 4 4
+S pthread_rwlock_t * 56 8
+ 0 __u	pthread_rwlock_t____u
+U pthread_rwlock_t____u * 56 8
+S pthread_rwlockattr_t m=8,8 8 4
+S qelem * 24 8
+ 0 q_forw	struct qelem *
+ 8 q_back	struct qelem *
+ 16 q_data	char[1]
+S r_debug * 40 8
+ 0 r_version	int
+ 8 r_map	struct link_map *
+ 16 r_brk	Elf64_Addr
+ 32 r_ldbase	Elf64_Addr
+S re_pattern_buffer m=64,8 64 8
+ 0 re_nsub	size_t
+S regmatch_t m=8,4 16 8
+ 0 rm_so	regoff_t
+ 8 rm_eo	regoff_t
+S res_sym * 24 8
+ 0 number	int
+ 8 name	char *
+ 16 humanname	char *
+S rlimit * 16 8
+ 0 rlim_cur	rlim_t
+ 8 rlim_max	rlim_t
+S rr_pco_match * 24 4
+ 0 rpm_code	uint8_t
+ 1 rpm_len	uint8_t
+ 2 rpm_ordinal	uint8_t
+ 3 rpm_matchlen	uint8_t
+ 4 rpm_minlen	uint8_t
+ 5 rpm_maxlen	uint8_t
+ 6 rpm_reserved	uint16_t
+ 8 rpm_prefix	struct in6_addr
+S rr_pco_use * 32 4
+ 0 rpu_uselen	uint8_t
+ 1 rpu_keeplen	uint8_t
+ 2 rpu_ramask	uint8_t
+ 3 rpu_raflags	uint8_t
+ 4 rpu_vltime	uint32_t
+ 8 rpu_pltime	uint32_t
+ 12 rpu_flags	uint32_t
+ 16 rpu_prefix	struct in6_addr
+S rr_result * 24 4
+ 0 rrr_flags	uint16_t
+ 2 rrr_ordinal	uint8_t
+ 3 rrr_matchedlen	uint8_t
+ 4 rrr_ifid	uint32_t
+ 8 rrr_prefix	struct in6_addr
+S rtentry * 120 8
+ 0 rt_pad1	unsigned long
+ 8 rt_dst	struct sockaddr
+ 24 rt_gateway	struct sockaddr
+ 40 rt_genmask	struct sockaddr
+ 56 rt_flags	unsigned short
+ 58 rt_pad2	short
+ 64 rt_pad3	unsigned long
+ 72 rt_tos	unsigned char
+ 73 rt_class	unsigned char
+ 74 rt_pad4	short[3]
+ 80 rt_metric	short
+ 88 rt_dev	char *
+ 96 rt_mtu	unsigned long
+ 104 rt_window	unsigned long
+ 112 rt_irtt	unsigned short
+S rusage m=144,8 272 8
+ 0 ru_utime	struct timeval
+ 16 ru_stime	struct timeval
+ 32 ru_maxrss	long
+ 40 ru_ixrss	long
+ 48 ru_idrss	long
+ 56 ru_isrss	long
+ 64 ru_minflt	long
+ 72 ru_majflt	long
+ 80 ru_nswap	long
+ 88 ru_inblock	long
+ 96 ru_oublock	long
+ 104 ru_msgsnd	long
+ 112 ru_msgrcv	long
+ 120 ru_nsignals	long
+ 128 ru_nvcsw	long
+ 136 ru_nivcsw	long
+S sched_param m=4,4 48 8
+ 0 sched_priority	int
+S sched_param____reserved2 m 16 8
+S sem_t m=32,8 32 4
+S sembuf * 6 2
+ 0 sem_num	unsigned short
+ 2 sem_op	short
+ 4 sem_flg	short
+S semid_ds m=104,8 104 8
+ 0 sem_perm	struct ipc_perm
+ 48 sem_otime	time_t
+ 64 sem_ctime	time_t
+ 80 sem_nsems	unsigned short
+S seminfo * 40 4
+ 0 semmap	int
+ 4 semmni	int
+ 8 semmns	int
+ 12 semmnu	int
+ 16 semmsl	int
+ 20 semopm	int
+ 24 semume	int
+ 28 semusz	int
+ 32 semvmx	int
+ 36 semaem	int
+S servent * 32 8
+ 0 s_name	char *
+ 8 s_aliases	char **
+ 16 s_port	int
+ 24 s_proto	char *
+S sg_header * 36 4
+ 0 pack_len	int
+ 4 reply_len	int
+ 8 pack_id	int
+ 12 result	int
+ 20 sense_buffer	unsigned char[16]
+S sg_io_hdr * 88 8
+ 0 interface_id	int
+ 4 dxfer_direction	int
+ 8 cmd_len	unsigned char
+ 9 mx_sb_len	unsigned char
+ 10 iovec_count	unsigned short
+ 12 dxfer_len	unsigned int
+ 16 dxferp	void *
+ 24 cmdp	unsigned char *
+ 32 sbp	unsigned char *
+ 40 timeout	unsigned int
+ 44 flags	unsigned int
+ 48 pack_id	int
+ 56 usr_ptr	void *
+ 64 status	unsigned char
+ 65 masked_status	unsigned char
+ 66 msg_status	unsigned char
+ 67 sb_len_wr	unsigned char
+ 68 host_status	unsigned short
+ 70 driver_status	unsigned short
+ 72 resid	int
+ 76 duration	unsigned int
+ 80 info	unsigned int
+S sg_iovec * 16 8
+ 0 iov_base	void *
+ 8 iov_len	unsigned long
+S sg_req_info * 24 8
+ 0 req_state	char
+ 1 orphan	char
+ 2 sg_io_owned	char
+ 3 problem	char
+ 4 pack_id	int
+ 8 usr_ptr	void *
+ 16 duration	unsigned int
+ 20 unused	int
+S sg_scsi_id * 32 4
+ 0 host_no	int
+ 4 channel	int
+ 8 scsi_id	int
+ 12 lun	int
+ 16 scsi_type	int
+ 20 h_cmd_per_lun	short
+ 22 d_queue_depth	short
+ 24 unused	int[2]
+S shm_info * 48 8
+ 0 used_ids	int
+ 8 shm_tot	unsigned long
+ 16 shm_rss	unsigned long
+ 24 shm_swp	unsigned long
+ 32 swap_attempts	unsigned long
+ 40 swap_successes	unsigned long
+S shmid_ds * 112 8
+ 0 shm_perm	struct ipc_perm
+ 48 shm_segsz	size_t
+ 56 shm_atime	time_t
+ 64 shm_dtime	time_t
+ 72 shm_ctime	time_t
+ 80 shm_cpid	pid_t
+ 84 shm_lpid	pid_t
+ 88 shm_nattch	unsigned long
+S shminfo * 72 8
+ 0 shmmax	unsigned long
+ 8 shmmin	unsigned long
+ 16 shmmni	unsigned long
+ 24 shmseg	unsigned long
+ 32 shmall	unsigned long
+S sigaction * 152 8
+ 0 __sa_handler	sigaction____sa_handler
+ 8 sa_mask	sigset_t
+ 136 sa_flags	int
+ 144 sa_restorer	void (*)(void)
+U sigaction____sa_handler * 8 8
+ 0 sa_handler	void (*)(int)
+ 0 sa_sigaction	void (*)(int, siginfo_t *, void *)
+S sigaltstack m 24 8
+ 0 ss_sp	void *
+ 8 ss_flags	int
+ 16 ss_size	size_t
+S sigcontext * 256 8
+ 0 r8	unsigned long
+ 8 r9	unsigned long
+ 16 r10	unsigned long
+ 24 r11	unsigned long
+ 32 r12	unsigned long
+ 40 r13	unsigned long
+ 48 r14	unsigned long
+ 56 r15	unsigned long
+ 64 rdi	unsigned long
+ 72 rsi	unsigned long
+ 80 rbp	unsigned long
+ 88 rbx	unsigned long
+ 96 rdx	unsigned long
+ 104 rax	unsigned long
+ 112 rcx	unsigned long
+ 120 rsp	unsigned long
+ 128 rip	unsigned long
+ 136 eflags	unsigned long
+ 144 cs	unsigned short
+ 146 gs	unsigned short
+ 148 fs	unsigned short
+ 152 err	unsigned long
+ 160 trapno	unsigned long
+ 168 oldmask	unsigned long
+ 176 cr2	unsigned long
+ 184 fpstate	struct _fpstate *
+S sigevent m=64,8 64 8
+ 0 sigev_value	union sigval
+ 8 sigev_signo	int
+ 12 sigev_notify	int
+ 16 __sev_fields	sigevent____sev_fields
+U sigevent____sev_fields m 48 8
+ 0 sigev_notify_thread_id	pid_t
+ 0 __sev_thread	sigevent____sev_fields____sev_thread
+S sigevent____sev_fields____sev_thread m 16 8
+ 0 sigev_notify_function	void (*)(union sigval)
+ 8 sigev_notify_attributes	pthread_attr_t *
+S siginfo_t * 128 8
+ 0 si_signo	int
+ 4 si_errno	int
+ 8 si_code	int
+ 16 __si_fields	siginfo_t____si_fields
+U siginfo_t____si_fields * 112 8
+ 0 __si_common	siginfo_t____si_fields____si_common
+ 0 __sigfault	siginfo_t____si_fields____sigfault
+ 0 __sigpoll	siginfo_t____si_fields____sigpoll
+ 0 __sigsys	siginfo_t____si_fields____sigsys
+S siginfo_t____si_fields____si_common * 32 8
+ 0 __first	siginfo_t____si_fields____si_common____first
+ 8 __second	siginfo_t____si_fields____si_common____second
+U siginfo_t____si_fields____si_common____first * 8 4
+ 0 __piduid	siginfo_t____si_fields____si_common____first____piduid
+ 0 __timer	siginfo_t____si_fields____si_common____first____timer
+S siginfo_t____si_fields____si_common____first____piduid * 8 4
+ 0 si_pid	pid_t
+ 4 si_uid	uid_t
+S siginfo_t____si_fields____si_common____first____timer * 8 4
+ 0 si_timerid	int
+ 4 si_overrun	int
+U siginfo_t____si_fields____si_common____second * 24 8
+ 0 si_value	union sigval
+ 0 __sigchld	siginfo_t____si_fields____si_common____second____sigchld
+S siginfo_t____si_fields____si_common____second____sigchld * 24 8
+ 0 si_status	int
+ 8 si_utime	clock_t
+ 16 si_stime	clock_t
+S siginfo_t____si_fields____sigfault * 32 8
+ 0 si_addr	void *
+ 8 si_addr_lsb	short
+ 16 __first	siginfo_t____si_fields____sigfault____first
+U siginfo_t____si_fields____sigfault____first * 16 8
+ 0 __addr_bnd	siginfo_t____si_fields____sigfault____first____addr_bnd
+ 0 si_pkey	unsigned int
+S siginfo_t____si_fields____sigfault____first____addr_bnd * 16 8
+ 0 si_lower	void *
+ 8 si_upper	void *
+S siginfo_t____si_fields____sigpoll * 16 8
+ 0 si_band	long
+ 8 si_fd	int
+S siginfo_t____si_fields____sigsys * 16 8
+ 0 si_call_addr	void *
+ 8 si_syscall	int
+ 12 si_arch	unsigned int
+S signalfd_siginfo * 128 8
+ 0 ssi_signo	uint32_t
+ 4 ssi_errno	int32_t
+ 8 ssi_code	int32_t
+ 12 ssi_pid	uint32_t
+ 16 ssi_uid	uint32_t
+ 20 ssi_fd	int32_t
+ 24 ssi_tid	uint32_t
+ 28 ssi_band	uint32_t
+ 32 ssi_overrun	uint32_t
+ 36 ssi_trapno	uint32_t
+ 40 ssi_status	int32_t
+ 44 ssi_int	int32_t
+ 48 ssi_ptr	uint64_t
+ 56 ssi_utime	uint64_t
+ 64 ssi_stime	uint64_t
+ 72 ssi_addr	uint64_t
+ 80 ssi_addr_lsb	uint16_t
+ 84 ssi_syscall	int32_t
+ 88 ssi_call_addr	uint64_t
+ 96 ssi_arch	uint32_t
+U sigval * 8 8
+ 0 sival_int	int
+ 0 sival_ptr	void *
+S sockaddr * 16 2
+ 0 sa_family	sa_family_t
+ 2 sa_data	char[14]
+S sockaddr_in * 16 4
+ 0 sin_family	sa_family_t
+ 2 sin_port	in_port_t
+ 4 sin_addr	struct in_addr
+ 8 sin_zero	uint8_t[8]
+S sockaddr_in6 * 28 4
+ 0 sin6_family	sa_family_t
+ 2 sin6_port	in_port_t
+ 4 sin6_flowinfo	uint32_t
+ 8 sin6_addr	struct in6_addr
+ 24 sin6_scope_id	uint32_t
+S sockaddr_ll * 20 4
+ 0 sll_family	unsigned short
+ 2 sll_protocol	unsigned short
+ 4 sll_ifindex	int
+ 8 sll_hatype	unsigned short
+ 10 sll_pkttype	unsigned char
+ 11 sll_halen	unsigned char
+ 12 sll_addr	unsigned char[8]
+S sockaddr_storage * 128 8
+ 0 ss_family	sa_family_t
+S sockaddr_un * 110 2
+ 0 sun_family	sa_family_t
+ 2 sun_path	char[108]
+S spwd * 72 8
+ 0 sp_namp	char *
+ 8 sp_pwdp	char *
+ 16 sp_lstchg	long
+ 24 sp_min	long
+ 32 sp_max	long
+ 40 sp_warn	long
+ 48 sp_inact	long
+ 56 sp_expire	long
+ 64 sp_flag	unsigned long
+S stat * 144 8
+ 0 st_dev	dev_t
+ 8 st_ino	ino_t
+ 16 st_nlink	nlink_t
+ 24 st_mode	mode_t
+ 28 st_uid	uid_t
+ 32 st_gid	gid_t
+ 40 st_rdev	dev_t
+ 48 st_size	off_t
+ 56 st_blksize	blksize_t
+ 64 st_blocks	blkcnt_t
+ 72 st_atim	struct timespec
+ 88 st_mtim	struct timespec
+ 104 st_ctim	struct timespec
+S statfs * 120 8
+ 0 f_type	unsigned long
+ 8 f_bsize	unsigned long
+ 16 f_blocks	fsblkcnt_t
+ 24 f_bfree	fsblkcnt_t
+ 32 f_bavail	fsblkcnt_t
+ 40 f_files	fsfilcnt_t
+ 48 f_ffree	fsfilcnt_t
+ 56 f_fsid	fsid_t
+ 64 f_namelen	unsigned long
+ 72 f_frsize	unsigned long
+ 80 f_flags	unsigned long
+ 88 f_spare	unsigned long[4]
+S statvfs * 112 8
+ 0 f_bsize	unsigned long
+ 8 f_frsize	unsigned long
+ 16 f_blocks	fsblkcnt_t
+ 24 f_bfree	fsblkcnt_t
+ 32 f_bavail	fsblkcnt_t
+ 40 f_files	fsfilcnt_t
+ 48 f_ffree	fsfilcnt_t
+ 56 f_favail	fsfilcnt_t
+ 64 f_fsid	unsigned long
+ 72 f_flag	unsigned long
+ 80 f_namemax	unsigned long
+ 88 f_type	unsigned int
+S statx * 256 8
+ 0 stx_mask	uint32_t
+ 4 stx_blksize	uint32_t
+ 8 stx_attributes	uint64_t
+ 16 stx_nlink	uint32_t
+ 20 stx_uid	uint32_t
+ 24 stx_gid	uint32_t
+ 28 stx_mode	uint16_t
+ 32 stx_ino	uint64_t
+ 40 stx_size	uint64_t
+ 48 stx_blocks	uint64_t
+ 56 stx_attributes_mask	uint64_t
+ 64 stx_atime	struct statx_timestamp
+ 80 stx_btime	struct statx_timestamp
+ 96 stx_ctime	struct statx_timestamp
+ 112 stx_mtime	struct statx_timestamp
+ 128 stx_rdev_major	uint32_t
+ 132 stx_rdev_minor	uint32_t
+ 136 stx_dev_major	uint32_t
+ 140 stx_dev_minor	uint32_t
+ 144 stx_mnt_id	uint64_t
+ 152 stx_dio_mem_align	uint32_t
+ 156 stx_dio_offset_align	uint32_t
+ 160 stx_subvol	uint64_t
+ 168 stx_atomic_write_unit_min	uint32_t
+ 172 stx_atomic_write_unit_max	uint32_t
+ 176 stx_atomic_write_segments_max	uint32_t
+S statx_timestamp * 16 8
+ 0 tv_sec	int64_t
+ 8 tv_nsec	uint32_t
+S str_list m 16 8
+ 0 sl_nmods	int
+ 8 sl_modlist	struct str_mlist *
+S str_mlist m 9 1
+ 0 l_name	char[9]
+S strbuf m 16 8
+ 0 maxlen	int
+ 4 len	int
+ 8 buf	char *
+S strfdinsert m 48 8
+ 0 ctlbuf	struct strbuf
+ 16 databuf	struct strbuf
+ 32 flags	unsigned int
+ 36 fildes	int
+ 40 offset	int
+S strioctl m 24 8
+ 0 ic_cmd	int
+ 4 ic_timout	int
+ 8 ic_len	int
+ 16 ic_dp	char *
+S strpeek m 40 8
+ 0 ctlbuf	struct strbuf
+ 16 databuf	struct strbuf
+ 32 flags	unsigned int
+S strrecvfd m 20 4
+ 0 fd	int
+ 4 uid	int
+ 8 gid	int
+S sysinfo m=112,8 368 8
+ 0 uptime	unsigned long
+ 8 loads	unsigned long[3]
+ 32 totalram	unsigned long
+ 40 freeram	unsigned long
+ 48 sharedram	unsigned long
+ 56 bufferram	unsigned long
+ 64 totalswap	unsigned long
+ 72 freeswap	unsigned long
+ 80 procs	unsigned short
+ 82 pad	unsigned short
+ 88 totalhigh	unsigned long
+ 96 freehigh	unsigned long
+ 104 mem_unit	unsigned int
+S tcp_diag_md5sig * 100 4
+ 0 tcpm_family	uint8_t
+ 1 tcpm_prefixlen	uint8_t
+ 2 tcpm_keylen	uint16_t
+ 4 tcpm_addr	uint32_t[4]
+ 20 tcpm_key	uint8_t[80]
+S tcp_info m=280,8 232 8
+ 0 tcpi_state	uint8_t
+ 1 tcpi_ca_state	uint8_t
+ 2 tcpi_retransmits	uint8_t
+ 3 tcpi_probes	uint8_t
+ 4 tcpi_backoff	uint8_t
+ 5 tcpi_options	uint8_t
+ 8 tcpi_rto	uint32_t
+ 12 tcpi_ato	uint32_t
+ 16 tcpi_snd_mss	uint32_t
+ 20 tcpi_rcv_mss	uint32_t
+ 24 tcpi_unacked	uint32_t
+ 28 tcpi_sacked	uint32_t
+ 32 tcpi_lost	uint32_t
+ 36 tcpi_retrans	uint32_t
+ 40 tcpi_fackets	uint32_t
+ 44 tcpi_last_data_sent	uint32_t
+ 48 tcpi_last_ack_sent	uint32_t
+ 52 tcpi_last_data_recv	uint32_t
+ 56 tcpi_last_ack_recv	uint32_t
+ 60 tcpi_pmtu	uint32_t
+ 64 tcpi_rcv_ssthresh	uint32_t
+ 68 tcpi_rtt	uint32_t
+ 72 tcpi_rttvar	uint32_t
+ 76 tcpi_snd_ssthresh	uint32_t
+ 80 tcpi_snd_cwnd	uint32_t
+ 84 tcpi_advmss	uint32_t
+ 88 tcpi_reordering	uint32_t
+ 92 tcpi_rcv_rtt	uint32_t
+ 96 tcpi_rcv_space	uint32_t
+ 100 tcpi_total_retrans	uint32_t
+ 104 tcpi_pacing_rate	uint64_t
+ 112 tcpi_max_pacing_rate	uint64_t
+ 120 tcpi_bytes_acked	uint64_t
+ 128 tcpi_bytes_received	uint64_t
+ 136 tcpi_segs_out	uint32_t
+ 140 tcpi_segs_in	uint32_t
+ 144 tcpi_notsent_bytes	uint32_t
+ 148 tcpi_min_rtt	uint32_t
+ 152 tcpi_data_segs_in	uint32_t
+ 156 tcpi_data_segs_out	uint32_t
+ 160 tcpi_delivery_rate	uint64_t
+ 168 tcpi_busy_time	uint64_t
+ 176 tcpi_rwnd_limited	uint64_t
+ 184 tcpi_sndbuf_limited	uint64_t
+ 192 tcpi_delivered	uint32_t
+ 196 tcpi_delivered_ce	uint32_t
+ 200 tcpi_bytes_sent	uint64_t
+ 208 tcpi_bytes_retrans	uint64_t
+ 216 tcpi_dsack_dups	uint32_t
+ 220 tcpi_reord_seen	uint32_t
+ 224 tcpi_rcv_ooopack	uint32_t
+ 228 tcpi_snd_wnd	uint32_t
+S tcp_md5sig * 216 8
+ 0 tcpm_addr	struct sockaddr_storage
+ 128 tcpm_flags	uint8_t
+ 129 tcpm_prefixlen	uint8_t
+ 130 tcpm_keylen	uint16_t
+ 132 tcpm_ifindex	int
+ 136 tcpm_key	uint8_t[80]
+S tcp_repair_window * 20 4
+ 0 snd_wl1	uint32_t
+ 4 snd_wnd	uint32_t
+ 8 max_window	uint32_t
+ 12 rcv_wnd	uint32_t
+ 16 rcv_wup	uint32_t
+S tcp_zerocopy_receive * 64 8
+ 0 address	uint64_t
+ 8 length	uint32_t
+ 12 recv_skip_hint	uint32_t
+ 16 inq	uint32_t
+ 20 err	int32_t
+ 24 copybuf_address	uint64_t
+ 32 copybuf_len	int32_t
+ 36 flags	uint32_t
+ 40 msg_control	uint64_t
+ 48 msg_controllen	uint64_t
+ 56 msg_flags	uint32_t
+ 60 reserved	uint32_t
+S tcphdr * 20 4
+ 0 source	uint16_t
+ 2 dest	uint16_t
+ 4 seq	uint32_t
+ 8 ack_seq	uint32_t
+ 14 window	uint16_t
+ 16 check	uint16_t
+ 18 urg_ptr	uint16_t
+ 0 th_sport	uint16_t
+ 2 th_dport	uint16_t
+ 4 th_seq	uint32_t
+ 8 th_ack	uint32_t
+ 13 th_flags	uint8_t
+ 14 th_win	uint16_t
+ 16 th_sum	uint16_t
+ 18 th_urp	uint16_t
+S termios * 60 4
+ 0 c_iflag	tcflag_t
+ 4 c_oflag	tcflag_t
+ 8 c_cflag	tcflag_t
+ 12 c_lflag	tcflag_t
+ 16 c_line	cc_t
+ 17 c_cc	cc_t[32]
+S tftphdr m=5,1 6 2
+ 0 th_opcode	short
+ 2 th_u	tftphdr__th_u
+ 4 th_data	char[1]
+U tftphdr__th_u m 2 2
+ 0 tu_block	unsigned short
+ 0 tu_code	short
+ 0 tu_stuff	char[1]
+S timeb * 16 8
+ 0 time	time_t
+ 8 millitm	unsigned short
+ 10 timezone	short
+ 12 dstflag	short
+S timespec * 16 8
+ 0 tv_sec	time_t
+ 8 tv_nsec	long
+S timestamp * 40 4
+ 0 len	uint8_t
+ 1 ptr	uint8_t
+ 4 data	uint32_t[9]
+S timeval * 16 8
+ 0 tv_sec	time_t
+ 8 tv_usec	suseconds_t
+S timex * 208 8
+ 0 modes	unsigned int
+ 8 offset	long
+ 16 freq	long
+ 24 maxerror	long
+ 32 esterror	long
+ 40 status	int
+ 48 constant	long
+ 56 precision	long
+ 64 tolerance	long
+ 72 time	struct timeval
+ 88 tick	long
+ 96 ppsfreq	long
+ 104 jitter	long
+ 112 shift	int
+ 120 stabil	long
+ 128 jitcnt	long
+ 136 calcnt	long
+ 144 errcnt	long
+ 152 stbcnt	long
+ 160 tai	int
+S timezone * 8 4
+ 0 tz_minuteswest	int
+ 4 tz_dsttime	int
+S tm * 56 8
+ 0 tm_sec	int
+ 4 tm_min	int
+ 8 tm_hour	int
+ 12 tm_mday	int
+ 16 tm_mon	int
+ 20 tm_year	int
+ 24 tm_wday	int
+ 28 tm_yday	int
+ 32 tm_isdst	int
+ 40 tm_gmtoff	long
+ 48 tm_zone	const char *
+S tms * 32 8
+ 0 tms_utime	clock_t
+ 8 tms_stime	clock_t
+ 16 tms_cutime	clock_t
+ 24 tms_cstime	clock_t
+S ucontext m 936 8
+ 0 uc_flags	unsigned long
+ 8 uc_link	struct ucontext *
+ 16 uc_stack	stack_t
+ 40 uc_mcontext	mcontext_t
+ 296 uc_sigmask	sigset_t
+S ucred * 12 4
+ 0 pid	pid_t
+ 4 uid	uid_t
+ 8 gid	gid_t
+S udphdr * 8 2
+ 0 source	uint16_t
+ 2 dest	uint16_t
+ 4 len	uint16_t
+ 6 check	uint16_t
+S user * 912 8
+ 0 regs	struct user_regs_struct
+ 216 u_fpvalid	int
+ 224 i387	struct user_fpregs_struct
+ 736 u_tsize	unsigned long
+ 744 u_dsize	unsigned long
+ 752 u_ssize	unsigned long
+ 760 start_code	unsigned long
+ 768 start_stack	unsigned long
+ 776 signal	long
+ 784 reserved	int
+ 792 u_ar0	struct user_regs_struct *
+ 800 u_fpstate	struct user_fpregs_struct *
+ 808 magic	unsigned long
+ 816 u_comm	char[32]
+ 848 u_debugreg	unsigned long[8]
+S user_fpregs_struct * 512 8
+ 0 cwd	uint16_t
+ 2 swd	uint16_t
+ 4 ftw	uint16_t
+ 6 fop	uint16_t
+ 8 rip	uint64_t
+ 16 rdp	uint64_t
+ 24 mxcsr	uint32_t
+ 28 mxcr_mask	uint32_t
+ 32 st_space	uint32_t[32]
+ 160 xmm_space	uint32_t[64]
+ 416 padding	uint32_t[24]
+S user_regs_struct * 216 8
+ 0 r15	unsigned long
+ 8 r14	unsigned long
+ 16 r13	unsigned long
+ 24 r12	unsigned long
+ 32 rbp	unsigned long
+ 40 rbx	unsigned long
+ 48 r11	unsigned long
+ 56 r10	unsigned long
+ 64 r9	unsigned long
+ 72 r8	unsigned long
+ 80 rax	unsigned long
+ 88 rcx	unsigned long
+ 96 rdx	unsigned long
+ 104 rsi	unsigned long
+ 112 rdi	unsigned long
+ 120 orig_rax	unsigned long
+ 128 rip	unsigned long
+ 136 cs	unsigned long
+ 144 eflags	unsigned long
+ 152 rsp	unsigned long
+ 160 ss	unsigned long
+ 168 fs_base	unsigned long
+ 176 gs_base	unsigned long
+ 184 ds	unsigned long
+ 192 es	unsigned long
+ 200 fs	unsigned long
+ 208 gs	unsigned long
+S utimbuf * 16 8
+ 0 actime	time_t
+ 8 modtime	time_t
+S utmpx m=384,4 400 8
+ 0 ut_type	short
+ 4 ut_pid	pid_t
+ 8 ut_line	char[32]
+ 40 ut_id	char[4]
+ 44 ut_user	char[32]
+ 76 ut_host	char[256]
+ 332 ut_exit	utmpx__ut_exit
+ 336 ut_session	int
+ 344 ut_tv	struct timeval
+ 360 ut_addr_v6	unsigned int[4]
+S utmpx__ut_exit m 4 2
+S utsname * 390 1
+ 0 sysname	char[65]
+ 65 nodename	char[65]
+ 130 release	char[65]
+ 195 version	char[65]
+ 260 machine	char[65]
+ 325 domainname	char[65]
+S winsize * 8 2
+ 0 ws_row	unsigned short
+ 2 ws_col	unsigned short
+ 4 ws_xpixel	unsigned short
+ 6 ws_ypixel	unsigned short
+S wordexp_t * 24 8
+ 0 we_wordc	size_t
+ 8 we_wordv	char **
+ 16 we_offs	size_t
+F _Exit *	void _Exit(int)
+F _Fork *	pid_t _Fork(void)
+F __assert_fail m	void __assert_fail(const char *, const char *, int, const char *)
+F __ctype_get_mb_cur_max *	size_t __ctype_get_mb_cur_max(void)
+F __errno_location *	int *__errno_location(void)
+F __fbufsize *	size_t __fbufsize(FILE *)
+F __flbf *	int __flbf(FILE *)
+F __flt_rounds m	int __flt_rounds(void)
+F __fpclassify *	int __fpclassify(double)
+F __fpclassifyf *	int __fpclassifyf(float)
+F __fpclassifyl *	int __fpclassifyl(long double)
+F __fpending *	size_t __fpending(FILE *)
+F __fpurge m	int __fpurge(FILE *)
+F __freadable *	int __freadable(FILE *)
+F __freadahead m	size_t __freadahead(FILE *)
+F __freading *	int __freading(FILE *)
+F __freadptr m	const char *__freadptr(FILE *, size_t *)
+F __freadptrinc m	void __freadptrinc(FILE *, size_t)
+F __fseterr m	void __fseterr(FILE *)
+F __fsetlocking *	int __fsetlocking(FILE *, int)
+F __fwritable *	int __fwritable(FILE *)
+F __fwriting *	int __fwriting(FILE *)
+F __h_errno_location *	int *__h_errno_location(void)
+F __libc_current_sigrtmax *	int __libc_current_sigrtmax(void)
+F __libc_current_sigrtmin *	int __libc_current_sigrtmin(void)
+F __res_state *	struct __res_state *__res_state(void)
+F __sched_cpucount *	int __sched_cpucount(size_t, const cpu_set_t *)
+F __signbit *	int __signbit(double)
+F __signbitf *	int __signbitf(float)
+F __signbitl *	int __signbitl(long double)
+F _exit *	void _exit(int)
+F _flush_cache m	int _flush_cache(void *, int, int)
+F _flushlbf *	void _flushlbf(void)
+F _longjmp *	void _longjmp(struct __jmp_buf_tag *, int)
+F _pthread_cleanup_pop m	void _pthread_cleanup_pop(struct __ptcb *, int)
+F _pthread_cleanup_push m	void _pthread_cleanup_push(struct __ptcb *, void (*)(void *), void *)
+F _setjmp *	int _setjmp(struct __jmp_buf_tag *)
+F a64l *	long a64l(const char *)
+F abort *	void abort(void)
+F abs *	int abs(int)
+F accept *	int accept(int, struct sockaddr *, socklen_t *)
+F accept4 *	int accept4(int, struct sockaddr *, socklen_t *, int)
+F access *	int access(const char *, int)
+F acct *	int acct(const char *)
+F acos *	double acos(double)
+F acosf *	float acosf(float)
+F acosh *	double acosh(double)
+F acoshf *	float acoshf(float)
+F acoshl *	long double acoshl(long double)
+F acosl *	long double acosl(long double)
+F addmntent *	int addmntent(FILE *, const struct mntent *)
+F adjtime *	int adjtime(const struct timeval *, struct timeval *)
+F adjtimex *	int adjtimex(struct timex *)
+F aio_cancel *	int aio_cancel(int, struct aiocb *)
+F aio_error *	int aio_error(const struct aiocb *)
+F aio_fsync *	int aio_fsync(int, struct aiocb *)
+F aio_read *	int aio_read(struct aiocb *)
+F aio_return *	ssize_t aio_return(struct aiocb *)
+F aio_suspend *	int aio_suspend(const struct aiocb *const *, int, const struct timespec *)
+F aio_write *	int aio_write(struct aiocb *)
+F alarm *	unsigned int alarm(unsigned int)
+F aligned_alloc *	void *aligned_alloc(size_t, size_t)
+F alloca *	void *alloca(size_t)
+F alphasort *	int alphasort(const struct dirent **, const struct dirent **)
+F asctime *	char *asctime(const struct tm *)
+F asctime_r *	char *asctime_r(const struct tm *, char *)
+F asin *	double asin(double)
+F asinf *	float asinf(float)
+F asinh *	double asinh(double)
+F asinhf *	float asinhf(float)
+F asinhl *	long double asinhl(long double)
+F asinl *	long double asinl(long double)
+F asprintf *	int asprintf(char **, const char *, ...)
+F at_quick_exit *	int at_quick_exit(void (*)(void))
+F atan *	double atan(double)
+F atan2 *	double atan2(double, double)
+F atan2f *	float atan2f(float, float)
+F atan2l *	long double atan2l(long double, long double)
+F atanf *	float atanf(float)
+F atanh *	double atanh(double)
+F atanhf *	float atanhf(float)
+F atanhl *	long double atanhl(long double)
+F atanl *	long double atanl(long double)
+F atexit *	int atexit(void (*)(void))
+F atof *	double atof(const char *)
+F atoi *	int atoi(const char *)
+F atol *	long atol(const char *)
+F atoll *	long long atoll(const char *)
+F basename m	char *basename(char *)
+F bcmp *	int bcmp(const void *, const void *, size_t)
+F bcopy *	void bcopy(const void *, void *, size_t)
+F bind *	int bind(int, const struct sockaddr *, socklen_t)
+F bind_textdomain_codeset *	char *bind_textdomain_codeset(const char *, const char *)
+F bindtextdomain *	char *bindtextdomain(const char *, const char *)
+F brk *	int brk(void *)
+F bsd_signal m	void (*bsd_signal(int, void (*)(int)))(int)
+F bsearch *	void *bsearch(const void *, const void *, size_t, size_t, int (*)(const void *, const void *))
+F btowc *	wint_t btowc(int)
+F bzero *	void bzero(void *, size_t)
+F c16rtomb *	size_t c16rtomb(char *, char16_t, mbstate_t *)
+F c32rtomb *	size_t c32rtomb(char *, char32_t, mbstate_t *)
+F cachectl m	int cachectl(void *, int, int)
+F cacheflush m	int cacheflush(void *, int, int)
+F call_once *	void call_once(once_flag *, void (*)(void))
+F calloc *	void *calloc(size_t, size_t)
+F catclose *	int catclose(nl_catd)
+F catgets *	char *catgets(nl_catd, int, int, const char *)
+F catopen *	nl_catd catopen(const char *, int)
+F cbrt *	double cbrt(double)
+F cbrtf *	float cbrtf(float)
+F cbrtl *	long double cbrtl(long double)
+F ceil *	double ceil(double)
+F ceilf *	float ceilf(float)
+F ceill *	long double ceill(long double)
+F cfgetispeed *	speed_t cfgetispeed(const struct termios *)
+F cfgetospeed *	speed_t cfgetospeed(const struct termios *)
+F cfmakeraw *	void cfmakeraw(struct termios *)
+F cfsetispeed *	int cfsetispeed(struct termios *, speed_t)
+F cfsetospeed *	int cfsetospeed(struct termios *, speed_t)
+F cfsetspeed *	int cfsetspeed(struct termios *, speed_t)
+F chdir *	int chdir(const char *)
+F chmod *	int chmod(const char *, mode_t)
+F chown *	int chown(const char *, uid_t, gid_t)
+F chroot *	int chroot(const char *)
+F clearenv *	int clearenv(void)
+F clearerr *	void clearerr(FILE *)
+F clearerr_unlocked *	void clearerr_unlocked(FILE *)
+F clock *	clock_t clock(void)
+F clock_adjtime *	int clock_adjtime(clockid_t, struct timex *)
+F clock_getcpuclockid *	int clock_getcpuclockid(pid_t, clockid_t *)
+F clock_getres *	int clock_getres(clockid_t, struct timespec *)
+F clock_gettime *	int clock_gettime(clockid_t, struct timespec *)
+F clock_nanosleep *	int clock_nanosleep(clockid_t, int, const struct timespec *, struct timespec *)
+F clock_settime *	int clock_settime(clockid_t, const struct timespec *)
+F clone *	int clone(int (*)(void *), void *, int, void *, ...)
+F close *	int close(int)
+F closedir *	int closedir(DIR *)
+F closelog *	void closelog(void)
+F cnd_broadcast *	int cnd_broadcast(cnd_t *)
+F cnd_destroy *	void cnd_destroy(cnd_t *)
+F cnd_init *	int cnd_init(cnd_t *)
+F cnd_signal *	int cnd_signal(cnd_t *)
+F cnd_timedwait *	int cnd_timedwait(cnd_t *, mtx_t *, const struct timespec *)
+F cnd_wait *	int cnd_wait(cnd_t *, mtx_t *)
+F confstr *	size_t confstr(int, char *, size_t)
+F connect *	int connect(int, const struct sockaddr *, socklen_t)
+F copy_file_range *	ssize_t copy_file_range(int, off_t *, int, off_t *, size_t, unsigned int)
+F copysign *	double copysign(double, double)
+F copysignf *	float copysignf(float, float)
+F copysignl *	long double copysignl(long double, long double)
+F cos *	double cos(double)
+F cosf *	float cosf(float)
+F cosh *	double cosh(double)
+F coshf *	float coshf(float)
+F coshl *	long double coshl(long double)
+F cosl *	long double cosl(long double)
+F creat *	int creat(const char *, mode_t)
+F crypt *	char *crypt(const char *, const char *)
+F crypt_r *	char *crypt_r(const char *, const char *, struct crypt_data *)
+F ctermid *	char *ctermid(char *)
+F ctime *	char *ctime(const time_t *)
+F ctime_r *	char *ctime_r(const time_t *, char *)
+F cuserid *	char *cuserid(char *)
+F daemon *	int daemon(int, int)
+F dcgettext *	char *dcgettext(const char *, const char *, int)
+F dcngettext *	char *dcngettext(const char *, const char *, const char *, unsigned long, int)
+F dgettext *	char *dgettext(const char *, const char *)
+F difftime *	double difftime(time_t, time_t)
+F dirfd *	int dirfd(DIR *)
+F dirname *	char *dirname(char *)
+F div *	div_t div(int, int)
+F dl_iterate_phdr *	int dl_iterate_phdr(int (*)(struct dl_phdr_info *, size_t, void *), void *)
+F dladdr *	int dladdr(const void *, Dl_info *)
+F dlclose *	int dlclose(void *)
+F dlerror *	char *dlerror(void)
+F dlinfo *	int dlinfo(void *, int, void *)
+F dlopen *	void *dlopen(const char *, int)
+F dlsym *	void *dlsym(void *, const char *)
+F dn_comp *	int dn_comp(const char *, unsigned char *, int, unsigned char **, unsigned char **)
+F dn_expand *	int dn_expand(const unsigned char *, const unsigned char *, const unsigned char *, char *, int)
+F dn_skipname *	int dn_skipname(const unsigned char *, const unsigned char *)
+F dngettext *	char *dngettext(const char *, const char *, const char *, unsigned long)
+F dprintf *	int dprintf(int, const char *, ...)
+F drand48 *	double drand48(void)
+F drem *	double drem(double, double)
+F dremf *	float dremf(float, float)
+F dup *	int dup(int)
+F dup2 *	int dup2(int, int)
+F dup3 *	int dup3(int, int, int)
+F duplocale *	locale_t duplocale(locale_t)
+F eaccess *	int eaccess(const char *, int)
+F ecvt *	char *ecvt(double, int, int *, int *)
+F encrypt m	void encrypt(char *, int)
+F endgrent *	void endgrent(void)
+F endhostent *	void endhostent(void)
+F endmntent *	int endmntent(FILE *)
+F endnetent *	void endnetent(void)
+F endprotoent *	void endprotoent(void)
+F endpwent *	void endpwent(void)
+F endservent *	void endservent(void)
+F endspent *	void endspent(void)
+F endusershell *	void endusershell(void)
+F endutent *	void endutent(void)
+F endutxent *	void endutxent(void)
+F epoll_create *	int epoll_create(int)
+F epoll_create1 *	int epoll_create1(int)
+F epoll_ctl *	int epoll_ctl(int, int, int, struct epoll_event *)
+F epoll_pwait *	int epoll_pwait(int, struct epoll_event *, int, int, const sigset_t *)
+F epoll_wait *	int epoll_wait(int, struct epoll_event *, int, int)
+F erand48 *	double erand48(unsigned short *)
+F erf *	double erf(double)
+F erfc *	double erfc(double)
+F erfcf *	float erfcf(float)
+F erfcl *	long double erfcl(long double)
+F erff *	float erff(float)
+F erfl *	long double erfl(long double)
+F err *	void err(int, const char *, ...)
+F errx *	void errx(int, const char *, ...)
+F ether_aton *	struct ether_addr *ether_aton(const char *)
+F ether_aton_r *	struct ether_addr *ether_aton_r(const char *, struct ether_addr *)
+F ether_hostton *	int ether_hostton(const char *, struct ether_addr *)
+F ether_line *	int ether_line(const char *, struct ether_addr *, char *)
+F ether_ntoa *	char *ether_ntoa(const struct ether_addr *)
+F ether_ntoa_r *	char *ether_ntoa_r(const struct ether_addr *, char *)
+F ether_ntohost *	int ether_ntohost(char *, const struct ether_addr *)
+F euidaccess *	int euidaccess(const char *, int)
+F eventfd *	int eventfd(unsigned int, int)
+F eventfd_read *	int eventfd_read(int, eventfd_t *)
+F eventfd_write *	int eventfd_write(int, eventfd_t)
+F execl *	int execl(const char *, const char *, ...)
+F execle *	int execle(const char *, const char *, ...)
+F execlp *	int execlp(const char *, const char *, ...)
+F execv *	int execv(const char *, char *const *)
+F execve *	int execve(const char *, char *const *, char *const *)
+F execvp *	int execvp(const char *, char *const *)
+F execvpe *	int execvpe(const char *, char *const *, char *const *)
+F exit *	void exit(int)
+F exp *	double exp(double)
+F exp10 *	double exp10(double)
+F exp10f *	float exp10f(float)
+F exp10l *	long double exp10l(long double)
+F exp2 *	double exp2(double)
+F exp2f *	float exp2f(float)
+F exp2l *	long double exp2l(long double)
+F expf *	float expf(float)
+F expl *	long double expl(long double)
+F explicit_bzero *	void explicit_bzero(void *, size_t)
+F expm1 *	double expm1(double)
+F expm1f *	float expm1f(float)
+F expm1l *	long double expm1l(long double)
+F fabs *	double fabs(double)
+F fabsf *	float fabsf(float)
+F fabsl *	long double fabsl(long double)
+F faccessat *	int faccessat(int, const char *, int, int)
+F fallocate *	int fallocate(int, int, off_t, off_t)
+F fanotify_init *	int fanotify_init(unsigned int, unsigned int)
+F fanotify_mark m	int fanotify_mark(int, unsigned int, unsigned long long, int, const char *)
+F fchdir *	int fchdir(int)
+F fchmod *	int fchmod(int, mode_t)
+F fchmodat *	int fchmodat(int, const char *, mode_t, int)
+F fchown *	int fchown(int, uid_t, gid_t)
+F fchownat *	int fchownat(int, const char *, uid_t, gid_t, int)
+F fclose *	int fclose(FILE *)
+F fcntl *	int fcntl(int, int, ...)
+F fcvt *	char *fcvt(double, int, int *, int *)
+F fdatasync *	int fdatasync(int)
+F fdim *	double fdim(double, double)
+F fdimf *	float fdimf(float, float)
+F fdiml *	long double fdiml(long double, long double)
+F fdopen *	FILE *fdopen(int, const char *)
+F fdopendir *	DIR *fdopendir(int)
+F feclearexcept *	int feclearexcept(int)
+F fegetenv *	int fegetenv(fenv_t *)
+F fegetexceptflag *	int fegetexceptflag(fexcept_t *, int)
+F fegetround *	int fegetround(void)
+F feholdexcept *	int feholdexcept(fenv_t *)
+F feof *	int feof(FILE *)
+F feof_unlocked *	int feof_unlocked(FILE *)
+F feraiseexcept *	int feraiseexcept(int)
+F ferror *	int ferror(FILE *)
+F ferror_unlocked *	int ferror_unlocked(FILE *)
+F fesetenv *	int fesetenv(const fenv_t *)
+F fesetexceptflag *	int fesetexceptflag(const fexcept_t *, int)
+F fesetround *	int fesetround(int)
+F fetestexcept *	int fetestexcept(int)
+F feupdateenv *	int feupdateenv(const fenv_t *)
+F fexecve *	int fexecve(int, char *const *, char *const *)
+F fflush *	int fflush(FILE *)
+F fflush_unlocked *	int fflush_unlocked(FILE *)
+F ffs *	int ffs(int)
+F ffsl *	int ffsl(long)
+F ffsll *	int ffsll(long long)
+F fgetc *	int fgetc(FILE *)
+F fgetc_unlocked *	int fgetc_unlocked(FILE *)
+F fgetgrent *	struct group *fgetgrent(FILE *)
+F fgetln m	char *fgetln(FILE *, size_t *)
+F fgetpos *	int fgetpos(FILE *, fpos_t *)
+F fgetpwent *	struct passwd *fgetpwent(FILE *)
+F fgets *	char *fgets(char *, int, FILE *)
+F fgets_unlocked *	char *fgets_unlocked(char *, int, FILE *)
+F fgetspent *	struct spwd *fgetspent(FILE *)
+F fgetwc *	wint_t fgetwc(FILE *)
+F fgetwc_unlocked *	wint_t fgetwc_unlocked(FILE *)
+F fgetws *	wchar_t *fgetws(wchar_t *, int, FILE *)
+F fgetws_unlocked *	wchar_t *fgetws_unlocked(wchar_t *, int, FILE *)
+F fgetxattr *	ssize_t fgetxattr(int, const char *, void *, size_t)
+F fileno *	int fileno(FILE *)
+F fileno_unlocked *	int fileno_unlocked(FILE *)
+F finite *	int finite(double)
+F finitef *	int finitef(float)
+F flistxattr *	ssize_t flistxattr(int, char *, size_t)
+F flock *	int flock(int, int)
+F flockfile *	void flockfile(FILE *)
+F floor *	double floor(double)
+F floorf *	float floorf(float)
+F floorl *	long double floorl(long double)
+F fma *	double fma(double, double, double)
+F fmaf *	float fmaf(float, float, float)
+F fmal *	long double fmal(long double, long double, long double)
+F fmax *	double fmax(double, double)
+F fmaxf *	float fmaxf(float, float)
+F fmaxl *	long double fmaxl(long double, long double)
+F fmemopen *	FILE *fmemopen(void *, size_t, const char *)
+F fmin *	double fmin(double, double)
+F fminf *	float fminf(float, float)
+F fminl *	long double fminl(long double, long double)
+F fmod *	double fmod(double, double)
+F fmodf *	float fmodf(float, float)
+F fmodl *	long double fmodl(long double, long double)
+F fmtmsg *	int fmtmsg(long, const char *, int, const char *, const char *, const char *)
+F fnmatch *	int fnmatch(const char *, const char *, int)
+F fopen *	FILE *fopen(const char *, const char *)
+F fopencookie *	FILE *fopencookie(void *, const char *, cookie_io_functions_t)
+F fork *	pid_t fork(void)
+F forkpty *	int forkpty(int *, char *, const struct termios *, const struct winsize *)
+F fpathconf *	long fpathconf(int, int)
+F fprintf *	int fprintf(FILE *, const char *, ...)
+F fputc *	int fputc(int, FILE *)
+F fputc_unlocked *	int fputc_unlocked(int, FILE *)
+F fputs *	int fputs(const char *, FILE *)
+F fputs_unlocked *	int fputs_unlocked(const char *, FILE *)
+F fputwc *	wint_t fputwc(wchar_t, FILE *)
+F fputwc_unlocked *	wint_t fputwc_unlocked(wchar_t, FILE *)
+F fputws *	int fputws(const wchar_t *, FILE *)
+F fputws_unlocked *	int fputws_unlocked(const wchar_t *, FILE *)
+F fread *	size_t fread(void *, size_t, size_t, FILE *)
+F fread_unlocked *	size_t fread_unlocked(void *, size_t, size_t, FILE *)
+F free *	void free(void *)
+F freeaddrinfo *	void freeaddrinfo(struct addrinfo *)
+F freeifaddrs *	void freeifaddrs(struct ifaddrs *)
+F freelocale *	void freelocale(locale_t)
+F fremovexattr *	int fremovexattr(int, const char *)
+F freopen *	FILE *freopen(const char *, const char *, FILE *)
+F frexp *	double frexp(double, int *)
+F frexpf *	float frexpf(float, int *)
+F frexpl *	long double frexpl(long double, int *)
+F fscanf m	int fscanf(FILE *, const char *, ...)
+F fseek *	int fseek(FILE *, long, int)
+F fseeko *	int fseeko(FILE *, off_t, int)
+F fsetpos *	int fsetpos(FILE *, const fpos_t *)
+F fsetxattr *	int fsetxattr(int, const char *, const void *, size_t, int)
+F fstat *	int fstat(int, struct stat *)
+F fstatat *	int fstatat(int, const char *, struct stat *, int)
+F fstatfs *	int fstatfs(int, struct statfs *)
+F fstatvfs *	int fstatvfs(int, struct statvfs *)
+F fsync *	int fsync(int)
+F ftell *	long ftell(FILE *)
+F ftello *	off_t ftello(FILE *)
+F ftime *	int ftime(struct timeb *)
+F ftok *	key_t ftok(const char *, int)
+F ftruncate *	int ftruncate(int, off_t)
+F ftrylockfile *	int ftrylockfile(FILE *)
+F ftw *	int ftw(const char *, int (*)(const char *, const struct stat *, int), int)
+F funlockfile *	void funlockfile(FILE *)
+F futimens *	int futimens(int, const struct timespec *)
+F futimes *	int futimes(int, const struct timeval *)
+F futimesat *	int futimesat(int, const char *, const struct timeval *)
+F fwide *	int fwide(FILE *, int)
+F fwprintf *	int fwprintf(FILE *, const wchar_t *, ...)
+F fwrite *	size_t fwrite(const void *, size_t, size_t, FILE *)
+F fwrite_unlocked *	size_t fwrite_unlocked(const void *, size_t, size_t, FILE *)
+F fwscanf m	int fwscanf(FILE *, const wchar_t *, ...)
+F gai_strerror *	const char *gai_strerror(int)
+F gcvt *	char *gcvt(double, int, char *)
+F get_avphys_pages *	long get_avphys_pages(void)
+F get_current_dir_name *	char *get_current_dir_name(void)
+F get_nprocs *	int get_nprocs(void)
+F get_nprocs_conf *	int get_nprocs_conf(void)
+F get_phys_pages *	long get_phys_pages(void)
+F getaddrinfo *	int getaddrinfo(const char *, const char *, const struct addrinfo *, struct addrinfo **)
+F getauxval *	unsigned long getauxval(unsigned long)
+F getc *	int getc(FILE *)
+F getc_unlocked *	int getc_unlocked(FILE *)
+F getchar *	int getchar(void)
+F getchar_unlocked *	int getchar_unlocked(void)
+F getcontext *	int getcontext(ucontext_t *)
+F getcwd *	char *getcwd(char *, size_t)
+F getdate *	struct tm *getdate(const char *)
+F getdelim *	ssize_t getdelim(char **, size_t *, int, FILE *)
+F getdents m	int getdents(int, struct dirent *, size_t)
+F getdomainname *	int getdomainname(char *, size_t)
+F getdtablesize *	int getdtablesize(void)
+F getegid *	gid_t getegid(void)
+F getentropy *	int getentropy(void *, size_t)
+F getenv *	char *getenv(const char *)
+F geteuid *	uid_t geteuid(void)
+F getgid *	gid_t getgid(void)
+F getgrent *	struct group *getgrent(void)
+F getgrgid *	struct group *getgrgid(gid_t)
+F getgrgid_r *	int getgrgid_r(gid_t, struct group *, char *, size_t, struct group **)
+F getgrnam *	struct group *getgrnam(const char *)
+F getgrnam_r *	int getgrnam_r(const char *, struct group *, char *, size_t, struct group **)
+F getgrouplist *	int getgrouplist(const char *, gid_t, gid_t *, int *)
+F getgroups *	int getgroups(int, gid_t *)
+F gethostbyaddr *	struct hostent *gethostbyaddr(const void *, socklen_t, int)
+F gethostbyaddr_r *	int gethostbyaddr_r(const void *, socklen_t, int, struct hostent *, char *, size_t, struct hostent **, int *)
+F gethostbyname *	struct hostent *gethostbyname(const char *)
+F gethostbyname2 *	struct hostent *gethostbyname2(const char *, int)
+F gethostbyname2_r *	int gethostbyname2_r(const char *, int, struct hostent *, char *, size_t, struct hostent **, int *)
+F gethostbyname_r *	int gethostbyname_r(const char *, struct hostent *, char *, size_t, struct hostent **, int *)
+F gethostent *	struct hostent *gethostent(void)
+F gethostid *	long gethostid(void)
+F gethostname *	int gethostname(char *, size_t)
+F getifaddrs *	int getifaddrs(struct ifaddrs **)
+F getitimer *	int getitimer(int, struct itimerval *)
+F getline *	ssize_t getline(char **, size_t *, FILE *)
+F getloadavg *	int getloadavg(double *, int)
+F getlogin *	char *getlogin(void)
+F getlogin_r *	int getlogin_r(char *, size_t)
+F getmntent *	struct mntent *getmntent(FILE *)
+F getmntent_r *	struct mntent *getmntent_r(FILE *, struct mntent *, char *, int)
+F getnameinfo *	int getnameinfo(const struct sockaddr *, socklen_t, char *, socklen_t, char *, socklen_t, int)
+F getnetbyaddr *	struct netent *getnetbyaddr(uint32_t, int)
+F getnetbyname *	struct netent *getnetbyname(const char *)
+F getnetent *	struct netent *getnetent(void)
+F getopt *	int getopt(int, char *const *, const char *)
+F getopt_long *	int getopt_long(int, char *const *, const char *, const struct option *, int *)
+F getopt_long_only *	int getopt_long_only(int, char *const *, const char *, const struct option *, int *)
+F getpagesize *	int getpagesize(void)
+F getpass *	char *getpass(const char *)
+F getpeername *	int getpeername(int, struct sockaddr *, socklen_t *)
+F getpgid *	pid_t getpgid(pid_t)
+F getpgrp *	pid_t getpgrp(void)
+F getpid *	pid_t getpid(void)
+F getppid *	pid_t getppid(void)
+F getpriority *	int getpriority(int, id_t)
+F getprotobyname *	struct protoent *getprotobyname(const char *)
+F getprotobynumber *	struct protoent *getprotobynumber(int)
+F getprotoent *	struct protoent *getprotoent(void)
+F getpwent *	struct passwd *getpwent(void)
+F getpwnam *	struct passwd *getpwnam(const char *)
+F getpwnam_r *	int getpwnam_r(const char *, struct passwd *, char *, size_t, struct passwd **)
+F getpwuid *	struct passwd *getpwuid(uid_t)
+F getpwuid_r *	int getpwuid_r(uid_t, struct passwd *, char *, size_t, struct passwd **)
+F getrandom *	ssize_t getrandom(void *, size_t, unsigned int)
+F getresgid *	int getresgid(gid_t *, gid_t *, gid_t *)
+F getresuid *	int getresuid(uid_t *, uid_t *, uid_t *)
+F getrlimit *	int getrlimit(int, struct rlimit *)
+F getrusage *	int getrusage(int, struct rusage *)
+F getservbyname *	struct servent *getservbyname(const char *, const char *)
+F getservbyname_r *	int getservbyname_r(const char *, const char *, struct servent *, char *, size_t, struct servent **)
+F getservbyport *	struct servent *getservbyport(int, const char *)
+F getservbyport_r *	int getservbyport_r(int, const char *, struct servent *, char *, size_t, struct servent **)
+F getservent *	struct servent *getservent(void)
+F getsid *	pid_t getsid(pid_t)
+F getsockname *	int getsockname(int, struct sockaddr *, socklen_t *)
+F getsockopt *	int getsockopt(int, int, int, void *, socklen_t *)
+F getspent *	struct spwd *getspent(void)
+F getspnam *	struct spwd *getspnam(const char *)
+F getspnam_r *	int getspnam_r(const char *, struct spwd *, char *, size_t, struct spwd **)
+F getsubopt *	int getsubopt(char **, char *const *, char **)
+F gettext *	char *gettext(const char *)
+F gettid *	pid_t gettid(void)
+F gettimeofday *	int gettimeofday(struct timeval *, void *)
+F getuid *	uid_t getuid(void)
+F getusershell *	char *getusershell(void)
+F getutent m	struct utmpx *getutent(void)
+F getutid m	struct utmpx *getutid(const struct utmpx *)
+F getutline m	struct utmpx *getutline(const struct utmpx *)
+F getutxent *	struct utmpx *getutxent(void)
+F getutxid *	struct utmpx *getutxid(const struct utmpx *)
+F getutxline *	struct utmpx *getutxline(const struct utmpx *)
+F getw *	int getw(FILE *)
+F getwc *	wint_t getwc(FILE *)
+F getwc_unlocked *	wint_t getwc_unlocked(FILE *)
+F getwchar *	wint_t getwchar(void)
+F getwchar_unlocked *	wint_t getwchar_unlocked(void)
+F getxattr *	ssize_t getxattr(const char *, const char *, void *, size_t)
+F glob *	int glob(const char *, int, int (*)(const char *, int), glob_t *)
+F globfree *	void globfree(glob_t *)
+F gmtime *	struct tm *gmtime(const time_t *)
+F gmtime_r *	struct tm *gmtime_r(const time_t *, struct tm *)
+F grantpt *	int grantpt(int)
+F hasmntopt *	char *hasmntopt(const struct mntent *, const char *)
+F hcreate *	int hcreate(size_t)
+F hcreate_r *	int hcreate_r(size_t, struct hsearch_data *)
+F hdestroy *	void hdestroy(void)
+F hdestroy_r *	void hdestroy_r(struct hsearch_data *)
+F herror *	void herror(const char *)
+F hsearch *	ENTRY *hsearch(ENTRY, ACTION)
+F hsearch_r *	int hsearch_r(ENTRY, ACTION, ENTRY **, struct hsearch_data *)
+F hstrerror *	const char *hstrerror(int)
+F htonl *	uint32_t htonl(uint32_t)
+F htons *	uint16_t htons(uint16_t)
+F hypot *	double hypot(double, double)
+F hypotf *	float hypotf(float, float)
+F hypotl *	long double hypotl(long double, long double)
+F iconv *	size_t iconv(iconv_t, char **, size_t *, char **, size_t *)
+F iconv_close *	int iconv_close(iconv_t)
+F iconv_open *	iconv_t iconv_open(const char *, const char *)
+F if_freenameindex *	void if_freenameindex(struct if_nameindex *)
+F if_indextoname *	char *if_indextoname(unsigned int, char *)
+F if_nameindex *	struct if_nameindex *if_nameindex(void)
+F if_nametoindex *	unsigned int if_nametoindex(const char *)
+F ilogb *	int ilogb(double)
+F ilogbf *	int ilogbf(float)
+F ilogbl *	int ilogbl(long double)
+F imaxabs *	intmax_t imaxabs(intmax_t)
+F imaxdiv *	imaxdiv_t imaxdiv(intmax_t, intmax_t)
+F index *	char *index(const char *, int)
+F inet_addr *	in_addr_t inet_addr(const char *)
+F inet_aton *	int inet_aton(const char *, struct in_addr *)
+F inet_lnaof *	in_addr_t inet_lnaof(struct in_addr)
+F inet_makeaddr *	struct in_addr inet_makeaddr(in_addr_t, in_addr_t)
+F inet_netof *	in_addr_t inet_netof(struct in_addr)
+F inet_network *	in_addr_t inet_network(const char *)
+F inet_ntoa *	char *inet_ntoa(struct in_addr)
+F inet_ntop *	const char *inet_ntop(int, const void *, char *, socklen_t)
+F inet_pton *	int inet_pton(int, const char *, void *)
+F initgroups *	int initgroups(const char *, gid_t)
+F initstate *	char *initstate(unsigned int, char *, size_t)
+F inotify_add_watch *	int inotify_add_watch(int, const char *, uint32_t)
+F inotify_init *	int inotify_init(void)
+F inotify_init1 *	int inotify_init1(int)
+F inotify_rm_watch *	int inotify_rm_watch(int, int)
+F insque *	void insque(void *, void *)
+F ioctl m	int ioctl(int, int, ...)
+F ioperm *	int ioperm(unsigned long, unsigned long, int)
+F iopl *	int iopl(int)
+F isalnum *	int isalnum(int)
+F isalnum_l *	int isalnum_l(int, locale_t)
+F isalpha *	int isalpha(int)
+F isalpha_l *	int isalpha_l(int, locale_t)
+F isascii *	int isascii(int)
+F isastream m	int isastream(int)
+F isatty *	int isatty(int)
+F isblank *	int isblank(int)
+F isblank_l *	int isblank_l(int, locale_t)
+F iscntrl *	int iscntrl(int)
+F iscntrl_l *	int iscntrl_l(int, locale_t)
+F isdigit *	int isdigit(int)
+F isdigit_l *	int isdigit_l(int, locale_t)
+F isgraph *	int isgraph(int)
+F isgraph_l *	int isgraph_l(int, locale_t)
+F islower *	int islower(int)
+F islower_l *	int islower_l(int, locale_t)
+F isprint *	int isprint(int)
+F isprint_l *	int isprint_l(int, locale_t)
+F ispunct *	int ispunct(int)
+F ispunct_l *	int ispunct_l(int, locale_t)
+F issetugid m	int issetugid(void)
+F isspace *	int isspace(int)
+F isspace_l *	int isspace_l(int, locale_t)
+F isupper *	int isupper(int)
+F isupper_l *	int isupper_l(int, locale_t)
+F iswalnum *	int iswalnum(wint_t)
+F iswalnum_l *	int iswalnum_l(wint_t, locale_t)
+F iswalpha *	int iswalpha(wint_t)
+F iswalpha_l *	int iswalpha_l(wint_t, locale_t)
+F iswblank *	int iswblank(wint_t)
+F iswblank_l *	int iswblank_l(wint_t, locale_t)
+F iswcntrl *	int iswcntrl(wint_t)
+F iswcntrl_l *	int iswcntrl_l(wint_t, locale_t)
+F iswctype *	int iswctype(wint_t, wctype_t)
+F iswctype_l *	int iswctype_l(wint_t, wctype_t, locale_t)
+F iswdigit *	int iswdigit(wint_t)
+F iswdigit_l *	int iswdigit_l(wint_t, locale_t)
+F iswgraph *	int iswgraph(wint_t)
+F iswgraph_l *	int iswgraph_l(wint_t, locale_t)
+F iswlower *	int iswlower(wint_t)
+F iswlower_l *	int iswlower_l(wint_t, locale_t)
+F iswprint *	int iswprint(wint_t)
+F iswprint_l *	int iswprint_l(wint_t, locale_t)
+F iswpunct *	int iswpunct(wint_t)
+F iswpunct_l *	int iswpunct_l(wint_t, locale_t)
+F iswspace *	int iswspace(wint_t)
+F iswspace_l *	int iswspace_l(wint_t, locale_t)
+F iswupper *	int iswupper(wint_t)
+F iswupper_l *	int iswupper_l(wint_t, locale_t)
+F iswxdigit *	int iswxdigit(wint_t)
+F iswxdigit_l *	int iswxdigit_l(wint_t, locale_t)
+F isxdigit *	int isxdigit(int)
+F isxdigit_l *	int isxdigit_l(int, locale_t)
+F j0 *	double j0(double)
+F j0f *	float j0f(float)
+F j1 *	double j1(double)
+F j1f *	float j1f(float)
+F jn *	double jn(int, double)
+F jnf *	float jnf(int, float)
+F jrand48 *	long jrand48(unsigned short *)
+F kill *	int kill(pid_t, int)
+F killpg *	int killpg(pid_t, int)
+F klogctl *	int klogctl(int, char *, int)
+F l64a *	char *l64a(long)
+F labs *	long labs(long)
+F lchmod *	int lchmod(const char *, mode_t)
+F lchown *	int lchown(const char *, uid_t, gid_t)
+F lckpwdf *	int lckpwdf(void)
+F lcong48 *	void lcong48(unsigned short *)
+F ldexp *	double ldexp(double, int)
+F ldexpf *	float ldexpf(float, int)
+F ldexpl *	long double ldexpl(long double, int)
+F ldiv *	ldiv_t ldiv(long, long)
+F lfind *	void *lfind(const void *, const void *, size_t *, size_t, int (*)(const void *, const void *))
+F lgamma *	double lgamma(double)
+F lgamma_r *	double lgamma_r(double, int *)
+F lgammaf *	float lgammaf(float)
+F lgammaf_r *	float lgammaf_r(float, int *)
+F lgammal *	long double lgammal(long double)
+F lgammal_r *	long double lgammal_r(long double, int *)
+F lgetxattr *	ssize_t lgetxattr(const char *, const char *, void *, size_t)
+F link *	int link(const char *, const char *)
+F linkat *	int linkat(int, const char *, int, const char *, int)
+F lio_listio *	int lio_listio(int, struct aiocb *const *, int, struct sigevent *)
+F listen *	int listen(int, int)
+F listxattr *	ssize_t listxattr(const char *, char *, size_t)
+F llabs *	long long llabs(long long)
+F lldiv *	lldiv_t lldiv(long long, long long)
+F llistxattr *	ssize_t llistxattr(const char *, char *, size_t)
+F llrint *	long long llrint(double)
+F llrintf *	long long llrintf(float)
+F llrintl *	long long llrintl(long double)
+F llround *	long long llround(double)
+F llroundf *	long long llroundf(float)
+F llroundl *	long long llroundl(long double)
+F localeconv *	struct lconv *localeconv(void)
+F localtime *	struct tm *localtime(const time_t *)
+F localtime_r *	struct tm *localtime_r(const time_t *, struct tm *)
+F lockf *	int lockf(int, int, off_t)
+F log *	double log(double)
+F log10 *	double log10(double)
+F log10f *	float log10f(float)
+F log10l *	long double log10l(long double)
+F log1p *	double log1p(double)
+F log1pf *	float log1pf(float)
+F log1pl *	long double log1pl(long double)
+F log2 *	double log2(double)
+F log2f *	float log2f(float)
+F log2l *	long double log2l(long double)
+F logb *	double logb(double)
+F logbf *	float logbf(float)
+F logbl *	long double logbl(long double)
+F logf *	float logf(float)
+F login_tty *	int login_tty(int)
+F logl *	long double logl(long double)
+F longjmp *	void longjmp(struct __jmp_buf_tag *, int)
+F lrand48 *	long lrand48(void)
+F lremovexattr *	int lremovexattr(const char *, const char *)
+F lrint *	long lrint(double)
+F lrintf *	long lrintf(float)
+F lrintl *	long lrintl(long double)
+F lround *	long lround(double)
+F lroundf *	long lroundf(float)
+F lroundl *	long lroundl(long double)
+F lsearch *	void *lsearch(const void *, void *, size_t *, size_t, int (*)(const void *, const void *))
+F lseek *	off_t lseek(int, off_t, int)
+F lsetxattr *	int lsetxattr(const char *, const char *, const void *, size_t, int)
+F lstat *	int lstat(const char *, struct stat *)
+F lutimes *	int lutimes(const char *, const struct timeval *)
+F madvise *	int madvise(void *, size_t, int)
+F makecontext m	void makecontext(struct ucontext *, void (*)(void), int, ...)
+F malloc *	void *malloc(size_t)
+F malloc_usable_size *	size_t malloc_usable_size(void *)
+F mblen *	int mblen(const char *, size_t)
+F mbrlen *	size_t mbrlen(const char *, size_t, mbstate_t *)
+F mbrtoc16 *	size_t mbrtoc16(char16_t *, const char *, size_t, mbstate_t *)
+F mbrtoc32 *	size_t mbrtoc32(char32_t *, const char *, size_t, mbstate_t *)
+F mbrtowc *	size_t mbrtowc(wchar_t *, const char *, size_t, mbstate_t *)
+F mbsinit *	int mbsinit(const mbstate_t *)
+F mbsnrtowcs *	size_t mbsnrtowcs(wchar_t *, const char **, size_t, size_t, mbstate_t *)
+F mbsrtowcs *	size_t mbsrtowcs(wchar_t *, const char **, size_t, mbstate_t *)
+F mbstowcs *	size_t mbstowcs(wchar_t *, const char *, size_t)
+F mbtowc *	int mbtowc(wchar_t *, const char *, size_t)
+F memalign *	void *memalign(size_t, size_t)
+F membarrier m	int membarrier(int, int)
+F memccpy *	void *memccpy(void *, const void *, int, size_t)
+F memchr *	void *memchr(const void *, int, size_t)
+F memcmp *	int memcmp(const void *, const void *, size_t)
+F memcpy *	void *memcpy(void *, const void *, size_t)
+F memfd_create *	int memfd_create(const char *, unsigned int)
+F memmem *	void *memmem(const void *, size_t, const void *, size_t)
+F memmove *	void *memmove(void *, const void *, size_t)
+F mempcpy *	void *mempcpy(void *, const void *, size_t)
+F memrchr *	void *memrchr(const void *, int, size_t)
+F memset *	void *memset(void *, int, size_t)
+F mincore *	int mincore(void *, size_t, unsigned char *)
+F mkdir *	int mkdir(const char *, mode_t)
+F mkdirat *	int mkdirat(int, const char *, mode_t)
+F mkdtemp *	char *mkdtemp(char *)
+F mkfifo *	int mkfifo(const char *, mode_t)
+F mkfifoat *	int mkfifoat(int, const char *, mode_t)
+F mknod *	int mknod(const char *, mode_t, dev_t)
+F mknodat *	int mknodat(int, const char *, mode_t, dev_t)
+F mkostemp *	int mkostemp(char *, int)
+F mkostemps *	int mkostemps(char *, int, int)
+F mkstemp *	int mkstemp(char *)
+F mkstemps *	int mkstemps(char *, int)
+F mktemp *	char *mktemp(char *)
+F mktime *	time_t mktime(struct tm *)
+F mlock *	int mlock(const void *, size_t)
+F mlock2 *	int mlock2(const void *, size_t, unsigned int)
+F mlockall *	int mlockall(int)
+F mmap *	void *mmap(void *, size_t, int, int, int, off_t)
+F modf *	double modf(double, double *)
+F modff *	float modff(float, float *)
+F modfl *	long double modfl(long double, long double *)
+F mount *	int mount(const char *, const char *, const char *, unsigned long, const void *)
+F mprotect *	int mprotect(void *, size_t, int)
+F mq_close *	int mq_close(mqd_t)
+F mq_getattr *	int mq_getattr(mqd_t, struct mq_attr *)
+F mq_notify *	int mq_notify(mqd_t, const struct sigevent *)
+F mq_open *	mqd_t mq_open(const char *, int, ...)
+F mq_receive *	ssize_t mq_receive(mqd_t, char *, size_t, unsigned int *)
+F mq_send *	int mq_send(mqd_t, const char *, size_t, unsigned int)
+F mq_setattr *	int mq_setattr(mqd_t, const struct mq_attr *, struct mq_attr *)
+F mq_timedreceive *	ssize_t mq_timedreceive(mqd_t, char *, size_t, unsigned int *, const struct timespec *)
+F mq_timedsend *	int mq_timedsend(mqd_t, const char *, size_t, unsigned int, const struct timespec *)
+F mq_unlink *	int mq_unlink(const char *)
+F mrand48 *	long mrand48(void)
+F mremap *	void *mremap(void *, size_t, size_t, int, ...)
+F msgctl *	int msgctl(int, int, struct msqid_ds *)
+F msgget *	int msgget(key_t, int)
+F msgrcv *	ssize_t msgrcv(int, void *, size_t, long, int)
+F msgsnd *	int msgsnd(int, const void *, size_t, int)
+F msync *	int msync(void *, size_t, int)
+F mtx_destroy *	void mtx_destroy(mtx_t *)
+F mtx_init *	int mtx_init(mtx_t *, int)
+F mtx_lock *	int mtx_lock(mtx_t *)
+F mtx_timedlock *	int mtx_timedlock(mtx_t *, const struct timespec *)
+F mtx_trylock *	int mtx_trylock(mtx_t *)
+F mtx_unlock *	int mtx_unlock(mtx_t *)
+F munlock *	int munlock(const void *, size_t)
+F munlockall *	int munlockall(void)
+F munmap *	int munmap(void *, size_t)
+F name_to_handle_at *	int name_to_handle_at(int, const char *, struct file_handle *, int *, int)
+F nan *	double nan(const char *)
+F nanf *	float nanf(const char *)
+F nanl *	long double nanl(const char *)
+F nanosleep *	int nanosleep(const struct timespec *, struct timespec *)
+F nearbyint *	double nearbyint(double)
+F nearbyintf *	float nearbyintf(float)
+F nearbyintl *	long double nearbyintl(long double)
+F newlocale *	locale_t newlocale(int, const char *, locale_t)
+F nextafter *	double nextafter(double, double)
+F nextafterf *	float nextafterf(float, float)
+F nextafterl *	long double nextafterl(long double, long double)
+F nexttoward *	double nexttoward(double, long double)
+F nexttowardf *	float nexttowardf(float, long double)
+F nexttowardl *	long double nexttowardl(long double, long double)
+F nftw *	int nftw(const char *, int (*)(const char *, const struct stat *, int, struct FTW *), int, int)
+F ngettext *	char *ngettext(const char *, const char *, unsigned long)
+F nice *	int nice(int)
+F nl_langinfo *	char *nl_langinfo(nl_item)
+F nl_langinfo_l *	char *nl_langinfo_l(nl_item, locale_t)
+F nrand48 *	long nrand48(unsigned short *)
+F ns_get16 *	unsigned int ns_get16(const unsigned char *)
+F ns_get32 *	unsigned long ns_get32(const unsigned char *)
+F ns_initparse *	int ns_initparse(const unsigned char *, int, ns_msg *)
+F ns_name_uncompress *	int ns_name_uncompress(const unsigned char *, const unsigned char *, const unsigned char *, char *, size_t)
+F ns_parserr *	int ns_parserr(ns_msg *, ns_sect, int, ns_rr *)
+F ns_put16 *	void ns_put16(unsigned int, unsigned char *)
+F ns_put32 *	void ns_put32(unsigned long, unsigned char *)
+F ns_skiprr *	int ns_skiprr(const unsigned char *, const unsigned char *, ns_sect, int)
+F ntohl *	uint32_t ntohl(uint32_t)
+F ntohs *	uint16_t ntohs(uint16_t)
+F open *	int open(const char *, int, ...)
+F open_by_handle_at *	int open_by_handle_at(int, struct file_handle *, int)
+F open_memstream *	FILE *open_memstream(char **, size_t *)
+F open_wmemstream *	FILE *open_wmemstream(wchar_t **, size_t *)
+F openat *	int openat(int, const char *, int, ...)
+F opendir *	DIR *opendir(const char *)
+F openlog *	void openlog(const char *, int, int)
+F openpty *	int openpty(int *, int *, char *, const struct termios *, const struct winsize *)
+F pathconf *	long pathconf(const char *, int)
+F pause *	int pause(void)
+F pclose *	int pclose(FILE *)
+F perror *	void perror(const char *)
+F personality *	int personality(unsigned long)
+F pipe *	int pipe(int *)
+F pipe2 *	int pipe2(int *, int)
+F poll *	int poll(struct pollfd *, nfds_t, int)
+F popen *	FILE *popen(const char *, const char *)
+F posix_close m	int posix_close(int, int)
+F posix_fadvise *	int posix_fadvise(int, off_t, off_t, int)
+F posix_fallocate *	int posix_fallocate(int, off_t, off_t)
+F posix_getdents m	ssize_t posix_getdents(int, void *, size_t, int)
+F posix_madvise *	int posix_madvise(void *, size_t, int)
+F posix_memalign *	int posix_memalign(void **, size_t, size_t)
+F posix_openpt *	int posix_openpt(int)
+F posix_spawn *	int posix_spawn(pid_t *, const char *, const posix_spawn_file_actions_t *, const posix_spawnattr_t *, char *const *, char *const *)
+F posix_spawn_file_actions_addchdir_np *	int posix_spawn_file_actions_addchdir_np(posix_spawn_file_actions_t *, const char *)
+F posix_spawn_file_actions_addclose *	int posix_spawn_file_actions_addclose(posix_spawn_file_actions_t *, int)
+F posix_spawn_file_actions_adddup2 *	int posix_spawn_file_actions_adddup2(posix_spawn_file_actions_t *, int, int)
+F posix_spawn_file_actions_addfchdir_np *	int posix_spawn_file_actions_addfchdir_np(posix_spawn_file_actions_t *, int)
+F posix_spawn_file_actions_addopen *	int posix_spawn_file_actions_addopen(posix_spawn_file_actions_t *, int, const char *, int, mode_t)
+F posix_spawn_file_actions_destroy *	int posix_spawn_file_actions_destroy(posix_spawn_file_actions_t *)
+F posix_spawn_file_actions_init *	int posix_spawn_file_actions_init(posix_spawn_file_actions_t *)
+F posix_spawnattr_destroy *	int posix_spawnattr_destroy(posix_spawnattr_t *)
+F posix_spawnattr_getflags *	int posix_spawnattr_getflags(const posix_spawnattr_t *, short *)
+F posix_spawnattr_getpgroup *	int posix_spawnattr_getpgroup(const posix_spawnattr_t *, pid_t *)
+F posix_spawnattr_getschedparam *	int posix_spawnattr_getschedparam(const posix_spawnattr_t *, struct sched_param *)
+F posix_spawnattr_getschedpolicy *	int posix_spawnattr_getschedpolicy(const posix_spawnattr_t *, int *)
+F posix_spawnattr_getsigdefault *	int posix_spawnattr_getsigdefault(const posix_spawnattr_t *, sigset_t *)
+F posix_spawnattr_getsigmask *	int posix_spawnattr_getsigmask(const posix_spawnattr_t *, sigset_t *)
+F posix_spawnattr_init *	int posix_spawnattr_init(posix_spawnattr_t *)
+F posix_spawnattr_setflags *	int posix_spawnattr_setflags(posix_spawnattr_t *, short)
+F posix_spawnattr_setpgroup *	int posix_spawnattr_setpgroup(posix_spawnattr_t *, pid_t)
+F posix_spawnattr_setschedparam *	int posix_spawnattr_setschedparam(posix_spawnattr_t *, const struct sched_param *)
+F posix_spawnattr_setschedpolicy *	int posix_spawnattr_setschedpolicy(posix_spawnattr_t *, int)
+F posix_spawnattr_setsigdefault *	int posix_spawnattr_setsigdefault(posix_spawnattr_t *, const sigset_t *)
+F posix_spawnattr_setsigmask *	int posix_spawnattr_setsigmask(posix_spawnattr_t *, const sigset_t *)
+F posix_spawnp *	int posix_spawnp(pid_t *, const char *, const posix_spawn_file_actions_t *, const posix_spawnattr_t *, char *const *, char *const *)
+F pow *	double pow(double, double)
+F pow10 m	double pow10(double)
+F pow10f m	float pow10f(float)
+F pow10l m	long double pow10l(long double)
+F powf *	float powf(float, float)
+F powl *	long double powl(long double, long double)
+F ppoll *	int ppoll(struct pollfd *, nfds_t, const struct timespec *, const sigset_t *)
+F prctl *	int prctl(int, ...)
+F pread *	ssize_t pread(int, void *, size_t, off_t)
+F preadv *	ssize_t preadv(int, const struct iovec *, int, off_t)
+F preadv2 *	ssize_t preadv2(int, const struct iovec *, int, off_t, int)
+F printf *	int printf(const char *, ...)
+F prlimit m	int prlimit(pid_t, int, const struct rlimit *, struct rlimit *)
+F process_vm_readv *	ssize_t process_vm_readv(pid_t, const struct iovec *, unsigned long, const struct iovec *, unsigned long, unsigned long)
+F process_vm_writev *	ssize_t process_vm_writev(pid_t, const struct iovec *, unsigned long, const struct iovec *, unsigned long, unsigned long)
+F pselect *	int pselect(int, fd_set *, fd_set *, fd_set *, const struct timespec *, const sigset_t *)
+F psiginfo *	void psiginfo(const siginfo_t *, const char *)
+F psignal *	void psignal(int, const char *)
+F pthread_atfork *	int pthread_atfork(void (*)(void), void (*)(void), void (*)(void))
+F pthread_attr_destroy *	int pthread_attr_destroy(pthread_attr_t *)
+F pthread_attr_getdetachstate *	int pthread_attr_getdetachstate(const pthread_attr_t *, int *)
+F pthread_attr_getguardsize *	int pthread_attr_getguardsize(const pthread_attr_t *, size_t *)
+F pthread_attr_getinheritsched *	int pthread_attr_getinheritsched(const pthread_attr_t *, int *)
+F pthread_attr_getschedparam *	int pthread_attr_getschedparam(const pthread_attr_t *, struct sched_param *)
+F pthread_attr_getschedpolicy *	int pthread_attr_getschedpolicy(const pthread_attr_t *, int *)
+F pthread_attr_getscope *	int pthread_attr_getscope(const pthread_attr_t *, int *)
+F pthread_attr_getstack *	int pthread_attr_getstack(const pthread_attr_t *, void **, size_t *)
+F pthread_attr_getstacksize *	int pthread_attr_getstacksize(const pthread_attr_t *, size_t *)
+F pthread_attr_init *	int pthread_attr_init(pthread_attr_t *)
+F pthread_attr_setdetachstate *	int pthread_attr_setdetachstate(pthread_attr_t *, int)
+F pthread_attr_setguardsize *	int pthread_attr_setguardsize(pthread_attr_t *, size_t)
+F pthread_attr_setinheritsched *	int pthread_attr_setinheritsched(pthread_attr_t *, int)
+F pthread_attr_setschedparam *	int pthread_attr_setschedparam(pthread_attr_t *, const struct sched_param *)
+F pthread_attr_setschedpolicy *	int pthread_attr_setschedpolicy(pthread_attr_t *, int)
+F pthread_attr_setscope *	int pthread_attr_setscope(pthread_attr_t *, int)
+F pthread_attr_setstack *	int pthread_attr_setstack(pthread_attr_t *, void *, size_t)
+F pthread_attr_setstacksize *	int pthread_attr_setstacksize(pthread_attr_t *, size_t)
+F pthread_barrier_destroy *	int pthread_barrier_destroy(pthread_barrier_t *)
+F pthread_barrier_init *	int pthread_barrier_init(pthread_barrier_t *, const pthread_barrierattr_t *, unsigned int)
+F pthread_barrier_wait *	int pthread_barrier_wait(pthread_barrier_t *)
+F pthread_barrierattr_destroy *	int pthread_barrierattr_destroy(pthread_barrierattr_t *)
+F pthread_barrierattr_getpshared *	int pthread_barrierattr_getpshared(const pthread_barrierattr_t *, int *)
+F pthread_barrierattr_init *	int pthread_barrierattr_init(pthread_barrierattr_t *)
+F pthread_barrierattr_setpshared *	int pthread_barrierattr_setpshared(pthread_barrierattr_t *, int)
+F pthread_cancel *	int pthread_cancel(pthread_t)
+F pthread_cond_broadcast *	int pthread_cond_broadcast(pthread_cond_t *)
+F pthread_cond_destroy *	int pthread_cond_destroy(pthread_cond_t *)
+F pthread_cond_init *	int pthread_cond_init(pthread_cond_t *, const pthread_condattr_t *)
+F pthread_cond_signal *	int pthread_cond_signal(pthread_cond_t *)
+F pthread_cond_timedwait *	int pthread_cond_timedwait(pthread_cond_t *, pthread_mutex_t *, const struct timespec *)
+F pthread_cond_wait *	int pthread_cond_wait(pthread_cond_t *, pthread_mutex_t *)
+F pthread_condattr_destroy *	int pthread_condattr_destroy(pthread_condattr_t *)
+F pthread_condattr_getclock *	int pthread_condattr_getclock(const pthread_condattr_t *, clockid_t *)
+F pthread_condattr_getpshared *	int pthread_condattr_getpshared(const pthread_condattr_t *, int *)
+F pthread_condattr_init *	int pthread_condattr_init(pthread_condattr_t *)
+F pthread_condattr_setclock *	int pthread_condattr_setclock(pthread_condattr_t *, clockid_t)
+F pthread_condattr_setpshared *	int pthread_condattr_setpshared(pthread_condattr_t *, int)
+F pthread_create *	int pthread_create(pthread_t *, const pthread_attr_t *, void *(*)(void *), void *)
+F pthread_detach *	int pthread_detach(pthread_t)
+F pthread_equal *	int pthread_equal(pthread_t, pthread_t)
+F pthread_exit *	void pthread_exit(void *)
+F pthread_getaffinity_np m	int pthread_getaffinity_np(pthread_t, size_t, struct cpu_set_t *)
+F pthread_getattr_default_np *	int pthread_getattr_default_np(pthread_attr_t *)
+F pthread_getattr_np *	int pthread_getattr_np(pthread_t, pthread_attr_t *)
+F pthread_getconcurrency *	int pthread_getconcurrency(void)
+F pthread_getcpuclockid *	int pthread_getcpuclockid(pthread_t, clockid_t *)
+F pthread_getname_np *	int pthread_getname_np(pthread_t, char *, size_t)
+F pthread_getschedparam *	int pthread_getschedparam(pthread_t, int *, struct sched_param *)
+F pthread_getspecific *	void *pthread_getspecific(pthread_key_t)
+F pthread_join *	int pthread_join(pthread_t, void **)
+F pthread_key_create *	int pthread_key_create(pthread_key_t *, void (*)(void *))
+F pthread_key_delete *	int pthread_key_delete(pthread_key_t)
+F pthread_kill *	int pthread_kill(pthread_t, int)
+F pthread_mutex_consistent *	int pthread_mutex_consistent(pthread_mutex_t *)
+F pthread_mutex_destroy *	int pthread_mutex_destroy(pthread_mutex_t *)
+F pthread_mutex_getprioceiling *	int pthread_mutex_getprioceiling(const pthread_mutex_t *, int *)
+F pthread_mutex_init *	int pthread_mutex_init(pthread_mutex_t *, const pthread_mutexattr_t *)
+F pthread_mutex_lock *	int pthread_mutex_lock(pthread_mutex_t *)
+F pthread_mutex_setprioceiling *	int pthread_mutex_setprioceiling(pthread_mutex_t *, int, int *)
+F pthread_mutex_timedlock *	int pthread_mutex_timedlock(pthread_mutex_t *, const struct timespec *)
+F pthread_mutex_trylock *	int pthread_mutex_trylock(pthread_mutex_t *)
+F pthread_mutex_unlock *	int pthread_mutex_unlock(pthread_mutex_t *)
+F pthread_mutexattr_destroy *	int pthread_mutexattr_destroy(pthread_mutexattr_t *)
+F pthread_mutexattr_getprioceiling *	int pthread_mutexattr_getprioceiling(const pthread_mutexattr_t *, int *)
+F pthread_mutexattr_getprotocol *	int pthread_mutexattr_getprotocol(const pthread_mutexattr_t *, int *)
+F pthread_mutexattr_getpshared *	int pthread_mutexattr_getpshared(const pthread_mutexattr_t *, int *)
+F pthread_mutexattr_getrobust *	int pthread_mutexattr_getrobust(const pthread_mutexattr_t *, int *)
+F pthread_mutexattr_gettype *	int pthread_mutexattr_gettype(const pthread_mutexattr_t *, int *)
+F pthread_mutexattr_init *	int pthread_mutexattr_init(pthread_mutexattr_t *)
+F pthread_mutexattr_setprioceiling *	int pthread_mutexattr_setprioceiling(pthread_mutexattr_t *, int)
+F pthread_mutexattr_setprotocol *	int pthread_mutexattr_setprotocol(pthread_mutexattr_t *, int)
+F pthread_mutexattr_setpshared *	int pthread_mutexattr_setpshared(pthread_mutexattr_t *, int)
+F pthread_mutexattr_setrobust *	int pthread_mutexattr_setrobust(pthread_mutexattr_t *, int)
+F pthread_mutexattr_settype *	int pthread_mutexattr_settype(pthread_mutexattr_t *, int)
+F pthread_once *	int pthread_once(pthread_once_t *, void (*)(void))
+F pthread_rwlock_destroy *	int pthread_rwlock_destroy(pthread_rwlock_t *)
+F pthread_rwlock_init *	int pthread_rwlock_init(pthread_rwlock_t *, const pthread_rwlockattr_t *)
+F pthread_rwlock_rdlock *	int pthread_rwlock_rdlock(pthread_rwlock_t *)
+F pthread_rwlock_timedrdlock *	int pthread_rwlock_timedrdlock(pthread_rwlock_t *, const struct timespec *)
+F pthread_rwlock_timedwrlock *	int pthread_rwlock_timedwrlock(pthread_rwlock_t *, const struct timespec *)
+F pthread_rwlock_tryrdlock *	int pthread_rwlock_tryrdlock(pthread_rwlock_t *)
+F pthread_rwlock_trywrlock *	int pthread_rwlock_trywrlock(pthread_rwlock_t *)
+F pthread_rwlock_unlock *	int pthread_rwlock_unlock(pthread_rwlock_t *)
+F pthread_rwlock_wrlock *	int pthread_rwlock_wrlock(pthread_rwlock_t *)
+F pthread_rwlockattr_destroy *	int pthread_rwlockattr_destroy(pthread_rwlockattr_t *)
+F pthread_rwlockattr_getpshared *	int pthread_rwlockattr_getpshared(const pthread_rwlockattr_t *, int *)
+F pthread_rwlockattr_init *	int pthread_rwlockattr_init(pthread_rwlockattr_t *)
+F pthread_rwlockattr_setpshared *	int pthread_rwlockattr_setpshared(pthread_rwlockattr_t *, int)
+F pthread_self *	pthread_t pthread_self(void)
+F pthread_setaffinity_np m	int pthread_setaffinity_np(pthread_t, size_t, const struct cpu_set_t *)
+F pthread_setattr_default_np *	int pthread_setattr_default_np(const pthread_attr_t *)
+F pthread_setcancelstate *	int pthread_setcancelstate(int, int *)
+F pthread_setcanceltype *	int pthread_setcanceltype(int, int *)
+F pthread_setconcurrency *	int pthread_setconcurrency(int)
+F pthread_setname_np *	int pthread_setname_np(pthread_t, const char *)
+F pthread_setschedparam *	int pthread_setschedparam(pthread_t, int, const struct sched_param *)
+F pthread_setschedprio *	int pthread_setschedprio(pthread_t, int)
+F pthread_setspecific *	int pthread_setspecific(pthread_key_t, const void *)
+F pthread_sigmask *	int pthread_sigmask(int, const sigset_t *, sigset_t *)
+F pthread_spin_destroy *	int pthread_spin_destroy(pthread_spinlock_t *)
+F pthread_spin_init *	int pthread_spin_init(pthread_spinlock_t *, int)
+F pthread_spin_lock *	int pthread_spin_lock(pthread_spinlock_t *)
+F pthread_spin_trylock *	int pthread_spin_trylock(pthread_spinlock_t *)
+F pthread_spin_unlock *	int pthread_spin_unlock(pthread_spinlock_t *)
+F pthread_testcancel *	void pthread_testcancel(void)
+F pthread_timedjoin_np *	int pthread_timedjoin_np(pthread_t, void **, const struct timespec *)
+F pthread_tryjoin_np *	int pthread_tryjoin_np(pthread_t, void **)
+F ptrace m	long ptrace(int, ...)
+F ptsname *	char *ptsname(int)
+F ptsname_r *	int ptsname_r(int, char *, size_t)
+F putc *	int putc(int, FILE *)
+F putc_unlocked *	int putc_unlocked(int, FILE *)
+F putchar *	int putchar(int)
+F putchar_unlocked *	int putchar_unlocked(int)
+F putenv *	int putenv(char *)
+F putgrent *	int putgrent(const struct group *, FILE *)
+F putpwent *	int putpwent(const struct passwd *, FILE *)
+F puts *	int puts(const char *)
+F putspent *	int putspent(const struct spwd *, FILE *)
+F pututline m	struct utmpx *pututline(const struct utmpx *)
+F pututxline *	struct utmpx *pututxline(const struct utmpx *)
+F putw *	int putw(int, FILE *)
+F putwc *	wint_t putwc(wchar_t, FILE *)
+F putwc_unlocked *	wint_t putwc_unlocked(wchar_t, FILE *)
+F putwchar *	wint_t putwchar(wchar_t)
+F putwchar_unlocked *	wint_t putwchar_unlocked(wchar_t)
+F pwrite *	ssize_t pwrite(int, const void *, size_t, off_t)
+F pwritev *	ssize_t pwritev(int, const struct iovec *, int, off_t)
+F pwritev2 *	ssize_t pwritev2(int, const struct iovec *, int, off_t, int)
+F qsort *	void qsort(void *, size_t, size_t, int (*)(const void *, const void *))
+F qsort_r *	void qsort_r(void *, size_t, size_t, int (*)(const void *, const void *, void *), void *)
+F quick_exit *	void quick_exit(int)
+F quotactl *	int quotactl(int, const char *, int, char *)
+F raise *	int raise(int)
+F rand *	int rand(void)
+F rand_r *	int rand_r(unsigned int *)
+F random *	long random(void)
+F read *	ssize_t read(int, void *, size_t)
+F readahead *	ssize_t readahead(int, off_t, size_t)
+F readdir *	struct dirent *readdir(DIR *)
+F readdir_r *	int readdir_r(DIR *, struct dirent *, struct dirent **)
+F readlink *	ssize_t readlink(const char *, char *, size_t)
+F readlinkat *	ssize_t readlinkat(int, const char *, char *, size_t)
+F readv *	ssize_t readv(int, const struct iovec *, int)
+F realloc *	void *realloc(void *, size_t)
+F reallocarray *	void *reallocarray(void *, size_t, size_t)
+F realpath *	char *realpath(const char *, char *)
+F reboot *	int reboot(int)
+F recv *	ssize_t recv(int, void *, size_t, int)
+F recvfrom *	ssize_t recvfrom(int, void *, size_t, int, struct sockaddr *, socklen_t *)
+F recvmmsg m	int recvmmsg(int, struct mmsghdr *, unsigned int, unsigned int, struct timespec *)
+F recvmsg *	ssize_t recvmsg(int, struct msghdr *, int)
+F regcomp *	int regcomp(regex_t *, const char *, int)
+F regerror *	size_t regerror(int, const regex_t *, char *, size_t)
+F regexec *	int regexec(const regex_t *, const char *, size_t, regmatch_t *, int)
+F regfree *	void regfree(regex_t *)
+F remainder *	double remainder(double, double)
+F remainderf *	float remainderf(float, float)
+F remainderl *	long double remainderl(long double, long double)
+F remap_file_pages *	int remap_file_pages(void *, size_t, int, size_t, int)
+F remove *	int remove(const char *)
+F removexattr *	int removexattr(const char *, const char *)
+F remque *	void remque(void *)
+F remquo *	double remquo(double, double, int *)
+F remquof *	float remquof(float, float, int *)
+F remquol *	long double remquol(long double, long double, int *)
+F rename *	int rename(const char *, const char *)
+F renameat *	int renameat(int, const char *, int, const char *)
+F renameat2 *	int renameat2(int, const char *, int, const char *, unsigned int)
+F res_init m	int res_init(void)
+F res_mkquery *	int res_mkquery(int, const char *, int, int, const unsigned char *, int, const unsigned char *, unsigned char *, int)
+F res_query *	int res_query(const char *, int, int, unsigned char *, int)
+F res_querydomain *	int res_querydomain(const char *, const char *, int, int, unsigned char *, int)
+F res_search *	int res_search(const char *, int, int, unsigned char *, int)
+F res_send *	int res_send(const unsigned char *, int, unsigned char *, int)
+F rewind *	void rewind(FILE *)
+F rewinddir *	void rewinddir(DIR *)
+F rindex *	char *rindex(const char *, int)
+F rint *	double rint(double)
+F rintf *	float rintf(float)
+F rintl *	long double rintl(long double)
+F rmdir *	int rmdir(const char *)
+F round *	double round(double)
+F roundf *	float roundf(float)
+F roundl *	long double roundl(long double)
+F sbrk *	void *sbrk(intptr_t)
+F scalb *	double scalb(double, double)
+F scalbf *	float scalbf(float, float)
+F scalbln *	double scalbln(double, long)
+F scalblnf *	float scalblnf(float, long)
+F scalblnl *	long double scalblnl(long double, long)
+F scalbn *	double scalbn(double, int)
+F scalbnf *	float scalbnf(float, int)
+F scalbnl *	long double scalbnl(long double, int)
+F scandir *	int scandir(const char *, struct dirent ***, int (*)(const struct dirent *), int (*)(const struct dirent **, const struct dirent **))
+F scanf m	int scanf(const char *, ...)
+F sched_get_priority_max *	int sched_get_priority_max(int)
+F sched_get_priority_min *	int sched_get_priority_min(int)
+F sched_getaffinity *	int sched_getaffinity(pid_t, size_t, cpu_set_t *)
+F sched_getcpu *	int sched_getcpu(void)
+F sched_getparam *	int sched_getparam(pid_t, struct sched_param *)
+F sched_getscheduler *	int sched_getscheduler(pid_t)
+F sched_rr_get_interval *	int sched_rr_get_interval(pid_t, struct timespec *)
+F sched_setaffinity *	int sched_setaffinity(pid_t, size_t, const cpu_set_t *)
+F sched_setparam *	int sched_setparam(pid_t, const struct sched_param *)
+F sched_setscheduler *	int sched_setscheduler(pid_t, int, const struct sched_param *)
+F sched_yield *	int sched_yield(void)
+F secure_getenv *	char *secure_getenv(const char *)
+F seed48 *	unsigned short *seed48(unsigned short *)
+F seekdir *	void seekdir(DIR *, long)
+F select *	int select(int, fd_set *, fd_set *, fd_set *, struct timeval *)
+F sem_close *	int sem_close(sem_t *)
+F sem_destroy *	int sem_destroy(sem_t *)
+F sem_getvalue *	int sem_getvalue(sem_t *, int *)
+F sem_init *	int sem_init(sem_t *, int, unsigned int)
+F sem_open *	sem_t *sem_open(const char *, int, ...)
+F sem_post *	int sem_post(sem_t *)
+F sem_timedwait *	int sem_timedwait(sem_t *, const struct timespec *)
+F sem_trywait *	int sem_trywait(sem_t *)
+F sem_unlink *	int sem_unlink(const char *)
+F sem_wait *	int sem_wait(sem_t *)
+F semctl *	int semctl(int, int, int, ...)
+F semget *	int semget(key_t, int, int)
+F semop *	int semop(int, struct sembuf *, size_t)
+F semtimedop *	int semtimedop(int, struct sembuf *, size_t, const struct timespec *)
+F send *	ssize_t send(int, const void *, size_t, int)
+F sendfile *	ssize_t sendfile(int, int, off_t *, size_t)
+F sendmmsg m	int sendmmsg(int, struct mmsghdr *, unsigned int, unsigned int)
+F sendmsg *	ssize_t sendmsg(int, const struct msghdr *, int)
+F sendto *	ssize_t sendto(int, const void *, size_t, int, const struct sockaddr *, socklen_t)
+F setbuf *	void setbuf(FILE *, char *)
+F setbuffer *	void setbuffer(FILE *, char *, size_t)
+F setcontext m	int setcontext(const struct ucontext *)
+F setdomainname *	int setdomainname(const char *, size_t)
+F setegid *	int setegid(gid_t)
+F setenv *	int setenv(const char *, const char *, int)
+F seteuid *	int seteuid(uid_t)
+F setfsgid *	int setfsgid(gid_t)
+F setfsuid *	int setfsuid(uid_t)
+F setgid *	int setgid(gid_t)
+F setgrent *	void setgrent(void)
+F setgroups *	int setgroups(size_t, const gid_t *)
+F sethostent *	void sethostent(int)
+F sethostname *	int sethostname(const char *, size_t)
+F setitimer *	int setitimer(int, const struct itimerval *, struct itimerval *)
+F setjmp *	int setjmp(struct __jmp_buf_tag *)
+F setkey m	void setkey(const char *)
+F setlinebuf *	void setlinebuf(FILE *)
+F setlocale *	char *setlocale(int, const char *)
+F setlogmask *	int setlogmask(int)
+F setmntent *	FILE *setmntent(const char *, const char *)
+F setnetent *	void setnetent(int)
+F setns *	int setns(int, int)
+F setpgid *	int setpgid(pid_t, pid_t)
+F setpgrp *	pid_t setpgrp(void)
+F setpriority *	int setpriority(int, id_t, int)
+F setprotoent *	void setprotoent(int)
+F setpwent *	void setpwent(void)
+F setregid *	int setregid(gid_t, gid_t)
+F setresgid *	int setresgid(gid_t, gid_t, gid_t)
+F setresuid *	int setresuid(uid_t, uid_t, uid_t)
+F setreuid *	int setreuid(uid_t, uid_t)
+F setrlimit *	int setrlimit(int, const struct rlimit *)
+F setservent *	void setservent(int)
+F setsid *	pid_t setsid(void)
+F setsockopt *	int setsockopt(int, int, int, const void *, socklen_t)
+F setspent *	void setspent(void)
+F setstate *	char *setstate(char *)
+F settimeofday *	int settimeofday(const struct timeval *, const struct timezone *)
+F setuid *	int setuid(uid_t)
+F setusershell *	void setusershell(void)
+F setutent *	void setutent(void)
+F setutxent *	void setutxent(void)
+F setvbuf *	int setvbuf(FILE *, char *, int, size_t)
+F setxattr *	int setxattr(const char *, const char *, const void *, size_t, int)
+F shm_open *	int shm_open(const char *, int, mode_t)
+F shm_unlink *	int shm_unlink(const char *)
+F shmat *	void *shmat(int, const void *, int)
+F shmctl *	int shmctl(int, int, struct shmid_ds *)
+F shmdt *	int shmdt(const void *)
+F shmget *	int shmget(key_t, size_t, int)
+F shutdown *	int shutdown(int, int)
+F sigaction *	int sigaction(int, const struct sigaction *, struct sigaction *)
+F sigaddset *	int sigaddset(sigset_t *, int)
+F sigaltstack *	int sigaltstack(const stack_t *, stack_t *)
+F sigandset *	int sigandset(sigset_t *, const sigset_t *, const sigset_t *)
+F sigdelset *	int sigdelset(sigset_t *, int)
+F sigemptyset *	int sigemptyset(sigset_t *)
+F sigfillset *	int sigfillset(sigset_t *)
+F sighold *	int sighold(int)
+F sigignore *	int sigignore(int)
+F siginterrupt *	int siginterrupt(int, int)
+F sigisemptyset *	int sigisemptyset(const sigset_t *)
+F sigismember *	int sigismember(const sigset_t *, int)
+F siglongjmp *	void siglongjmp(struct __jmp_buf_tag *, int)
+F signal *	void (*signal(int, void (*)(int)))(int)
+F signalfd *	int signalfd(int, const sigset_t *, int)
+F significand *	double significand(double)
+F significandf *	float significandf(float)
+F sigorset *	int sigorset(sigset_t *, const sigset_t *, const sigset_t *)
+F sigpause m	int sigpause(int)
+F sigpending *	int sigpending(sigset_t *)
+F sigprocmask *	int sigprocmask(int, const sigset_t *, sigset_t *)
+F sigqueue *	int sigqueue(pid_t, int, union sigval)
+F sigrelse *	int sigrelse(int)
+F sigset *	void (*sigset(int, void (*)(int)))(int)
+F sigsetjmp m	int sigsetjmp(struct __jmp_buf_tag *, int)
+F sigsuspend *	int sigsuspend(const sigset_t *)
+F sigtimedwait *	int sigtimedwait(const sigset_t *, siginfo_t *, const struct timespec *)
+F sigwait *	int sigwait(const sigset_t *, int *)
+F sigwaitinfo *	int sigwaitinfo(const sigset_t *, siginfo_t *)
+F sin *	double sin(double)
+F sincos *	void sincos(double, double *, double *)
+F sincosf *	void sincosf(float, float *, float *)
+F sincosl *	void sincosl(long double, long double *, long double *)
+F sinf *	float sinf(float)
+F sinh *	double sinh(double)
+F sinhf *	float sinhf(float)
+F sinhl *	long double sinhl(long double)
+F sinl *	long double sinl(long double)
+F sleep *	unsigned int sleep(unsigned int)
+F snprintf *	int snprintf(char *, size_t, const char *, ...)
+F sockatmark *	int sockatmark(int)
+F socket *	int socket(int, int, int)
+F socketpair *	int socketpair(int, int, int, int *)
+F splice *	ssize_t splice(int, off_t *, int, off_t *, size_t, unsigned int)
+F sprintf *	int sprintf(char *, const char *, ...)
+F sqrt *	double sqrt(double)
+F sqrtf *	float sqrtf(float)
+F sqrtl *	long double sqrtl(long double)
+F srand *	void srand(unsigned int)
+F srand48 *	void srand48(long)
+F srandom *	void srandom(unsigned int)
+F sscanf m	int sscanf(const char *, const char *, ...)
+F stat *	int stat(const char *, struct stat *)
+F statfs *	int statfs(const char *, struct statfs *)
+F statvfs *	int statvfs(const char *, struct statvfs *)
+F statx *	int statx(int, const char *, int, unsigned int, struct statx *)
+F stime m	int stime(const time_t *)
+F stpcpy *	char *stpcpy(char *, const char *)
+F stpncpy *	char *stpncpy(char *, const char *, size_t)
+F strcasecmp *	int strcasecmp(const char *, const char *)
+F strcasecmp_l *	int strcasecmp_l(const char *, const char *, locale_t)
+F strcasestr *	char *strcasestr(const char *, const char *)
+F strcat *	char *strcat(char *, const char *)
+F strchr *	char *strchr(const char *, int)
+F strchrnul *	char *strchrnul(const char *, int)
+F strcmp *	int strcmp(const char *, const char *)
+F strcoll *	int strcoll(const char *, const char *)
+F strcoll_l *	int strcoll_l(const char *, const char *, locale_t)
+F strcpy *	char *strcpy(char *, const char *)
+F strcspn *	size_t strcspn(const char *, const char *)
+F strdup *	char *strdup(const char *)
+F strerror *	char *strerror(int)
+F strerror_l *	char *strerror_l(int, locale_t)
+F strerror_r m	int strerror_r(int, char *, size_t)
+F strfmon *	ssize_t strfmon(char *, size_t, const char *, ...)
+F strfmon_l *	ssize_t strfmon_l(char *, size_t, locale_t, const char *, ...)
+F strftime *	size_t strftime(char *, size_t, const char *, const struct tm *)
+F strftime_l *	size_t strftime_l(char *, size_t, const char *, const struct tm *, locale_t)
+F strlcat *	size_t strlcat(char *, const char *, size_t)
+F strlcpy *	size_t strlcpy(char *, const char *, size_t)
+F strlen *	size_t strlen(const char *)
+F strncasecmp *	int strncasecmp(const char *, const char *, size_t)
+F strncasecmp_l *	int strncasecmp_l(const char *, const char *, size_t, locale_t)
+F strncat *	char *strncat(char *, const char *, size_t)
+F strncmp *	int strncmp(const char *, const char *, size_t)
+F strncpy *	char *strncpy(char *, const char *, size_t)
+F strndup *	char *strndup(const char *, size_t)
+F strnlen *	size_t strnlen(const char *, size_t)
+F strpbrk *	char *strpbrk(const char *, const char *)
+F strptime *	char *strptime(const char *, const char *, struct tm *)
+F strrchr *	char *strrchr(const char *, int)
+F strsep *	char *strsep(char **, const char *)
+F strsignal *	char *strsignal(int)
+F strspn *	size_t strspn(const char *, const char *)
+F strstr *	char *strstr(const char *, const char *)
+F strtod *	double strtod(const char *, char **)
+F strtod_l *	double strtod_l(const char *, char **, struct __locale_struct *)
+F strtof *	float strtof(const char *, char **)
+F strtof_l *	float strtof_l(const char *, char **, struct __locale_struct *)
+F strtoimax m	intmax_t strtoimax(const char *, char **, int)
+F strtok *	char *strtok(char *, const char *)
+F strtok_r *	char *strtok_r(char *, const char *, char **)
+F strtol m	long strtol(const char *, char **, int)
+F strtold *	long double strtold(const char *, char **)
+F strtold_l *	long double strtold_l(const char *, char **, struct __locale_struct *)
+F strtoll m	long long strtoll(const char *, char **, int)
+F strtoul m	unsigned long strtoul(const char *, char **, int)
+F strtoull m	unsigned long long strtoull(const char *, char **, int)
+F strtoumax m	uintmax_t strtoumax(const char *, char **, int)
+F strverscmp *	int strverscmp(const char *, const char *)
+F strxfrm *	size_t strxfrm(char *, const char *, size_t)
+F strxfrm_l *	size_t strxfrm_l(char *, const char *, size_t, locale_t)
+F swab *	void swab(const void *, void *, ssize_t)
+F swapcontext m	int swapcontext(struct ucontext *, const struct ucontext *)
+F swapoff *	int swapoff(const char *)
+F swapon *	int swapon(const char *, int)
+F swprintf *	int swprintf(wchar_t *, size_t, const wchar_t *, ...)
+F swscanf m	int swscanf(const wchar_t *, const wchar_t *, ...)
+F symlink *	int symlink(const char *, const char *)
+F symlinkat *	int symlinkat(const char *, int, const char *)
+F sync *	void sync(void)
+F sync_file_range *	int sync_file_range(int, off_t, off_t, unsigned int)
+F syncfs *	int syncfs(int)
+F syscall *	long syscall(long, ...)
+F sysconf *	long sysconf(int)
+F sysinfo *	int sysinfo(struct sysinfo *)
+F syslog *	void syslog(int, const char *, ...)
+F system *	int system(const char *)
+F tan *	double tan(double)
+F tanf *	float tanf(float)
+F tanh *	double tanh(double)
+F tanhf *	float tanhf(float)
+F tanhl *	long double tanhl(long double)
+F tanl *	long double tanl(long double)
+F tcdrain *	int tcdrain(int)
+F tcflow *	int tcflow(int, int)
+F tcflush *	int tcflush(int, int)
+F tcgetattr *	int tcgetattr(int, struct termios *)
+F tcgetpgrp *	pid_t tcgetpgrp(int)
+F tcgetsid *	pid_t tcgetsid(int)
+F tcgetwinsize m	int tcgetwinsize(int, struct winsize *)
+F tcsendbreak *	int tcsendbreak(int, int)
+F tcsetattr *	int tcsetattr(int, int, const struct termios *)
+F tcsetpgrp *	int tcsetpgrp(int, pid_t)
+F tcsetwinsize m	int tcsetwinsize(int, const struct winsize *)
+F tdelete *	void *tdelete(const void *, void **, int (*)(const void *, const void *))
+F tdestroy *	void tdestroy(void *, void (*)(void *))
+F tee *	ssize_t tee(int, int, size_t, unsigned int)
+F telldir *	long telldir(DIR *)
+F tempnam *	char *tempnam(const char *, const char *)
+F textdomain *	char *textdomain(const char *)
+F tfind *	void *tfind(const void *, void *const *, int (*)(const void *, const void *))
+F tgamma *	double tgamma(double)
+F tgammaf *	float tgammaf(float)
+F tgammal *	long double tgammal(long double)
+F thrd_create *	int thrd_create(thrd_t *, thrd_start_t, void *)
+F thrd_current *	thrd_t thrd_current(void)
+F thrd_detach *	int thrd_detach(thrd_t)
+F thrd_equal *	int thrd_equal(thrd_t, thrd_t)
+F thrd_exit *	void thrd_exit(int)
+F thrd_join *	int thrd_join(thrd_t, int *)
+F thrd_sleep *	int thrd_sleep(const struct timespec *, struct timespec *)
+F thrd_yield *	void thrd_yield(void)
+F time *	time_t time(time_t *)
+F timegm *	time_t timegm(struct tm *)
+F timer_create *	int timer_create(clockid_t, struct sigevent *, timer_t *)
+F timer_delete *	int timer_delete(timer_t)
+F timer_getoverrun *	int timer_getoverrun(timer_t)
+F timer_gettime *	int timer_gettime(timer_t, struct itimerspec *)
+F timer_settime *	int timer_settime(timer_t, int, const struct itimerspec *, struct itimerspec *)
+F timerfd_create *	int timerfd_create(int, int)
+F timerfd_gettime *	int timerfd_gettime(int, struct itimerspec *)
+F timerfd_settime *	int timerfd_settime(int, int, const struct itimerspec *, struct itimerspec *)
+F times *	clock_t times(struct tms *)
+F timespec_get *	int timespec_get(struct timespec *, int)
+F tmpfile *	FILE *tmpfile(void)
+F tmpnam *	char *tmpnam(char *)
+F toascii *	int toascii(int)
+F tolower *	int tolower(int)
+F tolower_l *	int tolower_l(int, locale_t)
+F toupper *	int toupper(int)
+F toupper_l *	int toupper_l(int, locale_t)
+F towctrans *	wint_t towctrans(wint_t, wctrans_t)
+F towctrans_l *	wint_t towctrans_l(wint_t, wctrans_t, locale_t)
+F towlower *	wint_t towlower(wint_t)
+F towlower_l *	wint_t towlower_l(wint_t, locale_t)
+F towupper *	wint_t towupper(wint_t)
+F towupper_l *	wint_t towupper_l(wint_t, locale_t)
+F trunc *	double trunc(double)
+F truncate *	int truncate(const char *, off_t)
+F truncf *	float truncf(float)
+F truncl *	long double truncl(long double)
+F tsearch *	void *tsearch(const void *, void **, int (*)(const void *, const void *))
+F tss_create *	int tss_create(tss_t *, tss_dtor_t)
+F tss_delete *	void tss_delete(tss_t)
+F tss_get *	void *tss_get(tss_t)
+F tss_set *	int tss_set(tss_t, void *)
+F ttyname *	char *ttyname(int)
+F ttyname_r *	int ttyname_r(int, char *, size_t)
+F twalk *	void twalk(const void *, void (*)(const void *, VISIT, int))
+F tzset *	void tzset(void)
+F ualarm *	unsigned int ualarm(unsigned int, unsigned int)
+F ulckpwdf *	int ulckpwdf(void)
+F ulimit *	long ulimit(int, ...)
+F umask *	mode_t umask(mode_t)
+F umount *	int umount(const char *)
+F umount2 *	int umount2(const char *, int)
+F uname *	int uname(struct utsname *)
+F ungetc *	int ungetc(int, FILE *)
+F ungetwc *	wint_t ungetwc(wint_t, FILE *)
+F unlink *	int unlink(const char *)
+F unlinkat *	int unlinkat(int, const char *, int)
+F unlockpt *	int unlockpt(int)
+F unsetenv *	int unsetenv(const char *)
+F unshare *	int unshare(int)
+F updwtmp m	void updwtmp(const char *, const struct utmpx *)
+F updwtmpx *	void updwtmpx(const char *, const struct utmpx *)
+F uselocale *	locale_t uselocale(locale_t)
+F usleep *	int usleep(unsigned int)
+F utime *	int utime(const char *, const struct utimbuf *)
+F utimensat *	int utimensat(int, const char *, const struct timespec *, int)
+F utimes *	int utimes(const char *, const struct timeval *)
+F utmpname *	int utmpname(const char *)
+F utmpxname *	int utmpxname(const char *)
+F valloc *	void *valloc(size_t)
+F vasprintf *	int vasprintf(char **, const char *, void *)
+F vdprintf *	int vdprintf(int, const char *, void *)
+F verr *	void verr(int, const char *, void *)
+F verrx *	void verrx(int, const char *, void *)
+F versionsort *	int versionsort(const struct dirent **, const struct dirent **)
+F vfork *	int vfork(void)
+F vfprintf *	int vfprintf(FILE *, const char *, void *)
+F vfscanf m	int vfscanf(FILE *, const char *, void *)
+F vfwprintf *	int vfwprintf(FILE *, const wchar_t *, void *)
+F vfwscanf m	int vfwscanf(FILE *, const wchar_t *, void *)
+F vhangup *	int vhangup(void)
+F vmsplice *	ssize_t vmsplice(int, const struct iovec *, size_t, unsigned int)
+F vprintf *	int vprintf(const char *, void *)
+F vscanf m	int vscanf(const char *, void *)
+F vsnprintf *	int vsnprintf(char *, size_t, const char *, void *)
+F vsprintf *	int vsprintf(char *, const char *, void *)
+F vsscanf m	int vsscanf(const char *, const char *, void *)
+F vswprintf *	int vswprintf(wchar_t *, size_t, const wchar_t *, void *)
+F vswscanf m	int vswscanf(const wchar_t *, const wchar_t *, void *)
+F vsyslog *	void vsyslog(int, const char *, void *)
+F vwarn *	void vwarn(const char *, void *)
+F vwarnx *	void vwarnx(const char *, void *)
+F vwprintf *	int vwprintf(const wchar_t *, void *)
+F vwscanf m	int vwscanf(const wchar_t *, void *)
+F wait *	pid_t wait(int *)
+F wait3 *	pid_t wait3(int *, int, struct rusage *)
+F wait4 *	pid_t wait4(pid_t, int *, int, struct rusage *)
+F waitid *	int waitid(idtype_t, id_t, siginfo_t *, int)
+F waitpid *	pid_t waitpid(pid_t, int *, int)
+F warn *	void warn(const char *, ...)
+F warnx *	void warnx(const char *, ...)
+F wcpcpy *	wchar_t *wcpcpy(wchar_t *, const wchar_t *)
+F wcpncpy *	wchar_t *wcpncpy(wchar_t *, const wchar_t *, size_t)
+F wcrtomb *	size_t wcrtomb(char *, wchar_t, mbstate_t *)
+F wcscasecmp *	int wcscasecmp(const wchar_t *, const wchar_t *)
+F wcscasecmp_l *	int wcscasecmp_l(const wchar_t *, const wchar_t *, locale_t)
+F wcscat *	wchar_t *wcscat(wchar_t *, const wchar_t *)
+F wcschr *	int *wcschr(const int *, int)
+F wcscmp *	int wcscmp(const int *, const int *)
+F wcscoll *	int wcscoll(const wchar_t *, const wchar_t *)
+F wcscoll_l *	int wcscoll_l(const wchar_t *, const wchar_t *, locale_t)
+F wcscpy *	wchar_t *wcscpy(wchar_t *, const wchar_t *)
+F wcscspn *	size_t wcscspn(const wchar_t *, const wchar_t *)
+F wcsdup *	wchar_t *wcsdup(const wchar_t *)
+F wcsftime *	size_t wcsftime(wchar_t *, size_t, const wchar_t *, const struct tm *)
+F wcsftime_l *	size_t wcsftime_l(wchar_t *, size_t, const wchar_t *, const struct tm *, locale_t)
+F wcslen *	size_t wcslen(const int *)
+F wcsncasecmp *	int wcsncasecmp(const wchar_t *, const wchar_t *, size_t)
+F wcsncasecmp_l *	int wcsncasecmp_l(const wchar_t *, const wchar_t *, size_t, locale_t)
+F wcsncat *	wchar_t *wcsncat(wchar_t *, const wchar_t *, size_t)
+F wcsncmp *	int wcsncmp(const int *, const int *, size_t)
+F wcsncpy *	wchar_t *wcsncpy(wchar_t *, const wchar_t *, size_t)
+F wcsnlen *	size_t wcsnlen(const wchar_t *, size_t)
+F wcsnrtombs *	size_t wcsnrtombs(char *, const wchar_t **, size_t, size_t, mbstate_t *)
+F wcspbrk *	wchar_t *wcspbrk(const wchar_t *, const wchar_t *)
+F wcsrchr *	wchar_t *wcsrchr(const wchar_t *, wchar_t)
+F wcsrtombs *	size_t wcsrtombs(char *, const wchar_t **, size_t, mbstate_t *)
+F wcsspn *	size_t wcsspn(const wchar_t *, const wchar_t *)
+F wcsstr *	wchar_t *wcsstr(const wchar_t *, const wchar_t *)
+F wcstod *	double wcstod(const wchar_t *, wchar_t **)
+F wcstof *	float wcstof(const wchar_t *, wchar_t **)
+F wcstoimax m	intmax_t wcstoimax(const wchar_t *, wchar_t **, int)
+F wcstok *	wchar_t *wcstok(wchar_t *, const wchar_t *, wchar_t **)
+F wcstol m	long wcstol(const wchar_t *, wchar_t **, int)
+F wcstold *	long double wcstold(const wchar_t *, wchar_t **)
+F wcstoll m	long long wcstoll(const wchar_t *, wchar_t **, int)
+F wcstombs *	size_t wcstombs(char *, const wchar_t *, size_t)
+F wcstoul m	unsigned long wcstoul(const wchar_t *, wchar_t **, int)
+F wcstoull m	unsigned long long wcstoull(const wchar_t *, wchar_t **, int)
+F wcstoumax m	uintmax_t wcstoumax(const wchar_t *, wchar_t **, int)
+F wcswcs *	wchar_t *wcswcs(const wchar_t *, const wchar_t *)
+F wcswidth *	int wcswidth(const wchar_t *, size_t)
+F wcsxfrm *	size_t wcsxfrm(wchar_t *, const wchar_t *, size_t)
+F wcsxfrm_l *	size_t wcsxfrm_l(wchar_t *, const wchar_t *, size_t, locale_t)
+F wctob *	int wctob(wint_t)
+F wctomb *	int wctomb(char *, wchar_t)
+F wctrans *	wctrans_t wctrans(const char *)
+F wctrans_l *	wctrans_t wctrans_l(const char *, locale_t)
+F wctype *	wctype_t wctype(const char *)
+F wctype_l *	wctype_t wctype_l(const char *, locale_t)
+F wcwidth *	int wcwidth(wchar_t)
+F wmemchr *	int *wmemchr(const int *, int, size_t)
+F wmemcmp *	int wmemcmp(const int *, const int *, size_t)
+F wmemcpy *	int *wmemcpy(int *, const int *, size_t)
+F wmemmove *	int *wmemmove(int *, const int *, size_t)
+F wmemset *	wchar_t *wmemset(wchar_t *, wchar_t, size_t)
+F wordexp *	int wordexp(const char *, wordexp_t *, int)
+F wordfree *	void wordfree(wordexp_t *)
+F wprintf *	int wprintf(const wchar_t *, ...)
+F write *	ssize_t write(int, const void *, size_t)
+F writev *	ssize_t writev(int, const struct iovec *, int)
+F wscanf m	int wscanf(const wchar_t *, ...)
+F y0 *	double y0(double)
+F y0f *	float y0f(float)
+F y1 *	double y1(double)
+F y1f *	float y1f(float)
+F yn *	double yn(int, double)
+F ynf *	float ynf(int, float)

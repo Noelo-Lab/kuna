@@ -114,6 +114,10 @@
     timespec grown to 16 swallowed the two locals beside it, and an obstack
     grown to 88 swallowed an int[12]. No slot is named on i386 now, so both
     frames are the functions' own (#37, #38, #39).
+
+Every load is followed by `typelib off`: the prebuilt type library also declares the
+    imports this file leaves unsaid (`putspent` of #29), and what is pinned here
+    is `libctypes` alone.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -124,6 +128,7 @@ c3
   <com>option libctypes off</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libctypes_stat_x86_64</com>
+  <com>option typelib off</com>
   <com>read symbols</com>
   <com>load function fclose</com>
   <com>decompile</com>
@@ -137,6 +142,7 @@ c3
   <com>option libctypes opaque</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libctypes_stat_x86_64</com>
+  <com>option typelib off</com>
   <com>read symbols</com>
   <com>load function fclose</com>
   <com>decompile</com>
@@ -149,6 +155,7 @@ c3
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/regglobal_fmt_x86_64</com>
+  <com>option typelib off</com>
   <com>read symbols</com>
   <com>load function fclose</com>
   <com>decompile</com>
@@ -159,6 +166,7 @@ c3
   <com>option libctypes opaque</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libctypes_glibc_x86_64</com>
+  <com>option typelib off</com>
   <com>read symbols</com>
   <com>load function next_byte</com>
   <com>decompile</com>
@@ -169,6 +177,7 @@ c3
   <com>option libctypes glibc</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libctypes_glibc_x86_64</com>
+  <com>option typelib off</com>
   <com>read symbols</com>
   <com>load function next_byte</com>
   <com>decompile</com>
@@ -179,6 +188,7 @@ c3
   <com>option libctypes off</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libctypes_streams_x86_64</com>
+  <com>option typelib off</com>
   <com>read symbols</com>
   <com>load function pending</com>
   <com>decompile</com>
@@ -194,6 +204,7 @@ c3
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libctypes_streams_so_x86_64.so</com>
+  <com>option typelib off</com>
   <com>option importdata off</com>
   <com>read symbols</com>
   <com>load function 0x11b9</com>
@@ -211,6 +222,7 @@ c3
   <com>option libctypes opaque</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libctypes_streams_x86_64</com>
+  <com>option typelib off</com>
   <com>read symbols</com>
   <com>load function pending</com>
   <com>decompile</com>
@@ -226,6 +238,7 @@ c3
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libctypes_streams_so_x86_64.so</com>
+  <com>option typelib off</com>
   <com>option importdata off</com>
   <com>read symbols</com>
   <com>load function 0x11b9</com>
@@ -243,6 +256,7 @@ c3
   <com>option libctypes off</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libctypes_obstack_x86_64</com>
+  <com>option typelib off</com>
   <com>read symbols</com>
   <com>load function grow</com>
   <com>decompile</com>
@@ -252,6 +266,7 @@ c3
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libctypes_obstack_import_x86_64</com>
+  <com>option typelib off</com>
   <com>read symbols</com>
   <com>load function grow_import</com>
   <com>decompile</com>
@@ -259,6 +274,7 @@ c3
   <com>option libctypes opaque</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libctypes_obstack_x86_64</com>
+  <com>option typelib off</com>
   <com>read symbols</com>
   <com>load function grow</com>
   <com>decompile</com>
@@ -268,12 +284,14 @@ c3
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libctypes_obstack_import_x86_64</com>
+  <com>option typelib off</com>
   <com>read symbols</com>
   <com>load function grow_import</com>
   <com>decompile</com>
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libctypes_container_x86_64</com>
+  <com>option typelib off</com>
   <com>read symbols</com>
   <com>load function kws_grow</com>
   <com>decompile</com>
@@ -286,6 +304,7 @@ c3
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libctypes_widths_i386</com>
+  <com>option typelib off</com>
   <com>read symbols</com>
   <com>load function sub_8049040</com>
   <com>decompile</com>

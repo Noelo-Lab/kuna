@@ -3174,6 +3174,14 @@ impl ConsoleProgram {
         suppress_pdb_interior_entries(self.arch(), &code_space, &mut merged);
         merged.context_paints.extend(input_context_paints);
         self.fid_databases = std::mem::take(&mut merged.fid_databases);
+        // (kuna `typelib`) Last, so every other source of a prototype has
+        // spoken: the library declares only the imports nothing else did.
+        if let Some(facts) = merged.typelib.take() {
+            if let Err(message) = crate::kuna_typelib::seed(self.arch(), &facts, &mut merged) {
+                let path = self.image_path();
+                kuna_base::notes::say_once(&path, &format!("[kuna typelib] {message}"));
+            }
+        }
         let committed = commit_analysis_output(self, &code_space, merged);
         self.stash_float_scan();
         committed
@@ -3333,6 +3341,9 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // facts are computed at LOAD and COMMITTED only when this gate is on, so
         // `off` renders exactly what the base table alone renders.
         "libgccsigs" => arch.analysis_libgccsigs,
+        // (kuna `typelib`) The image's library target and imports; dropped
+        // here when no library is to be read.
+        "typelib" => arch.analysis_typelib != kuna_decomp::kuna_typelib::TypeLib::Off,
         // (kuna) The LOAD-TIME format-string resolver — a Listing consumer whose
         // per-call-site overrides are computed at the deferred commit point and
         // applied only when the gate asks for the static half (`static` on x86,
