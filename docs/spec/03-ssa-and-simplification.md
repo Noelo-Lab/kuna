@@ -1482,10 +1482,11 @@ throwaway per-call `RestartLog`
 (RestartLog)`) that is dropped on return — diagnostic plumbing not yet wired to
 the Architecture-owned log — and neither fires during a jump-table
 sub-decompilation (the `is_jumptable_recovery_on` guards at the call sites —
-the sub-query must not mutate P0, §0.7). The console `deadcode delay` command
-exists but is an unwired stub (`kuna-console/src/ifacedecomp.rs
-(IfcDeadcodedelay)` returns engine-unavailable); the only live writer of the
-Override is `Heritage::bump_deadcode_delay`.
+the sub-query must not mutate P0, §0.7). The console `deadcode delay <space> <n>` command
+(`kuna-console/src/ifacedecomp.rs (IfcDeadcodedelay)`) sets a space's delay for
+all functions when no function is loaded; the per-function form is refused
+because the console rebuilds the Funcdata (and its Override) on `decompile`, so
+the only live writer of the Override is `Heritage::bump_deadcode_delay`.
 
 (kuna early restart) Upstream finishes the pass that asked for
 the restart: every later mainloop iteration, the merges and the structuring of
@@ -3118,13 +3119,14 @@ and splices the block out of the graph
 (`decompiler/crates/kuna-decomp/src/substrate/funcdata_block.rs
 (Funcdata::remove_from_flow_split)`). The action loops over all blocks until a
 full round makes no change, and refuses to run at all while unreachable blocks
-exist. One kuna conservatism: the per-space "has heritage run yet" array the
-removability test consults is hard-wired to *false*
-(`condexe.rs (ConditionalExecution::build_heritage_array)` — a port seam never
-re-wired to the live `Funcdata::num_heritage_passes`), so an iblock op whose
-output has **no readers** is always refused rather than trusted once its space
-is heritaged; strictly conservative relative to upstream (a collapse is missed,
-never wrongly taken). `condexe.rs (RuleOrPredicate)` (oppool1, group
+exist. An iblock op whose output has **no readers** is removable only once
+its space has had at least one heritage pass: before that, the missing readers
+may simply not be linked yet. `condexe.rs (ConditionalExecution::build_heritage_array)`
+records that per space from `Funcdata::num_heritage_passes`, as upstream. Such
+ops normally fall to dead-code removal first; they reach the test when the
+space's dead-code delay outlasts its heritage delay (the console
+`deadcode delay` command, `tests/stages/kuna-condexe-heritage.xml`).
+`condexe.rs (RuleOrPredicate)` (oppool1, group
 `conditionalexe`) handles the value-form of the same redundancy: an INT_OR
 (or INT_XOR) where one operand is provably zero along the path that reaches it (the
 `MultiPredicate` zero-slot analysis) collapses to a COPY of the other operand.

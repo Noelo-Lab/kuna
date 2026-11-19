@@ -5,6 +5,11 @@ arguments passed by both call orders. It also checks the disabled option,
 an ordinary name lookalike, a wrapper with stack results, the signal
 trampoline and two linked runtime functions with private or foreign exits.
 
+`kuna-condexe-heritage.xml` checks that conditional execution removes a re-test
+whose block holds unread flag writes once the register space has had a heritage
+pass (`deadcode delay register 50` keeps those writes alive). Before the fix the
+second `if (x)` stayed.
+
 `ghangr-call-argument-extensions.xml` checks explicit and missing parameter
 contracts. The CLI companion executes complete emitted C, Go and Rust callers
 and callees, covering zero extension, sign extension, signedness and store canaries.
