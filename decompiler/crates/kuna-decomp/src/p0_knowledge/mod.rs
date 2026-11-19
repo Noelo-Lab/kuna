@@ -55,6 +55,8 @@ pub mod kuna_langfacet;
 // (kuna) Named libc/POSIX aggregate types in the prototype tables option gate
 // (load-time, env-bridged).
 pub mod kuna_libctypes;
+// (kuna) The prebuilt type library a load reads (`typelib`).
+pub mod kuna_typelib;
 pub mod kuna_loadoptions;
 // (kuna) DWARF variant-part (discriminated-union) import option gate
 // (load-time, env-bridged) plus the recovered-layout side table.

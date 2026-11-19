@@ -967,6 +967,12 @@ kuna_options! { self, p1;
             None => "Objective-C SDK headers off".to_string(),
         })
     },
+    "typelib" => {
+        let choice = crate::kuna_typelib::TypeLib::parse(p1).map_err(KunaError::parse)?;
+        let msg = format!("Type library set to {}", choice.as_str());
+        self.analysis_typelib = choice;
+        Ok(msg)
+    },
     "pdb" => on_off!(analysis_pdb, "PE PDB metadata recovery pass"),
     "macho-arm64e" => {
         let val = on_or_off(p1)?;

@@ -1427,6 +1427,9 @@ pub struct Architecture {
     /// pass's decision, which also requires the target to be an x86-64 ELF
     /// against glibc.
     pub analysis_libctypes_glibc: bool,
+    /// (kuna `typelib`) The prebuilt type library the analysis commit reads;
+    /// default `auto`.
+    pub analysis_typelib: crate::kuna_typelib::TypeLib,
     /// (kuna) Gate the string-literal pass (`strings`); default on.
     pub analysis_strings: bool,
     /// (kuna) Gate the 2-byte (UTF-16LE) width of the string-literal pass
@@ -2522,6 +2525,7 @@ impl Architecture {
             analysis_go_type_globals: false,
             analysis_libctypes: false,
             analysis_libctypes_glibc: false,
+            analysis_typelib: crate::kuna_typelib::TypeLib::Auto,
             analysis_x86listingswitch: false,
             analysis_addrtakenentry: false,
             analysis_flowmode: false,
@@ -2836,6 +2840,9 @@ impl Architecture {
         // and the layout value defaults to `opaque`: the field layouts are the
         // `glibc` value, which is opt-in.
         self.analysis_libctypes_glibc = false;
+        // (kuna) The prebuilt type library -- default `auto`: the built-in
+        // library on a target that has one, nothing anywhere else.
+        self.analysis_typelib = crate::kuna_typelib::TypeLib::Auto;
         // (kuna) DIV-141 built-in Win32 API signature table -- default-ON.
         // (kuna) DIV-139 declared-name libc prototype lookup -- default-ON.
         self.analysis_strings = true;

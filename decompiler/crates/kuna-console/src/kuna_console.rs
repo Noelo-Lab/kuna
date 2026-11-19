@@ -165,6 +165,9 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
                 .map_or(Cow::Borrowed("none"), Cow::Owned),
         );
     }
+    if option == "typelib" {
+        return Some(Cow::Owned(conf.analysis_typelib.as_str()));
+    }
     if option == "kernelcache" {
         // The program's load options, or for a program loaded from the
         // environment the env bridge, which the `option` command also sets.
