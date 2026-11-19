@@ -54,20 +54,33 @@ pub fn parse_value(tok: &str) -> Option<u64> {
 }
 
 /// Is input `slot` of an operation with this opcode a number the C prints,
-/// not a space id, a user-op index, a truncation amount or an element size?
+/// not a space id, a user-op index, a flow target, a truncation amount or an
+/// element size?
 fn prints_as_number(opc: OpCode, slot: i32) -> bool {
     !matches!(
         (opc, slot),
         (OpCode::CPUI_LOAD | OpCode::CPUI_STORE | OpCode::CPUI_CALLOTHER, 0)
+            | (
+                OpCode::CPUI_BRANCH
+                    | OpCode::CPUI_CBRANCH
+                    | OpCode::CPUI_BRANCHIND
+                    | OpCode::CPUI_CALL
+                    | OpCode::CPUI_CALLIND
+                    | OpCode::CPUI_RETURN,
+                0,
+            )
             | (OpCode::CPUI_SUBPIECE | OpCode::CPUI_PTRSUB | OpCode::CPUI_INDIRECT, 1)
             | (OpCode::CPUI_PTRADD, 2)
             | (OpCode::CPUI_CPOOLREF | OpCode::CPUI_SEGMENTOP | OpCode::CPUI_NEW, _)
     )
 }
 
-/// The integer constants the live operations at `at` read, with their values.
-fn constants_read(fd: &Funcdata, at: &Address) -> Vec<(VarnodeId, u64)> {
+/// The integer constants the live operations at `at` read and print as
+/// numbers, with their values, and the enum one of them prints a name of
+/// instead (a format does not reach an enum's names).
+fn constants_read(fd: &Funcdata, at: &Address) -> (Vec<(VarnodeId, u64)>, Option<String>) {
     let mut out: Vec<(VarnodeId, u64)> = Vec::new();
+    let mut named = None;
     for (_, id) in fd.obank().iter_at(at) {
         let Some(op) = fd.obank().get(id).filter(|op| !op.is_dead()) else { continue };
         let opc = op.code();
@@ -78,12 +91,18 @@ fn constants_read(fd: &Funcdata, at: &Address) -> Vec<(VarnodeId, u64)> {
                 v.get_type().get_metatype(),
                 type_metatype::TYPE_INT | type_metatype::TYPE_UINT | type_metatype::TYPE_UNKNOWN
             );
-            if integer && !out.iter().any(|(seen, _)| *seen == vn) {
-                out.push((vn, v.get_offset()));
+            if !integer || out.iter().any(|(seen, _)| *seen == vn) {
+                continue;
             }
+            let shown = fd.vn_type_read_facing(vn, id);
+            if shown.is_enum_type() {
+                named.get_or_insert_with(|| shown.get_name().to_string());
+                continue;
+            }
+            out.push((vn, v.get_offset()));
         }
     }
-    out
+    (out, named)
 }
 
 /// Does a constant of `size` bytes holding `held` answer to the stated `value`?
@@ -95,9 +114,12 @@ fn answers(held: u64, size: i32, value: u64) -> bool {
 /// The constants at `at` a request names: all of them when they share one
 /// value, else the ones holding `value`.
 fn selected(fd: &Funcdata, at: &Address, value: Option<u64>) -> Result<Vec<VarnodeId>, String> {
-    let read = constants_read(fd, at);
+    let (read, named) = constants_read(fd, at);
     if read.is_empty() {
-        return Err(format!("no constant is read at {:#x}", at.get_offset()));
+        return Err(match named {
+            Some(name) => format!("the constant read at {:#x} prints as a name of {name}, not as a number", at.get_offset()),
+            None => format!("no constant is read at {:#x}", at.get_offset()),
+        });
     }
     let size_of = |vn: VarnodeId| fd.vbank().get(vn).map_or(0, |v| v.get_size());
     let chosen: Vec<VarnodeId> = match value {
@@ -134,7 +156,14 @@ pub fn apply(
         .types()
         .get_base(1, type_metatype::TYPE_UNKNOWN)
         .map_err(|e| e.explain().to_string())?;
-    for vn in selected(fd, at, value)? {
+    let chosen = selected(fd, at, value)?;
+    if format == "char" {
+        let mut read = chosen.iter().filter_map(|&vn| fd.vbank().get(vn)).map(|v| (v.get_size(), v.get_offset()));
+        if let Some((_, held)) = read.find(|&(size, held)| size > 4 && held != held as i32 as i64 as u64) {
+            return Err(format!("a character literal cannot hold {held:#x}"));
+        }
+    }
+    for vn in chosen {
         fd.build_dynamic_symbol(vn, maxduplicates, base1.clone()).map_err(|e| e.explain().to_string())?;
         let sym = fd.vn_high_equate_symbol(vn).ok_or_else(|| "Unable to create symbol".to_string())?;
         let scope = fd.get_scope_local_mut().ok_or_else(|| "Function has no local scope".to_string())?;
@@ -147,7 +176,7 @@ pub fn apply(
 /// Is a constant the request names bound to a Symbol of that format in `fd`?
 pub fn holds(fd: &Funcdata, at: &Address, format: &str, value: Option<u64>) -> bool {
     let (Some(code), Some(lm)) = (format_code(format), fd.get_scope_local()) else { return false };
-    constants_read(fd, at).into_iter().any(|(vn, held)| {
+    constants_read(fd, at).0.into_iter().any(|(vn, held)| {
         value.is_none_or(|value| answers(held, fd.vbank().get(vn).map_or(0, |v| v.get_size()), value))
             && fd.vn_high_equate_symbol(vn).is_some_and(|sym| lm.database().symbol(sym).dispflags & 7 == code)
     })

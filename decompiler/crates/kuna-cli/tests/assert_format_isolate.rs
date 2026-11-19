@@ -18,8 +18,14 @@ fn fixture() -> String {
 /// code.
 fn both(function: &str, directives: &[&str], extra: &[&str]) -> [(String, String, i32); 2] {
     let binary = fixture();
+    surfaces(&["decompile", binary.as_str(), function], directives, extra)
+}
+
+/// [`both`] for a command line that starts with `head`.
+fn surfaces(head: &[&str], directives: &[&str], extra: &[&str]) -> [(String, String, i32); 2] {
     let sleigh = common::repo_root().join("specs").to_string_lossy().into_owned();
-    let mut args = vec!["decompile", binary.as_str(), function, "--sleighpath", sleigh.as_str()];
+    let mut args = head.to_vec();
+    args.extend(["--sleighpath", sleigh.as_str()]);
     for directive in directives {
         args.extend(["--assert", directive]);
     }
@@ -57,6 +63,50 @@ fn an_address_that_reads_no_constant_is_rejected() {
     }
     for (_, _, code) in both("is_rwx", &["format 0x146e oct"], &["--assert-strict"]) {
         assert_eq!(code, 1);
+    }
+    for (c, report, _) in both("is_rwx", &["format 0x1471 oct"], &[]) {
+        assert!(c.contains("return (a0 & 0x1ff) == 0x1ed;"), "{c}");
+        assert!(report.contains("no constant is read at 0x1471"), "{report}");
+    }
+}
+
+/// `int is_blue(int c) { return c == 7; }` at 0x1590 and
+/// `long wide(long x) { return x == 0x100000041L; }` at 0x15a0, the same
+/// compiler and flags as the fixture, as a raw x86-64 image.
+fn raw_image(entry: &str, directives: &[&str]) -> [(String, String, i32); 2] {
+    const BYTES: &str = "31c083ff070f94c0c30f1f800000000048b9410000000100000031c04839cf0f94c0c3";
+    let binary = common::scratch_file("assert-format-raw", "bin");
+    let bytes: Vec<u8> = (0..BYTES.len()).step_by(2).map(|i| u8::from_str_radix(&BYTES[i..i + 2], 16).unwrap()).collect();
+    std::fs::write(&binary, bytes).unwrap();
+    let binary = binary.to_string_lossy().into_owned();
+    let head = ["decompile", binary.as_str(), entry, "--raw-image", "--base", "0x1590", "--target", "x86:LE:64:default:gcc"];
+    surfaces(&head, directives, &[])
+}
+
+#[test]
+fn a_constant_printed_as_an_enum_name_is_rejected() {
+    let enumerated = ["function 0x1590=is_blue", "typedef enum color {RED=1,GREEN=2,BLUE=7};", "prototype is_blue int is_blue(color c)"];
+    let mut directives = enumerated.to_vec();
+    directives.push("format 0x1592 dec");
+    for (c, report, _) in raw_image("0x1590", &directives) {
+        assert!(c.contains("return c == BLUE;"), "{c}\n{report}");
+        assert!(report.contains("the constant read at 0x1592 prints as a name of color, not as a number"), "{report}");
+    }
+}
+
+#[test]
+fn a_character_literal_does_not_take_a_wider_value() {
+    let wide = ["function 0x15a0=wide", "prototype wide long wide(long x)"];
+    let mut directives = wide.to_vec();
+    directives.push("format 0x15ac char");
+    for (c, report, _) in raw_image("0x15a0", &directives) {
+        assert!(c.contains("x == 0x100000041"), "{c}\n{report}");
+        assert!(report.contains("a character literal cannot hold 0x100000041"), "{report}");
+    }
+    directives.pop();
+    directives.push("format 0x15ac dec");
+    for (c, report, _) in raw_image("0x15a0", &directives) {
+        assert!(c.contains("x == 4294967361"), "{c}\n{report}");
     }
 }
 

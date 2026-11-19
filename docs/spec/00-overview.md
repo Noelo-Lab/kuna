@@ -2502,9 +2502,14 @@ something only a finished decompile has, and takes effect in the second pass.
 (`decompiler/crates/kuna-console/src/kuna_constformat.rs`). The candidates are
 the integer constants the live operations at that address read, leaving out the
 inputs that are not printed as numbers (a LOAD or STORE space id, a user-op
-index, a SUBPIECE truncation, a PTRSUB offset, a PTRADD element size). One
-candidate value needs no more; several need the directive's `<value>`, and the
-rejection lists the values so the caller can pick. Each chosen constant gets
+index, a branch, call or return target, a SUBPIECE truncation, a PTRSUB offset,
+a PTRADD element size) and a constant whose read-facing type is an enum, which
+prints as the enum's names whatever its format; when only such a constant is
+read the rejection says so. One candidate value needs no more; several need the
+directive's `<value>`, and the rejection lists the values so the caller can
+pick. A `char` request is refused for a constant wider than 32 bits whose
+value is not the sign extension of its low 32 bits, since the character
+literal keeps only those bits. Each chosen constant gets
 the EquateSymbol `force varnode` builds (`Funcdata::build_dynamic_symbol`,
 anchored by the constant's dataflow hash) with the display format set and the
 type locked, and `assertions::carried_dynamic_symbols` carries it to the

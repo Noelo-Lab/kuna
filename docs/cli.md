@@ -679,7 +679,9 @@ one `kuna disassemble` shows for the instruction, and `--json` lists the
 addresses behind each line of C in `line_mappings`. When the instruction reads
 several constants, a `<value>` (decimal, or hex with `0x`) picks one, and the
 rejection of a request without it lists them. An address where the decompiled
-function reads no integer constant is `rejected`. A format that was taken and
+function reads no integer constant is `rejected`, and so is a constant that
+prints as an enum's name and a `char` request for a value wider than 32 bits,
+which no character literal holds. A format that was taken and
 whose constant the second pass does not find again is reported refused
 (`fatal`).
 
