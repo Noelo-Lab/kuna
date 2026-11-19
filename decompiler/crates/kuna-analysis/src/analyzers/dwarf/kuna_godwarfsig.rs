@@ -7,6 +7,7 @@ use std::rc::Rc;
 use kuna_decomp::architecture::Architecture;
 use kuna_decomp::dtype::{type_metatype, Datatype, TypeField};
 use kuna_decomp::fspec::{ParameterPieces, PrototypePieces};
+use kuna_decomp::kuna_gostringinput::GoStringInput;
 use kuna_decomp::kuna_langfacet::LangFacet;
 use kuna_decomp::kuna_symbolnamechars::{sanitize_symbol_name, NameChars};
 
@@ -210,6 +211,7 @@ pub struct Materialized {
     pub pieces: PrototypePieces,
     pub status_site: Option<u64>,
     pub pointer_receiver: Option<kuna_decomp::kuna_gopointermethod::Receiver>,
+    pub string_input: Option<GoStringInput>,
 }
 
 impl fmt::Debug for Facts {
@@ -274,15 +276,15 @@ impl Facts {
                 return None;
             }
             let entry = die.low_pc?;
-            let (pieces, status_site, pointer_receiver) =
+            let (pieces, status_site, pointer_receiver, string_input) =
                 self.prototype(*offset, arch, !repeated.contains(&entry), methods.get(&entry))?;
-            Some(Materialized { entry, pieces, status_site, pointer_receiver })
+            Some(Materialized { entry, pieces, status_site, pointer_receiver, string_input })
         }).collect()
     }
 
     fn prototype(&self, offset: usize, arch: &Architecture, unique: bool,
         method: Option<&crate::gotypes::kuna_pointermethods::LinkedMethod>,
-    ) -> Option<(PrototypePieces, Option<u64>, Option<kuna_decomp::kuna_gopointermethod::Receiver>)>
+    ) -> Option<(PrototypePieces, Option<u64>, Option<kuna_decomp::kuna_gopointermethod::Receiver>, Option<GoStringInput>)>
     {
         let sub = self.dies.get(&offset)?;
         let extra = self.extras.get(&offset)?;
@@ -355,7 +357,7 @@ impl Facts {
         }
         if unique {
             if let Some((pieces, site)) = self.channel_status(arch, sub.low_pc?, name, &parameters) {
-                return Some((pieces, Some(site), None));
+                return Some((pieces, Some(site), None, None));
             }
         }
         let receiver = method.filter(|_| unique && origin.is_none())
@@ -375,6 +377,7 @@ impl Facts {
         let mut int_error = false;
         let (mut integers, mut floats) = (0, 0);
         let mut string_inputs = 0;
+        let mut string_formal = None;
         for (parameter, location, result) in parameters {
             if let Location::RegisterPair(registers) = location {
                 if result || string_inputs == 2 || !unique || output_count != 0
@@ -388,6 +391,9 @@ impl Facts {
                 if registers != [first.0, second.0] { return None; }
                 let fields = self.string_input_fields(parameter.type_ref?)?;
                 let source = sanitize_symbol_name(&parameter.name, self.names);
+                if string_inputs == 0 {
+                    string_formal = Some((inputs.len(), source.to_string()));
+                }
                 for ((offset, register), suffix) in fields.into_iter().zip([first.1, second.1]).zip(["data", "len"]) {
                     inputs.push((offset, self.scalar(offset, &mut BTreeSet::new(), &mut 256)?));
                     names.push(format!("{source}_{suffix}"));
@@ -541,7 +547,19 @@ impl Facts {
             };
             pieces.outtype = Some(outtype);
         }
-        Some((pieces, None, receiver))
+        let string_input = string_formal.filter(|_| string_inputs == 1).and_then(|(slot, name)| {
+            let entry = kuna_base::address::Address::new(
+                arch.manage().get_default_code_space()?.clone(), sub.low_pc?,
+            );
+            let storage = [assigned.get(slot + 1)?.addr.clone(), assigned.get(slot + 2)?.addr.clone()];
+            Some(GoStringInput {
+                entry,
+                name,
+                first_slot: i32::try_from(slot).ok()?,
+                storage,
+            })
+        });
+        Some((pieces, None, receiver, string_input))
     }
 
     fn channel_status(

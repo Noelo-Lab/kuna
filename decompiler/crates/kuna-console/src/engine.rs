@@ -6376,7 +6376,7 @@ fn commit_analysis_output(
         if let Some(site) = fact.status_site {
             prog.arch_mut().go_chanrecv_status_sites.insert(fact.entry, site);
         }
-        prog.arch_mut().set_function_prototype_pieces_at(&a, fact.pieces);
+        prog.arch_mut().set_go_dwarf_prototype_at(&a, fact.pieces, fact.string_input);
         if let Some(receiver) = fact.pointer_receiver {
             prog.arch_mut().symboltab.attach_go_pointer_receiver(&a, receiver);
         }

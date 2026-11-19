@@ -3319,6 +3319,19 @@ impl Architecture {
         }
     }
 
+    /// Commit a Go DWARF declaration and its verified input roles as one symbol record.
+    pub fn set_go_dwarf_prototype_at(
+        &mut self,
+        addr: &Address,
+        pieces: crate::fspec::PrototypePieces,
+        string_input: Option<crate::kuna_gostringinput::GoStringInput>,
+    ) {
+        if let Some((sid, _)) = self.symboltab.find_function_across_scopes(addr) {
+            let string_input = string_input.filter(|formal| &formal.entry == addr);
+            self.symboltab.set_function_proto_with_go_string(sid, pieces, string_input);
+        }
+    }
+
     // -----------------------------------------------------------------------
     // Funcdata construction (the W3 boot boundary)
     // -----------------------------------------------------------------------
