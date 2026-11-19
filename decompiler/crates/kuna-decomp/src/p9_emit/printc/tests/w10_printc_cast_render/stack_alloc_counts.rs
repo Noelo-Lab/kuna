@@ -26,6 +26,7 @@ fn pointer_carried_stack_counts_compile_and_use_native_word_sizes() {
             for scoped in [false, true] {
                 let mut context = ContextArch::new(build_manager());
                 context.types = Some(Rc::new(crate::dtype::TypeFactoryImpl::new()));
+                context.stack_alloc = true;
                 let space = Rc::clone(context.manage().get_space_by_name("ram").unwrap());
                 let mut fd = Funcdata::new("sample", "sample", Rc::new(context),
                     Address::new(Rc::clone(&space), 0x1000), 0x1000, 0x40).unwrap();

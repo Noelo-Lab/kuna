@@ -13,7 +13,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
 /// Internal allocation result is an address-sized integer, including in C.
-pub const BUILTIN_STACK_ALLOC: u32 = 0x1000000b; // After the kernel built-ins in userop.rs.
+pub const BUILTIN_STACK_ALLOC: u32 = crate::userop::BUILTIN_STACK_ALLOC;
 const UNKNOWN: i128 = i128::MIN;
 const SWEEPS: usize = 64;
 const WIDENINGS: usize = 8;

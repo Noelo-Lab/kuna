@@ -6922,7 +6922,7 @@ impl PrintC {
             Some(v) => fd.vbank().get(v).map(|vn| vn.get_offset()).unwrap_or(0),
             None => 0,
         };
-        if in0_off == crate::p3_dataflow::kuna_stackalloc::BUILTIN_STACK_ALLOC as u64 {
+        if in0_off == crate::userop::BUILTIN_STACK_ALLOC as u64 && fd.get_arch().stack_alloc {
             let out = fd.obank().get(op).and_then(|o| o.get_out());
             let width = out.and_then(|v| fd.vbank().get(v)).map(|v| v.get_size())
                 .unwrap_or(arch.types().get_size_of_pointer());
