@@ -6930,32 +6930,29 @@ impl PrintC {
             Some(v) => fd.vbank().get(v).map(|vn| vn.get_offset()).unwrap_or(0),
             None => 0,
         };
-        let display = arch
-            .userops
-            .get_op(in0_off as u32)
-            .map(|u| u.get_display())
-            .unwrap_or(0);
+        let rust = self.out_lang == crate::kuna_lang::OutLang::Rust;
+        let userop = if rust {
+            u32::try_from(in0_off)
+                .ok()
+                .and_then(|index| arch.userops.get_op(index))
+        } else {
+            arch.userops.get_op(in0_off as u32)
+        };
+        let display = userop.map_or(0, |op| op.get_display());
         let nin = fd.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
         if display == 0 {
-            let acle = arch.userops.get_op(in0_off as u32).and_then(|u| {
+            let acle = userop.and_then(|u| {
                 crate::kuna_acleintrinsics::intrinsic(fd, arch, op, u.get_name())
             });
             if let Some(call) = acle {
                 self.push_acle_intrinsic(fd, arch, op, &call);
                 return;
             }
-            // Functional syntax: for CALLOTHER the operator name resolves to the
-            // userop's name (the base getOperatorName), or the generic
-            // `CALLOTHER[index]` fallback.
-            let mut nm = match arch.userops.get_op(in0_off as u32) {
-                Some(u) => String::from_utf8_lossy(u.get_name()).into_owned(),
-                None => format!("CALLOTHER[{:#x}]", in0_off),
+            let nm = match (rust, userop) {
+                (true, op) => crate::kuna_rustuserop::operator_name(op.map(|u| u.get_name()), in0_off),
+                (false, Some(op)) => String::from_utf8_lossy(op.get_name()).into_owned(),
+                (false, None) => format!("CALLOTHER[{:#x}]", in0_off),
             };
-            if self.out_lang == crate::kuna_lang::OutLang::Rust
-                && crate::kuna_rustuserop::raw_keyword(&nm)
-            {
-                nm.insert_str(0, "r#");
-            }
             self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
             self.push_atom(&Atom::with_op(
                 nm,
