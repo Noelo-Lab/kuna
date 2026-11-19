@@ -6527,6 +6527,46 @@ every other binary's pass list is byte-identical to before the pass existed):
   (that is what `xgettext`'s `c-format` check enforces), and without the hop the
   pass finds almost nothing in coreutils, grep, tar or findutils.
 
+  **Format functions no table declares** (part of `formatstring` whenever the
+  load-time resolver runs; `analyzers/formatstring/kuna_fmtcallee.rs (infer)`).
+  A program's own logger,
+  `die` or `xasprintf` takes a format too, and nothing declares it. The same
+  pass types its calls once it has decided which callees are format functions
+  and in which direction, printf-like or scanf-like. A callee qualifies by its
+  name, when the name contains `printf` or `scanf` and no table knows it (the
+  `v`-prefixed `va_list` forms and the wide-character forms excluded), or by
+  its body: a function of the image that calls or tail-jumps to a `va_list`
+  library function of either family (`vfprintf`, `__vsnprintf_chk`,
+  `vsscanf`, `vsyslog`, ...), directly or through one more function of the
+  image that does. Only a function holding a `va_list` makes that call, and the
+  library function gives the direction. On x86-64 System V the body must also
+  read `AL` at its entry before writing it: the caller of a variadic function
+  passes the number of vector registers it used there, and a variadic prologue
+  tests it before it spills `xmm0`-`xmm7`. `xor eax,eax` is a write. That
+  test is what keeps out a `va_list` helper like `vlog(int, const char *,
+  va_list)` and a function that only calls a format function, such as `note(const
+  char *what) { log_msg(0, "%s", what); }`. Its call `note("50% done")` would
+  otherwise read `% d` as a conversion and invent an argument.
+
+  At each call edge the first of the first four integer argument slots that
+  holds a constant pointer to a NUL-terminated string in a read-only section is
+  taken as the format, folded by the same window and `gettext` hop. A site whose first
+  such string has no `%` is not typed. All typed sites of one callee must name
+  the same slot, or the callee is dropped. On System V a site whose `AL` folds
+  to a constant must pass as many vector registers as the format has floating
+  conversions. The override is built like a library one, with three
+  differences: the slots before the format are untyped values, each as wide as
+  the call's own block last wrote it (an `int` in `edi` is four bytes, so it
+  prints without a widening cast; a full register when the block does not write
+  it); the return type is left to recovery
+  (`decompile_drive.rs (ArchFlowEnv::build_override_proto)` seeds `void` and
+  unlocks the output); and an untyped slot of a format call declares no integer
+  contract to the cast printer (`p9_emit/kuna_unknowncasts.rs`). The callee's
+  own prototype is not changed: parking a variadic declaration on it split the
+  register-save locals of its own body. With a DWARF declaration of the callee,
+  the site override still replaces it, so the slots before the format lose
+  their declared types (a known limit).
+
   A parked override is consumed at flow time, so a function that has one never
   adopts IR that was followed before the park.
 
@@ -7002,7 +7042,28 @@ way; an image with no sized function symbol (a fully stripped executable, Mach-O
 is unchanged. The rule trusts the size: a symbol-less routine that hand-written
 assembly places inside another function's `.size`, and that only a data pointer
 reaches, loses its pattern start. One with an FDE or a direct call is still found
-by those passes.
+by those passes. On a
+headerless image (`--raw-image`), where the object-file passes cannot run, the
+same option sweeps the image's executable bytes with the pattern set of the
+target's language id (`patterns/mod.rs (for_language)`) and seeds `rawdiscover`'s
+call-target walk with the starts it finds, so a function reached only through a
+pointer table is in the inventory too. A raw image needs no `--entry` at all
+then: the pattern starts are the seeds, and the driver turns the option on for
+a headerless image the way it does for any non-x86-64 one. The raw sweep also
+takes the weak tier below.
+
+The pattern set is chosen by format as well as architecture (`for_object`): an
+ELF or Mach-O x86 image is SysV-compiled and takes the gcc patterns alone, not
+the gcc+windows union, and a big-endian ARM image takes `ARM_BE`. After a start
+is accepted, the scan resumes past the prologue that matched, so no second
+start is reported inside it. A pair whose action is an
+unconditional `<possiblefuncstart/>` is a weak hit (`scan_hits`). It is used
+only by a set that has nothing stronger (AArch64, PowerPC): where `<funcstart/>`
+pairs exist, they carry the confident shapes already. On an ELF a weak hit is
+taken only outside every FDE body, because the unwind table already describes
+the functions it covers. A Mach-O or PE
+image's own function tables list everything such a hint could add, so the weak
+tier is not used there.
 
 **LSDA landing pads** (`eh_frame_full`, default-off): the deeper
 `GccExceptionAnalyzer` markup — follow each FDE's CIE `L` augmentation to its
@@ -7601,16 +7662,52 @@ it. On PowerPC64 an array element is the value its dynamic relocation leaves, an
 file, which a linker may leave zero or stale; an element that any other relocation
 writes is left out.
 
-**Address tables** (`addrtable`,
+**Address tables** (`addrtable`, default-off, on in `--mode aggressive`;
 `decompiler/crates/kuna-analysis/src/analyzers/addrtable/mod.rs (AddrTablePass)`)
-scan `.rodata`/`.data` for runs of pointer-width values all landing in executable
-sections — vtables and absolute function-pointer arrays — emitting data symbols
-plus a read-only range (never entries, never switch ranges; in-function switch
-recovery is the inherited S2 engine machinery, a different thing entirely). Ghidra
-ships this analyzer disabled, and kuna goes one further: the pass is implemented
-and tested but **left out of the registered pass list** (`passes.rs` keeps its
-registration commented out), because a pointer-run scanner over-accepts and the
-relocation guard that defends it is weak on non-PIE executables.
+scan initialized data for runs of pointer-width values that all land in executable
+sections: vtables, absolute function-pointer arrays and hook tables. The import
+slot sections (`.got`, `.got.plt`, `.idata`, the Mach-O `__got` /
+`__auth_got` / `__la_symbol_ptr` / `__nl_symbol_ptr`) are skipped. Those slots
+are the loader's, and a lazily bound one points back into its own PLT stub. The
+pass never emits entries or switch ranges; in-function switch recovery is the
+inherited S2 engine machinery, a different thing entirely. Ghidra ships this
+analyzer disabled, and so does kuna, because a pointer-run scanner over-accepts
+and the relocation guard that defends it is weak on non-PIE executables. The
+gate is known only after `load file`, so the pass is not in the load-time list.
+`commit_pending_analysis` runs it at the deferred commit
+(`passes.rs (run_addrtable)`), and a default run scans nothing.
+
+What it commits depends on where the table lies:
+- **Writable data.** No compiler puts a switch table there, so the table is a
+  run-time hook or callback table. It is typed `code *[N]` under the image's name
+  for its head, or `AddrTable<addr>` (the label Ghidra's `AddressTable.makeTable`
+  writes). A call through a slot then reads `(*AddrTable002022b0[a0 % 3])(x)`
+  instead of a cast byte offset.
+- **Read-only data.** The table may be a switch's offset table that the code masks
+  and adds to. A name-locked object with no element type would print every access
+  as `*(unsigned int *)&AddrTable[i * 4]`, so this table gets only a read-only range
+  over its body: a load from a fixed slot folds to the function it holds, and a
+  variable access keeps its inferred `dat_<addr>[i]` spelling.
+
+Over 400 small x86-64, ARM, MIPS and PE fixtures decompiled under `auto`
+(aggressive below 500 KiB), two binaries change, one function each, both to a
+typed table index.
+
+The reference walk behind `kuna xrefs`
+(`decompiler/crates/kuna-analysis/src/listing/xrefs.rs (XrefIndex)`) reads the same
+tables. Under `addrtable on` each slot is filed as a `data` reference from the
+slot to the code it holds, which is the reference `makeTable` creates. So
+`kuna xrefs --to` a function reached only through a pointer table names the slot.
+A slot is data, so the reference is attributed to no function.
+
+The scanner's one live consumer is the reference walk behind `kuna xrefs`
+(`decompiler/crates/kuna-analysis/src/listing/xrefs.rs (XrefIndex)`). Under
+`--option addrtable on` (and so `--mode aggressive`) each table slot is filed as a
+`data` reference from the slot to the code it holds — the reference Ghidra's
+`AddressTable.makeTable` creates — so `kuna xrefs --to` a function reached only
+through a pointer table names the slot instead of answering zero references. A
+slot is data, so the reference is attributed to no function. Emitted C is
+unaffected: no fact is committed.
 
 ## 1.6 The Listing tier
 
@@ -8520,6 +8617,26 @@ byte-identical. On DAZZLE 15 of 295 functions change: the five `funcboundflow`
 warnings and their zero-run tails are gone, and the error and abort paths of
 eleven more end at the exit wrapper they call instead of running on after it.
 
+A byte-addressed raw image also runs the object-file pass list
+(`objectview`, default-on), through an ELF view
+(`decompiler/crates/kuna-analysis/src/loader/kuna_objectview.rs (raw_as_elf)`).
+The view has one `PT_LOAD` and one `SHF_ALLOC | SHF_WRITE | SHF_EXECINSTR`
+`.text` section covering the file at `--base`, which is the read-write-execute
+block Ghidra's raw importer makes. Its machine, class and byte order come from
+the selected SLEIGH language, and its `e_entry` is the first seed. A processor
+ELF assigns no number gets `EM_NONE`: the sections still scan, and only
+`object`'s architecture is unknown. The view runs at the commit like a TE's,
+so the strings, the prologue and entry oracles and the Listing tier join the
+seeds and `rawdiscover`'s call closure. A word-addressed target (code-space
+word size above one) keeps the old behavior, because its addresses are not
+byte offsets. A UEFI TE image runs the same list through a PE view
+(`kuna_objectview.rs (te_as_pe)`: a rewritten header of `StrippedSize` bytes in
+front of the TE's section table, so every `PointerToRawData` stays valid), and
+the headerless-image discovery (`engine.rs (discover_raw_entries)`, the direct
+call sweep plus the recursive descent) runs on a TE too, after the entry Thumb
+walk has painted the decode mode, so the entry's call closure is in the
+inventory with or without the view.
+
 Table-derived roots are committed but are deliberately not fed through a
 second recursive walk. Thus the bounded path obtains direct-call closure and
 high-confidence callback/vtable roots while avoiding the full prologue scan,
@@ -8534,9 +8651,12 @@ as a LOAD/STORE address); it is promoted when the instruction is `PUSH`, a
 straight-line run of at most sixteen instructions reaches the next call, the
 target is not an existing instruction or an interior instruction byte, and the
 strict bounded subroutine probe reaches a valid termination. Accepted stack
-callback roots are added to the Listing seeds and the walk is rebuilt, up to
-four rounds and 1,024 roots, so a dialog callback that registers a second
-callback contributes both bodies to one project inventory. Other code-looking
+callback roots are added to the Listing seeds and the walk is resumed from them
+(`listing/mod.rs (Listing::resume)`: the instructions, functions and references
+already found are kept and only what the new roots reach is decoded, the same
+Listing a fresh build from all the seeds makes), up to four rounds and 1,024
+roots, so a dialog callback that registers a second callback contributes both
+bodies to one project inventory. Other code-looking
 immediates, targets already claimed by a body, and targets that only happen to
 decode without a valid return path remain unpromoted.
 
@@ -8717,6 +8837,20 @@ eight bytes, each onto a true start, and changes no count; GCC 14 stripped
 symbol address. Two prefixes are not recognised: a frame size whose low ten bits
 are zero, which GCC builds with a lone `sethi`, and SPARC64's `sethi; xor`, since
 the pass runs only where `%g1` is four bytes.
+
+(kuna) No gap entry starts on bytes the program reads or writes as data
+(`decompiler/crates/kuna-analysis/src/listing/kuna_aifdataveto.rs (data_targets)`,
+part of `aif`). A table, a literal or a variable laid out in `.text` can decode
+as a plausible function (a jump table whose entries read as `push rbp; mov
+rbp,rsp`), and the gap walk accepts it on its bytes alone. The decoded Listing
+says what the program does with those bytes: every `LOAD`/`STORE` through a
+constant or a constant plus something, and every direct data-space operand, is a
+data target. A gap entry whose first instruction spans one is dropped, and so is
+any other discovered (not symbol) entry that lands on one, at the commit. Only
+the entry's own first instruction is tested, so a function whose body holds an
+inline constant pool is kept. On stripped Lua (x86-64, AArch64), ld.so, llvm-nm
+and llvm-objdump it removes nothing; the function-shaped table in
+`tests/stages/kuna-aifdataveto.xml` goes. Inert without the Listing and `aif`.
 
 (kuna, GH-299) No gap entry starts on a literal-pool word: `aifpoolslide`
 (default-on; `decompiler/crates/kuna-analysis/src/analyzers/aif/kuna_aifpoolslide.rs`).
@@ -8959,6 +9093,26 @@ later change to either gate from quietly reducing the four guards to the rule
 they replaced. Output-changing (more functions), hence default-off; ARM-only and Listing-tier, so
 it is a strict no-op on every other architecture, with `listing off`, and on the
 XML datatest path.
+
+**Function chunks** (`funcchunks`, default-off; kuna;
+`decompiler/crates/kuna-analysis/src/listing/kuna_funcchunks.rs (ChunkModel::build)`)
+gives a discovered function a body. The Listing keys a function by its entry,
+and every consumer that needs a body clips `[entry, next entry)`; that clip
+mis-assigns the two shapes compilers produce most: a tail several functions jump
+into (a shared epilogue or error path) and a part placed after another function.
+The chunk model is a per-function set of address runs with shared tails,
+computed after the walk from the decoded flow. A function's body is the flow closure of its entry over
+fall-through and branch targets; a call target is never followed, and neither is
+another function's entry, because a jump there is a tail call. The body is cut
+into address runs, where up to 16 undecoded bytes of alignment padding join two
+runs and any decoded instruction between them splits them. The run holding the
+entry is the main chunk and every other run is a tail. An instruction reached
+from several entries is shared, and the model keeps the list of every function
+that reaches it. With the option on, the FID
+matcher hashes this body (all chunks, ascending, Ghidra's `func.getBody()`
+order) instead of the clip, and the inventory `size` of `kuna functions` is the
+chunk body. Analysis-tier and Listing-only, so it is inert on the XML datatest
+path.
 
 **Literal-pool inference** (`poolentry`, on by default, ARM-only; kuna;
 `decompiler/crates/kuna-analysis/src/analyzers/aif/kuna_poolentry.rs`) is aimed at

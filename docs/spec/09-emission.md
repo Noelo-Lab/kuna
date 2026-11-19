@@ -3947,7 +3947,8 @@ completeness queries. Its scheduling module,
 `decompiler/crates/kuna-cli/src/callgraph/plan.rs`, owns the iterative SCC walk
 and recursion policy used by callee-first decompilation. Object-file consumers
 share `decompiler/crates/kuna-cli/src/image.rs`: they read the selected Mach-O
-slice and reject TE inputs that have no object-file view. These boundaries are
+slice, and a TE input as its PE view
+(`decompiler/crates/kuna-analysis/src/loader/kuna_objectview.rs (te_as_pe)`). These boundaries are
 shared by the command drivers without changing edge rules or output ordering.
 
 **Both ends of every edge are rows of the same document.** A reference into the

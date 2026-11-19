@@ -49,17 +49,24 @@
 //!
 //! ## DISABLED by default
 //!
-//! This pass is **registered commented-out** in
-//! [`crate::passes::default_passes`], exactly like [`crate::strings`], for two
-//! reasons: (a) Ghidra parity (off by default upstream); (b) real false-positive
+//! This pass is not in [`crate::passes::default_passes`]: it runs from
+//! [`crate::passes::run_addrtable`] at the commit point, only under
+//! `--option addrtable on` (and so in `--mode aggressive`), and is off by default
+//! for two reasons: (a) Ghidra parity (off by default upstream); (b) real false-positive
 //! risk — a pointer-run scanner over `.rodata`/`.data` over-accepts, since any
 //! coincidental run of in-range aligned values reads as a "table". The relocation
 //! guard is the main defense and is strong on PIE/relocatable objects (every real
 //! pointer is relocated) but *weak on non-PIE* binaries (absolute `.text` pointers
 //! carry no relocation), so the non-PIE `switchtab_x86_64` fixture exercises the
 //! heuristic path (min-run + executable-target check + string guard), not the
-//! relocation-guided path. The scanner is exercised directly by the unit tests
-//! below; it is inert in the bootstrap until a future increment enables it.
+//! relocation-guided path.
+//!
+//! What it commits, with the gate on: each table typed `code *[N]` under its
+//! image name or `AddrTable<addr>` (the label `AddressTable.makeTable` writes),
+//! and a read-only range over a table in read-only data so a fixed-slot load
+//! folds to its function. The reference walk behind `kuna xrefs`
+//! ([`crate::listing::xrefs`]) files every slot as a `data` reference from the
+//! slot to the code it holds, the reference `makeTable` creates.
 //!
 //! ## Scope / LOSS vs Ghidra (documented divergence)
 //!
@@ -77,7 +84,13 @@
 use object::read::{Object, ObjectSection};
 use object::SectionKind;
 
-use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase, SymFact, SymKind};
+use std::collections::BTreeMap;
+use std::rc::Rc;
+
+use kuna_base::types::int4;
+use kuna_decomp::dtype::TypeFactory;
+
+use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, DataObjectFact, Phase, TypedDataFact};
 
 // --- Upstream constants (AddressTable.java / AddressTableAnalyzer.java) --------
 
@@ -111,6 +124,9 @@ pub struct AddrTable {
     pub len: usize,
     /// The decoded element targets, in order (each is an in-`.text` address).
     pub elements: Vec<u64>,
+    /// Whether the table lies in read-only (or relocated-then-read-only) data,
+    /// so its slots hold what the image says at run time.
+    pub read_only: bool,
 }
 
 /// `[start, end)` half-open executable-section range.
@@ -214,6 +230,11 @@ fn is_searchable_section<'a>(sec: &impl object::read::ObjectSection<'a>) -> bool
     if is_executable_section(sec) {
         return false;
     }
+    // Import pointer slots are the loader's (named after their imports), and a
+    // lazily bound one holds its own PLT stub until the first call.
+    if sec.name().is_ok_and(is_import_slot_section) {
+        return false;
+    }
     // Must be in the runtime image. Read-only OR writable data both qualify
     // (vtables in .data.rel.ro, GOT, .rodata switch tables). Per-format (PR-10):
     // ELF SHF_ALLOC (unchanged); a PE/COFF section is mapped iff readable+
@@ -228,6 +249,15 @@ fn is_searchable_section<'a>(sec: &impl object::read::ObjectSection<'a>) -> bool
         object::SectionFlags::MachO { .. } => true,
         _ => false,
     }
+}
+
+/// A section of import pointer slots: the ELF GOT, the Mach-O symbol-pointer
+/// and GOT sections, the PE import address table.
+fn is_import_slot_section(name: &str) -> bool {
+    matches!(
+        name,
+        ".got" | ".got.plt" | ".idata" | "__got" | "__auth_got" | "__la_symbol_ptr" | "__nl_symbol_ptr"
+    )
 }
 
 /// `checkTable` string guard (AddressTable.java): a run that is actually a
@@ -306,7 +336,7 @@ fn scan_section(
             cur += ptr_size;
         }
         if elements.len() >= min_run {
-            tables.push(AddrTable { addr: slot_vma, len: elements.len(), elements });
+            tables.push(AddrTable { addr: slot_vma, len: elements.len(), elements, read_only: false });
             // Advance past the accepted table (non-overlapping, like getEntry).
             off = cur;
         } else {
@@ -352,24 +382,32 @@ pub fn scan_address_tables(file: &object::File, min_run: usize, ptr_size: usize)
             Ok(d) if !d.is_empty() => d,
             _ => continue,
         };
-        out.extend(scan_section(
-            sec.address(),
-            data,
-            ptr_size,
-            little,
-            min_addr,
-            min_run,
-            &exec,
-            &relocs,
-            use_reloc_guard,
-        ));
+        let read_only = matches!(
+            sec.kind(),
+            SectionKind::ReadOnlyData | SectionKind::ReadOnlyDataWithRel | SectionKind::ReadOnlyString
+        );
+        out.extend(
+            scan_section(
+                sec.address(),
+                data,
+                ptr_size,
+                little,
+                min_addr,
+                min_run,
+                &exec,
+                &relocs,
+                use_reloc_guard,
+            )
+            .into_iter()
+            .map(|table| AddrTable { read_only, ..table }),
+        );
     }
     out
 }
 
 /// Choose the pointer width for `file`: 8 for ELFCLASS64, else 4. Faithful to
 /// `AddressTable.getByteLength` reading the program's default pointer size.
-fn ptr_width(file: &object::File) -> usize {
+pub(crate) fn ptr_width(file: &object::File) -> usize {
     if file.is_64() {
         8
     } else {
@@ -377,31 +415,65 @@ fn ptr_width(file: &object::File) -> usize {
     }
 }
 
-/// Turn the discovered tables into [`AnalysisOutput`] facts: a **Data** symbol at
-/// each table head + a read-only range over the body. **Never** an `entries` /
-/// Function fact — faithful to `AddressTableAnalyzer` (which labels and types the
-/// table but, per its commented-out code, never makes functions from it; real
-/// code targets are found by `s1-entry-disc` and the engine's switch recovery).
-/// Pure (no engine/context dependency), so the unit tests can assert it directly.
-fn emit_facts(tables: &[AddrTable], ptr_size: usize) -> AnalysisOutput {
+/// Turn the discovered tables into [`AnalysisOutput`] facts, each under the name
+/// the image already gives its head or `AddrTable<addr>`, the label Ghidra's
+/// `AddressTable.makeTable` writes.
+///
+/// - A table in **writable** data is a run-time hook or callback table: no
+///   compiler puts a switch table there. It is typed `code *[len]`, so a call
+///   through a slot reads `AddrTable[i](x)`.
+/// - A table in **read-only** data may be a switch's offset or address table
+///   that the code masks and adds to, and a name-locked object of no element
+///   type would print every access through it as a byte offset. It only gets a
+///   read-only range over its body, so a load from a fixed slot folds to what it
+///   holds; the access keeps its inferred `dat_<addr>[i]` spelling.
+///
+/// **Never** an `entries` / Function fact — faithful to `AddressTableAnalyzer`,
+/// which labels the table but never makes functions from it.
+fn emit_facts(
+    tables: &[AddrTable],
+    ptr_size: usize,
+    types: Option<&dyn TypeFactory>,
+    names: &BTreeMap<u64, String>,
+) -> AnalysisOutput {
     let mut out = AnalysisOutput::default();
+    let slot = types.and_then(|types| {
+        types.get_type_pointer(ptr_size as int4, types.get_type_code().ok()?, 1).ok()
+    });
     for t in tables {
-        out.symbols.push(SymFact {
-            addr: t.addr,
-            name: format!("AddrTable{:08x}", t.addr),
-            kind: SymKind::Data,
-        });
-        let body_end = t.addr + (t.len as u64) * (ptr_size as u64);
-        out.readonly.push((t.addr, body_end));
+        let size = (t.len * ptr_size) as u64;
+        let name = names.get(&t.addr).cloned().unwrap_or_else(|| format!("AddrTable{:08x}", t.addr));
+        if t.read_only {
+            out.readonly.push((t.addr, t.addr + size));
+            continue;
+        }
+        if let (Some(types), Some(slot)) = (types, &slot) {
+            if let Ok(type_) = types.get_type_array(t.len as int4, Rc::clone(slot)) {
+                out.typed_data.push(TypedDataFact { addr: t.addr, name, type_ });
+                continue;
+            }
+        }
+        out.data_objects.push(DataObjectFact { addr: t.addr, name, size: size as u32 });
     }
     out
+}
+
+/// The name every data symbol of `file` gives its address.
+fn data_symbol_names(file: &object::File) -> BTreeMap<u64, String> {
+    use object::{ObjectSymbol, SymbolKind};
+    file.symbols()
+        .chain(file.dynamic_symbols())
+        .filter(|s| s.kind() == SymbolKind::Data && s.address() != 0)
+        .filter_map(|s| Some((s.address(), s.name().ok()?.to_string())))
+        .filter(|(_, name)| !name.is_empty())
+        .collect()
 }
 
 /// Port of `AddressTableAnalyzer` ("Create Address Tables"): discover absolute
 /// address/jump tables and emit their head + body as **data** facts.
 ///
-/// **Disabled by default** (see the module docs): registered commented-out in
-/// [`crate::passes::default_passes`].
+/// **Disabled by default** (see the module docs): run from
+/// [`crate::passes::run_addrtable`] under `--option addrtable on`.
 pub struct AddrTablePass {
     /// Minimum run length to accept a table (clamped up to [`MIN_RUN_FLOOR`]).
     pub min_run: usize,
@@ -425,12 +497,11 @@ impl AnalysisPass for AddrTablePass {
     fn run(&self, ctx: &AnalysisCtx) -> AnalysisOutput {
         // Format-agnostic (PR-10): the scan keys off the neutral pointer-run +
         // executable-target heuristic (per-format exec/searchable section arms),
-        // so it works on ELF/PE/COFF/Mach-O. (Still off by default — registered
-        // commented-out, matching Ghidra's `setDefaultEnablement(false)`.) The
-        // relocation guard already keys on the neutral `file.kind()`.
+        // so it works on ELF/PE/COFF/Mach-O. The relocation guard keys on the
+        // neutral `file.kind()`.
         let ptr_size = ptr_width(ctx.file);
         let tables = scan_address_tables(ctx.file, self.min_run, ptr_size);
-        emit_facts(&tables, ptr_size)
+        emit_facts(&tables, ptr_size, Some(ctx.arch.types()), &data_symbol_names(ctx.file))
     }
 }
 
@@ -487,32 +558,30 @@ mod tests {
     }
 
     #[test]
-    fn pass_emits_a_data_symbol_and_readonly_range_for_the_table() {
-        // Exercise the fact-emission half directly over the scanned tables (the
-        // pure `emit_facts`, the same path `AddrTablePass::run` takes — building a
-        // full Architecture for an AnalysisCtx needs the SLEIGH specs, so the
-        // unit tests assert the pure cores, as every other analyzer pass test does):
-        // it must emit a Data symbol at the table head + a readonly range over the
-        // body, and NEVER a Function entry from a table (faithful to the analyzer).
+    fn pass_marks_a_read_only_table_and_types_a_writable_one() {
+        // The pure `emit_facts` over the scanned tables, the path `run` takes. The
+        // `.rodata` table only becomes read-only; the same table in writable data
+        // is a named `code *[8]`; neither makes a function entry.
         let bytes = load("switchtab_x86_64");
         let file = object::File::parse(bytes.as_slice()).expect("parse switchtab");
         let tables = scan_address_tables(&file, 2, 8);
-        let out = emit_facts(&tables, 8);
+        let types = kuna_decomp::dtype::TypeFactoryImpl::new();
+        types.set_default_alignment_map();
+        types.set_max_basetype_size(8);
+        types.setup_sizes(Some(8), 8, 4);
+        let _ = types.cache_core_types();
 
-        assert!(
-            out.symbols.iter().any(|s| s.addr == EXPECTED_TABLE_VMA && s.kind == SymKind::Data),
-            "expected a Data symbol at {EXPECTED_TABLE_VMA:#x}; got {:?}",
-            out.symbols
-        );
-        assert!(
-            out.symbols.iter().all(|s| s.kind == SymKind::Data),
-            "address-table pass must emit only Data symbols, never Function"
-        );
-        assert!(out.entries.is_empty(), "address-table pass must NOT emit code entries");
-        assert!(
-            out.readonly.iter().any(|&(a, e)| a == EXPECTED_TABLE_VMA && e > a),
-            "expected a readonly range starting at the table head"
-        );
+        let out = emit_facts(&tables, 8, Some(&types), &BTreeMap::new());
+        assert!(out.data_objects.is_empty() && out.typed_data.is_empty());
+        assert!(out.entries.is_empty() && out.symbols.is_empty());
+        assert!(out.readonly.iter().any(|&(a, e)| a == EXPECTED_TABLE_VMA && e >= a + 64));
+
+        let writable: Vec<AddrTable> = tables.iter().map(|t| AddrTable { read_only: false, ..t.clone() }).collect();
+        let names = BTreeMap::from([(EXPECTED_TABLE_VMA, "jump_targets".to_string())]);
+        let out = emit_facts(&writable, 8, Some(&types), &names);
+        assert!(out.readonly.is_empty(), "a writable table is not read-only");
+        let typed = out.typed_data.iter().find(|d| d.name == "jump_targets").expect("the image's own name wins");
+        assert!(typed.type_.get_size() >= 64);
     }
 
     #[test]

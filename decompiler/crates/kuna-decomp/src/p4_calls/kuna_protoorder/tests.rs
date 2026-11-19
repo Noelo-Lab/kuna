@@ -319,6 +319,7 @@ fn stated(params: &[(Address, int4, Rc<Datatype>)]) -> RecoveredTypes {
         vararg_tail: Vec::new(),
         reads: Vec::new(),
         passes: Vec::new(),
+        callers_vote: false,
     }
 }
 

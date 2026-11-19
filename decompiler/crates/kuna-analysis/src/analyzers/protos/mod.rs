@@ -39,6 +39,7 @@ use kuna_decomp::fspec::PrototypePieces;
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
 
 pub mod kuna_libgcc;
+pub mod kuna_importvote;
 mod kuna_libcnames;
 pub mod kuna_libcsigs;
 pub mod kuna_libctypes;

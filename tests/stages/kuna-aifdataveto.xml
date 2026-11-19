@@ -1,0 +1,46 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    A speculative gap entry the program only ever reads as data (part of
+    option aif: the data read/write veto).
+
+    Fixture: tests/stages/fixtures/aifdataveto/aifdataveto_x86_64 (source
+    alongside, stripped). `table` sits in .text after `reader`, looks like a
+    function (push rbp; mov rbp,rsp; ...; pop rbp; ret) and is only ever read
+    as data: `mov table(%rip),%eax; add table+4(%rip),%eax`.
+
+    Stage model: P1 program-prep, code-data-partition
+    (listing/kuna_aifdataveto.rs data_targets over the decoded Listing; the
+    aif consumer drops a gap entry, and any other discovered entry, whose first
+    instruction the code loads from or stores to).
+
+    Pass 1 is `aif off`: the table is in the inventory and loads by name. Pass
+    2 is `aif strict` (the aggressive preset): the inventory no longer lists
+    it.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file tests/stages/fixtures/aifdataveto/aifdataveto_x86_64</com>
+  <com>option listing on</com>
+  <com>option aif off</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>load function sub_401020</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/stages/fixtures/aifdataveto/aifdataveto_x86_64</com>
+  <com>option listing on</com>
+  <com>option aif strict</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>quit</com>
+</script>
+<stringmatch name="AIFDATAVETO #1: aif off, the data table is in the inventory and decodes as a function" min="1" max="1">sub_401020\(void\)</stringmatch>
+<stringmatch name="AIFDATAVETO #2: aif on, the table the reader loads from is dropped" min="1" max="1">0x401020 sub_401020</stringmatch>
+</decompilertest>

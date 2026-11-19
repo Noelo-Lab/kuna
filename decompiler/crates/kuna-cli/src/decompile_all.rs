@@ -1470,8 +1470,7 @@ pub(crate) fn decompile_entries(
 /// (kuna `protoorder`) Whether this run takes the callee-first order, and
 /// whether the option was named on the command line.
 ///
-/// A narrowed run, or a raw image (which has no call graph), skips the order
-/// unless the option is named.  Every whole-program driver asks here, so the
+/// A narrowed run, or a raw image, skips the order unless the option is named.  Every whole-program driver asks here, so the
 /// two that keep a ledger -- `decompile-all` and `decompile-project` -- visit
 /// the program in the same order and a `struct_N` means one record on both.
 pub(crate) fn callee_first_decision(
@@ -1680,11 +1679,20 @@ pub(crate) fn driver_default_options(
         })
         .unwrap_or(false);
 
-    driver_default_options_for_arch(non_x86_64, decompiles, wants_listing, options)
+    // A headerless image (no object view, not a TE) is swept with the target
+    // language's patterns on the raw path, so it takes the pattern default too.
+    let raw = crate::image::inspect(binary, |bytes| {
+            Some(!kuna_analysis::loadimage_te::is_te_image(bytes)
+                && kuna_analysis::loadimage_object::parse_object(bytes).is_err())
+        })
+        .unwrap_or(false);
+
+    driver_default_options_for_arch(non_x86_64, raw, decompiles, wants_listing, options)
 }
 
 fn driver_default_options_for_arch(
     non_x86_64: bool,
+    raw: bool,
     decompiles: bool,
     wants_listing: bool,
     options: &[(String, String)],
@@ -1706,7 +1714,7 @@ fn driver_default_options_for_arch(
     if wants_listing && (decompiles || non_x86_64) && !named("listing") {
         injected.push(("listing", "on"));
     }
-    if non_x86_64 && !named("funcstart_patterns") {
+    if (non_x86_64 || raw) && !named("funcstart_patterns") {
         injected.push(("funcstart_patterns", "on"));
     }
     if non_x86_64 && !named("aif") {
@@ -1806,6 +1814,7 @@ fn load_program_with_rust_profiles(
     let non_x86_64 = !prog.arch().archid.starts_with("x86:LE:64:");
     for (name, value) in driver_default_options_for_arch(
         non_x86_64,
+        args.raw_image,
         defaults.decompiles() || args.apply_rust_signatures.is_some(),
         defaults.wants_listing(),
         &args.options,
@@ -3121,9 +3130,6 @@ pub(crate) fn parse_args_with_filters(
     }
 
     if raw_image {
-        if cmd == "decompile-graph" {
-            return Err("--raw-image is not supported by decompile-graph".into());
-        }
         if target.as_deref().is_none_or(|value| value.trim().is_empty()) {
             return Err("--raw-image requires --target <SLEIGH-language-id>".into());
         }
@@ -3133,8 +3139,9 @@ pub(crate) fn parse_args_with_filters(
         if names.is_some() {
             return Err("--raw-image uses explicit --entry/--addr seeds, not --functions".into());
         }
-        if addrs.is_empty() && entry_seeds.is_empty() {
-            return Err("--raw-image requires at least one --entry or --addr".into());
+        let patterns_off = options.iter().any(|(name, value)| name == "funcstart_patterns" && value == "off");
+        if addrs.is_empty() && entry_seeds.is_empty() && patterns_off {
+            return Err("--raw-image with funcstart_patterns off requires at least one --entry or --addr".into());
         }
         if addrs
             .iter()
@@ -3145,9 +3152,6 @@ pub(crate) fn parse_args_with_filters(
         }
         if slice.is_some() {
             return Err("--slice does not apply to --raw-image input".into());
-        }
-        if filters.reachable_from.is_some() || filters.summary {
-            return Err("--reachable-from and --summary require object-file metadata and do not apply to --raw-image input".into());
         }
     } else {
         if base.is_some() {

@@ -374,6 +374,7 @@ pub fn universal_sched(
         rrow!("constspaceload", "analysis", crate::kuna_constspaceload::RuleConstSpaceLoad::with_group("analysis")),
         rrow!("x87truncate", "analysis", crate::kuna_x87truncate::RuleX87Truncate::new("analysis")),
         rrow!("gobool", "analysis", crate::kuna_gobool::RuleGoBoolReturn::with_group(false, "analysis")),
+        rrow!("strcpychain", "analysis", crate::kuna_helperrole::RuleStrcpyChain::new("analysis")),
         rrow!("boolsignless", "analysis", crate::kuna_flagcompare::RuleBoolSignLess::with_group("analysis")),
         rrow!("sborrowge", "analysis", crate::kuna_flagcompare::RuleSborrowGe::with_group("analysis")),
         rrow!("shiftcompare", "analysis", crate::ruleaction_2::RuleShiftCompare),

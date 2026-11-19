@@ -170,7 +170,7 @@ fn computed_untyped_returns_use_the_parameter_recovery_snapshot() {
     let mut recovered = crate::kuna_protoorder::RecoveredTypes {
         inputs: Vec::new(), arity_sound: false, output: None,
         result: Some((storage.clone(), 8)), vararg_tail: Vec::new(),
-        reads: Vec::new(), passes: Vec::new(),
+        reads: Vec::new(), passes: Vec::new(), callers_vote: false,
     };
     fd.kuna_set_protoorder_types(&entry, Rc::new(recovered.clone()));
     assert_eq!(render(&fd, op, "rust", false), "wide_value()");

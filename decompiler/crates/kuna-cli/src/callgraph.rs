@@ -70,7 +70,10 @@ impl CallGraph {
         pref: SlicePref,
         measured: bool,
     ) -> Result<CallGraph, String> {
-        let bytes = image_bytes(binary, pref)?;
+        let bytes = match prog.object_view() {
+            Some(view) => view.to_vec(),
+            None => image_bytes(binary, pref)?,
+        };
         let file = kuna_analysis::loadimage_object::parse_object(&bytes)
             .map_err(|e| format!("could not parse {binary}: {e}"))?;
         Ok(CallGraph::walk(prog, &file, measured))

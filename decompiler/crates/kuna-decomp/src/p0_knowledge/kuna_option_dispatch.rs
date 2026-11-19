@@ -101,6 +101,7 @@ kuna_options! { self, p1;
     },
     "returnbranch" => on_off!(return_branch, "Computed jumps through the return register"),
     "globalarrayanchor" => on_off!(global_array_anchor, "Global array anchor preservation"),
+    "helperroles" => on_off!(helper_roles, "Role-tagged helper-call rewrites"),
     "signedness" => {
         let (val, msg) = crate::kuna_typeround::OptionSignedness.apply(p1)?;
         self.signedness = val;
@@ -778,6 +779,7 @@ kuna_options! { self, p1;
     "unwindstarts" => {
         on_off!(analysis_unwindstarts, "Mach-O __unwind_info function-start discovery")
     },
+    "importvote" => on_off!(analysis_importvote, "Undeclared import call-site vote"),
     "funcstart_patterns" => {
         on_off!(analysis_funcstart_patterns, "Full byte-pattern function-start pass")
     },
@@ -913,6 +915,9 @@ kuna_options! { self, p1;
         analysis_lazyfuncs,
         "Materialize Function objects on demand instead of one per entry"
     ),
+    "objectview" => {
+        on_off!(analysis_objectview, "Object-file analysis passes on TE and raw images")
+    },
     "noreturn_disc" => {
         on_off!(analysis_noreturn_disc, "Discovered-no-return Listing consumer")
     },
@@ -949,6 +954,9 @@ kuna_options! { self, p1;
     },
     "tailcallentry" => {
         on_off!(analysis_tailcallentry, "Tail-call function-entry recovery Listing consumer")
+    },
+    "funcchunks" => {
+        on_off!(analysis_funcchunks, "Function chunk bodies (main chunk + shared tails)")
     },
     "objc" => on_off!(analysis_objc, "Mach-O Objective-C metadata recovery pass"),
     "swiftmetadata" => on_off!(analysis_swiftmetadata, "Swift runtime-metadata recovery pass"),

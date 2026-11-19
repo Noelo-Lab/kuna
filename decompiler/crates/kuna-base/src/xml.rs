@@ -2242,7 +2242,14 @@ mod tests {
         // and ghangr-go-paniccheck-return / a returning Go panic check keeps its continuation
         // and ghangr-go-aarch64-stack-stride / adjacent eight-byte spills keep their declared inputs
         // and ghangr-go-mcall-resumption / a scheduler switch preserves its caller's continuation
-        assert_eq!(count, 824, "corpus file count drifted");
+        // and kuna-addrtable / a writable function-pointer table typed code *[N] (option addrtable)
+        // and kuna-rawpatterns / a headerless image is swept with its language's function-start patterns
+        // and kuna-importvote / an undeclared import takes the arguments its other call sites pass (option importvote)
+        // and kuna-formatcallees / undeclared format functions are typed from their formats (option formatstring)
+        // and kuna-strcpychain / memcpy(d, s, strlen(s) + 1) prints as strcpy(d, s) (option helperroles)
+        // and kuna-objectview / a TE or raw image runs the object-file analysis passes over a rebuilt view (option objectview)
+        // and kuna-aifdataveto / a gap entry the code reads as data is not a function (option aif)
+        assert_eq!(count, 831, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
