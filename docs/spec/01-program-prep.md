@@ -5481,8 +5481,8 @@ every other binary's pass list is byte-identical to before the pass existed):
     lists. The base comes from the `ObjCOptimizationHeader` the cache header
     names (`objcOptsOffset`; `relativeMethodSelectorBaseAddressOffset` at
     +0x30, an offset from the cache base), else from libobjc's `objc_opt_t`
-    (`__objc_opt_ro`, version 16 on, the same field at +0x28 as an offset from
-    the record) on an older cache. A method whose IMP lies outside the image, a
+    (`__objc_opt_ro`, version 16 on, the same field at +0x28 as a signed offset
+    from the record) on an older cache. A method whose IMP lies outside the image, a
     category of another image preattached to this image's class, is named at
     that address as an import (`AnalysisOutput::import_slot_names`) and makes
     no function. Class, super and protocol reference slots hold plain pointers

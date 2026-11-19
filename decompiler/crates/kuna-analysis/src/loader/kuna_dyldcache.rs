@@ -342,8 +342,8 @@ impl DyldCache {
     /// The address every direct-selector method list of the cache offsets its
     /// selectors from. The `ObjCOptimizationHeader` the cache header names
     /// carries it as an offset from the cache base; an older cache carries it in
-    /// libobjc's `objc_opt_t` (`__objc_opt_ro`, version 16 on) as an offset from
-    /// that record. `None` on a cache with neither.
+    /// libobjc's `objc_opt_t` (`__objc_opt_ro`, version 16 on) as a signed offset
+    /// from that record. `None` on a cache with neither.
     pub fn objc_selector_base(&self) -> Option<u64> {
         *self.objc_selector_base.get_or_init(|| self.header_selector_base().or_else(|| self.libobjc_selector_base()))
     }
@@ -365,8 +365,8 @@ impl DyldCache {
         if u32_at(&record, 0) < 16 {
             return None;
         }
-        let rel = u64_at(&record, OBJC_OPT_T_SELECTOR_BASE);
-        if rel == 0 { None } else { opt.addr.checked_add(rel) }
+        let rel = u64_at(&record, OBJC_OPT_T_SELECTOR_BASE) as i64;
+        if rel == 0 { None } else { opt.addr.checked_add_signed(rel) }
     }
 
     fn open_local_symbols(
