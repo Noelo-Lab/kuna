@@ -56,13 +56,13 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_222() {
-    assert_eq!(kuna_num_settables(), 222);
-    assert_eq!(SETTABLE_TABLE.len(), 222);
+fn settable_count_is_223() {
+    assert_eq!(kuna_num_settables(), 223);
+    assert_eq!(SETTABLE_TABLE.len(), 223);
 }
 
 #[test]
-fn tier_counts_are_45_core_121_transform_56_analysis() {
+fn tier_counts_are_45_core_121_transform_57_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -74,7 +74,7 @@ fn tier_counts_are_45_core_121_transform_56_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (45, 121, 56));
+    assert_eq!((core, transform, analysis), (45, 121, 57));
 }
 
 #[test]
@@ -437,6 +437,9 @@ fn option_values_live_value_present_for_76() {
         // (kuna) PowerPC APU-note language selection: a load-time gate read via
         // the `kuna_ppcapu` env var, like `ifuncfpret`.
         "ppcapu",
+        // (kuna) Separate debug file lookup: a load-time gate read via the
+        // `kuna_debuglink` env var, like `ifuncfpret`.
+        "debuglink",
         // (kuna, GH-340) Symbol-name character sanitizing: a load-time gate read
         // via the `kuna_symbolnamechars` env var (names are minted inside `load
         // file`), like `symbolnamerepair`. Three-valued, default `safe`.
@@ -1100,7 +1103,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `kernelcache-boot`; its P1 row sits after `kernelcache`.
     // +1 for `blobs`; its P1 row sits after `strings`.
     // +1 for `repstring`; its P3 row sits after `strlenscan`.
-    assert_eq!(json.matches("},\n").count(), 221);
+    // +1 for `debuglink`; its P1 row sits after `ifuncfpret`.
+    assert_eq!(json.matches("},\n").count(), 222);
 }
 
 #[test]

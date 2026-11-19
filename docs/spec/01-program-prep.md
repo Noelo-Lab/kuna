@@ -1631,6 +1631,24 @@ dereferences in 136 of 295 functions become 44 (the entry point's PSP reads
 and code that loads DS from memory), and 1,537 named global references replace
 29.
 
+(kuna) **A stripped ELF's separate debug information** (`debuglink`,
+default on, a load-time gate read through `KUNA_DEBUGLINK`). Distributions
+strip their binaries and ship the symbol table and DWARF in a separate file.
+When the image has no `.symtab`,
+`decompiler/crates/kuna-analysis/src/loader/elf_debuglink.rs (companion_symbols)`
+looks for that file the way gdb does: the GNU build-id note names
+`<dir>/.build-id/<xx>/<rest>.debug`, accepted only if its own build-id matches,
+and `.gnu_debuglink` names a file next to the image, in its `.debug/`
+directory, or under `<dir>/<image's directory>/`, accepted only if its CRC32
+matches. `<dir>` is each entry of `KUNA_DEBUG_DIRS`, then `/usr/lib/debug`. A
+debuglink name with a directory component is refused, and a candidate over
+1 GiB is not read. The companion's defined function symbols join the loader's
+function symbols; an address that already has a name keeps it. When the image
+has no `.debug_info`, the DWARF pass (§1.6) runs over the same companion
+(`elf_debuglink.rs (find_companion)`): its addresses are the image's own, so
+prototypes, parameters and locals apply unchanged. With `debuglink off` only
+what the image itself carries is read.
+
 (kuna) **UEFI TE images take a bounded container path of their own.**
 `decompiler/crates/kuna-analysis/src/loadimage_te.rs (TeLoadImage)` parses a
 file the format probe claims. That probe reads more than the `VZ` signature —

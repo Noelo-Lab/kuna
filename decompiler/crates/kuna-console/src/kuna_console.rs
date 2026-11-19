@@ -301,6 +301,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "unwindstarts" => on_off(conf.analysis_unwindstarts),
         "ppc32picimports" => conf.analysis_ppc32picimports.as_str(),
         "ifuncfpret" => on_off(conf.analysis_ifuncfpret),
+        "debuglink" => on_off(conf.analysis_debuglink),
         "ppcapu" => on_off(conf.analysis_ppcapu),
         // (kuna `goabi`) Two-valued but spelled auto|off, so it reports its token.
         "goabi" => {

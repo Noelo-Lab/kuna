@@ -50,6 +50,8 @@ pub struct LoadOptions {
     pub ppc32picimports: Ppc32PicMode,
     /// `ifuncfpret`: name x86-64 IFUNC PLT stubs.
     pub ifuncfpret: bool,
+    /// `debuglink`: name a stripped ELF from its separate debug file.
+    pub debuglink: bool,
     /// `ppcapu`: select the PowerPC APU language for an image that needs it.
     pub ppcapu: bool,
     /// `kernelcache`: unwrap Apple firmware containers and pick a fileset entry.
@@ -100,6 +102,7 @@ impl Default for LoadOptions {
         LoadOptions {
             ppc32picimports: Ppc32PicMode::Off,
             ifuncfpret: true,
+            debuglink: true,
             ppcapu: false,
             kernelcache: KernelcacheChoice::default(),
             kernelcache_boot: KernelcacheBoot::default(),
@@ -132,6 +135,7 @@ impl LoadOptions {
         LoadOptions {
             ppc32picimports: env::ppc32picimports(),
             ifuncfpret: env::ifuncfpret(),
+            debuglink: env::debuglink(),
             ppcapu: env::ppcapu(),
             kernelcache: env::kernelcache(),
             kernelcache_boot: env::kernelcache_boot(),
@@ -183,6 +187,7 @@ impl LoadOptions {
         match option {
             "ppc32picimports" => self.ppc32picimports.set_env(),
             "ifuncfpret" => kuna_ifuncfpret::set_ifuncfpret_env(self.ifuncfpret),
+            "debuglink" => kuna_debuglink::set_debuglink_env(self.debuglink),
             "ppcapu" => kuna_ppcapu::set_ppcapu_env(self.ppcapu),
             "kernelcache" => kuna_kernelcache::set_kernelcache_env(&self.kernelcache),
             "kernelcache-boot" => {
@@ -308,6 +313,10 @@ pub mod env {
 
     pub fn ifuncfpret() -> bool {
         env_toggle(crate::kuna_ifuncfpret::IFUNCFPRET_ENV, true)
+    }
+
+    pub fn debuglink() -> bool {
+        env_toggle(crate::kuna_debuglink::DEBUGLINK_ENV, true)
     }
 
     pub fn ppcapu() -> bool {

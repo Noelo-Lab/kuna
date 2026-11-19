@@ -1187,6 +1187,20 @@ impl AnalysisPass for DwarfPass {
         //
         // DWARFProgram.isDWARF: no `.debug_info` => not a DWARF program, empty out.
         if dwarf_section_data(ctx.file, gimli::SectionId::DebugInfo).is_none() {
+            // (kuna `debuglink`) A stripped image's DWARF lives in its companion
+            // debug file; the addresses are the image's own.
+            if kuna_decomp::kuna_debuglink::debuglink_enabled() {
+                let companion = ctx
+                    .image_path
+                    .and_then(|path| crate::loader::elf_debuglink::find_companion(ctx.file, path));
+                if let Some((_, bytes)) = companion {
+                    if let Ok(file) = object::File::parse(&*bytes) {
+                        if dwarf_section_data(&file, gimli::SectionId::DebugInfo).is_some() {
+                            return self.run(&AnalysisCtx { file: &file, ..*ctx });
+                        }
+                    }
+                }
+            }
             return out;
         }
 

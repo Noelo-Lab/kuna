@@ -1,0 +1,42 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default">
+<!--
+    kuna-debuglink: a stripped ELF takes its function names and DWARF from the
+    separate debug file its .gnu_debuglink names (`option debuglink on|off`).
+
+    Stage: P1 environment binding. Fixture tests/fixtures/debuglink/link (built
+    from p.c as its header says): stripped, with a .gnu_debuglink naming
+    link.debug next to it (CRC32 checked). The option is a load-time gate, so
+    it is set before the `load file` it applies to.
+
+    Pass 1 (`debuglink off`, the bug): the only name is the dynamic symbol
+    `main`; helper_beta is sub_115a and its callee sub_1149.
+    Pass 2 (default, the fix): link.debug's .symtab names the functions and its
+    DWARF their parameters.
+    (The build-id path, <dir>/.build-id/xx/rest.debug under KUNA_DEBUG_DIRS,
+    is the same lookup; a host directory cannot be pinned in a stage test.)
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>option debuglink off</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/debuglink/link</com>
+  <com>read symbols</com>
+  <com>load addr 0x115a</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option debuglink on</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/debuglink/link</com>
+  <com>read symbols</com>
+  <com>load function helper_beta</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="debuglink #1: off, the stripped image has no names" min="1" max="1">return sub_1149\(\) \+ -3;</stringmatch>
+<stringmatch name="debuglink #2: the .gnu_debuglink companion supplies names and DWARF" min="1" max="1">^int4 helper_beta\(int4 x\)</stringmatch>
+<stringmatch name="debuglink #3: the companion's DWARF parameter reaches the call" min="1" max="1">return helper_alpha\(x\) \+ -3;</stringmatch>
+</decompilertest>
