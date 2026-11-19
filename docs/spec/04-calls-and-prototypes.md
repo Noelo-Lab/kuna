@@ -1710,7 +1710,13 @@ that machinery.
   (ActionStackPtrFlow)`, its home by port history) and, per-function, to
   `option extrapop`
   (`decompiler/crates/kuna-decomp/src/p0_knowledge/options.rs
-  (OptionExtraPop)`).
+  (OptionExtraPop)`). With a function name, `option extrapop <n> <name>`
+  parks `n` on that FunctionSymbol
+  (`decompiler/crates/kuna-decomp/src/p0_knowledge/database.rs
+  (Database::set_function_extra_pop)`). `ActionDefaultParams` copies it into
+  every call spec that targets the function, as upstream copies the callee's
+  own prototype, and the function's own prototype takes it when it is
+  decompiled (`tests/stages/kuna-extrapop-function.xml`).
   On x86-32 under a compiler spec whose default model leaves extrapop unknown
   (`x86win.cspec`'s `__stdcall`, and with it `__thiscall`/`__fastcall` callees
   the image does not declare), a direct call whose prototype states no extrapop

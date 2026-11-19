@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4512,
-    4512
+    4515,
+    4515
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -675,6 +675,9 @@
     "data:EXTENT-DIRECT #4: an in-range recovered indirect target remains local",
     "data:EXTENT-DIRECT #5: the stated interior indirect entry is not inferred as a callee",
     "data:EXTENT-FALLTHROUGH #1: both passes decode the body inside the asserted outer extent",
+    "data:EXTRAPOP #1: the model extrapop leaves the pushed 2 at [esp+4]",
+    "data:EXTRAPOP #2: extrapop 12 pops both arguments, so [esp+4] is the caller's argument",
+    "data:EXTRAPOP #3: the call sees both pushed arguments",
     "data:Explicit Go consumer preserves sign extension",
     "data:Explicit Go consumer preserves zero extension",
     "data:Explicit Go prototype retains the narrowing conversion",

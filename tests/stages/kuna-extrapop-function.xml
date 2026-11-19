@@ -1,0 +1,38 @@
+<decompilertest>
+<binaryimage arch="x86:LE:32:default:gcc">
+<!--
+    Per-function extrapop: `option extrapop <n> <name>`.
+
+    OptionExtraPop (decompiler/cpp/options.cc) with a function name sets that
+    function's prototype extrapop, which every caller copies into its call
+    spec (ActionDefaultParams). kuna returned "Unknown function name" for
+    every name.
+
+    Authored x86-32 (nasm): f pushes 2 and 1, calls g, then returns [esp+4];
+    g ends in `ret 8`. The gcc cspec's extrapop (4) leaves the arguments on
+    the stack, so [esp+4] reads the pushed 2. With extrapop 12 for g the
+    stack pointer is back at f's entry and [esp+4] is f's own argument.
+
+    Pass 1 (model extrapop): `g(1); return 2;`
+    Pass 2 (`option extrapop 12 g`): `g(1,2); return a0;`
+
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+6a026a01e8170000008b442404c39090909090909090909090909090909090908b442404c20800
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="f"/>
+<symbol space="ram" offset="0x100020" name="g"/>
+</binaryimage>
+<script>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option extrapop 12 g</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="EXTRAPOP #1: the model extrapop leaves the pushed 2 at [esp+4]" min="1" max="1">return 2;</stringmatch>
+<stringmatch name="EXTRAPOP #2: extrapop 12 pops both arguments, so [esp+4] is the caller's argument" min="1" max="1">return a0;</stringmatch>
+<stringmatch name="EXTRAPOP #3: the call sees both pushed arguments" min="1" max="1">g\(1,2\);</stringmatch>
+</decompilertest>

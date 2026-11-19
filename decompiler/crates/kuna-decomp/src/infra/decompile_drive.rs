@@ -2012,6 +2012,9 @@ fn decompile_func_full_with_objects_inner(
             proto.set_model_lock(true);
             fd.kuna_set_input_hints(input_hints.clone());
         }
+        if let Some(expop) = arch.symboltab.function_extra_pop_across_scopes(&entry_addr) {
+            fd.get_func_proto_mut().set_extra_pop(expop);
+        }
         // Re-seed any console `map param <i> <addr> <typedecl>` storage locks (lost
         // when the IR is rebuilt, like `pending_proto`/`mapped_symbols`).  This makes
         // the rebuilt proto input-locked so `ActionPrototypeTypes` forces the typed
