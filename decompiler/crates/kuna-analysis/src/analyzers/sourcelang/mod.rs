@@ -85,6 +85,7 @@
 //! byte-identical output, and the **ELF path is untouched**.
 
 mod kuna_rustversion;
+mod kuna_legacy_llvm;
 pub use kuna_rustversion::{fmt_pieces_layout, rustc_version_label, stable_rustc_version};
 mod kuna_rustreleases;
 mod kuna_rustcrates;
@@ -640,10 +641,10 @@ fn is_rust_legacy(name: &str) -> bool {
     let Some(pos) = name.rfind("17h") else {
         return false;
     };
-    let Some(hex) = name[pos + 3..].strip_suffix('E') else {
-        return false;
-    };
-    hex.len() == 16 && hex.bytes().all(|b| b.is_ascii_hexdigit())
+    let bare = name[pos + 3..].strip_suffix('E').is_some_and(|hex| {
+        hex.len() == 16 && hex.bytes().all(|b| b.is_ascii_hexdigit())
+    });
+    bare || kuna_legacy_llvm::stem(name).is_some()
 }
 
 /// `true` if the `.rodata` section carries any [`RUST_SIGNATURES`] byte signature
