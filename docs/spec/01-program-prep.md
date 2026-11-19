@@ -8568,9 +8568,12 @@ as a LOAD/STORE address); it is promoted when the instruction is `PUSH`, a
 straight-line run of at most sixteen instructions reaches the next call, the
 target is not an existing instruction or an interior instruction byte, and the
 strict bounded subroutine probe reaches a valid termination. Accepted stack
-callback roots are added to the Listing seeds and the walk is rebuilt, up to
-four rounds and 1,024 roots, so a dialog callback that registers a second
-callback contributes both bodies to one project inventory. Other code-looking
+callback roots are added to the Listing seeds and the walk is resumed from them
+(`listing/mod.rs (Listing::resume)`: the instructions, functions and references
+already found are kept and only what the new roots reach is decoded, the same
+Listing a fresh build from all the seeds makes), up to four rounds and 1,024
+roots, so a dialog callback that registers a second callback contributes both
+bodies to one project inventory. Other code-looking
 immediates, targets already claimed by a body, and targets that only happen to
 decode without a valid return path remain unpromoted.
 
