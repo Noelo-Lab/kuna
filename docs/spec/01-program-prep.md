@@ -4108,6 +4108,18 @@ moves.
   for §4's locked-call recovery. Unavailable, ambiguous or inconsistent
   evidence leaves the ordinary inference path in place.
 
+  Named amd64 Go ELF images with supported linked layouts can additionally
+  carry a pointer receiver on a complete imported scalar prototype. The
+  rooted module descriptor and symbol table must agree on the type region,
+  text base, and unique named pointer and record. A method-table entry must
+  identify the same ordinary executable function through both Ifn and Tfn.
+  The receiver, argument, result and record fields must independently agree
+  with the compiler DWARF runtime type offsets and layouts, including the
+  RAX and RBX input locations and word-sized result. A value-method record,
+  wrapper flag, trampoline, duplicate or missing type evidence leaves the
+  ordinary declaration. The function symbol retains receiver evidence only
+  while the exact imported prototype and name remain in authority.
+
   Native Go zlib debug sections are retained compressed at load time. Their
   combined stored/declared extents are bounded to 64 MiB and are inflated only
   when `godwarfsig` is enabled. Each stream must end exactly, pass its checksum

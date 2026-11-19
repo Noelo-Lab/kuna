@@ -88,6 +88,7 @@ mod kuna_layout;
 mod kuna_fieldtypes;
 mod kuna_itabs;
 mod kuna_typeglobals;
+pub mod kuna_pointermethods;
 use kuna_fieldtypes::field_type;
 
 /// Go `kind` byte values (`internal/abi.Kind`), masked by [`KIND_MASK`].
@@ -723,7 +724,10 @@ impl AnalysisPass for GoTypesPass {
             .map(|s| s.address())
             .collect();
         let itabs = kuna_itabs::collect(&img, &meta, anchor, &occupied);
-        AnalysisOutput { go_type_globals: globals, go_itabs: itabs, ..Default::default() }
+        let go_pointer_methods = kuna_pointermethods::collect(
+            ctx.file, &img, &meta, header_vma, anchor, version,
+        ).unwrap_or_default();
+        AnalysisOutput { go_type_globals: globals, go_itabs: itabs, go_pointer_methods, ..Default::default() }
     }
 }
 

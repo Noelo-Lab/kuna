@@ -645,6 +645,7 @@ pub struct Funcdata {
     /// (kuna `elfmain`) The C runtime's `main` declaration this function's inputs
     /// take, when it is an executable's own `main`. See [`crate::kuna_elfmaindecl`].
     kuna_elfmain: Option<std::rc::Rc<crate::kuna_elfmaindecl::Runtime>>,
+    pub(crate) kuna_go_receiver: Option<crate::kuna_gopointermethod::Receiver>,
     /// (kuna `swiftcall`) Names and types for the inputs this function's
     /// analysis recovers. See [`crate::kuna_inputhints`].
     kuna_input_hints: Option<std::rc::Rc<Vec<crate::kuna_inputhints::InputHint>>>,
@@ -899,6 +900,7 @@ impl Funcdata {
             kuna_calleevote_inputs: None,
             kuna_callerargs: None,
             kuna_elfmain: None,
+            kuna_go_receiver: None,
             kuna_input_hints: None,
             kuna_calleevote_closed: false,
             kuna_elemptr_blocked: None,

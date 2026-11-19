@@ -585,6 +585,8 @@ pub enum SymbolKind {
         /// name+address) and re-seeded into a `FuncProto` on demand.  `None` = no
         /// source-declared prototype (the default-model recovery applies).
         proto_pieces: Option<Box<crate::fspec::PrototypePieces>>,
+        /// Receiver evidence belongs to this exact parked prototype.
+        pointer_receiver: Option<Box<crate::kuna_gopointermethod::Receiver>>,
     },
     /// `EquateSymbol` — labels a constant (C++ `EquateSymbol`).
     Equate {
@@ -2245,6 +2247,7 @@ impl Database {
             no_return: false,
             inject_id: -1,
             proto_pieces: None,
+            pointer_receiver: None,
         };
         let sid = self.symbols.insert(sym);
         self.add_symbol_internal(scope, sid)?;
@@ -2902,9 +2905,38 @@ impl Database {
         pieces: crate::fspec::PrototypePieces,
     ) {
         self.kuna_gen += 1;
-        if let SymbolKind::Function { proto_pieces, .. } = &mut self.symbols[sid].kind {
+        if let SymbolKind::Function { proto_pieces, pointer_receiver, .. } = &mut self.symbols[sid].kind {
             *proto_pieces = Some(Box::new(pieces));
+            *pointer_receiver = None;
         }
+    }
+
+    pub fn attach_go_pointer_receiver(
+        &mut self, addr: &Address, receiver: crate::kuna_gopointermethod::Receiver,
+    ) {
+        self.kuna_gen += 1;
+        let Some((id, _)) = self.find_function_across_scopes(addr) else { return };
+        let symbol = &mut self.symbols[id];
+        if symbol.name != receiver.symbol || symbol.display_name != receiver.symbol {
+            return;
+        }
+        if let SymbolKind::Function { proto_pieces: Some(pieces), pointer_receiver, .. } = &mut symbol.kind {
+            if pieces.name == receiver.symbol {
+                *pointer_receiver = Some(Box::new(receiver));
+            }
+        }
+    }
+
+    pub(crate) fn go_pointer_receiver(
+        &self, addr: &Address,
+    ) -> Option<&crate::kuna_gopointermethod::Receiver> {
+        let (id, _) = self.find_function_across_scopes(addr)?;
+        let symbol = &self.symbols[id];
+        let SymbolKind::Function { pointer_receiver: Some(receiver), .. } = &symbol.kind else {
+            return None;
+        };
+        (symbol.name == receiver.symbol && symbol.display_name == receiver.symbol)
+            .then_some(receiver.as_ref())
     }
 
     /// The prototype pieces parked on FunctionSymbol `sid`, or `None` when it

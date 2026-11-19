@@ -2027,6 +2027,14 @@ fn decompile_func_full_with_objects_inner(
         // the rebuilt proto input-locked so `ActionPrototypeTypes` forces the typed
         // input Varnode (C++ `IfcMapParam` writes straight onto the live FuncProto).
         fd.apply_mapped_params(mapped_params);
+        if pending_proto.is_none() && recovered_proto.is_some() && mapped_params.is_empty()
+            && staged_proto_model.is_none() && arch.analysis_godwarfsig
+        {
+            fd.kuna_go_receiver = arch.symboltab.go_pointer_receiver(&entry_addr)
+                .filter(|receiver| receiver.symbol == fd.get_display_name()
+                    && receiver.matches(arch, fd.get_func_proto()))
+                .cloned();
+        }
         // Re-seed the console-mapped symbols (lost when the IR is rebuilt).
         fd.seed_mapped_symbols(mapped_symbols);
         // Re-seed the usepoint-scoped console symbols (the register-storage

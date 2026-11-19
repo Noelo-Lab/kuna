@@ -663,6 +663,8 @@ pub struct AnalysisOutput {
     pub cpp_dwarf: CppDwarfFacts,
     /// Go DWARF signatures, with type interning deferred until the commit gate.
     pub go_dwarf: Vec<crate::dwarf::kuna_godwarfsig::Facts>,
+    /// Exact linked pointer method statements, intersected with Go DWARF at commit.
+    pub go_pointer_methods: std::collections::BTreeMap<u64, crate::gotypes::kuna_pointermethods::LinkedMethod>,
     /// (kuna `cppsig`) The prototypes recovered from the MANGLED SYMBOL, split by
     /// how certain the pass is that argument 0 is an implicit `this`. Held apart
     /// for the same reason as [`Self::cpp_dwarf`] — the producing pass runs at
@@ -900,6 +902,7 @@ impl AnalysisOutput {
         self.cpp_dwarf.locals.extend(other.cpp_dwarf.locals);
         self.cpp_dwarf.prototypes.extend(other.cpp_dwarf.prototypes);
         self.go_dwarf.extend(other.go_dwarf);
+        self.go_pointer_methods.extend(other.go_pointer_methods);
         self.cpp_sig.proven.extend(other.cpp_sig.proven);
         self.cpp_sig.inferred.extend(other.cpp_sig.inferred);
         self.cpp_sig.msvc.extend(other.cpp_sig.msvc);
