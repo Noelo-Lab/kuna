@@ -1616,6 +1616,12 @@ above are reused, plus one new stripped Mach-O:
         -no_function_starts -x -e _main -o macho_unwind_only_arm64 t.o
   ```
 
+- **Mach-O, truncated:** `macho_truncated_arm64` (1.5 KB) is the first 0x600
+  bytes of `macho_unwind_only_arm64` (`head -c 1536`): `__TEXT` is cut short and
+  `__LINKEDIT`, with the symbol and string tables, is gone. It is the witness
+  that a Mach-O whose load commands name bytes past the end of the file still
+  loads (`tests/stages/kuna-machotruncated.xml`).
+
 ## DWARF on MinGW-PE / Mach-O (PR-11)
 
 The multi-format **DWARF** gate (`kuna-console/tests/verify_multiformat_dwarf.rs`,

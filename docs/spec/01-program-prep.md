@@ -567,6 +567,30 @@ header is wrong however the rest of the file reads, so keeping it lets the calle
 report whatever is actually unreadable instead of a header count that was never
 the whole story.
 
+(kuna) **A Mach-O range past the end of the file is clamped, not fatal**
+(`decompiler/crates/kuna-analysis/src/loader/kuna_machotolerance.rs
+(clamp_out_of_file_ranges)`). A segment, section, symbol table or string table
+whose file range runs past the end of a truncated or hand-edited Mach-O used to
+fail the whole load: `object` checks the symbol table eagerly in `File::parse`
+("Invalid Mach-O symbol table offset or size"), and the loader reads each
+segment's file range when it maps it. dyld would refuse such a file, but a
+static reader can still use every byte that is there. Each such range is clamped
+to the bytes the file holds (segment `filesize`, section `size`, `nsyms`,
+`strsize`) in a copy of the image, at the same read point as the ELF and PE
+header repairs, and the repair is reported once on stderr and recorded with the
+other load notes. Virtual sizes are untouched, so the rest of each segment still
+reads as zero-filled memory and nothing is invented. A thin Mach-O is normally
+mapped rather than read (`image_bytes.rs (map_thin_macho)`); one that needs the
+clamp declines the mapping and takes the owned copy. A whole image is passed on
+byte for byte.
+
+(kuna) **An encrypted Mach-O says so** (`kuna_machotolerance.rs
+(encryption_note)`). An App Store binary carries `LC_ENCRYPTION_INFO[_64]` with
+`cryptid != 0` until it is decrypted. It loads, but the encrypted file range is
+ciphertext that decompiles to noise without any error, so the load names that
+state once: `Mach-O is encrypted (LC_ENCRYPTION_INFO cryptid 1): file bytes
+0x4000..0x... are ciphertext and decompile to noise; decrypt the app first`.
+
 (kuna) **A PE's header page is mapped, read-only**
 (`decompiler/crates/kuna-analysis/src/loader/pe_headers.rs (header_region)`).
 Windows maps a PE in two parts: `SizeOfHeaders` file bytes are copied to
