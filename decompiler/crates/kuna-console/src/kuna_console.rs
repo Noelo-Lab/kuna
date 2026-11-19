@@ -196,6 +196,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "callarrayextent" => on_off(conf.call_array_extent),
         "stackstruct" => on_off(conf.stack_struct),
         "globalarrayanchor" => on_off(conf.global_array_anchor),
+        "helperroles" => on_off(conf.helper_roles),
         "memsetrecover" => on_off(conf.memset_recover),
         "rodatastring" => on_off(conf.rodata_string),
         "returnpair" => {

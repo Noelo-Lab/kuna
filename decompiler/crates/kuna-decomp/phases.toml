@@ -5,8 +5,8 @@
 # live-value match. Editing a row here is the one edit point; the codegen makes
 # any drift a build failure. DO NOT hand-edit the generated Rust.
 #
-# Counts (asserted in tests): group=39, subphase=40, surface=98, settable=75
-# (tiers: 16 core / 35 transform / 24 analysis).
+# Counts (asserted in tests): group=39, subphase=40, surface=98, settable=76
+# (tiers: 16 core / 36 transform / 24 analysis).
 
 # ---------------------------------------------------------------------------
 # groupTable: every action/rule GROUP name -> its dominant stage (39 rows).
@@ -5542,6 +5542,28 @@ change_kind = "opt-in-tool"
 tier = "transform"
 symptoms = "negative index displacement hides a declared global array|indexed stores use an address immediately before an array"
 live_field = "global_array_anchor"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
+option = "helperroles"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P3"
+subphase = "simplification-quiescence"
+strength = "HARD"
+rewind = "P3"
+issue = "kuna-helperroles"
+summary = "Tag helper calls with a role (memcpy, memmove, memset, memcmp, strlen, strcpy, strncpy, strcmp) from the callee's name with its decorations stripped (_memcpy, j_strlen, __imp_memcpy, memcpy@GLIBC, builtin_ prefix) or a CALLOTHER builtin's id, and rewrite on the roles: memcpy(d, s, strlen(s) + 1) becomes strcpy(d, s) (either half a library call or a builtin; the arguments compared through copies, extensions and the INDIRECTs a call leaves on a preserved register), and a strlen whose length nobody reads is dropped. The strcpy builtin carries char * in and out in type inference."
+use_when = "On (default). Flip off to keep the memcpy/strlen pair as the binary spells it."
+example = "--option helperroles off"
+source_decompiler = "kuna"
+inspiration = "the strcpy idiom gcc -fno-builtin and inlined string copies leave behind: a strlen followed by a memcpy of one more byte"
+change_kind = "presentation-default"
+tier = "transform"
+symptoms = "memcpy(d, s, strlen(s) + 1) is printed instead of strcpy(d, s)|an inlined strcpy shows as a strlen call followed by a memcpy"
+live_field = "helper_roles"
 live_true = "on"
 live_false = "off"
 

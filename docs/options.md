@@ -434,6 +434,8 @@ Three tiers:
 | memcpy copies 0x40 bytes into a local declared char v13[12] | [`stackstruct`](#stackstruct----on--off-default-off) |
 | negative index displacement hides a declared global array | [`globalarrayanchor`](#globalarrayanchor----on--off-default-off) |
 | indexed stores use an address immediately before an array | [`globalarrayanchor`](#globalarrayanchor----on--off-default-off) |
+| memcpy(d, s, strlen(s) + 1) is printed instead of strcpy(d, s) | [`helperroles`](#helperroles----on--off-default-on) |
+| an inlined strcpy shows as a strlen call followed by a memcpy | [`helperroles`](#helperroles----on--off-default-on) |
 | Go array accesses surrounded by runtime.panicIndex or runtime.panicBounds calls | [`gobounds`](#gobounds----on--off-default-on-destructive-opt-in) |
 | Go division retains compiler-generated runtime.panicdivide branches | [`gobounds`](#gobounds----on--off-default-on-destructive-opt-in) |
 | PPC32 PIC calls retain local linker stub names | [`ppc32picimports`](#ppc32picimports----off--on--abi-default-off) |
@@ -1781,6 +1783,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** Enable when an indexed access is rendered with a literal address before the declared array or with a synthetic symbol instead of its declared array.
 - **Where / provenance:** P3/simplification-quiescence · kuna · opt-in-tool · mapped-array-negative-index-bias
 - **Example:** `option globalarrayanchor on`
+
+### `helperroles` -- on | off, default `on`
+
+- **Symptoms:** memcpy(d, s, strlen(s) + 1) is printed instead of strcpy(d, s); an inlined strcpy shows as a strlen call followed by a memcpy.
+- **What it does:** Tag helper calls with a role (memcpy, memmove, memset, memcmp, strlen, strcpy, strncpy, strcmp) from the callee's name with its decorations stripped (_memcpy, j_strlen, __imp_memcpy, memcpy@GLIBC, builtin_ prefix) or a CALLOTHER builtin's id, and rewrite on the roles: memcpy(d, s, strlen(s) + 1) becomes strcpy(d, s) (either half a library call or a builtin; the arguments compared through copies, extensions and the INDIRECTs a call leaves on a preserved register), and a strlen whose length nobody reads is dropped. The strcpy builtin carries char * in and out in type inference.
+- **When to flip:** On (default). Flip off to keep the memcpy/strlen pair as the binary spells it.
+- **Where / provenance:** P3/simplification-quiescence · kuna · presentation-default · kuna-helperroles
+- **Example:** `--option helperroles off`
 
 ### `gobounds` -- on | off, default `on` (destructive opt-in)
 

@@ -1,0 +1,38 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna-strcpychain: helper-call roles and the memcpy/strlen chain (option
+    helperroles).
+
+    Source (gcc -O2 -fno-builtin, x86-64):
+      char *dup_into(char *d, const char *s) { memcpy(d, s, strlen(s) + 1); return d; }
+
+    Stage: P3/P4 rule RuleStrcpyChain over kuna_helperrole::role_of, which tags a
+    CALL by its callee name (decorations stripped) and a CALLOTHER by its builtin
+    id. memcpy(d, s, strlen(s) + 1) becomes strcpy(d, s) and the strlen nobody
+    reads is dropped.
+
+    Pass 1 (default) prints strcpy(a0,a1); pass 2 (helperroles off) the pair.
+-->
+<bytechunk space="ram" offset="0x401000" readonly="true">
+f30f1efa31c0803f0074150f1f4400004883c001803c070075f6c30f1f440000c30f1f400066662e0f1f840000000000f30f1efa4885d2741731c00f1f4400000fb60c06880c074883c0014839d075f04889f8c39066662e0f1f840000000000f30f1efa4989f84889f7e891ffffff4c89c7488d5001e8b5ffffff4c89c0c390
+</bytechunk>
+<symbol space="ram" offset="0x401000" name="strlen"/>
+<symbol space="ram" offset="0x401030" name="memcpy"/>
+<symbol space="ram" offset="0x401060" name="dup_into"/>
+</binaryimage>
+<script>
+  <com>parse line extern unsigned long strlen(char *s);</com>
+  <com>parse line extern void *memcpy(void *d,void *s,unsigned long n);</com>
+  <com>lo fu dup_into</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option helperroles off</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="KUNA-STRCPYCHAIN #1: memcpy(d, s, strlen(s) + 1) is strcpy(d, s) (default)" min="1" max="1">strcpy\(a0,a1\);</stringmatch>
+<stringmatch name="KUNA-STRCPYCHAIN #2: helperroles off keeps the memcpy" min="1" max="1">memcpy\(a0,a1,</stringmatch>
+<stringmatch name="KUNA-STRCPYCHAIN #3: the strlen survives only with helperroles off" min="1" max="1">= strlen\(a1\)</stringmatch>
+</decompilertest>

@@ -626,6 +626,9 @@ pub struct Architecture {
     /// Keep mapped global array bases separate from negative element offsets
     /// (option `globalarrayanchor`).
     pub global_array_anchor: bool,
+    /// (kuna `helperroles`) Role-tagged helper-call rewrites
+    /// ([`crate::kuna_helperrole`]).
+    pub helper_roles: bool,
     /// (kuna) Refuse to split a shared RETURN block that stores to GLOBALS, so
     /// a 72-store epilogue is not cloned into each predecessor (option
     /// `retsplitglobal`).  See [`crate::p8_structure::kuna_retsplitglobal`].
@@ -2392,6 +2395,7 @@ impl Architecture {
             switch_selector_guard: false, // (kuna) option switchselector; reset_defaults sets the shipped default
             sparc_struct_return: false,
             global_array_anchor: false,
+            helper_roles: false,
             ret_split_global: false,
             ret_split_limit: None,
             stack_addr_arg_trial: false,
@@ -2731,6 +2735,7 @@ impl Architecture {
         self.msvc_str_append = false; // (kuna) option msvcstrappend, default-off: it deletes the inlined fast path's stores and renames the grow call, and no MSVC C++ corpus in the tree can measure it
         self.linux_syscall = crate::kuna_linuxsyscall::LinuxSyscallMode::Auto; // (kuna) default `auto`: name an x86 `int 0x80` only on an image the loader identified as a Linux ELF; `on` acts on any x86 image, `off` keeps the swi() call
         self.sparc_struct_return = true; // (kuna) GH-6882: gated on the SPARC-only IllegalInstructionTrap user-op, so inert on every other language
+        self.helper_roles = true; // (kuna) memcpy(d, s, strlen(s) + 1) prints as strcpy(d, s); 0/675 datatest assertions move
         self.ret_split_global = true; // (kuna) DIV-PENDING default-on: a shared RETURN block that stores to GLOBALS is not the bare epilogue `ActionReturnSplit::isSplittable` assumes, so it is no longer cloned into every predecessor. One-directional (it can only decline a split) and byte-identical (0/675) on the datatest corpus; restore the upstream predicate with `option retsplitglobal off`
         self.ret_split_limit = Some(crate::p8_structure::kuna_retsplitlimit::DEFAULT_LIMIT); // (kuna) GH-1034 default-on: a return block whose split would clone more than 2^20 ops keeps its gotos
         self.stack_addr_arg_trial = false;
@@ -3504,6 +3509,7 @@ impl Architecture {
         // reads `data.get_arch().<flag>`; the rule is registered `enabled=false`
         // so the live flag drives both the DIV default and the toggle).
         ctx.global_array_anchor = self.global_array_anchor;
+        ctx.helper_roles = self.helper_roles;
         ctx.ret_split_global = self.ret_split_global; // retsplitglobal
         ctx.ret_split_limit = self.ret_split_limit; // retsplitlimit
         // (kuna) resolve the byte-shuffle user-op ids ONCE per program, so the
@@ -4705,7 +4711,7 @@ impl Architecture {
     fn register_string_builtins(&mut self) -> KunaResult<()> {
         use crate::userop::{
             BUILTIN_KERNEL_BUG, BUILTIN_KERNEL_WARN, BUILTIN_MEMCMP, BUILTIN_MEMCPY, BUILTIN_MEMSET,
-            BUILTIN_MEMSET16, BUILTIN_MEMSET32, BUILTIN_MEMSET64,
+            BUILTIN_MEMSET16, BUILTIN_MEMSET32, BUILTIN_MEMSET64, BUILTIN_STRCPY,
             BUILTIN_STRINGDATA, BUILTIN_STRLEN, BUILTIN_STRNCPY, BUILTIN_SYSCALL_ERROR,
             BUILTIN_VOLATILE_READ, BUILTIN_VOLATILE_WRITE, BUILTIN_WCSNCPY,
         };
@@ -4748,6 +4754,7 @@ impl Architecture {
             for id in [BUILTIN_MEMSET16, BUILTIN_MEMSET32, BUILTIN_MEMSET64, BUILTIN_MEMCMP] {
                 userops.register_builtin(id, &adapter)?;
             }
+            userops.register_builtin(BUILTIN_STRCPY, &adapter)?;
             Ok(())
         })();
         self.userops = userops;
