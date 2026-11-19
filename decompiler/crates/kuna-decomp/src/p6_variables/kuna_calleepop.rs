@@ -161,80 +161,38 @@ pub(crate) fn caller_cleans_up(
 
 /// The highest stack-pointer value, relative to `call_out`, that the caller
 /// reaches after the call (see [`caller_cleans_up`]); 0 when it never rises.
-/// A later call whose pop is stated moves the stack pointer by that pop
-/// ([`exact_pop`]), so the reach continues past it, as far as
-/// [`MAX_EXACT_CALLS`] such calls.
 pub(crate) fn caller_raise(data: &Funcdata, spacebase: &Address, call_out: VarnodeId) -> int4 {
     let step = match data.vbank().get(call_out).map(|v| v.get_size()) {
         Some(s) if s > 0 => s,
         _ => return 0,
     };
     let mut high: int4 = if is_argument_push(data, call_out) { step } else { 0 };
-    let mut segments = vec![(0, call_out)];
-    let mut crossed = 0;
-    while let Some((at, from)) = segments.pop() {
-        let mut refs = vec![(at, from)];
-        let descend: Vec<_> = match data.vbank().get(from) {
-            Some(v) => v.descend_iter().collect(),
+    let descend: Vec<_> = match data.vbank().get(call_out) {
+        Some(v) => v.descend_iter().collect(),
+        None => return 0,
+    };
+    for op in descend {
+        let o = match data.obank().get(op) {
+            Some(o) => o,
             None => continue,
         };
-        for op in descend {
-            let o = match data.obank().get(op) {
-                Some(o) => o,
-                None => continue,
-            };
-            if o.code() != OpCode::CPUI_INT_ADD || !at_address(data, o.get_out(), spacebase) {
-                continue;
-            }
-            let other = if o.get_in(0) == Some(from) { o.get_in(1) } else { o.get_in(0) };
-            let c = match const_signed(data, other) {
-                Some(c) => at + c,
-                None => continue,
-            };
-            let Some(out) = o.get_out() else { continue };
-            let reached = if is_argument_push(data, out) { c + step } else { c };
-            if reached > high {
-                high = reached;
-            }
-            refs.push((c, out));
+        if o.code() != OpCode::CPUI_INT_ADD || !at_address(data, o.get_out(), spacebase) {
+            continue;
         }
-        for (c, sp) in refs {
-            let Some(v) = data.vbank().get(sp) else { continue };
-            for op in v.descend_iter() {
-                let Some(o) = data.obank().get(op) else { continue };
-                if o.code() != OpCode::CPUI_INDIRECT || o.get_in(0) != Some(sp) || crossed >= MAX_EXACT_CALLS {
-                    continue;
-                }
-                if let (Some(pop), Some(out)) = (exact_pop(data, o.get_in(1)), o.get_out()) {
-                    crossed += 1;
-                    let after = c + pop;
-                    let reached = if is_argument_push(data, out) { after + step } else { after };
-                    if reached > high {
-                        high = reached;
-                    }
-                    segments.push((after, out));
-                }
-            }
+        let other = if o.get_in(0) == Some(call_out) { o.get_in(1) } else { o.get_in(0) };
+        let c = match const_signed(data, other) {
+            Some(c) => c,
+            None => continue,
+        };
+        let reached = match o.get_out() {
+            Some(out) if is_argument_push(data, out) => c + step,
+            _ => c,
+        };
+        if reached > high {
+            high = reached;
         }
     }
     high
-}
-
-/// Most calls with a stated pop a walk over the stack pointer reads past.
-pub(crate) const MAX_EXACT_CALLS: int4 = 64;
-
-/// The pop of the call whose stack-pointer INDIRECT carries the IOP annotation
-/// `iop`, when its prototype states one: an equation for the solver, not a
-/// guess ([`crate::p4_calls::kuna_declaredpop`]).
-pub(crate) fn exact_pop(data: &Funcdata, iop: Option<VarnodeId>) -> Option<int4> {
-    let v = data.vbank().get(iop?)?;
-    if v.get_addr().get_space()?.get_type() != kuna_base::space::spacetype::IPTR_IOP {
-        return None;
-    }
-    let call = crate::funcdata_varnode::op_iop_decode(v.get_addr().get_offset());
-    let fc = data.get_call_specs(data.get_call_specs_index(call)?);
-    let pop = fc.get_extra_pop();
-    (pop != crate::fspec::EXTRAPOP_UNKNOWN).then_some(pop)
 }
 
 /// Split a spacebase reference into `(base, constant offset)` when it is

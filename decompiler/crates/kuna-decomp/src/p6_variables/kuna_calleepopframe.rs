@@ -77,9 +77,30 @@ pub fn guess_extra_pop(
     if n <= 0 || n > MAX_ARG_BYTES || n % step != 0 {
         return None;
     }
-    let (base, delta) = decompose(data, spacebase, call_sp)?;
+    let (base, delta) = match decompose(data, spacebase, call_sp) {
+        Some(d) => d,
+        None if stated_result(data, call_sp) => (call_sp, 0),
+        None => return None,
+    };
     let first = delta.checked_add(step)?;
     stores_cover(data, spacebase, call, base, first, n, step).then_some(RETURN_ADDRESS_ONLY + n)
+}
+
+/// Is `sp` the stack pointer a call whose pop is stated left behind? That
+/// call's INDIRECT carries its exact equation
+/// ([`crate::p4_calls::kuna_declaredpop`]); written as an `INT_ADD`, it would
+/// have made `sp` a constant offset from the stack pointer before the call.
+fn stated_result(data: &Funcdata, sp: VarnodeId) -> bool {
+    let Some(o) = data.vbank().get(sp).and_then(|v| v.get_def()).and_then(|d| data.obank().get(d)) else {
+        return false;
+    };
+    o.code() == OpCode::CPUI_INDIRECT
+        && o.get_in(1).and_then(|v| data.vbank().get(v)).is_some_and(|v| {
+            v.get_addr().get_space().is_some_and(|s| s.get_type() == kuna_base::space::spacetype::IPTR_IOP)
+                && data
+                    .get_call_specs_index(crate::funcdata_varnode::op_iop_decode(v.get_addr().get_offset()))
+                    .is_some_and(|k| data.get_call_specs(k).get_extra_pop() != crate::fspec::EXTRAPOP_UNKNOWN)
+        })
 }
 
 /// `n` when the first stack-pointer write after `call` in its block is

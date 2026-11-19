@@ -6,35 +6,40 @@
 //! a model that leaves extrapop unknown. `ActionExtraPopSetup` used to write a
 //! stated pop into the IR as `sp_after = INT_ADD(sp_call, #pop)`. In a function
 //! whose other pops `StackSolver` still guesses, that joins the stack pointer
-//! after the call to the one before it before anything is solved, and the
-//! simplifier then rebases the references on both sides onto each other:
+//! after the call to the one before it before anything is solved, and term
+//! collection then rewrites stack arithmetic after the call in terms of a stack
+//! pointer from before it. A pointer difference after `GetModuleFileNameA`
+//! became `-(sp at its last push)`, and the local-alias boundary took that
+//! slot as an escaped address, so every outgoing argument above it was refused
+//! for the rest of the function.
 //!
-//! * The push-run guess of the next call
-//!   ([`crate::p6_variables::kuna_calleepopslot`]) walks stack slots by their
-//!   offset from a shared base, so the slots the declared call popped read as
-//!   pushes for the next call: `push v; call [VariantClear]; push s; call
-//!   [lstrlenA]` credits lstrlenA with VariantClear's argument.
-//! * Term collection rewrites stack arithmetic after the call in terms of a
-//!   stack pointer from before it. A pointer difference after
-//!   `GetModuleFileNameA` became `-(sp at its last push)`, and the local-alias
-//!   boundary took that slot as an escaped address, so every outgoing argument
-//!   above it was refused for the rest of the function.
+//! So the declared pop takes the INDIRECT the other calls take, and the
+//! prototype keeps the pop: `StackSolver::build` reads it as the call's exact
+//! equation, the answer the `INT_ADD` gave, and the solve writes it into the IR
+//! with all the others. Where the solve cannot place the stack pointer (a frame
+//! sized at run time, a stack pointer an exception handler loads from memory),
+//! the INDIRECT is written as the `INT_ADD` it would have been
+//! ([`write_unplaced`]). A direct call's declared pop (a DWARF or demangled
+//! declaration of the image's own function) keeps the `INT_ADD`.
 //!
-//! The solved pops were the same either way. So a declared pop on a call
-//! through a pointer, in a function that is left something to guess
-//! ([`crate::p4_calls::kuna_calleepurge::every_pop_settled`]), takes the
-//! INDIRECT the other calls take, and the prototype keeps the pop:
-//! `StackSolver::build` reads it as the call's exact equation, the same answer
-//! the INT_ADD gave, and the solve writes it into the IR with all the others.
-//! Where the solve cannot place the stack pointer (a frame sized at run time,
-//! a stack pointer an exception handler loads from memory), the INDIRECT is
-//! written as the INT_ADD it would have been ([`write_unplaced`]). The guesses
-//! that looked past the declared call see through its INDIRECT by its pop
-//! ([`crate::p6_variables::kuna_calleepop::exact_pop`]).
+//! This is a change of form only where the solve does not depend on the form
+//! ([`allowed`]), and it does in two cases, which keep the `INT_ADD`:
 //!
-//! A direct call's declared pop (a DWARF or demangled declaration of the
-//! image's own function) keeps the `INT_ADD`, and so does every pop when no
-//! pop is guessed.
+//! * A guess that reads the caller's stack. The push-run guess of a call into
+//!   an import or through a pointer
+//!   ([`crate::p6_variables::kuna_calleepopslot`]) counts the slots pushed in
+//!   front of it. With the `INT_ADD` folded in, every reference after the
+//!   declared call is an offset from one before it, and the walk reads
+//!   whichever reference sits at a slot's offset, often a slot of another call;
+//!   with the INDIRECT it reads the call's own slots. Neither reading is the
+//!   pop, and changing one for the other moves its errors. A direct call into
+//!   the image's own code is guessed to pop nothing either way.
+//! * An exact equation that is false. A direct call's pop stated under that
+//!   model is computed from its declared parameters as if the callee popped
+//!   them, which a GCC `__cdecl` or `regparm` callee does not; its own `RET`
+//!   says so. One such equation leaves the system without a consistent
+//!   solution, and where the error lands depends on the order of the solve,
+//!   which the form changes.
 
 use kuna_base::address::Address;
 use kuna_base::types::{int4, uintb};
@@ -44,16 +49,44 @@ use crate::fspec::EXTRAPOP_UNKNOWN;
 use crate::funcdata::Funcdata;
 
 /// Whether call spec `i`'s stated pop is left to the stack solver as an exact
-/// equation on its INDIRECT. `settled` is
-/// [`crate::p4_calls::kuna_calleepurge::every_pop_settled`].
-pub fn deferred(data: &Funcdata, i: int4, settled: bool) -> bool {
+/// equation on its INDIRECT, in a function where that is [`allowed`].
+pub fn deferred(data: &Funcdata, i: int4, allowed: bool) -> bool {
+    allowed && candidate(data, i)
+}
+
+/// Does call spec `i` state its pop by a declaration of a call through a
+/// pointer?
+fn candidate(data: &Funcdata, i: int4) -> bool {
     let fc = data.get_call_specs(i);
-    !settled
-        && fc.proto().has_model()
-        && fc.get_model_extra_pop() == EXTRAPOP_UNKNOWN
-        && fc.get_extra_pop() != EXTRAPOP_UNKNOWN
+    stated(data, i)
         && fc.proto().is_input_locked()
         && data.obank().get(fc.get_op()).is_some_and(|op| op.code() == OpCode::CPUI_CALLIND)
+}
+
+/// Whether the function leaves a pop to guess (`settled` is
+/// [`crate::p4_calls::kuna_calleepurge::every_pop_settled`]), every pop it
+/// leaves is a direct call's into the image's own code, and every pop a
+/// direct call's prototype states is the one its callee's returns prove. A
+/// call through a pointer the function leaves to guess may resolve to an
+/// import before the solve, so it counts as one.
+pub fn allowed(data: &Funcdata, settled: bool) -> bool {
+    !settled
+        && (0..data.num_calls()).any(|i| candidate(data, i))
+        && (0..data.num_calls()).all(|i| {
+            let fc = data.get_call_specs(i);
+            let direct = data.obank().get(fc.get_op()).is_some_and(|op| op.code() == OpCode::CPUI_CALL);
+            if fc.get_extra_pop() == EXTRAPOP_UNKNOWN {
+                direct && !crate::p6_variables::kuna_calleepop::is_imported(data, fc.get_entry_address())
+            } else {
+                !stated(data, i) || !direct || fc.callee_purge() == Some(fc.get_extra_pop())
+            }
+        })
+}
+
+/// Does call spec `i` state a pop its model leaves unknown?
+fn stated(data: &Funcdata, i: int4) -> bool {
+    let fc = data.get_call_specs(i);
+    fc.proto().has_model() && fc.get_model_extra_pop() == EXTRAPOP_UNKNOWN && fc.get_extra_pop() != EXTRAPOP_UNKNOWN
 }
 
 /// After the stack solve: rewrite the stack-pointer INDIRECT of each call
