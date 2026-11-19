@@ -5343,6 +5343,9 @@ fn commit_analysis_output(
     //    producing pass: they fold into the normal symbol/local streams below and
     //    their address-keyed prototypes are applied at step 5a.
     let mut out = out;
+    if let Some(entry) = out.go_chanrecv2 {
+        prog.arch_mut().go_chanrecv2 = Some(entry);
+    }
     for slot in std::mem::take(&mut out.ppc32_pic_slots) {
         prog.arch_mut().ppc32_pic_imports.insert(slot.address, slot);
     }
@@ -5356,8 +5359,8 @@ fn commit_analysis_output(
         Vec::new()
     };
     out.go_dwarf.clear();
-    out.symbols.extend(go_prototypes.iter().map(|(addr, pieces)| kuna_analysis::pass::SymFact {
-        addr: *addr, name: pieces.name.clone(), kind: SymKind::Function,
+    out.symbols.extend(go_prototypes.iter().map(|fact| kuna_analysis::pass::SymFact {
+        addr: fact.entry, name: fact.pieces.name.clone(), kind: SymKind::Function,
     }));
     // 0b. (kuna `swifttypes`) The Swift type-layout arm's facts, the same
     //     deferred shape: on, the typed metadata records and the accessor
@@ -6366,9 +6369,12 @@ fn commit_analysis_output(
         let a = Address::new(Rc::clone(code_space), addr);
         prog.arch_mut().set_function_prototype_pieces_at(&a, pieces);
     }
-    for (addr, pieces) in go_prototypes {
-        let a = Address::new(Rc::clone(code_space), addr);
-        prog.arch_mut().set_function_prototype_pieces_at(&a, pieces);
+    for fact in go_prototypes {
+        let a = Address::new(Rc::clone(code_space), fact.entry);
+        if let Some(site) = fact.status_site {
+            prog.arch_mut().go_chanrecv_status_sites.insert(fact.entry, site);
+        }
+        prog.arch_mut().set_function_prototype_pieces_at(&a, fact.pieces);
     }
 
     // 6. Processor-context decode-mode paints (the kuna analog of ARM's
