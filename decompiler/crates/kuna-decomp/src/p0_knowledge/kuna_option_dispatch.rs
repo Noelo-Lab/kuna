@@ -183,6 +183,7 @@ kuna_options! { self, p1;
         let state = if call { "on, calls retargeted" } else if resolve { "on" } else { "off" };
         Ok(format!("Objective-C message sends typed and resolved by receiver turned {state}"))
     },
+    "oslog" => on_off!(os_log_args, "Apple os_log call arguments"),
     "tailcalljump" => {
         let (jumps, tables, msg) = crate::kuna_tailcalljump::tail_call_mode(p1)?;
         self.tail_call_jumps = jumps;

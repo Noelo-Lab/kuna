@@ -2249,7 +2249,8 @@ mod tests {
         // and kuna-objcblocks2 / block invokes carry Clang's names, the flags pool folds, a block parameter is a Block_layout *
         // and kuna-objcresolve / an Objective-C message send is typed and resolved by its receiver
         // and kuna-objcstubagree / an objc_msgSend$<sel> stub is typed only from declarations that agree on its registers
-        assert_eq!(count, 831, "corpus file count drifted");
+        // and kuna-oslog / an os_log call prints its decoded arguments; __oslogstring literals print as strings
+        assert_eq!(count, 832, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

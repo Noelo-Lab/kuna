@@ -56,13 +56,13 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_224() {
-    assert_eq!(kuna_num_settables(), 224);
-    assert_eq!(SETTABLE_TABLE.len(), 224);
+fn settable_count_is_225() {
+    assert_eq!(kuna_num_settables(), 225);
+    assert_eq!(SETTABLE_TABLE.len(), 225);
 }
 
 #[test]
-fn tier_counts_are_45_core_123_transform_56_analysis() {
+fn tier_counts_are_45_core_124_transform_56_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -74,7 +74,7 @@ fn tier_counts_are_45_core_123_transform_56_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (45, 123, 56));
+    assert_eq!((core, transform, analysis), (45, 124, 56));
 }
 
 #[test]
@@ -857,7 +857,8 @@ fn option_values_live_value_present_for_76() {
     // -1: `constselectjump` became three-valued (off|reentry|on) over an
     // enum field with no `live_field`.
     // 77 -> 78: +1 for `objcarc` (live_field = objc_arc).
-    assert_eq!(with_live, 78);
+    // 78 -> 79: +1 for `oslog` (live_field = os_log_args).
+    assert_eq!(with_live, 79);
 }
 
 #[test]
@@ -1112,7 +1113,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `repstring`; its P3 row sits after `strlenscan`.
     // +1 for `objcarc`; its P2 row sits after `chkstkdarwin`.
     // +1 for `objcresolve`; its P5 row sits after `objcarc`.
-    assert_eq!(json.matches("},\n").count(), 223);
+    // +1 for `oslog`; its P9 row sits after `objcresolve`.
+    assert_eq!(json.matches("},\n").count(), 224);
 }
 
 #[test]

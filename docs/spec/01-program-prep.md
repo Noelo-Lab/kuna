@@ -1179,6 +1179,21 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   away from this path — a read-only section in a `.o` holds *pre*-relocation
   bytes, but a `__real@` COMDAT carries no relocation, and a disagreement between
   the bytes and the name drops the range with a warning rather than folding it.
+- **Mach-O read-only sections** — a Mach-O section carries no write bit of its
+  own, so `decompiler/crates/kuna-analysis/src/loader/format/macho.rs (section_bits)`
+  derives READONLY from the neutral section kind `object` assigns, which knows
+  `__TEXT,__cstring` by name and nothing else. Every other literal section
+  (`__TEXT,__oslogstring`, the kernel's `__TEXT,__os_log`, `__objc_methname`)
+  read as unknown, so it was not read-only and a reference to one of its strings
+  printed as the string's symbol (`_os_log_impl(...,s_10006c0cf,...)`) even
+  though `kuna strings` found the text. Two facts the image states settle it. A
+  section of type `S_CSTRING_LITERALS` is a pool of coalesced literals and is
+  `DATA | READONLY` like `__cstring`. And a loaded section lying wholly inside a
+  segment whose initial protection is readable but not writable (`__TEXT`, never
+  `__DATA_CONST`, which dyld writes before protecting it) is READONLY
+  (`macho.rs (readonly_segments)`, `macho.rs (in_readonly_segment)`, applied by the
+  object load image to every non-NOLOAD section); this covers the kernel's
+  `__os_log`, an `S_REGULAR` section. Strings in either now print as literals.
 - **Mach-O fat/arm64e** — a universal binary is peeled to one slice's bytes
   before anything else parses it, because `object::File::parse` has no fat arm
   and rejects the whole file with "Unsupported file format"

@@ -1586,6 +1586,30 @@ ld64.lld -arch arm64 -platform_version macos 11.0 11.0 -fixup_chains -objc_stubs
 decompiler/crates/kuna-analysis/tests/fixtures/objc_sdk` (whose `Widget.h` declares
 an `NSInteger tag`) also `check(objc_msgSend$tag(a1),a2,2,"bad tag")`.
 
+### `macho_oslog_arm64` — Apple unified-logging call sites (`oslog`)
+
+`macho_oslog_arm64` (arm64, ~34 KB) is a self-contained Mach-O whose four
+functions log through `_os_log_impl` the way the SDK's `os_log` macros do, for
+`tests/stages/kuna-oslog.xml`. Source `macho_oslog.c` restates the macro: an
+`os_log_type_enabled` guard, the format string in
+`__TEXT,__oslogstring,cstring_literals`, a buffer filled by clang's
+`__builtin_os_log_format`, and `_os_log_impl(&__dso_handle, log, type, fmt, buf,
+size)`. No SDK is needed; `ld64.lld` keeps the separate literal section only with
+`--separate-cstring-literal-sections`:
+
+```bash
+clang -target arm64-apple-macos11 -O1 -c macho_oslog.c -o oslog.o
+LLD=$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin/gcc-ld/ld64.lld
+"$LLD" -arch arm64 -platform_version macos 11.0 11.0 -fixup_chains -undefined dynamic_lookup \
+       --separate-cstring-literal-sections -e _log_plain -o macho_oslog_arm64 oslog.o
+```
+
+**Pinned VMAs:** `_log_code`@`0x100000418` (one int, 8-byte buffer),
+`_log_pair`@`0x1000004a8` (a long and a string, the string an unaligned store at
+buffer offset 14), `_log_private`@`0x100000554` (a private string and an int),
+`_log_plain`@`0x100000600` (no arguments); the format strings start at
+`0x10000067c` in `__oslogstring`; `__mh_execute_header`@`0x100000000`.
+
 ### `swift_metadata_elf` — a stripped Swift executable (`swiftmetadata`)
 
 `swift_metadata_elf` (x86-64 ELF, 14 KB) is the Swift runtime-metadata fixture
