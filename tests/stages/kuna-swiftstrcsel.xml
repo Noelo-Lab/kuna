@@ -1,0 +1,98 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Swift string literals chosen by a branch or a `csel` (`option fatstr`).
+
+    Issue: a Swift.String literal is two words, the count word and the object
+    word, and the rule paired an object word held in a register with the
+    count word in the register numbered eight bytes below it. When the words
+    are picked per branch (`csel x8, x8, x9`, one select per register), that
+    register holds another arm's count word: `Field.hash(into:)` printed
+    "serviceIrovider" ("serviceItems"'s count word, "serviceProvider"'s
+    object word), `pick` printed "animal" where it hashes "serviceItems" or
+    "serviceDate", and the words of the other arms stayed raw.
+
+    Stage / sub-stage: P5 const-pointer, `RuleSwiftString`
+    (`kuna-decomp/src/p5_types/kuna_swiftstr.rs`): a register-held object word
+    is paired by data flow. Every consumer that takes it beside its count word
+    (a call or return input, a `PIECE`, a store eight bytes above) names the
+    partner, which is traced back along the same `MULTIEQUAL` arms; two
+    `MULTIEQUAL`s of different blocks correspond when their branches test the
+    same condition.
+
+    Fixture `macho_swift_strsel_arm64` (arm64 Mach-O, swiftc 6.3 -O,
+    stripped; source `macho_swift_strsel.swift`): 0x100000d30 `pick` (two
+    `csel` pairs per literal), 0x100000f1c `Field.hash(into:)` (a switch),
+    0x100000e30 `tag` (a selected literal stored into a class field),
+    0x100000eb0 `blank` (the empty literal stored). Pass 1 (`fatstr off`)
+    shows the raw words; pass 2 (the default) and pass 3 (with
+    `swiftmetadata on`, whose names spell the branch conditions as separate
+    negations) show each arm's own literal.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_swift_strsel_arm64</com>
+  <com>option fatstr off</com>
+  <com>read symbols</com>
+  <com>load addr 0x100000d30</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x100000f1c</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x100000e30</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x100000eb0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_swift_strsel_arm64</com>
+  <com>read symbols</com>
+  <com>load addr 0x100000d30</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x100000f1c</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x100000e30</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x100000eb0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_swift_strsel_arm64</com>
+  <com>option swiftmetadata on</com>
+  <com>read symbols</com>
+  <com>load addr 0x100000d30</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x100000f1c</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x100000e30</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x100000eb0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="fatstr off: the selected object words are constants" min="2" max="2">0xec000000736d6574;</stringmatch>
+<stringmatch name="fatstr off: the stored empty string is a constant" min="1" max="1">= 0xe000000000000000;</stringmatch>
+<stringmatch name="no literal is pieced from two arms' words" min="0" max="0">serviceIrovider</stringmatch>
+<stringmatch name="the csel-picked and switched literal of the first arm" min="4" max="4">"serviceItems"</stringmatch>
+<stringmatch name="the csel-picked and switched literal of the second arm" min="4" max="4">"serviceDate"</stringmatch>
+<stringmatch name="the switch's 15-byte literal" min="2" max="2">"serviceProvider"</stringmatch>
+<stringmatch name="the switch's 8-byte literal" min="2" max="2">"odoMeter"</stringmatch>
+<stringmatch name="the second select's arms" min="2" max="2">"shape"</stringmatch>
+<stringmatch name="the second select's other arm" min="2" max="2">"animal"</stringmatch>
+<stringmatch name="the stored selected literal, paired through the store beside it" min="2" max="2">"disabled"</stringmatch>
+<stringmatch name="the stored empty literal" min="2" max="2">= "";</stringmatch>
+</decompilertest>
