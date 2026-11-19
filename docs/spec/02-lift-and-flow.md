@@ -2040,10 +2040,17 @@ later step. Under `reentry` (and `on`), a recovered in-bounds, non-override
 single-target table is provisional. A multi-target dispatch is also provisional
 when the jump forwards its target operand directly or through the transfer
 instruction's copies and alignment mask. For a table that reads its destinations
-from memory, a back edge through the destination load still uses the table's
-range model. Flow watches entries that bypass that load within the original
-basic block. When the load and transfer share an instruction, every entry
-executes the load. After each round of table following,
+from memory, an edge into the dispatch block can bypass the incoming range
+check, change the table base, or skip the load entirely. Flow compares the
+actual jump operand against its known destinations on these paths. It can
+also follow a local target supplied by the edge, including a target read
+from a proven constant address in immutable memory. For an edge through the
+load, flow checks whether a recovered case can reach its source. An acyclic
+edge from a sibling switch can share the guarded table without re-entering it.
+If a conditional re-entry repeats the range check, the finished flow graph
+can retain the table. Each incoming selector must have a proved range, and
+every value must read the original rows and reach a known destination.
+After each round of table following,
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_indirectreturn.rs (reentry_edges)`
 collects the new direct branches and fallthroughs into previously decoded
 instructions, reading only the dead list's tail: flow appends what it
@@ -2070,7 +2077,8 @@ requests a full recovery once the locally proved frontier drains. At most 128
 such retries run per flow. A successful retry must account for the local
 targets already followed. If it omits one, the union of the known targets
 stays reachable. With `off`, flow skips discovery of additional local
-targets and still checks whether a newly arriving value was covered.
+targets for a register dispatcher. In all three modes, an indexed bypass uses
+the computed address and can reveal a local case outside the original range.
 
 When recovery fails, is disabled, or exhausts its retries, flow keeps the
 unresolved dispatch until table following finishes. At the original jump it
@@ -2083,7 +2091,9 @@ declared targets.
 
 For a transfer that may also return, the first SSA pass identifies the incoming
 return register or an entry-block load of the return at the initial stack
-pointer before any possible memory overwrite. It follows the selector
+pointer before any possible memory overwrite. A store to a proven disjoint
+entry-stack byte range preserves the saved return; an unknown pointer or even
+a partial overlap ends the proof. It follows the selector
 through copies, identity operations, merges and the transfer's own alignment
 mask. An incoming return address takes a separate conditional return. A
 parallel merge carries that decision and a defined selector on each edge,

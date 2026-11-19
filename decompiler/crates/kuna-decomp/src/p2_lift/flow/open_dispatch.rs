@@ -8,11 +8,9 @@ use kuna_num::opcodes::OpCode;
 use std::collections::BTreeSet;
 
 impl<E: FlowEnvironment> FlowInfo<'_, E> {
-    /// Instruction entries that bypass a memory table's destination load.
-    /// A back edge through the load still dispatches through the table, even
-    /// if it supplies a new index. Stop at an existing basic-block boundary:
-    /// other predecessors there may have supplied a register target already.
-    pub(super) fn table_load_suffix(&self, jump: OpId) -> Option<Vec<OpId>> {
+    /// Entries into the dispatch block after its incoming range check. An edge
+    /// can change the base or index before the load, or the target after it.
+    pub(super) fn table_load_suffix(&self, jump: OpId) -> Option<Vec<(OpId, bool)>> {
         let bank = self.data.obank();
         let storage = |vn| {
             let value = self.data.vbank().get(vn)?;
@@ -22,12 +20,16 @@ impl<E: FlowEnvironment> FlowInfo<'_, E> {
         let mut needed = BTreeSet::from([storage(branch.get_in(0)?)?]);
         let mut entries = Vec::new();
         let mut cursor = jump;
+        let mut found_load = false;
         loop {
             let op = bank.get(cursor)?;
+            if cursor != jump && (op.is_branch() || op.is_call()) {
+                return found_load.then_some(entries);
+            }
             if let Some(out) = op.get_out() {
-                if needed.remove(&storage(out)?) {
+                if !found_load && needed.remove(&storage(out)?) {
                     match op.code() {
-                        OpCode::CPUI_LOAD => return Some(entries),
+                        OpCode::CPUI_LOAD => found_load = true,
                         OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_INT_SEXT
                         | OpCode::CPUI_INT_ZEXT | OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB
                         | OpCode::CPUI_INT_AND | OpCode::CPUI_INT_LEFT | OpCode::CPUI_SUBPIECE => {
@@ -43,12 +45,13 @@ impl<E: FlowEnvironment> FlowInfo<'_, E> {
                 }
             }
             if op.is_instruction_start() {
-                entries.push(cursor);
+                entries.push((cursor, found_load));
             }
-            if op.is_block_start() || (cursor != jump && (op.is_branch() || op.is_call())) {
-                return None;
+            if op.is_block_start() {
+                return found_load.then_some(entries);
             }
-            cursor = bank.dead_prev(cursor)?;
+            let Some(prev) = bank.dead_prev(cursor) else { return found_load.then_some(entries) };
+            cursor = prev;
         }
     }
 

@@ -125,6 +125,49 @@ pub(crate) fn resolve_returns(data: &mut Funcdata) -> KunaResult<()> {
     Ok(())
 }
 
+/// Resolve a byte displacement from the ABI's incoming SP before spacebase
+/// flags are installed. Pushes and adjusted frames may use several additions.
+fn entry_stack_offset(data: &Funcdata, sp: VarnodeId, mut ptr: VarnodeId) -> Option<u64> {
+    let width = data.vbank().get(sp)?.get_size();
+    if !(1..=8).contains(&width) {
+        return None;
+    }
+    let mut offset = 0u64;
+    for _ in 0..64 {
+        if ptr == sp {
+            return Some(offset & kuna_base::address::calc_mask(width));
+        }
+        let value = data.vbank().get(ptr)?;
+        if value.get_size() != width {
+            return None;
+        }
+        let op = data.obank().get(value.get_def()?)?;
+        match op.code() {
+            OpCode::CPUI_COPY => ptr = op.get_in(0)?,
+            OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB => {
+                let sub = op.code() == OpCode::CPUI_INT_SUB;
+                let slot = if !sub && data.vbank().get(op.get_in(0)?)?.is_constant() {
+                    0
+                } else {
+                    1
+                };
+                let delta = data.vbank().get(op.get_in(slot)?)?;
+                if !delta.is_constant() {
+                    return None;
+                }
+                offset = if sub {
+                    offset.wrapping_sub(delta.get_offset())
+                } else {
+                    offset.wrapping_add(delta.get_offset())
+                };
+                ptr = op.get_in(1 - slot)?;
+            }
+            _ => return None,
+        }
+    }
+    None
+}
+
 /// Before stack heritage turns a LOAD into a stack input, an entry-block
 /// read at the incoming stack pointer can already prove the saved return.
 /// Any preceding call or possible memory overwrite ends that proof.
@@ -138,7 +181,8 @@ fn entry_return_loads(data: &Funcdata) -> Option<HashSet<VarnodeId>> {
     if ret.offset != 0 || ret.space.as_ref()?.get_index() != stack.get_index() {
         return None;
     }
-    let base = stack.get_spacebase(0).ok()?;
+    let sp = data.find_spacebase_input(stack)?;
+    let relative = |vn| entry_stack_offset(data, sp, vn);
     let memory = stack.get_contain()?.get_index();
     let block = data
         .bblocks_ref()
@@ -151,8 +195,22 @@ fn entry_return_loads(data: &Funcdata) -> Option<HashSet<VarnodeId>> {
     let mut next = data.bb_op_head(block);
     while let Some(id) = next {
         let op = data.obank().get(id)?;
-        if op.is_call() || matches!(op.code(), OpCode::CPUI_CALLOTHER | OpCode::CPUI_STORE) {
+        if op.is_call() || op.code() == OpCode::CPUI_CALLOTHER {
             break;
+        }
+        if op.code() == OpCode::CPUI_STORE {
+            let segment = data.vbank().get(op.get_in(0)?)?;
+            let size = data.vbank().get(op.get_in(2)?)?.get_size();
+            // Offsets are relative to the incoming SP modulo its width. A
+            // store ending at -1 is disjoint; one wrapping through zero is not.
+            let disjoint = stack.get_word_size() == 1 && size > 0 && relative(op.get_in(1)?)
+                .is_some_and(|offset| {
+                    let start = stack.wrap_offset(offset);
+                    start >= u64::from(ret.size) && (size - 1) as u64 <= stack.get_highest() - start
+                });
+            if !segment.is_constant() || segment.get_offset() != memory as u64 || !disjoint {
+                break;
+            }
         }
         if let Some(out) = op.get_out() {
             let value = data.vbank().get(out)?;
@@ -162,13 +220,10 @@ fn entry_return_loads(data: &Funcdata) -> Option<HashSet<VarnodeId>> {
             }
             if op.code() == OpCode::CPUI_LOAD && value.get_size() as u32 == ret.size {
                 let segment = data.vbank().get(op.get_in(0)?)?;
-                let ptr = data.vbank().get(op.get_in(1)?)?;
+                let ptr = op.get_in(1)?;
                 if segment.is_constant()
                     && segment.get_offset() == memory as u64
-                    && ptr.is_input()
-                    && ptr.get_space().get_index() == base.space.as_ref()?.get_index()
-                    && ptr.get_offset() == base.offset
-                    && ptr.get_size() as u32 == base.size
+                    && relative(ptr) == Some(0)
                 {
                     found.insert(out);
                 }

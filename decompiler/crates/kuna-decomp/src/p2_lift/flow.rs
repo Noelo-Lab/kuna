@@ -2881,6 +2881,8 @@ truncating the fall-through here"
         let mut pending_retry = std::collections::BTreeSet::new();
         let mut unresolved = BTreeSet::new();
         let mut load_bypasses = BTreeMap::new();
+        let mut open_indexed = BTreeSet::new();
+        let mut guarded_indexed = BTreeSet::new();
         loop {
             while !self.tablelist.is_empty() {
                 let new_tables = self.recover_jump_tables(run_pipeline, &mut unresolved)?;
@@ -2902,7 +2904,7 @@ truncating the fall-through here"
                     }
                     let num = self.data.get_jump_table(jt_idx as int4).num_entries();
                     let table = self.data.get_jump_table(jt_idx as int4);
-                    let loaded = (num > 1 && table.kuna_reads_table_entries() && !table.is_override())
+                    let loaded = (num > 0 && table.kuna_reads_table_entries() && !table.is_override())
                         .then(|| self.table_load_suffix(indop)).flatten();
                     for i in 0..num {
                         let addr = self.data.get_jump_table(jt_idx as int4).get_address_by_index(i);
@@ -2922,13 +2924,13 @@ truncating the fall-through here"
                         self.fallthru()?;
                     }
                     let table = self.data.get_jump_table(jt_idx as int4);
-                    if num > 0 && (num == 1 || table.kuna_target_encoding().is_some())
+                    if num > 0 && (num == 1 || loaded.is_some() || table.kuna_target_encoding().is_some())
                         && !table.is_override()
                         && table.address_table().iter().all(|addr| !self.outofbounds.contains(addr))
                     {
                         if let Some(entries) = loaded {
-                            for entry in entries {
-                                load_bypasses.insert(entry, indop);
+                            for (entry, through_load) in entries {
+                                load_bypasses.insert(entry, (indop, through_load));
                             }
                         } else {
                             provisional.insert(indop);
@@ -2949,10 +2951,29 @@ truncating the fall-through here"
                     crate::kuna_indirectreturn::reaching_edges(&self.data, &dispatches, &new_edges,
                         |to| self.target(to).ok(), |op| self.fallthru_op(op))
                 };
+                let mut through_load: BTreeMap<OpId, Vec<(OpId, OpId)>> = BTreeMap::new();
                 for &edge in &new_edges {
-                    if let Some(&op) = load_bypasses.get(&edge.1) {
-                        relevant.entry(op).or_default().push(edge);
+                    if let Some(&(op, loads_target)) = load_bypasses.get(&edge.1) {
+                        if loads_target {
+                            through_load.entry(op).or_default().push(edge);
+                        } else {
+                            relevant.entry(op).or_default().push(edge);
+                        }
                     }
+                }
+                // Following one switch can reveal a guarded predecessor of a
+                // sibling. A path through the load re-enters this table only
+                // when its source is reachable from one of this table's cases.
+                let mut budget = crate::kuna_indirectreturn::REACH_BUDGET;
+                for (op, mut edges) in through_load {
+                    let sources = edges.iter().map(|edge| edge.0).collect();
+                    if let Some(reached) = crate::kuna_indirectreturn::reached(
+                        &self.data, op, &sources, &mut budget, &|to| self.target(to).ok(),
+                        &|id| self.fallthru_op(id))
+                    {
+                        edges.retain(|edge| reached.contains(&edge.0));
+                    }
+                    relevant.entry(op).or_default().extend(edges);
                 }
                 for (op, edges) in relevant {
                     let Some(idx) = self.data.find_jump_table_index(op) else { continue };
@@ -2960,13 +2981,24 @@ truncating the fall-through here"
                     let mut exact = true;
                     let mut added = false;
                     for (from, to) in edges {
-                        if self.data.obank().get(to).unwrap().get_addr() != &address {
+                        let indexed = load_bypasses.get(&to).is_some_and(|&(owner, _)| owner == op);
+                        if indexed {
+                            // Even an exact destination says nothing about the value
+                            // of the original index on this incoming edge.
+                            if load_bypasses[&to].1 && self.data.obank().get(from)
+                                .is_some_and(|branch| branch.code() == OpCode::CPUI_CBRANCH)
+                            {
+                                guarded_indexed.insert(op);
+                            } else {
+                                open_indexed.insert(op);
+                            }
+                        } else if self.data.obank().get(to).unwrap().get_addr() != &address {
                             exact = false;
                             continue;
                         }
                         let value = crate::kuna_returnbranch::target_on_edge(
-                            &self.data, from, op, |index| self.env.is_isa_mode_switch(index));
-                        if !reentry {
+                            &self.data, from, op, indexed.then_some(to), |index| self.env.is_isa_mode_switch(index));
+                        if !reentry && !indexed {
                             let known = self.data.get_jump_table(idx as int4).address_table();
                             exact &= value.is_some_and(|v| known.iter().any(|a| {
                                 let size = a.get_space().unwrap().get_word_size();
@@ -2987,7 +3019,7 @@ truncating the fall-through here"
                         });
                         match result { Some(new) => added |= new, None => exact = false }
                     }
-                    if !exact { pending_retry.insert(op); }
+                    if !exact && !open_indexed.contains(&op) && !guarded_indexed.contains(&op) { pending_retry.insert(op); }
                     if added { self.tablelist.push(op); }
                 }
                 if self.tablelist.is_empty() {
@@ -3013,6 +3045,20 @@ truncating the fall-through here"
                 break;
             }
         }
+        guarded_indexed.retain(|op| !open_indexed.contains(op) && !unresolved.contains(op));
+        if !guarded_indexed.is_empty() {
+            let partial = self.data.jumptable_partial(&self.visited, run_pipeline);
+            for op in guarded_indexed {
+                let proved = partial.as_ref().is_some_and(|fd| {
+                    let seq = self.data.obank().get(op).unwrap().get_seq_num();
+                    let Some(jump) = fd.obank().find_op(seq) else { return false };
+                    let Some(idx) = self.data.find_jump_table_index(op) else { return false };
+                    self.data.get_jump_table(idx as int4).kuna_covers_guarded_dispatch(fd, jump)
+                });
+                if !proved { open_indexed.insert(op); }
+            }
+        }
+        unresolved.extend(open_indexed);
         for op in unresolved {
             if let Some(idx) = self.data.find_jump_table_index(op) {
                 self.open_dispatch(op, idx)?;
