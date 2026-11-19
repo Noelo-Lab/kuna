@@ -3028,6 +3028,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "looprotate"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P8"
+subphase = "loop-refinement"
+strength = "HARD"
+rewind = "P8"
+issue = "kuna-looprotate"
+summary = "Rotate a guarded do-while loop into a while loop. Compilers turn while (c) body into if (c) { do body while (c); }; with this on, when the guard is the tail's condition evaluated on the values entering the loop (operands compared op by op), or the loop counts by one from x0 to an exit at i + 1 == n behind a guard x0 < n (then i + 1 != n is i + 1 < n on every iteration), and the code between guard and loop has no side effect and each exit value is available at the top, the header's MULTIEQUALs move to a new header block that tests the condition and the guard's and tail's branches go. The for recovery then prints for (i = 0; i < n; i = i + 1). Two return blocks that return the same thing on the entry values (the guard's return 0, the loop's return c) count as one exit."
+use_when = "On (default). Flip off to see the guard and the do-while the compiler emitted."
+example = "option looprotate off"
+source_decompiler = "kuna"
+inspiration = "clang -O2 `for (long i = 0; i < n; i++) s ^= a[i];`: `if (0 < a1) { v2 = 0; do { v1 ^= a0[v2]; v2 += 1; } while (a1 != v2); }` where the source has one loop with its test at the top"
+change_kind = "presentation-default"
+tier = "transform"
+symptoms = "if (n > 0) { i = 0; do { ... } while (i != n); } instead of a for loop|a while loop prints as an if around a do-while"
+live_field = "loop_rotate"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "regionlooprefine"
 values = "on|off"
 default = "on"

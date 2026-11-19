@@ -114,6 +114,7 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "gotosink" => on_off!(goto_sink, "goto sinking and backward-goto loops"),
+    "looprotate" => on_off!(loop_rotate, "Guarded do-while loops rotated to while loops"),
     "retsplitlimit" => {
         let (val, msg) =
             crate::p8_structure::kuna_retsplitlimit::OptionRetSplitLimit.apply(p1)?;

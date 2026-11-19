@@ -344,17 +344,21 @@ fn a_structure_pointer_retype_keeps_the_variable_whole() {
 /// The retyped variable keeps the name a directive pins on it while the type
 /// reshapes the code around it: `walk`'s pointer is found by its lock once the
 /// first decompile's keys miss it (it printed as `v3`), and `squeeze`'s stays
-/// declared where the reshaped loop could inline it (it vanished).
+/// declared where the reshaped loop could inline it (it vanished). `walk`'s
+/// pointer is the do-while's step, which `looprotate` folds into the `for`
+/// header, so that loop shape is pinned.
 #[test]
 fn a_structure_pointer_retype_keeps_its_name() {
     let fixture = "retypeptr_x86_64";
     let typedef = "typedef struct S { long a; long b; } S;";
+    let rotate_off = ["--option", "looprotate", "off"];
     for (function, directive, decl) in
         [("walk", "type v2 S *v2", "  S *v2;"), ("walk", "type v2 S *", "  S *v2;"), ("squeeze", "type v1 S *v1", "  S *v1;")]
     {
-        let code = decompile_in(fixture, function, &[], &[typedef, directive]);
+        let extra: &[&str] = if function == "walk" { &rotate_off } else { &[] };
+        let code = decompile_in(fixture, function, extra, &[typedef, directive]);
         assert!(code.contains(decl), "{function} {directive}:\n{code}");
-        assert_eq!(declared(&code), declared(&decompile_in(fixture, function, &[], &[])), "{code}");
+        assert_eq!(declared(&code), declared(&decompile_in(fixture, function, extra, &[])), "{code}");
     }
 }
 
@@ -437,7 +441,7 @@ fn an_incomplete_structure_pointer_retype_keeps_the_local() {
     let code = decompile_in("retypestackchoose_arm_le32", "choose", &["--assert-strict"], &directives);
     let uncast = code.replace("  Opaque *v1; // r4\n", "  char *v1; // r4\n").replace("(Opaque *)", "");
     assert_eq!(lines_renamed(&uncast, &[("first", "v3"), ("second", "v4")]), lines_renamed(&plain, &[]), "{plain}\n---\n{code}");
-    let code = decompile_in("retypeptr_x86_64", "walk", &[], &["typedef struct Opaque;", "type v2 struct Opaque *"]);
+    let code = decompile_in("retypeptr_x86_64", "walk", &["--option", "looprotate", "off"], &["typedef struct Opaque;", "type v2 struct Opaque *"]);
     assert!(code.contains("  Opaque *v2;") && code.contains("walk(Opaque *a0,Opaque *a1)"), "{code}");
 }
 

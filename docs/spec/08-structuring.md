@@ -1669,3 +1669,36 @@ block whose only edge loops back to itself. When the dispatch loop is a case
 of an outer switch, such a case is not a continue either: folding it as a
 terminal case would make its self-edge internal and drop the inner loop, so
 the outer switch declines until the loop schema has wrapped it.
+**Loop rotation** (`looprotate`, default on; kuna;
+`decompiler/crates/kuna-decomp/src/p8_structure/kuna_looprotate.rs (ActionLoopRotate)`,
+in the main loop just before `ActionBlockStructure`): compilers rotate
+`while (c) body` into `if (c) { do body while (c); }`. The action matches, on
+the basic blocks, a guard `G` that branches to the loop's entry side `P` (or
+straight to the header) and to an exit, a header `H` entered from `P` and from
+the tail `T`, and `T` branching back to `H` or out; every other loop block stays
+in the loop. The tail's condition `F` may read only loop invariants and the
+back-edge values of `H`'s MULTIEQUALs, through pure ops. The rotation needs the
+guard to be `F` on the entry values (`Rotation::same`: identical varnodes, equal
+constants through COPYs, or the same pure op over operands that are the same,
+commuted for commutative ops; BOOL_NEGATEs flip the sense). A counting loop
+also qualifies (`counting`): `F` is `i + 1 != n` (or `==` with the other
+sense) with `i` a header MULTIEQUAL stepping by one and `n` invariant, and the
+guard is `x0 < n` or `x0 + 1 <= n` (`k <= n` with constant `k`) for `i`'s
+entry value `x0`, signed or unsigned; then `i` runs from `x0` up to `n - 1`
+without wrapping and the tail's compare is replaced by `i + 1 < n`. `P` must
+have no side effect (no LOAD, STORE or call), since it now runs on the
+skipped path too. Values leaving the loop must be available at the top: with
+one exit block, each of its MULTIEQUALs reads, from `T`, a back-edge value (or
+a COPY of one) or an invariant and, from `G`, the same value on entry; with
+two return blocks (the guard's `return 0;`, the loop's `return c;`), both
+hold only COPYs and a RETURN and the guard's returns what the loop's would on
+the entry values. The rotation then creates a header `N`, moves `H`'s
+MULTIEQUALs into it, copies `F` over them before a CBRANCH to `H` or the exit,
+points `P` and `T` at `N`, and removes the guard's and the tail's exits (and
+the guard's now unreachable return). `ActionBlockStructure` then finds a
+while-do, and the for recovery (`analyzeforloops`) a `for`: clang -O2
+`for (long i = 0; i < n; i++) s ^= a[i];` prints
+`for (v2 = 0; v2 < a1; v2 = v2 + 1) { v1 ^= a0[v2]; }`. Lua 5.4: 29 functions
+on x86-64 (do-whiles 181 to 159, fors 34 to 46), 26 on AArch64, 13 in ld.so.
+A pointer loop whose guard is `1 <= n` and whose tail is `p != p0 + n`, and a
+loop whose guard reads a 32-bit `n` while the tail compares 64 bits, are left.

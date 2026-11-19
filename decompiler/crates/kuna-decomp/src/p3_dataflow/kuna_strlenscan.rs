@@ -165,7 +165,7 @@ fn constant(data: &Funcdata, v: VarnodeId) -> Option<u64> {
 }
 
 /// `v`'s value when it is a constant or a chain of COPYs of one.
-fn copied_constant(data: &Funcdata, mut v: VarnodeId) -> Option<u64> {
+pub(crate) fn copied_constant(data: &Funcdata, mut v: VarnodeId) -> Option<u64> {
     for _ in 0..8 {
         if let Some(k) = constant(data, v) {
             return Some(k);
@@ -179,7 +179,7 @@ fn copied_constant(data: &Funcdata, mut v: VarnodeId) -> Option<u64> {
     None
 }
 
-fn mask(width: i32) -> u64 {
+pub(crate) fn mask(width: i32) -> u64 {
     if width >= 8 {
         u64::MAX
     } else {
@@ -193,7 +193,7 @@ fn def_block(data: &Funcdata, v: VarnodeId) -> Option<BlockId> {
 }
 
 /// The successors a CBRANCH block takes when its condition is true and false.
-fn taken(data: &Funcdata, b: BlockId) -> Option<(BlockId, BlockId)> {
+pub(crate) fn taken(data: &Funcdata, b: BlockId) -> Option<(BlockId, BlockId)> {
     let fb = data.bblocks_ref().block(b);
     if fb.size_out() != 2 {
         return None;

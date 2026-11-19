@@ -628,6 +628,10 @@ pub fn universal_sched(
             stackstall,
             act!(crate::p6_variables::kuna_savedregisterspills::ActionRestrictLocalSavedLanes::boxed()),
             act!(ActionRedundBranch::boxed("deadcontrolflow")),
+            // (kuna) looprotate (option `looprotate`, default-on): a guarded
+            // do-while whose guard is the tail's test on the entry values gets a
+            // new header that tests first, so the structurer sees a while loop.
+            act!(crate::p8_structure::kuna_looprotate::ActionLoopRotate::boxed("blockrecovery")),
             act!(ActionBlockStructure::boxed("blockrecovery")),
             act!(ActionConstantPtr::boxed("typerecovery")),
             SchedNode::Pool { flags: REPEAT, name: "oppool2", rules: oppool2_rules },
