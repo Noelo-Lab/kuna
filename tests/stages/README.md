@@ -489,3 +489,9 @@ intrinsic order.
 functions: `lanefuse off` prints the SLEIGH lanes, the default fuses a VEX
 `vaddps`, a legacy `addps` and both AVX-512 mask forms into one intrinsic and
 leaves legacy `paddd` and `mulpd` as lanes, and `lanefuse all` fuses those too.
+
+`kuna-x87depth.xml` pins an i386 function that calls a `double` helper and
+pops the result with `fstp %st(0)`: it prints as `void`, and its sibling that
+keeps the value still returns `float10`. `kuna-x87depth-warn.xml` declares two
+functions that leave a value on the x87 stack as returning `int` and checks
+the warning at the function and at the call.
