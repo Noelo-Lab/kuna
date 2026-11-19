@@ -1521,6 +1521,32 @@ With `--option objc on`: `(self->frame).width * (self->frame).height`,
 `-[Shape setFrame:](Shape *self, objc_selector *_cmd, CGRect arg1)`,
 `self->counts[arg1 & 3]`, `long block_invoke_10000071c(Block_layout *block, long arg1)`.
 
+### `macho_objc_structabi_arm64` — aggregates passed and returned by value
+
+`macho_objc_structabi_arm64` (arm64, ~50 KB) is the fixture for
+`tests/stages/kuna-objcstructabi.xml`: `macho_objc_structabi.m` has a root
+class `Shape` whose methods pass and return aggregates by value: a homogeneous
+floating-point aggregate (`CGRect`, `UIEdgeInsets`), an integer pair
+(`_NSRange`), aggregates past 16 bytes as an argument and as a return
+(`CGAffineTransform`, and `Mixed` with a `[4d]` member), a union
+(`(Word=qf)`), bit-fields (`{Flags=b3b5S}`), an unnamed struct (`{?=ii}`) and a
+pointer to a struct. Same recipe as `macho_objc_structs_arm64`:
+
+```bash
+clang -target arm64-apple-macos11 -fobjc-arc -O1 -c macho_objc_structabi.m -o m.o
+LLD=$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin/gcc-ld/ld64.lld
+"$LLD" -arch arm64 -platform_version macos 11.0 11.0 -fixup_chains \
+       -undefined dynamic_lookup -x -e _main -o macho_objc_structabi_arm64 m.o
+```
+
+**Pinned VMAs:** `-[Shape setFrame:]`@`0x100000640`, `-[Shape frame]`@`0x100000658`,
+`-[Shape range]`@`0x100000664`, `-[Shape setRange:scale:]`@`0x100000670`,
+`-[Shape inset:by:]`@`0x100000680`, `-[Shape transform]`@`0x100000690`,
+`-[Shape setTransform:tag:]`@`0x1000006a4`, `-[Shape mixed]`@`0x1000006bc`,
+`-[Shape weigh:at:]`@`0x1000006d0`, `-[Shape word:]`@`0x1000006f0`,
+`-[Shape flags:]`@`0x1000006fc`, `-[Shape span:]`@`0x100000708`,
+`-[Shape width:]`@`0x100000714`.
+
 ### `macho_objc_blocks_arm64` — stack blocks, captures, a `__block` cell
 
 `macho_objc_blocks_arm64` (arm64, ~50 KB) is the fixture for

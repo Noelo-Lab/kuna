@@ -5889,10 +5889,49 @@ every other binary's pass list is byte-identical to before the pass existed):
     encoding spells through the same `struct_type` the stub returns use, with
     the member names an ivar encoding quotes (`"origin"{CGPoint="x"d"y"d}`,
     nested structs flattened to `x, y, width, height`) and the CoreGraphics
-    table for a method encoding that quotes none, and `[n T]` as an array; an
-    unnamed struct (`{?=ii}`) or a union stays opaque. The IMP then reads
+    table for a method encoding that quotes none, and `[n T]` as an array. The
+    IMP then reads
     `-[Shape setFrame:](Shape *self, SEL _cmd, CGRect arg1)` with `arg1` placed
-    by the model (`d0..d3`). A global block literal — `isa =
+    by the model (`d0..d3`).
+    The record is laid out as the C compiler lays it out
+    (`decompiler/crates/kuna-analysis/src/analyzers/objc/encoding.rs (record_layout)`):
+    each member at its natural alignment, a nested struct placed as a unit
+    before its fields are listed in the parent (`{Outer=C{Inner=Cq}C}` is 32
+    bytes with fields at 0, 8, 16 and 24), the whole padded to its widest
+    member. A union (`(Word=qf)`) is built the same way with every member at
+    offset zero and is one field where it sits in a struct. A zero-length array
+    member (`[0C]`) takes no room. The encoding gives a bit-field its width and
+    not its declared type (`b3`), so a run of adjacent bit-fields is one
+    unsigned field over the bytes the run packs into, starting at the next free
+    byte, and the record is aligned as for `unsigned int`, or `unsigned long
+    long` once the run passes 32 bits: `{Flags=b3b5S}` is 4 bytes, not the 12
+    of one word per bit-field. A struct or union with no name (`{?=qiIq}`, the
+    spelling of `CMTime` and of every typedef'd anonymous struct) is named from
+    its member codes, `struct_qiIq`, or from a hash of them when they are long
+    or hold punctuation, with quoted member names left out, so an ivar's and a
+    method's spelling of one layout are one type. A flattened field name that
+    is already taken is prefixed with the name of the member it came from
+    (`duration_value`). `{Name}` spells no layout: it is the incomplete record
+    of that name, so `^{Name}` is a `Name *`, and a method that passes or
+    returns one by value gets no prototype, as does one whose record holds
+    itself, has no member, has a member that does not decode (`{?=[4]}`, a
+    SIMD matrix), or passes the bounds (32 levels of records and arrays, 4096
+    fields, 1 MiB). A refused layout is remembered by name and not retried. An
+    array argument (`[10Q]`) is the pointer C passes. With the record built,
+    the convention's own rules place it, nothing in the decoder: on Apple
+    arm64 a homogeneous floating-point aggregate of up to four members travels
+    in `d0..d3`, any other record of up to 16 bytes in `x` registers, a larger
+    one as a pointer to the caller's copy, and a return past 16 bytes through
+    `x8` (`void -[Shape transform](CGAffineTransform *rethidden, Shape *self,
+    SEL _cmd)`); on System V x86-64 a record past two eightbytes is on the
+    stack and its return through `rdi`. Before this a union or an unnamed
+    struct by value decoded to void and the method lost its prototype and its
+    typed `self` (`long -[Shape word:](void *a0, unsigned long a1, long a2)`
+    reading `((long *)a0)[0x12]`; now `long -[Shape word:](Shape *self, SEL
+    _cmd, Word arg1)` returning `self->total + arg1.field_0`); of the distinct
+    method encodings in an iOS 16.4 dyld cache that pass or return a record by
+    value, 29% spell one of the two.
+    A global block literal — `isa =
     _NSConcreteGlobalBlock, flags, reserved, invoke, descriptor` in `__const`,
     found by the isa slot's bind name — is typed `Block_layout`
     (`block_literal_<addr>`), and its invoke is typed from the descriptor's signature when the

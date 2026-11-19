@@ -409,7 +409,7 @@ fn stub_prototype(
         if !matches!(struct_passing(machine, &members), StructPass::Spread) {
             return None;
         }
-        encoding::struct_type(&ret, tctx)?
+        encoding::struct_type(&ret, tctx).filter(|t| !t.is_incomplete())?
     } else {
         encoding::decode_ivar_type(&ret, tctx)?
     };

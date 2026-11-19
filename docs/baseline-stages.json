@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4882,
-    4882
+    4898,
+    4898
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1938,6 +1938,22 @@
     "data:OBJCSDK #7: a CGRect argument is spread over its members",
     "data:OBJCSDK #8: a two-argument method keeps both",
     "data:OBJCSDK #9: the stub itself returns the struct",
+    "data:OBJCSTRUCTABI #10: a 48-byte return is written through x8",
+    "data:OBJCSTRUCTABI #11: a 48-byte argument is read through its pointer",
+    "data:OBJCSTRUCTABI #12: an array member is indexed",
+    "data:OBJCSTRUCTABI #13: a pointer to a struct reads its field",
+    "data:OBJCSTRUCTABI #14: the CGRect argument is copied field by field",
+    "data:OBJCSTRUCTABI #15: both register returns are one whole value",
+    "data:OBJCSTRUCTABI #16: no method of the class loses self",
+    "data:OBJCSTRUCTABI #1: a union argument keeps the prototype",
+    "data:OBJCSTRUCTABI #2: the union is read by member and self by ivar",
+    "data:OBJCSTRUCTABI #3: an unnamed struct is named from its member codes",
+    "data:OBJCSTRUCTABI #4: its two halves are fields of one register",
+    "data:OBJCSTRUCTABI #5: a struct of bit-fields is one 4-byte argument",
+    "data:OBJCSTRUCTABI #6: a CGRect return comes back in d0..d3",
+    "data:OBJCSTRUCTABI #7: an NSRange return comes back in x0 and x1",
+    "data:OBJCSTRUCTABI #8: an integer argument follows an NSRange",
+    "data:OBJCSTRUCTABI #9: a double follows four doubles of UIEdgeInsets",
     "data:OBJCSTRUCTS #1: objc off, the block invoke is an anonymous function",
     "data:OBJCSTRUCTS #2: the struct ivar reads by field",
     "data:OBJCSTRUCTS #3: the by-value struct argument is a CGRect",

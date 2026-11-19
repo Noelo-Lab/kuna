@@ -23,15 +23,16 @@
 //! ## Scope (design §3.2 LOSS)
 //!
 //! Primitive codes (`c i s l q f d B v *`, signed/unsigned), `@` → `id`, `#` →
-//! `Class`, `:` → `SEL`, and a `^T` / `{...}` / `[...]` **opaque-pointer / opaque
-//! fallback** (we do not reconstruct nested struct/array layout — the same
-//! name-level-opaque posture as `dwarf`'s MVP). Protocol qualifiers
-//! (`r`/`n`/`N`/`o`/`O`/`R`/`V`) and the GC `!` are skipped. An unparseable or
-//! empty encoding yields `None` (the IMP is still *named* `-[Class sel]` — only
-//! the typed prototype is dropped), never a failure.
+//! `Class`, `:` → `SEL`, `^T` → a pointer, `[n T]` → an array, and `{...}` /
+//! `(...)` → the struct or union the encoding spells ([`struct_type`]), which
+//! the calling convention then places like any other record. Protocol
+//! qualifiers (`r`/`n`/`N`/`o`/`O`/`R`/`V`) and the GC `!` are skipped. An
+//! unparseable or empty encoding, or one passing a record whose layout is not
+//! spelled, yields `None` (the IMP is still *named* `-[Class sel]` — only the
+//! typed prototype is dropped), never a failure.
 
-use std::cell::RefCell;
-use std::collections::HashMap;
+use std::cell::{Cell, RefCell};
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use kuna_decomp::dtype::{type_metatype, Datatype, TypeFactory, TypeField};
@@ -54,7 +55,7 @@ pub fn decode_method(
     let mut p = Parser::new(encoding);
 
     // Return type first (a null/void return is still `Some(void)`).
-    let outtype = Some(p.next_type(tctx)?);
+    let outtype = Some(p.next_type(tctx).filter(|t| !t.is_incomplete())?);
 
     let mut intypes: Vec<Rc<Datatype>> = Vec::new();
     let mut innames: Vec<String> = Vec::new();
@@ -69,7 +70,7 @@ pub fn decode_method(
         };
         let ty = match (idx, self_type) {
             (0, Some(st)) => Rc::clone(st),
-            _ => ty,
+            _ => by_value(ty, tctx)?,
         };
         intypes.push(ty);
         innames.push(nm);
@@ -88,6 +89,16 @@ pub fn decode_method(
     })
 }
 
+/// The type an argument of encoded type `ty` is passed as: an array is a
+/// pointer to its first element, as C passes it. `None` for a type with no
+/// value to pass (`void`, a record whose layout is not known).
+fn by_value(ty: Rc<Datatype>, tctx: &TypeCtx) -> Option<Rc<Datatype>> {
+    if ty.get_metatype() == type_metatype::TYPE_ARRAY {
+        return tctx.types.get_type_pointer(tctx.ptr_size, ty.get_depend(0)?, tctx.word_size).ok();
+    }
+    (ty.get_size() > 0 && !ty.is_incomplete() && ty.get_metatype() != type_metatype::TYPE_VOID).then_some(ty)
+}
+
 /// Split a method encoding into its raw return and argument encodings, frame
 /// offsets stripped: `v24@0:8{CGRect=dddd}16` → `("v", ["@", ":", "{CGRect=dddd}"])`.
 /// `None` for an empty or unparseable encoding.
@@ -101,48 +112,192 @@ pub fn split_method(encoding: &str) -> Option<(String, Vec<String>)> {
     Some((ret, args))
 }
 
-/// The struct a by-value encoding names (`{CGRect={CGPoint=dd}{CGSize=dd}}`),
-/// built once per name with its leaf members as fields — nested geometry
-/// flattened (`x, y, width, height`), since a field of a field is what the
-/// printer renders worst — so a method returning one has a type the model can
-/// place in registers. `None` for an unnamed or malformed layout.
+/// The struct or union a by-value encoding spells (`{CGRect={CGPoint=dd}{CGSize=dd}}`,
+/// `(Word=qf)`), built once per name with the layout the C compiler gives its
+/// members: each at its natural alignment, a run of bit-fields as one unsigned
+/// field over the bytes it packs into, a union's members all at offset zero. A
+/// struct nested in a struct is laid out as one member and then listed as its
+/// own fields (`x, y, width, height`), since a field of a field is what the
+/// printer renders worst. An encoding with no name (`{?=qiIq}`) gets one made
+/// from its member codes. `{Name}` with no layout, a layout that does not parse
+/// or one past the bounds below is the incomplete record of that name: a pointer
+/// to it reads, a value of it does not. `None` for a name some other kind of
+/// type already holds.
 pub fn struct_type(encoding: &str, tctx: &TypeCtx) -> Option<Rc<Datatype>> {
-    let name = struct_name(encoding)?;
-    if let Some(t) = tctx.structs.borrow().get(name) {
+    let union = encoding.starts_with('(');
+    let body = if union {
+        encoding.strip_prefix('(')?.strip_suffix(')')?
+    } else {
+        encoding.strip_prefix('{')?.strip_suffix('}')?
+    };
+    let (tag, members) = match body.split_once('=') {
+        Some((tag, members)) => (tag, Some(members)),
+        None => (body, None),
+    };
+    let name = if tag.is_empty() || tag == "?" { unnamed_record_name(members?, union) } else { tag.to_string() };
+    if let Some(t) = tctx.structs.borrow().get(&name) {
         return Some(Rc::clone(t));
     }
     let types = tctx.types;
-    let shell = match types.find_by_name(name).ok().flatten() {
-        Some(t) if t.get_metatype() == type_metatype::TYPE_STRUCT && !t.is_incomplete() => {
-            tctx.structs.borrow_mut().insert(name.to_string(), Rc::clone(&t));
+    let want = if union { type_metatype::TYPE_UNION } else { type_metatype::TYPE_STRUCT };
+    let shell = match types.find_by_name(&name).ok().flatten() {
+        Some(t) if t.get_metatype() != want => return None,
+        Some(t) if !t.is_incomplete() => {
+            tctx.structs.borrow_mut().insert(name, Rc::clone(&t));
             return Some(t);
         }
-        Some(_) => return None,
-        None => types.kuna_declare_record(name, false).ok()?,
+        Some(t) => t,
+        None => types.kuna_declare_record(&name, union).ok()?,
     };
-    let members = struct_leaves(encoding)?;
-    let names = member_names(name);
-    let mut fields = Vec::new();
-    let mut offset = 0i32;
-    for (k, (quoted, code)) in members.iter().enumerate() {
-        let ty = Parser::new(code).next_type(tctx)?;
-        let size = ty.get_size();
-        if size <= 0 {
+    let Some(members) = members else { return Some(shell) };
+    let Some(_nested) = tctx.nest() else { return Some(shell) };
+    if !tctx.unbuilt.borrow_mut().insert(name.clone()) {
+        return Some(shell);
+    }
+    let Some((fields, size, align)) = record_layout(members, union, &name, tctx) else { return Some(shell) };
+    let done = if union {
+        types.set_fields_union_raw(&shell, fields, size, align)
+    } else {
+        types.set_fields_struct_raw(&shell, fields, Vec::new(), size, align, 0)
+    };
+    let Ok(done) = done else { return Some(shell) };
+    tctx.unbuilt.borrow_mut().remove(&name);
+    tctx.structs.borrow_mut().insert(name, Rc::clone(&done));
+    Some(done)
+}
+
+/// The name of a record whose encoding gives none: its member codes when they
+/// are a few plain letters (`{?=qiIq}` → `struct_qiIq`), else a hash of them,
+/// so one layout is one type wherever it is spelled. Quoted member names are
+/// not part of it: an ivar's spelling and a method's name the same record.
+fn unnamed_record_name(members: &str, union: bool) -> String {
+    let codes: String = members.split('"').step_by(2).collect();
+    let kind = if union { "union" } else { "struct" };
+    if !codes.is_empty() && codes.len() <= 12 && codes.bytes().all(|b| b.is_ascii_alphanumeric()) {
+        return format!("{kind}_{codes}");
+    }
+    let hash = codes.bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| (h ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3));
+    format!("{kind}_{hash:016x}")
+}
+
+/// The fields, size and alignment of a record with the member encodings
+/// `members`. `None` when a member does not decode, has no size, or the record
+/// passes [`MAX_RECORD_SIZE`] or [`MAX_RECORD_FIELDS`].
+fn record_layout(members: &str, union: bool, name: &str, tctx: &TypeCtx) -> Option<(Vec<TypeField>, i32, i32)> {
+    let mut rec = Record { union, known: member_names(name), fields: Vec::new(), used: HashSet::new(), end: 0, size: 0, align: 1 };
+    let mut bits = 0i32;
+    let mut p = Parser::new(members);
+    loop {
+        let quoted = if p.peek() == Some(b'"') {
+            let start = p.pos + 1;
+            let close = start + members.get(start..)?.find('"')?;
+            p.pos = close + 1;
+            Some(&members[start..close])
+        } else {
+            None
+        };
+        if p.peek() == Some(b'b') {
+            p.pos += 1;
+            let digits = p.pos;
+            p.skip_frame_offset();
+            let width: i32 = members[digits..p.pos].parse().ok().filter(|w| *w <= 64)?;
+            bits = bits.checked_add(width)?;
+            continue;
+        }
+        if bits > 0 {
+            rec.bit_run(bits, tctx)?;
+            bits = 0;
+        }
+        if p.at_end() {
+            break;
+        }
+        if members[p.pos..].starts_with("[0") && !members[p.pos + 2..].starts_with(|c: char| c.is_ascii_digit()) {
+            p.pos += 1;
+            p.skip_balanced(b'[', b']');
+            continue;
+        }
+        let flatten = !union && p.peek() == Some(b'{');
+        let ty = p.next_type(tctx)?;
+        rec.member(ty, quoted, flatten)?;
+    }
+    let size = rec.size.checked_add(rec.align - 1)? / rec.align * rec.align;
+    (size > 0 && size <= MAX_RECORD_SIZE && !rec.fields.is_empty()).then_some((rec.fields, size, rec.align))
+}
+
+/// A record's layout while its members are placed.
+struct Record {
+    union: bool,
+    known: &'static [&'static str],
+    fields: Vec<TypeField>,
+    used: HashSet<String>,
+    end: i32,
+    size: i32,
+    align: i32,
+}
+
+impl Record {
+    /// One field at `at`, named `label` when that is free, else by
+    /// [`member_names`], else `field_<index>`.
+    fn place(&mut self, ty: Rc<Datatype>, at: i32, label: Option<String>) -> Option<()> {
+        let k = self.fields.len();
+        if k >= MAX_RECORD_FIELDS {
             return None;
         }
-        let align = size.min(tctx.ptr_size);
-        offset = (offset + align - 1) / align * align;
-        let field = quoted
-            .clone()
-            .or_else(|| names.get(k).map(|n| n.to_string()))
+        let label = label
+            .filter(|l| !self.used.contains(l))
+            .or_else(|| self.known.get(k).map(|n| n.to_string()).filter(|l| !self.used.contains(l)))
             .unwrap_or_else(|| format!("field_{k}"));
-        fields.push(TypeField::new(offset, offset, field, ty));
-        offset += size;
+        self.used.insert(label.clone());
+        self.size = self.size.max(at.checked_add(ty.get_size())?);
+        let (id, offset) = if self.union { (k as i32, 0) } else { (at, at) };
+        self.fields.push(TypeField::new(id, offset, label, ty));
+        (self.size <= MAX_RECORD_SIZE).then_some(())
     }
-    let size = (offset + tctx.ptr_size - 1) / tctx.ptr_size * tctx.ptr_size;
-    let done = types.set_fields_struct_raw(&shell, fields, Vec::new(), size, tctx.ptr_size, 0).ok()?;
-    tctx.structs.borrow_mut().insert(name.to_string(), Rc::clone(&done));
-    Some(done)
+
+    /// A run of `bits` bits of bit-fields: one unsigned field over the bytes
+    /// the run packs into, starting at the next free byte. The encoding drops a
+    /// bit-field's declared type, so the run is taken as `unsigned int` units,
+    /// `unsigned long long` once it passes 32 bits.
+    fn bit_run(&mut self, bits: i32, tctx: &TypeCtx) -> Option<()> {
+        let types = tctx.types;
+        let bytes = (bits + 7) / 8;
+        let ty = match bytes {
+            1 | 2 | 4 | 8 => types.get_base(bytes, type_metatype::TYPE_UINT).ok()?,
+            _ => types.get_type_array(bytes, types.get_base(1, type_metatype::TYPE_UINT).ok()?).ok()?,
+        };
+        self.align = self.align.max(if bits > 32 { 8 } else { 4 }.min(tctx.ptr_size));
+        self.place(ty, self.end, None)?;
+        self.end = if self.union { 0 } else { self.end.checked_add(bytes)? };
+        Some(())
+    }
+
+    /// One member at its natural alignment; with `flatten`, a struct member's
+    /// own fields in its place, a name already taken prefixed with `quoted`.
+    fn member(&mut self, ty: Rc<Datatype>, quoted: Option<&str>, flatten: bool) -> Option<()> {
+        if ty.get_size() <= 0 || ty.is_incomplete() || ty.get_metatype() == type_metatype::TYPE_VOID {
+            return None;
+        }
+        let a = ty.get_alignment().max(1);
+        self.align = self.align.max(a);
+        let at = if self.union { 0 } else { self.end.checked_add(a - 1)? / a * a };
+        if flatten && ty.get_metatype() == type_metatype::TYPE_STRUCT {
+            for i in 0..ty.num_depend() {
+                let f = ty.get_field(i)?;
+                let inner = Some(f.name.clone()).filter(|n| !n.starts_with("field_"));
+                let label = match (&inner, quoted) {
+                    (Some(n), Some(outer)) if self.used.contains(n) => Some(format!("{outer}_{n}")),
+                    _ => inner,
+                };
+                self.place(Rc::clone(&f.field_type), at.checked_add(f.offset)?, label)?;
+            }
+        } else {
+            self.place(Rc::clone(&ty), at, quoted.map(str::to_string))?;
+        }
+        let stop = at.checked_add(ty.get_size())?;
+        self.size = self.size.max(stop);
+        self.end = if self.union { 0 } else { stop };
+        Some(())
+    }
 }
 
 /// The name of a struct encoding (`CGRect` of `{CGRect=…}`), `None` when it
@@ -218,7 +373,7 @@ pub fn member_names(name: &str) -> &'static [&'static str] {
 /// [`Datatype`]. Used for the `<Class>::ivar` typing (design §5 PR-O2). `None`
 /// for an empty / unparseable encoding.
 pub fn decode_ivar_type(encoding: &str, tctx: &TypeCtx) -> Option<Rc<Datatype>> {
-    Parser::new(encoding).next_type(tctx)
+    Parser::new(encoding).next_type(tctx).filter(|t| !t.is_incomplete())
 }
 
 /// The type-mapping context a method or ivar encoding is decoded against: the
@@ -233,8 +388,21 @@ pub struct TypeCtx<'a> {
     pub ptr_size: i32,
     pub word_size: u32,
     opaque: RefCell<HashMap<String, Rc<Datatype>>>,
-    /// The by-value structs [`struct_type`] built, by name.
+    /// The by-value records [`struct_type`] built, by name.
     structs: RefCell<HashMap<String, Rc<Datatype>>>,
+    /// The records being built, and those whose layout was refused.
+    unbuilt: RefCell<HashSet<String>>,
+    /// How many records and arrays deep the decoder is.
+    depth: Cell<usize>,
+}
+
+/// One level of record or array nesting, left when dropped.
+struct Nest<'a>(&'a Cell<usize>);
+
+impl Drop for Nest<'_> {
+    fn drop(&mut self) {
+        self.0.set(self.0.get() - 1);
+    }
 }
 
 impl<'a> TypeCtx<'a> {
@@ -245,7 +413,18 @@ impl<'a> TypeCtx<'a> {
             word_size,
             opaque: RefCell::new(HashMap::new()),
             structs: RefCell::new(HashMap::new()),
+            unbuilt: RefCell::new(HashSet::new()),
+            depth: Cell::new(0),
         }
+    }
+
+    /// Enter one more record or array, `None` past [`MAX_STRUCT_DEPTH`].
+    fn nest(&self) -> Option<Nest<'_>> {
+        if self.depth.get() >= MAX_STRUCT_DEPTH {
+            return None;
+        }
+        self.depth.set(self.depth.get() + 1);
+        Some(Nest(&self.depth))
     }
 
     /// A pointer to the named struct (`objc_object*` for `id`, `objc_class*` for
@@ -296,6 +475,10 @@ const MAX_POINTER_DEPTH: usize = 32;
 
 /// The deepest by-value struct nesting flattened; `CGRect` is two deep.
 const MAX_STRUCT_DEPTH: usize = 32;
+
+/// The largest record built, in bytes, and the most fields one holds.
+const MAX_RECORD_SIZE: i32 = 1 << 20;
+const MAX_RECORD_FIELDS: usize = 1 << 12;
 
 impl<'a> Parser<'a> {
     fn new(s: &'a str) -> Parser<'a> {
@@ -422,22 +605,13 @@ impl<'a> Parser<'a> {
                 let pointee = pointee.or_else(|| types.get_type_void().ok())?;
                 types.get_type_pointer(ptr_size, pointee, word_size).ok()?
             }
-            // `{name=...}` struct, `(name=...)` union, `[N T]` array, `b<n>`
-            // bitfield: name-level-opaque — skip the body and yield a void* / void
-            // placeholder (the dwarf recursion-cap posture). Reconstructing the
-            // nested layout is the deferred field-level scope.
-            // A struct by value is the struct the encoding spells
-            // (`{CGRect={CGPoint=dd}{CGSize=dd}}` → `CGRect {x, y, width, height}`);
-            // an unnamed or malformed one stays an opaque void.
-            b'{' => {
+            // `{name=...}` struct, `(name=...)` union: the record the encoding
+            // spells; one that names nothing buildable stays an opaque void.
+            b'{' | b'(' => {
                 let start = self.pos - 1;
-                self.skip_balanced(b'{', b'}');
+                self.skip_balanced(c, if c == b'{' { b'}' } else { b')' });
                 let text = std::str::from_utf8(&self.bytes[start..self.pos]).ok()?;
                 struct_type(text, tctx).or_else(|| types.get_type_void().ok())?
-            }
-            b'(' => {
-                self.skip_balanced(b'(', b')');
-                types.get_type_void().ok()?
             }
             // `[<n><type>]`: an array of n elements.
             b'[' => {
@@ -449,6 +623,7 @@ impl<'a> Parser<'a> {
                 let inner = std::str::from_utf8(&self.bytes[start..self.pos - 1]).ok()?;
                 let digits = inner.bytes().take_while(u8::is_ascii_digit).count();
                 let count: i32 = inner[..digits].parse().ok()?;
+                let _nested = tctx.nest()?;
                 let elem = Parser::new(&inner[digits..]).next_type(tctx)?;
                 if count <= 0 || elem.get_size() <= 0 || count.checked_mul(elem.get_size()).is_none_or(|n| n > 1 << 20) {
                     return None;
@@ -664,8 +839,7 @@ mod tests {
         assert_eq!(args, ["@", ":", "@?<v@?q>"]);
     }
 
-    /// A struct by value is the struct the encoding spells; an array is an array;
-    /// an unnamed struct and a union stay opaque.
+    /// A struct by value is the struct the encoding spells; an array is an array.
     #[test]
     fn by_value_aggregates_are_types() {
         let f = factory();
@@ -681,8 +855,6 @@ mod tests {
         assert_eq!(a.get_size(), 16);
         let p = decode_method("-[C setFrame:]", "v48@0:8{CGRect=dddd}16", &tctx, None).unwrap();
         assert_eq!(p.intypes[2].get_name(), "CGRect");
-        assert_eq!(decode_ivar_type("{?=ii}", &tctx).unwrap().get_metatype(), type_metatype::TYPE_VOID);
-        assert_eq!(decode_ivar_type("(u=id)", &tctx).unwrap().get_metatype(), type_metatype::TYPE_VOID);
         assert!(decode_ivar_type("[0i]", &tctx).is_none());
         assert!(decode_ivar_type("[", &tctx).is_none(), "an unterminated array");
         assert!(decode_ivar_type("[4", &tctx).is_none());
@@ -706,6 +878,14 @@ mod tests {
         assert_eq!(split_method("^^^i16@0:8").unwrap().0, "^^^i");
         let nested = format!("{}i{}", "{S=".repeat(n), "}".repeat(n));
         assert_eq!(struct_members(&nested), None);
+        let f = factory();
+        let tctx = TypeCtx::new(&f, 8, 1);
+        assert!(decode_method("-[C a:]", &format!("v@:{nested}"), &tctx, None).is_none());
+        let arrays = format!("{}i{}", "[1".repeat(n), "]".repeat(n));
+        assert!(decode_ivar_type(&arrays, &tctx).is_none());
+        let wide = format!("{{Wide={}}}", "q".repeat(MAX_RECORD_FIELDS + 1));
+        assert!(decode_ivar_type(&wide, &tctx).is_none());
+        assert!(decode_ivar_type("{Big=[65536[65536q]]}", &tctx).is_none());
         assert!(split_method(&format!("v@:{nested}")).is_some(), "a by-value struct is skipped linearly");
         let deep = format!("{}d{}", "{S=".repeat(8), "}".repeat(8));
         assert_eq!(struct_members(&deep), Some(vec!["d".to_string()]));
@@ -722,7 +902,6 @@ mod tests {
         let range = struct_type("{_NSRange=QQ}", &tctx).unwrap();
         assert_eq!(range.get_size(), 16);
         assert!(Rc::ptr_eq(&rect, &struct_type("{CGRect={CGPoint=dd}{CGSize=dd}}", &tctx).unwrap()));
-        assert!(struct_type("{?=dd}", &tctx).is_none());
     }
 
     /// A pointer member is one field the size of a pointer, not its pointee's
@@ -742,5 +921,94 @@ mod tests {
         assert_eq!(first.field_type.get_metatype(), type_metatype::TYPE_PTR);
         assert_eq!(s.get_field(1).unwrap().offset, 8);
         assert!(s.get_field(2).is_none());
+    }
+
+    fn layout(t: &Datatype) -> Vec<(i32, String, i32)> {
+        (0..t.num_depend()).map(|i| t.get_field(i).unwrap()).map(|f| (f.offset, f.name.clone(), f.field_type.get_size())).collect()
+    }
+
+    /// Members sit at their natural alignment, a nested struct as a unit, and
+    /// the record is padded to its own.
+    #[test]
+    fn records_follow_the_c_layout() {
+        let f = factory();
+        let tctx = TypeCtx::new(&f, 8, 1);
+        let s = decode_ivar_type("{Outer=C{Inner=Cq}C}", &tctx).unwrap();
+        assert_eq!((s.get_size(), s.get_alignment()), (32, 8));
+        assert_eq!(layout(&s).iter().map(|f| f.0).collect::<Vec<_>>(), [0, 8, 16, 24]);
+        let m = decode_ivar_type("{Mixed=i[4d]C}", &tctx).unwrap();
+        assert_eq!(m.get_size(), 48);
+        assert_eq!(layout(&m), [(0, "field_0".into(), 4), (8, "field_1".into(), 32), (40, "field_2".into(), 1)]);
+        let c = decode_ivar_type("{Chars=[16C]i}", &tctx).unwrap();
+        assert_eq!((c.get_size(), c.get_alignment()), (20, 4));
+        let z = decode_ivar_type("{Tail=q[0C]C}", &tctx).unwrap();
+        assert_eq!(layout(&z).iter().map(|f| f.0).collect::<Vec<_>>(), [0, 8]);
+    }
+
+    /// A union's members share offset zero; a run of bit-fields is one field.
+    #[test]
+    fn unions_and_bit_fields_are_laid_out() {
+        let f = factory();
+        let tctx = TypeCtx::new(&f, 8, 1);
+        let u = decode_ivar_type("(Word=qf)", &tctx).unwrap();
+        assert_eq!((u.get_metatype(), u.get_size()), (type_metatype::TYPE_UNION, 8));
+        assert_eq!(layout(&u), [(0, "field_0".into(), 8), (0, "field_1".into(), 4)]);
+        let b = decode_ivar_type("{Flags=b3b5S}", &tctx).unwrap();
+        assert_eq!(b.get_size(), 4);
+        assert_eq!(layout(&b), [(0, "field_0".into(), 1), (2, "field_1".into(), 2)]);
+        let w = decode_ivar_type("{?=(?={?=b1b1b1b1b1b32b1b1b1}Q)}", &tctx).unwrap();
+        assert_eq!(w.get_size(), 8);
+        let l = decode_ivar_type("{Long=^vQb63b1}", &tctx).unwrap();
+        assert_eq!(l.get_size(), 24);
+        let p = decode_method("-[C word:]", "q24@0:8(Word=qf)16", &tctx, None).unwrap();
+        assert_eq!(p.intypes[2].get_name(), "Word");
+    }
+
+    /// A record with no name is one type per layout, whatever names an ivar
+    /// quotes; a flattened name that repeats takes its member's name.
+    #[test]
+    fn unnamed_records_are_named_by_their_members() {
+        let f = factory();
+        let tctx = TypeCtx::new(&f, 8, 1);
+        let t = decode_ivar_type("{?=qiIq}", &tctx).unwrap();
+        assert_eq!((t.get_name(), t.get_size()), ("struct_qiIq", 24));
+        let quoted = decode_ivar_type("{?=\"value\"q\"timescale\"i\"flags\"I\"epoch\"q}", &tctx).unwrap();
+        assert!(Rc::ptr_eq(&t, &quoted));
+        let range = decode_ivar_type("{?=\"start\"{Stamp=\"value\"q\"scale\"i}\"duration\"{Stamp=\"value\"q\"scale\"i}}", &tctx).unwrap();
+        let names: Vec<String> = layout(&range).into_iter().map(|f| f.1).collect();
+        assert_eq!(names, ["value", "scale", "duration_value", "duration_scale"]);
+        assert_eq!(range.get_size(), 32);
+        assert!(range.get_name().starts_with("struct_"));
+        assert_eq!(decode_ivar_type("(?=dq)", &tctx).unwrap().get_name(), "union_dq");
+    }
+
+    /// `{Name}` spells no layout: a pointer to it reads, a value of it does
+    /// not, and neither does a record holding itself or an empty one.
+    #[test]
+    fn a_record_without_a_layout_is_not_a_value() {
+        let f = factory();
+        let tctx = TypeCtx::new(&f, 8, 1);
+        let p = decode_ivar_type("^{Opaque}", &tctx).unwrap();
+        assert_eq!(p.get_ptr_to().unwrap().get_name(), "Opaque");
+        assert!(decode_ivar_type("{Opaque}", &tctx).is_none());
+        assert!(decode_method("-[C a:]", "v24@0:8{Opaque}16", &tctx, None).is_none());
+        assert!(decode_method("-[C a]", "{Opaque}16@0:8", &tctx, None).is_none());
+        assert!(decode_ivar_type("{Self={Self=i}}", &tctx).is_none());
+        assert!(decode_ivar_type("{Empty=}", &tctx).is_none());
+        assert!(decode_ivar_type("(?=)", &tctx).is_none());
+        assert!(decode_ivar_type("{?=[4]}", &tctx).is_none());
+        let node = decode_ivar_type("{Node=q^{Node}}", &tctx).unwrap();
+        assert_eq!(node.get_size(), 16);
+        assert!(Rc::ptr_eq(&node.get_field(1).unwrap().field_type.get_ptr_to().unwrap(), &node));
+    }
+
+    /// An array argument is the pointer C passes.
+    #[test]
+    fn an_array_argument_is_a_pointer() {
+        let f = factory();
+        let tctx = TypeCtx::new(&f, 8, 1);
+        let p = decode_method("-[C fill:]", "v24@0:8[10Q]16", &tctx, None).unwrap();
+        assert_eq!(p.intypes[2].get_metatype(), type_metatype::TYPE_PTR);
+        assert_eq!(p.intypes[2].get_ptr_to().unwrap().get_size(), 8);
     }
 }
