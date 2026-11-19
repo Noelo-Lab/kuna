@@ -805,6 +805,12 @@ pub fn decompile_pulled(
                     single_target,
                     &fd,
                 );
+                crate::assertions::record_rejected_callee_overrides(
+                    prog,
+                    &name,
+                    single_target,
+                    &fd,
+                );
                 crate::assertions::record_unbound_call_prototypes(
                     prog,
                     &name,
@@ -976,6 +982,9 @@ pub fn decompile_pulled(
                 match rendered {
                     Ok((code, variables, types, (globals, field_calls, call_declarations, callwide_prototypes), proto, line_mappings, callee_hints, detail, (pointerargs, warnings), stack_objects)) => {
                     crate::assertions::verify_printed(prog, &fd, &code, &replayed);
+                    if replay {
+                        crate::assertions::verify_formats(prog, &fd, &name, single_target);
+                    }
                     sink(FuncResult {
                         name,
                         address,

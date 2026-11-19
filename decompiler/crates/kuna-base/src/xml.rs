@@ -2225,8 +2225,14 @@ mod tests {
         // and gh1628-x86-vmx-decode-flags / VMREAD/VMWRITE decode without REX.W and VMX instructions set CF/ZF
         // and kuna-kernelbug / a Linux kernel __bug_table trap prints as __WARN(file,line) or BUG()
         // and gh1674-subpiece-shadow-wide-const / a subpiece shadow 8 bytes into a 16-byte constant reads 0
+        // and kuna-wrapadd / wrapadd wraps a widened four-byte sum before its extension
+        // and kuna-rustversion-commit / a Rust image without .comment gets its release from /rustc/<commit>/ paths
+        // and kuna-sharedpush-regparm / a declared list its callee's register reads contradict shares no push
+        // and kuna-acleintrinsics / AArch64 MTE tag instructions and barriers print as ACLE intrinsics
+        // and kuna-assert-callee / a stated destination makes an indirect call direct
+        // and kuna-assert-format-isolate / a constant's format set by its instruction, and an isolated local
         // and kuna-callproto / one call through a pointer is given its own prototype
-        assert_eq!(count, 784, "corpus file count drifted");
+        assert_eq!(count, 793, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

@@ -282,6 +282,38 @@ pub fn parse_directive(spec: &str) -> Result<Directive, String> {
             }
             Body::Type { func, symbol, decl: decl.to_string() }
         }
+        "format" => {
+            let (addr, tail) = take_token(rest);
+            let (func, addr) = split_qualifier(addr);
+            let addr = parse_vma(&addr).ok_or_else(|| bad("format needs a hex <addr>"))?;
+            let (format, tail) = take_token(tail);
+            if crate::kuna_constformat::format_code(format).is_none() {
+                return Err(bad("format needs <addr> then one of hex, dec, oct, bin, char"));
+            }
+            let (value, tail) = take_token(tail);
+            if !tail.is_empty() {
+                return Err(bad("format takes exactly <addr> <format> [<value>]"));
+            }
+            let value = match value {
+                "" => None,
+                value => Some(
+                    crate::kuna_constformat::parse_value(value)
+                        .ok_or_else(|| bad("format's <value> is decimal, or hex with 0x"))?,
+                ),
+            };
+            Body::Format { func, addr, format: format.to_string(), value }
+        }
+        "isolate" => {
+            let (symbol, tail) = take_token(rest);
+            let (func, symbol) = split_qualifier(symbol);
+            if symbol.is_empty() {
+                return Err(bad("isolate needs <symbol>"));
+            }
+            if !tail.is_empty() {
+                return Err(bad("isolate takes exactly <symbol>"));
+            }
+            Body::Isolate { func, symbol }
+        }
         "readonly" | "volatile" => {
             let (addr, size) = parse_range(rest)
                 .ok_or_else(|| bad("needs <addr>+<size> (e.g. 0x404028+8)"))?;
@@ -329,6 +361,16 @@ pub fn parse_directive(spec: &str) -> Result<Directive, String> {
             }
             Body::Flow { func, addr, kind: kind.to_string() }
         }
+        "callee" => {
+            let (addr, callee) = take_token(rest);
+            let (func, addr) = split_qualifier(addr);
+            let addr = parse_vma(&addr).ok_or_else(|| bad("callee needs a hex <callsite>"))?;
+            let (callee, tail) = take_token(callee);
+            if callee.is_empty() || !tail.is_empty() {
+                return Err(bad("callee takes exactly <callsite> <name|address>"));
+            }
+            Body::Callee { func, addr, callee: callee.to_string() }
+        }
         "callproto" => {
             let (site, decl) = take_token(rest);
             let (func, site) = split_qualifier(site);
@@ -342,8 +384,8 @@ pub fn parse_directive(spec: &str) -> Result<Directive, String> {
         other => {
             return Err(format!(
                 "--assert {raw:?}: unknown directive {other:?} (want one of \
-                 function, typedef, prototype, callproto, data, param, return, comment, flow, \
-                 name, type, readonly, volatile, bytes)"
+                 function, typedef, prototype, callproto, data, param, return, comment, flow, callee, \
+                 name, type, format, isolate, readonly, volatile, bytes)"
             ))
         }
     };

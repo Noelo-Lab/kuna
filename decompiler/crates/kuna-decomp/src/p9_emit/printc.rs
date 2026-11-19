@@ -6002,6 +6002,8 @@ impl PrintC {
         {
             return false;
         }
+        if self.out_lang == crate::kuna_lang::OutLang::C
+            && self.widened_add_plan(fd, arch, op).is_some() { return false; }
         // (kuna) `x += -c` reads poorly: when the INT_ADD addend is a plain
         // negative signed constant (no equate/display override, not char-typed,
         // not the unnegatable type minimum), render `x -= c` with the negated
@@ -6462,6 +6464,16 @@ impl PrintC {
                 self.emit_arm_register_lsl(fd, arch, op, plan);
                 return;
             }
+            if let Some(plan) = self.widened_add_plan(fd, arch, op) {
+                if let Some(ty) = &plan.signed { self.push_cast_open(ty, op); }
+                self.push_op(tok, Some(op_key(op)));
+                self.push_cast_open(&plan.unsigned, op);
+                self.push_vn_ir(fd, arch, plan.lhs, op);
+                self.push_cast_close(&plan.unsigned);
+                self.push_vn_ir(fd, arch, plan.rhs, op);
+                if let Some(ty) = &plan.signed { self.push_cast_close(ty); }
+                return;
+            }
             if tok.print1 == "<<" {
                 if let Some(plan) = crate::p9_emit::kuna_armconstantshift::plan_arm_constant_lsl(fd, arch, op)
                     .or_else(|| self.fixed64_shift_plan(fd, arch, op)) {
@@ -6619,6 +6631,13 @@ impl PrintC {
         -> Option<crate::p9_emit::kuna_constantshift::ConstantLslPlan>
     {
         crate::p9_emit::kuna_constantshift::plan_fixed64_lsl(fd, arch, op,
+            |vn| self.printed_operand_type(fd, vn, op))
+    }
+
+    fn widened_add_plan(&self, fd: &Funcdata, arch: &Architecture, op: OpId)
+        -> Option<crate::p9_emit::kuna_widenedadd::WidenedAddPlan>
+    {
+        crate::p9_emit::kuna_widenedadd::plan(fd, arch, op,
             |vn| self.printed_operand_type(fd, vn, op))
     }
 
@@ -6860,6 +6879,41 @@ impl PrintC {
         }
     }
 
+    /// (kuna `acleintrinsics`) Render a user op under its ACLE spelling.
+    fn push_acle_intrinsic(
+        &mut self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        op: OpId,
+        call: &crate::kuna_acleintrinsics::Intrinsic,
+    ) {
+        use crate::kuna_acleintrinsics::Arg;
+        self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
+        self.push_atom(&Atom::with_op(
+            call.name.to_string(),
+            TagType::OpToken,
+            crate::printlanguage::SyntaxHighlight::funcname_color,
+            op_key(op),
+        ));
+        if call.args.is_empty() {
+            self.push_atom(&Atom::syntax(
+                "",
+                TagType::BlankToken,
+                crate::printlanguage::SyntaxHighlight::no_color,
+            ));
+            return;
+        }
+        for _ in 1..call.args.len() {
+            self.push_op(&tokens::COMMA, Some(op_key(op)));
+        }
+        for arg in &call.args {
+            match *arg {
+                Arg::Vn(vn) => self.push_vn_ir(fd, arch, vn, op),
+                Arg::Dec(val) => self.push_constant_ir_fmt_sign(val, 4, op, display_format::FORCE_DEC, false),
+            }
+        }
+    }
+
     /// C++ `PrintC::opCallother` (printc.cc:693): render a CALLOTHER (user
     /// p-code op).  The op's in0 constant indexes a `UserPcodeOp` whose
     /// `getDisplay()` selects the form:
@@ -6883,6 +6937,13 @@ impl PrintC {
             .unwrap_or(0);
         let nin = fd.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
         if display == 0 {
+            let acle = arch.userops.get_op(in0_off as u32).and_then(|u| {
+                crate::kuna_acleintrinsics::intrinsic(fd, arch, op, u.get_name())
+            });
+            if let Some(call) = acle {
+                self.push_acle_intrinsic(fd, arch, op, &call);
+                return;
+            }
             // Functional syntax: for CALLOTHER the operator name resolves to the
             // userop's name (the base getOperatorName), or the generic
             // `CALLOTHER[index]` fallback.
@@ -8968,6 +9029,12 @@ impl PrintC {
     /// notation absorbing the deref).  A byte-copy helper's compound initializer
     /// takes the rendered source member's scalar type, so it copies those bits.
     fn op_store_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
+        if self.out_lang == crate::kuna_lang::OutLang::Rust
+            && !self.options.nocasts
+            && self.op_rust_store_width(fd, arch, op)
+        {
+            return;
+        }
         if self.out_lang == crate::kuna_lang::OutLang::C {
             if let Some(mut access) = crate::kuna_stackmem::access(fd, op) {
                 if let Some(target) = access.value.and_then(|value| self.partial_piece_type(fd, arch, value, op, 2))
@@ -9668,6 +9735,11 @@ impl PrintC {
     /// C++ `PrintC::opPtradd` (printc.cc:900).  `ptr[index]` (value), `&ptr[index]`
     /// (array-notation address), or `ptr + index` (plain pointer arithmetic).
     fn op_ptradd_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
+        let raw_address = self.context.is_set(modifiers::RUST_RAW_INDEX_ADDRESS);
+        if raw_address {
+            self.context
+                .set_mods(self.context.mods() & !modifiers::RUST_RAW_INDEX_ADDRESS);
+        }
         if self.out_lang == crate::kuna_lang::OutLang::Go {
             self.op_go_ptradd(fd, arch, op);
             return;
@@ -9686,7 +9758,11 @@ impl PrintC {
             self.push_op(&tokens::SUBSCRIPT, Some(op_key(op)));
         } else if self.options.array_notation() {
             // (kuna) S9 pointer-notation sub-stage: EMIT &base[index].
-            let tok = self.lang_token(&tokens::ADDRESSOF);
+            let tok = if raw_address {
+                &crate::kuna_rustarrayaddr::RAW_ADDRESS
+            } else {
+                self.lang_token(&tokens::ADDRESSOF)
+            };
             self.push_op(tok, Some(op_key(op)));
             self.push_op(&tokens::SUBSCRIPT, Some(op_key(op)));
         } else {

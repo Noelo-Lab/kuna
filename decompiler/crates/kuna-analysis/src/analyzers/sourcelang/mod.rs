@@ -85,7 +85,10 @@
 //! byte-identical output, and the **ELF path is untouched**.
 
 mod kuna_rustversion;
-pub use kuna_rustversion::{fmt_pieces_layout, stable_rustc_version};
+pub use kuna_rustversion::{fmt_pieces_layout, rustc_version_label, stable_rustc_version};
+mod kuna_rustreleases;
+mod kuna_rustcrates;
+pub use kuna_rustcrates::registry_crates;
 mod kuna_rustformatters;
 mod kuna_rustfmtstr;
 mod kuna_rustfmtwrite;

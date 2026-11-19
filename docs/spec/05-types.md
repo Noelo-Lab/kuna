@@ -3469,6 +3469,15 @@ rule `decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_1.rs
 (RuleRangeMeld)`, which pulls two comparison ranges back to a common Varnode
 and intersects/unions them into one comparison.
 
+A Varnode's non-zero mask is itself a range: `set_nz_mask` turns a mask with
+one run of set bits into `[0, mask + stride)` with the stride `2^k`, `k` being
+the mask's lowest set bit. The step is a 32-bit signed integer, so the largest
+stride it holds is `2^30`. A mask whose lowest set bit is higher (the value of
+`x << 35` in a 64-bit register, the form a RISC-V bit test takes) forms no
+range: `set_nz_mask` reports failure and the guard analysis keeps the range it
+pulled back, without the mask's refinement. Upstream shifts the 32-bit step by
+`k` unchecked, which is undefined for `k >= 32`.
+
 **The value-set solver.** On top of `CircleRange` sits an abstract
 interpretation layer (`ValueSet`, `ValueSetSolver`, same file): a
 Bourdoncle-style weak topological ordering over the SSA constraint graph, with

@@ -610,10 +610,13 @@ One directive per `--assert`, keyed by intent rather than by phase:
 | `return [<func>::]<storage> <C typedecl>` | the storage and type of the return value |
 | `name [<func>::]<symbol> <newname>` | rename a local |
 | `type [<func>::]<symbol> <C type>` | retype a local |
+| `format [<func>::]<addr> hex\|dec\|oct\|bin\|char [<value>]` | the form the constant read by the instruction at `<addr>` is printed in |
+| `isolate [<func>::]<symbol>` | this local is its own variable: it is not merged with another |
 | `typedef <C declaration>` | intern a `struct`/`union`/`enum`/`typedef` so `type` can name it |
 | `data <addr> <C typedeclaration>` | a named, typed global at an address |
 | `comment [<func>::]<addr> <text>` | a comment rendered into the C at that instruction |
 | `flow [<func>::]<addr> branch\|call\|callreturn\|return` | the flow out of this instruction is not what kuna decided |
+| `callee [<func>::]<callsite> <name\|address>` | the indirect call at this instruction goes to this function |
 | `callproto [<func>::]<callsite> <C declaration>` | the arguments and return of the one call made by the instruction at `<callsite>` |
 | `function <start>[-<end>][=<name>]` | the `--define-function` spelling, on this plane |
 | `readonly <addr>+<size>` | the bytes in this range never change at run time |
@@ -670,6 +673,38 @@ Saved copies, joins and later reuse of that register remain distinct. JOIN
 values, temporaries and ambiguous definition addresses use a validated
 dataflow anchor. A missing or ambiguous anchor rejects the directive rather
 than applying it to another value.
+
+**`format` and `isolate` change how one constant or one local is shown.**
+`format <addr> oct` prints the constant the instruction at `<addr>` reads in
+octal; the forms are `hex`, `dec`, `oct`, `bin` and `char`. The address is the
+one `kuna disassemble` shows for the instruction, and `--json` lists the
+addresses behind each line of C in `line_mappings`. When the instruction reads
+several constants, a `<value>` (decimal, or hex with `0x`) picks one, and the
+rejection of a request without it lists them. An address where the decompiled
+function reads no integer constant is `rejected`, and so is a constant that
+prints as an enum's name and a `char` request for a value wider than 32 bits,
+which no character literal holds. A format that was taken and
+whose constant the second pass does not find again is reported refused
+(`fatal`).
+
+```bash
+kuna decompile ./mode.so is_rwx --assert 'format 0x1304 oct' --assert 'format 0x130c oct'
+#   return (a0 & 0777) == 0755;       (was: return (a0 & 0x1ff) == 0x1ed;)
+```
+
+`isolate <symbol>` keeps a local out of the merges kuna chooses to make: a
+copy with its source, and the result of an operation with its input, which
+is what prints one variable for two values (`v1 = v1 * 3 + 1;`) or reuses a
+parameter (`a0 *= 3;`). The isolated local keeps the values it is defined
+with, and the other value gets a declaration of its own. Values that meet
+where two paths join are one variable and stay one. The name is resolved as
+`name` resolves it, so a register local, a stack local and a parameter can
+all be isolated.
+
+```bash
+kuna decompile ./a.out triple --assert 'isolate a0'
+#   v2 = a0 * 3;                      (was: a0 *= 3;)
+```
 
 With `option stackviews on`, the console command `print stack objects` lists
 logical frame objects at declared address uses: calls, typed pointer assignments,
@@ -955,6 +990,31 @@ int sub_13c9(void)
 error: --assert "flow 0x1405 call" refused by the pipeline: Could not apply flowoverride (the C below does not show it)
 exit 1
 ```
+
+**`callee` states where an indirect call goes.** kuna prints a call through a
+table or a function pointer as the pointer expression, because the destination
+is not in the code. When you know it, name the call instruction and the
+function, by name or by entry address:
+
+```console
+$ kuna decompile ./ops.so twice
+  v1 = (*(int (*)(unsigned long,unsigned int))**(unsigned long **)&table[(a1 & 3) * 8UL])(a0,a2);
+$ kuna decompile ./ops.so twice --assert 'callee 0x147a handle_open'
+  v1 = handle_open(a0,a2);
+```
+
+The call is rebuilt as a direct call before the function is analysed, so the
+callee's name and prototype apply to its arguments and its result. An indirect
+jump (`jmp *%rax`) is taken as a tail call: a call to the function, then a
+return (no return after a callee that never returns); no switch is recovered
+from it. The statement outranks a destination kuna would recover itself, such
+as the import a `call *slot(%rip)` loads. The directive is rejected when the
+instruction is a direct call, when it is not a call or an indirect jump, and
+when the destination is not a function (declare one first with `function`). A
+second `callee` for the same call site replaces the first, which is reported
+rejected. A call site the function's flow never reaches is refused after the
+decompile, and the run exits non-zero. In the console the same fact is
+`override indirect <callsite> <name|address>`, given after `load function`.
 
 **A `call` override follows the RET-call chain it starts.** `push
 <continuation>; push <target>; ret` is a call written without a `call`
@@ -1814,7 +1874,16 @@ analysis retain an explicit report status instead of guessing a profile.
   | `autoit` | `AU3!EA06`/`AU3!EA05` in a PE | `AutoIt compiled script: extract the script with autoit-ripper` |
   | `upx` / `neolite` / `pklite` | `UPX0`/`UPX1` sections, `UPX!` in the first 4 KiB or a UPX PackHeader; the NEOLite stub; a PKLITE stub at the DOS entry point | `UPX packed: run 'kuna unpack'` |
   | `twinbasic` / `vb6` | `twinBASIC` / an `MSVBVM60.DLL` import name in a PE | the runtime model and what to use for P-Code |
-  | `go` / `rust` | the toolchain verdict the loader already makes | informational (`actionable: false`) |
+  | `go` / `rust` | the toolchain verdict the loader already makes | informational (`actionable: false`); a `rust` row says `Rust binary (rustc 1.95.0): …` when the compiler is known |
+
+  A `rust` row carries two more facts. `version` is the compiler release: the
+  `rustc version` record of `.comment` (prerelease suffix kept, `1.89.0-nightly`),
+  or, when the image has no such record, the stable release whose commit its
+  standard library source paths name (`/rustc/<commit>/library/...`); `null`
+  when neither identifies one release. `crates` lists the registry dependencies
+  the image names in `registry/src/<index>/<crate>-<version>/` source paths, as
+  sorted `{name,version}` rows (`[]` when it names none). Only crates that left
+  a source path in the image appear, so the list is a lower bound.
 
   The PE walk does not insist on the `MZ` magic, so an image whose DOS header
   was damaged is still named even though it does not load. Every other
@@ -1828,7 +1897,8 @@ analysis retain an explicit report status instead of guessing a profile.
   ```
 
   `--summary` prints no note unless the load itself fails; the text form lists
-  the rows as `runtime\t<id>\t<hint>` lines.
+  the rows as `runtime\t<id>\t<hint>` lines, each `rust` row followed by one
+  `crate\t<name>\t<version>` line per crate.
 
 Without `--json` the same measurements print as tab-separated lines. `--summary`
 is accepted on `decompile-all` too, where it short-circuits the decompile loop
@@ -4511,6 +4581,72 @@ explanation, also printed as a `note:` line:
 ```
 note: 0xfffffe0007007000 is in the MH_FILESET entry com.apple.kernel, not in com.example.driver.PMGR, the entry loaded: only references made from com.example.driver.PMGR are listed; `--option kernelcache com.apple.kernel` loads that entry
 ```
+
+## `--member NAME` — one member of an `ar` archive
+
+A static library (`libfoo.a`) is an `ar` archive of relocatable objects, and
+every kuna surface works on one of them. Pass the archive as the binary and name
+the member with `--member NAME`, or spell both as one path, `libfoo.a:NAME`.
+`--member` with no name after it (last, or before another flag) lists the
+members with their sizes; with `--json` the listing is
+`{archive, members: [{name, size, object}]}`, where `object` says whether the
+member is an object file kuna can load. A name the archive stores more than
+once (common in static libraries built from several directories) is listed and
+selected as `NAME#K`, its K-th occurrence: `--member cpu.o#2`. An argument
+that is an existing file is never split at a `:`.
+
+```
+$ kuna functions libm2.a --member
+a1.o	1064
+a2.o	1064
+$ kuna decompile libm2.a --member a2.o cube
+$ kuna decompile libm2.a:a2.o cube
+```
+
+Without a member, an archive of one object loads it. Otherwise the member is
+the one that defines a symbol the arguments spell, and a `note:` line on stderr
+names it:
+
+```
+$ kuna decompile libm2.a cube
+note: libm2.a: using member a2.o
+int cube(int a0)
+{
+  return a0 * a0 * a0;
+}
+```
+
+When no member, or more than one, defines such a symbol, the run exits `2` and
+lists the object members to choose from. An unknown member name, and `--member`
+on an input that is not an archive, also exit `2`.
+
+`kuna functions <lib.a>` with no member lists every object member, each name
+prefixed with its member (also when the archive holds only one):
+
+```
+$ kuna functions libm2.a
+0x400000	a1.o:sq
+0x400000	a2.o:cube
+```
+
+With `--json` that is `{archive, members: [{member, functions}]}`, where
+`functions` is the member's own `kuna functions --json` document. A member
+that does not load is skipped with a `note:` line. `--summary` describes one
+image, so it needs a member.
+
+The selected member is loaded exactly as the same `.o` file is: its relocations
+are applied, and a call into another member stays an external reference,
+because members are not linked against each other. The member is written to a
+temporary file for the run (`<tmp>/kuna_ar_*/<archive>/<member>`), removed on
+exit, and a `binary` field in JSON output names that file. A thin archive
+stores only member paths, so its members load from their own files: each path
+is resolved against the archive's directory as `ar` does, only a regular file
+is read, and a member whose path leaves that directory is named in a `note:`
+line when it loads. `--raw-image` reads the file as bytes and skips all of
+this. `--member`
+applies to `decompile`, `decompile-all`, `decompile-project`,
+`decompile-graph`, `functions`, `disassemble`, `raw-pcode`, `read`, `xrefs`,
+`strings` and `crypto`; `kuna fid build` reads a whole archive itself.
 
 ## `kuna fid` — function identification by fingerprint
 
