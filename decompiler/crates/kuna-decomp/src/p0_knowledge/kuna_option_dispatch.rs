@@ -952,6 +952,11 @@ kuna_options! { self, p1;
         self.analysis_aif = mode;
         Ok(msg)
     },
+    "esprom" => {
+        let (value, msg) = crate::kuna_esprom::parse_esprom(p1)?;
+        self.esprom = value;
+        Ok(msg)
+    },
     "aifpoolslide" => {
         on_off!(analysis_aifpoolslide, "AIF literal-pool candidate slide (GH-299)")
     },

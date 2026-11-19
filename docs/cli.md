@@ -1621,7 +1621,6 @@ given the arguments its header states:
 | U-Boot legacy uImage | magic `27 05 19 56` | `ih_arch` (ARM, AArch64, x86, MIPS with the byte order that finds more `jr ra`, PowerPC, SH, SPARC, m68k, Xtensa, RISC-V) | `ih_load`, `ih_ep` (odd ARM entry: Thumb); gzip payloads inflated |
 | Intel HEX | every line a checksummed `:` record | `--target` or the Cortex-M probe | lowest address; type 03/05 records |
 | Motorola S-record | every line a checksummed `S0`-`S9` record | `--target` or the Cortex-M probe | lowest address; S7/S8/S9 |
-| ESP32 / ESP8266 app image | `E9`, segment table | chip id: Xtensa (ESP32, S2, S3, ESP8266) or RISC-V (C2, C3, C6, H2, P4) | lowest segment; header entry |
 | uClinux bFLT v4 | `bFLT` | ColdFire unless `--target` | 0; header entry; GOT and relocations rebased past the 64-byte header |
 | Qualcomm MBN / SBL / GPT image | SBL codeword, MBN header, `EFI PART` | the wrapped ELF's | the ELF is loaded as is |
 | MediaTek `md1img` | chained `0x58881688` section headers | MIPS32 LE (a nanoMIPS `md1rom` is reported: no SLEIGH spec decodes it) | `md1rom` at 0x90000000; `md1_dbginfo` (LZMA) symbols name functions |
@@ -1629,6 +1628,32 @@ given the arguments its header states:
 
 A flat image whose processor the container does not state is probed for a
 Cortex-M vector table like a raw dump, at the container's base.
+
+### Espressif (ESP32 / ESP8266) application images
+
+An ESP application image (`E9`, a segment table; what `esptool elf2image` and
+an ESP-IDF build write as `<project>.bin`) is loaded by every subcommand as
+it is, not flattened: each segment is mapped at its load address with the
+properties of the chip's memory region it loads into (DROM read-only data,
+IROM/IRAM read-only code, DRAM and RTC writable data), and the header's entry
+seeds function discovery. The processor follows the chip id: Xtensa (ESP32,
+S2, S3, ESP8266) or RISC-V (C2, C3, C5, C6, C61, H2, P4).
+
+The `esprom` option (default `auto`) names the calls into the chip's mask ROM
+and marks its peripheral registers volatile, for esp32, esp32s2, esp32s3,
+esp32c2, esp32c3, esp32c6, esp32h2 and esp8266. A ROM function names its call
+sites only; it has no bytes, so `kuna functions` does not list it.
+`--option esprom <chip>` applies a chip's ROM names to another input of the
+same firmware: its ELF, or a `--raw-image` dump of one segment whose code is
+also asserted `readonly` (an Xtensa call reaches the ROM through a literal,
+which folds only from read-only bytes). `--option esprom off` applies nothing.
+
+```sh
+$ kuna decompile hello_world.bin 0x400d6f04 --addr
+[kuna esp] hello_world.bin: ESP application image (esp32, 6 segments, entry 0x40081220)
+  ...
+  memcpy(&v2,a1,0x10);
+```
 
 ```sh
 $ kuna decompile-all stm32.hex --svd STM32F401.svd

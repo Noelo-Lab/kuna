@@ -1,5 +1,5 @@
 //! Firmware front end: a raw Cortex-M dump, or a firmware container (U-Boot
-//! uImage, Intel HEX, S-record, ESP image, bFLT, Qualcomm MBN, MediaTek
+//! uImage, Intel HEX, S-record, bFLT, Qualcomm MBN, MediaTek
 //! md1img, PC BIOS image), gets the `--raw-image --target --base --entry`
 //! arguments it would otherwise need by hand
 //! (`kuna_analysis::loader::firmware`). `--svd FILE` adds a CMSIS-SVD
@@ -12,7 +12,7 @@
 
 use std::path::{Path, PathBuf};
 
-use kuna_analysis::loader::firmware::{containers, cortexm, svd};
+use kuna_analysis::loader::firmware::{containers, cortexm, esp, svd};
 
 const RAW_COMMANDS: [&str; 4] = ["decompile", "decompile-all", "decompile-project", "functions"];
 const CORTEX_TARGET: &str = "ARM:LE:32:Cortex";
@@ -63,6 +63,9 @@ pub(crate) fn prepare(sub: &str, args: &mut Vec<String>) -> Result<Option<tempfi
         return Ok(None);
     }
     let Ok(bytes) = std::fs::read(&binary) else { return Ok(None) };
+    if !has(args, "--raw-image") && esp::parse(&bytes).is_some() {
+        return Ok(None);
+    }
     let image = match peel_container(&binary, bytes, args)? {
         Peeled::Object(dir) => return Ok(Some(dir)),
         Peeled::Raw(image) => image,

@@ -1,0 +1,56 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna issue testcase: an Espressif application image gets its chip's
+    mask-ROM names and memory map (`option esprom`, default `auto`).
+
+    Stage:      P1 loader + analysis commit
+                (`loader/firmware/esp.rs`, `loader/firmware/esprom.rs`,
+                `kuna-console/src/kuna_esprom.rs`).
+    The XML wrapper only provides the harness architecture.  Both passes clear
+    it and load `esprom_esp32.bin` (written by `esprom_esp32.py` beside it): an
+    ESP32 image with a DROM and an IRAM segment.  `sub_40080020` calls the
+    ROM's memcpy at 0x4000c2c8 through a literal; `sub_40080040` reads the
+    UART0 status register at 0x3ff4001c twice and adds the two values.
+
+    Pass 1 (default): the image header names the ESP32, so the call is
+    `memcpy(...)` and the register, being volatile, is read twice.
+    Pass 2 (`option esprom off`): the call goes through the bare address and
+    the two reads fold into one.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/esprom_esp32.bin</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>load addr 0x40080020</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x40080040</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/esprom_esp32.bin</com>
+  <com>option esprom off</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>load addr 0x40080020</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x40080040</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="KUNA-ESPROM #1: the ROM call is named with the chip in force" min="1" max="1">memcpy\(.*,.*,0x10\)</stringmatch>
+<stringmatch name="KUNA-ESPROM #2: off leaves the call through the bare address" min="1" max="1">0x4000c2c8\)\(.*,.*,0x10\)</stringmatch>
+<stringmatch name="KUNA-ESPROM #3: the peripheral register is read twice with the chip in force" min="1" max="1">= .*3ff4001c;</stringmatch>
+<stringmatch name="KUNA-ESPROM #4: off folds the two reads into one" min="1" max="1">3ff4001c \* 2</stringmatch>
+<stringmatch name="KUNA-ESPROM #5: the three functions of the image are listed in both passes" min="2" max="2">0x40080040 sub_40080040</stringmatch>
+<stringmatch name="KUNA-ESPROM #6: a ROM function is a name, not an inventory entry" min="0" max="0">0x4000c2c8 memcpy</stringmatch>
+</decompilertest>

@@ -1,6 +1,8 @@
 //! Firmware containers that carry a header or a record format instead of an
-//! object file: U-Boot legacy images, Intel HEX, Motorola S-records, ESP32 /
-//! ESP8266 application images, uClinux bFLT and Qualcomm MBN wrappers.
+//! object file: U-Boot legacy images, Intel HEX, Motorola S-records, uClinux
+//! bFLT and Qualcomm MBN wrappers. An Espressif application image is not
+//! one of them: its segments load far apart, so the engine loads it as a
+//! segmented image ([`super::esp`]).
 //!
 //! Each becomes either one flat image (the bytes between the lowest and the
 //! highest loaded address, gaps filled) with the processor, base and entries
@@ -55,9 +57,6 @@ pub fn detect(bytes: &[u8]) -> Result<Option<Container>, String> {
         }
     }
     if let Some(c) = md1img(bytes)? {
-        return Ok(Some(c));
-    }
-    if let Some(c) = esp(bytes) {
         return Ok(Some(c));
     }
     if let Some(c) = mbn(bytes) {
@@ -223,51 +222,6 @@ fn srec(b: &[u8]) -> Result<Option<Container>, String> {
     }
     let (base, bytes) = flatten(&chunks, 0xff)?;
     Ok(Some(Container::Flat(Flat { format: "Motorola S-record", base, bytes, entries, ..Flat::default() })))
-}
-
-/// ESP32-family / ESP8266 application image (esp-idf `esp_app_format.h`):
-/// `0xE9`, segment count, flash parameters, entry; ESP32 parts add a 16-byte
-/// extended header whose chip id says Xtensa or RISC-V.
-fn esp(b: &[u8]) -> Option<Container> {
-    if b.first() != Some(&0xe9) {
-        return None;
-    }
-    let count = b[1] as usize;
-    let entry = u64::from(le32(b, 4)?);
-    if count == 0 || count > 16 || b.get(2).is_none_or(|&m| m > 5) {
-        return None;
-    }
-    let chip = u16::from_le_bytes([*b.get(12)?, *b.get(13)?]);
-    let extended = b.get(8..24)?;
-    let esp32 = extended[15] <= 1 && extended[11..15].iter().all(|&x| x == 0) && chip != 0xffff;
-    let mut off = if esp32 { 24 } else { 8 };
-    let mut chunks = Vec::new();
-    for _ in 0..count {
-        let addr = u64::from(le32(b, off)?);
-        let len = le32(b, off + 4)? as usize;
-        let data = b.get(off + 8..off + 8 + len)?;
-        if !(0x3f00_0000..0x6000_0000).contains(&addr) {
-            return None;
-        }
-        chunks.push((addr, data.to_vec()));
-        off += 8 + len;
-    }
-    let riscv = esp32 && matches!(chip, 5 | 0xc | 0xd | 0x10 | 0x12 | 0x14 | 0x17);
-    let target = if riscv { "RISCV:LE:32:default" } else { "Xtensa:LE:32:default" };
-    let keep: Vec<(u64, Vec<u8>)> = match flatten(&chunks, 0) {
-        Ok(_) => chunks,
-        Err(_) => chunks.into_iter().filter(|(a, _)| (a >> 24) == (entry >> 24)).collect(),
-    };
-    let (base, bytes) = flatten(&keep, 0).ok()?;
-    Some(Container::Flat(Flat {
-        format: if esp32 { "ESP32 application image" } else { "ESP8266 application image" },
-        target: Some(target.into()),
-        base,
-        bytes,
-        entries: vec![entry],
-        thumb: false,
-        ..Flat::default()
-    }))
 }
 
 /// uClinux bFLT v4 (`include/uapi/linux/flat.h`): big-endian header; text,

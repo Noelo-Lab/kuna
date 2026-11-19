@@ -602,6 +602,11 @@ Three tiers:
 | a UEFI boot service call renders as (**(code **)(*(long *)(param_2 + 0x60) + 0x140))(...) | [`uefi`](#uefi----on--off-default-on) |
 | a protocol GUID in .data is an unnamed 16-byte blob | [`uefi`](#uefi----on--off-default-on) |
 | a DXE core's static boot-services table is raw words | [`uefi`](#uefi----on--off-default-on) |
+| an ESP32 firmware calls through a literal like (*dat_40080504)(dst,src,n) instead of memcpy | [`esprom`](#esprom----auto--off--esp32--esp32s2--esp32s3--esp32c2--esp32c3--esp32c6--esp32h2--esp8266-default-auto) |
+| a call to a fixed 0x4000xxxx address in an Espressif image has no name | [`esprom`](#esprom----auto--off--esp32--esp32s2--esp32s3--esp32c2--esp32c3--esp32c6--esp32h2--esp8266-default-auto) |
+| sub_40000xxx callees in an ESP32-C3 image that have no body | [`esprom`](#esprom----auto--off--esp32--esp32s2--esp32s3--esp32c2--esp32c3--esp32c6--esp32h2--esp8266-default-auto) |
+| a peripheral register poll loop in ESP firmware folds to while (true) | [`esprom`](#esprom----auto--off--esp32--esp32s2--esp32s3--esp32c2--esp32c3--esp32c6--esp32h2--esp8266-default-auto) |
+| ets_printf, esp_rom_delay_us or Cache_Read_Enable missing from an ESP image's output | [`esprom`](#esprom----auto--off--esp32--esp32s2--esp32s3--esp32c2--esp32c3--esp32c6--esp32h2--esp8266-default-auto) |
 | gcc/clang c++ class names missing and vtables left as unnamed DAT_ data | [`itaniumrtti`](#itaniumrtti----on--off-default-on) |
 | no Class::vtable or typeinfo labels in a stripped elf or mach-o with polymorphic classes | [`itaniumrtti`](#itaniumrtti----on--off-default-on) |
 | virtual dispatch slot resolves to sub_<addr> with no class | [`itaniumrtti`](#itaniumrtti----on--off-default-on) |
@@ -2158,6 +2163,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On by default; it only acts on EFI-subsystem PE images, so every other input is byte-identical. Flip off to see the module without the EFI types: the entry then takes two untyped words and every service call is an indirect call through an offset.
 - **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-uefi
 - **Example:** `option uefi off`
+
+### `esprom` -- auto | off | esp32 | esp32s2 | esp32s3 | esp32c2 | esp32c3 | esp32c6 | esp32h2 | esp8266, default `auto`
+
+- **Symptoms:** an ESP32 firmware calls through a literal like (*dat_40080504)(dst,src,n) instead of memcpy; a call to a fixed 0x4000xxxx address in an Espressif image has no name; sub_40000xxx callees in an ESP32-C3 image that have no body; a peripheral register poll loop in ESP firmware folds to while (true); ets_printf, esp_rom_delay_us or Cache_Read_Enable missing from an ESP image's output.
+- **What it does:** Espressif (ESP32 family and ESP8266) images only: name the calls into the chip's mask ROM and apply the chip's memory map. An ESP application calls memcpy, ets_printf, the flash and cache routines and the compiler helpers at fixed addresses in the ROM, which the image does not carry, so each call renders as an indirect call through a literal or as a call to a bare address. With a chip in force, every ROM function of that chip is a named function at its address (a libc name also takes its libc prototype), every ROM data symbol is a named global, and the chip's peripheral register ranges are volatile, so a register poll loop keeps its read and two writes to one register are both kept. The tables cover esp32, esp32s2, esp32s3, esp32c2, esp32c3, esp32c6, esp32h2 (ESP-IDF v5.5.6 components/esp_rom/<chip>/ld/*.ld) and esp8266 (ESP8266_RTOS_SDK v3.4 esp8266.rom.ld); the memory maps are the SOC_*_LOW/HIGH bounds of ESP-IDF's soc.h. `auto` takes the chip from the chip id in the application image header (an image with no extended header is an ESP8266); a chip name applies that chip's ROM and peripheral ranges to any input, such as the firmware's ELF; `off` applies nothing. A ROM function is a name for its call sites only: it has no bytes, so it is not listed by `kuna functions` and is not decompiled.
+- **When to flip:** Auto by default; it only acts on an Espressif application image, so every other input is byte-identical. Name the chip when the input is not the application image itself: `--option esprom esp32` on the ELF, or on a `--raw-image` dump of one segment whose code is also asserted `readonly` (an Xtensa call reaches the ROM through a literal, which folds only from read-only bytes). Flip off to see the calls as the image states them, or when the firmware runs on a ROM revision whose addresses differ from the table.
+- **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-esprom
+- **Example:** `option esprom esp32c3`
 
 ### `itaniumrtti` -- on | off, default `on`
 

@@ -641,6 +641,8 @@ pub struct ConsoleProgram {
     /// (kuna `mzsweep`) An MS-DOS executable's relocated module and relocation
     /// words, the evidence its raw-image call sweep reads.
     mz_evidence: Option<kuna_analysis::listing::kuna_mzsweep::MzEvidence>,
+    /// (kuna `esprom`) The chip whose ROM names and memory map are applied.
+    pub(crate) esprom_applied: Option<kuna_decomp::kuna_esprom::EspChip>,
     /// (kuna #1288) An x86 real-mode raw image's flow ends, entry VMA ->
     /// exclusive end (`kuna_rawextent`): what bounds [`crate::funcextent`]'s
     /// clip where the one CODE range holds the program's data too. `None` on
@@ -2705,6 +2707,26 @@ impl ConsoleProgram {
         Ok(name)
     }
 
+    /// (kuna `esprom`) Name the function at `addr`, which lies outside the
+    /// input, for the calls that reach it: a `FunctionSymbol` with the call
+    /// fixup and the libc prototype its name selects, and no inventory entry.
+    /// An address that already has a function keeps it.
+    pub(crate) fn name_external_function(&mut self, addr: &Address, name: &str) -> KunaResult<()> {
+        let type_code = self.arch().types().get_type_code()?;
+        let min_size = self.arch().min_funcsymbol_size;
+        let num_spaces = self.arch().manage().num_spaces() as int4;
+        let arch = self.arch_mut();
+        if arch.symboltab.find_function_across_scopes(addr).is_some() {
+            return Ok(());
+        }
+        let (scope, basename) =
+            arch.symboltab.find_create_scope_from_symbol_name(name, "::", None, num_spaces)?;
+        let sym = arch.symboltab.add_function(scope, addr, &basename, min_size, type_code)?;
+        install_named_call_fixup(arch, sym, &basename);
+        self.seed_declared_libc_prototype(name, addr);
+        Ok(())
+    }
+
     /// Ensure a `FunctionSymbol` exists at `addr` without asserting that the
     /// address has a body. Used by an addressed CLI run that needs a symbol for
     /// prototype directives before selection.
@@ -2945,6 +2967,7 @@ impl ConsoleProgram {
     /// this Listing while the ordinary Listing-consumer gates remain off.
     pub fn commit_pending_analysis(&mut self) -> KunaResult<()> {
         let _load = self.arch().load_scope();
+        crate::kuna_esprom::apply(self)?;
         let rust_profile_request = self.rust_profile_request.take();
         let apply_rust_names = std::mem::take(&mut self.rust_profile_apply);
         if apply_rust_names && (self.rust_profile_image_modified || self.analysis_image.is_none()) {
@@ -4341,6 +4364,7 @@ fn empty_program(
         loader_data_objects: Vec::new(),
         loader_data_exports: Vec::new(),
         mz_evidence: None,
+        esprom_applied: None,
         flow_ends: None,
         data_name_aliases: HashMap::new(),
         declared_extents: BTreeMap::new(),
@@ -4391,6 +4415,16 @@ pub fn bootstrap_from_raw(
 }
 
 /// [`bootstrap_from_raw`] over the file, or over `bytes` built in memory.
+/// Where [`bootstrap_raw_image`] takes the image's bytes from.
+pub(crate) enum RawBytes {
+    /// The file at the path, whole.
+    File,
+    /// One run built in memory, such as a relocated DOS load module.
+    Whole(Vec<u8>),
+    /// Separate runs, such as a firmware image's segments.
+    Segmented(kuna_sleigh::loadimage::RawLoadImage),
+}
+
 pub(crate) fn bootstrap_raw_image(
     path: &str,
     target: &str,
@@ -4398,7 +4432,7 @@ pub(crate) fn bootstrap_raw_image(
     entries: &[u64],
     isa: Option<ArmIsa>,
     languages: &(impl Languages + ?Sized),
-    bytes: Option<Vec<u8>>,
+    bytes: RawBytes,
 ) -> KunaResult<ConsoleProgram> {
     if target.trim().is_empty() {
         return Err(KunaError::lowlevel(
@@ -4434,8 +4468,9 @@ pub(crate) fn bootstrap_raw_image(
     };
     let base_bytes = address_to_byte(base, "base")?;
     match bytes {
-        Some(bytes) => raw.build_loader_from_bytes(Rc::clone(&code_space), base, bytes),
-        None => raw.build_loader_at(Rc::clone(&code_space), base)?,
+        RawBytes::Whole(bytes) => raw.build_loader_from_bytes(Rc::clone(&code_space), base, bytes),
+        RawBytes::Segmented(image) => raw.build_loader_from_image(Rc::clone(&code_space), base, image),
+        RawBytes::File => raw.build_loader_at(Rc::clone(&code_space), base)?,
     }
     let loader = raw
         .loader()
@@ -4556,6 +4591,9 @@ pub(crate) fn bootstrap_image(
     } else if let Some(bytes) = file_mz_dos_image(path) {
         let _load = enter_load(options, from_env);
         bootstrap_mz_bytes(path, &bytes, target, languages, isa)
+    } else if let Some(image) = crate::kuna_esprom::file_esp_image(path) {
+        let _load = enter_load(options, from_env);
+        bootstrap_esp_image(path, &image, target, languages, isa)
     } else {
         bootstrap_object(path, target, languages, isa, options, from_env)
     }
@@ -4659,7 +4697,7 @@ pub(crate) fn bootstrap_mz_bytes(
         &[entry],
         isa,
         languages,
-        Some(image.module.clone()),
+        RawBytes::Whole(image.module.clone()),
     )?;
     if let Some(space) = program.analysis_code_space.clone() {
         kuna_analysis::loader::kuna_realmodecs::paint(program.arch(), &space, &image.code_segments);
@@ -4713,6 +4751,43 @@ fn reader_is_te_image(reader: &mut impl std::io::Read) -> std::io::Result<bool> 
         Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => Ok(false),
         Err(error) => Err(error),
     }
+}
+
+/// Bootstrap an Espressif application image: its segments are the mapped
+/// ranges, each with the properties of the memory region it loads into, and
+/// its header's entry the seed raw-image discovery widens from. The language
+/// follows the chip's core unless `target` names one.
+pub(crate) fn bootstrap_esp_image(
+    path: &str,
+    image: &kuna_analysis::loader::firmware::esp::EspImage,
+    target: &str,
+    languages: &(impl Languages + ?Sized),
+    isa: Option<ArmIsa>,
+) -> KunaResult<ConsoleProgram> {
+    let target =
+        kuna_analysis::loadimage_object::explicit_language_target(target).unwrap_or(image.target());
+    let (loader, base, metadata) = crate::kuna_esprom::raw_image(path, image)?;
+    let mut program = bootstrap_raw_image(
+        path,
+        target,
+        base,
+        &[image.entry],
+        isa,
+        languages,
+        RawBytes::Segmented(loader),
+    )?;
+    kuna_base::notes::say_once(path, &format!("[kuna esp] {path}: {}", image.describe()));
+    let readonly = {
+        let loader = program.arch().translate().loader_rc();
+        let loader = loader.borrow();
+        loader_readonly_ranges(&**loader, program.arch().manage())
+    };
+    apply_readonly_ranges(&mut program, &readonly);
+    let litpool_const = kuna_decomp::kuna_litpoolconst::code_const_ranges(&program.sections(), &[]);
+    program.arch_mut().litpool_const = Rc::new(litpool_const);
+    program.arch_mut().esp_image_chip = image.chip;
+    program.image_metadata = Some(metadata);
+    Ok(program)
 }
 
 /// Bootstrap a UEFI TE image without converting it to PE or ELF.
@@ -6825,6 +6900,7 @@ pub fn bootstrap_from_file(
 pub(crate) enum FileInput {
     Mz(Vec<u8>),
     Te(Vec<u8>),
+    Esp(kuna_analysis::loader::firmware::esp::EspImage),
     Object,
     Xml(Rc<Element>),
 }
@@ -6843,6 +6919,9 @@ pub(crate) fn classify_file(path: &str) -> KunaResult<FileInput> {
     }
     if is_te_image(&bytes) {
         return Ok(FileInput::Te(bytes));
+    }
+    if let Some(image) = kuna_analysis::loader::firmware::esp::parse(&bytes) {
+        return Ok(FileInput::Esp(image));
     }
     if is_object_binary(&bytes) || is_apple_container(&bytes) {
         return Ok(FileInput::Object);

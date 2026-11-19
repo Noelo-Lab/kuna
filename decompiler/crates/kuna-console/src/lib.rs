@@ -40,6 +40,7 @@ pub mod kuna_hightarget;
 pub mod kuna_constformat;
 pub mod kuna_callwide;
 pub mod kuna_declaredbytes;
+mod kuna_esprom;
 pub mod kuna_lazyfuncs;
 mod kuna_paramasserts;
 mod kuna_dwarfstack;

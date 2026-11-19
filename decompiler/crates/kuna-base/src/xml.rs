@@ -2267,7 +2267,8 @@ mod tests {
         // and kuna-opaquepredicate / a comparison constant for every input folds under opaquepredicate
         // and kuna-stubbinds / a stripped Mach-O stub is named from the chained bind on its slot (option stubbinds)
         // and kuna-uefi / an EFI-subsystem PE gets the UEFI entry prototype, table types and GUID names
-        assert_eq!(count, 849, "corpus file count drifted");
+        // and kuna-esprom / an Espressif application image gets its chip's mask-ROM names and memory map
+        assert_eq!(count, 850, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

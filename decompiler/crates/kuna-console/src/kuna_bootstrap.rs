@@ -10,9 +10,9 @@ use kuna_base::xml::Element;
 use kuna_decomp::kuna_loadoptions::{self, LoadOptions, LoadScope};
 
 use crate::engine::{
-    arm_isa_from_env, bootstrap_image, bootstrap_mz_bytes, bootstrap_object,
+    arm_isa_from_env, bootstrap_esp_image, bootstrap_image, bootstrap_mz_bytes, bootstrap_object,
     bootstrap_raw_image, bootstrap_te, bootstrap_te_bytes, bootstrap_xml_image, classify_file,
-    xml_root_image, ArmIsa, ConsoleProgram, FileInput, Languages,
+    xml_root_image, ArmIsa, ConsoleProgram, FileInput, Languages, RawBytes,
 };
 
 /// Where a [`Bootstrap`] finds its languages: spec roots (a slice, array or
@@ -158,6 +158,11 @@ impl<'a, L: LanguageSource + ?Sized> Bootstrap<'a, L> {
         match input {
             FileInput::Mz(bytes) => self.mz_bytes(path, &bytes),
             FileInput::Te(bytes) => self.te_bytes(path, &bytes),
+            FileInput::Esp(image) => {
+                let isa = self.resolved_isa()?;
+                let _load = self.enter();
+                bootstrap_esp_image(path, &image, self.target, self.languages, isa)
+            }
             FileInput::Object => self.object(path),
             FileInput::Xml(root) => self.xml_root(&root),
         }
@@ -169,7 +174,7 @@ impl<'a, L: LanguageSource + ?Sized> Bootstrap<'a, L> {
     pub fn raw(&self, path: &str, base: u64, entries: &[u64]) -> KunaResult<ConsoleProgram> {
         let isa = self.resolved_isa()?;
         let _load = self.enter();
-        bootstrap_raw_image(path, self.target, base, entries, isa, self.languages, None)
+        bootstrap_raw_image(path, self.target, base, entries, isa, self.languages, RawBytes::File)
     }
 
     /// Load a UEFI TE image, as [`bootstrap_from_te`](crate::engine::bootstrap_from_te) does.
