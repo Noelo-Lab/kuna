@@ -659,7 +659,7 @@ impl<'a> Types<'a> {
     /// The kuna type of a demangled Swift type, sized `hint` bytes in its
     /// container, or `None` for one outside the mapping (or wrapped in more
     /// than [`MAX_NESTING`] optionals).
-    fn kuna_type(&self, node: &NodeRef, hint: u32, depth: usize) -> Option<Rc<Datatype>> {
+    pub(super) fn kuna_type(&self, node: &NodeRef, hint: u32, depth: usize) -> Option<Rc<Datatype>> {
         if depth > MAX_NESTING {
             return None;
         }
@@ -771,6 +771,55 @@ impl<'a> Types<'a> {
                 (hint >= 16).then(|| self.closure_struct()).flatten()
             }
             Kind::Metatype => (hint >= 8).then(|| self.void_ptr()).flatten(),
+            // A value of a generic parameter's type is passed by address.
+            Kind::DependentGenericParamType | Kind::DependentMemberType => {
+                (hint >= 8).then(|| self.void_ptr()).flatten()
+            }
+            // An `inout` argument is the address of the value.
+            Kind::InOut => {
+                let t = self.kuna_type(inner.first()?, u32::MAX, depth + 1)?;
+                (hint >= 8).then(|| tf.get_type_pointer(self.ptr_size, t, 1).ok()).flatten()
+            }
+            // A tuple is laid out like a struct of its elements, each at its
+            // natural alignment, named `_0`, `_1`, … (the empty tuple is no
+            // type at all).
+            Kind::Tuple => {
+                if inner.children.is_empty() {
+                    return None;
+                }
+                let full = print_full(node)?.replace(' ', "");
+                if let Some(t) = self.tf.find_by_name(&full).ok().flatten() {
+                    return (t.get_size() as u32 <= hint).then_some(t);
+                }
+                let mut fields: Vec<(i32, String, Rc<Datatype>)> = Vec::new();
+                let mut end = 0u32;
+                let mut align = 1u32;
+                for (i, e) in inner.children.iter().enumerate() {
+                    let ty = e.children.iter().find(|c| c.kind == Kind::Type)?;
+                    let t = self.kuna_type(ty, hint, depth + 1)?;
+                    let size = t.get_size() as u32;
+                    let a = match t.get_metatype() {
+                        type_metatype::TYPE_STRUCT => 8.min(size.max(1)),
+                        _ => size.max(1),
+                    }
+                    .min(8);
+                    let off = end.div_ceil(a) * a;
+                    fields.push((off as i32, format!("_{i}"), t));
+                    end = off + size;
+                    align = align.max(a);
+                }
+                let size = end.div_ceil(align) * align;
+                if size > hint {
+                    return None;
+                }
+                let shell = self.tf.get_type_struct(&full).ok()?;
+                let fields: Vec<TypeField> = fields
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, (off, n, t))| TypeField::new(i as i32, off, n, t))
+                    .collect();
+                self.tf.set_fields_struct_raw(&shell, fields, Vec::new(), size as i32, align as i32, 0).ok()
+            }
             _ => None,
         }
     }
@@ -904,6 +953,13 @@ impl<'a> Types<'a> {
             (f + 32, "ivarDestroyer", ptr),
         ]);
         self.interned_struct("swift.class_metadata", &fields, f + 40)
+    }
+
+    /// `swift.AsyncContext`: the parent context and the function that
+    /// resumes it; a function's own frame follows.
+    pub fn async_context_struct(&self) -> Option<Rc<Datatype>> {
+        let ptr = self.void_ptr()?;
+        self.interned_struct("swift.AsyncContext", &[(0, "parent", Rc::clone(&ptr)), (8, "resume_parent", ptr)], 16)
     }
 
     /// `swift.value_witness_table`.
@@ -1140,6 +1196,22 @@ impl<'a> Types<'a> {
     /// A pointer to `t`.
     pub(super) fn pointer_to(&self, t: Rc<Datatype>) -> Option<Rc<Datatype>> {
         self.tf.get_type_pointer(self.ptr_size, t, 1).ok()
+    }
+
+    /// The dotted path and type of the global variable a `$s…vp` storage
+    /// symbol names (`Module.name`), when its type maps.
+    pub fn global_variable(&self, symbol: &str) -> Option<(String, Rc<Datatype>)> {
+        let tree = demangle_swift_tree(symbol)?;
+        let [entity] = tree.children.as_slice() else {
+            return None;
+        };
+        if entity.kind != Kind::Variable {
+            return None;
+        }
+        let ty = entity.child_of_kind(Kind::Type)?;
+        let t = self.kuna_type(ty, u32::MAX, 0)?;
+        let name = crate::demangle::kuna_swift::name::print_name(&tree)?;
+        Some((name, t))
     }
 
     /// `Type *`: the pointer a class or struct `self` is passed as.
