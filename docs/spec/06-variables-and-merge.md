@@ -1809,7 +1809,11 @@ the other hint entirely. Non-intersecting neighbors may still *join* into one
 array when an open hint's element type and alignment continue
 (`varmap.rs (RangeHint::attempt_join)`, including absorbing constant-only
 COPY ranges). Every surviving range becomes a Symbol in the local scope
-(`adjust_fit`/`create_entry`), and `funcdata_spacebase.rs
+(`adjust_fit`/`create_entry`), an array of its type when the range holds more
+than one element. (kuna `itaniumrtti on`) A variable-length structure is never
+made an array element: a C++ class whose object size nothing states (chapter
+05) is one object of unknown extent, so a 240-byte stack object passed as
+`MainLoopPosix *` is `MainLoopPosix v30`, not `MainLoopPosix v30 [30]`. And `funcdata_spacebase.rs
 (Funcdata::sync_varnodes_with_symbols)` paints the resulting
 `mapped`/`addrtied`/`addrforce`/`nolocalalias` flags (and, in the final sync
 only, data-types) onto the Varnodes. Unmapped locations gain `nolocalalias`

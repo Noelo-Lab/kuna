@@ -1,0 +1,58 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    C++ virtual calls (fixtures/vtabletypes/vtabletypes.cpp, built with g++ -O1
+    as its header says; the ABI typeinfo vtables are defined in the source, so
+    nothing else is linked). use() calls two virtual methods of a Shape *,
+    Shape::scaled calls area() on this, and local() (built at -O0) calls area()
+    through a reference to a stack Tr whose vptr store it can see.
+
+    Stage model: P5 type-propagation (p5_types/kuna_vtabletypes.rs install,
+    lock_this; facts from analyzers/rtti/kuna_vtabletypes.rs). The recovered
+    vtable is a Shape_vtbl structure of method pointers and Shape's first field
+    a Shape_vtbl *vptr, so the slot loads are field reads; the vtable words are
+    foldable constants, so the call on the visible object folds to Tr::area.
+
+    Option: itaniumrtti (default names). Pass 1 is on, pass 2 the default
+    names (the labels without the types).
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file tests/stages/fixtures/vtabletypes/vtabletypes</com>
+  <com>option itaniumrtti on</com>
+  <com>read symbols</com>
+  <com>load function use</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function Shape::scaled</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function local</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/stages/fixtures/vtabletypes/vtabletypes</com>
+  <com>read symbols</com>
+  <com>load function use</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function Shape::scaled</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function local</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="VTABLETYPES #1: on, the call goes through the named slot with its arguments" min="1" max="1">v2 = \(\*a0->vptr->area\)\(a0,a1\);</stringmatch>
+<stringmatch name="VTABLETYPES #2: on, the second slot is named too" min="1" max="1">v1 = a0->vptr->scaled;</stringmatch>
+<stringmatch name="VTABLETYPES #3: on, a method's call on this goes through its class's slot" min="1" max="1">v1 = \(\*this->vptr->area\)\(this,a1\);</stringmatch>
+<stringmatch name="VTABLETYPES #4: on, the call on the visible object is direct" min="1" max="1">^  (Tr::)?area\(v3,a0\);</stringmatch>
+<stringmatch name="VTABLETYPES #5: names, the slot load is cast arithmetic and the first call loses an argument" min="1" max="1">v2 = \(\*\(code \*\)\*\*\(unsigned long \*\*\)a0\)\(a0,CONCAT44\(v3,a1\)\);</stringmatch>
+<stringmatch name="VTABLETYPES #6: names, the method's call on this takes no arguments" min="1" max="1">v1 = \(\*\(code \*\)\*\*\(unsigned long \*\*\)this\)\(\);</stringmatch>
+<stringmatch name="VTABLETYPES #7: names, the call on the visible object stays indirect" min="1" max="1">\(\*[^()]+\)\(v3,a0\);</stringmatch>
+</decompilertest>

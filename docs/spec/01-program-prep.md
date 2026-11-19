@@ -5473,6 +5473,25 @@ every other binary's pass list is byte-identical to before the pass existed):
   so no anchor exists and the output is empty. Independent code-pointer-run scanning
   — which would find such vtables heuristically — is deliberately **not** part of
   this pass.
+- **(kuna) Typed vtables** (`itaniumrtti on`, opt-in; `names`, the default,
+  stops at the labels above;
+  `decompiler/crates/kuna-analysis/src/analyzers/rtti/kuna_vtabletypes.rs`): the
+  facts chapter 05's vtable typing installs, read from the same recovered graph
+  (`kuna_itaniumrtti.rs (recover_graph)`). Per polymorphic class the pass
+  reports the primary vtable's slots and, per slot, the function the class
+  holds and every override: the same slot of each derived class's sub-vtable
+  for the class's subobject (the primary one for a base at offset 0, the
+  secondary one at the base's displacement otherwise). A class the image never
+  instantiates (an abstract base whose constructor was inlined away) has no
+  vtable of its own and gets the prefix all its derived views share. A slot is
+  named for the method its symbol demangles to; a destructor slot is `dtor`, or
+  `deleting_dtor` for the `D0` variant, and a `this`-adjusting thunk
+  (`_ZThn16_…`, `_ZTv0_n24_…`) names the method it forwards to. The class's
+  structure name is the one the demangled signatures give `this`, the innermost
+  component without template arguments; two classes with the same such name
+  are both skipped. It also reports every sub-vtable's slot words. A function
+  a vtable holds is known to be a virtual member, so its inferred-tier
+  demangled declaration with `this` (`cppsig`) is applied as if proven.
 - **Objective-C** (`objc`, Mach-O-only, on by default and inert elsewhere;
   `decompiler/crates/kuna-analysis/src/analyzers/objc/mod.rs`): walk
   `__objc_classlist` → `class_t` → `class_ro_t` → method lists (both absolute and

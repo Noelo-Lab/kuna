@@ -1814,6 +1814,12 @@ pub struct Architecture {
     /// (output-changing: it adds named data and function symbols);
     /// `--option itaniumrtti on` enables it.
     pub analysis_itaniumrtti: bool,
+    /// (kuna `itaniumrtti on`) Type each recovered Itanium vtable as a `C_vtbl`
+    /// structure of named method pointers, give the class structure a `vptr`
+    /// field of that type, and fold a load of a vtable slot to the method it
+    /// holds; see [`crate::kuna_vtabletypes`]. Off under `itaniumrtti names`,
+    /// the default.
+    pub analysis_vtabletypes: bool,
     /// (kuna) The Aggressive Instruction Finder gap-walk (`aif`), the third
     /// Listing/xref consumer; default **off**. The kuna analog of Ghidra's
     /// `AggressiveInstructionFinderAnalyzer` (which ships `setDefaultEnablement(false)`
@@ -2613,6 +2619,7 @@ impl Architecture {
             analysis_flirt: false,
             analysis_rtti: false,
             analysis_itaniumrtti: false,
+            analysis_vtabletypes: false,
             analysis_aif: crate::kuna_aif::AifMode::Off,
             analysis_aifpoolslide: true,
             analysis_tailcallentry: false,
@@ -3516,6 +3523,7 @@ impl Architecture {
             .filter_map(|nm| self.userops.get_op_by_name(nm).map(|u| u.get_index() as kuna_base::types::uint4))
             .collect();
         ctx.return_branch = self.return_branch; // returnbranch
+        ctx.vtable_types = self.analysis_vtabletypes;
         ctx.kuna_unwind_extents = Rc::clone(&self.kuna_unwind_extents);
         ctx.index_rescale = self.index_rescale;
         ctx.recover_array_stride = self.recover_array_stride; // GH-8724 arraystride

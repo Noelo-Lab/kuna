@@ -556,7 +556,7 @@ fn build_pieces(
     let mut intypes: Vec<Rc<Datatype>> = Vec::with_capacity(decl.params.len() + 1);
     let mut innames: Vec<String> = Vec::with_capacity(decl.params.len() + 1);
     if has_this {
-        let cls = types.get_type_struct(&decl.class).ok()?;
+        let cls = class_record(types, &decl.class)?;
         intypes.push(types.get_type_pointer(ptr, cls, word_size).ok()?);
         innames.push("this".to_string());
     }
@@ -663,13 +663,23 @@ fn build_param_type(
         if name.is_empty() || !is_identifier(&name) {
             return None;
         }
-        types.get_type_struct(&name).ok()?
+        class_record(types, &name)?
     };
     let mut ty = base;
     for _ in 0..indirection {
         ty = types.get_type_pointer(ptr, ty, word_size).ok()?;
     }
     Some(ty)
+}
+
+/// The structure a class name refers to: the one already defined under that
+/// name, else a declared shell that a later definition (the typed vtables of
+/// `itaniumrtti`) completes in place.
+fn class_record(types: &dyn TypeFactory, name: &str) -> Option<Rc<Datatype>> {
+    match types.find_by_name(name).ok()? {
+        Some(ct) => (ct.get_metatype() == type_metatype::TYPE_STRUCT).then_some(ct),
+        None => types.kuna_declare_record(name, false).ok(),
+    }
 }
 
 /// The C/C++ primitive spellings c++filt emits, at their LP64/ILP32 width.

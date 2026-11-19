@@ -770,7 +770,12 @@ calls, with identical observable result — the analysis path locks callee
 signatures before flow runs). A CALLIND keeps its computed target as input 0
 (`setup_callind_specs`) unless a previous decompilation pass planted an
 indirect override (de-indirection), which converts it to a direct CALL before
-the spec is built. (kuna `msvcsig`) One more CALLIND is made direct there: a
+the spec is built. (kuna `itaniumrtti on`) With the typed vtables on, the
+register the CALLIND read its target from
+(`flow.rs (FlowInfo::jump_target_carrier)`) is recorded on the new spec, so the
+trial scoring of chapter 04 does not take it as an argument: a virtual call
+de-indirected through a folded vtable slot (chapter 05) loaded the method's
+address into that register only to jump through it. (kuna `msvcsig`) One more CALLIND is made direct there: a
 call through an import slot whose MSVC-declared prototype the analysis commit
 locked onto the import symbol (01, `msvcsig`)
 (`decompiler/crates/kuna-decomp/src/p2_lift/kuna_msvcimportcall.rs

@@ -1808,7 +1808,10 @@ impl ScopeLocal {
         let align = ct.get_align_size();
         // C++ `a.size / ct->getAlignSize()` (int4 division); guard a 0 align.
         let num = if align != 0 { a.size / align } else { a.size };
-        if num > 1 {
+        // (kuna `itaniumrtti`) A record of open-ended size (a C++ class whose
+        // object size nothing states) cannot be an array element.
+        let open_record = ct.get_metatype() == type_metatype::TYPE_STRUCT && ct.is_variable_length();
+        if num > 1 && !open_record {
             ct = types.get_type_array(num, ct)?;
         }
         self.add_symbol("", ct, &addr, &usepoint)?;

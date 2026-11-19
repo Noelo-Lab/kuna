@@ -5408,6 +5408,22 @@ fn commit_analysis_output(
     } else {
         (Vec::new(), Vec::new())
     };
+    // (kuna `itaniumrtti`) A function a vtable slot holds is a virtual member,
+    // so its implicit `this` is certain: an inferred-tier declaration of one
+    // that takes `this` is as good as a proven one.
+    if prog.arch().analysis_vtabletypes {
+        let held: std::collections::HashSet<u64> = out
+            .cpp_vtables
+            .classes
+            .iter()
+            .flat_map(|c| c.slots.iter().flat_map(|s| s.targets.iter().copied()))
+            .collect();
+        let (members, rest): (Vec<_>, Vec<_>) = std::mem::take(&mut out.cpp_sig.inferred)
+            .into_iter()
+            .partition(|(addr, pieces)| held.contains(addr) && pieces.innames.first().is_some_and(|n| n == "this"));
+        out.cpp_sig.proven.extend(members);
+        out.cpp_sig.inferred = rest;
+    }
     let cppsig_protos = if cppsig_mode.enabled() {
         kuna_analysis::demangle::kuna_cppsig::select(
             std::mem::take(&mut out.cpp_sig),
@@ -5481,6 +5497,28 @@ fn commit_analysis_output(
         }
         ranges.sort_unstable();
         prog.arch_mut().dynreloc_const = Rc::new(ranges);
+    }
+    // 0e. (kuna `itaniumrtti`) The vtable slot words, the same way: a load of a
+    //     slot through a constant vtable address folds to the method it holds,
+    //     so a call on an object whose vptr store the function can see becomes
+    //     a direct call. Painted before the vptr labels are mapped at 1.
+    if prog.arch().analysis_vtabletypes && !out.cpp_vtables.slot_ranges.is_empty() {
+        let mut ranges = prog.arch().dynreloc_const.as_ref().clone();
+        for &(first, last) in &out.cpp_vtables.slot_ranges {
+            let begin = Address::new(Rc::clone(code_space), first);
+            let end = Address::new(Rc::clone(code_space), last + 1);
+            prog.arch_mut().symboltab.set_property_range(kuna_decomp::varnode::varnode_flags::readonly, &begin, &end);
+            ranges.push((first, last));
+        }
+        ranges.sort_unstable();
+        let mut merged: Vec<(u64, u64)> = Vec::with_capacity(ranges.len());
+        for (lo, hi) in ranges {
+            match merged.last_mut() {
+                Some(last) if lo <= last.1.saturating_add(1) => last.1 = last.1.max(hi),
+                _ => merged.push((lo, hi)),
+            }
+        }
+        prog.arch_mut().dynreloc_const = Rc::new(merged);
     }
 
     // 1. Extra symbols a pass discovered. Function symbols install like the
@@ -6378,6 +6416,12 @@ fn commit_analysis_output(
     for (addr, pieces) in go_prototypes {
         let a = Address::new(Rc::clone(code_space), addr);
         prog.arch_mut().set_function_prototype_pieces_at(&a, pieces);
+    }
+
+    // 5f. (kuna `itaniumrtti`) The typed vtables, after every prototype source
+    //     above so a slot's function pointer carries the methods' signature.
+    if prog.arch().analysis_vtabletypes {
+        kuna_decomp::kuna_vtabletypes::install(prog.arch(), code_space, &out.cpp_vtables.classes)?;
     }
 
     // 6. Processor-context decode-mode paints (the kuna analog of ARM's

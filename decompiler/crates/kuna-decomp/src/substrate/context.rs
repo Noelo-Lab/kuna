@@ -823,6 +823,9 @@ pub struct ArchContext {
     /// prefix proves constant flows as an indirect branch
     /// ([`crate::kuna_returnbranch`]). Off keeps the spec's RETURN.
     pub return_branch: bool,
+    /// (kuna `itaniumrtti on`) A call made direct by an indirect-call override
+    /// does not take the register that carried its target as an argument.
+    pub vtable_types: bool,
     /// (kuna `funcboundflow`) `Architecture::kuna_unwind_extents`.
     pub kuna_unwind_extents: Rc<Vec<(u64, u64)>>,
     /// (kuna `indexrescale`) A byte offset into an array becomes an element index.
@@ -1605,6 +1608,7 @@ impl ArchContext {
             x87_integer_userops: Vec::new(),
             float_rounding_userops: Vec::new(),
             return_branch: false,        // returnbranch
+            vtable_types: false,
             kuna_unwind_extents: Rc::new(Vec::new()),
             index_rescale: false,
             recover_array_stride: false, // GH-8724 arraystride

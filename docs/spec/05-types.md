@@ -2928,6 +2928,53 @@ reads prints only the lanes it uses. Two such ops are never merged, and a
 constant operand is not folded. This is a correction, not an option: the ops
 compute on floats by definition.
 
+### A C++ virtual call goes through a named slot of its class (`kuna_vtabletypes.rs`)
+
+(kuna `itaniumrtti on`; the default `names` leaves the types out, because a
+function whose calls fold to direct calls below is decompiled again.) An Itanium
+virtual call is two loads and a CALLIND: the object's first word is the vtable
+pointer, and the method is the word a fixed offset past the vtable's address
+point. With the receiver typed only as a pointer to an empty class shell (the
+`IShape *` a demangled signature gives, chapter 04), nothing names either
+load, and gcc's `s->area(n)` prints
+`(*(code *)**(unsigned long **)a0)(a0,...)`, its arguments left to the
+CALLIND's trial scoring.
+
+The analysis tier (chapter 01, typed vtables) reports, per polymorphic class,
+the primary vtable's slots, and for each slot every function the class or a
+derived class holds there. At the commit,
+`decompiler/crates/kuna-decomp/src/p5_types/kuna_vtabletypes.rs (install)` builds
+`C_vtbl`, a structure with one function-pointer field per slot named for the
+method (`area`, `dtor`, `deleting_dtor`, or `vfn_<i>` when no symbol names it),
+and completes the class structure `C` with a first field `C_vtbl *vptr` and
+each non-virtual base at a nonzero offset embedded at that offset (so `MI`'s
+`M2` subobject is `&a0->M2`, whose own `vptr` is `M2_vtbl *`). Both records are
+variable-length: nothing says how large the object is, and a fixed size would
+make an access past the last field an array index (`&a0[2]`) rather than a byte
+offset. A virtual-base subobject has no fixed offset and is not embedded. Both
+names are declared records (`kuna_declare_record`), and the demangled
+signatures declare their class shells the same way, so the completion reaches
+every `C *` already built. A class whose structure DWARF has completed is left
+alone.
+
+A slot's field carries a prototype when every target with a known one agrees on
+the return type and on the parameters after `this`
+(`kuna_vtabletypes.rs (agreed_prototype)`); `this` becomes `C *`. The CALLIND
+reads that field, so the call takes the prototype as any call through a typed
+function pointer does and keeps its arguments: `(*a0->vptr->area)(a0,a1)`.
+Itanium mangling has no return type, so a slot whose methods have no DWARF
+prototype has an unknown return; the call's result is recovered as before, but a
+variable holding the slot's pointer is declared returning `void`. Where no
+target has a prototype (a stripped image), the field is a plain `code *` and the
+call's arguments come from trial scoring.
+
+The slot words themselves are folded: the commit marks each sub-vtable's slot
+array read-only and adds it to the `dynrelocs` fold set (chapter 03). A call on
+an object whose vptr store the function can see (a stack object, or a reference
+to one) loads the slot from a constant address, the load folds to the method's
+entry, and `ActionDeindirect` makes the call direct (chapter 04):
+`(*_Tr_vptr)(v3,a0)` becomes `Tr::area(v3,a0)`.
+
 ### A value returned in a float register is a float (`kuna_floatreg.rs`)
 
 A calling convention that reserves registers for floating point makes the

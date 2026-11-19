@@ -3093,6 +3093,10 @@ truncating the fall-through here"
             .map(|o| o.get_addr().clone())
             .unwrap_or_default();
         let mut direct = self.data.get_override().find_indirect_override(&op_addr).cloned();
+        let carrier = direct
+            .as_ref()
+            .filter(|_| self.data.get_arch().vtable_types)
+            .and_then(|_| self.jump_target_carrier(op));
         if direct.is_none() {
             direct = self.env.msvc_import_slot(&self.data, op);
         }
@@ -3112,6 +3116,9 @@ truncating the fall-through here"
             // exactly as flow.cc:735-739 does after `applyIndirect`/`applyPrototype`.
             self.data.op_set_opcode_code(op, OpCode::CPUI_CALL);
             self.build_call_specs(op, entry.clone(), false)?;
+            if let (Some(storage), Some(idx)) = (carrier, self.data.get_call_specs_index(op)) {
+                self.data.get_call_specs_mut(idx).set_jump_target_storage(storage);
+            }
             self.qlst_count += 1;
             return self.check_for_flow_modification(op, &entry);
         }

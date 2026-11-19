@@ -935,7 +935,15 @@ kuna_options! { self, p1;
     "flirt" => on_off!(analysis_flirt, "FLIRT signature matcher Listing consumer"),
     "rtti" => on_off!(analysis_rtti, "MSVC RTTI / vftable class-name recovery pass"),
     "itaniumrtti" => {
-        on_off!(analysis_itaniumrtti, "Itanium (GCC/Clang) RTTI / vtable recovery pass")
+        let (names, types) = match p1 {
+            "on" => (true, true),
+            "names" => (true, false),
+            "off" => (false, false),
+            other => return Err(KunaError::parse(format!("itaniumrtti takes on|names|off, not {other:?}"))),
+        };
+        self.analysis_itaniumrtti = names;
+        self.analysis_vtabletypes = types;
+        Ok(format!("Itanium (GCC/Clang) RTTI / vtable recovery pass set to {p1}"))
     },
     "aif" => {
         let (mode, msg) = crate::kuna_aif::parse_aif_mode(p1)?;

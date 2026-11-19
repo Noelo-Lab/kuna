@@ -2240,7 +2240,8 @@ mod tests {
         // and kuna-indexrescale / a byte offset into an array becomes an element index
         // and kuna-globalwidth / a symbol-table data object takes the element width its accesses use
         // and kuna-funcboundflow-unwind / fall-through stops at the end of the function's own unwind extent
-        assert_eq!(count, 802, "corpus file count drifted");
+        // and kuna-vtabletypes / a C++ virtual call reads through a named slot of its class
+        assert_eq!(count, 803, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
