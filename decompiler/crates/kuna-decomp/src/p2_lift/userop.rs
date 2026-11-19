@@ -140,7 +140,8 @@ pub const BUILTIN_KERNEL_BUG: uint4 = 0x10000009;
 pub const BUILTIN_KERNEL_WARN: uint4 = 0x1000000a;
 /// (kuna) Built-in id for `__builtin_alloca`, a runtime stack reservation
 /// lowered by `stackalloc`; it is printed and typed by that option only.
-pub const BUILTIN_STACK_ALLOC: uint4 = 0x1000000b;
+/// 0x1000000b-0x1000000e are taken by the x86 string builtins.
+pub const BUILTIN_STACK_ALLOC: uint4 = 0x1000000f;
 
 // ---------------------------------------------------------------------------
 // UserOpBase + UserPcodeOp hierarchy (userop.hh:47-318)
