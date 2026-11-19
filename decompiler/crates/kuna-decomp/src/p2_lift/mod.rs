@@ -64,6 +64,7 @@ pub mod kuna_gojumpchain;
 pub mod kuna_returnbranch;
 
 pub mod kuna_rustprobestack;
+pub mod kuna_outlinedinline; // (kuna) inline clang's MachineOutliner fragments into their callers
 pub mod kuna_chkstkdarwin; // (kuna) remove the Darwin AArch64 stack probe so the registers it preserves survive it
 
 pub(crate) mod kuna_highslice_guard;

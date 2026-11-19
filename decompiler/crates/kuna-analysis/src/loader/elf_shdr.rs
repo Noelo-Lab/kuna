@@ -25,7 +25,8 @@ use object::read::Object;
 /// fat / universal Mach-O peeled to one arch slice ([`super::macho_fat::peel_fat_image`]) and the header-tolerance
 /// repairs applied -- [`tolerate_unusable_section_table`] for ELF,
 /// [`super::pe_dosmagic::tolerate_corrupt_dos_magic`] and
-/// [`super::pe_datadirs::tolerate_oversized_data_directories`] for PE -- so a
+/// [`super::pe_datadirs::tolerate_oversized_data_directories`] for PE,
+/// [`super::kuna_machotolerance::clamp_out_of_file_ranges`] for Mach-O -- so a
 /// surface that parses the bytes itself sees the same recovered view the loader
 /// does instead of rejecting the file outright.
 ///
@@ -88,7 +89,8 @@ pub fn read_image_selected(
     let (bytes, shdr) = tolerate_unusable_section_table(bytes);
     let (bytes, magic) = super::pe_dosmagic::tolerate_corrupt_dos_magic(bytes);
     let (bytes, dirs) = super::pe_datadirs::tolerate_oversized_data_directories(bytes);
-    let repaired = shdr.is_some() || magic.is_some() || dirs.is_some();
+    let (bytes, clamp) = super::kuna_machotolerance::clamp_out_of_file_ranges(bytes);
+    let repaired = shdr.is_some() || magic.is_some() || dirs.is_some() || clamp.is_some();
     Ok(SelectedImage { bytes, repaired, fileset: peeled.fileset })
 }
 

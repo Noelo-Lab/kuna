@@ -1079,10 +1079,15 @@ dyld shared cache, split the way iOS 16 splits one: `dyld_shared_cache_arm64e`
 (header, image table, `__TEXT`/`__DATA`/`__LINKEDIT` mappings, v3 slide info),
 `.01` (a `__TEXT_STUBS` stub island), and `.symbols` (the local symbols).
 `/usr/lib/libcaller.dylib` calls `/usr/lib/libcallee.dylib`'s `callee_add`
-through the island at `0x180008800` and through a coalesced `__got` slot. That
-slot's v3 chain links a plain pointer to an authenticated one. Its `helper_local`
-is a `<redacted>` placeholder in its own symbol table, named only by `.symbols`.
-It drives the `kuna_dyldcache` unit tests and `tests/stages/kuna-dyldcrossrefs.xml`.
+through the island at `0x180008800` and through a `__got` slot the cache builder
+bound in place: the section stays `S_NON_LAZY_SYMBOL_POINTERS` and its
+indirect-symbol entries are `INDIRECT_SYMBOL_LOCAL|ABS`. The slots' v3 chain
+links a plain pointer (to `callee_counter`, which libcallee also exports as
+`callee_total`) to an authenticated one. It also
+reads libcallee's `callee_table` directly, with `adrp`/`ldr` and `adrp`/`add`.
+Its `helper_local` is a `<redacted>` placeholder in its own symbol table, named
+only by `.symbols`. It drives the `kuna_dyldcache` unit tests,
+`tests/stages/kuna-dyldcrossrefs.xml` and `tests/stages/kuna-dyldcrossdata.xml`.
 No Apple toolchain is needed: `dyld_cache_arm64e.py` assembles the files from
 the public `dyld_cache_format.h` layouts and hand-encodes the A64 bodies.
 Regenerate with:
@@ -1282,6 +1287,39 @@ layout, whose rebase words hold image-base offsets. Source `macho_ptrslots.c`;
 recipe, toolchain and SHA-256s in `macho_ptrslots_arm64.provenance`. Pinned by
 `loadimage_object.rs (macho_chained_fixups_are_applied_to_the_image)`,
 `chained.rs (fixture_rebases_and_binds)` and `tests/verify_dynrelocs_gate.rs`.
+
+### `macho_arm64_32` — a thin arm64_32 (watchOS, ILP32) executable
+
+`macho_arm64_32` (~33 KB) is `macho_arm64_32.c` built for
+`arm64_32-apple-watchos7.0`; its header has the commands. A 28-byte
+`mach_header`, `LC_SEGMENT` commands and 4-byte pointers: the witness that an
+arm64_32 Mach-O loads as `AARCH64:LE:32:ilp32`
+(`tests/stages/kuna-macho-arm64-32.xml`).
+
+### `macho_bindslots_arm64` — data pointers bound to imports
+
+`macho_bindslots_arm64` (arm64, 33 KB) has two `__DATA,__data` pointers bound by
+chained fixups to the undefined `_ext_handler` and `_ext_counter`, with no
+indirect-symbol entry naming either slot, local symbols stripped. Built from
+`macho_bindslots_arm64.c`, whose header has the commands. The witness that a
+bound slot is named for its import (`tests/stages/kuna-machobinds.xml`).
+
+### `macho_arm64_outlined` — MachineOutliner fragments
+
+`macho_arm64_outlined` (plain arm64, ~33 KB) is `macho_arm64_outlined.s` linked
+as-is:
+
+```bash
+clang -target arm64-apple-macos11 -c macho_arm64_outlined.s -o o.o
+ld64.lld -arch arm64 -platform_version macos 11.0 11.0 -fixup_chains \
+         -undefined dynamic_lookup -e _main -o macho_arm64_outlined o.o
+```
+
+`_OUTLINED_FUNCTION_0` (`0x1000003a0`) is `(w0 + w1) * 2; ret`, called by
+`_sum2` (`0x1000003b4`). `_OUTLINED_FUNCTION_1` (`0x1000003ac`) is
+`mov w0, #7; b _exit`, tail-called by `_bail` (`0x1000003cc`). `_probe`
+(`0x100000378`) keeps its argument in x8 across `bl ___chkstk_darwin`. The
+`outlinedinline` witness (`tests/stages/kuna-outlinedinline.xml`).
 
 ### `macho_objc_refs_arm64` — selector, class and super references + `__objc_stubs`
 
@@ -1615,6 +1653,12 @@ above are reused, plus one new stripped Mach-O:
   ld64.lld -arch arm64 -platform_version macos 11.0 11.0 \
         -no_function_starts -x -e _main -o macho_unwind_only_arm64 t.o
   ```
+
+- **Mach-O, truncated:** `macho_truncated_arm64` (1.5 KB) is the first 0x600
+  bytes of `macho_unwind_only_arm64` (`head -c 1536`): `__TEXT` is cut short and
+  `__LINKEDIT`, with the symbol and string tables, is gone. It is the witness
+  that a Mach-O whose load commands name bytes past the end of the file still
+  loads (`tests/stages/kuna-machotruncated.xml`).
 
 ## DWARF on MinGW-PE / Mach-O (PR-11)
 

@@ -4840,11 +4840,17 @@ pub(crate) fn bootstrap_object(
             // imports from the real table rather than fabricating one.
             let (bytes, datadir_note) =
                 kuna_analysis::loader::pe_datadirs::tolerate_oversized_data_directories(bytes);
+            // Mach-O range tolerance: a segment, section or symbol table that runs
+            // past the end of the file is clamped to the bytes present.
+            let (bytes, clamp_note) =
+                kuna_analysis::loader::kuna_machotolerance::clamp_out_of_file_ranges(bytes);
             let load_notes: Vec<String> =
-                [shdr_note, dosmagic_note, datadir_note].into_iter().flatten().collect();
+                [shdr_note, dosmagic_note, datadir_note, clamp_note].into_iter().flatten().collect();
             (kuna_analysis::image_bytes::ImageBytes::from(bytes), load_notes)
         }
     };
+    let crypt_note = kuna_analysis::loader::kuna_machotolerance::encryption_note(&bytes);
+    let load_notes: Vec<String> = load_notes.into_iter().chain(crypt_note).collect();
     for note in &load_notes {
         kuna_base::notes::say_once(path, &format!("[kuna] {note}"));
     }
@@ -5482,6 +5488,18 @@ fn commit_analysis_output(
                     .set_attribute(sid, kuna_decomp::varnode::varnode_flags::namelock);
             }
         }
+    }
+
+    // 1--. (kuna `outlinedinline`) Flag clang's MachineOutliner fragments inline,
+    //      so flow splices each into its callers.
+    if prog.arch().outlined_inline {
+        let fragments: Vec<Address> = prog
+            .symbols
+            .iter()
+            .filter(|s| kuna_decomp::kuna_outlinedinline::is_outlined_name(&s.name))
+            .map(|s| s.addr.clone())
+            .collect();
+        kuna_decomp::kuna_outlinedinline::mark_inline(prog.arch_mut(), &fragments);
     }
 
     // 1-. (kuna `elfgotimports`) The import a loader import slot holds. A

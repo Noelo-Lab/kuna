@@ -567,6 +567,30 @@ header is wrong however the rest of the file reads, so keeping it lets the calle
 report whatever is actually unreadable instead of a header count that was never
 the whole story.
 
+(kuna) **A Mach-O range past the end of the file is clamped, not fatal**
+(`decompiler/crates/kuna-analysis/src/loader/kuna_machotolerance.rs
+(clamp_out_of_file_ranges)`). A segment, section, symbol table or string table
+whose file range runs past the end of a truncated or hand-edited Mach-O used to
+fail the whole load: `object` checks the symbol table eagerly in `File::parse`
+("Invalid Mach-O symbol table offset or size"), and the loader reads each
+segment's file range when it maps it. dyld would refuse such a file, but a
+static reader can still use every byte that is there. Each such range is clamped
+to the bytes the file holds (segment `filesize`, section `size`, `nsyms`,
+`strsize`) in a copy of the image, at the same read point as the ELF and PE
+header repairs, and the repair is reported once on stderr and recorded with the
+other load notes. Virtual sizes are untouched, so the rest of each segment still
+reads as zero-filled memory and nothing is invented. A thin Mach-O is normally
+mapped rather than read (`image_bytes.rs (map_thin_macho)`); one that needs the
+clamp declines the mapping and takes the owned copy. A whole image is passed on
+byte for byte.
+
+(kuna) **An encrypted Mach-O says so** (`kuna_machotolerance.rs
+(encryption_note)`). An App Store binary carries `LC_ENCRYPTION_INFO[_64]` with
+`cryptid != 0` until it is decrypted. It loads, but the encrypted file range is
+ciphertext that decompiles to noise without any error, so the load names that
+state once: `Mach-O is encrypted (LC_ENCRYPTION_INFO cryptid 1): file bytes
+0x4000..0x... are ciphertext and decompile to noise; decrypt the app first`.
+
 (kuna) **A PE's header page is mapped, read-only**
 (`decompiler/crates/kuna-analysis/src/loader/pe_headers.rs (header_region)`).
 Windows maps a PE in two parts: `SizeOfHeaders` file bytes are copied to
@@ -1379,11 +1403,23 @@ slide zero (`kuna_dyldcache/slide.rs (SlideInfo::apply)`). v2 chains carry a
 `delta_mask` link plus `value_add`, and a page may list several chains in an
 extras array. v3 chains carry an 11-bit link at bit 51: plain pointers keep a
 51-bit target with a top byte, and authenticated ones keep a 32-bit offset
-from `auth_value_add`. v5 chains carry a 34-bit runtime offset from
-`value_add` and the link at bit 52. Each slot therefore holds its unslid
+from `auth_value_add`. v4 chains (32-bit caches) keep the link in the top two
+bits of a 32-bit word: a value with no bits above 15 is a small positive
+integer, one whose bits 15 to 29 are all set a small negative one
+(sign-extended), and anything else is a pointer plus `value_add`. v5 chains
+carry a 34-bit runtime offset from `value_add` and the link at bit 52. Each
+slot therefore holds its unslid
 target; the PAC key and diversity of an auth pointer are dropped, because the
-decompiler does not model them. v1 needs no rewrite at slide zero, and v4
-(32-bit caches) is refused by name. The cache's images share one `__LINKEDIT`,
+decompiler does not model them. v1 needs no rewrite at slide zero. A 32-bit
+cache (`arm64_32` on watchOS) holds 32-bit Mach-O images: a 28-byte header,
+`LC_SEGMENT` commands with 32-bit fields and 68-byte sections, 12-byte nlists
+and 4-byte pointer slots. The rebuild reads and writes either layout through
+one table of field offsets (`extract.rs (Width)`), the local-symbols file's
+nlists follow the cache's width, and a stub's `ldr w` is followed like its
+`ldr x`. An `arm64_32` Mach-O, thin or rebuilt from a cache, loads as
+`AARCH64:LE:32:ilp32` (`loadimage_object.rs (compose_language_id)`). On the
+watchOS 10.0.1 cache of a Watch5,1, `libobjc.A.dylib` rebuilds, lists 1,073
+functions and decompiles with its cross-image calls named. The cache's images share one `__LINKEDIT`,
 so the image gets a private one. It holds the image's nlists, a compact string
 table read in spans around the names actually used (the shared pool is tens of
 megabytes and an image's names are scattered through it), the indirect-symbol
@@ -2551,26 +2587,62 @@ funcsym stream:
   other images past its own stubs. The cache builder sends a `bl` to a stub
   island in a `__TEXT_STUBS` sub-cache (iOS 16: `adrp x16; add x16; br x16`), to
   another image's rewritten stub (iOS 14), or straight to the callee. It also
-  coalesces `__got` sections into plain sections with no indirect-symbol entries.
+  binds `__got` slots in place: on iOS 14 the section is left untyped with no
+  indirect-symbol entries, on iOS 16 it stays `S_NON_LAZY_SYMBOL_POINTERS` with
+  every entry `INDIRECT_SYMBOL_LOCAL|ABS`. And it rewrites a GOT load in range
+  into a direct `adrp`/`add` or `adrp`/`ldr` of the target.
   None of those addresses is in the rebuilt image, so the stub walk above cannot
-  name them, and a call renders `sub_<island>(...)`.
+  name them, and a call renders `sub_<island>(...)`, a load through a bound slot
+  `*dat_<slot>` and a direct reference `dat_<addr>` or a bare number.
   `decompiler/crates/kuna-analysis/src/loader/kuna_dyldcache/xrefs.rs (collect)`
   runs while the image is rebuilt. It scans an arm64 image's code sections for
-  `b`/`bl` targets outside the image (an x86_64 image gets its GOT slots alone), and its untyped `__got`/`__auth_got` sections for
-  slid pointers outside it. For each target it takes, in order, a symbol at that
+  `b`/`bl` targets outside the image (an x86_64 image gets its GOT slots
+  alone), and its `__got`, `__auth_got` and `__auth_ptr` sections
+  for slid pointers outside it: every slot of an untyped section, and of a typed
+  one those whose indirect entry is local or absent. For each target it takes, in order, a symbol at that
   address, then the import an `S_SYMBOL_STUBS` entry there stands for (from the
   owning image's indirect-symbol table), then wherever the stub jumps. Up to four
   stubs are followed, decoding `adrp`/`add`/`ldr` (through slid data) to
   `br`/`braa`/`braaz`. An image's names come from its symbol table, exports
   winning over the locals in the `.symbols` file, and are built only for the
-  images actually reached. The result rides in the rebuilt Mach-O as an
+  images actually reached. Where several exports share one address
+  (`_objc_retain` and `_objc_retain_x0`, `_bzero` and `__platform_bzero`), the
+  one the rebuilt image lists among its own undefined symbols is the name
+  there, since that is the name its source called (`xrefs.rs (Names::at)`).
+
+  The same pass names the image's direct references to other images' data. It
+  follows each `adrp` page in a code section to a later `add` or
+  unsigned-offset load or store on the same register, one linear pass per
+  section (`xrefs.rs (adrp_targets)`): `b`, `br` and `ret` forget every page,
+  `bl` the pages of the registers a call clobbers, any other write the page of
+  its destination. Each such
+  address is named by the symbol holding it in the image that owns it
+  (`xrefs.rs (Names::containing)`): one starting there in a code section, which
+  becomes a call target, else the last symbol at or below it in its data
+  section, reaching to the next symbol, the section end or 64 KiB. A data
+  target becomes a data symbol at the holding symbol's start, reaching eight
+  bytes past the last address referenced in it but never past the holding
+  symbol, which is how `macho_stubs::data_symbols` sizes a symbol table's data;
+  an interior reference then renders as a part of it. The section searches are
+  charged to the same work allowance as the stub walk.
+
+  The result rides in the rebuilt Mach-O as an
   `LC_NOTE` owned by `kuna.dyld.xrefs`, so `kuna unpack` writes it too, and the
   stub walk reads it back as imports: a call target becomes an import stub, and
-  a slot becomes an import slot, so `peimportcall` binds a call through it. A
+  a slot becomes an import slot, so `peimportcall` binds a call through it and
+  `importdata` names a read through it. The loader reads the data symbols from
+  the same note (`decompiler/crates/kuna-analysis/src/loadimage_object.rs`);
+  they are written last, with their size in the upper bits of the kind word,
+  so a reader that knows only calls and slots stops there. A
   note cut short by `sizeofcmds`, or whose blob lies past the file, reads as no
   note, and the names a note copies never exceed its name pool. The
-  gate is read at that point, so `off` leaves the note unread and every island
-  call `sub_<addr>(...)`. On the iOS 16.4.1 cache, CoreFoundation's note names
+  gate is read at that point, so `off` leaves the note unread, every island
+  call `sub_<addr>(...)` and every data reference `dat_<addr>`. On CryptoKit
+  (iOS 16.4.1) the `(*dat_1e14a56c0)(...)` calls through `__auth_ptr` name
+  their callee and `*dat_1dc6827c8` reads as
+  `Foundation.Data.Deallocator.custom(_:).enum_case`; 179 lines of its 2,625
+  functions change. CoreFoundation's 2,554 changed lines are mostly
+  `objc_retain(a2)` for `objc_retain_x0(a2)`. On the iOS 16.4.1 cache, CoreFoundation's note names
   699 of its call targets and 65 GOT slots; `libobjc`'s `class_copyMethodList`
   calls `os_unfair_lock_lock_with_options` through an island on iOS 16 and
   through `HomeKit`'s rewritten stub on iOS 14, and both render the name.
@@ -2799,6 +2871,25 @@ indirect-symbol walk does, and reports the slot as an `externref` range. The
 commit and `ActionDeindirect` then treat the slot exactly like a `__got` slot.
 A bind with a nonzero addend points inside the import rather than at it, so it
 is skipped.
+
+Every other pointer slot a bind fills is named too
+(`decompiler/crates/kuna-analysis/src/loader/kuna_machobinds.rs (MachoBindSlotsPass)`,
+Mach-O only, always on). A C function pointer or data pointer initialized to an
+import, a vtable entry or a Swift witness slot lies in an ordinary data
+section: no indirect-symbol entry lists it, and only a chained-fixup bind or a
+classic `LC_DYLD_INFO` bind opcode says which import it holds, so a call
+through it read `(*dat_100004000)()`. The pass takes each addend-free bind of
+either kind outside the symbol-pointer sections the indirect-symbol walk names
+(`S_NON_LAZY_SYMBOL_POINTERS`, `S_LAZY_SYMBOL_POINTERS`) and outside
+`__auth_ptr`, `__objc_*` and `__cfstring` (whose own passes name their slots).
+It reports the slot as an `externref` range and its import, one leading `_`
+stripped, as an import-slot name: the channel `elfgotimports` uses for ELF GOT
+slots, a `FunctionSymbol` in the symbol table that `query_function` resolves
+for a call through the slot (`ActionDeindirect`) or, with `importdata`, a read
+through it, and that never joins the function inventory. The classic bind
+replay keeps each bind's `SET_ADDEND_SLEB` addend for this
+(`dyldinfo.rs (resolve_dyld_info_bind_slots)`). Pinned by
+`tests/stages/kuna-machobinds.xml`.
 
 Two arch-marker passes paint **decode context** rather than names, because a wrong
 decode mode is unrecoverable downstream. `decompiler/crates/kuna-analysis/src/loader/arm_markers.rs

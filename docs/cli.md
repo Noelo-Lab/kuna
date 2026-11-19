@@ -4515,7 +4515,7 @@ $ kuna functions dyld_shared_cache_arm64e --image CoreFoundation --json
 The image is rebuilt as a thin Mach-O before anything parses it, and every
 segment keeps its address in the cache, so addresses match `ipsw` and crash logs.
 Pointers in its data are rewritten from the cache's slide-info chains (v2, v3
-with arm64e auth pointers, v5) to their targets. Its local symbols come from the
+with arm64e auth pointers, v4 of a 32-bit `arm64_32` cache, v5) to their targets. Its local symbols come from the
 `.symbols` file, in place of the `<redacted>` placeholders in its own symbol
 table. Calls into other images name their targets: a `bl` to a `__TEXT_STUBS`
 stub island, or to another image's stub, renders as the callee

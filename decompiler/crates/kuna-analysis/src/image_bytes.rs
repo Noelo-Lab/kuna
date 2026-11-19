@@ -16,7 +16,8 @@ pub enum ImageBytes {
 impl ImageBytes {
     /// Mapping requires the input file to remain unchanged while it is analyzed.
     /// A kernel collection (`MH_FILESET`) declines: its entry is selected into an
-    /// owned copy.
+    /// owned copy. So does an image whose load commands name bytes past the end
+    /// of the file: its header is repaired in an owned copy.
     /// The load's `load_mmap` option (`KUNA_LOAD_MMAP=off` outside a load)
     /// selects the owned path.
     pub fn map_thin_macho(path: &str) -> KunaResult<Option<Self>> {
@@ -47,6 +48,9 @@ impl ImageBytes {
             }
         });
         if !header.is_some_and(|filetype| filetype != object::macho::MH_FILESET) {
+            return Ok(None);
+        }
+        if crate::loader::kuna_machotolerance::runs_past_the_file(&mapping) {
             return Ok(None);
         }
         Ok(Some(Self::Mapped(Arc::new(mapping))))

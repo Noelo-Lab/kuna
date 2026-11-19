@@ -9,8 +9,8 @@
     selects /usr/lib/libcaller.dylib before `load file`.
 
     libcaller calls libcallee's callee_add through the island at 0x180008800
-    and tail-calls it through a coalesced __got slot whose v3 slide-info
-    chain holds an authenticated pointer.
+    and tail-calls it through a __got slot the cache builder bound in place,
+    whose v3 slide-info chain holds an authenticated pointer.
 
     Pass 1 (dyldcrossrefs off) is the bug: the island call renders as
     sub_180008800() (assert #1) and the slot call as (*dat_180010008)()

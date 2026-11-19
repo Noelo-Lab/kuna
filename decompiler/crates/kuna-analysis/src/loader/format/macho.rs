@@ -40,7 +40,7 @@ pub use chained::{resolve_chained_fixups, ChainedBind, ChainedFixups};
 /// The classic `LC_DYLD_INFO` bind-opcode replay: which slots an imported symbol
 /// fills on an image that predates chained fixups.
 pub mod dyldinfo;
-pub use dyldinfo::resolve_dyld_info_binds;
+pub use dyldinfo::{resolve_dyld_info_bind_slots, resolve_dyld_info_binds};
 
 /// The environment-variable gate for arm64e Apple-Silicon spec selection
 /// (design §3.7): on unless it holds an off-token, which `--option

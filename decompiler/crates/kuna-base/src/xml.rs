@@ -2231,7 +2231,12 @@ mod tests {
         // and kuna-acleintrinsics / AArch64 MTE tag instructions and barriers print as ACLE intrinsics
         // and kuna-assert-callee / a stated destination makes an indirect call direct
         // and kuna-assert-format-isolate / a constant's format set by its instruction, and an isolated local
-        assert_eq!(count, 792, "corpus file count drifted");
+        // and kuna-machotruncated / a Mach-O cut short still loads the bytes it has
+        // and kuna-outlinedinline / MachineOutliner fragments inlined into their callers (option outlinedinline)
+        // and kuna-machobinds / a Mach-O pointer slot a bind fills is named for its import
+        // and kuna-dyldcrossdata / a dyld shared cache image names the data it reads from other images
+        // and kuna-macho-arm64-32 / an arm64_32 Mach-O loads as ILP32 AArch64
+        assert_eq!(count, 797, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

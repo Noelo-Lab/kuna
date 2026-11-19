@@ -1,0 +1,64 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A">
+<!--
+    Kuna: P1 environment binding, option dyldcrossrefs (default on), the data
+    half. The script loads /usr/lib/libcaller.dylib out of the committed
+    synthetic dyld shared cache (decompiler/crates/kuna-analysis/tests/
+    fixtures/dyld_cache_arm64e.py). libcaller reads libcallee's data three
+    ways, none of which the rebuilt image can name on its own:
+
+    - caller_entry loads callee_counter through __got[0], a slot the cache
+      builder bound in place: its section stays S_NON_LAZY_SYMBOL_POINTERS
+      but its indirect-symbol entry is INDIRECT_SYMBOL_LOCAL|ABS, as iOS 16
+      leaves the __got of a system framework. libcallee exports the
+      variable under a second name, callee_total, listed after the first;
+      libcaller imports callee_counter, so that is its name here;
+    - caller_table reads callee_table[1] with adrp/ldr, an interior address;
+    - caller_addr forms &callee_table with adrp/add.
+
+    Pass 1 (dyldcrossrefs off) is the bug: the slot load renders
+    *dat_180010000 (assert #1), the interior read dat_180010118 (#2) and the
+    address the bare 0x180010110 (#3). Pass 2 (on) is the fix: the slot is
+    named for callee_counter (#4), and callee_table is named by the symbol
+    containing each address (#5, #6).
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">c0035fd6</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>option dyldimage /usr/lib/libcaller.dylib</com>
+  <com>option dyldcrossrefs off</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/dyld_cache_arm64e/dyld_shared_cache_arm64e</com>
+  <com>read symbols</com>
+  <com>load function caller_entry</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function caller_table</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function caller_addr</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option dyldcrossrefs on</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/dyld_cache_arm64e/dyld_shared_cache_arm64e</com>
+  <com>read symbols</com>
+  <com>load function caller_entry</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function caller_table</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function caller_addr</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="dyldcrossdata #1: off leaves the bound GOT slot load unnamed" min="1" max="1">return v1 \+ \*dat_180010000;</stringmatch>
+<stringmatch name="dyldcrossdata #2: off leaves the interior read of the other image unnamed" min="1" max="1">return dat_180010118;</stringmatch>
+<stringmatch name="dyldcrossdata #3: off leaves the other image's address bare" min="1" max="1">return 0x180010110;</stringmatch>
+<stringmatch name="dyldcrossdata #4: on names the bound slot for its target" min="1" max="1">return v1 \+ callee_counter;</stringmatch>
+<stringmatch name="dyldcrossdata #5: on names an interior read by the symbol holding it" min="1" max="1">return \*\(unsigned long \*\)&amp;_callee_table\[8\];</stringmatch>
+<stringmatch name="dyldcrossdata #6: on names the address formed by adrp/add" min="1" max="1">return _callee_table;</stringmatch>
+</decompilertest>

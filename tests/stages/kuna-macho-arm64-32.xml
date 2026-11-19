@@ -1,0 +1,40 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<!--
+    An arm64_32 Mach-O (ILP32 AArch64, the watchOS ABI).
+
+    Issue: a Mach-O with cputype CPU_TYPE_ARM64_32 was refused at load with
+    "unsupported machine Aarch64_Ilp32 (no kuna SLEIGH language)", and a
+    watchOS dyld shared cache, whose images are all arm64_32, with "image at
+    0x1a094000 is not a 64-bit Mach-O". The AARCH64:LE:32:ilp32 language has
+    been in the specs all along; nothing selected it.
+
+    Stage / sub-stage: P1 container parse, the object bootstrap's language
+    choice (`kuna-analysis/src/loadimage_object.rs (compose_language_id)`),
+    at `load file`.
+
+    The XML wrapper only supplies the harness architecture. The fixture
+    `macho_arm64_32` (built from `macho_arm64_32.c`) is a thin arm64_32
+    executable with two functions.
+
+    The image loads, both functions are listed, and `add3` decompiles.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_arm64_32</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>load function _add3</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="MACHOARM6432 #1: the image loads and its functions are listed" min="1" max="1">0x8000 _add3</stringmatch>
+<stringmatch name="MACHOARM6432 #2: the entry is listed" min="1" max="1">0x800c _main</stringmatch>
+<stringmatch name="MACHOARM6432 #3: a function decompiles" min="1" max="1">return a0 \+ a1 \+ 3;</stringmatch>
+</decompilertest>

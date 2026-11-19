@@ -1040,8 +1040,14 @@ impl ObjectLoadImage {
 
         // A Mach-O `nlist` records no size; `data_symbols` guesses one from
         // the next symbol of its section, capped at 8 bytes. Demangled as the
-        // function stream's names are.
-        for (addr, name, size) in crate::loader::macho_stubs::data_symbols(&file) {
+        // function stream's names are. A dyld cache image's `kuna.dyld.xrefs`
+        // note adds the data of other images it reaches (`dyldcrossrefs`).
+        let cross_image = if macho_code.is_some() && kuna_decomp::kuna_dyldcache::dyldcrossrefs_enabled() {
+            crate::loader::kuna_dyldcache::xrefs::data_symbols(bytes)
+        } else {
+            Vec::new()
+        };
+        for (addr, name, size) in crate::loader::macho_stubs::data_symbols(&file).into_iter().chain(cross_image) {
             let name = match std::str::from_utf8(&name).ok().and_then(crate::demangle::demangle_name) {
                 Some(demangled) => demangled.into_bytes(),
                 None => name,
@@ -2137,6 +2143,7 @@ pub(crate) fn compose_language_id(arch: Architecture, endian: &str, model: Optio
         Architecture::X86_64 => format!("x86:LE:64:default:{}", model.unwrap_or("gcc")),
         Architecture::I386 => format!("x86:LE:32:default:{}", model.unwrap_or("gcc")),
         Architecture::Aarch64 => format!("AARCH64:{endian}:64:v8A:{}", model.unwrap_or("default")),
+        Architecture::Aarch64_Ilp32 => format!("AARCH64:{endian}:32:ilp32:{}", model.unwrap_or("default")),
         Architecture::Arm => format!("ARM:{endian}:32:v8:{}", model.unwrap_or("default")),
         Architecture::Mips => format!("MIPS:{endian}:32:default:{}", model.unwrap_or("default")),
         Architecture::PowerPc => {

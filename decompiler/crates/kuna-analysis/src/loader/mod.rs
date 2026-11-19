@@ -99,6 +99,8 @@ pub mod format;
 // typed import-pointer slots + upstream's strictly PE-only no-return API names.
 pub mod kuna_peimportcall;
 pub mod kuna_authptrcall;
+// Mach-O pointer slots a bind fills, named for their import.
+pub mod kuna_machobinds;
 // (kuna) `rexthunk`: an x86-64 `REX FF 25` tail jump is not an import thunk.
 pub(crate) mod kuna_rexthunk;
 // (kuna) `peordinal`: name a PE import-by-ordinal from a built-in export table.
@@ -109,6 +111,9 @@ pub mod kuna_pcmemory;
 // selection for Apple kernelcaches.
 pub mod kuna_kernelcache;
 pub mod macho_fat;
+// Mach-O load tolerance: out-of-file segment/section ranges clamped,
+// FairPlay-encrypted images named.
+pub mod kuna_machotolerance;
 // (kuna) The dyld shared cache: one image rebuilt as a thin Mach-O, its
 // references into other images named (`dyldimage`, `dyldcrossrefs`).
 pub mod kuna_dyldcache;

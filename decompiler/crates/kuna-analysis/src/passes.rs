@@ -472,6 +472,13 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         passes.push(Box::new(crate::loader::kuna_authptrcall::AuthPtrCallPass));
     }
 
+    // S1 Mach-O bound pointer slots (MachoBindSlotsPass): name every other slot
+    // a chained-fixup or classic bind fills, which no indirect-symbol entry
+    // names, in the symbol table only (the `elfgotimports` channel).
+    if format == object::BinaryFormat::MachO {
+        passes.push(Box::new(crate::loader::kuna_machobinds::MachoBindSlotsPass));
+    }
+
     // S1 MSVC RTTI / vftable recovery (RttiPass): on a Windows PE, parse the
     // CompleteObjectLocator → RTTI3/2/1 → RTTI0 graph in `.rdata`/`.data`, demangle
     // each `.?A…@@` class name, and emit `<Class>::vftable` / `<Class>::RTTI_*`
@@ -1979,7 +1986,7 @@ mod tests {
         assert!(macho.contains(&"objc"), "Mach-O must carry the objc pass");
         // Compare the format-neutral base after dropping each format's gated
         // additions: `itaniumrtti` and `elfgotimports` for ELF and `peimportcall`,
-        // `authptrcall`, `cfstrings` and `objc` for Mach-O.
+        // `authptrcall`, `machobinds`, `cfstrings` and `objc` for Mach-O.
         let elf_neutral: Vec<&str> = elf
             .iter()
             .copied()
@@ -1988,7 +1995,7 @@ mod tests {
         let macho_neutral: Vec<&str> = macho
             .iter()
             .copied()
-            .filter(|&p| !matches!(p, "peimportcall" | "authptrcall" | "cfstrings" | "objc"))
+            .filter(|&p| !matches!(p, "peimportcall" | "authptrcall" | "machobinds" | "cfstrings" | "objc"))
             .collect();
         assert!(!elf_neutral.contains(&"itaniumrtti"));
         assert_eq!(
