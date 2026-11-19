@@ -1,6 +1,7 @@
 //! Command dispatch for the kuna CLI.
 
 mod args;
+mod armember;
 mod callgraph;
 mod catalog;
 mod crypto;
@@ -90,6 +91,14 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
+    let _staged = match armember::resolve(sub, &mut rest) {
+        Ok(armember::Resolved::Run(staged)) => staged,
+        Ok(armember::Resolved::Done(code)) => return ExitCode::from(code as u8),
+        Err(e) => {
+            eprintln!("error: {e}");
+            return ExitCode::from(2);
+        }
+    };
     loadtime::export_image_selection(&rest);
     followimages::apply(sub, &mut rest, follow_limit);
     let rest = rest.as_slice();
@@ -157,7 +166,8 @@ fn usage() {
          \n\
          --image NAME[+NAME...] (any subcommand): load those images of a dyld shared cache\n\
          --follow-images N (decompile, disassemble, xrefs): also load up to N images holding\n\
-         a requested address outside them (default 2)"
+         a requested address outside them (default 2)\n\
+         --member [NAME] (any <binary> that is an ar archive): load that member, or list the members when no NAME follows; <lib.a>:NAME is the same selection"
     );
 }
 
