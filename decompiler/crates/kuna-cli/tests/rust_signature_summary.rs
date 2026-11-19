@@ -12,6 +12,13 @@ const RECOVERED: &str = "_ZN4core3ptr4read17h0123456789abcdefE";
 const ENTRY: u64 = 0x400100;
 
 fn fixture() -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
+    fixture_with_comment(COMMENT)
+}
+
+fn fixture_with_comment(
+    comment: &[u8],
+) -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
+    assert!(comment.len() <= 0x40);
     let temp = tempfile::tempdir().unwrap();
     let binary = temp.path().join("authored.elf");
     let mut bytes = vec![0u8; 0x300];
@@ -57,7 +64,7 @@ fn fixture() -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
         (0x260, 40),
         (0x270, 16),
         (0x298, 0x140),
-        (0x2a0, COMMENT.len() as u64),
+        (0x2a0, comment.len() as u64),
         (0x2b0, 1),
         (0x2d8, 0x180),
         (0x2e0, names.len() as u64),
@@ -68,7 +75,7 @@ fn fixture() -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
     bytes[0x100..0x128].fill(0x90);
     bytes[0x100..0x104].copy_from_slice(&[0x55, 0x48, 0x89, 0xe5]);
     bytes[0x126..0x128].copy_from_slice(&[0x5d, 0xc3]);
-    bytes[0x140..0x140 + COMMENT.len()].copy_from_slice(COMMENT);
+    bytes[0x140..0x140 + comment.len()].copy_from_slice(comment);
     bytes[0x180..0x180 + names.len()].copy_from_slice(names);
     std::fs::write(&binary, bytes).unwrap();
     let mut signature: Vec<u8> = (0..TINY.len())
@@ -163,6 +170,80 @@ fn requested_profiles_preserve_normal_summary_and_ignore_summary_filters() {
             plain, requested,
             "report request changed inventory, names, or normal summary"
         );
+    }
+}
+
+#[test]
+fn stable_comment_profile_hint_preserves_matches_selection_and_provenance() {
+    let cases: &[(&[u8], bool, Option<&str>)] = &[
+        (b"rustc version 1.93.0\0", true, Some("exact_version")),
+        (b"rustc version 1.93.1\0", true, Some("same_minor")),
+        (
+            b"rustc version 1.98.1\0",
+            true,
+            Some("newer_than_available"),
+        ),
+        (b"rustc version 1.90.1\0", true, None),
+        (b"rustc version 2.0.0\0", true, None),
+        (b"rustc version 1.93.1\0rustc version 1.98.1\0", true, None),
+        (COMMENT, true, None),
+        (b"rustc version 1.93.1\0", false, None),
+    ];
+    for &(comment, pair, basis) in cases {
+        let (temp, binary, manifest) = fixture_with_comment(comment);
+        let mut inputs: Value = serde_json::from_slice(&std::fs::read(&manifest).unwrap()).unwrap();
+        let candidate = json!({"version": "1.93.0", "optimization": 3});
+        inputs["candidates"].as_array_mut().unwrap().push(candidate);
+        for (index, bank) in ["inline", "no-inline"].iter().enumerate() {
+            if !pair && index == 1 {
+                break;
+            }
+            let mut signature = inputs["signatures"][index].clone();
+            let name = format!("second-{bank}.sig");
+            std::fs::copy(
+                temp.path().join(format!("{bank}.sig")),
+                temp.path().join(&name),
+            )
+            .unwrap();
+            signature["path"] = json!(name);
+            signature["version"] = json!("1.93.0");
+            inputs["signatures"].as_array_mut().unwrap().push(signature);
+        }
+        std::fs::write(&manifest, inputs.to_string()).unwrap();
+
+        let result = summary(
+            &binary,
+            &["--rust-signature-manifest", manifest.to_str().unwrap()],
+        );
+        let report = &result["rust_signature_profile"];
+        assert!(report["selected_profile"].is_null());
+        let records: Vec<_> = comment
+            .split(|&byte| byte == 0)
+            .filter(|record| !record.is_empty())
+            .map(|record| std::str::from_utf8(record).unwrap())
+            .collect();
+        assert_eq!(
+            result["compiler_provenance"]["rustc_records"],
+            json!(records)
+        );
+        if pair {
+            assert_eq!(report["status"], "ambiguous");
+            assert_eq!(report["tied_profiles"].as_array().unwrap().len(), 2);
+            assert_eq!(report["candidates"][0]["score"], 1);
+            assert_eq!(report["candidates"][1]["score"], 1);
+        } else {
+            assert_eq!(report["status"], "incomplete");
+        }
+        match basis {
+            Some(basis) => assert_eq!(
+                report["comment_profile_hint"],
+                json!({
+                    "profile": {"version":"1.93.0", "optimization":3},
+                    "basis": basis,
+                })
+            ),
+            None => assert!(report.get("comment_profile_hint").is_none()),
+        }
     }
 }
 

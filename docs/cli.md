@@ -1789,6 +1789,13 @@ and `status`: `unique`, `ambiguous`, `incomplete`, `no_matches`, `no_candidates`
 `unsupported`, or `unavailable`. Only `unique` has a `selected_profile`; ties have
 `tied_profiles`. A unique best score does not prove the compiler's nominal version.
 
+`comment_profile_hint` optionally suggests a complete requested O3 profile
+from consistent stable ELF `.comment` records. The `basis` is `exact_version`,
+`same_minor` for an older patch in the same minor, or `newer_than_available`
+when the compiler's minor exceeds the requested O3 range for that major.
+Prereleases and gaps within that range omit the hint. Compatibility scoring
+and any use of matched names require their own signature evidence.
+
 The flag requires `functions --summary --json`, cannot be repeated, and does not
 accept raw images, slice/target/ISA selection, image-selection options, assertions,
 or function-definition overrides. Unsupported image formats or unavailable
