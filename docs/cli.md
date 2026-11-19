@@ -1592,6 +1592,23 @@ $ kuna decompile-all stm32.bin
 ...
 ```
 
+**`--svd FILE`** (the same four subcommands) imports a CMSIS-SVD device
+description (`kuna_analysis::loader::firmware::svd`): each peripheral becomes a
+structure `<NAME>_Type` (registers as members, clusters flattened into
+`<cluster>_<register>`, `dim` arrays expanded, overlapping alternates dropped,
+gaps as reserved bytes; a `derivedFrom` peripheral reuses its base's type),
+declared at its base address as a typed global with a volatile range over its
+registers, and each `<interrupt>` names the Cortex-M handler of that IRQ
+`<NAME>_IRQHandler`. The access then reads `USART1.DR = 0x78;` instead of
+`dat_40011004 = 0x78;`. The file is read before the binary; an unreadable or
+malformed one is an argument error.
+
+```sh
+$ kuna decompile-all stm32.bin --svd STM32F401.svd
+[kuna firmware] Cortex-M vector table: base 0x8000000, ...
+[kuna firmware] SVD STM32F401: 52 peripherals, 85 interrupts
+```
+
 ## `kuna decompile-all` / `kuna functions` — whole binary, machine-readable
 
 ```bash

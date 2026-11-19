@@ -1769,7 +1769,15 @@ below the lowest handler. Handlers are named `<Exception>_Handler` and
 (`decompiler/crates/kuna-cli/src/rawfront.rs (prepare)`) turns the table into
 `--raw-image` arguments before a subcommand parses its own, so the engine sees
 an ordinary raw load; the probe runs only on a file whose magic no object
-loader claims, and an explicit `--base` or a non-ARM `--target` turns it off.
+loader claims, and an explicit `--base` or a non-ARM `--target` turns it off. `svd.rs (parse)` reads a CMSIS-SVD device with the kuna XML
+reader: peripherals (`derivedFrom` reusing the base's registers and type),
+clusters, `dim`/`dimIncrement`/`dimIndex` expansion, register sizes inherited
+from the peripheral or device, and `<interrupt>` names. `Peripheral::c_struct`
+lays a peripheral out as a C structure, dropping a register that overlaps an
+earlier one and padding gaps. The CLI's `--svd FILE` asserts the structure
+(`typedef`), the peripheral as a typed global at its base (`data`) and its
+register range as volatile, and names the IRQ handlers the vector table found
+from the interrupts.
 
 PE entry discovery and Listing seeds normalize the low bit according to the
 selected decoder before deduplication and naming. A 32-bit ARM decoder clears
