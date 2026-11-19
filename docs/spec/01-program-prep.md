@@ -9191,7 +9191,7 @@ start, and over 320 generated multi-file non-PIE gcc, clang and i386 programs
 1,944 and none. A table reached only through an unchecked jump is no longer
 found by running into it from the table before.
 
-**Tail-call entries** (`tailcallentry`, on by default, ARM-only; kuna;
+**Tail-call entries** (`tailcallentry`, on by default; ARM, AArch64, x86 and RISC-V; kuna;
 `decompiler/crates/kuna-analysis/src/listing/kuna_tailcallentry.rs (tail_call_entries)`)
 closes the walk's other structural blind spot. The recursive-descent walk
 (`decompiler/crates/kuna-analysis/src/listing/walk.rs`) makes a new function entry
@@ -9233,9 +9233,21 @@ the full model rejects. So the pass checks for both models up front and yields
 nothing without them. In production the gate that enables the pass is the same
 one that enables the models, so the check is invisible there; it is what keeps a
 later change to either gate from quietly reducing the four guards to the rule
-they replaced. Output-changing (more functions), hence default-off; ARM-only and Listing-tier, so
-it is a strict no-op on every other architecture, with `listing off`, and on the
-XML datatest path.
+they replaced. A fifth guard rejects a detour: the target's own entry-ordered
+region must not branch into the branch site's region. A protector that moves a
+run of instructions out of a function leaves a jump to the moved run and a jump
+back into the function's middle; that jump back passes the four guards above
+(the i386 crackme `explicit_branch_assertion_pe_i386.exe` has thirty of them),
+and the round trip is what tells it from a tail call, which never comes back.
+The guards are architecture-neutral; only the stack-restore
+test reads mnemonics, and it knows the ARM (`pop`, `ldm sp!`, `add sp`), x86
+(`pop`, `leave`, `add rsp`), AArch64 (`ldp x29,x30`, post-indexed loads off `sp`)
+and RISC-V (`ld ra,(sp)`, `addi sp,sp,+n`) epilogues, so the pass runs on those
+four families and is a strict no-op on every other architecture, with
+`listing off`, and on the XML datatest path. On x86-64 a static function reached
+only by a tail `jmp` across another function (`tailcall_x86_64`, and its
+AArch64 twin `tailcall_aarch64`) becomes a function instead of being emitted
+inside the one that jumps to it.
 
 **Literal-pool inference** (`poolentry`, on by default, ARM-only; kuna;
 `decompiler/crates/kuna-analysis/src/analyzers/aif/kuna_poolentry.rs`) is aimed at

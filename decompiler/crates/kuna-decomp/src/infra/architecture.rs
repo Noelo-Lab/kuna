@@ -3053,7 +3053,7 @@ impl Architecture {
         // (kuna, GH-299) AIF filler reject -- default-ON; inert without `aif`.
         // (kuna, GH-299) AIF literal-pool slide -- default-ON; inert without `aif`.
         self.analysis_aifpoolslide = true;
-        self.analysis_tailcallentry = true; // tail-call function-entry recovery (ARM-only, needs listing)
+        self.analysis_tailcallentry = true; // tail-call function-entry recovery (ARM, AArch64, x86, RISC-V; needs listing)
         self.analysis_calltable = true; // call tables and the call-table vs switch vote (needs listing)
         self.analysis_stubbinds = true; // (kuna) stripped Mach-O stubs named from their slot's chained bind (Mach-O-only pass)
         self.analysis_objc = true; // Mach-O Objective-C metadata recovery (Mach-O-only pass)
