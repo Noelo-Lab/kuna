@@ -56,13 +56,13 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_230() {
-    assert_eq!(kuna_num_settables(), 230);
-    assert_eq!(SETTABLE_TABLE.len(), 230);
+fn settable_count_is_231() {
+    assert_eq!(kuna_num_settables(), 231);
+    assert_eq!(SETTABLE_TABLE.len(), 231);
 }
 
 #[test]
-fn tier_counts_are_46_core_125_transform_59_analysis() {
+fn tier_counts_are_46_core_126_transform_59_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -74,7 +74,7 @@ fn tier_counts_are_46_core_125_transform_59_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (46, 125, 59));
+    assert_eq!((core, transform, analysis), (46, 126, 59));
 }
 
 #[test]
@@ -469,6 +469,8 @@ fn option_values_live_value_present_for_76() {
         // (kuna) Where a kernel collection's linked collections are found -- a
         // LOAD-time gate read from `KUNA_KERNELCACHE_BOOT`. Default auto.
         "kernelcache-boot",
+        // (kuna) Three-valued `on|call|off`; read console-side via kuna_live_value.
+        "objcresolve",
     ];
     let mut with_live = 0;
     for i in 0..kuna_num_settables() {
@@ -1123,7 +1125,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `calltable`; its P1 row sits after `tailcallentry`.
     // +1 for `stubbinds`; its P1 row sits after `calltable`.
     // +1 for `objcarc`; its P2 row sits after `chkstkdarwin`.
-    assert_eq!(json.matches("},\n").count(), 229);
+    // +1 for `objcresolve`; its P5 row sits after `objcarc`.
+    assert_eq!(json.matches("},\n").count(), 230);
 }
 
 #[test]

@@ -71,6 +71,10 @@ pub struct Selectors {
     by_class: HashMap<(String, String), String>,
     /// Selector strings that already carry a `sel_` symbol.
     named: HashSet<u64>,
+    /// Every named selector string by address — what a folded selector reference is.
+    pub strings: HashMap<u64, String>,
+    /// Every selector reference slot by address and the selector it holds.
+    pub slots: HashMap<u64, String>,
 }
 
 impl Selectors {
@@ -136,6 +140,7 @@ impl Selectors {
     /// selector (`alloc`, `init`) is named from its slot so a folded selref reads.
     pub fn name(&mut self, out: &mut AnalysisOutput, sel_va: u64, sel: &str) {
         if self.named.insert(sel_va) {
+            self.strings.insert(sel_va, sel.to_string());
             out.symbols.push(SymFact {
                 addr: sel_va,
                 name: format!("sel_{}", sanitize_selector(sel)),
@@ -164,6 +169,7 @@ pub(super) fn emit(
         let Some(sel_va) = img.rebase_ptr(va) else { continue };
         let Some(sel) = img.read_cstr(sel_va).filter(|s| !s.is_empty()) else { continue };
         selectors.name(out, sel_va, &sel);
+        selectors.slots.insert(va, sel.clone());
         out.data_objects.push(DataObjectFact {
             addr: va,
             name: format!("selRef_{}", sanitize_selector(&sel)),

@@ -6085,6 +6085,47 @@ every other binary's pass list is byte-identical to before the pass existed):
     `objc` off and on. A literal stored in a join block
     reached by a branch is not followed (13 of 3,005 sites in an 84 MB app).
 
+  - **Message sends typed and resolved by their receiver**
+    (`decompiler/crates/kuna-decomp/src/p5_types/kuna_objcresolve.rs (instancetype)`,
+    option **`objcresolve`** `on|call|off`, kuna, default `on`, inert
+    unless `objc` is on): the names above are per entry point, so a send still
+    read `objc_msgSend(v1, sel_setInner_, v2)` with `v1` an `objc_object *`
+    from `objc_alloc_init(_OBJC_CLASS_$_Base)`. The receiver says more: the analysis hands the engine its class table
+    (every class's own methods by selector — categories included — its
+    superclass, the `class_t` address a class reference folds to, every selector
+    string and selector-reference slot). At P5, `TypeOpCall::getOutputLocal`
+    answers for a send before the stub's locked `id` does: `alloc`,
+    `allocWithZone:`, `new` and the runtime's `objc_alloc`/`objc_alloc_init`/
+    `objc_opt_new` on a class reference return `Base *`; `init…`, `self`,
+    `retain`, `autorelease`, `copy`, `mutableCopy` return their receiver's class
+    pointer, a receiver that is itself a send being asked first so an alloc/init
+    chain types through. A method's own locked `id` return still
+    wins where the two meet (`return (objc_object *)v1;`). At P9 the printed
+    callee of a send whose receiver's class is known — a folded class reference,
+    a pointer to a class struct, or a value the P5 walk resolves — is the IMP
+    found along the superclass chain: `-[Base setInner:](v1, sel_setInner_, …)`,
+    `-[Base count](self->inner, sel_count)`, `-[Holder inner](self)` for the
+    `objc_msgSend$inner` stub. That is the default (`on`) and costs
+    one table lookup per send. Under `objcresolve call` the resolution is more
+    than a rendering: once the first decompile has resolved the sends of a
+    function, each site's IMP is recorded on the architecture
+    (`decompile_step.rs (objc_retargets)`) and the function is decompiled
+    again with every such CALL sent to the IMP — `FlowInfo::setup_call_specs`
+    asks `query_call_retarget` before the callee is looked up, so the call
+    carries the method's own prototype (`-[Base setInner:](self, SEL, id)`).
+    An `objc_msgSend$<sel>` stub site has no selector
+    argument, so it keeps the stub's argument shape (`query_call_site_pieces`)
+    with `self` typed as the receiver's class and the method's declared return.
+    The second decompile is why `call` is not the default: on an iOS 16.4
+    Objective-C daemon (1.2 MB, 1,329 resolved sends) a 400-function sample
+    costs 24% more instructions with it, and none with `on`.
+    The method named is the one the receiver's static class reaches; an
+    override in a subclass of another image is not visible, which is why the
+    resolution is an option. A method's `self`/`_cmd` parameter names are never adopted
+    for the caller's variables. A selector no class of the chain declares keeps
+    the runtime entry point. The stage test `tests/stages/kuna-objcresolve.xml`
+    runs both fixtures with the option off, on and `call`.
+
   Decoding every method's encoding asks the type factory for `objc_object *`
   once per argument, and the factory finds a type by name with a linear scan of
   every type it holds; with thousands of class structs interned that scan is no

@@ -2384,6 +2384,11 @@ fn build_func_param_name_recmap(
             if crate::kuna_naming::kuna_is_generated_name(&param_name) {
                 continue;
             }
+            // (kuna `objcresolve`) An Objective-C method's receiver and selector
+            // are its own `self` and `_cmd`, not names for the caller's values.
+            if matches!(param_name.as_str(), "self" | "_cmd") && fc.get_name().starts_with(['-', '+']) {
+                continue;
+            }
             let mut ct: Option<std::rc::Rc<crate::dtype::Datatype>> = param.get_type().cloned();
 
             let arg_vn = match data.obank().get(op).and_then(|o| o.get_in(j + 1)) {

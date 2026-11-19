@@ -175,6 +175,16 @@ kuna_options! { self, p1;
     "chkstkdarwin" => on_off!(chkstk_darwin, "Darwin stack-probe call removal"),
     "typevote" => on_off!(type_vote, "Type vote for leftover undefined variables"),
     "objcarc" => on_off!(objc_arc, "Objective-C ARC call hiding"),
+    "objcresolve" => {
+        let (resolve, call) = match p1 {
+            "call" => (true, true),
+            other => (on_or_off(other)?, false),
+        };
+        self.objc_resolve = resolve;
+        self.objc_resolve_call = call;
+        let state = if call { "on, calls retargeted" } else if resolve { "on" } else { "off" };
+        Ok(format!("Objective-C message sends typed and resolved by receiver turned {state}"))
+    },
     "tailcalljump" => {
         let (jumps, tables, msg) = crate::kuna_tailcalljump::tail_call_mode(p1)?;
         self.tail_call_jumps = jumps;

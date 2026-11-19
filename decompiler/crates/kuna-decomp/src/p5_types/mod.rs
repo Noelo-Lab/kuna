@@ -19,6 +19,7 @@ pub mod coreaction_infertypes;
 pub(crate) mod kuna_stackwordtypes;
 pub mod kuna_memsetsequence;
 pub mod kuna_rodatastring;
+pub mod kuna_objcresolve; // (kuna) an Objective-C message send typed and resolved by its receiver
 pub mod kuna_fatstr; // (kuna) length-carried (ptr,len) string literals (docs/multilang.md W3/W4)
 pub mod kuna_ptrdepth;
 pub mod kuna_codescalar;

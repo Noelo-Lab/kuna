@@ -6373,6 +6373,13 @@ fn commit_analysis_output(
     //    struct takes `self` as `Class *` instead of the encoding's `id`.
     let self_types: std::collections::HashMap<String, Rc<kuna_decomp::dtype::Datatype>> =
         if prog.arch().analysis_objcivars { out.objc_self_types.into_iter().collect() } else { Default::default() };
+    // (kuna `objcresolve`) The ObjC class table the engine types
+    // and resolves message sends with; it rides the `objc` gate like the labels.
+    if let Some(table) = out.objc_classes {
+        if prog.arch().analysis_objc {
+            prog.arch_mut().kuna_objc_classes = Rc::new(table);
+        }
+    }
     for mut pieces in out.prototypes {
         if let Some(st) = self_types.get(&pieces.name) {
             if let Some(first) = pieces.intypes.first_mut() {
