@@ -1602,6 +1602,29 @@ getter is `Base * -[Holder inner](Holder *self, …)` and the setter takes `Base
 declares it) but `self` is untyped; with `objc off` everything is
 `sub_<addr>(void *a0)`.
 
+### `macho_objc_direct_arm64` — direct methods
+
+`macho_objc_direct_arm64` (arm64, ~50 KB) is the fixture for the receiver of a
+direct method (`analyzers/objc/kuna_objcdirect.rs`, stage test
+`tests/stages/kuna-objcdirect.xml`). Source `macho_objc_direct.m`: `Label {
+Class isa; int flags; Label *next; }` with `-[Label bump:]` and `+[Label
+scale:]` declared `__attribute__((objc_direct))` and an ordinary `-[Label
+flags]`. The instance method list holds `flags` alone; the two direct methods
+are C functions (`bump:` takes `self` in `x0` and `n` in `w1`, with the nil
+check the compiler puts in a direct method) that only their local symbols name,
+so the link keeps local symbols (no `-x`):
+
+```bash
+clang -target arm64-apple-macos11 -fno-objc-arc -O1 -c macho_objc_direct.m -o direct.o
+ld64.lld -arch arm64 -platform_version macos 11.0 11.0 -fixup_chains \
+         -undefined dynamic_lookup -e _main -o macho_objc_direct_arm64 direct.o
+```
+
+**Pinned VMAs:** `-[Label bump:]`@`0x1000006e0`, `+[Label scale:]`@`0x1000006fc`,
+`-[Label flags]`@`0x100000728`. With `objc on` `bump:` reads
+`int -[Label bump:](Label *self,int a1)` with `self->flags = self->flags + a1;`
+and `return self->next->flags;`.
+
 ## Stripped-PE / stripped-Mach-O entry discovery (PR-12+13)
 
 The multi-format **entry-discovery** gate

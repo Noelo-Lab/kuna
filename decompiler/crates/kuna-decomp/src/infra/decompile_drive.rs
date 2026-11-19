@@ -2021,6 +2021,10 @@ fn decompile_func_full_with_objects_inner(
             proto.set_model(Some(model));
             proto.set_model_lock(true);
             fd.kuna_set_input_hints(input_hints.clone());
+        } else if input_hints.is_some() {
+            // (kuna) Hints under the default convention: an Objective-C
+            // direct method's `self`.
+            fd.kuna_set_input_hints(input_hints.clone());
         }
         let go_string_input = if arch.analysis_godwarfsig
             && arch.image_linux_elf
