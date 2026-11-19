@@ -700,6 +700,9 @@ pub fn universal_sched(
                 false,
                 "returnsplit"
             ))),
+            // (kuna) copyrun (option `copyrun`): an unrolled run of element
+            // copies within one block, collapsed into memcpy.
+            act!(Box::new(crate::kuna_copyrun::ActionCopyRun::new("returnsplit"))),
             // (kuna) devectorize (option `devectorize`, default-OFF): re-roll a
             // vectorized integer reduction -- guard, stride loop with one
             // accumulator per lane, fold, scalar remainder loop -- into its scalar

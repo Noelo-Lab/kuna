@@ -460,6 +460,7 @@ kuna_options! { self, p1;
     "cmpmerge" => on_off!(cmp_merge, "comparison merge"),
     "bitidioms" => on_off!(bit_idioms, "byte-swap, rotate, abs and bit-scan idioms"),
     "mba" => on_off!(mba, "mixed boolean-arithmetic simplification"),
+    "copyrun" => on_off!(copy_run, "unrolled element-copy runs as memcpy"),
     "regionstructure" => {
         let (val, msg) =
             crate::p8_structure::region_structurer::OptionRegionStructure.apply(p1)?;

@@ -1,0 +1,51 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    An element-copy run beside a global its stores may alias (`option copyrun`).
+
+    Issue: heritage hangs one INDIRECT of every global a store may alias on
+    each store of the run, a chain per global. `copyrun` moved each of them
+    onto the one `memcpy` it puts in the run's place, so the builtin carried
+    a chain of INDIRECTs of the same global whose middle values overlap; the
+    global's variable could not be merged and printed a self-assignment per
+    INDIRECT (`token = token;` seven times, and `token = v2;` before the
+    copy).
+
+    Stage / sub-stage: P3, `ActionCopyRun`
+    (`kuna-decomp/src/p3_dataflow/kuna_copyrun.rs`): each chain is folded to
+    one INDIRECT on the builtin, reading the chain's first input; a run whose
+    chain has another reader is left as it is.
+
+    Fixture `copyrun_global_x86_64` (gcc -O2, x86-64; source
+    `copyrun_global.c`): `copy_guarded` copies a 64-byte struct between a
+    `swift_once`-like guarded call on the global `token` and a tail call
+    taking `token`. Pass 1 (`copyrun off`) prints the element copies; pass 2
+    (the default) one `memcpy` and no assignment of `token`.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/copyrun_global_x86_64</com>
+  <com>option copyrun off</com>
+  <com>read symbols</com>
+  <com>load function copy_guarded</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/copyrun_global_x86_64</com>
+  <com>read symbols</com>
+  <com>load function copy_guarded</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="copyrun off: the struct is copied element by element" min="1" max="1">a0\[6\] = a1\[6\];</stringmatch>
+<stringmatch name="copyrun on: the run is one memcpy" min="1" max="1">builtin_memcpy\(a0,a1,0x40\);</stringmatch>
+<stringmatch name="the global is never assigned to itself" min="0" max="0">token = token;</stringmatch>
+<stringmatch name="the global is never assigned at all" min="0" max="0">token = </stringmatch>
+<stringmatch name="the value read before the copy reaches the tail call" min="1" max="1">consume\(a0,v1\);</stringmatch>
+</decompilertest>

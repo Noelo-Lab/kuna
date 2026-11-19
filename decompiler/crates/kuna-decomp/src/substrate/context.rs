@@ -1084,6 +1084,8 @@ pub struct ArchContext {
     pub cmp_merge: bool,
     /// (kuna) `bitidioms` — byte swap, rotate, abs, bit reversal and bit-scan idioms.
     pub bit_idioms: bool,
+    /// (kuna) `copyrun` — collapse an unrolled element-copy run into `memcpy`.
+    pub copy_run: bool,
     /// (kuna) `mba` — simplify mixed boolean-arithmetic expressions.
     pub mba: bool,
     /// (kuna) region-based (Phoenix/SAILR) structurer: structure the CFG by
@@ -1692,6 +1694,7 @@ impl ArchContext {
             pow2_select: false, // pow2select (live value copied from the Architecture)
             cmp_merge: false, // cmpmerge (live value copied from the Architecture)
             bit_idioms: false, // bitidioms (live value copied from the Architecture)
+            copy_run: false, // copyrun (live value copied from the Architecture)
             mba: false, // mba (live value copied from the Architecture)
             region_structure: false,     // regionstructure (opt-in default-off)
             guard_arm: false,            // guardarm (opt-in default-off)

@@ -931,6 +931,9 @@ pub struct Architecture {
     /// bit-scan loops into `bswap` / `rotl` / `abs` / `bitreverse` / `ctz`
     /// (option `bitidioms`).  See [`crate::p3_dataflow::kuna_bitidioms`].
     pub bit_idioms: bool,
+    /// (kuna) Collapse an unrolled element-copy run into `memcpy` (option
+    /// `copyrun`).  See [`crate::p3_dataflow::kuna_copyrun`].
+    pub copy_run: bool,
     /// (kuna) Simplify mixed boolean-arithmetic expressions (option `mba`).  See
     /// [`crate::p3_dataflow::kuna_mba`].
     pub mba: bool,
@@ -2479,6 +2482,7 @@ impl Architecture {
             pow2_select: false, // (kuna) option pow2select; reset_defaults sets the shipped default
             cmp_merge: false, // (kuna) option cmpmerge; reset_defaults sets the shipped default
             bit_idioms: false, // (kuna) option bitidioms; reset_defaults sets the shipped default
+            copy_run: false, // (kuna) option copyrun; reset_defaults sets the shipped default
             mba: false, // (kuna) option mba; reset_defaults sets the shipped default
             region_structure: true,
             guard_arm: false,
@@ -2834,6 +2838,7 @@ impl Architecture {
         self.range_fold = true; // (kuna) option rangefold default-on: folds only a comparison or mask a dominating branch's range decides; 0/675 datatest assertions, speed within noise; see docs/spec/03-ssa-and-simplification.md
         self.pow2_select = true; // (kuna) option pow2select default-on: rewrites only a select or sign-mask shift proved equal to x / 2^k or x % 2^k; 0/675 datatest assertions; see docs/spec/03-ssa-and-simplification.md
         self.bit_idioms = true; // (kuna) option bitidioms default-on: folds only a proved byte swap, rotate, abs, bit reversal or bit-scan loop; 0/675 datatest assertions; see docs/spec/03-ssa-and-simplification.md
+        self.copy_run = true; // (kuna) option copyrun default-on: an unrolled element-copy run prints as memcpy; 0/675 datatest assertions
         self.cortexmpriv = true; // (kuna) DIV-99: default-ON; the fixup is registered only on a language that declares the user-op (ARM), so inert elsewhere; "the core is privileged" is a modelling judgement, so `off` audits unprivileged Thread-mode code
         self.acle_intrinsics = true; // (kuna) option acleintrinsics default-on; reads the AArch64 `ShowMemTag` context and AArch64 user-op names only, so inert on every other target
         self.float_globals = true; // (kuna) option floatglobals default-on
@@ -3591,6 +3596,7 @@ impl Architecture {
         ctx.pow2_select = self.pow2_select; // pow2select
         ctx.cmp_merge = self.cmp_merge; // cmpmerge
         ctx.bit_idioms = self.bit_idioms; // bitidioms
+        ctx.copy_run = self.copy_run; // copyrun
         ctx.mba = self.mba; // mba
         ctx.region_structure = self.region_structure; // regionstructure
         ctx.guard_arm = self.guard_arm; // guardarm

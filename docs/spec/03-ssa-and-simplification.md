@@ -3663,6 +3663,39 @@ loop, replaces the counter's uses after the loop with `ctz(x)` (or
 `BUILTIN_BSWAP`, `BUILTIN_ROTL`, `BUILTIN_BITREV`, `BUILTIN_CTZ` (unspecialised)
 and `BUILTIN_ABS`/`BUILTIN_LABS` (typed `int`/`long`).
 
+**Unrolled copies** (`option copyrun`, default **on**) —
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_copyrun.rs (ActionCopyRun)`,
+in the fullloop tail with the other edge-removal strippers. A fixed-size copy (a struct
+assignment, a constant-length `memcpy`) is expanded by the compiler into loads
+and stores of its widest registers, which printed one assignment per element.
+The action groups the STOREs of each basic block whose value is a LOAD of the
+same width in the same block, through COPYs that nothing else reads. A pointer
+is read as a base plus a constant, through COPY, CAST, `INT_ADD` or `PTRSUB` of
+a constant and `PTRADD` of a constant index; stores group when their
+destinations share a base, their sources share a base, and every pair's
+destination offset minus its source offset is the same. A group is rewritten
+when the bytes its stores write are one contiguous range (stores may overlap,
+as gcc's 31-byte copy with 8-byte moves at 0, 8, 15 and 23 does), it has at
+least three stores or two covering 32 bytes (two SSE moves), so a two-word
+assignment keeps its two statements, nothing between its first and last op
+reads or writes memory or calls, the ranges do not overlap when both bases are
+the same pointer, and the destination is not in the function's own frame (a builtin
+placed after heritage would leave the frame locations it writes without a
+definition). `builtin_memcpy(base + lo, base' + lo', n)` is
+placed at the last store and the stores, loads and copies are destroyed. The
+`INDIRECT`s heritage hung on the stores (an address-taken local or a global the
+destination may alias) form one chain per storage location, one link per
+store, each reading the one before; each chain is folded to a single
+`INDIRECT` on the builtin that reads the chain's first input, and the other
+links are destroyed. Moving every link onto the one builtin instead would hang
+several `INDIRECT`s of one location on one op with overlapping values, which
+the merge cannot join, so the location printed a self-assignment per link
+(`dat_x = dat_x;` around every guarded `swift_once` of a Swift accessor). A
+run whose chain is broken, or whose intermediate value has a reader other
+than the next link, is not rewritten. The run copies element by element in program order, which `memcpy`
+does not promise for buffers that overlap through different pointers; the
+rewrite cannot see that, which is what the option is for.
+
 **constspaceload** (repipe `arm-neon-zero-initialization`) —
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_constspaceload.rs
 (RuleConstSpaceLoad)`, oppool1, fires on LOAD. *Pattern:* a LOAD whose space
