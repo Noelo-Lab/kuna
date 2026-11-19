@@ -29,6 +29,7 @@
 //! decoded instruction.
 
 pub mod classify;
+pub mod kuna_aifdataveto;
 mod kuna_compactrefs;
 mod kuna_insnindex;
 mod kuna_insnstore;

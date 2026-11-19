@@ -13,9 +13,9 @@
     the target's language, patterns/mod.rs for_language, and seeds the walk).
 
     Option: funcstart_patterns (off by default; the decompile-all driver turns
-    it on for a headerless image). Pass 1 is off and can only load the seed by
-    name; pass 2 is on and loads the two table-reached functions by name, which
-    succeeds only when the sweep put them in the inventory.
+    it on for a headerless image). Pass 1 is off: the inventory is the seed
+    alone. Pass 2 is on: the two table-reached functions are in it and load by
+    name.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -26,13 +26,12 @@ c3
   <com>clear architecture</com>
   <com>load raw x86:LE:64:default 0x401000 0x401055 tests/stages/fixtures/rawpatterns/raw-fp-x86-64.bin</com>
   <com>read symbols</com>
-  <com>load function sub_401055</com>
-  <com>decompile</com>
-  <com>print C</com>
+  <com>functions</com>
   <com>clear architecture</com>
   <com>load raw x86:LE:64:default 0x401000 0x401055 tests/stages/fixtures/rawpatterns/raw-fp-x86-64.bin</com>
   <com>option funcstart_patterns on</com>
   <com>read symbols</com>
+  <com>functions</com>
   <com>load function sub_401015</com>
   <com>decompile</com>
   <com>print C</com>
@@ -41,7 +40,8 @@ c3
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="RAWPATTERNS #1: the seed is in the inventory either way" min="1" max="1">sub_401055\(</stringmatch>
-<stringmatch name="RAWPATTERNS #2: on, the pattern sweep adds the loop function" min="1" max="1">sub_401015\(</stringmatch>
-<stringmatch name="RAWPATTERNS #3: on, and the xor function" min="1" max="1">sub_401043\(</stringmatch>
+<stringmatch name="RAWPATTERNS #1: the seed is in the inventory either way" min="2" max="2">0x401055 sub_401055</stringmatch>
+<stringmatch name="RAWPATTERNS #2: off, the table-reached functions are not" min="1" max="1">0x401015 sub_401015</stringmatch>
+<stringmatch name="RAWPATTERNS #3: on, the pattern sweep adds the loop function" min="1" max="1">sub_401015\(</stringmatch>
+<stringmatch name="RAWPATTERNS #4: on, and the xor function" min="1" max="1">sub_401043\(</stringmatch>
 </decompilertest>

@@ -5391,12 +5391,16 @@ fn commit_model_facts(
 fn commit_analysis_output(
     prog: &mut ConsoleProgram,
     code_space: &Rc<AddrSpace>,
-    out: kuna_analysis::pass::AnalysisOutput,
+    mut out: kuna_analysis::pass::AnalysisOutput,
     zero_size_data_names: Vec<String>,
 ) -> KunaResult<()> {
     use kuna_analysis::pass::SymKind;
 
     let num_spaces = prog.arch().manage().num_spaces();
+    if !out.data_vetoed.is_empty() {
+        let vetoed: BTreeSet<u64> = out.data_vetoed.iter().copied().collect();
+        out.entries.retain(|e| !vetoed.contains(e));
+    }
 
     // 0. (kuna `cppproto`) The DWARF C++ arm's facts, stashed apart by the
     //    producing pass: they fold into the normal symbol/local streams below and

@@ -911,3 +911,6 @@ mod xrefs_immutable_got;
 
 #[path = "addrtable_xrefs.rs"]
 mod addrtable_xrefs;
+
+#[path = "aif_data_veto.rs"]
+mod aif_data_veto;

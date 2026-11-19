@@ -1317,6 +1317,19 @@ pub fn run_listing_consumers_replaying_observed(
             let bodies = crate::entry::sized_function_bodies(&file);
             aif_out.entries = checked.entries;
             aif_out.entries.retain(|&vma| !crate::entry::inside_body(&bodies, vma));
+            // Code the program loads from or stores to is a table, a literal
+            // or a variable, however well its bytes decode: the gap entries
+            // and every other discovered entry the data targets cover go.
+            if let Some(data) = arch.manage().get_default_data_space() {
+                let targets = crate::listing::kuna_aifdataveto::data_targets(&listing, translate, code_space, data);
+                crate::listing::kuna_aifdataveto::without_data_entries(&listing, &targets, &mut aif_out.entries);
+                aif_out.data_vetoed = listing
+                    .functions()
+                    .filter(|(_, f)| !f.from_symbol)
+                    .map(|(&e, _)| e)
+                    .filter(|e| targets.contains(e))
+                    .collect();
+            }
             if !checked.pool_entries.is_empty() {
                 let mut pool_out = AnalysisOutput::default();
                 pool_out.entries = checked.pool_entries;
