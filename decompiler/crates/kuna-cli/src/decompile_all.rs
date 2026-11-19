@@ -275,6 +275,7 @@ pub(crate) struct Filters {
     sort: SortKey,
     /// `--summary`: report the orientation document instead of the inventory.
     pub(crate) summary: bool,
+    rust_signature_manifest: Option<String>,
 }
 
 impl Filters {
@@ -389,6 +390,7 @@ struct Summary {
     runtime: Vec<crate::runtime_hints::RuntimeHint>,
     /// The selected functions a decompile would hit an engine budget on.
     limits: crate::limits::Limits,
+    rust_fields: Vec<(String, Json)>,
 }
 
 /// Measure the orientation document over `all` (the discovered inventory) and
@@ -436,6 +438,7 @@ fn summarize(
         runtime: crate::image::inspect(binary, |bytes| Some(crate::runtime_hints::detect(bytes, true)))
             .unwrap_or_default(),
         limits: crate::limits::measure(prog, graph, selected),
+        rust_fields: Vec::new(),
     }
 }
 
@@ -519,6 +522,7 @@ fn summary_json(
         ),
     ];
     doc.extend(declared.fid_databases_field());
+    doc.extend(summary.rust_fields.iter().cloned());
     doc.push((
         "summary".into(),
         Json::Object(vec![
@@ -1232,7 +1236,25 @@ pub fn run_functions(argv: &[String]) -> i32 {
 /// orients by are the same numbers `kuna functions` reports, and asking for
 /// orientation never pays for a decompile it is trying to avoid.
 fn run_summary(args: &Args, filters: &Filters) -> i32 {
-    let (prog, all) = match list_functions(args) {
+    let (request, rust_manifest) = match filters.rust_signature_manifest.as_deref() {
+        Some(path) => match crate::rust_signatures::load(std::path::Path::new(path)) {
+            Ok((request, manifest)) => (Some(request), Some(manifest)),
+            Err(error) => {
+                eprintln!("error: {error}");
+                return 1;
+            }
+        },
+        None => (None, None),
+    };
+    let loaded = match request {
+        Some(request) => load_program_with_rust_profiles(args, DriverDefaults::Functions, Some(request))
+            .map(|prog| {
+                let all = prog.function_entries_canonical();
+                (prog, all)
+            }),
+        None => list_functions(args),
+    };
+    let (prog, all) = match loaded {
         Ok(loaded) => loaded,
         Err(e) => {
             crate::runtime_hints::note_to_stderr(&args.binary);
@@ -1257,7 +1279,10 @@ fn run_summary(args: &Args, filters: &Filters) -> i32 {
         eprintln!("error: --summary could not build the program call graph");
         return 1;
     };
-    let summary = summarize(&args.binary, &prog, filters, &graph, &all, &selected);
+    let mut summary = summarize(&args.binary, &prog, filters, &graph, &all, &selected);
+    if let Some(manifest) = &rust_manifest {
+        summary.rust_fields = crate::rust_signatures::fields(manifest, prog.rust_profile_report());
+    }
     let declared = crate::funcdecl::Declared::of(&prog);
     let warnings: Vec<String> = prog
         .load_notes()
@@ -1693,6 +1718,14 @@ pub(crate) fn load_program(
     args: &Args,
     defaults: DriverDefaults,
 ) -> Result<ConsoleProgram, String> {
+    load_program_with_rust_profiles(args, defaults, None)
+}
+
+fn load_program_with_rust_profiles(
+    args: &Args,
+    defaults: DriverDefaults,
+    request: Option<kuna_analysis::flirt::kuna_rustprofiles::Request>,
+) -> Result<ConsoleProgram, String> {
     let binary = std::fs::canonicalize(&args.binary)
         .map_err(|_| format!("binary not found: {}", args.binary))?
         .to_string_lossy()
@@ -1794,6 +1827,9 @@ pub(crate) fn load_program(
         kuna_console::assertions::apply_image_scoped(&mut prog);
     }
     replay_worker_arm_frames(&mut prog, args)?;
+    if let Some(request) = request {
+        prog.request_rust_profiles(request);
+    }
     prog.commit_pending_analysis()
         .map_err(|e| format!("read symbols (analysis commit) failed: {}", e.explain()))?;
     // AFTER the commit: a caller-declared boundary is an assertion that outranks
@@ -2999,6 +3035,12 @@ pub(crate) fn parse_args_with_filters(
                 filters.sort = SortKey::parse(&v)?;
             }
             "--summary" if triageable => filters.summary = true,
+            "--rust-signature-manifest" if cmd == "functions" => {
+                let value = take(argv, &mut i, "--rust-signature-manifest")?;
+                if filters.rust_signature_manifest.replace(value).is_some() {
+                    return Err("duplicate --rust-signature-manifest".into());
+                }
+            }
             "--option" => options.push(crate::args::take_option(argv, &mut i)?),
             // (kuna outlang) `--language` is the first-class surface for the
             // output language; it lowers to the upstream `setlanguage` option, so
@@ -3040,6 +3082,17 @@ pub(crate) fn parse_args_with_filters(
     }
 
     let binary = binary.ok_or_else(|| format!("{cmd} requires <binary>"))?;
+    if filters.rust_signature_manifest.is_some() {
+        if !filters.summary || !json {
+            return Err("--rust-signature-manifest requires functions --summary --json".into());
+        }
+        if raw_image || slice.is_some() || target.is_some() || isa.is_some()
+            || !assertions.is_empty() || !func_decls.is_empty()
+            || options.iter().any(|(name, _)| matches!(name.as_str(), "dyldimage" | "kernelcache"))
+        {
+            return Err("--rust-signature-manifest requires an unmodified object image without raw, slice, target, ISA, image-selection, assertion, or function-definition overrides".into());
+        }
+    }
     if !omit.is_empty() {
         if !json {
             return Err("--omit selects --json record keys; add --json".into());
@@ -3327,6 +3380,7 @@ fn usage_functions() {
          \x20               [--define-function S[-E][=N]|@FILE].. [--jobs N|auto] \\\n\
          \x20               [--mode auto|reliable|aggressive|fast] [--isa auto|arm|thumb] [--slice ARCH] [--target T] [--sleighpath D]\n\
          \x20               [--raw-image --target T --base VMA (--entry|--addr VMA)..]\n\
+         \x20               [--rust-signature-manifest PATH (requires --summary --json)]\n\
          \n\
          List every function kuna discovers in a binary as `<addr>\\t<name>` (or\n\
          --json: {{binary,count,total,functions:[{{name,address,address_hex,aliases,size}}]}}).\n\
@@ -3342,6 +3396,9 @@ fn usage_functions() {
          functions (10 by default). Its `warnings` array repeats the loader's\n\
          header repairs (a dropped ELF section table, a repaired PE DOS magic, a\n\
          clamped data-directory count) that the run also printed on stderr.\n\
+         --rust-signature-manifest reads verified external Rust signature banks\n\
+         once for the summary. It reports compiler metadata separately from\n\
+         signature-profile scores; it downloads nothing and installs no names.\n\
          Shares decompile-all's discovery policy, so the inventory always contains\n\
          every function a whole-binary run would decompile; on a non-x86-64 binary\n\
          that means a full prologue-pattern + gap-walk discovery pass.\n\
@@ -3871,6 +3928,35 @@ mod triage_tests {
         assert_eq!(SortKey::parse("name").unwrap(), SortKey::Name);
         assert!(SortKey::parse("entropy").is_err());
         assert_eq!(SortKey::default(), SortKey::Addr);
+    }
+
+    #[test]
+    fn rust_signature_manifest_requires_the_unmodified_json_summary_surface() {
+        let valid = ["--summary", "--json", "--rust-signature-manifest", "manifest.json"];
+        let (_, filters) = parse("functions", &valid).unwrap();
+        assert_eq!(filters.rust_signature_manifest.as_deref(), Some("manifest.json"));
+        for cmd in ["decompile-all", "decompile-project", "decompile-graph", "decompile"] {
+            assert!(parse(cmd, &valid).is_err(), "{cmd}");
+        }
+        for flags in [
+            vec!["--rust-signature-manifest", "manifest.json"],
+            vec!["--summary", "--rust-signature-manifest", "manifest.json"],
+            vec!["--json", "--rust-signature-manifest", "manifest.json"],
+        ] {
+            assert!(err(parse("functions", &flags)).contains("requires functions --summary --json"));
+        }
+        for extra in [
+            vec!["--rust-signature-manifest", "second.json"],
+            vec!["--raw-image"],
+            vec!["--slice", "x86_64"],
+            vec!["--target", "x86:LE:64:default"],
+            vec!["--isa", "arm"],
+            vec!["--define-function", "0x1000=probe"],
+            vec!["--option", "dyldimage", "probe"],
+        ] {
+            let flags: Vec<_> = valid.iter().copied().chain(extra).collect();
+            assert!(parse("functions", &flags).is_err(), "{flags:?}");
+        }
     }
 
     /// An unnarrowed run must keep every pre-existing behaviour, so `narrows()`

@@ -58,6 +58,7 @@ use kuna_num::pcoderaw::VarnodeData;
 use kuna_sleigh::loadimage::{section_flags, LoadImage, LoadImageFunc, LoadImageSection};
 use kuna_analysis::loadimage_object::{is_arm32_language, ObjectLoadImage, PE_MACHINES};
 use kuna_analysis::loadimage_mz::{is_mz_dos_image, MzImage, MZ_LANGUAGE};
+use kuna_analysis::flirt::kuna_rustprofiles::{ImageReport as RustProfileReport, Request as RustProfileRequest};
 use kuna_analysis::loadimage_te::{is_te_image, TeLoadImage, TE_PROBE_LEN};
 use kuna_sleigh::loadimage_xml::LoadImageXml;
 use kuna_sleigh::loadimage_xml::register_loadimage_xml_ids;
@@ -601,6 +602,8 @@ pub struct ConsoleProgram {
     /// analysis commit (`AnalysisOutput::fid_databases`). Empty when the FID
     /// pass did not run or no database was configured.
     fid_databases: Vec<kuna_analysis::fid::kuna_fidapply::FidDbReport>,
+    rust_profile_request: Option<RustProfileRequest>,
+    rust_profile_report: Option<RustProfileReport>,
     /// (kuna) The image bytes + path stashed at load for the **deferred Listing
     /// build** (the Listing/xref PR6 build-timing fix). The Listing is gated on
     /// `--option listing on`, a flag the live CLI sets AFTER `load file` (before
@@ -798,6 +801,16 @@ impl ConsoleProgram {
     /// `kuna_analysis::fid::kuna_fidapply`).
     pub fn fid_databases(&self) -> &[kuna_analysis::fid::kuna_fidapply::FidDbReport] {
         &self.fid_databases
+    }
+
+    /// Request one read-only observation of the next accepted image Listing.
+    pub fn request_rust_profiles(&mut self, request: RustProfileRequest) {
+        self.rust_profile_request = Some(request);
+        self.rust_profile_report = Some(RustProfileReport::unavailable());
+    }
+
+    pub fn rust_profile_report(&self) -> Option<&RustProfileReport> {
+        self.rust_profile_report.as_ref()
     }
 
     /// The loaded image's file name, as the loader reports it.
@@ -2901,9 +2914,11 @@ impl ConsoleProgram {
     /// `arch.analysis_listing` is on, the stashed image bytes are re-parsed, the
     /// Listing is built, and the enabled Listing-consumer passes run; their
     /// defensively re-gated facts merge into the same `merged` output committed
-    /// below. With Listing off, this whole block is skipped.
+    /// below. Fast inventory or an explicit Rust profile request can also need
+    /// this Listing while the ordinary Listing-consumer gates remain off.
     pub fn commit_pending_analysis(&mut self) -> KunaResult<()> {
         let _load = self.arch().load_scope();
+        let rust_profile_request = self.rust_profile_request.take();
         if !self.pending_synthetic_entries.is_empty() {
             // (kuna `rawdiscover`) A headerless image reaches this point holding
             // only the `--entry` addresses the caller typed, because the
@@ -3002,7 +3017,9 @@ impl ConsoleProgram {
                 ),
             );
         }
-        if self.pending_analysis.is_empty() && self.loader_data_objects.is_empty() {
+        if self.pending_analysis.is_empty() && self.loader_data_objects.is_empty()
+            && rust_profile_request.is_none()
+        {
             // Drop the deferred-Listing stash too: nothing to commit against, and
             // a session with no analysis tier (XML path) must not build a Listing.
             self.analysis_image = None;
@@ -3062,6 +3079,17 @@ impl ConsoleProgram {
         // the gate was off (the default). See `passes::run_deferred_entry_passes`.
         if self.analysis_image.is_some() {
             if let Some((path, bytes, import_proofs)) = self.analysis_image.take() {
+                let profile_request = if rust_profile_request.is_some() {
+                    match RustProfileReport::reject_unsupported(&bytes) {
+                        Some(report) => {
+                            self.rust_profile_report = Some(report);
+                            None
+                        }
+                        None => rust_profile_request.as_ref(),
+                    }
+                } else {
+                    None
+                };
                 let _import_proofs =
                     kuna_analysis::loader::ImportProofScope::resume(&bytes, Some(import_proofs));
                 let image_path = std::path::Path::new(&path);
@@ -3087,7 +3115,7 @@ impl ConsoleProgram {
                     // on the matching option. The call-fixup seed list is the names
                     // the load-time pass flagged resolved to addresses via the
                     // (already installed) symbol table.
-                    if want_listing || want_fast_funcdisc {
+                    if want_listing || want_fast_funcdisc || profile_request.is_some() {
                         let mut committed_entry_seeds = merged.entries.clone();
                         committed_entry_seeds.sort_unstable();
                         committed_entry_seeds.dedup();
@@ -3107,7 +3135,16 @@ impl ConsoleProgram {
                         // share it takes is released with the plan, before any
                         // later writer of the loader's bytes.
                         let plan = kuna_analysis::listing::WalkPlan::from_env(arch);
-                        let consumer_out = kuna_analysis::passes::run_listing_consumers_replaying(
+                        let mut rust_report = None;
+                        let mut observe_rust = |file: &object::File<'_>, listing: &kuna_analysis::listing::Listing| {
+                            if let Some(request) = profile_request {
+                                rust_report = Some(request.evaluate(file, listing));
+                            }
+                        };
+                        let observer = profile_request.map(|_| {
+                            &mut observe_rust as &mut dyn FnMut(&object::File<'_>, &kuna_analysis::listing::Listing)
+                        });
+                        let consumer_out = kuna_analysis::passes::run_listing_consumers_replaying_observed(
                             &bytes,
                             arch,
                             arch.translate(),
@@ -3117,7 +3154,11 @@ impl ConsoleProgram {
                             &merged.fde_interior_entries,
                             &plan,
                             self.arm_frames.as_ref(),
+                            observer,
                         );
+                        if profile_request.is_some() {
+                            self.rust_profile_report = Some(rust_report.unwrap_or_else(|| RustProfileReport::unavailable_for(&bytes)));
+                        }
                         for (id, mut out) in consumer_out {
                             if let Some(record) = out.arm_frames.take() {
                                 self.arm_frames = Some(record);
@@ -4173,6 +4214,8 @@ fn empty_program(
         libctypes_glibc: false,
         libctypes_refused: false,
         fid_databases: Vec::new(),
+        rust_profile_request: None,
+        rust_profile_report: None,
         analysis_image: None,
         arm_frames: None,
         loader_data_objects: Vec::new(),
@@ -5237,6 +5280,13 @@ fn commit_model_facts(
     let mut models = (*prog.arch().loader_proto_models).clone();
     for fact in facts {
         let Some(model) = prog.arch().get_model(fact.model).cloned() else { continue };
+        let model = if let Some(inputs) = &fact.leaf_stack_inputs {
+            let Some(limit) = inputs.proven_limit(prog.arch(), fact.func_addr) else { continue };
+            let Some(bounded) = model.kuna_bound_stack_inputs(limit) else { continue };
+            Rc::new(bounded)
+        } else {
+            model
+        };
         models.insert((code_space.get_index(), fact.func_addr), model);
     }
     prog.arch_mut().loader_proto_models = Rc::new(models);

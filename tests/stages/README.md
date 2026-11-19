@@ -1,5 +1,10 @@
 # Stage-model issue testcases
 
+`ghangr-go-abi0-model.xml` checks recovery of a Go stack-input leaf and the
+arguments passed by both call orders. It also checks the disabled option,
+an ordinary name lookalike, a wrapper with stack results, the signal
+trampoline and two linked runtime functions with private or foreign exits.
+
 `ghangr-call-argument-extensions.xml` checks explicit and missing parameter
 contracts. The CLI companion executes complete emitted C, Go and Rust callers
 and callees, covering zero extension, sign extension, signedness and store canaries.
@@ -119,6 +124,8 @@ writeup, not here.
 | `gh1627-x86-senduipi-gatherpf.xml` | [Kuna #1627](https://github.com/Noelo-Lab/kuna/issues/1627) | S1 decode-table / S2 p-code lift (x86 spec-fix, no option) | `F3 0F C7 /6` reg-form is `SENDUIPI r64` (was RDRAND), with `UIRET`/`TESTUI`/`CLUI`/`STUI` in `uintr.sinc`; RIP-relative `0F 18 /7`,`/6` are `PREFETCHIT0/1`; `VGATHERPF*` use the VSIB operand tables so the index is a ZMM/YMM register and the user-op takes an address |
 
 | `gh1628-x86-vmx-decode-flags.xml` | [Kuna #1628](https://github.com/Noelo-Lab/kuna/issues/1628) | S1 decode-table / S2 p-code lift (x86 spec-fix, no option) | `VMREAD`/`VMWRITE` decode without REX.W in 64-bit mode; every VMX user-op returns its status (0/1/2) and `vmxflags` sets ZF/CF from it, so `setna` after `vmlaunch` reads the VMX outcome; `VMPTRST` stores the VMCS pointer |
+
+| `gh1674-subpiece-shadow-wide-const.xml` | [Kuna #1674](https://github.com/Noelo-Lab/kuna/issues/1674) | P6 merge (cover intersection, partial copy shadow; no option) | a constant truncated by 8 or more bytes reads 0 instead of shifting a 64-bit offset by 64 or more bits, so the function decompiles in a build with overflow checks |
 
 | `gh9184-x86-fma-ymm256.xml` | [GH-9184](https://github.com/NationalSecurityAgency/ghidra/issues/9184) | S1/S2 decode + pcode-semantics (x86 spec-fix, no option) | SLEIGH YMM FMA uses 256-bit `local tmp:32` (was `tmp:16`) |
 
