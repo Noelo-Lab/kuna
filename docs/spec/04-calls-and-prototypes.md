@@ -1780,6 +1780,85 @@ that machinery.
   `__thiscall` callee, which shifts each later stack offset by the arguments
   the callee popped, so later calls lose stack arguments and locals whose
   address is taken alias outgoing-argument slots.
+  On x86-32 under a compiler spec whose default model *states* its extrapop
+  (`x86gcc.cspec`'s `__cdecl`, extrapop 4, so ELF and other GCC-convention
+  images), the constant is planted after every call and nothing checks it.
+  `option spsolve` (default on) checks it first
+  (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_spsolve.rs (settle)`).
+  Two kinds of call break the constant. A callee that pops more than its
+  return address: a function returning an aggregate pops the hidden result
+  pointer with `ret 4`, and a `stdcall` or `fastcall` callee pops its
+  arguments. And a callee that does not return and is not known as such: the
+  code laid out after the call belongs to another path and expects that
+  path's stack pointer. Either way two predecessors reach a block with
+  different stack pointers, or a return is reached away from the return
+  address; the stack pointer then stays a variable (`char *v5; // esp`),
+  arguments are stored through it (`*(int *)&v5[-4] = v1;`), calls print
+  without them (`mk();`) and every stack reference after the call is
+  displaced.
+
+  The pass walks the raw p-code block by block (`kuna_spsolve.rs (Tracker)`)
+  with the stack pointer, and each register or temporary that holds a constant
+  or a stack address, as a linear form over the entry stack pointer: a
+  constant, plus one unknown per call for what the call moves the stack
+  pointer by beyond its model's extrapop, plus one unknown per place the stack
+  pointer is set to something the walk cannot read (an alignment mask, a
+  runtime reservation, a call under a model with no extrapop, a software
+  interrupt). Registers the call's prototype does not preserve are forgotten
+  at the call. Blocks are visited in reverse postorder; a block starts from
+  the stack pointer its spanning-tree predecessor left and from the registers
+  every walked predecessor agrees on, and the walk repeats until the register
+  state settles (eight passes at most). Each constraint is then one equation:
+  a block has one stack pointer on entry whichever predecessor reaches it; a
+  return starts at the entry stack pointer, and so does a jump out of the
+  function that flow turned into a call followed by a return it planted. A
+  direct callee whose own returns prove its extrapop (the walk of
+  `kuna_calleepurge.rs` described above, asked for at flow time through
+  `kuna_spsolve.rs (callee_returns)`) contributes that constant instead of an
+  unknown, and so does a callee whose reached returns all pop only the return
+  address when code of the caller's own block follows the call.
+
+  With every call unknown at zero the system usually holds; then only the
+  proven extrapops are applied and nothing else changes. Otherwise each
+  remaining call is one of two kinds (`kuna_spsolve.rs (classify)`). Code of
+  its own block follows it: it returned, and its unknown is a pop, zero or
+  more. Or it ends its block and falls into a block with another predecessor:
+  it may not have returned. A call of the second kind is marked no-return when
+  the system has no solution in which it returned, that is with its own
+  unknown zero or more (exactly zero, when its callee's reached returns pop
+  only the return address) and every pop zero or more. The unrestricted
+  unknowns are eliminated exactly over the rationals and the first phase of
+  the simplex method, with Bland's rule, decides the rest
+  (`kuna_spsolve.rs (feasible)`). The remaining system is solved by Gaussian
+  elimination (`kuna_spsolve.rs (eliminate)`), with one rule the sign adds:
+  pops that sum to nothing are each nothing. A call whose unknown then has
+  exactly one value, a positive multiple of 4 no larger than 0x400 that the
+  callee's reached returns do not contradict, takes the model's extrapop plus
+  that value. A verdict the system pins for one direct call is the callee's,
+  so the other direct calls to the same callee in the function take it too
+  when the pinned ones agree.
+
+  The call sites found not to return are recorded on the function's override
+  (`decompiler/crates/kuna-decomp/src/p0_knowledge/overrides.rs
+  (insert_no_return_call)`), a restart is requested, and the next flow ends
+  those calls where it ends a call to a named no-return function; a site
+  already recorded asks for no further restart. A direct callee with no
+  reachable return at all is not followed in the first place
+  (`kuna_spsolve.rs (callee_never_returns)`, asked by flow's no-return
+  query), which is what keeps an assertion-failure helper's callers from
+  running into the next function.
+
+  The pass refuses rather than guesses. A call that ends its block and whose
+  callee's code is not available (an import, a call through a pointer) may
+  pop its arguments or not return; when a pop explains the system it is left
+  alone. An unknown with several solutions stays at zero. A call that
+  returned with a value no callee pops (negative, not a multiple of 4)
+  discards every pop of the function. A function over 8192 blocks or 1024
+  unknowns, a feasibility test over 128 rows or 256 columns, and arithmetic
+  that leaves 64 bits change nothing. Under a model whose extrapop is unknown
+  (`x86win.cspec`) the pass is inert and `ActionStackPtrFlow`'s solver keeps
+  its role. `option spsolve off` restores the planted constants and the
+  decoded fall-throughs.
 - **`ActionFuncLink`** (`coreaction_protos.rs (ActionFuncLink)`) arms each
   call site. Unlocked or varargs prototype → input recovery on
   (`init_active_input`). Locked prototype → one pre-marked trial per declared
