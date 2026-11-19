@@ -1072,6 +1072,7 @@ impl PrintC {
         }
         if GO_SPELLER.declarator(&self.rt_ctx, target).0
             != GO_SPELLER.declarator(&self.rt_ctx, &source).0
+            && !self.push_go_pair_conversion(fd, value, op, &source, target)
         {
             self.push_go_conversion(target, &source, op);
         }

@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4702,
-    4702
+    4706,
+    4706
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1203,6 +1203,10 @@
     "data:Go keeps the pointer conversion to the formal type",
     "data:Go never converts a string directly to a pointer",
     "data:Go ordered inequality still excludes NaN",
+    "data:Go pair signedness control keeps the correctly typed alternate results",
+    "data:Go pair signedness conversion constructs matching field types",
+    "data:Go pair signedness conversion evaluates each source once",
+    "data:Go pair signedness off keeps the raw call separate",
     "data:Go pair zero carrier becomes two integer fields",
     "data:Go paired callers assign both fields from one invocation",
     "data:Go paired nested call evaluates outside adapter parameter scope",

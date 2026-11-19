@@ -3479,8 +3479,13 @@ These adapters avoid an invalid direct conversion between a byte array or
 and partial stores retain their ordinary struct semantics. An eight-byte
 SUBPIECE at offset zero or eight projects the corresponding validated field,
 including from an implied indirect call, and converts signedness at the scalar
-field rather than casting the whole struct to an integer. If call-output
-extraction instead narrows a field to fewer than eight bytes, the shared
+field rather than casting the whole struct to an integer. Conversion between
+two verified full-width pair layouts with different signedness passes the
+source once to a function literal. The literal converts each field to the
+target's integer type in order, preserving both physical words through
+returns and assignments. This conversion requires the existing pair facets
+on both types and a complete nonvolatile value.
+If call-output extraction instead narrows a field to fewer than eight bytes, the shared
 integer field renderer preserves that width, including a narrowed second
 result from a callback, without evaluating the call twice. If call-output
 trimming has already reduced an amd64 ABIInternal call to one eight-byte
