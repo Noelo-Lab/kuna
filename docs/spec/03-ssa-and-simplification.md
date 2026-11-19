@@ -2500,6 +2500,18 @@ followed as upstream follows it (`tests/stages/kuna-segmentize-z80.xml`).
 Ghidra mode has no local `.sla` to compile the snippet, so there the segment
 ops are not decoded and the CALLOTHER stays.
 
+**Constant-pool references.** A byte-code processor names a method, field,
+string or type by its index in the program's constant pool, and its SLEIGH spec
+writes that as a `cpool(object, index, tag)` operator (CPOOLREF).
+`decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_3.rs
+(RuleTransformCpool)` visits each CPOOLREF once and looks its constant inputs up
+in the architecture's pool. A primitive record replaces the op with a COPY of
+its constant value; an `instanceof` record marks the op as producing a boolean;
+any other record has its tag appended as an extra input, the form the printer
+and the type rules read. A missing record leaves the op unchanged. Only a DEX
+image has a pool today (`option dexmodel`, chapter 00), so the rule is inert
+on every other input.
+
 ## 3.3 Sub-variable flow
 
 **Pointer flow on a truncated address space** (always on). A truncated
@@ -3706,7 +3718,16 @@ C++ did there happens in the drive, which follows flow before the tree runs
 (§0.6) — and exist so the tree's listing stays oracle-identical.
 `ActionConstbase` injects a `COPY #val` at the entry block for every *tracked
 register* the context database pins to a constant at this function's address
-(the console `set track` surface). `ActionStartTypes` flips the function's
+(the console `set track` surface). For a DEX method with `option dexmodel`
+on it first inserts the method's `uponentry` copies
+(`decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_dex.rs (apply_entry)`):
+the Dalvik compiler spec passes arguments in the designated input registers
+`iv0..` and leaves the move into the frame to a dynamic payload, which Ghidra's
+`InjectPayloadDexParameters` builds from the method's code item. `this`, when
+the method has one, and each parameter are copied in order to the top
+`ins_size` registers of the frame, a `long` or `double` taking an 8-byte register
+pair. Without the copies the parameters read as uninitialized frame registers.
+`ActionStartTypes` flips the function's
 type-recovery flag — the gate the oppool2 pointer rules and
 `ActionInferTypes` key on (chapter 05) — and `ActionStartCleanUp` marks the
 transition into the cleanup phase. `ActionNormalizeSetup` (normalize variant

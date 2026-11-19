@@ -1,0 +1,36 @@
+<decompilertest>
+<binaryimage arch="Dalvik:LE:32:DEX_Android12">
+<!--
+    Kuna DEX loader, APK input (P1 environment binding; option dexmodel,
+    default on). An APK is a zip of classes.dex, classes2.dex, ...; the
+    loader inflates each and maps them one after another.
+
+    The fixture tests/stages/fixtures/dex/two.apk holds hello.dex
+    (Hello.java) as a deflated classes.dex and the DEX built from Other.java
+    as a stored classes2.dex. Asserts #1-#2: methods of the second file
+    resolve their constant pool against that file and call into the first
+    by name. Assert #3: a method of the first file still decompiles.
+-->
+<bytechunk space="ram" offset="0x0" readonly="true">0e00</bytechunk>
+<symbol space="ram" offset="0x0" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file tests/stages/fixtures/dex/two.apk</com>
+  <com>option setlanguage java-language</com>
+  <com>read symbols</com>
+  <com>load function demo::Other::twice</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function demo::Other::hi</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function demo::Hello::add</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="dex apk #1: classes2.dex calls a static method of classes.dex" min="1" max="1">return Hello\.add\(a0,a0\);</stringmatch>
+<stringmatch name="dex apk #2: classes2.dex strings come from its own pool" min="1" max="1">return Hello\.greet\("other"\);</stringmatch>
+<stringmatch name="dex apk #3: classes.dex methods load too" min="1" max="1">^int add\(int a0,int a1\)</stringmatch>
+</decompilertest>

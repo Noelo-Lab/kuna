@@ -833,6 +833,9 @@ pub struct FlowInfo<'a, E: FlowEnvironment> {
     /// the SAME entry must `cancel_inject_id` so the injection does not recurse.
     /// `None` outside a call-fixup injection (the user-op path passes NULL `fc`).
     injecting_entry: Option<Address>,
+    /// (kuna `javatry`) The DEX model of a method decoded with the option on,
+    /// and its try items.
+    java_try: Option<(crate::kuna_javatry::JavaTryPlan, std::rc::Rc<crate::kuna_dex::DexModel>)>,
 }
 
 /// Apply explicit-flow and declared-extent precedence before consulting either
@@ -878,6 +881,12 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
         // and is OR'd in only for back-compat with envs that still carry it.
         let flowoverride_present = data.get_override().has_flow_override() || env.has_flow_override();
         let loader_transfers_present = crate::kuna_stubtailcall::active(data.get_arch());
+        let java_try = data
+            .get_arch()
+            .dex
+            .as_ref()
+            .filter(|_| data.get_arch().java_try)
+            .map(|model| (crate::kuna_javatry::JavaTryPlan::new(model, entry.get_offset()), std::rc::Rc::clone(model)));
         FlowInfo {
             data,
             env,
@@ -908,6 +917,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             overlap_watch: None,
             overlap_cbranch_target: None,
             injecting_entry: None,
+            java_try,
         }
     }
 
@@ -1979,6 +1989,12 @@ following this call as a branch"
             explicit
         };
 
+        if let Some((plan, model)) = self.java_try.as_ref().filter(|_| !self.is_flow_for_inline()) {
+            if let Some(first) = crate::kuna_javatry::before_instruction(&mut self.data, plan, model, curaddr)? {
+                self.op_mark_start_basic(first);
+            }
+        }
+
         let mode = self.arm_context.then(|| self.env.arm_decode_mode(curaddr)).flatten();
         if curaddr == self.data.get_address() {
             if let Some(mode) = mode { self.env.preserve_arm_decode_mode(curaddr, mode, true); }
@@ -2073,6 +2089,20 @@ truncating the fall-through here"
                 curaddr,
             );
             step = 1;
+        }
+
+        // (kuna javatry) Dalvik `throw` ends its path: its RETURN is a halt, so
+        // return recovery gives it no value.
+        if let Some((_, model)) = self.java_try.as_ref() {
+            if model.bytes_at(curaddr.get_offset(), 1) == Some(&[0x27]) {
+                let mut cur = if emptyflag { self.dead_head() } else { marker.and_then(|m| self.dead_next(m)) };
+                while let Some(op) = cur {
+                    cur = self.dead_next(op);
+                    if self.data.obank().get(op).is_some_and(|o| o.code() == OpCode::CPUI_RETURN) {
+                        self.data.op_mark_halt(op, pcodeop_flags::noreturn)?;
+                    }
+                }
+            }
         }
 
         // (Insert with an INVALID seqnum; the first-op seqnum is filled in below.)

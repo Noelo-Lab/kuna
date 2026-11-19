@@ -1,0 +1,66 @@
+<decompilertest>
+<binaryimage arch="Dalvik:LE:32:DEX_Android12">
+<!--
+    Kuna DEX loader (notes/proposal-dex.md): P1 environment binding,
+    option dexmodel, and the P2 switch model, option jumpassist (both
+    default on). The script loads the committed DEX fixture built from
+    tests/stages/fixtures/dex/Hello.java and prints Java.
+
+    Asserts #1-#3 are the off pass, the bare SLEIGH lifting: calls and loads
+    go through constant-pool references with no record (UNKNOWNREF), the
+    method has no signature, so its parameter never reaches the call that
+    used it, and the sparse-switch stays an indirect jump through the
+    switchAssist user-op.
+    Asserts #4-#10 are the default pass: the constant pool names methods,
+    fields and strings, the method's arguments arrive through the entry
+    copies (including an invoke-static/range call), the DEX prototypes are
+    the signatures, and JumpAssisted recovers the sparse-switch cases.
+-->
+<bytechunk space="ram" offset="0x0" readonly="true">0e00</bytechunk>
+<symbol space="ram" offset="0x0" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file tests/stages/fixtures/dex/hello.dex</com>
+  <com>option setlanguage java-language</com>
+  <com>option dexmodel off</com>
+  <com>option jumpassist off</com>
+  <com>read symbols</com>
+  <com>load function demo::Hello::greet</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function demo::Hello::sparse</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/stages/fixtures/dex/hello.dex</com>
+  <com>option setlanguage java-language</com>
+  <com>read symbols</com>
+  <com>load function demo::Hello::greet</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function demo::Hello::getValue</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function demo::Hello::sparse</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function demo::Hello::callMany</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function demo::Hello::mulWide</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="dexmodel #1: off leaves the constant pool unresolved" min="1" max="1">v1 = new\(UNKNOWNREF\);</stringmatch>
+<stringmatch name="dexmodel #2: off loses the signature and its parameter" min="1" max="1">^int greet\(\)</stringmatch>
+<stringmatch name="jumpassist #3: off keeps the sparse-switch an indirect jump" min="1" max="1">switchAssist\(</stringmatch>
+<stringmatch name="dexmodel #4: the string literal comes from the pool" min="1" max="1">v1 = v1\.append\("Hello, "\);</stringmatch>
+<stringmatch name="dexmodel #5: an instance call names its object and method" min="1" max="1">return v1\.toString\(\);</stringmatch>
+<stringmatch name="dexmodel #6: the DEX prototype is the signature" min="1" max="1">^String greet\(String a0\)</stringmatch>
+<stringmatch name="dexmodel #7: instance and static fields print by name" min="1" max="1">return this\.value \+ Hello\.counter;</stringmatch>
+<stringmatch name="jumpassist #8: the sparse-switch cases are recovered" min="1" max="1">case 999999:</stringmatch>
+<stringmatch name="dexmodel #9: invoke-static/range passes all six arguments" min="1" max="1">Hello\.many\(a0,2,3,4,5,6\)</stringmatch>
+<stringmatch name="dexmodel #10: a long parameter takes a register pair" min="1" max="1">^long mulWide\(long a0,int a1\)</stringmatch>
+</decompilertest>

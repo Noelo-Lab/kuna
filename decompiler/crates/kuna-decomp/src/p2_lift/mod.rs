@@ -18,6 +18,7 @@ pub mod kuna_switchguardbound;
 pub mod kuna_switchguardrange;
 pub mod kuna_switchsharedcase;
 pub mod kuna_switchrunon; // (kuna) an unguarded jump table stops where its rows leave the function
+pub mod kuna_jumpassist; // (kuna) the JumpAssisted model: switches computed by a <jumpassist> user-op
 pub mod kuna_constselectjump; // (kuna) recover a BRANCHIND whose destination is selected between constants
 pub mod kuna_sparcstructret;
 pub mod kuna_stackprobeloop;
@@ -47,6 +48,7 @@ pub mod kuna_gowritebarrier; // (kuna) fold the Go GC write-barrier diamond (doc
 pub mod kuna_ptrauthtrap; // (kuna) drop the arm64e pointer-auth failure checks
 pub mod kuna_linuxsyscall; // (kuna) name the 32-bit Linux int 0x80 sites instead of calling through swi()
 pub mod kuna_x64syscall; // (kuna) give the x86-64 SYSCALL user-op the Linux ABI register effects
+pub mod kuna_javatry; // (kuna `javatry`) exception edges and try dispatches from a DEX method's try items
 pub mod kuna_syscallregs; // (kuna) give the ARM/AArch64/RISC-V/MIPS/PowerPC system-call user-op its register effects
 pub mod kuna_msvcstrappend; // (kuna) collapse an inlined MSVC std::string push_back/append diamond into one call
 pub mod kuna_fastfailnoreturn; // (kuna) a Windows `int 0x29` (__fastfail) ends the flow instead of unbalancing the stack

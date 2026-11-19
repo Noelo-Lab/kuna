@@ -3695,6 +3695,28 @@ and an agent writes:
   (`decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_restartlog.rs (RestartLog)`):
   owned by the engine `Architecture` so it survives function clears; every
   restart trigger records *why* (§0.7). Observability only.
+- **The DEX model** (kuna, `option dexmodel`)
+  (`decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_dex.rs (DexModel)`): the
+  parsed DEX file a DEX image carries on its `Architecture` (one per file of an
+  APK, each with the base it is mapped at), answering what the
+  Dalvik spec leaves to the loading program, which in Ghidra is its Java side.
+  It names the functions (`DexModel::functions`: `pkg::Class::method`, with
+  `_<addr>` on each member of an overload set), gives each method's prototype
+  (`DexModel::method_prototype`: `this` typed as the class under `__thiscall`
+  for an instance method, the DEX parameter and return types otherwise), the
+  `uponentry` register copies (chapter 03) and the `moveRangeToIV` copies
+  (chapter 02), and the constant pool (`DexModel::record`, Ghidra's
+  `ConstantPoolDex`): `cpool(object, index, tag)` resolves by its first two
+  constant inputs to a method (a pointer to a code type with the method's
+  prototype, whose `this` is an untyped `ref` as at upstream call sites), a
+  field (a pointer to its type), a string literal, a class, an array length, an
+  `instanceof` test or `super`. Static members are qualified by their class's
+  simple name. Records and Java types are built on first use and cached, so a
+  65,000-method file costs nothing until a function references a method. The
+  DEX format reader is `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_dex/format.rs`;
+  every offset in it is checked against the file. With the option off the
+  per-function snapshot carries no model, so the constant pool is empty and the
+  register payloads are not applied.
 - The phase registry itself
   (`decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_phases.rs (KunaPhase)`):
   P0–P9 with Band-B membership (`KunaPhase::in_band_b` — P3..P6), queryable at
@@ -3710,7 +3732,9 @@ preset, and load-time members plus explicit load-time options are exported
 before bootstrap with last-write precedence; (3) per-program loader adjustments
 made at bootstrap (e.g. `readonlypropagate` forced on for
 MIPS so GOT-slot loads fold to import names,
-`decompiler/crates/kuna-console/src/engine.rs (bootstrap_from_object)`);
+`decompiler/crates/kuna-console/src/engine.rs (bootstrap_from_object)`, and for
+a DEX image, whose bytes cannot change at run time, so a switch payload's keys
+fold to constants, `engine.rs (bootstrap_from_dex_bytes)`);
 (4) driver surface injections (`listing`, non-x86-64
 `funcstart_patterns`/`aif`, §0.2) for options the concrete preset did not name;
 (5) `auto`'s own overrides (when the mode was omitted or `auto`), the concrete

@@ -3748,17 +3748,87 @@ Go; compilation and execution are checked for the supported scalar, pointer,
 conversion and control-flow fixtures. Missing types, low-level helpers and
 incomplete ABI recovery still prevent arbitrary output from compiling.
 
-The Java back-end is deliberately not ported:
-`decompiler/crates/kuna-decomp/src/p9_emit/printjava.rs (PrintJava)` is a
-recorded LOSS whose constructor returns an error — upstream `PrintJava` is a
-thin `PrintC` subclass (shared token table and RPN driver, eight overrides for
-object references and `instanceof`), and no oracle datatest selects the
-`java-language` back-end, so Java remains unregistered; C, Rust and Go are the registered output
-languages, with `c-language` the engine default (`printc.rs (CAPABILITY_NAME)`). What *is* live is the Java half of
-the cast strategy, `cast.rs (CastStrategyJava)` — Java's pointer-encoded
-object references change which extensions and pointer conversions are
-representable as casts — kept current alongside `CastStrategyC` so a future
-`PrintJava` port is emitter wiring only.
+**The java-language back-end.** `option setlanguage java-language` selects it;
+the CLI selects it automatically for a DEX file (chapter 00). It follows upstream
+`PrintJava`, which is `PrintC` with a handful of overrides, so here it is a
+profile plus a few `OutLang::Java` arms: `p9_emit/kuna_langjava.rs` holds the
+profile, the type speller and the Java string escapes, and
+`p9_emit/printc/kuna_cpoolprint.rs` the operator forms.
+
+- **Spelling.** A logical right shift prints `>>>` and its assignment form
+  `>>>=` (`TypeOp::selectJavaOperators`), a null pointer prints `null`, and a
+  string escapes as Java does, with `\uXXXX` for anything without a short escape
+  (`kuna_langjava.rs (print_unicode_java)`).
+- **Types.** A Java reference is a pointer in the type system, so the speller
+  (`kuna_langjava.rs (JavaSpeller)`) strips pointer levels: a pointer to a class
+  structure is the class name, and a pointer to a primitive or to another
+  reference is one array dimension (`kuna_langjava.rs (is_array_type)`, upstream
+  `PrintJava::isArrayType`). Core types print as `byte`, `short`, `int`, `long`,
+  `char`, `boolean`, `float`, `double`.
+- **Capabilities.** Java has no comma operator, no integer-as-condition test and
+  no `U`/`L` literal suffixes, so the capability record turns those renderings
+  off. `goto` stays, as in upstream's output.
+- **Members and calls.** A member reached through an object reference prints
+  with `.`; `instanceof` is a binary operator. A call through a method reference
+  prints `object.method(args)`, the object being the call's `this` argument,
+  which the argument list then omits (`kuna_cpoolprint.rs (java_callind_ir)`,
+  upstream `PrintJava::opCallind` and `getHiddenThisSlot`). A LOAD or STORE
+  through a reference prints the referenced value, with `[0]` only for an
+  array reference that is not itself a field, an index or a pool reference
+  (`PrintJava::needZeroArray`).
+- **Allocation** (kuna, `option javanew`, default on). Dalvik allocates an
+  object with `new-instance` and initializes it with a separate `invoke-direct`
+  of `<init>`, and upstream's Java output keeps both statements:
+  `v = new(T); v.<init>(args);`. `p9_emit/kuna_javanew.rs (pairs)` finds each
+  `<init>` call whose object comes from a NEW earlier in the same basic block
+  and reaches nothing in between but the call's own method reference; the NEW
+  statement is then dropped and the call prints `v = new T(args)`
+  (`kuna_cpoolprint.rs (java_callind_ir)`). The arguments keep their own
+  statements and order, which is sound because Java evaluates them after the
+  allocation too. A pair split across blocks — an `if` choosing between two
+  constructors — keeps the two-statement form.
+- **Constructors** (kuna, `option javanew`). A constructor (`<init>`, with or
+  without its overload suffix) is declared by its class name, the part after
+  the last `$`, with no return type. In a constructor, an `<init>` call on the
+  method's own `this` input is Java's `this(args)` when the called method
+  belongs to the same class and `super(args)` otherwise
+  (`kuna_javanew.rs (ctor_calls)`, the class read from the DEX model). The
+  no-argument `super()` to `java.lang.Object` is the call Java inserts
+  implicitly, so it prints nothing.
+- **Exceptions** (kuna, `option javatry`, default on). Dalvik's `throw` lifts to
+  `throwException(x)` followed by a RETURN; the RETURN is a halt (chapter 2),
+  and the pair prints `throw x;`. A `java_try` dispatch (chapter 2) prints as a
+  `try` statement (`printc/kuna_javatryprint.rs`). The dispatch structures as an
+  `if` one of whose arms starts at the handler: the arm is the catch clause,
+  and the protected statements are the `if`'s other arm or, when the handler
+  ends the path, the statements that follow the `if` in its list (nested lists
+  flattened). The protected part runs to the last statement inside the
+  handler's ranges; a statement between two of them that cannot throw is
+  inside too (D8 leaves those out of a range), and a basic block that straddles
+  the end prints its statements on each side by the address of the
+  instructions each one executes (`kuna_javatryprint.rs (statement_in_range)`).
+  What follows prints after the `try` when no clause can fall into it; when one
+  can, a tail that cannot throw moves inside, and a tail that can moves inside
+  under a comment saying an exception there would not reach the catch.
+  Consecutive dispatches with the same ranges are the clauses of one `try`; an
+  `if` whose handler arm is the code after it is an empty catch, and an
+  `if (dispatch) goto L` is a catch whose body is that jump. The clause binds
+  the variable `java_caught` defines (declared only there) and names the types
+  its handler catches, `A | B` for several.
+- **Signature.** The method name prints without its class path, the `this`
+  parameter is hidden, and an empty parameter list prints `()`.
+- **Casts.** `CastStrategyJava` decides casts (`cast.rs (java_cast_standard)`):
+  a cast between two references is never printed, since Java code converts one
+  only through an explicit `check-cast`.
+
+**Constant-pool operators.** In every language a CPOOLREF prints from its pool
+record (`kuna_cpoolprint.rs (op_cpoolref_ir)`, upstream `opCpoolRefOp`): a string
+as its literal (truncated after 2048 bytes), a class as its name, a method or
+field as its name, qualified by the object it is reached through, or by its class
+when static. `NEW` prints `new T[n]` for an array allocation and `new(T)` for an
+object (`kuna_cpoolprint.rs (op_new_ir)`, upstream `opNewOp`); the constructor
+call follows as its own statement, as in upstream's output, unless Java's
+`javanew` folds the two.
 
 ## 9.7 Whole-program document renders (`kuna decompile-project`, `kuna decompile-graph`)
 

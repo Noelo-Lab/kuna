@@ -286,6 +286,10 @@ impl Action for ActionConstbase {
             data.kuna_call_mechanisms.failure = Some(error.to_string());
             return 0;
         }
+        if let Err(error) = crate::kuna_dex::apply_entry(data) {
+            data.kuna_call_mechanisms.failure = Some(error.to_string());
+            return 0;
+        }
 
         // C++ takes a copy; the per-function `glb` skeleton holds a snapshot of the
         // engine track base (taken at `build_arch_handle`), so clone the queried set
@@ -904,7 +908,8 @@ impl Action for ActionRedundBranch {
                 let bb_is_switch = data.bblocks_ref().block(bb).is_switch_out();
                 // Do not splice a block coming from a single-exit switch — this
                 // prevents possible second-stage recovery.
-                if bl_size_in == 1 && !bl_is_entry && !bb_is_switch {
+                // (kuna javatry) A `try` dispatch keeps a block of its own.
+                if bl_size_in == 1 && !bl_is_entry && !bb_is_switch && !crate::kuna_javatry::is_dispatch_only(data, bl) {
                     // splice_block_basic Errs when the spliced block ends in a
                     // branch op (STUB(W3-op)); a successful splice counts as a
                     // change and resets the scan, exactly as C++ `i = -1`.

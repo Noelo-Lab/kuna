@@ -12,7 +12,6 @@ pub mod kuna_partialconcat;
 pub mod kuna_partialaccess;
 pub mod kuna_widelocal;
 pub mod prettyprint;
-pub mod printjava;
 pub mod cast;
 pub mod kuna_unknowncasts;
 pub mod kuna_signedread; // (kuna) a signed read of an expression that prints unsigned casts it back
@@ -113,6 +112,8 @@ pub mod kuna_rusttypes; // (kuna) the rust-language type speller
 pub(crate) mod kuna_rustextend;
 pub(crate) mod kuna_rustuserop;
 mod kuna_rustoption;
+pub mod kuna_langjava; // (kuna) the java-language profile and type speller
+pub mod kuna_javanew; // (kuna) `new T(args)` from an allocation and its <init> call
 pub mod kuna_ctypes; // (kuna) valid per-architecture C spelling of the core types
 pub mod coreaction_render;
 pub mod kuna_srcmap; // (kuna) the token-level source map of a rendered function

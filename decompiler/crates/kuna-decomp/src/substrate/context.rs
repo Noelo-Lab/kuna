@@ -653,6 +653,14 @@ pub struct ArchContext {
     /// (kuna) `callmechanisms auto` — only return payloads whose stored slot the next instruction
     /// reloads, forwarded into that reload when possible.
     pub call_mechanism_reload_only: bool,
+    /// (kuna `dexmodel`) The loaded DEX file's constant pool and register
+    /// payloads; `None` for any other image or with the option off.
+    pub dex: Option<Rc<crate::kuna_dex::DexModel>>,
+    /// (kuna `javatry`) Give a DEX method's `try_item`s exception edges.
+    pub java_try: bool,
+    /// (kuna `jumpassist`) The compiled `<jumpassist>` scripts; empty with the
+    /// option off.
+    pub jump_assists: Rc<crate::kuna_jumpassist::JumpAssists>,
     /// Shared spaces retain the pointer identities and indices used by lifted
     /// Varnodes. [`Self::new_shared`] accepts the engine's manager; [`Self::new`]
     /// wraps an owned manager for fixtures.
@@ -852,6 +860,8 @@ pub struct ArchContext {
     /// anything there. Read by
     /// [`retype_call_targets`](crate::kuna_calltargettype::retype_call_targets).
     pub call_target_c: bool,
+    /// (kuna) The output is Java: decide casts as `CastStrategyJava`.
+    pub java_casts: bool,
     /// (kuna `floatglobals`) The globals the program only moves through float
     /// registers, once the scan has run; read by
     /// [`float_only`](crate::kuna_floatglobals::float_only).
@@ -1532,6 +1542,9 @@ impl ArchContext {
             call_mechanisms: Rc::default(),
             call_mechanism_effects: false,
             call_mechanism_reload_only: false,
+            dex: None,
+            java_try: false,
+            jump_assists: Rc::default(),
             manage,
             min_laned_register_size: 4,
             x87_empty_storage: None,
@@ -1609,6 +1622,7 @@ impl ArchContext {
             ptrdepthcap: false,          // (kuna) option ptrdepthcap
             call_target_type: false,     // (kuna) option calltargettype
             call_target_c: false,        // (kuna) option calltargettype, C output
+            java_casts: false,
             float_globals: None,         // (kuna) option floatglobals
             float_globals_pending: false,
             float_globals_wanted: std::cell::Cell::new(false),
@@ -1887,6 +1901,12 @@ impl ArchContext {
 
     pub fn types(&self) -> Option<&dyn crate::dtype::TypeFactory> {
         self.types.as_deref().map(|t| t as &dyn crate::dtype::TypeFactory)
+    }
+
+    /// (kuna `dexmodel`) The constant-pool record for `refs` (C++
+    /// `glb->cpool->getRecord`).  Only a DEX image has a pool.
+    pub fn cpool_record(&self, refs: &[u64]) -> Option<Rc<crate::cpool::CPoolRecord>> {
+        self.dex.as_ref()?.record(refs, self.types()?)
     }
 
     /// Get the floating-point format for the given size in bytes, or `None` if

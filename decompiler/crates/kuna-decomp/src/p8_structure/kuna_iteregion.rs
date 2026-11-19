@@ -211,6 +211,10 @@ pub fn match_ite_assignment(data: &Funcdata, n: BlockId) -> Option<IteAssignMatc
     // precedes each `_PF` diamond) — the printer emits them normally *before* the
     // ternary, so nothing is lost.
     let cbranch = cond_cbranch(data, cond_block)?;
+    // (kuna javatry) A `try` dispatch is not a value selection.
+    if crate::kuna_javatry::dispatch_handler(data, cbranch).is_some() {
+        return None;
+    }
 
     // Each arm: a single leaf whose only printed op is a pure value assignment.
     let (true_op, dest_true) = single_assign_arm(data, true_clause)?;

@@ -136,6 +136,8 @@ pub struct State {
     applied: std::collections::HashMap<crate::context::OpId, i32>,
     entry: Option<i32>,
     pub failure: Option<String>,
+    /// (kuna `dexmodel`) The DEX `uponentry` copies are in.
+    pub dex_entry: bool,
 }
 
 /// Changing a call's return mechanism requires rebuilding its pre-SSA effects.
@@ -476,6 +478,15 @@ fn validate_operations(operations: &[Operation]) -> KunaResult<()> {
         }
     }
     Ok(())
+}
+
+/// Install straight-line p-code at the start of `block`.
+pub fn install_at_entry(
+    data: &mut crate::funcdata::Funcdata,
+    block: crate::context::BlockId,
+    operations: &[Operation],
+) -> KunaResult<()> {
+    install(data, None, Some(block), operations)
 }
 
 /// Install straight-line p-code with a fresh temporary range for this invocation.

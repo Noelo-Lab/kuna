@@ -106,6 +106,8 @@ Three tiers:
 | indirect jump renders as a computed (code *)() call whose destinations are already constants in the emitted C | [`constselectjump`](#constselectjump----off--reentry--on-default-reentry-destructive-opt-in) |
 | 'Treating indirect jump as call' on a CMOV/predicated dispatch | [`constselectjump`](#constselectjump----off--reentry--on-default-reentry-destructive-opt-in) |
 | the body behind a conditional indirect branch is never decoded | [`constselectjump`](#constselectjump----off--reentry--on-default-reentry-destructive-opt-in) |
+| a Dalvik sparse-switch prints as switchAssist(...) followed by a computed call | [`jumpassist`](#jumpassist----on--off-default-on) |
+| 'jump-as-call' on a switchAssist or lookupswitch user-op | [`jumpassist`](#jumpassist----on--off-default-on) |
 | 'Too many branches' jumptable failure where a cbranch range guard bounds the index | [`switchguardbound`](#switchguardbound----on--off-default-off-destructive-opt-in) |
 | computed (code *)() call at a gcc sub/ja guarded dispatch with the index spilled to the stack | [`switchguardbound`](#switchguardbound----on--off-default-off-destructive-opt-in) |
 | narrow comparison after a logical right shift does not bound a jump table | [`highsliceguard`](#highsliceguard----on--off-default-off) |
@@ -459,6 +461,12 @@ Three tiers:
 | every function of an MS-DOS executable declares an unsigned short local commented // ds | [`mzdgroup`](#mzdgroup----on--off-default-on) |
 | the same DOS global gets no shared name across functions | [`mzdgroup`](#mzdgroup----on--off-default-on) |
 | a near string pointer in a DOS program resolves to a low address instead of its data segment | [`mzdgroup`](#mzdgroup----on--off-default-on) |
+| a DEX method prints CPOOLREF(...) calls and loads | [`dexmodel`](#dexmodel----on--off-default-on) |
+| a DEX method's parameters print as uninitialized locals | [`dexmodel`](#dexmodel----on--off-default-on) |
+| invoke-range calls lose their arguments | [`dexmodel`](#dexmodel----on--off-default-on) |
+| a DEX method's catch blocks are missing from the output | [`javatry`](#javatry----on--off-default-on) |
+| code after a call that can throw runs on as if nothing could be thrown | [`javatry`](#javatry----on--off-default-on) |
+| throwException(x); return; instead of throw x; | [`javatry`](#javatry----on--off-default-on) |
 | a function that only ever passes its argument to a libc stdio call still declares it long or unsigned long | [`libctypes`](#libctypes----off--opaque--glibc-default-opaque) |
 | a fopen or fdopen result is a void * that nothing can name | [`libctypes`](#libctypes----off--opaque--glibc-default-opaque) |
 | a stat or lstat call fills an untyped void * buffer | [`libctypes`](#libctypes----off--opaque--glibc-default-opaque) |
@@ -715,6 +723,9 @@ Three tiers:
 | Control flow encountered bad instruction data in a DOS function that does float math | [`fpuemu`](#fpuemu----off--auto--on-default-auto) |
 | a phantom function starts inside an INT 35h instruction's operand bytes | [`fpuemu`](#fpuemu----off--auto--on-default-auto) |
 | swi(0x3d) calls where the program waits for the coprocessor | [`fpuemu`](#fpuemu----off--auto--on-default-auto) |
+| Java output prints v = new(T); followed by v.<init>(args); | [`javanew`](#javanew----on--off-default-on) |
+| a constructor call prints as a method named <init> | [`javanew`](#javanew----on--off-default-on) |
+| a constructor prints as void <init>(...) calling this.<init>(...) | [`javanew`](#javanew----on--off-default-on) |
 | a value stored before an Octeon atomic add is returned instead of the reloaded memory | [`octeoneffects`](#octeoneffects----off--atomic--ordered-default-atomic) |
 | a store read only by a following ll or lld disappears | [`octeoneffects`](#octeoneffects----off--atomic--ordered-default-atomic) |
 | an Octeon fetch-and-add result or old value prints with the wrong width or behind an (int) cast | [`octeoneffects`](#octeoneffects----off--atomic--ordered-default-atomic) |
@@ -1042,6 +1053,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** `reentry` is on by default: 0/675 datatest assertions move. Flip `off` to compare with upstream, which keeps only the first target of a re-entered dispatch. Turn `on` when an indirect jump renders as a computed `(*v)()` call carrying a 'Treating indirect jump as call' warning while the destinations are already visible as address constants in the emitted C, and the code behind them is missing. DESTRUCTIVE as a global default: a conditional TAIL CALL selecting between two nearby function entries is the same shape, and recovering it splices both callee bodies into the caller; `reentry` never recovers a select that is not re-entered.
 - **Where / provenance:** P2/switch-model · kuna · structure-recovery · re-conditional-indirect-branches-hide
 - **Example:** `option constselectjump off`
+
+### `jumpassist` -- on | off, default `on`
+
+- **Symptoms:** a Dalvik sparse-switch prints as switchAssist(...) followed by a computed call; 'jump-as-call' on a switchAssist or lookupswitch user-op.
+- **What it does:** Recover a switch whose destination a `<jumpassist>` user-op computes (upstream `JumpAssisted`): the processor spec's `<case_pcode>`, `<addr_pcode>`, `<default_pcode>` and `<size_pcode>` scripts are evaluated over the load image to build the case labels and the address table, and the user-op is replaced by its switch variable. Dalvik's `sparse-switch` and the JVM's `lookupswitch`/`tableswitch` use it.
+- **When to flip:** On by default; only the Dalvik and JVM processor specs declare a `<jumpassist>`. Turn OFF to see the indirect jump through the user-op, rendered as a call.
+- **Where / provenance:** P2/switch-model · ghidra-upstream · structure-recovery · kuna-dex-loader
+- **Example:** `option jumpassist off`
 
 ### `switchguardbound` -- on | off, default `off` (destructive opt-in)
 
@@ -1839,6 +1858,22 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **Where / provenance:** P1/environment-binding · kuna · analysis-enablement · kuna-1288-mzdgroup
 - **Example:** `kuna decompile-all dazzle.exe --option mzdgroup off`
 
+### `dexmodel` -- on | off, default `on`
+
+- **Symptoms:** a DEX method prints CPOOLREF(...) calls and loads; a DEX method's parameters print as uninitialized locals; invoke-range calls lose their arguments.
+- **What it does:** Answer the Dalvik spec's questions from the loaded DEX file: resolve each `cpool` operator to the method, field, string or type it names (Ghidra's `ConstantPoolDex`), copy a method's arguments from the input registers into its frame at entry (`InjectPayloadDexParameters`), and copy an `invoke-*/range` register run into the input registers (`InjectPayloadDexRange`). Calls take the callee's DEX prototype, fields and strings print by name.
+- **When to flip:** On by default; only a DEX image carries a model, so no other input changes. Turn OFF to see the bare SLEIGH lifting of a DEX method: raw `CPOOLREF(...)` operators and arguments read as uninitialized frame registers.
+- **Where / provenance:** P1/environment-binding · ghidra-upstream · analysis-enablement · kuna-dex-loader
+- **Example:** `option dexmodel off`
+
+### `javatry` -- on | off, default `on`
+
+- **Symptoms:** a DEX method's catch blocks are missing from the output; code after a call that can throw runs on as if nothing could be thrown; throwException(x); return; instead of throw x;.
+- **What it does:** Recover a DEX method's try/catch blocks from its code_item try table and print them as Java try { } catch (T e) { }. Flow enters each catch handler once, from the start of the first range that names it (`java_try`), gives every other throwing instruction in a range an exceptional edge to its handlers (`java_throws`, data flow only: the structurer drops them, and the ones that bring the handler no value of their own are removed), and defines the move-exception register (`java_caught`). Handlers of one try item that are D8 stubs into the same code merge into one multi-type clause. Dalvik's throw becomes a halt, printed as a Java throw statement. A range's statement that cannot throw may print inside the try; a protected tail that can throw but lies outside the range is marked with a comment.
+- **When to flip:** On by default; it changes only DEX input. Turn OFF to see the method without its catch handlers (upstream Ghidra never reaches them).
+- **Where / provenance:** P2/flow-classification · kuna · analysis-enablement · kuna-dex-loader
+- **Example:** `option javatry off`
+
 ### `libctypes` -- off | opaque | glibc, default `opaque`
 
 - **Symptoms:** a function that only ever passes its argument to a libc stdio call still declares it long or unsigned long; a fopen or fdopen result is a void * that nothing can name; a stat or lstat call fills an untyped void * buffer; getopt_long takes a bare (void *)0x... long-option table; readdir returns a void * whose fields are casts and offsets; a stream parameter is void * where the ground truth is FILE *; a FILE * or stat * renders its members as field_0x8 / field_0x30 instead of _IO_read_ptr / st_size; a value loaded out of a named libc struct keeps the cast's type instead of the field's; stdin/stdout/stderr render as an untyped word and their fields as raw offsets ((long)stdout + 0x28); a shared object's stream slot has no name at all (*(long *)(*dat_3fe0 + 0x28)); two functions in one binary disagree about what stdout is, one calling it FILE * and the other a long.
@@ -2370,6 +2405,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** Leave auto: a DOS program linked with the 8087 emulator decompiles its float code, and every other input (no fpuEmu bit outside x86-16.sla, no emulator code in the image) is byte-identical. Use on for a raw-image or .COM program that uses the emulator but has too little float code for the evidence, off to read the interrupts as the bytes encode them.
 - **Where / provenance:** P2/decode-context · kuna · correctness-fix · kuna-1288-fpuemu
 - **Example:** `kuna decompile-all dazzle.exe --option fpuemu off`
+
+### `javanew` -- on | off, default `on`
+
+- **Symptoms:** Java output prints v = new(T); followed by v.<init>(args);; a constructor call prints as a method named <init>; a constructor prints as void <init>(...) calling this.<init>(...).
+- **What it does:** In java-language output, print Java's constructor syntax. An allocation and the `<init>` call that initializes it print as one `new T(args)` expression: Dalvik allocates with `new-instance` and initializes with a separate `invoke-direct` of `<init>`, which upstream's Java output keeps as two statements (`v = new(T); v.<init>(args);`). The pair folds only when the object reaches nothing but that call before it, in the same basic block; the arguments keep their own statements and order. A constructor is declared by its class name, its call of another constructor on its own object prints as `this(args)` (same class) or `super(args)` (the superclass), and the implicit no-argument `super()` to java.lang.Object prints nothing.
+- **When to flip:** On by default; it changes only java-language output. Turn OFF to see the bytecode's two steps, or to diff against upstream Ghidra's Java output.
+- **Where / provenance:** P9/readability-rewrites · kuna · presentation-default · kuna-dex-loader
+- **Example:** `option javanew off`
 
 ### `octeoneffects` -- off | atomic | ordered, default `atomic`
 

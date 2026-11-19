@@ -10,7 +10,7 @@ use kuna_base::xml::Element;
 use kuna_decomp::kuna_loadoptions::{self, LoadOptions, LoadScope};
 
 use crate::engine::{
-    arm_isa_from_env, bootstrap_image, bootstrap_mz_bytes, bootstrap_object,
+    arm_isa_from_env, bootstrap_dex_bytes, bootstrap_image, bootstrap_mz_bytes, bootstrap_object,
     bootstrap_raw_image, bootstrap_te, bootstrap_te_bytes, bootstrap_xml_image, classify_file,
     xml_root_image, ArmIsa, ConsoleProgram, FileInput, Languages,
 };
@@ -158,6 +158,7 @@ impl<'a, L: LanguageSource + ?Sized> Bootstrap<'a, L> {
         match input {
             FileInput::Mz(bytes) => self.mz_bytes(path, &bytes),
             FileInput::Te(bytes) => self.te_bytes(path, &bytes),
+            FileInput::Dex(bytes) => self.dex_bytes(path, bytes),
             FileInput::Object => self.object(path),
             FileInput::Xml(root) => self.xml_root(&root),
         }
@@ -193,6 +194,13 @@ impl<'a, L: LanguageSource + ?Sized> Bootstrap<'a, L> {
         let isa = self.resolved_isa()?;
         let _load = self.enter();
         bootstrap_mz_bytes(path, bytes, self.target, self.languages, isa)
+    }
+
+    /// Load a DEX file from bytes already read from `path`, as
+    /// [`bootstrap_from_dex_bytes`](crate::engine::bootstrap_from_dex_bytes) does.
+    pub fn dex_bytes(&self, path: &str, bytes: Vec<u8>) -> KunaResult<ConsoleProgram> {
+        let _load = self.enter();
+        bootstrap_dex_bytes(path, bytes, self.target, self.languages)
     }
 
     /// Load a `<binaryimage>` element as language `arch_id`, as

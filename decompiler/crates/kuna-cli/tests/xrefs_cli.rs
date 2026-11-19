@@ -562,3 +562,28 @@ fn the_gap_walk_finds_call_sites_a_descent_cannot_reach() {
         "the gap-walk-off answer still has the gap call site:\n{off}"
     );
 }
+
+/// The DEX fixture APK `tests/stages/fixtures/dex/two.apk`: `classes.dex` holds
+/// `demo.Hello`, `classes2.dex` holds `demo.Other`, which calls into it.
+fn two_apk() -> String {
+    repo_root().join("tests/stages/fixtures/dex/two.apk").to_str().unwrap().to_string()
+}
+
+/// An APK's calls resolve across its DEX files: `Other.twice` in
+/// `classes2.dex` reaches `Hello.add` in `classes.dex`, and asking about either
+/// end answers with the other.
+#[test]
+fn an_apk_call_resolves_into_another_dex_file() {
+    let to = xrefs(&[&two_apk(), "--to", "demo::Hello::add"]);
+    assert!(to.starts_with("# 4 references to demo::Hello::add @ 0x368"), "{to}");
+    assert!(
+        rows(&to).contains(&"0x1016c\tcall\tdemo::Other::twice\tinvoke-static demo.Hello.add(II)I"),
+        "{to}"
+    );
+    let from = xrefs(&[&two_apk(), "--from", "demo::Other::hi", "--json"]);
+    assert_eq!(json_int(&from, "/count"), Some(1));
+    assert_eq!(json_int(&from, "/xrefs/0/to_address"), Some(0x578));
+    assert_eq!(json_str(&from, "/xrefs/0/to_function/name").as_deref(), Some("demo::Hello::greet"));
+    let framework = xrefs(&[&two_apk(), "--from", "demo::Hello::main"]);
+    assert!(rows(&framework).iter().any(|r| r.starts_with("-\tcall\tjava::io::PrintStream::println\t")), "{framework}");
+}

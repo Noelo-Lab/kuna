@@ -261,6 +261,9 @@ fn query(args: &XrefArgs) -> Result<String, String> {
         &args.binary,
         kuna_analysis::loader::macho_fat::slice_pref(args.slice.as_deref(), args.target.as_deref()),
     )?;
+    if kuna_analysis::loadimage_dex::is_dex_image(&bytes) {
+        return dex_query(args, bytes);
+    }
     let file = kuna_analysis::loadimage_object::parse_object(&bytes)
         .map_err(|e| format!("could not parse {}: {e}", args.binary))?;
     let mut prog = load_program(&load, DriverDefaults::Query)?;
@@ -1220,6 +1223,120 @@ fn site_label(vma: u64, owner: Option<(u64, String)>) -> String {
         Some((entry, name)) => format!("{name}-0x{:x}", entry - vma),
         None => format!("0x{vma:x}"),
     }
+}
+
+// --- DEX and APK input --------------------------------------------------------
+
+/// `kuna xrefs` over a DEX file or an APK: the `invoke` call graph, every
+/// method reference resolved across the APK's DEX files
+/// (`kuna_dex::links`). Calls are the only kind a DEX image has.
+fn dex_query(args: &XrefArgs, bytes: Vec<u8>) -> Result<String, String> {
+    use kuna_decomp::kuna_dex::links;
+    let models = kuna_analysis::loadimage_dex::load_dex_models(bytes)
+        .map_err(|e| format!("could not parse {}: {e}", args.binary))?;
+    let mut names: BTreeMap<u64, String> = BTreeMap::new();
+    for model in &models {
+        for f in model.functions() {
+            names.insert(f.addr, f.name);
+        }
+    }
+    let spec = args.spec.trim();
+    let target = match spec.strip_prefix("0x").or_else(|| spec.strip_prefix("0X")) {
+        Some(hex) => u64::from_str_radix(hex, 16).map_err(|_| format!("invalid address {spec:?}"))?,
+        None => {
+            let found: Vec<u64> = names.iter().filter(|(_, n)| n.as_str() == spec).map(|(&a, _)| a).collect();
+            match found.as_slice() {
+                [one] => *one,
+                [] => return Err(format!("no method named {spec:?}")),
+                _ => return Err(format!("{spec:?} names {} methods; give an address", found.len())),
+            }
+        }
+    };
+    let entry_of = |site: u64| names.range(..=site).next_back().map(|(&a, n)| (a, n.clone()));
+    let calls = links::calls(&models);
+    let wants_calls = args.kinds.is_empty() || args.kinds.contains(&XrefKind::Call);
+    let rows: Vec<&links::DexCall> = calls
+        .iter()
+        .filter(|c| {
+            wants_calls
+                && match args.direction {
+                    Direction::To => c.callee == Some(target),
+                    Direction::From => c.caller == target || (!names.contains_key(&target) && c.site == target),
+                }
+        })
+        .collect();
+    let target_name = names.get(&target).cloned();
+    if args.json {
+        let function = |addr: Option<u64>, name: &str| match addr {
+            Some(a) => function_json(name, a),
+            None => Json::Object(vec![("name".into(), Json::Str(name.to_string())), ("address".into(), Json::Null)]),
+        };
+        let xrefs = rows
+            .iter()
+            .map(|c| {
+                let caller = entry_of(c.site).map(|(_, n)| n).unwrap_or_default();
+                let other = match args.direction {
+                    Direction::To => Some(c.site),
+                    Direction::From => c.callee,
+                };
+                let number = |a: Option<u64>| a.map_or(Json::Null, |a| Json::Number(a.to_string()));
+                let hex = |a: Option<u64>| a.map_or(Json::Null, |a| Json::Str(format!("0x{a:x}")));
+                Json::Object(vec![
+                    ("address".into(), number(other)),
+                    ("address_hex".into(), hex(other)),
+                    ("kind".into(), Json::Str("call".into())),
+                    ("from_address".into(), number(Some(c.site))),
+                    ("from_address_hex".into(), hex(Some(c.site))),
+                    ("to_address".into(), number(c.callee)),
+                    ("to_address_hex".into(), hex(c.callee)),
+                    ("from_function".into(), function(Some(c.caller), &caller)),
+                    ("to_function".into(), function(c.callee, &c.callee_name)),
+                    ("instruction".into(), Json::Str(c.instruction.clone())),
+                ])
+            })
+            .collect();
+        let doc = Json::Object(vec![
+            ("binary".into(), Json::Str(args.binary.clone())),
+            (
+                "target".into(),
+                Json::Object(vec![
+                    ("name".into(), target_name.clone().map_or(Json::Null, Json::Str)),
+                    ("address".into(), Json::Number(target.to_string())),
+                    ("address_hex".into(), Json::Str(format!("0x{target:x}"))),
+                    ("aliases".into(), Json::Array(Vec::new())),
+                ]),
+            ),
+            ("direction".into(), Json::Str(args.direction.as_str().to_string())),
+            ("count".into(), Json::Number(rows.len().to_string())),
+            ("xrefs".into(), Json::Array(xrefs)),
+        ]);
+        return Ok(format!("{}\n", dumps_indent2(&doc)));
+    }
+    use std::fmt::Write as _;
+    let mut out = String::new();
+    let label = match &target_name {
+        Some(name) => format!("{name} @ 0x{target:x}"),
+        None => format!("0x{target:x}"),
+    };
+    let plural = if rows.len() == 1 { "reference" } else { "references" };
+    let _ = writeln!(out, "# {} {plural} {} {label}", rows.len(), args.direction.as_str());
+    for c in rows {
+        match args.direction {
+            Direction::To => {
+                let site = match entry_of(c.site) {
+                    Some((entry, name)) if entry < c.site => format!("{name}+0x{:x}", c.site - entry),
+                    Some((_, name)) => name,
+                    None => format!("0x{:x}", c.site),
+                };
+                let _ = writeln!(out, "0x{:x}\tcall\t{site}\t{}", c.site, c.instruction);
+            }
+            Direction::From => {
+                let to = c.callee.map_or_else(|| "-".to_string(), |a| format!("0x{a:x}"));
+                let _ = writeln!(out, "{to}\tcall\t{}\t@0x{:x}\t{}", c.callee_name, c.site, c.instruction);
+            }
+        }
+    }
+    Ok(out)
 }
 
 // --- argument parsing --------------------------------------------------------

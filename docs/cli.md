@@ -1187,8 +1187,8 @@ ABI/type recovery, so arbitrary output is not promised to compile. This selector
 does not add Go multi-result, string, slice or interface recovery. `auto` still
 selects Rust for a detected Rust image and C otherwise, including Go images.
 
-**`--language auto|c|rust|go`** selects the output language. **`auto` is the
-default and follows the binary**: a Rust binary renders as Rust, because kuna
+**`--language auto|c|rust|go|java`** selects the output language. **`auto` is the
+default and follows the binary**: a DEX file renders as Java, and a Rust binary renders as Rust, because kuna
 already detects one (`kuna-analysis`'s `sourcelang` pass, the port of Ghidra's
 `SourceLanguageAnalyzer`) and rendering it as C is worse in a way the reader has
 to undo by hand (DIV-80). Detection is high-precision, not heuristic; an
@@ -1371,6 +1371,45 @@ with other segments in DS.
 `decompile-project` and the console support MZ input; `strings`, `xrefs`,
 `decompile-graph` and the graph-backed `--summary`/`--reachable-from` need an
 object-file view and refuse it with a capability error, as for a TE.
+
+### DEX files
+
+A `.dex` file (Android bytecode, `dex\n035`..`039`) or an `.apk` loads like any
+other image: the file is mapped at address 0, every method with code is a function
+named `pkg::Class::method` (a method name shared by several overloads gets
+`_<addr>` appended), and its DEX prototype is its signature. The output
+language defaults to Java (`--language c` gives C).
+
+```bash
+kuna functions classes.dex | head -3
+#   0x350	demo::Hello::isHello
+#   0x368	demo::Hello::add
+#   0x37c	demo::Hello::callMany
+kuna decompile classes.dex 'demo::Hello::greet'
+#   String greet(String a0)
+#   {
+#     StringBuilder v1; // resultreg | v0 | v2
+#     v1 = new StringBuilder();
+#     v1 = v1.append("Hello, ");
+#     v1 = v1.append(a0);
+#     return v1.toString();
+#   }
+```
+
+Method, field, string and type references resolve through the DEX constant
+pool, a method's arguments are read from its input registers, and
+`sparse-switch` tables are recovered (`--option dexmodel off` and
+`--option jumpassist off` show the raw SLEIGH lifting instead). An allocation
+and the constructor call that initializes it print as one `new T(args)` when
+they sit together in a basic block; `--option javanew off` prints the bytecode's
+two steps, `v = new(T); v.<init>(args);`. The language is `Dalvik:LE:32:DEX_Android12`; `--target` selects another
+`Dalvik:` language. An APK loads directly: its `classes.dex`, `classes2.dex`, ...
+are inflated and mapped one after another, each at a 64 KiB boundary, so one
+run covers the whole app and a call from one file into a class of another
+prints by name. The on-device forms load the same way: a compact DEX file
+(`cdex`), an ODEX (`dey\n`, decoded with `Dalvik:LE:32:ODEX_KitKat`), a
+version-027 VDEX, and an OAT file (an ELF whose `oatdata` embeds the DEX files,
+up to Android 7).
 
 ### Headerless raw images
 
@@ -2945,6 +2984,22 @@ they compose one. How far the table runs comes from the switch's own range check
 back are indistinguishable from one long one. Without a range check to read, nothing
 is followed. This is what puts the callees inside a `switch` on
 `kuna decompile-graph`'s callee list.
+
+A DEX file or an APK has no object-file view, so `kuna xrefs` answers for it from
+the `invoke` call graph instead (`kuna_dex/links.rs`): every method reference is
+resolved across the APK's DEX files to the method it runs, through the
+superclass chain for an inherited method. `--to <method>` lists the call sites in
+every file; `--from <method>` lists what the method calls, a framework method no
+loaded file defines appearing by name with `-` for its address. `call` is the
+only kind.
+
+```console
+$ kuna xrefs two.apk --to demo::Hello::add
+# 4 references to demo::Hello::add @ 0x368
+0x458	call	demo::Hello::many	invoke-static demo.Hello.add(II)I
+...
+0x1016c	call	demo::Other::twice	invoke-static demo.Hello.add(II)I
+```
 
 A target nothing references is exit `0` with `count: 0` — an answer, not a
 failure. A name that resolves to nothing is exit `1` with the reason on stderr; a

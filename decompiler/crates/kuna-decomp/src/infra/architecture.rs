@@ -1992,6 +1992,21 @@ pub struct Architecture {
     /// not an option: written once at `load file` and the thing `option
     /// callmechanisms auto` tests.  The XML `<binaryimage>` bootstrap never sets it.
     pub image_elfv1_toc: bool,
+    /// (kuna `jumpassist`) The compiled `<jumpassist>` scripts.
+    jump_assists: Rc<crate::kuna_jumpassist::JumpAssists>,
+    /// (kuna) Recover switches from a jump-assist user-op (option `jumpassist`).
+    pub jump_assist: bool,
+    /// (kuna `dexmodel`) The loaded DEX files, when the image is one (or an
+    /// APK holding several).
+    pub dex: Vec<Rc<crate::kuna_dex::DexModel>>,
+    /// (kuna) Hand [`Self::dex`] to the engine (option `dexmodel`).
+    pub dex_model: bool,
+    /// (kuna) Print an allocation and its `<init>` call as `new T(args)` in
+    /// Java (option `javanew`).
+    pub java_new: bool,
+    /// (kuna) Recover a DEX method's try/catch blocks from its `try_item`s
+    /// (option `javatry`).
+    pub java_try: bool,
     /// Comments for this architecture (C++ `commentdb`).  // STUB(comment.cc)
     pub commentdb: CommentDatabase,
 
@@ -2643,6 +2658,12 @@ impl Architecture {
             call_mechanisms: Rc::default(),
             call_mechanism_mode: crate::kuna_callmechanisms::CallMechanismMode::Off, // (kuna) option callmechanisms; reset_defaults sets the shipped default
             image_elfv1_toc: false, // (kuna) a load-time fact; set by the console's `load file`
+            jump_assists: Rc::default(),
+            jump_assist: true,
+            dex: Vec::new(),
+            dex_model: true,
+            java_new: true,
+            java_try: true,
             commentdb: CommentDatabase::new(),
             // C++ ctor leaves types/print/defaultfp null; init() fills them.
             types: Rc::new(TypeFactoryImpl::new()),
@@ -2760,6 +2781,10 @@ impl Architecture {
         self.call_mechanism_mode = crate::kuna_callmechanisms::CallMechanismMode::Auto; // (kuna) option callmechanisms default `auto`: the PPC64 cspecs' uponreturn stores r2Save at 0x28(r1), the TOC save slot only under ELFv1, so on an image whose ELFv1 function descriptors the loader validated (a linked image's or an object's .opd) a return payload is installed only at a call whose next instruction reloads the slot it stores. Gated on that loader fact, which the XML bootstrap never sets, so it is structurally inert on the datatest corpus (0/675); `on` installs them on any image, `off` on none
         self.readonly_calls = Some(crate::p3_dataflow::heritage::READONLY_CROSS_PRODUCT);
         self.persist_calls = Some(crate::p3_dataflow::heritage::PERSIST_CROSS_PRODUCT);
+        self.jump_assist = true; // (kuna) option jumpassist default-on: only the Dalvik and JVM specs declare a <jumpassist>, and no datatest uses either
+        self.java_new = true; // (kuna) option javanew default-on: changes java-language output only
+        self.java_try = true; // (kuna) option javatry default-on: DEX methods only
+        self.dex_model = true; // (kuna) option dexmodel default-on: only a DEX image carries a model, so no other input changes
         self.narrow_args_callers = true; // (kuna) option narrowargs default `callers`: also narrow a 32-bit ARM parameter every caller of a closed function passes narrow, one of them extending it itself
         self.narrow_args = true; // (kuna) option narrowargs default-on: a register parameter whose uses read only its low 1, 2 or 4 bytes is declared that wide, and a callee's stated narrow parameter caps how much of the argument its callers consume (0/675 datatests)
         self.narrow_signed = false; // (kuna) option regsigned default-off: rebuilding a sign-extended register-local web at its low 1, 2 or 4 bytes moves decbench type_match by +0 to +4 perfect functions and adds casts elsewhere
@@ -3281,6 +3306,15 @@ impl Architecture {
             .ok_or_else(|| KunaError::recov(format!("Unknown function name: {name}")))
     }
 
+    /// (kuna `dexmodel`) The DEX models the engine may consult.
+    pub fn dex_models(&self) -> &[Rc<crate::kuna_dex::DexModel>] {
+        if self.dex_model {
+            &self.dex
+        } else {
+            &[]
+        }
+    }
+
     /// Park a source-declared prototype on the named global FunctionSymbol (C++
     /// `Architecture::setPrototype`: `queryFunction(name)->getFuncProto()` is locked
     /// from the parsed declaration).  A caller's `ActionDefaultParams::apply` later
@@ -3374,6 +3408,13 @@ impl Architecture {
         ctx.call_mechanism_effects = self.call_mechanism_mode.fires(self.image_elfv1_toc); // callmechanisms
         ctx.call_mechanism_reload_only =
             self.call_mechanism_mode == crate::kuna_callmechanisms::CallMechanismMode::Auto;
+        ctx.dex = entry.and_then(|addr| {
+            self.dex_models().iter().find(|model| model.contains(addr.get_offset())).cloned()
+        }); // dexmodel
+        ctx.java_try = self.java_try && ctx.dex.is_some(); // javatry
+        if self.jump_assist {
+            ctx.jump_assists = Rc::clone(&self.jump_assists); // jumpassist
+        }
         ctx.min_laned_register_size = self.get_minimum_laned_register_size();
         // Carry the laned-register table so the per-function Funcdata reaches
         // `glb->getLanedRegister` (C++ `Architecture::lanerecords`); cheap clones
@@ -3529,6 +3570,7 @@ impl Architecture {
         ctx.ptrdepthcap = self.ptrdepthcap; // (kuna) ptrdepthcap
         ctx.call_target_type = self.call_target_type && self.ctypes; // (kuna) calltargettype: only C's own spelling needs it
         ctx.call_target_c = ctx.call_target_type && self.print.out_lang() == crate::kuna_lang::OutLang::C; // (kuna) calltargettype
+        ctx.java_casts = self.print.out_lang() == crate::kuna_lang::OutLang::Java;
         if self.float_globals {
             ctx.float_globals = self.kuna_float_globals.clone(); // (kuna) floatglobals
             ctx.float_globals_pending = self.kuna_float_globals.is_none() && self.kuna_float_scan.is_some();
@@ -4536,6 +4578,30 @@ impl Architecture {
             let cspec = self.cspec_xml.clone();
             self.decode_segment_ops(&mut userops, cspec.as_deref(), "compiler_spec")
         });
+        let fixup_res = fixup_res.and_then(|()| {
+            // C++ `parseProcessorConfig`'s ELEM_JUMPASSIST branch
+            // (`userops.decodeJumpAssist`): the Dalvik and JVM switch scripts.
+            let Some(xml) = self.pspec_xml.clone() else {
+                return Ok(());
+            };
+            let mut store = DocumentStorage::new();
+            let root = store.parse_document(&xml)?.get_root().clone();
+            let assists: Vec<Rc<kuna_base::xml::Element>> = root
+                .get_children()
+                .iter()
+                .filter(|c| c.get_name() == "jumpassist")
+                .cloned()
+                .collect();
+            let manager = self.translate.manager_rc();
+            let mut registry = IdRegistry::with_base_ids();
+            crate::pcodeinject::register_ids(&mut registry);
+            crate::userop::register_ids(&mut registry);
+            for assist in assists.iter() {
+                let mut decoder = XmlDecode::new_with_root(&manager, &registry, assist, 0);
+                userops.decode_jump_assist(&mut decoder, self)?;
+            }
+            Ok(())
+        });
         self.userops = userops;
         fixup_res?;
 
@@ -4572,6 +4638,7 @@ impl Architecture {
         };
         if parse_res.is_ok() {
             self.call_mechanisms = Rc::new(crate::kuna_callmechanisms::Mechanisms::from_library(&lib));
+            self.jump_assists = Rc::new(crate::kuna_jumpassist::JumpAssists::from_library(&self.userops, &lib));
         }
         self.pcodeinjectlib = lib;
         parse_res
@@ -4737,7 +4804,16 @@ impl Architecture {
             userops.register_builtin(BUILTIN_KERNEL_WARN, &adapter)?;
             // (kuna repstring) the fills and the compare a repeated string
             // instruction prints as.
-            for id in [BUILTIN_MEMSET16, BUILTIN_MEMSET32, BUILTIN_MEMSET64, BUILTIN_MEMCMP] {
+            for id in [
+                BUILTIN_MEMSET16,
+                BUILTIN_MEMSET32,
+                BUILTIN_MEMSET64,
+                BUILTIN_MEMCMP,
+                // (kuna javatry) the DEX try dispatch, exceptional edge and caught value.
+                crate::userop::BUILTIN_JAVA_TRY,
+                crate::userop::BUILTIN_JAVA_THROWS,
+                crate::userop::BUILTIN_JAVA_CAUGHT,
+            ] {
                 userops.register_builtin(id, &adapter)?;
             }
             Ok(())
@@ -7213,6 +7289,9 @@ impl crate::userop::UseropTypeArchitecture for BuiltinTypeArch {
         self.types
             .get_type_char(self.types.get_size_of_wchar())
             .expect("builtin: getTypeChar(wchar)")
+    }
+    fn get_type_bool(&self) -> Rc<crate::dtype::Datatype> {
+        self.types.get_base(1, type_metatype::TYPE_BOOL).expect("builtin: getBase(BOOL)")
     }
 }
 

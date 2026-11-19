@@ -74,5 +74,8 @@ pub mod kuna_symbolnamebound;
 // (kuna) `<eval_current_prototype>`: the compiler spec's model for evaluating the
 // current function's own unknown prototype (register-parameter recovery).
 pub mod kuna_evalcurrentproto;
+// (kuna `dexmodel`) The DEX format, and the constant pool and register payloads
+// a DEX image supplies to the Dalvik spec.
+pub mod kuna_dex;
 
 pub(crate) mod kuna_wrappedstackmap;
