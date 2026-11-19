@@ -52,6 +52,12 @@ The same holds on the input side. A recovered prototype that drops a parameter (
 leaves the body reading a register no caller sets. The check has to feed such reads a
 value the machine side does not get.
 
+This is the one place D-Helix (proposal, Prior work) was blind. It read both sides
+through the prototype the decompiler recovered, and its paper attributes every false
+negative it measured to that. The bug family is not specific to kuna either: D-Helix's
+Ghidra findings include `RuleIntLessEqual` with `RuleSubvarSext` turning `x < 128` into
+`x < -128`, the sign-extension sibling of #794's `RuleSubvarZext`.
+
 ## 4. Why equivalence is the hard part
 
 Lifted machine code and the decompiled function describe the same computation in

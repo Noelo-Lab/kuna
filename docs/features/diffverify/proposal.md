@@ -53,8 +53,12 @@ candidate change that makes a function newly `DIFFERS` is rejected before review
   p-code over the load image) until it returns.
 - Inputs: a full random ABI state, with seeded edge values (0, -1, sign boundaries, shift
   counts ≥ width).
-- Pointer arguments point into a mapped scratch region of the same contents on both
-  sides.
+- Pointer arguments point into a mapped scratch region with the same contents **and the
+  same addresses** on both sides. A pointer that differs between the sides makes every
+  address-dependent value differ, which is a harness false positive, not a bug. All of
+  D-Helix's false positives had this cause (see Prior work).
+- Globals read their real initial values from the load image, the same image on both
+  sides, not zero.
 
 **Decompiled side.**
 - Run the final `Funcdata` (after the action tree, before printing) with a graph
@@ -85,6 +89,18 @@ that exceeds it is `UNKNOWN`.
 (`count_apply > 0`) disabled, by delta debugging over `disable_rule`, and report the
 smallest set that removes the difference. Once #1699 lands, per-phase snapshots further
 narrow the difference to P2, Band B or P6.
+- **Only fired rules are candidates.** The search space is the k rules that applied to
+  this function, not the whole rule table, so a single culprit costs about log2 k
+  re-decompiles of one function.
+- **A candidate must not add a difference.** Disabling rules can break output on its own;
+  D-Helix saw new errors once more than two Ghidra rules were off. A subset that removes
+  the original difference but makes any other observable differ is rejected.
+- **"No rule set removes it" is a result.** D-Helix could not fix 83.7% of its Ghidra
+  findings by toggling rules, because the defect was in printing or core code rather than
+  a rule. The report says so, which tells the reader to look outside the rule table.
+- **Past culprits are tried first.** Rule sets that explained earlier differences are
+  kept with a hit count and tried before the search. D-Helix's version of this sped its
+  tuner up 44–278×.
 
 **Sees.** The body-rewrite class (~15 of 56 P3/P4 fixes) and the prototype/ABI class
 (~29), per `analysis.md` §2.
@@ -172,15 +188,20 @@ This tier makes Tier C's machine side trustworthy.
 
 It is the only tier that sees type, P6, P8 and P9 bugs. It is also the tier most limited
 by printed C that does not compile, and by cross toolchains. decbench's `byte_match`
-already hits that wall (`docs/decbench-loop.md`, Trap 1).
+already hits that wall (`docs/decbench-loop.md`, Trap 1). D-Helix measured the wall on
+Ghidra: clang compiled 24.9% of decompiled functions as printed, and its repair loop
+raised that to 72.4%. Its repairs gave undefined variables default types and values,
+which introduced differences of their own. A repair here therefore stays out of
+values the function reads, and decompiler pseudo-operations are linked from a helper
+library rather than stubbed.
 
 ## Slices
 
 | slice | scope | done when |
 |---|---|---|
-| C1 | Tier C, leaf functions, integer only; ABI projection of returns and parameters; declared-divergence list | reverting #794 gives `DIFFERS` on its fixture; verdict table over `tests/datatests` + `tests/stages` |
-| C2 | calls by record/replay; rule bisection | bisection names `subvar_zext` on reverted #794; reverting #801 gives `DIFFERS` |
-| C3 | corpus run (decbench binaries), triage of every `DIFFERS` into bug / declared divergence / harness bug | published verdict table |
+| C1 | Tier C, leaf functions, integer only; ABI projection of returns and parameters; declared-divergence list | reverting #794 gives `DIFFERS` on its fixture; verdict table over `tests/datatests` + `tests/stages`, with per-function and total time |
+| C2 | calls by record/replay; rule bisection | bisection names `subvar_zext` on reverted #794; reverting #801 gives `DIFFERS`; bisection cost per finding |
+| C3 | corpus run (decbench binaries); precision and recall | precision: triage of every `DIFFERS` into bug / declared divergence / harness bug. Recall: of the ~44 visible P3/P4 fixes that have a fixture, how many give `DIFFERS` when reverted. Published table with both |
 | S1 | Tier S for loop-free `AGREES` functions, under the budget | `EQUIVALENT` and `UNKNOWN(budget)` counts on the same corpus; every `sat` replays |
 | S2 | bounded loops; budget baseline and budget-regression flag | `EQUIVALENT(≤k)` counts; a deliberately bloating rule change is flagged by budget alone |
 | L1 | Tier L for x86-64, AArch64, ARM | per-arch mismatch report with skip list |
@@ -189,6 +210,56 @@ already hits that wall (`docs/decbench-loop.md`, Trap 1).
 **CI.** The tool runs as a non-gating job that publishes the verdict table. It becomes a
 gate only once the `DIFFERS` set is empty or every entry is a declared divergence, with a
 baseline file like `docs/baseline.json`.
+
+## Cost
+
+Nothing has been measured yet; C1 measures it. What the design expects, and why:
+
+- **Tier C** costs one decompile, which a check needs anyway, plus n concrete runs of
+  one function (256 by default), each capped by a step budget. There is no solver and
+  no compiler in the loop. The target is that a Tier C pass over `tests/datatests` and
+  `tests/stages` fits in a CI job measured in minutes.
+- **Localization** runs only on `DIFFERS`, at about log2 k re-decompiles of one function
+  for a single culprit (k = the rules that fired on it).
+- **Tier S** is bounded per function by the budget in its section, so its total is
+  bounded by the corpus size.
+- **For scale:** D-Helix gave symbolic execution two minutes per function on a 112-core
+  server with 1 TB of memory, left out binaries over 30 MiB because they took days, and
+  let its tuner run up to two weeks on one function. Tier C and fired-rule bisection are
+  meant to avoid both costs; C1 and C2 report whether they do.
+
+kuna-verify is a development tool. It is never on the decompile path, so its cost never
+reaches a user's decompile.
+
+## Prior work
+
+**D-Helix** (Zou et al., USENIX Security 2024,
+<https://www.usenix.org/system/files/usenixsecurity24-zou.pdf>) is the closest prior
+design.
+- It recompiles each decompiled function, symbolically executes the result and the
+  lifted P-code, and asks z3 whether the return values can differ.
+- A tuner toggles rules to find the culprit. It found 17 new bugs in Ghidra and angr,
+  and the tuner fixed 7 automatically by toggling rules.
+- One of them is the same rule family as #794: `RuleIntLessEqual` together with
+  `RuleSubvarSext` turned `x < 128` into `x < -128`.
+
+This proposal keeps its core idea (the lift is ground truth, and rule toggling localizes)
+and differs where D-Helix reported its losses:
+
+| | D-Helix | this proposal |
+|---|---|---|
+| decompiled side | recompiled C; 27.6% of Ghidra functions lost to compile failures | the final `Funcdata`, run directly (Tier C); recompiling is Tier P only |
+| observables | the return value | return value, stores outside the frame, the ordered calls with their arguments (#801, #893) |
+| prototype | read through the recovered prototype; all of its false negatives came from that | machine side read by the ABI, kuna's side through its claimed prototype; undeclared inputs read poison |
+| calls | modeled as returning the sum of the arguments' low bytes | recorded and replayed concretely; uninterpreted functions in Tier S |
+| loops | after a timeout, each branch at most twice, then a dummy return | step budget, `UNKNOWN` beyond it; Tier S reports `EQUIVALENT(≤k)` as bounded |
+| globals | zero | the load image's initial values |
+| culprit search | combinations of 1, then 2, of all 151 rules; up to two weeks per function | delta debugging over the rules that fired on the function |
+| lifter | trusted | checked separately (Tier L) |
+
+**MeanDiff** compares lifters per instruction with symbolic formulas, which is the shape
+of Tier L. **Alive2** checks LLVM optimizations with SMT and gives inputs `poison` and
+`undef` values, the same idea as Tier C's poison input.
 
 ## Related work in this repository
 

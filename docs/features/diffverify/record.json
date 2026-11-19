@@ -28,5 +28,17 @@
     "body_rewrite": 15,
     "prototype_abi": 29,
     "not_visible": 12
+  },
+  "prior_work": [
+    {
+      "name": "D-Helix",
+      "venue": "USENIX Security 2024",
+      "url": "https://www.usenix.org/system/files/usenixsecurity24-zou.pdf"
+    }
+  ],
+  "measurements_required": {
+    "C1": "per-function and total Tier C time",
+    "C2": "bisection cost per finding",
+    "C3": "precision (triage) and recall (reverted fixes)"
   }
 }
