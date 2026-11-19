@@ -1,0 +1,115 @@
+# Writing and changing SLEIGH processor specs
+
+kuna decodes every instruction through the SLEIGH processor modules under
+`specs/Ghidra/Processors/`. Most were vendored from Ghidra. kuna also fixes them
+(x86, SPARC, AArch64 rounding modes), extends them (the Octeon MIPS variants) and adds
+modules Ghidra does not have (Cortus APS3). This page covers both kinds of work and
+the places that have to change with them. Concrete examples are cited by commit.
+
+## The files of a module
+
+A module lives in `specs/Ghidra/Processors/<P>/data/languages/`:
+
+| file | holds | read at runtime? |
+|---|---|---|
+| `.slaspec` (+ the `.sinc` files it `@include`s) | registers, tokens, instruction decoding and p-code semantics | no; compiled to `.sla` |
+| `.sla` | the compiled form; a build artifact, gitignored | yes |
+| `.ldefs` | one `<language>` per variant: its id, `.sla`, `.pspec` and the `.cspec` of each compiler | yes |
+| `.pspec` | the program counter, context register defaults, volatile (MMIO) ranges | yes |
+| `.cspec` | data sizes, stack pointer, return address, calling conventions, callee-saved registers | yes |
+| `.dwarf` (optional) | DWARF register numbering | yes |
+
+A language id is `processor:endian:size:variant`, and a target adds the compiler id:
+`Cortus:LE:32:APS3:default`. kuna finds modules by scanning every `.ldefs` under its
+spec roots, so there is no registration table; the web front-end bundles the same
+runtime files the same way (`docs/web-integration.md` §3).
+
+## Compiling
+
+```sh
+kuna specs specs/Ghidra/Processors/Cortus/data/languages/aps3.slaspec   # one spec
+make specs                                                               # all of them
+```
+
+`kuna specs` is `slacomp`, which has upstream `sleigh_opt`'s command line. In a
+worktree, do not run `make specs`; symlink the main tree's `.sla` files instead
+(`docs/agents.md`, Conventions).
+
+To look at what a constructor produces, `kuna raw-pcode <binary> <addr> --count N`
+prints each instruction's bytes, disassembly and p-code before any analysis
+(`docs/cli.md`). A headerless firmware image loads with `--raw-image --target <id>
+--base <vma>`; `specs/Ghidra/Processors/Cortus/README.md` shows a full example.
+
+## Adding a module Ghidra does not have
+
+Cortus APS3 (`d3617d648`) is the reference: four files, a README, and one stage test.
+
+1. **Write the module and a README next to `data/`.** Say where the instruction set
+   came from. Cortus's was recovered from firmware because no opcode table is public,
+   so each guessed constructor carries a `# GUESS` comment with its evidence, and the
+   README states what is proven (lengths and operand formats for all 256 opcodes) and
+   what is not (some mnemonics).
+2. **Never use `unimpl` for an instruction whose length is known.** `unimpl` aborts the
+   enclosing basic block, and with it the whole function. Declare an opaque operation
+   (`define pcodeop aps3_unknown_op;`) and assign its result to the destination
+   register. On Cortus this took the functions with an unimplemented-instruction
+   warning from 24 to 0.
+3. **Measure the `.cspec`, and record the measurement in its comment.** `aps3.cspec`
+   gives, per register, the share of call sites that set it and of prologues that save
+   it, which is where its argument registers and its callee-saved split come from.
+4. **Mark MMIO windows volatile in the `.pspec`**, so repeated register reads do not
+   fold into one.
+5. **Make it loadable.** If an object format can name this processor, map it in
+   `compose_language_id` (`decompiler/crates/kuna-analysis/src/loadimage_object.rs`).
+   Otherwise it is reached with `--raw-image --target`.
+6. **Bump the spec count.** `decompiler/crates/kuna-sleigh/tests/verify_context_commits.rs`
+   asserts the number of compiled `.sla` files; every new `.slaspec` changes it.
+7. **Add a stage test** with `<binaryimage arch="<id>:<compiler>">` and the
+   instruction bytes in `<bytechunk>`s (`tests/stages/cortus-aps3-constructors.xml`),
+   then bump the corpus count and re-record `docs/baseline-stages.json`
+   (`docs/agents.md`, Conventions).
+
+Adding the new spec to the compiler oracle (below) is optional; the Octeon variants did,
+Cortus did not.
+
+## Changing a vendored spec
+
+A constructor that produces wrong p-code is a strict correctness fix. It ships with no
+option, and its stage test pins the corrected output.
+
+**The compiler oracle.** `decompiler/crates/kuna-slacomp/tests/golden/compiler.sha256`
+pins the SHA-256 of each listed spec's decompressed `.sla` element stream, as produced
+by Ghidra's C++ `sleigh_opt` at the pinned `GHIDRA_REV`. The stream records source line
+numbers, so any edit to a listed spec, or to a `.sinc` it includes, changes its digest,
+even when the semantics of the other constructors do not change. To update an entry:
+
+1. Show that the compiler you use reproduces the current digest on the unmodified
+   sources.
+2. Regenerate the digest on the changed sources with the same compiler.
+3. Say in `tests/golden/README.md` which entries changed, why, and with which compiler.
+
+```sh
+cargo test --manifest-path decompiler/Cargo.toml --release -p kuna-slacomp --test compiler_parity
+```
+
+Keeping the line count stable keeps the other digests stable: the `x86-16` hook in
+`ia.sinc` replaced three blank lines, so the `x86` and `x86-64` digests did not move.
+
+**Shared `.sinc` files reach every language that includes them.** A change meant for
+one variant goes behind a guard: `x86-16.slaspec` defines `IA16`, and the Octeon
+constructors sit behind conditional guards in the shared MIPS `.sinc` files
+(`e27d88545`).
+
+**Upstream syncs.** `tools/sync_upstream.py` maps Ghidra's
+`Ghidra/Processors/<P>/data/languages/` onto these directories and falls back to a
+three-way merge when a file was edited locally (`docs/history.md`, Upstream provenance
+& sync). Small, local edits are what keeps that merge clean.
+
+**Describe the change** in `docs/spec/02-lift-and-flow.md`, as its Octeon and x86-16
+passages do.
+
+## Before committing
+
+1. `kuna specs` on the changed spec compiles with no new errors.
+2. The `compiler_parity` test above passes, with any digest change explained.
+3. The four gates in `docs/agents.md` pass.
