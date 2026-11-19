@@ -2180,7 +2180,7 @@ impl PrintC {
     /// (C++ passes the `PcodeOp *`): `opref = op->getTime()`, the `<ast>`
     /// `<seqnum uniq>`. Gated on the markup back-end or an explicitly requested
     /// plain statement sidecar, so the ordinary plain-text path does no lookup.
-    fn op_markup(&self, fd: &Funcdata, op: OpId) -> MarkupRef {
+    pub(crate) fn op_markup(&self, fd: &Funcdata, op: OpId) -> MarkupRef {
         if !self.emit.emits_markup()
             && !self.emit.captures_plain_statement_provenance()
         {
@@ -2742,25 +2742,43 @@ impl PrintC {
         // ScopeLocal symbol walk is the W4 surface; we emit from the named
         // HighVariables directly (the `kuna_name` stand-in), which is the same set
         // of locals the scope would declare.
-        let _emitted_decls = self.emit_local_var_decls(fd, arch);
-        self.emit_indirect_input_aliases(fd);
-        crate::kuna_renderfault::check(fd.get_address().get_offset());
-        if fd.sblocks_get_size() != 0 {
-            self.emit_function_body(fd, arch);
+        let atomic_return = if self.out_lang == crate::kuna_lang::OutLang::Go
+            && !self.signature_param_names.values().any(|name| name == "atomic" || name == "unsafe")
+        {
+            super::kuna_goatomicreturn::plan(fd, arch)
         } else {
-            // No structured tree: keep the brace-matched shell and name the real
-            // cause.  A caught pipeline abort discards the analyzed Funcdata, so
-            // what is being rendered is the previous, un-decompiled one — that is
-            // a pipeline failure (the driver stamped its reason), NOT structuring
-            // declining on analyzed IR.
-            self.emit.tag_line();
-            let warning = match fd.kuna_pipeline_failure() {
-                Some(reason) => format!("WARNING: decompilation failed: {reason}"),
-                None => "WARNING: structured blocks unavailable (structuring declined)".to_string(),
-            };
-            let text = format!("/* {warning} */");
-            self.emit.print(&text, SyntaxHighlight::CommentColor);
-            self.record_warning(crate::kuna_functionwarnings::Warning::new(None, &warning), &text);
+            None
+        };
+        if let Some(plan) = atomic_return {
+            crate::kuna_renderfault::check(fd.get_address().get_offset());
+            if let Some(block) = fd.obank().get(plan.atomic).and_then(|op| op.get_parent()) {
+                self.commsorter.setup_block_list(fd.bblocks_ref().block(block).get_index());
+            }
+            self.emit.reset_pending_fired();
+            self.emit_comment_group(fd, Some(plan.atomic));
+            self.emit_go_atomic_return(fd, arch, &plan);
+            self.emit_comment_group(fd, None);
+        } else {
+            let _emitted_decls = self.emit_local_var_decls(fd, arch);
+            self.emit_indirect_input_aliases(fd);
+            crate::kuna_renderfault::check(fd.get_address().get_offset());
+            if fd.sblocks_get_size() != 0 {
+                self.emit_function_body(fd, arch);
+            } else {
+                // No structured tree: keep the brace-matched shell and name the real
+                // cause.  A caught pipeline abort discards the analyzed Funcdata, so
+                // what is being rendered is the previous, un-decompiled one — that is
+                // a pipeline failure (the driver stamped its reason), NOT structuring
+                // declining on analyzed IR.
+                self.emit.tag_line();
+                let warning = match fd.kuna_pipeline_failure() {
+                    Some(reason) => format!("WARNING: decompilation failed: {reason}"),
+                    None => "WARNING: structured blocks unavailable (structuring declined)".to_string(),
+                };
+                let text = format!("/* {warning} */");
+                self.emit.print(&text, SyntaxHighlight::CommentColor);
+                self.record_warning(crate::kuna_functionwarnings::Warning::new(None, &warning), &text);
+            }
         }
         // (kuna warnstyle, DIV-39) drain any slug still pending from a
         // construct with no closer flush point onto the last body line, so no
@@ -6172,7 +6190,7 @@ impl PrintC {
     /// else `None` at the top of an expression (printc.cc:2579 passes `(PcodeOp *)0`).
     /// Only `opIntSext`/`opIntZext` consume it (the extension-cast-implied test,
     /// printc.cc:806-830); every other override ignores it.
-    fn op_push_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId, read_op: Option<OpId>) {
+    pub(crate) fn op_push_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId, read_op: Option<OpId>) {
         let opc = fd.obank().get(op).expect("op_push_ir: stale op").code();
         // (kuna truthycond, DIV-37) CONDITION_CONTEXT only survives through the
         // boolean-preserving operators; any other operator's operands are value

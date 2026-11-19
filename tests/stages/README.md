@@ -1,5 +1,9 @@
 # Stage-model issue testcases
 
+`kuna-go-atomic-return.xml` checks exact AMD64 Go direct-return atomic additions,
+including old-value, flag, branch, memory-effect and width refusals. The same
+bytes retain C/Rust rendering and the non-Go source control.
+
 `ghangr-go-abi0-model.xml` checks recovery of a Go stack-input leaf and the
 arguments passed by both call orders. It also checks the disabled option,
 an ordinary name lookalike, a wrapper with stack results, the signal

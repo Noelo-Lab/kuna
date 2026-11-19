@@ -2116,6 +2116,9 @@ truncating the fall-through here"
                 insn_ops.push(next);
             }
             crate::kuna_retpushedhalf::observe_instruction(&mut self.data, &insn_ops);
+            if flowoverride == crate::overrides::flow_type::NONE {
+                super::kuna_atomicxadd::observe(&mut self.data, &insn_ops);
+            }
             ends_in_call = self.pool_bound && self.ends_in_unconditional_call(&insn_ops);
             let seq = self.data.obank().get(firstop).expect("process: stale firstop").get_seq_num().clone();
             if let Some(stat) = self.visited.get_mut(curaddr) {

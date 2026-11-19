@@ -90,6 +90,27 @@ With `partialaccess` enabled, pointer views of volatile annotations retain a
 volatile pointee, including sixteen-byte views, so changing the spelling does
 not change the access width or permit the C compiler to merge the accesses.
 
+AMD64 Go direct-return atomic additions use
+`kuna_goatomicreturn.rs (plan)`. The original instruction record must retain
+its LOCK, STORE, old-value LOAD and UNLOCK identities and user-op names. The
+entire live function must be one basic block containing exactly this update
+and one returned new sum, with no unmatched operation. Both sums add the same
+locked, signed input parameter to loads of the same pointer and byte width.
+The target pointer traces only through bounded pure address operations to a
+locked pointer parameter, and its pointee and return type are signed int32 or
+int64. Transparent same-width COPY/CAST operations preserve result bits.
+A live old-value consumer, flag, separate memory access, call, branch, second
+atomic operation or unproved operand refuses the recovery.
+
+The renderer emits one `atomic.AddInt32` or `atomic.AddInt64` call as the
+complete return body. It expands the proved pure address once and reads the
+delta once; no removed local declaration remains necessary. A parameter emitted as
+`atomic` or `unsafe` refuses this form, as do flow overrides and failed
+analysis. This path is Go-only and retains the instruction's statement provenance. It changes neither
+SSA nor C/Rust rendering. A branch/return pair consuming the new value remains
+explicit until a separate once-only binding proof exists; substituting an
+atomic call for a repeatedly expanded pure sum would duplicate the effect.
+
 This phase renders the finished decompilation: it inserts the explicit
 cast/field-access operations a C compiler would need to *see* the recovered
 types (§9.1), then walks the structured block tree of chapter 08 and the SSA
