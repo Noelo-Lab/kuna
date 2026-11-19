@@ -50,6 +50,9 @@ const MAX_DEGREE: usize = 4;
 const MAX_MONOMIALS: usize = 128;
 /// Largest tree the rule looks at.
 const MAX_NODES: usize = 48;
+/// Smallest tree of bitwise ops alone that is looked at, and its most leaves.
+const MIN_BITWISE_OPS: usize = 3;
+const MAX_BITWISE_LEAVES: usize = 3;
 
 #[derive(Clone, Debug, PartialEq)]
 enum Expr {
@@ -117,12 +120,18 @@ impl Expr {
         }
     }
 
-    fn has_bitwise(&self) -> bool {
+    /// The truth table of each topmost bitwise term.
+    fn bitwise_tables(&self, n: usize, out: &mut Vec<u64>) {
         match self {
-            Expr::And(..) | Expr::Or(..) | Expr::Xor(..) | Expr::Not(_) => true,
-            Expr::Add(a, b) | Expr::Sub(a, b) | Expr::Prod(a, b) => a.has_bitwise() || b.has_bitwise(),
-            Expr::Neg(a) | Expr::Mul(a, _) => a.has_bitwise(),
-            _ => false,
+            Expr::Add(a, b) | Expr::Sub(a, b) | Expr::Prod(a, b) => {
+                a.bitwise_tables(n, out);
+                b.bitwise_tables(n, out);
+            }
+            Expr::Neg(a) | Expr::Mul(a, _) => a.bitwise_tables(n, out),
+            Expr::And(..) | Expr::Or(..) | Expr::Xor(..) | Expr::Not(_) => {
+                out.push(truth_table(self, n));
+            }
+            Expr::Leaf(_) | Expr::Const(_) => {}
         }
     }
 
@@ -141,7 +150,10 @@ fn coefficients(f: &Expr, n: usize, mask: u64) -> Vec<u64> {
     let points = 1usize << n;
     let mut b: Vec<u64> = (0..points)
         .map(|e| {
-            let leaves: Vec<u64> = (0..n).map(|i| ((e >> i) & 1) as u64).collect();
+            let mut leaves = [0u64; MAX_LEAVES];
+            for (i, l) in leaves.iter_mut().enumerate().take(n) {
+                *l = ((e >> i) & 1) as u64;
+            }
             f.eval(&leaves, mask)
         })
         .collect();
@@ -217,48 +229,41 @@ fn boolean_table(n: usize) -> &'static [Expr] {
 }
 
 fn minimal_exprs(n: usize) -> Vec<Expr> {
-    let points = 1usize << n;
-    let full = (1u32 << points) - 1;
-    let tt = |e: &Expr| -> u32 {
-        (0..points).fold(0, |acc, p| {
-            let leaves: Vec<u64> = (0..n).map(|i| ((p >> i) & 1) as u64).collect();
-            acc | (((e.eval(&leaves, 1)) as u32 & 1) << p)
-        })
-    };
-    let mut best: std::collections::BTreeMap<u32, Expr> = std::collections::BTreeMap::new();
-    for i in 0..n {
-        best.insert(tt(&Expr::Leaf(i)), Expr::Leaf(i));
-    }
+    let full = (1u32 << (1usize << n)) - 1;
+    let mut best: std::collections::BTreeMap<u32, (usize, Expr)> =
+        (0..n).map(|i| (COLUMNS[i] as u32 & full, (0, Expr::Leaf(i)))).collect();
     loop {
-        let known: Vec<Expr> = best.values().cloned().collect();
+        let known: Vec<(u32, usize, Expr)> = best.iter().map(|(t, (ops, e))| (*t, *ops, e.clone())).collect();
         let mut changed = false;
-        let mut offer = |e: Expr, best: &mut std::collections::BTreeMap<u32, Expr>| {
-            let t = tt(&e);
-            if t == 0 || t == full {
-                return;
-            }
-            if best.get(&t).is_none_or(|b| e.ops() < b.ops()) {
-                best.insert(t, e);
+        let mut offer = |t: u32, ops: usize, e: &dyn Fn() -> Expr| {
+            if t != 0 && t != full && best.get(&t).is_none_or(|b| ops < b.0) {
+                best.insert(t, (ops, e()));
                 changed = true;
             }
         };
-        for a in &known {
-            offer(Expr::Not(Box::new(a.clone())), &mut best);
-            for b in &known {
-                if a.ops() + b.ops() + 1 > 9 {
-                    continue;
-                }
-                let (x, y) = (Box::new(a.clone()), Box::new(b.clone()));
-                offer(Expr::And(x.clone(), y.clone()), &mut best);
-                offer(Expr::Or(x.clone(), y.clone()), &mut best);
-                offer(Expr::Xor(x, y), &mut best);
+        for (ta, oa, a) in &known {
+            offer(!ta & full, oa + 1, &|| Expr::Not(Box::new(a.clone())));
+            for (tb, ob, b) in known.iter().filter(|(_, ob, _)| oa + ob + 1 <= 9) {
+                let pair = || (Box::new(a.clone()), Box::new(b.clone()));
+                offer(ta & tb, oa + ob + 1, &|| {
+                    let (x, y) = pair();
+                    Expr::And(x, y)
+                });
+                offer(ta | tb, oa + ob + 1, &|| {
+                    let (x, y) = pair();
+                    Expr::Or(x, y)
+                });
+                offer(ta ^ tb, oa + ob + 1, &|| {
+                    let (x, y) = pair();
+                    Expr::Xor(x, y)
+                });
             }
         }
         if !changed {
             break;
         }
     }
-    let mut out: Vec<Expr> = best.into_values().collect();
+    let mut out: Vec<Expr> = best.into_values().map(|(_, e)| e).collect();
     out.sort_by_key(Expr::ops); // stable: ties keep truth-table order
     out
 }
@@ -281,8 +286,23 @@ fn remap(e: &Expr, p: &[usize]) -> Expr {
     }
 }
 
+/// Bit `p` of column `i` is the value of leaf `i` at point `p`.
+const COLUMNS: [u64; MAX_LEAVES] = [
+    0xaaaa_aaaa_aaaa_aaaa,
+    0xcccc_cccc_cccc_cccc,
+    0xf0f0_f0f0_f0f0_f0f0,
+    0xff00_ff00_ff00_ff00,
+    0xffff_0000_ffff_0000,
+    0xffff_ffff_0000_0000,
+];
+
 /// The truth table (bit `p` is the value at point `p`) of `e` over `n` leaves.
+/// A tree of bitwise ops over leaves is evaluated at every point at once.
 fn truth_table(e: &Expr, n: usize) -> u64 {
+    if n <= MAX_LEAVES && e.is_bitwise_of_leaves() {
+        let points = 1u32 << n;
+        return e.eval(&COLUMNS, u64::MAX) & if points >= 64 { u64::MAX } else { (1u64 << points) - 1 };
+    }
     (0..1usize << n).fold(0, |acc, p| {
         let leaves: Vec<u64> = (0..n).map(|i| ((p >> i) & 1) as u64).collect();
         acc | ((e.eval(&leaves, 1) & 1) << p)
@@ -466,6 +486,102 @@ fn shannon(x: Expr, f0: Bool, f1: Bool, diff: impl FnOnce() -> Bool) -> Vec<Expr
     }
 }
 
+/// The two spellings of `w * g` for the boolean function `tt` of `vars`:
+/// `w * g`, and `-w * ~g - w` (`~g` is `-1 - g` at full width). Each is the
+/// expression, its coefficient and the constant it adds.
+fn bool_terms(tt: u64, vars: &[usize], w: u64, mask: u64) -> impl Iterator<Item = (Expr, u64, u64)> {
+    let width = 1usize << vars.len();
+    let not_tt = !tt & if width >= 64 { u64::MAX } else { (1u64 << width) - 1 };
+    let neg_w = w.wrapping_neg() & mask;
+    [(synth(tt, vars), w, 0u64), (synth(not_tt, vars), neg_w, neg_w)].into_iter().filter_map(|(g, c, kk)| match g {
+        Bool::E(e) => Some((e, c, kk)),
+        _ => None,
+    })
+}
+
+/// The truth table of what is left of `vals` after `Σ lin_j*x_j` is taken
+/// away, when that takes only the values 0 and `w`.
+fn two_valued(vals: &[u64], lin: &[u64], w: u64, mask: u64) -> Option<u64> {
+    let mut tt = 0u64;
+    for (p, &v) in vals.iter().enumerate() {
+        let l = (0..lin.len()).filter(|&j| p & (1 << j) != 0).fold(0u64, |a, j| a.wrapping_add(lin[j]));
+        match v.wrapping_sub(l) & mask {
+            0 => {}
+            r if r == w => tt |= 1 << p,
+            _ => return None,
+        }
+    }
+    Some(tt)
+}
+
+/// Largest group whose linear part is searched (`3^m` choices).
+const MAX_SPLIT_LEAVES: usize = 4;
+/// Most boolean-term weights tried per group.
+const MAX_WEIGHTS: usize = 8;
+
+/// The cheapest terms for one group of leaves, with the constant they add.
+/// `vals[p]` is the group's part at the 0/1 point `p`. The group is solved as
+/// `w*g + Σ c_j*x_j`: each leaf's `c_j` is 0, its own value `F_j` or `F_j - w`,
+/// and the choice stands when what is left takes only the values 0 and `w`,
+/// which makes it `w` times one boolean function `g`. The conjunction terms
+/// are the fallback. Choices are compared with the tree's constant added, so
+/// one that cancels it wins.
+fn group_terms(b: &[u64], vars: &[usize], mask: u64) -> (Vec<(Expr, u64)>, u64) {
+    let m = vars.len();
+    let abs = |e: usize| -> usize { (0..m).filter(|&j| e & (1 << j) != 0).map(|j| 1usize << vars[j]).sum() };
+    let vals: Vec<u64> = (0..1usize << m)
+        .map(|e| {
+            let top = abs(e);
+            let (mut acc, mut s) = (0u64, top);
+            while s != 0 {
+                acc = acc.wrapping_add(b[s]);
+                s = (s - 1) & top;
+            }
+            acc & mask
+        })
+        .collect();
+    let conj_terms: Vec<(Expr, u64)> = (1..1usize << m).map(|e| (conj(abs(e)), b[abs(e)])).collect();
+    let mut best_ops = sum(conj_terms.clone(), b[0], mask).ops();
+    let mut best = (conj_terms, 0u64);
+    let singles: Vec<u64> = (0..m).map(|j| vals[1 << j]).collect();
+    let mut weights: Vec<u64> = Vec::new();
+    for (p, &v) in vals.iter().enumerate() {
+        let lin = (0..m).filter(|&j| p & (1 << j) != 0).fold(0u64, |a, j| a.wrapping_add(singles[j]));
+        for w in [v, v.wrapping_sub(lin) & mask] {
+            if w != 0 && !weights.contains(&w) && weights.len() < MAX_WEIGHTS {
+                weights.push(w);
+            }
+        }
+    }
+    let choices = if m <= MAX_SPLIT_LEAVES { 3usize.pow(m as u32) } else { 1 };
+    for &w in &weights {
+        'choice: for choice in 0..choices {
+            let mut lin = vec![0u64; m];
+            let mut c = choice;
+            for j in 0..m {
+                lin[j] = match c % 3 {
+                    0 => 0,
+                    1 if singles[j] != 0 => singles[j],
+                    2 if singles[j] != w => singles[j].wrapping_sub(w) & mask,
+                    _ => continue 'choice,
+                };
+                c /= 3;
+            }
+            let Some(tt) = two_valued(&vals, &lin, w, mask) else { continue };
+            for (g, gc, kk) in bool_terms(tt, vars, w, mask) {
+                let mut terms = vec![(g, gc)];
+                terms.extend((0..m).filter(|&j| lin[j] != 0).map(|j| (Expr::Leaf(vars[j]), lin[j])));
+                let ops = sum(terms.clone(), b[0].wrapping_add(kk) & mask, mask).ops();
+                if ops < best_ops {
+                    best_ops = ops;
+                    best = (terms, kk);
+                }
+            }
+        }
+    }
+    best
+}
+
 /// The cheapest expression equal to the linear MBA `f` over `n` leaves.
 fn simplify(f: &Expr, n: usize, mask: u64) -> Expr {
     let b = coefficients(f, n, mask);
@@ -491,37 +607,8 @@ fn simplify(f: &Expr, n: usize, mask: u64) -> Expr {
     let mut terms: Vec<(Expr, u64)> = Vec::new();
     for &grp in &groups {
         let vars: Vec<usize> = (0..n).filter(|&i| grp & (1 << i) != 0).collect();
-        let m = vars.len();
-        // The group's part on its 0/1 points: the sum of its coefficients over
-        // the subsets of the point.
-        let vals: Vec<u64> = (0..1usize << m)
-            .map(|e| {
-                let abs: usize = (0..m).filter(|&j| e & (1 << j) != 0).map(|j| 1 << vars[j]).sum();
-                let mut acc = 0u64;
-                let mut s = abs;
-                while s != 0 {
-                    acc = acc.wrapping_add(b[s]);
-                    s = (s - 1) & abs;
-                }
-                acc & mask
-            })
-            .collect();
-        let Some(&w) = vals.iter().find(|&&v| v != 0) else { return full };
-        if vals.iter().any(|&v| v != 0 && v != w) {
-            return full;
-        }
-        let tt = vals.iter().enumerate().fold(0u64, |acc, (p, &v)| acc | (u64::from(v == w) << p));
-        let width = 1usize << m;
-        let not_tt = !tt & if width >= 64 { u64::MAX } else { (1u64 << width) - 1 };
-        let pick = [(synth(tt, &vars), w, 0u64), (synth(not_tt, &vars), w.wrapping_neg() & mask, w)]
-            .into_iter()
-            .filter_map(|(g, c, kk)| match g {
-                Bool::E(e) => Some((e, c, kk)),
-                _ => None,
-            })
-            .min_by_key(|(e, c, _)| scaled(e.clone(), *c, mask).0.ops());
-        let Some((g, c, kk)) = pick else { return full };
-        terms.push((g, c));
+        let (t, kk) = group_terms(&b, &vars, mask);
+        terms.extend(t);
         k = k.wrapping_add(kk) & mask;
     }
     let grouped = groups.iter().fold(0usize, |a, &g| a | g);
@@ -648,27 +735,65 @@ fn is_candidate(op: OpCode) -> bool {
     )
 }
 
+fn is_arith(op: OpCode) -> bool {
+    matches!(op, OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB | OpCode::CPUI_INT_2COMP | OpCode::CPUI_INT_MULT)
+}
+
+/// A leaf of the tree: a varnode, or a constant operand of a bitwise op. The
+/// identities hold for every value of a leaf, so a constant can stand as one.
+#[derive(Clone, Copy, PartialEq)]
+enum LeafRef {
+    Vn(VarnodeId),
+    Const(u64),
+}
+
 /// Builds an [`Expr`] from the IR, numbering leaves as it meets them.
 struct Collector<'a> {
     data: &'a Funcdata,
     size: int4,
-    leaves: Vec<VarnodeId>,
+    leaves: Vec<LeafRef>,
     nodes: usize,
+    /// Inline a bitwise op with several readers too.
+    inline_shared: bool,
+    /// A bitwise op with several readers was met.
+    shared: bool,
+    /// A bitwise op was read.
+    bitwise: bool,
+    /// A complement of an arithmetic term was read.
+    not_arith: bool,
+    /// The expression of each inlined varnode.
+    seen: Vec<(VarnodeId, Expr)>,
+    /// Inside the tree of an op with several readers.
+    in_shared: bool,
+    /// Ops of the tree that lie under an op with several readers. They stay
+    /// when another reader keeps that op, so a rewrite may not count on them.
+    shared_ops: usize,
 }
 
 impl Collector<'_> {
-    fn leaf(&mut self, vn: VarnodeId) -> Option<Expr> {
-        let i = match self.leaves.iter().position(|&l| l == vn) {
+    fn leaf(&mut self, l: LeafRef) -> Option<Expr> {
+        let i = match self.leaves.iter().position(|&k| k == l) {
             Some(i) => i,
             None => {
-                self.leaves.push(vn);
+                self.leaves.push(l);
                 self.leaves.len() - 1
             }
         };
         (i < MAX_LEAVES).then_some(Expr::Leaf(i))
     }
 
-    fn vn(&mut self, vn: VarnodeId, inline: bool) -> Option<Expr> {
+    /// A constant under a bitwise op: a leaf, or the complement of one.
+    fn const_leaf(&mut self, c: u64) -> Option<Expr> {
+        let not_c = !c & mask_of(self.size);
+        match self.leaves.iter().position(|&k| k == LeafRef::Const(not_c)) {
+            Some(i) => Some(Expr::Not(Box::new(Expr::Leaf(i)))),
+            None => self.leaf(LeafRef::Const(c)),
+        }
+    }
+
+    /// The expression of `vn`, read by a bitwise op when `under`: an arithmetic
+    /// op is then a leaf, so `(x + y) | z` is a bitwise term of two leaves.
+    fn vn(&mut self, vn: VarnodeId, under: bool) -> Option<Expr> {
         self.nodes += 1;
         if self.nodes > MAX_NODES {
             return None;
@@ -678,47 +803,163 @@ impl Collector<'_> {
             return None;
         }
         if v.is_constant() {
-            return Some(Expr::Const(v.get_offset()));
+            return if under { self.const_leaf(v.get_offset()) } else { Some(Expr::Const(v.get_offset())) };
         }
         let def = v.get_def().filter(|_| v.is_written());
-        match def {
-            Some(op) if inline && self.data.lone_descend(vn).is_some() => self.op(op),
-            _ => self.leaf(vn),
+        let code = def.and_then(|op| self.data.obank().get(op)).map(|o| o.code());
+        let Some((op, code)) = def.zip(code).filter(|&(_, c)| is_candidate(c) && !(under && is_arith(c))) else {
+            return self.leaf(LeafRef::Vn(vn));
+        };
+        let lone = self.data.lone_descend(vn).is_some();
+        if !lone {
+            // A shared sum stays a leaf: its own tree is simplified at its op.
+            if is_arith(code) {
+                return self.leaf(LeafRef::Vn(vn));
+            }
+            self.shared = true;
+            if !self.inline_shared {
+                return self.leaf(LeafRef::Vn(vn));
+            }
+        }
+        let outer = self.in_shared;
+        self.in_shared |= !lone;
+        let e = match self.seen.iter().find(|(s, _)| *s == vn) {
+            Some((_, e)) => {
+                self.nodes += e.ops();
+                (self.nodes <= MAX_NODES).then(|| e.clone())
+            }
+            None => self.op(op, code, under).inspect(|e| {
+                if self.inline_shared {
+                    self.seen.push((vn, e.clone()));
+                }
+            }),
+        };
+        self.in_shared = outer;
+        let e = e?;
+        if !lone && !outer {
+            self.shared_ops += e.ops();
+        }
+        Some(e)
+    }
+
+    /// `~a`: a bitwise complement of a bitwise term, `-1 - a` of an arithmetic one.
+    fn not(&mut self, a: VarnodeId, under: bool) -> Option<Expr> {
+        self.bitwise = true;
+        let e = self.vn(a, under)?;
+        Some(match e {
+            Expr::Const(_) | Expr::Add(..) | Expr::Sub(..) | Expr::Neg(_) | Expr::Mul(..) | Expr::Prod(..) => {
+                self.not_arith = true;
+                Expr::Sub(Box::new(Expr::Const(mask_of(self.size))), Box::new(e))
+            }
+            e => Expr::Not(Box::new(e)),
+        })
+    }
+
+    /// Read an arithmetic constant that is also a constant leaf, or the
+    /// complement of one, as that leaf: `(x & ~c) + c` is `x | c`.
+    fn bind_consts(&self, e: Expr) -> Expr {
+        let b = |e: Box<Expr>| Box::new(self.bind_consts(*e));
+        match e {
+            Expr::Const(c) => {
+                let find = |c: u64| self.leaves.iter().position(|&k| k == LeafRef::Const(c)).map(Expr::Leaf);
+                find(c)
+                    .or_else(|| find(!c & mask_of(self.size)).map(|l| Expr::Not(Box::new(l))))
+                    .unwrap_or(Expr::Const(c))
+            }
+            Expr::Add(x, y) => Expr::Add(b(x), b(y)),
+            Expr::Sub(x, y) => Expr::Sub(b(x), b(y)),
+            Expr::Neg(x) => Expr::Neg(b(x)),
+            Expr::Mul(x, c) => Expr::Mul(b(x), c),
+            Expr::Prod(x, y) => Expr::Prod(b(x), b(y)),
+            e => e,
         }
     }
 
-    fn op(&mut self, op: OpId) -> Option<Expr> {
+    fn op(&mut self, op: OpId, code: OpCode, under: bool) -> Option<Expr> {
         let o = self.data.obank().get(op)?;
-        let code = o.code();
-        if !is_candidate(code) {
-            let out = o.get_out()?;
-            return self.leaf(out);
-        }
         let i0 = o.get_in(0)?;
         let i1 = o.get_in(1);
-        let a = Box::new(self.vn(i0, true)?);
-        let mut b = || -> Option<Box<Expr>> { Some(Box::new(self.vn(i1?, true)?)) };
+        let all_ones = |vn: VarnodeId| {
+            self.data.vbank().get(vn).is_some_and(|v| v.is_constant() && v.get_offset() == mask_of(self.size))
+        };
+        if code == OpCode::CPUI_INT_NEGATE || (code == OpCode::CPUI_INT_XOR && i1.is_some_and(all_ones)) {
+            return self.not(i0, under);
+        }
+        let under = !is_arith(code);
+        self.bitwise |= under;
+        let a = Box::new(self.vn(i0, under)?);
+        if code == OpCode::CPUI_INT_2COMP {
+            return Some(Expr::Neg(a));
+        }
+        let b = Box::new(self.vn(i1?, under)?);
         Some(match code {
-            OpCode::CPUI_INT_ADD => Expr::Add(a, b()?),
-            OpCode::CPUI_INT_SUB => Expr::Sub(a, b()?),
-            OpCode::CPUI_INT_2COMP => Expr::Neg(a),
-            OpCode::CPUI_INT_NEGATE => Expr::Not(a),
-            OpCode::CPUI_INT_AND => Expr::And(a, b()?),
-            OpCode::CPUI_INT_OR => Expr::Or(a, b()?),
-            OpCode::CPUI_INT_XOR => {
-                let b = b()?;
-                match (*a, *b) {
-                    (e, Expr::Const(c)) | (Expr::Const(c), e) if c == mask_of(self.size) => Expr::Not(Box::new(e)),
-                    (a, b) => Expr::Xor(Box::new(a), Box::new(b)),
-                }
-            }
-            OpCode::CPUI_INT_MULT => match (*a, *b()?) {
+            OpCode::CPUI_INT_ADD => Expr::Add(a, b),
+            OpCode::CPUI_INT_SUB => Expr::Sub(a, b),
+            OpCode::CPUI_INT_AND => Expr::And(a, b),
+            OpCode::CPUI_INT_OR => Expr::Or(a, b),
+            OpCode::CPUI_INT_XOR => Expr::Xor(a, b),
+            OpCode::CPUI_INT_MULT => match (*a, *b) {
                 (e, Expr::Const(c)) | (Expr::Const(c), e) => Expr::Mul(Box::new(e), c),
                 (a, b) => Expr::Prod(Box::new(a), Box::new(b)),
             },
             _ => return None,
         })
     }
+}
+
+/// A replacement for the tree under one op.
+struct Rewrite {
+    simple: Expr,
+    leaves: Vec<LeafRef>,
+    seen: Vec<(VarnodeId, Expr)>,
+}
+
+/// Collect the tree under `op` and find a smaller equal expression. The second
+/// value says a bitwise op with several readers was met.
+fn rewrite(data: &Funcdata, op: OpId, code: OpCode, size: int4, inline_shared: bool) -> (Option<Rewrite>, bool) {
+    let mut col =
+        Collector { data, size, leaves: Vec::new(), nodes: 0, inline_shared, shared: false, bitwise: false, not_arith: false, seen: Vec::new(), in_shared: false, shared_ops: 0 };
+    let expr = col.op(op, code, false);
+    let shared = col.shared;
+    let Some(expr) = expr else { return (None, shared) };
+    let expr = col.bind_consts(expr);
+    let n = col.leaves.len();
+    if n == 0 || n > MAX_LEAVES || !col.bitwise {
+        return (None, shared);
+    }
+    let mask = mask_of(size);
+    let simple = if !expr.has_arith() {
+        if expr.ops() < MIN_BITWISE_OPS || n > MAX_BITWISE_LEAVES {
+            return (None, shared);
+        }
+        match synth(truth_table(&expr, n), &(0..n).collect::<Vec<_>>()) {
+            Bool::Zero => Expr::Const(0),
+            Bool::One => Expr::Const(mask),
+            Bool::E(e) => e,
+        }
+    } else if expr.is_linear() {
+        simplify(&expr, n, mask)
+    } else {
+        match to_poly(&expr, n, mask) {
+            Some(p) => from_poly(&p, n, mask),
+            None => return (None, shared),
+        }
+    };
+    if simple.ops() >= expr.ops().saturating_sub(col.shared_ops) || !agree(&expr, &simple, n, mask) {
+        return (None, shared);
+    }
+    // The same bitwise terms in a different sum is plain arithmetic.
+    if expr.has_arith() && !col.not_arith {
+        let (mut before, mut after) = (Vec::new(), Vec::new());
+        expr.bitwise_tables(n, &mut before);
+        simple.bitwise_tables(n, &mut after);
+        before.sort_unstable();
+        after.sort_unstable();
+        if before == after {
+            return (None, shared);
+        }
+    }
+    (Some(Rewrite { simple, leaves: col.leaves, seen: col.seen }), shared)
 }
 
 fn mask_of(size: int4) -> u64 {
@@ -729,18 +970,25 @@ fn mask_of(size: int4) -> u64 {
     }
 }
 
-/// Materialize `e` as ops before `root`, returning the varnode holding it.
-fn emit(data: &mut Funcdata, root: OpId, e: &Expr, leaves: &[VarnodeId], size: int4) -> VarnodeId {
+/// Materialize `e` as ops before `root`, returning the varnode holding it. A
+/// subtree the old tree already computes is reused.
+fn emit(data: &mut Funcdata, root: OpId, e: &Expr, rw: &Rewrite, size: int4) -> VarnodeId {
+    if let Some((vn, _)) = rw.seen.iter().find(|(_, s)| s == e) {
+        return *vn;
+    }
     let bin = |data: &mut Funcdata, code: OpCode, a: &Expr, b: VarnodeId| {
-        let va = emit(data, root, a, leaves, size);
+        let va = emit(data, root, a, rw, size);
         let op = data.new_op_before(root, code, va, b, None);
         data.obank().get(op).and_then(|o| o.get_out()).expect("new_op_before output")
     };
     match e {
-        Expr::Leaf(i) => leaves[*i],
+        Expr::Leaf(i) => match rw.leaves[*i] {
+            LeafRef::Vn(vn) => vn,
+            LeafRef::Const(c) => data.new_constant(size, c as uintb),
+        },
         Expr::Const(c) => data.new_constant(size, *c as uintb),
         Expr::Add(a, b) | Expr::Sub(a, b) | Expr::Prod(a, b) | Expr::And(a, b) | Expr::Or(a, b) | Expr::Xor(a, b) => {
-            let vb = emit(data, root, b, leaves, size);
+            let vb = emit(data, root, b, rw, size);
             let code = match e {
                 Expr::Add(..) => OpCode::CPUI_INT_ADD,
                 Expr::Sub(..) => OpCode::CPUI_INT_SUB,
@@ -756,7 +1004,7 @@ fn emit(data: &mut Funcdata, root: OpId, e: &Expr, leaves: &[VarnodeId], size: i
             bin(data, OpCode::CPUI_INT_MULT, a, vc)
         }
         Expr::Neg(a) | Expr::Not(a) => {
-            let va = emit(data, root, a, leaves, size);
+            let va = emit(data, root, a, rw, size);
             let addr = data.obank().get(root).map(|o| o.get_addr().clone()).expect("root");
             let op = data.new_op(1, addr);
             data.op_set_opcode_code(op, if matches!(e, Expr::Neg(_)) { OpCode::CPUI_INT_2COMP } else { OpCode::CPUI_INT_NEGATE });
@@ -806,29 +1054,19 @@ impl Rule for RuleMbaSimplify {
         if size > 8 {
             return 0;
         }
+        let Some(code) = data.obank().get(op).map(|o| o.code()) else { return 0 };
         // A subtree is simplified on its own too: a non-linear reader (an
         // `^ v0` over the whole sum) must not hide a linear tree below it.
         // Each rewrite strictly lowers the op count, so this terminates.
-        let mut col = Collector { data, size, leaves: Vec::new(), nodes: 0 };
-        let Some(expr) = col.op(op) else { return 0 };
-        let leaves = col.leaves;
-        let n = leaves.len();
-        if n == 0 || n > MAX_LEAVES || !expr.has_bitwise() || !expr.has_arith() {
-            return 0;
-        }
-        let mask = mask_of(size);
-        let simple = if expr.is_linear() {
-            simplify(&expr, n, mask)
-        } else {
-            match to_poly(&expr, n, mask) {
-                Some(p) => from_poly(&p, n, mask),
+        let rw = match rewrite(data, op, code, size, false) {
+            (Some(rw), _) => rw,
+            (None, true) => match rewrite(data, op, code, size, true).0 {
+                Some(rw) => rw,
                 None => return 0,
-            }
+            },
+            (None, false) => return 0,
         };
-        if simple.ops() >= expr.ops() || !agree(&expr, &simple, n, mask) {
-            return 0;
-        }
-        let res = emit(data, op, &simple, &leaves, size);
+        let res = emit(data, op, &rw.simple, &rw, size);
         let copy = crate::context::TypeOp::new(OpCode::CPUI_COPY, 0, "COPY");
         data.op_set_opcode(op, copy);
         if data.op_set_all_input(op, &[res]).is_err() {
@@ -955,6 +1193,47 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn linear_part_search_finds_leaf_plus_xor() {
+        // 2(x | y) - (x ^ y) - (x & y) + (x & ~y) == x + (x ^ y)
+        let m = u32::MAX as u64;
+        let not = |e: Box<Expr>| Box::new(Expr::Not(e));
+        let f = Expr::Add(
+            Box::new(Expr::Sub(
+                Box::new(Expr::Sub(Box::new(Expr::Mul(Box::new(Expr::Or(x(), y())), 2)), Box::new(Expr::Xor(x(), y())))),
+                and(x(), y()),
+            )),
+            and(x(), not(y())),
+        );
+        let s = simplify(&f, 2, m);
+        assert_eq!(s.ops(), 2, "{s:?}");
+        assert!(agree(&f, &s, 2, m));
+    }
+
+    #[test]
+    fn group_search_agrees_on_random_linear_mbas() {
+        let mut st = 11u64;
+        for n in 2..=4usize {
+            for _ in 0..200 {
+                let terms: Vec<(Expr, u64)> = (1..1usize << n).map(|s| (conj(s), splitmix(&mut st) % 7)).collect();
+                let f = sum(terms, splitmix(&mut st) % 3, u64::MAX);
+                let s = simplify(&f, n, u64::MAX);
+                assert!(agree(&f, &s, n, u64::MAX), "{f:?} -> {s:?}");
+                assert!(s.ops() <= f.ops(), "{f:?} -> {s:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn complemented_boolean_term_carries_its_constant() {
+        // (x & y) + ~y == x | ~y
+        let m = u32::MAX as u64;
+        let f = Expr::Add(and(x(), y()), Box::new(Expr::Not(y())));
+        let s = simplify(&f, 2, m);
+        assert_eq!(s.ops(), 2, "{s:?}");
+        assert!(agree(&f, &s, 2, m));
     }
 
     #[test]
