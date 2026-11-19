@@ -3776,6 +3776,17 @@ profile, the type speller and the Java string escapes, and
   through a reference prints the referenced value, with `[0]` only for an
   array reference that is not itself a field, an index or a pool reference
   (`PrintJava::needZeroArray`).
+- **Allocation** (kuna, `option javanew`, default on). Dalvik allocates an
+  object with `new-instance` and initializes it with a separate `invoke-direct`
+  of `<init>`, and upstream's Java output keeps both statements:
+  `v = new(T); v.<init>(args);`. `p9_emit/kuna_javanew.rs (pairs)` finds each
+  `<init>` call whose object comes from a NEW earlier in the same basic block
+  and reaches nothing in between but the call's own method reference; the NEW
+  statement is then dropped and the call prints `v = new T(args)`
+  (`kuna_cpoolprint.rs (java_callind_ir)`). The arguments keep their own
+  statements and order, which is sound because Java evaluates them after the
+  allocation too. A pair split across blocks — an `if` choosing between two
+  constructors — keeps the two-statement form.
 - **Signature.** The method name prints without its class path, the `this`
   parameter is hidden, and an empty parameter list prints `()`.
 - **Casts.** `CastStrategyJava` decides casts (`cast.rs (java_cast_standard)`):
@@ -3788,7 +3799,8 @@ as its literal (truncated after 2048 bytes), a class as its name, a method or
 field as its name, qualified by the object it is reached through, or by its class
 when static. `NEW` prints `new T[n]` for an array allocation and `new(T)` for an
 object (`kuna_cpoolprint.rs (op_new_ir)`, upstream `opNewOp`); the constructor
-call follows as its own statement, as in upstream's output.
+call follows as its own statement, as in upstream's output, unless Java's
+`javanew` folds the two.
 
 ## 9.7 Whole-program document renders (`kuna decompile-project`, `kuna decompile-graph`)
 

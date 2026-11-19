@@ -2110,6 +2110,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "javanew"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P9"
+subphase = "readability-rewrites"
+strength = "HARD"
+rewind = "P9"
+issue = "kuna-dex-loader"
+summary = "In java-language output, print an allocation and the `<init>` call that initializes it as one `new T(args)` expression. Dalvik allocates with `new-instance` and initializes with a separate `invoke-direct` of `<init>`, which upstream's Java output keeps as two statements (`v = new(T); v.<init>(args);`). The pair folds only when the object reaches nothing but that call before it, in the same basic block; the arguments keep their own statements and order."
+use_when = "On by default; it changes only java-language output. Turn OFF to see the bytecode's two steps, or to diff against upstream Ghidra's Java output."
+example = "option javanew off"
+source_decompiler = "kuna"
+inspiration = "Java source spells allocation and construction as one expression; the bytecode splits them"
+change_kind = "presentation-default"
+tier = "core"
+symptoms = "Java output prints v = new(T); followed by v.<init>(args);|a constructor call prints as a method named <init>"
+live_field = "java_new"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "switchguardbound"
 values = "on|off"
 default = "off"
