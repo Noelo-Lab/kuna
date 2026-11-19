@@ -774,6 +774,9 @@ pub struct ArchContext {
     /// (kuna) The `SoftwareBreakpoint` user-op id when `option ptrauthtrap`
     /// is on; read by [`crate::p2_lift::kuna_ptrauthtrap`].
     pub ptrauth_trap_userop: Option<kuna_base::types::uint4>,
+    /// (kuna) The language is arm64e's; read by
+    /// [`crate::p4_calls::kuna_hiddenretarg`].
+    pub arm64e: bool,
     /// (kuna) angr-style default naming: an unknown callee / global prints as
     /// `sub_<addr>` / `dat_<addr>` rather than `func_<addr>` (C++
     /// `Architecture::name_style_angr`, default-on).  Read by the call-spec
@@ -1582,6 +1585,7 @@ impl ArchContext {
             // (kuna) `option gonewtype` default on; copied the same way.
             go_new_type: true,
             ptrauth_trap_userop: None,
+            arm64e: false,
             // (kuna) angr-style default naming is default-on (Architecture::reset).
             name_style_angr: true,
             // (kuna, Phase 3) ghidra-mode-only; never set on the standalone path.
