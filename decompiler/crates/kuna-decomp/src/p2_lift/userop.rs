@@ -911,6 +911,11 @@ impl UserOpManage {
         NameLookup { map }
     }
 
+    /// (kuna) Every registered (non-builtin) user-op as `(index, name)`.
+    pub fn named_ops(&self) -> impl Iterator<Item = (uint4, &[u8])> + '_ {
+        self.useroplist.iter().enumerate().filter_map(|(i, op)| op.as_ref().map(|op| (i as uint4, op.get_name())))
+    }
+
     /// Number of segment operations supported (C++ `numSegmentOps`).
     pub fn num_segment_ops(&self) -> int4 {
         self.segmentop.len() as int4
@@ -1074,6 +1079,12 @@ impl UserOpManage {
         };
         self.builtinmap.insert(i, res);
         Ok(self.builtinmap.get(&i).unwrap())
+    }
+
+    /// (kuna) Register an unspecialized built-in user-op under `name` (the
+    /// `lanefuse` intrinsics, whose ids are generated).
+    pub fn register_named_builtin(&mut self, i: uint4, name: &str) {
+        self.builtinmap.entry(i).or_insert_with(|| UserPcodeOp::new_unspecialized(name.as_bytes(), i as int4));
     }
 
     /// \brief Insert a new UserPcodeOp description object in the map(s)

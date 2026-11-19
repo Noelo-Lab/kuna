@@ -14,6 +14,12 @@ fn names_and_orders() {
 }
 
 #[test]
+fn masked_forms_take_the_mask_infix() {
+    assert_eq!(intrinsic("vaddps_avx512f_mask", 64), Some(("_mm512_mask_add_ps".into(), vec![0, 1, 2, 3])));
+    assert_eq!(intrinsic("vaddps_avx512f_maskz", 64), Some(("_mm512_maskz_add_ps".into(), vec![0, 1, 2])));
+}
+
+#[test]
 fn unmapped_user_ops_keep_their_names() {
     assert_eq!(intrinsic("vpaddd_avx2", 8), None);
     assert_eq!(intrinsic("cpuid", 16), None);

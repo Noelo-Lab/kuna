@@ -176,6 +176,12 @@ kuna_options! { self, p1;
     "chkstkdarwin" => on_off!(chkstk_darwin, "Darwin stack-probe call removal"),
     "typevote" => on_off!(type_vote, "Type vote for leftover undefined variables"),
     "vexzeroupper" => on_off!(vex_zero_upper, "VEX zero-upper writes split at the result width"),
+    "lanefuse" => {
+        let mode = crate::kuna_lanefuse::LaneFuseMode::parse(p1)
+            .ok_or_else(|| KunaError::lowlevel("lanefuse takes on, all or off"))?;
+        self.lane_fuse = mode;
+        Ok(format!("Per-lane vector p-code re-fused into one intrinsic turned {}", mode.as_str()))
+    },
     "tailcalljump" => {
         let (jumps, tables, msg) = crate::kuna_tailcalljump::tail_call_mode(p1)?;
         self.tail_call_jumps = jumps;
