@@ -2232,7 +2232,8 @@ mod tests {
         // and kuna-assert-callee / a stated destination makes an indirect call direct
         // and kuna-assert-format-isolate / a constant's format set by its instruction, and an isolated local
         // and kuna-callproto / one call through a pointer is given its own prototype
-        assert_eq!(count, 793, "corpus file count drifted");
+        // and kuna-dyldcacheobjc / a dyld shared cache image's ObjC metadata is read through the cache
+        assert_eq!(count, 794, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

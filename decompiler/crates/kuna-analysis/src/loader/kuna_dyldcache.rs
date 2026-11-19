@@ -15,7 +15,7 @@
 //! input is an ordinary Mach-O. See [`extract`] for the rebuild and [`xrefs`] for
 //! how calls into other images are named.
 
-use std::cell::{Cell, RefCell};
+use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
@@ -41,6 +41,11 @@ const HDR_SUBCACHES: usize = 392;
 const HDR_SYMBOL_FILE_UUID: usize = 400;
 const HDR_IMAGES_OFFSET: usize = 448;
 const HDR_CACHE_SUBTYPE: usize = 456;
+const HDR_OBJC_OPTS: usize = 464;
+/// `ObjCOptimizationHeader.relativeMethodSelectorBaseAddressOffset`.
+const OBJC_OPTS_SELECTOR_BASE: usize = 0x30;
+/// `objc_opt_t.relativeMethodSelectorBaseAddressOffset`, present from version 16.
+const OBJC_OPT_T_SELECTOR_BASE: usize = 0x28;
 
 /// Does `prefix` (the first bytes of a file) open a dyld shared cache?
 pub fn is_dyld_cache(prefix: &[u8]) -> bool {
@@ -172,6 +177,10 @@ pub struct DyldCache {
     /// Bytes the slide infos and symbol tables built so far may still retain;
     /// see [`DyldCache::charge`].
     retained: Cell<u64>,
+    /// `objcOptsOffset` of the header: the `ObjCOptimizationHeader`, as an
+    /// offset from the cache base. Zero or absent before dyld-1042.
+    objc_opts: Option<u64>,
+    objc_selector_base: OnceCell<Option<u64>>,
 }
 
 fn u32_at(b: &[u8], off: usize) -> u32 {
@@ -325,7 +334,39 @@ impl DyldCache {
             total_len,
             layout_bytes: Cell::new(0),
             retained: Cell::new(total_len.saturating_mul(2).max(MIN_RETAINED)),
+            objc_opts: h.u64(HDR_OBJC_OPTS).filter(|&o| o != 0),
+            objc_selector_base: OnceCell::new(),
         })
+    }
+
+    /// The address every direct-selector method list of the cache offsets its
+    /// selectors from. The `ObjCOptimizationHeader` the cache header names
+    /// carries it as an offset from the cache base; an older cache carries it in
+    /// libobjc's `objc_opt_t` (`__objc_opt_ro`, version 16 on) as a signed offset
+    /// from that record. `None` on a cache with neither.
+    pub fn objc_selector_base(&self) -> Option<u64> {
+        *self.objc_selector_base.get_or_init(|| self.header_selector_base().or_else(|| self.libobjc_selector_base()))
+    }
+
+    fn header_selector_base(&self) -> Option<u64> {
+        let opts = self.read_va(self.base.checked_add(self.objc_opts?)?, OBJC_OPTS_SELECTOR_BASE + 8).ok()?;
+        if u32_at(&opts, 0) == 0 {
+            return None;
+        }
+        let rel = u64_at(&opts, OBJC_OPTS_SELECTOR_BASE);
+        if rel == 0 { None } else { self.base.checked_add(rel) }
+    }
+
+    fn libobjc_selector_base(&self) -> Option<u64> {
+        let index = self.images.iter().position(|i| i.path.ends_with("/libobjc.A.dylib"))?;
+        let layout = self.image_layout(index).ok()?;
+        let opt = layout.segments.iter().flat_map(|s| s.sections.iter()).find(|s| s.sectname == "__objc_opt_ro")?;
+        let record = self.read_va(opt.addr, OBJC_OPT_T_SELECTOR_BASE + 8).ok()?;
+        if u32_at(&record, 0) < 16 {
+            return None;
+        }
+        let rel = u64_at(&record, OBJC_OPT_T_SELECTOR_BASE) as i64;
+        if rel == 0 { None } else { opt.addr.checked_add_signed(rel) }
     }
 
     fn open_local_symbols(
