@@ -4511,10 +4511,15 @@ void gadget_start(unsigned long a0)
 On a Mac the two files are `/Library/KernelCollections/AuxiliaryKernelExtensions.kc`
 and `/System/Library/KernelCollections/BootKernelExtensions.kc`.
 
-`--option kernelcache-boot PATH` names the file (raw, or an IMG4 / IM4P
-container) or a directory to search instead; `off` reads no other file. A file
-with a different UUID is not used. When no file matches, the pointers stay
-unresolved and the note says how many and which UUID is missing. Like
+Only an input with pointers into another collection reads any other file.
+`auto` then opens the regular files of the input's directory (at most 4096
+entries) for their first 16 bytes, and reads whole only the `MH_FILESET` ones
+(at most 16, never the input itself) until the UUID matches; the load note
+names the file it used. `--option kernelcache-boot PATH` names the file (raw,
+or an IMG4 / IM4P container) or a directory to search instead; `off` reads no
+other file. A file with a different UUID is not used. When no file matches,
+the pointers stay unresolved and the note says how many and which UUID is
+missing. Like
 `kernelcache`, the option applies to the whole invocation and overrides
 `KUNA_KERNELCACHE_BOOT`.
 

@@ -1287,11 +1287,12 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   env-bridged through `KUNA_KERNELCACHE_BOOT`) resolves them from the other
   file. The plist names each linked collection by UUID, `_BootKCID` for level 0
   and `_PageableKCID` for level 1, as a 16-byte base64 `<data>` value. `auto`
-  lists the directory of the input (at most 4096 names, in name order), keeps
-  the files whose first 16 bytes are an `MH_FILESET` header (at most 16), and
-  reads each until every wanted UUID is found; a path value names one file,
-  which may be an IMG4 or IM4P container, or a directory searched the same
-  way; `off` reads no other file. A candidate is the linked collection only if
+  takes the first 4096 entries the directory of the input lists, in name
+  order, keeps the regular files other than the input whose first 16 bytes are an
+  `MH_FILESET` header (at most 16), and reads each whole until every wanted
+  UUID is found; a path value names one regular file, which may be an IMG4 or
+  IM4P container, or a directory searched the same way; `off` reads no other
+  file. A candidate is the linked collection only if
   its `LC_UUID` or its own plist's `_PrelinkKCID` equals the wanted UUID, so a
   boot collection from another build is never used: its offsets would land on
   other functions. For a match, each slot gets the linked file's base (its
