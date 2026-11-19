@@ -398,6 +398,7 @@ fn decode_plt_section(
         Architecture::Sparc | Architecture::Sparc32Plus | Architecture::Sparc64 => {
             decode_sparc(vma, data, if file.is_64() { 32 } else { 12 }, map, out, named_got)
         }
+        Architecture::S390x => super::kuna_s390xplt::decode(vma, data, map, out, named_got),
         // PowerPC's stubs are not in a `.plt*` *code* section (`.plt` is a NOBITS
         // data table; the call stubs live in `.text`), so they are resolved out of
         // band in [`resolve_plt_imports`] via [`decode_ppc_text`], not here.
@@ -410,7 +411,7 @@ fn decode_plt_section(
 }
 
 /// Push `(stub, got)`'s name if `got` is a known import not yet named.
-fn record(
+pub(super) fn record(
     stub: u64,
     got: u64,
     map: &HashMap<u64, Vec<u8>>,

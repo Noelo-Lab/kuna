@@ -3643,6 +3643,69 @@ are retained separately from instruction-start flags, which clones can copy.
 The callback changes neither lifted P-code nor flow; it supplies provenance
 before optimization can create indistinguishable same-address reconstructions.
 
+### z/Architecture (s390x) processor module (GH-1635)
+
+`specs/Ghidra/Processors/s390x` is a kuna-written SLEIGH module for the 64-bit
+IBM z/Architecture, language id `s390x:BE:64:default`. It is the first slice of
+s390x support: the general instructions through the z15 facilities, the
+binary-floating-point instructions on `f0`-`f15` (short, long, and extended in
+register pairs), and the s390x ELF ABI. The vector facility (opcode `E7`) is
+not decoded yet, so a function that reaches a vector instruction ends there in
+`halt_baddata()`. The four `s390x_*.sinc` files are written by
+`specs/Ghidra/Processors/s390x/gen_sinc.py` from its opcode tables.
+
+Instructions are 2, 4 or 6 bytes long, fixed by the top two bits of the first
+byte, and each length has its own token. A base or index field of 0 means "no
+register", never `r0`, so every address operand has a constructor per
+combination and a displacement-only operand exports a constant. A 32-bit
+instruction reads and writes the low half `rNl` of its register and leaves the
+high half alone.
+
+The 2-bit condition code is held one-hot in four flags, `CC0`-`CC3`: `CCn` is
+set exactly when the condition code is `n`. A branch mask is then a boolean
+over the flags. A mask that leaves out condition code 3 is written as the
+negation of the flags it excludes (`jlh`, mask 6, is `!CC0 && !CC3`), and a
+comparison writes a constant 0 to `CC3`, so the test after a compare folds to
+one relation: `cgr; jlh` is `a != b`. Two more flags repeat the same state for
+the masks that name two codes: `CCA` is "condition code 2 or 3" and `CCB` is
+"1 or 3". Every instruction that sets the condition code sets both, in the form
+it can state most simply: a compare writes its two strict relations, so
+`clgr; jhe` (`!CCB`) is an unsigned `a >= b`; a logical add writes the carry to
+`CCA` and "result is not zero" to `CCB`, so the add-with-carry that follows
+reads the carry itself and `algr; jhe` is a test for zero. Signed arithmetic
+sets `CC3` on overflow and qualifies the other three with its negation, as the
+machine does. `ipm` rebuilds the numeric value as `CC1 + 2*CC2 + 3*CC3`.
+
+`STMG`/`LMG` and the other load- and store-multiple forms move registers R1
+through R3, wrapping from 15 to 0. Each of the 16 registers has its own
+sub-constructor pair, one matching when the register is in the range and one
+when it is not, so a prologue is 16 named stores at constant offsets and the
+saved registers are recognized as such. The address is latched in the scratch
+register `multi_addr` before the first load because `lmg %r6,%r15,48(%r15)`
+replaces its own base.
+
+`br %r14` is a return and `br` through any other register an indirect jump;
+`brasl`/`basr` write the return address to their first operand and call.
+Compare-and-branch instructions test their own operands without touching the
+condition code. Load, store and select on condition skip to the next
+instruction when the condition fails.
+
+`MVC`, `CLC`, `NC`, `OC` and `XC` of 1, 2, 4 or 8 bytes are one access of that
+width (big-endian storage makes an unsigned integer compare the same as the
+byte-wise one). Other lengths, and the string instructions `SRST`, `CLST` and
+`MVST`, are user operations over their operands; the model is the completed
+operation, so the `jo` that re-runs a partially completed one is never taken.
+`EX`/`EXRL` stay a user operation over the modified register and the target
+address.
+
+`s390x.cspec` is the ELF ABI: `r2`-`r6` for integer arguments, `f0`, `f2`, `f4`,
+`f6` for floating-point ones, further arguments from `160(r15)`, results in `r2`
+or `f0`, the return address in `r14`. A `float` is the leftmost four bytes of
+its register, so each floating-point register is listed as its short view and
+then whole. The caller's 160-byte register save area at `0(r15)` is in the
+callee's local range, because the callee's prologue stores into it.
+Exercised by `tests/stages/kuna-s390x.xml`.
+
 ## 2.9 Go stack-growth prologue folding
 
 **(kuna) `option gomorestack off|auto|always`, default auto,

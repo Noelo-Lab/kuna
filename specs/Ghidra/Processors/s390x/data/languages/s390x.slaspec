@@ -1,0 +1,5 @@
+# IBM z/Architecture (s390x), 64-bit big-endian.
+@include "s390x_main.sinc"
+@include "s390x_general.sinc"
+@include "s390x_multi.sinc"
+@include "s390x_bfp.sinc"

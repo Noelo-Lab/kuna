@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<language_definitions>
+  <language processor="s390x" endian="big" size="64" variant="default" version="1.0"
+            slafile="s390x.sla" processorspec="s390x.pspec" id="s390x:BE:64:default">
+    <description>IBM z/Architecture (s390x) 64-bit</description>
+    <compiler name="default" spec="s390x.cspec" id="default"/>
+    <external_name tool="gnu" name="s390:64-bit"/>
+  </language>
+</language_definitions>
