@@ -3930,7 +3930,9 @@ destination is in fact known, and is reported as `forwardsTo` instead. An
 imported API call, `call qword ptr [slot]`, is the case where a `CALLIND` *does*
 carry an edge: the slot is a decode-time constant the reference walk reads out of
 the instruction (§1.6), so the row is both an edge to the import and
-`hasIndirectCalls`. That slot
+`hasIndirectCalls`. A proven immutable relative ELF slot adds a Call to the
+actual callee and a separate Read of the slot (§1.6). The physical
+`hasIndirectCalls` flag still applies. An import slot
 is only recoverable where the jump names it as a decode-time constant, so an
 AArch64 stub that computes it across `adrp`/`ldr`/`br` is a `thunk` row with a
 null `forwardsTo`.

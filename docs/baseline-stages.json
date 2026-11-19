@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4752,
-    4752
+    4754,
+    4754
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1330,6 +1330,8 @@
     "data:ISAMODE #2: the four table-reachable tail-call arms are intact",
     "data:ISAMODE #3: the table-reachable f0 call sites survive the injection",
     "data:ISAMODE #4: flow still reaches the last jump-table entry",
+    "data:Immutable GOT graph resolution keeps the existing named C call",
+    "data:Immutable GOT graph resolution keeps writable C calls indirect",
     "data:JUMPTABLEMAX #1: at the default cap the four-case switch is recovered",
     "data:JUMPTABLEMAX #2: every case of the table is a case label",
     "data:JUMPTABLEMAX #3: `option jumptablemax 2` refuses the four-case table and the dispatch prints as a call",
