@@ -537,7 +537,9 @@ intrinsic order.
 
 `kuna-vexzeroupper.xml` decompiles `vpaddd` and `vfmadd132ps` twice: with
 `vexzeroupper off` the `ymm0` operand is a 64-byte local read through
-`SUB6432`, and at the default it is read at its own 32 bytes.
+`SUB6432`, and at the default it is read at its own 32 bytes. A third function
+stores a `vmulsd` product, reloads it with `vmovsd` and returns it: the default
+pass must print it as returning `double`.
 
 `kuna-lanefuse.xml` runs three passes over six one-instruction vector
 functions: `lanefuse off` prints the SLEIGH lanes, the default fuses a VEX

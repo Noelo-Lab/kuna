@@ -3986,15 +3986,22 @@ register, `ZmmReg1 = zext(result)`. Every such write overlaps every read of
 the same XMM/YMM register, so heritage widened the register to all 64 bytes:
 a function that read `ymm0` had a 64-byte `zmm0` input and read
 `SUB6432(zmm0, 0)`. At flow time, on x86-64 only, each `INT_ZEXT` into a 32-
-or 64-byte register from a 16- or 32-byte value is split:
+or 64-byte register from a 4-, 8-, 16- or 32-byte value is split:
 
 - the low part keeps the value at its own width. When the value is a
   temporary that only this write reads, its producer (the user-op) writes the
   low register itself; when the value already is the low register, nothing is
   copied;
-- the bytes above it are zeroed by `COPY 0` ops cut at the YMM/ZMM boundary
-  (`[16, 32)` and `[32, 64)` for an XMM write), so an XMM write does not create
-  a YMM-wide value either.
+- the bytes above it are zeroed by `COPY 0` ops cut at the quadword, XMM and
+  YMM boundaries (`[16, 32)` and `[32, 64)` for an XMM write, `[8, 16)` first
+  for a scalar one), so an XMM write does not create a YMM-wide value either.
+
+A scalar result (`vmulsd`, `vaddss`) is split like a vector one. While it
+stayed a whole-ZMM write, heritage rebuilt each later split write of the same
+register as a `PIECE` over it, so in
+`vmulsd (%rdi),%xmm0,%xmm0; vmovsd %xmm0,(%rdi); vmovsd (%rdi),%xmm0; ret`
+the reloaded `xmm0` reached the `RETURN` with the stored product in its
+ancestry, return recovery rejected it, and the function printed as `void`.
 
 The split writes cover exactly the bytes the one write covered, with the same
 values, so it changes how heritage partitions the register and nothing else.

@@ -5,6 +5,7 @@
 
       0x1000 addi: vpaddd ymm0,ymm0,ymm1; ret
       0x1010 fma3: vfmadd132ps ymm0,ymm2,ymm1; ret
+      0x1020 scal: vmulsd xmm0,xmm0,[rdi]; vmovsd [rdi],xmm0; vmovsd xmm0,[rdi]; ret
 
     The SLEIGH spec writes the result of a VEX instruction as one zero-extended
     write of all of ZMM0, so heritage widens the ymm0 the instruction reads to
@@ -12,11 +13,16 @@
 
     Asserts #1-#2 are the off pass: a 64-byte local, truncated at each use.
     Asserts #3-#4 are the on pass: ymm0 is read at its own 32 bytes.
+    Assert #5 is the on pass over scal: the scalar product is split too, so the
+    reloaded xmm0 is the returned double (a whole-ZMM scalar write left the
+    function void).
 -->
 <bytechunk space="ram" offset="0x1000" readonly="true">c5fdfec1c3</bytechunk>
 <bytechunk space="ram" offset="0x1010" readonly="true">c4e26d98c1c3</bytechunk>
 <symbol space="ram" offset="0x1000" name="addi"/>
+<bytechunk space="ram" offset="0x1020" readonly="true">c5fb5907c5fb1107c5fb1007c3</bytechunk>
 <symbol space="ram" offset="0x1010" name="fma3"/>
+<symbol space="ram" offset="0x1020" name="scal"/>
 </binaryimage>
 <script>
   <com>option vexzeroupper off</com>
@@ -33,10 +39,14 @@
   <com>lo fu fma3</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu scal</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="vexzeroupper #1: off, ymm0 is a 64-byte local in both functions and in neither with the option on" min="2" max="2">char \w+ \[64\];</stringmatch>
 <stringmatch name="vexzeroupper #2: off, each read of ymm0 truncates the widened register" min="2" max="2">SUB6432\(\w+,0\)</stringmatch>
 <stringmatch name="vexzeroupper #3: on, the add reads ymm0 whole" min="1" max="1">_mm256_add_epi32\(v1,v2\)</stringmatch>
 <stringmatch name="vexzeroupper #4: on, the FMA reads ymm0 whole" min="1" max="1">_mm256_fmadd_ps\(v1,v2,v3\)</stringmatch>
+<stringmatch name="vexzeroupper #5: on, a scalar product stored, reloaded and returned is a double result" min="1" max="1">float8 scal\(float8 a0,float8 \*a1\)</stringmatch>
 </decompilertest>
