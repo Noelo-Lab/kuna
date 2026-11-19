@@ -1210,6 +1210,15 @@ fn is_pointer(
     if needexacthit && entry.entry_addr != rampoint {
         return None;
     }
+    // (kuna) An import slot holds the import's function Symbol so a call through
+    // the slot binds to it, but a constant equal to the slot is the slot's own
+    // address, which the function's name would misstate.
+    let code = entry.symbol_type.as_ref().is_some_and(|t| t.get_metatype() == type_metatype::TYPE_CODE);
+    if code
+        && glb.query_global_properties(&rampoint, vn_size, &invalid) & crate::varnode::varnode_flags::externref != 0
+    {
+        return None;
+    }
     Some((entry, rampoint))
 }
 

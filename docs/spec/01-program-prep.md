@@ -2859,7 +2859,16 @@ the resolved callee's no-return flag onto the prototype it hands `ActionDeindire
 dropped it, where upstream returns the callee's live `Funcdata`), which is what makes
 the deindirect schedule the restart whose re-flow plants the artificial halt. The
 extra upstream Win32 no-return-name list remains on the PE/COFF arm only. An ELF
-image runs no such pass, but a MIPS relocatable object's loader makes import
+`.got` import slot (`elfgotimports`) named `abort`, `exit` or `_Unwind_Resume`
+takes the base ELF no-return list's fact at the slot address, like a PLT stub
+(`decompiler/crates/kuna-analysis/src/loader/noreturn.rs (scan_noreturn)`), so a
+`-fno-plt` call through it ends its path. Code that takes the slot's *address*
+(`lea slot(%rip)`, then `call *(%rax)`) keeps the constant: `ActionConstantPtr`
+(`decompiler/crates/kuna-decomp/src/p9_emit/coreaction_render.rs (is_pointer)`)
+declines a code Symbol whose address carries `externref`, because the slot and
+the function share one Symbol and the function's name would state the wrong
+value. An ELF
+image runs no `peimportcall` pass, but a MIPS relocatable object's loader makes import
 slots, the GOT entry of each undefined weak function: the engine stashes the
 loader's ranges under this pass's id
 (`decompiler/crates/kuna-console/src/engine.rs (object_import_slot_stash)`), so
@@ -10754,6 +10763,16 @@ an unresolved jump, or an unmodelled escaping path. Without a known or explicit
 no-return fact, a call followed by INT3 alone does not establish that its callee
 cannot return. The existing `listing`, `noreturn_propagate`, and `noreturn_reach`
 gates still control this inference.
+
+A seed need not be a function: an import a `-fno-plt` build reaches only through
+its `.got` slot is flagged at the slot's address (§1.3), and the call through it
+names no target the Listing can see. `terminal_slot_calls` therefore decodes each
+x86 `call [rip+disp32]` (x86-64) or `call [abs32]` (i386), `notrack` allowed, and
+each AArch64 `blr xN` whose register an `adrp`/`ldr` pair at most four instructions
+earlier loaded from the slot, whose static target is unknown, and a call whose slot
+is a no-return seed ends its
+path in both rules exactly as a call to a terminal function does, so a `die()`
+ending in `exit()` through the GOT is concluded no-return as its PLT twin is.
 
 Two rules fold into the same fixpoint, both Ghidra-derived:
 

@@ -1,0 +1,76 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna-elfgot-noreturn: a call to an import through its .got slot takes the
+    import's no-return flag, and the slot's address stays an address.
+
+    Issue: a `-fno-plt` build (or a linker-relaxed `call *slot(%rip)`) calls an
+    import through its GLOB_DAT slot in `.got`; there is no PLT stub. The slot
+    was named for the import but the no-return list was matched only against
+    functions and PLT stubs, so a function ending in `abort()`/`exit()` ran on
+    into the next function until funcboundflow truncated it, and the
+    call-graph propagation never saw a wrapper ending in such a call.
+
+    Stage / sub-stage: P1 external-refinement (`kuna-analysis`
+    `loader/noreturn.rs` flags the slot, `analyzers/noreturn_propagate`
+    reads calls through a flagged slot) and P9 (`coreaction_render.rs
+    (is_pointer)` keeps a constant equal to an import slot a constant).
+    Strict fixes, no option.
+
+    Fixtures: `elf_got_noreturn_x86_64` (gcc -O2 -fPIC -pie -fno-plt; `check`
+    ends in a GOT call to `abort`, `die` in a GOT call to `exit`, and `pick`
+    reads a function pointer from a `.data.rel.ro` table filled by the same
+    kind of relocation outside `.got`); `elf_got_slotaddr_x86_64` takes the
+    ADDRESS of the `lgetxattr` and `getxattr` slots (`lea sym@GOTPCREL(%rip)`)
+    and jumps through the one it selects; `elf_got_noreturn_aarch64`
+    (clang -O2 -fPIC -fno-plt, lld) reaches `exit` through `adrp/ldr/blr`.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/elf_got_noreturn_x86_64</com>
+  <com>option listing on</com>
+  <com>read symbols</com>
+  <com>load function check</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function die</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function pick</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function main</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/elf_got_slotaddr_x86_64</com>
+  <com>read symbols</com>
+  <com>load function pickx</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/elf_got_noreturn_aarch64</com>
+  <com>option listing on</com>
+  <com>read symbols</com>
+  <com>load function die</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function check</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="elfgot noreturn #1: the abort slot call ends the flow" min="1" max="1">^\s*abort\(\); // no-return$</stringmatch>
+<stringmatch name="elfgot noreturn #2: the exit slot call ends the flow (x86-64 and AArch64)" min="2" max="2">^\s*exit\(2\); // no-return$</stringmatch>
+<stringmatch name="elfgot noreturn #3: no function runs on into the next entry" min="0" max="0">funcboundflow</stringmatch>
+<stringmatch name="elfgot noreturn #4: die joins the no-return set through its exit slot" min="1" max="1">^\s*die\("usage"\); // no-return$</stringmatch>
+<stringmatch name="elfgot noreturn #5: AArch64 die joins the no-return set through its exit slot" min="1" max="1">^\s*die\(0x[0-9a-f]+\); // no-return$</stringmatch>
+<stringmatch name="elfgot noreturn #6: the address of a bound slot stays an address" min="1" max="1">v1 = \(unsigned long \*\)0x3fd8;</stringmatch>
+<stringmatch name="elfgot noreturn #7: no slot address prints as a function name" min="0" max="0">= (lgetxattr|getxattr);</stringmatch>
+<stringmatch name="elfgot noreturn #8: the .data.rel.ro function-pointer table stays a table" min="1" max="1">&amp;classes\[</stringmatch>
+</decompilertest>

@@ -304,6 +304,13 @@ fn scan_noreturn(file: &object::File, bytes: &[u8], compiler: Compiler) -> Analy
         let Ok(n) = String::from_utf8(p.name) else { continue };
         emit(&mut out, p.addr, n);
     }
+
+    // 3. `.got` import slots (`kuna_elfgotimports`): a `-fno-plt` call is
+    //    `call *slot(%rip)`, so the import's only FunctionSymbol sits at the slot.
+    for (slot, name) in crate::loader::kuna_elfgotimports::resolve(file) {
+        let Ok(n) = String::from_utf8(name) else { continue };
+        emit(&mut out, slot, n);
+    }
     out
 }
 

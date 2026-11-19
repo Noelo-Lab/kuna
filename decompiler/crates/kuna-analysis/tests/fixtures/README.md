@@ -2590,3 +2590,11 @@ rustc --edition 2021 -C opt-level=2 -C overflow-checks=on -C panic=abort -C relo
     -C link-arg=-Wl,-z,relro,-z,now -C strip=debuginfo \
     -o rust_noreturn_pie_x86_64 rust_noreturn_pie_x86_64.rs
 ```
+
+`elf_got_noreturn_x86_64` (source `elf_got_noreturn_x86_64.c`, gcc -O2 -fPIC -pie
+-fno-plt), `elf_got_slotaddr_x86_64` (source `elf_got_slotaddr_x86_64.s`) and
+`elf_got_noreturn_aarch64` (sources `elf_got_noreturn_aarch64.c` and
+`elf_got_noreturn_aarch64_stub.c`, clang -O2 -fPIC -fno-plt, lld) are the
+`.got` import-slot call fixtures (`tests/stages/kuna-elfgot-noreturn.xml`): calls
+to `abort` and `exit` through their GLOB_DAT slots, a function-pointer table in
+`.data.rel.ro` that must stay a table, and code that takes a slot's address.
