@@ -60,7 +60,7 @@ c0035fd6
 <stringmatch name="OBJCARC #2: default keeps the autoreleased return value as the message's result" min="1" max="1">v2 = objc_msgSend\(arg1,sel_inner\);</stringmatch>
 <stringmatch name="OBJCARC #3: default drops every release (two in total:, one in make)" min="2" max="2">objc_release\(</stringmatch>
 <stringmatch name="OBJCARC #4: the ivar store is an assignment (storeStrong inlined by -O2, retain/release hidden)" min="1" max="1">self->slot = \(Base \*\)arg1;</stringmatch>
-<stringmatch name="OBJCARC #5: the autorelease-return pass-through is the returned value" min="1" max="1">return v1; // tail-call</stringmatch>
+<stringmatch name="OBJCARC #5: the autorelease-return pass-through is the returned value (a Base * handed back as the id the method declares)" min="1" max="1">return \(objc_object \*\)v1; // tail-call</stringmatch>
 <stringmatch name="OBJCARC #6: objc_alloc_init carries its class argument through the runtime prototype" min="2" max="2">objc_alloc_init\(\(objc_class \*\)_OBJC_CLASS_\$_Base\)</stringmatch>
 <stringmatch name="OBJCARC #7: off shows the ARC helper with its argument and result" min="1" max="1">obj = objc_retainAutoreleasedReturnValue\(\(objc_object \*\)objc_msgSend\(arg1,sel_inner\)\);</stringmatch>
 <stringmatch name="OBJCARC #8: no header line per hidden call" min="0" max="0">injected</stringmatch>

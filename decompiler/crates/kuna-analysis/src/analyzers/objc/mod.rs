@@ -191,6 +191,14 @@ impl AnalysisPass for ObjcMetadataPass {
             }
         }
 
+        let mut table = kuna_decomp::kuna_objcresolve::ObjcClassTable::default();
+        for (class, name) in &classes {
+            let shown = display_class_name(name);
+            table.class_at.insert(class.addr, shown.clone());
+            table.classes.entry(shown).or_default().superclass =
+                classt::superclass_name(&img, class.addr).map(|s| display_class_name(&s));
+        }
+        out.objc_classes = Some(table);
         for (class, name) in &classes {
             out.symbols.push(SymFact {
                 addr: class.addr,
@@ -241,6 +249,10 @@ impl AnalysisPass for ObjcMetadataPass {
                 Some((s.address(), name.strip_prefix('_').unwrap_or(name).to_string()))
             }));
             kuna_objcblocks::stack_blocks(&img, ctx.file, ctx.bytes, &tctx, &creators, &globals, &mut out);
+        }
+        if let Some(table) = out.objc_classes.as_mut() {
+            table.selector_at.extend(selectors.strings.iter().map(|(va, s)| (*va, s.clone())));
+            table.selref_at.extend(selectors.slots.iter().map(|(va, s)| (*va, s.clone())));
         }
 
         // A chained slot holds its packed fixup word until `dynrelocs` unpacks it
@@ -295,6 +307,11 @@ impl ObjcMetadataPass {
             // own sub_*/FUN_* placeholder with the ObjC method name, never a real
             // symbol.
             out.fid_names.push(FidMatch { addr: m.imp, name: label.clone(), by_signature: false });
+            let owner = class.split('(').next().unwrap_or(class);
+            if let Some(table) = out.objc_classes.as_mut() {
+                let shown_owner = display_class_name(owner);
+                table.classes.entry(shown_owner).or_default().methods.insert((kind == '+', m.selector.clone()), (label.clone(), m.imp));
+            }
 
             // The typed prototype from the ObjC type encoding (PR-O2): `i20@0:8i16`
             // → `int -[Greeter greet:](id self, SEL _cmd, int n)`. Keyed by the
@@ -305,7 +322,6 @@ impl ObjcMetadataPass {
             // The spelling the class's own property gives the selector, else the
             // method's own: another class's property of the same selector says
             // nothing about this class's return type.
-            let owner = class.split('(').next().unwrap_or(class);
             let enc = selectors.encoding_for_class(owner, &m.selector).map(str::to_string).or_else(|| m.types.clone());
             if let Some(enc) = enc.as_deref() {
                 if let Some(pieces) = encoding::decode_method(&label, enc, tctx, None) {

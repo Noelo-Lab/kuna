@@ -380,6 +380,31 @@ fn decompile_one_prefollowed_once(
             seed.purpose,
         );
     }
+    // (kuna `objcresolve call`) A message send whose method the finished function
+    // knows is retargeted to that IMP and the function driven again, so the
+    // call carries the method's prototype and the call graph its edge.
+    let retargets = match &result {
+        Ok(fd) if arch.objc_resolve_call => objc_retargets(arch, fd),
+        _ => 0,
+    };
+    if retargets > 0 {
+        result = kuna_decomp::decompile_drive::decompile_func_full_with_objects(
+            arch,
+            name,
+            redo_entry.clone(),
+            size,
+            seed.mapped_symbols,
+            seed.usepoint_symbols,
+            seed.dynamic_symbols,
+            seed.pending_proto,
+            &flow_overrides,
+            &last_overrides,
+            seed.mapped_params,
+            None,
+            seed.object_assertions,
+            seed.purpose,
+        );
+    }
     // (kuna `callrettype`) A callee's stated return type that the finished
     // function's own variables contradict is withdrawn for this caller, and the
     // function is driven again without it.
@@ -781,4 +806,47 @@ pub(crate) fn extract_format_string_overrides(
         }
     }
     overrides
+}
+
+/// (kuna `objcresolve`) Install the retargets of every send the decompiled `fd`
+/// resolved and not yet retargeted: the CALL's new entry, and for an
+/// `objc_msgSend$<sel>` stub site the stub's own prototype with `self` typed as
+/// the receiver's class and the IMP's declared return. The count installed.
+fn objc_retargets(arch: &mut Architecture, fd: &kuna_decomp::funcdata::Funcdata) -> usize {
+    let mut n = 0;
+    for send in kuna_decomp::kuna_objcresolve::resolved_sends(fd) {
+        let site = send.site.get_offset();
+        if arch.kuna_objc_retargets.contains_key(&site) {
+            continue;
+        }
+        if send.stub {
+            let Some(space) = send.site.get_space().cloned() else { continue };
+            let stub_entry = (0..fd.num_calls())
+                .map(|i| fd.get_call_specs(i))
+                .find(|fc| fd.obank().get(fc.get_op()).is_some_and(|o| *o.get_addr() == send.site))
+                .map(|fc| fc.get_entry_address().clone());
+            let Some(mut pieces) = stub_entry
+                .and_then(|e| arch.symboltab.function_proto_pieces_across_scopes(&e).cloned())
+            else {
+                continue;
+            };
+            if let (Some(first), Some(t)) = (pieces.intypes.first_mut(), send.self_type.as_ref()) {
+                *first = Rc::clone(t);
+                if let Some((_, p)) = pieces.input_storage.iter_mut().find(|(slot, _)| *slot == 0) {
+                    p.type_ = Some(Rc::clone(t));
+                }
+            }
+            let imp = Address::new(space, send.imp);
+            if let Some(declared) = arch.symboltab.function_proto_pieces_across_scopes(&imp) {
+                if declared.outtype.is_some() {
+                    pieces.outtype = declared.outtype.clone();
+                }
+            }
+            pieces.name = send.label.clone();
+            arch.kuna_objc_site_pieces.insert(site, pieces);
+        }
+        arch.kuna_objc_retargets.insert(site, send.imp);
+        n += 1;
+    }
+    n
 }

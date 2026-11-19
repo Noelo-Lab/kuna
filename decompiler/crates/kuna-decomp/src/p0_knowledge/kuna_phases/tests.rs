@@ -56,13 +56,13 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_220() {
-    assert_eq!(kuna_num_settables(), 220);
-    assert_eq!(SETTABLE_TABLE.len(), 220);
+fn settable_count_is_221() {
+    assert_eq!(kuna_num_settables(), 221);
+    assert_eq!(SETTABLE_TABLE.len(), 221);
 }
 
 #[test]
-fn tier_counts_are_45_core_121_transform_54_analysis() {
+fn tier_counts_are_45_core_122_transform_54_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -74,7 +74,7 @@ fn tier_counts_are_45_core_121_transform_54_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (45, 121, 54));
+    assert_eq!((core, transform, analysis), (45, 122, 54));
 }
 
 #[test]
@@ -458,6 +458,8 @@ fn option_values_live_value_present_for_76() {
         // (kuna) Apple kernelcache unwrapping + MH_FILESET entry choice -- a
         // LOAD-time gate read from `KUNA_KERNELCACHE`. Default auto.
         "kernelcache",
+        // (kuna) Three-valued `on|call|off`; read console-side via kuna_live_value.
+        "objcresolve",
     ];
     let mut with_live = 0;
     for i in 0..kuna_num_settables() {
@@ -1093,7 +1095,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `calleeargs`; its P4 row sits after `argclobber`.
     // +1 for `acleintrinsics`; its P9 row sits after `cortexmpriv`.
     // +1 for `objcarc`; its P2 row sits after `chkstkdarwin`.
-    assert_eq!(json.matches("},\n").count(), 219);
+    // +1 for `objcresolve`; its P5 row sits after `objcarc`.
+    assert_eq!(json.matches("},\n").count(), 220);
 }
 
 #[test]

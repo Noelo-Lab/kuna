@@ -5725,3 +5725,22 @@ symptoms = "an Objective-C method is mostly objc_retain/objc_release lines|objc_
 live_field = "objc_arc"
 live_true = "on"
 live_false = "off"
+
+[[settable]]
+option = "objcresolve"
+values = "on|call|off"
+default = "on"
+destructive = false
+phase = "P5"
+subphase = "type-propagation"
+strength = "HARD"
+rewind = "P5"
+issue = "kuna-objcresolve"
+summary = "Objective-C images only (inert unless `objc` is on and the image has classes of its own): type and resolve a message send by its receiver. `objc_msgSend` and the `objc_msgSend$<sel>` stubs are typed once for every receiver, so `[[Foo alloc] init]` is an `objc_object *` and `objc_msgSend(v1, sel_setInner_, v2)` names the selector but not the method. With the class table the ObjC analysis hands over (`p5_types/kuna_objcresolve.rs`), `TypeOpCall::getOutputLocal` answers for such a call before the stub's locked `id`: `alloc`, `allocWithZone:`, `new` and the runtime's `objc_alloc`/`objc_alloc_init`/`objc_opt_new` on a folded class reference return that class's instance pointer (`Foo *`), and `init…`, `self`, `retain`, `autorelease`, `copy`, `mutableCopy` return their receiver's class pointer, a receiver that is itself a message send being asked first, so an alloc/init chain types through. When the receiver is a folded class reference (`+[Foo new]`) or a pointer to a class struct of this image (`self`, an ivar, an alloc/init result), the selector is looked up along the class's own method lists (categories included) and then its superclass chain, and the call prints the method as its callee: `-[Base setInner:](v1, sel_setInner_, v2)`. `call` goes further: the function is decompiled a second time with each such CALL sent to that IMP (`FlowInfo::setup_call_specs` reads the retarget; an `objc_msgSend$<sel>` stub site keeps the stub's argument shape with `self` typed and the method's return), so the call carries the method's own prototype, `-[Base setInner:](v1, (objc_selector *)sel_setInner_, (objc_object *)v2)`, at the cost of that second decompile (about 25% more decompile work on an Objective-C daemon). The method named is the one the receiver's static class reaches; a subclass of another image that overrides it is not visible. A selector no class of the chain declares (a framework method) keeps the runtime entry point; a method's `self`/`_cmd` names never name the caller's values. Off, the stub's `id` stands and every send prints as the runtime entry point."
+use_when = "On by default: message sends to objects of the image's own classes otherwise read as `objc_msgSend(obj, sel_x, ...)` with `obj` an `objc_object *`, and every field read through an alloc/init result is a cast. Set `call` when the arguments of a resolved send should take the method's declared types. Flip OFF to see the runtime entry point at every call, or when a receiver's dynamic class may be a subclass that overrides the method and the static resolution misleads."
+example = "option objcresolve off"
+source_decompiler = "kuna"
+inspiration = "The Objective-C runtime's own dispatch: a selector is looked up in the receiver class's method lists and then up the superclass chain; alloc and init return instancetype"
+change_kind = "analysis-enablement"
+tier = "transform"
+symptoms = "objc_msgSend(self, sel_foo) where -[Class foo] is a method of this image|objc_msgSend$count(v2) on a receiver whose class is known|[[Foo alloc] init] typed objc_object * or unsigned long|the call graph of an ObjC image stops at objc_msgSend"

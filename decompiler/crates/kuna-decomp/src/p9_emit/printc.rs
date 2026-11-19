@@ -8771,6 +8771,9 @@ impl PrintC {
     }
 
     fn call_callee_name(&self, fd: &Funcdata, op: OpId) -> String {
+        if let Some(label) = crate::kuna_objcresolve::resolved_callee(fd, op) {
+            return label;
+        }
         if let Some(idx) = fd.get_call_specs_index(op) {
             let fc = fd.get_call_specs(idx);
             let nm = fc.get_name();

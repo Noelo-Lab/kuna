@@ -455,6 +455,10 @@ Three tiers:
 | objc_retainAutoreleasedReturnValue() rendered with no argument and its result typed unsigned long | [`objcarc`](#objcarc----on--off-default-on) |
 | objc_storeStrong(&self->field, x) where an assignment is meant | [`objcarc`](#objcarc----on--off-default-on) |
 | objc_retain_x19() or objc_release_x20() printed with no argument | [`objcarc`](#objcarc----on--off-default-on) |
+| objc_msgSend(self, sel_foo) where -[Class foo] is a method of this image | [`objcresolve`](#objcresolve----on--call--off-default-on) |
+| objc_msgSend$count(v2) on a receiver whose class is known | [`objcresolve`](#objcresolve----on--call--off-default-on) |
+| [[Foo alloc] init] typed objc_object * or unsigned long | [`objcresolve`](#objcresolve----on--call--off-default-on) |
+| the call graph of an ObjC image stops at objc_msgSend | [`objcresolve`](#objcresolve----on--call--off-default-on) |
 | a DOS program's globals print as *(short *)0x308e near-pointer dereferences instead of named globals | [`mzdgroup`](#mzdgroup----on--off-default-on) |
 | every function of an MS-DOS executable declares an unsigned short local commented // ds | [`mzdgroup`](#mzdgroup----on--off-default-on) |
 | the same DOS global gets no shared name across functions | [`mzdgroup`](#mzdgroup----on--off-default-on) |
@@ -1816,6 +1820,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On by default: an Objective-C method otherwise reads as retain/release traffic around the few lines that do the work, or an ARC helper call shows no argument and the value it returned is missing. Flip OFF to audit the reference counting itself.
 - **Where / provenance:** P2/flow-classification · kuna · presentation-default · kuna-objcarc
 - **Example:** `option objcarc off`
+
+### `objcresolve` -- on | call | off, default `on`
+
+- **Symptoms:** objc_msgSend(self, sel_foo) where -[Class foo] is a method of this image; objc_msgSend$count(v2) on a receiver whose class is known; [[Foo alloc] init] typed objc_object * or unsigned long; the call graph of an ObjC image stops at objc_msgSend.
+- **What it does:** Objective-C images only (inert unless `objc` is on and the image has classes of its own): type and resolve a message send by its receiver. `objc_msgSend` and the `objc_msgSend$<sel>` stubs are typed once for every receiver, so `[[Foo alloc] init]` is an `objc_object *` and `objc_msgSend(v1, sel_setInner_, v2)` names the selector but not the method. With the class table the ObjC analysis hands over (`p5_types/kuna_objcresolve.rs`), `TypeOpCall::getOutputLocal` answers for such a call before the stub's locked `id`: `alloc`, `allocWithZone:`, `new` and the runtime's `objc_alloc`/`objc_alloc_init`/`objc_opt_new` on a folded class reference return that class's instance pointer (`Foo *`), and `init…`, `self`, `retain`, `autorelease`, `copy`, `mutableCopy` return their receiver's class pointer, a receiver that is itself a message send being asked first, so an alloc/init chain types through. When the receiver is a folded class reference (`+[Foo new]`) or a pointer to a class struct of this image (`self`, an ivar, an alloc/init result), the selector is looked up along the class's own method lists (categories included) and then its superclass chain, and the call prints the method as its callee: `-[Base setInner:](v1, sel_setInner_, v2)`. `call` goes further: the function is decompiled a second time with each such CALL sent to that IMP (`FlowInfo::setup_call_specs` reads the retarget; an `objc_msgSend$<sel>` stub site keeps the stub's argument shape with `self` typed and the method's return), so the call carries the method's own prototype, `-[Base setInner:](v1, (objc_selector *)sel_setInner_, (objc_object *)v2)`, at the cost of that second decompile (about 25% more decompile work on an Objective-C daemon). The method named is the one the receiver's static class reaches; a subclass of another image that overrides it is not visible. A selector no class of the chain declares (a framework method) keeps the runtime entry point; a method's `self`/`_cmd` names never name the caller's values. Off, the stub's `id` stands and every send prints as the runtime entry point.
+- **When to flip:** On by default: message sends to objects of the image's own classes otherwise read as `objc_msgSend(obj, sel_x, ...)` with `obj` an `objc_object *`, and every field read through an alloc/init result is a cast. Set `call` when the arguments of a resolved send should take the method's declared types. Flip OFF to see the runtime entry point at every call, or when a receiver's dynamic class may be a subclass that overrides the method and the static resolution misleads.
+- **Where / provenance:** P5/type-propagation · kuna · analysis-enablement · kuna-objcresolve
+- **Example:** `option objcresolve off`
 
 ## Analysis & loader passes
 
