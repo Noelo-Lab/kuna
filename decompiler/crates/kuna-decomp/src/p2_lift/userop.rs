@@ -158,6 +158,8 @@ pub const BUILTIN_LABS: uint4 = 0x10000017;
 pub const BUILTIN_BITREV: uint4 = 0x10000018;
 /// (kuna) Built-in id for `ctz`, the count of trailing zero bits (`bitidioms`).
 pub const BUILTIN_CTZ: uint4 = 0x10000019;
+/// (kuna) Built-in id for `alloca`, a dynamic stack allocation (`alloca`).
+pub const BUILTIN_ALLOCA: uint4 = 0x1000001a;
 
 // ---------------------------------------------------------------------------
 // UserOpBase + UserPcodeOp hierarchy (userop.hh:47-318)
@@ -1091,6 +1093,13 @@ impl UserOpManage {
             }
             BUILTIN_BITREV => UserPcodeOp::new_unspecialized(b"bitreverse", BUILTIN_BITREV as int4),
             BUILTIN_CTZ => UserPcodeOp::new_unspecialized(b"ctz", BUILTIN_CTZ as int4),
+            BUILTIN_ALLOCA => {
+                let ptr_size = types.get_size_of_pointer();
+                let word_size = types.get_default_data_space_word_size();
+                let ptr_type = types.get_type_pointer(ptr_size, types.get_type_void(), word_size);
+                let size_type = types.get_base_int(ptr_size);
+                UserPcodeOp::new_datatype(b"alloca", BUILTIN_ALLOCA as int4, Some(ptr_type), &[Some(size_type)])
+            }
             _ => return Err(KunaError::lowlevel("Bad built-in userop id")),
         };
         self.builtinmap.insert(i, res);

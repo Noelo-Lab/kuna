@@ -939,6 +939,9 @@ pub struct Architecture {
     /// (kuna) Collapse an unrolled element-copy run into `memcpy` (option
     /// `copyrun`).  See [`crate::p3_dataflow::kuna_copyrun`].
     pub copy_run: bool,
+    /// (kuna) Print a dynamic stack allocation as `alloca(size)` (option `alloca`).
+    /// See [`crate::p3_dataflow::kuna_alloca`].
+    pub alloca_calls: bool,
     /// (kuna) Simplify mixed boolean-arithmetic expressions (option `mba`).  See
     /// [`crate::p3_dataflow::kuna_mba`].
     pub mba: bool,
@@ -2489,6 +2492,7 @@ impl Architecture {
             cmp_merge: false, // (kuna) option cmpmerge; reset_defaults sets the shipped default
             bit_idioms: false, // (kuna) option bitidioms; reset_defaults sets the shipped default
             copy_run: false, // (kuna) option copyrun; reset_defaults sets the shipped default
+            alloca_calls: false, // (kuna) option alloca; reset_defaults sets the shipped default
             mba: false, // (kuna) option mba; reset_defaults sets the shipped default
             region_structure: true,
             guard_arm: false,
@@ -2846,6 +2850,7 @@ impl Architecture {
         self.pow2_select = true; // (kuna) option pow2select default-on: rewrites only a select or sign-mask shift proved equal to x / 2^k or x % 2^k; 0/675 datatest assertions; see docs/spec/03-ssa-and-simplification.md
         self.bit_idioms = true; // (kuna) option bitidioms default-on: folds only a proved byte swap, rotate, abs, bit reversal or bit-scan loop; 0/675 datatest assertions; see docs/spec/03-ssa-and-simplification.md
         self.copy_run = true; // (kuna) option copyrun default-on: an unrolled element-copy run prints as memcpy; 0/675 datatest assertions
+        self.alloca_calls = true; // (kuna) option alloca default-on: a dynamic stack move prints as alloca(size); 0/675 datatest assertions
         self.cortexmpriv = true; // (kuna) DIV-99: default-ON; the fixup is registered only on a language that declares the user-op (ARM), so inert elsewhere; "the core is privileged" is a modelling judgement, so `off` audits unprivileged Thread-mode code
         self.acle_intrinsics = true; // (kuna) option acleintrinsics default-on; reads the AArch64 `ShowMemTag` context and AArch64 user-op names only, so inert on every other target
         self.float_globals = true; // (kuna) option floatglobals default-on
@@ -3604,6 +3609,7 @@ impl Architecture {
         ctx.cmp_merge = self.cmp_merge; // cmpmerge
         ctx.bit_idioms = self.bit_idioms; // bitidioms
         ctx.copy_run = self.copy_run; // copyrun
+        ctx.alloca_calls = self.alloca_calls; // alloca
         ctx.mba = self.mba; // mba
         ctx.region_structure = self.region_structure; // regionstructure
         ctx.guard_arm = self.guard_arm; // guardarm
@@ -4733,6 +4739,7 @@ impl Architecture {
             BUILTIN_STRINGDATA, BUILTIN_STRLEN, BUILTIN_STRNCPY, BUILTIN_SYSCALL_ERROR,
             BUILTIN_VOLATILE_READ, BUILTIN_VOLATILE_WRITE, BUILTIN_WCSNCPY,
             BUILTIN_ABS, BUILTIN_BITREV, BUILTIN_BSWAP, BUILTIN_CTZ, BUILTIN_LABS, BUILTIN_ROTL,
+            BUILTIN_ALLOCA,
         };
         // Split the &mut userops borrow from the &self type-factory read by
         // building a small adapter over the (already-populated) factory.
@@ -4777,6 +4784,8 @@ impl Architecture {
             for id in [BUILTIN_BSWAP, BUILTIN_ROTL, BUILTIN_ABS, BUILTIN_LABS, BUILTIN_BITREV, BUILTIN_CTZ] {
                 userops.register_builtin(id, &adapter)?;
             }
+            // (kuna alloca) a dynamic stack allocation.
+            userops.register_builtin(BUILTIN_ALLOCA, &adapter)?;
             Ok(())
         })();
         self.userops = userops;

@@ -103,6 +103,15 @@ pub(crate) fn output_type_local(data: &Funcdata, op: OpId) -> Rc<Datatype> {
                 return t;
             }
         }
+        // (kuna alloca) `void *alloca(size_t)`.
+        if in0_off == crate::userop::BUILTIN_ALLOCA as u64 {
+            if let Some(tlst) = arch.types() {
+                let ws = arch.manage().get_default_data_space().map(|s| s.get_word_size()).unwrap_or(1);
+                if let Ok(ptr) = tlst.get_type_void().and_then(|v| tlst.get_type_pointer(out_size, v, ws)) {
+                    return ptr;
+                }
+            }
+        }
     }
     // C++ `TypeOpCall::getOutputLocal` (typeop.cc:722) / `TypeOpCallind::getOutputLocal`
     // (typeop.cc:778): when the resolved `FuncCallSpecs` has a locked (committed)

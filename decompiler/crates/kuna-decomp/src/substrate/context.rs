@@ -1086,6 +1086,8 @@ pub struct ArchContext {
     pub bit_idioms: bool,
     /// (kuna) `copyrun` — collapse an unrolled element-copy run into `memcpy`.
     pub copy_run: bool,
+    /// (kuna) `alloca` — print a dynamic stack allocation as `alloca(size)`.
+    pub alloca_calls: bool,
     /// (kuna) `mba` — simplify mixed boolean-arithmetic expressions.
     pub mba: bool,
     /// (kuna) region-based (Phoenix/SAILR) structurer: structure the CFG by
@@ -1695,6 +1697,7 @@ impl ArchContext {
             cmp_merge: false, // cmpmerge (live value copied from the Architecture)
             bit_idioms: false, // bitidioms (live value copied from the Architecture)
             copy_run: false, // copyrun (live value copied from the Architecture)
+            alloca_calls: false, // alloca (live value copied from the Architecture)
             mba: false, // mba (live value copied from the Architecture)
             region_structure: false,     // regionstructure (opt-in default-off)
             guard_arm: false,            // guardarm (opt-in default-off)

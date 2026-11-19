@@ -462,6 +462,7 @@ kuna_options! { self, p1;
     "bitidioms" => on_off!(bit_idioms, "byte-swap, rotate, abs and bit-scan idioms"),
     "mba" => on_off!(mba, "mixed boolean-arithmetic simplification"),
     "copyrun" => on_off!(copy_run, "unrolled element-copy runs as memcpy"),
+    "alloca" => on_off!(alloca_calls, "dynamic stack allocation as alloca(size)"),
     "regionstructure" => {
         let (val, msg) =
             crate::p8_structure::region_structurer::OptionRegionStructure.apply(p1)?;

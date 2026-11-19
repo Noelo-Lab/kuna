@@ -733,6 +733,11 @@ Three tiers:
 | warning text wanted inline at the end of the statement it describes | [`warnstyle`](#warnstyle----inline--banner-default-inline) |
 | terse warning slugs unwanted; full upstream warning text needed | [`warnstyle`](#warnstyle----inline--banner-default-inline) |
 | warning style needs to match upstream ghidra for diffing | [`warnstyle`](#warnstyle----inline--banner-default-inline) |
+| a variable-length array renders as negative indexing off a stack symbol | [`alloca`](#alloca----on--off-default-on) |
+| alloca renders as stack pointer arithmetic | [`alloca`](#alloca----on--off-default-on) |
+| a while loop assigns a stack word to itself (stack-clash probe) | [`alloca`](#alloca----on--off-default-on) |
+| use(&(&Stack...)[v1]) where the source passes a VLA | [`alloca`](#alloca----on--off-default-on) |
+| the size of a dynamic allocation appears rounded to 16 in the C | [`alloca`](#alloca----on--off-default-on) |
 | an AArch64 function that tags a pointer (irg, addg) decompiles to return a0 | [`acleintrinsics`](#acleintrinsics----on--off-default-on) |
 | stg, st2g or stzg leave no trace in the output of MTE-hardened AArch64 code | [`acleintrinsics`](#acleintrinsics----on--off-default-on) |
 | DataMemoryBarrier(2,3) or DataSynchronizationBarrier(3,3,0) where the source called __dmb or __dsb | [`acleintrinsics`](#acleintrinsics----on--off-default-on) |
@@ -2436,6 +2441,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** Inline by default (DIV-38): usage(1); // no-return, if (v8) { // branch-flip, prototype-line // early-return x3. Flip to banner to reproduce upstream Ghidra's full warning text or to grep for the long-form messages. Unknown warning texts keep their full text behind a warn: marker; user/dwarf_lines comments always keep banner lines.
 - **Where / provenance:** P9/warning-style · kuna · presentation-default · kuna-cnorm-fmt
 - **Example:** `option warnstyle banner`
+
+### `alloca` -- on | off, default `on`
+
+- **Symptoms:** a variable-length array renders as negative indexing off a stack symbol; alloca renders as stack pointer arithmetic; a while loop assigns a stack word to itself (stack-clash probe); use(&(&Stack...)[v1]) where the source passes a VLA; the size of a dynamic allocation appears rounded to 16 in the C.
+- **What it does:** Print a dynamic stack allocation as `alloca(size)`. `alloca(n)` and a variable-length array lower the stack pointer by the size rounded up to 16 (`(n + 15) & -16`, `n + 0x17 >> 4 << 4`), which printed as stack arithmetic: `use(&(&Stackfffffffffffffff8)[v1],a0)` with `v1 = -((long)a0 + 0xfU & 0xfffffffffffffff0)`. Under stack-clash protection (the Ubuntu gcc default, and clang -fstack-clash-protection) the allocation is a page-at-a-time probe loop (`sub rsp,0x1000; or qword [rsp+0xff8],0`) plus a probed remainder (`and eax,0xff0; sub rsp,rax`), which printed as a `while` loop of self-assignments. Before heritage `sp = sp - reg` becomes `sp = alloca(reg)` unless the block loaded the register as a constant (a fixed frame behind __chkstk); in the rules, an `INT_ADD` of a stack pointer and the negated non-constant size becomes `alloca(size)` (clang computes the new stack pointer in another register), the size is taken back to `n` when the round-up or the stack-clash remainder mask is recognized, the realignment of the result is dropped, the probes (a store back of the word just loaded from a stack or alloca address) are removed, and the guard in front of the probe loop is pinned to skip it, which leaves the loop unreachable. A stack move neither form caught before types were in -- the typed `PTRADD(stack pointer, -n, 1)` written back to the stack-pointer register -- becomes `alloca(n)` as well. The result is typed `void *`. Result: `v3 = alloca((long)a0); v1 = use(v3,a0); return ((char *)v3)[...]`. The stack-relative arguments an i386 caller pushes after a dynamic allocation stay unrecovered, as they were: the stack model has one frame base, and after the allocation the stack pointer is not that base plus a constant.
+- **When to flip:** On by default. The OFF symptom is a VLA or alloca rendered as `&(&Stackfffffffffffffff8)[-(n + 0xf & ...)]`, or under stack-clash protection a `while` loop whose body assigns a stack word to itself. Flip off to see the allocation as compiled.
+- **Where / provenance:** P3/stack-pointer-normalization · kuna · type-inference · kuna-alloca
+- **Example:** `option alloca off`
 
 ### `acleintrinsics` -- on | off, default `on`
 

@@ -74,6 +74,7 @@ pub mod kuna_cmpmerge;
 pub mod kuna_bitidioms;
 pub mod kuna_mba;
 pub mod kuna_copyrun;
+pub mod kuna_alloca;
 pub mod kuna_narrowload; // (kuna) a narrow LOAD keeps its own width
 pub mod kuna_regnarrow;
 pub(crate) mod kuna_volatileload;
