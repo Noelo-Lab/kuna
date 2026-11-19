@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4519,
-    4519
+    4522,
+    4522
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -184,6 +184,9 @@
     "data:C keeps its ordinary Boolean cast",
     "data:C keeps ordinary byte string syntax",
     "data:C selection retains C return punctuation before and after Go",
+    "data:C type definition members retain the array of pointers",
+    "data:C type definition members retain the pointer to an array",
+    "data:C type definition members use the declared pointer alias",
     "data:C++ namespace despite same-named parameter",
     "data:C++ namespace target",
     "data:C++ nested namespace target",
