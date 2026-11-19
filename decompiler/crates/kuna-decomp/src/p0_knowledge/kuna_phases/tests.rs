@@ -56,13 +56,13 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_219() {
-    assert_eq!(kuna_num_settables(), 219);
-    assert_eq!(SETTABLE_TABLE.len(), 219);
+fn settable_count_is_220() {
+    assert_eq!(kuna_num_settables(), 220);
+    assert_eq!(SETTABLE_TABLE.len(), 220);
 }
 
 #[test]
-fn tier_counts_are_45_core_120_transform_54_analysis() {
+fn tier_counts_are_45_core_121_transform_54_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -74,7 +74,7 @@ fn tier_counts_are_45_core_120_transform_54_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (45, 120, 54));
+    assert_eq!((core, transform, analysis), (45, 121, 54));
 }
 
 #[test]
@@ -841,7 +841,8 @@ fn option_values_live_value_present_for_76() {
     // field with no `live_field`.
     // 75 -> 76: +1 for `wrapadd` (live_field = wrap_add).
     // +1 for `acleintrinsics` (live_field = acle_intrinsics).
-    assert_eq!(with_live, 77);
+    // 77 -> 78: +1 for `objcarc` (live_field = objc_arc).
+    assert_eq!(with_live, 78);
 }
 
 #[test]
@@ -1091,7 +1092,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `chkstkdarwin`, its P2 row after `msvcftol`.
     // +1 for `calleeargs`; its P4 row sits after `argclobber`.
     // +1 for `acleintrinsics`; its P9 row sits after `cortexmpriv`.
-    assert_eq!(json.matches("},\n").count(), 218);
+    // +1 for `objcarc`; its P2 row sits after `chkstkdarwin`.
+    assert_eq!(json.matches("},\n").count(), 219);
 }
 
 #[test]

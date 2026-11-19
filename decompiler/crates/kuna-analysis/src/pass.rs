@@ -358,6 +358,10 @@ pub struct TrackedRegFact {
 pub struct CallFixupFact {
     /// The matched function's installed name (e.g. `mcount`, `__fentry__`).
     pub func_name: String,
+    /// The function's entry when the pass knows it (a Mach-O import stub, whose
+    /// FunctionSymbol keeps its `sub_` name under a display alias); `None` resolves
+    /// by name.
+    pub addr: Option<u64>,
 }
 
 /// A function the FID matcher re-identified by full-hash fingerprint: at `addr`,

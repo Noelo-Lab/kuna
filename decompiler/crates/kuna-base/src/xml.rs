@@ -2231,7 +2231,9 @@ mod tests {
         // and kuna-acleintrinsics / AArch64 MTE tag instructions and barriers print as ACLE intrinsics
         // and kuna-assert-callee / a stated destination makes an indirect call direct
         // and kuna-assert-format-isolate / a constant's format set by its instruction, and an isolated local
-        assert_eq!(count, 792, "corpus file count drifted");
+        // and kuna-objcarc / Objective-C ARC bookkeeping calls are hidden as the copies and stores they stand for
+        // and kuna-objcoutlinedresult / an outlined objc_retain_x<N> returns in x0
+        assert_eq!(count, 794, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

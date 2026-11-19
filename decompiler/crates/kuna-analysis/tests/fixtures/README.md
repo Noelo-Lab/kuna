@@ -1397,6 +1397,54 @@ clang -target arm64-apple-macos11 -O1 -c macho_gotdata_local.c -o m.o
        -e _main -o macho_gotdata_local m.o
 ```
 
+### `macho_objc_arc_arm64` — ARC bookkeeping (`objcarc`)
+
+`macho_objc_arc_arm64` (arm64, ~50 KB) is the fixture for
+`tests/stages/kuna-objcarc.xml`: `macho_objc_arc.m` compiled with `-fobjc-arc
+-O2`, so the runtime calls are the compiler's own — `objc_retain`,
+`objc_release`, `objc_retainAutoreleasedReturnValue`,
+`objc_autoreleaseReturnValue`, `objc_storeStrong`, `objc_alloc_init`. Two root
+classes: `Base` (`count`, `inner`) and `Holder` (`slot`) with `-make` (two
+alloc/init chains), `-total:` (two message sends whose autoreleased result is
+retained and released) and `-keep:` (an ivar store). Same recipe as
+`macho_objc_refs_arm64` (chained fixups, fast stubs, `-x`):
+
+```bash
+clang -target arm64-apple-macos11 -fobjc-arc -O2 -c macho_objc_arc.m -o m.o
+LLD=$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin/gcc-ld/ld64.lld
+"$LLD" -arch arm64 -platform_version macos 11.0 11.0 -fixup_chains -objc_stubs_fast \
+       -undefined dynamic_lookup -x -e _main -o macho_objc_arc_arm64 m.o
+```
+
+**Pinned VMAs:** IMP `-[Holder make]`@`0x100000798`, `-[Holder total:]`@`0x1000007ec`,
+`-[Holder keep:]`@`0x100000870`; stubs `objc_release`@`0x1000008b0`,
+`objc_retain`@`0x1000008bc`, `objc_retainAutoreleasedReturnValue`@`0x1000008f8`.
+With `--option objc on` (default `objcarc`) `-total:` is
+`v1 = objc_msgSend(arg1,sel_count); v2 = objc_msgSend(arg1,sel_inner); return objc_msgSend(v2,sel_count) + v1;`;
+with `--option objcarc off` the five ARC calls are shown with their arguments.
+
+### `macho_objc_outlined_retain_arm64` — outlined `objc_retain_x19` returns in `x0` (`objcarc`, `objc`)
+
+`macho_objc_outlined_retain_arm64` (arm64 Mach-O, 50 KB) with its source
+`macho_objc_outlined_retain_arm64.s` is the fixture for
+`tests/stages/kuna-objcoutlinedresult.xml`. Clang does not outline ARC retains
+from source here, so the source is hand-written arm64 assembly: `_holder_viewDidLoad`
+keeps its `self` in x19, calls an accessor that clobbers x0, builds the objc_super
+and calls `bl _objc_retain_x19`, then `mov x20, x0` and passes x20 to
+`_holder_vtable7`. Linked with `ld64.lld` (no SDK needed):
+
+```bash
+clang -target arm64-apple-macos11 -c macho_objc_outlined_retain_arm64.s -o m.o
+ld64.lld -arch arm64 -platform_version macos 11.0 11.0 -undefined dynamic_lookup -e _main \
+  -o macho_objc_outlined_retain_arm64 m.o
+```
+
+SHA-256 `5e19f8a0c35206fe0ffa3a1b68c6d3414a4152b38ad3234f3d82fa14914f6b8a`. The
+import stub `_objc_retain_x19` sits at `0x100000510`, the entry at `0x1000004c4`.
+Before the fix the call read `_holder_vtable7((void *)_holder_type_accessor())`;
+the retain's result is in x0, so with `objcarc` on the call takes the entry's `a0`,
+and with `objcarc off` it reads `_holder_vtable7(objc_retain_x19(a0))`.
+
 ### `swift_metadata_elf` — a stripped Swift executable (`swiftmetadata`)
 
 `swift_metadata_elf` (x86-64 ELF, 14 KB) is the Swift runtime-metadata fixture

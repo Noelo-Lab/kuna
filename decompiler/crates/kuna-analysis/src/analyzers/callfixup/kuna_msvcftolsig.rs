@@ -137,7 +137,7 @@ pub fn scan(file: &object::File, out: &mut AnalysisOutput) {
             out.symbols.push(SymFact { addr, name: name.to_string(), kind: SymKind::Function });
             out.fid_names.push(FidMatch { addr, name: name.to_string(), by_signature: false });
             if !out.call_fixups.iter().any(|f| f.func_name == name) {
-                out.call_fixups.push(CallFixupFact { func_name: name.to_string() });
+                out.call_fixups.push(CallFixupFact { func_name: name.to_string(), addr: None });
             }
         }
     }

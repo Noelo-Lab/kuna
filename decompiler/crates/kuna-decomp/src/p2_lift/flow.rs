@@ -3687,9 +3687,13 @@ truncating the fall-through here"
                 // at the call site, replacing the original CALL/CALLIND.
                 if self.inject_sub_function(idx, op)? {
                     let fixup = self.env.call_fixup_name(inject_id);
-                    self.data.warning_header(&format!(
-                        "Function: {name} replaced with injection: {fixup}"
-                    ));
+                    // (kuna `objcarc`) Hidden ARC bookkeeping is not worth a
+                    // header line per call; the option says what happened.
+                    if !fixup.starts_with(crate::kuna_objcarc::FIXUP_PREFIX) {
+                        self.data.warning_header(&format!(
+                            "Function: {name} replaced with injection: {fixup}"
+                        ));
+                    }
                     // Remove the now-injected call from qlst.
                     self.data.delete_call_spec(idx);
                 }
