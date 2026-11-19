@@ -793,6 +793,18 @@ mod usepoint_pointer_constants;
 #[path = "pe_data_exports.rs"]
 mod pe_data_exports;
 
+#[path = "stack_allocations.rs"]
+mod stack_allocations;
+
+#[path = "stack_allocations_isa.rs"]
+mod stack_allocations_isa;
+
+#[path = "stack_allocations_ia16.rs"]
+mod stack_allocations_ia16;
+
+#[path = "stack_allocations_abi.rs"]
+mod stack_allocations_abi;
+
 #[path = "float_nan_quieting.rs"]
 mod float_nan_quieting;
 

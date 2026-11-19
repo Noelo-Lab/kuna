@@ -865,6 +865,7 @@ pub(crate) fn analyze_extra_pop(
         // (coreaction.cc:226-228) reads getExtraPop() to build the exact equation
         // for the switch index — so L0's INT_ADD/INDIRECT is cleanly solved
         // instead of leaking stack-relative residue into the switch index.
+        let mut native_call_pop = None;
         if data.obank().get(op).map(|o| o.code()) == Some(OpCode::CPUI_INDIRECT) {
             let iopvn = data.obank().get(op).and_then(|o| o.get_in(1));
             let is_iop = iopvn
@@ -882,12 +883,30 @@ pub(crate) fn analyze_extra_pop(
                         let comp = solver.companion[i];
                         let soln2 = if comp >= 0 { solver.soln[comp as usize] } else { Some(0) };
                         if let Some(soln2) = soln2 {
-                            data.get_call_specs_mut(fc_idx)
-                                .set_effective_extra_pop(soln.wrapping_sub(soln2));
+                            let pop = soln.wrapping_sub(soln2);
+                            data.get_call_specs_mut(fc_idx).set_effective_extra_pop(pop);
+                            native_call_pop = data.obank().get(op)
+                                .and_then(|op| op.get_in(0)).map(|input| (input, pop));
                         }
                     }
                 }
             }
+        }
+
+        // Allocation recovery still needs these native definitions, including
+        // loop-carried SP and the decrements reserving saved-frame words.
+        // Keep call-pop facts relative to their native input, never to the
+        // solver's constant-frame approximation.
+        if data.stack_alloc_on() && data.vbank().get(vn).is_some_and(|node| node.is_auto_live_hold()) {
+            if let Some((input, pop)) = native_call_pop {
+                let size = data.vbank().get(vn).unwrap().get_size();
+                let offset = data.new_constant(size, (pop as uintb) & calc_mask(size));
+                data.op_set_opcode_code(op, OpCode::CPUI_INT_ADD);
+                if data.op_set_all_input(op, &[input, offset]).is_ok() {
+                    changed += 1;
+                }
+            }
+            continue;
         }
 
         let sz = data.vbank().get(invn).map(|v| v.get_size()).unwrap_or(0);

@@ -189,6 +189,10 @@ pub mod block_flags {
     pub const f_delayed_donothing: uint4 = 0x80000;
     /// Has the final transform been run
     pub const f_final_transform: uint4 = 0x100000;
+    /// A native stack-lifetime boundary must survive basic-block coalescing.
+    pub const f_stack_scope_boundary: uint4 = 0x200000;
+    /// A structured graph with a C lexical stack-storage lifetime.
+    pub const f_stack_scope: uint4 = 0x400000;
 }
 
 /// Boolean properties on edges (C++ `FlowBlock::edge_flags`,
@@ -2248,7 +2252,7 @@ impl BlockGraph {
             }
         };
         let fl1 = self.arena[bl].flags
-            & (block_flags::f_unstructured_targ | block_flags::f_entry_point);
+            & (block_flags::f_unstructured_targ | block_flags::f_entry_point | block_flags::f_stack_scope_boundary);
         let fl2 = self.arena[outbl].flags & block_flags::f_switch_out;
         self.remove_out_edge(bl, 0);
         let szout = self.arena[outbl].size_out();
@@ -2896,6 +2900,16 @@ impl BlockGraph {
         self.add_block(graph_id, ret);
         ret
     }
+    /// Preserve a proved lifetime region while its interior is structured.
+    pub(crate) fn new_stack_scope_region(&mut self, graph_id: BlockId, body: &[BlockId]) -> BlockId {
+        let scope = self.arena.insert(FlowBlock::new_kind(BlockKind::Graph));
+        self.identify_internal(graph_id, scope, body);
+        self.add_block(graph_id, scope);
+        self.arena[scope].set_flag(block_flags::f_stack_scope);
+        self.set_start_block(scope, body[0]);
+        scope
+    }
+
 
     /// Build a new BlockSwitch collapsing the switch root + its case components
     /// (C++ `BlockGraph::newBlockSwitch`, `block.cc:1907`).

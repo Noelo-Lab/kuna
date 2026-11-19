@@ -1062,6 +1062,14 @@ pub struct ArchContext {
     pub stack_alias_deadstore: bool,
     /// Operation-specific typed views over shared physical frame storage.
     pub stack_views: bool,
+    /// Opt-in dynamic stack allocation.
+    pub stack_alloc: bool,
+    /// C output can represent proved native restoration with a lexical VLA scope.
+    pub stack_alloc_scopes: bool,
+    /// The target passes every variadic argument on the stack (Apple arm64),
+    /// so a variadic tail stored through a lowered allocation starts at the
+    /// call's stack pointer. Read by `stackalloc`.
+    pub stack_alloc_stacked_varargs: bool,
     /// (kuna `libcnames`) Name locals from the library calls they meet.
     /// See [`crate::kuna_libcnames`].
     pub libc_names: bool,
@@ -1674,6 +1682,9 @@ impl ArchContext {
             array_size: 0,               // arraysize (Architecture::reset_defaults sets the shipped default)
             stack_alias_deadstore: false,
             stack_views: false, // stackviews (opt-in)
+            stack_alloc: false, // stackalloc (opt-in)
+            stack_alloc_scopes: false,
+            stack_alloc_stacked_varargs: false,
             libc_names: false, // libcnames; set from the Architecture
             devectorize_reduction: false, // devectorize (opt-in default-off)
             strlen_scan: false, // strlenscan (live value copied from the Architecture)

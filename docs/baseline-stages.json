@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4646,
-    4646
+    4648,
+    4648
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2285,6 +2285,8 @@
     "data:STACK WORD #1: default loses the pointer",
     "data:STACK WORD #2: enabled retains all four arguments",
     "data:STACK WORD #3: enabled preserves the output-dependent condition",
+    "data:STACKALLOC #1: disabled retains the raw frame reference",
+    "data:STACKALLOC #2: enabled allocates backing storage once",
     "data:STACKCOOKIE #10: key ^ esp pushed in an SEH body is an argument, and so is the 7 above it",
     "data:STACKCOOKIE #11: key ^ ebp pushed under an EBP SEH frame is an argument",
     "data:STACKCOOKIE #1: the call under an SEH frame takes only its pushed name",

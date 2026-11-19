@@ -563,6 +563,7 @@ impl Action for ActionVarnodeProps {
                         }
                     }
                     skip |= crate::kuna_stackalias::holds_store(data, vn);
+                    skip |= data.kuna_stack_scope_holds.contains(&vn);
                     skip |= def.is_some_and(|op| crate::p3_dataflow::kuna_volatileload::is_volatile(data, op));
                     if !skip {
                         data.vbank_mut()

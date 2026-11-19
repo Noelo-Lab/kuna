@@ -1708,9 +1708,12 @@ impl Action for ActionRestructureVarnode {
         // l1->restructureVarnode(aliasyes): re-derive the stack-frame layout from
         // the live (stack, off) Varnodes that RuleLoad/StoreVarnode produced.
         count += data.restructure_varnode(aliasyes);
-        // (kuna `stackstoreguard`) The drive analyzes a function whose layout
-        // spoiled the guard again without it, so this analysis stops here.
-        if data.stack_store_guard_spoiled() && !data.is_jumptable_recovery_on() {
+        // A layout that spoiled stack protection or allocation recovery must
+        // restart without it before later actions can settle this analysis.
+        if (data.stack_store_guard_spoiled()
+            || (!data.stack_alloc_on() && data.stack_alloc_spoiled().is_some()))
+            && !data.is_jumptable_recovery_on()
+        {
             ctx.abandon = true;
         }
         // syncVarnodesWithSymbols(l1, /*updateDatatypes*/false, aliasyes): paint

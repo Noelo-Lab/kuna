@@ -2216,6 +2216,7 @@ mod tests {
         // and kuna-x86-directalias-freed / and does so after an earlier call stops taking that pointer
         // and kuna-itaniumvfunc / an Itanium virtual method named after the function, not its vtable
         // and kuna-itaniumctors / Itanium constructors and destructors named from their vptr stores
+        // and kuna-stackalloc / runtime stack allocation reaches its uses
         // and kuna-switchselfloop / a switch that heads its own loop keeps the loop
         // and kuna-wide-shifts / armconstshift all shifts a signed 64-bit operand unsigned
         // and kuna-sharedpush / a push above a branch is the argument of the call on each arm
@@ -2239,7 +2240,8 @@ mod tests {
         // and kuna-repstring, kuna-repstring-i386 / x86 rep movs/stos/cmpsb print as copy, fill and compare builtins
         // and kuna-reentereddispatch / a re-entered dispatch keeps every step's store
         // and kuna-dispatch-values / dispatcher return values survive narrowing and copies
-        assert_eq!(count, 802, "corpus file count drifted");
+        // and kuna-stackalloc / a runtime stack reservation lowers to __builtin_alloca under stackalloc on
+        assert_eq!(count, 803, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

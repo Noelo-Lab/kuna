@@ -103,6 +103,16 @@ pub(crate) fn output_type_local(data: &Funcdata, op: OpId) -> Rc<Datatype> {
                 return t;
             }
         }
+        // (kuna `stackalloc`) Runtime stack storage is addressed through a byte
+        // pointer, as the backing is bytes; never an integer of its width.
+        if in0_off == crate::userop::BUILTIN_STACK_ALLOC as u64 && data.get_arch().stack_alloc {
+            if let Some(tlst) = arch.types() {
+                let ws = data.get_arch().manage().get_default_data_space().map(|s| s.get_word_size()).unwrap_or(1);
+                if let Ok(ptr) = tlst.get_type_char(1).and_then(|c| tlst.get_type_pointer(out_size, c, ws)) {
+                    return ptr;
+                }
+            }
+        }
     }
     // C++ `TypeOpCall::getOutputLocal` (typeop.cc:722) / `TypeOpCallind::getOutputLocal`
     // (typeop.cc:778): when the resolved `FuncCallSpecs` has a locked (committed)
