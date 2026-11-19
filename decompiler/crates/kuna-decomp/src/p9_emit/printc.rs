@@ -11509,6 +11509,14 @@ impl PrintC {
                                 self.op_func_ir(fd, arch, op);
                                 return;
                             }
+                            if self.out_lang == crate::kuna_lang::OutLang::Go
+                                && !valueon
+                                && !ptype.is_formal_pointer_rel()
+                                && word_size == 1
+                                && self.push_go_record_prefix_address(fd, arch, op, &ct, suboff_bytes)
+                            {
+                                return;
+                            }
                             // Default field name `field_0x<hex>`.
                             (format!("field_0x{suboff_bytes:x}"), None, suboff_bytes as int4)
                         }
