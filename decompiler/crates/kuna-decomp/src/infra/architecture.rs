@@ -3626,6 +3626,7 @@ impl Architecture {
         ctx.strip_stack_guard = self.strip_stack_guard; // stackguard
         ctx.strip_msvc_stack_guard = self.strip_msvc_stack_guard; // msvcstackguard
         ctx.go_bounds = self.go_bounds;
+        ctx.go_keep_divide_checks = self.archid.starts_with("AARCH64:");
         ctx.strip_security_check = self.strip_security_check; // securitycheck
         ctx.branch_flip = self.branch_flip; // branchflip (negated-guard branch flipping)
         // (kuna) carry the whiledo->for reroll gate (C++ `glb->analyze_for_loops`)
