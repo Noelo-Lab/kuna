@@ -6057,12 +6057,21 @@ impl FuncProto {
         // unconditionally, so those pieces aborted the process the moment the
         // function was decompiled. The declared type IS the return type — adopt it
         // and the model has something to assign against, after which `set_pieces`
-        // replaces the derived storage with the explicit one as before.
+        // replaces the derived storage with the explicit one as before. With
+        // no stated inputs, leave input recovery open on the rebuilt callee.
         if pieces.outtype.is_none() {
             if let Some(declared) = pieces.output_storage.as_ref().and_then(|p| p.type_.clone()) {
                 let mut typed = pieces.clone();
                 typed.outtype = Some(declared);
-                return self.set_pieces(&typed, Some(defaultfp), typefactory, manager);
+                self.set_pieces(&typed, Some(defaultfp), typefactory, manager)?;
+                if pieces.intypes.is_empty()
+                    && pieces.innames.is_empty()
+                    && pieces.input_storage.is_empty()
+                    && pieces.first_var_arg_slot < 0
+                {
+                    self.set_input_lock(false);
+                }
+                return Ok(());
             }
         }
         self.set_pieces(pieces, Some(defaultfp), typefactory, manager)

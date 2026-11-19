@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4800,
-    4800
+    4810,
+    4810
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -582,12 +582,22 @@
     "data:CTYPES #4: on, LP64 spells an 8-byte unsigned `unsigned long`, not `unsigned long long`",
     "data:CTYPES #5: on, the 4-byte parameter is `unsigned int`",
     "data:CTYPES #6: off, that parameter carries the core-type name",
+    "data:CUSTOM-CALL-STORAGE #10: return-only input never becomes an uninitialized local",
+    "data:CUSTOM-CALL-STORAGE #11: caller retains its argument before and after the edit",
+    "data:CUSTOM-CALL-STORAGE #12: an explicit input still supplies its locked name",
+    "data:CUSTOM-CALL-STORAGE #13: an explicit input still supplies its value",
+    "data:CUSTOM-CALL-STORAGE #14: a full empty signature remains empty",
+    "data:CUSTOM-CALL-STORAGE #15: Go output retains the inferred input",
+    "data:CUSTOM-CALL-STORAGE #16: Rust output retains the inferred input",
     "data:CUSTOM-CALL-STORAGE #1: getter supplies the one-formal call across rebuilds",
     "data:CUSTOM-CALL-STORAGE #2: the callee has exactly one formal",
     "data:CUSTOM-CALL-STORAGE #3: the callee reads its declared input",
     "data:CUSTOM-CALL-STORAGE #4: the ordinary two-slot control passes getter as argument two",
     "data:CUSTOM-CALL-STORAGE #5: the custom call never reads the receiver as an integer",
     "data:CUSTOM-CALL-STORAGE #6: all three caller runs retain the getter result",
+    "data:CUSTOM-CALL-STORAGE #7: return-only declaration keeps the inferred input across rebuilds",
+    "data:CUSTOM-CALL-STORAGE #8: return-only body retains its incoming value",
+    "data:CUSTOM-CALL-STORAGE #9: return-only declaration never claims no inputs",
     "data:Call push #1: the push before the call in the loop is never printed",
     "data:Call push #2: the push before the call with stack arguments is never printed",
     "data:Call push #3: the call in the loop is kept",
