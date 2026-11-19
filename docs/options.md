@@ -30,6 +30,10 @@ Three tiers:
 | rep movsq / rep stosd from -Os code printed as a loop instead of memcpy/memset | [`repstring`](#repstring----on--off-default-on) |
 | a struct copy prints as a 16-iteration word loop | [`repstring`](#repstring----on--off-default-on) |
 | a strcmp against a short constant prints as a do/while over two byte pointers and a count | [`repstring`](#repstring----on--off-default-on) |
+| an inner test that an outer test already decides is printed | [`rangefold`](#rangefold----on--off-default-on) |
+| if (x < 10) { if (x > 20) ... } keeps the dead branch | [`rangefold`](#rangefold----on--off-default-on) |
+| x & 0xff kept on a value an earlier range check bounds below 256 | [`rangefold`](#rangefold----on--off-default-on) |
+| a range check repeated inside the branch of the same check | [`rangefold`](#rangefold----on--off-default-on) |
 | stack string initialisation renders as an array-typed cast such as (char[8])s_addr._0_8_ | [`rodatastring`](#rodatastring----on--off-default-on) |
 | partial-symbol slice assignments like buf._0_9_ = s_addr._16_9_ instead of the string | [`rodatastring`](#rodatastring----on--off-default-on) |
 | a recognized rodata literal never appears in the function that copies it onto the stack | [`rodatastring`](#rodatastring----on--off-default-on) |
@@ -890,6 +894,15 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On by default. Flip off when a `rep movsb` copies forward over its own output on purpose -- an LZ77 decoder's overlapping match copy is defined for the instruction and not for memcpy -- or to see the instruction's loop.
 - **Where / provenance:** P3/simplification-quiescence · kuna · presentation-default · GH-1650
 - **Example:** `option repstring off`
+
+### `rangefold` -- on | off, default `on`
+
+- **Symptoms:** an inner test that an outer test already decides is printed; if (x < 10) { if (x > 20) ... } keeps the dead branch; x & 0xff kept on a value an earlier range check bounds below 256; a range check repeated inside the branch of the same check.
+- **What it does:** Fold a comparison, and an `& (2^k - 1)` mask, whose outcome the ranges dominating branches establish already fixes. A conditional branch on `V cmp K` bounds `V` in every block one of its out-edges controls -- the edge's target dominates the block and is entered only through that edge (`FlowBlock::restrictedByConditional`, the test `ActionConditionalConst` uses). Upstream propagates only the `V == K` case, as a constant. `kuna_rangefold` keeps a `CircleRange` per such edge, pulled back through the comparison and then through up to three `COPY`, `INT_ZEXT`, `INT_SEXT`, `INT_ADD`/`INT_SUB`-constant ops that defined `V`, and intersects every range whose edge controls a block. In that block a comparison of `V` against a constant that is true (or false) on the whole range becomes the constant, and `ActionDeterminedBranch` removes a branch on it; `V & M` with `M = 2^k - 1` and the range inside `[0, M]` becomes `V`. `V` is an SSA value, so the range holds at every read in the block. Runs right after `ActionConditionalConst`, in the action group `unreachable` with `ActionDeterminedBranch`, so the reduced jump-table pipeline never sees a guard folded away.
+- **When to flip:** On by default: 0/675 datatest assertions move and the speed is unchanged (lua -O0: user time within run-to-run noise). Flip off to see a test that an enclosing test already decides, e.g. to compare against a listing. Measured over 4,072 functions in ten x86-64 binaries (gcc/clang -O2 and gcc -O0 builds of Lua 5.4.8 and bzip2 1.0.8, -O2 zlib 1.3.2, system libexpat and libyaml): 71 functions change; `if` statements 22,188 -> 22,043, gotos 9,853 -> 9,840, lines 184,891 -> 184,573. Most folds are -O0 binary-search switch ladders (`if (v != 0x31) { if (0x31 < v) ...` after `!(0x32 < v)`), retests of the same value after a short-circuit, and repeated null checks. Four functions gain one goto: a test the compiler duplicated into two predecessors is decided in one copy only, so the copies no longer merge.
+- **Where / provenance:** P3/simplification-quiescence · kuna · transform · kuna-rangefold
+- **Example:** `option rangefold off`
+
 
 ### `rodatastring` -- on | off, default `on`
 

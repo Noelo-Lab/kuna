@@ -915,6 +915,10 @@ pub struct Architecture {
     /// copy, fill or compare builtin (option `repstring`).  See
     /// [`crate::p3_dataflow::kuna_repstring`].
     pub rep_string: bool,
+    /// (kuna) Fold a comparison or mask whose outcome the ranges dominating
+    /// branches establish fixes (option `rangefold`).  See
+    /// [`crate::p3_dataflow::kuna_rangefold`].
+    pub range_fold: bool,
     /// (kuna) Region-based (Phoenix/SAILR) structurer: structure the CFG by
     /// walking the [`KunaRegionIdentifier`](crate::p7_regions::kuna_regionid)
     /// region tree and matching Phoenix acyclic schemas instead of running
@@ -2456,6 +2460,7 @@ impl Architecture {
             devectorize_reduction: false, // (kuna) option devectorize (opt-in default-off)
             strlen_scan: false, // (kuna) option strlenscan; reset_defaults sets the shipped default
             rep_string: false, // (kuna) option repstring; reset_defaults sets the shipped default
+            range_fold: false, // (kuna) option rangefold; reset_defaults sets the shipped default
             region_structure: true,
             guard_arm: false,
             loop_continue: true,
@@ -2807,6 +2812,7 @@ impl Architecture {
         self.decl_order = crate::kuna_declorder::DeclOrder::Natural; // (kuna) option declorder default `natural`: locals declare v1, v2, ..., v10; only the order of declaration lines moves, 0/675 datatest assertions
         self.strlen_scan = true; // (kuna) option strlenscan default-on: an inline repnz scasb length prints as strlen; byte-identical on gcc 11 decbench output, 0/675 datatest assertions
         self.rep_string = true; // (kuna) option repstring default-on: an x86 rep movs/stos/cmpsb loop prints as a copy, fill or compare builtin; inert off x86, 0/675 datatest assertions
+        self.range_fold = true; // (kuna) option rangefold default-on: folds only a comparison or mask a dominating branch's range decides; 0/675 datatest assertions, speed within noise; see docs/spec/03-ssa-and-simplification.md
         self.cortexmpriv = true; // (kuna) DIV-99: default-ON; the fixup is registered only on a language that declares the user-op (ARM), so inert elsewhere; "the core is privileged" is a modelling judgement, so `off` audits unprivileged Thread-mode code
         self.acle_intrinsics = true; // (kuna) option acleintrinsics default-on; reads the AArch64 `ShowMemTag` context and AArch64 user-op names only, so inert on every other target
         self.float_globals = true; // (kuna) option floatglobals default-on
@@ -3560,6 +3566,7 @@ impl Architecture {
         ctx.devectorize_reduction = self.devectorize_reduction; // devectorize
         ctx.strlen_scan = self.strlen_scan; // strlenscan
         ctx.rep_string = self.rep_string; // repstring
+        ctx.range_fold = self.range_fold; // rangefold
         ctx.region_structure = self.region_structure; // regionstructure
         ctx.guard_arm = self.guard_arm; // guardarm
         ctx.loop_continue = self.loop_continue;

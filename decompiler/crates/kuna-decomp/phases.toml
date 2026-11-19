@@ -1603,6 +1603,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "rangefold"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P3"
+subphase = "simplification-quiescence"
+strength = "HARD"
+rewind = "P3"
+issue = "kuna-rangefold"
+summary = "Fold a comparison, and an `& (2^k - 1)` mask, whose outcome the ranges dominating branches establish already fixes. A conditional branch on `V cmp K` bounds `V` in every block one of its out-edges controls -- the edge's target dominates the block and is entered only through that edge (`FlowBlock::restrictedByConditional`, the test `ActionConditionalConst` uses). Upstream propagates only the `V == K` case, as a constant. `kuna_rangefold` keeps a `CircleRange` per such edge, pulled back through the comparison and then through up to three `COPY`, `INT_ZEXT`, `INT_SEXT`, `INT_ADD`/`INT_SUB`-constant ops that defined `V`, and intersects every range whose edge controls a block. In that block a comparison of `V` against a constant that is true (or false) on the whole range becomes the constant, and `ActionDeterminedBranch` removes a branch on it; `V & M` with `M = 2^k - 1` and the range inside `[0, M]` becomes `V`. `V` is an SSA value, so the range holds at every read in the block. Runs right after `ActionConditionalConst`, in the action group `unreachable` with `ActionDeterminedBranch`, so the reduced jump-table pipeline never sees a guard folded away."
+use_when = "On by default: 0/675 datatest assertions move and the speed is unchanged (lua -O0: user time within run-to-run noise). Flip off to see a test that an enclosing test already decides, e.g. to compare against a listing. Measured over 4,072 functions in ten x86-64 binaries (gcc/clang -O2 and gcc -O0 builds of Lua 5.4.8 and bzip2 1.0.8, -O2 zlib 1.3.2, system libexpat and libyaml): 71 functions change; `if` statements 22,188 -> 22,043, gotos 9,853 -> 9,840, lines 184,891 -> 184,573. Most folds are -O0 binary-search switch ladders (`if (v != 0x31) { if (0x31 < v) ...` after `!(0x32 < v)`), retests of the same value after a short-circuit, and repeated null checks. Four functions gain one goto: a test the compiler duplicated into two predecessors is decided in one copy only, so the copies no longer merge."
+example = "option rangefold off"
+source_decompiler = "kuna"
+inspiration = "gcc -O0 bzip2 BZ2_decompress: a binary-search switch ladder re-tests `0x31 < v` after `!(0x32 < v)` and `v != 0x31`; SPARC clang -O2 `if ((a1) && (v1 = a0, a1))` tests a1 twice"
+change_kind = "transform"
+tier = "transform"
+symptoms = "an inner test that an outer test already decides is printed|if (x < 10) { if (x > 20) ... } keeps the dead branch|x & 0xff kept on a value an earlier range check bounds below 256|a range check repeated inside the branch of the same check"
+live_field = "range_fold"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "rodatastring"
 values = "on|off"
 default = "on"

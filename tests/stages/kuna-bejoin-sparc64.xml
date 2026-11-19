@@ -48,7 +48,9 @@
     shifted into the high word, at both levels.
     Assert #5: mix2 returns x << 32 whole, and nothing returns a0 or 5.
     Assert #6: mix3 returns 0x500000000 whole.
-    Assert #7: mix2 and mix3 join the product with its high word first.
+    Assert #7: mix2 and mix3 return the whole product.  Option rangefold
+    decides the second test of c that kept the two words apart, so the
+    product returns directly instead of as a high-word-first join.
 -->
 <bytechunk space="ram" offset="0x40000" readonly="true">
 9de3bfa04000000001000000b0103fff81c7e00893e800189de3bfa040000000
@@ -150,5 +152,5 @@ f41fbff8b010001a81c7e00893e8001b
 <stringmatch name="bejoin-sparc64 #5: mix2 returns x shifted into the high word" min="1" max="1">return \(uint8\)a0 &lt;&lt; 0x20;</stringmatch>
 <stringmatch name="bejoin-sparc64 #5b: nothing returns a0 or 5 for a wider value" min="0" max="0">return (a0|5);</stringmatch>
 <stringmatch name="bejoin-sparc64 #6: mix3 returns 0x500000000" min="1" max="1">return 0x500000000;</stringmatch>
-<stringmatch name="bejoin-sparc64 #7: mix2 and mix3 join the product high word first" min="2" max="2">return CONCAT44\(v1,\(int4\)\(a0 \* 3ULL\)\);</stringmatch>
+<stringmatch name="bejoin-sparc64 #7: mix2 and mix3 return the whole product" min="2" max="2">return a0 \* 3ULL;</stringmatch>
 </decompilertest>

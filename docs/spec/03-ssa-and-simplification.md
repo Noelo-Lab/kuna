@@ -3535,6 +3535,41 @@ global `map address` names, which prints `builtin_memset(gfill,0,0x80)`.
 compiles the printed x86-64 functions beside the source and checks they compute
 the same values.
 
+**Range folding** (`option rangefold`, default **on**) —
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_rangefold.rs
+(ActionRangeFold)`, right after `ActionConditionalConst`, in the action group
+`unreachable` with `ActionDeterminedBranch`: the reduced `jumptable` pipeline
+that recovers a switch reads its bounds check, which this pass may decide
+away, so it does not run there. Conditional
+constants use only the `x == k` edge; a branch on any comparison of a varnode
+against a constant bounds the varnode on both edges. For every CBRANCH block
+whose condition is such a comparison (through any `BOOL_NEGATE`s), and for each
+out-edge whose target the condition restricts (`restricted_by_conditional`,
+and the target does not dominate the branch), the pass pulls the edge's
+boolean value back through the comparison into a `CircleRange`
+(`CircleRange::pull_back_binary`). It then pulls that range back through up
+to three ops that defined the varnode -- `COPY`, `INT_ZEXT`, `INT_SEXT`, and
+`INT_ADD`/`INT_SUB` of a constant -- and records a fact for each varnode on
+the way. In a block, the range of a varnode is the intersection of every fact
+whose edge target dominates the block; an intersection `CircleRange` cannot
+represent keeps the narrower operand it already had, which is still sound.
+
+Two reads of a bounded varnode fold:
+
+- a comparison against a constant that holds (or fails) for every value in the
+  range becomes `COPY` of the boolean constant, and the next
+  `ActionDeterminedBranch` removes a branch on it;
+- `V & M`, with `M = 2^k - 1` and the range inside `[0, M]`, becomes
+  `COPY V`.
+
+The varnode is an SSA value, so its range at the top of a block holds at every
+read in the block; the same restriction test is what makes `ActionConditionalConst`
+sound. On -O0 code the pass mostly removes the re-tests of a binary-search
+switch ladder; on -O2 code, a value tested twice after a short-circuit and
+repeated null checks. Folding a test the compiler duplicated into two
+predecessors can decide one copy only, which can leave a goto where the
+copies used to merge.
+
 **constspaceload** (repipe `arm-neon-zero-initialization`) —
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_constspaceload.rs
 (RuleConstSpaceLoad)`, oppool1, fires on LOAD. *Pattern:* a LOAD whose space
