@@ -8534,6 +8534,26 @@ byte-identical. On DAZZLE 15 of 295 functions change: the five `funcboundflow`
 warnings and their zero-run tails are gone, and the error and abort paths of
 eleven more end at the exit wrapper they call instead of running on after it.
 
+A byte-addressed raw image also runs the object-file pass list
+(`objectview`, default-on), through an ELF view
+(`decompiler/crates/kuna-analysis/src/loader/kuna_objectview.rs (raw_as_elf)`).
+The view has one `PT_LOAD` and one `SHF_ALLOC | SHF_WRITE | SHF_EXECINSTR`
+`.text` section covering the file at `--base`, which is the read-write-execute
+block Ghidra's raw importer makes. Its machine, class and byte order come from
+the selected SLEIGH language, and its `e_entry` is the first seed. A processor
+ELF assigns no number gets `EM_NONE`: the sections still scan, and only
+`object`'s architecture is unknown. The view runs at the commit like a TE's,
+so the strings, the prologue and entry oracles and the Listing tier join the
+seeds and `rawdiscover`'s call closure. A word-addressed target (code-space
+word size above one) keeps the old behavior, because its addresses are not
+byte offsets. A UEFI TE image runs the same list through a PE view
+(`kuna_objectview.rs (te_as_pe)`: a rewritten header of `StrippedSize` bytes in
+front of the TE's section table, so every `PointerToRawData` stays valid), and
+the headerless-image discovery (`engine.rs (discover_raw_entries)`, the direct
+call sweep plus the recursive descent) runs on a TE too, after the entry Thumb
+walk has painted the decode mode, so the entry's call closure is in the
+inventory with or without the view.
+
 Table-derived roots are committed but are deliberately not fed through a
 second recursive walk. Thus the bounded path obtains direct-call closure and
 high-confidence callback/vtable roots while avoiding the full prologue scan,
