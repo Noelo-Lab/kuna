@@ -450,6 +450,8 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
     // off` drops the facts at the read-symbols boundary.
     if compiler.is_rust() {
         passes.push(Box::new(crate::strings::kuna_strrecords::StrRecordPass::rust()));
+        // (kuna `panicloc`) The panic `Location` records, typed and named.
+        passes.push(Box::new(crate::strings::kuna_panicloc::PanicLocationPass));
     }
 
     // S1 PE/Mach-O import-slot call binding (PeImportCallPass): paint

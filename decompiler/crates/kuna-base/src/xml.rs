@@ -2225,7 +2225,8 @@ mod tests {
         // and gh1628-x86-vmx-decode-flags / VMREAD/VMWRITE decode without REX.W and VMX instructions set CF/ZF
         // and kuna-kernelbug / a Linux kernel __bug_table trap prints as __WARN(file,line) or BUG()
         // and gh1674-subpiece-shadow-wide-const / a subpiece shadow 8 bytes into a 16-byte constant reads 0
-        assert_eq!(count, 784, "corpus file count drifted");
+        // and kuna-panicloc / a Rust panic Location record is typed and named after its position (option panicloc)
+        assert_eq!(count, 785, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

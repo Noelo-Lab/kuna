@@ -3034,6 +3034,23 @@ The always-on core, in pass order (`passes.rs (passes_for)`):
   bytes, valid UTF-8 at least 90% printable-or-whitespace, and the direct
   (relocation-less) arm additionally keeps the NUL scan's minimum of four.
   The engine half of the option is chapter [05](05-types.md)'s `RuleFatStr`.
+- **Rust panic `Location` records** (`panicloc`, kuna, default on,
+  rustc-detected images only,
+  `decompiler/crates/kuna-analysis/src/analyzers/strings/kuna_panicloc.rs
+  (PanicLocationPass)`): every Rust panic site passes
+  `&'static core::panic::Location { file: &str, line: u32, col: u32 }`, so a
+  bounds check read `panic_bounds_check(a2,a1,0x51150)`. The pass scans
+  read-only data (and `.data.rel.ro`) at pointer alignment for the record's
+  shape: the `file` pointer reaches read-only text of `1..=0x1000` bytes that
+  ends in `.rs` and passes the `&str` record text test, `1 <= line <=
+  0xffffff` and `col <= 0xfff`. On a PIE the pointer word is an
+  `R_*_RELATIVE` slot, so its value is the relocation addend. Each record
+  becomes a typed data symbol of type `core::panic::Location` (built once: a
+  `&str { data_ptr, length }` field, then `line` and `col`) named from the
+  last two path components and the position (`panic_loc_src_main_rs_10_5`),
+  so the call prints `&panic_loc_tiny_rs_15_9`. The file name is also a
+  bounded string fact of exact length. Pinned by
+  `tests/stages/kuna-panicloc.xml`.
 - **Wide strings** (`widestrings`, the `StringsAnalyzer` `allCharWidths` arm,
   `decompiler/crates/kuna-analysis/src/analyzers/strings/kuna_widestrings.rs
   (scan_wide_strings)`): the same matcher over 2-byte little-endian code units —

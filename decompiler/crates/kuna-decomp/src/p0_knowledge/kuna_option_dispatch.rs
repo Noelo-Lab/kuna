@@ -938,6 +938,7 @@ kuna_options! { self, p1;
         on_off!(analysis_tailcallentry, "Tail-call function-entry recovery Listing consumer")
     },
     "objc" => on_off!(analysis_objc, "Mach-O Objective-C metadata recovery pass"),
+    "panicloc" => on_off!(analysis_panicloc, "Rust panic Location record pass"),
     "swiftmetadata" => on_off!(analysis_swiftmetadata, "Swift runtime-metadata recovery pass"),
     "cfstrings" => {
         let (pass, annotate) = match p1 {
