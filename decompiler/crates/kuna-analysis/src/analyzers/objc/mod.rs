@@ -190,10 +190,10 @@ impl AnalysisPass for ObjcMetadataPass {
         let protocols = kuna_objcprotos::protocols(&img, ctx.file);
         for proto in &protocols {
             for m in &proto.methods {
-                selectors.record(&m.selector, m.types.as_deref());
+                selectors.record_declared(&m.selector, m.types.as_deref());
             }
             for (sel, enc) in &proto.properties {
-                selectors.record(sel, Some(enc));
+                selectors.record_declared(sel, Some(enc));
             }
         }
 

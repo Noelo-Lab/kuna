@@ -1,0 +1,64 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<!--
+    Objective-C selector stubs typed only from agreeing declarations
+    (with `option objc on`; a strict fix, no option of its own).
+
+    Issue: one `objc_msgSend$<sel>` stub serves every receiver of its
+    selector, but it took its prototype from whatever declaration the image
+    held. A protocol declaring `- (double)length` typed `objc_msgSend$length`
+    as returning a double for every sender, so after `[name length]` on a
+    string (an integer in x0) x0 read as dead and the next call lost every
+    argument: `objc_msgSend$length(a0); if (check())` where the caller passes
+    four.
+
+    Stage / sub-stage: P1 external-refinement.
+    `analyzers/objc/kuna_objcrefs.rs` `Selectors::stub_encoding` types a stub
+    from the image's agreed spelling only when the SDK headers (`objcsdk`),
+    when they spell the selector, agree on the register classes of its return
+    and arguments, and a floating-point return only a protocol declares (no
+    class or category of the image implements it) needs that confirmation.
+
+    The fixture is `macho_objc_stubagree.m`: protocol `Measured` declares
+    `-(double)length` with no implementer, class `Ruler` implements
+    `-(double)tag`, and `validate` sends `length` and `tag` to a `Str` (whose
+    methods return integers) through stubs, each result passed to `check` with
+    three more arguments.
+
+    Pass 1 (`objc on`): the protocol-only selector leaves its stub untyped and
+    the send's result reaches the next call, `check(v1,a2,1,"empty name")`;
+    `tag`, implemented here as a double and unknown without headers, still
+    types its stub.
+    Pass 2 (`objcsdk` on the hand-written `objc_sdk/Widget.h`, which declares
+    an NSInteger `tag`) drops the disagreeing `tag` prototype too:
+    `check(objc_msgSend$tag(a1),a2,2,"bad tag")`.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_objc_stubagree_arm64</com>
+  <com>option objc on</com>
+  <com>read symbols</com>
+  <com>load function _validate</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option objcsdk decompiler/crates/kuna-analysis/tests/fixtures/objc_sdk</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_objc_stubagree_arm64</com>
+  <com>option objc on</com>
+  <com>read symbols</com>
+  <com>load function _validate</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option objcsdk off</com>
+  <com>quit</com>
+</script>
+<stringmatch name="OBJCSTUBAGREE #1: a protocol-only double return does not type the stub" min="0" max="0">if \(check\(\)\)</stringmatch>
+<stringmatch name="OBJCSTUBAGREE #2: the send's integer result reaches the next call" min="2" max="2">if \(check\(v1,a2,1,"empty name"\)\)</stringmatch>
+<stringmatch name="OBJCSTUBAGREE #3: an implemented double tag types the stub without headers" min="1" max="1">objc_msgSend\$tag\(a1\);</stringmatch>
+<stringmatch name="OBJCSTUBAGREE #4: headers declaring an integer tag drop the double prototype" min="1" max="1">check\(objc_msgSend\$tag\(a1\),a2,2,"bad tag"\); // tail-call</stringmatch>
+</decompilertest>
