@@ -2603,6 +2603,17 @@ anchor; an unresolved or ambiguous anchor still rejects the directive.
 Type seeding uses the definition usepoint, and naming retains the selected SymbolId;
 a storage-only re-query must not attach another lifetime's name or type.
 
+Console `rename` and whole-variable `retype` edits carried by `PriorNames`
+survive switching to another function and returning within the loaded program.
+`IfaceDecompData`
+records the replay after an explicit edit, keyed by the resolved entry address
+and its address space. An untouched function gets its own fresh analysis. The
+replay uses the existing definition identities and numbering context to find
+the edited local. The active function continues to carry its current edits
+directly across rebuilds. Later edits replace the saved replay for that entry,
+and explicitly loading the already-selected entry clears its replay and starts
+a fresh local analysis. Clearing the architecture clears the session records.
+
 (kuna) **A `prototype` directive binds to `<func>`, whatever name its declaration
 carries.** The operand says which function the signature describes; the
 declaration supplies the return type, the parameter types and the parameter
