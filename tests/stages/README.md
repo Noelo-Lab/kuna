@@ -529,3 +529,8 @@ fixture source is `decompiler/crates/kuna-cli/tests/fixtures/assert_callee.c`.
 `kuna-rust-process-exit.xml` preserves exit status and preceding stores while
 removing dead trap flow after a known Rust standard-library process exit.
 Different namespaces and a longer similarly named function retain their callers.
+
+`kuna-avxintrinsics.xml` decompiles `vpaddd` and `vfmadd132ps` twice: with
+`avxintrinsics off` the SLEIGH user-op names print, and at the default they
+print as `_mm256_add_epi32` and `_mm256_fmadd_ps` with the FMA operands in
+intrinsic order.

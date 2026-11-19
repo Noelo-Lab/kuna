@@ -5426,3 +5426,42 @@ the one printed right before the step in the same block. `v = *p; p = &p[1];`
 prints `v = *p++;`, `*d = c; d = &d[1];` prints `*d++ = c;`. A step that goes
 through a copy the loop also compares (`v2 = &a0[1]; v1 += *a0; a0 = v2;`) is
 left as it is (`tests/stages/kuna-postinc.xml`).
+
+## (kuna) Intel intrinsic names for AVX user-ops — `option avxintrinsics`, default on
+
+**`decompiler/crates/kuna-decomp/src/p9_emit/kuna_avxintrinsics.rs (intrinsic)`,
+called from `printc.rs (op_callother_ir)`.** The x86 SLEIGH spec lifts most
+AVX2, FMA and AVX-512 instructions to opaque user-ops named after the mnemonic
+and its extension: `vpaddd_avx2`, `vfmadd132ps_fma`, `vaddps_avx512f`. When a
+`CALLOTHER` prints in functional form, its name is looked up: a user-op whose
+extension suffix is `avx`, `avx2`, `fma` or an `avx512*` subset, and whose
+mnemonic has a mapping, prints as `_mm<W>_<op>_<type>`. `<W>` comes from the
+result's size (16, 32 or 64 bytes gives "", "256" or "512"), or from the first
+argument when the op has no result. The table covers:
+
+- packed float arithmetic, logic, shuffles and blends (`_mm256_add_ps`,
+  `_mm512_mul_pd`, `_mm256_andnot_ps`);
+- packed integer arithmetic, saturating and unsigned forms, compares,
+  per-element variable shifts, min/max, averages, packs and unpacks
+  (`_mm256_adds_epu8`, `_mm256_max_epu8`, `_mm256_cmpgt_epi32`,
+  `_mm256_unpacklo_epi8`);
+- the bitwise forms on the whole register (`_mm256_and_si256`).
+
+The FMA family is the one place where the argument order changes. SLEIGH passes
+the instruction's operands `(a, b, c)` in encoding order, and the form number
+says which product is formed: `132` is `a*c + b`, `213` is `b*a + c` and `231`
+is `b*c + a`. `_mm<W>_f<kind>_<ty>(x, y, z)` is `x*y + z`, so the arguments
+print as `(a, c, b)`, `(b, a, c)` and `(b, c, a)`. Scalar forms (`ss`, `sd`) keep
+the 128-bit `_mm_` prefix.
+
+A user-op with no mapping keeps its SLEIGH name, and so does one whose operand
+count differs from the intrinsic's. Mnemonics whose intrinsic depends on the
+operand kind are left unmapped: the whole-register shifts (`vpslld` is
+`_mm256_sll_epi32` with a vector count and `_mm256_slli_epi32` with an
+immediate) and the permutes (`vpermd` takes its index vector first, the
+intrinsic takes it second). An AVX-512 compare writes a mask register, whose
+size is not a vector width, so it keeps its name too. The rename is display
+only: the IR keeps the user-op, so every rule that keys on its index is
+unaffected. Only the x86 SLEIGH spec declares user-ops with these suffixes, so
+other targets are unchanged. Changes 0/675 datatest assertions. Pinned by
+`tests/stages/kuna-avxintrinsics.xml`.

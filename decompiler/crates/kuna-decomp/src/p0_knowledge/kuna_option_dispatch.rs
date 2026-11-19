@@ -43,6 +43,7 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "wrapadd" => on_off!(wrap_add, "Wrapping four-byte addition before a wider sign extension"),
+    "avxintrinsics" => on_off!(avx_intrinsics, "Intel intrinsic names for AVX user-ops"),
     "armconstshift" => {
         let (mode, msg) = crate::p9_emit::kuna_armconstantshift::OptionArmConstShift.apply(p1)?;
         self.arm_constant_shift = mode;
