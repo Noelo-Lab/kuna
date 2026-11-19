@@ -5854,12 +5854,15 @@ impl JumpTable {
     /// (kuna) Forget the synthetic return destination; the remaining constant
     /// targets keep their model.
     pub(crate) fn kuna_drop_return_default(&mut self) {
-        if self.kuna_return_default().is_none() {
-            return;
+        use crate::kuna_constselectjump::JumpModelConstSelect;
+        if let Some(model) = self.jmodel.as_ref()
+            .and_then(|m| m.as_any().downcast_ref::<JumpModelConstSelect>())
+            .filter(|m| m.kuna_returns_to_caller())
+        {
+            let dests = model.destinations().to_vec();
+            self.addresstable.pop();
+            self.jmodel = Some(Box::new(JumpModelConstSelect::from_flow_targets(dests, None)));
         }
-        self.addresstable.pop();
-        let dests = self.addresstable.iter().map(|a| a.get_offset()).collect();
-        self.jmodel = Some(Box::new(crate::kuna_constselectjump::JumpModelConstSelect::from_flow_targets(dests, None)));
     }
     /// (kuna) Is this a re-entry retry of a table whose followed targets must
     /// survive a failed second stage?
@@ -5878,7 +5881,9 @@ impl JumpTable {
         if stub.is_some() { self.addresstable.pop(); }
         self.addresstable.push(target);
         self.addresstable.sort();
-        let dests = self.addresstable.iter().map(|a| a.get_offset()).collect();
+        let dests = self.addresstable.iter().map(|a| {
+            AddrSpace::byte_to_address(a.get_offset(), a.get_space().unwrap().get_word_size())
+        }).collect();
         if let Some(address) = &stub { self.addresstable.push(address.clone()); }
         self.jmodel = Some(Box::new(crate::kuna_constselectjump::JumpModelConstSelect::from_flow_targets(
             dests, stub.as_ref().map(|a| a.get_offset()))));
@@ -6626,11 +6631,13 @@ impl JumpTable {
     /// (kuna) A second flow-time stage that again recovered a single address
     /// adopts the targets the late model recorded with the multistage hint, so
     /// flow follows every case of the table.
-    pub fn kuna_adopt_multistage_targets(&mut self, targets: Vec<Address>) {
-        if self.addresstable.len() == 1 && targets.len() > 1 {
-            self.addresstable = targets;
+    pub fn kuna_adopt_multistage_targets(&mut self, targets: &[Address]) -> bool {
+        if self.addresstable.len() == 1 && targets.len() > 1 && targets.contains(&self.addresstable[0]) {
+            self.addresstable = targets.to_vec();
             self.row_loads = None;
+            return true;
         }
+        false
     }
 
     /// Set manual override information on \b this jump-table

@@ -2899,12 +2899,13 @@ truncating the fall-through here"
                     let num = self.data.get_jump_table(jt_idx as int4).num_entries();
                     for i in 0..num {
                         let addr = self.data.get_jump_table(jt_idx as int4).get_address_by_index(i);
-                        if !self.data.get_jump_table(jt_idx as int4).kuna_is_reentered() || followed.insert((
+                        let first = reentry && followed.insert((
                             indop,
                             addr.get_space().map(|s| s.get_index()),
                             addr.get_offset(),
-                        )) {
-                            if reentry && self.seen_instruction(&addr)
+                        ));
+                        if first || !self.data.get_jump_table(jt_idx as int4).kuna_is_reentered() {
+                            if first && self.seen_instruction(&addr)
                                 && self.data.get_jump_table(jt_idx as int4).kuna_return_default() != Some(&addr) {
                                 if let Ok(to) = self.target(&addr) { new_edges.push((indop, to)); }
                             }
@@ -2951,7 +2952,19 @@ truncating the fall-through here"
                         let value = crate::kuna_returnbranch::target_on_edge(
                             &self.data, from, op, |index| self.env.is_isa_mode_switch(index));
                         let result = value.and_then(|value| {
-                            let target = Address::new(address.get_space()?.clone(), value);
+                            let space = address.get_space()?;
+                            let word_size = space.get_word_size();
+                            let align = self.data.get_arch().funcptr_align;
+                            // Extending the original singleton reconstructs its selector from
+                            // its address. Use SSA when alignment could have erased tag bits.
+                            if word_size != 1 || align != 0 {
+                                let (_, mask) = self.data.get_jump_table(idx as int4).kuna_target_encoding()?;
+                                if mask.checked_mul(u64::from(word_size))? & !(u64::MAX << align) != 0 {
+                                    return None;
+                                }
+                            }
+                            let byte = crate::kuna_constselectjump::target_offset(value, word_size, align);
+                            let target = Address::new(space.clone(), byte);
                             if self.outofbounds.contains(&target)
                                 || self.data.get_arch().get_load_image_value(&target, 1).is_err()
                             { return None; }

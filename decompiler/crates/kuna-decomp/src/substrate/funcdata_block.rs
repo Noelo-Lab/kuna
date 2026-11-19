@@ -2632,12 +2632,15 @@ impl Funcdata {
         let addr2 = partial.obank().get(partop).unwrap().get_addr().clone();
         jt.set_indirect_op_addr(partop, addr2);
         let res = if jt.is_partial() {
-            let targets = self.get_override().multistage_targets(&addr).map(<[Address]>::to_vec);
-            jt.recover_multistage(partial).map(|()| {
-                if let Some(targets) = targets {
-                    jt.kuna_adopt_multistage_targets(targets);
-                }
-            })
+            let recovered = jt.recover_multistage(partial);
+            // Failure restores the singleton. The guarded targets from a prior
+            // pass still apply if they include that already-followed address.
+            if self.get_override().multistage_targets(&addr)
+                .is_some_and(|targets| jt.kuna_adopt_multistage_targets(targets)) {
+                Ok(())
+            } else {
+                recovered
+            }
         } else {
             jt.recover_addresses(partial)
         };
