@@ -177,7 +177,17 @@ encoding, every op reachable from the entry in **both** CFGs is checked:
 
 Each op must have complete SMT semantics, and every call's reachable memory must be
 bounded. One that does not makes the function `SKIPPED(unencodable: <op or call>)`, and
-it is never proved. An incomplete memory or call model can therefore never yield
+it is never proved.
+
+Checking every op of a CFG only covers the paths that CFG has, so both CFGs must also be
+complete. On both sides, every reachable control-flow target must be resolved or
+conservatively over-approximated:
+- a `BRANCHIND` or `CALLIND`;
+- a jump table, whose entries count only when its index bound is proved by its guard;
+- a call kuna treats as no-return, which counts only when the callee is proved not to
+  return.
+
+Where completeness cannot be established, the function is `SKIPPED(incomplete-cfg)`. An incomplete memory or call model can therefore never yield
 `EQUIVALENT`, whichever paths the concrete runs happened to cover.
 
 z3 runs as a subprocess speaking SMT-LIB 2. That keeps libz3 out of the cargo build, lets
