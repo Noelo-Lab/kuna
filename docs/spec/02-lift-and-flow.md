@@ -192,8 +192,12 @@ tag from the address itself). `GCR_EL1.Exclude`, which `irg`, `addg` and
 granule-aligned; upstream modelled it as a branch to `AlignmentFault()`
 before each store, a block and two edges that are in no source and that
 cost the function its return value, so the fault is not modelled. The
-bulk forms `ldgm`, `stgm` and `stzgm` are unchanged. Chapter 09 prints these
-user ops as ACLE intrinsics.
+EL1-only bulk forms `ldgm`, `stgm` and `stzgm` keep upstream's
+`ShowMemTag=1` bodies, so with the option on they lift as loops of
+`LoadMemTag` / `StoreMemTag` over a block whose size is read from `GMID_EL1`
+(`DCZID_EL0` for `stzgm`); under `ShowMemTag=0` `ldgm` reads as zero and
+`stgm`/`stzgm` store no tag. Chapter 09 prints the tag ops of the single-granule forms as ACLE
+intrinsics.
 
 SPARC integer branch conditions snapshot the ICC/XCC carry, negative, and
 overflow flags before expanding the delay slot. A flag-writing slot still
