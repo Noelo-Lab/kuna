@@ -1,0 +1,41 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna switchtrim: a switch with an unreachable default has no range check.
+
+    gcc -O2 -fno-pic -no-pie of
+        int f(unsigned x, int y) { int r = y * 3; sink = r;
+          switch (x) { case 0: sink = 11; return 3 + r; ... case 5: sink = 66; return 17;
+                       default: __builtin_unreachable(); } }
+    dispatches with `mov edi,edi; notrack jmp [0x402000 + rdi*8]`: no guard, so
+    the index range is the full 32 bits, JumpBasic declines, and the jump is
+    truncated to a computed call.  With the option on the single-LOAD table is
+    opened to [0, jumptablemax) and the rows end at the first one that fails
+    the layout rules (here the zero after the six entries).
+
+    Stage: P2 switch model, option switchtrim off|on.  Pass 1 (off) pins the bug,
+    pass 2 (on, the default) pins the fix.
+-->
+<bytechunk space="ram" offset="0x401000">
+f30f1efa8d7701e9040000000f1f4000f30f1efa8d147689ff8915e11f00003eff24fd00204000660f1f840000000000c705c61f000037000000b80d00000029d0c3660f1f440000c705ae1f000042000000b811000000c30f1f840000000000c705961f00000b0000008d4203c36690c705861f000016000000b807000000c3c705761f0000210000008d4209c36690c705661f00002c000000b801000000c3
+</bytechunk>
+<bytechunk space="ram" offset="0x402000">
+601040000000000070104000000000008010400000000000901040000000000030104000000000004810400000000000
+</bytechunk>
+<symbol space="ram" offset="0x401010" name="f"/>
+</binaryimage>
+<script>
+  <com>option switchtrim off</com>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option switchtrim on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="SWITCHTRIM #1: off, the table dispatch is a computed jump-as-call" min="1" max="1">\(\*\*\(code \*\*\)\(a0 \* 8UL \+ 0x402000\)\)\(\); // jump-as-call</stringmatch>
+<stringmatch name="SWITCHTRIM #2: on, the dispatch is a switch on the index" min="1" max="1">^  switch\(a0\) \{</stringmatch>
+<stringmatch name="SWITCHTRIM #3: on, all six cases and no more" min="6" max="6">^    case [0-5]:$</stringmatch>
+<stringmatch name="SWITCHTRIM #4: on, case 4 returns 13 - r" min="1" max="1">return a1 \* -3 \+ 0xd;</stringmatch>
+</decompilertest>

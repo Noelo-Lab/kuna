@@ -125,6 +125,9 @@ Three tiers:
 | image-base-relative switch whose bound guard is duplicated across multiple predecessors renders as a computed call | [`switchmultipred`](#switchmultipred----on--off-default-on-destructive-opt-in) |
 | 'Too many branches' where the dispatch block has several guarded incoming paths | [`switchmultipred`](#switchmultipred----on--off-default-on-destructive-opt-in) |
 | msvc memmove small-count tail dispatch truncated to an indirect call | [`switchmultipred`](#switchmultipred----on--off-default-on-destructive-opt-in) |
+| a switch with an unreachable default renders as a computed jump-as-call through a table | [`switchtrim`](#switchtrim----on--off-default-on) |
+| `*(code **)(a0 * 8 + table)` called instead of a switch | [`switchtrim`](#switchtrim----on--off-default-on) |
+| Too many branches on a table indexed with no range check | [`switchtrim`](#switchtrim----on--off-default-on) |
 | one switch recovered but sibling interleaved jump tables degrade to computed calls | [`unrolledguard`](#unrolledguard----on--off-default-off-destructive-opt-in) |
 | 'Could not find op at target address' during recovery of an msvc optimized memcpy dispatch | [`unrolledguard`](#unrolledguard----on--off-default-off-destructive-opt-in) |
 | duff's-device tail dispatch rendered as 'Treating indirect jump as call' | [`unrolledguard`](#unrolledguard----on--off-default-off-destructive-opt-in) |
@@ -1145,6 +1148,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** Set on PER PROGRAM when an image-base-relative switch (e.g. an MSVC memmove/memcpy small-count tail dispatch) reports 'Could not recover jumptable ... Too many branches' and renders as a computed (code *)() call AND the dispatch block has multiple predecessors each with its own bound guard (vs the single-guard form switchguardbound handles); DESTRUCTIVE as a global default (it unions per-path guard prefixes across a MULTIEQUAL and re-binds the table from a heuristic max bound, so it may over-bind an unrelated multi-entry indirect jump).
 - **Where / provenance:** P2/switch-model · angr · opt-in-tool · angr-abnormal-switch-case-case3
 - **Example:** `option switchmultipred on`
+
+### `switchtrim` -- on | off, default `on`
+
+- **Symptoms:** a switch with an unreachable default renders as a computed jump-as-call through a table; `*(code **)(a0 * 8 + table)` called instead of a switch; Too many branches on a table indexed with no range check.
+- **What it does:** Recover a jump table that no guard bounds, and end it where its layout ends. A switch whose default is unreachable (`__builtin_unreachable()`, an enum the compiler trusts) indexes its table with no range check, so JumpBasic sees the full width of the index, the range exceeds jumptablemax, and the BRANCHIND stays a computed jump-as-call -- `v1 = *(code **)(a0 * 8 + 0x402000); return (*v1)();`. The upstream sanity check (JumpBasic::sanityCheck, kept as reasonable_rows) only stops at a zero row or a far row with no image bytes, which is no help once the range is unbounded. With the option on, after every guard-based extension has declined, a table whose path holds exactly one LOAD is opened to [0, jumptablemax); emulation stops at the first row it cannot read, and the sanity check keeps the rows before the first one that points into the table's own bytes (the entries read, first to last) or, on an object load, outside the image's executable memory -- the table's own layout ends it. Fewer than two surviving rows is no table, and the computed jump stays. Bounded tables are untouched.
+- **When to flip:** On by default. Keep it on when a switch renders as `(*v1)()` through a table read with an unbounded index -- typically a switch with an unreachable default. Flip OFF if a recovered switch carries cases that are not really part of it (a table followed directly by another code-pointer table with no gap), or to restore the computed jump.
+- **Where / provenance:** P2/switch-model · kuna · structure-recovery · kuna-switchtrim
+- **Example:** `option switchtrim off`
 
 ### `unrolledguard` -- on | off, default `off` (destructive opt-in)
 
