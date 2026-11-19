@@ -14,8 +14,10 @@ use kuna_decomp::kuna_symbolnamechars::{sanitize_symbol_name, NameChars};
 use super::{build_datatype, kuna_dwarfbyref, DieSnap, Reader, TypeWalk};
 use object::{Object, ObjectSection};
 
+mod kuna_arm64;
 mod kuna_goerror;
 mod kuna_pointerreceiver;
+pub(super) use kuna_arm64::capture_compressed as capture_arm64_compressed;
 
 const INTEGER_REGISTERS: &[(u16, &str)] = &[
     (0, "RAX"), (3, "RBX"), (2, "RCX"), (5, "RDI"), (4, "RSI"),
@@ -58,14 +60,19 @@ pub(super) struct UnitExtras {
     base: Option<usize>,
     go: bool,
     regabi: bool,
+    metadata_only: bool,
     entries: BTreeMap<usize, Extra>,
     channel_elements: BTreeMap<usize, usize>,
     pub(super) complete: bool,
 }
 
 impl UnitExtras {
+    pub(super) fn metadata_only() -> Self {
+        Self { metadata_only: true, ..Self::default() }
+    }
+
     pub(super) fn enabled(&self) -> bool {
-        self.go
+        self.go && !self.metadata_only
     }
 
     pub(super) fn capture(
@@ -86,17 +93,42 @@ impl UnitExtras {
                 .is_some_and(|producer| producer.starts_with("Go cmd/compile ")
                     && producer.split_whitespace().any(|word| word == "regabi"));
         }
-        if !self.go {
-            return;
+        if self.enabled() {
+            self.capture_entry(dwarf, unit, entry, function_entry);
         }
-        let reference = |attribute| match entry.attr_value(attribute) {
+    }
+
+    fn reference(&self, entry: &gimli::DebuggingInformationEntry<Reader<'_>>, attribute: gimli::DwAt) -> Option<usize> {
+        match entry.attr_value(attribute) {
             Some(gimli::AttributeValue::UnitRef(offset)) => self.base?.checked_add(offset.0),
             Some(gimli::AttributeValue::DebugInfoRef(offset)) => Some(offset.0),
             _ => None,
-        };
-        let kind = entry.attr_value(gimli::DwAt(0x2900)).and_then(|value| value.udata_value());
-        if kind == Some(18) {
-            if let Some(element) = reference(gimli::DwAt(0x2902)) {
+        }
+    }
+
+    fn capture_entry(
+        &mut self,
+        dwarf: &gimli::Dwarf<Reader<'_>>,
+        unit: &gimli::Unit<Reader<'_>>,
+        entry: &gimli::DebuggingInformationEntry<Reader<'_>>,
+        function_entry: Option<u64>,
+    ) {
+        let attributes = self.read_entry(dwarf, unit, entry, function_entry);
+        self.entries.insert(entry.offset().0, attributes);
+    }
+
+    fn read_entry(
+        &mut self,
+        dwarf: &gimli::Dwarf<Reader<'_>>,
+        unit: &gimli::Unit<Reader<'_>>,
+        entry: &gimli::DebuggingInformationEntry<Reader<'_>>,
+        function_entry: Option<u64>,
+    ) -> Extra {
+        let kind = (!self.metadata_only || kuna_arm64::type_tag(entry.tag()))
+            .then(|| entry.attr_value(gimli::DwAt(0x2900)).and_then(|value| value.udata_value()))
+            .flatten();
+        if !self.metadata_only && kind == Some(18) {
+            if let Some(element) = self.reference(entry, gimli::DwAt(0x2902)) {
                 self.channel_elements.insert(entry.offset().0, element);
             }
         }
@@ -105,6 +137,8 @@ impl UnitExtras {
                 .map(|location| {
                     if let Some(expression) = kuna_dwarfbyref::location_at_entry(dwarf, unit, &location, function_entry) {
                         simple_location(expression, unit.encoding())
+                    } else if self.metadata_only {
+                        Location::Unsupported
                     } else {
                         empty_entry_location(dwarf, unit, &location, function_entry).unwrap_or_default()
                     }
@@ -112,7 +146,8 @@ impl UnitExtras {
         } else {
             Location::Unsupported
         };
-        self.entries.insert(entry.offset().0, Extra {
+        let reference = |attribute| self.reference(entry, attribute);
+        Extra {
             type_ref: reference(gimli::DW_AT_type),
             origin_ref: reference(gimli::DW_AT_abstract_origin),
             result: match entry.attr_value(gimli::DW_AT_variable_parameter) {
@@ -120,9 +155,11 @@ impl UnitExtras {
                 _ => None,
             },
             kind,
-            runtime_type: entry.attr_value(gimli::DwAt(0x2904))
-                .and_then(|value| dwarf.attr_address(unit, value).ok().flatten())
-                .and_then(|value| u32::try_from(value).ok()).filter(|&value| value != 0),
+            runtime_type: (!self.metadata_only)
+                .then(|| entry.attr_value(gimli::DwAt(0x2904))
+                    .and_then(|value| dwarf.attr_address(unit, value).ok().flatten())
+                    .and_then(|value| u32::try_from(value).ok()).filter(|&value| value != 0))
+                .flatten(),
             location,
             regabi: self.regabi,
             trampoline: entry.attr_value(gimli::DW_AT_trampoline).is_some(),
@@ -138,7 +175,7 @@ impl UnitExtras {
                     None => high.udata_value(),
                 }
             }).flatten(),
-        });
+        }
     }
 }
 
@@ -193,8 +230,10 @@ pub struct Facts {
     extras: BTreeMap<usize, Extra>,
     channel_elements: BTreeMap<usize, usize>,
     names: NameChars,
-    compressed: Option<Deferred>,
+    compressed: Option<Box<Deferred>>,
 }
+
+type TextSymbols = BTreeMap<u64, Option<(String, u64)>>;
 
 impl Default for Facts {
     fn default() -> Self {
@@ -256,14 +295,29 @@ impl Facts {
     pub fn materialize(&self, arch: &Architecture,
         methods: &BTreeMap<u64, crate::gotypes::kuna_pointermethods::LinkedMethod>,
     ) -> Vec<Materialized> {
-        if !arch.archid.starts_with("x86:LE:64:") || arch.data_org().0 != 8
+        let compressed = self.compressed.as_deref();
+        let entries = compressed.and_then(|stored| stored.arm64_entries.as_ref());
+        let target = if entries.is_some() { "AARCH64:LE:64:" } else { "x86:LE:64:" };
+        if !arch.archid.starts_with(target) || arch.data_org().0 != 8
             || !arch.default_fp().is_some_and(|model| model.get_name() == "abi-internal")
         {
             return Vec::new();
         }
-        if let Some(compressed) = &self.compressed {
-            return compressed.decode(self.names).map(|facts| facts.materialize(arch, methods)).unwrap_or_default();
+        if let Some(compressed) = compressed {
+            let facts = if let Some(entries) = entries {
+                kuna_arm64::decode_compressed(compressed, entries, self.names)
+            } else {
+                compressed.decode(self.names)
+            };
+            return facts.map(|facts| facts.materialize_decoded(arch, methods, entries)).unwrap_or_default();
         }
+        self.materialize_decoded(arch, methods, None)
+    }
+
+    fn materialize_decoded(&self, arch: &Architecture,
+        methods: &BTreeMap<u64, crate::gotypes::kuna_pointermethods::LinkedMethod>,
+        arm64_entries: Option<&TextSymbols>,
+    ) -> Vec<Materialized> {
         let mut repeated = BTreeSet::new();
         let mut entries = BTreeSet::new();
         for die in self.dies.values().filter(|die| die.tag == gimli::DW_TAG_subprogram && !die.declaration) {
@@ -276,10 +330,71 @@ impl Facts {
                 return None;
             }
             let entry = die.low_pc?;
-            let (pieces, status_site, pointer_receiver, string_input) =
-                self.prototype(*offset, arch, !repeated.contains(&entry), methods.get(&entry))?;
+            let unique = !repeated.contains(&entry);
+            let (pieces, status_site, pointer_receiver, string_input) = if let Some(entries) = arm64_entries {
+                let (name, size) = entries.get(&entry)?.as_ref()?;
+                (self.arm64_scalar_prototype(*offset, arch, unique, name, *size)?, None, None, None)
+            } else {
+                self.prototype(*offset, arch, unique, methods.get(&entry))?
+            };
             Some(Materialized { entry, pieces, status_site, pointer_receiver, string_input })
         }).collect()
+    }
+
+    fn arm64_scalar_prototype(&self, offset: usize, arch: &Architecture, unique: bool, name: &str, size: u64)
+        -> Option<PrototypePieces>
+    {
+        let sub = self.dies.get(&offset)?;
+        let extra = self.extras.get(&offset)?;
+        if !unique || !extra.regabi || extra.trampoline || extra.closure || extra.invalid
+            || sub.type_ref.is_some() || sub.origin_ref.is_some() || sub.name != name
+            || extra.code_size != Some(size) || name.is_empty() || hidden_context(name)
+        {
+            return None;
+        }
+        let mut formals = Vec::new();
+        for key in &sub.children {
+            let die = self.dies.get(key)?;
+            if die.tag == gimli::DW_TAG_unspecified_parameters { return None; }
+            if die.tag != gimli::DW_TAG_formal_parameter { continue; }
+            let attr = self.extras.get(key)?;
+            if !attr.regabi || attr.invalid || attr.closure || die.origin_ref.is_some() { return None; }
+            formals.push((die, attr.location, attr.result?));
+        }
+        let [(input, Location::Register(0), false), (output, location, true)] = formals.as_slice() else { return None; };
+        if !matches!(location, Location::Register(0) | Location::Unavailable) { return None; }
+        let (input_ref, output_ref) = (input.type_ref?, output.type_ref?);
+        self.arm64_type_shape(input_ref, output_ref)?;
+        let types = arch.types();
+        let mut walk = TypeWalk::new();
+        let input_type = build_datatype(Some(input_ref), &self.dies, types, 1, &mut walk, false)?;
+        let output_type = build_datatype(Some(output_ref), &self.dies, types, 1, &mut walk, false)?;
+        if !self.built_matches(input_ref, &input_type, 64) || !self.built_matches(output_ref, &output_type, 64) { return None; }
+        let pieces = PrototypePieces {
+            name: sanitize_symbol_name(name, self.names).into_owned(),
+            outtype: Some(Rc::clone(&output_type)), intypes: vec![Rc::clone(&input_type)],
+            innames: vec![sanitize_symbol_name(&input.name, self.names).into_owned()], first_var_arg_slot: -1,
+            output_storage: None, input_storage: Vec::new(), kuna_library_names: None,
+        };
+        let mut assigned = Vec::new();
+        arch.default_fp()?.assign_parameter_storage(&pieces, &mut assigned, false, types, arch.manage()).ok()?;
+        let [output, input] = assigned.as_slice() else { return None; };
+        (storage_matches(arch, output, "x0", &output_type) && storage_matches(arch, input, "x0", &input_type))
+            .then_some(pieces)
+    }
+
+    fn arm64_type_shape(&self, input_ref: usize, output_ref: usize) -> Option<()> {
+        let pointer = self.dies.get(&input_ref)?;
+        if pointer.tag != gimli::DW_TAG_pointer_type { return None; }
+        let pointee = self.scalar(pointer.type_ref?, &mut BTreeSet::new(), &mut 256)?;
+        let input_scalar = self.scalar(input_ref, &mut BTreeSet::new(), &mut 256)?;
+        let output_scalar = self.scalar(output_ref, &mut BTreeSet::new(), &mut 256)?;
+        if pointee.meta != type_metatype::TYPE_INT || pointee.size != 4 || input_scalar.meta != type_metatype::TYPE_PTR
+            || output_scalar.meta != type_metatype::TYPE_INT || !matches!(output_scalar.size, 4 | 8)
+        {
+            return None;
+        }
+        Some(())
     }
 
     fn prototype(&self, offset: usize, arch: &Architecture, unique: bool,
@@ -746,11 +861,12 @@ struct StoredSection {
 
 struct Deferred {
     sections: Vec<(gimli::SectionId, StoredSection)>,
+    arm64_entries: Option<TextSymbols>,
 }
 
 impl Deferred {
-    fn decode(&self, names: NameChars) -> Option<Facts> {
-        let sections = gimli::DwarfSections::load(|id| -> Result<Vec<u8>, ()> {
+    fn load(&self) -> Option<gimli::DwarfSections<Vec<u8>>> {
+        gimli::DwarfSections::load(|id| -> Result<Vec<u8>, ()> {
             let Some((_, stored)) = self.sections.iter().find(|(section, _)| *section == id) else {
                 return Ok(Vec::new());
             };
@@ -758,18 +874,12 @@ impl Deferred {
                 return Ok(stored.bytes.clone());
             }
             if stored.size > DEBUG_LIMIT { return Err(()); }
-            let mut decoder = flate2::Decompress::new(true);
-            let mut bytes = Vec::new();
-            bytes.try_reserve_exact(stored.size + 1).map_err(|_| ())?;
-            let status = decoder.decompress_vec(&stored.bytes, &mut bytes, flate2::FlushDecompress::Finish)
-                .map_err(|_| ())?;
-            if status != flate2::Status::StreamEnd || bytes.len() != stored.size
-                || decoder.total_in() != stored.bytes.len() as u64
-            {
-                return Err(());
-            }
-            Ok(bytes)
-        }).ok()?;
+            decode_zlib(&stored.bytes, stored.size).ok_or(())
+        }).ok()
+    }
+
+    fn decode(&self, names: NameChars) -> Option<Facts> {
+        let sections = self.load()?;
         let dwarf = sections.borrow(|bytes| gimli::EndianSlice::new(bytes, gimli::RunTimeEndian::Little));
         let mut facts = Facts { names, ..Facts::default() };
         let mut units = dwarf.units();
@@ -784,23 +894,34 @@ impl Deferred {
     }
 }
 
+fn decode_zlib(data: &[u8], size: usize) -> Option<Vec<u8>> {
+    let mut decoder = flate2::Decompress::new(true);
+    let mut bytes = Vec::new();
+    bytes.try_reserve_exact(size.checked_add(1)?).ok()?;
+    let status = decoder.decompress_vec(data, &mut bytes, flate2::FlushDecompress::Finish).ok()?;
+    (status == flate2::Status::StreamEnd && bytes.len() == size
+        && decoder.total_in() == data.len() as u64).then_some(bytes)
+}
+
 pub(super) fn capture_compressed(ctx: &crate::pass::AnalysisCtx<'_>) -> Option<Facts> {
     if !ctx.file.is_little_endian() || ctx.file.architecture() != object::Architecture::X86_64 {
         return None;
     }
-    let section = |id: gimli::SectionId| ctx.file.section_by_name(id.name())
-        .or_else(|| ctx.file.section_by_name(&id.name().replacen(".debug_", ".zdebug_", 1)));
-    if section(gimli::SectionId::DebugInfo)?.compressed_data().ok()?.format != object::CompressionFormat::Zlib
+    let section = ctx.file.section_by_name(gimli::SectionId::DebugInfo.name())
+        .or_else(|| ctx.file.section_by_name(".zdebug_info"))?;
+    if section.compressed_data().ok()?.format != object::CompressionFormat::Zlib
         || crate::sourcelang::detect_compiler(ctx.file, ctx.bytes) != crate::sourcelang::Compiler::Go
     {
         return None;
     }
-    Some(Facts { compressed: Some(capture_sections(ctx.file)?), ..Facts::default() })
+    Some(Facts { compressed: Some(Box::new(capture_sections(ctx.file, true)?)), ..Facts::default() })
 }
 
-fn capture_sections(file: &object::File<'_>) -> Option<Deferred> {
-    let section = |id: gimli::SectionId| file.section_by_name(id.name())
-        .or_else(|| file.section_by_name(&id.name().replacen(".debug_", ".zdebug_", 1)));
+fn capture_sections(file: &object::File<'_>, gnu_names: bool) -> Option<Deferred> {
+    let section = |id: gimli::SectionId| file.section_by_name(id.name()).or_else(|| {
+        if !gnu_names { return None; }
+        file.section_by_name(&id.name().replacen(".debug_", ".zdebug_", 1))
+    });
     let mut captured = Vec::new();
     let mut total = 0usize;
     gimli::DwarfSections::load(|id| -> Result<(), ()> {
@@ -815,7 +936,7 @@ fn capture_sections(file: &object::File<'_>) -> Option<Deferred> {
         captured.push((id, StoredSection { format: data.format, bytes: data.data.to_vec(), size }));
         Ok(())
     }).ok()?;
-    Some(Deferred { sections: captured })
+    Some(Deferred { sections: captured, arm64_entries: None })
 }
 
 #[derive(Clone, Copy)]
@@ -969,7 +1090,7 @@ mod tests {
         encoder.write_all(bytes).unwrap();
         Deferred { sections: vec![(gimli::SectionId::DebugInfo, StoredSection {
             bytes: encoder.finish().unwrap(), size: bytes.len(), format: object::CompressionFormat::Zlib,
-        })] }
+        })], arm64_entries: None }
     }
 
     #[test]
@@ -1000,13 +1121,13 @@ mod tests {
             .join("../../../tests/fixtures/go-dwarf-signatures/compressed");
         let mut bytes = std::fs::read(path).unwrap();
         let file = object::File::parse(bytes.as_slice()).unwrap();
-        let captured = capture_sections(&file).unwrap();
+        let captured = capture_sections(&file, true).unwrap();
         let facts = captured.decode(NameChars::Off).unwrap();
         assert!(facts.dies.values().any(|die| die.name == "main.fromWord"));
         let offset = file.section_by_name(".debug_info").unwrap().file_range().unwrap().0 as usize;
         bytes[offset + 8..offset + 16].copy_from_slice(&(DEBUG_LIMIT as u64 + 1).to_le_bytes());
         let oversized = object::File::parse(bytes.as_slice()).unwrap();
-        assert!(capture_sections(&oversized).is_none());
+        assert!(capture_sections(&oversized, true).is_none());
     }
 
     #[test]

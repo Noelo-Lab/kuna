@@ -3994,7 +3994,7 @@ moves.
   parameterless functions. Names from such minimal units retain their namespace
   qualification, so Rust `core::fmt::write` does not become a global `write`
   alias that could inherit the C import's incompatible signature.
-  The `godwarfsig` arm (on by default, inert off amd64 Go with DWARF)
+  The default-on `godwarfsig` arm
   (`decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_godwarfsig.rs`)
   recovers complete scalar/pointer contracts from Go compiler units on
   little-endian amd64 under `abi-internal`. It requires the producer's `regabi`
@@ -4014,6 +4014,27 @@ moves.
   architecture and option settings. Names and other metadata remain available;
   only the Go-specific importer may install a source signature. Unsupported
   Go contracts therefore retain inference in compressed and uncompressed files.
+
+  On little-endian AArch64 Go ELF with zlib-compressed DWARF, this importer
+  also accepts a single pointer-to-`int32` input and one signed `int32` or
+  `int64` result. The concrete DWARF definition must have a unique entry
+  and match the linked
+  text function's name and full extent. Require the Go register-ABI producer,
+  explicit input and result roles, and an X0 location at entry for the input.
+  A result location can name X0 or be explicitly empty in the debug record.
+  The `abi-internal` model must independently place the pointer in X0 and
+  choose the low four or eight bytes of X0 for the result. This preserves
+  the `int32` boundary even when a widened `int64` function has the same
+  machine body. Explicit prototypes still take precedence at the entry.
+
+  The AArch64 importer retains bounded raw sections. When enabled, it
+  validates the compressed streams and scans complete Go units for the
+  selected types and direct formals. It counts duplicate definitions before
+  considering the type shape and checks the linked name and extent before
+  reading parameter locations. The generic DWARF importer still uses its
+  ordinary section loading and traversal for every format. AArch64 Go ELF
+  with uncompressed DWARF continues to use the generic path.
+
 
   Accepted inputs occupy the verified Go integer or float register sequence;
   an explicit empty location is permitted for an optimized-away input. A
