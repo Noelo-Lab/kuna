@@ -54,7 +54,7 @@ pub(crate) fn capture_compressed(ctx: &AnalysisCtx<'_>) -> Option<Facts> {
     let section = ctx
         .file
         .section_by_name(gimli::SectionId::DebugInfo.name())?;
-    if section.compressed_data().ok()?.format != CompressionFormat::Zlib
+    if !matches!(section.compressed_data().ok()?.format, CompressionFormat::Zlib | CompressionFormat::None)
         || ctx.file.symbol_table().is_none()
         || crate::sourcelang::detect_compiler_elf(ctx.file) != crate::sourcelang::Compiler::Go
     {
