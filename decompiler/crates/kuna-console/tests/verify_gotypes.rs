@@ -310,7 +310,7 @@ fn check_named_struct(arch: &str) {
         let file = object::File::parse(bytes.as_slice()).unwrap();
         let version = kuna_analysis::loader::gobuildinfo::buildinfo_blob(&file)
             .and_then(kuna_analysis::loader::gobuildinfo::version_from_blob);
-        if !matches!(version, Some((1, 18..=25))) {
+        if !matches!(version, Some((1, 18..=25 | 27))) {
             assert!(tf.find_by_name("main.Point").unwrap().is_none(), "unsupported 32-bit layout");
             let _ = std::fs::remove_dir_all(&dir);
             return;

@@ -122,10 +122,7 @@ const KIND_UNSAFEPTR: u8 = 26;
 const TFLAG_EXTRA_STAR: u8 = 0x2;
 const TFLAG_NAMED: u8 = 0x4;
 
-/// The `_type` base record size on a 64-bit target.
-const TYPE_BASE: u64 = 48;
-
-/// How far past the moduledata anchor the window scan looks, in 8-byte words.
+/// How far past the moduledata anchor the window scan looks, in target words.
 /// The fields phase 1 needs (`types`/`etypes`/`typelinks`) have sat within the
 /// first ~50 words of moduledata on every release since go1.16; 96 leaves room
 /// for two more releases of growth without scanning unrelated globals.
@@ -282,48 +279,44 @@ fn locate_type_meta(img: &GoImage, anchor: u64) -> Option<TypeMeta> {
 }
 
 /// The go1.26+ `_type` descriptor stride: records sit consecutively in
-/// `[types + 8, types + typedesclen)` and a walker advances by each record's
+/// `[types + ptrSize, types + typedesclen)` and a walker advances by each record's
 /// own descriptor size (`internal/abi.Type::DescriptorSize`, go1.27.2) — the
 /// per-kind wrapper, an optional `UncommonType` (+ its methods), and the
 /// kind's trailing arrays, in that memory order. `None` for a stride this
 /// phase cannot trust; the caller stops the walk there (conservative: keep
 /// what already decoded).
 fn descriptor_stride(img: &GoImage, t: &GoType) -> Option<u64> {
-    if img.word_size != 8 {
-        return None;
-    }
+    let width = img.word_size;
+    let type_base = img.type_base();
     const UNCOMMON_SIZE: u64 = 16; // {PkgPath i32, Mcount u16, Xcount u16, Moff u32, _ u32}
     const METHOD_SIZE: u64 = 16; // 4 x i32
     const TFLAG_UNCOMMON: u8 = 0x1;
     let slice_len = |at: u64| -> Option<u64> {
-        let len = word(img, at + 8)?;
-        let cap = word(img, at + 16)?;
+        let len = word(img, at + width)?;
+        let cap = word(img, at + 2 * width)?;
         (len == cap && len <= 1_000_000).then_some(len)
     };
     let (base, add): (u64, u64) = match t.kind {
-        KIND_ARRAY => (TYPE_BASE + 24, 0),
-        KIND_CHAN => (TYPE_BASE + 16, 0),
+        KIND_ARRAY => (type_base + 3 * width, 0),
+        KIND_CHAN => (type_base + 2 * width, 0),
         KIND_FUNC => {
-            // InCount u16 @ +48, OutCount u16 @ +50 (top bit = variadic).
-            let b = img.read(t.vma + TYPE_BASE, 4)?;
+            let b = img.read(t.vma + type_base, 4)?;
             let inc = u16::from_le_bytes(b[0..2].try_into().unwrap()) as u64;
             let outc = (u16::from_le_bytes(b[2..4].try_into().unwrap()) & 0x7fff) as u64;
             if inc + outc > 512 {
                 return None;
             }
-            (TYPE_BASE + 8, (inc + outc) * 8)
+            (type_base + width, (inc + outc) * width)
         }
         KIND_INTERFACE => {
-            // PkgPath Name (ptr) @ +48, Methods slice @ +56; Imethod = 8.
-            (TYPE_BASE + 8 + 24, slice_len(t.vma + TYPE_BASE + 8)? * 8)
+            (type_base + 4 * width, slice_len(t.vma + type_base + width)? * 8)
         }
-        KIND_MAP => (TYPE_BASE + 88, 0), // Key,Elem,Group,Hasher,GroupSize,KeysOff,KeyStride,ElemsOff,ElemStride,ElemOff,Flags+pad
-        KIND_POINTER | KIND_SLICE => (TYPE_BASE + 8, 0),
+        KIND_MAP => (type_base + 11 * width, 0),
+        KIND_POINTER | KIND_SLICE => (type_base + width, 0),
         KIND_STRUCT => {
-            // PkgPath Name (ptr) @ +48, Fields slice @ +56; StructField = 24.
-            (TYPE_BASE + 8 + 24, slice_len(t.vma + TYPE_BASE + 8)? * 24)
+            (type_base + 4 * width, slice_len(t.vma + type_base + width)? * 3 * width)
         }
-        _ => (TYPE_BASE, 0), // plain kinds (bool..complex128, string, unsafeptr)
+        _ => (type_base, 0),
     };
     let uncommon = if t.tflag & TFLAG_UNCOMMON != 0 {
         // Mcount u16 sits at uncommon + 4.
@@ -348,17 +341,16 @@ fn descriptor_stride(img: &GoImage, t: &GoType) -> Option<u64> {
 /// (`types + typedesclen <= etypes`), both bounds must map, and the walk must
 /// decode records back to back — a divergence stops it conservatively.
 fn locate_type_meta_descriptors(img: &GoImage, anchor: u64) -> Option<TypeMeta> {
-    if img.word_size != 8 {
-        return None;
-    }
+    let width = img.word_size;
     for i in 0..MODULEDATA_WINDOW_WORDS {
-        let Some(types) = word(img, anchor + i * 8) else { break };
-        let Some(typedesclen) = word(img, anchor + (i + 1) * 8) else { break };
-        let Some(etypes) = word(img, anchor + (i + 2) * 8) else { break };
+        let Some(types) = word(img, anchor + i * width) else { break };
+        let Some(typedesclen) = word(img, anchor + (i + 1) * width) else { break };
+        let Some(etypes) = word(img, anchor + (i + 2) * width) else { break };
+        let Some(end) = types.checked_add(typedesclen) else { continue };
         if types == 0
             || typedesclen == 0
             || typedesclen >= 0x1000_0000
-            || types + typedesclen > etypes
+            || end > etypes
             || etypes - types >= 0x1000_0000
             || !mapped(img, types)
             || !mapped(img, etypes - 1)
@@ -366,19 +358,21 @@ fn locate_type_meta_descriptors(img: &GoImage, anchor: u64) -> Option<TypeMeta> 
             continue;
         }
         // Walk the descriptor region; require a run of decoding records.
-        let end = types + typedesclen;
-        let mut td = types + 8;
+        let mut td = types + width;
         let mut offsets: Vec<u32> = Vec::new();
         while td < end && offsets.len() < GOTYPES_MAX_TYPELINKS {
-            td = (td + 7) & !7;
+            let Some(aligned) = td.checked_add(width - 1) else { break };
+            td = aligned & !(width - 1);
             if td >= end {
                 break;
             }
             let off = (td - types) as u32;
-            let Some(t) = read_type(img, types, etypes, off) else { break };
+            let Some(t) = read_type(img, types, end, off) else { break };
             let Some(stride) = descriptor_stride(img, &t) else { break };
+            let Some(next) = td.checked_add(stride) else { break };
+            if next > end { break; }
             offsets.push(off);
-            td += stride;
+            td = next;
         }
         // Accept only a walk that looks like the real region: several records
         // and no early divergence (reached the end or the cap).
@@ -696,7 +690,8 @@ impl AnalysisPass for GoTypesPass {
             return AnalysisOutput::default();
         }
         let version = buildinfo_blob(ctx.file).and_then(version_from_blob);
-        if !ctx.file.is_64() && !matches!(version, Some((1, 18..=25))) {
+        let modern_32_bit = !ctx.file.is_64() && version == Some((1, 27));
+        if !ctx.file.is_64() && !modern_32_bit && !matches!(version, Some((1, 18..=25))) {
             return AnalysisOutput::default();
         }
         let img = GoImage::new(ctx.file);
@@ -706,9 +701,13 @@ impl AnalysisPass for GoTypesPass {
         let Some(anchor) = locate_moduledata(ctx.file, &img, header_vma) else {
             return AnalysisOutput::default();
         };
-        let Some(meta) = locate_type_meta(&img, anchor)
-            .or_else(|| locate_type_meta_descriptors(&img, anchor))
-        else {
+        let meta = match img.word_size {
+            4 if modern_32_bit => locate_type_meta_descriptors(&img, anchor),
+            4 => locate_type_meta(&img, anchor),
+            _ => locate_type_meta(&img, anchor)
+                .or_else(|| locate_type_meta_descriptors(&img, anchor)),
+        };
+        let Some(meta) = meta else {
             return AnalysisOutput::default();
         };
         let tf = ctx.arch.types();

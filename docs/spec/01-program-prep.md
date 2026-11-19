@@ -5160,7 +5160,7 @@ every other binary's pass list is byte-identical to before the pass existed):
   offsets. Through go1.25: the `types`/`etypes` pair plus the `typelinks`
   slice, sampled entries required to decode as plausible `_type` records.
   From go1.26 the slice is gone: moduledata carries `types, typedesclen,
-  etypes` and the records sit consecutively in `[types + 8, types +
+  etypes` and the records sit consecutively in `[types + ptrSize, types +
   typedesclen)`, enumerated by advancing each record's own descriptor size
   (`internal/abi.Type::DescriptorSize` — the per-kind wrapper, the optional
   uncommon block and its methods, and the kind's trailing arrays), the walk
@@ -5205,8 +5205,12 @@ every other binary's pass list is byte-identical to before the pass existed):
   Their base type record is 32 bytes, moduledata and slice words are four bytes,
   and each struct field occupies three words. Header shells and pointer types
   use four-byte words as well. A build-info version identifying Go 1.18 through
-  1.25 is required for 32-bit import; unknown versions and the newer 32-bit
-  descriptor-region layout are refused until qualified.
+  1.25 selects the 32-bit typelinks path. Go 1.27 selects the consecutive
+  descriptor path, using the pointer width for alignment, wrapper fields,
+  slices and function type pointers. Method entries stay fixed-width, and the
+  Go 1.27 map wrapper uses ten words plus one aligned flags slot. A partial
+  final descriptor refuses the region. Go 1.26 and unknown versions retain
+  the 32-bit refusal for their unqualified layouts.
   Stripped i386 and ARM tests cover integer, string, embedded-pointer and nested
   value fields, with the existing amd64 and arm64 tests as controls. Interning happens at
   `load file`, the walk is bounded (20,000 typelinks), and the

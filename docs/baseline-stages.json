@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4721,
-    4721
+    4725,
+    4725
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1161,6 +1161,10 @@
     "data:GUARDARM #2: ON keeps the guard flat with the fatal call as its clause (pass 2 only)",
     "data:GUARDARM #3: the no-return clause call is emitted in BOTH passes",
     "data:Global aggregate fields do not become locals",
+    "data:Go 1.27 i386 descriptor names respect the global display option",
+    "data:Go 1.27 i386 names the padded record descriptor",
+    "data:Go 1.27 i386 names the recursive node descriptor",
+    "data:Go 1.27 i386 retains both node allocation and initialization",
     "data:Go AArch64 a two-panic branch retains both arms",
     "data:Go AArch64 an application helper with the same suffix remains",
     "data:Go AArch64 bare SDIV never gains a panic helper",
