@@ -2971,7 +2971,7 @@ impl Architecture {
         // (kuna, GH-299) AIF filler reject -- default-ON; inert without `aif`.
         // (kuna, GH-299) AIF literal-pool slide -- default-ON; inert without `aif`.
         self.analysis_aifpoolslide = true;
-        self.analysis_tailcallentry = true; // tail-call function-entry recovery (ARM-only, needs listing)
+        self.analysis_tailcallentry = true; // tail-call function-entry recovery (ARM, AArch64, x86, RISC-V; needs listing)
         self.analysis_objc = true; // Mach-O Objective-C metadata recovery (Mach-O-only pass)
         self.analysis_swiftmetadata = true; // Swift runtime-metadata recovery (inert without swift5_* sections)
         self.analysis_cfstrings = true; // (kuna) Mach-O __cfstring constant-string recovery default-on: Mach-O-only and real-binary-path only, so the XML datatest corpus never runs it (0/675); on an 80 MB third-party arm64 iOS app one decompile is within noise (min 2.324 s off, 2.359 s on, medians 2.442 / 2.372 over 6 interleaved runs)

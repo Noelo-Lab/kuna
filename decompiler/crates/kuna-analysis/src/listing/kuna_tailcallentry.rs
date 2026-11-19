@@ -51,9 +51,15 @@
 //! 4. [`Guard::EpilogueStart`] — the target must not open with a stack restore.
 //!    A function does not begin by tearing down a frame it never built; such a
 //!    target is the caller's shared epilogue.
+//! 5. [`Guard::Detour`] — the target's own region must not branch into the
+//!    branch site's region. A protector that moves instructions out of a
+//!    function leaves a jump to the moved run and a jump back into the
+//!    function's middle; the jump back passes the four guards above, and the
+//!    round trip is what tells it from a tail call.
 //!
-//! ARM-gated like the sibling Stage-2/3 seed scans, so every non-ARM binary is a
-//! strict no-op (the mechanism is architecture-neutral; the evidence is not).
+//! The four guards are architecture-neutral; only [`restores_frame`] reads
+//! mnemonics, and it knows the ARM, AArch64, x86 and RISC-V epilogues. Other
+//! architectures are a strict no-op.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -73,18 +79,24 @@ pub enum Guard {
     NotTerminating,
     /// The target opens with a stack restore (the caller's shared epilogue).
     EpilogueStart,
+    /// The target's own region jumps into the branch site's region: the
+    /// branch comes back from code moved out of the target's function, not
+    /// from a caller.
+    Detour,
 }
 
 /// The accepted tail-call function entries, address-sorted.
 ///
-/// ARM-only (the corpus the containment model was measured on); a strict no-op
-/// on every other architecture, and on a Listing built without the reference
-/// model or the disassembly text — [`predecessors_are_branches`] and
-/// [`restores_frame`] are satisfied by an absent model rather than by evidence,
-/// so the precondition is structural and not left to the caller's gate.
+/// ARM (the corpus the containment model was measured on), AArch64, x86 and
+/// RISC-V; a strict no-op on every other architecture, and on a Listing built
+/// without the reference model or the disassembly text —
+/// [`predecessors_are_branches`] and [`restores_frame`] are satisfied by an
+/// absent model rather than by evidence, so the precondition is structural and
+/// not left to the caller's gate.
 pub fn tail_call_entries(file: &object::File, listing: &Listing) -> Vec<u64> {
     use object::read::Object;
-    if file.architecture() != object::Architecture::Arm {
+    use object::Architecture as A;
+    if !matches!(file.architecture(), A::Arm | A::Aarch64 | A::X86_64 | A::I386 | A::Riscv64 | A::Riscv32) {
         return Vec::new();
     }
     if !listing.has_refs() || !listing.has_assembly() {
@@ -129,6 +141,9 @@ fn probe(
     if srcs.iter().any(|&src| in_caller_region(entries, src, target)) {
         return Err(Guard::InCallerRegion);
     }
+    if srcs.iter().any(|&src| region_flows_into(listing, entries, target, src)) {
+        return Err(Guard::Detour);
+    }
     if listing.instruction_at(target).is_some_and(|i| restores_frame(i)) {
         return Err(Guard::EpilogueStart);
     }
@@ -156,6 +171,23 @@ fn predecessors_are_branches(listing: &Listing, target: u64) -> bool {
 fn in_caller_region(entries: &[u64], src: u64, target: u64) -> bool {
     let Some(caller) = region_of(entries, src) else { return true };
     target > caller && next_entry(entries, caller).is_none_or(|hi| target < hi)
+}
+
+/// True iff some instruction of the entry-ordered region holding `target`
+/// branches or calls into the region holding `src`.  A protector that moves a
+/// run of instructions out of a function leaves a `jmp` to the moved run and
+/// a `jmp` back into the function's middle; the one back satisfies the other
+/// guards, so the round trip is what tells it from a tail call.
+fn region_flows_into(listing: &Listing, entries: &[u64], target: u64, src: u64) -> bool {
+    let (Some(owner), Some(site)) = (region_of(entries, target), region_of(entries, src)) else { return false };
+    if owner == site {
+        return false;
+    }
+    let site_end = next_entry(entries, site);
+    let in_site = |vma: u64| vma >= site && site_end.is_none_or(|hi| vma < hi);
+    listing
+        .instructions_in_range(owner, next_entry(entries, owner))
+        .any(|(_, i)| i.flows.iter().any(|&f| in_site(f)))
 }
 
 /// The greatest function entry `<= vma` (the entry-ordered region key, the same
@@ -196,15 +228,21 @@ fn terminates(listing: &Listing, target: u64) -> bool {
     false
 }
 
-/// True iff the instruction restores the stack frame (`POP` / `VPOP` /
-/// `LDM SP!` / `ADD SP`) — an epilogue, never a function start.
+/// True iff the instruction restores the stack frame — an epilogue, never a
+/// function start. ARM `POP` / `VPOP` / `LDM SP!` / `ADD SP`; x86 `POP` /
+/// `LEAVE` / `ADD (E|R)SP`; AArch64 `LDP x29,x30` and `LDR`/`LDP` post-indexed
+/// off `sp`; RISC-V `ld`/`lw ra` and `addi sp,sp,+n`.
 fn restores_frame(i: &Insn) -> bool {
     let m = i.mnemonic.to_ascii_lowercase();
-    let o = i.operands.to_ascii_lowercase();
+    let o = i.operands.to_ascii_lowercase().replace(' ', "");
     match m.split('.').next().unwrap_or("") {
-        "pop" | "vpop" => true,
+        "pop" | "vpop" | "leave" => true,
         "ldmia" | "ldm" | "ldmfd" => o.starts_with("sp!"),
-        "add" | "adds" => o.starts_with("sp"),
+        "add" | "adds" => o.starts_with("sp") || o.starts_with("rsp") || o.starts_with("esp"),
+        "ldp" => o.starts_with("x29,x30") || o.contains("[sp],"),
+        "ldr" => o.contains("[sp],"),
+        "ld" | "lw" | "c" => o.starts_with("ra,") && o.contains("(sp)"),
+        "addi" | "c.addi16sp" => o.starts_with("sp,sp,") && !o.starts_with("sp,sp,-"),
         _ => false,
     }
 }
@@ -263,5 +301,17 @@ mod tests {
         assert!(!restores_frame(&insn("add", "r0,r1")));
         assert!(!restores_frame(&insn("ldr", "r0,[sp,#4]")));
         assert!(!restores_frame(&insn("ldmia", "r3!,{r0,r1}")));
+        assert!(restores_frame(&insn("POP", "RBP")));
+        assert!(restores_frame(&insn("LEAVE", "")));
+        assert!(restores_frame(&insn("ADD", "RSP,0x18")));
+        assert!(!restores_frame(&insn("SUB", "RSP,0x18")));
+        assert!(!restores_frame(&insn("PUSH", "RBP")));
+        assert!(restores_frame(&insn("ldp", "x29, x30, [sp], #0x10")));
+        assert!(restores_frame(&insn("ldr", "x19, [sp], #0x10")));
+        assert!(!restores_frame(&insn("stp", "x29, x30, [sp, #-0x10]!")));
+        assert!(!restores_frame(&insn("ldr", "x0, [x1, #8]")));
+        assert!(restores_frame(&insn("ld", "ra,8(sp)")));
+        assert!(restores_frame(&insn("addi", "sp,sp,16")));
+        assert!(!restores_frame(&insn("addi", "sp,sp,-16")));
     }
 }
