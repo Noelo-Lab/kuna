@@ -553,6 +553,13 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
     // false) AND a fingerprint-matching `.pdb` is supplied via `kuna_pdb_path`, so a
     // default run is byte-identical and bound to the real-PE path (the XML datatest
     // oracle is untouched). Types/typed-locals/lines are the deferred PR-P2/P3.
+    // (kuna `uefi`) UEFI module markup: the entry prototype, the EFI table
+    // types, EDK2 GUID names and statically defined service tables of a PE whose
+    // Subsystem is an EFI one. PE-only; the pass self-gates on the subsystem.
+    if format == object::BinaryFormat::Pe {
+        passes.push(Box::new(crate::uefi::UefiPass));
+    }
+
     if format == object::BinaryFormat::Pe {
         passes.push(Box::new(crate::pdb::PdbPass));
         // S1 PDB-procedure-interior entry suppression (`pdbinterior`): the same

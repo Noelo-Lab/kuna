@@ -1,0 +1,43 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    UEFI module markup (`option uefi on|off`).
+
+    Stage P1 external-refinement. The fixture is EDK2's DiskIoDxe.efi
+    (edk2-stable202505, OvmfX64 RELEASE_GCC5), a PE32+ boot-service driver
+    (Subsystem 11) whose entry at 0x1743 is EDK2's _ModuleEntryPoint with the
+    library constructors inlined.
+
+    Pass 1 (`uefi off`, the bug): the entry takes two untyped words, the boot
+    services call is an offset off a raw pointer, and the protocol GUIDs are bare
+    addresses.
+    Pass 2 (default, the fix): the entry is typed from the UEFI specification,
+    the call is a member call through EFI_BOOT_SERVICES, and the GUIDs carry
+    their EDK2 names.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/uefi_diskio_x64.efi</com>
+  <com>option uefi off</com>
+  <com>read symbols</com>
+  <com>load addr 0x1743</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/uefi_diskio_x64.efi</com>
+  <com>read symbols</com>
+  <com>load function _ModuleEntryPoint</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="UEFI #1: off, the boot-services call is an offset off an untyped word" min="1" max="1">\(v1 \+ 0x140\)\)\(0x18c0,0,0x1a60\)</stringmatch>
+<stringmatch name="UEFI #2: on, the entry carries the specification's prototype" min="1" max="1">EFI_STATUS _ModuleEntryPoint\(EFI_HANDLE ImageHandle,EFI_SYSTEM_TABLE \*SystemTable\)</stringmatch>
+<stringmatch name="UEFI #3: on, the boot-services table is read as a member" min="1" max="1">= SystemTable-&gt;BootServices;</stringmatch>
+<stringmatch name="UEFI #4: on, the service is a member call and its GUID argument is named" min="1" max="1">\(\*v1-&gt;LocateProtocol\)\(&amp;gEfiDevicePathUtilitiesProtocolGuid,</stringmatch>
+<stringmatch name="UEFI #5: on, the protocol GUIDs of the install call are named" min="1" max="1">&amp;gEfiDriverBindingProtocolGuid,0x1920,&amp;gEfiComponentNameProtocolGuid</stringmatch>
+</decompilertest>
