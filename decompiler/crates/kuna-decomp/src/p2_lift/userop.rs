@@ -147,9 +147,9 @@ pub const BUILTIN_MEMSET64: uint4 = 0x1000000d;
 /// computes (`repstring`).
 pub const BUILTIN_MEMCMP: uint4 = 0x1000000e;
 /// (kuna swiftcall) The error a throwing Swift call left in the error register.
-pub const BUILTIN_SWIFT_ERROR: uint4 = 0x1000000b;
+pub const BUILTIN_SWIFT_ERROR: uint4 = 0x100000a0;
 /// (kuna swiftcall) The error a throwing Swift function hands back.
-pub const BUILTIN_SWIFT_THROW: uint4 = 0x1000000c;
+pub const BUILTIN_SWIFT_THROW: uint4 = 0x100000a1;
 
 // ---------------------------------------------------------------------------
 // UserOpBase + UserPcodeOp hierarchy (userop.hh:47-318)
