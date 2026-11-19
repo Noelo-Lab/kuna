@@ -129,14 +129,19 @@ pub fn run(argv: &[String]) -> i32 {
 fn export(args: &Args, label: &str) -> Result<String, String> {
     let binary_path = std::fs::canonicalize(&args.binary)
         .map_err(|_| format!("binary not found: {}", args.binary))?;
-    // The object view first: an input without one (a UEFI TE) is refused
-    // before anything is loaded or decompiled for nothing.
     crate::decompile_all::warn_protoorder_inert(&args.options, "decompile-graph");
-    let bytes = crate::image::image_bytes(&args.binary, args.slice_pref())?;
-    let file = kuna_analysis::loadimage_object::parse_object(&bytes)
-        .map_err(|error| format!("could not parse {}: {error}", args.binary))?;
+    let image = if args.raw_image { None } else { Some(crate::image::image_bytes(&args.binary, args.slice_pref())?) };
     let load_started = std::time::Instant::now();
     let mut prog = load_program(args, DriverDefaults::Decompile)?;
+    let bytes = match image {
+        Some(bytes) => bytes,
+        None => prog
+            .object_view()
+            .ok_or("decompile-graph needs a byte-addressed --raw-image target")?
+            .to_vec(),
+    };
+    let file = kuna_analysis::loadimage_object::parse_object(&bytes)
+        .map_err(|error| format!("could not parse {}: {error}", args.binary))?;
     let load_seconds = load_started.elapsed().as_secs_f64();
     if prog.arch().print().get_name() != "c-language" {
         return Err(format!(

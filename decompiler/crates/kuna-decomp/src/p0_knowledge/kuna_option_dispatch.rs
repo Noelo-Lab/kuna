@@ -915,6 +915,9 @@ kuna_options! { self, p1;
         analysis_lazyfuncs,
         "Materialize Function objects on demand instead of one per entry"
     ),
+    "objectview" => {
+        on_off!(analysis_objectview, "Object-file analysis passes on TE and raw images")
+    },
     "noreturn_disc" => {
         on_off!(analysis_noreturn_disc, "Discovered-no-return Listing consumer")
     },

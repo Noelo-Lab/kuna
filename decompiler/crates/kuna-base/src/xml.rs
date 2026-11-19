@@ -2247,7 +2247,8 @@ mod tests {
         // and kuna-importvote / an undeclared import takes the arguments its other call sites pass (option importvote)
         // and kuna-formatcallees / undeclared format functions are typed from their formats (option formatstring)
         // and kuna-strcpychain / memcpy(d, s, strlen(s) + 1) prints as strcpy(d, s) (option helperroles)
-        assert_eq!(count, 829, "corpus file count drifted");
+        // and kuna-objectview / a TE or raw image runs the object-file analysis passes over a rebuilt view (option objectview)
+        assert_eq!(count, 830, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

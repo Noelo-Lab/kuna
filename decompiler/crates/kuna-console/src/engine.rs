@@ -618,6 +618,10 @@ pub struct ConsoleProgram {
     /// there. Empty/`None` when the listing flag is off ⇒ zero cost.
     analysis_image:
         Option<(String, kuna_analysis::image_bytes::ImageBytes, kuna_analysis::loader::ImportProofMemo)>,
+    /// (kuna `objectview`) The PE view of a TE image or the ELF view of a raw
+    /// one, kept for the CLI's object-file consumers once the commit has taken
+    /// [`Self::analysis_image`].
+    object_view: Option<Rc<[u8]>>,
     /// (kuna `armframes`) The whole-image frame recovery: set before the commit,
     /// it is replayed instead of searched; after it, the record that commit made.
     arm_frames: Option<kuna_analysis::aif::kuna_framereplay::ArmFrameReplay>,
@@ -2919,6 +2923,46 @@ impl ConsoleProgram {
         found.dos_exits.noreturn
     }
 
+    /// (kuna `objectview`) Run the object-file pass list over the PE / ELF view a
+    /// TE or raw bootstrap stashed in [`Self::analysis_image`], so its facts join
+    /// the gated commit like an object image's. With the gate off the view is
+    /// dropped, and the deferred Listing tier below declines as before.
+    fn run_object_view_passes(&mut self) {
+        if !matches!(self.container, ProgramContainer::Raw | ProgramContainer::Te) {
+            return;
+        }
+        if !self.arch().analysis_objectview {
+            self.analysis_image = None;
+            return;
+        }
+        let Some((path, bytes, _)) = self.analysis_image.as_ref() else { return };
+        let target = self.arch.arch_id().to_string();
+        let Ok(image) = ObjectLoadImage::from_bytes_silent_with_target(path, bytes, &target) else {
+            return;
+        };
+        let arch = self.arch();
+        let split = kuna_analysis::passes::run_default_analyses_per_pass(bytes, &image, arch, arch.translate());
+        self.pending_analysis.extend(split);
+    }
+
+    /// (kuna `objectview`) Stash the PE view of a TE image or the ELF view of a
+    /// raw one as the analysis image, and keep it for the CLI's object-file
+    /// consumers once the commit has taken the stash.
+    fn set_object_view(&mut self, path: &str, view: Option<Vec<u8>>) {
+        self.object_view = view.as_deref().map(Rc::from);
+        self.analysis_image = view.map(|view| {
+            let bytes = kuna_analysis::image_bytes::ImageBytes::from(view);
+            let memo = kuna_analysis::loader::ImportProofScope::enter(&bytes).memo();
+            (path.to_string(), bytes, memo)
+        });
+    }
+
+    /// (kuna `objectview`) The PE view of a TE image or the ELF view of a
+    /// byte-addressed raw one; `None` for an object image, which is its own.
+    pub fn object_view(&self) -> Option<&[u8]> {
+        self.object_view.as_deref()
+    }
+
     /// (kuna) Commit the stashed per-pass analysis facts, gated by the per-pass
     /// `--option <id> on|off` enable flags — the deferred half of the analysis
     /// boundary (conflict #4). Called from `IfcReadSymbols` (`read symbols`), which
@@ -2950,35 +2994,7 @@ impl ConsoleProgram {
         if apply_rust_names && (self.rust_profile_image_modified || self.analysis_image.is_none()) {
             return Err(KunaError::lowlevel("Rust signature application requires an unmodified object image before its analysis commit"));
         }
-        if !self.pending_synthetic_entries.is_empty() || self.container == ProgramContainer::Raw {
-            // (kuna `rawdiscover`) A headerless image reaches this point holding
-            // only the `--entry` addresses the caller typed, because the
-            // object-file discovery tier below declines without an
-            // `object::File`. Discover the rest first, so the entries it finds
-            // are named and installed by the same loop.
-            let dos_noreturn = if self.container == ProgramContainer::Raw {
-                self.discover_raw_entries()
-            } else {
-                Vec::new()
-            };
-            let entries = std::mem::take(&mut self.pending_synthetic_entries);
-            let symbols = entries
-                .into_iter()
-                .map(|addr| ProgramSymbol {
-                    ordinal: 0,
-                    name: self.arch().name_function(&addr),
-                    addr,
-                    object_location: None,
-                    binding: None,
-                    provenance: EntryProvenance::Mapped,
-                })
-                .collect::<Vec<_>>();
-            for symbol in symbols {
-                self.symbols.push(symbol);
-            }
-            self.read_loader_symbols()?;
-            self.mark_no_return(&dos_noreturn);
-        }
+        self.run_object_view_passes();
         // (kuna `entrythumbflow`) The entry-reachable Thumb walk, taken out of
         // the pending slot BEFORE it runs so a failure cannot leave it armed for
         // the next commit. Its paints join the gated stash under their own id.
@@ -3035,18 +3051,37 @@ impl ConsoleProgram {
                 self.pending_analysis.push(("entrythumbflow", output));
             }
         }
-        // A TE image has no `object::File`, so the discovery tier cannot run
-        // over it at all: say so once rather than report an inventory of one in
-        // silence. Stated unconditionally because it is a property of the
-        // container, not of this run's options.
-        if self.container == ProgramContainer::Te {
-            let path = self.image_path();
-            kuna_base::notes::say_once(
-                &path,
-                &format!(
-                    "[kuna te] {path}: a UEFI TE image has no object-file view, so function discovery cannot run; the inventory is the container entry plus any declared boundaries"
-                ),
-            );
+        if !self.pending_synthetic_entries.is_empty()
+            || matches!(self.container, ProgramContainer::Raw | ProgramContainer::Te)
+        {
+            // (kuna `rawdiscover`) A headerless or TE image reaches this point
+            // holding only the `--entry` addresses or the container entry,
+            // because the object-file discovery tier below declines without an
+            // `object::File`. Discover the rest first, after the entry Thumb walk
+            // has painted the decode mode, so the entries it finds are named and
+            // installed by the same loop.
+            let dos_noreturn = if matches!(self.container, ProgramContainer::Raw | ProgramContainer::Te) {
+                self.discover_raw_entries()
+            } else {
+                Vec::new()
+            };
+            let entries = std::mem::take(&mut self.pending_synthetic_entries);
+            let symbols = entries
+                .into_iter()
+                .map(|addr| ProgramSymbol {
+                    ordinal: 0,
+                    name: self.arch().name_function(&addr),
+                    addr,
+                    object_location: None,
+                    binding: None,
+                    provenance: EntryProvenance::Mapped,
+                })
+                .collect::<Vec<_>>();
+            for symbol in symbols {
+                self.symbols.push(symbol);
+            }
+            self.read_loader_symbols()?;
+            self.mark_no_return(&dos_noreturn);
         }
         if self.pending_analysis.is_empty() && self.loader_data_objects.is_empty()
             && rust_profile_request.is_none()
@@ -4272,6 +4307,7 @@ fn empty_program(
         rust_profile_image_modified: false,
         rust_profile_report: None,
         analysis_image: None,
+        object_view: None,
         arm_frames: None,
         loader_data_objects: Vec::new(),
         loader_data_exports: Vec::new(),
@@ -4451,6 +4487,14 @@ pub(crate) fn bootstrap_raw_image(
     prog.pending_analysis = input_isa_stash(input_context_paints);
     prog.analysis_code_space = Some(code_space);
     prog.raw_address_units = Some((word_size, arm32));
+    if word_size == 1 {
+        let entry = prog.pending_synthetic_entries.first().map_or(image_base, Address::get_offset);
+        let language = prog.arch.arch_id().to_string();
+        let view = std::fs::read(path).ok().and_then(|bytes| {
+            kuna_analysis::loader::kuna_objectview::raw_as_elf(&bytes, image_base, entry, &language)
+        });
+        prog.set_object_view(path, view);
+    }
     Ok(prog)
 }
 
@@ -4758,6 +4802,7 @@ pub(crate) fn bootstrap_te_bytes(
         entry,
     });
     program.analysis_code_space = Some(code_space);
+    program.set_object_view(path, kuna_analysis::loader::kuna_objectview::te_as_pe(bytes));
     apply_readonly_ranges(&mut program, &readonly_ranges);
     program.arch_mut().litpool_const = Rc::new(litpool_const);
     Ok(program)

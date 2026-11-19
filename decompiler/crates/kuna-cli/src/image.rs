@@ -65,7 +65,8 @@ pub(crate) fn image_bytes_and_repairs(binary: &str, pref: SlicePref) -> Result<(
 /// `bytes`, unless the image has no object-file view (TE, MZ).
 fn object_view(binary: &str, bytes: Vec<u8>) -> Result<Vec<u8>, String> {
     if kuna_analysis::loadimage_te::is_te_image(&bytes) {
-        return Err(te_object_view_error(binary));
+        return kuna_analysis::loader::kuna_objectview::te_as_pe(&bytes)
+            .ok_or_else(|| format!("{binary}: UEFI TE section table does not fit the file"));
     }
     if kuna_analysis::loadimage_mz::is_mz_dos_image(&bytes) {
         return Err(mz_object_view_error(binary));
@@ -99,13 +100,3 @@ fn mz_object_view_error(binary: &str) -> String {
     )
 }
 
-/// The capability error every object-view consumer reports for a UEFI TE
-/// input: the loader maps it, but nothing can hand out the `object::File` the
-/// call graph, string inventory, and reference index are built from.
-fn te_object_view_error(binary: &str) -> String {
-    format!(
-        "{binary}: UEFI TE input has no object-file view, which this operation needs; \
-         TE support covers decompile, decompile-all, functions, disassemble/read, \
-         decompile-project, and the console"
-    )
-}

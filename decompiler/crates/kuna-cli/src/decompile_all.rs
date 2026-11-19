@@ -1470,8 +1470,7 @@ pub(crate) fn decompile_entries(
 /// (kuna `protoorder`) Whether this run takes the callee-first order, and
 /// whether the option was named on the command line.
 ///
-/// A narrowed run, or a raw image (which has no call graph), skips the order
-/// unless the option is named.  Every whole-program driver asks here, so the
+/// A narrowed run, or a raw image, skips the order unless the option is named.  Every whole-program driver asks here, so the
 /// two that keep a ledger -- `decompile-all` and `decompile-project` -- visit
 /// the program in the same order and a `struct_N` means one record on both.
 pub(crate) fn callee_first_decision(
@@ -3131,9 +3130,6 @@ pub(crate) fn parse_args_with_filters(
     }
 
     if raw_image {
-        if cmd == "decompile-graph" {
-            return Err("--raw-image is not supported by decompile-graph".into());
-        }
         if target.as_deref().is_none_or(|value| value.trim().is_empty()) {
             return Err("--raw-image requires --target <SLEIGH-language-id>".into());
         }
@@ -3156,9 +3152,6 @@ pub(crate) fn parse_args_with_filters(
         }
         if slice.is_some() {
             return Err("--slice does not apply to --raw-image input".into());
-        }
-        if filters.reachable_from.is_some() || filters.summary {
-            return Err("--reachable-from and --summary require object-file metadata and do not apply to --raw-image input".into());
         }
     } else {
         if base.is_some() {

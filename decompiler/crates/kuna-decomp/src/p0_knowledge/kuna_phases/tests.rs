@@ -56,13 +56,13 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_224() {
-    assert_eq!(kuna_num_settables(), 224);
-    assert_eq!(SETTABLE_TABLE.len(), 224);
+fn settable_count_is_225() {
+    assert_eq!(kuna_num_settables(), 225);
+    assert_eq!(SETTABLE_TABLE.len(), 225);
 }
 
 #[test]
-fn tier_counts_are_45_core_122_transform_57_analysis() {
+fn tier_counts_are_45_core_122_transform_58_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -74,7 +74,7 @@ fn tier_counts_are_45_core_122_transform_57_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (45, 122, 57));
+    assert_eq!((core, transform, analysis), (45, 122, 58));
 }
 
 #[test]
@@ -457,6 +457,9 @@ fn option_values_live_value_present_for_76() {
         // `read symbols` (the commit either creates a Function per entry or parks
         // the starts), so it has no codegen live reader. Default-off.
         "lazyfuncs",
+        // (kuna) The PE/ELF view of a TE or raw image -- read console-side at the
+        // commit, so it has no codegen live reader. Default-on.
+        "objectview",
         // (kuna) Apple kernelcache unwrapping + MH_FILESET entry choice -- a
         // LOAD-time gate read from `KUNA_KERNELCACHE`. Default auto.
         "kernelcache",
@@ -1111,7 +1114,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     assert_eq!(json.matches("},\n").count(), 222);
     // +1 for `importvote`.
         // +1 for `helperroles`.
-    assert_eq!(json.matches("},\n").count(), 221);
+        // +1 for `objectview`.
+    assert_eq!(json.matches("},\n").count(), 222);
 }
 
 #[test]
