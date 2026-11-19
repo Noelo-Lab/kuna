@@ -10767,6 +10767,8 @@ duplicates of `noreturn_known`'s. Registered only for `Compiler::Go` (beside
 `gopclntab`, preserving that pass's appended-last contract), so every non-Go
 pass set is byte-identical; `option noreturn_known off` disables it together
 with the symbol-table pass.
+The Go name list leaves `runtime.panicCheck1` returnable so callers retain
+the path from the conditional check to `runtime.gopanic`.
 
 **Discovered, ≥3 evidence** (`noreturn_disc`,
 `decompiler/crates/kuna-analysis/src/analyzers/noreturn_disc/mod.rs`, the

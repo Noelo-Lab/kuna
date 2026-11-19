@@ -1,5 +1,10 @@
 # Stage-model issue testcases
 
+`ghangr-go-paniccheck-return.xml` checks that a returning Go panic helper
+falls through to the terminal `runtime.gopanic` call. It also checks the
+helper's conditional throw and shows the caller's sentinel with the known
+no-return analysis disabled.
+
 `kuna-go-atomic-return.xml` checks exact AMD64 Go direct-return atomic additions,
 including old-value, flag, branch, memory-effect and width refusals. The same
 bytes retain C/Rust rendering and the non-Go source control.
