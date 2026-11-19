@@ -4672,12 +4672,26 @@ A functional `CALLOTHER` names the architecture's machine operation. When Rust
 output encounters a strict or reserved keyword such as x86 `in`, AVR `break`, or
 MIPS `yield`, `kuna_rustuserop.rs` supplies the raw-identifier prefix `r#`. This
 preserves the operation's identifier and arguments while preventing Rust from
-parsing it as a control-flow construct or rejecting it as a keyword. Ordinary
-names and other output languages keep their spelling. The keyword set includes
-edition-specific reserved words; weak keywords remain ordinary identifiers.
-Rust forbids raw spellings of `_`, `crate`, `self`, `Self`, and `super`, so those
-are excluded. This correction applies only to functional machine-operation
-calls, not to unrelated type, variable, namespace, or symbol naming.
+parsing it as a control-flow construct or rejecting it as a keyword. The
+keyword set includes edition-specific reserved words. Valid ASCII identifiers,
+including weak keywords, keep their spelling.
+
+Rust renders a non-ASCII or invalid name, including a name with punctuation or
+one of `_`, `crate`, `self`, `Self`, and `super`, as
+`__kuna_userop_<index>_<stem>`. Non-ASCII names use this indexed ASCII spelling
+because Rust normalizes identifiers to NFC: distinct user-operation labels
+with equivalent normalized spellings must still identify distinct operations.
+The existing selector supplies that identity without a normalization dependency.
+The operation index is hexadecimal. The stem maps characters outside ASCII
+letters and digits to underscores and keeps up to 64 characters. Missing and
+empty names use only the index. A selector that exceeds the table's index
+width keeps its full value in that fallback. Each generated name identifies
+its operation even when two source names produce the same stem. A table name
+starting with `__kuna_userop_` is also rewritten to keep generated names
+distinct. The existing ACLE spelling takes precedence for a resolved intrinsic.
+Arguments keep their original order. Callers may bind these opaque
+operations to external implementations. C, Go and the special non-call display
+modes retain their existing rendering.
 
 ### AArch64 ACLE intrinsics (`acleintrinsics`)
 

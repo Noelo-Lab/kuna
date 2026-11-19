@@ -2453,6 +2453,9 @@ mod w10_printc_cast_render {
     #[path = "call_argument_extensions.rs"]
     mod call_argument_extensions;
 
+    #[path = "opaque_operations.rs"]
+    mod opaque_operations;
+
     #[path = "stack_alloc_counts.rs"]
     mod stack_alloc_counts;
 
