@@ -3499,6 +3499,17 @@ Variadic tails use the blank identifier so they cannot capture a source name.
 This is a presentation of the recovered ABI: it does not infer missing Go
 multi-results, receivers, strings, slices or interfaces.
 
+Go's floating-point equality is false for unordered operands. In a
+short-circuit conjunction whose first clause is a positive IEEE float32 or
+float64 equality, the printer can omit a private second clause made solely
+of negated NaN tests of those operands. Each tested value must match an
+equality operand by SSA identity or identical constant bits. The fold admits
+constants, materialized floating-point locals, register inputs, and proven
+read-only float inputs. It requires a statement-free second clause and
+preserves the first comparison and the enclosing branches. Implied operand
+expressions, volatile values, ordered inequality, and guards of other
+operands retain their existing condition.
+
 `p9_emit/kuna_gopointerarith.rs` preserves the live pointer base of byte
 arithmetic emitted as Go. When a pointer result or conversion contains an
 integer addition with exactly one declared pointer operand, it emits
@@ -4599,6 +4610,15 @@ function with a potentially noncanonical machine Boolean representation.
 Additional loop probes check merged Boolean locals at assignments, returns and
 stores, with independent result formulas, ordered callback traces and adjacent
 store canaries at both optimization levels zero and two.
+
+### Go floating-point NaN tests
+
+The Go emitter renders a p-code NaN test on a proven `float64` as
+`math.IsNaN(x)`. For `float32` it emits `math.IsNaN(float64(x))` because
+widening preserves whether the operand is NaN. Both forms evaluate their
+operand once. The printer uses the operand's emitted type and requires its
+width to match the p-code input. Values outside these two widths or without
+a proven floating-point type retain the generic operation spelling.
 
 ### Narrow recovered scalar call results
 

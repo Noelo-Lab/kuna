@@ -2241,7 +2241,7 @@ mod tests {
         // and kuna-reentereddispatch / a re-entered dispatch keeps every step's store
         // and kuna-dispatch-values / dispatcher return values survive narrowing and copies
         // and kuna-stackalloc / a runtime stack reservation lowers to __builtin_alloca under stackalloc on
-        assert_eq!(count, 802, "corpus file count drifted");
+        assert_eq!(count, 803, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
