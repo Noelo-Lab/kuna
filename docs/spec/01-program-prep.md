@@ -10833,6 +10833,14 @@ which unconditionally cannot return. Without it, every caller grows a spurious
 fall-through edge into the cold path that structures into an invalid
 `while(true)`+`goto`.
 
+On Go AMD64 ELF, `pclntab/kuna_gomcall.rs` independently identifies the
+unique `runtime.mcall` name and entry address in pclntab and verifies that
+the entry lies within the Listing's executable ranges. The saved goroutine
+context can resume its caller. The propagation sweep skips that address
+because its scheduler body reaches terminal handlers without a reachable
+machine return. Existing terminal seeds, scheduler callback analysis, and
+explicit callee and call-site overrides still apply.
+
 An import stub is never a candidate (`import_stubs`, read from the same
 `resolve_imports` stream the Known pass and the `error` recognizer use, keeping
 only `ImportSymKind::Import` entries). A stub's body is the dynamic linker's

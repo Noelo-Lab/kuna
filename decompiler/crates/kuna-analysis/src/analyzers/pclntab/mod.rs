@@ -793,6 +793,7 @@ impl AnalysisPass for GoPclntabPass {
 
 mod kuna_goabi0;
 pub(crate) mod kuna_goabi0_leaf;
+pub(crate) mod kuna_gomcall;
 mod kuna_gomoduledata;
 pub mod kuna_gonoreturn;
 

@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4795,
-    4795
+    4800,
+    4800
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1248,6 +1248,11 @@
     "data:Go internal strings use data pointers",
     "data:Go keeps the pointer conversion to the formal type",
     "data:Go linked pointer method binds the receiver and preserves its field effects",
+    "data:Go mcall correction preserves the terminal goexit0 callback",
+    "data:Go mcall explicit call-site flow override cuts the continuation",
+    "data:Go mcall explicit no-return assertion cuts the continuation",
+    "data:Go mcall lookalike still propagates terminal flow to its caller",
+    "data:Go mcall retains the resumed caller continuation",
     "data:Go method call uses the typed receiver when a parameter shadows its type",
     "data:Go method display leaves an explicit per-call prototype in authority",
     "data:Go method display leaves the explicit function declaration in authority",
