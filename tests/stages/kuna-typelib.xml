@@ -1,0 +1,68 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    A stripped-of-debug-info x86-64 Linux program calls poll, getrlimit and
+    setrlimit. No built-in prototype table declares them, so the calls are
+    untyped and a `struct pollfd` on the stack is three unrelated locals, one of
+    them read without a write. P1 program prep, option typelib (default auto):
+    the prebuilt type library declares the imports nothing else did, with the
+    record layouts the platform's compiler measured.
+
+    Pass 1 is `typelib off`, the old output (#1, #2). Pass 2 is the default: the
+    pollfd is one object with its members (#3, #4, #5) and the rlimit copy is a
+    member assignment (#6). Pass 3 reads a library file instead of the built-in
+    one, and the members take that file's names (#7). `puts` is declared by the
+    built-in table in every pass and is never the library's (#8).
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/typelib_x86_64</com>
+  <com>option typelib off</com>
+  <com>read symbols</com>
+  <com>load function wait_readable</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function raise_files</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function main</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/typelib_x86_64</com>
+  <com>read symbols</com>
+  <com>load function wait_readable</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function raise_files</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function main</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/typelib_x86_64</com>
+  <com>option typelib decompiler/crates/kuna-analysis/tests/fixtures/typelib_custom.ktl</com>
+  <com>read symbols</com>
+  <com>load function wait_readable</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function main</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="kuna-typelib #1: off, the poll result needs a cast and the pollfd is a bare int" min="1" max="1">\(int4\)poll\(&amp;v1,1,a1\) &lt;= 0</stringmatch>
+<stringmatch name="kuna-typelib #2: off, revents is a local nothing assigns" min="1" max="1">return v3 &amp; 1;</stringmatch>
+<stringmatch name="kuna-typelib #3: auto, the three locals are one pollfd" min="2" max="2">pollfd v1;</stringmatch>
+<stringmatch name="kuna-typelib #4: auto, poll takes it and returns int" min="2" max="2">if \(poll\(&amp;v1,1,a1\) &lt;= 0\)</stringmatch>
+<stringmatch name="kuna-typelib #5: auto, the result is the member poll wrote" min="1" max="1">return v1\.revents &amp; 1;</stringmatch>
+<stringmatch name="kuna-typelib #6: auto, the rlimit copy is a member assignment" min="1" max="1">\.rlim_cur = v[0-9]+\.rlim_max;</stringmatch>
+<stringmatch name="kuna-typelib #7: a library file names the members itself" min="1" max="1">return v1\.got &amp; 1;</stringmatch>
+<stringmatch name="kuna-typelib #8: the table's puts is the same in every pass" min="3" max="3">puts\(\*argv\);</stringmatch>
+</decompilertest>

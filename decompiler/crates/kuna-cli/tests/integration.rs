@@ -882,3 +882,6 @@ mod nullable_relocations;
 
 #[path = "types_header.rs"]
 mod types_header;
+
+#[path = "typelib.rs"]
+mod typelib;

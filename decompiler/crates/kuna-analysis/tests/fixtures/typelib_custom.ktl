@@ -1,0 +1,8 @@
+kuna-typelib 1
+target linux x86_64
+source kuna-test 1
+S pollfd * 8 4
+ 0 descriptor	int
+ 4 wanted	short
+ 6 got	short
+F poll *	int poll(struct pollfd *, unsigned long, int)
