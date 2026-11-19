@@ -7002,7 +7002,28 @@ way; an image with no sized function symbol (a fully stripped executable, Mach-O
 is unchanged. The rule trusts the size: a symbol-less routine that hand-written
 assembly places inside another function's `.size`, and that only a data pointer
 reaches, loses its pattern start. One with an FDE or a direct call is still found
-by those passes.
+by those passes. On a
+headerless image (`--raw-image`), where the object-file passes cannot run, the
+same option sweeps the image's executable bytes with the pattern set of the
+target's language id (`patterns/mod.rs (for_language)`) and seeds `rawdiscover`'s
+call-target walk with the starts it finds, so a function reached only through a
+pointer table is in the inventory too. A raw image needs no `--entry` at all
+then: the pattern starts are the seeds, and the driver turns the option on for
+a headerless image the way it does for any non-x86-64 one. The raw sweep also
+takes the weak tier below.
+
+The pattern set is chosen by format as well as architecture (`for_object`): an
+ELF or Mach-O x86 image is SysV-compiled and takes the gcc patterns alone, not
+the gcc+windows union, and a big-endian ARM image takes `ARM_BE`. After a start
+is accepted, the scan resumes past the prologue that matched, so no second
+start is reported inside it. A pair whose action is an
+unconditional `<possiblefuncstart/>` is a weak hit (`scan_hits`). It is used
+only by a set that has nothing stronger (AArch64, PowerPC): where `<funcstart/>`
+pairs exist, they carry the confident shapes already. On an ELF a weak hit is
+taken only outside every FDE body, because the unwind table already describes
+the functions it covers. A Mach-O or PE
+image's own function tables list everything such a hint could add, so the weak
+tier is not used there.
 
 **LSDA landing pads** (`eh_frame_full`, default-off): the deeper
 `GccExceptionAnalyzer` markup — follow each FDE's CIE `L` augmentation to its

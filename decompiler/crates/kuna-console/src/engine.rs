@@ -2878,9 +2878,25 @@ impl ConsoleProgram {
             .filter(|(_, _, flags)| flags & section_flags::CODE != 0)
             .map(|(addr, size, _)| (addr, addr.saturating_add(size)))
             .collect();
-        let seeds: Vec<u64> =
+        let mut seeds: Vec<u64> =
             self.pending_synthetic_entries.iter().map(|addr| addr.get_offset()).collect();
-        let known: BTreeSet<u64> = seeds.iter().copied().collect();
+        // (kuna `funcstart_patterns`) The prologue patterns of the target's
+        // language, swept over the same executable bytes, seed the walk too.
+        if self.arch().analysis_funcstart_patterns {
+            if let Some(set) = kuna_analysis::entry::patterns::for_language(self.arch().get_description()) {
+                for &(lo, hi) in &exec {
+                    let Ok(size) = usize::try_from(hi - lo) else { continue };
+                    if let Some(bytes) = self.read_bytes(lo, size) {
+                        let weak_ok = set.only_weak();
+                        seeds.extend(set.scan_hits(lo, &bytes).into_iter().filter(|h| weak_ok || !h.weak).map(|h| h.vma));
+                    }
+                }
+                seeds.sort_unstable();
+                seeds.dedup();
+            }
+        }
+        let mut known: BTreeSet<u64> =
+            self.pending_synthetic_entries.iter().map(|addr| addr.get_offset()).collect();
         let found = {
             let arch = self.arch();
             let mz = self.mz_evidence.as_ref();
@@ -2893,11 +2909,10 @@ impl ConsoleProgram {
                 mz,
             )
         };
-        for &vma in &found.entries {
-            if known.contains(&vma) {
-                continue;
+        for vma in found.entries.iter().copied().chain(seeds) {
+            if known.insert(vma) {
+                self.pending_synthetic_entries.push(Address::new(Rc::clone(&code_space), vma));
             }
-            self.pending_synthetic_entries.push(Address::new(Rc::clone(&code_space), vma));
         }
         self.flow_ends = found.flow_ends;
         self.arch_mut().dos_exit_sites = found.dos_exits.sites;
@@ -2935,7 +2950,7 @@ impl ConsoleProgram {
         if apply_rust_names && (self.rust_profile_image_modified || self.analysis_image.is_none()) {
             return Err(KunaError::lowlevel("Rust signature application requires an unmodified object image before its analysis commit"));
         }
-        if !self.pending_synthetic_entries.is_empty() {
+        if !self.pending_synthetic_entries.is_empty() || self.container == ProgramContainer::Raw {
             // (kuna `rawdiscover`) A headerless image reaches this point holding
             // only the `--entry` addresses the caller typed, because the
             // object-file discovery tier below declines without an
@@ -4321,11 +4336,6 @@ pub(crate) fn bootstrap_raw_image(
     if target.trim().is_empty() {
         return Err(KunaError::lowlevel(
             "raw image input requires --target <SLEIGH-language-id>",
-        ));
-    }
-    if entries.is_empty() {
-        return Err(KunaError::lowlevel(
-            "raw image input requires at least one --entry or --addr",
         ));
     }
 
