@@ -362,10 +362,10 @@ impl Facts {
         let mut output_count = 0;
         let mut int_error = false;
         let (mut integers, mut floats) = (0, 0);
-        let mut string_input = false;
+        let mut string_inputs = 0;
         for (parameter, location, result) in parameters {
             if let Location::RegisterPair(registers) = location {
-                if result || string_input || !unique || output_count != 0
+                if result || string_inputs == 2 || !unique || output_count != 0
                     || parameter.name.is_empty() || parameter.name == "_"
                 {
                     return None;
@@ -382,7 +382,7 @@ impl Facts {
                     expected.push(register);
                 }
                 integers += 2;
-                string_input = true;
+                string_inputs += 1;
                 continue;
             }
             let location = match location {
@@ -423,7 +423,7 @@ impl Facts {
                 expected.push(register);
             }
         }
-        if string_input {
+        if string_inputs != 0 {
             let mut unique_names = BTreeSet::new();
             if output_count > 1 || names.iter().any(|name| !unique_names.insert(name)) {
                 return None;
