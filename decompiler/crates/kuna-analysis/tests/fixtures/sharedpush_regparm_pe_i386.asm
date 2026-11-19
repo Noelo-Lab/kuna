@@ -18,6 +18,12 @@
 ;                      jmp->ebp) in EAX, EDX, ECX, or jmp->unwind(jmp), a
 ;                      __stdcall callee taking one argument (`push eax`
 ;                      re-reserves the slot it pops). finish(jmp, retval).
+;   this_free (0x4010e0)     __thiscall: this in ECX, p on the stack, `ret 4`.
+;   declared_this(fp, p) __cdecl (0x4010f0). Pushes p above a branch, then
+;                      fp(p) through a register or this_free(p) with ECX set;
+;                      this_free's declared list also places `this` on the
+;                      stack. Both take p, and nothing else: the next slot up
+;                      is the saved ESI.
 ;
 ; Build: nasm -f bin -I . -o sharedpush_regparm_pe_i386.exe sharedpush_regparm_pe_i386.asm
 
@@ -120,6 +126,30 @@ longjmp_like:                           ; 0x401060
     ret
 
     align 16, db 0xcc
+this_free:                              ; 0x4010e0
+    mov eax, [esp+4]
+    mov [eax], ecx
+    ret 4
+
+    align 16, db 0xcc
+declared_this:                          ; 0x4010f0
+    push esi
+    mov esi, [esp+8]
+    push dword [esp+0xc]
+    test esi, esi
+    jz .d
+    call esi
+    jmp .j
+.d:
+    mov ecx, esi
+    call this_free
+    push eax
+.j:
+    pop ecx
+    pop esi
+    ret
+
+    align 16, db 0xcc
 entry:
     push 0
     push buf
@@ -127,7 +157,10 @@ entry:
     push buf
     push stack_free
     call declared_ok
-    add esp, 16
+    push buf
+    push stack_free
+    call declared_this
+    add esp, 24
     ret
 
 section .rdata

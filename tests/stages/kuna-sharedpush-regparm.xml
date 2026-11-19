@@ -18,7 +18,10 @@
     0x401060 is the longjmp shape: the call through jmp->unwind takes jmp alone
     (1-2). 0x401040 pushes p above a branch for stack_free, whose code reads
     its stack argument, and for a call through a register: both still take p
-    (3-4).
+    (3-4). 0x4010f0 does the same for this_free, a __thiscall member that reads
+    ECX and takes p on the stack, declared (as from a mangled name) with `this`
+    as a stack parameter: one register read leaves one stack argument, so the
+    call through the register still takes p (4-5).
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -31,12 +34,17 @@ c3
   <com>read symbols</com>
   <com>map function r0x401000 local_unwind</com>
   <com>map function r0x401030 stack_free</com>
+  <com>map function r0x4010e0 this_free</com>
   <com>parse line extern void local_unwind(int *frame,int level,void *ebp);</com>
   <com>parse line extern void stack_free(int *p);</com>
+  <com>parse line extern void this_free(void *this,int *p);</com>
   <com>load addr 0x401060</com>
   <com>decompile</com>
   <com>print C</com>
   <com>load addr 0x401040</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x4010f0</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
@@ -44,5 +52,6 @@ c3
 <stringmatch name="SHAREDPUSH-REGPARM #1: the call through the unwind slot takes the buffer alone" min="1" max="1">\(\*\(\(code \*\*\)v1\)\[9\]\)\(v1\);</stringmatch>
 <stringmatch name="SHAREDPUSH-REGPARM #2: it is never handed the padding slot" min="0" max="0">\)\(v1,[^)]*\);</stringmatch>
 <stringmatch name="SHAREDPUSH-REGPARM #3: stack_free keeps its push" min="1" max="1">stack_free\(a1\);</stringmatch>
-<stringmatch name="SHAREDPUSH-REGPARM #4: the call through the register takes it too" min="1" max="1">\(\*a0\)\(a1\);</stringmatch>
+<stringmatch name="SHAREDPUSH-REGPARM #4: the call through the register takes it too, beside stack_free and beside this_free" min="2" max="2">\(\*a0\)\(a1\);</stringmatch>
+<stringmatch name="SHAREDPUSH-REGPARM #5: this_free keeps its push" min="1" max="1">this_free\(a1</stringmatch>
 </decompilertest>

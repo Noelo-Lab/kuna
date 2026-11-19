@@ -467,10 +467,10 @@ fn is_import(arch: &Architecture, entry: &Address) -> bool {
     flags & crate::varnode::varnode_flags::externref != 0
 }
 
-/// Does the callee at `entry` read EAX, ECX or EDX before writing it: take an
-/// argument in a register?
-pub fn reads_argument_register(arch: &Architecture, entry: &Address) -> bool {
-    callee_register_inputs(arch, entry).is_some_and(|inputs| inputs & ARGUMENTS != 0)
+/// How many of EAX, ECX and EDX the callee at `entry` reads before writing
+/// them: the arguments it takes in registers.
+pub fn argument_registers(arch: &Architecture, entry: &Address) -> u8 {
+    callee_register_inputs(arch, entry).map_or(0, |inputs| (inputs & ARGUMENTS).count_ones() as u8)
 }
 
 /// The tracked registers the callee at `entry` reads before writing, as bits

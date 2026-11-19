@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4502,
-    4502
+    4503,
+    4503
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2161,7 +2161,8 @@
     "data:SHAREDPUSH-REGPARM #1: the call through the unwind slot takes the buffer alone",
     "data:SHAREDPUSH-REGPARM #2: it is never handed the padding slot",
     "data:SHAREDPUSH-REGPARM #3: stack_free keeps its push",
-    "data:SHAREDPUSH-REGPARM #4: the call through the register takes it too",
+    "data:SHAREDPUSH-REGPARM #4: the call through the register takes it too, beside stack_free and beside this_free",
+    "data:SHAREDPUSH-REGPARM #5: this_free keeps its push",
     "data:SHORT ASCII STRING #1: off, the four bytes remain a raw data word",
     "data:SHORT ASCII STRING #2: default, the four-byte literal is one string copy",
     "data:SHORT ASCII STRING #3: both passes preserve the surrounding string transform",
