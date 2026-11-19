@@ -1051,6 +1051,17 @@ and line number. Consistency checks and section finalization share this lookup,
 so included-file diagnostics keep the constructor's location after parsing
 returns to the parent file. No separate constructor-location map is maintained.
 
+Constructor patterns are built one operand at a time, in operand order, and an
+operand whose disassembly action is a bare operand (`[ idx = fld; ]`) takes
+that operand's pattern. When the named operand is the operand itself
+(`[ idx = idx; ]`) or comes later in the order, its pattern does not exist yet,
+so the compiler rejects the constructor with
+`idx: operand is defined as itself or an operand that follows it`, as Ghidra's
+compiler does with `operand idx has an issue`. Listing the source operand first,
+or writing an expression such as `fld + 0`, compiles
+(`decompiler/crates/kuna-sleigh/src/slghsymbol.rs (build_constructor_pattern)`,
+`decompiler/crates/kuna-sleigh/src/slghpatexpress.rs (gen_min_pattern)`).
+
 The consistency checker rejects a temporary that is read exactly once and
 written exactly once in the same semantic section when the read precedes or
 occurs in the write operation. This fatal error propagates through constructor
@@ -1643,7 +1654,13 @@ jump-table recovery probes it too, before and after each table's attempt and
 after its basic and default-path models (`decompiler/crates/kuna-decomp/src/p2_lift/flow.rs
 (FlowInfo::recover_jump_tables)`, `decompiler/crates/kuna-decomp/src/p2_lift/jumptable.rs
 (JumpTable::recover_model)`); a table reached past the deadline is not attempted
-and its indirect jump is truncated as an unrecovered one. On expiry the
+and its indirect jump is truncated as an unrecovered one. Inside a model, every
+loop over the values of the switch variable (building the address table,
+checking its rows against the guards, labelling them) advances through
+`decompiler/crates/kuna-decomp/src/p2_lift/jumptable.rs (walk_within_budget)`,
+which fails the walk once a probe sees the budget spent, so a table of any
+length the `jumptablemax` ceiling admits ends with its drive instead of after
+its last row. On expiry the
 containers stop scheduling work and unwind; the driver converts that into the
 function's `error` record (a pass panic after the deadline passed reports the
 same budget error) and the batch continues. The record names where the budget
@@ -1654,7 +1671,8 @@ running when the deadline passed — an action (a rule pool adds the rule that
 applied most since the function's reset, `decompiler/crates/kuna-decomp/src/infra/action.rs
 (ActionPool::budget_site)`), heritage, variable merging, region identification,
 region structuring, `action activeparam`'s trial scoring, a
-store-reachability walk or a jump-table step. A walk that recurses too often
+store-reachability walk or a jump-table step (`jump-table value walk` for
+the loop over a table's values). A walk that recurses too often
 to read the clock at each step probes through
 `decompile_drive.rs (budget_probe)`, which reads it every 256th call and,
 once it has seen the budget spent, answers at once for the rest of the drive;
@@ -2598,6 +2616,17 @@ anchor; an unresolved or ambiguous anchor still rejects the directive.
 Type seeding uses the definition usepoint, and naming retains the selected SymbolId;
 a storage-only re-query must not attach another lifetime's name or type.
 
+Console `rename` and whole-variable `retype` edits carried by `PriorNames`
+survive switching to another function and returning within the loaded program.
+`IfaceDecompData`
+records the replay after an explicit edit, keyed by the resolved entry address
+and its address space. An untouched function gets its own fresh analysis. The
+replay uses the existing definition identities and numbering context to find
+the edited local. The active function continues to carry its current edits
+directly across rebuilds. Later edits replace the saved replay for that entry,
+and explicitly loading the already-selected entry clears its replay and starts
+a fresh local analysis. Clearing the architecture clears the session records.
+
 (kuna) **A `prototype` directive binds to `<func>`, whatever name its declaration
 carries.** The operand says which function the signature describes; the
 declaration supplies the return type, the parameter types and the parameter
@@ -3195,7 +3224,14 @@ the top of the space by halving the remaining gap, so a block renumbered to end
 near the maximum would run out of room again within a few dozen appends, and
 building a block of tens of thousands of operations would renumber it thousands
 of times. With the upper half free, a renumber is followed by roughly 280
-appends before the next one.
+appends before the next one. That alone still renumbers a growing block once
+per 280 operations, which is quadratic work in a long straight-line block: a
+30,000-instruction block took minutes to build. So an append steps by the
+smaller of the fixed gap (`0x1000000`) and the order space divided by the
+block's operation count. Blocks of up to 255 operations step exactly as
+before; a longer block's gap shrinks as it grows, a renumber then leaves room
+for about as many appends as the block already holds, and the renumbers of a
+block grow with the logarithm of its length.
 
 Deleting a varnode through `Funcdata::delete_varnode` first checks the bank's
 deletion precondition: the node must have neither a defining operation nor any

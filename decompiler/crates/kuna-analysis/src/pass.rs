@@ -266,11 +266,15 @@ pub struct SwiftTypeFacts {
 pub struct ModelFact {
     pub func_addr: u64,
     pub model: &'static str,
+    /// Optional stack bound that requires a decoded leaf body before binding.
+    pub leaf_stack_inputs: Option<LeafStackInputs>,
     /// The convention's implicit context register may or may not be a
     /// parameter (a Swift struct member's `self`): a call passes it only
     /// when the caller set it for that call.
     pub maybe_self: bool,
 }
+
+pub use crate::pclntab::kuna_goabi0_leaf::LeafStackInputs;
 
 /// The input of the function at `func_addr` in register `reg` is `name`, of
 /// `type_` when that is known, when the function's own analysis finds it
