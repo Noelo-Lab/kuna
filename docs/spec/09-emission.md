@@ -4961,8 +4961,26 @@ rendered declaration type; implied field pointers use their read-facing type.
 The emitter restores its expression modifiers after rendering the value.
 Cast suppression retains its existing output. Enums, floats, booleans,
 pointers used as values, mismatched widths and unsupported integer widths
-retain their prior paths. This conversion does not change memory-operation
-widths or repair raw-pointer indexing.
+retain their prior paths in this conversion.
+
+`kuna_ruststorewidth.rs` uses the STORE value varnode's byte count to determine
+the physical write width. When a primitive value or the destination pointee
+disagrees with that width, Rust output converts the value to an unsigned
+integer of the physical width and calls `core::ptr::write_unaligned` at the same
+address. The supported widths are 1, 2, 4, 8 and 16 bytes, including unknown
+16-byte integers as `u128`. It checks through implied, same-size pointer
+conversions because a typed pointer cast can hide a narrower destination and
+require alignment the physical store did not require. A proven exact record
+field, array place or indexed array element supplies its raw address without
+borrowing it. The write
+evaluates the converted value before the address, once each, just like a Rust
+assignment.
+
+Matching scalar widths keep the existing output. An unproven place, aggregate,
+float or enum mismatch stays visible with a diagnostic and no scalar cast.
+The width repair applies only to ordinary, byte-addressed stores through
+32- or 64-bit addresses, excluding known volatile storage, and follows the
+existing Rust cast suppression setting. C and Go keep their existing paths.
 
 
 ### Rust raw-pointer indices
