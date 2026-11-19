@@ -34,7 +34,7 @@
   <funcptr align="4"/>     <!-- Function pointers are word aligned and leastsig bit may encode otherstuff -->
   
     <default_proto>
-		<prototype name="abi-internal" extrapop="8" stackshift="8">
+		<prototype name="abi-internal" extrapop="0" stackshift="8">
 			<input>
 				<pentry minsize="4" maxsize="8" metatype="float">
 					<register name="q0"/>
