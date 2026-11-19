@@ -1106,6 +1106,17 @@ does nothing. A function is typed by its own declaration only: declare `fetch`
 in a header too (`int fetch(const char *url);`) to name its parameter and state
 its return type.
 
+**The built-in type library.** An x86-64 Linux ELF linked against glibc or musl
+needs no header for libc itself: kuna carries the declarations of the C library
+(1,447 functions, 347 records, 190 typedefs, generated from the musl 1.2.6
+headers) and reads the ones the image imports. `--option typelib off` turns that
+off, and `--option typelib <file>` reads a library file of your own instead (the
+format is described in `docs/spec/01-program-prep.md`; `scripts/typelib/gen_musl.py`
+writes one). A function the library declared is still overridden by a header's
+or an `--assert`'s declaration of it. A record the library already defined is
+not redefined by a header: that definition is rejected with the usual warning,
+so pass `--option typelib off` when your header's layout must win.
+
 The text must be preprocessed C. kuna runs no preprocessor on its own: it skips
 `#` lines, so a header that needs its macros or its `#include`s expanded leaves
 declarations that do not parse. **`--types-cpp <cc>`** runs your preprocessor
