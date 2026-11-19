@@ -5967,6 +5967,48 @@ every other binary's pass list is byte-identical to before the pass existed):
   can still make the pass slow, because every module of a crafted file can match
   at every entry, so `KUNA_FLIRT_SIGS` should name signature files from a trusted
   source.
+  The opt-in report API in
+  `decompiler/crates/kuna-analysis/src/analyzers/flirt/kuna_rustprofiles.rs`
+  compares an explicit set of Rust version/optimization candidates on the same
+  caller-supplied Listing and entry set. It retains each external signature
+  source's identity, inline/no-inline bank, header library name, and accepted
+  `core::`, `std::`, or `alloc::` match addresses and full names. The shared
+  matcher can report an already-named entry when its exact signature name agrees;
+  this does not emit a rename or alter matching rounds. Name collisions,
+  reference-site requirements, CRC checks and ambiguous module names still
+  refuse. Ordinary `FlirtPass` renames retain their existing behavior and do not
+  collect report records.
+  Each candidate's score is the greater of its two bank counts, not their sum.
+  An absent bank makes the comparison incomplete; duplicate banks are errors.
+  An empty candidate set, all-zero scores and tied best scores report distinct
+  unresolved outcomes. A unique positive maximum identifies only the best
+  measured candidate, never an authenticated compiler version or permission to
+  enable an ABI/layout recovery. The API accepts linked little-endian x86-64
+  ELF images and checks external signatures' x86 processor, ELF applicability
+  and non-startup status. The caller supplies the signature provenance and
+  candidate set; no signature corpus is bundled or downloaded, and no candidate
+  is inferred from a fixture's name or a nightly version number.
+  `kuna functions --summary --json --rust-signature-manifest PATH` requests this
+  report for one loaded image. The CLI validates the explicit corpus/candidate
+  manifest and hashes each signature's bytes before constructing the request.
+  The request is distinct from `KUNA_FLIRT_SIGS` and does not turn on `flirt`,
+  `listing`, or another analysis consumer. The console consumes it once during
+  the deferred image-analysis commit; the observer in
+  `decompiler/crates/kuna-analysis/src/passes.rs` receives the final accepted
+  Listing after recovery and never applies the report's matches as names.
+  If a Listing is already required, that same object supplies the report. If
+  only reporting requires it, consumer gates retain their original values.
+  Unsupported targets decline before a reporting-only decode. A repeated
+  analysis commit retains the completed report without rescoring.
+  The report considers function entries in each text section's final 128 KiB;
+  summary presentation filters do not change its candidate set or evidence.
+  `compiler_provenance` contains independently observed Rust `.comment` records
+  and complete `/rustc/<40-hex-commit>/library/` source-path hashes, including
+  conflicting records. No source path is translated into a nominal version.
+  `rust_signature_profile` carries compatibility scores and explicit unresolved
+  statuses, with the verified external manifest/source identities. These fields
+  are absent unless requested; stable compiler and formatter-layout facts remain
+  separate. Malformed manifests and hash mismatches fail before image analysis.
 - **Format strings** (`formatstring off|static|full`, default `static`;
   `decompiler/crates/kuna-analysis/src/analyzers/formatstring/mod.rs`): what a
   `printf`/`scanf`-family call does with its variadic arguments is stated by its
