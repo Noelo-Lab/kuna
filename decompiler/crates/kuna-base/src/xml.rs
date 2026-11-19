@@ -2268,7 +2268,8 @@ mod tests {
         // and kuna-stubbinds / a stripped Mach-O stub is named from the chained bind on its slot (option stubbinds)
         // and kuna-swiftstr / a Swift string literal's two constant words print as the literal
         // and kuna-swiftstrcsel / a Swift literal's two words are paired along one branch arm
-        assert_eq!(count, 850, "corpus file count drifted");
+        // and kuna-swiftruntime / the Swift runtime's entry points carry their header signatures
+        assert_eq!(count, 851, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
