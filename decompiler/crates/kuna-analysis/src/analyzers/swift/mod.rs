@@ -33,6 +33,7 @@
 
 pub mod descriptors;
 pub mod kuna_swiftcall;
+pub mod kuna_swiftconcurrency;
 pub mod kuna_swiftnames;
 pub mod kuna_swiftruntime;
 pub mod kuna_swifttypes;

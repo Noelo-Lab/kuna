@@ -291,6 +291,8 @@ pub struct SwiftTypeFacts {
     /// The `swiftself`, `swifterror` and `swiftasync` registers, once a
     /// convention is bound.
     pub regs: Option<(&'static str, &'static str, &'static str)>,
+    /// (kuna `swiftcall`) The runtime's `swiftasync` entry points, by name.
+    pub runtime_context: Vec<crate::analyzers::swift::kuna_swiftruntime::ContextProto>,
 }
 
 /// The function at `func_addr` follows the cspec prototype model `model`,
@@ -886,6 +888,7 @@ impl AnalysisOutput {
         self.swift_types.input_hints.extend(other.swift_types.input_hints);
         self.swift_types.declared.extend(other.swift_types.declared);
         self.swift_types.no_self.extend(other.swift_types.no_self);
+        self.swift_types.runtime_context.extend(other.swift_types.runtime_context);
         self.swift_types.regs = self.swift_types.regs.or(other.swift_types.regs);
         self.entries.extend(other.entries);
         self.fde_bodies.extend(other.fde_bodies);
