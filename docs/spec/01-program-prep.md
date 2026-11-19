@@ -5833,6 +5833,106 @@ every other binary's pass list is byte-identical to before the pass existed):
     `tests/stages/kuna-dyldcacheobjc.xml` runs the two synthetic caches of
     `dyld_cache_objc.py`, one with the header and one with only the
     `objc_opt_t`.
+  - **By-value aggregates and global blocks**
+    (`decompiler/crates/kuna-analysis/src/analyzers/objc/encoding.rs (struct_leaves)`,
+    `decompiler/crates/kuna-analysis/src/analyzers/objc/kuna_objcblocks.rs (emit)`,
+    kuna, part of `objc`, no option): a struct by value in an encoding
+    (`{CGRect={CGPoint=dd}{CGSize=dd}}`) used to decode to a void placeholder,
+    so a `CGRect frame` ivar read `*(double *)&self->frame[0x10]`, an `int
+    counts[4]` ivar (`[4i]`) was indexed by hand, and an IMP taking a `CGRect`
+    lost its prototype altogether. The decoder now builds the struct the
+    encoding spells through the same `struct_type` the stub returns use, with
+    the member names an ivar encoding quotes (`"origin"{CGPoint="x"d"y"d}`,
+    nested structs flattened to `x, y, width, height`) and the CoreGraphics
+    table for a method encoding that quotes none, and `[n T]` as an array; an
+    unnamed struct (`{?=ii}`) or a union stays opaque. The IMP then reads
+    `-[Shape setFrame:](Shape *self, SEL _cmd, CGRect arg1)` with `arg1` placed
+    by the model (`d0..d3`). A global block literal — `isa =
+    _NSConcreteGlobalBlock, flags, reserved, invoke, descriptor` in `__const`,
+    found by the isa slot's bind name — is typed `Block_layout`
+    (`block_literal_<addr>`), and its invoke is typed from the descriptor's signature when the
+    descriptor carries one, with the block itself first
+    (`long __pick_block_invoke(Block_layout *block, long arg1)`).
+    A stack block is built by its creator at run time; `stack_blocks` finds
+    the build in each arm64 function from the creator's own stores: the isa's GOT slot load (`adrp; ldr`, or the linker's `ldr
+    <literal>`) stored to `sp`, then the `adr` / `adrp; add` addresses stored
+    16 and 24 bytes after it (`str`/`stp`), state cleared at every `ret`. The
+    invoke is named after its creator (the nearest IMP label or symbol at or
+    before the store; the naming is described below), typed from the
+    descriptor's signature, and its first argument
+    is `Block_layout_<invoke> *` — `Block_layout` then one field per captured
+    value up to the descriptor's `size` — so `return block->capture_0 * arg1;`.
+    Each capture's type comes from the descriptor's copy helper when the block
+    has one (`BLOCK_HAS_COPY_DISPOSE`: the helper's `_Block_object_assign`
+    flags say 3 object, 7 block, 8 byref, 16 weak, and a capture it
+    `objc_retain`s itself is an object) and otherwise from the store that
+    filled it (`str w` an `int`, `str d` a `double`, `str s` a `float`, `str q`
+    16 bytes, a frame or code address a `void *`, else a `long`). A `__block`
+    variable's cell — built on the same frame as `isa = 0`, `forwarding =
+    &cell`, `flags`/`size` (one eight-byte constant the compiler pools, or two
+    words) and the value — becomes `Block_byref_<size>_<width>` (`isa`,
+    `forwarding` of its own type, `flags`, `size`, the copy/dispose helpers
+    when `flags` says so, `value` as wide as the initializing store), and the
+    capture that holds its address a pointer to it, so the invoke reads
+    `block->capture_1->forwarding->value`. The creator's frame is typed too
+    (`LocalFact`s the decompile seeds like DWARF locals): the literal is
+    `block` (`block_2`, …) and each cell `cell_<k>`, so the build reads
+    `block.block.invoke = …; block.capture_1 = &cell_1; cell_1.forwarding = block.capture_1;`.
+    x86-64 creators and a
+    capture's signedness are not modelled. The stage tests
+    `tests/stages/kuna-objcstructs.xml` and `tests/stages/kuna-objcblocks.xml`
+    run `macho_objc_structs_arm64` and `macho_objc_blocks_arm64`.
+
+    The scan starts over at every function start
+    the image declares (`LC_FUNCTION_STARTS`, the exports, the entry) as well
+    as at `ret`, `retaa` and `retab`: a function that ends in a tail call
+    otherwise handed its frame depth and its unfinished literals to the next
+    one, whose stores then overwrote the earlier literal's invoke slot, and
+    an arm64e function never ended at all. A literal keeps the first code
+    address stored at +16 and the first data address at +24, and a capture
+    the first store to its slot once the header is there, so a frame reused
+    after the call keeps the literal it held. A `bl`/`blr`/`blraa` clears the
+    caller-saved registers (`x0`-`x18`, `d0`-`d7`, `d16`-`d31`), and `ldr d,
+    [xn, #imm]` off an `adrp` page reads its pool word like the literal form.
+    The creator of a literal in a function with no label is that function's
+    start; a pointer-authenticated isa (`pacda`) and invoke (`pacia`) keep the
+    value they sign.
+
+  - **Block naming and typing**
+    (`decompiler/crates/kuna-analysis/src/analyzers/objc/kuna_objcblocks.rs (stack_blocks)`,
+    kuna, part of `objc`, no option): the invoke is named the way Clang mangles it
+    (`MangleContext::mangleBlock`): `__<creator>_block_invoke`, then `_2`,
+    `_3` for the creator's later blocks in address order, an Objective-C
+    method spelled with its byte length first (`__15-[Chain build:]_block_invoke`),
+    a block built inside an invoke counted on under the outermost function
+    (`__sum_block_invoke_2`, the creator's own `__sum` prefix), a creator with
+    no name `sub_<addr>`, and a name the image already uses skipped. An
+    invoke the symbol table names keeps that name and is only typed. A global
+    block's invoke is named after the first function that materializes the
+    literal's address (`adrp; add` or `adr`), in the same numbering as that
+    function's stack blocks; one nothing references stays `block_invoke_<addr>`.
+    With `BLOCK_HAS_COPY_DISPOSE` the descriptor's helpers are named
+    `<invoke>_copy_helper` and `<invoke>_dispose_helper`. Each descriptor a
+    literal stores is typed data `block_descriptor_<addr>`: `Block_descriptor`
+    (`reserved`, `size`, `copy`, `dispose`, `signature`) or, without helpers,
+    `Block_descriptor_basic` (`reserved`, `size`, `signature`), so the store
+    reads `block.block.descriptor = &block_descriptor_100004028`. The
+    `_NSConcreteStackBlock` GOT slot is typed data `NSConcreteStackBlock_ptr`.
+    At -O2 a creator that builds several blocks loads the shared flags word
+    once into a callee-saved `d` register from a read-only `__TEXT` pool and
+    stores it into each literal; that word (when its refcount half is zero)
+    is reported constant like the reference slots above
+    (`AnalysisOutput::const_ranges`), so it folds and the split store reads `block_2.block.flags =
+    0xc0000000; block_2.block.reserved = 0;` rather than a load of the pool
+    (on a large app the split otherwise wrote the pieces back to the pool).
+    `Block_layout.flags` is `unsigned int`. The `@?` type encoding (with an
+    extended encoding's spelled signature `@?<v@?q>` read as part of it)
+    decodes to `Block_layout *` instead of `void *`, so a method's block
+    parameter is a block and calling it reads `(*arg2->invoke)(arg2,arg1)`.
+    `tests/stages/kuna-objcblocks2.xml` runs `macho_objc_blocks2_arm64` with
+    `objc` off and on. A literal stored in a join block
+    reached by a branch is not followed (13 of 3,005 sites in an 84 MB app).
+
   Decoding every method's encoding asks the type factory for `objc_object *`
   once per argument, and the factory finds a type by name with a linear scan of
   every type it holds; with thousands of class structs interned that scan is no

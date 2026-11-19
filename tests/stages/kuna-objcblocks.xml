@@ -1,0 +1,76 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<!--
+    Stack blocks: the invoke function named after its creator and typed, the
+    captures typed, a `__block` cell typed, the creator's frame typed.
+
+    Issue: a block built on a method's frame (`isa = _NSConcreteStackBlock`, the
+    invoke and descriptor addresses stored after it) left its invoke function a
+    `sub_` with an untyped first argument, so a captured variable read as an
+    offset off an unknown pointer, and the creator read as a run of stores to
+    numbered locals.
+
+    Fix: `analyzers/objc/kuna_objcblocks.rs (stack_blocks)` scans each arm64
+    function with a register state (`adrp`/`adr`/`add`/`sub`/`mov`/`movz`/`movk`,
+    `ldr` immediate and literal, `str`/`stur`/`stp` of every width to `sp` or a
+    frame address): the isa's GOT load stored to the frame, the invoke and
+    descriptor 16 and 24 bytes after it, every capture after them, and a
+    `__block` cell (`isa = 0, forwarding = &cell, flags|size, value`). The
+    invoke is named `__<creator>_block_invoke`, typed from the descriptor's
+    signature, with `Block_layout_<invoke>` carrying one typed field per
+    capture - the copy helper's `_Block_object_assign` flags (3 object, 7
+    block, 8 byref) and `objc_retain` calls say which are objects, blocks and
+    cells, the creator's store says the width of the rest - and
+    `Block_byref_<size>_<width>` for a cell. The creator gets `block` and
+    `cell_<k>` as typed locals.
+
+    Pass 1 (`objc off`): `sub_100000930`. Pass 2 (`objc on`):
+    `__22-[Runner tally:scale:]_block_invoke(Block_layout_100000930 *block,long arg1)`
+    (Clang's name for it)
+    reading `block->capture_0` (self, objc_object *), `block->capture_1->forwarding->value`
+    (the `__block long total`), `capture_2` (double s), `capture_3` (int step);
+    the creator stores `block.block.invoke`, `block.capture_1 = &cell_1`,
+    `cell_1.forwarding = block.capture_1`.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_objc_blocks_arm64</com>
+  <com>option objc off</com>
+  <com>read symbols</com>
+  <com>load addr 0x100000930</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_objc_blocks_arm64</com>
+  <com>option objc on</com>
+  <com>read symbols</com>
+  <com>load addr 0x100000930</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x100000864</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x100000878</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x100000804</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="OBJCBLOCKS #1: objc off, the invoke is an anonymous function" min="1" max="1">sub_100000930\(</stringmatch>
+<stringmatch name="OBJCBLOCKS #2: the invoke is named after its creator and typed from the descriptor" min="1" max="1">__22-\[Runner tally:scale:\]_block_invoke\(Block_layout_100000930 \*block,int8 arg1\)</stringmatch>
+<stringmatch name="OBJCBLOCKS #3: the captured object is sent a message" min="1" max="1">objc_msgSend\(block->capture_0,sel_base\)</stringmatch>
+<stringmatch name="OBJCBLOCKS #4: the __block cell is read through its forwarding pointer" min="1" max="1">return block->capture_1->forwarding->value;</stringmatch>
+<stringmatch name="OBJCBLOCKS #5: the cell is typed Block_byref_32_8 in the invoke" min="1" max="1">Block_byref_32_8 \*v3; // x8</stringmatch>
+<stringmatch name="OBJCBLOCKS #6: the double and int captures" min="1" max="1">v4 = block->capture_2;</stringmatch>
+<stringmatch name="OBJCBLOCKS #7: the plain capture of the first block is a word" min="1" max="1">return block->capture_0 \* arg1;</stringmatch>
+<stringmatch name="OBJCBLOCKS #8: the creator's literal is a typed local (two creators)" min="2" max="2">block\.block\.invoke = __[0-9]+-\[Runner </stringmatch>
+<stringmatch name="OBJCBLOCKS #9: the creator stores the cell's address and the cell forwards to itself" min="1" max="1">cell_1\.forwarding = block\.capture_1;</stringmatch>
+<stringmatch name="OBJCBLOCKS #10: the creator reads the cell's value after the send" min="1" max="1">v2 = \(cell_1\.forwarding\)->value;</stringmatch>
+</decompilertest>
