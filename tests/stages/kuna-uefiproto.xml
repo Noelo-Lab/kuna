@@ -1,0 +1,91 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    UEFI protocol interfaces, service-table globals and the PEI and SMM phases
+    (`option uefi on|off`).
+
+    Stage P1 external-refinement. Four EDK2 modules:
+    - uefi_diskio_x64.efi: DiskIoDxe (edk2-stable202505, OvmfX64 RELEASE_GCC5),
+      a DXE driver that locates one protocol and installs three;
+    - uefi_fv/StatusCodeHandlerPei.efi and uefi_fv/ReportStatusCodeRouterPei.efi
+      (same build): two PEIMs, the first locating the PPI the second installs;
+    - uefi_fv/TcgMorLockSmm.efi (edk2-stable202502, OvmfX64 with SMM, as
+      shipped in Debian's ovmf 2025.02-8): an SMM driver.
+    uefi_fv/kuna-uefi.index is what `kuna unpack` with its protocols flag writes
+    for the three modules of that directory.
+
+    Pass 1 (`uefi off`, the bug): a function other than the entry calls a boot
+    service through an offset off an untyped global, and its parameters are
+    untyped words.
+    Pass 2 (default, the fix): the globals the entry stores the tables in are
+    gST and gBS, a protocol lookup types its interface from the GUID, the
+    installed instances and the functions they point at carry the interface's
+    struct and member names, the PEIM is entered as a PEIM and its PPI lookup
+    names the module that installs the PPI, and the SMM driver reaches its
+    services through gSmst.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/uefi_diskio_x64.efi</com>
+  <com>option uefi off</com>
+  <com>read symbols</com>
+  <com>load addr 0x24f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/uefi_diskio_x64.efi</com>
+  <com>read symbols</com>
+  <com>load function _ModuleEntryPoint</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function DriverBindingSupported</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/uefi_fv/StatusCodeHandlerPei.efi</com>
+  <com>read symbols</com>
+  <com>load function _ModuleEntryPoint</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/uefi_fv/ReportStatusCodeRouterPei.efi</com>
+  <com>read symbols</com>
+  <com>load function _ModuleEntryPoint</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function PeiRscHandlerRegister</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/uefi_fv/TcgMorLockSmm.efi</com>
+  <com>read symbols</com>
+  <com>load function _ModuleEntryPoint</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x116b</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="UEFIPROTO #1: off, a boot service outside the entry is an offset off an untyped global" min="1" max="1">\(\*\*\(code \*\*\)\(dat_1a70 \+ 0x118\)\)\(a1,0x1a10,</stringmatch>
+<stringmatch name="UEFIPROTO #2: on, the entry stores the tables in gST and gBS" min="2" max="2">gBS = v1;</stringmatch>
+<stringmatch name="UEFIPROTO #3: on, the located interface pointer is typed from its GUID" min="1" max="1">\(&amp;gEfiDevicePathUtilitiesProtocolGuid,NULL,&amp;mDevicePathUtilities\);</stringmatch>
+<stringmatch name="UEFIPROTO #4: on, the installed instances are named and typed" min="1" max="1">&amp;gEfiDriverBindingProtocolGuid,&amp;gDriverBinding,&amp;gEfiComponentNameProtocolGuid,&amp;gComponentName,&amp;gEfiComponentName2ProtocolGuid,&amp;gComponentName2,0\);</stringmatch>
+<stringmatch name="UEFIPROTO #5: on, a write into the instance names its member" min="1" max="1">gDriverBinding\.DriverBindingHandle = ImageHandle;</stringmatch>
+<stringmatch name="UEFIPROTO #6: on, the binding's member function has the member's name and prototype" min="1" max="1">EFI_STATUS DriverBindingSupported\(EFI_DRIVER_BINDING_PROTOCOL \*This,EFI_HANDLE ControllerHandle,</stringmatch>
+<stringmatch name="UEFIPROTO #7: on, a boot service outside the entry is a member call through gBS" min="1" max="1">\(\*gBS-&gt;OpenProtocol\)\(ControllerHandle,&amp;gEfiBlockIoProtocolGuid,v2,This-&gt;DriverBindingHandle,ControllerHandle,0x10\);</stringmatch>
+<stringmatch name="UEFIPROTO #8: a PEIM is entered with its file handle and the PEI services" min="2" max="2">EFI_STATUS _ModuleEntryPoint\(void \*FileHandle,EFI_PEI_SERVICES \*\*PeiServices\)</stringmatch>
+<stringmatch name="UEFIPROTO #9: a PPI lookup names the module of the volume that installs the PPI" min="1" max="1">gEfiPeiRscHandlerPpiGuid is installed by ReportStatusCodeRouterPei\.efi \(EFI_PEI_RSC_HANDLER_PPI at 0x829a90: Register=0x8297ff, Unregister=0x8298c8\)</stringmatch>
+<stringmatch name="UEFIPROTO #10: a PEI service read from below the IDT is a member call" min="1" max="1">\(\*\(\*v2\)-&gt;LocatePpi\)\(v2,&amp;gEfiPeiRscHandlerPpiGuid,0,NULL,&amp;v6\);</stringmatch>
+<stringmatch name="UEFIPROTO #11: a call through the located PPI names its member" min="1" max="1">\(\*v6-&gt;Register\)\(</stringmatch>
+<stringmatch name="UEFIPROTO #12: the PPI descriptor a PEIM installs is named from its GUID" min="1" max="1">PeiServicesInstallPpi\(&amp;mEfiPeiRscHandlerPpiDescriptor\);</stringmatch>
+<stringmatch name="UEFIPROTO #13: the IDT read is GetPeiServicesTablePointer" min="2" max="2">v2 = GetPeiServicesTablePointer\(\);</stringmatch>
+<stringmatch name="UEFIPROTO #14: the function an installed PPI points at has the member's prototype" min="1" max="1">EFI_STATUS PeiRscHandlerRegister\(void \*Callback\)</stringmatch>
+<stringmatch name="UEFIPROTO #15: an SMM driver's system table is found through GetSmstLocation" min="1" max="1">\(\*v3-&gt;GetSmstLocation\)\(v3,&amp;gSmst\);</stringmatch>
+<stringmatch name="UEFIPROTO #16: an SMM protocol lookup types its interface and the call names the member" min="1" max="1">\(\*gSmst-&gt;SmmLocateProtocol\)\(&amp;gEfiSmmVariableProtocolGuid,NULL,&amp;mSmmVariable\);</stringmatch>
+<stringmatch name="UEFIPROTO #17: a call through the SMM interface names its member" min="1" max="1">\(\*mSmmVariable-&gt;SmmSetVariable\)\(L\"MemoryOverwriteRequestControlLock\",</stringmatch>
+</decompilertest>

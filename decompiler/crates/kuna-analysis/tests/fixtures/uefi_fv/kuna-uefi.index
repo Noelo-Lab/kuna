@@ -1,0 +1,7 @@
+kuna-uefi-index 1
+module ReportStatusCodeRouterPei.efi 06
+module StatusCodeHandlerPei.efi 06
+module TcgMorLockSmm.efi 0a
+struct EFI_PEI_STATUS_CODE_PPI Function_00:FUNC
+install ReportStatusCodeRouterPei.efi d3329822307a364bb827f40cb7d45436 829a80 EFI_PEI_STATUS_CODE_PPI Function_00=829949
+install ReportStatusCodeRouterPei.efi 94d365005199444182a30afc8579c251 829a90 EFI_PEI_RSC_HANDLER_PPI Register=8297ff Unregister=8298c8

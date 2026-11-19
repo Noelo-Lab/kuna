@@ -4107,8 +4107,112 @@ moves.
   `EFI_PEI_SERVICES **`. A typed data fact outranks a string literal the string
   scan found inside it (a table's signature reads as text), so the commit
   (`decompiler/crates/kuna-console/src/engine.rs (commit_analysis_output)`)
-  skips such a string. The pass does not track the values the entry stores into
-  `gBS`/`gST`/`gRT`; those globals keep the type their first store implies.
+  skips such a string.
+
+  The pass then follows the service tables through the code
+  (`decompiler/crates/kuna-analysis/src/analyzers/uefi/flow.rs (Walk)`). It
+  decodes, so it runs at the analysis commit
+  (`decompiler/crates/kuna-analysis/src/passes.rs (run_uefi)`), not in the
+  load-time list. It lifts the code reachable from the entry point and from the
+  code pointers the data sections hold, at most 60,000 instructions shared
+  between the two, and walks each function over its basic blocks with a small
+  state per register and stack slot: a constant, a stack address, the
+  function's own parameter, or a pointer to one of the EFI structures. The
+  state at the head of a block is the intersection of what its predecessors
+  leave, iterated to a fixed point around a loop, and a block only an indirect
+  jump reaches starts from nothing, so a value is known only when it is the
+  same on every way in. A call keeps stack addresses, the registers the
+  prototype model preserves and, when the callee calls nothing, the registers
+  the callee does not write. The entry's parameters seed the walk, a typed
+  pointer passed to a function seeds that function's parameter, and a typed
+  pointer a function returns on every path is what its callers receive. The
+  walk repeats, at most four times, until nothing more is learned. What it
+  reads:
+
+  - A typed pointer stored into a writable global types the global and names
+    it as EDK2 does: `gImageHandle`, `gST`, `gBS`, `gRT`, `gDS`, `gSmst`,
+    `gMmst`, and `m<Interface>` for a protocol pointer. A global two different
+    types are stored into gets neither.
+  - `LocateProtocol`, `HandleProtocol`, `OpenProtocol`, `SmmLocateProtocol` /
+    `MmLocateProtocol` and `LocatePpi` take a GUID. When the GUID has an
+    interface struct, the global or stack slot the interface out-parameter
+    addresses holds a pointer to it, and that one call gets a prototype whose
+    out-parameter is `INTERFACE **`
+    (`decompiler/crates/kuna-decomp/src/p2_lift/kuna_callsiteproto.rs (parked)`:
+    a prototype parked by call-instruction address, installed as the call's
+    prototype override when `FlowInfo` builds the call, unless the function
+    already carries an override there).
+  - `InstallProtocolInterface`, `InstallMultipleProtocolInterfaces` (its
+    GUID/interface pairs up to the NULL), the MM installs and `InstallPpi` /
+    `ReInstallPpi` name an interface instance. The instance is typed with the
+    interface struct and named `g<Interface>`, and each function it points at
+    is named `<Interface><Member>` with the member's prototype, so a driver's
+    `DriverBindingSupported(EFI_DRIVER_BINDING_PROTOCOL *This, EFI_HANDLE
+    ControllerHandle, ...)` is recovered from its binding instance. A PPI list
+    is walked descriptor by descriptor to the entry flagged
+    `EFI_PEI_PPI_DESCRIPTOR_TERMINATE_LIST`, each one typed
+    `EFI_PEI_PPI_DESCRIPTOR`; `NotifyPpi` does the same with
+    `EFI_PEI_NOTIFY_DESCRIPTOR` and gives each callback the notify prototype
+    with its PPI typed from the GUID.
+  - A member whose prototype has an out-parameter `T **` for a known `T`
+    (`EFI_SMM_BASE2_PROTOCOL.GetSmstLocation`) types what it is handed, which is
+    how an SMM driver's `gSmst` is found.
+
+  The interface structs come from
+  `decompiler/crates/kuna-analysis/src/analyzers/uefi/protocols.txt`, generated
+  by `scripts/gen_uefi_protocols.py` from the EDK2 `MdePkg` and `MdeModulePkg`
+  headers (edk2-stable202505, BSD-2-Clause-Patent): 371 protocol and PPI GUIDs
+  with the layout of their interface, plus `EFI_MM_SYSTEM_TABLE` and
+  `EFI_SMM_SYSTEM_TABLE2`. A member the generator cannot lay out exactly (a
+  union, a bit-field, a packed or unknown by-value type) ends its struct, so
+  every offset in the table is the header's. A struct is built in the type
+  factory the first time something names it
+  (`decompiler/crates/kuna-analysis/src/analyzers/uefi/types.rs (EfiTypes)`),
+  so an image pays for the interfaces it uses; a `This` parameter is a pointer
+  to its own interface. An interface installed under a GUID the table has no
+  struct for gets one synthesized from the instance: one member per pointer
+  slot up to the last slot that points at a function start, `Function_<off>`
+  for those and `Field_<off>` for the others, named from the GUID
+  (`gEdkiiFooProtocolGuid` gives `EDKII_FOO_PROTOCOL`, an unknown GUID
+  `PROTOCOL_<Data1>`).
+
+  The phase decides the entry prototype. A module whose service calls go
+  through `EFI_PEI_SERVICES` is a PEIM, entered as `EFI_STATUS
+  _ModuleEntryPoint(VOID *FileHandle, EFI_PEI_SERVICES **PeiServices)`; a
+  standalone-MM module is entered with `EFI_MM_SYSTEM_TABLE *MmSystemTable`.
+  Without other evidence the walk reads the module as a DXE module first and
+  as the other two only when that resolves no service call. Two EDK2 library
+  shapes are recognized in a PEIM because every service call goes through
+  them: a function that reads the IDT register (`sidt`) and loads the pointer
+  below the IDT base is `GetPeiServicesTablePointer`, returning
+  `EFI_PEI_SERVICES **` (the X64 and IA32 counterpart of the ARM getters
+  above), and a short function that only forwards its own parameters to one
+  PEI service is named `PeiServices<Service>` and treated as that service at
+  its call sites. A PEI service call also states its prototype at the call,
+  because a PEIM that reads the table pointer inline leaves the decompiler no
+  typed pointer to read the member from. On 32-bit ARM (PE machine `ARM`,
+  `THUMB` or `ARMNT`) a code pointer's low bit selects Thumb and is not part
+  of the address, for the entry point as for an interface member.
+
+  Across the modules of one firmware volume, `kuna unpack <firmware>` writes
+  `kuna-uefi.index` beside the modules
+  (`decompiler/crates/kuna-analysis/src/analyzers/uefi/index.rs (Index)`): each
+  module's FFS file type and, with `--protocols`, every interface instance
+  each module installs, read off one load of the module (the pass leaves them
+  on the architecture as
+  `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_uefiprotocols.rs (InstalledInterface)`).
+  A module loaded from
+  that directory takes its phase from its file type (PEIM, PEI core and
+  combined PEIM/driver are PEI; MM standalone and MM core standalone are MM;
+  a traditional SMM driver is entered as a DXE driver), takes the struct
+  another module synthesized for a GUID, and gets a comment at each interface
+  lookup naming the module that installs it, the instance address and the
+  member functions: `gEfiPeiRscHandlerPpiGuid is installed by
+  ReportStatusCodeRouterPei.efi (EFI_PEI_RSC_HANDLER_PPI at 0x829a90:
+  Register=0x8297ff, Unregister=0x8298c8)`. The index is plain text, a line that does not parse
+  is skipped and a file over 16 MiB is not read. The walk is static: an
+  interface installed from a heap copy, or under a GUID computed at run time,
+  is not seen.
 - **(kuna) Declared names** (`declaredlibcproto`,
   `decompiler/crates/kuna-analysis/src/analyzers/protos/mod.rs (declared_libc_prototype)`,
   consulted from `decompiler/crates/kuna-console/src/engine.rs (ConsoleProgram::declare_function)`):
