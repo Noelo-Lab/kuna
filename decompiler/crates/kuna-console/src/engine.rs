@@ -3474,6 +3474,7 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // single-function FDE bodies and the commit rejects any discovered entry
         // strictly inside one. Default-ON; with the gate off the fact stream is
         // dropped here and the discovery set is exactly what it was before.
+        "importvote" => arch.analysis_importvote,
         // (kuna) PDB-procedure-interior entry suppression — the extents come out of
         // the `.pdb`, so switching `pdb` off withdraws them too.
         "pdbinterior" => arch.analysis_pdb,
@@ -6393,6 +6394,15 @@ fn commit_analysis_output(
         if let Some(receiver) = fact.pointer_receiver {
             prog.arch_mut().symboltab.attach_go_pointer_receiver(&a, receiver);
         }
+    }
+
+    // 5e. (kuna `importvote`) The call sites of every PLT import, read by the
+    //     engine when a function tail-calls one no declaration reached.
+    let space = code_space.get_index();
+    let sites: std::collections::HashMap<(i32, u64), Vec<u64>> =
+        out.import_call_sites.into_iter().map(|(stub, sites)| ((space, stub), sites)).collect();
+    if !sites.is_empty() {
+        prog.arch_mut().kuna_import_sites = Rc::new(sites);
     }
 
     // 6. Processor-context decode-mode paints (the kuna analog of ARM's

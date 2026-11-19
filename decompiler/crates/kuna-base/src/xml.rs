@@ -2244,7 +2244,8 @@ mod tests {
         // and ghangr-go-mcall-resumption / a scheduler switch preserves its caller's continuation
         // and kuna-addrtable / a writable function-pointer table typed code *[N] (option addrtable)
         // and kuna-rawpatterns / a headerless image is swept with its language's function-start patterns
-        assert_eq!(count, 826, "corpus file count drifted");
+        // and kuna-importvote / an undeclared import takes the arguments its other call sites pass (option importvote)
+        assert_eq!(count, 827, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

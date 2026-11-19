@@ -96,6 +96,9 @@ mod verify_coff_object;
 #[path = "verify_coldentry.rs"]
 mod verify_coldentry;
 
+#[path = "verify_importvote.rs"]
+mod verify_importvote;
+
 #[path = "verify_cortexmvectors.rs"]
 mod verify_cortexmvectors;
 
