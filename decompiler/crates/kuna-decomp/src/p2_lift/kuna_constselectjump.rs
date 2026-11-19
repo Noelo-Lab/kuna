@@ -377,7 +377,7 @@ impl JumpModel for JumpModelConstSelect {
             return Ok(());
         }
         let original = orig.as_any().downcast_ref::<Self>().unwrap_or(self);
-        let mut selectors = std::collections::HashMap::<_, Vec<_>>::new();
+        let mut selectors = std::collections::BTreeMap::<_, Vec<_>>::new();
         for &selector in original.dests.iter().rev() {
             let byte = target_offset(selector, space.get_word_size(), fd.get_arch().funcptr_align);
             selectors.entry(byte).or_default().push(selector);

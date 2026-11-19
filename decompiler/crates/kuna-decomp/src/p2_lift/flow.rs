@@ -2955,14 +2955,6 @@ truncating the fall-through here"
                             let space = address.get_space()?;
                             let word_size = space.get_word_size();
                             let align = self.data.get_arch().funcptr_align;
-                            // Extending the original singleton reconstructs its selector from
-                            // its address. Use SSA when alignment could have erased tag bits.
-                            if word_size != 1 || align != 0 {
-                                let (_, mask) = self.data.get_jump_table(idx as int4).kuna_target_encoding()?;
-                                if mask.checked_mul(u64::from(word_size))? & !(u64::MAX << align) != 0 {
-                                    return None;
-                                }
-                            }
                             let byte = crate::kuna_constselectjump::target_offset(value, word_size, align);
                             let target = Address::new(space.clone(), byte);
                             if self.outofbounds.contains(&target)
@@ -2970,7 +2962,7 @@ truncating the fall-through here"
                             { return None; }
                             let limit = self.data.get_arch().max_jumptable_size as usize;
                             self.data.get_jump_table_mut(idx as int4)
-                                .kuna_extend_flow_target(target, limit)
+                                .kuna_extend_flow_target(value, target, align, limit)
                         });
                         match result { Some(new) => added |= new, None => exact = false }
                     }
