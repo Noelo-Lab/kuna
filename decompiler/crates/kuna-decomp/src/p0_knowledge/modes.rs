@@ -598,6 +598,9 @@ mod tests {
             // number are the two things that PR has to add).
             "guardarm",
             "loopcondhoist",
+            // `cmpmerge` moves 5/675 datatest assertions; a preset flip needs a
+            // decbench sweep first.
+            "cmpmerge",
             // `switchselector` is the one entry here whose evaluation is already
             // done and recorded (its catalog row carries the 0/675 datatest
             // ablation and the whole-corpus sweep: one function changes across

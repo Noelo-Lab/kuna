@@ -3603,6 +3603,35 @@ the set of `x` sent down it; every positive `x` must reach the unbiased input
 most negative `x` both inputs hold the same value, so those two values may go
 either way. Varnodes are compared through their `COPY` chains.
 
+**cmpmerge** — `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_cmpmerge.rs
+(RuleCompareMerge, ActionBranchMerge)`, option `cmpmerge`, default off.
+A comparison of `a` and `b` is the set of relations that make it true: `LT`,
+`EQ`, `GT` for integers, plus `UN` (unordered) for floats, so `!=` is
+`LT|GT` on integers and `LT|GT|UN` on floats, and a `BOOL_NEGATE`
+complements the set. Two comparisons of the same operands (in either order;
+constants compare by value) combined by `BOOL_OR`, `BOOL_AND` or `BOOL_XOR`
+are the union, intersection or symmetric difference of their sets.
+`RuleCompareMerge` (oppool1) rewrites the combining op when the result is
+empty or full (a constant), equal to one input (a copy of it), or one
+comparison or the negation of one; signed and unsigned orderings never mix,
+and a float result stays exact under NaN (`a != b && !(a < b)` is
+`!(a <= b)`, never `a > b`). When both inputs compare the same varnode
+against constants, the inputs are `CircleRange` pull-backs instead, and their
+union or intersection folds when it is one strict comparison against a
+constant (`v < c`, `c - 1 < v`, `==`, `!=`, unsigned or signed); the result
+op carries `canonical_lessequal` when an input was written with `<=`, so
+`ActionPresentCompareForm` prints it the same way.
+
+`ActionBranchMerge` (group `unreachable`, after `ActionRangeFold`) applies the
+same algebra to two branches in a row: a CBRANCH block one of whose
+successors has it as its only predecessor, holds nothing but a second CBRANCH
+whose inputs are computed outside it (no call, load or store, every other op
+read only inside the block), and shares the first branch's other target. The
+path reaches the shared target exactly when the union of the two "to the
+shared target" sets holds, so the first branch takes the merged test and the
+second branch's condition becomes the constant that sends it the other way;
+`ActionDeterminedBranch` then removes the dead edge.
+
 **constspaceload** (repipe `arm-neon-zero-initialization`) —
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_constspaceload.rs
 (RuleConstSpaceLoad)`, oppool1, fires on LOAD. *Pattern:* a LOAD whose space

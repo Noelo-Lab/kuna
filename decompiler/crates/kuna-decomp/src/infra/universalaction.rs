@@ -374,6 +374,7 @@ pub fn universal_sched(
         rrow!("constspaceload", "analysis", crate::kuna_constspaceload::RuleConstSpaceLoad::with_group("analysis")),
         rrow!("x87truncate", "analysis", crate::kuna_x87truncate::RuleX87Truncate::new("analysis")),
         rrow!("selectdiv", "analysis", crate::kuna_selectdiv::RuleSelectDiv::new("analysis")),
+        rrow!("comparemerge", "analysis", crate::kuna_cmpmerge::RuleCompareMerge::new("analysis")),
         rrow!("gobool", "analysis", crate::kuna_gobool::RuleGoBoolReturn::with_group(false, "analysis")),
         rrow!("boolsignless", "analysis", crate::kuna_flagcompare::RuleBoolSignLess::with_group("analysis")),
         rrow!("sborrowge", "analysis", crate::kuna_flagcompare::RuleSborrowGe::with_group("analysis")),
@@ -637,6 +638,7 @@ pub fn universal_sched(
             act!(Box::new(crate::condexe::ActionConditionalExe::new("conditionalexe"))),
             act!(ActionConditionalConst::boxed("analysis")),
             act!(crate::p3_dataflow::kuna_rangefold::ActionRangeFold::boxed("unreachable")),
+            act!(crate::p3_dataflow::kuna_cmpmerge::ActionBranchMerge::boxed("unreachable")),
         ],
     };
 

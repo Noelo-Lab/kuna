@@ -923,6 +923,10 @@ pub struct Architecture {
     /// select or a sign-mask shift (option `pow2select`).  See
     /// [`crate::p3_dataflow::kuna_selectdiv`].
     pub pow2_select: bool,
+    /// (kuna) Merge two comparisons of the same operands, combined by a boolean op or
+    /// by two branches in a row, into one (option `cmpmerge`).  See
+    /// [`crate::p3_dataflow::kuna_cmpmerge`].
+    pub cmp_merge: bool,
     /// (kuna) Region-based (Phoenix/SAILR) structurer: structure the CFG by
     /// walking the [`KunaRegionIdentifier`](crate::p7_regions::kuna_regionid)
     /// region tree and matching Phoenix acyclic schemas instead of running
@@ -2466,6 +2470,7 @@ impl Architecture {
             rep_string: false, // (kuna) option repstring; reset_defaults sets the shipped default
             range_fold: false, // (kuna) option rangefold; reset_defaults sets the shipped default
             pow2_select: false, // (kuna) option pow2select; reset_defaults sets the shipped default
+            cmp_merge: false, // (kuna) option cmpmerge; reset_defaults sets the shipped default
             region_structure: true,
             guard_arm: false,
             loop_continue: true,
@@ -3574,6 +3579,7 @@ impl Architecture {
         ctx.rep_string = self.rep_string; // repstring
         ctx.range_fold = self.range_fold; // rangefold
         ctx.pow2_select = self.pow2_select; // pow2select
+        ctx.cmp_merge = self.cmp_merge; // cmpmerge
         ctx.region_structure = self.region_structure; // regionstructure
         ctx.guard_arm = self.guard_arm; // guardarm
         ctx.loop_continue = self.loop_continue;

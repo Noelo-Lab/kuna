@@ -37,6 +37,10 @@ Three tiers:
 | v = x + 3; if (0 <= x) v = x; return v >> 2; where the source divides by 4 | [`pow2select`](#pow2select----on--off-default-on) |
 | a signed remainder by a power of two prints as a select between x & m and -(-x & m) | [`pow2select`](#pow2select----on--off-default-on) |
 | (x + ((unsigned)(x >> 31) >> 30)) >> 2 instead of x / 4 | [`pow2select`](#pow2select----on--off-default-on) |
+| a < b or a == b printed as two tests where a <= b would do | [`cmpmerge`](#cmpmerge----on--off-default-off) |
+| a0 != a1 && !(a0 < a1) on floats | [`cmpmerge`](#cmpmerge----on--off-default-off) |
+| two branches in a row test the same value against neighbouring constants and jump to one place | [`cmpmerge`](#cmpmerge----on--off-default-off) |
+| x == 3 or 3 < x printed as two tests | [`cmpmerge`](#cmpmerge----on--off-default-off) |
 | stack string initialisation renders as an array-typed cast such as (char[8])s_addr._0_8_ | [`rodatastring`](#rodatastring----on--off-default-on) |
 | partial-symbol slice assignments like buf._0_9_ = s_addr._16_9_ instead of the string | [`rodatastring`](#rodatastring----on--off-default-on) |
 | a recognized rodata literal never appears in the function that copies it onto the stack | [`rodatastring`](#rodatastring----on--off-default-on) |
@@ -913,6 +917,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On by default: 0/675 datatest assertions move; four stage assertions that pinned the select (`kuna-storealias` #1/#2/#4, `kuna-globalvalue` #17, whose fixtures return `gi / 16`) now read the division. Flip off to see the select or shift the compiler emitted. Measured over 4,072 functions in ten x86-64 binaries (gcc/clang -O2 and gcc -O0 Lua 5.4.8 and bzip2 1.0.8, -O2 zlib, libexpat, libyaml): 15 functions change, ` / ` 142 -> 166, `if` statements 22,188 -> 22,163, lines 184,891 -> 184,802, e.g. bzip2 sendMTFValues `nBytes / 8` and fallbackSort `nblock / 32`. Near misses (a test other than the sign, a bias other than 2^k - 1, `-(-x & 7)` chosen only below -4) keep their select.
 - **Where / provenance:** P3/simplification-quiescence · kuna · transform · kuna-pow2select
 - **Example:** `option pow2select off`
+
+### `cmpmerge` -- on | off, default `off`
+
+- **Symptoms:** a < b or a == b printed as two tests where a <= b would do; a0 != a1 && !(a0 < a1) on floats; two branches in a row test the same value against neighbouring constants and jump to one place; x == 3 or 3 < x printed as two tests.
+- **What it does:** Merge two comparisons of the same operands into one. A comparison's outcome is a set of the relations LT, EQ, GT (and UN, unordered, for floats); two of them combined by `||`, `&&` or `^` are the union, intersection or symmetric difference of their sets, and fold when that set is one comparison, its negation, a constant, or one of the two inputs. A comparison of one varnode against two constants is a pair of CircleRanges instead, which folds when the combined range is one strict comparison against a constant (`c - 1 < v`, `v < c`, `==`, `!=`, signed or unsigned), keeping the `<=` presentation when an input was written with it. `RuleCompareMerge` (oppool1) folds BOOL_OR / BOOL_AND / BOOL_XOR of two comparisons. `ActionBranchMerge` (group unreachable) folds a CBRANCH whose one successor is a single-predecessor block holding nothing but a second test of the same operands that shares the first branch's other target: the first branch takes the merged test and the second can no longer reach the shared target, so ActionDeterminedBranch removes its edge. Signed and unsigned orderings never mix; floats keep unordered results (`a != b && !(a < b)` is `!(a <= b)`, not `a > b`).
+- **When to flip:** Turn on to print `a <= b` for `a < b || a == b`, `(unsigned)v >= 8` for `v < 0 || 8 <= v`, and `!(a <= b)` for a float `a != b && !(a < b)`, mostly in -O0 code where each test is its own branch. Default off: the merged forms move 5/675 datatest assertions (an AArch64 ccmp `val <= 9` that becomes `val < 10`, bitfield and signed-byte tests). x86-64 gcc -O0: `if ((a1 <= a0) && (a0 != a1)) return 0;` becomes `if (a1 < a0) return 0;` and `if ((!(a1 < a0)) && (a0 != a1))` on doubles becomes `if (!(a1 <= a0))`.
+- **Where / provenance:** P3/simplification-quiescence · kuna · transform · kuna-cmpmerge
+- **Example:** `option cmpmerge on`
 
 
 ### `rodatastring` -- on | off, default `on`

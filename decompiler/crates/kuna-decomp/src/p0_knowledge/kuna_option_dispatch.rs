@@ -457,6 +457,7 @@ kuna_options! { self, p1;
     "repstring" => on_off!(rep_string, "rep movs/stos/cmps loops as copy, fill and compare builtins"),
     "rangefold" => on_off!(range_fold, "dominating-range folding"),
     "pow2select" => on_off!(pow2_select, "power-of-two division select recovery"),
+    "cmpmerge" => on_off!(cmp_merge, "comparison merge"),
     "regionstructure" => {
         let (val, msg) =
             crate::p8_structure::region_structurer::OptionRegionStructure.apply(p1)?;

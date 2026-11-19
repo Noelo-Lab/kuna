@@ -1647,6 +1647,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "cmpmerge"
+values = "on|off"
+default = "off"
+destructive = false
+phase = "P3"
+subphase = "simplification-quiescence"
+strength = "HARD"
+rewind = "P3"
+issue = "kuna-cmpmerge"
+summary = "Merge two comparisons of the same operands into one. A comparison's outcome is a set of the relations LT, EQ, GT (and UN, unordered, for floats); two of them combined by `||`, `&&` or `^` are the union, intersection or symmetric difference of their sets, and fold when that set is one comparison, its negation, a constant, or one of the two inputs. A comparison of one varnode against two constants is a pair of CircleRanges instead, which folds when the combined range is one strict comparison against a constant (`c - 1 < v`, `v < c`, `==`, `!=`, signed or unsigned), keeping the `<=` presentation when an input was written with it. `RuleCompareMerge` (oppool1) folds BOOL_OR / BOOL_AND / BOOL_XOR of two comparisons. `ActionBranchMerge` (group unreachable) folds a CBRANCH whose one successor is a single-predecessor block holding nothing but a second test of the same operands that shares the first branch's other target: the first branch takes the merged test and the second can no longer reach the shared target, so ActionDeterminedBranch removes its edge. Signed and unsigned orderings never mix; floats keep unordered results (`a != b && !(a < b)` is `!(a <= b)`, not `a > b`)."
+use_when = "Turn on to print `a <= b` for `a < b || a == b`, `(unsigned)v >= 8` for `v < 0 || 8 <= v`, and `!(a <= b)` for a float `a != b && !(a < b)`, mostly in -O0 code where each test is its own branch. Default off: the merged forms move 5/675 datatest assertions (an AArch64 ccmp `val <= 9` that becomes `val < 10`, bitfield and signed-byte tests). x86-64 gcc -O0: `if ((a1 <= a0) && (a0 != a1)) return 0;` becomes `if (a1 < a0) return 0;` and `if ((!(a1 < a0)) && (a0 != a1))` on doubles becomes `if (!(a1 <= a0))`."
+example = "option cmpmerge on"
+source_decompiler = "kuna"
+inspiration = "gcc -O0 `if (a < b || a == b)` printed as two tests `(a1 <= a0) && (a0 != a1)`; floats `a != b && !(a < b)` printed as an and-and of two compares"
+change_kind = "transform"
+tier = "transform"
+symptoms = "a < b or a == b printed as two tests where a <= b would do|a0 != a1 && !(a0 < a1) on floats|two branches in a row test the same value against neighbouring constants and jump to one place|x == 3 or 3 < x printed as two tests"
+live_field = "cmp_merge"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "rodatastring"
 values = "on|off"
 default = "on"
