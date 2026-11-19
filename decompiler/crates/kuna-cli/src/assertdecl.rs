@@ -19,6 +19,7 @@
 //!   --assert 'name v2 credbuf'
 //!   --assert 'readonly 0x404028+8'
 //!   --assert 'flow 0x1405 return'
+//!   --assert 'callee 0x147a handle_open'
 //!   --assert 'volatile 0x50000000+4'
 //!   --assert 'bytes 0x43d0c6 8bd581c21f324000'
 //!   --assert 'bytes 0x43d0c6 @notes/stage1.bin'
@@ -152,6 +153,10 @@ pub(crate) fn console_form(
             Some(f) => return Err(unbindable(&f)),
             None => (Slot::Function, format!("override flow {addr:#x} {kind}")),
         },
+        Body::Callee { func, addr, callee } => match names_another(func, target) {
+            Some(f) => return Err(unbindable(&f)),
+            None => (Slot::Function, format!("override indirect {addr:#x} {callee}")),
+        },
         Body::Bytes { addr, data } => {
             let hex: String = data.iter().map(|b| format!("{b:02x}")).collect();
             (Slot::Image, format!("override bytes {addr:#x} {hex}"))
@@ -165,6 +170,14 @@ pub(crate) fn console_form(
         Body::Type { func, symbol, decl } => match names_another(func, target) {
             Some(f) => return Err(unbindable(&f)),
             None => (Slot::Symbol, format!("retype {symbol} {decl}")),
+        },
+        Body::Format { func, addr, format, value } => match names_another(func, target) {
+            Some(f) => return Err(unbindable(&f)),
+            None => (Slot::Symbol, kuna_console::kuna_constformat::console_line(*addr, format, *value)),
+        },
+        Body::Isolate { func, symbol } => match names_another(func, target) {
+            Some(f) => return Err(unbindable(&f)),
+            None => (Slot::Symbol, format!("isolate {symbol}")),
         },
     };
     Ok(ConsoleForm { slot, line })
@@ -319,6 +332,9 @@ mod tests {
             "flow 0x1405 goto",
             "flow notahex return",
             "flow 0x1405 return extra",
+            "callee 0x147a",
+            "callee notahex handle_open",
+            "callee 0x147a handle_open extra",
         ] {
             let err = parse_one(spec).expect_err("refuses");
             assert!(err.starts_with("--assert"), "got {err:?} for {spec:?}");
@@ -377,6 +393,10 @@ mod tests {
             lowered("flow 0x1405 return"),
             (Slot::Function, "override flow 0x1405 return".into())
         );
+        assert_eq!(
+            lowered("callee authenticate::0x147a handle_open"),
+            (Slot::Function, "override indirect 0x147a handle_open".into())
+        );
         assert_eq!(lowered("type v2 char[16]"), (Slot::Symbol, "retype v2 char[16]".into()));
         assert_eq!(lowered("name v2 credbuf"), (Slot::Symbol, "rename v2 credbuf".into()));
         assert_eq!(
@@ -391,6 +411,31 @@ mod tests {
             lowered("volatile 0x50000000+4"),
             (Slot::Image, "volatile 0x50000000 4".into())
         );
+    }
+
+    /// `format` names a constant by the instruction that reads it, and by its
+    /// value where that is needed; `isolate` names a local.
+    #[test]
+    fn format_and_isolate_parse_and_lower() {
+        assert_eq!(
+            one("format is_rwx::0x1304 oct").body,
+            Body::Format { func: Some("is_rwx".into()), addr: 0x1304, format: "oct".into(), value: None }
+        );
+        assert_eq!(
+            one("format 1304 char -1").body,
+            Body::Format { func: None, addr: 0x1304, format: "char".into(), value: Some(u64::MAX) }
+        );
+        assert_eq!(one("isolate f::v1").body, Body::Isolate { func: Some("f".into()), symbol: "v1".into() });
+        let lowered = |spec: &str| {
+            let form = console_form(&one(spec), Some("f")).expect("has a console form");
+            (form.slot, form.line)
+        };
+        assert_eq!(lowered("format 0x1304 oct"), (Slot::Symbol, "force constant 0x1304 oct".into()));
+        assert_eq!(lowered("format 0x1304 dec 511"), (Slot::Symbol, "force constant 0x1304 dec 0x1ff".into()));
+        assert_eq!(lowered("isolate v1"), (Slot::Symbol, "isolate v1".into()));
+        for spec in ["format 0x1304", "format 0x1304 roman", "format oct", "format 0x1304 oct x", "format 0x1304 oct 1 2", "isolate", "isolate v1 v2"] {
+            assert!(parse_one(spec).expect_err("refuses").starts_with("--assert"), "{spec:?}");
+        }
     }
 
     /// `readonly`/`volatile` take `<addr>+<size>`; a whitespace-separated size is

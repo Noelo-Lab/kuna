@@ -805,6 +805,12 @@ pub fn decompile_pulled(
                     single_target,
                     &fd,
                 );
+                crate::assertions::record_rejected_callee_overrides(
+                    prog,
+                    &name,
+                    single_target,
+                    &fd,
+                );
                 // Render + extract under `catch_unwind`: the decompile drive only
                 // guards the pipeline (decompile_drive.rs), so a fail-fast invariant
                 // in the printer / type declarator on an exotic recovered function
@@ -970,6 +976,9 @@ pub fn decompile_pulled(
                 match rendered {
                     Ok((code, variables, types, (globals, field_calls, call_declarations, callwide_prototypes), proto, line_mappings, callee_hints, detail, (pointerargs, warnings), stack_objects)) => {
                     crate::assertions::verify_printed(prog, &fd, &code, &replayed);
+                    if replay {
+                        crate::assertions::verify_formats(prog, &fd, &name, single_target);
+                    }
                     sink(FuncResult {
                         name,
                         address,

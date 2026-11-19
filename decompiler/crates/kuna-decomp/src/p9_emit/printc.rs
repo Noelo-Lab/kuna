@@ -6906,6 +6906,41 @@ impl PrintC {
         }
     }
 
+    /// (kuna `acleintrinsics`) Render a user op under its ACLE spelling.
+    fn push_acle_intrinsic(
+        &mut self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        op: OpId,
+        call: &crate::kuna_acleintrinsics::Intrinsic,
+    ) {
+        use crate::kuna_acleintrinsics::Arg;
+        self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
+        self.push_atom(&Atom::with_op(
+            call.name.to_string(),
+            TagType::OpToken,
+            crate::printlanguage::SyntaxHighlight::funcname_color,
+            op_key(op),
+        ));
+        if call.args.is_empty() {
+            self.push_atom(&Atom::syntax(
+                "",
+                TagType::BlankToken,
+                crate::printlanguage::SyntaxHighlight::no_color,
+            ));
+            return;
+        }
+        for _ in 1..call.args.len() {
+            self.push_op(&tokens::COMMA, Some(op_key(op)));
+        }
+        for arg in &call.args {
+            match *arg {
+                Arg::Vn(vn) => self.push_vn_ir(fd, arch, vn, op),
+                Arg::Dec(val) => self.push_constant_ir_fmt_sign(val, 4, op, display_format::FORCE_DEC, false),
+            }
+        }
+    }
+
     /// C++ `PrintC::opCallother` (printc.cc:693): render a CALLOTHER (user
     /// p-code op).  The op's in0 constant indexes a `UserPcodeOp` whose
     /// `getDisplay()` selects the form:
@@ -6957,6 +6992,13 @@ impl PrintC {
             .unwrap_or(0);
         let nin = fd.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
         if display == 0 {
+            let acle = arch.userops.get_op(in0_off as u32).and_then(|u| {
+                crate::kuna_acleintrinsics::intrinsic(fd, arch, op, u.get_name())
+            });
+            if let Some(call) = acle {
+                self.push_acle_intrinsic(fd, arch, op, &call);
+                return;
+            }
             // Functional syntax: for CALLOTHER the operator name resolves to the
             // userop's name (the base getOperatorName), or the generic
             // `CALLOTHER[index]` fallback.

@@ -840,8 +840,9 @@ fn option_values_live_value_present_for_76() {
     // 75 -> 74: `armconstshift` became three-valued (off|on|all) over an enum
     // field with no `live_field`.
     // 75 -> 76: +1 for `wrapadd` (live_field = wrap_add).
-    // 76 -> 77: +1 for `stackalloc` (live_field = stack_alloc).
-    assert_eq!(with_live, 77);
+    // +1 for `acleintrinsics` (live_field = acle_intrinsics).
+    // 77 -> 78: +1 for `stackalloc` (live_field = stack_alloc).
+    assert_eq!(with_live, 78);
 }
 
 #[test]
@@ -1090,7 +1091,9 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `flirt`; its P1 row sits beside `fid`.
     // +1 for `chkstkdarwin`, its P2 row after `msvcftol`.
     // +1 for `calleeargs`; its P4 row sits after `argclobber`.
-    assert_eq!(json.matches("},\n").count(), 218);
+    // +1 for `acleintrinsics`; its P9 row sits after `cortexmpriv`.
+    // +1 for `stackalloc`; its P3 row sits after `chkstkdarwin`.
+    assert_eq!(json.matches("},\n").count(), 219);
 }
 
 #[test]

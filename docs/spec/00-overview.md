@@ -2441,8 +2441,11 @@ lowering) and applied by
 | `return [<func>::]<storage> <C typedeclaration>` | `map return` | P4 prototype-source |
 | `comment [<func>::]<addr> <text>` | `comment instruction` | P9 external-refinement |
 | `flow [<func>::]<addr> branch\|call\|callreturn\|return` | `override flow` | P2 flow-classification |
+| `callee [<func>::]<callsite> <name\|address>` | `override indirect` | P2 flow-classification |
 | `name [<func>::]<symbol> <newname>` | `rename` | P9 naming-policy |
 | `type [<func>::]<symbol> <C type>` | `retype` | P5 type-propagation |
+| `format [<func>::]<addr> hex\|dec\|oct\|bin\|char [<value>]` | `force constant` | P9 literal-format |
+| `isolate [<func>::]<symbol>` | `isolate` | P6 merge-aggressiveness |
 | `readonly <addr>+<size>` | `readonly` | P1 code-data-partition |
 | `volatile <addr>+<size>` | `volatile` | P1 code-data-partition |
 | `bytes <addr> <hex\|@FILE>` | `override bytes` | P1 code-data-partition |
@@ -2523,6 +2526,38 @@ printer chose instead of by a hand-written varnode specifier. `linkSymbol`'s
 `query_container_for_link(addr, usepoint)` then binds it on the second pass, and
 `assertions::carried_usepoint_symbols` carries it across the in-process surface's
 IR rebuild.
+
+`format` and `isolate` are symbol-scoped in the same way: each names
+something only a finished decompile has, and takes effect in the second pass.
+`format` names a constant by the address of the instruction that reads it
+(`decompiler/crates/kuna-console/src/kuna_constformat.rs`). The candidates are
+the integer constants the live operations at that address read, leaving out the
+inputs that are not printed as numbers (a LOAD or STORE space id, a user-op
+index, a branch, call or return target, a SUBPIECE truncation, a PTRSUB offset,
+a PTRADD element size) and a constant whose read-facing type is an enum, which
+prints as the enum's names whatever its format; when only such a constant is
+read the rejection says so. One candidate value needs no more; several need the
+directive's `<value>`, and the rejection lists the values so the caller can
+pick. A `char` request is refused for a constant wider than 32 bits whose
+value is not the sign extension of its low 32 bits, since the character
+literal keeps only those bits. Each chosen constant gets
+the EquateSymbol `force varnode` builds (`Funcdata::build_dynamic_symbol`,
+anchored by the constant's dataflow hash) with the display format set and the
+type locked, and `assertions::carried_dynamic_symbols` carries it to the
+second pass, where the dynamic mapping finds the constant by its hash and the
+printer reads the format. After the second pass `assertions::verify_formats`
+looks for a constant at the address that holds a Symbol of that format; when
+there is none the directive is refused, since the C then prints the constant
+as before. The console spelling is `force constant <addr> <format> [<value>]`,
+and its `decompile` prints `Rejected force constant ...` for the same check.
+
+`isolate` resolves its name as `name` does and sets the Symbol's isolated flag
+(`kuna_hightarget.rs (isolate_local)`); the console's `isolate` command is the
+same function. A printed register local gets the isolated, type-locked Symbol
+over its definition that a `type` stating its present type would map, and the
+use-point carry brings it to the second pass. A stack local and a parameter
+are isolated without a type lock, and reach the second pass by their storage
+(chapter 06, `decompiler/crates/kuna-decomp/src/p6_variables/kuna_isolated.rs`).
 
 When a Varnode is created at an isolated local's mapped definition,
 `Funcdata::set_varnode_properties` applies its exact, locked type before
@@ -2935,7 +2970,7 @@ wanted, so silence there is the failure this plane exists to end.
 Durability is caller-carried, as it is for boundaries: `--assert @FILE` is the
 artifact.
 
-A `flow` directive is the sharpest of the four function-scoped ones, and the only
+A `flow` directive is the sharpest of the function-scoped ones, and the only
 one that changes which bytes are in the function at all. P2 classifies the flow
 out of each instruction — branch, call, call-that-does-not-return, return — and
 `FlowInfo::process` consults the per-function `Override` store
@@ -2971,6 +3006,30 @@ the same engine in process, exited 1 on the same command. Every per-function abo
 is now stamped onto the retained `Funcdata` (`set_kuna_pipeline_failure`) so that
 shell names its reason, and the script surface reports the raised abort the way it
 already reported the swallowed one.
+
+A `callee` directive states where one indirect call goes. The engine cannot
+derive the destination of `call *(%rax)`, and it already has the store for it:
+the per-function `Override` keeps an indirect-call redirect, which kuna plants
+itself when it resolves a call and restarts. The directive plants the same
+redirect before flow (`decompiler/crates/kuna-console/src/kuna_calleeoverride.rs
+(plant)`). It first decodes the instruction at the call site and accepts an
+indirect call or an indirect jump; a direct call, any other instruction and a
+destination that is not a function entry are rejected with the reason, and
+nothing is planted. A destination is a function name or a `0x` entry address.
+The fact is parked on the architecture under the entry of the function that
+holds the call, and P2 turns the call into a direct call to the callee, or the
+jump into a tail call (02, *Call sites*). The script surface lowers the
+directive to the console command `override indirect <callsite> <name|address>`
+(`kuna-console/src/ifacedecomp.rs (IfcOverrideIndirect)`), which calls the same
+`plant`. A call site the function's flow does not reach cannot be seen before
+flow, so the engine records it on the `Funcdata` after the follow and both
+surfaces turn that record into a `fatal` rejection, as they do for a refused
+`flow` (`assertions::record_rejected_callee_overrides`, and the console's
+`Rejected override indirect ...` line). The planted redirect is consulted before
+any resolution of kuna's own, so the statement outranks a destination kuna
+would have recovered (the import a GOT-slot call loads). Two `callee`
+directives for one call site leave the later one planted; the same function
+reports the earlier one rejected.
 
 A `call` (or `callreturn`) override carries one more fact with it: the RET-call
 chain it starts. `push <continuation>; push <target>; ret` is a call spelled
