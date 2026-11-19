@@ -1,0 +1,38 @@
+<decompilertest>
+<binaryimage arch="Dalvik:LE:32:DEX_Android12">
+<!--
+    Kuna DEX loader, Java allocation: P9 presentation, option javanew
+    (default on). The script loads the committed DEX fixture built from
+    tests/stages/fixtures/dex/Hello.java and prints Java.
+
+    Asserts #1-#2 are the off pass: the bytecode's two steps, an allocation
+    new(T) and a separate call to the constructor <init>.
+    Asserts #3-#4 are the default pass: one new T(args) expression, with
+    the constructor's arguments in place.
+-->
+<bytechunk space="ram" offset="0x0" readonly="true">0e00</bytechunk>
+<symbol space="ram" offset="0x0" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file tests/stages/fixtures/dex/hello.dex</com>
+  <com>option setlanguage java-language</com>
+  <com>option javanew off</com>
+  <com>read symbols</com>
+  <com>load function demo::Hello::main</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/stages/fixtures/dex/hello.dex</com>
+  <com>option setlanguage java-language</com>
+  <com>read symbols</com>
+  <com>load function demo::Hello::main</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="javanew #1: off allocates with new(T)" min="1" max="1">= new\(Hello\);</stringmatch>
+<stringmatch name="javanew #2: off calls the constructor as &lt;init&gt;" min="1" max="1">\.&lt;init&gt;\("x",3\);</stringmatch>
+<stringmatch name="javanew #3: on folds the pair into new T(args)" min="1" max="1">= new Hello\("x",3\);</stringmatch>
+<stringmatch name="javanew #4: on folds a no-argument constructor" min="1" max="1">= new StringBuilder\(\);</stringmatch>
+</decompilertest>

@@ -2000,6 +2000,9 @@ pub struct Architecture {
     pub dex: Option<Rc<crate::kuna_dex::DexModel>>,
     /// (kuna) Hand [`Self::dex`] to the engine (option `dexmodel`).
     pub dex_model: bool,
+    /// (kuna) Print an allocation and its `<init>` call as `new T(args)` in
+    /// Java (option `javanew`).
+    pub java_new: bool,
     /// Comments for this architecture (C++ `commentdb`).  // STUB(comment.cc)
     pub commentdb: CommentDatabase,
 
@@ -2655,6 +2658,7 @@ impl Architecture {
             jump_assist: true,
             dex: None,
             dex_model: true,
+            java_new: true,
             commentdb: CommentDatabase::new(),
             // C++ ctor leaves types/print/defaultfp null; init() fills them.
             types: Rc::new(TypeFactoryImpl::new()),
@@ -2773,6 +2777,7 @@ impl Architecture {
         self.readonly_calls = Some(crate::p3_dataflow::heritage::READONLY_CROSS_PRODUCT);
         self.persist_calls = Some(crate::p3_dataflow::heritage::PERSIST_CROSS_PRODUCT);
         self.jump_assist = true; // (kuna) option jumpassist default-on: only the Dalvik and JVM specs declare a <jumpassist>, and no datatest uses either
+        self.java_new = true; // (kuna) option javanew default-on: changes java-language output only
         self.dex_model = true; // (kuna) option dexmodel default-on: only a DEX image carries a model, so no other input changes
         self.narrow_args_callers = true; // (kuna) option narrowargs default `callers`: also narrow a 32-bit ARM parameter every caller of a closed function passes narrow, one of them extending it itself
         self.narrow_args = true; // (kuna) option narrowargs default-on: a register parameter whose uses read only its low 1, 2 or 4 bytes is declared that wide, and a callee's stated narrow parameter caps how much of the argument its callers consume (0/675 datatests)

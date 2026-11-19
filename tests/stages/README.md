@@ -49,6 +49,7 @@ cover both byte orders and execute the recovered wrappers.
 `kuna-dex.xml` loads the committed DEX fixture (`fixtures/dex/hello.dex`, built
 from `fixtures/dex/Hello.java` as its header says) and checks the Java output
 with `dexmodel` and `jumpassist` off and on.
+`kuna-dex-javanew.xml` checks `new T(args)` with `javanew` off and on.
 
 `kuna-callwide.xml` loads the committed sealed MIPS32-BE ELF and checks the
 four-byte OFF result against the proved eight-byte result and high-piece callers.

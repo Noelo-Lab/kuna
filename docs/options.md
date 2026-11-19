@@ -718,6 +718,8 @@ Three tiers:
 | Control flow encountered bad instruction data in a DOS function that does float math | [`fpuemu`](#fpuemu----off--auto--on-default-auto) |
 | a phantom function starts inside an INT 35h instruction's operand bytes | [`fpuemu`](#fpuemu----off--auto--on-default-auto) |
 | swi(0x3d) calls where the program waits for the coprocessor | [`fpuemu`](#fpuemu----off--auto--on-default-auto) |
+| Java output prints v = new(T); followed by v.<init>(args); | [`javanew`](#javanew----on--off-default-on) |
+| a constructor call prints as a method named <init> | [`javanew`](#javanew----on--off-default-on) |
 | a value stored before an Octeon atomic add is returned instead of the reloaded memory | [`octeoneffects`](#octeoneffects----off--atomic--ordered-default-atomic) |
 | a store read only by a following ll or lld disappears | [`octeoneffects`](#octeoneffects----off--atomic--ordered-default-atomic) |
 | an Octeon fetch-and-add result or old value prints with the wrong width or behind an (int) cast | [`octeoneffects`](#octeoneffects----off--atomic--ordered-default-atomic) |
@@ -2389,6 +2391,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** Leave auto: a DOS program linked with the 8087 emulator decompiles its float code, and every other input (no fpuEmu bit outside x86-16.sla, no emulator code in the image) is byte-identical. Use on for a raw-image or .COM program that uses the emulator but has too little float code for the evidence, off to read the interrupts as the bytes encode them.
 - **Where / provenance:** P2/decode-context · kuna · correctness-fix · kuna-1288-fpuemu
 - **Example:** `kuna decompile-all dazzle.exe --option fpuemu off`
+
+### `javanew` -- on | off, default `on`
+
+- **Symptoms:** Java output prints v = new(T); followed by v.<init>(args);; a constructor call prints as a method named <init>.
+- **What it does:** In java-language output, print an allocation and the `<init>` call that initializes it as one `new T(args)` expression. Dalvik allocates with `new-instance` and initializes with a separate `invoke-direct` of `<init>`, which upstream's Java output keeps as two statements (`v = new(T); v.<init>(args);`). The pair folds only when the object reaches nothing but that call before it, in the same basic block; the arguments keep their own statements and order.
+- **When to flip:** On by default; it changes only java-language output. Turn OFF to see the bytecode's two steps, or to diff against upstream Ghidra's Java output.
+- **Where / provenance:** P9/readability-rewrites · kuna · presentation-default · kuna-dex-loader
+- **Example:** `option javanew off`
 
 ### `octeoneffects` -- off | atomic | ordered, default `atomic`
 

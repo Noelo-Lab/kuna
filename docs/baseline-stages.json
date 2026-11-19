@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4825,
-    4825
+    4829,
+    4829
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -3771,6 +3771,10 @@
     "data:iteregion #3: fix (on) -- the diamond collapses to a single ?: ternary (on pass only)",
     "data:iteregion #4: fix (on) -- the rewrite is logged",
     "data:iteregion #5: p-code untouched -- the merged variable still feeds the call in BOTH passes",
+    "data:javanew #1: off allocates with new(T)",
+    "data:javanew #2: off calls the constructor as <init>",
+    "data:javanew #3: on folds the pair into new T(args)",
+    "data:javanew #4: on folds a no-argument constructor",
     "data:jtsharepartial #2: all three passes are in the scanned stream (one memcpy_opt definition each), so the counts above are not one dropped pass",
     "data:jumpassist #3: off keeps the sparse-switch an indirect jump",
     "data:jumpassist #8: the sparse-switch cases are recovered",

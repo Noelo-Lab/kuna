@@ -2243,7 +2243,8 @@ mod tests {
         // and ghangr-go-aarch64-stack-stride / adjacent eight-byte spills keep their declared inputs
         // and ghangr-go-mcall-resumption / a scheduler switch preserves its caller's continuation
         // and kuna-dex / a DEX file's constant pool, entry copies and sparse switches
-        assert_eq!(count, 825, "corpus file count drifted");
+        // and kuna-dex-javanew / an allocation and its <init> call as new T(args)
+        assert_eq!(count, 826, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

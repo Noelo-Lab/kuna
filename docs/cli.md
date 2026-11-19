@@ -1389,8 +1389,7 @@ kuna decompile classes.dex 'demo::Hello::greet'
 #   String greet(String a0)
 #   {
 #     StringBuilder v1; // resultreg | v0 | v2
-#     v1 = new(StringBuilder);
-#     v1.<init>();
+#     v1 = new StringBuilder();
 #     v1 = v1.append("Hello, ");
 #     v1 = v1.append(a0);
 #     return v1.toString();
@@ -1400,9 +1399,10 @@ kuna decompile classes.dex 'demo::Hello::greet'
 Method, field, string and type references resolve through the DEX constant
 pool, a method's arguments are read from its input registers, and
 `sparse-switch` tables are recovered (`--option dexmodel off` and
-`--option jumpassist off` show the raw SLEIGH lifting instead). An object is
-created by `new(T)` and initialized by a separate `<init>` call, as the bytecode
-does it. The language is `Dalvik:LE:32:DEX_Android12`; `--target` selects another
+`--option jumpassist off` show the raw SLEIGH lifting instead). An allocation
+and the constructor call that initializes it print as one `new T(args)` when
+they sit together in a basic block; `--option javanew off` prints the bytecode's
+two steps, `v = new(T); v.<init>(args);`. The language is `Dalvik:LE:32:DEX_Android12`; `--target` selects another
 `Dalvik:` language. An APK is a zip: extract its `classes*.dex` and load each one;
 a call into a class defined in another of them prints by name. CDEX, ODEX, OAT
 and VDEX files are not supported.

@@ -1,6 +1,7 @@
 //! (kuna `dexmodel`) Printing the byte-code operators: `CPOOLREF` and `NEW`
 //! (`PrintC::opCpoolRefOp`, `PrintC::opNewOp`), and the java-language forms of
-//! LOAD, STORE and CALLIND (`PrintJava::opLoad`, `opStore`, `opCallind`).
+//! LOAD, STORE and CALLIND (`PrintJava::opLoad`, `opStore`, `opCallind`),
+//! the last also as `new T(args)` (kuna `javanew`).
 
 use kuna_num::opcodes::OpCode;
 
@@ -187,9 +188,23 @@ impl PrintC {
             let is_this = |slot: i32| proto.get_param(slot).is_some_and(|p| p.is_this_pointer());
             (1..nin - 1).find(|&i| is_this(i - 1)).or_else(|| (nin >= 2 && is_this(nin - 2)).then_some(nin - 1)).unwrap_or(-1)
         });
+        let merged = self.java_new.get(&op).cloned();
+        if let Some(pair) = &merged {
+            if fd.vbank().get(pair.object).is_some_and(|v| !v.is_implied()) {
+                self.push_op(&tokens::ASSIGNMENT, Some(op_key(op)));
+                self.push_vn_explicit_ir(fd, arch, pair.object, pair.new_op);
+            }
+            self.push_op(&tokens::NEW_OP, Some(op_key(op)));
+            self.push_atom(&Atom::with_op(keywords::KEYWORD_NEW, TagType::OpToken, SyntaxHighlight::keyword_color, op_key(op)));
+        }
         self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
-        if let Some(callee) = o.get_in(0) {
-            self.push_vn_ir(fd, arch, callee, op);
+        match &merged {
+            Some(pair) => self.push_atom(&Atom::with_op(pair.class.clone(), TagType::OpToken, SyntaxHighlight::type_color, op_key(op))),
+            None => {
+                if let Some(callee) = o.get_in(0) {
+                    self.push_vn_ir(fd, arch, callee, op);
+                }
+            }
         }
         let args: Vec<VarnodeId> = (1..nin).filter(|&i| i != skip).filter_map(|i| o.get_in(i)).collect();
         if args.is_empty() {
