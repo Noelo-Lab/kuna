@@ -182,10 +182,19 @@ fn probe_cortex(image: &Image, args: &mut Vec<String>) -> Option<cortexm::Vector
 }
 
 /// Each SVD peripheral: its structure, a typed global at its base, and a
-/// volatile range over its registers.
+/// volatile range over its registers. A structure named as a built-in System
+/// Control Space one (`SCB_Type`) takes the device's name in front, so the
+/// peripheral keeps the SVD's layout where it replaces the built-in global.
 fn declare_device(device: &svd::Device, args: &mut Vec<String>) {
     let mut declared = std::collections::BTreeSet::new();
     for p in device.peripherals.iter().filter(|p| !p.registers.is_empty()) {
+        let renamed;
+        let p = if kuna_analysis::cortexmscs::names_a_type(&p.type_name) {
+            renamed = svd::Peripheral { type_name: format!("{}_{}", device.c_name(), p.type_name), ..p.clone() };
+            &renamed
+        } else {
+            p
+        };
         if declared.insert(p.type_name.clone()) {
             args.extend(["--assert".into(), format!("typedef {}", p.c_struct())]);
         }

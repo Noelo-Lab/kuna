@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<device schemaVersion="1.1">
+  <name>MINI_SCS</name>
+  <size>32</size>
+  <peripherals>
+    <peripheral>
+      <name>SCB</name>
+      <baseAddress>0xE000ED00</baseAddress>
+      <registers>
+        <register><name>CPUID</name><addressOffset>0x00</addressOffset></register>
+        <register><name>ICSR</name><addressOffset>0x04</addressOffset></register>
+        <register><name>VTOR</name><addressOffset>0x08</addressOffset></register>
+        <register><name>AIRCR</name><addressOffset>0x0C</addressOffset></register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>FPU_CPACR</name>
+      <baseAddress>0xE000ED88</baseAddress>
+      <registers>
+        <register><name>CPACR</name><addressOffset>0x00</addressOffset></register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>STK</name>
+      <baseAddress>0xE000E010</baseAddress>
+      <registers>
+        <register><name>CSR</name><addressOffset>0x00</addressOffset></register>
+        <register><name>RVR</name><addressOffset>0x04</addressOffset></register>
+        <register><name>CVR</name><addressOffset>0x08</addressOffset></register>
+      </registers>
+    </peripheral>
+  </peripherals>
+</device>

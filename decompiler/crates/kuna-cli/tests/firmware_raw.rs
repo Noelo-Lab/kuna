@@ -41,6 +41,33 @@ fn svd_names_peripherals_and_interrupts() {
 }
 
 #[test]
+fn cortexm_dump_gets_the_system_control_space() {
+    let bin = common::fixture("cortexm3_scs.bin");
+    let (out, err, code) = common::run_kuna(&["decompile-all", &bin]);
+    assert_eq!(code, 0, "{err}");
+    assert!(out.contains("SCB.VTOR = 0x8000000;"), "{out}");
+    assert!(out.contains("NVIC.ISER[0] = 0x40;"), "{out}");
+    assert!(out.contains("NVIC.ISER[a0 >> 5] ="), "{out}");
+    assert!(out.contains("SysTick.CTRL = 7;"), "{out}");
+    let (off, err, code) = common::run_kuna(&["decompile-all", &bin, "--option", "cortexmscs", "off"]);
+    assert_eq!(code, 0, "{err}");
+    assert!(off.contains("dat_e000ed08 = 0x8000000;") && !off.contains("SCB."), "{off}");
+}
+
+#[test]
+fn svd_peripheral_replaces_a_system_control_space_block() {
+    let bin = common::fixture("cortexm3_scs.bin");
+    let svd = common::fixture("cortexm3_scs.svd");
+    let (out, err, code) = common::run_kuna(&["decompile-all", &bin, "--svd", &svd]);
+    assert_eq!(code, 0, "{err}");
+    assert!(out.contains("STK.RVR = a0 - 1U;") && !out.contains("SysTick."), "{out}");
+    assert!(out.contains("SCB.VTOR = 0x8000000;"), "{out}");
+    assert!(out.contains("dat_e000ed23 = 0xf0;"), "the SVD's SCB has no SHPR: {out}");
+    assert!(out.contains("FPU_CPACR.CPACR"), "{out}");
+    assert!(out.contains("NVIC.ISER[0] = 0x40;"), "a block the SVD omits stays built in: {out}");
+}
+
+#[test]
 fn svd_is_refused_where_it_does_not_apply() {
     let bin = common::fixture("cortexm3_raw.bin");
     let svd = common::fixture("cortexm3_raw.svd");

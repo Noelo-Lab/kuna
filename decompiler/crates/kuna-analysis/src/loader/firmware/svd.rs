@@ -144,6 +144,13 @@ pub fn parse(bytes: &[u8]) -> Result<Device, String> {
     Ok(dev)
 }
 
+impl Device {
+    /// The device name as a C identifier.
+    pub fn c_name(&self) -> String {
+        c_name(&self.name)
+    }
+}
+
 impl Peripheral {
     /// Bytes the registers span.
     pub fn extent(&self) -> u64 {
