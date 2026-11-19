@@ -109,14 +109,19 @@ function's type, because the binary alone cannot settle it:
 **Calls.**
 - The machine side runs a stub at each call. The stub records the call, returns a
   recorded random value in the return registers, clobbers caller-saved registers, and
-  writes recorded random bytes to the memory the call can reach: what its pointer
-  arguments point to, and memory that escaped to it. Without the memory writes, a rule
-  that reuses a value loaded before the call as if the call could not change it would
-  agree with the machine and be missed.
+  writes recorded random bytes to the memory the call can reach. That set is:
+  - what its pointer arguments point to;
+  - memory that escaped before the call;
+  - every writable global: the image's writable sections, since a callee with no
+    arguments can still change `counter`.
+
+  Without the memory writes, a rule that reuses a value loaded before the call as if the
+  call could not change it would agree with the machine and be missed.
 - The decompiled side replays the same return values and memory writes call by call.
   INDIRECT is a copy unless the recorded effect wrote that storage.
 - A different call sequence is itself `DIFFERS`.
-- A call whose reachable memory the harness cannot bound is `UNKNOWN(call-effect)`.
+- A call whose reachable memory the harness cannot bound (an escaped pointer of unknown
+  extent, writable memory outside the image) is `UNKNOWN(call-effect)`.
 
 **Needs no phase hooks.** The machine side reads the binary and the decompiled side reads
 the finished `Funcdata`. Loops are fine: execution is bounded by a step budget, and a run
@@ -163,9 +168,17 @@ bit-vectors and arrays:
 - loops are unrolled up to a bound k on both sides;
 - floating point stays `UNKNOWN` until a later slice.
 
-Tier S encodes only what Tier C executes. A function that reached
-`UNKNOWN(unsupported-op)` or `UNKNOWN(call-effect)` in Tier C is not encoded, so an
-incomplete memory or call model can never yield `EQUIVALENT`.
+**Entry condition: static, over every path.** Tier C's runs sample paths, so a function
+can be `AGREES(256)` while an unsupported op sits on a path no run took (a branch on
+`x == 0xDEADBEEF`). Admission to Tier S therefore does not rest on those runs. Before
+encoding, every op reachable from the entry in **both** CFGs is checked:
+- the machine side's lifted instructions;
+- every op of the `Funcdata`.
+
+Each op must have complete SMT semantics, and every call's reachable memory must be
+bounded. One that does not makes the function `SKIPPED(unencodable: <op or call>)`, and
+it is never proved. An incomplete memory or call model can therefore never yield
+`EQUIVALENT`, whichever paths the concrete runs happened to cover.
 
 z3 runs as a subprocess speaking SMT-LIB 2. That keeps libz3 out of the cargo build, lets
 CI `apt install z3`, and lets any verdict be cross-checked with cvc5 or bitwuzla.
@@ -254,11 +267,11 @@ library rather than stubbed.
 
 | slice | scope | done when |
 |---|---|---|
-| C1 | Tier C on pure integer functions: no calls, no stores outside the frame; same raw state on both sides; physical-ABI and typed-contract return checks; `PROTOTYPE_SUSPECT`; `UNKNOWN(unsupported-op)`; declared-divergence predicates | reverting #794 gives `DIFFERS` against its fixture's source contract; verdict table over `tests/datatests` + `tests/stages`, with per-function and total time |
-| C2 | memory and call effects: stack and pointer-argument memory, call stubs that write reachable memory, `UNKNOWN(call-effect)` | reverting #801 gives `DIFFERS`; a rule that keeps a pre-call load across a call that writes it gives `DIFFERS` |
+| C1 | Tier C on register-only leaf functions: no calls and no memory access at all, except loads from read-only image data; same raw state on both sides; physical-ABI and typed-contract return checks; `PROTOTYPE_SUSPECT`; `UNKNOWN(unsupported-op)`; declared-divergence predicates | reverting #794 gives `DIFFERS` against its fixture's source contract; verdict table over `tests/datatests` + `tests/stages`, with per-function and total time |
+| C2 | memory and call effects: stack, pointer-argument and global memory; call stubs that write reachable memory, globals included; `UNKNOWN(call-effect)` | reverting #801 gives `DIFFERS`; a rule that keeps a pre-call load across a call that writes it gives `DIFFERS` |
 | C3 | rule localization over the C1/C2 verdicts | candidate culprits include `subvar_zext` on reverted #794; cost per finding |
 | C4 | corpus run (decbench binaries); precision and recall | precision: triage of every `DIFFERS` into bug / declared divergence / harness bug. Recall: of the ~44 visible P3/P4 fixes that have a fixture, how many give `DIFFERS` when reverted. Published table with both |
-| S1 | Tier S for loop-free `AGREES` functions, under the budget, over exactly the semantics Tier C executes | `EQUIVALENT` and `UNKNOWN(budget)` counts on the same corpus; every `sat` replays or is classified |
+| S1 | Tier S for loop-free `AGREES` functions that pass the static entry condition, under the budget | `EQUIVALENT` and `UNKNOWN(budget)` counts on the same corpus; every `sat` replays or is classified |
 | S2 | bounded loops; budget baseline and budget-regression flag | `EQUIVALENT(≤k)` counts; a deliberately bloating rule change is flagged by budget alone |
 | L1 | Tier L for x86-64, AArch64, ARM | per-arch mismatch report with skip list |
 | P | separate proposal | — |

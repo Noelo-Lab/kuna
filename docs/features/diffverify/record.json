@@ -39,11 +39,11 @@
   ],
   "measurements_required": {
     "C1": "per-function and total Tier C time",
-    "C2": "bisection cost per finding",
-    "C3": "precision (triage) and recall (reverted fixes)"
+    "C3": "localization cost per finding",
+    "C4": "precision (triage) and recall (reverted fixes)"
   },
   "slices": [
-    "C1 pure integer",
+    "C1 register-only leaf functions",
     "C2 memory and call effects",
     "C3 rule localization",
     "C4 corpus, precision and recall",
