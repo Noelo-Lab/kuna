@@ -3897,6 +3897,33 @@ adjacency, root-filter behavior and the empty `UNPORTED_ALLOWLIST`
 require an intentional schedule change; matching it alone does not prove
 decompilation parity, which remains covered by the output regression suites.
 
+**Embedder hooks** (kuna). Code that links `kuna-decomp` can extend the default
+tree without replacing it, through a registry on the `Architecture`
+(`decompiler/crates/kuna-decomp/src/infra/kuna_hooks.rs (HookRegistry)`,
+reached by `decompiler/crates/kuna-decomp/src/infra/architecture.rs
+(Architecture::add_rule, Architecture::on_phase)`). There is no option and no
+CLI surface for it. `add_rule(after_group, state, rule)` puts a rule directly
+behind the last rule of `after_group`, in the first pool in schedule order
+(`oppool1`, `oppool2`, cleanup) that holds a rule of that group; rules added to
+the same group keep their registration order. The rule's own group, from its
+`RuleState`, decides which root variants keep it, as for every built-in rule.
+`on_phase(phase, callback)` runs a callback with the function at one fixed
+schedule point per phase: P2 after `start`, when the ops are lifted and the CFG
+is built; P3, P4 and P5 together, in that order, after fullloop reaches its
+fixed point, because Band B has no boundary between them; P6 after `copymarker`,
+when the HighVariables are merged; P7 after the final `blockstructure`; P8 after
+the last structure pass, before `prototypewarnings`. P1 ends before a function
+exists and P9 is the printer, so neither has a point in the tree and
+registering for them is an error. Each point is a leaf action
+(`phasehook_p2` … `phasehook_p8`) in the group of its neighbours (`base`,
+`merge`, `blockrecovery`), so a root variant that does not run a phase does not
+run its callbacks; a jump-table recovery partial runs none, and a restart runs
+them again. A registration rebuilds the universal tree and derives the current
+root again: group lists survive, but breakpoints and disabled rules set on the
+old roots do not, so hooks are registered before those. With nothing registered
+the schedule holds no extra row and no extra leaf, and the tree, its listing
+and the output are the ones described above.
+
 Flow-follow itself runs *before* the tree (the upstream `followFlow` →
 `startProcessing` order), bounded by the P0 flow options — decode-error policy
 `error_toomanyinstructions` and a 100000-instruction ceiling by default

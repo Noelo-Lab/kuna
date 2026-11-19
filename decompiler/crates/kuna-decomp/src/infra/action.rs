@@ -1769,6 +1769,12 @@ impl ActionDatabase {
         self.register_action(UNIVERSAL_NAME, act);
     }
 
+    /// (kuna) Forget every root derived from the universal tree, so the next
+    /// [`set_current`](ActionDatabase::set_current) derives it again.
+    pub fn drop_derived(&mut self) {
+        self.actionmap.retain(|name, _| name == UNIVERSAL_NAME);
+    }
+
     /// Get the current root Action (C++ `getCurrent`).
     pub fn get_current(&self) -> Option<&dyn Action> {
         self.actionmap.get(&self.currentactname).map(|b| b.as_ref())

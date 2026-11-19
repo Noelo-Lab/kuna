@@ -20,6 +20,9 @@ mod funcdata_encode_e2e;
 #[path = "heritage_b3.rs"]
 mod heritage_b3;
 
+#[path = "hook_registry.rs"]
+mod hook_registry;
+
 #[path = "options_md_fresh.rs"]
 mod options_md_fresh;
 
