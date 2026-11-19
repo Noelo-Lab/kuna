@@ -5157,16 +5157,16 @@ every other binary's pass list is byte-identical to before the pass existed):
   into `.data` with the rest of the data segment), and the type
   metadata is then found by CROSS-VALIDATION inside the moduledata window in
   whichever of its two historical forms is present — never by hardcoded field
-  offsets. Through go1.25: the `types`/`etypes` pair plus the `typelinks`
+  offsets. Through go1.26: the `types`/`etypes` pair plus the `typelinks`
   slice, sampled entries required to decode as plausible `_type` records.
-  From go1.26 the slice is gone: moduledata carries `types, typedesclen,
+  From go1.27 the slice is gone: moduledata carries `types, typedesclen,
   etypes` and the records sit consecutively in `[types + ptrSize, types +
   typedesclen)`, enumerated by advancing each record's own descriptor size
   (`internal/abi.Type::DescriptorSize` — the per-kind wrapper, the optional
   uncommon block and its methods, and the kind's trailing arrays), the walk
   accepted only when records decode back to back and refused whole on the
   first divergence. That is what lets one implementation hold across
-  go1.18..go1.27's layout drift (verified under go1.22, go1.25 and go1.27;
+  go1.18..go1.27's layout drift (verified under go1.22, go1.25, go1.26 and go1.27;
   the e2e gate is `verify_gotypes`). Typelinks hold the pointer forms
   interface conversion reaches (`*main.Point`), so the walk follows a
   pointer record's elem to the named struct pointee. It interns
@@ -5205,12 +5205,14 @@ every other binary's pass list is byte-identical to before the pass existed):
   Their base type record is 32 bytes, moduledata and slice words are four bytes,
   and each struct field occupies three words. Header shells and pointer types
   use four-byte words as well. A build-info version identifying Go 1.18 through
-  1.25 selects the 32-bit typelinks path. Go 1.27 selects the consecutive
-  descriptor path, using the pointer width for alignment, wrapper fields,
+  1.26 selects the 32-bit typelinks path. Go 1.26 keeps the typelinks and
+  itablinks slices when `firstmoduledata` moves into `.go.module`.
+  Go 1.27 selects the consecutive descriptor path and uses the pointer width
+  for alignment, wrapper fields,
   slices and function type pointers. Method entries stay fixed-width, and the
   Go 1.27 map wrapper uses ten words plus one aligned flags slot. A partial
-  final descriptor refuses the region. Go 1.26 and unknown versions retain
-  the 32-bit refusal for their unqualified layouts.
+  final descriptor refuses the region. Unknown versions are refused on
+  32-bit targets.
   Stripped i386 and ARM tests cover integer, string, embedded-pointer and nested
   value fields, with the existing amd64 and arm64 tests as controls. Interning happens at
   `load file`, the walk is bounded (20,000 typelinks), and the
@@ -5236,7 +5238,7 @@ every other binary's pass list is byte-identical to before the pass existed):
   them. A descriptor is a global of layout `internal/abi.Type` that
   Go's linker names `type:main.Point` / `type:*main.Point` / `type:[]uint8`;
   stripping deletes those symtab names while the records stay reachable
-  through the moduledata. Every decodable record (typelinks or the go1.26+
+  through the moduledata. Every decodable record (typelinks or the go1.27+
   descriptor region, a pointer record's pointee included, deduplicated by
   VMA and emitted in address order) becomes one typed-data fact: the record's
   VMA, the linker-spelling `type:<name>` symbol (the decoded name — a
@@ -5266,8 +5268,8 @@ every other binary's pass list is byte-identical to before the pass existed):
   `decompiler/crates/kuna-analysis/src/analyzers/gotypes/kuna_itabs.rs`): each
   static `itab` the runtime lists binds one interface type to one concrete
   type and Go's linker names it `go:itab.<concrete>,<interface>`. The records
-  sit in the `itablinks` pointer slice of moduledata (go1.18..go1.25) or, from
-  go1.26, in the contiguous `[types + itaboffset, + itabsize)` region walked by
+  sit in the `itablinks` pointer slice of moduledata (go1.18..go1.26) or, from
+  go1.27, in the contiguous `[types + itaboffset, + itabsize)` region walked by
   each record's `internal/abi.ITab::Size()` — the parallel of the typelinks →
   descriptor-region change `locate_type_meta_descriptors` already handles —
   both located by cross-validation in the moduledata window (sampled records
