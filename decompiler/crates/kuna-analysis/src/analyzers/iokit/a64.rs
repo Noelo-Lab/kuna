@@ -67,7 +67,7 @@ enum Step {
 }
 
 /// Execute one instruction at `pc` on `regs`, reporting calls and stores.
-fn step(img: &MachoImage, pc: u64, ins: u32, regs: &mut Regs, events: &mut Vec<Event>, ctor: Option<u64>) -> Step {
+fn step(img: &MachoImage, pc: u64, ins: u32, regs: &mut Regs, events: &mut Vec<Event>, ctors: &[u64]) -> Step {
     let branch = |ins: u32| pc.wrapping_add((sext((ins & 0x03ff_ffff) as u64, 26) * 4) as u64);
     let args = |regs: &Regs| [regs.get(0), regs.get(1), regs.get(2), regs.get(3)];
     match ins {
@@ -109,7 +109,7 @@ fn step(img: &MachoImage, pc: u64, ins: u32, regs: &mut Regs, events: &mut Vec<E
         _ if ins & 0xfc00_0000 == 0x9400_0000 => {
             let (target, args) = (branch(ins), args(regs));
             regs.clobber_call();
-            if Some(target) == ctor {
+            if ctors.contains(&target) {
                 regs.set(0, args[0]);
             }
             events.push(Event::Call(Call { target, args }));
@@ -156,15 +156,15 @@ fn clobber_generic(ins: u32, regs: &mut Regs) {
 
 /// Follow straight-line code from `entry` for at most `budget` instructions,
 /// stopping at a return, an indirect or tail branch, or an undecodable address.
-/// Conditional branches fall through. A call to `ctor` (a C++ constructor)
-/// returns its `this` in `x0`, as Apple's arm64 ABI specifies.
-pub(super) fn trace(img: &MachoImage, entry: u64, budget: usize, ctor: Option<u64>) -> Vec<Event> {
+/// Conditional branches fall through. A call to one of `ctors` (a C++
+/// constructor) returns its `this` in `x0`, as Apple's arm64 ABI specifies.
+pub(super) fn trace(img: &MachoImage, entry: u64, budget: usize, ctors: &[u64]) -> Vec<Event> {
     let mut regs = Regs::default();
     let mut events = Vec::new();
     let mut pc = entry;
     for _ in 0..budget {
         let Some(ins) = img.read_u32(pc) else { break };
-        if let Step::Stop = step(img, pc, ins, &mut regs, &mut events, ctor) {
+        if let Step::Stop = step(img, pc, ins, &mut regs, &mut events, ctors) {
             break;
         }
         pc = pc.wrapping_add(4);
@@ -183,7 +183,7 @@ pub(super) fn returned_constant(img: &MachoImage, entry: u64, limit: usize) -> O
         if ins == 0xd65f_03c0 || ins & 0xffff_fbff == 0xd65f_0bff {
             return regs.get(0);
         }
-        if let Step::Stop = step(img, pc, ins, &mut regs, &mut events, None) {
+        if let Step::Stop = step(img, pc, ins, &mut regs, &mut events, &[]) {
             return None;
         }
         if !events.is_empty() {
@@ -202,7 +202,7 @@ pub(super) fn constants(img: &MachoImage, entry: u64, budget: usize) -> Vec<u64>
     let mut pc = entry;
     for _ in 0..budget {
         let Some(ins) = img.read_u32(pc) else { break };
-        let stop = matches!(step(img, pc, ins, &mut regs, &mut events, None), Step::Stop);
+        let stop = matches!(step(img, pc, ins, &mut regs, &mut events, &[]), Step::Stop);
         if ins & 0x1f00_0000 == 0x1000_0000 || ins & 0xff80_0000 == 0x9100_0000 {
             out.extend(regs.get(rd(ins)));
         }
