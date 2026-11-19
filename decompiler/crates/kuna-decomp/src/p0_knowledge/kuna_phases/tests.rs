@@ -56,9 +56,9 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_219() {
-    assert_eq!(kuna_num_settables(), 219);
-    assert_eq!(SETTABLE_TABLE.len(), 219);
+fn settable_count_is_220() {
+    assert_eq!(kuna_num_settables(), 220);
+    assert_eq!(SETTABLE_TABLE.len(), 220);
 }
 
 #[test]
@@ -1095,7 +1095,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `calleeargs`; its P4 row sits after `argclobber`.
     // +1 for `acleintrinsics`; its P9 row sits after `cortexmpriv`.
     // +1 for `kernelcache-boot`; its P1 row sits after `kernelcache`.
-    assert_eq!(json.matches("},\n").count(), 218);
+    assert_eq!(json.matches("},\n").count(), 219);
 }
 
 #[test]
