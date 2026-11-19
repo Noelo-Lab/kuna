@@ -184,6 +184,22 @@ fn input_type_local_with(data: &Funcdata, op: OpId, slot: int4, recovered: bool)
         }
     }
 
+    // (kuna vastart) `va_start(__va_list_tag *, ...)`.
+    if opcode == OpCode::CPUI_CALLOTHER
+        && slot == 1
+        && in_size == 8
+        && o.get_in(0).and_then(|v| data.vbank().get(v)).map(|v| v.get_offset())
+            == Some(crate::userop::BUILTIN_VA_START as u64)
+    {
+        if let Some(tlst) = arch.types() {
+            if let Ok(ptr) = tlst.get_type_struct("__va_list_tag").and_then(|t| tlst.get_type_pointer(8, t, 1)) {
+                if ptr.get_ptr_to().is_some_and(|t| t.get_size() == 24) {
+                    return ptr;
+                }
+            }
+        }
+    }
+
     // (kuna kernelbug) `__WARN(file,line)`: the file is a `char *`, the line an `int`.
     if opcode == OpCode::CPUI_CALLOTHER
         && slot > 0

@@ -973,6 +973,8 @@ pub struct ArchContext {
     /// (kuna) `mixedtailret`: a value returned beside a claimed tail-call
     /// result is returned too.  Read by [`crate::p4_calls::kuna_mixedtailret`].
     pub mixed_tail_ret: bool,
+    /// (kuna `vastart`) Print the x86-64 SysV va_start prologue as va_start(ap, last).
+    pub va_start: bool,
     /// (kuna `trapaftercall`) A `ud2` after an x86 call marks the call site no-return.
     pub trap_after_call: bool,
     /// (kuna) `armfloatreturn` is on and the image states the ARM VFP calling
@@ -1703,6 +1705,7 @@ impl ArchContext {
             narrow_ext: crate::kuna_narrowext::Rules::default(),
             pass_through: true, // (kuna) option passthrough (default on)
             mixed_tail_ret: false, // (kuna) option mixedtailret (default off)
+            va_start: false,
             trap_after_call: false,
             readonly_calls: Some(crate::p3_dataflow::heritage::READONLY_CROSS_PRODUCT),
             persist_calls: Some(crate::p3_dataflow::heritage::PERSIST_CROSS_PRODUCT),

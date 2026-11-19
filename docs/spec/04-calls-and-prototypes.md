@@ -9643,6 +9643,28 @@ operations and operands outside the complete ten-byte stack-register bank retain
 their original inputs. Implementation:
 `decompiler/crates/kuna-decomp/src/p4_calls/kuna_x87free.rs`.
 
+**va_start** (`vastart`, default on; kuna;
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_vastart.rs (ActionVaStart)`,
+run in the full loop after the stack-guard strip): an x86-64 SysV variadic
+function that materializes a `va_list` spills the unnamed argument registers
+to a 176-byte register save area (the XMM half under `if (al)`) and sets the
+four `__va_list_tag` fields. The action finds the two offset constants (two
+4-byte COPYs or one 8-byte COPY at a stack slot `X`: `gp_offset` a multiple of
+8 up to 48, `fp_offset` 48 plus a multiple of 16 up to 176) and, in the same
+block, the writes of `X+8` and `X+16`, where the `X+16` value is a stack
+address (`PTRSUB` or `INT_ADD` off the stack pointer) giving the save area. A
+write is a COPY, or an INDIRECT whose input is other storage (a store folded
+into a later call's effect on the slot). It inserts `va_start(&X, last)`
+before the offset COPYs, turns those COPYs into indirect creations of it, and
+feeds the pointer writes from new indirect creations of it, so the `va_list`
+keeps every later reader. `last` is the prototype's parameter
+`gp_offset/8 + (fp_offset-48)/16 - 1`, or, before a prototype exists and with
+no named float argument, the integer argument register `gp_offset/8 - 1`. The
+save area's slots lose their address-forced liveness and local mapping (as the
+stack-guard strip does for the canary slot), so dead-code removes the spills
+and the `al` test, and an unlocked prototype is marked variadic. x86-64 System V language ids only
+(`ctx.va_start`). Exercised by `tests/stages/kuna-vastart.xml`.
+
 ### Qualified register declarations bind to an entry (`kuna_qualifiedstorage.rs`, `kuna_qualifiedcall.rs`)
 
 The console's qualified `map param <func>::<i>` and `map return <func>::<storage>`

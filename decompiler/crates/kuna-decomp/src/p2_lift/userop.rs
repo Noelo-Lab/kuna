@@ -146,6 +146,8 @@ pub const BUILTIN_MEMSET64: uint4 = 0x1000000d;
 /// (kuna) Built-in id for `builtin_memcmp`, the comparison a `repz cmpsb`
 /// computes (`repstring`).
 pub const BUILTIN_MEMCMP: uint4 = 0x1000000e;
+/// (kuna) Built-in id for `va_start`, a `va_list` set-up (`vastart`).
+pub const BUILTIN_VA_START: uint4 = 0x10000012;
 
 // ---------------------------------------------------------------------------
 // UserOpBase + UserPcodeOp hierarchy (userop.hh:47-318)
@@ -834,6 +836,11 @@ pub trait UseropTypeArchitecture {
     fn get_type_char(&self) -> Rc<crate::dtype::Datatype>;
     /// C++ `glb->types->getTypeChar(glb->types->getSizeOfWChar())`.
     fn get_type_wchar(&self) -> Rc<crate::dtype::Datatype>;
+    /// (kuna) A pointer to the System V x86-64 `__va_list_tag`, when pointers
+    /// are 8 bytes.
+    fn get_va_list_pointer(&self) -> Option<Rc<crate::dtype::Datatype>> {
+        None
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1070,6 +1077,10 @@ impl UserOpManage {
             }
             BUILTIN_KERNEL_BUG => UserPcodeOp::new_unspecialized(b"BUG", BUILTIN_KERNEL_BUG as int4),
             BUILTIN_KERNEL_WARN => UserPcodeOp::new_unspecialized(b"__WARN", BUILTIN_KERNEL_WARN as int4),
+            BUILTIN_VA_START => match types.get_va_list_pointer() {
+                Some(ptr) => UserPcodeOp::new_datatype(b"va_start", BUILTIN_VA_START as int4, None, &[Some(ptr)]),
+                None => UserPcodeOp::new_unspecialized(b"va_start", BUILTIN_VA_START as int4),
+            },
             _ => return Err(KunaError::lowlevel("Bad built-in userop id")),
         };
         self.builtinmap.insert(i, res);

@@ -1,0 +1,48 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna-vastart: the x86-64 SysV va_start prologue prints as one call
+    (option vastart).
+
+    Source (gcc -O2, x86-64):
+      int logf_(const char *fmt, ...) {
+        va_list ap;
+        va_start(ap, fmt);
+        int r = sink_v(fmt, ap);
+        va_end(ap);
+        return r;
+      }
+
+    gcc spills the five unnamed argument registers and, under test al, the
+    eight XMM registers to the register save area, then sets gp_offset 8,
+    fp_offset 0x30, overflow_arg_area and reg_save_area.
+
+    Stage: P4, ActionVaStart: the four field writes become effects of a
+    va_start(ap, fmt) CALLOTHER, and the save area's slots lose their forced
+    liveness, so the spills go.
+
+    Pass 1 (default) prints va_start and no spill; pass 2 (vastart off) the
+    field stores and the al test.
+
+-->
+<bytechunk space="ram" offset="0x401000" readonly="true">
+f30f1efa8b160fbe0783fa2f771289d183c20848034e1089160301c30f1f4000488b4e08488d5108488956080301c390f30f1efa4881ecd80000004889742428488954243048894c24384c894424404c894c244884c074370f294424500f294c24600f295424700f299c24800000000f29a424900000000f29ac24a00000000f29b424b00000000f29bc24c0000000488d8424e0000000488d742408c7442408080000004889442410488d442420c744240c300000004889442418e840ffffff4881c4d8000000c30f1f840000000000f30f1efa488d44240848897424d848894424c0488d4424d048895424e048894c24e84c894424f04c894c24f8c74424b80800000048894424c885ff7e4b4989c1b908000000488d74240831c031d2eb114189c883c00183c1084303140139c7741f83f92f76ea662e0f1f8400000000004889f183c0014883c608031139c775f089d0c30f1f44000031d289d0c30f1f00f30f1efa5058be01000000bf0020400031c04883ec18e8b5feffffba04000000be03000000bf020000004189c231c0e83cffffff4101c2448954240c8b44240cebfe
+</bytechunk>
+<symbol space="ram" offset="0x401030" name="logf_"/>
+<symbol space="ram" offset="0x401000" name="sink_v"/>
+<symbol space="ram" offset="0x401160" name="_start"/>
+<symbol space="ram" offset="0x4010d0" name="sum"/>
+</binaryimage>
+<script>
+  <com>lo fu logf_</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option vastart off</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="KUNA-VASTART #1: the prologue is one va_start call naming the last fixed argument (default)" min="1" max="1">va_start\(&amp;\w+,\w+\);</stringmatch>
+<stringmatch name="KUNA-VASTART #2: vastart off sets fp_offset field by field" min="1" max="1">= 0x30;</stringmatch>
+<stringmatch name="KUNA-VASTART #3: vastart off keeps the XMM spills under the al test" min="1" max="1">if \(</stringmatch>
+</decompilertest>

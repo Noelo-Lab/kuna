@@ -2573,6 +2573,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "vastart"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P4"
+subphase = "prototype-source"
+strength = "HARD"
+rewind = "P4"
+issue = "kuna-vastart"
+summary = "x86-64 System V only: print the va_start prologue as va_start(ap, last). A variadic function that materializes a va_list spills the unnamed argument registers (and, under test al, the eight XMM registers) to a 176-byte register save area and sets gp_offset, fp_offset, overflow_arg_area and reg_save_area; each spill and field store printed. With this on, the two offset constants (gp_offset 8 per named integer argument, fp_offset 48 plus 16 per named float argument) beside the two pointer writes in one block become effects of a va_start(&ap, last) CALLOTHER, the register save area loses its forced liveness so the spills go, and an unlocked prototype is marked variadic: a stripped image's 14-parameter signature becomes (a0, a1, ...)."
+use_when = "On (default). Flip off to see the register save area spills and the four va_list field stores."
+example = "option vastart off"
+source_decompiler = "kuna"
+inspiration = "a gcc -O2 printf-style wrapper that printed twelve register copies, an if (al) block of XMM copies and four va_list field stores where the source has one va_start(ap, fmt)"
+change_kind = "presentation-default"
+tier = "transform"
+symptoms = "a variadic function prints a dozen register copies, an if (al) block of XMM copies and gp_offset/fp_offset stores|a stripped printf-like function recovers 14 parameters"
+live_field = "va_start"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "narrowargs"
 values = "off|on|callers"
 default = "callers"

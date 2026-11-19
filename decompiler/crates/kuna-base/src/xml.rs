@@ -2269,7 +2269,8 @@ mod tests {
         // and kuna-trapaftercall / a ud2 after an x86 call ends the flow at the call
         // and kuna-retpolinethunk / a call to a retpoline thunk is the indirect call it stands for
         // and kuna-tlsnames / x86 ELF static TLS variables read as fields of the block below the thread pointer
-        assert_eq!(count, 851, "corpus file count drifted");
+        // and kuna-vastart / the x86-64 SysV va_start prologue prints as va_start(ap, last)
+        assert_eq!(count, 852, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
