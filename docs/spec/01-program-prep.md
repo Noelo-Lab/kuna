@@ -4142,6 +4142,19 @@ moves.
     a prototype parked by call-instruction address, installed as the call's
     prototype override when `FlowInfo` builds the call, unless the function
     already carries an override there).
+  - Every other call the walk reads through a table or interface member
+    (`gBS->CreateEvent`, `This->ReadDisk`) gets the member's prototype the
+    same way. The decompiler would otherwise learn the prototype only when
+    type propagation reaches the pointer the call goes through, which is too
+    late to place the arguments, so it analyzes the whole function a second
+    time; with the prototype there when the call is built it analyzes the
+    function once, and an argument that is a function address is a function
+    from the start. It is also the only source for a PEIM that reads the table
+    pointer inline, which leaves the decompiler no typed pointer to read the
+    member from. A jump through a member (a tail call) states nothing, and a
+    call the walk cannot follow to its table (its pointer comes from a heap
+    record, or the block is only reached through a jump table) is still
+    resolved by the decompiler, at the cost of the second analysis.
   - `InstallProtocolInterface`, `InstallMultipleProtocolInterfaces` (its
     GUID/interface pairs up to the NULL), the MM installs and `InstallPpi` /
     `ReInstallPpi` name an interface instance. The instance is typed with the
@@ -4188,9 +4201,7 @@ moves.
   `EFI_PEI_SERVICES **` (the X64 and IA32 counterpart of the ARM getters
   above), and a short function that only forwards its own parameters to one
   PEI service is named `PeiServices<Service>` and treated as that service at
-  its call sites. A PEI service call also states its prototype at the call,
-  because a PEIM that reads the table pointer inline leaves the decompiler no
-  typed pointer to read the member from. On 32-bit ARM (PE machine `ARM`,
+  its call sites. On 32-bit ARM (PE machine `ARM`,
   `THUMB` or `ARMNT`) a code pointer's low bit selects Thumb and is not part
   of the address, for the entry point as for an interface member.
 

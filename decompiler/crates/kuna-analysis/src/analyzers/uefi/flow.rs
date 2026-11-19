@@ -18,9 +18,11 @@
 //!   descriptor list) its struct and name the functions it points at;
 //! - a member whose prototype has a `T **` out-parameter (`GetSmstLocation`)
 //!   types what it is handed;
-//! - a PEI service call states its prototype at the call, because a PEIM
-//!   that reads `EFI_PEI_SERVICES **` from below the IDT inline gives the
-//!   decompiler no typed pointer to read the member from.
+//! - every call through a member states the member's prototype at the call:
+//!   the decompiler then has it when it builds the call instead of reading it
+//!   off the typed pointer later and analyzing the function a second time, and
+//!   a PEIM that reads `EFI_PEI_SERVICES **` from below the IDT inline gives
+//!   it no typed pointer to read the member from at all.
 //!
 //! A function that only forwards its own parameters to such a member (EDK2's
 //! `PeiServicesLocatePpi`) is treated as that member at its call sites, and a
@@ -1462,8 +1464,8 @@ impl<'a, 'e> Walk<'a, 'e> {
                 self.set_pointee(state, args.get(j).and_then(|a| a.as_ref()), pointee);
             }
         }
-        if via.is_none() && service.owner == PEI_SERVICES && !varargs && !self.dry {
-            self.found.call_decls.insert(site, sig_join(ret, &params, false));
+        if via.is_none() && !self.dry {
+            self.found.call_decls.insert(site, sig_join(ret, &params, varargs));
         }
         let role = role(&service.owner, &service.member);
         if self.dry && !matches!(role, Some(Role::Locate { .. })) {

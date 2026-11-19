@@ -78,6 +78,17 @@ fn unpack_protocols_indexes_what_each_module_installs() {
     assert!(!out.contains("installed by"), "nothing in this volume installs the located protocol: {out}");
 }
 
+/// A call through a service-table member has the member's prototype when the
+/// call is built, so the notify function it is handed is a function and the
+/// function is analyzed once.
+#[test]
+fn a_uefi_service_call_is_built_with_its_prototype() {
+    let module = common::fixture("uefi_diskio_x64.efi");
+    let (out, err, code) = common::run_kuna(&["decompile", &module, "0x9c2"]);
+    assert_eq!(code, 0, "{err}");
+    assert!(out.contains("(*gBS->CreateEvent)(0x200,8,sub_52e,v1,"), "{out}");
+}
+
 #[test]
 fn intel_hex_with_svd_names_peripherals_and_interrupts() {
     let hex = common::fixture("cortexm3_raw.hex");
