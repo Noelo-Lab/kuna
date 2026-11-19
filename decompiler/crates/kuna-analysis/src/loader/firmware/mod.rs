@@ -3,3 +3,5 @@
 
 pub mod cortexm;
 pub mod svd;
+pub mod tiano;
+pub mod uefifv;
