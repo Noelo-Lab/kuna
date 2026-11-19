@@ -12,14 +12,17 @@
 //! A member is a relocatable object like any other `.o` input, so selection
 //! ends by writing it to an owned temporary file and substituting that path in
 //! the command's arguments. A thin archive's member is already a file and is
-//! named directly.
+//! named directly. A name stored more than once is spelled `NAME#K` for its
+//! K-th occurrence.
 //!
 //! Members are not linked against each other: a call into another member
 //! stays an external reference, as it is in the `.o` on its own.
 
 use std::borrow::Cow;
+use std::cell::OnceCell;
+use std::collections::BTreeMap;
 use std::io::Write as _;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 
 use object::read::archive::ArchiveFile;
@@ -59,12 +62,29 @@ pub(crate) enum Resolved {
     Done(i32),
 }
 
-/// One member's name and bytes. A thin archive stores only the name, a path
-/// relative to the archive, which `file` then holds.
+/// One member: `name` is how it is selected (`stored`, or `stored#K` when
+/// several members store that name). A thin archive stores only a path
+/// relative to the archive, whose regular file `file` is read on demand.
 struct Member<'a> {
     name: String,
-    data: Cow<'a, [u8]>,
+    stored: String,
+    data: &'a [u8],
     file: Option<PathBuf>,
+    size: u64,
+    object: OnceCell<bool>,
+}
+
+impl Member<'_> {
+    fn bytes(&self) -> std::io::Result<Cow<'_, [u8]>> {
+        match &self.file {
+            Some(file) => std::fs::read(file).map(Cow::Owned),
+            None => Ok(Cow::Borrowed(self.data)),
+        }
+    }
+
+    fn is_object(&self) -> bool {
+        *self.object.get_or_init(|| self.bytes().is_ok_and(|b| is_object(&b)))
+    }
 }
 
 /// Remove a global `--member [NAME]` from `argv`. A `--member` that ends the
@@ -97,24 +117,28 @@ fn take_request(argv: &mut Vec<String>) -> Option<Request> {
 fn is_archive(path: &str) -> bool {
     use std::io::Read;
     let mut head = [0u8; 8];
-    std::fs::File::open(path)
-        .and_then(|mut f| f.read_exact(&mut head))
-        .is_ok_and(|()| head == MAGIC || head == THIN_MAGIC)
+    std::fs::metadata(path).is_ok_and(|m| m.is_file())
+        && std::fs::File::open(path)
+            .and_then(|mut f| f.read_exact(&mut head))
+            .is_ok_and(|()| head == MAGIC || head == THIN_MAGIC)
 }
 
 /// The first argument naming an archive, as `(index, archive path, member)`;
-/// the member is the `NAME` of a `lib.a:NAME` spelling.
+/// the member is the `NAME` of a `lib.a:NAME` spelling. An argument that is an
+/// existing path is never split.
 fn find_archive(argv: &[String]) -> Option<(usize, String, Option<String>)> {
     argv.iter().enumerate().find_map(|(i, arg)| {
         if arg.starts_with('-') {
             return None;
         }
-        if is_archive(arg) {
-            return Some((i, arg.clone(), None));
+        if Path::new(arg).exists() {
+            return is_archive(arg).then(|| (i, arg.clone(), None));
         }
-        let (path, member) = arg.rsplit_once(':')?;
-        (!member.is_empty() && is_archive(path))
-            .then(|| (i, path.to_string(), Some(member.to_string())))
+        arg.match_indices(':').rev().find_map(|(at, _)| {
+            let (path, member) = (&arg[..at], &arg[at + 1..]);
+            (!member.is_empty() && is_archive(path))
+                .then(|| (i, path.to_string(), Some(member.to_string())))
+        })
     })
 }
 
@@ -128,18 +152,33 @@ fn members<'a>(path: &str, bytes: &'a [u8]) -> Result<Vec<Member<'a>>, String> {
     let mut out = Vec::new();
     for member in archive.members() {
         let member = member.map_err(|e| format!("{path}: archive member error: {e}"))?;
-        let name = String::from_utf8_lossy(member.name()).into_owned();
-        let (data, file) = if member.is_thin() {
-            let file = Path::new(path).parent().unwrap_or(Path::new("")).join(&name);
-            let data = std::fs::read(&file).map_err(|e| format!("{path}({name}): {e}"))?;
-            (Cow::Owned(data), Some(file))
+        let stored = String::from_utf8_lossy(member.name()).into_owned();
+        let (data, file, size) = if member.is_thin() {
+            let file = Path::new(path).parent().unwrap_or(Path::new("")).join(&stored);
+            let meta = std::fs::metadata(&file)
+                .map_err(|e| format!("{path}({stored}): {}: {e}", file.display()))?;
+            if !meta.is_file() {
+                return Err(format!("{path}({stored}): {} is not a regular file", file.display()));
+            }
+            (&[][..], Some(file), meta.len())
         } else {
             let data = member
                 .data(bytes)
-                .map_err(|e| format!("{path}({name}): archive member data error: {e}"))?;
-            (Cow::Borrowed(data), None)
+                .map_err(|e| format!("{path}({stored}): archive member data error: {e}"))?;
+            (data, None, data.len() as u64)
         };
-        out.push(Member { name, data, file });
+        let name = stored.clone();
+        out.push(Member { name, stored, data, file, size, object: OnceCell::new() });
+    }
+    let mut total: BTreeMap<String, usize> = BTreeMap::new();
+    for m in &out {
+        *total.entry(m.stored.clone()).or_default() += 1;
+    }
+    let mut seen: BTreeMap<String, usize> = BTreeMap::new();
+    for m in out.iter_mut().filter(|m| total[&m.stored] > 1) {
+        let k = seen.entry(m.stored.clone()).or_default();
+        *k += 1;
+        m.name = format!("{}#{k}", m.stored);
     }
     Ok(out)
 }
@@ -151,8 +190,8 @@ fn list(path: &str, members: &[Member<'_>], json: bool) -> i32 {
             .map(|m| {
                 Json::Object(vec![
                     ("name".into(), Json::Str(m.name.clone())),
-                    ("size".into(), Json::Number(m.data.len().to_string())),
-                    ("object".into(), Json::Bool(is_object(&m.data))),
+                    ("size".into(), Json::Number(m.size.to_string())),
+                    ("object".into(), Json::Bool(m.is_object())),
                 ])
             })
             .collect();
@@ -162,15 +201,18 @@ fn list(path: &str, members: &[Member<'_>], json: bool) -> i32 {
         ]);
         format!("{}\n", dumps_indent2(&root))
     } else {
-        members.iter().map(|m| format!("{}\t{}\n", m.name, m.data.len())).collect()
+        members.iter().map(|m| format!("{}\t{}\n", m.name, m.size)).collect()
     };
     crate::output::emit_with_status(&text, 0)
 }
 
-/// Whether the object in `data` defines a symbol one of `wanted` spells; a
-/// Mach-O symbol matches without its leading underscore too.
-fn defines(data: &[u8], wanted: &[&str]) -> bool {
-    let Ok(file) = object::File::parse(data) else {
+/// Whether `member` defines a symbol one of `wanted` spells; a Mach-O symbol
+/// matches without its leading underscore too.
+fn defines(member: &Member<'_>, wanted: &[&str]) -> bool {
+    let Ok(data) = member.bytes() else {
+        return false;
+    };
+    let Ok(file) = object::File::parse(&*data) else {
         return false;
     };
     file.symbols().filter(|s| s.is_definition()).any(|s| {
@@ -194,17 +236,21 @@ fn select<'m, 'a>(
     at: usize,
 ) -> Result<&'m Member<'a>, String> {
     if let Some(name) = name {
-        let named: Vec<&Member<'_>> = members.iter().filter(|m| m.name == name).collect();
-        return match named.as_slice() {
-            [one] => Ok(one),
-            [] => Err(format!(
-                "{path}: no member named {name}; `--member` with no name lists them"
-            )),
-            many => Err(format!("{path}: {} members are named {name}", many.len())),
-        };
+        if let Some(one) = members.iter().find(|m| m.name == name) {
+            return Ok(one);
+        }
+        let stored: Vec<&Member<'_>> = members.iter().filter(|m| m.stored == name).collect();
+        return Err(if stored.is_empty() {
+            format!("{path}: no member named {name}; `--member` with no name lists them")
+        } else {
+            format!(
+                "{path}: {} members are named {name}; select one as {}",
+                stored.len(),
+                names(&stored)
+            )
+        });
     }
-    let objects: Vec<&Member<'_>> =
-        members.iter().filter(|m| is_object(&m.data)).collect();
+    let objects: Vec<&Member<'_>> = members.iter().filter(|m| m.is_object()).collect();
     if let [one] = objects.as_slice() {
         return Ok(one);
     }
@@ -220,7 +266,7 @@ fn select<'m, 'a>(
     let defining: Vec<&Member<'_>> = objects
         .iter()
         .copied()
-        .filter(|m| defines(&m.data, &wanted))
+        .filter(|m| defines(m, &wanted))
         .collect();
     match defining.as_slice() {
         [one] => {
@@ -250,8 +296,8 @@ fn stage(archive: &str, member: &Member<'_>) -> std::io::Result<(tempfile::TempD
     let dir = tempfile::Builder::new().prefix("kuna_ar_").tempdir()?;
     let inner = dir.path().join(base(archive, "archive"));
     std::fs::create_dir(&inner)?;
-    let path = inner.join(base(&member.name, "member.o"));
-    std::fs::File::create(&path)?.write_all(&member.data)?;
+    let path = inner.join(base(&member.stored, "member.o"));
+    std::fs::File::create(&path)?.write_all(member.data)?;
     Ok((dir, path))
 }
 
@@ -266,7 +312,7 @@ fn prefixed(member: &str, line: &str) -> String {
 /// `kuna functions <lib.a>`: list every object member through its own run and
 /// join the listings, each name prefixed `member:`. With `--json` the result is
 /// `{archive, members: [{member, functions: <that member's document>}]}`.
-fn functions_of_all(path: &str, members: &[Member<'_>], argv: &[String], at: usize) -> i32 {
+fn functions_of_all(path: &str, members: &[Member<'_>], argv: &[String]) -> i32 {
     let json = argv.iter().any(|a| a == "--json");
     let exe = match std::env::current_exe() {
         Ok(exe) => exe,
@@ -278,10 +324,9 @@ fn functions_of_all(path: &str, members: &[Member<'_>], argv: &[String], at: usi
     let mut text = String::new();
     let mut listed = 0usize;
     let mut status = 0;
-    for member in members.iter().filter(|m| is_object(&m.data)) {
-        let mut args = argv.to_vec();
-        args[at] = format!("{path}:{}", member.name);
-        let run = Command::new(&exe).arg("functions").args(&args).output();
+    for member in members.iter().filter(|m| m.is_object()) {
+        let member_arg = format!("--member={}", member.name);
+        let run = Command::new(&exe).arg("functions").args(argv).arg(member_arg).output();
         let out = match run {
             Ok(out) => out,
             Err(e) => {
@@ -316,7 +361,9 @@ fn functions_of_all(path: &str, members: &[Member<'_>], argv: &[String], at: usi
 /// fan `functions` out over the members, or replace the archive argument with
 /// the selected member's path. Arguments naming no archive pass through.
 pub(crate) fn resolve(sub: &str, argv: &mut Vec<String>) -> Result<Resolved, String> {
-    if !IMAGE_COMMANDS.contains(&sub) || argv.iter().any(|a| a == "-h" || a == "--help") {
+    if !IMAGE_COMMANDS.contains(&sub)
+        || argv.iter().any(|a| a == "-h" || a == "--help" || a == "--raw-image")
+    {
         return Ok(Resolved::Run(None));
     }
     let request = take_request(argv);
@@ -335,13 +382,16 @@ pub(crate) fn resolve(sub: &str, argv: &mut Vec<String>) -> Result<Resolved, Str
         Some(Request::Name(name)) => Some(name),
         None => inline,
     };
-    let objects = members.iter().filter(|m| is_object(&m.data)).count();
     let listing = sub == "functions" && !argv.iter().any(|a| a == "--summary");
-    if name.is_none() && listing && objects > 1 {
-        return Ok(Resolved::Done(functions_of_all(&path, &members, argv, at)));
+    if name.is_none() && listing && members.iter().any(Member::is_object) {
+        return Ok(Resolved::Done(functions_of_all(&path, &members, argv)));
     }
     let member = select(&path, &members, name.as_deref(), argv, at)?;
     if let Some(file) = &member.file {
+        let stored = Path::new(&member.stored);
+        if stored.is_absolute() || stored.components().any(|c| c == Component::ParentDir) {
+            eprintln!("note: {path}: thin member {} is read from {}", member.name, file.display());
+        }
         argv[at] = file.to_string_lossy().into_owned();
         return Ok(Resolved::Run(None));
     }

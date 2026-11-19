@@ -2,10 +2,11 @@
 //! the symbol-driven member lookup.
 //!
 //! `fixtures/archive_members/libm2.a` holds `sq.o`, a text member `notes.txt`
-//! and `cube.o`, built from the sources beside it:
-//! `clang -O2 -c sq.c cube.c && llvm-ar rcsD libm2.a sq.o notes.txt cube.o`.
+//! and `cube.o`, built from the sources beside it (clang 22.1.8, x86-64 Linux):
+//! `printf 'not an object\n' > notes.txt && clang -O2 -c sq.c cube.c &&
+//! llvm-ar rcsD libm2.a sq.o notes.txt cube.o`.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::common;
@@ -15,6 +16,30 @@ fn archive() -> String {
         .join("tests/fixtures/archive_members/libm2.a")
         .to_string_lossy()
         .into_owned()
+}
+
+fn member(name: &[u8]) -> Vec<u8> {
+    let bytes = std::fs::read(archive()).unwrap();
+    let parsed = object::read::archive::ArchiveFile::parse(&*bytes).unwrap();
+    let found = parsed.members().map(|m| m.unwrap()).find(|m| m.name() == name).unwrap();
+    found.data(&*bytes).unwrap().to_vec()
+}
+
+/// Write a GNU archive of `members` (short names, `/`-terminated); a thin
+/// archive records each member's size but not its bytes.
+fn write_archive(path: &Path, magic: &str, members: &[(&str, &[u8])]) {
+    let mut bytes = magic.as_bytes().to_vec();
+    for (name, data) in members {
+        let size = data.len();
+        bytes.extend(format!("{name:<16}{:<12}{:<6}{:<6}{:<8}{size:<10}`\n", 0, 0, 0, 644).bytes());
+        if magic == "!<arch>\n" {
+            bytes.extend(*data);
+            if size % 2 == 1 {
+                bytes.push(b'\n');
+            }
+        }
+    }
+    std::fs::write(path, bytes).unwrap();
 }
 
 fn kuna(args: &[&str]) -> (String, String, i32) {
@@ -69,15 +94,8 @@ fn member_without_a_name_lists_the_members() {
 #[test]
 fn a_symbol_selects_the_member_that_defines_it() {
     let scratch = tempfile::tempdir().unwrap();
-    let bytes = std::fs::read(archive()).unwrap();
-    let parsed = object::read::archive::ArchiveFile::parse(&*bytes).unwrap();
-    let cube = parsed
-        .members()
-        .map(|m| m.unwrap())
-        .find(|m| m.name() == b"cube.o")
-        .unwrap();
     let extracted = scratch.path().join("cube.o");
-    std::fs::write(&extracted, cube.data(&*bytes).unwrap()).unwrap();
+    std::fs::write(&extracted, member(b"cube.o")).unwrap();
     let (expected, stderr, code) = kuna(&["decompile", extracted.to_str().unwrap(), "cube"]);
     assert_eq!(code, 0, "{stderr}");
     assert!(expected.contains("return a0 * a0 * a0;"), "{expected}");
@@ -128,4 +146,52 @@ fn a_selected_member_leaves_no_staging_files() {
     assert_eq!(output.status.code(), Some(0));
     assert!(String::from_utf8_lossy(&output.stdout).contains("return a0 * a0;"));
     assert_eq!(std::fs::read_dir(staging.path()).unwrap().count(), 0);
+}
+
+#[test]
+fn a_name_stored_twice_is_selected_by_its_occurrence() {
+    let scratch = tempfile::tempdir().unwrap();
+    let lib = scratch.path().join("libdup.a");
+    write_archive(&lib, "!<arch>\n", &[("x.o/", &member(b"sq.o")), ("x.o/", &member(b"cube.o"))]);
+    let lib = lib.to_str().unwrap();
+
+    let (stdout, stderr, code) = kuna(&["functions", lib]);
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(stdout, "0x400000\tx.o#1:sq\n0x400000\tx.o#2:cube\n");
+
+    let (_, stderr, code) = kuna(&["decompile", lib, "--member", "x.o", "sq"]);
+    assert_eq!(code, 2);
+    assert!(stderr.contains("2 members are named x.o; select one as x.o#1, x.o#2"), "{stderr}");
+
+    let (stdout, stderr, code) = kuna(&["decompile", &format!("{lib}:x.o#2"), "cube"]);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(stdout.contains("return a0 * a0 * a0;"), "{stdout}");
+}
+
+#[test]
+fn an_existing_path_with_a_colon_is_not_split() {
+    let scratch = tempfile::tempdir().unwrap();
+    std::fs::copy(archive(), scratch.path().join("lib.a")).unwrap();
+    let real = scratch.path().join("lib.a:sq.o");
+    std::fs::write(&real, member(b"cube.o")).unwrap();
+    let (stdout, stderr, code) = kuna(&["functions", real.to_str().unwrap()]);
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(stdout, "0x400000\tcube\n");
+}
+
+#[test]
+fn a_thin_archive_reads_only_regular_member_files() {
+    let scratch = tempfile::tempdir().unwrap();
+    let cube = member(b"cube.o");
+    std::fs::write(scratch.path().join("cube.o"), &cube).unwrap();
+    let lib = scratch.path().join("libthin.a");
+    write_archive(&lib, "!<thin>\n", &[("cube.o/", &cube)]);
+    let (stdout, stderr, code) = kuna(&["functions", lib.to_str().unwrap()]);
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(stdout, "0x400000\tcube.o:cube\n");
+
+    write_archive(&lib, "!<thin>\n", &[("cube.o/", &cube), ("./", b"")]);
+    let (_, stderr, code) = kuna(&["functions", lib.to_str().unwrap(), "--member"]);
+    assert_eq!(code, 2);
+    assert!(stderr.contains("is not a regular file"), "{stderr}");
 }

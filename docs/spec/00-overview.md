@@ -224,11 +224,15 @@ an `ar` archive, alone or as `lib.a:NAME`, is replaced by the path of one
 member: the one `--member NAME` or the `:NAME` suffix names, else the only
 object member, else the only object member defining a symbol that another
 argument spells (a Mach-O name also matches without its leading underscore).
-Any other case is a usage error listing the object members. The member is
-written under an owned temporary directory that is removed when the command
-returns; a thin archive's member is named in place. `--member` with no name
-prints the member list, and `functions` with no member re-runs itself once per
-object member and joins the listings with a `member:` prefix on each name.
+Any other case is a usage error listing the object members. A name stored
+more than once is selected as `NAME#K`, its K-th occurrence, and an argument
+that is an existing file is never split at a `:`. The member is written under
+an owned temporary directory that is removed when the command returns; a thin
+archive's member is named in place, resolved against the archive's directory,
+and must be a regular file (read on demand, one at a time), with a `note:`
+when its path leaves that directory. `--member` with no name prints the member
+list, and `functions` with no member re-runs itself once per object member
+(`--member=NAME`) and joins the listings with a `member:` prefix on each name.
 Commands never see the archive, so a member loads exactly as its `.o` does.
 
 Text decompilation owns its C and optional region-output files for the entire

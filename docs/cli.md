@@ -4451,7 +4451,10 @@ the member with `--member NAME`, or spell both as one path, `libfoo.a:NAME`.
 `--member` with no name after it (last, or before another flag) lists the
 members with their sizes; with `--json` the listing is
 `{archive, members: [{name, size, object}]}`, where `object` says whether the
-member is an object file kuna can load.
+member is an object file kuna can load. A name the archive stores more than
+once (common in static libraries built from several directories) is listed and
+selected as `NAME#K`, its K-th occurrence: `--member cpu.o#2`. An argument
+that is an existing file is never split at a `:`.
 
 ```
 $ kuna functions libm2.a --member
@@ -4479,7 +4482,7 @@ lists the object members to choose from. An unknown member name, and `--member`
 on an input that is not an archive, also exit `2`.
 
 `kuna functions <lib.a>` with no member lists every object member, each name
-prefixed with its member:
+prefixed with its member (also when the archive holds only one):
 
 ```
 $ kuna functions libm2.a
@@ -4497,7 +4500,11 @@ are applied, and a call into another member stays an external reference,
 because members are not linked against each other. The member is written to a
 temporary file for the run (`<tmp>/kuna_ar_*/<archive>/<member>`), removed on
 exit, and a `binary` field in JSON output names that file. A thin archive
-stores only member paths, so its members load from their own files. `--member`
+stores only member paths, so its members load from their own files: each path
+is resolved against the archive's directory as `ar` does, only a regular file
+is read, and a member whose path leaves that directory is named in a `note:`
+line when it loads. `--raw-image` reads the file as bytes and skips all of
+this. `--member`
 applies to `decompile`, `decompile-all`, `decompile-project`,
 `decompile-graph`, `functions`, `disassemble`, `raw-pcode`, `read`, `xrefs`,
 `strings` and `crypto`; `kuna fid build` reads a whole archive itself.
