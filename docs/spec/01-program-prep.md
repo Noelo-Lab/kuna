@@ -2317,7 +2317,13 @@ funcsym stream:
   callee that is a *named function in the very same image*. Zero is not an
   ambiguity to be judged; it is a byte the run-time image never holds.
   `decompiler/crates/kuna-analysis/src/loader/kuna_dynrelocs.rs (resolve)` walks
-  `.rela.dyn`/`.rel.dyn`/`.rela.plt` and computes the value the dynamic loader
+  `.rela.dyn`/`.rel.dyn`/`.rela.plt`, or, when the section table names no
+  dynamic relocation table (stripped or zeroed section headers), the
+  `DT_RELA`, `DT_REL` and `DT_JMPREL` tables `PT_DYNAMIC` names, with symbols
+  read from `DT_SYMTAB`
+  (`kuna_dynrelocs.rs (segment_relocations)`,
+  `decompiler/crates/kuna-analysis/src/loader/elf_dynseg.rs (dynamic_relocations)`),
+  the way the run-time loader finds them, and computes the value the dynamic loader
   would store: for `RELATIVE` the image's load bias plus the addend (kuna maps a
   linked image at the vaddrs it declares, so the bias is zero and the value is the
   addend); for `GLOB_DAT`/`JUMP_SLOT` the symbol's address, **and only when that

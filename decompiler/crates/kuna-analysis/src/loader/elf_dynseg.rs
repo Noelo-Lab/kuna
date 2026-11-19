@@ -230,6 +230,78 @@ pub(crate) fn dynamic_imports(bytes: &[u8]) -> Option<DynImports> {
     Some(DynImports { got_to_name, pltgot })
 }
 
+/// One dynamic relocation read through `PT_DYNAMIC`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct DynReloc {
+    pub offset: u64,
+    pub r_type: u32,
+    /// The symbol's `(st_value, defined in this image)`, when the entry names one.
+    pub symbol: Option<(u64, bool)>,
+    /// `Some` for a RELA entry; `None` when the addend is the slot's own word.
+    pub addend: Option<i64>,
+}
+
+/// Every entry of `DT_RELA`, `DT_REL` and `DT_JMPREL`, in that order: the
+/// relocations the run-time loader applies, found the way it finds them.
+///
+/// `None` when the file is not an ELF or has no `PT_DYNAMIC`. Stops a table at
+/// its first unreadable entry.
+pub(crate) fn dynamic_relocations(bytes: &[u8]) -> Option<Vec<DynReloc>> {
+    let img = Image::parse(bytes)?;
+    let tags = dynamic_tags(&img)?;
+    let get = |t: u64| tags.iter().rev().find(|&&(tag, _)| tag == t).map(|&(_, v)| v);
+    let abi_syment = if img.is64 { 24 } else { 16 };
+    let syment = get(DT_SYMENT).filter(|&s| s >= abi_syment).unwrap_or(abi_syment);
+    let symtab = get(DT_SYMTAB);
+    let jmprel = match get(DT_PLTREL) {
+        Some(DT_RELA) => (get(DT_JMPREL), get(DT_PLTRELSZ), true),
+        Some(DT_REL) => (get(DT_JMPREL), get(DT_PLTRELSZ), false),
+        _ => (None, None, true),
+    };
+    let word = if img.is64 { 8usize } else { 4 };
+    let mut out = Vec::new();
+    for (base, size, rela) in
+        [(get(DT_RELA), get(DT_RELASZ), true), (get(DT_REL), get(DT_RELSZ), false), jmprel]
+    {
+        let (Some(base), Some(size)) = (base, size) else {
+            continue;
+        };
+        let entsz = (if rela { 3 } else { 2 } * word) as u64;
+        let n = (size / entsz).min(img.bytes.len() as u64 / entsz);
+        for i in 0..n {
+            let Some(off) = i.checked_mul(entsz).and_then(|d| base.checked_add(d)).and_then(|v| img.off_of(v))
+            else {
+                break;
+            };
+            let (Some(offset), Some(info)) = (img.wordat(off), off.checked_add(word).and_then(|o| img.wordat(o)))
+            else {
+                break;
+            };
+            let addend = if rela {
+                match off.checked_add(2 * word).and_then(|o| img.wordat(o)) {
+                    Some(a) if img.is64 => Some(a as i64),
+                    Some(a) => Some(i64::from(a as u32 as i32)),
+                    None => break,
+                }
+            } else {
+                None
+            };
+            let (sym, r_type) = if img.is64 { (info >> 32, info as u32) } else { (info >> 8, (info & 0xff) as u32) };
+            let symbol = symtab.filter(|_| sym != 0).and_then(|symtab| {
+                let st = sym.checked_mul(syment).and_then(|d| symtab.checked_add(d)).and_then(|v| img.off_of(v))?;
+                let (value, shndx) = if img.is64 {
+                    (img.u64at(st.checked_add(8)?)?, img.u16at(st.checked_add(6)?)?)
+                } else {
+                    (u64::from(img.u32at(st.checked_add(4)?)?), img.u16at(st.checked_add(14)?)?)
+                };
+                Some((value, shndx != 0))
+            });
+            out.push(DynReloc { offset, r_type, symbol, addend });
+        }
+    }
+    Some(out)
+}
+
 /// The `(d_tag, d_un)` pairs of the `PT_DYNAMIC` segment, up to `DT_NULL`.
 fn dynamic_tags(img: &Image) -> Option<Vec<(u64, u64)>> {
     let (_, _, off, _, filesz) = *img.phdrs.iter().find(|&&(t, ..)| t == PT_DYNAMIC)?;

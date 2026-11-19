@@ -205,11 +205,13 @@ pub fn resolve(file: &object::File, bytes: &[u8]) -> DynRelocs {
     if file.format() == object::BinaryFormat::MachO {
         return macho_chained(file, bytes);
     }
-    let Some(table) = ElfTable::new(file).filter(|table| table.triple.is_some()) else {
-        return out;
-    };
     let relro = relro_range(bytes);
+    let Some(table) = ElfTable::new(file).filter(|table| table.triple.is_some()) else {
+        return segment_relocations(file, bytes, relro);
+    };
+    let mut walked = false;
     for (offset, reloc) in file.dynamic_relocations().into_iter().flatten() {
+        walked = true;
         let Some(value) = table.classify(file, offset, &reloc).written() else {
             continue;
         };
@@ -222,7 +224,49 @@ pub fn resolve(file: &object::File, bytes: &[u8]) -> DynRelocs {
             }
         }
     }
+    if !walked {
+        return segment_relocations(file, bytes, relro);
+    }
 
+    out
+}
+
+/// [`resolve`] for a linked ELF whose section table yields no dynamic
+/// relocation (stripped or zeroed section headers): the same writes, read from the
+/// `DT_RELA`/`DT_REL`/`DT_JMPREL` tables `PT_DYNAMIC` names, as the run-time
+/// loader reads them.
+fn segment_relocations(file: &object::File, bytes: &[u8], relro: Option<(u64, u64)>) -> DynRelocs {
+    let mut out = DynRelocs::default();
+    if file.format() != object::BinaryFormat::Elf || file.kind() == object::ObjectKind::Relocatable {
+        return out;
+    }
+    let Some((r_relative, r_glob_dat, r_jump_slot)) = reloc_triple(file.architecture()) else {
+        return out;
+    };
+    let width: usize = if file.is_64() { 8 } else { 4 };
+    let mask = if width == 8 { u64::MAX } else { u64::from(u32::MAX) };
+    let le = file.is_little_endian();
+    for entry in crate::loader::elf_dynseg::dynamic_relocations(bytes).unwrap_or_default() {
+        let value = if entry.r_type == r_relative {
+            match entry.addend {
+                Some(a) => Some(a as u64),
+                None => implicit_addend(file, entry.offset, width, le),
+            }
+        } else if entry.r_type == r_glob_dat || entry.r_type == r_jump_slot {
+            match entry.symbol {
+                Some((addr, true)) => Some(addr.wrapping_add(entry.addend.unwrap_or(0) as u64)),
+                _ => None,
+            }
+        } else {
+            None
+        };
+        let Some(value) = value else { continue };
+        let Some(last) = entry.offset.checked_add(width as u64 - 1) else { continue };
+        out.writes.push(DynRelocWrite { vma: entry.offset, value: value & mask, width: width as u8 });
+        if relro.is_some_and(|(lo, hi)| entry.offset >= lo && last < hi) {
+            out.const_ranges.push((entry.offset, last));
+        }
+    }
     out
 }
 
