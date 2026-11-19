@@ -1,5 +1,10 @@
 # Stage-model issue testcases
 
+`ghangr-go-abi0-model.xml` checks recovery of a Go stack-input leaf and the
+arguments passed by both call orders. It also checks the disabled option,
+an ordinary name lookalike, a wrapper with stack results, the signal
+trampoline and two linked runtime functions with private or foreign exits.
+
 `ghangr-call-argument-extensions.xml` checks explicit and missing parameter
 contracts. The CLI companion executes complete emitted C, Go and Rust callers
 and callees, covering zero extension, sign extension, signedness and store canaries.
