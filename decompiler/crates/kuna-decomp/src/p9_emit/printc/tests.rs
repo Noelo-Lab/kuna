@@ -2444,6 +2444,9 @@ mod w10_printc_cast_render {
     #[path = "rust_boolean_conversions.rs"]
     mod rust_boolean_conversions;
 
+    #[path = "rust_store_width.rs"]
+    mod rust_store_width;
+
     #[path = "scalar_call_results.rs"]
     mod scalar_call_results;
 
