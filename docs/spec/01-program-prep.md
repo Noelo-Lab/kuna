@@ -9539,7 +9539,10 @@ worse than reporting nothing and no parity gate could see it: the base is offere
 to a function whose body never writes the register at all, or from its own
 establishment up to the next write of it (in GCC output, the epilogue's restore),
 and to no other function. A body that reuses the register for its own purposes
-contributes no references rather than wrong ones.
+contributes no references rather than wrong ones. The pass runs only on a
+32-bit image: a 64-bit one (x86-64, AArch64) forms PC-relative addresses
+directly, which the constant scan already reads, so the walk never probes its
+prologues for the idiom.
 
 (kuna) One indirection further out is the same defect on ARM, and PIC base
 folding does not reach it: an ARM immediate cannot hold an arbitrary address, so
