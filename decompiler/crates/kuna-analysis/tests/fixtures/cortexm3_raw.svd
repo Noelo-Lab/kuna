@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<device schemaVersion="1.1">
+  <name>MINI_F4</name>
+  <size>32</size>
+  <peripherals>
+    <peripheral>
+      <name>GPIOA</name>
+      <baseAddress>0x40020000</baseAddress>
+      <registers>
+        <register><name>MODER</name><addressOffset>0x00</addressOffset></register>
+        <register><name>OTYPER</name><addressOffset>0x04</addressOffset></register>
+        <register><name>OSPEEDR</name><addressOffset>0x08</addressOffset></register>
+        <register><name>PUPDR</name><addressOffset>0x0C</addressOffset></register>
+        <register><name>IDR</name><addressOffset>0x10</addressOffset></register>
+        <register><name>ODR</name><addressOffset>0x14</addressOffset></register>
+      </registers>
+    </peripheral>
+    <peripheral derivedFrom="GPIOA">
+      <name>GPIOB</name>
+      <baseAddress>0x40020400</baseAddress>
+    </peripheral>
+    <peripheral>
+      <name>USART1</name>
+      <baseAddress>0x40011000</baseAddress>
+      <registers>
+        <register><name>SR</name><addressOffset>0x00</addressOffset></register>
+        <register><name>DR</name><addressOffset>0x04</addressOffset></register>
+        <register><name>BRR</name><addressOffset>0x08</addressOffset></register>
+      </registers>
+      <interrupt><name>USART1</name><value>37</value></interrupt>
+    </peripheral>
+  </peripherals>
+</device>

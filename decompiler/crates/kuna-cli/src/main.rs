@@ -107,7 +107,10 @@ fn main() -> ExitCode {
     };
     loadtime::export_image_selection(&rest);
     followimages::apply(sub, &mut rest, follow_limit);
-    rawfront::prepare(sub, &mut rest);
+    if let Err(e) = rawfront::prepare(sub, &mut rest) {
+        eprintln!("error: {e}");
+        return ExitCode::from(2);
+    }
     let rest = rest.as_slice();
     runtime_hints::note_for_invocation(sub, rest);
     let code = match sub {
