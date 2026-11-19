@@ -2117,6 +2117,11 @@ truncating the fall-through here"
                 stat.seqnum = seq;
             }
             self.op_mark_start_instruction(firstop);
+            if self.data.get_arch().vex_zero_upper {
+                for &op in &insn_ops {
+                    crate::kuna_vexzeroupper::split(&mut self.data, op, &insn_ops)?;
+                }
+            }
             if flowoverride != crate::overrides::flow_type::NONE {
                 // (kuna) A refused override is a rejected caller assertion, not a
                 // dead function.  `override_flow` refuses before it mutates

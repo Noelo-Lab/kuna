@@ -173,6 +173,7 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "chkstkdarwin" => on_off!(chkstk_darwin, "Darwin stack-probe call removal"),
+    "vexzeroupper" => on_off!(vex_zero_upper, "VEX zero-upper writes split at the result width"),
     "tailcalljump" => {
         let (jumps, tables, msg) = crate::kuna_tailcalljump::tail_call_mode(p1)?;
         self.tail_call_jumps = jumps;

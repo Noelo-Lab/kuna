@@ -2236,7 +2236,8 @@ mod tests {
         // and kuna-dyldcacheobjc / a dyld shared cache image's ObjC metadata is read through the cache
         // and kuna-dyldimage-merge / dyldimage A+B loads two dyld shared cache images as one program
         // and kuna-avxintrinsics / the x86 AVX user-ops print as Intel intrinsics (option avxintrinsics)
-        assert_eq!(count, 797, "corpus file count drifted");
+        // and kuna-vexzeroupper / a VEX write of ymm0 no longer widens the register to zmm0 (option vexzeroupper)
+        assert_eq!(count, 798, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

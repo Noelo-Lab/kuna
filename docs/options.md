@@ -849,6 +849,9 @@ Three tiers:
 | a function that touches thousands of globals between thousands of calls takes gigabytes and minutes to decompile | [`persistcalls`](#persistcalls----off--on---default-65536) |
 | heritage builds millions of INDIRECTs over writable globals that survive dead-code removal | [`persistcalls`](#persistcalls----off--on---default-65536) |
 | a huge initializer or finalizer exhausts memory in assignhigh or merging | [`persistcalls`](#persistcalls----off--on---default-65536) |
+| avx code reads SUB6432(zmm0,0) instead of ymm0 | [`vexzeroupper`](#vexzeroupper----on--off-default-on) |
+| a ymm or xmm value shows as a 64-byte zmm local | [`vexzeroupper`](#vexzeroupper----on--off-default-on) |
+| vector values are widened to char[64] | [`vexzeroupper`](#vexzeroupper----on--off-default-on) |
 
 ## Toggleable transforms
 
@@ -2629,6 +2632,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default at 65,536 guards, the size at which the guards cost a huge function gigabytes and minutes. Set `on` to place the sparse guards in every pass with a call, a larger N or `off` to keep upstream's guard on every persistent global at every call, for example to compare heritage's IR with upstream.
 - **Where / provenance:** P3/call-guard · kuna · performance · gh-1034
 - **Example:** `option persistcalls off`
+
+### `vexzeroupper` -- on | off, default `on`
+
+- **Symptoms:** avx code reads SUB6432(zmm0,0) instead of ymm0; a ymm or xmm value shows as a 64-byte zmm local; vector values are widened to char[64].
+- **What it does:** x86-64 only (inert elsewhere): split each VEX/EVEX zero-upper register write at the result's width. The x86 SLEIGH spec writes `ZmmReg1 = zext(result)` for every VEX-encoded instruction that writes an XMM or YMM register, so each write overlaps every read of the same XMM/YMM register and heritage widens the storage to all 64 bytes of ZMM: a function that reads ymm0 and returns in ymm0 had a 64-byte zmm0 input and read it back as `SUB6432(zmm0,0)`. At flow time each such `INT_ZEXT` into a 32- or 64-byte register becomes a write of the result's own width (the producing user-op writes the low register directly when its temporary has no other reader) plus zero fills of the bytes above it, cut at the YMM/ZMM boundary.
+- **When to flip:** On by default: AVX code keeps xmm/ymm values at their width. Turn it off to see the SLEIGH spec's whole-ZMM writes.
+- **Where / provenance:** P2/flow-classification · kuna · correctness-fix · kuna-vexzeroupper
+- **Example:** `option vexzeroupper off`
 
 ## Programmatic use
 

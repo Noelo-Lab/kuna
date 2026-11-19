@@ -3860,3 +3860,28 @@ deletes a real call and the stack-overflow fault its page touches can raise.
 Through an arm64e `__auth_ptr` slot (`adrp x16; ldr x16,[x16,#off]; blraaz x16`,
 named by `authptrcall`) the same walk matches, since the slot carries the
 import's function symbol. `off` keeps the call.
+
+## (kuna) VEX zero-upper writes split at the result width — `option vexzeroupper`, default on
+
+**`decompiler/crates/kuna-decomp/src/p2_lift/kuna_vexzeroupper.rs (split)`,
+called from `flow.rs (process_instruction)`.** A VEX- or EVEX-encoded
+instruction that writes an XMM or YMM register clears the rest of the ZMM
+register, and the x86 SLEIGH spec states that as one write of the whole
+register, `ZmmReg1 = zext(result)`. Every such write overlaps every read of
+the same XMM/YMM register, so heritage widened the register to all 64 bytes:
+a function that read `ymm0` had a 64-byte `zmm0` input and read
+`SUB6432(zmm0, 0)`. At flow time, on x86-64 only, each `INT_ZEXT` into a 32-
+or 64-byte register from a 16- or 32-byte value is split:
+
+- the low part keeps the value at its own width. When the value is a
+  temporary that only this write reads, its producer (the user-op) writes the
+  low register itself; when the value already is the low register, nothing is
+  copied;
+- the bytes above it are zeroed by `COPY 0` ops cut at the YMM/ZMM boundary
+  (`[16, 32)` and `[32, 64)` for an XMM write), so an XMM write does not create
+  a YMM-wide value either.
+
+The split writes cover exactly the bytes the one write covered, with the same
+values, so it changes how heritage partitions the register and nothing else.
+`option vexzeroupper off` keeps the spec's whole-ZMM write. Changes 0/675
+datatest assertions. Pinned by `tests/stages/kuna-vexzeroupper.xml`.
