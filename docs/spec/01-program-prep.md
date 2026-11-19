@@ -8846,7 +8846,14 @@ rbp,rsp`), and the gap walk accepts it on its bytes alone. The decoded Listing
 says what the program does with those bytes: every `LOAD`/`STORE` through a
 constant or a constant plus something, and every direct data-space operand, is a
 data target. A gap entry whose first instruction spans one is dropped, and so is
-any other discovered (not symbol) entry that lands on one, at the commit. Only
+any other discovered (not symbol) entry that lands on one, at the commit. A
+register a constant was put in stays known for the next eight straight-line
+instructions, until something else writes it or a branch, call or user op ends
+the run, and two known addends sum, so an AArch64 `adrp x17, P; add x17, x17,
+#o; ldrsw x16, [x17, x16, lsl #2]` reads its jump table at `P + o`. Apple's
+linker lists such an inline `__text` table in `LC_FUNCTION_STARTS`, where it
+decodes as a `sub_` entry the dispatch then indexes (`sub_4060[a0 * 4]`), and
+the veto removes it. Only
 the entry's own first instruction is tested, so a function whose body holds an
 inline constant pool is kept. On stripped Lua (x86-64, AArch64), ld.so, llvm-nm
 and llvm-objdump it removes nothing; the function-shaped table in

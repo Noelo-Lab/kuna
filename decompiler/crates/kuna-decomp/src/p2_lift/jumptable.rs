@@ -6358,7 +6358,10 @@ impl JumpTable {
     /// the `jumpassist` userop family — `// STUB(W4)`, recorded as a loss).  Each
     /// model's `recoverModel` emulation-drives the index range over the landed
     /// [`EmulateFunction`].  (kuna) A basic model rejected because it cannot
-    /// label the matched flow-time `rows` ends the walk with no model.
+    /// label the matched flow-time `rows` ends the walk with no model.  A basic
+    /// model that only matched by `switchtrim` opening an unguarded table yields
+    /// to `JumpBasic2` when that model bounds the switch through a default path
+    /// (an AArch64 hardened `cmp; csel xI, xI, xzr, ls` clamp).
     fn recover_model(
         &mut self,
         fd: &mut Funcdata,
@@ -6392,11 +6395,11 @@ impl JumpTable {
         }
         // Stash the basic model's path-meld for model 2's piggyback.
         let basic_path = jbasic.get_path_meld().clone();
-        if basic_ok {
+        if basic_ok && !jbasic.trim_rows {
             self.jmodel = Some(Box::new(jbasic));
             return Ok(());
         }
-        if jbasic.rows_rejected {
+        if !basic_ok && jbasic.rows_rejected {
             self.drop_model_for_rows(fd, true);
             return Ok(());
         }
@@ -6411,6 +6414,10 @@ impl JumpTable {
         }
         if m2_ok {
             self.jmodel = Some(Box::new(jbasic2));
+            return Ok(());
+        }
+        if basic_ok {
+            self.jmodel = Some(Box::new(jbasic));
             return Ok(());
         }
         // (kuna) Neither value-range model could bound the destination.  When

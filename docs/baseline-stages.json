@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4861,
-    4861
+    4867,
+    4867
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -4282,6 +4282,12 @@
     "data:relocrebase-be #2: no t9 variable",
     "data:relocrebase-be #3: greet is listed once, at its load address",
     "data:relocrebase-be #3b: nothing at a pre-link address",
+    "data:relswitch #1: the hardened table is a switch on the clamped index, with or without switchtrim",
+    "data:relswitch #2: every case is recovered",
+    "data:relswitch #3: no computed jump remains",
+    "data:relswitch #4: case 1 passes a1 + 5 to sink",
+    "data:relswitch #5: the inline table is a function start only without aif",
+    "data:relswitch #6: the dispatch function is listed in both inventories",
     "data:rename after rebuilding updates initializer fields",
     "data:rename after rebuilding updates the call view",
     "data:repstring #10: eleven builtins in the default pass, none with the option off",

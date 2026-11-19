@@ -3060,7 +3060,18 @@ must read its own table entry, above the previous row's, so a range opened on
 a value that is not the table index (the loaded entry itself, when the index
 feeds an image-base add) reads no table at all. Fewer than two rows is no
 table, and the jump stays a computed call. A bounded table
-never reaches this arm.
+never reaches this arm. A trimmed basic model is only a fallback: the
+default-path model (`JumpBasic2`) is tried first and wins when it bounds the
+switch (`jumptable.rs (recover_model)`). An AArch64 hardened jump table
+(arm64e, clang `-faarch64-jump-table-hardening`, Swift enum dispatch) clamps
+its index with `cmp x16, #N-1; csel x16, x16, xzr, ls` instead of branching to
+a default, so the switch variable is a `MULTIEQUAL` of the index and the
+constant 0 and the basic model sees no guard. A trimmed arm that took that
+unbounded `MULTIEQUAL` first would read past the table into the code after
+it, fail its sanity check, and leave the switch a
+`(*(code *)(*(int *)&table[i * 4] + base))()` computed call; model 2 recovers
+it as `switch(a0 >> 0x3e)` with every case
+(`tests/stages/kuna-relswitch-a64.xml`).
 
 ## 2.4 No-return at lift time
 

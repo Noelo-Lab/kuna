@@ -1,0 +1,76 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<!--
+    kuna-relswitch: an arm64e hardened jump table (clang
+    -faarch64-jump-table-hardening; Swift enum dispatch on iOS) recovered as a
+    switch.  It printed as
+    `(*(void (*)(void))(*(int *)&sub_4060[a0 * 4] + 0x4020L))(); // jump-as-call`.
+
+    Source (tests/stages/fixtures/relswitch/relswitch_arm64e.s):
+      lsr  x16, x0, #62
+      cmp  x16, #3
+      csel x16, x16, xzr, ls            ; clamp, no guard branch
+      adrp x17, jt ; add x17, x17, :lo12:jt
+      ldrsw x16, [x17, x16, lsl #2]
+      adr  x17, base ; add x16, x17, x16 ; br x16
+    with the four 32-bit offsets (relative to `base`) inline after the body.
+    bl targets 0x100078 (g) and 0x100084 (sink) are `ret` stand-ins.
+
+    Stage model: P2 switch-model recovery.  The clamp makes the switch value a
+    MULTIEQUAL of the index and 0, so JumpBasic finds no guard.  `switchtrim`
+    then opened that unbounded value to [0, jumptablemax), read past the table
+    into code, failed its sanity check, and left the computed jump.  The
+    default-path model (JumpBasic2) bounds it, and is tried before a trimmed
+    basic model is accepted.  Strict fix: both passes (switchtrim on, the
+    default, and off) print the same four-case switch.
+
+    Passes 3 and 4 load the Mach-O fixture itself, whose LC_FUNCTION_STARTS
+    lists the inline table at 0x4060 as Apple's linker does.  P1 program-prep,
+    code-data-partition (listing/kuna_aifdataveto.rs data_targets): the
+    adrp/add/ldrsw read makes 0x4060 a data target, so under `aif` the start
+    is dropped; with `aif off` it is listed.
+-->
+<bytechunk space="ram" offset="0x100000">
+fd7bbfa9fd03009110fc7ed31f0e00f110929f9a1100009031820191307ab0b8
+110000103002108b00021fd66001805215000094090000142014001112000094
+0600001420701d530f00009403000014600c805209000094fd7bc1a8c0035fd6
+0c000000180000002400000030000000
+</bytechunk>
+<bytechunk space="ram" offset="0x100078">
+c0035fd6000000000000000000000000c0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="dispatch"/>
+<symbol space="ram" offset="0x100078" name="g"/>
+<symbol space="ram" offset="0x100084" name="sink"/>
+</binaryimage>
+<script>
+  <com>parse line extern void sink(int4 v);</com>
+  <com>parse line extern void g(int4 v);</com>
+  <com>lo fu dispatch</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option switchtrim off</com>
+  <com>lo fu dispatch</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/stages/fixtures/relswitch/relswitch_arm64e</com>
+  <com>option listing on</com>
+  <com>option aif off</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>clear architecture</com>
+  <com>load file tests/stages/fixtures/relswitch/relswitch_arm64e</com>
+  <com>option listing on</com>
+  <com>option aif strict</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>quit</com>
+</script>
+<stringmatch name="relswitch #1: the hardened table is a switch on the clamped index, with or without switchtrim" min="2" max="2">switch\(.* &gt;&gt; 0x3e\)</stringmatch>
+<stringmatch name="relswitch #2: every case is recovered" min="2" max="2">case 3:</stringmatch>
+<stringmatch name="relswitch #3: no computed jump remains" min="0" max="0">jump-as-call</stringmatch>
+<stringmatch name="relswitch #4: case 1 passes a1 + 5 to sink" min="2" max="2">sink\(.* \+ 5\)</stringmatch>
+<stringmatch name="relswitch #5: the inline table is a function start only without aif" min="1" max="1">sub_4060</stringmatch>
+<stringmatch name="relswitch #6: the dispatch function is listed in both inventories" min="2" max="2">0x4000</stringmatch>
+</decompilertest>
