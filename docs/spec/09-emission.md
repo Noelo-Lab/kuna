@@ -3518,6 +3518,13 @@ carrier; that member retains its existing type error even when its surrounding
 pointer arithmetic is corrected.
 The diagnostic `nocastprinting` setting retains its existing behavior.
 
+A Go record address at a positive byte offset before its first known field
+uses the same `unsafe.Add` form for a named, complete record with a native
+pointer base. The address keeps the original pointer and byte offset, and any
+surrounding load or conversion still supplies its original width. The rule
+does not create a field in padding or apply to a relative base, a direct
+dereference already folded into a member expression, or suppressed casts.
+
 `p9_emit/kuna_gobyteview.rs` makes bounded artificial members of byte-array
 storage usable under Go output. A final unnamed piece covering the whole array
 reads or writes the array value directly. A one-, two-, four- or eight-byte
