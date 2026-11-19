@@ -18,7 +18,7 @@
     "https://github.com/Noelo-Lab/kuna/pull/1699"
   ],
   "tiers": {
-    "C": "concrete: SLEIGH emulation of the binary vs the final Funcdata",
+    "C": "concrete: SLEIGH emulation of the binary vs a new interpreter over the final Funcdata, from the same raw state; prototype claims checked against a typed contract (source, DWARF) when one exists, else PROTOTYPE_SUSPECT",
     "S": "z3 proof over SMT-LIB 2 of SLEIGH p-code vs the Funcdata, under a deterministic budget (rlimit, unroll and query caps); bounded loops; budget regressions flagged",
     "L": "SLEIGH lift vs Unicorn/qemu-user",
     "P": "printed C vs binary (separate proposal)"
@@ -27,7 +27,8 @@
     "p3_p4_fixes_since_2026_06": 56,
     "body_rewrite": 15,
     "prototype_abi": 29,
-    "not_visible": 12
+    "not_visible": 12,
+    "prototype_abi_note": "DIFFERS only with a typed contract; otherwise PROTOTYPE_SUSPECT at most"
   },
   "prior_work": [
     {
@@ -40,5 +41,15 @@
     "C1": "per-function and total Tier C time",
     "C2": "bisection cost per finding",
     "C3": "precision (triage) and recall (reverted fixes)"
-  }
+  },
+  "slices": [
+    "C1 pure integer",
+    "C2 memory and call effects",
+    "C3 rule localization",
+    "C4 corpus, precision and recall",
+    "S1",
+    "S2",
+    "L1",
+    "P"
+  ]
 }

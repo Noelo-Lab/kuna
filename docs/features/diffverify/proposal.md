@@ -8,13 +8,18 @@ Evidence, coverage estimates and the hard part: `analysis.md` in this folder.
 A command that says whether kuna changed what a function computes, and on which input:
 
 ```
-$ kuna-verify check ins16.o ins16          # planned output
+$ kuna-verify check ins16.o ins16 --contract ins16.c     # planned output
 ins16  DIFFERS  (run 3 of 256)
-  input    a0=0x00007fff a1=0x0000   (r0, r1)
+  contract u64 ins16(unsigned a, unsigned short b)       (ins16.c)
+  input    a=0x00007fff b=0x0000                         (r0, r1)
   machine  r1:r0 = 0x0000000080000000
-  kuna     int  0x80000000 -> r1:r0 = 0xffffffff80000000
-  rules    bisected to: subvar_zext
+  kuna     int ins16(int a0, unsigned int a1) = 0x80000000; as u64 0xffffffff80000000
+  rules    candidate culprits: subvar_zext
 ```
+
+The verdict on a prototype needs a contract: the function's real type, from the fixture's
+source here. Without one, `int` in `r0` and a `u64` in `r1:r0` are both consistent with
+the machine, so the check compares only the storage both readings share, and that agrees.
 
 Run over the corpus, it lists the functions where kuna's output provably computes
 something else than the binary. It also gives the automated improvement loops a gate: a
@@ -22,9 +27,10 @@ candidate change that makes a function newly `DIFFERS` is rejected before review
 
 ## Principles
 
-1. **No home-grown solver or emulator.** z3 proves, QEMU (through Unicorn where
-   `qemu-user` is unavailable) checks the lift, and kuna's existing emulators execute.
-   kuna owns only the encoding.
+1. **No home-grown solver or machine emulator.** z3 proves, QEMU (through Unicorn where
+   `qemu-user` is unavailable) checks the lift, and kuna's SLEIGH emulator runs the
+   machine code. kuna owns the encoding and an interpreter for its own `Funcdata`
+   (Tier C).
 2. **Dev-only.** A new workspace crate, `kuna-verify`, next to `kuna-harness`. The release
    binary does not link it and its output is byte-identical. Emitted C does not change,
    so there is no option row or DIV entry.
@@ -35,24 +41,31 @@ candidate change that makes a function newly `DIFFERS` is rejected before review
    - `DIFFERS`: a concrete input that disagrees;
    - `AGREES(n)`: n runs, no difference;
    - `EQUIVALENT`: proved;
-   - `EQUIVALENT(≤k)`: proved for inputs that iterate each loop at most k times;
-   - `UNKNOWN(reason)`, including `UNKNOWN(budget)`;
+   - `EQUIVALENT(≤k)`: proved for the inputs on which both sides finish within k
+     iterations of each loop (Tier S);
+   - `UNKNOWN(reason)`, including `UNKNOWN(budget)` and `UNKNOWN(unsupported-op)`;
    - `SKIPPED(reason)`.
 
    Only `EQUIVALENT` is a proof. `AGREES` and `EQUIVALENT(≤k)` are evidence, and the
-   report says which one it is.
+   report says which one it is. Separately from the verdict, `PROTOTYPE_SUSPECT(detail)`
+   records a prototype claim the binary alone cannot settle (Tier C, Contracts).
 5. **Declared divergence.** Defaults that knowingly trade fidelity for readability are
-   listed, keyed by option name. #794's x86-64 `RDX:RAX` trim is one example. A
-   difference they explain is reported as `DIVERGES(option)`, not `DIFFERS`. The list
-   is part of the first slice, not an afterthought.
+   listed. An entry is a predicate, not an option name alone: the option, the
+   architecture, the observable it changes, and the pattern of the difference. #794's
+   x86-64 `RDX:RAX` trim is one entry: option `returnpair`, x86-64, the `RDX` half of a
+   16-byte return, machine `RDX = 0`. A difference that matches an entry is
+   `DIVERGES(entry)`; a different difference under the same option is still `DIFFERS`.
+   Each entry counts its matches, so a sudden rise is visible. The list is part of the
+   first slice, not an afterthought.
 
 ## Tier C — run both sides (first)
 
 **Machine side.**
 - Run the function's own machine code from its entry with `EmulatePcodeCache` (SLEIGH
   p-code over the load image) until it returns.
-- Inputs: a full random ABI state, with seeded edge values (0, -1, sign boundaries, shift
-  counts ≥ width).
+- Inputs: a full random machine state, with seeded edge values (0, -1, sign boundaries,
+  shift counts ≥ width). Both sides start from this same raw state: the same register,
+  stack and memory values.
 - Pointer arguments point into a mapped scratch region with the same contents **and the
   same addresses** on both sides. A pointer that differs between the sides makes every
   address-dependent value differ, which is a harness false positive, not a bug. All of
@@ -61,25 +74,49 @@ candidate change that makes a function newly `DIFFERS` is rejected before review
   sides, not zero.
 
 **Decompiled side.**
-- Run the final `Funcdata` (after the action tree, before printing) with a graph
-  interpreter built on `EmulatePcodeOp`.
-- The interpreter drives its own control flow, and resolves MULTIEQUAL by the incoming
-  edge.
-- Declared parameters get the values the ABI places in their storage. Any other input the
-  body reads gets a poison value, which catches dropped parameters (#875).
+- Run the final `Funcdata` (after the action tree, before printing) with a new graph
+  interpreter. It is new work, not a reuse: `EmulateFunction`
+  (`p2_lift/kuna_emulatefunction.rs`) is a jump-table evaluator whose `execute_store` does
+  nothing, whose calls fall through, and whose branches are errors. The interpreter
+  reuses only its per-op arithmetic, and adds the CFG walk, MULTIEQUAL by incoming edge,
+  memory, call effects and register aliasing.
+- An op the interpreter does not support ends the run as `UNKNOWN(unsupported-op)`. It is
+  never approximated.
+- Every input varnode reads its storage from the same raw state the machine side starts
+  from, declared in the prototype or not.
+
+**Contracts.** A prototype claim is checked only against an independent statement of the
+function's type, because the binary alone cannot settle it:
+- **Physical ABI (always).** Compare the bytes the calling convention defines for the
+  claimed return type, and only those. A claimed `int` on 32-bit ARM is `r0`; whatever
+  the machine leaves in `r1` is not compared.
+- **Typed contract (when one exists).** From a fixture's source, from DWARF in the
+  binary, or later from how callers in the same binary use the result. kuna's value is
+  converted to the contract's type by C's rules and compared with the machine's value
+  read at the contract's width. This is what makes #794 a `DIFFERS`: the contract is
+  `u64` in `r1:r0`, and kuna's `int 0x80000000` reads as `0xffffffff80000000`.
+- **Without a contract**, a claim the machine's behavior makes doubtful is reported as
+  `PROTOTYPE_SUSPECT`, not `DIFFERS`. Examples: the body reads a register no declared
+  parameter covers (#875's shape), or the machine writes the upper return register on
+  every path to the return. A custom ABI or a platform register produces the same shape
+  legitimately.
 
 **Observables.**
-- The return value: the decompiled side's value is converted through its claimed C type
-  to ABI storage, which catches #794.
+- The return value, under the contracts above.
 - Stores outside the function's own frame.
 - The ordered call sequence, each call with its callee and arguments.
 
 **Calls.**
 - The machine side runs a stub at each call. The stub records the call, returns a
-  recorded random value in the return registers, and clobbers caller-saved registers.
-- The decompiled side replays the same values call by call. INDIRECT is a copy unless the
-  recorded effect wrote that storage.
+  recorded random value in the return registers, clobbers caller-saved registers, and
+  writes recorded random bytes to the memory the call can reach: what its pointer
+  arguments point to, and memory that escaped to it. Without the memory writes, a rule
+  that reuses a value loaded before the call as if the call could not change it would
+  agree with the machine and be missed.
+- The decompiled side replays the same return values and memory writes call by call.
+  INDIRECT is a copy unless the recorded effect wrote that storage.
 - A different call sequence is itself `DIFFERS`.
+- A call whose reachable memory the harness cannot bound is `UNKNOWN(call-effect)`.
 
 **Needs no phase hooks.** The machine side reads the binary and the decompiled side reads
 the finished `Funcdata`. Loops are fine: execution is bounded by a step budget, and a run
@@ -87,11 +124,15 @@ that exceeds it is `UNKNOWN`.
 
 **Localization.** On `DIFFERS`, re-decompile with subsets of the fired rules
 (`count_apply > 0`) disabled, by delta debugging over `disable_rule`, and report the
-smallest set that removes the difference. Once #1699 lands, per-phase snapshots further
+subset it ends on as **candidate culprits**. That subset is 1-minimal (re-enabling any
+one of its rules brings the difference back), not the smallest possible. Disabling a
+rule changes which other rules fire and in what order, so the search is not monotone, and
+the report says it is a candidate set. Once #1699 lands, per-phase snapshots further
 narrow the difference to P2, Band B or P6.
 - **Only fired rules are candidates.** The search space is the k rules that applied to
-  this function, not the whole rule table, so a single culprit costs about log2 k
-  re-decompiles of one function.
+  this function, not the whole rule table. When one rule alone is the cause and disabling
+  others does not mask it, that takes about log2 k re-decompiles of one function. Other
+  cases cost more, up to quadratic in k for delta debugging.
 - **A candidate must not add a difference.** Disabling rules can break output on its own;
   D-Helix saw new errors once more than two Ghidra rules were off. A subset that removes
   the original difference but makes any other observable differ is rejected.
@@ -102,8 +143,9 @@ narrow the difference to P2, Band B or P6.
   kept with a hit count and tried before the search. D-Helix's version of this sped its
   tuner up 44–278×.
 
-**Sees.** The body-rewrite class (~15 of 56 P3/P4 fixes) and the prototype/ABI class
-(~29), per `analysis.md` §2.
+**Sees.** The body-rewrite class (~15 of 56 P3/P4 fixes) directly. The prototype/ABI
+class (~29) as `DIFFERS` only where a typed contract exists (fixtures with source, DWARF),
+and otherwise at most as `PROTOTYPE_SUSPECT`. Per `analysis.md` §2.
 
 **Does not see.**
 - Lift bugs: the machine side shares the SLEIGH lift (Tier L).
@@ -113,10 +155,17 @@ narrow the difference to P2, Band B or P6.
 
 For functions that are `AGREES`, encode the same two sides and the same observables as SMT
 bit-vectors and arrays:
-- calls become uninterpreted functions of (callee, arguments, memory);
-- CALLOTHER becomes an uninterpreted function;
+- a call is an uninterpreted function from (callee, argument registers, memory) to
+  (return registers, memory). The memory it returns may differ from its input anywhere
+  the call can reach, the same set Tier C's stub writes, so a value kept across a call
+  is not assumed unchanged;
+- CALLOTHER is an uninterpreted function in the same way;
 - loops are unrolled up to a bound k on both sides;
 - floating point stays `UNKNOWN` until a later slice.
+
+Tier S encodes only what Tier C executes. A function that reached
+`UNKNOWN(unsupported-op)` or `UNKNOWN(call-effect)` in Tier C is not encoded, so an
+incomplete memory or call model can never yield `EQUIVALENT`.
 
 z3 runs as a subprocess speaking SMT-LIB 2. That keeps libz3 out of the cargo build, lets
 CI `apt install z3`, and lets any verdict be cross-checked with cvc5 or bitwuzla.
@@ -135,8 +184,8 @@ runs, not through angr or binsec:
 - The `Funcdata` is p-code too, so one p-code-to-SMT encoder serves both sides. A second
   lifter would need glue between two register, memory and calling-convention models, and
   every glue bug would surface as a false `DIFFERS`.
-- A `sat` model then replays exactly in Tier C. A model that does not replay is an encoder
-  bug, not a disagreement between two lifters.
+- A `sat` model then replays in Tier C on the same lift, so a failed replay cannot be a
+  disagreement between two lifters (Outcomes says what it can be).
 - It adds no toolchain and covers every architecture kuna has a SLEIGH spec for.
 
 Independence from SLEIGH is Tier L's job, per instruction, where a lift bug is easier to
@@ -145,11 +194,17 @@ localize than inside a whole-function proof.
 - **Outcomes.**
   - `unsat` on a function without loops, or whose loops the bound covers completely,
     upgrades it to `EQUIVALENT`.
-  - `unsat` with a loop the bound does not cover gives `EQUIVALENT(≤k)`: equivalent for
-    every input that iterates at most k times. It is reported as bounded, never as a
-    proof.
-  - `sat` must replay in Tier C. A model that does not replay is an encoder bug and is
-    reported as one.
+  - `unsat` with a loop the bound does not cover gives `EQUIVALENT(≤k)`. Each side's
+    encoding carries an explicit flag for "this path exceeded the bound", and the claim
+    is equivalence on the inputs for which **both** sides finish within it. It is
+    reported as bounded, never as a proof.
+  - An input on which one side finishes within the bound and the other does not is not
+    excluded: it is a difference candidate and is replayed in Tier C with a larger step
+    budget.
+  - `sat` must replay in Tier C. The model's choices for each call (return values and
+    memory writes) become the stubs' recorded effects. A model that does not replay is
+    reported as either an encoder bug, or `UNREPLAYABLE(call-effect)` when it relies on a
+    call effect the stub cannot perform. The two are never merged.
 - **Budget as a regression signal.** The budget each function spends is recorded in the
   baseline. A function that proved within budget and now exhausts it, or whose spend grows
   past a tolerance, is flagged even though no value changed: the decompiled output got
@@ -199,10 +254,11 @@ library rather than stubbed.
 
 | slice | scope | done when |
 |---|---|---|
-| C1 | Tier C, leaf functions, integer only; ABI projection of returns and parameters; declared-divergence list | reverting #794 gives `DIFFERS` on its fixture; verdict table over `tests/datatests` + `tests/stages`, with per-function and total time |
-| C2 | calls by record/replay; rule bisection | bisection names `subvar_zext` on reverted #794; reverting #801 gives `DIFFERS`; bisection cost per finding |
-| C3 | corpus run (decbench binaries); precision and recall | precision: triage of every `DIFFERS` into bug / declared divergence / harness bug. Recall: of the ~44 visible P3/P4 fixes that have a fixture, how many give `DIFFERS` when reverted. Published table with both |
-| S1 | Tier S for loop-free `AGREES` functions, under the budget | `EQUIVALENT` and `UNKNOWN(budget)` counts on the same corpus; every `sat` replays |
+| C1 | Tier C on pure integer functions: no calls, no stores outside the frame; same raw state on both sides; physical-ABI and typed-contract return checks; `PROTOTYPE_SUSPECT`; `UNKNOWN(unsupported-op)`; declared-divergence predicates | reverting #794 gives `DIFFERS` against its fixture's source contract; verdict table over `tests/datatests` + `tests/stages`, with per-function and total time |
+| C2 | memory and call effects: stack and pointer-argument memory, call stubs that write reachable memory, `UNKNOWN(call-effect)` | reverting #801 gives `DIFFERS`; a rule that keeps a pre-call load across a call that writes it gives `DIFFERS` |
+| C3 | rule localization over the C1/C2 verdicts | candidate culprits include `subvar_zext` on reverted #794; cost per finding |
+| C4 | corpus run (decbench binaries); precision and recall | precision: triage of every `DIFFERS` into bug / declared divergence / harness bug. Recall: of the ~44 visible P3/P4 fixes that have a fixture, how many give `DIFFERS` when reverted. Published table with both |
+| S1 | Tier S for loop-free `AGREES` functions, under the budget, over exactly the semantics Tier C executes | `EQUIVALENT` and `UNKNOWN(budget)` counts on the same corpus; every `sat` replays or is classified |
 | S2 | bounded loops; budget baseline and budget-regression flag | `EQUIVALENT(≤k)` counts; a deliberately bloating rule change is flagged by budget alone |
 | L1 | Tier L for x86-64, AArch64, ARM | per-arch mismatch report with skip list |
 | P | separate proposal | — |
@@ -220,7 +276,7 @@ Nothing has been measured yet; C1 measures it. What the design expects, and why:
   no compiler in the loop. The target is that a Tier C pass over `tests/datatests` and
   `tests/stages` fits in a CI job measured in minutes.
 - **Localization** runs only on `DIFFERS`, at about log2 k re-decompiles of one function
-  for a single culprit (k = the rules that fired on it).
+  when a single rule is the cause (k = the rules that fired on it), more otherwise.
 - **Tier S** is bounded per function by the budget in its section, so its total is
   bounded by the corpus size.
 - **For scale:** D-Helix gave symbolic execution two minutes per function on a 112-core
@@ -250,7 +306,7 @@ and differs where D-Helix reported its losses:
 |---|---|---|
 | decompiled side | recompiled C; 27.6% of Ghidra functions lost to compile failures | the final `Funcdata`, run directly (Tier C); recompiling is Tier P only |
 | observables | the return value | return value, stores outside the frame, the ordered calls with their arguments (#801, #893) |
-| prototype | read through the recovered prototype; all of its false negatives came from that | machine side read by the ABI, kuna's side through its claimed prototype; undeclared inputs read poison |
+| prototype | read through the recovered prototype; all of its false negatives came from that | checked against a typed contract (source, DWARF) where one exists; otherwise only the physical ABI, with doubtful claims reported as `PROTOTYPE_SUSPECT` |
 | calls | modeled as returning the sum of the arguments' low bytes | recorded and replayed concretely; uninterpreted functions in Tier S |
 | loops | after a timeout, each branch at most twice, then a dummy return | step budget, `UNKNOWN` beyond it; Tier S reports `EQUIVALENT(≤k)` as bounded |
 | globals | zero | the load image's initial values |
@@ -258,8 +314,7 @@ and differs where D-Helix reported its losses:
 | lifter | trusted | checked separately (Tier L) |
 
 **MeanDiff** compares lifters per instruction with symbolic formulas, which is the shape
-of Tier L. **Alive2** checks LLVM optimizations with SMT and gives inputs `poison` and
-`undef` values, the same idea as Tier C's poison input.
+of Tier L.
 
 ## Related work in this repository
 

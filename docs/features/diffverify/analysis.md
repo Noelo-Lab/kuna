@@ -29,32 +29,41 @@ approximate: a subject line is not a root cause.
 | class | count | examples | visible to a function-level check? |
 |---|---:|---|---|
 | **body rewrite**: a rule changes a value, drops a store, or drops a call | ~15 | #777 wide constants with oversized shifts; #801 a call dropped after stack byte stores; #893 a store into the caller's home slot dropped; #533 a loop counter's write-back dropped; #251 `RuleSubRight` truncation | yes, by comparing outputs and stores |
-| **prototype/ABI claim**: wrong parameters, wrong return width or signedness, halves swapped | ~29 | #794, #763, #855, #877, #875, #828, #229 | only if the decompiled side is read **through the prototype it claims**, on inputs and outputs (§3) |
+| **prototype/ABI claim**: wrong parameters, wrong return width or signedness, halves swapped | ~29 | #794, #763, #855, #877, #875, #828, #229 | as `DIFFERS` only against a typed contract (fixture source, DWARF); otherwise at most `PROTOTYPE_SUSPECT` (§3) |
 | **type, print, naming, crash, flow** | ~12 | #756, #677 narrow reads printed wide; #639 naming; #562 panic; #1501 jump tables | no |
 
-So the check sees roughly 15 bugs with a plain comparison and roughly 44 with ABI
-projection. It sees none of the type and printing class. That class, plus P6 merges and
-P9, needs the printed-C layer.
+So the check sees roughly 15 bugs with a plain comparison. It sees up to 29 more where a
+typed contract exists, which covers every one of these fixes' fixtures but not an
+arbitrary stripped binary. It sees none of the type and printing class. That class, plus
+P6 merges and P9, needs the printed-C layer.
 
-## 3. The representative bug, and why projection is required
+## 3. The representative bug, and why it needs a contract
 
 #794 (`fix(p3)`): on 32-bit ARM, `u64 ins16(unsigned a, unsigned short b) { return ((a + 1)
 << 16) | b; }` printed as `int ins16(int a0, unsigned int a1)`. The machine returns `r1:r0`
 with `r1 = 0`. `RuleSubvarZext` cut the `ZEXT` feeding the RETURN, so the decompiled
 function claims to return a signed 32-bit word.
 
-Comparing `r0` with `r0` says the two agree. The disagreement appears only when the
-claimed `int` return is mapped back to the ABI the way a caller would read it, which is
-sign-extended into `r1:r0`. On `a0 = 0x7fff` the machine gives `0x0000000080000000` and
-the claim gives `0xffffffff80000000`.
+Comparing `r0` with `r0` says the two agree, and under the physical ABI that is all an
+`int` return defines: AAPCS returns an `int` in `r0` and leaves `r1` unspecified, so a
+genuine `int` function may leave anything there. Widening to 64 bits is the caller's C
+conversion, not part of the `int` return. The disagreement therefore exists only against
+the function's real type. With the source's `u64` as the contract, the machine's
+`r1:r0` is `0x0000000080000000` on `a0 = 0x7fff`, and kuna's `int 0x80000000` converted
+to `u64` by C's rules is `0xffffffff80000000`. Without a contract the binary cannot tell
+the two prototypes apart, and the check must not claim it can.
 
-The same holds on the input side. A recovered prototype that drops a parameter (#875)
-leaves the body reading a register no caller sets. The check has to feed such reads a
-value the machine side does not get.
+The input side is the same. A recovered prototype that drops a parameter (#875) leaves the
+body reading a register no declared parameter covers. Feeding that read a value the
+machine side does not get would manufacture a difference that a custom ABI or a platform
+register also produces. Both sides get the same raw state, and the read is reported as
+`PROTOTYPE_SUSPECT`; it becomes `DIFFERS` only against a contract that has the
+parameter.
 
 This is the one place D-Helix (proposal, Prior work) was blind. It read both sides
 through the prototype the decompiler recovered, and its paper attributes every false
-negative it measured to that. The bug family is not specific to kuna either: D-Helix's
+negative it measured to that. Its own evaluation needed source to see these bugs; so does
+this check, and the proposal says so rather than claiming the binary is enough. The bug family is not specific to kuna either: D-Helix's
 Ghidra findings include `RuleIntLessEqual` with `RuleSubvarSext` turning `x < 128` into
 `x < -128`, the sign-extension sibling of #794's `RuleSubvarZext`.
 
@@ -70,8 +79,9 @@ differences that are not bugs:
   stores kuna deliberately drops as dead.
 - **Deliberate divergence.** Some defaults trade fidelity for readability on purpose.
   #794 keeps trimming x86-64 `RDX:RAX` because a zeroed `RDX` is usually
-  `-fzero-call-used-regs`. Each of these must be declared, keyed by option, or it shows
-  up as a bug.
+  `-fzero-call-used-regs`. Each of these must be declared as a predicate (option,
+  architecture, observable, pattern) or it shows up as a bug; an option name alone would
+  also hide new bugs under that option.
 
 A checker drowning in false differences gets ignored. This drives two design choices:
 concrete execution before symbolic proof, and a declared-divergence list from day one.
@@ -80,10 +90,11 @@ concrete execution before symbolic proof, and a declared-divergence list from da
 
 - **Machine-side emulator.** `kuna-sleigh/src/emulate.rs` has `EmulatePcodeCache`, which
   runs SLEIGH p-code over the load image.
-- **Graph-side emulator.** `p2_lift/kuna_emulatefunction.rs` has
-  `EmulateFunction`/`EmulatePcodeOp`, which runs ops over a `Funcdata` syntax tree with a
-  varnode-keyed state. It is single-path and externally driven today, for jump-table
-  recovery, and is the base for an interpreter over the decompiled function.
+- **Graph-side op semantics.** `p2_lift/kuna_emulatefunction.rs` has
+  `EmulateFunction`/`EmulatePcodeOp`, which evaluates ops over a `Funcdata` syntax tree
+  with a varnode-keyed state, for jump-table recovery. Only its per-op arithmetic carries
+  over: `execute_store` does nothing, calls and CALLOTHER fall through, and branches are
+  errors. The interpreter over the decompiled function is new work (proposal, Tier C).
 - **Dev-only home.** `kuna-harness` already hosts differential tooling and is never
   shipped.
 - **Rule control.** Rules are named, keep `count_apply` statistics, and can be switched
