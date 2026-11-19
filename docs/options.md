@@ -474,6 +474,10 @@ Three tiers:
 | string constants render as raw addresses or unnamed data instead of quoted char[N] literals | [`strings`](#strings----on--off-default-on) |
 | no data symbols at ascii runs in rodata | [`strings`](#strings----on--off-default-on) |
 | four-character commands such as quit, show, bind, or fork render as hexadecimal addresses | [`strings`](#strings----on--off-default-on) |
+| a function returns a bare address that points at an embedded PNG or JPEG | [`blobs`](#blobs----on--off-default-on) |
+| PNG, IHDR or IDATx show up as short string fragments in rodata | [`blobs`](#blobs----on--off-default-on) |
+| an embedded zip or gzip archive renders as dat_ globals with no length | [`blobs`](#blobs----on--off-default-on) |
+| a resource table of images is unnamed data | [`blobs`](#blobs----on--off-default-on) |
 | a wide Windows API argument renders as a one-character string literal | [`widestrings`](#widestrings----on--off-default-on) |
 | LoadLibraryW("n") or FindWindowW("O",0) in the emitted C | [`widestrings`](#widestrings----on--off-default-on) |
 | kuna strings --encoding utf16 reports a literal the decompiled C truncates to its first character | [`widestrings`](#widestrings----on--off-default-on) |
@@ -1846,6 +1850,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On (default) lays char[N] data at detected strings; off leaves those addresses undefined.
 - **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-strings
 - **Example:** `option strings off`
+
+### `blobs` -- on | off, default `on`
+
+- **Symptoms:** a function returns a bare address that points at an embedded PNG or JPEG; PNG, IHDR or IDATx show up as short string fragments in rodata; an embedded zip or gzip archive renders as dat_ globals with no length; a resource table of images is unnamed data.
+- **What it does:** Plant a data symbol on every whole image or archive file stored in a mapped section: PNG, JPEG, GIF, BMP, ICO, zip, gzip, xz and zstd. A file counts only when its container structure walks to its end, which also gives the exact length (PNG chunks to IEND with every CRC-32, JPEG markers to EOI, GIF blocks to the trailer, the BMP header size against its pixel array, an ICO directory of PNG or DIB images, the zip end record and central directory, a gzip stream inflated to its trailer CRC-32, the xz footer and index CRC-32s, zstd frame and block headers); a truncated file is not one. Each is named <kind>_<addr> (png_2d0) and typed unsigned char[length], where no symbol already covers the address, and the string fragments the string pass finds inside it (PNG, IHDR, IDATx) are not planted. A constant equal to a file's first address is weighed as a pointer even below the pointer lower bound or with the bit pattern of a mask, unless the function also uses that value as a number, so a shared object whose read-only data starts in the first page still returns png_2d0 instead of 0x2d0. Real-image path only. `kuna blobs` lists the same files with the functions that reference them.
+- **When to flip:** On (default) names embedded files and types them as byte arrays; off leaves their addresses as bare constants or dat_ globals and lets the string pass plant the header fragments. Flip off when a plain number in code that never touches the file prints as its name (return png_370; where 0x370 is a size): a file starting in the first page of a small shared object shares its address with ordinary constants.
+- **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-1649-blobs
+- **Example:** `option blobs off`
 
 ### `widestrings` -- on | off, default `on`
 

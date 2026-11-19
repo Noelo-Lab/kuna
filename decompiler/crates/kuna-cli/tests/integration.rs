@@ -180,6 +180,9 @@ mod contiguous_byte_frame;
 #[path = "cookie_pointer_return_271.rs"]
 mod cookie_pointer_return_271;
 
+#[path = "blobs_cli.rs"]
+mod blobs_cli;
+
 #[path = "crypto_cli.rs"]
 mod crypto_cli;
 

@@ -56,13 +56,13 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_220() {
-    assert_eq!(kuna_num_settables(), 220);
-    assert_eq!(SETTABLE_TABLE.len(), 220);
+fn settable_count_is_221() {
+    assert_eq!(kuna_num_settables(), 221);
+    assert_eq!(SETTABLE_TABLE.len(), 221);
 }
 
 #[test]
-fn tier_counts_are_45_core_120_transform_55_analysis() {
+fn tier_counts_are_45_core_120_transform_56_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -74,7 +74,7 @@ fn tier_counts_are_45_core_120_transform_55_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (45, 120, 55));
+    assert_eq!((core, transform, analysis), (45, 120, 56));
 }
 
 #[test]
@@ -415,6 +415,8 @@ fn option_values_live_value_present_for_76() {
         // with no codegen live reader (read console-side via kuna_live_value), like
         // the gates around it. Default-on, Mach-O-only.
         "cfstrings",
+        // (kuna) Embedded image and archive data symbols: a commit-side gate.
+        "blobs",
         // (kuna) The Swift type-layout arm's gate, read inside that pass.
         "swifttypes",
         // (kuna) Objective-C instance layouts — same commit-side gate as `objc`.
@@ -1095,7 +1097,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `calleeargs`; its P4 row sits after `argclobber`.
     // +1 for `acleintrinsics`; its P9 row sits after `cortexmpriv`.
     // +1 for `kernelcache-boot`; its P1 row sits after `kernelcache`.
-    assert_eq!(json.matches("},\n").count(), 219);
+    // +1 for `blobs`; its P1 row sits after `strings`.
+    assert_eq!(json.matches("},\n").count(), 220);
 }
 
 #[test]

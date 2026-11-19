@@ -957,6 +957,7 @@ kuna_options! { self, p1;
         let state = if annotate { "on, annotated" } else if pass { "on" } else { "off" };
         Ok(format!("Mach-O __cfstring constant-string recovery pass turned {state}"))
     },
+    "blobs" => on_off!(analysis_blobs, "Embedded image and archive data symbols"),
     "swifttypes" => on_off!(analysis_swifttypes, "Swift type layouts from static metadata"),
     "objcivars" => {
         let val = on_or_off(p1)?;
