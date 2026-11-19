@@ -4,8 +4,13 @@ the way iOS 16 splits one: a main file, a `.01` sub-cache holding a
 `__TEXT_STUBS` stub island, and a `.symbols` file holding the local symbols.
 
 `libcaller.dylib` calls `libcallee.dylib` through the island and loads one of its
-globals through a coalesced `__got` whose slots carry v3 slide-info chains (a
-plain pointer chained to an authenticated one). Its one local function is a
+globals through a `__got` the cache builder bound in place: its slots carry v3
+slide-info chains (a plain pointer chained to an authenticated one) and their
+indirect-symbol entries are `INDIRECT_SYMBOL_LOCAL|ABS`, as iOS 16 leaves them.
+It also reads libcallee's `callee_table` directly, an `adrp`/`ldr` of its second
+word and an `adrp`/`add` of its address. libcallee exports `callee_counter`
+under a second name, `callee_total`; libcaller imports the first. Its one local
+function is a
 `<redacted>` placeholder in its own symbol table and is named only by
 `.symbols`. No Apple toolchain is needed; the files are assembled here byte by
 byte from the public `dyld_cache_format.h` layouts and the A64 bodies are
@@ -20,13 +25,16 @@ Layout (cache base 0x180000000):
             0x180001800  caller_entry(a, b) = callee_add(helper_local(a), b) + callee_counter
             0x180001828  helper_local(a) = a + 1      <- named by .symbols only
             0x180001830  caller_indirect: tail call through __got[1]
+            0x18000183c  caller_table() = callee_table[1]   (adrp/ldr)
+            0x180001848  caller_addr() = &callee_table      (adrp/add)
         0x180002000           libcallee.dylib  __TEXT (__text @+0x800)
             0x180002800  callee_add(a, b) = a + b
   .01   0x180008000  __TEXT_STUBS  island @0x180008800: adrp/add/br x16 -> callee_add
   main  0x180010000  __DATA   file 0x3000, slide info v3 @ file 0x4000
             0x180010000  libcaller __DATA_CONST,__got: [0] -> callee_counter (plain,
                          chained to [1]), [1] -> callee_add (auth, IA, addr-diversified)
-            0x180010100  libcallee __DATA,__data: callee_counter = 5
+            0x180010100  libcallee __DATA,__data: callee_counter = callee_total = 5,
+                         callee_table @+0x10 = {7, 9}
   main  0x180020000  __LINKEDIT  file 0x5000  both images' nlists + one string pool
 """
 import os
@@ -42,6 +50,7 @@ CALLER_TEXT, CALLEE_TEXT = CALLER + 0x800, CALLEE + 0x800
 ISLANDS, ISLAND = 0x180008000, 0x180008800
 DATA = 0x180010000
 GOT, COUNTER = DATA, DATA + 0x100
+TABLE = COUNTER + 0x10
 LINKEDIT = 0x180020000
 DATA_FILE, SLIDE_FILE, LINKEDIT_FILE, MAIN_SIZE = 0x3000, 0x4000, 0x5000, 0x6000
 
@@ -53,6 +62,8 @@ MH_MAGIC_64, CPU_TYPE_ARM64, CPU_SUBTYPE_ARM64E = 0xFEEDFACF, 0x0100000C, 2
 MH_DYLIB, MH_FLAGS = 6, 0x80000000 | 0x80 | 0x4
 LC_SEGMENT_64, LC_SYMTAB, LC_DYSYMTAB, LC_ID_DYLIB = 0x19, 0x2, 0xB, 0xD
 S_ATTR_CODE = 0x80000400
+S_NON_LAZY_SYMBOL_POINTERS = 0x6
+INDIRECT_SYMBOL_LOCAL_ABS = 0xC0000000
 TEXT_STUBS = 1 << 3
 
 
@@ -101,7 +112,17 @@ def caller_code():
         ldr_x(16, 16, (GOT & 0xFFF) + 8),              # ldr x16, [x16, __got[1]]
         0xD61F0200,                                    # br x16
     ]
-    return words(entry + helper + indirect)
+    table = [
+        adrp(8, pc + 0x3C, TABLE),                     # adrp x8, callee_table
+        ldr_x(0, 8, (TABLE & 0xFFF) + 8),              # ldr x0, [x8, callee_table + 8]
+        0xD65F03C0,                                    # ret
+    ]
+    addr = [
+        adrp(0, pc + 0x48, TABLE),                     # adrp x0, callee_table
+        add_imm(0, 0, TABLE & 0xFFF),                  # add x0, x0, callee_table
+        0xD65F03C0,                                    # ret
+    ]
+    return words(entry + helper + indirect + table + addr)
 
 
 def callee_code():
@@ -136,10 +157,10 @@ def id_dylib(path):
     return struct.pack("<IIIIII", LC_ID_DYLIB, 24 + len(raw), 24, 0, 0x10000, 0x10000) + raw
 
 
-def macho(text_addr, segments, path, symtab, dysymtab):
+def macho(text_addr, segments, path, symtab, dysymtab, indirect=(0, 0)):
     cmds = b"".join(segments) + id_dylib(path)
     cmds += struct.pack("<IIIIII", LC_SYMTAB, 24, *symtab)
-    cmds += struct.pack("<II18I", LC_DYSYMTAB, 80, *dysymtab, *([0] * 12))
+    cmds += struct.pack("<II18I", LC_DYSYMTAB, 80, *dysymtab, *([0] * 6), *indirect, *([0] * 4))
     ncmds = len(segments) + 3
     header = struct.pack("<IIIIIIII", MH_MAGIC_64, CPU_TYPE_ARM64, CPU_SUBTYPE_ARM64E, MH_DYLIB,
                          ncmds, len(cmds), MH_FLAGS, 0)
@@ -196,23 +217,23 @@ def main_file(pool, linkedit):
         f[at:at + len(path) + 1] = path.encode() + b"\0"
         at += len(path) + 1
 
-    sym_caller, sym_callee, strings = 0x0, 0x30, 0x60
+    sym_caller, sym_callee, indirect, strings = 0x0, 0x60, 0xA0, 0xB0
     caller = macho(CALLER, [
         segment("__TEXT", CALLER, 0x1000, CALLER - BASE, 0x1000, 5,
                 [("__text", CALLER_TEXT, len(caller_code()), CALLER_TEXT - BASE, S_ATTR_CODE)]),
         segment("__DATA_CONST", GOT, 0x100, DATA_FILE, 0x100, 3,
-                [("__got", GOT, 16, DATA_FILE, 0)]),
+                [("__got", GOT, 16, DATA_FILE, S_NON_LAZY_SYMBOL_POINTERS)]),
         segment("__LINKEDIT", LINKEDIT, 0x1000, LINKEDIT_FILE, 0x1000, 1, []),
-    ], paths[0], (LINKEDIT_FILE + sym_caller, 3, LINKEDIT_FILE + strings, len(pool.data)),
-        (0, 1, 1, 2, 3, 0))
+    ], paths[0], (LINKEDIT_FILE + sym_caller, 6, LINKEDIT_FILE + strings, len(pool.data)),
+        (0, 1, 1, 4, 5, 1), (LINKEDIT_FILE + indirect, 2))
     callee = macho(CALLEE, [
         segment("__TEXT", CALLEE, 0x1000, CALLEE - BASE, 0x1000, 5,
                 [("__text", CALLEE_TEXT, len(callee_code()), CALLEE_TEXT - BASE, S_ATTR_CODE)]),
         segment("__DATA", COUNTER, 0x100, DATA_FILE + 0x100, 0x100, 3,
-                [("__data", COUNTER, 4, DATA_FILE + 0x100, 0)]),
+                [("__data", COUNTER, 0x20, DATA_FILE + 0x100, 0)]),
         segment("__LINKEDIT", LINKEDIT, 0x1000, LINKEDIT_FILE, 0x1000, 1, []),
-    ], paths[1], (LINKEDIT_FILE + sym_callee, 2, LINKEDIT_FILE + strings, len(pool.data)),
-        (0, 0, 0, 2, 2, 0))
+    ], paths[1], (LINKEDIT_FILE + sym_callee, 4, LINKEDIT_FILE + strings, len(pool.data)),
+        (0, 0, 0, 4, 4, 0))
     for addr, blob in [(CALLER, caller), (CALLEE, callee),
                        (CALLER_TEXT, caller_code()), (CALLEE_TEXT, callee_code())]:
         f[addr - BASE:addr - BASE + len(blob)] = blob
@@ -221,9 +242,11 @@ def main_file(pool, linkedit):
     auth = (1 << 63) | (1 << 48) | (0x1234 << 32) | (CALLEE_TEXT - BASE)
     struct.pack_into("<QQ", f, DATA_FILE, plain, auth)
     struct.pack_into("<I", f, DATA_FILE + 0x100, 5)
+    struct.pack_into("<QQ", f, DATA_FILE + 0x110, 7, 9)
     struct.pack_into("<IIIIQH", f, SLIDE_FILE, 3, 0x1000, 1, 0, BASE, 0)
 
     f[LINKEDIT_FILE:LINKEDIT_FILE + len(linkedit)] = linkedit
+    struct.pack_into("<II", f, LINKEDIT_FILE + indirect, INDIRECT_SYMBOL_LOCAL_ABS, INDIRECT_SYMBOL_LOCAL_ABS)
     f[LINKEDIT_FILE + strings:LINKEDIT_FILE + strings + len(pool.data)] = pool.data
     return f
 
@@ -253,13 +276,19 @@ def build():
     pool = Pool()
     redacted = pool.add("<redacted>")
     names = {n: pool.add(n) for n in
-             ["_caller_entry", "_caller_indirect", "_callee_add", "_callee_counter"]}
+             ["_caller_entry", "_caller_indirect", "_caller_table", "_caller_addr",
+              "_callee_add", "_callee_counter", "_callee_total", "_callee_table"]}
     linkedit = b"".join([
         nlist(redacted, 0x0E, 1, CALLER_TEXT + 0x28),
         nlist(names["_caller_entry"], 0x0F, 1, CALLER_TEXT),
         nlist(names["_caller_indirect"], 0x0F, 1, CALLER_TEXT + 0x30),
+        nlist(names["_caller_table"], 0x0F, 1, CALLER_TEXT + 0x3C),
+        nlist(names["_caller_addr"], 0x0F, 1, CALLER_TEXT + 0x48),
+        nlist(names["_callee_counter"], 0x01, 0, 0),
         nlist(names["_callee_add"], 0x0F, 1, CALLEE_TEXT),
         nlist(names["_callee_counter"], 0x0F, 2, COUNTER),
+        nlist(names["_callee_total"], 0x0F, 2, COUNTER),
+        nlist(names["_callee_table"], 0x0F, 2, TABLE),
     ])
     os.makedirs(OUT, exist_ok=True)
     for suffix, data in [("", main_file(pool, linkedit)), (".01", subcache_file()),

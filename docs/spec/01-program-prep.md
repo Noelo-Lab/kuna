@@ -2575,26 +2575,62 @@ funcsym stream:
   other images past its own stubs. The cache builder sends a `bl` to a stub
   island in a `__TEXT_STUBS` sub-cache (iOS 16: `adrp x16; add x16; br x16`), to
   another image's rewritten stub (iOS 14), or straight to the callee. It also
-  coalesces `__got` sections into plain sections with no indirect-symbol entries.
+  binds `__got` slots in place: on iOS 14 the section is left untyped with no
+  indirect-symbol entries, on iOS 16 it stays `S_NON_LAZY_SYMBOL_POINTERS` with
+  every entry `INDIRECT_SYMBOL_LOCAL|ABS`. And it rewrites a GOT load in range
+  into a direct `adrp`/`add` or `adrp`/`ldr` of the target.
   None of those addresses is in the rebuilt image, so the stub walk above cannot
-  name them, and a call renders `sub_<island>(...)`.
+  name them, and a call renders `sub_<island>(...)`, a load through a bound slot
+  `*dat_<slot>` and a direct reference `dat_<addr>` or a bare number.
   `decompiler/crates/kuna-analysis/src/loader/kuna_dyldcache/xrefs.rs (collect)`
   runs while the image is rebuilt. It scans an arm64 image's code sections for
-  `b`/`bl` targets outside the image (an x86_64 image gets its GOT slots alone), and its untyped `__got`/`__auth_got` sections for
-  slid pointers outside it. For each target it takes, in order, a symbol at that
+  `b`/`bl` targets outside the image (an x86_64 image gets its GOT slots
+  alone), and its `__got`, `__auth_got` and `__auth_ptr` sections
+  for slid pointers outside it: every slot of an untyped section, and of a typed
+  one those whose indirect entry is local or absent. For each target it takes, in order, a symbol at that
   address, then the import an `S_SYMBOL_STUBS` entry there stands for (from the
   owning image's indirect-symbol table), then wherever the stub jumps. Up to four
   stubs are followed, decoding `adrp`/`add`/`ldr` (through slid data) to
   `br`/`braa`/`braaz`. An image's names come from its symbol table, exports
   winning over the locals in the `.symbols` file, and are built only for the
-  images actually reached. The result rides in the rebuilt Mach-O as an
+  images actually reached. Where several exports share one address
+  (`_objc_retain` and `_objc_retain_x0`, `_bzero` and `__platform_bzero`), the
+  one the rebuilt image lists among its own undefined symbols is the name
+  there, since that is the name its source called (`xrefs.rs (Names::at)`).
+
+  The same pass names the image's direct references to other images' data. It
+  follows each `adrp` page in a code section to a later `add` or
+  unsigned-offset load or store on the same register, one linear pass per
+  section (`xrefs.rs (adrp_targets)`): `b`, `br` and `ret` forget every page,
+  `bl` the pages of the registers a call clobbers, any other write the page of
+  its destination. Each such
+  address is named by the symbol holding it in the image that owns it
+  (`xrefs.rs (Names::containing)`): one starting there in a code section, which
+  becomes a call target, else the last symbol at or below it in its data
+  section, reaching to the next symbol, the section end or 64 KiB. A data
+  target becomes a data symbol at the holding symbol's start, reaching eight
+  bytes past the last address referenced in it but never past the holding
+  symbol, which is how `macho_stubs::data_symbols` sizes a symbol table's data;
+  an interior reference then renders as a part of it. The section searches are
+  charged to the same work allowance as the stub walk.
+
+  The result rides in the rebuilt Mach-O as an
   `LC_NOTE` owned by `kuna.dyld.xrefs`, so `kuna unpack` writes it too, and the
   stub walk reads it back as imports: a call target becomes an import stub, and
-  a slot becomes an import slot, so `peimportcall` binds a call through it. A
+  a slot becomes an import slot, so `peimportcall` binds a call through it and
+  `importdata` names a read through it. The loader reads the data symbols from
+  the same note (`decompiler/crates/kuna-analysis/src/loadimage_object.rs`);
+  they are written last, with their size in the upper bits of the kind word,
+  so a reader that knows only calls and slots stops there. A
   note cut short by `sizeofcmds`, or whose blob lies past the file, reads as no
   note, and the names a note copies never exceed its name pool. The
-  gate is read at that point, so `off` leaves the note unread and every island
-  call `sub_<addr>(...)`. On the iOS 16.4.1 cache, CoreFoundation's note names
+  gate is read at that point, so `off` leaves the note unread, every island
+  call `sub_<addr>(...)` and every data reference `dat_<addr>`. On CryptoKit
+  (iOS 16.4.1) the `(*dat_1e14a56c0)(...)` calls through `__auth_ptr` name
+  their callee and `*dat_1dc6827c8` reads as
+  `Foundation.Data.Deallocator.custom(_:).enum_case`; 179 lines of its 2,625
+  functions change. CoreFoundation's 2,554 changed lines are mostly
+  `objc_retain(a2)` for `objc_retain_x0(a2)`. On the iOS 16.4.1 cache, CoreFoundation's note names
   699 of its call targets and 65 GOT slots; `libobjc`'s `class_copyMethodList`
   calls `os_unfair_lock_lock_with_options` through an island on iOS 16 and
   through `HomeKit`'s rewritten stub on iOS 14, and both render the name.

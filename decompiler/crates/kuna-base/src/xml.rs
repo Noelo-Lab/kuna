@@ -2234,7 +2234,8 @@ mod tests {
         // and kuna-machotruncated / a Mach-O cut short still loads the bytes it has
         // and kuna-outlinedinline / MachineOutliner fragments inlined into their callers (option outlinedinline)
         // and kuna-machobinds / a Mach-O pointer slot a bind fills is named for its import
-        assert_eq!(count, 795, "corpus file count drifted");
+        // and kuna-dyldcrossdata / a dyld shared cache image names the data it reads from other images
+        assert_eq!(count, 796, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

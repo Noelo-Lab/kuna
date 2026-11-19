@@ -57,24 +57,35 @@ fn rebuilt_image_is_a_mach_o_at_its_cache_addresses_with_slid_pointers() {
     assert!(!names.iter().any(|(n, _)| n == "<redacted>"));
     let exports: Vec<String> =
         file.exports().unwrap().iter().map(|e| String::from_utf8_lossy(e.name()).into_owned()).collect();
-    assert_eq!(exports, ["_caller_entry", "_caller_indirect"]);
+    assert_eq!(exports, ["_caller_entry", "_caller_indirect", "_caller_table", "_caller_addr"]);
 }
 
 #[test]
 fn cross_image_references_ride_in_the_note() {
     let cache = DyldCache::open(&fixture()).unwrap();
     let xrefs = read_note(&cache.extract(0).unwrap());
-    let call = |addr, name: &[u8]| Xref { addr, kind: XrefKind::Call, name: name.to_vec() };
-    let slot = |addr, name: &[u8]| Xref { addr, kind: XrefKind::Slot, name: name.to_vec() };
+    let x = |addr, kind, name: &[u8], size| Xref { addr, kind, name: name.to_vec(), size };
     assert_eq!(
         xrefs,
         [
-            call(0x1_8000_8800, b"_callee_add"),
-            slot(0x1_8001_0000, b"_callee_counter"),
-            slot(0x1_8001_0008, b"_callee_add"),
+            x(0x1_8000_8800, XrefKind::Call, b"_callee_add", 0),
+            x(0x1_8001_0000, XrefKind::Slot, b"_callee_counter", 0),
+            x(0x1_8001_0008, XrefKind::Slot, b"_callee_add", 0),
+            x(0x1_8001_0110, XrefKind::Data, b"_callee_table", 0x10),
         ]
     );
     assert!(read_note(&cache.extract(1).unwrap()).is_empty(), "the callee reaches no other image");
+}
+
+/// The `__got` stays `S_NON_LAZY_SYMBOL_POINTERS` with every indirect entry
+/// `INDIRECT_SYMBOL_LOCAL|ABS`, as the cache builder leaves a slot it bound in
+/// place, and the data another image holds reads back as data symbols.
+#[test]
+fn a_bound_got_keeps_its_local_abs_entries_and_its_targets_read_back_as_data() {
+    let cache = DyldCache::open(&fixture()).unwrap();
+    assert_eq!(cache.image_indirect_symbols(0).unwrap(), [0xC000_0000; 2]);
+    let bytes = cache.extract(0).unwrap();
+    assert_eq!(xrefs::data_symbols(&bytes), [(0x1_8001_0110, b"_callee_table".to_vec(), 0x10)]);
 }
 
 #[test]

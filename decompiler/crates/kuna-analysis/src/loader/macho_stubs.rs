@@ -185,9 +185,12 @@ where
     }
 
     if kuna_decomp::kuna_dyldcache::dyldcrossrefs_enabled() {
+        use super::kuna_dyldcache::xrefs::XrefKind;
         for xref in super::kuna_dyldcache::xrefs::read_note(bytes) {
-            if xref.kind == super::kuna_dyldcache::xrefs::XrefKind::Slot {
-                out.import_slots.push((xref.addr, xref.addr.saturating_add(8)));
+            match xref.kind {
+                XrefKind::Data => continue,
+                XrefKind::Slot => out.import_slots.push((xref.addr, xref.addr.saturating_add(8))),
+                XrefKind::Call => {}
             }
             out.imports.push(ImportSym {
                 addr: xref.addr,
