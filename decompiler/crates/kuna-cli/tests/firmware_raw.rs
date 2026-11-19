@@ -1,5 +1,5 @@
 //! Raw firmware front end: a Cortex-M flash dump loads with no `--target`,
-//! `--base` or `--entry`, from its vector table.
+//! `--base` or `--entry`, from its vector table; `--svd` types its peripherals.
 
 use crate::common;
 
@@ -24,4 +24,25 @@ fn an_explicit_base_is_kept() {
     ]);
     assert_eq!(code, 0, "{err}");
     assert!(!err.contains("Cortex-M vector table"));
+}
+
+#[test]
+fn svd_names_peripherals_and_interrupts() {
+    let bin = common::fixture("cortexm3_raw.bin");
+    let svd = common::fixture("cortexm3_raw.svd");
+    let (out, err, code) = common::run_kuna(&["decompile-all", &bin, "--svd", &svd]);
+    assert_eq!(code, 0, "{err}");
+    assert!(err.contains("SVD MINI_F4: 3 peripherals, 1 interrupts"), "{err}");
+    assert!(out.contains("void USART1_IRQHandler(void)"), "{out}");
+    assert!(out.contains("USART1.DR = 0x78;"), "{out}");
+    assert!(out.contains("GPIOA.ODR = GPIOA.ODR ^ 0x20;"), "{out}");
+}
+
+#[test]
+fn svd_is_refused_where_it_does_not_apply() {
+    let bin = common::fixture("cortexm3_raw.bin");
+    let svd = common::fixture("cortexm3_raw.svd");
+    let (_, err, code) = common::run_kuna(&["strings", &bin, "--svd", &svd]);
+    assert_eq!(code, 2, "{err}");
+    assert!(err.contains("--svd does not apply to strings"), "{err}");
 }

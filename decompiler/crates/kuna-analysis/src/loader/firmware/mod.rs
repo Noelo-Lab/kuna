@@ -2,3 +2,4 @@
 //! bytes load, which processor runs them and where execution starts.
 
 pub mod cortexm;
+pub mod svd;
