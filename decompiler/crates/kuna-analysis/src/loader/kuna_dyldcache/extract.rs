@@ -21,24 +21,24 @@ use super::{u32_at, u64_at, DyldCache};
 const MH_MAGIC_64: u32 = 0xfeed_facf;
 const CPU_TYPE_ARM64: u32 = 0x0100_000c;
 const CPU_TYPE_X86_64: u32 = 0x0100_0007;
-const LC_SEGMENT_64: u32 = 0x19;
-const LC_SYMTAB: u32 = 0x2;
-const LC_DYSYMTAB: u32 = 0xb;
-const LC_DYLD_INFO: u32 = 0x22;
-const LC_DYLD_INFO_ONLY: u32 = 0x8000_0022;
-const LC_FUNCTION_STARTS: u32 = 0x26;
+pub(super) const LC_SEGMENT_64: u32 = 0x19;
+pub(super) const LC_SYMTAB: u32 = 0x2;
+pub(super) const LC_DYSYMTAB: u32 = 0xb;
+pub(super) const LC_DYLD_INFO: u32 = 0x22;
+pub(super) const LC_DYLD_INFO_ONLY: u32 = 0x8000_0022;
+pub(super) const LC_FUNCTION_STARTS: u32 = 0x26;
 const LC_DATA_IN_CODE: u32 = 0x29;
 const LC_DYLD_EXPORTS_TRIE: u32 = 0x8000_0033;
 pub(crate) const LC_NOTE: u32 = 0x31;
-const LINKEDIT_DATA_COMMANDS: &[u32] =
+pub(super) const LINKEDIT_DATA_COMMANDS: &[u32] =
     &[0x1d, 0x1e, LC_FUNCTION_STARTS, LC_DATA_IN_CODE, 0x2b, 0x2e, LC_DYLD_EXPORTS_TRIE, 0x8000_0034, 0x36, 0x37, 0x38];
-const INDIRECT_SYMBOL_LOCAL: u32 = 0x8000_0000;
-const INDIRECT_SYMBOL_ABS: u32 = 0x4000_0000;
+pub(super) const INDIRECT_SYMBOL_LOCAL: u32 = 0x8000_0000;
+pub(super) const INDIRECT_SYMBOL_ABS: u32 = 0x4000_0000;
 const N_STAB: u8 = 0xe0;
 const N_TYPE: u8 = 0x0e;
 const N_SECT: u8 = 0x0e;
 const N_EXT: u8 = 0x01;
-const PAGE: u64 = 0x4000;
+pub(super) const PAGE: u64 = 0x4000;
 /// The name the cache builder leaves on a local it moved to the local-symbols file.
 const REDACTED: &[u8] = b"<redacted>";
 
@@ -52,7 +52,7 @@ pub struct Section {
     pub reserved1: u32,
     pub reserved2: u32,
     /// Byte offset of this section header within the load commands.
-    cmd_offset: usize,
+    pub(super) cmd_offset: usize,
 }
 
 impl Section {
@@ -78,7 +78,7 @@ pub struct Segment {
     pub fileoff: u64,
     pub filesize: u64,
     pub sections: Vec<Section>,
-    cmd_offset: usize,
+    pub(super) cmd_offset: usize,
 }
 
 impl Segment {
@@ -91,15 +91,15 @@ impl Segment {
 #[derive(Debug)]
 pub struct ImageLayout {
     pub address: u64,
-    header: Vec<u8>,
-    cmds: Vec<u8>,
+    pub(super) header: Vec<u8>,
+    pub(super) cmds: Vec<u8>,
     pub segments: Vec<Segment>,
-    symtab: Option<usize>,
-    dysymtab: Option<usize>,
+    pub(super) symtab: Option<usize>,
+    pub(super) dysymtab: Option<usize>,
 }
 
 impl ImageLayout {
-    fn linkedit(&self) -> Option<&Segment> {
+    pub(super) fn linkedit(&self) -> Option<&Segment> {
         self.segments.iter().find(|s| s.name == "__LINKEDIT")
     }
 
@@ -109,14 +109,20 @@ impl ImageLayout {
         (offset as u64).checked_sub(le.fileoff).and_then(|d| le.vmaddr.checked_add(d))
     }
 
-    fn cmd_u32(&self, at: usize) -> u32 {
+    pub(super) fn cmd_u32(&self, at: usize) -> u32 {
         u32_at(&self.cmds, at)
+    }
+
+    /// The bytes of the command at `at`, one [`ImageLayout::commands`] listed.
+    pub(super) fn command(&self, at: usize) -> Result<&[u8], String> {
+        let size = self.cmd_u32(at + 4) as usize;
+        self.cmds.get(at..at.saturating_add(size)).ok_or_else(|| "load command runs past the commands".to_string())
     }
 
     /// The commands, as `(cmd, offset)` pairs. A command whose `cmdsize`, or
     /// the bytes left, is short of the fixed fields of its kind is skipped, so
     /// every field the rebuild reads or rewrites lies inside the commands.
-    fn commands(&self) -> Vec<(u32, usize)> {
+    pub(super) fn commands(&self) -> Vec<(u32, usize)> {
         let mut out = Vec::new();
         let mut at = 0;
         while at + 8 <= self.cmds.len() {
@@ -152,7 +158,7 @@ fn min_cmdsize(cmd: u32) -> usize {
     }
 }
 
-fn parse_layout(address: u64, header: Vec<u8>, cmds: Vec<u8>) -> ImageLayout {
+pub(super) fn parse_layout(address: u64, header: Vec<u8>, cmds: Vec<u8>) -> ImageLayout {
     let mut layout = ImageLayout { address, header, cmds, segments: Vec::new(), symtab: None, dysymtab: None };
     for (cmd, at) in layout.commands() {
         let c = &layout.cmds[at..];
@@ -556,8 +562,8 @@ impl DyldCache {
 
 /// The private `__LINKEDIT` being assembled; offsets are from its start.
 #[derive(Default)]
-struct Linkedit {
-    bytes: Vec<u8>,
+pub(super) struct Linkedit {
+    pub(super) bytes: Vec<u8>,
     symoff: u64,
     nsyms: u32,
     stroff: u64,
@@ -570,7 +576,7 @@ struct Linkedit {
 }
 
 impl Linkedit {
-    fn push(&mut self, data: &[u8]) -> u64 {
+    pub(super) fn push(&mut self, data: &[u8]) -> u64 {
         let at = align(self.bytes.len() as u64, 8);
         self.bytes.resize(at as usize, 0);
         self.bytes.extend(data);
@@ -582,14 +588,14 @@ impl Linkedit {
     }
 }
 
-fn align(v: u64, to: u64) -> u64 {
+pub(super) fn align(v: u64, to: u64) -> u64 {
     v.div_ceil(to) * to
 }
 
-fn put_u32(b: &mut [u8], at: usize, v: u32) {
+pub(super) fn put_u32(b: &mut [u8], at: usize, v: u32) {
     b[at..at + 4].copy_from_slice(&v.to_le_bytes());
 }
 
-fn put_u64(b: &mut [u8], at: usize, v: u64) {
+pub(super) fn put_u64(b: &mut [u8], at: usize, v: u64) {
     b[at..at + 8].copy_from_slice(&v.to_le_bytes());
 }

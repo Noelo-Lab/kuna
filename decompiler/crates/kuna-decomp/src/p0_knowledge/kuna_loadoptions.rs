@@ -20,6 +20,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use crate::kuna_kernelcache::KernelcacheChoice;
+use crate::kuna_kernelcacheboot::KernelcacheBoot;
 use crate::kuna_libctypes::LibcTypesLayout;
 use crate::kuna_ppc32picimports::Mode as Ppc32PicMode;
 use crate::kuna_sourcelang::SourceLang;
@@ -53,6 +54,8 @@ pub struct LoadOptions {
     pub ppcapu: bool,
     /// `kernelcache`: unwrap Apple firmware containers and pick a fileset entry.
     pub kernelcache: KernelcacheChoice,
+    /// `kernelcache-boot`: where the collections a kernel collection links are found.
+    pub kernelcache_boot: KernelcacheBoot,
     /// `goabi`: select the golang compiler spec for a Go image.
     pub goabi: bool,
     /// `symbolnamechars`: how symbol-name characters are sanitized.
@@ -99,6 +102,7 @@ impl Default for LoadOptions {
             ifuncfpret: true,
             ppcapu: false,
             kernelcache: KernelcacheChoice::default(),
+            kernelcache_boot: KernelcacheBoot::default(),
             goabi: true,
             symbolnamechars: NameChars::default(),
             libctypes: LibcTypesLayout::Opaque,
@@ -130,6 +134,7 @@ impl LoadOptions {
             ifuncfpret: env::ifuncfpret(),
             ppcapu: env::ppcapu(),
             kernelcache: env::kernelcache(),
+            kernelcache_boot: env::kernelcache_boot(),
             goabi: env::goabi(),
             symbolnamechars: env::symbolnamechars(),
             libctypes: env::libctypes(),
@@ -180,6 +185,9 @@ impl LoadOptions {
             "ifuncfpret" => kuna_ifuncfpret::set_ifuncfpret_env(self.ifuncfpret),
             "ppcapu" => kuna_ppcapu::set_ppcapu_env(self.ppcapu),
             "kernelcache" => kuna_kernelcache::set_kernelcache_env(&self.kernelcache),
+            "kernelcache-boot" => {
+                kuna_kernelcacheboot::set_kernelcache_boot_env(&self.kernelcache_boot)
+            }
             "goabi" => kuna_goabi::set_goabi_env(self.goabi),
             "symbolnamechars" => {
                 kuna_symbolnamechars::set_symbolnamechars_env(self.symbolnamechars)
@@ -308,6 +316,10 @@ pub mod env {
 
     pub fn kernelcache() -> KernelcacheChoice {
         KernelcacheChoice::from_env()
+    }
+
+    pub fn kernelcache_boot() -> KernelcacheBoot {
+        KernelcacheBoot::from_env()
     }
 
     pub fn goabi() -> bool {
@@ -476,6 +488,7 @@ mod tests {
             ifuncfpret: false,
             ppcapu: true,
             kernelcache: KernelcacheChoice::Off,
+            kernelcache_boot: KernelcacheBoot::Off,
             symbolnamechars: NameChars::Ident,
             libctypes: LibcTypesLayout::Glibc,
             calltargettype: false,
@@ -492,6 +505,7 @@ mod tests {
         assert!(!crate::kuna_ifuncfpret::ifuncfpret_enabled());
         assert!(crate::kuna_ppcapu::ppcapu_enabled());
         assert_eq!(KernelcacheChoice::in_force(), KernelcacheChoice::Off);
+        assert_eq!(KernelcacheBoot::in_force(), KernelcacheBoot::Off);
         assert_eq!(
             crate::kuna_symbolnamechars::symbolnamechars_mode(),
             NameChars::Ident

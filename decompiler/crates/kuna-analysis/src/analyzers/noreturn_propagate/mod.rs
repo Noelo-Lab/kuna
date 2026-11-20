@@ -137,7 +137,8 @@ impl AnalysisPass for NoReturnPropagatePass {
         // (`--option noreturn_reach`, default-on, DIV-19); Listing-gated like the rest,
         // so every parity gate stays byte-identical.
         let reach = ctx.arch.analysis_noreturn_reach;
-        for fact in propagate_noreturn(listing, &error_recog, reach, &stubs) {
+        let resuming_entry = crate::pclntab::kuna_gomcall::resuming_entry(ctx, listing);
+        for fact in propagate_noreturn(listing, &error_recog, reach, &stubs, resuming_entry) {
             out.noreturn.push(fact);
         }
         // (kuna, Ghidra-gap) Emit every `call error(nonzero,…)` site so the decompile
@@ -717,7 +718,7 @@ fn reaches_only_noreturn_walk<B: InstructionBody + ?Sized>(
 /// when every path it can take ends at one, or at a call to a function already
 /// concluded.
 pub(crate) fn propagate_exits(listing: &Listing, sites: &[u64], reach: bool) -> Vec<NoReturnFact> {
-    propagate_noreturn(listing, &ErrorRecognizer::dos_exits(sites), reach, &BTreeSet::new())
+    propagate_noreturn(listing, &ErrorRecognizer::dos_exits(sites), reach, &BTreeSet::new(), None)
 }
 
 /// Run the call-graph no-return propagation over the Listing and return the
@@ -727,12 +728,14 @@ pub(crate) fn propagate_exits(listing: &Listing, sites: &[u64], reach: bool) -> 
 /// (`has_no_return`), then sweep the candidate functions to a fixpoint: each
 /// newly-concluded function joins the terminal set so a caller whose last act is a
 /// call to *it* is re-evaluated next sweep (a wrapper-of-a-wrapper converges).
+/// A Go scheduler entry can resume its caller without a machine return.
 /// Keyed by entry VMA (a `BTreeMap` ⇒ address-ordered, deduped).
 fn propagate_noreturn(
     listing: &Listing,
     error_recog: &ErrorRecognizer,
     reach: bool,
     stubs: &BTreeSet<u64>,
+    resuming_entry: Option<u64>,
 ) -> Vec<NoReturnFact> {
     let mut discovered: BTreeMap<u64, NoReturnFact> = BTreeMap::new();
     // The "already no-return" anchor set: the Known-seeded functions plus
@@ -755,7 +758,7 @@ fn propagate_noreturn(
         changed = false;
         sweeps += 1;
         for &entry in &candidates {
-            if skip_candidate(listing, entry, &terminal, stubs) {
+            if Some(entry) == resuming_entry || skip_candidate(listing, entry, &terminal, stubs) {
                 continue;
             }
             // The strict tail-call rule first (cheap, proven); then, if enabled, the
@@ -1087,7 +1090,7 @@ mod tests {
         );
         let recog = ErrorRecognizer::disabled();
         let concluded = |stubs: &BTreeSet<u64>| -> Vec<u64> {
-            propagate_noreturn(&listing, &recog, true, stubs).iter().map(|f| f.addr).collect()
+            propagate_noreturn(&listing, &recog, true, stubs, None).iter().map(|f| f.addr).collect()
         };
         assert_eq!(concluded(&BTreeSet::new()), vec![0x10]);
         assert!(concluded(&[0x10, 0x20].into_iter().collect()).is_empty());

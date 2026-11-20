@@ -1,0 +1,51 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Call-site prototypes (`override prototype`, the `callproto` assertion).
+
+    `report` calls a variadic function pointer twice; the second call is a tail
+    jump through r8, and the register holding its target is read as a fifth
+    argument. No callee symbol carries a signature for a call through a
+    pointer, so the only place to state it is the call instruction.
+
+    Pass 1 is the recovery with nothing stated. Pass 2 gives the tail jump its
+    own prototype without the trailing `;`. Pass 3 places a parameter with
+    `@<storage>`: the third argument is read from R8D, which holds the target.
+
+    Source and build recipe:
+    decompiler/crates/kuna-analysis/tests/fixtures/callproto_x86_64.c
+-->
+<bytechunk space="ram" offset="0x308" readonly="true">
+257320256420256400256400
+</bytechunk>
+<bytechunk space="ram" offset="0x1370" readonly="true">
+f30f1efa41574156534889f34189fe4c
+8b3dd2100000488d3d84efffff4489f6
+31c041ff174d8b07418d4e01488d3d65
+efffff4889de4489f231c05b415e415f
+41ffe0
+</bytechunk>
+<bytechunk space="ram" offset="0x2458">
+0000000000000000
+</bytechunk>
+<symbol space="ram" offset="0x1370" name="report"/>
+<symbol space="ram" offset="0x2458" name="logger"/>
+</binaryimage>
+<script>
+  <com>lo fu report</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>override prototype 0x13b0 void f(char *fmt, char *s, int a, int b)</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu report</com>
+  <com>override prototype 0x13b0 void f(char *fmt, char *s, int a @R8D)</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="callproto #1: nothing stated, the call target is read as a fifth argument" min="1" max="1">a0 \+ 1,[^;]*\*v1\);</stringmatch>
+<stringmatch name="callproto #2: the stated prototype leaves exactly four arguments" min="1" max="1">\("%s %d %d",a1,a0,a0 \+ 1\);</stringmatch>
+<stringmatch name="callproto #3: a parameter placed with @R8D reads the target register" min="1" max="1">\("%s %d %d",a1,[^,;]*\*v1\);</stringmatch>
+<stringmatch name="callproto #4: the tail jump is a call in every pass" min="3" max="3">jump-as-call</stringmatch>
+</decompilertest>

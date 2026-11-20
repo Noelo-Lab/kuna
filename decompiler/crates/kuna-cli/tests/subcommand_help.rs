@@ -72,7 +72,7 @@ fn each_block_names_its_own_subcommand() {
 /// nor a compiled `.sla` — the state an agent meeting the tool is actually in.
 #[test]
 fn help_needs_no_binary_and_no_specs() {
-    for sub in ["decompile", "test", "catalog", "specs"] {
+    for sub in ["decompile", "test", "catalog", "specs", "rust-signatures"] {
         let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
             .args([sub, "--help"])
             .env_remove("KUNA_SPECS")
@@ -110,6 +110,7 @@ fn the_repaired_blocks_document_their_flags() {
 fn every_json_surface_names_its_root_in_help() {
     let stated: &[(&str, &str)] = &[
         ("fid", "{binary,"),
+        ("rust-signatures", "{status,"),
         ("decompile", "{binary,"),
         ("decompile-all", "{binary,"),
         ("functions", "{binary,"),
@@ -119,6 +120,7 @@ fn every_json_surface_names_its_root_in_help() {
         ("xrefs", "{binary,"),
         ("strings", "{binary,"),
         ("crypto", "{binary,"),
+        ("blobs", "{binary,"),
         ("unpack", "{binary,"),
         ("test", "{unit_footer,"),
         ("modes", "{modes:["),

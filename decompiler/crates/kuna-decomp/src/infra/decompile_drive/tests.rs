@@ -293,6 +293,30 @@ fn variable_merging_stops_once_a_probe_sees_the_budget_spent() {
 }
 
 #[test]
+fn a_jump_table_value_walk_stops_once_a_probe_sees_the_budget_spent() {
+    use crate::jumptable::{JumpValues, JumpValuesRange, JumpValuesRangeDefault, JumpValuesSetters};
+    use crate::rangeutil::CircleRange;
+    let walks: [fn() -> Box<dyn JumpValues>; 2] =
+        [|| Box::new(JumpValuesRange::new()), || Box::new(JumpValuesRangeDefault::new())];
+    for walk in walks {
+        let mut values = walk();
+        values.as_setters_mut().set_range(CircleRange::new(0, 1000, 4, 1));
+        {
+            let _unbudgeted = super::DeadlineScope::enter(None);
+            assert!(values.initialize_for_reading());
+            assert!((0..2000).take_while(|_| values.next().unwrap()).count() >= 999);
+        }
+        let _drive = super::DeadlineScope::enter(Some(std::time::Instant::now()));
+        let _table = super::JumpTableScope::enter(0x401026);
+        assert!(values.initialize_for_reading());
+        let stride = (0..1000).take_while(|_| values.next().is_ok()).count() + 1;
+        assert!(stride <= 256, "first step to ask the clock: {stride}");
+        assert!(values.next().is_err(), "every step after it fails");
+        assert_eq!(budget_site().as_deref(), Some("jump-table value walk at 0x401026"));
+    }
+}
+
+#[test]
 fn a_budget_probe_stays_spent_for_its_drive_and_names_no_site() {
     {
         let _unbudgeted = super::DeadlineScope::enter(None);

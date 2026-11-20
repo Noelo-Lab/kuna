@@ -708,6 +708,10 @@ pub fn universal_sched(
             // passes above: mainloop has settled the count and the searched byte
             // to constants, and the repeating fullloop folds what it leaves.
             act!(Box::new(crate::kuna_strlenscan::ActionStrlenScan::new(false, "returnsplit"))),
+            // (kuna) repstring (option `repstring`): the same loop shape for
+            // `rep movs`, `rep stos` and `repz cmpsb`, collapsed into a copy,
+            // fill or compare builtin by removing the edge into the body.
+            act!(Box::new(crate::kuna_repstring::ActionRepString::new("returnsplit"))),
             act!(ActionReturnSplit::boxed("returnsplit")),
             // (kuna) angr SAILR gotoless `ReturnDuplicatorHigh` (option `returndup`,
             // default-OFF).  Runs right after ActionReturnSplit (the goto-driven
@@ -801,6 +805,7 @@ pub fn universal_sched(
             act!(ActionStructureTransform::boxed("blockrecovery", true)),
             act!(ActionNormalizeBranches::boxed("normalizebranches")),
             act!(crate::kuna_armfloatargs::ActionArmFloatArgs::boxed("merge")),
+            act!(crate::p9_emit::kuna_returnselector::ActionReturnSelector::boxed("merge")),
             act!(ActionAssignHigh::boxed("merge")),
             act!(ActionMergeRequired::boxed("merge")),
             act!(ActionMarkExplicit::boxed("merge")),

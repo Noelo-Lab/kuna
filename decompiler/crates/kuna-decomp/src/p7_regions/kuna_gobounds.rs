@@ -8,13 +8,17 @@ use crate::context::BlockId;
 use crate::funcdata::Funcdata;
 use kuna_num::opcodes::OpCode;
 
-/// Compiler-generated checks, excluding explicit panic and type assertions.
-pub fn is_go_check_name(name: &str) -> bool {
+fn go_runtime_name(name: &str) -> Option<&str> {
     let name = name
         .strip_suffix(".abi0")
         .or_else(|| name.strip_suffix(".abiinternal"))
         .unwrap_or(name);
-    let Some(name) = name.strip_prefix("runtime.") else {
+    name.strip_prefix("runtime.")
+}
+
+/// Compiler-generated checks, excluding explicit panic and type assertions.
+pub fn is_go_check_name(name: &str) -> bool {
+    let Some(name) = go_runtime_name(name) else {
         return false;
     };
     if matches!(
@@ -64,13 +68,13 @@ pub fn is_go_check_name(name: &str) -> bool {
         })
 }
 
-fn panic_only(data: &Funcdata, block: BlockId) -> bool {
+fn panic_only(data: &Funcdata, block: BlockId) -> Option<&str> {
     if !matches!(data.bblocks_ref().block(block).kind(), BlockKind::Basic(_))
         || data.bblocks_ref().block(block).size_out() != 0
     {
-        return false;
+        return None;
     }
-    let mut found = false;
+    let mut found = None;
     for op in data.bb_ops(block) {
         let operation = data.obank().get(op).expect("gobounds op");
         if operation.code() == OpCode::CPUI_INDIRECT || operation.is_return_copy() {
@@ -84,23 +88,22 @@ fn panic_only(data: &Funcdata, block: BlockId) -> bool {
                 .get_in(slot)
                 .is_some_and(|id| data.vbank().get(id).expect("gobounds input").is_volatile())
         }) {
-            return false;
+            return None;
         }
         let code = operation.code();
         match code {
             OpCode::CPUI_CALL => {
-                if found {
-                    return false;
+                if found.is_some() {
+                    return None;
                 }
-                let Some(idx) = data.get_call_specs_index(op) else {
-                    return false;
-                };
-                if !is_go_check_name(data.get_call_specs(idx).get_name()) {
-                    return false;
+                let idx = data.get_call_specs_index(op)?;
+                let name = data.get_call_specs(idx).get_name();
+                if !is_go_check_name(name) {
+                    return None;
                 }
-                found = true;
+                found = Some(name);
             }
-            OpCode::CPUI_STORE | OpCode::CPUI_CALLIND | OpCode::CPUI_CALLOTHER => return false,
+            OpCode::CPUI_STORE | OpCode::CPUI_CALLIND | OpCode::CPUI_CALLOTHER => return None,
             _ => {}
         }
     }
@@ -152,12 +155,19 @@ impl Action for ActionGoBounds {
                 continue;
             }
             let candidates: Vec<_> = (0..2)
-                .filter(|&edge| panic_only(data, data.bblocks_ref().block(guard).get_out(edge)))
+                .filter_map(|edge| {
+                    let block = data.bblocks_ref().block(guard).get_out(edge);
+                    panic_only(data, block).map(|name| (edge, name))
+                })
                 .collect();
-            if candidates.len() != 1 {
+            let &[(edge, name)] = candidates.as_slice() else {
+                continue;
+            };
+            if data.get_arch().go_keep_divide_checks && go_runtime_name(name) == Some("panicdivide")
+            {
                 continue;
             }
-            data.remove_branch(guard, candidates[0])
+            data.remove_branch(guard, edge)
                 .expect("gobounds remove branch");
             data.remove_unreachable_blocks(false, true)
                 .expect("gobounds remove unreachable");

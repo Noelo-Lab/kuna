@@ -91,7 +91,8 @@ inclusion rule. `AGGRESSIVE_OVERRIDES` in `p0_knowledge/modes.rs` is the authori
 invariant test `aggressive_carries_every_default_off_option` makes an omission a
 build failure. The options it enables:
 
-- **transform tier**: `switchmodbound`, `constselectjump`,
+- **transform tier**: `switchmodbound`, `constselectjump` (`on`; the default
+  `reentry` recovers only re-entered dispatches),
   `switchguardbound` (speed-costly),
   `unrolledguard` (speed-costly), `sparcstructret`,
   `globalarrayanchor` (retain mapped array bases in negatively biased element indices),
