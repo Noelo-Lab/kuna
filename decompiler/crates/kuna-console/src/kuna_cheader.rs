@@ -209,6 +209,7 @@ fn split_declarations(file: &str, text: &str) -> Vec<Chunk> {
     let mut parens = 0usize;
     let mut body = 0usize;
     let mut continued = false;
+    let mut read = Tail::default();
     for raw in text.split('\n') {
         line += 1;
         let directive = continued || raw.trim_start().starts_with('#');
@@ -236,14 +237,15 @@ fn split_declarations(file: &str, text: &str) -> Vec<Chunk> {
                 }
                 continue;
             }
-            if cur.trim().is_empty() {
+            if cur.is_empty() {
                 if c.is_whitespace() {
                     continue;
                 }
                 start = (file.clone(), line);
+                read = Tail::default();
             }
             match c {
-                '{' if braces == 0 && parens == 0 && opens_body(&cur) => body = 1,
+                '{' if braces == 0 && parens == 0 && read.opens_body(&cur) => body = 1,
                 '{' if braces == 0 && is_linkage_block(&cur) => cur.clear(),
                 '{' => {
                     braces += 1;
@@ -266,19 +268,46 @@ fn split_declarations(file: &str, text: &str) -> Vec<Chunk> {
                 _ => cur.push(c),
             }
         }
-        cur.push(' ');
+        if !cur.is_empty() {
+            cur.push(' ');
+        }
     }
     flush(&mut out, &mut cur, &start);
     out
 }
 
-/// Does a `{` after `cur` open a function body (rather than a record that
-/// carries an attribute before its brace)?
-fn opens_body(cur: &str) -> bool {
-    cur.trim_end().ends_with(')') && undecorated(&words(cur)).last().is_some_and(|t| t == ")")
+/// How much of the declaration being cut [`Tail::opens_body`] has read, and
+/// whether its last undecorated token there was `)`.
+#[derive(Default)]
+struct Tail {
+    read: usize,
+    paren: bool,
 }
 
+impl Tail {
+    /// Does a `{` after `cur` open a function body (rather than a record that
+    /// carries an attribute before its brace)? Asked only where every group is
+    /// closed, so what an earlier call read keeps its reading and only the text
+    /// added since is tokenized: a declaration is read once, not once per brace.
+    fn opens_body(&mut self, cur: &str) -> bool {
+        if !cur.trim_end().ends_with(')') {
+            return false;
+        }
+        if let Some(last) = undecorated(&words(&cur[self.read..])).last() {
+            self.paren = last == ")";
+        }
+        self.read = cur.len();
+        self.paren
+    }
+}
+
+/// `extern "C"` (or `"C++"`) before a `{`. Longer text is never one, which
+/// keeps the check constant-time however long the declaration grows.
 fn is_linkage_block(cur: &str) -> bool {
+    let cur = cur.trim();
+    if cur.len() > 256 {
+        return false;
+    }
     let mut words = cur.split_whitespace();
     words.next() == Some("extern")
         && words.next().is_some_and(|w| w.starts_with('"'))
@@ -508,12 +537,13 @@ fn push_value(out: &mut Vec<String>, value: i128) {
 /// `known` carries enumerator values across the declarations of one load.
 fn fold_constants(toks: Vec<String>, known: &mut BTreeMap<String, i128>) -> Vec<String> {
     let mut out = Vec::with_capacity(toks.len());
+    let closers = closers(&toks);
     let mut i = 0;
     while i < toks.len() {
         let tok = toks[i].as_str();
         let close = match tok {
-            "[" => matching(&toks, i, "[", "]"),
-            "{" if enum_opens(&toks, i) => matching(&toks, i, "{", "}"),
+            "[" => closers[i],
+            "{" if enum_opens(&toks, i) => closers[i],
             _ => None,
         };
         let Some(close) = close else {
@@ -533,6 +563,31 @@ fn fold_constants(toks: Vec<String>, known: &mut BTreeMap<String, i128>) -> Vec<
         }
         out.push(toks[close].clone());
         i = close + 1;
+    }
+    out
+}
+
+/// For each `[` and `{`, the index of the token that closes it: [`matching`]
+/// for every group in one pass.
+fn closers(toks: &[String]) -> Vec<Option<usize>> {
+    let mut out = vec![None; toks.len()];
+    let (mut squares, mut braces) = (Vec::new(), Vec::new());
+    for (i, tok) in toks.iter().enumerate() {
+        match tok.as_str() {
+            "[" => squares.push(i),
+            "{" => braces.push(i),
+            "]" => {
+                if let Some(open) = squares.pop() {
+                    out[open] = Some(i);
+                }
+            }
+            "}" => {
+                if let Some(open) = braces.pop() {
+                    out[open] = Some(i);
+                }
+            }
+            _ => {}
+        }
     }
     out
 }
@@ -573,16 +628,20 @@ fn fold_enumerators(inner: &[String], known: &mut BTreeMap<String, i128>, out: &
 }
 
 /// Spell an unsized array parameter (`char *argv[]`) as the pointer it is.
-fn pointer_parameters(mut decl: Vec<String>) -> Vec<String> {
-    let mut i = 2;
-    while i < decl.len() {
-        if decl[i] == "]" && decl[i - 1] == "[" && is_identifier(&decl[i - 2]) {
-            decl.drain(i - 1..=i);
-            decl.insert(i - 2, "*".into());
+fn pointer_parameters(decl: Vec<String>) -> Vec<String> {
+    let mut out: Vec<String> = Vec::with_capacity(decl.len());
+    let mut toks = decl.into_iter().peekable();
+    while let Some(tok) = toks.next() {
+        let bare = tok == "[" && toks.peek().is_some_and(|t| t == "]");
+        if bare && out.last().is_some_and(|t| is_identifier(t)) {
+            toks.next();
+            let name = out.pop().unwrap_or_default();
+            out.extend(["*".to_string(), name]);
+        } else {
+            out.push(tok);
         }
-        i += 1;
     }
-    decl
+    out
 }
 
 /// The directive body one declaration states, or `None` for a declaration that
