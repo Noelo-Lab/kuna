@@ -437,8 +437,7 @@ Three tiers:
 | branch tests x * (x + 1) & 1 or another condition that never changes | [`opaquepredicate`](#opaquepredicate----on--off-default-off) |
 | dead arm guarded by an arithmetic identity is still printed | [`opaquepredicate`](#opaquepredicate----on--off-default-off) |
 | obfuscated function has bogus control flow behind always-true conditions | [`opaquepredicate`](#opaquepredicate----on--off-default-off) |
-| condition compares (x  | [`opaquepredicate`](#opaquepredicate----on--off-default-off) |
-|  y) - (x & y) with x ^ y | [`opaquepredicate`](#opaquepredicate----on--off-default-off) |
+| condition compares an OR minus an AND of two values with their XOR | [`opaquepredicate`](#opaquepredicate----on--off-default-off) |
 | Go array accesses surrounded by runtime.panicIndex or runtime.panicBounds calls | [`gobounds`](#gobounds----on--off-default-on-destructive-opt-in) |
 | Go division retains compiler-generated runtime.panicdivide branches | [`gobounds`](#gobounds----on--off-default-on-destructive-opt-in) |
 | PPC32 PIC calls retain local linker stub names | [`ppc32picimports`](#ppc32picimports----off--on--abi-default-off) |
@@ -1786,9 +1785,9 @@ The control surface: each of these can make output worse on the wrong source sha
 
 ### `opaquepredicate` -- on | off, default `off`
 
-- **Symptoms:** branch tests x * (x + 1) & 1 or another condition that never changes; dead arm guarded by an arithmetic identity is still printed; obfuscated function has bogus control flow behind always-true conditions; condition compares (x ;  y) - (x & y) with x ^ y.
+- **Symptoms:** branch tests x * (x + 1) & 1 or another condition that never changes; dead arm guarded by an arithmetic identity is still printed; obfuscated function has bogus control flow behind always-true conditions; condition compares an OR minus an AND of two values with their XOR.
 - **What it does:** Fold a comparison that has the same result for every input, so the branch it guards loses the arm that never runs. Control-flow obfuscation guards real code with such tests (`x * (x + 1)` is always even, `x * x` is 0 or 1 modulo 4, `(x | y) - (x & y)` always equals `x ^ y`). Only an exact proof folds. Low bits: bit i of a sum, difference, product, left shift or bitwise operation depends only on bits 0..i of its operands, so a comparison between constants and values masked to their low 8 bits or fewer (`& mask`, unsigned `% 2^n`) is decided by the low bits of its inputs, and every assignment of them is evaluated. Linear combination: an equality whose sides are sums of constant multiples of AND/OR/XOR/NOT terms is decided by evaluating it with each input all zeros or all ones. Differing low bits: two sides whose low four bits differ for every assignment of the inputs' low four bits are never equal. Each proof admits at most two inputs; a comparison that changes with any input is left alone. The proven comparison becomes its constant and ordinary constant-branch removal deletes the dead arm.
-- **When to flip:** Enable on obfuscated code whose branches test arithmetic that looks input-dependent but is not, to see the code that actually runs. Leave off to keep the predicate visible, for example when identifying the obfuscator or matching the binary's control-flow graph block for block. `aggressive` enables it.
+- **When to flip:** Enable on obfuscated code whose branches test arithmetic that looks input-dependent but is not, to see the code that actually runs. Leave off to keep the predicate visible, for example when identifying the obfuscator or matching the binary's control-flow graph block for block. `aggressive` enables it, and `auto` picks `aggressive` for inputs under 500 KiB, so a no-flag decompile of a small binary folds; `--mode reliable` or `--option opaquepredicate off` keeps the predicates.
 - **Where / provenance:** P3/simplification-quiescence · kuna · structure-recovery · kuna-opaque-predicate
 - **Example:** `option opaquepredicate on`
 

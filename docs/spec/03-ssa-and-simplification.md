@@ -3595,7 +3595,7 @@ is the conversion the instruction performs under that control word.
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_opaquepredicate.rs
 (RuleOpaquePredicate)`, oppool1, fires on INT_EQUAL, INT_NOTEQUAL, INT_LESS and
 INT_LESSEQUAL. With `option opaquepredicate on` (default off, on in the
-`aggressive` preset) a comparison that has the same result for every input is
+`aggressive` preset, which `auto` selects for inputs under 500 KiB) a comparison that has the same result for every input is
 replaced by a `COPY` of that result, and constant-branch removal then deletes
 the arm that never runs. Control-flow obfuscation plants such comparisons in
 front of real code: `x * (x + 1)` is always even, `x * x` is 0 or 1 modulo 4,
