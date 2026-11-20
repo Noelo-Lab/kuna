@@ -70,7 +70,13 @@ oct_rt: rt is rt & rt=0 { local discarded:8 = 0; export discarded; }
 }
 
 @ifdef OCTEON2
-OctKScratch: RD0 is RD0 & rd=31 & (sel=2 | sel=3) { export RD0; }
+# Keep the selector disjunction in one pattern so the enclosing instruction
+# can fall back to generic CP0 transfers for the other selectors.
+@ifdef OCTEON3
+OctKScratch: RD0 is RD0 & rd=31 & (sel=2 | sel=3 | sel=4 | sel=5) { export RD0; }
+@else
+OctKScratch: RD0 is RD0 & rd=31 & (sel=2 | sel=3 | sel=4) { export RD0; }
+@endif
 
 # Read the full register before narrowing so a word read does not create a
 # second, overlapping global in the decompiler.
@@ -81,7 +87,7 @@ OctKScratch: RD0 is RD0 & rd=31 & (sel=2 | sel=3) { export RD0; }
 :dmfc0 oct_rt, OctKScratch is $(AMODE) & prime=16 & copop=1 & oct_rt & OctKScratch & zero6=0 {
     oct_rt = OctKScratch;
 }
-# MTC0 writes the destination width. KScratch1 and KScratch2 are 64-bit.
+# MTC0 writes the destination width. Kernel scratch registers are 64-bit.
 :mtc0 RTsrc, OctKScratch is $(AMODE) & prime=16 & copop=4 & RTsrc & OctKScratch & zero6=0 {
     OctKScratch = RTsrc;
 }

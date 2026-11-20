@@ -129,28 +129,34 @@ fn kernel_scratch_transfers_preserve_each_selector_and_read_width() {
     let value = 0x1234_5678_8000_0017;
     let other = 0xface_cafe_1122_3344;
     for spec in ["octeon2be", "octeon3be"] {
-        for (sel, written, neighbor) in
-            [(2, "KScratch1", "KScratch2"), (3, "KScratch2", "KScratch1")]
-        {
+        let registers = ["KScratch1", "KScratch2", "KScratch3", "KScratch4"];
+        let count = if spec == "octeon3be" { 4 } else { 3 };
+        let registers = &registers[..count];
+        let mut inputs: Vec<_> = registers.iter().map(|&name| (name, other)).collect();
+        inputs.extend([("a0", value), ("zero", 37)]);
+        for (index, &written) in registers.iter().enumerate() {
+            let sel = index as u32 + 2;
             for write in [0x4084_f800, 0x40a4_f800] {
                 for (read, expected) in [(0x4002_f800, 0xffff_ffff_8000_0017), (0x4022_f800, value)]
                 {
                     let mut machine = Machine::new(spec, write | sel, read | sel);
-                    machine.step(&[("a0", value), (written, 0), (neighbor, other)]);
+                    machine.step(&inputs);
                     machine.emulator.execute_instruction().unwrap();
-                    assert_eq!(machine.read(written), value);
-                    assert_eq!(machine.read(neighbor), other);
+                    for &name in registers {
+                        assert_eq!(machine.read(name), if name == written { value } else { other });
+                    }
                     assert_eq!(machine.read("v0"), expected);
                 }
             }
             // A deliberately nonzero backing slot catches both reading and writing $zero.
             for read_zero in [0x4000_f800, 0x4020_f800] {
                 let mut machine = Machine::new(spec, read_zero | sel, 0x4080_f800 | sel);
-                machine.step(&[("zero", 37), (written, value), (neighbor, other)]);
+                machine.step(&inputs);
                 assert_eq!(machine.read("zero"), 37);
                 machine.emulator.execute_instruction().unwrap();
-                assert_eq!(machine.read(written), 0);
-                assert_eq!(machine.read(neighbor), other);
+                for &name in registers {
+                    assert_eq!(machine.read(name), if name == written { 0 } else { other });
+                }
             }
         }
     }
@@ -164,7 +170,11 @@ fn other_cp0_writes_keep_the_existing_handler() {
         ("octeonbe", 31, 2),
         ("octeonplusbe", 31, 3),
         ("octeon2be", 31, 0),
-        ("octeon2be", 31, 4),
+        ("mips64be", 31, 4),
+        ("octeonbe", 31, 4),
+        ("octeonplusbe", 31, 5),
+        ("octeon2be", 31, 5),
+        ("octeon3be", 31, 6),
         ("octeon3be", 30, 2),
     ] {
         let word = 0x4084_0000 | (rd << 11) | sel;

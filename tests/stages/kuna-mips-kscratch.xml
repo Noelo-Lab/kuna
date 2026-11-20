@@ -17,6 +17,13 @@
 <symbol space="ram" offset="0x1058" name="around"/>
 <symbol space="ram" offset="0x1084" name="observe"/>
 <symbol space="ram" offset="0x109c" name="write_twice"/>
+<!-- GNU-assembled tests/fixtures/mips-cp0/generation.S -->
+<bytechunk space="ram" offset="0x1100" readonly="true">
+4084f804 4085f805 000000c0 4008f804 fcc80000 4022f805 03e00008 00000000
+40a4f805 000000c0 40a5f805 000000c0 4022f805 03e00008 00000000
+</bytechunk>
+<symbol space="ram" offset="0x1100" name="transfer"/>
+<symbol space="ram" offset="0x1120" name="replace"/>
 </binaryimage>
 <script>
 <com>option ctypes on</com>
@@ -34,6 +41,10 @@
 <com>lo fu around</com><com>decompile</com><com>print C</com>
 <com>lo fu observe</com><com>decompile</com><com>print C</com>
 <com>lo fu write_twice</com><com>decompile</com><com>print C</com>
+<com>parse line extern long transfer(long x,long y,long *out);</com>
+<com>lo fu transfer</com><com>decompile</com><com>print C</com>
+<com>parse line extern long replace(long x,long y);</com>
+<com>lo fu replace</com><com>decompile</com><com>print C</com>
 <com>quit</com>
 </script>
 <stringmatch name="Octeon scratch writes survive and word reads preserve both full registers" min="1" max="1">KScratch1 = x;
@@ -53,4 +64,10 @@ return KScratch1;</stringmatch>
 KScratch1 = y;</stringmatch>
 <stringmatch name="Octeon scratch consecutive writes remain observable" min="1" max="1">KScratch2 = x;
 KScratch2 = y;</stringmatch>
+<stringmatch name="Octeon II writes scratch three and keeps selector five generic" min="1" max="1">KScratch3 = x;
+setCopReg\(0,cop0_reg31\.5,y\);
+\*out = \(int\)KScratch3;
+return cop0_reg31\.5;</stringmatch>
+<stringmatch name="Octeon II retains ordinary doubleword storage for selector five" min="1" max="1">cop0_reg31\.5 = y;
+return y;</stringmatch>
 </decompilertest>

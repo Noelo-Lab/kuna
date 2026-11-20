@@ -2271,7 +2271,8 @@ mod tests {
         // and kuna-switchextent-a64 / an unchecked AArch64 table ends at the function's next table (option switchextent)
         // and kuna-switchnext-a64 / a byte-masked last table ends at the next function's table (option switchextent)
         // and kuna-mips-kscratch / Octeon kernel scratch transfers preserve both selectors across calls
-        assert_eq!(count, 853, "corpus file count drifted");
+        // and kuna-mips-kscratch3 / Octeon III additional kernel scratch registers
+        assert_eq!(count, 854, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

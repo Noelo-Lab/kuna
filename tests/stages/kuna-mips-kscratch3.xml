@@ -1,0 +1,26 @@
+<decompilertest>
+<binaryimage arch="MIPS:BE:64:octeon3:default">
+<!-- GNU-assembled tests/fixtures/mips-cp0/generation.S -->
+<bytechunk space="ram" offset="0x1100" readonly="true">
+4084f804 4085f805 000000c0 4008f804 fcc80000 4022f805 03e00008 00000000
+40a4f805 000000c0 40a5f805 000000c0 4022f805 03e00008 00000000
+</bytechunk>
+<symbol space="ram" offset="0x1100" name="transfer"/>
+<symbol space="ram" offset="0x1120" name="replace"/>
+</binaryimage>
+<script>
+<com>option ctypes on</com>
+<com>parse line extern long transfer(long x,long y,long *out);</com>
+<com>lo fu transfer</com><com>decompile</com><com>print C</com>
+<com>parse line extern long replace(long x,long y);</com>
+<com>lo fu replace</com><com>decompile</com><com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="Octeon III writes two distinct upper scratch selectors and reads each width" min="1" max="1">KScratch3 = x;
+KScratch4 = y;
+\*out = \(int\)KScratch3;
+return KScratch4;</stringmatch>
+<stringmatch name="Octeon III preserves consecutive doubleword writes to scratch four" min="1" max="1">KScratch4 = x;
+KScratch4 = y;
+return KScratch4;</stringmatch>
+</decompilertest>
