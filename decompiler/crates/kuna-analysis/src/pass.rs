@@ -511,6 +511,10 @@ pub struct AnalysisOutput {
     /// Objective-C method whose class got an instance struct. Applied to the
     /// matching entry of [`Self::prototypes`] at the commit when the gate is on.
     pub objc_self_types: Vec<(String, std::rc::Rc<kuna_decomp::dtype::Datatype>)>,
+    /// The `self` of each Objective-C method only a symbol names (a direct
+    /// method): an unlocked hint on its first argument register, typed
+    /// `Class *` under `objcivars`.
+    pub objc_self_hints: Vec<InputHintFact>,
     /// (kuna) Address ranges holding an **external reference** — an import slot
     /// whose contents the dynamic loader fills in with the address of a function
     /// living in another image (a PE IAT entry or a typed Mach-O lazy/non-lazy
@@ -873,6 +877,7 @@ impl AnalysisOutput {
         self.readonly.extend(other.readonly);
         self.const_ranges.extend(other.const_ranges);
         self.objc_self_types.extend(other.objc_self_types);
+        self.objc_self_hints.extend(other.objc_self_hints);
         self.externref.extend(other.externref);
         self.import_slot_names.extend(other.import_slot_names);
         self.strings.extend(other.strings);

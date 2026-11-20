@@ -2248,7 +2248,8 @@ mod tests {
         // and kuna-condexe-heritage / condexe removes a re-test whose block holds unread ops
         // and kuna-dwarf-addrx / a DWARF 5 DW_OP_addrx global takes its name on both byte orders
         // and kuna-pacmodifier-arg-a64e / a hidden signing's modifier is not a call argument
-        assert_eq!(count, 830, "corpus file count drifted");
+        // and kuna-objcdirect / an Objective-C direct method's receiver is its class
+        assert_eq!(count, 831, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
