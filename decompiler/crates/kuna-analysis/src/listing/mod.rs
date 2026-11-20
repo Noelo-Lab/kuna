@@ -57,6 +57,7 @@ mod kuna_pcform;
 mod kuna_picbase;
 mod kuna_picpool;
 mod kuna_poolref;
+mod kuna_gotcall;
 mod kuna_regcarry;
 mod kuna_ppclocalentry;
 mod kuna_pltstub;

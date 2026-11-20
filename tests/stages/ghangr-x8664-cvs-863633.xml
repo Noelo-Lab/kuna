@@ -64,6 +64,8 @@ f30f1efa41564155415455534883ec30897c240c488d3dfc6709004889342464488b042528000000
 <script>
   <!-- kuna: stackguard is now default-on (DIV-14) and strips the -fstack-protector canary epilogue in this cvs main, changing the 0x3c decl count. It is not the flag under test here, so keep it off for both passes (the off-baseline these dedupvardecls assertions were pinned against). -->
   <com>option stackguard off</com>
+  <!-- kuna: repstring (default-on) prints this main's inlined `repz cmpsb` compares as builtin_memcmp, which retypes and renumbers the locals counted below. It is not the flag under test here either, so it is off for both passes. -->
+  <com>option repstring off</com>
   <com>option dedupvardecls off</com>
   <com>lo fu main</com>
   <com>decompile</com>

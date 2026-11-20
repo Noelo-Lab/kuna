@@ -97,9 +97,19 @@
   <com>lo fu nan_or_above</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>option outlang go</com>
+  <com>lo fu nan_or_above</com><com>decompile</com><com>print C</com>
+  <com>option outlang rust</com>
+  <com>lo fu nan_or_above</com><com>decompile</com><com>print C</com>
+  <com>option outlang c</com>
   <com>lo fu ordered_below</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>option outlang go</com>
+  <com>lo fu ordered_below</com><com>decompile</com><com>print C</com>
+  <com>option outlang rust</com>
+  <com>lo fu ordered_below</com><com>decompile</com><com>print C</com>
+  <com>option outlang c</com>
   <com>lo fu jp_jbe</com>
   <com>decompile</com>
   <com>print C</com>
@@ -131,8 +141,33 @@
 <stringmatch name="UCOMISS unordered #8: no ordered spelling of an unordered flag" min="0" max="0">x != one|return x &lt;= one;|return x &lt; one;|!\(x &lt;= one\)|!\(x &lt; one\)|\(x &lt; y\)</stringmatch>
 <stringmatch name="UCOMISS unordered #9: an isnan test beside an exact jbe stays" min="1" max="1">if \(\(!NAN\(x\)\) &amp;&amp; \(!\(huge &lt; x\)\)\)</stringmatch>
 <stringmatch name="UCOMISS unordered #10: setnp beside an exact setb stays" min="1" max="1">\(!NAN\(x\) &amp;&amp; !NAN\(y\)\) &amp;&amp; !\(y &lt;= x\)</stringmatch>
-<stringmatch name="UCOMISS unordered #11: setp beside an exact seta stays" min="1" max="1">return bound &lt; x \|\| NAN\(x\);</stringmatch>
-<stringmatch name="UCOMISS unordered #12: setnp beside an exact setb through a pointer stays" min="1" max="1">return !\(limit &lt;= x\) &amp;&amp; !NAN\(x\);</stringmatch>
+<!-- Compare the same NaN test across output languages at each width. -->
+<stringmatch name="UCOMISS unordered #11: setp beside an exact seta stays" min="1" max="1">return bound &lt; x \|\| NAN\(x\);
+^\}$
+^$
+^func nan_or_above\(x float64\) int32 \{$
+^  return .*\(bound &lt; x \|\| math\.IsNaN\(x\)\)$
+^\}$
+^$
+^$
+^#\[allow\(
+^unsafe fn nan_or_above\(mut x: f64\) -&gt; i32$
+^\{$
+^  return \(bound &lt; x \|\| NAN\(x\)\) as i32;$
+^\}$</stringmatch>
+<stringmatch name="UCOMISS unordered #12: setnp beside an exact setb through a pointer stays" min="1" max="1">return !\(limit &lt;= x\) &amp;&amp; !NAN\(x\);
+^\}$
+^$
+^func ordered_below\(x float32\) int32 \{$
+^  return .*\(!\(limit &lt;= x\) &amp;&amp; !math\.IsNaN\(float64\(x\)\)\)$
+^\}$
+^$
+^$
+^#\[allow\(
+^unsafe fn ordered_below\(mut x: f32\) -&gt; i32$
+^\{$
+^  return \(!\(limit &lt;= x\) &amp;&amp; !NAN\(x\)\) as i32;$
+^\}$</stringmatch>
 <stringmatch name="UCOMISS unordered #13: jp then jbe on one memory compare" min="1" max="1">if \(\(!NAN\(x\) &amp;&amp; !NAN\(limit\)\) &amp;&amp; \(limit &lt; x\)\)</stringmatch>
 <stringmatch name="UCOMISS unordered #14: no NaN test dropped beside an exact compare" min="0" max="0">if \(x &lt;= limit\)|return x &lt; limit;|!\(x &lt; bound\)|!\(x &lt;= huge\)</stringmatch>
 <stringmatch name="UCOMISS unordered #15: a guard hoisted out of the branch keeps its NaN test (gcc -O1/-Os)" min="4" max="4">!NAN\(x\) &amp;&amp; !\(y &lt;= x\)</stringmatch>

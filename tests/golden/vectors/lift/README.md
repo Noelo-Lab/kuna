@@ -32,6 +32,13 @@ The function contains no `cs`, `neg`, `vs` or register branch, so its
 instructions, operations and temporary aliasing are unchanged; 150 lines change
 only unique-space offsets by `0xc00`.
 
+`ccmp.txt` was refreshed for the AArch64 memory-tagging constructors (#1626).
+The function contains no memory-tagging instruction, so its instructions,
+operations and temporary aliasing are unchanged; 144 lines change only
+unique-space offsets. The refreshed lines are the Rust runtime's output over
+specs compiled by `slacomp`, which reproduces the pinned C++ compiler's
+previous AArch64 digest on the previous sources.
+
 ## Regeneration
 
 ```bash
