@@ -2441,6 +2441,12 @@ mod w10_printc_cast_render {
     #[path = "rust_integer_assignments.rs"]
     mod rust_integer_assignments;
 
+    #[path = "rust_wrapping_arithmetic.rs"]
+    mod rust_wrapping_arithmetic;
+
+    #[path = "rust_niche_option.rs"]
+    mod rust_niche_option;
+
     #[path = "rust_boolean_conversions.rs"]
     mod rust_boolean_conversions;
 
@@ -2452,6 +2458,9 @@ mod w10_printc_cast_render {
 
     #[path = "call_argument_extensions.rs"]
     mod call_argument_extensions;
+
+    #[path = "opaque_operations.rs"]
+    mod opaque_operations;
 
     /// Build a 1-input cast op (`opc`) whose in0 is a constant `k` (renders as a
     /// literal, deterministic) and whose OUTPUT carries the data-type `out_ty`.

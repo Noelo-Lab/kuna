@@ -94,7 +94,13 @@ mod tests {
             assert!(name_matches(name, &exact, &wildcard), "{name} must match");
         }
         // Ordinary Go functions must not.
-        for name in ["main.main", "runtime.morestack_noctxt", "runtime.mallocgc", "fmt.Println"] {
+        for name in [
+            "main.main",
+            "runtime.morestack_noctxt",
+            "runtime.panicCheck1",
+            "runtime.mallocgc",
+            "fmt.Println",
+        ] {
             assert!(!name_matches(name, &exact, &wildcard), "{name} must not match");
         }
     }

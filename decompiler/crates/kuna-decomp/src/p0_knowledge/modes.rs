@@ -132,11 +132,12 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     // transform-tier default-off recovery/structuring passes.
     ("switchmodbound", "on"),
     // (kuna) Recover a CMOV/predicated indirect dispatch over constant code
-    // addresses. Default OFF because a conditional tail call between two nearby
-    // function entries has the same shape and recovering it splices both callee
-    // bodies into the caller; preset membership is the delivery route, since the
-    // only alternative on a real dispatch is losing the whole body behind the
-    // branch to a `(*v)()` call.
+    // addresses. The default `reentry` recovers only re-entered dispatcher loops,
+    // because a conditional tail call between two nearby function entries has the
+    // same shape and recovering it splices both callee bodies into the caller;
+    // preset membership is the delivery route for `on`, since the only
+    // alternative on a real dispatch is losing the whole body behind the branch
+    // to a `(*v)()` call.
     ("constselectjump", "on"),
     ("switchguardbound", "on"), // speed-expensive
     ("unrolledguard", "on"),    // speed-expensive
@@ -528,7 +529,9 @@ mod tests {
         ///
         /// `armconstshift` makes signed ARM constant shifts defined C at the
         /// cost of a cast pair on every sign-bit test (`x << 0x18 < 0`), which
-        /// firmware uses for nearly every register flag check.
+        /// firmware uses for nearly every register flag check. `wrapadd` makes a
+        /// widened four-byte sum wrap the same way, at the cost of a cast pair on
+        /// every such sum (`return a0 + 3;`).
         ///
         /// `x86listingswitch` reaches valid cases but ordinary tail jumps from
         /// them can hide independent function entries from the AIF gap walk;
@@ -556,7 +559,7 @@ mod tests {
               "nulterminator", "msvcstrappend",
               "structdefs", "indirectonly", "protoorder", "stackalias", "stackviews", "bejoin",
               "mixedtailret", "varargsharedfloat", "callarrayextent",
-              "armconstshift", "regsigned", "x86listingswitch", "callwide", "ppc32picimports", "ppcapu", "rustprobestack", "highsliceguard", "rustarrayzero",
+              "armconstshift", "wrapadd", "regsigned", "x86listingswitch", "callwide", "ppc32picimports", "ppcapu", "rustprobestack", "highsliceguard", "rustarrayzero",
               // `lazyfuncs` changes no output, but its saving is a single-function
               // property: the whole-binary surfaces the presets drive (decompile-all,
               // the web front-end, the benchmark) materialize every target they walk
