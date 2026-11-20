@@ -17,6 +17,7 @@ pub mod sleigh;
 mod kuna_instructionbytes;
 mod kuna_handleview;
 mod kuna_expressionplan;
+pub mod kuna_slacache;
 pub mod sleighbase;
 pub mod slaformat;
 pub mod loadimage;
