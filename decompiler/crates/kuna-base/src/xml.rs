@@ -2243,7 +2243,7 @@ mod tests {
         // and ghangr-go-aarch64-stack-stride / adjacent eight-byte spills keep their declared inputs
         // and ghangr-go-mcall-resumption / a scheduler switch preserves its caller's continuation
         // and kuna-panicloc / a Rust panic Location record is typed and named after its position (option panicloc)
-        assert_eq!(count, 824, "corpus file count drifted");
+        assert_eq!(count, 825, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
