@@ -172,6 +172,11 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         let choice = kuna_decomp::kuna_kernelcache::KernelcacheChoice::in_force();
         return Some(Cow::Owned(choice.as_str().to_string()));
     }
+    if option == "kernelcache-boot" {
+        let _load = conf.load_scope();
+        let choice = kuna_decomp::kuna_kernelcacheboot::KernelcacheBoot::in_force();
+        return Some(Cow::Owned(choice.as_str().into_owned()));
+    }
     Some(Cow::Borrowed(match option {
         "bytearrayc" => on_off(conf.print().options.bytearray_c),
         "partialaccess" => on_off(conf.print().options.partial_access),
@@ -262,7 +267,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "stackviews" => on_off(conf.stack_views),
         "v850indirectbranch" => on_off(conf.v850_indirect_branch),
         "switchmodbound" => on_off(conf.switch_modulo_bound),
-        "constselectjump" => on_off(conf.const_select_jump),
+        "constselectjump" => conf.const_select_jump.as_str(),
         "switchsharedcase" => on_off(conf.switch_shared_case),
         "realtypes" => on_off(conf.realtypes),
         // (kuna `calloverlap`) Report the selected overlap policy.
@@ -288,6 +293,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
             (true, true) => "glibc",
         },
         "strings" => on_off(conf.analysis_strings),
+        "blobs" => on_off(conf.analysis_blobs),
         "widestrings" => on_off(conf.analysis_widestrings),
         "widestrings32" => on_off(conf.analysis_widestrings32),
         "entry_disc" => on_off(conf.analysis_entry_disc),
@@ -820,9 +826,22 @@ impl IfaceCommandAction for IfcKunaAssert {
             Dispatch::Retype => Err(engine_unavailable(
                 "parse_type + Scope::retypeSymbol (IfaceDecompData::readSymbol) for kassert type-propagation",
             )),
-            Dispatch::Isolate => Err(engine_unavailable(
-                "Symbol::setIsolated (IfaceDecompData::readSymbol) for kassert merge-aggressiveness",
-            )),
+            Dispatch::Isolate => {
+                let Some(name) = tokens.first().cloned() else {
+                    return Err(IfaceError::parse("merge-aggressiveness assertion needs <name>"));
+                };
+                let dcp = dcp_mut(status)?;
+                let maxduplicates = kuna_decomp::kuna_dynamichashmax::MAX_DUPLICATES;
+                dcp.local_symbol_fd(&name)?;
+                let (Some(fd), arch) = (dcp.fd.as_mut(), dcp.conf.as_ref().map(|p| p.arch())) else {
+                    return Err(IfaceError::execution("no function selected"));
+                };
+                crate::kuna_hightarget::isolate_local(fd, &name, maxduplicates, arch)
+                    .map_err(IfaceError::execution)?;
+                status.out(&applied_line);
+                self.assert_log.borrow_mut().push(record);
+                Ok(())
+            }
             Dispatch::Rename => {
                 if tokens.len() < 2 {
                     return Err(IfaceError::parse(
@@ -1622,6 +1641,11 @@ pub fn register_kuna_commands(status: &mut IfaceStatus) {
     status.register_com(
         Box::new(crate::ifacedecomp::IfcOverrideBytes),
         &["override", "bytes"],
+    );
+    // (kuna) Nor this: where an indirect call goes is the reader's knowledge.
+    status.register_com(
+        Box::new(crate::ifacedecomp::IfcOverrideIndirect),
+        &["override", "indirect"],
     );
 }
 

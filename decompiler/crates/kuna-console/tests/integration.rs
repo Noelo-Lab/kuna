@@ -216,6 +216,8 @@ mod verify_go_pclntab;
 mod verify_go_noreturn_stripped;
 #[path = "verify_go_morestack.rs"]
 mod verify_go_morestack;
+#[path = "verify_go_mcall.rs"]
+mod verify_go_mcall;
 #[path = "verify_fatstr_records.rs"]
 mod verify_fatstr_records;
 #[path = "verify_go_writebarrier.rs"]
@@ -533,6 +535,8 @@ mod verify_outlang_go;
 mod verify_godwarfsig;
 #[path = "verify_gopairreturns.rs"]
 mod verify_gopairreturns;
+#[path = "verify_gointerror.rs"]
+mod verify_gointerror;
 
 #[path = "verify_rustextensions.rs"]
 mod verify_rustextensions;
@@ -557,3 +561,9 @@ mod verify_bootstrap;
 
 #[path = "mips_weak_imports.rs"]
 mod mips_weak_imports;
+
+#[path = "indirect_dispatch_flow.rs"]
+mod indirect_dispatch_flow;
+
+#[path = "verify_immutable_got.rs"]
+mod verify_immutable_got;

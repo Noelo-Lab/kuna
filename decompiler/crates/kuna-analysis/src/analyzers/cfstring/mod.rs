@@ -44,7 +44,7 @@
 use object::read::{Object, ObjectSection};
 
 use crate::loader::format::macho::resolve_chained_fixups;
-use crate::objc::sections::MachoImage;
+use crate::objc::sections::{sections_named, MachoImage};
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, CFStringFact, Phase};
 
 /// The `__cfstring` section short name (`object` exposes the bare section name).
@@ -98,13 +98,12 @@ fn collect_bounded(file: &object::File, bytes: &[u8], max_span_checks: u64) -> A
     if file.format() != object::BinaryFormat::MachO {
         return out;
     }
-    let Some(sec) = file.section_by_name(SEC_CFSTRING) else {
+    let sections: Vec<_> = sections_named(file, SEC_CFSTRING).collect();
+    if sections.is_empty() {
         return out;
-    };
+    }
     let fixups = resolve_chained_fixups(file, bytes);
     let img = MachoImage::with_fixups(file, fixups);
-    let base = sec.address();
-    let size = sec.size().min(bytes.len() as u64);
     let ps = img.ptr_size();
     let stride = ps.saturating_mul(4);
     if stride == 0 {
@@ -113,49 +112,53 @@ fn collect_bounded(file: &object::File, bytes: &[u8], max_span_checks: u64) -> A
 
     let max_entries = max_span_checks / (4 * file.sections().count().max(1) as u64);
     let mut budget = bytes.len() as u64;
-    let mut off: u64 = 0;
     let mut walked: u64 = 0;
-    while off.saturating_add(stride) <= size && walked < max_entries {
-        walked += 1;
-        let entry = base.wrapping_add(off);
-        off += stride;
-        let (Some(flags), Some(data), Some(length)) = (
-            img.read_ptr(entry.wrapping_add(ps)),
-            img.read_ptr(entry.wrapping_add(ps.wrapping_mul(2))),
-            img.read_ptr(entry.wrapping_add(ps.wrapping_mul(3))),
-        ) else {
-            continue;
-        };
-        if data == 0 || length == 0 {
-            continue;
-        }
-        let unicode = flags & CFSTRING_UNICODE != 0;
-        let Some(byte_len) = (if unicode { length.checked_mul(2) } else { Some(length) }) else {
-            continue;
-        };
-        if byte_len == 0 || byte_len > MAX_CFSTRING_BYTES || byte_len > budget {
-            continue;
-        }
-        let Some(raw) = img.read(data, byte_len as usize) else {
-            continue;
-        };
-        budget -= byte_len;
-        let text = if unicode {
-            match decode_utf16(raw, file.is_little_endian()) {
-                Some(b) => b,
-                None => continue,
+    for sec in sections {
+        let base = sec.address();
+        let size = sec.size().min(bytes.len() as u64);
+        let mut off: u64 = 0;
+        while off.saturating_add(stride) <= size && walked < max_entries {
+            walked += 1;
+            let entry = base.wrapping_add(off);
+            off += stride;
+            let (Some(flags), Some(data), Some(length)) = (
+                img.read_ptr(entry.wrapping_add(ps)),
+                img.read_ptr(entry.wrapping_add(ps.wrapping_mul(2))),
+                img.read_ptr(entry.wrapping_add(ps.wrapping_mul(3))),
+            ) else {
+                continue;
+            };
+            if data == 0 || length == 0 {
+                continue;
             }
-        } else {
-            match std::str::from_utf8(raw) {
-                Ok(_) => raw.to_vec(),
-                Err(_) => continue,
+            let unicode = flags & CFSTRING_UNICODE != 0;
+            let Some(byte_len) = (if unicode { length.checked_mul(2) } else { Some(length) }) else {
+                continue;
+            };
+            if byte_len == 0 || byte_len > MAX_CFSTRING_BYTES || byte_len > budget {
+                continue;
             }
-        };
-        if nul_inside(&text) {
-            continue;
+            let Some(raw) = img.read(data, byte_len as usize) else {
+                continue;
+            };
+            budget -= byte_len;
+            let text = if unicode {
+                match decode_utf16(raw, file.is_little_endian()) {
+                    Some(b) => b,
+                    None => continue,
+                }
+            } else {
+                match std::str::from_utf8(raw) {
+                    Ok(_) => raw.to_vec(),
+                    Err(_) => continue,
+                }
+            };
+            if nul_inside(&text) {
+                continue;
+            }
+            out.cfstrings.push(CFStringFact { addr: entry, bytes: text, size: stride as u32 });
+            out.readonly.push((entry, entry.wrapping_add(stride)));
         }
-        out.cfstrings.push(CFStringFact { addr: entry, bytes: text, size: stride as u32 });
-        out.readonly.push((entry, entry.wrapping_add(stride)));
     }
     out
 }

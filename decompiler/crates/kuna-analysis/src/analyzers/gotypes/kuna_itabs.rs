@@ -23,10 +23,10 @@
 //!
 //! ## Where the itabs are listed, across releases
 //!
-//! - **go1.18..go1.25:** moduledata carries `itablinks []*itab`, a slice of
+//! - **go1.18..go1.26:** moduledata carries `itablinks []*itab`, a slice of
 //!   pointers (the `.itablink` section); each pointer is followed to its
 //!   record. No per-record size is needed.
-//! - **go1.26+:** the slice is gone. moduledata carries `itaboffset` /
+//! - **go1.27+:** the slice is gone. moduledata carries `itaboffset` /
 //!   `itabsize` and the records sit consecutively in
 //!   `[types + itaboffset, types + itaboffset + itabsize)`, enumerated by
 //!   advancing each record's own `ITab.Size()` — `sizeof(ITab{})` for a
@@ -76,7 +76,7 @@ pub(super) fn interface_method_count(img: &GoImage, inter_vma: u64) -> Option<u6
     Some(n)
 }
 
-/// The in-image size of the itab record at `vma`, for the go1.26+ contiguous
+/// The in-image size of the itab record at `vma`, for the go1.27+ contiguous
 /// walk. `Fun[0] == 0` is the "does not implement" placeholder (header only);
 /// otherwise the `Fun` array holds one word per interface method.
 pub(super) fn itab_size(img: &GoImage, vma: u64, inter_vma: u64) -> Option<u64> {
@@ -110,14 +110,14 @@ pub(super) fn read_itab(img: &GoImage, types: u64, etypes: u64, vma: u64) -> Opt
 }
 
 /// The located itab records' VMAs, from whichever representation this release
-/// uses. Tries the go≤1.25 `itablinks` pointer slice first, then the go1.26+
+/// uses. Tries the go≤1.26 `itablinks` pointer slice first, then the go1.27+
 /// `[types + itaboffset, …]` contiguous region; `None` if neither validates.
 fn locate_itabs(img: &GoImage, anchor: u64, types: u64, etypes: u64) -> Option<Vec<u64>> {
     locate_itablinks_slice(img, anchor, types, etypes)
         .or_else(|| locate_itab_region(img, anchor, types, etypes))
 }
 
-/// go1.18..go1.25: an `itablinks []*itab` slice in the moduledata window whose
+/// go1.18..go1.26: an `itablinks []*itab` slice in the moduledata window whose
 /// sampled entries are pointers to valid itab records.
 pub(super) fn locate_itablinks_slice(img: &GoImage, anchor: u64, types: u64, etypes: u64) -> Option<Vec<u64>> {
     for j in 0..MODULEDATA_WINDOW_WORDS {
@@ -151,7 +151,7 @@ pub(super) fn locate_itablinks_slice(img: &GoImage, anchor: u64, types: u64, ety
     None
 }
 
-/// go1.26+: `itaboffset` / `itabsize` — a pair of adjacent words in the
+/// go1.27+: `itaboffset` / `itabsize` — a pair of adjacent words in the
 /// moduledata window where `[types + itaboffset, + itabsize)` walks as
 /// consecutive itab records by `ITab.Size()`, every one decoding.
 pub(super) fn locate_itab_region(img: &GoImage, anchor: u64, types: u64, etypes: u64) -> Option<Vec<u64>> {

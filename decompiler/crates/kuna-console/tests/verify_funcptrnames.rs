@@ -4,7 +4,9 @@ use kuna_console::ifacedecomp::{
     execute, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE,
 };
 use kuna_console::ifaceterm::ConsoleCommands;
+use kuna_console::kuna_console::register_kuna_commands;
 use kuna_decomp::kuna_funcptrnames;
+use kuna_decomp::options::NamespaceStrategy;
 use kuna_decomp::printlanguage::NamespaceStrategy::{
     AllNamespaces, MinimalNamespaces, NoNamespaces,
 };
@@ -33,12 +35,18 @@ fn inspect_with_setup<T>(
     let commands = vec![
         "parse line extern unsigned long global_shadow(unsigned long target);".into(),
         "parse line extern unsigned long scope_shadow(unsigned long left);".into(),
+        "parse line extern unsigned long foreign_address(void);".into(),
+        "parse line extern unsigned long nested_address(void);".into(),
+        "parse line extern unsigned long right_address(void);".into(),
+        "map prototype left::same_address unsigned long same_address(void);".into(),
+        "map prototype right::cross_address unsigned long cross_address(void);".into(),
         format!("load function {caller}"),
         "decompile".into(),
     ];
-    let count = commands.len();
-    let mut status = ConsoleCommands::into_status(commands);
+    let mut status = ConsoleCommands::into_status(commands.clone());
     register_decomp_commands(&mut status);
+    register_kuna_commands(&mut status);
+    status.set_error_is_done(true);
     status
         .get_data_mut(DECOMPILE_MODULE)
         .unwrap()
@@ -46,9 +54,12 @@ fn inspect_with_setup<T>(
         .downcast_mut::<IfaceDecompData>()
         .unwrap()
         .conf = Some(program);
-    for _ in 0..count {
+    for command in commands {
+        status
+            .resolve(&command)
+            .unwrap_or_else(|err| panic!("{command}: {err}"));
         execute(&mut status);
-        assert!(!status.inerror, "{}", status.optr);
+        assert!(!status.inerror, "{command}: {}", status.optr);
     }
     check(
         status
@@ -240,4 +251,116 @@ fn function_values_decline_scopes_that_are_not_plain_cpp_names() {
             },
         );
     }
+}
+
+fn render_rust_between_c(data: &IfaceDecompData) -> String {
+    render_rust_between_c_with_strategy(data, NamespaceStrategy::Minimal)
+}
+
+fn render_rust_between_c_with_strategy(
+    data: &IfaceDecompData,
+    strategy: NamespaceStrategy,
+) -> String {
+    let program = data.conf.as_ref().unwrap();
+    let fd = data.fd.as_ref().unwrap();
+    let mut printer = kuna_decomp::printc::PrintC::new();
+    printer.set_namespace_strategy(strategy);
+    let before = printer.doc_function_full(fd, program.arch());
+    printer.set_output_stream();
+    printer.set_name("rust-language");
+    let rust = printer.doc_function_full(fd, program.arch());
+    printer.set_output_stream();
+    printer.set_name("c-language");
+    assert_eq!(before, printer.doc_function_full(fd, program.arch()));
+    rust
+}
+
+#[test]
+fn rust_function_addresses_keep_the_root_around_local_collisions() {
+    for (caller, expected) in [
+        ("global_shadow", "return crate::target as u64;"),
+        ("scope_shadow", "return crate::left::target as u64;"),
+    ] {
+        inspect(caller, |data| {
+            let text = render_rust_between_c(data);
+            assert!(text.contains(expected), "{text}");
+        });
+    }
+}
+
+#[test]
+fn rust_function_addresses_quote_modules_without_inventing_type_paths() {
+    for (scope_name, prefix) in [
+        ("safe_scope", "safe_scope::"), ("type", "r#type::"),
+        ("const", "r#const::"), ("struct", "r#struct::"), ("return", "r#return::"),
+        ("&T", ""), ("&<T>", ""), ("*mut T", ""), ("Box<int>", ""),
+        ("crate", ""), ("self", ""), ("Self", ""), ("super", ""), ("_", ""),
+        ("char", ""), ("bool", ""), ("str", ""), ("u8", ""), ("f32", ""),
+        ("{impl#0}", ""), ("crate-name", ""), ("0scope", ""),
+    ] {
+        inspect_with_setup(
+            "scope_shadow",
+            |program| {
+                let target = program.lookup_symbol("left::target").unwrap();
+                let arch = program.arch_mut();
+                let (old, _) = arch.symboltab.find_function_across_scopes(&target).unwrap();
+                arch.symboltab.remove_symbol(old);
+                let spaces = arch.manage().num_spaces();
+                let (scope, name) = arch.symboltab
+                    .find_create_scope_from_symbol_name(&format!("{scope_name}::target"), "::", None, spaces)
+                    .unwrap();
+                let ty = arch.types().get_type_code().unwrap();
+                arch.symboltab.add_function(scope, &target, &name, arch.min_funcsymbol_size, ty).unwrap();
+            },
+            |data| {
+                let text = render_rust_between_c(data);
+                assert!(text.contains(&format!("return {prefix}target as u64;")), "{scope_name}: {text}");
+            },
+        );
+    }
+}
+
+#[test]
+fn rust_function_addresses_resolve_from_the_callers_module() {
+    for (caller, minimal, all) in [
+        ("foreign_address", "left::", "left::"),
+        ("nested_address", "left::deep::", "left::deep::"),
+        ("right_address", "right::", "right::"),
+        ("left::same_address", "", "crate::left::"),
+        ("right::cross_address", "crate::left::", "crate::left::"),
+    ] {
+        inspect(caller, |data| {
+            for (strategy, prefix) in [
+                (NamespaceStrategy::Minimal, minimal),
+                (NamespaceStrategy::All, all),
+                (NamespaceStrategy::None, ""),
+            ] {
+                let text = render_rust_between_c_with_strategy(data, strategy);
+                assert!(text.contains(&format!("return {prefix}target as u64;")), "{caller}: {text}");
+            }
+        });
+    }
+}
+
+#[test]
+fn rust_function_addresses_use_relative_descendant_modules() {
+    inspect_with_setup(
+        "left::same_address",
+        |program| {
+            let target = program.lookup_symbol("left::target").unwrap();
+            let arch = program.arch_mut();
+            let (old, _) = arch.symboltab.find_function_across_scopes(&target).unwrap();
+            arch.symboltab.remove_symbol(old);
+            let spaces = arch.manage().num_spaces();
+            let (scope, name) = arch.symboltab
+                .find_create_scope_from_symbol_name("left::child::target", "::", None, spaces)
+                .unwrap();
+            let ty = arch.types().get_type_code().unwrap();
+            arch.symboltab.add_function(scope, &target, &name, arch.min_funcsymbol_size, ty).unwrap();
+        },
+        |data| {
+            let text = render_rust_between_c(data);
+            assert!(text.contains("return child::target as u64;"), "{text}");
+        },
+    );
 }
