@@ -87,9 +87,9 @@ fn build_go(dir: &std::path::Path, out_bin: &std::path::Path) -> bool {
 }
 
 /// Bootstrap, optionally flip `noreturn_known` BEFORE the analysis commit (the
-/// per-pass gate is decided there), then decompile `main.sh` and return the
+/// per-pass gate is decided there), then decompile a function and return the
 /// console transcript.
-fn decompile_sh(bin: &str, option: Option<&str>) -> String {
+fn decompile_function(bin: &str, name: &str, option: Option<&str>) -> String {
     let specs = repo_root().join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
     let mut prog: ConsoleProgram = bootstrap_from_object(bin, "", &spec_roots)
@@ -99,8 +99,7 @@ fn decompile_sh(bin: &str, option: Option<&str>) -> String {
         prog.arch_mut().set_kuna_option("noreturn_known", v).expect("noreturn_known option applies");
     }
     prog.commit_pending_analysis().expect("analysis commit succeeds");
-    let cmds: Vec<String> =
-        ["load function main.sh", "decompile", "print C"].iter().map(|s| s.to_string()).collect();
+    let cmds = vec![format!("load function {name}"), "decompile".into(), "print C".into()];
     let count = cmds.len();
     let mut status = ConsoleCommands::into_status(cmds);
     register_decomp_commands(&mut status);
@@ -133,7 +132,7 @@ fn stripped_go_panicshift_truncates_flow_under_the_default() {
     }
     let bin = out_bin.to_str().expect("utf8 path");
 
-    let on = decompile_sh(bin, None);
+    let on = decompile_function(bin, "main.sh", None);
     assert!(on.contains("panicshift"), "the shift guard's panic call renders; transcript:\n{on}");
     assert!(
         !on.contains("int3-pad"),
@@ -141,12 +140,24 @@ fn stripped_go_panicshift_truncates_flow_under_the_default() {
          padding after the function; transcript:\n{on}"
     );
 
-    let off = decompile_sh(bin, Some("off"));
+    let off = decompile_function(bin, "main.sh", Some("off"));
     assert!(off.contains("panicshift"), "the call itself is untouched by the option; transcript:\n{off}");
     assert!(
         off.contains("int3-pad"),
         "with noreturn_known off the fall-through bug is back (flow runs into the INT3 \
          padding), proving the facts came from this pass; transcript:\n{off}"
+    );
+
+    let helper = decompile_function(bin, "runtime.panicshift", None);
+    let check = helper.lines().position(|line| {
+        line.contains("runtime.panicCheck1(") && !line.contains("// no-return")
+    });
+    let panic = helper.lines().position(|line| {
+        line.contains("runtime.gopanic(") && line.contains("// no-return")
+    });
+    assert!(
+        matches!((check, panic), (Some(check), Some(panic)) if check < panic),
+        "panicCheck1 may return to the terminal gopanic call; transcript:\n{helper}"
     );
 
     let _ = std::fs::remove_dir_all(&dir);

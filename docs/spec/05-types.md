@@ -1482,14 +1482,21 @@ states the signature its target must have, and when `calltargettype` is on,
 final one: it runs once, in the one-shot tail, after `ActionNameVars` and
 directly before `ActionSetCasts`, and never feeds the inference lattice or
 `ActionDeindirect`'s forced prototypes. For each indirect call whose prototype
-is neither locked nor variadic it builds `R (*)(A1,..,An)` with
+is neither variadic nor locked, or was stated at the call itself (`override
+prototype`, the `callproto` assertion, which types the call but not the value
+it goes through), it builds `R (*)(A1,..,An)` with
 `TypeFactory::getTypeCode(PrototypePieces)`: `R` is the high type of the call's
 output, or `void` when it has none, and each `Ai` the high type of the argument
 in that slot as it is read there -- except an argument printed inline as an
 address computed from a base (`&v4`, `&a1[2]`, a `PTRSUB` or `PTRADD`), whose C
 type is the base's rather than its own, which takes `void *`. A call any of
 whose types has no C spelling (a partial or union-resolving type, an array, a
-`TYPE_SPACEBASE`, a scalar of a width C has no type for) is skipped.
+`TYPE_SPACEBASE`, a scalar of a width C has no type for) is skipped. A call
+whose prototype was stated at the call takes `R` and the `Ai` from that
+declaration instead (a variadic one its fixed parameters and `...`, the
+arguments past them passed as printed), and the storage its declared
+parameters were given stands in for the argument storage such a call never
+recovers.
 
 The type must also be one a C compiler would pass the same way. Laid out under
 the default model, each parameter of the built prototype has to fall inside the
@@ -1716,7 +1723,7 @@ recovered as a pointer into the declaration when its sink is typed as a
 pointer, and otherwise prints as the bare address, the same as for an
 aggregate the DWARF tier declared.
 
-Two (kuna) escapes hook exactly here, both always on:
+Three (kuna) escapes hook exactly here; the first two are always on:
 
 - **(kuna GH-6930)** The function-entry escape: the
   bit-transitions rejection is skipped when the constant resolves *exactly* to
@@ -1756,6 +1763,25 @@ Two (kuna) escapes hook exactly here, both always on:
   number *anywhere*, which `ActionConstantPtr::apply` collects once per pass from
   the constant snapshot it already takes
   (`decompiler/crates/kuna-decomp/src/p9_emit/coreaction_render.rs`).
+- **(kuna `blobs`)** The embedded-file escape: a constant equal to the first
+  address of an embedded image or archive (chapter 01, `blobs`) skips both the
+  pointer-lower-bound rejection and the bit-transitions rejection
+  (`decompiler/crates/kuna-decomp/src/p9_emit/coreaction_render.rs
+  (is_pointer)`). A shared object linked at base zero keeps its read-only data
+  in the first page, below the bound every x86 processor spec sets, so the
+  function returning a PNG at `0x2d0` printed `return 0x2d0;` whether or not a
+  symbol named the array; and `0x3c0` is a single run of set bits. The address
+  set is exact starts only, shared from `Architecture::blob_entries`, and the
+  skip is declined on the same two readings as the function-entry escape
+  (`kuna_inferfuncentry.rs (entry_escape_applies)`): the reader is not
+  arithmetic, and the function reads that value as a number nowhere else.
+  The escape cannot tell the address from an equal number: a function that
+  never touches the file but returns, stores, passes or compares that value
+  (`return 0x370;` beside a PNG at `0x370`) prints the file's name too, and
+  the return or parameter type becomes `unsigned char *`. Only a file starting
+  in the first page or at a mask-like address is exposed, which in practice
+  means the small shared objects whose read-only data `ld.lld` places first.
+  Empty, so inert, under `blobs off`.
 - **(kuna GH-8471)** Thumb function-pointer preservation: a Thumb function pointer
   is `fn|1`; constant-pointer recovery produces `PTRSUB(fn) + 1`, and the
   simplification rule that normally deletes out-of-bounds PTRSUBs would
@@ -3461,6 +3487,15 @@ to bound the case count (chapter 02), and (b) the boolean-expression melding
 rule `decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_1.rs
 (RuleRangeMeld)`, which pulls two comparison ranges back to a common Varnode
 and intersects/unions them into one comparison.
+
+A Varnode's non-zero mask is itself a range: `set_nz_mask` turns a mask with
+one run of set bits into `[0, mask + stride)` with the stride `2^k`, `k` being
+the mask's lowest set bit. The step is a 32-bit signed integer, so the largest
+stride it holds is `2^30`. A mask whose lowest set bit is higher (the value of
+`x << 35` in a 64-bit register, the form a RISC-V bit test takes) forms no
+range: `set_nz_mask` reports failure and the guard analysis keeps the range it
+pulled back, without the mask's refinement. Upstream shifts the 32-bit step by
+`k` unchecked, which is undefined for `k >= 32`.
 
 **The value-set solver.** On top of `CircleRange` sits an abstract
 interpretation layer (`ValueSet`, `ValueSetSolver`, same file): a

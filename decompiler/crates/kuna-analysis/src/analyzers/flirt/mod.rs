@@ -34,6 +34,7 @@ use crate::listing::Listing;
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, FidMatch, Phase};
 use flirt_sig::{Endian, Matcher, Module, Signature, FLAG_STARTUP};
 
+pub mod kuna_elf_data_names;
 pub mod kuna_rustprofiles;
 
 /// The environment variable that lists the `.sig` files.
