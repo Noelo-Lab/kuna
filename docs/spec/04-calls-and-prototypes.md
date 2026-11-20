@@ -373,6 +373,13 @@ code space also seed pointer flow; chapter 03 describes address-use trimming.
 With the option off neither input is seeded, the stack register stays one wide
 input, and no parameter starts with pointer flow.
 
+The AArch64 Go ABIInternal input stack starts at `SP+8` in the decompiler's
+entry-relative frame. Adjacent spilled eight-byte scalar arguments occupy
+`SP+8` and `SP+16`. The input model uses eight-byte slots, matching these
+arguments' adjacency even though the machine stack pointer is aligned to a
+16-byte boundary. The register inputs, result stack model and other compiler
+conventions keep their own allocation rules.
+
 The model's stack ranges come from the spec too, as upstream `ProtoModel::decode`
 takes them (§6.2): the parameter range is every stack `<pentry>` of `<input>` plus any
 `<paramrange>`, and the local range is the `<localrange>` element
@@ -2284,7 +2291,24 @@ classified:
   call-relative address and size, and both calls sit at the same stack offset, so
   the push is an argument the declared callee takes, at the same position as the
   other callee is entered with it; a push that sits deeper in one call's area than
-  in the other's does not qualify. The slot is written by an operation that is not a
+  in the other's does not qualify. That parameter is evidence only where the callee
+  can take a stack argument at the slot. Every x86-32 convention passes the leading
+  parameters in registers (`regparm` in `EAX`, `EDX`, `ECX`; `__fastcall` in `ECX`,
+  `EDX`; `__thiscall` in `ECX`), so when the declared list places every parameter on
+  the stack while the direct callee's own entry reads `r` of `EAX`, `ECX` and `EDX`
+  before writing them (the straight-line walk of `kuna_calleereginputs`, x86-32
+  Windows), its stack arguments are at most the declared parameters after the first
+  `r`, and a slot above them is not one. GCC passes a static function's arguments in
+  registers while its debug information lists them as ordinary parameters: wine's
+  `MSVCRT_longjmp` calls `msvcrt_local_unwind2` (frame, trylevel and ebp in `EAX`,
+  `EDX`, `ECX`) on one arm, after `push edx; push edx` re-reserves the outgoing area,
+  and an indirect `__stdcall` call on the other arm read the padding slot the
+  declared list put the second parameter on, printing
+  `(*jmp->UnwindFunc)(jmp,frame)`. A MinGW `__thiscall` member declared from its
+  mangled name with `this` on the stack reads only `ECX`, so its one real stack
+  argument still qualifies, and the virtual call GCC's speculative devirtualization
+  leaves on the other arm keeps it. The declared call's own line still reads the
+  slots its declared list names. The slot is written by an operation that is not a
   `MULTIEQUAL` or an `INDIRECT`, which is the push; the push and the two calls sit
   in three distinct blocks, and neither call's block reaches the other's without
   passing through the push's block. A path that avoids the push's block would run
@@ -2629,6 +2653,22 @@ oversized Varnode with a SUBPIECE, translating stack trials into the caller's
 frame and marking those ranges not-mapped, and materializing recovered but
 unreferenced parameters as fresh Varnodes. For a locked varargs prototype the
 fixed arguments sort to the front first (`ParamActive::sort_fixed_position`).
+
+### Status-only Go channel receive
+
+`kuna_gochanrecv`
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_gochanrecv.rs`)
+uses the address-scoped `godwarfsig` proof from §1 for a direct blocking
+receive. The exact amd64 Go stack-guard hot path preserves the full RAX
+channel handle, provides an aligned private eight-byte destination in RBX,
+and returns with AL unchanged after the call. The verified channel element
+width fits that storage. The caller and call use the ordinary ABI input and
+output assignment, with an opaque channel pointer, a pointer to an eight-byte
+scratch word, and a one-byte boolean result. The normal call pipeline retains
+the receive's memory and blocking effects. The proof stays local to this call
+site and survives a flow restart. An existing caller or callee contract that
+conflicts with this proof, or an explicit call-site override, takes precedence.
+Callers without the owned boolean result keep their ordinary recovery.
 
 ### Caller-proved big-endian pair returns
 
@@ -6862,6 +6902,18 @@ trial, the stated parameter and the widest body read starting at `R` — so a
 parameter recovered as `rdi` but read as `edi` is passed, and becomes the
 caller's parameter, as an `int`, through a truncating `SUBPIECE`.
 
+**Go stack-growth spills.** On AMD64 Go ABIInternal, a stack-growth arm can
+mention a forwarded register only to spill and restore it. The initial
+passthrough claim sees those mentions, but removing the arm before heritage
+would leave the register with no reader and therefore no call trial. When
+`gomorestack` successfully removes this arm and exactly one call remains, P4
+offers the ordinary input claim again before heritage. A removed input use can
+leave an unreferenced Varnode in the bank, so only nodes with a definition or
+remaining readers count as touches for this retry. It requires the existing
+callee statement and first-call checks, a full-width general-purpose register
+and an unlocked ABIInternal caller and callee. Existing claims and live
+register touches are kept. The retry adds argument trials only.
+
 **What a body takes.** The entry walk ends at the first CALL and gives up on a
 body too large for its bound, so on its own it answered "not read" for most of
 what a forwarder hands on: grep -O2 `bmexec` printed `bmexec_trans()` for
@@ -9442,7 +9494,7 @@ goes from `char` to `unsigned long`, its reader only renumbered; and dash's
 `hashvar` and bash -O0's `pshash_getbucket`, which compute a pointer in 32 bits,
 return 64-bit values (a `char *` for bash).
 
-### A function decompiled alone returns what its callers read (`kuna_callerreads.rs`)
+### Raw caller reads prove a return outside callee-first settling (`kuna_callerreads.rs`)
 
 `kuna decompile` decompiles one function, so no caller of it is decompiled
 beside it and the ledger above has nothing to settle: `int f(int a) { gi = a *
@@ -9457,7 +9509,7 @@ The Listing files (`kuna_callerreads.rs`, always on), for every direct
 call it walked, the callee's entry and the address the call returns to
 (`decompiler/crates/kuna-analysis/src/listing/kuna_callerreads.rs
 (call_returns)`), and the commit parks the sorted pairs on the architecture
-(`Architecture::kuna_call_returns`). After the single-function decompile step's
+(`Architecture::kuna_call_returns`). After the shared decompile step's
 drives (chapter [00](00-overview.md)), a function recovered `void` with a model,
 no declared prototype, no locked output and a live RETURN is checked by
 `decompiler/crates/kuna-decomp/src/p4_calls/kuna_callerreads.rs (read)`. It
@@ -9483,11 +9535,14 @@ scoring above decides: a value also stored to a global, branched on, or left in
 another register is returned, and so is a call's result, while a load or store
 through the value or a call reading it still refuses it. The forcing is undone
 after the drive, and the redo is kept only when the function then returns a
-value; otherwise the first decompile stands. A batch run skips the check
-(`Architecture::kuna_float_scan_batch`), because its callers answer for their
-callees through the ledger, and a run without the Listing (the XML corpora, a raw
+value; otherwise the first decompile stands. When the callee-first driver has a
+call graph, it settles returns from its decompiled callers and skips this raw
+check. Other batches use the raw evidence just as a single-function run does.
+For example, a selected function can return an indirect call's result because
+an unselected direct caller reads its return register. Float global scanning
+still follows batch size. A run without the Listing (the XML corpora, a raw
 image) has no call to read. A function nothing calls directly, or whose callers
-all ignore the register, stays `void`, as in `decompile-all`. Over every function
+all ignore the register, stays `void`. Over every function
 of gzip, dash and diff at -O2 (941), 17 change, each from `void` to the value its
 callers use: dash's `ckmalloc`, `ckrealloc` and diff's `xrealloc` return their
 pointer, `findkwd`, `stnputs`, `pstrcmp`, `xvsnprintf` and `shell_quote_length`
@@ -9531,6 +9586,15 @@ rejected instead of being parked as a function name nothing has. An
 input-only or output-only declaration keeps its partial-prototype inference;
 only a declaration that also states the return type retypes the symbol. The
 binding lives in `decompiler/crates/kuna-console/src/kuna_qualifiedstorage.rs`.
+
+An output-only declaration also leaves the callee's own input recovery open
+when its IR is rebuilt. `FuncProto::seed_locked_from_pieces` assigns the stated
+output storage and locks its type and model, then releases the empty input
+lock only when the pieces state no input types, names, storage, or variadic
+boundary. The declared return does not turn a physical incoming register read
+into an uninitialized local or a zero-argument signature. A full declaration
+with an explicitly empty parameter list stays locked, and input-only or
+combined input/return declarations keep their existing parameter locks.
 
 A call that reaches such a callee indirectly, through an import slot or a
 constant pointer, becomes direct only once `ActionDeindirect` resolves it

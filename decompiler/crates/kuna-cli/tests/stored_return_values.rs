@@ -160,3 +160,128 @@ fn a_single_function_decompile_returns_what_its_callers_read() {
     let cases: Vec<_> = RETURNING.iter().filter(|(name, _, _)| *name != "put").collect();
     round_trip(&asm, &cases, |name| decompile(name, &[]));
 }
+
+#[test]
+#[cfg(all(target_arch = "x86_64", target_os = "linux"))]
+fn a_selected_batch_returns_the_indirect_result_its_unselected_caller_reads() {
+    use std::os::unix::fs::PermissionsExt;
+
+    if process::optional_output(Command::new("clang").arg("--version")).is_none() {
+        return;
+    }
+    let asm = common::scratch_file("batch-caller-reads", "S");
+    let elf = asm.with_extension("elf");
+    std::fs::write(&asm, include_str!("fixtures/batch_caller_reads.S")).unwrap();
+    process::required_output(
+        Command::new("clang")
+            .args([
+                "-nostdlib",
+                "-fPIE",
+                "-pie",
+                "-Wl,-z,relro,-z,now",
+                "-Wl,--build-id=none",
+                "-Wl,-e,batch_reader",
+            ])
+            .arg(&asm)
+            .arg("-o")
+            .arg(&elf),
+    );
+    std::fs::set_permissions(&elf, std::fs::Permissions::from_mode(0o444)).unwrap();
+
+    let decompile = |mode: &str, args: &[&str]| {
+        let mut command = Command::new(kuna());
+        command.arg(mode).arg(&elf).args(args).args([
+            "--assert",
+            "prototype batch_target long batch_target(long value)",
+            "--json",
+        ]);
+        let output = process::required_output(&mut command);
+        let output: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        let bodies: std::collections::BTreeMap<String, String> = output["functions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| {
+                assert!(row["error"].is_null(), "{row}");
+                (
+                    row["name"].as_str().unwrap().to_owned(),
+                    row["code"].as_str().unwrap().to_owned(),
+                )
+            })
+            .collect();
+        assert!(output["assertions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|row| row["status"] == "applied"));
+        bodies
+    };
+    let selected = decompile(
+        "decompile-all",
+        &["--functions", "batch_wrapper,batch_target,batch_unread"],
+    );
+    assert_eq!(selected.len(), 3);
+    let wrapper = &selected["batch_wrapper"];
+    assert!(wrapper.starts_with("long batch_wrapper("), "{wrapper}");
+    assert!(wrapper.contains("return batch_target("), "{wrapper}");
+    let single = decompile("decompile", &["batch_wrapper"]);
+    assert_eq!(wrapper, &single["batch_wrapper"]);
+
+    let settled = decompile(
+        "decompile-all",
+        &[
+            "--functions",
+            "batch_wrapper,batch_target,batch_reader,batch_unread",
+            "--option",
+            "protoorder",
+            "cycles",
+        ],
+    );
+    assert_eq!(wrapper, &settled["batch_wrapper"]);
+    let unread = &selected["batch_unread"];
+    assert!(unread.starts_with("void batch_unread("), "{unread}");
+    assert_eq!(unread, &settled["batch_unread"]);
+    let declared = decompile(
+        "decompile-all",
+        &[
+            "--functions",
+            "batch_wrapper,batch_target,batch_unread",
+            "--assert",
+            "prototype batch_wrapper void batch_wrapper(long value)",
+        ],
+    );
+    assert!(declared["batch_wrapper"].starts_with("void batch_wrapper("));
+
+    let source = asm.with_extension("c");
+    let observer = asm.with_extension("observer");
+    let emitted = wrapper.replace("long batch_wrapper(", "long emitted_batch_wrapper(");
+    std::fs::write(
+        &source,
+        format!(
+            r#"
+long batch_target(long);
+long batch_wrapper(long);
+{emitted}
+int main(void) {{
+    const long values[] = {{-100, -7, -1, 0, 1, 19, 100, 1L << 40, -(1L << 40)}};
+    for (unsigned i = 0; i < sizeof values / sizeof values[0]; i++) {{
+        const long value = values[i];
+        if (batch_wrapper(value) != value + 7 || emitted_batch_wrapper(value) != value + 7)
+            return 1;
+    }}
+    return 0;
+}}
+"#,
+        ),
+    )
+    .unwrap();
+    process::required_output(
+        Command::new("clang")
+            .args(["-std=c11", "-Wall", "-Werror", "-O2", "-no-pie"])
+            .arg(&source)
+            .arg(&asm)
+            .arg("-o")
+            .arg(&observer),
+    );
+    process::required_output(&mut Command::new(observer));
+}

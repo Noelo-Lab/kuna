@@ -338,6 +338,8 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         Box::new(crate::callfixup::CallFixupPass),
         // (kuna `kernelbug`) A Linux kernel image's `__bug_table`; inert elsewhere.
         Box::new(crate::kernelbug::KernelBugPass),
+        // (kuna `blobs`) Embedded images and archives, committed unless `blobs off`.
+        Box::new(crate::blobs::BlobPass),
         // (kuna `thunkentry`) An MSVC incremental-link table's stubs and targets.
         Box::new(crate::listing::kuna_thunkentry::IncrementalLinkPass),
         // (kuna) The MSVC x87 one-operand intrinsics take ST0 and return in ST0.
@@ -802,6 +804,26 @@ pub fn run_listing_consumers_replaying(
     cold_entries: &[u64],
     plan: &crate::listing::WalkPlan,
     frames_replay: Option<&crate::aif::kuna_framereplay::ArmFrameReplay>,
+) -> Vec<(&'static str, AnalysisOutput)> {
+    run_listing_consumers_replaying_observed(
+        bytes, arch, translate, noreturn_seeds, callfixup_seeds, committed_entries, cold_entries,
+        plan, frames_replay, None,
+    )
+}
+
+/// Observe the final accepted Listing once, without enabling a consumer or applying its output.
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+pub fn run_listing_consumers_replaying_observed(
+    bytes: &[u8],
+    arch: &Architecture,
+    translate: &dyn Translate,
+    noreturn_seeds: &[u64],
+    callfixup_seeds: &[u64],
+    committed_entries: &[u64],
+    cold_entries: &[u64],
+    plan: &crate::listing::WalkPlan,
+    frames_replay: Option<&crate::aif::kuna_framereplay::ArmFrameReplay>,
+    observer: Option<&mut dyn FnMut(&object::File<'_>, &crate::listing::Listing)>,
 ) -> Vec<(&'static str, AnalysisOutput)> {
     let Ok(file) = crate::loadimage_object::parse_object(bytes) else {
         return Vec::new();
@@ -1414,6 +1436,9 @@ pub fn run_listing_consumers_replaying(
         modes.entries = retained_entries;
         modes.arm_frames = frame_record;
         out.push(("armframes", modes));
+    }
+    if let Some(observer) = observer {
+        observer(&file, &listing);
     }
     sanitize_all_names(&mut out);
     out

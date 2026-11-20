@@ -160,6 +160,9 @@ impl FlowEnvironment for ArchFlowEnv {
     fn query_call_register_model(&self, entry: &Address) -> Option<Rc<crate::fspec::ProtoModel>> {
         crate::p4_calls::kuna_calleereginputs::callee_register_model(self.arch(), entry)
     }
+    fn query_call_arg_registers(&self, entry: &Address) -> u8 {
+        crate::p4_calls::kuna_calleereginputs::argument_registers(self.arch(), entry)
+    }
     fn query_call_extra_pop(&self, entry: &Address) -> Option<int4> {
         crate::p4_calls::kuna_calleepurge::callee_extra_pop(self.arch(), entry)
     }
@@ -504,6 +507,9 @@ impl FlowEnvironment for ArchFlowEnv {
         )
     }
 
+    fn stated_callee_site(&self, fd: &Funcdata, site: &Address) -> bool {
+        crate::kuna_calleeoverride::is_stated(self.arch(), fd, site)
+    }
     fn msvc_import_slot(&self, fd: &Funcdata, op: crate::context::OpId) -> Option<Address> {
         let locked = &self.arch().msvcsig_import_slots;
         if locked.is_empty() {
@@ -981,7 +987,10 @@ pub fn build_and_follow_flow_with_override_and_protos(
             Box::new(crate::overrides::PiecesProtoOverride { pieces });
         fd.get_override_mut().insert_proto_override(callpoint.clone(), ov);
     }
-    follow_flow_on_fd(arch, fd)
+    crate::kuna_calleeoverride::seed(arch, &mut fd);
+    let mut fd = follow_flow_on_fd(arch, fd)?;
+    crate::kuna_calleeoverride::audit(arch, &mut fd);
+    Ok(fd)
 }
 
 /// Follow flow for an (already-constructed) `fd`, returning the IR-populated
@@ -1014,6 +1023,7 @@ fn follow_flow_on_fd(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcda
 fn generate_flow(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcdata> {
     let _load = arch.load_scope();
     crate::kuna_mipsunaligned::paint(arch);
+    crate::kuna_memtag::paint(arch, fd.get_address());
     // C++ Funcdata::followFlow(baddr, eaddr): a function carrying a declared byte
     // extent restricts flow to it; size 0 keeps the unbounded default the whole
     // engine has used until now (`kuna_console::engine::UNBOUNDED_SIZE`), so this
@@ -2015,11 +2025,35 @@ fn decompile_func_full_with_objects_inner(
         if let Some(expop) = arch.symboltab.function_extra_pop_across_scopes(&entry_addr) {
             fd.get_func_proto_mut().set_extra_pop(expop);
         }
+        let go_string_input = if arch.analysis_godwarfsig
+            && arch.image_linux_elf
+            && arch.archid == "x86:LE:64:default:golang"
+            && arch.source_lang_detected.is_go()
+            && arch.source_lang().is_go()
+            && pending_proto.is_none()
+            && mapped_params.is_empty()
+            && staged_proto_model.is_none()
+        {
+            arch.symboltab.function_go_string_input(&entry_addr)
+                .filter(|formal| formal.matches(fd.get_func_proto()))
+                .cloned()
+        } else {
+            None
+        };
+        fd.set_go_string_input(go_string_input);
         // Re-seed any console `map param <i> <addr> <typedecl>` storage locks (lost
         // when the IR is rebuilt, like `pending_proto`/`mapped_symbols`).  This makes
         // the rebuilt proto input-locked so `ActionPrototypeTypes` forces the typed
         // input Varnode (C++ `IfcMapParam` writes straight onto the live FuncProto).
         fd.apply_mapped_params(mapped_params);
+        if pending_proto.is_none() && recovered_proto.is_some() && mapped_params.is_empty()
+            && staged_proto_model.is_none() && arch.analysis_godwarfsig
+        {
+            fd.kuna_go_receiver = arch.symboltab.go_pointer_receiver(&entry_addr)
+                .filter(|receiver| receiver.symbol == fd.get_display_name()
+                    && receiver.matches(arch, fd.get_func_proto()))
+                .cloned();
+        }
         // Re-seed the console-mapped symbols (lost when the IR is rebuilt).
         fd.seed_mapped_symbols(mapped_symbols);
         // Re-seed the usepoint-scoped console symbols (the register-storage
@@ -2048,6 +2082,7 @@ fn decompile_func_full_with_objects_inner(
         // high word first.
         crate::kuna_bejoin::seed_wide_returns(arch, &mut fd);
         crate::p4_calls::kuna_callwide::seed(arch, &mut fd);
+        crate::p4_calls::kuna_gochanrecv::seed(arch, &mut fd);
         // (kuna `calleedeadarg`) Take the callee entry-liveness probe the
         // input-trial scoring seam consults, for the same reason and at the same
         // point.
@@ -3569,10 +3604,10 @@ impl RenderBudget {
 /// Publishes a drive's deadline to [`deadline_passed`], with no budget site
 /// named yet and no [`budget_probe`] spent, and restores the ones before it
 /// when the drive ends.
-struct DeadlineScope(Option<std::time::Instant>, Option<String>, bool);
+pub(crate) struct DeadlineScope(Option<std::time::Instant>, Option<String>, bool);
 
 impl DeadlineScope {
-    fn enter(deadline: Option<std::time::Instant>) -> Self {
+    pub(crate) fn enter(deadline: Option<std::time::Instant>) -> Self {
         DeadlineScope(
             FN_DEADLINE.with(|d| d.replace(deadline)),
             FN_BUDGET_SITE.with(|s| s.borrow_mut().take()),
