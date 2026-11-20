@@ -1869,7 +1869,7 @@ pub(crate) fn name_miss_hint(error: &EntryLookupError) -> Option<String> {
 /// table / `name_function`), `--functions` names or aliases, or — with no filter
 /// — every CODE-backed entry, each exactly once. Among several selectors, one
 /// naming a bodyless import slot is reported on stderr and skipped; a lone one,
-/// or a run whose every selector is such a slot, is an error.
+/// or a run left with nothing to decompile after the skips, is an error.
 pub(crate) fn resolve_targets(
     prog: &ConsoleProgram,
     args: &Args,
@@ -1893,14 +1893,14 @@ fn resolve_targets_with_policy(
     require_body: bool,
 ) -> Result<Vec<FunctionEntry>, String> {
     let mut targets: Vec<FunctionEntry> = Vec::new();
-    let batch = args.addrs.len() + args.names.as_ref().map_or(0, Vec::len) > 1;
-    let mut skipped = false;
+    let selectors = args.addrs.len() + args.names.as_ref().map_or(0, Vec::len);
+    let mut skipped = 0usize;
     let mut skip_import = |error: &EntryLookupError| -> bool {
-        if !batch || !matches!(error, EntryLookupError::BodylessImport { .. }) {
+        if selectors < 2 || !matches!(error, EntryLookupError::BodylessImport { .. }) {
             return false;
         }
         eprintln!("warning: {error}; skipped");
-        skipped = true;
+        skipped += 1;
         true
     };
 
@@ -1961,8 +1961,13 @@ fn resolve_targets_with_policy(
             }
         }
     }
-    if targets.is_empty() && skipped {
-        return Err("every selector names an import slot; nothing to decompile".to_string());
+    if targets.is_empty() && skipped > 0 {
+        return Err(if skipped == selectors {
+            "every selector names an import slot; nothing to decompile"
+        } else {
+            "no selector names a function body; nothing to decompile"
+        }
+        .to_string());
     }
 
     // Dedup the explicitly-selected targets by entry offset: `--addr 0xX` and

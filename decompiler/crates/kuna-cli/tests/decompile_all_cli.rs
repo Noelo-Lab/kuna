@@ -339,7 +339,7 @@ fn decompile_all_refuses_an_executable_section_iat_slot() {
 }
 
 /// Among several selectors an IAT slot is reported and skipped, and the rest
-/// still decompile; when every selector is one, the run fails.
+/// still decompile; when the skips leave nothing to decompile, the run fails.
 #[test]
 fn decompile_all_skips_an_iat_slot_among_other_selectors() {
     let bin = repo_root()
@@ -380,6 +380,23 @@ fn decompile_all_skips_an_iat_slot_among_other_selectors() {
     assert!(stdout.trim().is_empty(), "an IAT result row escaped: {stdout}");
     assert!(
         stderr.ends_with("error: every selector names an import slot; nothing to decompile\n"),
+        "{stderr}"
+    );
+
+    let (stdout, stderr, ok) = run_kuna(&[
+        "decompile-all",
+        &bin,
+        "--addr",
+        "0x401000",
+        "--functions",
+        "no_such_function",
+        "--sleighpath",
+        &specs(),
+    ]);
+    assert!(!ok, "a slot and a missing name unexpectedly decompiled: {stdout}");
+    assert!(stdout.trim().is_empty(), "an IAT result row escaped: {stdout}");
+    assert!(
+        stderr.ends_with("error: no selector names a function body; nothing to decompile\n"),
         "{stderr}"
     );
 }

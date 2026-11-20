@@ -390,7 +390,7 @@ pointer, so neither an executable section flag nor direct `--addr` turns
 adjacent IAT words into instructions. Among several `--addr`/`--functions`
 selectors of one filtered run, a selector naming such a slot is reported as
 `warning: <diagnostic>; skipped` and the others still decompile; the run fails
-only when every selector names one. Inventory, graph, disassembly/read, and
+only when the skips leave nothing to decompile. Inventory, graph, disassembly/read, and
 xref consumers still resolve the slot because they do not lift a body. An
 explicit `--define-function` or `--assert function` declaration overrides the
 loader classification when the image's import directory is known to be false.

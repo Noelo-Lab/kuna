@@ -2572,7 +2572,7 @@ decompilation selects only entries contained by a loader `CODE` section
 (ConsoleProgram::function_entries_executable)`). Explicit decompiling selection
 uses the same body distinction: a lone IAT slot is refused with its import name
 and address (among several selectors of one filtered run it is reported and
-skipped, and the run fails only when every selector is one;
+skipped, and the run fails only when the skips leave nothing to decompile;
 `decompiler/crates/kuna-cli/src/decompile_all.rs (resolve_targets)`), while a name shared by a stub and slot selects the sole body-bearing
 stub. Generic lookup still resolves the slot for call binding and inventory
 consumers. Loaders without section metadata keep the complete inventory.
