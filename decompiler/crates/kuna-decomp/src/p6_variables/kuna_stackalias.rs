@@ -14,7 +14,7 @@ use std::collections::BTreeSet;
 /// Whether this Varnode is a physical write in this function's frame space.
 pub fn holds_store(fd: &Funcdata, id: VarnodeId) -> bool {
     if crate::kuna_localstackviews::publication(fd, id) { return true; }
-    let full = fd.get_arch().stack_alias_deadstore || fd.get_arch().stack_views;
+    let full = fd.get_arch().stack_alias_deadstore || fd.get_arch().stack_views || fd.stack_frame_published;
     if !full && !crate::kuna_localstackviews::active(fd) && fd.stack_parameter_store_extents.values().all(|&width| width > 4) {
         return false;
     }
@@ -36,8 +36,13 @@ pub fn holds_store(fd: &Funcdata, id: VarnodeId) -> bool {
 
 /// Compute once per dead-code pass. A later full overwrite before any memory
 /// observer kills only the earlier store's potentially aliased bytes.
+/// A frame address written to memory outside the frame escapes, so the
+/// alias-checked frame stores stay live in every policy.
 pub fn prepare(fd: &mut Funcdata) -> i32 {
-    let full = fd.get_arch().stack_alias_deadstore || fd.get_arch().stack_views;
+    if !fd.stack_frame_published && crate::kuna_localstackviews::frame_published(fd) {
+        fd.stack_frame_published = true;
+    }
+    let full = fd.get_arch().stack_alias_deadstore || fd.get_arch().stack_views || fd.stack_frame_published;
     if !full && !crate::kuna_localstackviews::active(fd) && fd.stack_parameter_store_extents.values().all(|&width| width > 4) {
         return 0;
     }

@@ -293,6 +293,23 @@ fn published_input(fd: &Funcdata, id: OpId) -> Option<(i32, VarnodeId)> {
     }
 }
 
+/// Whether a live COPY, STORE or volatile write stores a frame address outside this frame.
+pub(crate) fn frame_published(fd: &Funcdata) -> bool {
+    let frame = |input| crate::kuna_stackranges::frame_address(fd, input).is_some();
+    let volatile_write = |op: &crate::op::PcodeOp| {
+        op.code() == OpCode::CPUI_CALLOTHER
+            && op.get_in(0).and_then(|id| fd.vbank().get(id)).is_some_and(|code| {
+                code.is_constant()
+                    && code.get_offset() == crate::userop::BUILTIN_VOLATILE_WRITE as u64
+            })
+            && op.get_in(2).is_some_and(frame)
+    };
+    fd.obank().iter_alive().any(|id| {
+        published_input(fd, id).is_some_and(|(_, input)| frame(input))
+            || fd.obank().get(id).is_some_and(volatile_write)
+    })
+}
+
 fn collect(fd: &mut Funcdata) {
     let gathered = (|| {
         let mut groups: BTreeMap<(u64, i32), Vec<Rc<Datatype>>> = BTreeMap::new();

@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4815,
-    4815
+    4817,
+    4817
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2020,7 +2020,7 @@
     "data:PEBNAMES-X86 #4: the magic-offset read of BeingDebugged (off pass only)",
     "data:PEBNAMES-X86 #5: the TEB pointer is declared for the reader and every near miss, never for the function that writes the base",
     "data:PEBNAMES-X86 #6: the function that links an SEH record keeps its PEB read untyped under on",
-    "data:PEBNAMES-X86 #7: the SEH registration record stays one 12-byte object under on",
+    "data:PEBNAMES-X86 #7: the SEH registration record keeps its handler and state stores in both passes",
     "data:PEBNAMES-X86 #8: the record is linked and unlinked through the base's first member, not a TEB name, in both passes",
     "data:PEBNAMES-X86 #9: the register storage comment survives in every pass",
     "data:PEIMPORTCALL #1: the IAT-slot call is never left unnamed",
@@ -4627,6 +4627,8 @@
     "data:the bounded local policy never leaves a pointer assigned to the Pair object",
     "data:the call never passes the ABI pointer",
     "data:the converted call uses variable-valued arguments",
+    "data:the default policy keeps the Pair and Handle stores published through a volatile global",
+    "data:the default policy keeps the Pair and Handle stores published through an ordinary global",
     "data:the entry partition never loses the input",
     "data:the float rounding is never folded away",
     "data:the function body is kept",
