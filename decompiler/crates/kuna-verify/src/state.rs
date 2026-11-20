@@ -8,7 +8,8 @@
 //! keeps its own writes on top.
 
 use std::cell::RefCell;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::hash::BuildHasherDefault;
 use std::rc::Rc;
 
 use kuna_base::address::{Address, RangeList};
@@ -69,7 +70,12 @@ pub struct Env<'p> {
     pub ret_slot: u32,
     /// Register parameters of type `bool`: a caller passes 0 or 1.
     pub booleans: Vec<(i32, u64, u32)>,
-    image: RefCell<BTreeMap<u64, Option<u8>>>,
+    /// Image pages by base address; `None` for a page not mapped whole.
+    image: RefCell<HashMap<u64, Option<Box<[u8]>>>>,
+    /// Bytes of the pages not mapped whole.
+    image_bytes: RefCell<HashMap<u64, Option<u8>>>,
+    /// Where a call to each target goes once thunks are followed.
+    pub(crate) thunks: RefCell<HashMap<u64, u64>>,
     pub(crate) insns: RefCell<BTreeMap<u64, Rc<crate::machine::Insn>>>,
     stack: Rc<AddrSpace>,
     /// The decompiled function, whose local symbols give the extent of a
@@ -182,7 +188,9 @@ impl<'p> Env<'p> {
             ret_addr: None,
             ret_slot: 0,
             booleans: Vec::new(),
-            image: RefCell::new(BTreeMap::new()),
+            image: RefCell::new(HashMap::new()),
+            image_bytes: RefCell::new(HashMap::new()),
+            thunks: RefCell::new(HashMap::new()),
             insns: RefCell::new(BTreeMap::new()),
             stack: Rc::clone(stack),
             fd: None,
@@ -211,15 +219,35 @@ impl<'p> Env<'p> {
             && (self.code_sections.is_empty() || self.code_sections.iter().any(|&(start, size)| addr >= start && addr - start < size))
     }
 
+    /// A byte of the loaded image, read a page at a time. A page the loader
+    /// does not map whole is read a byte at a time, as each byte is asked for:
+    /// a random pointer lands in one far more often than in the image.
     fn image_byte(&self, addr: u64) -> Option<u8> {
-        if let Some(b) = self.image.borrow().get(&addr) {
+        let page = addr & !(IMAGE_PAGE - 1);
+        let at = (addr - page) as usize;
+        let known = self.image.borrow().get(&page).map(|p| p.as_ref().map(|bytes| bytes[at]));
+        match known {
+            Some(Some(b)) => return Some(b),
+            Some(None) => {}
+            None => {
+                let base = Address::new(Rc::clone(&self.ram), page);
+                let whole = self
+                    .prog
+                    .read_bytes_at(&base, IMAGE_PAGE as usize)
+                    .filter(|v| v.len() == IMAGE_PAGE as usize)
+                    .map(Vec::into_boxed_slice);
+                let b = whole.as_ref().map(|bytes| bytes[at]);
+                self.image.borrow_mut().insert(page, whole);
+                if b.is_some() {
+                    return b;
+                }
+            }
+        }
+        if let Some(b) = self.image_bytes.borrow().get(&addr) {
             return *b;
         }
-        let b = self
-            .prog
-            .read_bytes_at(&Address::new(Rc::clone(&self.ram), addr), 1)
-            .map(|v| v[0]);
-        self.image.borrow_mut().insert(addr, b);
+        let b = self.prog.read_bytes_at(&Address::new(Rc::clone(&self.ram), addr), 1).map(|v| v[0]);
+        self.image_bytes.borrow_mut().insert(addr, b);
         b
     }
 
@@ -383,6 +411,29 @@ impl<'p> Env<'p> {
 /// Register offsets past this go through the sparse map.
 const DENSE_REGISTERS: u64 = 1 << 20;
 
+/// A multiplicative hasher for the temporaries' byte offsets: they are
+/// cleared every instruction, so the map keeps its capacity and its hashing
+/// costs one multiply.
+#[derive(Default, Clone, Copy)]
+pub(crate) struct Fast(u64);
+
+impl std::hash::Hasher for Fast {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+    fn write(&mut self, bytes: &[u8]) {
+        for &b in bytes {
+            self.0 = (self.0.rotate_left(5) ^ u64::from(b)).wrapping_mul(0x51_7cc1_b727_220a_95);
+        }
+    }
+    fn write_u64(&mut self, n: u64) {
+        self.0 = (self.0.rotate_left(5) ^ n).wrapping_mul(0x51_7cc1_b727_220a_95);
+    }
+}
+
+/// Bytes of the image read at once.
+const IMAGE_PAGE: u64 = 256;
+
 const PRESENT: u8 = 1;
 const WRITTEN: u8 = 2;
 
@@ -396,7 +447,7 @@ pub struct State<'e, 'p> {
     pub run: u32,
     regs: Vec<u8>,
     flags: Vec<u8>,
-    unique: BTreeMap<u64, u8>,
+    unique: HashMap<u64, u8, BuildHasherDefault<Fast>>,
     mem: BTreeMap<(i32, u64), u8>,
     /// Calls made so far.
     pub epoch: u32,
@@ -533,7 +584,7 @@ impl<'e, 'p> State<'e, 'p> {
             run,
             regs: Vec::new(),
             flags: Vec::new(),
-            unique: BTreeMap::new(),
+            unique: HashMap::default(),
             mem: BTreeMap::new(),
             epoch: 0,
             escaped: Vec::new(),
@@ -695,13 +746,18 @@ impl<'e, 'p> State<'e, 'p> {
     /// a callee run for real leaves the registers the calling convention says
     /// it preserves as they were. Returns the offsets the callee had changed.
     pub fn preserve_registers(&mut self, before: &State, keep: &[(u64, u32)]) -> Vec<u64> {
-        let kept = |o: u64| keep.iter().any(|&(off, size)| o >= off && o < off + u64::from(size));
         let mut changed = Vec::new();
         let n = self.regs.len().max(before.regs.len());
         self.grow(n);
+        let mut kept = vec![false; n];
+        for &(off, size) in keep {
+            let lo = (off as usize).min(n);
+            let hi = (off as usize).saturating_add(size as usize).min(n);
+            kept[lo..hi].fill(true);
+        }
         for i in 0..n {
             let o = i as u64;
-            if kept(o) {
+            if kept[i] {
                 continue;
             }
             let (b, f) = (before.regs.get(i).copied().unwrap_or(0), before.flags.get(i).copied().unwrap_or(0));

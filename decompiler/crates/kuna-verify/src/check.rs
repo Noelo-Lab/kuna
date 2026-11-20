@@ -355,6 +355,12 @@ fn tracked(prog: &ConsoleProgram, fd: &Funcdata, env: &mut Env) -> Vec<(i32, u64
     out
 }
 
+/// Runs that may stop on an operation the model cannot run before the
+/// function is given up as `UNKNOWN(unsupported-op)`: such a function is
+/// `UNKNOWN` whatever its other runs show, unless one of them differs, and
+/// later runs mostly take the same path into the same operation.
+const UNSUPPORTED_RUNS: u32 = 16;
+
 /// Runs that are repeated with other values in the storage kuna's C never
 /// assigns.
 const PERTURBED_RUNS: u32 = 16;
@@ -578,6 +584,7 @@ pub fn check_function(prog: &ConsoleProgram, fd: &Funcdata, contract: Option<&Co
     let mut trapped_runs = 0u32;
     let mut trapped: Option<String> = None;
     let mut budget_runs = 0u32;
+    let mut unsupported_runs = 0u32;
     let mut unknown: Option<Halt> = None;
     let mut diverged: Option<&'static str> = None;
     let mut call_suspects: Vec<String> = Vec::new();
@@ -598,11 +605,13 @@ pub fn check_function(prog: &ConsoleProgram, fd: &Funcdata, contract: Option<&Co
                 continue;
             }
             (Err(h), _) | (_, Err(h)) => {
-                if h == Halt::Budget {
-                    budget_runs += 1;
+                match h {
+                    Halt::Budget => budget_runs += 1,
+                    Halt::Unsupported(_) => unsupported_runs += 1,
+                    _ => {}
                 }
                 unknown.get_or_insert(h);
-                if budget_runs >= opts.budget_runs {
+                if budget_runs >= opts.budget_runs || unsupported_runs >= UNSUPPORTED_RUNS {
                     break;
                 }
                 continue;

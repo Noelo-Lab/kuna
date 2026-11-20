@@ -79,6 +79,15 @@ fn write(state: &mut State, vn: &VarnodeData, val: u128) -> Result<(), Halt> {
 /// runs from different states reach the same place without storing or
 /// calling. A target that is no thunk is its own answer.
 pub fn through_thunks(env: &Env, target: u64) -> u64 {
+    if let Some(&t) = env.thunks.borrow().get(&target) {
+        return t;
+    }
+    let t = follow_thunks(env, target);
+    env.thunks.borrow_mut().insert(target, t);
+    t
+}
+
+fn follow_thunks(env: &Env, target: u64) -> u64 {
     let mut t = target;
     for _ in 0..4 {
         let a = thunk_hop(env, t, 0);
