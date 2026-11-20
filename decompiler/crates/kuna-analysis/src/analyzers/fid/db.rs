@@ -22,7 +22,8 @@
 //!
 //! All multi-byte integers are little-endian; string lengths are `u32` byte
 //! counts. A name offset points into the trailing string blob. Loading checks
-//! lengths, offsets and UTF-8 and reports malformed input as `KunaError`.
+//! lengths, offsets and UTF-8, bounds the text the records expand to, and
+//! reports malformed input as `KunaError`.
 //!
 //! Version 2 lets a record carry the function's prototype as C text
 //! ([`NO_STRING`] for none) and the type declarations it needs: a run of
@@ -50,6 +51,12 @@ pub const FID_DB_VERSION_NAMES: u32 = 1;
 
 /// The `proto_off` of a record without a prototype.
 pub const NO_STRING: u32 = u32::MAX;
+
+/// Records name their strings by offset, so any number of them can share one;
+/// the text a load decodes is bounded by the larger of this floor and
+/// [`DECODED_TEXT_PER_BYTE`] bytes per byte of the file.
+const DECODED_TEXT_FLOOR: usize = 64 << 20;
+const DECODED_TEXT_PER_BYTE: usize = 128;
 
 /// `flags` bit 0 — the record's hash was computed over a body with a terminator
 /// (return/halt) as its last code unit. Other flag bits are reserved.
@@ -260,22 +267,32 @@ impl FidDb {
         // The remainder is the string blob.
         let blob = r.rest();
 
+        let budget = DECODED_TEXT_FLOOR.max(bytes.len().saturating_mul(DECODED_TEXT_PER_BYTE));
+        let mut decoded = 0usize;
+        let mut text = |off: u32| -> KunaResult<String> {
+            let text = read_interned_name(blob, off as usize)?;
+            decoded += text.len() + std::mem::size_of::<String>();
+            if decoded > budget {
+                return Err(KunaError::bad_data(format!(
+                    "fid: the records of a {}-byte file expand past {budget} bytes of text",
+                    bytes.len()
+                )));
+            }
+            Ok(text)
+        };
         let mut records: Vec<FidRecord> = Vec::with_capacity(raw.len());
         for rr in raw {
-            let name = read_interned_name(blob, rr.name_off as usize)?;
+            let name = text(rr.name_off)?;
             let prototype = match rr.proto_off {
                 NO_STRING => None,
-                off => Some(read_interned_name(blob, off as usize)?),
+                off => Some(text(off)?),
             };
             let (first, count) = rr.types;
             let run = first
                 .checked_add(count)
                 .and_then(|end| types.get(first..end))
                 .ok_or_else(|| KunaError::bad_data("fid: type run past the type table"))?;
-            let typedefs = run
-                .iter()
-                .map(|off| read_interned_name(blob, *off as usize))
-                .collect::<KunaResult<Vec<String>>>()?;
+            let typedefs = run.iter().map(|off| text(*off)).collect::<KunaResult<Vec<String>>>()?;
             records.push(FidRecord {
                 full_hash: rr.full_hash,
                 specific_hash: rr.specific_hash,
@@ -619,5 +636,35 @@ mod tests {
         bytes.extend_from_slice(&9999u32.to_le_bytes());
         // (no string blob)
         assert!(FidDb::load(&bytes).is_err());
+    }
+
+    #[test]
+    fn records_sharing_one_long_run_stop_at_the_text_budget() {
+        let (n, run, len) = (300u32, 300u32, 1024usize);
+        let mut bytes: Vec<u8> = Vec::new();
+        bytes.extend_from_slice(FID_DB_MAGIC);
+        bytes.extend_from_slice(&FID_DB_VERSION.to_le_bytes());
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        bytes.extend_from_slice(&n.to_le_bytes());
+        for i in 0..n {
+            bytes.extend_from_slice(&u64::from(i).to_le_bytes());
+            bytes.extend_from_slice(&0u64.to_le_bytes());
+            bytes.extend_from_slice(&5i16.to_le_bytes());
+            bytes.extend_from_slice(&[0, 0]);
+            for word in [0, NO_STRING, 0, run] {
+                bytes.extend_from_slice(&word.to_le_bytes());
+            }
+        }
+        bytes.extend_from_slice(&run.to_le_bytes());
+        for _ in 0..run {
+            bytes.extend_from_slice(&2u32.to_le_bytes());
+        }
+        bytes.extend_from_slice(b"f\0");
+        bytes.extend(std::iter::repeat_n(b'A', len));
+        bytes.push(0);
+        assert!(bytes.len() < 16 << 10);
+        let err = FidDb::load(&bytes).unwrap_err().explain().to_string();
+        assert!(err.contains("expand past"), "{err}");
     }
 }

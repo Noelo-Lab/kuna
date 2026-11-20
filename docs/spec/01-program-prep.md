@@ -6376,7 +6376,10 @@ every other binary's pass list is byte-identical to before the pass existed):
   each record adds a prototype offset and a run in a table of declaration
   offsets, so records share a declaration's text). A version-1 file loads as
   before, and a database none of whose records has a prototype is still written
-  as version 1, byte for byte what the builder wrote before. `kuna fid build`
+  as version 1, byte for byte what the builder wrote before. Records name their
+  strings by offset, so a small file can name one long string many times; a load
+  stops with `invalid` once the text it has decoded passes the larger of 64 MiB
+  and 128 bytes per byte of the file. `kuna fid build`
   fills a record from the prototype the object's own committed analysis parked
   on the function symbol of that name, which is its DWARF signature
   (`decompiler/crates/kuna-analysis/src/analyzers/fid/kuna_fidproto.rs
@@ -6393,9 +6396,11 @@ every other binary's pass list is byte-identical to before the pass existed):
   type declarations are parsed first; one that redefines a type the program
   already has is rejected by the parser and the program's definition stands. A
   prototype that does not parse is dropped with a header warning on the
-  function. The applied prototype is parked like a DWARF one, so the function's
-  callers copy it too, and the drive checks it against the body (04 §4.2
-  "Seeding").
+  function, and a declaration whose brackets nest deeper than 64 is not handed
+  to the parser at all, since the text comes from a file and the parser
+  recurses once per level. The applied prototype is parked like a DWARF one, so
+  the function's callers copy it too, and the drive checks it against the body
+  (04 §4.2 "Seeding").
   `kuna fid query` exposes full-hash candidates as a read-only lookup, each
   with its record's `prototype`. It
   reports whether the entry was discovered or supplied by the caller, the

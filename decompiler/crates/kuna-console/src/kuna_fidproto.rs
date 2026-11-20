@@ -6,8 +6,10 @@
 //! `--assert` given later still replaces it. Each record's type declarations
 //! are parsed first; one that names a type the program already has is left
 //! out, the program's own definition standing. A prototype that does not
-//! parse is dropped with a header warning on its function. The decompile
-//! drive checks a parked one against the body
+//! parse is dropped with a header warning on its function. The text comes
+//! from a file, and the parser recurses once per bracket level, so a
+//! declaration nested deeper than [`MAX_NESTING`] is not parsed at all. The
+//! decompile drive checks a parked one against the body
 //! ([`kuna_decomp::kuna_fidproto`]).
 
 use std::collections::BTreeSet;
@@ -20,6 +22,8 @@ use kuna_decomp::comment::comment_type;
 
 use crate::engine::ConsoleProgram;
 
+const MAX_NESTING: usize = 64;
+
 pub(crate) fn apply(prog: &mut ConsoleProgram, code_space: &Rc<AddrSpace>, facts: Vec<FidProtoFact>) {
     let mut parsed: BTreeSet<String> = BTreeSet::new();
     for fact in facts {
@@ -30,11 +34,16 @@ pub(crate) fn apply(prog: &mut ConsoleProgram, code_space: &Rc<AddrSpace>, facts
             continue;
         }
         for decl in &fact.typedefs {
-            if parsed.insert(decl.clone()) {
+            if parsed.insert(decl.clone()) && nesting(decl) <= MAX_NESTING {
                 let _ = crate::assertions::parse_declaration(prog, decl);
             }
         }
-        match crate::assertions::parse_prototype(prog, &fact.prototype) {
+        let prototype = if nesting(&fact.prototype) > MAX_NESTING {
+            Err(format!("brackets nested deeper than {MAX_NESTING}"))
+        } else {
+            crate::assertions::parse_prototype(prog, &fact.prototype)
+        };
+        match prototype {
             Ok((mut pieces, _)) => {
                 pieces.name = fact.name;
                 prog.arch_mut().set_function_prototype_pieces_at(&addr, pieces);
@@ -51,5 +60,31 @@ pub(crate) fn apply(prog: &mut ConsoleProgram, code_space: &Rc<AddrSpace>, facts
                 );
             }
         }
+    }
+}
+
+fn nesting(text: &str) -> usize {
+    let mut depth = 0usize;
+    let mut most = 0;
+    for byte in text.bytes() {
+        match byte {
+            b'(' | b'[' | b'{' => {
+                depth += 1;
+                most = most.max(depth);
+            }
+            b')' | b']' | b'}' => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+    }
+    most
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn nesting_counts_the_deepest_bracket() {
+        assert_eq!(super::nesting("int f(void (*cb)(int a[4]))"), 3);
+        assert_eq!(super::nesting("struct s { int a; };"), 1);
+        assert_eq!(super::nesting(")))"), 0);
     }
 }
