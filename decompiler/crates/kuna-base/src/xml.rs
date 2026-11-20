@@ -2244,7 +2244,7 @@ mod tests {
         // and ghangr-go-mcall-resumption / a scheduler switch preserves its caller's continuation
         // and kuna-loweredswitch-linear / loweredswitch linear re-rolls a linear equality chain
         // and kuna-loweredswitch-tree / loweredswitch tree re-rolls a twenty-case compare tree
-        assert_eq!(count, 824, "corpus file count drifted");
+        assert_eq!(count, 826, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
