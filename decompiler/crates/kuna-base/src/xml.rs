@@ -2243,7 +2243,8 @@ mod tests {
         // and ghangr-go-aarch64-stack-stride / adjacent eight-byte spills keep their declared inputs
         // and ghangr-go-mcall-resumption / a scheduler switch preserves its caller's continuation
         // and kuna-mips-kscratch / Octeon kernel scratch transfers preserve both selectors across calls
-        assert_eq!(count, 825, "corpus file count drifted");
+        // and kuna-mips-kscratch3 / Octeon III additional kernel scratch registers
+        assert_eq!(count, 826, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
