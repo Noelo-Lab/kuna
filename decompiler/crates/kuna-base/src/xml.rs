@@ -2242,7 +2242,19 @@ mod tests {
         // and ghangr-go-paniccheck-return / a returning Go panic check keeps its continuation
         // and ghangr-go-aarch64-stack-stride / adjacent eight-byte spills keep their declared inputs
         // and ghangr-go-mcall-resumption / a scheduler switch preserves its caller's continuation
-        assert_eq!(count, 824, "corpus file count drifted");
+        // and kuna-restart-warnings / a restart drops the warnings of the pass it discards
+        // and kuna-narrowed-call-input / a call argument narrowed before its prototype is forced stays valid
+        // and kuna-extrapop-function / option extrapop <n> <name> sets a named function's extrapop
+        // and kuna-condexe-heritage / condexe removes a re-test whose block holds unread ops
+        // and kuna-dwarf-addrx / a DWARF 5 DW_OP_addrx global takes its name on both byte orders
+        // and kuna-pacmodifier-arg-a64e / a hidden signing's modifier is not a call argument
+        // and kuna-objcdirect / an Objective-C direct method's receiver is its class
+        // and kuna-itaniumrtti-macho / Itanium RTTI on a Mach-O through chained-fixup binds
+        // and kuna-itaniumrtti-macho-classic / and through classic LC_DYLD_INFO binds
+        // and kuna-typeorder / distinct types order by id and shape before heap address
+        // and kuna-loopcontinue-while / a jump to a do-while's own test prints as continue
+        // and kuna-switchsingle / a jump table whose entries all name one block is a direct branch
+        assert_eq!(count, 836, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

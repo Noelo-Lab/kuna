@@ -161,10 +161,26 @@ No p-code, statement, or destination changes.
 
 `kuna_loopcontinue.rs (recover_continues)` runs before `mark_unstructured`.
 A goto or if-goto becomes `continue` only when its target's first leaf is the
-first leaf of its innermost `BlockInfLoop`. Entering a nested loop resets that
-scope; conditional loops disable recovery because their continue may evaluate
-a condition or iterator rather than restart the first leaf. Other destinations
-retain gotos. `off` restores the original collapse precedence and rendering.
+first leaf of its innermost `BlockInfLoop`, or the continue point of its
+innermost conditional loop. Entering a nested loop resets that scope. A
+conditional loop's `continue;` evaluates a test or an iterate statement rather
+than restarting the first leaf, so `kuna_loopcontinue.rs (continue_points)`
+gives each one the leaf a `continue;` resumes at, or none. A while-do resumes
+at the front leaf of its condition block, unless it prints as a `for` (an
+iterate op), whose `continue;` would run the iterate statement first; in the
+overflow form the condition block prints first inside `while( true ) { ... }`,
+which is where the jump lands too. A do-while resumes at the last leaf of its
+body only when that leaf prints nothing but the loop test: every op besides
+the branch is not printed, a marker, or has an implied output, and only when
+the output language's do-while runs its test on `continue;`: C's `do..while`
+and Go's `for` post statement do, while Rust prints a do-while as
+`loop { ..; if !(c) { break; } }`, where `continue;` would skip the test, so a
+Rust do-while keeps the goto (the `do_while_continue` flag the architecture
+derives from the output language). A switch
+between the jump and the loop does not matter, since C's `continue` skips
+switches. A jump into any other leaf, including the latch of a `while( true )`
+loop, keeps its goto. `off` restores the original collapse precedence and
+rendering.
 
 **(angr) `condfold` — folding across a *complex* sibling.** `rule_block_or`
 requires the sibling condition block (upstream's `orblock`, the right operand
