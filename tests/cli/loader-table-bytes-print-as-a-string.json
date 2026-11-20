@@ -29,8 +29,8 @@
       "eq": 0
     },
     "stdout_matches": [
-      "puts\\(\\(char \\*\\)0x4a3\\)",
-      "puts\\(\\(char \\*\\)0x320\\)",
+      "puts\\(&s_4a2\\[1\\]\\)",
+      "puts\\(&s_318\\[8\\]\\)",
       "puts\\(&__abi_tag\\[0x14\\]\\)"
     ],
     "stdout_absent": [
@@ -39,6 +39,6 @@
       "puts\\(\"\\\\x03\"\\)"
     ]
   },
-  "notes": "Loader metadata in .dynstr, .interp and .note.ABI-tag must not become string literals. The ABI-tag address 0x3a0 is retained symbolically as &__abi_tag[0x14] (symbol base 0x38c). Source beside the fixture.",
-  "probe_id": "p-02aabaca0026"
+  "notes": "Loader metadata in .dynstr, .interp and .note.ABI-tag must not become string literals. None of the three is read-only data, so each constant is kept as a reference into the table's own symbol: &s_4a2[1] (.dynstr), &s_318[8] (.interp), &__abi_tag[0x14] (symbol base 0x38c). Source beside the fixture.",
+  "probe_id": "p-c68761659d29"
 }
