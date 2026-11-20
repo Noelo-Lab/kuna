@@ -2510,8 +2510,10 @@ impl Funcdata {
         shared: &mut Option<Funcdata>,
     ) -> Result<Option<usize>, crate::jumptable::RecoveryMode> {
         use crate::jumptable::RecoveryMode;
+        let encoding = crate::kuna_indirectreturn::target_encoding(self, op);
         // linkJumpTable: search for a pre-existing table.
         if let Some(idx) = self.link_jump_table(op) {
+            self.get_jump_table_mut(idx as int4).kuna_set_target_encoding(encoding);
             let jt = self.get_jump_table(idx as int4);
             if !jt.is_override() && !jt.is_partial() && jt.num_entries() != 0 {
                 return Ok(Some(idx)); // Previously calculated, complete, non-override
@@ -2537,7 +2539,8 @@ impl Funcdata {
         }
         // Trial recovery into a fresh table appended to jumpvec.
         let addr = self.obank().get(op).unwrap().get_addr().clone();
-        let trial = crate::jumptable::JumpTable::new(addr);
+        let mut trial = crate::jumptable::JumpTable::new(addr);
+        trial.kuna_set_target_encoding(encoding);
         self.jumpvec_mut().push(trial);
         let idx = self.num_jump_tables() as usize - 1;
         let mode = self.stage_jump_table(idx, op, record_loads, visited, run_pipeline, shared);

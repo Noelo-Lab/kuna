@@ -60,20 +60,20 @@ fn run_one(line: &str) -> String {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn registers_all_twenty_three_kuna_commands() {
-    // register_decomp_commands registers 106 (see ifacedecomp/tests.rs); the
-    // kuna capability adds 23: phase list/map/status/catalog (plus the four
+fn registers_all_twenty_four_kuna_commands() {
+    // register_decomp_commands registers 107 (see ifacedecomp/tests.rs); the
+    // kuna capability adds 24: phase list/map/status/catalog (plus the four
     // deprecated `stage ...` alias registrations), kassert, restarts,
     // pipeline, mode, quality, functions, region tree/blocks/walk,
     // `function bounds`/`function symbol`/`function containing`, `map prototype`
-    // `override bytes`, and `callwide prepare`.
+    // `override bytes`, `override indirect`, and `callwide prepare`.
     let only_kuna = {
         let mut st = ConsoleCommands::into_status(vec![]);
         register_kuna_commands(&mut st);
         st.num_commands()
     };
-    assert_eq!(only_kuna, 23);
-    assert_eq!(console(&[]).num_commands(), 106 + 23);
+    assert_eq!(only_kuna, 24);
+    assert_eq!(console(&[]).num_commands(), 107 + 24);
 }
 
 #[test]

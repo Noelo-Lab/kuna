@@ -1,5 +1,18 @@
 # Stage-model issue testcases
 
+`ghangr-go-paniccheck-return.xml` checks that a returning Go panic helper
+falls through to the terminal `runtime.gopanic` call. It also checks the
+helper's conditional throw and shows the caller's sentinel with the known
+no-return analysis disabled.
+
+`ghangr-go-mcall-resumption.xml` checks the continuation after a Go scheduler
+switch, independent terminal propagation through a lookalike wrapper, and
+explicit function and call-site overrides.
+
+`kuna-go-atomic-return.xml` checks exact AMD64 Go direct-return atomic additions,
+including old-value, flag, branch, memory-effect and width refusals. The same
+bytes retain C/Rust rendering and the non-Go source control.
+
 `ghangr-go-abi0-model.xml` checks recovery of a Go stack-input leaf and the
 arguments passed by both call orders. It also checks the disabled option,
 an ordinary name lookalike, a wrapper with stack results, the signal
@@ -22,6 +35,11 @@ and callers across signed, unsigned, Boolean and full-width results.
 and narrowed callback results. Its CLI companion compiles complete C and Rust
 output under the same asserted prototypes and checks every byte value and call
 counts. The original fixture is only decompiled.
+
+`kuna-callproto.xml` checks a tail jump through a variadic function pointer with
+nothing stated, with a call-site prototype, and with one parameter placed in a
+register. Its CLI companion covers both decompile surfaces and the rejection of
+an address that is not a call.
 
 `kuna-e500-call-slots.xml` compares disabled and automatic call-overlap guards
 for scalar arguments and results inside e500's wide registers, and decompiles a
@@ -142,6 +160,8 @@ writeup, not here.
 | `gh831-riscv-fpmove.xml`, `gh831-riscv32-fpmove.xml` | [Kuna #831](https://github.com/Noelo-Lab/kuna/issues/831) | P2 p-code lift (RISCV spec-fix, no option) | `fmv.x.d`/`fmv.x.w` read the FP register itself, and `fmv.x.w`/`fcvt.w*` write the integer register (sign-extended on RV64) |
 | `kuna-fcvtround-a64.xml` | [Kuna #1535](https://github.com/Noelo-Lab/kuna/issues/1535) | P2 p-code lift (AArch64 spec-fix, no option) + P5 typing of its rounding user ops (`p5_types/kuna_roundingops.rs`) | `fcvt{a,m,n,p}{s,u}` and `frint*` round in their own mode (`FLOAT_FLOOR`/`FLOAT_CEIL`/`FLOAT_ROUND`, typed `FLOAT_ROUNDEVEN`/`FLOAT_TRUNC`/`FLOAT_RINT`/`FLOAT_NEARBYINT`), so the issue's floor/ceil interpolation branch survives; `frint32/64*` zero the register bits above the result |
 | `kuna-pacflow-a64.xml` | [Kuna #1621](https://github.com/Noelo-Lab/kuna/issues/1621) | P2 p-code lift (AArch64 spec-fix, no option) | with `ShowPAC=0` a `pac*`/`aut*`/`xpac*` that writes a general register lifts to a pass-through copy (`Rd = Rd`) instead of nothing, so a function whose only write to `x0` is the signing returns its pointer instead of decompiling as `void`; the `x30`/`sp` and branch forms stay empty |
+| `kuna-rustversion-commit.xml` | [Kuna #1639](https://github.com/Noelo-Lab/kuna/issues/1639) | P0 knowledge (loader image facts, Rust compiler version; no option) | a Rust image without a `.comment` record takes its stable release from the commit in its `/rustc/<commit>/library/...` source paths, so the 1.93 `rustfmt` argument recovery still applies |
+| `kuna-acleintrinsics.xml` | [Kuna #1626](https://github.com/Noelo-Lab/kuna/issues/1626) | P9 naming-policy + P2 context paint (`option acleintrinsics`, AArch64 only, default on) | pass 1 (`off`): `irg`/`addg` return the argument unchanged, `stg` leaves nothing, barriers and hints print as `DataMemoryBarrier(2,3)` / `WaitForInterrupt()`; pass 2 (default): `__arm_mte_create_random_tag(a0,0)` produces the returned pointer, `__dmb(11)`, `__dsb(15)`, `__isb(15)`, `__wfi()`, `__arm_mte_increment_tag`, `__arm_mte_exclude_tag`, `__arm_mte_get_tag`, `__arm_mte_set_tag`; a tag load or store of another granule keeps `LoadPtrTag` / `StorePtrTag` |
 
 | `gh6904-ppc-e500-concat44.xml` | [GH-6904](https://github.com/NationalSecurityAgency/ghidra/issues/6904) | P-code lift (PowerPC e500 spec-fix, no option) | `or`/`or.` (`mr`/`mr.`) zero-extend their 32-bit result on the 64-bit-register e500, killing spurious CONCAT44 at function boundaries (partial) |
 
@@ -293,6 +313,7 @@ readability defaults measured on the angr `fmt` corpus binary, DIV-34+ in
 | `kuna-cfstrings.xml` | a Mach-O `__cfstring` constant prints as its entry address (`NSLog(0x1044376b0)` in a large third-party iOS app): code references the CFString struct, and the constant-string route reads the bytes at that address | P1 external-refinement (the Mach-O `cfstrings` analysis pass; the commit types the entry an opaque `struct __CFString`, spelled `CFStringRef` through a pointer, and seeds the StringManager with its resolved string); `option cfstrings on\|off\|annotate` (kuna settable, default on; carried by `--mode aggressive`); on renders `CFSTR("...")`, annotate adds the entry address |
 | `kuna-elfgotimports.xml` | an ELF `-fPIC` read of data another object defines (`stdout`, `environ`, a library global) loads a `GLOB_DAT` GOT slot and then loads through it, and printed as `*dat_<slot>`: PE/Mach-O import slots were painted externref but an ELF GOT slot never was | P1 environment-binding (`kuna_elfgotimports`: the undefined-symbol `GLOB_DAT` slots are import slots, named and painted externref) + P9 naming-policy (`importdata`) | `option importdata on\|off` (default on); x86-64 and AArch64 shared objects, with a defined-symbol control |
 | `kuna-objcmeta.xml` | A third-party iOS app (1.9 MB arm64 ObjC): with `objc on` every category method stayed `sub_<addr>` (77: categories extend classes of other images, out of the class walk's reach), every ivar access read `*(long *)((long)self + dat_1001aea74)` (505 sites: the offset variable's 1-byte label never matched the 4-byte load) and a protocol-declared selector typed nothing. P1 external-refinement (`analyzers/objc/kuna_objccats.rs`, `kuna_objcprotos.rs`, `kuna_objcivars.rs`: `-[Class(Category) sel]` renames, `_OBJC_PROTOCOL_$_` names + declared encodings for the stubs, a struct per class from `class_ro_t.ivars` typing `self`) → P3 fold of the offset variables | `option objc on\|off` (names), `option objcivars on\|off` (new kuna settable; struct + typed self + offset fold) |
+| `kuna-dyldcacheobjc.xml` | Foundation out of an iOS 16.4 dyld shared cache (Noelo-Lab/kuna#1623): `objc on` typed no `self` and every `objc_msgSend$<sel>` stub stayed `sub_<addr>`. A cache's small method lists hold selectors and type strings as offsets from the cache's selector base (`0x40000000`/`0x20000000`) and carry two flags in the low bits of the entry size, the strings and selector reference targets live in libobjc's `__OBJC_RO` outside the image, and `baseMethods` with its low bit set is a relative list of lists. P1 external-refinement (`loader/kuna_dyldcache.rs`: the base from the ObjCOptimizationHeader, else libobjc's `objc_opt_t`; `analyzers/objc/kuna_objccache.rs` reads through the cache; `methods.rs`/`classt.rs` decode the flags and the list of lists) on the synthetic caches of `dyld_cache_objc.py` | `option objc on\|off` (no new settable) |
 | `kuna-objcsdk.xml` | A 1.9 MB third-party iOS app: 2,897 of 25,084 `objc_msgSend$<sel>` calls rendered with no argument (`setHidden:();`), `setAlpha:` showed `0x3ff0000000000000`, `setFrame:` one word for a CGRect — a framework selector is declared nowhere in the image. P1 external-refinement (`analyzers/objc/kuna_objcsdk.rs` reads `@interface`/`@protocol` methods, `@property` getter/setter pairs and `typedef`s from a user-named SDK or header directory into runtime-style encodings; the stub prototype path pins scalars to x/d registers, spreads an HFA `CGRect` over `d0..d3`, returns the flat struct) | `option objcsdk <directory>\|off` (new kuna settable, env-bridged load-time) |
 | `kuna-objctypes.xml` | with the `objcivars` structs only `self` was typed: a getter returned `objc_object *`, an ivar of a local class was `objc_object *`, and a field read through either stayed `*(int *)((long)v + 8)` although the property attribute (`T@"Base"`) and ivar encoding (`@"Base"`) name the class. P1 external-refinement (`analyzers/objc/kuna_objcprops.rs` reads every `property_list_t` into class-naming getter/setter encodings; `Selectors::record` keeps the class-naming spelling of agreeing declarations; the decoder resolves `@"Base"` to the layout's struct, declared-record completion included) → P5 field resolution through the typed pointer | `option objc on\|off`, `option objcivars on\|off` (no new settable) |
 | `kuna-opaquepointerretype.xml` | `probe` keeps `&frame[1]` in a saved register (ARM32 r4, PowerPC32 r29); `retype` to a pointer to a bodiless `struct Opaque` added a default one-byte frame range that split the array, the copy holding the address was propagated away, and the retype was refused with `int4 *v3` printed instead. P6 frame layout under the stable-names replay (`p6_variables/funcdata_spacebase.rs` `gather_open`): a value carrying a replayed retype's lock whose pointee has no size lays its range out by the pointee it was printed with (`kuna_stablenames.rs` `printed_pointee`) | always on (`retype` directive) |
@@ -418,6 +439,11 @@ overwrites a writable relocation slot, across off/on/off option toggles.
 compressed cross-unit references, result roles, caller propagation and a wrong-register
 control. Its console companion executes hermetic and native recovered Go bodies.
 
+`ghangr-go-dwarf-string-inputs.xml` checks the two physical Go string input
+words, the ABI slot after an earlier scalar, numeric byte iteration, a retained
+bounds branch, and explicit prototype precedence. The stage also exercises
+malformed pairs and a word-identical scalar signature.
+
 `ghangr-go-pair-results.xml` checks opt-in paired 64-bit Go integer results,
 ordinary local struct storage, destructuring calls and nested result selection.
 Its console companion covers the option gate, malformed cross-unit DWARF,
@@ -447,6 +473,10 @@ bare MH_FILESET with `kernelcache off` (one image, no symbols), its kext out of 
 IMG4(IM4P(LZFSE)) wrapper, and its kernel out of a bare IM4P(complzss). The
 fixtures and their generator live in
 `decompiler/crates/kuna-analysis/tests/fixtures/kernelcache/`.
+`kuna-kernelcacheboot.xml` loads the kext of a synthetic Auxiliary collection
+twice: with `kernelcache-boot off` its calls into the kernel go through
+unresolved slots, and by default they are named from the boot collection that
+sits beside it (`linked/` in the same fixture directory).
 
 `ghangr-go-pointer-arithmetic-32.xml` and `ghangr-go-pointer-arithmetic-64.xml`
 check live pointer bases through constant, negative and signed dynamic byte
@@ -458,3 +488,13 @@ the complete emitted functions with Go pointer checks and full-array canaries.
 with FDE ownership disabled it remains a call; with ownership enabled the
 complete body returns `a0 * 3 + 7`. The fixture generator is
 `decompiler/crates/kuna-cli/tests/fixtures/elf_unwind_fixture.rs`.
+
+`kuna-assert-callee.xml` checks `override indirect`: an indirect call and an
+indirect tail jump each print as a direct call to the stated function, and the
+tail call to a callee marked no-return ends the function with no return. The CLI
+companion covers `--assert callee` on both surfaces and every refusal. The
+fixture source is `decompiler/crates/kuna-cli/tests/fixtures/assert_callee.c`.
+
+`kuna-rust-process-exit.xml` preserves exit status and preceding stores while
+removing dead trap flow after a known Rust standard-library process exit.
+Different namespaces and a longer similarly named function retain their callers.
