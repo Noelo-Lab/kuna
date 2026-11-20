@@ -1,0 +1,122 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Kuna pushan soundness: P2 flow-follow, option pushan (default auto).
+    The script loads the synthetic static x86-64 ELF
+    decompiler/crates/kuna-analysis/tests/fixtures/pushan_vm2_x86_64
+    (generator pushan_vm2_x86_64.py): one stack-machine interpreter in its own
+    64 KiB executable section .vmp0 and sixteen protected functions, each an
+    entry stub `push key; jmp vm_entry` whose key selects a hand-written
+    bytecode program whose decompilation is known.  Each program targets a
+    way the devirtualizer could print something false about the program;
+    fifteen are decompiled here (f_arr's stack array, read back at a constant
+    index after a loop fills it, is lost by the decompiler's own stack alias
+    analysis, as it is in native code whose array pointer round-trips through
+    the stack).
+
+    f_sum (#1, #2): a counted loop, `for (i = 0; i < 10; i++) s += i`, whose
+    exit test is a `setl` the virtual JZ tests and a cmov selects on; the
+    loop exits and accumulates.
+    f_eq (#3): a do-while whose exit test is an equality on the counter.
+    f_big (#4): a loop bound of 2^40, beyond what the counter's known bits
+    reach in the rounds it takes to converge.
+    f_mem (#5, shared with f_corr) and f_corr (#6): a branch on a comparison
+    stored through its address and reloaded, and two branches on the same
+    comparison (both returns stay, as x + 10 and x + 20).
+    f_call (#7): a value live across a native System V call is its argument.
+    f_tbl (#8, #9): a read-only table indexed by the loop counter; the found
+    path stays (table[2] is 300).
+    f_glob (#10): a branch on a writable global is a test, not its initial 0.
+    f_gcall (#11): a global the call writes is re-read after it.
+    f_ptr (#12) and f_ploop (#13, #14): stores through a pointer argument on
+    two paths, and a loop on a field behind it; the test after the join stays
+    and the loop exits.
+    f_join (#15): two virtual branches to one label keep both continuations.
+    f_callp (#16): a local a call writes through its address is re-read.
+    f_deep (#17) and f_ijmp (#18): a loop that grows the stack past the depths
+    kept apart, and a virtual jump through an argument: the header says the
+    program is incomplete (#19 counts both) instead of staying silent.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/pushan_vm2_x86_64</com>
+  <com>read symbols</com>
+  <com>load function f_sum</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function f_eq</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function f_big</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function f_mem</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function f_corr</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function f_call</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function f_tbl</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function f_glob</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function f_gcall</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function f_ptr</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function f_ploop</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function f_join</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function f_callp</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function f_deep</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function f_ijmp</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="PUSHAN-SOUND #1: f_sum, the loop exits on i &lt; 10" min="1" max="1">\(SBORROW8\(v3,10\) &amp;&amp; v1\)\) break;</stringmatch>
+<stringmatch name="PUSHAN-SOUND #2: f_sum, the loop accumulates" min="1" max="1">v2 \+= v3;</stringmatch>
+<stringmatch name="PUSHAN-SOUND #3: f_eq, the exit tests the counter" min="1" max="1">\} while \(v2 != 7\);</stringmatch>
+<stringmatch name="PUSHAN-SOUND #4: f_big, the loop exits at 2^40" min="1" max="1">\(SBORROW8\(v2,0x10000000000\) &amp;&amp; v1\)\) break;</stringmatch>
+<stringmatch name="PUSHAN-SOUND #5: f_mem and f_corr, the stored comparison is tested" min="2" max="2">if \(\(SBORROW8\(a0,5\) \|\| v1\) &amp;&amp; \(!SBORROW8\(a0,5\) \|\| !v1\)\)</stringmatch>
+<stringmatch name="PUSHAN-SOUND #6: f_corr, both correlated returns" min="1" max="1">return v2 \+ 10;
+return v2 \+ 0x14;</stringmatch>
+<stringmatch name="PUSHAN-SOUND #7: f_call, the call's argument is the computed value" min="1" max="1">return a0 \* 3 \+ ext\(a0 \* 3,</stringmatch>
+<stringmatch name="PUSHAN-SOUND #8: f_tbl, the table element is loaded" min="1" max="1">v1 = \*\(int8 \*\)\(v3 \* 8 \+ 0x412000\);</stringmatch>
+<stringmatch name="PUSHAN-SOUND #9: f_tbl, the found path stays" min="1" max="1">\(SBORROW8\(v1,100\) &amp;&amp; v2\)\) break;
+v3 \+= 1;
+\}
+return v3;</stringmatch>
+<stringmatch name="PUSHAN-SOUND #10: f_glob, the global is tested" min="1" max="1">if \(!dat_413020\)</stringmatch>
+<stringmatch name="PUSHAN-SOUND #11: f_gcall, the global is re-read after the call" min="1" max="1">if \(!dat_413028\)</stringmatch>
+<stringmatch name="PUSHAN-SOUND #12: f_ptr, the stored field is tested after the join" min="1" max="1">if \(\*a0 == 1\)</stringmatch>
+<stringmatch name="PUSHAN-SOUND #13: f_ploop, the field is reloaded each iteration" min="1" max="1">v1 = \*a0;</stringmatch>
+<stringmatch name="PUSHAN-SOUND #14: f_ploop, the field is incremented" min="1" max="1">\*a0 = \*a0 \+ 1;</stringmatch>
+<stringmatch name="PUSHAN-SOUND #15: f_join, both branches to the label" min="1" max="1">if \(\(a0\) &amp;&amp; \(a1\)\)
+return 3;
+return 4;</stringmatch>
+<stringmatch name="PUSHAN-SOUND #16: f_callp, the local is re-read after the call" min="1" max="1">if \(v1\[0\] == 5\)</stringmatch>
+<stringmatch name="PUSHAN-SOUND #17: f_deep, the unmerged join is reported" min="1" max="1">pushan: incomplete: 1 path joined at another stack depth unmerged</stringmatch>
+<stringmatch name="PUSHAN-SOUND #18: f_ijmp, the unresolved jump is reported" min="1" max="1">pushan: incomplete: 1 unresolved computed jump</stringmatch>
+<stringmatch name="PUSHAN-SOUND #19: only those two are incomplete" min="2" max="2">pushan: incomplete</stringmatch>
+<stringmatch name="PUSHAN-SOUND #20: every function is devirtualized" min="15" max="15">pushan: devirtualized VM-protected function</stringmatch>
+</decompilertest>
