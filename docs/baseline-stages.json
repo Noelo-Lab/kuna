@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4815,
-    4815
+    4818,
+    4818
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -4266,6 +4266,9 @@
     "data:repstring #8: a compare of a run-time length @dup2",
     "data:repstring #9: a compare with no flags set before it, of a constant length",
     "data:repstring #9: a compare with no flags set before it, of a constant length @dup2",
+    "data:restartwarnings #1: the prototype carries no warning of the discarded pass",
+    "data:restartwarnings #2: nothing reports a duplicated return",
+    "data:restartwarnings #3: the kept pass's own comment still prints",
     "data:retsplitglobal #1: the shared epilogue is cloned into all three predecessors with the option off and emitted once with it on",
     "data:retsplitglobal #2: every store of the epilogue is cloned, not just its head (the last one counts the same)",
     "data:retsplitglobal #3: the vectorised store loop the epilogue reads back is untouched by the split decision (three unrolled sites x two passes)",
