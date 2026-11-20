@@ -18,9 +18,9 @@
   <com>read symbols</com>
   <com>load function runtime.panicshift</com><com>decompile</com><com>print C</com>
 </script>
-<stringmatch name="Go panicCheck1 returns to the terminal gopanic call" min="1" max="1">^void runtime\.panicshift\(void\)$
+<stringmatch name="Go panicCheck1 returns to the terminal gopanic call" min="1" max="1">^void runtime\.panicshift\(unsigned long a0\)$
 ^\{$
-^\s+runtime\.panicCheck1\(\);$
+^\s+runtime\.panicCheck1\(a0\);$
 ^\s+runtime\.gopanic\(\); // no-return$
 ^\}$</stringmatch>
 <stringmatch name="Go panicCheck1 keeps its return and terminal throw paths" min="1" max="1">^void runtime\.panicCheck1\(.*\)$
@@ -29,9 +29,9 @@
 ^\s+return;$
 ^\s+runtime\.throw\(\); // no-return$
 ^\}$</stringmatch>
-<stringmatch name="Go gopanic fallthrough sentinel appears only with known no-return off" min="1" max="1">^void runtime\.panicshift\(void\)$
+<stringmatch name="Go gopanic fallthrough sentinel appears only with known no-return off" min="1" max="1">^void runtime\.panicshift\(unsigned long a0\)$
 ^\{$
-^\s+runtime\.panicCheck1\(\);$
+^\s+runtime\.panicCheck1\(a0\);$
 ^\s+runtime\.gopanic\(\);$
 ^\s+dat_[[:xdigit:]]+ = 0x5a;$
 ^\}$</stringmatch>

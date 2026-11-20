@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4815,
-    4815
+    4817,
+    4817
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1549,7 +1549,7 @@
     "data:LIBCTYPES #23: and in the library it is the one indirection the program performs, no more",
     "data:LIBCTYPES #24: a stream handed to a libc call the table already typed does not move",
     "data:LIBCTYPES #25: and the library's loses the cast the untyped slot needed",
-    "data:LIBCTYPES #27: off, an obstack entry point the image DEFINES says nothing, so its caller has neither arity nor a pointee",
+    "data:LIBCTYPES #27: off, an obstack entry point the image DEFINES gives its caller only the arity its body reads, and no pointee",
     "data:LIBCTYPES #28: on, that same definition -- gnulib's copy, linked in and exported -- names the pointer its caller holds",
     "data:LIBCTYPES #29: off, the imported `putspent` leaves both of its aggregate slots unsaid",
     "data:LIBCTYPES #2: on, the same parameter is a minted FILE *",
@@ -4073,9 +4073,11 @@
     "data:partial update retains the first byte",
     "data:partial update retains the other bytes",
     "data:partial update retains the second word across both uses",
-    "data:passthrough #1: the tail-call thunk never names rdi, so it has no parameter in either pass",
-    "data:passthrough #2: the function that tests the result never names rdi either, and has no parameter in either pass",
-    "data:passthrough #3: the calls pass nothing in both passes, because no callee stated a prototype for the rule to read",
+    "data:passthrough #1: off, the tail-call thunk never names rdi, so it has no parameter",
+    "data:passthrough #1b: on, the callee's body reads rdi, so the thunk forwards it as its parameter",
+    "data:passthrough #2: off, the function that tests the result never names rdi either, and has no parameter",
+    "data:passthrough #2b: on, it forwards rdi too",
+    "data:passthrough #3: off passes nothing; on passes the registers each unstated callee's body reads",
     "data:persistcalls #10: persistcalls on drops the guard of small's that only passes a value on",
     "data:persistcalls #11: revisit reads u0 again after the call with the option off and on",
     "data:persistcalls #12: revisit compares the two reads with the option off and on",
