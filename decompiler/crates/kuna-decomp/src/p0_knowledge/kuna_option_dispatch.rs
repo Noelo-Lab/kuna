@@ -172,6 +172,7 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "chkstkdarwin" => on_off!(chkstk_darwin, "Darwin stack-probe call removal"),
+    "typevote" => on_off!(type_vote, "Type vote for leftover undefined variables"),
     "tailcalljump" => {
         let (jumps, tables, msg) = crate::kuna_tailcalljump::tail_call_mode(p1)?;
         self.tail_call_jumps = jumps;

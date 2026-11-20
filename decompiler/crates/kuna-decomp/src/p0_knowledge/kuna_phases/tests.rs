@@ -62,7 +62,7 @@ fn settable_count_is_223() {
 }
 
 #[test]
-fn tier_counts_are_46_core_121_transform_56_analysis() {
+fn tier_counts_are_45_core_122_transform_56_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -74,7 +74,7 @@ fn tier_counts_are_46_core_121_transform_56_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (46, 121, 56));
+    assert_eq!((core, transform, analysis), (45, 122, 56));
 }
 
 #[test]
@@ -854,6 +854,7 @@ fn option_values_live_value_present_for_76() {
     // +1 for `repstring` (live_field = rep_string).
     // -1: `constselectjump` became three-valued (off|reentry|on) over an
     // enum field with no `live_field`.
+    // +1 for `typevote` (live_field = type_vote).
     // +1 for `gotonext` (live_field = goto_next).
     assert_eq!(with_live, 78);
 }
