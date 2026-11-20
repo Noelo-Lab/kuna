@@ -19,6 +19,11 @@
 //!
 //! A proven comparison becomes a `COPY` of the constant; constant branch
 //! removal then deletes the arm that never runs.
+//!
+//! The rule stands down inside jump-table recovery: that copy of the function
+//! lacks the edges back from the table's targets, so a switch index set by
+//! `xor ebx,ebx` reads as zero there and folding its guard would drop the
+//! table's last case.
 
 use std::collections::BTreeMap;
 
@@ -357,7 +362,7 @@ impl Rule for RuleOpaquePredicate {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        if !data.get_arch().opaque_predicate {
+        if !data.get_arch().opaque_predicate || data.is_jumptable_recovery_on() {
             return 0;
         }
         let Some(result) = constant_result(data, op) else { return 0 };

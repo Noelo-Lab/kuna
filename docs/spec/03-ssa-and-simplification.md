@@ -3639,8 +3639,12 @@ fit the layer it is met in — a product of two inputs, an `INT_AND` with a mask
 
 *Bounds.* A free Varnode, a value wider than 8 bytes, a third input, or a
 tree of more than 48 operations proves nothing, and the comparison is left as
-it is; so is any comparison that some assignment distinguishes, such as
-`x * (x + 2) & 1`. Nothing restricts the rule to obfuscated code: `x * 8 == 0x3f`
+it is. The rule does not fire inside jump-table recovery: the recovery copy of
+the function has no edges back from the table's targets yet, so an index
+initialized by `xor ebx,ebx` and counted up by the cases reads as the constant
+0 there, and folding the `ebx == 9` half of a `cmp ebx,9; ja` guard would cut
+the last entry from the recovered table. A comparison that some assignment
+distinguishes, such as `x * (x + 2) & 1`, is left alone too. Nothing restricts the rule to obfuscated code: `x * 8 == 0x3f`
 folds on the same proof, including when it is one half of a flag-derived
 `<=`. The option is off by default because the predicate is part
 of what the binary does: with it folded, the output no longer shows that the

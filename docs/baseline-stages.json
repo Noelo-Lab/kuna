@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4826,
-    4826
+    4828,
+    4828
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -3999,6 +3999,8 @@
     "data:on folds sides whose low bits always differ",
     "data:on folds the bitwise identity",
     "data:on keeps both cached lane snapshots as integers",
+    "data:on keeps the call in the last case of the switch",
+    "data:on keeps the last case of a switch whose index starts at zero",
     "data:on preserves the first lane's integer XOR",
     "data:on preserves the second lane's integer XOR",
     "data:on recovers exact-width result",
