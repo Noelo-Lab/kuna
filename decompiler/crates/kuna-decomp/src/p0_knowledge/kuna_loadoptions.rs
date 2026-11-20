@@ -100,7 +100,7 @@ impl Default for LoadOptions {
         LoadOptions {
             ppc32picimports: Ppc32PicMode::Off,
             ifuncfpret: true,
-            ppcapu: false,
+            ppcapu: true,
             kernelcache: KernelcacheChoice::default(),
             kernelcache_boot: KernelcacheBoot::default(),
             goabi: true,
@@ -311,7 +311,8 @@ pub mod env {
     }
 
     pub fn ppcapu() -> bool {
-        env_toggle(crate::kuna_ppcapu::PPCAPU_ENV, false)
+        std::env::var(crate::kuna_ppcapu::PPCAPU_ENV)
+            .map_or(true, |value| crate::options::parse_env_toggle(&value, false))
     }
 
     pub fn kernelcache() -> KernelcacheChoice {
