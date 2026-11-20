@@ -1,0 +1,41 @@
+<decompilertest>
+<!-- Original GNU-assembled memory.S fixtures; public regeneration and hashes
+     are in tests/fixtures/octeon-atomics. Explicit Octeon target selection
+     enables the instruction set. Ordinary MIPS retains its own semantics. -->
+<binaryimage arch="MIPS:BE:64:octeon2:default">
+<bytechunk space="ram" offset="0x1000" readonly="true">3404200064050007fc850000708504dfdc82000003e00008000000000000000067bdffe0ffa5001067a40010708614df67bd002003e000080000000000000000c0880000e085000000a0102d03e0000800000000000000000000000000000000fc8500000000010f0000010fdc82000003e00008000000000000000000000000708544df0080102d03e00008000000000000000000000000000000000000000034042004fc80fffc640500017085049fdc82fffc03e000080000000000000000</bytechunk>
+<bytechunk space="ram" offset="0x2000">1122334455667788</bytechunk>
+<symbol space="ram" offset="0x1000" name="atomic_global"/>
+<symbol space="ram" offset="0x1020" name="atomic_local"/>
+<symbol space="ram" offset="0x1040" name="conditional"/>
+<symbol space="ram" offset="0x1060" name="barriers"/>
+<symbol space="ram" offset="0x1080" name="wide_integer"/>
+<symbol space="ram" offset="0x10a0" name="partial_global"/>
+</binaryimage>
+<script>
+<com>parse line extern unsigned long long atomic_global(void);</com>
+<com>parse line extern unsigned long long atomic_local(unsigned long long unused,unsigned long long value,unsigned long long increment);</com>
+<com>parse line extern unsigned long long conditional(unsigned int *pointer,unsigned int value);</com>
+<com>parse line extern unsigned long long barriers(unsigned long long *pointer,unsigned long long value);</com>
+<com>parse line extern unsigned long long wide_integer(unsigned long long raw,unsigned long long increment);</com>
+<com>parse line extern unsigned long long partial_global(void);</com>
+<com>lo fu atomic_global</com><com>decompile</com><com>print C</com>
+<com>lo fu atomic_local</com><com>decompile</com><com>print C</com>
+<com>lo fu conditional</com><com>decompile</com><com>print C</com>
+<com>lo fu barriers</com><com>decompile</com><com>print C</com>
+<com>lo fu wide_integer</com><com>decompile</com><com>print C</com>
+<com>lo fu partial_global</com><com>decompile</com><com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="Octeon n64 atomics: indivisible doubleword operations" min="3" max="3">octeon_fetch_add64\(</stringmatch>
+<stringmatch name="Octeon n64 atomics: indivisible word operation" min="1" max="1">octeon_fetch_add32\(</stringmatch>
+<stringmatch name="Octeon n64 atomics: linked load retained" min="1" max="1">octeon_load_linked32\(</stringmatch>
+<stringmatch name="Octeon n64 atomics: conditional store retained" min="1" max="1">octeon_store_conditional32\(</stringmatch>
+<stringmatch name="Octeon n64 atomics: repeated write barriers retained" min="2" max="2">octeon_syncw\(</stringmatch>
+<stringmatch name="Octeon n64 atomics: global input store retained" min="1" max="1">= 7;</stringmatch>
+<stringmatch name="Octeon n64 atomics: stack and pointer input stores retained" min="2" max="2">= value;</stringmatch>
+<stringmatch name="Octeon n64 atomics: later memory read does not reuse input" min="0" max="0">return value;</stringmatch>
+<stringmatch name="Octeon n64 atomics: full-width integer return survives" min="1" max="1">return raw;</stringmatch>
+<stringmatch name="Octeon n64 atomics: no false constant return" min="0" max="0">return [01];</stringmatch>
+<stringmatch name="Octeon n64 atomics: no save or restore collision" min="0" max="0">(save|restore)\(</stringmatch>
+</decompilertest>

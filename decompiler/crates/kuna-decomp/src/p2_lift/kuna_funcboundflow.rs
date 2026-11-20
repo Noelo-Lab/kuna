@@ -123,6 +123,54 @@ pub fn kuna_should_bound_at_entry(
         && !next_is_unconditional_return
 }
 
+/// The widest alignment padding a compiler puts between a call and the literal
+/// pool that follows it: one A32 instruction, or the slack before an 8-byte
+/// aligned pool word.
+pub const MAX_POOL_PAD: u64 = 4;
+
+/// How far past the fall-through `next` the function's literal pool starts:
+/// `Some(0)` when `next` is inside one of the sorted, disjoint `[lo, hi)`
+/// `extents` the analysis tier proved, the gap when a pool starts within
+/// [`MAX_POOL_PAD`] of it, and `None` otherwise or when `is_pool_slot` denies
+/// the word (writable bytes are not the instruction stream).
+pub fn kuna_pool_pad(extents: &[(u64, u64)], is_pool_slot: impl Fn(u64) -> bool, next: u64) -> Option<u64> {
+    let i = extents.partition_point(|&(_, hi)| hi <= next);
+    let &(lo, _) = extents.get(i)?;
+    let pad = lo.saturating_sub(next);
+    (pad <= MAX_POOL_PAD && is_pool_slot(next.max(lo))).then_some(pad)
+}
+
+/// Do `ops`, the p-code of the instructions filling the gap between a call and
+/// the pool word after it, do nothing at all: no ops, or only a register copied
+/// onto itself (ARM's `nop` is `mov r8,r8`)? Anything that computes, stores or
+/// transfers control is live code, not alignment padding.
+pub fn kuna_is_padding_run<'a>(
+    ops: impl IntoIterator<Item = (OpCode, Option<(i32, u64, u32)>, &'a [(i32, u64, u32)])>,
+) -> bool {
+    ops.into_iter().all(|(code, out, ins)| match (code, out, ins) {
+        (OpCode::CPUI_COPY, Some(out), [input]) => out == *input,
+        _ => false,
+    })
+}
+
+/// Should a call's fall-through be truncated because it leads into the
+/// function's own literal pool? A compiler places the PC-relative constants a
+/// body loads right after its last instruction, so a call followed by them is a
+/// call that does not return, whatever kuna knows of its callee.
+///
+///   - `pad` — the distance from the fall-through to the pool
+///     ([`kuna_pool_pad`]), `None` when no proven pool starts within
+///     [`MAX_POOL_PAD`];
+///   - `pad_is_padding` — there is no gap, or the bytes in it decode as
+///     instructions that do nothing ([`kuna_is_padding_run`]).
+///
+/// A gap is only ever the compiler's alignment padding: live code never sits
+/// between a call and the pool it must jump over. A word anything branches to
+/// is never part of a proven pool, so no label test is needed here.
+pub fn kuna_should_bound_at_pool(pad: Option<u64>, pad_is_padding: bool) -> bool {
+    pad.is_some_and(|pad| pad <= MAX_POOL_PAD) && pad_is_padding
+}
+
 #[cfg(test)]
 #[path = "kuna_funcboundflow/tests.rs"]
 mod tests;

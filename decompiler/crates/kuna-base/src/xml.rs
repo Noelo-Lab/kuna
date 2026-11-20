@@ -2176,13 +2176,74 @@ mod tests {
         // and kuna-stubtailcall / a loader-proven lazy-binding stub flowed as a tail call
         // and kuna-gotimportproto / a type-only declaration bound at a MIPS GOT import call
         // and kuna-aggregatefields / declared records kept whole until their fields are named
+        // and kuna-bejoin-residue / -O0 reloads, a pair passed to a 64-bit runtime routine, a whole wrapper's sign test (option bejoin)
         // and kuna-armderef / the ARM pointer-access xref rule is inert on the console path
         // and kuna-copywaves / copy propagations seed rule-pool waves
         // and kuna-deadcascade / dead-op removal takes a dead chain out at once (option deadcascade)
         // and kuna-armpltslot, -armcondskip / the ARM xref rules are inert on the
         // console path
+        // and kuna-gowbphi / shared and phi-feeding barrier arms fold post-SSA (same option)
+        // and kuna-poolfallthru / a call followed by its literal pool does not return (option funcboundflow)
+        // and kuna-stackpointerretype / a retyped pointer into a re-laid frame keeps its readers
+        // and kuna-opaquepointerretype / a retype to a pointer to a bodiless record keeps its local
+        // and kuna-prefixed-noreturn / a <prefix>__<runtime name> stub is no-return (option noreturn_known)
+        // and kuna-octeon-atomics-n32 + kuna-octeon-atomics-n64 / Octeon atomic, reservation and barrier effects retained
+        // and kuna-octeoneffects / Octeon memory effects are controlled by option octeoneffects
+        // and kuna-mipsreloc-chains / composed MIPS relocation expressions
+        // and kuna-swiftstrobj / a Swift string object prints as an address, not
+        // as the literal 32 bytes before it
+        // and kuna-msvcftolsig / stripped MSVC __ftol helpers recognized by their bytes
+        // and kuna-iltentry / an MSVC incremental-link table's stubs and bodies are entries
+        // and kuna-x87intrinsics / the MSVC x87 one-operand intrinsics take their operand in ST0
+        // and kuna-calleereginputs / an x86-32 callee's register inputs read off its own code
+        // and kuna-chkstkdarwin / the Darwin AArch64 stack probe keeps the
+        // argument registers it preserves (option chkstkdarwin)
+        // and kuna-brktrap / an AArch64 compiler trap ends the flow
+        // and kuna-calleepurge / an x86-32 callee's stack purge read off its own returns
+        // and kuna-calleeargs / an x86-32 callee's own code bounds its stack arguments
+        // and kuna-fcvtround-a64 / AArch64 FCVT and FRINT round in their own mode
+        // and kuna-pacflow-a64 / a hidden AArch64 pac*/aut*/xpac* passes its register through
+        // and kuna-repframecopy / a by-value argument copied with rep movs reaches its call
+        // and kuna-libcnames-win32 / a local takes the name of the Win32 call it meets
+        // and kuna-libcnames-addr / a stack object takes the name of the library parameter its address meets
+        // and kuna-sparc64-or-masked-spill / a spill read through an OR-masked frame address is kept
+        // and kuna-sparc64-hiddenret-slot-locals / a SPARC64 local in the unused hidden-return slot keeps its symbol
+        // and kuna-ppc64le-elfv2-stack-args / an ELFv2 stack argument follows the 32-byte header
+        // and kuna-stackchklocal / __stack_chk_fail_local takes no arguments and never returns
+        // and kuna-mipsgot-weak / unresolved weak GOT entries retain import-slot identity
+        // and kuna-stackcookie / the MSVC frame cookie is no call's argument
+        // and kuna-x86-directalias / a call keeps an argument a later direct stack store sits below
+        // and kuna-x86-directalias-freed / and does so after an earlier call stops taking that pointer
+        // and kuna-itaniumvfunc / an Itanium virtual method named after the function, not its vtable
+        // and kuna-itaniumctors / Itanium constructors and destructors named from their vptr stores
+        // and kuna-switchselfloop / a switch that heads its own loop keeps the loop
+        // and kuna-wide-shifts / armconstshift all shifts a signed 64-bit operand unsigned
+        // and kuna-sharedpush / a push above a branch is the argument of the call on each arm
+        // and kuna-ebpf-elf-map-reloc / an EM_BPF object loads and its map and subprogram relocations land in imm
+        // and kuna-riscv-zcmp / RISC-V Zcmp push/pop decode under the Zcmp language variant
+        // and gh1627-x86-senduipi-gatherpf / SENDUIPI is not RDRAND and VGATHERPF indexes with a ZMM register
+        // and gh1628-x86-vmx-decode-flags / VMREAD/VMWRITE decode without REX.W and VMX instructions set CF/ZF
+        // and kuna-kernelbug / a Linux kernel __bug_table trap prints as __WARN(file,line) or BUG()
+        // and kuna-kernelcacheboot / an Auxiliary kernel collection resolved against its boot collection (option kernelcache-boot)
+        // and gh1674-subpiece-shadow-wide-const / a subpiece shadow 8 bytes into a 16-byte constant reads 0
+        // and kuna-wrapadd / wrapadd wraps a widened four-byte sum before its extension
+        // and kuna-rustversion-commit / a Rust image without .comment gets its release from /rustc/<commit>/ paths
+        // and kuna-sharedpush-regparm / a declared list its callee's register reads contradict shares no push
+        // and kuna-acleintrinsics / AArch64 MTE tag instructions and barriers print as ACLE intrinsics
+        // and kuna-assert-callee / a stated destination makes an indirect call direct
+        // and kuna-assert-format-isolate / a constant's format set by its instruction, and an isolated local
+        // and kuna-callproto / one call through a pointer is given its own prototype
+        // and kuna-dyldcacheobjc / a dyld shared cache image's ObjC metadata is read through the cache
+        // and kuna-dyldimage-merge / dyldimage A+B loads two dyld shared cache images as one program
+        // and kuna-blobs / an embedded PNG, GIF, JPEG, zip or gzip is returned by name
+        // and kuna-repstring, kuna-repstring-i386 / x86 rep movs/stos/cmpsb print as copy, fill and compare builtins
+        // and kuna-reentereddispatch / a re-entered dispatch keeps every step's store
+        // and kuna-dispatch-values / dispatcher return values survive narrowing and copies
+        // and ghangr-go-paniccheck-return / a returning Go panic check keeps its continuation
+        // and ghangr-go-aarch64-stack-stride / adjacent eight-byte spills keep their declared inputs
+        // and ghangr-go-mcall-resumption / a scheduler switch preserves its caller's continuation
         // and kuna-pushan / a VM-protected entry stub devirtualized (option pushan)
-        assert_eq!(count, 734, "corpus file count drifted");
+        assert_eq!(count, 825, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

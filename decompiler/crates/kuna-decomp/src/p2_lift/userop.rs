@@ -132,6 +132,20 @@ pub const BUILTIN_SYSCALL_ERROR: uint4 = 0x10000007;
 /// (kuna) Built-in id for `strlen`, the length an inline `repnz scasb` scan
 /// computes (`strlenscan`).
 pub const BUILTIN_STRLEN: uint4 = 0x10000008;
+/// (kuna) Built-in id for `BUG`, a Linux kernel `__bug_table` trap the handler
+/// does not resume after (`kernelbug`).
+pub const BUILTIN_KERNEL_BUG: uint4 = 0x10000009;
+/// (kuna) Built-in id for `__WARN`, a Linux kernel `__bug_table` trap the
+/// handler resumes after (`kernelbug`).
+pub const BUILTIN_KERNEL_WARN: uint4 = 0x1000000a;
+/// (kuna) Built-in ids for `builtin_memset16`/`32`/`64`, a `rep stos` fill of
+/// 2-, 4- or 8-byte elements whose bytes differ (`repstring`).
+pub const BUILTIN_MEMSET16: uint4 = 0x1000000b;
+pub const BUILTIN_MEMSET32: uint4 = 0x1000000c;
+pub const BUILTIN_MEMSET64: uint4 = 0x1000000d;
+/// (kuna) Built-in id for `builtin_memcmp`, the comparison a `repz cmpsb`
+/// computes (`repstring`).
+pub const BUILTIN_MEMCMP: uint4 = 0x1000000e;
 
 // ---------------------------------------------------------------------------
 // UserOpBase + UserPcodeOp hierarchy (userop.hh:47-318)
@@ -1029,6 +1043,33 @@ impl UserOpManage {
                 let len_type = types.get_base_int(ptr_size);
                 UserPcodeOp::new_datatype(b"strlen", BUILTIN_STRLEN as int4, Some(len_type), &[Some(ptr_type)])
             }
+            BUILTIN_MEMSET16 | BUILTIN_MEMSET32 | BUILTIN_MEMSET64 => {
+                let (name, width): (&[u8], int4) = match i {
+                    BUILTIN_MEMSET16 => (b"builtin_memset16", 2),
+                    BUILTIN_MEMSET32 => (b"builtin_memset32", 4),
+                    _ => (b"builtin_memset64", 8),
+                };
+                let ptr_size = types.get_size_of_pointer();
+                let word_size = types.get_default_data_space_word_size();
+                let element = types.get_base_int(width);
+                let ptr_type = types.get_type_pointer(ptr_size, Rc::clone(&element), word_size);
+                let count = types.get_base_int(ptr_size);
+                UserPcodeOp::new_datatype(name, i as int4, None, &[Some(ptr_type), Some(element), Some(count)])
+            }
+            BUILTIN_MEMCMP => {
+                let ptr_size = types.get_size_of_pointer();
+                let word_size = types.get_default_data_space_word_size();
+                let ptr_type = types.get_type_pointer(ptr_size, types.get_type_void(), word_size);
+                let count = types.get_base_int(ptr_size);
+                UserPcodeOp::new_datatype(
+                    b"builtin_memcmp",
+                    BUILTIN_MEMCMP as int4,
+                    Some(types.get_base_int(4)),
+                    &[Some(Rc::clone(&ptr_type)), Some(ptr_type), Some(count)],
+                )
+            }
+            BUILTIN_KERNEL_BUG => UserPcodeOp::new_unspecialized(b"BUG", BUILTIN_KERNEL_BUG as int4),
+            BUILTIN_KERNEL_WARN => UserPcodeOp::new_unspecialized(b"__WARN", BUILTIN_KERNEL_WARN as int4),
             _ => return Err(KunaError::lowlevel("Bad built-in userop id")),
         };
         self.builtinmap.insert(i, res);

@@ -90,6 +90,20 @@ pub struct StringFact {
     pub len: u32,
 }
 
+/// (kuna `blobs`) An embedded image or archive: `len` bytes at `addr` that
+/// walk as one whole file of `kind`. The commit plants it as `<kind>_<addr>`,
+/// an `unsigned char[len]`, wherever no symbol already covers the address.
+/// Produced by [`crate::analyzers::blobs`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BlobFact {
+    /// Virtual address of the file's first byte.
+    pub addr: u64,
+    /// The file's exact length in bytes.
+    pub len: u64,
+    /// Which container it is.
+    pub kind: crate::analyzers::blobs::BlobKind,
+}
+
 /// A Mach-O Core Foundation constant string (`__cfstring` entry). The entry is a
 /// `CFString` struct (isa, flags, char pointer, length); `bytes` is the UTF-8 of
 /// the string its char pointer targets, already resolved through chained fixups
@@ -252,6 +266,9 @@ pub struct SwiftTypeFacts {
     /// and accessor, and the name and type of its `self`.
     pub models: Vec<ModelFact>,
     pub input_hints: Vec<InputHintFact>,
+    /// Swift functions of a module, no type's members, by entry address: a
+    /// call to one passes no `self` and leaves `swiftself` as it was.
+    pub no_self: Vec<u64>,
     /// The `swiftself` and `swifterror` registers, once a convention is bound.
     pub regs: Option<(&'static str, &'static str)>,
 }
@@ -263,11 +280,15 @@ pub struct SwiftTypeFacts {
 pub struct ModelFact {
     pub func_addr: u64,
     pub model: &'static str,
+    /// Optional stack bound that requires a decoded leaf body before binding.
+    pub leaf_stack_inputs: Option<LeafStackInputs>,
     /// The convention's implicit context register may or may not be a
     /// parameter (a Swift struct member's `self`): a call passes it only
     /// when the caller set it for that call.
     pub maybe_self: bool,
 }
+
+pub use crate::pclntab::kuna_goabi0_leaf::LeafStackInputs;
 
 /// The input of the function at `func_addr` in register `reg` is `name`, of
 /// `type_` when that is known, when the function's own analysis finds it
@@ -290,7 +311,7 @@ pub struct InputHintFact {
 /// The kuna analog of Ghidra's `DWARFLineInfoCommentScript.addSourceLineInfo`,
 /// which walks each compilation unit's `.debug_line` rows
 /// (`DWARFLine.getAllSourceFileAddrInfo`) and `appendComment(addr, EOL,
-/// "%s:%d".formatted(fileName, lineNum))`. Produced only by
+/// "%s:%d".formatted(fileName, lineNum))`. Produced by the CVF `.trace` lines pass and
 /// [`crate::dwarf::DwarfLinesPass`] (the `.debug_line` parse, gated on the
 /// `dwarf_lines` flag, default-off); empty otherwise.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -372,6 +393,10 @@ pub struct FidMatch {
     pub addr: u64,
     /// The library name the full-hash fingerprint matched (e.g. `kuna_crc32`).
     pub name: String,
+    /// A code-signature guess (FID, FLIRT) rather than a name the binary's own
+    /// metadata states (PDB, Objective-C, Swift). Signature names at one address
+    /// apply only when they all agree, and never over a metadata name.
+    pub by_signature: bool,
 }
 
 /// Which option decides whether a [`ConstRange`] is committed.
@@ -399,6 +424,8 @@ pub struct AnalysisOutput {
     pub ppc32_pic_slots: Vec<kuna_decomp::kuna_ppc32piccalls::ImportSlot>,
     /// `(addr, name, kind)` -> seed `Database::add_function` / symbol map.
     pub symbols: Vec<SymFact>,
+    /// Unique AMD64 Go function-table entry of the blocking status receive helper.
+    pub go_chanrecv2: Option<u64>,
     /// Named, sized data globals (the symbol-table / DWARF data objects). Mapped
     /// into the global scope with an `undefined<size>` type so a memory access of
     /// the object renders its NAME (`max_width`) not `dat_<addr>`. See
@@ -464,6 +491,15 @@ pub struct AnalysisOutput {
     /// entry, return address)`; the decompile step decodes a `void` function's
     /// callers from there.
     pub call_returns: Vec<(u64, u64)>,
+    /// (kuna `kernelbug`) A Linux kernel image's `__bug_table` entries, one per
+    /// `WARN`/`BUG` trap. Parked on the architecture for the flow
+    /// (`kuna_decomp::kuna_kernelbug`); empty on every other image.
+    pub kernel_bugs: Vec<kuna_decomp::kuna_kernelbug::KernelBugSite>,
+    /// (kuna `poolextents`) The ARM32 literal pools the Listing's trusted
+    /// instructions prove, as sorted, disjoint `[lo, hi)` word runs; the flow
+    /// walk's `funcboundflow` bound ends a call's fall-through at one. Empty
+    /// without the Listing and on every other target.
+    pub arm_pool_extents: Vec<(u64, u64)>,
     /// Extra read-only address ranges (e.g. `.got` after relocation).
     pub readonly: Vec<(u64, u64)>,
     /// (kuna) Ranges whose loaded contents are constant by construction, each
@@ -515,6 +551,9 @@ pub struct AnalysisOutput {
     /// types each entry an opaque `struct __CFString` and pre-seeds the
     /// `StringManager`, so a reference renders the literal. Produced by [`crate::analyzers::cfstring`].
     pub cfstrings: Vec<CFStringFact>,
+    /// (kuna `blobs`) Embedded images and archives, each a whole file with an
+    /// exact length. Produced by [`crate::analyzers::blobs`].
+    pub blobs: Vec<BlobFact>,
     /// Library-function prototypes to seed onto matching FunctionSymbols (the kuna
     /// analog of Ghidra's `ApplyDataArchiveAnalyzer` / `.gdt` archives). Each is
     /// parked on its named callee via `set_function_prototype_pieces`, so a caller
@@ -568,11 +607,19 @@ pub struct AnalysisOutput {
     /// MIPS PIC `$gp`-relative load resolves). Produced only on the MIPS path (see
     /// [`crate::loader::mips_markers`]); empty otherwise.
     pub tracked_regs: Vec<TrackedRegFact>,
+    /// Register values seeded at one function entry through the architecture's
+    /// per-entry loader seeds, as the ELFv1 TOC is, rather than as a context-database
+    /// range: every function's snapshot of that database would otherwise grow with
+    /// their number. Produced by [`crate::loader::kuna_ppc64r12`]; empty otherwise.
+    pub entry_tracks: Vec<TrackedRegFact>,
     /// Functions whose names matched a cspec call-fixup `<target>` (e.g. the `-pg`
     /// `mcount`/`__fentry__` profiling stubs). The commit boundary tags each with the
     /// matched fixup's inject id so the engine replaces the CALL with the fixup
     /// body. The kuna analog of Ghidra's `CallFixupAnalyzer` install loop.
     pub call_fixups: Vec<CallFixupFact>,
+    /// Functions bound to a named prototype model without a signature (see
+    /// [`ModelFact`]).
+    pub models: Vec<ModelFact>,
     /// Named, typed stack LOCALS recovered from DWARF (`DW_OP_fbreg` variables /
     /// parameters), each to be installed in its owning function's stack scope so the
     /// decompiler renders the source name+type instead of `local_*`/`iVar*`. The
@@ -581,11 +628,12 @@ pub struct AnalysisOutput {
     /// Produced only by the DWARF pass (subtask 3); empty otherwise. See
     /// [`LocalFact`].
     pub locals: Vec<LocalFact>,
-    /// Source-line annotations recovered from DWARF `.debug_line`, each to be
+    /// Source-line annotations recovered from debug metadata, each to be
     /// installed as a `Comment::user2` so the decompiled output carries the
     /// `file:line` of the instruction. The commit boundary writes each into the
-    /// architecture's `commentdb`. Produced only by the DWARF lines pass
-    /// (`dwarf_lines`, default-off); empty otherwise. See [`CommentFact`].
+    /// architecture's `commentdb`. Produced by the DWARF lines pass and the CVF
+    /// trace lines pass (`dwarf_lines on`, `cvftrace lines`); empty otherwise. See
+    /// [`CommentFact`].
     pub comments: Vec<CommentFact>,
     /// Functions the FID matcher re-identified by full-hash fingerprint, by
     /// `(addr, name)`. The commit boundary **renames** each (resolved by ADDRESS) only
@@ -595,12 +643,28 @@ pub struct AnalysisOutput {
     /// path only, and only when a `.fid` database is configured); empty otherwise.
     /// See [`FidMatch`].
     pub fid_names: Vec<FidMatch>,
+    /// Signature names a recogniser holds but does not apply (`fid strict` when
+    /// the specific hash disagrees). They take part in the agreement check of
+    /// [`FidMatch::by_signature`] guesses at the same address and are never
+    /// committed on their own.
+    pub signature_vetoes: Vec<FidMatch>,
+    /// What became of each `.fid` database the FID pass was configured with
+    /// (loaded, missing, unreadable, invalid, incompatible). Produced only by
+    /// [`crate::fid::FidPass`] when `kuna_fid_db` names a database.
+    pub fid_databases: Vec<crate::fid::kuna_fidapply::FidDbReport>,
+    /// Lowest-priority function names, committed after every other name stream:
+    /// only an existing `sub_`/`FUN_` placeholder function takes the name, and
+    /// only when no function, data symbol or alias anywhere already uses it. No
+    /// function is created. Produced only by [`crate::kuna_cvftrace::CvfTracePass`].
+    pub fallback_names: Vec<FidMatch>,
     /// (kuna `cppproto`) The DWARF recoveries that only the C++ arm of the DWARF
     /// pass produces, held APART from the streams above so the commit boundary
     /// merges them in its own order. See [`CppDwarfFacts`].
     pub cpp_dwarf: CppDwarfFacts,
     /// Go DWARF signatures, with type interning deferred until the commit gate.
     pub go_dwarf: Vec<crate::dwarf::kuna_godwarfsig::Facts>,
+    /// Exact linked pointer method statements, intersected with Go DWARF at commit.
+    pub go_pointer_methods: std::collections::BTreeMap<u64, crate::gotypes::kuna_pointermethods::LinkedMethod>,
     /// (kuna `cppsig`) The prototypes recovered from the MANGLED SYMBOL, split by
     /// how certain the pass is that argument 0 is an implicit `this`. Held apart
     /// for the same reason as [`Self::cpp_dwarf`] — the producing pass runs at
@@ -611,6 +675,18 @@ pub struct AnalysisOutput {
     /// (kuna `libctypes`) Data symbols the analysis tier types outright — the
     /// stdio stream slots. See [`TypedDataFact`].
     pub typed_data: Vec<TypedDataFact>,
+    /// (kuna `gotypeglobals`) A Go image's `_type` descriptors as named, typed
+    /// data globals (`type:main.Point` of shell `go.typedesc`). Held APART from
+    /// [`Self::typed_data`] because the producing pass runs at load, upstream of
+    /// the `option` commands: the commit boundary folds them into the typed-data
+    /// stream only when the `gotypeglobals` gate is on, and drops them whole
+    /// otherwise. Produced by [`crate::gotypes::GoTypesPass`]; empty elsewhere.
+    pub go_type_globals: Vec<TypedDataFact>,
+    /// (kuna `gotypeglobals`) Name-only `go:itab.<concrete>,<interface>` data
+    /// symbols for the located interface-dispatch tables; committed into the
+    /// symbol table under the same gate. Name-only (not typed) so an itab
+    /// address used polymorphically keeps rendering the symbol.
+    pub go_itabs: Vec<SymFact>,
     /// (kuna `swifttypes`) The Swift type-layout facts. See [`SwiftTypeFacts`].
     pub swift_types: SwiftTypeFacts,
     /// (kuna `formatstring static`) Per-call-site prototype overrides the
@@ -685,9 +761,13 @@ impl AnalysisOutput {
         });
         self.data_objects.iter_mut().for_each(|d| fix_data(&mut d.name));
         self.typed_data.iter_mut().for_each(|d| fix_data(&mut d.name));
+        self.go_type_globals.iter_mut().for_each(|d| fix_data(&mut d.name));
+        self.go_itabs.iter_mut().for_each(|s| fix_data(&mut s.name));
         self.entry_names.iter_mut().for_each(|(_, n)| fix(n));
         self.locals.iter_mut().for_each(|l| fix(&mut l.name));
         self.fid_names.iter_mut().for_each(|f| fix(&mut f.name));
+        self.signature_vetoes.iter_mut().for_each(|f| fix(&mut f.name));
+        self.fallback_names.iter_mut().for_each(|f| fix(&mut f.name));
         self.prototypes.iter_mut().for_each(fix_proto);
         self.prototypes_at.iter_mut().for_each(|(_, p)| fix_proto(p));
         self.arm_float_prototypes.iter_mut().for_each(|(_, p)| fix_proto(p));
@@ -767,13 +847,17 @@ impl AnalysisOutput {
     /// Fold another output into this one (concatenation; dedup is the driver's job).
     pub fn merge(&mut self, other: AnalysisOutput) {
         self.symbols.extend(other.symbols);
+        self.go_chanrecv2 = self.go_chanrecv2.or(other.go_chanrecv2);
         self.data_objects.extend(other.data_objects);
         self.typed_data.extend(other.typed_data);
+        self.go_type_globals.extend(other.go_type_globals);
+        self.go_itabs.extend(other.go_itabs);
         self.swift_types.typed_data.extend(other.swift_types.typed_data);
         self.swift_types.prototypes.extend(other.swift_types.prototypes);
         self.swift_types.param_locks.extend(other.swift_types.param_locks);
         self.swift_types.models.extend(other.swift_types.models);
         self.swift_types.input_hints.extend(other.swift_types.input_hints);
+        self.swift_types.no_self.extend(other.swift_types.no_self);
         self.swift_types.regs = self.swift_types.regs.or(other.swift_types.regs);
         self.entries.extend(other.entries);
         self.fde_bodies.extend(other.fde_bodies);
@@ -784,6 +868,8 @@ impl AnalysisOutput {
         self.noreturn.extend(other.noreturn);
         self.no_fallthru_calls.extend(other.no_fallthru_calls);
         self.call_returns.extend(other.call_returns);
+        self.kernel_bugs.extend(other.kernel_bugs);
+        self.arm_pool_extents.extend(other.arm_pool_extents);
         self.readonly.extend(other.readonly);
         self.const_ranges.extend(other.const_ranges);
         self.objc_self_types.extend(other.objc_self_types);
@@ -794,6 +880,7 @@ impl AnalysisOutput {
         self.wide_strings.extend(other.wide_strings);
         self.wide_strings32.extend(other.wide_strings32);
         self.cfstrings.extend(other.cfstrings);
+        self.blobs.extend(other.blobs);
         self.prototypes.extend(other.prototypes);
         self.prototypes_at.extend(other.prototypes_at);
         self.arm_float_prototypes.extend(other.arm_float_prototypes);
@@ -802,14 +889,20 @@ impl AnalysisOutput {
         self.context_paints.extend(other.context_paints);
         self.inventory_context_paints.extend(other.inventory_context_paints);
         self.tracked_regs.extend(other.tracked_regs);
+        self.entry_tracks.extend(other.entry_tracks);
         self.call_fixups.extend(other.call_fixups);
+        self.models.extend(other.models);
         self.locals.extend(other.locals);
         self.comments.extend(other.comments);
         self.fid_names.extend(other.fid_names);
+        self.signature_vetoes.extend(other.signature_vetoes);
+        self.fid_databases.extend(other.fid_databases);
+        self.fallback_names.extend(other.fallback_names);
         self.cpp_dwarf.symbols.extend(other.cpp_dwarf.symbols);
         self.cpp_dwarf.locals.extend(other.cpp_dwarf.locals);
         self.cpp_dwarf.prototypes.extend(other.cpp_dwarf.prototypes);
         self.go_dwarf.extend(other.go_dwarf);
+        self.go_pointer_methods.extend(other.go_pointer_methods);
         self.cpp_sig.proven.extend(other.cpp_sig.proven);
         self.cpp_sig.inferred.extend(other.cpp_sig.inferred);
         self.cpp_sig.msvc.extend(other.cpp_sig.msvc);
@@ -855,7 +948,7 @@ pub struct AnalysisCtx<'a> {
     /// typed parser; the ELF impl ignores it.
     pub bytes: &'a [u8],
     /// The loaded image backing byte reads at a vma.
-    pub image: &'a ObjectLoadImage,
+    pub image: Option<&'a ObjectLoadImage>,
     /// The engine architecture (read access to types/spaces/options).
     pub arch: &'a Architecture,
     /// The optional Listing/xref disassembly model (`--option listing on`,

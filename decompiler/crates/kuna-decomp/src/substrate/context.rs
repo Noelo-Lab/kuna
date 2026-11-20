@@ -236,6 +236,13 @@ impl GlobalSpaceIndex {
         }
     }
 
+    /// The entries that start exactly at `start`, in their original order.
+    fn starting_at<'a>(&'a self, entries: &'a [GlobalEntry], start: u64) -> impl Iterator<Item = &'a GlobalEntry> + 'a {
+        let lo = self.interval_order.partition_point(|&entry_index| entries[entry_index].first < start);
+        let hi = self.interval_order.partition_point(|&entry_index| entries[entry_index].first <= start);
+        self.interval_order[lo..hi].iter().map(move |&entry_index| &entries[entry_index])
+    }
+
     fn for_each_candidate(
         &self,
         entries: &[GlobalEntry],
@@ -495,16 +502,13 @@ impl GlobalQuery {
             }
         }
 
-        let entries = self.entries_for_space(space_index);
+        let index = self.index_for_space(space_index);
+        let starting_at = || index.into_iter().flat_map(|index| index.starting_at(&self.entries, start));
         let active = |entry: &GlobalEntry| {
             entry.addrtied
                 || (!usepoint.is_invalid() && entry.uselimit.in_range(usepoint, 1))
         };
-        if let Some(entry) = entries
-            .iter()
-            .rev()
-            .find(|entry| entry.first == start && !entry.is_function && active(entry))
-        {
+        if let Some(entry) = starting_at().filter(|entry| !entry.is_function && active(entry)).last() {
             return Some(classify_data(entry));
         }
 
@@ -516,9 +520,8 @@ impl GlobalQuery {
             return Some(IndirectSlotType::Untyped);
         }
 
-        let entry = entries.iter().find(|entry| {
-            entry.first == start
-                && entry.symbol_offset == 0
+        let entry = starting_at().find(|entry| {
+            entry.symbol_offset == 0
                 && entry.is_function
                 && active(entry)
                 && entry
@@ -703,6 +706,10 @@ pub struct ArchContext {
     /// `Funcdata::test_for_return_address` to detect a BRANCHIND that is really a
     /// tail return through the return-address register.
     pub default_return_addr: Option<kuna_num::pcoderaw::VarnodeData>,
+    /// Entry return-address storage for a bounded indirect-transfer proof.
+    /// Falls back to a register the language names `ra` when the cspec names
+    /// none, which only ever withholds entry facts from the proof.
+    pub indirect_return_addr: Option<kuna_num::pcoderaw::VarnodeData>,
     /// Maximum recursion depth for `Funcdata::ancestorOpUse` (C++
     /// `Architecture::trim_recurse_max`).  Drives `ActionReturnRecovery`'s
     /// ancestor-realism walk.
@@ -750,6 +757,10 @@ pub struct ArchContext {
     /// `Architecture` in `build_arch_handle`.
     pub go_morestack: u8,
     pub rust_probestack: crate::kuna_rustprobestack::RustProbestackMode,
+    /// (kuna) `option chkstkdarwin` on an AArch64 language; read by
+    /// [`crate::p2_lift::kuna_chkstkdarwin`].  Copied from the engine
+    /// `Architecture` in `build_arch_handle`.
+    pub chkstk_darwin: bool,
     /// (kuna) `option gobool` mode; read by [`crate::p4_calls::kuna_gobool`].
     /// Copied from the engine `Architecture` in `build_arch_handle`.
     pub go_bool: u8,
@@ -757,6 +768,9 @@ pub struct ArchContext {
     /// [`crate::p2_lift::kuna_gowritebarrier`].  Copied from the engine
     /// `Architecture` in `build_arch_handle`.
     pub go_write_barrier: u8,
+    /// (kuna) `option gonewtype`; read by [`crate::p5_types::kuna_gonewtype`].
+    /// Copied from the engine `Architecture` in `build_arch_handle`.
+    pub go_new_type: bool,
     /// (kuna) The `SoftwareBreakpoint` user-op id when `option ptrauthtrap`
     /// is on; read by [`crate::p2_lift::kuna_ptrauthtrap`].
     pub ptrauth_trap_userop: Option<kuna_base::types::uint4>,
@@ -801,6 +815,14 @@ pub struct ArchContext {
     /// SLEIGH FIST/FISTP conversion userops and their signed output widths.
     /// Resolved by name once when building the architecture snapshot.
     pub x87_integer_userops: Vec<(kuna_base::types::uint4, int4)>,
+    /// (kuna) CALLOTHER ids of the float roundings p-code has no operator for
+    /// ([`USEROP_NAMES`](crate::kuna_roundingops::USEROP_NAMES)), typed float in
+    /// and out by [`kuna_roundingops`](crate::kuna_roundingops).
+    pub float_rounding_userops: Vec<kuna_base::types::uint4>,
+    /// (kuna) `returnbranch`, default-on: a RETURN whose target the entry
+    /// prefix proves constant flows as an indirect branch
+    /// ([`crate::kuna_returnbranch`]). Off keeps the spec's RETURN.
+    pub return_branch: bool,
     /// (kuna) GH-8724: re-express a strided-induction offset as counter*stride
     /// (C++ `recover_array_stride`, DIV-3 default-on).  Read by
     /// [`RuleArrayStride`](crate::kuna_arraystride::RuleArrayStride).
@@ -975,6 +997,12 @@ pub struct ArchContext {
     /// which a pass guards a persistent global only next to its accesses, `None`
     /// when off.
     pub persist_calls: Option<u64>,
+    /// (kuna `calleereginputs custom`) Per-callee-entry input-register key, and
+    /// the model for each key: so a function's own evaluation prints the same
+    /// custom register parameters its callers pass. Copied from the global
+    /// architecture per function; empty unless the whole-image rule decided one.
+    pub kuna_custom_reg_callers: Rc<std::collections::HashMap<u64, u16>>,
+    pub kuna_custom_reg_models: Rc<std::collections::HashMap<u16, Rc<crate::fspec::ProtoModel>>>,
     /// (kuna) narrow a register parameter to the low part its uses consume
     /// (`narrowargs`). Read by [`crate::kuna_narrowargs`].
     pub narrow_args: bool,
@@ -1045,6 +1073,9 @@ pub struct ArchContext {
     pub devectorize_reduction: bool,
     /// (kuna) `strlenscan` — collapse an inline `repnz scasb` length into `strlen`.
     pub strlen_scan: bool,
+    /// (kuna) `repstring` — collapse an x86 `rep movs`/`rep stos`/`repz cmpsb` loop
+    /// into a copy, fill or compare builtin.
+    pub rep_string: bool,
     /// (kuna) region-based (Phoenix/SAILR) structurer: structure the CFG by
     /// walking the [`KunaRegionIdentifier`](crate::p7_regions::kuna_regionid)
     /// region tree and matching Phoenix acyclic schemas instead of running
@@ -1124,6 +1155,13 @@ pub struct ArchContext {
     /// left out, so a spec-declared model always wins.  Read by
     /// [`ActionX64Syscall`](crate::p2_lift::kuna_x64syscall::ActionX64Syscall).
     pub x64_syscall_userops: Vec<kuna_base::types::uint4>,
+    /// (kuna `octeoneffects`) Which Octeon user operations guard memory.
+    pub octeon_effects: crate::kuna_octeoneffects::OcteonEffectsMode,
+    /// The Octeon atomic, reservation and ordering operations the language
+    /// declares, resolved under [`Self::octeon_effects`]. Under `off` only a
+    /// load-linked or store-conditional left without its upstream fixup (ghidra
+    /// mode) remains; see `kuna_octeoneffects::userop_ids`.
+    pub octeon_memory_userops: Vec<(u32, crate::kuna_octeoneffects::Effect)>,
     /// (kuna) The processor's segment operations by address-space index (C++
     /// `userops.segmentop`); empty when the spec declares none.
     pub segment_ops: Vec<Option<Rc<crate::kuna_segmentize::SegmentDef>>>,
@@ -1249,6 +1287,8 @@ pub struct ArchContext {
     pub strip_security_check: bool,
     /// Fold Go compiler bounds/division panic arms (option gobounds).
     pub go_bounds: bool,
+    /// AArch64 integer division returns zero for a zero divisor.
+    pub go_keep_divide_checks: bool,
     /// (kuna) flip negated-guard if/else branches for linearity (option
     /// `branchflip`, opt-in default-off).  Read by
     /// [`ActionBranchFlip`](crate::blockaction::ActionBranchFlip).
@@ -1307,7 +1347,7 @@ pub struct ArchContext {
     pub lazy_entry_starts: Rc<Vec<u64>>,
     /// (kuna) Recover a `BRANCHIND` whose destination is a select over constant
     /// addresses (`option constselectjump`, `p2_lift/kuna_constselectjump.rs`).
-    pub const_select_jump: bool,
+    pub const_select_jump: crate::kuna_constselectjump::ConstSelectMode,
     /// (kuna) Bound a LOAD-table jumptable by an out-of-band CBRANCH range guard
     /// when the basic model's guard analysis could not (C++
     /// `Architecture::switch_guard_bound`, flipped by `option switchguardbound`,
@@ -1417,6 +1457,9 @@ pub struct ArchContext {
     /// the various pointer-inference arms.  Default-on (C++ `resetDefaults`); `false`
     /// for hand-built fixtures (no constant-pointer recovery exercised).
     pub infer_pointers: bool,
+    /// (kuna `blobs`) The first address of each embedded image or archive,
+    /// shared from the real architecture; empty for fixtures.
+    pub blob_entries: Rc<std::collections::BTreeSet<u64>>,
     /// Ordered list of address spaces in which a constant pointer can be inferred
     /// (C++ `Architecture::inferPtrSpaces`, built by `cacheAddrSpaceProperties` +
     /// the cspec `<global>` push), shared from the real architecture through
@@ -1437,6 +1480,8 @@ pub struct ArchContext {
     pub loader_transfer_sites: Rc<std::collections::BTreeSet<Address>>,
     /// MIPS GOT import entries identified by the loader, never ordinary definitions.
     pub loader_mips_imports: Rc<std::collections::BTreeSet<Address>>,
+    pub nullable_relocations: Rc<std::collections::BTreeMap<u64, Vec<crate::kuna_nullable_reloc::NullableRelocation>>>,
+    pub nullable_literal_values: Rc<std::collections::BTreeSet<u64>>,
     /// The calling convention each declared callee was declared under, keyed the
     /// same way [`Self::callee_protos`] is.  Snapshotted at `build_arch_handle`
     /// from the architecture's declared-convention map and read back by
@@ -1455,6 +1500,9 @@ pub struct ArchContext {
     /// (kuna `swiftcall`) The Swift registers and the throwing model, when the
     /// image binds the Swift convention ([`crate::kuna_swiftcall`]).
     pub swift_abi: Option<Rc<crate::kuna_swiftcall::SwiftAbi>>,
+    /// (kuna `calleereginputs`) The `__thiscall` model, the ECX storage a
+    /// virtual call reads its `this` from and EAX's, when the option applies.
+    pub virtual_this: Option<(Rc<crate::fspec::ProtoModel>, kuna_base::address::Address, int4, kuna_base::address::Address)>,
     /// Snapshot of the engine's tracked-register database (C++ `glb->context`'s
     /// track base, populated by `set track <reg> <val> [start end]`).  The
     /// per-function `glb` skeleton does not hold the `ContextDatabase`, so
@@ -1494,9 +1542,11 @@ impl ArchContext {
             callee_proto_models: Vec::new(),
             bound_proto_models: Rc::default(),
             swift_abi: None,
+            virtual_this: None,
             defaultfp: None,
             evalfp_current: None,
             default_return_addr: None,
+            indirect_return_addr: None,
             // C++ Architecture default: trim_recurse_max = 5 (resetDefaults).
             trim_recurse_max: 5,
             // C++ Architecture default: max_implied_ref = 2 (resetDefaults).
@@ -1523,11 +1573,14 @@ impl ArchContext {
             // copied from the engine Architecture in `build_arch_handle`.
             go_morestack: 1,
             rust_probestack: crate::kuna_rustprobestack::RustProbestackMode::Off,
+            chkstk_darwin: false,
             // (kuna) `option gobool` default auto; copied the same way.
             go_bool: 1,
             // (kuna) `option gowritebarrier` default auto; the real value is
             // copied from the engine Architecture in `build_arch_handle`.
             go_write_barrier: 1,
+            // (kuna) `option gonewtype` default on; copied the same way.
+            go_new_type: true,
             ptrauth_trap_userop: None,
             // (kuna) angr-style default naming is default-on (Architecture::reset).
             name_style_angr: true,
@@ -1548,6 +1601,8 @@ impl ArchContext {
             simd_shuffle_userops: Vec::new(),
             x87_float_to_int_userops: Vec::new(),
             x87_integer_userops: Vec::new(),
+            float_rounding_userops: Vec::new(),
+            return_branch: false,        // returnbranch
             recover_array_stride: false, // GH-8724 arraystride
             memset_recover: false,       // GH-9230/1537 memsetrecover
             rodata_string: false,        // (kuna) rodatastring
@@ -1605,6 +1660,8 @@ impl ArchContext {
             mixed_tail_ret: false, // (kuna) option mixedtailret (default off)
             readonly_calls: Some(crate::p3_dataflow::heritage::READONLY_CROSS_PRODUCT),
             persist_calls: Some(crate::p3_dataflow::heritage::PERSIST_CROSS_PRODUCT),
+            kuna_custom_reg_callers: Rc::default(),
+            kuna_custom_reg_models: Rc::default(),
             narrow_args: true,
             narrow_locals: true,
             narrow_ret: true,
@@ -1622,6 +1679,7 @@ impl ArchContext {
             libc_names: false, // libcnames; set from the Architecture
             devectorize_reduction: false, // devectorize (opt-in default-off)
             strlen_scan: false, // strlenscan (live value copied from the Architecture)
+            rep_string: false, // repstring (live value copied from the Architecture)
             region_structure: false,     // regionstructure (opt-in default-off)
             guard_arm: false,            // guardarm (opt-in default-off)
             loop_continue: true,
@@ -1635,6 +1693,8 @@ impl ArchContext {
             x64_syscall: crate::p2_lift::kuna_x64syscall::X64SyscallMode::Off, // x64syscall (Architecture::reset_defaults sets the shipped default: on)
             x64_syscall_memory_target: false,
             x64_syscall_userops: Vec::new(),
+            octeon_effects: crate::kuna_octeoneffects::OcteonEffectsMode::Off,
+            octeon_memory_userops: Vec::new(),
             segment_ops: Vec::new(),
             syscall_regs: false,
             syscall_regs_family: None,
@@ -1661,6 +1721,7 @@ impl ArchContext {
             strip_stack_guard: false,    // stackguard (opt-in default-off)
             strip_msvc_stack_guard: true, // msvcstackguard (the live gate rides build_arch_handle)
             go_bounds: true,
+            go_keep_divide_checks: false,
             strip_security_check: false, // securitycheck (fixture default-off; the live gate rides build_arch_handle)
             branch_flip: false,          // branchflip (opt-in default-off)
             // C++ Architecture default: analyze_for_loops = true (architecture.cc).
@@ -1677,7 +1738,7 @@ impl ArchContext {
             funcptr_align: 0,
             switch_modulo_bound: false, // (kuna) GH-9191 default off (upstream byte-identical)
             lazy_entry_starts: Rc::default(),
-            const_select_jump: false, // (kuna) constant-select indirect branch: default off
+            const_select_jump: crate::kuna_constselectjump::ConstSelectMode::Off, // (kuna) constant-select indirect branch; reset_defaults sets the shipped default
             highslice_guard: false,
             switch_guard_bound: false, // (kuna) angr opt-in default off (upstream byte-identical)
             switch_shared_case: false, // (kuna) angr opt-in default off (upstream byte-identical)
@@ -1708,6 +1769,7 @@ impl ArchContext {
             // a hand-built fixture never exercises constant-pointer recovery, but
             // the real lift+analyze path overwrites this from the real arch.
             infer_pointers: false,
+            blob_entries: Rc::default(),
             // No inferable spaces until cacheAddrSpaceProperties runs on the real
             // arch and build_arch_handle shares the result.
             infer_ptr_spaces: Vec::new(),
@@ -1715,6 +1777,8 @@ impl ArchContext {
             callee_protos: Rc::new(Vec::new()),
             loader_transfer_sites: Rc::default(),
             loader_mips_imports: Rc::default(),
+            nullable_relocations: Rc::default(),
+            nullable_literal_values: Rc::default(),
             // No tracked registers until build_arch_handle snapshots the context DB.
             tracked_sets: kuna_base::partmap::PartMap::default(),
         }

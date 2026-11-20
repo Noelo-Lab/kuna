@@ -1,0 +1,20 @@
+fid_audit_x86_64* -- the fixtures for which `.fid` database a run matches
+against and how it reports the one it was given (GH #1475;
+decompiler/crates/kuna-cli/tests/fid_db_status_cli.rs).
+
+What they are
+  fid_audit_x86_64.c    the issue's two functions, audit_mix and audit_fold.
+  fid_audit_x86_64.o    that source compiled for x86-64.
+  fid_audit_x86_64      the object linked alone and stripped: sub_401000 is
+                        audit_mix, sub_401020 is audit_fold.
+  fid_audit_x86_64.fid  `kuna fid build` over the object, header
+                        x86:LE:64:default / gcc, 2 records.
+
+The tests derive the other databases from fid_audit_x86_64.fid at run time
+(the same records under another header language, a truncated copy, a
+directory, a path that does not exist), so nothing is compiled when they run.
+
+Recipe (Ubuntu clang 14.0.0, GNU ld 2.38)
+  clang -target x86_64-unknown-linux-gnu -O1 -c fid_audit_x86_64.c -o fid_audit_x86_64.o
+  ld -m elf_x86_64 -s -e audit_fold fid_audit_x86_64.o -o fid_audit_x86_64
+  kuna fid build fid_audit_x86_64.o -o fid_audit_x86_64.fid --lang x86:LE:64:default --cspec gcc

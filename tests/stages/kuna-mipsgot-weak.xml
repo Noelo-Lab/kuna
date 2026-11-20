@@ -1,0 +1,64 @@
+<decompilertest>
+<binaryimage arch="MIPS:BE:64:default">
+<!--
+    kuna relocatable-object loader: the GOT entry of an undefined weak symbol
+    in a MIPS PIC object. The run-time loader fills that entry with the
+    symbol's address, or 0 when nothing defines it, so
+    `optional ? optional(x) : (x ^ 0x42)` tests the entry before calling
+    through it. The loader stored the symbol's synthetic extern address in the
+    entry and reported it foldable with the rest of the GOT, so the test folded
+    to true and the function read `return optional();`.
+
+    The entry now holds 0, as GNU ld leaves it, and is an import slot outside
+    the foldable range; the call through it binds to the slot's name, as an
+    Import Address Table call does, instead of calling through the anonymous
+    slot.
+
+    Stage: P1 program prep (relocatable-object loader); a strict loader fix
+    and the import-slot call binding.
+
+    Images: tests/fixtures/octeon-relocations/pic-gcc73-n32.o and
+    pic-gcc47-64.o (GCC N32 and N64 PIC, pic.c).
+
+    Assert #1: both objects keep the test of the weak function's address.
+    Assert #2: both call `optional` by name inside that test.
+    Assert #3: no object folds the test into an unconditional call.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">03e0000800000000</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/octeon-relocations/pic-gcc73-n32.o</com>
+  <com>read symbols</com>
+  <com>map prototype call_optional unsigned int call_optional(unsigned int x);</com>
+  <com>map prototype optional unsigned int optional(unsigned int x);</com>
+  <com>lo fu call_optional</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/octeon-relocations/pic-gcc47-64.o</com>
+  <com>read symbols</com>
+  <com>map prototype call_optional unsigned int call_optional(unsigned int x);</com>
+  <com>map prototype optional unsigned int optional(unsigned int x);</com>
+  <com>lo fu call_optional</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/mips-weak-imports/identity-n32-be-mixed.o</com>
+  <com>read symbols</com>
+  <com>map prototype optional unsigned int optional(unsigned int x);</com>
+  <com>lo fu same</com><com>decompile</com><com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/mips-weak-imports/identity-64-be-mixed.o</com>
+  <com>read symbols</com>
+  <com>map prototype optional unsigned int optional(unsigned int x);</com>
+  <com>lo fu same</com><com>decompile</com><com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="mipsgot-weak #1: the weak function's address is tested" min="2" max="2">if \(dat_[0-9a-f]+\)</stringmatch>
+<stringmatch name="mipsgot-weak #2: the call binds to optional" min="2" max="2">optional\(x\);</stringmatch>
+<stringmatch name="mipsgot-weak #3: no unconditional call" min="0" max="0">return optional\(</stringmatch>
+<stringmatch name="mipsgot-weak #4: mixed direct and GOT references retain one import name" min="2" max="2">return (dat_[0-9a-f]+ == optional|1|true);</stringmatch>
+<stringmatch name="mipsgot-weak #5: a declared import is never ambiguous" min="0" max="0">ambiguous</stringmatch>
+</decompilertest>

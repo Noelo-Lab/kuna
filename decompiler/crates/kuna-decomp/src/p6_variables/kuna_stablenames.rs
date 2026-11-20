@@ -106,6 +106,9 @@ pub struct PriorNames {
     /// The local each varnode's keys matched, as the merge asks it
     /// ([`same_variable`]).
     pub merged_names: std::cell::RefCell<MergeMemo>,
+    /// The storage and width of each isolated stack local and parameter
+    /// (`crate::kuna_isolated`).
+    pub isolated: BTreeSet<(Address, int4)>,
 }
 
 /// Each varnode's matched local, by an index into the names seen so far.
@@ -517,17 +520,18 @@ pub fn relabel(fd: &mut Funcdata, high: HighVariableId, name: &str) {
 
 /// A retype carried to the next decompile as the type of the whole printed
 /// variable ([`unit_retype`]); `infer` when type inference has to read it
-/// ([`reaches_inference`]).
+/// ([`reaches_inference`]); `from` the type the variable was printed with.
 #[derive(Clone, Debug)]
 pub struct UnitRetype {
     pub ct: std::rc::Rc<crate::dtype::Datatype>,
     pub infer: bool,
+    pub from: std::rc::Rc<crate::dtype::Datatype>,
 }
 
 /// The unit retype of a `from` variable to `to`, when it keeps the width and
 /// kind ([`retypes_as_unit`]).
-pub fn unit_retype(from: &crate::dtype::Datatype, to: &std::rc::Rc<crate::dtype::Datatype>) -> Option<UnitRetype> {
-    retypes_as_unit(from, to).then(|| UnitRetype { ct: to.clone(), infer: reaches_inference(to) })
+pub fn unit_retype(from: &std::rc::Rc<crate::dtype::Datatype>, to: &std::rc::Rc<crate::dtype::Datatype>) -> Option<UnitRetype> {
+    retypes_as_unit(from, to).then(|| UnitRetype { ct: to.clone(), infer: reaches_inference(to), from: from.clone() })
 }
 
 /// Does retyping a `from` variable to `to` keep its width and kind: integer
@@ -657,6 +661,46 @@ pub fn variable_groups(fd: &Funcdata, highs: &[HighVariableId]) -> Vec<Vec<HighV
 pub fn holds_retype(fd: &Funcdata, vn: VarnodeId) -> bool {
     let Some(v) = fd.vbank().get(vn).filter(|v| v.is_type_lock()) else { return false };
     fd.kuna_prior_names().retypes.values().any(|retype| retype.infer && std::rc::Rc::ptr_eq(&retype.ct, v.get_type()))
+}
+
+/// Is `vn` a definition [`lock_retyped`] locked: a varnode whose defining
+/// operation defined an instance of the retyped variable, carrying the carried
+/// type itself? `RulePropagateCopy` keeps such a copy: the frame the type
+/// re-lays can leave the variable's definition a copy, and propagated, it would
+/// leave the variable no instance.
+pub fn is_retyped_definition(fd: &Funcdata, vn: VarnodeId) -> bool {
+    let Some(v) = fd.vbank().get(vn).filter(|v| v.is_type_lock()) else { return false };
+    if !replays_inference(fd) {
+        return false;
+    }
+    let prior = fd.kuna_prior_names();
+    keys_of(fd, vn)
+        .and_then(|keys| prior.ops.get(&keys.0).and_then(|name| name.as_ref()))
+        .and_then(|name| prior.retypes.get(name))
+        .is_some_and(|retype| retype.infer && std::rc::Rc::ptr_eq(&retype.ct, v.get_type()))
+}
+
+/// The pointee the frame layout reads off `vn` when it carries the lock of a
+/// replayed retype to a pointer to a type with no size: the pointee the
+/// variable was printed with before, which laid out the frame the first time.
+/// `None` when the retypes holding that lock disagree on it or it has no size
+/// either.
+pub fn printed_pointee(fd: &Funcdata, vn: VarnodeId) -> Option<std::rc::Rc<crate::dtype::Datatype>> {
+    let v = fd.vbank().get(vn).filter(|v| v.is_type_lock())?;
+    let mut pointees = fd
+        .kuna_prior_names()
+        .retypes
+        .values()
+        .filter(|retype| retype.infer && std::rc::Rc::ptr_eq(&retype.ct, v.get_type()))
+        .map(|retype| {
+            let mut pointee = retype.from.get_ptr_to();
+            while let Some(element) = pointee.as_ref().filter(|p| p.get_metatype() == crate::dtype::type_metatype::TYPE_ARRAY) {
+                pointee = element.get_array_base();
+            }
+            pointee
+        });
+    let first = pointees.next()??;
+    (first.get_size() > 0 && pointees.all(|p| p.is_some_and(|p| std::rc::Rc::ptr_eq(&p, &first)))).then_some(first)
 }
 
 fn replays_inference(fd: &Funcdata) -> bool {
@@ -801,8 +845,9 @@ pub fn is_name_only(fd: &Funcdata, sym: crate::database::SymbolId) -> bool {
 /// earlier numbering, so a plain re-decompile numbers from scratch as before.
 pub fn carry(fd: &Funcdata) -> PriorNames {
     let prior = fd.kuna_prior_names();
+    let isolated = crate::kuna_isolated::carried(fd);
     if prior.is_empty() && fd.kuna_directive_symbols().is_empty() {
-        return PriorNames::default();
+        return PriorNames { isolated, ..Default::default() };
     }
     let angr = fd.get_arch().name_style_angr;
     let mut next = PriorNames {
@@ -823,6 +868,7 @@ pub fn carry(fd: &Funcdata) -> PriorNames {
             .map(|(from, retype)| (prior.renames.get(from).unwrap_or(from).clone(), retype.clone()))
             .collect(),
         merged_names: Default::default(),
+        isolated,
     };
     for (name, (op, shape, place)) in fd.kuna_name_snapshot().iter().cloned() {
         record(&mut next.ops, op, &name);

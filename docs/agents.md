@@ -179,6 +179,7 @@ phases are **settable assertions/options** (`--option NAME VALUE`, discovered vi
   `decompiler/crates/kuna-base/src/xml.rs` and requires re-recording
   `docs/baseline-stages.json`. Two such PRs in flight WILL conflict on both; resolve the count
   to base + all merged, and re-record the baseline rather than hand-merging it.
+- Opening a PR: do not open an issue first (the PR describes the problem), do not @-mention the maintainers, and end the body with the line `Model: <model id>` naming the model that generated it. Details in `docs/pr-bodies.md`.
 - Any time any public thing is created fully automatically, it should start with `[AUTOMATED]`. That goes for PRs, Issues (opening and responses), and most importantly replies or comments to issues/PRs. It should also be in the commit message, but can go outside of the tagline and more inside the extended part.
 - **PR bodies** lead with a runnable repro, stay under one screen, and never mention our
   internal process (milestones, review rounds, agents, gate runs). The full rules are in
@@ -193,6 +194,7 @@ phases are **settable assertions/options** (`--option NAME VALUE`, discovered vi
 | `docs/options.md` | The generated option catalog (tiers, symptoms, flip guidance). |
 | `docs/cli.md` | The full `kuna` CLI reference. |
 | `docs/pr-bodies.md` | How to write a PR body (read before opening or editing any PR). |
+| `docs/prepr.md` | Optional pre-PR helpers: a call-arity diff over real MSVC binaries, and a diff lint. |
 | `docs/improvement-pipeline.md` | The autonomous improvement pipeline + standing requirements for feature PRs. |
 | `docs/re-pipeline.md` | The RE-friction loop: agents solve crackmes with kuna, record where it fails them, and close those gaps. The second, self-merging lane. |
 | `docs/decbench-loop.md` | The decbench benchmark / improvement campaign. |

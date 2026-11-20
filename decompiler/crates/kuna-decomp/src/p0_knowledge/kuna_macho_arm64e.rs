@@ -19,7 +19,8 @@ pub const MACHO_ARM64E_ENV: &str = "KUNA_MACHO_ARM64E";
 
 /// Whether an arm64e Mach-O selects the AppleSilicon spec in this process.
 pub fn macho_arm64e_enabled() -> bool {
-    crate::options::env_toggle(MACHO_ARM64E_ENV, true)
+    crate::kuna_loadoptions::scoped(|o| o.macho_arm64e)
+        .unwrap_or_else(crate::kuna_loadoptions::env::macho_arm64e)
 }
 
 /// Bridge a `set_kuna_option("macho-arm64e", val)` toggle to

@@ -43,6 +43,7 @@ mod kuna_libcnames;
 pub mod kuna_libcsigs;
 pub mod kuna_libctypes;
 pub mod kuna_win32sigs;
+pub mod kuna_x87intrinsics;
 
 /// Port of `ApplyDataArchiveAnalyzer`: seed built-in libc prototypes onto matching
 /// FunctionSymbols so call arguments get typed.
@@ -544,7 +545,7 @@ fn unambiguous_defined_function_names(
 }
 
 /// Extend resolver addresses with proven ELF code externs retained by `reloc_symbols`.
-fn loaded_import_addrs(
+pub(crate) fn loaded_import_addrs(
     file: &object::File,
     bytes: &[u8],
     image: &crate::loadimage_object::ObjectLoadImage,
@@ -604,7 +605,11 @@ impl AnalysisPass for LibProtoPass {
         // branch. On a PE a `printf` import then types its first arg `char *`, so
         // `printf("%d\n", …)` renders the literal instead of `printf(0x…, …)`.
         let mut out = AnalysisOutput::default();
-        let (imports, reloc_imports) = loaded_import_addrs(ctx.file, ctx.bytes, ctx.image);
+        let (imports, reloc_imports) = loaded_import_addrs(
+            ctx.file,
+            ctx.bytes,
+            ctx.image.expect("load-time analysis image"),
+        );
         let present = loaded_function_names(ctx.file, ctx.bytes, &reloc_imports, false);
         let types = ctx.arch.types();
         let (_addr_size, word_size) = ctx.arch.data_org();

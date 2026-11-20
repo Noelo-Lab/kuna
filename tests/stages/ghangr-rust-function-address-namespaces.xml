@@ -1,0 +1,51 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/rust-function-address/startup</com>
+  <com>read symbols</com>
+  <com>option outlang c</com>
+  <com>load function main</com><com>decompile</com><com>print C</com>
+  <com>option outlang rust</com><com>print C</com>
+  <com>option outlang c</com><com>print C</com>
+  <com>parse line extern unsigned long keyword_address(void);</com>
+  <com>parse line extern unsigned long const_address(void);</com>
+  <com>map prototype r17_probe::global_address unsigned long global_address(void);</com>
+  <com>option outlang rust</com>
+  <com>load function keyword_address</com><com>decompile</com><com>print C</com>
+  <com>load function const_address</com><com>decompile</com><com>print C</com>
+  <com>load function r17_probe::global_address</com><com>decompile</com><com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/function_pointer_namespaces_x86_64</com>
+  <com>read symbols</com>
+  <com>parse line extern unsigned long global_shadow(unsigned long target);</com>
+  <com>parse line extern unsigned long scope_shadow(unsigned long left);</com>
+  <com>map prototype left::same_address unsigned long same_address(void);</com>
+  <com>map prototype right::cross_address unsigned long cross_address(void);</com>
+  <com>option outlang rust</com>
+  <com>load function global_shadow</com><com>decompile</com><com>print C</com>
+  <com>load function scope_shadow</com><com>decompile</com><com>print C</com>
+  <com>load function right::cross_address</com><com>decompile</com><com>print C</com>
+  <com>load function left::same_address</com><com>decompile</com><com>print C</com>
+  <com>option outlang c</com><com>print C</com>
+</script>
+<stringmatch name="Rust startup function address keeps its distinct target" min="1" max="1">std::rt::lang_start\(r17_probe::main,argc as i64,argv,0\)</stringmatch>
+<stringmatch name="C startup function address survives a Rust render unchanged" min="2" max="2">std::rt::lang_start\(r17_probe::main,\(int8\)argc,argv,0\)</stringmatch>
+<stringmatch name="Rust function address quotes a keyword module" min="1" max="1">return r#type::callback as u64;</stringmatch>
+<stringmatch name="Rust global function address escapes a local callback shadow" min="1" max="1">return crate::target as u64;</stringmatch>
+<stringmatch name="Rust function address keeps the root through a module-name shadow" min="1" max="1">unsafe fn scope_shadow\(mut left: u64\) -&gt; u64
+\{
+  return crate::left::target as u64;</stringmatch>
+<stringmatch name="Rust same-scope function value keeps its bare spelling" min="1" max="1">unsafe fn same_address\(\) -&gt; u64
+\{
+  return target as u64;</stringmatch>
+<stringmatch name="C same-scope function value keeps its bare spelling" min="1" max="1">return (\(uint8\))?target;</stringmatch>
+<stringmatch name="Rust function address quotes a C keyword module" min="1" max="1">return r#const::callback as u64;</stringmatch>
+<stringmatch name="Rust sibling-module function address starts at the crate root" min="1" max="1">unsafe fn cross_address\(\) -&gt; u64
+\{
+  return crate::left::target as u64;</stringmatch>
+<stringmatch name="Rust ancestor function address starts at the crate root" min="1" max="1">return crate::ordinary_callback as u64;</stringmatch>
+</decompilertest>

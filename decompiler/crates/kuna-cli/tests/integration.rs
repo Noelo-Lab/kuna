@@ -1,7 +1,15 @@
 // Shared integration-test executable. Process-sensitive tests stay separate.
 #[path = "mips_elf_selection.rs"]
 mod mips_elf_selection;
+#[path = "return_branch_cli.rs"]
+mod return_branch_cli;
+#[path = "riscv_zcmp.rs"]
+mod riscv_zcmp;
 mod common;
+#[path = "rust_signature_summary.rs"]
+mod rust_signature_summary;
+#[path = "sparc_prologue_start.rs"]
+mod sparc_prologue_start;
 
 #[path = "rust_empty_match.rs"]
 mod rust_empty_match;
@@ -33,6 +41,12 @@ mod declared_bytes_cli;
 #[path = "argument_errors_cli.rs"]
 mod argument_errors_cli;
 
+#[path = "archive_members_cli.rs"]
+mod archive_members_cli;
+
+#[path = "assert_callee.rs"]
+mod assert_callee;
+
 #[path = "array_member_bits.rs"]
 mod array_member_bits;
 
@@ -41,6 +55,9 @@ mod mapped_array_bits;
 
 #[path = "array_source_bits.rs"]
 mod array_source_bits;
+
+#[path = "relocated_table_c.rs"]
+mod relocated_table_c;
 
 #[path = "conditional_register_lifetimes.rs"]
 mod conditional_register_lifetimes;
@@ -51,6 +68,10 @@ mod conditional_stack_bytes;
 mod arm_conditional_switch;
 #[path = "arm_constant_shift.rs"]
 mod arm_constant_shift;
+#[path = "wide_shift_emission.rs"]
+mod wide_shift_emission;
+#[path = "wrap_add_emission.rs"]
+mod wrap_add_emission;
 
 #[path = "arm_float_arguments.rs"]
 mod arm_float_arguments;
@@ -98,6 +119,9 @@ mod thumbswitch_guards;
 #[path = "asserted_enum_layout.rs"]
 mod asserted_enum_layout;
 
+#[path = "assert_format_isolate.rs"]
+mod assert_format_isolate;
+
 #[path = "baseline_cli.rs"]
 mod baseline_cli;
 
@@ -115,6 +139,9 @@ mod buildstamp_cli;
 
 #[path = "call_array_extent.rs"]
 mod call_array_extent;
+
+#[path = "sparc_delay_slot_storage.rs"]
+mod sparc_delay_slot_storage;
 
 #[path = "call_wide.rs"]
 mod call_wide;
@@ -135,6 +162,8 @@ mod caller_stack_cli;
 mod castnarrow_round_trip;
 #[path = "strlenscan_round_trip.rs"]
 mod strlenscan_round_trip;
+#[path = "repstring_round_trip.rs"]
+mod repstring_round_trip;
 
 #[path = "coff_strings.rs"]
 mod coff_strings;
@@ -144,12 +173,19 @@ mod coldentry_source_boundary;
 
 #[path = "compact_switch_cli.rs"]
 mod compact_switch_cli;
+#[path = "switch_self_loop_cli.rs"]
+mod switch_self_loop_cli;
+#[path = "indirect_dispatch.rs"]
+mod indirect_dispatch;
 
 #[path = "contiguous_byte_frame.rs"]
 mod contiguous_byte_frame;
 
 #[path = "cookie_pointer_return_271.rs"]
 mod cookie_pointer_return_271;
+
+#[path = "blobs_cli.rs"]
+mod blobs_cli;
 
 #[path = "crypto_cli.rs"]
 mod crypto_cli;
@@ -160,11 +196,23 @@ mod ctypes_per_arch;
 #[path = "decompile_budget_cli.rs"]
 mod decompile_budget_cli;
 
+#[path = "dos_dgroup_cli.rs"]
+mod dos_dgroup_cli;
+
 #[path = "dos_fpuemu_cli.rs"]
 mod dos_fpuemu_cli;
 
+#[path = "dos_pcmemory_cli.rs"]
+mod dos_pcmemory_cli;
+
 #[path = "dos_mz_cli.rs"]
 mod dos_mz_cli;
+
+#[path = "dos_exit_cli.rs"]
+mod dos_exit_cli;
+
+#[path = "dos_extent_cli.rs"]
+mod dos_extent_cli;
 
 #[path = "decompile_cli.rs"]
 mod decompile_cli;
@@ -174,6 +222,9 @@ mod decompile_graph_cli;
 
 #[path = "decompile_json_cli.rs"]
 mod decompile_json_cli;
+
+#[path = "function_warnings_cli.rs"]
+mod function_warnings_cli;
 
 #[path = "decompile_project_cli.rs"]
 mod decompile_project_cli;
@@ -222,6 +273,9 @@ mod explicit_branch_assertion_cli;
 
 #[path = "fid_cli.rs"]
 mod fid_cli;
+
+#[path = "fid_db_status_cli.rs"]
+mod fid_db_status_cli;
 
 #[path = "float_unordered_compare.rs"]
 mod float_unordered_compare;
@@ -336,6 +390,9 @@ mod pltlocal_cli;
 #[path = "pointer_table_strings.rs"]
 mod pointer_table_strings;
 
+#[path = "pool_fallthrough.rs"]
+mod pool_fallthrough;
+
 #[path = "ppc64_delayed_constant_switch.rs"]
 mod ppc64_delayed_constant_switch;
 
@@ -405,6 +462,9 @@ mod sse_minss_cli;
 #[path = "stack_alias_preservation.rs"]
 mod stack_alias_preservation;
 
+#[path = "stack_chk_fail_local.rs"]
+mod stack_chk_fail_local;
+
 #[path = "stack_float_snapshot.rs"]
 mod stack_float_snapshot;
 
@@ -431,6 +491,9 @@ mod store_alias;
 
 #[path = "store_copy_effects.rs"]
 mod store_copy_effects;
+
+#[path = "repeated_global_pointer_stores.rs"]
+mod repeated_global_pointer_stores;
 
 #[path = "stored_return_values.rs"]
 mod stored_return_values;
@@ -521,6 +584,12 @@ mod xrefs_cli;
 
 #[path = "xrefs_data_refs_cli.rs"]
 mod xrefs_data_refs_cli;
+
+#[path = "xrefs_fileset_entry.rs"]
+mod xrefs_fileset_entry;
+
+#[path = "dyld_follow_images.rs"]
+mod dyld_follow_images;
 
 #[path = "xrefs_got_call.rs"]
 mod xrefs_got_call;
@@ -619,6 +688,8 @@ mod x87_free_operands;
 
 #[path = "prototype_call_mechanisms.rs"]
 mod prototype_call_mechanisms;
+#[path = "ppc64_global_entry_toc.rs"]
+mod ppc64_global_entry_toc;
 #[path = "qualified_storage_addresses.rs"]
 mod qualified_storage_addresses;
 #[path = "qualified_import_storage.rs"]
@@ -775,6 +846,9 @@ mod scalar_call_results;
 #[path = "call_argument_extensions.rs"]
 mod call_argument_extensions;
 
+#[path = "calleereginputs_custom.rs"]
+mod calleereginputs_custom;
+
 #[path = "rust_store_value.rs"]
 mod rust_store_value;
 
@@ -793,11 +867,20 @@ mod rust_array_decay;
 #[path = "rust_array_constant.rs"]
 mod rust_array_constant;
 
+#[path = "rust_array_init.rs"]
+mod rust_array_init;
+
+#[path = "high_address_branches.rs"]
+mod high_address_branches;
+
 #[path = "mips_import_flow.rs"]
 mod mips_import_flow;
 
 #[path = "qualified_call.rs"]
 mod qualified_call;
+
+#[path = "bitfield_byte_pull.rs"]
+mod bitfield_byte_pull;
 
 #[path = "powerpc_apu_selection.rs"]
 mod powerpc_apu_selection;
@@ -807,3 +890,21 @@ mod elf_unwind;
 
 #[path = "e500_arguments.rs"]
 mod e500_arguments;
+
+#[path = "cvf_trace.rs"]
+mod cvf_trace;
+
+#[path = "dynamic_sp_merge.rs"]
+mod dynamic_sp_merge;
+
+#[path = "mips_weak_imports.rs"]
+mod mips_weak_imports;
+
+#[path = "nullable_relocations.rs"]
+mod nullable_relocations;
+
+#[path = "call_site_prototype.rs"]
+mod call_site_prototype;
+
+#[path = "xrefs_immutable_got.rs"]
+mod xrefs_immutable_got;

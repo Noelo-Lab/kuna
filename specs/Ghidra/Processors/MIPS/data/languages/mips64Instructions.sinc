@@ -247,19 +247,23 @@
 @endif
 
 # 1101 00bb bbbt tttt iiii iiii iiii iiii
+@ifndef OCTEON
 :lld RT, OFF_BASE               is $(AMODE) & prime=52 & OFF_BASE & RT {        
     RT = *[ram]:8 OFF_BASE;
 }
+@endif
 # 1001 11bb bbbt tttt iiii iiii iiii iiii
 :lwu RT, OFF_BASE               is $(AMODE) & prime=39 & OFF_BASE & RT { 
     RT = zext( *[ram]:4 OFF_BASE );
 }
 
 # 1111 00bb bbbt tttt iiii iiii iiii iiii
+@ifndef OCTEON
 :scd RTsrc, OFF_BASE            is $(AMODE) & prime=60 & OFF_BASE & RT & RTsrc {        
     *[ram]:8 OFF_BASE = RTsrc;
     RT = 1;
 }
+@endif
 # 1111 11bb bbbt tttt iiii iiii iiii iiii
 :sd RTsrc, OFF_BASE             is $(AMODE) & prime=63 & OFF_BASE & RTsrc {
     *[ram]:8 OFF_BASE = RTsrc;

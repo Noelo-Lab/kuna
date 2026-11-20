@@ -1,0 +1,83 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<!--
+    A Swift string object printed as another literal's text.  swiftc passes a
+    String literal of 16 bytes or more as two words: its count with flags, and
+    the object word (literal - 0x20) | 1<<63.  When the tag is ORed in after a
+    join, the untagged object reaches ActionConstantPtr as a bare constant.
+    Large literals are 16-byte aligned, so it is the start of, or a point 16
+    bytes into, the literal stored before, and the action's char-array arms
+    printed that literal's text in place of the address.
+
+    pick and level are swiftc -O output (Swift 6.4.2, arm64 Mach-O) for
+
+        func pick(_ flag: Bool) -> String {
+            flag ? "chosen when the flag is set (long)"
+                 : "chosen when the flag is clear (long)" }
+        func level(_ n: Int) -> String {
+            switch n { case 0: return "level zero (short-ish)"
+                       case 1: return "level one (short-ish)"
+                       default: return "level two (short-ish)" } }
+
+    with the __cstring section they read.  Before the fix pick's set path
+    printed "flag is clear (long)" (16 bytes into the clear literal, the
+    interior arm), and level printed "level one (short-ish)" for case 0 and
+    "level two (short-ish)" for case 1 (the exact-hit arm) and "flag is set
+    (long)" for the default.  `map addr` stands in for the strings analysis
+    pass, which does not run on a bytechunk image.
+
+    ctl_join is hand-written: pick's values with the bias applied after the
+    join, the shape swiftc emits for a large rawValue switch.  Its literal
+    addresses meet an INT_ADD before the tag, so they keep their text.
+
+    Stage: P9 emission (ActionConstantPtr, kuna_swiftstrobj), strict fix, no
+    option.  #1-#6 fail before the fix; #7-#10 pass with and without it.
+-->
+<bytechunk space="ram" offset="0x100000780" readonly="true">
+480480d20800faf2090900910a0000904ac122914a8100d10b0000906b012291
+6b8100d11f0000720011899a48118b9a010141b2c0035fd6a80280d20800faf2
+09000090298124910a0000904a812391298100d14a8100d10b0000906b012491
+6b8100d11f0400f14a118b9a1f0000f129018a9a0015889a210141b2c0035fd6
+490480d20900faf20800009008c1229180000037290900910800009008012291
+088100d1010141b2e00309aac0035fd6
+</bytechunk>
+<bytechunk space="ram" offset="0x100000880" readonly="true">
+63686f73656e207768656e2074686520666c616720697320636c65617220286c
+6f6e672900000000000000000000000063686f73656e207768656e2074686520
+666c61672069732073657420286c6f6e67290000000000000000000000000000
+6c6576656c2074776f202873686f72742d697368290000000000000000000000
+6c6576656c206f6e65202873686f72742d697368290000000000000000000000
+6c6576656c207a65726f202873686f72742d6973682900
+</bytechunk>
+<symbol space="ram" offset="0x100000780" name="pick"/>
+<symbol space="ram" offset="0x1000007b8" name="level"/>
+<symbol space="ram" offset="0x100000800" name="ctl_join"/>
+</binaryimage>
+<script>
+  <com>map addr r0x100000880 char s_clear[37]</com>
+  <com>map addr r0x1000008b0 char s_set[35]</com>
+  <com>map addr r0x1000008e0 char s_two[22]</com>
+  <com>map addr r0x100000900 char s_one[22]</com>
+  <com>map addr r0x100000920 char s_zero[23]</com>
+  <com>lo fu pick</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu level</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ctl_join</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="SWIFTSTROBJ #1: pick's set-path object prints as its address" min="1" max="1">= 0x100000890;</stringmatch>
+<stringmatch name="SWIFTSTROBJ #2: level's case-0 object prints as its address" min="1" max="1">= 0x100000900;</stringmatch>
+<stringmatch name="SWIFTSTROBJ #3: level's case-1 object prints as its address" min="1" max="1">= 0x1000008e0;</stringmatch>
+<stringmatch name="SWIFTSTROBJ #4: level's default object prints as its address" min="1" max="1">= 0x1000008c0;</stringmatch>
+<stringmatch name="SWIFTSTROBJ #5: no object prints the tail of the literal before it" min="0" max="0">"flag is (clear|set) \(long\)"</stringmatch>
+<stringmatch name="SWIFTSTROBJ #6: no object prints the literal before it" min="0" max="0">"level (zero|one|two) \(short-ish\)"</stringmatch>
+<stringmatch name="SWIFTSTROBJ #7: every function still ORs in the tag" min="3" max="3">\| 0x8000000000000000;</stringmatch>
+<stringmatch name="SWIFTSTROBJ #8: a literal biased after the join keeps its text" min="1" max="1">= "chosen when the flag is set \(long\)";</stringmatch>
+<stringmatch name="SWIFTSTROBJ #9: so does the other one" min="1" max="1">= "chosen when the flag is clear \(long\)";</stringmatch>
+<stringmatch name="SWIFTSTROBJ #10: and the bias stays on the literal" min="1" max="1">&amp;v\d+\[-0x20\] \| 0x8000000000000000;</stringmatch>
+</decompilertest>

@@ -2,7 +2,6 @@
 
 use crate::context::VarnodeId;
 use crate::funcdata::Funcdata;
-use kuna_num::opcodes::OpCode;
 
 pub(crate) fn crosses_write(fd: &Funcdata, id: VarnodeId) -> bool {
     if !crate::kuna_stackviews::enabled(fd) {
@@ -11,12 +10,10 @@ pub(crate) fn crosses_write(fd: &Funcdata, id: VarnodeId) -> bool {
     let Some(value) = fd.vbank().get(id) else {
         return false;
     };
-    let Some(load) = value.get_def().and_then(|op| fd.obank().get(op)) else {
+    let Some(load) = value.get_def().and_then(|op| crate::bitfield::pull::printed_load(fd, op))
+        .and_then(|op| fd.obank().get(op)) else {
         return false;
     };
-    if load.code() != OpCode::CPUI_LOAD {
-        return false;
-    }
     let Some(cover) = value.cover() else {
         return false;
     };
@@ -44,7 +41,7 @@ pub(crate) fn crosses_write(fd: &Funcdata, id: VarnodeId) -> bool {
         return false;
     }
     let extent = crate::kuna_stackranges::frame_address(fd, pointer)
-        .and_then(|address| address.extent(value.get_size()));
+        .and_then(|address| address.extent(load.get_out().and_then(|v| fd.vbank().get(v))?.get_size()));
     for (block, _) in cover.iter() {
         if block < 0 || block >= fd.bblocks_get_size() {
             continue;

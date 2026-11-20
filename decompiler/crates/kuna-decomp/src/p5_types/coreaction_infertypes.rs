@@ -70,6 +70,15 @@ pub(crate) fn output_type_local(data: &Funcdata, op: OpId) -> Rc<Datatype> {
     // `BUILTIN_STRINGDATA` CALLOTHER reports its char-pointer output token and
     // `ActionSetCasts` inserts no spurious cast around the rendered string literal.
     if o.code() == OpCode::CPUI_CALLOTHER {
+        if let Some(ty) = crate::kuna_octeoneffects::output_type(data, op) {
+            return ty;
+        }
+        if let Some(ty) = crate::kuna_roundingops::output_type(data, op) {
+            return ty;
+        }
+        if let Some(ty) = crate::kuna_repstring::output_type(data, op) {
+            return ty;
+        }
         let in0_off = o
             .get_in(0)
             .and_then(|v| data.vbank().get(v))
@@ -148,6 +157,18 @@ fn input_type_local_with(data: &Funcdata, op: OpId, slot: int4, recovered: bool)
         }
     }
 
+    if opcode == OpCode::CPUI_CALLOTHER {
+        if let Some(ty) = crate::kuna_octeoneffects::input_type(data, op, slot) {
+            return ty;
+        }
+        if let Some(ty) = crate::kuna_roundingops::input_type(data, op, slot) {
+            return ty;
+        }
+        if let Some(ty) = crate::kuna_repstring::input_type(data, op, slot) {
+            return ty;
+        }
+    }
+
     // (kuna strlenscan) `DatatypeUserOp::getInputLocal` for the `strlen` builtin:
     // its one argument is a `char *`.
     if opcode == OpCode::CPUI_CALLOTHER
@@ -156,6 +177,25 @@ fn input_type_local_with(data: &Funcdata, op: OpId, slot: int4, recovered: bool)
             == Some(crate::userop::BUILTIN_STRLEN as u64)
     {
         if let Some(tlst) = arch.types() {
+            let ws = data.get_arch().manage().get_default_data_space().map(|s| s.get_word_size()).unwrap_or(1);
+            if let Ok(ptr) = tlst.get_type_char(1).and_then(|c| tlst.get_type_pointer(in_size, c, ws)) {
+                return ptr;
+            }
+        }
+    }
+
+    // (kuna kernelbug) `__WARN(file,line)`: the file is a `char *`, the line an `int`.
+    if opcode == OpCode::CPUI_CALLOTHER
+        && slot > 0
+        && o.get_in(0).and_then(|v| data.vbank().get(v)).map(|v| v.get_offset())
+            == Some(crate::userop::BUILTIN_KERNEL_WARN as u64)
+    {
+        if let Some(tlst) = arch.types() {
+            if in_size == 4 {
+                if let Ok(t) = tlst.get_base(4, type_metatype::TYPE_INT) {
+                    return t;
+                }
+            }
             let ws = data.get_arch().manage().get_default_data_space().map(|s| s.get_word_size()).unwrap_or(1);
             if let Ok(ptr) = tlst.get_type_char(1).and_then(|c| tlst.get_type_pointer(in_size, c, ws)) {
                 return ptr;
@@ -308,6 +348,17 @@ fn call_input_type_local(
 /// non-VOID, return that return data-type.  `None` falls back to the generic
 /// size-only `getOutputLocal`.
 fn call_output_type_local(data: &Funcdata, op: OpId, opcode: OpCode) -> Option<Rc<Datatype>> {
+    // (kuna `sitetypelock`) A per-call-site locked output IS this call's stated
+    // result type: report it here so the cast plane sees no mismatch with the
+    // output Varnode the lock pinned (same size guard as the apply).
+    if let Some(o) = data.obank().get(op) {
+        if let Some(ct) = data.get_override().find_output_typelock(o.get_addr()) {
+            let out_size = o.get_out().and_then(|v| data.vbank().get(v)).map(|v| v.get_size());
+            if out_size == Some(ct.get_size()) {
+                return Some(Rc::clone(ct));
+            }
+        }
+    }
     // C++ `TypeOpCall`: the prototype lives only when in(0) is an fspec reference;
     // a CALL whose in(0) is not an fspec falls through to the default.
     if opcode == OpCode::CPUI_CALL {
@@ -337,6 +388,7 @@ fn call_output_type_local(data: &Funcdata, op: OpId, opcode: OpCode) -> Option<R
     if !proto.is_output_locked() {
         let size = data.obank().get(op)?.get_out().and_then(|v| data.vbank().get(v)).map(|v| v.get_size())?;
         return crate::p4_calls::kuna_passthrough::tail_return_type(data, op, size)
+            .or_else(|| crate::p4_calls::kuna_slotargs::declared_result_type(data, op, fc, size))
             .or_else(|| crate::p4_calls::kuna_callrettype::stated_return_type(data, op, fc))
             .or_else(|| crate::p4_calls::kuna_narrowret::stated_type(data, op, fc, size))
             .or_else(|| crate::kuna_floatreg::jump_result_type(data, op, size));
@@ -1116,7 +1168,10 @@ fn propagate_load_store(
                 return None;
             }
         }
-        let value = propagate_from_pointer(tlst, alttype, out_size)?;
+        let value = match propagate_from_pointer(tlst, Rc::clone(&alttype), out_size) {
+            Some(value) if value.get_metatype() != type_metatype::TYPE_UNKNOWN => value,
+            value => crate::bitfield::whole_byte_field_value(tlst, &alttype, out_size).or(value)?,
+        };
         // (kuna `structsynth nest`) A record's pointer to itself names its shell.
         Some(crate::kuna_structsynth::resolve_self_pointer(tlst, &value).unwrap_or(value))
     }

@@ -1,0 +1,50 @@
+<decompilertest>
+<binaryimage arch="x86:LE:32:default:windows">
+<!--
+    MSVC __ftol-family helpers in a stripped PE (kuna_msvcftolsig).
+
+    The kuna_msvcftol call-fixup is installed by name. In a stripped PE the
+    statically linked helper has none, so `fld ...; call sub_XXXX` keeps the
+    ST0 argument invisible and the feeding x87 expression is dead-code
+    eliminated. The recognizer names the helpers from their VS2005 CRT bytes.
+    The SSE2 entries return only EAX; __ftol and __ftol2 return EDX:EAX.
+
+    Fixture: decompiler/crates/kuna-analysis/tests/fixtures/ftolsig_pe_i386.exe
+    (build notes in ftolsig_pe_i386.s). sub_401150 is VC8 /O2 output calling
+    __ftol2_sse twice, sub_401033 calls __ftol, and sub_401042 calls a helper
+    with the same contract that no signature knows: it stays argument-less
+    until `function bounds ... as _ftol2` names it.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/ftolsig_pe_i386.exe</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>load function sub_401150</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function sub_401033</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function sub_401042</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x401060 as _ftol2</com>
+  <com>load function sub_401042</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="MSVCFTOLSIG #1: the stripped helpers are named from their bytes" min="5" max="5">^0x40(1070 __ftol2_sse|1079 __ftol2_pentium4|108c __ftol2_sse_excpt|10a6 __ftol2|1120 __ftol)$</stringmatch>
+<stringmatch name="MSVCFTOLSIG #2: no recognized helper is called without its argument" min="0" max="0">(sub_401070|sub_401120|__ftol2_sse|__ftol)\(\)</stringmatch>
+<stringmatch name="MSVCFTOLSIG #3: the first __ftol2_sse operand survives as a 32-bit conversion" min="1" max="1">\*a3 = \(int4\)\(\(float10\)a0\[2\] \* \(float10\)a1\[1\] \+ \(\(float10\)a0\[1\] \* \(float10\)\*a1 \+ \(float10\)a2 \* \(float10\)\*a0\)\);</stringmatch>
+<stringmatch name="MSVCFTOLSIG #4: the second __ftol2_sse operand survives and EDX stays out of the return" min="1" max="1">^int4 sub_401150\(float4 \*a0,float4 \*a1,float4 a2,int4 \*a3\)</stringmatch>
+<stringmatch name="MSVCFTOLSIG #5: the __ftol operand survives" min="1" max="1">return \(int8\)\(\(float10\)\*a0 \* \(float10\)a0\[1\]\);</stringmatch>
+<stringmatch name="MSVCFTOLSIG #6: an unrecognized helper stays argument-less" min="1" max="1">^  sub_401060\(\);</stringmatch>
+<stringmatch name="MSVCFTOLSIG #7: declaring its name installs the fixup" min="1" max="1">return \(int8\)\(\(float10\)\(\(float4 \*\)a0\)\[2\] \+ \(float10\)\(\(float4 \*\)a0\)\[3\]\);</stringmatch>
+</decompilertest>

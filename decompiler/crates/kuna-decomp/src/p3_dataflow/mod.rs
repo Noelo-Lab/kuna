@@ -4,6 +4,8 @@
 //! `lib.rs` so public paths (`kuna_decomp::<module>`) are unchanged.
 
 pub mod heritage;
+pub(crate) mod kuna_memoryguard;
+pub mod kuna_octeoneffects;
 mod kuna_leafmemory;
 pub(crate) mod kuna_globalcallranges;
 pub(crate) mod kuna_loadguardreads;
@@ -50,6 +52,7 @@ pub(crate) mod kuna_calleehomes;
 pub(crate) mod kuna_partialglobalload;
 pub(crate) mod kuna_stackstoreguard;
 pub(crate) mod kuna_stackbytecopy;
+pub(crate) mod kuna_repframecopy;
 pub(crate) mod kuna_spillstoreguard;
 pub mod kuna_tiedstorekeep;
 pub mod kuna_loopcounterstore;
@@ -65,6 +68,7 @@ pub mod kuna_wideslice;
 pub mod kuna_pushanrules;
 pub mod kuna_devectorize;
 pub mod kuna_strlenscan;
+pub mod kuna_repstring;
 pub mod kuna_narrowload; // (kuna) a narrow LOAD keeps its own width
 pub mod kuna_regnarrow;
 pub(crate) mod kuna_volatileload;

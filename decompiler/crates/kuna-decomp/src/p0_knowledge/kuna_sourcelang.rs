@@ -13,18 +13,18 @@
 //! `<binaryimage>` bootstrap never runs the analyzer tier, so the fact stays
 //! [`SourceLang::Unknown`] on the datatest corpus by construction.
 //!
-//! ## Why the override is an env-var bridge, not only an `Architecture` flag
+//! ## Why the override is a load-time option, not only an `Architecture` flag
 //!
 //! Detection does not just set the engine fact — it selects analysis passes
 //! (`passes_for(compiler, format)`: the Go pclntab pass, the Rust no-return
 //! widening) *inside* `load file`, upstream of every per-function `option`
-//! command. An override that should reach pass selection therefore travels as
-//! a process environment variable ([`SOURCELANG_ENV`]) consulted by
-//! `kuna_analysis::sourcelang::effective_compiler` and set by the `kuna` CLI
-//! before the file is loaded.
-//! The console `option sourcelang` arm still updates the engine fact for the
-//! already-loaded program (the per-function rules read the fresh value), and
-//! bridges the env so a later `load file` in the same process honours it.
+//! command. An override that should reach pass selection therefore travels on
+//! the load options (`LoadOptions::sourcelang`, [`crate::kuna_loadoptions`]),
+//! read by `kuna_analysis::sourcelang::effective_compiler`; the `kuna` CLI
+//! carries it in [`SOURCELANG_ENV`]. The console `option sourcelang` arm still
+//! updates the engine fact for the already-loaded program (the per-function
+//! rules read the fresh value), and the console exports it so a later
+//! `load file` in the same session honours it.
 //!
 //! Default **auto** (= trust detection); `c`, `rust`, `go` and `swift` force
 //! the verdict. A `cpp` value is deliberately absent until something consumes
@@ -94,13 +94,19 @@ impl SourceLang {
 /// verdict for analysis-pass selection and the engine fact alike.
 pub const SOURCELANG_ENV: &str = "KUNA_SOURCELANG";
 
-/// The forced source language in this process's environment, if any.
-pub fn forced_from_env() -> Option<SourceLang> {
-    let v = std::env::var(SOURCELANG_ENV).ok()?;
-    SourceLang::parse_forced(&v)
+/// The forced source language of the load in progress, if any.
+pub fn forced() -> Option<SourceLang> {
+    crate::kuna_loadoptions::scoped(|o| o.sourcelang)
+        .unwrap_or_else(crate::kuna_loadoptions::env::sourcelang)
 }
 
-/// Bridge a `set_kuna_option("sourcelang", val)` choice to [`SOURCELANG_ENV`]
+/// The forced source language in this process's environment, if any. Reads
+/// only the environment; a load in progress reads [`forced`].
+pub fn forced_from_env() -> Option<SourceLang> {
+    crate::kuna_loadoptions::env::sourcelang()
+}
+
+/// Export a `set_kuna_option("sourcelang", val)` choice to [`SOURCELANG_ENV`]
 /// so a later `load file` in the same process sees it (`auto` clears it).
 pub fn set_sourcelang_env(forced: Option<SourceLang>) {
     match forced {

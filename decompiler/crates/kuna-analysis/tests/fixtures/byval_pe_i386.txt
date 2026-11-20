@@ -1,0 +1,11 @@
+Stripped PE32 i386 fixture for kuna_calleestackargs (tests/stages/kuna-calleeargs.xml).
+
+byval_pe_i386.cpp and byval_pe_i386_impl.cpp are compiled by Visual C++ 2005 SP1
+(`cl /O2 /c`, outputs renamed byval_pe_i386_c.obj and byval_pe_i386_impl.obj).
+`draw` (0x401000) calls paint(a, b, 3), then passes a 32-byte Rect by value to
+fill, which VC8 builds with `sub esp,0x20; mov edi,esp; rep movsd`.
+
+Build:
+  lld-link /nologo /entry:start /subsystem:console /nodefaultlib /base:0x400000 \
+    /fixed /safeseh:no /opt:noref /Brepro /out:byval_pe_i386.exe \
+    byval_pe_i386_c.obj byval_pe_i386_impl.obj

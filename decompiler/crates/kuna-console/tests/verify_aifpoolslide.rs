@@ -1,6 +1,6 @@
 //! End-to-end gate for `aifpoolslide` on the `poolentry` fixture
 //! (`cortexm_poolentry_le32`, see `verify_poolentry.rs` for its three shapes),
-//! with the byte-granular gap cursor (`aifstrict` off) and `poolentry` off.
+//! with the byte-granular gap cursor (`aif on`) and `poolentry` off.
 //!
 //! Off, the gap walk plants an entry one halfword into each literal pool and the
 //! function behind it is never probed. On, both accepts are planted on the
@@ -25,7 +25,6 @@ fn bootstrap(slide: bool) -> kuna_console::engine::ConsoleProgram {
         ("listing", true),
         ("funcstart_patterns", true),
         ("aif", true),
-        ("aifstrict", false),
         ("poolentry", false),
         ("aifpoolslide", slide),
     ] {

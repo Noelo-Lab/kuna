@@ -38,12 +38,10 @@ pub fn crosses_global_write(data: &mut Funcdata, vn: VarnodeId, except: Option<H
     let Some(v) = data.vbank().get(vn) else {
         return false;
     };
-    let Some(load) = v.get_def().and_then(|d| data.obank().get(d)) else {
+    let Some(load) = v.get_def().and_then(|d| crate::bitfield::pull::printed_load(data, d))
+        .and_then(|d| data.obank().get(d)) else {
         return false;
     };
-    if load.code() != OpCode::CPUI_LOAD {
-        return false;
-    }
     let Some(cover) = v.cover() else {
         return false;
     };
@@ -54,7 +52,8 @@ pub fn crosses_global_write(data: &mut Funcdata, vn: VarnodeId, except: Option<H
         .get_in(1)
         .and_then(|p| data.vbank().get(p))
         .filter(|p| p.is_constant())
-        .map(|p| (p.get_offset(), p.get_offset().wrapping_add(v.get_size() as u64)));
+        .map(|p| (p.get_offset(), p.get_offset().wrapping_add(load.get_out()
+            .and_then(|v| data.vbank().get(v)).map_or(1, |v| v.get_size()) as u64)));
     let mut writes: Vec<(VarnodeId, Option<HighVariableId>)> = Vec::new();
     for (blk, cb) in cover.iter() {
         if blk < 0 || blk >= data.bblocks_get_size() {
@@ -141,7 +140,8 @@ pub fn keeps_apart(ctx: &mut dyn MergeContext, vn1: VarnodeId, vn2: VarnodeId) -
     };
     let loads: Vec<VarnodeId> = (0..ctx.high_num_instances(value))
         .map(|i| ctx.high_get_instance(value, i))
-        .filter(|&v| ctx.vn_def(v).is_some_and(|d| ctx.op_code(d) == OpCode::CPUI_LOAD))
+        .filter(|&v| ctx.vn_def(v).is_some_and(|d| matches!(ctx.op_code(d),
+            OpCode::CPUI_LOAD | OpCode::CPUI_ZPULL | OpCode::CPUI_SPULL)))
         .collect();
     loads.into_iter().any(|v| ctx.vn_load_crosses_global_write(v, global))
 }

@@ -959,6 +959,17 @@ fn matching_constants(fd: &Funcdata, vn1: VarnodeId, vn2: VarnodeId) -> bool {
 // JumpValues iterator family (jumptable.hh:166-231, jumptable.cc:261-388)
 // ---------------------------------------------------------------------------
 
+/// (kuna) Fails a walk over a switch variable's values once the per-function
+/// budget is spent, so a model with a long range ends with its drive: every
+/// recovery loop advances through [`JumpValues::next`].
+fn walk_within_budget() -> KunaResult<()> {
+    if !crate::decompile_drive::budget_probe() {
+        return Ok(());
+    }
+    crate::decompile_drive::note_budget_site(|| "jump-table value walk".to_string());
+    Err(KunaError::lowlevel("Jumptable value walk ran past the per-function budget"))
+}
+
 /// An iterator over values a switch variable can take (C++ `JumpValues`,
 /// `jumptable.hh:166`).
 ///
@@ -1134,6 +1145,7 @@ impl JumpValues for JumpValuesRange {
     }
 
     fn next(&mut self) -> KunaResult<bool> {
+        walk_within_budget()?;
         if let Some(values) = &self.explicit_values {
             if self.explicit_index + 1 >= values.len() {
                 return Ok(false);
@@ -1271,6 +1283,7 @@ impl JumpValues for JumpValuesRangeDefault {
         if self.lastvalue {
             return Ok(false);
         }
+        walk_within_budget()?;
         let mut cv = self.base.curval;
         if self.base.range.get_next(&mut cv) {
             self.base.curval = cv;
@@ -1398,6 +1411,11 @@ pub trait JumpModel {
     ) -> KunaResult<bool>;
     /// Clone \b this model (C++ `clone`).
     fn clone_box(&self) -> Box<dyn JumpModel>;
+    /// (kuna) Is the table's last address the synthetic return a dispatch
+    /// takes when its target is the caller's return address?
+    fn kuna_returns_to_caller(&self) -> bool {
+        false
+    }
     /// Downcast support: `buildLabels` receives the \e orig model as a
     /// `&dyn JumpModel` and (in C++) `static_cast`s it to `const JumpBasic *`.
     fn as_any(&self) -> &dyn std::any::Any;
@@ -2560,6 +2578,88 @@ impl JumpBasicModel {
                 self.jrange = Some(Box::new(exact));
                 return;
             }
+        }
+        self.end_table_at_selector_map(fd, selector_vn);
+    }
+
+    /// (kuna) The bytes the selector's map occupies, as the first and last
+    /// byte offsets in its space: the LOAD addresses at the two ends of the
+    /// nearest upstream index range a guard bounds without wrapping.
+    fn selector_map_extent(&self, fd: &Funcdata, selector_vn: VarnodeId) -> Option<(Rc<AddrSpace>, uintb, uintb)> {
+        let load = fd.obank().get(fd.vbank().get(selector_vn)?.get_def()?)?;
+        let ptr_vn = load.get_in(1)?;
+        let space_index = fd.vbank().get(load.get_in(0)?)?.get_offset();
+        let space = fd.get_arch().manage().get_space(i32::try_from(space_index).ok()?)?.clone();
+        let last_byte = (fd.vbank().get(selector_vn)?.get_size() as uintb).checked_sub(1)?;
+        for pos in self.varnode_index + 1..self.path_meld.num_common_varnode() {
+            let start_vn = self.path_meld.get_varnode(pos);
+            let (mut range, _) = Self::width_range(fd, start_vn);
+            let unguarded = range.get_size();
+            crate::kuna_switchguardrange::intersect(fd, &self.selectguards, start_vn, &mut range);
+            if range.is_empty() || range.get_size() >= unguarded || range.get_min() > range.get_max() {
+                continue;
+            }
+            let Some(start_op) = self.path_meld.get_earliest_op(pos) else {
+                continue;
+            };
+            let address = |index: uintb| {
+                let mut emul = EmulateFunction::new(fd);
+                for &(seed_vn, seed_val) in self.loop_carried_seeds.iter() {
+                    emul.seed_varnode_value(seed_vn, seed_val);
+                }
+                emul.emulate_path(index, &self.path_meld, start_op, start_vn).ok()?;
+                let raw = emul.emulated_value(ptr_vn)?;
+                Some(AddrSpace::address_to_byte(raw, space.get_word_size()))
+            };
+            let (Some(a), Some(b)) = (address(range.get_min()), address(range.get_max())) else {
+                continue;
+            };
+            let end = a.max(b).checked_add(last_byte)?;
+            return Some((space, a.min(b), end));
+        }
+        None
+    }
+
+    /// (kuna) End the table at the selector value whose row would be read
+    /// from the selector's own map: the map's bytes are selector values, not
+    /// rows, so the table cannot continue through them. Used when the map's
+    /// values could not be proven, which leaves the selector its whole range.
+    fn end_table_at_selector_map(&mut self, fd: &Funcdata, selector_vn: VarnodeId) {
+        let Some((space, first, last)) = self.selector_map_extent(fd, selector_vn) else {
+            return;
+        };
+        let mut values = self.jrange().clone_box();
+        let (Some(start_op), Some(start_vn)) = (values.get_start_op(), values.get_start_varnode()) else {
+            return;
+        };
+        let mut kept: int4 = 0;
+        let mut more = values.initialize_for_reading();
+        while more {
+            let mut emul = EmulateFunction::new(fd);
+            for &(seed_vn, seed_val) in self.loop_carried_seeds.iter() {
+                emul.seed_varnode_value(seed_vn, seed_val);
+            }
+            emul.set_load_collect(true);
+            let emulated = emul.emulate_path(values.get_value(), &self.path_meld, start_op, start_vn);
+            let loads = emul.take_loadpoints().unwrap_or_default();
+            let in_map = loads.iter().any(|row| {
+                let start = row.addr.get_offset();
+                let size = (row.size.max(1) as uintb).saturating_mul(row.num.max(1) as uintb);
+                row.addr.get_space().is_some_and(|s| s.get_index() == space.get_index())
+                    && start <= last
+                    && start.saturating_add(size - 1) >= first
+            });
+            if in_map {
+                if kept > 0 {
+                    self.jrange_range_mut().truncate(kept);
+                }
+                return;
+            }
+            if emulated.is_err() {
+                return;
+            }
+            kept += 1;
+            more = values.next().unwrap_or(false);
         }
     }
 
@@ -5467,6 +5567,9 @@ pub struct JumpTable {
     display_format: uint4,
     /// Set to \b true if \b this table is incomplete (C++ `partialTable`).
     partial_table: bool,
+    /// (kuna) Staged again because later flow re-entered the code before it.
+    reentered: bool,
+    target_encoding: Option<(i32, u64)>,
     /// Set to \b true if in-memory model data should be collected
     /// (C++ `collectloads`).
     collectloads: bool,
@@ -5520,6 +5623,8 @@ impl JumpTable {
             recover_count: 0,
             display_format: 0,
             partial_table: false,
+            reentered: false,
+            target_encoding: None,
             collectloads: false,
             default_is_folded: false,
             default_pinned: false,
@@ -5553,6 +5658,8 @@ impl JumpTable {
             recover_count: op2.recover_count,
             display_format: op2.display_format,
             partial_table: op2.partial_table,
+            reentered: op2.reentered,
+            target_encoding: op2.target_encoding,
             collectloads: op2.collectloads,
             default_is_folded: false,
             default_pinned: false,
@@ -5590,6 +5697,76 @@ impl JumpTable {
     /// Mark whatever is recovered so far as the complete table (C++ `markComplete`).
     pub fn mark_complete(&mut self) {
         self.partial_table = false;
+    }
+
+    /// (kuna) Stage this recovered table again: later flow re-entered the
+    /// code before it, so its target may now be one of several constants.
+    pub(crate) fn kuna_retry_flow(&mut self) {
+        self.partial_table = true;
+        self.reentered = true;
+    }
+    /// (kuna) Has flow extended or staged this table again for re-entry? Such a
+    /// table is followed many times, so flow follows each destination once.
+    pub(crate) fn kuna_is_reentered(&self) -> bool {
+        self.reentered
+    }
+    /// (kuna) The constant-select model needs `constselectjump on`, except on a
+    /// table staged again for re-entry, which only `off` prevents.
+    pub(crate) fn kuna_admits_const_select(&self, mode: crate::kuna_constselectjump::ConstSelectMode) -> bool {
+        mode == crate::kuna_constselectjump::ConstSelectMode::On || self.reentered
+    }
+    /// (kuna) The synthetic return destination, when the model proved the
+    /// dispatch can also jump to the caller's return address.
+    pub(crate) fn kuna_return_default(&self) -> Option<&Address> {
+        self.jmodel
+            .as_ref()
+            .filter(|model| model.kuna_returns_to_caller())
+            .and_then(|_| self.addresstable.last())
+    }
+    /// (kuna) Forget the synthetic return destination; the remaining constant
+    /// targets keep their model.
+    pub(crate) fn kuna_drop_return_default(&mut self) {
+        if self.kuna_return_default().is_none() {
+            return;
+        }
+        self.addresstable.pop();
+        let dests = self.addresstable.iter().map(|a| a.get_offset()).collect();
+        self.jmodel = Some(Box::new(crate::kuna_constselectjump::JumpModelConstSelect::from_flow_targets(dests, None)));
+    }
+    /// (kuna) Is this a re-entry retry of a table whose followed targets must
+    /// survive a failed second stage?
+    pub(crate) fn kuna_keeps_recovered_targets(&self) -> bool {
+        self.reentered && self.partial_table && !self.addresstable.is_empty()
+    }
+    /// Add an exact edge-local target without running another partial decompile.
+    pub(crate) fn kuna_extend_flow_target(&mut self, target: Address, limit: usize) -> Option<bool> {
+        if self.is_override() || self.addresstable.is_empty()
+            || !crate::kuna_constselectjump::kuna_destination_is_local(
+                self.opaddress.get_offset(), target.get_offset())
+        { return None; }
+        if self.addresstable.contains(&target) { return Some(false); }
+        if self.addresstable.len() >= limit { return None; }
+        let stub = self.kuna_return_default().cloned();
+        if stub.is_some() { self.addresstable.pop(); }
+        self.addresstable.push(target);
+        self.addresstable.sort();
+        let dests = self.addresstable.iter().map(|a| a.get_offset()).collect();
+        if let Some(address) = &stub { self.addresstable.push(address.clone()); }
+        self.jmodel = Some(Box::new(crate::kuna_constselectjump::JumpModelConstSelect::from_flow_targets(
+            dests, stub.as_ref().map(|a| a.get_offset()))));
+        self.reentered = true;
+        self.partial_table = false;
+        self.row_loads = None;
+        Some(true)
+    }
+
+    pub(crate) fn kuna_target_encoding(&self) -> Option<(i32, u64)> {
+        self.target_encoding
+    }
+    pub(crate) fn kuna_set_target_encoding(&mut self, encoding: Option<(i32, u64)>) {
+        if self.target_encoding.is_none() {
+            self.target_encoding = encoding;
+        }
     }
 
     /// (kuna) Attach a trivial (non-override) model to a hand-built table (C++
@@ -6051,6 +6228,9 @@ impl JumpTable {
                 self.default_block = cur_pos;
             }
         }
+        if self.kuna_return_default().is_some() {
+            self.default_block = self.last_block;
+        }
         Ok(())
     }
 
@@ -6118,11 +6298,15 @@ impl JumpTable {
             return Ok(());
         }
         // (kuna) Neither value-range model could bound the destination.  When
-        // `option constselectjump on`, the destination may still be a select over
+        // `option constselectjump on`, or for a table staged again after flow
+        // re-entered the code before it, the destination may still be a select over
         // constants -- a set both models prune away at the MULTIEQUAL rather than
         // lose.  See `p2_lift/kuna_constselectjump.rs`.
-        if fd.get_arch().const_select_jump {
+        if self.kuna_admits_const_select(fd.get_arch().const_select_jump) {
             let mut jconst = crate::kuna_constselectjump::JumpModelConstSelect::new();
+            if self.reentered {
+                jconst.kuna_admit_return(self.target_encoding);
+            }
             if jconst.recover_model(fd, indirect, self.addresstable.len() as uint4, max_table_size)?
             {
                 self.jmodel = Some(Box::new(jconst));
@@ -6289,9 +6473,10 @@ impl JumpTable {
         self.save_model();
         let oldaddresstable = std::mem::take(&mut self.addresstable);
         self.loadpoints.clear();
+        let mut failure = None;
         match self.recover_addresses(fd) {
             Ok(()) => {}
-            Err(_e) => {
+            Err(error) => {
                 // C++ catches JumptableThunkError and LowlevelError identically:
                 // restore the saved model and warn. (We do not yet distinguish
                 // the thunk subclass; both downgrade to the same restore path.)
@@ -6299,11 +6484,15 @@ impl JumpTable {
                 self.addresstable = oldaddresstable;
                 // fd->warning("Second-stage recovery error", indirect->getAddr())
                 // STUB(W4): warning sink lives on Funcdata; recorded as a loss.
+                // A re-entry retry reports its failure to the flow instead.
+                if self.reentered {
+                    failure = Some(error);
+                }
             }
         }
         self.partial_table = false;
         self.clear_saved_model(); // Keep the new model if it was created successfully
-        Ok(())
+        match failure { Some(error) => Err(error), None => Ok(()) }
     }
 
     /// (kuna) A second flow-time stage that again recovered a single address

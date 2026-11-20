@@ -702,7 +702,27 @@ fn ptrflow_copy_not_flagged_is_noop() {
 #[test]
 fn ptrflow_oplist_empty_without_truncations() {
     assert!(RulePtrFlow::new(false).get_op_list().is_empty());
-    assert_eq!(RulePtrFlow::new(true).get_op_list().len(), 10);
+    let operations = RulePtrFlow::new(true).get_op_list();
+    assert_eq!(operations.len(), 11);
+    assert!(operations.contains(&OpCode::CPUI_CALLOTHER));
+}
+
+#[test]
+fn ptrflow_does_not_narrow_unmodeled_userop_operands() {
+    let mut fd = build_fd();
+    ram(&fd).truncate_space(4);
+    let value = make_input(&mut fd, 0x100, 8);
+    let (op, _out) = make_op(&mut fd, 0x200, OpCode::CPUI_CALLOTHER, 3, 8);
+    let index = konst(&mut fd, 4, 0);
+    wire(&mut fd, index, op, 0);
+    wire(&mut fd, value, op, 1);
+    wire(&mut fd, value, op, 2);
+
+    assert_eq!(RulePtrFlow::new(true).apply_op(op, &mut fd), 0);
+    assert_eq!(op_in(&fd, op, 1), Some(value));
+    assert_eq!(op_in(&fd, op, 2), Some(value));
+    assert_eq!(fd.vbank().get(value).unwrap().get_size(), 8);
+    assert!(!fd.vbank().get(value).unwrap().is_ptr_flow());
 }
 
 #[test]

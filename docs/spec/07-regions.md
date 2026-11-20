@@ -500,7 +500,14 @@ Three further gates keep the edit honest: the victim must be a direct
 thunk); the call's output must have no reader (the checker returns `void`, and
 destroying a read Varnode is not recoverable); and exactly one argument may be
 a cookie cancel — a call that takes the pattern twice is not the one-argument
-checker.
+checker. The destructive arm also strips only a call whose model states its pop
+(`kuna_msvcstackguard.rs (pop_is_stated)`): an x86-32 Windows checker's model
+leaves extrapop unknown, chapter 06's stack solver accounts for the call with a
+guess, and deleting it re-solves the frame without that equation, which moved
+the stack arguments of unrelated calls (every argument of a `printf`-like call
+in setuptools' `cli-32.exe` launcher was lost). Such a check keeps its call and
+its argument. An x86-32 check only has an argument to match through
+`calleereginputs` (chapter 04, on by default on x86-32 Windows).
 
 **What it REMOVES.** The check call, with the stock pair
 `Funcdata::block_remove_internal` uses for a CALL inside a deleted block and
@@ -586,6 +593,40 @@ exact-cookie callee that writes XMM0 before an unresolved nested call, and a
 lane remains killed. Unit coverage adds nine exact checker sites marked before
 one restart.
 
+## 7.5b kuna passes at the region tier: the post-SSA write-barrier arm (kuna)
+
+**(kuna) `option gowritebarrier`, post-SSA arm,
+`decompiler/crates/kuna-decomp/src/p7_regions/kuna_gowbphi.rs
+(ActionGoWriteBarrierPhi)`.** The pre-SSA one-hop fold (chapter 02, §2.10)
+takes the textbook write-barrier diamond; real Go binaries carry two shapes it
+must refuse — a barrier arm SHARED by several guards, and an arm whose call
+result (the GC buffer pointer) and register effects feed the join's
+MULTIEQUALs, so the program's own stores after the join read phi outputs
+partly defined by the arm. Deleting such an arm is only provable once SSA has
+made every read explicit, so this action sits in the fullloop tail beside the
+other edge strippers and uses the same `remove_branch` +
+`remove_unreachable_blocks` pair.
+
+The matcher (`decompiler/crates/kuna-decomp/src/infra/idiom.rs
+(match_guarded_cold_call_phi)`) refuses unless ALL of: every predecessor of
+the arm is a CBRANCH-terminated guard whose condition derives from a global
+flag (a `ram`-storage read or a LOAD through a constant pointer — the
+`runtime.writeBarrier` byte, wherever its symbol went); every op in the arm is
+GC bookkeeping (an allowlist of value plumbing, address arithmetic, LOADs,
+the one matched `runtime.gcWriteBarrier*` CALL and its INDIRECT effects, and
+STOREs only through pointers rooted at that call's own output — a store to
+program memory refuses the whole match); and every value the arm defines is
+read only inside the arm or by a MULTIEQUAL in the arm's single out-target.
+Under those proofs, cutting a guard edge strands nothing:
+`branch_remove_internal` drops the matching phi inputs, and when the last
+guard edge goes the unreachable sweep removes the arm, its join inputs with
+it — each surviving phi collapses to the hot-path value. One guard edge is
+cut per apply, so a shared arm converges one guard at a time and every cut
+re-validates the shape against the edited graph. The witness is
+`tests/stages/kuna-gowbphi.xml` (a double-guarded shared arm whose buffer
+stores read the call result), and the kuna-console `verify_go_writebarrier`
+family carries the store-preservation oracle over real Go builds.
+
 ## 7.6 Observability (kuna)
 
 Three console commands expose the region tree
@@ -648,5 +689,10 @@ unreachable blocks lets the ordinary dead-code pass remove unused comparison
 operands. The success arm and its memory accesses remain; length parameters used
 only by the eliminated comparison can disappear from the inferred signature.
 Straight-line panic stubs and conditionals with two panic successors are retained.
+On AArch64, the pass retains a branch to the exact `runtime.panicdivide`
+helper, including its ABI-suffixed names. AArch64 integer division yields
+zero for a zero divisor, and its lifted result preserves that case. Removing
+the panic edge would turn a Go divide-by-zero into a normal return. The
+helper's no-return fact and the other Go check folds still apply.
 This is a source-oriented destructive transform: `option gobounds off` preserves
 the actual checks for auditing. The Go language gate leaves the C corpus untouched.

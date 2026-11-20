@@ -134,7 +134,7 @@ fe0301aa400000b4220080d2d0071eca5000f0b6208e38d4e00302aac0035fd6
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="PTRAUTHTRAP #1: off keeps the bit test on the incoming return address" min="1" max="1">if \(\(v1 \^ v1 &lt;&lt; 1\) &gt;&gt; 0x3e &amp; 1\)</stringmatch>
+<stringmatch name="PTRAUTHTRAP #1: off keeps the bit test on the incoming return address (and x30inverted keeps it in both)" min="2" max="2">if \(\(v1 \^ v1 &lt;&lt; 1\) &gt;&gt; 0x3e &amp; 1\)</stringmatch>
 <stringmatch name="PTRAUTHTRAP #2: off keeps the trap call" min="1" max="1">SoftwareBreakpoint\(0xc471,0x100000444\)</stringmatch>
 <stringmatch name="PTRAUTHTRAP #3: the tail call survives in both passes" min="2" max="2">_helper2\(\); // tail-call</stringmatch>
 <stringmatch name="PTRAUTHTRAP #4: only off declares a variable for the incoming x30" min="1" max="1"> v1; // stack - 0x8 \| x30</stringmatch>

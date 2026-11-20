@@ -18,8 +18,10 @@
 //! `SHF_ALLOC` section out above `RELOC_BASE`); the raw `object::File` symbol
 //! addresses are section-relative and would miss every instruction.
 //!
-//! A function's extent is the **address-contiguous clip** `[entry, next_entry)`
-//! (the same approximation [`crate::fid::extent`] documents), reconstructed by
+//! A function's extent is the **address-contiguous clip** `[entry, end)`
+//! using the smaller of the next entry and the symbol end when a nonzero size
+//! is available; otherwise the next entry bounds the clip.
+//! It is reconstructed by
 //! a **linear decode** from `entry` through the live `Translate` (driving
 //! [`crate::listing::decode::decode_one`] + [`crate::listing::classify::classify`]
 //! for the per-instruction flow). This is independent of the Listing/xref tier's
@@ -41,6 +43,7 @@ use std::rc::Rc;
 use kuna_base::address::Address;
 use kuna_decomp::architecture::Architecture;
 use kuna_sleigh::sleigh::{OpObject as SleighOpObject, Sleigh};
+use kuna_sleigh::translate::Translate;
 
 use crate::listing::classify::classify;
 use crate::listing::decode::decode_one;
@@ -94,8 +97,10 @@ pub fn build_records(
     // load-bearing seed/name source (see the module doc): for an `ET_REL` `.o`
     // the raw `object::File` symbol address is section-relative.
     let mut funcs = image.func_symbols();
-    funcs.sort_by_key(|(a, _)| *a);
-    funcs.dedup_by_key(|(a, _)| *a);
+    let arm32 = arch.archid.starts_with("ARM:") && arch.archid.contains(":32:");
+    let sizes: std::collections::BTreeMap<u64, u64> = image.func_symbol_sizes().into_iter().collect();
+    funcs.sort_by_key(|(a, _)| if arm32 { (*a & !1, a & 1 == 0) } else { (*a, false) });
+    funcs.dedup_by_key(|(a, _)| if arm32 { *a & !1 } else { *a });
 
     // The relocation oracle for the 4-way scalar rule: a relocation overlapping
     // an operand's value bytes suppresses that scalar to the `0xfeeddead`
@@ -118,11 +123,23 @@ pub fn build_records(
         if name.is_empty() {
             continue;
         }
-        // The exclusive upper bound: the next function entry strictly after this
-        // one (the `[entry, next)` clip). `None` ⇒ decode until a terminal / error.
-        let next = funcs.get(idx + 1).map(|(a, _)| *a);
-
-        let extent = decode_extent(translate, *entry, next, &code_space);
+        // The exclusive upper bound: the nearer of the next function entry and
+        // the symbol end. `None` ⇒ decode until a terminal / error.
+        let address = if arm32 { *entry & !1 } else { *entry };
+        let next = funcs.get(idx + 1).map(|(a, _)| if arm32 { *a & !1 } else { *a });
+        let symbol_end = sizes.get(entry).and_then(|size| address.checked_add(*size));
+        let end = match (next, symbol_end) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        };
+        let Some(_scope) = translate.context_scope() else { continue };
+        if arm32 && entry & 1 != 0 {
+            let addr = Address::new(Rc::clone(&code_space), address);
+            if arch.with_context_db_mut(|db| db.set_variable(b"TMode", &addr, 1)).is_err() {
+                continue;
+            }
+        }
+        let extent = decode_extent(translate, address, end, &code_space);
         if extent.len() < 4 {
             if dbg {
                 eprintln!("[fid] {name} @ {entry:#x}: extent {} < 4, skip", extent.len());
@@ -202,7 +219,7 @@ pub fn build_records(
 }
 
 /// Linear-decode a function's extent: the contiguous instructions in
-/// `[entry, next)` (with `next = None` ⇒ stop at the first terminal or decode
+/// `[entry, end)` (with `end = None` ⇒ stop at the first terminal or decode
 /// error). Each instruction is decoded once through `decode_one` and classified
 /// for its flow (`is_call` / `is_terminal`).
 fn decode_extent(
@@ -232,6 +249,9 @@ fn decode_extent(
             break; // an undecodable byte ends the clip
         };
         let len = dec.len.max(1); // never advance by 0 (avoid an infinite loop)
+        if next.is_some_and(|end| vma.checked_add(u64::from(len)).is_none_or(|end_insn| end_insn > end)) {
+            break;
+        }
         let cls = classify(&dec.ops, vma, dec.len);
         let is_terminal = cls.flow.is_terminal;
         out.push(ExtentInsn { addr: vma, len, is_call: cls.flow.is_call, is_terminal });

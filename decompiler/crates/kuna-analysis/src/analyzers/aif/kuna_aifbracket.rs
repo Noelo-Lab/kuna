@@ -40,7 +40,7 @@
 //!     (`nop`, `int3`, a self-`mov` or self-`lea`), a return or an unconditional
 //!     jump.
 //!
-//! A refused candidate still consumes its body, as an `aifcorroborate` refusal
+//! A refused candidate still consumes its body, as an `aif precise` refusal
 //! does: otherwise the cursor resumes inside the fragment it just refused.
 //!
 //! # Measured

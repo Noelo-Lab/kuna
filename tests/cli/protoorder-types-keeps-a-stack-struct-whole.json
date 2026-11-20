@@ -1,6 +1,6 @@
 {
   "schema": "re-probe/1",
-  "probe_id": "a-326a9ab3702d",
+  "probe_id": "a-7136962e0ea7",
   "kind": "cli",
   "cmd": [
     "{{KUNA}}",
@@ -28,9 +28,9 @@
       "eq": 0
     },
     "stdout_matches": [
-      "stat v2; // (?:[^|\\r\\n]+ \\| )*stack - 0xa8(?: \\| [^|\\r\\n]+)*",
-      "if \\(fstat\\(a0,&v2\\)\\)",
-      "\\(\\(long \\*\\)&v2\\)\\[7\\] = 0x200;"
+      "stat buf; // (?:[^|\\r\\n]+ \\| )*stack - 0xa8(?: \\| [^|\\r\\n]+)*",
+      "if \\(fstat\\(a0,&buf\\)\\)",
+      "\\(\\(long \\*\\)&buf\\)\\[7\\] = 0x200;"
     ],
     "stdout_absent": [
       "char v\\d+ \\[56\\]; // (?:[^|\\r\\n]+ \\| )*stack - 0xa8(?: \\| [^|\\r\\n]+)*",

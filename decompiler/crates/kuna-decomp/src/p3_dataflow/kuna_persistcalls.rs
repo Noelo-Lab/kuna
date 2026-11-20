@@ -42,9 +42,9 @@
 //! writes are its full and partial writes and every such STORE. For the last
 //! walk a LOAD reads nothing and a STORE may write all of the range, which is
 //! what each is until it folds. A return reads the range too (its persist
-//! COPY), so the call before it keeps its guard. A system call that guards
-//! memory reads and writes the range through its own INDIRECT, so it counts as
-//! a STORE.
+//! COPY), so the call before it keeps its guard. A system call or Octeon
+//! operation that guards memory ([`crate::kuna_memoryguard::memory_ops`]) reads
+//! and writes the range through its own INDIRECT, so it counts as a STORE.
 //!
 //! What is left is a value that crosses skipped calls only into a kept guard's
 //! input. A join is the other place such a value could land: a MULTIEQUAL that
@@ -126,8 +126,7 @@ impl MemoryOps {
                 }
             }
         }
-        self.stores.extend(crate::kuna_syscallregs::memory_calls(fd));
-        self.stores.extend(crate::kuna_x64syscall::memory_calls(fd));
+        self.stores.extend(crate::kuna_memoryguard::memory_ops(fd));
     }
 }
 

@@ -16,11 +16,18 @@ mod octeon_n64_arguments;
 mod octeon_abi;
 #[path = "mips_import_flow.rs"]
 mod mips_import_flow;
+#[path = "octeon_atomics.rs"]
+mod octeon_atomics;
 #[path = "n32_stack.rs"]
 mod n32_stack;
 
 #[path = "setup_commands.rs"]
 mod setup_commands;
+
+#[path = "verify_language_database.rs"]
+mod verify_language_database;
+#[path = "verify_memoryspecs.rs"]
+mod verify_memoryspecs;
 
 #[path = "verify_aarch64_plt.rs"]
 mod verify_aarch64_plt;
@@ -209,6 +216,8 @@ mod verify_go_pclntab;
 mod verify_go_noreturn_stripped;
 #[path = "verify_go_morestack.rs"]
 mod verify_go_morestack;
+#[path = "verify_go_mcall.rs"]
+mod verify_go_mcall;
 #[path = "verify_fatstr_records.rs"]
 mod verify_fatstr_records;
 #[path = "verify_go_writebarrier.rs"]
@@ -230,6 +239,9 @@ mod verify_iatcall;
 
 #[path = "verify_indirect_callers.rs"]
 mod verify_indirect_callers;
+
+#[path = "verify_itaniumctors.rs"]
+mod verify_itaniumctors;
 
 #[path = "verify_itaniumrtti.rs"]
 mod verify_itaniumrtti;
@@ -327,6 +339,8 @@ mod verify_objc;
 mod verify_swiftmetadata;
 #[path = "verify_swifttypes.rs"]
 mod verify_swifttypes;
+#[path = "verify_swiftcall.rs"]
+mod verify_swiftcall;
 
 #[path = "verify_importdata.rs"]
 mod verify_importdata;
@@ -521,6 +535,8 @@ mod verify_outlang_go;
 mod verify_godwarfsig;
 #[path = "verify_gopairreturns.rs"]
 mod verify_gopairreturns;
+#[path = "verify_gointerror.rs"]
+mod verify_gointerror;
 
 #[path = "verify_rustextensions.rs"]
 mod verify_rustextensions;
@@ -539,3 +555,15 @@ mod verify_rustfmtio;
 
 #[path = "verify_rustprobestack.rs"]
 mod verify_rustprobestack;
+
+#[path = "verify_bootstrap.rs"]
+mod verify_bootstrap;
+
+#[path = "mips_weak_imports.rs"]
+mod mips_weak_imports;
+
+#[path = "indirect_dispatch_flow.rs"]
+mod indirect_dispatch_flow;
+
+#[path = "verify_immutable_got.rs"]
+mod verify_immutable_got;

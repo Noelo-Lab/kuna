@@ -1,0 +1,83 @@
+dataptrs_arch_*.so -- shared objects whose data pointers are listed by each
+machine's own dynamic relocations (GH #1502).
+
+What they are
+  Built from dataptrs_arch.c (a hidden function, an exported function and an
+  exported int, a pointer to each function, a GOT read of the int, a PLT call
+  of the export). Not executed. SHA-256 and the relocations `llvm-readelf -r`
+  prints (slot type target):
+
+  dataptrs_arch_riscv64.so
+    ffa0e909f5efce29bb48bf13e8fb8ecde8cab22ea7caf747264b8606e472524d
+    0x3568 R_RISCV_RELATIVE 0x13d0 (audit_slot -> audit_target)
+    0x3570 R_RISCV_64 audit_export (audit_export_slot)
+    0x2558 R_RISCV_64 audit_data (GOT)
+    0x3588 R_RISCV_JUMP_SLOT audit_export
+  dataptrs_arch_riscv32.so
+    01908df6c774bf28e87c251cd3bf50db22c98a98ac1c16c73ca040637231ae3e
+    0x339c R_RISCV_RELATIVE 0x1280, 0x33a0 R_RISCV_32 audit_export,
+    0x2394 R_RISCV_32 audit_data, 0x33ac R_RISCV_JUMP_SLOT audit_export
+  dataptrs_arch_ppc32.so (secure PLT: DT_PPC_GOT 0x204c8)
+    6d67491ca2f501fc444d524aae0f1424744fbb288971705457432685af1ecdce
+    0x304dc R_PPC_RELATIVE 0x10338, 0x304e0 R_PPC_ADDR32 audit_export,
+    0x304d4 R_PPC_ADDR32 audit_data, 0x304e4 R_PPC_JMP_SLOT audit_export
+  dataptrs_arch_ppc32_bssplt.so (BSS PLT: no DT_PPC_GOT, .plt is code)
+    ba2e5a284ed1f22569b7fac5c068ce9acc83e650c30defb79c87f12b92366992
+    0x2014 R_PPC_RELATIVE 0x230, 0x2018 R_PPC_ADDR32 audit_export,
+    0x1f6c R_PPC_ADDR32 audit_data, 0x2064 R_PPC_JMP_SLOT audit_export
+  dataptrs_arch_ppc64le.so (ELFv2, e_flags 2)
+    8e33125de184bd372340b26c441feaa277aa6ada8677b7eac30821cd5b2c12fc
+    0x306a0 R_PPC64_RELATIVE 0x10480, 0x306a8 R_PPC64_ADDR64 audit_export,
+    0x20690 R_PPC64_ADDR64 audit_data, 0x306c0 R_PPC64_JMP_SLOT audit_export
+  dataptrs_arch_ppc64_elfv1.so (big-endian ELFv1, e_flags 1)
+    211ca020df8b8f89cdb4bafd33bf725fe9d533044d043c8fe69fde21f7deca09
+    .opd descriptors 0x1ea0/0x1eb8/0x1ed0/0x1ee8, each an R_PPC64_RELATIVE
+    entry word and TOC word; 0x2038 R_PPC64_RELATIVE 0x1ea0 (audit_slot ->
+    audit_target's descriptor), 0x2040 R_PPC64_ADDR64 audit_export (its
+    descriptor 0x1eb8), 0x1f08 R_PPC64_ADDR64 audit_data, 0x2018
+    R_PPC64_JMP_SLOT audit_export (a 24-byte descriptor copy, not a word)
+  dataptrs_arch_x86_64_androidrelr.so (Android RELR tags: SHT_ANDROID_RELR,
+    DT_ANDROID_RELR)
+    8c4a0eab6b5879767693941c5b305ecbf5fecf6de8935362ce9b501ee77ba7a4
+    0x3650 RELATIVE (the .relr.dyn bit; the word holds 0x1490, audit_target),
+    0x3658 R_X86_64_64 audit_export, 0x2620 R_X86_64_GLOB_DAT audit_data,
+    0x2640 R_X86_64_JUMP_SLOT audit_export
+  dataptrs_arch_ppc32_uaddr.so (from dataptrs_arch_uaddr.c: a pointer at an
+    unaligned offset of a packed struct)
+    bc2a6471376fb5729c3ba17dac087f51e6f9f04473f44f1365e38d79c2dc0b86
+    0x2001 R_PPC_UADDR32 .text + 0x190 (a local section symbol, whose value
+    binutils folds into the addend: the word holds 0x190, audit_target),
+    0x2008 R_PPC_RELATIVE 0x190
+  dataptrs_arch_ppc64_uaddr.so (same source, -m64, ELFv1)
+    73e1800066b67e7820c243ace47957e8018a8126749da157522538203909e792
+    0x2001 R_PPC64_UADDR64 .opd + 0 (audit_target's descriptor 0x1ee8),
+    0x2010 R_PPC64_RELATIVE 0x1ee8, 0x1ee8 R_PPC64_RELATIVE 0x278 (the
+    descriptor's entry word); GNU readelf names type 43, llvm-readelf 14 does not
+
+How they were built
+  LLVM: Ubuntu clang 14.0.0 compiling, LLD 23.1.1 (rust-lld) linking:
+    clang --target=<triple> -fuse-ld=lld --ld-path=<ld.lld> -fPIC -shared \
+      -nostdlib -O0 -Wl,--build-id=none dataptrs_arch.c -o <out>
+  with <triple> riscv64-unknown-linux-gnu, riscv32-unknown-linux-gnu,
+  powerpc-unknown-linux-gnu, powerpc64le-unknown-linux-gnu.
+  GNU: powerpc-linux-gnu-gcc 13.3.0, GNU ld 2.42:
+    powerpc-linux-gnu-gcc [-mbss-plt | -m64] -O0 -fPIC -shared -nostdlib \
+      -Wl,--build-id=none -Wl,-z,max-page-size=0x1000 \
+      -Wl,-z,common-page-size=0x1000 dataptrs_arch.c -o <out>
+  The _uaddr pair the same way from dataptrs_arch_uaddr.c (without -mbss-plt;
+  -m64 for ppc64). The Android one with LLD 23.1.1:
+    clang --target=x86_64-linux-android29 -fuse-ld=lld --ld-path=<ld.lld> \
+      -fPIC -shared -nostdlib -O0 -Wl,--build-id=none \
+      -Wl,--pack-dyn-relocs=relr -Wl,--use-android-relr-tags \
+      dataptrs_arch.c -o dataptrs_arch_x86_64_androidrelr.so
+  Prebuilt so the relocation kinds do not depend on the host toolchain.
+
+What they pin
+  kuna_dataptrs lists every relocated word whose relocation stores a word with
+  coverage dynamic-relocations: RISC-V's absolute GOT words and JUMP_SLOT,
+  PowerPC's RELATIVE/ADDR words and its PLT slot only where it is a word
+  (secure PLT, ELFv2), and its unaligned UADDR words. `kuna xrefs` reports them
+  as pointer rows. The SHT_RELR slots of relr_so_x86_64.so, and the
+  SHT_ANDROID_RELR slot of the Android one, are listed the same way. Corrupted copies (a
+  .rela.dyn sh_link, a PE base-relocation directory RVA) are made at test time
+  from dataptrs_so_x86_64.so and dataptrs_textptr_i386.exe.

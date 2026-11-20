@@ -13,7 +13,11 @@
 
 use kuna_decomp::kuna_kernelcache::KernelcacheChoice;
 
+pub use fileset::FilesetMap;
+pub use linked::LinkSearch;
+
 mod fileset;
+mod linked;
 mod lzfse;
 mod lzss;
 
@@ -36,10 +40,12 @@ fn decode_limit(input_len: usize, declared: Option<usize>) -> usize {
     declared.map_or(cap, |d| d.min(cap))
 }
 
-/// The loadable image after [`peel`], plus a one-line note on what was done.
+/// The loadable image after [`peel`], a one-line note on what was done, and the
+/// collection's entry map when an `MH_FILESET` entry was cut out.
 pub struct Peeled {
     pub bytes: Vec<u8>,
     pub note: Option<String>,
+    pub fileset: Option<FilesetMap>,
 }
 
 /// Whether `bytes` is an IMG4 / IM4P container or a bare compressed payload.
@@ -48,10 +54,25 @@ pub fn is_container(bytes: &[u8]) -> bool {
 }
 
 /// Unwrap a container and select one fileset entry, per `choice`. Input that is
-/// neither a container nor an `MH_FILESET` comes back unchanged.
+/// neither a container nor an `MH_FILESET` comes back unchanged. No other file
+/// is read, so pointers into a linked collection stay unresolved.
 pub fn peel(bytes: Vec<u8>, choice: &KernelcacheChoice) -> Result<Peeled, String> {
+    peel_linked(bytes, choice, &LinkSearch::none())
+}
+
+/// [`peel`] for the bytes of the file at `path`: the collections a System or
+/// Auxiliary collection links are looked up per the `kernelcache-boot` option
+/// in force.
+pub fn peel_file(path: &std::path::Path, bytes: Vec<u8>, choice: &KernelcacheChoice) -> Result<Peeled, String> {
+    let boot = kuna_decomp::kuna_kernelcacheboot::KernelcacheBoot::in_force();
+    peel_linked(bytes, choice, &LinkSearch::new(path, boot))
+}
+
+/// [`peel`], resolving pointers into linked collections against the files
+/// `search` finds.
+pub fn peel_linked(bytes: Vec<u8>, choice: &KernelcacheChoice, search: &LinkSearch) -> Result<Peeled, String> {
     if *choice == KernelcacheChoice::Off {
-        return Ok(Peeled { bytes, note: None });
+        return Ok(Peeled { bytes, note: None, fileset: None });
     }
     let mut notes = Vec::new();
     let bytes = if is_container(&bytes) {
@@ -61,15 +82,15 @@ pub fn peel(bytes: Vec<u8>, choice: &KernelcacheChoice) -> Result<Peeled, String
     } else {
         bytes
     };
-    let bytes = if fileset::is_fileset(&bytes) {
-        let (image, note) = fileset::extract(bytes, choice)?;
+    let (bytes, map) = if fileset::is_fileset(&bytes) {
+        let (image, note, map) = fileset::extract(bytes, choice, search)?;
         notes.push(note);
-        image
+        (image, Some(map))
     } else {
-        bytes
+        (bytes, None)
     };
     let note = (!notes.is_empty()).then(|| notes.join("; "));
-    Ok(Peeled { bytes, note })
+    Ok(Peeled { bytes, note, fileset: map })
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

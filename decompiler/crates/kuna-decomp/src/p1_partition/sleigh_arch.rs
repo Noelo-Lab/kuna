@@ -63,6 +63,8 @@
 //!   surface that is itself a later stub.  Each is documented inline with
 //!   `// STUB(...)`.
 
+use std::borrow::Cow;
+
 use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::filemanage::FileManage;
 use kuna_base::marshal::{
@@ -78,6 +80,7 @@ use kuna_sleigh::sleigh::Sleigh;
 use kuna_sleigh::translate::{TruncationTag, ELEM_TRUNCATE_SPACE};
 
 use crate::architecture::Architecture;
+use crate::kuna_memoryspecs::{self, MemorySpecs, SpecRoot};
 
 // ---------------------------------------------------------------------------
 // Marshaling ids (C++ sleigh_arch.cc:21-34 + architecture.cc:40 for adjustvma)
@@ -105,6 +108,10 @@ pub const ATTRIB_VERSION: AttributeId = AttributeId::new("version", 144);
 /// `architecture.cc:40` — used by the [`crate::raw_arch`]/[`crate::xml_arch`]
 /// save-file marshaling).
 pub const ATTRIB_ADJUSTVMA: AttributeId = AttributeId::new("adjustvma", 103);
+/// (kuna) Marshaling attribute "instructionEndian": the `.ldefs` byte order of
+/// instructions when it differs from the data `endian` (ARM BE8, big-endian
+/// AArch64, little-endian NDS32). The C++ decoder ignores it.
+pub const ATTRIB_INSTRUCTION_ENDIAN: AttributeId = AttributeId::new("instructionEndian", 4004);
 
 /// Marshaling element \<compiler> (C++ `ELEM_COMPILER`).
 pub const ELEM_COMPILER: ElementId = ElementId::new("compiler", 232);
@@ -132,6 +139,7 @@ pub fn register_sleigh_arch_ids(registry: &mut IdRegistry) {
     registry.register_attribute(&ATTRIB_VARIANT);
     registry.register_attribute(&ATTRIB_VERSION);
     registry.register_attribute(&ATTRIB_ADJUSTVMA);
+    registry.register_attribute(&ATTRIB_INSTRUCTION_ENDIAN);
     registry.register_element(&ELEM_COMPILER);
     registry.register_element(&ELEM_DESCRIPTION);
     registry.register_element(&ELEM_LANGUAGE);
@@ -206,6 +214,9 @@ pub struct LanguageDescription {
     processor: String,
     /// `true` if this processor is \e big-endian (C++ `isbigendian`).
     isbigendian: bool,
+    /// (kuna) `true` if its instructions are big-endian: the `instructionEndian`
+    /// attribute, else the data endianness.
+    instruction_big_endian: bool,
     /// Size of address bus in bits (C++ `size`).
     size: int4,
     /// Name of processor variant or "default" (C++ `variant`).
@@ -248,6 +259,7 @@ impl LanguageDescription {
         self.processorspec = read_string(decoder, &ATTRIB_PROCESSORSPEC)?;
         self.id = read_string(decoder, &ATTRIB_ID)?;
         self.deprecated = false;
+        self.instruction_big_endian = self.isbigendian;
         // Optional attributes.
         loop {
             let attrib_id = decoder.get_next_attribute_id()?;
@@ -256,6 +268,8 @@ impl LanguageDescription {
             }
             if attrib_id == ATTRIB_DEPRECATED {
                 self.deprecated = decoder.read_bool()?;
+            } else if attrib_id == ATTRIB_INSTRUCTION_ENDIAN {
+                self.instruction_big_endian = decoder.read_string()? == b"big";
             }
         }
         // Child elements: <description>, <compiler>, <truncate_space>, others ignored.
@@ -294,6 +308,12 @@ impl LanguageDescription {
     /// Return `true` if the processor is big-endian (C++ `isBigEndian`).
     pub fn is_big_endian(&self) -> bool {
         self.isbigendian
+    }
+
+    /// (kuna) Return `true` if instructions are big-endian (Ghidra's
+    /// `LanguageDescription.getInstructionEndian`).
+    pub fn is_instruction_big_endian(&self) -> bool {
+        self.instruction_big_endian
     }
 
     /// Get the size of the address bus (C++ `getSize`).
@@ -404,6 +424,9 @@ pub struct LanguageDatabase {
     description: Vec<LanguageDescription>,
     /// Known directories that contain .ldefs files (C++ `specpaths`).
     specpaths: FileManage,
+    /// (kuna) Spec trees held in memory, each reached through the
+    /// `specpaths` entries under its internal root.
+    mounts: Vec<MemorySpecs>,
 }
 
 impl LanguageDatabase {
@@ -416,6 +439,25 @@ impl LanguageDatabase {
     /// `FileManage`), for the bootstrap to seed directories directly.
     pub fn specpaths_mut(&mut self) -> &mut FileManage {
         &mut self.specpaths
+    }
+
+    /// (kuna) Add a spec root of either kind, scanning it like
+    /// [`Self::scan_for_sleigh_directories`].
+    pub fn add_spec_root(&mut self, root: &SpecRoot) {
+        match root {
+            SpecRoot::Dir(path) => self.scan_for_sleigh_directories(&path.to_string_lossy()),
+            SpecRoot::Memory(specs) => {
+                let rootpath = kuna_memoryspecs::memory_root(self.mounts.len());
+                self.mounts.push(specs.clone());
+                self.scan_for_sleigh_directories(&rootpath);
+            }
+        }
+    }
+
+    /// (kuna) The contents of a spec file this database resolved, such as a
+    /// [`BuildSpecFiles`] path, from disk or from a mounted tree.
+    pub fn read_spec(&self, path: &str) -> std::io::Result<Cow<'_, [u8]>> {
+        kuna_memoryspecs::read(&self.mounts, path)
     }
 
     /// All parsed language descriptions, in `.ldefs` document then file order
@@ -439,8 +481,8 @@ impl LanguageDatabase {
         errs: &mut String,
         registry: &IdRegistry,
     ) {
-        let bytes = match std::fs::read(specfile) {
-            Ok(b) => b,
+        let bytes = match self.read_spec(specfile) {
+            Ok(b) => b.into_owned(),
             Err(_) => return,
         };
 
@@ -513,7 +555,9 @@ impl LanguageDatabase {
             return; // Have we already collected before
         }
         let mut testspecs: Vec<String> = Vec::new();
-        self.specpaths.match_list(&mut testspecs, ".ldefs", true);
+        for path in self.specpaths.path_list() {
+            kuna_memoryspecs::match_list_dir(&self.mounts, &mut testspecs, ".ldefs", path);
+        }
         for spec in &testspecs {
             self.load_language_description(spec, errs, registry);
         }
@@ -548,24 +592,24 @@ impl LanguageDatabase {
         let mut procdir2: Vec<String> = Vec::new();
         let mut languagesubdirs: Vec<String> = Vec::new();
 
-        FileManage::scan_directory_recursive(&mut ghidradir, "Ghidra", rootpath, 2);
+        kuna_memoryspecs::scan_directory_recursive(&self.mounts, &mut ghidradir, "Ghidra", rootpath, 2);
         for g in &ghidradir {
-            FileManage::scan_directory_recursive(&mut procdir, "Processors", g, 1); // Processors structure
-            FileManage::scan_directory_recursive(&mut procdir, "contrib", g, 1);
+            kuna_memoryspecs::scan_directory_recursive(&self.mounts, &mut procdir, "Processors", g, 1); // Processors structure
+            kuna_memoryspecs::scan_directory_recursive(&self.mounts, &mut procdir, "contrib", g, 1);
         }
         if !procdir.is_empty() {
             for p in &procdir {
-                FileManage::directory_list(&mut procdir2, p, false);
+                kuna_memoryspecs::directory_list(&self.mounts, &mut procdir2, p);
             }
 
             let mut datadirs: Vec<String> = Vec::new();
             for p in &procdir2 {
-                FileManage::scan_directory_recursive(&mut datadirs, "data", p, 1);
+                kuna_memoryspecs::scan_directory_recursive(&self.mounts, &mut datadirs, "data", p, 1);
             }
 
             let mut languagedirs: Vec<String> = Vec::new();
             for d in &datadirs {
-                FileManage::scan_directory_recursive(&mut languagedirs, "languages", d, 1);
+                kuna_memoryspecs::scan_directory_recursive(&self.mounts, &mut languagedirs, "languages", d, 1);
             }
 
             for l in &languagedirs {
@@ -574,7 +618,7 @@ impl LanguageDatabase {
 
             // In the old version we have to go down one more level to get to ldefs
             for l in &languagedirs {
-                FileManage::directory_list(&mut languagesubdirs, l, false);
+                kuna_memoryspecs::directory_list(&self.mounts, &mut languagesubdirs, l);
             }
         }
         // If we haven't matched this directory structure, just use rootpath as the
@@ -813,10 +857,10 @@ impl SleighArchitecture {
         let mut compilerfile = String::new();
         let mut slafile = String::new();
 
-        db.specpaths.find_file(&mut processorfile, language.get_processor_spec());
-        db.specpaths.find_file(&mut compilerfile, compilertag.get_spec());
+        kuna_memoryspecs::find_file(&db.mounts, &db.specpaths, &mut processorfile, language.get_processor_spec());
+        kuna_memoryspecs::find_file(&db.mounts, &db.specpaths, &mut compilerfile, compilertag.get_spec());
         if !language_reuse {
-            db.specpaths.find_file(&mut slafile, language.get_sla_file());
+            kuna_memoryspecs::find_file(&db.mounts, &db.specpaths, &mut slafile, language.get_sla_file());
             if slafile.is_empty() {
                 return Err(KunaError::sleigh(format!(
                     "Could not find .sla file for {}",

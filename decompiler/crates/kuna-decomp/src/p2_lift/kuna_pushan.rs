@@ -38,7 +38,6 @@ use super::kuna_pushanemu::{classify_space, LiftedInsn, PushanTarget, RawOp, Spa
 use super::kuna_pushanflow::{Abi, Config, Explorer, NodeExit, Stats};
 use super::kuna_pushanstate::PushanImage;
 use crate::architecture::Architecture;
-use crate::database::SymbolKind;
 use crate::fspec::EXTRAPOP_UNKNOWN;
 use crate::funcdata::Funcdata;
 
@@ -348,7 +347,7 @@ impl PushanTarget for ArchTarget<'_> {
                 return Some((ep as u32).saturating_sub(self.ram.get_addr_size()));
             }
         }
-        let SymbolKind::Function { proto_pieces: Some(p), .. } = &sym.kind else { return None };
+        let p = self.arch.symboltab.function_proto_pieces_of(sid)?;
         if p.first_var_arg_slot >= 0 {
             return Some(0);
         }

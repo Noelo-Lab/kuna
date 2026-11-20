@@ -20,6 +20,24 @@ fn catalog_matches_implemented_options() {
 }
 
 #[test]
+fn github_anchor_matches_rendered_heading_text() {
+    let cases = [
+        ("`objc` -- on | off, default `off`", "objc----on--off-default-off"),
+        (
+            "`returnpair` -- pair | single, default `pair` (destructive opt-in)",
+            "returnpair----pair--single-default-pair-destructive-opt-in",
+        ),
+        (
+            "`fooopt` -- off | 0 | 1 | <n>, default `2`",
+            "fooopt----off--0--1---default-2",
+        ),
+    ];
+    for (heading, anchor) in cases {
+        assert_eq!(github_anchor(heading), anchor, "{heading}");
+    }
+}
+
+#[test]
 fn group_count_is_39() {
     assert_eq!(kuna_num_groups(), 39);
     assert_eq!(GROUP_TABLE.len(), 39);
@@ -38,13 +56,13 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_210() {
-    assert_eq!(kuna_num_settables(), 210);
-    assert_eq!(SETTABLE_TABLE.len(), 210);
+fn settable_count_is_223() {
+    assert_eq!(kuna_num_settables(), 223);
+    assert_eq!(SETTABLE_TABLE.len(), 223);
 }
 
 #[test]
-fn tier_counts_are_42_core_116_transform_52_analysis() {
+fn tier_counts_are_45_core_122_transform_56_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -57,7 +75,7 @@ fn tier_counts_are_42_core_116_transform_52_analysis() {
         }
     }
     // +1 transform for `pushan` (VM devirtualization).
-    assert_eq!((core, transform, analysis), (42, 116, 52));
+    assert_eq!((core, transform, analysis), (45, 122, 56));
 }
 
 #[test]
@@ -247,7 +265,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_73() {
+fn option_values_live_value_present_for_76() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -293,6 +311,18 @@ fn option_values_live_value_present_for_73() {
         // (kuna) The libgcc `__divdi3` contract -- an analysis-pass gate read
         // console-side via kuna_live_value, like `libcsigs`. Default-off.
         "libgccsigs",
+        // (kuna) The Go `_type` descriptor globals -- an analysis-pass commit
+        // gate (`analysis_go_type_globals`) read console-side via
+        // kuna_live_value, like `libgccsigs`. Default-on.
+        "gotypeglobals",
+        // (kuna) The Go newobject result typing (the sitetypelock client) --
+        // an on/off engine gate read console-side via kuna_live_value, like
+        // `gotypeglobals`. Default-on.
+        "gonewtype",
+        // (kuna) The MS-DOS data segment in DS -- an on/off engine gate
+        // (`Architecture::mz_dgroup_on`) read console-side via kuna_live_value,
+        // like `gonewtype`. Default-on, MZ loads only.
+        "mzdgroup",
         "strings",
         // (kuna) The 2-byte (UTF-16LE) width of the string-literal pass — an
         // analysis-pass gate read at the commit boundary (console-side via
@@ -324,6 +354,7 @@ fn option_values_live_value_present_for_73() {
         "ptrentry",
         "dwarf",
         "dwarf_lines",
+        "cvftrace",
         "addrtable",
         "operand_refs",
         "formatstring",
@@ -344,6 +375,9 @@ fn option_values_live_value_present_for_73() {
         // live_value reader (read console-side via kuna_live_value), like the gates
         // around it. Default-off.
         "fid",
+        // (kuna) FLIRT signature matcher, the same Listing-consumer gate as `fid`;
+        // its signatures come from `KUNA_FLIRT_SIGS`. Default-off.
+        "flirt",
         // (kuna) MSVC RTTI / vftable class-name recovery — a PE-only analysis-pass
         // gate (no `live_field`); its live state is read console-side via
         // kuna_live_value, like the analysis-pass gates around it. Default-off.
@@ -362,15 +396,7 @@ fn option_values_live_value_present_for_73() {
         // Default-ON.
         "flowmode",
         "aif",
-        // (kuna, GH-299) The AIF gap-cursor aligned slide — an analysis-tier gate
-        // with no codegen live reader (read console-side via kuna_live_value), like
-        // `aif` above. Default-OFF, carried by the `aggressive` preset.
-        "aifstrict",
-        // (kuna, GH-313) The AIF accept corroboration test — an analysis-tier gate
-        // with no codegen live reader (read console-side via kuna_live_value), like
-        // `aifstrict` above. Default-OFF, carried by the `aggressive` preset.
-        "aifcorroborate",
-        // (kuna, GH-299) The AIF literal-pool slide, read console-side like `aifnoppad`.
+        // (kuna, GH-299) The AIF literal-pool slide, read console-side like `aif`.
         "aifpoolslide",
         // (kuna) Tail-call function-entry recovery — an analysis-pass gate with no
         // codegen live reader (read console-side via kuna_live_value), same as the
@@ -390,6 +416,8 @@ fn option_values_live_value_present_for_73() {
         // with no codegen live reader (read console-side via kuna_live_value), like
         // the gates around it. Default-on, Mach-O-only.
         "cfstrings",
+        // (kuna) Embedded image and archive data symbols: a commit-side gate.
+        "blobs",
         // (kuna) The Swift type-layout arm's gate, read inside that pass.
         "swifttypes",
         // (kuna) Objective-C instance layouts — same commit-side gate as `objc`.
@@ -433,6 +461,9 @@ fn option_values_live_value_present_for_73() {
         // (kuna) Apple kernelcache unwrapping + MH_FILESET entry choice -- a
         // LOAD-time gate read from `KUNA_KERNELCACHE`. Default auto.
         "kernelcache",
+        // (kuna) Where a kernel collection's linked collections are found -- a
+        // LOAD-time gate read from `KUNA_KERNELCACHE_BOOT`. Default auto.
+        "kernelcache-boot",
     ];
     let mut with_live = 0;
     for i in 0..kuna_num_settables() {
@@ -540,11 +571,26 @@ fn option_values_live_value_present_for_73() {
                             // (kuna) `callbacktype` is an enum field the same
                             // way; its live value is `Architecture::callbacktype`.
                             | "callbacktype"
+                            // (kuna `calleereginputs`) three-valued
+                            // (`off|on|custom`), so its live value is read
+                            // console-side from its two engine flags, not a
+                            // single codegen `live_field`.
+                            | "calleereginputs"
                             // (kuna `castwiden`) takes a MODE
                             // (`off|on|literal`) over an enum field, for the
                             // same reason.  Its live value is
                             // `Architecture::cast_widen`.
                             | "castwiden"
+                            // (kuna) `armconstshift` takes a MODE
+                            // (`off|on|all`) over an enum field, for the same
+                            // reason.  Its live value is
+                            // `Architecture::arm_constant_shift`.
+                            | "armconstshift"
+                            // (kuna) `constselectjump` takes a MODE
+                            // (`off|reentry|on`) over an enum field, for the
+                            // same reason.  Its live value is
+                            // `Architecture::const_select_jump`.
+                            | "constselectjump"
                             // (kuna) `declorder` takes a MODE (`natural|name`)
                             // over an enum field, for the same reason.  Its live
                             // value is `Architecture::decl_order`.
@@ -575,6 +621,10 @@ fn option_values_live_value_present_for_73() {
                             // (kuna) `bejoinpass` likewise (`off|whole|high`);
                             // its live value is `Architecture::be_join_pass`.
                             | "bejoinpass"
+                            // (kuna) `octeoneffects` likewise
+                            // (`off|atomic|ordered`); its live value is
+                            // `Architecture::octeon_effects`.
+                            | "octeoneffects"
                             | "bytearrayc"
                             // (kuna) `structdefs` is a PrintC option: its live
                             // state is `PrintC::options.struct_defs`, which the
@@ -795,7 +845,21 @@ fn option_values_live_value_present_for_73() {
     // 179 -> 181: +1 for `copywaves` (pool_copy_waves), +1 for `armderef` (analysis_armderef).
     // 178 -> 179: +1 for `ptrauthtrap` (live_field = ptrauth_trap).
     // 179 -> 180: +1 for `authptrcall` (live_field = analysis_authptrcall).
-    assert_eq!(with_live, 73);
+    // 186 -> 187: +1 for `chkstkdarwin` (chkstk_darwin).
+    // 73 -> 74: +1 for `calleereginputs` (live_field = callee_reginputs).
+    // 74 -> 75: +1 for `chkstkdarwin` (live_field = chkstk_darwin).
+    // 75 -> 76: +1 for `calleeargs` (live_field = kuna_calleeargs).
+    // 76 -> 75: `calleereginputs` became three-valued (off|on|custom), so it has
+    // no codegen live reader; its live value is read console-side via
+    // `kuna_live_value`, like `narrowargs`/`protoorder`.
+    // 75 -> 74: `armconstshift` became three-valued (off|on|all) over an enum
+    // field with no `live_field`.
+    // 75 -> 76: +1 for `wrapadd` (live_field = wrap_add).
+    // +1 for `acleintrinsics` (live_field = acle_intrinsics).
+    // +1 for `repstring` (live_field = rep_string).
+    // -1: `constselectjump` became three-valued (off|reentry|on) over an
+    // enum field with no `live_field`.
+    assert_eq!(with_live, 77);
 }
 
 #[test]
@@ -901,14 +965,13 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // row, libcsigs' S1 row, funcboundflow's S2 row, poolentry's S1 row, the
     // two P8 ifNoExit rows, calloverlap's P3 row, orchain's S8 row,
     // evalcurrentproto's P4 row, ifuncfpret's P1 row, msvcftol's P2 row and
-    // datasyms' P1 row, loadguardrange's P3 row, relocrebase's P1 row and
-    // aifstrict's P1 row, spillargtrial's P4 row, dynrelocs' P1 row and
+    // datasyms' P1 row, loadguardrange's P3 row, relocrebase's P1 row,
+    // spillargtrial's P4 row, dynrelocs' P1 row and
     // retinputhalf's P4, dwarfstructs' P1, dwarfvariants' P1, rustabi's P4 and
     // symbolnamerepair's P1 rows sit mid-table, so they do not move the tail).
     // noreturn_discstrict's P1 row is mid-table too, so it only bumps the count.
     // retinputhalf's P4, dwarfstructs' P1, dwarfvariants' P1, rustabi's P4,
-    // symbolnamerepair's P1 and aifcorroborate's P1 rows sit mid-table, so they do
-    // not move the tail).
+    // symbolnamerepair's P1 rows sit mid-table, so they do not move the tail).
     // symbolnamerepair's P1 and symbolnamechars' P1 rows sit mid-table, so they
     // do not move the tail).
     // symbolnamerepair's P1 and symbolnamebound's P1 rows sit mid-table, so they
@@ -1041,8 +1104,16 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `swiftcall`, beside that.
     // +1 for `objcsdk`; its P1 row sits beside `objcivars`.
     // +2 for `dyldimage` and `dyldcrossrefs`; their P1 rows follow `swiftdemangle`.
+    // +1 for `gotypeglobals`; its P1 row sits beside `goabi`.
+    // +1 for `flirt`; its P1 row sits beside `fid`.
+    // +1 for `chkstkdarwin`, its P2 row after `msvcftol`.
+    // +1 for `calleeargs`; its P4 row sits after `argclobber`.
+    // +1 for `acleintrinsics`; its P9 row sits after `cortexmpriv`.
+    // +1 for `kernelcache-boot`; its P1 row sits after `kernelcache`.
+    // +1 for `blobs`; its P1 row sits after `strings`.
+    // +1 for `repstring`; its P3 row sits after `strlenscan`.
     // +1 for `pushan`; its P2 row sits beside `loweredswitch`.
-    assert_eq!(json.matches("},\n").count(), 209);
+    assert_eq!(json.matches("},\n").count(), 222);
 }
 
 #[test]

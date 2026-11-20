@@ -132,6 +132,15 @@ pub struct ChainedFixups {
     /// resolved into `rebases` once every chain has been read
     /// ([`resolve_kernel_cache_levels`]).
     kernel_cache: Vec<(u64, u8, u64)>,
+    /// The kernel-collection rebases that target another collection, as
+    /// `(slot_vma, cache_level, target_offset)`: that collection's file holds
+    /// the base they are offsets from.
+    linked: Vec<(u64, u8, u64)>,
+    /// Why some fixups were not read, the first reason met: a truncated
+    /// header or start table, a pointer format the walk does not decode, a
+    /// chain that leaves the mapped segments, kernel-collection rebases whose
+    /// own collection level is unknown or that target another collection.
+    damage: Option<String>,
 }
 
 impl ChainedFixups {
@@ -175,6 +184,12 @@ impl ChainedFixups {
         self.rebases.iter().copied()
     }
 
+    /// Every kernel-collection rebase into another collection, as `(slot,
+    /// cache level, offset from that collection's base)`.
+    pub fn linked_targets(&self) -> impl Iterator<Item = (u64, u8, u64)> + '_ {
+        self.linked.iter().copied()
+    }
+
     /// Every bind as `(slot, import)`, in slot order.
     pub fn binds(&self) -> impl Iterator<Item = (u64, &ChainedBind)> + '_ {
         self.binds.iter().map(|(slot, bind)| (*slot, bind))
@@ -209,6 +224,18 @@ impl ChainedFixups {
     /// The width in bytes of every fixup slot this image carries.
     pub fn slot_width(&self) -> u8 {
         if self.width == 0 { 8 } else { self.width }
+    }
+
+    /// Why the chains were not all read, when they were not: the rebases and
+    /// binds are then only those read.
+    pub fn damage(&self) -> Option<&str> {
+        self.damage.as_deref()
+    }
+
+    fn damaged(&mut self, why: impl FnOnce() -> String) {
+        if self.damage.is_none() {
+            self.damage = Some(why());
+        }
     }
 }
 
@@ -343,7 +370,8 @@ impl CollectionLinks {
 /// the collection its `cacheLevel` names -- xnu's `basePointers` index
 /// (`kc_kind_t`: 0 the boot collection, 1 the pageable System one, 3 the
 /// Auxiliary one). Only targets at this collection's own level can be rebased
-/// from this file's base; a target in another collection needs that file.
+/// from this file's base; a target in another collection needs that file, so
+/// it is kept aside ([`ChainedFixups::linked_targets`]) and counted as damage.
 ///
 /// Nothing in the Mach-O header or the chains names the own level: xnu learns a
 /// collection's kind from whoever loads it. The `__PRELINK_INFO` plist does
@@ -369,11 +397,25 @@ fn resolve_kernel_cache_levels(out: &mut ChainedFixups, imagebase: u64, links: O
         },
         None => None,
     };
-    let Some(own) = own else { return };
+    let Some(own) = own else {
+        if !pending.is_empty() {
+            let count = pending.len();
+            out.damaged(|| format!("{count} kernel-collection rebases need this collection's own level, which is unknown"));
+        }
+        return;
+    };
     for (va, level, offset) in pending {
         if level == own {
             out.rebases.push((va, imagebase.wrapping_add(offset)));
+        } else {
+            out.linked.push((va, level, offset));
         }
+    }
+    if let Some(&(_, level, _)) = out.linked.first() {
+        let count = out.linked.len();
+        out.damaged(|| {
+            format!("{count} kernel-collection rebases point into another collection (level {level} first), which this file does not hold")
+        });
     }
 }
 
@@ -422,14 +464,18 @@ impl<'a> Walk<'a> {
 /// `imports_format`, `symbols_format` — seven `u32`. Walks every segment's
 /// chains, then names each bind through the imports table.
 fn walk_fixups(blob: &[u8], imagebase: u64, walk: &mut Walk, out: &mut ChainedFixups) {
-    let Some(starts_offset) = rd_u32(blob, 4) else { return };
+    let truncated = || "the chained-fixups header or its start table ends early".to_string();
+    let Some(starts_offset) = rd_u32(blob, 4) else { return out.damaged(truncated) };
     let sio = starts_offset as usize;
 
     // dyld_chained_starts_in_image { uint32 seg_count; uint32 seg_info_offset[]; }
-    let Some(seg_count) = rd_u32(blob, sio) else { return };
+    let Some(seg_count) = rd_u32(blob, sio) else { return out.damaged(truncated) };
     let mut binds: Vec<(u64, u32, i64)> = Vec::new();
     for i in 0..seg_count as usize {
-        let Some(seg_info_off) = rd_u32(blob, sio + 4 + 4 * i) else { break };
+        let Some(seg_info_off) = rd_u32(blob, sio + 4 + 4 * i) else {
+            out.damaged(truncated);
+            break;
+        };
         if seg_info_off == 0 {
             continue;
         }
@@ -562,13 +608,15 @@ fn walk_segment(
     //   uint32 size; uint16 page_size; uint16 pointer_format;
     //   uint64 segment_offset; uint32 max_valid_pointer;
     //   uint16 page_count; uint16 page_start[page_count]; ... }
-    let Some(page_size) = rd_u16(blob, p + 4) else { return };
-    let Some(pointer_format) = rd_u16(blob, p + 6) else { return };
-    let Some(segment_offset) = rd_u64(blob, p + 8) else { return };
-    let Some(max_valid_pointer) = rd_u32(blob, p + 16) else { return };
-    let Some(page_count) = rd_u16(blob, p + 20) else { return };
+    let fields = (rd_u16(blob, p + 4), rd_u16(blob, p + 6), rd_u64(blob, p + 8));
+    let (Some(page_size), Some(pointer_format), Some(segment_offset)) = fields else {
+        return out.damaged(|| format!("a segment's chain starts at blob offset 0x{p:x} end early"));
+    };
+    let (Some(max_valid_pointer), Some(page_count)) = (rd_u32(blob, p + 16), rd_u16(blob, p + 20)) else {
+        return out.damaged(|| format!("a segment's chain starts at blob offset 0x{p:x} end early"));
+    };
     if page_size == 0 {
-        return;
+        return out.damaged(|| format!("the segment chain starts at blob offset 0x{p:x} give page size 0"));
     }
 
     let stride: u64 = match pointer_format {
@@ -580,7 +628,7 @@ fn walk_segment(
         | ptr_format::ARM64E_FIRMWARE
         | ptr_format::PTR_64_KERNEL_CACHE => 4,
         ptr_format::X86_64_KERNEL_CACHE => 1,
-        _ => return,
+        _ => return out.damaged(|| format!("chained pointer format {pointer_format} is not decoded")),
     };
     out.width = if pointer_format == ptr_format::PTR_32 { 4 } else { 8 };
     let format = Format { pointer_format, imagebase, max_valid_pointer };
@@ -594,11 +642,15 @@ fn walk_segment(
     const START_NONE: u16 = 0xFFFF;
     const START_MULTI: u16 = 0x8000;
     const START_LAST: u16 = 0x8000;
+    let exhausted = || "the chain starts name more pages than the blob can describe".to_string();
     for pi in 0..page_count as usize {
         if !walk.start() {
-            return;
+            return out.damaged(exhausted);
         }
-        let Some(page_start) = rd_u16(blob, p + 22 + 2 * pi) else { continue };
+        let Some(page_start) = rd_u16(blob, p + 22 + 2 * pi) else {
+            out.damaged(|| format!("a segment's page starts at blob offset 0x{p:x} end early"));
+            continue;
+        };
         if page_start == START_NONE {
             continue;
         }
@@ -612,7 +664,7 @@ fn walk_segment(
         let mut overflow = usize::from(page_start & !START_MULTI);
         while let Some(start) = rd_u16(blob, p + 22 + 2 * overflow) {
             if !walk.start() {
-                return;
+                return out.damaged(exhausted);
             }
             let first = page.wrapping_add(u64::from(start & !START_LAST));
             if !walk_chain(walk, first, stride, &format, out, binds) || start & START_LAST != 0 {
@@ -647,7 +699,10 @@ fn walk_chain(
     let mut va = first_va;
     let mut first = true;
     loop {
-        let Some(fo) = va_to_fileoff(walk.segs, va) else { return !first };
+        let Some(fo) = va_to_fileoff(walk.segs, va) else {
+            out.damaged(|| format!("a fixup chain reaches 0x{va:x}, outside the segments' file data"));
+            return !first;
+        };
         if !walk.first_visit(fo) {
             return !first;
         }
@@ -657,7 +712,10 @@ fn walk_chain(
         } else {
             rd_u64(walk.file, fo as usize)
         };
-        let Some(raw) = raw else { return true };
+        let Some(raw) = raw else {
+            out.damaged(|| format!("a fixup chain reaches 0x{va:x}, past the end of the file"));
+            return true;
+        };
         if let Some((next, level, offset)) = kernel_cache_rebase(raw, format.pointer_format) {
             out.kernel_cache.push((va, level, offset));
             if next == 0 {
@@ -910,13 +968,21 @@ mod tests {
     fn kernel_cache_rebases_resolve_the_collections_own_level() {
         let base = 0xffff_fe00_0700_0000;
         let pending = vec![(base + 0x10, 3, 0x4000), (base + 0x18, 0, 0x8000), (base + 0x20, 1, 0x100)];
-        let run = |pending: Vec<(u64, u8, u64)>, links| {
+        let resolve = |pending: Vec<(u64, u8, u64)>, links| {
             let mut f = ChainedFixups { kernel_cache: pending, ..ChainedFixups::default() };
             resolve_kernel_cache_levels(&mut f, base, links);
             f.sort_slots();
+            f
+        };
+        let run = |pending, links| {
+            let f = resolve(pending, links);
             [base + 0x10, base + 0x18, base + 0x20].map(|va| f.resolved_ptr(va))
         };
         let aux = Some(CollectionLinks { boot: true, pageable: true });
+        let linked = resolve(pending.clone(), aux);
+        assert_eq!(linked.linked_targets().collect::<Vec<_>>(), [(base + 0x18, 0, 0x8000), (base + 0x20, 1, 0x100)]);
+        assert!(linked.damage().is_some_and(|why| why.starts_with("2 kernel-collection rebases point into another")));
+        assert_eq!(resolve(pending.clone(), None).linked_targets().count(), 0, "an unknown own level links nothing");
         assert_eq!(run(pending.clone(), aux), [Some(base + 0x4000), None, None]);
         let boot = Some(CollectionLinks { boot: false, pageable: false });
         assert_eq!(run(pending.clone(), boot), [None, Some(base + 0x8000), None]);
@@ -1132,6 +1198,34 @@ mod tests {
         walk_fixups(&blob, BASE, &mut walk, &mut out);
         assert!(out.rebases.is_empty());
         assert_eq!(va_to_fileoff(&segs, u64::MAX - 2), None);
+    }
+
+    /// GH #1502: a walk that cannot read every chain records why, and a clean
+    /// one records nothing: an unknown pointer format, a chain whose `next`
+    /// leaves the segments, kernel-collection rebases with no own level.
+    #[test]
+    fn a_walk_that_stops_short_says_why() {
+        let mut file = vec![0u8; 0x100];
+        file[..8].copy_from_slice(&0x1234u64.to_le_bytes());
+        let segs = [SegInfo { vmaddr: BASE, fileoff: 0, filesize: file.len() as u64 }];
+        let run = |file: &[u8], blob: &[u8]| {
+            let mut walk = Walk::new(&segs, file, blob);
+            let mut out = ChainedFixups::default();
+            walk_fixups(blob, BASE, &mut walk, &mut out);
+            out
+        };
+        let clean = run(&file, &starts_blob(0x1000, ptr_format::PTR_64, 0, 1));
+        assert_eq!((clean.rebases.len(), clean.damage()), (1, None));
+        let unknown = run(&file, &starts_blob(0x1000, 13, 0, 1));
+        assert_eq!(unknown.damage(), Some("chained pointer format 13 is not decoded"));
+        let mut runaway = file.clone();
+        runaway[..8].copy_from_slice(&(0x1234u64 | (0x80 << 51)).to_le_bytes());
+        let off = run(&runaway, &starts_blob(0x1000, ptr_format::PTR_64, 0, 1));
+        assert_eq!(off.rebases.len(), 1);
+        assert!(off.damage().is_some_and(|why| why.starts_with("a fixup chain reaches")), "{:?}", off.damage());
+        let mut levels = ChainedFixups { kernel_cache: vec![(BASE, 1, 0x10)], ..ChainedFixups::default() };
+        resolve_kernel_cache_levels(&mut levels, BASE, None);
+        assert!(levels.rebases.is_empty() && levels.damage().is_some());
     }
 
     /// `macho_bind_only_arm64` has `LC_DYLD_CHAINED_FIXUPS` with a single bind

@@ -1358,6 +1358,7 @@ mod tests {
             callee_hints: hints,
             synth: None,
             pointerargs: None,
+            warnings: Vec::new(),
             detail: None,
         }
     }

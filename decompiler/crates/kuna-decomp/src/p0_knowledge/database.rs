@@ -545,6 +545,13 @@ pub mod symbol_category {
 /// Base of internal symbol ID's (C++ `Symbol::ID_BASE`, `database.cc:46`).
 pub const SYMBOL_ID_BASE: uint8 = 0x4000_0000_0000_0000;
 
+/// A declared prototype and any Go DWARF input authority committed with it.
+#[derive(Debug, Clone)]
+pub struct FunctionPrototype {
+    pieces: crate::fspec::PrototypePieces,
+    go_string_input: Option<crate::kuna_gostringinput::GoStringInput>,
+}
+
 /// The subclass discriminant for a [`Symbol`] (C++ uses virtual dispatch /
 /// `dynamic_cast`; the arena model uses an explicit tag in the same object).
 #[derive(Debug, Clone)]
@@ -584,7 +591,9 @@ pub enum SymbolKind {
         /// queried `Funcdata` fresh, so the declared prototype is stashed here (by
         /// name+address) and re-seeded into a `FuncProto` on demand.  `None` = no
         /// source-declared prototype (the default-model recovery applies).
-        proto_pieces: Option<Box<crate::fspec::PrototypePieces>>,
+        proto_pieces: Option<Box<FunctionPrototype>>,
+        /// Receiver evidence belongs to this exact parked prototype.
+        pointer_receiver: Option<Box<crate::kuna_gopointermethod::Receiver>>,
     },
     /// `EquateSymbol` — labels a constant (C++ `EquateSymbol`).
     Equate {
@@ -2245,11 +2254,26 @@ impl Database {
             no_return: false,
             inject_id: -1,
             proto_pieces: None,
+            pointer_receiver: None,
         };
         let sid = self.symbols.insert(sym);
         self.add_symbol_internal(scope, sid)?;
         self.add_map_point(scope, sid, addr, &Address::new_invalid())?;
         Ok(sid)
+    }
+
+    /// Map another address to the same function identity and declared prototype.
+    pub fn add_function_alias(&mut self, entry: &Address, alias: &Address) -> KunaResult<()> {
+        self.kuna_gen += 1;
+        let (symbol, scope) = self.find_function_across_scopes(entry)
+            .ok_or_else(|| KunaError::lowlevel("Function alias has no canonical function"))?;
+        if let Some((other, _)) = self.find_function_across_scopes(alias) {
+            return if other == symbol { Ok(()) } else {
+                Err(KunaError::lowlevel("Function alias overlaps a different function"))
+            };
+        }
+        self.add_map_point(scope, symbol, alias, &Address::new_invalid())?;
+        Ok(())
     }
 
     /// C++ `ScopeInternal::setAttribute` (`database.cc:2228-2235`): OR the
@@ -2888,16 +2912,77 @@ impl Database {
         pieces: crate::fspec::PrototypePieces,
     ) {
         self.kuna_gen += 1;
-        if let SymbolKind::Function { proto_pieces, .. } = &mut self.symbols[sid].kind {
-            *proto_pieces = Some(Box::new(pieces));
+        Self::write_function_prototype(
+            &mut self.symbols[sid].kind,
+            FunctionPrototype { pieces, go_string_input: None },
+        );
+    }
+
+    pub(crate) fn set_function_proto_with_go_string(
+        &mut self,
+        sid: SymbolId,
+        pieces: crate::fspec::PrototypePieces,
+        go_string_input: Option<crate::kuna_gostringinput::GoStringInput>,
+    ) {
+        self.kuna_gen += 1;
+        Self::write_function_prototype(
+            &mut self.symbols[sid].kind,
+            FunctionPrototype { pieces, go_string_input },
+        );
+    }
+
+    fn write_function_prototype(kind: &mut SymbolKind, prototype: FunctionPrototype) {
+        if let SymbolKind::Function { proto_pieces, pointer_receiver, .. } = kind {
+            *proto_pieces = Some(Box::new(prototype));
+            *pointer_receiver = None;
         }
+    }
+
+    /// The single Go string formal attached to the exact declared function entry.
+    pub fn function_go_string_input(
+        &self,
+        addr: &Address,
+    ) -> Option<&crate::kuna_gostringinput::GoStringInput> {
+        let (sid, _) = self.find_function_across_scopes(addr)?;
+        let SymbolKind::Function { proto_pieces: Some(decl), .. } = &self.symbols[sid].kind else {
+            return None;
+        };
+        decl.go_string_input.as_ref().filter(|formal| &formal.entry == addr)
+    }
+
+    pub fn attach_go_pointer_receiver(
+        &mut self, addr: &Address, receiver: crate::kuna_gopointermethod::Receiver,
+    ) {
+        self.kuna_gen += 1;
+        let Some((id, _)) = self.find_function_across_scopes(addr) else { return };
+        let symbol = &mut self.symbols[id];
+        if symbol.name != receiver.symbol || symbol.display_name != receiver.symbol {
+            return;
+        }
+        if let SymbolKind::Function { proto_pieces: Some(pieces), pointer_receiver, .. } = &mut symbol.kind {
+            if pieces.pieces.name == receiver.symbol {
+                *pointer_receiver = Some(Box::new(receiver));
+            }
+        }
+    }
+
+    pub(crate) fn go_pointer_receiver(
+        &self, addr: &Address,
+    ) -> Option<&crate::kuna_gopointermethod::Receiver> {
+        let (id, _) = self.find_function_across_scopes(addr)?;
+        let symbol = &self.symbols[id];
+        let SymbolKind::Function { pointer_receiver: Some(receiver), .. } = &symbol.kind else {
+            return None;
+        };
+        (symbol.name == receiver.symbol && symbol.display_name == receiver.symbol)
+            .then_some(receiver.as_ref())
     }
 
     /// The prototype pieces parked on FunctionSymbol `sid`, or `None` when it
     /// carries none or is not a function.
     pub fn function_proto_pieces_of(&self, sid: SymbolId) -> Option<&crate::fspec::PrototypePieces> {
         match &self.symbols[sid].kind {
-            SymbolKind::Function { proto_pieces, .. } => proto_pieces.as_deref(),
+            SymbolKind::Function { proto_pieces, .. } => proto_pieces.as_deref().map(|decl| &decl.pieces),
             _ => None,
         }
     }
@@ -2913,7 +2998,7 @@ impl Database {
     ) -> Option<&crate::fspec::PrototypePieces> {
         let sid = self.find_function(scope, addr)?;
         match &self.symbols[sid].kind {
-            SymbolKind::Function { proto_pieces, .. } => proto_pieces.as_deref(),
+            SymbolKind::Function { proto_pieces, .. } => proto_pieces.as_deref().map(|decl| &decl.pieces),
             _ => None,
         }
     }
@@ -2933,7 +3018,7 @@ impl Database {
     ) -> Option<&crate::fspec::PrototypePieces> {
         let (sid, _) = self.find_function_across_scopes(addr)?;
         match &self.symbols[sid].kind {
-            SymbolKind::Function { proto_pieces, .. } => proto_pieces.as_deref(),
+            SymbolKind::Function { proto_pieces, .. } => proto_pieces.as_deref().map(|decl| &decl.pieces),
             _ => None,
         }
     }
@@ -3422,7 +3507,7 @@ impl Database {
                     if let SymbolKind::Function { proto_pieces: Some(pieces), .. } =
                         &self.symbols[entry.symbol].kind
                     {
-                        out.push((space_index as int4, entry.get_first(), (**pieces).clone()));
+                        out.push((space_index as int4, entry.get_first(), pieces.pieces.clone()));
                     }
                 }
             }
@@ -4210,6 +4295,56 @@ impl Database {
             } else {
                 self.remove_symbol(sid);
             }
+        }
+        Ok(())
+    }
+
+    /// C++ `ScopeInternal::clearUnlocked` (`database.cc:2191-2218`), the head of
+    /// `Funcdata::clear`: drop every symbol of `scope` the analysis recovered, so
+    /// a restarted analysis starts from the symbols the function was given. A
+    /// type-locked symbol is kept, with an unlocked recovered name reset and a
+    /// size-locked type the analysis refined reset to undefined of its size; an
+    /// equate is kept too. As in [`Self::clear_unlocked_category_negative`], a
+    /// name-locked isolated symbol (an asserted identity) is also kept. Every
+    /// kept symbol loses the `nolocalalias` the analysis computed for it.
+    pub fn clear_unlocked(
+        &mut self,
+        scope: ScopeId,
+        types: Option<&dyn crate::dtype::TypeFactory>,
+    ) -> KunaResult<()> {
+        self.kuna_gen += 1;
+        let candidates: Vec<SymbolId> = self.scopes[scope].nametree.values().copied().collect();
+        for sid in candidates {
+            let (type_locked, name_locked, size_locked, keep) = {
+                let sym = &self.symbols[sid];
+                (
+                    sym.is_type_locked(),
+                    sym.is_name_locked(),
+                    // Read before anything recomputes it: a refined type would
+                    // clear the bit and hide the lock.
+                    sym.is_size_type_locked(),
+                    sym.get_category() == symbol_category::EQUATE || (sym.is_name_locked() && sym.is_isolated()),
+                )
+            };
+            if !type_locked && !keep {
+                self.remove_symbol(sid);
+                continue;
+            }
+            if type_locked && !name_locked && !self.symbols[sid].is_name_undefined() {
+                let newname = self.build_undefined_name(scope)?;
+                self.rename_symbol(sid, &newname)?;
+            }
+            let sym = &mut self.symbols[sid];
+            sym.flags &= !varnode_flags::nolocalalias;
+            let refined = sym
+                .dtype
+                .as_ref()
+                .filter(|t| size_locked && t.get_metatype() != type_metatype::TYPE_UNKNOWN)
+                .map(|t| t.get_size());
+            if let (Some(size), Some(types)) = (refined, types) {
+                sym.dtype = Some(types.get_base(size, type_metatype::TYPE_UNKNOWN)?);
+            }
+            sym.check_size_type_lock();
         }
         Ok(())
     }
@@ -5338,6 +5473,53 @@ mod tests {
         assert!(db.find_overlap(g, &b_addr, 4).is_some());
     }
 
+    /// C++ `ScopeInternal::clearUnlocked` (database.cc:2191-2218), run by
+    /// `Funcdata::clear` before a restart: only what the function was given
+    /// survives, and nothing the previous pass computed rides along.
+    #[test]
+    fn clear_unlocked_keeps_given_symbols_and_drops_what_the_pass_computed() {
+        let m = build_manager();
+        let ram = space(&m, 2);
+        let (mut db, g) = db_with_global(m.num_spaces());
+        use crate::dtype::TypeFactory;
+        let types = crate::dtype::TypeFactoryImpl::new();
+        types.set_default_alignment_map();
+        types.set_core_type("undefined", 1, type_metatype::TYPE_UNKNOWN, false).unwrap();
+        types.set_core_type("char", 1, type_metatype::TYPE_INT, true).unwrap();
+        types.set_core_type("undefined4", 4, type_metatype::TYPE_UNKNOWN, false).unwrap();
+        types.cache_core_types().unwrap();
+        let int4 = || Rc::new(Datatype::new(4, type_metatype::TYPE_INT));
+        let at = |off| Address::new(Rc::clone(&ram), off);
+
+        // A local the previous pass recovered: removed.
+        let (recovered, _) = db.add_symbol_mapped(g, "v3", int4(), &at(0x100), &Address::new_invalid()).unwrap();
+        // A size-only lock (type-locked while undefined) whose type the pass
+        // refined to `int`: kept, back to undefined of its size.
+        let (sized, _) = db.add_symbol_mapped(g, "sized", dt(4), &at(0x200), &Address::new_invalid()).unwrap();
+        db.set_attribute(sized, varnode_flags::typelock | varnode_flags::namelock);
+        assert!(db.symbols[sized].is_size_type_locked());
+        db.symbols[sized].dtype = Some(int4());
+        // An asserted `int`: kept as `int`. The `nolocalalias` the pass marked
+        // on it is cleared.
+        let (typed, _) = db.add_symbol_mapped(g, "typed", int4(), &at(0x300), &Address::new_invalid()).unwrap();
+        db.set_attribute(typed, varnode_flags::typelock | varnode_flags::namelock | varnode_flags::nolocalalias);
+        assert!(!db.symbols[typed].is_size_type_locked());
+        // An equate: kept although not type-locked.
+        let (equate, _) = db.add_symbol_mapped(g, "eq", dt(4), &at(0x400), &Address::new_invalid()).unwrap();
+        db.set_category(g, equate, symbol_category::EQUATE, 0);
+
+        db.clear_unlocked(g, Some(&types)).unwrap();
+
+        assert!(!db.symbols.contains_key(recovered), "a recovered local must not seed the restart");
+        let sized = &db.symbols[sized];
+        assert_eq!(sized.dtype.as_ref().map(|t| (t.get_size(), t.get_metatype())), Some((4, type_metatype::TYPE_UNKNOWN)));
+        assert!(sized.is_type_locked() && sized.is_size_type_locked() && sized.get_name() == "sized");
+        let typed = &db.symbols[typed];
+        assert_eq!(typed.dtype.as_ref().map(|t| t.get_metatype()), Some(type_metatype::TYPE_INT));
+        assert_eq!(typed.get_flags() & varnode_flags::nolocalalias, 0, "alias facts are recomputed each pass");
+        assert!(db.symbols.contains_key(equate));
+    }
+
     // VERIFIER adversarial (w10-sized-stackvn): clearUnlockedCategory(-1) C++
     // database.cc:2120-2136 — the type-locked arm.  A TYPE-locked but NOT
     // name-locked symbol is KEPT; if its name is *defined* it is reset to an
@@ -5570,6 +5752,30 @@ mod tests {
     /// The per-function inline / noreturn / inject-id flags round-trip through the
     /// FunctionSymbol kind (the parked-FuncProto facts `OptionInline` /
     /// `OptionNoReturn` / `IfcFixupApply` set and `FlowInfo::queryCall` reads).
+    #[test]
+    fn function_aliases_share_identity_without_merging_distinct_same_named_functions() {
+        let m=build_manager();
+        let (mut db,g)=db_with_global(m.num_spaces());
+        let a=Address::new(space(&m,2),0x1000);
+        let b=Address::new(space(&m,2),0x2000);
+        let alias=Address::new(space(&m,2),0x3000);
+        let first=db.add_function(g,&a,"optional",1,dt(1)).unwrap();
+        let second=db.add_function(g,&b,"optional",1,dt(1)).unwrap();
+        let generation=db.kuna_generation();
+        db.add_function_alias(&a,&alias).unwrap();
+        assert!(db.kuna_generation()>generation);
+        assert_eq!(db.find_by_name(g,"optional").len(),2);
+        assert_eq!(db.find_function_across_scopes(&alias),Some((first,g)));
+        assert!(db.add_function_alias(&a,&b).is_err());
+        assert_eq!(db.find_function_across_scopes(&b),Some((second,g)));
+        let mut pieces=crate::fspec::PrototypePieces::default();
+        pieces.name="optional".into();
+        pieces.intypes=vec![dt(4)];
+        db.set_function_proto_pieces(first,pieces);
+        assert_eq!(db.function_proto_pieces(g,&alias).unwrap().intypes.len(),1);
+        assert!(db.function_proto_pieces(g,&b).is_none());
+    }
+
     #[test]
     fn function_inline_noreturn_injectid_roundtrip() {
         let m = build_manager();

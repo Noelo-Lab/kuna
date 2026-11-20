@@ -1,0 +1,80 @@
+<decompilertest>
+<binaryimage arch="x86:LE:32:default:windows">
+<!--
+    kuna `libcnames` on Windows: a local that holds a Win32 call's result, or
+    that is handed to one whole, keeps a `vN` name although the SDK declares
+    what it is: `v1 = LoadLibraryW(a0)`, `CloseHandle(v1)`.
+
+    Stage / sub-stage: P6 "naming-policy", with the P4 prototype delivery it
+    reads.  The `win32sigs` table carries the Windows SDK parameter names and,
+    where the result is one kind of thing, a result name (`hModule` for
+    `LoadLibraryW`, `hFile` for `CreateFileW`, `hHeap` for `GetProcessHeap`,
+    `lpMem` for `HeapAlloc`).  The names ride on the prototype the table parks
+    at the import's IAT slot, so they reach a local only through a call whose
+    inputs that prototype locked.  A `call [slot]` reaches its parameters from
+    `ActionDefaultParams`, which reads the slot the call's own instruction
+    loads (where the caller's own pushes back every declared stack slot), and
+    `ActionDeindirect` keeps that locked declaration when it makes the call
+    direct.  The result is not locked: the call keeps the result the
+    caller's use recovers, typed by the declared pointer.  Without that,
+    the prototype reached such a call only after a restart: on x86-64 never,
+    and `LoadLibraryW` lost its argument.
+
+    The fixtures are
+    decompiler/crates/kuna-analysis/tests/fixtures/libcnames_win32_{i386,x86_64}.exe
+    (clang 14 -O2 for i686-pc-windows-msvc and x86_64-pc-windows-msvc,
+    lld-link; source and recipe in libcnames_win32.c).
+
+    Pass 1 (i386) sets the option off: `resolve` keeps `v1`, typed by the
+    locked prototype.  Pass 2 turns it back on, the shipped default: the
+    module handle is `hModule` and GetProcAddress's result keeps `v2`.
+    `copy_to`'s handle is `hFile` and the NULLs are the prototype's pointer
+    slots.  A console rename of `hModule` to `mod` leaves `v2` as it was.
+    Pass 3 (x86-64): `resolve` passes its argument to `LoadLibraryW` and
+    names the handle; `copy_to` passes CreateFileW's `DWORD` at its width.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libcnames_win32_i386.exe</com>
+  <com>read symbols</com>
+  <com>option libcnames off</com>
+  <com>lo fu sub_4010e0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option libcnames on</com>
+  <com>lo fu sub_4010e0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu sub_401000</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu sub_4010e0</com>
+  <com>decompile</com>
+  <com>rename hModule mod</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libcnames_win32_x86_64.exe</com>
+  <com>read symbols</com>
+  <com>lo fu sub_140001150</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu sub_140001000</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="libcnames-win32 #1: with the option off LoadLibraryW's result is a vN" min="1" max="1">^  v1 = LoadLibraryW\(a0\);$</stringmatch>
+<stringmatch name="libcnames-win32 #2: with the option on it is hModule, on i386 and x86-64" min="2" max="2">^  hModule = LoadLibraryW\(a0\);$</stringmatch>
+<stringmatch name="libcnames-win32 #3: GetProcAddress takes hModule and its result keeps v2" min="2" max="2">^  v2 = GetProcAddress\(hModule,a1\);$</stringmatch>
+<stringmatch name="libcnames-win32 #4: the module handle is declared void * under its SDK name" min="2" max="2">^  void \*hModule; // </stringmatch>
+<stringmatch name="libcnames-win32 #5: CreateFileW's result is hFile, its pointer slots NULL" min="2" max="2">^  hFile = CreateFileW\(a0,0x80000000,1,NULL,3,0x80,NULL\);$</stringmatch>
+<stringmatch name="libcnames-win32 #6: CloseHandle reads hFile" min="2" max="2">^ +CloseHandle\(hFile\);$</stringmatch>
+<stringmatch name="libcnames-win32 #7: renaming hModule renames it alone" min="1" max="1">^  v2 = GetProcAddress\(mod,a1\);$</stringmatch>
+<stringmatch name="libcnames-win32 #8: no LoadLibraryW call loses its argument" min="0" max="0">LoadLibraryW\(\)</stringmatch>
+</decompilertest>

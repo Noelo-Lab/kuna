@@ -1,0 +1,206 @@
+{
+  "tools": {
+    "assembler": {
+      "name": "mips64-octeon-linux-gnu-as",
+      "sha256": "96b3d7b45a26a3b53aba77e56a372d30c8fa92f06092a2ca78a39d1e97ad465a",
+      "version": "GNU assembler (GNU Binutils) 2.30"
+    },
+    "linker": {
+      "name": "ld",
+      "sha256": "2865846ece2642439cfae404ef930bfc5494c4babd2347757878b8f0f8f761cf",
+      "version": "GNU ld (GNU Binutils) 2.47.20260726"
+    },
+    "objcopy": {
+      "name": "objcopy",
+      "sha256": "f4cee3fbde6906b10a4dba6c3543281fb5ccdbab4d8ba1c6acc560b4131f2ba2",
+      "version": "GNU objcopy (GNU Binutils) 2.47.20260726"
+    },
+    "nm": {
+      "name": "nm",
+      "sha256": "1fd313eeb35b9fbda41a3f9a51af9c8b1c1d471927b7f3046580d15937155f0a",
+      "version": "GNU nm (GNU Binutils) 2.47.20260726"
+    }
+  },
+  "fixtures": [
+    {
+      "source": "chain-400-64.S",
+      "source_sha256": "280c35076c736b0084a57dfb88782f84aaff265a92dfff7cc7d3aee414d26117",
+      "binary": "chain-400-64.bin",
+      "binary_sha256": "5bc7a08539ad8cd22e496338c49867ef5c77c63e98dade3182fd6877ed6b3f39",
+      "elf_sha256": "edb8acaf4af45e45bafa90347b9aacc73692fdc9869ccbce5fd385671650d2bd",
+      "base": 4194304,
+      "size": 9616,
+      "abi": "64",
+      "kind": "chain",
+      "commands": [
+        [
+          "mips64-octeon-linux-gnu-as",
+          "-EB",
+          "-march=octeon",
+          "-mabi=64",
+          "-o",
+          "chain-400-64.o",
+          "chain-400-64.S"
+        ],
+        [
+          "ld",
+          "-m",
+          "elf64btsmip",
+          "-Ttext",
+          "0x400000",
+          "-Tdata",
+          "0x500000",
+          "-e",
+          "_start",
+          "--build-id=none",
+          "-o",
+          "chain-400-64.elf",
+          "chain-400-64.o"
+        ],
+        [
+          "objcopy",
+          "--only-section=.text",
+          "-O",
+          "binary",
+          "chain-400-64.elf",
+          "chain-400-64.text.bin"
+        ]
+      ]
+    },
+    {
+      "source": "retry-failure-64.S",
+      "source_sha256": "56976e149713f7092bee9a53bcceeaac0942fe911cea30ff5db397d625cc8249",
+      "binary": "retry-failure-64.bin",
+      "binary_sha256": "040ff81013722ef4cd895bb6652fc9a26c0872178b5d8bbe7d106f2f1e39a8ee",
+      "elf_sha256": "e126327b9941e5faa25c91171de40a7a003d5635675e407f6b808281ce4fe218",
+      "base": 4194304,
+      "size": 60,
+      "abi": "64",
+      "kind": "retry-failure",
+      "commands": [
+        [
+          "mips64-octeon-linux-gnu-as",
+          "-EB",
+          "-march=octeon",
+          "-mabi=64",
+          "-o",
+          "retry-failure-64.o",
+          "retry-failure-64.S"
+        ],
+        [
+          "ld",
+          "-m",
+          "elf64btsmip",
+          "-Ttext",
+          "0x400000",
+          "-Tdata",
+          "0x500000",
+          "-e",
+          "_start",
+          "--build-id=none",
+          "-o",
+          "retry-failure-64.elf",
+          "retry-failure-64.o"
+        ],
+        [
+          "objcopy",
+          "--only-section=.text",
+          "-O",
+          "binary",
+          "retry-failure-64.elf",
+          "retry-failure-64.text.bin"
+        ]
+      ]
+    },
+    {
+      "source": "singletons-128-64.S",
+      "source_sha256": "f0d392abe6b1001c85e1674ca6a2b13d6a44af10ed5a9dccc9e85baf23910e8e",
+      "binary": "singletons-128-64.bin",
+      "binary_sha256": "3a8344772b16783decd5854e98bd127b52b6b07e3829b59825a214d3ccadfe3b",
+      "elf_sha256": "aff0606149e1f6495100cdc7f8ed6717617cd60f9b9a1355bd5114c07634cdc5",
+      "base": 4194304,
+      "size": 2112,
+      "abi": "64",
+      "kind": "unrelated-singletons",
+      "commands": [
+        [
+          "mips64-octeon-linux-gnu-as",
+          "-EB",
+          "-march=octeon",
+          "-mabi=64",
+          "-o",
+          "singletons-128-64.o",
+          "singletons-128-64.S"
+        ],
+        [
+          "ld",
+          "-m",
+          "elf64btsmip",
+          "-Ttext",
+          "0x400000",
+          "-Tdata",
+          "0x500000",
+          "-e",
+          "_start",
+          "--build-id=none",
+          "-o",
+          "singletons-128-64.elf",
+          "singletons-128-64.o"
+        ],
+        [
+          "objcopy",
+          "--only-section=.text",
+          "-O",
+          "binary",
+          "singletons-128-64.elf",
+          "singletons-128-64.text.bin"
+        ]
+      ]
+    },
+    {
+      "source": "two-chains-64.S",
+      "source_sha256": "bdf586487a1cbdf3f2d120ce12735c0d690d07821a548b23bca5ff63d14030ad",
+      "binary": "two-chains-64.bin",
+      "binary_sha256": "e0ef486ea93b59edb94c84fea0f862c0171c502542c4eaa6265f0601c91f55f1",
+      "elf_sha256": "22e9cdb1f006ec0004cdeac8a3c9495a94701b472c0796a663276a220a6794d3",
+      "base": 4194304,
+      "size": 3888,
+      "abi": "64",
+      "kind": "two-chains",
+      "commands": [
+        [
+          "mips64-octeon-linux-gnu-as",
+          "-EB",
+          "-march=octeon",
+          "-mabi=64",
+          "-o",
+          "two-chains-64.o",
+          "two-chains-64.S"
+        ],
+        [
+          "ld",
+          "-m",
+          "elf64btsmip",
+          "-Ttext",
+          "0x400000",
+          "-Tdata",
+          "0x500000",
+          "-e",
+          "_start",
+          "--build-id=none",
+          "-o",
+          "two-chains-64.elf",
+          "two-chains-64.o"
+        ],
+        [
+          "objcopy",
+          "--only-section=.text",
+          "-O",
+          "binary",
+          "two-chains-64.elf",
+          "two-chains-64.text.bin"
+        ]
+      ]
+    }
+  ]
+}

@@ -14,781 +14,850 @@ Three tiers:
 
 | If the output shows... | Try |
 |---|---|
-| the signature says FILE * or struct_0 * and nothing says what the fields are | [`structdefs`](#structdefs) |
-| a field access like f->_flags with no layout anywhere in the output | [`structdefs`](#structdefs) |
-| you have to run decompile-project just to read the .h for one function's struct | [`structdefs`](#structdefs) |
-| a synthesized struct_N appears in a parameter type with no definition | [`structdefs`](#structdefs) |
-| a loop summing an array prints as eight lane accumulators added into one total after the loop | [`devectorize`](#devectorize) |
-| a vectorised reduction is followed by a second copy of the loop over the remainder | [`devectorize`](#devectorize) |
-| an array sum is guarded by if (8 <= length) with a stride-eight do-while behind it | [`devectorize`](#devectorize) |
-| a line like v8 + v12 + v6 + v10 + v7 + v11 + v5 + v9 follows a loop | [`devectorize`](#devectorize) |
-| a do/while that decrements a 0xffffffffffffffff counter while stepping a char pointer until the byte read is zero | [`strlenscan`](#strlenscan) |
-| if (!v3) break; v3 -= 1; inside a loop that reads one byte per step | [`strlenscan`](#strlenscan) |
-| ~v3 - 1 or ~v3 - 5 where the source computes a string length | [`strlenscan`](#strlenscan) |
-| repnz scasb in the disassembly where IDA prints strlen | [`strlenscan`](#strlenscan) |
-| stack string initialisation renders as an array-typed cast such as (char[8])s_addr._0_8_ | [`rodatastring`](#rodatastring) |
-| partial-symbol slice assignments like buf._0_9_ = s_addr._16_9_ instead of the string | [`rodatastring`](#rodatastring) |
-| a recognized rodata literal never appears in the function that copies it onto the stack | [`rodatastring`](#rodatastring) |
-| builtin_strncpy call where the individual slice assignments are wanted (flip off) | [`rodatastring`](#rodatastring) |
-| long run of per-element constant stores instead of a single memset | [`memsetrecover`](#memsetrecover) |
-| unrolled or SIMD zeroing rendered as dozens of assignments | [`memsetrecover`](#memsetrecover) |
-| builtin_memset call where the individual element stores are wanted (flip off) | [`memsetrecover`](#memsetrecover) |
-| spurious CONCAT44 return value in a void or single-register function | [`returnpair`](#returnpair) |
-| two return registers joined into one double-width return (e.g. sparc o0/o1) | [`returnpair`](#returnpair) |
-| return type twice the natural width built from a register concat | [`returnpair`](#returnpair) |
-| v850 jmp [reg] rendered as an indirect call instead of a recovered switch | [`v850indirectbranch`](#v850indirectbranch) |
-| jump table on v850 never recovered because the dispatch decodes as a computed call | [`v850indirectbranch`](#v850indirectbranch) |
-| an `if (isCurrentModePrivileged())` block wraps every interrupt-mask or special-register access in Cortex-M firmware | [`cortexmpriv`](#cortexmpriv) |
-| `isCurrentModePrivileged()` appears in the emitted C at all | [`cortexmpriv`](#cortexmpriv) |
-| a Cortex-M function has more basic blocks and branches than its source | [`cortexmpriv`](#cortexmpriv) |
-| `getBasePriority()`/`isIRQinterruptsEnabled()`/`getCurrentExceptionNumber()` are each read under their own conditional | [`cortexmpriv`](#cortexmpriv) |
-| leaf function ends in a (*dat_...)(...) computed call with a 'Treating indirect jump as call' warning | [`tailcalljump`](#tailcalljump) |
-| jmp to a plt stub inlined into the caller instead of a named tail call | [`tailcalljump`](#tailcalljump) |
-| plt thunk body absorbed where func(...) is expected | [`tailcalljump`](#tailcalljump) |
-| a veneer renders as switch(0x...) with one case holding another function's body, or halt_missing() with a 'flows out of bounds' warning | [`tailcalljump`](#tailcalljump) |
-| a function decompiled by address continues into an unrelated function's body | [`tailcallframe`](#tailcallframe) |
-| an event/listener callback emits a second routine's UI strings and callees | [`tailcallframe`](#tailcallframe) |
-| the same callee is emitted twice in one function, once as a named call and once inlined | [`tailcallframe`](#tailcallframe) |
-| an unconditional jmp after add rsp,N; pop reg is followed instead of ending the function | [`tailcallframe`](#tailcallframe) |
-| kuna emits thousands of lines for a function the disassembly shows is a few hundred bytes | [`tailcallframe`](#tailcallframe) |
-| a function's tail is really the body of the NEXT function | [`funcboundflow`](#funcboundflow) |
-| dead/garbage code after a call to a die()/fatal()/throw wrapper that never returns | [`funcboundflow`](#funcboundflow) |
-| two adjacent functions merged into one, the second also decompiled on its own | [`funcboundflow`](#funcboundflow) |
-| uninitialized reads in the tail after an unrecognized no-return call | [`funcboundflow`](#funcboundflow) |
-| a call to a sub_<hex> address that is not in the binary | [`overlapbranch`](#overlapbranch) |
-| writes through pointers that are never assigned right after a short conditional jump | [`overlapbranch`](#overlapbranch) |
-| a bogus dat_<hex> global incremented once and never read | [`overlapbranch`](#overlapbranch) |
-| a comparison whose operands are unreadable CONCAT/subpiece salad in hand-written or obfuscated code | [`overlapbranch`](#overlapbranch) |
-| core::ptr::drop_in_place(...) calls all over a decompiled rust function | [`cleanupcode`](#cleanupcode) |
-| drop glue and deallocation calls that are nowhere in the rust source | [`cleanupcode`](#cleanupcode) |
-| Drop::drop / __rust_dealloc / RawVecInner::deallocate noise at every scope exit | [`cleanupcode`](#cleanupcode) |
-| rust output is twice as long as the source because of automatic resource management | [`cleanupcode`](#cleanupcode) |
-| flip off to see when a rust value is actually dropped or freed | [`cleanupcode`](#cleanupcode) |
-| a syscall renders as (*(void *)swi(0x80))() - a call through a pointer nothing assigns | [`linuxsyscall`](#linuxsyscall) |
-| the mov $N,%eax before an int 0x80 has vanished from the output | [`linuxsyscall`](#linuxsyscall) |
-| an int 0x80 site shows no arguments even though the disassembly loads ebx/ecx/edx | [`linuxsyscall`](#linuxsyscall) |
-| 32-bit linux _start or shellcode where every system call is an unnamed indirect call | [`linuxsyscall`](#linuxsyscall) |
-| esp-relative locals shift by four bytes after an int 0x80 | [`linuxsyscall`](#linuxsyscall) |
-| several near-identical if/else blocks in a row, each comparing two adjacent stack slots and either calling a helper with the same object or storing one character through a 16-byte-threshold pointer select | [`msvcstrappend`](#msvcstrappend) |
-| an msvc c++ function whose string-building code shows a `0x10 <= v` buffer select before every character store | [`msvcstrappend`](#msvcstrappend) |
-| a loop body that is a whole capacity check plus a grow call to append one byte to a std::string | [`msvcstrappend`](#msvcstrappend) |
-| counting inlined std::string appends from the c output gives the wrong number | [`msvcstrappend`](#msvcstrappend) |
-| a re-rolled switch dispatches on a function parameter and the compiler's if/else-if chain would read better | [`switchselector`](#switchselector) |
-| a callback or window/dialog procedure's message dispatch reads better as the chain the compiler emitted | [`switchselector`](#switchselector) |
-| option loweredswitch off gives the rendering you want, but you want it for one cascade and not for the whole binary | [`switchselector`](#switchselector) |
-| an int3 pad renders as (*(void *)swi(3))() - a call through a pointer nothing assigns | [`int3pad`](#int3pad) |
-| a function returns the result of a call through swi(3) | [`int3pad`](#int3pad) |
-| nothing in the C says control ran into a run of 0xcc padding bytes | [`int3pad`](#int3pad) |
-| an anti-debug binary's clean-run path ends in an indirect call that only the disassembly explains | [`int3pad`](#int3pad) |
-| an x86-64 syscall renders as syscall() with empty parens, with the number and every argument erased | [`x64syscall`](#x64syscall) |
-| a syscall wrapper returns its own first parameter, the syscall number, instead of the syscall's result | [`x64syscall`](#x64syscall) |
-| the register writes feeding a SYSCALL are all missing from the C while kuna disassemble shows them | [`x64syscall`](#x64syscall) |
-| a SYSCALL's result is never assigned to anything | [`x64syscall`](#x64syscall) |
-| a function containing svc/ecall/syscall/sc returns its arguments as a register pair (CONCAT44 or undefined16) | [`syscallregs`](#syscallregs) |
-| a MIPS syscall wrapper returns the syscall number it loaded into v0 | [`syscallregs`](#syscallregs) |
-| software_interrupt(0), CallSupervisor(0), ecall() or syscall() shows no arguments while the disassembly loads registers before it | [`syscallregs`](#syscallregs) |
-| a test of a system call's result tests the argument the function set up instead | [`syscallregs`](#syscallregs) |
-| a syscall wrapper returns its own first parameter | [`syscallregs`](#syscallregs) |
-| the same wrapper is right in a linked Linux program but wrong in its .o or a static musl build | [`syscallregs`](#syscallregs) |
-| a MIPS syscall wrapper grows a fourth parameter a3 it tests after the syscall | [`syscallregs`](#syscallregs) |
-| a PowerPC syscall wrapper tests an uninitialized cr0 after sc | [`syscallregs`](#syscallregs) |
-| a MIPS syscall wrapper that passes its parameters straight to the kernel shows none of them | [`syscallregs`](#syscallregs) |
-| switch reports 'Could not recover jumptable ... Too many branches' and renders as a computed call | [`switchmodbound`](#switchmodbound) |
-| indirect jump bounded only by a modulo or and-mask on its index never becomes a switch | [`switchmodbound`](#switchmodbound) |
-| indirect jump renders as a computed (code *)() call whose destinations are already constants in the emitted C | [`constselectjump`](#constselectjump) |
-| 'Treating indirect jump as call' on a CMOV/predicated dispatch | [`constselectjump`](#constselectjump) |
-| the body behind a conditional indirect branch is never decoded | [`constselectjump`](#constselectjump) |
-| 'Too many branches' jumptable failure where a cbranch range guard bounds the index | [`switchguardbound`](#switchguardbound) |
-| computed (code *)() call at a gcc sub/ja guarded dispatch with the index spilled to the stack | [`switchguardbound`](#switchguardbound) |
-| narrow comparison after a logical right shift does not bound a jump table | [`highsliceguard`](#highsliceguard) |
-| a high-byte table index renders as jump-as-call | [`highsliceguard`](#highsliceguard) |
-| a Rust match over a shifted tag is missing despite an unsigned bound | [`highsliceguard`](#highsliceguard) |
-| getopt-style switch inside a loop degrades to a computed call with goto spaghetti | [`switchsharedcase`](#switchsharedcase) |
-| pic relative-offset jump table with a loop-carried base register never recovered | [`switchsharedcase`](#switchsharedcase) |
-| 'Too many branches' on a dispatch whose table base is set before the loop | [`switchsharedcase`](#switchsharedcase) |
-| image-base-relative switch whose bound guard is duplicated across multiple predecessors renders as a computed call | [`switchmultipred`](#switchmultipred) |
-| 'Too many branches' where the dispatch block has several guarded incoming paths | [`switchmultipred`](#switchmultipred) |
-| msvc memmove small-count tail dispatch truncated to an indirect call | [`switchmultipred`](#switchmultipred) |
-| one switch recovered but sibling interleaved jump tables degrade to computed calls | [`unrolledguard`](#unrolledguard) |
-| 'Could not find op at target address' during recovery of an msvc optimized memcpy dispatch | [`unrolledguard`](#unrolledguard) |
-| duff's-device tail dispatch rendered as 'Treating indirect jump as call' | [`unrolledguard`](#unrolledguard) |
-| decompiling one function with several switch statements takes far longer than its size suggests | [`jtsharepartial`](#jtsharepartial) |
-| per-function latency scales with the NUMBER of jump tables rather than their size | [`jtsharepartial`](#jtsharepartial) |
-| profile shows the reduced jumptable action set running once per switch | [`jtsharepartial`](#jtsharepartial) |
-| a huge function spends most of its time in oppool1 | [`deadcascade`](#deadcascade) |
-| rule pool sweep count in the thousands for one function | [`deadcascade`](#deadcascade) |
-| each pool sweep removes only a handful of dead INDIRECT or MULTIEQUAL ops | [`deadcascade`](#deadcascade) |
-| a stack char buffer is declared one element short, e.g. [63] where the source has [64] | [`nulterminator`](#nulterminator) |
-| the NUL terminator after strncpy renders as an assignment to a separate char local | [`nulterminator`](#nulterminator) |
-| a stack char local is assigned 0 and never read, right after the end of an array | [`nulterminator`](#nulterminator) |
-| the buffer's last element is missing from the array and declared as its own variable | [`nulterminator`](#nulterminator) |
-| a pointer loop over a stack buffer ends at the address of an unrelated local (`while (v3 != v2)`) | [`endptrbound`](#endptrbound) |
-| a loop's `while (p != vN)` names a local declared at the stack offset just past the buffer the loop reads | [`endptrbound`](#endptrbound) |
-| a stack buffer walked bytewise is declared as a scalar of the neighbour's width (`unsigned int v1;` for eight bytes) | [`endptrbound`](#endptrbound) |
-| the walking pointer is typed after the neighbouring local instead of the bytes it reads | [`endptrbound`](#endptrbound) |
-| a local char buffer is declared 8 bytes longer than the length passed to fgets/snprintf/read with it, e.g. char v3 [8200] beside fgets(v3,0x2000,fp) | [`arraysize`](#arraysize) |
-| a stack array's size is a multiple of 16 plus 8 and it ends where the stack-protector canary slot starts | [`arraysize`](#arraysize) |
-| a buffer passed to __snprintf_chk(buf, n, 1, 0x100, ...) is declared longer than the 0x100 object size the call carries | [`arraysize`](#arraysize) |
-| an out-parameter local is passed as (int *)&v2 to waitpid or wait | [`castobject`](#castobject) |
-| a stack local is declared unsigned int where the callee that fills it declares int * | [`castobject`](#castobject) |
-| return (int)v1 >> 8 & 0xff; over an unsigned int status filled by waitpid | [`castobject`](#castobject) |
-| a reused stack slot is assigned a value of an incompatible type | [`stackviews`](#stackviews) |
-| two object views of one frame address become unrelated local variables | [`stackviews`](#stackviews) |
-| spurious uninitialized local (xStack_N) returned after storing through a pointer to a local | [`stackalias`](#stackalias) |
-| store through a take-address-of-local pointer dropped as dead so the later read is garbage | [`stackalias`](#stackalias) |
-| bogus (*pcVar1)() indirect call after calling a struct-returning function on sparc | [`sparcstructret`](#sparcstructret) |
-| function tail dropped after a sparc call followed by unimp | [`sparcstructret`](#sparcstructret) |
-| switch rendered as nested if/else-if compare tree over one variable | [`loweredswitch`](#loweredswitch) |
-| binary-search cascade of constant compares where source had a switch | [`loweredswitch`](#loweredswitch) |
-| flip off to keep the compiler's lowered compare-tree rendering | [`loweredswitch`](#loweredswitch) |
-| a function decompiles to a two-line stub that tail-calls into an unnamed section of the binary | [`pushan`](#pushan) |
-| the decompiled body is an interpreter dispatch loop: fetches through a pointer into a high-entropy section, a rolling xor key, computed jumps through a handler table | [`pushan`](#pushan) |
-| VMProtect .vmp0/.vmp1 or renamed sections and pushfq/popfq register-save sequences at the function entry | [`pushan`](#pushan) |
-| hundreds of thousands of instructions reachable from one function with no recognizable program logic | [`pushan`](#pushan) |
-| values below an x87 call are read from the wrong register-stack positions after consecutive calls | [`callmechanisms`](#callmechanisms) |
-| a store the compiler spec says a callee always makes is missing after the call | [`callmechanisms`](#callmechanisms) |
-| a custom compiler spec's uponentry or uponreturn p-code has no effect on the output | [`callmechanisms`](#callmechanisms) |
-| a PPC64 ELFv1 switch after an external call is a jump-as-call through r2 plus a constant | [`callmechanisms`](#callmechanisms) |
-| a PPC64 ELFv1 function reads an r2 local that is never assigned after a call | [`callmechanisms`](#callmechanisms) |
-| a TOC-relative global after an external PPC64 call prints as an unknown pointer plus an offset | [`callmechanisms`](#callmechanisms) |
-| a 32-bit PowerPC -O0 variadic call drops a trailing double that an earlier argument is computed from | [`varargsharedfloat`](#varargsharedfloat) |
-| `sumi(2, x * 2, x)` prints as `sumi(2,x + x)` on PowerPC | [`varargsharedfloat`](#varargsharedfloat) |
-| a uint8_t parameter prints as unsigned int and is only ever used as a1 & 0xff or (char)a1 | [`narrowargs`](#narrowargs) |
-| an int parameter prints as unsigned long on x86-64 and is used as (unsigned int)a0 | [`narrowargs`](#narrowargs) |
-| a caller passes v + 5 to a callee whose parameter is a byte and another caller passes v - 8 & 0xff | [`narrowargs`](#narrowargs) |
-| a uint8_t loop counter prints as unsigned int v with v = v + 1 & 0xff | [`regnarrow`](#regnarrow) |
-| a byte loaded with ldrb is declared unsigned int and used as an index | [`regnarrow`](#regnarrow) |
-| an int local prints as unsigned long on x86-64 though every value is a zero-extended 32-bit result | [`regnarrow`](#regnarrow) |
-| a signed char loaded with ldrsb is declared int | [`regsigned`](#regsigned) |
-| a short counter prints as int with (int)(short) casts at every use | [`regsigned`](#regsigned) |
-| an int local prints as long on x86-64 though every value is a movsxd | [`regsigned`](#regsigned) |
-| a FILE * or char * the caller holds becomes long at the callee's parameter | [`protoorder`](#protoorder) |
-| a function that only hands a string on to a recursive function (quotearg_buffer_restyled, a tree walk, a pair of functions calling each other) keeps an integer parameter | [`protoorder`](#protoorder) |
-| an argument is typed at one call site of a callee and not at another | [`protoorder`](#protoorder) |
-| decompiling one function alone gives it a prototype the whole-binary output does not use at its call sites | [`protoorder`](#protoorder) |
-| the same sub_ address is called with one argument at one site and three at another in the same function | [`protoorder`](#protoorder) |
-| a callee's parameter is void * or long while every call to it passes a struct_N * or a string | [`calleevote`](#calleevote) |
-| a one-field getter reads *(unsigned long *)((long)a0 + 0x10) and its caller's own parameter is a synthesized record | [`calleevote`](#calleevote) |
-| the same record is struct_N * in the caller and void * in the function it passes it to | [`calleevote`](#calleevote) |
-| a wrapper that only compares or forwards a pointer keeps an integer parameter | [`calleevote`](#calleevote) |
-| a parameter is long or unsigned long while every call to it passes a struct_N *, a void * or a string | [`callerptr`](#callerptr) |
-| unsigned long sub_8514(void *a0,unsigned long a1) for a hash_insert whose callers pass two different records | [`callerptr`](#callerptr) |
-| a list or table insert keeps an integer item parameter although its callers pass malloc results | [`callerptr`](#callerptr) |
-| a wrapper that only forwards a pointer to a function pointer keeps an integer parameter | [`callerptr`](#callerptr) |
-| a qsort comparator's parameters print as unsigned long * or int * where the program declares const void * | [`callbacktype`](#callbacktype) |
-| a signal handler renders void sub_1100(void) and its ground truth takes the signal number | [`callbacktype`](#callbacktype) |
-| a pthread start routine takes a pointer-width integer instead of void * | [`callbacktype`](#callbacktype) |
-| a function reached only through a function pointer keeps whatever its own body recovered, with no prototype anywhere | [`callbacktype`](#callbacktype) |
-| a call to a function the same listing declares char * prints (char *)sub_43ee(a0) | [`callrettype`](#callrettype) |
-| v7 = (char *)sub_e8ca(4,(char *)sub_43ee(a0)); | [`callrettype`](#callrettype) |
-| a caller converts a call's result to the type the callee is declared to return | [`callrettype`](#callrettype) |
-| (FILE *)f(a0) under FILE * f(int a0) | [`callrettype`](#callrettype) |
-| a function declared unsigned char sub_x(...) whose callers hold the result in an unsigned int | [`narrowret`](#narrowret) |
-| v1 = sub_8017ac6(a0); with unsigned int v1 beside unsigned char sub_8017ac6 | [`narrowret`](#narrowret) |
-| a bool-returning callee's result kept in an int and only tested | [`narrowret`](#narrowret) |
-| an x86-64 unsigned-int-returning callee's result held in an unsigned long | [`narrowret`](#narrowret) |
-| call rendered with fewer arguments than the disassembly passes when the missing argument register is spilled to the frame before the call | [`spillargtrial`](#spillargtrial) |
-| floating-point argument dropped at the FIRST of several calls that reuse the same value | [`spillargtrial`](#spillargtrial) |
-| a spurious 4-byte stack local appears where a call argument should be | [`spillargtrial`](#spillargtrial) |
-| clang -O2 packed-double code calls atan2 with one argument instead of two | [`spillargtrial`](#spillargtrial) |
-| argument register stored to a caller-frame slot and reloaded after the call is not recognized as an argument | [`spillargtrial`](#spillargtrial) |
-| goto placement follows the sailr region walk instead of ghidra's collapse order (flip off to force CollapseStructure) | [`regionstructure`](#regionstructure) |
-| uncompilable c where a loop body folded into a while condition | [`regionstructure`](#regionstructure) |
-| structuring differs from upstream ghidra on the same function | [`regionstructure`](#regionstructure) |
-| guard clause with a fatal no-return call comes out inverted and the whole body is nested inside the if | [`guardarm`](#guardarm) |
-| the function's only return sits inside an if-arm and the body ends on a no-return call | [`guardarm`](#guardarm) |
-| kuna negates a guard condition that ida and ghidra leave alone | [`guardarm`](#guardarm) |
-| a leading validation guard is emitted at the tail of the function | [`guardarm`](#guardarm) |
-| loop emitted as while( true ) with the head test as a guarded exit on the first statement | [`loopcondhoist`](#loopcondhoist) |
-| a for/while header condition is left inside the loop body | [`loopcondhoist`](#loopcondhoist) |
-| kuna writes while(true) where ida writes while (cond) | [`loopcondhoist`](#loopcondhoist) |
-| a loop's early-exit return is the loop's first statement instead of its condition | [`loopcondhoist`](#loopcondhoist) |
-| one source loop emitted as multiple nested infinite loops | [`loopcontinue`](#loopcontinue) |
-| early continues emitted as retry loops | [`loopcontinue`](#loopcontinue) |
-| accept and fork retries obscure a server's main loop | [`loopcontinue`](#loopcontinue) |
-| goto-heavy multi-exit loop where angr recovers a clean while/for with break/continue | [`regionlooprefine`](#regionlooprefine) |
-| irreducible or multi-latch loop falls back to raw gotos instead of folding | [`regionlooprefine`](#regionlooprefine) |
-| secondary loop exits rendered as gotos rather than break statements | [`regionlooprefine`](#regionlooprefine) |
-| more gotos than angr on a function forced to virtualize several edges | [`regionedgeorder`](#regionedgeorder) |
-| goto cut at an awkward edge where a dominance/post-dominator ordering exposes more structure | [`regionedgeorder`](#regionedgeorder) |
-| crossing goto from the else arm back into the then arm's shared clause | [`condfold`](#condfold) |
-| goto plus label into the shared body of a guard cascade whose arms reconverge | [`condfold`](#condfold) |
-| nested if where angr emits one compound short-circuit condition | [`condfold`](#condfold) |
-| second condition block assigns one value or calls something before its test and the fold is declined | [`condfold`](#condfold) |
-| a condition holds a long comma chain of assignments before its test | [`condstmts`](#condstmts) |
-| if ((a) && (v1 = x, v2 = y, v3 = z, call(..) == v1)) on one very long line | [`condstmts`](#condstmts) |
-| a while header carries several comma-separated assignments | [`condstmts`](#condstmts) |
-| want a cap on how many statements a short-circuit operand may print | [`condstmts`](#condstmts) |
-| goto to a label that only returns | [`gotoreduce`](#gotoreduce) |
-| label_N: return; shared tail after an if | [`gotoreduce`](#gotoreduce) |
-| more gotos than angr for the same function | [`gotoreduce`](#gotoreduce) |
-| goto to a shared free(p); return; style epilogue | [`gotoreduce`](#gotoreduce) |
-| cleanup-call return tail reached via label instead of duplicated inline | [`gotoreduce`](#gotoreduce) |
-| many error checks share one cleanup block (the goto out; idiom) and it is printed once per check | [`gotoreduce`](#gotoreduce) |
-| else block kept although the matching if branch always returns or aborts | [`ifelseflatten`](#ifelseflatten) |
-| guard-clause body indented one level deeper than the source | [`ifelseflatten`](#ifelseflatten) |
-| redundant else after an early-return arm | [`ifelseflatten`](#ifelseflatten) |
-| goto into the middle of a sibling branch's arm (compiler cross-jumping) | [`crossjumprevert`](#crossjumprevert) |
-| shared non-return tail reached by goto from an else-if chain | [`crossjumprevert`](#crossjumprevert) |
-| label planted inside an else block targeted from another branch | [`crossjumprevert`](#crossjumprevert) |
-| the same run of dat_<addr> = ... statements is emitted two or three times in one function | [`retsplitglobal`](#retsplitglobal) |
-| a long global-filling epilogue is duplicated once per path that reaches the return | [`retsplitglobal`](#retsplitglobal) |
-| option returndup off does not stop a shared epilogue from being cloned | [`retsplitglobal`](#retsplitglobal) |
-| 46% of a function's text is three copies of one exit block | [`retsplitglobal`](#retsplitglobal) |
-| a huge function exhausts memory right after its return blocks are split | [`retsplitlimit`](#retsplitlimit) |
-| millions of COPY ops of a global into itself fill a large function's IR | [`retsplitlimit`](#retsplitlimit) |
-| a function with hundreds of gotos to one return and thousands of globals takes gigabytes to decompile | [`retsplitlimit`](#retsplitlimit) |
-| both arms of an if/else begin or end with the same duplicated statements | [`dedupitetail`](#dedupitetail) |
-| shared cleanup or help call repeated verbatim in the two branches | [`dedupitetail`](#dedupitetail) |
-| compiler-duplicated tail emitted twice instead of hoisted out of the if | [`dedupitetail`](#dedupitetail) |
-| if (c) v = A; else v = B; assignment diamond where a ternary v = c ? A : B is expected | [`iteregion`](#iteregion) |
-| format/flag builder full of two-arm constant assignments to the same variable | [`iteregion`](#iteregion) |
-| flip off when the source likely wrote an explicit if/else | [`iteregion`](#iteregion) |
-| if (c) v = <expr1>; else v = <expr2>; where a ternary v = c ? expr1 : expr2 is expected | [`iteexpr`](#iteexpr) |
-| kuna emits far fewer ?: ternaries than angr/ida on format/flag/size code | [`iteexpr`](#iteexpr) |
-| computed-arm assignment diamond (v = *p / v = b + k) not folded to a ternary | [`iteexpr`](#iteexpr) |
-| if (a && b) v = 1; else v = 0; where the source has a single boolean assignment v = a && b | [`iteboolean`](#iteboolean) |
-| -O0 boolean materialization printed as an explicit 0/1 constant diamond | [`iteboolean`](#iteboolean) |
-| extra CFG blocks/edges vs Hex-Rays around a short-circuit boolean assignment | [`iteboolean`](#iteboolean) |
-| giant short-circuit if with comma-expression side effects merging several source early-return guards | [`returndup`](#returndup) |
-| one trailing return shared by many guard paths where the source used per-guard early returns | [`returndup`](#returndup) |
-| merged guard condition containing v = f(...) assignments inline | [`returndup`](#returndup) |
-| if (!c) return 0; f(); return 0; where the source has if (c) f(); return 0; | [`rettriangle`](#rettriangle) |
-| a duplicated constant return right after a one-statement body | [`rettriangle`](#rettriangle) |
-| // return-dupe on a function whose only split is a short if before its return | [`rettriangle`](#rettriangle) |
-| inverted diamond: if (guard) { entire body } else { v = 0; } return v; | [`earlyreturn`](#earlyreturn) |
-| leading argument-validity check wraps the whole body instead of an early return | [`earlyreturn`](#earlyreturn) |
-| function opens with if (p != 0) { everything } where source wrote if (!p) return 0; | [`earlyreturn`](#earlyreturn) |
-| wide switch where every case assigns a constant and breaks to one shared return | [`switchreturn`](#switchreturn) |
-| switch (x) { case A: v = K; break; ... } return v; instead of per-case return K | [`switchreturn`](#switchreturn) |
-| 17-plus-case const dispatch keeps a merged return variable | [`switchreturn`](#switchreturn) |
-| call result spilled to a temp used exactly once: v5 = f(); if (v5 < 0) | [`foldcallret`](#foldcallret) |
-| single-use call return not inlined into its use site | [`foldcallret`](#foldcallret) |
-| flip off to force every call output into a named temporary (ghidra style) | [`foldcallret`](#foldcallret) |
-| too many single-use temporaries: v7 = v3 + 8 declared and read once | [`impliedrefs`](#impliedrefs) |
-| a value read three times is written out three times instead of being declared | [`impliedrefs`](#impliedrefs) |
-| want to ablate the implied-expression threshold without rebuilding | [`impliedrefs`](#impliedrefs) |
-| expressions are too deeply nested to read and every sub-term should get a name | [`impliedrefs`](#impliedrefs) |
-| a two-term expression is declared as a temporary instead of being inlined at its two uses | [`termdup`](#termdup) |
-| want to ablate the term-duplication threshold without rebuilding | [`termdup`](#termdup) |
-| raising impliedrefs did not inline an expression because the expression itself is too wide | [`termdup`](#termdup) |
-| switch with more than 1024 cases prints as a computed call (jump-as-call) | [`jumptablemax`](#jumptablemax) |
-| state-machine function with a giant jump table decompiles to a stub | [`jumptablemax`](#jumptablemax) |
-| functions --summary lists a switch over jumptablemax | [`jumptablemax`](#jumptablemax) |
-| xrefs miss references made from switch cases past the first 1024 | [`jumptablemax`](#jumptablemax) |
-| stack-protector canary compare against fs:0x28 and a __stack_chk_fail branch cluttering the epilogue | [`stackguard`](#stackguard) |
-| shared-return goto forced by the canary check block | [`stackguard`](#stackguard) |
-| flip off to keep the real canary instructions for auditing the protector | [`stackguard`](#stackguard) |
-| a Windows PE function opens with `v8 = dat_140074040 ^ (unsigned long long)v1;` and ends with a one-argument call taking `v8 ^ (unsigned long long)v1` | [`msvcstackguard`](#msvcstackguard) |
-| an unnamed one-argument callee (`__security_check_cookie`) called just before every return | [`msvcstackguard`](#msvcstackguard) |
-| `--option stackguard on` and `off` give byte-identical output on a Windows binary | [`msvcstackguard`](#msvcstackguard) |
-| an otherwise unused 8-byte stack slot declared in every function of an MSVC binary | [`msvcstackguard`](#msvcstackguard) |
-| Rust output littered with `panic_bounds_check()` / `slice_error_fail()` / `panic_const_div_by_zero()` calls | [`securitycheck`](#securitycheck) |
-| every slice index guarded by an `if` whose arm only panics | [`securitycheck`](#securitycheck) |
-| Rust function CFG roughly twice the size of the source control flow | [`securitycheck`](#securitycheck) |
-| flip off to keep the real bounds-check instructions for auditing | [`securitycheck`](#securitycheck) |
-| if (x == 0) guard with the common path in the else arm | [`branchflip`](#branchflip) |
-| negated condition where angr renders the positive complement first | [`branchflip`](#branchflip) |
-| if/else polarity inverted versus the source's reading order | [`branchflip`](#branchflip) |
-| loop exit rendered as goto label_N; plus a synthesized label instead of break; | [`loopbreak_recovery`](#loopbreak_recovery) |
-| switch-case exit gotos where break; is expected | [`loopbreak_recovery`](#loopbreak_recovery) |
-| error paths leave a loop by goto to its successor label | [`loopbreak_recovery`](#loopbreak_recovery) |
-| an -O2 counter is declared unsigned int but every comparison on it is written (int)v | [`signedness`](#signedness) |
-| unsigned long locals whose only uses are signed compares | [`signedness`](#signedness) |
-| the declared signedness contradicts the casts in the body | [`signedness`](#signedness) |
-| want C-conventional signed declarations for values no operation settles | [`signedness`](#signedness) |
-| want the declaration type inference produced, without any rounding | [`signedness`](#signedness) |
-| a stack local is declared unsigned long and every comparison on it is written (long)v | [`castsign`](#castsign) |
-| if (0 <= (long)v15) with unsigned long v15; // stack - 0x60 | [`castsign`](#castsign) |
-| the declared signedness of a frame local contradicts the casts in the body | [`castsign`](#castsign) |
-| a conditional arm is cast to the type the conditional already has, v = c ? (int)*(char *)p : 0; | [`castternary`](#castternary) |
-| every arm of a ?: over bytes carries an (int) cast | [`castternary`](#castternary) |
-| (unsigned long)v1 on one arm of a ?: whose other arm is already unsigned long | [`castternary`](#castternary) |
-| an int widened to long beside a long operand, ((long *)a0)[1] + (long)a1 | [`castwiden`](#castwiden) |
-| a widened index times a literal, (long)i * 8 + 0x2b200 | [`castwiden`](#castwiden) |
-| v = (unsigned long)i; into a variable already declared unsigned long | [`castwiden`](#castwiden) |
-| a store of (long)i through a long pointer | [`castwiden`](#castwiden) |
-| memchr(p,c,(long)n) for an int n | [`castwiden`](#castwiden) |
-| a truncation assigned to a variable already declared that type, v1 = (unsigned int)a0; with unsigned int v1 | [`castnarrow`](#castnarrow) |
-| return (int)x; from a function declared int | [`castnarrow`](#castnarrow) |
-| a long passed to a declared int parameter as toupper((int)a0) | [`castnarrow`](#castnarrow) |
-| a byte store through a char pointer written *a1 = (char)a0; | [`castnarrow`](#castnarrow) |
-| kuna prints a narrowing cast IDA leaves to C's assignment conversion | [`castnarrow`](#castnarrow) |
-| a local is declared with three or more levels of pointer indirection | [`ptrdepthcap`](#ptrdepthcap) |
-| unsigned long long ***** or char ***** appears in the output | [`ptrdepthcap`](#ptrdepthcap) |
-| C++ std::string / ostringstream locals get absurd pointer types | [`ptrdepthcap`](#ptrdepthcap) |
-| the type of a stack object grows one pointer level per decompilation pass | [`ptrdepthcap`](#ptrdepthcap) |
-| an indirect call through a table entry prints (**(void **)p)(), which does not compile | [`calltargettype`](#calltargettype) |
-| a local holding a function pointer is declared void * and called as (*v1)(a1,7) | [`calltargettype`](#calltargettype) |
-| a parameter, global or struct field holding a function pointer is declared void * and its call does not compile | [`calltargettype`](#calltargettype) |
-| a DWARF function-pointer parameter or field prints void * | [`calltargettype`](#calltargettype) |
-| called object is not a function or function pointer when the output is compiled | [`calltargettype`](#calltargettype) |
-| a parameter is declared long or unsigned long and is only ever dereferenced | [`ptrfromuse`](#ptrfromuse) |
-| every use of an argument is *(T *)(a0 + k) but the argument is not a pointer | [`ptrfromuse`](#ptrfromuse) |
-| one function takes T *a0 and its sibling takes long a0 for the same kind of argument | [`ptrfromuse`](#ptrfromuse) |
-| an argument dereferenced at offset 0 gets a pointer type but one dereferenced at +8 does not | [`ptrfromuse`](#ptrfromuse) |
-| a string parameter is declared unsigned long and every call site passes it to strlen or printf | [`charptr`](#charptr) |
-| a buffer indexed one byte at a time is declared void * | [`charptr`](#charptr) |
-| two functions take the same string and one says char * and the other unsigned long | [`charptr`](#charptr) |
-| a -O0 parameter is an integer although the callee's prototype declares char * | [`charptr`](#charptr) |
-| void * sub_e680(uint1 *a0) for a function that passes its argument to strlen | [`charptr`](#charptr) |
-| a buffer indexed one byte at a time prints as *(char *)((long)v6 + (long)v8) | [`elemptr`](#elemptr) |
-| a parameter only ever indexed is declared long | [`elemptr`](#elemptr) |
-| malloc's result is declared void * and every store through it casts | [`elemptr`](#elemptr) |
-| a table in .data read with a computed index prints as *(unsigned char *)((long)v1 + 0x4020) | [`elemptr`](#elemptr) |
-| argv-like parameters are declared long and each element is cast to char * | [`elemptr`](#elemptr) |
-| a local commented // gs_offset or // fs_offset is read through constant offsets | [`pebnames`](#pebnames) |
-| an anti-debug check reads *(char *)(*(long long *)(v1 + 0x60) + 2) | [`pebnames`](#pebnames) |
-| PEB fields such as BeingDebugged or NtGlobalFlag render as magic offsets | [`pebnames`](#pebnames) |
-| a thread-local or stack-limit read renders as *(long long *)(v1 + 0x58) or (v1 + 0x10) | [`pebnames`](#pebnames) |
-| a parameter is declared `unsigned long *` or `void *` and read at two or more fixed offsets | [`structsynth`](#structsynth) |
-| a local assigned from `xmalloc` or another call is written as `*(char *)((long)v1 + 0x14) = 0x6e` | [`structsynth`](#structsynth) |
-| the body is a wall of `*(int *)(p + 0x18)` casts over one pointer | [`structsynth`](#structsynth) |
-| `*(unsigned int *)&a0[1]` appears where a record field is meant | [`structsynth`](#structsynth) |
-| two functions read the same object and neither names its fields | [`structsynth`](#structsynth) |
-| a local loaded from a `struct_N` field is read as `*(int *)((long)v1 + 0xc)` | [`structsynth`](#structsynth) |
-| a synthesized struct's link fields are `long *` or `unsigned long` where the nodes they point at are the same record | [`structsynth`](#structsynth) |
-| one object has two or more struct_N names whose fields agree as far as both go | [`structmerge`](#structmerge) |
-| a synthesized record declares fewer fields than the program's own accesses show | [`structmerge`](#structmerge) |
-| two functions take a pointer to the same thing and their parameter types differ | [`structmerge`](#structmerge) |
-| the exported header defines struct_2 and struct_7 with the same first members | [`structmerge`](#structmerge) |
-| a parameter is declared `void *` and every read of it is `((T *)a0)[K]` or `*(T *)((long)a0 + K)` with no read at offset 0 | [`structheadless`](#structheadless) |
-| a function reads a record's later members and the listing shows a cast per access | [`structheadless`](#structheadless) |
-| `statx_to_stat` or a `fileinfo` accessor renders as casts of an untyped pointer | [`structheadless`](#structheadless) |
-| a record reader keeps `void *` while a sibling that reads the first member gets `struct_N *` | [`structheadless`](#structheadless) |
-| a synthesized record declares long field_0x0 and every read of it is (char *)a0->field_0x0 | [`fieldtype`](#fieldtype) |
-| free((void *)a0->field_0xb0) on a struct_N field | [`fieldtype`](#fieldtype) |
-| a function-pointer field prints as (*(void *)a0->field_0x40)(...) | [`fieldtype`](#fieldtype) |
-| a record's buffer field is used in pointer arithmetic that prints as (char *)(a0->field_0x8 + a0->field_0x0) | [`fieldtype`](#fieldtype) |
-| dead code kept after calls to exit/abort/panic when off | [`noreturn_known`](#noreturn_known) |
-| call to a known no-return libc function still shows a fall-through path | [`noreturn_known`](#noreturn_known) |
-| unreachable epilogue after std::terminate or a rust panic call | [`noreturn_known`](#noreturn_known) |
-| heavily-called custom die()/fatal() wrapper still treated as returning | [`noreturn_disc`](#noreturn_disc) |
-| dead code after a stripped sub_ wrapper that never falls through at 3+ call sites | [`noreturn_disc`](#noreturn_disc) |
-| caller swallows the next function after a wrapper call | [`noreturn_disc`](#noreturn_disc) |
-| unreachable code after a call to an exit/fatal wrapper | [`noreturn_propagate`](#noreturn_propagate) |
-| function truncated after calling a cold wrapper | [`noreturn_propagate`](#noreturn_propagate) |
-| spurious while(true) around a call that never returns | [`noreturn_propagate`](#noreturn_propagate) |
-| stripped binary's unnamed exit wrapper swallows the functions after it | [`noreturn_propagate`](#noreturn_propagate) |
-| wrapper with a mid-body fatal call still treated as returning | [`noreturn_reach`](#noreturn_reach) |
-| unreachable write()/return tail keeps a fatal wrapper looking like it returns | [`noreturn_reach`](#noreturn_reach) |
-| switch whose every arm ends in a no-return call not concluded no-return | [`noreturn_reach`](#noreturn_reach) |
-| caller decodes garbage past an sshpkt_fatal-style wrapper | [`noreturn_reach`](#noreturn_reach) |
-| rust or go string argument renders as a raw rodata address beside its length instead of the literal text | [`fatstr`](#fatstr) |
-| takes_str(&DAT_00102000, 15) where the 15 bytes at that address are plainly the string | [`fatstr`](#fatstr) |
-| string literals recovered on C binaries but never on rust or go ones | [`fatstr`](#fatstr) |
-| every function of a Go binary opens with if (condition) { runtime_morestack_noctxt(); } inside a loop to the entry | [`gomorestack`](#gomorestack) |
-| go function parameters recovered as phi-fed locals or missing because the entry is a loop head | [`gomorestack`](#gomorestack) |
-| do-while wrapping an entire go function body with a morestack call in its latch | [`gomorestack`](#gomorestack) |
-| every pointer store in a go function wrapped in if (writeBarrier flag) with a gcWriteBarrier call | [`gowritebarrier`](#gowritebarrier) |
-| stores through an undefined local after a gcWriteBarrier call because the thunk's buffer register is not modeled | [`gowritebarrier`](#gowritebarrier) |
-| go output doubled in size by GC bookkeeping diamonds | [`gowritebarrier`](#gowritebarrier) |
-| if ((v ^ v << 1) >> 0x3e & 1) before a tail call in an arm64e function | [`ptrauthtrap`](#ptrauthtrap) |
-| (*SoftwareBreakpoint(0xc471,..))() // jump-as-call | [`ptrauthtrap`](#ptrauthtrap) |
-| a stack - 0x8  | [`ptrauthtrap`](#ptrauthtrap) |
-|  x30 variable declared only for a pointer-auth check | [`ptrauthtrap`](#ptrauthtrap) |
-| go function returning bool prints v = CONCAT71((undefined7)(v >> 8), a == b) instead of returning the comparison | [`gobool`](#gobool) |
-| return value masked with 0xffffffff around a boolean | [`gobool`](#gobool) |
-| undefined7 casts feeding a concatenation at every boolean return | [`gobool`](#gobool) |
-| an objective-c method reads *(long *)((long)self + dat_<addr>) instead of self->_ivar | [`objcivars`](#objcivars) |
-| self is objc_object * in every -[Class sel] although the class declares ivars | [`objcivars`](#objcivars) |
-| objc_storeStrong((long)self + <Class>::_ivar, x) instead of &self->_ivar | [`objcivars`](#objcivars) |
-| parameter copy-shadow assignment (v6 = a1;) emitted below an earlier guard instead of at the top of the function | [`paramcopyhoist`](#paramcopyhoist) |
-| kuna places some parameter spill copies in the entry block and others after a guard in the same function | [`paramcopyhoist`](#paramcopyhoist) |
-| extra CFG nodes versus the source around a cascade of if (p && !*p) p = NULL; parameter guards | [`paramcopyhoist`](#paramcopyhoist) |
-| vN = aM; for an unmodified incoming parameter appearing in the middle of a guard cascade | [`paramcopyhoist`](#paramcopyhoist) |
-| a value stored into a stack slot is printed into a register local and the slot is never assigned | [`indirectonly`](#indirectonly) |
-| a struct filled on the frame is passed by address to a call although the emitted C never wrote it | [`indirectonly`](#indirectonly) |
-| a declared local is never written and never read anywhere in the function | [`indirectonly`](#indirectonly) |
-| a `vN = slot;` ... `slot = vN;` round-trip copy pair around a loop that only reads the slot | [`indirectonly`](#indirectonly) |
-| a call result assigned to a temporary that is immediately assigned to a stack slot | [`indirectonly`](#indirectonly) |
-| an inlined callee body is spliced into the caller and should read as a call | [`outline`](#outline) |
-| want to pull a chosen region out of a function into a named pseudofunction | [`outline`](#outline) |
-| acting on an almostregion inline-candidate report by hand or with an llm | [`outline`](#outline) |
-| an unprototyped call loses a local output pointer | [`stackaddrargtrial`](#stackaddrargtrial) |
-| a post-call word or halfword output folds to its initializer | [`stackaddrargtrial`](#stackaddrargtrial) |
-| a helper's stack output array is shorter than the helper writes | [`callarrayextent`](#callarrayextent) |
-| a post-call stack read is emitted as an independent uninitialized scalar | [`callarrayextent`](#callarrayextent) |
-| a stack array passed to a helper loses aliases with neighboring frame slots | [`callarrayextent`](#callarrayextent) |
-| a local passed by address to a callee is declared unsigned long and read as v1._4_2_ or v1._6_1_ | [`stackstruct`](#stackstruct) |
-| byte and short fields of a local header print as partial accesses | [`stackstruct`](#stackstruct) |
-| a struct the source zero-initializes or memsets prints as several unrelated stack scalars | [`stackstruct`](#stackstruct) |
-| memcpy copies 0x40 bytes into a local declared char v13[12] | [`stackstruct`](#stackstruct) |
-| negative index displacement hides a declared global array | [`globalarrayanchor`](#globalarrayanchor) |
-| indexed stores use an address immediately before an array | [`globalarrayanchor`](#globalarrayanchor) |
-| Go array accesses surrounded by runtime.panicIndex or runtime.panicBounds calls | [`gobounds`](#gobounds) |
-| Go division retains compiler-generated runtime.panicdivide branches | [`gobounds`](#gobounds) |
-| PPC32 PIC calls retain local linker stub names | [`ppc32picimports`](#ppc32picimports) |
-| a PPC32 PIC no-return call flows into padding | [`ppc32picimports`](#ppc32picimports) |
-| PPC32 PIC imports are missing from named cross-reference queries | [`ppc32picimports`](#ppc32picimports) |
-| every import call in a PPC32 shared library linked with the start files prints as sub_ | [`ppc32picimports`](#ppc32picimports) |
-| Rust printing exposes std::io::stdio::_print with a pointer and odd integer | [`rustfmt`](#rustfmt) |
-| Rust print calls retain a runtime template pointer and stack formatter descriptor arrays | [`rustfmt`](#rustfmt) |
-| Rust integer or string String construction retains format_inner with an output pointer | [`rustfmt`](#rustfmt) |
-| Rust panic messages remain core::panicking::panic_fmt calls with opaque pointers | [`rustfmt`](#rustfmt) |
-| older Rust print calls retain a piece-array fmt::Arguments descriptor | [`rustfmt`](#rustfmt) |
-| Rust String or Stdout writes remain opaque core::fmt::write or write_fmt calls (set all) | [`rustfmt`](#rustfmt) |
-| Go output language is unavailable | [`outlang`](#outlang) |
-| Go functions retain C declarations and control-flow syntax | [`outlang`](#outlang) |
-| Rust large-frame functions retain __rust_probestack calls | [`rustprobestack`](#rustprobestack) |
-| live stack-probe R11 residual renders as an undefined local | [`rustprobestack`](#rustprobestack) |
-| stack-probe calls obscure a known constant frame allocation | [`rustprobestack`](#rustprobestack) |
-| a function that only ever passes its argument to a libc stdio call still declares it long or unsigned long | [`libctypes`](#libctypes) |
-| a fopen or fdopen result is a void * that nothing can name | [`libctypes`](#libctypes) |
-| a stat or lstat call fills an untyped void * buffer | [`libctypes`](#libctypes) |
-| getopt_long takes a bare (void *)0x... long-option table | [`libctypes`](#libctypes) |
-| readdir returns a void * whose fields are casts and offsets | [`libctypes`](#libctypes) |
-| a stream parameter is void * where the ground truth is FILE * | [`libctypes`](#libctypes) |
-| a FILE * or stat * renders its members as field_0x8 / field_0x30 instead of _IO_read_ptr / st_size | [`libctypes`](#libctypes) |
-| a value loaded out of a named libc struct keeps the cast's type instead of the field's | [`libctypes`](#libctypes) |
-| stdin/stdout/stderr render as an untyped word and their fields as raw offsets ((long)stdout + 0x28) | [`libctypes`](#libctypes) |
-| a shared object's stream slot has no name at all (*(long *)(*dat_3fe0 + 0x28)) | [`libctypes`](#libctypes) |
-| two functions in one binary disagree about what stdout is, one calling it FILE * and the other a long | [`libctypes`](#libctypes) |
-| a SPARC32 caller stores the low word of a 64-bit quotient from a local nothing assigns | [`libgccsigs`](#libgccsigs) |
-| __divdi3 is called with four 32-bit arguments and only %o0 is read back | [`libgccsigs`](#libgccsigs) |
-| *p = v1; after a __divdi3 call where v1 is never written | [`libgccsigs`](#libgccsigs) |
-| string constants render as raw addresses or unnamed data instead of quoted char[N] literals | [`strings`](#strings) |
-| no data symbols at ascii runs in rodata | [`strings`](#strings) |
-| four-character commands such as quit, show, bind, or fork render as hexadecimal addresses | [`strings`](#strings) |
-| a wide Windows API argument renders as a one-character string literal | [`widestrings`](#widestrings) |
-| LoadLibraryW("n") or FindWindowW("O",0) in the emitted C | [`widestrings`](#widestrings) |
-| kuna strings --encoding utf16 reports a literal the decompiled C truncates to its first character | [`widestrings`](#widestrings) |
-| a UTF-16 string address carries no data symbol while the ascii ones do | [`widestrings`](#widestrings) |
-| an anti-debugging check names no DLL or window class | [`widestrings`](#widestrings) |
-| a wchar_t or char32_t string literal argument renders as an address such as &dat_2004 | [`widestrings32`](#widestrings32) |
-| a wide literal renders as its first character in a narrow string | [`widestrings32`](#widestrings32) |
-| L"..." appears only where a libc wide-string prototype types the argument | [`widestrings32`](#widestrings32) |
-| a wide default such as s = L"(NULL)" renders as s = &dat_2038 | [`widestrings32`](#widestrings32) |
-| a stripped binary yields almost no functions (symbol stream only) | [`entry_disc`](#entry_disc) |
-| functions discovered via e_entry/init_array/.eh_frame/prologues missing from the list | [`entry_disc`](#entry_disc) |
-| c++ catch/cleanup landing pads missing from a stripped binary's function list | [`eh_frame_full`](#eh_frame_full) |
-| exception-handler code never discovered as entries | [`eh_frame_full`](#eh_frame_full) |
-| gcc_except_table call-site targets left unexplored | [`eh_frame_full`](#eh_frame_full) |
-| a stripped mach-o yields almost no functions although __text is large | [`unwindstarts`](#unwindstarts) |
-| an ios app function list is only __mh_execute_header, main, exports and import stubs | [`unwindstarts`](#unwindstarts) |
-| LC_FUNCTION_STARTS absent and the arm64 gap walk cannot reach the body | [`unwindstarts`](#unwindstarts) |
-| functions the unwinder describes in __unwind_info missing from the inventory | [`unwindstarts`](#unwindstarts) |
-| a function called only through a pointer is missing from kuna functions | [`addrtakenentry`](#addrtakenentry) |
-| kuna xrefs reports a data reference to an address kuna functions does not list | [`addrtakenentry`](#addrtakenentry) |
-| a registration stub's size covers the handler after it | [`addrtakenentry`](#addrtakenentry) |
-| decompile --addr at a lea target prints a body no listed function has | [`addrtakenentry`](#addrtakenentry) |
-| relocated handler pointers before the first .pdata record are not functions | [`addrtakenentry`](#addrtakenentry) |
-| a frame-less leaf with no .pdata record is folded into the function before it | [`addrtakenentry`](#addrtakenentry) |
-| an A32 function after a Thumb helper decompiles as halt_missing in a stripped ARM binary | [`flowmode`](#flowmode) |
-| flow reaches unmapped memory two bytes into an A32 instruction | [`flowmode`](#flowmode) |
-| --isa arm decompiles an ARM function correctly that the default run turns into garbage | [`flowmode`](#flowmode) |
-| a function reached with bl after a blx call decodes in the wrong instruction set | [`flowmode`](#flowmode) |
-| --option listing off fixes the decompilation of an ARM function | [`flowmode`](#flowmode) |
-| an unstripped ELF's main decompiles with anonymous a0/a1 parameters and an unsigned return | [`elfmain`](#elfmain) |
-| argv[1] in main reads as a struct field or a cast of a1 | [`elfmain`](#elfmain) |
-| kuna functions on a stripped Linux binary lists no main at all | [`elfmain`](#elfmain) |
-| the entry of a stripped ELF is reported only as sub_<addr> | [`elfmain`](#elfmain) |
-| a stripped ELF program routine decompiles as unsigned long sub_<addr>(int a0,char **a1) | [`elfmain`](#elfmain) |
-| argc and argv are invisible in the decompiled main of a stripped elf binary | [`elfmain`](#elfmain) |
-| main returns unsigned long instead of int in a stripped ELF | [`elfmain`](#elfmain) |
-| there is no way to tell which of a stripped ELF's functions the program starts in | [`elfmain`](#elfmain) |
-| functions after nop padding missing in a stripped binary | [`funcstart_patterns`](#funcstart_patterns) |
-| a push rbx; mov rbx,rdi prologue never discovered as a function start | [`funcstart_patterns`](#funcstart_patterns) |
-| code-bearing gaps between discovered functions left undefined | [`funcstart_patterns`](#funcstart_patterns) |
-| a stripped a32 firmware omits disconnected functions | [`armframes`](#armframes) |
-| stripped arm xref queries omit calls from disconnected stack frames | [`armframes`](#armframes) |
-| an arm caller is assigned to an interior prologue | [`armframes`](#armframes) |
-| arm interworking frame discovery leaves stale call references | [`armframes`](#armframes) |
-| stripped cortex-m firmware yields only a handful of functions | [`cortexmvectors`](#cortexmvectors) |
-| arm firmware body decodes as a32 garbage instead of thumb | [`cortexmvectors`](#cortexmvectors) |
-| nmi/hardfault/systick exception handlers never discovered as entries | [`cortexmvectors`](#cortexmvectors) |
-| isr_vector table present but no vector-derived function starts | [`cortexmvectors`](#cortexmvectors) |
-| a small arm callback or isr handler produces no decompiled output at all | [`ptrentry`](#ptrentry) |
-| kuna emits one function then the next with un-decompiled code in between | [`ptrentry`](#ptrentry) |
-| bare bx lr exception handlers never discovered as entries | [`ptrentry`](#ptrentry) |
-| vtable or fops-struct callbacks missing from a stripped arm binary | [`ptrentry`](#ptrentry) |
-| driver op-struct function pointers left undiscovered | [`ptrentry`](#ptrentry) |
-| a stripped arm function list carries sub_<addr> entries two bytes below the real function | [`poolentry`](#poolentry) |
-| the same arm function appears twice at addresses two bytes apart | [`poolentry`](#poolentry) |
-| a decompiled arm function returns a constant or drops its first parameter because of a dead leading movs | [`poolentry`](#poolentry) |
-| kuna reports far more functions than the binary has on bare-metal arm | [`poolentry`](#poolentry) |
-| an arm function entry lands one halfword before the real prologue | [`poolentry`](#poolentry) |
-| a32 u-boot recall is far below the cortex-m images | [`poolentry`](#poolentry) |
-| an A32 function after a Thumb helper decompiles as halt_missing in a stripped ARM binary | [`armwalkmode`](#armwalkmode) |
-| flow reaches unmapped memory two bytes into an A32 instruction | [`armwalkmode`](#armwalkmode) |
-| a function reached with bl after a blx call decodes in the wrong instruction set | [`armwalkmode`](#armwalkmode) |
-| --option listing off fixes the decompilation of an ARM function | [`armwalkmode`](#armwalkmode) |
-| --isa arm decompiles an ARM function correctly that the default run turns into garbage | [`armwalkmode`](#armwalkmode) |
-| a function name in the emitted c contains a newline and splits the declaration across two lines | [`symbolnamechars`](#symbolnamechars) |
-| the // Function: header comment ends early and the address becomes code | [`symbolnamechars`](#symbolnamechars) |
-| decompile-project emits two functions with the same name and the .h has a duplicate prototype | [`symbolnamechars`](#symbolnamechars) |
-| a symbol name renders with a U+FFFD replacement character | [`symbolnamechars`](#symbolnamechars) |
-| kuna decompile <name> cannot address a function that kuna functions printed | [`symbolnamechars`](#symbolnamechars) |
-| the exported .c does not compile because a function name contains */ or // | [`symbolnamechars`](#symbolnamechars) |
-| a glibc math/mem/str wrapper tail-jumps to `(*dat_...)(...)` with the callee dropped | [`ifuncfpret`](#ifuncfpret) |
-| an x86-64 IFUNC .plt.sec stub is not a discovered function | [`ifuncfpret`](#ifuncfpret) |
-| xmm0 read uninitialized after calling a void-typed ifunc-dispatching wrapper | [`ifuncfpret`](#ifuncfpret) |
-| SPE instructions in a PowerPC ELF decode as AltiVec vector operations | [`ppcapu`](#ppcapu) |
-| an e500 function that adds two 64-bit SPE registers renders vectorAddUnsignedByteSaturate on 16-byte locals | [`ppcapu`](#ppcapu) |
-| a -g binary still shows default names and inferred types | [`dwarf`](#dwarf) |
-| dwarf function/global names and typed signatures ignored | [`dwarf`](#dwarf) |
-| no /* file:line */ source-location comments in the output | [`dwarf_lines`](#dwarf_lines) |
-| want each instruction annotated with its dwarf source line | [`dwarf_lines`](#dwarf_lines) |
-| c++ member functions on a stripped binary decompile with a0/a1 parameters | [`cppsig`](#cppsig) |
-| this renders as int8 * or unsigned long instead of the class type | [`cppsig`](#cppsig) |
-| a mangled symbol names the function but not its parameter types | [`cppsig`](#cppsig) |
-| no signature recovery on a stripped c++ shared library | [`cppsig`](#cppsig) |
-| absolute function-pointer table in rodata never recognized | [`addrtable`](#addrtable) |
-| indirect calls through an unrecovered address table in a stripped target | [`addrtable`](#addrtable) |
-| an immediate operand pointing at a rodata string renders as a bare number | [`operand_refs`](#operand_refs) |
-| string argument of a no-prototype call not typed as char[N] | [`operand_refs`](#operand_refs) |
-| printf/scanf variadic arguments render untyped at the call site | [`formatstring`](#formatstring) |
-| %d and %s arguments carry generic types instead of int/char * | [`formatstring`](#formatstring) |
-| error/warn/syslog format arguments carry generic types | [`formatstring`](#formatstring) |
-| noreturn discovery inert on a stripped binary | [`listing`](#listing) |
-| analysis passes that need whole-image xrefs do nothing | [`listing`](#listing) |
-| no program-wide instruction/xref/function model for consumer passes | [`listing`](#listing) |
-| fast decompile-project emits only import veneers and the binary entry | [`fast_funcdisc`](#fast_funcdisc) |
-| internal direct callees have no project bodies | [`fast_funcdisc`](#fast_funcdisc) |
-| function reachable through a callback or vtable pointer is absent while explicit --addr decompiles it | [`fast_funcdisc`](#fast_funcdisc) |
-| stripped static-linked library function stays sub_<addr> although its fingerprint is known | [`fid`](#fid) |
-| no .fid database renames applied in a stripped binary | [`fid`](#fid) |
-| msvc c++ class names missing and vftables left as unnamed data | [`rtti`](#rtti) |
-| no Class::vftable or RTTI_ labels in a windows pe with polymorphic classes | [`rtti`](#rtti) |
-| gcc/clang c++ class names missing and vtables left as unnamed DAT_ data | [`itaniumrtti`](#itaniumrtti) |
-| no Class::vtable or typeinfo labels in a stripped elf with polymorphic classes | [`itaniumrtti`](#itaniumrtti) |
-| virtual dispatch slot resolves to sub_<addr> with no class | [`itaniumrtti`](#itaniumrtti) |
-| function reachable only through a rodata function-pointer table never discovered | [`aif`](#aif) |
-| undefined gap between functions that clearly holds code | [`aif`](#aif) |
-| call *reg targets missing from the function list | [`aif`](#aif) |
-| a stripped binary reports far more functions than it has | [`aifstrict`](#aifstrict) |
-| a discovered function starts in the middle of another functions body | [`aifstrict`](#aifstrict) |
-| a sub_ entry lands on an ordinary call or mov instruction rather than a prologue | [`aifstrict`](#aifstrict) |
-| two overlapping functions decompile the same instructions twice | [`aifstrict`](#aifstrict) |
-| aif adds thousands of entries a reference decompiler does not agree are functions | [`aifstrict`](#aifstrict) |
-| an arm function entry lands one halfword before the real prologue | [`aifstrict`](#aifstrict) |
-| a sub_ entry lands on a routine that calls nothing and only falls off the end of a hole | [`aifcorroborate`](#aifcorroborate) |
-| aif accepts a function on nothing but four other functions sharing its first two instructions | [`aifcorroborate`](#aifcorroborate) |
-| a stripped function list is full of leaf routines that are not functions | [`aifcorroborate`](#aifcorroborate) |
-| aif lists return-terminated i386 switch cases as functions | [`x86listingswitch`](#x86listingswitch) |
-| a direct callee reached only through an i386 switch case is missing from discovery | [`x86listingswitch`](#x86listingswitch) |
-| the discovery Listing stops at an absolute-pointer jump table | [`x86listingswitch`](#x86listingswitch) |
-| independent reference queries see case bodies absent from the initial instruction partition | [`x86listingswitch`](#x86listingswitch) |
-| a sub_ entry starts on a literal pool word one word before a real function | [`aifpoolslide`](#aifpoolslide) |
-| a stripped arm function list lists a function 4 bytes early | [`aifpoolslide`](#aifpoolslide) |
-| a function's first decoded instruction is a conditional addvs or a movs r0,#0 that no code reaches | [`aifpoolslide`](#aifpoolslide) |
-| a real arm function is missing from a stripped inventory while the entry just before it is a pool word | [`aifpoolslide`](#aifpoolslide) |
-| aif adds entries on literal pools | [`aifpoolslide`](#aifpoolslide) |
-| routine reached only by a tail B produces no decompiled output at all | [`tailcallentry`](#tailcallentry) |
-| a shared ISR handler is swallowed by the two-instruction stub that branches to it | [`tailcallentry`](#tailcallentry) |
-| function entry missing where the previous function ends in an unconditional branch | [`tailcallentry`](#tailcallentry) |
-| kuna emits one oversized function where the ground truth has two | [`tailcallentry`](#tailcallentry) |
-| go function parameters missing or void while the body reads rax/rbx locals that are never assigned | [`goabi`](#goabi) |
-| a go function returning two values loses the second and the statements computing it | [`goabi`](#goabi) |
-| go output full of unassigned register-commented locals | [`goabi`](#goabi) |
-| multi-return go call sites read registers the call never defines | [`goabi`](#goabi) |
-| a dyld_shared_cache file is rejected as an unrecognized input format | [`dyldimage`](#dyldimage) |
-| cannot decompile an ios or macos system library because it only exists inside the dyld shared cache | [`dyldimage`](#dyldimage) |
-| dyld shared cache holds N images; choose one with --image | [`dyldimage`](#dyldimage) |
-| calls in a dyld shared cache image render as sub_<addr> into a __TEXT_STUBS island | [`dyldcrossrefs`](#dyldcrossrefs) |
-| a cache image's __got loads name nothing | [`dyldcrossrefs`](#dyldcrossrefs) |
-| cross-library calls of an ios framework have no names | [`dyldcrossrefs`](#dyldcrossrefs) |
-| rust binary renders with c output and no rust abi handling because a stripped image lost its language signals | [`sourcelang`](#sourcelang) |
-| a c binary is detected as another language and language-gated rules misfire | [`sourcelang`](#sourcelang) |
-| go runtime passes do not run on a go binary whose buildinfo section was stripped | [`sourcelang`](#sourcelang) |
-| kuna decompile on a large c++ .so needs ~750 MB for one function | [`lazyfuncs`](#lazyfuncs) |
-| read symbols dominates a single-function run on an entry-dense image | [`lazyfuncs`](#lazyfuncs) |
-| objective-c methods render as sub_<addr> instead of -[Class sel] | [`objc`](#objc) |
-| __objc_ metadata present but classes and selectors unnamed in a mach-o | [`objc`](#objc) |
-| a message send renders as sub_<addr>(obj) through an __objc_stubs entry | [`objc`](#objc) |
-| objc_msgSend selector argument renders as dat_<addr> | [`objc`](#objc) |
-| a category method renders as sub_<addr> instead of -[Class(Category) sel] | [`objc`](#objc) |
-| objc_msgSend$setFoo:() renders with no argument although the caller sets one | [`objcsdk`](#objcsdk) |
-| objc_msgSend$setAlpha: shows 0x3ff0000000000000 instead of 1.0 | [`objcsdk`](#objcsdk) |
-| objc_msgSend$setFrame: passes one word where a CGRect was built | [`objcsdk`](#objcsdk) |
-| a framework method's stub returns undefined16 or unsigned long instead of its declared type | [`objcsdk`](#objcsdk) |
-| swift binary functions render as sub_<addr> although swift5 metadata sections are present | [`swiftmetadata`](#swiftmetadata) |
-| type metadata accessors unnamed in a stripped swift mach-o | [`swiftmetadata`](#swiftmetadata) |
-| protocol witnesses and class methods of a stripped swift app have no names | [`swiftmetadata`](#swiftmetadata) |
-| core-foundation / objc string constants render as dat_<addr> instead of their text | [`cfstrings`](#cfstrings) |
-| a CFSTR(...) argument shows an address in a mach-o | [`cfstrings`](#cfstrings) |
-| swift struct and class fields render as raw offsets off self | [`swifttypes`](#swifttypes) |
-| swift getters named by swiftmetadata take no self parameter | [`swifttypes`](#swifttypes) |
-| type metadata accessors return undefined16 | [`swifttypes`](#swifttypes) |
-| swift methods named by swiftmetadata read self from an unnamed x20 or r13 | [`swiftcall`](#swiftcall) |
-| calls to swift methods drop the self they pass | [`swiftcall`](#swiftcall) |
-| a try? error path or a do/catch after a throwing call folds away | [`swiftcall`](#swiftcall) |
-| swift struct mutating methods write through an untyped register | [`swiftcall`](#swiftcall) |
-| stripped windows pe functions stay FUN_<addr> although a matching .pdb exists | [`pdb`](#pdb) |
-| pdb symbol names not applied to a pe | [`pdb`](#pdb) |
-| a .pdb beside the exe is ignored | [`pdb`](#pdb) |
-| windows function names need kuna_pdb_path to be set by hand | [`pdb`](#pdb) |
-| arm64e mach-o decoded with the generic v8A spec so pointer-auth ops are unmodeled | [`macho-arm64e`](#macho-arm64e) |
-| pac instructions in an apple-silicon binary not modeled by the loaded spec | [`macho-arm64e`](#macho-arm64e) |
-| an iOS kernelcache (IMG4/IM4P) is rejected as an unrecognized input format | [`kernelcache`](#kernelcache) |
-| kuna functions on a decompressed MH_FILESET kernelcache finds no functions | [`kernelcache`](#kernelcache) |
-| a kext cannot be selected out of a kernel collection | [`kernelcache`](#kernelcache) |
-| pointers in a kernelcache read as packed chained-fixup words instead of addresses | [`kernelcache`](#kernelcache) |
-| go functions lose source parameters despite dwarf | [`godwarfsig`](#godwarfsig) |
-| go identity function decompiles as void | [`godwarfsig`](#godwarfsig) |
-| go result parameters appear as inputs | [`godwarfsig`](#godwarfsig) |
-| comparison constant off by one versus upstream ghidra (x <= 9 vs x < 10) | [`compareform`](#compareform) |
-| need the analysis-canonical compare form to diff against upstream ghidra output | [`compareform`](#compareform) |
-| &base[index] rendering unwanted; consumer expects raw pointer arithmetic | [`arraynotation`](#arraynotation) |
-| indexed array form where base + offset arithmetic is desired for diffing | [`arraynotation`](#arraynotation) |
-| if (x != 0) where idiomatic C reads if (x) | [`truthycond`](#truthycond) |
-| if (p == NULL) where if (!p) is wanted | [`truthycond`](#truthycond) |
-| explicit zero comparison in conditions unwanted | [`truthycond`](#truthycond) |
-| truthy condition rendering needs to match upstream ghidra for diffing | [`truthycond`](#truthycond) |
-| if (x) { stmt; } where braceless if (x) stmt; is wanted | [`braceelide`](#braceelide) |
-| single-statement if body keeps braces | [`braceelide`](#braceelide) |
-| braced one-liner bodies unwanted | [`braceelide`](#braceelide) |
-| brace style needs to match upstream ghidra for diffing | [`braceelide`](#braceelide) |
-| the emitted C contains a member named like `._4_2_` or `._0_8_` | [`partialaccess`](#partialaccess) |
-| a variable is read as `v1._6_1_` and the text does not compile | [`partialaccess`](#partialaccess) |
-| a 16-byte register pair returns as `v1._0_16_` | [`partialaccess`](#partialaccess) |
-| a libc record such as `stat` is read as `v3._24_4_` | [`partialaccess`](#partialaccess) |
-| Rust assigns scalar zero to a recovered [u8; 16] destination | [`rustarrayzero`](#rustarrayzero) |
-| a wide zero store fails with Rust E0308 | [`rustarrayzero`](#rustarrayzero) |
-| a byte-array field needs a contextually typed zero value | [`rustarrayzero`](#rustarrayzero) |
-| mapped unsigned char array uses invalid ._offset_size_ members | [`bytearrayc`](#bytearrayc) |
-| wide byte-array accesses need compilable C | [`bytearrayc`](#bytearrayc) |
-| unaligned mapped integer transfer needs an alias-safe C representation | [`bytearrayc`](#bytearrayc) |
-| a call argument is a raw address behind a cast, like sub_e4ca((struct_2 *)0x2b080) | [`globalref`](#globalref) |
-| (unsigned long *)0x21180 or (void *)0x2b460 where IDA prints qword_21180 or &unk_2B460 | [`globalref`](#globalref) |
-| getopt_long's option table prints as (option *)0x2a0c0 | [`globalref`](#globalref) |
-| a loop runs from (int *)0x1a664 to (int *)0x1a690 | [`globalref`](#globalref) |
-| the same global is dat_2b080 in one statement and (struct_2 *)0x2b080 in the next | [`globalref`](#globalref) |
-| a constant address you want to keep as an address (flip off) | [`globalref`](#globalref) |
-| full-line WARNING banner comments clutter the output | [`warnstyle`](#warnstyle) |
-| warning text wanted inline at the end of the statement it describes | [`warnstyle`](#warnstyle) |
-| terse warning slugs unwanted; full upstream warning text needed | [`warnstyle`](#warnstyle) |
-| warning style needs to match upstream ghidra for diffing | [`warnstyle`](#warnstyle) |
-| a DOS program's float code decompiles as calls through swi(0x35) and other INT 34h-3Dh vectors | [`fpuemu`](#fpuemu) |
-| Control flow encountered bad instruction data in a DOS function that does float math | [`fpuemu`](#fpuemu) |
-| a phantom function starts inside an INT 35h instruction's operand bytes | [`fpuemu`](#fpuemu) |
-| swi(0x3d) calls where the program waits for the coprocessor | [`fpuemu`](#fpuemu) |
-| a stack array is declared with 4 elements while a loop subscripts it further | [`arrayextent`](#arrayextent) |
-| the elements after the fourth of a local array are separate scalars that are assigned and never read | [`arrayextent`](#arrayextent) |
-| a recompiled function reads past a local array under AddressSanitizer | [`arrayextent`](#arrayextent) |
-| a masked or clamped index (`v[n & 7]`, `min(n, 5)`) subscripts a smaller declared array | [`arrayextent`](#arrayextent) |
-| loop walks an array with a raw offset accumulator (iVar += 0x414) instead of an index | [`arraystride`](#arraystride) |
-| strided induction offset never re-expressed as counter*stride array indexing | [`arraystride`](#arraystride) |
-| a Rust Result or Option producer recovers as bool and the payload register is missing from the return | [`rustabi`](#rustabi) |
-| a local commented with a register name is declared and read but never assigned anywhere in the function | [`rustabi`](#rustabi) |
-| a call to a Rust function that returns Result renders with no output at all | [`rustabi`](#rustabi) |
-| a discriminant guard tests a variable whose companion payload variable has no definition | [`rustabi`](#rustabi) |
-| two-register return recovered as one register when the first half holds a setCC flag | [`rustabi`](#rustabi) |
-| a call passes one more argument than the callee's own recovered prototype takes | [`argclobber`](#argclobber) |
-| the last argument of a call is a local that is never assigned anywhere in the function | [`argclobber`](#argclobber) |
-| a declaration carries a // rdx storage comment and no write | [`argclobber`](#argclobber) |
-| two calls to the same callee in one function render with different arities and the longer one reads an undefined value | [`argclobber`](#argclobber) |
-| Ghidra names the same value extraout_RDX and kuna renders it as an ordinary local | [`argclobber`](#argclobber) |
-| a wrapper renders void f(void) { g(); } although g takes an argument in the same output | [`passthrough`](#passthrough) |
-| a call renders with no arguments while the callee's declaration in the same file takes one | [`passthrough`](#passthrough) |
-| a tail-call thunk returns void while the function it jumps to returns a value | [`passthrough`](#passthrough) |
-| decompiling the caller shows a parameter-less function whose only instruction is a jmp to a function with parameters | [`passthrough`](#passthrough) |
-| DWARF gives a forwarding function a parameter kuna does not | [`passthrough`](#passthrough) |
-| a function that returns a value on one path and tail-calls a function on the other is printed void | [`mixedtailret`](#mixedtailret) |
-| if (6 <= *a0) return; getv(); // tail-call where the source returns *a0 on that path | [`mixedtailret`](#mixedtailret) |
-| a function returns xmm0 although its callee and its other path return an int in eax | [`mixedtailret`](#mixedtailret) |
-| the return value a function tests before returning it is lost beside a tail call | [`mixedtailret`](#mixedtailret) |
-| call emitted with no arguments or fewer arguments than the disassembly passes | [`calloverlap`](#calloverlap) |
-| call result read from a local that is never assigned | [`calloverlap`](#calloverlap) |
-| enclosing function loses its own parameter list and return type (void f(void)) | [`calloverlap`](#calloverlap) |
-| argument register written whole-width by pxor movdqa movdqu por pand orpd or movq before the call | [`calloverlap`](#calloverlap) |
-| second call binds a stale pre-call value where the first call should have defined it | [`calloverlap`](#calloverlap) |
-| stack array declared and read but never initialised in the emitted C | [`indexaliasguard`](#indexaliasguard) |
-| a run of direct frame stores vanishes when the same slots are later read through a pointer | [`indexaliasguard`](#indexaliasguard) |
-| constants loaded from .rdata into a local buffer do not appear in the decompilation | [`indexaliasguard`](#indexaliasguard) |
-| accumulator or key schedule buffer looks uninitialised before an XOR loop walks it | [`indexaliasguard`](#indexaliasguard) |
-| value stored through a pointer does not appear to reach the frame slot it aliases | [`indexaliasguard`](#indexaliasguard) |
-| a global read back after a store through a pointer prints the value stored before that store | [`indexaliasguard`](#indexaliasguard) |
-| a global read before a store through a pointer is printed after it | [`indexaliasguard`](#indexaliasguard) |
-| a store to a global before a pointer load is missing when the global is stored again later | [`indexaliasguard`](#indexaliasguard) |
-| a loop that bumps a global around a pointer load prints with no store to the global | [`indexaliasguard`](#indexaliasguard) |
-| iVar1/uVar2/param_1 ghidra-style names wanted instead of v1/a1 (set ghidra) | [`namestyle`](#namestyle) |
-| v-numbered locals and sub_/dat_/label_ names in the default output | [`namestyle`](#namestyle) |
-| byte-for-byte comparison against upstream ghidra naming | [`namestyle`](#namestyle) |
-| undefined8/xunknownN placeholder types wanted for upstream comparison (flip off) | [`realtypes`](#realtypes) |
-| size-guessed unsigned long/int/char types shown for values the inference never typed | [`realtypes`](#realtypes) |
-| a void function ends with a redundant return; the source does not have | [`voidtailreturn`](#voidtailreturn) |
-| GED counts one extra exit node against an otherwise perfect function | [`voidtailreturn`](#voidtailreturn) |
-| the last statement of a void function is a bare return | [`voidtailreturn`](#voidtailreturn) |
-| a data import read through __got renders *dat_<slot> | [`importdata`](#importdata) |
-| __stack_chk_guard shows as a dereferenced dat_ address | [`importdata`](#importdata) |
-| imported globals are anonymous even though their GOT slot is named | [`importdata`](#importdata) |
-| an ELF shared object reads stdout or environ as *dat_<slot> or *stdout_ptr | [`importdata`](#importdata) |
-| a libc argument is cast to the very type the parameter declares, memchr(v10,(int)v4,n) | [`castimplied`](#castimplied) |
-| a widening cast assigned to a variable already declared that type, v2 = (long)v1; with long v2 | [`castimplied`](#castimplied) |
-| return (unsigned long)v1; from a function declared unsigned long | [`castimplied`](#castimplied) |
-| several casts stacked over one byte, (long)(int)(unsigned int)(unsigned char)c | [`castimplied`](#castimplied) |
-| kuna prints more casts than IDA on the same function | [`castimplied`](#castimplied) |
-| v10 and v11 declared between v1 and v2 | [`declorder`](#declorder) |
-| local declarations in string order v1, v10, v11, v2 | [`declorder`](#declorder) |
-| a numbered local hard to find among ten or more declarations | [`declorder`](#declorder) |
-| a local holding open()'s result named v1 | [`libcnames`](#libcnames) |
-| read's byte count kept as a vN | [`libcnames`](#libcnames) |
-| a buffer length from strlen named vN | [`libcnames`](#libcnames) |
-| a local passed to a libc function keeps a vN name | [`libcnames`](#libcnames) |
-| kuna names fewer locals than IDA on libc-heavy code | [`libcnames`](#libcnames) |
-| a double parameter stored into a global prints as unsigned long and moves ahead of the integer parameters | [`floatglobals`](#floatglobals) |
-| a float parameter copied into a global prints as unsigned int | [`floatglobals`](#floatglobals) |
-| a global passed to a float parameter prints as a union reinterpretation ((union { unsigned int from; float to; }){ .from = dat_10001d78 }).to | [`floatglobals`](#floatglobals) |
-| firmware calls of float helpers wrap every global argument in a union | [`floatglobals`](#floatglobals) |
-| a parameter is declared char and every use of it is if (a0) or !a0 | [`boolbyte`](#boolbyte) |
-| a one-byte local is char but only ever assigned 0 and 1 | [`boolbyte`](#boolbyte) |
-| a flag argument reads as a character, so a call site looks like it passes text | [`boolbyte`](#boolbyte) |
-| char v1; followed by v1 = 0; v1 = 1; if (v1) | [`boolbyte`](#boolbyte) |
-| DWARF says _Bool and kuna says char or unsigned char | [`boolbyte`](#boolbyte) |
-| a string pointer is declared unsigned char * and its bytes print as (char)*p | [`charbyte`](#charbyte) |
-| a comparison against a character constant prints as a number: v3 != 9, *p == 0x2d | [`charbyte`](#charbyte) |
-| a wrapper takes unsigned char *a1 and passes (char *)a1 to mbrtowc or strlen | [`charbyte`](#charbyte) |
-| strchr("...",(int)(char)*v1) | [`charbyte`](#charbyte) |
-| a loop variable that walks text is unsigned char | [`charbyte`](#charbyte) |
-| *(unsigned int *)((long)a0 + 0xac) | [`castarith`](#castarith) |
-| every read through one parameter is a cast to (long) and back | [`castarith`](#castarith) |
-| (char *)((long)v4 + 0x10) assigned to a pointer variable | [`castarith`](#castarith) |
-| (void *)((long)a0 + 8) passed to a callee | [`castarith`](#castarith) |
-| two casts for one field read where IDA prints one | [`castarith`](#castarith) |
-| *(long *)((long)v7 + v19 * 8) | [`castindex`](#castindex) |
-| (long)v24 - (long)v14 passed as a length | [`castindex`](#castindex) |
-| free(*(void **)((long)v1 + (long)v2 * 8)) | [`castindex`](#castindex) |
-| an array walk through a void * base prints two casts per element | [`castindex`](#castindex) |
-| a pointer difference of two char * is cast to long on both sides | [`castindex`](#castindex) |
-| int4/uint1/uint4/float8/float10 appear in the emitted C instead of C type names | [`ctypes`](#ctypes) |
-| the same function mixes `unsigned int` with `int4` | [`ctypes`](#ctypes) |
-| `code *` appears as a function-pointer type | [`ctypes`](#ctypes) |
-| the emitted C does not compile because its type names are not C | [`ctypes`](#ctypes) |
-| the same local declared once although many HighVariables share the stack slot | [`dedupvardecls`](#dedupvardecls) |
-| flip off to see one declaration line per high (e.g. int4 option_index repeated hundreds of times) | [`dedupvardecls`](#dedupvardecls) |
-| an untyped MIPS32 big-endian producer loses its low return word despite a declared 64-bit consumer | [`callwide`](#callwide) |
-| producer and caller disagree about a complete big-endian eight-byte integer return | [`callwide`](#callwide) |
-| a long long return on a big-endian 32-bit target prints CONCAT44 with the low word first | [`bejoin`](#bejoin) |
-| a long long read from memory on PowerPC, MIPS, SPARC or ARM big-endian returns CONCAT44(p[1],p[0]) | [`bejoin`](#bejoin) |
-| a 64-bit product, sum or shift returned on PowerPC, MIPS, SPARC or ARM big-endian comes back with its halves swapped | [`bejoin`](#bejoin) |
-| an AVR function returning a 16-bit int prints a read of R25R24 nothing assigns | [`bejoin`](#bejoin) |
-| a big-endian function that returns a call's long long prints CONCAT44((int)v1,(int)(v1 >> 0x20)) | [`bejoinpass`](#bejoinpass) |
-| a wrapper of a 64-bit callee on PowerPC or MIPS returns the callee's value with its halves swapped | [`bejoinpass`](#bejoinpass) |
-| a u32 that returns the high word of a 64-bit call result prints as unsigned long long | [`bejoinpass`](#bejoinpass) |
-| a call to a function returning int is printed (unsigned long)(unsigned int)f() on RISC-V or LoongArch | [`narrowext`](#narrowext) |
-| a signed char or short result is zero-extended where the callee sign-extends it | [`narrowext`](#narrowext) |
-| a declared int parameter used as a 64-bit value prints (unsigned long)(unsigned int)x | [`narrowext`](#narrowext) |
-| a narrow result or parameter prints as CONCAT31(v1,f()) or CONCAT44(v1,x) with an unassigned v1 | [`narrowext`](#narrowext) |
-| a double return becomes SUB84 or zero | [`armfloatreturn`](#armfloatreturn) |
-| an ARM hard-float function loses its d0 parameter | [`armfloatreturn`](#armfloatreturn) |
-| a caller reads an undefined floating result | [`armfloatreturn`](#armfloatreturn) |
-| missing floating argument | [`armfloatargs`](#armfloatargs) |
-| double input split into two words | [`armfloatargs`](#armfloatargs) |
-| caller and callee disagree on mixed argument contract | [`armfloatargs`](#armfloatargs) |
-| unconditional loop prints do-while (true) at the bottom | [`infloopstyle`](#infloopstyle) |
-| prefer while (true) at the top | [`infloopstyle`](#infloopstyle) |
-| need the previous infinite-loop spelling for comparison | [`infloopstyle`](#infloopstyle) |
-| a signed ARM value is shifted left by a constant in the emitted C | [`armconstshift`](#armconstshift) |
-| UBSan reports a left shift of a negative value in recompiled ARM output | [`armconstshift`](#armconstshift) |
-| a signed ARM shift overflows into the sign bit in recompiled output | [`armconstshift`](#armconstshift) |
-| a function that reads many constant globals between calls exhausts memory during heritage | [`readonlycalls`](#readonlycalls) |
-| decompile of a huge function is killed before the first jump table is recovered | [`readonlycalls`](#readonlycalls) |
-| thousands of INDIRECTs over read-only globals survive in a large function's IR | [`readonlycalls`](#readonlycalls) |
-| a function prints read-only literals differently once it grows past the readonlycalls threshold | [`readonlycalls`](#readonlycalls) |
-| a function that touches thousands of globals between thousands of calls takes gigabytes and minutes to decompile | [`persistcalls`](#persistcalls) |
-| heritage builds millions of INDIRECTs over writable globals that survive dead-code removal | [`persistcalls`](#persistcalls) |
-| a huge initializer or finalizer exhausts memory in assignhigh or merging | [`persistcalls`](#persistcalls) |
+| the signature says FILE * or struct_0 * and nothing says what the fields are | [`structdefs`](#structdefs----on--off-default-off) |
+| a field access like f->_flags with no layout anywhere in the output | [`structdefs`](#structdefs----on--off-default-off) |
+| you have to run decompile-project just to read the .h for one function's struct | [`structdefs`](#structdefs----on--off-default-off) |
+| a synthesized struct_N appears in a parameter type with no definition | [`structdefs`](#structdefs----on--off-default-off) |
+| a loop summing an array prints as eight lane accumulators added into one total after the loop | [`devectorize`](#devectorize----on--off-default-off) |
+| a vectorised reduction is followed by a second copy of the loop over the remainder | [`devectorize`](#devectorize----on--off-default-off) |
+| an array sum is guarded by if (8 <= length) with a stride-eight do-while behind it | [`devectorize`](#devectorize----on--off-default-off) |
+| a line like v8 + v12 + v6 + v10 + v7 + v11 + v5 + v9 follows a loop | [`devectorize`](#devectorize----on--off-default-off) |
+| a do/while that decrements a 0xffffffffffffffff counter while stepping a char pointer until the byte read is zero | [`strlenscan`](#strlenscan----on--off-default-on) |
+| if (!v3) break; v3 -= 1; inside a loop that reads one byte per step | [`strlenscan`](#strlenscan----on--off-default-on) |
+| ~v3 - 1 or ~v3 - 5 where the source computes a string length | [`strlenscan`](#strlenscan----on--off-default-on) |
+| repnz scasb in the disassembly where IDA prints strlen | [`strlenscan`](#strlenscan----on--off-default-on) |
+| a while loop that copies or stores one element per iteration and steps pointers and a count | [`repstring`](#repstring----on--off-default-on) |
+| rep movsq / rep stosd from -Os code printed as a loop instead of memcpy/memset | [`repstring`](#repstring----on--off-default-on) |
+| a struct copy prints as a 16-iteration word loop | [`repstring`](#repstring----on--off-default-on) |
+| a strcmp against a short constant prints as a do/while over two byte pointers and a count | [`repstring`](#repstring----on--off-default-on) |
+| stack string initialisation renders as an array-typed cast such as (char[8])s_addr._0_8_ | [`rodatastring`](#rodatastring----on--off-default-on) |
+| partial-symbol slice assignments like buf._0_9_ = s_addr._16_9_ instead of the string | [`rodatastring`](#rodatastring----on--off-default-on) |
+| a recognized rodata literal never appears in the function that copies it onto the stack | [`rodatastring`](#rodatastring----on--off-default-on) |
+| builtin_strncpy call where the individual slice assignments are wanted (flip off) | [`rodatastring`](#rodatastring----on--off-default-on) |
+| long run of per-element constant stores instead of a single memset | [`memsetrecover`](#memsetrecover----on--off-default-on) |
+| unrolled or SIMD zeroing rendered as dozens of assignments | [`memsetrecover`](#memsetrecover----on--off-default-on) |
+| builtin_memset call where the individual element stores are wanted (flip off) | [`memsetrecover`](#memsetrecover----on--off-default-on) |
+| spurious CONCAT44 return value in a void or single-register function | [`returnpair`](#returnpair----pair--single-default-pair-destructive-opt-in) |
+| two return registers joined into one double-width return (e.g. sparc o0/o1) | [`returnpair`](#returnpair----pair--single-default-pair-destructive-opt-in) |
+| return type twice the natural width built from a register concat | [`returnpair`](#returnpair----pair--single-default-pair-destructive-opt-in) |
+| v850 jmp [reg] rendered as an indirect call instead of a recovered switch | [`v850indirectbranch`](#v850indirectbranch----on--off-default-on) |
+| jump table on v850 never recovered because the dispatch decodes as a computed call | [`v850indirectbranch`](#v850indirectbranch----on--off-default-on) |
+| an `if (isCurrentModePrivileged())` block wraps every interrupt-mask or special-register access in Cortex-M firmware | [`cortexmpriv`](#cortexmpriv----on--off-default-on) |
+| `isCurrentModePrivileged()` appears in the emitted C at all | [`cortexmpriv`](#cortexmpriv----on--off-default-on) |
+| a Cortex-M function has more basic blocks and branches than its source | [`cortexmpriv`](#cortexmpriv----on--off-default-on) |
+| `getBasePriority()`/`isIRQinterruptsEnabled()`/`getCurrentExceptionNumber()` are each read under their own conditional | [`cortexmpriv`](#cortexmpriv----on--off-default-on) |
+| leaf function ends in a (*dat_...)(...) computed call with a 'Treating indirect jump as call' warning | [`tailcalljump`](#tailcalljump----on--direct--off-default-on) |
+| jmp to a plt stub inlined into the caller instead of a named tail call | [`tailcalljump`](#tailcalljump----on--direct--off-default-on) |
+| plt thunk body absorbed where func(...) is expected | [`tailcalljump`](#tailcalljump----on--direct--off-default-on) |
+| a veneer renders as switch(0x...) with one case holding another function's body, or halt_missing() with a 'flows out of bounds' warning | [`tailcalljump`](#tailcalljump----on--direct--off-default-on) |
+| a function decompiled by address continues into an unrelated function's body | [`tailcallframe`](#tailcallframe----on--off-default-on) |
+| an event/listener callback emits a second routine's UI strings and callees | [`tailcallframe`](#tailcallframe----on--off-default-on) |
+| the same callee is emitted twice in one function, once as a named call and once inlined | [`tailcallframe`](#tailcallframe----on--off-default-on) |
+| an unconditional jmp after add rsp,N; pop reg is followed instead of ending the function | [`tailcallframe`](#tailcallframe----on--off-default-on) |
+| kuna emits thousands of lines for a function the disassembly shows is a few hundred bytes | [`tailcallframe`](#tailcallframe----on--off-default-on) |
+| a function ends at jr $ra right after loading $ra with a constant address | [`returnbranch`](#returnbranch----on--off-default-on) |
+| stores and calls after a computed jump through the return register are missing | [`returnbranch`](#returnbranch----on--off-default-on) |
+| a MIPS function that reuses $ra as a jump register decompiles to an empty body | [`returnbranch`](#returnbranch----on--off-default-on) |
+| a function's tail is really the body of the NEXT function | [`funcboundflow`](#funcboundflow----on--off-default-on) |
+| dead/garbage code after a call to a die()/fatal()/throw wrapper that never returns | [`funcboundflow`](#funcboundflow----on--off-default-on) |
+| two adjacent functions merged into one, the second also decompiled on its own | [`funcboundflow`](#funcboundflow----on--off-default-on) |
+| uninitialized reads in the tail after an unrecognized no-return call | [`funcboundflow`](#funcboundflow----on--off-default-on) |
+| halt_baddata() Bad instruction - Truncating control flow here right after a call on ARM32, where the words after the call are constants the function loads PC-relatively | [`funcboundflow`](#funcboundflow----on--off-default-on) |
+| a call to a sub_<hex> address that is not in the binary | [`overlapbranch`](#overlapbranch----on--off-default-on) |
+| writes through pointers that are never assigned right after a short conditional jump | [`overlapbranch`](#overlapbranch----on--off-default-on) |
+| a bogus dat_<hex> global incremented once and never read | [`overlapbranch`](#overlapbranch----on--off-default-on) |
+| a comparison whose operands are unreadable CONCAT/subpiece salad in hand-written or obfuscated code | [`overlapbranch`](#overlapbranch----on--off-default-on) |
+| core::ptr::drop_in_place(...) calls all over a decompiled rust function | [`cleanupcode`](#cleanupcode----on--off-default-on-destructive-opt-in) |
+| drop glue and deallocation calls that are nowhere in the rust source | [`cleanupcode`](#cleanupcode----on--off-default-on-destructive-opt-in) |
+| Drop::drop / __rust_dealloc / RawVecInner::deallocate noise at every scope exit | [`cleanupcode`](#cleanupcode----on--off-default-on-destructive-opt-in) |
+| rust output is twice as long as the source because of automatic resource management | [`cleanupcode`](#cleanupcode----on--off-default-on-destructive-opt-in) |
+| flip off to see when a rust value is actually dropped or freed | [`cleanupcode`](#cleanupcode----on--off-default-on-destructive-opt-in) |
+| a syscall renders as (*(void *)swi(0x80))() - a call through a pointer nothing assigns | [`linuxsyscall`](#linuxsyscall----off--auto--on-default-auto) |
+| the mov $N,%eax before an int 0x80 has vanished from the output | [`linuxsyscall`](#linuxsyscall----off--auto--on-default-auto) |
+| an int 0x80 site shows no arguments even though the disassembly loads ebx/ecx/edx | [`linuxsyscall`](#linuxsyscall----off--auto--on-default-auto) |
+| 32-bit linux _start or shellcode where every system call is an unnamed indirect call | [`linuxsyscall`](#linuxsyscall----off--auto--on-default-auto) |
+| esp-relative locals shift by four bytes after an int 0x80 | [`linuxsyscall`](#linuxsyscall----off--auto--on-default-auto) |
+| several near-identical if/else blocks in a row, each comparing two adjacent stack slots and either calling a helper with the same object or storing one character through a 16-byte-threshold pointer select | [`msvcstrappend`](#msvcstrappend----on--off-default-off-destructive-opt-in) |
+| an msvc c++ function whose string-building code shows a `0x10 <= v` buffer select before every character store | [`msvcstrappend`](#msvcstrappend----on--off-default-off-destructive-opt-in) |
+| a loop body that is a whole capacity check plus a grow call to append one byte to a std::string | [`msvcstrappend`](#msvcstrappend----on--off-default-off-destructive-opt-in) |
+| counting inlined std::string appends from the c output gives the wrong number | [`msvcstrappend`](#msvcstrappend----on--off-default-off-destructive-opt-in) |
+| a re-rolled switch dispatches on a function parameter and the compiler's if/else-if chain would read better | [`switchselector`](#switchselector----on--off-default-off) |
+| a callback or window/dialog procedure's message dispatch reads better as the chain the compiler emitted | [`switchselector`](#switchselector----on--off-default-off) |
+| option loweredswitch off gives the rendering you want, but you want it for one cascade and not for the whole binary | [`switchselector`](#switchselector----on--off-default-off) |
+| an int3 pad renders as (*(void *)swi(3))() - a call through a pointer nothing assigns | [`int3pad`](#int3pad----off--warn--halt-default-warn) |
+| a function returns the result of a call through swi(3) | [`int3pad`](#int3pad----off--warn--halt-default-warn) |
+| nothing in the C says control ran into a run of 0xcc padding bytes | [`int3pad`](#int3pad----off--warn--halt-default-warn) |
+| an anti-debug binary's clean-run path ends in an indirect call that only the disassembly explains | [`int3pad`](#int3pad----off--warn--halt-default-warn) |
+| an x86-64 syscall renders as syscall() with empty parens, with the number and every argument erased | [`x64syscall`](#x64syscall----off--on--abi-default-on) |
+| a syscall wrapper returns its own first parameter, the syscall number, instead of the syscall's result | [`x64syscall`](#x64syscall----off--on--abi-default-on) |
+| the register writes feeding a SYSCALL are all missing from the C while kuna disassemble shows them | [`x64syscall`](#x64syscall----off--on--abi-default-on) |
+| a SYSCALL's result is never assigned to anything | [`x64syscall`](#x64syscall----off--on--abi-default-on) |
+| a function containing svc/ecall/syscall/sc returns its arguments as a register pair (CONCAT44 or undefined16) | [`syscallregs`](#syscallregs----off--auto--on-default-auto) |
+| a MIPS syscall wrapper returns the syscall number it loaded into v0 | [`syscallregs`](#syscallregs----off--auto--on-default-auto) |
+| software_interrupt(0), CallSupervisor(0), ecall() or syscall() shows no arguments while the disassembly loads registers before it | [`syscallregs`](#syscallregs----off--auto--on-default-auto) |
+| a test of a system call's result tests the argument the function set up instead | [`syscallregs`](#syscallregs----off--auto--on-default-auto) |
+| a syscall wrapper returns its own first parameter | [`syscallregs`](#syscallregs----off--auto--on-default-auto) |
+| the same wrapper is right in a linked Linux program but wrong in its .o or a static musl build | [`syscallregs`](#syscallregs----off--auto--on-default-auto) |
+| a MIPS syscall wrapper grows a fourth parameter a3 it tests after the syscall | [`syscallregs`](#syscallregs----off--auto--on-default-auto) |
+| a PowerPC syscall wrapper tests an uninitialized cr0 after sc | [`syscallregs`](#syscallregs----off--auto--on-default-auto) |
+| a MIPS syscall wrapper that passes its parameters straight to the kernel shows none of them | [`syscallregs`](#syscallregs----off--auto--on-default-auto) |
+| switch reports 'Could not recover jumptable ... Too many branches' and renders as a computed call | [`switchmodbound`](#switchmodbound----on--off-default-off-destructive-opt-in) |
+| indirect jump bounded only by a modulo or and-mask on its index never becomes a switch | [`switchmodbound`](#switchmodbound----on--off-default-off-destructive-opt-in) |
+| indirect jump renders as a computed (code *)() call whose destinations are already constants in the emitted C | [`constselectjump`](#constselectjump----off--reentry--on-default-reentry-destructive-opt-in) |
+| 'Treating indirect jump as call' on a CMOV/predicated dispatch | [`constselectjump`](#constselectjump----off--reentry--on-default-reentry-destructive-opt-in) |
+| the body behind a conditional indirect branch is never decoded | [`constselectjump`](#constselectjump----off--reentry--on-default-reentry-destructive-opt-in) |
+| 'Too many branches' jumptable failure where a cbranch range guard bounds the index | [`switchguardbound`](#switchguardbound----on--off-default-off-destructive-opt-in) |
+| computed (code *)() call at a gcc sub/ja guarded dispatch with the index spilled to the stack | [`switchguardbound`](#switchguardbound----on--off-default-off-destructive-opt-in) |
+| narrow comparison after a logical right shift does not bound a jump table | [`highsliceguard`](#highsliceguard----on--off-default-off) |
+| a high-byte table index renders as jump-as-call | [`highsliceguard`](#highsliceguard----on--off-default-off) |
+| a Rust match over a shifted tag is missing despite an unsigned bound | [`highsliceguard`](#highsliceguard----on--off-default-off) |
+| getopt-style switch inside a loop degrades to a computed call with goto spaghetti | [`switchsharedcase`](#switchsharedcase----on--off-default-on-destructive-opt-in) |
+| pic relative-offset jump table with a loop-carried base register never recovered | [`switchsharedcase`](#switchsharedcase----on--off-default-on-destructive-opt-in) |
+| 'Too many branches' on a dispatch whose table base is set before the loop | [`switchsharedcase`](#switchsharedcase----on--off-default-on-destructive-opt-in) |
+| image-base-relative switch whose bound guard is duplicated across multiple predecessors renders as a computed call | [`switchmultipred`](#switchmultipred----on--off-default-on-destructive-opt-in) |
+| 'Too many branches' where the dispatch block has several guarded incoming paths | [`switchmultipred`](#switchmultipred----on--off-default-on-destructive-opt-in) |
+| msvc memmove small-count tail dispatch truncated to an indirect call | [`switchmultipred`](#switchmultipred----on--off-default-on-destructive-opt-in) |
+| one switch recovered but sibling interleaved jump tables degrade to computed calls | [`unrolledguard`](#unrolledguard----on--off-default-off-destructive-opt-in) |
+| 'Could not find op at target address' during recovery of an msvc optimized memcpy dispatch | [`unrolledguard`](#unrolledguard----on--off-default-off-destructive-opt-in) |
+| duff's-device tail dispatch rendered as 'Treating indirect jump as call' | [`unrolledguard`](#unrolledguard----on--off-default-off-destructive-opt-in) |
+| decompiling one function with several switch statements takes far longer than its size suggests | [`jtsharepartial`](#jtsharepartial----on--off-default-on-destructive-opt-in) |
+| per-function latency scales with the NUMBER of jump tables rather than their size | [`jtsharepartial`](#jtsharepartial----on--off-default-on-destructive-opt-in) |
+| profile shows the reduced jumptable action set running once per switch | [`jtsharepartial`](#jtsharepartial----on--off-default-on-destructive-opt-in) |
+| a huge function spends most of its time in oppool1 | [`deadcascade`](#deadcascade----off--on---default-32) |
+| rule pool sweep count in the thousands for one function | [`deadcascade`](#deadcascade----off--on---default-32) |
+| each pool sweep removes only a handful of dead INDIRECT or MULTIEQUAL ops | [`deadcascade`](#deadcascade----off--on---default-32) |
+| a stack char buffer is declared one element short, e.g. [63] where the source has [64] | [`nulterminator`](#nulterminator----on--off-default-off) |
+| the NUL terminator after strncpy renders as an assignment to a separate char local | [`nulterminator`](#nulterminator----on--off-default-off) |
+| a stack char local is assigned 0 and never read, right after the end of an array | [`nulterminator`](#nulterminator----on--off-default-off) |
+| the buffer's last element is missing from the array and declared as its own variable | [`nulterminator`](#nulterminator----on--off-default-off) |
+| a pointer loop over a stack buffer ends at the address of an unrelated local (`while (v3 != v2)`) | [`endptrbound`](#endptrbound----on--off-default-on) |
+| a loop's `while (p != vN)` names a local declared at the stack offset just past the buffer the loop reads | [`endptrbound`](#endptrbound----on--off-default-on) |
+| a stack buffer walked bytewise is declared as a scalar of the neighbour's width (`unsigned int v1;` for eight bytes) | [`endptrbound`](#endptrbound----on--off-default-on) |
+| the walking pointer is typed after the neighbouring local instead of the bytes it reads | [`endptrbound`](#endptrbound----on--off-default-on) |
+| a local char buffer is declared 8 bytes longer than the length passed to fgets/snprintf/read with it, e.g. char v3 [8200] beside fgets(v3,0x2000,fp) | [`arraysize`](#arraysize----off--on--calls-default-on) |
+| a stack array's size is a multiple of 16 plus 8 and it ends where the stack-protector canary slot starts | [`arraysize`](#arraysize----off--on--calls-default-on) |
+| a buffer passed to __snprintf_chk(buf, n, 1, 0x100, ...) is declared longer than the 0x100 object size the call carries | [`arraysize`](#arraysize----off--on--calls-default-on) |
+| an out-parameter local is passed as (int *)&v2 to waitpid or wait | [`castobject`](#castobject----on--off-default-on) |
+| a stack local is declared unsigned int where the callee that fills it declares int * | [`castobject`](#castobject----on--off-default-on) |
+| return (int)v1 >> 8 & 0xff; over an unsigned int status filled by waitpid | [`castobject`](#castobject----on--off-default-on) |
+| a reused stack slot is assigned a value of an incompatible type | [`stackviews`](#stackviews----on--off-default-off) |
+| two object views of one frame address become unrelated local variables | [`stackviews`](#stackviews----on--off-default-off) |
+| spurious uninitialized local (xStack_N) returned after storing through a pointer to a local | [`stackalias`](#stackalias----on--off-default-off-destructive-opt-in) |
+| store through a take-address-of-local pointer dropped as dead so the later read is garbage | [`stackalias`](#stackalias----on--off-default-off-destructive-opt-in) |
+| bogus (*pcVar1)() indirect call after calling a struct-returning function on sparc | [`sparcstructret`](#sparcstructret----on--off-default-on) |
+| function tail dropped after a sparc call followed by unimp | [`sparcstructret`](#sparcstructret----on--off-default-on) |
+| switch rendered as nested if/else-if compare tree over one variable | [`loweredswitch`](#loweredswitch----on--off-default-on) |
+| binary-search cascade of constant compares where source had a switch | [`loweredswitch`](#loweredswitch----on--off-default-on) |
+| flip off to keep the compiler's lowered compare-tree rendering | [`loweredswitch`](#loweredswitch----on--off-default-on) |
+| a function decompiles to a two-line stub that tail-calls into an unnamed section of the binary | [`pushan`](#pushan----auto--on--off-default-auto) |
+| the decompiled body is an interpreter dispatch loop: fetches through a pointer into a high-entropy section, a rolling xor key, computed jumps through a handler table | [`pushan`](#pushan----auto--on--off-default-auto) |
+| VMProtect .vmp0/.vmp1 or renamed sections and pushfq/popfq register-save sequences at the function entry | [`pushan`](#pushan----auto--on--off-default-auto) |
+| hundreds of thousands of instructions reachable from one function with no recognizable program logic | [`pushan`](#pushan----auto--on--off-default-auto) |
+| values below an x87 call are read from the wrong register-stack positions after consecutive calls | [`callmechanisms`](#callmechanisms----off--auto--on-default-auto) |
+| a store the compiler spec says a callee always makes is missing after the call | [`callmechanisms`](#callmechanisms----off--auto--on-default-auto) |
+| a custom compiler spec's uponentry or uponreturn p-code has no effect on the output | [`callmechanisms`](#callmechanisms----off--auto--on-default-auto) |
+| a PPC64 ELFv1 switch after an external call is a jump-as-call through r2 plus a constant | [`callmechanisms`](#callmechanisms----off--auto--on-default-auto) |
+| a PPC64 ELFv1 function reads an r2 local that is never assigned after a call | [`callmechanisms`](#callmechanisms----off--auto--on-default-auto) |
+| a TOC-relative global after an external PPC64 call prints as an unknown pointer plus an offset | [`callmechanisms`](#callmechanisms----off--auto--on-default-auto) |
+| a 32-bit PowerPC -O0 variadic call drops a trailing double that an earlier argument is computed from | [`varargsharedfloat`](#varargsharedfloat----on--off-default-off) |
+| `sumi(2, x * 2, x)` prints as `sumi(2,x + x)` on PowerPC | [`varargsharedfloat`](#varargsharedfloat----on--off-default-off) |
+| a uint8_t parameter prints as unsigned int and is only ever used as a1 & 0xff or (char)a1 | [`narrowargs`](#narrowargs----off--on--callers-default-callers) |
+| an int parameter prints as unsigned long on x86-64 and is used as (unsigned int)a0 | [`narrowargs`](#narrowargs----off--on--callers-default-callers) |
+| a caller passes v + 5 to a callee whose parameter is a byte and another caller passes v - 8 & 0xff | [`narrowargs`](#narrowargs----off--on--callers-default-callers) |
+| a uint8_t loop counter prints as unsigned int v with v = v + 1 & 0xff | [`regnarrow`](#regnarrow----on--off-default-on) |
+| a byte loaded with ldrb is declared unsigned int and used as an index | [`regnarrow`](#regnarrow----on--off-default-on) |
+| an int local prints as unsigned long on x86-64 though every value is a zero-extended 32-bit result | [`regnarrow`](#regnarrow----on--off-default-on) |
+| a signed char loaded with ldrsb is declared int | [`regsigned`](#regsigned----on--off-default-off) |
+| a short counter prints as int with (int)(short) casts at every use | [`regsigned`](#regsigned----on--off-default-off) |
+| an int local prints as long on x86-64 though every value is a movsxd | [`regsigned`](#regsigned----on--off-default-off) |
+| a call before a by-value struct copy prints with no arguments and the pushed values appear as stray local stores | [`calleeargs`](#calleeargs----on--off-default-on-destructive-opt-in) |
+| a pushed return address appears as a local store before a call | [`calleeargs`](#calleeargs----on--off-default-on-destructive-opt-in) |
+| an inner this-only call takes an argument pushed for the outer virtual call after it | [`calleeargs`](#calleeargs----on--off-default-on-destructive-opt-in) |
+| the outer call after an inner call is missing its last stack argument | [`calleeargs`](#calleeargs----on--off-default-on-destructive-opt-in) |
+| an indirect or import call takes a trailing argument that is a local of its caller (the /GS cookie, a zero-initialised buffer) | [`calleeargs`](#calleeargs----on--off-default-on-destructive-opt-in) |
+| a FILE * or char * the caller holds becomes long at the callee's parameter | [`protoorder`](#protoorder----off--types--cycles--lock-default-cycles) |
+| a function that only hands a string on to a recursive function (quotearg_buffer_restyled, a tree walk, a pair of functions calling each other) keeps an integer parameter | [`protoorder`](#protoorder----off--types--cycles--lock-default-cycles) |
+| an argument is typed at one call site of a callee and not at another | [`protoorder`](#protoorder----off--types--cycles--lock-default-cycles) |
+| decompiling one function alone gives it a prototype the whole-binary output does not use at its call sites | [`protoorder`](#protoorder----off--types--cycles--lock-default-cycles) |
+| the same sub_ address is called with one argument at one site and three at another in the same function | [`protoorder`](#protoorder----off--types--cycles--lock-default-cycles) |
+| a callee's parameter is void * or long while every call to it passes a struct_N * or a string | [`calleevote`](#calleevote----off--types--fields-default-fields) |
+| a one-field getter reads *(unsigned long *)((long)a0 + 0x10) and its caller's own parameter is a synthesized record | [`calleevote`](#calleevote----off--types--fields-default-fields) |
+| the same record is struct_N * in the caller and void * in the function it passes it to | [`calleevote`](#calleevote----off--types--fields-default-fields) |
+| a wrapper that only compares or forwards a pointer keeps an integer parameter | [`calleevote`](#calleevote----off--types--fields-default-fields) |
+| a parameter is long or unsigned long while every call to it passes a struct_N *, a void * or a string | [`callerptr`](#callerptr----on--off-default-on) |
+| unsigned long sub_8514(void *a0,unsigned long a1) for a hash_insert whose callers pass two different records | [`callerptr`](#callerptr----on--off-default-on) |
+| a list or table insert keeps an integer item parameter although its callers pass malloc results | [`callerptr`](#callerptr----on--off-default-on) |
+| a wrapper that only forwards a pointer to a function pointer keeps an integer parameter | [`callerptr`](#callerptr----on--off-default-on) |
+| a 32-bit Windows call prints an extra first argument its callee never reads | [`calleereginputs`](#calleereginputs----off--on--custom-default-on) |
+| a 32-bit Windows constructor or method call prints the caller's locals as its arguments, e.g. sub_401020(a0,a1,0) where the code loads lea ecx,[esp+N] | [`calleereginputs`](#calleereginputs----off--on--custom-default-on) |
+| a method called through a jmp stub prints with no arguments on a 32-bit PE | [`calleereginputs`](#calleereginputs----off--on--custom-default-on) |
+| lea ecx,[...] or mov ecx,esi before a call vanishes from the output | [`calleereginputs`](#calleereginputs----off--on--custom-default-on) |
+| a 32-bit MSVC /O2 static function is called with a count or buffer set in EDI, ESI or EBX that the call drops (set calleereginputs custom) | [`calleereginputs`](#calleereginputs----off--on--custom-default-on) |
+| a qsort comparator's parameters print as unsigned long * or int * where the program declares const void * | [`callbacktype`](#callbacktype----on--off-default-on) |
+| a signal handler renders void sub_1100(void) and its ground truth takes the signal number | [`callbacktype`](#callbacktype----on--off-default-on) |
+| a pthread start routine takes a pointer-width integer instead of void * | [`callbacktype`](#callbacktype----on--off-default-on) |
+| a function reached only through a function pointer keeps whatever its own body recovered, with no prototype anywhere | [`callbacktype`](#callbacktype----on--off-default-on) |
+| a call to a function the same listing declares char * prints (char *)sub_43ee(a0) | [`callrettype`](#callrettype----on--off-default-on) |
+| v7 = (char *)sub_e8ca(4,(char *)sub_43ee(a0)); | [`callrettype`](#callrettype----on--off-default-on) |
+| a caller converts a call's result to the type the callee is declared to return | [`callrettype`](#callrettype----on--off-default-on) |
+| (FILE *)f(a0) under FILE * f(int a0) | [`callrettype`](#callrettype----on--off-default-on) |
+| a function declared unsigned char sub_x(...) whose callers hold the result in an unsigned int | [`narrowret`](#narrowret----on--off-default-on) |
+| v1 = sub_8017ac6(a0); with unsigned int v1 beside unsigned char sub_8017ac6 | [`narrowret`](#narrowret----on--off-default-on) |
+| a bool-returning callee's result kept in an int and only tested | [`narrowret`](#narrowret----on--off-default-on) |
+| an x86-64 unsigned-int-returning callee's result held in an unsigned long | [`narrowret`](#narrowret----on--off-default-on) |
+| call rendered with fewer arguments than the disassembly passes when the missing argument register is spilled to the frame before the call | [`spillargtrial`](#spillargtrial----off--reload--spill-default-off) |
+| floating-point argument dropped at the FIRST of several calls that reuse the same value | [`spillargtrial`](#spillargtrial----off--reload--spill-default-off) |
+| a spurious 4-byte stack local appears where a call argument should be | [`spillargtrial`](#spillargtrial----off--reload--spill-default-off) |
+| clang -O2 packed-double code calls atan2 with one argument instead of two | [`spillargtrial`](#spillargtrial----off--reload--spill-default-off) |
+| argument register stored to a caller-frame slot and reloaded after the call is not recognized as an argument | [`spillargtrial`](#spillargtrial----off--reload--spill-default-off) |
+| goto placement follows the sailr region walk instead of ghidra's collapse order (flip off to force CollapseStructure) | [`regionstructure`](#regionstructure----on--off-default-on) |
+| uncompilable c where a loop body folded into a while condition | [`regionstructure`](#regionstructure----on--off-default-on) |
+| structuring differs from upstream ghidra on the same function | [`regionstructure`](#regionstructure----on--off-default-on) |
+| guard clause with a fatal no-return call comes out inverted and the whole body is nested inside the if | [`guardarm`](#guardarm----on--off-default-off) |
+| the function's only return sits inside an if-arm and the body ends on a no-return call | [`guardarm`](#guardarm----on--off-default-off) |
+| kuna negates a guard condition that ida and ghidra leave alone | [`guardarm`](#guardarm----on--off-default-off) |
+| a leading validation guard is emitted at the tail of the function | [`guardarm`](#guardarm----on--off-default-off) |
+| loop emitted as while( true ) with the head test as a guarded exit on the first statement | [`loopcondhoist`](#loopcondhoist----on--off-default-off) |
+| a for/while header condition is left inside the loop body | [`loopcondhoist`](#loopcondhoist----on--off-default-off) |
+| kuna writes while(true) where ida writes while (cond) | [`loopcondhoist`](#loopcondhoist----on--off-default-off) |
+| a loop's early-exit return is the loop's first statement instead of its condition | [`loopcondhoist`](#loopcondhoist----on--off-default-off) |
+| one source loop emitted as multiple nested infinite loops | [`loopcontinue`](#loopcontinue----on--off-default-on) |
+| early continues emitted as retry loops | [`loopcontinue`](#loopcontinue----on--off-default-on) |
+| accept and fork retries obscure a server's main loop | [`loopcontinue`](#loopcontinue----on--off-default-on) |
+| goto-heavy multi-exit loop where angr recovers a clean while/for with break/continue | [`regionlooprefine`](#regionlooprefine----on--off-default-on) |
+| irreducible or multi-latch loop falls back to raw gotos instead of folding | [`regionlooprefine`](#regionlooprefine----on--off-default-on) |
+| secondary loop exits rendered as gotos rather than break statements | [`regionlooprefine`](#regionlooprefine----on--off-default-on) |
+| more gotos than angr on a function forced to virtualize several edges | [`regionedgeorder`](#regionedgeorder----on--off-default-off) |
+| goto cut at an awkward edge where a dominance/post-dominator ordering exposes more structure | [`regionedgeorder`](#regionedgeorder----on--off-default-off) |
+| crossing goto from the else arm back into the then arm's shared clause | [`condfold`](#condfold----off--on--wide-default-off) |
+| goto plus label into the shared body of a guard cascade whose arms reconverge | [`condfold`](#condfold----off--on--wide-default-off) |
+| nested if where angr emits one compound short-circuit condition | [`condfold`](#condfold----off--on--wide-default-off) |
+| second condition block assigns one value or calls something before its test and the fold is declined | [`condfold`](#condfold----off--on--wide-default-off) |
+| a condition holds a long comma chain of assignments before its test | [`condstmts`](#condstmts----off--0--1--2--3---default-3) |
+| if ((a) && (v1 = x, v2 = y, v3 = z, call(..) == v1)) on one very long line | [`condstmts`](#condstmts----off--0--1--2--3---default-3) |
+| a while header carries several comma-separated assignments | [`condstmts`](#condstmts----off--0--1--2--3---default-3) |
+| want a cap on how many statements a short-circuit operand may print | [`condstmts`](#condstmts----off--0--1--2--3---default-3) |
+| goto to a label that only returns | [`gotoreduce`](#gotoreduce----off--return--on-default-on) |
+| label_N: return; shared tail after an if | [`gotoreduce`](#gotoreduce----off--return--on-default-on) |
+| more gotos than angr for the same function | [`gotoreduce`](#gotoreduce----off--return--on-default-on) |
+| goto to a shared free(p); return; style epilogue | [`gotoreduce`](#gotoreduce----off--return--on-default-on) |
+| cleanup-call return tail reached via label instead of duplicated inline | [`gotoreduce`](#gotoreduce----off--return--on-default-on) |
+| many error checks share one cleanup block (the goto out; idiom) and it is printed once per check | [`gotoreduce`](#gotoreduce----off--return--on-default-on) |
+| else block kept although the matching if branch always returns or aborts | [`ifelseflatten`](#ifelseflatten----on--off-default-on) |
+| guard-clause body indented one level deeper than the source | [`ifelseflatten`](#ifelseflatten----on--off-default-on) |
+| redundant else after an early-return arm | [`ifelseflatten`](#ifelseflatten----on--off-default-on) |
+| goto into the middle of a sibling branch's arm (compiler cross-jumping) | [`crossjumprevert`](#crossjumprevert----on--off-default-on) |
+| shared non-return tail reached by goto from an else-if chain | [`crossjumprevert`](#crossjumprevert----on--off-default-on) |
+| label planted inside an else block targeted from another branch | [`crossjumprevert`](#crossjumprevert----on--off-default-on) |
+| the same run of dat_<addr> = ... statements is emitted two or three times in one function | [`retsplitglobal`](#retsplitglobal----on--off-default-on) |
+| a long global-filling epilogue is duplicated once per path that reaches the return | [`retsplitglobal`](#retsplitglobal----on--off-default-on) |
+| option returndup off does not stop a shared epilogue from being cloned | [`retsplitglobal`](#retsplitglobal----on--off-default-on) |
+| 46% of a function's text is three copies of one exit block | [`retsplitglobal`](#retsplitglobal----on--off-default-on) |
+| a huge function exhausts memory right after its return blocks are split | [`retsplitlimit`](#retsplitlimit----off---default-1048576) |
+| millions of COPY ops of a global into itself fill a large function's IR | [`retsplitlimit`](#retsplitlimit----off---default-1048576) |
+| a function with hundreds of gotos to one return and thousands of globals takes gigabytes to decompile | [`retsplitlimit`](#retsplitlimit----off---default-1048576) |
+| both arms of an if/else begin or end with the same duplicated statements | [`dedupitetail`](#dedupitetail----on--off-default-on) |
+| shared cleanup or help call repeated verbatim in the two branches | [`dedupitetail`](#dedupitetail----on--off-default-on) |
+| compiler-duplicated tail emitted twice instead of hoisted out of the if | [`dedupitetail`](#dedupitetail----on--off-default-on) |
+| if (c) v = A; else v = B; assignment diamond where a ternary v = c ? A : B is expected | [`iteregion`](#iteregion----on--off-default-on) |
+| format/flag builder full of two-arm constant assignments to the same variable | [`iteregion`](#iteregion----on--off-default-on) |
+| flip off when the source likely wrote an explicit if/else | [`iteregion`](#iteregion----on--off-default-on) |
+| if (c) v = <expr1>; else v = <expr2>; where a ternary v = c ? expr1 : expr2 is expected | [`iteexpr`](#iteexpr----on--off-default-off) |
+| kuna emits far fewer ?: ternaries than angr/ida on format/flag/size code | [`iteexpr`](#iteexpr----on--off-default-off) |
+| computed-arm assignment diamond (v = *p / v = b + k) not folded to a ternary | [`iteexpr`](#iteexpr----on--off-default-off) |
+| if (a && b) v = 1; else v = 0; where the source has a single boolean assignment v = a && b | [`iteboolean`](#iteboolean----on--off-default-on) |
+| -O0 boolean materialization printed as an explicit 0/1 constant diamond | [`iteboolean`](#iteboolean----on--off-default-on) |
+| extra CFG blocks/edges vs Hex-Rays around a short-circuit boolean assignment | [`iteboolean`](#iteboolean----on--off-default-on) |
+| giant short-circuit if with comma-expression side effects merging several source early-return guards | [`returndup`](#returndup----on--off-default-on) |
+| one trailing return shared by many guard paths where the source used per-guard early returns | [`returndup`](#returndup----on--off-default-on) |
+| merged guard condition containing v = f(...) assignments inline | [`returndup`](#returndup----on--off-default-on) |
+| if (!c) return 0; f(); return 0; where the source has if (c) f(); return 0; | [`rettriangle`](#rettriangle----on--off-default-off) |
+| a duplicated constant return right after a one-statement body | [`rettriangle`](#rettriangle----on--off-default-off) |
+| // return-dupe on a function whose only split is a short if before its return | [`rettriangle`](#rettriangle----on--off-default-off) |
+| inverted diamond: if (guard) { entire body } else { v = 0; } return v; | [`earlyreturn`](#earlyreturn----on--off-default-on) |
+| leading argument-validity check wraps the whole body instead of an early return | [`earlyreturn`](#earlyreturn----on--off-default-on) |
+| function opens with if (p != 0) { everything } where source wrote if (!p) return 0; | [`earlyreturn`](#earlyreturn----on--off-default-on) |
+| wide switch where every case assigns a constant and breaks to one shared return | [`switchreturn`](#switchreturn----on--off-default-on) |
+| switch (x) { case A: v = K; break; ... } return v; instead of per-case return K | [`switchreturn`](#switchreturn----on--off-default-on) |
+| 17-plus-case const dispatch keeps a merged return variable | [`switchreturn`](#switchreturn----on--off-default-on) |
+| call result spilled to a temp used exactly once: v5 = f(); if (v5 < 0) | [`foldcallret`](#foldcallret----on--off-default-on) |
+| single-use call return not inlined into its use site | [`foldcallret`](#foldcallret----on--off-default-on) |
+| flip off to force every call output into a named temporary (ghidra style) | [`foldcallret`](#foldcallret----on--off-default-on) |
+| too many single-use temporaries: v7 = v3 + 8 declared and read once | [`impliedrefs`](#impliedrefs----2--3--4---default-2) |
+| a value read three times is written out three times instead of being declared | [`impliedrefs`](#impliedrefs----2--3--4---default-2) |
+| want to ablate the implied-expression threshold without rebuilding | [`impliedrefs`](#impliedrefs----2--3--4---default-2) |
+| expressions are too deeply nested to read and every sub-term should get a name | [`impliedrefs`](#impliedrefs----2--3--4---default-2) |
+| a two-term expression is declared as a temporary instead of being inlined at its two uses | [`termdup`](#termdup----2--3--4---default-2) |
+| want to ablate the term-duplication threshold without rebuilding | [`termdup`](#termdup----2--3--4---default-2) |
+| raising impliedrefs did not inline an expression because the expression itself is too wide | [`termdup`](#termdup----2--3--4---default-2) |
+| switch with more than 1024 cases prints as a computed call (jump-as-call) | [`jumptablemax`](#jumptablemax----1024---default-1024) |
+| state-machine function with a giant jump table decompiles to a stub | [`jumptablemax`](#jumptablemax----1024---default-1024) |
+| functions --summary lists a switch over jumptablemax | [`jumptablemax`](#jumptablemax----1024---default-1024) |
+| xrefs miss references made from switch cases past the first 1024 | [`jumptablemax`](#jumptablemax----1024---default-1024) |
+| stack-protector canary compare against fs:0x28 and a __stack_chk_fail branch cluttering the epilogue | [`stackguard`](#stackguard----on--off-default-on-destructive-opt-in) |
+| shared-return goto forced by the canary check block | [`stackguard`](#stackguard----on--off-default-on-destructive-opt-in) |
+| flip off to keep the real canary instructions for auditing the protector | [`stackguard`](#stackguard----on--off-default-on-destructive-opt-in) |
+| a Windows PE function opens with `v8 = dat_140074040 ^ (unsigned long long)v1;` and ends with a one-argument call taking `v8 ^ (unsigned long long)v1` | [`msvcstackguard`](#msvcstackguard----on--off-default-on-destructive-opt-in) |
+| an unnamed one-argument callee (`__security_check_cookie`) called just before every return | [`msvcstackguard`](#msvcstackguard----on--off-default-on-destructive-opt-in) |
+| `--option stackguard on` and `off` give byte-identical output on a Windows binary | [`msvcstackguard`](#msvcstackguard----on--off-default-on-destructive-opt-in) |
+| an otherwise unused 8-byte stack slot declared in every function of an MSVC binary | [`msvcstackguard`](#msvcstackguard----on--off-default-on-destructive-opt-in) |
+| Rust output littered with `panic_bounds_check()` / `slice_error_fail()` / `panic_const_div_by_zero()` calls | [`securitycheck`](#securitycheck----on--off-default-on-destructive-opt-in) |
+| every slice index guarded by an `if` whose arm only panics | [`securitycheck`](#securitycheck----on--off-default-on-destructive-opt-in) |
+| Rust function CFG roughly twice the size of the source control flow | [`securitycheck`](#securitycheck----on--off-default-on-destructive-opt-in) |
+| flip off to keep the real bounds-check instructions for auditing | [`securitycheck`](#securitycheck----on--off-default-on-destructive-opt-in) |
+| if (x == 0) guard with the common path in the else arm | [`branchflip`](#branchflip----on--off-default-on) |
+| negated condition where angr renders the positive complement first | [`branchflip`](#branchflip----on--off-default-on) |
+| if/else polarity inverted versus the source's reading order | [`branchflip`](#branchflip----on--off-default-on) |
+| loop exit rendered as goto label_N; plus a synthesized label instead of break; | [`loopbreak_recovery`](#loopbreak_recovery----on--off-default-on) |
+| switch-case exit gotos where break; is expected | [`loopbreak_recovery`](#loopbreak_recovery----on--off-default-on) |
+| error paths leave a loop by goto to its successor label | [`loopbreak_recovery`](#loopbreak_recovery----on--off-default-on) |
+| an -O2 counter is declared unsigned int but every comparison on it is written (int)v | [`signedness`](#signedness----upstream--auto--prefer-signed--prefer-unsigned-default-auto) |
+| unsigned long locals whose only uses are signed compares | [`signedness`](#signedness----upstream--auto--prefer-signed--prefer-unsigned-default-auto) |
+| the declared signedness contradicts the casts in the body | [`signedness`](#signedness----upstream--auto--prefer-signed--prefer-unsigned-default-auto) |
+| want C-conventional signed declarations for values no operation settles | [`signedness`](#signedness----upstream--auto--prefer-signed--prefer-unsigned-default-auto) |
+| want the declaration type inference produced, without any rounding | [`signedness`](#signedness----upstream--auto--prefer-signed--prefer-unsigned-default-auto) |
+| a stack local is declared unsigned long and every comparison on it is written (long)v | [`castsign`](#castsign----on--off-default-on) |
+| if (0 <= (long)v15) with unsigned long v15; // stack - 0x60 | [`castsign`](#castsign----on--off-default-on) |
+| the declared signedness of a frame local contradicts the casts in the body | [`castsign`](#castsign----on--off-default-on) |
+| a conditional arm is cast to the type the conditional already has, v = c ? (int)*(char *)p : 0; | [`castternary`](#castternary----on--off-default-on) |
+| every arm of a ?: over bytes carries an (int) cast | [`castternary`](#castternary----on--off-default-on) |
+| (unsigned long)v1 on one arm of a ?: whose other arm is already unsigned long | [`castternary`](#castternary----on--off-default-on) |
+| an int widened to long beside a long operand, ((long *)a0)[1] + (long)a1 | [`castwiden`](#castwiden----off--on--literal-default-literal) |
+| a widened index times a literal, (long)i * 8 + 0x2b200 | [`castwiden`](#castwiden----off--on--literal-default-literal) |
+| v = (unsigned long)i; into a variable already declared unsigned long | [`castwiden`](#castwiden----off--on--literal-default-literal) |
+| a store of (long)i through a long pointer | [`castwiden`](#castwiden----off--on--literal-default-literal) |
+| memchr(p,c,(long)n) for an int n | [`castwiden`](#castwiden----off--on--literal-default-literal) |
+| a truncation assigned to a variable already declared that type, v1 = (unsigned int)a0; with unsigned int v1 | [`castnarrow`](#castnarrow----on--off-default-on) |
+| return (int)x; from a function declared int | [`castnarrow`](#castnarrow----on--off-default-on) |
+| a long passed to a declared int parameter as toupper((int)a0) | [`castnarrow`](#castnarrow----on--off-default-on) |
+| a byte store through a char pointer written *a1 = (char)a0; | [`castnarrow`](#castnarrow----on--off-default-on) |
+| kuna prints a narrowing cast IDA leaves to C's assignment conversion | [`castnarrow`](#castnarrow----on--off-default-on) |
+| a local is declared with three or more levels of pointer indirection | [`ptrdepthcap`](#ptrdepthcap----on--off-default-off) |
+| unsigned long long ***** or char ***** appears in the output | [`ptrdepthcap`](#ptrdepthcap----on--off-default-off) |
+| C++ std::string / ostringstream locals get absurd pointer types | [`ptrdepthcap`](#ptrdepthcap----on--off-default-off) |
+| the type of a stack object grows one pointer level per decompilation pass | [`ptrdepthcap`](#ptrdepthcap----on--off-default-off) |
+| an indirect call through a table entry prints (**(void **)p)(), which does not compile | [`calltargettype`](#calltargettype----on--off-default-on) |
+| a local holding a function pointer is declared void * and called as (*v1)(a1,7) | [`calltargettype`](#calltargettype----on--off-default-on) |
+| a parameter, global or struct field holding a function pointer is declared void * and its call does not compile | [`calltargettype`](#calltargettype----on--off-default-on) |
+| a DWARF function-pointer parameter or field prints void * | [`calltargettype`](#calltargettype----on--off-default-on) |
+| called object is not a function or function pointer when the output is compiled | [`calltargettype`](#calltargettype----on--off-default-on) |
+| a parameter is declared long or unsigned long and is only ever dereferenced | [`ptrfromuse`](#ptrfromuse----off--byte--void-default-void) |
+| every use of an argument is *(T *)(a0 + k) but the argument is not a pointer | [`ptrfromuse`](#ptrfromuse----off--byte--void-default-void) |
+| one function takes T *a0 and its sibling takes long a0 for the same kind of argument | [`ptrfromuse`](#ptrfromuse----off--byte--void-default-void) |
+| an argument dereferenced at offset 0 gets a pointer type but one dereferenced at +8 does not | [`ptrfromuse`](#ptrfromuse----off--byte--void-default-void) |
+| a string parameter is declared unsigned long and every call site passes it to strlen or printf | [`charptr`](#charptr----on--off-default-off) |
+| a buffer indexed one byte at a time is declared void * | [`charptr`](#charptr----on--off-default-off) |
+| two functions take the same string and one says char * and the other unsigned long | [`charptr`](#charptr----on--off-default-off) |
+| a -O0 parameter is an integer although the callee's prototype declares char * | [`charptr`](#charptr----on--off-default-off) |
+| void * sub_e680(uint1 *a0) for a function that passes its argument to strlen | [`charptr`](#charptr----on--off-default-off) |
+| a buffer indexed one byte at a time prints as *(char *)((long)v6 + (long)v8) | [`elemptr`](#elemptr----on--off-default-on) |
+| a parameter only ever indexed is declared long | [`elemptr`](#elemptr----on--off-default-on) |
+| malloc's result is declared void * and every store through it casts | [`elemptr`](#elemptr----on--off-default-on) |
+| a table in .data read with a computed index prints as *(unsigned char *)((long)v1 + 0x4020) | [`elemptr`](#elemptr----on--off-default-on) |
+| argv-like parameters are declared long and each element is cast to char * | [`elemptr`](#elemptr----on--off-default-on) |
+| a local commented // gs_offset or // fs_offset is read through constant offsets | [`pebnames`](#pebnames----off--auto--on-default-auto) |
+| an anti-debug check reads *(char *)(*(long long *)(v1 + 0x60) + 2) | [`pebnames`](#pebnames----off--auto--on-default-auto) |
+| PEB fields such as BeingDebugged or NtGlobalFlag render as magic offsets | [`pebnames`](#pebnames----off--auto--on-default-auto) |
+| a thread-local or stack-limit read renders as *(long long *)(v1 + 0x58) or (v1 + 0x10) | [`pebnames`](#pebnames----off--auto--on-default-auto) |
+| a parameter is declared `unsigned long *` or `void *` and read at two or more fixed offsets | [`structsynth`](#structsynth----off--param--locals--nest--all-default-locals) |
+| a local assigned from `xmalloc` or another call is written as `*(char *)((long)v1 + 0x14) = 0x6e` | [`structsynth`](#structsynth----off--param--locals--nest--all-default-locals) |
+| the body is a wall of `*(int *)(p + 0x18)` casts over one pointer | [`structsynth`](#structsynth----off--param--locals--nest--all-default-locals) |
+| `*(unsigned int *)&a0[1]` appears where a record field is meant | [`structsynth`](#structsynth----off--param--locals--nest--all-default-locals) |
+| two functions read the same object and neither names its fields | [`structsynth`](#structsynth----off--param--locals--nest--all-default-locals) |
+| a local loaded from a `struct_N` field is read as `*(int *)((long)v1 + 0xc)` | [`structsynth`](#structsynth----off--param--locals--nest--all-default-locals) |
+| a synthesized struct's link fields are `long *` or `unsigned long` where the nodes they point at are the same record | [`structsynth`](#structsynth----off--param--locals--nest--all-default-locals) |
+| one object has two or more struct_N names whose fields agree as far as both go | [`structmerge`](#structmerge----off--siblings-default-off) |
+| a synthesized record declares fewer fields than the program's own accesses show | [`structmerge`](#structmerge----off--siblings-default-off) |
+| two functions take a pointer to the same thing and their parameter types differ | [`structmerge`](#structmerge----off--siblings-default-off) |
+| the exported header defines struct_2 and struct_7 with the same first members | [`structmerge`](#structmerge----off--siblings-default-off) |
+| a parameter is declared `void *` and every read of it is `((T *)a0)[K]` or `*(T *)((long)a0 + K)` with no read at offset 0 | [`structheadless`](#structheadless----off--closed-default-off) |
+| a function reads a record's later members and the listing shows a cast per access | [`structheadless`](#structheadless----off--closed-default-off) |
+| `statx_to_stat` or a `fileinfo` accessor renders as casts of an untyped pointer | [`structheadless`](#structheadless----off--closed-default-off) |
+| a record reader keeps `void *` while a sibling that reads the first member gets `struct_N *` | [`structheadless`](#structheadless----off--closed-default-off) |
+| a synthesized record declares long field_0x0 and every read of it is (char *)a0->field_0x0 | [`fieldtype`](#fieldtype----on--off-default-off) |
+| free((void *)a0->field_0xb0) on a struct_N field | [`fieldtype`](#fieldtype----on--off-default-off) |
+| a function-pointer field prints as (*(void *)a0->field_0x40)(...) | [`fieldtype`](#fieldtype----on--off-default-off) |
+| a record's buffer field is used in pointer arithmetic that prints as (char *)(a0->field_0x8 + a0->field_0x0) | [`fieldtype`](#fieldtype----on--off-default-off) |
+| dead code kept after calls to exit/abort/panic when off | [`noreturn_known`](#noreturn_known----on--off-default-on) |
+| call to a known no-return libc function still shows a fall-through path | [`noreturn_known`](#noreturn_known----on--off-default-on) |
+| unreachable epilogue after std::terminate or a rust panic call | [`noreturn_known`](#noreturn_known----on--off-default-on) |
+| heavily-called custom die()/fatal() wrapper still treated as returning | [`noreturn_disc`](#noreturn_disc----on--off-default-on) |
+| dead code after a stripped sub_ wrapper that never falls through at 3+ call sites | [`noreturn_disc`](#noreturn_disc----on--off-default-on) |
+| caller swallows the next function after a wrapper call | [`noreturn_disc`](#noreturn_disc----on--off-default-on) |
+| unreachable code after a call to an exit/fatal wrapper | [`noreturn_propagate`](#noreturn_propagate----on--off-default-on) |
+| function truncated after calling a cold wrapper | [`noreturn_propagate`](#noreturn_propagate----on--off-default-on) |
+| spurious while(true) around a call that never returns | [`noreturn_propagate`](#noreturn_propagate----on--off-default-on) |
+| stripped binary's unnamed exit wrapper swallows the functions after it | [`noreturn_propagate`](#noreturn_propagate----on--off-default-on) |
+| wrapper with a mid-body fatal call still treated as returning | [`noreturn_reach`](#noreturn_reach----on--off-default-on) |
+| unreachable write()/return tail keeps a fatal wrapper looking like it returns | [`noreturn_reach`](#noreturn_reach----on--off-default-on) |
+| switch whose every arm ends in a no-return call not concluded no-return | [`noreturn_reach`](#noreturn_reach----on--off-default-on) |
+| caller decodes garbage past an sshpkt_fatal-style wrapper | [`noreturn_reach`](#noreturn_reach----on--off-default-on) |
+| rust or go string argument renders as a raw rodata address beside its length instead of the literal text | [`fatstr`](#fatstr----off--auto--always-default-auto) |
+| takes_str(&DAT_00102000, 15) where the 15 bytes at that address are plainly the string | [`fatstr`](#fatstr----off--auto--always-default-auto) |
+| string literals recovered on C binaries but never on rust or go ones | [`fatstr`](#fatstr----off--auto--always-default-auto) |
+| every function of a Go binary opens with if (condition) { runtime_morestack_noctxt(); } inside a loop to the entry | [`gomorestack`](#gomorestack----off--auto--always-default-auto-destructive-opt-in) |
+| go function parameters recovered as phi-fed locals or missing because the entry is a loop head | [`gomorestack`](#gomorestack----off--auto--always-default-auto-destructive-opt-in) |
+| do-while wrapping an entire go function body with a morestack call in its latch | [`gomorestack`](#gomorestack----off--auto--always-default-auto-destructive-opt-in) |
+| go newobject results declared long or undefined8 while the call names its type: descriptor | [`gonewtype`](#gonewtype----on--off-default-on) |
+| field stores into a fresh go allocation render as offset arithmetic on an integer local | [`gonewtype`](#gonewtype----on--off-default-on) |
+| harvested go record types visible at interface conversions but never on allocations | [`gonewtype`](#gonewtype----on--off-default-on) |
+| go allocation sites cast their result at every use instead of declaring the named pointer | [`gonewtype`](#gonewtype----on--off-default-on) |
+| every pointer store in a go function wrapped in if (writeBarrier flag) with a gcWriteBarrier call | [`gowritebarrier`](#gowritebarrier----off--auto--always-default-auto-destructive-opt-in) |
+| stores through an undefined local after a gcWriteBarrier call because the thunk's buffer register is not modeled | [`gowritebarrier`](#gowritebarrier----off--auto--always-default-auto-destructive-opt-in) |
+| go output doubled in size by GC bookkeeping diamonds | [`gowritebarrier`](#gowritebarrier----off--auto--always-default-auto-destructive-opt-in) |
+| if ((v ^ v << 1) >> 0x3e & 1) before a tail call in an arm64e function | [`ptrauthtrap`](#ptrauthtrap----on--off-default-on-destructive-opt-in) |
+| SoftwareBreakpoint(0xc471,..); behind a bit test of the return address | [`ptrauthtrap`](#ptrauthtrap----on--off-default-on-destructive-opt-in) |
+| a stack - 0x8  | [`ptrauthtrap`](#ptrauthtrap----on--off-default-on-destructive-opt-in) |
+|  x30 variable declared only for a pointer-auth check | [`ptrauthtrap`](#ptrauthtrap----on--off-default-on-destructive-opt-in) |
+| go function returning bool prints v = CONCAT71((undefined7)(v >> 8), a == b) instead of returning the comparison | [`gobool`](#gobool----off--auto--always-default-auto-destructive-opt-in) |
+| return value masked with 0xffffffff around a boolean | [`gobool`](#gobool----off--auto--always-default-auto-destructive-opt-in) |
+| undefined7 casts feeding a concatenation at every boolean return | [`gobool`](#gobool----off--auto--always-default-auto-destructive-opt-in) |
+| an objective-c method reads *(long *)((long)self + dat_<addr>) instead of self->_ivar | [`objcivars`](#objcivars----on--off-default-on) |
+| self is objc_object * in every -[Class sel] although the class declares ivars | [`objcivars`](#objcivars----on--off-default-on) |
+| objc_storeStrong((long)self + <Class>::_ivar, x) instead of &self->_ivar | [`objcivars`](#objcivars----on--off-default-on) |
+| parameter copy-shadow assignment (v6 = a1;) emitted below an earlier guard instead of at the top of the function | [`paramcopyhoist`](#paramcopyhoist----on--off-default-off) |
+| kuna places some parameter spill copies in the entry block and others after a guard in the same function | [`paramcopyhoist`](#paramcopyhoist----on--off-default-off) |
+| extra CFG nodes versus the source around a cascade of if (p && !*p) p = NULL; parameter guards | [`paramcopyhoist`](#paramcopyhoist----on--off-default-off) |
+| vN = aM; for an unmodified incoming parameter appearing in the middle of a guard cascade | [`paramcopyhoist`](#paramcopyhoist----on--off-default-off) |
+| a value stored into a stack slot is printed into a register local and the slot is never assigned | [`indirectonly`](#indirectonly----on--off-default-off) |
+| a struct filled on the frame is passed by address to a call although the emitted C never wrote it | [`indirectonly`](#indirectonly----on--off-default-off) |
+| a declared local is never written and never read anywhere in the function | [`indirectonly`](#indirectonly----on--off-default-off) |
+| a `vN = slot;` ... `slot = vN;` round-trip copy pair around a loop that only reads the slot | [`indirectonly`](#indirectonly----on--off-default-off) |
+| a call result assigned to a temporary that is immediately assigned to a stack slot | [`indirectonly`](#indirectonly----on--off-default-off) |
+| an inlined callee body is spliced into the caller and should read as a call | [`outline`](#outline----off----default-off-destructive-opt-in) |
+| want to pull a chosen region out of a function into a named pseudofunction | [`outline`](#outline----off----default-off-destructive-opt-in) |
+| acting on an almostregion inline-candidate report by hand or with an llm | [`outline`](#outline----off----default-off-destructive-opt-in) |
+| an unprototyped call loses a local output pointer | [`stackaddrargtrial`](#stackaddrargtrial----on--off-default-off) |
+| a post-call word or halfword output folds to its initializer | [`stackaddrargtrial`](#stackaddrargtrial----on--off-default-off) |
+| a helper's stack output array is shorter than the helper writes | [`callarrayextent`](#callarrayextent----on--off-default-off-destructive-opt-in) |
+| a post-call stack read is emitted as an independent uninitialized scalar | [`callarrayextent`](#callarrayextent----on--off-default-off-destructive-opt-in) |
+| a stack array passed to a helper loses aliases with neighboring frame slots | [`callarrayextent`](#callarrayextent----on--off-default-off-destructive-opt-in) |
+| a local passed by address to a callee is declared unsigned long and read as v1._4_2_ or v1._6_1_ | [`stackstruct`](#stackstruct----on--off-default-off) |
+| byte and short fields of a local header print as partial accesses | [`stackstruct`](#stackstruct----on--off-default-off) |
+| a struct the source zero-initializes or memsets prints as several unrelated stack scalars | [`stackstruct`](#stackstruct----on--off-default-off) |
+| memcpy copies 0x40 bytes into a local declared char v13[12] | [`stackstruct`](#stackstruct----on--off-default-off) |
+| negative index displacement hides a declared global array | [`globalarrayanchor`](#globalarrayanchor----on--off-default-off) |
+| indexed stores use an address immediately before an array | [`globalarrayanchor`](#globalarrayanchor----on--off-default-off) |
+| Go array accesses surrounded by runtime.panicIndex or runtime.panicBounds calls | [`gobounds`](#gobounds----on--off-default-on-destructive-opt-in) |
+| Go division retains compiler-generated runtime.panicdivide branches | [`gobounds`](#gobounds----on--off-default-on-destructive-opt-in) |
+| PPC32 PIC calls retain local linker stub names | [`ppc32picimports`](#ppc32picimports----off--on--abi-default-off) |
+| a PPC32 PIC no-return call flows into padding | [`ppc32picimports`](#ppc32picimports----off--on--abi-default-off) |
+| PPC32 PIC imports are missing from named cross-reference queries | [`ppc32picimports`](#ppc32picimports----off--on--abi-default-off) |
+| every import call in a PPC32 shared library linked with the start files prints as sub_ | [`ppc32picimports`](#ppc32picimports----off--on--abi-default-off) |
+| Rust printing exposes std::io::stdio::_print with a pointer and odd integer | [`rustfmt`](#rustfmt----off--on--all-default-on) |
+| Rust print calls retain a runtime template pointer and stack formatter descriptor arrays | [`rustfmt`](#rustfmt----off--on--all-default-on) |
+| Rust integer or string String construction retains format_inner with an output pointer | [`rustfmt`](#rustfmt----off--on--all-default-on) |
+| Rust panic messages remain core::panicking::panic_fmt calls with opaque pointers | [`rustfmt`](#rustfmt----off--on--all-default-on) |
+| older Rust print calls retain a piece-array fmt::Arguments descriptor | [`rustfmt`](#rustfmt----off--on--all-default-on) |
+| Rust String or Stdout writes remain opaque core::fmt::write or write_fmt calls (set all) | [`rustfmt`](#rustfmt----off--on--all-default-on) |
+| Go output language is unavailable | [`outlang`](#outlang----c--rust--go-default-c) |
+| Go functions retain C declarations and control-flow syntax | [`outlang`](#outlang----c--rust--go-default-c) |
+| Rust large-frame functions retain __rust_probestack calls | [`rustprobestack`](#rustprobestack----off--auto--always-default-off-destructive-opt-in) |
+| live stack-probe R11 residual renders as an undefined local | [`rustprobestack`](#rustprobestack----off--auto--always-default-off-destructive-opt-in) |
+| stack-probe calls obscure a known constant frame allocation | [`rustprobestack`](#rustprobestack----off--auto--always-default-off-destructive-opt-in) |
+| v = __chkstk_darwin(); assigns a value an arm64 macOS function then uses as its argument | [`chkstkdarwin`](#chkstkdarwin----on--off-default-on-destructive-opt-in) |
+| an arm64 macOS function with a large frame or a variable-length array prints with a (void) parameter list | [`chkstkdarwin`](#chkstkdarwin----on--off-default-on-destructive-opt-in) |
+| a variable-length array is sized from a register nothing assigns after __chkstk_darwin() | [`chkstkdarwin`](#chkstkdarwin----on--off-default-on-destructive-opt-in) |
+| __chkstk_darwin is called with arguments it does not take | [`chkstkdarwin`](#chkstkdarwin----on--off-default-on-destructive-opt-in) |
+| a DOS program's globals print as *(short *)0x308e near-pointer dereferences instead of named globals | [`mzdgroup`](#mzdgroup----on--off-default-on) |
+| every function of an MS-DOS executable declares an unsigned short local commented // ds | [`mzdgroup`](#mzdgroup----on--off-default-on) |
+| the same DOS global gets no shared name across functions | [`mzdgroup`](#mzdgroup----on--off-default-on) |
+| a near string pointer in a DOS program resolves to a low address instead of its data segment | [`mzdgroup`](#mzdgroup----on--off-default-on) |
+| a function that only ever passes its argument to a libc stdio call still declares it long or unsigned long | [`libctypes`](#libctypes----off--opaque--glibc-default-opaque) |
+| a fopen or fdopen result is a void * that nothing can name | [`libctypes`](#libctypes----off--opaque--glibc-default-opaque) |
+| a stat or lstat call fills an untyped void * buffer | [`libctypes`](#libctypes----off--opaque--glibc-default-opaque) |
+| getopt_long takes a bare (void *)0x... long-option table | [`libctypes`](#libctypes----off--opaque--glibc-default-opaque) |
+| readdir returns a void * whose fields are casts and offsets | [`libctypes`](#libctypes----off--opaque--glibc-default-opaque) |
+| a stream parameter is void * where the ground truth is FILE * | [`libctypes`](#libctypes----off--opaque--glibc-default-opaque) |
+| a FILE * or stat * renders its members as field_0x8 / field_0x30 instead of _IO_read_ptr / st_size | [`libctypes`](#libctypes----off--opaque--glibc-default-opaque) |
+| a value loaded out of a named libc struct keeps the cast's type instead of the field's | [`libctypes`](#libctypes----off--opaque--glibc-default-opaque) |
+| stdin/stdout/stderr render as an untyped word and their fields as raw offsets ((long)stdout + 0x28) | [`libctypes`](#libctypes----off--opaque--glibc-default-opaque) |
+| a shared object's stream slot has no name at all (*(long *)(*dat_3fe0 + 0x28)) | [`libctypes`](#libctypes----off--opaque--glibc-default-opaque) |
+| two functions in one binary disagree about what stdout is, one calling it FILE * and the other a long | [`libctypes`](#libctypes----off--opaque--glibc-default-opaque) |
+| a SPARC32 caller stores the low word of a 64-bit quotient from a local nothing assigns | [`libgccsigs`](#libgccsigs----on--off-default-off) |
+| __divdi3 is called with four 32-bit arguments and only %o0 is read back | [`libgccsigs`](#libgccsigs----on--off-default-off) |
+| *p = v1; after a __divdi3 call where v1 is never written | [`libgccsigs`](#libgccsigs----on--off-default-off) |
+| a PIE or shared object calls __stack_chk_fail_local with an argument (__stack_chk_fail_local(a0 * 3)) | [`libgccsigs`](#libgccsigs----on--off-default-off) |
+| a function that returns a value before its stack-protector check is void | [`libgccsigs`](#libgccsigs----on--off-default-off) |
+| string constants render as raw addresses or unnamed data instead of quoted char[N] literals | [`strings`](#strings----on--off-default-on) |
+| no data symbols at ascii runs in rodata | [`strings`](#strings----on--off-default-on) |
+| four-character commands such as quit, show, bind, or fork render as hexadecimal addresses | [`strings`](#strings----on--off-default-on) |
+| a function returns a bare address that points at an embedded PNG or JPEG | [`blobs`](#blobs----on--off-default-on) |
+| PNG, IHDR or IDATx show up as short string fragments in rodata | [`blobs`](#blobs----on--off-default-on) |
+| an embedded zip or gzip archive renders as dat_ globals with no length | [`blobs`](#blobs----on--off-default-on) |
+| a resource table of images is unnamed data | [`blobs`](#blobs----on--off-default-on) |
+| a wide Windows API argument renders as a one-character string literal | [`widestrings`](#widestrings----on--off-default-on) |
+| LoadLibraryW("n") or FindWindowW("O",0) in the emitted C | [`widestrings`](#widestrings----on--off-default-on) |
+| kuna strings --encoding utf16 reports a literal the decompiled C truncates to its first character | [`widestrings`](#widestrings----on--off-default-on) |
+| a UTF-16 string address carries no data symbol while the ascii ones do | [`widestrings`](#widestrings----on--off-default-on) |
+| an anti-debugging check names no DLL or window class | [`widestrings`](#widestrings----on--off-default-on) |
+| a wchar_t or char32_t string literal argument renders as an address such as &dat_2004 | [`widestrings32`](#widestrings32----on--off-default-off) |
+| a wide literal renders as its first character in a narrow string | [`widestrings32`](#widestrings32----on--off-default-off) |
+| L"..." appears only where a libc wide-string prototype types the argument | [`widestrings32`](#widestrings32----on--off-default-off) |
+| a wide default such as s = L"(NULL)" renders as s = &dat_2038 | [`widestrings32`](#widestrings32----on--off-default-off) |
+| a stripped binary yields almost no functions (symbol stream only) | [`entry_disc`](#entry_disc----on--off-default-on) |
+| functions discovered via e_entry/init_array/.eh_frame/prologues missing from the list | [`entry_disc`](#entry_disc----on--off-default-on) |
+| c++ catch/cleanup landing pads missing from a stripped binary's function list | [`eh_frame_full`](#eh_frame_full----on--off-default-off) |
+| exception-handler code never discovered as entries | [`eh_frame_full`](#eh_frame_full----on--off-default-off) |
+| gcc_except_table call-site targets left unexplored | [`eh_frame_full`](#eh_frame_full----on--off-default-off) |
+| a stripped mach-o yields almost no functions although __text is large | [`unwindstarts`](#unwindstarts----on--off-default-on) |
+| an ios app function list is only __mh_execute_header, main, exports and import stubs | [`unwindstarts`](#unwindstarts----on--off-default-on) |
+| LC_FUNCTION_STARTS absent and the arm64 gap walk cannot reach the body | [`unwindstarts`](#unwindstarts----on--off-default-on) |
+| functions the unwinder describes in __unwind_info missing from the inventory | [`unwindstarts`](#unwindstarts----on--off-default-on) |
+| a function called only through a pointer is missing from kuna functions | [`addrtakenentry`](#addrtakenentry----on--off-default-on) |
+| kuna xrefs reports a data reference to an address kuna functions does not list | [`addrtakenentry`](#addrtakenentry----on--off-default-on) |
+| a registration stub's size covers the handler after it | [`addrtakenentry`](#addrtakenentry----on--off-default-on) |
+| decompile --addr at a lea target prints a body no listed function has | [`addrtakenentry`](#addrtakenentry----on--off-default-on) |
+| relocated handler pointers before the first .pdata record are not functions | [`addrtakenentry`](#addrtakenentry----on--off-default-on) |
+| a frame-less leaf with no .pdata record is folded into the function before it | [`addrtakenentry`](#addrtakenentry----on--off-default-on) |
+| an A32 function after a Thumb helper decompiles as halt_missing in a stripped ARM binary | [`flowmode`](#flowmode----on--aftercall--off-default-off) |
+| flow reaches unmapped memory two bytes into an A32 instruction | [`flowmode`](#flowmode----on--aftercall--off-default-off) |
+| --isa arm decompiles an ARM function correctly that the default run turns into garbage | [`flowmode`](#flowmode----on--aftercall--off-default-off) |
+| a function reached with bl after a blx call decodes in the wrong instruction set | [`flowmode`](#flowmode----on--aftercall--off-default-off) |
+| --option listing off fixes the decompilation of an ARM function | [`flowmode`](#flowmode----on--aftercall--off-default-off) |
+| an unstripped ELF's main decompiles with anonymous a0/a1 parameters and an unsigned return | [`elfmain`](#elfmain----on--off-default-on) |
+| argv[1] in main reads as a struct field or a cast of a1 | [`elfmain`](#elfmain----on--off-default-on) |
+| kuna functions on a stripped Linux binary lists no main at all | [`elfmain`](#elfmain----on--off-default-on) |
+| the entry of a stripped ELF is reported only as sub_<addr> | [`elfmain`](#elfmain----on--off-default-on) |
+| a stripped ELF program routine decompiles as unsigned long sub_<addr>(int a0,char **a1) | [`elfmain`](#elfmain----on--off-default-on) |
+| argc and argv are invisible in the decompiled main of a stripped elf binary | [`elfmain`](#elfmain----on--off-default-on) |
+| main returns unsigned long instead of int in a stripped ELF | [`elfmain`](#elfmain----on--off-default-on) |
+| there is no way to tell which of a stripped ELF's functions the program starts in | [`elfmain`](#elfmain----on--off-default-on) |
+| functions after nop padding missing in a stripped binary | [`funcstart_patterns`](#funcstart_patterns----on--off-default-off) |
+| a push rbx; mov rbx,rdi prologue never discovered as a function start | [`funcstart_patterns`](#funcstart_patterns----on--off-default-off) |
+| code-bearing gaps between discovered functions left undefined | [`funcstart_patterns`](#funcstart_patterns----on--off-default-off) |
+| a stripped a32 firmware omits disconnected functions | [`armframes`](#armframes----inventory--on--off-default-inventory) |
+| stripped arm xref queries omit calls from disconnected stack frames | [`armframes`](#armframes----inventory--on--off-default-inventory) |
+| an arm caller is assigned to an interior prologue | [`armframes`](#armframes----inventory--on--off-default-inventory) |
+| arm interworking frame discovery leaves stale call references | [`armframes`](#armframes----inventory--on--off-default-inventory) |
+| stripped cortex-m firmware yields only a handful of functions | [`cortexmvectors`](#cortexmvectors----on--off-default-on) |
+| arm firmware body decodes as a32 garbage instead of thumb | [`cortexmvectors`](#cortexmvectors----on--off-default-on) |
+| nmi/hardfault/systick exception handlers never discovered as entries | [`cortexmvectors`](#cortexmvectors----on--off-default-on) |
+| isr_vector table present but no vector-derived function starts | [`cortexmvectors`](#cortexmvectors----on--off-default-on) |
+| a small arm callback or isr handler produces no decompiled output at all | [`ptrentry`](#ptrentry----on--off-default-on) |
+| kuna emits one function then the next with un-decompiled code in between | [`ptrentry`](#ptrentry----on--off-default-on) |
+| bare bx lr exception handlers never discovered as entries | [`ptrentry`](#ptrentry----on--off-default-on) |
+| vtable or fops-struct callbacks missing from a stripped arm binary | [`ptrentry`](#ptrentry----on--off-default-on) |
+| driver op-struct function pointers left undiscovered | [`ptrentry`](#ptrentry----on--off-default-on) |
+| a stripped arm function list carries sub_<addr> entries two bytes below the real function | [`poolentry`](#poolentry----on--off-default-on) |
+| the same arm function appears twice at addresses two bytes apart | [`poolentry`](#poolentry----on--off-default-on) |
+| a decompiled arm function returns a constant or drops its first parameter because of a dead leading movs | [`poolentry`](#poolentry----on--off-default-on) |
+| kuna reports far more functions than the binary has on bare-metal arm | [`poolentry`](#poolentry----on--off-default-on) |
+| an arm function entry lands one halfword before the real prologue | [`poolentry`](#poolentry----on--off-default-on) |
+| a32 u-boot recall is far below the cortex-m images | [`poolentry`](#poolentry----on--off-default-on) |
+| an A32 function after a Thumb helper decompiles as halt_missing in a stripped ARM binary | [`armwalkmode`](#armwalkmode----on--off-default-on) |
+| flow reaches unmapped memory two bytes into an A32 instruction | [`armwalkmode`](#armwalkmode----on--off-default-on) |
+| a function reached with bl after a blx call decodes in the wrong instruction set | [`armwalkmode`](#armwalkmode----on--off-default-on) |
+| --option listing off fixes the decompilation of an ARM function | [`armwalkmode`](#armwalkmode----on--off-default-on) |
+| --isa arm decompiles an ARM function correctly that the default run turns into garbage | [`armwalkmode`](#armwalkmode----on--off-default-on) |
+| a function name in the emitted c contains a newline and splits the declaration across two lines | [`symbolnamechars`](#symbolnamechars----off--safe--ident-default-safe) |
+| the // Function: header comment ends early and the address becomes code | [`symbolnamechars`](#symbolnamechars----off--safe--ident-default-safe) |
+| decompile-project emits two functions with the same name and the .h has a duplicate prototype | [`symbolnamechars`](#symbolnamechars----off--safe--ident-default-safe) |
+| a symbol name renders with a U+FFFD replacement character | [`symbolnamechars`](#symbolnamechars----off--safe--ident-default-safe) |
+| kuna decompile <name> cannot address a function that kuna functions printed | [`symbolnamechars`](#symbolnamechars----off--safe--ident-default-safe) |
+| the exported .c does not compile because a function name contains */ or // | [`symbolnamechars`](#symbolnamechars----off--safe--ident-default-safe) |
+| a glibc math/mem/str wrapper tail-jumps to `(*dat_...)(...)` with the callee dropped | [`ifuncfpret`](#ifuncfpret----on--off-default-on) |
+| an x86-64 IFUNC .plt.sec stub is not a discovered function | [`ifuncfpret`](#ifuncfpret----on--off-default-on) |
+| xmm0 read uninitialized after calling a void-typed ifunc-dispatching wrapper | [`ifuncfpret`](#ifuncfpret----on--off-default-on) |
+| SPE instructions in a PowerPC ELF decode as AltiVec vector operations | [`ppcapu`](#ppcapu----on--off-default-off) |
+| an e500 function that adds two 64-bit SPE registers renders vectorAddUnsignedByteSaturate on 16-byte locals | [`ppcapu`](#ppcapu----on--off-default-off) |
+| a -g binary still shows default names and inferred types | [`dwarf`](#dwarf----on--off-default-on) |
+| dwarf function/global names and typed signatures ignored | [`dwarf`](#dwarf----on--off-default-on) |
+| no /* file:line */ source-location comments in the output | [`dwarf_lines`](#dwarf_lines----on--off-default-off) |
+| want each instruction annotated with its dwarf source line | [`dwarf_lines`](#dwarf_lines----on--off-default-off) |
+| c++ member functions on a stripped binary decompile with a0/a1 parameters | [`cppsig`](#cppsig----off--proven--inferred-default-proven) |
+| this renders as int8 * or unsigned long instead of the class type | [`cppsig`](#cppsig----off--proven--inferred-default-proven) |
+| a mangled symbol names the function but not its parameter types | [`cppsig`](#cppsig----off--proven--inferred-default-proven) |
+| no signature recovery on a stripped c++ shared library | [`cppsig`](#cppsig----off--proven--inferred-default-proven) |
+| absolute function-pointer table in rodata never recognized | [`addrtable`](#addrtable----on--off-default-off) |
+| indirect calls through an unrecovered address table in a stripped target | [`addrtable`](#addrtable----on--off-default-off) |
+| an immediate operand pointing at a rodata string renders as a bare number | [`operand_refs`](#operand_refs----on--off-default-off) |
+| string argument of a no-prototype call not typed as char[N] | [`operand_refs`](#operand_refs----on--off-default-off) |
+| printf/scanf variadic arguments render untyped at the call site | [`formatstring`](#formatstring----off--static--full--on-default-static) |
+| %d and %s arguments carry generic types instead of int/char * | [`formatstring`](#formatstring----off--static--full--on-default-static) |
+| error/warn/syslog format arguments carry generic types | [`formatstring`](#formatstring----off--static--full--on-default-static) |
+| noreturn discovery inert on a stripped binary | [`listing`](#listing----on--off-default-off) |
+| analysis passes that need whole-image xrefs do nothing | [`listing`](#listing----on--off-default-off) |
+| no program-wide instruction/xref/function model for consumer passes | [`listing`](#listing----on--off-default-off) |
+| fast decompile-project emits only import veneers and the binary entry | [`fast_funcdisc`](#fast_funcdisc----on--off-default-off) |
+| internal direct callees have no project bodies | [`fast_funcdisc`](#fast_funcdisc----on--off-default-off) |
+| function reachable through a callback or vtable pointer is absent while explicit --addr decompiles it | [`fast_funcdisc`](#fast_funcdisc----on--off-default-off) |
+| stripped static-linked library function stays sub_<addr> although its fingerprint is known | [`fid`](#fid----on--off--strict-default-off) |
+| no .fid database renames applied in a stripped binary | [`fid`](#fid----on--off--strict-default-off) |
+| a stripped static binary lists libc functions as sub_<addr> | [`flirt`](#flirt----on--off-default-off) |
+| kuna cannot use flirt .sig signatures | [`flirt`](#flirt----on--off-default-off) |
+| memcpy and printf in a static binary have no names | [`flirt`](#flirt----on--off-default-off) |
+| msvc c++ class names missing and vftables left as unnamed data | [`rtti`](#rtti----on--off-default-on) |
+| no Class::vftable or RTTI_ labels in a windows pe with polymorphic classes | [`rtti`](#rtti----on--off-default-on) |
+| gcc/clang c++ class names missing and vtables left as unnamed DAT_ data | [`itaniumrtti`](#itaniumrtti----on--off-default-on) |
+| no Class::vtable or typeinfo labels in a stripped elf with polymorphic classes | [`itaniumrtti`](#itaniumrtti----on--off-default-on) |
+| virtual dispatch slot resolves to sub_<addr> with no class | [`itaniumrtti`](#itaniumrtti----on--off-default-on) |
+| function reachable only through a rodata function-pointer table never discovered | [`aif`](#aif----off--on--strict--precise-default-off) |
+| undefined gap between functions that clearly holds code | [`aif`](#aif----off--on--strict--precise-default-off) |
+| call *reg targets missing from the function list | [`aif`](#aif----off--on--strict--precise-default-off) |
+| a stripped binary reports far more functions than it has | [`aif`](#aif----off--on--strict--precise-default-off) |
+| a discovered function starts in the middle of another functions body | [`aif`](#aif----off--on--strict--precise-default-off) |
+| a sub_ entry lands on an ordinary call or mov instruction rather than a prologue | [`aif`](#aif----off--on--strict--precise-default-off) |
+| two overlapping functions decompile the same instructions twice | [`aif`](#aif----off--on--strict--precise-default-off) |
+| aif adds thousands of entries a reference decompiler does not agree are functions | [`aif`](#aif----off--on--strict--precise-default-off) |
+| an arm function entry lands one halfword before the real prologue | [`aif`](#aif----off--on--strict--precise-default-off) |
+| a sub_ entry lands on a routine that calls nothing and only falls off the end of a hole | [`aif`](#aif----off--on--strict--precise-default-off) |
+| aif accepts a function on nothing but four other functions sharing its first two instructions | [`aif`](#aif----off--on--strict--precise-default-off) |
+| a stripped function list is full of leaf routines that are not functions | [`aif`](#aif----off--on--strict--precise-default-off) |
+| aif lists return-terminated i386 switch cases as functions | [`x86listingswitch`](#x86listingswitch----on--off-default-off) |
+| a direct callee reached only through an i386 switch case is missing from discovery | [`x86listingswitch`](#x86listingswitch----on--off-default-off) |
+| the discovery Listing stops at an absolute-pointer jump table | [`x86listingswitch`](#x86listingswitch----on--off-default-off) |
+| independent reference queries see case bodies absent from the initial instruction partition | [`x86listingswitch`](#x86listingswitch----on--off-default-off) |
+| a sub_ entry starts on a literal pool word one word before a real function | [`aifpoolslide`](#aifpoolslide----on--off-default-on) |
+| a stripped arm function list lists a function 4 bytes early | [`aifpoolslide`](#aifpoolslide----on--off-default-on) |
+| a function's first decoded instruction is a conditional addvs or a movs r0,#0 that no code reaches | [`aifpoolslide`](#aifpoolslide----on--off-default-on) |
+| a real arm function is missing from a stripped inventory while the entry just before it is a pool word | [`aifpoolslide`](#aifpoolslide----on--off-default-on) |
+| aif adds entries on literal pools | [`aifpoolslide`](#aifpoolslide----on--off-default-on) |
+| routine reached only by a tail B produces no decompiled output at all | [`tailcallentry`](#tailcallentry----on--off-default-on) |
+| a shared ISR handler is swallowed by the two-instruction stub that branches to it | [`tailcallentry`](#tailcallentry----on--off-default-on) |
+| function entry missing where the previous function ends in an unconditional branch | [`tailcallentry`](#tailcallentry----on--off-default-on) |
+| kuna emits one oversized function where the ground truth has two | [`tailcallentry`](#tailcallentry----on--off-default-on) |
+| go function parameters missing or void while the body reads rax/rbx locals that are never assigned | [`goabi`](#goabi----auto--off-default-auto) |
+| a go function returning two values loses the second and the statements computing it | [`goabi`](#goabi----auto--off-default-auto) |
+| go output full of unassigned register-commented locals | [`goabi`](#goabi----auto--off-default-auto) |
+| multi-return go call sites read registers the call never defines | [`goabi`](#goabi----auto--off-default-auto) |
+| go decompile shows runtime.newobject(&DAT_...) or convT(&DAT_...) with no hint which type is allocated | [`gotypeglobals`](#gotypeglobals----on--off-default-on) |
+| interface conversion call sites in go output pass anonymous dat_ globals | [`gotypeglobals`](#gotypeglobals----on--off-default-on) |
+| go:itab interface-dispatch tables render as bare &DAT_ addresses instead of go:itab.<concrete>,<interface> | [`gotypeglobals`](#gotypeglobals----on--off-default-on) |
+| runtime functions walking type descriptors render raw offset arithmetic instead of named fields | [`gotypeglobals`](#gotypeglobals----on--off-default-on) |
+| harvested go struct names exist in the type catalog but never appear in any function's C | [`gotypeglobals`](#gotypeglobals----on--off-default-on) |
+| a dyld_shared_cache file is rejected as an unrecognized input format | [`dyldimage`](#dyldimage----none---default-none) |
+| cannot decompile an ios or macos system library because it only exists inside the dyld shared cache | [`dyldimage`](#dyldimage----none---default-none) |
+| dyld shared cache holds N images; choose one with --image | [`dyldimage`](#dyldimage----none---default-none) |
+| address is not mapped in this input for a callee in another image of the dyld shared cache | [`dyldimage`](#dyldimage----none---default-none) |
+| following a call from one cache image into another needs a second run | [`dyldimage`](#dyldimage----none---default-none) |
+| calls in a dyld shared cache image render as sub_<addr> into a __TEXT_STUBS island | [`dyldcrossrefs`](#dyldcrossrefs----on--off-default-on) |
+| a cache image's __got loads name nothing | [`dyldcrossrefs`](#dyldcrossrefs----on--off-default-on) |
+| cross-library calls of an ios framework have no names | [`dyldcrossrefs`](#dyldcrossrefs----on--off-default-on) |
+| rust binary renders with c output and no rust abi handling because a stripped image lost its language signals | [`sourcelang`](#sourcelang----auto--c--rust--go--swift-default-auto) |
+| a c binary is detected as another language and language-gated rules misfire | [`sourcelang`](#sourcelang----auto--c--rust--go--swift-default-auto) |
+| go runtime passes do not run on a go binary whose buildinfo section was stripped | [`sourcelang`](#sourcelang----auto--c--rust--go--swift-default-auto) |
+| kuna decompile on a large c++ .so needs ~750 MB for one function | [`lazyfuncs`](#lazyfuncs----on--off-default-off) |
+| read symbols dominates a single-function run on an entry-dense image | [`lazyfuncs`](#lazyfuncs----on--off-default-off) |
+| objective-c methods render as sub_<addr> instead of -[Class sel] | [`objc`](#objc----on--off-default-on) |
+| __objc_ metadata present but classes and selectors unnamed in a mach-o | [`objc`](#objc----on--off-default-on) |
+| a message send renders as sub_<addr>(obj) through an __objc_stubs entry | [`objc`](#objc----on--off-default-on) |
+| objc_msgSend selector argument renders as dat_<addr> | [`objc`](#objc----on--off-default-on) |
+| a category method renders as sub_<addr> instead of -[Class(Category) sel] | [`objc`](#objc----on--off-default-on) |
+| objc_msgSend$setFoo:() renders with no argument although the caller sets one | [`objcsdk`](#objcsdk------off-default-off) |
+| objc_msgSend$setAlpha: shows 0x3ff0000000000000 instead of 1.0 | [`objcsdk`](#objcsdk------off-default-off) |
+| objc_msgSend$setFrame: passes one word where a CGRect was built | [`objcsdk`](#objcsdk------off-default-off) |
+| a framework method's stub returns undefined16 or unsigned long instead of its declared type | [`objcsdk`](#objcsdk------off-default-off) |
+| swift binary functions render as sub_<addr> although swift5 metadata sections are present | [`swiftmetadata`](#swiftmetadata----on--off-default-on) |
+| type metadata accessors unnamed in a stripped swift mach-o | [`swiftmetadata`](#swiftmetadata----on--off-default-on) |
+| protocol witnesses and class methods of a stripped swift app have no names | [`swiftmetadata`](#swiftmetadata----on--off-default-on) |
+| core-foundation / objc string constants render as dat_<addr> instead of their text | [`cfstrings`](#cfstrings----on--off--annotate-default-on) |
+| a CFSTR(...) argument shows an address in a mach-o | [`cfstrings`](#cfstrings----on--off--annotate-default-on) |
+| swift struct and class fields render as raw offsets off self | [`swifttypes`](#swifttypes----on--off-default-on) |
+| swift getters named by swiftmetadata take no self parameter | [`swifttypes`](#swifttypes----on--off-default-on) |
+| type metadata accessors return undefined16 | [`swifttypes`](#swifttypes----on--off-default-on) |
+| swift methods named by swiftmetadata read self from an unnamed x20 or r13 | [`swiftcall`](#swiftcall----on--off-default-on) |
+| calls to swift methods drop the self they pass | [`swiftcall`](#swiftcall----on--off-default-on) |
+| a try? error path or a do/catch after a throwing call folds away | [`swiftcall`](#swiftcall----on--off-default-on) |
+| swift struct mutating methods write through an untyped register | [`swiftcall`](#swiftcall----on--off-default-on) |
+| stripped windows pe functions stay FUN_<addr> although a matching .pdb exists | [`pdb`](#pdb----on--off-default-on) |
+| pdb symbol names not applied to a pe | [`pdb`](#pdb----on--off-default-on) |
+| a .pdb beside the exe is ignored | [`pdb`](#pdb----on--off-default-on) |
+| windows function names need kuna_pdb_path to be set by hand | [`pdb`](#pdb----on--off-default-on) |
+| arm64e mach-o decoded with the generic v8A spec so pointer-auth ops are unmodeled | [`macho-arm64e`](#macho-arm64e----on--off-default-on) |
+| pac instructions in an apple-silicon binary not modeled by the loaded spec | [`macho-arm64e`](#macho-arm64e----on--off-default-on) |
+| an iOS kernelcache (IMG4/IM4P) is rejected as an unrecognized input format | [`kernelcache`](#kernelcache----auto--off---default-auto) |
+| kuna functions on a decompressed MH_FILESET kernelcache finds no functions | [`kernelcache`](#kernelcache----auto--off---default-auto) |
+| a kext cannot be selected out of a kernel collection | [`kernelcache`](#kernelcache----auto--off---default-auto) |
+| pointers in a kernelcache read as packed chained-fixup words instead of addresses | [`kernelcache`](#kernelcache----auto--off---default-auto) |
+| a kext in an Auxiliary kernel collection calls the kernel through a raw number instead of a named function | [`kernelcache-boot`](#kernelcache-boot----auto--off---default-auto) |
+| pointers into the boot kernel collection read as packed chained-fixup words | [`kernelcache-boot`](#kernelcache-boot----auto--off---default-auto) |
+| vtable and metaclass pointers of a third-party kext are not addresses | [`kernelcache-boot`](#kernelcache-boot----auto--off---default-auto) |
+| AuxiliaryKernelExtensions.kc or SystemKernelExtensions.kc loads with unresolved kernel references | [`kernelcache-boot`](#kernelcache-boot----auto--off---default-auto) |
+| go functions lose source parameters despite dwarf | [`godwarfsig`](#godwarfsig----on--off-default-on) |
+| go identity function decompiles as void | [`godwarfsig`](#godwarfsig----on--off-default-on) |
+| go result parameters appear as inputs | [`godwarfsig`](#godwarfsig----on--off-default-on) |
+| a CVF Fortran PE32 image keeps a .trace section but its routines print as sub_<addr> | [`cvftrace`](#cvftrace----on--lines--off-default-on) |
+| CVF source file and line comments are missing | [`cvftrace`](#cvftrace----on--lines--off-default-on) |
+| comparison constant off by one versus upstream ghidra (x <= 9 vs x < 10) | [`compareform`](#compareform----canonical--original-default-original) |
+| need the analysis-canonical compare form to diff against upstream ghidra output | [`compareform`](#compareform----canonical--original-default-original) |
+| &base[index] rendering unwanted; consumer expects raw pointer arithmetic | [`arraynotation`](#arraynotation----on--off-default-on) |
+| indexed array form where base + offset arithmetic is desired for diffing | [`arraynotation`](#arraynotation----on--off-default-on) |
+| if (x != 0) where idiomatic C reads if (x) | [`truthycond`](#truthycond----on--off-default-on) |
+| if (p == NULL) where if (!p) is wanted | [`truthycond`](#truthycond----on--off-default-on) |
+| explicit zero comparison in conditions unwanted | [`truthycond`](#truthycond----on--off-default-on) |
+| truthy condition rendering needs to match upstream ghidra for diffing | [`truthycond`](#truthycond----on--off-default-on) |
+| if (x) { stmt; } where braceless if (x) stmt; is wanted | [`braceelide`](#braceelide----on--off-default-on) |
+| single-statement if body keeps braces | [`braceelide`](#braceelide----on--off-default-on) |
+| braced one-liner bodies unwanted | [`braceelide`](#braceelide----on--off-default-on) |
+| brace style needs to match upstream ghidra for diffing | [`braceelide`](#braceelide----on--off-default-on) |
+| the emitted C contains a member named like `._4_2_` or `._0_8_` | [`partialaccess`](#partialaccess----on--off-default-on) |
+| a variable is read as `v1._6_1_` and the text does not compile | [`partialaccess`](#partialaccess----on--off-default-on) |
+| a 16-byte register pair returns as `v1._0_16_` | [`partialaccess`](#partialaccess----on--off-default-on) |
+| a libc record such as `stat` is read as `v3._24_4_` | [`partialaccess`](#partialaccess----on--off-default-on) |
+| Rust assigns scalar zero to a recovered [u8; 16] destination | [`rustarrayzero`](#rustarrayzero----on--off-default-off) |
+| a wide zero store fails with Rust E0308 | [`rustarrayzero`](#rustarrayzero----on--off-default-off) |
+| a byte-array field needs a contextually typed zero value | [`rustarrayzero`](#rustarrayzero----on--off-default-off) |
+| mapped unsigned char array uses invalid ._offset_size_ members | [`bytearrayc`](#bytearrayc----on--off-default-off) |
+| wide byte-array accesses need compilable C | [`bytearrayc`](#bytearrayc----on--off-default-off) |
+| unaligned mapped integer transfer needs an alias-safe C representation | [`bytearrayc`](#bytearrayc----on--off-default-off) |
+| a call argument is a raw address behind a cast, like sub_e4ca((struct_2 *)0x2b080) | [`globalref`](#globalref----on--off-default-on) |
+| (unsigned long *)0x21180 or (void *)0x2b460 where IDA prints qword_21180 or &unk_2B460 | [`globalref`](#globalref----on--off-default-on) |
+| getopt_long's option table prints as (option *)0x2a0c0 | [`globalref`](#globalref----on--off-default-on) |
+| a loop runs from (int *)0x1a664 to (int *)0x1a690 | [`globalref`](#globalref----on--off-default-on) |
+| the same global is dat_2b080 in one statement and (struct_2 *)0x2b080 in the next | [`globalref`](#globalref----on--off-default-on) |
+| a constant address you want to keep as an address (flip off) | [`globalref`](#globalref----on--off-default-on) |
+| full-line WARNING banner comments clutter the output | [`warnstyle`](#warnstyle----inline--banner-default-inline) |
+| warning text wanted inline at the end of the statement it describes | [`warnstyle`](#warnstyle----inline--banner-default-inline) |
+| terse warning slugs unwanted; full upstream warning text needed | [`warnstyle`](#warnstyle----inline--banner-default-inline) |
+| warning style needs to match upstream ghidra for diffing | [`warnstyle`](#warnstyle----inline--banner-default-inline) |
+| an AArch64 function that tags a pointer (irg, addg) decompiles to return a0 | [`acleintrinsics`](#acleintrinsics----on--off-default-on) |
+| stg, st2g or stzg leave no trace in the output of MTE-hardened AArch64 code | [`acleintrinsics`](#acleintrinsics----on--off-default-on) |
+| DataMemoryBarrier(2,3) or DataSynchronizationBarrier(3,3,0) where the source called __dmb or __dsb | [`acleintrinsics`](#acleintrinsics----on--off-default-on) |
+| WaitForInterrupt() or Yield() where the source called __wfi or __yield | [`acleintrinsics`](#acleintrinsics----on--off-default-on) |
+| a DOS program's float code decompiles as calls through swi(0x35) and other INT 34h-3Dh vectors | [`fpuemu`](#fpuemu----off--auto--on-default-auto) |
+| Control flow encountered bad instruction data in a DOS function that does float math | [`fpuemu`](#fpuemu----off--auto--on-default-auto) |
+| a phantom function starts inside an INT 35h instruction's operand bytes | [`fpuemu`](#fpuemu----off--auto--on-default-auto) |
+| swi(0x3d) calls where the program waits for the coprocessor | [`fpuemu`](#fpuemu----off--auto--on-default-auto) |
+| a value stored before an Octeon atomic add is returned instead of the reloaded memory | [`octeoneffects`](#octeoneffects----off--atomic--ordered-default-atomic) |
+| a store read only by a following ll or lld disappears | [`octeoneffects`](#octeoneffects----off--atomic--ordered-default-atomic) |
+| an Octeon fetch-and-add result or old value prints with the wrong width or behind an (int) cast | [`octeoneffects`](#octeoneffects----off--atomic--ordered-default-atomic) |
+| a store before syncw disappears or a reload after it reuses the stored value (use ordered) | [`octeoneffects`](#octeoneffects----off--atomic--ordered-default-atomic) |
+| a stack array is declared with 4 elements while a loop subscripts it further | [`arrayextent`](#arrayextent----off--bound--on-default-on) |
+| the elements after the fourth of a local array are separate scalars that are assigned and never read | [`arrayextent`](#arrayextent----off--bound--on-default-on) |
+| a recompiled function reads past a local array under AddressSanitizer | [`arrayextent`](#arrayextent----off--bound--on-default-on) |
+| a masked or clamped index (`v[n & 7]`, `min(n, 5)`) subscripts a smaller declared array | [`arrayextent`](#arrayextent----off--bound--on-default-on) |
+| on SPARC32 a two-word object zeroed around a call's delay slot and passed by address (`mbstate_t`) splits into a scalar and a neighbour that is assigned and never read | [`arrayextent`](#arrayextent----off--bound--on-default-on) |
+| loop walks an array with a raw offset accumulator (iVar += 0x414) instead of an index | [`arraystride`](#arraystride----on--off-default-on) |
+| strided induction offset never re-expressed as counter*stride array indexing | [`arraystride`](#arraystride----on--off-default-on) |
+| a Rust Result or Option producer recovers as bool and the payload register is missing from the return | [`rustabi`](#rustabi----off--auto--always-default-auto) |
+| a local commented with a register name is declared and read but never assigned anywhere in the function | [`rustabi`](#rustabi----off--auto--always-default-auto) |
+| a call to a Rust function that returns Result renders with no output at all | [`rustabi`](#rustabi----off--auto--always-default-auto) |
+| a discriminant guard tests a variable whose companion payload variable has no definition | [`rustabi`](#rustabi----off--auto--always-default-auto) |
+| two-register return recovered as one register when the first half holds a setCC flag | [`rustabi`](#rustabi----off--auto--always-default-auto) |
+| a call passes one more argument than the callee's own recovered prototype takes | [`argclobber`](#argclobber----on--off-default-on-destructive-opt-in) |
+| the last argument of a call is a local that is never assigned anywhere in the function | [`argclobber`](#argclobber----on--off-default-on-destructive-opt-in) |
+| a declaration carries a // rdx storage comment and no write | [`argclobber`](#argclobber----on--off-default-on-destructive-opt-in) |
+| two calls to the same callee in one function render with different arities and the longer one reads an undefined value | [`argclobber`](#argclobber----on--off-default-on-destructive-opt-in) |
+| Ghidra names the same value extraout_RDX and kuna renders it as an ordinary local | [`argclobber`](#argclobber----on--off-default-on-destructive-opt-in) |
+| a wrapper renders void f(void) { g(); } although g takes an argument in the same output | [`passthrough`](#passthrough----on--off-default-on) |
+| a call renders with no arguments while the callee's declaration in the same file takes one | [`passthrough`](#passthrough----on--off-default-on) |
+| a tail-call thunk returns void while the function it jumps to returns a value | [`passthrough`](#passthrough----on--off-default-on) |
+| decompiling the caller shows a parameter-less function whose only instruction is a jmp to a function with parameters | [`passthrough`](#passthrough----on--off-default-on) |
+| DWARF gives a forwarding function a parameter kuna does not | [`passthrough`](#passthrough----on--off-default-on) |
+| a function that returns a value on one path and tail-calls a function on the other is printed void | [`mixedtailret`](#mixedtailret----on--off-default-off) |
+| if (6 <= *a0) return; getv(); // tail-call where the source returns *a0 on that path | [`mixedtailret`](#mixedtailret----on--off-default-off) |
+| a function returns xmm0 although its callee and its other path return an int in eax | [`mixedtailret`](#mixedtailret----on--off-default-off) |
+| the return value a function tests before returning it is lost beside a tail call | [`mixedtailret`](#mixedtailret----on--off-default-off) |
+| call emitted with no arguments or fewer arguments than the disassembly passes | [`calloverlap`](#calloverlap----auto--off--in--full-default-auto) |
+| call result read from a local that is never assigned | [`calloverlap`](#calloverlap----auto--off--in--full-default-auto) |
+| enclosing function loses its own parameter list and return type (void f(void)) | [`calloverlap`](#calloverlap----auto--off--in--full-default-auto) |
+| argument register written whole-width by pxor movdqa movdqu por pand orpd or movq before the call | [`calloverlap`](#calloverlap----auto--off--in--full-default-auto) |
+| second call binds a stale pre-call value where the first call should have defined it | [`calloverlap`](#calloverlap----auto--off--in--full-default-auto) |
+| stack array declared and read but never initialised in the emitted C | [`indexaliasguard`](#indexaliasguard----off--load--global--full-default-global) |
+| a run of direct frame stores vanishes when the same slots are later read through a pointer | [`indexaliasguard`](#indexaliasguard----off--load--global--full-default-global) |
+| constants loaded from .rdata into a local buffer do not appear in the decompilation | [`indexaliasguard`](#indexaliasguard----off--load--global--full-default-global) |
+| accumulator or key schedule buffer looks uninitialised before an XOR loop walks it | [`indexaliasguard`](#indexaliasguard----off--load--global--full-default-global) |
+| value stored through a pointer does not appear to reach the frame slot it aliases | [`indexaliasguard`](#indexaliasguard----off--load--global--full-default-global) |
+| a global read back after a store through a pointer prints the value stored before that store | [`indexaliasguard`](#indexaliasguard----off--load--global--full-default-global) |
+| a global read before a store through a pointer is printed after it | [`indexaliasguard`](#indexaliasguard----off--load--global--full-default-global) |
+| a store to a global before a pointer load is missing when the global is stored again later | [`indexaliasguard`](#indexaliasguard----off--load--global--full-default-global) |
+| a loop that bumps a global around a pointer load prints with no store to the global | [`indexaliasguard`](#indexaliasguard----off--load--global--full-default-global) |
+| iVar1/uVar2/param_1 ghidra-style names wanted instead of v1/a1 (set ghidra) | [`namestyle`](#namestyle----angr--ghidra-default-angr) |
+| v-numbered locals and sub_/dat_/label_ names in the default output | [`namestyle`](#namestyle----angr--ghidra-default-angr) |
+| byte-for-byte comparison against upstream ghidra naming | [`namestyle`](#namestyle----angr--ghidra-default-angr) |
+| undefined8/xunknownN placeholder types wanted for upstream comparison (flip off) | [`realtypes`](#realtypes----on--off-default-on) |
+| size-guessed unsigned long/int/char types shown for values the inference never typed | [`realtypes`](#realtypes----on--off-default-on) |
+| a void function ends with a redundant return; the source does not have | [`voidtailreturn`](#voidtailreturn----on--off-default-on) |
+| GED counts one extra exit node against an otherwise perfect function | [`voidtailreturn`](#voidtailreturn----on--off-default-on) |
+| the last statement of a void function is a bare return | [`voidtailreturn`](#voidtailreturn----on--off-default-on) |
+| a data import read through __got renders *dat_<slot> | [`importdata`](#importdata----on--off-default-on) |
+| __stack_chk_guard shows as a dereferenced dat_ address | [`importdata`](#importdata----on--off-default-on) |
+| imported globals are anonymous even though their GOT slot is named | [`importdata`](#importdata----on--off-default-on) |
+| an ELF shared object reads stdout or environ as *dat_<slot> or *stdout_ptr | [`importdata`](#importdata----on--off-default-on) |
+| a libc argument is cast to the very type the parameter declares, memchr(v10,(int)v4,n) | [`castimplied`](#castimplied----on--off-default-on) |
+| a widening cast assigned to a variable already declared that type, v2 = (long)v1; with long v2 | [`castimplied`](#castimplied----on--off-default-on) |
+| return (unsigned long)v1; from a function declared unsigned long | [`castimplied`](#castimplied----on--off-default-on) |
+| several casts stacked over one byte, (long)(int)(unsigned int)(unsigned char)c | [`castimplied`](#castimplied----on--off-default-on) |
+| kuna prints more casts than IDA on the same function | [`castimplied`](#castimplied----on--off-default-on) |
+| v10 and v11 declared between v1 and v2 | [`declorder`](#declorder----natural--name-default-natural) |
+| local declarations in string order v1, v10, v11, v2 | [`declorder`](#declorder----natural--name-default-natural) |
+| a numbered local hard to find among ten or more declarations | [`declorder`](#declorder----natural--name-default-natural) |
+| a local holding open()'s result named v1 | [`libcnames`](#libcnames----on--off-default-on) |
+| read's byte count kept as a vN | [`libcnames`](#libcnames----on--off-default-on) |
+| a stack buffer passed to read() or ReadFile() named vN | [`libcnames`](#libcnames----on--off-default-on) |
+| a struct stat or a DWORD whose address a library call takes named vN | [`libcnames`](#libcnames----on--off-default-on) |
+| a buffer length from strlen named vN | [`libcnames`](#libcnames----on--off-default-on) |
+| a local passed to a libc function keeps a vN name | [`libcnames`](#libcnames----on--off-default-on) |
+| a handle from CreateFileW or LoadLibraryW named vN | [`libcnames`](#libcnames----on--off-default-on) |
+| kuna names fewer locals than IDA on libc-heavy code | [`libcnames`](#libcnames----on--off-default-on) |
+| a double parameter stored into a global prints as unsigned long and moves ahead of the integer parameters | [`floatglobals`](#floatglobals----on--off-default-on) |
+| a float parameter copied into a global prints as unsigned int | [`floatglobals`](#floatglobals----on--off-default-on) |
+| a global passed to a float parameter prints as a union reinterpretation ((union { unsigned int from; float to; }){ .from = dat_10001d78 }).to | [`floatglobals`](#floatglobals----on--off-default-on) |
+| firmware calls of float helpers wrap every global argument in a union | [`floatglobals`](#floatglobals----on--off-default-on) |
+| a parameter is declared char and every use of it is if (a0) or !a0 | [`boolbyte`](#boolbyte----on--off-default-on) |
+| a one-byte local is char but only ever assigned 0 and 1 | [`boolbyte`](#boolbyte----on--off-default-on) |
+| a flag argument reads as a character, so a call site looks like it passes text | [`boolbyte`](#boolbyte----on--off-default-on) |
+| char v1; followed by v1 = 0; v1 = 1; if (v1) | [`boolbyte`](#boolbyte----on--off-default-on) |
+| DWARF says _Bool and kuna says char or unsigned char | [`boolbyte`](#boolbyte----on--off-default-on) |
+| a string pointer is declared unsigned char * and its bytes print as (char)*p | [`charbyte`](#charbyte----on--off-default-on) |
+| a comparison against a character constant prints as a number: v3 != 9, *p == 0x2d | [`charbyte`](#charbyte----on--off-default-on) |
+| a wrapper takes unsigned char *a1 and passes (char *)a1 to mbrtowc or strlen | [`charbyte`](#charbyte----on--off-default-on) |
+| strchr("...",(int)(char)*v1) | [`charbyte`](#charbyte----on--off-default-on) |
+| a loop variable that walks text is unsigned char | [`charbyte`](#charbyte----on--off-default-on) |
+| *(unsigned int *)((long)a0 + 0xac) | [`castarith`](#castarith----on--off-default-on) |
+| every read through one parameter is a cast to (long) and back | [`castarith`](#castarith----on--off-default-on) |
+| (char *)((long)v4 + 0x10) assigned to a pointer variable | [`castarith`](#castarith----on--off-default-on) |
+| (void *)((long)a0 + 8) passed to a callee | [`castarith`](#castarith----on--off-default-on) |
+| two casts for one field read where IDA prints one | [`castarith`](#castarith----on--off-default-on) |
+| *(long *)((long)v7 + v19 * 8) | [`castindex`](#castindex----on--off-default-on) |
+| (long)v24 - (long)v14 passed as a length | [`castindex`](#castindex----on--off-default-on) |
+| free(*(void **)((long)v1 + (long)v2 * 8)) | [`castindex`](#castindex----on--off-default-on) |
+| an array walk through a void * base prints two casts per element | [`castindex`](#castindex----on--off-default-on) |
+| a pointer difference of two char * is cast to long on both sides | [`castindex`](#castindex----on--off-default-on) |
+| int4/uint1/uint4/float8/float10 appear in the emitted C instead of C type names | [`ctypes`](#ctypes----on--off-default-off) |
+| the same function mixes `unsigned int` with `int4` | [`ctypes`](#ctypes----on--off-default-off) |
+| `code *` appears as a function-pointer type | [`ctypes`](#ctypes----on--off-default-off) |
+| the emitted C does not compile because its type names are not C | [`ctypes`](#ctypes----on--off-default-off) |
+| the same local declared once although many HighVariables share the stack slot | [`dedupvardecls`](#dedupvardecls----on--off-default-on) |
+| flip off to see one declaration line per high (e.g. int4 option_index repeated hundreds of times) | [`dedupvardecls`](#dedupvardecls----on--off-default-on) |
+| an untyped MIPS32 big-endian producer loses its low return word despite a declared 64-bit consumer | [`callwide`](#callwide----on--off-default-off) |
+| producer and caller disagree about a complete big-endian eight-byte integer return | [`callwide`](#callwide----on--off-default-off) |
+| a long long return on a big-endian 32-bit target prints CONCAT44 with the low word first | [`bejoin`](#bejoin----off--evidence--callers--on-default-callers) |
+| a long long read from memory on PowerPC, MIPS, SPARC or ARM big-endian returns CONCAT44(p[1],p[0]) | [`bejoin`](#bejoin----off--evidence--callers--on-default-callers) |
+| a 64-bit product, sum or shift returned on PowerPC, MIPS, SPARC or ARM big-endian comes back with its halves swapped | [`bejoin`](#bejoin----off--evidence--callers--on-default-callers) |
+| an AVR function returning a 16-bit int prints a read of R25R24 nothing assigns | [`bejoin`](#bejoin----off--evidence--callers--on-default-callers) |
+| a big-endian function that returns a call's long long prints CONCAT44((int)v1,(int)(v1 >> 0x20)) | [`bejoinpass`](#bejoinpass----off--whole--high-default-whole) |
+| a wrapper of a 64-bit callee on PowerPC or MIPS returns the callee's value with its halves swapped | [`bejoinpass`](#bejoinpass----off--whole--high-default-whole) |
+| a u32 that returns the high word of a 64-bit call result prints as unsigned long long | [`bejoinpass`](#bejoinpass----off--whole--high-default-whole) |
+| a call to a function returning int is printed (unsigned long)(unsigned int)f() on RISC-V or LoongArch | [`narrowext`](#narrowext----off--abi--compiler-default-abi) |
+| a signed char or short result is zero-extended where the callee sign-extends it | [`narrowext`](#narrowext----off--abi--compiler-default-abi) |
+| a declared int parameter used as a 64-bit value prints (unsigned long)(unsigned int)x | [`narrowext`](#narrowext----off--abi--compiler-default-abi) |
+| a narrow result or parameter prints as CONCAT31(v1,f()) or CONCAT44(v1,x) with an unassigned v1 | [`narrowext`](#narrowext----off--abi--compiler-default-abi) |
+| a double return becomes SUB84 or zero | [`armfloatreturn`](#armfloatreturn----on--off-default-on) |
+| an ARM hard-float function loses its d0 parameter | [`armfloatreturn`](#armfloatreturn----on--off-default-on) |
+| a caller reads an undefined floating result | [`armfloatreturn`](#armfloatreturn----on--off-default-on) |
+| missing floating argument | [`armfloatargs`](#armfloatargs----on--off-default-on) |
+| double input split into two words | [`armfloatargs`](#armfloatargs----on--off-default-on) |
+| caller and callee disagree on mixed argument contract | [`armfloatargs`](#armfloatargs----on--off-default-on) |
+| unconditional loop prints do-while (true) at the bottom | [`infloopstyle`](#infloopstyle----while--do-default-while) |
+| prefer while (true) at the top | [`infloopstyle`](#infloopstyle----while--do-default-while) |
+| need the previous infinite-loop spelling for comparison | [`infloopstyle`](#infloopstyle----while--do-default-while) |
+| a signed ARM value is shifted left by a constant in the emitted C | [`armconstshift`](#armconstshift----off--on--all-default-off) |
+| UBSan reports a left shift of a negative value in recompiled ARM output | [`armconstshift`](#armconstshift----off--on--all-default-off) |
+| a signed ARM shift overflows into the sign bit in recompiled output | [`armconstshift`](#armconstshift----off--on--all-default-off) |
+| UBSan reports a left shift of a negative 64-bit value in recompiled output | [`armconstshift`](#armconstshift----off--on--all-default-off) |
+| a sign-extended 32-bit value shifted left into the sign bit of a 64-bit result | [`armconstshift`](#armconstshift----off--on--all-default-off) |
+| UBSan reports a signed integer overflow in a recompiled 32-bit addition | [`wrapadd`](#wrapadd----on--off-default-off) |
+| a sign-extended 32-bit sum differs from the binary at INT32_MAX in recompiled output | [`wrapadd`](#wrapadd----on--off-default-off) |
+| (long)(a + 1) where the machine wraps at 32 bits | [`wrapadd`](#wrapadd----on--off-default-off) |
+| a function that reads many constant globals between calls exhausts memory during heritage | [`readonlycalls`](#readonlycalls----off--on---default-65536) |
+| decompile of a huge function is killed before the first jump table is recovered | [`readonlycalls`](#readonlycalls----off--on---default-65536) |
+| thousands of INDIRECTs over read-only globals survive in a large function's IR | [`readonlycalls`](#readonlycalls----off--on---default-65536) |
+| a function prints read-only literals differently once it grows past the readonlycalls threshold | [`readonlycalls`](#readonlycalls----off--on---default-65536) |
+| a function that touches thousands of globals between thousands of calls takes gigabytes and minutes to decompile | [`persistcalls`](#persistcalls----off--on---default-65536) |
+| heritage builds millions of INDIRECTs over writable globals that survive dead-code removal | [`persistcalls`](#persistcalls----off--on---default-65536) |
+| a huge initializer or finalizer exhausts memory in assignhigh or merging | [`persistcalls`](#persistcalls----off--on---default-65536) |
 
 ## Toggleable transforms
 
@@ -817,6 +886,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On by default: a string length gcc 9 or older MSVC computed with `repnz scasb` reads `strlen(s)`, taken where the scan was (`v1 = strlen(s);` when it is read twice or before a store). Set it off to see the scan loop SLEIGH lifts the instruction to, as upstream prints it.
 - **Where / provenance:** P3/simplification-quiescence · ida · presentation-default · kuna-strlenscan
 - **Example:** `option strlenscan off`
+
+### `repstring` -- on | off, default `on`
+
+- **Symptoms:** a while loop that copies or stores one element per iteration and steps pointers and a count; rep movsq / rep stosd from -Os code printed as a loop instead of memcpy/memset; a struct copy prints as a 16-iteration word loop; a strcmp against a short constant prints as a do/while over two byte pointers and a count.
+- **What it does:** x86: print a `rep movs` as `builtin_memcpy(dst, src, n * w)`, a `rep stos` as `builtin_memset(dst, c, n * w)` or `builtin_memset16`/`32`/`64(dst, value, n)`, and a `repz cmpsb` as `builtin_memcmp(a, b, n)`. SLEIGH lifts a repeat prefix as a loop inside the one instruction, so a copy, fill or compare a compiler inlines (gcc and clang at `-Os`, gcc's `-minline-all-stringops`, MSVC `/Oi`) printed as `while (n) { *p = *q; n -= 1; ... }` or `do { if (!n) return 1; ... } while (x == y);`. `kuna_repstring` runs in the fullloop tail beside `strlenscan` and matches the two blocks the instruction lifts to on SSA: a head, entered from outside and from the body, that leaves exactly when the count is zero, and a body at the same instruction address that steps the count down by one and each pointer up by the element width (a set direction flag, which steps them down, is declined). A copy or fill body stores one element, loaded through the source or defined before the loop, computes nothing else, and nothing outside the loop reads what it computes; the builtin goes in the head over the values entering the loop, every later read of the count becomes 0 and of a pointer the pointer plus `n * w`, and the edge into the body is removed. A fill is `builtin_memset` when every byte of the value is the same (`stosb` always, a constant such as 0) and the element-wide builtin, whose count is in elements, otherwise. A destination in the function's own frame is declined: the builtin is placed after heritage, so the frame locations it writes would have no definition at it. A compare body loads one byte through each pointer and returns to the head exactly while they are equal (checked for all 65536 pairs); `r = builtin_memcmp(a, b, n)` goes in the head, and each flag read after the loop is rebuilt from `r` by evaluating it over every byte pair: the zero flag is `r == 0`, the carry flag `r < 0`. A flag the head merges must enter the loop already holding its value for equal bytes (gcc's `cmp eax, eax` before the instruction) unless the count is a non-zero constant, and a compare whose final count or pointers are read keeps its loop. The builtins keep the call flag, so they stay ordered against loads, stores and calls, and type their pointer operands `void *`. Inert where no instruction lifts to a loop: 0/675 datatest assertions move.
+- **When to flip:** On by default. Flip off when a `rep movsb` copies forward over its own output on purpose -- an LZ77 decoder's overlapping match copy is defined for the instruction and not for memcpy -- or to see the instruction's loop.
+- **Where / provenance:** P3/simplification-quiescence · kuna · presentation-default · GH-1650
+- **Example:** `option repstring off`
 
 ### `rodatastring` -- on | off, default `on`
 
@@ -874,10 +951,18 @@ The control surface: each of these can make output worse on the wrong source sha
 - **Where / provenance:** P2/flow-classification · ida · correctness-fix · direct-address-keyboard-handler
 - **Example:** `option tailcallframe off`
 
+### `returnbranch` -- on | off, default `on`
+
+- **Symptoms:** a function ends at jr $ra right after loading $ra with a constant address; stores and calls after a computed jump through the return register are missing; a MIPS function that reuses $ra as a jump register decompiles to an empty body.
+- **What it does:** Keep a computed jump that the instruction spec classified as a return. SLEIGH marks `jr $ra` (and similar return-register jumps) as RETURN whatever the register holds, so a function that loads a constant code address into the return register and jumps through it ends at that jump: the code it reaches, and every store there, is dropped. On, a RETURN whose target a bounded straight-line prefix from the function entry proves constant (at most 256 raw operations, stopping at any call, branch or unknown user operation; an unproven write invalidates the storage it overlaps, a store forgets the values in the space it writes, and the incoming return address is never treated as known) becomes an indirect branch; ordinary jump recovery then follows it. A proven zero is not a target: `move ra, zero` ends a backtrace, so a function start placed on such a delay slot keeps its real return. Instructions that emit no p-code, such as a MIPS `nop`, may precede the prefix. An ISA-mode marker selecting the ordinary ISA does not stop it, recognized by the user-op name the language declares rather than by the architecture id, so the standalone and Ghidra front ends decide alike. A flow override at the return keeps its classification. Off restores the spec's RETURN.
+- **When to flip:** On by default: 0/675 datatest assertions move. Flip off to compare with upstream's return classification, or when the proven constant is not code this function continues at: a target that is another function's entry shows that function's body inside this one, and a target in a segment's zero fill can fail the whole function.
+- **Where / provenance:** P2/flow-classification · kuna · correctness-fix · mips-ra-jump
+- **Example:** `option returnbranch off`
+
 ### `funcboundflow` -- on | off, default `on`
 
-- **Symptoms:** a function's tail is really the body of the NEXT function; dead/garbage code after a call to a die()/fatal()/throw wrapper that never returns; two adjacent functions merged into one, the second also decompiled on its own; uninitialized reads in the tail after an unrecognized no-return call.
-- **What it does:** REMOVES CODE: bound a function's fall-through at the entry of another known function. A kuna FunctionSymbol has no extent and CALL is fall-through, so a function whose last act is a `call` to a no-return routine kuna cannot prove no-return (in a stripped static binary: the unnamed `exit`/`abort`/`__stack_chk_fail` bodies and the app-level `die()`/`throw` wrappers built on them) runs its flow past the compiler's inter-function padding straight into the next function's entry and decodes THAT function's body into itself (the merge bug). When a fall-through reaches a known function entry (`query_call(next).is_some()`) not included in an explicit caller-declared extent, plant a no-return artificial RETURN and stop, emitting a `funcboundflow` truncation WARNING. Excludes the function's own entry and admits one safe shared-epilogue shape: if the complete instruction at the foreign entry is an unconditional CPUI_RETURN with no other control transfer, decode that instruction because it has no successor and therefore cannot consume the function after it. Branch, computed-branch, and conditional-return entries stay bounded, and a failed entry decode is conservative.
+- **Symptoms:** a function's tail is really the body of the NEXT function; dead/garbage code after a call to a die()/fatal()/throw wrapper that never returns; two adjacent functions merged into one, the second also decompiled on its own; uninitialized reads in the tail after an unrecognized no-return call; halt_baddata() Bad instruction - Truncating control flow here right after a call on ARM32, where the words after the call are constants the function loads PC-relatively.
+- **What it does:** REMOVES CODE: bound a function's fall-through at the entry of another known function. A kuna FunctionSymbol has no extent and CALL is fall-through, so a function whose last act is a `call` to a no-return routine kuna cannot prove no-return (in a stripped static binary: the unnamed `exit`/`abort`/`__stack_chk_fail` bodies and the app-level `die()`/`throw` wrappers built on them) runs its flow past the compiler's inter-function padding straight into the next function's entry and decodes THAT function's body into itself (the merge bug). When a fall-through reaches a known function entry (`query_call(next).is_some()`) not included in an explicit caller-declared extent, plant a no-return artificial RETURN and stop, emitting a `funcboundflow` truncation WARNING. Excludes the function's own entry and admits one safe shared-epilogue shape: if the complete instruction at the foreign entry is an unconditional CPUI_RETURN with no other control transfer, decode that instruction because it has no successor and therefore cannot consume the function after it. Branch, computed-branch, and conditional-return entries stay bounded, and a failed entry decode is conservative. On ARM32 the same bound holds at the function's own literal pool: when an unconditional CALL/CALLIND's fall-through lands on a pool the analysis tier proved (`listing/kuna_poolextents.rs`: maximal runs of 4-aligned executable words that a whole-word load reads at a fixed address from a trusted instruction that no fixed-address load reads as data and no known function entry separates from the word, with no trusted instruction covering or branching to the word, where trusted means reachable from a function entry without falling through a call, indirect call or user operation whose callee is not proven to return to the instruction after the call, or, in a second strict judgement whose words also count, without falling through any call at all), or up to one instruction of do-nothing alignment padding before one, in non-writable image bytes, the compiler put the pool there because the call does not return: the walk plants the no-return halt in the call's block and stops with a `funcboundflow` pool warning, instead of decoding the constants as instructions until one fails to decode (`halt_baddata()` / `Bad instruction`) or a decoded constant carries the walk into code the call never returns to. The pools are a fact of the Listing (`option listing`), so without it (`--mode fast`, and under `auto` at 2 MiB and above) and on every other target no call is bounded at a pool.
 - **When to flip:** A function shows a garbage tail that is really the body of the FOLLOWING function (dead code after a call to a die()/throw/exit wrapper, uninitialized reads, a second unrelated function inlined after an error call). On by default; flip OFF to restore the upstream flow-into-the-next-function behavior.
 - **Where / provenance:** P2/flow-classification · ida · correctness-fix · interp-bee-func-merge
 - **Example:** `option funcboundflow off`
@@ -954,13 +1039,13 @@ The control surface: each of these can make output worse on the wrong source sha
 - **Where / provenance:** P2/switch-model · ghidra-upstream · opt-in-tool · GH-9191
 - **Example:** `option switchmodbound on`
 
-### `constselectjump` -- on | off, default `off` (destructive opt-in)
+### `constselectjump` -- off | reentry | on, default `reentry` (destructive opt-in)
 
 - **Symptoms:** indirect jump renders as a computed (code *)() call whose destinations are already constants in the emitted C; 'Treating indirect jump as call' on a CMOV/predicated dispatch; the body behind a conditional indirect branch is never decoded.
-- **What it does:** Recover an indirect branch whose destination is selected between constant addresses (a CMOV/predicated dispatch) as a jump table over that constant set, instead of truncating it to a call.
-- **When to flip:** An indirect jump renders as a computed `(*v)()` call carrying a 'Treating indirect jump as call' warning while the destinations are already visible as address constants in the emitted C, and the code behind them is missing. DESTRUCTIVE as a global default: a conditional TAIL CALL selecting between two nearby function entries is the same shape, and recovering it splices both callee bodies into the caller.
+- **What it does:** Recover an indirect branch whose destination is selected between constant addresses as a jump table over that constant set. `on` recovers every such select (a CMOV/predicated dispatch) instead of truncating it to a call. `reentry`, the default, recovers only a dispatcher loop: a single-target jump whose own target code flows back into it with another local constant, so the re-entry already shows the targets are one function's. Flow retries only the dispatches a newly found edge can reach, proves a constant arriving straight at the dispatch without another partial decompile, keeps the caller's return as a destination when the selector can still hold it, and warns for every dispatch left unresolved when the retry budget runs out. `off` keeps the first target, as upstream does.
+- **When to flip:** `reentry` is on by default: 0/675 datatest assertions move. Flip `off` to compare with upstream, which keeps only the first target of a re-entered dispatch. Turn `on` when an indirect jump renders as a computed `(*v)()` call carrying a 'Treating indirect jump as call' warning while the destinations are already visible as address constants in the emitted C, and the code behind them is missing. DESTRUCTIVE as a global default: a conditional TAIL CALL selecting between two nearby function entries is the same shape, and recovering it splices both callee bodies into the caller; `reentry` never recovers a select that is not re-entered.
 - **Where / provenance:** P2/switch-model · kuna · structure-recovery · re-conditional-indirect-branches-hide
-- **Example:** `option constselectjump on`
+- **Example:** `option constselectjump off`
 
 ### `switchguardbound` -- on | off, default `off` (destructive opt-in)
 
@@ -1130,6 +1215,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **Where / provenance:** P3/simplification-quiescence · kuna · type-inference · ty17-narrow-signed-register-locals
 - **Example:** `option regsigned on`
 
+### `calleeargs` -- on | off, default `on` (destructive opt-in)
+
+- **Symptoms:** a call before a by-value struct copy prints with no arguments and the pushed values appear as stray local stores; a pushed return address appears as a local store before a call; an inner this-only call takes an argument pushed for the outer virtual call after it; the outer call after an inner call is missing its last stack argument; an indirect or import call takes a trailing argument that is a local of its caller (the /GS cookie, a zero-initialised buffer).
+- **What it does:** On x86-32 under a model that leaves the callee's pop unknown (the x86 Windows models), bound each direct call's stack arguments by what the callee's own code touches. The walk that proves a callee's pop (kuna_calleepurge) also records the highest stack-argument byte any load or store touches, through the stack pointer or a register holding a stack address it placed exactly, rounded up to a 4-byte slot; a nested call whose own extent is known touches its arguments. It is stated only when every path was seen and every access placed: an indirect jump, a budget overrun, an access through the caller's frame pointer or one a helper such as __SEH_prolog4 set, a stack pointer a call left unplaced, an argument indexed at run time, an argument's address stored, returned or live at a call (va_start), or a read through a stack address the walk lost (one a call returns, one loaded back from a stack slot, one parked outside the general registers) states nothing. The bound a call site uses widens the extent to what the callee's returns pop and to what the caller removes right after the call (pop ecx, add esp,8), so an unread parameter that was pushed and taken off for this call stays an argument. A stack trial past the bound is no argument, which tells an outer call's pushes from an inner call's; a trial within the touched extent skips checkInputTrialUse's flow-insensitive local-alias refusal, because the callee reads that slot. Calls whose extent is not stated (imports, indirect calls, SEH-framed callees) keep the upstream test, and so does every call in a function that calls a stack-moving helper (_chkstk, __SEH_prolog4), whose stack offsets the solver can only guess. A trial past the bound is kept where a direct call with no stated extent would otherwise take its value from past what that call's callee pops or its caller removes (a pushed cookie, a pushed local); an indirect call or one whose window covers the slot takes the freed push as its argument. Inert on every other target.
+- **When to flip:** On by default on x86-32 Windows. Flip off to see every value the call site pushes: an unread trailing parameter of a __cdecl callee whose cleanup the compiler deferred past a later call is dropped together with an outer call's pushes, and the off value prints it. Also flip off when an indirect or import call (one whose callee states no extent) shows a trailing argument that is a local of the caller, such as the /GS cookie or a zero-initialised buffer: a store an earlier call no longer takes can still attach to it.
+- **Where / provenance:** P4/active-input-trial-scoring · ghidra · new-analysis · GH-1562
+- **Example:** `option calleeargs off`
+
 ### `protoorder` -- off | types | cycles | lock, default `cycles`
 
 - **Symptoms:** a FILE * or char * the caller holds becomes long at the callee's parameter; a function that only hands a string on to a recursive function (quotearg_buffer_restyled, a tree walk, a pair of functions calling each other) keeps an integer parameter; an argument is typed at one call site of a callee and not at another; decompiling one function alone gives it a prototype the whole-binary output does not use at its call sites; the same sub_ address is called with one argument at one site and three at another in the same function.
@@ -1153,6 +1246,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On by default, and inert unless a whole-binary `kuna decompile-all` or `decompile-project` runs its callee-first pass on an x86-64 image with `calleevote` on: `kuna decompile`, `--addr`, `--functions`, `--jobs N`, `decompile-project --stream`, a raw image and `--option protoorder off` decide nothing. The tell it fixes is a parameter declared `long` or `unsigned long` in a function that only stores, compares, forwards or hands to an indirect call a value every caller holds as a pointer -- a hash-table entry, a list item, a callback's data. Measured on the 444-slice decbench sweep (published address-correspondence `type_match`, decbench 14e14b8) against main 0e35a1ff5: 244 decisions move onto the DWARF type and 1 off (a register loop counter in diffutils -O2 `diff3`'s `dotlines` that address overlap stops matching once an address temporary folds into its uses), 181 functions score better and 1 worse, perfect functions 1869 -> 1871, and the mean per-function score rises 0.4292 -> 0.4340; on the 96-binary optimized nightly sample 15 functions score better and none worse. Turn it off to keep the integer a function's own body recovered, when a script matches body text an older run printed: the retyped value prints with `(long)` casts at its integer uses and field arithmetic over it is spelled as indexing (`((unsigned long *)a0)[v2]` for `*(unsigned long *)(a0 + v2 * 8)`).
 - **Where / provenance:** P4/prototype-source · kuna · type-inference · ty17-ptrargs
 - **Example:** `option callerptr on`
+
+### `calleereginputs` -- off | on | custom, default `on`
+
+- **Symptoms:** a 32-bit Windows call prints an extra first argument its callee never reads; a 32-bit Windows constructor or method call prints the caller's locals as its arguments, e.g. sub_401020(a0,a1,0) where the code loads lea ecx,[esp+N]; a method called through a jmp stub prints with no arguments on a 32-bit PE; lea ecx,[...] or mov ecx,esi before a call vanishes from the output; a 32-bit MSVC /O2 static function is called with a count or buffer set in EDI, ESI or EBX that the call drops (set calleereginputs custom).
+- **What it does:** On x86-32 Windows (`x86win.cspec`, whose default `__stdcall` model has no register parameters), give a direct call with no declared prototype the spec's own `__thiscall` model when its callee reads ECX before writing it, and `__fastcall` when it reads ECX and EDX. Without it a `this` passed in ECX is dropped at every such call, the computation that set ECX disappears, and the caller's stores for its own locals are offered to the callee as stack arguments in its place: a constructor run on one local is handed another local's fields. Flow decodes the callee's opening straight line when it builds the call spec (through `jmp` stubs, never an import, at most 64 instructions, ending at a conditional branch, call or return; cached per callee). A register counts only when it is read before any part of it is written: `mov cx,[eax+0xa]` then `mov esi,ecx` reads none. A push that saves a register, a copy onto itself (`mov edi,edi`, `lea ecx,[ecx]`) and a result the old value cannot change (`xor ecx,ecx`, `or ecx,-1`) are not reads. A callee that also reads EAX, EBX, ESI or EDI keeps the default: that is a convention no spec model states (Borland `register`, an MSVC whole-program custom convention, `_chkstk`) or a routine capturing every register (`__report_gsfailure`, `_invoke_watson`). A register the callee reads is an argument whatever the caller's data flow says, so it never costs the call its stack arguments: its trial is active (a register the caller never wrote passes the caller's own value through), it does not end the argument list in front of the stack slots, its use does not count against another call taking the same value, and where the function's stack solution rests on a guessed pop the call-site alias test passes over these operands as it did while they were dead. An indirect call that is MSVC's virtual dispatch (`mov eax,[ecx]; call [eax+k]`, ECX unchanged between the vtable load and the call, and no other call since the object was taken from ECX) takes `__thiscall` as well, unless its last push stores the object (ECX or a register holding the same value), which is a COM method's `__stdcall` interface argument, or it stores the object at `[esp+4]` (GCC before 4.7 passes a member function's `this` on the stack, behind the hidden pointer of a returned class), or the caller cleans up after it (`add esp,4`: a C table of `__cdecl` function pointers), or EAX also holds the object (Delphi `register`); its ECX then has a read register's standing. Inert on every other target and compiler spec. The `custom` value also recovers the callee-saved registers EBX, ESI and EDI as custom arguments, on a whole-binary callee-first run (`decompile-all`, `decompile-project`), where both halves of a two-sided rule hold. The callee half: its own body reads the register's entry value before writing it, by the post-heritage entry reads `passthrough` records (a value read past the first branch, or pushed to a sub-call and compared after it; a prologue save or a plain store does not count), and it reads neither ECX nor EDX (such a callee keeps the `__thiscall`/`__fastcall` resolution above). The caller half: every direct call site in the image writes every such register in the call's own basic block before the call, by a recursive-descent decode of the callers (never a value an earlier call left behind, never a write a branch bypasses). A callee whose caller set is not a list of direct calls states nothing: its address is stored as a word in the image or taken in code, it is exported or the entry point, another function branches to it, a call to it comes from no known function or from a site the call graph gives another caller, it is an interior chunk inside another function's extent, or it is a stack-moving CRT helper (`_chkstk`, `__SEH_prolog`). The decided registers lead the parameter list in the order EBX, ESI, EDI, and the callee's own decompile is given the same synthesized model; each decided callee is decompiled again with all its callers, a whole group within a 5% line budget or not at all, so callee and callers agree. A single-function or narrowed run decides nothing (the latter says so on stderr), `decompile-project --stream` and `decompile-graph` warn, and naming `custom` with `--jobs N` is refused. EAX and EDX as custom inputs (the Borland/Delphi EAX,EDX,ECX register convention) are not covered by `custom`.
+- **When to flip:** On by default on x86-32 Windows. Flip off to see the calls as the default `__stdcall` model reads them, with no ECX or EDX operand and the pointer a caller loads into ECX left as a dead computation; also flip off when a 32-bit call prints an extra first argument its callee does not take (a callee whose opening code reads ECX for another reason, as obfuscated or hand-written code can, is still given `__thiscall`). Measured base vs default over 224 i386 PEs (MSVC 6 to 2019, MinGW, Delphi, VMProtect and Themida samples, two AutoIt-compiled images, IDA's `win32_remote32.exe`), call by call: about 41,700 calls gain `this` and 2,400 gain ECX and EDX, and a separate reading of the callees' opening code (about 4,600 of them) finds the ECX read in every one it decodes; no call loses a stack argument, and the one call whose stack arguments shrink is a constructor no longer handed a neighbouring local's fields. Where the caller's model says an earlier call clobbered ECX but the compiler knew that callee keeps it (`_chkstk`, an MSVC whole-program leaf), the call passes it as an uninitialized `// ecx` variable. A Delphi image, which is also read under `x86win.cspec`, passes EAX, EDX and ECX: a callee that reads EAX on its opening line keeps the default, and one that does not shows the ECX (and EDX) it reads, in `__fastcall` order. Arguments in other registers (a static function MSVC passes a count in EDI) are not recovered. A 32-bit `/GS` cookie check keeps its argument (`sub_401ee2(v21 ^ (unsigned int)&v10)`) where its pop is the solver's guess, and `msvcstackguard` strips it where its pop is stated. Set `custom` to also recover a callee-saved register argument an MSVC `/O2` static function takes -- a point count in EDI (`sub_437030(a0, a1, a2, a3, a4)` where `mov edi,4` set it), a buffer or object pointer in ESI or EBX -- where every call site in the image sets it and the callee reads it; the register becomes a leading parameter and the callee prints it too. Measured over the corpus above plus 200 more crackme PEs, `custom` against the default `on`: 235 callees in 73 images take a custom register, and an independent reading of the disassembly finds each one read by the callee and set before every one of its 363 calls; no parameter or call argument is lost, and no caller disagrees with its callee. Its cost is the redo of the decided callees with their callers, about 1.5 to 3% more user CPU on an image that decides 25 to 70 callees and under 0.5% on one that decides none; on the one image whose groups outgrow the redo budget, 28 of its 69 decided callees state nothing. It acts only on a serial whole-binary run (`decompile-all`, `decompile-project`), and naming it with `--jobs N` is refused. Leave it `on` (the default) when a callee-saved register the compiler happened to leave live at a call should not read as an argument.
+- **Where / provenance:** P4/prototype-source · ida · new-analysis · GH-1558
+- **Example:** `option calleereginputs custom`
 
 ### `callbacktype` -- on | off, default `on`
 
@@ -1549,7 +1650,7 @@ The control surface: each of these can make output worse on the wrong source sha
 ### `noreturn_known` -- on | off, default `on`
 
 - **Symptoms:** dead code kept after calls to exit/abort/panic when off; call to a known no-return libc function still shows a fall-through path; unreachable epilogue after std::terminate or a rust panic call.
-- **What it does:** Run the known-no-return analysis pass: mark exit/abort/_Unwind_Resume/std::terminate-style functions no-return (the kuna analog of Ghidra's NoReturnFunctionAnalyzer, plus the Rust panic/handle_alloc_error list). The same flag covers the flow-time name matches that reach the externs the address-keyed scan cannot (`kuna_noreturn_externmatch.rs`, `kuna_noreturnextern.rs`: an undefined extern of an ET_REL object whose name is on the list) and the error(nonzero,...) value rule inside the no-return propagation (an error(status,...) wrapper whose status is a nonzero literal is no-return). On a Go binary the same vendored Go list is also applied to the pclntab-recovered function list (the gonoreturn pass, formerly its own option), so a stripped Go binary whose symbol tables are gone still gets its runtime.panic*/throw/goexit facts.
+- **What it does:** Run the known-no-return analysis pass: mark exit/abort/_Unwind_Resume/std::terminate-style functions no-return (the kuna analog of Ghidra's NoReturnFunctionAnalyzer, plus the Rust panic/handle_alloc_error list). The same flag covers the flow-time name matches that reach the externs the address-keyed scan cannot (`kuna_noreturn_externmatch.rs`, `kuna_noreturnextern.rs`: an undefined extern of an ET_REL object whose name is on the list) and the error(nonzero,...) value rule inside the no-return propagation (an error(status,...) wrapper whose status is a nonzero literal is no-return). It also ends a call to a `<prefix>__<entry>` proxy stub (`stub___stack_chk_fail`, an empty `__wrap___assert_fail`: a sized one-instruction return or jump named for a multi-word list entry) when that call is the last instruction of its sized caller, so the caller was compiled for the no-return original. On a Go binary the same vendored Go list is also applied to the pclntab-recovered function list (the gonoreturn pass, formerly its own option), so a stripped Go binary whose symbol tables are gone still gets its runtime.panic*/throw/goexit facts.
 - **When to flip:** On (default) suppresses dead fall-through after a no-return call; off leaves the call rendering as if it returns (dead code reappears).
 - **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-noreturn
 - **Example:** `option noreturn_known off`
@@ -1565,7 +1666,7 @@ The control surface: each of these can make output worse on the wrong source sha
 ### `noreturn_propagate` -- on | off, default `on`
 
 - **Symptoms:** unreachable code after a call to an exit/fatal wrapper; function truncated after calling a cold wrapper; spurious while(true) around a call that never returns; stripped binary's unnamed exit wrapper swallows the functions after it.
-- **What it does:** REMOVES CODE: propagates no-return through the call graph, dropping unreachable code after no-return calls. Runs the structural no-return propagation consumer (the second Listing/xref consumer): the kuna analog of angr's CFGFast call-graph no-return propagation. Seed the terminal set from the Known no-return list and conclude a function no-return when its last real instruction (skipping trailing NOP alignment padding) is a CALL (or tail JMP) to an already-no-return callee, with no RETURN path, no computed jump, and no branch escaping the reachable body — iterated to a fixpoint, with NO evidence threshold (unlike noreturn_disc's >=3 call sites). Catches a custom no-return wrapper (e.g. coreutils xalloc_die, which ends in `call abort` followed by padding) that the static name list does not know and the >=3-evidence rule does not reach, so a caller (e.g. tee_O2 x2nrealloc) no longer grows a spurious while(true)/goto from the dead fall-through. Emits the existing NoReturnFact -> the existing set_function_no_return commit seam (no new commit arm, no S7 work). Requires the Listing (option listing on) — a no-op when the Listing is absent. On by default (DIV-14), but gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only).
+- **What it does:** REMOVES CODE: propagates no-return through the call graph, dropping unreachable code after no-return calls. Runs the structural no-return propagation consumer (the second Listing/xref consumer): the kuna analog of angr's CFGFast call-graph no-return propagation. Seed the terminal set from the Known no-return list and conclude a function no-return when its last real instruction (skipping trailing NOP alignment padding) is a CALL (or tail JMP) to an already-no-return callee, with no RETURN path, no computed jump, and no branch escaping the reachable body — iterated to a fixpoint, with NO evidence threshold (unlike noreturn_disc's >=3 call sites). Catches a custom no-return wrapper (e.g. coreutils xalloc_die, which ends in `call abort` followed by padding) that the static name list does not know and the >=3-evidence rule does not reach, so a caller (e.g. tee_O2 x2nrealloc) no longer grows a spurious while(true)/goto from the dead fall-through. Emits the existing NoReturnFact -> the existing set_function_no_return commit seam (no new commit arm, no S7 work). Requires the Listing (option listing on) — a no-op when the Listing is absent. On by default (DIV-14), but gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only). On an x86 real-mode raw or MZ image it runs over the raw discovery's own Listing instead, seeded from the DOS exit interrupts (INT 20h, INT 27h, INT 21h with AH 00h/31h/4Ch) rather than the Known list, so a function whose every path exits (Turbo C's exit and _exit) is no-return to its callers.
 - **When to flip:** On by default (DIV-14), but a no-op unless the Listing is built (option listing on) — with the Listing off there is zero behavior change. With listing on it concludes a custom no-return wrapper (a die()/fatal()/xalloc_die() that unconditionally ends in abort/exit) is no-return where it would otherwise be treated as returning — angr renders the caller cleanly but kuna would emit a spurious while(true) loop + goto + dead stack spills from the post-call fall-through (e.g. tee_O2 x2nrealloc). Broader than noreturn_disc: no >=3 call-site threshold and it seeds from the Known list. Flip OFF (with listing on) to keep the post-call fall-through code in the output.
 - **Where / provenance:** P1/external-refinement · angr · structure-recovery · kuna-analysis-noreturn-propagate
 - **Example:** `option listing on --option noreturn_propagate on`
@@ -1594,18 +1695,26 @@ The control surface: each of these can make output worse on the wrong source sha
 - **Where / provenance:** P2/flow-classification · kuna · structure-recovery · kuna-multilang-gomorestack
 - **Example:** `option gomorestack off`
 
+### `gonewtype` -- on | off, default `on`
+
+- **Symptoms:** go newobject results declared long or undefined8 while the call names its type: descriptor; field stores into a fresh go allocation render as offset arithmetic on an integer local; harvested go record types visible at interface conversions but never on allocations; go allocation sites cast their result at every use instead of declaring the named pointer.
+- **What it does:** Type a Go allocation result from the descriptor it allocates - the first client of the per-call-site output TYPE LOCK. Go's allocators take the runtime descriptor of the type they allocate: `runtime.newobject(typ *_type) unsafe.Pointer` returns a fresh zeroed object OF that type, and go1.26+ compilers inline the same call into the size-class `runtime.mallocgc*` entries (`mallocgcSmallScanNoHeaderSC4(size, typ, needzero)`, ...), descriptor second. At a site whose descriptor argument resolves to a `type:<name>` data symbol (gotypeglobals) whose `<name>` the gotypes harvest interned as a complete named record, the result's type is a fact stated by the binary's own metadata. A plain vote at the type-inference seam cannot deliver it: `typeOrder` folding and structsynth override the voted type before the declaration prints, and parking a prototype locks EVERY site of the callee to one output (`void *`). The option therefore asserts the fact through the sitetypelock primitive: the lock is recorded in the P0 override store keyed by the CALL op's address (surviving restarts like every per-site override), and `ActionSiteTypeLock` pins it onto the call's output Varnode (`update_type_locked(lock=true, over=false)`) directly before the first `buildLocaltypes`, riding the same Varnode-typelock chain a type-locked Database symbol rides - propagation refuses to enter a locked Varnode, `writeBack` refuses to replace it, structsynth installs with `over=false`, and the HighVariable's type representative prefers the locked member. Refusals leave the site untouched: no output Varnode, output already type-locked (mapped-symbol/DWARF evidence outranks the client), descriptor argument not a constant address (or one COPY away), constant not at the START of a `type:` symbol, `<name>` not held as a complete named record (pointer/array/primitive spellings and empty shells refuse, so the lock never blocks a later structsynth recovery), a mallocgc-family size argument that is not a constant equal to the record's size, or an output-width mismatch. The lock changes downstream pointer-arithmetic restructuring (field reads render as `->field`), which is why the whole-corpus two-leg diff ships with the feature; a wrong descriptor decode would mis-NAME fields but never moves or deletes a statement. Structurally inert off Go images: the callee name, the `type:` symbol and the interned record only exist where the Go harvest ran.
+- **When to flip:** On by default: every escaping Go allocation declares its result as a pointer to the program's own named record (`main.Point *p = runtime.newobject(&type:main.Point)`) and downstream field accesses render by name instead of offset arithmetic. Flip off to compare against the untyped rendering (triaging a suspect field layout back to the descriptor walk) or to let structsynth re-derive the layout from accesses alone. Non-Go binaries are byte-identical either way.
+- **Where / provenance:** P5/type-propagation · kuna · type-inference · kuna-multilang-gonewtype
+- **Example:** `option gonewtype off`
+
 ### `gowritebarrier` -- off | auto | always, default `auto` (destructive opt-in)
 
 - **Symptoms:** every pointer store in a go function wrapped in if (writeBarrier flag) with a gcWriteBarrier call; stores through an undefined local after a gcWriteBarrier call because the thunk's buffer register is not modeled; go output doubled in size by GC bookkeeping diamonds.
-- **What it does:** Fold the Go GC write-barrier diamond. Every pointer store the garbage collector must see compiles to a flag test: when runtime.writeBarrier is set, call a runtime.gcWriteBarrier<N> thunk (which hands back the GC pointer buffer, R11 on amd64) and record the old and new pointer values in it; both paths then perform the program's own stores at the join. The cold arm is GC bookkeeping with no bearing on what the function computes, and it actively corrupts the output today: the thunk's buffer register is not a modeled return, so the recording stores read an undefined local and the value split can mangle even the real store's address expression. The fold matches the shared guarded-cold-call shape (infra/idiom.rs): a one-block cold arm holding exactly one call, whose guard rejoins the hot path in one hop - the callee name (runtime.gcWriteBarrier, gcWriteBarrier1..8, the bare assembly thunk gcWriteBarrier; never wbBufFlush, which user code cannot call inline) is only accepted INSIDE that shape, so a coincidental name in ordinary flow cuts nothing. The guard edge is removed pre-SSA (the cleanupcode/gomorestack window, registered directly after gomorestack), so the buffer-feeding loads die to ordinary dead-code elimination and the program's stores at the join are untouched. At auto (default) the fold acts only when the image's source language is Go; always drops the language test (stage-test bytechunks); off keeps the barrier for auditing GC behavior. Whenever the fold is enabled on a Go image, the jump-only forwarding blocks an unoptimized build places between the flag test and the barrier call are normalized away first (`kuna_gojumpchain.rs`).
+- **What it does:** Fold the Go GC write-barrier diamond. Every pointer store the garbage collector must see compiles to a flag test: when runtime.writeBarrier is set, call a runtime.gcWriteBarrier<N> thunk (which hands back the GC pointer buffer, R11 on amd64) and record the old and new pointer values in it; both paths then perform the program's own stores at the join. The cold arm is GC bookkeeping with no bearing on what the function computes, and it actively corrupts the output today: the thunk's buffer register is not a modeled return, so the recording stores read an undefined local and the value split can mangle even the real store's address expression. The fold matches the shared guarded-cold-call shape (infra/idiom.rs): a one-block cold arm holding exactly one call, whose guard rejoins the hot path in one hop - the callee name (runtime.gcWriteBarrier, gcWriteBarrier1..8, the bare assembly thunk gcWriteBarrier; never wbBufFlush, which user code cannot call inline) is only accepted INSIDE that shape, so a coincidental name in ordinary flow cuts nothing. The guard edge is removed pre-SSA (the cleanupcode/gomorestack window, registered directly after gomorestack), so the buffer-feeding loads die to ordinary dead-code elimination and the program's stores at the join are untouched. At auto (default) the fold acts only when the image's source language is Go; always drops the language test (stage-test bytechunks); off keeps the barrier for auditing GC behavior. A second, post-SSA arm of the same option folds the shapes this pre-SSA fold must refuse - an arm SHARED by several guards, and an arm whose call result (the wb buffer pointer) and register effects feed the join's phis - once SSA has made every read explicit: the matcher proves every guard reads a global flag, every arm op is bookkeeping with stores only through the call's own buffer pointer, and no arm-defined value escapes except through the join phis, then cuts one guard edge per pass so the unreachable sweep collapses each phi to the hot-path value the program computes. The post-SSA arm REFUSES a value-returning function whose barrier output or arm INDIRECT effects reach a RETURN or an outside store address - the return-value staging dataflow a fold must never orphan (two miscompiles proved it; a refusal is a kept barrier, never wrong C); a void function keeps the fold, where the same reach is a preserved caller register. Whenever the fold is enabled on a Go image, the jump-only forwarding blocks an unoptimized build places between the flag test and the barrier call are normalized away first (`kuna_gojumpchain.rs`).
 - **When to flip:** Leave auto: on a Go binary every guarded pointer store sheds its if (runtime_writeBarrier) { gcWriteBarrierN(); buffer writes } wrapper and renders as the plain store; off only to audit the GC's barrier placement. Use always on a Go function carved into a bytechunk where detection has no buildinfo section to find.
 - **Where / provenance:** P2/flow-classification · kuna · structure-recovery · kuna-multilang-gowritebarrier
 - **Example:** `option gowritebarrier off`
 
 ### `ptrauthtrap` -- on | off, default `on` (destructive opt-in)
 
-- **Symptoms:** if ((v ^ v << 1) >> 0x3e & 1) before a tail call in an arm64e function; (*SoftwareBreakpoint(0xc471,..))() // jump-as-call; a stack - 0x8 ;  x30 variable declared only for a pointer-auth check.
-- **What it does:** Drop the pointer-authentication failure checks an arm64e compiler plants after an aut* instruction. Without FEAT_FPAC a failed aut* does not trap; it leaves an error code in the pointer's top bits, so Apple's clang checks the result inline and branches to brk #0xc470+key when it is bad: before a tail call it tests that bits 62 and 61 of the authenticated x30 agree (eor x16, x30, x30, lsl #1; tbz x16, #62), after a data aut* it compares the result with its xpac-stripped copy. SLEIGH hides the aut* itself (ShowPAC is off), so statically every pointer authenticates and the check is noise; the xpac form folds away on its own, but the bit test reads the incoming return address and renders as if ((x30 ^ x30 << 1) >> 0x3e & 1) { (*SoftwareBreakpoint(0xc471,..))(); return; } before nearly every tail call of an Apple binary. The trap block is the anchor: a block lifted entirely from one brk whose SoftwareBreakpoint immediate is 0xc470-0xc473, the codes LLVM reserves for this trap. A CBRANCH edge into it is removed pre-SSA (the gomorestack window) only when the guard's condition is that bit test of the return address, ((x30 ^ x30 << 1) >> 62) & 1, the edge is the arm taken when the two bits disagree, and x30 was reloaded from the frame (an sp- or x29-based load) or is unwritten anywhere in the function: the brk immediate alone is not evidence, since any AArch64 code can branch to a brk #0xc470 on a condition of its own, and a value the code put in x30 (mov x30, x0; ldr x30, [x0]) is not the authenticated return address. The condition then dies to dead-code elimination.
+- **Symptoms:** if ((v ^ v << 1) >> 0x3e & 1) before a tail call in an arm64e function; SoftwareBreakpoint(0xc471,..); behind a bit test of the return address; a stack - 0x8 ;  x30 variable declared only for a pointer-auth check.
+- **What it does:** Drop the pointer-authentication failure checks an arm64e compiler plants after an aut* instruction. Without FEAT_FPAC a failed aut* does not trap; it leaves an error code in the pointer's top bits, so Apple's clang checks the result inline and branches to brk #0xc470+key when it is bad: before a tail call it tests that bits 62 and 61 of the authenticated x30 agree (eor x16, x30, x30, lsl #1; tbz x16, #62), after a data aut* it compares the result with its xpac-stripped copy. SLEIGH hides the aut* itself (ShowPAC is off), so statically every pointer authenticates and the check is noise; the xpac form folds away on its own, but the bit test reads the incoming return address and renders as if ((x30 ^ x30 << 1) >> 0x3e & 1) SoftwareBreakpoint(0xc471,..); before nearly every tail call of an Apple binary. The trap block is the anchor: a block lifted entirely from one brk whose SoftwareBreakpoint immediate is 0xc470-0xc473, the codes LLVM reserves for this trap. A CBRANCH edge into it is removed pre-SSA (the gomorestack window) only when the guard's condition is that bit test of the return address, ((x30 ^ x30 << 1) >> 62) & 1, the edge is the arm taken when the two bits disagree, and x30 was reloaded from the frame (an sp- or x29-based load) or is unwritten anywhere in the function: the brk immediate alone is not evidence, since any AArch64 code can branch to a brk #0xc470 on a condition of its own, and a value the code put in x30 (mov x30, x0; ldr x30, [x0]) is not the authenticated return address. The condition then dies to dead-code elimination.
 - **When to flip:** Leave on: an arm64e function's tail call reads as the call alone. Flip off to audit where the compiler checks an authenticated pointer. Inert on any guard other than the return-address bit test before a brk #0xc470-0xc473 trap, whatever the image format.
 - **Where / provenance:** P2/flow-classification · kuna · structure-recovery · kuna-apple-ptrauthtrap
 - **Example:** `option ptrauthtrap off`
@@ -1722,9 +1831,25 @@ The control surface: each of these can make output worse on the wrong source sha
 - **Where / provenance:** P2/flow-classification · angr · structure-recovery · angr-rust-probestack
 - **Example:** `option rustprobestack off`
 
+### `chkstkdarwin` -- on | off, default `on` (destructive opt-in)
+
+- **Symptoms:** v = __chkstk_darwin(); assigns a value an arm64 macOS function then uses as its argument; an arm64 macOS function with a large frame or a variable-length array prints with a (void) parameter list; a variable-length array is sized from a register nothing assigns after __chkstk_darwin(); __chkstk_darwin is called with arguments it does not take.
+- **What it does:** Darwin AArch64 only (an AArch64 language on a Mach-O, fat Mach-O or dyld shared cache image; inert everywhere else): remove the calls to the stack probe `___chkstk_darwin` from the raw p-code before SSA and call recovery. Apple clang calls it, with the byte count in x9, before it allocates a frame larger than a page or a variable-length array. It writes no register but x9, the x16/x17 call scratch and the flags, and the code after it keeps reading the argument registers. The AArch64 prototype model kills x0, x1 and x8-x18 at every call, so an argument register read after the probe became the probe's return value or a local nothing assigns, and the function lost its parameters (`int _big_frame(void)` with `v2 = __chkstk_darwin();`, a variable-length array sized from an unassigned `// x1`). A direct CALL matches by the callee's name: `__chkstk_darwin` as the Mach-O loader names the import, or `___chkstk_darwin` as an image that defines it does. A CALLIND matches when its target is loaded, earlier in the same block, from a constant address that holds a function symbol of that name, which is the `adrp x16; ldr x16,[x16,#off]; blr x16` GOT call clang emits. A call-fixup cannot reach that call, because it only becomes direct after ActionDeindirect and a restart. Calls with an inject, inline or no-return fact are left alone, and so is a jump the flow turned into a call (the probe's own `__stubs` entry), which has no code after it. Not on x86-64, whose probe takes its size in RAX and whose CALL pushes a return address, and not on an ELF or PE image, where a function of that name is not Apple's probe. Destructive: the call and the stack-overflow fault its page touches can raise are deleted, as Ghidra's Windows `__chkstk` call-fixup deletes them.
+- **When to flip:** On by default. Keep it on for macOS and iOS arm64 binaries: a function with a large frame or a variable-length array otherwise prints `v = __chkstk_darwin();`, loses the parameters it reads after the probe, or sizes a stack allocation from a register nothing assigns. Flip OFF to see the probe calls again, for instance to find the functions that allocate more than a page of stack.
+- **Where / provenance:** P2/flow-classification · kuna · structure-recovery · kuna-chkstkdarwin
+- **Example:** `option chkstkdarwin off`
+
 ## Analysis & loader passes
 
 Program-prep enablement: what is discovered, decoded, and named before any function is decompiled.
+
+### `mzdgroup` -- on | off, default `on`
+
+- **Symptoms:** a DOS program's globals print as *(short *)0x308e near-pointer dereferences instead of named globals; every function of an MS-DOS executable declares an unsigned short local commented // ds; the same DOS global gets no shared name across functions; a near string pointer in a DOS program resolves to a low address instead of its data segment.
+- **What it does:** On an MS-DOS executable, start every function with DS holding the data segment the program's startup code loads into it (the linker's DGROUP), so near data pointers name the program's globals. DOS starts a program with DS holding its PSP; a compiled program's startup code loads DGROUP into DS before it calls into the program, and every function keeps DS there, restoring it when it borrows the register. Without that value DS is an unknown input, so each global read `mov ax, [0x308e]` printed as `*(int *)0x308e` (a pointer constant resolved against DS 0) and no two functions shared a global. The MZ loader decodes forward from the entry CS:IP to the first call (or a DOS exit) and reads the segment DS then holds: a register loaded from an immediate the relocation table names (`mov dx, DGROUP`), CS at the entry, or a relocated word read through `CS:`, carried by register moves, segment moves and an adjacent push/pop; any other write forgets the register, an INT 21h forgets every register the function in AH can return in (DS too for the services that return a pointer in it or an unknown function; any other interrupt, every register), and at a branch target a register keeps its segment only when every path into the target brings the same one. The segment must start inside the load module, and the program must keep it: the walk reads on past that call through the rest of the startup and decodes each direct callee entered with a known DS, and a callee that returns with another known segment in DS, or a startup path that ends with another known segment still in DS, states nothing. That value becomes DS's tracked value over the whole load module except the entry point itself and each routine the startup calls with another known segment in DS (Borland's StartExit, run with the `_INIT_` segment), so ActionConstbase starts each function with it and a constant near pointer resolves against it; a function that loads another segment into DS is read with that segment from the load on. Startup code that loads DS only on a path that exits, from an unrelocated immediate, or after a return, an indirect jump or 512 instructions states nothing, and DS stays unknown. Raw images and every non-MZ input never reach it.
+- **When to flip:** Leave on: an MS-DOS program compiled by Turbo C, Microsoft C, MASM or a similar toolchain (anything that sets DS to its data segment at startup and keeps it there) prints its globals as named `dat_` globals at their linear address. Turn off for a program whose functions run with different data segments in DS (hand-written assembly that switches DS between segments around its calls, interrupt handlers entered with the interrupted program's DS), where a function entered with another DS would name the wrong bytes; off prints each near access as the raw DS offset.
+- **Where / provenance:** P1/environment-binding · kuna · analysis-enablement · kuna-1288-mzdgroup
+- **Example:** `kuna decompile-all dazzle.exe --option mzdgroup off`
 
 ### `libctypes` -- off | opaque | glibc, default `opaque`
 
@@ -1736,9 +1861,9 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 
 ### `libgccsigs` -- on | off, default `off`
 
-- **Symptoms:** a SPARC32 caller stores the low word of a 64-bit quotient from a local nothing assigns; __divdi3 is called with four 32-bit arguments and only %o0 is read back; *p = v1; after a __divdi3 call where v1 is never written.
-- **What it does:** Seed the libgcc DI-mode contract `long long __divdi3(long long, long long)` onto a SPARC32 big-endian ELF (`sparc:BE:32:default:default`) that names `__divdi3`, defined or imported. The helper's widths come from GCC machine modes, not the C data model: it takes two eight-byte operands in %o0:%o1 and %o2:%o3 and returns the eight-byte quotient in %o0:%o1, high word first. Without the contract the caller sees an unknown callee that writes only %o0, so a caller that stores only the low word (`*p = (int)(a / b);`, the `st %o1` after the call) stores a local nothing assigns. With it the call prints `__divdi3(CONCAT44(a0,a1),CONCAT44(a2,a3))` and the stored word is `(int)__divdi3(..)`. A DWARF or explicit `--assert prototype` declaration keeps precedence, a stripped image names no helper and is unchanged, and every other target and helper (`__moddi3`, `__udivdi3`, `__umoddi3`) keeps its inferred contract.
-- **When to flip:** Off by default: the locked eight-byte result still costs a caller that RETURNS arithmetic on the quotient. Return recovery keeps a caller's two return words only when each is a bare slice of the call result or a literal and nothing else reads the quotient (`return a / b;`, a quotient kept across a call, a guarded `return -1`), so `return a / b + 1;` prints `int inc(..)` with only the high word, `return -(a / b);` prints `int neg(..)`, and `return f ? a / b : c;` prints `void sel(..)`, dropping both values; with the option off all three return every word (in the first-register-low join `bejoin` leaves without evidence). Of 21 authored caller shapes at clang -O2, 14 lose words that way: +1, +c, negation, abs, `>> 3`, an unsigned `>> 32`, ^c, |c, *c, a sum of two quotients, an accumulation loop, a quotient an argument replaces on one path, a clamp (`if (x > 100) x = 100;`), and the `sel` phi. Turn on for a SPARC32 binary whose callers store or pass the quotient (`*p = (int)(a / b);`, `g(a / b)`) or return it unchanged, where the off output reads an unassigned local; check any `int` or `void` caller that should return a `long long` against the disassembly.
+- **Symptoms:** a SPARC32 caller stores the low word of a 64-bit quotient from a local nothing assigns; __divdi3 is called with four 32-bit arguments and only %o0 is read back; *p = v1; after a __divdi3 call where v1 is never written; a PIE or shared object calls __stack_chk_fail_local with an argument (__stack_chk_fail_local(a0 * 3)); a function that returns a value before its stack-protector check is void.
+- **What it does:** Seed two compiler-runtime contracts: the libgcc DI-mode `long long __divdi3(long long, long long)` onto a SPARC32 big-endian ELF (`sparc:BE:32:default:default`) that names `__divdi3`, defined or imported, and `void __stack_chk_fail_local(void)` onto any ELF that defines that helper at an address no other function name holds. The `__divdi3` widths come from GCC machine modes, not the C data model: it takes two eight-byte operands in %o0:%o1 and %o2:%o3 and returns the eight-byte quotient in %o0:%o1, high word first. Without the contract the caller sees an unknown callee that writes only %o0, so a caller that stores only the low word (`*p = (int)(a / b);`, the `st %o1` after the call) stores a local nothing assigns. With it the call prints `__divdi3(CONCAT44(a0,a1),CONCAT44(a2,a3))` and the stored word is `(int)__divdi3(..)`. A DWARF or explicit `--assert prototype` declaration keeps precedence, a stripped image names no helper and is unchanged, and every other target and helper (`__moddi3`, `__udivdi3`, `__umoddi3`) keeps its inferred contract. GCC's `-fPIC` stack protector on 32-bit PowerPC and x86 links `__stack_chk_fail_local` hidden into each PIE and shared object, where it is no import, so the imports-only `libcsigs` row does not reach it: a PowerPC caller that sets its return value in r3 before the canary test prints `__stack_chk_fail_local(a0 * 3)`, and with the contract `__stack_chk_fail_local()`. Static glibc aliases the helper to `__stack_chk_fail` at one address; that address keeps its inferred contract.
+- **When to flip:** Off by default: the locked eight-byte result still costs a caller that RETURNS arithmetic on the quotient. Return recovery keeps a caller's two return words only when each is a bare slice of the call result or a literal and nothing else reads the quotient (`return a / b;`, a quotient kept across a call, a guarded `return -1`), so `return a / b + 1;` prints `int inc(..)` with only the high word, `return -(a / b);` prints `int neg(..)`, and `return f ? a / b : c;` prints `void sel(..)`, dropping both values; with the option off all three return every word (in the first-register-low join `bejoin` leaves without evidence). Of 21 authored caller shapes at clang -O2, 14 lose words that way: +1, +c, negation, abs, `>> 3`, an unsigned `>> 32`, ^c, |c, *c, a sum of two quotients, an accumulation loop, a quotient an argument replaces on one path, a clamp (`if (x > 100) x = 100;`), and the `sel` phi. Turn on for a SPARC32 binary whose callers store or pass the quotient (`*p = (int)(a / b);`, `g(a / b)`) or return it unchanged, where the off output reads an unassigned local; check any `int` or `void` caller that should return a `long long` against the disassembly. The `__stack_chk_fail_local` half also moves more than the argument: over GCC 15 `-fPIC -fstack-protector-strong` PowerPC32 shared objects at -O1 to -O3 and -Os it removes every invented argument (391 calls on the default target, 234 on e500) and gives 240 functions on the default target the return value their source declares, but 43 PLT call stubs (32 on e500) lose an inferred return the argument was the only use of, and at -Os 4 functions lose a parameter whose only use was the argument (`void gather(int a0,unsigned char *a1)` becomes `void gather(int a0)`; e500 `void main(unsigned int a0)` becomes `void main(void)`); on an i386 PIE one function in 141 (`xstrtoimax`) splits a 64-bit local into two 32-bit halves. Turn on for such a PIE or shared object whose calls to `__stack_chk_fail_local` carry an argument.
 - **Where / provenance:** P1/external-refinement · kuna · correctness-fix · pr-1252-libgcc-divdi3
 - **Example:** `option libgccsigs on`
 
@@ -1749,6 +1874,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On (default) lays char[N] data at detected strings; off leaves those addresses undefined.
 - **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-strings
 - **Example:** `option strings off`
+
+### `blobs` -- on | off, default `on`
+
+- **Symptoms:** a function returns a bare address that points at an embedded PNG or JPEG; PNG, IHDR or IDATx show up as short string fragments in rodata; an embedded zip or gzip archive renders as dat_ globals with no length; a resource table of images is unnamed data.
+- **What it does:** Plant a data symbol on every whole image or archive file stored in a mapped section: PNG, JPEG, GIF, BMP, ICO, zip, gzip, xz and zstd. A file counts only when its container structure walks to its end, which also gives the exact length (PNG chunks to IEND with every CRC-32, JPEG markers to EOI, GIF blocks to the trailer, the BMP header size against its pixel array, an ICO directory of PNG or DIB images, the zip end record and central directory, a gzip stream inflated to its trailer CRC-32, the xz footer and index CRC-32s, zstd frame and block headers); a truncated file is not one. Each is named <kind>_<addr> (png_2d0) and typed unsigned char[length], where no symbol already covers the address, and the string fragments the string pass finds inside it (PNG, IHDR, IDATx) are not planted. A constant equal to a file's first address is weighed as a pointer even below the pointer lower bound or with the bit pattern of a mask, unless the function also uses that value as a number, so a shared object whose read-only data starts in the first page still returns png_2d0 instead of 0x2d0. Real-image path only. `kuna blobs` lists the same files with the functions that reference them.
+- **When to flip:** On (default) names embedded files and types them as byte arrays; off leaves their addresses as bare constants or dat_ globals and lets the string pass plant the header fragments. Flip off when a plain number in code that never touches the file prints as its name (return png_370; where 0x370 is a size): a file starting in the first page of a small shared object shares its address with ordinary constants.
+- **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-1649-blobs
+- **Example:** `option blobs off`
 
 ### `widestrings` -- on | off, default `on`
 
@@ -1785,7 +1918,7 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 ### `unwindstarts` -- on | off, default `on`
 
 - **Symptoms:** a stripped mach-o yields almost no functions although __text is large; an ios app function list is only __mh_execute_header, main, exports and import stubs; LC_FUNCTION_STARTS absent and the arm64 gap walk cannot reach the body; functions the unwinder describes in __unwind_info missing from the inventory.
-- **What it does:** On a Mach-O, extend function discovery with the function starts the linker recorded in __TEXT,__unwind_info. The second-level pages (regular and compressed) list in ascending order the start offset of every function the unwinder can describe - one per .cfi_startproc the compiler emitted - relative to the image base. The section lives in the mapped __TEXT segment, so it survives the strip that removes LC_FUNCTION_STARTS from __LINKEDIT. On an image that still carries LC_FUNCTION_STARTS every unwind start is already a function-starts entry (the linker folds runs of adjacent same-encoding functions into one entry, so the set is a strict subset) and this oracle adds nothing. Its value is the stripped App-Store app: with LC_FUNCTION_STARTS gone, the symbol stream, LC_MAIN, exports and __mod_init_func seed only a handful of starts and the arm64 gap walk cannot reach the body, so the inventory collapses to the entry and the import stubs - measured on a 249 MB arm64 third-party iOS app with no LC_FUNCTION_STARTS, kuna discovered 23 of the 204,800 real __text functions __unwind_info records. With this on, those 204,800 starts are recovered. Only the function starts are read; the compact encodings (frame size, saved registers, frameless stack size) are ignored because kuna S5/S7 frame analysis recovers the stack frame from the code.
+- **What it does:** On a Mach-O, extend function discovery with the function starts the linker recorded in __TEXT,__unwind_info. The second-level pages (regular and compressed) list in ascending order, relative to the image base, the start offset of each entry the unwinder looks up - a function start, though the linker folds a run of adjacent functions sharing one compact encoding into the entry of its first, so a folded run yields one start. The section lives in the mapped __TEXT segment, so it survives the strip that removes LC_FUNCTION_STARTS from __LINKEDIT. On an image that still carries LC_FUNCTION_STARTS every unwind start is already a function-starts entry (the linker folds runs of adjacent same-encoding functions into one entry, so the set is a strict subset) and this oracle adds nothing. Its value is the stripped App-Store app: with LC_FUNCTION_STARTS gone, the symbol stream, LC_MAIN, exports and __mod_init_func seed only a handful of starts and the arm64 gap walk cannot reach the body, so the inventory collapses to the entry and the import stubs - measured on a 249 MB arm64 third-party iOS app with no LC_FUNCTION_STARTS, kuna discovered 23 of the 204,800 real __text functions __unwind_info records. With this on, those 204,800 starts are recovered. Only the function starts are read; the compact encodings (frame size, saved registers, frameless stack size) are ignored because kuna S5/S7 frame analysis recovers the stack frame from the code.
 - **When to flip:** On by default: a Mach-O whose LC_FUNCTION_STARTS was stripped (a common App-Store app) gets its function inventory back from __unwind_info -- the tell-tale without it is an inventory of a few named entries and many __stubs/__got slots over a large __text that holds real code. Inert on every non-Mach-O image and on any Mach-O that still carries LC_FUNCTION_STARTS, where the unwind starts are already a subset of what is discovered. Flip off to keep only the LC_FUNCTION_STARTS, LC_MAIN, export and __mod_init_func starts.
 - **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-unwindstarts
 - **Example:** `--option unwindstarts on`
@@ -1950,13 +2083,21 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **Where / provenance:** P1/code-data-partition · kuna · correctness-fix · kuna-fast-function-discovery
 - **Example:** `--mode fast --option fast_funcdisc on`
 
-### `fid` -- on | off, default `off`
+### `fid` -- on | off | strict, default `off`
 
 - **Symptoms:** stripped static-linked library function stays sub_<addr> although its fingerprint is known; no .fid database renames applied in a stripped binary.
-- **What it does:** Run the FID fingerprint matcher (a Listing/xref consumer): the kuna analog of Ghidra's FID (Function-ID) identification analyzer. Over the built Listing, fingerprint each function with the byte-exact operand-masked FNV-1a64 hash (the MessageDigestFidHasher port, driving Sleigh::instruction_mask) and look the full hash up in a kuna `.fid` fingerprint database (named by the `kuna_fid_db` environment variable). When the full-hash bucket collapses to exactly one name (conservative — never guess on a tie), RENAME the matched function — but only when it still carries an engine FUN_*/sub_* placeholder (the label gate; a real .symtab/DWARF name is never overwritten). This re-identifies a function in a STRIPPED binary purely by its instruction-stream fingerprint (e.g. sub_4017c0 -> kuna_crc32). Requires the Listing (option listing on) and a configured `.fid` DB — a no-op when either is absent. DISABLED by default (real-ELF path only, so every parity gate is byte-identical).
-- **When to flip:** Off (default; no Listing consumer runs and there is zero behavior change). Flip on (with option listing on, and `kuna_fid_db` pointing at a `.fid` database built by `kuna fid build`) to re-identify library functions in a STRIPPED real-ELF target by full-hash fingerprint — renaming a FUN_*/sub_* placeholder back to its known library name.
+- **What it does:** Run the FID fingerprint matcher (a Listing/xref consumer): the kuna analog of Ghidra's FID (Function-ID) identification analyzer. Over the built Listing, fingerprint each function with the byte-exact operand-masked FNV-1a64 hash (the MessageDigestFidHasher port, driving Sleigh::instruction_mask) and look the full hash up in a kuna `.fid` fingerprint database (named by the `kuna_fid_db` environment variable). When the full-hash bucket collapses to exactly one name (conservative — never guess on a tie), RENAME the matched function — but only when it still carries an engine FUN_*/sub_* placeholder (the label gate; a real .symtab/DWARF name is never overwritten). This re-identifies a function in a STRIPPED binary purely by its instruction-stream fingerprint (e.g. sub_4017c0 -> kuna_crc32). The optional strict mode also requires a specific-hash and code-unit-count match for the same record; matching evidence is not identity proof. Requires the Listing (option listing on) and a configured `.fid` DB — a no-op when either is absent. DISABLED by default (real-ELF path only, so every parity gate is byte-identical).
+- **When to flip:** Off (default; no Listing consumer runs and there is zero behavior change). Flip on (with option listing on, and `kuna_fid_db` pointing at a `.fid` database built by `kuna fid build`) to re-identify library functions in a STRIPPED real-ELF target by full-hash fingerprint — renaming a FUN_*/sub_* placeholder back to its known library name. Use strict to require matching specific hash and code-unit count when the database comes from the same link as the target: the specific hash folds in operand values that differ between links, so against a libc.a database strict keeps about 3% of the correct names.
 - **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-fid
 - **Example:** `option listing on --option fid on`
+
+### `flirt` -- on | off, default `off`
+
+- **Symptoms:** a stripped static binary lists libc functions as sub_<addr>; kuna cannot use flirt .sig signatures; memcpy and printf in a static binary have no names.
+- **What it does:** Name library functions in a stripped binary with IDA FLIRT .sig signature files (versions 5 to 11; raw, deflate, zlib or zstd bodies) named by the KUNA_FLIRT_SIGS environment variable (a :-separated list of files or directories; IDA ships them under <ida>/sig/<processor>). A Listing consumer: at every discovered function entry the signature trie is walked over the first pattern_len bytes, and a module matches when the byte-swapped CRC-16/X.25 of its crc_len bytes after the prefix, its tail bytes and its expected instruction bits agree. A module that names a referenced function is accepted only when the instruction at the reference offset branches, calls, or (x86) holds the 32-bit address of a function of that name; names found in one round satisfy references in the next, for up to three rounds. Modules that disagree on the name are scored by their reference sites (+4 for a site whose target has the expected name, -4 for another name, 0 unnamed); the strictly best name wins and a tie names nothing. A module wholly inside the trie prefix is dropped when a site contradicts it. A name given to two addresses, or one the binary already carries, is withheld; a bare-return entry, startup signatures and signatures whose file-type mask excludes the binary are never used. The names go out through the FID rename, so only a sub_ placeholder is replaced. Requires the Listing (option listing on); inert without a signature file.
+- **When to flip:** Off (default). Flip on with listing on and KUNA_FLIRT_SIGS pointing at .sig files (for example IDA's sig/pc/glibc_amd64.sig for a static x86-64 glibc binary) when a stripped statically linked binary shows hundreds of sub_ functions that are library code.
+- **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-flirt
+- **Example:** `KUNA_FLIRT_SIGS=$IDADIR/sig/pc/glibc_amd64.sig kuna functions ./static-stripped --option listing on --option flirt on`
 
 ### `rtti` -- on | off, default `on`
 
@@ -1969,34 +2110,18 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 ### `itaniumrtti` -- on | off, default `on`
 
 - **Symptoms:** gcc/clang c++ class names missing and vtables left as unnamed DAT_ data; no Class::vtable or typeinfo labels in a stripped elf with polymorphic classes; virtual dispatch slot resolves to sub_<addr> with no class.
-- **What it does:** On a GCC/Clang-built C++ ELF, run the Itanium RTTI + vtable recovery pass -- a capability Ghidra does NOT have (its RttiAnalyzer is a Microsoft-PE analyzer, and its GCC class recovery is script-tier: RecoverClassesFromRTTIScript / RTTIGccClassRecoverer, never auto-analysis), so on a stripped g++ binary Ghidra leaves the Shape vtable as DAT_00107a80. IDA Pro does reconstruct it, and this is kuna's analog, built against the Itanium C++ ABI. On an ELF, discovery is EXACT rather than a byte-pattern scan: the three __cxxabiv1 typeinfo vtables live in libstdc++, so every _ZTI... typeinfo object's leading vptr word is an UND dynamic relocation naming __class_type_info / __si_class_type_info / __vmi_class_type_info with addend 2*ptr -- the relocation's r_offset IS the typeinfo address and its symbol IS the flavour, and `.rela.dyn` is a loader input that `strip --strip-all` cannot remove from a shared object. A defined _ZTI... OBJECT symbol is a second discovery source (unstripped / static link), its flavour sniffed from the object's shape. Each typeinfo's _ZTS... type-name string is demangled to the class name by wrapping it back into the _ZTS symbol form and reusing the existing cpp_demangle Itanium arm (the exact analog of the MSVC ??_R0...@8 wrap; ZERO new demangler code), and its base list gives the inheritance DISPLACEMENTS. Vtables are then reached from the typeinfo, not guessed: one scan finds every pointer slot holding a discovered typeinfo address (a sub-vtable's second header word), and two exact ABI constraints reject the coincidental hits -- offset-to-top is always <= 0, and a real sub-vtable has >= 1 slot pointing into an executable section. A slot whose file word is 0 but which carries a dynamic relocation is an IMPORTED virtual method (__cxa_pure_virtual, a base method in another image); the walk steps over it instead of terminating, so an abstract interface keeps its true extent. Emits Data symbols `<C>::typeinfo`, `<C>::typeinfo_name`, `<C>::vtable`, and for a secondary sub-vtable the base subobject its displacement identifies (`Widget::vtable_for_Drawable`); a Function symbol `<C>::vtable_<i>` per virtual slot, with an inherited slot attributed to the class that DEFINES it rather than to whichever vtable the scan reached first (so Shape::perimeter, repeated in Circle's and Square's tables, is named once for Shape); and the slot arrays as read-only ranges. ELF-only (registered in passes_for only for BinaryFormat::Elf, and the pass self-gates on ELF in run), and an ELF with no __cxxabiv1 typeinfo relocation and no _ZTI symbol produces nothing, so every other image is byte-identical.
-- **When to flip:** On by default: a GCC/Clang-built C++ ELF carrying polymorphic classes -- especially a STRIPPED one, where the relocation anchor is the only surviving type information -- gets its class names, inheritance graph and vtables recovered (an unnamed DAT_* vtable slot becomes `Shape::vtable_2`, the raw .data.rel.ro bytes become `Shape::typeinfo` / `Shape::vtable`). Inert on every non-ELF image, on a binary built -fno-rtti (google/leveldb is such a build: 18 _ZTV symbols, zero _ZTI/_ZTS, zero __cxxabiv1 relocations), and on plain C. Flip off to keep the vtable data unnamed.
+- **What it does:** On a GCC/Clang-built C++ ELF, run the Itanium RTTI + vtable recovery pass -- a capability Ghidra does NOT have (its RttiAnalyzer is a Microsoft-PE analyzer, and its GCC class recovery is script-tier: RecoverClassesFromRTTIScript / RTTIGccClassRecoverer, never auto-analysis), so on a stripped g++ binary Ghidra leaves the Shape vtable as DAT_00107a80. IDA Pro does reconstruct it, and this is kuna's analog, built against the Itanium C++ ABI. On an ELF, discovery is EXACT rather than a byte-pattern scan: the three __cxxabiv1 typeinfo vtables live in libstdc++, so every _ZTI... typeinfo object's leading vptr word is an UND dynamic relocation naming __class_type_info / __si_class_type_info / __vmi_class_type_info with addend 2*ptr -- the relocation's r_offset IS the typeinfo address and its symbol IS the flavour, and `.rela.dyn` is a loader input that `strip --strip-all` cannot remove from a shared object. A defined _ZTI... OBJECT symbol is a second discovery source (unstripped / static link), its flavour sniffed from the object's shape. Each typeinfo's _ZTS... type-name string is demangled to the class name by wrapping it back into the _ZTS symbol form and reusing the existing cpp_demangle Itanium arm (the exact analog of the MSVC ??_R0...@8 wrap; ZERO new demangler code), and its base list gives the inheritance DISPLACEMENTS. Vtables are then reached from the typeinfo, not guessed: one scan finds every pointer slot holding a discovered typeinfo address (a sub-vtable's second header word), and two exact ABI constraints reject the coincidental hits -- offset-to-top is always <= 0, and a real sub-vtable has >= 1 slot pointing into an executable section. A slot whose file word is 0 but which carries a dynamic relocation is an IMPORTED virtual method (__cxa_pure_virtual, a base method in another image); the walk steps over it instead of terminating, so an abstract interface keeps its true extent. Emits Data symbols `<C>::typeinfo`, `<C>::typeinfo_name`, `<C>::vtable`, and for a secondary sub-vtable the base subobject its displacement identifies (`Widget::vtable_for_Drawable`); a Function symbol `<C>::vfunc_<i>` per virtual slot (`<C>::vfunc_for_<Base>_<i>` in a secondary sub-vtable), with an inherited slot attributed to the class that DEFINES it rather than to whichever vtable the scan reached first (so Shape::perimeter, repeated in Circle's and Square's tables, is named once for Shape); and the slot arrays as read-only ranges. Where the Listing is built, it also names constructors and destructors: a function that stores a class's vptr through `this` (its first parameter, followed through frame spills along the fall-through path of its p-code) is `C::~C` when it sits in that class's own primary vtable and its stores make it C's, all of them and also those before any call or conditional branch (a `Release` testing its count before `delete this` stores after one; a `reset` that rebuilds `*this` with a polymorphic member, or builds a derived class in place, also stores that other vptr), and when the class's shaped slots are a D1/D0 pair: two neighbours, or one whose next slot calls it or, for clang's abstract class, only traps (a lone shaped slot beside an ordinary method is a placement-new rebuild or a `delete this` with a non-virtual destructor; a third, or two apart, also leaves the class alone; a virtual method returning its class by value, which reads its `this` from the second parameter or returns the slot's address, is not shaped), and so is the next slot when it calls that function (the deleting destructor); it is `C::C` when it sits in no vtable, the class or a base has a virtual destructor, every store goes through `this` reloaded from the function's own frame spill (unoptimized code: an optimized by-value factory, placement-new helper, holder constructor or `delete p` wrapper stores exactly as an inlined constructor does, so optimized constructors stay unnamed; a `this` re-stored to a second slot with no call after it is an inlined always_inline constructor's parameter), no call before a store but one passed `this` (a by-value return slot spilled across other calls stores the same way), and, when the class has a base, every store follows a call (a destructor, such as a pure virtual one in no slot, stores first); a factory that inlines the constructor stores through operator new's result and keeps its own name, and a function the symbol table already names keeps that name alone. ELF-only (registered in passes_for only for BinaryFormat::Elf, and the pass self-gates on ELF in run), and an ELF with no __cxxabiv1 typeinfo relocation and no _ZTI symbol produces nothing, so every other image is byte-identical.
+- **When to flip:** On by default: a GCC/Clang-built C++ ELF carrying polymorphic classes -- especially a STRIPPED one, where the relocation anchor is the only surviving type information -- gets its class names, inheritance graph and vtables recovered (an unnamed DAT_* vtable slot becomes `Shape::vfunc_2`, the raw .data.rel.ro bytes become `Shape::typeinfo` / `Shape::vtable`, and with the Listing a constructor call `sub_14ea(v3,2,5)` becomes `shapes::Circle::Circle(v3,2,5)`). Inert on every non-ELF image, on a binary built -fno-rtti (google/leveldb is such a build: 18 _ZTV symbols, zero _ZTI/_ZTS, zero __cxxabiv1 relocations), and on plain C. Flip off to keep the vtable data unnamed.
 - **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-itaniumrtti
 - **Example:** `option itaniumrtti on`
 
-### `aif` -- on | off, default `off`
+### `aif` -- off | on | strict | precise, default `off`
 
-- **Symptoms:** function reachable only through a rodata function-pointer table never discovered; undefined gap between functions that clearly holds code; call *reg targets missing from the function list.
-- **What it does:** Run the Aggressive Instruction Finder gap-walk (the third Listing/xref consumer): the kuna analog of Ghidra's AggressiveInstructionFinderAnalyzer, a speculative gap-filler. Over the undefined gaps between discovered functions, speculatively decode each gap start and accept it as a NEW function entry when it BOTH (a) disassembles into a valid subroutine (followSubFlows reaches a clean RET without hitting a bad/undecodable byte or an out-of-range flow, > 2 instructions) AND (b) matches a function-start byte fingerprint (mask-histogram) shared by >= 4 already-discovered functions. Finds functions reachable ONLY through an indirect/data path (a .rodata function-pointer table) that entry discovery + funcsyms + .eh_frame miss. Emits the discovered starts as the existing entries fact -> the existing name_function/add_function commit seam (no new commit arm). Requires the Listing (option listing on) — a no-op when the Listing is absent. DISABLED by default (Ghidra ships setDefaultEnablement(false) with the warning 'IT MAY CREATE A LOT OF BAD CODE!'; a speculative gap-filler can create false-positive functions; real-ELF path only, so every parity gate is byte-identical). The gap walk also refuses a candidate whose own flow rejoins the known function around it unless boundary evidence says a function starts there (GH-299, formerly the aifbracket option), and it never plants an entry on nop padding or zero fill: zero fill is not probed, padding ending at a known entry is not probed, and an accept behind padding lands on the first instruction after it (formerly aifnoppad); both run whenever this pass does.
-- **When to flip:** Off (default; no Listing consumer runs and there is zero behavior change, and a speculative gap-filler can create false-positive functions). Flip on (with option listing on) when a function is reachable ONLY through an indirect/data path (its address taken into a .rodata function-pointer table and called via call *reg with an opaque index) — so it is in no symbol table, has no .eh_frame FDE, and no static CALL edge points at it, leaving it an undefined gap that entry discovery cannot reach. AIF's fingerprint+validity gap-walk recovers it as a named sub_<addr>.
+- **Symptoms:** function reachable only through a rodata function-pointer table never discovered; undefined gap between functions that clearly holds code; call *reg targets missing from the function list; a stripped binary reports far more functions than it has; a discovered function starts in the middle of another functions body; a sub_ entry lands on an ordinary call or mov instruction rather than a prologue; two overlapping functions decompile the same instructions twice; aif adds thousands of entries a reference decompiler does not agree are functions; an arm function entry lands one halfword before the real prologue; a sub_ entry lands on a routine that calls nothing and only falls off the end of a hole; aif accepts a function on nothing but four other functions sharing its first two instructions; a stripped function list is full of leaf routines that are not functions.
+- **What it does:** Run the Aggressive Instruction Finder gap-walk (the third Listing/xref consumer): the kuna analog of Ghidra's AggressiveInstructionFinderAnalyzer, a speculative gap-filler. Over the undefined gaps between discovered functions, speculatively decode each gap start and accept it as a NEW function entry when it BOTH (a) disassembles into a valid subroutine (followSubFlows reaches a clean RET without hitting a bad/undecodable byte or an out-of-range flow, > 2 instructions) AND (b) matches a function-start byte fingerprint (mask-histogram) shared by >= 4 already-discovered functions. Finds functions reachable ONLY through an indirect/data path (a .rodata function-pointer table) that entry discovery + funcsyms + .eh_frame miss. Emits the discovered starts as the existing entries fact -> the existing name_function/add_function commit seam (no new commit arm). Requires the Listing (option listing on) - a no-op when the Listing is absent. Four values, each a cumulative setting of the walk. `off` (default) runs no walk: Ghidra ships setDefaultEnablement(false) with the warning 'IT MAY CREATE A LOT OF BAD CODE!', a speculative gap-filler can create false-positive functions, and it is real-ELF path only, so every parity gate is byte-identical. `on` slides the gap cursor ONE BYTE at a time, because the undefined-byte partition is byte-granular by construction (first_undefined_after), so every byte of every hole is a candidate function start and both acceptance tests are applied to addresses that cannot be instruction boundaries at all; a candidate starting mid-instruction reads the tail of one encoding plus the head of the next, and that synthetic pair matches a common prologue about as often as a real one does. On the reported 3.4 MB stripped i386 PE, the byte cursor contributes 5,913 entries of which 2,067 land inside a function IDA decodes as one body, and 737 of those are inside a function kuna itself already has an entry for (GH-299). `strict` advances the cursor to the next 4-byte boundary instead and probes a candidate only when it is 4-byte aligned OR is the first byte of its hole: a hole boundary is evidence, since the recursive-descent walk decoded up to exactly there and stopped, while an interior byte the cursor slid onto is a guess. The exemption is also what keeps the aif_gap_x86_64 fixture green, whose indirect-only function at 0x13ae is 2-mod-4 but IS a hole start. 4 bytes on every architecture, deliberately: 16-byte alignment kills 91 percent of the bad Cortex-M entries but takes 80 percent of the real ones with it. The removal is not only a precision win: because an accept advances the cursor past the accepted body, a phantom accepted one halfword inside a literal pool CONSUMES the real function behind it, so declining that probe recovers the true entry. Measured bidirectionally over 110 stripped non-x86-64 decbench binaries against each stripped image unstripped twin symbol table: mid-body entries 11,010 to 6,728 (a 38.9 percent cut) and ground-truth recall 44,613 to 44,957 of 50,724 (plus 344). On the two large PE witnesses, mid-body entries 339 to 135 on a 590 KB i386 crackme scored against its unstripped twin (zero of its 636 AIF-recovered real entries lost, 9 gained) and 421 to 293 on IDA Pro 9.2 win32_remote32.exe (3 of 157 lost). u-boot A32, the image DIV-20 exists for, gains 56 functions at O2 and is unchanged at O2-noinline. The worst single-image cost is CMSIS_DAP.axf, where only 73.5 percent of ground-truth entries are 4-aligned and three Thumb functions at 2-mod-4 interior addresses are lost. This does NOT reach the acceptance bar pre-registered for the default (a 60 percent corpus cut and 100 or fewer crackme mid-body entries), so the aligned cursor reaches the default path through the aggressive preset (which `auto` picks under 500 KiB) and GH-299 stays open. The issue's other direction - reject a candidate bracketed by a known function - costs u-boot 195 of 1,759 recovered functions when the bracket is read off the Listing's entry-ordered function model; it ships as aifbracket, which proves the bracket from the candidate's own flow instead. `precise` is `strict` plus upstream Ghidra's SECOND fingerprint test (GH-313), so a gap candidate that corroborates nothing is refused instead of accepted on four functions sharing its prologue. AggressiveInstructionFinderAnalyzer rejects a candidate twice: startCount < 4 at line 278, and then numInstr <= 2 || (!addsInfo && startCount < 50) at line 367, whose comment reads 'if the routine doesn't add good info, it must start like a large numbe of other functions'. kuna's port of the first test and the numInstr half of the second dropped the addsInfo clause, so under `on` and `strict` a self-contained routine that calls nothing, jumps nowhere known and merely reaches a ret becomes a function on a two-mnemonic coincidence. Under `precise` an accept must EITHER add information - a call, or a jump into already-discovered code, computed upstream's way rather than from kuna's looser adds_info, which also counts a plain fall-through out of the hole and therefore fires on exactly the mid-body phantom this is meant to catch - OR match a prologue that 50 discovered functions share. A refused candidate still CONSUMES its body, because refusing an accept without that would hand the gap cursor back to the interior of the same hole: without the pairing the 3.4 MB PE witness turns a 361-entry mid-body cut into a 222-entry mid-body RISE. Applied only at the gap-walk accept; the raw Thumb-prologue seed, the code-pointer-table seed and the pointer-target validator carry their own corroboration and are untouched. MEASURED OUT FOR THE DEFAULT PATH, which is why no preset sets it. Over the same 110 stripped non-x86-64 decbench binaries, each scored against its own unstripped twin symbol table and compared with `strict`: AIF-marginal mid-body entries 6,728 to 4,653 (a 30.8 percent cut) but ground-truth recall 44,957 to 44,107 of 50,724 (minus 850), with recall raised on ZERO of the 110 images. The two u-boot A32 images, which carry 66 percent of AIF's corpus-wide true recall and are what DIV-20 exists for, lose 84 real functions at O2 and 141 at O2-noinline; CMSIS_DAP.axf loses 16. The PE witnesses are worse: a 590 KB i386 crackme gives up 24 real entries for 16 mid-body ones, and the 3.4 MB stripped i386 PE of GH-299 gives up 1,100 IDA Pro 9.2 agreed entries for 361. A threshold grid over 4, 8, 12, 20, 50 and 100 finds no escape - 4 is the existing fingerprint floor and so inert, and u-boot O2-noinline is already down 79 functions at 8 - so the upstream literal 50 is kept. What upstream assumes, that a function worth finding calls something the analyzer already knows, does not hold for the bare-metal ARM firmware that is AIF's remaining justification in kuna, where the routines only AIF can find are the leaf helpers that call nothing. Speed is inside the budget (interleaved min-of-4: minus 4.3, plus 2.5, minus 0.6 percent). The gap walk also refuses a candidate whose own flow rejoins the known function around it unless boundary evidence says a function starts there (GH-299, formerly the aifbracket option), and it never plants an entry on nop padding or zero fill: zero fill is not probed, padding ending at a known entry is not probed, and an accept behind padding lands on the first instruction after it (formerly aifnoppad); both run whenever this pass does.
+- **When to flip:** Off (default; no Listing consumer runs and there is zero behavior change, and a speculative gap-filler can create false-positive functions). Set `on` (with option listing on) when a function is reachable ONLY through an indirect/data path (its address taken into a .rodata function-pointer table and called via call *reg with an opaque index) - so it is in no symbol table, has no .eh_frame FDE, and no static CALL edge points at it, leaving it an undefined gap that entry discovery cannot reach. AIF's fingerprint+validity gap-walk recovers it as a named sub_<addr>. `on` is also what the decompile-all, decompile-project and functions drivers inject on a non-x86-64 image when the selected mode names no aif value (`--mode reliable`), and it reproduces the GH-299 measurement exactly. Set `strict` (what the aggressive preset sets, and so the default path under 500 KiB; every number above was measured there) for a stripped image whose function list is far longer than the binary can hold, or that contains a sub_<addr> sitting on an ordinary call or mov in the middle of another function - and especially when two overlapping entries decompile the same instructions twice: it cuts mid-body entries 38.9 percent AND raises recall by 344 over 110 stripped non-x86-64 binaries. Go back to `on` if a function you know is real disappears on an architecture whose function starts are not 4-byte aligned (Thumb allows a 2-mod-4 start; three are lost on CMSIS_DAP.axf). An explicit `--option aif on` after the aggressive preset replaces its `strict`. Set `precise` only when you are reading a stripped image for PRECISION rather than coverage and would rather miss a real function than chase a sub_<addr> that is not one: a triage pass over a huge stripped binary where the function list is the artifact, or a comparison against a reference decompiler where a mid-body entry is worse than a gap. Expect to lose roughly one real function for every two phantom entries it removes compared with `strict`, and expect that ratio to be much worse on bare-metal ARM firmware and on large i386 PEs. If you are hunting mid-body entries and want to keep recall, use `strict` - it is the one that removes them and raises recall.
 - **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-aif
-- **Example:** `option listing on --option aif on`
-
-### `aifstrict` -- on | off, default `off`
-
-- **Symptoms:** a stripped binary reports far more functions than it has; a discovered function starts in the middle of another functions body; a sub_ entry lands on an ordinary call or mov instruction rather than a prologue; two overlapping functions decompile the same instructions twice; aif adds thousands of entries a reference decompiler does not agree are functions; an arm function entry lands one halfword before the real prologue.
-- **What it does:** Advance the Aggressive Instruction Finder gap cursor to the next 4-byte boundary instead of the next byte, so it stops planting function entries in the middle of function bodies (GH-299). run_aif walks the undefined-byte partition ONE BYTE at a time, because first_undefined_after is byte-granular by construction, so every byte of every hole is a candidate function start and the two acceptance tests - a 2-mnemonic prologue fingerprint shared by at least 4 discovered functions, and a valid-subroutine decode - are applied to addresses that cannot be instruction boundaries at all. A candidate starting mid-instruction reads the tail of one encoding plus the head of the next, and that synthetic pair matches a common prologue about as often as a real one does. On the reported 3.4 MB stripped i386 PE, AIF contributes 5,913 entries of which 2,067 land inside a function IDA decodes as one body, and 737 of those are inside a function kuna itself already has an entry for. With this on, a candidate is probed only when it is 4-byte aligned OR is the first byte of its hole: a hole boundary is evidence, since the recursive-descent walk decoded up to exactly there and stopped, while an interior byte the cursor slid onto is a guess. The exemption is also what keeps the aif_gap_x86_64 fixture green, whose indirect-only function at 0x13ae is 2-mod-4 but IS a hole start. 4 bytes on every architecture, deliberately: 16-byte alignment kills 91 percent of the bad Cortex-M entries but takes 80 percent of the real ones with it. The removal is not only a precision win: because an accept advances the cursor past the accepted body, a phantom accepted one halfword inside a literal pool CONSUMES the real function behind it, so declining that probe recovers the true entry. Measured bidirectionally over 110 stripped non-x86-64 decbench binaries against each stripped image unstripped twin symbol table: mid-body entries 11,010 to 6,728 (a 38.9 percent cut) and ground-truth recall 44,613 to 44,957 of 50,724 (plus 344). On the two large PE witnesses, mid-body entries 339 to 135 on a 590 KB i386 crackme scored against its unstripped twin (zero of its 636 AIF-recovered real entries lost, 9 gained) and 421 to 293 on IDA Pro 9.2 win32_remote32.exe (3 of 157 lost). u-boot A32, the image DIV-20 exists for, gains 56 functions at O2 and is unchanged at O2-noinline. The worst single-image cost is CMSIS_DAP.axf, where only 73.5 percent of ground-truth entries are 4-aligned and three Thumb functions at 2-mod-4 interior addresses are lost. This does NOT reach the acceptance bar pre-registered for the fix (a 60 percent corpus cut and 100 or fewer crackme mid-body entries), so it ships opt-in rather than as the default and GH-299 stays open. The issues other direction - reject a candidate bracketed by a known function - costs u-boot 195 of 1,759 recovered functions when the bracket is read off the Listings entry-ordered function model; it ships as aifbracket, which proves the bracket from the candidate's own flow instead. Inert without aif and without --option listing on.
-- **When to flip:** Off (default) keeps the byte-granular cursor and reproduces the GH-299 measurement exactly. The `aggressive` preset carries it, which is where every number above was measured. Flip on for a stripped image whose function list is far longer than the binary can hold, or that contains a sub_<addr> sitting on an ordinary call or mov in the middle of another function - and especially when two overlapping entries decompile the same instructions twice. Flip it back off if a function you know is real disappears on an architecture whose function starts are not 4-byte aligned (Thumb allows a 2-mod-4 start; three are lost on CMSIS_DAP.axf).
-- **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · GH-299
-- **Example:** `--option aifstrict on`
-
-### `aifcorroborate` -- on | off, default `off`
-
-- **Symptoms:** a sub_ entry lands on a routine that calls nothing and only falls off the end of a hole; aif accepts a function on nothing but four other functions sharing its first two instructions; a stripped function list is full of leaf routines that are not functions.
-- **What it does:** Restore upstream Ghidra's SECOND Aggressive Instruction Finder fingerprint test, so a gap candidate that corroborates nothing is refused instead of accepted on four functions sharing its prologue (GH-313). AggressiveInstructionFinderAnalyzer rejects a candidate twice: startCount < 4 at line 278, and then numInstr <= 2 || (!addsInfo && startCount < 50) at line 367, whose comment reads 'if the routine doesn't add good info, it must start like a large numbe of other functions'. kuna ported the first test and the numInstr half of the second and dropped the addsInfo clause entirely, so a self-contained routine that calls nothing, jumps nowhere known and merely reaches a ret becomes a function on a two-mnemonic coincidence. With this on an accept must EITHER add information - a call, or a jump into already-discovered code, computed upstream's way rather than from kuna's looser adds_info, which also counts a plain fall-through out of the hole and therefore fires on exactly the mid-body phantom this is meant to catch - OR match a prologue that 50 discovered functions share. A refused candidate still CONSUMES its body, because refusing an accept without that would hand the gap cursor back to the interior of the same hole: without the pairing the 3.4 MB PE witness turns a 361-entry mid-body cut into a 222-entry mid-body RISE. Applied only at the gap-walk accept; the raw Thumb-prologue seed, the code-pointer-table seed and the pointer-target validator carry their own corroboration and are untouched. MEASURED OUT FOR THE DEFAULT PATH, which is why it ships opt-in and in no preset. Over the same 110 stripped non-x86-64 decbench binaries aifstrict was measured on, each scored against its own unstripped twin symbol table and on top of aifstrict: AIF-marginal mid-body entries 6,728 to 4,653 (a 30.8 percent cut) but ground-truth recall 44,957 to 44,107 of 50,724 (minus 850), with recall raised on ZERO of the 110 images. The two u-boot A32 images, which carry 66 percent of AIF's corpus-wide true recall and are what DIV-20 exists for, lose 84 real functions at O2 and 141 at O2-noinline; CMSIS_DAP.axf loses 16. The PE witnesses are worse: a 590 KB i386 crackme gives up 24 real entries for 16 mid-body ones, and the 3.4 MB stripped i386 PE of GH-299 gives up 1,100 IDA Pro 9.2 agreed entries for 361. A threshold grid over 4, 8, 12, 20, 50 and 100 finds no escape - 4 is the existing fingerprint floor and so inert, and u-boot O2-noinline is already down 79 functions at 8 - so the upstream literal 50 is kept. What upstream assumes, that a function worth finding calls something the analyzer already knows, does not hold for the bare-metal ARM firmware that is AIF's remaining justification in kuna, where the routines only AIF can find are the leaf helpers that call nothing. Speed is inside the budget (interleaved min-of-4: minus 4.3, plus 2.5, minus 0.6 percent). Inert without aif and without --option listing on.
-- **When to flip:** Off (default, and in no preset - it costs more real functions than it removes phantoms on every corpus measured). Flip on only when you are reading a stripped image for PRECISION rather than coverage and would rather miss a real function than chase a sub_<addr> that is not one: a triage pass over a huge stripped binary where the function list is the artifact, or a comparison against a reference decompiler where a mid-body entry is worse than a gap. Expect to lose roughly one real function for every two phantom entries it removes, and expect that ratio to be much worse on bare-metal ARM firmware and on large i386 PEs. If you are hunting mid-body entries and want to keep recall, use aifstrict instead - it is the one that removes them and raises recall, and the aggressive preset already carries it.
-- **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · GH-313
-- **Example:** `--option aifcorroborate on`
+- **Example:** `--option listing on --option aif strict`
 
 ### `x86listingswitch` -- on | off, default `off`
 
@@ -2025,16 +2150,24 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 ### `goabi` -- auto | off, default `auto`
 
 - **Symptoms:** go function parameters missing or void while the body reads rax/rbx locals that are never assigned; a go function returning two values loses the second and the statements computing it; go output full of unassigned register-commented locals; multi-return go call sites read registers the call never defines.
-- **What it does:** Select the vendored golang compiler spec for a Go image. Go does not use the platform C ABI: since 1.17 its register ABI (abi-internal) passes arguments in RAX,RBX,RCX,RDI,RSI,R8-R11 on x86-64 and returns multiple values in those same registers, so under the default gcc model a Go function's parameters are invisible (RAX/RBX are scratch to SysV), a second return value is dead-coded away, and the statements computing it are DELETED - `func pair(a,b int) (int,int)` decompiles as `long pair(void){ return v1 + v2; }` with both locals unassigned and the product gone. Ghidra vendors golang cspecs (abi-internal default, abi0 the stack ABI, the write-barrier and duff helper models) for x86-64, x86-32 and AArch64; kuna ships them compiled and nothing selected them. At `auto` (default) an image whose effective source language is Go (the sourcelang fact, KUNA_SOURCELANG force included) composes the `:golang` compiler field in its SLEIGH language id on those three little-endian architectures; every other architecture and every non-Go image is untouched, and the engine's default-model retry covers a spec that fails to resolve. The id is composed inside `load file`, so the option travels as the KUNA_GOABI environment variable (the rexthunk/sourcelang loadtime pattern). The golang cspec also registers the `abi0` stack-ABI model, and a function or callee whose name ends `.abi0` (Go's dual-ABI stack alias - an unstripped go1.22 hello-world carries 115 such .symtab names; the pclntab carries none, so a stripped image keeps abi-internal everywhere) takes that model at the model-selection seams; the binding self-gates on the model being registered, so an explicit `--target ...:golang` gets it even with goabi off.
+- **What it does:** Select the vendored golang compiler spec for a Go image. Go does not use the platform C ABI: since 1.17 its register ABI (abi-internal) passes arguments in RAX,RBX,RCX,RDI,RSI,R8-R11 on x86-64 and returns multiple values in those same registers, so under the default gcc model a Go function's parameters are invisible (RAX/RBX are scratch to SysV), a second return value is dead-coded away, and the statements computing it are DELETED - `func pair(a,b int) (int,int)` decompiles as `long pair(void){ return v1 + v2; }` with both locals unassigned and the product gone. Ghidra vendors golang cspecs (abi-internal default, abi0 the stack ABI, the write-barrier and duff helper models) for x86-64, x86-32 and AArch64; kuna ships them compiled and nothing selected them. At `auto` (default) an image whose effective source language is Go (the sourcelang fact, KUNA_SOURCELANG force included) composes the `:golang` compiler field in its SLEIGH language id on those three little-endian architectures; every other architecture and every non-Go image is untouched, and the engine's default-model retry covers a spec that fails to resolve. The id is composed inside `load file`, so the option travels as the KUNA_GOABI environment variable (the rexthunk/sourcelang loadtime pattern). On AMD64 ELF under goabi auto, a defined name.abi0 text symbol must match the address and base name of a pclntab function. Complete FUNCDATA_ArgInfo must describe contiguous eight-byte inputs spanning the entire _func.args area, leaving no stack result storage. An ordinary function must also have a bounded, straight-line symbol body ending in a decoded near return. Special runtime entries, branches, calls, user operations and earlier stack-pointer writes keep the existing model. The function and its direct calls then use the bounded abi0 input model. Stripped images and unsupported metadata retain the default model.
 - **When to flip:** Leave auto: on a Go binary the golang cspec is the difference between invisible parameters with deleted statements and recovered register arguments with the multi-return join; flip off to read a Go image under the platform C model (comparing against another tool, or triaging a suspected cspec defect). Non-Go binaries never see the option either way.
 - **Where / provenance:** P1/environment-binding · kuna · analysis-enablement · kuna-multilang-goabi
 - **Example:** `option goabi off`
 
-### `dyldimage` -- none | <install-name>, default `none`
+### `gotypeglobals` -- on | off, default `on`
 
-- **Symptoms:** a dyld_shared_cache file is rejected as an unrecognized input format; cannot decompile an ios or macos system library because it only exists inside the dyld shared cache; dyld shared cache holds N images; choose one with --image.
-- **What it does:** Choose which image of a dyld shared cache to load. A cache (dyld_shared_cache_arm64e and its sub-caches .01, .27.dylddata, .44.dyldlinkedit, ... and .symbols beside it) holds every system library of an iOS or macOS release; kuna rebuilds the chosen image as a standalone thin Mach-O before anything parses it, so the loader, the analysis passes and every surface see an ordinary Mach-O. The rebuild keeps each segment at its cache address, applies the cache's slide info (v2, v3 with arm64e auth pointers, v5) at slide zero so every rebased pointer reads as its unslid target, and gives the image a private __LINKEDIT with its own symbol table, the local symbols the cache moved to its .symbols file in place of the <redacted> placeholders, the renumbered indirect-symbol table, and copies of the export trie, function starts and data-in-code. The name matches a full install name (/usr/lib/libobjc.A.dylib), else a unique basename (libobjc.A.dylib, CoreFoundation), else a unique basename without its last extension (libobjc.A). `none` (default) loads the image of a one-image cache and refuses a larger one with the image count. The image is rebuilt inside `load file`, so the choice travels as the KUNA_DYLD_IMAGE environment variable; the CLI's global `--image NAME` sets it for every subcommand, and the console sets it with `option dyldimage NAME` before `load file`, accepted before any image is loaded. `kuna unpack <cache> --list` lists the images and `kuna unpack <cache> --image NAME` writes the rebuilt Mach-O.
-- **When to flip:** Set it (or pass --image) whenever the input is a dyld shared cache: kuna decompile dyld_shared_cache_arm64e --image CoreFoundation CFStringCreateCopy. Not used for any other input.
+- **Symptoms:** go decompile shows runtime.newobject(&DAT_...) or convT(&DAT_...) with no hint which type is allocated; interface conversion call sites in go output pass anonymous dat_ globals; go:itab interface-dispatch tables render as bare &DAT_ addresses instead of go:itab.<concrete>,<interface>; runtime functions walking type descriptors render raw offset arithmetic instead of named fields; harvested go struct names exist in the type catalog but never appear in any function's C.
+- **What it does:** Name and type a Go image's `_type` descriptors as data globals - the first consumer of the gotypes runtime-type harvest. A Go binary's runtime metadata types two families of data objects outright: its own `_type` descriptors and the interface-dispatch tables (itabs) that bind them. A descriptor is a global of layout internal/abi.Type that Go's linker names `type:main.Point` / `type:*main.Point` / `type:[]uint8`. Stripping deletes those symtab names but the records stay reachable through the moduledata, so every allocation and interface-conversion site - `runtime.newobject(&type:main.Point)`, convT*, assertE, mapiterinit - decompiles as a call on a bare `&DAT_...` constant and the recovered named types never appear in the C. With the option on, every descriptor the gotypes walk decodes (typelinks or the go1.26+ descriptor region, pointer pointees included) is committed as a data symbol at the record's VMA: the linker-spelling `type:<name>` name, the `go.typedesc` shell (the 48/32-byte abi.Type base record, so runtime code walking a descriptor renders named field reads like `t->Kind_`), typelock|namelock at the engine's typed-data seam. The same walk names each static itab the moduledata lists - the go1.18..1.25 `itablinks` pointer slice or the go1.26+ `[types + itaboffset, + itabsize)` region walked by each record's `ITab.Size()` - as a name-only `go:itab.<concrete>,<interface>` data symbol, its two type names built from the two descriptor ADDRESSES the itab record points at (offsets 0 and 8), never a spelled name; so an interface conversion renders `go:itab.main.Point,fmt.Stringer` instead of a bare `&DAT_...`. The itab symbol is a NAME, not a typed object (an itab address is used polymorphically - passed to getitab, compared, stored into an interface word - so locking its global to a struct type would demote those uses and hide the very symbol a reference renders, exactly how Go's own symtab names an itab untyped), and an itab the image already names (an unstripped binary's symbol table) is left to that name, so the pass only ever ADDS the itabs stripping removed. Names that cannot print safely (anonymous `struct { ... }` literals, `func(int) bool` - anything with interior whitespace) are dropped; unnamed composite spellings (`[]uint8`, `map[string]int`) are kept, they are what an analyst searches for. The facts are produced at load and the COMMIT is gated, so `off` renders exactly what the gotypes provider alone renders; non-Go images produce no facts and never see the option.
+- **When to flip:** On by default: on a Go binary every runtime.newobject/convT/assertE call site names the type it manipulates instead of a bare &DAT_ constant, which is how the harvested named types become visible in decompiled C at all. Flip off to compare against the bare-metadata rendering (triaging whether a wrong name came from the descriptor walk) or to keep the symbol table minimal on a huge Go image. Non-Go binaries are byte-identical either way.
+- **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-multilang-gotypeglobals
+- **Example:** `option gotypeglobals off`
+
+### `dyldimage` -- none | <install-name>[+<install-name>...], default `none`
+
+- **Symptoms:** a dyld_shared_cache file is rejected as an unrecognized input format; cannot decompile an ios or macos system library because it only exists inside the dyld shared cache; dyld shared cache holds N images; choose one with --image; address is not mapped in this input for a callee in another image of the dyld shared cache; following a call from one cache image into another needs a second run.
+- **What it does:** Choose which image of a dyld shared cache to load. A cache (dyld_shared_cache_arm64e and its sub-caches .01, .27.dylddata, .44.dyldlinkedit, ... and .symbols beside it) holds every system library of an iOS or macOS release; kuna rebuilds the chosen image as a standalone thin Mach-O before anything parses it, so the loader, the analysis passes and every surface see an ordinary Mach-O. The rebuild keeps each segment at its cache address, applies the cache's slide info (v2, v3 with arm64e auth pointers, v5) at slide zero so every rebased pointer reads as its unslid target, and gives the image a private __LINKEDIT with its own symbol table, the local symbols the cache moved to its .symbols file in place of the <redacted> placeholders, the renumbered indirect-symbol table, and copies of the export trie, function starts and data-in-code. The name matches a full install name (/usr/lib/libobjc.A.dylib), else a unique basename (libobjc.A.dylib, CoreFoundation), else a unique basename without its last extension (libobjc.A). `none` (default) loads the image of a one-image cache and refuses a larger one with the image count. The image is rebuilt inside `load file`, so the choice travels as the KUNA_DYLD_IMAGE environment variable; the CLI's global `--image NAME` sets it for every subcommand, and the console sets it with `option dyldimage NAME` before `load file`, accepted before any image is loaded. `kuna unpack <cache> --list` lists the images and `kuna unpack <cache> --image NAME` writes the rebuilt Mach-O. Several names joined by `+` (Foundation+CoreFoundation) load several images as one program: each is rebuilt on its own and the results are joined into one thin Mach-O, every segment at its cache address, images in address order, with one symbol table (section ordinals renumbered), one indirect-symbol table, one function-starts table and one cross-image reference note, so a function of either image decompiles in the same run and the analysis passes read the ObjC, Swift and CFString sections of every image. The identity commands (LC_ID_DYLIB, the dylib list) are those of the image named first. The joined images may hold at most 255 sections together, the most a Mach-O symbol can index. The CLI also widens the selection on demand: `decompile`, `disassemble` and `xrefs` look each 0x address of the request up in the cache's image ranges and add the image that holds it, up to `--follow-images N` images (default 2, 0 turns it off), and `decompile` and `disassemble` first follow a stub-island address to the function the stub jumps to.
+- **When to flip:** Set it (or pass --image) whenever the input is a dyld shared cache: kuna decompile dyld_shared_cache_arm64e --image CoreFoundation CFStringCreateCopy. Join names with + to follow calls from one image into another without a second run: --image Foundation+CoreFoundation. Not used for any other input.
 - **Where / provenance:** P1/environment-binding · kuna · analysis-enablement · kuna-apple-dyldcache
 - **Example:** `option dyldimage /usr/lib/libobjc.A.dylib`
 
@@ -2073,7 +2206,7 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 ### `objcsdk` -- <directory> | off, default `off`
 
 - **Symptoms:** objc_msgSend$setFoo:() renders with no argument although the caller sets one; objc_msgSend$setAlpha: shows 0x3ff0000000000000 instead of 1.0; objc_msgSend$setFrame: passes one word where a CGRect was built; a framework method's stub returns undefined16 or unsigned long instead of its declared type.
-- **What it does:** Read Objective-C method signatures from SDK headers for the selectors an image only sends. A selector stub `objc_msgSend$setAlpha:` gets a prototype only when something in the image declares the selector (a class, category or protocol of its own), so a send to a framework method kept the untyped call-site inference and lost its arguments (`objc_msgSend$setHidden:();`). The declarations exist in the SDK the app was built against, and Apple's headers are never shipped with kuna, so this names a directory to read at load: an SDK root (`.../iPhoneOS.sdk`) contributes the `Headers/` of every framework the image links (LC_LOAD_DYLIB), any other directory every `.h` under it. The reader takes the declaration subset of the grammar — `@interface`/`@protocol`/category bodies, `- (ret)sel:(T)a ...;` methods, `@property (attrs) T name;` with `getter=`/`setter=`/`readonly` honoured, `typedef`s so NSInteger, CGFloat, NS_ENUM names and NSString-backed typed enums resolve — and turns each into the type encoding the runtime metadata would carry (`v@:d`), which rides the existing selector-to-prototype path: scalars and pointers pinned to their x/d registers, an HFA struct such as CGRect spread over d0..d3 as `arg_x, arg_y, arg_width, arg_height`, NSRange over two x registers, a larger struct (CGAffineTransform) the pointer the caller passes, a struct return the flat struct the model places in d0..d3. A type the reader cannot encode (an unknown struct, a function pointer) makes the selector unusable rather than guessed; one selector declared two ways across classes is dropped (a differing class-pointer argument is not a disagreement). The image's own declarations always win over the headers. Load-time, env-bridged (KUNA_OBJCSDK): set it before the `load file` it should apply to; nothing derived from the headers is written anywhere.
+- **What it does:** Read Objective-C method signatures from SDK headers for the selectors an image only sends. A selector stub `objc_msgSend$setAlpha:` gets a prototype only when something in the image declares the selector (a class, category or protocol of its own), so a send to a framework method kept the untyped call-site inference and lost its arguments (`objc_msgSend$setHidden:();`). The declarations exist in the SDK the app was built against, and Apple's headers are never shipped with kuna, so this names a directory to read at load: an SDK root (`.../iPhoneOS.sdk`) contributes the `Headers/` of every framework the image links (LC_LOAD_DYLIB), any other directory every `.h` under it. The reader takes the declaration subset of the grammar — `@interface`/`@protocol`/category bodies, `- (ret)sel:(T)a ...;` methods, `@property (attrs) T name;` with `getter=`/`setter=`/`readonly` honoured, `typedef`s so NSInteger, CGFloat, NS_ENUM names and NSString-backed typed enums resolve — and turns each into the type encoding the runtime metadata would carry (`v@:d`), which rides the existing selector-to-prototype path: scalars and pointers pinned to their x/d registers, an HFA struct such as CGRect spread over d0..d3 as `arg_x, arg_y, arg_width, arg_height`, NSRange over two x registers, a larger struct (CGAffineTransform) the pointer the caller passes, a struct return the flat struct the model places in d0..d3. A type the reader cannot encode (an unknown struct, a function pointer) makes the selector unusable rather than guessed; one selector declared two ways across classes is dropped (a differing class-pointer argument is not a disagreement, but leaves the selector with neither class). The image's own declarations always win over the headers. Load-time, env-bridged (KUNA_OBJCSDK): set it before the `load file` it should apply to; nothing derived from the headers is written anywhere.
 - **When to flip:** Off (default): only the image's own metadata types a send. Point it at the SDK the app was built against (`--option objcsdk ~/sdks/iPhoneOS16.5.sdk`) to type every UIKit/Foundation send; on a 1.9 MB iOS app that takes argument-less stub calls from 2,897 to 1,221 of 25,084 and renders `objc_msgSend$setAlpha:(v, 1.0)`, `objc_msgSend$setFrame:(v, r.x, r.y, r.width, r.height)`. A directory of your own headers works the same way. Inert unless `objc` is on.
 - **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-objc
 - **Example:** `option objcsdk /path/to/iPhoneOS.sdk`
@@ -2134,13 +2267,29 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-kernelcache
 - **Example:** `--option kernelcache com.apple.iokit.IOSurface`
 
+### `kernelcache-boot` -- auto | off | <path>, default `auto`
+
+- **Symptoms:** a kext in an Auxiliary kernel collection calls the kernel through a raw number instead of a named function; pointers into the boot kernel collection read as packed chained-fixup words; vtable and metaclass pointers of a third-party kext are not addresses; AuxiliaryKernelExtensions.kc or SystemKernelExtensions.kc loads with unresolved kernel references.
+- **What it does:** Apple kernel collections only: resolve the pointers a System or Auxiliary collection (macOS SystemKernelExtensions.kc, AuxiliaryKernelExtensions.kc) holds into the collections it was linked against. A DYLD_CHAINED_PTR_64_KERNEL_CACHE or X86_64_KERNEL_CACHE rebase names a cache level, and a target at level 0 (the boot collection) or 1 (the System collection) is an offset from the base of that other file, so the collection alone cannot say where it points: the slot would keep its packed chain word, and a call through it, or a vtable or metaclass pointer it holds, prints as a raw number. The collection's __PRELINK_INFO plist names each file it needs by UUID (_BootKCID, _PageableKCID). kuna reads the MH_FILESET files in the directory of the input (`auto`), or the file or directory the value names (a file may be an IMG4/IM4P container), takes the one whose LC_UUID or _PrelinkKCID is that UUID, writes base + offset into every such slot, and gives each target that a section symbol of the linked file defines inside code that symbol's name as an import of the loaded kext (the kernel's symbol before a kext's); a `__got`, `__auth_got` or `__auth_ptr` slot holding such an address is that import's slot, so a call through it is a call to the named function. A file with another UUID is never used. The load note counts, per level, the pointers rebased and functions named, or the pointers left unresolved and why. Inert on every input that is not a kernel collection pointing into another one. Loader-tier: read through the KUNA_KERNELCACHE_BOOT env var, because the image is built inside load file.
+- **When to flip:** Auto (default): with BootKernelExtensions.kc copied next to AuxiliaryKernelExtensions.kc, a kext's calls into the kernel through its pointer slots print the kernel function's name. Give a path when the boot collection lives elsewhere (`--option kernelcache-boot /System/Library/KernelCollections`). Flip off to read no file but the input: the slots into other collections stay unresolved and the load note counts them.
+- **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-kernelcache-boot
+- **Example:** `--option kernelcache-boot /System/Library/KernelCollections/BootKernelExtensions.kc`
+
 ### `godwarfsig` -- on | off, default `on`
 
 - **Symptoms:** go functions lose source parameters despite dwarf; go identity function decompiles as void; go result parameters appear as inputs.
-- **What it does:** On an amd64 Go binary with DWARF, recover Go scalar and pointer function signatures from the compiler DWARF, including bounded zlib debug sections. Resolve cross-unit type references, separate result formals using DW_AT_variable_parameter, and verify complete contracts against the little-endian amd64 Go register ABI. Pointers may target grounded scalars or flat records. Decompression, type interning and address-bound prototype installation run only on such an image. Aggregates by value, unsupported multiple results, stack arguments, hidden-context functions and incomplete metadata retain existing inference. Exactly two full-width signed or unsigned integer results are recovered as well when the contract is complete (independent RAX/RBX result allocation, joined storage, a unique function entry): they are carried in an ordinary struct with validated language metadata and Go declarations, calls and returns use multiple-result syntax (formerly the gopairreturns option).
-- **When to flip:** On by default: a Go binary with DWARF keeps its parameter names, pointer types and an identity function's return value. Requires the abi-internal compiler model (the Go cspec `goabi` selects) and little-endian amd64; stripped images, non-Go images and other architectures are unchanged. Flip off to leave the Go prototypes to inference.
+- **What it does:** On little-endian amd64 Go binaries and a verified AArch64 Go ELF subset, recover compiler DWARF function signatures, including bounded zlib debug sections. Resolve cross-unit type references, separate result formals using DW_AT_variable_parameter, and verify complete contracts against the little-endian amd64 Go register ABI. Pointers may target grounded scalars or flat records. AArch64 supports bounded uncompressed and zlib-compressed DWARF and requires an exact ELF text identity, one pointer-to-int32 input in X0 and one signed int32 or int64 result with verified X0 storage. Up to two verified string inputs with a scalar or void result keep each input's two separate ABI words and name its pointer and length from the source formal. Other by-value aggregates, unsupported multiple results, stack arguments, hidden-context functions and incomplete metadata retain existing inference. Exactly two full-width signed or unsigned integer results are recovered as well when the contract is complete (independent RAX/RBX result allocation, joined storage, a unique function entry): they are carried in an ordinary struct with validated language metadata and Go declarations, calls and returns use multiple-result syntax (formerly the gopairreturns option). DWARF int/error results require the nominal runtime.iface layout and RCX/RBX/RAX join; their raw 24-byte integer/table/data fields preserve typed nil without high-level error syntax or stripped inference. A verified amd64 ELF status-only receive on a receive-only int channel retains its full channel handle, private word destination and boolean chanrecv2 result. On named amd64 ELF with verified Go pointer method metadata and a matching scalar ABI contract, the Go view binds the receiver declaration and direct same-package method expressions.
+- **When to flip:** On by default: a Go binary with DWARF keeps its parameter names, pointer types and an identity function's return value. Uses the abi-internal compiler model on little-endian amd64 and the verified AArch64 subset. Stripped or unsupported contracts retain existing inference. Flip off to leave the Go prototypes to inference.
 - **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-angr-go-dwarf-signatures
 - **Example:** `option godwarfsig on`
+
+### `cvftrace` -- on | lines | off, default `on`
+
+- **Symptoms:** a CVF Fortran PE32 image keeps a .trace section but its routines print as sub_<addr>; CVF source file and line comments are missing.
+- **What it does:** Compaq Visual Fortran x86 PE32 images only: name routines from the `.trace` traceback section the CVF runtime keeps, and optionally comment each statement's source line.
+- **When to flip:** On by default (`on`): on a PE32 i386 image that carries a `.trace` section, each traced routine that kuna already discovered as a `sub_<addr>` placeholder takes its Fortran name (`FROM_TRACE` instead of `sub_10001000`). It only renames: no function is created at a traced address, a function another source named (export, COFF symbol, PDB, FID, `--define-function`) keeps its name and gains no alias, a trace name already used by any function, data symbol or alias elsewhere is skipped, and a name the trace gives two addresses (or an address it gives two names) is dropped entirely. Names must be Fortran identifiers (letters, digits, `_`, `$`; at most 127 bytes) or the whole record is declined, as it is for an unknown opcode, a file index past its table, a routine outside the record's code range, a truncated record or an incremental-link type-11 record. When a size cap (16 MiB section, 65,536 file names, 262,144 facts) stops decoding, one `[kuna cvftrace]` note goes to stderr. Set `lines` to also emit each statement's `minimal.for:7` comment, the CVF counterpart of `dwarf_lines` and opt-in for the same reason. Inert everywhere else: nothing is read unless the container is PE, the machine is i386 and a `.trace` section exists. Set `off` to keep the generic names.
+- **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-cvftrace
+- **Example:** `option cvftrace lines`
 
 ## Core rendering defaults
 
@@ -2218,6 +2367,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **Where / provenance:** P9/warning-style · kuna · presentation-default · kuna-cnorm-fmt
 - **Example:** `option warnstyle banner`
 
+### `acleintrinsics` -- on | off, default `on`
+
+- **Symptoms:** an AArch64 function that tags a pointer (irg, addg) decompiles to return a0; stg, st2g or stzg leave no trace in the output of MTE-hardened AArch64 code; DataMemoryBarrier(2,3) or DataSynchronizationBarrier(3,3,0) where the source called __dmb or __dsb; WaitForInterrupt() or Yield() where the source called __wfi or __yield.
+- **What it does:** On AArch64, lift the memory-tagging (MTE) instructions with their tag effect and print the barrier, hint and memory-tagging user ops as the ACLE intrinsics of <arm_acle.h>. The vendored AARCH64.pspec leaves the ShowMemTag context at 0, under which irg, addg, subg, gmi and ldg lift as a plain pointer copy or add and the stg family as nothing or a plain store, so __arm_mte_create_random_tag(p, 0) decompiled to return p. On sets ShowMemTag to 1 over the code space before a function is lifted; only the memory-tagging constructors read that context, so code without those instructions lifts exactly as before. Each tag instruction is then one user op whose result is the tagged pointer: irg prints __arm_mte_create_random_tag(p, mask), addg and subg __arm_mte_increment_tag(p + n, k), gmi __arm_mte_exclude_tag(p, mask), ldg x, [x] __arm_mte_get_tag(p), and stg x, [x] (and each granule st2g, stzg, stz2g and stgp tag) __arm_mte_set_tag(p). A tag load or store whose pointer and granule address differ has no ACLE spelling and keeps its user-op name, LoadPtrTag(p, addr) or StorePtrTag(addr, p). The alignment fault stg raises on a misaligned address is not modelled as a branch. Independently of MTE, DataMemoryBarrier(domain, types) prints __dmb(CRm) with the two operands recombined into the 4-bit CRm the intrinsic takes, DataSynchronizationBarrier likewise __dsb(CRm) (the nXS forms keep their name), InstructionSynchronizationBarrier() prints __isb(CRm) with CRm read from the instruction, and WaitForInterrupt, WaitForEvent, Yield, SendEvent and SendEventLocally print __wfi(), __wfe(), __yield(), __sev() and __sevl(). The rewrite is keyed on the user-op name and changes only the spelling of the call.
+- **When to flip:** On by default on AArch64 and inert on every other target: the output names the intrinsic the source called, and a pointer that was tagged is the result of a call instead of an unchanged copy. Flip off to read barriers and hints under their SLEIGH instruction names with the domain and type operands separate, or to read MTE-hardened code (for example a stack-tagging build, which tags every address-taken local) as if the core had no tags.
+- **Where / provenance:** P9/naming-policy · kuna · correctness-fix · kuna-acleintrinsics
+- **Example:** `option acleintrinsics off`
+
 ### `fpuemu` -- off | auto | on, default `auto`
 
 - **Symptoms:** a DOS program's float code decompiles as calls through swi(0x35) and other INT 34h-3Dh vectors; Control flow encountered bad instruction data in a DOS function that does float math; a phantom function starts inside an INT 35h instruction's operand bytes; swi(0x3d) calls where the program waits for the coprocessor.
@@ -2226,10 +2383,18 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **Where / provenance:** P2/decode-context · kuna · correctness-fix · kuna-1288-fpuemu
 - **Example:** `kuna decompile-all dazzle.exe --option fpuemu off`
 
+### `octeoneffects` -- off | atomic | ordered, default `atomic`
+
+- **Symptoms:** a value stored before an Octeon atomic add is returned instead of the reloaded memory; a store read only by a following ll or lld disappears; an Octeon fetch-and-add result or old value prints with the wrong width or behind an (int) cast; a store before syncw disappears or a reload after it reuses the stored value (use ordered).
+- **What it does:** Give the Octeon atomic, reservation and ordering user operations (`octeonAtomics.sinc`) memory effects and types. A fetch-and-add, exchange, load-linked, store-conditional or cache-block zero accesses memory through its address operand, but a user operation has no memory effect of its own, so a store before it was forwarded past it or dropped, and a later read reused the pre-update value. `atomic` places a heritage guard across each of those operations over writable RAM and stack ranges, as a call guard does: read-only image ranges are never guarded, so a GOT or `.rodata` read still folds, and a guard on a local whose address never escapes collapses, so a spill stays a plain value, except at a cache-block zero, which clears the whole 128-byte block holding its address and so can reach a neighboring slot. Through an address built from the stack pointer, loaded, returned by a call or transformed by arithmetic, every local keeps its guard. Only representation changes preserving all target address bits can retain the entry-pointer bound: copies, same-width casts, extensions, low-part extraction (including canonical N32 GPR narrowing) and joins. A negative or variable displacement, mask, shift, wrapping or other unproved transformation may reach a private local even without a stack-pointer dependency. An unchanged constant or incoming address retains guards only on locals in the frame's top 128 bytes; deeper direct-pointer spills stay values. The same operations, with the system calls that guard memory, keep a pointer load ahead of them in the C and count as STOREs for `persistcalls`, so a sparse call guard is never skipped under an atomic's own guard. `ordered` also guards across every ordering operation (SYNC, SYNCW, SYNCWS, SYNCS, SYNCIOBDMA, and the other selectors, printed `sync 0xN` as GNU binutils does: Cavium's assembler names 1 and 3 `syncio`/`syncioall`, which no hardware manual defines), so a store before a barrier is kept and a value is never reused across an ordering point another core could act on; this is conservative about concurrent modification, not a claim that a barrier writes memory. Both also type the address operand as a pointer to the access width (except a cache-block zero's, which clears a whole block; only at the target RAM width, so N32 keeps full-width GPR values) and stored values as unsigned; a word result is `int`, since every constructor sign-extends it into its register, and a doubleword result or the success byte is unsigned. `off` restores upstream's lifting of the instructions upstream's MIPS spec also decodes, and only those, through callother fixups: LL/LLD as a plain load, SC/SCD as a plain store whose success is 1 and SYNC as `SYNC(n)`; the Octeon-only atomics (SAA/SAAD, the LA forms, ZCB/ZCBT), which the base branch rejected and upstream reaches only through the SPECIAL2 catch-all Octeon excludes, decode in every mode and stay opaque under `off`. The fixups apply while lifting, so a mode change rewinds to P2. Where they cannot be compiled (ghidra mode has no local `.sla`), `off` keeps the LL/LLD/SC/SCD memory effects instead. A result for `$zero` is discarded rather than written, which changes the raw p-code but not the C. The option governs decompilation only: raw p-code and the analysis tier see the user operations in every mode.
+- **When to flip:** Default `atomic`: only Octeon languages declare these operations, so 0/675 datatest assertions move and other targets are unaffected. Use `ordered` for concurrent code where a store before a barrier must stay and a reload after it must stay a reload (another core may observe or change the location); it places one guard per ordering operation per global range, so a function with 200 barriers and 200 globals decompiles about 11x slower than under `atomic`. Use `off` to compare with upstream's ll/lld/sc/scd/sync lifting.
+- **Where / provenance:** P3/heritage-guard · kuna · correctness-fix · octeon-atomics
+- **Example:** `option octeoneffects ordered`
+
 ### `arrayextent` -- off | bound | on, default `on`
 
-- **Symptoms:** a stack array is declared with 4 elements while a loop subscripts it further; the elements after the fourth of a local array are separate scalars that are assigned and never read; a recompiled function reads past a local array under AddressSanitizer; a masked or clamped index (`v[n & 7]`, `min(n, 5)`) subscripts a smaller declared array.
-- **What it does:** Size an indexed stack array past the four elements upstream assumes when its guard has no locked range. `bound`: an indexed base whose pointer is the stack base plus constants plus indices bounded by their known bits (`v[n & 7]`), and which is only dereferenced, gets room for every element those LOADs and STOREs may touch, up to the next pointer base above it; every slot of the element width inside that reach joins the array, whether the function reads it on its own or not. `on` adds: an indexed base with no such bound, or a guard with a step but no locked range, takes each following slot of its element size while the slot is contiguous with its elements, holds only unlocked fixed hints of that width whose type keeps the element type, starts no other open range, and is observed only through a pointer (no direct read of the slot, and no other use of a value copied into it except copies into stack slots outside the array); a constant stored into the last slot it takes no longer lets upstream's constant absorption grow the array past it, unless upstream's merge of the same hints, with the array at its old length, reaches past that slot anyway. `off` is upstream's [0,3] floor.
+- **Symptoms:** a stack array is declared with 4 elements while a loop subscripts it further; the elements after the fourth of a local array are separate scalars that are assigned and never read; a recompiled function reads past a local array under AddressSanitizer; a masked or clamped index (`v[n & 7]`, `min(n, 5)`) subscripts a smaller declared array; on SPARC32 a two-word object zeroed around a call's delay slot and passed by address (`mbstate_t`) splits into a scalar and a neighbour that is assigned and never read.
+- **What it does:** Size an indexed stack array past the four elements upstream assumes when its guard has no locked range. `bound`: an indexed base whose pointer is the stack base plus constants plus indices bounded by their known bits (`v[n & 7]`), and which is only dereferenced, gets room for every element those LOADs and STOREs may touch, up to the next pointer base above it; every slot of the element width inside that reach joins the array, whether the function reads it on its own or not. `on` adds: an indexed base with no such bound, or a guard with a step but no locked range, takes each following slot of its element size while the slot is contiguous with its elements, holds only unlocked fixed hints of that width whose type keeps the element type, starts no other open range, and is observed only through a pointer (no direct read of the slot, and no other use of a value copied into it except copies into stack slots outside the array); a constant stored into the last slot it takes no longer lets upstream's constant absorption grow the array past it, unless upstream's merge of the same hints, with the array at its old length, reaches past that slot anyway. On SPARC32 only, `on` also keeps two adjacent frame words as one two-word array when both are zeroed before a direct call that receives the first word's address, the second zero store sits in that call's delay slot, and neither word is read directly or has its own address; other targets, and SPARC32 stores outside the delay slot, keep the split. `off` is upstream's [0,3] floor.
 - **When to flip:** On by default (0/675 datatest assertions move). With it OFF a local array that a loop indexes up to a clamped bound (`for (i = 0; i < n && i < 6; i++) t += v[i];`, `v[n & 7]`) is declared with four elements and the rest split into scalars that are assigned and never read, so the printed loop subscripts past the declared array and the C reads the wrong object (ASan reports a stack-buffer-overflow on the recompiled function). `bound` keeps only the sound known-bits sizing. Flip `bound` or `off` to see the upstream split for a bisect.
 - **Where / provenance:** P6/stack-frame-layout · kuna · correctness-fix · GH-867
 - **Example:** `option arrayextent off`
@@ -2261,7 +2426,7 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 ### `passthrough` -- on | off, default `on`
 
 - **Symptoms:** a wrapper renders void f(void) { g(); } although g takes an argument in the same output; a call renders with no arguments while the callee's declaration in the same file takes one; a tail-call thunk returns void while the function it jumps to returns a value; decompiling the caller shows a parameter-less function whose only instruction is a jmp to a function with parameters; DWARF gives a forwarding function a parameter kuna does not.
-- **What it does:** Give a function the parameter it forwards untouched to a callee that reads it, and the return value of a tail call it hands straight back. A call's argument trials come from Heritage::guardCalls (heritage.cc:1444), which registers one per HERITAGED storage range, and a range is heritaged only when some op of the function reads or writes it: a register the function only forwards is named by no op, so the call gets no trial, no argument, and the function's own input never gets a reader or a parameter. gzip -O2 gzip_base_name is `endbr64; jmp last_component` and kuna printed `void sub_d290(void) { sub_dfd0(); }` while recovering the callee as `char *sub_dfd0(char *a0)` in the same run. Where the register IS heritaged, AncestorRealistic::execute (funcdata_varnode.cc:2159) refuses an input Varnode at the call slot outright. The evidence this option acts on is the callee's own RECOVERED prototype, which `protoorder` states for every callee a whole-binary decompile-all decompiled first: a register is an argument when that prototype has a parameter starting at it, the list is one protoorder's locking mode would accept as an arity claim (the callee's body does not read the next argument register -- a variadic's register-save prologue does -- the list does not saturate the register file, and it sits where the convention puts those types), the callee's body takes the register (its bounded entry decode reads it before writing it, or its statement records it handed on to a declared parameter or to a callee that takes it, or -- where that decode cannot finish -- its first heritage saw it read; a list that is not an arity claim qualifies when every register it names is taken that way), and the value at the call is the function's own incoming register. A function calling itself asks its own body, so a recursive call keeps the register it forwards (grep treenext) even in a single-function decompile. The width is the one the callee's body consumes (`edi` for an int). The rule only adds: every other rule (upstream scoring, then the calleearityfwd, calleearitylive and calleearitybody rescues) settles the call's list first, and at the end of ActionActiveParam a list that is a leading run of the stated one gains the stated registers that follow it, up to the first the function does not forward; an argument supplied while scoring would turn off the sibling rescue that completes tar sysinttostr's first tail call. For a register no op of the function touches, ActionFuncLink gives a call no other call can precede a read of it and a trial; heritage registers the visible range at every other call as usual and keeps only the function's own RETURN off it; and every trial on the range is scored inactive -- where the option-off run's hole-filling trial starts -- never definitely-not-used, which would make forceNoUse drop every later argument (gcc -O2 `noop(); twoarg(p,3)`). When every live RETURN is reached from a direct call with nothing in between, every such callee states a non-void return in the same register or register pair (x86-64 rdx:rax, i386 edx:eax, ARM r1:r0; a callee with no parameters states its return too), and the function never touches those registers, the RETURN reads them and the tail call's result is the function's return value, typed by the callee's recovered return type. A register that carries no argument (x86 eax, MIPS v0) may be written before the call, which overwrites it, as long as nothing between the call and the RETURN reads or writes it; an argument register that is also the return register (ARM r0) may not, since `mov r0,#5; b g` is how a void function calls g(5). The `r0 = r0` (MIPS `v0 = v0`) the ARM and MIPS specs inject as the mode switch of every `bx lr`, `pop {...,pc}` and `jr ra` is not a touch, nor the vector-count access that marks a SysV variadic function or call, so `bl f; pop {r4,pc}`, `jal f; ...; jr ra` and a MIPS `jr $t9` tail call qualify as x86-64 `call f; ret` does; a returned register the body touches itself keeps its call-site argument trials scored as with the option off, so `bl g; bl f; pop {r4,pc}` still passes g's result to f. A pair is kept whole or not at all: a register the call's model does not kill (xmm1 of a struct {double,double} on x86-64 gcc) is not the call's result at the RETURN, and keeping xmm0 alone would return half the value as an integer. And the claim yields to a return value the function computes itself in another storage class: `float f(int x,float y){ g(x); return y*2.0f; }` leaves g's result untouched in r0 (x86-64 rax, MIPS v0) and its own in s0 (xmm0, $f0), and returns the float, as with the option off; a value of the same class (the r1 of `bl g; mov r1,#0`) and a value that is zero at every RETURN (what -fzero-call-used-regs leaves in every call-used register a forwarder does not return in) keep the claim. A callee states a return only where its own body computed one in every byte and on every path: gnulib's `void version_etc_arn` ends its fallthrough on a `__fprintf_chk` and keeps that call's RAX clobber, so kuna recovers it as returning `long`, and without that gate every `version_etc_ar` wrapper inherited the same wrong return (212 of 4,267 gained returns across 444 decbench slices; 6 of 4,088 with the gate). A callee that stated nothing (single-function decompile, a narrowed or sharded run, an import, protoorder off, and under `protoorder types` a callee in a recursive component) changes nothing, the function's call of itself aside. Two refusals keep a caller off a parameter the callee's own recovery invented. A stated parameter whose value, through value-preserving operations, only reaches an argument slot of a variadic call -- one the callee set up as variadic, or a declared `...` prototype past its named parameters -- is never claimed: openssh xcalloc's third parameter is gcc's `push %rdx` stack-alignment filler at a call to sshfatal, gnulib open_safer's is `open`'s mode, and the ABI lets a caller leave that register unset. And a claim the positional list can only reach across a register this function writes before reading is declined, because that register would become a parameter nothing sets: the protoorder fixture's overrec sets rsi to 16 and forwards rdx, and rendered `void overrec(unsigned long *a0,unsigned long a1,long a2)` with a1 in no statement against the call site `overrec(v1)`.
+- **What it does:** Give a function the parameter it forwards untouched to a callee that reads it, and the return value of a tail call it hands straight back. A call's argument trials come from Heritage::guardCalls (heritage.cc:1444), which registers one per HERITAGED storage range, and a range is heritaged only when some op of the function reads or writes it: a register the function only forwards is named by no op, so the call gets no trial, no argument, and the function's own input never gets a reader or a parameter. gzip -O2 gzip_base_name is `endbr64; jmp last_component` and kuna printed `void sub_d290(void) { sub_dfd0(); }` while recovering the callee as `char *sub_dfd0(char *a0)` in the same run. Where the register IS heritaged, AncestorRealistic::execute (funcdata_varnode.cc:2159) refuses an input Varnode at the call slot outright. The evidence this option acts on is the callee's own RECOVERED prototype, which `protoorder` states for every callee a whole-binary decompile-all decompiled first: a register is an argument when that prototype has a parameter starting at it, the list is one protoorder's locking mode would accept as an arity claim (the callee's body does not read the next argument register -- a variadic's register-save prologue does -- the list does not saturate the register file, and it sits where the convention puts those types), the callee's body takes the register (its bounded entry decode reads it before writing it, or its statement records it handed on to a declared parameter or to a callee that takes it, or -- where that decode cannot finish -- its first heritage saw it read; a list that is not an arity claim qualifies when every register it names is taken that way), and the value at the call is the function's own incoming register. A function calling itself asks its own body, so a recursive call keeps the register it forwards (grep treenext) even in a single-function decompile. The width is the one the callee's body consumes (`edi` for an int). The rule only adds: every other rule (upstream scoring, then the calleearityfwd, calleearitylive and calleearitybody rescues) settles the call's list first, and at the end of ActionActiveParam a list that is a leading run of the stated one gains the stated registers that follow it, up to the first the function does not forward; an argument supplied while scoring would turn off the sibling rescue that completes tar sysinttostr's first tail call. For a register no op of the function touches, ActionFuncLink gives a call no other call can precede a read of it and a trial; heritage registers the visible range at every other call as usual and keeps only the function's own RETURN off it; and every trial on the range is scored inactive -- where the option-off run's hole-filling trial starts -- never definitely-not-used, which would make forceNoUse drop every later argument (gcc -O2 `noop(); twoarg(p,3)`). When every live RETURN is reached from a direct call with nothing in between, every such callee states a non-void return in the same register or register pair (x86-64 rdx:rax, i386 edx:eax, ARM r1:r0; a callee with no parameters states its return too), and the function never touches those registers, the RETURN reads them and the tail call's result is the function's return value, typed by the callee's recovered return type. A register that carries no argument (x86 eax, MIPS v0) may be written before the call, which overwrites it, as long as nothing between the call and the RETURN reads or writes it; an argument register that is also the return register (ARM r0) may not, since `mov r0,#5; b g` is how a void function calls g(5). The `r0 = r0` (MIPS `v0 = v0`) the ARM and MIPS specs inject as the mode switch of every `bx lr`, `pop {...,pc}` and `jr ra` is not a touch, nor the vector-count access that marks a SysV variadic function or call, so `bl f; pop {r4,pc}`, `jal f; ...; jr ra` and a MIPS `jr $t9` tail call qualify as x86-64 `call f; ret` does; a returned register the body touches itself keeps its call-site argument trials scored as with the option off, so `bl g; bl f; pop {r4,pc}` still passes g's result to f. A pair is kept whole or not at all: a register the call's model does not kill (xmm1 of a struct {double,double} on x86-64 gcc) is not the call's result at the RETURN, and keeping xmm0 alone would return half the value as an integer. And the claim yields to a return value the function computes itself in another storage class: `float f(int x,float y){ g(x); return y*2.0f; }` leaves g's result untouched in r0 (x86-64 rax, MIPS v0) and its own in s0 (xmm0, $f0), and returns the float, as with the option off; a value of the same class (the r1 of `bl g; mov r1,#0`) and a value that is zero at every RETURN (what -fzero-call-used-regs leaves in every call-used register a forwarder does not return in) keep the claim. A callee states a return only where its own body computed one in every byte and on every path: gnulib's `void version_etc_arn` ends its fallthrough on a `__fprintf_chk` and keeps that call's RAX clobber, so kuna recovers it as returning `long`, and without that gate every `version_etc_ar` wrapper inherited the same wrong return (212 of 4,267 gained returns across 444 decbench slices; 6 of 4,088 with the gate). A callee that stated nothing (single-function decompile, a narrowed or sharded run, an import, protoorder off, and under `protoorder types` a callee in a recursive component) changes nothing, the function's call of itself aside. Two refusals keep a caller off a parameter the callee's own recovery invented. A stated parameter whose value, through value-preserving operations, only reaches an argument slot of a variadic call -- one the callee set up as variadic, or a declared `...` prototype past its named parameters -- is never claimed: openssh xcalloc's third parameter is gcc's `push %rdx` stack-alignment filler at a call to sshfatal, gnulib open_safer's is `open`'s mode, and the ABI lets a caller leave that register unset. And a claim the positional list can only reach across a register this function writes before reading is declined, because that register would become a parameter nothing sets: the protoorder fixture's overrec sets rsi to 16 and forwards rdx, and rendered `void overrec(unsigned long *a0,unsigned long a1,long a2)` with a1 in no statement against the call site `overrec(v1)`. On AMD64 Go ABIInternal, retry the existing input proof before SSA after a verified stack-growth fold leaves one direct call and a full-width argument register untouched.
 - **When to flip:** On by default. Over 574 slices in 25 projects -- the 444-slice decbench corpus AND 130 slices of 17 projects disjoint from it (openssh, e2fsprogs, dpkg, kmod, dash, iproute2, gnutls, zlib, ...) -- 4,107 of 4,346 gained parameters are confirmed by the unstripped twin's DWARF prototype, NONE are contradicted, and the remaining 239 belong to forwarding thunks DWARF does not describe at all; no function and no call site loses an argument (docs/features/passthrough/dwarf-confirmation.md). The return arm is a judgement, not a proof, and is where ON costs something: a source-`void` wrapper that tail-calls a value-returning function compiles to the same `jmp` as a wrapper that returns what it calls, so 5,458 of 5,615 gained returns are DWARF-confirmed and 157 are contradicted -- 6 on the decbench corpus but 151 on the disjoint one, concentrated in projects that write many one-line `void` wrappers (e2fsprogs bitmap accessors, openssh blf_key). A return in a register pair is taken on the same terms, so it shares both limits the bytes cannot resolve: a wrapper repeats a pair its callee's own recovery invented (coreutils strintcmp becomes `undefined16` because numcompare is), and a wrapper that truncates the pair (`return (int)wide(a,b);`) compiles to the same `jmp` and is given the whole pair. On ARM and MIPS the return arm also takes a wrapper that calls and then returns (`bl f; pop {r4,pc}`, `jal f; ...; jr ra`): over 92 debug-stripped ARM firmware binaries (decbench O0, O2 and O2-noinline) 223 functions gain a return that way: 182 DWARF-confirmed, 39 DWARF `void` and 2 with no DWARF entry (82.4% of those DWARF describes); betaflight (49 of 74) and cleanflight (28 of 34) are -Og builds, where no sibling call turns a one-line `void` wrapper into a tail `b f`, and without them it is 105 of 113 (92.9%), against 157 of 164 (95.7%) for tail-jump returns on the same set. No MIPS corpus with DWARF was measured. It acts only where a callee was decompiled BEFORE its caller (serial `decompile-all`, `decompile-project`); a single-function `kuna decompile`, a run narrowed by `--addr` or `--functions`, `--jobs N` and `--option protoorder off` leave every call but a function's call of itself alone, and no argument moves at -O0, where the register is already named by an op (an x86 -O0 wrapper that loads its arguments through rax before `call f; leave; ret` does gain f's return). Reading the callee's body where its entry decode stops (a call, a large body) and a function's calls of itself adds 222 call arguments over 14 binaries (x86-64 gcc -O2/-O0 and clang, Cortex-M firmware, an ARM library); of the 167 whose callee has a DWARF prototype, 156 match it and the other 11 are register-level arguments DWARF does not count (a hidden struct-return pointer, a 64-bit integer in two registers, libgcc's assembly soft-float compares). Set OFF to get upstream's reading back: an input register at a call is not an argument unless the caller moved a value into it, and a tail call's result is not the caller's return value.
 - **Where / provenance:** P4/active-input-trial-scoring · ghidra · correctness-fix · typecampaign-passthrough-arity
 - **Example:** `option passthrough on`
@@ -2286,7 +2451,7 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 
 - **Symptoms:** stack array declared and read but never initialised in the emitted C; a run of direct frame stores vanishes when the same slots are later read through a pointer; constants loaded from .rdata into a local buffer do not appear in the decompilation; accumulator or key schedule buffer looks uninitialised before an XOR loop walks it; value stored through a pointer does not appear to reach the frame slot it aliases; a global read back after a store through a pointer prints the value stored before that store; a global read before a store through a pointer is printed after it; a store to a global before a pointer load is missing when the global is stored again later; a loop that bumps a global around a pointer load prints with no store to the global.
 - **What it does:** Restore the index-alias arm of upstream Heritage::guard (heritage.cc:1194), which kuna shipped stubbed out behind a hard-coded `highPtrPossible == false`. Where a pointer can reach the range being heritaged, upstream adds two kinds of guard op, and this option selects how much of them runs. `load` runs Heritage::guardLoads (heritage.cc:1570): an addrforce CPUI_COPY read of the range in front of every indexed-stack LOAD whose discovered guard range covers it, so a slot that is only ever READ through a computed pointer still has a reader at the point the pointer is dereferenced. The COPY is artificial -- Heritage::handleNewLoadCopies propagates it away once heritage has finished, keeping only the addrforce marks it earned. `global` (the default) adds the global half of Heritage::guardStores (heritage.cc:1538): an indirect_store CPUI_INDIRECT on a global range in front of every STORE into the global's own space, skipping a read-only range and a STORE through the stack pointer, and stopping once a function has 1024 of them (a range past that point keeps the `load` output), and RulePropagateCopy does not move a stored value into one of these INDIRECTs, so the global's store stays where the binary makes it. Without it a pointer STORE has no effect on a global, so a load of the global after `gi = a; *p = k;` prints `a`, and a value read from the global before such a STORE and used after it prints as a read of the global after it. `global` also adds the LOAD guard for a global, which upstream never builds: an addrforce CPUI_COPY read of a persistent, writable range written at least twice in front of every LOAD from its space that may read it (not a constant address outside the range, not the stack pointer or an x86 segment base plus a constant), so a store to a global that a pointer load may read is kept when the global is stored again after the load; RulePropagateCopy and RuleMultiCollapse leave such a kept store's joins alone so it prints once, and ActionMarkImplied keeps a LOAD explicit when its value is live across a store to a global in its space, so the load prints ahead of the store as the binary makes it. `full` adds the INDIRECT in front of every STORE that can reach any range, the stack included, which is what upstream always does; on a frame slot its INDIRECT chain survives into the output as write-backs of values the slot already held. `off` is the pre-port state: neither arm runs, so a frame slot written by a direct `MOV [ESP+k],REG` and read only through a `LEA`-derived pointer has no reader at all and ActionDeadCode deletes the store. kuna::highPtrPossible is the upstream inline (architecture.hh:408) minus the cspec <nohighptr> range list, which only the PIC families set.
-- **When to flip:** `global` by default (DIV-147 restored `load`; `global` moves 0/675 datatest assertions). The `load` symptom is a global read back after a store through a pointer that may point at it, printed as the value stored before that store (`gi = a0; *a1 = a2; return a0 >> 4;` where the binary reloads `gi` after `*a1 = a2`), or a global read before such a store printed after it (`*a0 = a1; return gi;` where the binary returns what it read first). The `off` symptom is an array that is used before it is set: a stack buffer initialised by a run of direct frame stores, then walked by a pointer loop, prints with its declaration and all of its reads but none of its initialisation -- the analyst sees `unsigned int v11 [4];` followed by `*v6 = *v6 ^ ...` and concludes the buffer starts as garbage, when the binary loaded four constants into it. The `load` symptom is also a store to a global that vanishes when the global is stored again after a load through a pointer: `gi = gi + 1; s += *p; gi = gi - 1;` in a loop prints with no store to gi, and `gi = a; x = *p; gi = b; return x;` prints `gi = a2; return *a1;`. Flip `load` to reproduce kuna's output before the global guards, `off` to reproduce kuna's pre-indexaliasguard output or to bisect whether a new addrforce mark on a frame slot came from the load arm. Flip `full` to reproduce upstream Ghidra exactly, or when a value written through a pointer looks like it is not reaching the frame slot it aliases; expect noisier output (measured +5 lines on the 1.9% of functions the arm touches at all).
+- **When to flip:** `global` by default (DIV-147 restored `load`; `global` moves 0/675 datatest assertions). The `load` symptom is a global read back after a store through a pointer that may point at it, printed as the value stored before that store (`gi = a0; *a1 = a2; return a0 >> 4;` where the binary reloads `gi` after `*a1 = a2`), or a global read before such a store printed after it (`*a0 = a1; return gi;` where the binary returns what it read first). The `off` symptom is an array that is used before it is set: a stack buffer initialised by a run of direct frame stores, then walked by a pointer loop, prints with its declaration and all of its reads but none of its initialisation -- the analyst sees `unsigned int v11 [4];` followed by `*v6 = *v6 ^ ...` and concludes the buffer starts as garbage, when the binary loaded four constants into it. The `load` symptom is also a store to a global that vanishes when the global is stored again after a load through a pointer: `gi = gi + 1; s += *p; gi = gi - 1;` in a loop prints with no store to gi, and `gi = a; x = *p; gi = b; return x;` prints `gi = a2; return *a1;`. Flip `load` to reproduce kuna's output before the global guards, `off` to reproduce kuna's pre-indexaliasguard output or to bisect whether a new addrforce mark on a frame slot came from the load arm; `off` also leaves two frame copies as loops, a short frame byte-copy loop and an x86-32 by-value `rep movs` with a known count (chapter 03). Flip `full` to reproduce upstream Ghidra exactly, or when a value written through a pointer looks like it is not reaching the frame slot it aliases; expect noisier output (measured +5 lines on the 1.9% of functions the arm touches at all).
 - **Where / provenance:** P3/heritage-guard · ghidra-upstream · correctness-fix · re-quadratic-transform-loses-four
 - **Example:** `option indexaliasguard full`
 
@@ -2340,9 +2505,9 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 
 ### `libcnames` -- on | off, default `on`
 
-- **Symptoms:** a local holding open()'s result named v1; read's byte count kept as a vN; a buffer length from strlen named vN; a local passed to a libc function keeps a vN name; kuna names fewer locals than IDA on libc-heavy code.
-- **What it does:** Give a numbered local the name the C library gives it, as a second name for its number. The built-in libc tables (`libproto`, `libcsigs`, `libctypes`) carry glibc's declared parameter names, leading underscores stripped (`read (int __fd, void *__buf, size_t __nbytes)` gives `fd, buf, nbytes`), and, where the result is one kind of thing whatever the arguments, a conventional name for it (`fd` for `open`, `n` for `read`, `len` for `strlen`, `p` for `malloc`, `fp` for `fopen`, `tp` for `localtime`). They ride on the prototype a table parks, so only a call a table prototype reaches counts, and they are kept out of the callee's parameter names, so its printed signature and name locks do not change. `kuna_libcnames` reads each local's evidence before the naming walk: the value a library call returns (`fd = open(a0,0);`), counted only when every library result the local holds agrees; then a library argument it is passed whole as when the name says what the value is (`read(fd,...)`, `write(a0,a1,n)`); then a name that only says which side of one call a value is on (`dest`/`src`, `s1`/`s2`), counted only when every such name agrees. A name equal to a type the code can print (`tm`, `FILE`) or a C or Rust keyword is passed over. The walk numbers every local exactly as with the option off and records that numbering, and only then does a numbered candidate print its library name, so `v4` is the same variable in every mode. A clash takes `_2`, `_3`, ... in call order, and no spelling repeats a name any variable of the function prints (a global's included), the scope holds, or a callee has. A directive reaches the local by either name, and a replay records the number: after `name fd src` the second descriptor stays `fd_2` and no local becomes `fd`, and a local whose library name a rename took prints its number. Over 14 stripped decbench binaries under `--mode aggressive` (O0 gzip, crontab, wc, bzip2, cat, dash; O2 bzip2, init, login, gzip, crond, tail, kmod, grep), 968 of 10,106 numbered locals print a library name in 546 of 3,297 functions, and every changed function differs from the option-off output only in those names, every other local keeping its number; against the source of the `compiled/` twins at the same call and slot, 415 of them could be located: 91 carry the source's own name and 324 another spelling of the same meaning (`fp` for `inStr`, `len` for `namelen`, `tp` for `tm`), none a misleading one. 0/675 datatest assertions move. No stage assertion of another feature moves with it on.
-- **When to flip:** On by default: a local reads `fd = open(a0,0); n = read(fd,v4,0x200);` where it would read `v1 = open(a0,0); v3 = read(v1,v4,0x200);`, and every other local keeps its number. A directive may name such a local `fd` or `v1` in either setting. Set it off for `vN` names only, for example to diff against Ghidra output or to keep the numbering a script expects.
+- **Symptoms:** a local holding open()'s result named v1; read's byte count kept as a vN; a stack buffer passed to read() or ReadFile() named vN; a struct stat or a DWORD whose address a library call takes named vN; a buffer length from strlen named vN; a local passed to a libc function keeps a vN name; a handle from CreateFileW or LoadLibraryW named vN; kuna names fewer locals than IDA on libc-heavy code.
+- **What it does:** Give a numbered local the name the C library gives it, as a second name for its number. The built-in libc tables (`libproto`, `libcsigs`, `libctypes`) carry glibc's declared parameter names, leading underscores stripped (`read (int __fd, void *__buf, size_t __nbytes)` gives `fd, buf, nbytes`), and, where the result is one kind of thing whatever the arguments, a conventional name for it (`fd` for `open`, `n` for `read`, `len` for `strlen`, `p` for `malloc`, `fp` for `fopen`, `tp` for `localtime`). The `win32sigs` table carries the Windows SDK names the same way (`ReadFile(hFile, lpBuffer, nNumberOfBytesToRead, ...)`, `hModule` for `LoadLibraryW`, `hHeap` for `GetProcessHeap`, `lpMem` for `HeapAlloc`), so a PE reads `hFile = CreateFileW(a0,...); ReadFile(hFile,...)`. They ride on the prototype a table parks, so only a call a table prototype reaches counts, and they are kept out of the callee's parameter names, so its printed signature and name locks do not change. `kuna_libcnames` reads each local's evidence before the naming walk: the value a library call returns (`fd = open(a0,0);`), counted only when every library result the local holds agrees; then a library argument it is passed whole as when the name says what the value is (`read(fd,...)`, `write(a0,a1,n)`); then a name that only says which side of one call a value is on (`dest`/`src`, `s1`/`s2`), counted only when every such name agrees. A stack array, structure or scalar whose own address a library call takes has the same evidence under the name of the object the parameter points at, and prints it at every reference: glibc's name as it is (`read(a0,buf,0x100)`, `stat(a0,&buf)`, `waitpid(pid,&stat_loc,0)`), a Windows SDK name less its `lp`/`p` pointer prefix (`ReadFile(hFile,Buffer,0x200,&NumberOfBytesRead,NULL)`), nothing for a name that only says the argument is a pointer (`fread`'s `ptr`) unless the object is one (`strtol(a0,&endptr,10)`), and no evidence from a call that only fills it (`memset`, `bzero`, `explicit_bzero`), a member's address, or a DWARF, user or directive name. A scalar object that two calls name differently (`read(fd,&v,4)` then `waitpid(v,&v,0)`) holds two values in turn and keeps its number. The function's own parameters keep their `aN` names. A name equal to a type the code can print (`tm`, `FILE`) or a C or Rust keyword is passed over. The walk numbers every local exactly as with the option off and records that numbering, and only then does a numbered candidate print its library name, so `v4` is the same variable in every mode. A clash takes `_2`, `_3`, ... in call order, and no spelling repeats a name any variable of the function prints (a global's included), the scope holds, or a callee has. A directive reaches the local by either name, and a replay records the number: after `name fd src` the second descriptor stays `fd_2` and no local becomes `fd`, and a local whose library name a rename took prints its number. Over 14 stripped decbench binaries under `--mode aggressive` (O0 gzip, crontab, wc, bzip2, cat, dash; O2 bzip2, init, login, gzip, crond, tail, kmod, grep), 968 of 10,106 numbered locals print a library name in 546 of 3,297 functions, and every changed function differs from the option-off output only in those names, every other local keeping its number; against the source of the `compiled/` twins at the same call and slot, 415 of them could be located: 91 carry the source's own name and 324 another spelling of the same meaning (`fp` for `inStr`, `len` for `namelen`, `tp` for `tm`), none a misleading one. Over 70 native PE crackmes (MSVC and clang, i386 and x86-64), 615 numbered locals print a Win32 name in 478 of 17,166 functions; against the DWARF twins of the four decbench Windows projects (mydoom, dexter, x0r-usb, minipig at O0 and O2), the Win32-named locals located at the same call and slot carry the twin's own name or another name for the same thing (`hFile` for `HostFD`, `lpMem` for `output_buffer`, `hModule` for `kernel32_dll`), none a misleading one. Over 117 stripped decbench images (39 programs at O0, O2 and O2-noinline), 1,529 stack objects print a library name and every changed function differs only in names; in a random sample of 220 matched to the DWARF variable at the same frame offset of the unstripped twin, all but 4 carry the source's name or a name for the same kind of object (`buf` for `struct stat st`, `stat_loc` for `status`, `NumberOfBytesRead` for `readbytes`), and those 4 name a stack slot the compiler reuses for several variables, or a scalar the program also assigns an unrelated value, after only one of them. 0/675 datatest assertions move. No stage assertion of another feature moves with it on.
+- **When to flip:** On by default: a local reads `fd = open(a0,0); n = read(fd,buf,0x200);` where it would read `v1 = open(a0,0); v3 = read(v1,v4,0x200);` (on a PE, `hModule = LoadLibraryW(a0);` where it would read `v1 = LoadLibraryW(a0);`), and every other local keeps its number. A directive may name such a local `fd` or `v1` in either setting. Set it off for `vN` names only, for example to diff against Ghidra output or to keep the numbering a script expects.
 - **Where / provenance:** P6/naming-policy · ida · presentation-default · kuna-libcnames
 - **Example:** `option libcnames off`
 
@@ -2413,7 +2578,7 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 ### `bejoin` -- off | evidence | callers | on, default `callers`
 
 - **Symptoms:** a long long return on a big-endian 32-bit target prints CONCAT44 with the low word first; a long long read from memory on PowerPC, MIPS, SPARC or ARM big-endian returns CONCAT44(p[1],p[0]); a 64-bit product, sum or shift returned on PowerPC, MIPS, SPARC or ARM big-endian comes back with its halves swapped; an AVR function returning a 16-bit int prints a read of R25R24 nothing assigns.
-- **What it does:** Join a value returned in two registers in the order the ABI returns it. PowerPC (r3:r4), MIPS o32 big-endian (v0:v1), SPARC (o0:o1), ARM big-endian (r0:r1), AArch64 big-endian (x0:x1, a 16-byte value) and AVR's gcc ABI (R25:R24) put the most significant half in the first return register, and their output rule says so (`join_reverse`), but return recovery and the two-register CALL output arm joined every pair first register low, so a `long long` came back with its halves swapped: `(long long)a * b` on PowerPC printed `CONCAT44(a1 * a0,(int)(... >> 0x20))`. `evidence` decides once per function, from that function's own instructions, and both the function's RETURN and every call to it read the verdict, so the two agree in any decompile order and any run (`--functions`, `--jobs`, one `kuna decompile`, a front-end session): before any pipeline runs the driver walks the raw p-code of the function and of each direct callee, once per image (kuna_bejoin::evidence::seed), and a call the pipeline resolves only mid-pass (a `-mlong-calls` call, a constant function pointer) to a proven callee sends the function through the pass again with that verdict. A function is proven when every path's RETURN holds, both registers written and not read again, a sign extension (the first register is the second shifted right arithmetically by all but one bit, `mr 4,3; srawi 3,3,31`), a zero extension (a literal zero beside a value), or the two halves of one product whose low half an instruction of its own made (PowerPC `mullw` beside `mulhw`, MIPS `mflo` beside `mfhi`, ARMv4/v6 `umull r2,r3` then `mov r1,r2`) -- the extended value computed or another register's argument, never the second register's own entry value, a load, a call's result or a by-product, and read by nothing else on any path, a path ending in a call that does not return included (gcc -Os computes an `exit` argument in a branch delay slot). It is also proven when every RETURN holds, the low word read by nothing but moves and stack spills, the two words of one object read from memory (two loads of adjacent words, the high word's at the lower address: `lwz 4,4(3); lwz 3,0(3)`, `ldmia r0,{r0,r1}`, SPARC's `ldd`, also reloaded from the stack frame), or the pair a direct call to a proven callee handed back with its low word moved back into place by the function (`mr 31,4; bl ext; mr 4,31`), when it branches straight into a proven callee (a tail call), and when the remaining RETURNs hold two literals or a proven callee's pair left where the call put it; a callee chain that loops back is not proven. An `int` returning one word of a 64-bit object loads only that word, unless the object is volatile: `(int)(*(volatile long long *)p >> 32)` compiles to the bytes of `*p` and reads as the `long long`. A proven callee's pair is read high word first, and a call reading only its first register reads the high piece. Everything else keeps the first-register-low join, which C's truncation reads as the right `int`: an `int` worked out from the high half of a 64-bit temporary can compile to the same bytes as the `long long` (`umull r1,r0` is both `((u64)a * b) >> 32` and `(u64)a * b`; `addc 4,4,6; addze 3,3; add 3,3,5` is both `(a + b) >> 32` and `a + b`). `callers` (the default) adds the callers' reads: a function is also proven when one of its direct callers reads the second register after the call, before writing it or making another call (a move, a store, an operation, a compare; not a call, a RETURN, a branch, a register window's bulk copy, a register XORed with itself, an instruction nothing of which depends on the register's value (PowerPC's `subfe 4,4,4`), or, past a branch, a store of several registers or a register pair, which gcc merges into SPARC's `std %o0` or ARM's `stm` with a dead second word, or the delay slot of a conditional branch, which the delay slot filler may take from the branch target; a site whose fall-through reaches, before any branch, an instruction another branch of the caller targets or the target of a direct call, whose walk reaches a word the caller loads as data, after which a branch tests a flag nothing set since the call, in a caller that jumps through a register, or in gcc's `f.cold` part gives no evidence, because a call kuna does not know never returns is followed by unrelated code: `bl f; __builtin_unreachable()` by the block a `bne` reaches, an ARM or Thumb literal pool, a jump table's case, a static function whose symbol `strip -x` removed, or a rare block the hot part enters, and a function's extent ends at the size its symbol states, so a walk does not leave it; and no site whose walk reaches a C++ landing pad, which the unwinder enters with the selector in the second register: the pads come from the `.eh_frame` LSDAs and the `.ARM.exidx`/`.ARM.extab` data, a caller whose LSDA does not decode gives none, and so does every caller of an image whose C++ exception tables cannot be placed), or when a caller that hands its pair back untouched to its own RETURN is proven, because a caller compiled against `int f()` never reads a register the call clobbered: a 64-bit sum (`addc`/`adde`, `addu`+`sltu`, `addcc`/`addx`, `adds`/`adc`), ARM's single `umull`/`smull`/`umlal` and `return g();` without a tail call then join high word first wherever a caller stores, compares or adds both words. The callee must write that register itself or through what it calls (gcc's IPA-RA lets a caller keep its own value there across a callee that never touches it, so such a read proves nothing), must start a symbol of the image's own symbol table and reach a RETURN; a register-window function counts only writes of the register its `restore` moves into the second one, and one whose first instruction stores the second register (`push {r0-r3,lr}`) proves nothing. The call sites come from one scan of the executable bytes for direct-call encodings (PowerPC `bl`, MIPS `jal`/`bal`, SPARC `call`, ARM and Thumb `bl`/`blx`) whose target starts a symbol, and MIPS PIC `jalr $25` calls whose `$25` a GOT load gave (the entry read at the GOT pointer the caller's prologue computes), each decoded again before it is read; a MIPS `lwl`/`lwr` pair into the second register writes it without reading it; and the walk after a call keeps on each path what its branches decided about the flags (ARM's `ldrne r1,..; orrnes r2,r1,r0` reads no stale `r1`); the verdict is the least fixed point over the functions it reaches (up to 32 functions and 48 call sites; a caller reached only by handing the pair back is judged by its own callers), from facts cached per image, so every run mode prints the same, and an image without symbols proves nothing this way. A declared, DWARF or `--assert prototype` 8-byte return is placed by the model in the ABI's order in every mode. `on` is the instruction-shape guess: the ABI's order when the second register's value looks returned on purpose at every live RETURN (kuna_bejoin::join_order), which also reads such an `int` as the `long long` it matches. `off` joins every pair first register low, as upstream does.
+- **What it does:** Join a value returned in two registers in the order the ABI returns it. PowerPC (r3:r4), MIPS o32 big-endian (v0:v1), SPARC (o0:o1), ARM big-endian (r0:r1), AArch64 big-endian (x0:x1, a 16-byte value) and AVR's gcc ABI (R25:R24) put the most significant half in the first return register, and their output rule says so (`join_reverse`), but return recovery and the two-register CALL output arm joined every pair first register low, so a `long long` came back with its halves swapped: `(long long)a * b` on PowerPC printed `CONCAT44(a1 * a0,(int)(... >> 0x20))`. `evidence` decides once per function, from that function's own instructions, and both the function's RETURN and every call to it read the verdict, so the two agree in any decompile order and any run (`--functions`, `--jobs`, one `kuna decompile`, a front-end session): before any pipeline runs the driver walks the raw p-code of the function and of each direct callee, once per image (kuna_bejoin::evidence::seed), and a call the pipeline resolves only mid-pass (a `-mlong-calls` call, a constant function pointer) to a proven callee sends the function through the pass again with that verdict. A function is proven when every path's RETURN holds, both registers written and not read again, a sign extension (the first register is the second shifted right arithmetically by all but one bit, `mr 4,3; srawi 3,3,31`), a zero extension (a literal zero beside a value), or the two halves of one product whose low half an instruction of its own made (PowerPC `mullw` beside `mulhw`, MIPS `mflo` beside `mfhi`, ARMv4/v6 `umull r2,r3` then `mov r1,r2`) -- the extended value computed or another register's argument, never the second register's own entry value, a load, a call's result or a by-product, and read by nothing else on any path (a reload of a frame slot the path stored is the value stored there, so the -O0 forms prove too: an argument spilled across a call and reloaded into the second register, clang's `lwz r4,8(r31); srawi r3,r4,31` whose shift may read it, and a `long long` local both of whose words are reloaded to return it), a path ending in a call that does not return included (gcc -Os computes an `exit` argument in a branch delay slot). It is also proven when every RETURN holds, the low word read by nothing but moves and stack spills, the two words of one object read from memory (two loads of adjacent words, the high word's at the lower address: `lwz 4,4(3); lwz 3,0(3)`, `ldmia r0,{r0,r1}`, SPARC's `ldd`, also reloaded from the stack frame), or the pair a direct call to a proven callee handed back with its low word moved back into place by the function (`mr 31,4; bl ext; mr 4,31`), when it branches straight into a proven callee (a tail call), and when the remaining RETURNs hold two literals or a proven callee's pair left where the call put it; a callee chain that loops back is not proven. An `int` returning one word of a 64-bit object loads only that word, unless the object is volatile: `(int)(*(volatile long long *)p >> 32)` compiles to the bytes of `*p` and reads as the `long long`. A proven callee's pair is read high word first, and a call reading only its first register reads the high piece. Everything else keeps the first-register-low join, which C's truncation reads as the right `int`: an `int` worked out from the high half of a 64-bit temporary can compile to the same bytes as the `long long` (`umull r1,r0` is both `((u64)a * b) >> 32` and `(u64)a * b`; `addc 4,4,6; addze 3,3; add 3,3,5` is both `(a + b) >> 32` and `a + b`). `callers` (the default) adds the callers' reads: a function is also proven when one of its direct callers reads the second register after the call, before writing it or making another call (a move, a store, an operation, a compare, or a call or tail branch to a compiler-runtime routine whose first parameter is a 64-bit integer, libgcc's `__floatundidf`, `__udivdi3`, `__ashldi3` and their kin or ARM's `__aeabi_ul2d` and `__aeabi_uldivmod`, which PowerPC, SPARC and ARM pass in the two return registers, so `bl add64; bl __floatundidf` reads the pair; not any other call, a RETURN, a branch, a register window's bulk copy, a register XORed with itself, an instruction nothing of which depends on the register's value (PowerPC's `subfe 4,4,4`), or, past a branch, a store of several registers or a register pair, which gcc merges into SPARC's `std %o0` or ARM's `stm` with a dead second word, or the delay slot of a conditional branch, which the delay slot filler may take from the branch target; a site whose fall-through reaches, before any branch, an instruction another branch of the caller targets or the target of a direct call, whose walk reaches a word the caller loads as data, after which a branch tests a flag nothing set since the call, in a caller that jumps through a register, or in gcc's `f.cold` part gives no evidence, because a call kuna does not know never returns is followed by unrelated code: `bl f; __builtin_unreachable()` by the block a `bne` reaches, an ARM or Thumb literal pool, a jump table's case, a static function whose symbol `strip -x` removed, or a rare block the hot part enters, and a function's extent ends at the size its symbol states, so a walk does not leave it; and no site whose walk reaches a C++ landing pad, which the unwinder enters with the selector in the second register: the pads come from the `.eh_frame` LSDAs and the `.ARM.exidx`/`.ARM.extab` data, a caller whose LSDA does not decode gives none, and so does every caller of an image whose C++ exception tables cannot be placed), or when a caller that hands its pair back untouched to its own RETURN is proven, because a caller compiled against `int f()` never reads a register the call clobbered: a 64-bit sum (`addc`/`adde`, `addu`+`sltu`, `addcc`/`addx`, `adds`/`adc`), ARM's single `umull`/`smull`/`umlal` and `return g();` without a tail call then join high word first wherever a caller stores, compares or adds both words. The callee must write that register itself or through what it calls (gcc's IPA-RA lets a caller keep its own value there across a callee that never touches it, so such a read proves nothing), must start a symbol of the image's own symbol table and reach a RETURN; a register-window function counts only writes of the register its `restore` moves into the second one, and one whose first instruction stores the second register (`push {r0-r3,lr}`) proves nothing. The call sites come from one scan of the executable bytes for direct-call encodings (PowerPC `bl`, MIPS `jal`/`bal`, SPARC `call`, ARM and Thumb `bl`/`blx`) whose target starts a symbol, and MIPS PIC `jalr $25` calls whose `$25` a GOT load gave (the entry read at the GOT pointer the caller's prologue computes), each decoded again before it is read; a MIPS `lwl`/`lwr` pair into the second register writes it without reading it; and the walk after a call keeps on each path what its branches decided about the flags (ARM's `ldrne r1,..; orrnes r2,r1,r0` reads no stale `r1`); the verdict is the least fixed point over the functions it reaches (up to 32 functions and 48 call sites; a caller reached only by handing the pair back is judged by its own callers), from facts cached per image, so every run mode prints the same, and an image without symbols proves nothing this way. A declared, DWARF or `--assert prototype` 8-byte return is placed by the model in the ABI's order in every mode. `on` is the instruction-shape guess: the ABI's order when the second register's value looks returned on purpose at every live RETURN (kuna_bejoin::join_order), which also reads such an `int` as the `long long` it matches. `off` joins every pair first register low, as upstream does.
 - **When to flip:** Leave at `callers` (the default): it changes a big-endian or AVR pair only on proof, from the function's own instructions or from how its callers read it, so an `int` keeps its first-register reading, and a function and its callers agree however they are decompiled. Set `evidence` to judge each function from its own instructions alone. Set `on` when a big-endian function's 64-bit return or call result still prints with its halves swapped (`CONCAT44(low,high)`) and its disassembly shows a genuine 64-bit value (a 64-bit sum or difference, an ARM `umull` or SPARC `umul` product, a value an unproven callee returns): `on` reads those in the ABI's order too, and also reads an `int` worked out from the high half of a 64-bit temporary as that `long long` -- `int sum_hi(u64 a,u64 b){return (a+b)>>32;}` on PowerPC -O2, `((u64)a*b)>>32` and `a / 641` on ARM big-endian, MIPS gcc -O0's `>> 32` -- so check such a function against the disassembly. Better still, `--assert prototype` the 8-byte return, which joins it right in every mode. `off` gives upstream's first-register-low join everywhere. Little-endian targets other than AVR never reach the option. Measured with the default against off: over 698 big-endian objects (bash, cronie, diffutils, dpkg, findutils, grep, kmod, libbsd, libedit, Lua, openssh, shadow and sysvinit for PowerPC, SPARC and ARM big-endian with clang and MIPS with gcc at -O0 and -O2), SQLite and zlib for the same four targets, and every shape GH-904 lists built at -O0 to -O3 and -Os with callers before and after their callees, decompiled whole, narrowed, with `--jobs 2` and one at a time, no function whose DWARF or source return type is narrower than 8 bytes changes (the memory and call-pair shapes added later change 37 64-bit returns and 6 of their callers among 20,759 functions of that corpus and none narrower; of the authored shapes only a volatile 64-bit read's high word moves); compiling the printed C of those shapes against their source, functions go from wrong to right and none from right to wrong. Little-endian x86-64, i386, ARM, AArch64, MIPSel, PowerPC LE and RISC-V output is byte-identical. `callers` against `evidence`: every function it newly proves over those 813 objects, the four SQLite builds and 1,428 authored objects (1,570) returns eight bytes by its DWARF or source type, as do the 75 it proves in two static PowerPC SQLite shells linked with glibc (by DWARF, or libgcc's and glibc's 64-bit routines), and no function's return changes width; 250 functions of the corpus and those of SQLite now return or read a 64-bit value high word first; over 16 gcc MIPS PIC shared objects (SQLite, Lua, zlib, authored shapes) the 47 functions the GOT calls newly prove return eight bytes by DWARF, and three `int`/`void` SQLite functions an unaligned `lwl`/`lwr` load had proven no longer are. A pair a caller passes straight on as the next call's arguments (`bl f; bl use64`), or that no caller reads the second word of, stays as `evidence` prints it.
 - **Where / provenance:** P4/output-prototype · kuna · correctness-fix · bejoin
 - **Example:** `option bejoin callers`
@@ -2421,7 +2586,7 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 ### `bejoinpass` -- off | whole | high, default `whole`
 
 - **Symptoms:** a big-endian function that returns a call's long long prints CONCAT44((int)v1,(int)(v1 >> 0x20)); a wrapper of a 64-bit callee on PowerPC or MIPS returns the callee's value with its halves swapped; a u32 that returns the high word of a 64-bit call result prints as unsigned long long.
-- **What it does:** Join a big-endian register pair that a call hands back and the function returns untouched as one value. `bejoin` decides a function's returned pair by that function's own proof and a call's output pair by its callee's, so a pair passing from one to the other unchanged was judged twice and could join in both orders at once: a wrapper with no proof of its own of a proven 64-bit callee (`jal add64; nop; lw $31,..; jr $31` on MIPS o32, `bl add64; ..; blr` on PowerPC, which `passthrough`'s tail-return claim gives the callee's two registers) joined its RETURN first register low while the call read the pair high word first, and printed `CONCAT44((int)v1,(int)(v1 >> 0x20))`, the callee's value with its halves swapped; a function proven by its callers or declared 8 bytes that returns what an unknown callee left in the pair (a MIPS PIC call through the GOT, a call through a function pointer, a PowerPC tail call into an unproven callee) printed the same swap the other way round. A side with a proof now fixes the order of both: a call whose two registers reach, untouched through moves and phis, the high and low words of a RETURN joined high word first joins high word first too, which changes only how the same bits print (`v1 = (*hook)(); ext(); return v1;`, kuna_bejoinpass::call_order). A function with no proof of its own whose every live RETURN hands back the pair a call to a proven callee left there untouched (kuna_bejoinpass::settle_return) has the bytes of both `u64 w(){return add64(..);}` and `u32 hi(){return add64(..) >> 32;}`, and nothing in it tells the two apart: `whole` (the default) returns the callee's whole value high word first, `return add64(..);`, right for the wrapper and too wide for `hi`; `high` returns its first register alone, the callee's high word, `return (int)((unsigned long long)add64(..) >> 0x20);`, right for `hi` and too narrow for the wrapper; under `whole` too, a RETURN whose first register went through more moves than its second (gcc -O0's `(u32)(v >> 32)`, `mov r3,r0; mov r0,r3` after the pair is moved back) keeps the first register alone. A caller reading the second register (`bejoin callers`) or a declared, DWARF or `--assert prototype` 8-byte return proves the function and keeps the pair whole in either mode. The function's own verdict stays unproven, so under `whole` a caller in the image that reads only its first register (a sign test, `if (w() < 0)`) still reads that register as the low word, `(int)w()`. `off` leaves each side to its own verdict. Only pairs of two 4-byte registers (PowerPC r3:r4, MIPS o32 v0:v1, SPARC o0:o1, ARM big-endian r0:r1) under `bejoin evidence` or `callers` are judged; every other target and mode is unchanged.
+- **What it does:** Join a big-endian register pair that a call hands back and the function returns untouched as one value. `bejoin` decides a function's returned pair by that function's own proof and a call's output pair by its callee's, so a pair passing from one to the other unchanged was judged twice and could join in both orders at once: a wrapper with no proof of its own of a proven 64-bit callee (`jal add64; nop; lw $31,..; jr $31` on MIPS o32, `bl add64; ..; blr` on PowerPC, which `passthrough`'s tail-return claim gives the callee's two registers) joined its RETURN first register low while the call read the pair high word first, and printed `CONCAT44((int)v1,(int)(v1 >> 0x20))`, the callee's value with its halves swapped; a function proven by its callers or declared 8 bytes that returns what an unknown callee left in the pair (a MIPS PIC call through the GOT, a call through a function pointer, a PowerPC tail call into an unproven callee) printed the same swap the other way round. A side with a proof now fixes the order of both: a call whose two registers reach, untouched through moves and phis, the high and low words of a RETURN joined high word first joins high word first too, which changes only how the same bits print (`v1 = (*hook)(); ext(); return v1;`, kuna_bejoinpass::call_order). A function with no proof of its own whose every live RETURN hands back the pair a call to a proven callee left there untouched (kuna_bejoinpass::settle_return) has the bytes of both `u64 w(){return add64(..);}` and `u32 hi(){return add64(..) >> 32;}`, and nothing in it tells the two apart: `whole` (the default) returns the callee's whole value high word first, `return add64(..);`, right for the wrapper and too wide for `hi`; `high` returns its first register alone, the callee's high word, `return (int)((unsigned long long)add64(..) >> 0x20);`, right for `hi` and too narrow for the wrapper; under `whole` too, a RETURN whose first register went through more moves than its second (gcc -O0's `(u32)(v >> 32)`, `mov r3,r0; mov r0,r3` after the pair is moved back) keeps the first register alone. A caller reading the second register (`bejoin callers`) or a declared, DWARF or `--assert prototype` 8-byte return proves the function and keeps the pair whole in either mode. Under `whole` such a function is proven for its callers too, once one of its direct callers reads its first register (`void f() { g(); }` has the same bytes, and a caller of it reads nothing), so a caller that reads only that register (a sign test, `if (w() < 0)`) reads the value's high word, `(long long)w() <= -1`, not `(int)w()`, which C reads as the low word; and a proven function whose RETURN hands back a proven callee's pair keeps both registers even where they reach it as the call's indirect creations (an -O0 wrapper that reloads its arguments printed `void w(..)`). Changing the option mid-session drops the verdicts taken. `off` leaves each side to its own verdict. Only pairs of two 4-byte registers (PowerPC r3:r4, MIPS o32 v0:v1, SPARC o0:o1, ARM big-endian r0:r1) under `bejoin evidence` or `callers` are judged; every other target and mode is unchanged.
 - **When to flip:** Leave at `whole` (the default): a pair handed back untouched prints as one value, and a function with no proof of its own that returns a proven 64-bit callee's pair returns the callee's value. Set `high` when such a function's source returns only the high word (`u32 hi(){return add64(..) >> 32;}`, or the first member of a struct a PowerPC `-msvr4-struct-return` callee returns in r3:r4), or when a caller in the image tests only its first register and prints `(int)w()` for what is the high word; better still, `--assert prototype` its true return, which every caller then reads. `off` restores the two separate verdicts and the swapped `CONCAT44((int)v1,(int)(v1 >> 0x20))`. Measured against `off` over 359 MIPS images (gcc and clang, -O0 to -O3 and -Os; zlib, Lua, SQLite and authored shapes; big- and little-endian PIC shared objects and big-endian objects) and 250 PowerPC images (gcc 13 and clang 14, the same sources, PIC and non-PIC) with their DWARF stripped: functions printing the swapped `CONCAT44((int)v,(int)(v >> 0x20))` fall from 22 to 4 on MIPS (the rest join a 64-bit temporary of the function's own, or a call's pair the function keeps rather than returns) and from 16 to 0 on PowerPC. Every function `whole` and `high` print differently is a wrapper with no proof of its own and an 8-byte DWARF return: 22 there (`i64 p8(int x){return fw(x);}`, `u64 ret_g(u64 a){return add64(a,3);}`) and 13 in compiler-rt's builtins and 64 SDL3 sources built for MIPS and PowerPC (clang 14, gcc 12 and 13, -O0 to -Os, PIC and non-PIC, soft-float; `SDL_TellIO`, the `SDL_IOStream` size and seek callbacks, soft-float `__floatdidf`). `whole` prints all 35 at their DWARF width, `high` none, and no `u32 hi()` shape occurs in any of these images; over big-endian MIPS and PowerPC glibc, libm, libgcc_s, libatomic, libgomp, libstdc++ and ld.so (Debian 12, Ubuntu 24.04) and angr's MIPS and PowerPC test binaries, 59 images and 30,677 functions, the two print byte-identically. Every other change prints a proven function's call pair high word first. x86-64, i386, little-endian ARM and MIPS, AArch64 and PowerPC64 LE output is byte-identical, as are 51 ARM big-endian objects.
 - **Where / provenance:** P4/output-prototype · kuna · correctness-fix · bejoin
 - **Example:** `option bejoinpass whole`
@@ -2458,13 +2623,21 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **Where / provenance:** P9/infinite-loop-style · kuna · presentation-default · server-infinite-loop-style
 - **Example:** `option infloopstyle do`
 
-### `armconstshift` -- on | off, default `off`
+### `armconstshift` -- off | on | all, default `off`
 
-- **Symptoms:** a signed ARM value is shifted left by a constant in the emitted C; UBSan reports a left shift of a negative value in recompiled ARM output; a signed ARM shift overflows into the sign bit in recompiled output.
-- **What it does:** Print a fixed 32-bit ARM LSL of a signed operand as a shift of its unsigned conversion, `(int)((unsigned int)x << n)`, so the emitted C is defined for negative values and for bits shifted into or past the sign. The shiftee is converted once, the signed result type is restored only when the p-code output is signed, unsigned and register-count shifts are unchanged, and a signed variable is never shifted in place.
-- **When to flip:** Turn on when the emitted C must be free of signed-shift undefined behavior, e.g. before recompiling it with sanitizers or comparing it against the binary. Off by default because the conversion adds a cast pair to every ARM sign-bit test such as `x << 0x18 < 0`, which firmware uses for nearly every register flag check.
+- **Symptoms:** a signed ARM value is shifted left by a constant in the emitted C; UBSan reports a left shift of a negative value in recompiled ARM output; a signed ARM shift overflows into the sign bit in recompiled output; UBSan reports a left shift of a negative 64-bit value in recompiled output; a sign-extended 32-bit value shifted left into the sign bit of a 64-bit result.
+- **What it does:** Print a fixed left shift of a signed operand as a shift of its unsigned conversion, so the emitted C is defined for negative values and for bits shifted into or past the sign. `on` covers ARM's fixed 32-bit LSL, `(int)((unsigned int)x << n)`; `all` adds every architecture's fixed 64-bit left shift with a count below 64, `(long)((unsigned long)x << n)`, keeping an operand's sign extension inside the conversion. The shiftee is converted once, the signed result type is restored only when the p-code output is signed, unsigned and register-count shifts are unchanged, a 64-bit operand whose known bits prove the result nonnegative keeps the compact form, and a signed variable is never shifted in place.
+- **When to flip:** Turn on when the emitted C must be free of signed-shift undefined behavior, e.g. before recompiling it with sanitizers or comparing it against the binary; use `all` for 64-bit code on any architecture. Off by default because the conversion adds a cast pair to every ARM sign-bit test such as `x << 0x18 < 0`, which firmware uses for nearly every register flag check, and to every scaled 64-bit index.
 - **Where / provenance:** P9/cast-policy · kuna · correctness-fix · arm-fixed-signed-lsl
 - **Example:** `option armconstshift on`
+
+### `wrapadd` -- on | off, default `off`
+
+- **Symptoms:** UBSan reports a signed integer overflow in a recompiled 32-bit addition; a sign-extended 32-bit sum differs from the binary at INT32_MAX in recompiled output; (long)(a + 1) where the machine wraps at 32 bits.
+- **What it does:** Print a four-byte addition whose result a wider sign extension observes, through a return, a store or a comparison, as an addition of its unsigned conversion, `(int)((unsigned int)a + b)`, so the emitted C wraps at 32 bits exactly as the machine word does instead of overflowing a signed int, which is undefined and lets a compiler compute the sum at 64 bits. Applies on every architecture when the printed operands are signed four-byte integers or literals and the output language is C. Each operand prints once and other readers are unchanged; an already unsigned literal, address-only uses and library lengths keep their spelling.
+- **When to flip:** Turn on when the emitted C must be free of signed-overflow undefined behavior, e.g. before recompiling it with sanitizers or comparing it against the binary; MIPS `addiu` and RISC-V `addw` results that are sign-extended into 64-bit registers are the usual source. Off by default because the casts land on every widened int sum such as `return a0 + 3;`.
+- **Where / provenance:** P9/cast-policy · kuna · correctness-fix · widened-signed-add
+- **Example:** `option wrapadd on`
 
 ### `readonlycalls` -- off | on | <n>, default `65536`
 

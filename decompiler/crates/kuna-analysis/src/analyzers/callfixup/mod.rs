@@ -70,6 +70,8 @@ use kuna_decomp::inject_sleigh::SleighPayload;
 
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
 
+pub mod kuna_msvcftolsig;
+
 /// Prefix Ghidra strips from a conflicting library-imported function name before
 /// the target-map probe (`CallFixupAnalyzer.java:207-209`,
 /// `LIBRARY_ID_CONFLICT_PREFIX`).
@@ -157,9 +159,13 @@ fn scan_call_fixups(file: &object::File, arch: &Architecture) -> AnalysisOutput 
     // The same FUNC streams the loader installs as FunctionSymbols (a `-pg`
     // `mcount` may be a `.symtab` FUNC, a weak symbol, or a `.dynsym` import);
     // both streams are scanned, with version suffixes stripped (`mcount@GLIBC…`),
-    // exactly as `noreturn.rs` does.
+    // exactly as `noreturn.rs` does. A relocatable object's undefined symbols
+    // carry no type (a kernel module's `__fentry__` and `__x86_return_thunk` are
+    // `NOTYPE UND`); the loader binds each one a call reaches as an extern
+    // function, so those are scanned too.
     for sym in file.symbols().chain(file.dynamic_symbols()) {
-        if sym.kind() != SymbolKind::Text {
+        let untyped_extern = sym.is_undefined() && sym.kind() == SymbolKind::Unknown;
+        if sym.kind() != SymbolKind::Text && !untyped_extern {
             continue;
         }
         let Ok(n) = sym.name() else { continue };
@@ -191,7 +197,9 @@ impl AnalysisPass for CallFixupPass {
     }
 
     fn run(&self, ctx: &AnalysisCtx) -> AnalysisOutput {
-        scan_call_fixups(ctx.file, ctx.arch)
+        let mut out = scan_call_fixups(ctx.file, ctx.arch);
+        kuna_msvcftolsig::scan(ctx.file, &mut out);
+        out
     }
 }
 

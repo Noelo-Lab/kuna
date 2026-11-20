@@ -4304,6 +4304,17 @@ pub trait TypeFactory {
     }
 
     /// (kuna multilang W3) The language facet recorded for the named type.
+    /// (kuna `gonewtype`) Record that a Go reflection name is held by more than
+    /// one descriptor with DIFFERENT layouts (function-local types reuse the
+    /// `pkg.Name` spelling). A name-keyed factory keeps only one such record, so
+    /// a per-site type lock resolved through this name may assert the wrong
+    /// layout; [`crate::kuna_gonewtype`] refuses a marked name.
+    fn kuna_mark_ambiguous_go_type(&self, _name: &str) {}
+    /// (kuna `gonewtype`) Is this Go reflection name layout-ambiguous? See
+    /// [`TypeFactory::kuna_mark_ambiguous_go_type`].
+    fn kuna_is_ambiguous_go_type(&self, _name: &str) -> bool {
+        false
+    }
     fn kuna_lang_facet(&self, _name: &str) -> Option<crate::kuna_langfacet::LangFacet> {
         None
     }
@@ -4966,6 +4977,11 @@ pub struct TypeFactoryImpl {
     /// (kuna `cfstrings`) Named pointers preferred for their pointee, keyed by
     /// the pointee's id. See [`TypeFactory::kuna_prefer_named_pointer`].
     named_pointers: RefCell<BTreeMap<uint8, Rc<Datatype>>>,
+    /// (kuna `gonewtype`) Go reflection names whose descriptors disagree on
+    /// layout — a factory record keyed by name holds only one, so the name is
+    /// NOT a safe basis for a per-site type lock. See
+    /// [`TypeFactory::kuna_mark_ambiguous_go_type`].
+    go_ambiguous_types: RefCell<BTreeSet<String>>,
 }
 
 impl Default for TypeFactoryImpl {
@@ -5005,6 +5021,7 @@ impl TypeFactoryImpl {
             variant_layouts: RefCell::new(BTreeMap::new()),
             lang_facets: RefCell::new(BTreeMap::new()),
             named_pointers: RefCell::new(BTreeMap::new()),
+            go_ambiguous_types: RefCell::new(BTreeSet::new()),
         }
     }
 
@@ -7541,6 +7558,12 @@ impl TypeFactory for TypeFactoryImpl {
     ) -> KunaResult<()> {
         self.lang_facets.borrow_mut().insert(name.to_string(), facet);
         Ok(())
+    }
+    fn kuna_mark_ambiguous_go_type(&self, name: &str) {
+        self.go_ambiguous_types.borrow_mut().insert(name.to_string());
+    }
+    fn kuna_is_ambiguous_go_type(&self, name: &str) -> bool {
+        self.go_ambiguous_types.borrow().contains(name)
     }
     fn kuna_lang_facet(&self, name: &str) -> Option<crate::kuna_langfacet::LangFacet> {
         self.lang_facets.borrow().get(name).cloned()

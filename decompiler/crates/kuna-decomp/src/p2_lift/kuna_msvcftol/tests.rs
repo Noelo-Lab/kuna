@@ -1,43 +1,65 @@
-//! Unit tests for the MSVC `__ftol` call-fixup payload: the synthesized XML
-//! parses into the shape `decode_inject` consumes, carries the three CRT target
-//! spellings, and the architecture guard admits x86-32 alone.
+//! Unit tests for the MSVC `__ftol` call-fixup payloads: the synthesized XML
+//! parses into the shape `decode_inject` consumes, splits the CRT targets by
+//! result width, and the architecture guard admits x86-32 alone.
 
 use super::*;
 
-/// The payload parses as a `<callfixup>` whose `name` is [`FIXUP_NAME`] — the
-/// name the installer suppression keys on.
+/// Both payloads parse as `<callfixup>` elements named [`FIXUP_NAME`] and
+/// [`FIXUP_NAME_SSE`].
 #[test]
-fn payload_parses_as_a_named_callfixup() {
-    let mut seen = None;
+fn payloads_parse_as_named_callfixups() {
+    let mut seen = Vec::new();
     decode_payload(|root| {
-        seen = Some((
+        seen.push((
             root.get_name().to_string(),
             String::from_utf8_lossy(root.get_attribute_value("name")?).into_owned(),
         ));
         Ok(())
     })
-    .expect("payload_xml must parse");
-    assert_eq!(seen, Some(("callfixup".to_string(), FIXUP_NAME.to_string())));
+    .expect("payloads must parse");
+    assert_eq!(
+        seen,
+        vec![
+            ("callfixup".to_string(), FIXUP_NAME.to_string()),
+            ("callfixup".to_string(), FIXUP_NAME_SSE.to_string()),
+        ]
+    );
 }
 
-/// All three CRT spellings are targets. The installer probes a function name
-/// bare / `_`-prefixed / `__`-prefixed, so the `__`-spelled targets also cover
-/// `ftol` / `_ftol` etc.; spelling them `__`-first is what makes that work.
+/// The 64-bit payload targets `__ftol`/`__ftol2`, the 32-bit one the SSE2
+/// entries. The installer probes a function name bare / `_`-prefixed /
+/// `__`-prefixed, so the `__`-spelled targets also cover `ftol` / `_ftol` etc.
 #[test]
-fn payload_targets_the_three_crt_spellings() {
-    let mut targets: Vec<String> = Vec::new();
+fn payloads_split_the_crt_targets_by_result_width() {
+    let mut targets: Vec<Vec<String>> = Vec::new();
     decode_payload(|root| {
+        let mut t = Vec::new();
         for child in root.get_children().iter() {
             if child.get_name() == "target" {
-                targets.push(
-                    String::from_utf8_lossy(child.get_attribute_value("name")?).into_owned(),
-                );
+                t.push(String::from_utf8_lossy(child.get_attribute_value("name")?).into_owned());
             }
         }
+        targets.push(t);
         Ok(())
     })
-    .expect("payload_xml must parse");
-    assert_eq!(targets, vec!["__ftol", "__ftol2", "__ftol2_sse"]);
+    .expect("payloads must parse");
+    assert_eq!(
+        targets,
+        vec![
+            vec!["__ftol", "__ftol2"],
+            vec!["__ftol2_sse", "__ftol2_pentium4", "__ftol2_sse_excpt"],
+        ]
+    );
+}
+
+/// The SSE2 entries return only `EAX` and leave `EDX` alone.
+#[test]
+fn sse_body_converts_into_eax_only() {
+    let xml = payload_sse_xml();
+    assert!(xml.contains("ESP = ESP + 4;"));
+    assert!(xml.contains("EAX = trunc(ST0);"));
+    assert!(!xml.contains("EDX"), "the SSE2 path never writes EDX");
+    assert!(xml.contains("ST6 = ST7;"));
 }
 
 /// The body pops the CALL's pushed return address, converts at the full 64-bit

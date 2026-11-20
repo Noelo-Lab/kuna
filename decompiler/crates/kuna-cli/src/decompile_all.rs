@@ -9,6 +9,8 @@
 //! bodies is a run-level failure.
 
 mod callee_first;
+mod custom_reg_callers;
+mod functions_serialize;
 mod omit;
 mod result_store;
 
@@ -53,6 +55,8 @@ use crate::paths;
 /// `decompile-project` reuses the same parse via its own wrapper).
 pub(crate) struct Args {
     pub(crate) binary: String,
+    /// Explicitly trusted, hashed Rust banks; consumed once before target selection.
+    pub(crate) apply_rust_signatures: Option<String>,
     pub(crate) json: bool,
     /// `--functions a,b,c`: restrict to these names (None ⇒ CODE-backed entries).
     pub(crate) names: Option<Vec<String>>,
@@ -158,6 +162,7 @@ impl Args {
     pub(crate) fn serial() -> Self {
         Self {
             binary: String::new(),
+            apply_rust_signatures: None,
             json: false,
             names: None,
             addrs: Vec::new(),
@@ -273,6 +278,7 @@ pub(crate) struct Filters {
     sort: SortKey,
     /// `--summary`: report the orientation document instead of the inventory.
     pub(crate) summary: bool,
+    rust_signature_manifest: Option<String>,
 }
 
 impl Filters {
@@ -387,6 +393,7 @@ struct Summary {
     runtime: Vec<crate::runtime_hints::RuntimeHint>,
     /// The selected functions a decompile would hit an engine budget on.
     limits: crate::limits::Limits,
+    rust_fields: Vec<(String, Json)>,
 }
 
 /// Measure the orientation document over `all` (the discovered inventory) and
@@ -431,10 +438,10 @@ fn summarize(
         code_bytes: selected.iter().map(|e| e.size).sum(),
         buckets,
         largest,
-        runtime: kuna_analysis::loader::elf_shdr::read_image(binary)
-            .map(|bytes| crate::runtime_hints::detect(&bytes, true))
+        runtime: crate::image::inspect(binary, |bytes| Some(crate::runtime_hints::detect(bytes, true)))
             .unwrap_or_default(),
         limits: crate::limits::measure(prog, graph, selected),
+        rust_fields: Vec::new(),
     }
 }
 
@@ -507,39 +514,39 @@ fn summary_json(
             })
             .collect(),
     );
-    format!(
-        "{}\n",
-        dumps_indent2(&Json::Object(vec![
-            ("binary".into(), Json::Str(binary.to_string())),
-            ("count".into(), Json::Number(selected.to_string())),
-            ("total".into(), Json::Number(summary.total.to_string())),
-            ("error".into(), error_json(error)),
+    let mut doc = vec![
+        ("binary".into(), Json::Str(binary.to_string())),
+        ("count".into(), Json::Number(selected.to_string())),
+        ("total".into(), Json::Number(summary.total.to_string())),
+        ("error".into(), error_json(error)),
+        (
+            "warnings".into(),
+            Json::Array(warnings.iter().map(|w| Json::Str(w.clone())).collect()),
+        ),
+    ];
+    doc.extend(declared.fid_databases_field());
+    doc.extend(summary.rust_fields.iter().cloned());
+    doc.push((
+        "summary".into(),
+        Json::Object(vec![
+            ("entry".into(), entry),
+            ("main".into(), main),
             (
-                "warnings".into(),
-                Json::Array(warnings.iter().map(|w| Json::Str(w.clone())).collect()),
+                "reachable_from_entry".into(),
+                summary
+                    .reachable_from_entry
+                    .map(|n| Json::Number(n.to_string()))
+                    .unwrap_or(Json::Null),
             ),
-            (
-                "summary".into(),
-                Json::Object(vec![
-                    ("entry".into(), entry),
-                    ("main".into(), main),
-                    (
-                        "reachable_from_entry".into(),
-                        summary
-                            .reachable_from_entry
-                            .map(|n| Json::Number(n.to_string()))
-                            .unwrap_or(Json::Null),
-                    ),
-                    ("no_callers".into(), Json::Number(summary.no_callers.to_string())),
-                    ("code_bytes".into(), Json::Number(summary.code_bytes.to_string())),
-                    ("size_buckets".into(), buckets),
-                    ("largest".into(), entries_json(&summary.largest, display_address, declared)),
-                    ("runtime".into(), crate::runtime_hints::to_json(&summary.runtime)),
-                    ("limits".into(), crate::limits::to_json(&summary.limits, display_address)),
-                ])
-            ),
-        ]))
-    )
+            ("no_callers".into(), Json::Number(summary.no_callers.to_string())),
+            ("code_bytes".into(), Json::Number(summary.code_bytes.to_string())),
+            ("size_buckets".into(), buckets),
+            ("largest".into(), entries_json(&summary.largest, display_address, declared)),
+            ("runtime".into(), crate::runtime_hints::to_json(&summary.runtime)),
+            ("limits".into(), crate::limits::to_json(&summary.limits, display_address)),
+        ]),
+    ));
+    format!("{}\n", dumps_indent2(&Json::Object(doc)))
 }
 
 fn summary_text(
@@ -548,11 +555,15 @@ fn summary_text(
     selected: usize,
     warnings: &[String],
     display_address: &dyn Fn(u64) -> u64,
+    declared: &crate::funcdecl::Declared,
 ) -> String {
     let mut out = String::new();
     let _ = writeln!(out, "binary\t{binary}");
     for warning in warnings {
         let _ = writeln!(out, "warning\t{warning}");
+    }
+    for line in crate::fid::report::text_lines(declared.fid_databases()) {
+        let _ = writeln!(out, "{line}");
     }
     let _ = writeln!(out, "functions\t{selected} selected / {} discovered", summary.total);
     match &summary.entry {
@@ -589,6 +600,9 @@ fn summary_text(
     }
     for h in &summary.runtime {
         let _ = writeln!(out, "runtime\t{}\t{}", h.id, h.hint);
+        for (name, version) in h.crates.iter().flatten() {
+            let _ = writeln!(out, "crate\t{name}\t{version}");
+        }
     }
     crate::limits::write_text(&mut out, &summary.limits, display_address);
     out
@@ -1063,7 +1077,7 @@ pub(crate) fn report_rejected_assertions(
         if outcome.fatal {
             eprintln!(
                 "error: --assert {:?} refused by the pipeline: {reason} \
-                 (the C below was produced WITHOUT it)",
+                 (the C below does not show it)",
                 outcome.directive
             );
         } else {
@@ -1181,17 +1195,23 @@ pub fn run_functions(argv: &[String]) -> i32 {
                     return 1;
                 }
             };
-            let text = if args.json {
+            let written = if args.json {
                 let limits = graph.as_ref().map(|g| crate::limits::measure(&prog, g, &entries));
-                functions_json(
-                    &args.binary,
-                    &entries,
-                    total,
-                    discovery_error.as_deref(),
-                    limits.as_ref(),
-                    &|address| prog.output_code_offset(address),
-                    &crate::funcdecl::Declared::of(&prog),
-                )
+                let limits = limits.as_ref().map(|limits| {
+                    crate::limits::to_json(limits, &|address| prog.output_code_offset(address))
+                });
+                crate::output::emit_streamed(|out| {
+                    functions_serialize::write(
+                        out,
+                        &args.binary,
+                        &entries,
+                        total,
+                        discovery_error.as_deref(),
+                        limits.as_ref(),
+                        &|address| prog.output_code_offset(address),
+                        &crate::funcdecl::Declared::of(&prog),
+                    )
+                })
             } else {
                 let mut text = String::new();
                 for e in &entries {
@@ -1205,9 +1225,9 @@ pub fn run_functions(argv: &[String]) -> i32 {
                     let address = prog.output_code_offset(e.addr.get_offset());
                     let _ = writeln!(text, "0x{address:x}\t{}{extra}", e.name);
                 }
-                text
+                crate::output::emit(&text)
             };
-            emit_with_run_error(&text, discovery_error.as_deref())
+            finish_with_run_error(written, discovery_error.as_deref())
         }
         Err(e) => {
             eprintln!("error: {e}");
@@ -1222,7 +1242,25 @@ pub fn run_functions(argv: &[String]) -> i32 {
 /// orients by are the same numbers `kuna functions` reports, and asking for
 /// orientation never pays for a decompile it is trying to avoid.
 fn run_summary(args: &Args, filters: &Filters) -> i32 {
-    let (prog, all) = match list_functions(args) {
+    let (request, rust_manifest) = match filters.rust_signature_manifest.as_deref() {
+        Some(path) => match crate::rust_signatures::load(std::path::Path::new(path)) {
+            Ok((request, manifest)) => (Some(request), Some(manifest)),
+            Err(error) => {
+                eprintln!("error: {error}");
+                return 1;
+            }
+        },
+        None => (None, None),
+    };
+    let loaded = match request {
+        Some(request) => load_program_with_rust_profiles(args, DriverDefaults::Functions, Some(request))
+            .map(|prog| {
+                let all = prog.function_entries_canonical();
+                (prog, all)
+            }),
+        None => list_functions(args),
+    };
+    let (prog, all) = match loaded {
         Ok(loaded) => loaded,
         Err(e) => {
             crate::runtime_hints::note_to_stderr(&args.binary);
@@ -1247,10 +1285,18 @@ fn run_summary(args: &Args, filters: &Filters) -> i32 {
         eprintln!("error: --summary could not build the program call graph");
         return 1;
     };
-    let summary = summarize(&args.binary, &prog, filters, &graph, &all, &selected);
+    let mut summary = summarize(&args.binary, &prog, filters, &graph, &all, &selected);
+    if let Some(manifest) = &rust_manifest {
+        summary.rust_fields = crate::rust_signatures::fields(manifest, prog.rust_profile_report());
+    }
     let declared = crate::funcdecl::Declared::of(&prog);
-    let warnings: Vec<String> =
-        prog.load_notes().iter().chain(declared.notes()).cloned().collect();
+    let warnings: Vec<String> = prog
+        .load_notes()
+        .iter()
+        .chain(declared.notes())
+        .cloned()
+        .chain(crate::fid::report::warnings(declared.fid_databases()))
+        .collect();
     let text = if args.json {
         summary_json(
             &args.binary,
@@ -1268,6 +1314,7 @@ fn run_summary(args: &Args, filters: &Filters) -> i32 {
             selected.len(),
             &warnings,
             &|address| prog.output_code_offset(address),
+            &declared,
         )
     };
     emit_with_run_error(&text, discovery_error.as_deref())
@@ -1352,6 +1399,7 @@ fn decompile_all(args: &Args, filters: &Filters) -> Result<AllRun, String> {
     let funcs = if callee_first {
         decompile_entries_callee_first(&mut prog, args, targets, explicit)
     } else {
+        note_custom_inert(&prog, targets.len());
         decompile_entries(&mut prog, args, targets, /* pointer_arguments= */ true)
     };
     Ok(AllRun { funcs, discovered, assertions: prog.assertion_outcomes(), interior, declared })
@@ -1448,17 +1496,36 @@ pub(crate) fn callee_first_decision(
 /// parks anything: with `protoorder on` they produce exactly the output they
 /// produce with it off. That is a legitimate choice, but it must not be a
 /// silent one -- an option accepted with `rc=0` and no effect reads as "it did
-/// not help". `callbacktype` rides the same driver loop and is inert in exactly
-/// the same places.
+/// not help". `callbacktype` and `calleereginputs custom` ride the same driver
+/// loop and are inert in exactly the same places.
 pub fn warn_protoorder_inert(options: &[(String, String)], surface: &str) {
-    for name in ["protoorder", "callbacktype"] {
-        if options.iter().any(|(n, value)| n == name && value != "off") {
-            eprintln!(
-                "warning: --option {name} has no effect on `kuna {surface}`: the callee-first \
-                 order belongs to a buffered whole-program run (`decompile-all`, \
-                 `decompile-project`; see docs/cli.md)"
-            );
-        }
+    let named = |name: &str| options.iter().any(|(n, value)| n == name && value != "off");
+    let custom = options.iter().any(|(n, value)| n == "calleereginputs" && is_custom(value));
+    let inert = ["protoorder", "callbacktype"].into_iter().filter(|name| named(name));
+    for option in inert.chain(custom.then_some("calleereginputs custom")) {
+        eprintln!(
+            "warning: --option {option} has no effect on `kuna {surface}`: the callee-first \
+             order belongs to a buffered whole-program run (`decompile-all`, \
+             `decompile-project`; see docs/cli.md)"
+        );
+    }
+}
+
+/// (kuna `calleereginputs custom`) Does `value` name the whole-image `custom`
+/// extension?
+fn is_custom(value: &str) -> bool {
+    value.trim().eq_ignore_ascii_case("custom")
+}
+
+/// (kuna `calleereginputs custom`) Say so when the run names `custom` but is not
+/// the whole-binary callee-first run that decides it.
+pub(crate) fn note_custom_inert(prog: &ConsoleProgram, selected: usize) {
+    if kuna_decomp::kuna_calleereginputs::custom_applies(prog.arch()) {
+        eprintln!(
+            "note: --option calleereginputs custom acts only on a whole-binary callee-first \
+             run; this run decompiles {selected} selected entries without that order, so no \
+             callee-saved register is an argument"
+        );
     }
 }
 
@@ -1468,7 +1535,7 @@ pub fn warn_protoorder_inert(options: &[(String, String)], surface: &str) {
 /// The loaded program is handed back with it: the triage filters and `--summary`
 /// both ask further questions of the same load rather than paying for a second.
 fn list_functions(args: &Args) -> Result<(ConsoleProgram, Vec<FunctionEntry>), String> {
-    let prog = load_program(args, DriverDefaults::Inventory)?;
+    let prog = load_program(args, DriverDefaults::Functions)?;
     // One record per entry address, address-ordered, alias names carried as data
     // (issue #197 — this used to dedup by (address, name), so a function the
     // loader and an analysis pass both named was listed twice).
@@ -1480,9 +1547,12 @@ fn list_functions(args: &Args) -> Result<(ConsoleProgram, Vec<FunctionEntry>), S
 ///
 /// Both variants take the same DISCOVERY policy (DIV-20/DIV-68); they differ only
 /// in whether the Listing is built on an architecture where it discovers nothing.
+#[derive(Clone, Copy)]
 pub(crate) enum DriverDefaults {
     /// `kuna functions` — enumeration only.
     Inventory,
+    /// `kuna functions` — inventory without body-only string markup.
+    Functions,
     /// `kuna decompile-all` / `kuna decompile-project` — enumeration plus bodies.
     Decompile,
     /// `kuna xrefs` — a reference query that runs its OWN recursive descent, so
@@ -1508,6 +1578,10 @@ impl DriverDefaults {
     /// still takes — the reference walk consumes both of them directly.
     fn wants_listing(&self) -> bool {
         !matches!(self, DriverDefaults::Query)
+    }
+
+    fn functions_inventory(&self) -> bool {
+        matches!(self, DriverDefaults::Functions)
     }
 }
 
@@ -1594,20 +1668,28 @@ pub(crate) fn driver_default_options(
     wants_listing: bool,
     options: &[(String, String)],
 ) -> Vec<(&'static str, &'static str)> {
-    let named = |name: &str| options.iter().any(|(option, _)| option == name);
     // The discovery bundle needs the object view the deferred consumers re-parse;
     // a raw or TE input has none, so it takes no discovery default at all rather
     // than an inert one. (`image_bytes` is deliberately not used here: a TE is
     // an ordinary "no object view" answer, not an error, on this path.)
-    let non_x86_64 = kuna_analysis::loader::elf_shdr::read_image(binary)
-        .ok()
-        .filter(|bytes| !kuna_analysis::loadimage_te::is_te_image(bytes))
-        .and_then(|bytes| {
-            kuna_analysis::loadimage_object::parse_object(&bytes)
+    let non_x86_64 = crate::image::inspect(binary, |bytes| {
+            if kuna_analysis::loadimage_te::is_te_image(bytes) { return None }
+            kuna_analysis::loadimage_object::parse_object(bytes)
                 .ok()
                 .map(|file| file.architecture() != object::Architecture::X86_64)
         })
         .unwrap_or(false);
+
+    driver_default_options_for_arch(non_x86_64, decompiles, wants_listing, options)
+}
+
+fn driver_default_options_for_arch(
+    non_x86_64: bool,
+    decompiles: bool,
+    wants_listing: bool,
+    options: &[(String, String)],
+) -> Vec<(&'static str, &'static str)> {
+    let named = |name: &str| options.iter().any(|(option, _)| option == name);
 
     let mut injected = Vec::new();
     // (kuna DIV-120) A function past the instruction budget reports the body kuna
@@ -1642,6 +1724,18 @@ pub(crate) fn load_program(
     args: &Args,
     defaults: DriverDefaults,
 ) -> Result<ConsoleProgram, String> {
+    let request = args.apply_rust_signatures.as_deref().map(|path| {
+        crate::rust_signatures::validate_application(args)?;
+        crate::rust_signatures::load(std::path::Path::new(path)).map(|(request, _)| request)
+    }).transpose()?;
+    load_program_with_rust_profiles(args, defaults, request)
+}
+
+fn load_program_with_rust_profiles(
+    args: &Args,
+    defaults: DriverDefaults,
+    request: Option<kuna_analysis::flirt::kuna_rustprofiles::Request>,
+) -> Result<ConsoleProgram, String> {
     let binary = std::fs::canonicalize(&args.binary)
         .map_err(|_| format!("binary not found: {}", args.binary))?
         .to_string_lossy()
@@ -1651,8 +1745,12 @@ pub(crate) fn load_program(
     // the subprocess env). Keep the restoration guard alive through runtime
     // option recording too: the bridged options update their env again inside
     // `set_kuna_option` and must not leak into a later load.
-    let _loadtime_env =
-        apply_loadtime_env(&args.options, args.slice.as_deref(), jobs::decode_lanes(args));
+    let _loadtime_env = apply_loadtime_env(
+        &args.options,
+        args.slice.as_deref(),
+        jobs::decode_lanes(args),
+        defaults.functions_inventory() && args.apply_rust_signatures.is_none(),
+    );
 
     let spec_roots = spec_roots(args.sleighpath.as_deref());
     let target = args.target.as_deref().unwrap_or("");
@@ -1705,9 +1803,10 @@ pub(crate) fn load_program(
         format!("{msg}{raw_hint}")
     })?;
 
-    for (name, value) in driver_default_options(
-        &binary,
-        defaults.decompiles(),
+    let non_x86_64 = !prog.arch().archid.starts_with("x86:LE:64:");
+    for (name, value) in driver_default_options_for_arch(
+        non_x86_64,
+        defaults.decompiles() || args.apply_rust_signatures.is_some(),
         defaults.wants_listing(),
         &args.options,
     ) {
@@ -1738,6 +1837,13 @@ pub(crate) fn load_program(
         kuna_console::assertions::apply_image_scoped(&mut prog);
     }
     replay_worker_arm_frames(&mut prog, args)?;
+    if let Some(request) = request {
+        if args.apply_rust_signatures.is_some() {
+            prog.request_rust_signature_names(request);
+        } else {
+            prog.request_rust_profiles(request);
+        }
+    }
     prog.commit_pending_analysis()
         .map_err(|e| format!("read symbols (analysis commit) failed: {}", e.explain()))?;
     // AFTER the commit: a caller-declared boundary is an assertion that outranks
@@ -1752,6 +1858,7 @@ pub(crate) fn load_program(
     }
     if args.jobs_worker.is_none() {
         crate::funcdecl::warn_unmapped(&prog, &binary);
+        crate::fid::report::warn(&prog, &binary);
     }
     crate::kuna_allocrelease::after_analysis();
     if args.jobs_worker.is_none() {
@@ -1894,9 +2001,10 @@ pub fn detected_output_language(
     {
         Some(lang) => kuna_analysis::sourcelang::Compiler::from_forced_lang(lang),
         None => {
-            let bytes = kuna_analysis::loader::elf_shdr::read_image(binary).ok()?;
-            let file = kuna_analysis::loadimage_object::parse_object(&bytes).ok()?;
-            kuna_analysis::sourcelang::effective_compiler(&file, &bytes)
+            crate::image::inspect(binary, |bytes| {
+                let file = kuna_analysis::loadimage_object::parse_object(bytes).ok()?;
+                Some(kuna_analysis::sourcelang::effective_compiler(&file, bytes))
+            })?
         }
     };
     match compiler {
@@ -2043,8 +2151,10 @@ enum CodeEvidence {
 /// Does this image carry executable content at all, and on what evidence?
 ///
 /// Section flags first (the per-format executable test `kuna-analysis`'s entry
-/// analyzers use), then the ELF program headers — a section-header-stripped PIE
-/// has no section table at all, and the program header is what the loader obeys.
+/// analyzers use), then the segments no section describes — a
+/// section-header-stripped PIE has no section table at all, and a bare
+/// `MH_FILESET` (`kernelcache off`) no sections, so the ELF program header and
+/// the Mach-O segment's `initprot` are what the loader obeys.
 /// An image `object` cannot parse (a raw blob, a `<binaryimage>` document)
 /// answers [`CodeEvidence::Flagged`]: nothing there clears the run, so it stays
 /// a failure.
@@ -2082,10 +2192,15 @@ fn classify_code_evidence(bytes: &[u8]) -> CodeEvidence {
     });
     let executable_segment = file.segments().any(|seg| {
         seg.size() != 0
-            && matches!(
-                seg.flags(),
-                object::SegmentFlags::Elf { p_flags } if p_flags & PF_X != 0
-            )
+            && match seg.flags() {
+                object::SegmentFlags::Elf { p_flags } => p_flags & PF_X != 0,
+                object::SegmentFlags::MachO { initprot, .. } => {
+                    let span = seg.address()..seg.address().saturating_add(seg.size());
+                    initprot & object::macho::VM_PROT_EXECUTE != 0
+                        && !file.sections().any(|sec| span.contains(&sec.address()))
+                }
+                _ => false,
+            }
     });
     if executable_section || executable_segment {
         return CodeEvidence::Flagged;
@@ -2194,12 +2309,13 @@ pub(crate) fn write_selected_json(
 /// so a triage-narrowed listing says what it was narrowed from. They are equal on
 /// an unfiltered run. `limits` is present only when the selection already walked
 /// the image (`--reachable-from`): the plain listing never pays for that walk.
+#[cfg(test)]
 fn functions_json(
     binary: &str,
     entries: &[FunctionEntry],
     total: usize,
     error: Option<&str>,
-    limits: Option<&crate::limits::Limits>,
+    limits: Option<&Json>,
     display_address: &dyn Fn(u64) -> u64,
     declared: &crate::funcdecl::Declared,
 ) -> String {
@@ -2210,9 +2326,10 @@ fn functions_json(
         ("error".into(), error_json(error)),
     ];
     doc.extend(declared.notes_field());
+    doc.extend(declared.fid_databases_field());
     doc.push(("functions".into(), entries_json(entries, display_address, declared)));
     if let Some(limits) = limits {
-        doc.push(("limits".into(), crate::limits::to_json(limits, display_address)));
+        doc.push(("limits".into(), limits.clone()));
     }
     format!("{}\n", dumps_indent2(&Json::Object(doc)))
 }
@@ -2336,6 +2453,7 @@ fn document_fields(
         error_json(error),
     )]);
     fields.extend(declared.notes_field());
+    fields.extend(declared.fid_databases_field());
     // (kuna `--assert`) One row per caller-supplied assertion, in the order the
     // caller gave them: what it was, where in the phase model it wrote, and
     // whether it landed. Always present (`[]` when none were passed) so an agent
@@ -2356,7 +2474,11 @@ fn function_json(
         ("name".into(), Json::Str(f.name.clone())),
         ("address".into(), Json::Number(f.address.to_string())),
         ("address_hex".into(), Json::Str(format!("0x{:x}", f.address))),
-        ("aliases".into(), aliases_json(&f.aliases)),
+    ];
+    if !omit.aliases {
+        record.push(("aliases".into(), aliases_json(&f.aliases)));
+    }
+    record.extend([
         (
             "object_location".into(),
             object_location_json(f.object_location.as_ref()),
@@ -2378,7 +2500,8 @@ fn function_json(
             "unstructured_gotos".into(),
             Json::Number(f.unstructured_gotos().to_string()),
         ),
-    ];
+        ("warnings".into(), Json::Array(f.warnings.iter().map(warning_json).collect())),
+    ]);
     if !omit.line_mappings {
         record.push((
             "line_mappings".into(),
@@ -2427,6 +2550,15 @@ fn assertions_json(outcomes: &[kuna_console::assertions::Outcome]) -> Json {
             })
             .collect(),
     )
+}
+
+fn warning_json(warning: &kuna_decomp::kuna_functionwarnings::Warning) -> Json {
+    Json::Object(vec![
+        ("kind".into(), Json::Str(warning.kind())),
+        ("message".into(), Json::Str(warning.message())),
+        ("line".into(), Json::Number(warning.line.to_string())),
+        ("address".into(), warning.address.map_or(Json::Null, |a| Json::Number(a.to_string()))),
+    ])
 }
 
 fn line_mapping_json(mapping: &LineMapping) -> Json {
@@ -2568,6 +2700,7 @@ mod provenance_json_tests {
             callee_hints: Vec::new(),
             synth: None,
             pointerargs: None,
+            warnings: Vec::new(),
             detail: None,
         }
     }
@@ -2617,7 +2750,7 @@ mod provenance_json_tests {
         let record = doc["functions"][0].as_object().unwrap();
         assert!(!record.contains_key("line_mappings") && !record.contains_key("types"));
         assert_eq!(record["variables"][0]["line_numbers"], serde_json::json!([3]));
-        for key in ["name", "address", "code", "error", "unstructured_gotos"] {
+        for key in ["name", "address", "code", "error", "unstructured_gotos", "warnings"] {
             assert!(record.contains_key(key), "{key} must survive --omit");
         }
         assert_eq!(doc["language"], "c-language");
@@ -2629,6 +2762,49 @@ mod provenance_json_tests {
             serde_json::json!(["line_mappings", "variables", "types", "stack_objects"])
         );
         assert!(!doc["functions"][0].as_object().unwrap().contains_key("variables"));
+    }
+
+    #[test]
+    fn a_record_lists_its_warnings_and_a_failed_one_none() {
+        use kuna_decomp::kuna_functionwarnings::Warning;
+        let warned = FuncResult {
+            warnings: vec![
+                Warning { address: Some(0x401000), text: "WARNING: Subroutine does not return".into(), line: 1 },
+                Warning { address: Some(0x401010), text: "WARNING: Function flows out of bounds".into(), line: 4 },
+                Warning { address: None, text: "WARNING: structured blocks unavailable".into(), line: 5 },
+            ],
+            ..function()
+        };
+        let failed = FuncResult { code: None, error: Some("boom".into()), ..function() };
+        let text = dumps_indent2(&result_json(
+            "fixture", &[warned, failed], "c-language", None, None, &[], &Default::default(), Omit::default(),
+        ));
+        let doc: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(
+            doc["functions"][0]["warnings"],
+            serde_json::json!([
+                {"kind": "no-return", "message": "Subroutine does not return", "line": 1, "address": 0x401000},
+                {"kind": "out-of-bounds", "message": "Function flows out of bounds", "line": 4, "address": 0x401010},
+                {"kind": "structuring-declined", "message": "structured blocks unavailable", "line": 5, "address": null},
+            ])
+        );
+        assert_eq!(doc["functions"][1]["warnings"], serde_json::json!([]));
+    }
+
+    #[test]
+    fn omitted_aliases_leave_the_record_and_keep_its_identity() {
+        let aliased = FuncResult { aliases: vec!["sub_401000".into()], ..function() };
+        let mut omit = Omit::default();
+        omit.add("aliases").unwrap();
+        let text = dumps_indent2(&result_json(
+            "fixture", &[aliased], "c-language", None, None, &[], &Default::default(), omit,
+        ));
+        let doc: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(doc["omitted"], serde_json::json!(["aliases"]));
+        let record = doc["functions"][0].as_object().unwrap();
+        let keys: Vec<&str> = record.keys().map(String::as_str).take(4).collect();
+        assert_eq!(keys, ["name", "address", "address_hex", "object_location"]);
+        assert!(record.contains_key("line_mappings") && record.contains_key("variables"));
     }
 }
 
@@ -2728,6 +2904,7 @@ pub(crate) fn parse_args_with_filters(
     let triageable = cmd == "decompile-all" || cmd == "functions";
     let mut filters = Filters::default();
     let mut binary: Option<String> = None;
+    let mut apply_rust_signatures: Option<String> = None;
     let mut json = false;
     let mut names: Option<Vec<String>> = None;
     let mut addrs: Vec<EntrySelector> = Vec::new();
@@ -2775,8 +2952,14 @@ pub(crate) fn parse_args_with_filters(
         let a = argv[i].as_str();
         match a {
             "--json" => json = true,
+            "--apply-rust-signatures" if matches!(cmd, "functions" | "decompile") => {
+                let value = take(argv, &mut i, "--apply-rust-signatures")?;
+                if apply_rust_signatures.replace(value).is_some() {
+                    return Err("duplicate --apply-rust-signatures".into());
+                }
+            }
             "--no-vars" => no_vars = true,
-            "--omit" if cmd == "decompile-all" => omit.add(&take(argv, &mut i, "--omit")?)?,
+            "--omit" if matches!(cmd, "decompile-all" | "decompile") => omit.add(&take(argv, &mut i, "--omit")?)?,
             "--functions" => {
                 let v = take(argv, &mut i, "--functions")?;
                 names = Some(v.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect());
@@ -2829,9 +3012,7 @@ pub(crate) fn parse_args_with_filters(
                 jobs_synth = Some(jobs::SynthWorker::parse(&take(argv, &mut i, "--jobs-synth")?)?);
             }
             "--max-fn-seconds"
-                if cmd == "decompile-all"
-                    || cmd == "decompile-project"
-                    || cmd == "decompile-graph" =>
+                if matches!(cmd, "decompile" | "decompile-all" | "decompile-project" | "decompile-graph") =>
             {
                 let v = take(argv, &mut i, "--max-fn-seconds")?;
                 max_fn_seconds = Some(
@@ -2841,9 +3022,7 @@ pub(crate) fn parse_args_with_filters(
                 );
             }
             "--max-fn-memory"
-                if cmd == "decompile-all"
-                    || cmd == "decompile-project"
-                    || cmd == "decompile-graph" =>
+                if matches!(cmd, "decompile" | "decompile-all" | "decompile-project" | "decompile-graph") =>
             {
                 max_fn_memory = Some(parse_max_fn_memory(&take(argv, &mut i, "--max-fn-memory")?)?);
             }
@@ -2873,6 +3052,12 @@ pub(crate) fn parse_args_with_filters(
                 filters.sort = SortKey::parse(&v)?;
             }
             "--summary" if triageable => filters.summary = true,
+            "--rust-signature-manifest" if cmd == "functions" => {
+                let value = take(argv, &mut i, "--rust-signature-manifest")?;
+                if filters.rust_signature_manifest.replace(value).is_some() {
+                    return Err("duplicate --rust-signature-manifest".into());
+                }
+            }
             "--option" => options.push(crate::args::take_option(argv, &mut i)?),
             // (kuna outlang) `--language` is the first-class surface for the
             // output language; it lowers to the upstream `setlanguage` option, so
@@ -2914,6 +3099,20 @@ pub(crate) fn parse_args_with_filters(
     }
 
     let binary = binary.ok_or_else(|| format!("{cmd} requires <binary>"))?;
+    if filters.rust_signature_manifest.is_some() {
+        if apply_rust_signatures.is_some() {
+            return Err("--rust-signature-manifest and --apply-rust-signatures are exclusive".into());
+        }
+        if !filters.summary || !json {
+            return Err("--rust-signature-manifest requires functions --summary --json".into());
+        }
+        if raw_image || slice.is_some() || target.is_some() || isa.is_some()
+            || !assertions.is_empty() || !func_decls.is_empty()
+            || options.iter().any(|(name, _)| matches!(name.as_str(), "dyldimage" | "kernelcache"))
+        {
+            return Err("--rust-signature-manifest requires an unmodified object image without raw, slice, target, ISA, image-selection, assertion, or function-definition overrides".into());
+        }
+    }
     if !omit.is_empty() {
         if !json {
             return Err("--omit selects --json record keys; add --json".into());
@@ -2988,13 +3187,13 @@ pub(crate) fn parse_args_with_filters(
     let ResolvedMode { name: concrete_mode, options: merged } =
         mode_and_options_for_binary(mode.as_deref(), &binary, options)?;
     options = merged;
-    if names.is_none() && !addrs.is_empty() && !explicit_fast_funcdisc {
+    if names.is_none() && !addrs.is_empty() && !explicit_fast_funcdisc && apply_rust_signatures.is_none() {
         options.push(("fast_funcdisc".into(), "off".into()));
     }
     let whole_binary = batch && names.is_none() && addrs.is_empty();
     let max_fn_seconds = max_fn_seconds
         .unwrap_or_else(|| default_fn_budget_seconds(concrete_mode, whole_binary));
-    let decompiles = matches!(cmd, "decompile-all" | "decompile-project" | "decompile-graph");
+    let decompiles = matches!(cmd, "decompile" | "decompile-all" | "decompile-project" | "decompile-graph");
     let max_fn_memory = if decompiles { max_fn_memory } else { Some(0) };
     // The pool re-execs this binary, so a policy it cannot express is one the
     // shards would silently drop rather than honour. Pool-only: on `functions`
@@ -3043,6 +3242,15 @@ pub(crate) fn parse_args_with_filters(
                     .into(),
             );
         }
+        // (kuna `calleereginputs custom`) Nor does the whole-image decision.
+        if options.iter().any(|(name, value)| name == "calleereginputs" && is_custom(value)) {
+            return Err(
+                "--option calleereginputs custom and --jobs are exclusive: whether a callee-saved \
+                 register is an argument is decided over every caller and callee of the load, \
+                 which does not cross a worker process. Re-run with --jobs 1."
+                    .into(),
+            );
+        }
     }
 
     if let (Some(min), Some(max)) = (filters.min_size, filters.max_size) {
@@ -3051,9 +3259,9 @@ pub(crate) fn parse_args_with_filters(
         }
     }
 
-    Ok((
-        Args {
+    let args = Args {
             binary,
+            apply_rust_signatures,
             json,
             names,
             addrs,
@@ -3085,9 +3293,11 @@ pub(crate) fn parse_args_with_filters(
             jobs_pointerargs,
             jobs_synth,
             jobs_objects,
-        },
-        filters,
-    ))
+        };
+    if args.apply_rust_signatures.is_some() {
+        crate::rust_signatures::validate_application(&args)?;
+    }
+    Ok((args, filters))
 }
 
 fn parse_count(v: &str, flag: &str) -> Result<u64, String> {
@@ -3115,7 +3325,7 @@ fn parse_entry_selector(s: &str) -> Result<EntrySelector, String> {
 fn usage_decompile_all() {
     eprintln!(
         "usage: kuna decompile-all <binary> [--json] [--functions a,b,..] [--addr 0xVMA].. \\\n\
-         \x20                   [--no-vars] [--omit line_mappings,variables,types] \\\n\
+         \x20                   [--no-vars] [--omit aliases,line_mappings,variables,types] \\\n\
          \x20                   [--max-fn-seconds N] [--max-fn-memory MiB] \\\n\
          \x20                   [--mode auto|reliable|aggressive|fast] \\\n\
          \x20                   [--jobs N|auto] [--jobs-chunk N] [--jobs-full-load] \\\n\
@@ -3126,12 +3336,16 @@ fn usage_decompile_all() {
          \x20                   [--raw-image --target T --base VMA (--entry|--addr VMA)..]\n\
          \n\
          Decompile every CODE-backed function in one in-process load (load-once,\n\
-         decompile-many).  --json emits {{binary,count,functions:[{{name,address,code,variables,..}}]}};\n\
-         without it, concatenated C with `// Function:` headers.\n\
+         decompile-many).  --json emits {{binary,count,functions:[{{name,address,code,error,warnings,variables,..}}]}};\n\
+         without it, concatenated C with `// Function:` headers.  A record's\n\
+         `warnings` lists the engine warnings its code carries as comments, as\n\
+         {{kind,message,line,address}}, each at the address it was recorded\n\
+         at (a header warning at the entry); `error` is set only for a failed\n\
+         function.\n\
          --omit KEY[,KEY].. (with --json) leaves those record collections out of\n\
-         every record -- line_mappings, variables (with stack_objects), types --\n\
-         and lists them in a top-level `omitted` array, so an omitted collection\n\
-         is never mistaken for an empty one.\n\
+         every record -- aliases, line_mappings, variables (with stack_objects),\n\
+         types -- and lists them in a top-level `omitted` array, so an omitted\n\
+         collection is never mistaken for an empty one.\n\
          --no-vars skips the variable extraction and leaves `variables` empty.\n\
          --max-fn-seconds N caps ONE function's decompile at N seconds (default 10\n\
          for unfiltered fast runs, 120 otherwise; 0 disables); a function over\n\
@@ -3188,6 +3402,8 @@ fn usage_functions() {
          \x20               [--define-function S[-E][=N]|@FILE].. [--jobs N|auto] \\\n\
          \x20               [--mode auto|reliable|aggressive|fast] [--isa auto|arm|thumb] [--slice ARCH] [--target T] [--sleighpath D]\n\
          \x20               [--raw-image --target T --base VMA (--entry|--addr VMA)..]\n\
+         \x20               [--rust-signature-manifest PATH (requires --summary --json)]\n\
+         \x20               [--apply-rust-signatures PATH (trusted manifest; --jobs 1)]\n\
          \n\
          List every function kuna discovers in a binary as `<addr>\\t<name>` (or\n\
          --json: {{binary,count,total,functions:[{{name,address,address_hex,aliases,size}}]}}).\n\
@@ -3203,6 +3419,9 @@ fn usage_functions() {
          functions (10 by default). Its `warnings` array repeats the loader's\n\
          header repairs (a dropped ELF section table, a repaired PE DOS magic, a\n\
          clamped data-directory count) that the run also printed on stderr.\n\
+         --rust-signature-manifest reads verified external Rust signature banks\n\
+         once for the summary. It reports compiler metadata separately from\n\
+         signature-profile scores; it downloads nothing and installs no names.\n\
          Shares decompile-all's discovery policy, so the inventory always contains\n\
          every function a whole-binary run would decompile; on a non-x86-64 binary\n\
          that means a full prologue-pattern + gap-walk discovery pass.\n\
@@ -3732,6 +3951,57 @@ mod triage_tests {
         assert_eq!(SortKey::parse("name").unwrap(), SortKey::Name);
         assert!(SortKey::parse("entropy").is_err());
         assert_eq!(SortKey::default(), SortKey::Addr);
+    }
+
+    #[test]
+    fn rust_signature_application_keeps_discovery_independent_of_selection() {
+        let common = ["--mode", "reliable", "--apply-rust-signatures", "trusted.json"];
+        let (inventory, _) = parse("functions", &common).unwrap();
+        let flags: Vec<_> = common.into_iter().chain(["--addr", "0x1000"]).collect();
+        let (addressed, _) = parse("decompile", &flags).unwrap();
+        assert_eq!(inventory.options, addressed.options);
+        assert_eq!(addressed.apply_rust_signatures.as_deref(), Some("trusted.json"));
+        for extra in [
+            vec!["--jobs", "2"], vec!["--jobs", "auto"],
+            vec!["--apply-rust-signatures", "second.json"],
+            vec!["--summary", "--json", "--rust-signature-manifest", "report.json"],
+            vec!["--assert", "bytes 0x1000 90"],
+        ] {
+            let flags: Vec<_> = common.into_iter().chain(extra).collect();
+            assert!(parse("functions", &flags).is_err(), "{flags:?}");
+        }
+        for command in ["decompile-all", "decompile-project", "decompile-graph"] {
+            assert!(parse(command, &common).is_err(), "{command}");
+        }
+    }
+
+    #[test]
+    fn rust_signature_manifest_requires_the_unmodified_json_summary_surface() {
+        let valid = ["--summary", "--json", "--rust-signature-manifest", "manifest.json"];
+        let (_, filters) = parse("functions", &valid).unwrap();
+        assert_eq!(filters.rust_signature_manifest.as_deref(), Some("manifest.json"));
+        for cmd in ["decompile-all", "decompile-project", "decompile-graph", "decompile"] {
+            assert!(parse(cmd, &valid).is_err(), "{cmd}");
+        }
+        for flags in [
+            vec!["--rust-signature-manifest", "manifest.json"],
+            vec!["--summary", "--rust-signature-manifest", "manifest.json"],
+            vec!["--json", "--rust-signature-manifest", "manifest.json"],
+        ] {
+            assert!(err(parse("functions", &flags)).contains("requires functions --summary --json"));
+        }
+        for extra in [
+            vec!["--rust-signature-manifest", "second.json"],
+            vec!["--raw-image"],
+            vec!["--slice", "x86_64"],
+            vec!["--target", "x86:LE:64:default"],
+            vec!["--isa", "arm"],
+            vec!["--define-function", "0x1000=probe"],
+            vec!["--option", "dyldimage", "probe"],
+        ] {
+            let flags: Vec<_> = valid.iter().copied().chain(extra).collect();
+            assert!(parse("functions", &flags).is_err(), "{flags:?}");
+        }
     }
 
     /// An unnarrowed run must keep every pre-existing behaviour, so `narrows()`

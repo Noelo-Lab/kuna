@@ -56,6 +56,8 @@ enum Mode {
     /// `--option listing on --option fid on` + `kuna_fid_db=…/lib.fid`, set BEFORE
     /// the deferred commit (the live-CLI ordering).
     On,
+    Strict,
+    StrictMatched,
 }
 
 /// The result of a run: the symbol-table name at `0x4017c0` (the rename ground
@@ -86,6 +88,8 @@ fn name_at_crc32(prog: &ConsoleProgram) -> String {
 /// Bootstrap the stripped `prog`, (optionally) enable FID + point it at the DB, resolve +
 /// decompile the function at `KUNA_CRC32_VMA`.
 fn run(mode: Mode) -> Run {
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _guard = ENV_LOCK.lock().unwrap();
     let root = repo_root();
     let specs = root.join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
@@ -96,9 +100,19 @@ fn run(mode: Mode) -> Run {
     // The DB env var (`kuna_fid_db`) is read by `FidPass::run` at the deferred
     // commit. Set it ONLY for the On run; clear it for Off so the default path is
     // doubly inert (gate off AND no DB).
+    let mut temp_db = None;
     match mode {
-        Mode::On => {
-            let db = fixture_dir().join("lib.fid");
+        Mode::On | Mode::Strict | Mode::StrictMatched => {
+            let mut db = fixture_dir().join("lib.fid");
+            if matches!(mode, Mode::StrictMatched) {
+                use kuna_analysis::fid::db::FidDb;
+                let original = FidDb::load(&std::fs::read(&db).unwrap()).unwrap();
+                let mut records: Vec<_> = original.records().into_iter().cloned().collect();
+                records.iter_mut().find(|r| r.name == "kuna_crc32").unwrap().specific_hash = 0x7488df19ec1bc03b;
+                db = std::env::temp_dir().join(format!("kuna-fid-strict-{}.fid", std::process::id()));
+                std::fs::write(&db, FidDb::from_records("x86:LE:64:default", "gcc", records).serialize()).unwrap();
+                temp_db = Some(db.clone());
+            }
             std::env::set_var("kuna_fid_db", db.to_str().unwrap());
         }
         Mode::Off => std::env::remove_var("kuna_fid_db"),
@@ -107,12 +121,22 @@ fn run(mode: Mode) -> Run {
     let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
         .expect("bootstrap fixture with built processor specs");
 
+    prog.arch_mut().set_kuna_option("fid", "strict").unwrap();
+    assert!(prog.arch().analysis_fid && prog.arch().analysis_fid_strict);
+    prog.arch_mut().set_kuna_option("fid", "on").unwrap();
+    assert!(prog.arch().analysis_fid && !prog.arch().analysis_fid_strict);
+    assert!(prog.arch_mut().set_kuna_option("fid", "bogus").is_err());
+    assert!(prog.arch().analysis_fid && !prog.arch().analysis_fid_strict);
+    prog.arch_mut().set_kuna_option("fid", "off").unwrap();
+    assert!(!prog.arch().analysis_fid && !prog.arch().analysis_fid_strict);
+
     // Live-CLI ordering: the `option` lines precede `read symbols` (the deferred
     // commit). Set the flags on the live arch BEFORE committing so the deferred
     // Listing build + FID consumer run see them on.
-    if let Mode::On = mode {
+    if !matches!(mode, Mode::Off) {
         prog.arch_mut().set_kuna_option("listing", "on").expect("listing flips on");
-        prog.arch_mut().set_kuna_option("fid", "on").expect("fid flips on");
+        let setting = if matches!(mode, Mode::Strict | Mode::StrictMatched) { "strict" } else { "on" };
+        prog.arch_mut().set_kuna_option("fid", setting).expect("fid flips on");
     }
     // `read symbols`: build the Listing (deferred) + run the FID consumer, gated.
     prog.commit_pending_analysis().expect("analysis commit succeeds");
@@ -146,6 +170,7 @@ fn run(mode: Mode) -> Run {
         execute(&mut status);
     }
     let dur = t0.elapsed();
+    if let Some(path) = temp_db { let _ = std::fs::remove_file(path); }
     Run { name, body: status.optr.clone(), dur }
 }
 
@@ -156,6 +181,8 @@ fn run(mode: Mode) -> Run {
 fn fid_reidentifies_stripped_crc32_by_fingerprint() {
     let off = run(Mode::Off);
     let on = run(Mode::On);
+    let strict = run(Mode::Strict);
+    let strict_matched = run(Mode::StrictMatched);
 
     eprintln!(
         "==== 0x{KUNA_CRC32_VMA:x} symbol  OFF: {:>16}   ON: {:>16} ====",
@@ -194,6 +221,10 @@ fn fid_reidentifies_stripped_crc32_by_fingerprint() {
         "FID on body must render the re-identified name kuna_crc32:\n{}",
         on.body
     );
+
+    assert!(is_placeholder(&strict.name), "strict must decline the known specific-hash mismatch");
+    assert!(!strict.body.contains("kuna_crc32"));
+    assert_eq!(strict_matched.name, "kuna_crc32");
 
     // 3. The symbol name changed — FID performed the rename.
     assert_ne!(

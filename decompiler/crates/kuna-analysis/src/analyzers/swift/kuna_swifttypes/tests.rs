@@ -22,6 +22,12 @@ fn factory() -> TypeFactoryImpl {
 
 /// `f` over the type arm of `swift_types_elf`, its records located.
 fn with_types<R>(f: impl FnOnce(&Types) -> R) -> R {
+    with_edited_types(|_| {}, f)
+}
+
+/// [`with_types`], with `edit` applied to the metadata read before the
+/// records are located.
+fn with_edited_types<R>(edit: impl FnOnce(&mut Metadata), f: impl FnOnce(&Types) -> R) -> R {
     let bytes = std::fs::read(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/swift_types_elf"
@@ -47,7 +53,8 @@ fn with_types<R>(f: impl FnOnce(&Types) -> R) -> R {
         img: &img,
         bind_slots: &bind_slots,
     };
-    let md = reader.read_all(&file, &ELF_SECTIONS, bytes.len());
+    let mut md = reader.read_all(&file, &ELF_SECTIONS, bytes.len());
+    edit(&mut md);
     let namer = Namer {
         md: &md,
         imports: &imports,
@@ -57,6 +64,8 @@ fn with_types<R>(f: impl FnOnce(&Types) -> R) -> R {
             .filter(|s| s.kind() == object::SectionKind::Text)
             .map(|s| (s.address(), s.address().saturating_add(s.size())))
             .collect(),
+        bodies: crate::analyzers::entry::stated_function_bodies(&file, &bytes),
+        insn_align: 1,
         claims: Default::default(),
         budget: std::cell::Cell::new(usize::MAX),
     };
@@ -155,4 +164,32 @@ fn a_witness_self_follows_the_protocols_class_constraint() {
         assert_eq!(witness(point, "typefix.Point", false), (1, "typefix.Point".into()));
         assert_eq!(witness(point, "typefix.Point", true), (1, "typefix.Point".into()));
     });
+}
+
+/// A class whose descriptor says its superclass is resilient has no static
+/// layout to read, so it is not located, while the structs still are.
+#[test]
+fn a_class_with_a_resilient_superclass_is_not_located() {
+    let located = |resilient: bool| {
+        with_edited_types(
+            |md| {
+                if resilient {
+                    for ctx in md.contexts.values_mut().filter(|c| c.kind == ContextKind::Class) {
+                        ctx.flags |= CLASS_HAS_RESILIENT_SUPERCLASS << 16;
+                    }
+                }
+            },
+            |types| {
+                let kinds: Vec<ContextKind> =
+                    types.metadata.keys().map(|a| types.md.contexts[a].kind).collect();
+                (
+                    kinds.iter().filter(|k| **k == ContextKind::Class).count(),
+                    kinds.iter().filter(|k| **k == ContextKind::Struct).count(),
+                )
+            },
+        )
+    };
+    let (classes, structs) = located(false);
+    assert!(classes > 0 && structs > 0);
+    assert_eq!(located(true), (0, structs));
 }

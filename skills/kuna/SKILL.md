@@ -50,7 +50,7 @@ kuna decompile ./challenge 0x401230 --addr --json
 
 Batch multiple functions instead of looping over `decompile`. Use `decompile-all --json`
 for structured batch output; project export does not accept `--json`. When only the code
-is needed, `--omit line_mappings,variables,types` on either `--json` drops those
+is needed, `--omit aliases,line_mappings,variables,types` on either `--json` drops those
 collections (named in the document's `omitted`), keeping it near the size of the C.
 
 ## Navigate the export
@@ -108,6 +108,7 @@ query string owners and references:
 ```bash
 kuna strings ./challenge --filter '(?i)password|flag|correct|wrong' --json
 kuna crypto ./challenge --json          # AES/SHA/MD5/CRC/TEA/Base64 constants + the functions using them
+kuna blobs ./challenge --json           # embedded PNG/JPEG/GIF/BMP/ICO/zip/gzip/xz/zstd files, exact lengths (--extract DIR)
 kuna xrefs ./challenge --from main --json
 ```
 

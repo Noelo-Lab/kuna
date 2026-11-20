@@ -70,6 +70,20 @@ const SYM_ID_GLOBAL_TAG: u64 = 1u64 << 63;
 // =============================================================================
 
 impl HighContext for Funcdata {
+    fn high_has_foreign_member(
+        &self,
+        insts: &[VarnodeId],
+        lock_vn: VarnodeId,
+        lock_size: int4,
+    ) -> bool {
+        crate::funcdata::high_has_foreign_member_banks(
+            self.vbank(),
+            self.obank(),
+            insts,
+            lock_vn,
+            lock_size,
+        )
+    }
     fn vn_view(&self, vn: VarnodeId) -> VarnodeView {
         let v = self.vbank().get(vn).expect("vn_view: stale vn");
         let space_internal = v
@@ -87,6 +101,7 @@ impl HighContext for Funcdata {
             size: v.get_size(),
             type_: Rc::clone(v.get_type()),
             type_lock: v.is_type_lock(),
+            site_locked: v.is_site_locked(),
             merge_group: v.get_merge_group(),
             written: v.is_written(),
             def_time,
@@ -658,6 +673,9 @@ impl MergeContext for Funcdata {
         // isolated cannot answer `true` from any of them, and the global arm
         // below is unconditionally `false`, so the whole scan is skippable —
         // see `ScopeLocal::has_isolated_symbols`.
+        if crate::kuna_isolated::holds(self, high) {
+            return true;
+        }
         if !self.get_scope_local().map(|lm| lm.has_isolated_symbols()).unwrap_or(false) {
             return false;
         }

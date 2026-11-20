@@ -84,10 +84,13 @@ pub struct PoolResult {
 /// The absolute literal target of one instruction, if its operand body carries a
 /// bare `[0xHEX]` (no register, no shift) — the form the ARM SLEIGH prints for a
 /// resolved PC-relative literal load.
-pub(super) fn absolute_literal_target(operands: &str) -> Option<u64> {
+pub(crate) fn absolute_literal_target(operands: &str) -> Option<u64> {
     let open = operands.find("[0x")?;
     let rest = &operands[open + 3..];
     let close = rest.find(']')?;
+    if indexed_after(&rest[close + 1..]) {
+        return None;
+    }
     let hex = &rest[..close];
     if hex.is_empty() || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
         return None;
@@ -110,6 +113,9 @@ fn pcrel_literal_target(
     let pc_delta = pc_delta()?;
     let rest = &operands[open + 3..];
     let close = rest.find(']')?;
+    if indexed_after(&rest[close + 1..]) {
+        return None;
+    }
     let inner = &rest[..close];
     let base = (addr + pc_delta) & !3u64;
     if inner.is_empty() {
@@ -133,8 +139,14 @@ fn pcrel_literal_target(
     if neg { base.checked_sub(imm) } else { base.checked_add(imm) }
 }
 
+/// Does the text after an address operand's `]` index or write back the base
+/// (`[pc],-r2,lsl #0xd`, `[pc,#4]!`)? The address read is then not the bracket's.
+fn indexed_after(tail: &str) -> bool {
+    tail.starts_with(',') || tail.starts_with('!')
+}
+
 /// One instruction's literal target under both display forms.
-pub(super) fn literal_target(addr: u64, operands: &str, mode: &DecodeMode) -> Option<u64> {
+pub(crate) fn literal_target(addr: u64, operands: &str, mode: &DecodeMode) -> Option<u64> {
     absolute_literal_target(operands)
         .or_else(|| pcrel_literal_target(addr, operands, || mode.pc_delta(addr)))
 }
@@ -154,15 +166,15 @@ pub(super) fn literal_target(addr: u64, operands: &str, mode: &DecodeMode) -> Op
 /// disables the `[pc,#imm]` reference form outright. That is a structural brake on
 /// top of the ISA fact that x86-64 RIP-relative loads target `.rodata` rather than
 /// `.text` interstices and that i386 has no PC-relative addressing at all.
-pub(super) struct DecodeMode<'a> {
-    pub(super) arch: &'a kuna_decomp::architecture::Architecture,
-    pub(super) code_space: Rc<AddrSpace>,
+pub(crate) struct DecodeMode<'a> {
+    pub(crate) arch: &'a kuna_decomp::architecture::Architecture,
+    pub(crate) code_space: Rc<AddrSpace>,
 }
 
 impl DecodeMode<'_> {
     /// PC bias of a `[pc,#imm]` literal at `addr`: Thumb +4, A32 +8, `None` where
     /// the language has no decode-mode context.
-    pub(super) fn pc_delta(&self, addr: u64) -> Option<u64> {
+    pub(crate) fn pc_delta(&self, addr: u64) -> Option<u64> {
         let at = kuna_base::address::Address::new(Rc::clone(&self.code_space), addr);
         let tmode = self
             .arch
@@ -218,7 +230,7 @@ fn referenced_words(
 }
 
 /// A 64-bit literal load covers TWO words; the second is loaded by nothing.
-pub(super) fn wide(mnemonic: &str) -> bool {
+pub(crate) fn wide(mnemonic: &str) -> bool {
     let m = mnemonic.to_ascii_lowercase();
     (m.starts_with("vldr") && m.ends_with(".64")) || m.starts_with("ldrd")
 }
@@ -362,6 +374,12 @@ mod tests {
         assert_eq!(pcrel_literal_target(0x8000100, "r0,r1,[pc,#-0x10]", || Some(4)), Some(0x80000f4));
         assert_eq!(pcrel_literal_target(0x8000100, "[pc,r3]", || Some(4)), None);
         assert_eq!(pcrel_literal_target(0x8000100, "[pc,r3,lsl #1]", || Some(4)), None);
+        // Post-indexed and write-back forms (a Thumb body decoded as A32 spells
+        // `ldrmi r4,[pc],-r2,lsl #0xd`) read no fixed literal.
+        assert_eq!(pcrel_literal_target(0x52ac0, "r4,[pc],-r2,lsl #0xd", || Some(8)), None);
+        assert_eq!(pcrel_literal_target(0x8000100, "r0,[pc],#0x4", || Some(4)), None);
+        assert_eq!(pcrel_literal_target(0x8000100, "r0,[pc,#0x4]!", || Some(4)), None);
+        assert_eq!(absolute_literal_target("r0,[0x8000200],#0x4"), None);
         // Off ARM there is no decode mode, so the form is disabled outright.
         assert_eq!(pcrel_literal_target(0x8000100, "d0,[pc,#0x18]", || None), None);
     }

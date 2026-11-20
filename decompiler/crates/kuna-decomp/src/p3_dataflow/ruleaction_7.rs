@@ -1664,6 +1664,7 @@ impl Rule for RulePtrFlow {
             return Vec::new();
         }
         vec![
+            OpCode::CPUI_CALLOTHER,
             OpCode::CPUI_STORE,
             OpCode::CPUI_LOAD,
             OpCode::CPUI_COPY,
@@ -1691,6 +1692,20 @@ impl Rule for RulePtrFlow {
         }
         let mut made_change = 0;
         match op_code(data, op) {
+            OpCode::CPUI_CALLOTHER => {
+                let Some(effect) = crate::kuna_octeoneffects::effect(data, op) else { return 0 };
+                if !effect.addressed() { return 0; }
+                let Some(space) = data.get_arch().manage().get_default_data_space() else { return 0 };
+                let size = space.get_addr_size() as int4;
+                let Some(mut vn) = op_in(data, op, 1) else { return 0 };
+                if vn_size(data, vn) > size {
+                    vn = Self::truncate_pointer(data, op, vn, 1, size);
+                    made_change = 1;
+                }
+                if Self::propagate_flow_to_def(data, vn) {
+                    made_change = 1;
+                }
+            }
             OpCode::CPUI_LOAD | OpCode::CPUI_STORE => {
                 let index = vn_offset(data, op_in(data, op, 0).expect("memory space"));
                 let manager = data.get_arch().manage();

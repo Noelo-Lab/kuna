@@ -5,6 +5,16 @@ Anchors:
   - decompiler/crates/kuna-decomp/src/p2_lift
 ```
 
+For Go images, `kuna_atomicxadd.rs` records a bounded single-instruction
+LOCK/load/add/exchange/store/UNLOCK candidate before SSA. The record retains
+original op identities and the old-value load; it changes no p-code. All memory
+accesses must share the same storage address and four- or eight-byte width,
+and the exchange must copy a loaded old value into a register without changing
+the memory address before the store. Extra calls, branches, transaction hints
+and effects refuse. Flow overrides do not acquire a record. The record is
+cleared on restart and cannot authorize a later rendering without the final
+whole-function SSA proof described in chapter 09.
+
 This phase turns an entry address into a function: raw p-code ops for every
 reachable instruction, a basic-block graph over them, a call-spec record per
 call site, and — the centerpiece — a recovered `JumpTable` for every indirect
@@ -22,6 +32,16 @@ reaches the architecture only through the
 `decompiler/crates/kuna-decomp/src/p2_lift/flow.rs (FlowEnvironment)` trait; the
 live implementation is
 `decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (ArchFlowEnv)`.
+
+In 64-bit code spaces, SLEIGH display operands marked as code addresses retain
+that interpretation through their nested display subtables. Their evaluated bit patterns
+print as unsigned hexadecimal addresses even when bit 63 is set; ordinary
+signed immediates keep their minus sign. Pattern-expression arithmetic already
+wraps at 64 bits. This lets disassembly and its direct-reference consumers
+agree on upper-half branch and call targets, including Apple arm64e kernel
+addresses (issue #1505). Text disassembly always separates the address and
+encoding columns, including a full-width address. This is a correctness repair
+without an inference option.
 
 Loader-validated MIPS lazy-binding resolver sites carry call-and-return
 overrides in the shared architecture snapshot
@@ -80,6 +100,114 @@ double destinations use the V9 encoding that maps an odd encoded field into
 the upper register bank. The rules apply in both language variants. See the
 [SPARC V9 instruction mapping](https://docs.oracle.com/cd/E19963-01/html/821-1607/sparcv9-32853.html).
 This is a SLEIGH correctness repair, without an inference option.
+
+The AArch64 float-to-integer conversions and round-to-integral instructions
+round in the mode they name. Upstream lifts every scalar, SIMD-scalar and
+vector `FCVT{A,M,N,P,Z}{S,U}` as `TRUNC(x)`, and every `FRINT{A,I,M,N,P,X,Z}`
+and `FRINT32/64{X,Z}` as `TRUNC(x)` written into the float register, so
+`(int)floorf(x)` and `(int)ceilf(x)` lifted alike and a test of the floor
+against the ceil of one value folded away (Kuna #1535; upstream master is
+unchanged as of 2026-11-10). A conversion now truncates `FLOAT_FLOOR(x)`
+(`M`), `FLOAT_CEIL(x)` (`P`), `FLOAT_ROUND(x)` (`A`: ties away from zero,
+which is what p-code's `ROUND` does), the `FLOAT_ROUNDEVEN(x)` user op (`N`),
+or `x` itself (`Z`, unchanged). The conversions do not saturate: an input
+whose rounded value is outside the destination's range converts as `TRUNC`
+does. `FRINTM`, `FRINTP` and `FRINTA` are `FLOAT_FLOOR`, `FLOAT_CEIL` and
+`FLOAT_ROUND`; `FRINTN` and `FRINTZ` are the `FLOAT_ROUNDEVEN` and
+`FLOAT_TRUNC` user ops; `FRINTX` and `FRINTI`, which round in the FPCR mode
+with and without the inexact exception, are the `FLOAT_RINT` and
+`FLOAT_NEARBYINT` user ops. Each of these is exact for every input,
+including values too large for any integer, infinities, NaNs and negative
+zero. Chapter 05 types the four user ops as floats. `FRINT32Z` and
+`FRINT64Z` are `INT2FLOAT` of a 32- or 64-bit `TRUNC(x)`, and `FRINT32X` and
+`FRINT64X` the same of `FLOAT_RINT(x)`: exact while the rounded value fits
+the integer, except that a result of zero is +0.0 even for a negative input;
+like the other scalar and 64-bit vector writes they now zero the bits of the
+vector register above the result. Unsigned conversions keep the signed
+`TRUNC` of the destination width, exact when the rounded value is at least
+zero and below 2^31 (2^63 for a 64-bit destination); a negative one, which
+the instruction saturates to zero, converts as a signed value. The only
+unsigned spelling p-code has, a wider `TRUNC` narrowed to the destination,
+prints `(long)x & 0xffffffff` and widens every variable that holds the
+result. The SVE forms stay user ops. Subtables beside the mnemonic tables
+decode the mode (`fcvt_srnd`, `fcvt_vrnd`, `fcvt_vlanes`, `frint_s` and
+`frint_vlanes` in
+`specs/Ghidra/Processors/AARCH64/data/languages/AARCH64neon.sinc`); every
+encoding decodes and disassembles as before, and `FCVTZS` and `FCVTZU` lift
+to the same p-code. This is a SLEIGH correctness repair, without an inference
+option.
+
+The AArch64 pointer-authentication instructions keep their register defined
+while hidden. `AARCH64.pspec` leaves the `ShowPAC` context at 0 for every
+AArch64 language, so `pac*`, `aut*` and `xpac*` lift under the `"hide"`
+constructors of
+`specs/Ghidra/Processors/AARCH64/data/languages/AARCH64_base_PACoptions.sinc`
+and the decompiler models every signed pointer as already authenticated (the
+`ptrauthtrap` section below describes that model). Upstream's `"hide"` bodies
+are empty, so `pacda x0,x16` wrote nothing: a function whose only write to
+`x0` is the signing had no definition of `x0` at its `ret`, return recovery
+found no result, and `return ptrauth_sign_unauthenticated(p, ..)` decompiled
+as `void f(void)` (Kuna #1621). A hidden form that writes a general register
+(`pac{i,d}{a,b}`, `pac{i,d}z{a,b}`, `aut{i,d}{a,b}`, `aut{i,d}z{a,b}`,
+`pac{i}{a,b}1716`, `aut{i}{a,b}1716`, `xpaci`, `xpacd`) now lifts to a copy of
+that register onto itself, `Rd = Rd`, the transparent model's own semantics:
+the value flows to the return or store, and the function returns its pointer.
+When the compiler builds a blended modifier in place in `x1`
+(`movk x1, #d, lsl #48` then `pacda x0, x1; ret`), return recovery also takes
+that scratch `x1`, and the function returns the `x1:x0` pair, as it does for
+any other write to `x1` before `ret`. The forms that act on `x30` or `sp`
+(`pac{i}{a,b}sp`, `pac{i}{a,b}z`,
+`aut{i}{a,b}sp`, `aut{i}{a,b}z`, `retaa`, `retab`, `xpaclri`) and the
+authenticating branches and loads (`braa`, `blraa`, `eretaa`, `ldraa` and
+their `b`-key forms) stay empty: the return address carries no value the
+output needs, and `ptrauthtrap` keys on `x30` being unwritten. The FPAC-less
+failure check after a data `aut*` still folds, since the stripped copy still
+equals the original. On an iOS system daemon and three jailbreak dylibs
+(6,517 functions, 491 pointer-auth instructions in one of them) the output is
+byte-identical. This is a SLEIGH correctness repair, without an inference
+option.
+
+The AArch64 memory-tagging (MTE) instructions lift with their tag effect
+(`option acleintrinsics on|off`, default on, AArch64 only; Kuna #1626).
+`AARCH64.pspec` leaves the `ShowMemTag` context at 0, and under it
+`specs/Ghidra/Processors/AARCH64/data/languages/AARCH64base.sinc` lifts
+`irg` as a copy, `addg` and `subg` as a plain add, `gmi` as a copy of its
+mask, `ldg` and `stg`/`st2g` as nothing, and `stzg`/`stz2g`/`stgp` as their
+data store alone. The lift is then false about the program:
+`return __arm_mte_create_random_tag(p, 0);` is `irg x0, x0; ret` and
+decompiled to `return a0;`, and a function that only tags memory decompiled
+to an empty `void f(void)`.
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_memtag.rs (paint)` runs
+before each function's flow and makes the context agree with the option: it
+reads `ShowMemTag` at the function entry and, when that differs, sets the
+default and paints the whole code space. Only the memory-tagging
+constructors read that context, so every other instruction decodes and lifts
+exactly as before, and a language without the variable (every non-AArch64
+one) is left alone. `off` paints it back to 0, so one session can lift the
+same function both ways.
+
+The `ShowMemTag=1` constructors are kuna's, not upstream's. Upstream kept
+the destination register an untouched copy and put the tag operation in a
+user op with no output, to keep the pointer's data flow; the output then
+still read `return a0;` after a detached `RandomizePtrTag_Exclude(a0, ..)`
+statement. Here the tagged pointer is the user op's result:
+`Rd = RandomizePtrTag_Exclude(Rn, Xm)` for `irg` (zero when `Xm` is absent),
+`Rd = AddPtrTag(Rn +/- imm, tag_offset)` for `addg` and `subg`, both of which
+advance the tag, `Rd = ExcludePtrTag(Rn, Rm)` for `gmi`,
+`Rt = LoadPtrTag(Rt, address)` for `ldg`, and `StorePtrTag(address, Rt)` for
+each granule `stg`, `st2g`, `stzg`, `stz2g` and `stgp` tag (`stgp` takes the
+tag from the address itself). `GCR_EL1.Exclude`, which `irg`, `addg` and
+`subg` also honour, is part of those ops' meaning and is not an operand. The
+`stg` family raises an alignment fault on an address that is not
+granule-aligned; upstream modelled it as a branch to `AlignmentFault()`
+before each store, a block and two edges that are in no source and that
+cost the function its return value, so the fault is not modelled. The
+EL1-only bulk forms `ldgm`, `stgm` and `stzgm` keep upstream's
+`ShowMemTag=1` bodies, so with the option on they lift as loops of
+`LoadMemTag` / `StoreMemTag` over a block whose size is read from `GMID_EL1`
+(`DCZID_EL0` for `stzgm`); under `ShowMemTag=0` `ldgm` reads as zero and
+`stgm`/`stzgm` store no tag. Chapter 09 prints the tag ops of the single-granule forms as ACLE
+intrinsics.
 
 SPARC integer branch conditions snapshot the ICC/XCC carry, negative, and
 overflow flags before expanding the delay slot. A flag-writing slot still
@@ -264,9 +392,9 @@ Thumb IT state, retain their normal effects. Direct and indirect branches retain
 their existing target-mode selection. This strict correctness repair applies
 without Listing or frame discovery and adds no option.
 
-ARM return-dispatch probes preceding flow run in a decode context scope with
-`TMode` writes masked. Rejected probe chains cannot change the entry mode before
-the real walk establishes its boundary; local IT state remains active in a probe.
+Return-dispatch recognizers own their decode context scopes. Segment and mode
+commits remain visible within each probe, including ARM `TMode` and local IT
+state, but cannot repaint the real walk's entry mode when the probe ends.
 The scope journals only touched context partitions, restoring their values and
 explicit-set masks and removing new split points on exit. Opening a scope does
 not copy the image's context database.
@@ -665,9 +793,11 @@ and the FunctionSymbol there must carry an input-locked prototype. Left to
 prototype it was given has been merged against a locked `__thiscall` or
 `__cdecl` one, which fails and restarts the function to plant exactly this
 override; resolving it here removes that restart, which on a 32-bit MSVC C++
-image nearly every function paid. Other import calls are unchanged: one whose
-symbol carries only parked pieces (the Win32 and libc tables) still waits for
-`ActionDeindirect`. A call to any address that set names, direct or made direct
+image nearly every function paid. Other import calls stay indirect here: one whose
+symbol carries only parked pieces (the Win32 and libc tables) takes their
+parameters from the early slot query of `ActionDefaultParams` (04), where the
+caller's own writes back them, and becomes direct at `ActionDeindirect`, which
+keeps that declaration. A call to any address that set names, direct or made direct
 here, copies the locked prototype at flow and so never reaches the
 `ActionDefaultParams` arm that gives a declared callee the stack adjustment its
 parameter list implies (`kuna_calleeprotostack.rs`, 04); the copy applies that rule
@@ -676,6 +806,24 @@ itself
 (resolve_declared_extra_pop)`), so a
 `__thiscall` or `__stdcall` import pops what its declaration says instead of
 what the push run in front of it suggests.
+
+(kuna `--assert callee`) The reader can plant the same indirect override. A
+front-end parks `call site -> callee entry` facts on the architecture, keyed
+by the entry of the function that holds the call, and
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_calleeoverride.rs (seed)`
+copies a function's facts into its `Override` store when the flow build
+creates the `Funcdata`. `setup_callind_specs` then makes the named CALLIND a
+direct CALL, so the callee's name and its declared prototype apply. A named
+BRANCHIND is a tail call: `recover_jump_tables` asks the environment
+(`FlowEnvironment::stated_callee_site`) before it tries a table, and for a
+stated site `flow.rs (FlowInfo::stated_tail_call)` builds the CALLIND, the
+direct call and, unless the callee never returns, the return, with no warning.
+After the follow, `kuna_calleeoverride.rs (audit)` looks for a direct call to
+the stated callee (or, for a PLT stub, to the definition the stub binds) at
+each site and records every site that has none on the
+`Funcdata` (`note_rejected_callee_override`); the front-ends report those as
+refused directives. A function with no parked fact pays one map lookup.
+
 `flow.rs (FlowInfo::check_for_flow_modification)` then
 applies the callee's flow effects: an *inline* callee queues the op for
 injection; a *no-return* callee gets an artificial halt planted directly after
@@ -747,7 +895,8 @@ recovered switch table.
   (`architecture.rs (decode_kuna_call_fixups)`), so the vendored spec tree stays
   byte-identical to upstream while `parse_inject_all` still compiles every body
   together. Its subject is the MSVC x86-32 float-to-integer CRT helper family
-  (`__ftol`, `__ftol2`, `__ftol2_sse`). MSVC passes that helper's argument in the
+  (`__ftol`, `__ftol2`, `__ftol2_sse`, and the `ftol2.obj` SSE2 entries
+  `__ftol2_pentium4` / `__ftol2_sse_excpt`). MSVC passes that helper's argument in the
   x87 stack top `ST0` and returns the `__int64` in `EDX:EAX`, but no vendored
   x86 prototype model has an `<input>` `<pentry>` naming an x87 register — `ST0`
   appears only as an `<output>` pentry — so `FuncProto::characterize_as_input_param`
@@ -759,8 +908,15 @@ recovered switch table.
   every unrelated stack-passing callee. The fixup body pops the return address
   the `CALL` pushed (mandatory — x86 `CALL rel32` lifts as
   `push44(&:4 inst_next); call rel32`, so a replaced CALL otherwise leaks the
-  pushed address into the next call's arguments), truncates `ST0` at the helper's
-  real 64-bit width into `EDX:EAX`, and pops the x87 stack. Registration is
+  pushed address into the next call's arguments), truncates `ST0`, and pops the
+  x87 stack. The result width follows the helper: `__ftol` and `__ftol2` return
+  the full `__int64` in `EDX:EAX`, while the SSE2 entries of `ftol2.obj`
+  (`__ftol2_sse`, `__ftol2_pentium4`, `__ftol2_sse_excpt`) get a second payload
+  that writes `EAX` alone. Their SSE2 path is `cvttsd2si eax, …` and never
+  touches `EDX`, and MSVC emits them only for 32-bit conversions; a body that
+  wrote `EDX` would make a caller returning the converted `int` on one path and
+  an untouched `EDX` on another look like it returns an `EDX:EAX` pair, with the
+  untouched `EDX` promoted to a phantom register parameter. Registration is
   guarded to x86-32 (every register the body names must resolve, at a 4-byte
   code space) because the body would not compile elsewhere and the helper exists
   nowhere else.
@@ -799,6 +955,12 @@ recovered switch table.
   live per-CALLOTHER predicate that sees the applied options — so with the option
   off the CALLOTHER is never queued, survives as an ordinary black box, and the
   emitted C is identical to a build carrying no such payload.
+  `architecture.rs (register_octeon_upstream_fixups)` installs upstream's MIPS
+  lifting of `ll`/`lld`/`sc`/`scd`/`sync` the same way for an Octeon language's
+  reservation and ordering operations, each registered under its operation's
+  name (`inject_sleigh.rs (manual_call_other_fixup_named)`; upstream names
+  every manual payload "unknown", so only one could exist), and the same gate
+  applies them only under `option octeoneffects off` (chapter 3).
 
 ## 2.2 CFG construction
 
@@ -1155,6 +1317,50 @@ deliberately clipped edge a resolvable head without weakening the missing-op
 invariant: an unprocessed address before the cutoff, or in another space, still
 raises `Could not find op at target address`.
 
+The same bound holds at the function's own literal pool
+(`decompiler/crates/kuna-decomp/src/p2_lift/kuna_funcboundflow.rs
+(kuna_should_bound_at_pool)`), on ARM32. A compiler places the PC-relative
+constants a body loads right after its last instruction, so a function that ends
+in a call kuna cannot prove no-return (an unnamed import, a call to an address
+outside the image) is followed by its pool, not by code: armv5te `probe` ends `bl
+use; bl die`, and the walk took the second call's fall-through, decoded the first
+constants as instructions and stopped at one that decodes as nothing, printing
+`die(); halt_baddata(); // warn: Bad instruction - Truncating control flow here`,
+while `kuna disassemble` listed the same words as data. Worse, a pool word that
+decodes as a branch carried the walk into code the call never returns to (a
+`u_pool` that calls `hi` ahead of `__builtin_unreachable()` printed the other
+path's `return` after the call). The walk cannot be its own witness for where a
+pool is — it reaches the pool by falling through a call, and a constant that
+happens to encode a PC-relative load or a branch is then indistinguishable from
+evidence — so the pools come from the analysis tier: the Listing's trusted-reference
+extents (chapter [01](01-program-prep.md), `kuna_poolextents`), computed once over
+the completed image walk and parked on the architecture before any function is
+walked. When an unconditional `CALL`/`CALLIND` (no `CBRANCH` in the instruction,
+`flow.rs (FlowInfo::ends_in_unconditional_call)`) would fall through into one of
+those extents (`kuna_funcboundflow.rs (kuna_pool_pad)`, a range lookup, in
+executable non-writable image bytes), the call does not return: the walk plants
+the no-return halt and a `funcboundflow` warning saying the fall-through is the
+literal pool. The pool may start up to one instruction past the fall-through, when
+the bytes between decode as instructions that do nothing (`kuna_is_padding_run`)
+or are zero — the alignment padding a compiler leaves before a doubleword pool, or
+after a Thumb call that ends halfway through a word. Live code never sits between a
+call and the pool it must jump over. The halt stays in the call's block, as a known
+no-return callee's does, so `p4_calls/kuna_noreturnretuse.rs` still lets a status
+the failure call is handed be the function's return value. The judgement is a
+lookup against a set computed before the walk, so decode order changes nothing,
+no evidence the walk gathers is used, and the function is walked once. A word
+anything trusted branches to is never in an extent, and a load decoded past a
+non-returning `svc` or an unproven call witnesses nothing, so the live code after
+a returning call stays; a pool after a call to a function that does return (a
+`u_pool` that calls `hi` ahead of `__builtin_unreachable()`) is seen by the strict
+witness, whose trust crosses no call at all. The listing's own pool rule (`kuna-console` `litpool.rs`,
+which folds any width the decoded rows tile) is a separate decision about what to
+render. The pools are a fact of the Listing (`option listing`), so without it —
+`--mode fast`, and under `auto` at 2 MiB and above — and on every other target no
+call is bounded at a pool; an inlined callee's nested flow is not re-walked, so the
+bound does not apply inside an inline; and a code space that is not byte-addressed
+keeps every fall-through.
+
 The cutoff address itself maps to the no-return halt inserted by the truncating
 fall-through. This lets `target` walk across already-decoded instructions that
 generated no p-code and terminate at the proven boundary. It does not mark the
@@ -1270,6 +1476,16 @@ The flow override changes only the current function's graph: it never registers
 or decodes the constant target as a function, because an unpacker destination
 can still be encrypted in the static image.
 
+The RET-transfer walks, including the chain extension of an `override flow`
+call, and the bounded out-of-band raw decoder shared by `calltrampoline`,
+`callpopret` and the `funcboundflow` entry and padding checks use a private
+decode-context transaction. Segment or mode commits remain visible within the
+probe, but are rolled back when it ends, even when no transfer is recognized.
+An advisory walk can pass a no-return call or a flow override that the real
+flow follower respects; its speculative far branches must not change another
+function's real-mode return IP. Normal flow decoding still publishes its
+segment discoveries.
+
 **(kuna) `__fastfail` is a no-return — always on (DIV-120),
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_fastfailnoreturn.rs
 (is_fastfail_callind)`.** x86 SLEIGH lifts `INT imm8` to `intloc = swi(imm8);
@@ -1300,6 +1516,26 @@ a Linux syscall (`option linuxsyscall`) and `int1`/`int3`/`into` carry a
 compiler-spec component of the resolved language id, since `int 0x29` is
 `__fastfail` by Windows convention alone.
 
+**(kuna) DOS exits are no-returns — always on (#1288),
+`decompiler/crates/kuna-decomp/src/p2_lift/flow.rs (FlowEnvironment::is_dos_exit_callind)`.**
+An interrupt that ends an MS-DOS program (`INT 20h`, `INT 27h`, `INT 21h` with
+AH = 00h, 31h or 4Ch) lowers to the same falling-through `swi` call, so flow
+used to run past `mov ah,4ch; int 21h` into whatever follows it, typically zero
+fill decoding as `ADD [BX+SI],AL` until a `funcboundflow` warning stopped it at
+the next function. Which interrupts exit is decided once, for the whole image,
+by the raw discovery (chapter [01](01-program-prep.md), *A DOS program exit
+ends the flow*): AH is a value the code sets before the interrupt, which only
+the Listing's program-wide view of branch targets can prove reaches it on every
+path. The decision rule here is a lookup: a CALLIND at an address in the
+architecture's `dos_exit_sites` has its call spec marked no-return and goes
+through `check_for_flow_modification` like a call to a no-return function, so
+the halt is planted after it and the `Subroutine does not return` warning is
+buffered (printed `// no-return`). Unlike `__fastfail` the warning is kept: the
+service an `INT 21h` asks for is in AH, which the C does not show, so the
+annotation is the only thing on the line that says the program ends there. The
+list is empty unless a real-mode raw or MZ image was discovered, so every other
+input, the XML corpus included, is byte-identical.
+
 **(kuna) The `int3` pad control ran into — `option int3pad`, default `warn`
 (DIV-128), `decompiler/crates/kuna-decomp/src/p2_lift/kuna_int3pad.rs
 (is_int3_callind)`.** `INT3` lowers the same way (`intloc = swi(3); call
@@ -1326,6 +1562,93 @@ because an `int3` does return to a debugger that steps past it, and the value of
 naming the pad does not depend on asserting that the process dies there. `option
 int3pad off` restores the unannotated rendering. Exercised by
 `tests/stages/kuna-int3pad.xml`.
+
+**(kuna) A compiler's AArch64 `brk` trap ends the flow — always on,
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_brktrap.rs
+(is_brk_trap_branchind)`.** AArch64 SLEIGH lowers `BRK #imm16` to `pc =
+SoftwareBreakpoint(imm16, inst_next); goto [pc];` (`AARCH64base.sinc`, `:brk`):
+a jump through a user-op's result, not a call. Jump-table recovery cannot
+resolve that BRANCHIND, so `truncate_indirect_jump` (§2.3) turns it into a
+CALLIND followed by an ordinary return, and the trap path returns whatever the
+call leaves in `x0`. Return recovery then drops the function's return value or
+returns one fabricated from the call: clang -O2's `adds x0,x0,x1; b.vs trap;
+ret; trap: brk #1` (an `__builtin_add_overflow` checked add) prints as a `void`
+function that passes the sum it returns to `SoftwareBreakpoint` as an argument,
+and a bounds check ending in GCC's `brk #1000` returns `(*v1)()` on its trap
+path. That return is false for any `brk`, whose exception returns to the `brk`
+itself and never to the caller, so the fix carries no option. Decision rule: a
+BRANCHIND that jumps through exactly the storage a `SoftwareBreakpoint`
+CALLOTHER wrote in the same instruction, with no other write of that storage in
+between, found by the walk back over the instruction's raw ops that
+`sparcstructret` uses for SPARC's `unimp`, whose two-byte constant immediate is
+one a compiler emits for a trap that does not return: `#1` (`llvm.trap`:
+clang's `__builtin_trap`, Rust's `abort`, Swift's overflow and bounds checks,
+and the trap Darwin and Windows targets plant for `__builtin_unreachable`),
+`#1000` (GCC's `__builtin_trap`), `#0x5500`..`#0x55ff` (`llvm.ubsantrap`:
+`-fsanitize-trap` and clang's `-ftrapv`), `#0xc470`..`#0xc473` (the arm64e
+pointer-authentication failure traps) or `#0xf003` (MSVC's `__fastfail`, the
+counterpart of the x86 `int 0x29` above). Flow already stopped at the jump, so
+no instruction is dropped; what changes is that the trap path no longer returns.
+`FlowInfo::xref_control_flow` replaces the matched BRANCHIND with the artificial
+no-return halt a call that never returns gets, before it reaches `tablelist`,
+and hands the halt to its `CPUI_RETURN` arm. The CALLOTHER stays and prints as a
+`SoftwareBreakpoint(1,..);` statement; its output has no reader left, so
+dead-code removal drops it. `__fastfail` passes its failure code in `w0`
+(`mov w0,#8; brk #0xf003`), and the code says why the process died, so for
+`#0xf003` alone the flow also appends a read of `w0` to the CALLOTHER's inputs
+(`decompiler/crates/kuna-decomp/src/p2_lift/kuna_brktrap.rs (read_code)`): the
+trap prints as `SoftwareBreakpoint(0xf003,..,8);`, as the x86 `int 0x29` keeps
+its `ecx` argument. A `w0` set in the function resolves to its value there; one
+the function never sets is its incoming `w0`, which `__fastfail(code)` called
+with a parameter really does read. No other trap immediate reads a register. As
+for `fastfailnoreturn`, no warning is buffered: the trap is definitional, and a
+function with checked arithmetic often holds several. The halt shares the `brk`'s address, so a pointer-authentication trap
+block is still the one-instruction block `ptrauthtrap` anchors on, and that
+pass removes the check in front of it as before; a trap it leaves (a guard that
+is not the return-address bit test, or `option ptrauthtrap off`) now ends the
+flow instead of returning. Not matched, because a debugger or a kernel handler
+steps past them: `brk #0xf000` (`__builtin_debugtrap` and `__debugbreak`, which
+is why clang emits the function's `ret` behind it), `brk #0` (a debugger's
+breakpoint, Go's `runtime.breakpoint`) and Linux's kernel immediates (`#0x800`
+for `BUG`/`WARN`, KGDB, kprobes, KASAN, KCFI). They keep the jump-as-call,
+except for a `#0x800` the image's `__bug_table` names (next paragraph). Only
+the AArch64 specs define `SoftwareBreakpoint`; elsewhere the lookup of its
+user-op index fails before any op is walked. Exercised by
+`tests/stages/kuna-brktrap.xml`.
+
+**(kuna) A Linux kernel `WARN`/`BUG` site prints as the statement it is — always
+on, `decompiler/crates/kuna-decomp/src/p2_lift/kuna_kernelbug.rs (rewrite)`.**
+The kernel plants a trap at every `WARN_ON`/`BUG_ON` site — `ud2` on x86, `brk
+#0x800` on AArch64 — and names it in a `__bug_table` entry whose flags say
+whether the handler resumes after the trap (`BUGFLAG_WARNING`) or panics. x86
+SLEIGH lowers `ud2` the way AArch64 lowers `brk`: `target =
+invalidInstructionException(); goto [target];` (`ia.sinc`, `:UD2`), so each site
+took the jump-as-call path above and printed as `(*(void (*)(void))
+invalidInstructionException())(); // jump-as-call` followed by a return — false
+both ways, since a `WARN` site falls through to the next instruction and never
+returns, and a `BUG` site never continues. The analysis tier reads the table
+(chapter 01, `kernelbug`) and parks one `KernelBugSite` per entry on
+`Architecture::kernel_bug_sites`, sorted by trap address. Decision rule, asked
+in `FlowInfo::xref_control_flow` before the `brktrap` match: a BRANCHIND whose
+address is a parked site and which jumps through exactly the storage a
+CALLOTHER wrote in the same instruction (`kuna_brktrap.rs (trap_producer)`, the
+walk `brktrap` and `sparcstructret` use), that CALLOTHER being
+`invalidInstructionException` with no operand or `SoftwareBreakpoint` with the
+kernel's `#0x800`. The CALLOTHER's user-op index is then replaced by one of two
+built-ins (`userop.rs`, `BUILTIN_KERNEL_WARN` / `BUILTIN_KERNEL_BUG`, registered
+with the string built-ins): `__WARN(file,line)` — the kernel's own spelling of
+the macro, the file a pointer constant the type inference marks `char *`
+(`coreaction_infertypes.rs (input_type_local_with)`) so it prints as the literal,
+the line an `int` the printer writes in decimal (`printc.rs (op_callother_ir)`);
+both absent on a table built without
+`CONFIG_DEBUG_BUGVERBOSE`, where the statement prints bare — or `BUG()`. The
+BRANCHIND is destroyed. After a `__WARN` the instruction falls through, exactly
+as the trap handler resumes it; after a `BUG()` the flow plants the artificial
+no-return halt a call that never returns gets, as `brktrap` does. A trap the
+table does not name (an `__builtin_trap`, a KGDB or kprobes breakpoint) keeps
+its rendering, and an image with no `__bug_table` pays one empty-list test per
+BRANCHIND. The AArch64 `#0x800` the previous paragraph leaves alone is matched
+here only through a table entry. Exercised by `tests/stages/kuna-kernelbug.xml`.
 
 **(kuna) The x86-64 `SYSCALL` user-op's ABI effects — `option x64syscall`,
 default `on`, x86-64-gated (DIV-152),
@@ -1673,6 +1996,108 @@ no standalone SLEIGH engine. The backend-boundary failure and regression drive
 are recorded in
 [`docs/features/ghidra-v850-register-lookup/analysis.md`](../features/ghidra-v850-register-lookup/analysis.md).
 
+**(kuna) Computed return-register jumps — `option returnbranch`, default on,
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_returnbranch.rs (computed_target)`.**
+A SLEIGH spec marks a jump through the return register as RETURN whatever the
+register holds, so MIPS code that loads a constant code address into `$ra` and
+executes `jr $ra` ended the function there and dropped what it reached. At the
+same point in `xref_control_flow`, a RETURN whose target a bounded
+straight-line prefix from the function entry proves constant is reclassified
+to BRANCHIND, unless the proven target is zero: `move ra, zero` marks the end
+of a backtrace, and a function start that discovery placed on such a delay
+slot (u-boot's `relocate_code` jumps to `board_init_r` with it) would otherwise
+turn the next function's real return into a jump to address zero. The prefix
+starts with the tracked context values, never counts
+the incoming return address as known, evaluates at most 256 raw operations in
+emitted p-code order (so delay-slot writes after the target is captured do not
+change it) and stops at any call, branch or unknown user operation. A write
+whose value is not proven invalidates the storage it overlaps, a store forgets
+every value in the space it writes, and a read of part of a known register
+takes the bytes it names in the space's byte order. Decoded instructions that
+emitted no p-code at all may precede the prefix, since they cannot have changed
+anything; a MIPS `nop` is one, and demanding an operation at the entry address
+itself rejected the proof outright. A mode marker that selects the ordinary ISA
+does not stop the prefix. That marker is recognized by the user-op name the
+language declares, and the incoming return storage is the cspec's return
+address or a register the language names `ra` when the cspec names none — as
+the Octeon specs do. Neither consults the architecture id, which the Ghidra
+front end spells as a session number, so both front ends decide alike.
+`Prefix` is the one evaluator for such bounded target proofs. Only the flow
+kind changes: jump recovery must still prove the destination. It inherits one
+limitation it shares with every architecture's register jump, rather than
+introducing it — a recovered single-entry table whose register is redefined on
+a back edge found after recovery is not staged again, so that later transfer is
+missing from the output, exactly as it is for an x86-64 `jmp *%rax` of the same
+shape. A flow override at the return keeps its classification, and off restores
+the spec's RETURN.
+
+**(kuna) Re-entered indirect dispatches — `option constselectjump`, default
+`reentry`, `decompiler/crates/kuna-decomp/src/p2_lift/flow.rs (generate_ops_with_jumptables)`.**
+A dispatcher loop jumps through one register, and each step's code loads the
+next step's address and jumps back. Flow recovers the dispatch's first target
+before that code is decoded, so upstream keeps a one-entry table and drops every
+later step. Under `reentry` (and `on`), a recovered in-bounds, non-override
+singleton table is provisional. After each round of table following,
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_indirectreturn.rs (reentry_edges)`
+collects the new direct branches and fallthroughs into previously decoded
+instructions, reading only the dead list's tail: flow appends what it
+generates and moves injected or inlined sequences only next to other new
+operations. A recovered table destination that is already decoded is an edge
+as well, since following it creates no operations. A re-entered table is
+followed again on every round, so its transfer/destination pairs are followed
+once each; other tables keep upstream's re-following, which on x86-64 gnulib
+`quotearg_buffer_restyled` already shapes the output.
+
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_indirectreturn.rs (reaching_edges)`
+keeps, for each provisional dispatch, only the new edges whose destination
+reaches it over raw flow: fallthroughs, direct targets, every operation of an
+instruction with an internal relative branch, and recovered table targets. An
+edge elsewhere cannot bring the dispatch another value, so it costs that
+dispatch nothing. A round's walks visit at most 2^20 operations; past that,
+every dispatch counts as reached. When every reaching edge lands on the
+dispatch instruction itself,
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_returnbranch.rs (target_on_edge)`
+runs the edge's block and the dispatch instruction's own operations through
+the same `Prefix` evaluator as the entry proof, and a proven local constant
+extends the table without another partial decompile. Any other reaching edge
+requests a full recovery once the locally proved frontier drains. At most 128
+such retries run per flow; every dispatch still pending when they run out
+keeps its targets and carries `Re-entered indirect jump may have more targets`,
+once each. A retry admits the constant-select model whatever `constselectjump`
+says except `off`, because the re-entry already shows the targets are one
+function's. A retry's failed second stage keeps the old model and targets and
+reports that warning; outside re-entry a failed second stage restores its model
+silently, as upstream does. `off` records no provisional table and restores
+upstream's flow.
+
+A re-entered dispatch can also receive the caller's return address, and not
+always last: an early exit can reach it before the later steps are decoded.
+For such a retry the select model accepts values that are local constants or
+the incoming return, through the transfer's own mask, with its walk bounded by
+the table ceiling. The return becomes the table's last, unlabelled address: a
+synthetic RETURN that `FlowInfo::kuna_return_stub` plants one byte past the
+jump, where no instruction is decoded, and that the table marks as its default
+case. If an instruction is already decoded there, the return destination is
+dropped with `Indirect jump caller return overlaps decoded code` rather than
+flowing into that instruction. Whatever the dispatcher block does, including a
+delay-slot update, runs before that return exactly as it does before each case.
+Out-of-bounds or unmapped destinations retain one placeholder and do not make a
+singleton table provisional. The original transfer's mask is recorded from raw
+storage before SSA can combine it with other operations.
+
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_indirectreturn.rs (normalize_return_selector)`
+checks a bounded COPY/PHI/low-pointer projection of known destinations and the
+incoming return token. All constant targets must already be represented.
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_returnselector.rs (ActionReturnSelector)`
+then clones only this selector expression, replacing the caller-return input in
+the clone with a representable sentinel distinct from every real target. Labels
+and guards are recovered first. Other readers of the original values are
+unchanged, and dead original selector operations are removed before
+declarations. The synthetic default RETURN thus has a defined C selector,
+including conditional and early returns. Every dispatcher operation remains;
+unknown inputs, destructive masks, unsupported projections or an exhausted
+finite encoding refuse normalization with a warning.
+
 ## 2.3 Jump tables & switch recovery
 
 A switch exists in the output only if a BRANCHIND op carries a recovered
@@ -1838,6 +2263,27 @@ the case targets.
    addresses they named. A candidate stops as soon as its values cover the
    selector's whole range, since it can no longer narrow it: a 65,536-entry
    map that names all 256 rows in its first 256 bytes costs 256 emulations.
+   When no candidate proves a domain (the index takes more values than the
+   budget, or the map is not read-only), the selector keeps its whole range,
+   but the table still cannot run through the map: the map's bytes are
+   selector values, not rows. `jumptable.rs
+   (JumpBasicModel::end_table_at_selector_map)` finds the bytes the map
+   occupies and ends the table at the first selector value whose row would be
+   read from them. The map's extent comes from the nearest upstream index that
+   a guard bounds to a range that does not wrap: the path is emulated at the
+   range's two ends and the selector LOAD's addresses there are the map's
+   first and last (`jumptable.rs (JumpBasicModel::selector_map_extent)`). Only
+   addresses are used, never the map's values, so this needs no read-only
+   proof. Each selector value is then emulated in order with its LOADs
+   collected; the first one that reads a byte of the map ends the table, and
+   the earlier values keep their rows. A table whose first row already lies
+   in the map is left alone. The `selector_domain.S` fixture places a
+   three-row table directly before its byte map, as MSVC lays out its
+   two-stage tables; with a 70,000-entry or writable map, rows 3 to 255 were
+   read from the map and from the bytes after it, and flow left for the
+   addresses they named. Only the selector's own map ends the table: a map
+   placed before the table, another switch's map after it, or padding between
+   table and map is still read as rows.
    **Stranded rows.** The smallest range can belong to a variable in front of
    a map: in `switch (map[mode])` one guard bounds `mode` and a second bounds
    `map[mode] - 8` to the table, and `mode`'s range is the smaller. A value of
@@ -2003,14 +2449,16 @@ last entry; a dominance check (`check_normal_dominance`) decides whether the
 normalization walk can proceed past the join.
 
 **Model 3 — the constant destination set** (`kuna_constselectjump.rs
-(JumpModelConstSelect)`, kuna, `option constselectjump`, default off). Both
+(JumpModelConstSelect)`, kuna, `option constselectjump`; `on` admits it for
+every table, the default `reentry` only for the re-entry retry described
+under re-entered indirect dispatches above). Both
 models above are value-range models over one switch variable, and
 `jumptable.rs (JumpBasic::isprune)` stops the backward walk at any marker op, so
 a destination computed by a conditional move — `CMOVZ R11,R10; JMP R11` over two
 `LEA`-loaded code addresses — leaves the MULTIEQUAL output as the normalized
 variable with nothing to bound it. The destination set is not lost there, it is
 simply never promoted into the CFG: every reaching definition is already a
-literal address. When the option is on and both value-range models have
+literal address. When the model is admitted and both value-range models have
 declined, `kuna_constselectjump.rs (kuna_collect_const_destinations)` walks the
 MULTIEQUAL/COPY web behind the BRANCHIND input; if every reaching definition is
 a constant, the set becomes a fixed address table whose case labels are the
@@ -2021,14 +2469,14 @@ already handles. Every destination must also sit within `0xffff` of the branch �
 the same intraprocedural-vs-thunk yardstick `sanity_check` uses above — so a
 conditional *tail call* between two distant function entries keeps the upstream
 `CALLIND` rendering rather than splicing both callee bodies into the caller.
-Without the option the branch is truncated to a `CALLIND` carrying
+When the model is not admitted the branch is truncated to a `CALLIND` carrying
 `"Treating indirect jump as call"` and neither arm is ever decoded.
 
 **What is deliberately absent.** The CALLOTHER-assisted `JumpAssisted` model
 (the `jumpassist` user-op family) and the manual `JumpBasicOverride` model are
 unported shells: `jumptable.rs (JumpTable::set_override)` and the
 `<basicoverride>` arm of `jumptable.rs (JumpTable::decode)` return errors, and
-`recover_model` walks only JumpBasic/JumpBasic2 and, when `option constselectjump` is on, the constant-destination model above (Trivial exists only as the label-time fallback).
+`recover_model` walks only JumpBasic/JumpBasic2 and, when `option constselectjump` is `on` or the table is a re-entry retry, the constant-destination model above (Trivial exists only as the label-time fallback).
 
 **Multistage recovery.** A flow-time table can come out with a single address
 when the partial clone folds its index to a constant. One case is a stack slot
@@ -2600,6 +3048,40 @@ the match surface is kept deliberately narrow (exact names, closed lists, no
 class methods): the failure mode of a false positive is truncating live code
 after a returning callee that happens to share a listed name.
 
+**Proxy stubs (under `noreturn_known`).** A stub that carries a runtime name
+behind a prefix (`stub___stack_chk_fail`, an empty `__wrap___assert_fail`
+bound by `ld --wrap`) is a returning function by its own body, yet the code
+that calls it was compiled for the no-return original and ends at the call;
+the three sources above all miss it. One more check therefore answers per call
+site rather than per callee:
+`decompile_drive.rs (ArchFlowEnv::query_call_no_return_at)`, asked by
+`flow.rs (FlowInfo::call_site_no_return)` with the call instruction's address
+and fall-through, and decided by
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleenoreturn.rs
+(is_proxy_no_return_at)`. The call is no-return when three facts hold
+together. The callee's name is `<prefix>__<entry>`
+(`kuna_noreturn_externmatch.rs (is_proxy_noreturn_name)`): the text after the
+last `__` of the stripped name is an exact list entry holding an `_` of its
+own, so `stub___stack_chk_fail` qualifies while `stub__stack_chk_fail_count`,
+`machine__exit` and `ui__abort` (single-word entries never take the prefix) do
+not. The callee's body is a stub (`kuna_noreturn_externmatch.rs
+(is_stub_body)`): its symbol states a size, and those bytes, every one of them
+mapped, decode as exactly one unconditional return or unconditional jump with
+no control transfer before it. And the call is the last instruction of the
+sized function symbol holding it (`kuna_noreturn_externmatch.rs
+(call_ends_function)`): its fall-through is at or past that symbol's end, so
+the compiler emitted nothing after it. The last condition is what makes the
+rule safe. A one-instruction body is exactly what a compiler emits for an
+empty function or for a tail call to a returning one, so name and body alone
+would read a `hooks__pthread_exit(){}` or a `report__assert_fail` that jumps to
+a logger as no-return and drop the live code after every call to it; with live
+code after the call inside the caller, the call keeps its fall-through. A
+callee whose symbol states no size (an import, a bytechunk image), a body that
+runs on past its first instruction, or an instruction that runs past the
+mapped bytes is judged by the three sources above alone. Because the decision
+belongs to the call site, `is_no_return` (and with it the `bejoin` and
+`rustabi` callee queries) never reports a proxy stub as no-return.
+
 ### Caller-local PPC32 PIC imports
 
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_ppc32piccalls.rs (prove)` implements
@@ -2718,13 +3200,16 @@ escaped form, so the names that actually arrive look like
 `_$LT$alloc..vec..Vec$LT$T$C$A$GT$$u20$as$u20$core..ops..drop..Drop$GT$::drop`.
 `kuna_cleanupcode.rs (normalize_rust_name)` reproduces Oxidizer's
 `normalize(monopolize=True, use_trait_name=True)`: strip a trailing
-`::h<16 hex>` disambiguator, un-escape the `$LT$`/`$GT$`/`$C$`/`$uXX$`
+`::h<16 lowercase hex>` disambiguator, un-escape the `$LT$`/`$GT$`/`$C$`/`$uXX$`
 sequences and the `..` path separator, then repeatedly collapse the *innermost*
 angle-bracket group — deleting a plain generic argument list (with the `::` of a
 turbofish), and replacing a `<T as Trait>` qualified path with the **trait**
 name. The three examples above reduce to the first, third and second list
 entries. Innermost-first is what makes the ` as ` split safe: the inner groups
 of a nested qualified path are already gone when it runs.
+Uppercase or mixed-case hash-shaped final components remain user names. A call
+whose name ends in such a component must not become a cleanup victim merely by
+removing that component; the same exact lowercase rule governs loader names.
 
 Normalization only ever shrinks a name and the comparison is exact, so nothing
 outside those five paths can be reached. `FakeCrypt::fileops::drop_ransom_note`
@@ -2993,6 +3478,42 @@ provide processor-version and privilege-appropriate reads and masked writes.
 Register and immediate MSR update NZCVQ only when the flag byte is selected,
 preserving arithmetic flags across control-only writes.
 
+### RISC-V Zcmp and Zcmt (GH-1630)
+
+The Zc code-size extensions (`specs/Ghidra/Processors/RISCV/data/languages/riscv.zc.sinc`)
+put `cm.push`, `cm.pop`, `cm.popret`, `cm.popretz`, `cm.mvsa01`, `cm.mva01s`
+(Zcmp) and `cm.jt`, `cm.jalt` (Zcmt) in the `c.fsdsp` encoding space
+(op=10, funct3=101), so they exist only where Zcd does not. The `Zcmp` context
+bit (`riscv.reg.sinc`) selects between the two readings: `c.fsdsp` decodes at
+`Zcmp=0`, the Zc instructions at `Zcmp=1`, and the default RV32/RV64 processor
+specs leave the bit 0, so every existing RISC-V language decodes byte-identically.
+The `RISCV:LE:32:Zcmp` and `RISCV:LE:64:Zcmp` language variants
+(`riscv.ldefs`, `RV32zcmp.pspec`, `RV64zcmp.pspec`) share the `.sla` files
+and set the bit; the ELF loader picks them from `Tag_RISCV_arch` (§1).
+
+The register list `rlist` (bits 7:4, values 4..15) is a prefix of
+`{ra, s0, s1, ..., s11}`: `rlist - 3` registers, except 15, which is the full
+list of 13 (`s10` is never saved without `s11`). The stack adjustment is the
+list's byte size rounded up to 16 plus `16 * spimm` (bits 3:2), so one
+constructor per `rlist` value carries the base and a per-base operand
+(`zcadj16` ... `zcadj112`) adds `spimm`. `cm.push` stores the highest-numbered
+register at `sp - XLEN/8` and each lower one `XLEN/8` below it, `ra` lowest,
+then subtracts the adjustment; `cm.pop` loads the same registers from
+`sp + adjustment` downward and then adds the adjustment; `cm.popret` returns
+through the reloaded `ra`; `cm.popretz` also writes `a0 = 0`. `cm.mvsa01`
+copies `a0`, `a1` into two `s0..s7` registers, `cm.mva01s` copies them back.
+`cm.jt index` loads the jump target from the `jvt` CSR (0x017) table at
+`(jvt & ~0x3f) + index * XLEN/8` and jumps; `cm.jalt` (index 32..255) sets
+`ra` and calls. Displays print the register list and the adjustment as
+`cm.push {ra,s0-s1},-0x10`. Before this the issue's `-Os` prologue decoded as
+`c.fsdsp fs8,0x30(sp)` and its epilogue as a float store followed by a jump
+through whatever `ra` held, so the saves, the stack adjustment and the return
+were lost. Exercised by `tests/stages/kuna-riscv-zcmp.xml` (the issue's
+`keep`, hand-written `swapcall`/`zret`/`popsep`, the raw push/popret p-code)
+and `kuna-cli/tests/riscv_zcmp.rs` (one decode per encoding shape against
+LLVM's names, RV32 and RV64). Zcb, Zicond and the T-Head vendor extensions
+the issue also lists are not decoded.
+
 ### RISC-V moves and conversions from FP to integer registers (GH-831)
 
 `fmv.x.d` copies the 64-bit pattern of its FP source into the integer
@@ -3041,6 +3562,45 @@ arguments, clobbers, or stack adjustment, and avoids adding control-flow
 diamonds around every check. The abstraction does not specify OS handler
 dispatch or resumable exception state. Both operand widths preserve the checks
 instead of lifting to an empty operation list.
+
+In 64-bit mode the x86 spec decodes the user-interrupt group (`uintr.sinc`):
+`SENDUIPI r64` is the `F3`-prefixed register form of `0F C7 /6` (a `66` or
+`REX.W` prefix does not change its 64-bit operand), so it is no
+longer lifted as `RDRAND`, and `UIRET`, `TESTUI`, `CLUI` and `STUI` are the
+`F3`-prefixed `0F 01 EC..EF` forms (`CLUI`/`STUI` were `RDPKRU`/`WRPKRU`). Each
+lifts to a user-op of its own name; `UIRET` pops `RIP`, `RFLAGS` and `RSP` and
+returns, and `TESTUI` writes `CF` from its user-op and clears the other
+arithmetic flags. `PREFETCHIT0`/`PREFETCHIT1` are the RIP-relative `0F 18 /7`
+and `/6` encodings, lifted as the other prefetch hints are (no operations);
+every other `0F 18 /4..7` encoding stays a reserved NOP. The AVX-512PF
+`VGATHERPF0/1{D,Q}P{S,D}` constructors take their VSIB operand (`vm32z`,
+`vm64z`, `vm32y`) like the `VSCATTERPF` family, so the index is the ZMM or YMM
+register the SIB names and the user-op receives the gather address; the lift
+loads nothing. Outside 64-bit mode `z_vm64z` is the 32-bit-address form of
+the same operand (`vMem32z`), so the qword-index gathers still decode in
+32-bit code, while the other qword-index EVEX scatters (`VSCATTERPF*Q*`,
+`VPSCATTERQ*`) are still built for 64-bit mode only. An index in
+`ZMM16`..`ZMM31` (`EVEX.V'`) still reads as `ZMM0`..`ZMM15`, as for every EVEX
+VSIB operand. Exercised by
+`tests/stages/gh1627-x86-senduipi-gatherpf.xml`.
+
+The x86 VMX lifts report the instruction's outcome the way the hardware does
+(Intel SDM 31.2, "Conventions"): each of `VMLAUNCH`, `VMRESUME`, `VMXOFF`,
+`VMXON`, `VMPTRLD`, `VMCLEAR`, `VMWRITE`, `INVEPT` and `INVVPID` is a user-op
+of its own name whose 4-byte result is the status, 0 for VMsucceed, 1 for
+VMfailValid and 2 for VMfailInvalid (the values the `__vmx_*` compiler
+intrinsics return), and the `vmxflags` macro writes `ZF = status == 1`,
+`CF = status == 2` and clears `OF`, `SF`, `AF` and `PF`, so a following
+`setna`/`jbe` tests that status and a `jz`/`jc` picks one failure kind.
+`VMREAD` keeps its value output and takes the status from the input-less
+`vmx_status` user-op that follows it; `VMPTRST` stores the result of `vmptrst`
+to its operand (it no longer passes the loaded qword to the user-op) and
+always succeeds. In 64-bit mode `VMREAD r/m64, r64` and `VMWRITE r64, r/m64`
+decode whatever `REX.W` says, since their operand size is fixed at 64 bits
+there and compilers encode them without the prefix. `VMFUNC` and `VMCALL`
+write no flags: `VMFUNC` leaves them unchanged, and the flags after a guest's
+`VMCALL` are whatever the hypervisor returns. Exercised by
+`tests/stages/gh1628-x86-vmx-decode-flags.xml`.
 
 For the bounded local policy (`kuna_localstackviews.rs`), the `FlowEmit::dump` seam in
 `decompiler/crates/kuna-decomp/src/p2_lift/flow.rs` records original STORE and
@@ -3188,7 +3748,7 @@ This normalization removes no computation or memory effect. The existing
 
 Explicit BE Octeon/Plus/II/III language variants share the MIPS core while replacing the four CP2 load/store opcode meanings with bit-test branches. Their conditions are sampled before delay-slot execution. Integer extension arithmetic, comparisons, population counts and bitfield operations use ordinary p-code; II/III additionally expose indexed loads with exact width and signedness. Generic MIPS retains its opcode meanings and SPECIAL2 fallback; Octeon has no wildcard SPECIAL2 success.
 
-Both 64-bit address and 32-bit address (N32) variants have explicit soft-float compiler specifications. Automatic ELF selection, III hard-float conventions, system/crypto/atomic coverage and complete ABI qualification remain separate work. These explicit targets currently advertise the integer core subset.
+Both 64-bit address and 32-bit address (N32) variants have explicit soft-float compiler specifications; III also offers hard-float models. ELF selection and compiler conventions are described in chapters 01 and 04. System and crypto coverage remain separate from the integer and memory operations described here.
 
 The generic MIPS `save`/`restore` constructors and their helper tables are also
 excluded from every Octeon variant. Their SPECIAL2 function 0x1f overlaps the
@@ -3196,6 +3756,37 @@ Octeon II/III load-and-atomic instructions. Disabling only the wildcard SPECIAL2
 constructor is insufficient: an unsupported atomic must fail assembly decoding
 and p-code lifting without emitting stack effects. Original GNU-assembled atomic
 probes cover both colliding constructors; generic MIPS retains them unchanged.
+
+`specs/Ghidra/Processors/MIPS/data/languages/octeonAtomics.sinc` models
+SAA/SAAD on Plus and later, and the twelve LA forms and ZCB/ZCBT on II/III.
+Read-modify-write instructions use one width-specific stateful user operation,
+with their address and value captured before any aliased register is replaced.
+Word results sign-extend to 64 bits. A zero destination discards the result while
+retaining the operation; zero sources supply literal zero. Reserved fields and
+generation exclusions remain decoding failures. These operations require an
+execution model; replacing them with ordinary load/add/store is not equivalent.
+They decode on the generations that define them in every `octeoneffects` mode:
+upstream lifts them only through generic MIPS's SPECIAL2 catch-all, which
+Octeon excludes, so there is no upstream lifting for `off` to restore. Cavium's
+binutils moved SAA/SAAD to Octeon I in 2012, but Linux's Cavium-written feature
+check enables SAA only from CN58XX, so Octeon I still rejects them.
+
+Octeon LL/LLD establish reservation state through user operations. SC/SCD return
+a runtime success byte and conditionally update memory through the same state,
+instead of inheriting generic MIPS's unconditional store-and-success p-code.
+An executor must specify its memory mapping, interference and reservation rules.
+In particular, flat ordinary RAM execution does not model Octeon III's extended
+128-bit scratch/LMT operation, MMIO, cache state or TLB exceptions.
+
+SYNC, SYNCW, SYNCWS, SYNCS and SYNCIOBDMA (selectors 0, 4, 5, 6 and 2, as the
+CN50XX hardware manual defines them) retain distinct ordering operations.
+Repeated barriers remain observable. Every other selector, including 1 and 3,
+which Cavium's assembler alone aliases as `syncio`/`syncioall` and its SDK
+deprecates as no-ops, disassembles as `sync 0xN`, as upstream GNU binutils
+prints it, and lifts as `octeon_sync_unknown(N)`; decoding does not establish
+its execution semantics. A single-thread executor may record
+barriers without proving device completion or inter-core ordering. The
+decompiler's memory guards and pointer roles are described in chapter 03.
 
 ## Verified Rust stack-probe summaries
 
@@ -3241,8 +3832,11 @@ that overlapping ownership can be represented without shrinking the buffer.
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_ptrauthtrap.rs
 (ActionPtrAuthTrap)`.** The AArch64 SLEIGH spec gives every pointer-auth
 instruction a `ShowPAC` context, off in `AARCH64.pspec`, and with it off the
-instruction lifts to no p-code. `paciasp`, `pacibsp`, `autibsp`, `pacia`,
-`pacda` and `xpaci` vanish. `retab` is a plain return. `braa`, `blraa` and
+instruction lifts to no p-code, except that a form writing a general
+register passes it through unchanged (the SLEIGH repairs at the top of this
+chapter). `paciasp`, `pacibsp` and
+`autibsp` vanish; `pacia`, `pacda` and `xpaci` leave their register as it
+was. `retab` is a plain return. `braa`, `blraa` and
 `blraaz` branch to their first register exactly like `br` and `blr`, so a
 call target the decompiler resolves through `blr x8` resolves the same way
 through `blraa x8, x9`. `ldraa` is a plain load. The decompiler therefore
@@ -3262,7 +3856,9 @@ The second form folds by itself, because the hidden `xpac` leaves the copy
 equal to the original. The first reads the incoming `x30`, which nothing can
 fold. It printed `if ((v1 ^ v1 << 1) >> 0x3e & 1) { (*SoftwareBreakpoint(0xc471,..))(); return; }`
 before nearly every tail call of an Apple binary: 205 times in an iOS system
-daemon, 1,017 times in a system framework.
+daemon, 1,017 times in a system framework. (`brktrap` above now ends the flow at
+the `brk` itself, so a check this pass keeps prints as
+`if (...) SoftwareBreakpoint(0xc471,..);`.)
 
 **Matching.** The trap block is the anchor. It is a basic block whose ops
 all come from one instruction, and that instruction's `SoftwareBreakpoint`
@@ -3767,3 +4363,49 @@ empty body. With the default, the virtual branch and both returns are
 recovered. The expression arena and the state have unit tests in
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_pushanexpr/tests.rs` and
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_pushanstate/tests.rs`.
+
+## Darwin AArch64 stack probes
+
+Apple clang calls `___chkstk_darwin` before it allocates a frame larger than a
+page or a variable-length array, with the byte count in `x9`. The probe touches
+each page below the stack pointer and returns. It writes no register but `x9`,
+the `x16`/`x17` call scratch and the flags, and the code after it reads the
+argument registers it was entered with. The AArch64 prototype model kills `x0`,
+`x1` and `x8`-`x18` at every call, so such a read became the call's return value
+or a value nothing assigns: `int big_frame(int k)` printed as
+`int _big_frame(void)` with `v2 = __chkstk_darwin();`, and a variable-length
+array was sized from an unassigned `x1`.
+
+With `option chkstkdarwin` on (the default), the action in
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_chkstkdarwin.rs` removes those
+calls from the raw p-code. It runs right after `rustprobestack`, before
+ExtraPopSetup, FuncLink and SSA, and only on a Darwin AArch64 image: an AArch64
+language and an Apple container (Mach-O, fat Mach-O or dyld shared cache,
+`Architecture::image_apple`, which the console sets at `load file`; the XML
+`<binaryimage>` bootstrap never does). A direct `CALL`
+matches when its callee is named `__chkstk_darwin`, as the Mach-O loader names
+the import (one leading underscore stripped), or `___chkstk_darwin`, as an image
+that defines it does. A `CALLIND` matches when a backward walk of at most 32 raw
+operations in its block finds its target loaded from a constant address built
+only from `COPY` and `INT_ADD` of constants, as in
+`adrp x16; ldr x16,[x16,#off]; blr x16`, and a function symbol of either name
+starts at that address. The walk declines at a call, at a partial write of the
+storage it follows and at any other producer. A call whose prototype carries an
+inject id, the inline flag or the no-return flag is left alone, and so is a call
+followed by a `RETURN` at its own address: a jump the flow turned into a call,
+such as the `br x16` of the probe's own `__stubs` entry, has no code after it
+that could read what the probe preserves.
+
+The match is by name because the probe is an import: the image holds no body to
+check, and the dynamic linker binds the slot by that name. A call-fixup, which is
+how Ghidra removes the Windows `__chkstk`, is woven in when flow follows a direct
+call; this call stays indirect until ActionDeindirect resolves the slot, so a
+fixup would cost a restart of every function with a large frame. The probe's page
+touches, and the stack-overflow fault they turn into, are not modelled. On
+x86-64 the probe takes its size in `RAX` and its `CALL` pushes a return address,
+so that target is not served, and an ELF or PE function that happens to carry
+the name keeps its calls. The option is destructive by declared intent: it
+deletes a real call and the stack-overflow fault its page touches can raise.
+Through an arm64e `__auth_ptr` slot (`adrp x16; ldr x16,[x16,#off]; blraaz x16`,
+named by `authptrcall`) the same walk matches, since the slot carries the
+import's function symbol. `off` keeps the call.

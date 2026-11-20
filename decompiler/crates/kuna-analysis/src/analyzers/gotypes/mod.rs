@@ -14,14 +14,17 @@
 //!
 //! Recovered: package-qualified NAMED struct types (fields, verified offsets,
 //! total size), with field types mapped to base widths, pointers, and the
-//! header shells. Deliberately NOT phase 1: interface/itab method resolution,
-//! generic instantiations beyond their raw name string, map/chan internals
-//! beyond an opaque named shell, typed GLOBALS (no variable binding happens
-//! here), and any caller-signature recovery. Named non-struct types (a
-//! `type MyInt int`) are also skipped — a bare alias adds no layout knowledge.
-//! Little-endian images: Go 1.18–1.25 32-bit typelinks layouts, and both
-//! typelinks and newer descriptor regions on 64-bit targets. Big-endian images
-//! and 32-bit descriptor regions remain unsupported.
+//! header shells. The first consumer rides the same walk: each decoded
+//! `_type` record is itself a typed global (`kuna_typeglobals`, the
+//! `gotypeglobals` option), emitted as a `TypedDataFact` and committed at the
+//! engine's typed-data seam. Deliberately NOT here: interface/itab method
+//! resolution, generic instantiations beyond their raw name string, map/chan
+//! internals beyond an opaque named shell, binding any OTHER global to a
+//! harvested type (the metadata declares none), and any caller-signature
+//! recovery. Named non-struct types (a `type MyInt int`) are also skipped —
+//! a bare alias adds no layout knowledge.
+//! Little-endian 32-bit images use typelinks on Go 1.18–1.26 and consecutive
+//! descriptors on Go 1.27. Little-endian 64-bit targets support both layouts.
 //!
 //! ## Locating moduledata without symbols
 //!
@@ -33,11 +36,11 @@
 //!    `len == cap`, sane length) — true of every moduledata since go1.16;
 //! 2. within the following window, the type metadata VALIDATES AGAINST
 //!    ITSELF, in whichever of its two historical forms is present. Through
-//!    go1.25: a `(types, etypes)` pair plus a `typelinks` slice
+//!    go1.26: a `(types, etypes)` pair plus a `typelinks` slice
 //!    (`len == cap`, sampled entries decode as plausible `_type` records
-//!    inside `[types, etypes)`). From go1.26: the slice is gone — moduledata
+//!    inside `[types, etypes)`). From go1.27: the slice is gone — moduledata
 //!    carries `types, typedesclen, etypes` and the records sit consecutively
-//!    in `[types + 8, types + typedesclen)`, enumerated by advancing each
+//!    in `[types + ptrSize, types + typedesclen)`, enumerated by advancing each
 //!    record's own descriptor size (`internal/abi.Type::DescriptorSize`),
 //!    accepted only when the walk decodes back to back. Field positions are
 //!    NOT hardcoded — runtime field order drifts release to release — the
@@ -59,13 +62,16 @@
 //! ## Gating
 //!
 //! Registered only for a Go-detected image (the `gopclntab` precedent).
-//! Phase 1 is OUTPUT-NEUTRAL by construction: it adds
-//! factory knowledge that nothing binds to a variable yet, so emitted C does
-//! not change until a consumer (typed globals, interface dispatch) lands.
+//! The shell interning is OUTPUT-NEUTRAL by construction: it adds factory
+//! knowledge that nothing binds to a variable by itself. The descriptor
+//! globals are the output-changing half, so their COMMIT is gated by
+//! `--option gotypeglobals` (default on) at the engine's typed-data seam —
+//! `off` renders exactly what the provider alone rendered.
 
 use std::rc::Rc;
 
 use object::read::Object;
+use object::ObjectSymbol;
 
 use kuna_base::types::int4;
 use kuna_decomp::dtype::{type_metatype, Datatype, TypeFactory, TypeField};
@@ -80,6 +86,9 @@ use crate::loader::gobuildinfo::{buildinfo_blob, version_from_blob};
 mod kuna_structorder;
 mod kuna_layout;
 mod kuna_fieldtypes;
+mod kuna_itabs;
+mod kuna_typeglobals;
+pub mod kuna_pointermethods;
 use kuna_fieldtypes::field_type;
 
 /// Go `kind` byte values (`internal/abi.Kind`), masked by [`KIND_MASK`].
@@ -113,10 +122,7 @@ const KIND_UNSAFEPTR: u8 = 26;
 const TFLAG_EXTRA_STAR: u8 = 0x2;
 const TFLAG_NAMED: u8 = 0x4;
 
-/// The `_type` base record size on a 64-bit target.
-const TYPE_BASE: u64 = 48;
-
-/// How far past the moduledata anchor the window scan looks, in 8-byte words.
+/// How far past the moduledata anchor the window scan looks, in target words.
 /// The fields phase 1 needs (`types`/`etypes`/`typelinks`) have sat within the
 /// first ~50 words of moduledata on every release since go1.16; 96 leaves room
 /// for two more releases of growth without scanning unrelated globals.
@@ -133,8 +139,8 @@ struct GoType {
 }
 
 /// The located metadata: the type blob bounds and the reachable `_type`
-/// record offsets — from the `typelinks` slice (go1.18..go1.25) or from the
-/// descriptor-region walk that replaced it (go1.26+).
+/// record offsets — from the `typelinks` slice (go1.18..go1.26) or from the
+/// descriptor-region walk that replaced it (go1.27+).
 struct TypeMeta {
     types: u64,
     etypes: u64,
@@ -272,49 +278,45 @@ fn locate_type_meta(img: &GoImage, anchor: u64) -> Option<TypeMeta> {
     None
 }
 
-/// The go1.26+ `_type` descriptor stride: records sit consecutively in
-/// `[types + 8, types + typedesclen)` and a walker advances by each record's
+/// The go1.27+ `_type` descriptor stride: records sit consecutively in
+/// `[types + ptrSize, types + typedesclen)` and a walker advances by each record's
 /// own descriptor size (`internal/abi.Type::DescriptorSize`, go1.27.2) — the
 /// per-kind wrapper, an optional `UncommonType` (+ its methods), and the
 /// kind's trailing arrays, in that memory order. `None` for a stride this
 /// phase cannot trust; the caller stops the walk there (conservative: keep
 /// what already decoded).
 fn descriptor_stride(img: &GoImage, t: &GoType) -> Option<u64> {
-    if img.word_size != 8 {
-        return None;
-    }
+    let width = img.word_size;
+    let type_base = img.type_base();
     const UNCOMMON_SIZE: u64 = 16; // {PkgPath i32, Mcount u16, Xcount u16, Moff u32, _ u32}
     const METHOD_SIZE: u64 = 16; // 4 x i32
     const TFLAG_UNCOMMON: u8 = 0x1;
     let slice_len = |at: u64| -> Option<u64> {
-        let len = word(img, at + 8)?;
-        let cap = word(img, at + 16)?;
+        let len = word(img, at + width)?;
+        let cap = word(img, at + 2 * width)?;
         (len == cap && len <= 1_000_000).then_some(len)
     };
     let (base, add): (u64, u64) = match t.kind {
-        KIND_ARRAY => (TYPE_BASE + 24, 0),
-        KIND_CHAN => (TYPE_BASE + 16, 0),
+        KIND_ARRAY => (type_base + 3 * width, 0),
+        KIND_CHAN => (type_base + 2 * width, 0),
         KIND_FUNC => {
-            // InCount u16 @ +48, OutCount u16 @ +50 (top bit = variadic).
-            let b = img.read(t.vma + TYPE_BASE, 4)?;
+            let b = img.read(t.vma + type_base, 4)?;
             let inc = u16::from_le_bytes(b[0..2].try_into().unwrap()) as u64;
             let outc = (u16::from_le_bytes(b[2..4].try_into().unwrap()) & 0x7fff) as u64;
             if inc + outc > 512 {
                 return None;
             }
-            (TYPE_BASE + 8, (inc + outc) * 8)
+            (type_base + width, (inc + outc) * width)
         }
         KIND_INTERFACE => {
-            // PkgPath Name (ptr) @ +48, Methods slice @ +56; Imethod = 8.
-            (TYPE_BASE + 8 + 24, slice_len(t.vma + TYPE_BASE + 8)? * 8)
+            (type_base + 4 * width, slice_len(t.vma + type_base + width)? * 8)
         }
-        KIND_MAP => (TYPE_BASE + 88, 0), // Key,Elem,Group,Hasher,GroupSize,KeysOff,KeyStride,ElemsOff,ElemStride,ElemOff,Flags+pad
-        KIND_POINTER | KIND_SLICE => (TYPE_BASE + 8, 0),
+        KIND_MAP => (type_base + 11 * width, 0),
+        KIND_POINTER | KIND_SLICE => (type_base + width, 0),
         KIND_STRUCT => {
-            // PkgPath Name (ptr) @ +48, Fields slice @ +56; StructField = 24.
-            (TYPE_BASE + 8 + 24, slice_len(t.vma + TYPE_BASE + 8)? * 24)
+            (type_base + 4 * width, slice_len(t.vma + type_base + width)? * 3 * width)
         }
-        _ => (TYPE_BASE, 0), // plain kinds (bool..complex128, string, unsafeptr)
+        _ => (type_base, 0),
     };
     let uncommon = if t.tflag & TFLAG_UNCOMMON != 0 {
         // Mcount u16 sits at uncommon + 4.
@@ -331,7 +333,7 @@ fn descriptor_stride(img: &GoImage, t: &GoType) -> Option<u64> {
     (stride <= 1_048_576).then_some(stride)
 }
 
-/// Locate the go1.26+ type metadata: the moduledata triple
+/// Locate the go1.27+ type metadata: the moduledata triple
 /// `types, typedesclen, etypes` (the middle word bounds the consecutive
 /// descriptor region that replaced the `typelinks` slice), then enumerate the
 /// records by walking that region with [`descriptor_stride`]. Cross-validated
@@ -339,17 +341,16 @@ fn descriptor_stride(img: &GoImage, t: &GoType) -> Option<u64> {
 /// (`types + typedesclen <= etypes`), both bounds must map, and the walk must
 /// decode records back to back — a divergence stops it conservatively.
 fn locate_type_meta_descriptors(img: &GoImage, anchor: u64) -> Option<TypeMeta> {
-    if img.word_size != 8 {
-        return None;
-    }
+    let width = img.word_size;
     for i in 0..MODULEDATA_WINDOW_WORDS {
-        let Some(types) = word(img, anchor + i * 8) else { break };
-        let Some(typedesclen) = word(img, anchor + (i + 1) * 8) else { break };
-        let Some(etypes) = word(img, anchor + (i + 2) * 8) else { break };
+        let Some(types) = word(img, anchor + i * width) else { break };
+        let Some(typedesclen) = word(img, anchor + (i + 1) * width) else { break };
+        let Some(etypes) = word(img, anchor + (i + 2) * width) else { break };
+        let Some(end) = types.checked_add(typedesclen) else { continue };
         if types == 0
             || typedesclen == 0
             || typedesclen >= 0x1000_0000
-            || types + typedesclen > etypes
+            || end > etypes
             || etypes - types >= 0x1000_0000
             || !mapped(img, types)
             || !mapped(img, etypes - 1)
@@ -357,19 +358,21 @@ fn locate_type_meta_descriptors(img: &GoImage, anchor: u64) -> Option<TypeMeta> 
             continue;
         }
         // Walk the descriptor region; require a run of decoding records.
-        let end = types + typedesclen;
-        let mut td = types + 8;
+        let mut td = types + width;
         let mut offsets: Vec<u32> = Vec::new();
         while td < end && offsets.len() < GOTYPES_MAX_TYPELINKS {
-            td = (td + 7) & !7;
+            let Some(aligned) = td.checked_add(width - 1) else { break };
+            td = aligned & !(width - 1);
             if td >= end {
                 break;
             }
             let off = (td - types) as u32;
-            let Some(t) = read_type(img, types, etypes, off) else { break };
+            let Some(t) = read_type(img, types, end, off) else { break };
             let Some(stride) = descriptor_stride(img, &t) else { break };
+            let Some(next) = td.checked_add(stride) else { break };
+            if next > end { break; }
             offsets.push(off);
-            td += stride;
+            td = next;
         }
         // Accept only a walk that looks like the real region: several records
         // and no early divergence (reached the end or the cap).
@@ -522,9 +525,37 @@ fn intern_named_structs(
             }
         }
     }
+    // F1 (name ambiguity): a Go reflection name is `pkg.Name`, which is NOT
+    // unique — two different `type point struct{...}` in two functions share
+    // the spelling `main.point` yet carry distinct descriptors and layouts.
+    // The type factory is name-keyed, so only ONE record survives; a per-site
+    // lock (`gonewtype`) resolved through such a name could assert the wrong
+    // layout on a site that allocates the other type. Detect names whose
+    // descriptors disagree on layout and mark them ambiguous so the client
+    // refuses them (the surviving record still prints fine for display).
+    {
+        let mut by_name: std::collections::BTreeMap<&str, std::collections::BTreeSet<String>> =
+            std::collections::BTreeMap::new();
+        for t in &structs {
+            let fp = struct_layout_fingerprint(img, t)
+                .unwrap_or_else(|| format!("?{:x}", t.vma));
+            by_name.entry(t.name.as_str()).or_default().insert(fp);
+        }
+        for (name, fps) in &by_name {
+            if fps.len() > 1 {
+                tf.kuna_mark_ambiguous_go_type(name);
+            }
+        }
+    }
     // Pass 2: fill value dependencies before their enclosing layouts.
     let structs = kuna_structorder::complete_order(tf, img, meta, structs);
     for t in &structs {
+        // A layout-ambiguous name must not be completed to one of its
+        // conflicting layouts — the client refuses it regardless, and leaving
+        // a shell keeps any later, address-exact recovery free to complete it.
+        if tf.kuna_is_ambiguous_go_type(&t.name) {
+            continue;
+        }
         let Ok(ct) = shell(tf, &t.name) else { continue };
         if ct.get_size() != 0 {
             // Already completed (DWARF on an unstripped -g build, or an earlier
@@ -612,6 +643,37 @@ fn intern_named_structs(
     (walked, interned)
 }
 
+/// A canonical fingerprint of a struct descriptor's layout — total size and
+/// each field's `(offset, field-type size)`. Two descriptors sharing a Go
+/// reflection name but yielding different fingerprints are genuinely different
+/// types (`main.point` reused across functions); the same fingerprint means
+/// the same layout, safe to collapse. Reads the fields slice exactly as pass 2
+/// does, but needs only each field type's `Size_` word (offset 0 of its
+/// `_type`), so it is cheap. `None` when the layout cannot be decoded.
+fn struct_layout_fingerprint(img: &GoImage, t: &GoType) -> Option<String> {
+    let ws = img.word_size;
+    let base = t.vma + img.type_base();
+    let (f_ptr, f_len) = plausible_slice(img, base + ws, 4096).or_else(|| {
+        let len = word(img, base + 2 * ws)?;
+        let cap = word(img, base + 3 * ws)?;
+        (len == 0 && cap == 0).then_some((0, 0))
+    })?;
+    let mut fp = format!("{}:", t.size);
+    for i in 0..f_len {
+        let fv = f_ptr + i * 3 * ws;
+        let typ_ptr = word(img, fv + ws)?;
+        let off = word(img, fv + 2 * ws)?;
+        // Prefer the field type's size; if it cannot be read, fall back to the
+        // type pointer itself so two divergent-but-unreadable layouts stay
+        // distinct (and are marked ambiguous) rather than falsely equating.
+        match word(img, typ_ptr) {
+            Some(tsz) => fp.push_str(&format!("{off}={tsz},")),
+            None => fp.push_str(&format!("{off}=@{typ_ptr:x},")),
+        }
+    }
+    Some(fp)
+}
+
 /// (kuna) `GoTypesPass` — the Go runtime-type harvest (Go-detected images only).
 pub struct GoTypesPass;
 
@@ -628,7 +690,8 @@ impl AnalysisPass for GoTypesPass {
             return AnalysisOutput::default();
         }
         let version = buildinfo_blob(ctx.file).and_then(version_from_blob);
-        if !ctx.file.is_64() && !matches!(version, Some((1, 18..=25))) {
+        let modern_32_bit = !ctx.file.is_64() && version == Some((1, 27));
+        if !ctx.file.is_64() && !modern_32_bit && !matches!(version, Some((1, 18..=26))) {
             return AnalysisOutput::default();
         }
         let img = GoImage::new(ctx.file);
@@ -638,16 +701,33 @@ impl AnalysisPass for GoTypesPass {
         let Some(anchor) = locate_moduledata(ctx.file, &img, header_vma) else {
             return AnalysisOutput::default();
         };
-        let Some(meta) = locate_type_meta(&img, anchor)
-            .or_else(|| locate_type_meta_descriptors(&img, anchor))
-        else {
+        let meta = match img.word_size {
+            4 if modern_32_bit => locate_type_meta_descriptors(&img, anchor),
+            4 => locate_type_meta(&img, anchor),
+            _ => locate_type_meta(&img, anchor)
+                .or_else(|| locate_type_meta_descriptors(&img, anchor)),
+        };
+        let Some(meta) = meta else {
             return AnalysisOutput::default();
         };
         let tf = ctx.arch.types();
         intern_header_shells(tf, img.word_size as int4);
         let (walked, interned) = intern_named_structs(tf, &img, &meta, version);
         let _ = (walked, interned);
-        AnalysisOutput::default()
+        let globals = kuna_typeglobals::collect(tf, &img, &meta);
+        // Addresses the image already names (unstripped binaries) — the itab
+        // naming defers to them so it only ever ADDS symbols stripping removed.
+        let occupied: std::collections::HashSet<u64> = ctx
+            .file
+            .symbols()
+            .filter(|s| s.name().map(|n| !n.is_empty()).unwrap_or(false))
+            .map(|s| s.address())
+            .collect();
+        let itabs = kuna_itabs::collect(&img, &meta, anchor, &occupied);
+        let go_pointer_methods = kuna_pointermethods::collect(
+            ctx.file, &img, &meta, header_vma, anchor, version,
+        ).unwrap_or_default();
+        AnalysisOutput { go_type_globals: globals, go_itabs: itabs, go_pointer_methods, ..Default::default() }
     }
 }
 

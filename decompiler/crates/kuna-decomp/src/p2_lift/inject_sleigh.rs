@@ -578,6 +578,32 @@ impl PcodeInjectLibrarySleigh {
         inname: &[Vec<u8>],
         snippet: &[u8],
     ) -> KunaResult<int4> {
+        self.manual_call_other(name, outname, inname, snippet, false)
+    }
+
+    /// (kuna) [`manual_call_other_fixup`](Self::manual_call_other_fixup) with the
+    /// payload registered under the user-op's own name, as a compiler spec's
+    /// `<callotherfixup targetop=...>` is. C++ names every manual payload
+    /// "unknown", so a second manual fixup is a duplicate; this lets several
+    /// coexist.
+    pub fn manual_call_other_fixup_named(
+        &mut self,
+        name: &[u8],
+        outname: &[u8],
+        inname: &[Vec<u8>],
+        snippet: &[u8],
+    ) -> KunaResult<int4> {
+        self.manual_call_other(name, outname, inname, snippet, true)
+    }
+
+    fn manual_call_other(
+        &mut self,
+        name: &[u8],
+        outname: &[u8],
+        inname: &[Vec<u8>],
+        snippet: &[u8],
+        named: bool,
+    ) -> KunaResult<int4> {
         let mut source_name = b"<manual callotherfixup name=\"".to_vec();
         source_name.extend_from_slice(name);
         source_name.extend_from_slice(b"\")");
@@ -593,6 +619,9 @@ impl PcodeInjectLibrarySleigh {
             }
             p.payload.core.order_parameters();
             p.payload.parsestring = snippet.to_vec();
+            if named {
+                p.payload.core.name = name.to_vec();
+            }
         }
         self.register_inject(injectid)?;
         Ok(injectid)

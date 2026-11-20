@@ -24,7 +24,7 @@
 //!   *proves* them ABI-identical to the standard names they replace;
 //! * the FORTIFY `*_chk` family from GCC's own builtin types, checked with
 //!   `__builtin_types_compatible_p`;
-//! * `__stack_chk_fail` from glibc `debug/stack_chk_fail.c` (`void (void)`).
+//! * `__stack_chk_fail{,_local}` from glibc `debug/stack_chk_fail{,_local}.c` (`void (void)`).
 //!
 //! A declaration whose every slot is not width-stable is **rejected**, not
 //! approximated: `off_t`/`time_t`/`long long`/`char` parameters have no honest
@@ -111,6 +111,7 @@ pub(super) const LIBC_EXT: &[(&str, Sig)] = &[
     ("__snprintf_chk", Sig { ret: Ty::Int, params: &[Ty::CharPtr, Ty::Size, Ty::Int, Ty::Size, Ty::CharPtr], vararg: 5 }),
     ("__sprintf_chk", Sig { ret: Ty::Int, params: &[Ty::CharPtr, Ty::Int, Ty::Size, Ty::CharPtr], vararg: 4 }),
     ("__stack_chk_fail", Sig { ret: Ty::Void, params: &[], vararg: -1 }),
+    ("__stack_chk_fail_local", Sig { ret: Ty::Void, params: &[], vararg: -1 }),
     ("__stpcpy_chk", Sig { ret: Ty::CharPtr, params: &[Ty::CharPtr, Ty::CharPtr, Ty::Size], vararg: -1 }),
     ("__strcat_chk", Sig { ret: Ty::CharPtr, params: &[Ty::CharPtr, Ty::CharPtr, Ty::Size], vararg: -1 }),
     ("__strcpy_chk", Sig { ret: Ty::CharPtr, params: &[Ty::CharPtr, Ty::CharPtr, Ty::Size], vararg: -1 }),
@@ -766,7 +767,11 @@ impl AnalysisPass for LibcSigsPass {
 
     fn run(&self, ctx: &AnalysisCtx) -> AnalysisOutput {
         let mut out = AnalysisOutput::default();
-        let (resolved, reloc_imports) = super::loaded_import_addrs(ctx.file, ctx.bytes, ctx.image);
+        let (resolved, reloc_imports) = super::loaded_import_addrs(
+            ctx.file,
+            ctx.bytes,
+            ctx.image.expect("load-time analysis image"),
+        );
         let imported = super::loaded_function_names(ctx.file, ctx.bytes, &reloc_imports, true);
         let types = ctx.arch.types();
         let (_addr_size, word_size) = ctx.arch.data_org();

@@ -35,7 +35,7 @@
 //! `PcodeInjectLibrary::decode_inject` path the cspec `<callfixup>` elements use,
 //! immediately after them, so `parse_inject_all` compiles it with the rest.
 //!
-//! # Body
+//! # Body (64-bit helpers)
 //!
 //! ```text
 //! ESP = ESP + 4;                  // the CALL's pushed return address
@@ -51,26 +51,36 @@
 //! pop those addresses surface as bogus arguments to the *next* call. Upstream's
 //! own `alloca_probe` fixup carries the same correction (`ESP = ESP + 4 - EAX`).
 //!
-//! The result is modelled at its true 64-bit width rather than as a
-//! sign-extended 32-bit value. A caller that uses only `EAX` (the `(int)d` case,
-//! which dominates) therefore reads `(int)(long long)x`; modelling `EDX` as
-//! `EAX s>> 31` would render that case one cast shorter but would silently
-//! produce the wrong high word for a `(__int64)d` conversion.
+//! `__ftol` and `__ftol2` return the full `__int64`, so their result is
+//! modelled at its true 64-bit width: a caller that uses only `EAX` reads
+//! `(int)(long long)x`, and a `(__int64)d` conversion keeps its real high word.
+//!
+//! The `ftol2.obj` SSE2 entries (`__ftol2_sse`, `__ftol2_pentium4`,
+//! `__ftol2_sse_excpt`) get a second payload whose body writes only
+//! `EAX = trunc(ST0)`. Their SSE2 path is `cvttsd2si eax, …` and never touches
+//! `EDX`, and MSVC calls them only for a 32-bit conversion. Writing `EDX` there
+//! would make every caller that returns the converted `int` on one path and an
+//! untouched `EDX` on another look like it returns an `EDX:EAX` pair, and turn
+//! the untouched `EDX` into a phantom register parameter.
 //!
 //! # Targets
 //!
-//! `__ftol`, `__ftol2`, `__ftol2_sse` — the three MSVC CRT spellings of the same
-//! contract (`_ftol` is pre-VS2002, `_ftol2` VS2002+, `_ftol2_sse` the SSE2 path;
-//! all take `ST0` and return `EDX:EAX`). The installer probes a function name
+//! `__ftol` (pre-VS2002) and `__ftol2` (VS2002+) take the 64-bit payload;
+//! `__ftol2_sse`, `__ftol2_pentium4` and `__ftol2_sse_excpt` the 32-bit one.
+//! All take `ST0`. In a stripped PE, `kuna_analysis::callfixup::kuna_msvcftolsig`
+//! names them by their bytes. The installer probes a function name
 //! bare, then `_`-prefixed, then `__`-prefixed
 //! (`CallFixupAnalyzer.getCallFixupNameForFunction`), so each `__`-spelled target
 //! also covers the `_`- and bare-spelled function names.
 
 use kuna_base::error::KunaResult;
 
-/// The `<callfixup name=…>` this module registers and the installer
-/// (`kuna_analysis::analyzers::callfixup`) tags onto its targets.
+/// The `<callfixup name=…>` of the 64-bit helpers, `__ftol` and `__ftol2`.
 pub const FIXUP_NAME: &str = "kuna_msvcftol";
+
+/// The `<callfixup name=…>` of the `ftol2.obj` SSE2 entries, which return only
+/// `EAX` (`cvttsd2si eax, …`) and are emitted only for 32-bit conversions.
+pub const FIXUP_NAME_SSE: &str = "kuna_msvcftol_sse";
 
 /// The registers the body reads or writes. Presence of all of them (at a 32-bit
 /// default code space) is the architecture guard: `ST0` exists only on x86, and
@@ -79,21 +89,40 @@ pub const FIXUP_NAME: &str = "kuna_msvcftol";
 const REQUIRED_REGISTERS: [&str; 11] =
     ["ST0", "ST1", "ST2", "ST3", "ST4", "ST5", "ST6", "ST7", "EAX", "EDX", "ESP"];
 
-/// The synthesized `<callfixup>` element, in the shape
+const X87_POP: &str = "ST0 = ST1; ST1 = ST2; ST2 = ST3; ST3 = ST4; ST4 = ST5; ST5 = ST6; ST6 = ST7;";
+
+/// The synthesized 64-bit `<callfixup>` element, in the shape
 /// `Architecture::decode_call_fixups` hands to `decode_inject`.
 pub fn payload_xml() -> String {
     format!(
         r#"<callfixup name="{FIXUP_NAME}">
   <target name="__ftol"/>
   <target name="__ftol2"/>
-  <target name="__ftol2_sse"/>
   <pcode>
     <body><![CDATA[
       ESP = ESP + 4;
       ftol_res:8 = trunc(ST0);
       EAX = ftol_res:4;
       EDX = ftol_res(4);
-      ST0 = ST1; ST1 = ST2; ST2 = ST3; ST3 = ST4; ST4 = ST5; ST5 = ST6; ST6 = ST7;
+      {X87_POP}
+    ]]></body>
+  </pcode>
+</callfixup>"#
+    )
+}
+
+/// The synthesized 32-bit `<callfixup>` element for the SSE2 entries.
+pub fn payload_sse_xml() -> String {
+    format!(
+        r#"<callfixup name="{FIXUP_NAME_SSE}">
+  <target name="__ftol2_sse"/>
+  <target name="__ftol2_pentium4"/>
+  <target name="__ftol2_sse_excpt"/>
+  <pcode>
+    <body><![CDATA[
+      ESP = ESP + 4;
+      EAX = trunc(ST0);
+      {X87_POP}
     ]]></body>
   </pcode>
 </callfixup>"#
@@ -111,18 +140,20 @@ pub fn language_is_x86_32(
     code_space_addr_size == 4 && REQUIRED_REGISTERS.iter().all(|r| resolve_register(r.as_bytes()))
 }
 
-/// Parse [`payload_xml`] into the decoder shape `decode_inject` consumes, and
-/// hand it to `register`. Split from the architecture so the XML and the guard
+/// Parse both payloads into the decoder shape `decode_inject` consumes, and
+/// hand each to `register`. Split from the architecture so the XML and the guard
 /// can be unit-tested without a bootstrapped engine.
 pub fn decode_payload<F>(mut register: F) -> KunaResult<()>
 where
     F: FnMut(&std::rc::Rc<kuna_base::xml::Element>) -> KunaResult<()>,
 {
     use kuna_base::xml::DocumentStorage;
-    let xml = payload_xml();
-    let mut store = DocumentStorage::new();
-    let root = store.parse_document(xml.as_bytes())?.get_root().clone();
-    register(&root)
+    for xml in [payload_xml(), payload_sse_xml()] {
+        let mut store = DocumentStorage::new();
+        let root = store.parse_document(xml.as_bytes())?.get_root().clone();
+        register(&root)?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
