@@ -1,0 +1,33 @@
+Parent 3a7385b58ae1562137d3d71bf0f77b9aa667f891
+
+typedef struct elm_tag elm_tag; /* renamed from "elm.tag" */
+typedef struct Header Header;
+
+/* renamed from "elm.tag" */
+struct elm_tag {
+    unsigned long size;
+};
+
+struct Header {
+    elm.tag *p;
+    elm.tag *list[2];
+    elm.tag (*table)[3];
+    elm.tag *alias;
+};
+
+Candidate
+
+typedef struct elm_tag elm_tag; /* renamed from "elm.tag" */
+typedef struct Header Header;
+
+/* renamed from "elm.tag" */
+struct elm_tag {
+    unsigned long size;
+};
+
+struct Header {
+    elm_tag *p;
+    elm_tag *list[2];
+    elm_tag (*table)[3];
+    elm_tag *alias;
+};

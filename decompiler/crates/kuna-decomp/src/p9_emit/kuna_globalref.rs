@@ -446,6 +446,7 @@ fn void_reader_converts(fd: &Funcdata, op: OpId, vn: VarnodeId) -> bool {
     let ty_of = |v: Option<VarnodeId>| v.and_then(|v| fd.vbank().get(v)).map(|v| Rc::clone(v.get_type()));
     match o.code() {
         OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_RETURN => slot >= 1,
+        OpCode::CPUI_CALLOTHER => fd.get_arch().rep_string && crate::kuna_repstring::input_type(fd, op, slot).is_some(),
         OpCode::CPUI_COPY => ty_of(o.get_out()).is_some_and(|t| is_void_pointer(&t)),
         OpCode::CPUI_STORE => {
             slot == 2

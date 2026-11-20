@@ -6,7 +6,7 @@ use crate::architecture::Architecture;
 use crate::context::{OpId, VarnodeId};
 use crate::dtype::{type_metatype, Datatype};
 use crate::funcdata::Funcdata;
-use crate::printc::{op_key, tokens, vn_key, PrintC};
+use crate::printc::{display_format, op_key, tokens, vn_key, PrintC};
 use crate::printlanguage::{Atom, SyntaxHighlight, TagType};
 use kuna_num::opcodes::OpCode;
 
@@ -195,10 +195,7 @@ impl PrintC {
         target: &Rc<Datatype>,
     ) {
         self.push_go_pointer_conversion(target, true, reader);
-        self.push_go_call("unsafe.Add", plan.operation);
-        self.push_op(&tokens::COMMA, Some(op_key(plan.operation)));
-        self.push_go_call("unsafe.Pointer", plan.base.reader);
-        self.push_vn_ir(fd, arch, plan.base.value, plan.base.reader);
+        self.push_go_byte_address(fd, arch, plan.operation, plan.base);
         if let Some(offset) = plan.negative_constant {
             self.push_op(&tokens::UNARY_MINUS, Some(op_key(plan.offset.reader)));
             self.push_atom(&Atom::with_op_vn(
@@ -211,6 +208,97 @@ impl PrintC {
         } else {
             self.push_vn_ir(fd, arch, plan.offset.value, plan.offset.reader);
         }
+    }
+
+    pub(crate) fn push_go_record_prefix_address(
+        &mut self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        op: OpId,
+        record: &Datatype,
+        byte_offset: i64,
+    ) -> bool {
+        if self.options.nocasts
+            || record.get_name().is_empty()
+            || record.is_incomplete()
+            || byte_offset <= 0
+            || !record
+                .get_field(0)
+                .is_some_and(|first| byte_offset < i64::from(first.offset))
+        {
+            return false;
+        }
+        let Some(operation) = fd.obank().get(op) else {
+            return false;
+        };
+        let (Some(base), Some(offset), Some(output)) = (
+            operation.get_in(0),
+            operation.get_in(1),
+            operation.get_out(),
+        ) else {
+            return false;
+        };
+        if !fd
+            .vbank()
+            .get(offset)
+            .is_some_and(|node| node.is_constant() && node.get_offset() == byte_offset as u64)
+        {
+            return false;
+        }
+        let pointer_size = arch.types().get_size_of_pointer();
+        let base_type = self.go_value_type(fd, arch, base, op);
+        let target = fd.vn_type_def_facing(output);
+        let native_value = |value| {
+            fd.vbank()
+                .get(value)
+                .is_some_and(|node| node.get_size() == pointer_size)
+        };
+        if !native_value(base)
+            || !native_value(output)
+            || !native_pointer(&base_type, pointer_size)
+            || !native_pointer(&target, pointer_size)
+            || base_type.is_formal_pointer_rel()
+            || target.is_formal_pointer_rel()
+            || !base_type
+                .get_ptr_to()
+                .is_some_and(|pointee| pointee.get_metatype() == type_metatype::TYPE_STRUCT)
+        {
+            return false;
+        }
+        let Some(pointee) = target.get_ptr_to() else {
+            return false;
+        };
+        match pointee.get_metatype() {
+            type_metatype::TYPE_VOID => {}
+            type_metatype::TYPE_UNKNOWN | type_metatype::TYPE_INT | type_metatype::TYPE_UINT => {
+                self.push_cast_open(&target, op);
+            }
+            _ => return false,
+        }
+        self.push_go_byte_address(
+            fd,
+            arch,
+            op,
+            Operand {
+                value: base,
+                reader: op,
+            },
+        );
+        self.push_constant_ir_fmt_sign(byte_offset as u64, 0, op, display_format::NONE, false);
+        true
+    }
+
+    fn push_go_byte_address(
+        &mut self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        op: OpId,
+        base: Operand,
+    ) {
+        self.push_go_call("unsafe.Add", op);
+        self.push_op(&tokens::COMMA, Some(op_key(op)));
+        self.push_go_call("unsafe.Pointer", base.reader);
+        self.push_vn_ir(fd, arch, base.value, base.reader);
     }
 }
 

@@ -106,6 +106,9 @@ pub struct PriorNames {
     /// The local each varnode's keys matched, as the merge asks it
     /// ([`same_variable`]).
     pub merged_names: std::cell::RefCell<MergeMemo>,
+    /// The storage and width of each isolated stack local and parameter
+    /// (`crate::kuna_isolated`).
+    pub isolated: BTreeSet<(Address, int4)>,
 }
 
 /// Each varnode's matched local, by an index into the names seen so far.
@@ -842,8 +845,9 @@ pub fn is_name_only(fd: &Funcdata, sym: crate::database::SymbolId) -> bool {
 /// earlier numbering, so a plain re-decompile numbers from scratch as before.
 pub fn carry(fd: &Funcdata) -> PriorNames {
     let prior = fd.kuna_prior_names();
+    let isolated = crate::kuna_isolated::carried(fd);
     if prior.is_empty() && fd.kuna_directive_symbols().is_empty() {
-        return PriorNames::default();
+        return PriorNames { isolated, ..Default::default() };
     }
     let angr = fd.get_arch().name_style_angr;
     let mut next = PriorNames {
@@ -864,6 +868,7 @@ pub fn carry(fd: &Funcdata) -> PriorNames {
             .map(|(from, retype)| (prior.renames.get(from).unwrap_or(from).clone(), retype.clone()))
             .collect(),
         merged_names: Default::default(),
+        isolated,
     };
     for (name, (op, shape, place)) in fd.kuna_name_snapshot().iter().cloned() {
         record(&mut next.ops, op, &name);

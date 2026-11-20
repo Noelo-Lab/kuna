@@ -87,6 +87,11 @@ of the pointer-authentication instructions that write a general register
 now lift to. The digest was regenerated the same way: the recorded C++
 compiler reproduces the previous digest on the previous sources and
 `slacomp` matches it on the updated ones.
+It also includes the memory-tagging constructors under `ShowMemTag=1`, whose
+tag operation is now a user op producing the tagged pointer (`AddPtrTag`,
+`ExcludePtrTag`, `LoadPtrTag`, `StorePtrTag`), without the alignment-fault
+branch. That digest was regenerated with `slacomp`, which reproduces the
+previous AArch64 digest on the previous sources.
 
 The RISC-V entry includes the Zcmp/Zcmt constructors (`riscv.zc.sinc`), the
 `Zcmp` context bit and the `c.fsdsp` guard on it. Its digest was regenerated
