@@ -101,21 +101,25 @@
       "corpus": "tests/datatests + tests/stages, 256 runs per function",
       "functions": 4030,
       "verdicts": {
-        "AGREES": 2977,
-        "DIFFERS": 29,
+        "AGREES": 2932,
+        "DIFFERS": 77,
         "DIVERGES": 11,
-        "UNKNOWN": 1013
+        "UNKNOWN": 1010
       },
       "c1_agrees_regressed": 0,
       "c2_agrees_regressed": 12,
       "differs_triage": {
-        "kuna_bug": 5,
-        "pinned_by_test": 8,
-        "source_ub": 3,
-        "harness_limit": 13
+        "section2": {
+          "kuna_bug": 5,
+          "pinned_by_test": 8,
+          "source_ub": 3,
+          "harness_limit": 12
+        },
+        "call_checks_added": 49,
+        "call_checks_false_positives": 0
       },
-      "check_seconds": 122.9,
-      "wall_seconds": 19.3,
+      "check_seconds": 152.9,
+      "wall_seconds": 22.9,
       "workers": 14,
       "peak_rss_mb": 216,
       "recall": {
@@ -123,13 +127,17 @@
         "with_stage_fixture": 39,
         "measured": 27,
         "semantic_bugs_reproduced": 22,
-        "caught_no_contract": 5,
-        "caught_with_contract": 9,
-        "missed": 13,
+        "caught_no_contract": 7,
+        "caught_with_contract": 11,
+        "missed": 11,
         "ir_equivalent": 3,
         "crash_file_error": 1,
         "not_reproduced": 1,
-        "method": "fault restored by hand in a local build per fix (sources moved since, so reverts do not apply); fixture assertions confirm the pre-fix output"
+        "method": "fault restored by hand in a local build per fix (sources moved since, so reverts do not apply); fixture assertions confirm the pre-fix output",
+        "before_call_checks": {
+          "caught_no_contract": 5,
+          "caught_with_contract": 9
+        }
       },
       "results": "docs/features/diffverify/c4-results.md",
       "kuna_bugs": [

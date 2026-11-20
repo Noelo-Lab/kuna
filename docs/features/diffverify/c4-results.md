@@ -21,18 +21,17 @@ decompiles with an abbreviated command (§5).
 
 | verdict | C2 | C4 |
 |---|---:|---:|
-| `AGREES(256)` | 2,482 | 2,977 |
-| `DIFFERS` | 500 | 29 |
+| `AGREES(256)` | 2,482 | 2,932 |
+| `DIFFERS` | 500 | 77 |
 | `DIVERGES` | 3 | 11 |
-| `UNKNOWN` | 994 | 1,013 |
+| `UNKNOWN` | 994 | 1,010 |
 
 `UNKNOWN` by reason: 767 unsupported operations (SIMD and float user ops, memory
-builtins, ISA-mode switches), 219 budget, 16 traps on both sides, 8 undefined reads of
+builtins, ISA-mode switches), 218 budget, 16 traps on both sides, 6 undefined reads of
 the frame, and 3 callees the model guessed.
 
-Of the 29 `DIFFERS`, 5 are kuna bugs, 8 are bugs a test pins on purpose, 3 are
-source-level undefined behavior, and 13 are harness limits (§2). None is an unexplained
-harness defect.
+Of the 77 `DIFFERS`, 28 are the ones §2 triages. The other 49 come from the two checks
+of §6a and are triaged in §6b. None is an unexplained harness defect.
 
 Every function C1 found to agree still agrees. Of C2's 2,482, twelve no longer agree:
 - `enum ptrenumlow` is `UNKNOWN(unsupported-op)`: its IR has an `INT_AND` whose output
@@ -169,6 +168,21 @@ A second review found seven more. All are fixed, and each fix keeps the corpus's
 `tests/verdict_guards.rs` pins the trap, empty-loop, frame-object, failed-load,
 abbreviation and CLI cases.
 
+A third review found seven more, all fixed:
+- **Kept registers.** A stub that a callee falls back to now keeps the registers
+  `calleepreserves` proved it leaves alone, which the effect list does not carry.
+- **Earlier escapes.** A frame object passed to any earlier call is compared at every
+  later call (`save(&x); x = 1; consume();`).
+- **Direct targets.** These are compared too, after following thunks (a jump, an
+  `endbr64`, a PLT slot). Calls kuna bound past a PLT stub or replaced with an injection
+  are not compared, since the machine runs no dynamic linker and no call fixup.
+- **Contracts.** `__int128` is 16 bytes, and an unknown word in a contract type is an
+  error rather than ignored.
+- **Register return addresses.** A return address kept in a register (RISC-V `ra`,
+  ARM `lr`) is written by every call and is no longer read as a smashed frame.
+- **Empty script lines** clear the console's resolved command.
+- **Missing corpus paths** are a usage error.
+
 ## 6. Recall
 
 Of the 56 P3/P4 fixes since June 2026, 39 have a stage fixture. The 27 whose fixture the
@@ -212,15 +226,93 @@ one (41%). The misses fall into a few gaps, most of them in how the model treats
   `__chkstk` leaves) and #1501 (a jump made a call into in-image code) execute
   identically. Only the printed-C tier can see them.
 
-Two of these suggest checks that would close most of the misses. One reruns kuna's side
-with storage it never initialized given different values: a result that changes reads
-an uninitialized value. The other compares, at a call to a callee run for real, the
-inputs the callee read before writing them. #252 needs a read-only store check, and #227
-needs an `UNKNOWN(decompile)` row instead of a file error.
+### 6a. Two checks for the call gaps
+
+Two checks were added for the first two gaps, and the misses re-measured on them:
+- **A callee's inputs.**
+  - Recording: a callee run for real has the argument-register bytes it reads before
+    writing them recorded. Bytes it only spills (a `push`, a home-slot store, a varargs
+    prologue) are not recorded.
+  - Placement: each of kuna's CALL inputs is placed at the callee's parameter storage,
+    else at its own register for an entry-register input, else at the next integer
+    argument register. Register pairs are split into their pieces.
+  - Confirmation: where kuna passes other bytes or none, the machine is rerun with
+    kuna's bytes in the callee's registers. Only a changed result is `DIFFERS`: the
+    function's own, or the callee's return value or memory writes.
+  - A callee with a declared prototype makes it a `PROTOTYPE_SUSPECT` instead, since kuna
+    follows the declaration.
+- **What kuna's C never assigns.** kuna's side is rerun with other values in:
+  - argument or scratch registers it reads at entry with no parameter for them;
+  - output registers of a call it never connects;
+  - other registers a call kills, read after it.
+
+  A changed kuna result is `DIFFERS`. For entry registers and non-output killed
+  registers, the machine is rerun with the same values first: when its own result
+  changes too, the binary reads that storage itself (a `push ecx` reserving a slot, a
+  hand-written routine reading `r10`), and the dependence is not kuna's.
+
+Re-measured with both checks:
+- #565 and #1500 are now caught without a contract, through a call output kuna never
+  connects (`_r3` after the call).
+- The other eleven misses stand:
+  - **Path:** the bug is on a path random inputs never take (#564: `end == cap`). That
+    needs C5's concolic inputs.
+  - **A smaller claim:** kuna claims less than the binary does. A void caller ignores the
+    callee result (#455). A return is narrowed or dropped (#559, #763). An argument
+    is dropped that the fixture's callee ignores (#875).
+  - **The binary reads the register too:** #290's `this` arrives in ECX, which the
+    binary reads at entry, so the missing parameter is a prototype claim.
+  - **No reader:** #561 and #554 reach only a callee that reads nothing.
+  - **No check:** #252 needs a read-only store check. A first try flagged AVR's
+    memory-mapped registers and XML fixtures' read-only chunks, and was dropped.
+  - **Printed C only:** #542 and #1501 are false only in the printed C.
+
+| | without a contract | with one |
+|---|---:|---:|
+| before the two checks | 5 of 22 | 9 of 22 |
+| with them | 7 of 22 | 11 of 22 |
+
+### 6b. What the two checks found in the corpus
+
+The two checks add 49 `DIFFERS` over the corpus, and remove one (`kuna-calleescratchbody`
+`f`, whose stub no longer overwrites what kuna proved the callee keeps). Triage found
+no false positives in the 49. The false-positive classes the first version had were
+removed before this count: pair arguments, Swift's `self`, declared prototypes, and
+registers the binary itself reads.
+
+The largest group is one kuna defect: **a caller that passes its own entry argument
+registers straight through to a callee loses the arguments.** kuna prints `v1 = add64();`
+where the source is `add64(a, b)`. The same pattern shows up on six targets:
+- x86-64: `narrowret-x86` `returns_word`, `libcnames` `ordered`;
+- ARM;
+- PPC: `bejoin-callers`, `bejoin-residue`, `relocobj-ppc-mips`;
+- MIPS: `mipsunaligned`, `mipsgot-local`, `bejoin-mipspic`;
+- eBPF: `ebpf-elf-map-reloc`;
+- Rust and Swift: `rustabi`, `swiftcall`.
+
+Several of these tests pin the dropped spelling as expected output.
+
+Other real defects:
+- **A register the callee leaves alone is treated as killed.** `loadguardreads`
+  `gather` passes `reg(&s0, 0)` with the 0 set once before an earlier call; `regpiece`
+  `sh_openpipe` does the same with EDX.
+- **An assigned argument is dropped:** `pointerwalk-memo` `f` prints `ext()` for
+  `ext(buf[0])`.
+- **A call output is never connected**, read as an unassigned `v1`: the off or bug passes
+  of `calleeretpreserves`, `callretpair`, `callretpairhalf` and
+  `declaring-double-score-return`.
+
+The rest are passes a test pins on purpose:
+- the off passes of `calleearitycut`, `calleearityscratch`, `calleereadarg`, `bodyreads`
+  and `msvcstrappend`;
+- `narrowext`'s RISC-V bug pass, which a guard had hidden as `UNKNOWN` (§5).
+
+`injectoverride` `inject_collapse` is a harness limit: the machine does not run kuna's
+call-fixup injection.
 
 ## 7. Cost
 
-Check time 122.9 s, wall time 19.3 s on 14 worker processes, over 4,030 functions. Peak RSS is 216 MB for the
+Check time 152.9 s, wall time 22.9 s on 14 worker processes, over 4,030 functions. Peak RSS is 216 MB for the
 heaviest single test. Check time grew from C2's 50.3 s because functions that used to
 stop early now run: callees run for real, calls are kept in loops up to the 256-call
 limit, and fewer runs halt on harness errors. One function,
