@@ -171,7 +171,12 @@ iterate op), whose `continue;` would run the iterate statement first; in the
 overflow form the condition block prints first inside `while( true ) { ... }`,
 which is where the jump lands too. A do-while resumes at the last leaf of its
 body only when that leaf prints nothing but the loop test: every op besides
-the branch is not printed, a marker, or has an implied output. A switch
+the branch is not printed, a marker, or has an implied output, and only when
+the output language's do-while runs its test on `continue;`: C's `do..while`
+and Go's `for` post statement do, while Rust prints a do-while as
+`loop { ..; if !(c) { break; } }`, where `continue;` would skip the test, so a
+Rust do-while keeps the goto (the `do_while_continue` flag the architecture
+derives from the output language). A switch
 between the jump and the loop does not matter, since C's `continue` skips
 switches. A jump into any other leaf, including the latch of a `while( true )`
 loop, keeps its goto. `off` restores the original collapse precedence and

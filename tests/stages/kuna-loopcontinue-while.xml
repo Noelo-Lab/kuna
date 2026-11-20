@@ -15,6 +15,9 @@
     -nostartfiles -nostdlib with unresolved symbols ignored, entry
     XmlInitEncoding; the function sits at 0x407f50 and its jump table at
     0x40ee40.  Pass 1 is the default, pass 2 `option loopcontinue off`.
+    Pass 3 is the default in Rust, whose do-while is `loop { ..; if !(c)
+    { break; } }`: a `continue;` there would skip the test, so the jump keeps
+    its goto marker.
 -->
 <bytechunk space="ram" offset="0x407f50">
 f30f1efa4989c84839d60f83290100004889d04829f04883f8010f841f0100004889f00fb6480184c975250fb60880bc0f880000001577200fb68c0f88000000
@@ -40,10 +43,16 @@ a87f400000000000a87f400000000000a87f400000000000a87f400000000000a87f400000000000
   <com>lo fu little2_attributeValueTok</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>option loopcontinue on</com>
+  <com>option setlanguage rust-language</com>
+  <com>lo fu little2_attributeValueTok</com>
+  <com>decompile</com>
+  <com>print C</com>
 </script>
 <stringmatch name="LOOPCONTINUE-WHILE #1: the case that jumps to the do-while test continues" min="1" max="1">^          v1 = &amp;v1\[4\];$
 ^          continue;$</stringmatch>
 <stringmatch name="LOOPCONTINUE-WHILE #2: with the option off it jumps to an empty label above the test" min="1" max="1">^          goto label_407fe6;$</stringmatch>
 <stringmatch name="LOOPCONTINUE-WHILE #3: the empty label prints only with the option off" min="1" max="1">^label_407fe6:$</stringmatch>
 <stringmatch name="LOOPCONTINUE-WHILE #4: 19 gotos over both passes, nine by default and ten with the option off" min="19" max="19">goto label_</stringmatch>
+<stringmatch name="LOOPCONTINUE-WHILE #5: Rust's loop-and-break do-while keeps the jump to its test as a goto marker" min="1" max="1">panic!\("kuna: unstructured goto to label_407fe6"\)</stringmatch>
 </decompilertest>

@@ -119,7 +119,8 @@ pub(crate) fn recover_continues(graph: &mut BlockGraph, root: BlockId, points: &
 /// The leaf a `continue;` resumes at in each while-do and do-while loop under
 /// `root`: a while-do's condition block, unless it prints as a `for` whose
 /// iterate statement a `continue;` runs first, and a do-while's last leaf when
-/// that leaf prints nothing but the loop test.
+/// that leaf prints nothing but the loop test and the output language's
+/// do-while runs that test on `continue;`.
 pub(crate) fn continue_points(data: &Funcdata, root: BlockId) -> BTreeMap<BlockId, BlockId> {
     let graph = data.sblocks_ref();
     let mut points = BTreeMap::new();
@@ -133,7 +134,7 @@ pub(crate) fn continue_points(data: &Funcdata, root: BlockId) -> BTreeMap<BlockI
             BlockType::WhileDo if block.get_iterate_op().is_none() => {
                 graph.sub_block(id, 0).and_then(|cond| graph.get_front_leaf(cond))
             }
-            BlockType::DoWhile => graph
+            BlockType::DoWhile if data.get_arch().do_while_continue => graph
                 .sub_block(id, 0)
                 .and_then(|body| graph.get_exit_leaf(body))
                 .filter(|&leaf| prints_only_its_branch(data, leaf)),
