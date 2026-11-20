@@ -2345,8 +2345,24 @@ impl ArchContext {
     /// the entry is not a code symbol with a prototype.
     ///
     /// This is the `ActionDeindirect::apply` lever: a CALLIND whose target is the
-    /// constant `entry` deindirects to a direct CALL to this function.
+    /// constant `entry` deindirects to a direct CALL to this function.  The
+    /// prototype carries the extrapop `option extrapop <n> <name>` parked on the
+    /// symbol, as the C++ callee `getFuncProto()` does.
     pub fn query_function(
+        &self,
+        entry: &Address,
+    ) -> Option<(String, Address, std::rc::Rc<crate::fspec::FuncProto>)> {
+        let (name, addr, proto) = self.query_function_symbol(entry)?;
+        let Some(expop) = self.query_function_extra_pop(&addr) else {
+            return Some((name, addr, proto));
+        };
+        let mut popped = crate::fspec::FuncProto::new();
+        popped.copy(&proto);
+        popped.set_extra_pop(expop);
+        Some((name, addr, std::rc::Rc::new(popped)))
+    }
+
+    fn query_function_symbol(
         &self,
         entry: &Address,
     ) -> Option<(String, Address, std::rc::Rc<crate::fspec::FuncProto>)> {

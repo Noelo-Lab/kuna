@@ -15,13 +15,17 @@
 
     Pass 1 (model extrapop): `g(1); return 2;`
     Pass 2 (`option extrapop 12 g`): `g(1,2); return a0;`
+    k calls g through ecx; the deindirected call takes the same
+    extrapop, so [esp+8] after it is k's second argument.
 
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
-6a026a01e8170000008b442404c39090909090909090909090909090909090908b442404c20800
+6a026a01e8170000008b442404c39090909090909090909090909090909090908b442404c20800909090909090909090
+6a046a03b920001000ffd18b442408c3
 </bytechunk>
 <symbol space="ram" offset="0x100000" name="f"/>
 <symbol space="ram" offset="0x100020" name="g"/>
+<symbol space="ram" offset="0x100030" name="k"/>
 </binaryimage>
 <script>
   <com>lo fu f</com>
@@ -30,9 +34,13 @@
   <com>option extrapop 12 g</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu k</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="EXTRAPOP #1: the model extrapop leaves the pushed 2 at [esp+4]" min="1" max="1">return 2;</stringmatch>
 <stringmatch name="EXTRAPOP #2: extrapop 12 pops both arguments, so [esp+4] is the caller's argument" min="1" max="1">return a0;</stringmatch>
 <stringmatch name="EXTRAPOP #3: the call sees both pushed arguments" min="1" max="1">g\(1,2\);</stringmatch>
+<stringmatch name="EXTRAPOP #4: a call through a register to g pops its arguments too" min="1" max="1">return a1;</stringmatch>
 </decompilertest>

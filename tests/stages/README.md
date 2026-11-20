@@ -20,7 +20,8 @@ trampoline and two linked runtime functions with private or foreign exits.
 
 `kuna-extrapop-function.xml` checks that `option extrapop 12 g` makes a caller
 of the `ret 8` function g see both pushed arguments popped, so a later `[esp+4]`
-reads the caller's own argument.
+reads the caller's own argument. A second caller reaches g through a register
+and sees the same pop.
 
 `ghangr-call-argument-extensions.xml` checks explicit and missing parameter
 contracts. The CLI companion executes complete emitted C, Go and Rust callers
