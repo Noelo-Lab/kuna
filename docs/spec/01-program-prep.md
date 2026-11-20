@@ -5310,7 +5310,10 @@ every other binary's pass list is byte-identical to before the pass existed):
   maps) keep the record's spelling. A pointer record genuinely starts with
   `*`; an extra-star name was already stripped by the record reader. The
   `gonewtype` client maps the symbol back to the interned record by
-  dropping the path's directory part. The shell is the
+  dropping the directory part of a named type's own qualifier, before any
+  type arguments (`geom.Box[example.com/q/store.T]` keeps its argument's
+  path); a pointer, slice, array, map or func spelling is kept whole and
+  refuses. The shell is the
   48/32-byte `abi.Type` base record at the harvest's own decode offsets
   (`Size_` through `PtrToThis`), spanning only the base record so the mapped
   extent never overlaps the next descriptor; runtime code walking a
