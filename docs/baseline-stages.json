@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4830,
-    4830
+    4835,
+    4835
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -4058,6 +4058,11 @@
     "data:oxidizer-SecurityCheck #1: the panic helper call is emitted only with the option off",
     "data:oxidizer-SecurityCheck #2: the bounds guard is emitted only with the option off",
     "data:oxidizer-SecurityCheck #3: the guarded load itself is untouched (emitted by both passes)",
+    "data:pacmodifier #1: the signing call takes its three arguments",
+    "data:pacmodifier #2: so does the one whose modifier folds to a constant",
+    "data:pacmodifier #3: no blended modifier is an argument",
+    "data:pacmodifier #4: a tagged address in x8 is still passed",
+    "data:pacmodifier #5: a result buffer in x8 is still passed",
     "data:page frame values preserved",
     "data:panic hexadecimal width and alternate flag",
     "data:panic narrow signed arguments retain interpretation",

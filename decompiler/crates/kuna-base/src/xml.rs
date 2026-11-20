@@ -2247,7 +2247,8 @@ mod tests {
         // and kuna-extrapop-function / option extrapop <n> <name> sets a named function's extrapop
         // and kuna-condexe-heritage / condexe removes a re-test whose block holds unread ops
         // and kuna-dwarf-addrx / a DWARF 5 DW_OP_addrx global takes its name on both byte orders
-        assert_eq!(count, 829, "corpus file count drifted");
+        // and kuna-pacmodifier-arg-a64e / a hidden signing's modifier is not a call argument
+        assert_eq!(count, 830, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

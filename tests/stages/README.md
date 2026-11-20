@@ -4,6 +4,11 @@
 argument was narrowed to two bytes before the field's prototype was forced on
 the call: the function decompiles and passes the sum widened to the parameter.
 
+`kuna-pacmodifier-arg-a64e.xml` checks that the blended modifier an arm64e
+caller builds in `x8` for a hidden `pacda` is not the next call's first
+argument, with the modifier computed and folded to a constant. A tagged
+address and a result buffer in `x8` are the controls.
+
 `ghangr-go-paniccheck-return.xml` checks that a returning Go panic helper
 falls through to the terminal `runtime.gopanic` call. It also checks the
 helper's conditional throw and shows the caller's sentinel with the known
