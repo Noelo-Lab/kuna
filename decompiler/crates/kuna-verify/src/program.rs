@@ -26,6 +26,10 @@ pub enum Operand {
     Const(u128),
     /// A written varnode's slot, and the address offset its error names.
     Slot(usize, u64),
+    /// A varnode tied to a stack or memory location: the location now, as the
+    /// printed C reads the variable. A STORE through a pointer the IR did not
+    /// guard still shows.
+    Memory(Storage),
     /// An input varnode: its storage at entry.
     Input(Storage),
     /// Neither written nor an input: its storage now.
@@ -175,6 +179,13 @@ impl Compiler<'_> {
             Operand::TooWide
         } else if v.is_constant() {
             Operand::Const(u128::from(v.get_offset()) & mask(size))
+        } else if let Some(st) =
+            Storage::at(v.get_addr(), size).filter(|st| v.is_addr_tied() && self.memory(st))
+        {
+            if v.is_written() {
+                self.slot(id);
+            }
+            Operand::Memory(st)
         } else if v.is_written() {
             Operand::Slot(self.slot(id), v.get_addr().get_offset())
         } else {
@@ -331,6 +342,18 @@ fn after_their_effects(fd: &Funcdata, body: &[OpId]) -> Vec<Place> {
     out
 }
 
+/// Whether an INDIRECT's input was computed by an op. An entry value, or
+/// another guard's output on the same storage, only passes the location's
+/// value along, so writing it back before the guarded op would undo a write
+/// the IR did not guard.
+fn computed_input(fd: &Funcdata, indirect: OpId) -> bool {
+    let Some(v) = fd.obank().get(indirect).and_then(|o| o.get_in(0)).and_then(|v| fd.vbank().get(v)) else {
+        return false;
+    };
+    let def = v.get_def().and_then(|d| fd.obank().get(d));
+    def.is_some_and(|d| d.code() != OpCode::CPUI_INDIRECT)
+}
+
 /// Compile the final `Funcdata`.
 pub fn compile(prog: &ConsoleProgram, fd: &Funcdata, calls: &Calls) -> Program {
     let graph = fd.bblocks_ref();
@@ -364,12 +387,13 @@ pub fn compile(prog: &ConsoleProgram, fd: &Funcdata, calls: &Calls) -> Program {
             .into_iter()
             .filter_map(|place| match place {
                 Place::Op(op) => c.op(op, &out_starts, &succ),
-                Place::Before(op) => c.op(op, &out_starts, &succ).filter(|o| matches!(o.kind, Kind::Indirect(Effect::Memory))).map(
-                    |mut o| {
+                Place::Before(op) => c
+                    .op(op, &out_starts, &succ)
+                    .filter(|o| matches!(o.kind, Kind::Indirect(Effect::Memory)) && computed_input(fd, op))
+                    .map(|mut o| {
                         o.kind = Kind::IndirectBefore;
                         o
-                    },
-                ),
+                    }),
             })
             .collect();
         blocks.push(Block { index: block.get_index(), start: start_of(bl), phis, ops, outs });

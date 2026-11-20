@@ -53,12 +53,18 @@ pub struct Env<'p> {
     granule: u32,
     edges: Vec<u64>,
     readonly: Vec<(u64, u64)>,
+    /// The image's code sections, `(start, size)`; empty without a section table.
+    code_sections: Vec<(u64, u64)>,
     pub extensions: Vec<Extension>,
-    /// Registers the context gives a known value at the function's entry
-    /// (a PowerPC TOC, an ARM mode bit): offset, size, value.
-    pub tracked: Vec<(u64, u32, u64)>,
+    /// Storage the context or the loader gives a known value at the
+    /// function's entry (a PowerPC TOC, a MIPS t9, AVR's zero register, the
+    /// return address): space, offset, size, value.
+    pub tracked: Vec<(i32, u64, u32, u64)>,
+    /// The return address the function starts with, when the model names
+    /// where it is: a RETURN to it leaves the function.
+    pub ret_addr: Option<u64>,
     /// Register parameters of type `bool`: a caller passes 0 or 1.
-    pub booleans: Vec<(u64, u32)>,
+    pub booleans: Vec<(i32, u64, u32)>,
     image: RefCell<BTreeMap<u64, Option<u8>>>,
     pub(crate) insns: RefCell<BTreeMap<u64, Rc<crate::machine::Insn>>>,
 }
@@ -114,7 +120,7 @@ impl<'p> Env<'p> {
             .get_space_by_name("register")
             .cloned()
             .ok_or_else(|| Halt::Harness("no register space".into()))?;
-        let ram = manage
+        let data = manage
             .get_default_data_space()
             .cloned()
             .ok_or_else(|| Halt::Harness("no default data space".into()))?;
@@ -129,6 +135,7 @@ impl<'p> Env<'p> {
         let base = stack
             .get_spacebase(0)
             .map_err(|e| Halt::Harness(format!("stack pointer: {}", e.explain())))?;
+        let ram = stack.get_contain().cloned().unwrap_or(data);
         let ram_mask = ram.get_highest();
         let mut sp0 = (ram_mask >> 1) & !0xffff;
         if sp0 == 0 {
@@ -142,6 +149,12 @@ impl<'p> Env<'p> {
             .filter(|r| r.get_space().get_index() == ram.get_index() || r.get_space().get_index() == code.get_index())
             .map(|r| (r.get_first(), r.get_last()))
             .collect();
+        let code_sections = prog
+            .sections()
+            .into_iter()
+            .filter(|&(_, _, flags)| flags & kuna_sleigh::loadimage::section_flags::CODE != 0)
+            .map(|(start, size, _)| (start, size))
+            .collect();
         Ok(Env {
             prog,
             seed,
@@ -154,8 +167,10 @@ impl<'p> Env<'p> {
             granule,
             edges: edge_values(granule),
             readonly,
+            code_sections,
             extensions: Vec::new(),
             tracked: Vec::new(),
+            ret_addr: None,
             booleans: Vec::new(),
             image: RefCell::new(BTreeMap::new()),
             insns: RefCell::new(BTreeMap::new()),
@@ -174,6 +189,13 @@ impl<'p> Env<'p> {
 
     pub fn code_mapped(&self, addr: u64) -> bool {
         self.prog.entry_bytes_mapped(&Address::new(Rc::clone(&self.code), addr))
+    }
+
+    /// Whether `addr` is mapped code: in a section the loader marks as code,
+    /// or anywhere mapped in an image without a section table.
+    pub fn is_code(&self, addr: u64) -> bool {
+        self.code_mapped(addr)
+            && (self.code_sections.is_empty() || self.code_sections.iter().any(|&(start, size)| addr >= start && addr - start < size))
     }
 
     fn image_byte(&self, addr: u64) -> Option<u8> {
@@ -286,6 +308,17 @@ impl<'p> Env<'p> {
 
     pub fn initial_byte(&self, run: u32, space: &AddrSpace, off: u64) -> u8 {
         let idx = space.get_index();
+        if let Some(&(_, t, size, val)) =
+            self.tracked.iter().find(|&&(sp, t, size, _)| sp == idx && off >= t && off < t + u64::from(size))
+        {
+            return Self::byte_of(val, off - t, u64::from(size), space.is_big_endian());
+        }
+        if let Some(&(_, b, size)) =
+            self.booleans.iter().find(|&&(sp, b, size)| sp == idx && off >= b && off < b + u64::from(size))
+        {
+            let low = if space.is_big_endian() { b + u64::from(size) - 1 } else { b };
+            return if off == low { self.random_byte(run, space, off) & 1 } else { 0 };
+        }
         if self.unique.as_ref().is_some_and(|u| u.get_index() == idx) {
             return 0;
         }
@@ -293,13 +326,6 @@ impl<'p> Env<'p> {
             let (sp_off, sp_size) = self.sp;
             if off >= sp_off && off < sp_off + u64::from(sp_size) {
                 return Self::byte_of(self.sp0, off - sp_off, u64::from(sp_size), space.is_big_endian());
-            }
-            if let Some(&(t, size, val)) = self.tracked.iter().find(|&&(t, size, _)| off >= t && off < t + u64::from(size)) {
-                return Self::byte_of(val, off - t, u64::from(size), space.is_big_endian());
-            }
-            if let Some(&(b, size)) = self.booleans.iter().find(|&&(b, size)| off >= b && off < b + u64::from(size)) {
-                let low = if space.is_big_endian() { b + u64::from(size) - 1 } else { b };
-                return if off == low { self.random_byte(run, space, off) & 1 } else { 0 };
             }
             if let Some(b) = self.extended_byte(run, space, off) {
                 return b;
@@ -340,6 +366,12 @@ pub struct State<'e, 'p> {
     /// This side read a byte of the function's own frame that nothing wrote:
     /// an uninitialized local, whose value C does not define.
     pub read_uninitialized: bool,
+    /// Stack bytes that hold a callee-saved register's entry value, by the
+    /// register offset they came from: the prologue's spills.
+    saved: BTreeMap<u64, u64>,
+    /// This side read a spilled entry value back into anything but the
+    /// register it came from: what C sees there is uninitialized too.
+    pub read_saved: bool,
 }
 
 /// One thing a callee run for real did to memory.
@@ -381,6 +413,44 @@ impl<'e, 'p> State<'e, 'p> {
             escaped: Vec::new(),
             log: None,
             read_uninitialized: false,
+            saved: BTreeMap::new(),
+            read_saved: false,
+        }
+    }
+
+    /// Mark a stack store as the spill of a callee-saved register's entry value.
+    pub fn mark_saved(&mut self, at: u64, size: u32, reg: u64) {
+        for i in 0..u64::from(size) {
+            self.saved.insert(at.wrapping_add(i), reg);
+        }
+    }
+
+    /// The callee-saved registers whose spilled entry values the range holds.
+    pub fn saved_in(&self, at: u64, size: u32) -> Vec<u64> {
+        if self.saved.is_empty() || size == 0 {
+            return Vec::new();
+        }
+        let mut regs: Vec<u64> = self.saved.range(at..=at.saturating_add(u64::from(size) - 1)).map(|(_, &r)| r).collect();
+        regs.dedup();
+        regs
+    }
+
+    /// Forget what this side wrote to the stack below `sp`: after a call
+    /// returns, what is there (its return address, its frame) is no local.
+    pub fn forget_below(&mut self, sp: u64) {
+        let ram = self.env.ram.get_index();
+        let below = STACK_BELOW.min(self.env.sp0 / 2);
+        let lo = self.env.sp0.wrapping_sub(below);
+        if sp <= lo {
+            return;
+        }
+        let dead: Vec<(i32, u64)> = self.mem.range((ram, lo)..(ram, sp)).map(|(k, _)| *k).collect();
+        for k in dead {
+            self.mem.remove(&k);
+        }
+        let dead: Vec<u64> = self.saved.range(lo..sp).map(|(k, _)| *k).collect();
+        for k in dead {
+            self.saved.remove(&k);
         }
     }
 
@@ -558,6 +628,12 @@ impl<'e, 'p> State<'e, 'p> {
     }
 
     pub fn write(&mut self, space: &AddrSpace, off: u64, size: u32, val: u128) -> Result<(), Halt> {
+        if !self.saved.is_empty() && space.get_index() == self.env.ram.get_index() {
+            let dead: Vec<u64> = self.saved.range(off..=off.saturating_add(u64::from(size).max(1) - 1)).map(|(k, _)| *k).collect();
+            for k in dead {
+                self.saved.remove(&k);
+            }
+        }
         if size > MAX_SIZE {
             return Err(Halt::Unsupported(format!("{size}-byte value")));
         }

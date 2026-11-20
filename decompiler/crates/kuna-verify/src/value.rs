@@ -147,6 +147,26 @@ fn eval_wide(opc: OpCode, out: u32, ins: &[(u128, u32)]) -> Result<u128, Halt> {
     Ok(r & m)
 }
 
+/// Ops whose output and inputs are one size. Anything else is ill-formed IR,
+/// and truncating it would invent a value.
+fn same_size(opc: OpCode) -> bool {
+    matches!(
+        opc,
+        OpCode::CPUI_INT_ADD
+            | OpCode::CPUI_INT_SUB
+            | OpCode::CPUI_INT_MULT
+            | OpCode::CPUI_INT_DIV
+            | OpCode::CPUI_INT_SDIV
+            | OpCode::CPUI_INT_REM
+            | OpCode::CPUI_INT_SREM
+            | OpCode::CPUI_INT_AND
+            | OpCode::CPUI_INT_OR
+            | OpCode::CPUI_INT_XOR
+            | OpCode::CPUI_INT_NEGATE
+            | OpCode::CPUI_INT_2COMP
+    )
+}
+
 /// Evaluate a value-producing op. `ins` holds each input's value and size.
 pub fn eval(opc: OpCode, out_size: u32, ins: &[(u128, u32)]) -> Result<u128, Halt> {
     if out_size > MAX_SIZE || ins.iter().any(|&(_, s)| s > MAX_SIZE) {
@@ -173,6 +193,9 @@ pub fn eval(opc: OpCode, out_size: u32, ins: &[(u128, u32)]) -> Result<u128, Hal
         _ => {}
     }
     arg(0)?;
+    if same_size(opc) && (ins.iter().any(|&(_, s)| s != out_size)) {
+        return Err(Halt::Unsupported(format!("{} with operands of mixed size", get_opname(opc))));
+    }
     if out_size > 8 || ins.iter().any(|&(_, s)| s > 8) {
         return eval_wide(opc, out_size, ins);
     }

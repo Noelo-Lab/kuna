@@ -8,6 +8,7 @@
 //! to the contract type by C's rules.
 
 use std::collections::BTreeSet;
+use std::rc::Rc;
 use std::time::Instant;
 
 use kuna_base::space::spacetype;
@@ -181,15 +182,21 @@ fn compare_writes(env: &Env, run: u32, machine: &Writes, kuna: &Writes) -> Optio
 }
 
 /// A computed call target as an address in the code space: wrapped to its
-/// size, and without the ARM instruction-set bit.
+/// size, and without the ARM or MIPS instruction-set bit.
 fn code_target(env: &Env, t: Option<u64>) -> Option<u64> {
-    let arm = env.prog.arch().archid.starts_with("ARM");
-    t.map(|t| env.code.wrap_offset(t) & if arm { !1 } else { !0 })
+    let id = &env.prog.arch().archid;
+    let isa_bit = id.starts_with("ARM") || id.starts_with("MIPS");
+    t.map(|t| env.code.wrap_offset(t) & if isa_bit { !1 } else { !0 })
 }
 
 fn target(t: Option<u64>) -> String {
     t.map_or_else(|| "?".to_string(), |t| format!("{t:#x}"))
 }
+
+/// Stack-protector failure handlers, without leading underscores. A call to one
+/// on the machine side only means a call the model let rewrite the frame hit
+/// the canary.
+const STACK_PROTECTOR: &[&str] = &["stack_chk_fail", "security_check_cookie", "report_gsfailure"];
 
 /// How the two sides' calls compare: the first difference, and the arguments a
 /// recovered callee prototype may have wrong.
@@ -201,7 +208,7 @@ struct CallCompare {
 
 fn compare_calls(prog: &ConsoleProgram, env: &Env, run: u32, calls: &Calls, m: &[Record], g: &[Record]) -> CallCompare {
     let mut suspects = Vec::new();
-    if g.iter().any(|c| !c.indirect && c.target.is_none()) {
+    if g.iter().any(|c| c.at == 0 || (!c.indirect && c.target.is_none())) {
         return CallCompare { differs: None, declared: Some(divergence::SYNTHESIZED_CALL.id), suspects };
     }
     let differs = |lines: Vec<String>, suspects: Vec<String>| CallCompare { differs: Some(lines), declared: None, suspects };
@@ -210,7 +217,14 @@ fn compare_calls(prog: &ConsoleProgram, env: &Env, run: u32, calls: &Calls, m: &
         let (mc, gc) = match (m.get(k), g.get(k)) {
             (Some(mc), Some(gc)) => (mc, gc),
             (Some(mc), None) => {
+                let name = mc.target.and_then(|t| prog.function_named_at(t)).unwrap_or_default();
+                if name.starts_with("runtime.gcWriteBarrier") {
+                    return CallCompare { differs: None, declared: Some(divergence::GO_WRITE_BARRIER.id), suspects };
+                }
                 let l = format!("call {n} at {:#x} to {}: the machine makes it, kuna does not", mc.at, target(mc.target));
+                if STACK_PROTECTOR.contains(&name.trim_start_matches('_')) {
+                    return CallCompare { differs: None, declared: None, suspects: vec![format!("canary: {l}")] };
+                }
                 return differs(vec![l], suspects);
             }
             (None, Some(gc)) => {
@@ -222,7 +236,10 @@ fn compare_calls(prog: &ConsoleProgram, env: &Env, run: u32, calls: &Calls, m: &
         if mc.at != gc.at {
             return differs(vec![format!("call {n}: the machine calls from {:#x}, kuna from {:#x}", mc.at, gc.at)], suspects);
         }
-        if mc.indirect && gc.indirect && code_target(env, mc.target) != code_target(env, gc.target) {
+        let (mt, kt) = (code_target(env, mc.target), code_target(env, gc.target));
+        let both_code = mt.zip(kt).is_some_and(|(m, k)| env.is_code(m) && env.is_code(k));
+        let compared = if mc.indirect && gc.indirect { true } else { (mc.indirect || gc.indirect) && both_code };
+        if compared && mt != kt {
             let l = format!("call {n} at {:#x}: the machine calls {}, kuna calls {}", gc.at, target(mc.target), target(gc.target));
             return differs(vec![l], suspects);
         }
@@ -255,28 +272,79 @@ fn compare_calls(prog: &ConsoleProgram, env: &Env, run: u32, calls: &Calls, m: &
     CallCompare { differs: None, declared: None, suspects }
 }
 
-/// The register parameters kuna's prototype types `bool`.
-fn booleans(fd: &Funcdata, env: &Env) -> Vec<(u64, u32)> {
+/// The parameters kuna's prototype types `bool`, in a register or in the
+/// caller's stack.
+fn booleans(fd: &Funcdata, env: &Env) -> Vec<(i32, u64, u32)> {
     let proto = fd.get_func_proto();
     (0..proto.num_params())
         .filter_map(|i| proto.get_param(i))
         .filter(|p| p.get_type().is_some_and(|t| t.get_metatype() == kuna_decomp::dtype::type_metatype::TYPE_BOOL))
         .filter_map(|p| Storage::at(&p.get_address(), p.get_size() as u32))
-        .filter(|st| st.space.get_index() == env.register.get_index())
-        .map(|st| (st.off, st.size))
+        .filter_map(|st| {
+            if st.space.get_index() == env.register.get_index() {
+                Some((st.space.get_index(), st.off, st.size))
+            } else if st.space.get_type() == spacetype::IPTR_SPACEBASE {
+                Some((env.ram.get_index(), env.ram.wrap_offset(env.sp0.wrapping_add(st.off)), st.size))
+            } else {
+                None
+            }
+        })
         .collect()
 }
 
-/// The registers the context tracks at the function's entry.
-fn tracked(prog: &ConsoleProgram, fd: &Funcdata, env: &Env) -> Vec<(u64, u32, u64)> {
-    let reg = env.register.get_index();
-    prog.arch().with_context_db(|db| {
-        db.get_tracked_set(fd.get_address())
-            .iter()
-            .filter(|t| t.loc.space.as_ref().is_some_and(|s| s.get_index() == reg) && t.loc.size <= 8)
-            .map(|t| (t.loc.offset, t.loc.size, t.val))
-            .collect()
-    })
+/// The storage whose value is known at the function's entry: what the context
+/// tracks, what the loader seeds (a PowerPC TOC from a descriptor, MIPS t9),
+/// and the return address, which gets an address nothing maps so a RETURN to
+/// it is told apart from a branch.
+fn tracked(prog: &ConsoleProgram, fd: &Funcdata, env: &mut Env) -> Vec<(i32, u64, u32, u64)> {
+    let entry = fd.get_address();
+    let arch = prog.arch();
+    let to = |t: &kuna_sleigh::globalcontext::TrackedContext| {
+        let sp = t.loc.space.as_ref()?;
+        (t.loc.size <= 8).then(|| (sp.get_index(), t.loc.offset, t.loc.size, t.val))
+    };
+    let mut out: Vec<(i32, u64, u32, u64)> = arch.with_context_db(|db| db.get_tracked_set(entry).iter().filter_map(to).collect());
+    if let Some(set) = arch.loader_entry_tracks.get(entry) {
+        out.extend(set.iter().filter_map(to));
+    }
+    if let Some((vn, probe)) = &arch.loader_mips_t9 {
+        if let (Some(sp), Some(v)) = (vn.space.as_ref(), probe(entry)) {
+            if !out.iter().any(|&(s, o, _, _)| s == sp.get_index() && o == vn.offset) {
+                out.push((sp.get_index(), vn.offset, vn.size, v));
+            }
+        }
+    }
+    let ret = fd
+        .get_func_proto()
+        .model()
+        .effect_list()
+        .iter()
+        .find(|e| e.get_type() == kuna_decomp::fspec::effect_type::RETURN_ADDRESS)
+        .and_then(|e| Storage::at(&e.get_address(), e.get_size() as u32));
+    if let Some(st) = ret.filter(|st| st.size <= 8) {
+        let sentinel = env.ram.wrap_offset(env.sp0.wrapping_add(0x800));
+        let at = if st.space.get_type() == spacetype::IPTR_SPACEBASE {
+            Some((env.ram.get_index(), env.ram.wrap_offset(env.sp0.wrapping_add(st.off))))
+        } else {
+            Some((st.space.get_index(), st.off))
+        };
+        if let Some((sp, off)) = at {
+            out.push((sp, off, st.size, sentinel));
+            env.ret_addr = Some(sentinel);
+        }
+    }
+    out
+}
+
+/// Whether the machine overwrote the return address the function started
+/// with: past the frame C defines, as an overrun of a local does.
+fn smashed(env: &Env, ms: &State) -> bool {
+    let Some(ret) = env.ret_addr else { return false };
+    env.tracked
+        .iter()
+        .filter(|&&(_, _, _, v)| v == ret)
+        .filter_map(|&(sp, off, size, _)| env.prog.arch().manage().get_space(sp).map(|s| (Rc::clone(s), off, size)))
+        .any(|(s, off, size)| ms.wrote(&s, off, size))
 }
 
 fn input_line(prog: &ConsoleProgram, env: &Env, run: u32, claim: &Claim) -> String {
@@ -308,13 +376,17 @@ pub fn check_function(prog: &ConsoleProgram, fd: &Funcdata, contract: Option<&Co
         Ok(e) => e,
         Err(h) => return finish(Verdict::from_halt(&h), Vec::new(), Vec::new()),
     };
-    let claim = abi::claim(fd);
-    if let Some(out) = claim.storage.as_ref().filter(|o| o.space.get_type() == spacetype::IPTR_INTERNAL) {
+    let claim = abi::claim(prog, fd);
+    if let Some(out) = claim
+        .storage
+        .as_ref()
+        .filter(|o| matches!(o.space.get_type(), spacetype::IPTR_INTERNAL | spacetype::IPTR_CONSTANT))
+    {
         let at = format!("{}:{:#x}", out.space.get_name(), out.off);
         return finish(Verdict::Unknown(format!("UNKNOWN(return storage {at} is not machine state)")), Vec::new(), Vec::new());
     }
     env.extensions = abi::extensions(fd, &env, prog);
-    env.tracked = tracked(prog, fd, &env);
+    env.tracked = tracked(prog, fd, &mut env);
     env.booleans = booleans(fd, &env);
     let contract_storage = match contract.filter(|c| !c.ret.is_void()) {
         Some(c) => match abi::return_storage(prog, fd, &c.ret) {
@@ -330,6 +402,8 @@ pub fn check_function(prog: &ConsoleProgram, fd: &Funcdata, contract: Option<&Co
     let entry = fd.get_address().get_offset();
     let left_cfg = |mo: &machine::Outcome| mo.indirect.iter().any(|t| !program.starts.contains(t));
     let mut agreed = 0u32;
+    let mut trapped_runs = 0u32;
+    let mut trapped: Option<String> = None;
     let mut budget_runs = 0u32;
     let mut unknown: Option<Halt> = None;
     let mut diverged: Option<&'static str> = None;
@@ -339,8 +413,9 @@ pub fn check_function(prog: &ConsoleProgram, fd: &Funcdata, contract: Option<&Co
         let replay: &[Record] = m.as_ref().map(|mo| mo.calls.as_slice()).unwrap_or(&[]);
         let g = graph::run(&env, &program, run, opts.budget, &calls, replay);
         let (mo, go) = match (m, g) {
-            (Err(Halt::Trap(_)), Err(Halt::Trap(_))) => {
-                agreed += 1;
+            (Err(Halt::Trap(t)), Err(Halt::Trap(_))) => {
+                trapped.get_or_insert(t);
+                trapped_runs += 1;
                 continue;
             }
             (Ok(mo), Err(Halt::NoRow(_))) if left_cfg(&mo) => {
@@ -374,7 +449,13 @@ pub fn check_function(prog: &ConsoleProgram, fd: &Funcdata, contract: Option<&Co
             if opts.trace {
                 for (side, recs) in [("machine", &mo.calls), ("kuna   ", &go.calls)] {
                     for c in recs.iter() {
-                        let args: Vec<String> = c.args.iter().map(|a| format!("{a:#x}")).collect();
+                        let known = &calls.site(c.at).args;
+                        let args: Vec<String> = c
+                            .args
+                            .iter()
+                            .enumerate()
+                            .map(|(i, a)| if matches!(known.get(i), Some(Some(_))) { format!("{a:#x}") } else { "?".into() })
+                            .collect();
                         lines.push(format!("trace    {side} call at {:#x} to {} ({})", c.at, target(c.target), args.join(", ")));
                     }
                 }
@@ -392,8 +473,13 @@ pub fn check_function(prog: &ConsoleProgram, fd: &Funcdata, contract: Option<&Co
             }
         }
         let cc = compare_calls(prog, &env, run, &calls, &mo.calls, &go.calls);
+        let canary = cc.suspects.iter().any(|s| s.starts_with("canary: "));
+        if canary {
+            unknown.get_or_insert(Halt::Undefined("a call the model let write the frame changed the stack canary".into()));
+            continue;
+        }
         let doubtful = !cc.suspects.is_empty();
-        let undefined = go.read_uninitialized;
+        let undefined = (go.read_uninitialized && (mo.state.read_uninitialized || mo.state.read_saved)) || smashed(&env, &mo.state);
         for s in cc.suspects {
             if call_suspects.len() < 4 && !call_suspects.contains(&s) {
                 call_suspects.push(s);
@@ -425,9 +511,9 @@ pub fn check_function(prog: &ConsoleProgram, fd: &Funcdata, contract: Option<&Co
         let mut ms = mo.state;
         let outcome = if mo.noreturn { Ok(Outcome::Same) } else { compare.run(&mut ms, go.ret) };
         let outcome = match outcome {
-            Ok(Outcome::Same) => match compare_writes(&env, run, &ms.writes(), &go.writes) {
+            Ok(o @ (Outcome::Same | Outcome::Declared(_))) => match compare_writes(&env, run, &ms.writes(), &go.writes) {
                 Some(d) => Ok(Outcome::Differs(vec![format!("memory at exit: {d}")])),
-                None => Ok(Outcome::Same),
+                None => Ok(o),
             },
             other => other,
         };
@@ -464,14 +550,18 @@ pub fn check_function(prog: &ConsoleProgram, fd: &Funcdata, contract: Option<&Co
             suspects.extend(w.suspects(prog));
         }
     }
-    let verdict = match (unknown, diverged) {
-        (Some(h), _) => Verdict::from_halt(&h),
-        (None, Some(d)) => Verdict::Diverges(d),
-        (None, None) => Verdict::Agrees(agreed),
+    let verdict = match (unknown, diverged, trapped) {
+        (Some(h), _, _) => Verdict::from_halt(&h),
+        (None, Some(d), _) => Verdict::Diverges(d),
+        (None, None, Some(t)) if agreed == 0 => Verdict::from_halt(&Halt::Trap(t)),
+        (None, None, _) => Verdict::Agrees(agreed),
     };
-    let lines = match contract {
+    let mut lines = match contract {
         Some(c) if matches!(verdict, Verdict::Agrees(_)) => vec![format!("contract {}  ({})", c.declaration, c.source)],
         _ => Vec::new(),
     };
+    if trapped_runs > 0 && matches!(verdict, Verdict::Agrees(_)) {
+        lines.push(format!("note     {trapped_runs} runs trapped on both sides; C leaves them undefined, so they are not compared"));
+    }
     finish(verdict, lines, suspects)
 }

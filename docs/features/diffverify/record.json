@@ -53,7 +53,7 @@
     "L1",
     "P"
   ],
-  "status": "C1 and C2 implemented",
+  "status": "C1 and C2 implemented; C4 precision on tests/datatests + tests/stages",
   "measurements": {
     "C1": {
       "corpus": "tests/datatests + tests/stages, 256 runs per function",
@@ -96,10 +96,42 @@
       "peak_rss_mb": 332,
       "done_when": "both checks by a fault injected in a local build",
       "results": "docs/features/diffverify/c2-results.md"
+    },
+    "C4": {
+      "corpus": "tests/datatests + tests/stages, 256 runs per function",
+      "functions": 3979,
+      "verdicts": {
+        "AGREES": 2952,
+        "DIFFERS": 29,
+        "DIVERGES": 11,
+        "UNKNOWN": 987
+      },
+      "c1_agrees_regressed": 0,
+      "c2_agrees_regressed": 8,
+      "differs_triage": {
+        "kuna_bug": 5,
+        "pinned_by_test": 8,
+        "source_ub": 3,
+        "harness_limit": 13
+      },
+      "check_seconds": 132.7,
+      "wall_seconds": 20.7,
+      "workers": 14,
+      "peak_rss_mb": 216,
+      "recall": "open",
+      "results": "docs/features/diffverify/c4-results.md",
+      "kuna_bugs": [
+        "gh8777-flagcompare-sborrow FUN_0 (RuleSborrowGe polarity)",
+        "kuna-repframecopy sub_4012c0 (stack-pop guess)",
+        "kuna-stackviews obj_global_reuse (default stackviews off drops stores to an escaped frame)",
+        "kuna-libctypes next_byte x2 (recovered return wider than int)"
+      ]
     }
   },
   "declared_divergences": [
     "returnpair-rdx-zero",
-    "switchrunon-cut-row"
+    "switchrunon-cut-row",
+    "synthesized-call",
+    "gowritebarrier"
   ]
 }

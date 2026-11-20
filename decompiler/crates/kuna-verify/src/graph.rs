@@ -57,6 +57,7 @@ impl Run<'_, '_, '_> {
             Operand::Const(v) => Ok(*v),
             Operand::Slot(slot, at) => self.values[*slot]
                 .ok_or_else(|| Halt::Harness(format!("read of {at} before its definition"))),
+            Operand::Memory(st) => self.state.read_storage(&st.space, st.off, a.size),
             Operand::Input(st) => self.initial.read_storage(&st.space, st.off, a.size),
             Operand::Free(st) => self.state.read_storage(&st.space, st.off, a.size),
             Operand::TooWide => Err(Halt::Unsupported(format!("{}-byte varnode", a.size))),
@@ -171,8 +172,19 @@ impl Run<'_, '_, '_> {
                         self.state.call(&killed, &args);
                     }
                 }
-                if op.out.is_some() {
-                    let v = self.stored(op)?;
+                if let Some(out) = op.out.as_ref() {
+                    let physical = out.storage.as_ref().is_some_and(|st| {
+                        matches!(
+                            st.space.get_type(),
+                            kuna_base::space::spacetype::IPTR_PROCESSOR
+                                | kuna_base::space::spacetype::IPTR_SPACEBASE
+                                | kuna_base::space::spacetype::IPTR_JOIN
+                        )
+                    });
+                    let v = match (physical, self.calls.site(at).output.clone()) {
+                        (false, Some(st)) => self.state.read_storage(&st.space, st.off, out.size.min(st.size))?,
+                        _ => self.stored(op)?,
+                    };
                     self.set_out(op, v)?;
                 }
                 Ok(Flow::Next)
@@ -196,7 +208,11 @@ impl Run<'_, '_, '_> {
             Kind::Load(space) => {
                 let (spc, addr) = self.address(space, op)?;
                 let size = op.out.as_ref().map(|o| o.size).ok_or_else(|| Halt::Unsupported("op without output".into()))?;
-                let v = self.state.read(&spc, addr, size)?;
+                let v = if spc.get_type() == kuna_base::space::spacetype::IPTR_CONSTANT {
+                    u128::from(addr) & mask(size)
+                } else {
+                    self.state.read(&spc, addr, size)?
+                };
                 self.set_out(op, v)?;
                 Ok(Flow::Next)
             }

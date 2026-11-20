@@ -6,6 +6,7 @@ use std::rc::Rc;
 use kuna_console::engine::ConsoleProgram;
 use kuna_decomp::dtype::{type_metatype, Datatype};
 use kuna_decomp::fspec::{ParameterPieces, PrototypePieces};
+use kuna_base::space::spacetype;
 use kuna_decomp::funcdata::Funcdata;
 use kuna_num::opcodes::OpCode;
 
@@ -27,7 +28,9 @@ fn is_signed(t: &Datatype) -> bool {
     matches!(t.get_metatype(), type_metatype::TYPE_INT | type_metatype::TYPE_ENUM_INT)
 }
 
-pub fn claim(fd: &Funcdata) -> Claim {
+/// What the function claims to return, and where. A return kuna folded to a
+/// constant keeps the storage its model gives the return type.
+pub fn claim(prog: &ConsoleProgram, fd: &Funcdata) -> Claim {
     let proto = fd.get_func_proto();
     let out = proto.get_output();
     let out_type = proto.get_output_type();
@@ -37,6 +40,12 @@ pub fn claim(fd: &Funcdata) -> Claim {
         type_metatype::TYPE_VOID => None,
         _ if !addr.is_invalid() && out.get_size() > 0 => Storage::at(&addr, out.get_size() as u32),
         _ => None,
+    };
+    let storage = match (storage, out_type) {
+        (Some(st), Some(t)) if matches!(st.space.get_type(), spacetype::IPTR_CONSTANT | spacetype::IPTR_INTERNAL) => {
+            Some(model_output(prog, fd, t.clone(), st.size).unwrap_or(st))
+        }
+        (st, _) => st,
     };
     let type_name = |t: Option<&Rc<Datatype>>| {
         t.map(|t| t.get_display_name().to_string()).filter(|n| !n.is_empty()).unwrap_or_else(|| "?".into())
@@ -79,14 +88,20 @@ pub fn return_storage(prog: &ConsoleProgram, fd: &Funcdata, ty: &CType) -> Resul
         .types()
         .get_base(ty.size as i32, meta)
         .map_err(|e| format!("no {}-byte integer type: {}", ty.size, e.explain()))?;
+    model_output(prog, fd, dt, ty.size).map_err(|e| format!("`{}`: {e}", ty.spelling))
+}
+
+/// Where the function's prototype model returns a value of type `dt`.
+fn model_output(prog: &ConsoleProgram, fd: &Funcdata, dt: Rc<Datatype>, size: u32) -> Result<Storage, String> {
+    let arch = prog.arch();
     let pieces = PrototypePieces { outtype: Some(dt), first_var_arg_slot: -1, ..Default::default() };
     let mut res: Vec<ParameterPieces> = Vec::new();
     fd.get_func_proto()
         .model()
         .assign_parameter_storage(&pieces, &mut res, false, arch.types(), arch.manage())
-        .map_err(|e| format!("model assigns no storage to `{}`: {}", ty.spelling, e.explain()))?;
+        .map_err(|e| format!("model assigns no storage: {}", e.explain()))?;
     let p = res.first().ok_or("model assigned no output")?;
-    Storage::at(&p.addr, ty.size).ok_or_else(|| "model output has no space".to_string())
+    Storage::at(&p.addr, size).ok_or_else(|| "model output has no space".to_string())
 }
 
 /// C's conversion of kuna's claimed return to the contract type: extend by the

@@ -9,6 +9,9 @@
 //! `corpus --jobs N` runs N worker processes of this binary (`shard`), each
 //! printing one JSON line per file, so a file that crashes the engine costs
 //! only its own verdicts.
+//!
+//! Exit status: 1 when a function differs, 3 when a file could not be checked,
+//! 2 for a usage error, else 0.
 
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Write};
@@ -70,7 +73,9 @@ fn parse(argv: &[String]) -> Result<Args, String> {
                 let v = it.next();
                 let n = num(v, arg)?;
                 match arg.as_str() {
-                    "--runs" => a.opts.runs = n as u32,
+                    "--runs" => {
+                        a.opts.runs = u32::try_from(n).ok().filter(|&r| r > 0).ok_or("--runs takes a count from 1 to 4294967295")?
+                    }
                     "--seed" => a.opts.seed = n,
                     _ => a.opts.budget = n,
                 }
@@ -150,12 +155,17 @@ fn run_check(a: &Args) -> Result<ExitCode, String> {
     if a.all {
         print_summary(a, &[], &rows, None);
     }
-    Ok(exit_code(&rows))
+    Ok(exit_code(&rows, 0))
 }
 
-fn exit_code(rows: &[Row]) -> ExitCode {
+/// 1 when a function differs, 3 when a file could not be checked (a worker
+/// crash included), 2 for a usage error, else 0. `UNKNOWN` is not a failure:
+/// it says what the model could not check.
+fn exit_code(rows: &[Row], file_errors: usize) -> ExitCode {
     if rows.iter().any(|r| r.class == "DIFFERS") {
         ExitCode::from(1)
+    } else if file_errors > 0 {
+        ExitCode::from(3)
     } else {
         ExitCode::SUCCESS
     }
@@ -342,7 +352,7 @@ fn run_corpus(a: &Args) -> Result<ExitCode, String> {
     if !errors.is_empty() && !a.json {
         println!("file errors {}", errors.len());
     }
-    Ok(exit_code(&rows))
+    Ok(exit_code(&rows, errors.len()))
 }
 
 /// `corpus`: the file count and the wall time of the whole run.

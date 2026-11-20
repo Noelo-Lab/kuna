@@ -40,15 +40,27 @@ pub const SWITCH_RUNON: Divergence = Divergence {
     matches: |_| false,
 };
 
-/// Options that print inlined library code as a call to a function with no
-/// address (`msvcstrappend` folds MSVC's inlined `std::string` appends into
-/// one). The machine runs the inline code; kuna's call has no counterpart.
+/// Options that print code as a call that is not in the binary:
+/// `msvcstrappend` folds MSVC's inlined `std::string` appends into a call with
+/// no address, `outline` a region into a call at no instruction. The machine
+/// runs the code; kuna's call has no counterpart.
 pub const SYNTHESIZED_CALL: Divergence = Divergence {
     id: "synthesized-call",
-    option: "msvcstrappend",
+    option: "msvcstrappend, outline",
     arch: "",
     observable: "the calls a function makes",
-    pattern: "kuna calls a function that has no address",
+    pattern: "kuna calls a function that has no address, or from no instruction",
+    matches: |_| false,
+};
+
+/// `gowritebarrier` folds Go's write-barrier block, its call to
+/// `runtime.gcWriteBarrier*` included, into the plain store it guards.
+pub const GO_WRITE_BARRIER: Divergence = Divergence {
+    id: "gowritebarrier",
+    option: "gowritebarrier",
+    arch: "",
+    observable: "the calls a function makes",
+    pattern: "the machine calls runtime.gcWriteBarrier*, which kuna folded away",
     matches: |_| false,
 };
 

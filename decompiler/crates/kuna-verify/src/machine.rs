@@ -108,6 +108,16 @@ struct Machine<'e, 'p, 'c> {
     followed: Vec<(u64, u64)>,
     steps: u64,
     budget: u64,
+    /// Steps left for callees run for real; theirs do not count against the
+    /// function's budget, which the decompiled side never spends on them.
+    callee_pool: u64,
+    in_callee: bool,
+    /// Temporaries this instruction copied a callee-saved entry value to:
+    /// (temporary offset, register offset, size).
+    copies: Vec<(u64, u64, u32)>,
+    /// Temporaries this instruction loaded a spilled entry value into, with
+    /// the register it came from, until a copy restores it.
+    restoring: Vec<(u64, u64)>,
     /// Register offsets a callee run for real changed although the calling
     /// convention says the call preserves them, by call address.
     convention: Vec<(u64, u64)>,
@@ -120,14 +130,21 @@ impl<'e, 'p> Machine<'e, 'p, '_> {
 
     /// An argument's value at the call.
     fn arg(&mut self, a: &crate::calls::Arg) -> Result<u128, Halt> {
-        let st = &a.storage;
-        if a.callee_frame && st.space.get_type() == spacetype::IPTR_SPACEBASE {
-            let sp = self.sp();
-            let base = self.state.read(&sp.space, sp.off, sp.size)? as u64;
-            let ram = Rc::clone(&self.env.ram);
-            return self.state.read(&ram, ram.wrap_offset(base.wrapping_add(st.off)), st.size);
+        if !a.callee_frame {
+            return self.state.read_storage(&a.storage.space, a.storage.off, a.storage.size);
         }
-        self.state.read_storage(&st.space, st.off, st.size)
+        let mut acc = 0u128;
+        for p in a.storage.pieces(self.env.prog) {
+            let v = if p.space.get_type() == spacetype::IPTR_SPACEBASE {
+                let base = self.sp_value()?;
+                let ram = Rc::clone(&self.env.ram);
+                self.state.read(&ram, ram.wrap_offset(base.wrapping_add(p.off)), p.size)?
+            } else {
+                self.state.read_storage(&p.space, p.off, p.size)?
+            };
+            acc = if p.size >= 16 { v } else { (acc << (p.size * 8)) | v };
+        }
+        Ok(acc & mask(a.storage.size))
     }
 
     /// Record one of the function's own calls for the comparison, with kuna's
@@ -144,6 +161,20 @@ impl<'e, 'p> Machine<'e, 'p, '_> {
         let r = Record { at, target, indirect, args: args.clone(), writes: self.state.writes(), effect: None };
         crate::calls::record(&mut self.records, r)?;
         Ok(args)
+    }
+
+    /// One of the function's tail calls: record it, then run an in-image
+    /// callee for real or give it the stub. The function then returns.
+    fn tail_call(&mut self, at: u64, target: u64, indirect: bool) -> Result<Exit, Halt> {
+        let args = self.record(at, Some(target), indirect)?;
+        if self.calls.site(at).noreturn {
+            return Ok(Exit::NoReturn);
+        }
+        if self.env.code_mapped(target) && self.real(at, target)?.is_some() {
+            return Ok(Exit::Return);
+        }
+        self.stub(at, &args)?;
+        Ok(Exit::Return)
     }
 
     /// Record a call and give it the stub's effect. `true` when it does not
@@ -164,8 +195,48 @@ impl<'e, 'p> Machine<'e, 'p, '_> {
         self.state.call(&site.killed, args);
         let sp = self.sp();
         let v = self.state.read(&sp.space, sp.off, sp.size)?;
-        self.state.write(&sp.space, sp.off, sp.size, v.wrapping_add(pop as i64 as u128) & mask(sp.size))?;
+        let after = v.wrapping_add(pop as i64 as u128) & mask(sp.size);
+        self.state.write(&sp.space, sp.off, sp.size, after)?;
+        self.state.forget_below(after as u64);
         Ok(())
+    }
+
+    /// The callee-saved register whose entry value `vn` holds: the register
+    /// itself, or a temporary this instruction copied it to.
+    fn entry_value_of(&self, vn: &VarnodeData) -> Option<u64> {
+        let env = self.env;
+        let sp = space(vn).ok()?;
+        if sp.get_index() != env.register.get_index() {
+            return self.copies.iter().find(|&&(u, _, n)| u == vn.offset && n == vn.size).map(|&(_, r, _)| r);
+        }
+        let saved = vn.offset != env.sp.0
+            && !self.calls.default.killed.iter().any(|&(o, n)| vn.offset < o + u64::from(n) && o < vn.offset + u64::from(vn.size))
+            && !self.state.wrote(&env.register, vn.offset, vn.size);
+        saved.then_some(vn.offset)
+    }
+
+    /// A load of spilled entry values reads them as a value unless it restores
+    /// the register they came from, directly or through a temporary this
+    /// instruction then copies there.
+    fn note_load(&mut self, at: u64, out: &VarnodeData) {
+        let regs = self.state.saved_in(at, out.size);
+        let [reg] = regs[..] else {
+            self.state.read_saved |= !regs.is_empty();
+            return;
+        };
+        match space(out).map(|s| s.get_type()) {
+            Ok(spacetype::IPTR_INTERNAL) => self.restoring.push((out.offset, reg)),
+            _ => self.state.read_saved |= out.offset != reg,
+        }
+    }
+
+    /// A stack store of a callee-saved register's entry value: the register.
+    fn spill_of_entry(&self, spc: &AddrSpace, at: u64, val: &VarnodeData) -> Option<u64> {
+        let env = self.env;
+        if spc.get_index() != env.ram.get_index() || !env.in_stack(at, u64::from(val.size)) {
+            return None;
+        }
+        self.entry_value_of(val)
     }
 
     /// The stack pointer's value now.
@@ -196,18 +267,31 @@ impl<'e, 'p> Machine<'e, 'p, '_> {
     }
 
     /// Run the callee of the function's call at `at` for real and keep its
-    /// effect for the decompiled side. `false`, with nothing changed, when the
-    /// callee does something the model cannot run: the call then gets the stub.
-    fn real(&mut self, at: u64, target: u64) -> Result<bool, Halt> {
+    /// effect for the decompiled side. `None`, with nothing changed, when the
+    /// callee does something the model cannot run or outruns its budget: the
+    /// call then gets the stub.
+    fn real(&mut self, at: u64, target: u64) -> Result<Option<Exit>, Halt> {
+        let outer = !self.in_callee;
+        let limit = if outer { CALLEE_STEPS.min(self.callee_pool) } else { CALLEE_STEPS };
+        if limit == 0 {
+            return Ok(None);
+        }
         let saved = self.state.clone();
         let (records, steps, budget) = (self.records.len(), self.steps, self.budget);
         let call_sp = self.sp_value()?;
         self.state.log = Some(Vec::new());
-        self.budget = budget.min(steps + CALLEE_STEPS);
+        self.budget = if outer { steps + limit } else { budget.min(steps + limit) };
+        self.in_callee = true;
         let ran = exec(self, target, Mode::Opaque, 1);
+        self.in_callee = !outer;
         self.budget = budget;
+        if outer {
+            self.callee_pool -= (self.steps - steps).min(self.callee_pool);
+            self.steps = steps;
+        }
         match ran {
-            Ok(Exit::Return) => {
+            Err(Halt::Budget) if !outer && self.steps > budget => Err(Halt::Budget),
+            Ok(exit @ (Exit::Return | Exit::Leave)) => {
                 let site = self.calls.site(at);
                 let mut keep = site.killed.clone();
                 keep.push(self.env.sp);
@@ -217,12 +301,14 @@ impl<'e, 'p> Machine<'e, 'p, '_> {
                     }
                 }
                 self.close_effect(at, call_sp);
-                Ok(true)
+                let sp = self.sp_value()?;
+                self.state.forget_below(sp.min(call_sp));
+                Ok(Some(exit))
             }
             _ => {
                 self.state = saved;
                 self.records.truncate(records);
-                Ok(false)
+                Ok(None)
             }
         }
     }
@@ -271,6 +357,8 @@ const MAX_DEPTH: u32 = 32;
 enum Exit {
     Return,
     NoReturn,
+    /// A callee returned straight to the function's caller (a trampoline).
+    Leave,
 }
 
 /// What is executing: the function itself, a callee kuna inlined or dropped
@@ -311,6 +399,9 @@ fn exec(m: &mut Machine, entry: u64, mode: Mode, depth: u32) -> Result<Exit, Hal
         }
         if i == 0 {
             called_here = false;
+            m.copies.clear();
+            m.state.read_saved |= !m.restoring.is_empty();
+            m.restoring.clear();
         }
         let cur = Rc::clone(&insn);
         let op = &cur.ops[i];
@@ -321,7 +412,7 @@ fn exec(m: &mut Machine, entry: u64, mode: Mode, depth: u32) -> Result<Exit, Hal
                 let t = arg(0)?;
                 let relative = space(t)?.get_type() == spacetype::IPTR_CONSTANT;
                 if !relative && tail(addr, t.offset) {
-                    return Ok(if m.call(addr, Some(t.offset), false)? { Exit::NoReturn } else { Exit::Return });
+                    return m.tail_call(addr, t.offset, false);
                 }
                 if let Some(name) = mode_switch.take().filter(|_| !relative) {
                     return Err(Halt::Unsupported(format!("CALLOTHER {name} before a branch at {addr:#x}")));
@@ -332,7 +423,7 @@ fn exec(m: &mut Machine, entry: u64, mode: Mode, depth: u32) -> Result<Exit, Hal
                 if read(&mut m.state, arg(1)?)? != 0 {
                     let t = arg(0)?;
                     if space(t)?.get_type() != spacetype::IPTR_CONSTANT && tail(addr, t.offset) {
-                        return Ok(if m.call(addr, Some(t.offset), false)? { Exit::NoReturn } else { Exit::Return });
+                        return m.tail_call(addr, t.offset, false);
                     }
                     branch(env, &mut m.state, t, &mut i, &mut addr, &mut insn)?;
                 } else {
@@ -342,7 +433,7 @@ fn exec(m: &mut Machine, entry: u64, mode: Mode, depth: u32) -> Result<Exit, Hal
             OpCode::CPUI_BRANCHIND => {
                 let target = read(&mut m.state, arg(0)?)? as u64;
                 if tail(addr, target) {
-                    return Ok(if m.call(addr, Some(target), true)? { Exit::NoReturn } else { Exit::Return });
+                    return m.tail_call(addr, target, true);
                 }
                 if top && !env.code_mapped(target) {
                     return Ok(Exit::Return);
@@ -358,7 +449,25 @@ fn exec(m: &mut Machine, entry: u64, mode: Mode, depth: u32) -> Result<Exit, Hal
                 i = 0;
                 m.state.end_instruction();
             }
-            OpCode::CPUI_RETURN => return Ok(Exit::Return),
+            OpCode::CPUI_RETURN => {
+                let target = read(&mut m.state, arg(0)?)? as u64;
+                if env.ret_addr == Some(target) {
+                    return Ok(if top { Exit::Return } else { Exit::Leave });
+                }
+                if !top {
+                    return Ok(Exit::Return);
+                }
+                if tail(addr, target) {
+                    return m.tail_call(addr, target, true);
+                }
+                if !calls.branches.contains(&addr) || !env.code_mapped(target) {
+                    return Ok(Exit::Return);
+                }
+                addr = target;
+                insn = lift(env, addr)?;
+                i = 0;
+                m.state.end_instruction();
+            }
             OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
                 let target = if op.opc == OpCode::CPUI_CALL {
                     arg(0)?.offset
@@ -367,6 +476,13 @@ fn exec(m: &mut Machine, entry: u64, mode: Mode, depth: u32) -> Result<Exit, Hal
                 };
                 let indirect = op.opc == OpCode::CPUI_CALLIND;
                 let own = mode != Mode::Opaque && calls.known(addr);
+                if indirect && mode != Mode::Opaque && !own && calls.jumps.contains(&addr) {
+                    addr = target;
+                    insn = lift(env, addr)?;
+                    i = 0;
+                    m.state.end_instruction();
+                    continue;
+                }
                 let in_image = env.code_mapped(target);
                 if own {
                     if calls.site(addr).noreturn {
@@ -374,16 +490,20 @@ fn exec(m: &mut Machine, entry: u64, mode: Mode, depth: u32) -> Result<Exit, Hal
                         return Ok(Exit::NoReturn);
                     }
                     let args = m.record(addr, Some(target), indirect)?;
-                    if !in_image || !m.real(addr, target)? {
-                        m.stub(addr, &args)?;
+                    match if in_image { m.real(addr, target)? } else { None } {
+                        Some(Exit::Leave) => return Ok(Exit::Leave),
+                        Some(_) => {}
+                        None => m.stub(addr, &args)?,
                     }
                 } else if in_image {
                     if top && !m.followed.contains(&(addr, target)) {
                         m.followed.push((addr, target));
                     }
                     let inner = if mode == Mode::Opaque { Mode::Opaque } else { Mode::Inline };
-                    if let Exit::NoReturn = exec(m, target, inner, depth + 1)? {
-                        return Ok(Exit::NoReturn);
+                    match exec(m, target, inner, depth + 1)? {
+                        Exit::NoReturn => return Ok(Exit::NoReturn),
+                        Exit::Leave => return Ok(Exit::Leave),
+                        Exit::Return => {}
                     }
                 } else if mode != Mode::Opaque {
                     if m.call(addr, Some(target), indirect)? {
@@ -408,7 +528,14 @@ fn exec(m: &mut Machine, entry: u64, mode: Mode, depth: u32) -> Result<Exit, Hal
                 let ptr = read(&mut m.state, arg(1)?)? as u64;
                 let at = spc.wrap_offset(AddrSpace::address_to_byte(ptr, spc.get_word_size()));
                 let out = op.out.as_ref().ok_or_else(|| Halt::Harness("LOAD without output".into()))?;
-                let v = m.state.read(&spc, at, out.size)?;
+                let v = if spc.get_type() == spacetype::IPTR_CONSTANT {
+                    u128::from(ptr) & mask(out.size)
+                } else {
+                    if spc.get_index() == env.ram.get_index() {
+                        m.note_load(at, out);
+                    }
+                    m.state.read(&spc, at, out.size)?
+                };
                 write(&mut m.state, out, v)?;
                 i += 1;
             }
@@ -419,6 +546,9 @@ fn exec(m: &mut Machine, entry: u64, mode: Mode, depth: u32) -> Result<Exit, Hal
                 let val = arg(2)?;
                 let v = read(&mut m.state, val)?;
                 m.state.write(&spc, at, val.size, v)?;
+                if let Some(reg) = m.spill_of_entry(&spc, at, val) {
+                    m.state.mark_saved(at, val.size, reg);
+                }
                 i += 1;
             }
             opc => {
@@ -428,6 +558,16 @@ fn exec(m: &mut Machine, entry: u64, mode: Mode, depth: u32) -> Result<Exit, Hal
                     ins.push((read(&mut m.state, vn)?, vn.size));
                 }
                 let v = eval(opc, out.size, &ins)?;
+                if opc == OpCode::CPUI_COPY {
+                    let src = &op.ins[0];
+                    if space(out).is_ok_and(|s| s.get_type() == spacetype::IPTR_INTERNAL) {
+                        if let Some(reg) = m.entry_value_of(src) {
+                            m.copies.push((out.offset, reg, out.size));
+                        }
+                    } else if space(src).is_ok_and(|s| s.get_type() == spacetype::IPTR_INTERNAL) {
+                        m.restoring.retain(|&(u, r)| !(u == src.offset && r == out.offset));
+                    }
+                }
                 write(&mut m.state, out, v)?;
                 i += 1;
             }
@@ -446,6 +586,10 @@ pub fn run<'e, 'p>(env: &'e Env<'p>, run: u32, entry: u64, budget: u64, calls: &
         followed: Vec::new(),
         steps: 0,
         budget,
+        callee_pool: budget,
+        in_callee: false,
+        copies: Vec::new(),
+        restoring: Vec::new(),
         convention: Vec::new(),
     };
     let exit = exec(&mut m, entry, Mode::Top, 0)?;

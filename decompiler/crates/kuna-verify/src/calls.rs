@@ -13,7 +13,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use kuna_decomp::fspec::{effect_type, FuncProto, EXTRAPOP_UNKNOWN};
+use kuna_decomp::context::VarnodeId;
 use kuna_decomp::funcdata::Funcdata;
+use kuna_num::opcodes::OpCode;
 
 use crate::state::{Effect, Env, Writes};
 use crate::value::Halt;
@@ -59,6 +61,8 @@ pub struct Site {
     /// The callee's parameters are declared, not recovered: an argument that
     /// differs is a difference, not a doubtful prototype.
     pub locked: bool,
+    /// Where the callee's prototype returns its value.
+    pub output: Option<Storage>,
 }
 
 pub struct Calls {
@@ -68,6 +72,12 @@ pub struct Calls {
     /// Every instruction kuna kept an op of, and where its blocks start: a
     /// branch there stays in the function.
     pub inside: BTreeSet<u64>,
+    /// Instructions kuna made an indirect jump: a CALLIND the machine lifts
+    /// there is executed as one (an option reclassified it).
+    pub jumps: BTreeSet<u64>,
+    /// Instructions kuna ends in a branch and not a return: a RETURN the
+    /// machine lifts there is followed (kuna resolved where it goes).
+    pub branches: BTreeSet<u64>,
 }
 
 /// One call as a side made it.
@@ -126,6 +136,20 @@ fn killed(env: &Env, proto: &FuncProto) -> Vec<(u64, u32)> {
     out
 }
 
+/// The register a call's value is copied or cast into, for a call whose
+/// prototype has no output yet keeps its value in a temporary.
+fn copied_to_register(fd: &Funcdata, env: &Env, out: Option<VarnodeId>) -> Option<Storage> {
+    let v = fd.vbank().get(out?)?;
+    v.descend_iter().filter_map(|d| fd.obank().get(d)).find_map(|d| {
+        if !matches!(d.code(), OpCode::CPUI_COPY | OpCode::CPUI_CAST) {
+            return None;
+        }
+        let w = fd.vbank().get(d.get_out()?)?;
+        let st = Storage::at(w.get_addr(), w.get_size() as u32)?;
+        (st.space.get_index() == env.register.get_index()).then_some(st)
+    })
+}
+
 fn extrapop(pop: i32) -> Option<i32> {
     (pop != EXTRAPOP_UNKNOWN).then_some(pop)
 }
@@ -157,6 +181,10 @@ pub fn sites(fd: &Funcdata, env: &Env) -> Calls {
                 killed: killed(env, proto),
                 args,
                 locked: proto.is_input_locked(),
+                output: (proto.get_output().get_size() > 0)
+                    .then(|| Storage::at(&proto.get_output().get_address(), proto.get_output().get_size() as u32))
+                    .flatten()
+                    .or_else(|| copied_to_register(fd, env, op.get_out())),
             },
         );
     }
@@ -168,6 +196,7 @@ pub fn sites(fd: &Funcdata, env: &Env) -> Calls {
         killed: killed(env, own),
         args: Vec::new(),
         locked: false,
+        output: None,
     };
     let graph = fd.bblocks_ref();
     let blocks: Vec<_> = (0..fd.bblocks_get_size()).map(|i| fd.bblocks_get_block(i)).collect();
@@ -176,5 +205,16 @@ pub fn sites(fd: &Funcdata, env: &Env) -> Calls {
         .map(|&b| kuna_decomp::block::block_get_start(&graph.arena, b).get_offset())
         .chain(blocks.iter().flat_map(|&b| fd.bb_ops(b)).filter_map(|op| fd.obank().get(op).map(|o| o.get_addr().get_offset())))
         .collect();
-    Calls { by_addr, default, inside }
+    use kuna_num::opcodes::OpCode;
+    let ops: Vec<_> = blocks.iter().flat_map(|&b| fd.bb_ops(b)).filter_map(|op| fd.obank().get(op)).collect();
+    let at = |codes: &[OpCode]| -> BTreeSet<u64> {
+        ops.iter().filter(|o| codes.contains(&o.code())).map(|o| o.get_addr().get_offset()).collect()
+    };
+    let jumps = at(&[OpCode::CPUI_BRANCHIND]);
+    let returns = at(&[OpCode::CPUI_RETURN]);
+    let branches = at(&[OpCode::CPUI_BRANCH, OpCode::CPUI_CBRANCH, OpCode::CPUI_BRANCHIND])
+        .into_iter()
+        .filter(|a| !returns.contains(a))
+        .collect();
+    Calls { by_addr, default, inside, jumps, branches }
 }

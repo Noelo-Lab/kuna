@@ -58,11 +58,12 @@ fn run_on_switch_rows_are_declared() {
     assert_eq!(of(&v, &["pick", "pick2"]), ["DIVERGES(switchrunon-cut-row)"; 2]);
 }
 
-/// A return kept in a temporary is not machine state, so it is not compared.
+/// A return kept in a temporary is compared at the register the model
+/// returns its type in.
 #[test]
-fn return_in_a_temporary_is_unknown() {
+fn return_in_a_temporary_is_compared_at_the_model_register() {
     let v = verdicts("kuna-gobool");
-    assert!(v.iter().any(|(_, l)| l.starts_with("UNKNOWN(return storage unique:")), "{v:?}");
+    assert_eq!(of(&v, &["is_one"]), ["AGREES(256)"; 2]);
 }
 
 /// A switch row goes to the out-edge its table entry reaches, never silently to
@@ -71,4 +72,40 @@ fn return_in_a_temporary_is_unknown() {
 fn switch_rows_follow_their_table_entries() {
     let v = verdicts("regionstructure-switch");
     assert_eq!(of(&v, &["dispatch"]), ["AGREES(256)"; 2]);
+}
+
+/// A `bool` passed on the stack is 0 or 1 in its low byte, as one in a register.
+#[test]
+fn stack_bool_parameters_are_zero_or_one() {
+    let v = verdicts("kuna-stackobjects");
+    let checked = of(&v, &["param_reuse", "param_pair", "param_scalar_escaped"]);
+    assert!(!checked.is_empty() && checked.iter().all(|l| *l == "AGREES(256)"), "{checked:?}");
+}
+
+/// A return kuna folded to a constant is compared at the register the model
+/// returns it in.
+#[test]
+fn constant_returns_are_compared_at_the_model_register() {
+    let v = verdicts("kuna-bejoin-sparc");
+    let checked = of(&v, &["same", "one_after", "zero_after", "keep_zero"]);
+    assert!(!checked.is_empty() && checked.iter().all(|l| *l == "AGREES(256)"), "{checked:?}");
+}
+
+/// A call whose prototype has no output keeps its value in a temporary that a
+/// copy moves to a register: the value is the register's after the call.
+#[test]
+fn a_call_value_cast_into_a_register_is_the_registers() {
+    let v = verdicts("ghdec-realtypes-pointee");
+    let checked = of(&v, &["acl_calc_mask"]);
+    assert!(!checked.is_empty() && checked.iter().all(|l| *l == "AGREES(256)"), "{checked:?}");
+}
+
+/// Reading past an array into a callee-saved register's spill is undefined in
+/// C: kuna never stores the spill, so its side reads uninitialized stack, and
+/// the run is not a difference.
+#[test]
+fn reading_a_register_spill_past_an_array_is_undefined() {
+    let v = verdicts("kuna-arrayextent");
+    let checked = of(&v, &["q_clang", "w_clang"]);
+    assert!(!checked.is_empty() && checked.iter().all(|l| l.starts_with("UNKNOWN")), "{checked:?}");
 }

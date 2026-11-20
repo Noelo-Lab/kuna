@@ -4,3 +4,5 @@ mod zext_pair;
 mod stage_verdicts;
 #[path = "call_effects.rs"]
 mod call_effects;
+#[path = "verdict_guards.rs"]
+mod verdict_guards;

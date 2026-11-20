@@ -1,7 +1,8 @@
 # [PROPOSAL] diffverify — differential semantic checking with z3, QEMU and kuna
 
-Status: **proposal**. Slice C1 is implemented in `decompiler/crates/kuna-verify`; its
-measurements and the design changes it forced are in `c1-results.md`.
+Status: **proposal**. Slices C1 and C2, and C4's precision half, are implemented in
+`decompiler/crates/kuna-verify`. Their measurements and the design changes they forced
+are in `c1-results.md`, `c2-results.md` and `c4-results.md`.
 Evidence, coverage estimates and the hard part: `analysis.md` in this folder.
 
 ## What this makes possible
@@ -135,6 +136,10 @@ function's type, because the binary alone cannot settle it:
 - Where kuna has no call at an instruction that calls code in the image (inlined,
   injected or dropped), the machine runs the callee for real, so a deliberate removal
   agrees and a wrong one shows in what the callee does.
+- Since C4 (`c4-results.md` §4), a call or tail call to code in the image runs for real
+  on the machine side, and kuna's side replays the effect it recorded. Such callees share
+  a step pool of their own, so they never spend the caller's budget. A callee the model
+  cannot run, or one that exhausts the pool, gets the stub.
 
 **Needs no phase hooks.** The machine side reads the binary and the decompiled side reads
 the finished `Funcdata`. Loops are fine: execution is bounded by a step budget, and a run
@@ -309,7 +314,7 @@ library rather than stubbed.
 | C1 | Tier C on register-only leaf functions: no calls and no memory access at all, except loads from read-only image data; same raw state on both sides; physical-ABI and typed-contract return checks; `PROTOTYPE_SUSPECT`; `UNKNOWN(unsupported-op)`; declared-divergence predicates | reverting #794 gives `DIFFERS` against its fixture's source contract; verdict table over `tests/datatests` + `tests/stages`, with per-function and total time. **Done** (`c1-results.md`) |
 | C2 | memory and call effects: stack, pointer-argument and global memory; call stubs that write reachable memory, globals included | reverting #801 gives `DIFFERS`; a rule that keeps a pre-call load across a call that writes it gives `DIFFERS`. **Done** (`c2-results.md`; both by a fault injected in a local build) |
 | C3 | rule localization over the C1/C2 verdicts | candidate culprits include `subvar_zext` on reverted #794; cost per finding |
-| C4 | corpus run (decbench binaries); precision and recall | precision: triage of every `DIFFERS` into bug / declared divergence / harness bug. Recall: of the ~44 visible P3/P4 fixes that have a fixture, how many give `DIFFERS` when reverted. Published table with both |
+| C4 | corpus run (decbench binaries); precision and recall | precision: triage of every `DIFFERS` into bug / declared divergence / harness bug. Recall: of the ~44 visible P3/P4 fixes that have a fixture, how many give `DIFFERS` when reverted. Published table with both. **Precision done on `tests/datatests` + `tests/stages`** (`c4-results.md`); recall and decbench open |
 | C5 | concolic inputs: expressions over the inputs on both sides, branch conditions negated through z3, capped paths and queries | a fixture whose difference appears only on one 32-bit value gives `DIFFERS`, where 256 random runs give `AGREES`; new paths reached per function on the corpus |
 | S1 | Tier S for loop-free `AGREES` functions that pass the static entry condition, under the budget | `EQUIVALENT` and `UNKNOWN(budget)` counts on the same corpus; every `sat` replays or is classified |
 | S2 | bounded loops; budget baseline and budget-regression flag | `EQUIVALENT(≤k)` counts; a deliberately bloating rule change is flagged by budget alone |
