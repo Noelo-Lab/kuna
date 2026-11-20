@@ -412,3 +412,75 @@ fn e500mc_returns_a_64_bit_value_high_word_first() {
     assert!(text.contains("return 0x1122334455667788;"), "{text}");
     std::fs::remove_file(path).unwrap();
 }
+
+#[test]
+fn isel_preserves_the_upper_word_only_on_spe() {
+    let path = common::scratch_file("powerpc-isel-upper", "bin");
+    // Seed the upper halves of r5, r6 and r7 with 42, 1 and 2 using evmergelo
+    // or sldi. Select into r5, then return its upper half via evmergehi or srdi.
+    for (model, set_high, read_high, expected) in [
+        (
+            "32:e500",
+            [0x10a52a2d, 0x10c6322d, 0x10e73a2d],
+            0x10652a2c,
+            "sub_1000(0) != 42 || sub_1000(1) != 42",
+        ),
+        (
+            "64:A2ALT",
+            [0x78a507c6, 0x78c607c6, 0x78e707c6],
+            0x78a30022,
+            "sub_1000(0) != 1 || sub_1000(1) != 2",
+        ),
+    ] {
+        let words: [u32; 10] = [
+            0x38a0002a,
+            0x38c00001,
+            0x38e00002,
+            set_high[0],
+            set_high[1],
+            set_high[2],
+            0x2c030000,
+            0x7ca6389e,
+            read_high,
+            0x4e800020,
+        ];
+        for endian in ["BE", "LE"] {
+            let bytes: Vec<_> = words
+                .iter()
+                .flat_map(|word| {
+                    if endian == "BE" {
+                        word.to_be_bytes()
+                    } else {
+                        word.to_le_bytes()
+                    }
+                })
+                .collect();
+            std::fs::write(&path, bytes).unwrap();
+            let target = format!("PowerPC:{endian}:{model}:default");
+            let (code, _) = decompile(
+                &path,
+                "0x1000",
+                &[
+                    "--raw-image",
+                    "--base",
+                    "0x1000",
+                    "--target",
+                    &target,
+                    "--assert-strict",
+                    "--assert",
+                    "prototype 0x1000 unsigned int selected(int cond)",
+                ],
+            );
+            if model == "32:e500" {
+                assert!(code.contains("return 0x2a;"), "{code}");
+            } else {
+                assert!(
+                    code.contains("return 1;") && code.contains("return 2;"),
+                    "{code}"
+                );
+            }
+            check_emitted_c(&code, expected);
+        }
+    }
+    std::fs::remove_file(path).unwrap();
+}
