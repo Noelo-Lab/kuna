@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4815,
-    4815
+    4819,
+    4819
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -655,6 +655,10 @@
     "data:DUPLABELS #5: the default path jumps to the copy that stores v3",
     "data:DUPLABELS #6: the second copy stores the tag the path chose",
     "data:DWARF function value agrees with its qualified definition",
+    "data:DWARFGLOBALTYPES #1: a struct global's fields are named",
+    "data:DWARFGLOBALTYPES #2: a pointer table is indexed by element",
+    "data:DWARFGLOBALTYPES #3: a double field is read as the field",
+    "data:DWARFGLOBALTYPES #4: no use is a cast off a byte offset",
     "data:DWARFVARIANTS #10: the overlaying Result keeps its recovered tag field",
     "data:DWARFVARIANTS #11: and its payload is spelled by OFFSET because Ok and Err both claim it",
     "data:DWARFVARIANTS #12: neither variant of the overlaying Result is ever named as a field",

@@ -431,6 +431,10 @@ pub struct AnalysisOutput {
     /// the object renders its NAME (`max_width`) not `dat_<addr>`. See
     /// [`DataObjectFact`]. Produced by the DWARF pass; empty otherwise.
     pub data_objects: Vec<DataObjectFact>,
+    /// Named data globals whose debug info declares a sized, complete type.
+    /// Committed with the [`Self::data_objects`], ahead of the string
+    /// literals, typelocked. Produced by the DWARF pass; empty otherwise.
+    pub typed_globals: Vec<TypedDataFact>,
     /// Discovered function entry points (for stripped targets).
     pub entries: Vec<u64>,
     /// (kuna) Function bodies that describe exactly one function, as `[start, end)`.
@@ -760,6 +764,7 @@ impl AnalysisOutput {
             if s.kind == SymKind::Data { fix_data(&mut s.name); } else { fix(&mut s.name); }
         });
         self.data_objects.iter_mut().for_each(|d| fix_data(&mut d.name));
+        self.typed_globals.iter_mut().for_each(|d| fix_data(&mut d.name));
         self.typed_data.iter_mut().for_each(|d| fix_data(&mut d.name));
         self.go_type_globals.iter_mut().for_each(|d| fix_data(&mut d.name));
         self.go_itabs.iter_mut().for_each(|s| fix_data(&mut s.name));
@@ -849,6 +854,7 @@ impl AnalysisOutput {
         self.symbols.extend(other.symbols);
         self.go_chanrecv2 = self.go_chanrecv2.or(other.go_chanrecv2);
         self.data_objects.extend(other.data_objects);
+        self.typed_globals.extend(other.typed_globals);
         self.typed_data.extend(other.typed_data);
         self.go_type_globals.extend(other.go_type_globals);
         self.go_itabs.extend(other.go_itabs);

@@ -106,12 +106,12 @@ fn colliding_typedef_name_falls_back_not_to_void() {
 }
 
 /// A global whose element type is four DIEs deep was marked one byte wide, so it
-/// rendered address-taken; with the real extent it decays like the array it is.
+/// rendered address-taken; with its declared type it decays like the array it is.
 #[test]
 fn global_array_gets_its_real_extent() {
     let on = decompile(&["main"]);
     assert!(
-        on.contains("(char **)default_authors"),
+        on.contains("count_authors(default_authors)"),
         "the global array should carry its real extent, got:\n{on}"
     );
 }

@@ -303,7 +303,7 @@ c3
 <stringmatch name="LIBCTYPES #6: and neither aggregate a DWARF definition already described fell back to an offset-named field" min="0" max="0">(st|f)-&gt;field_0x</stringmatch>
 <stringmatch name="LIBCTYPES #7: on a binary whose DWARF DOES define the stream type, that definition is what the table points at" min="1" max="1">int4 fclose\(_IO_FILE \*a0\)</stringmatch>
 <stringmatch name="LIBCTYPES #8: including the parameter the whole option exists for" min="1" max="1">int4 get_prefix\(_IO_FILE \*f\)</stringmatch>
-<stringmatch name="LIBCTYPES #9: with its real field layout, not a shell" min="1" max="1">f-&gt;_IO_read_end &lt;= v4</stringmatch>
+<stringmatch name="LIBCTYPES #9: with its real field layout, not a shell" min="2" max="2">f-&gt;_IO_read_end &lt;= v[0-9]+</stringmatch>
 <stringmatch name="LIBCTYPES #10: glibc off, a MINTED stream shell has no members, so the refill body reads an offset" min="2" max="2">\*\(uint1 \*\*\)&amp;a0-&gt;field_0x8</stringmatch>
 <stringmatch name="LIBCTYPES #11: glibc on, the same two accesses are the published field" min="2" max="2">a0-&gt;_IO_read_ptr</stringmatch>
 <stringmatch name="LIBCTYPES #12: glibc off, a MINTED stat shell reads its size through a cast at an offset" min="1" max="1">&amp;a1-&gt;field_0x30</stringmatch>
