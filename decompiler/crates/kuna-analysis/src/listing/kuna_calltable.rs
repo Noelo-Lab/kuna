@@ -5,10 +5,12 @@
 //! functions, and [`is_call_table`] votes: an indexed CALL, or a jump whose
 //! distinct targets are 40% or more other functions' entries, dispatches to
 //! functions (a call table); any other jump table is a switch. A jump through
-//! a pointer table with no range check is a call table on x86 only when every
-//! target sits on a 16-byte function boundary (a switch whose range check the
-//! slice did not reach has case labels in the middle of its function), and is
-//! otherwise left alone.
+//! a pointer table with no range check is a call table only when every target
+//! is already another function's entry, and is otherwise left alone: an
+//! unchecked switch or a computed goto reads the same way. A table with no
+//! range check ends before the first target that is already code inside a
+//! function ([`call_table_run`]), which is where the read ran into the next
+//! table.
 //!
 //! [`scan`] reads the tables with [`super::kuna_switchtable::register_targets`]
 //! over the decoded Listing and returns both halves: the call-table targets as
@@ -23,7 +25,7 @@ use kuna_num::opcodes::OpCode;
 use kuna_sleigh::translate::Translate;
 
 use super::kuna_poolref::PoolImage;
-use super::kuna_switchtable::{preserved_registers, register_targets, Reach, DEFAULT_MAX_ENTRIES};
+use super::kuna_switchtable::{preserved_registers, register_targets, Reach, TableRead, DEFAULT_MAX_ENTRIES};
 use super::xrefs::{decode, FullCapture};
 use super::{Listing, RefKind};
 
@@ -37,16 +39,34 @@ pub struct CallTables {
 }
 
 /// Whether the table a computed jump read (`cases`) dispatches to functions.
-/// `unbounded` says no range check bounded the read; `foreign` says a target
+/// `unchecked` says no range check bounded the read; `foreign` says a target
 /// is the entry of a function other than the jump's own.
-pub(super) fn is_call_table(cases: &[u64], unbounded: bool, x86: bool, foreign: impl Fn(u64) -> bool) -> bool {
+pub(super) fn is_call_table(cases: &[u64], unchecked: bool, foreign: impl Fn(u64) -> bool) -> bool {
     let distinct: BTreeSet<u64> = cases.iter().copied().collect();
     if distinct.is_empty() {
         return false;
     }
-    let aligned = x86 && distinct.len() >= 2 && distinct.iter().all(|t| t % 16 == 0);
     let foreign = distinct.iter().filter(|&&t| foreign(t)).count();
-    (unbounded && aligned) || foreign * 5 >= distinct.len() * 2
+    if unchecked {
+        foreign == distinct.len()
+    } else {
+        foreign * 5 >= distinct.len() * 2
+    }
+}
+
+/// The entries of a call table with no range check: the leading run of
+/// `cases` before the first target `inside` says is already code inside a
+/// function, or nothing when fewer than two remain. An ARM word with the low
+/// bit set is a Thumb pointer and is not taken.
+pub(super) fn call_table_run(mut cases: Vec<u64>, arm: bool, inside: impl Fn(u64) -> bool) -> Vec<u64> {
+    if let Some(at) = cases.iter().position(|&t| inside(t)) {
+        cases.truncate(at);
+    }
+    cases.retain(|&t| !(arm && t & 1 == 1));
+    if cases.len() < 2 {
+        cases.clear();
+    }
+    cases
 }
 
 /// Read every computed jump and call's table in the Listing.
@@ -66,7 +86,7 @@ pub fn scan(file: &object::File, listing: &Listing, arch: &Architecture, transla
         settled: true,
     };
     let exec = listing.exec_ranges().to_vec();
-    let x86 = arch.archid.starts_with("x86");
+    let arm = object::Object::architecture(file) == object::Architecture::Arm;
     let entries: BTreeSet<u64> = listing.functions().map(|(&e, _)| e).collect();
     let mut calls: BTreeSet<u64> = BTreeSet::new();
     let mut cases: BTreeSet<u64> = BTreeSet::new();
@@ -77,6 +97,7 @@ pub fn scan(file: &object::File, listing: &Listing, arch: &Architecture, transla
     };
     let read_calls = pool.words().any(undecoded);
     let mut cap = FullCapture::default();
+    let mut reads = Vec::new();
     for (&vma, insn) in listing.instructions() {
         if !insn.flow.is_computed || !insn.flows.is_empty() || (insn.flow.is_call && !read_calls) {
             continue;
@@ -94,11 +115,25 @@ pub fn scan(file: &object::File, listing: &Listing, arch: &Architecture, transla
         };
         let read = register_targets(translate, &code_space, data_space.as_ref(), &decoded, vma, target, &pool, &exec, &reach);
         let owner = listing.function_containing(vma).map(|f| f.entry);
-        let foreign = |t: u64| entries.contains(&t) && Some(t) != owner;
-        if insn.flow.is_call || is_call_table(&read.cases, read.unbounded, x86, foreign) {
+        reads.push((insn.flow.is_call, owner, read));
+    }
+    let unchecked = |call: bool, read: &TableRead| read.unbounded || (call && read.stated.is_none());
+    let known = &entries;
+    let foreign = |owner: Option<u64>| move |t: u64| known.contains(&t) && Some(t) != owner;
+    for (call, owner, read) in &reads {
+        if !call && !unchecked(*call, read) && !is_call_table(&read.cases, false, foreign(*owner)) {
+            cases.extend(read.cases.iter().copied());
+        }
+    }
+    for (call, owner, read) in reads {
+        if unchecked(call, &read) {
+            let inside = |t: u64| cases.contains(&t) || (decoded.contains(&t) && !entries.contains(&t));
+            let run = call_table_run(read.cases, arm, inside);
+            if call || is_call_table(&run, true, foreign(owner)) {
+                calls.extend(run);
+            }
+        } else if call || is_call_table(&read.cases, false, foreign(owner)) {
             calls.extend(read.cases);
-        } else if !read.unbounded {
-            cases.extend(read.cases);
         }
     }
     out.entries = calls.iter().copied().filter(|t| !entries.contains(t)).collect();

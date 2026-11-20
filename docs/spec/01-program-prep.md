@@ -8922,20 +8922,34 @@ The tables are read with the register-chain fold the switch reader uses
 (register_targets)`), which also answers for a `CALLIND` and reads a pointer
 table with no range check up to 256 entries, stopping at the first word that
 is not code of the section the transfer is in; such a read is flagged
-`unbounded` and is never taken as a switch. The vote
+`unbounded` and is never taken as a switch. Nothing marks where a table with
+no range check ends, so a function table followed by another switch's table
+reads on into its case labels: such a read is cut before the first target
+that is a case of a range-checked switch or already code inside a function
 (`decompiler/crates/kuna-analysis/src/listing/kuna_calltable.rs
-(is_call_table)`): an indexed call calls every entry; a jump whose distinct
-targets are 40% or more other functions' entries is a table of tail calls; on
-x86 an unbounded table whose targets all sit on 16-byte boundaries is one too
-(a switch whose range check the slice did not reach has case labels in the
-middle of its function). The targets of a call table become entries, and in
-the `kuna xrefs` walk they are call references of the dispatcher rather than
-its switch cases. The other way round, a discovered, non-symbol entry that
-sits on a case of a switch and that no call reaches is dropped at the commit
-(`AnalysisOutput::case_entries`): a case body that opens `push rbp; mov
-rbp,rsp` looks like a function to a prologue scan. On the fixture
-`calltable_x86_64` the two table functions are found and the prologue-shaped
-case is no longer a function.
+(call_table_run)`), and the walk behind `kuna xrefs` reads its unchecked
+indexed calls only once its queue has drained, when those switches have been
+decoded. The vote (`decompiler/crates/kuna-analysis/src/listing/kuna_calltable.rs
+(is_call_table)`): an indexed call calls every entry; a jump through a
+range-checked table whose distinct targets are 40% or more other functions'
+entries is a table of tail calls; a jump through an unchecked table is one
+only when every target is already another function's entry, so it never adds
+a function. An unchecked switch (gcc drops the range check under
+`__builtin_unreachable()`) and a computed goto read exactly like a table of
+tail calls, and gcc aligns their labels to 16 bytes as it does functions, so
+an unchecked jump to targets that are not yet functions is left alone. The
+targets of a call table become entries, and in the `kuna xrefs` walk they are
+call references of the dispatcher rather than its switch cases. The other way
+round, a discovered, non-symbol entry that sits on a case of a switch and that
+no call reaches is dropped at the commit (`AnalysisOutput::case_entries`): a
+case body that opens `push rbp; mov rbp,rsp` looks like a function to a
+prologue scan. On the fixture `calltable_x86_64` the two functions of the
+called table are found, its read stops at the next switch's cases, the
+labels of an unchecked jump table are not functions, and the prologue-shaped
+case is no longer a function. Over 529 stripped decbench ELFs, 1,150 ELF and
+PE fixtures and four sqlite3 builds the function lists do not move; over 200
+generated non-PIE gcc/clang programs without unwind tables it finds 276
+table-only functions and adds no false start.
 
 **Tail-call entries** (`tailcallentry`, on by default, ARM-only; kuna;
 `decompiler/crates/kuna-analysis/src/listing/kuna_tailcallentry.rs (tail_call_entries)`)

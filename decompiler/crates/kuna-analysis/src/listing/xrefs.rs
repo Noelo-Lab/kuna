@@ -841,7 +841,6 @@ fn descend(
         settled: false,
     };
     let arm = file.architecture() == object::Architecture::Arm;
-    let x86 = arch.archid.starts_with("x86");
     let pic_image = pool.as_ref().map(|pool| kuna_picpool::Image {
         pool,
         mapped: &mapped,
@@ -865,6 +864,9 @@ fn descend(
     // (kuna) `switchtable`: the dispatches whose read stopped for want of a
     // decoded instruction ending at the key, as `(dispatch, mode, branch)`.
     let mut waiting: HashMap<u64, Vec<(u64, _, VarnodeData)>> = HashMap::new();
+    // (kuna `calltable`) Indexed calls with no range check, read once the walk
+    // has settled so a table that runs into the next one stops at its cases.
+    let mut call_sites: Vec<(u64, VarnodeData)> = Vec::new();
     let thumb_tables = sections_are_runtime
         .then(|| super::kuna_thumbswitch::HalfwordTables::new(file, data_space.clone(), max_entries))
         .flatten();
@@ -1073,6 +1075,7 @@ fn descend(
                         }).collect();
                         st = State::new(&seed_set, measure || preserve_bodies);
                         waiting.clear();
+                        call_sites.clear();
                         func_queue = seed_set.iter().copied().collect();
                         frame_candidates = reconciled.into_iter().collect();
                         frame_modes = Some(super::kuna_framemode::FrameModes::new(&frame_candidates));
@@ -1126,13 +1129,36 @@ fn descend(
                             translate, &code_space, data_space.as_ref(), &st.decoded, vma, &branch,
                             pool.as_ref().unwrap(), &exec, &settled,
                         );
-                        if !read.unbounded
-                            || !kuna_calltable::is_call_table(&read.cases, true, x86, |t| st.funcs.contains(&t))
-                        {
+                        if !read.unbounded {
+                            continue;
+                        }
+                        let run = kuna_calltable::call_table_run(read.cases, arm, |t| {
+                            st.decoded.contains(&t) && !st.funcs.contains(&t)
+                        });
+                        if !kuna_calltable::is_call_table(&run, true, |t| st.funcs.contains(&t)) {
                             continue;
                         }
                         let text = assembly(translate, vma, &code_space);
-                        for t in read.cases.into_iter().collect::<BTreeSet<u64>>() {
+                        for t in run.into_iter().collect::<BTreeSet<u64>>() {
+                            st.file(vma, t, XrefKind::Call, &text);
+                            if st.funcs.insert(t) {
+                                func_queue.push_back(t);
+                            }
+                        }
+                    }
+                    continue;
+                }
+                None if !call_sites.is_empty() && pool.is_some() => {
+                    for (vma, callind) in std::mem::take(&mut call_sites) {
+                        let read = kuna_switchtable::register_targets(
+                            translate, &code_space, data_space.as_ref(), &st.decoded, vma, &callind,
+                            pool.as_ref().unwrap(), &exec, &reach,
+                        );
+                        let run = kuna_calltable::call_table_run(read.cases, arm, |t| {
+                            st.decoded.contains(&t) && !st.funcs.contains(&t)
+                        });
+                        let text = assembly(translate, vma, &code_space);
+                        for t in run.into_iter().collect::<BTreeSet<u64>>() {
                             st.file(vma, t, XrefKind::Call, &text);
                             if st.funcs.insert(t) {
                                 func_queue.push_back(t);
@@ -1465,11 +1491,17 @@ fn descend(
                     if !cases.is_empty() && text.is_empty() {
                         text = assembly(translate, vma, &code_space);
                     }
-                    // (kuna `calltable`) A table whose distinct targets are 40%
-                    // or more other functions' entries dispatches tail calls,
-                    // not cases of this function.
+                    // (kuna `calltable`) A table whose distinct targets are other
+                    // functions' entries (40% of a checked table, all of an
+                    // unchecked one) dispatches tail calls, not cases of this
+                    // function.
+                    if unbounded && arch.analysis_calltable {
+                        cases = kuna_calltable::call_table_run(cases, arm, |t| {
+                            st.decoded.contains(&t) && !st.funcs.contains(&t)
+                        });
+                    }
                     let call_table = arch.analysis_calltable
-                        && kuna_calltable::is_call_table(&cases, unbounded, x86, |t| st.funcs.contains(&t) && t != entry);
+                        && kuna_calltable::is_call_table(&cases, unbounded, |t| st.funcs.contains(&t) && t != entry);
                     if call_table {
                         for t in cases.iter().copied().collect::<BTreeSet<u64>>() {
                             st.file(vma, t, XrefKind::Call, &text);
@@ -1489,9 +1521,14 @@ fn descend(
             if arch.analysis_calltable && c.flows.is_empty() && c.flow.is_computed && c.flow.is_call {
                 let callind = cap.ops().iter().find(|o| o.opcode == OpCode::CPUI_CALLIND).and_then(|o| o.ins.first());
                 if let (Some(p), Some(callind)) = (pool.as_ref(), callind) {
-                    let read = kuna_switchtable::register_targets(
+                    let mut read = kuna_switchtable::register_targets(
                         translate, &code_space, data_space.as_ref(), &st.decoded, vma, callind, p, &exec, &reach,
                     );
+                    if read.stated.is_none() && !read.cases.is_empty() {
+                        call_sites.push((vma, callind.clone()));
+                        read.cases.clear();
+                    }
+                    read.cases.retain(|&t| !(arm && t & 1 == 1));
                     if !read.cases.is_empty() && text.is_empty() {
                         text = assembly(translate, vma, &code_space);
                     }
