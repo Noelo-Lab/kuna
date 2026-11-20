@@ -1,5 +1,6 @@
 //! (kuna) The dyld shared cache: open a cache and its sub-caches, list its images,
-//! and rebuild one image as a standalone thin Mach-O at its cache addresses.
+//! and rebuild one image, or several joined, as a standalone thin Mach-O at its
+//! cache addresses.
 //!
 //! A cache is a main file named `dyld_shared_cache_<arch>` plus, on iOS 15+ and
 //! macOS 12+, sub-cache files beside it (`.01`, `.27.dylddata`, `.44.dyldlinkedit`,
@@ -12,10 +13,12 @@
 //! The cache is never read whole: a 3 GB cache costs only the pages of the image
 //! being rebuilt, read through file handles. [`read_selected_image`] is the one
 //! entry point the loader paths call, before they parse anything; after it, the
-//! input is an ordinary Mach-O. See [`extract`] for the rebuild and [`xrefs`] for
-//! how calls into other images are named.
+//! input is an ordinary Mach-O. See [`extract`] for the rebuild, `merge` for
+//! how several images become one program, and [`xrefs`] for how calls into
+//! other images are named. [`follow_images`] finds the image an address outside
+//! the selection lies in.
 
-use std::cell::{Cell, RefCell};
+use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
@@ -23,8 +26,12 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 pub mod extract;
+mod merge;
 pub mod slide;
 pub mod xrefs;
+
+/// Joins the image names of a `dyldimage` value that loads several images.
+pub const IMAGE_SEPARATOR: char = '+';
 
 /// Every dyld shared cache starts with this, followed by padding and the arch.
 pub const MAGIC_PREFIX: &[u8] = b"dyld_v1";
@@ -41,6 +48,11 @@ const HDR_SUBCACHES: usize = 392;
 const HDR_SYMBOL_FILE_UUID: usize = 400;
 const HDR_IMAGES_OFFSET: usize = 448;
 const HDR_CACHE_SUBTYPE: usize = 456;
+const HDR_OBJC_OPTS: usize = 464;
+/// `ObjCOptimizationHeader.relativeMethodSelectorBaseAddressOffset`.
+const OBJC_OPTS_SELECTOR_BASE: usize = 0x30;
+/// `objc_opt_t.relativeMethodSelectorBaseAddressOffset`, present from version 16.
+const OBJC_OPT_T_SELECTOR_BASE: usize = 0x28;
 
 /// Does `prefix` (the first bytes of a file) open a dyld shared cache?
 pub fn is_dyld_cache(prefix: &[u8]) -> bool {
@@ -55,20 +67,19 @@ pub fn is_dyld_cache_file(path: &Path) -> bool {
         .is_ok_and(|()| is_dyld_cache(&prefix))
 }
 
-/// The selected image of the dyld shared cache at `path`, rebuilt as a thin
-/// Mach-O; `None` when `path` is not a dyld shared cache. The image is the
+/// The selected images of the dyld shared cache at `path`, rebuilt as one thin
+/// Mach-O; `None` when `path` is not a dyld shared cache. The selection is the
 /// `dyldimage` option, carried in [`kuna_decomp::kuna_dyldcache::DYLDIMAGE_ENV`].
 pub fn read_selected_image(path: &Path) -> Option<Result<Vec<u8>, String>> {
     if !is_dyld_cache_file(path) {
         return None;
     }
     Some(DyldCache::open(path).and_then(|cache| {
-        let index = cache.select(kuna_decomp::kuna_dyldcache::selected_image().as_deref())?;
-        cache.extract(index)
+        cache.extract_merged(&cache.select_all(kuna_decomp::kuna_dyldcache::selected_image().as_deref())?)
     }))
 }
 
-/// The byte size image `name` occupies, `__LINKEDIT` aside (the cache shares
+/// The byte size the images `name` selects occupy, `__LINKEDIT` aside (the cache shares
 /// one across all images): the cache counterpart of a file's length for
 /// size-based policy. `None` when `path` is not a cache.
 pub fn image_size(path: &Path, name: Option<&str>) -> Option<Result<u64, String>> {
@@ -76,9 +87,69 @@ pub fn image_size(path: &Path, name: Option<&str>) -> Option<Result<u64, String>
         return None;
     }
     Some(DyldCache::open(path).and_then(|cache| {
-        let image = cache.image_layout(cache.select(name)?)?;
-        Ok(image.segments.iter().filter(|s| s.name != "__LINKEDIT").map(|s| s.filesize).sum())
+        let mut size = 0u64;
+        for index in cache.select_all(name)? {
+            let image = cache.image_layout(index)?;
+            size += image.segments.iter().filter(|s| s.name != "__LINKEDIT").map(|s| s.filesize).sum::<u64>();
+        }
+        Ok(size)
     }))
+}
+
+/// One address [`follow_images`] found outside the loaded images.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FollowStep {
+    pub requested: u64,
+    /// `requested`, or what the stub at `requested` jumps to.
+    pub target: u64,
+    /// The install name of the image holding `target`.
+    pub image: String,
+    /// Is that image part of [`Followed::images`]? `false` past the limit.
+    pub loaded: bool,
+}
+
+/// What [`follow_images`] found: the `dyldimage` value to load and one step per
+/// address the selection did not hold.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Followed {
+    pub images: String,
+    pub steps: Vec<FollowStep>,
+}
+
+/// Widen the `dyldimage` value `selected` of the cache at `path` until the
+/// images it names hold `addrs`, adding at most `limit` images. Each address
+/// carries whether a stub there may be followed to its target: an address in a
+/// stub island belongs to no image, and what a request for it means is the
+/// function the stub jumps to. An address the cache does not map is left alone.
+pub fn follow_images(path: &Path, selected: &str, addrs: &[(u64, bool)], limit: usize) -> Result<Followed, String> {
+    let cache = DyldCache::open(path)?;
+    let mut loaded = Vec::new();
+    for index in cache.select_all(Some(selected))? {
+        loaded.push(cache.image_layout(index)?);
+    }
+    let mut followed = Followed { images: selected.to_string(), steps: Vec::new() };
+    let mut names = None;
+    let mut added = 0;
+    for &(requested, through_stubs) in addrs {
+        if loaded.iter().any(|layout| layout.holds(requested)) {
+            continue;
+        }
+        let names = names.get_or_insert_with(|| xrefs::Names::new(&cache));
+        let Some((target, index)) = names.owner(requested, through_stubs) else {
+            continue;
+        };
+        let image = cache.images[index].path.clone();
+        let mut held = loaded.iter().any(|layout| layout.holds(target));
+        if !held && added < limit {
+            loaded.push(cache.image_layout(index)?);
+            followed.images.push(IMAGE_SEPARATOR);
+            followed.images.push_str(&image);
+            added += 1;
+            held = true;
+        }
+        followed.steps.push(FollowStep { requested, target, image, loaded: held });
+    }
+    Ok(followed)
 }
 
 /// One file of a split cache: the main file, a sub-cache, or `.symbols`.
@@ -172,6 +243,10 @@ pub struct DyldCache {
     /// Bytes the slide infos and symbol tables built so far may still retain;
     /// see [`DyldCache::charge`].
     retained: Cell<u64>,
+    /// `objcOptsOffset` of the header: the `ObjCOptimizationHeader`, as an
+    /// offset from the cache base. Zero or absent before dyld-1042.
+    objc_opts: Option<u64>,
+    objc_selector_base: OnceCell<Option<u64>>,
 }
 
 fn u32_at(b: &[u8], off: usize) -> u32 {
@@ -325,7 +400,39 @@ impl DyldCache {
             total_len,
             layout_bytes: Cell::new(0),
             retained: Cell::new(total_len.saturating_mul(2).max(MIN_RETAINED)),
+            objc_opts: h.u64(HDR_OBJC_OPTS).filter(|&o| o != 0),
+            objc_selector_base: OnceCell::new(),
         })
+    }
+
+    /// The address every direct-selector method list of the cache offsets its
+    /// selectors from. The `ObjCOptimizationHeader` the cache header names
+    /// carries it as an offset from the cache base; an older cache carries it in
+    /// libobjc's `objc_opt_t` (`__objc_opt_ro`, version 16 on) as a signed offset
+    /// from that record. `None` on a cache with neither.
+    pub fn objc_selector_base(&self) -> Option<u64> {
+        *self.objc_selector_base.get_or_init(|| self.header_selector_base().or_else(|| self.libobjc_selector_base()))
+    }
+
+    fn header_selector_base(&self) -> Option<u64> {
+        let opts = self.read_va(self.base.checked_add(self.objc_opts?)?, OBJC_OPTS_SELECTOR_BASE + 8).ok()?;
+        if u32_at(&opts, 0) == 0 {
+            return None;
+        }
+        let rel = u64_at(&opts, OBJC_OPTS_SELECTOR_BASE);
+        if rel == 0 { None } else { self.base.checked_add(rel) }
+    }
+
+    fn libobjc_selector_base(&self) -> Option<u64> {
+        let index = self.images.iter().position(|i| i.path.ends_with("/libobjc.A.dylib"))?;
+        let layout = self.image_layout(index).ok()?;
+        let opt = layout.segments.iter().flat_map(|s| s.sections.iter()).find(|s| s.sectname == "__objc_opt_ro")?;
+        let record = self.read_va(opt.addr, OBJC_OPT_T_SELECTOR_BASE + 8).ok()?;
+        if u32_at(&record, 0) < 16 {
+            return None;
+        }
+        let rel = u64_at(&record, OBJC_OPT_T_SELECTOR_BASE) as i64;
+        if rel == 0 { None } else { opt.addr.checked_add_signed(rel) }
     }
 
     fn open_local_symbols(
@@ -430,6 +537,17 @@ impl DyldCache {
     /// name, a cache of one image selects it.
     pub fn select(&self, name: Option<&str>) -> Result<usize, String> {
         select_image(&self.images, name)
+    }
+
+    /// Resolve a `dyldimage` value: one name, or several joined by `+`
+    /// (`Foundation+CoreFoundation`), each as [`DyldCache::select`] reads it.
+    /// A `+` inside an image's own name (`libc++.1.dylib+Foundation`) stays
+    /// part of that name.
+    pub fn select_all(&self, names: Option<&str>) -> Result<Vec<usize>, String> {
+        match names {
+            Some(names) if names.contains(IMAGE_SEPARATOR) => select_images(&self.images, names),
+            name => Ok(vec![self.select(name)?]),
+        }
     }
 
     /// The mapping holding `[va, va + len)`; the mappings are sorted by address.
@@ -549,6 +667,50 @@ fn select_image(images: &[CacheImage], name: Option<&str>) -> Result<usize, Stri
             )),
         };
     };
+    match_image(images, name)?.ok_or_else(|| no_image(images, name))
+}
+
+/// [`DyldCache::select_all`] over an image list, for a value holding a `+`.
+/// From each piece the longest run of `+`-joined pieces that names an image is
+/// taken, so a `+` of an image's own name (`libc++.1.dylib`) does not split it.
+/// A run ends at the end of the value or before a non-empty piece (`libc++`
+/// never reads as `libc`), and holds at most as many `+` as the image name
+/// holding the most.
+fn select_images(images: &[CacheImage], names: &str) -> Result<Vec<usize>, String> {
+    let pieces: Vec<&str> = names.split(IMAGE_SEPARATOR).collect();
+    let widest = images.iter().map(|i| i.path.matches(IMAGE_SEPARATOR).count()).max().unwrap_or(0);
+    let joined = |from: usize, to: usize| pieces[from..to].join("+").trim().to_string();
+    let ends_a_name = |to: &usize| *to == pieces.len() || !pieces[*to].trim().is_empty();
+    let longest = |from: usize| -> Result<Option<(usize, usize)>, String> {
+        for to in (from + 1..=pieces.len().min(from + 1 + widest)).rev().filter(ends_a_name) {
+            if let Some(index) = match_image(images, &joined(from, to))? {
+                return Ok(Some((to, index)));
+            }
+        }
+        Ok(None)
+    };
+    let mut out = Vec::new();
+    let mut from = 0;
+    while from < pieces.len() {
+        if pieces[from].trim().is_empty() {
+            from += 1;
+            continue;
+        }
+        let Some((to, index)) = longest(from)? else {
+            let named = |k: &usize| !pieces[*k].trim().is_empty() && !matches!(longest(*k), Ok(None));
+            let to = (from + 1..pieces.len()).find(named).unwrap_or(pieces.len());
+            return Err(no_image(images, &joined(from, to)));
+        };
+        out.push(index);
+        from = to;
+    }
+    Ok(out)
+}
+
+/// The image `name` names: a full install name, else a unique basename, else
+/// a unique basename without its last extension. `None` when no image matches;
+/// an error when several share the first tier that matches.
+fn match_image(images: &[CacheImage], name: &str) -> Result<Option<usize>, String> {
     let base = |p: &str| p.rsplit('/').next().unwrap_or(p).to_string();
     let stem = |p: &str| {
         let b = base(p);
@@ -564,13 +726,19 @@ fn select_image(images: &[CacheImage], name: Option<&str>) -> Result<usize, Stri
             images.iter().enumerate().filter(|(_, i)| matches(i)).map(|(n, _)| n).collect();
         match hits.len() {
             0 => continue,
-            1 => return Ok(hits[0]),
+            1 => return Ok(Some(hits[0])),
             _ => {
                 let names: Vec<&str> = hits.iter().map(|&n| images[n].path.as_str()).collect();
                 return Err(format!("image name {name:?} is ambiguous: {}", names.join(", ")));
             }
         }
     }
+    Ok(None)
+}
+
+/// The error for a `name` no image matches, with up to eight images whose
+/// install names contain it.
+fn no_image(images: &[CacheImage], name: &str) -> String {
     let lower = name.to_ascii_lowercase();
     let near: Vec<&str> = images
         .iter()
@@ -578,11 +746,11 @@ fn select_image(images: &[CacheImage], name: Option<&str>) -> Result<usize, Stri
         .take(8)
         .map(|i| i.path.as_str())
         .collect();
-    Err(if near.is_empty() {
+    if near.is_empty() {
         format!("no image named {name:?} in the dyld shared cache")
     } else {
         format!("no image named {name:?} in the dyld shared cache; close: {}", near.join(", "))
-    })
+    }
 }
 
 /// The retained-byte allowance's floor (see [`DyldCache::charge`]), so a small

@@ -1,5 +1,41 @@
 use std::fs;
 use std::process::{Command, Output};
+use std::rc::Rc;
+
+use kuna_base::address::Address;
+use kuna_base::error::KunaResult;
+use kuna_sleigh::globalcontext::ContextInternal;
+use kuna_sleigh::loadimage::LoadImage;
+use kuna_sleigh::sleigh::Sleigh;
+
+struct CodeImg(Vec<u8>);
+
+impl LoadImage for CodeImg {
+    fn get_file_name(&self) -> &str {
+        "code"
+    }
+    fn load_fill(&mut self, ptr: &mut [u8], addr: &Address) -> KunaResult<()> {
+        for (i, b) in ptr.iter_mut().enumerate() {
+            *b = *self.0.get(addr.get_offset() as usize + i).unwrap_or(&0);
+        }
+        Ok(())
+    }
+    fn get_arch_type(&self) -> Vec<u8> {
+        Vec::new()
+    }
+    fn adjust_vma(&mut self, _adjust: i64) {}
+}
+
+fn disassemble(image: &[u8], code: &[u8]) -> (i32, String, String) {
+    let mut sleigh = Sleigh::new(Box::new(CodeImg(code.to_vec())), Box::new(ContextInternal::new()));
+    sleigh.initialize_from_sla(image).unwrap();
+    let space = Rc::clone(sleigh.base().manager().get_default_code_space().unwrap());
+    let (mut mnemonic, mut body) = (String::new(), String::new());
+    let length = sleigh
+        .print_assembly_into(&Address::new(space, 0), &mut mnemonic, &mut body)
+        .unwrap();
+    (length, mnemonic, body)
+}
 
 const HEADER: &str = "define endian=little;\n\
     define space ram type=ram_space size=4 default;\n\
@@ -40,6 +76,46 @@ fn pattern_build_errors_report_the_undefined_operand() {
         assert_eq!(result.status.code(), Some(2));
         assert_eq!(std::str::from_utf8(&result.stderr).unwrap(), expected);
         assert!(image.is_none());
+    }
+}
+
+#[test]
+fn operand_defined_as_itself_or_a_later_operand_is_rejected() {
+    for action in ["idx = cop0209;", "idx = idx;"] {
+        let (result, image) = compile(
+            &format!(
+                "define token instr(16) op=(8,15) cop0209=(2,9);\n\
+                 :foo idx is op=0x1 & cop0209 [ {action} ] {{ r0 = idx; }}\n"
+            ),
+            &[],
+            false,
+        );
+        assert_eq!(result.status.code(), Some(2));
+        assert_eq!(
+            std::str::from_utf8(&result.stderr).unwrap(),
+            "main.slaspec:7 - ERROR Error: idx: operand is defined as itself or an operand that follows it: for table \"instruction\" constructor starting at line 6\n\nNo output produced\n"
+        );
+        assert!(image.is_none());
+    }
+}
+
+#[test]
+fn operand_defined_from_a_field_expression_or_an_earlier_operand_decodes() {
+    for (display, action, expected) in [
+        ("idx", "idx = cop0209 + 0;", "0x6a"),
+        ("cop0209, idx", "idx = cop0209;", "0x6a, 0x6a"),
+    ] {
+        let (result, image) = compile(
+            &format!(
+                "define token instr(16) op=(8,15) cop0209=(2,9);\n\
+                 :foo {display} is op=0x1 & cop0209 [ {action} ] {{ r0 = idx; }}\n"
+            ),
+            &[],
+            false,
+        );
+        assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
+        let (length, mnemonic, body) = disassemble(&image.unwrap(), &[0xa8, 0x01]);
+        assert_eq!((length, mnemonic.as_str(), body.as_str()), (2, "foo", expected));
     }
 }
 
