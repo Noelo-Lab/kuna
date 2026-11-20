@@ -4182,7 +4182,10 @@ writes, when its code was read to every return without calling out. The
 return address is popped, together with the arguments the callee removes
 itself (the stack purge below). The 16 bytes behind
 every pointer argument become unknown, because a `scanf("%d", &v)` writes
-`v`, and `v`'s old constant must not decide the branch that tests it.
+`v`, and `v`'s old constant must not decide the branch that tests it. An
+argument register that still holds an earlier call's clobber symbol was never
+set by the program and points at nothing; taking it for a pointer would open
+a fresh memory region in every later state for each call site.
 On x86 the eight stack words above the return address are treated as
 possible pointer arguments too, and so is every word the callee pops
 (`CreateProcessA` pops ten, the last its `PROCESS_INFORMATION` pointer). Every entry-stack offset handed to a call this

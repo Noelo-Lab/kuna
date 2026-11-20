@@ -1760,7 +1760,8 @@ impl<'a> Explorer<'a> {
     /// ([`State::clobber_mutable`]), and the memory its pointer arguments
     /// reach made unknown (a
     /// `scanf("%d", &v)` writes `v`; its old constant must not decide the
-    /// branch that tests it).
+    /// branch that tests it).  An argument register still holding an earlier
+    /// call's clobber was never set and points at nothing.
     fn apply_call_summary(&mut self, state: &mut State, site: u64, callee: Callee) {
         let ps = self.abi.ptr_size;
         let scan = callee.target.filter(|c| Some(*c) != callee.ret).and_then(|c| self.scan_callee(c));
@@ -1772,6 +1773,7 @@ impl<'a> Explorer<'a> {
         }
         let args: Vec<(u64, u8)> = self.abi.args.iter().copied().filter(|(o, _)| *o != self.abi.sp).collect();
         let mut values: Vec<ExprId> = args.iter().map(|&(off, size)| state.read_reg(&mut self.arena, off, size)).collect();
+        values.retain(|v| !matches!(self.arena.var_kind(*v), Some(VarKind::CallClobber { .. })));
         // Stack-passed arguments sit above the return address: the ABI's
         // window, and every word a callee-cleanup callee pops.
         let sp = state.read_reg(&mut self.arena, self.abi.sp, ps);
