@@ -1,0 +1,25 @@
+<decompilertest>
+<binaryimage arch="MIPS:LE:32:default:default">
+<!-- Restart, analysis warnings. sub_4009bc (the floatret_chain fixture) ends
+     in a stack-protector check. A pass that is later restarted duplicates the
+     shared return and records the `return-dupe` warning; the pass that is
+     kept has a single return and duplicates nothing. A
+     restart clears the function's warning comments with its analysis
+     (Architecture::clearAnalysis), so the header carries no warning of a pass
+     that was thrown away.
+
+     Before: `void sub_4009bc(unsigned int a0,unsigned int a1) // return-dupe`.
+-->
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/floatret_chain_mips_O0</com>
+  <com>read symbols</com>
+  <com>load function sub_4009bc</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="restartwarnings #1: the prototype carries no warning of the discarded pass" min="1" max="1">^void sub_4009bc\(unsigned int a0,unsigned int a1\)$</stringmatch>
+<stringmatch name="restartwarnings #2: nothing reports a duplicated return" min="0" max="0">return-dupe</stringmatch>
+<stringmatch name="restartwarnings #3: the kept pass's own comment still prints" min="1" max="1">__stack_chk_fail\(\); // no-return</stringmatch>
+</decompilertest>
