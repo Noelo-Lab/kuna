@@ -73,6 +73,7 @@ b83c000000bf010000000f05f4
 </binaryimage>
 <script>
   <com>echo passthrough output begins</com>
+  <com>option protoorder off</com>
   <com>option passthrough off</com>
   <com>lo fu fwd</com>
   <com>decompile</com>

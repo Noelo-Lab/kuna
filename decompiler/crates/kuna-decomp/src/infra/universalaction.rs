@@ -819,6 +819,7 @@ pub fn universal_sched(
             act!(ActionMergeType::boxed("merge")),
             act!(ActionHideShadow::boxed("merge")),
             act!(ActionCopyMarker::boxed("merge")),
+            act!(crate::kuna_typevote::ActionTypeVote::boxed("typerecovery")),
             act!(ActionLateDoNothing::boxed("blockrecovery")),
             act!(ActionBlockStructure::boxed("blockrecovery")),
             act!(ActionPreferComplement::boxed("blockrecovery", false)),
