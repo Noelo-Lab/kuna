@@ -53,7 +53,7 @@
     "L1",
     "P"
   ],
-  "status": "C1 and C2 implemented; C4 precision on tests/datatests + tests/stages",
+  "status": "C1 and C2 implemented; C4 precision and recall on tests/datatests + tests/stages",
   "measurements": {
     "C1": {
       "corpus": "tests/datatests + tests/stages, 256 runs per function",
@@ -118,7 +118,19 @@
       "wall_seconds": 19.3,
       "workers": 14,
       "peak_rss_mb": 216,
-      "recall": "open",
+      "recall": {
+        "fixes_since_2026_06": 56,
+        "with_stage_fixture": 39,
+        "measured": 27,
+        "semantic_bugs_reproduced": 22,
+        "caught_no_contract": 5,
+        "caught_with_contract": 9,
+        "missed": 13,
+        "ir_equivalent": 3,
+        "crash_file_error": 1,
+        "not_reproduced": 1,
+        "method": "fault restored by hand in a local build per fix (sources moved since, so reverts do not apply); fixture assertions confirm the pre-fix output"
+      },
       "results": "docs/features/diffverify/c4-results.md",
       "kuna_bugs": [
         "gh8777-flagcompare-sborrow FUN_0 (RuleSborrowGe polarity)",

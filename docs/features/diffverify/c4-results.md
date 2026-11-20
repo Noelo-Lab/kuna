@@ -1,10 +1,11 @@
-# diffverify — slice C4 results (precision)
+# diffverify — slice C4 results (precision and recall)
 
 C4 is the corpus run and its precision and recall (proposal, Slices). This file records
-the first half on the corpus kuna already has: every `DIFFERS` over `tests/datatests`
-and `tests/stages` triaged into a kuna bug, a bug its test pins on purpose, a harness
-limit, or a declared divergence. The harness defects that triage found were fixed on the
-way. Recall (reverting the visible P3/P4 fixes) and the decbench binaries are still open.
+both on the corpus kuna already has. Precision: every `DIFFERS` over `tests/datatests`
+and `tests/stages` is triaged into a kuna bug, a bug its test pins on purpose, a harness
+limit, or a declared divergence, and the harness defects that triage found were fixed on
+the way. Recall: past P3/P4 fixes were put back one at a time in a local build, to see
+which the check catches (§6). The decbench binaries are still open.
 
 ```sh
 decompiler/target/release/kuna-verify corpus tests/datatests tests/stages --trace
@@ -168,7 +169,56 @@ A second review found seven more. All are fixed, and each fix keeps the corpus's
 `tests/verdict_guards.rs` pins the trap, empty-loop, frame-object, failed-load,
 abbreviation and CLI cases.
 
-## 6. Cost
+## 6. Recall
+
+Of the 56 P3/P4 fixes since June 2026, 39 have a stage fixture. The 27 whose fixture the
+check could run were measured. Five were measured without a code change: a pass that sets
+the fix's option off, or C1 and C2's fault injections. The other 22 were put back by hand
+in a local build, never committed. A plain revert no longer applies, because the sources
+moved into phase folders since, so each fault is a guard returning its pre-fix answer.
+Each fixture's own assertions confirmed the old output was back.
+
+| outcome | fixes |
+|---|---|
+| caught, no contract | #801, #828 (`narrowext off`), #536 (`indexaliasguard off`), #893, #879 (1 of its 7 functions) |
+| caught only with a C contract | #794, #855, #755, #797, #879 (all 7) |
+| missed | #561, #554, #252, #564, #1500, #290, #1501, #542, #565, #559, #455, #875, #763 |
+| nothing to catch: the IR computes the same value | #1537 (a temporary named), #251 (`SUBnn` printed), #249 (a masked target the CPU masks too) |
+| a crash fix: shows as a file error | #227 |
+| bug did not come back | #238 |
+
+Of the 22 that put a semantic bug back, 5 are caught without a contract (23%) and 9 with
+one (41%). The misses fall into a few gaps, most of them in how the model treats calls:
+- **A callee run for real shares its effect.** kuna's side replays what the machine's
+  run of the callee did, so a dropped or wrong argument changes nothing on kuna's side.
+  Only arguments kuna claims are compared, and a variadic one has no storage to compare
+  at. Missed: #564, #1500, #455, #875.
+- **Storage kuna never initialized holds the machine's value.** A register kuna reads
+  without a parameter for it, or a call output it never connects, holds what the
+  machine has there, so C reading an unassigned `v1` or `_r3` computes the right value.
+  At most a `PROTOTYPE_SUSPECT` note appears. Missed: #290, #565, #1500, #1501.
+- **A return claimed too narrow, or void, compares nothing without a contract.** With
+  one, #855, #755, #797 and #879 are caught. #763 (swapped halves) was not run with
+  one. #559 claims a return too wide, and its extra half really holds what the claim
+  says.
+- **Frame objects at an in-image callee that reads nothing.** In #561 and #554 the wrong
+  bytes reach only a buffer passed to `sink`, which is a bare `ret` in these fixtures.
+  The program never reads them. A probe whose `sink` reads the buffer sees the
+  difference, as `UNKNOWN(uninitialized-local)` there, since the buffer's source is
+  never initialized either.
+- **Writes into read-only memory.** #252 stores a literal's own bytes back into it,
+  which is not a value difference, and nothing checks for writes to read-only memory.
+- **C that is false but runs the same.** #542 (`-sub_1100()` equals the RAX the real
+  `__chkstk` leaves) and #1501 (a jump made a call into in-image code) execute
+  identically. Only the printed-C tier can see them.
+
+Two of these suggest checks that would close most of the misses. One reruns kuna's side
+with storage it never initialized given different values: a result that changes reads
+an uninitialized value. The other compares, at a call to a callee run for real, the
+inputs the callee read before writing them. #252 needs a read-only store check, and #227
+needs an `UNKNOWN(decompile)` row instead of a file error.
+
+## 7. Cost
 
 Check time 122.9 s, wall time 19.3 s on 14 worker processes, over 4,030 functions. Peak RSS is 216 MB for the
 heaviest single test. Check time grew from C2's 50.3 s because functions that used to
