@@ -3122,10 +3122,12 @@ full round makes no change, and refuses to run at all while unreachable blocks
 exist. An iblock op whose output has **no readers** is removable only once
 its space has had at least one heritage pass: before that, the missing readers
 may simply not be linked yet. `condexe.rs (ConditionalExecution::build_heritage_array)`
-records that per space from `Funcdata::num_heritage_passes`, as upstream. Such
-ops normally fall to dead-code removal first; they reach the test when the
+records that per space from `Funcdata::num_heritage_passes`, as upstream. Most
+such ops fall to dead-code removal first. They still reach the test when the
 space's dead-code delay outlasts its heritage delay (the console
-`deadcode delay` command, `tests/stages/kuna-condexe-heritage.xml`).
+`deadcode delay` command, `tests/stages/kuna-condexe-heritage.xml`), and on
+ARM predicated code: a `moveq`/`movne` pair ahead of the re-tested branch
+(u-boot `env_attr_lookup`) now collapses into the guarded block.
 `condexe.rs (RuleOrPredicate)` (oppool1, group
 `conditionalexe`) handles the value-form of the same redundancy: an INT_OR
 (or INT_XOR) where one operand is provably zero along the path that reaches it (the
