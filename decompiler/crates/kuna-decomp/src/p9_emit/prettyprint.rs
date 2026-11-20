@@ -2719,6 +2719,7 @@ impl EmitPrettyPrint {
     }
     /// Fallible C++ `tagLine(int4 indent)`.
     pub fn try_tag_line_indent(&mut self, indent: int4) -> KunaResult<()> {
+        Emit::emit_pending(self);
         self.checkbreak()?;
         let slot = self.tokqueue.push();
         self.tokqueue.get_ref_mut(slot).tag_line_indent(indent);

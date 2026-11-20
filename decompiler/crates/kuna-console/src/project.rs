@@ -888,6 +888,7 @@ pub fn decompile_pulled(
                 }
                 let emitted_name = fd.get_display_name().to_string();
                 prog.arch_mut().print_mut().set_record_pointer_arguments(want_pointer_arguments);
+                let line_size = prog.arch_mut().print_mut().suspend_line_size();
                 let budget = kuna_decomp::decompile_drive::RenderBudget::enter(prog.arch(), &fd);
                 let rendered = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     if header_carries_types {
@@ -978,6 +979,7 @@ pub fn decompile_pulled(
                     ))
                 });
                 drop(budget);
+                prog.arch_mut().print_mut().restore_line_size(line_size);
                 fd.set_display_name(&original_display);
                 match rendered {
                     Ok((code, variables, types, (globals, field_calls, call_declarations, callwide_prototypes), proto, line_mappings, callee_hints, detail, (pointerargs, warnings), stack_objects)) => {

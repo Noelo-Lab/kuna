@@ -2112,7 +2112,15 @@ where upstream always breaks lines at 100 columns. `option maxlinewidth N`
 (20 to 10000) selects upstream's line breaking for plain text:
 `printc.rs (PrintC::set_max_line_size)` puts `EmitPrettyPrint` in front of the
 plain emitter, and `printc.rs (PrintC::set_markup)` keeps it when it restores
-plain text after a markup render. The markup back-end is never wrapped. The
+plain text after a markup render. The markup back-end is never wrapped. Only
+the console's `print C` (and so plain `kuna decompile` text) is broken: the
+batch render behind `--json`, `decompile-all` and the browser front-end
+returns records that address its code line by line (warning lines, line
+mappings, the call-argument positions later casts are written at), so
+`decompiler/crates/kuna-console/src/project.rs (decompile_pulled)` prints each
+of its functions unbroken (`printc.rs (PrintC::suspend_line_size)`). A label
+line fires a pending `else` brace before the label, as it does without the
+pretty-printer (`prettyprint.rs (EmitPrettyPrint::try_tag_line_indent)`). The
 line size also bounds `option commentindent`: an indent of N or more is refused
 (`printc.rs (PrintC::set_line_comment_indent)`), as upstream does
 (`tests/stages/kuna-maxlinewidth.xml`). The datatest corpus passes unchanged

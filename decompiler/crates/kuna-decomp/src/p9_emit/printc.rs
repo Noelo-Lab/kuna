@@ -1880,6 +1880,25 @@ impl PrintC {
         }
         Ok(())
     }
+    /// Print unbroken lines until [`Self::restore_line_size`], for a render
+    /// whose records (warning lines, line mappings, call-argument positions)
+    /// address its text line by line. Returns the line size to restore.
+    pub fn suspend_line_size(&mut self) -> Option<int4> {
+        let size = self.plain_line_size.take();
+        if size.is_some() && !self.emit.emits_markup() {
+            self.emit = self.plain_emit();
+        }
+        size
+    }
+    /// Undo [`Self::suspend_line_size`].
+    pub fn restore_line_size(&mut self, size: Option<int4>) {
+        if size.is_some() {
+            self.plain_line_size = size;
+            if !self.emit.emits_markup() {
+                self.emit = self.plain_emit();
+            }
+        }
+    }
     /// A fresh plain-text back-end honoring [`Self::plain_line_size`], carrying
     /// the current indent increment.
     fn plain_emit(&self) -> PrintEmit {
