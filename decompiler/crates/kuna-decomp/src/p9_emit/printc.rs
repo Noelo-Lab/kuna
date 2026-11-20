@@ -1903,8 +1903,8 @@ impl PrintC {
         }
     }
     /// A fresh plain-text back-end honoring [`Self::plain_line_size`] for C
-    /// output (Go ends a statement at a line break), carrying the current
-    /// indent increment.
+    /// output only (Go ends a statement at a line break; Rust and Go print
+    /// unbroken), carrying the current indent increment.
     fn plain_emit(&self) -> PrintEmit {
         let mut emit = match self.plain_line_size.filter(|_| self.out_lang == crate::kuna_lang::OutLang::C) {
             Some(size) => {

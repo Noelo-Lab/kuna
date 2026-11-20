@@ -2113,9 +2113,9 @@ where upstream always breaks lines at 100 columns. `option maxlinewidth N`
 `printc.rs (PrintC::set_max_line_size)` puts `EmitPrettyPrint` in front of the
 plain emitter, and `printc.rs (PrintC::set_markup)` keeps it when it restores
 plain text after a markup render. The markup back-end is never wrapped, and
-neither is Go output, where a line break ends a statement
-(`printc.rs (PrintC::set_name)` re-selects the emitter when the language
-changes). Only the console's `print C` (and so plain `kuna decompile` text) is
+only C output is: Go ends a statement at a line break, and Rust and Go print
+unbroken (`printc.rs (PrintC::set_name)` re-selects the emitter when the
+language changes). Only the console's `print C` (and so plain `kuna decompile` text) is
 broken: the batch render behind `--json`, `decompile-all` and the browser front-end
 returns records that address its code line by line (warning lines, line
 mappings, the call-argument positions later casts are written at), so
