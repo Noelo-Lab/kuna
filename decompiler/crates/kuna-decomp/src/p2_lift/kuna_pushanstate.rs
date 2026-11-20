@@ -7,9 +7,10 @@
 //! addresses): an access at `base + offset` touches only its own region, which
 //! is the "pointers to distinct symbolic bases never alias" assumption the
 //! paper's stack handling relies on.  Unwritten concrete memory reads the
-//! program image where its bytes are a fact (not a writable data section);
-//! unwritten symbolic memory, writable data and registers read a stable
-//! symbolic variable, so the same location is the same symbol on every path.
+//! program image where its bytes cannot have changed (not a writable data
+//! section); unwritten symbolic memory, writable data and registers read a
+//! stable symbolic variable, so the same location is the same symbol on every
+//! path.
 
 use std::collections::BTreeMap;
 
@@ -28,10 +29,10 @@ pub trait PushanImage {
     fn read_bytes(&self, addr: u64, buf: &mut [u8]) -> bool;
     /// Whether `addr` lies in a section the program may write at run time.
     fn is_writable(&self, addr: u64) -> bool;
-    /// Whether the image's bytes at `addr` are what an unwritten read there
-    /// sees at run time.
-    fn initial_is_fact(&self, addr: u64) -> bool {
-        !self.is_writable(addr)
+    /// Whether the bytes at `addr` may differ from the file's when the
+    /// function runs: writable memory, other than what the loader fills in.
+    fn is_mutable(&self, addr: u64) -> bool {
+        self.is_writable(addr)
     }
 }
 
@@ -71,6 +72,11 @@ impl ByteStore {
         for i in 0..size {
             self.bytes.remove(&(off + i as i128));
         }
+    }
+
+    /// Drop every stored byte whose offset satisfies `f`.
+    pub fn remove_where(&mut self, f: impl Fn(i128) -> bool) {
+        self.bytes.retain(|o, _| !f(*o));
     }
 
     pub fn has_any(&self, off: i128, size: u8) -> bool {
@@ -252,6 +258,9 @@ pub struct State {
     /// The 4-byte granules of the entry-stack region the program stored to
     /// since the last external call, sorted: the words a call's arguments can be.
     pub stack_stores: Vec<i32>,
+    /// The last external call emulated on this path (a number unique to that
+    /// emulation): unwritten mutable memory holds what that call left there.
+    pub global_epoch: Option<u64>,
 }
 
 /// Most granules [`State::stack_stores`] records between two calls.
@@ -268,6 +277,7 @@ impl State {
             unknown_stores: 0,
             unknown_loads: 0,
             stack_stores: Vec::new(),
+            global_epoch: None,
         }
     }
 
@@ -326,8 +336,9 @@ impl State {
         self.uniq.clear();
     }
 
-    /// Read memory at `base + off`; concrete gaps come from the image where
-    /// its bytes are a fact, and read a stable symbol elsewhere.
+    /// Read memory at `base + off`; concrete gaps come from the image.  An
+    /// unwritten byte of mutable memory is not the file's: it reads the
+    /// stable symbol of its value at entry, or after the last external call.
     pub fn read_mem(
         &mut self,
         arena: &mut ExprArena,
@@ -337,13 +348,20 @@ impl State {
         size: u8,
     ) -> ExprId {
         let be = self.big_endian;
+        let epoch = self.global_epoch;
         let region = self.mem.entry(base).or_default();
         region.read_with(arena, off, size, be, &mut |a, o, len| {
             if base.is_none() {
                 let addr = o as u64;
+                let concrete = (o as u64 as i128) == o;
+                if concrete && (image.is_mutable(addr) || image.is_mutable(addr.wrapping_add(len as u64 - 1))) {
+                    if let Some(site) = epoch {
+                        return a.var_of(VarKind::CallOutputAt { epoch: site, offset: o }, len, false);
+                    }
+                    return a.var_of(VarKind::InitMem { base, offset: o }, len, false);
+                }
                 let mut buf = vec![0u8; len as usize];
-                let fact = image.initial_is_fact(addr) && image.initial_is_fact(addr.wrapping_add(len as u64 - 1));
-                if (o as u64 as i128) == o && fact && image.read_bytes(addr, &mut buf) {
+                if concrete && image.read_bytes(addr, &mut buf) {
                     let mut v: u128 = 0;
                     if be {
                         for b in &buf {
@@ -359,6 +377,16 @@ impl State {
             }
             a.var_of(VarKind::InitMem { base, offset: o }, len, false)
         })
+    }
+
+    /// An external call may have written any mutable memory: the stored
+    /// bytes there are dropped and later reads see the output of the call
+    /// numbered `epoch`.
+    pub fn clobber_mutable(&mut self, image: &dyn PushanImage, epoch: u64) {
+        if let Some(region) = self.mem.get_mut(&None) {
+            region.bytes.retain(|o, _| u64::try_from(*o).is_ok_and(|a| !image.is_mutable(a)));
+        }
+        self.global_epoch = Some(epoch);
     }
 
     pub fn write_mem(&mut self, base: Option<VarId>, off: i128, e: ExprId, size: u8) {
@@ -509,14 +537,6 @@ impl State {
         rewrite(&mut self.uniq, arena);
         for region in self.mem.values_mut() {
             rewrite(region, arena);
-        }
-    }
-
-    /// Forget what the program wrote to concrete memory whose contents are
-    /// not a fact (a writable data section): a call may change it.
-    pub fn forget_globals(&mut self, image: &dyn PushanImage) {
-        if let Some(r) = self.mem.get_mut(&None) {
-            r.bytes.retain(|o, _| (*o as u64 as i128) != *o || image.initial_is_fact(*o as u64));
         }
     }
 

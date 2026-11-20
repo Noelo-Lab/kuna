@@ -181,6 +181,8 @@ pub struct Emulator<'a> {
     pub sym_values: SymValues,
     /// The handler address a no-return interrupt produced in this instruction.
     noreturn_target: Option<ExprId>,
+    /// Stores whose address the emulation could not place, ignored.
+    pub dropped_stores: usize,
 }
 
 /// Symbol -> the constants its location held where paths met.
@@ -201,6 +203,7 @@ impl<'a> Emulator<'a> {
             image_loads: BTreeMap::new(),
             sym_values: Default::default(),
             noreturn_target: None,
+            dropped_stores: 0,
         }
     }
 
@@ -528,6 +531,43 @@ impl<'a> Emulator<'a> {
         }
         state.unknown_stores += 1;
         self.note(format!("unknown store address {}", arena.fmt(addr)));
+        if !self.havoc_store(state, arena, addr) {
+            self.dropped_stores += 1;
+        }
+    }
+
+    /// A store to an address over a symbolic index (`base + c * i + k`, an
+    /// array element) that no split places: what it may have overwritten is
+    /// forgotten.  Distinct symbolic bases never alias, so only the regions
+    /// of the address's bases are touched; on the entry stack only the
+    /// function's own frame from the array's start upward (`[k, 0)`, the
+    /// index taken non-negative when every index term scales up), and below
+    /// it too otherwise.  An address with no base is an array in the image:
+    /// all mutable memory is forgotten.  False when nothing could be placed.
+    fn havoc_store(&mut self, state: &mut State, arena: &mut ExprArena, addr: ExprId) -> bool {
+        let (terms, k) = arena.linear_terms(addr);
+        let size = arena.size(addr);
+        if terms.is_empty() {
+            return false;
+        }
+        let bases: Vec<u32> = terms.iter().filter(|(_, c)| *c == 1).filter_map(|(t, _)| arena.as_var(*t)).collect();
+        if bases.is_empty() {
+            let fresh = arena.unknown(1);
+            let epoch = (1u64 << 63) | arena.as_var(fresh).unwrap_or(0) as u64;
+            state.clobber_mutable(self.target, epoch);
+            return true;
+        }
+        let upward = terms.iter().all(|(_, c)| !super::kuna_pushanexpr::sign(*c, size));
+        for b in bases {
+            let Some(region) = state.mem.get_mut(&Some(b)) else { continue };
+            if arena.var_info(b).pointer {
+                let lo = if upward { k } else { i128::MIN };
+                region.remove_where(|o| o >= lo && o < 0);
+            } else {
+                region.remove_where(|_| true);
+            }
+        }
+        true
     }
 
     /// Execute one instruction; the state is left as the fall-through side.

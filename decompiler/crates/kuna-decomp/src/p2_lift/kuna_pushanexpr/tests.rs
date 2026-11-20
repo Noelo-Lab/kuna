@@ -427,3 +427,57 @@ fn a_narrow_merged_location_never_probes_affine() {
     let zero = a.mk_bin(CPUI_INT_SUB, sq, k, 4);
     assert_eq!(a.affine_probe(zero), Some((None, 0)), "{}", a.fmt(zero));
 }
+
+#[test]
+fn case_split_reaches_atoms_nested_in_a_comparison() {
+    // `setl dl; push rdx; ...; test rax, rax; cmovz rsi, rcx`: the select's
+    // guard is a comparison of the overflow and sign atoms, an atom whose own
+    // operands hold the atoms that decide it.
+    let mut a = ExprArena::new();
+    let s = a.var_of_known(VarKind::Merged { node: 1, tag: 1 }, 8, false, (mask(8) & !1, 0));
+    let ten = a.cst(8, 10);
+    let zero = a.cst(8, 0);
+    let of = a.mk_bin(CPUI_INT_SBORROW, s, ten, 1);
+    let diff = a.mk_bin(CPUI_INT_SUB, s, ten, 8);
+    let sf = a.mk_bin(CPUI_INT_SLESS, diff, zero, 1);
+    let lt = a.mk_bin(CPUI_INT_NOTEQUAL, of, sf, 1);
+    let wide = a.mk_un(CPUI_INT_ZEXT, lt, 8);
+    let zf = a.mk_bin(CPUI_INT_EQUAL, wide, zero, 1);
+    let (exit, body) = (a.cst(8, 0x40296b), a.cst(8, 0x402958));
+    let vpc = a.mk_ite(zf, exit, body);
+    assert_eq!(a.possible_values(vpc), Some(vec![0x402958, 0x40296b]), "{}", a.fmt(vpc));
+}
+
+#[test]
+fn only_round_stable_variables_name_a_location() {
+    let mut a = ExprArena::new();
+    let sp = a.var_of(VarKind::InitReg { offset: 0x20 }, 8, false);
+    let sp_var = a.as_var(sp).unwrap();
+    let call = a.var(VarInfo::new(VarKind::CallResult { site: 0x1000 }, 8, false));
+    let call_var = a.as_var(call).unwrap();
+    let behind_sp = a.var_of(VarKind::InitMem { base: Some(sp_var), offset: 8 }, 8, false);
+    let behind_call = a.var_of(VarKind::InitMem { base: Some(call_var), offset: 8 }, 8, false);
+    assert!(a.is_stable_var(sp_var));
+    assert!(a.is_stable_var(a.as_var(behind_sp).unwrap()));
+    assert!(!a.is_stable_var(call_var));
+    assert!(!a.is_stable_var(a.as_var(behind_call).unwrap()));
+}
+
+#[test]
+fn a_stack_pointer_test_that_holds_only_high_up_is_no_constant() {
+    let mut a = ExprArena::new();
+    let sp = a.var_of_known(VarKind::InitReg { offset: 0x20 }, 8, false, (0x7, 0x8));
+    a.mark_pointer(sp);
+    let k32 = a.cst(1, 32);
+    let hi = a.mk_bin(CPUI_INT_RIGHT, sp, k32, 8);
+    let zero = a.cst(8, 0);
+    let low = a.mk_bin(CPUI_INT_EQUAL, hi, zero, 1);
+    let (x, y) = (a.cst(8, 0x401000), a.cst(8, 0x402000));
+    let sel = a.mk_ite(low, x, y);
+    assert_eq!(a.affine_probe(sel), None, "{}", a.fmt(sel));
+    // the image base an XOR swap through the stack pointer leaves is one
+    let base = a.cst(8, 0x1_4000_0000);
+    let swapped = a.mk_bin(CPUI_INT_XOR, sp, base, 8);
+    let back = a.mk_bin(CPUI_INT_XOR, swapped, sp, 8);
+    assert_eq!(a.affine_probe(back), Some((None, 0x1_4000_0000)));
+}

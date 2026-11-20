@@ -46,7 +46,7 @@ fn sext(v: u128, size: u8) -> i128 {
     if b >= 128 { v as i128 } else { ((v << (128 - b)) as i128) >> (128 - b) }
 }
 #[inline]
-fn sign(v: u128, size: u8) -> bool {
+pub fn sign(v: u128, size: u8) -> bool {
     (v >> (bits(size) - 1)) & 1 == 1
 }
 #[inline]
@@ -67,6 +67,9 @@ pub enum VarKind {
     CallClobber { site: u64, offset: u64 },
     /// Memory an external call may have written through a pointer argument.
     CallOutput { site: u64 },
+    /// Mutable memory at a concrete address after the external call that
+    /// opened `epoch` (one per emulated call).
+    CallOutputAt { epoch: u64, offset: i128 },
     /// A location that held different constants on two paths into a node.
     Merged { node: u32, tag: u64 },
     /// Anything the emulator does not model.
@@ -270,6 +273,22 @@ impl ExprArena {
         let e = self.var(VarInfo { kind, size, boolean, known, pointer: false });
         self.var_memo.insert((kind, size), e);
         e
+    }
+
+    /// Whether `v` names the same location in every exploration round: the
+    /// one variable of its kind ([`var_of`](Self::var_of)) for a register's
+    /// or memory's entry value or a merged location, behind no fresh base.
+    /// A call's outputs and the unknowns are made afresh each round.
+    pub fn is_stable_var(&self, v: VarId) -> bool {
+        let info = &self.vars[v as usize];
+        if self.var_memo.get(&(info.kind, info.size)).and_then(|e| self.as_var(*e)) != Some(v) {
+            return false;
+        }
+        match info.kind {
+            VarKind::InitReg { .. } | VarKind::Merged { .. } | VarKind::InitMem { base: None, .. } => true,
+            VarKind::InitMem { base: Some(b), .. } => b != v && self.is_stable_var(b),
+            _ => false,
+        }
     }
 
     /// Mark a variable as a valid pointer (see [`VarInfo::pointer`]).
@@ -1474,6 +1493,16 @@ impl ExprArena {
         r
     }
 
+    /// `e` as `sum(coef * term) + c`: its non-zero terms with their
+    /// coefficients and its constant, sign-extended.
+    pub fn linear_terms(&self, e: ExprId) -> (Vec<(ExprId, u128)>, i128) {
+        let size = self.size(e);
+        let l = self.lin(e);
+        let m = mask(size);
+        let terms = l.terms.iter().map(|(t, k)| (*t, (*k as u128) & m)).filter(|(_, k)| *k != 0).collect();
+        (terms, sext((l.c as u128) & m, size))
+    }
+
     /// `e == base + c` for a symbolic base variable (None = a plain constant).
     pub fn affine(&self, e: ExprId) -> Option<(Option<VarId>, i128)> {
         let size = self.size(e);
@@ -1524,6 +1553,11 @@ impl ExprArena {
                 let mut points: Vec<u128> =
                     [0x0000_7ffd_3a5c_9e40u128, 0x0000_1234_5678_9ab0, 0x0000_6b8b_4567_3270].iter().map(|p| ((p & m) & !info.known.0) | info.known.1).collect();
                 let mut constant = info.pointer;
+                if info.pointer {
+                    // A user-mode stack may sit below 4 GiB (a Windows main
+                    // thread's does): a value that only holds high up is no constant.
+                    points.push(((0x0014_fe40u128 & m) & !info.known.0) | info.known.1);
+                }
                 if free.count_ones() <= 2 {
                     points = (0..1u128 << free.count_ones()).map(|i| deposit(i, free) | info.known.1).collect();
                     constant = true;
@@ -1889,20 +1923,29 @@ impl ExprArena {
         Some(out)
     }
 
-    /// The innermost atoms of `e`: atoms whose operands hold no atom.
+    /// The innermost atoms of `e`: atoms whose operands hold no atom, found
+    /// through the operands of every atom that holds one (a comparison over
+    /// flags computed from other comparisons is decided by those).
     fn leaf_atoms(&self, e: ExprId) -> Vec<ExprId> {
-        let all = self.bool_atoms(e);
-        let mut out = Vec::with_capacity(all.len());
-        for a in all {
-            let inner = match self.kind(a).clone() {
-                ExprKind::Bin(_, x, y) => !self.bool_atoms(x).is_empty() || !self.bool_atoms(y).is_empty(),
-                ExprKind::Un(_, x) => !self.bool_atoms(x).is_empty(),
-                _ => false,
+        let mut out = Vec::new();
+        let mut seen = BTreeSet::new();
+        let mut stack = self.bool_atoms(e);
+        while let Some(a) = stack.pop() {
+            if !seen.insert(a) {
+                continue;
+            }
+            let inner: Vec<ExprId> = match self.kind(a).clone() {
+                ExprKind::Bin(_, x, y) => self.bool_atoms(x).into_iter().chain(self.bool_atoms(y)).collect(),
+                ExprKind::Un(_, x) => self.bool_atoms(x),
+                _ => Vec::new(),
             };
-            if !inner {
+            if inner.is_empty() {
                 out.push(a);
+            } else {
+                stack.extend(inner);
             }
         }
+        out.sort_unstable();
         out
     }
 
@@ -1999,6 +2042,7 @@ impl ExprArena {
                     VarKind::CallResult { site } => write!(s, "ret@{:x}", site),
                     VarKind::CallClobber { site, offset } => write!(s, "clobber{:x}@{:x}", offset, site),
                     VarKind::CallOutput { site } => write!(s, "out@{:x}", site),
+                    VarKind::CallOutputAt { epoch, offset } => write!(s, "out#{}[{:#x}]", epoch, offset),
                     VarKind::Merged { node, tag } => write!(s, "sym{}_{:x}", node, tag),
                     VarKind::Unknown { tag } => write!(s, "unk{}", tag),
                 };

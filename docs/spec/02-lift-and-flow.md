@@ -4007,15 +4007,25 @@ mixed-width stack accesses compose exactly. Memory is split into regions by
 the address's symbolic base. Distinct symbolic bases never alias, which is the
 paper's stack assumption. Unwritten read-only memory reads the image, and
 unwritten symbolic memory and registers read a stable symbol, the same one on
-every path. So does an unwritten byte of a writable data section
-(`kuna_pushan.rs (ArchTarget::initial_is_fact)`): its image contents are only
-the value it starts the process with, and another function may have changed
-it, so the MSVC `/GS` cookie, a global counter or a pointer table read there
-stays a variable instead of the number the file happens to hold. An import
-slot (a function symbol at the address, as in a Themida image's writable
-`.idata`) still reads the image, because a call through it is recognized by
-the pointer the slot holds. The protector's own sections are code and read
-the image too. A constant fill from the image is not stored in the state,
+every path. Unwritten memory in a writable data section is not the file's
+either (`PushanImage::is_mutable`): its image contents are only the value it
+starts the process with, and another function may have changed it, so it reads
+the stable symbol of its entry value, and the MSVC `/GS` cookie, a global flag
+tested by the program, a counter or a pointer table read there stays a
+variable instead of the number the file happens to hold. An import slot (a
+function symbol at the address, as in a Themida image's writable `.idata`)
+still reads the image, because a call through it is recognized by the pointer
+the slot holds, and the protector's own sections are code and read the image
+too. An external call may write any mutable memory, so it drops what the path
+stored there, and later reads see a symbol of that call's output, one per
+emulated call (`State::clobber_mutable`): a value read before the call and
+the same global read after it are not the same variable. A store whose
+address no split places, over a symbolic index (`base + c*i + k`, an array
+element), forgets what it may have overwritten (`Emulator::havoc_store`): the
+regions of the address's bases, and on the entry stack only the function's own
+frame from `k` upward, the index taken as non-negative when every index term
+scales up, below `k` too otherwise. An address with no base is an array in the
+image, and all mutable memory is forgotten. A constant fill from the image is not stored in the state,
 because it reads the same on every path, so a node's entry state holds only
 what the program wrote and not every bytecode byte its path fetched. A
 symbolic fill is stored, so reads of the same bytes at different widths
@@ -4054,7 +4064,10 @@ are answered by a case split over the boolean atoms of the expression
 (`ExprArena::case_split`). The atoms are the comparisons and boolean variables
 the value depends on. They are substituted innermost first, so a comparison
 over flags that are computed from other flags folds under the inner
-assignment. An atom whose flip never changes the result is dropped, and a case
+assignment. The innermost atoms are found through the operands of every atom
+that holds one, so a guard that tests a materialized comparison (`setl`, then
+`test` and `cmovz`, whose condition compares the overflow and sign atoms) is
+decided by those two atoms. An atom whose flip never changes the result is dropped, and a case
 that only fails through a shift or division made undefined by its own
 assignment is infeasible. The split is bounded at 10 atoms per level, 4
 nested levels and 4096 substitutions. A guard that folds takes one side. A
@@ -4073,25 +4086,42 @@ value differs is recorded against the node's key. A location is an aligned
 half is narrowed to that half, down to one byte, so a narrow variable sharing
 a slot with an unchanged neighbour does not take the neighbour with it. Each
 recorded location keeps the constants it was seen to hold (up to 32) and the
-bits all of them agreed on. The VPC register or cell is part of the key and
-is never symbolized. The next round starts over. At a recorded node, each recorded
+bits all of them agreed on. A side that is not a constant contributes the
+constants its atoms decide, nothing when it is the location's own symbol, and
+otherwise opens the location: a loop counter that comes back as `i + 1` takes
+values no merge saw, so its recorded constants no longer stand for all it
+holds. A location under any symbolic base that names the same variable every
+round (the entry stack pointer, a pointer argument, a merged location) is
+recorded like a register. Memory behind a base that is fresh each round (a
+call's result) cannot be named again, so a node such memory reached with
+different contents starts with all of it forgotten, and so does mutable
+memory at a node that paths reached after different external calls. The VPC
+register or cell is part of the key and is not symbolized while the incoming
+path's VPC is the value the key names (`Explorer::keys_vpc`); a key carried
+forward past a block that left no readable VPC symbolizes it like any other
+location, so a path the key cannot tell apart is not dropped. The next round starts over. At a recorded node, each recorded
 location becomes a fresh symbol that carries the agreed known bits. The fixpoint
-is reached when a round records no new location, no new constant and no
-narrowed bits. A pointer advanced in a loop (`sym + 1` against `sym`) loses
-one more high bit to the carry every round, which would cost one round per
-bit. The second time a location's agreed bits narrow, every agreed bit at or
-above the lowest bit that was lost is dropped at once. A computed target that
-depends on exactly one symbolized location is enumerated over that location's recorded constants instead of
+is reached when a round records no new location, no new constant, no opened
+location and no narrowed bits. The known bits only narrow, so each round's are
+implied by every value a path brought, and at the fixpoint every guard folded
+through them holds on every path. A pointer advanced in a loop (`sym + 1`
+against `sym`) loses one more high bit to the carry every round, which would
+cost one round per bit. The second time a location's agreed bits narrow,
+every agreed bit at or above the lowest bit that was lost is dropped at once.
+When the 40th round is reached without the fixpoint, it runs with every
+recorded location fully unknown and opened (`Explorer::widen_all`), so a
+location still widening folds nothing it cannot. A computed target that depends on exactly one symbolized
+location whose recorded constants were never opened is enumerated over them instead of
 atoms, by substituting each constant (`Explorer::enumerate_symbol_target`),
 and each successor's state pins the symbol to its constant. A load whose
-address depends on exactly one symbolized location and lies at concrete
+address depends on exactly one such location and lies at concrete
 addresses for every recorded constant is read once per constant (up to 16)
 and becomes a select over the reads, keyed by comparing the symbol with each
 constant (`kuna_pushanemu.rs (Emulator::indexed_load)`). That is how a Themida
 dispatch through a handler table, indexed by an opcode slot that a merge
-symbolized, resolves. An array on the stack or behind a pointer, indexed by a
-loop counter, is not read this way. The counter takes more values than the
-merges saw, and a select over `v[0]` and `v[1]` would rebuild the program's
+symbolized, resolves. An array indexed by a loop counter, on the stack, behind
+a pointer or in the image, is not read this way. The counter's location is
+open, and a select over `v[0]` and `v[1]` would rebuild the program's
 `v[i]` test as a test of those two elements; such a load is an unknown value,
 and the test on it is witnessed where the program computes it. A loop counter or a virtual register that differs between iterations
 therefore becomes a variable, while a value that is the same on every path
@@ -4111,6 +4141,14 @@ there is no fork: that constant replaces the VPC expression throughout the
 state, so the next handler fetches from a concrete VPC instead of carrying a
 select whose value only a case split knows.
 
+A node that ends in a native conditional reads each successor's context from
+that successor's own state (`Explorer::emulate_node`). A conditional that only
+skips to the next instruction, a `cmov`, first joins its two sides into one
+state selecting on the guard, and the context is read from the joined state.
+Read from one side, the key would name a single VPC that the state does not
+hold: two virtual branches to one label would then reach the same key, and the
+second branch's fall-through, which the key cannot tell apart, would be lost.
+
 **External calls.** A call into the foreign code section to an address that
 is not a known function is the interpreter's own dispatch. It is followed as a
 jump, salted as above. Every other call is not followed, and neither is a jump
@@ -4120,8 +4158,9 @@ call. A computed target that is not code but was read from a data slot of the
 image is a call through that slot (an import or GOT entry). It is a call when
 the interpreter pushed a return address, and a tail call through the slot otherwise. `Explorer::apply_call_summary` models a call that is not followed. The return
 register gets a fresh call-result symbol. Each ABI scratch register (RCX,
-RDX, R8-R11 and the arithmetic flags on x86-64, ECX/EDX on x86) gets a
-call-clobber symbol, except a register that a callee in the image never
+RDX, R8-R11 and the arithmetic flags on Windows x86-64, RSI and RDI as well
+under the System V convention every other x86-64 image uses, ECX/EDX on x86)
+gets a call-clobber symbol, except a register that a callee in the image never
 writes, when its code was read to every return without calling out. The
 return address is popped, together with the arguments the callee removes
 itself (the stack purge below). The 16 bytes behind
@@ -4130,10 +4169,9 @@ every pointer argument become unknown, because a `scanf("%d", &v)` writes
 On x86 the eight stack words above the return address are treated as
 possible pointer arguments too, and so is every word the callee pops
 (`CreateProcessA` pops ten, the last its `PROCESS_INFORMATION` pointer). Every entry-stack offset handed to a call this
-way is recorded as escaped, over all rounds. What the program wrote to a
-writable data section is forgotten (`State::forget_globals`), because the
-callee may change it, and a later read sees the section's symbol again.
-Emulation continues at the return address. On a Windows image
+way is recorded as escaped, over all rounds. Every byte of mutable memory is
+the call's output, as above (`State::clobber_mutable`), because the callee
+may change it. Emulation continues at the return address. On a Windows image
 (`ThreadBlock`) the segment register that addresses the thread block is
 fixed to a synthetic TEB, with a PEB, process heap and image base behind it,
 holding the values an ordinary undebugged process sees. The protector's TEB
@@ -4191,8 +4229,14 @@ with these edits:
   A return through an untouched stack slot above the entry stack pointer is a
   return too: Themida starts the virtualized code after the native prologue,
   so the caller's return address sits past the prologue's frame.
-  A symbolic guard keeps its CBRANCH. A computed target that could not be
-  enumerated keeps its original op, and an unexplored node is a dead end.
+  A symbolic guard keeps its CBRANCH, one per CBRANCH of the instruction in
+  order, and a conditional the emulation decided is dropped wherever it sits.
+  A guard that only skips to where the instruction continues anyway (a
+  `cmov`) becomes a branch inside the instruction to its exit, so the move
+  stays conditional and dies with the ops it skips when they are dead. A
+  computed target that could not be enumerated keeps its original op, except
+  that a dispatch's `ret` becomes a computed jump, since it is not the function
+  returning; an unexplored node is a dead end.
   Within a node where nothing forked, the executed path is emitted (loops
   unrolled) and the decided internal branches are dropped.
 - Folding. A data op whose result the emulation fixed to a constant becomes a
@@ -4227,12 +4271,17 @@ with these edits:
   bytes from -0x8000 to +0x1000 relative to the entry stack pointer. An
   instruction dies when nothing it defines is read and it has no other effect.
   Inside a live instruction, a stack store nobody reads dies with the address
-  arithmetic that fed it. A return keeps the return register and the
+  arithmetic that fed it. In an instruction with branches among its own ops,
+  everything before its trailing exit ops dies together when none of it has an
+  effect or writes anything read afterwards (`dead_body`). A return keeps the return register and the
   callee-saved registers, minus those the emulation proved still hold their
   entry value. An external call keeps the argument registers (RCX, RDX, R8 and
-  R9 on x86-64; ECX and EDX on x86, which `__fastcall` and `__thiscall` pass
-  and in which MSVC's `__security_check_cookie` takes the cookie), its outgoing
-  argument area (0x60 bytes on x86-64, 0x28 on x86), and every stack byte at
+  R9 on Windows x86-64; RDI, RSI, RDX, RCX, R8 and R9 under System V; ECX and
+  EDX on x86, which `__fastcall` and `__thiscall` pass and in which MSVC's
+  `__security_check_cookie` takes the cookie), its outgoing argument area (16
+  stack arguments: 0xa8 bytes from the return address on x86-64, home space
+  included, 0x44 on x86, or more when the callee pops more, as a 12-argument
+  `CreateWindowExA` does), and every stack byte at
   or above the lowest entry-stack offset the function ever handed to a call,
   because an escaped pointer can reach any of that. It keeps nothing below.
 - Undefined-argument placeholders. Before an external call, an argument
@@ -4291,7 +4340,12 @@ translator (`set_pcode_overlay`), which serves an overlay instruction's p-code
 and listing text before decoding any bytes. It also clears the function's
 declared extent, and the flow follower's mapped-byte checks accept overlay
 addresses. The function gets a header warning with the node, instruction and
-round counts, and an instruction budget of at least 4,000,000. A function
+round counts, and an instruction budget of at least 4,000,000. A second header
+warning (`PushanProgram::caveats`) says what the recovered program may miss or
+get wrong: computed jumps left unresolved, paths not followed, an exploration
+cut short by its budget or ending without its fixpoint, paths joined at another
+stack depth without merging (their values never reached the node), and stores
+the emulation could not place. A function
 that is not devirtualized gets the overlay cleared. The program's call-kill
 list (the scratch registers, the return register and the placeholders) is
 stored on the `Funcdata`, and `Heritage::guardCalls`
@@ -4347,7 +4401,10 @@ both keyed on the `Funcdata` flag `adopt` sets (`kuna_devirtualized`).
 First, the local-alias test of the input trials is off: the deferred alias
 checker `ActionActiveParam` builds
 (`decompiler/crates/kuna-decomp/src/p6_variables/funcdata_spacebase.rs (build_alias_checker_deferred)`)
-answers as if no pointer into the stack had been gathered. The gather takes
+answers there, and only there, as if no pointer into the stack had been
+gathered. The same checker answers heritage (whether a call may reach a stack
+slot) and the dead-store pass with every pointer it gathered, since a stack
+address the program passes to a call does reach that call. The gather takes
 every non-additive use of a stack address as a pointer escaping to all locals
 above it, and the interpreter makes such uses of addresses deep in the frame
 throughout: its virtual stack pointer compared against the native one, its
@@ -4402,9 +4459,22 @@ synthetic `pushan_vm_x86_64` fixture, a push/ret-dispatched stack-machine
 interpreter in a 64 KiB `.vmp0` whose bytecode computes `arg0 == 0 ? 7 :
 arg0 + 5` with a cmov-selected virtual branch. With `off`, the function is an
 empty body. With the default, the virtual branch and both returns are
-recovered. The expression arena and the state have unit tests in
+recovered. `tests/stages/kuna-pushan-sound.xml` decompiles fifteen
+hand-written programs of the `pushan_vm2_x86_64` fixture, each aimed at a way
+the recovered program could say something false: loops whose exit tests need
+more than two observed counter values (a `setl` the JZ selects on by `cmov`,
+an equality, a bound of 2^40), a branch on a comparison stored and reloaded,
+correlated branches, two branches to one label, values across System V calls
+and a local a call writes, a read-only table indexed by the loop counter, a
+writable global read before and after a call, stores through a pointer
+argument on two paths and in a loop, and two programs the header reports as
+incomplete (a loop that grows the stack, a virtual jump through an argument).
+The expression arena and the state have unit tests in
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_pushanexpr/tests.rs` and
-`decompiler/crates/kuna-decomp/src/p2_lift/kuna_pushanstate/tests.rs`.
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_pushanstate/tests.rs`, and
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_pushanrules/tests.rs`
+checks every rewrite of the four arithmetic rules on random byte-wide trees
+against all 65,536 pairs of inputs.
 
 ## Darwin AArch64 stack probes
 

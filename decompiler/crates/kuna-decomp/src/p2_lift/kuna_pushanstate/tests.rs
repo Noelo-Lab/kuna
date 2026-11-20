@@ -112,3 +112,39 @@ fn diff_and_symbolize() {
     s3.symbolize(&mut a, 7, &locs);
     assert_eq!(s3.read_reg(&mut a, 0x30, 8), v);
 }
+
+/// Image bytes at 0x1000..0x2000, of which 0x1800.. is a writable data section.
+struct DataImage;
+impl PushanImage for DataImage {
+    fn read_bytes(&self, addr: u64, buf: &mut [u8]) -> bool {
+        ConstImage.read_bytes(addr, buf)
+    }
+    fn is_writable(&self, addr: u64) -> bool {
+        addr >= 0x1800
+    }
+}
+
+#[test]
+fn mutable_memory_is_not_the_file_and_calls_overwrite_it() {
+    let mut a = ExprArena::new();
+    let mut s = State::new(false, (0x200, 0x216));
+    let img = DataImage;
+    // read-only bytes are the file's; a writable global is its entry value
+    let ro = s.read_mem(&mut a, &img, None, 0x1000, 4);
+    assert!(a.is_const(ro).is_some());
+    let g = s.read_mem(&mut a, &img, None, 0x1800, 4);
+    assert!(a.is_const(g).is_none());
+    assert_eq!(s.read_mem(&mut a, &img, None, 0x1800, 4), g);
+    // a store sticks until an external call, which leaves an unknown
+    let k = a.cst(4, 7);
+    s.write_mem(None, 0x1804, k, 4);
+    assert_eq!(s.read_mem(&mut a, &img, None, 0x1804, 4), k);
+    s.clobber_mutable(&img, 1);
+    let after = s.read_mem(&mut a, &img, None, 0x1804, 4);
+    assert!(a.is_const(after).is_none());
+    let g2 = s.read_mem(&mut a, &img, None, 0x1800, 4);
+    assert_ne!(g2, g);
+    // read-only memory survives
+    let ro = s.read_mem(&mut a, &img, None, 0x1000, 4);
+    assert!(a.is_const(ro).is_some());
+}

@@ -1374,6 +1374,13 @@ impl Action for ActionActiveParam {
         // aliascheck.gather(&data, getStackSpace(), true): deferred local-alias
         // checker for the spacebase-parameter branch.
         let mut aliascheck = data.build_alias_checker_deferred();
+        // (kuna pushan) A devirtualized function's input trials are judged by
+        // their data flow alone; see [`crate::kuna_pushan::adopt`].
+        if data.kuna_devirtualized() {
+            if let Some(c) = aliascheck.as_mut() {
+                c.assume_no_pointers();
+            }
+        }
         let mut held = crate::p4_calls::kuna_calleestackargs::Contenders::default();
         let manager_rc = data.get_arch().manage.clone();
         // (kuna) `calleearityfwd`: call sites that finalize with an empty argument

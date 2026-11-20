@@ -1059,6 +1059,9 @@ fn generate_flow(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcdata> 
             "pushan: devirtualized VM-protected function ({} nodes, {} instructions, {} rounds)",
             p.stats.nodes, p.stats.insns, p.stats.rounds
         ));
+        if let Some(c) = p.caveats() {
+            fd.warning_header(&c);
+        }
     }
     let mut flow = FlowInfo::new(fd, &env);
     if let Some((baddr, eaddr)) = range {

@@ -221,6 +221,45 @@ fn op_effect(op: &OverlayOp, r: Option<&MemRef>, pure_userops: &[u64]) -> bool {
     }
 }
 
+/// In an instruction with branches between its own ops, every op before the
+/// trailing run of ops with an effect (the node's exit) dies together when
+/// none of them has an effect or writes anything read after them: the
+/// branches among them then lead nowhere that matters.  Returns the ops
+/// newly marked dead.
+fn dead_body(ops: &[OverlayOp], refs: &[Option<MemRef>], live: &Live, dead: &mut [bool], pure_userops: &[u64]) -> usize {
+    let rof = |x: usize| refs.get(x).and_then(|r| r.as_ref());
+    let mut tail = ops.len();
+    while tail > 0 && (dead[tail - 1] || op_effect(&ops[tail - 1], rof(tail - 1), pure_userops)) {
+        tail -= 1;
+    }
+    if tail == 0 || tail == ops.len() || (0..tail).any(|x| !dead[x] && op_effect(&ops[x], rof(x), pure_userops)) {
+        return 0;
+    }
+    let read_after: Vec<(u64, u32)> = ops[tail..].iter().flat_map(|op| op.ins.iter().filter_map(unique_vn)).collect();
+    let needed = (0..tail).filter(|&x| !dead[x]).any(|x| {
+        let op = &ops[x];
+        match op.out.as_ref() {
+            Some(o) => match (reg_vn(o), unique_vn(o)) {
+                (Some((off, sz)), _) => live.regs.intersects_range(off, sz),
+                (_, Some((uo, us))) => read_after.iter().any(|(ro, rs)| *ro < uo + us as u64 && uo < ro + *rs as u64),
+                _ => true,
+            },
+            None => op.opc == CPUI_STORE && rof(x).and_then(mem_range).is_none_or(|(off, sz)| live.mem.intersects_range(off, sz)),
+        }
+    });
+    if needed {
+        return 0;
+    }
+    let mut n = 0;
+    for d in dead.iter_mut().take(tail) {
+        if !*d {
+            *d = true;
+            n += 1;
+        }
+    }
+    n
+}
+
 fn internal_flow(ops: &[OverlayOp]) -> bool {
     ops.iter().any(|op| matches!(op.opc, CPUI_BRANCH | CPUI_CBRANCH) && op.ins[0].space.as_ref().map(classify_space) == Some(Space::Const))
 }
@@ -324,11 +363,12 @@ fn mark_dead(
     // An external call reads its outgoing argument area and whatever lies
     // above the lowest stack address the function ever handed out.
     let escape_floor = cfg.escapes.iter().copied().min();
-    let call_mem = |off: Option<i128>| {
+    let call_mem = |off: Option<i128>, pop: u32| {
         let Some(k) = off else { return full_mem.clone() };
         let mut m = RegSet::new(MEM_BYTES);
         let ret_end = k + conf.ptr_size as i128;
-        for (lo, hi) in [(k, ret_end), (ret_end + conf.call_home_bytes as i128, k + conf.call_arg_bytes as i128)] {
+        let args_end = k + (conf.call_arg_bytes as i128).max(conf.ptr_size as i128 + pop as i128);
+        for (lo, hi) in [(k, ret_end), (ret_end + conf.call_home_bytes as i128, args_end)] {
             let (lo, hi) = (lo.max(WIN_LO), hi.min(WIN_HI));
             if lo < hi {
                 m.add_range((lo - WIN_LO) as u64, (hi - lo) as u32);
@@ -413,7 +453,7 @@ fn mark_dead(
                     NodeExit::Call { ret, .. } => {
                         out.union_with(&live_in[*ret as usize]);
                         out.regs.union_with(&call_args);
-                        out.mem.union_with(&call_mem(exits[i].sp_off));
+                        out.mem.union_with(&call_mem(exits[i].sp_off, cfg.nodes[i].call_pop.unwrap_or(0)));
                     }
                     NodeExit::Return => {
                         out.regs = match &exits[i].regs {
@@ -484,8 +524,11 @@ fn mark_dead(
                     newly += 1;
                     continue;
                 }
-                let mut uniq: Vec<(u64, u32)> = Vec::new();
                 let linear = !internal_flow(insn);
+                if !linear {
+                    newly_ops += dead_body(insn, rrow, &live, &mut dead_ops[i][j], &conf.pure_userops);
+                }
+                let mut uniq: Vec<(u64, u32)> = Vec::new();
                 for (x, op) in insn.iter().enumerate().rev() {
                     if dead_ops[i][j][x] {
                         continue;
@@ -984,6 +1027,7 @@ impl<'a> Emitter<'a> {
         let mut mem_ops: Vec<(usize, usize)> = Vec::new();
         let mut kept_flow = false;
         let mut arm_index = 0usize;
+        let mut skips: Vec<usize> = Vec::new();
         // Without a fork the emulation fixed every internal branch: emit the
         // executed path (loops unrolled) and drop the resolved branches.  A
         // forked instruction keeps its original op list and relative flow.
@@ -996,7 +1040,8 @@ impl<'a> Emitter<'a> {
                 continue;
             }
             if Self::is_flow(op) {
-                if !is_last {
+                let decided = linear && op.opc == CPUI_CBRANCH && trace.and_then(|t| t.op_out.get(i).copied().flatten()).is_some_and(|c| self.arena.is_const(c).is_some());
+                if !is_last || decided {
                     // A conditional the emulation decided against: never taken here.
                     out.push(self.nop_op());
                     continue;
@@ -1031,7 +1076,12 @@ impl<'a> Emitter<'a> {
                         kept_flow = true;
                     }
                     NodeExit::Unresolved(_) | NodeExit::Halt(_) => {
-                        out.push(Self::raw(op));
+                        // A dispatch's `ret` whose target is unknown is not the
+                        // function returning: it stays a computed jump.
+                        match op.opc {
+                            CPUI_RETURN => out.push(OverlayOp { opc: CPUI_BRANCHIND, out: None, ins: vec![op.ins[0].clone()] }),
+                            _ => out.push(Self::raw(op)),
+                        }
                         kept_flow = true;
                         self.stats.kept_unresolved += 1;
                     }
@@ -1039,8 +1089,16 @@ impl<'a> Emitter<'a> {
                         out.push(Self::raw(op));
                         kept_flow = true;
                     }
-                    NodeExit::CondBranch { arms, .. } if op.opc == CPUI_CBRANCH => {
+                    NodeExit::CondBranch { arms, fall } if op.opc == CPUI_CBRANCH => {
                         match arms.get(arm_index) {
+                            Some((_, taken)) if taken == fall => {
+                                // A skip to where the instruction continues
+                                // anyway (a CMOV): a branch within the
+                                // instruction to its exit, so it dies with
+                                // the ops it skips.
+                                skips.push(out.len());
+                                out.push(OverlayOp { opc: CPUI_CBRANCH, out: None, ins: vec![self.cst(0, op.ins[0].size), op.ins[1].clone()] });
+                            }
                             Some((_, taken)) => {
                                 out.push(OverlayOp {
                                     opc: CPUI_CBRANCH,
@@ -1116,6 +1174,10 @@ impl<'a> Emitter<'a> {
             }
         }
         let _ = (is_last, kept_flow);
+        for pos in skips {
+            let size = out[pos].ins[0].size;
+            out[pos].ins[0] = self.cst((out.len() - pos) as u64, size);
+        }
         let mut refs: Vec<Option<MemRef>> = vec![None; out.len()];
         for (pos, i) in mem_ops {
             let repeats = order_count(trace, insn, i);

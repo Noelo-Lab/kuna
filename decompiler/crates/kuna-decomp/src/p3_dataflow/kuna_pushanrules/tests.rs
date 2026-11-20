@@ -81,6 +81,13 @@ impl Ops<'_> {
 }
 
 fn evaluate(fd: &Funcdata, vn: VarnodeId, inputs: &[(VarnodeId, u64)]) -> u64 {
+    evaluate_memo(fd, vn, inputs, &mut std::collections::HashMap::new())
+}
+
+fn evaluate_memo(fd: &Funcdata, vn: VarnodeId, inputs: &[(VarnodeId, u64)], memo: &mut std::collections::HashMap<VarnodeId, u64>) -> u64 {
+    if let Some(v) = memo.get(&vn) {
+        return *v;
+    }
     let node = fd.vbank().get(vn).unwrap();
     let mask = calc_mask(node.get_size());
     if node.is_constant() {
@@ -90,8 +97,8 @@ fn evaluate(fd: &Funcdata, vn: VarnodeId, inputs: &[(VarnodeId, u64)]) -> u64 {
         return v & mask;
     }
     let op = fd.obank().get(node.get_def().unwrap()).unwrap();
-    let a = evaluate(fd, op.get_in(0).unwrap(), inputs);
-    let b = op.get_in(1).map(|v| evaluate(fd, v, inputs)).unwrap_or(0);
+    let a = evaluate_memo(fd, op.get_in(0).unwrap(), inputs, memo);
+    let b = op.get_in(1).map(|v| evaluate_memo(fd, v, inputs, memo)).unwrap_or(0);
     let value = match op.code() {
         CPUI_COPY | CPUI_INT_ZEXT => a,
         CPUI_PIECE => (a << (8 * size(fd, op.get_in(1).unwrap()))) | b,
@@ -118,6 +125,7 @@ fn evaluate(fd: &Funcdata, vn: VarnodeId, inputs: &[(VarnodeId, u64)]) -> u64 {
         }
         code => panic!("unexpected {code:?}"),
     };
+    memo.insert(vn, value & mask);
     value & mask
 }
 
@@ -508,4 +516,110 @@ fn a_zero_extended_pushf_image_keeps_only_the_masked_flags() {
     let masked = o.mask(root, 0x1_0000);
     assert_eq!(check(&mut fd, &mut logic(), masked, &[other]), Some(CPUI_COPY));
     assert_eq!(constant_value(&fd, root_inputs(&fd, masked)[0]), Some(0));
+}
+
+/// A small deterministic generator for the exhaustive rule checks.
+struct Rng(u64);
+
+impl Rng {
+    fn next(&mut self) -> u64 {
+        self.0 ^= self.0 << 13;
+        self.0 ^= self.0 >> 7;
+        self.0 ^= self.0 << 17;
+        self.0
+    }
+    fn below(&mut self, n: u64) -> u64 {
+        self.next() % n
+    }
+}
+
+/// Every node's value for every pair of byte inputs `(a, b)`, row `a * 256 + b`.
+fn table(fd: &Funcdata, nodes: &[VarnodeId], a: VarnodeId, b: VarnodeId) -> Vec<Vec<u64>> {
+    let mut vals: Vec<Vec<u64>> = vec![Vec::with_capacity(65536); nodes.len()];
+    for r in 0..65536u64 {
+        let mut memo = std::collections::HashMap::new();
+        for (i, &n) in nodes.iter().enumerate() {
+            vals[i].push(evaluate_memo(fd, n, &[(a, r >> 8), (b, r & 0xff)], &mut memo));
+        }
+    }
+    vals
+}
+
+/// Random trees of byte-wide AND/OR/XOR/NOT/ADD/SUB/negation/scaling, shifts,
+/// truncations, zero extensions, PIECEs and carries over two byte inputs and
+/// constants, with every non-zero mask exact: each pushan rule, applied to
+/// each op, must leave the op's value unchanged on all 65536 input pairs.
+#[test]
+fn every_rule_rewrite_is_an_identity_on_all_byte_inputs() {
+    let mut rng = Rng(0x2545_f491_4f6c_dd1d);
+    let mut fired = [0usize; 4];
+    for _ in 0..400 {
+        let (mut fd, anchor) = fixture(true);
+        let a = input(&mut fd, 1, 0x100);
+        let b = input(&mut fd, 1, 0x200);
+        let mut pool: Vec<VarnodeId> = vec![a, b];
+        let mut ops: Vec<VarnodeId> = Vec::new();
+        for _ in 0..(4 + rng.below(9)) {
+            let mut o = Ops { fd: &mut fd, anchor };
+            let pick = |rng: &mut Rng, pool: &Vec<VarnodeId>| pool[rng.below(pool.len() as u64) as usize];
+            let x = pick(&mut rng, &pool);
+            let y = pick(&mut rng, &pool);
+            let (wx, wy) = (size(o.fd, x), size(o.fd, y));
+            let c = if rng.below(3) == 0 { k(o.fd, wx, rng.next()) } else { y };
+            let c = if size(o.fd, c) == wx { c } else { k(o.fd, wx, rng.next() & 0xff) };
+            let made = match rng.below(14) {
+                0 => o.and(x, c),
+                1 => o.or(x, c),
+                2 => o.op(CPUI_INT_XOR, wx, &[x, c]),
+                3 => o.not(x),
+                4 => o.add(x, c),
+                5 => o.op(CPUI_INT_SUB, wx, &[x, c]),
+                6 => o.op(CPUI_INT_2COMP, wx, &[x]),
+                7 => o.mul(x, rng.next()),
+                8 => o.shr(x, rng.below(8 * wx as u64)),
+                9 if wx == 1 => o.op(CPUI_INT_ZEXT, 2, &[x]),
+                9 | 10 if wx == 2 => o.sub(x, rng.below(2), 1),
+                11 if wx == 1 && wy == 1 => o.op(CPUI_PIECE, 2, &[x, y]),
+                11 if wx == 2 => {
+                    let (hi, lo) = (o.sub(x, 1, 1), o.sub(x, 0, 1));
+                    o.op(CPUI_PIECE, 2, &[hi, lo])
+                }
+                10 if wx == wy => {
+                    let nx = o.not(x);
+                    let s = o.add(nx, y);
+                    o.not(s)
+                }
+                12 if wx == wy => o.op(CPUI_INT_CARRY, 1, &[x, y]),
+                13 if wx == wy => o.op(CPUI_INT_SCARRY, 1, &[x, y]),
+                _ => o.mask(x, rng.next()),
+            };
+            pool.push(made);
+            ops.push(made);
+        }
+        let before = table(&fd, &ops, a, b);
+        for (i, &n) in ops.iter().enumerate() {
+            let nz = before[i].iter().fold(0u64, |m, v| m | v);
+            fd.vbank_mut().get_mut(n).unwrap().set_nz_mask(nz);
+        }
+        for (i, &n) in ops.iter().enumerate() {
+            let rules: [Box<dyn Rule>; 4] = [
+                Box::new(RulePushanLogic::new("analysis")),
+                Box::new(RulePushanArith::new("analysis")),
+                Box::new(RulePushanPiece::new("analysis")),
+                Box::new(RulePushanCarry::new("analysis")),
+            ];
+            for (r, mut rule) in rules.into_iter().enumerate() {
+                let Some(op) = fd.vbank().get(n).unwrap().get_def() else { continue };
+                if !rule.get_op_list().contains(&fd.obank().get(op).unwrap().code()) || rule.apply_op(op, &mut fd) == 0 {
+                    continue;
+                }
+                fired[r] += 1;
+                for row in 0..65536u64 {
+                    let after = evaluate_memo(&fd, n, &[(a, row >> 8), (b, row & 0xff)], &mut std::collections::HashMap::new());
+                    assert_eq!(after, before[i][row as usize], "rule {r} changed op {i} at a={:#x} b={:#x}", row >> 8, row & 0xff);
+                }
+            }
+        }
+    }
+    assert!(fired.iter().all(|&f| f > 0), "rules fired {fired:?}");
 }

@@ -275,14 +275,16 @@ impl PushanImage for ArchTarget<'_> {
             None => true,
         }
     }
-    /// A writable data section's initial bytes are not a fact (another
-    /// function may have changed them), except at an import slot.
-    fn initial_is_fact(&self, addr: u64) -> bool {
+    /// A writable data section's bytes may have changed before the function
+    /// runs (another function wrote them), except at an import slot, which
+    /// the loader fills in (a function symbol at the address; Themida's
+    /// writable `.idata`).
+    fn is_mutable(&self, addr: u64) -> bool {
         if self.section_of(addr).is_none() || !self.is_writable(addr) {
-            return true;
+            return false;
         }
         let ps = self.ram.get_addr_size() as u64;
-        self.is_function_entry(addr - addr % ps)
+        !self.is_function_entry(addr - addr % ps)
     }
 }
 
@@ -470,7 +472,8 @@ fn plant_strings(arch: &mut Architecture, strings: &[(u64, u32)]) -> bool {
 /// Minimum entropy (bits/byte) of a 256-byte window for a VPC fetch (the paper's 5.0).
 const BYTECODE_ENTROPY: f64 = 5.0;
 
-/// The register facts for the supported ISAs (x86-64 and x86).
+/// The register facts for the supported ISAs (x86-64 and x86): the
+/// Microsoft x64 convention on a Windows image, the System V one elsewhere.
 fn abi_for(arch: &Architecture, target: &ArchTarget<'_>) -> Option<Abi> {
     let t = arch.translate();
     let reg = |n: &str| t.probe_register_varnode(n.as_bytes()).map(|v| (v.offset, v.size as u8));
@@ -486,7 +489,12 @@ fn abi_for(arch: &Architecture, target: &ArchTarget<'_>) -> Option<Abi> {
         gprs.push(reg(n)?.0);
     }
     let return_reg = reg(if x64 { "RAX" } else { "EAX" })?.0;
-    let clobber_names: &[&str] = if x64 { &["RCX", "RDX", "R8", "R9", "R10", "R11"] } else { &["ECX", "EDX"] };
+    let sysv = x64 && !target.windows;
+    let clobber_names: &[&str] = match (x64, sysv) {
+        (true, false) => &["RCX", "RDX", "R8", "R9", "R10", "R11"],
+        (true, true) => &["RCX", "RDX", "RSI", "RDI", "R8", "R9", "R10", "R11"],
+        _ => &["ECX", "EDX"],
+    };
     let mut clobbers: Vec<(u64, u8)> = clobber_names.iter().filter_map(|n| reg(n)).collect();
     for f in ["CF", "PF", "AF", "ZF", "SF", "OF"] {
         if let Some((o, s)) = reg(f) {
@@ -495,8 +503,16 @@ fn abi_for(arch: &Architecture, target: &ArchTarget<'_>) -> Option<Abi> {
     }
     let cf = reg("CF")?.0;
     let id = reg("ID").map(|r| r.0 + 1).unwrap_or(cf + 0x16);
-    let saved_names: &[&str] = if x64 { &["RBX", "RBP", "RDI", "RSI", "RSP", "R12", "R13", "R14", "R15"] } else { &["EBX", "EBP", "ESI", "EDI", "ESP"] };
-    let arg_names: &[&str] = if x64 { &["RCX", "RDX", "R8", "R9", "RSP"] } else { &["ESP"] };
+    let saved_names: &[&str] = match (x64, sysv) {
+        (true, false) => &["RBX", "RBP", "RDI", "RSI", "RSP", "R12", "R13", "R14", "R15"],
+        (true, true) => &["RBX", "RBP", "RSP", "R12", "R13", "R14", "R15"],
+        _ => &["EBX", "EBP", "ESI", "EDI", "ESP"],
+    };
+    let arg_names: &[&str] = match (x64, sysv) {
+        (true, false) => &["RCX", "RDX", "R8", "R9", "RSP"],
+        (true, true) => &["RDI", "RSI", "RDX", "RCX", "R8", "R9", "RSP"],
+        _ => &["ESP"],
+    };
     let callee_saved = saved_names.iter().filter_map(|n| reg(n)).collect();
     let args = arg_names.iter().filter_map(|n| reg(n)).collect();
     let fixed_regs = match (&target.teb, thread_block_register(arch, ptr)) {
@@ -597,6 +613,35 @@ pub fn detect_vm_entry(target: &ArchTarget<'_>, entry: u64) -> Option<u64> {
     None
 }
 
+impl PushanProgram {
+    /// What the recovered program may be missing or get wrong, for the
+    /// function's header: computed jumps left unresolved, paths that stopped,
+    /// an exploration that ended before its fixpoint, paths joined without
+    /// merging their values, and stores the emulation could not place.
+    pub fn caveats(&self) -> Option<String> {
+        let s = &self.stats;
+        let mut out = Vec::new();
+        if s.unresolved > 0 {
+            out.push(format!("{} unresolved computed jump{}", s.unresolved, if s.unresolved == 1 { "" } else { "s" }));
+        }
+        if s.halts > 0 {
+            out.push(format!("{} path{} not followed", s.halts, if s.halts == 1 { "" } else { "s" }));
+        }
+        if s.cut_short {
+            out.push("exploration cut short by its budget".into());
+        } else if !s.converged {
+            out.push("no fixpoint within the round limit".into());
+        }
+        if s.unmerged > 0 {
+            out.push(format!("{} path{} joined at another stack depth unmerged", s.unmerged, if s.unmerged == 1 { "" } else { "s" }));
+        }
+        if s.dropped_stores > 0 {
+            out.push(format!("{} store{} to unresolved addresses not modelled", s.dropped_stores, if s.dropped_stores == 1 { "" } else { "s" }));
+        }
+        (!out.is_empty()).then(|| format!("pushan: incomplete: {}", out.join(", ")))
+    }
+}
+
 /// Run the whole pipeline for a function entry.  On x86 the emitted calls
 /// keep ECX and EDX as possible arguments besides the stack: `__fastcall` and
 /// `__thiscall` pass them, and MSVC's `__security_check_cookie` takes the
@@ -651,7 +696,7 @@ pub fn devirtualize(arch: &Architecture, entry: u64) -> Result<PushanProgram, St
         call_args,
         callee_saved,
         return_reg,
-        call_arg_bytes: if ptr == 8 { 0x60 } else { 0x28 },
+        call_arg_bytes: if ptr == 8 { 0xa8 } else { 0x44 },
         call_home_bytes: if ptr == 8 && target.teb.is_some() { 0x20 } else { 0 },
         eliminate_dead: std::env::var("KUNA_PUSHAN_NO_DCE").is_err(),
         slot_base: {

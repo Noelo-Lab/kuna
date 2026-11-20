@@ -87,6 +87,8 @@ pub enum NodeExit {
 
 #[derive(Clone, Debug)]
 pub struct Node {
+    /// For an external call: the bytes the callee pops beyond its return address.
+    pub call_pop: Option<u32>,
     /// Where each variable of a select's deciding atoms lives when the node
     /// exits, as the constant it is offset by there, with the stack pointer's
     /// offset from its entry value there.
@@ -113,6 +115,14 @@ pub struct Stats {
     pub unresolved: usize,
     pub halts: usize,
     pub vm_nodes: usize,
+    /// Paths joined to a node at another stack depth without merging.
+    pub unmerged: usize,
+    /// Stores to an address the emulation could not place, ignored.
+    pub dropped_stores: usize,
+    /// The last round recorded nothing new (the symbolization fixpoint).
+    pub converged: bool,
+    /// The exploration stopped at the node limit or the time budget.
+    pub cut_short: bool,
 }
 
 pub struct Config {
@@ -210,6 +220,22 @@ pub struct Explorer<'a> {
     stack_depths: BTreeMap<(u64, Option<u64>), Vec<Option<i128>>>,
     /// The node being resolved left by a direct jump (a constant in the instruction).
     direct_exit: bool,
+    /// The context each arm of the conditional exit being resolved continues in.
+    arm_ctxs: Vec<VmCtx>,
+    /// Nodes that paths reached with different contents behind a base that is
+    /// a fresh variable every round: such memory starts unknown there.
+    forget_fresh: BTreeSet<NodeKey>,
+    /// Nodes that paths reached after different external calls.
+    fresh_epoch: BTreeSet<NodeKey>,
+    /// Symbolized locations some path reached with a value that is not one
+    /// of a few constants: their recorded constants are not all they hold.
+    sym_open: BTreeSet<(NodeKey, SymLoc)>,
+    /// The location each merged symbol was made for.
+    own_syms: BTreeMap<VarId, (NodeKey, SymLoc)>,
+    /// External calls emulated so far, numbering each one's memory effect.
+    call_epochs: u64,
+    /// What the last call summarized pops beyond its return address.
+    last_pop: Option<u32>,
     pub stats: Stats,
     pub log: Vec<String>,
     retaddr: Option<ExprId>,
@@ -286,6 +312,13 @@ impl<'a> Explorer<'a> {
             node_addrs: BTreeSet::new(),
             stack_depths: BTreeMap::new(),
             direct_exit: false,
+            arm_ctxs: Vec::new(),
+            forget_fresh: BTreeSet::new(),
+            fresh_epoch: BTreeSet::new(),
+            sym_open: BTreeSet::new(),
+            own_syms: BTreeMap::new(),
+            call_epochs: 0,
+            last_pop: None,
             stats: Stats::default(),
             log: Vec::new(),
             retaddr: None,
@@ -334,6 +367,9 @@ impl<'a> Explorer<'a> {
         let mut prev_nodes = usize::MAX;
         for round in 0..self.config.max_rounds {
             self.stats.rounds = round + 1;
+            if round > 0 && round + 1 == self.config.max_rounds && self.new_syms > 0 {
+                self.widen_all();
+            }
             self.new_syms = 0;
             if self.timed_out {
                 break;
@@ -359,6 +395,7 @@ impl<'a> Explorer<'a> {
             }
             prev_nodes = n;
         }
+        self.stats.converged = self.new_syms == 0 && !self.stats.cut_short;
         self.stats.nodes = cfg.nodes.len();
         self.stats.insns = cfg.nodes.iter().map(|n| n.insns.len()).sum();
         self.stats.vm_nodes = cfg.nodes.iter().filter(|n| n.entry_ctx.in_vm).count();
@@ -366,9 +403,26 @@ impl<'a> Explorer<'a> {
         cfg
     }
 
+    /// The last round runs with every recorded location fully unknown and
+    /// no recorded constants trusted, so a location still widening (a wide
+    /// loop counter seen one more bit per round) folds nothing it cannot.
+    fn widen_all(&mut self) {
+        for k in self.sym_known.values_mut() {
+            *k = (0, 0);
+        }
+        for (key, locs) in &self.to_symbolize {
+            for l in locs.keys() {
+                self.sym_open.insert((*key, *l));
+            }
+        }
+        self.log.push("round limit reached: every recorded location widened".into());
+    }
+
     fn explore_round(&mut self) -> FlatCfg {
         self.stats.unresolved = 0;
         self.stats.halts = 0;
+        self.stats.unmerged = 0;
+        self.stats.cut_short = false;
         self.node_addrs.clear();
         self.stack_depths.clear();
         let mut cfg = FlatCfg { nodes: Vec::new(), index: BTreeMap::new(), entry: 0, escapes: Vec::new(), sym_sources: BTreeMap::new() };
@@ -386,14 +440,17 @@ impl<'a> Explorer<'a> {
         while let Some(id) = worklist.pop_front() {
             if cfg.nodes.len() > self.config.max_nodes {
                 self.log.push("node limit reached".into());
+                self.stats.cut_short = true;
                 break;
             }
             if self.started.elapsed().as_secs() >= self.config.max_seconds {
                 self.log.push(format!("time budget of {}s exhausted", self.config.max_seconds));
                 self.timed_out = true;
+                self.stats.cut_short = true;
                 break;
             }
             self.emulate_node(&mut cfg, &mut worklist, &mut emu, id);
+            self.stats.dropped_stores = emu.dropped_stores;
             if let Some(t) = &self.config.trace {
                 use std::io::Write;
                 let n = &cfg.nodes[id as usize];
@@ -442,6 +499,7 @@ impl<'a> Explorer<'a> {
             let ps = self.abi.ptr_size;
             let (sa, sb) = (entry.read_reg(&mut self.arena, self.abi.sp, ps), state.read_reg(&mut self.arena, self.abi.sp, ps));
             if sa != sb && !self.same_on_stack(sa, sb) {
+                self.stats.unmerged += 1;
                 if let Some(tr) = &self.config.trace {
                     use std::io::Write;
                     let _ = writeln!(tr.borrow_mut(), "        stack pointer differs at node {id}: not merged: entry {:x?} incoming {:x?}", self.arena.affine(sa), self.arena.affine(sb));
@@ -500,15 +558,32 @@ impl<'a> Explorer<'a> {
                     ),
                 };
                 if !self.same_on_stack(a, b) {
-                    kept.push(d);
+                    kept.push((d, a, b));
                 }
             }
             let diffs = kept;
-            let set = self.to_symbolize.entry(key).or_default();
-            for d in diffs {
-                // The VPC itself is part of the key; never symbolize it.
+            // Paths that left different external calls last disagree on all
+            // mutable memory they did not read: it starts unknown at the node.
+            if entry.global_epoch != state.global_epoch && self.fresh_epoch.insert(key) {
+                self.new_syms += 1;
+            }
+            // The VPC is part of the key and never symbolized, as long as the
+            // incoming path's VPC is the one the key names.
+            let vpc_keyed = match (vpc_reg, vpc_cell) {
+                (_, Some(a)) => {
+                    let v = state.read_mem(&mut self.arena, self.target, None, a as i128, self.abi.ptr_size);
+                    self.keys_vpc(v, key.ctx)
+                }
+                (Some(r), None) => {
+                    let v = state.read_reg(&mut self.arena, r, self.abi.ptr_size);
+                    self.keys_vpc(v, key.ctx)
+                }
+                _ => false,
+            };
+            for (d, a, b) in diffs {
+                let sides = [a, b].map(|v| self.side_values(v, key, &d.loc));
                 if let Loc::Reg { off } = d.loc.loc {
-                    if vpc_reg.is_some_and(|r| off >= r && off < r + self.abi.ptr_size as u64) {
+                    if vpc_keyed && vpc_reg.is_some_and(|r| off >= r && off < r + self.abi.ptr_size as u64) {
                         continue;
                     }
                 }
@@ -518,18 +593,23 @@ impl<'a> Explorer<'a> {
                     }
                 }
                 if let Loc::Mem { base: None, off } = d.loc.loc {
-                    if vpc_cell.is_some_and(|a| off < a as i128 + self.abi.ptr_size as i128 && a as i128 <= off + d.loc.size as i128 - 1) {
+                    if vpc_keyed && vpc_cell.is_some_and(|a| off < a as i128 + self.abi.ptr_size as i128 && a as i128 <= off + d.loc.size as i128 - 1) {
                         continue;
                     }
                 }
-                // Memory under any other symbolic base is keyed by a variable
-                // that is fresh every round: it can never be re-applied.
+                // Memory under a base that is a fresh variable every round (a
+                // call's result) cannot be named again: the node starts with
+                // every such region forgotten instead.
                 if let Loc::Mem { base: Some(b), .. } = d.loc.loc {
-                    if Some(b) != self.sp0 {
+                    if Some(b) != self.sp0 && !self.arena.is_stable_var(b) {
+                        if self.forget_fresh.insert(key) {
+                            self.new_syms += 1;
+                        }
                         continue;
                     }
                 }
                 // A difference inside a location already recorded is that location.
+                let set = self.to_symbolize.entry(key).or_default();
                 let mut d = d;
                 if let Some(cover) = set.keys().find(|l| covers(l, &d.loc)).copied() {
                     d.loc = cover;
@@ -550,10 +630,29 @@ impl<'a> Explorer<'a> {
                 *k = narrowed;
                 let values = set.entry(d.loc).or_default();
                 let mut grew = false;
-                for v in [d.values.map(|v| v.0), d.values.map(|v| v.1), d.entry_const, d.incoming_const].into_iter().flatten() {
-                    if values.len() < MAX_SYM_VALUES && values.insert(v) {
-                        grew = true;
+                let mut open = false;
+                for side in sides {
+                    match side {
+                        Some(vs) => {
+                            for v in vs {
+                                if values.contains(&v) {
+                                    continue;
+                                }
+                                if values.len() < MAX_SYM_VALUES {
+                                    values.insert(v);
+                                    grew = true;
+                                } else {
+                                    open = true;
+                                }
+                            }
+                        }
+                        None => open = true,
                     }
+                }
+                // The constants seen stand for every value the location
+                // takes only while no path brought anything else.
+                if open && self.sym_open.insert((key, d.loc)) {
+                    grew = true;
                 }
                 if is_new || grew || shrank {
                     self.new_syms += 1;
@@ -563,6 +662,15 @@ impl<'a> Explorer<'a> {
                 }
             }
             return id;
+        }
+        if self.forget_fresh.contains(&key) {
+            let arena = &self.arena;
+            let sp0 = self.sp0;
+            state.mem.retain(|b, _| b.is_none() || *b == sp0 || b.is_some_and(|v| arena.is_stable_var(v)));
+        }
+        if self.fresh_epoch.contains(&key) {
+            self.call_epochs += 1;
+            state.clobber_mutable(self.target, self.call_epochs);
         }
         if let Some(locs) = self.to_symbolize.get(&key) {
             let with_known: Vec<(SymLoc, (u128, u128))> =
@@ -580,13 +688,18 @@ impl<'a> Explorer<'a> {
                     use std::io::Write;
                     let _ = writeln!(tr.borrow_mut(), "        symbolize {:#x}/{:?} {:?} -> {} known={:x?} vals={:x?}", key.addr, key.ctx, l, self.arena.fmt(e), self.sym_known.get(&(key, l)), locs.get(&l));
                 }
-                if let (Some(v), Some(vals)) = (self.arena.as_var(e), locs.get(&l)) {
-                    self.sym_values.borrow_mut().insert(v, vals.clone());
+                if let Some(v) = self.arena.as_var(e) {
+                    self.own_syms.insert(v, (key, l));
+                    match locs.get(&l).filter(|_| !self.sym_open.contains(&(key, l))) {
+                        Some(vals) => self.sym_values.borrow_mut().insert(v, vals.clone()),
+                        None => self.sym_values.borrow_mut().remove(&v),
+                    };
                 }
             }
         }
         let id = cfg.nodes.len() as NodeId;
         cfg.nodes.push(Node {
+            call_pop: None,
             exit_locs: None,
             vpc_fork: None,
             key,
@@ -732,17 +845,42 @@ impl<'a> Explorer<'a> {
             }
         }
         self.image_ptrs.append(&mut emu.image_loads);
+        // A conditional that only skips to the next instruction (a CMOV) joins
+        // the fall-through state before the context is read from it, and every
+        // other arm reads its context from its own state.
+        let mut arm_states: Vec<Option<State>> = Vec::new();
+        if let Exit::CondJump { arms, fallthrough } = &exit {
+            for (cond, target, taken) in arms {
+                if self.arena.is_const(*target) == Some(*fallthrough as u128) {
+                    merge_ite(&mut state, &mut taken.as_ref().clone(), &mut self.arena, self.target, *cond);
+                    arm_states.push(None);
+                } else {
+                    arm_states.push(Some(taken.as_ref().clone()));
+                }
+            }
+        }
         let next_ctx = self.successor_ctx(&mut state, &traces, ctx, &insns);
+        self.arm_ctxs = arm_states
+            .into_iter()
+            .map(|s| match s {
+                Some(mut st) => self.successor_ctx(&mut st, &traces, ctx, &insns),
+                None => next_ctx,
+            })
+            .collect();
         self.direct_exit = insns.last().and_then(|i| i.ops.iter().rev().find(|op| matches!(op.opc, OpCode::CPUI_BRANCH | OpCode::CPUI_BRANCHIND | OpCode::CPUI_RETURN | OpCode::CPUI_CALL | OpCode::CPUI_CALLIND))).is_some_and(|op| op.opc == OpCode::CPUI_BRANCH && classify_space_of(&op.ins[0]) == Some(super::kuna_pushanemu::Space::Ram));
         let node_exit = match self.fork_on_vpc(cfg, worklist, id, &exit, &mut state, next_ctx) {
             Some(e) => e,
             None => self.resolve_exit(cfg, worklist, id, exit, state, next_ctx, &insns),
         };
+        self.arm_ctxs.clear();
         let exit_locs = if matches!(node_exit, NodeExit::Select { .. }) { self.pending_locs.take() } else { None };
         let vpc_fork = if matches!(node_exit, NodeExit::Select { .. }) { self.pending_vpc_fork.take() } else { None };
         self.pending_locs = None;
         self.pending_vpc_fork = None;
+        let call_pop = if matches!(node_exit, NodeExit::Call { .. }) { self.last_pop.take() } else { None };
+        self.last_pop = None;
         let node = &mut cfg.nodes[id as usize];
+        node.call_pop = call_pop;
         node.insns = insns;
         node.traces = traces;
         node.exit = node_exit;
@@ -1077,6 +1215,37 @@ impl<'a> Explorer<'a> {
         next
     }
 
+    /// The constants one side of a difference at `loc` (of the node `key`)
+    /// may be: a constant, or a value its boolean atoms decide.  `Some(empty)`
+    /// for the location's own symbol, which adds nothing, and `None` for
+    /// anything else.
+    fn side_values(&mut self, v: ExprId, key: NodeKey, loc: &SymLoc) -> Option<Vec<u128>> {
+        if let Some(c) = self.arena.is_const(v) {
+            return Some(vec![c]);
+        }
+        if let Some((k, l)) = self.arena.as_var(v).and_then(|x| self.own_syms.get(&x)) {
+            if *k == key && covers(l, loc) {
+                return Some(Vec::new());
+            }
+        }
+        self.arena.possible_values(v).filter(|vs| vs.len() <= MAX_SYM_VALUES)
+    }
+
+    /// Whether a node keyed by context `ctx` stands for virtual PC value `v`:
+    /// the key names exactly the values `v` can take.  A key carried forward
+    /// past a block that left no readable VPC does not.
+    fn keys_vpc(&mut self, v: ExprId, ctx: Option<u64>) -> bool {
+        let Some(k) = ctx else { return false };
+        let vals: Vec<u64> = match self.arena.is_const(v) {
+            Some(c) => vec![c as u64],
+            None => match self.arena.possible_values(v).filter(|vs| vs.len() <= MAX_VPC_FORK) {
+                Some(vs) => vs.into_iter().map(|x| x as u64).collect(),
+                None => return false,
+            },
+        };
+        vpc_key(&vals) == k
+    }
+
     /// The VPC's current value, from its memory cell or its register.
     fn vpc_expr(&mut self, state: &mut State, ctx: &VmCtx) -> Option<ExprId> {
         if let Some(a) = ctx.vpc_cell {
@@ -1161,23 +1330,29 @@ impl<'a> Explorer<'a> {
                 let one = self.arena.cst(1, 1);
                 let zero = self.arena.cst(1, 0);
                 let fkey = NodeKey::at(fallthrough, ctx.ctx);
-                let mut out_arms = Vec::with_capacity(arms.len());
+                let arm_ctxs = std::mem::take(&mut self.arm_ctxs);
                 let mut earlier: Vec<ExprId> = Vec::new();
-                let mut arm_targets: Vec<(u64, State)> = Vec::new();
-                for (cond, target, mut taken_state) in arms {
+                // Per CBRANCH, in program order: the arm it joins (None: it
+                // only skips to the fall-through and continues there).
+                let mut slots: Vec<(ExprId, Option<usize>)> = Vec::with_capacity(arms.len());
+                let mut arm_targets: Vec<(NodeKey, VmCtx, State)> = Vec::new();
+                for (i, (cond, target, mut taken_state)) in arms.into_iter().enumerate() {
                     let Some(tc) = self.arena.is_const(target) else {
                         self.stats.unresolved += 1;
                         return NodeExit::Unresolved("conditional branch with symbolic target".into());
                     };
-                    let tkey = NodeKey::at(tc as u64, ctx.ctx);
+                    let actx = arm_ctxs.get(i).copied().unwrap_or(ctx);
+                    let tkey = NodeKey::at(tc as u64, actx.ctx);
                     if tkey == fkey {
                         // Both sides continue at the same place (a CMOV-style
                         // skip): one state, selecting on the guard.
                         merge_ite(&mut state, &mut taken_state, &mut self.arena, self.target, cond);
+                        slots.push((cond, None));
                         continue;
                     }
-                    if let Some((_, prev)) = arm_targets.iter_mut().find(|(a, _)| *a == tc as u64) {
-                        merge_ite(prev, &mut taken_state, &mut self.arena, self.target, cond);
+                    if let Some(k) = arm_targets.iter().position(|(a, _, _)| *a == tkey) {
+                        merge_ite(&mut arm_targets[k].2, &mut taken_state, &mut self.arena, self.target, cond);
+                        slots.push((cond, Some(k)));
                         continue;
                     }
                     // This arm: its guard holds and every earlier guard failed.
@@ -1187,19 +1362,18 @@ impl<'a> Explorer<'a> {
                     }
                     pin(&mut self.arena, &mut state, cond, zero);
                     earlier.push(cond);
-                    arm_targets.push((tc as u64, *taken_state));
-                    out_arms.push((cond, tc as u64));
+                    slots.push((cond, Some(arm_targets.len())));
+                    arm_targets.push((tkey, actx, *taken_state));
                 }
-                let mut resolved = Vec::with_capacity(out_arms.len());
-                for ((cond, tc), (_, st)) in out_arms.into_iter().zip(arm_targets.into_iter()) {
-                    let tkey = NodeKey::at(tc, ctx.ctx);
-                    let taken = self.reach(cfg, worklist, tkey, st, ctx, Some(id));
-                    resolved.push((cond, taken));
+                let mut taken_ids = Vec::with_capacity(arm_targets.len());
+                for (tkey, actx, st) in arm_targets {
+                    taken_ids.push(self.reach(cfg, worklist, tkey, st, actx, Some(id)));
                 }
                 let fall = self.reach(cfg, worklist, fkey, state, ctx, Some(id));
-                if resolved.is_empty() {
+                if slots.is_empty() {
                     return NodeExit::Branch(fall);
                 }
+                let resolved = slots.into_iter().map(|(c, k)| (c, k.map(|k| taken_ids[k]).unwrap_or(fall))).collect();
                 NodeExit::CondBranch { arms: resolved, fall }
             }
             Exit::Call { target, fallthrough } => {
@@ -1546,6 +1720,7 @@ impl<'a> Explorer<'a> {
         let id = cfg.nodes.len() as NodeId;
         let tag = 0x7f00_0000_0000_0000u64 ^ (from as u64).rotate_left(32) ^ addr;
         cfg.nodes.push(Node {
+            call_pop: None,
             exit_locs: None,
             vpc_fork: None,
             key: NodeKey::at(addr, Some(tag)),
@@ -1570,14 +1745,16 @@ impl<'a> Explorer<'a> {
     }
 
     /// Model an external call: a fresh return value, clobbered registers, the
-    /// return address popped, what the program wrote to writable data
-    /// forgotten, and the memory its pointer arguments reach made unknown (a
+    /// return address popped, mutable memory left as the call's output
+    /// ([`State::clobber_mutable`]), and the memory its pointer arguments
+    /// reach made unknown (a
     /// `scanf("%d", &v)` writes `v`; its old constant must not decide the
     /// branch that tests it).
     fn apply_call_summary(&mut self, state: &mut State, site: u64, callee: Callee) {
         let ps = self.abi.ptr_size;
         let scan = callee.target.filter(|c| Some(*c) != callee.ret).and_then(|c| self.scan_callee(c));
         let pop = self.callee_pop(state, &callee, scan.as_ref());
+        self.last_pop = Some(pop);
         let probed = callee.target.filter(|c| Some(*c) != callee.ret && self.target.is_executable(*c)).and_then(|c| self.probe_stack_effect(state, c));
         if self.config.trace.is_some() {
             self.log.push(format!("call at {site:#x}: pops {pop}"));
@@ -1592,7 +1769,6 @@ impl<'a> Explorer<'a> {
                 values.push(state.read_mem(&mut self.arena, self.target, sb, so + k * ps as i128, ps));
             }
         }
-        state.forget_globals(self.target);
         for v in values {
             if self.config.trace.is_some() {
                 self.log.push(format!("call at {site:#x}: arg {} affine={:?}", self.arena.fmt(v), self.arena.affine(v)));
@@ -1619,6 +1795,8 @@ impl<'a> Explorer<'a> {
                 _ => {}
             }
         }
+        self.call_epochs += 1;
+        state.clobber_mutable(self.target, self.call_epochs);
         let kept = |off: u64, size: u8| scan.as_ref().is_some_and(|s| s.closed && !s.writes.iter().any(|&(o, n)| o < off + size as u64 && off < o + n as u64));
         if !kept(self.abi.return_reg, ps) {
             let ret = self.arena.var(super::kuna_pushanexpr::VarInfo::new(VarKind::CallResult { site }, ps, false));
