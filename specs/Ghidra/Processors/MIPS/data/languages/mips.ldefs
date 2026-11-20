@@ -418,7 +418,7 @@
     <truncate_space space="ram" size="4"/>
     <compiler name="default" spec="octeon_n32_soft.cspec" id="default"/>
     <compiler name="n32" spec="octeon_n32_soft.cspec" id="n32"/>
-    <compiler name="o64" spec="mips64_32_o64.cspec" id="o64"/>
+    <compiler name="o64" spec="octeon_o64_soft.cspec" id="o64"/>
   </language>
   <language processor="MIPS" endian="big" size="64" variant="octeonplus" version="1.0" slafile="octeonplusbe.sla" processorspec="mips64.pspec" id="MIPS:BE:64:octeonplus">
     <description>octeonplus core subset, big endian, N64; explicit target</description>
