@@ -334,10 +334,12 @@ wins.
 (kuna) PowerPC32 ELF APU requirements are read by
 `decompiler/crates/kuna-analysis/src/loader/kuna_ppcaputarget.rs` when the
 default-on `ppcapu` load-time option is enabled. SPE and embedded floating-point
-requirements select e500. An ISEL requirement or the embedded ABI flag selects
+requirements select e500. Its `isel` writes the low word and preserves the
+destination’s upper SPE word. An ISEL requirement or the embedded ABI flag selects
 the `isel` variant with generic PowerPC32 registers, AltiVec and calling
 convention. PMR, RFMCI and cache locking alone retain the generic decoder.
-Unknown APU versions and malformed or unsupported requirements keep the generic
+A nonempty note owner must be NUL-terminated before the loader can skip an
+unrelated note. Unknown APU versions and malformed or unsupported requirements keep the generic
 decoder and print a `[kuna target]` note. Explicit `--target` takes precedence. A
 selected language never falls back to a different ISA if its specification is
 missing. The explicit e500mc target uses the standard PowerPC32 FPR argument and

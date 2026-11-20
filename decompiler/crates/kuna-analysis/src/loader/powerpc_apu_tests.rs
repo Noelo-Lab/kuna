@@ -124,6 +124,24 @@ fn unsupported_or_malformed_apus_keep_the_generic_decoder_with_a_note() {
 }
 
 #[test]
+fn only_well_formed_unrelated_note_owners_allow_the_embedded_flag_fallback() {
+    for little in [false, true] {
+        let mut bytes = image(Architecture::PowerPc, little, 0x8000_0000, Some(&[0x0100_0001]));
+        let owner = bytes.windows(8).position(|w| w == b"APUinfo\0").unwrap();
+        for (name, expected, diagnostic) in [
+            (b"foreign\0", "isel", false),
+            (b"APUinfo!", "default", true),
+            (b"APU\0bad\0", "default", true),
+        ] {
+            bytes[owner..owner + 8].copy_from_slice(name);
+            check_default(&bytes, little, expected);
+            let file = object::File::parse(&bytes[..]).unwrap();
+            assert_eq!(!notes_when(&file, "PowerPC", false, true).is_empty(), diagnostic);
+        }
+    }
+}
+
+#[test]
 fn explicit_target_wins_over_spe_or_unknown_apus() {
     for apus in [&[0x0100_0001][..], &[0xffff_0001][..]] {
         let bytes = image(Architecture::PowerPc, false, 0x8000_0000, Some(apus));

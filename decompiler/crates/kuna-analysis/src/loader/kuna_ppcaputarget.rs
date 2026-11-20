@@ -33,6 +33,9 @@ fn read_requirements(bytes: &[u8], little: bool, apus: &mut Requirements) -> Opt
         let descstart = 12usize.checked_add(namesz.checked_add(3)? & !3)?;
         let descend = descstart.checked_add(descsz)?;
         let name = tail.get(12..12usize.checked_add(namesz)?)?;
+        if !name.is_empty() {
+            std::ffi::CStr::from_bytes_with_nul(name).ok()?;
+        }
         let desc = tail.get(descstart..descend)?;
         cursor = cursor.checked_add(descend.checked_add(3)? & !3)?;
         if kind != 2 || name != b"APUinfo\0" {
