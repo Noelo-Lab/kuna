@@ -1,0 +1,56 @@
+{
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--functions",
+    "read_word,read_text,read_nothing,forward_word,forward_text,no_guard,clobber_word,forward_void,multiple_calls",
+    "--language",
+    "c",
+    "--option",
+    "ctypes",
+    "off",
+    "--option",
+    "realtypes",
+    "off",
+    "--option",
+    "protoorder",
+    "types"
+  ],
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 30,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/go_live_forward_amd64",
+    "binary_sha256": "3d0840306d96928b2a8cdafeb46c20aa000978be7bd4649dc83f29f68ec80eed",
+    "binary_size": 9264,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/go_live_forward_amd64",
+    "selector": "forward_word",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "void forward_word\\(xunknown8 \\*a0\\)\\n\\{\\n  read_word\\(a0\\);",
+      "void forward_text\\(int8 a0,int8 a1\\)\\n\\{[^}]*\\n  read_text\\(a0,a1\\);",
+      "void no_guard\\(xunknown8 \\*a0\\)\\n\\{\\n  read_word\\(a0\\);",
+      "void clobber_word\\(void\\)\\n\\{\\n  read_word\\(&sink\\);",
+      "void forward_void\\(void\\)\\n\\{\\n  read_nothing\\(\\);",
+      "void multiple_calls\\(void\\)\\n\\{\\n  read_nothing\\(\\);\\n  read_word\\(\\);"
+    ],
+    "stdout_absent": [
+      "runtime\\.morestack_noctxt"
+    ]
+  },
+  "notes": "AMD64 ABIInternal forwards AX or AX:BX after folding the stack-growth arm. The no-guard, rewritten AX, void callee and multiple-call controls retain their existing paths.",
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cwd": "{{WORK}}",
+  "repeat": 1,
+  "probe_id": "p-92086e8ec606"
+}

@@ -1,0 +1,55 @@
+{
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--functions",
+    "read_word,read_text,read_nothing,forward_word,forward_text,no_guard,clobber_word,forward_void,multiple_calls",
+    "--language",
+    "c",
+    "--option",
+    "ctypes",
+    "off",
+    "--option",
+    "realtypes",
+    "off",
+    "--option",
+    "protoorder",
+    "types",
+    "--option",
+    "passthrough",
+    "off"
+  ],
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 30,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/go_live_forward_amd64",
+    "binary_sha256": "3d0840306d96928b2a8cdafeb46c20aa000978be7bd4649dc83f29f68ec80eed",
+    "binary_size": 9264,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/go_live_forward_amd64",
+    "selector": "forward_word",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "void forward_word\\(void\\)\\n\\{\\n  read_word\\(\\);",
+      "void forward_text\\([^,]+\\)\\n\\{[^}]*\\n  read_text\\(\\);"
+    ],
+    "stdout_absent": [
+      "runtime\\.morestack_noctxt"
+    ]
+  },
+  "notes": "Disabling passthrough does not change the Go stack-guard fold or enable the argument retry.",
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cwd": "{{WORK}}",
+  "repeat": 1,
+  "probe_id": "p-6d22a1d1eab1"
+}
