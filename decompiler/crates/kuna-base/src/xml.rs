@@ -2244,7 +2244,7 @@ mod tests {
         // and ghangr-go-mcall-resumption / a scheduler switch preserves its caller's continuation
         // and kuna-itaniumrtti-macho / Itanium RTTI on a Mach-O through chained-fixup binds
         // and kuna-itaniumrtti-macho-classic / and through classic LC_DYLD_INFO binds
-        assert_eq!(count, 824, "corpus file count drifted");
+        assert_eq!(count, 826, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
