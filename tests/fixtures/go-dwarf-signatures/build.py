@@ -31,6 +31,47 @@ functions = [
     ('tooManyIntegers', 'ret', [('a'+str(i),'i64',r) for i,r in enumerate([0,3,2,5,4,8,9,10,11,0])], ['i64']),
     ('tooManyFloats', 'ret', [('a'+str(i),'f64',17+i) for i in range(9)], ['f64']),
 ]
+pair = (0x50, 0x93, 8, 0x53, 0x93, 8)
+bits = 'xor %rbx,%rax; ret'
+functions.extend([
+    ('stringLen', 'mov %rbx,%rax; ret', [('s', 'string', pair)], ['int']),
+    ('stringBits', bits, [('s', 'string', pair)], ['u64']),
+    ('stringCount', 'xor %edx,%edx; xor %esi,%esi; 1: cmp %rbx,%rsi; jae 3f; '
+                    'cmp %cl,(%rax,%rsi); jne 2f; inc %rdx; 2: inc %rsi; jmp 1b; 3: mov %rdx,%rax; ret',
+     [('s', 'string', pair), ('wanted', 'u8', 2)], ['int']),
+    ('shiftedString', 'mov %rcx,%rax; ret',
+     [('bias', 'int', 0), ('s', 'string', (0x53, 0x93, 8, 0x52, 0x93, 8))], ['int']),
+    ('rawStringWords', bits, [('data', 'pbyte', 0), ('size', 'int', 3)], ['u64']),
+    ('stringWrongOrder', bits, [('s', 'string', (0x53, 0x93, 8, 0x50, 0x93, 8))], ['u64']),
+    ('stringShortPiece', bits, [('s', 'string', (0x50, 0x93, 8, 0x53, 0x93, 4))], ['u64']),
+    ('stringLookalike', bits, [('s', 'stringlookalike', pair)], ['u64']),
+    ('stringNameCollision', 'xor %rbx,%rax; xor %rcx,%rax; ret',
+     [('s', 'string', pair), ('s_len', 'int', 2)], ['u64']),
+    ('forwardString', 'call main.stringBits; ret', [('s', 'string', pair)], ['u64']),
+    ('stringIndex', 'cmp %rbx,%rcx; jae 1f; movzbl (%rax,%rcx),%eax; ret; 1: call runtime.panicIndex; ud2',
+     [('s', 'string', pair), ('index', 'int', 2)], ['u8']),
+])
+second_pair = (0x52, 0x93, 8, 0x55, 0x93, 8)
+third_pair = (0x54, 0x93, 8, 0x58, 0x93, 8)
+two_bits = 'xor %rbx,%rax; xor %rcx,%rax; xor %rdi,%rax; ret'
+functions.extend([
+    ('twoStringBits', two_bits, [('a', 'string', pair), ('b', 'string', second_pair)], ['u64']),
+    ('twoStringForward', 'call main.twoStringBits; ret',
+     [('a', 'string', pair), ('b', 'string', second_pair)], ['u64']),
+    ('shiftedTwoStrings', 'lea (%rcx,%rsi),%rax; ret',
+     [('bias', 'int', 0), ('a', 'string', (0x53, 0x93, 8, 0x52, 0x93, 8)),
+      ('factor', 'f64', 17), ('b', 'string', (0x55, 0x93, 8, 0x54, 0x93, 8))], ['int']),
+    ('twoStringWrongOrder', two_bits,
+     [('a', 'string', pair), ('b', 'string', (0x55, 0x93, 8, 0x52, 0x93, 8))], ['u64']),
+    ('twoStringShortSecond', two_bits,
+     [('a', 'string', pair), ('b', 'string', (0x52, 0x93, 8, 0x55, 0x93, 4))], ['u64']),
+    ('twoStringWrongKind', two_bits,
+     [('a', 'string', pair), ('b', 'stringlookalike', second_pair)], ['u64']),
+    ('twoStringCollision', 'xor %rbx,%rax; xor %rcx,%rax; xor %rdi,%rax; xor %rsi,%rax; ret',
+     [('a', 'string', pair), ('b', 'string', second_pair), ('b_len', 'int', 4)], ['u64']),
+    ('threeStringPairs', 'xor %rbx,%rax; xor %rcx,%rax; xor %rdi,%rax; xor %rsi,%rax; xor %r8,%rax; ret',
+     [('a', 'string', pair), ('b', 'string', second_pair), ('c', 'string', third_pair)], ['u64']),
+])
 lines = ['.text', '.global _start', '_start: ret']
 def emit(*items): lines.extend(items)
 def string(value): return '.asciz "'+value+'"'
@@ -39,6 +80,8 @@ def ref(name): return '.long type_'+name+'-debug_info'
 for name,body,_,_ in functions:
     emit('.p2align 4', '.global main.'+name, '.type main.'+name+',@function', 'main.'+name+':', body,
          '.size main.'+name+',.-main.'+name)
+emit('.global runtime.panicIndex', '.type runtime.panicIndex,@function', 'runtime.panicIndex: ud2',
+     '.size runtime.panicIndex,.-runtime.panicIndex')
 emit('.data', '.global main.state', 'main.state: .long 0',
      '.section .go.buildinfo,"a"', '.balign 16', '.ascii "\\377 Go buildinf:"', '.byte 8,2', '.zero 16',
      '.byte 8', '.ascii "go1.22.5"', '.byte 0', '.section .debug_abbrev,"",@progbits')
@@ -70,7 +113,10 @@ def function(name,inputs,results):
     for param,ty,reg in inputs:
         emit('.byte '+('8' if name=='missingFlag' else '3'),string(param))
         if name!='missingFlag':emit('.byte 0')
-        emit(ref(ty),'.byte 2,0x91,0' if name=='stackInput' else '.byte 1,'+str(0x50+reg))
+        if isinstance(reg, tuple):
+            emit(ref(ty), uleb(len(reg)), '.byte '+','.join(map(str, reg)))
+        else:
+            emit(ref(ty),'.byte 2,0x91,0' if name=='stackInput' else '.byte 1,'+str(0x50+reg))
     for i,ty in enumerate(results):emit('.byte 3',string('~r'+str(i)),'.byte 1',ref(ty),'.byte 1,0x53' if name=='badResultReg' else '.byte 0')
     emit('.byte 0')
 cu_start('cu_functions')
@@ -89,6 +135,13 @@ for name,target in [('p32','i32'),('ppoint','point')]:emit('type_'+name+':','.by
 emit('type_badptr:', '.byte 5',string('*broken'),'.long 0xfffffff0','.byte 22',
      'type_point:','.byte 6',string('main.point'),'.byte 16,25',
      '.byte 7',string('x'),ref('i64'),'.byte 0', '.byte 7',string('y'),ref('i64'),'.byte 8','.byte 0')
+emit('type_int:', '.byte 4', string('int'), '.byte 5,8,2',
+     'type_u8:', '.byte 4', string('uint8'), '.byte 7,1,8',
+     'type_pbyte:', '.byte 5', string('*uint8'), ref('u8'), '.byte 22')
+for label, name, kind in [('string', 'string', 24), ('stringlookalike', 'main.lookalike', 25)]:
+    emit('type_'+label+':', '.byte 6', string(name), f'.byte 16,{kind}',
+         '.byte 7', string('str'), ref('pbyte'), '.byte 0',
+         '.byte 7', string('len'), ref('int'), '.byte 8', '.byte 0')
 cu_end('cu_types')
 cu_start('cu_old','Go cmd/compile go1.16.15')
 function('wrongProducer',[('p','u64',0)],['u32'])

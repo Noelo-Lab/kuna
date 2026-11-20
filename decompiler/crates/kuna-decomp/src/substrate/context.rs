@@ -1073,6 +1073,9 @@ pub struct ArchContext {
     pub devectorize_reduction: bool,
     /// (kuna) `strlenscan` — collapse an inline `repnz scasb` length into `strlen`.
     pub strlen_scan: bool,
+    /// (kuna) `repstring` — collapse an x86 `rep movs`/`rep stos`/`repz cmpsb` loop
+    /// into a copy, fill or compare builtin.
+    pub rep_string: bool,
     /// (kuna) region-based (Phoenix/SAILR) structurer: structure the CFG by
     /// walking the [`KunaRegionIdentifier`](crate::p7_regions::kuna_regionid)
     /// region tree and matching Phoenix acyclic schemas instead of running
@@ -1288,6 +1291,8 @@ pub struct ArchContext {
     pub strip_security_check: bool,
     /// Fold Go compiler bounds/division panic arms (option gobounds).
     pub go_bounds: bool,
+    /// AArch64 integer division returns zero for a zero divisor.
+    pub go_keep_divide_checks: bool,
     /// (kuna) flip negated-guard if/else branches for linearity (option
     /// `branchflip`, opt-in default-off).  Read by
     /// [`ActionBranchFlip`](crate::blockaction::ActionBranchFlip).
@@ -1346,7 +1351,7 @@ pub struct ArchContext {
     pub lazy_entry_starts: Rc<Vec<u64>>,
     /// (kuna) Recover a `BRANCHIND` whose destination is a select over constant
     /// addresses (`option constselectjump`, `p2_lift/kuna_constselectjump.rs`).
-    pub const_select_jump: bool,
+    pub const_select_jump: crate::kuna_constselectjump::ConstSelectMode,
     /// (kuna) Bound a LOAD-table jumptable by an out-of-band CBRANCH range guard
     /// when the basic model's guard analysis could not (C++
     /// `Architecture::switch_guard_bound`, flipped by `option switchguardbound`,
@@ -1456,6 +1461,9 @@ pub struct ArchContext {
     /// the various pointer-inference arms.  Default-on (C++ `resetDefaults`); `false`
     /// for hand-built fixtures (no constant-pointer recovery exercised).
     pub infer_pointers: bool,
+    /// (kuna `blobs`) The first address of each embedded image or archive,
+    /// shared from the real architecture; empty for fixtures.
+    pub blob_entries: Rc<std::collections::BTreeSet<u64>>,
     /// Ordered list of address spaces in which a constant pointer can be inferred
     /// (C++ `Architecture::inferPtrSpaces`, built by `cacheAddrSpaceProperties` +
     /// the cspec `<global>` push), shared from the real architecture through
@@ -1675,6 +1683,7 @@ impl ArchContext {
             libc_names: false, // libcnames; set from the Architecture
             devectorize_reduction: false, // devectorize (opt-in default-off)
             strlen_scan: false, // strlenscan (live value copied from the Architecture)
+            rep_string: false, // repstring (live value copied from the Architecture)
             region_structure: false,     // regionstructure (opt-in default-off)
             guard_arm: false,            // guardarm (opt-in default-off)
             loop_continue: true,
@@ -1718,6 +1727,7 @@ impl ArchContext {
             strip_stack_guard: false,    // stackguard (opt-in default-off)
             strip_msvc_stack_guard: true, // msvcstackguard (the live gate rides build_arch_handle)
             go_bounds: true,
+            go_keep_divide_checks: false,
             strip_security_check: false, // securitycheck (fixture default-off; the live gate rides build_arch_handle)
             branch_flip: false,          // branchflip (opt-in default-off)
             // C++ Architecture default: analyze_for_loops = true (architecture.cc).
@@ -1734,7 +1744,7 @@ impl ArchContext {
             funcptr_align: 0,
             switch_modulo_bound: false, // (kuna) GH-9191 default off (upstream byte-identical)
             lazy_entry_starts: Rc::default(),
-            const_select_jump: false, // (kuna) constant-select indirect branch: default off
+            const_select_jump: crate::kuna_constselectjump::ConstSelectMode::Off, // (kuna) constant-select indirect branch; reset_defaults sets the shipped default
             highslice_guard: false,
             switch_guard_bound: false, // (kuna) angr opt-in default off (upstream byte-identical)
             switch_shared_case: false, // (kuna) angr opt-in default off (upstream byte-identical)
@@ -1765,6 +1775,7 @@ impl ArchContext {
             // a hand-built fixture never exercises constant-pointer recovery, but
             // the real lift+analyze path overwrites this from the real arch.
             infer_pointers: false,
+            blob_entries: Rc::default(),
             // No inferable spaces until cacheAddrSpaceProperties runs on the real
             // arch and build_arch_handle shares the result.
             infer_ptr_spaces: Vec::new(),
