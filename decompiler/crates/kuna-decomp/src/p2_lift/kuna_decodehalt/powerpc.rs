@@ -1,9 +1,9 @@
 //! Explain a known generic PowerPC64 decode limitation without selecting an ISA.
 
-/// Called only after a bad-instruction decode, with `decodehalt` enabled.
+/// Called after a bad-instruction decode in decompilation or a raw p-code query.
 /// An `isel` word proves neither that these bytes are code nor which vector ISA
 /// the image uses. Suggest a supported override, never retry or change targets.
-pub(crate) fn powerpc_isa_hint(
+pub fn powerpc_isa_hint(
     target: &str,
     offset: u64,
     read: impl FnOnce(&mut [u8]) -> bool,
