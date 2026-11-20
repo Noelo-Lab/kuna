@@ -2195,10 +2195,15 @@ impl Datatype {
         if depth >= SHAPE_DEPTH {
             return std::cmp::Ordering::Equal;
         }
+        struct Restore(u8);
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                DEPTH.set(self.0);
+            }
+        }
         DEPTH.set(depth + 1);
-        let order = a.compare_dependency(b).map_or(std::cmp::Ordering::Equal, |c| c.cmp(&0));
-        DEPTH.set(depth);
-        order
+        let _restore = Restore(depth);
+        a.compare_dependency(b).map_or(std::cmp::Ordering::Equal, |c| c.cmp(&0))
     }
 
     /// Internal-invariant error for a `TypePointer` override reached with a
@@ -9111,6 +9116,43 @@ mod tests {
             Datatype::compare_dependency_ptr(&stub, &other),
             Datatype::compare_dependency_ptr(&full, &other),
         );
+    }
+
+    /// A panic unwinding out of the shape walk leaves the walk depth as it was,
+    /// so a later comparison of the same pair gives the same answer.
+    #[test]
+    fn shape_depth_survives_an_unwind() {
+        let pool = [
+            Rc::new(Datatype::new(4, type_metatype::TYPE_UINT)),
+            Rc::new(Datatype::new(4, type_metatype::TYPE_INT)),
+            Rc::new(Datatype::new(4, type_metatype::TYPE_UINT)),
+        ];
+        let int = &pool[1];
+        let shape = int.compare_dependency(&pool[0]).unwrap().signum();
+        let uint = pool
+            .iter()
+            .step_by(2)
+            .find(|u| ((Rc::as_ptr(int) as i128) - (Rc::as_ptr(u) as i128)).signum() as int4 != shape)
+            .expect("an int/uint pair whose address order opposes their shape order");
+        let chain = |leaf: &Rc<Datatype>| {
+            let mut t = Rc::clone(leaf);
+            for _ in 0..8 {
+                t = Rc::new(make_pointer(t, None, 1));
+            }
+            t
+        };
+        let (a, b) = (chain(int), chain(uint));
+        let before = a.compare_dependency(&b).unwrap().signum();
+        let code = || {
+            let mut c = Datatype::new(1, type_metatype::TYPE_CODE);
+            c.kind = DatatypeKind::Code { proto: Some(Rc::new(crate::fspec::FuncProto::new())) };
+            Rc::new(make_pointer(Rc::new(c), None, 1))
+        };
+        let (p1, p2) = (code(), code());
+        let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| p1.compare_dependency(&p2)));
+        assert!(caught.is_err());
+        assert_eq!(before, shape);
+        assert_eq!(a.compare_dependency(&b).unwrap().signum(), before);
     }
 
     #[test]
