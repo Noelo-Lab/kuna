@@ -1,0 +1,159 @@
+<decompilertest>
+<!--
+Pinned angr G18 atomic-add behavior, P2 instruction provenance and P9 Go output.
+These independent bytes are only decompiled. Exact signed direct returns should
+become one atomic.Add call. The branch, old value, flags, unlocked operation,
+intervening effect, retry, call, HLE, narrow update and exchange remain explicit.
+P0: asserted Go source and typed prototypes; C/Rust output and C source refuse.
+-->
+<binaryimage arch="x86:LE:64:default:golang">
+<bytechunk space="ram" offset="0x100000" readonly="true">89d9f00fc1088d040bc3</bytechunk>
+<symbol space="ram" offset="0x100000" name="add32_new"/>
+<bytechunk space="ram" offset="0x100100" readonly="true">4889d9f0480fc14808488d040bc3</bytechunk>
+<symbol space="ram" offset="0x100100" name="add64_new"/>
+<bytechunk space="ram" offset="0x100200" readonly="true">b9fffffffff00fc108ffc97503c6030789c8c3</bytechunk>
+<symbol space="ram" offset="0x100200" name="dec32_branch"/>
+<bytechunk space="ram" offset="0x100300" readonly="true">f00fc11889d8c3</bytechunk>
+<symbol space="ram" offset="0x100300" name="old32_live"/>
+<bytechunk space="ram" offset="0x100400" readonly="true">89d9f00fc1080f92c28d040b0fb6d201d0c3</bytechunk>
+<symbol space="ram" offset="0x100400" name="carry_live"/>
+<bytechunk space="ram" offset="0x100500" readonly="true">89d90fc1088d040bc3</bytechunk>
+<symbol space="ram" offset="0x100500" name="unlocked_add"/>
+<bytechunk space="ram" offset="0x100600" readonly="true">f001188b00c3</bytechunk>
+<symbol space="ram" offset="0x100600" name="locked_add"/>
+<bytechunk space="ram" offset="0x100700" readonly="true">89d9f00fc108c64008078d040bc3</bytechunk>
+<symbol space="ram" offset="0x100700" name="intervening_store"/>
+<bytechunk space="ram" offset="0x100800" readonly="true">89d9f2f00fc1088d040bc3</bytechunk>
+<symbol space="ram" offset="0x100800" name="hle_add"/>
+<bytechunk space="ram" offset="0x100900" readonly="true">89d966f00fc1086601d90fb7c1c3</bytechunk>
+<symbol space="ram" offset="0x100900" name="narrow_add"/>
+<bytechunk space="ram" offset="0x100a00" readonly="true">871889d8c3</bytechunk>
+<symbol space="ram" offset="0x100a00" name="exchange"/>
+<bytechunk space="ram" offset="0x100b00" readonly="true">89d9f00fc1088d040bc3</bytechunk>
+<symbol space="ram" offset="0x100b00" name="unsigned_add"/>
+<bytechunk space="ram" offset="0x100c00" readonly="true">89d9f00fc1088d040bc3</bytechunk>
+<symbol space="ram" offset="0x100c00" name="untrusted_add"/>
+<bytechunk space="ram" offset="0x100d00" readonly="true">89d9f00fc1088d040bc3</bytechunk>
+<symbol space="ram" offset="0x100d00" name="shadowed_add"/>
+<bytechunk space="ram" offset="0x100e00" readonly="true">89d9f00fc1088d040bffc0c3</bytechunk>
+<symbol space="ram" offset="0x100e00" name="wrong_delta"/>
+<bytechunk space="ram" offset="0x100f00" readonly="true">89d9f00fc1088d040b01c8c3</bytechunk>
+<symbol space="ram" offset="0x100f00" name="extra_old"/>
+<bytechunk space="ram" offset="0x101000" readonly="true">89d9f00fc10889d9f00fc1088d040bc3</bytechunk>
+<symbol space="ram" offset="0x101000" name="twice_add"/>
+<bytechunk space="ram" offset="0x101100" readonly="true">89d9f00fc1088d040bc3</bytechunk>
+<symbol space="ram" offset="0x101100" name="volatile_add"/>
+<bytechunk space="ram" offset="0x101200" readonly="true">89d9f00fc10801d974f689c8c3</bytechunk>
+<symbol space="ram" offset="0x101200" name="retry_add"/>
+<bytechunk space="ram" offset="0x101300" readonly="true">89d9f00fc1088d040b50e83100000058c3</bytechunk>
+<symbol space="ram" offset="0x101300" name="add_then_call"/>
+<bytechunk space="ram" offset="0x101340" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x101340" name="observe_result"/>
+</binaryimage>
+<script>
+<com>option sourcelang go</com>
+<com>option outlang go</com>
+<com>map prototype add32_new int4 add32_new(int4 *p,int4 d);</com>
+<com>map prototype add64_new int8 add64_new(int8 *p,int8 d);</com>
+<com>map prototype dec32_branch int4 dec32_branch(int4 *p,int1 *out);</com>
+<com>map prototype old32_live int4 old32_live(int4 *p,int4 d);</com>
+<com>map prototype carry_live int4 carry_live(int4 *p,int4 d);</com>
+<com>map prototype unlocked_add int4 unlocked_add(int4 *p,int4 d);</com>
+<com>map prototype locked_add int4 locked_add(int4 *p,int4 d);</com>
+<com>map prototype intervening_store int4 intervening_store(int4 *p,int4 d);</com>
+<com>map prototype hle_add int4 hle_add(int4 *p,int4 d);</com>
+<com>map prototype narrow_add int4 narrow_add(int2 *p,int4 d);</com>
+<com>map prototype exchange int4 exchange(int4 *p,int4 d);</com>
+<com>map prototype unsigned_add uint4 unsigned_add(uint4 *p,uint4 d);</com>
+<com>map prototype shadowed_add int4 shadowed_add(int4 *p,int4 atomic);</com>
+<com>map prototype wrong_delta int4 wrong_delta(int4 *p,int4 d);</com>
+<com>map prototype extra_old int4 extra_old(int4 *p,int4 d);</com>
+<com>map prototype twice_add int4 twice_add(int4 *p,int4 d);</com>
+<com>map prototype volatile_add int4 volatile_add(volatile int4 *p,int4 d);</com>
+<com>map prototype retry_add int4 retry_add(int4 *p,int4 d);</com>
+<com>map prototype add_then_call int4 add_then_call(int4 *p,int4 d);</com>
+<com>map prototype observe_result void observe_result(void);</com>
+<com>load function add32_new</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function add64_new</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function dec32_branch</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function old32_live</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function carry_live</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function unlocked_add</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function locked_add</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function intervening_store</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function hle_add</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function narrow_add</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function exchange</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function unsigned_add</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function untrusted_add</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function shadowed_add</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function wrong_delta</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function extra_old</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function twice_add</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function volatile_add</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function retry_add</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function add_then_call</com>
+<com>decompile</com>
+<com>print C</com>
+<com>option outlang c</com>
+<com>load function add32_new</com><com>decompile</com><com>print C</com>
+<com>option outlang rust</com>
+<com>decompile</com><com>print C</com>
+<com>option outlang go</com><com>option sourcelang c</com>
+<com>decompile</com><com>print C</com>
+</script>
+<stringmatch name="exact one direct-return signed 32-bit atomic addition" min="1" max="1">^  return atomic\.AddInt32\(p, *d\)$</stringmatch>
+<stringmatch name="exact one signed 64-bit atomic addition" min="1" max="1">^  return atomic\.AddInt64\(.*unsafe\.Pointer\(p\).*, *d\)$</stringmatch>
+<stringmatch name="refusals and foreign renderings retain LOCK" min="21" max="21">^ +LOCK\(\)</stringmatch>
+<stringmatch name="refusals and foreign renderings retain UNLOCK" min="21" max="21">^ +UNLOCK\(\)</stringmatch>
+<stringmatch name="carry value remains consumed" min="1" max="1">CARRY4\(v1,d\)</stringmatch>
+<stringmatch name="transaction hint remains explicit" min="1" max="1">XACQUIRE\(\)</stringmatch>
+<stringmatch name="narrow result keeps 16-bit modular width" min="1" max="1">return int32\(uint16\(v1 \+ int16\(d\)\)\)</stringmatch>
+<stringmatch name="old-valued exchange and add remain explicit" min="2" max="2">return v1$</stringmatch>
+<stringmatch name="Go retry retains the locked update inside the loop" min="1" max="1">^  for _kuna_first_[0-9]+ := true; .*uint32\(v[0-9]+ \+ d\) == 0x0.* \{$
+^    LOCK\(\)$
+^    v[0-9]+ = \*p$
+^    \*p = \*p \+ d$
+^    UNLOCK\(\)$</stringmatch>
+<stringmatch name="Go call after the atomic update keeps its order and the returned value" min="1" max="1">^  UNLOCK\(\)$
+^  observe_result\(\)$
+^  return d \+ v[0-9]+$</stringmatch>
+</decompilertest>
