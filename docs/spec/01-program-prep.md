@@ -9320,7 +9320,11 @@ widened by every veneer whose slot carries a dynamic relocation against a symbol
 the image defines at that body's address
 (`decompiler/crates/kuna-analysis/src/listing/xrefs.rs (export_alias_class)`). The
 join is again the relocation's binding, not the name, and a query by address keeps
-the plain class.
+the plain class. A named query also checks ARM and AArch64 PLT code, PowerPC32
+absolute and executable BSS PLT entries, and PowerPC64 ELFv1 descriptor stubs.
+The stub must reach the slot relocated against that definition. On ELFv1 the
+symbol names a validated descriptor whose entry is the queried function. The
+stub’s own slot access is excluded from the caller list.
 
 An x86-64 ELF memory-indirect call can have a proven local target through an
 immutable GOT slot. `decompiler/crates/kuna-analysis/src/listing/kuna_gotcall.rs`
