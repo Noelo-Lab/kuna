@@ -2249,7 +2249,9 @@ mod tests {
         // and kuna-dwarf-addrx / a DWARF 5 DW_OP_addrx global takes its name on both byte orders
         // and kuna-pacmodifier-arg-a64e / a hidden signing's modifier is not a call argument
         // and kuna-objcdirect / an Objective-C direct method's receiver is its class
-        assert_eq!(count, 831, "corpus file count drifted");
+        // and kuna-itaniumrtti-macho / Itanium RTTI on a Mach-O through chained-fixup binds
+        // and kuna-itaniumrtti-macho-classic / and through classic LC_DYLD_INFO binds
+        assert_eq!(count, 833, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
