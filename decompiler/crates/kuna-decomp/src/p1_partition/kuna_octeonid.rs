@@ -4,7 +4,8 @@
 //! An Octeon language is `MIPS:BE:64:<variant>[-32addr]:<compiler>`. Every
 //! variant has the soft-float `default` compiler and its ABI alias (`n64`, or
 //! `n32` for a 32-bit-address variant), both naming the same compiler spec;
-//! Octeon III adds `hard`.
+//! Octeon III adds `hard`. The original 32-bit-address variant also offers
+//! `o64`, which uses the generic MIPS O64 compiler spec.
 
 /// The Octeon core variants, oldest first.
 pub const VARIANTS: [&str; 4] = ["octeon", "octeonplus", "octeon2", "octeon3"];
@@ -57,7 +58,7 @@ mod tests {
                 assert_eq!(hard_float(&id("unknown")), None);
             }
         }
-        for id in ["MIPS:BE:64:64-32addr:n32", "MIPS:BE:64:default:default", "MIPS:LE:64:octeon3:default",
+        for id in ["MIPS:BE:64:octeon-32addr:o64", "MIPS:BE:64:64-32addr:n32", "MIPS:BE:64:default:default", "MIPS:LE:64:octeon3:default",
             "x86:LE:64:default:gcc"] {
             assert_eq!(hard_float(id), None);
         }

@@ -1,0 +1,30 @@
+<decompilertest>
+<!-- Original source: tests/fixtures/octeon-o64/calls.S -->
+<binaryimage arch="MIPS:BE:64:octeon-32addr:o64">
+<bytechunk space="ram" offset="0x100000" readonly="true">67bdffd0ffbf0028afa400242405000224060003240700040c04000b2408005bdfbf002803e0000867bd0030</bytechunk>
+<symbol space="ram" offset="0x100000" name="forward"/>
+<bytechunk space="ram" offset="0x10002c" readonly="true">8fa20024004710210046102100451021c8800002000000002442000b03e0000800000000</bytechunk>
+<symbol space="ram" offset="0x10002c" name="combine"/>
+<bytechunk space="ram" offset="0x100050" readonly="true">03e0000824820004</bytechunk>
+<symbol space="ram" offset="0x100050" name="next_slot"/>
+<bytechunk space="ram" offset="0x100058" readonly="true">03e000080004103e</bytechunk>
+<symbol space="ram" offset="0x100058" name="high_word"/>
+</binaryimage>
+<script>
+<com>option ctypes on</com>
+<com>parse line extern int combine(int first,int second,int third,int fourth,int fifth);</com>
+<com>parse line extern int forward(int value);</com>
+<com>parse line extern int **next_slot(int **ptr);</com>
+<com>parse line extern unsigned int high_word(unsigned long long wide);</com>
+<com>lo fu forward</com><com>decompile</com><com>print C</com>
+<com>lo fu combine</com><com>decompile</com><com>print C</com>
+<com>lo fu next_slot</com><com>decompile</com><com>print C</com>
+<com>lo fu high_word</com><com>decompile</com><com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="octeon-o64 passes the fifth argument on the stack" min="1" max="1">combine\(value,2,3,4,value\)</stringmatch>
+<stringmatch name="octeon-o64 reads the fifth stack value" min="1" max="1">fifth \+ fourth \+ third \+ second</stringmatch>
+<stringmatch name="octeon-o64 branches on the Octeon bit test" min="1" max="1">first &amp; 1U</stringmatch>
+<stringmatch name="octeon-o64 advances by one four-byte pointer slot" min="1" max="1">ptr\[1\]</stringmatch>
+<stringmatch name="octeon-o64 reads the high half of a single GPR" min="1" max="1">return wide &gt;&gt; 0x20;</stringmatch>
+</decompilertest>
