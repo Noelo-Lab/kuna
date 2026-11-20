@@ -4301,6 +4301,28 @@ with these edits:
   `CreateWindowExA` does), and every stack byte at
   or above the lowest entry-stack offset the function ever handed to a call,
   because an escaped pointer can reach any of that. It keeps nothing below.
+  It also ends the life of what it overwrites. These are the scratch registers
+  the call's summary replaced with clobber symbols (`Node::call_clobbers`:
+  every one the callee was not shown to keep). The return register stays
+  alive, because the decompiler knows callees that keep it, MSVC's
+  `__security_check_cookie` among them; a `mov eax, -1` before that check is
+  the function's return value. The call also ends every stack byte below the
+  call floor, the lowest stack pointer any external call of the function is
+  made with, or the lowest escaped offset if that lies deeper (`call_floor`).
+  Only the interpreter's scratch and the callees' frames live below the floor,
+  so every call may overwrite it, and a value stored there before a call is
+  dead even when the interpreter reads the slot after it. The bytes between
+  the floor and a particular call's stack pointer are not killed there: they
+  can hold another call's arguments, and the decompiler models the same floor
+  (see below). The loads the emitter adds itself are classified like the
+  program's own: an import slot of a call, the VPC cell of a forked select,
+  and a rebuilt condition's variable home. A load from a constant address
+  reads no stack byte, and a load from `frame + k` reads only its own. Without
+  that, the import-slot load in front of every call through the import table
+  counted as a read of the whole stack. In a VMProtect build whose register
+  context lives on the native stack (the plain build, not the Ultra one), the
+  last copy of every context slot before each call then survived: hundreds of
+  rebuilt flags words, saved virtual registers and bytecode constants.
 - Undefined-argument placeholders. Before an external call, an argument
   register that still holds its entry value, or an earlier call's leftovers, is
   one the program never defined. The same applies to the return register at a
@@ -4374,7 +4396,21 @@ interpreter-memory registers into unaffected, so the saved VM context, the
 entry stack pointer and a value witnessed before a call flow across it. The interpreter re-saves its whole context right after
 each call, reading registers the callee has just clobbered. With the
 prototype model's unknown effect, that read would look like a live use of the
-argument the caller placed there. After block generation,
+argument the caller placed there. The emission's call floor is stored on the
+`Funcdata` too (`Funcdata::kuna_call_floor`), and
+`kuna_pushan.rs (call_frame_kills)` turns an unknown effect on a stack range
+that lies entirely below it into killed-by-call, as the emission's liveness
+assumes. The alias analysis counts the interpreter's stack-pointer arithmetic
+as escaping pointers, so every stack slot the interpreter touches is
+address-tied, and each call would otherwise guard each of them with an
+address-forced INDIRECT. Whatever the interpreter last left in its scratch
+area before a call (the return address it pushed and popped again, a pushed
+flags word) then reached that INDIRECT and printed as an assignment. The
+floor is the lowest call's stack pointer rather than each call's own. A
+call's slots above the floor can hold arguments pushed for a later call, and
+cutting their flow at every call shortens the covers the variable merge
+compares, which merges values the program keeps apart (a call's result with a
+loop temporary). After block generation,
 `kuna_pushan.rs (mark_undefined_copies)` marks every COPY out of a placeholder
 register as an incidental copy, so the parameter analysis walks through it to
 the placeholder itself, an input nothing wrote, instead of taking it as a real

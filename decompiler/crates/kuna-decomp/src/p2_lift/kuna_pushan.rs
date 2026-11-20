@@ -977,6 +977,7 @@ fn adopt(arch: &mut Architecture, p: &PushanProgram, fd: &mut Funcdata) {
     fd.kuna_set_size(0);
     fd.kuna_set_call_kills(p.call_kills.iter().map(|&(o, s)| (o, s as int4)).collect());
     fd.kuna_set_call_preserves(p.call_preserves.iter().map(|&(o, s)| (o, s as int4)).collect());
+    fd.kuna_set_call_floor(p.emit_stats.call_floor.map(|k| k as i64));
     fd.kuna_set_devirtualized(true);
 }
 
@@ -1060,6 +1061,21 @@ pub fn call_kills(fd: &Funcdata, addr: &Address, size: int4) -> bool {
     let lo = addr.get_offset();
     let hi = lo.saturating_add(size.max(0) as u64);
     kills.iter().any(|&(o, s)| o <= lo && hi <= o.saturating_add(s.max(0) as u64))
+}
+
+/// Does every call inside a devirtualized body overwrite the stack range
+/// `addr:size`?  True when the range lies below the lowest stack pointer any
+/// call is made with, where only the interpreter's scratch and the callees'
+/// frames live.  Consulted by `Heritage::guardCalls`.
+pub fn call_frame_kills(fd: &Funcdata, addr: &Address, size: int4) -> bool {
+    let (Some(floor), Some(spc)) = (fd.kuna_call_floor(), addr.get_space()) else { return false };
+    if size <= 0 || spc.get_type() != kuna_base::space::spacetype::IPTR_SPACEBASE {
+        return false;
+    }
+    let bits = 8 * spc.get_addr_size() as u32;
+    let off = addr.get_offset();
+    let signed = if bits >= 64 { off as i64 as i128 } else { ((off << (64 - bits)) as i64 >> (64 - bits)) as i128 };
+    signed + size as i128 <= floor as i128
 }
 
 /// Does every call inside a devirtualized body leave `addr:size` untouched?

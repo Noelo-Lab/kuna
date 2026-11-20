@@ -463,6 +463,8 @@ pub struct Funcdata {
     kuna_call_kills: Vec<(uintb, int4)>,
     /// (kuna pushan) Register ranges every external call preserves.
     kuna_call_preserves: Vec<(uintb, int4)>,
+    /// (kuna pushan) The lowest stack offset any external call is made at.
+    kuna_call_floor: Option<i64>,
     /// (kuna pushan) The body is a devirtualized program, whose stack argument
     /// trials are judged without the local-alias test and join half slots.
     kuna_devirtualized: bool,
@@ -865,6 +867,7 @@ impl Funcdata {
             kuna_record_names: false,
             kuna_call_kills: Vec::new(),
             kuna_call_preserves: Vec::new(),
+            kuna_call_floor: None,
             kuna_devirtualized: false,
             kuna_structure_flips: Vec::new(),
             kuna_name_snapshot: Vec::new(),
@@ -1178,6 +1181,14 @@ impl Funcdata {
     }
     pub fn kuna_set_call_preserves(&mut self, keep: Vec<(uintb, int4)>) {
         self.kuna_call_preserves = keep;
+    }
+    /// (kuna pushan) The lowest stack offset, from the entry stack pointer,
+    /// any external call of this devirtualized function is made at.
+    pub fn kuna_call_floor(&self) -> Option<i64> {
+        self.kuna_call_floor
+    }
+    pub fn kuna_set_call_floor(&mut self, floor: Option<i64>) {
+        self.kuna_call_floor = floor;
     }
     /// (kuna pushan) Whether the body is a devirtualized program.
     pub fn kuna_devirtualized(&self) -> bool {

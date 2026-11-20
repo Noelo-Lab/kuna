@@ -86,6 +86,10 @@ pub struct EmitStats {
     pub frame_reg: Option<(u64, u32)>,
     /// The witness slots, which calls preserve.
     pub slot_regs: Option<(u64, u32)>,
+    /// The lowest stack pointer, relative to the entry one, any external call
+    /// is made with: below it lie only the interpreter's scratch and the
+    /// callees' frames, so every call overwrites it.
+    pub call_floor: Option<i128>,
 }
 
 /// Register-space offset, past the witness slots, of the placeholder registers
@@ -381,6 +385,12 @@ fn mark_dead(
         }
         m
     };
+    let clobbers: Vec<Option<RegSet>> = cfg.nodes.iter().map(|n| n.call_clobbers.as_deref().map(set_of)).collect();
+    let below_floor = call_floor(cfg, exits).filter(|k| *k > WIN_LO).map(|k| {
+        let mut m = RegSet::new(MEM_BYTES);
+        m.add_range(0, (k.min(WIN_HI) - WIN_LO) as u32);
+        m
+    });
     let mut total_dead = 0usize;
     let mut total_dead_ops = 0usize;
     loop {
@@ -452,6 +462,12 @@ fn mark_dead(
                     }
                     NodeExit::Call { ret, .. } => {
                         out.union_with(&live_in[*ret as usize]);
+                        if let Some(c) = &clobbers[i] {
+                            out.regs.subtract(c);
+                        }
+                        if let Some(b) = &below_floor {
+                            out.mem.subtract(b);
+                        }
                         out.regs.union_with(&call_args);
                         out.mem.union_with(&call_mem(exits[i].sp_off, cfg.nodes[i].call_pop.unwrap_or(0)));
                     }
@@ -562,6 +578,21 @@ fn mark_dead(
     (total_dead, total_dead_ops)
 }
 
+/// The lowest stack pointer an external call is made with, or the lowest
+/// escaped stack offset when that is lower; none when a call's stack pointer
+/// is not known.
+fn call_floor(cfg: &FlatCfg, exits: &[ExitInfo]) -> Option<i128> {
+    let mut floor: Option<i128> = None;
+    for (n, e) in cfg.nodes.iter().zip(exits) {
+        if matches!(n.exit, NodeExit::Call { .. }) {
+            let k = e.sp_off?;
+            floor = Some(floor.map_or(k, |f| f.min(k)));
+        }
+    }
+    let escaped = cfg.escapes.iter().copied().min();
+    floor.map(|f| escaped.map_or(f, |x| f.min(x)))
+}
+
 struct Emitter<'a> {
     cfg: &'a FlatCfg,
     arena: &'a mut ExprArena,
@@ -657,13 +688,13 @@ pub fn emit(cfg: &FlatCfg, arena: &mut ExprArena, target: &dyn PushanTarget, con
             let kept_flow = last.iter().any(|op| matches!(op.opc, CPUI_CALL | CPUI_CALLIND | CPUI_RETURN | CPUI_BRANCHIND)
                 || (op.opc == CPUI_CBRANCH && op.ins[0].space.as_ref().map(classify_space) == Some(Space::Ram)));
             em.append_exit(node, insn, last, kept_flow);
-            let n = last.len();
             if let Some(r) = refs[idx].last_mut() {
-                r.resize(n, None);
+                em.synthetic_refs(last, r);
             }
         }
     }
     let exits: Vec<ExitInfo> = cfg.nodes.iter().map(|node| em.exit_info(node)).collect();
+    em.stats.call_floor = call_floor(cfg, &exits);
     let mut dead: Vec<Vec<bool>> = code.iter().map(|n| vec![false; n.len()]).collect();
     let mut dead_ops: Vec<Vec<Vec<bool>>> = code.iter().map(|n| n.iter().map(|i| vec![false; i.len()]).collect()).collect();
     if conf.eliminate_dead {
@@ -1183,7 +1214,43 @@ impl<'a> Emitter<'a> {
             let repeats = order_count(trace, insn, i);
             refs[pos] = Some(if repeats > 1 { MemRef::Unknown } else { self.mem_ref(trace, i) });
         }
+        self.synthetic_refs(&out, &mut refs);
         (out, refs)
+    }
+
+    /// Where the emitter's own loads go: an import slot or a VPC cell is a
+    /// constant address, never a stack byte, and a rebuilt condition reads a
+    /// variable's home through a scratch the same op list set to `frame + k`.
+    fn synthetic_refs(&self, ops: &[OverlayOp], refs: &mut Vec<Option<MemRef>>) {
+        refs.resize(ops.len(), None);
+        let frame = self.frame_vn();
+        let is_frame = |v: &VarnodeData| reg_vn(v) == Some((frame.offset, frame.size));
+        let bits = 8 * self.conf.ptr_size as u32;
+        let mut homes: Vec<((u64, u32), i128)> = Vec::new();
+        for (pos, op) in ops.iter().enumerate() {
+            if refs[pos].is_none() && op.opc == CPUI_LOAD {
+                let a = &op.ins[1];
+                refs[pos] = if a.space.as_ref().map(classify_space) == Some(Space::Const) {
+                    Some(MemRef::Global)
+                } else {
+                    let size = op.out.as_ref().map_or(0, |o| o.size);
+                    unique_vn(a).and_then(|u| homes.iter().rev().find(|(h, _)| *h == u)).map(|&(_, off)| MemRef::Stack { off, size })
+                };
+            }
+            let Some(u) = op.out.as_ref().and_then(unique_vn) else { continue };
+            homes.retain(|(h, _)| *h != u);
+            let k = match op.opc {
+                CPUI_COPY if is_frame(&op.ins[0]) => Some(0),
+                CPUI_INT_ADD if is_frame(&op.ins[0]) && op.ins[1].space.as_ref().map(classify_space) == Some(Space::Const) => {
+                    let c = op.ins[1].offset as u128;
+                    Some(if c >> (bits - 1) & 1 == 1 { c as i128 - (1i128 << bits) } else { c as i128 })
+                }
+                _ => None,
+            };
+            if let Some(k) = k {
+                homes.push((u, k));
+            }
+        }
     }
 
     /// Where the LOAD/STORE at op index `i` went, from the emulated address.

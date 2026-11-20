@@ -89,6 +89,10 @@ pub enum NodeExit {
 pub struct Node {
     /// For an external call: the bytes the callee pops beyond its return address.
     pub call_pop: Option<u32>,
+    /// For an external call: the scratch registers its summary overwrote
+    /// (every one the callee was not shown to keep; the return register is
+    /// not among them).
+    pub call_clobbers: Option<Vec<(u64, u8)>>,
     /// Where each variable of a select's deciding atoms lives when the node
     /// exits, as the constant it is offset by there, with the stack pointer's
     /// offset from its entry value there.
@@ -236,6 +240,7 @@ pub struct Explorer<'a> {
     call_epochs: u64,
     /// What the last call summarized pops beyond its return address.
     last_pop: Option<u32>,
+    last_clobbers: Option<Vec<(u64, u8)>>,
     pub stats: Stats,
     pub log: Vec<String>,
     retaddr: Option<ExprId>,
@@ -319,6 +324,7 @@ impl<'a> Explorer<'a> {
             own_syms: BTreeMap::new(),
             call_epochs: 0,
             last_pop: None,
+            last_clobbers: None,
             stats: Stats::default(),
             log: Vec::new(),
             retaddr: None,
@@ -700,6 +706,7 @@ impl<'a> Explorer<'a> {
         let id = cfg.nodes.len() as NodeId;
         cfg.nodes.push(Node {
             call_pop: None,
+            call_clobbers: None,
             exit_locs: None,
             vpc_fork: None,
             key,
@@ -878,9 +885,12 @@ impl<'a> Explorer<'a> {
         self.pending_locs = None;
         self.pending_vpc_fork = None;
         let call_pop = if matches!(node_exit, NodeExit::Call { .. }) { self.last_pop.take() } else { None };
+        let call_clobbers = if matches!(node_exit, NodeExit::Call { .. }) { self.last_clobbers.take() } else { None };
         self.last_pop = None;
+        self.last_clobbers = None;
         let node = &mut cfg.nodes[id as usize];
         node.call_pop = call_pop;
+        node.call_clobbers = call_clobbers;
         node.insns = insns;
         node.traces = traces;
         node.exit = node_exit;
@@ -1721,6 +1731,7 @@ impl<'a> Explorer<'a> {
         let tag = 0x7f00_0000_0000_0000u64 ^ (from as u64).rotate_left(32) ^ addr;
         cfg.nodes.push(Node {
             call_pop: None,
+            call_clobbers: None,
             exit_locs: None,
             vpc_fork: None,
             key: NodeKey::at(addr, Some(tag)),
@@ -1798,6 +1809,7 @@ impl<'a> Explorer<'a> {
         self.call_epochs += 1;
         state.clobber_mutable(self.target, self.call_epochs);
         let kept = |off: u64, size: u8| scan.as_ref().is_some_and(|s| s.closed && !s.writes.iter().any(|&(o, n)| o < off + size as u64 && off < o + n as u64));
+        let mut clobbered: Vec<(u64, u8)> = Vec::new();
         if !kept(self.abi.return_reg, ps) {
             let ret = self.arena.var(super::kuna_pushanexpr::VarInfo::new(VarKind::CallResult { site }, ps, false));
             state.write_reg(self.abi.return_reg, ret, ps);
@@ -1807,10 +1819,12 @@ impl<'a> Explorer<'a> {
             if kept(off, size) {
                 continue;
             }
+            clobbered.push((off, size));
             let boolean = size == 1 && off >= flags.0 && off < flags.1;
             let u = self.arena.var(super::kuna_pushanexpr::VarInfo::new(VarKind::CallClobber { site, offset: off }, size, boolean));
             state.write_reg(off, u, size);
         }
+        self.last_clobbers = Some(clobbered);
         state.stack_stores.clear();
         let nsp = match probed {
             Some(p) => p,
