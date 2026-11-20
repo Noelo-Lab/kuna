@@ -2243,7 +2243,7 @@ mod tests {
         // and ghangr-go-aarch64-stack-stride / adjacent eight-byte spills keep their declared inputs
         // and ghangr-go-mcall-resumption / a scheduler switch preserves its caller's continuation
         // and kuna-switchsingle / a jump table whose entries all name one block is a direct branch
-        assert_eq!(count, 824, "corpus file count drifted");
+        assert_eq!(count, 825, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
