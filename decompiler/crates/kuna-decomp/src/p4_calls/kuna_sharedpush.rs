@@ -20,7 +20,15 @@
 //! * the declared call has a parameter at the trial's call-relative address and
 //!   size, and both calls sit at the same stack offset: the push is an argument
 //!   the declared callee takes, at the position the other callee is entered
-//!   with it, and never deeper;
+//!   with it, and never deeper. When the declared list places every parameter
+//!   on the stack but the callee's own entry reads `r` of EAX, ECX and EDX
+//!   before writing them (x86-32 Windows), the list is not its convention:
+//!   every x86-32 convention passes the leading parameters in registers, so
+//!   the callee's stack arguments are at most the parameters after the first
+//!   `r`, and a slot above them is no argument of it. GCC passes a static
+//!   function's arguments in EAX, EDX and ECX while its debug information lists
+//!   them as ordinary parameters; a MinGW `thiscall` member takes `this` in ECX
+//!   and the rest on the stack;
 //! * the slot is written by the push (not a merge or a call's side effect), the
 //!   push and the two calls sit in three distinct blocks, and neither call's
 //!   block reaches the other's without passing through the push's block;
@@ -46,7 +54,7 @@ use kuna_base::space::spacetype;
 use kuna_num::opcodes::OpCode;
 
 use crate::context::{BlockId, OpId, VarnodeId};
-use crate::fspec::{ParamTrial, OFFSET_UNKNOWN};
+use crate::fspec::{FuncCallSpecs, ParamTrial, ProtoParameter, OFFSET_UNKNOWN};
 use crate::funcdata::Funcdata;
 use crate::p4_calls::kuna_exclusivearguse::MAX_VISIT;
 
@@ -115,10 +123,31 @@ pub(crate) fn declared_arm_shares(
     if !fc.proto().get_param(j - 1).is_some_and(|p| p.get_address() == *addr && p.get_size() == trial.get_size()) {
         return false;
     }
+    if !within_stack_arguments(fc, addr.get_offset()) {
+        return false;
+    }
     let (Some(mb), Some(ob), Some(wall)) = (m.get_parent(), o.get_parent(), push.get_parent()) else {
         return false;
     };
     mb != wall && apart(data, mb, ob, wall) && only_reader(data, slot, opmatch, op, mb, wall)
+}
+
+/// Whether the callee-relative `offset` can hold a stack argument of the
+/// declared call `fc`, given the argument registers its callee reads: with a
+/// declared list that places every parameter on the stack, those registers
+/// carry the leading parameters, and only the rest can be on the stack above
+/// the return address.
+fn within_stack_arguments(fc: &FuncCallSpecs, offset: u64) -> bool {
+    let registers = usize::from(fc.callee_arg_registers());
+    let proto = fc.proto();
+    let params: Vec<_> = (0..proto.num_params()).filter_map(|i| proto.get_param(i)).collect();
+    let in_register =
+        |p: &&dyn ProtoParameter| p.get_address().get_space().is_some_and(|s| s.get_type() != spacetype::IPTR_SPACEBASE);
+    if registers == 0 || params.iter().any(in_register) {
+        return true;
+    }
+    let stack: u64 = params.iter().skip(registers).map(|p| (p.get_size().max(0) as u64).div_ceil(4) * 4).sum();
+    offset < 4 + stack
 }
 
 /// Distinct blocks, neither reaching the other without entering `wall`.

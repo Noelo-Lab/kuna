@@ -55,6 +55,8 @@ use crate::paths;
 /// `decompile-project` reuses the same parse via its own wrapper).
 pub(crate) struct Args {
     pub(crate) binary: String,
+    /// Explicitly trusted, hashed Rust banks; consumed once before target selection.
+    pub(crate) apply_rust_signatures: Option<String>,
     pub(crate) json: bool,
     /// `--functions a,b,c`: restrict to these names (None ⇒ CODE-backed entries).
     pub(crate) names: Option<Vec<String>>,
@@ -160,6 +162,7 @@ impl Args {
     pub(crate) fn serial() -> Self {
         Self {
             binary: String::new(),
+            apply_rust_signatures: None,
             json: false,
             names: None,
             addrs: Vec::new(),
@@ -597,6 +600,9 @@ fn summary_text(
     }
     for h in &summary.runtime {
         let _ = writeln!(out, "runtime\t{}\t{}", h.id, h.hint);
+        for (name, version) in h.crates.iter().flatten() {
+            let _ = writeln!(out, "crate\t{name}\t{version}");
+        }
     }
     crate::limits::write_text(&mut out, &summary.limits, display_address);
     out
@@ -1718,7 +1724,11 @@ pub(crate) fn load_program(
     args: &Args,
     defaults: DriverDefaults,
 ) -> Result<ConsoleProgram, String> {
-    load_program_with_rust_profiles(args, defaults, None)
+    let request = args.apply_rust_signatures.as_deref().map(|path| {
+        crate::rust_signatures::validate_application(args)?;
+        crate::rust_signatures::load(std::path::Path::new(path)).map(|(request, _)| request)
+    }).transpose()?;
+    load_program_with_rust_profiles(args, defaults, request)
 }
 
 fn load_program_with_rust_profiles(
@@ -1739,7 +1749,7 @@ fn load_program_with_rust_profiles(
         &args.options,
         args.slice.as_deref(),
         jobs::decode_lanes(args),
-        defaults.functions_inventory(),
+        defaults.functions_inventory() && args.apply_rust_signatures.is_none(),
     );
 
     let spec_roots = spec_roots(args.sleighpath.as_deref());
@@ -1796,7 +1806,7 @@ fn load_program_with_rust_profiles(
     let non_x86_64 = !prog.arch().archid.starts_with("x86:LE:64:");
     for (name, value) in driver_default_options_for_arch(
         non_x86_64,
-        defaults.decompiles(),
+        defaults.decompiles() || args.apply_rust_signatures.is_some(),
         defaults.wants_listing(),
         &args.options,
     ) {
@@ -1828,7 +1838,11 @@ fn load_program_with_rust_profiles(
     }
     replay_worker_arm_frames(&mut prog, args)?;
     if let Some(request) = request {
-        prog.request_rust_profiles(request);
+        if args.apply_rust_signatures.is_some() {
+            prog.request_rust_signature_names(request);
+        } else {
+            prog.request_rust_profiles(request);
+        }
     }
     prog.commit_pending_analysis()
         .map_err(|e| format!("read symbols (analysis commit) failed: {}", e.explain()))?;
@@ -2890,6 +2904,7 @@ pub(crate) fn parse_args_with_filters(
     let triageable = cmd == "decompile-all" || cmd == "functions";
     let mut filters = Filters::default();
     let mut binary: Option<String> = None;
+    let mut apply_rust_signatures: Option<String> = None;
     let mut json = false;
     let mut names: Option<Vec<String>> = None;
     let mut addrs: Vec<EntrySelector> = Vec::new();
@@ -2937,8 +2952,14 @@ pub(crate) fn parse_args_with_filters(
         let a = argv[i].as_str();
         match a {
             "--json" => json = true,
+            "--apply-rust-signatures" if matches!(cmd, "functions" | "decompile") => {
+                let value = take(argv, &mut i, "--apply-rust-signatures")?;
+                if apply_rust_signatures.replace(value).is_some() {
+                    return Err("duplicate --apply-rust-signatures".into());
+                }
+            }
             "--no-vars" => no_vars = true,
-            "--omit" if cmd == "decompile-all" => omit.add(&take(argv, &mut i, "--omit")?)?,
+            "--omit" if matches!(cmd, "decompile-all" | "decompile") => omit.add(&take(argv, &mut i, "--omit")?)?,
             "--functions" => {
                 let v = take(argv, &mut i, "--functions")?;
                 names = Some(v.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect());
@@ -2991,9 +3012,7 @@ pub(crate) fn parse_args_with_filters(
                 jobs_synth = Some(jobs::SynthWorker::parse(&take(argv, &mut i, "--jobs-synth")?)?);
             }
             "--max-fn-seconds"
-                if cmd == "decompile-all"
-                    || cmd == "decompile-project"
-                    || cmd == "decompile-graph" =>
+                if matches!(cmd, "decompile" | "decompile-all" | "decompile-project" | "decompile-graph") =>
             {
                 let v = take(argv, &mut i, "--max-fn-seconds")?;
                 max_fn_seconds = Some(
@@ -3003,9 +3022,7 @@ pub(crate) fn parse_args_with_filters(
                 );
             }
             "--max-fn-memory"
-                if cmd == "decompile-all"
-                    || cmd == "decompile-project"
-                    || cmd == "decompile-graph" =>
+                if matches!(cmd, "decompile" | "decompile-all" | "decompile-project" | "decompile-graph") =>
             {
                 max_fn_memory = Some(parse_max_fn_memory(&take(argv, &mut i, "--max-fn-memory")?)?);
             }
@@ -3083,6 +3100,9 @@ pub(crate) fn parse_args_with_filters(
 
     let binary = binary.ok_or_else(|| format!("{cmd} requires <binary>"))?;
     if filters.rust_signature_manifest.is_some() {
+        if apply_rust_signatures.is_some() {
+            return Err("--rust-signature-manifest and --apply-rust-signatures are exclusive".into());
+        }
         if !filters.summary || !json {
             return Err("--rust-signature-manifest requires functions --summary --json".into());
         }
@@ -3167,13 +3187,13 @@ pub(crate) fn parse_args_with_filters(
     let ResolvedMode { name: concrete_mode, options: merged } =
         mode_and_options_for_binary(mode.as_deref(), &binary, options)?;
     options = merged;
-    if names.is_none() && !addrs.is_empty() && !explicit_fast_funcdisc {
+    if names.is_none() && !addrs.is_empty() && !explicit_fast_funcdisc && apply_rust_signatures.is_none() {
         options.push(("fast_funcdisc".into(), "off".into()));
     }
     let whole_binary = batch && names.is_none() && addrs.is_empty();
     let max_fn_seconds = max_fn_seconds
         .unwrap_or_else(|| default_fn_budget_seconds(concrete_mode, whole_binary));
-    let decompiles = matches!(cmd, "decompile-all" | "decompile-project" | "decompile-graph");
+    let decompiles = matches!(cmd, "decompile" | "decompile-all" | "decompile-project" | "decompile-graph");
     let max_fn_memory = if decompiles { max_fn_memory } else { Some(0) };
     // The pool re-execs this binary, so a policy it cannot express is one the
     // shards would silently drop rather than honour. Pool-only: on `functions`
@@ -3239,9 +3259,9 @@ pub(crate) fn parse_args_with_filters(
         }
     }
 
-    Ok((
-        Args {
+    let args = Args {
             binary,
+            apply_rust_signatures,
             json,
             names,
             addrs,
@@ -3273,9 +3293,11 @@ pub(crate) fn parse_args_with_filters(
             jobs_pointerargs,
             jobs_synth,
             jobs_objects,
-        },
-        filters,
-    ))
+        };
+    if args.apply_rust_signatures.is_some() {
+        crate::rust_signatures::validate_application(&args)?;
+    }
+    Ok((args, filters))
 }
 
 fn parse_count(v: &str, flag: &str) -> Result<u64, String> {
@@ -3381,6 +3403,7 @@ fn usage_functions() {
          \x20               [--mode auto|reliable|aggressive|fast] [--isa auto|arm|thumb] [--slice ARCH] [--target T] [--sleighpath D]\n\
          \x20               [--raw-image --target T --base VMA (--entry|--addr VMA)..]\n\
          \x20               [--rust-signature-manifest PATH (requires --summary --json)]\n\
+         \x20               [--apply-rust-signatures PATH (trusted manifest; --jobs 1)]\n\
          \n\
          List every function kuna discovers in a binary as `<addr>\\t<name>` (or\n\
          --json: {{binary,count,total,functions:[{{name,address,address_hex,aliases,size}}]}}).\n\
@@ -3928,6 +3951,28 @@ mod triage_tests {
         assert_eq!(SortKey::parse("name").unwrap(), SortKey::Name);
         assert!(SortKey::parse("entropy").is_err());
         assert_eq!(SortKey::default(), SortKey::Addr);
+    }
+
+    #[test]
+    fn rust_signature_application_keeps_discovery_independent_of_selection() {
+        let common = ["--mode", "reliable", "--apply-rust-signatures", "trusted.json"];
+        let (inventory, _) = parse("functions", &common).unwrap();
+        let flags: Vec<_> = common.into_iter().chain(["--addr", "0x1000"]).collect();
+        let (addressed, _) = parse("decompile", &flags).unwrap();
+        assert_eq!(inventory.options, addressed.options);
+        assert_eq!(addressed.apply_rust_signatures.as_deref(), Some("trusted.json"));
+        for extra in [
+            vec!["--jobs", "2"], vec!["--jobs", "auto"],
+            vec!["--apply-rust-signatures", "second.json"],
+            vec!["--summary", "--json", "--rust-signature-manifest", "report.json"],
+            vec!["--assert", "bytes 0x1000 90"],
+        ] {
+            let flags: Vec<_> = common.into_iter().chain(extra).collect();
+            assert!(parse("functions", &flags).is_err(), "{flags:?}");
+        }
+        for command in ["decompile-all", "decompile-project", "decompile-graph"] {
+            assert!(parse(command, &common).is_err(), "{command}");
+        }
     }
 
     #[test]

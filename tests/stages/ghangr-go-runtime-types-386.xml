@@ -1,0 +1,21 @@
+<decompilertest>
+<binaryimage arch="x86:LE:32:default:gcc">
+  <bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+  <symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/go-runtime-types-386/go1.27.2-386-stripped</com>
+  <com>option dwarf off</com><com>option gotypeglobals off</com><com>read symbols</com>
+  <com>load function main.createWord</com><com>decompile</com><com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/go-runtime-types-386/go1.27.2-386-stripped</com>
+  <com>option dwarf off</com><com>option gotypeglobals on</com><com>read symbols</com>
+  <com>load function main.createWord</com><com>decompile</com><com>print C</com>
+  <com>load function main.create</com><com>decompile</com><com>print C</com>
+</script>
+<stringmatch name="Go 1.27 i386 names the recursive node descriptor" min="1" max="1">mallocgcSmallScanNoHeaderSC1\([^\n]*type:main.Node</stringmatch>
+<stringmatch name="Go 1.27 i386 names the padded record descriptor" min="1" max="1">mallocgcSmallScanNoHeaderSC5\([^\n]*type:main.Record</stringmatch>
+<stringmatch name="Go 1.27 i386 descriptor names respect the global display option" min="1" max="1">mallocgcSmallScanNoHeaderSC1\(8,0x8150528,1\)</stringmatch>
+<stringmatch name="Go 1.27 i386 retains both node allocation and initialization" min="2" max="2">\*v1 = a0;</stringmatch>
+</decompilertest>
