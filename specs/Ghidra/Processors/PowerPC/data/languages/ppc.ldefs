@@ -19,6 +19,13 @@
     <external_name tool="qemu" name="qemu-ppc"/>
     <external_name tool="qemu_system" name="qemu-system-ppc"/>
   </language>
+  <language processor="PowerPC" endian="big" size="32" variant="isel" version="1.0"
+            slafile="ppc_32_isel_be.sla" processorspec="ppc_32.pspec"
+            id="PowerPC:BE:32:isel">
+    <description>PowerPC 32-bit big endian with AltiVec, G2 and ISEL</description>
+    <compiler name="default" spec="ppc_32.cspec" id="default"/>
+    <external_name tool="DWARF.register.mapping.file" name="ppc.dwarf"/>
+  </language>
   <language processor="PowerPC"
             endian="little"
             size="32"
@@ -33,6 +40,13 @@
     <compiler name="Visual Studio" spec="ppc_32.cspec" id="windows"/>
     <external_name tool="gnu" name="powerpc:common"/>
     <external_name tool="IDA-PRO" name="ppcl"/>
+    <external_name tool="DWARF.register.mapping.file" name="ppc.dwarf"/>
+  </language>
+  <language processor="PowerPC" endian="little" size="32" variant="isel" version="1.0"
+            slafile="ppc_32_isel_le.sla" processorspec="ppc_32.pspec"
+            id="PowerPC:LE:32:isel">
+    <description>PowerPC 32-bit little endian with AltiVec, G2 and ISEL</description>
+    <compiler name="default" spec="ppc_32.cspec" id="default"/>
     <external_name tool="DWARF.register.mapping.file" name="ppc.dwarf"/>
   </language>
   <language processor="PowerPC"

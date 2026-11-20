@@ -1,0 +1,4 @@
+@include "ppc_32_be.slaspec"
+with : BIT_0=0 {
+@include "isel.sinc"
+}

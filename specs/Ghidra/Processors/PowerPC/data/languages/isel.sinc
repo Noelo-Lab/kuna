@@ -1,0 +1,14 @@
+:isel^CC_X_OPm D,RA_OR_ZERO,B,CC_X_OP  is OP=31 & D & RA_OR_ZERO & B & CC_X_OP & CC_X_OPm & XOP_1_5=15
+{
+@ifdef E500
+	local tmp:4 = RA_OR_ZERO:4;
+	D[0,32] = B:4;
+	if (!CC_X_OP) goto inst_next;
+	D[0,32] = tmp;
+@else
+	local tmp:$(REGISTER_SIZE) = RA_OR_ZERO;
+	D = B;
+	if (!CC_X_OP) goto inst_next;
+	D = tmp;
+@endif
+}
