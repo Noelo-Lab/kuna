@@ -6,8 +6,12 @@
 //! chooses the prototype of a bucket whose records all carry one name: the
 //! record the specific hash and code-unit count single out, else the one
 //! prototype every describing record agrees on.
+//!
+//! The types of every match land in one program, so a record type two objects
+//! define differently would lay out one object's functions with the other's
+//! members; [`drop_disputed`] leaves such a type opaque in every record.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
 use kuna_base::address::Address;
@@ -48,6 +52,30 @@ pub fn describe(arch: &Architecture, image: &ObjectLoadImage, records: &mut [Fid
     described
 }
 
+/// Leave every record type that `records` define in more than one way as its
+/// forward declaration alone. Returns the names left opaque.
+pub fn drop_disputed(records: &mut [FidRecord]) -> Vec<String> {
+    let mut definitions: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
+    for text in records.iter().flat_map(|r| &r.typedefs) {
+        if let Some(name) = defined_record(text) {
+            definitions.entry(name).or_default().insert(text);
+        }
+    }
+    let disputed: BTreeSet<String> =
+        definitions.into_iter().filter(|(_, texts)| texts.len() > 1).map(|(name, _)| name.to_string()).collect();
+    for record in records.iter_mut() {
+        record.typedefs.retain(|text| defined_record(text).is_none_or(|name| !disputed.contains(name)));
+    }
+    disputed.into_iter().collect()
+}
+
+/// The tag a stored `struct N { … };` or `union N { … };` defines.
+fn defined_record(text: &str) -> Option<&str> {
+    let rest = text.strip_prefix("struct ").or_else(|| text.strip_prefix("union "))?;
+    let (name, body) = rest.split_once(' ')?;
+    body.starts_with('{').then_some(name)
+}
+
 /// The record whose prototype a match on `records` applies.
 pub(super) fn pick<'a>(records: &'a [FidRecord], query: &FidHashQuad) -> Option<&'a FidRecord> {
     let mut described = records.iter().filter(|r| r.prototype.is_some());
@@ -80,5 +108,16 @@ mod tests {
         assert!(pick(&differ, &query).is_none());
         let exact = [record(1, Some("int f(void)")), record(9, Some("int f(int a)"))];
         assert_eq!(pick(&exact, &query).unwrap().specific_hash, 9);
+    }
+
+    #[test]
+    fn a_type_two_objects_define_differently_is_left_opaque() {
+        let forward = |n: &str| format!("typedef struct {n} {n};");
+        let mut records = [record(1, Some("int f(s *p,t *q)")), record(2, Some("int g(s *p,t *q)"))];
+        records[0].typedefs = vec![forward("s"), forward("t"), "struct s { int4 a; };".into(), "struct t { int4 a; };".into()];
+        records[1].typedefs = vec![forward("s"), forward("t"), "struct s { int8 b; };".into(), "struct t { int4 a; };".into()];
+        assert_eq!(drop_disputed(&mut records), ["s"]);
+        assert_eq!(records[0].typedefs, [forward("s"), forward("t"), "struct t { int4 a; };".into()]);
+        assert_eq!(records[1].typedefs, [forward("s"), forward("t"), "struct t { int4 a; };".into()]);
     }
 }

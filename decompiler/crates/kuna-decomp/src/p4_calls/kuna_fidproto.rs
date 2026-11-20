@@ -78,13 +78,40 @@ pub fn declaration(pieces: &PrototypePieces) -> Option<Declaration> {
         let name = crate::printc::sanitize_type_name(ct.get_name());
         typedefs.push(format!("typedef {kw} {name} {name};"));
     }
-    for ct in types.iter().filter(|ct| !(record(ct) && ct.is_incomplete())) {
+    for ct in types.iter().filter(|ct| !(record(ct) && (ct.is_incomplete() || !laid_out_again(ct)))) {
         let text = one_line(&crate::kuna_structdefs::definition_text(ct, rt.clone()));
         if !text.is_empty() {
-            typedefs.push(text);
+            typedefs.push(text.replace("undefined1 _pad", "uint1 _pad"));
         }
     }
     Some(Declaration { prototype: format!("{ret}{sep}{name}({params})"), typedefs })
+}
+
+/// Does the C parser, laying out the definition text of `ct` afresh, put every
+/// member where `ct` has it? Not when the text moves bitfields to the end, nor
+/// for a member off its natural alignment or a size the alignment does not
+/// divide; such a record is stored as its forward declaration alone.
+fn laid_out_again(ct: &Datatype) -> bool {
+    let align = |t: &Datatype| t.get_alignment().max(1);
+    match &ct.kind {
+        DatatypeKind::Struct { field, bitfield } => {
+            let mut end = 0;
+            let mut most = 1;
+            for f in field {
+                let t = &f.field_type;
+                if f.offset < end || f.offset % align(t) != 0 || t.get_align_size() != t.get_size() {
+                    return false;
+                }
+                end = f.offset + t.get_size();
+                most = most.max(align(t));
+            }
+            bitfield.is_empty() && ct.get_size() >= end && ct.get_size() % most == 0
+        }
+        DatatypeKind::Union { field } => {
+            ct.get_size() == field.iter().map(|f| f.field_type.get_size()).max().unwrap_or(0)
+        }
+        _ => true,
+    }
 }
 
 fn identifier(name: &str) -> Option<&str> {
@@ -171,5 +198,57 @@ mod tests {
         assert_eq!(identifier("Account::deposit"), None);
         assert_eq!(identifier("9lives"), None);
         assert_eq!(identifier(""), None);
+    }
+
+    fn scalar(size: int4, name: &str) -> Rc<Datatype> {
+        let mut t = Datatype::new_with_align(size, size, type_metatype::TYPE_INT);
+        t.name = name.into();
+        t.display_name = name.into();
+        t.flags |= crate::dtype::flags::coretype;
+        Rc::new(t)
+    }
+
+    fn record(name: &str, size: int4, fields: &[(int4, &Rc<Datatype>)]) -> Datatype {
+        let mut s = Datatype::new_with_align(size, 8, type_metatype::TYPE_STRUCT);
+        s.name = name.into();
+        s.display_name = name.into();
+        s.id = Datatype::hash_name(name);
+        let field = fields
+            .iter()
+            .enumerate()
+            .map(|(i, (off, t))| crate::dtype::TypeField::new(i as int4, *off, format!("m{i}"), Rc::clone(t)))
+            .collect();
+        s.kind = DatatypeKind::Struct { field, bitfield: vec![] };
+        s
+    }
+
+    #[test]
+    fn a_record_is_stored_whole_only_when_the_parser_lays_it_out_the_same() {
+        let (i4, i8) = (scalar(4, "int4"), scalar(8, "int8"));
+        let padded = record("padded", 16, &[(0, &i4), (8, &i8)]);
+        assert!(laid_out_again(&padded));
+        assert!(!laid_out_again(&record("packed", 12, &[(0, &i4), (4, &i8)])));
+        assert!(!laid_out_again(&record("overlap", 16, &[(0, &i8), (4, &i4)])));
+        assert!(!laid_out_again(&record("short", 12, &[(0, &i8), (8, &i4)])));
+        let mut bits = record("bits", 8, &[(0, &i4)]);
+        if let DatatypeKind::Struct { bitfield, .. } = &mut bits.kind {
+            bitfield.push(crate::dtype::TypeBitField::new(1, 3, false, "b", Rc::clone(&i4)));
+        }
+        assert!(!laid_out_again(&bits));
+
+        let mut ptr = Datatype::new_with_align(8, 8, type_metatype::TYPE_PTR);
+        ptr.kind = DatatypeKind::Pointer { ptrto: Rc::new(padded), spaceid: None, truncate: None, wordsize: 1 };
+        let pieces = PrototypePieces {
+            name: "f".into(),
+            intypes: vec![Rc::new(ptr)],
+            innames: vec!["p".into()],
+            first_var_arg_slot: -1,
+            ..Default::default()
+        };
+        let declared = declaration(&pieces).unwrap();
+        assert_eq!(
+            declared.typedefs,
+            ["typedef struct padded padded;", "struct padded { int4 m0; uint1 _pad4[4]; int8 m1; };"]
+        );
     }
 }

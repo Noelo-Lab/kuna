@@ -5015,6 +5015,8 @@ syntax of `kuna decompile --assert`: `prototype <name> <declaration>` for a
 function and `typedef <declaration>` for each type the prototypes use, one
 directive per line in `@file`. A stated prototype replaces a read one, and one
 naming no record is reported. The summary line counts the described records.
+A structure or union two objects define differently is kept only as a forward
+declaration in every record, and its name is listed on stderr.
 
 ```
 $ clang -O2 -g -c fidlib.c && kuna fid build fidlib.o -o fidlib.fid --lang x86:LE:64:default --cspec gcc

@@ -156,6 +156,10 @@ fn cmd_build(argv: &[String]) -> i32 {
     for name in args.declared.fill(&mut all) {
         eprintln!("kuna fid build: warning: --assert prototype {name}: no record has that name");
     }
+    let disputed = kuna_analysis::fid::kuna_fidproto::drop_disputed(&mut all);
+    if !disputed.is_empty() {
+        eprintln!("kuna fid build: defined differently by two objects, left opaque: {}", disputed.join(", "));
+    }
     let described = all.iter().filter(|r| r.prototype.is_some()).count();
 
     let db = FidDb::from_records(lang, cspec, all);

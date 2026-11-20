@@ -6385,7 +6385,13 @@ every other binary's pass list is byte-identical to before the pass existed):
   (`decompiler/crates/kuna-analysis/src/analyzers/fid/kuna_fidproto.rs
   (describe)`; the hashes are taken before that commit), and from `--assert
   'prototype <name> <declaration>'` with any `--assert 'typedef …'`, which
-  replace what was read. On a match the pass emits the prototype of the record
+  replace what was read. The types of every match land in one program, so a
+  record type that two objects define differently is left as its forward
+  declaration in every record and named on stderr (`drop_disputed`); a type one
+  object defines and another only declares (an opaque handle a library casts
+  to its own private state) is defined for both, so a function of the second
+  object reads the first object's members. On a match the pass emits the
+  prototype of the record
   the specific hash and code-unit count single out, else the one prototype all
   describing records of the bucket agree on (`pick`), as a `FidProtoFact`. The
   commit applies it last

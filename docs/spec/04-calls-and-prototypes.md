@@ -1416,11 +1416,18 @@ at the entry (`the .fid prototype was dropped: the body reads parameter
 storage it does not declare`). A declared parameter the body never reads is not
 a disagreement, since an unused parameter is ordinary C, and a variadic
 prototype is not checked. A caller decompiled before the function itself has
-already copied the prototype; the callee-first order of a batch run puts the
-check first, a single-function run of the caller does not. The same module
+already copied the prototype; the callee-first order of a serial batch run
+puts the check first, while a single-function run of the caller, or a `--jobs`
+worker that does not decompile the callee itself, does not. The same module
 writes a prototype as the text a record stores (`declaration`): sized core
 names, a forward `typedef struct N N;` for each record so pointers among them
-parse in any order, then each definition before its first by-value use.
+parse in any order, then each definition before its first by-value use, with
+gaps as `uint1 _pad<off>[N]` members. A record is stored by its forward
+declaration alone (an opaque type at the match) unless the parser, laying the
+definition out afresh, puts every member where the object has it
+(`laid_out_again`): no bitfields, which the definition text moves to the end,
+every member on its natural alignment after the one before, and a size its
+alignment divides (a union: the size of its largest member).
 
 ### Setup (once, before fullloop)
 
