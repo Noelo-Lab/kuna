@@ -4290,6 +4290,13 @@ with these edits:
 - Dead-code elimination. Backward liveness runs over registers and the stack
   bytes from -0x8000 to +0x1000 relative to the entry stack pointer. An
   instruction dies when nothing it defines is read and it has no other effect.
+  The liveness is strong: an op's inputs become live only where the op itself
+  is live. One worklist fixpoint over the nodes therefore finds a chain of
+  copies nothing reads (the interpreter moving a value through its context
+  slots, handler after handler) in full, a loop-carried one included, and a
+  final sweep marks it. Repeating plain liveness and removal until nothing
+  changes would peel one node of such a chain per round (71 rounds on a
+  32-bit VMProtect function).
   Inside a live instruction, a stack store nobody reads dies with the address
   arithmetic that fed it. In an instruction with branches among its own ops,
   everything before its trailing exit ops dies together when none of it has an

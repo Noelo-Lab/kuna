@@ -311,7 +311,9 @@ fn reg_vn(v: &VarnodeData) -> Option<(u64, u32)> {
 /// Backward liveness over registers and this function's own stack slots.
 /// An instruction dies when nothing it defines is read and it has no other
 /// effect; inside a live instruction a stack store whose bytes nobody reads
-/// dies on its own, with the address arithmetic that fed it.  A return keeps
+/// dies on its own, with the address arithmetic that fed it.  The liveness
+/// is strong (an op's inputs are live only where the op is), so one worklist
+/// fixpoint finds every dead chain and a final sweep marks it.  A return keeps
 /// the configured exit registers minus the callee-saved ones the emulation
 /// proved still hold their entry value; an external call keeps every stack
 /// byte at or above its stack pointer (the callee may reach any of it through
@@ -391,191 +393,159 @@ fn mark_dead(
         m.add_range(0, (k.min(WIN_HI) - WIN_LO) as u32);
         m
     });
+    let succ: Vec<Vec<NodeId>> = cfg.nodes.iter().map(|node| successors(&node.exit)).collect();
+    let mut preds: Vec<Vec<usize>> = vec![Vec::new(); n];
+    for (i, ss) in succ.iter().enumerate() {
+        for &t in ss {
+            preds[t as usize].push(i);
+        }
+    }
+    let live_out_of = |i: usize, live_in: &[Live]| -> Live {
+        let mut out = Live::new(bytes);
+        match &cfg.nodes[i].exit {
+            NodeExit::Branch(_) | NodeExit::CondBranch { .. } | NodeExit::Select { .. } => {
+                for &t in &succ[i] {
+                    out.union_with(&live_in[t as usize]);
+                }
+            }
+            NodeExit::Call { ret, .. } => {
+                out.union_with(&live_in[*ret as usize]);
+                if let Some(c) = &clobbers[i] {
+                    out.regs.subtract(c);
+                }
+                if let Some(b) = &below_floor {
+                    out.mem.subtract(b);
+                }
+                out.regs.union_with(&call_args);
+                out.mem.union_with(&call_mem(exits[i].sp_off, cfg.nodes[i].call_pop.unwrap_or(0)));
+            }
+            NodeExit::Return => {
+                out.regs = match &exits[i].regs {
+                    Some(r) => set_of(r),
+                    None => live_exit_default.clone(),
+                };
+                out.mem = mem_from(exits[i].sp_off.or(Some(0)));
+            }
+            NodeExit::TailCall(_) | NodeExit::TailCallSlot(_) => {
+                out.regs = full_regs.clone();
+                out.mem = mem_from(exits[i].sp_off);
+            }
+            NodeExit::Unresolved(_) | NodeExit::Halt(_) | NodeExit::NoReturn => {
+                out.regs = full_regs.clone();
+                out.mem = full_mem.clone();
+            }
+        }
+        out
+    };
+    // Strong liveness: an op's inputs are live only when the op is, so a
+    // chain of copies nothing reads dies in one fixpoint, loops included.
+    let mut live_in: Vec<Live> = (0..n).map(|_| Live::new(bytes)).collect();
+    let mut queued = vec![true; n];
+    let mut work: std::collections::VecDeque<usize> = (0..n).rev().collect();
+    while let Some(i) = work.pop_front() {
+        queued[i] = false;
+        let out = live_out_of(i, &live_in);
+        let mut d = vec![false; code[i].len()];
+        let mut d_ops: Vec<Vec<bool>> = code[i].iter().map(|insn| vec![false; insn.len()]).collect();
+        let (inn, _, _) = sweep_node(&code[i], &refs[i], out, &conf.pure_userops, &mut d, &mut d_ops);
+        if inn != live_in[i] {
+            live_in[i] = inn;
+            for &p in &preds[i] {
+                if !queued[p] {
+                    queued[p] = true;
+                    work.push_back(p);
+                }
+            }
+        }
+    }
     let mut total_dead = 0usize;
     let mut total_dead_ops = 0usize;
-    loop {
-        // Per-node gen/kill over the live ops.
-        let mut gen: Vec<Live> = Vec::with_capacity(n);
-        let mut kill: Vec<Live> = Vec::with_capacity(n);
-        for i in 0..n {
-            let mut g = Live::new(bytes);
-            let mut k = Live::new(bytes);
-            for (j, insn) in code[i].iter().enumerate().rev() {
-                if dead[i][j] {
-                    continue;
-                }
-                for (x, op) in insn.iter().enumerate().rev() {
-                    if dead_ops[i][j][x] {
-                        continue;
-                    }
-                    let r = refs[i][j].get(x).and_then(|r| r.as_ref());
-                    if let Some(o) = &op.out {
-                        if let Some((off, sz)) = reg_vn(o) {
-                            g.regs.remove_range(off, sz);
-                            k.regs.add_range(off, sz);
-                        }
-                    }
-                    if op.opc == CPUI_STORE {
-                        if let Some((off, sz)) = r.and_then(mem_range) {
-                            g.mem.remove_range(off, sz);
-                            k.mem.add_range(off, sz);
-                        }
-                    }
-                    for v in &op.ins {
-                        if let Some((off, sz)) = reg_vn(v) {
-                            g.regs.add_range(off, sz);
-                        }
-                    }
-                    if op.opc == CPUI_LOAD {
-                        match r {
-                            Some(MemRef::Global) => {}
-                            Some(rf) if mem_range(rf).is_some() => {
-                                let (off, sz) = mem_range(rf).unwrap();
-                                g.mem.add_range(off, sz);
-                            }
-                            _ => g.mem.set_all(),
-                        }
-                    }
-                }
-            }
-            gen.push(g);
-            kill.push(k);
+    for i in 0..n {
+        let out = live_out_of(i, &live_in);
+        let (_, d, o) = sweep_node(&code[i], &refs[i], out, &conf.pure_userops, &mut dead[i], &mut dead_ops[i]);
+        total_dead += d;
+        total_dead_ops += o;
+    }
+    (total_dead, total_dead_ops)
+}
+
+/// One node backwards from `live` (its live-out): marks the instructions and
+/// ops nothing reads and that have no other effect, and returns the live-in
+/// with the numbers of instructions and ops marked.
+fn sweep_node(
+    code: &[Vec<OverlayOp>],
+    refs: &[Vec<Option<MemRef>>],
+    mut live: Live,
+    pure_userops: &[u64],
+    dead: &mut [bool],
+    dead_ops: &mut [Vec<bool>],
+) -> (Live, usize, usize) {
+    let mut newly = 0usize;
+    let mut newly_ops = 0usize;
+    for (j, insn) in code.iter().enumerate().rev() {
+        if dead[j] {
+            continue;
         }
-        let mut live_in: Vec<Live> = (0..n).map(|_| Live::new(bytes)).collect();
-        let mut live_out: Vec<Live> = (0..n).map(|_| Live::new(bytes)).collect();
-        loop {
-            let mut changed = false;
-            for i in (0..n).rev() {
-                let mut out = Live::new(bytes);
-                match &cfg.nodes[i].exit {
-                    NodeExit::Branch(s) => out.union_with(&live_in[*s as usize]),
-                    NodeExit::CondBranch { arms, fall } => {
-                        for (_, t) in arms {
-                            out.union_with(&live_in[*t as usize]);
-                        }
-                        out.union_with(&live_in[*fall as usize]);
-                    }
-                    NodeExit::Select { targets, .. } => {
-                        for (_, t) in targets {
-                            out.union_with(&live_in[*t as usize]);
-                        }
-                    }
-                    NodeExit::Call { ret, .. } => {
-                        out.union_with(&live_in[*ret as usize]);
-                        if let Some(c) = &clobbers[i] {
-                            out.regs.subtract(c);
-                        }
-                        if let Some(b) = &below_floor {
-                            out.mem.subtract(b);
-                        }
-                        out.regs.union_with(&call_args);
-                        out.mem.union_with(&call_mem(exits[i].sp_off, cfg.nodes[i].call_pop.unwrap_or(0)));
-                    }
-                    NodeExit::Return => {
-                        out.regs = match &exits[i].regs {
-                            Some(r) => set_of(r),
-                            None => live_exit_default.clone(),
-                        };
-                        out.mem = mem_from(exits[i].sp_off.or(Some(0)));
-                    }
-                    NodeExit::TailCall(_) | NodeExit::TailCallSlot(_) => {
-                        out.regs = full_regs.clone();
-                        out.mem = mem_from(exits[i].sp_off);
-                    }
-                    NodeExit::Unresolved(_) | NodeExit::Halt(_) | NodeExit::NoReturn => {
-                        out.regs = full_regs.clone();
-                        out.mem = full_mem.clone();
-                    }
-                }
-                let mut inn = out.clone();
-                inn.regs.subtract(&kill[i].regs);
-                inn.mem.subtract(&kill[i].mem);
-                inn.union_with(&gen[i]);
-                if inn != live_in[i] || out != live_out[i] {
-                    live_in[i] = inn;
-                    live_out[i] = out;
-                    changed = true;
-                }
+        let rrow = &refs[j];
+        let rof = |x: usize| rrow.get(x).and_then(|r| r.as_ref());
+        let mut all_dead = true;
+        for (x, op) in insn.iter().enumerate() {
+            if dead_ops[j][x] {
+                continue;
             }
-            if !changed {
+            if op_effect(op, rof(x), pure_userops) {
+                all_dead = false;
                 break;
             }
-        }
-        let mut newly = 0usize;
-        let mut newly_ops = 0usize;
-        for i in 0..n {
-            let mut live = live_out[i].clone();
-            for (j, insn) in code[i].iter().enumerate().rev() {
-                if dead[i][j] {
-                    continue;
-                }
-                let rrow = &refs[i][j];
-                let rof = |x: usize| rrow.get(x).and_then(|r| r.as_ref());
-                let mut all_dead = true;
-                for (x, op) in insn.iter().enumerate() {
-                    if dead_ops[i][j][x] {
-                        continue;
-                    }
-                    if op_effect(op, rof(x), &conf.pure_userops) {
+            if op.opc == CPUI_STORE {
+                if let Some((off, sz)) = rof(x).and_then(mem_range) {
+                    if live.mem.intersects_range(off, sz) {
                         all_dead = false;
                         break;
                     }
-                    if op.opc == CPUI_STORE {
-                        if let Some((off, sz)) = rof(x).and_then(mem_range) {
-                            if live.mem.intersects_range(off, sz) {
-                                all_dead = false;
-                                break;
-                            }
-                        }
-                    }
-                    if let Some((o, sz)) = op.out.as_ref().and_then(reg_vn) {
-                        if live.regs.intersects_range(o, sz) {
-                            all_dead = false;
-                            break;
-                        }
-                    }
                 }
-                if all_dead {
-                    dead[i][j] = true;
-                    newly += 1;
-                    continue;
-                }
-                let linear = !internal_flow(insn);
-                if !linear {
-                    newly_ops += dead_body(insn, rrow, &live, &mut dead_ops[i][j], &conf.pure_userops);
-                }
-                let mut uniq: Vec<(u64, u32)> = Vec::new();
-                for (x, op) in insn.iter().enumerate().rev() {
-                    if dead_ops[i][j][x] {
-                        continue;
-                    }
-                    let r = rof(x);
-                    if linear && !op_effect(op, r, &conf.pure_userops) {
-                        let out_dead = match &op.out {
-                            Some(o) => match (reg_vn(o), unique_vn(o)) {
-                                (Some((off, sz)), _) => !live.regs.intersects_range(off, sz),
-                                (_, Some(u)) => !uniq.iter().any(|(uo, us)| uo < &(u.0 + u.1 as u64) && u.0 < uo + *us as u64),
-                                _ => false,
-                            },
-                            None => op.opc == CPUI_STORE && r.and_then(mem_range).is_some_and(|(off, sz)| !live.mem.intersects_range(off, sz)),
-                        };
-                        if out_dead {
-                            dead_ops[i][j][x] = true;
-                            newly_ops += 1;
-                            continue;
-                        }
-                    }
-                    apply_op(op, r, &mut live, &mut uniq);
+            }
+            if let Some((o, sz)) = op.out.as_ref().and_then(reg_vn) {
+                if live.regs.intersects_range(o, sz) {
+                    all_dead = false;
+                    break;
                 }
             }
         }
-        total_dead += newly;
-        total_dead_ops += newly_ops;
-        if newly == 0 && newly_ops == 0 {
-            break;
+        if all_dead {
+            dead[j] = true;
+            newly += 1;
+            continue;
+        }
+        let linear = !internal_flow(insn);
+        if !linear {
+            newly_ops += dead_body(insn, rrow, &live, &mut dead_ops[j], pure_userops);
+        }
+        let mut uniq: Vec<(u64, u32)> = Vec::new();
+        for (x, op) in insn.iter().enumerate().rev() {
+            if dead_ops[j][x] {
+                continue;
+            }
+            let r = rof(x);
+            if linear && !op_effect(op, r, pure_userops) {
+                let out_dead = match &op.out {
+                    Some(o) => match (reg_vn(o), unique_vn(o)) {
+                        (Some((off, sz)), _) => !live.regs.intersects_range(off, sz),
+                        (_, Some(u)) => !uniq.iter().any(|(uo, us)| uo < &(u.0 + u.1 as u64) && u.0 < uo + *us as u64),
+                        _ => false,
+                    },
+                    None => op.opc == CPUI_STORE && r.and_then(mem_range).is_some_and(|(off, sz)| !live.mem.intersects_range(off, sz)),
+                };
+                if out_dead {
+                    dead_ops[j][x] = true;
+                    newly_ops += 1;
+                    continue;
+                }
+            }
+            apply_op(op, r, &mut live, &mut uniq);
         }
     }
-    (total_dead, total_dead_ops)
+    (live, newly, newly_ops)
 }
 
 /// The lowest stack pointer an external call is made with, or the lowest
