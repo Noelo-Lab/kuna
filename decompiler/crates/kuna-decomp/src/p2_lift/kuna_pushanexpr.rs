@@ -277,15 +277,16 @@ impl ExprArena {
 
     /// Whether `v` names the same location in every exploration round: the
     /// one variable of its kind ([`var_of`](Self::var_of)) for a register's
-    /// or memory's entry value or a merged location, behind no fresh base.
-    /// A call's outputs and the unknowns are made afresh each round.
+    /// or memory's entry value, behind no other base.  A call's outputs and
+    /// the unknowns are made afresh each round, and a merge symbol whenever
+    /// its known bits narrow.
     pub fn is_stable_var(&self, v: VarId) -> bool {
         let info = &self.vars[v as usize];
         if self.var_memo.get(&(info.kind, info.size)).and_then(|e| self.as_var(*e)) != Some(v) {
             return false;
         }
         match info.kind {
-            VarKind::InitReg { .. } | VarKind::Merged { .. } | VarKind::InitMem { base: None, .. } => true,
+            VarKind::InitReg { .. } | VarKind::InitMem { base: None, .. } => true,
             VarKind::InitMem { base: Some(b), .. } => b != v && self.is_stable_var(b),
             _ => false,
         }

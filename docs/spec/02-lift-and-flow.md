@@ -4102,9 +4102,10 @@ constants its atoms decide, nothing when it is the location's own symbol, and
 otherwise opens the location: a loop counter that comes back as `i + 1` takes
 values no merge saw, so its recorded constants no longer stand for all it
 holds. A location under any symbolic base that names the same variable every
-round (the entry stack pointer, a pointer argument, a merged location) is
-recorded like a register. Memory behind a base that is fresh each round (a
-call's result) cannot be named again, so a node such memory reached with
+round (the entry stack pointer, a pointer argument or one loaded from the
+caller's frame) is recorded like a register. Memory behind a base that is
+fresh each round (a call's result, or a merge symbol, which a narrowing of
+its known bits replaces) cannot be named again, so a node such memory reached with
 different contents starts with all of it forgotten, and so does mutable
 memory at a node that paths reached after different external calls. The VPC
 register or cell is part of the key and is not symbolized while the incoming
