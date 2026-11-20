@@ -28,9 +28,10 @@ candidate change that makes a function newly `DIFFERS` is rejected before review
 
 ## Principles
 
-1. **No home-grown solver or machine emulator.** z3 proves, QEMU (through Unicorn where
-   `qemu-user` is unavailable) checks the lift, and kuna's SLEIGH translator and op
-   semantics run the machine code. kuna owns the encoding and an interpreter for its own `Funcdata`
+1. **No home-grown solver or machine emulator.** z3 proves and finds inputs (C5), QEMU
+   (through Unicorn where `qemu-user` is unavailable) checks the lift, and kuna's SLEIGH
+   translator and op semantics run the machine code. kuna owns the encoding, the small
+   symbolic executor that builds it (C5), and an interpreter for its own `Funcdata`
    (Tier C).
 2. **Dev-only.** A new workspace crate, `kuna-verify`, next to `kuna-harness`. The release
    binary does not link it and its output is byte-identical. Emitted C does not change,
@@ -154,6 +155,22 @@ narrow the difference to P2, Band B or P6.
 - **Past culprits are tried first.** Rule sets that explained earlier differences are
   kept with a hit count and tried before the search. D-Helix's version of this sped its
   tuner up 44–278×.
+
+**Inputs that reach rare paths (slice C5).** Random inputs rarely take a branch that
+depends on one value, such as `x == 0xDEADBEEF`, so a difference behind it stays hidden
+after 256 runs. A small symbolic executor in `kuna-verify` closes that gap concolically:
+- Both sides run concretely as before, and each register value also carries an expression
+  over the inputs. Every branch taken, on either side, records its condition.
+- Negating one recorded condition and asking z3 for a model gives an input that takes the
+  other side of that branch. Tier C runs again on it.
+- Verdicts still come only from concrete runs. A wrong expression costs a wasted input,
+  never a false verdict, and every `DIFFERS` stays replayable.
+- Expressions cover integer ops. An op without one makes its value concrete for the rest
+  of that path. Paths per function and z3 queries per function are capped.
+- The expression form is the one Tier S encodes, so S1 builds on it. If #1534's expression
+  arena lands, it is the candidate representation.
+- It never decides equivalence by rewriting two expressions to the same shape. Those
+  rewrites would be the same kind as kuna's rules, and could share their bugs.
 
 **Sees.** The body-rewrite class (~15 of 56 P3/P4 fixes) directly. The prototype/ABI
 class (~29) as `DIFFERS` only where a typed contract exists (fixtures with source, DWARF),
@@ -288,10 +305,14 @@ library rather than stubbed.
 | C2 | memory and call effects: stack, pointer-argument and global memory; call stubs that write reachable memory, globals included; `UNKNOWN(call-effect)` | reverting #801 gives `DIFFERS`; a rule that keeps a pre-call load across a call that writes it gives `DIFFERS` |
 | C3 | rule localization over the C1/C2 verdicts | candidate culprits include `subvar_zext` on reverted #794; cost per finding |
 | C4 | corpus run (decbench binaries); precision and recall | precision: triage of every `DIFFERS` into bug / declared divergence / harness bug. Recall: of the ~44 visible P3/P4 fixes that have a fixture, how many give `DIFFERS` when reverted. Published table with both |
+| C5 | concolic inputs: expressions over the inputs on both sides, branch conditions negated through z3, capped paths and queries | a fixture whose difference appears only on one 32-bit value gives `DIFFERS`, where 256 random runs give `AGREES`; new paths reached per function on the corpus |
 | S1 | Tier S for loop-free `AGREES` functions that pass the static entry condition, under the budget | `EQUIVALENT` and `UNKNOWN(budget)` counts on the same corpus; every `sat` replays or is classified |
 | S2 | bounded loops; budget baseline and budget-regression flag | `EQUIVALENT(≤k)` counts; a deliberately bloating rule change is flagged by budget alone |
 | L1 | Tier L for x86-64, AArch64, ARM | per-arch mismatch report with skip list |
 | P | separate proposal | — |
+
+C5 comes after C2 and before S1: most of what C1 skips needs C2's memory and call model
+first, and S1 reuses C5's expressions.
 
 **CI.** The tool runs as a non-gating job that publishes the verdict table. It becomes a
 gate only once the `DIFFERS` set is empty or every entry is a declared divergence, with a
