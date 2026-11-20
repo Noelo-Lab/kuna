@@ -1717,7 +1717,16 @@ that machinery.
   (ActionStackPtrFlow)`, its home by port history) and, per-function, to
   `option extrapop`
   (`decompiler/crates/kuna-decomp/src/p0_knowledge/options.rs
-  (OptionExtraPop)`).
+  (OptionExtraPop)`). With a function name, `option extrapop <n> <name>`
+  parks `n` on that FunctionSymbol
+  (`decompiler/crates/kuna-decomp/src/p0_knowledge/database.rs
+  (Database::set_function_extra_pop)`). `ActionDefaultParams` copies it into
+  every call spec that targets the function, as upstream copies the callee's
+  own prototype, and the function's own prototype takes it when it is
+  decompiled (`tests/stages/kuna-extrapop-function.xml`). The prototype
+  `ArchContext::query_function` returns carries it too, so a call through a
+  register or an import slot that resolves to the function pops the same
+  bytes.
   On x86-32 under a compiler spec whose default model leaves extrapop unknown
   (`x86win.cspec`'s `__stdcall`, and with it `__thiscall`/`__fastcall` callees
   the image does not declare), a direct call whose prototype states no extrapop
@@ -4139,7 +4148,15 @@ for a recovered one. Then it tries to merge the discovered callee prototype **in
 when the models are compatible (same or aliased `ProtoModel`, `is_compatible`),
 varargs only while input recovery is still active, and — for locked callee
 prototypes — when the existing argument Varnodes can be re-mapped onto the
-locked storage (`transfer_locked_input`/`transfer_locked_output`). Success
+locked storage (`transfer_locked_input`/`transfer_locked_output`). (kuna) An
+argument Varnode is re-mapped only if it is still at least as wide as the
+parameter it would become. A trial keeps the width it was recorded with, but
+subvariable flow may since have narrowed the Varnode a call reads (an unlocked
+call lets a zero-extended 16-bit sum replace the 64-bit register it filled), and
+`build_param` can only truncate: upstream re-maps the narrow Varnode anyway and
+emits a `SUBPIECE` whose output is wider than its input. Such a site fails the
+restriction and restarts, and the restart builds the call with its inputs
+locked, so nothing narrows them. Success
 commits the new input/output lists directly. For a locked variadic prototype,
 `decompiler/crates/kuna-decomp/src/p4_calls/kuna_varargtransfer.rs
 (pending_trials)` preserves existing trials outside the fixed parameters before
