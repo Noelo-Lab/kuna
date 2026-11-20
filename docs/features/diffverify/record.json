@@ -47,6 +47,7 @@
     "C2 memory and call effects",
     "C3 rule localization",
     "C4 corpus, precision and recall",
+    "C5 concolic inputs",
     "S1",
     "S2",
     "L1",
