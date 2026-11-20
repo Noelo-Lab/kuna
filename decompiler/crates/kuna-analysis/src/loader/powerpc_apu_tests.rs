@@ -37,37 +37,47 @@ fn image(arch: Architecture, little: bool, flags: u32, apus: Option<&[u32]>) -> 
     obj.write().unwrap()
 }
 
-fn generic(bytes: &[u8], little: bool) {
+fn check_default(bytes: &[u8], little: bool, variant: &str) {
     let endian = if little { "LE" } else { "BE" };
     let loaded = ObjectLoadImage::from_bytes("synthetic-apu.elf", bytes).unwrap();
     assert_eq!(
         loaded.get_arch_type(),
-        format!("PowerPC:{endian}:32:default:default").as_bytes()
+        format!("PowerPC:{endian}:32:{variant}:default").as_bytes()
     );
     assert!(loaded.fallback_arch_id().is_none());
 }
 
 #[test]
-fn embedded_powerpc_uses_declared_apus_not_the_embedded_abi_bit() {
+fn embedded_powerpc_keeps_generic_registers_without_an_spe_requirement() {
     for little in [false, true] {
         let endian = if little { "LE" } else { "BE" };
         for (apus, variant) in [
-            (None, None),
-            (Some(&[0x0040_0001][..]), None),
-            (Some(&[0x0041_0001, 0x0042_0001, 0x0043_0001][..]), None),
-            (Some(&[0x0040_0001, 0x0101_0001][..]), Some("e500")),
-            (Some(&[0x0100_0001][..]), Some("e500")),
+            (None, "default"),
+            (Some(&[0x0040_0001][..]), "isel"),
+            (Some(&[0x0041_0001][..]), "default"),
+        ] {
+            check_default(
+                &image(Architecture::PowerPc, little, 0, apus),
+                little,
+                variant,
+            );
+        }
+        for (apus, variant) in [
+            (None, "isel"),
+            (Some(&[0x0040_0001][..]), "isel"),
+            (Some(&[0x0041_0001, 0x0042_0001, 0x0043_0001][..]), "isel"),
+            (Some(&[0x0040_0001, 0x0101_0001][..]), "e500"),
+            (Some(&[0x0100_0001][..]), "e500"),
         ] {
             let bytes = image(Architecture::PowerPc, little, 0x8000_0000, apus);
             let file = object::File::parse(&bytes[..]).unwrap();
             assert_eq!(
                 language_id_when(&file, true),
-                variant.map(|v| format!("PowerPC:{endian}:32:{v}:default"))
+                Some(format!("PowerPC:{endian}:32:{variant}:default"))
             );
             assert!(notes_when(&file, "PowerPC", false, true).is_empty());
-            // `ppcapu` is off by default.
             assert_eq!(language_id_when(&file, false), None);
-            generic(&bytes, little);
+            check_default(&bytes, little, variant);
         }
     }
 }
@@ -108,7 +118,7 @@ fn unsupported_or_malformed_apus_keep_the_generic_decoder_with_a_note() {
             assert!(notes[0].contains("--target"), "{notes:?}");
             assert!(notes_when(&file, "PowerPC", true, true).is_empty());
             assert!(notes_when(&file, "PowerPC", false, false).is_empty());
-            generic(&bytes, little);
+            check_default(&bytes, little, "default");
         }
     }
 }

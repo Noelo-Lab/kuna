@@ -5,13 +5,20 @@ use object::{
 };
 use std::process::Command;
 
-fn powerpc_hard_float_image(little: bool, apu: bool) -> Vec<u8> {
+fn powerpc_hard_float_image(little: bool, apu: bool, embedded: bool) -> Vec<u8> {
     let endian = if little {
         Endianness::Little
     } else {
         Endianness::Big
     };
     let mut object = Object::new(BinaryFormat::Elf, Architecture::PowerPc, endian);
+    if embedded {
+        object.flags = object::FileFlags::Elf {
+            os_abi: 0,
+            abi_version: 0,
+            e_flags: object::elf::EF_PPC_EMB,
+        };
+    }
     let word = |v: u32| {
         if little {
             v.to_le_bytes()
@@ -87,8 +94,8 @@ fn check_emitted_c(code: &str, expression: &str) {
 fn shared_apu_requirements_preserve_altivec_and_hard_float() {
     let path = common::scratch_file("powerpc-apu-hard-float", "o");
     for little in [false, true] {
-        for apu in [false, true] {
-            std::fs::write(&path, powerpc_hard_float_image(little, apu)).unwrap();
+        for (apu, embedded) in [(false, false), (true, false), (false, true)] {
+            std::fs::write(&path, powerpc_hard_float_image(little, apu, embedded)).unwrap();
             let output = Command::new(env!("CARGO_BIN_EXE_kuna"))
                 .arg("decompile")
                 .arg(&path)
@@ -110,7 +117,11 @@ fn shared_apu_requirements_preserve_altivec_and_hard_float() {
             let vector = String::from_utf8(output.stdout).unwrap();
             assert!(!vector.contains("halt_baddata"), "{vector}");
             assert!(vector.contains("= 0;"), "{vector}");
-            if apu {
+            if apu || embedded {
+                let (choose, _) = decompile(&path, "choose", &[]);
+                check_emitted_c(&choose, "choose(0, 17, 23) != 17 || choose(1, 17, 23) != 23");
+                let (generic, _) = decompile(&path, "choose", &["--option", "ppcapu", "off"]);
+                assert!(generic.contains("halt_baddata"), "{generic}");
                 let endian = if little { "LE" } else { "BE" };
                 let target = format!("PowerPC:{endian}:32:e500mc:default");
                 let output = Command::new(env!("CARGO_BIN_EXE_kuna"))
@@ -334,27 +345,24 @@ fn decompile(path: &std::path::Path, function: &str, args: &[&str]) -> (String, 
 }
 
 #[test]
-fn spe_requirements_select_e500_only_under_ppcapu() {
+fn spe_requirements_select_e500_by_default() {
     let path = common::scratch_file("powerpc-apu-option", "o");
     for little in [false, true] {
         let endian = if little { "LE" } else { "BE" };
         std::fs::write(&path, spe_caller_image(little, &[0x0100_0001])).unwrap();
         let (text, _) = decompile(&path, "caller", &[]);
         assert!(text.contains("add3(a0,2,3)"), "{text}");
-        let generic = format!("PowerPC:{endian}:32:default:default");
-        assert_eq!(text, decompile(&path, "caller", &["--target", &generic]).0);
-        assert_eq!(text, decompile(&path, "caller", &["--option", "ppcapu", "off"]).0);
         let e500 = format!("PowerPC:{endian}:32:e500:default");
         for function in ["caller", "touch"] {
             assert_eq!(
-                decompile(&path, function, &["--option", "ppcapu", "on"]).0,
+                decompile(&path, function, &[]).0,
                 decompile(&path, function, &["--target", &e500]).0,
                 "{function}"
             );
         }
         let (touch, _) = decompile(&path, "touch", &["--option", "ppcapu", "on"]);
         assert!(!touch.contains("vector"), "{touch}");
-        let (touch, _) = decompile(&path, "touch", &[]);
+        let (touch, _) = decompile(&path, "touch", &["--option", "ppcapu", "off"]);
         assert!(touch.contains("vector"), "{touch}");
     }
     std::fs::remove_file(path).unwrap();
@@ -370,11 +378,11 @@ fn unclassified_apu_notes_keep_the_generic_decoder_under_ppcapu() {
             let generic = format!("PowerPC:{endian}:32:default:default");
             let (expected, quiet) = decompile(&path, "caller", &["--target", &generic]);
             assert!(!quiet.contains("APU"), "{quiet}");
-            let (text, stderr) = decompile(&path, "caller", &["--option", "ppcapu", "on"]);
+            let (text, stderr) = decompile(&path, "caller", &[]);
             assert_eq!(text, expected);
             assert!(stderr.contains("[kuna target]"), "{stderr}");
             assert!(stderr.contains("APU note"), "{stderr}");
-            let (_, stderr) = decompile(&path, "caller", &[]);
+            let (_, stderr) = decompile(&path, "caller", &["--option", "ppcapu", "off"]);
             assert!(!stderr.contains("APU"), "{stderr}");
         }
     }
