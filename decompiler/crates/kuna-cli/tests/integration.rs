@@ -833,6 +833,8 @@ mod integer_field_extract;
 mod go_store_value;
 #[path = "go_pointer_arithmetic.rs"]
 mod go_pointer_arithmetic;
+#[path = "go_stack_abi.rs"]
+mod go_stack_abi;
 
 #[path = "rust_integer_conversions.rs"]
 mod rust_integer_conversions;

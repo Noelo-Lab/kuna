@@ -646,7 +646,7 @@ impl FlowEnvironment for ArchFlowEnv {
     ) -> bool {
         let glb = fd.get_arch();
         let arch = self.arch();
-        crate::kuna_tailcalljump::kuna_is_tail_call_table(
+        let tail_call = crate::kuna_tailcalljump::kuna_is_tail_call_table(
             fd,
             op,
             arch.tail_call_tables,
@@ -673,7 +673,11 @@ impl FlowEnvironment for ArchFlowEnv {
                         || glb.query_callee_proto(own).is_some_and(|p| p.is_output_locked());
                 crate::kuna_tailcalljump::tail_call_states_the_body(stated, own_output_stated)
             },
-        )
+        );
+        if !tail_call {
+            crate::kuna_gottailcall::followed(arch, fd, dest);
+        }
+        tail_call
     }
 
     fn is_return_discarding_trampoline(&self, dest: &Address) -> bool {
@@ -1388,14 +1392,24 @@ fn drain_pipeline_comments(arch: &mut Architecture, fd: &mut Funcdata) {
     }
 }
 
+/// The comment types `Architecture::clearAnalysis` removes on a restart.
+const ANALYSIS_WARNINGS: kuna_base::types::uint4 =
+    crate::architecture::comment_type::warning | crate::architecture::comment_type::warningheader;
+
 /// Re-follow flow on an existing, already-analyzed `fd` after a restart request
 /// (C++ `ActionRestartGroup` → `clearAnalysis` + `ActionStart::startProcessing` →
-/// `followFlow`).  Clears the analysis-derived IR (`Funcdata::clear`) while
-/// preserving the per-function `Override`, then re-runs the flow follow in place.
+/// `followFlow`).  Clears the analysis-derived IR (`Funcdata::clear`) and the
+/// function's warning comments, published or still buffered (C++
+/// `commentdb->clearType(fd->getAddress(),Comment::warning|Comment::warningheader)`),
+/// while preserving the per-function `Override`, then re-runs the flow follow in
+/// place.
 #[allow(clippy::mutable_key_type)]
 fn refollow_flow(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<()> {
-    // C++ `glb->clearAnalysis(&data)` == fd->clear() (the comment-DB clear is the
-    // W4 stub) — drops ops/vbank/blocks/qlst/heritage but keeps `localoverride`.
+    if arch.kuna_drive_publishes() {
+        let entry = fd.get_address().clone();
+        arch.commentdb.retain_comments(|c| c.func_addr != entry || c.tp & ANALYSIS_WARNINGS == 0);
+    }
+    fd.drop_pending_comments(ANALYSIS_WARNINGS);
     fd.clear();
     // Move the cleared shell out so `follow_flow_on_fd` can re-flow it (it takes
     // `fd` by value, mirroring the fresh-build path), then put the re-flowed IR
@@ -2077,6 +2091,13 @@ fn decompile_func_full_with_objects_inner(
             proto.set_model(Some(model));
             proto.set_model_lock(true);
             fd.kuna_set_input_hints(input_hints.clone());
+        } else if input_hints.is_some() {
+            // (kuna) Hints under the default convention: an Objective-C
+            // direct method's `self`.
+            fd.kuna_set_input_hints(input_hints.clone());
+        }
+        if let Some(expop) = arch.symboltab.function_extra_pop_across_scopes(&entry_addr) {
+            fd.get_func_proto_mut().set_extra_pop(expop);
         }
         let go_string_input = if arch.analysis_godwarfsig
             && arch.image_linux_elf

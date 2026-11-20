@@ -4887,7 +4887,8 @@ pub(crate) fn bootstrap_object(
     // (kuna goreg) The Go toolchain version is a BUILD-TIME fact: the goreg
     // shells are interned inside the cspec decode during the sleigh build
     // below, upstream of every per-image fact write, and their layouts drift
-    // by release (go1.23's g.syscallbp, go1.25's dropped gobuf.ret). It travels
+    // by release (go1.23's g.syscallbp, go1.25's dropped gobuf.ret), and a
+    // release older than the register ABI takes the stack model. It travels
     // on the load options, which every gate below reads; this scope replaces the
     // caller's until the load returns.
     // An environment-reading load takes the version from the image alone: a
@@ -5327,6 +5328,34 @@ fn commit_model_facts(
         models.insert((code_space.get_index(), fact.func_addr), model);
     }
     prog.arch_mut().loader_proto_models = Rc::new(models);
+}
+
+/// Park each fact as an unlocked input hint on its function's entry, the
+/// register resolved through the language (one it does not define is a silent
+/// no-op). A function already hinted keeps the hints it has.
+fn commit_input_hints(
+    prog: &mut ConsoleProgram,
+    code_space: &Rc<AddrSpace>,
+    facts: &[kuna_analysis::pass::InputHintFact],
+) {
+    let mut hints: std::collections::BTreeMap<Address, Vec<kuna_decomp::kuna_inputhints::InputHint>> =
+        std::collections::BTreeMap::new();
+    for fact in facts {
+        let Ok(loc) = prog.arch().get_register_varnode(fact.reg.as_bytes()) else {
+            continue;
+        };
+        let Some(space) = loc.space.clone() else { continue };
+        let entry = Address::new(Rc::clone(code_space), fact.func_addr);
+        hints.entry(entry).or_default().push(kuna_decomp::kuna_inputhints::InputHint {
+            addr: Address::new(space, loc.offset),
+            size: loc.size as i32,
+            name: fact.name.clone(),
+            ct: fact.type_.clone(),
+        });
+    }
+    for (entry, list) in hints {
+        prog.arch_mut().loader_input_hints.entry(entry).or_insert_with(|| Rc::new(list));
+    }
 }
 
 fn commit_analysis_output(
@@ -6491,24 +6520,7 @@ fn commit_analysis_output(
         // (kuna `swiftcall`) Model-only bindings and the unlocked `self`
         // hints, the register again resolved through the language.
         commit_model_facts(prog, code_space, &out.swift_types.models);
-        let mut hints: std::collections::BTreeMap<Address, Vec<kuna_decomp::kuna_inputhints::InputHint>> =
-            std::collections::BTreeMap::new();
-        for fact in &out.swift_types.input_hints {
-            let Ok(loc) = prog.arch().get_register_varnode(fact.reg.as_bytes()) else {
-                continue;
-            };
-            let Some(space) = loc.space.clone() else { continue };
-            let entry = Address::new(Rc::clone(code_space), fact.func_addr);
-            hints.entry(entry).or_default().push(kuna_decomp::kuna_inputhints::InputHint {
-                addr: Address::new(space, loc.offset),
-                size: loc.size as i32,
-                name: fact.name.clone(),
-                ct: fact.type_.clone(),
-            });
-        }
-        for (entry, list) in hints {
-            prog.arch_mut().loader_input_hints.insert(entry, Rc::new(list));
-        }
+        commit_input_hints(prog, code_space, &out.swift_types.input_hints);
         let throws = prog.arch().get_model(kuna_decomp::kuna_swiftcall::SWIFTCALL_THROWS).cloned();
         let reg = |name: &str| {
             let loc = prog.arch().get_register_varnode(name.as_bytes()).ok()?;
@@ -6536,6 +6548,10 @@ fn commit_analysis_output(
             }
         }
     }
+
+    // 7c. An Objective-C direct method's `self`, the same unlocked hint; a
+    //     function Swift already hinted keeps that one.
+    commit_input_hints(prog, code_space, &out.objc_self_hints);
 
     // 8. Call-fixups (the kuna analog of CallFixupAnalyzer's install loop): for
     //    each function the pass matched to a cspec call-fixup `<target>`, tag it
