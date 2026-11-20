@@ -6917,13 +6917,13 @@ impl ArchOptionContext for Architecture {
             self.share_proto_models();
         }
     }
-    fn set_function_extra_pop(&mut self, name: &str, _expop: int4) -> KunaResult<()> {
-        // C++ looks up `symboltab->getGlobalScope()->queryFunction(name)` then
-        // `fd->getFuncProto().setExtraPop(expop)`.  The per-function FuncProto
-        // mutation needs a resolved Funcdata; the symbol-table function query +
-        // FuncProto write is the W4 symboltab + W6 fspec surface.
-        // STUB(W4 symboltab + W6 fspec): no function is resolvable here yet.
-        Err(KunaError::recov(format!("Unknown function name: {name}")))
+    fn set_function_extra_pop(&mut self, name: &str, expop: int4) -> KunaResult<()> {
+        // C++ `OptionExtraPop::apply`: queryFunction(name), then
+        // `getFuncProto().setExtraPop(expop)`; parked on the symbol like inline.
+        let sid = self.query_global_function(name)?;
+        self.kuna_callwide.clear();
+        self.symboltab.set_function_extra_pop(sid, expop);
+        Ok(())
     }
     fn set_default_model(&mut self, name: &str) -> KunaResult<()> {
         // C++ `glb->setDefaultModel(getModel(p1))`.

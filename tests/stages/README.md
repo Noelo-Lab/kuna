@@ -1,5 +1,9 @@
 # Stage-model issue testcases
 
+`kuna-narrowed-call-input.xml` checks a call through a typed field whose
+argument was narrowed to two bytes before the field's prototype was forced on
+the call: the function decompiles and passes the sum widened to the parameter.
+
 `kuna-pacmodifier-arg-a64e.xml` checks that the blended modifier an arm64e
 caller builds in `x8` for a hidden `pacda` is not the next call's first
 argument, with the modifier computed and folded to a constant. A tagged
@@ -22,6 +26,16 @@ bytes retain C/Rust rendering and the non-Go source control.
 arguments passed by both call orders. It also checks the disabled option,
 an ordinary name lookalike, a wrapper with stack results, the signal
 trampoline and two linked runtime functions with private or foreign exits.
+
+`kuna-extrapop-function.xml` checks that `option extrapop 12 g` makes a caller
+of the `ret 8` function g see both pushed arguments popped, so a later `[esp+4]`
+reads the caller's own argument. A second caller reaches g through a register
+and sees the same pop.
+
+`kuna-condexe-heritage.xml` checks that conditional execution removes a re-test
+whose block holds unread flag writes once the register space has had a heritage
+pass (`deadcode delay register 50` keeps those writes alive). Before the fix the
+second `if (x)` stayed.
 
 `ghangr-call-argument-extensions.xml` checks explicit and missing parameter
 contracts. The CLI companion executes complete emitted C, Go and Rust callers

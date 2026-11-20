@@ -7991,8 +7991,9 @@ impl FuncCallSpecs {
     ///
     /// `None` entries in `newinput` indicate stack parameters.  The op-input
     /// reuse path reads the CALL operands (the W3 op, via `data`); the stack
-    /// path needs a spacebase placeholder.  Returns `false` only if a stack
-    /// variable is needed and there is no placeholder.
+    /// path needs a spacebase placeholder.  Returns `false` if a stack
+    /// variable is needed and there is no placeholder, or (kuna) if a reused
+    /// input was narrowed below its parameter since its trial was recorded.
     fn transfer_locked_input(
         &self,
         data: &Funcdata,
@@ -8021,6 +8022,12 @@ impl FuncCallSpecs {
                     .get(self.op)
                     .expect("transferLockedInput: stale call op")
                     .get_in(reuse);
+                let narrowed = vn
+                    .and_then(|vn| data.vbank().get(vn))
+                    .is_some_and(|vn| vn.get_size() < param.get_size());
+                if narrowed {
+                    return Ok(false);
+                }
                 newinput.push(vn);
             } else {
                 if !stackref_resolved {
