@@ -408,8 +408,79 @@ fn join(toks: &[String]) -> String {
     out
 }
 
-/// A C integer literal with its suffix, or a one-character constant.
-fn literal(toks: &[String], at: &mut usize) -> Option<i128> {
+/// The type of an integer constant expression, as C's literal and conversion
+/// rules give it. `long` is 32 bits wide on some targets and 64 on others, so a
+/// `long` or `unsigned long` value is kept only while it means the same on both.
+#[derive(Clone, Copy, PartialEq)]
+enum Ty {
+    Int,
+    UInt,
+    Long,
+    ULong,
+    LLong,
+    ULLong,
+}
+
+impl Ty {
+    /// `v` converted to this type as C converts it, or `None` where C leaves
+    /// that undefined or the answer depends on the width of `long`.
+    fn value(self, v: i128) -> Option<i128> {
+        match self {
+            Ty::Int | Ty::Long => i32::try_from(v).ok().map(i128::from),
+            Ty::UInt => Some(v.rem_euclid(1 << 32)),
+            Ty::ULong => u32::try_from(v).ok().map(i128::from),
+            Ty::LLong => i64::try_from(v).ok().map(i128::from),
+            Ty::ULLong => Some(v.rem_euclid(1 << 64)),
+        }
+    }
+
+    fn unsigned(self) -> bool {
+        matches!(self, Ty::UInt | Ty::ULong | Ty::ULLong)
+    }
+
+    fn rank(self) -> u8 {
+        self as u8 / 2
+    }
+
+    /// The type the usual arithmetic conversions give `a` and `b`, where it is
+    /// the same on every target.
+    fn common(a: Ty, b: Ty) -> Option<Ty> {
+        if a.unsigned() == b.unsigned() {
+            return Some(if a.rank() >= b.rank() { a } else { b });
+        }
+        let (u, s) = if a.unsigned() { (a, b) } else { (b, a) };
+        if u.rank() >= s.rank() {
+            Some(u)
+        } else {
+            (s == Ty::LLong && u == Ty::UInt).then_some(s)
+        }
+    }
+
+    /// The type named by a cast's keywords; `char` and `short` are not read.
+    fn named(words: &[String]) -> Option<Ty> {
+        let count = |w: &str| words.iter().filter(|t| *t == w).count();
+        let unsigned = match (count("unsigned"), count("signed")) {
+            (0, _) => false,
+            (1, 0) => true,
+            _ => return None,
+        };
+        if count("char") + count("short") > 0 || count("int") > 1 {
+            return None;
+        }
+        Some(match (count("long"), unsigned) {
+            (0, false) => Ty::Int,
+            (0, true) => Ty::UInt,
+            (1, false) => Ty::Long,
+            (1, true) => Ty::ULong,
+            (2, false) => Ty::LLong,
+            (2, true) => Ty::ULLong,
+            _ => return None,
+        })
+    }
+}
+
+/// A C integer literal or one-character constant, with the type C gives it.
+fn literal(toks: &[String], at: &mut usize) -> Option<(i128, Ty)> {
     let tok = toks.get(*at)?.as_str();
     if tok == "'" {
         let c = toks.get(*at + 1)?;
@@ -417,24 +488,40 @@ fn literal(toks: &[String], at: &mut usize) -> Option<i128> {
             return None;
         }
         *at += 3;
-        return Some(i128::from(c.as_bytes()[0]));
+        return Some((i128::from(c.as_bytes()[0]), Ty::Int));
     }
     let digits = tok.trim_end_matches(['u', 'U', 'l', 'L']);
     let lower = digits.to_ascii_lowercase();
-    let value = if let Some(hex) = lower.strip_prefix("0x") {
-        i128::from_str_radix(hex, 16).ok()?
+    let (value, decimal) = if let Some(hex) = lower.strip_prefix("0x") {
+        (i128::from_str_radix(hex, 16).ok()?, false)
     } else if let Some(bin) = lower.strip_prefix("0b") {
-        i128::from_str_radix(bin, 2).ok()?
+        (i128::from_str_radix(bin, 2).ok()?, false)
     } else if lower.len() > 1 && lower.starts_with('0') {
-        i128::from_str_radix(&lower[1..], 8).ok()?
+        (i128::from_str_radix(&lower[1..], 8).ok()?, false)
     } else {
-        lower.parse().ok()?
+        (lower.parse().ok()?, true)
+    };
+    let types: &[Ty] = match (tok[digits.len()..].to_ascii_lowercase().as_str(), decimal) {
+        ("", true) => &[Ty::Int],
+        ("", false) => &[Ty::Int, Ty::UInt],
+        ("u", _) => &[Ty::UInt],
+        ("l", _) => &[Ty::Long],
+        ("ul" | "lu", _) => &[Ty::ULong],
+        ("ll", true) => &[Ty::LLong],
+        ("ll", false) => &[Ty::LLong, Ty::ULLong],
+        ("ull" | "llu", _) => &[Ty::ULLong],
+        _ => return None,
     };
     *at += 1;
-    Some(value)
+    let ty = types.iter().find(|t| t.value(value) == Some(value))?;
+    Some((value, *ty))
 }
 
-/// An integer constant expression over literals and already-seen enumerators.
+/// An integer constant expression over literals and already-seen enumerators,
+/// evaluated as C evaluates it, with a signed `<<` that wraps as GCC and Clang
+/// define it. `None` for what C leaves undefined (signed overflow, a shift by
+/// the width or more, a division by zero), for an answer that depends on the
+/// target, and for a value the C grammar cannot read back (above `i64::MAX`).
 /// `min` is the lowest binary precedence this call may consume.
 fn constant(
     toks: &[String],
@@ -442,7 +529,7 @@ fn constant(
     min: u8,
     known: &BTreeMap<String, i128>,
     depth: u8,
-) -> Option<i128> {
+) -> Option<(i128, Ty)> {
     if depth > 32 {
         return None;
     }
@@ -450,12 +537,12 @@ fn constant(
     let mut left = match tok {
         "-" | "+" | "~" | "!" => {
             *at += 1;
-            let v = constant(toks, at, 10, known, depth + 1)?;
+            let (v, ty) = constant(toks, at, 10, known, depth + 1)?;
             match tok {
-                "-" => v.checked_neg()?,
-                "~" => !v,
-                "!" => i128::from(v == 0),
-                _ => v,
+                "-" => (ty.value(-v)?, ty),
+                "~" => (ty.value(!v)?, ty),
+                "!" => (i128::from(v == 0), Ty::Int),
+                _ => (v, ty),
             }
         }
         "(" => {
@@ -464,8 +551,15 @@ fn constant(
                 matches!(t.as_str(), "int" | "long" | "short" | "char" | "signed" | "unsigned")
             });
             if cast && close > *at + 1 {
+                let ty = Ty::named(&toks[*at + 1..close])?;
                 *at = close + 1;
-                constant(toks, at, 10, known, depth + 1)?
+                let (v, _) = constant(toks, at, 10, known, depth + 1)?;
+                let v = match ty {
+                    Ty::Int => i128::from(v as i32),
+                    Ty::LLong => i128::from(v as i64),
+                    _ => ty.value(v)?,
+                };
+                (v, ty)
             } else {
                 *at += 1;
                 let v = constant(toks, at, 0, known, depth + 1)?;
@@ -478,7 +572,7 @@ fn constant(
         }
         name if is_identifier(name) => {
             *at += 1;
-            *known.get(name)?
+            (Ty::Int.value(*known.get(name)?)?, Ty::Int)
         }
         _ => literal(toks, at)?,
     };
@@ -503,17 +597,31 @@ fn constant(
         }
         *at += width;
         let right = constant(toks, at, prec + 1, known, depth + 1)?;
-        left = match op {
-            "<<" => left.checked_shl(u32::try_from(right).ok()?)?,
-            ">>" => left.checked_shr(u32::try_from(right).ok()?)?,
-            "|" => left | right,
-            "^" => left ^ right,
-            "&" => left & right,
-            "+" => left.checked_add(right)?,
-            "-" => left.checked_sub(right)?,
-            "*" => left.checked_mul(right)?,
-            "/" => left.checked_div(right)?,
-            _ => left.checked_rem(right)?,
+        let ((a, ty), (b, _)) = (left, right);
+        left = if op == "<<" || op == ">>" {
+            let bits = if matches!(ty, Ty::LLong | Ty::ULLong) { 64 } else { 32 };
+            let n = u32::try_from(b).ok().filter(|n| *n < bits)?;
+            let v = match (op, ty) {
+                (">>", _) => a >> n,
+                ("<<", Ty::Int) => i128::from((a as i32 as u32).wrapping_shl(n) as i32),
+                ("<<", Ty::LLong) => i128::from((a as i64 as u64).wrapping_shl(n) as i64),
+                _ => ty.value(a << n)?,
+            };
+            (v, ty)
+        } else {
+            let ty = Ty::common(ty, right.1)?;
+            let (a, b) = (ty.value(a)?, ty.value(b)?);
+            let v = match op {
+                "|" => a | b,
+                "^" => a ^ b,
+                "&" => a & b,
+                "+" => a + b,
+                "-" => a - b,
+                "*" => a.checked_mul(b)?,
+                "/" => a.checked_div(b)?,
+                _ => a.checked_rem(b)?,
+            };
+            (ty.value(v)?, ty)
         };
     }
 }
@@ -521,8 +629,15 @@ fn constant(
 /// The value of `toks` when all of it is one constant expression.
 fn whole_constant(toks: &[String], known: &BTreeMap<String, i128>) -> Option<i128> {
     let mut at = 0;
-    let value = constant(toks, &mut at, 0, known, 0)?;
-    (at == toks.len()).then_some(value)
+    let (value, _) = constant(toks, &mut at, 0, known, 0)?;
+    (at == toks.len() && i64::try_from(value).is_ok()).then_some(value)
+}
+
+/// Is `toks` one literal the C grammar reads as C does? A binary literal is
+/// not (the grammar stops at its `b`), nor is an enumerator name.
+fn read_as_written(toks: &[String]) -> bool {
+    let [tok] = toks else { return false };
+    tok.starts_with(|c: char| c.is_ascii_digit()) && !tok[1..].starts_with(['b', 'B'])
 }
 
 fn push_value(out: &mut Vec<String>, value: i128) {
@@ -556,7 +671,7 @@ fn fold_constants(toks: Vec<String>, known: &mut BTreeMap<String, i128>) -> Vec<
         if tok == "{" {
             fold_enumerators(inner, known, &mut out);
         } else {
-            match whole_constant(inner, known).filter(|_| inner.len() > 1) {
+            match whole_constant(inner, known).filter(|_| !read_as_written(inner)) {
                 Some(value) => push_value(&mut out, value),
                 None => out.extend(inner.iter().cloned()),
             }
@@ -610,7 +725,7 @@ fn fold_enumerators(inner: &[String], known: &mut BTreeMap<String, i128>, out: &
                 let value = whole_constant(&item[2..], known);
                 out.push("=".into());
                 match value {
-                    Some(value) if item.len() > 3 => push_value(out, value),
+                    Some(value) if !read_as_written(&item[2..]) => push_value(out, value),
                     _ => out.extend(item[2..].iter().cloned()),
                 }
                 value

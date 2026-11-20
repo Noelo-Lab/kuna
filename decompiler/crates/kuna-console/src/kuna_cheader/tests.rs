@@ -85,3 +85,41 @@ fn constant_expressions_fold_to_values() {
 fn variables_and_function_pointers_state_nothing() {
     assert!(bodies("int counter = 3;\nvoid (*hook)(int);\nextern const char version[];\n").is_empty());
 }
+
+#[test]
+fn constants_take_the_value_c_gives_them() {
+    let got = bodies(
+        "enum f { A = 0xFFFFFFFFu + 1, B = 1 << 31, C = ~0U, D = ~0u >> 1, E = 1ULL << 36,\n\
+         F = 0b101, G = E2, H = (unsigned)-1, I = (char)1, J = ~0UL, K = 1ULL << 63, L = 1UL << 4 };\n\
+         enum g { E2 = 7 };\nstruct s { char a[E2]; char b[0b100]; };\n",
+    );
+    assert_eq!(
+        got,
+        vec![
+            (
+                1,
+                typedef(
+                    "enum f{A = 0, B = -2147483648, C = 4294967295, D = 2147483647, E = 68719476736, \
+                     F = 5, G = E2, H = 4294967295, I = (char)1, J = ~0UL, K = 1ULL<<63, L = 16}"
+                )
+            ),
+            (3, typedef("enum g{E2 = 7}")),
+            (4, typedef("struct s{char a[7];char b[4];}")),
+        ]
+    );
+}
+
+#[test]
+fn a_body_is_found_after_a_record_in_the_same_declaration() {
+    let got = bodies(
+        "struct s __attribute__((packed)) { int a; } make(void) __attribute__((cold)) { return s; }\n\
+         struct __attribute__((packed)) t { char c; } __attribute__((aligned(2)));\n",
+    );
+    assert_eq!(
+        got,
+        vec![
+            (1, prototype("make", "struct s{int a;}make(void)")),
+            (2, typedef("struct t{char c;}")),
+        ]
+    );
+}
