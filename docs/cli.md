@@ -387,7 +387,10 @@ When an import has no body-bearing veneer, `decompile` and explicitly filtered
 whole-binary decompilation refuse its IAT slot with exit code 1. The diagnostic
 names the import and slot and explains that the bytes are a loader-written
 pointer, so neither an executable section flag nor direct `--addr` turns
-adjacent IAT words into instructions. Inventory, graph, disassembly/read, and
+adjacent IAT words into instructions. Among several `--addr`/`--functions`
+selectors of one filtered run, a selector naming such a slot is reported as
+`warning: <diagnostic>; skipped` and the others still decompile; the run fails
+only when the skips leave nothing to decompile. Inventory, graph, disassembly/read, and
 xref consumers still resolve the slot because they do not lift a body. An
 explicit `--define-function` or `--assert function` declaration overrides the
 loader classification when the image's import directory is known to be false.
@@ -1789,10 +1792,57 @@ and `status`: `unique`, `ambiguous`, `incomplete`, `no_matches`, `no_candidates`
 `unsupported`, or `unavailable`. Only `unique` has a `selected_profile`; ties have
 `tied_profiles`. A unique best score does not prove the compiler's nominal version.
 
+`comment_profile_hint` optionally suggests a complete requested O3 profile
+from consistent stable ELF `.comment` records. The `basis` is `exact_version`,
+`same_minor` for an older patch in the same minor, or `newer_than_available`
+when the compiler's minor exceeds the requested O3 range for that major.
+Prereleases and gaps within that range omit the hint. Compatibility scoring
+and any use of matched names require their own signature evidence.
+
 The flag requires `functions --summary --json`, cannot be repeated, and does not
 accept raw images, slice/target/ISA selection, image-selection options, assertions,
 or function-definition overrides. Unsupported image formats or unavailable
 analysis retain an explicit report status instead of guessing a profile.
+
+Use `kuna rust-signatures check --json` to check a locally provisioned corpus
+without opening an image. An explicit `--manifest PATH` overrides the default
+manifest. The default is `kuna/rust-signatures/x86_64/linux/manifest.json` in
+the user data directory. On Linux this is an absolute `XDG_DATA_HOME` or
+`$HOME/.local/share`. macOS uses `$HOME/Library/Application Support` and Windows
+uses `LOCALAPPDATA`.
+
+The check verifies the manifest's format, hashes and banks. It returns
+`ready` and exits zero when both banks are present for every requested profile.
+`absent`, `incomplete` and `invalid` exit nonzero. A validated manifest's
+inventory includes the corpus identity, manifest hash and the profile and
+verified bank counts. Install the manifest and its bank files locally before
+checking them. Analysis still takes an explicit manifest path for either
+reporting or application.
+
+To apply names from a manifest you trust, request application separately:
+
+```bash
+kuna functions ./fmt --json --apply-rust-signatures ./rust-signatures.json
+kuna decompile ./fmt '<recovered raw symbol>' --apply-rust-signatures ./rust-signatures.json
+kuna decompile ./fmt 0x154a20 --json --apply-rust-signatures ./rust-signatures.json
+```
+
+Application requires a complete comparison and a unique positive profile. Only
+exact raw symbol/address pairs accepted by both banks of that profile become name
+proposals. Existing loader and metadata names, name ownership, and conflicting
+FID/FLIRT matches still take precedence. Caller function declarations and
+assertions retain their precedence. This supplies names only; it does not infer
+compiler identity, types or ABI layouts, and it leaves the JSON schema unchanged.
+
+The manifest is evaluated once before function selection. Inventory and
+single-function text/JSON use the same analysis defaults, including discovery
+when selecting an address; explicit `--option` choices still apply. Unsupported
+images, incomplete or ambiguous profiles, and absent bank agreement are errors.
+`--apply-rust-signatures` cannot be repeated or combined with the report-only
+flag. It rejects archive inputs before member listing, selection or fan-out, as
+well as byte overlays, raw images, slice/target/ISA/image-selection changes, `--jobs` values other than `1`, and batch/project/graph commands. Single
+function application uses the in-process engine for text and JSON and rejects
+`--raw`, `--regions`, `--kassert`, `--decomp-dbg`, and `--engine`.
 
 ```json
 {"binary":"…","count":1150,"total":1150,"error":null,"warnings":[],

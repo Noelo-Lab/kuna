@@ -6057,12 +6057,21 @@ impl FuncProto {
         // unconditionally, so those pieces aborted the process the moment the
         // function was decompiled. The declared type IS the return type — adopt it
         // and the model has something to assign against, after which `set_pieces`
-        // replaces the derived storage with the explicit one as before.
+        // replaces the derived storage with the explicit one as before. With
+        // no stated inputs, leave input recovery open on the rebuilt callee.
         if pieces.outtype.is_none() {
             if let Some(declared) = pieces.output_storage.as_ref().and_then(|p| p.type_.clone()) {
                 let mut typed = pieces.clone();
                 typed.outtype = Some(declared);
-                return self.set_pieces(&typed, Some(defaultfp), typefactory, manager);
+                self.set_pieces(&typed, Some(defaultfp), typefactory, manager)?;
+                if pieces.intypes.is_empty()
+                    && pieces.innames.is_empty()
+                    && pieces.input_storage.is_empty()
+                    && pieces.first_var_arg_slot < 0
+                {
+                    self.set_input_lock(false);
+                }
+                return Ok(());
             }
         }
         self.set_pieces(pieces, Some(defaultfp), typefactory, manager)
@@ -7982,8 +7991,9 @@ impl FuncCallSpecs {
     ///
     /// `None` entries in `newinput` indicate stack parameters.  The op-input
     /// reuse path reads the CALL operands (the W3 op, via `data`); the stack
-    /// path needs a spacebase placeholder.  Returns `false` only if a stack
-    /// variable is needed and there is no placeholder.
+    /// path needs a spacebase placeholder.  Returns `false` if a stack
+    /// variable is needed and there is no placeholder, or (kuna) if a reused
+    /// input was narrowed below its parameter since its trial was recorded.
     fn transfer_locked_input(
         &self,
         data: &Funcdata,
@@ -8012,6 +8022,12 @@ impl FuncCallSpecs {
                     .get(self.op)
                     .expect("transferLockedInput: stale call op")
                     .get_in(reuse);
+                let narrowed = vn
+                    .and_then(|vn| data.vbank().get(vn))
+                    .is_some_and(|vn| vn.get_size() < param.get_size());
+                if narrowed {
+                    return Ok(false);
+                }
                 newinput.push(vn);
             } else {
                 if !stackref_resolved {

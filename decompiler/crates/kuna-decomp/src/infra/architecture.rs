@@ -406,10 +406,10 @@ pub struct Architecture {
     pub kuna_function_bodies: Vec<(u64, u64)>,
     /// (kuna `floatglobals`) The scan's answer, once a function asked for it.
     pub kuna_float_globals: Option<Rc<crate::kuna_floatglobals::FloatGlobals>>,
-    /// (kuna `floatglobals`, `callerreads`) The run decompiles more than one
-    /// function, so the whole-program scan is paid for whatever the image's
-    /// size, and the callers a batch decompiles answer for their callees.
+    /// (kuna `floatglobals`) A multi-function run scans images of any size.
     pub kuna_float_scan_batch: bool,
+    /// The callee-first driver settles return values from its decompiled callers.
+    pub kuna_settle_caller_reads: bool,
     /// (kuna `callerreads`) Every direct call the Listing walked, as `(callee
     /// entry, address the call returns to)`, sorted. Empty without the Listing.
     pub kuna_call_returns: Vec<(u64, u64)>,
@@ -670,6 +670,10 @@ pub struct Architecture {
     /// `option reloadarg` stands down on.  The XML `<binaryimage>` bootstrap
     /// never runs the analyzer tier, so it stays `Unknown` there.
     pub source_lang_detected: crate::kuna_sourcelang::SourceLang,
+    /// Executable `runtime.chanrecv2` entry confirmed by the Go function table.
+    pub go_chanrecv2: Option<u64>,
+    /// Function entry to its single DWARF-verified status receive call site.
+    pub go_chanrecv_status_sites: std::collections::BTreeMap<u64, u64>,
     /// Unambiguous stable rustc version from ELF compiler metadata.
     pub rustc_stable_version: Option<(u16, u16, u16)>,
     pub rustc_pieces_layout: bool,
@@ -712,9 +716,9 @@ pub struct Architecture {
     /// (kuna GH-9191) Bound a modulo/and-mask LOAD-table jumptable index
     /// (C++ `switch_modulo_bound`).
     pub switch_modulo_bound: bool,
-    /// (kuna) Recover a `BRANCHIND` whose destination is a select over constant
-    /// addresses (`p2_lift/kuna_constselectjump.rs`).
-    pub const_select_jump: bool,
+    /// (kuna) When a `BRANCHIND` whose destination is a select over constant
+    /// addresses is recovered (`p2_lift/kuna_constselectjump.rs`).
+    pub const_select_jump: crate::kuna_constselectjump::ConstSelectMode,
     /// (kuna, angr `test_decompiling_missing_function_call`) Bound a LOAD-table
     /// jumptable index by an out-of-band CBRANCH range guard the basic model's
     /// guard analysis could not turn into a bound (C++ `switch_guard_bound`).
@@ -1319,6 +1323,11 @@ pub struct Architecture {
         (int4, uintb),
         std::rc::Rc<crate::kuna_protoorder::RecoveredTypes>,
     >,
+    /// (kuna `protoorder`) A batch drive with no callee-first order behind it
+    /// (a narrowed `decompile-all`, `kuna decompile --json`) states its tail
+    /// callees first as a single-function drive does.  Driver state, not an
+    /// option: the front-end sets it around such a batch.
+    pub kuna_tail_callee_batch: bool,
     /// (kuna `vfpvariadic`) The default model with the variadic return rules,
     /// keyed by the default model it was derived from.
     pub kuna_vfp_variadic: RefCell<Option<(Rc<ProtoModel>, Option<Rc<ProtoModel>>)>>,
@@ -2332,6 +2341,7 @@ impl Architecture {
             kuna_function_bodies: Vec::new(),
             kuna_float_globals: None,
             kuna_float_scan_batch: false,
+            kuna_settle_caller_reads: false,
             kuna_call_returns: Vec::new(),
             bool_byte: true, // (kuna) option boolbyte; reset_defaults sets the shipped default
             arm_constant_shift: crate::p9_emit::kuna_armconstantshift::ConstShiftMode::Off,
@@ -2403,6 +2413,8 @@ impl Architecture {
             rust_fmt_write_relro: None,
             rust_io_writer_profiles: std::collections::BTreeMap::new(),
             source_lang_detected: Default::default(), // (kuna) a load-time fact; set by the console's `load file`
+            go_chanrecv2: None,
+            go_chanrecv_status_sites: Default::default(),
             source_lang_forced: None, // (kuna) option sourcelang; reset_defaults restores auto
             fat_str: 0, // (kuna) option fatstr; reset_defaults sets the shipped default (auto)
             go_morestack: 0, // (kuna) option gomorestack; reset_defaults sets the shipped default (auto)
@@ -2412,7 +2424,7 @@ impl Architecture {
             go_new_type: false, // (kuna) option gonewtype; reset_defaults sets the shipped default (on)
             ptrauth_trap: false, // (kuna) option ptrauthtrap; reset_defaults sets the shipped default (on)
             switch_modulo_bound: false,
-            const_select_jump: false,
+            const_select_jump: crate::kuna_constselectjump::ConstSelectMode::Off,
             highslice_guard: false,
             switch_guard_bound: false,
             switch_shared_case: false,
@@ -2515,6 +2527,7 @@ impl Architecture {
             kuna_swift_self_first_cache: std::collections::HashMap::new(),
             kuna_callee_forward_cache: std::collections::HashMap::new(),
             kuna_protoorder_types: std::collections::HashMap::new(),
+            kuna_tail_callee_batch: false,
             kuna_vfp_variadic: RefCell::new(None),
             kuna_callee_reginputs: RefCell::new(std::collections::HashMap::new()),
             kuna_custom_reg_callers: Rc::new(std::collections::HashMap::new()),
@@ -2735,7 +2748,7 @@ impl Architecture {
         self.go_new_type = true; // (kuna) type runtime.newobject results from their descriptors on Go images
         self.ptrauth_trap = true; // (kuna) drop arm64e pointer-auth failure checks; inert unless a brk #0xc47x trap's guard is the return-address bit test, 0/675 datatests
         self.switch_modulo_bound = false; // (kuna) default: upstream byte-identical (GH-9191)
-        self.const_select_jump = false; // (kuna) default: upstream byte-identical (constant-select indirect branch)
+        self.const_select_jump = crate::kuna_constselectjump::ConstSelectMode::Reentry; // (kuna) option constselectjump default `reentry`: only a single-target jump its own target code re-enters with another local constant; 0/675 datatest assertions move
         self.highslice_guard = false;
         self.switch_guard_bound = false; // (kuna) default: upstream byte-identical (angr opt-in)
         self.switch_shared_case = true; // (kuna) DIV-14 default-on (angr loop-carried-guard PIC switch recovery; slower on the functions it recovers, kept on for quality; 0/675 byte-identical)
@@ -3312,6 +3325,19 @@ impl Architecture {
         }
     }
 
+    /// Commit a Go DWARF declaration and its verified input roles as one symbol record.
+    pub fn set_go_dwarf_prototype_at(
+        &mut self,
+        addr: &Address,
+        pieces: crate::fspec::PrototypePieces,
+        string_input: Option<crate::kuna_gostringinput::GoStringInput>,
+    ) {
+        if let Some((sid, _)) = self.symboltab.find_function_across_scopes(addr) {
+            let string_input = string_input.filter(|formal| &formal.entry == addr);
+            self.symboltab.set_function_proto_with_go_string(sid, pieces, string_input);
+        }
+    }
+
     // -----------------------------------------------------------------------
     // Funcdata construction (the W3 boot boundary)
     // -----------------------------------------------------------------------
@@ -3462,6 +3488,7 @@ impl Architecture {
             .then(|| self.userops.get_op_by_name(crate::kuna_ptrauthtrap::BREAKPOINT_USEROP))
             .flatten()
             .map(|u| u.get_index() as kuna_base::types::uint4);
+        ctx.arm64e = self.archid.starts_with("AARCH64:LE:64:AppleSilicon:");
         ctx.name_style_angr = self.name_style_angr;
         ctx.name_style_ghidra = self.name_style_ghidra;
         // (kuna) carry the duplicate-declaration collapse gate so `emit_local_var_decls`
@@ -3563,6 +3590,8 @@ impl Architecture {
         ctx.region_structure = self.region_structure; // regionstructure
         ctx.guard_arm = self.guard_arm; // guardarm
         ctx.loop_continue = self.loop_continue;
+        ctx.do_while_continue =
+            self.print.out_lang().profile().forms.do_while != crate::kuna_lang::DoWhileForm::RustLoopBreakIf;
         ctx.loop_cond_hoist = self.loop_cond_hoist; // loopcondhoist
         ctx.region_loop_refine = self.region_loop_refine; // regionlooprefine
         ctx.region_edge_order = self.region_edge_order; // regionedgeorder
@@ -3620,6 +3649,7 @@ impl Architecture {
         ctx.strip_stack_guard = self.strip_stack_guard; // stackguard
         ctx.strip_msvc_stack_guard = self.strip_msvc_stack_guard; // msvcstackguard
         ctx.go_bounds = self.go_bounds;
+        ctx.go_keep_divide_checks = self.archid.starts_with("AARCH64:");
         ctx.strip_security_check = self.strip_security_check; // securitycheck
         ctx.branch_flip = self.branch_flip; // branchflip (negated-guard branch flipping)
         // (kuna) carry the whiledo->for reroll gate (C++ `glb->analyze_for_loops`)
@@ -4223,7 +4253,7 @@ impl Architecture {
     /// no-register golang target (x86-32 reaches `g` through TLS) and every
     /// other image are untouched.
     fn kuna_install_goreg(&mut self) -> KunaResult<()> {
-        let Some(reg) = crate::kuna_goreg::goroutine_register(&self.archid) else {
+        let Some(reg) = crate::kuna_goreg::goroutine_register(&self.archid, self.go_version()) else {
             return Ok(());
         };
         let scope = match self.symboltab.get_global_scope() {
@@ -4752,15 +4782,33 @@ impl Architecture {
         }
     }
 
+    /// (kuna) The image's Go toolchain release, when the load stated one.
+    fn go_version(&self) -> Option<(u16, u16)> {
+        if self.load_options_from_env {
+            crate::kuna_loadoptions::env::go_version()
+        } else {
+            self.load_options.go_version
+        }
+    }
+
     /// (kuna `goreg`) The runtime layouts of the image's Go toolchain release.
     fn go_layout(&self) -> crate::kuna_goreg::GoLayout {
-        if self.load_options_from_env {
-            return crate::kuna_goreg::GoLayout::from_env();
-        }
-        match self.load_options.go_version {
+        match self.go_version() {
             Some((major, minor)) => crate::kuna_goreg::GoLayout::from_version(major, minor),
             None => crate::kuna_goreg::GoLayout::baseline(),
         }
+    }
+
+    /// (kuna `goabi`) Make the stack model `abi0` the default of a golang-cspec
+    /// image built before the register ABI reached its CPU.
+    fn kuna_go_stack_default(&mut self) -> KunaResult<()> {
+        if self.archid.ends_with(":golang")
+            && self.proto_models.contains_key("abi0")
+            && !crate::kuna_goreg::register_abi(&self.archid, self.go_version())
+        {
+            crate::options::ArchOptionContext::set_default_model(self, "abi0")?;
+        }
+        Ok(())
     }
 
     /// Borrow the data-type factory (C++ `glb->types`).
@@ -6766,6 +6814,7 @@ impl Architecture {
         // kuna-side so the vendored spec stays pristine.
         self.kuna_install_goreg()?;
         self.build_default_proto();
+        self.kuna_go_stack_default()?;
         // Share `defaultfp` + the engine address-space manager into the type
         // factory so the C-declaration grammar's nested function-pointer
         // `buildType` path (`FunctionModifier::modType` -> `getTypeCode(
@@ -6895,13 +6944,13 @@ impl ArchOptionContext for Architecture {
             self.share_proto_models();
         }
     }
-    fn set_function_extra_pop(&mut self, name: &str, _expop: int4) -> KunaResult<()> {
-        // C++ looks up `symboltab->getGlobalScope()->queryFunction(name)` then
-        // `fd->getFuncProto().setExtraPop(expop)`.  The per-function FuncProto
-        // mutation needs a resolved Funcdata; the symbol-table function query +
-        // FuncProto write is the W4 symboltab + W6 fspec surface.
-        // STUB(W4 symboltab + W6 fspec): no function is resolvable here yet.
-        Err(KunaError::recov(format!("Unknown function name: {name}")))
+    fn set_function_extra_pop(&mut self, name: &str, expop: int4) -> KunaResult<()> {
+        // C++ `OptionExtraPop::apply`: queryFunction(name), then
+        // `getFuncProto().setExtraPop(expop)`; parked on the symbol like inline.
+        let sid = self.query_global_function(name)?;
+        self.kuna_callwide.clear();
+        self.symboltab.set_function_extra_pop(sid, expop);
+        Ok(())
     }
     fn set_default_model(&mut self, name: &str) -> KunaResult<()> {
         // C++ `glb->setDefaultModel(getModel(p1))`.

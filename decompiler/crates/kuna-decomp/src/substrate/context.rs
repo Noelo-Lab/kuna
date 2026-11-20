@@ -141,6 +141,10 @@ pub struct GlobalEntry {
     /// CALLIND to a no-return callee never schedules the restart that re-flows the
     /// now-direct CALL with an artificial halt.
     pub func_no_return: bool,
+    /// The owning FunctionSymbol's parked extrapop (C++
+    /// `FunctionSymbol::getFunction()->getFuncProto().getExtraPop()` after
+    /// `option extrapop <n> <name>`).  `None` when unset or not a function.
+    pub func_extra_pop: Option<int4>,
     /// The owning Symbol's id (C++ `SymbolEntry::getSymbol()->getId()`), for the
     /// Phase-4 `<high symref>` echo: ghidra-mode carries the REAL host database
     /// id delivered by getMappedSymbols (0 when the host sent none — the encode
@@ -175,6 +179,8 @@ pub struct GlobalQuery {
     pub flagbase: kuna_base::partmap::PartMap<Address, uint4>,
     /// Every entry's symbol name, built on first use by [`GlobalQuery::has_symbol_name`].
     symbol_name_set: std::cell::OnceCell<std::collections::BTreeSet<Box<str>>>,
+    /// Whether any entry carries a parked `func_extra_pop`.
+    has_extra_pop: bool,
 }
 
 /// Prototype evidence attached to an exact memory slot feeding a `CALLIND`.
@@ -298,12 +304,14 @@ impl GlobalQuery {
             ));
             entry_start = entry_end;
         }
+        let has_extra_pop = entries.iter().any(|entry| entry.func_extra_pop.is_some());
         Self {
             entries,
             space_indexes,
             owned,
             flagbase,
             symbol_name_set: std::cell::OnceCell::new(),
+            has_extra_pop,
         }
     }
 
@@ -781,6 +789,9 @@ pub struct ArchContext {
     /// (kuna) The `SoftwareBreakpoint` user-op id when `option ptrauthtrap`
     /// is on; read by [`crate::p2_lift::kuna_ptrauthtrap`].
     pub ptrauth_trap_userop: Option<kuna_base::types::uint4>,
+    /// (kuna) The language is arm64e's; read by
+    /// [`crate::p4_calls::kuna_hiddenretarg`].
+    pub arm64e: bool,
     /// (kuna) angr-style default naming: an unknown callee / global prints as
     /// `sub_<addr>` / `dat_<addr>` rather than `func_<addr>` (C++
     /// `Architecture::name_style_angr`, default-on).  Read by the call-spec
@@ -1103,6 +1114,10 @@ pub struct ArchContext {
     pub loop_cond_hoist: bool,
     /// Preserve secondary natural-loop latches as continues (`loopcontinue`).
     pub loop_continue: bool,
+    /// (kuna `loopcontinue`) The output language's do-while runs its test on
+    /// `continue;`: C `do..while` and Go's `for` post statement do, Rust's
+    /// `loop { ..; if !(c) { break; } }` restarts the body instead.
+    pub do_while_continue: bool,
     /// (kuna) region structurer cyclic loop-successor refinement
     /// (`region_loop_refine`, opt-in default-off).  When set (and
     /// `region_structure` is on), multi-exit / multi-latch / mid-entry loops are
@@ -1294,6 +1309,8 @@ pub struct ArchContext {
     pub strip_security_check: bool,
     /// Fold Go compiler bounds/division panic arms (option gobounds).
     pub go_bounds: bool,
+    /// AArch64 integer division returns zero for a zero divisor.
+    pub go_keep_divide_checks: bool,
     /// (kuna) flip negated-guard if/else branches for linearity (option
     /// `branchflip`, opt-in default-off).  Read by
     /// [`ActionBranchFlip`](crate::blockaction::ActionBranchFlip).
@@ -1352,7 +1369,7 @@ pub struct ArchContext {
     pub lazy_entry_starts: Rc<Vec<u64>>,
     /// (kuna) Recover a `BRANCHIND` whose destination is a select over constant
     /// addresses (`option constselectjump`, `p2_lift/kuna_constselectjump.rs`).
-    pub const_select_jump: bool,
+    pub const_select_jump: crate::kuna_constselectjump::ConstSelectMode,
     /// (kuna) Bound a LOAD-table jumptable by an out-of-band CBRANCH range guard
     /// when the basic model's guard analysis could not (C++
     /// `Architecture::switch_guard_bound`, flipped by `option switchguardbound`,
@@ -1587,6 +1604,7 @@ impl ArchContext {
             // (kuna) `option gonewtype` default on; copied the same way.
             go_new_type: true,
             ptrauth_trap_userop: None,
+            arm64e: false,
             // (kuna) angr-style default naming is default-on (Architecture::reset).
             name_style_angr: true,
             // (kuna, Phase 3) ghidra-mode-only; never set on the standalone path.
@@ -1688,6 +1706,7 @@ impl ArchContext {
             region_structure: false,     // regionstructure (opt-in default-off)
             guard_arm: false,            // guardarm (opt-in default-off)
             loop_continue: true,
+            do_while_continue: true,
             loop_cond_hoist: false,      // loopcondhoist (opt-in default-off)
             region_loop_refine: false,   // regionlooprefine (opt-in default-off)
             region_edge_order: false,    // regionedgeorder (opt-in default-off)
@@ -1726,6 +1745,7 @@ impl ArchContext {
             strip_stack_guard: false,    // stackguard (opt-in default-off)
             strip_msvc_stack_guard: true, // msvcstackguard (the live gate rides build_arch_handle)
             go_bounds: true,
+            go_keep_divide_checks: false,
             strip_security_check: false, // securitycheck (fixture default-off; the live gate rides build_arch_handle)
             branch_flip: false,          // branchflip (opt-in default-off)
             // C++ Architecture default: analyze_for_loops = true (architecture.cc).
@@ -1742,7 +1762,7 @@ impl ArchContext {
             funcptr_align: 0,
             switch_modulo_bound: false, // (kuna) GH-9191 default off (upstream byte-identical)
             lazy_entry_starts: Rc::default(),
-            const_select_jump: false, // (kuna) constant-select indirect branch: default off
+            const_select_jump: crate::kuna_constselectjump::ConstSelectMode::Off, // (kuna) constant-select indirect branch; reset_defaults sets the shipped default
             highslice_guard: false,
             switch_guard_bound: false, // (kuna) angr opt-in default off (upstream byte-identical)
             switch_shared_case: false, // (kuna) angr opt-in default off (upstream byte-identical)
@@ -2265,6 +2285,18 @@ impl ArchContext {
         None
     }
 
+    /// The extrapop parked on the FunctionSymbol starting at `entry` (C++
+    /// `queryFunction(entry)->getFuncProto().getExtraPop()` after
+    /// `option extrapop <n> <name>`), or `None` when unset.
+    pub fn query_function_extra_pop(&self, entry: &Address) -> Option<int4> {
+        let gq = self.effective_global_query(entry).filter(|gq| gq.has_extra_pop)?;
+        let space_index = entry.get_space()?.get_index();
+        gq.entries_for_space(space_index)
+            .iter()
+            .find(|e| e.first == entry.get_offset() && e.is_function)
+            .and_then(|e| e.func_extra_pop)
+    }
+
     /// Return the callable type attached to the exact global slot loaded as an
     /// indirect-call target.  See [`GlobalQuery::indirect_slot_type`].
     pub(crate) fn query_indirect_slot_type(
@@ -2326,8 +2358,24 @@ impl ArchContext {
     /// the entry is not a code symbol with a prototype.
     ///
     /// This is the `ActionDeindirect::apply` lever: a CALLIND whose target is the
-    /// constant `entry` deindirects to a direct CALL to this function.
+    /// constant `entry` deindirects to a direct CALL to this function.  The
+    /// prototype carries the extrapop `option extrapop <n> <name>` parked on the
+    /// symbol, as the C++ callee `getFuncProto()` does.
     pub fn query_function(
+        &self,
+        entry: &Address,
+    ) -> Option<(String, Address, std::rc::Rc<crate::fspec::FuncProto>)> {
+        let (name, addr, proto) = self.query_function_symbol(entry)?;
+        let Some(expop) = self.query_function_extra_pop(&addr) else {
+            return Some((name, addr, proto));
+        };
+        let mut popped = crate::fspec::FuncProto::new();
+        popped.copy(&proto);
+        popped.set_extra_pop(expop);
+        Some((name, addr, std::rc::Rc::new(popped)))
+    }
+
+    fn query_function_symbol(
         &self,
         entry: &Address,
     ) -> Option<(String, Address, std::rc::Rc<crate::fspec::FuncProto>)> {

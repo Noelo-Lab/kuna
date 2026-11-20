@@ -72,4 +72,8 @@ pub mod kuna_stubtailcall; // (kuna) a loader-proven lazy-binding stub flows as 
 
 pub mod kuna_ppcpcread;
 
+pub mod kuna_indirectreturn;
+
 pub mod kuna_nullable_reloc;
+
+pub(crate) mod kuna_atomicxadd;

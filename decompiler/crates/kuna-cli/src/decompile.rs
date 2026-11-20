@@ -1,7 +1,7 @@
 //! `kuna decompile` — the Rust port of `kuna/decompile.py`, plus its
 //! machine-readable mode.
 //!
-//! The TEXT surface drives `decomp_dbg` with the same console command language
+//! The ordinary TEXT surface drives `decomp_dbg` with the same console command language
 //! the datatests use (`load file` / `read symbols` / `option` /
 //! `load function` | `load addr` / `decompile` / `openfile write <tmp>` /
 //! `print C` / `closefile`), capturing the decompiled C through the bulk-output
@@ -11,11 +11,12 @@
 //! `--json` answers the same question in `decompile-all`'s record shape: a
 //! `functions` array holding the one function that was asked for, with its
 //! address, size, variables, line mappings and per-record `error`. It is not a
-//! second dialect and not a second implementation — [`run_json`] routes the
+//! second dialect and not a second implementation — [`run_in_process`] routes the
 //! selection through `decompile_all`'s own parser, decompile loop and
 //! serializer, so an agent parses ONE shape whichever command it reached for.
 //! That path loads the binary in-process rather than spawning `decomp_dbg`,
 //! which is why the `decomp_dbg`-only flags are refused rather than ignored.
+//! Explicit Rust signature application uses this same in-process path for text.
 
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -940,12 +941,13 @@ fn note_budget_flag(msg: &str) {
 
 /// Entry point for `kuna decompile`: parse the command line, then render either
 /// the text surface ([`run`], a `decomp_dbg` subprocess) or, with `--json`, the
-/// `decompile-all` record shape for the one selected function ([`run_json`]).
+/// `decompile-all` record shape for the one selected function ([`run_in_process`]).
 pub fn main(argv: &[String]) -> Result<i32, String> {
     let mut binary: Option<String> = None;
     let mut target: Option<String> = None;
     let mut addr = false;
     let mut json = false;
+    let mut apply_rust_signatures: Option<String> = None;
     let mut bfd_target: Option<String> = None;
     let mut raw = false;
     let mut regions = false;
@@ -978,6 +980,12 @@ pub fn main(argv: &[String]) -> Result<i32, String> {
         match a {
             "--addr" => addr = true,
             "--json" => json = true,
+            "--apply-rust-signatures" => {
+                let value = take_value(argv, &mut i, "--apply-rust-signatures")?;
+                if apply_rust_signatures.replace(value).is_some() {
+                    return Err("duplicate --apply-rust-signatures".into());
+                }
+            }
             "--no-vars" => {
                 record_flag = Some("--no-vars");
                 forwarded.push(a.into());
@@ -1076,6 +1084,9 @@ pub fn main(argv: &[String]) -> Result<i32, String> {
             return Err("decompile requires <binary> and <func>".into());
         }
     };
+    if apply_rust_signatures.is_some() && engine.is_some() {
+        return Err("--engine is not supported with --apply-rust-signatures".into());
+    }
     // Honor `--engine cpp|rust` like the Python tools: set `KUNA_ENGINE`.  In the
     // Rust-only world `rust` is already the default and `cpp` would fail to
     // resolve, but the flag is accepted (and exported) for compatibility with
@@ -1106,7 +1117,10 @@ pub fn main(argv: &[String]) -> Result<i32, String> {
         return Err("--base requires --raw-image".into());
     }
 
-    if json {
+    if json || apply_rust_signatures.is_some() {
+        if !json && record_flag.is_some() {
+            return Err("--omit and --no-vars require --json".into());
+        }
         // Refused, not ignored: each of these is a `decomp_dbg` transcript the
         // in-process JSON path never produces, and silently dropping half a
         // request is the failure mode `--json` exists to end.
@@ -1117,11 +1131,14 @@ pub fn main(argv: &[String]) -> Result<i32, String> {
             ("--decomp-dbg", decomp_dbg.is_some()),
         ] {
             if requested {
-                return Err(format!("{flag} is not supported with --json"));
+                let request = if apply_rust_signatures.is_some() { "--apply-rust-signatures" } else { "--json" };
+                return Err(format!("{flag} is not supported with {request}"));
             }
         }
-        return Ok(run_json(&JsonRequest {
+        return Ok(run_in_process(&SingleRequest {
             binary: &binary,
+            json,
+            apply_rust_signatures: apply_rust_signatures.as_deref(),
             target: &target,
             by_address: addr,
             forwarded: &forwarded,
@@ -1203,6 +1220,11 @@ fn usage() {
          name and address always stay.  --no-vars skips the variable extraction\n\
          and leaves `variables` empty, as on decompile-all.\n\
          \n\
+         --apply-rust-signatures PATH trusts an explicit hashed Rust signature manifest;\n\
+         only a complete unique profile and both-bank name/address agreement propose names.\n\
+         It shares the in-process load for text and JSON and refuses byte overlays,\n\
+         image-selection overrides and transcript-only controls.\n\
+         \n\
          --option NAME VALUE (repeatable) flips one phase-model decision for this run;\n\
          `kuna catalog` lists them and `kuna docs options` explains the tiers.\n\
          --mode applies an option preset (`kuna modes`); omitted, `auto` picks one by\n\
@@ -1244,12 +1266,14 @@ fn usage() {
     );
 }
 
-// --- the --json surface ------------------------------------------------------
+// --- the shared one-function in-process surface ------------------------------
 
-/// What `--json` needs from the parsed command line: the selection, plus every
+/// The shared in-process request: output form, selection, and every
 /// flag `decompile-all` also understands.
-struct JsonRequest<'a> {
+struct SingleRequest<'a> {
     binary: &'a str,
+    json: bool,
+    apply_rust_signatures: Option<&'a str>,
     target: &'a str,
     by_address: bool,
     /// The `--option` / `--language` tokens, in argv order.
@@ -1271,8 +1295,14 @@ struct JsonRequest<'a> {
 /// and the per-function watchdog budget then all resolve exactly once, in the
 /// parser that owns them, instead of being re-derived here where they would
 /// drift.
-fn run_json(req: &JsonRequest) -> i32 {
-    let mut argv: Vec<String> = vec![req.binary.to_string(), "--json".into()];
+fn run_in_process(req: &SingleRequest) -> i32 {
+    let mut argv: Vec<String> = vec![req.binary.to_string()];
+    if req.json {
+        argv.push("--json".into());
+    }
+    if let Some(path) = req.apply_rust_signatures {
+        argv.extend(["--apply-rust-signatures".into(), path.into()]);
+    }
     if req.by_address {
         argv.push("--addr".into());
         argv.push(if looks_like_addr(req.target) {
@@ -1302,7 +1332,8 @@ fn run_json(req: &JsonRequest) -> i32 {
         }
     }
 
-    let args = match decompile_all::parse_args(&argv, "decompile-all") {
+    let command = if req.apply_rust_signatures.is_some() { "decompile" } else { "decompile-all" };
+    let args = match decompile_all::parse_args(&argv, command) {
         Ok(args) => args,
         Err(e) => {
             eprintln!("error: {e}");
@@ -1314,10 +1345,10 @@ fn run_json(req: &JsonRequest) -> i32 {
     // it has to reconcile against a prose stderr line — the missing error channel
     // is half of why this flag exists. The verdict follows the document, matching
     // `run`'s stdout-then-stderr ordering.
-    let (text, failure) = match decompile_json(&args, req.target) {
+    let (text, failure) = match decompile_one(&args, req.target) {
         Ok(answered) => answered,
         Err((message, declared)) => (
-            decompile_all::render_result_json(
+            if req.json { decompile_all::render_result_json(
                 &args.binary,
                 &[],
                 &args.options,
@@ -1326,7 +1357,7 @@ fn run_json(req: &JsonRequest) -> i32 {
                 &Default::default(),
                 &declared,
                 args.omit,
-            ),
+            ) } else { String::new() },
             Some(message),
         ),
     };
@@ -1338,15 +1369,15 @@ fn run_json(req: &JsonRequest) -> i32 {
 }
 
 /// Load once, resolve the one selected function, decompile it, and render the
-/// document.
+/// requested text or JSON document.
 ///
-/// Returns the JSON text plus the failure the caller reports on stderr and exits
+/// Returns the rendered text plus the failure the caller reports on stderr and exits
 /// `1` on. A function whose pipeline aborted is a failed run here — `decompile`
 /// was asked about exactly that function — so `--json` cannot turn the text
 /// surface's non-zero verdict into a success; the reason is in the document too,
 /// as the record's `error` and as the run-level one. A failure keeps the
 /// declarations' notes for the document that reports it.
-fn decompile_json(
+fn decompile_one(
     args: &AllArgs,
     target: &str,
 ) -> Result<(String, Option<String>), (String, crate::funcdecl::Declared)> {
@@ -1375,7 +1406,7 @@ fn decompile_json(
         return Err((message, declared));
     }
 
-    let funcs = decompile_all::decompile_entries(&mut prog, args, targets, false);
+    let funcs = decompile_all::decompile_entries(&mut prog, args, targets, false, true);
     let assertions = prog.assertion_outcomes();
     let mut failure = funcs.iter().find_map(|f| {
         f.error.as_ref().map(|reason| {
@@ -1393,7 +1424,7 @@ fn decompile_json(
     if failure.is_none() && decompile_all::any_refused_assertion(&assertions) {
         failure = Some(format!("--assert directive refused by the pipeline in {}", args.binary));
     }
-    let text = decompile_all::render_result_json(
+    let text = if args.json { decompile_all::render_result_json(
         &args.binary,
         &funcs,
         &args.options,
@@ -1402,7 +1433,11 @@ fn decompile_json(
         &interior,
         &declared,
         args.omit,
-    );
+    ) } else {
+        funcs.iter().filter_map(|function| function.code.as_deref()).map(|code| {
+            if code.ends_with('\n') { code.to_string() } else { format!("{code}\n") }
+        }).collect::<String>()
+    };
     if failure.is_none() && args.assert_strict && rejected {
         failure = Some(format!("--assert directive rejected in {}", args.binary));
     }

@@ -604,6 +604,8 @@ pub struct ConsoleProgram {
     /// pass did not run or no database was configured.
     fid_databases: Vec<kuna_analysis::fid::kuna_fidapply::FidDbReport>,
     rust_profile_request: Option<RustProfileRequest>,
+    rust_profile_apply: bool,
+    rust_profile_image_modified: bool,
     rust_profile_report: Option<RustProfileReport>,
     /// (kuna) The image bytes + path stashed at load for the **deferred Listing
     /// build** (the Listing/xref PR6 build-timing fix). The Listing is gated on
@@ -809,8 +811,15 @@ impl ConsoleProgram {
 
     /// Request one read-only observation of the next accepted image Listing.
     pub fn request_rust_profiles(&mut self, request: RustProfileRequest) {
+        self.rust_profile_apply = false;
         self.rust_profile_request = Some(request);
         self.rust_profile_report = Some(RustProfileReport::unavailable());
+    }
+
+    /// Offer caller-verified trusted banks through ordinary name arbitration, once per image.
+    pub fn request_rust_signature_names(&mut self, request: RustProfileRequest) {
+        self.request_rust_profiles(request);
+        self.rust_profile_apply = true;
     }
 
     pub fn rust_profile_report(&self) -> Option<&RustProfileReport> {
@@ -2820,6 +2829,7 @@ impl ConsoleProgram {
     /// Add a successfully applied byte overlay to the deferred walk, clipped
     /// to executable mappings. Unwritten virtual tails remain outside its ranges.
     pub(crate) fn note_materialized_bytes(&mut self, addr: &Address, size: usize) {
+        self.rust_profile_image_modified = true;
         self.callwide_unavailable("effective byte overlays require a new complete image proof");
         if self.pending_entry_thumb.is_none()
             || !self.analysis_code_space.as_ref().zip(addr.get_space())
@@ -2936,6 +2946,10 @@ impl ConsoleProgram {
     pub fn commit_pending_analysis(&mut self) -> KunaResult<()> {
         let _load = self.arch().load_scope();
         let rust_profile_request = self.rust_profile_request.take();
+        let apply_rust_names = std::mem::take(&mut self.rust_profile_apply);
+        if apply_rust_names && (self.rust_profile_image_modified || self.analysis_image.is_none()) {
+            return Err(KunaError::lowlevel("Rust signature application requires an unmodified object image before its analysis commit"));
+        }
         if !self.pending_synthetic_entries.is_empty() {
             // (kuna `rawdiscover`) A headerless image reaches this point holding
             // only the `--entry` addresses the caller typed, because the
@@ -3100,6 +3114,9 @@ impl ConsoleProgram {
                 let profile_request = if rust_profile_request.is_some() {
                     match RustProfileReport::reject_unsupported(&bytes) {
                         Some(report) => {
+                            if apply_rust_names {
+                                return Err(KunaError::lowlevel("unsupported image: Rust signature application requires a linked little-endian x86-64 ELF image"));
+                            }
                             self.rust_profile_report = Some(report);
                             None
                         }
@@ -3175,7 +3192,16 @@ impl ConsoleProgram {
                             observer,
                         );
                         if profile_request.is_some() {
-                            self.rust_profile_report = Some(rust_report.unwrap_or_else(|| RustProfileReport::unavailable_for(&bytes)));
+                            let report = rust_report.unwrap_or_else(|| RustProfileReport::unavailable_for(&bytes));
+                            if apply_rust_names {
+                                let profile = report.report.as_ref().ok_or_else(|| KunaError::lowlevel(
+                                    report.error.as_deref().unwrap_or("Rust signature profile is unavailable")))?;
+                                let mut names = kuna_analysis::pass::AnalysisOutput::default();
+                                names.fid_names = profile.agreed_names().map_err(KunaError::lowlevel)?;
+                                names.sanitize_names(kuna_decomp::kuna_symbolnamechars::symbolnamechars_mode());
+                                merged.merge(names);
+                            }
+                            self.rust_profile_report = Some(report);
                         }
                         for (id, mut out) in consumer_out {
                             if let Some(record) = out.arm_frames.take() {
@@ -4301,6 +4327,8 @@ fn empty_program(
         libctypes_refused: false,
         fid_databases: Vec::new(),
         rust_profile_request: None,
+        rust_profile_apply: false,
+        rust_profile_image_modified: false,
         rust_profile_report: None,
         analysis_image: None,
         arm_frames: None,
@@ -4938,7 +4966,8 @@ pub(crate) fn bootstrap_object(
     // (kuna goreg) The Go toolchain version is a BUILD-TIME fact: the goreg
     // shells are interned inside the cspec decode during the sleigh build
     // below, upstream of every per-image fact write, and their layouts drift
-    // by release (go1.23's g.syscallbp, go1.25's dropped gobuf.ret). It travels
+    // by release (go1.23's g.syscallbp, go1.25's dropped gobuf.ret), and a
+    // release older than the register ABI takes the stack model. It travels
     // on the load options, which every gate below reads; this scope replaces the
     // caller's until the load returns.
     // An environment-reading load takes the version from the image alone: a
@@ -5380,6 +5409,34 @@ fn commit_model_facts(
     prog.arch_mut().loader_proto_models = Rc::new(models);
 }
 
+/// Park each fact as an unlocked input hint on its function's entry, the
+/// register resolved through the language (one it does not define is a silent
+/// no-op). A function already hinted keeps the hints it has.
+fn commit_input_hints(
+    prog: &mut ConsoleProgram,
+    code_space: &Rc<AddrSpace>,
+    facts: &[kuna_analysis::pass::InputHintFact],
+) {
+    let mut hints: std::collections::BTreeMap<Address, Vec<kuna_decomp::kuna_inputhints::InputHint>> =
+        std::collections::BTreeMap::new();
+    for fact in facts {
+        let Ok(loc) = prog.arch().get_register_varnode(fact.reg.as_bytes()) else {
+            continue;
+        };
+        let Some(space) = loc.space.clone() else { continue };
+        let entry = Address::new(Rc::clone(code_space), fact.func_addr);
+        hints.entry(entry).or_default().push(kuna_decomp::kuna_inputhints::InputHint {
+            addr: Address::new(space, loc.offset),
+            size: loc.size as i32,
+            name: fact.name.clone(),
+            ct: fact.type_.clone(),
+        });
+    }
+    for (entry, list) in hints {
+        prog.arch_mut().loader_input_hints.entry(entry).or_insert_with(|| Rc::new(list));
+    }
+}
+
 fn commit_analysis_output(
     prog: &mut ConsoleProgram,
     code_space: &Rc<AddrSpace>,
@@ -5394,6 +5451,9 @@ fn commit_analysis_output(
     //    producing pass: they fold into the normal symbol/local streams below and
     //    their address-keyed prototypes are applied at step 5a.
     let mut out = out;
+    if let Some(entry) = out.go_chanrecv2 {
+        prog.arch_mut().go_chanrecv2 = Some(entry);
+    }
     for slot in std::mem::take(&mut out.ppc32_pic_slots) {
         prog.arch_mut().ppc32_pic_imports.insert(slot.address, slot);
     }
@@ -5402,13 +5462,15 @@ fn commit_analysis_output(
     out.locals.extend(cpp.locals);
     out.cpp_dwarf.prototypes = cpp.prototypes;
     let go_prototypes = if prog.arch().analysis_godwarfsig {
-        out.go_dwarf.iter().flat_map(|facts| facts.materialize(prog.arch())).collect::<Vec<_>>()
+        out.go_dwarf.iter()
+            .flat_map(|facts| facts.materialize(prog.arch(), &out.go_pointer_methods))
+            .collect::<Vec<_>>()
     } else {
         Vec::new()
     };
     out.go_dwarf.clear();
-    out.symbols.extend(go_prototypes.iter().map(|(addr, pieces)| kuna_analysis::pass::SymFact {
-        addr: *addr, name: pieces.name.clone(), kind: SymKind::Function,
+    out.symbols.extend(go_prototypes.iter().map(|fact| kuna_analysis::pass::SymFact {
+        addr: fact.entry, name: fact.pieces.name.clone(), kind: SymKind::Function,
     }));
     // 0b. (kuna `swifttypes`) The Swift type-layout arm's facts, the same
     //     deferred shape: on, the typed metadata records and the accessor
@@ -6417,9 +6479,15 @@ fn commit_analysis_output(
         let a = Address::new(Rc::clone(code_space), addr);
         prog.arch_mut().set_function_prototype_pieces_at(&a, pieces);
     }
-    for (addr, pieces) in go_prototypes {
-        let a = Address::new(Rc::clone(code_space), addr);
-        prog.arch_mut().set_function_prototype_pieces_at(&a, pieces);
+    for fact in go_prototypes {
+        let a = Address::new(Rc::clone(code_space), fact.entry);
+        if let Some(site) = fact.status_site {
+            prog.arch_mut().go_chanrecv_status_sites.insert(fact.entry, site);
+        }
+        prog.arch_mut().set_go_dwarf_prototype_at(&a, fact.pieces, fact.string_input);
+        if let Some(receiver) = fact.pointer_receiver {
+            prog.arch_mut().symboltab.attach_go_pointer_receiver(&a, receiver);
+        }
     }
 
     // 6. Processor-context decode-mode paints (the kuna analog of ARM's
@@ -6531,24 +6599,7 @@ fn commit_analysis_output(
         // (kuna `swiftcall`) Model-only bindings and the unlocked `self`
         // hints, the register again resolved through the language.
         commit_model_facts(prog, code_space, &out.swift_types.models);
-        let mut hints: std::collections::BTreeMap<Address, Vec<kuna_decomp::kuna_inputhints::InputHint>> =
-            std::collections::BTreeMap::new();
-        for fact in &out.swift_types.input_hints {
-            let Ok(loc) = prog.arch().get_register_varnode(fact.reg.as_bytes()) else {
-                continue;
-            };
-            let Some(space) = loc.space.clone() else { continue };
-            let entry = Address::new(Rc::clone(code_space), fact.func_addr);
-            hints.entry(entry).or_default().push(kuna_decomp::kuna_inputhints::InputHint {
-                addr: Address::new(space, loc.offset),
-                size: loc.size as i32,
-                name: fact.name.clone(),
-                ct: fact.type_.clone(),
-            });
-        }
-        for (entry, list) in hints {
-            prog.arch_mut().loader_input_hints.insert(entry, Rc::new(list));
-        }
+        commit_input_hints(prog, code_space, &out.swift_types.input_hints);
         let throws = prog.arch().get_model(kuna_decomp::kuna_swiftcall::SWIFTCALL_THROWS).cloned();
         let reg = |name: &str| {
             let loc = prog.arch().get_register_varnode(name.as_bytes()).ok()?;
@@ -6576,6 +6627,10 @@ fn commit_analysis_output(
             }
         }
     }
+
+    // 7c. An Objective-C direct method's `self`, the same unlocked hint; a
+    //     function Swift already hinted keeps that one.
+    commit_input_hints(prog, code_space, &out.objc_self_hints);
 
     // 8. Call-fixups (the kuna analog of CallFixupAnalyzer's install loop): for
     //    each function the pass matched to a cspec call-fixup `<target>`, tag it

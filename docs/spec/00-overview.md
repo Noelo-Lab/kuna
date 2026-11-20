@@ -1569,12 +1569,14 @@ printf-heavy whole binary (DIV-66). That cost is the reason the typing now
 happens at load instead, and the reason `full` — the loop — remains a per-run
 opt-in rather than the default.
 
-The step's last drive answers for a function decompiled alone (`kuna_callerreads.rs`,
+The step's last drive checks raw caller reads (`kuna_callerreads.rs`,
 chapter [04](04-calls-and-prototypes.md)): when the finished function returns
 `void` and a direct caller reads one of its return registers after the call, the
 step forces that return and drives the function once more, keeping the redo only
-when it returns a value. A batch skips it, since the callers it decompiles settle
-the same question.
+when it returns a value. Only the callee-first driver with a built call graph
+delegates this question to its return settling pass. A batch that visits its
+selection in ordinary order uses the same raw caller evidence as a single
+function, even when the caller is outside the selection.
 
 (kuna) **Surface defaults.** The drivers inject their defaults before the option
 pass, from one shared table
@@ -3866,9 +3868,15 @@ action loop carries only the IR-boundary handle, not the SLEIGH translator — s
 it hands every restart up (`ActionContext::reflow_requested`) to the outer drive,
 `decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (run_pipeline)`,
 which owns `&mut Architecture`: it clears the function (`Funcdata::clear` — the
-Override store survives), re-follows flow, and re-performs the root, bounded at 8
-cross-flow restarts (`MAX_REFLOW`); past the budget it keeps the last analyzed IR
-rather than failing. Restarts are refused outright during jump-table recovery
+Override store survives) and the analysis warnings the previous pass raised for it
+(`refollow_flow`, upstream `Architecture::clearAnalysis` clearing
+`Comment::warning|Comment::warningheader`, both those already published and those
+still buffered on the `Funcdata`), re-follows flow, and re-performs the root,
+bounded at 8 cross-flow restarts (`MAX_REFLOW`); past the budget it keeps the last
+analyzed IR rather than failing. Clearing the warnings is what keeps a comment from
+describing a pass that was thrown away: a `funcboundflow` truncation at a call the
+restart now knows does not return, or a `branch-flip` on a guard the re-run did not
+flip. Restarts are refused outright during jump-table recovery
 (`is_jumptable_recovery_on`, same `apply`). The relocation is behavioral
 plumbing, not semantics: trigger, clear, re-read-P0, re-run are the upstream
 restart contract.

@@ -175,6 +175,8 @@ mod coldentry_source_boundary;
 mod compact_switch_cli;
 #[path = "switch_self_loop_cli.rs"]
 mod switch_self_loop_cli;
+#[path = "indirect_dispatch.rs"]
+mod indirect_dispatch;
 
 #[path = "contiguous_byte_frame.rs"]
 mod contiguous_byte_frame;
@@ -220,6 +222,9 @@ mod decompile_graph_cli;
 
 #[path = "decompile_json_cli.rs"]
 mod decompile_json_cli;
+
+#[path = "tail_callee_batch_cli.rs"]
+mod tail_callee_batch_cli;
 
 #[path = "function_warnings_cli.rs"]
 mod function_warnings_cli;
@@ -828,6 +833,8 @@ mod integer_field_extract;
 mod go_store_value;
 #[path = "go_pointer_arithmetic.rs"]
 mod go_pointer_arithmetic;
+#[path = "go_stack_abi.rs"]
+mod go_stack_abi;
 
 #[path = "rust_integer_conversions.rs"]
 mod rust_integer_conversions;
@@ -903,3 +910,6 @@ mod nullable_relocations;
 
 #[path = "call_site_prototype.rs"]
 mod call_site_prototype;
+
+#[path = "xrefs_immutable_got.rs"]
+mod xrefs_immutable_got;

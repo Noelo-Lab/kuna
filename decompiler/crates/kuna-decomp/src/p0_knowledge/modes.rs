@@ -101,7 +101,7 @@ const RELIABLE_OVERRIDES: &[(&str, &str)] = &[];
 /// (`returndup` since DIV-54, `pdb` since DIV-129, the presentation defaults
 /// `partialaccess`, `voidtailreturn`, `importdata`, `calltargettype` and
 /// `libcnames`, and the target-gated passes -- `rtti`=PE,
-/// `itaniumrtti`=ELF-with-RTTI, `objc`/`macho-arm64e`=Mach-O,
+/// `itaniumrtti`=ELF/Mach-O-with-RTTI, `objc`/`macho-arm64e`=Mach-O,
 /// `sparcstructret`=SPARC, `v850indirectbranch`=V850, the ARM entry and
 /// hard-float passes -- all inert off their target): the preset owns the option
 /// outright, so a user `--option returndup off` earlier on the command line is
@@ -132,11 +132,12 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     // transform-tier default-off recovery/structuring passes.
     ("switchmodbound", "on"),
     // (kuna) Recover a CMOV/predicated indirect dispatch over constant code
-    // addresses. Default OFF because a conditional tail call between two nearby
-    // function entries has the same shape and recovering it splices both callee
-    // bodies into the caller; preset membership is the delivery route, since the
-    // only alternative on a real dispatch is losing the whole body behind the
-    // branch to a `(*v)()` call.
+    // addresses. The default `reentry` recovers only re-entered dispatcher loops,
+    // because a conditional tail call between two nearby function entries has the
+    // same shape and recovering it splices both callee bodies into the caller;
+    // preset membership is the delivery route for `on`, since the only
+    // alternative on a real dispatch is losing the whole body behind the branch
+    // to a `(*v)()` call.
     ("constselectjump", "on"),
     ("switchguardbound", "on"), // speed-expensive
     ("unrolledguard", "on"),    // speed-expensive
@@ -229,7 +230,7 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     ("fid", "on"),
     ("flirt", "on"),         // inert without KUNA_FLIRT_SIGS
     ("rtti", "on"),          // PE-only; no-op off-PE
-    ("itaniumrtti", "on"),   // ELF-only, and inert without __cxxabiv1 typeinfo relocs
+    ("itaniumrtti", "on"),   // ELF and Mach-O, inert without __cxxabiv1 typeinfo anchors
     // The speculative gap-walk ("may create bad code") with the aligned gap cursor
     // (GH-299). Every number in its catalog row was measured under this preset,
     // and the aligned cursor is a net win in BOTH directions there (mid-body

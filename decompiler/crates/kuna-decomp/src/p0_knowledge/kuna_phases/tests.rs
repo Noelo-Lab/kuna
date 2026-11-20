@@ -585,6 +585,11 @@ fn option_values_live_value_present_for_76() {
                             // reason.  Its live value is
                             // `Architecture::arm_constant_shift`.
                             | "armconstshift"
+                            // (kuna) `constselectjump` takes a MODE
+                            // (`off|reentry|on`) over an enum field, for the
+                            // same reason.  Its live value is
+                            // `Architecture::const_select_jump`.
+                            | "constselectjump"
                             // (kuna) `declorder` takes a MODE (`natural|name`)
                             // over an enum field, for the same reason.  Its live
                             // value is `Architecture::decl_order`.
@@ -847,7 +852,9 @@ fn option_values_live_value_present_for_76() {
     // 75 -> 76: +1 for `wrapadd` (live_field = wrap_add).
     // +1 for `acleintrinsics` (live_field = acle_intrinsics).
     // +1 for `repstring` (live_field = rep_string).
-    assert_eq!(with_live, 78);
+    // -1: `constselectjump` became three-valued (off|reentry|on) over an
+    // enum field with no `live_field`.
+    assert_eq!(with_live, 77);
 }
 
 #[test]

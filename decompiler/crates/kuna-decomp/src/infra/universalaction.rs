@@ -805,6 +805,7 @@ pub fn universal_sched(
             act!(ActionStructureTransform::boxed("blockrecovery", true)),
             act!(ActionNormalizeBranches::boxed("normalizebranches")),
             act!(crate::kuna_armfloatargs::ActionArmFloatArgs::boxed("merge")),
+            act!(crate::p9_emit::kuna_returnselector::ActionReturnSelector::boxed("merge")),
             act!(ActionAssignHigh::boxed("merge")),
             act!(ActionMergeRequired::boxed("merge")),
             act!(ActionMarkExplicit::boxed("merge")),

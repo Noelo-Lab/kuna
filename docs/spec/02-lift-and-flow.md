@@ -5,6 +5,16 @@ Anchors:
   - decompiler/crates/kuna-decomp/src/p2_lift
 ```
 
+For Go images, `kuna_atomicxadd.rs` records a bounded single-instruction
+LOCK/load/add/exchange/store/UNLOCK candidate before SSA. The record retains
+original op identities and the old-value load; it changes no p-code. All memory
+accesses must share the same storage address and four- or eight-byte width,
+and the exchange must copy a loaded old value into a register without changing
+the memory address before the store. Extra calls, branches, transaction hints
+and effects refuse. Flow overrides do not acquire a record. The record is
+cleared on restart and cannot authorize a later rendering without the final
+whole-function SSA proof described in chapter 09.
+
 This phase turns an entry address into a function: raw p-code ops for every
 reachable instruction, a basic-block graph over them, a call-spec record per
 call site, and — the centerpiece — a recovered `JumpTable` for every indirect
@@ -1077,13 +1087,15 @@ spec, and input recovery marks a trial on it unused
 own address, never an argument.
 
 In every other case, unless the GOT-slot rule below takes it, the old behaviour
-stays: the follower walks into the callee as a one-case `switch`, because
-`RuleSwitchSingle`, which upstream uses to collapse that switch, is a stub
-here. That copied-in body is wrong in structure, but it still shows the
-callee's return value and the arguments it reads, which a call with no
-stated prototype would lose: a single-function decompile cannot recover a
-tail call's arguments or return value without one. The same holds for a
-multi-entry table whose entries all name one function.
+stays: the follower walks into the callee through the table, and
+`RuleSwitchSingle` (03 §3.2) then turns the jump into a direct branch, so the
+callee's body is copied in as straight-line code. That copied-in body stands
+in for a call, but it still shows the callee's return value and the arguments
+it reads, which a call with no stated prototype would lose: a single-function
+decompile cannot recover a tail call's arguments or return value without
+one. The same holds for a multi-entry table whose entries all name one
+function. Only a one-entry table whose index is not a constant keeps its
+one-case `switch`.
 Outside a declared extent a callee with no prototype is still tail-called and
 is printed with whatever arguments the function's own registers show and no
 return value, exactly as a direct `b f` there is. A destination that is not a
@@ -1098,9 +1110,8 @@ A position-independent tail call loads its target from a GOT slot and jumps
 through it: MIPS `lw $t9,%call16(f)($gp); jr $t9`, x86-64 `-fno-plt`
 `jmp *f@GOTPCREL(%rip)`. Jump-table recovery reads the slot, so it is the
 one-destination computed jump above, and with no stated prototype the
-function printed `switch(0x1340) {` around `f`'s copied-in body, or, when
-the slot names an extern of a relocatable object, `switch(0x402000) { case
-0x402000: halt_missing(); }` with the call's arguments gone. Under
+function printed `f`'s copied-in body, or, when the slot names an extern of
+a relocatable object, `halt_missing();` with the call's arguments gone. Under
 `tailcalljump on`, the GOT-slot rule adds two cases to the `call_states_the_body`
 test that `decompile_drive.rs (ArchFlowEnv::is_tail_call_table)` hands
 `kuna_tailcalljump.rs (kuna_is_tail_call_table)`:
@@ -1143,13 +1154,16 @@ pair is refused and the caller is decompiled again with the copied-in body.
 Each flow of a callee-first run first drops the function's earlier
 recovered-tail-call warnings (`kuna_gottailcall.rs (clear_stale_warnings)`),
 and every tail call the new flow takes warns again, so a refused tail call
-leaves no `// tail-call` on the switch the redo follows.
+leaves no `// tail-call` on the body the redo copies in.
 
 The reference walk behind the callee-first plan does not see these jumps. A
 MIPS `$gp` slot is not a constant it reads, and an x86 `jmp [slot]` is an
 edge to the slot, not to the function. So the callee is often planned after
 its caller. `kuna_gottailcall.rs (record)` therefore also files every caller
-whose flow followed a one-destination table into a callee not yet filed.
+whose flow followed a one-destination table into a callee not yet filed. The
+flow notes each such table as it declines the tail call
+(`kuna_gottailcall.rs (followed)`), because `RuleSwitchSingle` drops the
+table before the function is finished.
 Once one of the callees it copied in is filed, every other one the plan
 holds has been decompiled, and voidret's redos of the round are settled,
 `kuna_gottailcall.rs (due)` names that caller, and
@@ -1164,7 +1178,7 @@ callee-first run. A single-function `kuna decompile`, `--jobs N`, `protoorder
 off` and a run narrowed past the callee file nothing and keep the copied-in
 body. `tailcalljump off` keeps the copied-in body for these jumps too.
 `tests/stages/kuna-gottailcall.xml` pins the extern arm, with
-an unmapped non-function and a real one-case switch as controls, and
+an unmapped non-function and a jump to the function's own code as controls, and
 `tests/cli/gottailcall-*.json` pin the callee-first arm on an x86-64
 `-fno-plt` library and a MIPS PIC object.
 
@@ -2021,6 +2035,73 @@ missing from the output, exactly as it is for an x86-64 `jmp *%rax` of the same
 shape. A flow override at the return keeps its classification, and off restores
 the spec's RETURN.
 
+**(kuna) Re-entered indirect dispatches — `option constselectjump`, default
+`reentry`, `decompiler/crates/kuna-decomp/src/p2_lift/flow.rs (generate_ops_with_jumptables)`.**
+A dispatcher loop jumps through one register, and each step's code loads the
+next step's address and jumps back. Flow recovers the dispatch's first target
+before that code is decoded, so upstream keeps a one-entry table and drops every
+later step. Under `reentry` (and `on`), a recovered in-bounds, non-override
+singleton table is provisional. After each round of table following,
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_indirectreturn.rs (reentry_edges)`
+collects the new direct branches and fallthroughs into previously decoded
+instructions, reading only the dead list's tail: flow appends what it
+generates and moves injected or inlined sequences only next to other new
+operations. A recovered table destination that is already decoded is an edge
+as well, since following it creates no operations. A re-entered table is
+followed again on every round, so its transfer/destination pairs are followed
+once each; other tables keep upstream's re-following, which on x86-64 gnulib
+`quotearg_buffer_restyled` already shapes the output.
+
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_indirectreturn.rs (reaching_edges)`
+keeps, for each provisional dispatch, only the new edges whose destination
+reaches it over raw flow: fallthroughs, direct targets, every operation of an
+instruction with an internal relative branch, and recovered table targets. An
+edge elsewhere cannot bring the dispatch another value, so it costs that
+dispatch nothing. A round's walks visit at most 2^20 operations; past that,
+every dispatch counts as reached. When every reaching edge lands on the
+dispatch instruction itself,
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_returnbranch.rs (target_on_edge)`
+runs the edge's block and the dispatch instruction's own operations through
+the same `Prefix` evaluator as the entry proof, and a proven local constant
+extends the table without another partial decompile. Any other reaching edge
+requests a full recovery once the locally proved frontier drains. At most 128
+such retries run per flow; every dispatch still pending when they run out
+keeps its targets and carries `Re-entered indirect jump may have more targets`,
+once each. A retry admits the constant-select model whatever `constselectjump`
+says except `off`, because the re-entry already shows the targets are one
+function's. A retry's failed second stage keeps the old model and targets and
+reports that warning; outside re-entry a failed second stage restores its model
+silently, as upstream does. `off` records no provisional table and restores
+upstream's flow.
+
+A re-entered dispatch can also receive the caller's return address, and not
+always last: an early exit can reach it before the later steps are decoded.
+For such a retry the select model accepts values that are local constants or
+the incoming return, through the transfer's own mask, with its walk bounded by
+the table ceiling. The return becomes the table's last, unlabelled address: a
+synthetic RETURN that `FlowInfo::kuna_return_stub` plants one byte past the
+jump, where no instruction is decoded, and that the table marks as its default
+case. If an instruction is already decoded there, the return destination is
+dropped with `Indirect jump caller return overlaps decoded code` rather than
+flowing into that instruction. Whatever the dispatcher block does, including a
+delay-slot update, runs before that return exactly as it does before each case.
+Out-of-bounds or unmapped destinations retain one placeholder and do not make a
+singleton table provisional. The original transfer's mask is recorded from raw
+storage before SSA can combine it with other operations.
+
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_indirectreturn.rs (normalize_return_selector)`
+checks a bounded COPY/PHI/low-pointer projection of known destinations and the
+incoming return token. All constant targets must already be represented.
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_returnselector.rs (ActionReturnSelector)`
+then clones only this selector expression, replacing the caller-return input in
+the clone with a representable sentinel distinct from every real target. Labels
+and guards are recovered first. Other readers of the original values are
+unchanged, and dead original selector operations are removed before
+declarations. The synthetic default RETURN thus has a defined C selector,
+including conditional and early returns. Every dispatcher operation remains;
+unknown inputs, destructive masks, unsupported projections or an exhausted
+finite encoding refuse normalization with a warning.
+
 ## 2.3 Jump tables & switch recovery
 
 A switch exists in the output only if a BRANCHIND op carries a recovered
@@ -2372,14 +2453,16 @@ last entry; a dominance check (`check_normal_dominance`) decides whether the
 normalization walk can proceed past the join.
 
 **Model 3 — the constant destination set** (`kuna_constselectjump.rs
-(JumpModelConstSelect)`, kuna, `option constselectjump`, default off). Both
+(JumpModelConstSelect)`, kuna, `option constselectjump`; `on` admits it for
+every table, the default `reentry` only for the re-entry retry described
+under re-entered indirect dispatches above). Both
 models above are value-range models over one switch variable, and
 `jumptable.rs (JumpBasic::isprune)` stops the backward walk at any marker op, so
 a destination computed by a conditional move — `CMOVZ R11,R10; JMP R11` over two
 `LEA`-loaded code addresses — leaves the MULTIEQUAL output as the normalized
 variable with nothing to bound it. The destination set is not lost there, it is
 simply never promoted into the CFG: every reaching definition is already a
-literal address. When the option is on and both value-range models have
+literal address. When the model is admitted and both value-range models have
 declined, `kuna_constselectjump.rs (kuna_collect_const_destinations)` walks the
 MULTIEQUAL/COPY web behind the BRANCHIND input; if every reaching definition is
 a constant, the set becomes a fixed address table whose case labels are the
@@ -2390,14 +2473,14 @@ already handles. Every destination must also sit within `0xffff` of the branch �
 the same intraprocedural-vs-thunk yardstick `sanity_check` uses above — so a
 conditional *tail call* between two distant function entries keeps the upstream
 `CALLIND` rendering rather than splicing both callee bodies into the caller.
-Without the option the branch is truncated to a `CALLIND` carrying
+When the model is not admitted the branch is truncated to a `CALLIND` carrying
 `"Treating indirect jump as call"` and neither arm is ever decoded.
 
 **What is deliberately absent.** The CALLOTHER-assisted `JumpAssisted` model
 (the `jumpassist` user-op family) and the manual `JumpBasicOverride` model are
 unported shells: `jumptable.rs (JumpTable::set_override)` and the
 `<basicoverride>` arm of `jumptable.rs (JumpTable::decode)` return errors, and
-`recover_model` walks only JumpBasic/JumpBasic2 and, when `option constselectjump` is on, the constant-destination model above (Trivial exists only as the label-time fallback).
+`recover_model` walks only JumpBasic/JumpBasic2 and, when `option constselectjump` is `on` or the table is a re-entry retry, the constant-destination model above (Trivial exists only as the label-time fallback).
 
 **Multistage recovery.** A flow-time table can come out with a single address
 when the partial clone folds its index to a constant. One case is a stack slot
@@ -3121,13 +3204,16 @@ escaped form, so the names that actually arrive look like
 `_$LT$alloc..vec..Vec$LT$T$C$A$GT$$u20$as$u20$core..ops..drop..Drop$GT$::drop`.
 `kuna_cleanupcode.rs (normalize_rust_name)` reproduces Oxidizer's
 `normalize(monopolize=True, use_trait_name=True)`: strip a trailing
-`::h<16 hex>` disambiguator, un-escape the `$LT$`/`$GT$`/`$C$`/`$uXX$`
+`::h<16 lowercase hex>` disambiguator, un-escape the `$LT$`/`$GT$`/`$C$`/`$uXX$`
 sequences and the `..` path separator, then repeatedly collapse the *innermost*
 angle-bracket group — deleting a plain generic argument list (with the `::` of a
 turbofish), and replacing a `<T as Trait>` qualified path with the **trait**
 name. The three examples above reduce to the first, third and second list
 entries. Innermost-first is what makes the ` as ` split safe: the inner groups
 of a nested qualified path are already gone when it runs.
+Uppercase or mixed-case hash-shaped final components remain user names. A call
+whose name ends in such a component must not become a cleanup victim merely by
+removing that component; the same exact lowercase rule governs loader names.
 
 Normalization only ever shrinks a name and the comparison is exact, so nothing
 outside those five paths can be reached. `FakeCrypt::fileops::drop_ransom_note`

@@ -645,6 +645,8 @@ pub struct Funcdata {
     /// (kuna `elfmain`) The C runtime's `main` declaration this function's inputs
     /// take, when it is an executable's own `main`. See [`crate::kuna_elfmaindecl`].
     kuna_elfmain: Option<std::rc::Rc<crate::kuna_elfmaindecl::Runtime>>,
+    pub(crate) kuna_go_receiver: Option<crate::kuna_gopointermethod::Receiver>,
+    go_string_input: Option<Box<crate::kuna_gostringinput::GoStringInput>>,
     /// (kuna `swiftcall`) Names and types for the inputs this function's
     /// analysis recovers. See [`crate::kuna_inputhints`].
     kuna_input_hints: Option<std::rc::Rc<Vec<crate::kuna_inputhints::InputHint>>>,
@@ -687,6 +689,7 @@ pub struct Funcdata {
     /// the return-half placement test
     /// ([`crate::kuna_retpushedhalf::PushedRegisters`]).
     kuna_pushed_registers: crate::kuna_retpushedhalf::PushedRegisters,
+    pub(crate) kuna_atomic_xadds: Vec<crate::p2_lift::kuna_atomicxadd::Instruction>,
 }
 
 /// Opaque handle for a jump-table (C++ `JumpTable *` slot in `jumpvec`).
@@ -898,6 +901,8 @@ impl Funcdata {
             kuna_calleevote_inputs: None,
             kuna_callerargs: None,
             kuna_elfmain: None,
+            kuna_go_receiver: None,
+            go_string_input: None,
             kuna_input_hints: None,
             kuna_calleevote_closed: false,
             kuna_elemptr_blocked: None,
@@ -911,6 +916,7 @@ impl Funcdata {
             kuna_elemptr_no_objects: false,
             kuna_elemptr_stated: std::collections::HashMap::new(),
             kuna_pushed_registers: crate::kuna_retpushedhalf::PushedRegisters::default(),
+            kuna_atomic_xadds: Vec::new(),
         })
     }
 
@@ -996,6 +1002,11 @@ impl Funcdata {
         &mut self,
     ) -> Vec<(kuna_base::types::uint4, Address, String)> {
         std::mem::take(&mut self.pending_comments)
+    }
+
+    /// Discard the buffered comments of any type in `types`.
+    pub fn drop_pending_comments(&mut self, types: kuna_base::types::uint4) {
+        self.pending_comments.retain(|(tp, _, _)| tp & types == 0);
     }
 
     /// How many analysis comments are buffered (a mark for
@@ -1651,6 +1662,14 @@ impl Funcdata {
     /// (kuna `elfmain`) The C runtime's `main` declaration for this function.
     pub fn kuna_elfmain(&self) -> Option<&crate::kuna_elfmaindecl::Runtime> {
         self.kuna_elfmain.as_deref()
+    }
+
+    pub(crate) fn set_go_string_input(&mut self, formal: Option<crate::kuna_gostringinput::GoStringInput>) {
+        self.go_string_input = formal.map(Box::new);
+    }
+
+    pub(crate) fn go_string_input(&self) -> Option<&crate::kuna_gostringinput::GoStringInput> {
+        self.go_string_input.as_deref()
     }
 
     /// (kuna `swiftcall`) Seed the input hints. See [`crate::kuna_inputhints`].
@@ -4378,9 +4397,10 @@ impl Funcdata {
     /// given (type-locked, equates, asserted identities) and the prototype only
     /// its locked parts, so a restarted analysis starts where a fresh decompile
     /// does. The W3 IR clears (`clearBlocks`, `obank.clear`, `vbank.clear`) and
-    /// the flag/index reset are faithful. Buffered comments survive, as C++
-    /// comments already in the database survive a restart.
+    /// the flag/index reset are faithful. Buffered comments survive; the
+    /// restart drive drops the warnings (`refollow_flow`).
     pub fn clear(&mut self) {
+        self.kuna_atomic_xadds.clear();
         self.ppc32_pic_calls.clear();
         self.kuna_regnarrow_runs = 0;
         self.kuna_regnarrow_values.clear();

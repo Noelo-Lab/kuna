@@ -2180,7 +2180,7 @@ impl PrintC {
     /// (C++ passes the `PcodeOp *`): `opref = op->getTime()`, the `<ast>`
     /// `<seqnum uniq>`. Gated on the markup back-end or an explicitly requested
     /// plain statement sidecar, so the ordinary plain-text path does no lookup.
-    fn op_markup(&self, fd: &Funcdata, op: OpId) -> MarkupRef {
+    pub(crate) fn op_markup(&self, fd: &Funcdata, op: OpId) -> MarkupRef {
         if !self.emit.emits_markup()
             && !self.emit.captures_plain_statement_provenance()
         {
@@ -2742,25 +2742,43 @@ impl PrintC {
         // ScopeLocal symbol walk is the W4 surface; we emit from the named
         // HighVariables directly (the `kuna_name` stand-in), which is the same set
         // of locals the scope would declare.
-        let _emitted_decls = self.emit_local_var_decls(fd, arch);
-        self.emit_indirect_input_aliases(fd);
-        crate::kuna_renderfault::check(fd.get_address().get_offset());
-        if fd.sblocks_get_size() != 0 {
-            self.emit_function_body(fd, arch);
+        let atomic_return = if self.out_lang == crate::kuna_lang::OutLang::Go
+            && !self.signature_param_names.values().any(|name| name == "atomic" || name == "unsafe")
+        {
+            super::kuna_goatomicreturn::plan(fd, arch)
         } else {
-            // No structured tree: keep the brace-matched shell and name the real
-            // cause.  A caught pipeline abort discards the analyzed Funcdata, so
-            // what is being rendered is the previous, un-decompiled one — that is
-            // a pipeline failure (the driver stamped its reason), NOT structuring
-            // declining on analyzed IR.
-            self.emit.tag_line();
-            let warning = match fd.kuna_pipeline_failure() {
-                Some(reason) => format!("WARNING: decompilation failed: {reason}"),
-                None => "WARNING: structured blocks unavailable (structuring declined)".to_string(),
-            };
-            let text = format!("/* {warning} */");
-            self.emit.print(&text, SyntaxHighlight::CommentColor);
-            self.record_warning(crate::kuna_functionwarnings::Warning::new(None, &warning), &text);
+            None
+        };
+        if let Some(plan) = atomic_return {
+            crate::kuna_renderfault::check(fd.get_address().get_offset());
+            if let Some(block) = fd.obank().get(plan.atomic).and_then(|op| op.get_parent()) {
+                self.commsorter.setup_block_list(fd.bblocks_ref().block(block).get_index());
+            }
+            self.emit.reset_pending_fired();
+            self.emit_comment_group(fd, Some(plan.atomic));
+            self.emit_go_atomic_return(fd, arch, &plan);
+            self.emit_comment_group(fd, None);
+        } else {
+            let _emitted_decls = self.emit_local_var_decls(fd, arch);
+            self.emit_indirect_input_aliases(fd);
+            crate::kuna_renderfault::check(fd.get_address().get_offset());
+            if fd.sblocks_get_size() != 0 {
+                self.emit_function_body(fd, arch);
+            } else {
+                // No structured tree: keep the brace-matched shell and name the real
+                // cause.  A caught pipeline abort discards the analyzed Funcdata, so
+                // what is being rendered is the previous, un-decompiled one — that is
+                // a pipeline failure (the driver stamped its reason), NOT structuring
+                // declining on analyzed IR.
+                self.emit.tag_line();
+                let warning = match fd.kuna_pipeline_failure() {
+                    Some(reason) => format!("WARNING: decompilation failed: {reason}"),
+                    None => "WARNING: structured blocks unavailable (structuring declined)".to_string(),
+                };
+                let text = format!("/* {warning} */");
+                self.emit.print(&text, SyntaxHighlight::CommentColor);
+                self.record_warning(crate::kuna_functionwarnings::Warning::new(None, &warning), &text);
+            }
         }
         // (kuna warnstyle, DIV-39) drain any slug still pending from a
         // construct with no closer flush point onto the last body line, so no
@@ -4351,6 +4369,15 @@ impl PrintC {
                 .get_condition_opcode()
                 .unwrap_or(OpCode::CPUI_BOOL_AND);
 
+            if self.out_lang == crate::kuna_lang::OutLang::Go
+                && opc == OpCode::CPUI_BOOL_AND
+                && crate::p9_emit::kuna_goorderedcompare::redundant_right(fd, arch, b0, b1).is_some()
+                && !self.cond_block_emits_statements(fd, b1)
+            {
+                self.emit_block(fd, arch, b0);
+                return;
+            }
+
             let id = self.emit.open_paren(crate::printlanguage::OPEN_PAREN, 0);
             self.emit_block(fd, arch, b0);
             self.context.push_mod();
@@ -4795,7 +4822,9 @@ impl PrintC {
         self.emit.spaces(1, 0);
         self.context.push_mod();
         self.context.set_mod(modifiers::ONLY_BRANCH);
-        self.emit_block(fd, arch, cond_block);
+        if !self.emit_rust_option_condition(fd, arch, cond_block) {
+            self.emit_block(fd, arch, cond_block);
+        }
         self.context.pop_mod();
 
         // If the if has an unstructured-branch target, emit a goto/break/continue
@@ -5973,7 +6002,8 @@ impl PrintC {
             return false;
         }
         if self.out_lang == crate::kuna_lang::OutLang::Rust && !self.options.nocasts
-            && (crate::kuna_rustsigned::plan(fd, op).is_some()
+            && (self.rust_wrapping_plan(fd, arch, op).is_some()
+                || crate::kuna_rustsigned::plan(fd, op).is_some()
                 || self.rust_integer_binary_plan(fd, arch, op).is_some())
         {
             return false;
@@ -6162,7 +6192,7 @@ impl PrintC {
     /// else `None` at the top of an expression (printc.cc:2579 passes `(PcodeOp *)0`).
     /// Only `opIntSext`/`opIntZext` consume it (the extension-cast-implied test,
     /// printc.cc:806-830); every other override ignores it.
-    fn op_push_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId, read_op: Option<OpId>) {
+    pub(crate) fn op_push_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId, read_op: Option<OpId>) {
         let opc = fd.obank().get(op).expect("op_push_ir: stale op").code();
         // (kuna truthycond, DIV-37) CONDITION_CONTEXT only survives through the
         // boolean-preserving operators; any other operator's operands are value
@@ -6325,7 +6355,9 @@ impl PrintC {
                     self.emit.spaces(1, 0);
                     if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(1)) {
                         if self.out_lang == crate::kuna_lang::OutLang::Go {
-                            if self.rt_ctx.go_pair_types.is_none() || !self.push_go_pair_return(fd, arch, vn, op) {
+                            let emitted_pair = self.rt_ctx.go_pair_types.is_some()
+                                && self.push_go_pair_return(fd, arch, vn, op);
+                            if !emitted_pair && !self.push_go_zero_record_return(fd, vn, op) {
                                 if let Some(target) = fd.get_func_proto().get_output_type() {
                                     self.push_go_value_as(fd, arch, vn, op, target);
                                 } else { self.push_vn_ir(fd, arch, vn, op); }
@@ -6492,6 +6524,7 @@ impl PrintC {
             return;
         }
         if self.out_lang == crate::kuna_lang::OutLang::Rust && !self.options.nocasts {
+            if self.op_rust_wrapping(fd, arch, op) { return; }
             if self.op_rust_integer_binary(fd, arch, tok, op) { return; }
             if let Some(plan) = crate::kuna_rustsigned::plan(fd, op) {
                 self.emit_rust_signed_text(fd, arch, tok, op, plan);
@@ -6727,6 +6760,11 @@ impl PrintC {
 
     /// C++ `PrintLanguage::opUnary` over the IR (printlanguage.cc:573).
     fn op_unary_ir(&mut self, fd: &Funcdata, arch: &Architecture, tok: &'static OpToken, op: OpId) {
+        if self.out_lang == crate::kuna_lang::OutLang::Rust && !self.options.nocasts
+            && self.op_rust_wrapping(fd, arch, op)
+        {
+            return;
+        }
         self.push_op(tok, Some(op_key(op)));
         if let Some(v0) = fd.obank().get(op).and_then(|o| o.get_in(0)) {
             self.push_vn_ir(fd, arch, v0, op);
@@ -6847,6 +6885,12 @@ impl PrintC {
     /// next layer).
     fn op_func_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
         let opc = fd.obank().get(op).expect("op_func_ir: stale op").code();
+        if opc == OpCode::CPUI_FLOAT_NAN
+            && self.out_lang == crate::kuna_lang::OutLang::Go
+            && self.op_go_float_nan(fd, arch, op)
+        {
+            return;
+        }
         let name = func_operator_name(fd, op, opc);
         self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
         // The name is pushed as an *operator* token (C++ `optoken`, no_color).
@@ -6930,32 +6974,29 @@ impl PrintC {
             Some(v) => fd.vbank().get(v).map(|vn| vn.get_offset()).unwrap_or(0),
             None => 0,
         };
-        let display = arch
-            .userops
-            .get_op(in0_off as u32)
-            .map(|u| u.get_display())
-            .unwrap_or(0);
+        let rust = self.out_lang == crate::kuna_lang::OutLang::Rust;
+        let userop = if rust {
+            u32::try_from(in0_off)
+                .ok()
+                .and_then(|index| arch.userops.get_op(index))
+        } else {
+            arch.userops.get_op(in0_off as u32)
+        };
+        let display = userop.map_or(0, |op| op.get_display());
         let nin = fd.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
         if display == 0 {
-            let acle = arch.userops.get_op(in0_off as u32).and_then(|u| {
+            let acle = userop.and_then(|u| {
                 crate::kuna_acleintrinsics::intrinsic(fd, arch, op, u.get_name())
             });
             if let Some(call) = acle {
                 self.push_acle_intrinsic(fd, arch, op, &call);
                 return;
             }
-            // Functional syntax: for CALLOTHER the operator name resolves to the
-            // userop's name (the base getOperatorName), or the generic
-            // `CALLOTHER[index]` fallback.
-            let mut nm = match arch.userops.get_op(in0_off as u32) {
-                Some(u) => String::from_utf8_lossy(u.get_name()).into_owned(),
-                None => format!("CALLOTHER[{:#x}]", in0_off),
+            let nm = match (rust, userop) {
+                (true, op) => crate::kuna_rustuserop::operator_name(op.map(|u| u.get_name()), in0_off),
+                (false, Some(op)) => String::from_utf8_lossy(op.get_name()).into_owned(),
+                (false, None) => format!("CALLOTHER[{:#x}]", in0_off),
             };
-            if self.out_lang == crate::kuna_lang::OutLang::Rust
-                && crate::kuna_rustuserop::raw_keyword(&nm)
-            {
-                nm.insert_str(0, "r#");
-            }
             self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
             self.push_atom(&Atom::with_op(
                 nm,
@@ -8602,29 +8643,30 @@ impl PrintC {
         }
 
         // Direct CALL: the callee name from the fspec annotation.
-        let name = self.call_callee_name(fd, op);
-        for scope in self.call_scope_prefix(fd, arch, op, &name) {
-            self.push_op(&tokens::SCOPE, None);
-            self.push_atom(&Atom::syntax(
-                scope,
-                TagType::Syntax,
-                crate::printlanguage::SyntaxHighlight::global_color,
+        let first_argument = self.push_go_direct_method(fd, arch, op).unwrap_or_else(|| {
+            let name = self.call_callee_name(fd, op);
+            for scope in self.call_scope_prefix(fd, arch, op, &name) {
+                self.push_op(&tokens::SCOPE, None);
+                self.push_atom(&Atom::syntax(
+                    scope,
+                    TagType::Syntax,
+                    crate::printlanguage::SyntaxHighlight::global_color,
+                ));
+            }
+            self.push_atom(&Atom::with_op(
+                name,
+                TagType::FuncToken,
+                crate::printlanguage::SyntaxHighlight::funcname_color,
+                op_key(op),
             ));
-        }
-        self.push_atom(&Atom::with_op(
-            name,
-            TagType::FuncToken,
-            crate::printlanguage::SyntaxHighlight::funcname_color,
-            op_key(op),
-        ));
-        // count = numInput - 1 (no hidden-this: skip = -1).  The argument Varnodes
-        // are in[1..].
-        let count = nin - 1;
+            1
+        });
+        let count = nin - first_argument;
         if count > 0 {
             for _ in 0..(count - 1) {
                 self.push_op(&tokens::COMMA, Some(op_key(op)));
             }
-            for i in 1..nin {
+            for i in first_argument..nin {
                 if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(i)) {
                     self.pointer_candidate = if self.pointer_record.is_some() && !self.emit.emits_markup() {
                         let view = PointerView { pc: self, fd };
@@ -8645,6 +8687,44 @@ impl PrintC {
             ));
         }
         self.push_call_result_close(result_conversion, op);
+    }
+
+    fn push_go_direct_method(
+        &mut self, fd: &Funcdata, arch: &Architecture, op: OpId,
+    ) -> Option<i32> {
+        use super::kuna_langgo::identifier;
+
+        if self.out_lang != crate::kuna_lang::OutLang::Go {
+            return None;
+        }
+        let method = super::kuna_gomethod::direct_method(fd, arch, op)?;
+        let shadowed = self.signature_param_names.values().any(|name| name == &method.type_name)
+            || self.declared_locals.iter().any(|local| identifier(&local.name) == method.type_name);
+        let (name, first_argument) = if shadowed {
+            let receiver = fd.vbank().get(method.receiver)?;
+            if receiver.is_implied() || receiver.is_constant() {
+                return None;
+            }
+            let ty = receiver.get_high()
+                .and_then(|high| self.declared_local(high))
+                .and_then(|local| local.ty.clone())
+                .or_else(|| declared_variable_type(fd, method.receiver))?;
+            if !method.has_selector_type(&ty) {
+                return None;
+            }
+            self.push_op(&tokens::OBJECT_MEMBER, Some(op_key(op)));
+            self.push_vn_ir(fd, arch, method.receiver, op);
+            (method.member, 2)
+        } else {
+            (format!("(*{}).{}", method.type_name, method.member), 1)
+        };
+        self.push_atom(&Atom::with_op(
+            name,
+            TagType::OpToken,
+            crate::printlanguage::SyntaxHighlight::funcname_color,
+            op_key(op),
+        ));
+        Some(first_argument)
     }
 
     fn emit_indirect_input_aliases(&mut self, fd: &Funcdata) {
@@ -8966,6 +9046,17 @@ impl PrintC {
     /// as an explicit `*ptr`.  A statement LOAD through the byte-copy helper copies
     /// straight into its printed destination member's scalar type.
     fn op_load_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
+        if self.out_lang == crate::kuna_lang::OutLang::Go {
+            if let Some(view) = super::kuna_gostringindex::prove(fd, op) {
+                self.push_op(&tokens::SUBSCRIPT, Some(op_key(op)));
+                self.push_go_call("unsafe.String", op);
+                self.push_op(&tokens::COMMA, Some(op_key(op)));
+                self.push_vn_ir(fd, arch, view.data, op);
+                self.push_vn_ir(fd, arch, view.len, op);
+                self.push_vn_ir(fd, arch, view.index, op);
+                return;
+            }
+        }
         if self.out_lang == crate::kuna_lang::OutLang::C {
             if let Some(mut access) = crate::kuna_stackmem::access(fd, op) {
                 if self.stmt_op == Some(op) {
@@ -11432,6 +11523,14 @@ impl PrintC {
                                 self.op_func_ir(fd, arch, op);
                                 return;
                             }
+                            if self.out_lang == crate::kuna_lang::OutLang::Go
+                                && !valueon
+                                && !ptype.is_formal_pointer_rel()
+                                && word_size == 1
+                                && self.push_go_record_prefix_address(fd, arch, op, &ct, suboff_bytes)
+                            {
+                                return;
+                            }
                             // Default field name `field_0x<hex>`.
                             (format!("field_0x{suboff_bytes:x}"), None, suboff_bytes as int4)
                         }
@@ -11658,14 +11757,21 @@ impl PrintC {
             // whole-symbol cover the C++ `setSymbol` records for a size-matching
             // entry) is also a bare-name render, so `off <= 0` covers both.
             if sym_off <= 0 {
-                if self.out_lang == crate::kuna_lang::OutLang::C
+                if matches!(self.out_lang, crate::kuna_lang::OutLang::C | crate::kuna_lang::OutLang::Rust)
                     && sym_type.as_ref().is_some_and(|ty| ty.get_metatype() == crate::dtype::type_metatype::TYPE_CODE)
                 {
                     if let Some(address) = spacebase_unnamed_address(arch, fd, op, &ct, in1const, ptr_size) {
                         let point = fd.obank().get(op).map(|o| o.get_addr().clone()).unwrap_or_default();
-                        if let Some(prefix) = crate::kuna_funcptrnames::prefix(
-                            fd, arch, &address, &point, &name, self.context.namespace_strategy(),
-                        ) {
+                        let prefix = if self.out_lang == crate::kuna_lang::OutLang::Rust {
+                            crate::kuna_rustfuncptr::prefix(
+                                fd, arch, &address, &point, &name, self.context.namespace_strategy(),
+                            )
+                        } else {
+                            crate::kuna_funcptrnames::prefix(
+                                fd, arch, &address, &point, &name, self.context.namespace_strategy(),
+                            )
+                        };
+                        if let Some(prefix) = prefix {
                             for scope in prefix {
                                 self.push_op(&tokens::SCOPE, None);
                                 self.push_atom(&Atom::syntax(
@@ -13843,6 +13949,9 @@ fn to_emit_hl(hl: crate::printlanguage::SyntaxHighlight) -> SyntaxHighlight {
 
 #[path = "kuna_rustarrayinit.rs"]
 mod kuna_rustarrayinit;
+
+#[path = "kuna_rustoption_niche.rs"]
+mod kuna_rustoption_niche;
 
 #[cfg(test)]
 mod tests;
