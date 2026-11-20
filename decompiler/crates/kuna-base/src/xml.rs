@@ -2243,7 +2243,8 @@ mod tests {
         // and ghangr-go-aarch64-stack-stride / adjacent eight-byte spills keep their declared inputs
         // and ghangr-go-mcall-resumption / a scheduler switch preserves its caller's continuation
         // and kuna-restart-warnings / a restart drops the warnings of the pass it discards
-        assert_eq!(count, 825, "corpus file count drifted");
+        // and kuna-narrowed-call-input / a call argument narrowed before its prototype is forced stays valid
+        assert_eq!(count, 826, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

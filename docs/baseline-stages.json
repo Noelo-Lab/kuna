@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4818,
-    4818
+    4820,
+    4820
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1772,6 +1772,8 @@
     "data:NARROWARGS #4: a flag mask is not narrow evidence",
     "data:NARROWARGS-X86 #1: default reads the int parameter at 32 bits",
     "data:NARROWARGS-X86 #2: off keeps the 64-bit register",
+    "data:NARROWED-CALL-INPUT #1: the argument is the sum widened to the parameter",
+    "data:NARROWED-CALL-INPUT #2: the call goes through the typed field",
     "data:NARROWEQUAL #1: both sides of the byte compare are unsigned",
     "data:NARROWEQUAL #2: no signed char constant beside an unsigned byte",
     "data:NARROWEQUAL #3: a byte compares with a flag as a byte",

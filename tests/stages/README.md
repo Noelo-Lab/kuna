@@ -1,5 +1,9 @@
 # Stage-model issue testcases
 
+`kuna-narrowed-call-input.xml` checks a call through a typed field whose
+argument was narrowed to two bytes before the field's prototype was forced on
+the call: the function decompiles and passes the sum widened to the parameter.
+
 `ghangr-go-paniccheck-return.xml` checks that a returning Go panic helper
 falls through to the terminal `runtime.gopanic` call. It also checks the
 helper's conditional throw and shows the caller's sentinel with the known

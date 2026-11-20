@@ -4139,7 +4139,15 @@ for a recovered one. Then it tries to merge the discovered callee prototype **in
 when the models are compatible (same or aliased `ProtoModel`, `is_compatible`),
 varargs only while input recovery is still active, and — for locked callee
 prototypes — when the existing argument Varnodes can be re-mapped onto the
-locked storage (`transfer_locked_input`/`transfer_locked_output`). Success
+locked storage (`transfer_locked_input`/`transfer_locked_output`). (kuna) An
+argument Varnode is re-mapped only if it is still at least as wide as the
+parameter it would become. A trial keeps the width it was recorded with, but
+subvariable flow may since have narrowed the Varnode a call reads (an unlocked
+call lets a zero-extended 16-bit sum replace the 64-bit register it filled), and
+`build_param` can only truncate: upstream re-maps the narrow Varnode anyway and
+emits a `SUBPIECE` whose output is wider than its input. Such a site fails the
+restriction and restarts, and the restart builds the call with its inputs
+locked, so nothing narrows them. Success
 commits the new input/output lists directly. For a locked variadic prototype,
 `decompiler/crates/kuna-decomp/src/p4_calls/kuna_varargtransfer.rs
 (pending_trials)` preserves existing trials outside the fixed parameters before
