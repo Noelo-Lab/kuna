@@ -338,7 +338,7 @@ impl XrefIndex {
     /// references — sorted by source VMA.
     pub fn refs_to(&self, vma: u64) -> &[Xref] {
         let lo = self.refs.partition_point(|r| r.to < vma);
-        let len = self.refs[lo..].partition_point(|r| r.to == vma);
+        let len = self.refs[lo..].iter().take_while(|r| r.to == vma).count();
         &self.refs[lo..lo + len]
     }
 
