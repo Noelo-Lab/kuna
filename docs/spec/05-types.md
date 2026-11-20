@@ -188,7 +188,12 @@ allocator and with what was allocated earlier, and the tree order is the order
 `dependent_order` hands to emission, so an address-only comparison let the same
 input declare its types in different orders. The nested comparison stops
 `SHAPE_DEPTH` (8) levels down and falls back to the address there, which bounds
-one comparison on a cyclic or heavily shared type graph.
+one comparison on a cyclic or heavily shared type graph. A record the C grammar
+declared and its completion (and an alias made of it while incomplete) share one
+completion link and so one identity, but not one shape, so a type carrying such
+a link orders by id, then after every unlinked type of that id, then by the
+link's address, never by shape: the order of two identity classes cannot depend
+on which member of a class is compared.
 `tests/stages/kuna-typeorder.xml` pins the order on a DWARF fixture.
 
 (kuna) **A record the C grammar declared completes the pointers built to it.**

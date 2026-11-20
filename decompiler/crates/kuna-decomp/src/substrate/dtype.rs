@@ -2159,7 +2159,9 @@ impl Datatype {
     /// addresses change with the allocator and the run, and the tree order is
     /// the order a header declares types in, so (kuna) distinct types order by
     /// id, then (an unnamed type has id 0) by their own dependency order, and
-    /// only then by address ([`Rc::as_ptr`]).
+    /// only then by address ([`Rc::as_ptr`]).  A declared record and its
+    /// completion share one identity but not one shape, so a type carrying a
+    /// completion link orders by id and then that link's address alone.
     fn compare_dependency_ptr(a: &Rc<Datatype>, b: &Rc<Datatype>) -> int4 {
         if Rc::ptr_eq(a, b) {
             return 0;
@@ -2174,7 +2176,12 @@ impl Datatype {
         if pa == pb {
             return 0;
         }
-        match a.id.cmp(&b.id).then_with(|| Self::compare_dependency_shape(a, b)).then(pa.cmp(&pb)) {
+        let linked = a.record_completion.is_some();
+        let order = a.id.cmp(&b.id)
+            .then(linked.cmp(&b.record_completion.is_some()))
+            .then_with(|| if linked { std::cmp::Ordering::Equal } else { Self::compare_dependency_shape(a, b) })
+            .then(pa.cmp(&pb));
+        match order {
             std::cmp::Ordering::Less => -1,
             _ => 1,
         }
@@ -9078,6 +9085,32 @@ mod tests {
             assert_eq!(Rc::ptr_eq(&seen, &full), declared, "{name}");
             assert_eq!(seen.is_incomplete(), !declared, "{name}");
         }
+    }
+
+    /// A declared record's stub and completion are one identity, so a third
+    /// type of the same id orders the same way against either of them.
+    #[test]
+    fn a_completion_link_orders_like_its_stub() {
+        let int4 = Rc::new(Datatype::new(4, type_metatype::TYPE_INT));
+        let with_field = |base: &Datatype, name: &str| {
+            let mut ct = base.clone();
+            ct.kind = DatatypeKind::Struct {
+                field: vec![TypeField::new(0, 0, name, Rc::clone(&int4))],
+                bitfield: vec![],
+            };
+            ct
+        };
+        let mut stub = struct_with_bitfields(vec![], vec![], 0);
+        stub.id = Datatype::hash_name("rec");
+        let other = Rc::new(with_field(&stub, "b"));
+        stub.record_completion = Some(Rc::new(RefCell::new(std::rc::Weak::new())));
+        let full = Rc::new(with_field(&stub, "a"));
+        let stub = Rc::new(stub);
+        assert_eq!(Datatype::compare_dependency_ptr(&stub, &full), 0);
+        assert_eq!(
+            Datatype::compare_dependency_ptr(&stub, &other),
+            Datatype::compare_dependency_ptr(&full, &other),
+        );
     }
 
     #[test]
