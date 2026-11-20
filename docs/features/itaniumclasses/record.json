@@ -10,12 +10,13 @@
   "inspiration": "Itanium C++ ABI 2.5 (vtable layout) and 2.9.5 (type_info); the class structures Ghidra's RecoverClassesFromRTTIScript and IDA's GCC RTTI reconstruction build",
   "default_on": false,
   "status": "proposal",
+  "depends_on": [1756, 1810],
   "decisions": [
-    "No new option: a third value on itaniumrtti (on|names|off).",
-    "Slot fields are code pointers without a signature: a guessed arity drops arguments at the call site.",
-    "A class type is emitted only with size evidence that covers every observed access through this: a too-small struct prints worse than none.",
+    "No new option and no new value: a refinement of itaniumrtti on, which #1756 introduces.",
+    "Vtable types, slot names and slot prototypes are #1756's; this adds the class size, the fields and the receiver on ELF.",
+    "A class size is set only with operator delete/new evidence that covers every observed access through this: a too-small struct prints worse than none.",
     "The receiver is an unlocked input hint, not a locked prototype: locking one parameter fixes the arity.",
-    "Flat class layouts; no base embedding in the first step."
+    "The hint and vtable-object commit is shared with #1810's IOKit commit, not duplicated."
   ],
   "measurements": {
     "libapt-pkg.so.6.0.0": {

@@ -123,6 +123,25 @@ does:
   `void *`, integer-pointer or `struct_N *` receiver;
 - 173 classes with at least one named slot function.
 
+## What the open PRs already cover
+
+Read from the PR descriptions and code, not run:
+
+| | #1756 (`itaniumrtti on`) | #1810 (`iokitclasses on`) |
+|---|---|---|
+| `C_vtbl`, slot names | yes, from demangled symbols, else `vfn_<i>` | reuses #1756 |
+| Slot prototypes | where every target with a known prototype agrees, else `code *` | reuses #1756 |
+| Class structure | `vptr` plus embedded non-virtual bases, variable-length, no size | sized from `OSMetaClass`, fields from `kalloc_type` |
+| `this` | not typed on a stripped image | unlocked `C *` hint on `x0` |
+| Vtable object | no | `C_vtable` of type `C_vtbl` |
+| Targets | ELF; not shared objects with symbolic vtable relocations | arm64 XNU kernels and kexts |
+
+On a stripped ELF the gap is the size, the fields and the receiver. The table
+for slot types above still holds: #1756's prototypes come from known prototypes,
+the "true signature" row, not a guessed arity. One case is open there: a target
+without a known prototype is skipped, so one override with a prototype decides
+the slot for all of them.
+
 ## Reference
 
 The reference here is the source: `s->area(scale)` on a `Shape *`. Ghidra reaches
@@ -132,6 +151,7 @@ this analysis, so no side-by-side is claimed.
 
 ## Owning phase
 
-P1 external-refinement (`itaniumrtti`). The types are facts produced at load and
-committed like `swifttypes`' layouts; P5 type propagation and P9 emission are used
-as they are.
+P1 external-refinement (`itaniumrtti`). The size and the fields are facts produced
+at load and handed to #1756's P5 install through the instance size #1810 adds;
+the hints and the vtable object are committed the way #1810 commits them for
+IOKit. P5 type propagation and P9 emission are used as they are.
