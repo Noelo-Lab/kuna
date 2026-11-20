@@ -56,13 +56,13 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_222() {
-    assert_eq!(kuna_num_settables(), 222);
-    assert_eq!(SETTABLE_TABLE.len(), 222);
+fn settable_count_is_223() {
+    assert_eq!(kuna_num_settables(), 223);
+    assert_eq!(SETTABLE_TABLE.len(), 223);
 }
 
 #[test]
-fn tier_counts_are_45_core_121_transform_56_analysis() {
+fn tier_counts_are_45_core_122_transform_56_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -74,7 +74,7 @@ fn tier_counts_are_45_core_121_transform_56_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (45, 121, 56));
+    assert_eq!((core, transform, analysis), (45, 122, 56));
 }
 
 #[test]
@@ -855,7 +855,7 @@ fn option_values_live_value_present_for_76() {
     // -1: `constselectjump` became three-valued (off|reentry|on) over an
     // enum field with no `live_field`.
     // +1 for `opaquepredicate` (live_field = opaque_predicate).
-    assert_eq!(with_live, 77);
+    assert_eq!(with_live, 78);
 }
 
 #[test]
@@ -1109,7 +1109,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `blobs`; its P1 row sits after `strings`.
     // +1 for `repstring`; its P3 row sits after `strlenscan`.
     // +1 for `opaquepredicate`; its P3 row sits after `globalarrayanchor`.
-    assert_eq!(json.matches("},\n").count(), 221);
+    assert_eq!(json.matches("},\n").count(), 222);
 }
 
 #[test]
