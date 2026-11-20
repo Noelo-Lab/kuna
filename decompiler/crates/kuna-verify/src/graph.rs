@@ -29,10 +29,14 @@ pub struct Outcome {
     pub noreturn: bool,
     /// Memory written outside the stack since the last call.
     pub writes: Writes,
+    /// It read a byte of its own frame that nothing wrote.
+    pub read_uninitialized: bool,
 }
 
 struct Run<'e, 'p, 'c> {
     calls: &'c Calls,
+    /// The machine's calls, whose recorded effects this side replays.
+    replay: &'c [Record],
     state: State<'e, 'p>,
     initial: State<'e, 'p>,
     values: Vec<Option<u128>>,
@@ -146,14 +150,27 @@ impl Run<'_, '_, '_> {
                     args.push(self.input(op, k)?);
                 }
                 let indirect = direct.is_none();
-                crate::calls::record(&mut self.records, Record { at, target, indirect, args, writes: self.state.writes() })?;
+                crate::calls::record(&mut self.records, Record { at, target, indirect, args, writes: self.state.writes(), effect: None })?;
                 let site = self.calls.site(at);
                 if site.noreturn {
                     return Ok(Flow::NoReturn);
                 }
-                let killed = site.killed.clone();
-                let args = self.records.last().map(|r| r.args.clone()).unwrap_or_default();
-                self.state.call(&killed, &args);
+                let k = self.records.len() - 1;
+                let real = self.replay.get(k).filter(|r| r.at == at).and_then(|r| r.effect.clone());
+                match real {
+                    Some(effect) => self.state.replay(&effect),
+                    None => {
+                        let killed = site.killed.clone();
+                        let args: Vec<u128> = self.records[k]
+                            .args
+                            .iter()
+                            .zip(&site.args)
+                            .filter(|(_, a)| a.is_some())
+                            .map(|(&v, _)| v)
+                            .collect();
+                        self.state.call(&killed, &args);
+                    }
+                }
                 if op.out.is_some() {
                     let v = self.stored(op)?;
                     self.set_out(op, v)?;
@@ -191,6 +208,14 @@ impl Run<'_, '_, '_> {
                 self.set_out(op, v)?;
                 Ok(Flow::Next)
             }
+            Kind::IndirectBefore => {
+                let v = self.input(op, 0)?;
+                let out = op.out.as_ref().ok_or_else(|| Halt::Harness("op without output".into()))?;
+                if let Some(st) = &out.storage {
+                    self.state.write_storage(&st.space, st.off, out.size, v)?;
+                }
+                Ok(Flow::Next)
+            }
             Kind::StrayPhi => Err(Halt::Harness("MULTIEQUAL after a block's head".into())),
             Kind::Eval(opc) => {
                 let size = op.out.as_ref().map(|o| o.size).ok_or_else(|| Halt::Unsupported("op without output".into()))?;
@@ -213,6 +238,7 @@ impl Run<'_, '_, '_> {
             ret,
             unmatched_switch: self.unmatched_switch,
             writes: self.state.writes(),
+            read_uninitialized: self.state.read_uninitialized,
             calls: self.records,
             noreturn,
         }
@@ -220,12 +246,13 @@ impl Run<'_, '_, '_> {
 }
 
 /// Run the decompiled function from its entry block on the run's initial state.
-pub fn run(env: &Env, program: &Program, run: u32, budget: u64, calls: &Calls) -> Result<Outcome, Halt> {
+pub fn run(env: &Env, program: &Program, run: u32, budget: u64, calls: &Calls, replay: &[Record]) -> Result<Outcome, Halt> {
     if program.blocks.is_empty() {
         return Err(Halt::Harness("no basic blocks".into()));
     }
     let mut r = Run {
         calls,
+        replay,
         state: State::new(env, run),
         initial: State::new(env, run),
         values: vec![None; program.slots],

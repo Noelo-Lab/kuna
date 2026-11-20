@@ -27,6 +27,12 @@ pub enum Halt {
     /// A switch met a selector no row of its table carries, and the table has
     /// no default.
     NoRow(String),
+    /// The sides differ after a call whose argument a recovered callee
+    /// prototype may have wrong: the prototype, not the body, may be at fault.
+    Doubtful(String),
+    /// The sides differ after the decompiled function read a local nothing
+    /// wrote: C does not define the value.
+    Undefined(String),
 }
 
 impl Halt {
@@ -37,6 +43,8 @@ impl Halt {
             Halt::Trap(s) => format!("UNKNOWN(trap: {s})"),
             Halt::Harness(s) => format!("UNKNOWN(harness: {s})"),
             Halt::NoRow(s) => format!("UNKNOWN(no switch row: {s})"),
+            Halt::Doubtful(s) => format!("UNKNOWN(prototype-suspect: {s})"),
+            Halt::Undefined(s) => format!("UNKNOWN(uninitialized-local: {s})"),
         }
     }
 }

@@ -84,6 +84,9 @@ pub enum Kind {
     Call { direct: Option<u64> },
     CallOther { name: String, builtin: Option<&'static str> },
     Indirect(Effect),
+    /// A memory INDIRECT at its own place, before the op it guards: its input
+    /// is what the storage holds when that op runs.
+    IndirectBefore,
     StrayPhi,
 }
 
@@ -298,22 +301,32 @@ impl Compiler<'_> {
     }
 }
 
+/// Where a body op runs: as itself, or as the two halves of an INDIRECT that
+/// was moved.
+#[derive(Clone, Copy)]
+enum Place {
+    Op(OpId),
+    Before(OpId),
+}
+
 /// An INDIRECT stands just before the op whose effect it describes, and its
-/// output is the value after that op. Moving each one just after its op lets a
-/// run read the effect in order.
-fn after_their_effects(fd: &Funcdata, body: &[OpId]) -> Vec<OpId> {
+/// output is the value after that op: its input, with whatever the op wrote on
+/// top. Each one is moved just after its op, and leaves a `Before` half in its
+/// own place that puts the input in memory for the op to overwrite.
+fn after_their_effects(fd: &Funcdata, body: &[OpId]) -> Vec<Place> {
     let guarded: BTreeMap<OpId, OpId> = body
         .iter()
         .filter(|&&op| fd.obank().get(op).is_some_and(|o| o.code() == OpCode::CPUI_INDIRECT))
         .filter_map(|&op| guarded_op(fd, op).filter(|g| body.contains(g)).map(|g| (op, g)))
         .collect();
-    let mut out = Vec::with_capacity(body.len());
+    let mut out = Vec::with_capacity(body.len() + guarded.len());
     for &op in body {
         if guarded.contains_key(&op) {
+            out.push(Place::Before(op));
             continue;
         }
-        out.push(op);
-        out.extend(body.iter().filter(|&&i| guarded.get(&i) == Some(&op)));
+        out.push(Place::Op(op));
+        out.extend(body.iter().filter(|&&i| guarded.get(&i) == Some(&op)).map(|&i| Place::Op(i)));
     }
     out
 }
@@ -347,7 +360,18 @@ pub fn compile(prog: &ConsoleProgram, fd: &Funcdata, calls: &Calls) -> Program {
                 body.push(op);
             }
         }
-        let ops = after_their_effects(fd, &body).into_iter().filter_map(|op| c.op(op, &out_starts, &succ)).collect();
+        let ops = after_their_effects(fd, &body)
+            .into_iter()
+            .filter_map(|place| match place {
+                Place::Op(op) => c.op(op, &out_starts, &succ),
+                Place::Before(op) => c.op(op, &out_starts, &succ).filter(|o| matches!(o.kind, Kind::Indirect(Effect::Memory))).map(
+                    |mut o| {
+                        o.kind = Kind::IndirectBefore;
+                        o
+                    },
+                ),
+            })
+            .collect();
         blocks.push(Block { index: block.get_index(), start: start_of(bl), phis, ops, outs });
     }
     let starts = blocks.iter().map(|b| b.start).collect();

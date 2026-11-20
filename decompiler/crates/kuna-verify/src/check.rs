@@ -35,11 +35,13 @@ pub struct Options {
     /// `UNKNOWN(budget)`: a loop bounded by an argument exhausts it on almost
     /// every random input.
     pub budget_runs: u32,
+    /// Add both sides' calls to a `DIFFERS` report.
+    pub trace: bool,
 }
 
 impl Default for Options {
     fn default() -> Self {
-        Options { runs: 256, seed: 0x6b75_6e61, budget: 200_000, budget_runs: 4 }
+        Options { runs: 256, seed: 0x6b75_6e61, budget: 200_000, budget_runs: 4, trace: false }
     }
 }
 
@@ -193,12 +195,16 @@ fn target(t: Option<u64>) -> String {
 /// recovered callee prototype may have wrong.
 struct CallCompare {
     differs: Option<Vec<String>>,
+    declared: Option<&'static str>,
     suspects: Vec<String>,
 }
 
 fn compare_calls(prog: &ConsoleProgram, env: &Env, run: u32, calls: &Calls, m: &[Record], g: &[Record]) -> CallCompare {
     let mut suspects = Vec::new();
-    let differs = |lines: Vec<String>, suspects: Vec<String>| CallCompare { differs: Some(lines), suspects };
+    if g.iter().any(|c| !c.indirect && c.target.is_none()) {
+        return CallCompare { differs: None, declared: Some(divergence::SYNTHESIZED_CALL.id), suspects };
+    }
+    let differs = |lines: Vec<String>, suspects: Vec<String>| CallCompare { differs: Some(lines), declared: None, suspects };
     for k in 0..m.len().max(g.len()) {
         let n = k + 1;
         let (mc, gc) = match (m.get(k), g.get(k)) {
@@ -246,7 +252,31 @@ fn compare_calls(prog: &ConsoleProgram, env: &Env, run: u32, calls: &Calls, m: &
             return differs(vec![format!("memory before call {n} to {}: {d}", target(gc.target))], suspects);
         }
     }
-    CallCompare { differs: None, suspects }
+    CallCompare { differs: None, declared: None, suspects }
+}
+
+/// The register parameters kuna's prototype types `bool`.
+fn booleans(fd: &Funcdata, env: &Env) -> Vec<(u64, u32)> {
+    let proto = fd.get_func_proto();
+    (0..proto.num_params())
+        .filter_map(|i| proto.get_param(i))
+        .filter(|p| p.get_type().is_some_and(|t| t.get_metatype() == kuna_decomp::dtype::type_metatype::TYPE_BOOL))
+        .filter_map(|p| Storage::at(&p.get_address(), p.get_size() as u32))
+        .filter(|st| st.space.get_index() == env.register.get_index())
+        .map(|st| (st.off, st.size))
+        .collect()
+}
+
+/// The registers the context tracks at the function's entry.
+fn tracked(prog: &ConsoleProgram, fd: &Funcdata, env: &Env) -> Vec<(u64, u32, u64)> {
+    let reg = env.register.get_index();
+    prog.arch().with_context_db(|db| {
+        db.get_tracked_set(fd.get_address())
+            .iter()
+            .filter(|t| t.loc.space.as_ref().is_some_and(|s| s.get_index() == reg) && t.loc.size <= 8)
+            .map(|t| (t.loc.offset, t.loc.size, t.val))
+            .collect()
+    })
 }
 
 fn input_line(prog: &ConsoleProgram, env: &Env, run: u32, claim: &Claim) -> String {
@@ -284,6 +314,8 @@ pub fn check_function(prog: &ConsoleProgram, fd: &Funcdata, contract: Option<&Co
         return finish(Verdict::Unknown(format!("UNKNOWN(return storage {at} is not machine state)")), Vec::new(), Vec::new());
     }
     env.extensions = abi::extensions(fd, &env, prog);
+    env.tracked = tracked(prog, fd, &env);
+    env.booleans = booleans(fd, &env);
     let contract_storage = match contract.filter(|c| !c.ret.is_void()) {
         Some(c) => match abi::return_storage(prog, fd, &c.ret) {
             Ok(s) => Some(s),
@@ -304,7 +336,8 @@ pub fn check_function(prog: &ConsoleProgram, fd: &Funcdata, contract: Option<&Co
     let mut call_suspects: Vec<String> = Vec::new();
     for run in 0..opts.runs {
         let m = machine::run(&env, run, entry, opts.budget, &calls);
-        let g = graph::run(&env, &program, run, opts.budget, &calls);
+        let replay: &[Record] = m.as_ref().map(|mo| mo.calls.as_slice()).unwrap_or(&[]);
+        let g = graph::run(&env, &program, run, opts.budget, &calls, replay);
         let (mo, go) = match (m, g) {
             (Err(Halt::Trap(_)), Err(Halt::Trap(_))) => {
                 agreed += 1;
@@ -338,16 +371,52 @@ pub fn check_function(prog: &ConsoleProgram, fd: &Funcdata, contract: Option<&Co
             for (site, callee) in &mo.followed {
                 lines.push(format!("note     the machine ran {callee:#x} from {site:#x} itself: kuna has no call there"));
             }
+            if opts.trace {
+                for (side, recs) in [("machine", &mo.calls), ("kuna   ", &go.calls)] {
+                    for c in recs.iter() {
+                        let args: Vec<String> = c.args.iter().map(|a| format!("{a:#x}")).collect();
+                        lines.push(format!("trace    {side} call at {:#x} to {} ({})", c.at, target(c.target), args.join(", ")));
+                    }
+                }
+            }
             lines
         };
+        for &(at, o) in &mo.convention {
+            if call_suspects.len() >= 4 {
+                break;
+            }
+            let reg = Storage::new(&env.register, o & !(u64::from(env.sp.1) - 1), env.sp.1).name(prog);
+            let s = format!("the callee at {at:#x} changes {reg}, which the calling convention says it preserves");
+            if !call_suspects.contains(&s) {
+                call_suspects.push(s);
+            }
+        }
         let cc = compare_calls(prog, &env, run, &calls, &mo.calls, &go.calls);
+        let doubtful = !cc.suspects.is_empty();
+        let undefined = go.read_uninitialized;
         for s in cc.suspects {
             if call_suspects.len() < 4 && !call_suspects.contains(&s) {
                 call_suspects.push(s);
             }
         }
+        if let Some(id) = cc.declared {
+            diverged.get_or_insert(id);
+            continue;
+        }
         if let Some(lines) = cc.differs {
+            if undefined {
+                unknown.get_or_insert(Halt::Undefined(lines.join("; ")));
+                continue;
+            }
+            if doubtful {
+                unknown.get_or_insert(Halt::Doubtful(lines.join("; ")));
+                continue;
+            }
             return finish(Verdict::Differs { run, of: opts.runs }, differs(lines), call_suspects);
+        }
+        if mo.noreturn != go.noreturn && (doubtful || undefined) {
+            unknown.get_or_insert(Halt::Doubtful("one side returns".into()));
+            continue;
         }
         if mo.noreturn != go.noreturn {
             let which = if mo.noreturn { "the machine stops in a no-return call, kuna returns" } else { "kuna stops in a no-return call, the machine returns" };
@@ -370,8 +439,16 @@ pub fn check_function(prog: &ConsoleProgram, fd: &Funcdata, contract: Option<&Co
             Ok(Outcome::Declared(id)) => {
                 diverged.get_or_insert(id);
             }
+            Ok(Outcome::Differs(lines)) if undefined => {
+                unknown.get_or_insert(Halt::Undefined(lines.join("; ")));
+                continue;
+            }
+            Ok(Outcome::Differs(lines)) if doubtful => {
+                unknown.get_or_insert(Halt::Doubtful(lines.join("; ")));
+                continue;
+            }
             Ok(Outcome::Differs(lines)) => {
-                return finish(Verdict::Differs { run, of: opts.runs }, differs(lines), Vec::new());
+                return finish(Verdict::Differs { run, of: opts.runs }, differs(lines), call_suspects);
             }
             Ok(Outcome::Same) => {}
         }

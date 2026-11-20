@@ -40,6 +40,18 @@ pub const SWITCH_RUNON: Divergence = Divergence {
     matches: |_| false,
 };
 
+/// Options that print inlined library code as a call to a function with no
+/// address (`msvcstrappend` folds MSVC's inlined `std::string` appends into
+/// one). The machine runs the inline code; kuna's call has no counterpart.
+pub const SYNTHESIZED_CALL: Divergence = Divergence {
+    id: "synthesized-call",
+    option: "msvcstrappend",
+    arch: "",
+    observable: "the calls a function makes",
+    pattern: "kuna calls a function that has no address",
+    matches: |_| false,
+};
+
 impl Divergence {
     pub fn matches(&self, m: &ReturnMismatch) -> bool {
         m.arch.starts_with(self.arch) && (self.matches)(m)

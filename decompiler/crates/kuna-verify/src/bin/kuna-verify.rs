@@ -22,7 +22,7 @@ use serde_json::{json, Value};
 const USAGE: &str = "usage:
   kuna-verify check <binary> <function|0xaddr>... | --all  [--contract FILE.c] [--option NAME VALUE]...
   kuna-verify corpus <test.xml|dir>...  [--jobs N]
-options: --runs N (256)  --seed S  --budget OPS (200000)  --json  --sleighpath DIR";
+options: --runs N (256)  --seed S  --budget OPS (200000)  --json  --trace  --sleighpath DIR";
 
 struct Args {
     positional: Vec<String>,
@@ -84,6 +84,10 @@ fn parse(argv: &[String]) -> Result<Args, String> {
             "--jobs" => a.jobs = Some(num(it.next(), "--jobs")? as usize),
             "--json" => a.json = true,
             "--all" => a.all = true,
+            "--trace" => {
+                a.opts.trace = true;
+                a.forward.push("--trace".to_string());
+            }
             s if s.starts_with("--") => return Err(format!("unknown flag {s}")),
             _ => a.positional.push(arg.clone()),
         }

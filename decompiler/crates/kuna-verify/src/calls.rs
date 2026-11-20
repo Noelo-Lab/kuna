@@ -15,7 +15,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use kuna_decomp::fspec::{effect_type, FuncProto, EXTRAPOP_UNKNOWN};
 use kuna_decomp::funcdata::Funcdata;
 
-use crate::state::{Env, Writes};
+use crate::state::{Effect, Env, Writes};
 use crate::value::Halt;
 
 /// Calls one run may make before it is given up as `UNKNOWN(budget)`: each
@@ -32,9 +32,11 @@ pub fn record(records: &mut Vec<Record>, r: Record) -> Result<(), Halt> {
 }
 use crate::storage::Storage;
 
-/// Where an argument is passed. A stack location in the callee's frame is
-/// relative to the stack pointer the callee starts with; one in the caller's
-/// frame is relative to the caller's entry.
+/// Where an argument is passed: the callee prototype's parameter storage. A
+/// stack location is relative to the stack pointer the callee starts with. An
+/// argument past the prototype's parameters (a variadic one) has no known
+/// storage, and the input varnode's own storage is where the value was
+/// computed, not where it is passed, so it is not compared.
 #[derive(Clone, Debug)]
 pub struct Arg {
     pub storage: Storage,
@@ -63,8 +65,9 @@ pub struct Calls {
     /// By the address of the call instruction.
     pub by_addr: BTreeMap<u64, Site>,
     pub default: Site,
-    /// Where kuna's basic blocks start: a branch there stays in the function.
-    pub starts: BTreeSet<u64>,
+    /// Every instruction kuna kept an op of, and where its blocks start: a
+    /// branch there stays in the function.
+    pub inside: BTreeSet<u64>,
 }
 
 /// One call as a side made it.
@@ -79,6 +82,8 @@ pub struct Record {
     pub args: Vec<u128>,
     /// Memory the callee can read: what this side wrote since its last call.
     pub writes: Writes,
+    /// What the callee did when the machine ran it for real.
+    pub effect: Option<Effect>,
 }
 
 impl Calls {
@@ -92,7 +97,7 @@ impl Calls {
 
     /// A branch at `at` to `target` that kuna turned into a call.
     pub fn tail(&self, at: u64, target: u64) -> bool {
-        self.known(at) && !self.starts.contains(&target)
+        self.known(at) && !self.inside.contains(&target)
     }
 }
 
@@ -136,21 +141,9 @@ pub fn sites(fd: &Funcdata, env: &Env) -> Calls {
         let sp = Storage::new(&env.register, env.sp.0, env.sp.1);
         let args = (1..op.num_input())
             .map(|k| {
-                let param = proto.get_param(k - 1).and_then(|p| Storage::at(&p.get_address(), p.get_size() as u32));
-                let arg = match param {
-                    Some(storage) => Arg { storage, callee_frame: true },
-                    None => {
-                        let v = fd.vbank().get(op.get_in(k)?)?;
-                        let storage = Storage::at(v.get_addr(), v.get_size() as u32)?;
-                        let machine = storage.space.get_index() == env.register.get_index()
-                            || storage.space.get_type() == kuna_base::space::spacetype::IPTR_SPACEBASE;
-                        if !machine {
-                            return None;
-                        }
-                        Arg { storage, callee_frame: false }
-                    }
-                };
-                (!arg.storage.overlaps(&sp)).then_some(arg)
+                let p = proto.get_param(k - 1)?;
+                let storage = Storage::at(&p.get_address(), p.get_size() as u32)?;
+                (!storage.overlaps(&sp)).then_some(Arg { storage, callee_frame: true })
             })
             .collect();
         let entry = fc.get_entry_address();
@@ -177,8 +170,11 @@ pub fn sites(fd: &Funcdata, env: &Env) -> Calls {
         locked: false,
     };
     let graph = fd.bblocks_ref();
-    let starts = (0..fd.bblocks_get_size())
-        .map(|i| kuna_decomp::block::block_get_start(&graph.arena, fd.bblocks_get_block(i)).get_offset())
+    let blocks: Vec<_> = (0..fd.bblocks_get_size()).map(|i| fd.bblocks_get_block(i)).collect();
+    let inside = blocks
+        .iter()
+        .map(|&b| kuna_decomp::block::block_get_start(&graph.arena, b).get_offset())
+        .chain(blocks.iter().flat_map(|&b| fd.bb_ops(b)).filter_map(|op| fd.obank().get(op).map(|o| o.get_addr().get_offset())))
         .collect();
-    Calls { by_addr, default, starts }
+    Calls { by_addr, default, inside }
 }

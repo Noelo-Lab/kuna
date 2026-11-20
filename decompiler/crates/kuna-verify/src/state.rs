@@ -20,7 +20,8 @@ use crate::value::{mask, Halt, MAX_SIZE};
 /// Runs whose every register word is an edge value.
 pub const EDGE_RUNS: u32 = 16;
 
-const STACK_BELOW: u64 = 0x10000;
+/// The stack below the entry stack pointer: room for a large frame.
+const STACK_BELOW: u64 = 0x80_0000;
 
 /// How far past an escaped pointer a call may write.
 const ESCAPE_WINDOW: u64 = 0x1000;
@@ -53,6 +54,11 @@ pub struct Env<'p> {
     edges: Vec<u64>,
     readonly: Vec<(u64, u64)>,
     pub extensions: Vec<Extension>,
+    /// Registers the context gives a known value at the function's entry
+    /// (a PowerPC TOC, an ARM mode bit): offset, size, value.
+    pub tracked: Vec<(u64, u32, u64)>,
+    /// Register parameters of type `bool`: a caller passes 0 or 1.
+    pub booleans: Vec<(u64, u32)>,
     image: RefCell<BTreeMap<u64, Option<u8>>>,
     pub(crate) insns: RefCell<BTreeMap<u64, Rc<crate::machine::Insn>>>,
 }
@@ -149,13 +155,16 @@ impl<'p> Env<'p> {
             edges: edge_values(granule),
             readonly,
             extensions: Vec::new(),
+            tracked: Vec::new(),
+            booleans: Vec::new(),
             image: RefCell::new(BTreeMap::new()),
             insns: RefCell::new(BTreeMap::new()),
         })
     }
 
     pub fn in_stack(&self, addr: u64, size: u64) -> bool {
-        addr >= self.sp0.wrapping_sub(STACK_BELOW) && addr.wrapping_add(size) <= self.sp0.wrapping_add(STACK_ABOVE)
+        let below = STACK_BELOW.min(self.sp0 / 2);
+        addr >= self.sp0.wrapping_sub(below) && addr.wrapping_add(size) <= self.sp0.wrapping_add(STACK_ABOVE)
     }
 
     fn is_readonly(&self, addr: u64, size: u64) -> bool {
@@ -285,6 +294,13 @@ impl<'p> Env<'p> {
             if off >= sp_off && off < sp_off + u64::from(sp_size) {
                 return Self::byte_of(self.sp0, off - sp_off, u64::from(sp_size), space.is_big_endian());
             }
+            if let Some(&(t, size, val)) = self.tracked.iter().find(|&&(t, size, _)| off >= t && off < t + u64::from(size)) {
+                return Self::byte_of(val, off - t, u64::from(size), space.is_big_endian());
+            }
+            if let Some(&(b, size)) = self.booleans.iter().find(|&&(b, size)| off >= b && off < b + u64::from(size)) {
+                let low = if space.is_big_endian() { b + u64::from(size) - 1 } else { b };
+                return if off == low { self.random_byte(run, space, off) & 1 } else { 0 };
+            }
             if let Some(b) = self.extended_byte(run, space, off) {
                 return b;
             }
@@ -307,6 +323,7 @@ const WRITTEN: u8 = 2;
 ///
 /// Registers live in a dense file that memoizes their initial bytes on first
 /// read; temporaries and memory keep only the bytes this side wrote.
+#[derive(Clone)]
 pub struct State<'e, 'p> {
     pub env: &'e Env<'p>,
     pub run: u32,
@@ -318,6 +335,28 @@ pub struct State<'e, 'p> {
     pub epoch: u32,
     /// Pointer-sized values passed to calls so far.
     pub escaped: Vec<u64>,
+    /// While a callee runs for real: what it does to memory, in order.
+    pub log: Option<Vec<Event>>,
+    /// This side read a byte of the function's own frame that nothing wrote:
+    /// an uninitialized local, whose value C does not define.
+    pub read_uninitialized: bool,
+}
+
+/// One thing a callee run for real did to memory.
+#[derive(Clone, Debug)]
+pub enum Event {
+    Write(i32, u64, u8),
+    /// A call it made in turn, with the killed registers and its arguments.
+    Call(Vec<(u64, u32)>, Vec<u128>),
+}
+
+/// What a callee in the image did when the machine ran it, for the decompiled
+/// side to replay: its memory events, and the bytes it left in the registers
+/// the call kills.
+#[derive(Clone, Debug, Default)]
+pub struct Effect {
+    pub events: Vec<Event>,
+    pub regs: Vec<(u64, u8)>,
 }
 
 /// The memory a side wrote outside the stack since its last call, and how many
@@ -340,6 +379,8 @@ impl<'e, 'p> State<'e, 'p> {
             mem: BTreeMap::new(),
             epoch: 0,
             escaped: Vec::new(),
+            log: None,
+            read_uninitialized: false,
         }
     }
 
@@ -373,6 +414,13 @@ impl<'e, 'p> State<'e, 'p> {
         } else {
             self.mem.get(&(space.get_index(), off)).copied()
         };
+        if found.is_none()
+            && space.get_index() == self.env.ram.get_index()
+            && off < self.env.sp0
+            && self.env.in_stack(off, 1)
+        {
+            self.read_uninitialized = true;
+        }
         found.unwrap_or_else(|| self.env.base_byte(self.run, self.epoch, &self.escaped, space, off))
     }
 
@@ -385,8 +433,66 @@ impl<'e, 'p> State<'e, 'p> {
         } else if self.is_unique(space) {
             self.unique.insert(off, b);
         } else {
+            if let Some(log) = self.log.as_mut() {
+                log.push(Event::Write(space.get_index(), off, b));
+            }
             self.mem.insert((space.get_index(), off), b);
         }
+    }
+
+    /// Do what a callee did when the machine ran it.
+    pub fn replay(&mut self, effect: &Effect) {
+        let manage = self.env.prog.arch().manage();
+        for ev in &effect.events {
+            match ev {
+                Event::Write(sp, off, b) => {
+                    if let Some(space) = manage.get_space(*sp).cloned() {
+                        self.put(&space, *off, *b);
+                    }
+                }
+                Event::Call(killed, args) => self.call(killed, args),
+            }
+        }
+        let register = Rc::clone(&self.env.register);
+        for &(off, b) in &effect.regs {
+            self.put(&register, off, b);
+        }
+    }
+
+    /// The bytes now in the given register ranges.
+    pub fn register_bytes(&mut self, ranges: &[(u64, u32)]) -> Vec<(u64, u8)> {
+        let register = Rc::clone(&self.env.register);
+        ranges
+            .iter()
+            .flat_map(|&(off, size)| (0..u64::from(size)).map(move |i| off + i))
+            .map(|o| (o, self.byte(&register, o)))
+            .collect()
+    }
+
+    /// Put back every register byte `before` held, except those in `keep`:
+    /// a callee run for real leaves the registers the calling convention says
+    /// it preserves as they were. Returns the offsets the callee had changed.
+    pub fn preserve_registers(&mut self, before: &State, keep: &[(u64, u32)]) -> Vec<u64> {
+        let kept = |o: u64| keep.iter().any(|&(off, size)| o >= off && o < off + u64::from(size));
+        let mut changed = Vec::new();
+        let n = self.regs.len().max(before.regs.len());
+        self.grow(n);
+        for i in 0..n {
+            let o = i as u64;
+            if kept(o) {
+                continue;
+            }
+            let (b, f) = (before.regs.get(i).copied().unwrap_or(0), before.flags.get(i).copied().unwrap_or(0));
+            let present_now = self.flags[i] & PRESENT != 0;
+            if present_now && f & PRESENT != 0 && self.regs[i] != b {
+                changed.push(o);
+            }
+            if present_now || f & PRESENT != 0 {
+                self.regs[i] = b;
+                self.flags[i] = f;
+            }
+        }
+        changed
     }
 
     /// What this side wrote outside the stack since its last call.
@@ -405,6 +511,9 @@ impl<'e, 'p> State<'e, 'p> {
     /// lazily: every byte this side did not write since reads what
     /// [`Env::base_byte`] says for the new epoch.
     pub fn call(&mut self, killed: &[(u64, u32)], args: &[u128]) {
+        if let Some(log) = self.log.as_mut() {
+            log.push(Event::Call(killed.to_vec(), args.to_vec()));
+        }
         let call = self.epoch;
         let register = Rc::clone(&self.env.register);
         for &(off, size) in killed {
