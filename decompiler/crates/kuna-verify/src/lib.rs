@@ -1,15 +1,18 @@
-//! diffverify, Tier C slice C1: does kuna's decompiled function compute what
+//! diffverify, Tier C (slices C1 and C2): does kuna's decompiled function compute what
 //! the machine code computes?
 //!
 //! Both sides start from the same raw machine state. The machine side runs the
 //! function's SLEIGH p-code (`machine`); the decompiled side runs the final
-//! `Funcdata` (`graph`). Their return values are compared under the physical
-//! ABI and, when one is given, a typed contract (`check`). Design and scope:
+//! `Funcdata` (`graph`). Calls run the same stub on both (`calls`). Each call,
+//! the memory outside the stack, and the return value are compared, the last
+//! under the physical ABI and, when one is given, a typed contract (`check`).
+//! Design and scope:
 //! `docs/features/diffverify/proposal.md`.
 //!
 //! Development only: the release binary does not link this crate.
 
 pub mod abi;
+pub mod calls;
 pub mod check;
 pub mod contract;
 pub mod divergence;

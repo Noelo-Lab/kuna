@@ -96,7 +96,7 @@ fn the_fix_agrees_with_the_contract() {
 }
 
 #[test]
-fn a_caller_is_outside_c1() {
-    let reports = check(&["twice"], &[], false);
-    assert!(matches!(&reports[0].verdict, Verdict::Skipped(s) if s.contains("not-leaf")), "{}", reports[0].render());
+fn a_caller_runs_its_callee_stub() {
+    let reports = check(&["twice"], &[], true);
+    assert_eq!(reports[0].verdict, Verdict::Agrees(64), "{}", reports[0].render());
 }

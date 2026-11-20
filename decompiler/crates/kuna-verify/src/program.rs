@@ -12,11 +12,12 @@ use std::rc::Rc;
 
 use kuna_base::space::{spacetype, AddrSpace};
 use kuna_console::engine::ConsoleProgram;
-use kuna_decomp::context::{OpId, VarnodeId};
+use kuna_decomp::context::{BlockId, OpId, VarnodeId};
 use kuna_decomp::funcdata::Funcdata;
 use kuna_decomp::jumptable::NO_LABEL;
 use kuna_num::opcodes::OpCode;
 
+use crate::calls::Calls;
 use crate::storage::Storage;
 use crate::value::{mask, MAX_SIZE};
 
@@ -40,13 +41,25 @@ pub struct Arg {
     pub size: u32,
 }
 
-/// Where a written varnode lives: its slot, and the memory a later LOAD of the
-/// same bytes reads when the varnode is a stack or memory location.
+/// Where a written varnode lives: its slot, its storage, and the memory a later
+/// LOAD of the same bytes reads when the varnode is a stack or memory location.
 #[derive(Clone, Debug)]
 pub struct Out {
     pub slot: usize,
     pub size: u32,
+    pub storage: Option<Storage>,
     pub backing: Option<Storage>,
+}
+
+/// What an INDIRECT's output holds once the op it guards has run.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Effect {
+    /// The op leaves the storage alone: the output is the input.
+    Keep,
+    /// A register the guarded call kills.
+    Killed,
+    /// Memory: whatever the store or the call left there.
+    Memory,
 }
 
 #[derive(Clone, Debug)]
@@ -60,16 +73,17 @@ pub struct Switch {
 pub enum Kind {
     Eval(OpCode),
     Load(Option<Rc<AddrSpace>>),
-    Store,
+    Store(Option<Rc<AddrSpace>>),
     Branch,
     CBranch { flip: bool },
     Return { halt: bool },
     /// A switch's rows, or `None` when the input is a code address; and the
     /// start address of each out-edge's block.
     BranchInd { switch: Option<Switch>, targets: Vec<u64> },
-    Call,
+    /// `direct`: the target of a CALL; a CALLIND reads its input.
+    Call { direct: Option<u64> },
     CallOther { name: String, builtin: Option<&'static str> },
-    Indirect,
+    Indirect(Effect),
     StrayPhi,
 }
 
@@ -131,7 +145,17 @@ pub fn userop_name(prog: &ConsoleProgram, index: u64) -> String {
 struct Compiler<'a> {
     prog: &'a ConsoleProgram,
     fd: &'a Funcdata,
+    calls: &'a Calls,
+    register: i32,
     slots: BTreeMap<VarnodeId, usize>,
+}
+
+/// The op an INDIRECT guards, from the iop constant that names it.
+fn guarded_op(fd: &Funcdata, indirect: OpId) -> Option<OpId> {
+    let o = fd.obank().get(indirect)?;
+    let v = fd.vbank().get(o.get_in(1)?)?;
+    let space = v.get_addr().get_space()?;
+    (space.get_type() == spacetype::IPTR_IOP).then(|| OpId::from(slotmap::KeyData::from_ffi(v.get_offset())))
 }
 
 impl Compiler<'_> {
@@ -164,29 +188,64 @@ impl Compiler<'_> {
         let id = vn?;
         let v = self.fd.vbank().get(id)?;
         let size = v.get_size() as u32;
-        let backing = Storage::at(v.get_addr(), size).filter(|st| {
-            st.space.get_type() == spacetype::IPTR_SPACEBASE
-                || (st.space.get_type() == spacetype::IPTR_PROCESSOR
-                    && st.space.get_index()
-                        != self.prog.arch().manage().get_space_by_name("register").map_or(-1, |r| r.get_index()))
-        });
-        Some(Out { slot: self.slot(id), size, backing })
+        let storage = Storage::at(v.get_addr(), size);
+        let backing = storage.clone().filter(|st| self.memory(st));
+        Some(Out { slot: self.slot(id), size, storage, backing })
     }
 
-    fn switch(&self, op: OpId, starts: &[u64]) -> Option<Switch> {
+    fn memory(&self, st: &Storage) -> bool {
+        st.space.get_type() == spacetype::IPTR_SPACEBASE
+            || (st.space.get_type() == spacetype::IPTR_PROCESSOR && st.space.get_index() != self.register)
+    }
+
+    fn effect(&self, indirect: OpId, out: Option<VarnodeId>) -> Effect {
+        let Some(st) = out.and_then(|o| self.fd.vbank().get(o)).and_then(|v| Storage::at(v.get_addr(), v.get_size() as u32))
+        else {
+            return Effect::Keep;
+        };
+        if self.memory(&st) {
+            return Effect::Memory;
+        }
+        let call = guarded_op(self.fd, indirect)
+            .and_then(|g| self.fd.obank().get(g))
+            .filter(|g| matches!(g.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND));
+        let killed = call.is_some_and(|c| {
+            st.space.get_index() == self.register
+                && self.calls.site(c.get_addr().get_offset()).killed.iter().any(|&(off, size)| {
+                    st.off < off + u64::from(size) && off < st.off + u64::from(st.size)
+                })
+        });
+        if killed {
+            Effect::Killed
+        } else {
+            Effect::Keep
+        }
+    }
+
+    /// A labelled switch's rows, each mapped to the out-edge whose block the
+    /// table sends it to.
+    fn switch(&self, op: OpId, succ: &[BlockId]) -> Option<Switch> {
         let jt = self.fd.find_jump_table(op).filter(|jt| jt.is_labelled())?;
-        let edge_to = |addr: u64| starts.iter().position(|&s| s == addr).map(|e| e as i32);
+        let mut edge_of: BTreeMap<i32, i32> = BTreeMap::new();
+        for (e, &bl) in succ.iter().enumerate() {
+            let n = jt.num_indices_by_block(self.fd, bl).unwrap_or(0);
+            for i in 0..n {
+                if let Ok(idx) = jt.get_index_by_block(self.fd, bl, i) {
+                    edge_of.entry(idx).or_insert(e as i32);
+                }
+            }
+        }
         let rows = (0..jt.num_entries())
             .filter_map(|i| {
                 let label = jt.get_label_by_index(i);
-                (label != NO_LABEL).then(|| (label, edge_to(jt.get_address_by_index(i).get_offset())))
+                (label != NO_LABEL).then(|| (label, edge_of.get(&i).copied()))
             })
             .collect();
         let default = (jt.get_default_block() >= 0).then(|| jt.get_default_block());
         Some(Switch { rows, default })
     }
 
-    fn op(&mut self, id: OpId, out_starts: &[u64]) -> Option<Op> {
+    fn op(&mut self, id: OpId, out_starts: &[u64], succ: &[BlockId]) -> Option<Op> {
         let o = self.fd.obank().get(id)?;
         let opc = o.code();
         let at = o.get_addr().get_offset();
@@ -200,11 +259,22 @@ impl Compiler<'_> {
             OpCode::CPUI_CBRANCH => Kind::CBranch { flip },
             OpCode::CPUI_RETURN => Kind::Return { halt },
             OpCode::CPUI_BRANCHIND => {
-                Kind::BranchInd { switch: self.switch(id, out_starts), targets: out_starts.to_vec() }
+                Kind::BranchInd { switch: self.switch(id, succ), targets: out_starts.to_vec() }
             }
-            OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => Kind::Call,
-            OpCode::CPUI_STORE => Kind::Store,
-            OpCode::CPUI_INDIRECT => Kind::Indirect,
+            OpCode::CPUI_CALL => {
+                let direct = ins_ids.first().copied().flatten().and_then(|v| self.fd.vbank().get(v)).map(|v| v.get_offset());
+                Kind::Call { direct }
+            }
+            OpCode::CPUI_CALLIND => Kind::Call { direct: None },
+            OpCode::CPUI_STORE => {
+                let space = match ins.first().map(|a| &a.op) {
+                    Some(Operand::Const(idx)) => self.prog.arch().manage().get_space(*idx as i32).cloned(),
+                    _ => None,
+                };
+                ins.remove(0);
+                Kind::Store(space)
+            }
+            OpCode::CPUI_INDIRECT => Kind::Indirect(self.effect(id, out_id)),
             OpCode::CPUI_MULTIEQUAL => Kind::StrayPhi,
             OpCode::CPUI_LOAD => {
                 let space = match ins.first().map(|a| &a.op) {
@@ -228,14 +298,35 @@ impl Compiler<'_> {
     }
 }
 
+/// An INDIRECT stands just before the op whose effect it describes, and its
+/// output is the value after that op. Moving each one just after its op lets a
+/// run read the effect in order.
+fn after_their_effects(fd: &Funcdata, body: &[OpId]) -> Vec<OpId> {
+    let guarded: BTreeMap<OpId, OpId> = body
+        .iter()
+        .filter(|&&op| fd.obank().get(op).is_some_and(|o| o.code() == OpCode::CPUI_INDIRECT))
+        .filter_map(|&op| guarded_op(fd, op).filter(|g| body.contains(g)).map(|g| (op, g)))
+        .collect();
+    let mut out = Vec::with_capacity(body.len());
+    for &op in body {
+        if guarded.contains_key(&op) {
+            continue;
+        }
+        out.push(op);
+        out.extend(body.iter().filter(|&&i| guarded.get(&i) == Some(&op)));
+    }
+    out
+}
+
 /// Compile the final `Funcdata`.
-pub fn compile(prog: &ConsoleProgram, fd: &Funcdata) -> Program {
+pub fn compile(prog: &ConsoleProgram, fd: &Funcdata, calls: &Calls) -> Program {
     let graph = fd.bblocks_ref();
     let n = fd.bblocks_get_size();
     let ids: Vec<_> = (0..n).map(|i| fd.bblocks_get_block(i)).collect();
     let position: BTreeMap<_, usize> = ids.iter().enumerate().map(|(i, &b)| (b, i)).collect();
     let start_of = |b| kuna_decomp::block::block_get_start(&graph.arena, b).get_offset();
-    let mut c = Compiler { prog, fd, slots: BTreeMap::new() };
+    let register = prog.arch().manage().get_space_by_name("register").map_or(-1, |r| r.get_index());
+    let mut c = Compiler { prog, fd, calls, register, slots: BTreeMap::new() };
     let mut blocks = Vec::with_capacity(ids.len());
     for &bl in &ids {
         let block = graph.block(bl);
@@ -245,17 +336,18 @@ pub fn compile(prog: &ConsoleProgram, fd: &Funcdata) -> Program {
             .map(|e| (position.get(&succ[e as usize]).copied().unwrap_or(usize::MAX), block.get_out_rev_index(e)))
             .collect();
         let mut phis = Vec::new();
-        let mut ops = Vec::new();
+        let mut body = Vec::new();
         for op in fd.bb_ops(bl) {
             let Some(o) = fd.obank().get(op) else { continue };
-            if o.code() == OpCode::CPUI_MULTIEQUAL && ops.is_empty() {
+            if o.code() == OpCode::CPUI_MULTIEQUAL && body.is_empty() {
                 let ins = (0..o.num_input()).map(|k| c.arg(o.get_in(k))).collect();
                 let out = c.out(o.get_out());
                 phis.push(Phi { out, ins });
-            } else if let Some(compiled) = c.op(op, &out_starts) {
-                ops.push(compiled);
+            } else {
+                body.push(op);
             }
         }
+        let ops = after_their_effects(fd, &body).into_iter().filter_map(|op| c.op(op, &out_starts, &succ)).collect();
         blocks.push(Block { index: block.get_index(), start: start_of(bl), phis, ops, outs });
     }
     let starts = blocks.iter().map(|b| b.start).collect();

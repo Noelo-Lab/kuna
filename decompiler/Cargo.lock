@@ -396,6 +396,7 @@ dependencies = [
  "object",
  "regex",
  "serde_json",
+ "slotmap",
 ]
 
 [[package]]

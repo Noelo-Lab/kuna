@@ -64,3 +64,11 @@ fn return_in_a_temporary_is_unknown() {
     let v = verdicts("kuna-gobool");
     assert!(v.iter().any(|(_, l)| l.starts_with("UNKNOWN(return storage unique:")), "{v:?}");
 }
+
+/// A switch row goes to the out-edge its table entry reaches, never silently to
+/// the default.
+#[test]
+fn switch_rows_follow_their_table_entries() {
+    let v = verdicts("regionstructure-switch");
+    assert_eq!(of(&v, &["dispatch"]), ["AGREES(256)"; 2]);
+}

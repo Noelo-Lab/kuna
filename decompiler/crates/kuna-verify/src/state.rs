@@ -21,6 +21,9 @@ use crate::value::{mask, Halt, MAX_SIZE};
 pub const EDGE_RUNS: u32 = 16;
 
 const STACK_BELOW: u64 = 0x10000;
+
+/// How far past an escaped pointer a call may write.
+const ESCAPE_WINDOW: u64 = 0x1000;
 const STACK_ABOVE: u64 = 0x1000;
 
 /// An argument register the ABI promises the caller extended: bytes of
@@ -160,25 +163,6 @@ impl<'p> Env<'p> {
         self.readonly.iter().any(|&(lo, hi)| addr >= lo && last <= hi && last >= addr)
     }
 
-    /// A load is allowed from the stack and from read-only image data.
-    pub fn check_load(&self, space: &AddrSpace, addr: u64, size: u32) -> Result<(), Halt> {
-        let ram = space.get_index() == self.ram.get_index();
-        if (ram && self.in_stack(addr, size as u64)) || self.is_readonly(addr, size as u64) {
-            return Ok(());
-        }
-        Err(Halt::Memory(format!("load {size} bytes at {}:{addr:#x}", space.get_name())))
-    }
-
-    /// A store is allowed only into the function's own frame, below the entry
-    /// stack pointer.
-    pub fn check_store(&self, space: &AddrSpace, addr: u64, size: u32) -> Result<(), Halt> {
-        let ram = space.get_index() == self.ram.get_index();
-        if ram && self.in_stack(addr, size as u64) && addr.wrapping_add(size as u64) <= self.sp0 {
-            return Ok(());
-        }
-        Err(Halt::Memory(format!("store {size} bytes at {}:{addr:#x}", space.get_name())))
-    }
-
     pub fn code_mapped(&self, addr: u64) -> bool {
         self.prog.entry_bytes_mapped(&Address::new(Rc::clone(&self.code), addr))
     }
@@ -240,6 +224,57 @@ impl<'p> Env<'p> {
         Some((ext >> (shift * 8)) as u8)
     }
 
+    /// A byte of writable memory after the `epoch`-th call: the callee may
+    /// have written any of it.
+    fn clobbered_byte(&self, run: u32, epoch: u32, space: &AddrSpace, off: u64) -> u8 {
+        let h = splitmix(
+            self.seed
+                ^ u64::from(run).wrapping_mul(0xd6e8_feb8_6659_fd93)
+                ^ u64::from(epoch).wrapping_mul(0x9e37_79b9_7f4a_7c15)
+                ^ ((space.get_index() as u64) << 56)
+                ^ off.wrapping_mul(0xc2b2_ae3d_27d4_eb4f),
+        );
+        h as u8
+    }
+
+    fn is_memory(&self, space: &AddrSpace) -> bool {
+        space.get_index() != self.register.get_index()
+            && !self.unique.as_ref().is_some_and(|u| u.get_index() == space.get_index())
+    }
+
+    /// Memory either side's caller can observe after the function: anything
+    /// but registers, temporaries and the stack.
+    pub fn observable(&self, space: &AddrSpace, off: u64) -> bool {
+        self.is_memory(space) && !(space.get_index() == self.ram.get_index() && self.in_stack(off, 1))
+    }
+
+    /// Memory a call can write: the image's writable data, and the bytes near
+    /// a pointer that escaped into an earlier call, never read-only data. This
+    /// is no more than kuna itself treats as changed by a call, so a value it
+    /// keeps across one stays equal unless kuna is wrong to keep it.
+    pub fn callee_writable(&self, escaped: &[u64], space: &AddrSpace, off: u64) -> bool {
+        if !self.is_memory(space) || self.is_readonly(off, 1) {
+            return false;
+        }
+        escaped.iter().any(|&p| off.wrapping_sub(p) < ESCAPE_WINDOW)
+            || (space.get_index() == self.ram.get_index() && !self.in_stack(off, 1) && self.image_byte(off).is_some())
+    }
+
+    /// The byte at `off` with no write by a side since its last call: the
+    /// initial state before any call, what the calls left after one.
+    pub fn base_byte(&self, run: u32, epoch: u32, escaped: &[u64], space: &AddrSpace, off: u64) -> u8 {
+        if epoch > 0 && self.callee_writable(escaped, space, off) {
+            self.clobbered_byte(run, epoch, space, off)
+        } else {
+            self.initial_byte(run, space, off)
+        }
+    }
+
+    /// The value a call leaves in a register byte it kills.
+    pub fn killed_byte(&self, run: u32, call: u32, off: u64) -> u8 {
+        self.clobbered_byte(run, call + 1, &self.register, off)
+    }
+
     pub fn initial_byte(&self, run: u32, space: &AddrSpace, off: u64) -> u8 {
         let idx = space.get_index();
         if self.unique.as_ref().is_some_and(|u| u.get_index() == idx) {
@@ -279,11 +314,33 @@ pub struct State<'e, 'p> {
     flags: Vec<u8>,
     unique: BTreeMap<u64, u8>,
     mem: BTreeMap<(i32, u64), u8>,
+    /// Calls made so far.
+    pub epoch: u32,
+    /// Pointer-sized values passed to calls so far.
+    pub escaped: Vec<u64>,
+}
+
+/// The memory a side wrote outside the stack since its last call, and how many
+/// calls preceded it: what a callee, or the caller after the return, can read.
+#[derive(Clone, Debug, Default)]
+pub struct Writes {
+    pub bytes: BTreeMap<(i32, u64), u8>,
+    pub epoch: u32,
+    pub escaped: Vec<u64>,
 }
 
 impl<'e, 'p> State<'e, 'p> {
     pub fn new(env: &'e Env<'p>, run: u32) -> Self {
-        State { env, run, regs: Vec::new(), flags: Vec::new(), unique: BTreeMap::new(), mem: BTreeMap::new() }
+        State {
+            env,
+            run,
+            regs: Vec::new(),
+            flags: Vec::new(),
+            unique: BTreeMap::new(),
+            mem: BTreeMap::new(),
+            epoch: 0,
+            escaped: Vec::new(),
+        }
     }
 
     fn is_register(&self, space: &AddrSpace, off: u64) -> bool {
@@ -316,7 +373,7 @@ impl<'e, 'p> State<'e, 'p> {
         } else {
             self.mem.get(&(space.get_index(), off)).copied()
         };
-        found.unwrap_or_else(|| self.env.initial_byte(self.run, space, off))
+        found.unwrap_or_else(|| self.env.base_byte(self.run, self.epoch, &self.escaped, space, off))
     }
 
     fn put(&mut self, space: &AddrSpace, off: u64, b: u8) {
@@ -330,6 +387,43 @@ impl<'e, 'p> State<'e, 'p> {
         } else {
             self.mem.insert((space.get_index(), off), b);
         }
+    }
+
+    /// What this side wrote outside the stack since its last call.
+    pub fn writes(&self) -> Writes {
+        let bytes = self
+            .mem
+            .iter()
+            .filter(|((sp, off), _)| self.env.prog.arch().manage().get_space(*sp).is_some_and(|s| self.env.observable(s, *off)))
+            .map(|(k, v)| (*k, *v))
+            .collect();
+        Writes { bytes, epoch: self.epoch, escaped: self.escaped.clone() }
+    }
+
+    /// A call's effect: it kills the registers in `killed`, `args` escape into
+    /// it, and it may write any memory it can reach. The memory is written
+    /// lazily: every byte this side did not write since reads what
+    /// [`Env::base_byte`] says for the new epoch.
+    pub fn call(&mut self, killed: &[(u64, u32)], args: &[u128]) {
+        let call = self.epoch;
+        let register = Rc::clone(&self.env.register);
+        for &(off, size) in killed {
+            for i in 0..u64::from(size) {
+                let b = self.env.killed_byte(self.run, call, off + i);
+                self.put(&register, off + i, b);
+            }
+        }
+        let size = u64::from(self.env.ram.get_addr_size()).min(8);
+        let ptr_mask = if size >= 8 { u64::MAX } else { (1u64 << (size * 8)) - 1 };
+        self.escaped.extend(args.iter().map(|&a| a as u64 & ptr_mask).filter(|&p| p > 0xffff));
+        self.escaped.sort_unstable();
+        self.escaped.dedup();
+        let env = self.env;
+        let escaped = std::mem::take(&mut self.escaped);
+        let manage = env.prog.arch().manage();
+        self.mem.retain(|(sp, off), _| manage.get_space(*sp).is_some_and(|s| !env.callee_writable(&escaped, s, *off)));
+        self.escaped = escaped;
+        self.epoch += 1;
     }
 
     /// Forget the temporaries: they live for one instruction.

@@ -1,4 +1,4 @@
-//! `kuna-verify`: differential semantic checking (diffverify, Tier C slice C1).
+//! `kuna-verify`: differential semantic checking (diffverify, Tier C).
 //!
 //! ```text
 //! kuna-verify check <binary> <function|0xaddr>... | --all  [--contract FILE.c] [--option NAME VALUE]...

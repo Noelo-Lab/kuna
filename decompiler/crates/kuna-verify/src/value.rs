@@ -20,10 +20,6 @@ pub enum Halt {
     Unsupported(String),
     /// The step budget ran out: `UNKNOWN(budget)`.
     Budget,
-    /// A call: outside slice C1, `SKIPPED(not-leaf)`.
-    NotLeaf(String),
-    /// Memory outside the frame and read-only image data: `SKIPPED(memory)`.
-    Memory(String),
     /// The op itself has no defined result (division by zero).
     Trap(String),
     /// The harness could not set the run up: `UNKNOWN(harness)`.
@@ -38,16 +34,10 @@ impl Halt {
         match self {
             Halt::Unsupported(s) => format!("UNKNOWN(unsupported-op: {s})"),
             Halt::Budget => "UNKNOWN(budget)".to_string(),
-            Halt::NotLeaf(s) => format!("SKIPPED(not-leaf: {s})"),
-            Halt::Memory(s) => format!("SKIPPED(memory: {s})"),
             Halt::Trap(s) => format!("UNKNOWN(trap: {s})"),
             Halt::Harness(s) => format!("UNKNOWN(harness: {s})"),
             Halt::NoRow(s) => format!("UNKNOWN(no switch row: {s})"),
         }
-    }
-
-    pub fn is_skip(&self) -> bool {
-        matches!(self, Halt::NotLeaf(_) | Halt::Memory(_))
     }
 }
 

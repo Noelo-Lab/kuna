@@ -53,7 +53,7 @@
     "L1",
     "P"
   ],
-  "status": "C1 implemented",
+  "status": "C1 and C2 implemented",
   "measurements": {
     "C1": {
       "corpus": "tests/datatests + tests/stages, 256 runs per function",
@@ -77,6 +77,25 @@
       "check_seconds_first_build": 49.8,
       "wall_seconds_one_worker": 66,
       "workers": 14
+    },
+    "C2": {
+      "corpus": "tests/datatests + tests/stages, 256 runs per function",
+      "functions": 3979,
+      "verdicts": {
+        "AGREES": 2482,
+        "DIFFERS": 500,
+        "DIVERGES": 3,
+        "UNKNOWN": 994,
+        "SKIPPED": 0
+      },
+      "c1_agrees_regressed": 0,
+      "differs_triaged": false,
+      "check_seconds": 50.3,
+      "wall_seconds": 11.0,
+      "workers": 14,
+      "peak_rss_mb": 332,
+      "done_when": "both checks by a fault injected in a local build",
+      "results": "docs/features/diffverify/c2-results.md"
     }
   },
   "declared_divergences": [

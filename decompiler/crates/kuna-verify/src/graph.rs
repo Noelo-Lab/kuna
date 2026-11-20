@@ -4,13 +4,15 @@
 //! together on the incoming edge, then the block's ops in order. A CBRANCH takes
 //! out-edge 1 when its condition, flipped by `boolean_flip`, holds. A varnode
 //! that is neither constant nor written reads its storage: an input from the
-//! run's initial state, any other from the current one.
+//! run's initial state, any other from the current one. LOAD and STORE use the
+//! same memory model as the machine side, and a call has the same stub.
 
 use kuna_base::space::AddrSpace;
 use kuna_num::opcodes::get_opname;
 
-use crate::program::{Arg, Kind, Op, Operand, Out, Program};
-use crate::state::{Env, State};
+use crate::calls::{Calls, Record};
+use crate::program::{Arg, Effect, Kind, Op, Operand, Out, Program};
+use crate::state::{Env, State, Writes};
 use crate::value::{eval, mask, Halt};
 
 /// What the decompiled function returned: `None` when its RETURN carries no
@@ -22,22 +24,30 @@ pub struct Outcome {
     pub ret: Returned,
     /// A switch met a selector no row of its table carries.
     pub unmatched_switch: bool,
+    pub calls: Vec<Record>,
+    /// The run ended in a call kuna says does not return.
+    pub noreturn: bool,
+    /// Memory written outside the stack since the last call.
+    pub writes: Writes,
 }
 
-struct Run<'e, 'p> {
+struct Run<'e, 'p, 'c> {
+    calls: &'c Calls,
     state: State<'e, 'p>,
     initial: State<'e, 'p>,
     values: Vec<Option<u128>>,
     unmatched_switch: bool,
+    records: Vec<Record>,
 }
 
 enum Flow {
     Next,
     Edge(i32),
     Return(Returned),
+    NoReturn,
 }
 
-impl Run<'_, '_> {
+impl Run<'_, '_, '_> {
     fn value(&mut self, a: &Arg) -> Result<u128, Halt> {
         match &a.op {
             Operand::Const(v) => Ok(*v),
@@ -70,6 +80,20 @@ impl Run<'_, '_> {
         self.set(out, val)
     }
 
+    /// The value an output's storage holds now.
+    fn stored(&mut self, op: &Op) -> Result<u128, Halt> {
+        let out = op.out.as_ref().ok_or_else(|| Halt::Harness("op without output".into()))?;
+        let st = out.storage.clone().ok_or_else(|| Halt::Harness("output without storage".into()))?;
+        self.state.read_storage(&st.space, st.off, out.size)
+    }
+
+    fn address(&mut self, space: &Option<std::rc::Rc<AddrSpace>>, op: &Op) -> Result<(std::rc::Rc<AddrSpace>, u64), Halt> {
+        let spc = space.clone().ok_or_else(|| Halt::Harness("bad LOAD space id".into()))?;
+        let ptr = self.input(op, 0)? as u64;
+        let addr = spc.wrap_offset(AddrSpace::address_to_byte(ptr, spc.get_word_size()));
+        Ok((spc, addr))
+    }
+
     fn exec(&mut self, op: &Op) -> Result<Flow, Halt> {
         let at = op.at;
         match &op.kind {
@@ -93,11 +117,16 @@ impl Run<'_, '_> {
                 let vsize = op.ins[0].size;
                 let edge = match switch {
                     Some(sw) => {
-                        let row = sw.rows.iter().find(|(label, _)| u128::from(*label) & mask(vsize) == v);
-                        if row.is_none() {
-                            self.unmatched_switch = true;
+                        match sw.rows.iter().find(|(label, _)| u128::from(*label) & mask(vsize) == v) {
+                            Some((_, Some(e))) => Some(*e),
+                            Some((_, None)) => {
+                                return Err(Halt::Unsupported(format!("BRANCHIND at {at:#x}: the row for {v:#x} reaches no out-edge")));
+                            }
+                            None => {
+                                self.unmatched_switch = true;
+                                sw.default
+                            }
                         }
-                        row.and_then(|(_, e)| *e).or(sw.default)
                     }
                     None => targets.iter().position(|&t| u128::from(t) == v).map(|e| e as i32),
                 };
@@ -107,29 +136,58 @@ impl Run<'_, '_> {
                 edge.map(Flow::Edge)
                     .ok_or_else(|| Halt::Unsupported(format!("BRANCHIND at {at:#x} on {v:#x}, which no out-edge takes")))
             }
-            Kind::Call => Err(Halt::NotLeaf(format!("call at {at:#x}"))),
+            Kind::Call { direct } => {
+                let target = match direct {
+                    Some(_) => self.calls.site(at).target,
+                    None => Some(self.input(op, 0)? as u64),
+                };
+                let mut args = Vec::with_capacity(op.ins.len().saturating_sub(1));
+                for k in 1..op.ins.len() {
+                    args.push(self.input(op, k)?);
+                }
+                let indirect = direct.is_none();
+                crate::calls::record(&mut self.records, Record { at, target, indirect, args, writes: self.state.writes() })?;
+                let site = self.calls.site(at);
+                if site.noreturn {
+                    return Ok(Flow::NoReturn);
+                }
+                let killed = site.killed.clone();
+                let args = self.records.last().map(|r| r.args.clone()).unwrap_or_default();
+                self.state.call(&killed, &args);
+                if op.out.is_some() {
+                    let v = self.stored(op)?;
+                    self.set_out(op, v)?;
+                }
+                Ok(Flow::Next)
+            }
             Kind::CallOther { name, builtin } => {
                 if let Some(b) = builtin {
-                    return Err(Halt::Memory(format!("{b} at {at:#x}")));
+                    return Err(Halt::Unsupported(format!("{b} at {at:#x}")));
                 }
                 if op.out.is_some() || !crate::machine::EXIT_ONLY_USEROPS.contains(&name.as_str()) {
                     return Err(Halt::Unsupported(format!("CALLOTHER {name} at {at:#x}")));
                 }
                 Ok(Flow::Next)
             }
-            Kind::Store => Err(Halt::Memory(format!("store at {at:#x}"))),
+            Kind::Store(space) => {
+                let (spc, addr) = self.address(space, op)?;
+                let size = op.ins.get(1).map(|a| a.size).ok_or_else(|| Halt::Harness("STORE lacks a value".into()))?;
+                let v = self.input(op, 1)?;
+                self.state.write(&spc, addr, size, v)?;
+                Ok(Flow::Next)
+            }
             Kind::Load(space) => {
-                let spc = space.clone().ok_or_else(|| Halt::Harness("bad LOAD space id".into()))?;
-                let ptr = self.input(op, 0)? as u64;
+                let (spc, addr) = self.address(space, op)?;
                 let size = op.out.as_ref().map(|o| o.size).ok_or_else(|| Halt::Unsupported("op without output".into()))?;
-                let addr = spc.wrap_offset(AddrSpace::address_to_byte(ptr, spc.get_word_size()));
-                self.state.env.check_load(&spc, addr, size)?;
                 let v = self.state.read(&spc, addr, size)?;
                 self.set_out(op, v)?;
                 Ok(Flow::Next)
             }
-            Kind::Indirect => {
-                let v = self.input(op, 0)?;
+            Kind::Indirect(effect) => {
+                let v = match effect {
+                    Effect::Keep => self.input(op, 0)?,
+                    Effect::Killed | Effect::Memory => self.stored(op)?,
+                };
                 self.set_out(op, v)?;
                 Ok(Flow::Next)
             }
@@ -149,18 +207,30 @@ impl Run<'_, '_> {
             }
         }
     }
+
+    fn finish(self, ret: Returned, noreturn: bool) -> Outcome {
+        Outcome {
+            ret,
+            unmatched_switch: self.unmatched_switch,
+            writes: self.state.writes(),
+            calls: self.records,
+            noreturn,
+        }
+    }
 }
 
 /// Run the decompiled function from its entry block on the run's initial state.
-pub fn run(env: &Env, program: &Program, run: u32, budget: u64) -> Result<Outcome, Halt> {
+pub fn run(env: &Env, program: &Program, run: u32, budget: u64, calls: &Calls) -> Result<Outcome, Halt> {
     if program.blocks.is_empty() {
         return Err(Halt::Harness("no basic blocks".into()));
     }
     let mut r = Run {
+        calls,
         state: State::new(env, run),
         initial: State::new(env, run),
         values: vec![None; program.slots],
         unmatched_switch: false,
+        records: Vec::new(),
     };
     let mut bl = 0usize;
     let mut slot: Option<i32> = None;
@@ -191,7 +261,8 @@ pub fn run(env: &Env, program: &Program, run: u32, budget: u64) -> Result<Outcom
                     edge = e;
                     break;
                 }
-                Flow::Return(ret) => return Ok(Outcome { ret, unmatched_switch: r.unmatched_switch }),
+                Flow::Return(ret) => return Ok(r.finish(ret, false)),
+                Flow::NoReturn => return Ok(r.finish(None, true)),
             }
         }
         let Some(&(next, rev)) = block.outs.get(edge as usize).filter(|_| edge >= 0) else {

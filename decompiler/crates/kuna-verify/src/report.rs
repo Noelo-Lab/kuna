@@ -37,11 +37,7 @@ impl Verdict {
     }
 
     pub fn from_halt(h: &Halt) -> Verdict {
-        if h.is_skip() {
-            Verdict::Skipped(h.render())
-        } else {
-            Verdict::Unknown(h.render())
-        }
+        Verdict::Unknown(h.render())
     }
 }
 

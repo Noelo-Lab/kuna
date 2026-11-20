@@ -114,22 +114,27 @@ function's type, because the binary alone cannot settle it:
 - Stores outside the function's own frame.
 - The ordered call sequence, each call with its callee and arguments.
 
-**Calls.**
-- The machine side runs a stub at each call. The stub records the call, returns a
-  recorded random value in the return registers, clobbers caller-saved registers, and
-  writes recorded random bytes to the memory the call can reach. That set is:
-  - what its pointer arguments point to;
-  - memory that escaped before the call;
-  - every writable global: the image's writable sections, since a callee with no
-    arguments can still change `counter`.
-
-  Without the memory writes, a rule that reuses a value loaded before the call as if the
+**Calls.** As built in C2 (`c2-results.md` §1):
+- Both sides run the same stub at each call. It records the call with kuna's arguments
+  and the memory the callee could read, kills the registers the model lists as
+  killed-by-call and every output register with values fixed by the run and the call's
+  index, and pops `extrapop`.
+- It may write the image's writable data and 4 KiB past every pointer passed to a call
+  so far, lazily, with bytes fixed by the call's index. That is no more than kuna itself
+  treats as changed by a call, so a value kuna keeps across one stays equal unless kuna
+  is wrong to keep it. Writing all memory outside the stack is too much: it rewrites the
+  stack canary, which kuna rightly keeps.
+- Without the memory writes, a rule that reuses a value loaded before the call as if the
   call could not change it would agree with the machine and be missed.
-- The decompiled side replays the same return values and memory writes call by call.
-  INDIRECT is a copy unless the recorded effect wrote that storage.
-- A different call sequence is itself `DIFFERS`.
-- A call whose reachable memory the harness cannot bound (an escaped pointer of unknown
-  extent, writable memory outside the image) is `UNKNOWN(call-effect)`.
+- INDIRECT is moved after the op it guards. Its output is the call's value for a killed
+  register, what memory holds for a stack or memory location, and its input otherwise.
+- Calls are compared in order on the call instruction's address, and a computed target
+  when both sides compute it. A different call sequence is itself `DIFFERS`. An argument
+  is `DIFFERS` against a declared callee prototype and `PROTOTYPE_SUSPECT` against a
+  recovered one.
+- Where kuna has no call at an instruction that calls code in the image (inlined,
+  injected or dropped), the machine runs the callee for real, so a deliberate removal
+  agrees and a wrong one shows in what the callee does.
 
 **Needs no phase hooks.** The machine side reads the binary and the decompiled side reads
 the finished `Funcdata`. Loops are fine: execution is bounded by a step budget, and a run
@@ -302,7 +307,7 @@ library rather than stubbed.
 | slice | scope | done when |
 |---|---|---|
 | C1 | Tier C on register-only leaf functions: no calls and no memory access at all, except loads from read-only image data; same raw state on both sides; physical-ABI and typed-contract return checks; `PROTOTYPE_SUSPECT`; `UNKNOWN(unsupported-op)`; declared-divergence predicates | reverting #794 gives `DIFFERS` against its fixture's source contract; verdict table over `tests/datatests` + `tests/stages`, with per-function and total time. **Done** (`c1-results.md`) |
-| C2 | memory and call effects: stack, pointer-argument and global memory; call stubs that write reachable memory, globals included; `UNKNOWN(call-effect)` | reverting #801 gives `DIFFERS`; a rule that keeps a pre-call load across a call that writes it gives `DIFFERS` |
+| C2 | memory and call effects: stack, pointer-argument and global memory; call stubs that write reachable memory, globals included | reverting #801 gives `DIFFERS`; a rule that keeps a pre-call load across a call that writes it gives `DIFFERS`. **Done** (`c2-results.md`; both by a fault injected in a local build) |
 | C3 | rule localization over the C1/C2 verdicts | candidate culprits include `subvar_zext` on reverted #794; cost per finding |
 | C4 | corpus run (decbench binaries); precision and recall | precision: triage of every `DIFFERS` into bug / declared divergence / harness bug. Recall: of the ~44 visible P3/P4 fixes that have a fixture, how many give `DIFFERS` when reverted. Published table with both |
 | C5 | concolic inputs: expressions over the inputs on both sides, branch conditions negated through z3, capped paths and queries | a fixture whose difference appears only on one 32-bit value gives `DIFFERS`, where 256 random runs give `AGREES`; new paths reached per function on the corpus |

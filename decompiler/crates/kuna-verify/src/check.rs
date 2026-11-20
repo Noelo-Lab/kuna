@@ -1,25 +1,26 @@
-//! Tier C, slice C1: run both sides of one function and compare what it returns.
+//! Tier C: run both sides of one function and compare what they do.
 //!
-//! The scope is register-only leaf functions. A static scan of the decompiled
-//! function, and every machine run, refuse calls and memory beyond the frame and
-//! read-only image data as `SKIPPED`. The return value is compared under the
-//! physical ABI (the bytes kuna's claimed return occupies) and, when a typed
-//! contract is given, at the contract's width with kuna's value converted to the
-//! contract type by C's rules.
+//! A run compares, in order: each call (its target, kuna's arguments, and the
+//! memory the callee can read), whether the function returns at all, the return
+//! value, and the memory left outside the stack. The return value is compared
+//! under the physical ABI (the bytes kuna's claimed return occupies) and, when a
+//! typed contract is given, at the contract's width with kuna's value converted
+//! to the contract type by C's rules.
 
+use std::collections::BTreeSet;
 use std::time::Instant;
 
 use kuna_base::space::spacetype;
 use kuna_console::engine::ConsoleProgram;
 use kuna_decomp::funcdata::Funcdata;
-use kuna_num::opcodes::OpCode;
 
 use crate::abi::{self, Claim};
 use crate::contract::{CType, Contract};
 use crate::divergence::{self, ReturnMismatch};
+use crate::calls::{self, Calls, Record};
 use crate::program::{self, Program};
 use crate::report::{Report, Verdict};
-use crate::state::{Env, State};
+use crate::state::{Env, State, Writes};
 use crate::storage::{hex, Storage};
 use crate::value::{mask, Halt};
 use crate::{graph, machine};
@@ -40,34 +41,6 @@ impl Default for Options {
     fn default() -> Self {
         Options { runs: 256, seed: 0x6b75_6e61, budget: 200_000, budget_runs: 4 }
     }
-}
-
-/// C1's static scope: no call and no store anywhere in the decompiled function.
-fn static_scope(fd: &Funcdata) -> Option<Verdict> {
-    for i in 0..fd.bblocks_get_size() {
-        for op in fd.bb_ops(fd.bblocks_get_block(i)) {
-            let Some(o) = fd.obank().get(op) else { continue };
-            let at = o.get_addr().get_offset();
-            match o.code() {
-                OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
-                    return Some(Verdict::Skipped(format!("SKIPPED(not-leaf: call at {at:#x})")));
-                }
-                OpCode::CPUI_STORE => return Some(Verdict::Skipped(format!("SKIPPED(memory: store at {at:#x})"))),
-                OpCode::CPUI_CALLOTHER => {
-                    let builtin = o
-                        .get_in(0)
-                        .and_then(|v| fd.vbank().get(v))
-                        .filter(|v| v.is_constant())
-                        .and_then(|v| program::memory_builtin(v.get_offset()));
-                    if let Some(name) = builtin {
-                        return Some(Verdict::Skipped(format!("SKIPPED(memory: {name} at {at:#x})")));
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
-    None
 }
 
 /// Upper return registers the machine sets to the same value on every run while
@@ -185,6 +158,97 @@ impl Compare<'_> {
     }
 }
 
+/// The first byte the two sides left different, of the memory either wrote.
+fn compare_writes(env: &Env, run: u32, machine: &Writes, kuna: &Writes) -> Option<String> {
+    let manage = env.prog.arch().manage();
+    let keys: BTreeSet<(i32, u64)> = machine.bytes.keys().chain(kuna.bytes.keys()).copied().collect();
+    let mut first = None;
+    let mut differ = 0usize;
+    for (sp, off) in keys {
+        let Some(space) = manage.get_space(sp) else { continue };
+        let side = |w: &Writes| {
+            w.bytes.get(&(sp, off)).copied().unwrap_or_else(|| env.base_byte(run, w.epoch, &w.escaped, space, off))
+        };
+        let (m, k) = (side(machine), side(kuna));
+        if m != k {
+            differ += 1;
+            first.get_or_insert(format!("{}:{off:#x}: machine 0x{m:02x}, kuna 0x{k:02x}", space.get_name()));
+        }
+    }
+    first.map(|f| if differ > 1 { format!("{f} ({differ} bytes differ)") } else { f })
+}
+
+/// A computed call target as an address in the code space: wrapped to its
+/// size, and without the ARM instruction-set bit.
+fn code_target(env: &Env, t: Option<u64>) -> Option<u64> {
+    let arm = env.prog.arch().archid.starts_with("ARM");
+    t.map(|t| env.code.wrap_offset(t) & if arm { !1 } else { !0 })
+}
+
+fn target(t: Option<u64>) -> String {
+    t.map_or_else(|| "?".to_string(), |t| format!("{t:#x}"))
+}
+
+/// How the two sides' calls compare: the first difference, and the arguments a
+/// recovered callee prototype may have wrong.
+struct CallCompare {
+    differs: Option<Vec<String>>,
+    suspects: Vec<String>,
+}
+
+fn compare_calls(prog: &ConsoleProgram, env: &Env, run: u32, calls: &Calls, m: &[Record], g: &[Record]) -> CallCompare {
+    let mut suspects = Vec::new();
+    let differs = |lines: Vec<String>, suspects: Vec<String>| CallCompare { differs: Some(lines), suspects };
+    for k in 0..m.len().max(g.len()) {
+        let n = k + 1;
+        let (mc, gc) = match (m.get(k), g.get(k)) {
+            (Some(mc), Some(gc)) => (mc, gc),
+            (Some(mc), None) => {
+                let l = format!("call {n} at {:#x} to {}: the machine makes it, kuna does not", mc.at, target(mc.target));
+                return differs(vec![l], suspects);
+            }
+            (None, Some(gc)) => {
+                let l = format!("call {n} at {:#x} to {}: kuna makes it, the machine does not", gc.at, target(gc.target));
+                return differs(vec![l], suspects);
+            }
+            (None, None) => break,
+        };
+        if mc.at != gc.at {
+            return differs(vec![format!("call {n}: the machine calls from {:#x}, kuna from {:#x}", mc.at, gc.at)], suspects);
+        }
+        if mc.indirect && gc.indirect && code_target(env, mc.target) != code_target(env, gc.target) {
+            let l = format!("call {n} at {:#x}: the machine calls {}, kuna calls {}", gc.at, target(mc.target), target(gc.target));
+            return differs(vec![l], suspects);
+        }
+        let site = calls.site(gc.at);
+        for (i, ((ma, ka), arg)) in mc.args.iter().zip(&gc.args).zip(&site.args).enumerate() {
+            let Some(st) = arg.as_ref().map(|a| &a.storage) else { continue };
+            if ma & mask(st.size) == ka & mask(st.size) {
+                continue;
+            }
+            let l = format!(
+                "call {n} to {}, argument {} ({}): machine {}, kuna {}",
+                target(gc.target),
+                i + 1,
+                st.name(prog),
+                hex(*ma & mask(st.size), st.size),
+                hex(*ka & mask(st.size), st.size)
+            );
+            if site.locked {
+                return differs(vec![l], suspects);
+            }
+            let s = format!("{l}; the callee's recovered prototype may not take it");
+            if !suspects.contains(&s) {
+                suspects.push(s);
+            }
+        }
+        if let Some(d) = compare_writes(env, run, &mc.writes, &gc.writes) {
+            return differs(vec![format!("memory before call {n} to {}: {d}", target(gc.target))], suspects);
+        }
+    }
+    CallCompare { differs: None, suspects }
+}
+
 fn input_line(prog: &ConsoleProgram, env: &Env, run: u32, claim: &Claim) -> String {
     let mut init = State::new(env, run);
     let inputs: Vec<String> = claim
@@ -210,9 +274,6 @@ pub fn check_function(prog: &ConsoleProgram, fd: &Funcdata, contract: Option<&Co
         suspects,
         elapsed: started.elapsed(),
     };
-    if let Some(v) = static_scope(fd) {
-        return finish(v, Vec::new(), Vec::new());
-    }
     let mut env = match Env::new(prog, opts.seed) {
         Ok(e) => e,
         Err(h) => return finish(Verdict::from_halt(&h), Vec::new(), Vec::new()),
@@ -232,20 +293,19 @@ pub fn check_function(prog: &ConsoleProgram, fd: &Funcdata, contract: Option<&Co
     };
     let compare = Compare { prog, claim: &claim, contract: contract.zip(contract_storage.as_ref()) };
     let mut upper = UpperWatch::new(prog, fd, &claim);
-    let program: Program = program::compile(prog, fd);
+    let calls = calls::sites(fd, &env);
+    let program: Program = program::compile(prog, fd, &calls);
     let entry = fd.get_address().get_offset();
     let left_cfg = |mo: &machine::Outcome| mo.indirect.iter().any(|t| !program.starts.contains(t));
     let mut agreed = 0u32;
     let mut budget_runs = 0u32;
     let mut unknown: Option<Halt> = None;
     let mut diverged: Option<&'static str> = None;
+    let mut call_suspects: Vec<String> = Vec::new();
     for run in 0..opts.runs {
-        let m = machine::run(&env, run, entry, opts.budget);
-        let g = graph::run(&env, &program, run, opts.budget);
-        let (mut ms, ret) = match (m, g) {
-            (Err(h), _) | (_, Err(h)) if h.is_skip() => {
-                return finish(Verdict::from_halt(&h), Vec::new(), Vec::new());
-            }
+        let m = machine::run(&env, run, entry, opts.budget, &calls);
+        let g = graph::run(&env, &program, run, opts.budget, &calls);
+        let (mo, go) = match (m, g) {
             (Err(Halt::Trap(_)), Err(Halt::Trap(_))) => {
                 agreed += 1;
                 continue;
@@ -269,10 +329,40 @@ pub fn check_function(prog: &ConsoleProgram, fd: &Funcdata, contract: Option<&Co
                     diverged.get_or_insert(divergence::SWITCH_RUNON.id);
                     continue;
                 }
-                (mo.state, go.ret)
+                (mo, go)
             }
         };
-        match compare.run(&mut ms, ret) {
+        let differs = |mut lines: Vec<String>| {
+            let at = usize::from(lines.first().is_some_and(|l| l.starts_with("contract")));
+            lines.insert(at, input_line(prog, &env, run, &claim));
+            for (site, callee) in &mo.followed {
+                lines.push(format!("note     the machine ran {callee:#x} from {site:#x} itself: kuna has no call there"));
+            }
+            lines
+        };
+        let cc = compare_calls(prog, &env, run, &calls, &mo.calls, &go.calls);
+        for s in cc.suspects {
+            if call_suspects.len() < 4 && !call_suspects.contains(&s) {
+                call_suspects.push(s);
+            }
+        }
+        if let Some(lines) = cc.differs {
+            return finish(Verdict::Differs { run, of: opts.runs }, differs(lines), call_suspects);
+        }
+        if mo.noreturn != go.noreturn {
+            let which = if mo.noreturn { "the machine stops in a no-return call, kuna returns" } else { "kuna stops in a no-return call, the machine returns" };
+            return finish(Verdict::Differs { run, of: opts.runs }, differs(vec![which.to_string()]), Vec::new());
+        }
+        let mut ms = mo.state;
+        let outcome = if mo.noreturn { Ok(Outcome::Same) } else { compare.run(&mut ms, go.ret) };
+        let outcome = match outcome {
+            Ok(Outcome::Same) => match compare_writes(&env, run, &ms.writes(), &go.writes) {
+                Some(d) => Ok(Outcome::Differs(vec![format!("memory at exit: {d}")])),
+                None => Ok(Outcome::Same),
+            },
+            other => other,
+        };
+        match outcome {
             Err(h) => {
                 unknown.get_or_insert(h);
                 continue;
@@ -280,19 +370,18 @@ pub fn check_function(prog: &ConsoleProgram, fd: &Funcdata, contract: Option<&Co
             Ok(Outcome::Declared(id)) => {
                 diverged.get_or_insert(id);
             }
-            Ok(Outcome::Differs(mut lines)) => {
-                let at = usize::from(lines.first().is_some_and(|l| l.starts_with("contract")));
-                lines.insert(at, input_line(prog, &env, run, &claim));
-                return finish(Verdict::Differs { run, of: opts.runs }, lines, Vec::new());
+            Ok(Outcome::Differs(lines)) => {
+                return finish(Verdict::Differs { run, of: opts.runs }, differs(lines), Vec::new());
             }
             Ok(Outcome::Same) => {}
         }
-        if let Some(w) = upper.as_mut() {
+        if let Some(w) = upper.as_mut().filter(|_| !mo.noreturn) {
             w.observe(&mut ms);
         }
         agreed += 1;
     }
     let mut suspects = abi::unclaimed_inputs(prog, &env, fd, &claim);
+    suspects.extend(call_suspects);
     if agreed == opts.runs {
         if let Some(w) = upper {
             suspects.extend(w.suspects(prog));
