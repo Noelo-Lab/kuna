@@ -51,5 +51,35 @@
     "S2",
     "L1",
     "P"
+  ],
+  "status": "C1 implemented",
+  "measurements": {
+    "C1": {
+      "corpus": "tests/datatests + tests/stages, 256 runs per function",
+      "files": 782,
+      "functions": 3979,
+      "verdicts": {
+        "AGREES": 696,
+        "DIFFERS": 4,
+        "DIVERGES": 3,
+        "UNKNOWN": 331,
+        "SKIPPED": 2945
+      },
+      "differs_triage": {
+        "known_bug": 3,
+        "harness": 1
+      },
+      "check_seconds": 49.8,
+      "check_seconds_budget_exhausted": 47.2,
+      "median_ms_in_scope": 1.0,
+      "p95_ms_in_scope": 9.8,
+      "wall_seconds": 111,
+      "peak_rss_mb": 406,
+      "results": "docs/features/diffverify/c1-results.md"
+    }
+  },
+  "declared_divergences": [
+    "returnpair-rdx-zero",
+    "switchrunon-cut-row"
   ]
 }

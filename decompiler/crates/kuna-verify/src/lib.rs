@@ -1,0 +1,84 @@
+//! diffverify, Tier C slice C1: does kuna's decompiled function compute what
+//! the machine code computes?
+//!
+//! Both sides start from the same raw machine state. The machine side runs the
+//! function's SLEIGH p-code (`machine`); the decompiled side runs the final
+//! `Funcdata` (`graph`). Their return values are compared under the physical
+//! ABI and, when one is given, a typed contract (`check`). Design and scope:
+//! `docs/features/diffverify/proposal.md`.
+//!
+//! Development only: the release binary does not link this crate.
+
+pub mod check;
+pub mod contract;
+pub mod divergence;
+pub mod graph;
+pub mod machine;
+pub mod session;
+pub mod state;
+pub mod value;
+
+use std::time::{Duration, Instant};
+
+pub use check::{check_function, Options, Report, Verdict};
+
+/// Check `functions` in an object file. `contract_source` is C source to read
+/// each function's return type from.
+pub fn check_binary(
+    path: &str,
+    functions: &[String],
+    options: &[(String, String)],
+    spec_roots: &[String],
+    contract_source: Option<(&str, &str)>,
+    opts: &Options,
+) -> Result<Vec<Report>, String> {
+    let mut reports = Vec::new();
+    let mut failure = None;
+    session::drive(session::binary_script(path, functions, options), None, spec_roots, |prog, fd| {
+        let contract = match contract_source {
+            Some((src, name)) => match contract::from_source(src, fd.get_name(), name, check::c_sizes(prog)) {
+                Ok(c) => Some(c),
+                Err(e) => {
+                    failure.get_or_insert(e);
+                    return;
+                }
+            },
+            None => None,
+        };
+        reports.push(check_function(prog, fd, contract.as_ref(), opts));
+    })?;
+    match failure {
+        Some(e) => Err(e),
+        None => Ok(reports),
+    }
+}
+
+/// One datatest file's reports, and the time its decompiles and checks took.
+pub struct FileResult {
+    pub reports: Vec<Report>,
+    pub error: Option<String>,
+    pub wall: Duration,
+}
+
+/// Check every function a datatest's script decompiles, under the options its
+/// script sets.
+pub fn check_datatest(path: &str, spec_roots: &[String], opts: &Options) -> FileResult {
+    let start = Instant::now();
+    let mut reports = Vec::new();
+    let error = match session::load_datatest(path, spec_roots) {
+        Ok((prog, commands)) => {
+            let run = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                session::drive(commands, Some(prog), spec_roots, |prog, fd| {
+                    reports.push(check_function(prog, fd, None, opts));
+                })
+            }));
+            match run {
+                Ok(Ok(())) => None,
+                Ok(Err(e)) => Some(e),
+                Err(_) => Some("panicked".to_string()),
+            }
+        }
+        Err(e) => Some(e),
+    };
+    FileResult { reports, error, wall: start.elapsed() }
+}

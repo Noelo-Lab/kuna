@@ -1,0 +1,284 @@
+//! Concrete p-code value semantics, shared by both sides of a check.
+//!
+//! Every op on values of at most eight bytes is evaluated through kuna's own
+//! `OpBehavior` table, the one `EmulatePcodeCache` uses, so the two sides cannot
+//! disagree on what an `INT_SRIGHT` means. Integer ops on wider values, up to
+//! sixteen bytes (a 64-bit multiply-high widens to 128 bits), and the
+//! decompiler-only ops (`CAST`, `PTRADD`, `PTRSUB`) are defined here. Floating
+//! point and anything wider are refused, never approximated.
+
+use std::rc::Rc;
+
+use kuna_num::float::FloatFormat;
+use kuna_num::opbehavior::{register_instructions, FloatFormatProvider, OpBehavior};
+use kuna_num::opcodes::{get_opname, OpCode};
+
+/// Why a run stopped before it could be compared.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Halt {
+    /// An op or value the interpreter does not model: `UNKNOWN(unsupported-op)`.
+    Unsupported(String),
+    /// The step budget ran out: `UNKNOWN(budget)`.
+    Budget,
+    /// A call: outside slice C1, `SKIPPED(not-leaf)`.
+    NotLeaf(String),
+    /// Memory outside the frame and read-only image data: `SKIPPED(memory)`.
+    Memory(String),
+    /// The op itself has no defined result (division by zero).
+    Trap(String),
+    /// The harness could not set the run up: `UNKNOWN(harness)`.
+    Harness(String),
+    /// A switch met a selector no row of its table carries, and the table has
+    /// no default.
+    NoRow(String),
+}
+
+impl Halt {
+    pub fn render(&self) -> String {
+        match self {
+            Halt::Unsupported(s) => format!("UNKNOWN(unsupported-op: {s})"),
+            Halt::Budget => "UNKNOWN(budget)".to_string(),
+            Halt::NotLeaf(s) => format!("SKIPPED(not-leaf: {s})"),
+            Halt::Memory(s) => format!("SKIPPED(memory: {s})"),
+            Halt::Trap(s) => format!("UNKNOWN(trap: {s})"),
+            Halt::Harness(s) => format!("UNKNOWN(harness: {s})"),
+            Halt::NoRow(s) => format!("UNKNOWN(no switch row: {s})"),
+        }
+    }
+
+    pub fn is_skip(&self) -> bool {
+        matches!(self, Halt::NotLeaf(_) | Halt::Memory(_))
+    }
+}
+
+/// The widest value either side models.
+pub const MAX_SIZE: u32 = 16;
+
+pub fn mask(size: u32) -> u128 {
+    if size >= 16 {
+        u128::MAX
+    } else {
+        (1u128 << (size * 8)) - 1
+    }
+}
+
+struct NoFloats;
+
+impl FloatFormatProvider for NoFloats {
+    fn get_float_format(&self, _size: i32) -> Option<&FloatFormat> {
+        None
+    }
+}
+
+thread_local! {
+    static BEHAVIORS: Vec<Option<Rc<dyn OpBehavior>>> = {
+        let mut inst = Vec::new();
+        let provider: Rc<dyn FloatFormatProvider> = Rc::new(NoFloats);
+        register_instructions(&mut inst, &provider);
+        inst
+    };
+}
+
+fn signed(v: u128, size: u32) -> i128 {
+    let bits = size * 8;
+    if bits >= 128 {
+        v as i128
+    } else {
+        ((v << (128 - bits)) as i128) >> (128 - bits)
+    }
+}
+
+/// Integer semantics on values of up to sixteen bytes.
+fn eval_wide(opc: OpCode, out: u32, ins: &[(u128, u32)]) -> Result<u128, Halt> {
+    let m = mask(out);
+    let (a, asz) = ins[0];
+    let (b, bsz) = ins.get(1).copied().unwrap_or((0, 0));
+    let abits = u128::from(asz * 8);
+    let bool_of = |x: bool| u128::from(x);
+    let r = match opc {
+        OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_INT_ZEXT => a,
+        OpCode::CPUI_INT_SEXT => signed(a, asz) as u128,
+        OpCode::CPUI_INT_ADD => a.wrapping_add(b),
+        OpCode::CPUI_INT_SUB => a.wrapping_sub(b),
+        OpCode::CPUI_INT_MULT => a.wrapping_mul(b),
+        OpCode::CPUI_INT_AND => a & b,
+        OpCode::CPUI_INT_OR => a | b,
+        OpCode::CPUI_INT_XOR => a ^ b,
+        OpCode::CPUI_INT_NEGATE => !a,
+        OpCode::CPUI_INT_2COMP => a.wrapping_neg(),
+        OpCode::CPUI_INT_LEFT => if b >= abits { 0 } else { a << b },
+        OpCode::CPUI_INT_RIGHT => if b >= abits { 0 } else { (a & mask(asz)) >> b },
+        OpCode::CPUI_INT_SRIGHT => {
+            let s = signed(a, asz);
+            (if b >= abits { s >> 127 } else { s >> b }) as u128
+        }
+        OpCode::CPUI_SUBPIECE => if b >= 16 { 0 } else { a >> (b * 8) },
+        OpCode::CPUI_PIECE => if bsz >= 16 { b } else { (a << (bsz * 8)) | b },
+        OpCode::CPUI_INT_EQUAL => bool_of(a == b),
+        OpCode::CPUI_INT_NOTEQUAL => bool_of(a != b),
+        OpCode::CPUI_INT_LESS => bool_of(a < b),
+        OpCode::CPUI_INT_LESSEQUAL => bool_of(a <= b),
+        OpCode::CPUI_INT_SLESS => bool_of(signed(a, asz) < signed(b, asz)),
+        OpCode::CPUI_INT_SLESSEQUAL => bool_of(signed(a, asz) <= signed(b, asz)),
+        OpCode::CPUI_INT_CARRY => bool_of(a.wrapping_add(b) & mask(asz) < a),
+        OpCode::CPUI_INT_SCARRY => {
+            let r = signed(a.wrapping_add(b) & mask(asz), asz);
+            let (x, y) = (signed(a, asz), signed(b, asz));
+            bool_of((x < 0) == (y < 0) && (r < 0) != (x < 0))
+        }
+        OpCode::CPUI_INT_SBORROW => {
+            let r = signed(a.wrapping_sub(b) & mask(asz), asz);
+            let (x, y) = (signed(a, asz), signed(b, asz));
+            bool_of((x < 0) != (y < 0) && (r < 0) != (x < 0))
+        }
+        OpCode::CPUI_INT_DIV | OpCode::CPUI_INT_REM | OpCode::CPUI_INT_SDIV | OpCode::CPUI_INT_SREM if b == 0 => {
+            return Err(Halt::Trap(format!("{}: divide by 0", get_opname(opc))));
+        }
+        OpCode::CPUI_INT_DIV => a / b,
+        OpCode::CPUI_INT_REM => a % b,
+        OpCode::CPUI_INT_SDIV => signed(a, asz).wrapping_div(signed(b, asz)) as u128,
+        OpCode::CPUI_INT_SREM => signed(a, asz).wrapping_rem(signed(b, asz)) as u128,
+        OpCode::CPUI_POPCOUNT => u128::from(a.count_ones()),
+        OpCode::CPUI_LZCOUNT => u128::from(a.leading_zeros()) - (128 - abits),
+        OpCode::CPUI_BOOL_NEGATE => bool_of(a == 0),
+        OpCode::CPUI_BOOL_AND => bool_of(a != 0 && b != 0),
+        OpCode::CPUI_BOOL_OR => bool_of(a != 0 || b != 0),
+        OpCode::CPUI_BOOL_XOR => bool_of((a != 0) != (b != 0)),
+        _ => return Err(Halt::Unsupported(format!("{} wider than 8 bytes", get_opname(opc)))),
+    };
+    Ok(r & m)
+}
+
+/// Evaluate a value-producing op. `ins` holds each input's value and size.
+pub fn eval(opc: OpCode, out_size: u32, ins: &[(u128, u32)]) -> Result<u128, Halt> {
+    if out_size > MAX_SIZE || ins.iter().any(|&(_, s)| s > MAX_SIZE) {
+        return Err(Halt::Unsupported(format!("{} wider than {MAX_SIZE} bytes", get_opname(opc))));
+    }
+    if (OpCode::CPUI_FLOAT_EQUAL as u32..=OpCode::CPUI_FLOAT_ROUND as u32).contains(&(opc as u32)) {
+        return Err(Halt::Unsupported(get_opname(opc).to_string()));
+    }
+    let arg = |i: usize| -> Result<(u128, u32), Halt> {
+        ins.get(i)
+            .copied()
+            .ok_or_else(|| Halt::Harness(format!("{} lacks input {i}", get_opname(opc))))
+    };
+    let m = mask(out_size);
+    match opc {
+        OpCode::CPUI_COPY | OpCode::CPUI_CAST => return Ok(arg(0)?.0 & m),
+        OpCode::CPUI_PTRADD => {
+            let (base, _) = arg(0)?;
+            let (index, _) = arg(1)?;
+            let (scale, _) = arg(2)?;
+            return Ok(base.wrapping_add(index.wrapping_mul(scale)) & m);
+        }
+        OpCode::CPUI_PTRSUB => return Ok(arg(0)?.0.wrapping_add(arg(1)?.0) & m),
+        _ => {}
+    }
+    arg(0)?;
+    if out_size > 8 || ins.iter().any(|&(_, s)| s > 8) {
+        return eval_wide(opc, out_size, ins);
+    }
+    BEHAVIORS.with(|table| {
+        let behave = table
+            .get(opc as usize)
+            .and_then(Option::as_ref)
+            .filter(|b| !b.is_special())
+            .ok_or_else(|| Halt::Unsupported(get_opname(opc).to_string()))?;
+        let (a, asize) = arg(0)?;
+        let result = if behave.is_unary() {
+            behave.evaluate_unary(out_size as i32, asize as i32, a as u64)
+        } else {
+            let (b, _) = arg(1)?;
+            behave.evaluate_binary(out_size as i32, asize as i32, a as u64, b as u64)
+        };
+        result
+            .map(|v| u128::from(v) & m)
+            .map_err(|e| Halt::Trap(format!("{}: {}", get_opname(opc), e.explain())))
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decompiler_only_ops_are_defined_here() {
+        assert_eq!(eval(OpCode::CPUI_PTRADD, 4, &[(0x100, 4), (3, 4), (4, 4)]), Ok(0x10c));
+        assert_eq!(eval(OpCode::CPUI_PTRSUB, 4, &[(0xfffffff0, 4), (0x20, 4)]), Ok(0x10));
+        assert_eq!(eval(OpCode::CPUI_CAST, 2, &[(0x12345, 4)]), Ok(0x2345));
+    }
+
+    #[test]
+    fn sleigh_ops_use_the_behavior_table() {
+        assert_eq!(eval(OpCode::CPUI_INT_SEXT, 8, &[(0x80000000, 4)]), Ok(0xffffffff80000000));
+        assert_eq!(eval(OpCode::CPUI_INT_SRIGHT, 4, &[(0x80000000, 4), (31, 4)]), Ok(0xffffffff));
+        assert_eq!(eval(OpCode::CPUI_PIECE, 8, &[(1, 4), (2, 4)]), Ok(0x100000002));
+    }
+
+    #[test]
+    fn multiply_high_widens_to_sixteen_bytes() {
+        let x = eval(OpCode::CPUI_INT_SEXT, 16, &[(u128::from(u64::MAX), 8)]).unwrap();
+        assert_eq!(x, u128::MAX);
+        let p = eval(OpCode::CPUI_INT_MULT, 16, &[(0x5555_5555_5555_5556, 16), (x, 16)]).unwrap();
+        assert_eq!(eval(OpCode::CPUI_SUBPIECE, 8, &[(p, 16), (8, 4)]), Ok(u128::from(u64::MAX)));
+    }
+
+    /// The wide evaluator agrees with the behavior table wherever both apply.
+    #[test]
+    fn wide_semantics_match_the_behavior_table_at_eight_bytes() {
+        let ops = [
+            OpCode::CPUI_INT_ADD,
+            OpCode::CPUI_INT_SUB,
+            OpCode::CPUI_INT_MULT,
+            OpCode::CPUI_INT_LEFT,
+            OpCode::CPUI_INT_RIGHT,
+            OpCode::CPUI_INT_SRIGHT,
+            OpCode::CPUI_INT_LESS,
+            OpCode::CPUI_INT_SLESS,
+            OpCode::CPUI_INT_SLESSEQUAL,
+            OpCode::CPUI_INT_CARRY,
+            OpCode::CPUI_INT_SCARRY,
+            OpCode::CPUI_INT_SBORROW,
+            OpCode::CPUI_INT_DIV,
+            OpCode::CPUI_INT_SDIV,
+            OpCode::CPUI_INT_REM,
+            OpCode::CPUI_INT_SREM,
+        ];
+        let vals = [0u128, 1, 3, 7, 31, 32, 0x7fff_ffff, 0x8000_0000, 0xffff_ffff, 0x1234_5678];
+        for size in [1u32, 2, 4] {
+            for &op in &ops {
+                for &a in &vals {
+                    for &b in &vals {
+                        let (a, b) = (a & mask(size), b & mask(size));
+                        let out = if matches!(
+                            op,
+                            OpCode::CPUI_INT_LESS
+                                | OpCode::CPUI_INT_SLESS
+                                | OpCode::CPUI_INT_SLESSEQUAL
+                                | OpCode::CPUI_INT_CARRY
+                                | OpCode::CPUI_INT_SCARRY
+                                | OpCode::CPUI_INT_SBORROW
+                        ) {
+                            1
+                        } else {
+                            size
+                        };
+                        let table = eval(op, out, &[(a, size), (b, size)]);
+                        let wide = eval_wide(op, out, &[(a, size), (b, size)]);
+                        match (&table, &wide) {
+                            (Err(Halt::Trap(_)), Err(Halt::Trap(_))) => {}
+                            _ => assert_eq!(table, wide, "{} size {size} a={a:#x} b={b:#x}", get_opname(op)),
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn floats_and_division_by_zero_stop_the_run() {
+        assert!(matches!(eval(OpCode::CPUI_FLOAT_ADD, 4, &[(0, 4), (0, 4)]), Err(Halt::Unsupported(_))));
+        assert!(matches!(eval(OpCode::CPUI_INT_DIV, 4, &[(1, 4), (0, 4)]), Err(Halt::Trap(_))));
+        assert!(matches!(eval(OpCode::CPUI_INT_DIV, 16, &[(1, 16), (0, 16)]), Err(Halt::Trap(_))));
+    }
+}

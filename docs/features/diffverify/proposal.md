@@ -1,6 +1,7 @@
 # [PROPOSAL] diffverify — differential semantic checking with z3, QEMU and kuna
 
-Status: **proposal**. Design only; nothing is implemented before approval.
+Status: **proposal**. Slice C1 is implemented in `decompiler/crates/kuna-verify`; its
+measurements and the design changes it forced are in `c1-results.md`.
 Evidence, coverage estimates and the hard part: `analysis.md` in this folder.
 
 ## What this makes possible
@@ -28,8 +29,8 @@ candidate change that makes a function newly `DIFFERS` is rejected before review
 ## Principles
 
 1. **No home-grown solver or machine emulator.** z3 proves, QEMU (through Unicorn where
-   `qemu-user` is unavailable) checks the lift, and kuna's SLEIGH emulator runs the
-   machine code. kuna owns the encoding and an interpreter for its own `Funcdata`
+   `qemu-user` is unavailable) checks the lift, and kuna's SLEIGH translator and op
+   semantics run the machine code. kuna owns the encoding and an interpreter for its own `Funcdata`
    (Tier C).
 2. **Dev-only.** A new workspace crate, `kuna-verify`, next to `kuna-harness`. The release
    binary does not link it and its output is byte-identical. Emitted C does not change,
@@ -55,17 +56,23 @@ candidate change that makes a function newly `DIFFERS` is rejected before review
    x86-64 `RDX:RAX` trim is one entry: option `returnpair`, x86-64, the `RDX` half of a
    16-byte return, machine `RDX = 0`. A difference that matches an entry is
    `DIVERGES(entry)`; a different difference under the same option is still `DIFFERS`.
+   C1 found a second entry, `switchrunon-cut-row` (`c1-results.md` §3).
    Each entry counts its matches, so a sudden rise is visible. The list is part of the
    first slice, not an afterthought.
 
 ## Tier C — run both sides (first)
 
 **Machine side.**
-- Run the function's own machine code from its entry with `EmulatePcodeCache` (SLEIGH
-  p-code over the load image) until it returns.
+- Run the function's own machine code from its entry until it returns. Each instruction
+  is lifted by the program's SLEIGH translator, and its ops are evaluated with the
+  `OpBehavior` table `EmulatePcodeCache` uses (`c1-results.md` §6 says why not the engine
+  itself).
 - Inputs: a full random machine state, with seeded edge values (0, -1, sign boundaries,
   shift counts ≥ width). Both sides start from this same raw state: the same register,
   stack and memory values.
+- Argument registers keep the extension the ABI documents for the claimed parameters
+  (`narrowext abi`): a caller cannot pass a 32-bit `int` in a 64-bit RISC-V register
+  without sign-extending it, so no input does.
 - Pointer arguments point into a mapped scratch region with the same contents **and the
   same addresses** on both sides. A pointer that differs between the sides makes every
   address-dependent value differ, which is a harness false positive, not a bug. All of
@@ -238,7 +245,7 @@ localize than inside a whole-function proof.
 ## Tier L — the lift against the machine (QEMU/Unicorn)
 
 **Compares** one instruction's effect on random state:
-- kuna side: SLEIGH p-code in `EmulatePcodeCache`;
+- kuna side: the SLEIGH p-code and op semantics Tier C's machine side runs;
 - machine side: Unicorn, which is QEMU's TCG as a library and runs on macOS, unlike
   `qemu-user`.
 
@@ -277,7 +284,7 @@ library rather than stubbed.
 
 | slice | scope | done when |
 |---|---|---|
-| C1 | Tier C on register-only leaf functions: no calls and no memory access at all, except loads from read-only image data; same raw state on both sides; physical-ABI and typed-contract return checks; `PROTOTYPE_SUSPECT`; `UNKNOWN(unsupported-op)`; declared-divergence predicates | reverting #794 gives `DIFFERS` against its fixture's source contract; verdict table over `tests/datatests` + `tests/stages`, with per-function and total time |
+| C1 | Tier C on register-only leaf functions: no calls and no memory access at all, except loads from read-only image data; same raw state on both sides; physical-ABI and typed-contract return checks; `PROTOTYPE_SUSPECT`; `UNKNOWN(unsupported-op)`; declared-divergence predicates | reverting #794 gives `DIFFERS` against its fixture's source contract; verdict table over `tests/datatests` + `tests/stages`, with per-function and total time. **Done** (`c1-results.md`) |
 | C2 | memory and call effects: stack, pointer-argument and global memory; call stubs that write reachable memory, globals included; `UNKNOWN(call-effect)` | reverting #801 gives `DIFFERS`; a rule that keeps a pre-call load across a call that writes it gives `DIFFERS` |
 | C3 | rule localization over the C1/C2 verdicts | candidate culprits include `subvar_zext` on reverted #794; cost per finding |
 | C4 | corpus run (decbench binaries); precision and recall | precision: triage of every `DIFFERS` into bug / declared divergence / harness bug. Recall: of the ~44 visible P3/P4 fixes that have a fixture, how many give `DIFFERS` when reverted. Published table with both |
@@ -292,7 +299,9 @@ baseline file like `docs/baseline.json`.
 
 ## Cost
 
-Nothing has been measured yet; C1 measures it. What the design expects, and why:
+C1 measured Tier C (`c1-results.md` §5): 49.8 s of checking for 3,979 functions over both
+corpora, 47.2 s of it in 15 functions whose loops exhaust the step budget; median 1.0 ms
+per function in scope. What the design expects for the rest, and why:
 
 - **Tier C** costs one decompile, which a check needs anyway, plus n concrete runs of
   one function (256 by default), each capped by a step budget. There is no solver and

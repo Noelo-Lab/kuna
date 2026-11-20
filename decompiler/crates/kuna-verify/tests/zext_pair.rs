@@ -1,0 +1,102 @@
+//! #794 end to end on 32-bit ARM: `ins16` returns a `u64` whose high word the
+//! machine zeroes. Narrowed to `int` (`--option returnpair single`, the pre-fix
+//! behavior) it agrees under the physical ABI and differs against the source's
+//! contract; with the fix it agrees with both.
+
+use std::path::PathBuf;
+
+use kuna_verify::{check_binary, Options, Report, Verdict};
+use object::write::{Object, Symbol, SymbolSection};
+use object::{Architecture, BinaryFormat, Endianness, FileFlags, SectionKind, SymbolFlags, SymbolKind, SymbolScope};
+
+const SOURCE: &str = "typedef unsigned long long u64;
+u64 ins16(unsigned a, unsigned short b) { return ((a + 1) << 16) | b; }
+u64 zadd(int a, int b) { return (unsigned)(a + b); }
+u64 zsel(int a, unsigned b) { return a > 0 ? b : 7u; }
+u64 twice(unsigned a, unsigned short b) { return ins16(a, b) * 2; }
+";
+
+/// `ins16` is `orr r0,r1,r0,lsl #16; mov r1,#0; add r0,r0,#65536; bx lr`;
+/// `twice` calls it.
+const FUNCS: &[(&str, &[u32])] = &[
+    ("ins16", &[0xe1810800, 0xe3a01000, 0xe2800801, 0xe12fff1e]),
+    ("zadd", &[0xe0810000, 0xe3a01000, 0xe12fff1e]),
+    ("zsel", &[0xe3500000, 0xd3a01007, 0xe1a00001, 0xe3a01000, 0xe12fff1e]),
+    ("twice", &[0xe92d4800, 0xebfffff9, 0xe1a01081, 0xe1811fa0, 0xe1a00080, 0xe8bd4800, 0xe12fff1e]),
+];
+
+fn arm_object() -> PathBuf {
+    let mut text = Vec::new();
+    let mut at = Vec::new();
+    for (_, code) in FUNCS {
+        at.push(text.len() as u64);
+        text.extend(code.iter().flat_map(|w| w.to_le_bytes()));
+    }
+    let mut obj = Object::new(BinaryFormat::Elf, Architecture::Arm, Endianness::Little);
+    obj.flags = FileFlags::Elf { os_abi: 0, abi_version: 0, e_flags: 0x0500_0000 };
+    let section = obj.add_section(Vec::new(), b".text".to_vec(), SectionKind::Text);
+    obj.append_section_data(section, &text, 16);
+    for ((name, code), &value) in FUNCS.iter().zip(&at) {
+        obj.add_symbol(Symbol {
+            name: name.as_bytes().to_vec(),
+            value,
+            size: (code.len() * 4) as u64,
+            kind: SymbolKind::Text,
+            scope: SymbolScope::Linkage,
+            weak: false,
+            section: SymbolSection::Section(section),
+            flags: SymbolFlags::None,
+        });
+    }
+    let dir = std::env::temp_dir().join(format!("kuna-verify-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("zext_pair.o");
+    std::fs::write(&path, obj.write().unwrap()).unwrap();
+    path
+}
+
+fn specs() -> Vec<String> {
+    let p = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../specs");
+    vec![p.canonicalize().unwrap().to_string_lossy().into_owned()]
+}
+
+fn check(functions: &[&str], options: &[(&str, &str)], contract: bool) -> Vec<Report> {
+    let path = arm_object();
+    let functions: Vec<String> = functions.iter().map(|s| s.to_string()).collect();
+    let options: Vec<(String, String)> = options.iter().map(|(n, v)| (n.to_string(), v.to_string())).collect();
+    let opts = Options { runs: 64, ..Options::default() };
+    let source = contract.then_some((SOURCE, "zext_pair.c"));
+    check_binary(&path.to_string_lossy(), &functions, &options, &specs(), source, &opts).unwrap()
+}
+
+#[test]
+fn narrowed_return_differs_only_against_the_contract() {
+    let physical = check(&["ins16"], &[("returnpair", "single")], false);
+    assert_eq!(physical[0].verdict, Verdict::Agrees(64), "{}", physical[0].render());
+    assert!(
+        physical[0].suspects.iter().any(|s| s.contains("r1") && s.contains("every run")),
+        "{}",
+        physical[0].render()
+    );
+
+    let typed = check(&["ins16"], &[("returnpair", "single")], true);
+    let r = &typed[0];
+    assert!(matches!(r.verdict, Verdict::Differs { .. }), "{}", r.render());
+    let text = r.render();
+    assert!(text.contains("contract u64 ins16(unsigned a, unsigned short b)"), "{text}");
+    assert!(text.contains("r1:r0"), "{text}");
+}
+
+#[test]
+fn the_fix_agrees_with_the_contract() {
+    let reports = check(&["ins16", "zadd", "zsel"], &[], true);
+    for r in &reports {
+        assert_eq!(r.verdict, Verdict::Agrees(64), "{}", r.render());
+    }
+}
+
+#[test]
+fn a_caller_is_outside_c1() {
+    let reports = check(&["twice"], &[], false);
+    assert!(matches!(&reports[0].verdict, Verdict::Skipped(s) if s.contains("not-leaf")), "{}", reports[0].render());
+}
