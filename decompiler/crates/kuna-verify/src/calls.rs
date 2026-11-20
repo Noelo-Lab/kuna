@@ -94,6 +94,8 @@ pub struct Calls {
     pub input_regs: Vec<(u64, u32)>,
     /// Its general-purpose argument registers, in the order it assigns them.
     pub int_regs: Vec<Storage>,
+    /// The registers it returns values in.
+    pub output_regs: Vec<(u64, u32)>,
 }
 
 /// One call as a side made it.
@@ -301,5 +303,13 @@ pub fn sites(fd: &Funcdata, env: &Env) -> Calls {
         })
         .map(|e| Storage::new(&env.register, e.get_base(), e.get_size() as u32))
         .collect();
-    Calls { by_addr, default, inside, jumps, branches, pointer_regs, input_regs, int_regs }
+    let output_regs = own
+        .model()
+        .output()
+        .get_entry()
+        .iter()
+        .filter(|e| e.get_space().get_index() == env.register.get_index())
+        .map(|e| (e.get_base(), e.get_size() as u32))
+        .collect();
+    Calls { by_addr, default, inside, jumps, branches, pointer_regs, input_regs, int_regs, output_regs }
 }

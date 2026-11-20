@@ -754,6 +754,7 @@ pub fn run<'e, 'p>(
         convention: Vec::new(),
     };
     m.state.kill_salt = with_args.map_or(0, |o| o.kill_salt);
+    m.state.kill_salt_skip = calls.output_regs.clone();
     if let Some(o) = with_args.filter(|o| o.call.is_none()) {
         let register = std::rc::Rc::clone(&env.register);
         for &(off, b) in &o.bytes {

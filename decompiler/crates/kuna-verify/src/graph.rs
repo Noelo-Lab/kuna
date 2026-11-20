@@ -54,8 +54,9 @@ pub struct CallInput {
 pub struct Perturb {
     pub salt: u64,
     pub inputs: Vec<(u64, u32)>,
-    /// Also give registers a call kills, read after it, other values.
-    pub killed: bool,
+    /// Also give registers a call kills, read after it, other values: the
+    /// output registers (`Some(true)`) or the others (`Some(false)`).
+    pub killed: Option<bool>,
 }
 
 struct Run<'e, 'p, 'c> {
@@ -93,6 +94,14 @@ impl Run<'_, '_, '_> {
             Operand::TooWide => Err(Halt::Unsupported(format!("{}-byte varnode", a.size))),
             Operand::Missing => Err(Halt::Harness("op lacks an input".into())),
         }
+    }
+
+    /// Whether an op writes a register the convention returns values in.
+    fn is_output(&self, op: &Op) -> bool {
+        op.out.as_ref().and_then(|o| o.storage.as_ref()).is_some_and(|st| {
+            st.space.get_index() == self.state.env.register.get_index()
+                && self.calls.output_regs.iter().any(|&(o, n)| st.off < o + u64::from(n) && o < st.off + u64::from(st.size))
+        })
     }
 
     /// Whether input storage `st` is one kuna's C never assigns.
@@ -340,7 +349,7 @@ impl Run<'_, '_, '_> {
             Kind::Indirect(effect) => {
                 let v = match effect {
                     Effect::Keep => self.input(op, 0)?,
-                    Effect::Killed if self.perturb.is_some_and(|p| p.killed) => {
+                    Effect::Killed if self.perturb.and_then(|p| p.killed).is_some_and(|outputs| outputs == self.is_output(op)) => {
                         let (size, slot) = op.out.as_ref().map_or((0, 0), |o| (o.size, o.slot as u64));
                         scramble(self.perturb.map_or(0, |p| p.salt), self.state.run, op.at ^ (slot << 40) ^ 0x5bd1_e995) & mask(size)
                     }

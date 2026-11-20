@@ -425,6 +425,8 @@ pub struct State<'e, 'p> {
     passed_objects: Vec<(u64, u64)>,
     /// Varies what a stub leaves in the registers it kills.
     pub kill_salt: u32,
+    /// Registers `kill_salt` leaves alone.
+    pub kill_salt_skip: Vec<(u64, u32)>,
     /// Frame bytes last written by such code: a frame object's comparison at
     /// a call leaves them out, as a helper's leftovers in a buffer C never
     /// initialized.
@@ -545,6 +547,7 @@ impl<'e, 'p> State<'e, 'p> {
             live: None,
             passed_objects: Vec::new(),
             kill_salt: 0,
+            kill_salt_skip: Vec::new(),
         }
     }
 
@@ -777,7 +780,8 @@ impl<'e, 'p> State<'e, 'p> {
         let register = Rc::clone(&self.env.register);
         for &(off, size) in killed {
             for i in 0..u64::from(size) {
-                let b = self.env.killed_byte(self.run ^ self.kill_salt, call, off + i);
+                let salt = if self.kill_salt_skip.iter().any(|&(o, n)| off + i >= o && off + i < o + u64::from(n)) { 0 } else { self.kill_salt };
+                let b = self.env.killed_byte(self.run ^ salt, call, off + i);
                 self.put(&register, off + i, b);
             }
         }

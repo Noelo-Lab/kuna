@@ -389,16 +389,24 @@ fn unassigned(
     let mut out = Vec::new();
     if killed {
         out.push(Unassigned {
-            perturb: graph::Perturb { salt, inputs: Vec::new(), killed: true },
+            perturb: graph::Perturb { salt, inputs: Vec::new(), killed: Some(true) },
+            names: "a call's output register it never connects".to_string(),
+            entry: Vec::new(),
+            shared: false,
+        });
+        out.push(Unassigned {
+            perturb: graph::Perturb { salt, inputs: Vec::new(), killed: Some(false) },
             names: "a register a call kills, read after the call".to_string(),
             entry: Vec::new(),
+            shared: true,
         });
     }
     if !inputs.is_empty() && !fd.get_func_proto().is_input_locked() {
         out.push(Unassigned {
-            perturb: graph::Perturb { salt, inputs: inputs.iter().map(|s| (s.off, s.size)).collect(), killed: false },
+            perturb: graph::Perturb { salt, inputs: inputs.iter().map(|s| (s.off, s.size)).collect(), killed: None },
             names: inputs.iter().map(|s| s.name(prog)).collect::<Vec<_>>().join(", "),
             entry: inputs.iter().map(|s| (s.off, s.size)).collect(),
+            shared: true,
         });
     }
     out
@@ -411,6 +419,10 @@ struct Unassigned {
     perturb: graph::Perturb,
     names: String,
     entry: Vec<(u64, u32)>,
+    /// A dependence the machine shares, given the same values, is the
+    /// binary's own and not kuna's. Not so for a call's output register:
+    /// the binary reads what the callee returned there.
+    shared: bool,
 }
 
 /// The bytes of the perturbed entry registers for one run.
@@ -425,6 +437,24 @@ fn entry_bytes(env: &Env, u: &Unassigned, run: u32) -> Vec<(u64, u8)> {
         }
     }
     out
+}
+
+/// What a callee run for real did differently given other arguments: the
+/// value it returns, or what it wrote to memory.
+fn callee_differs(prog: &ConsoleProgram, calls: &Calls, a: Option<&Record>, b: Option<&Record>) -> Option<String> {
+    let (ea, eb) = (a?.effect.as_ref()?, b?.effect.as_ref()?);
+    let site = calls.site(a?.at);
+    if let Some(out) = site.output.as_ref().filter(|o| o.space.get_type() == spacetype::IPTR_PROCESSOR) {
+        let within = |r: &&(u64, u8)| r.0 >= out.off && r.0 < out.off + u64::from(out.size);
+        let (ra, rb): (Vec<_>, Vec<_>) = (ea.regs.iter().filter(within).collect(), eb.regs.iter().filter(within).collect());
+        if ra != rb {
+            return Some(format!("callee returns another {}", out.name(prog)));
+        }
+    }
+    let writes = |e: &crate::state::Effect| -> Vec<(i32, u64, u8)> {
+        e.events.iter().filter_map(|ev| if let crate::state::Event::Write(s, o, b) = ev { Some((*s, *o, *b)) } else { None }).collect()
+    };
+    (writes(ea) != writes(eb)).then(|| "callee writes other memory".to_string())
 }
 
 /// The first observable two machine runs differ in.
@@ -620,7 +650,8 @@ pub fn check_function(prog: &ConsoleProgram, fd: &Funcdata, contract: Option<&Co
         let mut cc = compare_calls(prog, &env, run, &calls, &mo.calls, &go.calls);
         if let Some(ci) = go.call_input.as_ref().filter(|_| cc.differs.is_none() && cc.declared.is_none()) {
             if let Ok(alt) = machine::run(&env, run, entry, opts.budget, &calls, Some(&ci.with)) {
-                if let Some(d) = machine_differs(prog, &env, run, &calls, &claim, &mo, &alt) {
+                let callee = ci.with.call.and_then(|k| callee_differs(prog, &calls, mo.calls.get(k), alt.calls.get(k)));
+                if let Some(d) = machine_differs(prog, &env, run, &calls, &claim, &mo, &alt).or(callee) {
                     let l = format!("{}; given kuna's arguments, the machine's {d}", ci.msg);
                     if ci.locked {
                         cc.suspects.push(format!("{l}; the callee's declared prototype does not take it"));
@@ -706,7 +737,7 @@ pub fn check_function(prog: &ConsoleProgram, fd: &Funcdata, contract: Option<&Co
             for u in &perturb {
                 let Ok(gp) = graph::run(&env, &program, run, opts.budget, &calls, replay, Some(&u.perturb)) else { continue };
                 let Some(d) = depends(prog, &env, run, &calls, &claim, &go, &gp) else { continue };
-                {
+                if u.shared {
                     let with = if u.entry.is_empty() {
                         machine::WithArgs { call: None, bytes: Vec::new(), kill_salt: 0x5a5a_5a5a }
                     } else {
