@@ -124,6 +124,9 @@ impl Compare<'_> {
         if let Some(out) = &self.claim.storage {
             let k = ret.ok_or_else(|| Halt::Harness("RETURN without the prototype's value".into()))?;
             let mv = ms.read_storage(&out.space, out.off, out.size)?;
+            if self.claim.float && divergence::nan_quieting(out.size, mv, k & mask(out.size)) {
+                return Ok(Outcome::Declared(divergence::NAN_QUIETING.id));
+            }
             if mv != k & mask(out.size) {
                 lines.push(format!("machine  {} = {}", out.name(self.prog), hex(mv, out.size)));
                 lines.push(format!("kuna     {} = {}", self.claim.text, hex(k, out.size)));

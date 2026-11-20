@@ -101,10 +101,10 @@
       "corpus": "tests/datatests + tests/stages, 256 runs per function",
       "functions": 4030,
       "verdicts": {
-        "AGREES": 2932,
-        "DIFFERS": 77,
-        "DIVERGES": 11,
-        "UNKNOWN": 1010
+        "AGREES": 3174,
+        "DIFFERS": 92,
+        "DIVERGES": 12,
+        "UNKNOWN": 752
       },
       "c1_agrees_regressed": 0,
       "c2_agrees_regressed": 12,
@@ -145,13 +145,20 @@
         "kuna-repframecopy sub_4012c0 (stack-pop guess)",
         "kuna-stackviews obj_global_reuse (default stackviews off drops stores to an escaped frame)",
         "kuna-libctypes next_byte x2 (recovered return wider than int)"
-      ]
+      ],
+      "float_support": {
+        "newly_judged": 242,
+        "new_differs": 15,
+        "kuna_defects": 5,
+        "harness_limit_functions": 3
+      }
     }
   },
   "declared_divergences": [
     "returnpair-rdx-zero",
     "switchrunon-cut-row",
     "synthesized-call",
-    "gowritebarrier"
+    "gowritebarrier",
+    "nan-quieting"
   ]
 }

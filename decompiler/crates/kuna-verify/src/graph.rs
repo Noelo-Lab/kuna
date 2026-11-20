@@ -126,12 +126,18 @@ impl Run<'_, '_, '_> {
                 crate::program::Operand::Input(st) => int_regs.iter().position(|r| r.covers(st)).map(|i| (i, st.clone())),
                 _ => None,
             };
+            let float_reg = a.storage.clone().filter(|st| {
+                st.space.get_index() == reg
+                    && !int_regs.iter().any(|r| r.overlaps(st))
+                    && self.calls.input_regs.iter().any(|&(o, n)| st.off >= o && st.off + u64::from(st.size) <= o + u64::from(n))
+            });
             let st = match (params.get(k - 1).cloned().flatten(), entry_reg) {
                 (Some(p), _) => Some(p),
                 (None, Some((i, st))) => {
                     next = next.max(i + 1);
                     Some(st)
                 }
+                (None, None) if float_reg.is_some() => float_reg,
                 (None, None) => {
                     let r = int_regs.get(next).cloned();
                     next += 1;

@@ -5,7 +5,8 @@
 //! disagree on what an `INT_SRIGHT` means. Integer ops on wider values, up to
 //! sixteen bytes (a 64-bit multiply-high widens to 128 bits), and the
 //! decompiler-only ops (`CAST`, `PTRADD`, `PTRSUB`) are defined here. Floating
-//! point and anything wider are refused, never approximated.
+//! point runs on IEEE single and double, through the same table; other float
+//! encodings and anything wider are refused, never approximated.
 
 use std::rc::Rc;
 
@@ -64,18 +65,59 @@ pub fn mask(size: u32) -> u128 {
     }
 }
 
-struct NoFloats;
+/// IEEE single and double: the float formats both sides evaluate with.
+struct Ieee {
+    single: FloatFormat,
+    double: FloatFormat,
+}
 
-impl FloatFormatProvider for NoFloats {
-    fn get_float_format(&self, _size: i32) -> Option<&FloatFormat> {
-        None
+impl FloatFormatProvider for Ieee {
+    fn get_float_format(&self, size: i32) -> Option<&FloatFormat> {
+        match size {
+            4 => Some(&self.single),
+            8 => Some(&self.double),
+            _ => None,
+        }
     }
+}
+
+/// The IEEE operations that only move bits: a sign change and a format
+/// conversion of a NaN keep its payload, which a trip through the host's
+/// floats would not.
+fn ieee_bits(opc: OpCode, out: u32, ins: &[(u128, u32)]) -> Option<u128> {
+    let &(a, size) = ins.first()?;
+    let sign = |n: u32| 1u128 << (n * 8 - 1);
+    match (opc, size) {
+        (OpCode::CPUI_FLOAT_NEG, 4 | 8) if out == size => Some((a ^ sign(size)) & mask(size)),
+        (OpCode::CPUI_FLOAT_ABS, 4 | 8) if out == size => Some(a & !sign(size) & mask(size)),
+        (OpCode::CPUI_FLOAT_FLOAT2FLOAT, 4) if out == 8 && is_nan(a, 4) => {
+            let (s, frac) = ((a >> 31) & 1, a & 0x7f_ffff);
+            Some((s << 63) | (0x7ff << 52) | (frac << 29) | (1 << 51))
+        }
+        (OpCode::CPUI_FLOAT_FLOAT2FLOAT, 8) if out == 4 && is_nan(a, 8) => {
+            let (s, frac) = ((a >> 63) & 1, a & 0xf_ffff_ffff_ffff);
+            Some((s << 31) | (0xff << 23) | (frac >> 29) | (1 << 22))
+        }
+        _ => None,
+    }
+}
+
+fn is_nan(v: u128, size: u32) -> bool {
+    match size {
+        4 => (v >> 23) & 0xff == 0xff && v & 0x7f_ffff != 0,
+        8 => (v >> 52) & 0x7ff == 0x7ff && v & 0xf_ffff_ffff_ffff != 0,
+        _ => false,
+    }
+}
+
+fn is_float(opc: OpCode) -> bool {
+    (OpCode::CPUI_FLOAT_EQUAL as u32..=OpCode::CPUI_FLOAT_ROUND as u32).contains(&(opc as u32))
 }
 
 thread_local! {
     static BEHAVIORS: Vec<Option<Rc<dyn OpBehavior>>> = {
         let mut inst = Vec::new();
-        let provider: Rc<dyn FloatFormatProvider> = Rc::new(NoFloats);
+        let provider: Rc<dyn FloatFormatProvider> = Rc::new(Ieee { single: FloatFormat::new(4), double: FloatFormat::new(8) });
         register_instructions(&mut inst, &provider);
         inst
     };
@@ -176,8 +218,11 @@ pub fn eval(opc: OpCode, out_size: u32, ins: &[(u128, u32)]) -> Result<u128, Hal
     if out_size > MAX_SIZE || ins.iter().any(|&(_, s)| s > MAX_SIZE) {
         return Err(Halt::Unsupported(format!("{} wider than {MAX_SIZE} bytes", get_opname(opc))));
     }
-    if (OpCode::CPUI_FLOAT_EQUAL as u32..=OpCode::CPUI_FLOAT_ROUND as u32).contains(&(opc as u32)) {
+    if is_float(opc) && (out_size > 8 || ins.iter().any(|&(_, s)| s > 8)) {
         return Err(Halt::Unsupported(get_opname(opc).to_string()));
+    }
+    if let Some(v) = ieee_bits(opc, out_size, ins) {
+        return Ok(v);
     }
     let arg = |i: usize| -> Result<(u128, u32), Halt> {
         ins.get(i)
@@ -216,9 +261,14 @@ pub fn eval(opc: OpCode, out_size: u32, ins: &[(u128, u32)]) -> Result<u128, Hal
             let (b, _) = arg(1)?;
             behave.evaluate_binary(out_size as i32, asize as i32, a as u64, b as u64)
         };
-        result
-            .map(|v| u128::from(v) & m)
-            .map_err(|e| Halt::Trap(format!("{}: {}", get_opname(opc), e.explain())))
+        result.map(|v| u128::from(v) & m).map_err(|e| {
+            let why = format!("{}: {}", get_opname(opc), e.explain());
+            if is_float(opc) {
+                Halt::Unsupported(why)
+            } else {
+                Halt::Trap(why)
+            }
+        })
     })
 }
 
@@ -301,8 +351,13 @@ mod tests {
     }
 
     #[test]
-    fn floats_and_division_by_zero_stop_the_run() {
-        assert!(matches!(eval(OpCode::CPUI_FLOAT_ADD, 4, &[(0, 4), (0, 4)]), Err(Halt::Unsupported(_))));
+    fn ieee_floats_run_and_division_by_zero_stops() {
+        let (one, two, three) = (1.0f32.to_bits().into(), 2.0f32.to_bits().into(), 3.0f32.to_bits().into());
+        assert_eq!(eval(OpCode::CPUI_FLOAT_ADD, 4, &[(one, 4), (two, 4)]), Ok(three));
+        let half = 1.5f64.to_bits().into();
+        assert_eq!(eval(OpCode::CPUI_FLOAT_MULT, 8, &[(half, 8), (2.0f64.to_bits().into(), 8)]), Ok(3.0f64.to_bits().into()));
+        assert!(matches!(eval(OpCode::CPUI_FLOAT_ADD, 2, &[(0, 2), (0, 2)]), Err(Halt::Unsupported(_))));
+        assert!(matches!(eval(OpCode::CPUI_FLOAT_ADD, 16, &[(0, 16), (0, 16)]), Err(Halt::Unsupported(_))));
         assert!(matches!(eval(OpCode::CPUI_INT_DIV, 4, &[(1, 4), (0, 4)]), Err(Halt::Trap(_))));
         assert!(matches!(eval(OpCode::CPUI_INT_DIV, 16, &[(1, 16), (0, 16)]), Err(Halt::Trap(_))));
     }

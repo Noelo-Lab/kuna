@@ -21,17 +21,21 @@ decompiles with an abbreviated command (§5).
 
 | verdict | C2 | C4 |
 |---|---:|---:|
-| `AGREES(256)` | 2,482 | 2,932 |
-| `DIFFERS` | 500 | 77 |
-| `DIVERGES` | 3 | 11 |
-| `UNKNOWN` | 994 | 1,010 |
+| `AGREES(256)` | 2,482 | 3,174 |
+| `DIFFERS` | 500 | 92 |
+| `DIVERGES` | 3 | 12 |
+| `UNKNOWN` | 994 | 752 |
 
-`UNKNOWN` by reason: 767 unsupported operations (SIMD and float user ops, memory
-builtins, ISA-mode switches), 218 budget, 16 traps on both sides, 6 undefined reads of
-the frame, and 3 callees the model guessed.
+`UNKNOWN` by reason: 509 unsupported operations (system calls and traps, SIMD user
+ops, memory builtins, ISA-mode switches, float formats other than IEEE single and
+double), 221 budget, 16 traps on both sides, and 6 undefined reads of the frame.
 
-Of the 77 `DIFFERS`, 28 are the ones §2 triages. The other 49 come from the two checks
-of §6a and are triaged in §6b. None is an unexplained harness defect.
+Of the 92 `DIFFERS`:
+- 28 are the ones §2 triages;
+- 49 come from the two checks of §6a and are triaged in §6b;
+- 15 come from float support and are triaged in §6c.
+
+None is an unexplained harness defect.
 
 Every function C1 found to agree still agrees. Of C2's 2,482, twelve no longer agree:
 - `enum ptrenumlow` is `UNKNOWN(unsupported-op)`: its IR has an `INT_AND` whose output
@@ -309,6 +313,43 @@ The rest are passes a test pins on purpose:
 
 `injectoverride` `inject_collapse` is a harness limit: the machine does not run kuna's
 call-fixup injection.
+
+### 6c. Floats
+
+Float ops now run on IEEE single and double through the same `OpBehavior` table,
+for both sides. Other float encodings (x87's 80 bits, half precision) stay
+`UNKNOWN(unsupported-op)`. Two parts are exact rather than going through the host's
+floats:
+- a sign change (`FLOAT_NEG`, `FLOAT_ABS`);
+- a NaN's format conversion.
+
+These keep a NaN's payload, as IEEE defines them and as a binary that clears a sign bit
+with an integer AND does. A float argument a callee reads is placed at the float
+register kuna's call input sits in.
+
+This judges 242 more functions (2,932 to 3,174 agree). Of the 15 new `DIFFERS`:
+- **NaN compares on ARM and AArch64 (kuna defects):** `armfloat-preset` `scale_err`,
+  `floatret` `logish`, `prefersplit` `ccw_mixed`.
+  - The machine's `vcmp`/`fcmp` sets V on a NaN, so `ble` and `cset gt` take the
+    unordered arm.
+  - kuna prints `a != b && !(a < b)`, which is true for a NaN. `kuna_floatnegation`
+    folds only x86's unordered guard; with `nanignore none` all three agree.
+- **Missing float arguments (kuna defects):**
+  - `arm-float-return`'s on pass prints `(float8)half()`, although `half` reads d0;
+  - `earlyrestart` `main` prints `set_gi_bits()` for `set_gi_bits(-7.5f)`.
+- **Off passes and pinned outputs:** the off passes of `ghdec-calloverlap` and
+  `arm-float-return`, and `declaring-double-score-return`'s two clobber controls.
+- **A harness limit:** `declaring-double-score-return` `score`, `wide_exact_caller`
+  and `refined_score`.
+  - kuna proves the MSVC cookie checker leaves XMM0's low lane alone, but the stub
+    still kills it. The proof is not in the call's effect list.
+  - Using kuna's per-call return-preserve proofs in the stub removed these five and
+    added about fifteen elsewhere, so it was dropped.
+
+`kuna-floatprecision` `widen_roundtrip` is a declared divergence, `nan-quieting`:
+`nanignore compare` treats a float conversion round trip as the identity, so a
+signalling NaN comes back unquieted. A float return that differs only in the quiet bit
+of a NaN matches it.
 
 ## 7. Cost
 

@@ -20,6 +20,8 @@ use crate::value::mask;
 pub struct Claim {
     pub storage: Option<Storage>,
     pub signed: bool,
+    /// The claimed return is a float.
+    pub float: bool,
     pub text: String,
     pub params: Vec<(String, Storage)>,
 }
@@ -64,6 +66,7 @@ pub fn claim(prog: &ConsoleProgram, fd: &Funcdata) -> Claim {
     Claim {
         storage,
         signed: out_type.is_some_and(|t| is_signed(t)),
+        float: meta == type_metatype::TYPE_FLOAT,
         text: format!("{} {}({})", ret, fd.get_name(), decl.join(", ")),
         params,
     }

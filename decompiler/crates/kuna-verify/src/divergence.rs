@@ -64,6 +64,30 @@ pub const GO_WRITE_BARRIER: Divergence = Divergence {
     matches: |_| false,
 };
 
+/// `nanignore compare` (the default) treats a float conversion round trip as
+/// the identity, as upstream does, so a signalling NaN comes back as it went in
+/// where the machine's conversions return it quieted.
+pub const NAN_QUIETING: Divergence = Divergence {
+    id: "nan-quieting",
+    option: "nanignore",
+    arch: "",
+    observable: "a float return",
+    pattern: "both sides return a NaN that differs only in its quiet bit",
+    matches: |_| false,
+};
+
+/// Whether two float values of `size` bytes are NaNs that differ only in the
+/// quiet bit.
+pub fn nan_quieting(size: u32, a: u128, b: u128) -> bool {
+    let (quiet, exp, frac) = match size {
+        4 => (1u128 << 22, 0xffu128 << 23, (1u128 << 23) - 1),
+        8 => (1u128 << 51, 0x7ffu128 << 52, (1u128 << 52) - 1),
+        _ => return false,
+    };
+    let nan = |v: u128| v & exp == exp && v & frac != 0;
+    a != b && nan(a) && nan(b) && a ^ b == quiet
+}
+
 impl Divergence {
     pub fn matches(&self, m: &ReturnMismatch) -> bool {
         m.arch.starts_with(self.arch) && (self.matches)(m)
@@ -96,5 +120,12 @@ mod tests {
         assert!(find(&m("x86:LE:64:default", 1u128 << 64, 0)).is_none());
         assert!(find(&m("x86:LE:64:default", 5, 6)).is_none());
         assert!(find(&m("ARM:LE:32:v8", 0x8000_0000, 0x8000_0000)).is_none());
+    }
+
+    #[test]
+    fn nan_quieting_is_the_quiet_bit_alone() {
+        assert!(nan_quieting(4, 0xffc5_7572, 0xff85_7572));
+        assert!(!nan_quieting(4, 0x7fc0_0000, 0x7fc0_0001));
+        assert!(!nan_quieting(4, 0x3f80_0000, 0x3fc0_0000));
     }
 }
