@@ -1101,6 +1101,17 @@ impl AnalysisPass for DwarfPass {
     }
 
     fn run(&self, ctx: &AnalysisCtx) -> AnalysisOutput {
+        let mut out = Self::run_generic(ctx);
+        if let Some(facts) = kuna_godwarfsig::capture_arm64_compressed(ctx) {
+            out.go_dwarf.push(facts);
+        }
+        out
+    }
+}
+
+impl DwarfPass {
+    #[inline(never)]
+    fn run_generic(ctx: &AnalysisCtx) -> AnalysisOutput {
         let mut out = AnalysisOutput::default();
         if let Some(facts) = kuna_godwarfsig::capture_compressed(ctx) {
             out.go_dwarf.push(facts);

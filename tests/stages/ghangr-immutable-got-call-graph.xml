@@ -1,0 +1,26 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+  Immutable relative GOT calls contribute their actual callee to the public
+  xref/call graph. The console does not expose that read-only index; the
+  end-to-end assertions live in kuna-cli/tests/xrefs_immutable_got.rs. This
+  companion checks that existing C emission stays unchanged. The fixture is
+  repository-authored and contains both immutable and writable callback slots.
+  This strict correctness fix has no option and does not execute the fixture.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/immutable_got_calls_x86_64</com>
+  <com>read symbols</com>
+  <com>parse line extern long callback(long value);</com>
+  <com>parse line extern long through_got(long value);</com>
+  <com>parse line extern long through_mutable(long value);</com>
+  <com>load function through_got</com><com>decompile</com><com>print C</com>
+  <com>load function through_mutable</com><com>decompile</com><com>print C</com>
+</script>
+<stringmatch name="Immutable GOT graph resolution keeps the existing named C call" min="1" max="1">return callback\(value\);</stringmatch>
+<stringmatch name="Immutable GOT graph resolution keeps writable C calls indirect" min="1" max="1">\(\*mutable_slot\)\(</stringmatch>
+</decompilertest>
