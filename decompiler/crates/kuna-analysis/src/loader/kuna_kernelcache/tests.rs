@@ -214,6 +214,133 @@ fn auxiliary_collection_rebases_only_its_own_level() {
     assert!(kext.note.unwrap().contains("2 chained-fixup pointers rebased"));
 }
 
+const BOOT_BASE: u64 = 0xffff_fe00_0700_4000;
+const AUX_BASE: u64 = 0xffff_fe00_1700_4000;
+
+fn word(image: &[u8], off: usize) -> u64 {
+    u64::from_le_bytes(image[off..off + 8].try_into().unwrap())
+}
+
+/// A fresh directory holding copies of the named `linked/` fixtures.
+fn linked_dir(tag: &str, files: &[&str]) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("kuna-kclinked-{tag}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    for name in files {
+        std::fs::write(dir.join(name), fixture(&format!("linked/{name}"))).unwrap();
+    }
+    dir
+}
+
+fn peel_aux(search: &LinkSearch) -> Peeled {
+    peel_linked(fixture("linked/AuxiliaryKernelExtensions.kc"), &KernelcacheChoice::Auto, search).unwrap()
+}
+
+fn imports(bytes: &[u8]) -> Vec<(u64, String)> {
+    let file = object::File::parse(bytes).unwrap();
+    let found = crate::loader::macho_stubs::resolve_macho_imports(&file, bytes);
+    found.iter().map(|i| (i.addr, String::from_utf8_lossy(&i.name).into_owned())).collect()
+}
+
+/// An Auxiliary collection's level-0 slots are rebased against the boot
+/// collection found beside it, by UUID, and the kernel functions they reach
+/// become named imports of the kext; its own level-3 slot and its own symbols
+/// are untouched.
+#[test]
+fn auxiliary_collection_resolves_into_the_boot_collection_beside_it() {
+    use kuna_decomp::kuna_kernelcacheboot::KernelcacheBoot;
+    let dir = linked_dir("beside", &["AuxiliaryKernelExtensions.kc", "BootKernelExtensions.kc"]);
+    let input = dir.join("AuxiliaryKernelExtensions.kc");
+    for choice in [
+        KernelcacheBoot::Auto,
+        KernelcacheBoot::Path(dir.clone()),
+        KernelcacheBoot::Path(dir.join("BootKernelExtensions.kc")),
+    ] {
+        let kext = peel_aux(&LinkSearch::new(&input, choice.clone()));
+        assert_eq!(word(&kext.bytes, 0x3000), BOOT_BASE + 0x3000, "{choice:?}: auth slot -> kernel_add");
+        assert_eq!(word(&kext.bytes, 0x3008), BOOT_BASE + 0x3008, "{choice:?}: slot -> kernel_log");
+        assert_eq!(word(&kext.bytes, 0x3010), AUX_BASE + 0x1400, "{choice:?}: own level 3");
+        let named = imports(&kext.bytes);
+        assert!(named.contains(&(BOOT_BASE + 0x3000, "kernel_add".into())), "{choice:?}: {named:?}");
+        assert!(named.contains(&(BOOT_BASE + 0x3008, "kernel_log".into())), "{choice:?}: {named:?}");
+        assert!(named.contains(&(AUX_BASE + 0x3000, "kernel_add".into())), "{choice:?}: the slot is its import's");
+        assert!(named.contains(&(AUX_BASE + 0x3008, "kernel_log".into())), "{choice:?}: {named:?}");
+        assert!(named.iter().all(|&(addr, _)| addr != AUX_BASE + 0x3010), "{choice:?}: a __const slot is no import");
+        let note = kext.note.unwrap();
+        assert!(note.contains("1 chained-fixup pointers rebased"), "{note}");
+        assert!(
+            note.contains("2 pointers into the boot collection rebased from BootKernelExtensions.kc (2 functions named)"),
+            "{note}"
+        );
+        use object::read::{Object, ObjectSymbol};
+        let file = object::File::parse(&kext.bytes[..]).unwrap();
+        assert!(file.symbols().any(|s| s.name() == Ok("_gadget_start")), "the kext keeps its own symbols");
+    }
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+/// With no boot collection to read, the level-0 slots keep their packed words,
+/// nothing is named, and the note counts them and says why.
+#[test]
+fn auxiliary_collection_without_its_boot_collection_stays_unresolved() {
+    use kuna_decomp::kuna_kernelcacheboot::KernelcacheBoot;
+    let raw = fixture("linked/AuxiliaryKernelExtensions.kc");
+    let dir = linked_dir("alone", &["AuxiliaryKernelExtensions.kc"]);
+    let input = dir.join("AuxiliaryKernelExtensions.kc");
+    let check = |kext: Peeled, why: &str| {
+        assert_eq!(word(&kext.bytes, 0x3000), word(&raw, 0x3000));
+        assert_eq!(word(&kext.bytes, 0x3008), word(&raw, 0x3008));
+        assert_eq!(word(&kext.bytes, 0x3010), AUX_BASE + 0x1400);
+        assert!(imports(&kext.bytes).iter().all(|(_, name)| !name.starts_with("kernel_")));
+        let note = kext.note.unwrap();
+        assert!(note.contains("2 pointers into the boot collection left unresolved"), "{note}");
+        assert!(note.contains(why), "{note}");
+    };
+    check(
+        peel_aux(&LinkSearch::new(&input, KernelcacheBoot::Auto)),
+        "no collection with UUID 6B756E61-626F-6F74-4B43-000000000001 beside the input",
+    );
+    check(peel_aux(&LinkSearch::none()), "kernelcache-boot is off");
+
+    let mut other = fixture("linked/BootKernelExtensions.kc");
+    for at in (0..other.len() - 16).filter(|&at| other[at..at + 8] == *b"kunaboot").collect::<Vec<_>>() {
+        other[at] = b'K';
+    }
+    let plist = other.windows(22).position(|w| w == b"a3VuYWJvb3RLQwAAAAAAAQ").unwrap();
+    other[plist] = b'b';
+    let wrong = dir.join("BootKernelExtensions.kc");
+    std::fs::write(&wrong, other).unwrap();
+    check(peel_aux(&LinkSearch::new(&input, KernelcacheBoot::Path(wrong))), "no collection with UUID");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+/// Only a regular file other than the input is read as a linked collection:
+/// an input whose plist names its own UUID is not its own boot collection, and
+/// a device named by path is not read.
+#[test]
+fn a_linked_collection_is_a_regular_file_other_than_the_input() {
+    use kuna_decomp::kuna_kernelcacheboot::KernelcacheBoot;
+    let dir = linked_dir("self", &[]);
+    let input = dir.join("AuxiliaryKernelExtensions.kc");
+    let mut aux = fixture("linked/AuxiliaryKernelExtensions.kc");
+    let at = aux.windows(22).position(|w| w == b"a3VuYWJvb3RLQwAAAAAAAQ").unwrap();
+    aux[at..at + 22].copy_from_slice(b"a3VuYWF1eEtDAAAAAAAAAw");
+    std::fs::write(&input, &aux).unwrap();
+    let note = |choice| {
+        let kext = peel_linked(aux.clone(), &KernelcacheChoice::Auto, &LinkSearch::new(&input, choice)).unwrap();
+        kext.note.unwrap()
+    };
+    let mut choices = vec![KernelcacheBoot::Auto, KernelcacheBoot::Path(input.clone())];
+    if cfg!(unix) {
+        choices.push(KernelcacheBoot::Path("/dev/zero".into()));
+    }
+    for choice in choices {
+        let note = note(choice.clone());
+        assert!(note.contains("2 pointers into the boot collection left unresolved (no collection with UUID"), "{choice:?}: {note}");
+    }
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
 #[test]
 fn compressed_containers_peel_to_the_same_kernel() {
     let expected = peel(fixture("fileset.macho"), &KernelcacheChoice::Auto).unwrap().bytes;

@@ -108,6 +108,7 @@ query string owners and references:
 ```bash
 kuna strings ./challenge --filter '(?i)password|flag|correct|wrong' --json
 kuna crypto ./challenge --json          # AES/SHA/MD5/CRC/TEA/Base64 constants + the functions using them
+kuna blobs ./challenge --json           # embedded PNG/JPEG/GIF/BMP/ICO/zip/gzip/xz/zstd files, exact lengths (--extract DIR)
 kuna xrefs ./challenge --from main --json
 ```
 
