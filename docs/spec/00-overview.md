@@ -3031,13 +3031,33 @@ reading for: compiler decorations are removed, an enumerator value or array
 bound that is an integer constant expression over literals and earlier
 enumerators is replaced by its value, an unsized array parameter is spelled as
 a pointer, and `__builtin_va_list` is spelled `void *`, the storage every
-supported ABI passes it in. kuna runs no preprocessor unless `--types-cpp <cc>`
+supported ABI passes it in. The value is the one C gives the expression: each
+literal takes its C type from its digits and suffix, operands meet under the
+usual arithmetic conversions, unsigned arithmetic wraps at its width, and a
+signed `<<` wraps as GCC and Clang define it. The width of `long` differs
+between targets, so a `long` or `unsigned long` result is kept only while it
+means the same at 32 and 64 bits. An expression C leaves undefined (a signed
+overflow, a shift by the width or more, a division by zero), one that depends
+on the target, one with a `char` or `short` cast, and one whose value the
+grammar cannot read back (above the signed 64-bit range) is left as written,
+and the grammar refuses its declaration: a declaration is stated with C's
+value or not at all, because an enumerator that is off by a wrap can widen its
+enum and shift every field after it in a record. A single literal the grammar
+reads as C does is left as written; a binary literal and an enumerator name are
+replaced, since the grammar has no reading for either. kuna runs no preprocessor unless `--types-cpp <cc>`
 names one; then each header is piped through `<cc> -E` and the output is what
 is cut.
 
 The header's directives are placed ahead of the caller's own, whatever the
 order of the flags, and program-scoped directives are applied in order, so an
-`--assert prototype` for the same function is applied last and wins. Each
+`--assert prototype` for the same function is applied last and wins. A header
+prototype is otherwise a `prototype` directive like any other: it outranks the
+signature DWARF and the built-in library tables give the same name, and it is
+not checked against the code, so a header that does not match the binary is
+believed. Types go the other way: the grammar does not redefine a completed
+record or an existing typedef name, so a type that DWARF, a built-in table or
+an earlier header defined keeps its first definition and the header's is a
+`rejected` row. Each
 directive's report row carries `--types <file>:<line>:` and the declaration; a
 declaration the grammar refuses is a `rejected` row and a warning, the others
 still apply, and such a row never fails the run, under `--assert-strict` too:

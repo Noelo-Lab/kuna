@@ -1191,6 +1191,18 @@ does nothing. A function is typed by its own declaration only: declare `fetch`
 in a header too (`int fetch(const char *url);`) to name its parameter and state
 its return type.
 
+A header's prototype has the weight of a `prototype` directive: it replaces the
+signature kuna would otherwise give that function and every call to it, the
+one DWARF or a built-in library table states included, and only an `--assert`
+outranks it. kuna does not check it against the code. A header from another
+version of the library, or one that declares a different function under a name
+the binary also uses, still gives that function the declared signature:
+arguments the code passes but the declaration lacks are dropped from the calls,
+and a `void` return drops the value the callers use. Load the headers the
+binary was built against. A type does not replace one the run already has: a
+`struct`, `union` or `typedef` name that DWARF, a built-in table or an earlier
+header defined keeps that definition, and the header's is reported as rejected.
+
 The text must be preprocessed C. kuna runs no preprocessor on its own: it skips
 `#` lines, so a header that needs its macros or its `#include`s expanded leaves
 declarations that do not parse. **`--types-cpp <cc>`** runs your preprocessor
@@ -1218,8 +1230,11 @@ with a few spellings rewritten first: `__attribute__((..))`, `__asm__(..)`,
 `__extension__`, `__restrict` and `_Noreturn` are dropped; a function body is
 dropped and its declaration kept; an `extern "C" {` wrapper is transparent; an
 enumerator value or an array bound that is an integer constant expression
-(`(1 << 4) | 3`, `10000 + 2`, an earlier enumerator) is replaced by its value;
-an unsized array parameter (`char *argv[]`) is the pointer it is; and
+(`(1 << 4) | 3`, `10000 + 2`, an earlier enumerator) is replaced by the value C
+gives it (`0xFFFFFFFFu + 1` is 0, `1 << 31` is -2147483648), and one whose
+value depends on the target's `long` (`~0UL`), on a `char` or `short` cast, or
+on what C leaves undefined (`1 << 32`, a signed overflow) is not, so its
+declaration is reported as rejected; an unsized array parameter (`char *argv[]`) is the pointer it is; and
 `__builtin_va_list` is `void *`. Variable declarations are skipped. Not read,
 and reported as rejected: `sizeof` in a constant expression, a flexible array
 member, an anonymous struct or union member, and an empty parameter list
