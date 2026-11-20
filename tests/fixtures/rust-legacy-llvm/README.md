@@ -1,0 +1,3 @@
+Each ELF contains the authored x86-64 bytes `xor eax,eax; ret` and one function symbol at `0x401000`. Run `python3 build.py` to reproduce all bytes without a compiler. These inputs are only read by Kuna.
+
+The LLVM-suffixed closure symbol is the exact name in [the pinned angr test](https://github.com/angr/angr/blob/6afa0c79a83d9f677a46b0275cdb63bf16c1979e/tests/analyses/test_rust_utils.py#L342). Its unsuffixed twin calibrates the expected decoded scope. The other inputs preserve ordinary C++, existing uppercase-hash treatment, malformed legacy lengths and unsupported suffix spelling. This change leaves the separate uppercase-hash behavior unchanged.

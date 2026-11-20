@@ -74,7 +74,7 @@ impl AnalysisPass for SwiftMetadataPass {
         };
         if [names.types, names.protocols, names.conformances]
             .iter()
-            .all(|s| ctx.file.section_by_name(s).is_none())
+            .all(|s| crate::objc::sections::sections_named(ctx.file, s).next().is_none())
         {
             return out;
         }
