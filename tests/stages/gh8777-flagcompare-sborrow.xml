@@ -6,22 +6,29 @@
 
     The PIC24 spec models `bra ge` explicitly as the condition-flag identity
     N == V over the subtraction (V - K):
-        cond = (SRL_N && SRL_OV) || (!SRL_N && !SRL_OV)        (== XNOR(N,V))
-    where N = sign of (V - K)  (INT_SLESSEQUAL(0, V-K) / INT_SLESS(-1, V-K))
-    and   V = INT_SBORROW(V, K)  (signed overflow).  XNOR(N,V) is the textbook
-    signed `V >= K` test, but upstream has no rule for it, so the raw flag
-    algebra survives into the rendered loop condition:
+        ge = (SRL_N && SRL_OV) || (!SRL_N && !SRL_OV)          (== XNOR(N,V))
+    where N = sign of (V - K)  and  V = INT_SBORROW(V, K)  (signed overflow).
+    XNOR(N,V) is the textbook signed `V >= K` test, but upstream has no rule
+    for it, so the raw flag algebra survives into the rendered loop condition:
 
       for (iVar1 = 0; bVar2 = 0 <= iVar1 + -7,
           (bVar2 || !SBORROW2(iVar1,7)) && (!bVar2 || SBORROW2(iVar1,7));
           iVar1 = iVar1 + 1) { ... }
 
+    Here bVar2 = `0 <= iVar1 - 7` is NOT N (sign clear), so the tree is
+    XNOR(!N, V) == N != V == `iVar1 < 7`: the loop continues while `ge` is
+    false.  The machine code agrees: W2 counts 0..6, the body stores 0 to
+    0x80 seven times, and `bra ge` leaves once W2 - 7 >= 0.
+
     Stage model: S3 "simplification-quiescence" (which algebraic/peephole rules
     fire).  kuna's RuleSborrowGe (group "analysis", always on) recognizes the
-    XNOR(N,V) tree in either De-Morgan dual form (AND-of-ORs or OR-of-ANDs)
-    with N = sign(V-K) and V = SBORROW(V,K), and rewrites the whole boolean
-    tree to INT_SLESSEQUAL(K, V) == `V s>= K`: the loop condition is the clean
-    signed comparison `7 <= iVar1` and no SBORROW2 remains.
+    XNOR(F, SBORROW(V,K)) tree in either De-Morgan dual form (AND-of-ORs or
+    OR-of-ANDs) over a sign flag F of (V-K), and keeps its polarity:
+      F = N   (`(V-K) s< 0`)                    ->  INT_SLESSEQUAL(K, V)  `K <= V`
+      F = !N  (`0 s<= (V-K)`, `-1 s< (V-K)`)    ->  INT_SLESS(V, K)       `V < K`
+    The loop condition is the clean signed comparison `v1 < 7` (seven
+    iterations) and no SBORROW2 remains.  An earlier version read `0 <= x` as
+    N and printed `7 <= v1`, a loop that never runs.
 
     Disassembly:
       0x000000 mov.w #0x0,W2
@@ -46,5 +53,5 @@
   <com>quit</com>
 </script>
 <stringmatch name="GH8777 #1: the raw SBORROW2 N==V flag idiom never survives" min="0" max="0">\(v2 \|\| !SBORROW2\(v1,7\)\) &amp;&amp; \(!v2 \|\| SBORROW2\(v1,7\)\)</stringmatch>
-<stringmatch name="GH8777 #2: the idiom folds to a clean signed compare (no SBORROW2 left)" min="1" max="1">for \(v1 = 0; 7 &lt;= v1; v1 = v1 \+ 1\)</stringmatch>
+<stringmatch name="GH8777 #2: the idiom folds to a clean signed compare (no SBORROW2 left)" min="1" max="1">for \(v1 = 0; v1 &lt; 7; v1 = v1 \+ 1\)</stringmatch>
 </decompilertest>
