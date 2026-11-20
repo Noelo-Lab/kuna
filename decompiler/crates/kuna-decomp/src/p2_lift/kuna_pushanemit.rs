@@ -1169,8 +1169,35 @@ impl<'a> Emitter<'a> {
         matches!(self.arena.var_kind(e), Some(super::kuna_pushanexpr::VarKind::InitReg { offset }) if offset == off)
     }
 
-    fn is_call_clobber(&self, e: ExprId) -> bool {
-        matches!(self.arena.var_kind(e), Some(super::kuna_pushanexpr::VarKind::CallClobber { .. }))
+    /// Does `e` hold nothing the program put in register `reg`: its entry
+    /// value, a call's leftovers, or a merge symbol that stood only for such
+    /// values on every path into its node (a loop head where the
+    /// interpreter's context slot carried a different call's leftovers each
+    /// time around)?
+    fn never_defined(&self, e: ExprId, reg: u64, seen: &mut BTreeSet<VarId>, depth: u32) -> bool {
+        use super::kuna_pushanexpr::VarKind;
+        if depth > 64 {
+            return false;
+        }
+        match *self.arena.kind(e) {
+            ExprKind::Var(v) => match self.arena.var_info(v).kind {
+                VarKind::InitReg { offset } => offset == reg,
+                VarKind::CallClobber { .. } => true,
+                VarKind::Merged { .. } => {
+                    if !seen.insert(v) {
+                        return true;
+                    }
+                    match self.cfg.sym_sources.get(&v) {
+                        Some(Some(srcs)) => srcs.iter().all(|s| self.never_defined(*s, reg, seen, depth + 1)),
+                        _ => false,
+                    }
+                }
+                _ => false,
+            },
+            ExprKind::Piece(h, l) => self.never_defined(h, reg, seen, depth + 1) && self.never_defined(l, reg, seen, depth + 1),
+            ExprKind::SubPiece(x, _) => self.never_defined(x, reg, seen, depth + 1),
+            _ => false,
+        }
     }
 
     fn undef_vn(&self, off: u64, size: u32) -> VarnodeData {
@@ -1178,7 +1205,8 @@ impl<'a> Emitter<'a> {
     }
 
     /// Before an external call, an argument register still holding its entry
-    /// value or a previous call's leftovers is one the program never defined:
+    /// value or a previous call's leftovers ([`Self::never_defined`]) is one
+    /// the program never defined:
     /// it is rewritten as a read of a placeholder no instruction writes, which
     /// the decompiler's parameter analysis rejects the way it rejects an
     /// untouched register in native code.
@@ -1186,7 +1214,7 @@ impl<'a> Emitter<'a> {
         let args: Vec<(u64, u8)> = self.conf.call_args.iter().copied().filter(|(o, _)| *o != self.conf.sp_reg).collect();
         for (off, size) in args {
             let Some(v) = self.exit_value(node, off, size) else { continue };
-            if self.is_entry_value(v, off) || self.is_call_clobber(v) {
+            if self.never_defined(v, off, &mut BTreeSet::new(), 0) {
                 let dst = self.vn(&self.conf.register, off, size as u32);
                 out.push(OverlayOp { opc: CPUI_COPY, out: Some(dst), ins: vec![self.undef_vn(off, size as u32)] });
                 self.stats.undefined += 1;
@@ -1199,7 +1227,7 @@ impl<'a> Emitter<'a> {
     fn undefined_return(&mut self, node: &super::kuna_pushanflow::Node, out: &mut Vec<OverlayOp>) {
         let (off, size) = (self.conf.return_reg, self.conf.ptr_size);
         let Some(v) = self.exit_value(node, off, size) else { return };
-        if self.is_entry_value(v, off) || self.is_call_clobber(v) {
+        if self.never_defined(v, off, &mut BTreeSet::new(), 0) {
             let dst = self.vn(&self.conf.register, off, size as u32);
             out.push(OverlayOp { opc: CPUI_COPY, out: Some(dst), ins: vec![self.undef_vn(off, size as u32)] });
             self.stats.undefined += 1;

@@ -128,7 +128,9 @@ pub enum Exit {
     Jump(ExprId),
     /// Symbolic guards, in program order: arm `k` is taken when its guard
     /// holds and no earlier guard did; the caller's state is the fall-through
-    /// side after every guard failed.
+    /// side after every guard failed, which continues at `fallthrough` (the
+    /// next instruction, or the constant target the instruction jumps to
+    /// after its guards, as a `rep` prefix loops back to itself).
     CondJump { arms: Vec<(ExprId, ExprId, Box<State>)>, fallthrough: u64 },
     Call { target: ExprId, fallthrough: u64 },
     Return(ExprId),
@@ -609,6 +611,10 @@ impl<'a> Emulator<'a> {
                                 arms.insert(0, (c, target, taken));
                                 Exit::CondJump { arms, fallthrough }
                             }
+                            Exit::Jump(t2) if arena.is_const(t2).is_some() => Exit::CondJump {
+                                arms: vec![(c, target, taken)],
+                                fallthrough: arena.is_const(t2).unwrap_or(0) as u64,
+                            },
                             Exit::Jump(t2) => {
                                 // `if c goto T; goto T2`: a two-way select.
                                 let one = arena.cst(1, 1);

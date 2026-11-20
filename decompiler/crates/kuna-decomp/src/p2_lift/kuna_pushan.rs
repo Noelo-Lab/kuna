@@ -275,6 +275,15 @@ impl PushanImage for ArchTarget<'_> {
             None => true,
         }
     }
+    /// A writable data section's initial bytes are not a fact (another
+    /// function may have changed them), except at an import slot.
+    fn initial_is_fact(&self, addr: u64) -> bool {
+        if self.section_of(addr).is_none() || !self.is_writable(addr) {
+            return true;
+        }
+        let ps = self.ram.get_addr_size() as u64;
+        self.is_function_entry(addr - addr % ps)
+    }
 }
 
 impl PushanTarget for ArchTarget<'_> {
@@ -588,7 +597,10 @@ pub fn detect_vm_entry(target: &ArchTarget<'_>, entry: u64) -> Option<u64> {
     None
 }
 
-/// Run the whole pipeline for a function entry.
+/// Run the whole pipeline for a function entry.  On x86 the emitted calls
+/// keep ECX and EDX as possible arguments besides the stack: `__fastcall` and
+/// `__thiscall` pass them, and MSVC's `__security_check_cookie` takes the
+/// cookie in ECX.
 pub fn devirtualize(arch: &Architecture, entry: u64) -> Result<PushanProgram, String> {
     let target = ArchTarget::new(arch, entry).ok_or("no code space")?;
     let abi = abi_for(arch, &target).ok_or("unsupported architecture for pushan (x86/x86-64 only)")?;
@@ -596,7 +608,10 @@ pub fn devirtualize(arch: &Architecture, entry: u64) -> Result<PushanProgram, St
     let ptr = abi.ptr_size;
     let mut live_at_exit = abi.callee_saved.clone();
     live_at_exit.push((abi.return_reg, ptr));
-    let call_args = abi.args.clone();
+    let mut call_args = abi.args.clone();
+    if ptr == 4 {
+        call_args.extend(abi.clobbers.iter().copied().filter(|(o, s)| *s == ptr && abi.gprs.contains(o)));
+    }
     let callee_saved = abi.callee_saved.clone();
     let return_reg = abi.return_reg;
     let mut call_kills = abi.clobbers.clone();

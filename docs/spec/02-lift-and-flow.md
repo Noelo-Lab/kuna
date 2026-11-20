@@ -3975,12 +3975,27 @@ VPC register wins while it qualifies. Next comes the candidate nearest
 most often. A block with no qualifying register follows the previous VPC
 register's value while it stays unwritten image memory, and otherwise
 carries the last VPC forward. Before the interpreter is entered, a register
-that a block advanced just past a concrete memory access (Themida's
-relocation of its handler table) keys the walk, so the walk unrolls with
-constant pointers instead of merging into a loop over symbols. Outside the
+that a block of the protector's code advanced just past a concrete memory
+access (Themida's relocation of its handler table) keys the walk, so the walk
+unrolls with constant pointers instead of merging into a loop over symbols. A
+loop of the function's own code (a `rep movsb` copying a literal before the
+protected region starts) is not keyed that way and stays a loop. Outside the
 interpreter (a re-entry stub, an external call's return), the context sticks
 to the last VPC, salted with the return address that a dispatch call pushed,
 so two re-entry stubs never share the entry handler's node.
+
+An instruction that branches back to itself (an x86 `rep` prefix) is handled
+by where it lives (`Explorer::emulate_node`). In the protector's code, with a
+decided count, it repeats inside its node, one instance per iteration, as
+angr's rep-movsb shortcut does. In the function's own code it starts a node of
+its own and re-reaches that node, so its counter and pointers are symbolized
+and it stays the program's loop. Its guard on the remaining count is a
+conditional branch out of the instruction, ahead of the copy, and the
+fall-through side then jumps back to the instruction. The emulator reports
+that as a conditional exit whose fall-through continues at the instruction
+itself (`Emulator::run_from`), not as a select between the two targets, so
+the emitted node keeps the branch where the instruction tests it, before the
+store, and a count of zero copies nothing.
 
 **The emulator and the expression arena.** Each node is emulated one native
 instruction at a time over its SLEIGH p-code
@@ -3992,7 +4007,15 @@ mixed-width stack accesses compose exactly. Memory is split into regions by
 the address's symbolic base. Distinct symbolic bases never alias, which is the
 paper's stack assumption. Unwritten read-only memory reads the image, and
 unwritten symbolic memory and registers read a stable symbol, the same one on
-every path. A constant fill from the image is not stored in the state,
+every path. So does an unwritten byte of a writable data section
+(`kuna_pushan.rs (ArchTarget::initial_is_fact)`): its image contents are only
+the value it starts the process with, and another function may have changed
+it, so the MSVC `/GS` cookie, a global counter or a pointer table read there
+stays a variable instead of the number the file happens to hold. An import
+slot (a function symbol at the address, as in a Themida image's writable
+`.idata`) still reads the image, because a call through it is recognized by
+the pointer the slot holds. The protector's own sections are code and read
+the image too. A constant fill from the image is not stored in the state,
 because it reads the same on every path, so a node's entry state holds only
 what the program wrote and not every bytecode byte its path fetched. A
 symbolic fill is stored, so reads of the same bytes at different widths
@@ -4054,8 +4077,11 @@ bits all of them agreed on. The VPC register or cell is part of the key and
 is never symbolized. The next round starts over. At a recorded node, each recorded
 location becomes a fresh symbol that carries the agreed known bits. The fixpoint
 is reached when a round records no new location, no new constant and no
-narrowed bits. A computed target that depends on exactly one symbolized
-location is enumerated over that location's recorded constants instead of
+narrowed bits. A pointer advanced in a loop (`sym + 1` against `sym`) loses
+one more high bit to the carry every round, which would cost one round per
+bit. The second time a location's agreed bits narrow, every agreed bit at or
+above the lowest bit that was lost is dropped at once. A computed target that
+depends on exactly one symbolized location is enumerated over that location's recorded constants instead of
 atoms, by substituting each constant (`Explorer::enumerate_symbol_target`),
 and each successor's state pins the symbol to its constant. A load whose
 address depends on exactly one symbolized location and lies at concrete
@@ -4104,7 +4130,10 @@ every pointer argument become unknown, because a `scanf("%d", &v)` writes
 On x86 the eight stack words above the return address are treated as
 possible pointer arguments too, and so is every word the callee pops
 (`CreateProcessA` pops ten, the last its `PROCESS_INFORMATION` pointer). Every entry-stack offset handed to a call this
-way is recorded as escaped, over all rounds. Emulation continues at the return address. On a Windows image
+way is recorded as escaped, over all rounds. What the program wrote to a
+writable data section is forgotten (`State::forget_globals`), because the
+callee may change it, and a later read sees the section's symbol again.
+Emulation continues at the return address. On a Windows image
 (`ThreadBlock`) the segment register that addresses the thread block is
 fixed to a synthetic TEB, with a PEB, process heap and image base behind it,
 holding the values an ordinary undebugged process sees. The protector's TEB
@@ -4200,14 +4229,27 @@ with these edits:
   Inside a live instruction, a stack store nobody reads dies with the address
   arithmetic that fed it. A return keeps the return register and the
   callee-saved registers, minus those the emulation proved still hold their
-  entry value. An external call keeps the argument registers, its outgoing
+  entry value. An external call keeps the argument registers (RCX, RDX, R8 and
+  R9 on x86-64; ECX and EDX on x86, which `__fastcall` and `__thiscall` pass
+  and in which MSVC's `__security_check_cookie` takes the cookie), its outgoing
   argument area (0x60 bytes on x86-64, 0x28 on x86), and every stack byte at
   or above the lowest entry-stack offset the function ever handed to a call,
   because an escaped pointer can reach any of that. It keeps nothing below.
 - Undefined-argument placeholders. Before an external call, an argument
   register that still holds its entry value, or an earlier call's leftovers, is
   one the program never defined. The same applies to the return register at a
-  return, when the function merely restores the caller's value. Such a read is
+  return, when the function merely restores the caller's value. A merge
+  symbol counts as well when every value it stood for on the paths into its
+  node was such a value (`Emitter::never_defined`). Each round records, for
+  every merge symbol, the value its location held on each path that reached
+  the node (`FlatCfg::sym_sources`, up to 64 values), and a cycle of symbols
+  that only pass each other around adds nothing. That is the case in a loop
+  of a virtualized function: the interpreter keeps the program's registers in
+  its context and reloads all of them before every call, so at a loop head the
+  context slot of R8 held one call's leftovers on the way in and another
+  call's leftovers on the way around, and became a symbol that a
+  two-argument `strcpy` inside the loop would otherwise take as its third and
+  fourth arguments. Such a read is
   rewritten as a read of a placeholder register (`undef_register`) that no
   instruction writes, so the parameter analysis rejects it the way it rejects
   an untouched register in native code, instead of inventing a parameter or a

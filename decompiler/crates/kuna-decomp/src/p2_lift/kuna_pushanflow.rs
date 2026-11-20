@@ -26,7 +26,7 @@ use kuna_num::opcodes::OpCode;
 
 use super::kuna_pushanemu::{merge_ite, Emulator, Exit, InsnTrace, LiftedInsn, PushanTarget, SymValues};
 use super::kuna_pushanexpr::{ExprArena, ExprId, VarId, VarKind};
-use super::kuna_pushanstate::{Loc, State, SymLoc};
+use super::kuna_pushanstate::{Loc, PushanImage, State, SymLoc};
 
 pub type NodeId = u32;
 
@@ -173,6 +173,9 @@ pub struct FlatCfg {
     pub entry: NodeId,
     /// Entry-stack offsets whose address was handed to an external call.
     pub escapes: Vec<i128>,
+    /// The values each merge symbol stood for on the paths into its node in
+    /// the last round (`None` when there were more than [`MAX_SYM_SOURCES`]).
+    pub sym_sources: BTreeMap<VarId, Option<BTreeSet<ExprId>>>,
 }
 
 pub struct Explorer<'a> {
@@ -187,6 +190,10 @@ pub struct Explorer<'a> {
     sym_values: SymValues,
     /// Bits every value seen at a symbolized location agreed on.
     sym_known: BTreeMap<(NodeKey, SymLoc), (u128, u128)>,
+    /// How often a location's agreed bits narrowed.
+    sym_shrinks: BTreeMap<(NodeKey, SymLoc), u8>,
+    /// The values each merge symbol stood for this round.
+    sym_sources: BTreeMap<VarId, Option<BTreeSet<ExprId>>>,
     /// Pointer values the emulator read from image slots (value -> slot).
     image_ptrs: BTreeMap<u64, u64>,
     /// Entry-stack offsets passed to external calls, over every round.
@@ -217,6 +224,8 @@ const VPC_MAX_DISP: i128 = 16;
 const VPC_NEAR: u64 = 0x100;
 /// Most constants remembered for one symbolized location.
 const MAX_SYM_VALUES: usize = 32;
+/// Most incoming values remembered for one merge symbol.
+const MAX_SYM_SOURCES: usize = 64;
 /// Distinct virtual-PC values a node may fork into.
 const MAX_VPC_FORK: usize = 4;
 /// Most instructions [`Explorer::handler_fragment`] follows.
@@ -267,6 +276,8 @@ impl<'a> Explorer<'a> {
             to_symbolize: BTreeMap::new(),
             sym_values: Default::default(),
             sym_known: BTreeMap::new(),
+            sym_shrinks: BTreeMap::new(),
+            sym_sources: BTreeMap::new(),
             image_ptrs: BTreeMap::new(),
             escapes: BTreeSet::new(),
             pending_locs: None,
@@ -319,7 +330,7 @@ impl<'a> Explorer<'a> {
 
     /// Run exploration rounds to the symbolization fixpoint.
     pub fn run(&mut self) -> FlatCfg {
-        let mut cfg = FlatCfg { nodes: Vec::new(), index: BTreeMap::new(), entry: 0, escapes: Vec::new() };
+        let mut cfg = FlatCfg { nodes: Vec::new(), index: BTreeMap::new(), entry: 0, escapes: Vec::new(), sym_sources: BTreeMap::new() };
         let mut prev_nodes = usize::MAX;
         for round in 0..self.config.max_rounds {
             self.stats.rounds = round + 1;
@@ -329,6 +340,7 @@ impl<'a> Explorer<'a> {
             }
             cfg = self.explore_round();
             cfg.escapes = self.escapes.iter().copied().collect();
+            cfg.sym_sources = std::mem::take(&mut self.sym_sources);
             let n = cfg.nodes.len();
             self.log.push(format!(
                 "round {}: {} nodes, {} new symbolized locations, {} unresolved, {} halts, {:.1}s",
@@ -359,7 +371,8 @@ impl<'a> Explorer<'a> {
         self.stats.halts = 0;
         self.node_addrs.clear();
         self.stack_depths.clear();
-        let mut cfg = FlatCfg { nodes: Vec::new(), index: BTreeMap::new(), entry: 0, escapes: Vec::new() };
+        let mut cfg = FlatCfg { nodes: Vec::new(), index: BTreeMap::new(), entry: 0, escapes: Vec::new(), sym_sources: BTreeMap::new() };
+        self.sym_sources.clear();
         let mut worklist: VecDeque<NodeId> = VecDeque::new();
         let init = self.initial_state();
         let key = NodeKey::at(self.entry_addr, None);
@@ -436,6 +449,17 @@ impl<'a> Explorer<'a> {
                 return id;
             }
             let diffs = entry.diff_constants(&mut state, &mut self.arena, self.target, self.abi.ptr_size);
+            if let Some(locs) = self.to_symbolize.get(&key) {
+                for l in locs.keys().copied().collect::<Vec<_>>() {
+                    let a = read_loc(&mut entry, &mut self.arena, self.target, &l);
+                    let b = read_loc(&mut state, &mut self.arena, self.target, &l);
+                    if a != b {
+                        if let Some(v) = self.arena.as_var(a) {
+                            add_source(&mut self.sym_sources, v, b);
+                        }
+                    }
+                }
+            }
             let vpc_reg = node.entry_ctx.vpc_reg;
             let vpc_cell = node.entry_ctx.vpc_cell;
             if let Some(tr) = &self.config.trace {
@@ -512,8 +536,17 @@ impl<'a> Explorer<'a> {
                 }
                 let is_new = !set.contains_key(&d.loc);
                 let k = self.sym_known.entry((key, d.loc)).or_insert(d.known);
-                let narrowed = (k.0 & d.known.0, k.1 & d.known.1);
+                let mut narrowed = (k.0 & d.known.0, k.1 & d.known.1);
                 let shrank = narrowed != *k;
+                if shrank {
+                    let n = self.sym_shrinks.entry((key, d.loc)).or_insert(0);
+                    *n = n.saturating_add(1);
+                    if *n >= 2 {
+                        let lost = (k.0 & !narrowed.0) | (k.1 & !narrowed.1);
+                        let keep = (1u128 << lost.trailing_zeros().min(127)) - 1;
+                        narrowed = (narrowed.0 & keep, narrowed.1 & keep);
+                    }
+                }
                 *k = narrowed;
                 let values = set.entry(d.loc).or_default();
                 let mut grew = false;
@@ -535,7 +568,13 @@ impl<'a> Explorer<'a> {
             let with_known: Vec<(SymLoc, (u128, u128))> =
                 locs.keys().map(|l| (*l, self.sym_known.get(&(key, *l)).copied().unwrap_or((0, 0)))).collect();
             let tag = key_tag(&key);
+            let before: Vec<ExprId> = with_known.iter().map(|(l, _)| read_loc(&mut state, &mut self.arena, self.target, l)).collect();
             let made = state.symbolize_known(&mut self.arena, tag, &with_known);
+            for (&(_, e), &b) in made.iter().zip(&before) {
+                if let Some(v) = self.arena.as_var(e).filter(|_| e != b) {
+                    add_source(&mut self.sym_sources, v, b);
+                }
+            }
             for (l, e) in made {
                 if let Some(tr) = &self.config.trace {
                     use std::io::Write;
@@ -594,7 +633,9 @@ impl<'a> Explorer<'a> {
     /// itself with a decided guard (a `rep movsb` with a concrete count)
     /// repeats inside the node, one instance per iteration, as angr's
     /// rep-movsb shortcut does, instead of re-reaching its own node and
-    /// symbolizing its counters.
+    /// symbolizing its counters.  Such an instruction of the function's own
+    /// code starts a node of its own and loops there, so the program's copy
+    /// loop stays a loop over its source pointer.
     fn emulate_node(&mut self, cfg: &mut FlatCfg, worklist: &mut VecDeque<NodeId>, emu: &mut Emulator<'a>, id: NodeId) {
         let mut state = cfg.nodes[id as usize].entry.clone();
         let ctx = cfg.nodes[id as usize].entry_ctx;
@@ -614,6 +655,10 @@ impl<'a> Explorer<'a> {
                     break;
                 }
             };
+            if !insns.is_empty() && !self.target.is_foreign_code(addr) && branches_to_itself(&insn) {
+                exit = Exit::Jump(self.arena.cst(self.abi.ptr_size, addr as u128));
+                break;
+            }
             let mut trace = InsnTrace::default();
             if let Some(t) = &self.config.trace {
                 use std::io::Write;
@@ -669,7 +714,7 @@ impl<'a> Explorer<'a> {
             traces.push(trace);
             if let (Exit::Jump(t), false) = (&exit, forked) {
                 match self.arena.is_const(*t).map(|c| c as u64) {
-                    Some(c) if c == here && ctx.in_vm && insns.len() < self.config.max_block_insns => continue,
+                    Some(c) if c == here && ctx.in_vm && self.target.is_foreign_code(here) && insns.len() < self.config.max_block_insns => continue,
                     Some(c) if c == after && repeated => exit = Exit::Fallthrough(after),
                     _ => {}
                 }
@@ -921,8 +966,10 @@ impl<'a> Explorer<'a> {
     /// find_vip follows the VIP register sequentially from its previous
     /// candidate (VMProtect's 32-bit vJMP garbles the register before the
     /// real pop), and before the VM is entered a register
-    /// just advanced past a concrete access (a table walk) keys the loop so it
-    /// unrolls.  Otherwise the context is inherited.
+    /// just advanced past a concrete access (a table walk) in the protector's
+    /// code keys the loop so it unrolls; a loop of the function's own native
+    /// code (a `rep movsb` copying a literal) stays a loop.  Otherwise the
+    /// context is inherited.
     fn successor_ctx(&mut self, state: &mut State, traces: &[InsnTrace], ctx: VmCtx, insns: &[Rc<LiftedInsn>]) -> VmCtx {
         let ps = self.abi.ptr_size;
         let mut fetch_regs: BTreeMap<u64, usize> = BTreeMap::new();
@@ -1013,7 +1060,7 @@ impl<'a> Explorer<'a> {
                 return next;
             }
         }
-        if !ctx.in_vm {
+        if !ctx.in_vm && insns.last().is_some_and(|i| self.target.is_foreign_code(i.addr)) {
             for r in self.abi.gprs.clone() {
                 if r == self.abi.sp {
                     continue;
@@ -1523,9 +1570,10 @@ impl<'a> Explorer<'a> {
     }
 
     /// Model an external call: a fresh return value, clobbered registers, the
-    /// return address popped, and the memory its pointer arguments reach made
-    /// unknown (a `scanf("%d", &v)` writes `v`; its old constant must not
-    /// decide the branch that tests it).
+    /// return address popped, what the program wrote to writable data
+    /// forgotten, and the memory its pointer arguments reach made unknown (a
+    /// `scanf("%d", &v)` writes `v`; its old constant must not decide the
+    /// branch that tests it).
     fn apply_call_summary(&mut self, state: &mut State, site: u64, callee: Callee) {
         let ps = self.abi.ptr_size;
         let scan = callee.target.filter(|c| Some(*c) != callee.ret).and_then(|c| self.scan_callee(c));
@@ -1544,6 +1592,7 @@ impl<'a> Explorer<'a> {
                 values.push(state.read_mem(&mut self.arena, self.target, sb, so + k * ps as i128, ps));
             }
         }
+        state.forget_globals(self.target);
         for v in values {
             if self.config.trace.is_some() {
                 self.log.push(format!("call at {site:#x}: arg {} affine={:?}", self.arena.fmt(v), self.arena.affine(v)));
@@ -1941,6 +1990,34 @@ fn vpc_key(vals: &[u64]) -> u64 {
         h = h.wrapping_mul(0x100000001b3).wrapping_add(*x);
     }
     h
+}
+
+/// Whether `insn` branches back to its own start (an x86 `rep` prefix).
+fn branches_to_itself(insn: &LiftedInsn) -> bool {
+    insn.ops.iter().any(|op| {
+        matches!(op.opc, OpCode::CPUI_BRANCH | OpCode::CPUI_CBRANCH)
+            && classify_space_of(&op.ins[0]) == Some(super::kuna_pushanemu::Space::Ram)
+            && op.ins[0].offset == insn.addr
+    })
+}
+
+/// The value of symbolized location `l` in `state`.
+fn read_loc(state: &mut State, arena: &mut ExprArena, image: &dyn PushanImage, l: &SymLoc) -> ExprId {
+    match l.loc {
+        Loc::Reg { off } => state.read_reg(arena, off, l.size),
+        Loc::Mem { base, off } => state.read_mem(arena, image, base, off, l.size),
+    }
+}
+
+/// Record that merge symbol `v` stood for `e` on one path into its node.
+fn add_source(sources: &mut BTreeMap<VarId, Option<BTreeSet<ExprId>>>, v: VarId, e: ExprId) {
+    let entry = sources.entry(v).or_insert_with(|| Some(BTreeSet::new()));
+    if let Some(set) = entry {
+        set.insert(e);
+        if set.len() > MAX_SYM_SOURCES {
+            *entry = None;
+        }
+    }
 }
 
 pub fn key_tag(key: &NodeKey) -> u64 {

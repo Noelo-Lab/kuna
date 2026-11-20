@@ -7,7 +7,8 @@
 //! addresses): an access at `base + offset` touches only its own region, which
 //! is the "pointers to distinct symbolic bases never alias" assumption the
 //! paper's stack handling relies on.  Unwritten concrete memory reads the
-//! program image; unwritten symbolic memory and registers read a stable
+//! program image where its bytes are a fact (not a writable data section);
+//! unwritten symbolic memory, writable data and registers read a stable
 //! symbolic variable, so the same location is the same symbol on every path.
 
 use std::collections::BTreeMap;
@@ -27,6 +28,11 @@ pub trait PushanImage {
     fn read_bytes(&self, addr: u64, buf: &mut [u8]) -> bool;
     /// Whether `addr` lies in a section the program may write at run time.
     fn is_writable(&self, addr: u64) -> bool;
+    /// Whether the image's bytes at `addr` are what an unwritten read there
+    /// sees at run time.
+    fn initial_is_fact(&self, addr: u64) -> bool {
+        !self.is_writable(addr)
+    }
 }
 
 /// A byte-granular store (one register file, one temporary file, or one memory region).
@@ -320,7 +326,8 @@ impl State {
         self.uniq.clear();
     }
 
-    /// Read memory at `base + off`; concrete gaps come from the image.
+    /// Read memory at `base + off`; concrete gaps come from the image where
+    /// its bytes are a fact, and read a stable symbol elsewhere.
     pub fn read_mem(
         &mut self,
         arena: &mut ExprArena,
@@ -335,7 +342,8 @@ impl State {
             if base.is_none() {
                 let addr = o as u64;
                 let mut buf = vec![0u8; len as usize];
-                if (o as u64 as i128) == o && image.read_bytes(addr, &mut buf) {
+                let fact = image.initial_is_fact(addr) && image.initial_is_fact(addr.wrapping_add(len as u64 - 1));
+                if (o as u64 as i128) == o && fact && image.read_bytes(addr, &mut buf) {
                     let mut v: u128 = 0;
                     if be {
                         for b in &buf {
@@ -501,6 +509,14 @@ impl State {
         rewrite(&mut self.uniq, arena);
         for region in self.mem.values_mut() {
             rewrite(region, arena);
+        }
+    }
+
+    /// Forget what the program wrote to concrete memory whose contents are
+    /// not a fact (a writable data section): a call may change it.
+    pub fn forget_globals(&mut self, image: &dyn PushanImage) {
+        if let Some(r) = self.mem.get_mut(&None) {
+            r.bytes.retain(|o, _| (*o as u64 as i128) != *o || image.initial_is_fact(*o as u64));
         }
     }
 
