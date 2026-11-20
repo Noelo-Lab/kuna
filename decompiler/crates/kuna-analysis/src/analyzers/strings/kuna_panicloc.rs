@@ -4,9 +4,12 @@
 //! u32, col: u32 }`. rustc emits one per site in read-only data, so a call reads
 //! `panic_bounds_check(a2, a1, 0x51150)` with the source position hidden behind
 //! the address. A record is recognized by its shape: the `file` pointer reaches
-//! read-only text of `1..=0x1000` bytes that ends in `.rs`,
-//! `1 <= line <= 0xffffff` and `col <= 0xfff`. On a PIE the pointer half is an
-//! `R_*_RELATIVE` slot, so its value is the relocation addend.
+//! read-only text of `1..=0x1000` bytes that ends in `.rs` (rustc 1.89 counts a
+//! trailing NUL in the length), `1 <= line <= 0xffffff` and `1 <= col <= 0xfff`;
+//! columns are 1-based, so a zero there is the high half of a following pointer
+//! or length (a `&str` table, a `(&str, usize)` pair, a `log` record's
+//! padding). On a PIE the pointer half is an `R_*_RELATIVE` slot, so its value
+//! is the relocation addend.
 //!
 //! Each record becomes a typed data object named after its position
 //! (`panic_loc_src_main_rs_10_5`), and its file name a bounded string.
@@ -66,10 +69,11 @@ fn record_at(
     let len = read_word(&raw[w..2 * w]);
     let line = u32::from_le_bytes(raw[2 * w..2 * w + 4].try_into().ok()?);
     let col = u32::from_le_bytes(raw[2 * w + 4..2 * w + 8].try_into().ok()?);
-    if !(1..=0x1000).contains(&len) || !(1..=0xff_ffff).contains(&line) || col > 0xfff {
+    if !(1..=0x1000).contains(&len) || !(1..=0xff_ffff).contains(&line) || !(1..=0xfff).contains(&col) {
         return None;
     }
     let text = regions.iter().find(|r| r.contains(ptr))?.bytes(ptr, len)?;
+    let text = text.strip_suffix(b"\0").unwrap_or(text);
     if !text.ends_with(b".rs") || !is_text(text) {
         return None;
     }
@@ -190,5 +194,22 @@ mod tests {
         let loc = record_at(&regions, &regions[0], 0x1000, 8, &HashMap::new()).expect("location");
         assert_eq!((loc.file.as_str(), loc.line, loc.col), ("src/main.rs", 10, 5));
         assert!(record_at(&regions, &regions[0], 0x1008, 8, &HashMap::new()).is_none());
+    }
+
+    #[test]
+    fn a_zero_column_is_not_a_location_and_a_counted_nul_is_dropped() {
+        let text = b"src/main.rs\0";
+        let mut data = vec![0u8; 0x40];
+        data[..8].copy_from_slice(&0x2000u64.to_le_bytes());
+        data[8..16].copy_from_slice(&11u64.to_le_bytes());
+        data[16..20].copy_from_slice(&0x2010u32.to_le_bytes());
+        data[24..32].copy_from_slice(&0x2000u64.to_le_bytes());
+        data[32..40].copy_from_slice(&12u64.to_le_bytes());
+        data[40..44].copy_from_slice(&7u32.to_le_bytes());
+        data[44..48].copy_from_slice(&3u32.to_le_bytes());
+        let regions = vec![RoRegion { vma: 0x1000, data: &data }, RoRegion { vma: 0x2000, data: text }];
+        assert!(record_at(&regions, &regions[0], 0x1000, 8, &HashMap::new()).is_none());
+        let loc = record_at(&regions, &regions[0], 0x1018, 8, &HashMap::new()).expect("location");
+        assert_eq!((loc.file.as_str(), loc.line, loc.col), ("src/main.rs", 7, 3));
     }
 }

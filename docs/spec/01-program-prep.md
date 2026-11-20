@@ -3143,8 +3143,12 @@ The always-on core, in pass order (`passes.rs (passes_for)`):
   bounds check read `panic_bounds_check(a2,a1,0x51150)`. The pass scans
   read-only data (and `.data.rel.ro`) at pointer alignment for the record's
   shape: the `file` pointer reaches read-only text of `1..=0x1000` bytes that
-  ends in `.rs` and passes the `&str` record text test, `1 <= line <=
-  0xffffff` and `col <= 0xfff`. On a PIE the pointer word is an
+  ends in `.rs` (rustc 1.89 counts the trailing NUL in the length; it is
+  dropped) and passes the `&str` record text test, `1 <= line <= 0xffffff`
+  and `1 <= col <= 0xfff`. Columns are 1-based, so a zero column rejects the
+  look-alikes whose third word is the high half of a pointer or length: a
+  `&str` table on a non-PIE, a `(&str, usize)` pair, the `log` crate's
+  `(target, module, file, line)` record. On a PIE the pointer word is an
   `R_*_RELATIVE` slot, so its value is the relocation addend. Each record
   becomes a typed data symbol of type `core::panic::Location` (built once: a
   `&str { data_ptr, length }` field, then `line` and `col`) named from the
