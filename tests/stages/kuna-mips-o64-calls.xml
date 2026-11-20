@@ -1,0 +1,86 @@
+<decompilertest>
+<!-- Original source: tests/fixtures/octeon-o64/calls.S -->
+<binaryimage arch="MIPS:BE:64:octeon-32addr:o64">
+<bytechunk space="ram" offset="0x100000" readonly="true">67bdffd0ffbf0028afa400242405000224060003240700040c04000b2408005bdfbf002803e0000867bd0030</bytechunk>
+<symbol space="ram" offset="0x100000" name="forward"/>
+<bytechunk space="ram" offset="0x10002c" readonly="true">8fa20024004710210046102100451021c8800002000000002442000b03e0000800000000</bytechunk>
+<symbol space="ram" offset="0x10002c" name="combine"/>
+<bytechunk space="ram" offset="0x100050" readonly="true">03e0000824820004</bytechunk>
+<symbol space="ram" offset="0x100050" name="next_slot"/>
+<bytechunk space="ram" offset="0x100058" readonly="true">03e000080004103e</bytechunk>
+<symbol space="ram" offset="0x100058" name="high_word"/>
+<!-- tests/fixtures/octeon-o64/storage.c, .text at 0x101000 -->
+<bytechunk space="ram" offset="0x101000" readonly="true">
+03e000080080102503e0000800801025
+03e000080080102503e0000800801025
+03e000088fa20024ffa4000003e00008
+0004103f0000000003e000088fa20020
+ac85000003e000080080102500000000
+ac85000003e000080080102500000000
+ffa7001803e000088fa2002000000000
+</bytechunk>
+<symbol space="ram" offset="0x101000" name="dbits"/>
+<symbol space="ram" offset="0x101008" name="frombits"/>
+<symbol space="ram" offset="0x101010" name="fbits"/>
+<symbol space="ram" offset="0x101018" name="fromword"/>
+<symbol space="ram" offset="0x101020" name="fifthfloat"/>
+<symbol space="ram" offset="0x101028" name="field"/>
+<symbol space="ram" offset="0x101038" name="fifthfield"/>
+<symbol space="ram" offset="0x101040" name="build"/>
+<symbol space="ram" offset="0x101050" name="makeunion"/>
+<symbol space="ram" offset="0x101060" name="tail"/>
+</binaryimage>
+<script>
+<com>option ctypes on</com>
+<com>parse line extern int combine(int first,int second,int third,int fourth,int fifth);</com>
+<com>parse line extern int forward(int value);</com>
+<com>parse line extern int **next_slot(int **ptr);</com>
+<com>parse line extern unsigned int high_word(unsigned long long wide);</com>
+<com>lo fu forward</com><com>decompile</com><com>print C</com>
+<com>lo fu combine</com><com>decompile</com><com>print C</com>
+<com>lo fu next_slot</com><com>decompile</com><com>print C</com>
+<com>lo fu high_word</com><com>decompile</com><com>print C</com>
+<com>parse line struct Word { int v; };</com>
+<com>parse line struct Pair { unsigned long long first; int last; };</com>
+<com>parse line union Value { unsigned int u; float f; };</com>
+<com>parse line extern unsigned long long dbits(double x);</com>
+<com>parse line extern double frombits(unsigned long long x);</com>
+<com>parse line extern unsigned int fbits(float x);</com>
+<com>parse line extern float fromword(unsigned int x);</com>
+<com>parse line extern float fifthfloat(int a,int b,int c,int d,float x);</com>
+<com>parse line extern int field(struct Word s);</com>
+<com>parse line extern int fifthfield(int a,int b,int c,int d,struct Word s);</com>
+<com>parse line extern struct Word build(int x);</com>
+<com>parse line extern union Value makeunion(unsigned int x);</com>
+<com>parse line extern int tail(int a,int b,int c,struct Pair p);</com>
+<com>lo fu dbits</com><com>decompile</com><com>print C</com>
+<com>lo fu frombits</com><com>decompile</com><com>print C</com>
+<com>lo fu fbits</com><com>decompile</com><com>print C</com>
+<com>lo fu fromword</com><com>decompile</com><com>print C</com>
+<com>lo fu fifthfloat</com><com>decompile</com><com>print C</com>
+<com>lo fu field</com><com>decompile</com><com>print C</com>
+<com>lo fu fifthfield</com><com>decompile</com><com>print C</com>
+<com>lo fu build</com><com>decompile</com><com>print C</com>
+<com>lo fu makeunion</com><com>decompile</com><com>print C</com>
+<com>lo fu tail</com><com>decompile</com><com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="octeon-o64 passes the fifth argument on the stack" min="1" max="1">combine\(value,2,3,4,value\)</stringmatch>
+<stringmatch name="octeon-o64 reads the fifth stack value" min="1" max="1">fifth \+ fourth \+ third \+ second</stringmatch>
+<stringmatch name="octeon-o64 branches on the Octeon bit test" min="1" max="1">first &amp; 1U</stringmatch>
+<stringmatch name="octeon-o64 advances by one four-byte pointer slot" min="1" max="1">ptr\[1\]</stringmatch>
+<stringmatch name="octeon-o64 reads the high half of a single GPR" min="1" max="1">return wide &gt;&gt; 0x20;</stringmatch>
+<stringmatch name="octeon-o64 uses double input bits" min="1" max="1">double from; unsigned long long to;.*\.from = x \}\)\.to;</stringmatch>
+<stringmatch name="octeon-o64 returns double bits" min="1" max="1">unsigned long long from; double to;.*\.from = x \}\)\.to;</stringmatch>
+<stringmatch name="octeon-o64 uses float input bits" min="1" max="1">float from; unsigned int to;.*\.from = x \}\)\.to;</stringmatch>
+<stringmatch name="octeon-o64 returns float bits" min="1" max="1">unsigned int from; float to;.*\.from = x \}\)\.to;</stringmatch>
+<stringmatch name="octeon-o64 reads the fifth scalar float" min="1" max="1">float fifthfloat\(.*float x\)
+\{
+return x;</stringmatch>
+<stringmatch name="octeon-o64 reads register and stack aggregates" min="2" max="2">return s\.v;</stringmatch>
+<stringmatch name="octeon-o64 writes and returns hidden struct storage" min="1" max="1">rethidden-&gt;v = x;
+return rethidden;</stringmatch>
+<stringmatch name="octeon-o64 writes and returns hidden union storage" min="1" max="1">rethidden-&gt;u = x;
+return rethidden;</stringmatch>
+<stringmatch name="octeon-o64 reads an aggregate split across register and stack" min="1" max="1">return p\.last;</stringmatch>
+</decompilertest>
