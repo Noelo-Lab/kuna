@@ -1,0 +1,67 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna issue #1642 (P9 emission, literal-format; P6 variables,
+    merge-aggressiveness).  The assertion directives `format` and `isolate`
+    lower to the console commands `force constant <addr> <format> [<value>]`
+    and `isolate <name>`.  `force constant` names a constant by the address
+    of the instruction that reads it, where `force varnode` needs its p-code
+    sequence number and `map convert` its dataflow hash.  `isolate` keeps a
+    local from being merged with others.
+
+    clang -O1 -fno-stack-protector -fcf-protection=none:
+
+      int is_rwx(unsigned m) { return (m & 0777) == 0755; }
+      int reuse(int a) {
+          int t = g(a); h(t); k(t);
+          int u = t * 3 + 1; h(u); k(u); return 0; }
+      int triple(int a) {
+          int t = a; p(&t); h(t); a = a * 3; h(a); h(a + t); return a; }
+
+    Each function is decompiled first without the command (the output the
+    directive corrects) and again after it.
+-->
+<bytechunk space="ram" offset="0x1460" readonly="true">81e7ff01000031c081ffed0100000f94c0c3</bytechunk>
+<bytechunk space="ram" offset="0x1490" readonly="true">53e87a00000089c389c7e88100000089dfe88a0000008d1c5bffc389dfe86e00000089dfe87700000031c05bc3</bytechunk>
+<bytechunk space="ram" offset="0x14c0" readonly="true">534883ec1089fb897c240c488d7c240ce86b0000008b7c240ce8420000008d1c5b89dfe8380000008b7c240c01dfe82d00000089d84883c4105bc3</bytechunk>
+<symbol space="ram" offset="0x1460" name="is_rwx"/>
+<symbol space="ram" offset="0x1490" name="reuse"/>
+<symbol space="ram" offset="0x14c0" name="triple"/>
+<symbol space="ram" offset="0x1510" name="g"/>
+<symbol space="ram" offset="0x1520" name="h"/>
+<symbol space="ram" offset="0x1530" name="k"/>
+<symbol space="ram" offset="0x1540" name="p"/>
+</binaryimage>
+<script>
+  <com>load function is_rwx</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>force constant 0x1460 oct</com>
+  <com>force constant 0x1468 oct 0x1ed</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function reuse</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>isolate v1</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function triple</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>isolate a0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>rename v2 tripled</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="format: the constants print in hex before the command" min="1" max="1">return \(a0 &amp; 0x1ff\) == 0x1ed;</stringmatch>
+<stringmatch name="format: both constants print in octal after it" min="1" max="1">return \(a0 &amp; 0777\) == 0755;</stringmatch>
+<stringmatch name="isolate: the local is reused for the second value before the command" min="1" max="1">v1 = v1 \* 3 \+ 1;</stringmatch>
+<stringmatch name="isolate: the second value is its own local after it" min="1" max="1">v2 = v1 \* 3 \+ 1;</stringmatch>
+<stringmatch name="isolate: the parameter is reused before the command" min="1" max="1">a0 \*= 3;</stringmatch>
+<stringmatch name="isolate: the parameter keeps its value after it" min="1" max="1">v2 = a0 \* 3;</stringmatch>
+<stringmatch name="isolate: the parameter stays isolated through a later rename" min="1" max="1">tripled = a0 \* 3;</stringmatch>
+</decompilertest>
