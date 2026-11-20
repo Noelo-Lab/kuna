@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4827,
-    4827
+    4830,
+    4830
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -3377,6 +3377,9 @@
     "data:dispatch-values #3: indirect re-entry reaches the second store",
     "data:dispatch-values #4: no incomplete recovery",
     "data:double is stored in its declared field",
+    "data:dwarf addrx #1: the scalar global takes its DWARF name on both byte orders",
+    "data:dwarf addrx #2: the array global takes its DWARF name on both byte orders",
+    "data:dwarf addrx #3: no global is left with an address name",
     "data:dyldcrossrefs #1: off leaves the island call unnamed",
     "data:dyldcrossrefs #2: off leaves the GOT slot call unnamed",
     "data:dyldcrossrefs #3: on names the island after its target in the other image",
