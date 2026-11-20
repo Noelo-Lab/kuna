@@ -27,6 +27,11 @@ of the `ret 8` function g see both pushed arguments popped, so a later `[esp+4]`
 reads the caller's own argument. A second caller reaches g through a register
 and sees the same pop.
 
+`kuna-condexe-heritage.xml` checks that conditional execution removes a re-test
+whose block holds unread flag writes once the register space has had a heritage
+pass (`deadcode delay register 50` keeps those writes alive). Before the fix the
+second `if (x)` stayed.
+
 `ghangr-call-argument-extensions.xml` checks explicit and missing parameter
 contracts. The CLI companion executes complete emitted C, Go and Rust callers
 and callees, covering zero extension, sign extension, signedness and store canaries.

@@ -2245,7 +2245,8 @@ mod tests {
         // and kuna-restart-warnings / a restart drops the warnings of the pass it discards
         // and kuna-narrowed-call-input / a call argument narrowed before its prototype is forced stays valid
         // and kuna-extrapop-function / option extrapop <n> <name> sets a named function's extrapop
-        assert_eq!(count, 827, "corpus file count drifted");
+        // and kuna-condexe-heritage / condexe removes a re-test whose block holds unread ops
+        assert_eq!(count, 828, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
