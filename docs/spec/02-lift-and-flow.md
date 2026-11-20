@@ -3916,18 +3916,29 @@ paper's stages 2 and 3 do (SSA, dead code, stack variables, types, structuring).
 x86 and x86-64 are supported; any other target reports a header warning and
 keeps the plain flow.
 
-**Detection.** `auto` devirtualizes a function only when the image has an
-executable section of at least 0x10000 bytes other than the one holding the
-entry, and the function's direct native flow reaches into such a section.
-`kuna_pushan.rs (detect_vm_entry)` walks fall-throughs, direct jumps and both
-sides of conditionals from the entry, without following calls, for up to 4096
-instructions. The first branch or call whose target lies in a large foreign
-code section is the VM entry. That covers both the stub a protector leaves at a
-whole-function entry and an SDK-marked region's `push imm; call vm_entry`.
-PLT stubs, init code and cold-text splits sit in smaller sections and never
-match. The sections come from the loader (`ArchTarget::new`, falling back to
-segments), so a raw image or an XML `<binaryimage>` reports none, and `auto`
-never fires on it. `on` skips the detection and devirtualizes the requested
+**Detection.** `auto` devirtualizes a function only when the image has a
+candidate interpreter section other than the one holding the entry, and the
+function's direct native flow reaches into such a section. A candidate is a
+loaded executable section of at least 0x10000 bytes that the toolchain does
+not emit for every program (`kuna_pushan.rs (toolchain_code_section)`): not
+an ELF `.plt*`, `.iplt`, `.init`, `.fini` or any `.text*` section, not Mach-O
+`__text`, `__stubs`, `__stub_helper` or `__auth_stubs`, and not a Windows
+driver's `PAGE*` or `INIT`. A large library's PLT (PyQt5's QtWidgets has an
+89 KiB `.plt`) and a kernel module's cold split (the `xe` driver's 69 KiB
+`.text.unlikely`) would otherwise match every function that calls through the
+PLT or jumps to its cold part. The names come from the loader
+(`LoadImage::kuna_section_names`); a section without one is a candidate on
+its size. An image with no candidate left returns before any instruction is
+lifted, so those binaries pay nothing. `kuna_pushan.rs (detect_vm_entry)`
+walks fall-throughs, direct jumps and both sides of conditionals from the
+entry, without following calls, for up to 4096 instructions. The first branch
+or call whose target lies in a candidate section other than the entry's is the
+VM entry, unless the target is an import thunk, code whose first instruction
+after an optional `endbr` is an indirect jump (`import_thunk`). That covers
+both the stub a protector leaves at a whole-function entry and an SDK-marked
+region's `push imm; call vm_entry`. The sections come from the loader
+(`ArchTarget::new`, falling back to segments), so a raw image or an XML
+`<binaryimage>` reports none, and `auto` never fires on it. `on` skips the detection and devirtualizes the requested
 function. Under both values, an exploration that never reaches a block inside
 the interpreter (`vm_nodes == 0`) is discarded and the plain flow is used, so a
 false detection costs one exploration and changes nothing. `off` always uses

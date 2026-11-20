@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use super::literal_len;
+use super::{literal_len, toolchain_code_section};
 
 fn unmapped(_: u64) -> bool {
     false
@@ -41,4 +41,14 @@ fn character_code_array_needs_its_second_element_referenced() {
     let utf16 = b"C\0:\0\0\0";
     assert_eq!(literal_len(utf16, 0x403300, 4, unmapped, &BTreeSet::new()), None);
     assert_eq!(literal_len(b"e\0\0\0sc\0\0", 0x4032a0, 4, unmapped, &BTreeSet::new()), Some(2));
+}
+
+#[test]
+fn toolchain_code_sections_are_no_interpreter_candidates() {
+    for name in [".plt", ".plt.sec", ".plt.got", ".iplt", ".init", ".fini", ".text", ".text.unlikely", ".text.hot", "__text", "__stubs", "__stub_helper", "__auth_stubs", "PAGE", "PAGELK", "INIT"] {
+        assert!(toolchain_code_section(name), "{name}");
+    }
+    for name in [".vmp0", ".vmp1", ".themida", ".QzR0", ".j7d0", ".JFk0", ".boot", "", "        "] {
+        assert!(!toolchain_code_section(name), "{name:?}");
+    }
 }

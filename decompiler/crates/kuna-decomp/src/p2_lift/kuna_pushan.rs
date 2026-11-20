@@ -83,6 +83,30 @@ struct Section {
     start: u64,
     end: u64,
     flags: u32,
+    /// The section's name, when the format has one.
+    name: String,
+}
+
+impl Section {
+    /// A section a protector's interpreter may live in: loaded code of at
+    /// least [`MIN_VM_SECTION`] bytes that no compiler or linker emits for
+    /// every program ([`toolchain_code_section`]).
+    fn vm_candidate(&self) -> bool {
+        self.flags & section_flags::CODE != 0
+            && self.flags & section_flags::NOLOAD == 0
+            && self.end - self.start >= MIN_VM_SECTION
+            && !toolchain_code_section(&self.name)
+    }
+}
+
+/// A code section the toolchain emits, never a protector's: ELF PLTs,
+/// init/fini code and every `.text*` split (`.text.unlikely`, `.text.hot`),
+/// Mach-O text and stub sections, and a Windows driver's `PAGE*`/`INIT`.
+pub(crate) fn toolchain_code_section(name: &str) -> bool {
+    name.starts_with(".plt")
+        || name.starts_with(".text")
+        || matches!(name, ".iplt" | ".init" | ".fini" | "__text" | "__stubs" | "__stub_helper" | "__auth_stubs" | "INIT")
+        || name.starts_with("PAGE")
 }
 
 /// A fixed, benign thread environment block for a Windows image: the
@@ -197,16 +221,22 @@ impl<'a> ArchTarget<'a> {
                 let more = loader.get_next_section(&mut rec);
                 if !rec.address.is_invalid() && rec.size > 0 {
                     let start = rec.address.get_offset();
-                    sections.push(Section { start, end: start.saturating_add(rec.size), flags: rec.flags });
+                    sections.push(Section { start, end: start.saturating_add(rec.size), flags: rec.flags, name: String::new() });
                 }
                 if !more {
                     break;
                 }
             }
             loader.close_section_info();
+            let names = loader.kuna_section_names();
+            for s in sections.iter_mut() {
+                if let Some((_, _, n)) = names.iter().find(|(v, sz, _)| *v == s.start && v.saturating_add(*sz) == s.end) {
+                    s.name = n.clone();
+                }
+            }
             if sections.is_empty() {
                 for (vma, size, flags) in loader.get_segments() {
-                    sections.push(Section { start: vma, end: vma.saturating_add(size), flags });
+                    sections.push(Section { start: vma, end: vma.saturating_add(size), flags, name: String::new() });
                 }
             }
         }
@@ -545,33 +575,24 @@ fn abi_for(arch: &Architecture, target: &ArchTarget<'_>) -> Option<Abi> {
 const MIN_VM_SECTION: u64 = 0x10000;
 const DETECT_MAX_INSNS: usize = 4096;
 
-/// A protected function: somewhere on its direct native flow (fall-through,
-/// direct jumps, both sides of conditionals; calls not followed) a transfer
-/// enters a large executable section other than its own -- the entry stub a
-/// protector leaves at the original address, or the SDK-marked region's
-/// `push imm; call vm_entry`.  Returns the first such target.
-/// The executable sections of the image at least [`MIN_VM_SECTION`] long.
+/// The sections a protector's interpreter may live in ([`Section::vm_candidate`]).
 fn large_code_sections(arch: &Architecture) -> Vec<(u64, u64)> {
     let Some(t) = ArchTarget::new(arch, 0) else { return Vec::new() };
-    t.sections
-        .iter()
-        .filter(|s| s.flags & section_flags::CODE != 0 && s.flags & section_flags::NOLOAD == 0 && s.end - s.start >= MIN_VM_SECTION)
-        .map(|s| (s.start, s.end))
-        .collect()
+    t.sections.iter().filter(|s| s.vm_candidate()).map(|s| (s.start, s.end)).collect()
 }
 
+/// A protected function: somewhere on its direct native flow (fall-through,
+/// direct jumps, both sides of conditionals; calls not followed) a transfer
+/// enters a candidate interpreter section other than its own -- the entry
+/// stub a protector leaves at the original address, or the SDK-marked
+/// region's `push imm; call vm_entry` -- at code that is not an import thunk.
+/// Returns the first such target.
 pub fn detect_vm_entry(target: &ArchTarget<'_>, entry: u64) -> Option<u64> {
-    if !target.sections.iter().any(|s| {
-        s.flags & section_flags::CODE != 0
-            && s.flags & section_flags::NOLOAD == 0
-            && s.end - s.start >= MIN_VM_SECTION
-            && Some((s.start, s.end)) != target.entry_section
-    }) {
+    if !target.sections.iter().any(|s| s.vm_candidate() && Some((s.start, s.end)) != target.entry_section) {
         return None;
     }
     let foreign = |addr: u64| -> bool {
-        target.is_foreign_code(addr)
-            && target.section_of(addr).is_some_and(|s| s.flags & section_flags::NOLOAD == 0 && s.end - s.start >= MIN_VM_SECTION)
+        target.is_foreign_code(addr) && target.section_of(addr).is_some_and(|s| s.vm_candidate()) && !import_thunk(target, addr)
     };
     let mut seen = std::collections::BTreeSet::new();
     let mut work = vec![entry];
@@ -640,6 +661,20 @@ impl PushanProgram {
         }
         (!out.is_empty()).then(|| format!("pushan: incomplete: {}", out.join(", ")))
     }
+}
+
+/// The code at `addr` is an import thunk: its first instruction, after an
+/// optional `endbr`, is an indirect jump (a PLT or stub entry).
+fn import_thunk(target: &ArchTarget<'_>, addr: u64) -> bool {
+    let Ok(mut insn) = target.lift(addr) else { return false };
+    if insn.asm.to_ascii_uppercase().starts_with("ENDBR") {
+        let Ok(next) = target.lift(addr + insn.len as u64) else { return false };
+        insn = next;
+    }
+    let flow = insn.ops.iter().rev().find(|op| {
+        matches!(op.opc, OpCode::CPUI_BRANCH | OpCode::CPUI_BRANCHIND | OpCode::CPUI_CBRANCH | OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_RETURN)
+    });
+    flow.is_some_and(|op| op.opc == OpCode::CPUI_BRANCHIND)
 }
 
 /// Run the whole pipeline for a function entry.  On x86 the emitted calls
