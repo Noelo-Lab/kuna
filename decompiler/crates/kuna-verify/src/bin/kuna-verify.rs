@@ -1,22 +1,28 @@
 //! `kuna-verify`: differential semantic checking (diffverify, Tier C slice C1).
 //!
 //! ```text
-//! kuna-verify check <binary> <function>... [--contract FILE.c] [--option NAME VALUE]...
-//! kuna-verify corpus <test.xml|dir>...
-//! common: [--runs N] [--seed S] [--budget OPS] [--sleighpath DIR]
+//! kuna-verify check <binary> <function|0xaddr>... | --all  [--contract FILE.c] [--option NAME VALUE]...
+//! kuna-verify corpus <test.xml|dir>...  [--jobs N]
+//! common: [--runs N] [--seed S] [--budget OPS] [--json] [--sleighpath DIR]
 //! ```
+//!
+//! `corpus --jobs N` runs N worker processes of this binary (`shard`), each
+//! printing one JSON line per file, so a file that crashes the engine costs
+//! only its own verdicts.
 
 use std::collections::BTreeMap;
+use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
-use std::process::ExitCode;
-use std::time::{Duration, Instant};
+use std::process::{Command, ExitCode, Stdio};
+use std::time::Instant;
 
-use kuna_verify::{check_binary, check_datatest, Options, Verdict};
+use kuna_verify::{check_binary, check_datatest, session, Options, Row};
+use serde_json::{json, Value};
 
 const USAGE: &str = "usage:
-  kuna-verify check <binary> <function>... [--contract FILE.c] [--option NAME VALUE]...
-  kuna-verify corpus <test.xml|dir>...
-options: --runs N (256)  --seed S  --budget OPS (200000)  --sleighpath DIR";
+  kuna-verify check <binary> <function|0xaddr>... | --all  [--contract FILE.c] [--option NAME VALUE]...
+  kuna-verify corpus <test.xml|dir>...  [--jobs N]
+options: --runs N (256)  --seed S  --budget OPS (200000)  --json  --sleighpath DIR";
 
 struct Args {
     positional: Vec<String>,
@@ -24,10 +30,25 @@ struct Args {
     options: Vec<(String, String)>,
     opts: Options,
     sleighpath: Option<String>,
+    json: bool,
+    all: bool,
+    jobs: Option<usize>,
+    /// Flags a worker process gets again.
+    forward: Vec<String>,
 }
 
 fn parse(argv: &[String]) -> Result<Args, String> {
-    let mut a = Args { positional: Vec::new(), contract: None, options: Vec::new(), opts: Options::default(), sleighpath: None };
+    let mut a = Args {
+        positional: Vec::new(),
+        contract: None,
+        options: Vec::new(),
+        opts: Options::default(),
+        sleighpath: None,
+        json: false,
+        all: false,
+        jobs: None,
+        forward: Vec::new(),
+    };
     let mut it = argv.iter();
     let num = |v: Option<&String>, flag: &str| -> Result<u64, String> {
         let v = v.ok_or(format!("{flag} needs a value"))?;
@@ -45,10 +66,24 @@ fn parse(argv: &[String]) -> Result<Args, String> {
                 let v = it.next().ok_or("--option needs NAME VALUE")?;
                 a.options.push((n.clone(), v.clone()));
             }
-            "--runs" => a.opts.runs = num(it.next(), "--runs")? as u32,
-            "--seed" => a.opts.seed = num(it.next(), "--seed")?,
-            "--budget" => a.opts.budget = num(it.next(), "--budget")?,
-            "--sleighpath" => a.sleighpath = Some(it.next().ok_or("--sleighpath needs a directory")?.clone()),
+            "--runs" | "--seed" | "--budget" => {
+                let v = it.next();
+                let n = num(v, arg)?;
+                match arg.as_str() {
+                    "--runs" => a.opts.runs = n as u32,
+                    "--seed" => a.opts.seed = n,
+                    _ => a.opts.budget = n,
+                }
+                a.forward.extend([arg.clone(), v.cloned().unwrap_or_default()]);
+            }
+            "--sleighpath" => {
+                let v = it.next().ok_or("--sleighpath needs a directory")?.clone();
+                a.forward.extend(["--sleighpath".to_string(), v.clone()]);
+                a.sleighpath = Some(v);
+            }
+            "--jobs" => a.jobs = Some(num(it.next(), "--jobs")? as usize),
+            "--json" => a.json = true,
+            "--all" => a.all = true,
             s if s.starts_with("--") => return Err(format!("unknown flag {s}")),
             _ => a.positional.push(arg.clone()),
         }
@@ -76,8 +111,14 @@ fn spec_roots(sleighpath: Option<&str>) -> Vec<String> {
 }
 
 fn run_check(a: &Args) -> Result<ExitCode, String> {
-    let [binary, functions @ ..] = a.positional.as_slice() else {
+    let [binary, named @ ..] = a.positional.as_slice() else {
         return Err(USAGE.to_string());
+    };
+    let roots = spec_roots(a.sleighpath.as_deref());
+    let functions: Vec<String> = if a.all {
+        session::function_entries(binary, &a.options, &roots)?.into_iter().map(|e| format!("{e:#x}")).collect()
+    } else {
+        named.to_vec()
     };
     if functions.is_empty() {
         return Err(USAGE.to_string());
@@ -88,18 +129,32 @@ fn run_check(a: &Args) -> Result<ExitCode, String> {
     };
     let reports = check_binary(
         binary,
-        functions,
+        &functions,
         &a.options,
-        &spec_roots(a.sleighpath.as_deref()),
+        &roots,
         source.as_ref().map(|(s, n)| (s.as_str(), n.as_str())),
         &a.opts,
     )?;
-    let mut differs = false;
-    for r in &reports {
-        print!("{}", r.render());
-        differs |= matches!(r.verdict, Verdict::Differs { .. });
+    let rows: Vec<Row> = reports.iter().map(Row::from).collect();
+    for r in &rows {
+        if a.json {
+            println!("{}", r.to_json());
+        } else {
+            print!("{}", r.render());
+        }
     }
-    Ok(if differs { ExitCode::from(1) } else { ExitCode::SUCCESS })
+    if a.all {
+        print_summary(a, &[], &rows, None);
+    }
+    Ok(exit_code(&rows))
+}
+
+fn exit_code(rows: &[Row]) -> ExitCode {
+    if rows.iter().any(|r| r.class == "DIFFERS") {
+        ExitCode::from(1)
+    } else {
+        ExitCode::SUCCESS
+    }
 }
 
 fn collect(path: &Path, out: &mut Vec<PathBuf>) {
@@ -116,6 +171,102 @@ fn collect(path: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
+/// One datatest file's verdicts.
+struct FileRows {
+    rows: Vec<Row>,
+    error: Option<String>,
+}
+
+fn file_json(index: usize, rows: &[Row], error: Option<&str>, wall_ms: f64) -> Value {
+    json!({
+        "index": index,
+        "rows": rows.iter().map(Row::to_json).collect::<Vec<_>>(),
+        "error": error,
+        "wall_ms": wall_ms,
+    })
+}
+
+/// The worker: check each listed `index=path` and print one JSON line per file.
+fn run_shard(a: &Args) -> Result<ExitCode, String> {
+    let roots = spec_roots(a.sleighpath.as_deref());
+    let mut out = std::io::stdout().lock();
+    for item in &a.positional {
+        let (index, path) = item.split_once('=').ok_or("shard items are index=path")?;
+        let index: usize = index.parse().map_err(|_| "bad shard index")?;
+        let res = check_datatest(path, &roots, &a.opts);
+        let rows: Vec<Row> = res.reports.iter().map(Row::from).collect();
+        let line = file_json(index, &rows, res.error.as_deref(), res.wall.as_secs_f64() * 1e3);
+        writeln!(out, "{line}").map_err(|e| e.to_string())?;
+        out.flush().map_err(|e| e.to_string())?;
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+fn parse_file_line(line: &str) -> Option<(usize, FileRows)> {
+    let v: Value = serde_json::from_str(line).ok()?;
+    let index = v.get("index")?.as_u64()? as usize;
+    let rows = v.get("rows")?.as_array()?.iter().map(Row::from_json).collect::<Option<Vec<_>>>()?;
+    let error = v.get("error").and_then(Value::as_str).map(str::to_string);
+    Some((index, FileRows { rows, error }))
+}
+
+/// Run `files` across `jobs` worker processes; every file gets a result, a
+/// crashed worker's unfinished files an error.
+fn run_workers(a: &Args, files: &[PathBuf], jobs: usize) -> Result<Vec<FileRows>, String> {
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let mut results: Vec<Option<FileRows>> = (0..files.len()).map(|_| None).collect();
+    let outputs = std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..jobs)
+            .map(|w| {
+                let items: Vec<String> = (w..files.len())
+                    .step_by(jobs)
+                    .map(|i| format!("{i}={}", files[i].to_string_lossy()))
+                    .collect();
+                let exe = exe.clone();
+                let forward = a.forward.clone();
+                scope.spawn(move || -> Result<(Vec<(usize, FileRows)>, String), String> {
+                    let mut child = Command::new(exe)
+                        .arg("shard")
+                        .args(&forward)
+                        .args(&items)
+                        .stdout(Stdio::piped())
+                        .stderr(Stdio::null())
+                        .spawn()
+                        .map_err(|e| e.to_string())?;
+                    let mut got = Vec::new();
+                    if let Some(stdout) = child.stdout.take() {
+                        for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+                            if let Some(parsed) = parse_file_line(&line) {
+                                got.push(parsed);
+                            }
+                        }
+                    }
+                    let status = child.wait().map_err(|e| e.to_string())?;
+                    Ok((got, format!("worker exited ({status})")))
+                })
+            })
+            .collect();
+        handles.into_iter().map(|h| h.join().unwrap_or_else(|_| Err("worker thread panicked".into()))).collect::<Vec<_>>()
+    });
+    let mut exits = Vec::new();
+    for out in outputs {
+        let (got, exit) = out?;
+        for (i, rows) in got {
+            if let Some(slot) = results.get_mut(i) {
+                *slot = Some(rows);
+            }
+        }
+        exits.push(exit);
+    }
+    Ok(results
+        .into_iter()
+        .enumerate()
+        .map(|(i, r)| {
+            r.unwrap_or_else(|| FileRows { rows: Vec::new(), error: Some(exits[i % jobs].clone()) })
+        })
+        .collect())
+}
+
 fn run_corpus(a: &Args) -> Result<ExitCode, String> {
     if a.positional.is_empty() {
         return Err(USAGE.to_string());
@@ -124,58 +275,110 @@ fn run_corpus(a: &Args) -> Result<ExitCode, String> {
     for p in &a.positional {
         collect(Path::new(p), &mut files);
     }
-    let roots = spec_roots(a.sleighpath.as_deref());
     let started = Instant::now();
-    let mut counts: BTreeMap<&'static str, u32> = BTreeMap::new();
-    let mut reasons: BTreeMap<String, u32> = BTreeMap::new();
-    let mut check_time = Duration::ZERO;
-    let mut slowest: Vec<(Duration, String)> = Vec::new();
-    let mut file_errors = 0;
-    println!("| test | function | verdict | check ms |");
-    println!("|---|---|---|---:|");
-    for f in &files {
-        let name = f.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-        let res = check_datatest(&f.to_string_lossy(), &roots, &a.opts);
-        for r in &res.reports {
-            *counts.entry(r.verdict.class()).or_default() += 1;
-            if matches!(r.verdict, Verdict::Unknown(_) | Verdict::Skipped(_)) {
-                let label = r.verdict.label();
-                let key = label.split(':').next().unwrap_or(&label).trim_end_matches(')').to_string();
-                *reasons.entry(key).or_default() += 1;
-            }
-            check_time += r.elapsed;
-            slowest.push((r.elapsed, format!("{name}/{}", r.function)));
-            println!("| {name} | {} | {} | {:.2} |", r.function, r.verdict.label(), r.elapsed.as_secs_f64() * 1e3);
-            if matches!(r.verdict, Verdict::Differs { .. }) || !r.suspects.is_empty() {
-                for l in r.render().lines().skip(1) {
-                    println!("| | | `{}` | |", l.trim());
+    let jobs = a
+        .jobs
+        .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get()))
+        .clamp(1, files.len().max(1));
+    let results: Vec<FileRows> = if jobs == 1 {
+        let roots = spec_roots(a.sleighpath.as_deref());
+        files
+            .iter()
+            .map(|f| {
+                let res = check_datatest(&f.to_string_lossy(), &roots, &a.opts);
+                FileRows { rows: res.reports.iter().map(Row::from).collect(), error: res.error }
+            })
+            .collect()
+    } else {
+        run_workers(a, &files, jobs)?
+    };
+    let names: Vec<String> = files
+        .iter()
+        .map(|f| f.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default())
+        .collect();
+    if !a.json {
+        println!("| test | function | verdict | check ms |");
+        println!("|---|---|---|---:|");
+    }
+    let mut all_rows = Vec::new();
+    let mut errors = Vec::new();
+    for (name, res) in names.iter().zip(&results) {
+        for r in &res.rows {
+            if a.json {
+                let mut v = r.to_json();
+                v["test"] = json!(name);
+                println!("{v}");
+            } else {
+                println!("| {name} | {} | {} | {:.2} |", r.function, r.label, r.ms);
+                if r.class == "DIFFERS" || !r.suspects.is_empty() {
+                    for l in r.render().lines().skip(1) {
+                        println!("| | | `{}` | |", l.trim());
+                    }
                 }
             }
+            all_rows.push((name.clone(), r.clone()));
         }
         if let Some(e) = &res.error {
-            file_errors += 1;
-            println!("| {name} | — | file error: {} | |", e.replace('|', "/"));
+            errors.push((name.clone(), e.clone()));
+            if a.json {
+                println!("{}", json!({"test": name, "error": e}));
+            } else {
+                println!("| {name} | — | file error: {} | |", e.replace('|', "/"));
+            }
         }
     }
-    slowest.sort_by_key(|x| std::cmp::Reverse(x.0));
+    let rows: Vec<Row> = all_rows.iter().map(|(_, r)| r.clone()).collect();
+    let slowest: Vec<(f64, String)> = {
+        let mut v: Vec<_> = all_rows.iter().map(|(n, r)| (r.ms, format!("{n}/{}", r.function))).collect();
+        v.sort_by(|x, y| y.0.total_cmp(&x.0));
+        v.truncate(5);
+        v
+    };
+    print_summary(a, &slowest, &rows, Some((files.len(), started.elapsed().as_secs_f64())));
+    if !errors.is_empty() && !a.json {
+        println!("file errors {}", errors.len());
+    }
+    Ok(exit_code(&rows))
+}
+
+/// `corpus`: the file count and the wall time of the whole run.
+fn print_summary(a: &Args, slowest: &[(f64, String)], rows: &[Row], corpus: Option<(usize, f64)>) {
+    let mut counts: BTreeMap<&str, u32> = BTreeMap::new();
+    let mut reasons: BTreeMap<String, u32> = BTreeMap::new();
+    for r in rows {
+        *counts.entry(r.class.as_str()).or_default() += 1;
+        if let Some(k) = r.reason() {
+            *reasons.entry(k).or_default() += 1;
+        }
+    }
+    let check_s: f64 = rows.iter().map(|r| r.ms).sum::<f64>() / 1e3;
+    if a.json {
+        println!(
+            "{}",
+            json!({"summary": {"files": corpus.map(|c| c.0), "functions": rows.len(), "verdicts": counts,
+                   "reasons": reasons, "check_seconds": check_s, "wall_seconds": corpus.map(|c| c.1),
+                   "runs": a.opts.runs}})
+        );
+        return;
+    }
     println!();
-    println!("files {}  file errors {}  functions {}", files.len(), file_errors, counts.values().sum::<u32>());
+    match corpus {
+        Some((files, _)) => println!("files {files}  functions {}", rows.len()),
+        None => println!("functions {}", rows.len()),
+    }
     for (k, v) in &counts {
         println!("  {k:<9} {v}");
     }
     for (k, v) in &reasons {
         println!("    {k}  {v}");
     }
-    println!(
-        "check time {:.3} s  wall time {:.3} s  (runs {})",
-        check_time.as_secs_f64(),
-        started.elapsed().as_secs_f64(),
-        a.opts.runs
-    );
-    for (d, n) in slowest.iter().take(5) {
-        println!("  slowest {n}  {:.1} ms", d.as_secs_f64() * 1e3);
+    match corpus {
+        Some((_, wall)) => println!("check time {check_s:.3} s  wall time {wall:.3} s  (runs {})", a.opts.runs),
+        None => println!("check time {check_s:.3} s  (runs {})", a.opts.runs),
     }
-    Ok(if counts.contains_key("DIFFERS") { ExitCode::from(1) } else { ExitCode::SUCCESS })
+    for (ms, n) in slowest {
+        println!("  slowest {n}  {ms:.1} ms");
+    }
 }
 
 fn main() -> ExitCode {
@@ -187,6 +390,7 @@ fn main() -> ExitCode {
     let result = parse(rest).and_then(|a| match cmd.as_str() {
         "check" => run_check(&a),
         "corpus" => run_corpus(&a),
+        "shard" => run_shard(&a),
         _ => Err(USAGE.to_string()),
     });
     match result {

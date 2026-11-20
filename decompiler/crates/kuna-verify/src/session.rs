@@ -25,14 +25,21 @@ fn dcp_mut(console: &mut IfaceStatus) -> Option<&mut IfaceDecompData> {
         .and_then(|d| d.as_any_mut().downcast_mut::<IfaceDecompData>())
 }
 
+/// A command that failed in a script that keeps going: its index and message.
+pub type Failure = (usize, String);
+
 /// Run `commands`, calling `on_decompile` after every `decompile` that
-/// succeeds. `conf` preloads a program (the datatest `<binaryimage>`).
-pub fn drive(
+/// succeeds. `conf` preloads a program (the datatest `<binaryimage>`). The first
+/// failing command ends the run unless `keep_going`, which records it and goes
+/// on. Returns the console, so the caller can read the program the script
+/// loaded, and the failures it went past.
+pub fn run(
     commands: Vec<String>,
     conf: Option<ConsoleProgram>,
     spec_roots: &[String],
+    keep_going: bool,
     mut on_decompile: impl FnMut(&ConsoleProgram, &Funcdata),
-) -> Result<(), String> {
+) -> Result<(IfaceStatus, Vec<Failure>), String> {
     let mut console = ConsoleCommands::into_status(commands.clone());
     register_decomp_commands(&mut console);
     register_kuna_commands(&mut console);
@@ -45,6 +52,7 @@ pub fn drive(
         }
     }
     let mut idx = 0usize;
+    let mut failures = Vec::new();
     while !console.is_stream_finished() {
         execute(&mut console);
         let line = commands.get(idx).map(|s| s.trim().to_string()).unwrap_or_default();
@@ -56,9 +64,14 @@ pub fn drive(
                 .map(str::trim)
                 .filter(|l| !l.is_empty() && *l != "Aborting process")
                 .collect();
-            return Err(format!("`{line}` failed: {}", said.last().copied().unwrap_or("no message")));
-        }
-        if line.split_whitespace().next() == Some("decompile") {
+            let msg = format!("`{line}` failed: {}", said.last().copied().unwrap_or("no message"));
+            if !keep_going {
+                return Err(msg);
+            }
+            failures.push((idx - 1, msg));
+            console.inerror = false;
+            console.done = false;
+        } else if line.split_whitespace().next() == Some("decompile") {
             if let Some(d) = dcp(&console) {
                 if let (Some(prog), Some(fd)) = (d.conf.as_ref(), d.fd.as_ref()) {
                     on_decompile(prog, fd);
@@ -70,16 +83,45 @@ pub fn drive(
             f.contents.clear();
         }
     }
-    Ok(())
+    Ok((console, failures))
 }
 
-/// The console script that decompiles `functions` from an object file.
-pub fn binary_script(path: &str, functions: &[String], options: &[(String, String)]) -> Vec<String> {
+/// [`run`], keeping only whether it succeeded.
+pub fn drive(
+    commands: Vec<String>,
+    conf: Option<ConsoleProgram>,
+    spec_roots: &[String],
+    on_decompile: impl FnMut(&ConsoleProgram, &Funcdata),
+) -> Result<(), String> {
+    run(commands, conf, spec_roots, false, on_decompile).map(|_| ())
+}
+
+pub fn load_lines(path: &str, options: &[(String, String)]) -> Vec<String> {
     let mut lines = vec![format!("load file {path}"), "option readonly on".to_string()];
     lines.extend(options.iter().map(|(n, v)| format!("option {n} {v}")));
     lines.push("read symbols".to_string());
+    lines
+}
+
+/// The entry address of every function with code in an object file.
+pub fn function_entries(path: &str, options: &[(String, String)], spec_roots: &[String]) -> Result<Vec<u64>, String> {
+    let (console, _) = run(load_lines(path, options), None, spec_roots, false, |_, _| {})?;
+    let prog = dcp(&console).and_then(|d| d.conf.as_ref()).ok_or("no program loaded")?;
+    Ok(prog
+        .function_entries_executable()
+        .into_iter()
+        .filter(|e| prog.entry_bytes_mapped(&e.addr))
+        .map(|e| e.addr.get_offset())
+        .collect())
+}
+
+/// The console script that decompiles `functions` from an object file. A
+/// function is a name, or an address written `0x...`.
+pub fn binary_script(path: &str, functions: &[String], options: &[(String, String)]) -> Vec<String> {
+    let mut lines = load_lines(path, options);
     for f in functions {
-        lines.push(format!("load function {f}"));
+        let verb = if f.starts_with("0x") { "addr" } else { "function" };
+        lines.push(format!("load {verb} {f}"));
         lines.push("decompile".to_string());
     }
     lines

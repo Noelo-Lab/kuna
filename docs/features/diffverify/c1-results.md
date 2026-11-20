@@ -9,10 +9,13 @@ make binaries specs
 cd decompiler && cargo build --release -p kuna-verify && cd ..
 decompiler/target/release/kuna-verify check ins16.o ins16 --contract ins16.c --option returnpair single
 decompiler/target/release/kuna-verify corpus tests/datatests tests/stages
+decompiler/target/release/kuna-verify check ins16.o --all --json
 ```
 
 Run `corpus` from the repository root: stage tests load their fixtures by repo-relative
-path. Every number below is from 256 runs per function with the default seed.
+path. It runs one worker process per core (`--jobs N` to change it), and a file that
+crashes the engine costs only its own verdicts. Every number below is from 256 runs per
+function with the default seed.
 
 ## 1. #794 against its source contract
 
@@ -83,13 +86,21 @@ run with current specs had 30 `DIFFERS`; 3 of them were the `narrowext` bug.
 
 ## 5. Cost
 
-- Check time 49.8 s for the whole corpus, 47.2 s of it in the 15 functions that exhaust
-  the step budget on every random input (loops bounded by an argument). The other 3,964
-  functions take 2.7 s together. For a function in scope the median is 1.0 ms and the
-  95th percentile 9.8 ms for 256 runs.
-- Wall time 111 s, which includes decompiling every script; peak RSS 406 MB.
-- No solver and no compiler are involved. Stopping a function after its first few budget
-  exhaustions would bring the check time to about 3 s.
+| | first build | now |
+|---|---:|---:|
+| check time, whole corpus | 49.8 s | 3.6 s |
+| wall time, whole corpus | 111 s | 20.6 s (14 workers), 66 s (1) |
+| wall time, `tests/datatests` | 7.3 s | 0.9 s |
+
+- The first build spent 47.2 s of its check time in the 15 functions that exhaust the
+  step budget on every random input (loops bounded by an argument). A function now stops
+  after 4 such runs (`Options::budget_runs`); its verdict is `UNKNOWN(budget)` either way.
+- The decompiled function is compiled once into a flat program (`program.rs`) that every
+  run reuses, and registers live in a dense file that memoizes their initial bytes.
+- Wall time is now mostly decompiling. Peak RSS is 454 MB for one process.
+- Every verdict is identical before and after these changes, compared function by
+  function over the corpus, sequential and parallel alike. No solver and no compiler are
+  involved.
 
 ## 6. What building C1 changed in the design
 

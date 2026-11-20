@@ -320,9 +320,9 @@ baseline file like `docs/baseline.json`.
 
 ## Cost
 
-C1 measured Tier C (`c1-results.md` §5): 49.8 s of checking for 3,979 functions over both
-corpora, 47.2 s of it in 15 functions whose loops exhaust the step budget; median 1.0 ms
-per function in scope. What the design expects for the rest, and why:
+C1 measured Tier C (`c1-results.md` §5): 3.6 s of checking for 3,979 functions over both
+corpora, and 20.6 s of wall time including every decompile, on 14 worker processes.
+What the design expects for the rest, and why:
 
 - **Tier C** costs one decompile, which a check needs anyway, plus n concrete runs of
   one function (256 by default), each capped by a step budget. There is no solver and

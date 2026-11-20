@@ -395,6 +395,7 @@ dependencies = [
  "kuna-sleigh",
  "object",
  "regex",
+ "serde_json",
 ]
 
 [[package]]

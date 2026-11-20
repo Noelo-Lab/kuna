@@ -9,21 +9,27 @@
 //!
 //! Development only: the release binary does not link this crate.
 
+pub mod abi;
 pub mod check;
 pub mod contract;
 pub mod divergence;
 pub mod graph;
 pub mod machine;
+pub mod program;
+pub mod report;
 pub mod session;
 pub mod state;
+pub mod storage;
 pub mod value;
 
 use std::time::{Duration, Instant};
 
-pub use check::{check_function, Options, Report, Verdict};
+pub use check::{check_function, Options};
+pub use report::{Report, Row, Verdict};
 
-/// Check `functions` in an object file. `contract_source` is C source to read
-/// each function's return type from.
+/// Check `functions` (names, or `0x` addresses) in an object file.
+/// `contract_source` is C source to read each function's return type from. A
+/// function whose decompile fails is reported as `UNKNOWN`, and the rest go on.
 pub fn check_binary(
     path: &str,
     functions: &[String],
@@ -34,9 +40,11 @@ pub fn check_binary(
 ) -> Result<Vec<Report>, String> {
     let mut reports = Vec::new();
     let mut failure = None;
-    session::drive(session::binary_script(path, functions, options), None, spec_roots, |prog, fd| {
+    let script = session::binary_script(path, functions, options);
+    let first = session::load_lines(path, options).len();
+    let (_, failures) = session::run(script, None, spec_roots, true, |prog, fd| {
         let contract = match contract_source {
-            Some((src, name)) => match contract::from_source(src, fd.get_name(), name, check::c_sizes(prog)) {
+            Some((src, name)) => match contract::from_source(src, fd.get_name(), name, abi::c_sizes(prog)) {
                 Ok(c) => Some(c),
                 Err(e) => {
                     failure.get_or_insert(e);
@@ -47,10 +55,29 @@ pub fn check_binary(
         };
         reports.push(check_function(prog, fd, contract.as_ref(), opts));
     })?;
-    match failure {
-        Some(e) => Err(e),
-        None => Ok(reports),
+    if let Some((_, msg)) = failures.iter().find(|(idx, _)| *idx < first) {
+        return Err(msg.clone());
     }
+    if let Some(e) = failure {
+        return Err(e);
+    }
+    let mut out = reports;
+    let mut failed: Vec<(usize, String)> =
+        failures.into_iter().map(|(idx, msg)| ((idx - first) / 2, msg)).collect();
+    failed.dedup_by_key(|(f, _)| *f);
+    for (f, msg) in failed {
+        let name = functions.get(f).cloned().unwrap_or_default();
+        let report = Report {
+            function: name,
+            verdict: Verdict::Unknown(format!("UNKNOWN(decompile: {msg})")),
+            lines: Vec::new(),
+            suspects: Vec::new(),
+            elapsed: Duration::ZERO,
+        };
+        let at = out.len().min(f);
+        out.insert(at, report);
+    }
+    Ok(out)
 }
 
 /// One datatest file's reports, and the time its decompiles and checks took.

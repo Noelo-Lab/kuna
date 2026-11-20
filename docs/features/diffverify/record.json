@@ -70,13 +70,13 @@
         "known_bug": 3,
         "harness": 1
       },
-      "check_seconds": 49.8,
-      "check_seconds_budget_exhausted": 47.2,
-      "median_ms_in_scope": 1.0,
-      "p95_ms_in_scope": 9.8,
-      "wall_seconds": 111,
-      "peak_rss_mb": 406,
-      "results": "docs/features/diffverify/c1-results.md"
+      "check_seconds": 3.6,
+      "wall_seconds": 20.6,
+      "peak_rss_mb": 454,
+      "results": "docs/features/diffverify/c1-results.md",
+      "check_seconds_first_build": 49.8,
+      "wall_seconds_one_worker": 66,
+      "workers": 14
     }
   },
   "declared_divergences": [

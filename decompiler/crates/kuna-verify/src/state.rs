@@ -262,26 +262,83 @@ impl<'p> Env<'p> {
     }
 }
 
+/// Register offsets past this go through the sparse map.
+const DENSE_REGISTERS: u64 = 1 << 20;
+
+const PRESENT: u8 = 1;
+const WRITTEN: u8 = 2;
+
 /// One side's view: the run's initial state plus that side's writes.
+///
+/// Registers live in a dense file that memoizes their initial bytes on first
+/// read; temporaries and memory keep only the bytes this side wrote.
 pub struct State<'e, 'p> {
     pub env: &'e Env<'p>,
     pub run: u32,
-    written: BTreeMap<(i32, u64), u8>,
+    regs: Vec<u8>,
+    flags: Vec<u8>,
+    unique: BTreeMap<u64, u8>,
+    mem: BTreeMap<(i32, u64), u8>,
 }
 
 impl<'e, 'p> State<'e, 'p> {
     pub fn new(env: &'e Env<'p>, run: u32) -> Self {
-        State { env, run, written: BTreeMap::new() }
+        State { env, run, regs: Vec::new(), flags: Vec::new(), unique: BTreeMap::new(), mem: BTreeMap::new() }
     }
 
-    fn byte(&self, space: &AddrSpace, off: u64) -> u8 {
-        match self.written.get(&(space.get_index(), off)) {
-            Some(&b) => b,
-            None => self.env.initial_byte(self.run, space, off),
+    fn is_register(&self, space: &AddrSpace, off: u64) -> bool {
+        space.get_index() == self.env.register.get_index() && off < DENSE_REGISTERS
+    }
+
+    fn is_unique(&self, space: &AddrSpace) -> bool {
+        self.env.unique.as_ref().is_some_and(|u| u.get_index() == space.get_index())
+    }
+
+    fn grow(&mut self, end: usize) {
+        if self.regs.len() < end {
+            self.regs.resize(end, 0);
+            self.flags.resize(end, 0);
         }
     }
 
-    fn read_wide(&self, space: &AddrSpace, off: u64, size: u32) -> Result<u128, Halt> {
+    fn byte(&mut self, space: &AddrSpace, off: u64) -> u8 {
+        if self.is_register(space, off) {
+            let i = off as usize;
+            self.grow(i + 1);
+            if self.flags[i] & PRESENT == 0 {
+                self.regs[i] = self.env.initial_byte(self.run, space, off);
+                self.flags[i] |= PRESENT;
+            }
+            return self.regs[i];
+        }
+        let found = if self.is_unique(space) {
+            self.unique.get(&off).copied()
+        } else {
+            self.mem.get(&(space.get_index(), off)).copied()
+        };
+        found.unwrap_or_else(|| self.env.initial_byte(self.run, space, off))
+    }
+
+    fn put(&mut self, space: &AddrSpace, off: u64, b: u8) {
+        if self.is_register(space, off) {
+            let i = off as usize;
+            self.grow(i + 1);
+            self.regs[i] = b;
+            self.flags[i] |= PRESENT | WRITTEN;
+        } else if self.is_unique(space) {
+            self.unique.insert(off, b);
+        } else {
+            self.mem.insert((space.get_index(), off), b);
+        }
+    }
+
+    /// Forget the temporaries: they live for one instruction.
+    pub fn end_instruction(&mut self) {
+        self.unique.clear();
+    }
+
+    /// Read a processor or temporary space value of up to sixteen bytes.
+    pub fn read(&mut self, space: &AddrSpace, off: u64, size: u32) -> Result<u128, Halt> {
         if size > MAX_SIZE {
             return Err(Halt::Unsupported(format!("{size}-byte value")));
         }
@@ -297,21 +354,66 @@ impl<'e, 'p> State<'e, 'p> {
         Ok(v)
     }
 
-    /// Read a processor or temporary space value.
-    pub fn read(&self, space: &AddrSpace, off: u64, size: u32) -> Result<u128, Halt> {
-        self.read_wide(space, off, size)
-    }
-
     pub fn write(&mut self, space: &AddrSpace, off: u64, size: u32, val: u128) -> Result<(), Halt> {
         if size > MAX_SIZE {
             return Err(Halt::Unsupported(format!("{size}-byte value")));
         }
         for i in 0..u64::from(size) {
             let shift = if space.is_big_endian() { u64::from(size) - 1 - i } else { i };
-            let b = (val >> (shift * 8)) as u8;
-            self.written.insert((space.get_index(), space.wrap_offset(off.wrapping_add(i))), b);
+            self.put(space, space.wrap_offset(off.wrapping_add(i)), (val >> (shift * 8)) as u8);
         }
         Ok(())
+    }
+
+    /// Whether every byte of the range was written by this side.
+    pub fn wrote(&self, space: &AddrSpace, off: u64, size: u32) -> bool {
+        (0..u64::from(size)).all(|i| {
+            let at = space.wrap_offset(off.wrapping_add(i));
+            if self.is_register(space, at) {
+                self.flags.get(at as usize).is_some_and(|f| f & WRITTEN != 0)
+            } else if self.is_unique(space) {
+                self.unique.contains_key(&at)
+            } else {
+                self.mem.contains_key(&(space.get_index(), at))
+            }
+        })
+    }
+
+    fn join(&self, off: u64) -> Result<Rc<kuna_base::space::JoinRecord>, Halt> {
+        self.env
+            .prog
+            .arch()
+            .manage()
+            .find_join(off)
+            .map_err(|e| Halt::Harness(format!("join: {}", e.explain())))
+    }
+
+    /// Read any storage a varnode or prototype can name, up to sixteen bytes:
+    /// constants, the stack space (relative to the entry stack pointer), joined
+    /// registers (most significant piece first), and processor spaces.
+    pub fn read_storage(&mut self, space: &Rc<AddrSpace>, off: u64, size: u32) -> Result<u128, Halt> {
+        let m = mask(size);
+        match space.get_type() {
+            spacetype::IPTR_CONSTANT => Ok(u128::from(off) & m),
+            spacetype::IPTR_SPACEBASE => {
+                let ram = Rc::clone(&self.env.ram);
+                let addr = ram.wrap_offset(self.env.sp0.wrapping_add(off));
+                self.read(&ram, addr, size)
+            }
+            spacetype::IPTR_JOIN => {
+                let rec = self.join(off)?;
+                let mut acc = 0u128;
+                for i in 0..rec.num_pieces() {
+                    let p = rec.get_piece(i);
+                    let ps = p.space.clone().ok_or_else(|| Halt::Harness("join piece without space".into()))?;
+                    let v = self.read_storage(&ps, p.offset, p.size)?;
+                    acc = if p.size >= 16 { v } else { (acc << (p.size * 8)) | v };
+                }
+                Ok(acc & m)
+            }
+            spacetype::IPTR_PROCESSOR | spacetype::IPTR_INTERNAL => self.read(space, off, size),
+            other => Err(Halt::Harness(format!("storage in a {other:?} space"))),
+        }
     }
 
     /// Write storage a varnode can name: the inverse of [`Self::read_storage`].
@@ -323,13 +425,7 @@ impl<'e, 'p> State<'e, 'p> {
                 self.write(&ram, addr, size, val)
             }
             spacetype::IPTR_JOIN => {
-                let rec = self
-                    .env
-                    .prog
-                    .arch()
-                    .manage()
-                    .find_join(off)
-                    .map_err(|e| Halt::Harness(format!("join: {}", e.explain())))?;
+                let rec = self.join(off)?;
                 let mut rest = val;
                 for i in (0..rec.num_pieces()).rev() {
                     let p = rec.get_piece(i);
@@ -340,47 +436,6 @@ impl<'e, 'p> State<'e, 'p> {
                 Ok(())
             }
             spacetype::IPTR_PROCESSOR | spacetype::IPTR_INTERNAL => self.write(space, off, size, val),
-            other => Err(Halt::Harness(format!("storage in a {other:?} space"))),
-        }
-    }
-
-    /// Whether every byte of the range was written by this side.
-    pub fn wrote(&self, space: &AddrSpace, off: u64, size: u32) -> bool {
-        (0..u64::from(size)).all(|i| {
-            self.written
-                .contains_key(&(space.get_index(), space.wrap_offset(off.wrapping_add(i))))
-        })
-    }
-
-    /// Read any storage a varnode or prototype can name, up to sixteen bytes:
-    /// constants, the stack space (relative to the entry stack pointer), joined
-    /// registers (most significant piece first), and processor spaces.
-    pub fn read_storage(&self, space: &Rc<AddrSpace>, off: u64, size: u32) -> Result<u128, Halt> {
-        let m = mask(size);
-        match space.get_type() {
-            spacetype::IPTR_CONSTANT => Ok(u128::from(off) & m),
-            spacetype::IPTR_SPACEBASE => {
-                let addr = self.env.ram.wrap_offset(self.env.sp0.wrapping_add(off));
-                self.read_wide(&self.env.ram, addr, size)
-            }
-            spacetype::IPTR_JOIN => {
-                let rec = self
-                    .env
-                    .prog
-                    .arch()
-                    .manage()
-                    .find_join(off)
-                    .map_err(|e| Halt::Harness(format!("join: {}", e.explain())))?;
-                let mut acc = 0u128;
-                for i in 0..rec.num_pieces() {
-                    let p = rec.get_piece(i);
-                    let ps = p.space.as_ref().ok_or_else(|| Halt::Harness("join piece without space".into()))?;
-                    let v = self.read_storage(ps, p.offset, p.size)?;
-                    acc = if p.size >= 16 { v } else { (acc << (p.size * 8)) | v };
-                }
-                Ok(acc & m)
-            }
-            spacetype::IPTR_PROCESSOR | spacetype::IPTR_INTERNAL => self.read_wide(space, off, size),
             other => Err(Halt::Harness(format!("storage in a {other:?} space"))),
         }
     }

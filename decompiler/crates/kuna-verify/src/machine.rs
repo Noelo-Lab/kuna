@@ -56,7 +56,7 @@ fn space(vn: &VarnodeData) -> Result<&Rc<AddrSpace>, Halt> {
     vn.space.as_ref().ok_or_else(|| Halt::Harness("varnode without a space".into()))
 }
 
-fn read(state: &State, vn: &VarnodeData) -> Result<u128, Halt> {
+fn read(state: &mut State, vn: &VarnodeData) -> Result<u128, Halt> {
     let spc = space(vn)?;
     if spc.get_type() == spacetype::IPTR_CONSTANT {
         return Ok(u128::from(vn.offset) & mask(vn.size));
@@ -78,13 +78,14 @@ fn mem_space(env: &Env, vn: &VarnodeData) -> Result<Rc<AddrSpace>, Halt> {
 /// branch inside the function they would change the decode, which is refused.
 pub const EXIT_ONLY_USEROPS: &[&str] = &["setISAMode"];
 
-pub fn userop_name(env: &Env, index: u64) -> String {
-    let mut names = Vec::new();
-    env.prog.arch().translate().get_user_op_names(&mut names);
-    names.get(index as usize).cloned().unwrap_or_else(|| format!("#{index}"))
-}
-
-fn branch(env: &Env, target: &VarnodeData, i: &mut usize, addr: &mut u64, insn: &mut Rc<Insn>) -> Result<(), Halt> {
+fn branch(
+    env: &Env,
+    state: &mut State,
+    target: &VarnodeData,
+    i: &mut usize,
+    addr: &mut u64,
+    insn: &mut Rc<Insn>,
+) -> Result<(), Halt> {
     if space(target)?.get_type() == spacetype::IPTR_CONSTANT {
         *i = (target.offset as u32).wrapping_add(*i as u32) as i32 as usize;
         if *i > insn.ops.len() {
@@ -94,6 +95,7 @@ fn branch(env: &Env, target: &VarnodeData, i: &mut usize, addr: &mut u64, insn: 
         *addr = target.offset;
         *insn = lift(env, *addr)?;
         *i = 0;
+        state.end_instruction();
     }
     Ok(())
 }
@@ -119,6 +121,7 @@ pub fn run<'e, 'p>(env: &'e Env<'p>, run: u32, entry: u64, budget: u64) -> Resul
             addr = env.code.wrap_offset(addr.wrapping_add(insn.len));
             insn = lift(env, addr)?;
             i = 0;
+            state.end_instruction();
             continue;
         }
         steps += 1;
@@ -134,18 +137,18 @@ pub fn run<'e, 'p>(env: &'e Env<'p>, run: u32, entry: u64, budget: u64) -> Resul
                 if let Some(name) = mode_switch.take().filter(|_| space(t).is_ok_and(|s| s.get_type() != spacetype::IPTR_CONSTANT)) {
                     return Err(Halt::Unsupported(format!("CALLOTHER {name} before a branch at {addr:#x}")));
                 }
-                branch(env, t, &mut i, &mut addr, &mut insn)?;
+                branch(env, &mut state, t, &mut i, &mut addr, &mut insn)?;
             }
             OpCode::CPUI_CBRANCH => {
-                if read(&state, arg(1)?)? != 0 {
+                if read(&mut state, arg(1)?)? != 0 {
                     let t = arg(0)?;
-                    branch(env, t, &mut i, &mut addr, &mut insn)?;
+                    branch(env, &mut state, t, &mut i, &mut addr, &mut insn)?;
                 } else {
                     i += 1;
                 }
             }
             OpCode::CPUI_BRANCHIND => {
-                let target = read(&state, arg(0)?)? as u64;
+                let target = read(&mut state, arg(0)?)? as u64;
                 if !env.code_mapped(target) {
                     return Ok(Outcome { state, indirect });
                 }
@@ -156,13 +159,14 @@ pub fn run<'e, 'p>(env: &'e Env<'p>, run: u32, entry: u64, budget: u64) -> Resul
                 addr = target;
                 insn = lift(env, addr)?;
                 i = 0;
+                state.end_instruction();
             }
             OpCode::CPUI_RETURN => return Ok(Outcome { state, indirect }),
             OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
                 return Err(Halt::NotLeaf(format!("call at {addr:#x}")));
             }
             OpCode::CPUI_CALLOTHER => {
-                let name = userop_name(env, arg(0)?.offset);
+                let name = crate::program::userop_name(env.prog, arg(0)?.offset);
                 if !(op.out.is_none() && EXIT_ONLY_USEROPS.contains(&name.as_str())) {
                     return Err(Halt::Unsupported(format!("CALLOTHER {name} at {addr:#x}")));
                 }
@@ -171,7 +175,7 @@ pub fn run<'e, 'p>(env: &'e Env<'p>, run: u32, entry: u64, budget: u64) -> Resul
             }
             OpCode::CPUI_LOAD => {
                 let spc = mem_space(env, arg(0)?)?;
-                let ptr = read(&state, arg(1)?)? as u64;
+                let ptr = read(&mut state, arg(1)?)? as u64;
                 let at = spc.wrap_offset(AddrSpace::address_to_byte(ptr, spc.get_word_size()));
                 let out = op.out.as_ref().ok_or_else(|| Halt::Harness("LOAD without output".into()))?;
                 env.check_load(&spc, at, out.size)?;
@@ -181,21 +185,20 @@ pub fn run<'e, 'p>(env: &'e Env<'p>, run: u32, entry: u64, budget: u64) -> Resul
             }
             OpCode::CPUI_STORE => {
                 let spc = mem_space(env, arg(0)?)?;
-                let ptr = read(&state, arg(1)?)? as u64;
+                let ptr = read(&mut state, arg(1)?)? as u64;
                 let at = spc.wrap_offset(AddrSpace::address_to_byte(ptr, spc.get_word_size()));
                 let val = arg(2)?;
                 env.check_store(&spc, at, val.size)?;
-                let v = read(&state, val)?;
+                let v = read(&mut state, val)?;
                 state.write(&spc, at, val.size, v)?;
                 i += 1;
             }
             opc => {
                 let out = op.out.as_ref().ok_or_else(|| Halt::Unsupported(get_opname(opc).to_string()))?;
-                let ins = op
-                    .ins
-                    .iter()
-                    .map(|vn| read(&state, vn).map(|v| (v, vn.size)))
-                    .collect::<Result<Vec<_>, _>>()?;
+                let mut ins = Vec::with_capacity(op.ins.len());
+                for vn in &op.ins {
+                    ins.push((read(&mut state, vn)?, vn.size));
+                }
                 let v = eval(opc, out.size, &ins)?;
                 write(&mut state, out, v)?;
                 i += 1;
