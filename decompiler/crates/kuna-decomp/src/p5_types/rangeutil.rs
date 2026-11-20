@@ -854,11 +854,17 @@ impl CircleRange {
     }
 
     /// Set the range based on a putative mask (C++ `setNZMask`, `rangeutil.cc:672`).
-    /// Returns `true` if the mask is valid.
+    /// Returns `true` if the mask is valid.  A mask whose lowest set bit is
+    /// past bit 30 has a stride that the `int4` step cannot hold (the C++
+    /// shifts it out of range); it forms no range.
     pub fn set_nz_mask(&mut self, nzmask: uintb, size: int4) -> bool {
         let trans = bit_transitions(nzmask, size);
         if trans > 2 {
             return false; // Too many transitions to form a valid range
+        }
+        let shift = leastsigbit_set(nzmask);
+        if shift >= int4::BITS as int4 - 1 {
+            return false;
         }
         let hasstep = (nzmask & 1) == 0;
         if (!hasstep) && (trans == 2) {
@@ -880,7 +886,6 @@ impl CircleRange {
             }
             return true;
         }
-        let shift = leastsigbit_set(nzmask);
         self.step = 1;
         self.step <<= shift; // step <<= shift (int4 shift)
         self.mask = calc_mask(size);

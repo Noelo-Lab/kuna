@@ -90,6 +90,20 @@ pub struct StringFact {
     pub len: u32,
 }
 
+/// (kuna `blobs`) An embedded image or archive: `len` bytes at `addr` that
+/// walk as one whole file of `kind`. The commit plants it as `<kind>_<addr>`,
+/// an `unsigned char[len]`, wherever no symbol already covers the address.
+/// Produced by [`crate::analyzers::blobs`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BlobFact {
+    /// Virtual address of the file's first byte.
+    pub addr: u64,
+    /// The file's exact length in bytes.
+    pub len: u64,
+    /// Which container it is.
+    pub kind: crate::analyzers::blobs::BlobKind,
+}
+
 /// A Mach-O Core Foundation constant string (`__cfstring` entry). The entry is a
 /// `CFString` struct (isa, flags, char pointer, length); `bytes` is the UTF-8 of
 /// the string its char pointer targets, already resolved through chained fixups
@@ -266,11 +280,15 @@ pub struct SwiftTypeFacts {
 pub struct ModelFact {
     pub func_addr: u64,
     pub model: &'static str,
+    /// Optional stack bound that requires a decoded leaf body before binding.
+    pub leaf_stack_inputs: Option<LeafStackInputs>,
     /// The convention's implicit context register may or may not be a
     /// parameter (a Swift struct member's `self`): a call passes it only
     /// when the caller set it for that call.
     pub maybe_self: bool,
 }
+
+pub use crate::pclntab::kuna_goabi0_leaf::LeafStackInputs;
 
 /// The input of the function at `func_addr` in register `reg` is `name`, of
 /// `type_` when that is known, when the function's own analysis finds it
@@ -406,6 +424,8 @@ pub struct AnalysisOutput {
     pub ppc32_pic_slots: Vec<kuna_decomp::kuna_ppc32piccalls::ImportSlot>,
     /// `(addr, name, kind)` -> seed `Database::add_function` / symbol map.
     pub symbols: Vec<SymFact>,
+    /// Unique AMD64 Go function-table entry of the blocking status receive helper.
+    pub go_chanrecv2: Option<u64>,
     /// Named, sized data globals (the symbol-table / DWARF data objects). Mapped
     /// into the global scope with an `undefined<size>` type so a memory access of
     /// the object renders its NAME (`max_width`) not `dat_<addr>`. See
@@ -531,6 +551,9 @@ pub struct AnalysisOutput {
     /// types each entry an opaque `struct __CFString` and pre-seeds the
     /// `StringManager`, so a reference renders the literal. Produced by [`crate::analyzers::cfstring`].
     pub cfstrings: Vec<CFStringFact>,
+    /// (kuna `blobs`) Embedded images and archives, each a whole file with an
+    /// exact length. Produced by [`crate::analyzers::blobs`].
+    pub blobs: Vec<BlobFact>,
     /// Library-function prototypes to seed onto matching FunctionSymbols (the kuna
     /// analog of Ghidra's `ApplyDataArchiveAnalyzer` / `.gdt` archives). Each is
     /// parked on its named callee via `set_function_prototype_pieces`, so a caller
@@ -640,6 +663,8 @@ pub struct AnalysisOutput {
     pub cpp_dwarf: CppDwarfFacts,
     /// Go DWARF signatures, with type interning deferred until the commit gate.
     pub go_dwarf: Vec<crate::dwarf::kuna_godwarfsig::Facts>,
+    /// Exact linked pointer method statements, intersected with Go DWARF at commit.
+    pub go_pointer_methods: std::collections::BTreeMap<u64, crate::gotypes::kuna_pointermethods::LinkedMethod>,
     /// (kuna `cppsig`) The prototypes recovered from the MANGLED SYMBOL, split by
     /// how certain the pass is that argument 0 is an implicit `this`. Held apart
     /// for the same reason as [`Self::cpp_dwarf`] — the producing pass runs at
@@ -822,6 +847,7 @@ impl AnalysisOutput {
     /// Fold another output into this one (concatenation; dedup is the driver's job).
     pub fn merge(&mut self, other: AnalysisOutput) {
         self.symbols.extend(other.symbols);
+        self.go_chanrecv2 = self.go_chanrecv2.or(other.go_chanrecv2);
         self.data_objects.extend(other.data_objects);
         self.typed_data.extend(other.typed_data);
         self.go_type_globals.extend(other.go_type_globals);
@@ -854,6 +880,7 @@ impl AnalysisOutput {
         self.wide_strings.extend(other.wide_strings);
         self.wide_strings32.extend(other.wide_strings32);
         self.cfstrings.extend(other.cfstrings);
+        self.blobs.extend(other.blobs);
         self.prototypes.extend(other.prototypes);
         self.prototypes_at.extend(other.prototypes_at);
         self.arm_float_prototypes.extend(other.arm_float_prototypes);
@@ -875,6 +902,7 @@ impl AnalysisOutput {
         self.cpp_dwarf.locals.extend(other.cpp_dwarf.locals);
         self.cpp_dwarf.prototypes.extend(other.cpp_dwarf.prototypes);
         self.go_dwarf.extend(other.go_dwarf);
+        self.go_pointer_methods.extend(other.go_pointer_methods);
         self.cpp_sig.proven.extend(other.cpp_sig.proven);
         self.cpp_sig.inferred.extend(other.cpp_sig.inferred);
         self.cpp_sig.msvc.extend(other.cpp_sig.msvc);

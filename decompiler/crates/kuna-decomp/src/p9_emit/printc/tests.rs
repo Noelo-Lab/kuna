@@ -988,6 +988,44 @@ mod decompile_project_type_render {
         );
     }
 
+    #[test]
+    fn c_type_definition_aliases_keep_qualifiers_and_nested_declarators() {
+        use crate::kuna_typequal::{qualified_type, CONST, VOLATILE};
+
+        let value = named(4, type_metatype::TYPE_UINT, "uint4");
+        let mut element = (*struct_of("elm.tag", 4, &[(0, "value", value)])).clone();
+        element.display_name = "debug.pretty".into();
+        let element = Rc::new(element);
+        let pointer = ptr_to(qualified_type(Rc::clone(&element), CONST));
+        let volatile_pointer = qualified_type(Rc::clone(&pointer), VOLATILE);
+        let mut alias = (*pointer).clone();
+        alias.name = "elm.ref".into();
+        alias.display_name = "debug.pointer".into();
+        alias.id = Datatype::hash_name("elm.ref");
+        alias.typedef_imm = Some(Rc::clone(&volatile_pointer));
+        let alias = Rc::new(alias);
+        let consumer = struct_of(
+            "Holder", 32,
+            &[
+                (0, "p", Rc::clone(&volatile_pointer)),
+                (8, "list", array_of(Rc::clone(&alias), 2)),
+                (24, "table", ptr_to(array_of(Rc::clone(&element), 3))),
+            ],
+        );
+
+        let header = render_type_definitions(&[element, alias, consumer], RealTypeCtx::OFF);
+        assert!(header.contains("typedef struct elm_tag elm_tag;"), "{header}");
+        assert!(header.contains("typedef const elm_tag * volatile elm_ref;"), "{header}");
+        assert!(
+            header.contains("    const elm_tag * volatile p;\n    elm_ref list[2];\n    elm_tag (*table)[3];"),
+            "{header}"
+        );
+        assert_eq!(
+            crate::printc::declaration_text(&volatile_pointer, "local", RealTypeCtx::OFF),
+            "const debug.pretty * volatile local"
+        );
+    }
+
     /// An INCOMPLETE struct emits ONLY the forward declaration, annotated
     /// `/* opaque */` — never a body.  A complete struct gets forward decl
     /// (un-annotated) FIRST, then its body.
@@ -2403,14 +2441,26 @@ mod w10_printc_cast_render {
     #[path = "rust_integer_assignments.rs"]
     mod rust_integer_assignments;
 
+    #[path = "rust_wrapping_arithmetic.rs"]
+    mod rust_wrapping_arithmetic;
+
+    #[path = "rust_niche_option.rs"]
+    mod rust_niche_option;
+
     #[path = "rust_boolean_conversions.rs"]
     mod rust_boolean_conversions;
+
+    #[path = "rust_store_width.rs"]
+    mod rust_store_width;
 
     #[path = "scalar_call_results.rs"]
     mod scalar_call_results;
 
     #[path = "call_argument_extensions.rs"]
     mod call_argument_extensions;
+
+    #[path = "opaque_operations.rs"]
+    mod opaque_operations;
 
     /// Build a 1-input cast op (`opc`) whose in0 is a constant `k` (renders as a
     /// literal, deterministic) and whose OUTPUT carries the data-type `out_ty`.

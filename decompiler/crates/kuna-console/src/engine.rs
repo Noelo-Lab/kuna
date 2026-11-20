@@ -31,6 +31,7 @@
 //! is precisely what `readLoaderSymbols` reads).
 
 mod lazy_inventory;
+mod kuna_signature_names;
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -58,6 +59,7 @@ use kuna_num::pcoderaw::VarnodeData;
 use kuna_sleigh::loadimage::{section_flags, LoadImage, LoadImageFunc, LoadImageSection};
 use kuna_analysis::loadimage_object::{is_arm32_language, ObjectLoadImage, PE_MACHINES};
 use kuna_analysis::loadimage_mz::{is_mz_dos_image, MzImage, MZ_LANGUAGE};
+use kuna_analysis::flirt::kuna_rustprofiles::{ImageReport as RustProfileReport, Request as RustProfileRequest};
 use kuna_analysis::loadimage_te::{is_te_image, TeLoadImage, TE_PROBE_LEN};
 use kuna_sleigh::loadimage_xml::LoadImageXml;
 use kuna_sleigh::loadimage_xml::register_loadimage_xml_ids;
@@ -601,6 +603,10 @@ pub struct ConsoleProgram {
     /// analysis commit (`AnalysisOutput::fid_databases`). Empty when the FID
     /// pass did not run or no database was configured.
     fid_databases: Vec<kuna_analysis::fid::kuna_fidapply::FidDbReport>,
+    rust_profile_request: Option<RustProfileRequest>,
+    rust_profile_apply: bool,
+    rust_profile_image_modified: bool,
+    rust_profile_report: Option<RustProfileReport>,
     /// (kuna) The image bytes + path stashed at load for the **deferred Listing
     /// build** (the Listing/xref PR6 build-timing fix). The Listing is gated on
     /// `--option listing on`, a flag the live CLI sets AFTER `load file` (before
@@ -798,6 +804,23 @@ impl ConsoleProgram {
     /// `kuna_analysis::fid::kuna_fidapply`).
     pub fn fid_databases(&self) -> &[kuna_analysis::fid::kuna_fidapply::FidDbReport] {
         &self.fid_databases
+    }
+
+    /// Request one read-only observation of the next accepted image Listing.
+    pub fn request_rust_profiles(&mut self, request: RustProfileRequest) {
+        self.rust_profile_apply = false;
+        self.rust_profile_request = Some(request);
+        self.rust_profile_report = Some(RustProfileReport::unavailable());
+    }
+
+    /// Offer caller-verified trusted banks through ordinary name arbitration, once per image.
+    pub fn request_rust_signature_names(&mut self, request: RustProfileRequest) {
+        self.request_rust_profiles(request);
+        self.rust_profile_apply = true;
+    }
+
+    pub fn rust_profile_report(&self) -> Option<&RustProfileReport> {
+        self.rust_profile_report.as_ref()
     }
 
     /// The loaded image's file name, as the loader reports it.
@@ -2537,6 +2560,8 @@ impl ConsoleProgram {
     pub fn set_assertions(&mut self, directives: Vec<crate::assertions::Directive>) {
         if directives.iter().any(|directive| matches!(directive.body,
             crate::assertions::Body::Flow { .. }
+            | crate::assertions::Body::Callee { .. }
+            | crate::assertions::Body::CallProto { .. }
             | crate::assertions::Body::Param { func: None, .. }
             | crate::assertions::Body::Return { func: None, .. }))
         {
@@ -2789,6 +2814,7 @@ impl ConsoleProgram {
     /// Add a successfully applied byte overlay to the deferred walk, clipped
     /// to executable mappings. Unwritten virtual tails remain outside its ranges.
     pub(crate) fn note_materialized_bytes(&mut self, addr: &Address, size: usize) {
+        self.rust_profile_image_modified = true;
         self.callwide_unavailable("effective byte overlays require a new complete image proof");
         if self.pending_entry_thumb.is_none()
             || !self.analysis_code_space.as_ref().zip(addr.get_space())
@@ -2900,9 +2926,15 @@ impl ConsoleProgram {
     /// `arch.analysis_listing` is on, the stashed image bytes are re-parsed, the
     /// Listing is built, and the enabled Listing-consumer passes run; their
     /// defensively re-gated facts merge into the same `merged` output committed
-    /// below. With Listing off, this whole block is skipped.
+    /// below. Fast inventory or an explicit Rust profile request can also need
+    /// this Listing while the ordinary Listing-consumer gates remain off.
     pub fn commit_pending_analysis(&mut self) -> KunaResult<()> {
         let _load = self.arch().load_scope();
+        let rust_profile_request = self.rust_profile_request.take();
+        let apply_rust_names = std::mem::take(&mut self.rust_profile_apply);
+        if apply_rust_names && (self.rust_profile_image_modified || self.analysis_image.is_none()) {
+            return Err(KunaError::lowlevel("Rust signature application requires an unmodified object image before its analysis commit"));
+        }
         if !self.pending_synthetic_entries.is_empty() {
             // (kuna `rawdiscover`) A headerless image reaches this point holding
             // only the `--entry` addresses the caller typed, because the
@@ -3001,7 +3033,9 @@ impl ConsoleProgram {
                 ),
             );
         }
-        if self.pending_analysis.is_empty() && self.loader_data_objects.is_empty() {
+        if self.pending_analysis.is_empty() && self.loader_data_objects.is_empty()
+            && rust_profile_request.is_none()
+        {
             // Drop the deferred-Listing stash too: nothing to commit against, and
             // a session with no analysis tier (XML path) must not build a Listing.
             self.analysis_image = None;
@@ -3034,6 +3068,7 @@ impl ConsoleProgram {
         // Filter by the per-pass enable flags (default-on, set by the user's
         // `--option <id> on|off`), then merge the survivors in pass order.
         let mut merged = kuna_analysis::pass::AnalysisOutput::default();
+        let mut zero_size_data_names = Vec::new();
         let mut input_context_paints = Vec::new();
         for (id, out) in pending {
             if id == "input_isa" {
@@ -3061,6 +3096,20 @@ impl ConsoleProgram {
         // the gate was off (the default). See `passes::run_deferred_entry_passes`.
         if self.analysis_image.is_some() {
             if let Some((path, bytes, import_proofs)) = self.analysis_image.take() {
+                let profile_request = if rust_profile_request.is_some() {
+                    match RustProfileReport::reject_unsupported(&bytes) {
+                        Some(report) => {
+                            if apply_rust_names {
+                                return Err(KunaError::lowlevel("unsupported image: Rust signature application requires a linked little-endian x86-64 ELF image"));
+                            }
+                            self.rust_profile_report = Some(report);
+                            None
+                        }
+                        None => rust_profile_request.as_ref(),
+                    }
+                } else {
+                    None
+                };
                 let _import_proofs =
                     kuna_analysis::loader::ImportProofScope::resume(&bytes, Some(import_proofs));
                 let image_path = std::path::Path::new(&path);
@@ -3086,7 +3135,7 @@ impl ConsoleProgram {
                     // on the matching option. The call-fixup seed list is the names
                     // the load-time pass flagged resolved to addresses via the
                     // (already installed) symbol table.
-                    if want_listing || want_fast_funcdisc {
+                    if want_listing || want_fast_funcdisc || profile_request.is_some() {
                         let mut committed_entry_seeds = merged.entries.clone();
                         committed_entry_seeds.sort_unstable();
                         committed_entry_seeds.dedup();
@@ -3106,7 +3155,16 @@ impl ConsoleProgram {
                         // share it takes is released with the plan, before any
                         // later writer of the loader's bytes.
                         let plan = kuna_analysis::listing::WalkPlan::from_env(arch);
-                        let consumer_out = kuna_analysis::passes::run_listing_consumers_replaying(
+                        let mut rust_report = None;
+                        let mut observe_rust = |file: &object::File<'_>, listing: &kuna_analysis::listing::Listing| {
+                            if let Some(request) = profile_request {
+                                rust_report = Some(request.evaluate(file, listing));
+                            }
+                        };
+                        let observer = profile_request.map(|_| {
+                            &mut observe_rust as &mut dyn FnMut(&object::File<'_>, &kuna_analysis::listing::Listing)
+                        });
+                        let consumer_out = kuna_analysis::passes::run_listing_consumers_replaying_observed(
                             &bytes,
                             arch,
                             arch.translate(),
@@ -3116,7 +3174,20 @@ impl ConsoleProgram {
                             &merged.fde_interior_entries,
                             &plan,
                             self.arm_frames.as_ref(),
+                            observer,
                         );
+                        if profile_request.is_some() {
+                            let report = rust_report.unwrap_or_else(|| RustProfileReport::unavailable_for(&bytes));
+                            if apply_rust_names {
+                                let profile = report.report.as_ref().ok_or_else(|| KunaError::lowlevel(
+                                    report.error.as_deref().unwrap_or("Rust signature profile is unavailable")))?;
+                                let mut names = kuna_analysis::pass::AnalysisOutput::default();
+                                names.fid_names = profile.agreed_names().map_err(KunaError::lowlevel)?;
+                                names.sanitize_names(kuna_decomp::kuna_symbolnamechars::symbolnamechars_mode());
+                                merged.merge(names);
+                            }
+                            self.rust_profile_report = Some(report);
+                        }
                         for (id, mut out) in consumer_out {
                             if let Some(record) = out.arm_frames.take() {
                                 self.arm_frames = Some(record);
@@ -3141,6 +3212,10 @@ impl ConsoleProgram {
                             &bytes,
                             self.arch(),
                         ));
+                    }
+                    if merged.fid_names.iter().any(|m| m.by_signature) {
+                        zero_size_data_names =
+                            kuna_analysis::flirt::kuna_elf_data_names::zero_size_data_names(&bytes);
                     }
             }
         } else {
@@ -3174,7 +3249,7 @@ impl ConsoleProgram {
         suppress_pdb_interior_entries(self.arch(), &code_space, &mut merged);
         merged.context_paints.extend(input_context_paints);
         self.fid_databases = std::mem::take(&mut merged.fid_databases);
-        let committed = commit_analysis_output(self, &code_space, merged);
+        let committed = commit_analysis_output(self, &code_space, merged, zero_size_data_names);
         self.stash_float_scan();
         committed
     }
@@ -3474,6 +3549,7 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // `CFStringRef`). Registered here so `off` really skips it; `off`
         // renders the entry exactly as before.
         "cfstrings" => arch.analysis_cfstrings,
+        "blobs" => arch.analysis_blobs,
         // (kuna) PE PDB metadata recovery — default-OFF (output-changing: renames
         // stripped functions to their real PDB names). PE-only + externally gated on
         // a fingerprint-matching `.pdb` (the `kuna_pdb_path` env var). Registered
@@ -4172,6 +4248,10 @@ fn empty_program(
         libctypes_glibc: false,
         libctypes_refused: false,
         fid_databases: Vec::new(),
+        rust_profile_request: None,
+        rust_profile_apply: false,
+        rust_profile_image_modified: false,
+        rust_profile_report: None,
         analysis_image: None,
         arm_frames: None,
         loader_data_objects: Vec::new(),
@@ -4760,7 +4840,7 @@ pub(crate) fn bootstrap_object(
             // (kuna `kernelcache`) IMG4 / IM4P / LZFSE / complzss unwrapping and MH_FILESET
             // entry selection, ahead of every other normalization.
             let choice = kuna_decomp::kuna_kernelcache::KernelcacheChoice::in_force();
-            let peeled = kuna_analysis::loader::kuna_kernelcache::peel(bytes, &choice)
+            let peeled = kuna_analysis::loader::kuna_kernelcache::peel_file(Path::new(path), bytes, &choice)
                 .map_err(KunaError::lowlevel)?;
             if let Some(note) = &peeled.note {
                 kuna_base::notes::say_once(path, &format!("[kuna] {note}"));
@@ -5057,9 +5137,10 @@ pub(crate) fn bootstrap_object(
     // datatest corpus by construction.
     let compiler = kuna_analysis::sourcelang::effective_compiler_bytes(&bytes);
     sleigh.base_mut().unwrap().source_lang_detected = compiler.to_source_lang();
+    let rust_image = compiler == kuna_analysis::sourcelang::Compiler::Rustc;
     sleigh.base_mut().unwrap().rustc_stable_version =
-        kuna_analysis::sourcelang::stable_rustc_version(&bytes);
-    if let Some(layout) = kuna_analysis::sourcelang::fmt_pieces_layout(&bytes) {
+        kuna_analysis::sourcelang::stable_rustc_version(&bytes, rust_image);
+    if let Some(layout) = kuna_analysis::sourcelang::fmt_pieces_layout(&bytes, rust_image) {
         sleigh.base_mut().unwrap().rustc_pieces_layout = true;
         sleigh.base_mut().unwrap().rust_fmt_pieces_relro = layout.relro;
     }
@@ -5236,6 +5317,13 @@ fn commit_model_facts(
     let mut models = (*prog.arch().loader_proto_models).clone();
     for fact in facts {
         let Some(model) = prog.arch().get_model(fact.model).cloned() else { continue };
+        let model = if let Some(inputs) = &fact.leaf_stack_inputs {
+            let Some(limit) = inputs.proven_limit(prog.arch(), fact.func_addr) else { continue };
+            let Some(bounded) = model.kuna_bound_stack_inputs(limit) else { continue };
+            Rc::new(bounded)
+        } else {
+            model
+        };
         models.insert((code_space.get_index(), fact.func_addr), model);
     }
     prog.arch_mut().loader_proto_models = Rc::new(models);
@@ -5245,6 +5333,7 @@ fn commit_analysis_output(
     prog: &mut ConsoleProgram,
     code_space: &Rc<AddrSpace>,
     out: kuna_analysis::pass::AnalysisOutput,
+    zero_size_data_names: Vec<String>,
 ) -> KunaResult<()> {
     use kuna_analysis::pass::SymKind;
 
@@ -5254,6 +5343,9 @@ fn commit_analysis_output(
     //    producing pass: they fold into the normal symbol/local streams below and
     //    their address-keyed prototypes are applied at step 5a.
     let mut out = out;
+    if let Some(entry) = out.go_chanrecv2 {
+        prog.arch_mut().go_chanrecv2 = Some(entry);
+    }
     for slot in std::mem::take(&mut out.ppc32_pic_slots) {
         prog.arch_mut().ppc32_pic_imports.insert(slot.address, slot);
     }
@@ -5262,13 +5354,15 @@ fn commit_analysis_output(
     out.locals.extend(cpp.locals);
     out.cpp_dwarf.prototypes = cpp.prototypes;
     let go_prototypes = if prog.arch().analysis_godwarfsig {
-        out.go_dwarf.iter().flat_map(|facts| facts.materialize(prog.arch())).collect::<Vec<_>>()
+        out.go_dwarf.iter()
+            .flat_map(|facts| facts.materialize(prog.arch(), &out.go_pointer_methods))
+            .collect::<Vec<_>>()
     } else {
         Vec::new()
     };
     out.go_dwarf.clear();
-    out.symbols.extend(go_prototypes.iter().map(|(addr, pieces)| kuna_analysis::pass::SymFact {
-        addr: *addr, name: pieces.name.clone(), kind: SymKind::Function,
+    out.symbols.extend(go_prototypes.iter().map(|fact| kuna_analysis::pass::SymFact {
+        addr: fact.entry, name: fact.pieces.name.clone(), kind: SymKind::Function,
     }));
     // 0b. (kuna `swifttypes`) The Swift type-layout arm's facts, the same
     //     deferred shape: on, the typed metadata records and the accessor
@@ -5322,6 +5416,8 @@ fn commit_analysis_output(
         Vec::new()
     };
     let out = out;
+    let signature_names =
+        kuna_signature_names::SignatureNames::collect(prog, &out, zero_size_data_names);
 
     // Keep lookup identities even when richer debug information wins the map;
     // a spelling shared by several objects resolves to its lowest address.
@@ -5789,21 +5885,31 @@ fn commit_analysis_output(
         let name = names.into_iter().next()?;
         Some(FidMatch { addr, name, by_signature: true })
     }));
+    let mut signature_renames = Vec::new();
     for m in &fids {
         let addr = Address::new(Rc::clone(code_space), m.addr);
         let sid = prog.arch().symboltab.find_function_across_scopes(&addr).map(|(sid, _)| sid);
         if let Some(sid) = sid {
-            // The label gate: only rename an engine placeholder.
-            let is_placeholder = {
-                let cur = prog.arch().symboltab.symbol(sid).get_name();
-                is_generic_placeholder_name(cur)
-            };
-            if is_placeholder {
-                prog.arch_mut().symboltab.rename_symbol(sid, &m.name)?;
-                // Make the new name resolvable by `load function <name>` (the same
-                // name->addr binding the entry/symbol arms register).
-                prog.register_symbol(&m.name, addr);
+            if !is_generic_placeholder_name(prog.arch().symboltab.symbol(sid).get_name()) {
+                continue;
             }
+            if m.by_signature {
+                if !signature_names.blocks(prog, m.addr, &m.name) {
+                    signature_renames.push((addr, sid, m.name.as_str()));
+                }
+                continue;
+            }
+            prog.arch_mut().symboltab.rename_symbol(sid, &m.name)?;
+            prog.register_symbol(&m.name, addr);
+        }
+    }
+    let contested = kuna_signature_names::contested_addresses(signature_renames.iter().map(
+        |(addr, _, name)| (prog.thumb_normalized(addr.get_offset()), *name),
+    ));
+    for (addr, sid, name) in signature_renames {
+        if !contested.contains(&prog.thumb_normalized(addr.get_offset())) {
+            prog.arch_mut().symboltab.rename_symbol(sid, name)?;
+            prog.register_symbol(name, addr);
         }
     }
 
@@ -5858,6 +5964,7 @@ fn commit_analysis_output(
     //    produced for the same address (the measured witness: three adjacent
     //    unterminated literals read back as one 39-byte string). A bounded
     //    fact's `len` is the exact element count — there is no terminator.
+    let blob_extents = crate::kuna_blobdata::Extents::new(&out.blobs);
     let wide = if prog.arch().analysis_widestrings { out.wide_strings.as_slice() } else { &[] };
     let wide32 =
         if prog.arch().analysis_widestrings32 { out.wide_strings32.as_slice() } else { &[] };
@@ -5872,6 +5979,9 @@ fn commit_analysis_output(
         .chain(wide.iter().map(|f| (f, 2u32)))
         .chain(out.strings.iter().map(|f| (f, 1u32)))
     {
+        if blob_extents.contains(fact.addr) {
+            continue;
+        }
         let addr = Address::new(Rc::clone(code_space), fact.addr);
         // Conservative guard: skip an address that already carries a symbol (an
         // existing data/function symbol must not be shadowed). Ghidra likewise
@@ -6122,6 +6232,10 @@ fn commit_analysis_output(
         arch.symboltab.set_attribute(sid, kuna_decomp::varnode::varnode_flags::namelock);
     }
 
+    // 4c. (kuna `blobs`) Embedded images and archives, last so every named or
+    //     typed claim on the address is kept.
+    crate::kuna_blobdata::commit(prog, code_space, &out.blobs, &mut data_names, num_spaces)?;
+
     // 4b. The C runtime declaration `elfmain` has for an executable's own
     //     `main`. Not parked on the symbol: the drive locks only its `int`
     //     return and names and types the parameters `main`'s own analysis
@@ -6257,9 +6371,15 @@ fn commit_analysis_output(
         let a = Address::new(Rc::clone(code_space), addr);
         prog.arch_mut().set_function_prototype_pieces_at(&a, pieces);
     }
-    for (addr, pieces) in go_prototypes {
-        let a = Address::new(Rc::clone(code_space), addr);
-        prog.arch_mut().set_function_prototype_pieces_at(&a, pieces);
+    for fact in go_prototypes {
+        let a = Address::new(Rc::clone(code_space), fact.entry);
+        if let Some(site) = fact.status_site {
+            prog.arch_mut().go_chanrecv_status_sites.insert(fact.entry, site);
+        }
+        prog.arch_mut().set_go_dwarf_prototype_at(&a, fact.pieces, fact.string_input);
+        if let Some(receiver) = fact.pointer_receiver {
+            prog.arch_mut().symboltab.attach_go_pointer_receiver(&a, receiver);
+        }
     }
 
     // 6. Processor-context decode-mode paints (the kuna analog of ARM's

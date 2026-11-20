@@ -6,6 +6,8 @@ mod return_branch_cli;
 #[path = "riscv_zcmp.rs"]
 mod riscv_zcmp;
 mod common;
+#[path = "rust_signature_summary.rs"]
+mod rust_signature_summary;
 #[path = "sparc_prologue_start.rs"]
 mod sparc_prologue_start;
 
@@ -39,6 +41,12 @@ mod declared_bytes_cli;
 #[path = "argument_errors_cli.rs"]
 mod argument_errors_cli;
 
+#[path = "archive_members_cli.rs"]
+mod archive_members_cli;
+
+#[path = "assert_callee.rs"]
+mod assert_callee;
+
 #[path = "array_member_bits.rs"]
 mod array_member_bits;
 
@@ -62,6 +70,8 @@ mod arm_conditional_switch;
 mod arm_constant_shift;
 #[path = "wide_shift_emission.rs"]
 mod wide_shift_emission;
+#[path = "wrap_add_emission.rs"]
+mod wrap_add_emission;
 
 #[path = "arm_float_arguments.rs"]
 mod arm_float_arguments;
@@ -109,6 +119,9 @@ mod thumbswitch_guards;
 #[path = "asserted_enum_layout.rs"]
 mod asserted_enum_layout;
 
+#[path = "assert_format_isolate.rs"]
+mod assert_format_isolate;
+
 #[path = "baseline_cli.rs"]
 mod baseline_cli;
 
@@ -149,6 +162,8 @@ mod caller_stack_cli;
 mod castnarrow_round_trip;
 #[path = "strlenscan_round_trip.rs"]
 mod strlenscan_round_trip;
+#[path = "repstring_round_trip.rs"]
+mod repstring_round_trip;
 
 #[path = "coff_strings.rs"]
 mod coff_strings;
@@ -160,12 +175,17 @@ mod coldentry_source_boundary;
 mod compact_switch_cli;
 #[path = "switch_self_loop_cli.rs"]
 mod switch_self_loop_cli;
+#[path = "indirect_dispatch.rs"]
+mod indirect_dispatch;
 
 #[path = "contiguous_byte_frame.rs"]
 mod contiguous_byte_frame;
 
 #[path = "cookie_pointer_return_271.rs"]
 mod cookie_pointer_return_271;
+
+#[path = "blobs_cli.rs"]
+mod blobs_cli;
 
 #[path = "crypto_cli.rs"]
 mod crypto_cli;
@@ -571,6 +591,9 @@ mod xrefs_data_refs_cli;
 #[path = "xrefs_fileset_entry.rs"]
 mod xrefs_fileset_entry;
 
+#[path = "dyld_follow_images.rs"]
+mod dyld_follow_images;
+
 #[path = "xrefs_got_call.rs"]
 mod xrefs_got_call;
 
@@ -882,3 +905,9 @@ mod mips_weak_imports;
 
 #[path = "nullable_relocations.rs"]
 mod nullable_relocations;
+
+#[path = "call_site_prototype.rs"]
+mod call_site_prototype;
+
+#[path = "xrefs_immutable_got.rs"]
+mod xrefs_immutable_got;
