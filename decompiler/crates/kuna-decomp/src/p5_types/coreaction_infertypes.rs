@@ -76,6 +76,9 @@ pub(crate) fn output_type_local(data: &Funcdata, op: OpId) -> Rc<Datatype> {
         if let Some(ty) = crate::kuna_roundingops::output_type(data, op) {
             return ty;
         }
+        if let Some(ty) = crate::kuna_repstring::output_type(data, op) {
+            return ty;
+        }
         let in0_off = o
             .get_in(0)
             .and_then(|v| data.vbank().get(v))
@@ -159,6 +162,9 @@ fn input_type_local_with(data: &Funcdata, op: OpId, slot: int4, recovered: bool)
             return ty;
         }
         if let Some(ty) = crate::kuna_roundingops::input_type(data, op, slot) {
+            return ty;
+        }
+        if let Some(ty) = crate::kuna_repstring::input_type(data, op, slot) {
             return ty;
         }
     }

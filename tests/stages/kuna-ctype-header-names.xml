@@ -1,0 +1,17 @@
+<!-- P9 C type definitions: DWARF names elm.tag. Its header alias must also
+     appear in pointer, array-of-pointer, and pointer-to-array members. -->
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+</binaryimage>
+<script>
+<com>clear architecture</com>
+<com>load file decompiler/crates/kuna-analysis/tests/fixtures/ctype_header_names_x86_64.elf</com>
+<com>read symbols</com>
+<com>option ctypes on</com>
+<com>print C types</com>
+</script>
+<stringmatch name="C type definition members use the declared pointer alias" min="1" max="1">elm_tag \*p;</stringmatch>
+<stringmatch name="C type definition members retain the array of pointers" min="1" max="1">elm_tag \*list\[2\];</stringmatch>
+<stringmatch name="C type definition members retain the pointer to an array" min="1" max="1">elm_tag \(\*table\)\[3\];</stringmatch>
+</decompilertest>
