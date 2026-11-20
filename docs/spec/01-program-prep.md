@@ -429,7 +429,11 @@ The register ABI reached amd64 in go1.17 and arm64 in go1.18
 (register_abi)`); 386 never got it, and its golang cspec already defaults to
 `abi0`. An older image passes every argument on the stack, so under
 `abi-internal` its calls lost all their arguments (`main.add3();` in a go1.16
-build). Such an image takes `abi0` as its default model. The release is the
+build). Such an image takes `abi0` as its default model. The AArch64 `abi0`
+model states `extrapop="0"` for the reason given above for `abi-internal`:
+`BL` pushes nothing, so with the eight-byte pop every call moved the caller's
+stack pointer and its later outgoing arguments read as stores to its own
+parameters. The release is the
 one on the load options, read by
 `decompiler/crates/kuna-analysis/src/loader/gobuildinfo.rs
 (go_toolchain_version)` from the build-info blob in either form: the inline
