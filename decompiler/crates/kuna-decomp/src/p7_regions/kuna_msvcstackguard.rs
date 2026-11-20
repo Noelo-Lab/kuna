@@ -94,7 +94,11 @@
 //! The stock pair `Funcdata::block_remove_internal` uses for a CALL inside a
 //! deleted block, and the pair `cleanupcode` uses for a Rust drop call:
 //! [`Funcdata::delete_call_specs`] to drop the `FuncCallSpecs` record, then
-//! [`Funcdata::op_destroy`].  Nothing else is deleted by hand.  The epilogue
+//! [`Funcdata::op_destroy`].  Nothing else is deleted by hand.  A function
+//! whose epilogue was duplicated holds one check per copy, all reading the
+//! same frame slot: every one of them is marked in the same restart and
+//! removed in the same apply, because a check left behind after the slot is
+//! released reads an unmapped slot and no longer matches.  The epilogue
 //! `INT_XOR` loses its last reader and dies in the following `ActionDeadCode`;
 //! and the repeating `fullloop` re-runs `mainloop` over the reduced function
 //! before P8 structures it.
@@ -506,28 +510,34 @@ impl Action for ActionStripMsvcStackGuard {
             data.set_restart_pending(true);
             return 0;
         }
-        let Some((op, inits)) = calls.into_iter().find(|(op, _)| pop_is_stated(data, *op)) else { return 0 };
-        let site = data.obank().get(op).expect("cookie checker op").get_addr().clone();
-        if !data.get_override().is_msvc_cookie_call(&site) {
-            data.get_override_mut().insert_msvc_cookie_call(site);
+        let stated: Vec<(OpId, Vec<OpId>)> = calls.into_iter().filter(|(op, _)| pop_is_stated(data, *op)).collect();
+        if stated.is_empty() {
+            return 0;
+        }
+        let mut unmarked = false;
+        for (op, _) in &stated {
+            let site = data.obank().get(*op).expect("cookie checker op").get_addr().clone();
+            if !data.get_override().is_msvc_cookie_call(&site) {
+                data.get_override_mut().insert_msvc_cookie_call(site);
+                unmarked = true;
+            }
+        }
+        if unmarked {
             data.set_restart_pending(true);
             return 0;
         }
-        if !strip {
-            return 0;
-        }
         let mut slots: Vec<(Address, int4)> = Vec::new();
-        collect_value_slots(&inits, data, &mut slots);
-        data.delete_call_specs(op);
-        data.op_destroy(op);
-        // The check is gone; release the entry-side scramble's frame slot so the
-        // following ActionDeadCode collects the store, the cookie read and the
-        // scramble itself instead of leaving a dead `v = cookie ^ SP`.
+        for (_, inits) in &stated {
+            collect_value_slots(inits, data, &mut slots);
+        }
+        let removed = stated.len() as int4;
+        for (op, _) in stated {
+            data.delete_call_specs(op);
+            data.op_destroy(op);
+        }
         release_canary_slots(data, &slots);
-        self.base.count += 1;
-        // One check per apply; the fullloop re-invokes and self-gates (this
-        // call and its argument chain are gone on the next pass).
-        1
+        self.base.count += removed;
+        removed
     }
 }
 
