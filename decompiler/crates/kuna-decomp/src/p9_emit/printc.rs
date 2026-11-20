@@ -1725,6 +1725,9 @@ impl PrintC {
         self.name = name.to_string();
         self.out_lang =
             crate::kuna_lang::OutLang::from_print_name(name).unwrap_or(crate::kuna_lang::OutLang::C);
+        if self.plain_line_size.is_some() && !self.emit.emits_markup() {
+            self.emit = self.plain_emit();
+        }
     }
 
     /// The active output language.
@@ -1899,10 +1902,11 @@ impl PrintC {
             }
         }
     }
-    /// A fresh plain-text back-end honoring [`Self::plain_line_size`], carrying
-    /// the current indent increment.
+    /// A fresh plain-text back-end honoring [`Self::plain_line_size`] for C
+    /// output (Go ends a statement at a line break), carrying the current
+    /// indent increment.
     fn plain_emit(&self) -> PrintEmit {
-        let mut emit = match self.plain_line_size {
+        let mut emit = match self.plain_line_size.filter(|_| self.out_lang == crate::kuna_lang::OutLang::C) {
             Some(size) => {
                 let mut pretty = EmitPrettyPrint::new();
                 pretty

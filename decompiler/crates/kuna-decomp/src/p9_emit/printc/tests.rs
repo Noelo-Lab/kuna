@@ -30,6 +30,19 @@ fn max_line_size_bounds_the_comment_indent_and_survives_markup() {
 }
 
 #[test]
+fn go_output_never_breaks_lines() {
+    let mut print = PrintC::new();
+    print.set_max_line_size(40).unwrap();
+    print.set_name("go-language");
+    assert_eq!(print.emit_mut().get_max_line_size(), -1);
+    print.set_name("c-language");
+    assert_eq!(print.emit_mut().get_max_line_size(), 40);
+    print.set_name("go-language");
+    print.set_max_line_size(60).unwrap();
+    assert_eq!(print.emit_mut().get_max_line_size(), -1);
+}
+
+#[test]
 fn case_labels_without_ops_keep_their_numeric_value() {
     let mut print = PrintC::new();
     print.set_output_stream();
