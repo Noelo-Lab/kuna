@@ -2684,7 +2684,9 @@ decompilation selects only entries contained by a loader `CODE` section
 (`decompiler/crates/kuna-console/src/engine.rs
 (ConsoleProgram::function_entries_executable)`). Explicit decompiling selection
 uses the same body distinction: a lone IAT slot is refused with its import name
-and address, while a name shared by a stub and slot selects the sole body-bearing
+and address (among several selectors of one filtered run it is reported and
+skipped, and the run fails only when the skips leave nothing to decompile;
+`decompiler/crates/kuna-cli/src/decompile_all.rs (resolve_targets)`), while a name shared by a stub and slot selects the sole body-bearing
 stub. Generic lookup still resolves the slot for call binding and inventory
 consumers. Loaders without section metadata keep the complete inventory.
 
@@ -4355,7 +4357,11 @@ moves.
   declaration-only) is not part of the layout. Global `DW_OP_addr` locations
   are read in the DWARF reader's byte order and must be exactly one address of
   the unit's address size; an address followed by more operations is not a
-  static location.
+  static location. A DWARF 5 producer writes the same location as
+  `DW_OP_addrx <index>` (GNU split DWARF: `DW_OP_GNU_addr_index`); that index
+  is resolved through the unit's `.debug_addr` table
+  (`dwarf/mod.rs (indexed_addr_location)`), so a clang `-g` binary whose
+  statics have no ELF symbol still names them.
   The mapper recurses each member's
   `DW_AT_type` through the same DIE switch; bitfields come off `DW_AT_bit_size`
   with either the DWARF 4/5 `DW_AT_data_bit_offset` or the DWARF 2/3
@@ -5740,6 +5746,31 @@ every other binary's pass list is byte-identical to before the pass existed):
     denotes a complete struct (DWARF) is that struct. Class (`+`) methods keep
     `objc_object *self`. The number of classes given a layout is bounded
     (32,768): every type the factory interns costs a linear name scan.
+  - **Direct methods**
+    (`decompiler/crates/kuna-analysis/src/analyzers/objc/kuna_objcdirect.rs (emit)`):
+    a method declared `__attribute__((objc_direct))` (or in an
+    `objc_direct_members` class) is called as a C function. It is in no
+    `method_list_t`, takes no `_cmd`, and has no type encoding; only its
+    symbol, `-[UILabel _setAllowsDefaultTighteningForTruncation:]`, says it is
+    a method (iOS 16.4's UIKitCore has 1,541, named by the dyld shared
+    cache's local symbols). The walk above never reaches it, so its
+    receiver stayed whatever inference made of the first argument while the
+    offset variables it loads were still folded: an ivar read printed
+    `((objc_object **)a0)[0x56]`, with neither the field nor the
+    `_OBJC_IVAR_$_` name. Every method symbol of the image whose address no
+    method list gave now hints `x0` as `self` on AArch64 — an unlocked input hint (`kuna_inputhints`, the seam Swift's
+    `self` uses, applied here under the default convention), because a
+    prototype would have to state the other parameters and nothing declares
+    them. Under `objcivars` an instance method's hint carries the `<Class> *`
+    of the class the symbol names (category spelling dropped), the same struct
+    a listed method's `self` takes, so the read is `self->_configuration`; a
+    class method's hint, and every hint with `objcivars` off, only names
+    `self`. A body that never reads the register declares no parameter, as
+    with any hint, and a function Swift already hinted keeps that hint.
+    x86-64 gets no hint: a direct method returning a struct in memory
+    (`- (CGRect)frame`) takes the result buffer in `RDI` and `self` in
+    `RSI`, and nothing in the symbol says which shape a method has, so a
+    `self` hint on `RDI` would type the result buffer as the receiver.
   - **Declarations typed by class**
     (`decompiler/crates/kuna-analysis/src/analyzers/objc/kuna_objcprops.rs (declarations)`):
     a method's own encoding spells every object as a bare `@`, so the structs
