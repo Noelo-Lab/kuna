@@ -3772,7 +3772,12 @@ equal to the other) carries out of no position, so neither the unsigned carry
 nor the signed overflow can be set, and the op becomes the constant 0. The
 flags word VMProtect pushes after its NOR-gate NOT carries `CARRY4(~v, v)` and
 `SCARRY4(~v, v)` terms that this removes, after which the logic rule reduces the
-masked word to the flags that really vary.
+masked word to the flags that really vary. Any other unsigned carry of an
+addition with a NOT operand, `CARRY(x, ~y)` in either order, becomes the
+comparison `y < x`: `x + ~y` is `x - y - 1` modulo the width, which wraps past
+the top exactly when `x` exceeds `y`. That is how an interpreter computes the
+carry for `jb`/`jae`, so a loop test the native code wrote as `cmp i,n; jae`
+prints as `n <= i` instead of `!CARRY4(n,~i)`.
 
 ## 3.6 Early passes
 

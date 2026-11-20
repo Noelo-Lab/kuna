@@ -22,7 +22,8 @@
 //! * [`RulePushanPiece`] folds a PIECE of two slices of one value back into the
 //!   value, its shift or its truncation.
 //! * [`RulePushanCarry`] clears the carry and signed overflow of an addition
-//!   whose operands share no set bit, such as `x + ~x`.
+//!   whose operands share no set bit, such as `x + ~x`, and reads the carry
+//!   of `x + ~y` as the unsigned comparison `y < x`.
 
 use std::sync::OnceLock;
 
@@ -955,7 +956,9 @@ impl Rule for RulePushanCarry {
 
     /// An addition of two values with no set bit in common never carries, so
     /// neither its carry nor its signed overflow can be set; `x + ~x` (a flags
-    /// word pushed after a NOR-gate NOT) is the common case.
+    /// word pushed after a NOR-gate NOT) is the common case.  Otherwise
+    /// `x + ~y` carries exactly when `y < x` (unsigned), the comparison an
+    /// interpreter computes for `jb`/`jae` through a NOT and an addition.
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> i32 {
         if !devirtualized_only(data) {
             return 0;
@@ -968,11 +971,20 @@ impl Rule for RulePushanCarry {
         let complement = |x: VarnodeId, y: VarnodeId| {
             matches!(def_of(data, x), Some((CPUI_INT_NEGATE, ref i)) if same_value(data, i[0], y, SAME_DEPTH))
         };
-        if nz(a) & nz(b) != 0 && !complement(a, b) && !complement(b, a) {
+        if nz(a) & nz(b) == 0 || complement(a, b) || complement(b, a) {
+            let zero = data.new_constant(size(data, out), 0);
+            set_op(data, op, CPUI_COPY, &[zero]);
+            return 1;
+        }
+        if o.code() != CPUI_INT_CARRY {
             return 0;
         }
-        let zero = data.new_constant(size(data, out), 0);
-        set_op(data, op, CPUI_COPY, &[zero]);
+        let negated = |x: VarnodeId| match def_of(data, x) {
+            Some((CPUI_INT_NEGATE, i)) if !unmovable(data, i[0]) => Some(i[0]),
+            _ => None,
+        };
+        let Some((y, x)) = negated(b).map(|y| (y, a)).or_else(|| negated(a).map(|y| (y, b))) else { return 0 };
+        set_op(data, op, CPUI_INT_LESS, &[y, x]);
         1
     }
 }

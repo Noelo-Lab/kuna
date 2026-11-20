@@ -105,6 +105,7 @@ fn evaluate(fd: &Funcdata, vn: VarnodeId, inputs: &[(VarnodeId, u64)]) -> u64 {
         CPUI_INT_ADD => a.wrapping_add(b),
         CPUI_INT_SUB => a.wrapping_sub(b),
         CPUI_INT_MULT => a.wrapping_mul(b),
+        CPUI_INT_LESS => u64::from(a < b),
         CPUI_INT_CARRY | CPUI_INT_SCARRY => {
             let in_mask = calc_mask(size(fd, op.get_in(0).unwrap()));
             let sum = a.wrapping_add(b) & in_mask;
@@ -460,6 +461,31 @@ fn an_addition_of_disjoint_values_never_carries() {
     fd.vbank_mut().get_mut(low).unwrap().set_nz_mask(0xff);
     assert_eq!(check(&mut fd, &mut rule, disjoint, &[hi, y]), Some(CPUI_COPY));
     assert_eq!(check(&mut fd, &mut rule, plain, &[x, y]), None);
+}
+
+#[test]
+fn the_carry_of_an_added_complement_is_an_unsigned_compare() {
+    let (mut fd, anchor) = fixture(true);
+    let x = input(&mut fd, 4, 0x100);
+    let y = input(&mut fd, 4, 0x200);
+    let mut o = Ops { fd: &mut fd, anchor };
+    let ny = o.not(y);
+    let right = o.op(CPUI_INT_CARRY, 1, &[x, ny]);
+    let ny2 = o.not(y);
+    let left = o.op(CPUI_INT_CARRY, 1, &[ny2, x]);
+    let ny3 = o.not(y);
+    let overflow = o.op(CPUI_INT_SCARRY, 1, &[x, ny3]);
+    let mut rule = RulePushanCarry::new("analysis");
+    assert_eq!(check(&mut fd, &mut rule, right, &[x, y]), Some(CPUI_INT_LESS));
+    assert_eq!(check(&mut fd, &mut rule, left, &[x, y]), Some(CPUI_INT_LESS));
+    assert_eq!(check(&mut fd, &mut rule, overflow, &[x, y]), None);
+    let (mut native, anchor) = fixture(false);
+    let x = input(&mut native, 4, 0x100);
+    let y = input(&mut native, 4, 0x200);
+    let mut o = Ops { fd: &mut native, anchor };
+    let ny = o.not(y);
+    let carry = o.op(CPUI_INT_CARRY, 1, &[x, ny]);
+    assert_eq!(check(&mut native, &mut rule, carry, &[x, y]), None);
 }
 
 #[test]
