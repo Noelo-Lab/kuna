@@ -3482,6 +3482,7 @@ impl Architecture {
             .then(|| self.userops.get_op_by_name(crate::kuna_ptrauthtrap::BREAKPOINT_USEROP))
             .flatten()
             .map(|u| u.get_index() as kuna_base::types::uint4);
+        ctx.arm64e = self.archid.starts_with("AARCH64:LE:64:AppleSilicon:");
         ctx.name_style_angr = self.name_style_angr;
         ctx.name_style_ghidra = self.name_style_ghidra;
         // (kuna) carry the duplicate-declaration collapse gate so `emit_local_var_decls`
@@ -3583,6 +3584,8 @@ impl Architecture {
         ctx.region_structure = self.region_structure; // regionstructure
         ctx.guard_arm = self.guard_arm; // guardarm
         ctx.loop_continue = self.loop_continue;
+        ctx.do_while_continue =
+            self.print.out_lang().profile().forms.do_while != crate::kuna_lang::DoWhileForm::RustLoopBreakIf;
         ctx.loop_cond_hoist = self.loop_cond_hoist; // loopcondhoist
         ctx.region_loop_refine = self.region_loop_refine; // regionlooprefine
         ctx.region_edge_order = self.region_edge_order; // regionedgeorder
@@ -6916,13 +6919,13 @@ impl ArchOptionContext for Architecture {
             self.share_proto_models();
         }
     }
-    fn set_function_extra_pop(&mut self, name: &str, _expop: int4) -> KunaResult<()> {
-        // C++ looks up `symboltab->getGlobalScope()->queryFunction(name)` then
-        // `fd->getFuncProto().setExtraPop(expop)`.  The per-function FuncProto
-        // mutation needs a resolved Funcdata; the symbol-table function query +
-        // FuncProto write is the W4 symboltab + W6 fspec surface.
-        // STUB(W4 symboltab + W6 fspec): no function is resolvable here yet.
-        Err(KunaError::recov(format!("Unknown function name: {name}")))
+    fn set_function_extra_pop(&mut self, name: &str, expop: int4) -> KunaResult<()> {
+        // C++ `OptionExtraPop::apply`: queryFunction(name), then
+        // `getFuncProto().setExtraPop(expop)`; parked on the symbol like inline.
+        let sid = self.query_global_function(name)?;
+        self.kuna_callwide.clear();
+        self.symboltab.set_function_extra_pop(sid, expop);
+        Ok(())
     }
     fn set_default_model(&mut self, name: &str) -> KunaResult<()> {
         // C++ `glb->setDefaultModel(getModel(p1))`.
