@@ -105,6 +105,24 @@ fn compiled_rust_keeps_formatter_traits_distinct() {
     }
 }
 
+#[test]
+fn source_path_commit_identifies_the_release_without_comment() {
+    for (name, expected) in [
+        ("decimal_lf", "println!(\"{}\""),
+        ("reorder", "println!(\"{0} {1} {0}\""),
+    ] {
+        let on = decompile_fixture(
+            "rust_fmt_args_nocomment_x86_64",
+            name,
+            true,
+            true,
+            true,
+            Some((1, 93, 1)),
+        );
+        assert!(on.contains(expected), "{name}: {on}");
+    }
+}
+
 fn output(function: &str, enabled: bool) -> String {
     decompile(function, enabled, true, true, Some((1, 93, 1)))
 }
