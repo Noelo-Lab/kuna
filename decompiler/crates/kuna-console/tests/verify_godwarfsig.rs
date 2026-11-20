@@ -229,3 +229,43 @@ fn a_different_calling_convention_refuses_the_contract() {
     let address = program.lookup_symbol("main.fromWord").unwrap();
     assert!(program.arch().symboltab.function_proto_pieces_across_scopes(&address).is_none());
 }
+
+#[test]
+fn a_single_nominal_string_tracks_the_declaration_and_exact_input_storage() {
+    use kuna_decomp::fspec::FuncProto;
+
+    for enabled in [false, true] {
+        let mut program = bootstrap_from_object(fixture("compressed").to_str().unwrap(), "",
+            &[root().join("specs").display().to_string()]).unwrap();
+        program.arch_mut().set_kuna_option("godwarfsig", if enabled { "on" } else { "off" })
+            .unwrap();
+        program.commit_pending_analysis().unwrap();
+        let entry = program.lookup_symbol("main.stringIndex").unwrap();
+        let arch = program.arch();
+        let input = arch.symboltab.function_go_string_input(&entry);
+        assert_eq!(input.is_some(), enabled);
+        for name in ["main.rawStringWords", "main.stringLookalike", "main.twoStringBits"] {
+            let addr = program.lookup_symbol(name).unwrap();
+            assert!(arch.symboltab.function_go_string_input(&addr).is_none(), "{name}");
+        }
+        let Some(input) = input else { continue };
+        assert_eq!(input.name, "s");
+        assert_eq!(input.first_slot, 0);
+        for (address, register) in input.storage.iter().zip([b"RAX", b"RBX"]) {
+            assert_eq!(address, &arch.get_register_varnode(register).unwrap().get_addr());
+        }
+
+        let pieces = arch.symboltab.function_proto_pieces_across_scopes(&entry).unwrap().clone();
+        let mut function = FuncProto::new();
+        function.seed_locked_from_pieces(&pieces, arch.default_fp().unwrap().clone(),
+            arch.types().get_type_void().unwrap(), arch.types(), arch.manage()).unwrap();
+        assert!(input.matches(&function));
+        function.set_input_lock(false);
+        assert!(!input.matches(&function));
+
+        // Replacement discards the authority even if all names and types match.
+        program.arch_mut().set_function_prototype_pieces_at(&entry, pieces);
+        assert!(program.arch().symboltab.function_proto_pieces_across_scopes(&entry).is_some());
+        assert!(program.arch().symboltab.function_go_string_input(&entry).is_none());
+    }
+}
