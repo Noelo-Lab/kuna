@@ -203,7 +203,7 @@ where
     };
     let strings = symtab.strings();
 
-    for sec in sections {
+    for &sec in &sections {
         // `Section::indirect_symbols` returns this section's window into the
         // flat indirect table (using `reserved1` as the start and `reserved2` /
         // pointer-width as the stride) — empty for any non-stub/non-pointer
@@ -281,7 +281,8 @@ where
     if header.filetype(endian) == object::macho::MH_KEXT_BUNDLE
         && header.flags(endian) & object::macho::MH_DYLIB_IN_CACHE != 0
     {
-        push_kext_bound_imports(&symtab, endian, &mut out);
+        let bound = push_kext_bound_imports(&symtab, endian, &mut out);
+        push_kext_bound_slots::<Mach>(&sections, endian, bytes, &bound, &mut out);
     }
     finish_with_exports(neutral, out)
 }
@@ -291,13 +292,15 @@ where
 /// address (see `kuna_kernelcache`), the target of the kext's direct calls.
 /// Only a kext whose header says it lives in a collection (`MH_DYLIB_IN_CACHE`,
 /// which the kext headers of a kernel collection carry) is read this way; a
-/// standalone kext's absolute symbols stay what they are.
+/// standalone kext's absolute symbols stay what they are. Returns the name
+/// bound at each address.
 fn push_kext_bound_imports<Mach: MachHeader<Endian = Endianness>>(
     symtab: &SymbolTable<Mach>,
     endian: Endianness,
     out: &mut MachOIndirectSymbols,
-) {
+) -> std::collections::HashMap<u64, Vec<u8>> {
     use object::read::macho::Nlist;
+    let mut bound = std::collections::HashMap::new();
     for nlist in symtab.iter() {
         let n_type = nlist.n_type();
         if n_type & object::macho::N_STAB != 0
@@ -309,9 +312,50 @@ fn push_kext_bound_imports<Mach: MachHeader<Endian = Endianness>>(
         let addr: u64 = nlist.n_value(endian).into();
         let Ok(name) = nlist.name(endian, symtab.strings()) else { continue };
         if addr != 0 && !name.is_empty() {
-            out.imports.push(ImportSym { addr, name: strip_leading_underscore(name), kind: ImportSymKind::Import });
+            let name = strip_leading_underscore(name);
+            bound.entry(addr).or_insert_with(|| name.clone());
+            out.imports.push(ImportSym { addr, name, kind: ImportSymKind::Import });
         }
     }
+    bound
+}
+
+/// (kuna `kernelcache-boot`) The pointer slots of such a kext that hold a bound
+/// import's address. The collection's builder turned each bind of a
+/// symbol-pointer section (`__got`, `__auth_got`) or of `__auth_ptr` into a
+/// rebase, so once the peel has written the address, the slot's value is the
+/// only record of what it is bound to. Each such slot the indirect-symbol
+/// table did not already name is an import slot of that function, as a bind
+/// slot of a user-space image is.
+fn push_kext_bound_slots<Mach: MachHeader<Endian = Endianness>>(
+    sections: &[&Mach::Section],
+    endian: Endianness,
+    bytes: &[u8],
+    bound: &std::collections::HashMap<u64, Vec<u8>>,
+    out: &mut MachOIndirectSymbols,
+) {
+    const WIDTH: u64 = 8;
+    if bound.is_empty() || std::mem::size_of::<Mach::Word>() as u64 != WIDTH {
+        return;
+    }
+    let named: std::collections::HashSet<u64> = out.imports.iter().map(|i| i.addr).collect();
+    for sec in sections {
+        let pointers = is_external_import_slot_section(sec.section_type(endian))
+            || trim_section_name(sec.name()) == b"__auth_ptr";
+        let Some(data) = sec.data(endian, bytes).ok().filter(|_| pointers) else { continue };
+        let base: u64 = sec.addr(endian).into();
+        for (i, word) in data.chunks_exact(WIDTH as usize).enumerate() {
+            let target = u64::from_le_bytes(word.try_into().unwrap());
+            let Some(addr) = base.checked_add(i as u64 * WIDTH).filter(|a| !named.contains(a)) else { continue };
+            let Some(name) = bound.get(&target) else { continue };
+            out.imports.push(ImportSym { addr, name: name.clone(), kind: ImportSymKind::Import });
+            out.import_slots.push((addr, addr.saturating_add(WIDTH)));
+        }
+    }
+}
+
+fn trim_section_name(raw: &[u8]) -> &[u8] {
+    &raw[..raw.iter().position(|&b| b == 0).unwrap_or(raw.len())]
 }
 
 /// True only for the two typed Mach-O section classes whose entries the dynamic
