@@ -2291,10 +2291,11 @@ impl ArchContext {
     pub fn query_function_extra_pop(&self, entry: &Address) -> Option<int4> {
         let gq = self.effective_global_query(entry).filter(|gq| gq.has_extra_pop)?;
         let space_index = entry.get_space()?.get_index();
-        gq.entries_for_space(space_index)
-            .iter()
-            .find(|e| e.first == entry.get_offset() && e.is_function)
-            .and_then(|e| e.func_extra_pop)
+        let extra_pop = gq
+            .entries_starting_at(space_index, entry.get_offset())
+            .find(|e| e.is_function)
+            .and_then(|e| e.func_extra_pop);
+        extra_pop
     }
 
     /// Return the callable type attached to the exact global slot loaded as an
