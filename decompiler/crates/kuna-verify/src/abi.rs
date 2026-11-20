@@ -80,14 +80,23 @@ pub fn c_sizes(prog: &ConsoleProgram) -> CSizes {
     }
 }
 
-/// Where the function's prototype model returns an integer of this type.
+/// Where the function's prototype model returns a value of this type: an
+/// integer, or a pointer, which some conventions return elsewhere.
 pub fn return_storage(prog: &ConsoleProgram, fd: &Funcdata, ty: &CType) -> Result<Storage, String> {
     let arch = prog.arch();
-    let meta = if ty.signed { type_metatype::TYPE_INT } else { type_metatype::TYPE_UINT };
-    let dt = arch
-        .types()
-        .get_base(ty.size as i32, meta)
-        .map_err(|e| format!("no {}-byte integer type: {}", ty.size, e.explain()))?;
+    let types = arch.types();
+    let dt = if ty.pointer {
+        let word = arch.manage().get_default_data_space().map_or(1, |s| s.get_word_size());
+        types
+            .get_type_void()
+            .and_then(|v| types.get_type_pointer(ty.size as i32, v, word))
+            .map_err(|e| format!("no {}-byte pointer type: {}", ty.size, e.explain()))?
+    } else {
+        let meta = if ty.signed { type_metatype::TYPE_INT } else { type_metatype::TYPE_UINT };
+        types
+            .get_base(ty.size as i32, meta)
+            .map_err(|e| format!("no {}-byte integer type: {}", ty.size, e.explain()))?
+    };
     model_output(prog, fd, dt, ty.size).map_err(|e| format!("`{}`: {e}", ty.spelling))
 }
 
@@ -152,6 +161,35 @@ pub fn extensions(fd: &Funcdata, env: &Env, prog: &ConsoleProgram) -> Vec<Extens
         }
     }
     out
+}
+
+/// The extension the ABI promises for a callee's return value in a register
+/// wider than it, as `narrowext abi` documents it.
+pub fn return_extension(env: &Env, proto: &kuna_decomp::fspec::FuncProto) -> Option<Extension> {
+    use kuna_decomp::kuna_narrowext::{or_model, rules_for, NarrowExtMode};
+    let rule = rules_for(env.prog.arch(), NarrowExtMode::Abi).output;
+    let out = proto.get_output();
+    let addr = out.get_address();
+    let space = addr.get_space()?;
+    let size = out.get_size();
+    if space.get_index() != env.register.get_index() || size <= 0 {
+        return None;
+    }
+    let mut res = kuna_num::pcoderaw::VarnodeData::default();
+    let (ext, _) = or_model(rule, proto.model().output(), &addr, size, out.get_type().map(|t| t.as_ref()), &mut res);
+    let signed = match ext {
+        OpCode::CPUI_INT_SEXT => true,
+        OpCode::CPUI_INT_ZEXT => false,
+        OpCode::CPUI_PIECE => out.get_type().is_some_and(|t| is_signed(t)),
+        _ => return None,
+    };
+    let same_space = res.space.as_ref().is_some_and(|s| s.get_index() == space.get_index());
+    (same_space && res.size > size as u32).then(|| Extension {
+        space: space.get_index(),
+        container: (res.offset, res.size),
+        param: (addr.get_offset(), size as u32),
+        signed,
+    })
 }
 
 /// Input registers the body reads that no declared parameter covers (#875's

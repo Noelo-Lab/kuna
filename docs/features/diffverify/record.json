@@ -99,23 +99,23 @@
     },
     "C4": {
       "corpus": "tests/datatests + tests/stages, 256 runs per function",
-      "functions": 3979,
+      "functions": 4030,
       "verdicts": {
-        "AGREES": 2952,
+        "AGREES": 2977,
         "DIFFERS": 29,
         "DIVERGES": 11,
-        "UNKNOWN": 987
+        "UNKNOWN": 1013
       },
       "c1_agrees_regressed": 0,
-      "c2_agrees_regressed": 8,
+      "c2_agrees_regressed": 12,
       "differs_triage": {
         "kuna_bug": 5,
         "pinned_by_test": 8,
         "source_ub": 3,
         "harness_limit": 13
       },
-      "check_seconds": 132.7,
-      "wall_seconds": 20.7,
+      "check_seconds": 122.9,
+      "wall_seconds": 19.3,
       "workers": 14,
       "peak_rss_mb": 216,
       "recall": "open",

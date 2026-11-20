@@ -57,7 +57,7 @@ struct UpperWatch {
 impl UpperWatch {
     fn new(prog: &ConsoleProgram, fd: &Funcdata, claim: &Claim) -> Option<Self> {
         let out = claim.storage.as_ref()?;
-        let wide = abi::return_storage(prog, fd, &CType { spelling: String::new(), size: out.size * 2, signed: false }).ok()?;
+        let wide = abi::return_storage(prog, fd, &CType { spelling: String::new(), size: out.size * 2, signed: false, pointer: false }).ok()?;
         let pieces = wide.pieces(prog);
         let extra: Vec<Storage> = pieces.iter().filter(|p| !p.overlaps(out)).cloned().collect();
         (!extra.is_empty() && pieces.iter().any(|p| p.covers(out))).then_some(UpperWatch {
@@ -162,9 +162,24 @@ impl Compare<'_> {
 }
 
 /// The first byte the two sides left different, of the memory either wrote.
-fn compare_writes(env: &Env, run: u32, machine: &Writes, kuna: &Writes) -> Option<String> {
+/// `read`: the frame bytes a callee run for real read, when only those count.
+fn compare_writes(env: &Env, run: u32, machine: &Writes, kuna: &Writes, read: Option<&BTreeSet<u64>>) -> Option<String> {
     let manage = env.prog.arch().manage();
-    let keys: BTreeSet<(i32, u64)> = machine.bytes.keys().chain(kuna.bytes.keys()).copied().collect();
+    let ram = env.ram.get_index();
+    let keys: BTreeSet<(i32, u64)> = machine
+        .bytes
+        .keys()
+        .chain(kuna.bytes.keys())
+        .copied()
+        .filter(|&(sp, off)| {
+            let both = |o: &(u64, u64)| off >= o.0 && off < o.1 && kuna.objects.contains(o);
+            !(sp == ram && env.in_stack(off, 1))
+                || (machine.objects.iter().any(both)
+                    && read.is_none_or(|r| r.contains(&off))
+                    && !machine.skip.contains(&off)
+                    && !kuna.skip.contains(&off))
+        })
+        .collect();
     let mut first = None;
     let mut differ = 0usize;
     for (sp, off) in keys {
@@ -265,7 +280,7 @@ fn compare_calls(prog: &ConsoleProgram, env: &Env, run: u32, calls: &Calls, m: &
                 suspects.push(s);
             }
         }
-        if let Some(d) = compare_writes(env, run, &mc.writes, &gc.writes) {
+        if let Some(d) = compare_writes(env, run, &mc.writes, &gc.writes, mc.frame_reads.as_ref()) {
             return differs(vec![format!("memory before call {n} to {}: {d}", target(gc.target))], suspects);
         }
     }
@@ -331,6 +346,9 @@ fn tracked(prog: &ConsoleProgram, fd: &Funcdata, env: &mut Env) -> Vec<(i32, u64
         if let Some((sp, off)) = at {
             out.push((sp, off, st.size, sentinel));
             env.ret_addr = Some(sentinel);
+            if st.space.get_type() == spacetype::IPTR_SPACEBASE {
+                env.ret_slot = st.size;
+            }
         }
     }
     out
@@ -376,6 +394,7 @@ pub fn check_function(prog: &ConsoleProgram, fd: &Funcdata, contract: Option<&Co
         Ok(e) => e,
         Err(h) => return finish(Verdict::from_halt(&h), Vec::new(), Vec::new()),
     };
+    env.fd = Some(fd);
     let claim = abi::claim(prog, fd);
     if let Some(out) = claim
         .storage
@@ -478,7 +497,9 @@ pub fn check_function(prog: &ConsoleProgram, fd: &Funcdata, contract: Option<&Co
             unknown.get_or_insert(Halt::Undefined("a call the model let write the frame changed the stack canary".into()));
             continue;
         }
-        let doubtful = !cc.suspects.is_empty();
+        let suspect = !cc.suspects.is_empty();
+        let doubtful = suspect || mo.guessed;
+        let doubt = |lines: &[String]| if suspect { Halt::Doubtful(lines.join("; ")) } else { Halt::Guessed(lines.join("; ")) };
         let undefined = (go.read_uninitialized && (mo.state.read_uninitialized || mo.state.read_saved)) || smashed(&env, &mo.state);
         for s in cc.suspects {
             if call_suspects.len() < 4 && !call_suspects.contains(&s) {
@@ -495,13 +516,13 @@ pub fn check_function(prog: &ConsoleProgram, fd: &Funcdata, contract: Option<&Co
                 continue;
             }
             if doubtful {
-                unknown.get_or_insert(Halt::Doubtful(lines.join("; ")));
+                unknown.get_or_insert(doubt(&lines));
                 continue;
             }
             return finish(Verdict::Differs { run, of: opts.runs }, differs(lines), call_suspects);
         }
         if mo.noreturn != go.noreturn && (doubtful || undefined) {
-            unknown.get_or_insert(Halt::Doubtful("one side returns".into()));
+            unknown.get_or_insert(doubt(&["one side returns".to_string()]));
             continue;
         }
         if mo.noreturn != go.noreturn {
@@ -511,7 +532,7 @@ pub fn check_function(prog: &ConsoleProgram, fd: &Funcdata, contract: Option<&Co
         let mut ms = mo.state;
         let outcome = if mo.noreturn { Ok(Outcome::Same) } else { compare.run(&mut ms, go.ret) };
         let outcome = match outcome {
-            Ok(o @ (Outcome::Same | Outcome::Declared(_))) => match compare_writes(&env, run, &ms.writes(), &go.writes) {
+            Ok(o @ (Outcome::Same | Outcome::Declared(_))) => match compare_writes(&env, run, &ms.writes(), &go.writes, None) {
                 Some(d) => Ok(Outcome::Differs(vec![format!("memory at exit: {d}")])),
                 None => Ok(o),
             },
@@ -530,7 +551,7 @@ pub fn check_function(prog: &ConsoleProgram, fd: &Funcdata, contract: Option<&Co
                 continue;
             }
             Ok(Outcome::Differs(lines)) if doubtful => {
-                unknown.get_or_insert(Halt::Doubtful(lines.join("; ")));
+                unknown.get_or_insert(doubt(&lines));
                 continue;
             }
             Ok(Outcome::Differs(lines)) => {

@@ -125,6 +125,9 @@ function's type, because the binary alone cannot settle it:
   treats as changed by a call, so a value kuna keeps across one stays equal unless kuna
   is wrong to keep it. Writing all memory outside the stack is too much: it rewrites the
   stack canary, which kuna rightly keeps.
+  Since C4, a pointer into the frame reaches only the local object kuna's symbol gives
+  it. That object is compared at the call, as the bytes outside the stack are
+  (`c4-results.md` §5).
 - Without the memory writes, a rule that reuses a value loaded before the call as if the
   call could not change it would agree with the machine and be missed.
 - INDIRECT is moved after the op it guards. Its output is the call's value for a killed

@@ -29,7 +29,8 @@ fn dcp_mut(console: &mut IfaceStatus) -> Option<&mut IfaceDecompData> {
 pub type Failure = (usize, String);
 
 /// Run `commands`, calling `on_decompile` after every `decompile` that
-/// succeeds. `conf` preloads a program (the datatest `<binaryimage>`). The first
+/// succeeds, however the line abbreviates it, except one after a failed
+/// `load`: the function it would decompile is the one loaded before. `conf` preloads a program (the datatest `<binaryimage>`). The first
 /// failing command ends the run unless `keep_going`, which records it and goes
 /// on. Returns the console, so the caller can read the program the script
 /// loaded, and the failures it went past.
@@ -53,11 +54,16 @@ pub fn run(
     }
     let mut idx = 0usize;
     let mut failures = Vec::new();
+    let mut stale = false;
     while !console.is_stream_finished() {
         execute(&mut console);
         let line = commands.get(idx).map(|s| s.trim().to_string()).unwrap_or_default();
         idx += 1;
+        let command = console.last_command.first().cloned().unwrap_or_default();
         if console.is_in_error() {
+            if command == "load" {
+                stale = true;
+            }
             let said: Vec<&str> = console
                 .optr
                 .lines()
@@ -71,7 +77,9 @@ pub fn run(
             failures.push((idx - 1, msg));
             console.inerror = false;
             console.done = false;
-        } else if line.split_whitespace().next() == Some("decompile") {
+        } else if command == "load" {
+            stale = false;
+        } else if command == "decompile" && !stale {
             if let Some(d) = dcp(&console) {
                 if let (Some(prog), Some(fd)) = (d.conf.as_ref(), d.fd.as_ref()) {
                     on_decompile(prog, fd);

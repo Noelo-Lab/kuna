@@ -151,7 +151,8 @@ impl Run<'_, '_, '_> {
                     args.push(self.input(op, k)?);
                 }
                 let indirect = direct.is_none();
-                crate::calls::record(&mut self.records, Record { at, target, indirect, args, writes: self.state.writes(), effect: None })?;
+                let writes = self.state.writes_at_call(&args);
+                crate::calls::record(&mut self.records, Record { at, target, indirect, args, writes, effect: None, frame_reads: None })?;
                 let site = self.calls.site(at);
                 if site.noreturn {
                     return Ok(Flow::NoReturn);
@@ -169,7 +170,7 @@ impl Run<'_, '_, '_> {
                             .filter(|(_, a)| a.is_some())
                             .map(|(&v, _)| v)
                             .collect();
-                        self.state.call(&killed, &args);
+                        self.state.call(&killed, &args, site.ret_ext.as_ref());
                     }
                 }
                 if let Some(out) = op.out.as_ref() {
@@ -280,6 +281,10 @@ pub fn run(env: &Env, program: &Program, run: u32, budget: u64, calls: &Calls, r
     let mut steps = 0u64;
     loop {
         let block = &program.blocks[bl];
+        steps += 1;
+        if steps > budget {
+            return Err(Halt::Budget);
+        }
         if !block.phis.is_empty() {
             let s = slot.ok_or_else(|| Halt::Harness("MULTIEQUAL in the entry block".into()))?;
             let mut vals = Vec::with_capacity(block.phis.len());

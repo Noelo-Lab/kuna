@@ -15,24 +15,25 @@ prototype does not recover prints as `?`.
 
 ## 1. The corpus
 
-3,979 decompiled functions, 256 runs each.
+4,030 decompiled functions, 256 runs each. C2 saw 3,979: it missed the 51 a script
+decompiles with an abbreviated command (§5).
 
 | verdict | C2 | C4 |
 |---|---:|---:|
-| `AGREES(256)` | 2,482 | 2,952 |
+| `AGREES(256)` | 2,482 | 2,977 |
 | `DIFFERS` | 500 | 29 |
 | `DIVERGES` | 3 | 11 |
-| `UNKNOWN` | 994 | 987 |
+| `UNKNOWN` | 994 | 1,013 |
 
-`UNKNOWN` by reason: 744 unsupported operations (SIMD and float user ops, memory
-builtins, ISA-mode switches), 219 budget, 16 traps on both sides, and 8 undefined reads
-of the frame.
+`UNKNOWN` by reason: 767 unsupported operations (SIMD and float user ops, memory
+builtins, ISA-mode switches), 219 budget, 16 traps on both sides, 8 undefined reads of
+the frame, and 3 callees the model guessed.
 
 Of the 29 `DIFFERS`, 5 are kuna bugs, 8 are bugs a test pins on purpose, 3 are
 source-level undefined behavior, and 13 are harness limits (§2). None is an unexplained
 harness defect.
 
-Every function C1 found to agree still agrees. Of C2's 2,482, eight no longer agree:
+Every function C1 found to agree still agrees. Of C2's 2,482, twelve no longer agree:
 - `enum ptrenumlow` is `UNKNOWN(unsupported-op)`: its IR has an `INT_AND` whose output
   is narrower than its inputs (§3).
 - Four are `UNKNOWN(budget)`. In each, a loop waits for an in-image callee to change
@@ -41,7 +42,12 @@ Every function C1 found to agree still agrees. Of C2's 2,482, eight no longer ag
   because the program does.
 - Two halt on an operation the machine cannot run: a Thumb `setISAMode` before a
   branch, and a decompiled flow that ends in a halt.
-- One reads an uninitialized local on both sides.
+- Two read an uninitialized local on both sides. In `kuna-msvcbyval` `sub_401000` the
+  argument is read from frame bytes outside the object the callee was given, which the
+  stub no longer writes (§5).
+- Three, in `kuna-stacklifetimes-cfg`, give a frame object to a callee that uses a
+  float op the model cannot run, so the stub's effect is a guess:
+  `UNKNOWN(guessed-callee)`.
 
 The 11 `DIVERGES` match their predicates: `synthesized-call` (the MSVC string append,
 outlined and AVR wrapper calls kuna makes up), `gowritebarrier` and
@@ -125,19 +131,46 @@ runs showed. All four are fixed:
 `tests/verdict_guards.rs` pins the first and last. The second and third change no
 verdict in the corpus.
 
-**Stack stores remain unobserved.** Memory in the stack window is not an observable.
-That is right for the caller's argument area and Win64 home slots: the ABI gives them
-to the callee. It misses one case: a store to a local whose address an *out-of-image*
-call receives. The stub does not read memory, so a store kuna drops there is not
-seen unless the function reads the local back, as `kuna-stackviews` does. Comparing
-the bytes after an escaped stack pointer catches it, but only within the local's
-extent. A fixed window also covers register spills that only the machine writes. The
-extent has to come from kuna's local symbol for that address, which is left for a
-later slice.
+A second review found seven more. All are fixed, and each fix keeps the corpus's
+`DIFFERS` the same 29:
+- **Frame objects a callee receives.** A store to a local whose address a call
+  receives was not compared, because stack bytes were never an observable. At each
+  call both sides now compare the object the pointer is into, with its extent taken
+  from kuna's local symbol for that address. kuna's side looks among the CALL op's
+  inputs, and the machine looks in the convention's argument registers. Only objects
+  both sides find are compared, so a stale pointer left in an unused register costs
+  nothing.
+  - A callee run for real counts only the bytes it reads. A callee kuna proved
+    read-only (#810's callee memory summaries) may then lose an unread initializer.
+  - Bytes a callee's own code left inside the object (a stack probe's pushes in a
+    buffer C never initialized) are not compared.
+  - The stub writes only that object, not a window past the pointer. A window
+    reached the stack canary and made `ptrtoarray` `passPtrToArray` call
+    `__stack_chk_fail`.
+  - An in-image callee the model cannot run (a float op) and that gets a frame
+    object makes later differences `UNKNOWN(guessed-callee)`: the stub's write is a
+    guess where kuna may know the callee only reads.
+  - Changing `int x = 1; sink(&x);` to store 2 on kuna's side, in a local build, now
+    gives `DIFFERS: memory before call 1 to sink: machine 0x01, kuna 0x02`.
+- **Empty loops.** A block visit, and an instruction with no p-code, now spend the
+  step budget, so a loop of empty blocks ends in `UNKNOWN(budget)`.
+- **Narrow returns.** The stub extends a callee's return value across its register
+  as `narrowext abi` documents. An RV64 `int` comes back sign-extended.
+- **Preserved registers.** The stub kills what the call's own effect list says,
+  so what kuna proved a callee preserves (`calleepreserves`) stays.
+- **Abbreviations.** `dec` and any other abbreviation of `decompile` is checked:
+  the console now reports the command a line resolved to. This adds 51 functions.
+- **Pointer contracts.** A contract returning a pointer asks the model where a
+  pointer goes: A0 on ColdFire, not D0.
+- **Failed loads.** A `decompile` after a `load` that failed is not checked: it
+  would check the function loaded before again.
+
+`tests/verdict_guards.rs` pins the trap, empty-loop, frame-object, failed-load,
+abbreviation and CLI cases.
 
 ## 6. Cost
 
-Check time 132.7 s, wall time 20.7 s on 14 worker processes. Peak RSS is 216 MB for the
+Check time 122.9 s, wall time 19.3 s on 14 worker processes, over 4,030 functions. Peak RSS is 216 MB for the
 heaviest single test. Check time grew from C2's 50.3 s because functions that used to
 stop early now run: callees run for real, calls are kept in loops up to the 256-call
 limit, and fewer runs halt on harness errors. One function,

@@ -8,7 +8,7 @@
 //! keeps its own writes on top.
 
 use std::cell::RefCell;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
 use kuna_base::address::{Address, RangeList};
@@ -27,8 +27,9 @@ const STACK_BELOW: u64 = 0x80_0000;
 const ESCAPE_WINDOW: u64 = 0x1000;
 const STACK_ABOVE: u64 = 0x1000;
 
-/// An argument register the ABI promises the caller extended: bytes of
-/// `container` outside the parameter repeat its sign, or are zero.
+/// A register the ABI promises is extended: an argument the caller passes, or
+/// a value a callee returns. Bytes of `container` outside the value repeat its
+/// sign, or are zero.
 #[derive(Debug, Clone)]
 pub struct Extension {
     pub space: i32,
@@ -63,10 +64,18 @@ pub struct Env<'p> {
     /// The return address the function starts with, when the model names
     /// where it is: a RETURN to it leaves the function.
     pub ret_addr: Option<u64>,
+    /// Bytes a call pushes for its return address on the stack (0 when the
+    /// model keeps it in a register).
+    pub ret_slot: u32,
     /// Register parameters of type `bool`: a caller passes 0 or 1.
     pub booleans: Vec<(i32, u64, u32)>,
     image: RefCell<BTreeMap<u64, Option<u8>>>,
     pub(crate) insns: RefCell<BTreeMap<u64, Rc<crate::machine::Insn>>>,
+    stack: Rc<AddrSpace>,
+    /// The decompiled function, whose local symbols give the extent of a
+    /// stack object whose address escapes.
+    pub fd: Option<&'p kuna_decomp::funcdata::Funcdata>,
+    locals: RefCell<BTreeMap<u64, Option<(u64, u64)>>>,
 }
 
 fn splitmix(mut z: u64) -> u64 {
@@ -171,9 +180,13 @@ impl<'p> Env<'p> {
             extensions: Vec::new(),
             tracked: Vec::new(),
             ret_addr: None,
+            ret_slot: 0,
             booleans: Vec::new(),
             image: RefCell::new(BTreeMap::new()),
             insns: RefCell::new(BTreeMap::new()),
+            stack: Rc::clone(stack),
+            fd: None,
+            locals: RefCell::new(BTreeMap::new()),
         })
     }
 
@@ -287,8 +300,36 @@ impl<'p> Env<'p> {
         if !self.is_memory(space) || self.is_readonly(off, 1) {
             return false;
         }
-        escaped.iter().any(|&p| off.wrapping_sub(p) < ESCAPE_WINDOW)
+        escaped.iter().any(|&p| self.reachable(p, off))
             || (space.get_index() == self.ram.get_index() && !self.in_stack(off, 1) && self.image_byte(off).is_some())
+    }
+
+    /// Whether a callee given `p` reaches `off`: within the local object kuna
+    /// gives `p` when it points into the frame, else within a window past it.
+    fn reachable(&self, p: u64, off: u64) -> bool {
+        if self.in_stack(p, 1) {
+            return self.stack_object(p).is_some_and(|(start, end)| off >= start && off < end);
+        }
+        off.wrapping_sub(p) < ESCAPE_WINDOW
+    }
+
+    /// The `[start, end)` of the local symbol of kuna's that holds frame
+    /// address `p`.
+    pub fn stack_object(&self, p: u64) -> Option<(u64, u64)> {
+        if let Some(hit) = self.locals.borrow().get(&p) {
+            return *hit;
+        }
+        let found = self.fd.and_then(|fd| {
+            let local = fd.get_scope_local()?;
+            let db = local.database();
+            let at = Address::new(Rc::clone(&self.stack), self.stack.wrap_offset(p.wrapping_sub(self.sp0)));
+            let entry = db.entry(local.scope_id(), db.find_container_ignore_usepoint(local.scope_id(), &at, 1)?);
+            let start = self.ram.wrap_offset(self.sp0.wrapping_add(entry.get_first()));
+            let size = u64::try_from(entry.get_size()).ok().filter(|&s| s > 0)?;
+            start.checked_add(size).map(|end| (start, end))
+        });
+        self.locals.borrow_mut().insert(p, found);
+        found
     }
 
     /// The byte at `off` with no write by a side since its last call: the
@@ -372,14 +413,24 @@ pub struct State<'e, 'p> {
     /// This side read a spilled entry value back into anything but the
     /// register it came from: what C sees there is uninitialized too.
     pub read_saved: bool,
+    /// While a callee runs for real: the frame bytes it reads.
+    pub frame_reads: Option<BTreeSet<u64>>,
+    /// Code other than the function's own is running (a callee run for real
+    /// or followed); what it writes in the frame is not the function's.
+    pub in_callee_code: bool,
+    /// Frame bytes last written by such code: a frame object's comparison at
+    /// a call leaves them out, as a helper's leftovers in a buffer C never
+    /// initialized.
+    callee_written: BTreeSet<u64>,
 }
 
 /// One thing a callee run for real did to memory.
 #[derive(Clone, Debug)]
 pub enum Event {
     Write(i32, u64, u8),
-    /// A call it made in turn, with the killed registers and its arguments.
-    Call(Vec<(u64, u32)>, Vec<u128>),
+    /// A call it made in turn, with the killed registers, its arguments and
+    /// the extension of its return value.
+    Call(Vec<(u64, u32)>, Vec<u128>, Option<Extension>),
 }
 
 /// What a callee in the image did when the machine ran it, for the decompiled
@@ -396,6 +447,12 @@ pub struct Effect {
 #[derive(Clone, Debug, Default)]
 pub struct Writes {
     pub bytes: BTreeMap<(i32, u64), u8>,
+    /// Frame bytes a callee's code left in an object this side passes: not
+    /// compared on either side.
+    pub skip: BTreeSet<u64>,
+    /// The frame objects, `[start, end)`, this side passes to the call. Only
+    /// those both sides pass are compared.
+    pub objects: Vec<(u64, u64)>,
     pub epoch: u32,
     pub escaped: Vec<u64>,
 }
@@ -415,6 +472,9 @@ impl<'e, 'p> State<'e, 'p> {
             read_uninitialized: false,
             saved: BTreeMap::new(),
             read_saved: false,
+            frame_reads: None,
+            in_callee_code: false,
+            callee_written: BTreeSet::new(),
         }
     }
 
@@ -484,6 +544,11 @@ impl<'e, 'p> State<'e, 'p> {
         } else {
             self.mem.get(&(space.get_index(), off)).copied()
         };
+        if let Some(reads) = self.frame_reads.as_mut() {
+            if space.get_index() == self.env.ram.get_index() && self.env.in_stack(off, 1) {
+                reads.insert(off);
+            }
+        }
         if found.is_none()
             && space.get_index() == self.env.ram.get_index()
             && off < self.env.sp0
@@ -507,6 +572,13 @@ impl<'e, 'p> State<'e, 'p> {
                 log.push(Event::Write(space.get_index(), off, b));
             }
             self.mem.insert((space.get_index(), off), b);
+            if space.get_index() == self.env.ram.get_index() && self.env.in_stack(off, 1) {
+                if self.in_callee_code {
+                    self.callee_written.insert(off);
+                } else if !self.callee_written.is_empty() {
+                    self.callee_written.remove(&off);
+                }
+            }
         }
     }
 
@@ -520,7 +592,7 @@ impl<'e, 'p> State<'e, 'p> {
                         self.put(&space, *off, *b);
                     }
                 }
-                Event::Call(killed, args) => self.call(killed, args),
+                Event::Call(killed, args, ext) => self.call(killed, args, ext.as_ref()),
             }
         }
         let register = Rc::clone(&self.env.register);
@@ -573,16 +645,50 @@ impl<'e, 'p> State<'e, 'p> {
             .filter(|((sp, off), _)| self.env.prog.arch().manage().get_space(*sp).is_some_and(|s| self.env.observable(s, *off)))
             .map(|(k, v)| (*k, *v))
             .collect();
-        Writes { bytes, epoch: self.epoch, escaped: self.escaped.clone() }
+        Writes { bytes, epoch: self.epoch, escaped: self.escaped.clone(), skip: BTreeSet::new(), objects: Vec::new() }
+    }
+
+    /// [`Self::writes`] at a call passing `args`, plus the frame objects the
+    /// call receives a pointer to: the callee can read them.
+    pub fn writes_at_call(&self, args: &[u128]) -> Writes {
+        let mut w = self.writes();
+        let ram = self.env.ram.get_index();
+        for &a in args {
+            let Some((start, end)) = self.env.stack_object(a as u64).filter(|_| self.env.in_stack(a as u64, 1)) else { continue };
+            if w.objects.contains(&(start, end)) {
+                continue;
+            }
+            w.objects.push((start, end));
+            for (k, v) in self.mem.range((ram, start)..(ram, end)) {
+                if self.callee_written.contains(&k.1) {
+                    w.skip.insert(k.1);
+                } else {
+                    w.bytes.insert(*k, *v);
+                }
+            }
+        }
+        w
+    }
+
+    /// Extend the value in `x.param` across `x.container`, as the ABI says a
+    /// callee leaves its return value.
+    fn extend(&mut self, x: &Extension) {
+        let Some(space) = self.env.prog.arch().manage().get_space(x.space) else { return };
+        let (p, ps) = x.param;
+        let (c, cs) = x.container;
+        let Ok(v) = self.read(&space, p, ps) else { return };
+        let negative = x.signed && ps > 0 && (v >> (ps * 8 - 1)) & 1 == 1;
+        let ext = if negative { v | !mask(ps) } else { v & mask(ps) };
+        let _ = self.write(&space, c, cs, ext & mask(cs));
     }
 
     /// A call's effect: it kills the registers in `killed`, `args` escape into
     /// it, and it may write any memory it can reach. The memory is written
     /// lazily: every byte this side did not write since reads what
     /// [`Env::base_byte`] says for the new epoch.
-    pub fn call(&mut self, killed: &[(u64, u32)], args: &[u128]) {
+    pub fn call(&mut self, killed: &[(u64, u32)], args: &[u128], ret: Option<&Extension>) {
         if let Some(log) = self.log.as_mut() {
-            log.push(Event::Call(killed.to_vec(), args.to_vec()));
+            log.push(Event::Call(killed.to_vec(), args.to_vec(), ret.cloned()));
         }
         let call = self.epoch;
         let register = Rc::clone(&self.env.register);
@@ -591,6 +697,9 @@ impl<'e, 'p> State<'e, 'p> {
                 let b = self.env.killed_byte(self.run, call, off + i);
                 self.put(&register, off + i, b);
             }
+        }
+        if let Some(x) = ret {
+            self.extend(x);
         }
         let size = u64::from(self.env.ram.get_addr_size()).min(8);
         let ptr_mask = if size >= 8 { u64::MAX } else { (1u64 << (size * 8)) - 1 };

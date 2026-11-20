@@ -23,6 +23,8 @@ pub struct CType {
     /// `0` for `void`.
     pub size: u32,
     pub signed: bool,
+    /// A pointer, which some conventions return in an address register.
+    pub pointer: bool,
 }
 
 impl CType {
@@ -90,9 +92,10 @@ fn base_type(words: &[&str], sizes: CSizes) -> Option<(u32, bool)> {
     Some((size, !unsigned))
 }
 
-fn resolve(spelling: &str, defs: &BTreeMap<String, String>, sizes: CSizes, depth: u32) -> Option<(u32, bool)> {
+/// `(size, signed, pointer)` of a spelled type, through typedefs.
+fn resolve(spelling: &str, defs: &BTreeMap<String, String>, sizes: CSizes, depth: u32) -> Option<(u32, bool, bool)> {
     if spelling.contains('*') {
-        return Some((sizes.pointer, false));
+        return Some((sizes.pointer, false, true));
     }
     let words: Vec<&str> = spelling
         .split_whitespace()
@@ -103,7 +106,7 @@ fn resolve(spelling: &str, defs: &BTreeMap<String, String>, sizes: CSizes, depth
             return resolve(inner, defs, sizes, depth + 1);
         }
     }
-    base_type(&words, sizes)
+    base_type(&words, sizes).map(|(size, signed)| (size, signed, false))
 }
 
 /// Read `function`'s return type from C source.
@@ -120,10 +123,10 @@ pub fn from_source(src: &str, function: &str, source: &str, sizes: CSizes) -> Re
         .find(|c| !c[2].split_whitespace().any(|w| matches!(w, "return" | "else" | "case" | "goto")))
         .ok_or_else(|| format!("{source}: no declaration of {function}"))?;
     let spelling = caps[2].trim().to_string();
-    let (size, signed) = resolve(&spelling, &defs, sizes, 0)
+    let (size, signed, pointer) = resolve(&spelling, &defs, sizes, 0)
         .ok_or_else(|| format!("{source}: cannot size return type `{spelling}` of {function}"))?;
     let declaration = format!("{} {}({})", spelling, function, caps[3].split_whitespace().collect::<Vec<_>>().join(" "));
-    Ok(Contract { ret: CType { spelling, size, signed }, declaration, source: source.to_string() })
+    Ok(Contract { ret: CType { spelling, size, signed, pointer }, declaration, source: source.to_string() })
 }
 
 #[cfg(test)]
@@ -136,7 +139,7 @@ mod tests {
     fn return_types_resolve_through_typedefs() {
         let src = "typedef unsigned long long u64;\n/* u32 f() */\nu64 ins16(unsigned a, unsigned short b) { return 0; }\n";
         let c = from_source(src, "ins16", "ins16.c", ARM).unwrap();
-        assert_eq!(c.ret, CType { spelling: "u64".into(), size: 8, signed: false });
+        assert_eq!(c.ret, CType { spelling: "u64".into(), size: 8, signed: false, pointer: false });
         assert_eq!(c.declaration, "u64 ins16(unsigned a, unsigned short b)");
     }
 
@@ -146,6 +149,8 @@ mod tests {
         assert_eq!(from_source(src, "f", "s", ARM).unwrap().ret.size, 4);
         assert!(from_source(src, "f", "s", ARM).unwrap().ret.signed);
         assert_eq!(from_source(src, "g", "s", ARM).unwrap().ret.size, 4);
+        assert!(from_source(src, "g", "s", ARM).unwrap().ret.pointer);
+        assert!(!from_source(src, "f", "s", ARM).unwrap().ret.pointer);
         assert!(from_source(src, "h", "s", ARM).unwrap().ret.is_void());
         assert_eq!(from_source(src, "k", "s", ARM).unwrap().ret.size, 4);
         assert!(from_source(src, "missing", "s", ARM).is_err());

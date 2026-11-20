@@ -97,6 +97,8 @@ pub struct Outcome<'e, 'p> {
     pub followed: Vec<(u64, u64)>,
     /// Register offsets a callee changed against the calling convention.
     pub convention: Vec<(u64, u64)>,
+    /// An in-image callee given a frame object got the stub's guessed effect.
+    pub guessed: bool,
 }
 
 struct Machine<'e, 'p, 'c> {
@@ -112,6 +114,8 @@ struct Machine<'e, 'p, 'c> {
     /// function's budget, which the decompiled side never spends on them.
     callee_pool: u64,
     in_callee: bool,
+    /// An in-image callee given a frame object fell back to the stub.
+    guessed: bool,
     /// Temporaries this instruction copied a callee-saved entry value to:
     /// (temporary offset, register offset, size).
     copies: Vec<(u64, u64, u32)>,
@@ -158,7 +162,11 @@ impl<'e, 'p> Machine<'e, 'p, '_> {
                 None => 0,
             });
         }
-        let r = Record { at, target, indirect, args: args.clone(), writes: self.state.writes(), effect: None };
+        let mut given: Vec<u128> = args.iter().zip(&site.args).filter(|(_, a)| a.is_some()).map(|(&v, _)| v).collect();
+        for st in &self.calls.pointer_regs {
+            given.push(self.state.read_storage(&st.space, st.off, st.size)?);
+        }
+        let r = Record { at, target, indirect, args: args.clone(), writes: self.state.writes_at_call(&given), effect: None, frame_reads: None };
         crate::calls::record(&mut self.records, r)?;
         Ok(args)
     }
@@ -170,9 +178,11 @@ impl<'e, 'p> Machine<'e, 'p, '_> {
         if self.calls.site(at).noreturn {
             return Ok(Exit::NoReturn);
         }
-        if self.env.code_mapped(target) && self.real(at, target)?.is_some() {
+        let in_image = self.env.code_mapped(target);
+        if in_image && self.real(at, target)?.is_some() {
             return Ok(Exit::Return);
         }
+        self.guess_if_frame(in_image, &args);
         self.stub(at, &args)?;
         Ok(Exit::Return)
     }
@@ -188,11 +198,20 @@ impl<'e, 'p> Machine<'e, 'p, '_> {
         Ok(false)
     }
 
+    /// An in-image callee the model could not run gets the stub, whose effect
+    /// on a frame object it was given is a guess where kuna may know better
+    /// (a callee that only reads it): differences after it are doubtful.
+    fn guess_if_frame(&mut self, in_image: bool, args: &[u128]) {
+        if in_image && args.iter().any(|&a| self.env.in_stack(a as u64, 1) && self.env.stack_object(a as u64).is_some()) {
+            self.guessed = true;
+        }
+    }
+
     /// The stub's effect: kill, let the arguments escape, pop the stack.
     fn stub(&mut self, at: u64, args: &[u128]) -> Result<(), Halt> {
         let site = self.calls.site(at).clone();
         let pop = site.extrapop.ok_or_else(|| Halt::Unsupported(format!("call at {at:#x} with unknown stack cleanup")))?;
-        self.state.call(&site.killed, args);
+        self.state.call(&site.killed, args, site.ret_ext.as_ref());
         let sp = self.sp();
         let v = self.state.read(&sp.space, sp.off, sp.size)?;
         let after = v.wrapping_add(pop as i64 as u128) & mask(sp.size);
@@ -280,10 +299,14 @@ impl<'e, 'p> Machine<'e, 'p, '_> {
         let (records, steps, budget) = (self.records.len(), self.steps, self.budget);
         let call_sp = self.sp_value()?;
         self.state.log = Some(Vec::new());
+        if outer {
+            self.state.frame_reads = Some(std::collections::BTreeSet::new());
+        }
         self.budget = if outer { steps + limit } else { budget.min(steps + limit) };
         self.in_callee = true;
         let ran = exec(self, target, Mode::Opaque, 1);
         self.in_callee = !outer;
+        let reads = if outer { self.state.frame_reads.take() } else { None };
         self.budget = budget;
         if outer {
             self.callee_pool -= (self.steps - steps).min(self.callee_pool);
@@ -301,8 +324,11 @@ impl<'e, 'p> Machine<'e, 'p, '_> {
                     }
                 }
                 self.close_effect(at, call_sp);
+                if let (Some(r), Some(reads)) = (self.records.last_mut(), reads) {
+                    r.frame_reads = Some(reads);
+                }
                 let sp = self.sp_value()?;
-                self.state.forget_below(sp.min(call_sp));
+                self.state.forget_below(sp.min(call_sp.wrapping_add(u64::from(self.env.ret_slot))));
                 Ok(Some(exit))
             }
             _ => {
@@ -320,6 +346,7 @@ impl<'e, 'p> Machine<'e, 'p, '_> {
             calls: self.records,
             noreturn,
             followed: self.followed,
+            guessed: self.guessed,
             convention: self.convention,
         }
     }
@@ -374,6 +401,14 @@ enum Mode {
 /// calls are recorded and compared, and only it has tail calls and an exit
 /// through the random return address. Anywhere else is a callee run for real.
 fn exec(m: &mut Machine, entry: u64, mode: Mode, depth: u32) -> Result<Exit, Halt> {
+    let outer = m.state.in_callee_code;
+    m.state.in_callee_code = mode != Mode::Top;
+    let exit = exec_body(m, entry, mode, depth);
+    m.state.in_callee_code = outer;
+    exit
+}
+
+fn exec_body(m: &mut Machine, entry: u64, mode: Mode, depth: u32) -> Result<Exit, Halt> {
     let top = mode == Mode::Top;
     if depth > MAX_DEPTH {
         return Err(Halt::Unsupported("calls nested too deep".into()));
@@ -391,6 +426,10 @@ fn exec(m: &mut Machine, entry: u64, mode: Mode, depth: u32) -> Result<Exit, Hal
             insn = lift(env, addr)?;
             i = 0;
             m.state.end_instruction();
+            m.steps += 1;
+            if m.steps > m.budget {
+                return Err(Halt::Budget);
+            }
             continue;
         }
         m.steps += 1;
@@ -493,7 +532,10 @@ fn exec(m: &mut Machine, entry: u64, mode: Mode, depth: u32) -> Result<Exit, Hal
                     match if in_image { m.real(addr, target)? } else { None } {
                         Some(Exit::Leave) => return Ok(Exit::Leave),
                         Some(_) => {}
-                        None => m.stub(addr, &args)?,
+                        None => {
+                            m.guess_if_frame(in_image, &args);
+                            m.stub(addr, &args)?
+                        }
                     }
                 } else if in_image {
                     if top && !m.followed.contains(&(addr, target)) {
@@ -588,6 +630,7 @@ pub fn run<'e, 'p>(env: &'e Env<'p>, run: u32, entry: u64, budget: u64, calls: &
         budget,
         callee_pool: budget,
         in_callee: false,
+        guessed: false,
         copies: Vec::new(),
         restoring: Vec::new(),
         convention: Vec::new(),

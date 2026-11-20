@@ -20,6 +20,9 @@ pub enum Halt {
     Unsupported(String),
     /// The step budget ran out: `UNKNOWN(budget)`.
     Budget,
+    /// The sides differ after an in-image callee the model could not run got
+    /// the stub, with a frame object it may only have read.
+    Guessed(String),
     /// The op itself has no defined result (division by zero).
     Trap(String),
     /// The harness could not set the run up: `UNKNOWN(harness)`.
@@ -45,6 +48,7 @@ impl Halt {
             Halt::NoRow(s) => format!("UNKNOWN(no switch row: {s})"),
             Halt::Doubtful(s) => format!("UNKNOWN(prototype-suspect: {s})"),
             Halt::Undefined(s) => format!("UNKNOWN(uninitialized-local: {s})"),
+            Halt::Guessed(s) => format!("UNKNOWN(guessed-callee: {s})"),
         }
     }
 }

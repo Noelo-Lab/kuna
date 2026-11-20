@@ -63,6 +63,9 @@ pub struct Site {
     pub locked: bool,
     /// Where the callee's prototype returns its value.
     pub output: Option<Storage>,
+    /// How the ABI extends that value across its register, which a stub
+    /// keeps (a 32-bit `int` in a 64-bit RISC-V register is sign-extended).
+    pub ret_ext: Option<crate::state::Extension>,
 }
 
 pub struct Calls {
@@ -78,6 +81,9 @@ pub struct Calls {
     /// Instructions kuna ends in a branch and not a return: a RETURN the
     /// machine lifts there is followed (kuna resolved where it goes).
     pub branches: BTreeSet<u64>,
+    /// The convention's argument registers, pointer-sized: where the machine
+    /// looks for a frame object a callee without a recovered prototype gets.
+    pub pointer_regs: Vec<Storage>,
 }
 
 /// One call as a side made it.
@@ -94,6 +100,9 @@ pub struct Record {
     pub writes: Writes,
     /// What the callee did when the machine ran it for real.
     pub effect: Option<Effect>,
+    /// The frame bytes that callee read, when the machine ran it for real:
+    /// only those of the frame objects it was given are compared.
+    pub frame_reads: Option<std::collections::BTreeSet<u64>>,
 }
 
 impl Calls {
@@ -111,10 +120,13 @@ impl Calls {
     }
 }
 
+/// The registers a stub for `proto` kills: those its effect list says a call
+/// kills, the call's own overrides first (what kuna proved about the callee),
+/// and its output registers, unless the call is known to leave them alone.
 fn killed(env: &Env, proto: &FuncProto) -> Vec<(u64, u32)> {
     let reg = env.register.get_index();
     let model = proto.model();
-    let mut out: Vec<(u64, u32)> = model
+    let mut out: Vec<(u64, u32)> = proto
         .effect_list()
         .iter()
         .filter(|e| e.get_type() == effect_type::KILLEDBYCALL)
@@ -131,6 +143,10 @@ fn killed(env: &Env, proto: &FuncProto) -> Vec<(u64, u32)> {
             .filter(|e| e.get_space().get_index() == reg)
             .map(|e| (e.get_base(), e.get_size() as u32)),
     );
+    out.retain(|&(off, size)| {
+        let at = kuna_base::address::Address::new(std::rc::Rc::clone(&env.register), off);
+        proto.has_effect(&at, size as i32) != effect_type::UNAFFECTED
+    });
     out.sort_unstable();
     out.dedup();
     out
@@ -185,6 +201,7 @@ pub fn sites(fd: &Funcdata, env: &Env) -> Calls {
                     .then(|| Storage::at(&proto.get_output().get_address(), proto.get_output().get_size() as u32))
                     .flatten()
                     .or_else(|| copied_to_register(fd, env, op.get_out())),
+                ret_ext: crate::abi::return_extension(env, proto),
             },
         );
     }
@@ -197,6 +214,7 @@ pub fn sites(fd: &Funcdata, env: &Env) -> Calls {
         args: Vec::new(),
         locked: false,
         output: None,
+        ret_ext: None,
     };
     let graph = fd.bblocks_ref();
     let blocks: Vec<_> = (0..fd.bblocks_get_size()).map(|i| fd.bblocks_get_block(i)).collect();
@@ -216,5 +234,17 @@ pub fn sites(fd: &Funcdata, env: &Env) -> Calls {
         .into_iter()
         .filter(|a| !returns.contains(a))
         .collect();
-    Calls { by_addr, default, inside, jumps, branches }
+    let width = u32::from(env.ram.get_addr_size()).min(8);
+    let pointer_regs = own
+        .model()
+        .input()
+        .get_entry()
+        .iter()
+        .filter(|e| e.get_space().get_index() == env.register.get_index() && e.get_size() as u32 >= width)
+        .map(|e| {
+            let low = if env.register.is_big_endian() { e.get_base() + u64::from(e.get_size() as u32 - width) } else { e.get_base() };
+            Storage::new(&env.register, low, width)
+        })
+        .collect();
+    Calls { by_addr, default, inside, jumps, branches, pointer_regs }
 }
