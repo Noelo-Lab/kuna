@@ -1717,7 +1717,16 @@ that machinery.
   (ActionStackPtrFlow)`, its home by port history) and, per-function, to
   `option extrapop`
   (`decompiler/crates/kuna-decomp/src/p0_knowledge/options.rs
-  (OptionExtraPop)`).
+  (OptionExtraPop)`). With a function name, `option extrapop <n> <name>`
+  parks `n` on that FunctionSymbol
+  (`decompiler/crates/kuna-decomp/src/p0_knowledge/database.rs
+  (Database::set_function_extra_pop)`). `ActionDefaultParams` copies it into
+  every call spec that targets the function, as upstream copies the callee's
+  own prototype, and the function's own prototype takes it when it is
+  decompiled (`tests/stages/kuna-extrapop-function.xml`). The prototype
+  `ArchContext::query_function` returns carries it too, so a call through a
+  register or an import slot that resolves to the function pops the same
+  bytes.
   On x86-32 under a compiler spec whose default model leaves extrapop unknown
   (`x86win.cspec`'s `__stdcall`, and with it `__thiscall`/`__fastcall` callees
   the image does not declare), a direct call whose prototype states no extrapop
@@ -2474,7 +2483,7 @@ classified:
   calls by the user op the language's `svc` lowers to, the one `syscallregs`
   names.
 
-  Where the body does not settle it, two facts about the value do. First, a
+  Where the body does not settle it, facts about the value do. First, a
   value already vetoed from another call is vetoed here too. clang -O0
   computes a comparison into `w8` ahead of two calls on different paths
   (`if (pg < 1) return corrupt(4321); if (pagecount(bt) == 0) ...`). The value
@@ -2497,6 +2506,27 @@ classified:
   null-page rule cannot see a callee that takes a small number in `x8` by its
   own convention behind an import, such as the OCaml runtime's `caml_allocN`
   reached through a PLT stub. That number is dropped (`caml_allocN()`).
+
+  On arm64e (the `AARCH64:LE:64:AppleSilicon` language) a third fact answers:
+  a value that is not an address is not a result buffer. The processor ignores
+  the top byte of a pointer, and bits 48..55 extend bit 55 with the
+  pointer-authentication code kept in them, so in an address a store can go
+  through they are all clear (user) or all set (kernel). A value whose every leaf
+  has those eight bits known, through copies and ANDs and ORs with constants,
+  and neither all clear nor all set, is vetoed. This is the blended modifier
+  of a signing. clang builds it in `x8` and moves it to `x16`
+  (`mov x8,x19; movk x8,#0xaea0,lsl #48; mov x16,x8; pacda x17,x16`), and the
+  hidden `pacda` lifts to a copy of `x17` that does not read `x16`
+  ([02](02-lift-and-flow.md)). The call that follows is then the modifier's
+  only reader, and a three-argument `OSCompareAndSwapPtr` printed as
+  `OSCompareAndSwapPtr(0xaea0fff00a64e488,0,v1,&gAKS)`. `x8` is the only
+  register this reaches: `x16` and `x17` are not input entries. A modifier
+  whose discriminator has a low byte of `0x00` or `0xff` has the bits of a
+  tagged address and is left to the other rules, as is one made of the
+  storage address alone. The rule is not applied to other AArch64 languages,
+  where a 52-bit address space gives bits 48..51 to the address.
+  `tests/stages/kuna-pacmodifier-arg-a64e.xml` covers both forms of the
+  modifier and the two controls.
 
   Dropping the entry leaves no hole in `x0..x7`. Only a register entry is
   vetoed: not SPARC's `[sp+64]` stack slot, and not one that shares storage
@@ -4139,7 +4169,15 @@ for a recovered one. Then it tries to merge the discovered callee prototype **in
 when the models are compatible (same or aliased `ProtoModel`, `is_compatible`),
 varargs only while input recovery is still active, and — for locked callee
 prototypes — when the existing argument Varnodes can be re-mapped onto the
-locked storage (`transfer_locked_input`/`transfer_locked_output`). Success
+locked storage (`transfer_locked_input`/`transfer_locked_output`). (kuna) An
+argument Varnode is re-mapped only if it is still at least as wide as the
+parameter it would become. A trial keeps the width it was recorded with, but
+subvariable flow may since have narrowed the Varnode a call reads (an unlocked
+call lets a zero-extended 16-bit sum replace the 64-bit register it filled), and
+`build_param` can only truncate: upstream re-maps the narrow Varnode anyway and
+emits a `SUBPIECE` whose output is wider than its input. Such a site fails the
+restriction and restarts, and the restart builds the call with its inputs
+locked, so nothing narrows them. Success
 commits the new input/output lists directly. For a locked variadic prototype,
 `decompiler/crates/kuna-decomp/src/p4_calls/kuna_varargtransfer.rs
 (pending_trials)` preserves existing trials outside the fixed parameters before
