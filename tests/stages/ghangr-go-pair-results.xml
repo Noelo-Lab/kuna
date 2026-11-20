@@ -74,9 +74,9 @@
 ^  return v1\.result0,v1\.result1$
 ^\}$
 ^\s*$
-^void main\.forward\(void\)$
+^void main\.forward\(unsigned long a0\)$
 ^\{$
-^  main\.check\(\);$
+^  main\.check\(a0\);$
 ^\}$
 ^\s*$
 ^__kuna_go_int_error_result main\.check\(int8 n\)$

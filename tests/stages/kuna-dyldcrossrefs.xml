@@ -51,5 +51,5 @@
 <stringmatch name="dyldcrossrefs #2: off leaves the GOT slot call unnamed" min="1" max="1">\(\*dat_180010008\)\(\); // jump-as-call</stringmatch>
 <stringmatch name="dyldcrossrefs #3: on names the island after its target in the other image" min="1" max="1">v1 = callee_add\(\);</stringmatch>
 <stringmatch name="dyldcrossrefs #4: on names the slot from its decoded auth pointer" min="1" max="1">^  callee_add\(\); // jump-as-call</stringmatch>
-<stringmatch name="dyldcrossrefs #5: the local symbols file names the redacted helper" min="2" max="2">_helper_local\(\);</stringmatch>
+<stringmatch name="dyldcrossrefs #5: the local symbols file names the redacted helper" min="2" max="2">_helper_local\(a0\);</stringmatch>
 </decompilertest>

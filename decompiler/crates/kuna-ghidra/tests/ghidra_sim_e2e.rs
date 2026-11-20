@@ -617,8 +617,13 @@ const PIN_FAILLOG_VARDECL_UNRESOLVED: [usize; 3] = [0, 0, 0];
 // extend), to tell a variadic caller by its register-save prologue, and the
 // walk is a cache miss for an entry no earlier caller probed. No new
 // instruction address is read.
-const PIN_FAILLOG_GETPCODE_TOTAL: u64 = 2142;
-const PIN_FAILLOG_DECODED_INSTS: usize = 1044;
+// (kuna `passthrough`) RAISED the total 2142 -> 2146 and the DISTINCT count
+// 1044 -> 1048, with every rendered pin above it unchanged. A callee that
+// stated nothing is now read by its body, and its direct calls' targets are
+// walked too (`reads_through_calls`): four instructions of a target no earlier
+// probe reached.
+const PIN_FAILLOG_GETPCODE_TOTAL: u64 = 2146;
+const PIN_FAILLOG_DECODED_INSTS: usize = 1048;
 // Whole-session getMappedSymbols traffic: Phase 2 pinned this at 0 (the
 // providers did not exist); Phase 3 pins the real query-through traffic —
 // every distinct global address the pipeline probes, answered once (holes and

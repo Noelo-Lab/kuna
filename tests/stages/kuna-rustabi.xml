@@ -102,9 +102,9 @@
      in-element access, which is exactly the discrimination the fix makes (#11). -->
 <stringmatch name="RUSTABI #5: with the option on the payload half is written at the second register's offset" min="1" max="1">v2\._8_4_ = v1;</stringmatch>
 <stringmatch name="RUSTABI #11: the one-byte discriminant write is a genuine element access and keeps its subscript" min="1" max="1">v2\[0\] = a0 &lt; 0xb;</stringmatch>
-<stringmatch name="RUSTABI #6: in both passes the call has an output and the payload is connected to it" min="2" max="2">v2 = prod\(\);</stringmatch>
+<stringmatch name="RUSTABI #6: in both passes the call has an output and the payload is connected to it" min="2" max="2">v2 = prod\(a0\);</stringmatch>
 <stringmatch name="RUSTABI #7: in both passes the consumer reads the payload out of the call's result, not out of thin air" min="4" max="4">SUB124\(v2,8\)</stringmatch>
 <stringmatch name="RUSTABI #8: in both passes the discriminant guard reads the same call result" min="2" max="2">SUB128\(v2,0\) &amp; 1</stringmatch>
 <stringmatch name="RUSTABI #9: a callee proven never to write the second return register is not paired -- the reader is unchanged in BOTH passes" min="2" max="2">int8 v3; // rdx</stringmatch>
-<stringmatch name="RUSTABI #10: and its call keeps no output in either pass" min="2" max="2">^  scalar_callee\(\);$</stringmatch>
+<stringmatch name="RUSTABI #10: and its call keeps no output in either pass" min="2" max="2">^  scalar_callee\(a0\);$</stringmatch>
 </decompilertest>

@@ -320,7 +320,7 @@ c3
 <stringmatch name="LIBCTYPES #23: and in the library it is the one indirection the program performs, no more" min="1" max="1">sink\(\*stdin_ptr\);</stringmatch>
 <stringmatch name="LIBCTYPES #24: a stream handed to a libc call the table already typed does not move" min="2" max="2">fputs\(a0,stdout\);</stringmatch>
 <stringmatch name="LIBCTYPES #25: and the library's loses the cast the untyped slot needed" min="1" max="1">fputs\(a0,\*stdout_ptr\);</stringmatch>
-<stringmatch name="LIBCTYPES #27: off, an obstack entry point the image DEFINES says nothing, so its caller has neither arity nor a pointee" min="1" max="1">void grow\(void\)</stringmatch>
+<stringmatch name="LIBCTYPES #27: off, an obstack entry point the image DEFINES gives its caller only the arity its body reads, and no pointee" min="1" max="1">void grow\(unsigned long a0,unsigned long a1\)</stringmatch>
 <stringmatch name="LIBCTYPES #28: on, that same definition -- gnulib's copy, linked in and exported -- names the pointer its caller holds" min="1" max="1">void grow\(obstack \*a0,uint8 a1\)</stringmatch>
 <stringmatch name="LIBCTYPES #29: off, the imported `putspent` leaves both of its aggregate slots unsaid" min="1" max="1">void emit\(void\)</stringmatch>
 <stringmatch name="LIBCTYPES #30: on, its declaration names the shadow record and the stream it is written to" min="1" max="1">void emit\(spwd \*a0,FILE \*a1\)</stringmatch>
