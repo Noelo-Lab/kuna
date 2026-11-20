@@ -3,10 +3,10 @@
 //! A method declared `__attribute__((objc_direct))` (or in an
 //! `objc_direct_members` class) is called as a C function: it has no entry in
 //! any `method_list_t`, takes no `_cmd`, and only its symbol, `-[Class sel]`,
-//! says what it is. Its receiver is still the first argument, so each such
-//! symbol hints that argument as `self`, of the class's type under `objcivars`:
-//! an unlocked hint ([`kuna_decomp::kuna_inputhints`]), since the encoding
-//! that would give the other parameters does not exist.
+//! says what it is. On AArch64 its receiver is always in `x0`, so each such
+//! symbol hints `x0` as `self`, of the class's type under `objcivars`: an
+//! unlocked hint ([`kuna_decomp::kuna_inputhints`]), since the encoding that
+//! would give the other parameters does not exist.
 
 use object::Architecture;
 
@@ -15,11 +15,12 @@ use super::kuna_objcivars::Structs;
 use super::sections::MachoImage;
 use crate::pass::{AnalysisOutput, InputHintFact};
 
-/// The register of the first argument, where `self` arrives.
+/// The register `self` always arrives in. AArch64 passes a result buffer in
+/// `x8`, so `x0` is the receiver; x86-64 passes one in `RDI` and moves `self`
+/// to `RSI`, and nothing in the symbol tells the two shapes apart.
 fn self_register(architecture: Architecture) -> Option<&'static str> {
     match architecture {
         Architecture::Aarch64 => Some("x0"),
-        Architecture::X86_64 => Some("RDI"),
         _ => None,
     }
 }
@@ -56,6 +57,12 @@ pub(super) fn emit(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_aarch64_has_a_fixed_receiver_register() {
+        assert_eq!(self_register(Architecture::Aarch64), Some("x0"));
+        assert_eq!(self_register(Architecture::X86_64), None, "a struct return moves self to RSI");
+    }
 
     #[test]
     fn owner_is_the_class_under_any_category() {

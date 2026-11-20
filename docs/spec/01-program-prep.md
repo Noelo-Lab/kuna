@@ -5731,8 +5731,7 @@ every other binary's pass list is byte-identical to before the pass existed):
     offset variables it loads were still folded: an ivar read printed
     `((objc_object **)a0)[0x56]`, with neither the field nor the
     `_OBJC_IVAR_$_` name. Every method symbol of the image whose address no
-    method list gave now hints its first argument register (`x0`, `RDI`) as
-    `self` — an unlocked input hint (`kuna_inputhints`, the seam Swift's
+    method list gave now hints `x0` as `self` on AArch64 — an unlocked input hint (`kuna_inputhints`, the seam Swift's
     `self` uses, applied here under the default convention), because a
     prototype would have to state the other parameters and nothing declares
     them. Under `objcivars` an instance method's hint carries the `<Class> *`
@@ -5741,6 +5740,10 @@ every other binary's pass list is byte-identical to before the pass existed):
     class method's hint, and every hint with `objcivars` off, only names
     `self`. A body that never reads the register declares no parameter, as
     with any hint, and a function Swift already hinted keeps that hint.
+    x86-64 gets no hint: a direct method returning a struct in memory
+    (`- (CGRect)frame`) takes the result buffer in `RDI` and `self` in
+    `RSI`, and nothing in the symbol says which shape a method has, so a
+    `self` hint on `RDI` would type the result buffer as the receiver.
   - **Declarations typed by class**
     (`decompiler/crates/kuna-analysis/src/analyzers/objc/kuna_objcprops.rs (declarations)`):
     a method's own encoding spells every object as a bare `@`, so the structs
