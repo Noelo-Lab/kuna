@@ -5600,7 +5600,7 @@ every other binary's pass list is byte-identical to before the pass existed):
   classic `LC_DYLD_INFO` image already has the ELF shape (rebased pointers in
   the file, zeros in bind slots); only its bind names are needed, and they
   come from replaying the bind opcodes
-  (`loader/format/macho/dyldinfo.rs (resolve_dyld_info_binds)`), which carry
+  (`loader/format/macho/dyldinfo.rs (resolve_dyld_info_binds)`), which keeps
   no addend, so the anchor is accepted on the name alone. Pinned by
   `tests/stages/kuna-itaniumrtti-macho.xml` and its `-classic` twin.
 - **Objective-C** (`objc`, Mach-O-only, on by default and inert elsewhere;

@@ -2,7 +2,7 @@
 <binaryimage arch="AARCH64:LE:64:v8A">
 <!--
     `itaniumrtti` on Mach-O (classic LC_DYLD_INFO binds): P1 external refinement, option
-    itaniumrtti (default off). The script loads the committed
+    itaniumrtti (default on). The script loads the committed
     itaniumrtti_macho/libshapes_arm64_classic.dylib (clang++ and ld64.lld, source and
     commands beside it). make() stores Circle's or Square's vptr; both
     classes' typeinfos are local, reached only through LC_DYLD_INFO bind opcodes naming

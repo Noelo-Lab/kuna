@@ -71,7 +71,7 @@
 //!
 //! # Gating + parity safety
 //!
-//! Default-**OFF** (`--option itaniumrtti on`), and registered only on an ELF or
+//! Default-**on** (`--option itaniumrtti off` disables it), and registered only on an ELF or
 //! Mach-O image ([`crate::passes::passes_for`]). On a Mach-O the pointer slots
 //! are fixup entries; [`MachoSlots`] resolves them before the walk. The XML
 //! datatest path never loads an ELF object
@@ -260,7 +260,7 @@ fn recover_graph(ctx: &AnalysisCtx) -> Option<(Vec<TypeInfo>, Vec<SubVtable>, Re
 /// has that shape; its bind names come from replaying the bind opcodes.
 struct MachoSlots {
     fixups: crate::loader::format::macho::chained::ChainedFixups,
-    /// `(slot, import, addend)`; the addend is unknown for a classic bind.
+    /// `(slot, import, addend)`; the classic bind replay keeps no addend.
     named_binds: Vec<(u64, String, Option<i64>)>,
 }
 
