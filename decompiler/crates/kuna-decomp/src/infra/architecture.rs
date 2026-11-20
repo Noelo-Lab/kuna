@@ -561,6 +561,14 @@ pub struct Architecture {
     /// (`p2_lift/kuna_chkstkdarwin.rs`), so the argument registers it preserves
     /// keep their values across it. Default on.
     pub chkstk_darwin: bool,
+    /// (kuna `typevote`) A variable left `undefinedN` takes the type the ops
+    /// on it vote for (`p5_types/kuna_typevote.rs`). Default on.
+    pub type_vote: bool,
+    /// (kuna `gotonext`) Leave out a `goto` whose target is the block that runs
+    /// next anyway, print one to the block after the enclosing loop or switch as
+    /// `break;`, and keep switch fall-thru chains in case order
+    /// (`p8_structure/kuna_gotonext.rs`). Default on.
+    pub goto_next: bool,
     /// (kuna tee-O2 tail-jumps) Recover a direct `jmp` to another function's
     /// entry (e.g. `jmp setlocale@plt`) as a tail call (CALL + RETURN) instead of
     /// flowing into the callee (`option tailcalljump on|direct`).
@@ -1329,6 +1337,11 @@ pub struct Architecture {
         (int4, uintb),
         std::rc::Rc<crate::kuna_protoorder::RecoveredTypes>,
     >,
+    /// (kuna `protoorder`) A batch drive with no callee-first order behind it
+    /// (a narrowed `decompile-all`, `kuna decompile --json`) states its tail
+    /// callees first as a single-function drive does.  Driver state, not an
+    /// option: the front-end sets it around such a batch.
+    pub kuna_tail_callee_batch: bool,
     /// (kuna `vfpvariadic`) The default model with the variadic return rules,
     /// keyed by the default model it was derived from.
     pub kuna_vfp_variadic: RefCell<Option<(Rc<ProtoModel>, Option<Rc<ProtoModel>>)>>,
@@ -2381,6 +2394,7 @@ impl Architecture {
             field_type: false, // (kuna) option fieldtype; reset_defaults sets the shipped default
             image_windows_user: false, // (kuna) a load-time fact; set by the console's `load file`
             chkstk_darwin: false, // (kuna) option chkstkdarwin; reset_defaults sets the shipped default
+            type_vote: false, // (kuna) option typevote; reset_defaults sets the shipped default
             tail_call_jumps: false,
             tail_call_tables: false, // (kuna) option tailcalljump; reset_defaults sets the shipped default
             tail_call_frame: false, // (kuna) option tailcallframe; reset_defaults sets the shipped default
@@ -2508,6 +2522,7 @@ impl Architecture {
             realtypes: false,
             ctypes: false, // (kuna) option ctypes; reset_defaults sets the shipped default
             voidtailreturn: false, // (kuna) option voidtailreturn; reset_defaults sets the shipped default
+            goto_next: false, // (kuna) option gotonext; reset_defaults sets the shipped default
             import_data: false,
             cast_implied: false, // (kuna) option castimplied; reset_defaults sets the shipped default
             cast_sign: false, // (kuna) option castsign; reset_defaults sets the shipped default
@@ -2530,6 +2545,7 @@ impl Architecture {
             kuna_swift_self_first_cache: std::collections::HashMap::new(),
             kuna_callee_forward_cache: std::collections::HashMap::new(),
             kuna_protoorder_types: std::collections::HashMap::new(),
+            kuna_tail_callee_batch: false,
             kuna_vfp_variadic: RefCell::new(None),
             kuna_callee_reginputs: RefCell::new(std::collections::HashMap::new()),
             kuna_custom_reg_callers: Rc::new(std::collections::HashMap::new()),
@@ -2722,6 +2738,7 @@ impl Architecture {
         self.field_type = false; // (kuna) option fieldtype default-off: the flip moves which record the layout ledger shares between readers (fields-only layout precision .8713 -> .8693); docs/features/fieldtype/default-on-evaluation.md
         self.struct_headless = crate::kuna_structheadless::StructHeadlessMode::Off; // (kuna) structheadless default `off`: a closed function's parameter read at two or more constant offsets, none of them zero, is declared `struct_N *` with filler over the bytes before its first access; `option structheadless closed` turns it on
         self.chkstk_darwin = true; // (kuna) default-on, Darwin AArch64 only (`image_apple` and an AArch64 language): inert unless a call reaches `___chkstk_darwin`; 0/675 datatests
+        self.type_vote = true; // (kuna) default-on: presentation only, types variables that would print undefinedN; signatures unchanged; 0/675 datatests
         self.tail_call_jumps = true; // (kuna) DIV-13 default-on (angr tail-call recovery; per-test opt-out on Long double #1/#2)
         self.tail_call_tables = true; // (kuna) GH-781 default `tailcalljump on`: a veneer whose one destination is another function's entry is a tail call when the destination is outside a declared extent, or the callee's prototype is stated and its return value (if any) reaches a stated output. 0/675 byte-identical on the datatest corpus; `option tailcalljump direct` restores the flow into the destination
         self.tail_call_frame = true; // (kuna) DIV-109 default-on: REMOVES CODE. A direct jmp preceded by a teardown of exactly the entry block's frame is a tail call even when the callee was never discovered. Byte-identical (0/675) on the datatest corpus; restore the flow-into-the-callee decode with `option tailcallframe off`
@@ -2813,6 +2830,7 @@ impl Architecture {
         self.signedness = crate::kuna_typeround::SignPolicy::Auto; // (kuna) default `auto`: a declaration is re-signed only when every signedness-sensitive reader of the value agrees, which makes each surviving cast on it a no-op and leaves every other token byte-identical. 0/675 datatests and PARITY OK on stages; `option signedness upstream` restores the declaration type inference produced
         self.realtypes = true; // (kuna) DIV-6 default-on: real C types for unknowns
         self.ctypes = false; // (kuna) DIV-75: default-OFF in the catalog because the datatest corpus pins `int4`/`float8` spellings in 42 assertions; ON in the `aggressive` and `fast` presets and at every `auto` size, so valid C is the default RENDERING everywhere a real binary is decompiled
+        self.goto_next = true; // (kuna) option gotonext default-on: upstream BlockGoto::gotoPrints; only the spelling of a jump changes; 0/675 datatests
         self.voidtailreturn = true; // (kuna) option voidtailreturn default-on (DIV-98); `option voidtailreturn off` restores the trailing `return;`
         self.import_data = true; // (kuna) option importdata default-on; `option importdata off` keeps the `*dat_<slot>` dereference
         self.cast_implied = true; // (kuna) option castimplied default-on: leaves out only a value-preserving integer conversion C performs itself (argument to a type-locked parameter, assignment to a local or parameter declared that spelling, return, or under another conversion); 1/675 datatest assertion moved (Union #26, the intended form, pinned to upstream by a per-test opt-out), 10 stage assertions moved to the new form, speed within budget; docs/features/castimplied/default-on-evaluation.md
@@ -3484,6 +3502,7 @@ impl Architecture {
         ctx.go_morestack = self.go_morestack;
         ctx.rust_probestack = self.rust_probestack;
         ctx.chkstk_darwin = self.chkstk_darwin && self.image_apple && crate::kuna_chkstkdarwin::applies_to(&self.archid);
+        ctx.type_vote = self.type_vote;
         ctx.go_bool = self.go_bool;
         ctx.go_write_barrier = self.go_write_barrier;
         ctx.go_new_type = self.go_new_type;
@@ -3492,6 +3511,7 @@ impl Architecture {
             .then(|| self.userops.get_op_by_name(crate::kuna_ptrauthtrap::BREAKPOINT_USEROP))
             .flatten()
             .map(|u| u.get_index() as kuna_base::types::uint4);
+        ctx.arm64e = self.archid.starts_with("AARCH64:LE:64:AppleSilicon:");
         ctx.name_style_angr = self.name_style_angr;
         ctx.name_style_ghidra = self.name_style_ghidra;
         // (kuna) carry the duplicate-declaration collapse gate so `emit_local_var_decls`
@@ -3593,6 +3613,9 @@ impl Architecture {
         ctx.region_structure = self.region_structure; // regionstructure
         ctx.guard_arm = self.guard_arm; // guardarm
         ctx.loop_continue = self.loop_continue;
+        ctx.do_while_continue =
+            self.print.out_lang().profile().forms.do_while != crate::kuna_lang::DoWhileForm::RustLoopBreakIf;
+        ctx.goto_next = self.goto_next; // gotonext
         ctx.loop_cond_hoist = self.loop_cond_hoist; // loopcondhoist
         ctx.region_loop_refine = self.region_loop_refine; // regionlooprefine
         ctx.region_edge_order = self.region_edge_order; // regionedgeorder
@@ -4256,7 +4279,7 @@ impl Architecture {
     /// no-register golang target (x86-32 reaches `g` through TLS) and every
     /// other image are untouched.
     fn kuna_install_goreg(&mut self) -> KunaResult<()> {
-        let Some(reg) = crate::kuna_goreg::goroutine_register(&self.archid) else {
+        let Some(reg) = crate::kuna_goreg::goroutine_register(&self.archid, self.go_version()) else {
             return Ok(());
         };
         let scope = match self.symboltab.get_global_scope() {
@@ -4785,15 +4808,33 @@ impl Architecture {
         }
     }
 
+    /// (kuna) The image's Go toolchain release, when the load stated one.
+    fn go_version(&self) -> Option<(u16, u16)> {
+        if self.load_options_from_env {
+            crate::kuna_loadoptions::env::go_version()
+        } else {
+            self.load_options.go_version
+        }
+    }
+
     /// (kuna `goreg`) The runtime layouts of the image's Go toolchain release.
     fn go_layout(&self) -> crate::kuna_goreg::GoLayout {
-        if self.load_options_from_env {
-            return crate::kuna_goreg::GoLayout::from_env();
-        }
-        match self.load_options.go_version {
+        match self.go_version() {
             Some((major, minor)) => crate::kuna_goreg::GoLayout::from_version(major, minor),
             None => crate::kuna_goreg::GoLayout::baseline(),
         }
+    }
+
+    /// (kuna `goabi`) Make the stack model `abi0` the default of a golang-cspec
+    /// image built before the register ABI reached its CPU.
+    fn kuna_go_stack_default(&mut self) -> KunaResult<()> {
+        if self.archid.ends_with(":golang")
+            && self.proto_models.contains_key("abi0")
+            && !crate::kuna_goreg::register_abi(&self.archid, self.go_version())
+        {
+            crate::options::ArchOptionContext::set_default_model(self, "abi0")?;
+        }
+        Ok(())
     }
 
     /// Borrow the data-type factory (C++ `glb->types`).
@@ -6799,6 +6840,7 @@ impl Architecture {
         // kuna-side so the vendored spec stays pristine.
         self.kuna_install_goreg()?;
         self.build_default_proto();
+        self.kuna_go_stack_default()?;
         // Share `defaultfp` + the engine address-space manager into the type
         // factory so the C-declaration grammar's nested function-pointer
         // `buildType` path (`FunctionModifier::modType` -> `getTypeCode(
@@ -6928,13 +6970,13 @@ impl ArchOptionContext for Architecture {
             self.share_proto_models();
         }
     }
-    fn set_function_extra_pop(&mut self, name: &str, _expop: int4) -> KunaResult<()> {
-        // C++ looks up `symboltab->getGlobalScope()->queryFunction(name)` then
-        // `fd->getFuncProto().setExtraPop(expop)`.  The per-function FuncProto
-        // mutation needs a resolved Funcdata; the symbol-table function query +
-        // FuncProto write is the W4 symboltab + W6 fspec surface.
-        // STUB(W4 symboltab + W6 fspec): no function is resolvable here yet.
-        Err(KunaError::recov(format!("Unknown function name: {name}")))
+    fn set_function_extra_pop(&mut self, name: &str, expop: int4) -> KunaResult<()> {
+        // C++ `OptionExtraPop::apply`: queryFunction(name), then
+        // `getFuncProto().setExtraPop(expop)`; parked on the symbol like inline.
+        let sid = self.query_global_function(name)?;
+        self.kuna_callwide.clear();
+        self.symboltab.set_function_extra_pop(sid, expop);
+        Ok(())
     }
     fn set_default_model(&mut self, name: &str) -> KunaResult<()> {
         // C++ `glb->setDefaultModel(getModel(p1))`.

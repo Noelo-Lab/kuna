@@ -172,6 +172,7 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "chkstkdarwin" => on_off!(chkstk_darwin, "Darwin stack-probe call removal"),
+    "typevote" => on_off!(type_vote, "Type vote for leftover undefined variables"),
     "tailcalljump" => {
         let (jumps, tables, msg) = crate::kuna_tailcalljump::tail_call_mode(p1)?;
         self.tail_call_jumps = jumps;
@@ -634,6 +635,7 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "voidtailreturn" => on_off!(voidtailreturn, "void tail-return elision"),
+    "gotonext" => on_off!(goto_next, "goto-to-next suppression"),
     "importdata" => on_off!(import_data, "import-slot data-read rendering"),
     "castimplied" => on_off!(cast_implied, "C-implied cast elision"),
     "castsign" => on_off!(cast_sign, "signed declarations for signed-only locals"),

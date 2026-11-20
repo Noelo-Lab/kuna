@@ -141,6 +141,10 @@ pub struct GlobalEntry {
     /// CALLIND to a no-return callee never schedules the restart that re-flows the
     /// now-direct CALL with an artificial halt.
     pub func_no_return: bool,
+    /// The owning FunctionSymbol's parked extrapop (C++
+    /// `FunctionSymbol::getFunction()->getFuncProto().getExtraPop()` after
+    /// `option extrapop <n> <name>`).  `None` when unset or not a function.
+    pub func_extra_pop: Option<int4>,
     /// The owning Symbol's id (C++ `SymbolEntry::getSymbol()->getId()`), for the
     /// Phase-4 `<high symref>` echo: ghidra-mode carries the REAL host database
     /// id delivered by getMappedSymbols (0 when the host sent none — the encode
@@ -175,6 +179,8 @@ pub struct GlobalQuery {
     pub flagbase: kuna_base::partmap::PartMap<Address, uint4>,
     /// Every entry's symbol name, built on first use by [`GlobalQuery::has_symbol_name`].
     symbol_name_set: std::cell::OnceCell<std::collections::BTreeSet<Box<str>>>,
+    /// Whether any entry carries a parked `func_extra_pop`.
+    has_extra_pop: bool,
 }
 
 /// Prototype evidence attached to an exact memory slot feeding a `CALLIND`.
@@ -198,8 +204,6 @@ pub(crate) enum IndirectSlotType {
 #[derive(Debug, Clone)]
 struct GlobalSpaceIndex {
     space_index: int4,
-    entry_start: usize,
-    entry_end: usize,
     interval_order: Vec<usize>,
     max_last: Vec<u64>,
     leaf_base: usize,
@@ -227,8 +231,6 @@ impl GlobalSpaceIndex {
 
         Self {
             space_index,
-            entry_start,
-            entry_end,
             interval_order,
             max_last,
             leaf_base,
@@ -302,12 +304,14 @@ impl GlobalQuery {
             ));
             entry_start = entry_end;
         }
+        let has_extra_pop = entries.iter().any(|entry| entry.func_extra_pop.is_some());
         Self {
             entries,
             space_indexes,
             owned,
             flagbase,
             symbol_name_set: std::cell::OnceCell::new(),
+            has_extra_pop,
         }
     }
 
@@ -367,12 +371,24 @@ impl GlobalQuery {
             .filter(|index| index.space_index == space_index)
     }
 
-    /// Return only entries belonging to one address space.
+    #[cfg(test)]
     fn entries_for_space(&self, space_index: int4) -> &[GlobalEntry] {
-        let Some(index) = self.index_for_space(space_index) else {
-            return &[];
-        };
-        &self.entries[index.entry_start..index.entry_end]
+        let start = self.entries.partition_point(|entry| entry.space_index < space_index);
+        let end = self.entries.partition_point(|entry| entry.space_index <= space_index);
+        &self.entries[start..end]
+    }
+
+    /// The entries of one address space whose storage starts at `start`, in
+    /// snapshot order, by binary search over the space's interval order rather
+    /// than a scan of the whole space.
+    fn entries_starting_at(
+        &self,
+        space_index: int4,
+        start: u64,
+    ) -> impl Iterator<Item = &GlobalEntry> {
+        self.index_for_space(space_index)
+            .into_iter()
+            .flat_map(move |index| index.starting_at(&self.entries, start))
     }
 
     /// C++ `Database::getProperty(addr)` (`database.hh:949`): the boolean
@@ -502,8 +518,7 @@ impl GlobalQuery {
             }
         }
 
-        let index = self.index_for_space(space_index);
-        let starting_at = || index.into_iter().flat_map(|index| index.starting_at(&self.entries, start));
+        let starting_at = || self.entries_starting_at(space_index, start);
         let active = |entry: &GlobalEntry| {
             entry.addrtied
                 || (!usepoint.is_invalid() && entry.uselimit.in_range(usepoint, 1))
@@ -761,6 +776,8 @@ pub struct ArchContext {
     /// [`crate::p2_lift::kuna_chkstkdarwin`].  Copied from the engine
     /// `Architecture` in `build_arch_handle`.
     pub chkstk_darwin: bool,
+    /// (kuna) `option typevote`; read by [`crate::p5_types::kuna_typevote`].
+    pub type_vote: bool,
     /// (kuna) `option gobool` mode; read by [`crate::p4_calls::kuna_gobool`].
     /// Copied from the engine `Architecture` in `build_arch_handle`.
     pub go_bool: u8,
@@ -774,6 +791,9 @@ pub struct ArchContext {
     /// (kuna) The `SoftwareBreakpoint` user-op id when `option ptrauthtrap`
     /// is on; read by [`crate::p2_lift::kuna_ptrauthtrap`].
     pub ptrauth_trap_userop: Option<kuna_base::types::uint4>,
+    /// (kuna) The language is arm64e's; read by
+    /// [`crate::p4_calls::kuna_hiddenretarg`].
+    pub arm64e: bool,
     /// (kuna) angr-style default naming: an unknown callee / global prints as
     /// `sub_<addr>` / `dat_<addr>` rather than `func_<addr>` (C++
     /// `Architecture::name_style_angr`, default-on).  Read by the call-spec
@@ -1096,6 +1116,12 @@ pub struct ArchContext {
     pub loop_cond_hoist: bool,
     /// Preserve secondary natural-loop latches as continues (`loopcontinue`).
     pub loop_continue: bool,
+    /// (kuna `loopcontinue`) The output language's do-while runs its test on
+    /// `continue;`: C `do..while` and Go's `for` post statement do, Rust's
+    /// `loop { ..; if !(c) { break; } }` restarts the body instead.
+    pub do_while_continue: bool,
+    /// (kuna `gotonext`) Re-derive switch fall-thru chains before the case sort.
+    pub goto_next: bool,
     /// (kuna) region structurer cyclic loop-successor refinement
     /// (`region_loop_refine`, opt-in default-off).  When set (and
     /// `region_structure` is on), multi-exit / multi-latch / mid-entry loops are
@@ -1578,6 +1604,7 @@ impl ArchContext {
             go_morestack: 1,
             rust_probestack: crate::kuna_rustprobestack::RustProbestackMode::Off,
             chkstk_darwin: false,
+            type_vote: false,
             // (kuna) `option gobool` default auto; copied the same way.
             go_bool: 1,
             // (kuna) `option gowritebarrier` default auto; the real value is
@@ -1586,6 +1613,7 @@ impl ArchContext {
             // (kuna) `option gonewtype` default on; copied the same way.
             go_new_type: true,
             ptrauth_trap_userop: None,
+            arm64e: false,
             // (kuna) angr-style default naming is default-on (Architecture::reset).
             name_style_angr: true,
             // (kuna, Phase 3) ghidra-mode-only; never set on the standalone path.
@@ -1687,6 +1715,8 @@ impl ArchContext {
             region_structure: false,     // regionstructure (opt-in default-off)
             guard_arm: false,            // guardarm (opt-in default-off)
             loop_continue: true,
+            do_while_continue: true,
+            goto_next: false,
             loop_cond_hoist: false,      // loopcondhoist (opt-in default-off)
             region_loop_refine: false,   // regionlooprefine (opt-in default-off)
             region_edge_order: false,    // regionedgeorder (opt-in default-off)
@@ -2257,10 +2287,7 @@ impl ArchContext {
         let gq = self.effective_global_query(entry)?;
         let space_index = entry.get_space()?.get_index();
         let start = entry.get_offset();
-        for e in gq.entries_for_space(space_index) {
-            if e.first != start {
-                continue;
-            }
+        for e in gq.entries_starting_at(space_index, start) {
             if let Some(ct) = &e.symbol_type {
                 if let Some(proto) = ct.get_code_prototype() {
                     return Some(std::rc::Rc::clone(proto));
@@ -2268,6 +2295,19 @@ impl ArchContext {
             }
         }
         None
+    }
+
+    /// The extrapop parked on the FunctionSymbol starting at `entry` (C++
+    /// `queryFunction(entry)->getFuncProto().getExtraPop()` after
+    /// `option extrapop <n> <name>`), or `None` when unset.
+    pub fn query_function_extra_pop(&self, entry: &Address) -> Option<int4> {
+        let gq = self.effective_global_query(entry).filter(|gq| gq.has_extra_pop)?;
+        let space_index = entry.get_space()?.get_index();
+        let extra_pop = gq
+            .entries_starting_at(space_index, entry.get_offset())
+            .find(|e| e.is_function)
+            .and_then(|e| e.func_extra_pop);
+        extra_pop
     }
 
     /// Return the callable type attached to the exact global slot loaded as an
@@ -2331,8 +2371,24 @@ impl ArchContext {
     /// the entry is not a code symbol with a prototype.
     ///
     /// This is the `ActionDeindirect::apply` lever: a CALLIND whose target is the
-    /// constant `entry` deindirects to a direct CALL to this function.
+    /// constant `entry` deindirects to a direct CALL to this function.  The
+    /// prototype carries the extrapop `option extrapop <n> <name>` parked on the
+    /// symbol, as the C++ callee `getFuncProto()` does.
     pub fn query_function(
+        &self,
+        entry: &Address,
+    ) -> Option<(String, Address, std::rc::Rc<crate::fspec::FuncProto>)> {
+        let (name, addr, proto) = self.query_function_symbol(entry)?;
+        let Some(expop) = self.query_function_extra_pop(&addr) else {
+            return Some((name, addr, proto));
+        };
+        let mut popped = crate::fspec::FuncProto::new();
+        popped.copy(&proto);
+        popped.set_extra_pop(expop);
+        Some((name, addr, std::rc::Rc::new(popped)))
+    }
+
+    fn query_function_symbol(
         &self,
         entry: &Address,
     ) -> Option<(String, Address, std::rc::Rc<crate::fspec::FuncProto>)> {
@@ -2340,10 +2396,7 @@ impl ArchContext {
         let space = entry.get_space()?;
         let space_index = space.get_index();
         let start = entry.get_offset();
-        for e in gq.entries_for_space(space_index) {
-            if e.first != start {
-                continue;
-            }
+        for e in gq.entries_starting_at(space_index, start) {
             // C++ `Scope::queryFunction(addr)` returns the `FunctionSymbol`'s
             // `Funcdata`, whose `getFuncProto()` is its recovered prototype — or,
             // for a bare loader symbol, the default (void, unlocked) proto.  A

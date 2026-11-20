@@ -2242,9 +2242,24 @@ mod tests {
         // and ghangr-go-paniccheck-return / a returning Go panic check keeps its continuation
         // and ghangr-go-aarch64-stack-stride / adjacent eight-byte spills keep their declared inputs
         // and ghangr-go-mcall-resumption / a scheduler switch preserves its caller's continuation
+        // and kuna-restart-warnings / a restart drops the warnings of the pass it discards
+        // and kuna-narrowed-call-input / a call argument narrowed before its prototype is forced stays valid
+        // and kuna-extrapop-function / option extrapop <n> <name> sets a named function's extrapop
+        // and kuna-condexe-heritage / condexe removes a re-test whose block holds unread ops
+        // and kuna-dwarf-addrx / a DWARF 5 DW_OP_addrx global takes its name on both byte orders
+        // and kuna-pacmodifier-arg-a64e / a hidden signing's modifier is not a call argument
+        // and kuna-objcdirect / an Objective-C direct method's receiver is its class
+        // and kuna-itaniumrtti-macho / Itanium RTTI on a Mach-O through chained-fixup binds
+        // and kuna-itaniumrtti-macho-classic / and through classic LC_DYLD_INFO binds
+        // and kuna-typeorder / distinct types order by id and shape before heap address
+        // and kuna-loopcontinue-while / a jump to a do-while's own test prints as continue
+        // and kuna-switchsingle / a jump table whose entries all name one block is a direct branch
+        // and kuna-protoorder-tailcallees / a single decompile states its tail callees' prototypes first
+        // and kuna-typevote / a variable left undefinedN takes the type its ops vote for (option typevote)
+        // and kuna-gotonext / a goto to the statement that runs next is left out, a loop or switch exit prints break (option gotonext)
         // and kuna-loweredswitch-linear / loweredswitch linear re-rolls a linear equality chain
         // and kuna-loweredswitch-tree / loweredswitch tree re-rolls a twenty-case compare tree
-        assert_eq!(count, 826, "corpus file count drifted");
+        assert_eq!(count, 841, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

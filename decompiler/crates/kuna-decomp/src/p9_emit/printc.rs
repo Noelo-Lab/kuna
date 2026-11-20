@@ -1547,6 +1547,10 @@ pub struct PrintC {
     /// [`emit_function_body`](PrintC::emit_function_body) and cleared after, so it
     /// is live only for that function's emission.
     void_tail_return: Option<OpId>,
+    /// (kuna `gotonext`) The gotos left out or printed as `break;`, and the labels
+    /// only they reached.  Computed per function at the top of
+    /// [`emit_function_body`](PrintC::emit_function_body).
+    goto_rewrites: crate::p8_structure::kuna_gotonext::GotoRewrites,
     /// (kuna) Resolved `realtypes` rendering context for the function currently
     /// being printed — the `Architecture::realtypes` gate plus the data-model fact
     /// (`long` is 8 bytes) needed to relabel residual `TYPE_UNKNOWN` (`xunknownN`)
@@ -1641,6 +1645,7 @@ impl PrintC {
             pending: 0,
             commsorter: crate::comment::CommentSorter::new(),
             void_tail_return: None,
+            goto_rewrites: Default::default(),
             rt_ctx: RealTypeCtx::OFF,
             out_lang: crate::kuna_lang::OutLang::C,
             eol_warns: Vec::new(),
@@ -4262,9 +4267,15 @@ impl PrintC {
         } else {
             None
         };
+        self.goto_rewrites = if arch.goto_next && matches!(self.lang().forms.switch, crate::kuna_lang::SwitchForm::CSwitch) {
+            crate::p8_structure::kuna_gotonext::goto_rewrites(fd.sblocks_ref(), sroot, arch.recover_loop_break)
+        } else {
+            Default::default()
+        };
         self.assign_label_names(fd, sroot);
         self.emit_block_graph(fd, arch, sroot);
         self.void_tail_return = None;
+        self.goto_rewrites = Default::default();
         self.label_names.clear();
     }
 
@@ -4283,7 +4294,7 @@ impl PrintC {
         while let Some(b) = stack.pop() {
             let blk = sb.block(b);
             if blk.get_type() == BlockType::Copy {
-                if blk.is_unstructured_target() {
+                if blk.is_unstructured_target() && !self.goto_rewrites.labels.contains(&b) {
                     targets.push(b);
                 }
                 continue;
@@ -4472,7 +4483,7 @@ impl PrintC {
         }
         // Structured: only print labels for unstructured-jump targets that are
         // t_copy leaves.
-        if !fd.sblocks_ref().block(bl).is_unstructured_target() {
+        if !fd.sblocks_ref().block(bl).is_unstructured_target() || self.goto_rewrites.labels.contains(&bl) {
             return;
         }
         if fd.sblocks_ref().block(bl).get_type() != BlockType::Copy {
@@ -4831,7 +4842,7 @@ impl PrintC {
         // instead of a braced body.
         let goto_target = fd.sblocks_ref().block(blk).get_if_goto_target();
         if let Some(target) = goto_target {
-            let gototype = fd.sblocks_ref().block(blk).get_if_goto_type();
+            let gototype = self.goto_rewrites.gototype(blk, fd.sblocks_ref().block(blk).get_if_goto_type());
             // (kuna outlang) C's one-line `if (cond) goto L;` needs no braces; a
             // language that requires block braces gets `if cond { goto-form }`.
             if self.lang().caps.brace_elision {
@@ -4958,7 +4969,9 @@ impl PrintC {
         // Would emit_any_label_statement print a `label_xxx:` line?
         if !fd.sblocks_ref().block(body).is_label_bump_up() {
             if let Some(front) = fd.sblocks_ref().get_front_leaf(body) {
-                if fd.sblocks_ref().block(front).is_unstructured_target() {
+                if fd.sblocks_ref().block(front).is_unstructured_target()
+                    && !self.goto_rewrites.labels.contains(&front)
+                {
                     return false;
                 }
             }
@@ -5332,6 +5345,7 @@ impl PrintC {
             if gototype != 0 {
                 self.emit.tag_line();
                 let caseblk = fd.sblocks_ref().block(blk).switch_caseblocks()[i].block;
+                let gototype = self.goto_rewrites.case_gototype(blk, caseblk, gototype);
                 self.emit_goto_statement(fd, switch_block, caseblk, gototype);
             } else {
                 let caseblk = fd.sblocks_ref().block(blk).switch_caseblocks()[i].block;
@@ -5526,21 +5540,22 @@ impl PrintC {
     /// C++ `PrintC::emitBlockGoto` (printc.cc:2915): emit the block's body
     /// (no_branch) then the trailing `goto`/`break`/`continue` statement.
     ///
-    /// STUB(W7): `BlockGoto::gotoPrints` consults `getParent()->nextFlowAfter` to
-    /// suppress a `goto` to the very next printed block; `nextFlowAfter` is not
-    /// yet ported, so the goto is always emitted when a target is present (an
-    /// over-emit, never an under-emit — a redundant `goto LAB_x;` to the
-    /// fallthrough where C++ would drop it).  Recorded as a loss.
+    /// `BlockGoto::gotoPrints` is honoured under option `gotonext`
+    /// ([`goto_rewrites`](PrintC::goto_rewrites)); off, the goto is emitted whenever
+    /// a target is present.
     fn emit_block_goto(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
         self.context.push_mod();
         self.context.set_mod(modifiers::NO_BRANCH);
         let inner = fd.sblocks_ref().block(blk).get_block(0);
         self.emit_block(fd, arch, inner);
         self.context.pop_mod();
-        // gotoPrints(): emit the trailing goto unless it targets the next block.
+        if self.goto_rewrites.silent.contains(&blk) {
+            self.flush_eol_warnings();
+            return;
+        }
         if let Some(target) = fd.sblocks_ref().block(blk).get_goto_target() {
             self.emit.tag_line();
-            let gototype = fd.sblocks_ref().block(blk).get_goto_type();
+            let gototype = self.goto_rewrites.gototype(blk, fd.sblocks_ref().block(blk).get_goto_type());
             self.emit_goto_statement(fd, inner, target, gototype);
             // (kuna warnstyle, DIV-39) pending block warnings land after the
             // trailing goto/break/continue.
