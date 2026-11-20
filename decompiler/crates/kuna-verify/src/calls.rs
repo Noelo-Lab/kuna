@@ -63,6 +63,12 @@ pub struct Site {
     pub locked: bool,
     /// Where the callee's prototype returns its value.
     pub output: Option<Storage>,
+    /// kuna bound the call past a PLT stub or replaced it with an injection:
+    /// its target comes from relocations or a fixup the machine does not run.
+    pub resolved: bool,
+    /// Where each CALL input lives for the callee: its prototype parameter,
+    /// or the trial kuna's recovery matched it to.
+    pub input_storage: Vec<Option<Storage>>,
     /// How the ABI extends that value across its register, which a stub
     /// keeps (a 32-bit `int` in a 64-bit RISC-V register is sign-extended).
     pub ret_ext: Option<crate::state::Extension>,
@@ -84,6 +90,10 @@ pub struct Calls {
     /// The convention's argument registers, pointer-sized: where the machine
     /// looks for a frame object a callee without a recovered prototype gets.
     pub pointer_regs: Vec<Storage>,
+    /// The convention's argument registers, whole: `(offset, size)`.
+    pub input_regs: Vec<(u64, u32)>,
+    /// Its general-purpose argument registers, in the order it assigns them.
+    pub int_regs: Vec<Storage>,
 }
 
 /// One call as a side made it.
@@ -103,6 +113,9 @@ pub struct Record {
     /// The frame bytes that callee read, when the machine ran it for real:
     /// only those of the frame objects it was given are compared.
     pub frame_reads: Option<std::collections::BTreeSet<u64>>,
+    /// The argument-register bytes that callee read before writing, with
+    /// the machine's values: what kuna's call must pass there.
+    pub live_in: Option<Vec<(u64, u8)>>,
 }
 
 impl Calls {
@@ -179,6 +192,18 @@ pub fn sites(fd: &Funcdata, env: &Env) -> Calls {
         let proto = fc.proto();
         let pop = extrapop(fc.get_effective_extra_pop()).or_else(|| extrapop(fc.get_extra_pop()));
         let sp = Storage::new(&env.register, env.sp.0, env.sp.1);
+        let active = fc.active_input();
+        let input_storage = (1..op.num_input())
+            .map(|k| {
+                if let Some(p) = proto.get_param(k - 1) {
+                    return Storage::at(&p.get_address(), p.get_size() as u32);
+                }
+                (active.get_num_trials() > (k as i32) - 1).then(|| {
+                    let t = active.get_trial_for_input_varnode(k as i32);
+                    Storage::at(t.get_address(), t.get_size() as u32)
+                })?
+            })
+            .collect();
         let args = (1..op.num_input())
             .map(|k| {
                 let p = proto.get_param(k - 1)?;
@@ -194,7 +219,13 @@ pub fn sites(fd: &Funcdata, env: &Env) -> Calls {
                 target,
                 extrapop: pop,
                 noreturn: proto.is_no_return(),
-                killed: killed(env, proto),
+                killed: killed(env, proto)
+                    .into_iter()
+                    .filter(|&(off, size)| {
+                        let at = kuna_base::address::Address::new(std::rc::Rc::clone(&env.register), off);
+                        !kuna_decomp::kuna_calleepreserves::callee_preserves_range(fd, fc, &at, size as i32)
+                    })
+                    .collect(),
                 args,
                 locked: proto.is_input_locked(),
                 output: (proto.get_output().get_size() > 0)
@@ -202,6 +233,8 @@ pub fn sites(fd: &Funcdata, env: &Env) -> Calls {
                     .flatten()
                     .or_else(|| copied_to_register(fd, env, op.get_out())),
                 ret_ext: crate::abi::return_extension(env, proto),
+                input_storage,
+                resolved: fc.plt_stub().is_some() || proto.get_inject_id() >= 0,
             },
         );
     }
@@ -215,6 +248,8 @@ pub fn sites(fd: &Funcdata, env: &Env) -> Calls {
         locked: false,
         output: None,
         ret_ext: None,
+        input_storage: Vec::new(),
+        resolved: false,
     };
     let graph = fd.bblocks_ref();
     let blocks: Vec<_> = (0..fd.bblocks_get_size()).map(|i| fd.bblocks_get_block(i)).collect();
@@ -246,5 +281,25 @@ pub fn sites(fd: &Funcdata, env: &Env) -> Calls {
             Storage::new(&env.register, low, width)
         })
         .collect();
-    Calls { by_addr, default, inside, jumps, branches, pointer_regs }
+    let input_regs = own
+        .model()
+        .input()
+        .get_entry()
+        .iter()
+        .filter(|e| e.get_space().get_index() == env.register.get_index() && e.get_base() != env.sp.0)
+        .map(|e| (e.get_base(), e.get_size() as u32))
+        .collect();
+    let int_regs = own
+        .model()
+        .input()
+        .get_entry()
+        .iter()
+        .filter(|e| {
+            e.get_space().get_index() == env.register.get_index()
+                && e.get_type() == kuna_decomp::dtype::type_class::TYPECLASS_GENERAL
+                && e.get_base() != env.sp.0
+        })
+        .map(|e| Storage::new(&env.register, e.get_base(), e.get_size() as u32))
+        .collect();
+    Calls { by_addr, default, inside, jumps, branches, pointer_regs, input_regs, int_regs }
 }

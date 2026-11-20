@@ -1146,6 +1146,7 @@ impl IfaceStatus {
         let mut source = std::mem::replace(&mut self.source, Box::new(DetachedSource));
         let line = source.read_line(self);
         self.source = source;
+        self.last_command.clear();
         if line.is_empty() {
             return Ok(false);
         }

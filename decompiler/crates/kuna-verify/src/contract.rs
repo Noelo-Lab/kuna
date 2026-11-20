@@ -55,6 +55,9 @@ fn typedefs(src: &str) -> BTreeMap<String, String> {
 fn base_type(words: &[&str], sizes: CSizes) -> Option<(u32, bool)> {
     let has = |w: &str| words.contains(&w);
     let unsigned = has("unsigned");
+    if has("__int128") {
+        return Some((16, !unsigned));
+    }
     let longs = words.iter().filter(|&&w| w == "long").count();
     let fixed = |w: &str| -> Option<(u32, bool)> {
         Some(match w {
@@ -68,6 +71,8 @@ fn base_type(words: &[&str], sizes: CSizes) -> Option<(u32, bool)> {
             "uint32_t" => (4, false),
             "int64_t" => (8, true),
             "uint64_t" => (8, false),
+            "__int128_t" => (16, true),
+            "__uint128_t" => (16, false),
             "size_t" | "uintptr_t" => (sizes.pointer, false),
             "ssize_t" | "intptr_t" | "ptrdiff_t" => (sizes.pointer, true),
             _ => return None,
@@ -75,6 +80,9 @@ fn base_type(words: &[&str], sizes: CSizes) -> Option<(u32, bool)> {
     };
     if let Some(found) = words.iter().find_map(|w| fixed(w)) {
         return Some(found);
+    }
+    if words.iter().any(|w| !matches!(*w, "unsigned" | "signed" | "long" | "short" | "int" | "char")) {
+        return None;
     }
     let size = if has("char") {
         1
@@ -154,5 +162,8 @@ mod tests {
         assert!(from_source(src, "h", "s", ARM).unwrap().ret.is_void());
         assert_eq!(from_source(src, "k", "s", ARM).unwrap().ret.size, 4);
         assert!(from_source(src, "missing", "s", ARM).is_err());
+        let wide = "unsigned __int128 m(unsigned long a);\nNI unsigned q(int x);";
+        assert_eq!(from_source(wide, "m", "s", ARM).unwrap().ret.size, 16);
+        assert!(from_source(wide, "q", "s", ARM).is_err());
     }
 }

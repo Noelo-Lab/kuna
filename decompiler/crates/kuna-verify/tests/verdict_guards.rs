@@ -23,8 +23,8 @@ fn specs() -> String {
 }
 
 /// An object holding `.text` with the given functions, `(name, offset, size)`,
-/// and a call to the undefined `sink` at each offset in `calls`.
-fn object(name: &str, text: &[u8], functions: &[(&str, u64, u64)], calls: &[u64]) -> PathBuf {
+/// and a call to the undefined function named at each offset in `calls`.
+fn object(name: &str, text: &[u8], functions: &[(&str, u64, u64)], calls: &[(u64, &str)]) -> PathBuf {
     let mut obj = Object::new(BinaryFormat::Elf, Architecture::X86_64, Endianness::Little);
     let code = obj.add_section(Vec::new(), b".text".to_vec(), SectionKind::Text);
     obj.append_section_data(code, text, 16);
@@ -43,12 +43,18 @@ fn object(name: &str, text: &[u8], functions: &[(&str, u64, u64)], calls: &[u64]
     for &(f, at, size) in functions {
         sym(&mut obj, f, at, size, SymbolSection::Section(code));
     }
-    if !calls.is_empty() {
-        let sink = sym(&mut obj, "sink", 0, 0, SymbolSection::Undefined);
-        for &offset in calls {
-            obj.add_relocation(code, Relocation { offset, symbol: sink, addend: -4, flags: RelocationFlags::Elf { r_type: 4 } })
-                .unwrap();
-        }
+    let mut externs: Vec<(&str, object::write::SymbolId)> = Vec::new();
+    for &(offset, callee) in calls {
+        let symbol = match externs.iter().find(|(n, _)| *n == callee) {
+            Some(&(_, id)) => id,
+            None => {
+                let id = sym(&mut obj, callee, 0, 0, SymbolSection::Undefined);
+                externs.push((callee, id));
+                id
+            }
+        };
+        obj.add_relocation(code, Relocation { offset, symbol, addend: -4, flags: RelocationFlags::Elf { r_type: 4 } })
+            .unwrap();
     }
     let dir = std::env::temp_dir().join(format!("kuna-verify-guards-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
@@ -90,8 +96,21 @@ fn a_local_a_callee_receives_is_compared_at_the_call() {
         0x48, 0x83, 0xec, 0x18, 0xc7, 0x44, 0x24, 0x0c, 0x01, 0, 0, 0, 0x48, 0x8d, 0x7c, 0x24, 0x0c, 0xe8, 0, 0, 0, 0, 0x48,
         0x83, 0xc4, 0x18, 0xc3,
     ];
-    let give = object("give", &text, &[("give", 0, text.len() as u64)], &[18]);
+    let give = object("give", &text, &[("give", 0, text.len() as u64)], &[(18, "sink")]);
     let reports = check(&give, &["give"], &Options { runs: 16, ..Options::default() });
+    assert_eq!(reports[0].verdict, Verdict::Agrees(16), "{}", reports[0].render());
+}
+
+/// A local whose address an earlier call kept is compared at later calls:
+/// `save(&x); x = 1; consume();`.
+#[test]
+fn a_local_an_earlier_call_kept_is_compared_later() {
+    let text = [
+        0x48, 0x83, 0xec, 0x18, 0x48, 0x8d, 0x7c, 0x24, 0x0c, 0xe8, 0, 0, 0, 0, 0xc7, 0x44, 0x24, 0x0c, 0x01, 0, 0, 0, 0xe8,
+        0, 0, 0, 0, 0x48, 0x83, 0xc4, 0x18, 0xc3,
+    ];
+    let kept = object("kept", &text, &[("kept", 0, text.len() as u64)], &[(10, "save"), (23, "consume")]);
+    let reports = check(&kept, &["kept"], &Options { runs: 16, ..Options::default() });
     assert_eq!(reports[0].verdict, Verdict::Agrees(16), "{}", reports[0].render());
 }
 
@@ -110,6 +129,12 @@ fn an_abbreviated_decompile_is_checked() {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../tests/datatests/pointersub.xml");
     let res = kuna_verify::check_datatest(&path.to_string_lossy(), &[specs()], &Options { runs: 4, ..Options::default() });
     assert!(res.reports.iter().any(|r| r.function == "getOuter"), "{:?}", res.error);
+}
+
+#[test]
+fn a_missing_corpus_path_is_a_usage_error() {
+    let out = verify(&["corpus", "no-such-directory", "--jobs", "1"]);
+    assert_eq!(out.status.code(), Some(2), "{}", String::from_utf8_lossy(&out.stderr));
 }
 
 fn verify(args: &[&str]) -> std::process::Output {

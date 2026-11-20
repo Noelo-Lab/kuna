@@ -195,6 +195,14 @@ pub fn return_extension(env: &Env, proto: &kuna_decomp::fspec::FuncProto) -> Opt
 /// Input registers the body reads that no declared parameter covers (#875's
 /// shape). Reported, never a verdict: a custom ABI reads them legitimately.
 pub fn unclaimed_inputs(prog: &ConsoleProgram, env: &Env, fd: &Funcdata, claim: &Claim) -> Vec<String> {
+    unclaimed_input_storage(prog, env, fd, claim)
+        .iter()
+        .map(|s| format!("reads {}, which no declared parameter covers", s.name(prog)))
+        .collect()
+}
+
+/// The registers the body reads at entry that no claimed parameter covers.
+pub fn unclaimed_input_storage(prog: &ConsoleProgram, env: &Env, fd: &Funcdata, claim: &Claim) -> Vec<Storage> {
     let params: Vec<Storage> = claim.params.iter().flat_map(|(_, s)| s.pieces(prog)).collect();
     let sp = Storage::new(&env.register, env.sp.0, env.sp.1);
     let mut found: Vec<Storage> = Vec::new();
@@ -219,9 +227,6 @@ pub fn unclaimed_inputs(prog: &ConsoleProgram, env: &Env, fd: &Funcdata, claim: 
         }
     }
     found
-        .iter()
-        .map(|s| format!("reads {}, which no declared parameter covers", s.name(prog)))
-        .collect()
 }
 
 #[cfg(test)]

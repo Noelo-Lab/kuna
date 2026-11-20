@@ -74,6 +74,69 @@ fn write(state: &mut State, vn: &VarnodeData, val: u128) -> Result<(), Halt> {
     state.write(space(vn)?, vn.offset, vn.size, val)
 }
 
+/// Where a call to `target` really goes: through a thunk (a jump, a PLT
+/// slot's `jmp [got]`, an `endbr64` before it) to what it jumps to, when two
+/// runs from different states reach the same place without storing or
+/// calling. A target that is no thunk is its own answer.
+pub fn through_thunks(env: &Env, target: u64) -> u64 {
+    let mut t = target;
+    for _ in 0..4 {
+        let a = thunk_hop(env, t, 0);
+        let b = thunk_hop(env, t, 1);
+        match (a, b) {
+            (Some(x), Some(y)) if x == y && x != t => t = x,
+            _ => break,
+        }
+    }
+    t
+}
+
+/// Where the thunk at `at` jumps, run from state `run`; `None` when the code
+/// there stores, calls, tests or does not jump within a few instructions.
+fn thunk_hop(env: &Env, at: u64, run: u32) -> Option<u64> {
+    let mut state = State::new(env, 0x7fff_0000 + run);
+    let mut addr = at;
+    for _ in 0..3 {
+        let insn = lift(env, addr).ok()?;
+        for op in &insn.ops {
+            match op.opc {
+                OpCode::CPUI_BRANCH => {
+                    let t = op.ins.first()?;
+                    if space(t).ok()?.get_type() == spacetype::IPTR_CONSTANT {
+                        return None;
+                    }
+                    return Some(t.offset);
+                }
+                OpCode::CPUI_BRANCHIND => return Some(read(&mut state, op.ins.first()?).ok()? as u64),
+                OpCode::CPUI_LOAD => {
+                    let spc = mem_space(env, op.ins.first()?).ok()?;
+                    let ptr = read(&mut state, op.ins.get(1)?).ok()? as u64;
+                    let out = op.out.as_ref()?;
+                    let v = state.read(&spc, spc.wrap_offset(ptr), out.size).ok()?;
+                    write(&mut state, out, v).ok()?;
+                }
+                OpCode::CPUI_STORE
+                | OpCode::CPUI_CALL
+                | OpCode::CPUI_CALLIND
+                | OpCode::CPUI_CBRANCH
+                | OpCode::CPUI_CALLOTHER
+                | OpCode::CPUI_RETURN => return None,
+                opc => {
+                    let out = op.out.as_ref()?;
+                    let mut ins = Vec::with_capacity(op.ins.len());
+                    for vn in &op.ins {
+                        ins.push((read(&mut state, vn).ok()?, vn.size));
+                    }
+                    let v = eval(opc, out.size, &ins).ok()?;
+                    write(&mut state, out, v).ok()?;
+                }
+            }
+        }
+        addr = env.code.wrap_offset(addr.wrapping_add(insn.len));
+    }
+    None
+}
+
 fn mem_space(env: &Env, vn: &VarnodeData) -> Result<Rc<AddrSpace>, Halt> {
     vn.get_space_from_const(env.prog.arch().manage())
         .ok_or_else(|| Halt::Harness("bad LOAD/STORE space id".into()))
@@ -114,6 +177,9 @@ struct Machine<'e, 'p, 'c> {
     /// function's budget, which the decompiled side never spends on them.
     callee_pool: u64,
     in_callee: bool,
+    /// Argument-register bytes to give one call's callee instead of the
+    /// machine's own: kuna's, to see whether the callee cares.
+    with_args: Option<&'c WithArgs>,
     /// An in-image callee given a frame object fell back to the stub.
     guessed: bool,
     /// Temporaries this instruction copied a callee-saved entry value to:
@@ -166,8 +232,14 @@ impl<'e, 'p> Machine<'e, 'p, '_> {
         for st in &self.calls.pointer_regs {
             given.push(self.state.read_storage(&st.space, st.off, st.size)?);
         }
-        let r = Record { at, target, indirect, args: args.clone(), writes: self.state.writes_at_call(&given), effect: None, frame_reads: None };
+        let r = Record { at, target, indirect, args: args.clone(), writes: self.state.writes_at_call(&given), effect: None, frame_reads: None, live_in: None };
         crate::calls::record(&mut self.records, r)?;
+        if let Some(o) = self.with_args.filter(|o| o.call == Some(self.records.len() - 1)) {
+            let register = std::rc::Rc::clone(&self.env.register);
+            for &(off, b) in &o.bytes {
+                self.state.write(&register, off, 1, u128::from(b))?;
+            }
+        }
         Ok(args)
     }
 
@@ -301,12 +373,21 @@ impl<'e, 'p> Machine<'e, 'p, '_> {
         self.state.log = Some(Vec::new());
         if outer {
             self.state.frame_reads = Some(std::collections::BTreeSet::new());
+            self.state.live = Some(crate::state::LiveIn::new(self.calls.input_regs.clone()));
         }
         self.budget = if outer { steps + limit } else { budget.min(steps + limit) };
         self.in_callee = true;
         let ran = exec(self, target, Mode::Opaque, 1);
         self.in_callee = !outer;
         let reads = if outer { self.state.frame_reads.take() } else { None };
+        let live = if outer {
+            self.state.live.take().map(|mut l| {
+                l.instruction();
+                l.read.into_iter().collect::<Vec<_>>()
+            })
+        } else {
+            None
+        };
         self.budget = budget;
         if outer {
             self.callee_pool -= (self.steps - steps).min(self.callee_pool);
@@ -324,8 +405,9 @@ impl<'e, 'p> Machine<'e, 'p, '_> {
                     }
                 }
                 self.close_effect(at, call_sp);
-                if let (Some(r), Some(reads)) = (self.records.last_mut(), reads) {
-                    r.frame_reads = Some(reads);
+                if let Some(r) = self.records.last_mut() {
+                    r.frame_reads = reads;
+                    r.live_in = live;
                 }
                 let sp = self.sp_value()?;
                 self.state.forget_below(sp.min(call_sp.wrapping_add(u64::from(self.env.ret_slot))));
@@ -441,6 +523,12 @@ fn exec_body(m: &mut Machine, entry: u64, mode: Mode, depth: u32) -> Result<Exit
             m.copies.clear();
             m.state.read_saved |= !m.restoring.is_empty();
             m.restoring.clear();
+            if let Some(l) = m.state.live.as_mut() {
+                l.instruction();
+            }
+        }
+        if let Some(l) = m.state.live.as_mut() {
+            l.op();
         }
         let cur = Rc::clone(&insn);
         let op = &cur.ops[i];
@@ -586,7 +674,16 @@ fn exec_body(m: &mut Machine, entry: u64, mode: Mode, depth: u32) -> Result<Exit
                 let ptr = read(&mut m.state, arg(1)?)? as u64;
                 let at = spc.wrap_offset(AddrSpace::address_to_byte(ptr, spc.get_word_size()));
                 let val = arg(2)?;
+                if let Some(l) = m.state.live.as_mut() {
+                    l.op();
+                }
                 let v = read(&mut m.state, val)?;
+                if spc.get_index() == env.ram.get_index() && env.in_stack(at, u64::from(val.size)) {
+                    let unique = space(val).is_ok_and(|s| s.get_type() == spacetype::IPTR_INTERNAL).then_some(val.offset);
+                    if let Some(l) = m.state.live.as_mut() {
+                        l.spilled(unique);
+                    }
+                }
                 m.state.write(&spc, at, val.size, v)?;
                 if let Some(reg) = m.spill_of_entry(&spc, at, val) {
                     m.state.mark_saved(at, val.size, reg);
@@ -603,6 +700,9 @@ fn exec_body(m: &mut Machine, entry: u64, mode: Mode, depth: u32) -> Result<Exit
                 if opc == OpCode::CPUI_COPY {
                     let src = &op.ins[0];
                     if space(out).is_ok_and(|s| s.get_type() == spacetype::IPTR_INTERNAL) {
+                        if let Some(l) = m.state.live.as_mut() {
+                            l.copied(out.offset);
+                        }
                         if let Some(reg) = m.entry_value_of(src) {
                             m.copies.push((out.offset, reg, out.size));
                         }
@@ -618,8 +718,26 @@ fn exec_body(m: &mut Machine, entry: u64, mode: Mode, depth: u32) -> Result<Exit
 }
 
 /// Run the function at `entry` from the run's initial state.
-pub fn run<'e, 'p>(env: &'e Env<'p>, run: u32, entry: u64, budget: u64, calls: &Calls) -> Result<Outcome<'e, 'p>, Halt> {
+/// The argument-register bytes the callee of the `call`-th call gets.
+#[derive(Clone, Debug)]
+pub struct WithArgs {
+    /// The call by index, or `None` for the function's own entry.
+    pub call: Option<usize>,
+    pub bytes: Vec<(u64, u8)>,
+    /// Nonzero: other values in the registers stubs kill.
+    pub kill_salt: u32,
+}
+
+pub fn run<'e, 'p>(
+    env: &'e Env<'p>,
+    run: u32,
+    entry: u64,
+    budget: u64,
+    calls: &Calls,
+    with_args: Option<&WithArgs>,
+) -> Result<Outcome<'e, 'p>, Halt> {
     let mut m = Machine {
+        with_args,
         env,
         calls,
         state: State::new(env, run),
@@ -635,6 +753,13 @@ pub fn run<'e, 'p>(env: &'e Env<'p>, run: u32, entry: u64, budget: u64, calls: &
         restoring: Vec::new(),
         convention: Vec::new(),
     };
+    m.state.kill_salt = with_args.map_or(0, |o| o.kill_salt);
+    if let Some(o) = with_args.filter(|o| o.call.is_none()) {
+        let register = std::rc::Rc::clone(&env.register);
+        for &(off, b) in &o.bytes {
+            m.state.write(&register, off, 1, u128::from(b))?;
+        }
+    }
     let exit = exec(&mut m, entry, Mode::Top, 0)?;
     Ok(m.finish(matches!(exit, Exit::NoReturn)))
 }

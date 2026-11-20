@@ -95,8 +95,13 @@ fn the_fix_agrees_with_the_contract() {
     }
 }
 
+/// kuna prints `twice(void)` calling `sub_400020()`: it drops the two
+/// arguments `twice` passes straight through to `ins16`. The machine runs the
+/// callee for real, so the callee's reads show the drop.
 #[test]
-fn a_caller_runs_its_callee_stub() {
+fn a_dropped_pass_through_argument_differs() {
     let reports = check(&["twice"], &[], true);
-    assert_eq!(reports[0].verdict, Verdict::Agrees(64), "{}", reports[0].render());
+    let r = &reports[0];
+    assert!(matches!(r.verdict, Verdict::Differs { .. }), "{}", r.render());
+    assert!(r.render().contains("kuna's call passes nothing there"), "{}", r.render());
 }

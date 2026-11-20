@@ -252,8 +252,9 @@ fn compare_calls(prog: &ConsoleProgram, env: &Env, run: u32, calls: &Calls, m: &
             return differs(vec![format!("call {n}: the machine calls from {:#x}, kuna from {:#x}", mc.at, gc.at)], suspects);
         }
         let (mt, kt) = (code_target(env, mc.target), code_target(env, gc.target));
+        let (mt, kt) = (mt.map(|t| machine::through_thunks(env, t)), kt.map(|t| machine::through_thunks(env, t)));
         let both_code = mt.zip(kt).is_some_and(|(m, k)| env.is_code(m) && env.is_code(k));
-        let compared = if mc.indirect && gc.indirect { true } else { (mc.indirect || gc.indirect) && both_code };
+        let compared = (mc.indirect && gc.indirect) || (both_code && !calls.site(gc.at).resolved);
         if compared && mt != kt {
             let l = format!("call {n} at {:#x}: the machine calls {}, kuna calls {}", gc.at, target(mc.target), target(gc.target));
             return differs(vec![l], suspects);
@@ -354,13 +355,136 @@ fn tracked(prog: &ConsoleProgram, fd: &Funcdata, env: &mut Env) -> Vec<(i32, u64
     out
 }
 
+/// Runs that are repeated with other values in the storage kuna's C never
+/// assigns.
+const PERTURBED_RUNS: u32 = 16;
+
+/// What kuna's C never assigns but its IR reads: argument or scratch
+/// registers read at entry with no parameter for them, and registers a call
+/// kills that are read after it. Registers a caller leaves meaningful values
+/// in (segment bases, PIC and frame registers, the stack pointer) are not
+/// among them. `None` when there is none, so the second run is skipped.
+fn unassigned(
+    prog: &ConsoleProgram,
+    env: &Env,
+    fd: &Funcdata,
+    claim: &abi::Claim,
+    program: &crate::program::Program,
+    calls: &Calls,
+) -> Vec<Unassigned> {
+    let tracked: Vec<Storage> = env
+        .tracked
+        .iter()
+        .filter(|t| t.0 == env.register.get_index())
+        .map(|t| Storage::new(&env.register, t.1, t.2))
+        .collect();
+    let scratch: Vec<(u64, u32)> = calls.input_regs.iter().copied().chain(calls.default.killed.iter().copied()).collect();
+    let inputs: Vec<Storage> = abi::unclaimed_input_storage(prog, env, fd, claim)
+        .into_iter()
+        .filter(|s| !tracked.iter().any(|t| t.overlaps(s)) && !env.booleans.iter().any(|b| b.1 == s.off))
+        .filter(|s| scratch.iter().any(|&(o, n)| s.off >= o && s.off + u64::from(s.size) <= o + u64::from(n)))
+        .collect();
+    let killed = program.blocks.iter().flat_map(|b| &b.ops).any(|o| matches!(o.kind, crate::program::Kind::Indirect(crate::program::Effect::Killed)));
+    let salt = env.seed ^ 0x7a1e_5eed;
+    let mut out = Vec::new();
+    if killed {
+        out.push(Unassigned {
+            perturb: graph::Perturb { salt, inputs: Vec::new(), killed: true },
+            names: "a register a call kills, read after the call".to_string(),
+            entry: Vec::new(),
+        });
+    }
+    if !inputs.is_empty() && !fd.get_func_proto().is_input_locked() {
+        out.push(Unassigned {
+            perturb: graph::Perturb { salt, inputs: inputs.iter().map(|s| (s.off, s.size)).collect(), killed: false },
+            names: inputs.iter().map(|s| s.name(prog)).collect::<Vec<_>>().join(", "),
+            entry: inputs.iter().map(|s| (s.off, s.size)).collect(),
+        });
+    }
+    out
+}
+
+/// One second run of kuna's side with other values in storage its C never
+/// assigns. `entry`: registers read at entry, which the machine gets too, so
+/// one the binary itself reads is told apart from one only kuna reads.
+struct Unassigned {
+    perturb: graph::Perturb,
+    names: String,
+    entry: Vec<(u64, u32)>,
+}
+
+/// The bytes of the perturbed entry registers for one run.
+fn entry_bytes(env: &Env, u: &Unassigned, run: u32) -> Vec<(u64, u8)> {
+    let be = env.register.is_big_endian();
+    let mut out = Vec::new();
+    for &(off, size) in &u.entry {
+        let v = graph::scramble(u.perturb.salt, run, off) & mask(size);
+        for i in 0..u64::from(size) {
+            let shift = if be { u64::from(size) - 1 - i } else { i };
+            out.push((off + i, (v >> (8 * shift)) as u8));
+        }
+    }
+    out
+}
+
+/// The first observable two machine runs differ in.
+fn machine_differs(
+    prog: &ConsoleProgram,
+    env: &Env,
+    run: u32,
+    calls: &Calls,
+    claim: &abi::Claim,
+    a: &machine::Outcome,
+    b: &machine::Outcome,
+) -> Option<String> {
+    if a.noreturn != b.noreturn {
+        return Some("run differs in whether it returns".into());
+    }
+    if let Some(out) = claim.storage.as_ref().filter(|_| !a.noreturn) {
+        let (mut sa, mut sb) = (a.state.clone(), b.state.clone());
+        if let (Ok(x), Ok(y)) = (sa.read_storage(&out.space, out.off, out.size), sb.read_storage(&out.space, out.off, out.size)) {
+            if x != y {
+                return Some(format!("return is {} instead of {}", hex(y, out.size), hex(x, out.size)));
+            }
+        }
+    }
+    if let Some(l) = compare_calls(prog, env, run, calls, &a.calls, &b.calls).differs {
+        return Some(format!("calls differ: {}", l.join("; ")));
+    }
+    compare_writes(env, run, &a.state.writes(), &b.state.writes(), None).map(|d| format!("memory at exit differs: {d}"))
+}
+
+/// The first observable two runs of kuna's side differ in.
+fn depends(
+    prog: &ConsoleProgram,
+    env: &Env,
+    run: u32,
+    calls: &Calls,
+    claim: &abi::Claim,
+    a: &graph::Outcome,
+    b: &graph::Outcome,
+) -> Option<String> {
+    if a.noreturn != b.noreturn {
+        return Some("whether it returns".into());
+    }
+    if let (Some(out), Some(x), Some(y)) = (&claim.storage, a.ret, b.ret) {
+        if x & mask(out.size) != y & mask(out.size) {
+            return Some(format!("its return {} or {}", hex(x, out.size), hex(y, out.size)));
+        }
+    }
+    if let Some(l) = compare_calls(prog, env, run, calls, &a.calls, &b.calls).differs {
+        return Some(l.join("; "));
+    }
+    compare_writes(env, run, &a.writes, &b.writes, None).map(|d| format!("memory at exit {d}"))
+}
+
 /// Whether the machine overwrote the return address the function started
 /// with: past the frame C defines, as an overrun of a local does.
 fn smashed(env: &Env, ms: &State) -> bool {
     let Some(ret) = env.ret_addr else { return false };
     env.tracked
         .iter()
-        .filter(|&&(_, _, _, v)| v == ret)
+        .filter(|&&(sp, _, _, v)| v == ret && sp == env.ram.get_index())
         .filter_map(|&(sp, off, size, _)| env.prog.arch().manage().get_space(sp).map(|s| (Rc::clone(s), off, size)))
         .any(|(s, off, size)| ms.wrote(&s, off, size))
 }
@@ -427,10 +551,12 @@ pub fn check_function(prog: &ConsoleProgram, fd: &Funcdata, contract: Option<&Co
     let mut unknown: Option<Halt> = None;
     let mut diverged: Option<&'static str> = None;
     let mut call_suspects: Vec<String> = Vec::new();
+    let perturb = unassigned(prog, &env, fd, &claim, &program, &calls);
+    let mut perturbed_runs = 0u32;
     for run in 0..opts.runs {
-        let m = machine::run(&env, run, entry, opts.budget, &calls);
+        let m = machine::run(&env, run, entry, opts.budget, &calls, None);
         let replay: &[Record] = m.as_ref().map(|mo| mo.calls.as_slice()).unwrap_or(&[]);
-        let g = graph::run(&env, &program, run, opts.budget, &calls, replay);
+        let g = graph::run(&env, &program, run, opts.budget, &calls, replay, None);
         let (mo, go) = match (m, g) {
             (Err(Halt::Trap(t)), Err(Halt::Trap(_))) => {
                 trapped.get_or_insert(t);
@@ -491,7 +617,19 @@ pub fn check_function(prog: &ConsoleProgram, fd: &Funcdata, contract: Option<&Co
                 call_suspects.push(s);
             }
         }
-        let cc = compare_calls(prog, &env, run, &calls, &mo.calls, &go.calls);
+        let mut cc = compare_calls(prog, &env, run, &calls, &mo.calls, &go.calls);
+        if let Some(ci) = go.call_input.as_ref().filter(|_| cc.differs.is_none() && cc.declared.is_none()) {
+            if let Ok(alt) = machine::run(&env, run, entry, opts.budget, &calls, Some(&ci.with)) {
+                if let Some(d) = machine_differs(prog, &env, run, &calls, &claim, &mo, &alt) {
+                    let l = format!("{}; given kuna's arguments, the machine's {d}", ci.msg);
+                    if ci.locked {
+                        cc.suspects.push(format!("{l}; the callee's declared prototype does not take it"));
+                    } else {
+                        cc.differs = Some(vec![l]);
+                    }
+                }
+            }
+        }
         let canary = cc.suspects.iter().any(|s| s.starts_with("canary: "));
         if canary {
             unknown.get_or_insert(Halt::Undefined("a call the model let write the frame changed the stack canary".into()));
@@ -561,6 +699,29 @@ pub fn check_function(prog: &ConsoleProgram, fd: &Funcdata, contract: Option<&Co
         }
         if let Some(w) = upper.as_mut().filter(|_| !mo.noreturn) {
             w.observe(&mut ms);
+        }
+        if perturbed_runs < PERTURBED_RUNS && !undefined && !perturb.is_empty() {
+            perturbed_runs += 1;
+            let replay: &[Record] = mo.calls.as_slice();
+            for u in &perturb {
+                let Ok(gp) = graph::run(&env, &program, run, opts.budget, &calls, replay, Some(&u.perturb)) else { continue };
+                let Some(d) = depends(prog, &env, run, &calls, &claim, &go, &gp) else { continue };
+                {
+                    let with = if u.entry.is_empty() {
+                        machine::WithArgs { call: None, bytes: Vec::new(), kill_salt: 0x5a5a_5a5a }
+                    } else {
+                        machine::WithArgs { call: None, bytes: entry_bytes(&env, u, run), kill_salt: 0 }
+                    };
+                    let base = machine::run(&env, run, entry, opts.budget, &calls, None);
+                    let alt = machine::run(&env, run, entry, opts.budget, &calls, Some(&with));
+                    match (base, alt) {
+                        (Ok(b), Ok(a)) if machine_differs(prog, &env, run, &calls, &claim, &b, &a).is_none() => {}
+                        _ => continue,
+                    }
+                }
+                let lines = vec![format!("kuna's result depends on {}, which its C never assigns: {d}", u.names)];
+                return finish(Verdict::Differs { run, of: opts.runs }, differs(lines), call_suspects);
+            }
         }
         agreed += 1;
     }

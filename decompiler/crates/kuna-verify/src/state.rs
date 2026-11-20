@@ -418,10 +418,77 @@ pub struct State<'e, 'p> {
     /// Code other than the function's own is running (a callee run for real
     /// or followed); what it writes in the frame is not the function's.
     pub in_callee_code: bool,
+    /// While a callee runs for real: the argument-register bytes it reads
+    /// before writing them.
+    pub live: Option<LiveIn>,
+    /// Frame objects a call received a pointer to so far.
+    passed_objects: Vec<(u64, u64)>,
+    /// Varies what a stub leaves in the registers it kills.
+    pub kill_salt: u32,
     /// Frame bytes last written by such code: a frame object's comparison at
     /// a call leaves them out, as a helper's leftovers in a buffer C never
     /// initialized.
     callee_written: BTreeSet<u64>,
+}
+
+/// The argument-register bytes a callee run for real reads before writing
+/// them: what it takes from its caller. A read whose value only goes to a
+/// stack store (a spill, a `push`, a varargs prologue) is not one.
+#[derive(Clone, Debug)]
+pub struct LiveIn {
+    regs: Vec<(u64, u32)>,
+    pub read: BTreeMap<u64, u8>,
+    written: BTreeSet<u64>,
+    /// Reads by the current op, committed when the next op starts.
+    last: Vec<(u64, u8)>,
+    /// Reads a COPY moved into a temporary this instruction, by its offset.
+    pending: Vec<(u64, Vec<(u64, u8)>)>,
+}
+
+impl LiveIn {
+    pub fn new(regs: Vec<(u64, u32)>) -> Self {
+        LiveIn { regs, read: BTreeMap::new(), written: BTreeSet::new(), last: Vec::new(), pending: Vec::new() }
+    }
+
+    fn saw(&mut self, off: u64, b: u8) {
+        if !self.written.contains(&off)
+            && !self.read.contains_key(&off)
+            && self.regs.iter().any(|&(o, n)| off >= o && off < o + u64::from(n))
+        {
+            self.last.push((off, b));
+        }
+    }
+
+    /// An op starts: what the previous op read is an input.
+    pub fn op(&mut self) {
+        for (off, b) in self.last.drain(..) {
+            self.read.entry(off).or_insert(b);
+        }
+    }
+
+    /// The current op copied what it read into temporary `u`.
+    pub fn copied(&mut self, u: u64) {
+        let reads = std::mem::take(&mut self.last);
+        self.pending.push((u, reads));
+    }
+
+    /// The current op stored what it read, or temporary `u`, to the stack.
+    pub fn spilled(&mut self, u: Option<u64>) {
+        self.last.clear();
+        if let Some(u) = u {
+            self.pending.retain(|(t, _)| *t != u);
+        }
+    }
+
+    /// An instruction ends: copies it did not spill are inputs.
+    pub fn instruction(&mut self) {
+        self.op();
+        for (_, reads) in std::mem::take(&mut self.pending) {
+            for (off, b) in reads {
+                self.read.entry(off).or_insert(b);
+            }
+        }
+    }
 }
 
 /// One thing a callee run for real did to memory.
@@ -475,6 +542,9 @@ impl<'e, 'p> State<'e, 'p> {
             frame_reads: None,
             in_callee_code: false,
             callee_written: BTreeSet::new(),
+            live: None,
+            passed_objects: Vec::new(),
+            kill_salt: 0,
         }
     }
 
@@ -537,7 +607,11 @@ impl<'e, 'p> State<'e, 'p> {
                 self.regs[i] = self.env.initial_byte(self.run, space, off);
                 self.flags[i] |= PRESENT;
             }
-            return self.regs[i];
+            let b = self.regs[i];
+            if let Some(l) = self.live.as_mut() {
+                l.saw(off, b);
+            }
+            return b;
         }
         let found = if self.is_unique(space) {
             self.unique.get(&off).copied()
@@ -565,6 +639,9 @@ impl<'e, 'p> State<'e, 'p> {
             self.grow(i + 1);
             self.regs[i] = b;
             self.flags[i] |= PRESENT | WRITTEN;
+            if let Some(l) = self.live.as_mut() {
+                l.written.insert(off);
+            }
         } else if self.is_unique(space) {
             self.unique.insert(off, b);
         } else {
@@ -648,13 +725,19 @@ impl<'e, 'p> State<'e, 'p> {
         Writes { bytes, epoch: self.epoch, escaped: self.escaped.clone(), skip: BTreeSet::new(), objects: Vec::new() }
     }
 
-    /// [`Self::writes`] at a call passing `args`, plus the frame objects the
-    /// call receives a pointer to: the callee can read them.
-    pub fn writes_at_call(&self, args: &[u128]) -> Writes {
+    /// [`Self::writes`] at a call passing `args`, plus the frame objects this
+    /// call or an earlier one received a pointer to: a callee can read them,
+    /// directly or through a pointer an earlier callee kept.
+    pub fn writes_at_call(&mut self, args: &[u128]) -> Writes {
         let mut w = self.writes();
         let ram = self.env.ram.get_index();
         for &a in args {
-            let Some((start, end)) = self.env.stack_object(a as u64).filter(|_| self.env.in_stack(a as u64, 1)) else { continue };
+            let Some(o) = self.env.stack_object(a as u64).filter(|_| self.env.in_stack(a as u64, 1)) else { continue };
+            if !self.passed_objects.contains(&o) {
+                self.passed_objects.push(o);
+            }
+        }
+        for &(start, end) in &self.passed_objects {
             if w.objects.contains(&(start, end)) {
                 continue;
             }
@@ -694,7 +777,7 @@ impl<'e, 'p> State<'e, 'p> {
         let register = Rc::clone(&self.env.register);
         for &(off, size) in killed {
             for i in 0..u64::from(size) {
-                let b = self.env.killed_byte(self.run, call, off + i);
+                let b = self.env.killed_byte(self.run ^ self.kill_salt, call, off + i);
                 self.put(&register, off + i, b);
             }
         }

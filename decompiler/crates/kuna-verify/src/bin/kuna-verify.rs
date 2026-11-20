@@ -171,18 +171,20 @@ fn exit_code(rows: &[Row], file_errors: usize) -> ExitCode {
     }
 }
 
-fn collect(path: &Path, out: &mut Vec<PathBuf>) {
+fn collect(path: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
     if path.is_dir() {
-        let mut entries: Vec<PathBuf> = std::fs::read_dir(path)
-            .map(|d| d.filter_map(|e| e.ok().map(|e| e.path())).collect())
-            .unwrap_or_default();
+        let mut entries = Vec::new();
+        for e in std::fs::read_dir(path).map_err(|e| format!("{}: {e}", path.display()))? {
+            entries.push(e.map_err(|e| format!("{}: {e}", path.display()))?.path());
+        }
         entries.sort();
         for e in entries {
-            collect(&e, out);
+            collect(&e, out)?;
         }
     } else if path.extension().is_some_and(|x| x == "xml") {
         out.push(path.to_path_buf());
     }
+    Ok(())
 }
 
 /// One datatest file's verdicts.
@@ -287,7 +289,14 @@ fn run_corpus(a: &Args) -> Result<ExitCode, String> {
     }
     let mut files = Vec::new();
     for p in &a.positional {
-        collect(Path::new(p), &mut files);
+        let path = Path::new(p);
+        if !path.exists() {
+            return Err(format!("{p}: no such file or directory"));
+        }
+        collect(path, &mut files)?;
+    }
+    if files.is_empty() {
+        return Err("no datatest .xml files under the given paths".to_string());
     }
     let started = Instant::now();
     let jobs = a

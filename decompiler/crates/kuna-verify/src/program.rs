@@ -43,6 +43,9 @@ pub enum Operand {
 pub struct Arg {
     pub op: Operand,
     pub size: u32,
+    /// Where the varnode lives, for a CALL's inputs: the storage a callee
+    /// reads the argument from.
+    pub storage: Option<Storage>,
 }
 
 /// Where a written varnode lives: its slot, its storage, and the memory a later
@@ -172,8 +175,8 @@ impl Compiler<'_> {
     }
 
     fn arg(&mut self, vn: Option<VarnodeId>) -> Arg {
-        let Some(id) = vn else { return Arg { op: Operand::Missing, size: 0 } };
-        let Some(v) = self.fd.vbank().get(id) else { return Arg { op: Operand::Missing, size: 0 } };
+        let Some(id) = vn else { return Arg { op: Operand::Missing, size: 0, storage: None } };
+        let Some(v) = self.fd.vbank().get(id) else { return Arg { op: Operand::Missing, size: 0, storage: None } };
         let size = v.get_size() as u32;
         let op = if size > MAX_SIZE {
             Operand::TooWide
@@ -195,7 +198,8 @@ impl Compiler<'_> {
                 None => Operand::Missing,
             }
         };
-        Arg { op, size }
+        let storage = (!v.is_constant()).then(|| Storage::at(v.get_addr(), size)).flatten();
+        Arg { op, size, storage }
     }
 
     fn out(&mut self, vn: Option<VarnodeId>) -> Option<Out> {

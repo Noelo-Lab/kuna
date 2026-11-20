@@ -31,10 +31,37 @@ pub struct Outcome {
     pub writes: Writes,
     /// It read a byte of its own frame that nothing wrote.
     pub read_uninitialized: bool,
+    /// The first call where a callee the machine ran for real read an
+    /// argument register kuna's call does not pass the same value in.
+    pub call_input: Option<CallInput>,
+}
+
+/// A call whose callee reads argument-register bytes kuna passes otherwise:
+/// the report, and kuna's bytes (a stand-in where it passes none) for a
+/// machine run that gives them to the callee.
+#[derive(Clone, Debug)]
+pub struct CallInput {
+    pub msg: String,
+    pub with: crate::machine::WithArgs,
+    /// The callee's prototype is declared: kuna's call follows it.
+    pub locked: bool,
+}
+
+/// Storage kuna's C never assigns, given other values for a second run: the
+/// registers it reads at entry without a parameter for them, and registers a
+/// call kills that it reads afterwards without a call output for them.
+#[derive(Clone, Debug)]
+pub struct Perturb {
+    pub salt: u64,
+    pub inputs: Vec<(u64, u32)>,
+    /// Also give registers a call kills, read after it, other values.
+    pub killed: bool,
 }
 
 struct Run<'e, 'p, 'c> {
     calls: &'c Calls,
+    perturb: Option<&'c Perturb>,
+    call_input: Option<CallInput>,
     /// The machine's calls, whose recorded effects this side replays.
     replay: &'c [Record],
     state: State<'e, 'p>,
@@ -58,11 +85,103 @@ impl Run<'_, '_, '_> {
             Operand::Slot(slot, at) => self.values[*slot]
                 .ok_or_else(|| Halt::Harness(format!("read of {at} before its definition"))),
             Operand::Memory(st) => self.state.read_storage(&st.space, st.off, a.size),
-            Operand::Input(st) => self.initial.read_storage(&st.space, st.off, a.size),
+            Operand::Input(st) => match self.perturb.filter(|p| self.unassigned(p, st)) {
+                Some(p) => Ok(scramble(p.salt, self.state.run, st.off) & mask(a.size)),
+                None => self.initial.read_storage(&st.space, st.off, a.size),
+            },
             Operand::Free(st) => self.state.read_storage(&st.space, st.off, a.size),
             Operand::TooWide => Err(Halt::Unsupported(format!("{}-byte varnode", a.size))),
             Operand::Missing => Err(Halt::Harness("op lacks an input".into())),
         }
+    }
+
+    /// Whether input storage `st` is one kuna's C never assigns.
+    fn unassigned(&self, p: &Perturb, st: &crate::storage::Storage) -> bool {
+        st.space.get_index() == self.state.env.register.get_index()
+            && p.inputs.iter().any(|&(o, n)| st.off < o + u64::from(n) && o < st.off + u64::from(st.size))
+    }
+
+    /// Compare what a callee the machine ran for real read in argument
+    /// registers with what kuna's call passes there.
+    fn check_inputs(&mut self, op: &Op, k: usize) -> Result<(), Halt> {
+        let Some(live) = self.replay.get(k).filter(|r| r.at == op.at).and_then(|r| r.live_in.clone()) else { return Ok(()) };
+        let env = self.state.env;
+        let reg = env.register.get_index();
+        let be = env.register.is_big_endian();
+        let params = &self.calls.site(op.at).input_storage;
+        let int_regs = &self.calls.int_regs;
+        let mut next = 0usize;
+        let mut placed: Vec<Option<crate::storage::Storage>> = Vec::with_capacity(op.ins.len());
+        for (k, a) in op.ins.iter().enumerate().skip(1) {
+            let entry_reg = match &a.op {
+                crate::program::Operand::Input(st) => int_regs.iter().position(|r| r.covers(st)).map(|i| (i, st.clone())),
+                _ => None,
+            };
+            let st = match (params.get(k - 1).cloned().flatten(), entry_reg) {
+                (Some(p), _) => Some(p),
+                (None, Some((i, st))) => {
+                    next = next.max(i + 1);
+                    Some(st)
+                }
+                (None, None) => {
+                    let r = int_regs.get(next).cloned();
+                    next += 1;
+                    r
+                }
+            };
+            if let Some(i) = st.as_ref().and_then(|s| int_regs.iter().position(|r| r.covers(s))) {
+                next = next.max(i + 1);
+            }
+            placed.push(st);
+        }
+        let mut bytes = Vec::new();
+        let mut first = None;
+        for (off, m) in live {
+            let (o, n) = self.calls.input_regs.iter().copied().find(|&(o, n)| off >= o && off < o + u64::from(n)).unwrap_or((off, 1));
+            let mut kuna = None;
+            let mut passes_part = false;
+            'inputs: for (a, st) in op.ins.iter().skip(1).zip(&placed) {
+                let Some(st) = st.as_ref() else { continue };
+                let pieces = st.pieces(env.prog);
+                let mut low = 0u64;
+                for p in pieces.iter().rev() {
+                    let here = low;
+                    low += u64::from(p.size);
+                    if p.space.get_index() != reg {
+                        continue;
+                    }
+                    passes_part |= p.off < o + u64::from(n) && o < p.off + u64::from(p.size);
+                    if off >= p.off && off < p.off + u64::from(p.size) {
+                        let v = self.value(a)?;
+                        let pos = if be { p.off + u64::from(p.size) - 1 - off } else { off - p.off };
+                        kuna = Some((v >> (8 * (here + pos))) as u8);
+                        break 'inputs;
+                    }
+                }
+            }
+            if kuna == Some(m) || (kuna.is_none() && passes_part) {
+                continue;
+            }
+            bytes.push((off, kuna.unwrap_or_else(|| !m)));
+            if first.is_none() {
+                let name = crate::storage::Storage::new(&env.register, o, n).name(env.prog);
+                let target = self.calls.site(op.at).target.map_or_else(|| "?".to_string(), |t| format!("{t:#x}"));
+                let what = match kuna {
+                    Some(kb) => format!("kuna passes 0x{kb:02x} there"),
+                    None => "kuna's call passes nothing there".to_string(),
+                };
+                first = Some(format!(
+                    "call at {:#x} to {target}: the callee reads {name} (byte {:#x}) = 0x{m:02x}; {what}",
+                    op.at,
+                    off - o
+                ));
+            }
+        }
+        if let (Some(msg), None) = (first, self.call_input.as_ref()) {
+            let locked = self.calls.site(op.at).locked;
+            self.call_input = Some(CallInput { msg, with: crate::machine::WithArgs { call: Some(k), bytes, kill_salt: 0 }, locked });
+        }
+        Ok(())
     }
 
     fn input(&mut self, op: &Op, k: usize) -> Result<u128, Halt> {
@@ -152,12 +271,13 @@ impl Run<'_, '_, '_> {
                 }
                 let indirect = direct.is_none();
                 let writes = self.state.writes_at_call(&args);
-                crate::calls::record(&mut self.records, Record { at, target, indirect, args, writes, effect: None, frame_reads: None })?;
+                crate::calls::record(&mut self.records, Record { at, target, indirect, args, writes, effect: None, frame_reads: None, live_in: None })?;
                 let site = self.calls.site(at);
                 if site.noreturn {
                     return Ok(Flow::NoReturn);
                 }
                 let k = self.records.len() - 1;
+                self.check_inputs(op, k)?;
                 let real = self.replay.get(k).filter(|r| r.at == at).and_then(|r| r.effect.clone());
                 match real {
                     Some(effect) => self.state.replay(&effect),
@@ -220,6 +340,10 @@ impl Run<'_, '_, '_> {
             Kind::Indirect(effect) => {
                 let v = match effect {
                     Effect::Keep => self.input(op, 0)?,
+                    Effect::Killed if self.perturb.is_some_and(|p| p.killed) => {
+                        let (size, slot) = op.out.as_ref().map_or((0, 0), |o| (o.size, o.slot as u64));
+                        scramble(self.perturb.map_or(0, |p| p.salt), self.state.run, op.at ^ (slot << 40) ^ 0x5bd1_e995) & mask(size)
+                    }
                     Effect::Killed | Effect::Memory => self.stored(op)?,
                 };
                 self.set_out(op, v)?;
@@ -256,6 +380,7 @@ impl Run<'_, '_, '_> {
             unmatched_switch: self.unmatched_switch,
             writes: self.state.writes(),
             read_uninitialized: self.state.read_uninitialized,
+            call_input: self.call_input,
             calls: self.records,
             noreturn,
         }
@@ -263,12 +388,31 @@ impl Run<'_, '_, '_> {
 }
 
 /// Run the decompiled function from its entry block on the run's initial state.
-pub fn run(env: &Env, program: &Program, run: u32, budget: u64, calls: &Calls, replay: &[Record]) -> Result<Outcome, Halt> {
+/// A value for storage kuna never assigns, other than the run's own.
+pub(crate) fn scramble(salt: u64, run: u32, key: u64) -> u128 {
+    let mut z = salt ^ u64::from(run).wrapping_mul(0x9e37_79b9_7f4a_7c15) ^ key.wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    z ^= z >> 31;
+    u128::from(z) | (u128::from(z.rotate_left(17)) << 64)
+}
+
+pub fn run(
+    env: &Env,
+    program: &Program,
+    run: u32,
+    budget: u64,
+    calls: &Calls,
+    replay: &[Record],
+    perturb: Option<&Perturb>,
+) -> Result<Outcome, Halt> {
     if program.blocks.is_empty() {
         return Err(Halt::Harness("no basic blocks".into()));
     }
     let mut r = Run {
         calls,
+        perturb,
+        call_input: None,
         replay,
         state: State::new(env, run),
         initial: State::new(env, run),
