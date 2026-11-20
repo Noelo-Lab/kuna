@@ -104,8 +104,8 @@ impl Section {
 /// Mach-O text and stub sections, and a Windows driver's `PAGE*`/`INIT`.
 pub(crate) fn toolchain_code_section(name: &str) -> bool {
     name.starts_with(".plt")
-        || name.starts_with(".text")
-        || matches!(name, ".iplt" | ".init" | ".fini" | "__text" | "__stubs" | "__stub_helper" | "__auth_stubs" | "INIT")
+        || name.to_ascii_lowercase().contains("text")
+        || matches!(name, ".iplt" | ".init" | ".fini" | "__stubs" | "__stub_helper" | "__auth_stubs" | "INIT")
         || name.starts_with("PAGE")
 }
 
@@ -586,7 +586,8 @@ fn large_code_sections(arch: &Architecture) -> Vec<(u64, u64)> {
 /// enters a candidate interpreter section other than its own -- the entry
 /// stub a protector leaves at the original address, or the SDK-marked
 /// region's `push imm; call vm_entry` -- at code that is not an import thunk.
-/// Returns the first such target.
+/// A call to a known function is passed over: the exploration summarizes it
+/// rather than entering it.  Returns the first such target.
 pub fn detect_vm_entry(target: &ArchTarget<'_>, entry: u64) -> Option<u64> {
     if !target.sections.iter().any(|s| s.vm_candidate() && Some((s.start, s.end)) != target.entry_section) {
         return None;
@@ -610,7 +611,8 @@ pub fn detect_vm_entry(target: &ArchTarget<'_>, entry: u64) -> Option<u64> {
                     let Some(t) = op.ins.first() else { continue };
                     match t.space.as_ref().map(classify_space) {
                         Some(Space::Ram) => {
-                            if foreign(t.offset) {
+                            let summarized = op.opc == OpCode::CPUI_CALL && t.offset != entry && target.is_function_entry(t.offset);
+                            if foreign(t.offset) && !summarized {
                                 return Some(t.offset);
                             }
                             if op.opc != OpCode::CPUI_CALL && target.section_of(t.offset).is_some() {

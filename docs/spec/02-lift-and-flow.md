@@ -3921,9 +3921,10 @@ candidate interpreter section other than the one holding the entry, and the
 function's direct native flow reaches into such a section. A candidate is a
 loaded executable section of at least 0x10000 bytes that the toolchain does
 not emit for every program (`kuna_pushan.rs (toolchain_code_section)`): not
-an ELF `.plt*`, `.iplt`, `.init`, `.fini` or any `.text*` section, not Mach-O
-`__text`, `__stubs`, `__stub_helper` or `__auth_stubs`, and not a Windows
-driver's `PAGE*` or `INIT`. A large library's PLT (PyQt5's QtWidgets has an
+an ELF `.plt*`, `.iplt`, `.init` or `.fini`, not a section whose name contains
+`text` in either case (`.text.unlikely`, the kernel's `.init.text`, Mach-O
+`__text`, PE `.textbss`), not Mach-O `__stubs`, `__stub_helper` or
+`__auth_stubs`, and not a Windows driver's `PAGE*` or `INIT`. A large library's PLT (PyQt5's QtWidgets has an
 89 KiB `.plt`) and a kernel module's cold split (the `xe` driver's 69 KiB
 `.text.unlikely`) would otherwise match every function that calls through the
 PLT or jumps to its cold part. The names come from the loader
@@ -3934,7 +3935,11 @@ walks fall-throughs, direct jumps and both sides of conditionals from the
 entry, without following calls, for up to 4096 instructions. The first branch
 or call whose target lies in a candidate section other than the entry's is the
 VM entry, unless the target is an import thunk, code whose first instruction
-after an optional `endbr` is an indirect jump (`import_thunk`). That covers
+after an optional `endbr` is an indirect jump (`import_thunk`), or the
+transfer is a call to a known function entry: the exploration summarizes such
+a call instead of entering it, so it could never reach an interpreter that way
+and a program with an unrecognised second code section of its own functions
+is not explored for calling them. That covers
 both the stub a protector leaves at a whole-function entry and an SDK-marked
 region's `push imm; call vm_entry`. The sections come from the loader
 (`ArchTarget::new`, falling back to segments), so a raw image or an XML

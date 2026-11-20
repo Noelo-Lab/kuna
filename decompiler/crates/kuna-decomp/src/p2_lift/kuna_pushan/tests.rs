@@ -45,7 +45,7 @@ fn character_code_array_needs_its_second_element_referenced() {
 
 #[test]
 fn toolchain_code_sections_are_no_interpreter_candidates() {
-    for name in [".plt", ".plt.sec", ".plt.got", ".iplt", ".init", ".fini", ".text", ".text.unlikely", ".text.hot", "__text", "__stubs", "__stub_helper", "__auth_stubs", "PAGE", "PAGELK", "INIT"] {
+    for name in [".plt", ".plt.sec", ".plt.got", ".iplt", ".init", ".fini", ".text", ".text.unlikely", ".text.hot", ".init.text", ".exit.text", ".textbss", "__text", "__TEXT_EXEC", "__stubs", "__stub_helper", "__auth_stubs", "PAGE", "PAGELK", "INIT"] {
         assert!(toolchain_code_section(name), "{name}");
     }
     for name in [".vmp0", ".vmp1", ".themida", ".QzR0", ".j7d0", ".JFk0", ".boot", "", "        "] {
