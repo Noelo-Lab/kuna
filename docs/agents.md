@@ -61,6 +61,11 @@ They use temporary state directories, not the live pipeline inventory.
 CI also runs `make lint`, treating Clippy warnings as errors in the CLI and the
 base and numeric libraries, not the whole workspace or their test targets.
 
+On a pull request CI runs `make fmt-new`: every `.rs` file the PR adds must be
+`rustfmt`-clean (`rustfmt <file>`; the style is the root `rustfmt.toml`).
+Existing files are not checked, since most of the tree predates rustfmt; do not
+reformat code you are not otherwise changing.
+
 The Rust test profile uses optimization level 1 for real-image tests, with debug
 assertions and integer-overflow checks enabled. Ordinary development builds retain
 Cargo's unoptimized default.

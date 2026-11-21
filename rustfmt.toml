@@ -1,0 +1,3 @@
+# The project formatting style: stable rustfmt defaults. Its presence also stops a
+# personal ~/.rustfmt.toml from changing what `make fmt` / `make fmt-new` produce.
+edition = "2021"
