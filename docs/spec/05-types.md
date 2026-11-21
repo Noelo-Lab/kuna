@@ -2101,7 +2101,12 @@ inline `newobject` into, such as `mallocgcSmallScanNoHeaderSC4`; the suffix is
 held to plain alphanumerics) — the descriptor argument must be a constant
 address (or one `COPY` away — the lifted `lea`), must point at the START of a
 `type:<name>` data symbol, and `<name>` must be held by the type factory as a
-complete named record (`TYPE_STRUCT`, non-zero size); a mallocgc-family site
+complete named record (`TYPE_STRUCT`, non-zero size). The symbol spells a
+named type with its full import path (`type:internal/poll.FD`) and the
+harvest interns the reflection spelling (`poll.FD`), so the directory part of
+the named type's own qualifier, before any type arguments, is dropped first
+(`decompiler/crates/kuna-decomp/src/p5_types/kuna_gonewtype.rs (harvest_spelling)`); a composite spelling keeps its path
+and refuses below. A mallocgc-family site
 must additionally state a constant size equal to the record's. The site is
 then locked to `<name> *` at the output's width. Pointer, array and primitive
 descriptor spellings

@@ -2263,7 +2263,8 @@ mod tests {
         // and kuna-postinc / a pointer step after its dereference prints *p++
         // and kuna-returndupcalls / gcc -Os cross-jumped call tails split per path
         // and kuna-panicloc / a Rust panic Location record is typed and named after its position (option panicloc)
-        assert_eq!(count, 845, "corpus file count drifted");
+        // and kuna-gotypenames / Go type descriptors and itabs named as the linker spells them, go1.16 on
+        assert_eq!(count, 846, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4897,
-    4897
+    4903,
+    4903
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -3664,6 +3664,12 @@
     "data:gotonext #7: off, the leaving case and the loop exits jump to labels",
     "data:gotonext #8: 13 gotos with the option off, 3 by default",
     "data:gotonext #9: 12 labels with the option off, 3 by default",
+    "data:gotypenames #1: go1.16 names the itab of the interface conversion",
+    "data:gotypenames #2: go1.16 names the descriptors printany compares against",
+    "data:gotypenames #3: go1.17 interns the allocated struct with its fields",
+    "data:gotypenames #4: go1.26 spells the allocated type with its import path",
+    "data:gotypenames #5: go1.26 spells the itab with its import path",
+    "data:gotypenames #6: off passes a bare descriptor address",
     "data:guarded SPARC stack read: capture stays inside success branch",
     "data:guarded SPARC stack read: saved value reaches consumer",
     "data:guarded SPARC stack read: the capture never precedes the success branch",

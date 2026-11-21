@@ -12,6 +12,8 @@
 //! header; that form is read through the image, because it is what tells a
 //! go1.16 image (stack ABI0 on x86-64) from a go1.17 one (register ABI). An
 //! image with no blob at all (before go1.13) is placed by its pclntab format.
+//! [`go_version`] gives the blob's release alone, for the readers whose
+//! metadata encodings changed before go1.18 (the `gotypes` name records).
 //!
 //! The blob is also how a Go **PE** is recognized at all. Go's linker gives
 //! ELF and Mach-O a build-info section of their own, but on Windows it merges
@@ -141,6 +143,13 @@ pub fn blob_is_buildinfo<'a>(blob: &[u8], read: impl FnMut(u64, usize) -> Option
     stated_release(blob, read).is_some()
 }
 
+/// The toolchain version from a build-info blob of either form: inline
+/// strings, or the pre-go1.18 pointer to a Go string header, resolved through
+/// `read`.
+pub fn go_version<'a>(blob: &[u8], read: impl FnMut(u64, usize) -> Option<&'a [u8]>) -> Option<(u16, u16)> {
+    stated_release(blob, read).flatten()
+}
+
 /// The build-info blob of a Go **PE**: the first 16-byte-aligned magic in the
 /// first writable initialized-data section whose header validates — the
 /// section `debug/buildinfo`'s `peExe.DataStart` reads. The scan touches one
@@ -260,6 +269,7 @@ mod tests {
         };
         assert!(blob_is_buildinfo(&b, read));
         assert_eq!(stated_release(&b, read), Some(Some((1, 16))));
+        assert_eq!(go_version(&b, read), Some((1, 16)));
         let dangling = |vma: u64, len: usize| if vma == 0x5000 { header.get(..len) } else { None };
         assert!(!blob_is_buildinfo(&b, dangling), "the version pointer leads nowhere");
         assert!(!blob_is_buildinfo(&b, unmapped));
