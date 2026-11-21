@@ -28,7 +28,7 @@ fn decompile_in(fixture: &str, surface: &[&str], assertions: &[&str]) -> (String
 #[test]
 fn a_stated_call_has_exactly_its_stated_arguments() {
     let (before, _, _) = decompile(&["decompile", "report"], &[SLOT]);
-    assert!(before.contains("(unsigned long)(a0 + 1),*v1); // jump-as-call"), "{before}");
+    assert!(before.contains("(unsigned long)a0,(unsigned long)(a0 + 1)); // jump-as-call"), "{before}");
     for surface in [&["decompile", "report"][..], &["decompile-all"][..]] {
         let (out, err, code) = decompile(
             surface,
@@ -126,7 +126,7 @@ fn an_address_that_is_not_a_call_is_rejected() {
             err.contains("rejected: No call is made at this address"),
             "{surface:?}: {err}"
         );
-        assert!(out.contains("(unsigned long)(a0 + 1),*v1); // jump-as-call"), "{surface:?}: {out}");
+        assert!(out.contains("(unsigned long)a0,(unsigned long)(a0 + 1)); // jump-as-call"), "{surface:?}: {out}");
         let (_, _, strict) = decompile(
             surface,
             &["callproto report::0x1395 void f(char *)", "--assert-strict"],
