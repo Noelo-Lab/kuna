@@ -1401,6 +1401,39 @@ one 16-byte return, and the result is a `char[16]` whose high half is whatever
 uninitialized value `RDX` happened to hold. A known `int` return never enters
 that machinery.
 
+(kuna `fid`) A parked prototype that came from a `.fid` record (01 §1.4;
+`Architecture::fid_prototypes` holds those entries) is the one parked
+prototype the drive checks after the fact, because a fingerprint match is
+evidence and not identity
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_fidproto.rs
+(reads_undeclared_parameter)`). The function is decompiled against it like any
+other; in the finished function, an input Varnode that still has a reader, lies
+in storage the model can pass a parameter in and overlaps no declared
+parameter means the body reads an argument the prototype does not have. The
+drive then decompiles the function once more with no prototype, removes the
+parked pieces so later callers stop copying them, and records a header warning
+at the entry (`the .fid prototype was dropped: the body reads parameter
+storage it does not declare`). A declared parameter the body never reads is not
+a disagreement, since an unused parameter is ordinary C, and a variadic
+prototype is not checked. A caller decompiled before the function itself has
+already copied the prototype; the callee-first order of a serial batch run
+puts the check first, while a single-function run of the caller, or a `--jobs`
+worker that does not decompile the callee itself, does not. The same module
+writes a prototype as the text a record stores (`declaration`): sized core
+names, a forward `typedef struct N N;` for each record so pointers among them
+parse in any order, then each definition before its first by-value use, with
+gaps as `uint1 _pad<off>[N]` members. A record is stored by its forward
+declaration alone (an opaque type at the match) unless the parser, laying the
+definition out afresh, puts every member where the object has it
+(`laid_out_again`): no bitfields, which the definition text moves to the end,
+every member on its natural alignment after the one before, and a size its
+alignment divides (a union: the size of its largest member). An enumeration is
+written with its width as a C23 underlying type (`typedef enum N : uint1 { … }
+N;`, `sized_enum`), since the parser otherwise makes it `int`-wide and a packed
+or `-fshort-enums` member would move every member after it. A record left
+opaque that the prototype passes or returns by value costs the whole prototype
+at the match (01 §1.4).
+
 ### Setup (once, before fullloop)
 
 - **`ActionPrototypeTypes`** (`coreaction_protos.rs (ActionPrototypeTypes)`)

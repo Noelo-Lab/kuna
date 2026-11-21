@@ -3004,6 +3004,14 @@ impl Database {
             .then_some(receiver.as_ref())
     }
 
+    /// Remove the prototype pieces parked on FunctionSymbol `sid`.
+    pub fn clear_function_proto_pieces(&mut self, sid: SymbolId) {
+        self.kuna_gen += 1;
+        if let SymbolKind::Function { proto_pieces, .. } = &mut self.symbols[sid].kind {
+            *proto_pieces = None;
+        }
+    }
+
     /// The prototype pieces parked on FunctionSymbol `sid`, or `None` when it
     /// carries none or is not a function.
     pub fn function_proto_pieces_of(&self, sid: SymbolId) -> Option<&crate::fspec::PrototypePieces> {

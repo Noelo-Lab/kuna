@@ -67,6 +67,7 @@ pub mod kuna_formattail; // (kuna) a resolved format call keeps an open tail thr
 pub mod kuna_protoorder; // (kuna) a callee's recovered prototype, parked for the callers decompiled after it
 pub mod kuna_calleetrial; // (kuna) an active call-argument trial in a preferred-split register is what a single-function drive may bootstrap
 pub mod kuna_callbacktype; // (kuna) a callback takes the prototype of the slot it is passed to
+pub mod kuna_fidproto; // (kuna) the prototype a .fid record carries, and its check against the body
 pub mod kuna_calleevote; // (kuna) a callee parameter takes the type every caller passes
 pub mod kuna_callerptr; // (kuna) a parameter every caller passes a pointer is a pointer
 pub mod kuna_callpush; // (kuna) a call's own return-address push is part of the call

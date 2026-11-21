@@ -10,7 +10,11 @@
 //!
 //! ```text
 //!   kuna fid build <lib.a|*.o ...> -o <out.fid> --lang <id> --cspec <id>
+//!                  [--assert <directive | @file>]..
 //! ```
+//!
+//! A record also takes its function's prototype when the object's debug
+//! information states one or an `--assert` does ([`declared`]).
 //!
 //! `--lang` / `--cspec` are written verbatim into the `.fid` header. The
 //! matching pass applies a database only to an image whose language has the
@@ -24,6 +28,7 @@
 //! bootstrapped directly.
 
 mod archive;
+mod declared;
 mod query;
 pub(crate) mod report;
 
@@ -43,6 +48,7 @@ struct BuildArgs {
     out: Option<String>,
     lang: Option<String>,
     cspec: Option<String>,
+    declared: declared::Declared,
 }
 
 /// Dispatch `kuna fid <subcommand>`: `build` or `query`.
@@ -70,6 +76,7 @@ pub fn run(argv: &[String]) -> i32 {
 fn usage() {
     eprintln!(
         "usage: kuna fid build <lib.a|*.o ...> -o <out.fid> --lang <id> --cspec <id>\n\
+         \x20                     [--assert <directive | @file>]..\n\
          kuna fid query <binary> --db <file.fid> --addr <address> [--addr <address> ...] --json\n\
          \n\
          Generate a kuna `.fid` fingerprint database from a static library or\n\
@@ -79,6 +86,13 @@ fn usage() {
          language's processor, address size and instruction byte order (Ghidra's\n\
          FID rule; the variant and --cspec do not matter), so build refuses an\n\
          object whose own language --lang does not apply to.\n\
+         A record keeps its function's prototype, parameter names and the types\n\
+         they need when the object's debug information has them, or when an\n\
+         --assert 'prototype <name> <declaration>' states one (with any --assert\n\
+         'typedef <declaration>' it needs; @file holds one directive per line).\n\
+         A match then declares the function it names, unless debug information or\n\
+         an --assert of the run already does, or its body reads a parameter the\n\
+         prototype lacks.\n\
          With kuna_fid_db set, a run that does not match against the database\n\
          (missing, unreadable, invalid, or incompatible with the image) says why on\n\
          stderr and still exits 0; --json documents list each database under\n\
@@ -138,7 +152,15 @@ fn cmd_build(argv: &[String]) -> i32 {
         }
     }
 
+    for name in args.declared.fill(&mut all) {
+        eprintln!("kuna fid build: warning: --assert prototype {name}: no record has that name");
+    }
+    let disputed = kuna_analysis::fid::kuna_fidproto::drop_disputed(&mut all);
+    if !disputed.is_empty() {
+        eprintln!("kuna fid build: defined differently by two objects, left opaque: {}", disputed.join(", "));
+    }
     dedup_records(&mut all);
+    let described = all.iter().filter(|r| r.prototype.is_some()).count();
 
     let db = FidDb::from_records(lang, cspec, all);
     let bytes = db.serialize();
@@ -146,8 +168,9 @@ fn cmd_build(argv: &[String]) -> i32 {
         eprintln!("kuna fid build: cannot write {out}: {e}");
         return 1;
     }
+    let prototypes = if described == 0 { String::new() } else { format!("{described} with a prototype, ") };
     eprintln!(
-        "kuna fid build: wrote {out} ({} record(s), {} bytes)",
+        "kuna fid build: wrote {out} ({} record(s), {prototypes}{} bytes)",
         db.records().len(),
         bytes.len()
     );
@@ -207,7 +230,7 @@ fn records_for_object_path(
     // Bootstrap the architecture from the object (resolves the SLEIGH language,
     // builds the engine, attaches the loadimage). `target = ""` ⇒ derive the
     // language from the object's machine.
-    let prog = bootstrap_from_object(path, "", spec_roots)
+    let mut prog = bootstrap_from_object(path, "", spec_roots)
         .map_err(|e| ObjectRefusal::Load(format!("bootstrap failed: {e}")))?;
     let arch = prog.arch();
     kuna_analysis::fid::kuna_fidapply::applies(lang, arch).map_err(|reason| {
@@ -223,12 +246,21 @@ fn records_for_object_path(
     let image = ObjectLoadImage::from_bytes(path, &bytes)
         .map_err(|e| ObjectRefusal::Load(format!("loadimage failed: {e}")))?;
 
-    Ok(build_records(
+    let mut records = build_records(
         &bytes,
         &image,
         arch,
         arch.translate().as_sleigh().expect("fid build: standalone Sleigh engine"),
-    ))
+    );
+    // The prototypes are read after the hashes: the commit that parks them may
+    // also paint decode context.
+    match prog.commit_pending_analysis() {
+        Ok(()) => {
+            kuna_analysis::fid::kuna_fidproto::describe(prog.arch(), &image, &mut records);
+        }
+        Err(e) => eprintln!("kuna fid build: {path}: no prototypes read: {}", e.explain()),
+    }
+    Ok(records)
 }
 
 /// Is `bytes` a Unix `ar` archive (the `.a` magic `!<arch>\n`)?
@@ -254,7 +286,7 @@ fn spec_roots() -> Vec<String> {
 
 /// Parse the `build` flags: positional inputs + `-o`/`--lang`/`--cspec`.
 fn parse_build_args(argv: &[String]) -> Result<BuildArgs, String> {
-    let mut a = BuildArgs { inputs: Vec::new(), out: None, lang: None, cspec: None };
+    let mut a = BuildArgs { inputs: Vec::new(), out: None, lang: None, cspec: None, declared: Default::default() };
     let mut i = 0;
     while i < argv.len() {
         let tok = argv[i].as_str();
@@ -262,6 +294,7 @@ fn parse_build_args(argv: &[String]) -> Result<BuildArgs, String> {
             "-o" | "--output" => a.out = Some(take_value(argv, &mut i, tok)?),
             "--lang" => a.lang = Some(take_value(argv, &mut i, tok)?),
             "--cspec" => a.cspec = Some(take_value(argv, &mut i, tok)?),
+            "--assert" => a.declared.add(&take_value(argv, &mut i, tok)?)?,
             other if other.starts_with('-') && other != "-" => {
                 return Err(format!("unknown flag {other:?}"));
             }
@@ -284,6 +317,8 @@ mod tests {
             specific_addl: 2,
             flags: 0,
             name: name.to_string(),
+            prototype: None,
+            typedefs: Default::default(),
         }
     }
 

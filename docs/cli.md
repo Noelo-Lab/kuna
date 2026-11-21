@@ -4932,8 +4932,8 @@ applies to `decompile`, `decompile-all`, `decompile-project`,
 
 ## `kuna fid` — function identification by fingerprint
 
-`kuna fid build <lib.a|*.o ...> -o <out.fid> --lang <id> --cspec <id>` writes a kuna
-`.fid` database of FID fingerprints; `--option listing on --option fid on` with the
+`kuna fid build <lib.a|*.o ...> -o <out.fid> --lang <id> --cspec <id> [--assert <directive | @file>]..`
+writes a kuna `.fid` database of FID fingerprints; `--option listing on --option fid on` with the
 `kuna_fid_db` environment variable naming it renames matching stripped functions
 (see `docs/options.md`, option `fid`). Use `--option fid strict` to require
 the same record to match the specific hash and code-unit count as well. Strict
@@ -5008,6 +5008,34 @@ the next-entry approximation. Rebuilding an older database can change its
 records because trailing padding is no longer included; existing databases
 remain readable, but need rebuilding to benefit from the new extents.
 
+A record also keeps its function's prototype, parameter names and the types
+they need when the builder knows them. It reads them from the object's debug
+information, and `--assert` states them for an object without any, in the
+syntax of `kuna decompile --assert`: `prototype <name> <declaration>` for a
+function and `typedef <declaration>` for each type the prototypes use, one
+directive per line in `@file`. A stated prototype replaces a read one, and one
+naming no record is reported. The summary line counts the described records.
+A structure or union two objects define differently is kept only as a forward
+declaration in every record, an enumeration they define differently is left
+out, and its name is listed on stderr, whatever order the objects come in.
+
+```
+$ clang -O2 -g -c fidlib.c && kuna fid build fidlib.o -o fidlib.fid --lang x86:LE:64:default --cspec gcc
+kuna fid build: wrote fidlib.fid (1 record(s), 1 with a prototype, 222 bytes)
+$ kuna_fid_db=fidlib.fid kuna decompile-all stripped --option fid on
+int parse_header(unsigned char *buf,unsigned int len,hdr *out)
+```
+
+On a match the prototype declares the function that has the record's name,
+and its callers type their arguments from it. Debug information and every
+other prototype source of the image come first, and an `--assert` of the run
+replaces it. Two things drop it, each with a warning in the function's header
+(and in the `warnings` of its JSON record): a declaration that does not parse
+against the image's types, and a body that reads a parameter the prototype
+does not declare. A database with prototypes is format version 2, which an
+older kuna reports as `invalid`; one without is still written as version 1,
+and version-1 files load unchanged.
+
 ### `kuna fid query` — candidates for an address, without renaming
 
 `kuna fid query <binary> --db <file.fid> --addr <address> [--addr <address> ...] --json`
@@ -5028,7 +5056,8 @@ Status `single_candidate` means the full-hash bucket has one distinct name;
 `ambiguous` means multiple names and `no_match` an empty bucket. These three also
 carry `database_format` (`kuna_fid`), `language`, `match_basis` (`full_hash`) and
 the function's own `full_hash`, `specific_hash` and `code_unit_size`; each candidate
-is `{name, specific_hash, specific_hash_matches, code_unit_size, code_unit_size_matches}`, sorted by name.
+is `{name, specific_hash, specific_hash_matches, code_unit_size, code_unit_size_matches, prototype}`, sorted by name;
+`prototype` is the record's C declaration, or `null` when it carries none.
 `identity_verified` is always false: even a single candidate can be wrong, and
 functions whose masked bodies are identical share a bucket, so one name can be
 reported at several addresses. Specific hashes are reported for comparison and do

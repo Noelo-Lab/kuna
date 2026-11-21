@@ -476,13 +476,7 @@ fn apply_one_program_scoped(prog: &mut ConsoleProgram, body: &Body) -> Result<()
                 .map(|_| ())
                 .map_err(|e| e.explain().to_string())
         }
-        Body::Typedef { decl } => {
-            let org = data_org(prog);
-            let text = with_semicolon(decl);
-            let models = model_names(prog);
-            crate::grammar::parse_c(&text, prog.arch().types(), org, &models, |_, _| Ok(()))
-                .map_err(|e| e.explain().to_string())
-        }
+        Body::Typedef { decl } => parse_declaration(prog, decl),
         Body::Prototype { func, decl } => apply_prototype(prog, func, decl),
         Body::Data { addr, decl } => apply_data(prog, *addr, decl),
         Body::Readonly { addr, size } => {
@@ -709,6 +703,30 @@ pub(crate) fn park_prototype(
     lock_prototype_on_symbol(prog, target, pieces, model);
 }
 
+/// Parse one type declaration into the program's type factory.
+pub(crate) fn parse_declaration(prog: &ConsoleProgram, decl: &str) -> Result<(), String> {
+    let org = data_org(prog);
+    let text = with_semicolon(decl);
+    let models = model_names(prog);
+    crate::grammar::parse_c(&text, prog.arch().types(), org, &models, |_, _| Ok(()))
+        .map_err(|e| e.explain().to_string())
+}
+
+/// Parse one function declaration into its pieces and the convention it named.
+pub(crate) fn parse_prototype(prog: &ConsoleProgram, decl: &str) -> Result<(PrototypePieces, String), String> {
+    use std::cell::RefCell;
+    let org = data_org(prog);
+    let text = format!("extern {}", with_semicolon(decl));
+    let captured: RefCell<Option<(PrototypePieces, String)>> = RefCell::new(None);
+    let models = model_names(prog);
+    crate::grammar::parse_c(&text, prog.arch().types(), org, &models, |pieces, model| {
+        *captured.borrow_mut() = Some((pieces, model.to_string()));
+        Ok(())
+    })
+    .map_err(|e| e.explain().to_string())?;
+    captured.into_inner().ok_or_else(|| "not a function declaration".to_string())
+}
+
 /// `prototype <func> <C declaration>` — the in-process twin of `parse line
 /// extern <decl>` (`IfcParseLine`'s `setPrototype` branch).
 ///
@@ -724,19 +742,7 @@ pub(crate) fn park_prototype(
 /// int handler(char *)` binds to `sub_1400`.  It may be a name or an entry
 /// address ([`resolve_proto_target`]).
 fn apply_prototype(prog: &mut ConsoleProgram, func: &str, decl: &str) -> Result<(), String> {
-    use std::cell::RefCell;
-    let org = data_org(prog);
-    let text = format!("extern {}", with_semicolon(decl));
-    let captured: RefCell<Option<(PrototypePieces, String)>> = RefCell::new(None);
-    let models = model_names(prog);
-    crate::grammar::parse_c(&text, prog.arch().types(), org, &models, |pieces, model| {
-        *captured.borrow_mut() = Some((pieces, model.to_string()));
-        Ok(())
-    })
-    .map_err(|e| e.explain().to_string())?;
-    let (mut pieces, model) = captured
-        .into_inner()
-        .ok_or_else(|| "not a function declaration".to_string())?;
+    let (mut pieces, model) = parse_prototype(prog, decl)?;
     let target = resolve_proto_target(prog, func)?;
     let model = declared_model(prog, &model);
     park_prototype(prog, &target, &mut pieces, model.as_ref());

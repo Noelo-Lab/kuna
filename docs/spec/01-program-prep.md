@@ -6370,7 +6370,61 @@ every other binary's pass list is byte-identical to before the pass existed):
   in a call the Listing does not know never returns can lose its match,
   because the Listing decodes the padding after that call and the bounded
   record does not.
-  `kuna fid query` exposes full-hash candidates as a read-only lookup. It
+  (kuna) **Prototypes.** A record may carry the function's prototype as one C
+  declaration and the type declarations it needs
+  (`decompiler/crates/kuna-analysis/src/analyzers/fid/db.rs`, format version 2:
+  each record adds a prototype offset and a run in a table of declaration
+  offsets, so records share a declaration's text). A version-1 file loads as
+  before, and a database none of whose records has a prototype is still written
+  as version 1, byte for byte what the builder wrote before. A load decodes each
+  distinct run once and every record naming it shares that one copy, as does
+  every match of such a record, so a database built from many variants of one
+  library (each optimization level a new record over the same declarations)
+  costs memory in proportion to its distinct text, and a binary with many
+  identical functions does not copy a record's declarations once per match.
+  Records name their strings by offset, so a small file can still name one long
+  string many times, in names or in overlapping runs; a load stops with
+  `invalid` once the text it has decoded (each distinct run counted once) passes
+  the larger of 64 MiB and 128 bytes per byte of the file. `kuna fid build`
+  fills a record from the prototype the object's own committed analysis parked
+  on the function symbol of that name, which is its DWARF signature
+  (`decompiler/crates/kuna-analysis/src/analyzers/fid/kuna_fidproto.rs
+  (describe)`; the hashes are taken before that commit), and from `--assert
+  'prototype <name> <declaration>'` with any `--assert 'typedef …'`, which
+  replace what was read. The types of every match land in one program, so a
+  record type that two objects define differently is left as its forward
+  declaration in every record and named on stderr (`drop_disputed`), and an
+  enumeration two objects define differently is left out of every record, so a
+  prototype naming it no longer parses and is dropped at the match. The check
+  runs over every input record before records with the same hashes and name
+  are merged, so the definitions it compares, and the database written, do not
+  depend on the order of the objects in the archive or on the command line; a
+  type one
+  object defines and another only declares (an opaque handle a library casts
+  to its own private state) is defined for both, so a function of the second
+  object reads the first object's members. On a match the pass emits the
+  prototype of the record
+  the specific hash and code-unit count single out, else the one prototype all
+  describing records of the bucket agree on (`pick`), as a `FidProtoFact`. The
+  commit applies it last
+  (`decompiler/crates/kuna-console/src/kuna_fidproto.rs (apply)`): only to a
+  function that carries the record's name, whether FID renamed it or the symbol
+  table already said so, and only when nothing else parked a prototype there, so
+  DWARF and every library table win and a later `--assert` replaces it. The
+  type declarations are parsed first; one that redefines a type the program
+  already has is rejected by the parser and the program's definition stands. A
+  prototype that does not parse is dropped with a header warning on the
+  function, and so is one that passes or returns a structure or union by value
+  whose definition the record left out (`opaque_by_value`): an opaque type has
+  no size to assign storage from, and a sizeless return would be taken for a
+  hidden return buffer, inventing a first parameter and shifting the real ones.
+  A declaration whose brackets nest deeper than 64 is not handed
+  to the parser at all, since the text comes from a file and the parser
+  recurses once per level. The applied prototype is parked like a DWARF one, so
+  the function's callers copy it too, and the drive checks it against the body
+  (04 §4.2 "Seeding").
+  `kuna fid query` exposes full-hash candidates as a read-only lookup, each
+  with its record's `prototype`. It
   reports whether the entry was discovered or supplied by the caller, the
   Listing's instruction-boundary classification, and that identity is unverified;
   `single_candidate` means one distinct name, not a confirmed match. ARM32 odd
