@@ -1000,8 +1000,14 @@ fn aif_candidates(
     // undefined executable VMA. Probe it, then advance past whatever we resolved
     // (the accepted body, or one byte on a reject) and continue.
     let mut frame_spans = frames.iter().peekable();
-    let mut cursor = listing.first_undefined_after(0);
-    let stride = decoder.translate.translate_base().section_instruction_stride;
+    let stride = decoder.translate.translate_base().section_instruction_stride
+        .filter(|_| listing.has_section_origins());
+    let mut cursor = if stride.is_some() {
+        listing.first_undefined_at_or_after(0)
+    } else {
+        listing.first_undefined_after(0)
+    };
+    let restricted = decoder.exec_ranges != listing.exec_ranges();
     let mut section_start = 0;
     let mut scan_end = 0;
     let mut gap_hi = u64::MAX;
@@ -1024,11 +1030,24 @@ fn aif_candidates(
         // are legitimate.
         if gap_start >= scan_end {
             gap_hi = listing.next_instruction_start_after(gap_start).unwrap_or(u64::MAX);
-            let &(base, exec_hi) = decoder.exec_ranges.iter()
-                .find(|&&(lo, hi)| lo <= gap_start && gap_start < hi)
-                .expect("undefined address belongs to an executable range");
+            // The listing owns the section boundaries. A caller may restrict
+            // speculative decoding to disjoint windows within that listing.
+            let Some((base, section_end)) = listing.range_containing_or_after(gap_start) else { break };
+            let end = if restricted {
+                let Some(&(_, hi)) = decoder.exec_ranges.iter()
+                    .find(|&&(lo, hi)| lo <= gap_start && gap_start < hi) else {
+                    let next = decoder.exec_ranges.iter()
+                        .filter(|&&(lo, hi)| gap_start < lo && lo < hi)
+                        .map(|&(lo, _)| lo).min();
+                    cursor = next.and_then(|lo| listing.first_undefined_at_or_after(lo));
+                    continue;
+                };
+                section_end.min(hi)
+            } else {
+                section_end
+            };
             section_start = base;
-            scan_end = gap_hi.min(exec_hi);
+            scan_end = gap_hi.min(end);
         }
         if roots.is_some_and(|roots| roots.range(gap_start..gap_hi).next().is_none()) {
             cursor = if gap_hi == u64::MAX { None } else { listing.first_undefined_after(gap_hi) };
@@ -1134,7 +1153,7 @@ fn aif_candidates(
         cursor = if advanced > gap_start && advanced < scan_end {
             Some(advanced)
         } else {
-            listing.first_undefined_after(advanced.saturating_sub(1))
+            listing.first_undefined_at_or_after(advanced)
                 .filter(|&next| next > gap_start)
         };
     }

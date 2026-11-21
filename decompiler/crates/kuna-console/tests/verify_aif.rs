@@ -283,3 +283,81 @@ fn flags_off_does_not_discover_the_gap_function() {
         "default main must NOT resolve the indirect call to sub_13ae():\n{main_body}"
     );
 }
+
+/// Each synthetic instruction occupies six bytes. The two hidden functions
+/// and two instruction-shaped data objects share a prologue and a PT_LOAD.
+/// Their assembler labels supply the expected entries independently of AIF.
+fn slot_entries(
+    image: &std::path::Path,
+    section_stride: bool,
+    strict: bool,
+    windows: Option<&[(u64, u64)]>,
+) -> Vec<u64> {
+    let specs = [repo_root().join("specs").display().to_string()];
+    let mut prog = bootstrap_from_object(image.to_str().unwrap(), "", &specs).unwrap();
+    if section_stride {
+        let arch = prog.arch_mut();
+        arch.set_pspec_xml(br#"<processor_spec><properties>
+            <property key="kuna.aif.sectionInstructionStride" value="6"/>
+            </properties></processor_spec>"#.to_vec());
+        arch.parse_processor_config().unwrap();
+    }
+    prog.arch_mut().set_kuna_option("aif", if strict { "strict" } else { "on" }).unwrap();
+    let bytes = std::fs::read(image).unwrap();
+    let file = object::File::parse(&*bytes).unwrap();
+    let seeds = kuna_analysis::entry::collect_entries(&file, &bytes);
+    let arch = prog.arch();
+    let listing = Listing::build_without_image(&file, arch, arch.translate(), &seeds);
+    assert_eq!(listing.function_count(), 65, "direct calls supply the histogram");
+    let entries = kuna_analysis::aif::run_aif(
+        &listing, arch.translate(), arch.manage().get_default_code_space().unwrap().clone(),
+        windows.unwrap_or(listing.exec_ranges()), strict, false, None, None,
+    );
+    if windows.is_none() {
+        // The xref walk constructs a separate listing from its own partition.
+        let xrefs = kuna_analysis::listing::xrefs::build(&file, arch, arch.translate(), &seeds);
+        for addr in [0, 0x40200c, 0x402026, 0x40203e, 0x402052] {
+            assert_eq!(xrefs.is_function_entry(addr), entries.contains(&addr), "xref at {addr:#x}");
+        }
+    }
+    entries
+}
+
+fn slots_fixture() -> PathBuf {
+    fixture().with_file_name("aif_slots_x86_64")
+}
+
+#[test]
+fn aif_stride_requires_section_origins() {
+    let image = slots_fixture();
+    assert_eq!(slot_entries(&image, true, true, None), [0, 0x40200c, 0x40203e]);
+    assert_eq!(slot_entries(&image, false, true, None), [0x40200c]);
+
+    // Remove only ELF64 e_shoff, e_shentsize, e_shnum and e_shstrndx.
+    let mut bytes = std::fs::read(image).unwrap();
+    bytes[40..48].fill(0);
+    bytes[58..64].fill(0);
+    let segments = crate::common::scratch_file("aif-segments", "elf");
+    std::fs::write(&segments, bytes).unwrap();
+    for strict in [false, true] {
+        let ordinary = slot_entries(&segments, false, strict, None);
+        if strict {
+            assert_eq!(ordinary, [0x40200c]);
+        } else {
+            assert!(ordinary.contains(&0x402026), "permissive AIF probes the decoy");
+        }
+        assert_eq!(slot_entries(&segments, true, strict, None), ordinary);
+    }
+    std::fs::remove_file(segments).unwrap();
+}
+
+#[test]
+fn aif_decoder_windows_clip_existing_slots() {
+    let image = slots_fixture();
+    // Neither low bound is a slot. Supply the windows in reverse address order.
+    let windows = [(0x40203a, 0x402050), (0x402007, 0x402038)];
+    assert_eq!(slot_entries(&image, true, false, Some(&windows)), [0x40200c, 0x40203e]);
+    assert_eq!(slot_entries(&image, true, false, Some(&windows[..1])), [0x40203e]);
+    assert_eq!(slot_entries(&image, false, false, Some(&windows[..1])), [0x40203e]);
+    assert!(slot_entries(&image, false, false, Some(&[])).is_empty());
+}

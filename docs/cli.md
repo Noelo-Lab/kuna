@@ -2308,8 +2308,8 @@ Behaviors specific to `decompile-all`:
   where the wider inventory is the point; a single-function request that already
   named its function gains nothing from it. (The gap was invisible under the
   default `auto` policy below 500 KiB, which resolves to `aggressive` and names
-  all three options itself.) The injected `aif on` is the byte-granular gap
-  cursor; `aggressive` sets `aif strict`, the aligned one, and an explicit
+  all three options itself.) By default the injected `aif on` uses a byte-granular gap
+  cursor. `aggressive` sets `aif strict`, the aligned one, and an explicit
   `--option aif on` after it replaces `strict` by last-write precedence.
   `kuna functions` shares the **discovery** half of that policy (DIV-68): on a
   non-x86-64 binary it injects `funcstart_patterns on`, `aif on`, and the
@@ -2327,7 +2327,9 @@ Behaviors specific to `decompile-all`:
   of every executable section may declare their size in its processor spec,
   for example `<property key="kuna.aif.sectionInstructionStride" value="6"/>`
   inside `<properties>`. AIF then probes section-relative slots in the gap
-  walk. Symbol and explicit function entries keep their usual admission rules.
+  walk, including the first slot at address zero. With only executable segment
+  or raw mapping bounds, AIF keeps the cursor policy of the selected mode.
+  Symbol and explicit function entries keep their usual admission rules.
   Omitted `--mode` first resolves the size-based `auto` policy. `--mode fast`
   names and disables the three exhaustive program-wide decode/discovery options
   (`listing`, `funcstart_patterns`, `aif`), suppressing those injections, and
