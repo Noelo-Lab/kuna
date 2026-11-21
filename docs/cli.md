@@ -1164,6 +1164,86 @@ Accepted by `decompile`, `decompile-all`, `decompile-project` and `functions`.
 The console spellings, for a hand-driven `decomp_dbg` session, are the commands in
 the table's second column.
 
+**`--types <file.h | dir>`** (repeatable) loads C declarations from a header for
+this run, so a program built against a library kuna has no table for shows that
+library's types instead of bare integers. Each function declaration becomes the
+prototype of the function or import of that name, and each `struct`, `union`,
+`enum` and `typedef` is defined, so `type` and `data` directives can name it. A
+directory contributes its `*.h` files in name order.
+
+```bash
+cat > curl.h <<'EOF'
+typedef void CURL;
+typedef enum { CURLOPT_URL = 10002, CURLOPT_TIMEOUT = 13 } CURLoption;
+CURL *curl_easy_init(void);
+int curl_easy_setopt(CURL *h, CURLoption opt, ...);
+EOF
+kuna decompile ./curlish.so fetch --types curl.h
+```
+
+```text
+-   v1 = curl_easy_init();                  +   h = curl_easy_init();
+-   curl_easy_setopt(v1,0x2712,a0);         +   curl_easy_setopt(h,CURLOPT_URL,a0);
+-   curl_easy_setopt(v1,0xd,0x1e);          +   curl_easy_setopt(h,CURLOPT_TIMEOUT,0x1e);
+```
+
+The header's declarations are applied before the `--assert` directives of the
+same run, wherever the two flags stand on the command line, so an `--assert` on
+the same function wins. A prototype for a function the binary does not have
+does nothing. A function is typed by its own declaration only: declare `fetch`
+in a header too (`int fetch(const char *url);`) to name its parameter and state
+its return type.
+
+A header's prototype has the weight of a `prototype` directive: it replaces the
+signature kuna would otherwise give that function and every call to it, the
+one DWARF or a built-in library table states included, and only an `--assert`
+outranks it. kuna does not check it against the code. A header from another
+version of the library, or one that declares a different function under a name
+the binary also uses, still gives that function the declared signature:
+arguments the code passes but the declaration lacks are dropped from the calls,
+and a `void` return drops the value the callers use. Load the headers the
+binary was built against. A type does not replace one the run already has: a
+`struct`, `union` or `typedef` name that DWARF, a built-in table or an earlier
+header defined keeps that definition, and the header's is reported as rejected.
+
+The text must be preprocessed C. kuna runs no preprocessor on its own: it skips
+`#` lines, so a header that needs its macros or its `#include`s expanded leaves
+declarations that do not parse. **`--types-cpp <cc>`** runs your preprocessor
+over each header first: the value is the command (`cc`, `clang`,
+`'cc -I include -DNDEBUG'`), kuna adds `-E` when the command does not carry it,
+and the header path goes last. A preprocessor that fails is an error. The
+declarations of the headers it includes are loaded as well, and a rejection is
+reported at the file and line the preprocessor's line markers give.
+
+```bash
+kuna decompile ./client fetch --types /usr/include/curl/curl.h --types-cpp cc
+```
+
+A declaration that does not parse is reported on stderr with its file and line,
+and the rest still apply; under `--json` it is a `rejected` row of
+`assertions[]`, whose `directive` starts with `--types <file>:<line>:`. Such a
+rejection never fails the run, under `--assert-strict` too.
+
+```text
+warning: --types bad.h:4: CURL_EXTERN CURL *curl_easy_init(void): rejected: Bad C syntax
+```
+
+What a header may say is what the `typedef` and `prototype` directives accept,
+with a few spellings rewritten first: `__attribute__((..))`, `__asm__(..)`,
+`__extension__`, `__restrict` and `_Noreturn` are dropped; a function body is
+dropped and its declaration kept; an `extern "C" {` wrapper is transparent; an
+enumerator value or an array bound that is an integer constant expression
+(`(1 << 4) | 3`, `10000 + 2`, an earlier enumerator) is replaced by the value C
+gives it (`0xFFFFFFFFu + 1` is 0, `1 << 31` is -2147483648), and one whose
+value depends on the target's `long` (`~0UL`), on a `char` or `short` cast, or
+on what C leaves undefined (`1 << 32`, a signed overflow) is not, so its
+declaration is reported as rejected; an unsized array parameter (`char *argv[]`) is the pointer it is; and
+`__builtin_va_list` is `void *`. Variable declarations are skipped. Not read,
+and reported as rejected: `sizeof` in a constant expression, a flexible array
+member, an anonymous struct or union member, and an empty parameter list
+(`int f()`). Accepted wherever `--assert` is, with its limits: not with
+`--jobs` above 1 on a whole-binary run, and not with `--stream`.
+
 **Paths containing spaces work (DIV-100).** This is the one surface that reaches the engine
 through a console *script* rather than an in-process call, and the console reads a
 filename with `s >> filename` — whitespace-delimited. An unquoted path with a space

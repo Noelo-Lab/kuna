@@ -918,3 +918,6 @@ mod call_site_prototype;
 
 #[path = "xrefs_immutable_got.rs"]
 mod xrefs_immutable_got;
+
+#[path = "types_header.rs"]
+mod types_header;
