@@ -7336,7 +7336,17 @@ register after the last active trial is still dropped (`k(a,b,fp){ fp(a+1,b); }`
 stays `(*a2)(a0 + 1)`: nothing after `x0` was set up), a stack slot is never
 neutral (an untouched incoming stack argument says nothing about the callee's
 list), and the function's own input recovery has `inputparamgap` for the same
-shape.
+shape. The later register must be set up *for* the call: an active trial the
+function reads again after the call, through the INDIRECT heritage planted at
+it (`kuna_passthrough::survives_call`, recorded on the trial by
+`check_input_trial_use`), is caller state the callee happens not to clobber,
+and the forwarded registers in front of it count as upstream counts them.
+gcc's `-fipa-ra` keeps a value in a caller-saved register across a call to a
+static function it knows leaves it alone: `expandload_zext`'s `f` computes
+`r8`, calls `sink`, and returns `r8d`, so `rsi`, `rdx` and `rcx` stay a chain
+of three and `sink` keeps its one argument
+(`kuna-cli/tests/decompile_all_cli.rs`
+`a_zero_extended_narrow_load_round_trips_through_the_printed_c`).
 
 The rule is held to registers that *are* the function's input in front of an
 argument the callee takes, because without those limits it reads incidental

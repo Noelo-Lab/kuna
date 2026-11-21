@@ -1263,7 +1263,34 @@ pub fn is_call_target(data: &Funcdata, op: OpId, vn: VarnodeId) -> bool {
         .is_some_and(|o| o.code() == OpCode::CPUI_CALLIND && o.get_in(0) == Some(vn))
 }
 
-/// Does an inactive trial at a call site stay out of `forceInactiveChain`'s
+/// Does the function read `vn`, the value the call `op` reads in an argument
+/// register, again after the call?
+///
+/// Heritage links the register's value after a call to its value before it
+/// through an INDIRECT whose second input names the call; a read of that
+/// INDIRECT's output is a read of the register past the call. gcc keeps a value
+/// in a caller-saved register across a call when it knows the callee leaves it
+/// alone (`-fipa-ra`, a static callee in the same unit): `expandload_zext`'s
+/// `f` computes `r8`, calls `sink`, and returns `r8d`. `checkInputTrialUse`
+/// records the shape on the active trial
+/// ([`crate::fspec::ParamTrial::set_live_past_call`]) for
+/// [`neutral_in_chain`] to read.
+pub fn survives_call(data: &Funcdata, op: OpId, vn: VarnodeId) -> bool {
+    let Some(v) = data.vbank().get(vn) else { return false };
+    v.descend_iter().any(|d| {
+        data.obank().get(d).is_some_and(|o| {
+            o.code() == OpCode::CPUI_INDIRECT
+                && o.get_in(0) == Some(vn)
+                && o
+                    .get_in(1)
+                    .and_then(|i| data.vbank().get(i))
+                    .is_some_and(|i| OpId::from(slotmap::KeyData::from_ffi(i.get_offset())) == op)
+                && o.get_out().and_then(|out| data.vbank().get(out)).is_some_and(|out| !out.has_no_descend())
+        })
+    })
+}
+
+/// Does the inactive trial `i` at a call site stay out of `forceInactiveChain`'s
 /// count of empty argument slots?
 ///
 /// The chain rule (`fspec.cc:1519`, `maxchain = 2`) reads a run of more than
@@ -1286,7 +1313,12 @@ pub fn is_call_target(data: &Funcdata, op: OpId, vn: VarnodeId) -> bool {
 /// first, and a stack slot is never neutral: an untouched incoming stack
 /// argument says nothing about the callee's list. Only a call site's trials
 /// qualify (`isRecoverSubcall`); the function's own input recovery has
-/// `inputparamgap`.
+/// `inputparamgap`. And the later register must be set up FOR the call: one
+/// the function reads again after it ([`survives_call`]) is caller state the
+/// callee happens not to clobber, so a forwarded register in front of such a
+/// trial counts as upstream counts it. `expandload_zext`'s `f` keeps its result
+/// in `r8` across `call sink` and returns it; `rsi`, `rdx` and `rcx` are a
+/// chain of three in front of it, and `sink` keeps its one argument.
 ///
 /// The rule keeps to registers that ARE the function's input in front of an
 /// argument the callee takes. An unreferenced slot, or one on a range this
@@ -1301,12 +1333,19 @@ pub fn is_call_target(data: &Funcdata, op: OpId, vn: VarnodeId) -> bool {
 /// gcc AArch64's stack-protector epilogue before `b lseek`, x3 holds the
 /// guard's address for the check, x4 the zero `subs` left and x5 the zero the
 /// canary was wiped with, and none of them is `lseek`'s fourth argument.
-pub fn neutral_in_chain(active: &ParamActive, trial: &ParamTrial, is_spacebase: bool) -> bool {
+pub fn neutral_in_chain(active: &ParamActive, i: int4, is_spacebase: bool) -> bool {
     let Some(scope) = active.forwarded_neutral() else { return false };
     if !active.is_recover_subcall() || is_spacebase {
         return false;
     }
-    trial.is_forwarded_input() || ((trial.is_unref() || trial.is_untouched()) && scope.unref)
+    let trial = active.get_trial(i);
+    if !(trial.is_forwarded_input() || ((trial.is_unref() || trial.is_untouched()) && scope.unref)) {
+        return false;
+    }
+    (i + 1..active.get_num_trials()).all(|j| {
+        let later = active.get_trial(j);
+        !(later.is_active() && later.is_live_past_call())
+    })
 }
 
 /// May the active trial `trial` end a run of [`neutral_in_chain`] registers,
