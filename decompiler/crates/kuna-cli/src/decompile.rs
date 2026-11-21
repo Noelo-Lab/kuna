@@ -1440,7 +1440,7 @@ fn decompile_one(
         return Err((message, declared));
     }
 
-    let funcs = decompile_all::decompile_entries(&mut prog, args, targets, false);
+    let funcs = decompile_all::decompile_entries(&mut prog, args, targets, false, true);
     let assertions = prog.assertion_outcomes();
     let mut failure = funcs.iter().find_map(|f| {
         f.error.as_ref().map(|reason| {

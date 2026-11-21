@@ -3928,9 +3928,15 @@ action loop carries only the IR-boundary handle, not the SLEIGH translator — s
 it hands every restart up (`ActionContext::reflow_requested`) to the outer drive,
 `decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (run_pipeline)`,
 which owns `&mut Architecture`: it clears the function (`Funcdata::clear` — the
-Override store survives), re-follows flow, and re-performs the root, bounded at 8
-cross-flow restarts (`MAX_REFLOW`); past the budget it keeps the last analyzed IR
-rather than failing. Restarts are refused outright during jump-table recovery
+Override store survives) and the analysis warnings the previous pass raised for it
+(`refollow_flow`, upstream `Architecture::clearAnalysis` clearing
+`Comment::warning|Comment::warningheader`, both those already published and those
+still buffered on the `Funcdata`), re-follows flow, and re-performs the root,
+bounded at 8 cross-flow restarts (`MAX_REFLOW`); past the budget it keeps the last
+analyzed IR rather than failing. Clearing the warnings is what keeps a comment from
+describing a pass that was thrown away: a `funcboundflow` truncation at a call the
+restart now knows does not return, or a `branch-flip` on a guard the re-run did not
+flip. Restarts are refused outright during jump-table recovery
 (`is_jumptable_recovery_on`, same `apply`). The relocation is behavioral
 plumbing, not semantics: trigger, clear, re-read-P0, re-run are the upstream
 restart contract.

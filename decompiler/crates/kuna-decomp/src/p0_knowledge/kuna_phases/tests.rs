@@ -56,13 +56,13 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_222() {
-    assert_eq!(kuna_num_settables(), 222);
-    assert_eq!(SETTABLE_TABLE.len(), 222);
+fn settable_count_is_228() {
+    assert_eq!(kuna_num_settables(), 228);
+    assert_eq!(SETTABLE_TABLE.len(), 228);
 }
 
 #[test]
-fn tier_counts_are_45_core_121_transform_56_analysis() {
+fn tier_counts_are_46_core_124_transform_58_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -74,7 +74,7 @@ fn tier_counts_are_45_core_121_transform_56_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (45, 121, 56));
+    assert_eq!((core, transform, analysis), (46, 124, 58));
 }
 
 #[test]
@@ -401,6 +401,9 @@ fn option_values_live_value_present_for_76() {
         // codegen live reader (read console-side via kuna_live_value), same as the
         // gates around it. Default-off, ARM-only.
         "tailcallentry",
+        // (kuna) Call tables: an analysis-pass gate read console-side, like
+        // `tailcallentry` above. Default-on.
+        "calltable",
         // (kuna) ARM literal-pool inference — an analysis-pass gate with no codegen
         // live reader (read console-side via kuna_live_value), same as
         // `tailcallentry` above. Default-off, ARM-only.
@@ -854,7 +857,12 @@ fn option_values_live_value_present_for_76() {
     // +1 for `repstring` (live_field = rep_string).
     // -1: `constselectjump` became three-valued (off|reentry|on) over an
     // enum field with no `live_field`.
-    assert_eq!(with_live, 77);
+    // +1 for `typevote` (live_field = type_vote).
+    // +1 for `gotonext` (live_field = goto_next).
+    // +1 for `postinc` (live_field = post_increment).
+    // +1 for `panicloc` (live_field = analysis_panicloc).
+    // +1 for `opaquepredicate` (live_field = opaque_predicate).
+    assert_eq!(with_live, 82);
 }
 
 #[test]
@@ -1107,7 +1115,9 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `kernelcache-boot`; its P1 row sits after `kernelcache`.
     // +1 for `blobs`; its P1 row sits after `strings`.
     // +1 for `repstring`; its P3 row sits after `strlenscan`.
-    assert_eq!(json.matches("},\n").count(), 221);
+    // +1 for `opaquepredicate`; its P3 row sits after `globalarrayanchor`.
+    // +1 for `calltable`; its P1 row sits after `tailcallentry`.
+    assert_eq!(json.matches("},\n").count(), 227);
 }
 
 #[test]

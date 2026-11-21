@@ -67,6 +67,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::rc::Rc;
+use std::sync::Arc;
 
 use kuna_base::address::Address;
 use kuna_base::space::{spacetype, AddrSpace};
@@ -85,6 +86,7 @@ use super::kuna_picpool::{self, GotImage, Insn, PicPool};
 use super::kuna_pltstub::PltStubs;
 use super::kuna_poolref::PoolImage;
 use super::kuna_regcarry::{self, Machine as CarryMachine};
+use super::kuna_calltable;
 use super::kuna_switchtable;
 use super::model::{FlowKind, FlowType, RawOp};
 #[path = "kuna_prefixreuse.rs"]
@@ -144,19 +146,20 @@ pub struct Xref {
     /// What kind of reference this is.
     pub kind: XrefKind,
     /// The referencing instruction's disassembly (`"CALL 0x00001030"`), empty if
-    /// the assembly emit produced nothing.
-    pub instruction: String,
+    /// the assembly emit produced nothing. Shared by every row with the same text.
+    pub instruction: Arc<str>,
 }
 
 /// Every reference edge the walk found, indexed both ways.
 pub struct XrefIndex {
-    /// Incoming edges, keyed by target VMA; sorted by source then kind.
-    by_target: BTreeMap<u64, Vec<Xref>>,
-    /// Outgoing edges, keyed by the referencing instruction's VMA.
-    by_source: BTreeMap<u64, Vec<Xref>>,
-    /// Outgoing edges, keyed by the entry of the function the source lies in;
-    /// sorted by target then source.
-    by_source_function: BTreeMap<u64, Vec<Xref>>,
+    /// Every edge once, sorted by target, then source, then kind, so a target's
+    /// incoming edges are one slice.
+    refs: Vec<Xref>,
+    /// Indices into `refs`, sorted by source, then target, then kind.
+    by_source: Vec<usize>,
+    /// Indices into `refs` keyed by the entry of the function the source lies
+    /// in; ascending, so sorted by target then source.
+    by_source_function: BTreeMap<u64, Vec<usize>>,
     /// Entry contexts proving each scoped `(instruction, target)` call edge.
     scoped_callers: BTreeMap<(u64, u64), BTreeSet<u64>>,
     /// Every instruction VMA the walk decoded (membership only).
@@ -293,18 +296,37 @@ impl XrefIndex {
     /// veneer alias: another entry may use the same stub with a different base.
     pub fn add_scoped_call(&mut self, arch: &Architecture, function: u64, from: u64, to: u64) {
         self.scoped_callers.entry((from, to)).or_default().insert(function);
-        let instruction = self.by_source.get(&from).and_then(|r| r.first())
-            .map(|r| r.instruction.clone()).filter(|text| !text.is_empty())
+        let instruction = self.refs_from_instruction(from).first()
+            .map(|r| Arc::clone(&r.instruction)).filter(|text| !text.is_empty())
             .unwrap_or_else(|| arch.manage().get_default_code_space()
-                .map(|space| assembly(arch.translate(), from, space)).unwrap_or_default());
-        let edge = Xref { from, to, kind: XrefKind::Call, instruction };
-        for (edges, by_source) in [
-            (self.by_target.entry(to).or_default(), true),
-            (self.by_source.entry(from).or_default(), false),
-            (self.by_source_function.entry(function).or_default(), false),
-        ] {
-            edges.push(edge.clone());
-            sort_dedup(edges, by_source);
+                .map(|space| assembly(arch.translate(), from, space)).unwrap_or_default().into());
+        let at = self.insert(Xref { from, to, kind: XrefKind::Call, instruction });
+        let rows = self.by_source_function.entry(function).or_default();
+        if let Err(i) = rows.binary_search(&at) {
+            rows.insert(i, at);
+        }
+    }
+
+    /// The index of the `(from, to, kind)` row in `refs`, inserting `edge` when
+    /// there is none. Inserting shifts every later index, so this is for the rare
+    /// edge added after the walk.
+    fn insert(&mut self, edge: Xref) -> usize {
+        let key = (edge.to, edge.from, edge.kind);
+        match self.refs.binary_search_by_key(&key, |r| (r.to, r.from, r.kind)) {
+            Ok(at) => at,
+            Err(at) => {
+                for i in self.by_source.iter_mut().chain(self.by_source_function.values_mut().flatten()) {
+                    if *i >= at {
+                        *i += 1;
+                    }
+                }
+                let source_key = (edge.from, edge.to, edge.kind);
+                self.refs.insert(at, edge);
+                let refs = &self.refs;
+                let s = self.by_source.partition_point(|&i| (refs[i].from, refs[i].to, refs[i].kind) < source_key);
+                self.by_source.insert(s, at);
+                at
+            }
         }
     }
 
@@ -316,12 +338,16 @@ impl XrefIndex {
     /// Everything that references `vma` — call sites, branches, and data
     /// references — sorted by source VMA.
     pub fn refs_to(&self, vma: u64) -> &[Xref] {
-        self.by_target.get(&vma).map_or(&[], Vec::as_slice)
+        let lo = self.refs.partition_point(|r| r.to < vma);
+        let len = self.refs[lo..].iter().take_while(|r| r.to == vma).count();
+        &self.refs[lo..lo + len]
     }
 
     /// Every reference to an address in `range`, in target then source order.
     pub fn refs_into(&self, range: std::ops::Range<u64>) -> impl Iterator<Item = &Xref> {
-        self.by_target.range(range).flat_map(|(_, refs)| refs)
+        let lo = self.refs.partition_point(|r| r.to < range.start);
+        let len = self.refs[lo..].partition_point(|r| r.to < range.end);
+        self.refs[lo..lo + len].iter()
     }
 
     /// Everything that references the *callable* `vma` names, rather than the
@@ -433,8 +459,9 @@ impl XrefIndex {
     }
 
     /// Everything the single instruction at `vma` references.
-    pub fn refs_from_instruction(&self, vma: u64) -> &[Xref] {
-        self.by_source.get(&vma).map_or(&[], Vec::as_slice)
+    pub fn refs_from_instruction(&self, vma: u64) -> Vec<&Xref> {
+        let lo = self.by_source.partition_point(|&i| self.refs[i].from < vma);
+        self.by_source[lo..].iter().map(|&i| &self.refs[i]).take_while(|r| r.from == vma).collect()
     }
 
     /// Everything the function entered at `entry` references: its callees, the
@@ -447,8 +474,9 @@ impl XrefIndex {
     pub fn refs_from_function(&self, entry: u64) -> Vec<&Xref> {
         self.by_source_function
             .get(&entry)
-            .map_or(Vec::new(), |refs| {
-                refs.iter()
+            .map_or(Vec::new(), |rows| {
+                rows.iter()
+                    .map(|&i| &self.refs[i])
                     .filter(|r| {
                         r.kind != XrefKind::Jump || self.function_containing(r.to) != Some(entry)
                     })
@@ -805,8 +833,10 @@ fn descend(
     // this can prove. Detected before the walk because the base a function
     // *inherits* is established in a different function's prologue -- see
     // `kuna_picbase`. `None` (every non-PIC target, every image with no GOT)
-    // leaves the walk below byte-identical to the pre-feature one.
-    let picbase: Option<(PicCtx, PicBase)> = if !mapped.is_empty() {
+    // leaves the walk below byte-identical to the pre-feature one. A 64-bit
+    // image forms PC-relative addresses directly (RIP-relative, ADRP), so only
+    // a 32-bit one pays for probing every seed's prologue.
+    let picbase: Option<(PicCtx, PicBase)> = if !file.is_64() && !mapped.is_empty() {
         PicCtx::new(arch, data_space.as_ref()).and_then(|ctx| {
             kuna_picbase::detect(file, translate, &code_space, &ctx, &seed_set).map(|b| (ctx, b))
         })
@@ -834,9 +864,13 @@ fn descend(
         n => n as usize,
     };
     let preserved = kuna_switchtable::preserved_registers(arch);
+    let named_set = std::cell::OnceCell::new();
+    let named = |at: u64| pool.as_ref().is_some_and(|p| named_set.get_or_init(|| p.code_named(file)).contains(&at));
     let reach = kuna_switchtable::Reach {
         max_entries,
         preserved: &preserved,
+        settled: false,
+        named: Some(&named),
     };
     let arm = file.architecture() == object::Architecture::Arm;
     let pic_image = pool.as_ref().map(|pool| kuna_picpool::Image {
@@ -862,6 +896,9 @@ fn descend(
     // (kuna) `switchtable`: the dispatches whose read stopped for want of a
     // decoded instruction ending at the key, as `(dispatch, mode, branch)`.
     let mut waiting: HashMap<u64, Vec<(u64, _, VarnodeData)>> = HashMap::new();
+    // (kuna `calltable`) Indexed calls with no range check, read once the walk
+    // has settled so a table that runs into the next one stops at its cases.
+    let mut call_sites: Vec<(u64, VarnodeData)> = Vec::new();
     let thumb_tables = sections_are_runtime
         .then(|| super::kuna_thumbswitch::HalfwordTables::new(file, data_space.clone(), max_entries))
         .flatten();
@@ -1070,6 +1107,7 @@ fn descend(
                         }).collect();
                         st = State::new(&seed_set, measure || preserve_bodies);
                         waiting.clear();
+                        call_sites.clear();
                         func_queue = seed_set.iter().copied().collect();
                         frame_candidates = reconciled.into_iter().collect();
                         frame_modes = Some(super::kuna_framemode::FrameModes::new(&frame_candidates));
@@ -1109,6 +1147,56 @@ fn descend(
                         Some(&crate::aif::kuna_aifbracket::BracketEvidence::from_object(file, &exec)),
                     );
                     pending_focus.extend(found.into_iter().rev());
+                    continue;
+                }
+                // (kuna `calltable`) Nothing fell into these dispatches: a
+                // pointer table with no range check above it is a call table
+                // or nothing.
+                None if arch.analysis_calltable && !waiting.is_empty() && pool.is_some() => {
+                    let settled = kuna_switchtable::Reach { settled: true, ..reach };
+                    let mut left: Vec<_> = waiting.drain().flat_map(|(_, sites)| sites).collect();
+                    left.sort_unstable_by_key(|&(vma, ..)| vma);
+                    for (vma, _, branch) in left {
+                        let read = kuna_switchtable::register_targets(
+                            translate, &code_space, data_space.as_ref(), &st.decoded, vma, &branch,
+                            pool.as_ref().unwrap(), &exec, &settled,
+                        );
+                        if !read.unbounded {
+                            continue;
+                        }
+                        let run = kuna_calltable::call_table_run(read.cases, arm, |t| {
+                            st.decoded.contains(&t) && !st.funcs.contains(&t)
+                        });
+                        if !kuna_calltable::is_call_table(&run, true, |t| st.funcs.contains(&t)) {
+                            continue;
+                        }
+                        let text = assembly(translate, vma, &code_space);
+                        for t in run.into_iter().collect::<BTreeSet<u64>>() {
+                            st.file(vma, t, XrefKind::Call, &text);
+                            if st.funcs.insert(t) {
+                                func_queue.push_back(t);
+                            }
+                        }
+                    }
+                    continue;
+                }
+                None if !call_sites.is_empty() && pool.is_some() => {
+                    for (vma, callind) in std::mem::take(&mut call_sites) {
+                        let read = kuna_switchtable::register_targets(
+                            translate, &code_space, data_space.as_ref(), &st.decoded, vma, &callind,
+                            pool.as_ref().unwrap(), &exec, &reach,
+                        );
+                        let run = kuna_calltable::call_table_run(read.cases, arm, |t| {
+                            st.decoded.contains(&t) && !st.funcs.contains(&t)
+                        });
+                        let text = assembly(translate, vma, &code_space);
+                        for t in run.into_iter().collect::<BTreeSet<u64>>() {
+                            st.file(vma, t, XrefKind::Call, &text);
+                            if st.funcs.insert(t) {
+                                func_queue.push_back(t);
+                            }
+                        }
+                    }
                     continue;
                 }
                 None => {
@@ -1171,7 +1259,7 @@ fn descend(
                         thumb_tables.as_ref(),
                     );
                 }
-                if read.cases.is_empty() && read.stated.is_none() {
+                if read.unbounded || (read.cases.is_empty() && read.stated.is_none()) {
                     if let Some(gap) = read.gap {
                         waiting.entry(gap).or_default().push((vma, mode, branch));
                     }
@@ -1392,6 +1480,7 @@ fn descend(
                         waiting.entry(gap).or_default().push((vma, mode, branch.clone()));
                     }
                     let unpredicated = c.flows.is_empty();
+                    let mut unbounded = false;
                     for &(base, kind) in &drefs {
                         if unpredicated && kind == XrefKind::Data && stated.is_none() && a32.gap.is_none() {
                             cases.extend(kuna_switchtable::targets(
@@ -1426,6 +1515,7 @@ fn descend(
                             }
                         }
                         (cases, stated) = (read.cases, read.stated);
+                        unbounded = read.unbounded;
                     }
                     // A dispatch that names no address rendered nothing above,
                     // and a row whose instruction column is blank does not say
@@ -1433,9 +1523,53 @@ fn descend(
                     if !cases.is_empty() && text.is_empty() {
                         text = assembly(translate, vma, &code_space);
                     }
-                    st.take_switch(vma, entry, &cases, stated, max_entries, &text);
-                    picpool.cases(vma, &cases);
-                    insn_queue.extend(cases.iter().map(|&target| (target, mode)));
+                    // (kuna `calltable`) A table whose distinct targets are other
+                    // functions' entries (40% of a checked table, all of an
+                    // unchecked one) dispatches tail calls, not cases of this
+                    // function.
+                    if unbounded && arch.analysis_calltable {
+                        cases = kuna_calltable::call_table_run(cases, arm, |t| {
+                            st.decoded.contains(&t) && !st.funcs.contains(&t)
+                        });
+                    }
+                    let call_table = arch.analysis_calltable
+                        && kuna_calltable::is_call_table(&cases, stated.is_none(), |t| st.funcs.contains(&t) && t != entry);
+                    if call_table {
+                        for t in cases.iter().copied().collect::<BTreeSet<u64>>() {
+                            st.file(vma, t, XrefKind::Call, &text);
+                            if st.funcs.insert(t) {
+                                func_queue.push_back(t);
+                            }
+                        }
+                    } else if !unbounded {
+                        st.take_switch(vma, entry, &cases, stated, max_entries, &text);
+                        picpool.cases(vma, &cases);
+                        insn_queue.extend(cases.iter().map(|&target| (target, mode)));
+                    }
+                }
+            }
+            // (kuna `calltable`) An indexed call through a table of function
+            // pointers calls every entry of the table.
+            if arch.analysis_calltable && c.flows.is_empty() && c.flow.is_computed && c.flow.is_call {
+                let callind = cap.ops().iter().find(|o| o.opcode == OpCode::CPUI_CALLIND).and_then(|o| o.ins.first());
+                if let (Some(p), Some(callind)) = (pool.as_ref(), callind) {
+                    let mut read = kuna_switchtable::register_targets(
+                        translate, &code_space, data_space.as_ref(), &st.decoded, vma, callind, p, &exec, &reach,
+                    );
+                    if read.stated.is_none() && !read.cases.is_empty() {
+                        call_sites.push((vma, callind.clone()));
+                        read.cases.clear();
+                    }
+                    read.cases.retain(|&t| !(arm && t & 1 == 1));
+                    if !read.cases.is_empty() && text.is_empty() {
+                        text = assembly(translate, vma, &code_space);
+                    }
+                    for t in read.cases.into_iter().collect::<BTreeSet<u64>>() {
+                        st.file(vma, t, XrefKind::Call, &text);
+                        if st.funcs.insert(t) {
+                            func_queue.push_back(t);
+                        }
+                    }
                 }
             }
 
@@ -1522,9 +1656,8 @@ fn descend(
             st.file(vma, to, kind, &text);
         }
     }
-    for (vma, page) in st.carry.superseded(&st.funcs) {
-        st.unfile(vma, page, XrefKind::Data);
-    }
+    let superseded: HashSet<(u64, u64)> = st.carry.superseded(&st.funcs).into_iter().collect();
+    st.unfile_data(&superseded);
     // A focus address that did not decode is not a function: recording it as one
     // would answer `sub_<addr>` for a byte in the middle of a string.
     for f in focused {
@@ -1643,12 +1776,10 @@ fn render_frame_flow(listing: &mut super::Listing, state: &State) {
             listing.insns.get_mut(&from).unwrap().flows.push(to);
         }
     }
-    for (&from, refs) in &state.by_source {
-        for call in refs.iter().filter(|r| r.kind == XrefKind::Call) {
-            let insn = listing.insns.get_mut(&from).unwrap();
-            insn.flow.is_call = true;
-            insn.flows.push(call.to);
-        }
+    for call in state.refs.iter().filter(|r| r.kind == XrefKind::Call) {
+        let insn = listing.insns.get_mut(&call.from).unwrap();
+        insn.flow.is_call = true;
+        insn.flows.push(call.to);
     }
 }
 
@@ -1794,8 +1925,11 @@ fn veneer_at(
 
 /// The accumulating state of [`build`].
 struct State {
-    by_target: BTreeMap<u64, Vec<Xref>>,
-    by_source: BTreeMap<u64, Vec<Xref>>,
+    /// Every row filed, in filing order; sorted and deduplicated once, in
+    /// [`State::finish`].
+    refs: Vec<Xref>,
+    /// The instruction texts the rows share.
+    texts: HashSet<Arc<str>>,
     /// Membership only (the `VisitStat` dedup), so it is hashed rather than
     /// ordered: it is probed once per successor edge over the whole program.
     decoded: HashSet<u64>,
@@ -1821,8 +1955,8 @@ struct State {
 impl State {
     fn new(seeds: &BTreeSet<u64>, keep_flow: bool) -> Self {
         Self {
-            by_target: BTreeMap::new(),
-            by_source: BTreeMap::new(),
+            refs: Vec::new(),
+            texts: HashSet::new(),
             decoded: HashSet::new(),
             funcs: seeds.clone(),
             indirect_call_sites: BTreeSet::new(),
@@ -1869,23 +2003,22 @@ impl State {
     }
 
     fn file(&mut self, from: u64, to: u64, kind: XrefKind, instruction: &str) {
-        let r = Xref { from, to, kind, instruction: instruction.to_string() };
-        self.by_target.entry(to).or_default().push(r.clone());
-        self.by_source.entry(from).or_default().push(r);
-    }
-
-    /// Withdraw every `from -> to` row of `kind`.
-    fn unfile(&mut self, from: u64, to: u64, kind: XrefKind) {
-        let withdraw = |map: &mut BTreeMap<u64, Vec<Xref>>, key: u64| {
-            if let Some(refs) = map.get_mut(&key) {
-                refs.retain(|r| (r.from, r.to, r.kind) != (from, to, kind));
-                if refs.is_empty() {
-                    map.remove(&key);
-                }
+        let instruction = match self.texts.get(instruction) {
+            Some(text) => Arc::clone(text),
+            None => {
+                let text: Arc<str> = instruction.into();
+                self.texts.insert(Arc::clone(&text));
+                text
             }
         };
-        withdraw(&mut self.by_source, from);
-        withdraw(&mut self.by_target, to);
+        self.refs.push(Xref { from, to, kind, instruction });
+    }
+
+    /// Withdraw every `Data` row whose `(from, to)` is in `pairs`, in one pass.
+    fn unfile_data(&mut self, pairs: &HashSet<(u64, u64)>) {
+        if !pairs.is_empty() {
+            self.refs.retain(|r| r.kind != XrefKind::Data || !pairs.contains(&(r.from, r.to)));
+        }
     }
 
     /// Use the same owners for incoming rows, outgoing buckets and computed calls.
@@ -1902,35 +2035,34 @@ impl State {
             || self.funcs.range(..=vma).next_back().copied(),
             |owners| owners.get(&vma).copied(),
         );
-        let mut by_source_function: BTreeMap<u64, Vec<Xref>> = BTreeMap::new();
-        for (&from, refs) in &self.by_source {
-            let Some(entry) = owner(from) else {
-                continue;
-            };
-            by_source_function.entry(entry).or_default().extend(refs.iter().cloned());
+        let mut refs = std::mem::take(&mut self.refs);
+        refs.sort_by_key(|r| (r.to, r.from, r.kind));
+        refs.dedup_by_key(|r| (r.to, r.from, r.kind));
+        refs.shrink_to_fit();
+        let mut by_source: Vec<usize> = (0..refs.len()).collect();
+        by_source.sort_unstable_by_key(|&i| (refs[i].from, refs[i].to, refs[i].kind));
+        let mut by_source_function: BTreeMap<u64, Vec<usize>> = BTreeMap::new();
+        for run in by_source.chunk_by(|&a, &b| refs[a].from == refs[b].from) {
+            if let Some(entry) = owner(refs[run[0]].from) {
+                by_source_function.entry(entry).or_default().extend_from_slice(run);
+            }
+        }
+        for rows in by_source_function.values_mut() {
+            rows.sort_unstable();
         }
         let indirect_callers: BTreeSet<u64> = self
             .indirect_call_sites
             .iter()
             .filter_map(|from| owner(*from))
             .collect();
-        for refs in self.by_target.values_mut() {
-            sort_dedup(refs, /* by_source = */ true);
-        }
-        for refs in self.by_source.values_mut() {
-            sort_dedup(refs, /* by_source = */ false);
-        }
-        for refs in by_source_function.values_mut() {
-            sort_dedup(refs, /* by_source = */ false);
-        }
         let insns = self.decoded.len();
         let mut veneers_of_slot: BTreeMap<u64, Vec<u64>> = BTreeMap::new();
         for (&entry, v) in &veneers {
             veneers_of_slot.entry(v.slot).or_default().push(entry);
         }
         XrefIndex {
-            by_target: self.by_target,
-            by_source: self.by_source,
+            refs,
+            by_source,
             by_source_function,
             scoped_callers: BTreeMap::new(),
             decoded: self.decoded,
@@ -1986,22 +2118,10 @@ fn mapping_kind(name: &str) -> Option<u8> {
     }
 }
 
-/// Lock one bucket's read ordering and collapse duplicates on `(from, to, kind)`,
-/// so a target reached twice from one site contributes exactly one row (the same
-/// contract [`super::Listing`]'s reference index holds).
-fn sort_dedup(refs: &mut Vec<Xref>, by_source: bool) {
-    refs.sort_by(|a, b| {
-        let (pa, sa) = if by_source { (a.from, a.to) } else { (a.to, a.from) };
-        let (pb, sb) = if by_source { (b.from, b.to) } else { (b.to, b.from) };
-        pa.cmp(&pb).then_with(|| sa.cmp(&sb)).then_with(|| a.kind.cmp(&b.kind))
-    });
-    refs.dedup_by(|a, b| a.from == b.from && a.to == b.to && a.kind == b.kind);
-}
-
 fn empty() -> XrefIndex {
     XrefIndex {
-        by_target: BTreeMap::new(),
-        by_source: BTreeMap::new(),
+        refs: Vec::new(),
+        by_source: Vec::new(),
         by_source_function: BTreeMap::new(),
         scoped_callers: BTreeMap::new(),
         decoded: HashSet::new(),
@@ -2910,15 +3030,15 @@ mod tests {
     /// somewhere else. Both addresses must answer with both references, and
     /// neither may report the veneer's own forwarding jump as a caller.
     fn import_index() -> XrefIndex {
-        let mk = |from, to, kind| Xref { from, to, kind, instruction: String::new() };
+        let mk = |from, to, kind| Xref { from, to, kind, instruction: "".into() };
         let edges = [
             mk(0x1102, 0x1030, XrefKind::Call), // a direct call to the veneer
             mk(0x1030, 0x4008, XrefKind::Jump), // the veneer's own jmp [slot]
             mk(0x1200, 0x4008, XrefKind::Read), // a call straight through the slot
         ];
         let mut st = State {
-            by_target: BTreeMap::new(),
-            by_source: BTreeMap::new(),
+            refs: Vec::new(),
+            texts: HashSet::new(),
             decoded: HashSet::from([0x1030, 0x1102, 0x1200]),
             funcs: BTreeSet::from([0x1000, 0x1030, 0x1180]),
             indirect_call_sites: BTreeSet::new(),
@@ -2977,8 +3097,8 @@ mod tests {
     #[test]
     fn a_computed_call_is_attributed_to_the_function_containing_it() {
         let mut st = State {
-            by_target: BTreeMap::new(),
-            by_source: BTreeMap::new(),
+            refs: Vec::new(),
+            texts: HashSet::new(),
             decoded: HashSet::from([0x1188]),
             funcs: BTreeSet::from([0x1000, 0x1030, 0x1180]),
             indirect_call_sites: BTreeSet::from([0x1188]),
@@ -3011,8 +3131,8 @@ mod tests {
         insns.extend(head);
         insns.push((0x3000, 1, false));
         let st = State {
-            by_target: BTreeMap::new(),
-            by_source: BTreeMap::new(),
+            refs: Vec::new(),
+            texts: HashSet::new(),
             decoded: insns.iter().map(|&(vma, _, _)| vma).collect(),
             funcs: BTreeSet::from([0x1000, 0x2000, 0x3000]),
             indirect_call_sites: BTreeSet::new(),
@@ -3112,18 +3232,19 @@ mod tests {
         assert!(in_range(&range_union(mapped_ranges(&file)), got.address()), "the GOT slot reads as unmapped");
     }
 
-    /// `sort_dedup` collapses the `(from, to, kind)` triple: one row per site.
+    /// `finish` collapses the `(from, to, kind)` triple: one row per site.
     #[test]
     fn duplicate_edges_from_one_site_collapse() {
-        let mk = |from, to, kind| Xref { from, to, kind, instruction: String::new() };
-        let mut rows = vec![
-            mk(0x1102, 0x1030, XrefKind::Call),
-            mk(0x1102, 0x1030, XrefKind::Call),
-            mk(0x1010, 0x1030, XrefKind::Jump),
-        ];
-        sort_dedup(&mut rows, true);
+        let mut st = State::new(&BTreeSet::from([0x1000]), false);
+        st.file(0x1102, 0x1030, XrefKind::Call, "first");
+        st.file(0x1102, 0x1030, XrefKind::Call, "second");
+        st.file(0x1010, 0x1030, XrefKind::Jump, "");
+        let index = st.finish(BTreeMap::new(), false);
+        let rows = index.refs_to(0x1030);
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].from, 0x1010);
-        assert_eq!(rows[1].from, 0x1102);
+        assert_eq!((rows[1].from, &*rows[1].instruction), (0x1102, "first"));
+        assert_eq!(index.refs_from_instruction(0x1102).len(), 1);
+        assert_eq!(index.refs_from_function(0x1000).len(), 2);
     }
 }
