@@ -1056,6 +1056,16 @@ no_link_references_the_return_address_it_leaves)`.
 `chkstkdarwin_macho_arm64.provenance` (Apple clang, which needs macOS). Pinned
 by `tests/stages/kuna-chkstkdarwin.xml`.
 
+`macho_stubs_stripped_arm64` (arm64, 33 KB; generator
+`macho_stubs_stripped_arm64.py`, regenerate with `python3 macho_stubs_stripped_arm64.py`)
+is `chkstkdarwin_macho_arm64` with every indirect-symbol entry overwritten with
+`INDIRECT_SYMBOL_LOCAL | INDIRECT_SYMBOL_ABS`, the way `strip` leaves a stub whose
+undefined `nlist` it dropped while the chained-fixups bind on the `__got` slot stays.
+Pins `stubbinds` (`loader/kuna_stubbinds.rs`): the `__stubs` entry at `0x100000520`
+is `sub_100000520` from the indirect-symbol walk and `__chkstk_darwin` from the bind
+on `0x100004000`; `tests/stages/kuna-stubbinds.xml` is the two-pass stage test.
+SHA-256 `3431ceec04e811d5c7a04b8b21d9f346077bb5faed9e7191f66610fcc25829f3`.
+
 `chkstkdarwin_macho_arm64e` (arm64e, 33 KB) reaches the probe through an
 `__auth_ptr` slot, the way an arm64e link calls it: `_big_e` with
 `adrp x16; ldr x16,[x16,#off]; blraaz x16` and `_vla_e` with

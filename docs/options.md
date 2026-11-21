@@ -630,6 +630,10 @@ Three tiers:
 | kuna xrefs shows no caller for a function called through ops[i](x) | [`calltable`](#calltable----on--off-default-on) |
 | a switch case that opens with push rbp is listed as a function | [`calltable`](#calltable----on--off-default-on) |
 | a dispatcher's table of tail calls is printed as a switch | [`calltable`](#calltable----on--off-default-on) |
+| a stripped Mach-O's stubs stay sub_ while its __got slots are named | [`stubbinds`](#stubbinds----on--off-default-on) |
+| anonymous sub_ calls into Swift stdlib or runtime from a SwiftPM framework | [`stubbinds`](#stubbinds----on--off-default-on) |
+| llvm-otool -I shows LOCAL ABSOLUTE for a __stubs entry whose slot has a chained bind | [`stubbinds`](#stubbinds----on--off-default-on) |
+| kuna names fewer imports than the chained-fixups import table lists | [`stubbinds`](#stubbinds----on--off-default-on) |
 | go function parameters missing or void while the body reads rax/rbx locals that are never assigned | [`goabi`](#goabi----auto--off-default-auto) |
 | a go function returning two values loses the second and the statements computing it | [`goabi`](#goabi----auto--off-default-auto) |
 | go output full of unassigned register-commented locals | [`goabi`](#goabi----auto--off-default-auto) |
@@ -2190,6 +2194,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On (default). Flip off if a hand-written dispatcher's table is misread as functions, or to see a prologue-shaped switch case listed as a function again.
 - **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-calltable
 - **Example:** `--option calltable off`
+
+### `stubbinds` -- on | off, default `on`
+
+- **Symptoms:** a stripped Mach-O's stubs stay sub_ while its __got slots are named; anonymous sub_ calls into Swift stdlib or runtime from a SwiftPM framework; llvm-otool -I shows LOCAL ABSOLUTE for a __stubs entry whose slot has a chained bind; kuna names fewer imports than the chained-fixups import table lists.
+- **What it does:** Name a Mach-O `__stubs` entry after the import its pointer slot is bound to when the indirect-symbol table no longer says. A stub is named through `LC_DYSYMTAB`: its indirect-symbol entry indexes the undefined `nlist` of the import it jumps to. A chained-fixups link records the import again as the bind on the slot the stub loads, and once the image is stripped the `nlist` entry can go while the bind stays: `strip` writes `INDIRECT_SYMBOL_LOCAL | INDIRECT_SYMBOL_ABS` over the stub's entry, which is how the SwiftPM-built frameworks of an App Store app ship most of their Swift stdlib and runtime calls. The indirect-symbol walk then leaves the stub `sub_<addr>` and every `bl` to it is an anonymous call. With this on, each such stub is decoded to the slot it jumps through (`adrp; ldr; br` on arm64, the `adrp; add; ldr; braa` of an arm64e `__auth_stubs` entry, `jmp [rip+disp]` on x86-64) and named after the slot's addend-free chained bind, one leading `_` stripped and Swift or Itanium names demangled, exactly as the indirect-symbol walk names a stub. A stub that walk already named, a stub that does not decode to a slot, and a slot with no bind or a bind with an addend are left alone. Mach-O only; inert on an image without chained fixups or with a complete indirect-symbol table, so every datatest is byte-identical.
+- **When to flip:** On (default): a stripped SwiftPM framework's `sub_fc80(0x28)` becomes `Swift._StringGuts.grow(_:)(0x28)`. Flip off to see the stubs as the symbol table alone names them, or when auditing what the indirect-symbol table says.
+- **Where / provenance:** P1/environment-binding · kuna · analysis-enablement · kuna-analysis-stubbinds
+- **Example:** `--option stubbinds off`
 
 ### `goabi` -- auto | off, default `auto`
 
