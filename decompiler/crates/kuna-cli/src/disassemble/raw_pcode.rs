@@ -137,9 +137,26 @@ struct Lift {
 /// Lift the instruction at `addr`, refusing one that does not decode or that
 /// would run past `stop`.
 fn lift(prog: &ConsoleProgram, addr: u64, stop: Option<u64>) -> Result<Lift, String> {
-    let (size, ops) = prog
-        .raw_pcode_at(addr)
-        .map_err(|e| format!("cannot lift instruction at 0x{addr:x}: {e}"))?;
+    let (size, ops) = prog.raw_pcode_at(addr).map_err(|error| {
+        let mut message = format!("cannot lift instruction at 0x{addr:x}: {error}");
+        if matches!(error, kuna_base::error::KunaError::BadData { .. }) {
+            let hint = kuna_decomp::kuna_decodehalt::powerpc_isa_hint(
+                prog.arch().get_description(), addr, |word| {
+                    if stop.is_some_and(|end| end.saturating_sub(addr) < word.len() as u64) {
+                        return false;
+                    }
+                    let Some(bytes) = prog.read_bytes(addr, word.len()) else { return false };
+                    word.copy_from_slice(&bytes);
+                    true
+                },
+            );
+            if let Some(hint) = hint {
+                message.push_str(". ");
+                message.push_str(&hint);
+            }
+        }
+        message
+    })?;
     let size = u64::try_from(size)
         .ok()
         .filter(|&n| n > 0)

@@ -4182,7 +4182,10 @@ takes the same windowed load. The straight-line walk never guesses: it stops at
 the first instruction that does not lift or that would cross the window or the
 end of mapped memory, and returns the lifted prefix, its exclusive end, the
 failure and exit status 1. A lift that includes a delay slot reports the
-combined byte span and the slot's operations in the same row.
+combined byte span and the slot's operations in the same row. On generic
+PowerPC64, a failed lift of a complete `isel` word within the window names
+the instruction and suggests the byte-order-matched A2ALT target. The error
+stays attached to the failed address in both straight-line and followed walks.
 
 The `--follow` walk (`raw_pcode/flow.rs`) reads each lift's successors with the
 rule `FlowInfo::xrefControlFlow` applies (`p2_lift/flow.rs`): a branch into the
