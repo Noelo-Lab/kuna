@@ -194,6 +194,31 @@ impl Funcdata {
         }
     }
 
+    /// (kuna `gotonext`) Re-derive each fall-thru chain from the case blocks: a
+    /// case that is a `BlockGoto` to another case's entry block chains to that
+    /// case.  `grab_case_basic` reads the target's switch out-index from sblocks
+    /// edges, which a target wrapped in its own `BlockGoto` has lost and whose
+    /// remaining indices can be stale, so a chain could be missed or point at the
+    /// case itself, and the sort then put that case first under label 0.
+    fn chain_fallthru_cases(&self, cases: &mut [crate::block::CaseOrder]) {
+        let sb = self.sblocks_ref();
+        for i in 0..cases.len() {
+            let blk = sb.block(cases[i].block);
+            if cases[i].gototype != 0 || blk.get_type() != crate::block::BlockType::Goto {
+                continue;
+            }
+            let target = blk.get_goto_target().and_then(|t| sb.get_front_leaf(t)).and_then(|f| sb.sub_block(f, 0));
+            cases[i].chain = match target {
+                Some(t) => cases
+                    .iter()
+                    .position(|c| c.gototype == 0 && c.basicblock == Some(t))
+                    .filter(|&j| j != i)
+                    .map_or(-1, |j| j as i32),
+                None => -1,
+            };
+        }
+    }
+
     /// `BlockSwitch::finalizePrinting` for a single switch node (block.cc:3607).
     fn finalize_one_switch(&mut self, sw: BlockId) {
         let jt_index = match self.sblocks_ref().block(sw).switch_jt_index() {
@@ -207,6 +232,9 @@ impl Funcdata {
             None => return,
         };
         let ncase = cases.len();
+        if self.get_arch().goto_next {
+            self.chain_fallthru_cases(&mut cases);
+        }
         // Construct the depth parameter, to sort fall-thru cases.
         for i in 0..ncase {
             let mut j = cases[i].chain;

@@ -161,10 +161,26 @@ No p-code, statement, or destination changes.
 
 `kuna_loopcontinue.rs (recover_continues)` runs before `mark_unstructured`.
 A goto or if-goto becomes `continue` only when its target's first leaf is the
-first leaf of its innermost `BlockInfLoop`. Entering a nested loop resets that
-scope; conditional loops disable recovery because their continue may evaluate
-a condition or iterator rather than restart the first leaf. Other destinations
-retain gotos. `off` restores the original collapse precedence and rendering.
+first leaf of its innermost `BlockInfLoop`, or the continue point of its
+innermost conditional loop. Entering a nested loop resets that scope. A
+conditional loop's `continue;` evaluates a test or an iterate statement rather
+than restarting the first leaf, so `kuna_loopcontinue.rs (continue_points)`
+gives each one the leaf a `continue;` resumes at, or none. A while-do resumes
+at the front leaf of its condition block, unless it prints as a `for` (an
+iterate op), whose `continue;` would run the iterate statement first; in the
+overflow form the condition block prints first inside `while( true ) { ... }`,
+which is where the jump lands too. A do-while resumes at the last leaf of its
+body only when that leaf prints nothing but the loop test: every op besides
+the branch is not printed, a marker, or has an implied output, and only when
+the output language's do-while runs its test on `continue;`: C's `do..while`
+and Go's `for` post statement do, while Rust prints a do-while as
+`loop { ..; if !(c) { break; } }`, where `continue;` would skip the test, so a
+Rust do-while keeps the goto (the `do_while_continue` flag the architecture
+derives from the output language). A switch
+between the jump and the loop does not matter, since C's `continue` skips
+switches. A jump into any other leaf, including the latch of a `while( true )`
+loop, keeps its goto. `off` restores the original collapse precedence and
+rendering.
 
 **(angr) `condfold` — folding across a *complex* sibling.** `rule_block_or`
 requires the sibling condition block (upstream's `orblock`, the right operand
@@ -1202,6 +1218,53 @@ label-marked and the dead label disappears (`continue` needs no handling
 here — loop construction already tags back-edge gotos). *Failure:* an edge
 whose target is not exactly the innermost loop successor is left a real
 goto. Flipped on by DIV-10.
+
+### gotonext — jumps to where control goes anyway (Ghidra `gotoPrints`)
+
+`decompiler/crates/kuna-decomp/src/p8_structure/kuna_gotonext.rs
+(goto_rewrites)`, read by the C printer
+(`decompiler/crates/kuna-decomp/src/p9_emit/printc.rs (PrintC::emit_function_body)`).
+Upstream prints a `BlockGoto`'s jump only when `BlockGoto::gotoPrints`
+holds: the jump's target is not the block that `nextFlowAfter` says runs
+next. kuna's printer printed every such jump, so a switch case falling into
+the next case, and an `if` arm whose last statement jumps to the statement
+after the `if`, printed `goto label_X;` directly above `label_X:`. Passes that
+edit the structured tree after `scopeBreak` also leave jumps to the statement
+after the innermost loop or switch, which is what `break;` does.
+
+*Transform:* the census walks the final structured tree once per function,
+at the top of body emission, so it sees the tree after every pass that edits
+it. It uses `BlockGraph::next_printed_flow_after`, which is `nextFlowAfter`
+with one addition: a switch case whose body prints no `break;` (it is not
+an exit of the switch) falls into the next case even when the body is not a
+`BlockGoto`. Then:
+
+- a `BlockGoto` whose target's front leaf is the next flow prints no jump;
+- a `BlockGoto`, `if (c) goto` or bare-goto switch arm of type
+  `f_goto_goto` whose target's front leaf is the next flow after the
+  innermost loop or switch whose body holds it prints `break;` (only while
+  `loopbreak_recovery` is on, the option that owns `scopeBreak`);
+- a label prints only if a jump that still prints `goto` reaches it. The
+  label carriers are the ones `mark_unstructured` marks, and a
+  `BlockMultiGoto` edge always keeps its label, so a printed `goto` never
+  loses its label.
+
+The census only changes how a jump is spelled, never where control goes:
+each rewrite needs the target to be exactly the block the C text reaches
+next. It applies to the C switch form only, because a Rust `match` arm does
+not fall through and a Rust `break` leaves the loop, not the match.
+
+*Case order:* `BlockSwitch::finalizePrinting` sorts the cases by label and
+places each fall-thru chain (a case that is a `BlockGoto` to another case)
+directly before the case it jumps to. `grab_case_basic` reads the chained
+case's switch out-index from sblocks edges. A case wrapped in its own
+`BlockGoto` has lost that in-edge, and the remaining sblocks indices can be
+stale, so a chain was missed or pointed at the case itself; the sort then
+printed that case first under label 0. With the option on,
+`Funcdata::chain_fallthru_cases` re-derives each chain by matching the jump's
+target leaf against the case blocks before the sort, and the jump between
+the two cases is then a fall-through the census leaves out. Off restores
+both the printing of every jump and the recorded chains.
 
 ### returndup — the whole-block duplicator (angr `ReturnDuplicatorHigh`)
 
