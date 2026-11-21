@@ -304,7 +304,11 @@ impl FlowEnvironment for ArchFlowEnv {
                 }
             }
         }
-        arch.symboltab.function_inject_id_across_scopes(entry)
+        let id = arch.symboltab.function_inject_id_across_scopes(entry);
+        if id >= 0 {
+            return id;
+        }
+        crate::p2_lift::kuna_retpolinethunk::inject_id(arch, entry)
     }
     fn build_inline_funcdata(&self, entry: &Address) -> KunaResult<Option<Funcdata>> {
         // C++ `Funcdata::inlineFlow` builds a fresh FlowInfo over the queried
@@ -606,6 +610,10 @@ impl FlowEnvironment for ArchFlowEnv {
         let breakpoint = index(crate::kuna_ptrauthtrap::BREAKPOINT_USEROP);
         let callother = crate::kuna_kernelbug::site_producer(fd, op, invalid, breakpoint)?;
         Some((callother, site))
+    }
+
+    fn kernel_bug_trap_at(&self, addr: u64) -> bool {
+        crate::kuna_kernelbug::site_at(&self.arch().kernel_bug_sites, addr).is_some()
     }
 
     fn is_tail_call_branch(

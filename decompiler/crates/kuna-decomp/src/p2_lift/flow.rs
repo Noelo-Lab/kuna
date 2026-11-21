@@ -431,6 +431,13 @@ pub trait FlowEnvironment {
         None
     }
 
+    /// (kuna) Does a Linux kernel `__bug_table` entry name the trap at `addr`?
+    /// Such a `ud2` is a `WARN`/`BUG` statement of its own, not evidence about
+    /// the call before it (`trapaftercall`).
+    fn kernel_bug_trap_at(&self, _addr: u64) -> bool {
+        false
+    }
+
     /// (kuna) Is the direct BRANCH or bounded CBRANCH `op`, whose target is
     /// `dest`, an `-O2` tail call to another known function's entry (and so should
     /// be recovered as a `CALL` + `RETURN` rather than flow-followed into the
@@ -3137,9 +3144,17 @@ truncating the fall-through here"
         }
         // The noreturn flag is also reported straight from the symbol table for
         // envs that carry it only there (the W4-era `query_call_no_return` hook).
-        let no_return = is_no_return
+        let mut no_return = is_no_return
             || (!entry.is_invalid()
                 && (self.env.query_call_no_return(entry) || self.call_site_no_return(op, entry)));
+        if !no_return && self.trap_follows_call(op) {
+            if !entry.is_invalid() {
+                if let Some(idx) = self.data.get_call_specs_index(op) {
+                    self.data.get_call_specs_mut(idx).proto_mut().set_no_return(true);
+                }
+            }
+            no_return = true;
+        }
         if no_return {
             let addr = self
                 .data
@@ -3159,6 +3174,38 @@ truncating the fall-through here"
             return Ok(true);
         }
         Ok(false)
+    }
+
+    /// (kuna `trapaftercall`) Is `op`'s instruction a machine `call` followed by
+    /// the `ud2` clang emits after a no-return call (trap-unreachable, the
+    /// Darwin and rustc default)? Execution never reaches it after a call that
+    /// returns. A tail `jmp` the flow turned into a call is not evidence, and
+    /// neither is `int3`: anti-debug code returns into an `int3` pad on purpose.
+    /// A `ud2` a Linux `__bug_table` entry names is a `WARN`/`BUG` of its own.
+    /// A `CALLIND` gets the halt but not the no-return mark on its call spec:
+    /// `ActionDeindirect` would see the mark disagree with the resolved
+    /// callee's prototype and restart the function.
+    fn trap_follows_call(&self, op: OpId) -> bool {
+        if !self.data.get_arch().trap_after_call {
+            return false;
+        }
+        let Some(addr) = self.data.obank().get(op).map(|o| o.get_addr().clone()) else { return false };
+        let Some(size) = self.visited.get(&addr).map(|v| v.size) else { return false };
+        let next = &addr + i64::from(size);
+        let byte = |at: &Address, k: i64| self.data.get_arch().get_load_image_value(&(at + k), 1).ok();
+        let mut first = 0;
+        while matches!(byte(&addr, first), Some(0x40..=0x4f | 0x66 | 0x2e | 0x3e | 0xf2)) && first < 4 {
+            first += 1;
+        }
+        let is_call = match byte(&addr, first) {
+            Some(0xe8) => true,
+            Some(0xff) => byte(&addr, first + 1).is_some_and(|m| (m >> 3) & 7 == 2),
+            _ => false,
+        };
+        is_call
+            && byte(&next, 0) == Some(0x0f)
+            && byte(&next, 1) == Some(0x0b)
+            && !self.env.kernel_bug_trap_at(next.get_offset())
     }
 
     /// [`FlowEnvironment::query_call_no_return_at`] for the decoded instruction

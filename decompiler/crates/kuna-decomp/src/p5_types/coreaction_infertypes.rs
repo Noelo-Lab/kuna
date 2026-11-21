@@ -103,6 +103,15 @@ pub(crate) fn output_type_local(data: &Funcdata, op: OpId) -> Rc<Datatype> {
                 return t;
             }
         }
+        // (kuna `vaarg`) an SSE-class `va_arg` reads a `double`.
+        if in0_off == crate::userop::BUILTIN_VAARG as u64
+            && out_size == 8
+            && o.get_in(2).and_then(|v| data.vbank().get(v)).is_some_and(|v| v.is_constant() && v.get_offset() == 1)
+        {
+            if let Some(Ok(t)) = arch.types().map(|t| t.get_base(8, type_metatype::TYPE_FLOAT)) {
+                return t;
+            }
+        }
     }
     // C++ `TypeOpCall::getOutputLocal` (typeop.cc:722) / `TypeOpCallind::getOutputLocal`
     // (typeop.cc:778): when the resolved `FuncCallSpecs` has a locked (committed)
@@ -180,6 +189,22 @@ fn input_type_local_with(data: &Funcdata, op: OpId, slot: int4, recovered: bool)
             let ws = data.get_arch().manage().get_default_data_space().map(|s| s.get_word_size()).unwrap_or(1);
             if let Ok(ptr) = tlst.get_type_char(1).and_then(|c| tlst.get_type_pointer(in_size, c, ws)) {
                 return ptr;
+            }
+        }
+    }
+
+    // (kuna vastart) `va_start(__va_list_tag *, ...)`.
+    if opcode == OpCode::CPUI_CALLOTHER
+        && slot == 1
+        && in_size == 8
+        && o.get_in(0).and_then(|v| data.vbank().get(v)).map(|v| v.get_offset())
+            == Some(crate::userop::BUILTIN_VA_START as u64)
+    {
+        if let Some(tlst) = arch.types() {
+            if let Ok(ptr) = tlst.get_type_struct("__va_list_tag").and_then(|t| tlst.get_type_pointer(8, t, 1)) {
+                if ptr.get_ptr_to().is_some_and(|t| t.get_size() == 24) {
+                    return ptr;
+                }
             }
         }
     }

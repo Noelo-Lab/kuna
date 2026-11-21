@@ -110,6 +110,8 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // global by-name query answers with the slot, which is not the address a
         // direct `call` resolves to. Registered always.
         Box::new(crate::protos::kuna_win32sigs::Win32SigsPass),
+        // (kuna `tlsnames`) The static TLS block of an x86 ELF executable.
+        Box::new(crate::tls::TlsNamesPass),
         // S1 entry discovery: find function entry points for stripped targets —
         // ELF e_entry, DT_INIT/DT_FINI + INIT_ARRAY/FINI_ARRAY pointer tables,
         // `.eh_frame` FDE pcBegin starts, the x86-64 `_start`→`main` libc-start

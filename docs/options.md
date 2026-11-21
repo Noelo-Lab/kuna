@@ -160,6 +160,10 @@ Three tiers:
 | a TOC-relative global after an external PPC64 call prints as an unknown pointer plus an offset | [`callmechanisms`](#callmechanisms----off--auto--on-default-auto) |
 | a 32-bit PowerPC -O0 variadic call drops a trailing double that an earlier argument is computed from | [`varargsharedfloat`](#varargsharedfloat----on--off-default-off) |
 | `sumi(2, x * 2, x)` prints as `sumi(2,x + x)` on PowerPC | [`varargsharedfloat`](#varargsharedfloat----on--off-default-off) |
+| a variadic function prints a dozen register copies, an if (al) block of XMM copies and gp_offset/fp_offset stores | [`vastart`](#vastart----on--off-default-on) |
+| a stripped printf-like function recovers 14 parameters | [`vastart`](#vastart----on--off-default-on) |
+| va_arg diamond printed as gp_offset/fp_offset checks and register save area or overflow pointer accesses | [`vaarg`](#vaarg----on--off-default-on) |
+| a variadic function's loop over multiple int/long/double arguments prints as separate gp_offset-checked loads | [`vaarg`](#vaarg----on--off-default-on) |
 | a uint8_t parameter prints as unsigned int and is only ever used as a1 & 0xff or (char)a1 | [`narrowargs`](#narrowargs----off--on--callers-default-callers) |
 | an int parameter prints as unsigned long on x86-64 and is used as (unsigned int)a0 | [`narrowargs`](#narrowargs----off--on--callers-default-callers) |
 | a caller passes v + 5 to a callee whose parameter is a byte and another caller passes v - 8 & 0xff | [`narrowargs`](#narrowargs----off--on--callers-default-callers) |
@@ -472,6 +476,9 @@ Three tiers:
 | every function of an MS-DOS executable declares an unsigned short local commented // ds | [`mzdgroup`](#mzdgroup----on--off-default-on) |
 | the same DOS global gets no shared name across functions | [`mzdgroup`](#mzdgroup----on--off-default-on) |
 | a near string pointer in a DOS program resolves to a low address instead of its data segment | [`mzdgroup`](#mzdgroup----on--off-default-on) |
+| a __thread variable reads as *(int *)(v1 + -0x10) with v1 an fs_offset | [`tlsnames`](#tlsnames----on--off-default-on) |
+| thread-local variables of an executable have no names although .symtab has STT_TLS symbols | [`tlsnames`](#tlsnames----on--off-default-on) |
+| the TLS block is not modelled | [`tlsnames`](#tlsnames----on--off-default-on) |
 | a function that only ever passes its argument to a libc stdio call still declares it long or unsigned long | [`libctypes`](#libctypes----off--opaque--glibc-default-opaque) |
 | a fopen or fdopen result is a void * that nothing can name | [`libctypes`](#libctypes----off--opaque--glibc-default-opaque) |
 | a stat or lstat call fills an untyped void * buffer | [`libctypes`](#libctypes----off--opaque--glibc-default-opaque) |
@@ -735,6 +742,12 @@ Three tiers:
 | stg, st2g or stzg leave no trace in the output of MTE-hardened AArch64 code | [`acleintrinsics`](#acleintrinsics----on--off-default-on) |
 | DataMemoryBarrier(2,3) or DataSynchronizationBarrier(3,3,0) where the source called __dmb or __dsb | [`acleintrinsics`](#acleintrinsics----on--off-default-on) |
 | WaitForInterrupt() or Yield() where the source called __wfi or __yield | [`acleintrinsics`](#acleintrinsics----on--off-default-on) |
+| invalidInstructionException() after a call in a stripped rust or clang binary | [`trapaftercall`](#trapaftercall----on--off-default-on) |
+| a panic helper call is not marked no-return | [`trapaftercall`](#trapaftercall----on--off-default-on) |
+| ud2 after a call is printed as a jump-as-call | [`trapaftercall`](#trapaftercall----on--off-default-on) |
+| a function-pointer call renders as a call of __llvm_retpoline_r11 | [`retpolinethunk`](#retpolinethunk----on--off-default-on) |
+| a call of a stripped retpoline thunk sub_<addr> loses the called pointer | [`retpolinethunk`](#retpolinethunk----on--off-default-on) |
+| the pointer loaded into r11 before a call is never used | [`retpolinethunk`](#retpolinethunk----on--off-default-on) |
 | a DOS program's float code decompiles as calls through swi(0x35) and other INT 34h-3Dh vectors | [`fpuemu`](#fpuemu----off--auto--on-default-auto) |
 | Control flow encountered bad instruction data in a DOS function that does float math | [`fpuemu`](#fpuemu----off--auto--on-default-auto) |
 | a phantom function starts inside an INT 35h instruction's operand bytes | [`fpuemu`](#fpuemu----off--auto--on-default-auto) |
@@ -1214,6 +1227,22 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** Off by default. Turn it on for 32-bit PowerPC code built without optimization (-O0) when a variadic call such as `sumi(2, x * 2, x)` prints `sumi(2,x + x)`; the callee must be declared variadic (DWARF or `--assert prototype`). The register-choice evidence holds only when nothing reorders instructions after register allocation. Measured on 1,200 random clang calls of a non-format variadic double function: at -O0 it restores 91 dropped arguments and adds none; at -O2 and -Os it restores 11 and adds 23 arguments the source never passed, because the post-allocation scheduler moves a scratch value's readers so f0 or f1 looks free. Optimized code rarely needs it: -O2 copies the shared value (`fmr 2,1; fadd 1,1,1`) and prints correctly already.
 - **Where / provenance:** P4/active-input-trial-scoring · kuna · correctness-fix · GH-841
 - **Example:** `option varargsharedfloat on`
+
+### `vastart` -- on | off, default `on`
+
+- **Symptoms:** a variadic function prints a dozen register copies, an if (al) block of XMM copies and gp_offset/fp_offset stores; a stripped printf-like function recovers 14 parameters.
+- **What it does:** x86-64 System V only: print the va_start prologue as va_start(ap, last). A variadic function that materializes a va_list spills the unnamed argument registers (and, under test al, the eight XMM registers) to a 176-byte register save area and sets gp_offset, fp_offset, overflow_arg_area and reg_save_area; each spill and field store printed. With this on, the two offset constants (gp_offset 8 per named integer argument, fp_offset 48 plus 16 per named float argument) beside the two pointer writes in one block become effects of a va_start(&ap, last) CALLOTHER, the register save area loses its forced liveness so the spills go, and an unlocked prototype is marked variadic: a stripped image's 14-parameter signature becomes (a0, a1, ...).
+- **When to flip:** On (default). Flip off to see the register save area spills and the four va_list field stores.
+- **Where / provenance:** P4/prototype-source · kuna · presentation-default · kuna-vastart
+- **Example:** `option vastart off`
+
+### `vaarg` -- on | off, default `on`
+
+- **Symptoms:** va_arg diamond printed as gp_offset/fp_offset checks and register save area or overflow pointer accesses; a variadic function's loop over multiple int/long/double arguments prints as separate gp_offset-checked loads.
+- **What it does:** x86-64 System V only: print the va_arg expansion as va_arg(ap, T). A va_arg(ap, T) compiles to an offset test: the register arm reads reg_save_area + offset and steps the offset; the memory arm reads through overflow_arg_area and steps the pointer. Both arms printed. With this on, every read becomes a va_arg(ap, T) CALLOTHER and the memory arms go, whether the va_list is reached through a pointer, cached in a register, or a local that heritage promoted to SSA values (that one prints as ap, with a va_start(ap, last) added); the arms need not rejoin, as long as the path from the memory arm does what the path from the register arm does (gcc copies a loop tail into each arm).
+- **When to flip:** On (default). Flip off to see the register-save and overflow-pointer steps and the merged address load.
+- **Where / provenance:** P4/prototype-source · kuna · presentation-default · kuna-vaarg
+- **Example:** `option vaarg off`
 
 ### `narrowargs` -- off | on | callers, default `callers`
 
@@ -1891,6 +1920,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **Where / provenance:** P1/environment-binding · kuna · analysis-enablement · kuna-1288-mzdgroup
 - **Example:** `kuna decompile-all dazzle.exe --option mzdgroup off`
 
+### `tlsnames` -- on | off, default `on`
+
+- **Symptoms:** a __thread variable reads as *(int *)(v1 + -0x10) with v1 an fs_offset; thread-local variables of an executable have no names although .symtab has STT_TLS symbols; the TLS block is not modelled.
+- **What it does:** x86 and x86-64 ELF executables only: name the static TLS variables where code reaches them through the thread pointer. A local-exec access to a __thread variable is a load at a constant offset from the thread pointer (x86-64 `mov eax, fs:[-0x10]`), lowered to FS_OFFSET + -0x10 and rendered as `*(int *)(v1 + -0x10)` off an untyped fs_offset input. The x86 TLS ABIs (variant II) put the executable's TLS block immediately below the thread pointer, so the STT_TLS symbol with value v sits at v - align_up(PT_TLS.p_memsz, PT_TLS.p_align). The loader reads PT_TLS and the defined STT_TLS symbols into a layout; in a function that uses FS_OFFSET (x86-64) or GS_OFFSET (x86) only at constant offsets inside that block, the register input gets a type-locked Symbol `tls`, a pointer relative to a `__tls_block` structure (each TLS symbol a field of its size, the rest holes) that points at the block's end, so the access renders `tls[-1].counter`. A function that also reads the thread control block above the pointer (the fs:[0x28] stack canary), a shared object (whose TLS goes through __tls_get_addr), an image without TLS symbols and every non-x86 target are unchanged.
+- **When to flip:** On by default: an executable's __thread variables read by name (`tls[-1].counter = a0;`) instead of offsets off fs_offset. Flip off to see the raw thread-pointer arithmetic, for example when checking the offsets against the ABI by hand.
+- **Where / provenance:** P5/type-propagation · kuna · analysis-enablement · static-tls-names
+- **Example:** `option tlsnames off`
+
 ### `libctypes` -- off | opaque | glibc, default `opaque`
 
 - **Symptoms:** a function that only ever passes its argument to a libc stdio call still declares it long or unsigned long; a fopen or fdopen result is a void * that nothing can name; a stat or lstat call fills an untyped void * buffer; getopt_long takes a bare (void *)0x... long-option table; readdir returns a void * whose fields are casts and offsets; a stream parameter is void * where the ground truth is FILE *; a FILE * or stat * renders its members as field_0x8 / field_0x30 instead of _IO_read_ptr / st_size; a value loaded out of a named libc struct keeps the cast's type instead of the field's; stdin/stdout/stderr render as an untyped word and their fields as raw offsets ((long)stdout + 0x28); a shared object's stream slot has no name at all (*(long *)(*dat_3fe0 + 0x28)); two functions in one binary disagree about what stdout is, one calling it FILE * and the other a long.
@@ -2438,6 +2475,22 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default on AArch64 and inert on every other target: the output names the intrinsic the source called, and a pointer that was tagged is the result of a call instead of an unchanged copy. Flip off to read barriers and hints under their SLEIGH instruction names with the domain and type operands separate, or to read MTE-hardened code (for example a stack-tagging build, which tags every address-taken local) as if the core had no tags.
 - **Where / provenance:** P9/naming-policy · kuna · correctness-fix · kuna-acleintrinsics
 - **Example:** `option acleintrinsics off`
+
+### `trapaftercall` -- on | off, default `on`
+
+- **Symptoms:** invalidInstructionException() after a call in a stripped rust or clang binary; a panic helper call is not marked no-return; ud2 after a call is printed as a jump-as-call.
+- **What it does:** End the flow at an x86 call instruction followed by `ud2`. clang with trap-unreachable (the Darwin and rustc default) emits `ud2` after every call it knows cannot return, and execution never reaches it after a call that returns. In a stripped image such a callee has no name, so no name list marks it no-return, flow walks into the trap, and the call is followed by `(*(invalidInstructionException() as ...))()`. When the instruction is a machine `call` (E8, or FF /2, after prefixes) and the next two bytes are 0F 0B, the call site is no-return: the artificial halt is planted and, for a direct call, its call spec is marked, as for a named no-return callee (an indirect call through a GOT slot is left unmarked, because ActionDeindirect would otherwise restart the function when it resolves the slot). A tail `jmp` the flow turned into a call is not evidence, neither is a `ud2` a Linux kernel `__bug_table` entry names (a WARN after `__warn_printk` resumes; kernelbug prints it), and neither is `int3`, because anti-debug code returns into an `int3` pad on purpose (int3pad). Per call site; x86 language ids only.
+- **When to flip:** On by default. The OFF symptom is a stripped clang, Apple or Rust binary where every panic or fatal-error helper call is followed by a jump-as-call through invalidInstructionException(). Flip off to see the trap the compiler planted.
+- **Where / provenance:** P2/flow-classification · kuna · correctness-fix · trap-after-call
+- **Example:** `option trapaftercall off`
+
+### `retpolinethunk` -- on | off, default `on`
+
+- **Symptoms:** a function-pointer call renders as a call of __llvm_retpoline_r11; a call of a stripped retpoline thunk sub_<addr> loses the called pointer; the pointer loaded into r11 before a call is never used.
+- **What it does:** Read a call to a retpoline thunk as the indirect call it stands for. `-mretpoline` (clang) and `-mindirect-branch=thunk` (gcc) compile every indirect call into a direct call to a per-register thunk, `call 1f; 2: pause; lfence; jmp 2b; 1: mov %reg,(%rsp); ret`, which returns into the target held in the register. The cspecs carry that effect as the `x86_indirect_thunk_<reg>` call-fixups and the call-fixup installer applies them by the name gcc gives the thunk, but clang names its thunks `__llvm_retpoline_<reg>` and a stripped image names neither, so the call printed as `__llvm_retpoline_r11(a1)`, a call of the thunk itself with the target lost. When a direct callee has no fixup of its own, the flow builder reads its first bytes for that shape (E8 call over the pause/lfence spin to a `[REX] 89 /r 24; C3` store of the register over the return address) and applies the `x86_indirect_thunk_<reg>` fixup the register names. x86 language ids only; a register with no fixup in the cspec keeps the plain call.
+- **When to flip:** On by default. The OFF symptom is a binary built with -mretpoline (or a stripped gcc -mindirect-branch=thunk build) where every function-pointer call renders as a call of `__llvm_retpoline_r11`/`sub_<thunk>` and the pointer it loads into r11 is lost. Flip off to see the thunk calls.
+- **Where / provenance:** P2/flow-classification · kuna · correctness-fix · retpoline-thunk-body
+- **Example:** `option retpolinethunk off`
 
 ### `fpuemu` -- off | auto | on, default `auto`
 

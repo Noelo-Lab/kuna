@@ -519,6 +519,8 @@ pub struct Architecture {
     /// on an image the loader proved is a Windows user-mode PE) or `on` (any image
     /// with a Windows compiler spec).  See [`kuna_pebnames`](crate::kuna_pebnames).
     pub peb_names: crate::kuna_pebnames::PebNamesMode,
+    /// (kuna `tlsnames`) The static TLS block the loader committed.
+    pub tls_layout: Option<Rc<crate::p5_types::kuna_tlsnames::TlsLayout>>,
     /// (kuna `structsynth`) Over which bases a structure may be synthesized from
     /// constant-offset dereferences: `off` (the default) or `param` (function
     /// parameters).  See [`kuna_structsynth`](crate::kuna_structsynth).
@@ -833,6 +835,14 @@ pub struct Architecture {
     /// its return value too (option `mixedtailret`).  See
     /// [`crate::p4_calls::kuna_mixedtailret`].
     pub mixed_tail_ret: bool,
+    /// (kuna `vaarg`) Print the x86-64 SysV va_arg expansion as va_arg(ap, T).
+    pub va_arg: bool,
+    /// (kuna `vastart`) Print the x86-64 SysV va_start prologue as va_start(ap, last).
+    pub va_start: bool,
+    /// (kuna `retpolinethunk`) A retpoline thunk recognized by its body gets the cspec's `x86_indirect_thunk_<reg>` call-fixup.
+    pub retpoline_thunk: bool,
+    /// (kuna `trapaftercall`) A `ud2` after an x86 call marks the call site no-return.
+    pub trap_after_call: bool,
     /// (kuna) Recover whole scalar VFP returns and double arguments on an ARM
     /// image that states the VFP calling convention (option `armfloatreturn`).
     /// See [`crate::p4_calls::kuna_armfloatreturn`].
@@ -1454,6 +1464,8 @@ pub struct Architecture {
     /// (kuna) Gate the libgcc DI-mode `__divdi3` contract on SPARC32 BE ELF
     /// (`libgccsigs`); default off.
     pub analysis_libgccsigs: bool,
+    /// (kuna) Gate the static-TLS naming (`tlsnames`); default on.
+    pub analysis_tlsnames: bool,
     /// (kuna) Gate the Go `_type` descriptor globals — the `gotypes` harvest's
     /// typed-data facts (`gotypeglobals`); default on.
     pub analysis_go_type_globals: bool,
@@ -2403,6 +2415,7 @@ impl Architecture {
             image_linux_elf: false, // (kuna) a load-time fact; set by the console's `load file`
             image_apple: false, // (kuna) a load-time fact; set by the console's `load file`
             peb_names: crate::kuna_pebnames::PebNamesMode::Off, // (kuna) option pebnames; reset_defaults sets the shipped default
+            tls_layout: None,
             struct_synth: crate::kuna_structsynth::StructSynthMode::Off, // (kuna) option structsynth; reset_defaults sets the shipped default
             struct_synth_shard: None,
             struct_merge: crate::kuna_structmerge::StructMergeMode::Off, // (kuna) option structmerge; reset_defaults sets the shipped default
@@ -2484,6 +2497,10 @@ impl Architecture {
             narrow_ext: crate::kuna_narrowext::NarrowExtMode::Off, // (kuna) option narrowext; reset_defaults sets the shipped default
             pass_through: true, // (kuna) option passthrough; reset_defaults sets the shipped default
             mixed_tail_ret: false, // (kuna) option mixedtailret; reset_defaults sets the shipped default
+            va_arg: false,
+            va_start: false,
+            retpoline_thunk: false,
+            trap_after_call: false,
             readonly_calls: Some(crate::p3_dataflow::heritage::READONLY_CROSS_PRODUCT),
             persist_calls: Some(crate::p3_dataflow::heritage::PERSIST_CROSS_PRODUCT),
             narrow_args: true,
@@ -2594,6 +2611,7 @@ impl Architecture {
             // asserted equal by kuna_phases/tests.rs `live_value` parity).
             analysis_noreturn_known: false,
             analysis_libgccsigs: false,
+            analysis_tlsnames: false,
             analysis_go_type_globals: false,
             analysis_libctypes: false,
             analysis_libctypes_glibc: false,
@@ -2880,6 +2898,10 @@ impl Architecture {
         self.arm_float_return = true; // (kuna) option armfloatreturn: default-ON; inert unless the ELF states the VFP procedure-call standard
         self.pass_through = true; // (kuna) option passthrough default-on: over 574 slices in 25 projects (the 444-slice decbench corpus plus 130 slices of 17 disjoint projects) 4,107 of 4,346 gained parameters are DWARF-confirmed, NONE contradicted, 239 thunks DWARF does not describe, 0 parameters and 0 call arguments lost; the return arm is 5,458 of 5,615 confirmed, its 157 misses all the undecidable `void` tail-call wrapper; docs/features/passthrough/dwarf-confirmation.md
         self.mixed_tail_ret = false; // (kuna) option mixedtailret default-off: a void guard that leaves the value it tested in the return register beside a tail call compiles to the same bytes; see the phases.toml row
+        self.va_arg = true; // (kuna) option vaarg default-on: x86-64 SysV only, needs the offset test with both arms proved equivalent; 0/675 datatests
+        self.va_start = true; // (kuna) option vastart default-on: x86-64 SysV only, needs the four va_list field writes in one block; 0/675 datatests
+        self.retpoline_thunk = true; // (kuna) option retpolinethunk default-on: x86 only, reads a direct callee's first bytes when it has no fixup; 0/675 datatests
+        self.trap_after_call = true; // (kuna) option trapaftercall default-on: x86 only, reads two bytes after a machine call; 0/675 datatests
         self.kuna_calleeargs = true;
         self.arg_clobber = true; // (kuna) option argclobber default-on: the drop now needs the callee's own RECOVERED prototype to say the register is free (`protoorder` parks it), so it is inert wherever no callee was decompiled first; 0/675 datatest assertions, PARITY OK on stages, no scored type_match change, measured in docs/features/argclobber/record.json
         self.char_byte = true; // (kuna) option charbyte default-on: a byte read through a `char *` whose only unsigned vote is the zero-extension is seeded `char`; 0/675 datatests, PARITY OK on stages, measured in docs/features/charbyte/record.json
@@ -2913,6 +2935,7 @@ impl Architecture {
         // (kuna) libgcc `__divdi3` contract -- default-OFF: a caller returning
         // arithmetic on the quotient still loses a word.
         self.analysis_libgccsigs = false;
+        self.analysis_tlsnames = true; // (kuna) option tlsnames default-on: x86 ELF executables with STT_TLS symbols only; 0/675 datatests
         // (kuna) Go `_type` descriptor globals -- default-ON: on a Go image the
         // harvested names appear at every allocation/conversion site; a non-Go
         // image produces no facts, so the gate is structurally inert there.
@@ -3613,6 +3636,9 @@ impl Architecture {
         ctx.arg_clobber = self.arg_clobber; // argclobber
         ctx.pass_through = self.pass_through; // passthrough
         ctx.mixed_tail_ret = self.mixed_tail_ret; // mixedtailret
+        ctx.va_arg = self.va_arg && self.get_description().starts_with("x86:LE:64") && !crate::kuna_fastfailnoreturn::archid_is_windows(self.get_description());
+        ctx.va_start = self.va_start && self.get_description().starts_with("x86:LE:64") && !crate::kuna_fastfailnoreturn::archid_is_windows(self.get_description());
+        ctx.trap_after_call = self.trap_after_call && self.get_description().starts_with("x86:");
         ctx.readonly_calls = self.readonly_calls;
         ctx.persist_calls = self.persist_calls;
         // (kuna `calleereginputs custom`) a function's own evaluation sees the
@@ -3664,6 +3690,7 @@ impl Architecture {
             crate::kuna_fastfailnoreturn::archid_is_windows(self.get_description()),
             self.image_windows_user,
         ); // (kuna) pebnames
+        ctx.tls_layout = self.tls_layout.clone(); // (kuna) tlsnames
         ctx.struct_synth = self.struct_synth; // (kuna) structsynth
         ctx.struct_synth_shard = self.struct_synth_shard.clone();
         ctx.struct_merge = self.struct_merge; // (kuna) structmerge
@@ -4804,6 +4831,9 @@ impl Architecture {
             for id in [BUILTIN_MEMSET16, BUILTIN_MEMSET32, BUILTIN_MEMSET64, BUILTIN_MEMCMP] {
                 userops.register_builtin(id, &adapter)?;
             }
+            // (kuna vastart, vaarg) the va_list set-up and read.
+            userops.register_builtin(crate::userop::BUILTIN_VA_START, &adapter)?;
+            userops.register_builtin(crate::userop::BUILTIN_VAARG, &adapter)?;
             Ok(())
         })();
         self.userops = userops;
@@ -7293,6 +7323,29 @@ impl crate::userop::UseropTypeArchitecture for BuiltinTypeArch {
         self.types
             .get_type_char(self.types.get_size_of_wchar())
             .expect("builtin: getTypeChar(wchar)")
+    }
+    fn get_va_list_pointer(&self) -> Option<Rc<crate::dtype::Datatype>> {
+        use crate::dtype::{TypeFactory, TypeField};
+        if self.types.get_size_of_pointer() != 8 {
+            return None;
+        }
+        let tag = self.types.get_type_struct("__va_list_tag").ok()?;
+        let uint = self.types.get_base(4, type_metatype::TYPE_UINT).ok()?;
+        let void_ptr = self.types.get_type_pointer(8, self.types.get_type_void().ok()?, 1).ok()?;
+        let field = |ident: int4, offset: int4, name: &str, ty: &Rc<crate::dtype::Datatype>| TypeField {
+            ident,
+            offset,
+            name: name.to_string(),
+            field_type: Rc::clone(ty),
+        };
+        let fields = vec![
+            field(0, 0, "gp_offset", &uint),
+            field(1, 4, "fp_offset", &uint),
+            field(2, 8, "overflow_arg_area", &void_ptr),
+            field(3, 16, "reg_save_area", &void_ptr),
+        ];
+        let tag = self.types.set_fields_struct_raw(&tag, fields, Vec::new(), 24, 8, 0).ok()?;
+        self.types.get_type_pointer(8, tag, 1).ok()
     }
 }
 

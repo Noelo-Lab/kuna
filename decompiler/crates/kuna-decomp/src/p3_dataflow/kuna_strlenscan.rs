@@ -193,7 +193,7 @@ fn def_block(data: &Funcdata, v: VarnodeId) -> Option<BlockId> {
 }
 
 /// The successors a CBRANCH block takes when its condition is true and false.
-fn taken(data: &Funcdata, b: BlockId) -> Option<(BlockId, BlockId)> {
+pub(crate) fn taken(data: &Funcdata, b: BlockId) -> Option<(BlockId, BlockId)> {
     let fb = data.bblocks_ref().block(b);
     if fb.size_out() != 2 {
         return None;

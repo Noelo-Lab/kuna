@@ -659,6 +659,12 @@ pub fn universal_sched(
                 ))
             })),
             act!(Box::new(crate::kuna_stackguard::ActionStripStackGuard::new(false, "returnsplit"))),
+            // (kuna) vastart (option `vastart`, default on): the x86-64 SysV
+            // va_start prologue becomes one va_start(ap, last) call.
+            act!(crate::kuna_vastart::ActionVaStart::boxed("returnsplit")),
+            // (kuna) vaarg (option `vaarg`, default on): the va_arg register/overflow
+            // diamond becomes one va_arg(ap, T) call.
+            act!(crate::kuna_vaarg::ActionVaArg::boxed("returnsplit")),
             // (kuna) msvcstackguard (option `msvcstackguard`, default-OFF): the
             // Windows sibling of ActionStripStackGuard.  MSVC `/GS` puts the
             // compare inside `__security_check_cookie`, so the guarded function
@@ -780,6 +786,10 @@ pub fn universal_sched(
             // Symbol must exist before heritage creates the input Varnode, which
             // is when its type and name locks are read.
             act!(crate::p5_types::kuna_pebnames::ActionPebNames::boxed("typerecovery")),
+            // (kuna) tlsnames (option `tlsnames`, default on): map the relative
+            // `tls` pointer over the x86 thread-pointer input, before heritage for
+            // the same reason as pebnames.
+            act!(crate::p5_types::kuna_tlsnames::ActionTlsNames::boxed("typerecovery")),
             // (kuna) msvcstrappend (option `msvcstrappend`, default-OFF): collapse
             // an inlined MSVC x64 `std::string` push_back/append capacity diamond
             // into one call.  Here for linuxsyscall's reasons: the diamond is

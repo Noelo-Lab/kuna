@@ -2924,6 +2924,32 @@ member access from pointer types, and `ruleaction_6.rs (RulePtraddUndo,
 RulePtrsubUndo)` in the main pool reverts them when the types they were built
 from degrade — the visible ping that the 7-pass ceiling exists to bound.
 
+### A static TLS variable is a field of the block below the thread pointer (`kuna_tlsnames.rs`)
+
+A local-exec access to a `__thread` variable is a load or store at a constant
+offset from the thread pointer: x86-64 `mov eax, fs:[-0x10]` lowers to
+`FS_OFFSET + -0x10`, and the untyped `fs_offset` input renders the access as
+`*(int *)(v1 + -0x10)`. The x86 TLS ABIs (variant II) place the executable's
+TLS block, `PT_TLS` rounded up to its alignment, immediately below the thread
+pointer, so the `STT_TLS` symbol with value `v` lives at
+`v - align_up(p_memsz, p_align)`. The `tlsnames` analysis pass
+(`decompiler/crates/kuna-analysis/src/analyzers/tls/mod.rs (TlsNamesPass)`, x86
+and x86-64 ELF images that are not relocatable objects) reads `PT_TLS` from the
+program headers and the defined `STT_TLS` symbols into a
+`decompiler/crates/kuna-decomp/src/p5_types/kuna_tlsnames.rs (TlsLayout)`
+(symbols sorted, a symbol that overlaps the previous one or runs past the block
+dropped), and the commit stores it on the architecture. `ActionTlsNames` runs
+before heritage like `pebnames`: when every use of the thread-pointer register
+(`FS_OFFSET` on x86-64, `GS_OFFSET` on x86) is an `INT_ADD` of a constant in
+`[-block_size, 0)`, it maps a type-locked Symbol `tls` over the register input,
+typed as a pointer to a `__tls_block` structure (each TLS symbol a field of its
+size, `undefined<n>` or a byte array, the rest holes) relative to the block's
+end. The thread pointer is one past the block, so the accesses render
+`tls[-1].counter = a0;`. A function that reads the thread control block above
+the pointer (the `fs:[0x28]` stack canary, the `fs:[0]` self pointer) or uses
+the register any other way is left as it was, so the canary keeps its form. A
+shared object's dynamic TLS goes through `__tls_get_addr` and is not touched.
+
 ### A rounding user op takes and returns a float (`kuna_roundingops.rs`)
 
 p-code rounds a float to an integral float only toward minus infinity

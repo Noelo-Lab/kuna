@@ -1,0 +1,66 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna `vaarg` stage test (clang loop): va_arg in a loop, on a va_list local
+    to the function (heritage promotes it: gp_offset and overflow_arg_area are
+    loop phis) and on a va_list parameter. clang unrolls the loop by two and peels the last read.
+    With vaarg off the offset tests and the register save area reads print.
+    With vaarg on each read prints as va_arg(ap,T) (va_arg(a1,long) through
+    the parameter) and the promoted va_list gets its va_start(ap,a0).
+
+    Source, compiled with clang -O2 -fno-inline -fcf-protection=none, linked at
+    0x100000 (flat .text):
+      #include <stdarg.h>
+      long sum_long(int n, ...) {
+          va_list ap; long s = 0;
+          va_start(ap, n);
+          for (int i = 0; i < n; i++) s += va_arg(ap, long);
+          va_end(ap);
+          return s;
+      }
+      double sum_dbl(int n, ...) {
+          va_list ap; double s = 0;
+          va_start(ap, n);
+          for (int i = 0; i < n; i++) s += va_arg(ap, double);
+          va_end(ap);
+          return s;
+      }
+      long vsum(int n, va_list ap) {
+          long s = 0;
+          for (int i = 0; i < n; i++) s += va_arg(ap, long);
+          return s;
+      }
+-->
+<bytechunk space="ram" offset="0x100000">4883ec5848897424a848895424b048894c24b84c894424c04c894c24c884c074270f294424d00f294c24e00f295424f00f291c240f296424100f296c24200f297424300f297c2440488d4424a04889442490488d442460488944248848b80800000030000000488944248085ff7e178b542480488b4c2490488b74248883ff01750b31c0eb6c31c04883c458c34189f84181e0feffff7f31c0eb1e0f1f4400004c89ce4189d14901c983c208895424804903014183c0fe743383fa2877124989f189d64801ce83c20889542480eb0a904c8d4e084c894c248848030683fa2972bf498d71084889742488ebc440f6c701742283fa29731189d64801f183c208895424804889ceeb09488d4e0848894c24884803064883c458c30f1f80000000004883ec5848897424a848895424b048894c24b84c894424c04c894c24c884c07428660f294424d00f294c24e00f295424f00f291c240f296424100f296c24200f297424300f297c2440488d4424a04889442490488d442460488944248848b80800000030000000488944248085ff0f8e8c000000488b4424908b4c2484488b542488660f57c083ff010f848000000089fe81e6feffff7feb210f1f80000000004c89c24189c84901c083c110894c2484f2410f580083c6fe744f81f9a0000000771e4989d089ca4801c283c110894c2484eb16666666662e0f1f8400000000004c8d42084c89442488f20f580281f9a100000072ab498d50084889542488ebb0660f57c04883c458c340f6c701742681f9a1000000731189ca4801d083c110894c24844889c2eb09488d42084889442488f20f58024883c458c3660f1f44000085ff7e0b8b0e83ff01750731c0eb6a31c0c389fa81e2feffff7f31c0eb1666904189c84c03461083c108890e49030083c2fe743e83f92877174189c84c03461083c108890eeb15660f1f8400000000004c8b46084d8d48084c894e0849030083f92972bc4c8b46084d8d48084c894e08ebba40f6c7017501c383f929730f89ca4803561083c108890e480302c3488b5608488d4a0848894e08480302c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="sum_long"/>
+<symbol space="ram" offset="0x100120" name="sum_dbl"/>
+<symbol space="ram" offset="0x100260" name="vsum"/>
+</binaryimage>
+<script>
+  <com>option vaarg off</com>
+  <com>lo fu sum_long</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu sum_dbl</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu vsum</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option vaarg on</com>
+  <com>lo fu sum_long</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu sum_dbl</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu vsum</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="vaarg off: the offset tests print" min="6" max="6">0x29 &lt;=|0xa1 &lt;=</stringmatch>
+<stringmatch name="vaarg off: the peeled last read tests print" min="3" max="3">&lt;= 0x28\)|&lt;= 0xa0\)</stringmatch>
+<stringmatch name="vaarg on: the promoted va_list reads print as va_arg(ap,T)" min="6" max="6">va_arg\(ap,\w+\)</stringmatch>
+<stringmatch name="vaarg on: the va_list parameter reads print as va_arg(a1,T)" min="3" max="3">va_arg\(a1,\w+\)</stringmatch>
+<stringmatch name="vaarg on: the promoted va_list gets its va_start" min="2" max="2">va_start\(ap,a0\)</stringmatch>
+</decompilertest>

@@ -128,6 +128,7 @@ e87b39feff85c0782e89efe89039feff31c0488b54242864482b142528000000
 <bytechunk space="ram" offset="0x84b00" readonly="true">53494f4353494658514c454e00</bytechunk>
 </binaryimage>
 <script>
+  <com>option vaarg off</com>
   <com>map function r0xa080 strlen</com>
   <com>map function r0xa0b0 __stack_chk_fail</com>
   <com>map function r0xa420 memcpy</com>
