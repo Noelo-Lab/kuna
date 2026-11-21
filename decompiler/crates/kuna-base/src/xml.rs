@@ -2275,7 +2275,8 @@ mod tests {
         // and kuna-swiftinfer / an unbound function that reads swiftself is Swift; a two-word result is a pair
         // and kuna-swiftnames / Swift accessors, witnesses, value witnesses and helpers named from code shape
         // and kuna-swiftrrregs / the Swift runtime's register-specific retain and release entry points
-        assert_eq!(count, 857, "corpus file count drifted");
+        // and kuna-swiftstdlib / the Swift standard library's C entry points carry their shims-header signatures
+        assert_eq!(count, 858, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

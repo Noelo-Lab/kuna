@@ -6379,6 +6379,21 @@ every other binary's pass list is byte-identical to before the pass existed):
   `swift_release_x20(v)` for the bare `swift_release_x20()`. The stage test
   `tests/stages/kuna-swiftrrregs.xml` runs `swift_rr_regs_macho`, an arm64
   Mach-O assembled against the iOS libswiftCore.
+  The standard library's own C entry points are in the table too
+  (`_swift_stdlib_*`, declared in the shims headers
+  `stdlib/public/SwiftShims/swift/shims/AssertionReporting.h`,
+  `RuntimeShims.h`, `LibcShims.h`, `FoundationShims.h`,
+  `ThreadLocalStorage.h`, plus `swift_reportError`, `swift_reportWarning`,
+  `swift_lookUpClassMethod` and `swift_deletedMethodError`): the fatal-error
+  and unimplemented-initializer reporters take their strings as `char *`
+  with `int` lengths and a `uint32_t` flags word and return nothing, the
+  `strto*_clocale` parsers return the `char *` they stopped at, and
+  `_swift_stdlib_operatingSystemVersion` returns the three-word
+  `swift.NSOperatingSystemVersion` (`majorVersion`, `minorVersion`,
+  `patchVersion`), which on arm64 comes back through `x8`, so a caller's
+  `v1[0]` reads `v1.majorVersion`. The stage test
+  `tests/stages/kuna-swiftstdlib.xml` runs `swift_stdlib_macho`, assembled
+  the same way.
 - **PDB** (`pdb`, PE-only, default-on;
   `decompiler/crates/kuna-analysis/src/analyzers/pdb/mod.rs`): Windows' debug info
   lives in a separate `.pdb` the PE only fingerprints, so the pass reads the

@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4979,
-    4979
+    4982,
+    4982
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -4789,6 +4789,7 @@
     "data:the indirect write is retained",
     "data:the loaded pair is never dropped at the first call",
     "data:the loaded pair reaches the first call as two slots",
+    "data:the major version is its first field",
     "data:the method body is kept",
     "data:the mixed record keeps its double field",
     "data:the mixed record keeps its short field",
@@ -4799,6 +4800,7 @@
     "data:the plain entry point is unchanged",
     "data:the pointer member is written under the bounded policy and under stackviews",
     "data:the release through x20 takes its argument",
+    "data:the report takes the two names, their lengths and the flags",
     "data:the retain through x21 takes its argument and returns in x0",
     "data:the same machine body with separate scalar formals keeps their names",
     "data:the second select's arms",
@@ -4808,6 +4810,7 @@
     "data:the stored selected literal, paired through the store beside it",
     "data:the switch's 15-byte literal",
     "data:the switch's 8-byte literal",
+    "data:the version triple is the struct",
     "data:the whole-register object is gone",
     "data:transaction hint remains explicit",
     "data:transient helper spill leaves the complete caller buffer",

@@ -1,0 +1,45 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Swift standard-library C entry points.
+
+    Issue: the standard library's own C entry points (`_swift_stdlib_*`)
+    carried no signature, so a caller's live floating-point registers became
+    the first arguments of `_swift_stdlib_reportUnimplementedInitializer`
+    (`(x, y, width, height, "Frame", 5, "init(frame:)", 0xc, 0)`) and the
+    version triple `_swift_stdlib_operatingSystemVersion` returns through
+    `x8` read as an untyped stack array.
+
+    Stage / sub-stage: P1 external-refinement, `SwiftRuntimePass`
+    (`kuna-analysis/src/analyzers/swift/kuna_swiftruntime.rs`). No option: the
+    signatures are the shims headers' (`AssertionReporting.h`,
+    `FoundationShims.h`), like the rest of the table.
+
+    The fixture `swift_stdlib_macho` (arm64 Mach-O, assembled from
+    `swift_stdlib_macho.s` against the iOS 16.5 libswiftCore) reports an
+    unimplemented initializer from `report_rect`, whose declared rectangle
+    rides in `d0`..`d3` and is otherwise unused, and reads the major version
+    off the triple in `os_major`.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/swift_stdlib_macho</com>
+  <com>read symbols</com>
+  <com>parse line extern void _report_rect(float8 x,float8 y,float8 width,float8 height);</com>
+  <com>load addr 0x100004054</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x100004080</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="the report takes the two names, their lengths and the flags" min="1" max="1">_swift_stdlib_reportUnimplementedInitializer\("Frame",5,"init\(frame:\)",0xc,0\);</stringmatch>
+<stringmatch name="the version triple is the struct" min="1" max="1">swift\.NSOperatingSystemVersion v1;</stringmatch>
+<stringmatch name="the major version is its first field" min="1" max="1">return v1\.majorVersion;</stringmatch>
+</decompilertest>

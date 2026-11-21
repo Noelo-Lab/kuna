@@ -8,6 +8,13 @@
 //! `swift_dynamicCast` a `bool`. Bound by name, so an import stub, a GOT slot or an unstripped
 //! copy of the runtime all take them.
 //!
+//! The standard library's own C entry points come along (`_swift_stdlib_*`,
+//! from `stdlib/public/SwiftShims/swift/shims/AssertionReporting.h`,
+//! `RuntimeShims.h`, `LibcShims.h`, `FoundationShims.h`,
+//! `ThreadLocalStorage.h`): `_swift_stdlib_reportUnimplementedInitializer`
+//! takes two strings with their lengths and the flags, so the live floating
+//! registers of its caller stop reading as its first arguments.
+//!
 //! The runtime is C (every entry point here is `extern "C"` under the
 //! platform convention), so these are plain prototypes; the `swiftcc`
 //! entry points whose arguments ride in the Swift registers
@@ -58,7 +65,11 @@ enum Ty {
     Int,
     /// `unsigned int`.
     U32,
+    /// `int`.
+    I32,
     Bool,
+    /// `swift.NSOperatingSystemVersion` (major, minor and patch, three words).
+    OsVersion,
 }
 
 struct Sig {
@@ -368,6 +379,41 @@ const RUNTIME: &[(&str, Sig)] = &[
         "swift_reflectionMirror_normalizedType",
         sig!(Meta(Ptr, Meta, Meta)),
     ),
+    ("swift_lookUpClassMethod", sig!(Ptr(Meta, Ptr, Ptr))),
+    ("swift_deletedMethodError", sig!(Void())),
+    ("swift_reportError", sig!(Void(U32, Str))),
+    ("swift_reportWarning", sig!(Void(U32, Str))),
+    (
+        "_swift_stdlib_reportFatalError",
+        sig!(Void(Str, I32, Str, I32, U32)),
+    ),
+    (
+        "_swift_stdlib_reportFatalErrorInFile",
+        sig!(Void(Str, I32, Str, I32, Str, I32, U32, U32)),
+    ),
+    (
+        "_swift_stdlib_reportUnimplementedInitializer",
+        sig!(Void(Str, I32, Str, I32, U32)),
+    ),
+    (
+        "_swift_stdlib_reportUnimplementedInitializerInFile",
+        sig!(Void(Str, I32, Str, I32, Str, I32, U32, U32, U32)),
+    ),
+    ("_swift_stdlib_strtold_clocale", sig!(Str(Str, Ptr))),
+    ("_swift_stdlib_strtod_clocale", sig!(Str(Str, Ptr))),
+    ("_swift_stdlib_strtof_clocale", sig!(Str(Str, Ptr))),
+    ("_swift_stdlib_strtof16_clocale", sig!(Str(Str, Ptr))),
+    ("_swift_stdlib_immortalize", sig!(Void(Ptr))),
+    ("_swift_stdlib_flockfile_stdout", sig!(Void())),
+    ("_swift_stdlib_funlockfile_stdout", sig!(Void())),
+    ("_swift_stdlib_putc_stderr", sig!(I32(I32))),
+    ("_swift_stdlib_getHardwareConcurrency", sig!(Size())),
+    ("_swift_stdlib_getCurrentStackBounds", sig!(Bool(Ptr, Ptr))),
+    ("_swift_stdlib_isExecutableLinkedOnOrAfter", sig!(Bool(U32))),
+    ("_swift_stdlib_fwrite_stdout", sig!(Size(Ptr, Size, Size))),
+    ("swift_stdlib_readLine_stdin", sig!(Int(Ptr))),
+    ("_swift_stdlib_operatingSystemVersion", sig!(OsVersion())),
+    ("_swift_stdlib_threadLocalStorageGet", sig!(Ptr())),
 ];
 
 /// The shared types, interned once per factory.
@@ -422,6 +468,25 @@ impl Types<'_> {
         )
     }
 
+    fn os_version(&self) -> Option<Rc<Datatype>> {
+        let name = "swift.NSOperatingSystemVersion";
+        if let Some(t) = self.tf.find_by_name(name).ok().flatten() {
+            if t.get_size() > 0 {
+                return Some(t);
+            }
+        }
+        let word = self.tf.get_base(8, type_metatype::TYPE_INT).ok()?;
+        let shell = self.tf.get_type_struct(name).ok()?;
+        let fields = ["majorVersion", "minorVersion", "patchVersion"]
+            .into_iter()
+            .enumerate()
+            .map(|(i, n)| TypeField::new(i as i32, 8 * i as i32, n.to_string(), Rc::clone(&word)))
+            .collect();
+        self.tf
+            .set_fields_struct_raw(&shell, fields, Vec::new(), 24, 8, 0)
+            .ok()
+    }
+
     fn box_pair(&self) -> Option<Rc<Datatype>> {
         self.pair(
             "swift.BoxPair",
@@ -444,7 +509,9 @@ impl Types<'_> {
             Size => self.tf.get_base(8, type_metatype::TYPE_UINT).ok()?,
             Int => self.tf.get_base(8, type_metatype::TYPE_INT).ok()?,
             U32 => self.tf.get_base(4, type_metatype::TYPE_UINT).ok()?,
+            I32 => self.tf.get_base(4, type_metatype::TYPE_INT).ok()?,
             Bool => self.tf.get_base(1, type_metatype::TYPE_BOOL).ok()?,
+            OsVersion => self.os_version()?,
         })
     }
 }
@@ -561,7 +628,7 @@ mod tests {
         let total = names.len();
         names.dedup();
         assert_eq!(names.len(), total, "a runtime entry point is listed twice");
-        assert!(names.iter().all(|n| n.starts_with("swift_")));
+        assert!(names.iter().all(|n| n.starts_with("swift_") || n.starts_with("_swift_stdlib_")));
     }
 
     #[test]
