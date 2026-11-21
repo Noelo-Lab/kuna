@@ -263,9 +263,9 @@ fn verify_w2translate_decode_attributes_u32_saturation_istream_parity() {
 
 /// Oracle: AddrSpace::read suffix parsing on a plain (no-register) space:
 ///   "0x10:2+1" -> (0x11, 2)   (':' size then '+' offset)
-///   "0x10+3:5" -> (0x13, 8)   ('+' first: the size override is IGNORED,
-///                              size stays the default space size)
-///   ":2"       -> (0x0, 2)
+/// (kuna) Two spellings upstream read silently are rejected: "0x10+3:5", whose
+/// size upstream ignored because it follows the offset, and ":2", which has no
+/// offset (upstream read 0).
 #[test]
 fn verify_w2translate_read_offset_suffix_oracle() {
     let m = manager(false);
@@ -273,10 +273,8 @@ fn verify_w2translate_read_offset_suffix_oracle() {
     let mut size = 0i32;
     let off = ram.read("0x10:2+1", &mut size, &m).unwrap();
     assert_eq!((off, size), (0x11, 2));
-    let off = ram.read("0x10+3:5", &mut size, &m).unwrap();
-    assert_eq!((off, size), (0x13, 8));
-    let off = ram.read(":2", &mut size, &m).unwrap();
-    assert_eq!((off, size), (0x0, 2));
+    assert!(ram.read("0x10+3:5", &mut size, &m).unwrap_err().explain().contains("malformed"));
+    assert!(ram.read(":2", &mut size, &m).is_err());
 }
 
 /// The C++ decodeOp switches from a 16-entry stack array to a heap vector
