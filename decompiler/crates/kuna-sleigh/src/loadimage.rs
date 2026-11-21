@@ -331,8 +331,11 @@ pub struct RawLoadImage {
     /// Address space that the file bytes are mapped to (C++ raw pointer,
     /// null until `attachToSpace`)
     spaceid: Option<Rc<AddrSpace>>,
-    /// Cursor for the synthetic whole-file section record.
-    cursection: Cell<bool>,
+    /// (kuna) The mapped ranges a container names, as `(offset from the
+    /// first byte, size, flags)`; empty for a headerless file.
+    sections: Vec<(u64, u64, u32)>,
+    /// Cursor over the section records.
+    cursection: Cell<usize>,
 }
 
 impl RawLoadImage {
@@ -345,8 +348,15 @@ impl RawLoadImage {
             bytes: None,
             filesize: 0,
             spaceid: None,
-            cursection: Cell::new(false),
+            sections: Vec::new(),
+            cursection: Cell::new(0),
         }
+    }
+
+    /// (kuna) Publish `sections`, `(offset from the first byte, size, flags)`,
+    /// in place of the one whole-file code section.
+    pub fn set_sections(&mut self, sections: Vec<(u64, u64, u32)>) {
+        self.sections = sections;
     }
 
     /// (kuna) An already-open image over bytes built in memory, such as a DOS
@@ -478,21 +488,24 @@ impl LoadImage for RawLoadImage {
     }
 
     fn open_section_info(&self) {
-        self.cursection.set(false);
+        self.cursection.set(0);
     }
 
     fn get_next_section(&self, record: &mut LoadImageSection) -> bool {
-        if self.cursection.replace(true) || self.filesize == 0 {
+        let index = self.cursection.replace(self.cursection.get() + 1);
+        let whole = [(0, self.filesize, section_flags::CODE)];
+        let sections = if self.sections.is_empty() { &whole[..] } else { &self.sections };
+        let Some(&(offset, size, flags)) = sections.get(index).filter(|_| self.filesize != 0) else {
             return false;
-        }
+        };
         let space = self
             .spaceid
             .as_ref()
             .expect("RawLoadImage::getNextSection before attachToSpace (C++ null space)");
-        record.address = Address::new(Rc::clone(space), self.vma);
-        record.size = self.filesize;
-        record.flags = section_flags::CODE;
-        false
+        record.address = Address::new(Rc::clone(space), self.vma.wadd(offset));
+        record.size = size;
+        record.flags = flags;
+        index + 1 < sections.len()
     }
 
     fn adjust_vma(&mut self, adjust: i64) {

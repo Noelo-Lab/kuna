@@ -31,6 +31,8 @@
 //! defined-function reader lifted out of [`crate::loadimage_object`].
 
 pub mod arm_markers;
+// (kuna `retroimage`) PS-X EXE, N64 ROM, a.out, Amiga hunk and PEF containers.
+pub mod kuna_retroimage;
 pub(crate) mod kuna_ppcaputarget;
 pub(crate) mod kuna_ppc64elfv2target;
 #[cfg(test)]

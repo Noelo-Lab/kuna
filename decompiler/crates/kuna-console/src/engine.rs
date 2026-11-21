@@ -30,8 +30,10 @@
 //! function entry the faithful way (the binaryimage's own symbol records, which
 //! is precisely what `readLoaderSymbols` reads).
 
+mod kuna_retroimage;
 mod lazy_inventory;
 mod kuna_signature_names;
+pub(crate) use kuna_retroimage::bootstrap_retro_bytes;
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -638,6 +640,9 @@ pub struct ConsoleProgram {
     loader_data_objects: Vec<(u64, String, u64)>,
     /// (kuna) A PE image's data exports, `(addr, name)`: lookup names only.
     loader_data_exports: Vec<(u64, String)>,
+    /// (kuna `retroimage`) The names a container gives its code addresses,
+    /// taken in place of a synthetic name when its entries are installed.
+    loader_entry_names: BTreeMap<u64, String>,
     /// (kuna `mzsweep`) An MS-DOS executable's relocated module and relocation
     /// words, the evidence its raw-image call sweep reads.
     mz_evidence: Option<kuna_analysis::listing::kuna_mzsweep::MzEvidence>,
@@ -2962,11 +2967,14 @@ impl ConsoleProgram {
                 Vec::new()
             };
             let entries = std::mem::take(&mut self.pending_synthetic_entries);
+            let mut names = std::mem::take(&mut self.loader_entry_names);
             let symbols = entries
                 .into_iter()
                 .map(|addr| ProgramSymbol {
                     ordinal: 0,
-                    name: self.arch().name_function(&addr),
+                    name: names
+                        .remove(&addr.get_offset())
+                        .unwrap_or_else(|| self.arch().name_function(&addr)),
                     addr,
                     object_location: None,
                     binding: None,
@@ -4340,6 +4348,7 @@ fn empty_program(
         arm_frames: None,
         loader_data_objects: Vec::new(),
         loader_data_exports: Vec::new(),
+        loader_entry_names: BTreeMap::new(),
         mz_evidence: None,
         flow_ends: None,
         data_name_aliases: HashMap::new(),
@@ -4390,7 +4399,14 @@ pub fn bootstrap_from_raw(
     Bootstrap::new(spec_roots).target(target).arm_isa(isa).raw(path, base, entries)
 }
 
-/// [`bootstrap_from_raw`] over the file, or over `bytes` built in memory.
+/// A raw image built in memory: its bytes, and the ranges its container
+/// names as `(offset, size, flags)` (none maps the bytes as one code range).
+pub(crate) struct RawModule {
+    pub(crate) bytes: Vec<u8>,
+    pub(crate) sections: Vec<(u64, u64, u32)>,
+}
+
+/// [`bootstrap_from_raw`] over the file, or over a `module` built in memory.
 pub(crate) fn bootstrap_raw_image(
     path: &str,
     target: &str,
@@ -4398,7 +4414,7 @@ pub(crate) fn bootstrap_raw_image(
     entries: &[u64],
     isa: Option<ArmIsa>,
     languages: &(impl Languages + ?Sized),
-    bytes: Option<Vec<u8>>,
+    module: Option<RawModule>,
 ) -> KunaResult<ConsoleProgram> {
     if target.trim().is_empty() {
         return Err(KunaError::lowlevel(
@@ -4433,8 +4449,10 @@ pub(crate) fn bootstrap_raw_image(
         })
     };
     let base_bytes = address_to_byte(base, "base")?;
-    match bytes {
-        Some(bytes) => raw.build_loader_from_bytes(Rc::clone(&code_space), base, bytes),
+    match module {
+        Some(module) => {
+            raw.build_loader_from_bytes(Rc::clone(&code_space), base, module.bytes, module.sections)
+        }
         None => raw.build_loader_at(Rc::clone(&code_space), base)?,
     }
     let loader = raw
@@ -4553,6 +4571,9 @@ pub(crate) fn bootstrap_image(
     if file_is_te_image(path) {
         let _load = enter_load(options, from_env);
         bootstrap_te(path, target, languages, isa)
+    } else if let Some(bytes) = kuna_retroimage::file_retro_image(path) {
+        let _load = enter_load(options, from_env);
+        bootstrap_retro_bytes(path, &bytes, target, languages, isa)
     } else if let Some(bytes) = file_mz_dos_image(path) {
         let _load = enter_load(options, from_env);
         bootstrap_mz_bytes(path, &bytes, target, languages, isa)
@@ -4659,7 +4680,7 @@ pub(crate) fn bootstrap_mz_bytes(
         &[entry],
         isa,
         languages,
-        Some(image.module.clone()),
+        Some(RawModule { bytes: image.module.clone(), sections: Vec::new() }),
     )?;
     if let Some(space) = program.analysis_code_space.clone() {
         kuna_analysis::loader::kuna_realmodecs::paint(program.arch(), &space, &image.code_segments);
@@ -6835,6 +6856,7 @@ pub fn bootstrap_from_file(
 pub(crate) enum FileInput {
     Mz(Vec<u8>),
     Te(Vec<u8>),
+    Retro(Vec<u8>),
     Object,
     Xml(Rc<Element>),
 }
@@ -6853,6 +6875,9 @@ pub(crate) fn classify_file(path: &str) -> KunaResult<FileInput> {
     }
     if is_te_image(&bytes) {
         return Ok(FileInput::Te(bytes));
+    }
+    if kuna_analysis::loader::kuna_retroimage::is_retro_image(&bytes) {
+        return Ok(FileInput::Retro(bytes));
     }
     if is_object_binary(&bytes) || is_apple_container(&bytes) {
         return Ok(FileInput::Object);

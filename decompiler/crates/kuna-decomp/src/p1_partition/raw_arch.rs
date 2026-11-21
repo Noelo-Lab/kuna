@@ -198,13 +198,17 @@ impl RawBinaryArchitecture {
 
     /// (kuna) [`Self::build_loader_at`] over bytes built in memory instead of
     /// the file, such as a DOS load module with its relocations applied.
+    /// `sections` are the ranges a container names, as
+    /// [`RawLoadImage::set_sections`] takes them; empty maps one code range.
     pub fn build_loader_from_bytes(
         &mut self,
         default_code_space: Rc<AddrSpace>,
         base: u64,
         bytes: Vec<u8>,
+        sections: Vec<(u64, u64, u32)>,
     ) {
-        let loader = RawLoadImage::from_bytes(self.sleigh.get_filename(), bytes);
+        let mut loader = RawLoadImage::from_bytes(self.sleigh.get_filename(), bytes);
+        loader.set_sections(sections);
         self.place_loader(loader, default_code_space, base);
     }
 

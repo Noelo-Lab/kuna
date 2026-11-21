@@ -211,6 +211,9 @@ mod dos_pcmemory_cli;
 #[path = "dos_mz_cli.rs"]
 mod dos_mz_cli;
 
+#[path = "retro_formats_cli.rs"]
+mod retro_formats_cli;
+
 #[path = "dos_exit_cli.rs"]
 mod dos_exit_cli;
 

@@ -1602,6 +1602,112 @@ body (issue #1288); the note sends a PKLITE file to `kuna unpack`. Surfaces that
 need an `object::File` refuse an `MZ` input with a capability error, as they do
 a TE.
 
+(kuna) **PS-X EXE, N64 ROM, a.out, Amiga hunk and PEF executables load from
+their own headers.** These five containers hold code for processors kuna
+decodes, but the `object` crate reads none of them, so each was refused as an
+unknown format and had to be mapped by hand as a headerless image, which for
+the three relocatable ones is also wrong: a flat mapping leaves every
+relocated word holding a link-time value. Each has a bounded parser under
+`decompiler/crates/kuna-analysis/src/loader/kuna_retroimage.rs (parse)` that
+turns the file into one description: a contiguous module of bytes as the
+platform's loader would leave them in memory, its base address, the SLEIGH
+language, the entry point, the mapped ranges with their kind, the names the
+container gives addresses, and any register the container fixes for the whole
+image. The dispatcher
+(`decompiler/crates/kuna-console/src/engine/kuna_retroimage.rs (bootstrap_retro_bytes)`)
+hands that module to the raw-image path, so discovery, naming and every option
+behave as they do for a headerless image; what the command line supplies there
+(`--target`, `--base`, `--entry`) the header supplies here. `--target` still
+overrides the language. The ranges are published as the load image's sections
+in place of the single whole-file code range, so the call sweep of
+`rawdiscover` reads only the ranges that hold code, and a read-only range is
+marked so. Every named code address is a discovery seed and takes the
+container's name; a named data address becomes a global of that name. There is
+no option: before this the same file was an error.
+
+The format is claimed from the first 32 bytes
+(`decompiler/crates/kuna-analysis/src/loader/kuna_retroimage.rs (is_retro_image)`),
+after the TE probe and before the MZ and object-file ones. Every size and
+offset is untrusted: arithmetic is checked, a module may not exceed 256 MiB,
+and what a parser cannot honor (a relocation outside its segment, a malformed
+relocation program) is skipped and reported on stderr rather than guessed.
+
+- **PS-X EXE** (`psx.rs`): the magic `PS-X EXE`, then little-endian `pc0`,
+  `gp0`, `t_addr`, `t_size` and the bss range in a 0x800-byte header. The text
+  that follows the header is mapped at `t_addr` (clamped to the bytes the file
+  holds), the bss range after it as zero fill, `pc0` is the entry and must lie
+  in the stored text, and a nonzero `gp0` is `gp`'s tracked value over the
+  image, so a `gp`-relative access folds to its address. The language is
+  `MIPS:LE:32:default`.
+- **N64 ROM** (`n64.rs`): the first word is the PI configuration word
+  `0x80371240`, whose stored byte order tells a big-endian (`.z64`),
+  byte-swapped (`.v64`) or little-endian (`.n64`) dump; the latter two are
+  converted. The boot code at ROM offset 0x40 copies up to one megabyte from
+  ROM offset 0x1000 to the entry address in header word 2 and jumps there, so
+  that segment is the one mapped range and its first byte the entry. Two
+  revisions of the boot code subtract 0x100000 or 0x200000 from the header
+  word first; they are told apart by the CRC-32 of the boot code. Code the
+  boot segment later copies from elsewhere in the ROM is not mapped. The
+  language is `MIPS:BE:64:64-32addr`.
+- **a.out** (`aout.rs`): a 32-byte header whose first word is the magic
+  (OMAGIC 0407, NMAGIC 0410, ZMAGIC 0413, QMAGIC 0314) and a machine id, in
+  one of three dialects: NetBSD's network-order `flags, mid, magic`; SunOS's
+  big-endian word with its machine type (1 to 3) below a toolchain version;
+  and the host-order word of Linux and the i386 BSDs. A file is claimed only
+  when the machine id is one of the table's (m68k, i386, SPARC, ARM), which
+  also picks the byte order of the rest of the header, the page size and the
+  language. Where the text starts in the file and in memory follows the
+  dialect and the magic; when the entry point is not inside the text at that
+  address, the text is placed at the page the entry is in. Data follows the
+  text (on the next page boundary unless OMAGIC), then bss as zero fill. The
+  `nlist` symbols of the text, data and bss name their addresses, less the
+  leading underscore and without debugger records, object-file names and
+  assembler-local labels. A file with no entry address and with relocation
+  records is a relocatable object: it is loaded at 0, each undefined or
+  common symbol is given a slot in a range appended after the bss, and each
+  external relocation record of m68k and i386 adds its symbol's slot address
+  to the field it names, so a call to an undefined function is a call to a
+  named address. Section-relative records need nothing at base 0. SPARC and
+  ARM relocation records are not applied, and the load says so.
+- **Amiga hunk** (`hunk.rs`): `HUNK_HEADER` (0x3f3) with no resident library
+  names and the memory size of each hunk, then each hunk's blocks to its
+  `HUNK_END`. AmigaDOS allocates the hunks separately; here they are placed
+  one after another from 0x10000. `HUNK_CODE` and `HUNK_DATA` contents are
+  copied, `HUNK_BSS` and the part of a hunk past its stored contents are zero
+  fill, and each `HUNK_RELOC32`, `HUNK_RELOC32SHORT` and `HUNK_DREL32` entry
+  adds its target hunk's address to the word it names. `HUNK_SYMBOL` names
+  are kept, `HUNK_NAME` and `HUNK_DEBUG` skipped. The entry is the first byte
+  of the first hunk, which must be code. An overlay tree ends the load with a
+  note; a library or object unit (`HUNK_UNIT`) is not claimed. The language is
+  `68000:BE:32:default`.
+- **PEF** (`pef.rs`): the tag `Joy!peff` with architecture `pwpc`; a CFM-68K
+  fragment is refused. Each instantiated section (code, data,
+  pattern-initialized data, constant) is placed in header order from
+  0x10000000 at its alignment, pattern-initialized data is expanded by
+  running its five-opcode pattern program, and one eight-byte slot per
+  imported symbol follows the sections. Each section's relocation program
+  from the loader section is then run: the instructions add a section's
+  address, or an import's slot address, to successive words, with the
+  position, the import index and the two section variables as state, and the
+  two repeat instructions replaying the blocks before them. A program is
+  bounded by a step budget and by its section, and one that leaves either is
+  cut short with a note. The main symbol of a PowerPC fragment is a
+  transition vector in the data section: its first word is the entry and its
+  second the TOC, which is `r2`'s tracked value over the image, so a
+  TOC-relative load reads its slot. Code is named from the export table (a
+  transition-vector export names the code its first word points at), from the
+  traceback table after each function (a zero word, flags with the
+  offset-present and name-present bits, the distance back to the function
+  start and the name), and from the import table: an import names its slot,
+  and each cross-fragment glue stub (`lwz r12,d(r2)` followed by the fixed
+  five-instruction tail that saves the TOC and jumps through the vector) takes
+  the name of the import whose slot its TOC entry holds. `r2` is known at each
+  function's entry only: after a cross-fragment call the caller reloads it
+  from the linkage area the glue stored it in, and that store is not modeled.
+
+Surfaces that need an `object::File` refuse these inputs with the capability
+error a TE or MZ input gets.
+
 (kuna) **An MS-DOS executable's functions start with DS holding its data
 segment** (`mzdgroup`, default on, `MZ` loads in real mode only). A near data
 pointer is an offset into the segment DS holds, and a function's DS is an input

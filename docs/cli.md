@@ -1455,6 +1455,41 @@ with other segments in DS.
 `decompile-graph` and the graph-backed `--summary`/`--reachable-from` need an
 object-file view and refuse it with a capability error, as for a TE.
 
+### PS-X EXE, N64 ROM, a.out, Amiga hunk and PEF executables
+
+These five formats load without `--raw-image`; the header supplies the
+language, the load address, the entry and, where the format has them, symbols
+and relocations:
+
+```bash
+kuna functions GAME.EXE                    # PS-X EXE: MIPS R3000 LE at t_addr, entry pc0, gp set
+kuna functions game.z64                    # N64 ROM (.z64/.v64/.n64): boot segment at the header entry
+kuna decompile a.out main                  # a.out: m68k, i386, SPARC or ARM, by machine id
+kuna decompile-all prog                    # Amiga hunk load file: hunks relocated from 0x10000
+kuna decompile app.pef main                # PEF (classic Mac OS, PowerPC): TOC in r2, imports named
+```
+
+| Format | Language | Mapped | Names |
+|---|---|---|---|
+| PS-X EXE | `MIPS:LE:32:default` | text at `t_addr`, bss | none |
+| N64 ROM | `MIPS:BE:64:64-32addr` | up to 1 MiB from ROM 0x1000 at the header entry | none |
+| a.out | by machine id | text, data, bss; undefined symbols of an object | `nlist` symbols |
+| Amiga hunk | `68000:BE:32:default` | every hunk, one after another from 0x10000 | `HUNK_SYMBOL` |
+| PEF | `PowerPC:BE:32:default` | code and data sections from 0x10000000, one slot per import | exports, imports, traceback tables |
+
+`--target` names another language (an a.out for a 68000 without the 68020
+addressing modes, say). An N64 ROM maps only the segment its boot code copies;
+code that segment loads later from elsewhere in the ROM needs `--raw-image`
+with the address it runs at. A relocatable a.out object loads at 0 with its
+m68k or i386 relocations applied; SPARC and ARM relocations are not. A PEF
+function knows its TOC at entry, so its globals resolve, but not after a call
+into another fragment, where `r2` is reloaded from the stack. A relocation or
+pattern program kuna cannot follow is cut short and reported on stderr.
+`decompile`, `decompile-all`, `functions`, `disassemble`/`read`,
+`decompile-project` and the console support these inputs; `strings`, `xrefs`,
+`decompile-graph` and the graph-backed `--summary`/`--reachable-from` need an
+object-file view and refuse them with a capability error, as for a TE.
+
 ### Headerless raw images
 
 `--raw-image` loads a file that has no object header. It is separate from
