@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4857,
-    4857
+    4862,
+    4862
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -4656,6 +4656,11 @@
     "data:symbol-keyed-local-decls #8: Ghidra-style body references bind to that whole",
     "data:synthetic initialization does not claim a native write",
     "data:tail callbacks and clobbered stack aliases retain returning continuations",
+    "data:tail callees #1: with nothing stated the thunk drops the tail call's result",
+    "data:tail callees #2: the thunk returns the tail call's result",
+    "data:tail callees #3: with nothing stated the forwarder drops the argument it passes through",
+    "data:tail callees #4: the forwarder passes its third argument through",
+    "data:tail callees #5: the forwarder takes the three parameters its callee reads",
     "data:tee-O2 tail-jumps #1: indirect-jump-as-call marker (pass 1 off only)",
     "data:tee-O2 tail-jumps #2: unresolved GOT-pointer indirect call (pass 1 off only)",
     "data:tee-O2 tail-jumps #3: tail call resolves to named setlocale (pass 2 on only)",

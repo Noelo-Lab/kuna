@@ -223,6 +223,9 @@ mod decompile_graph_cli;
 #[path = "decompile_json_cli.rs"]
 mod decompile_json_cli;
 
+#[path = "tail_callee_batch_cli.rs"]
+mod tail_callee_batch_cli;
+
 #[path = "function_warnings_cli.rs"]
 mod function_warnings_cli;
 

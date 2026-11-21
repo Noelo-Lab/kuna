@@ -6805,6 +6805,45 @@ not refused; it states nothing and says so on stderr, since its call-argument
 types can then differ from the serial run's, and `--option protoorder off` on
 both makes them byte-identical.
 
+A single-function `kuna decompile` does state two kinds of callee before its own
+pipeline finishes. The callees its call sites pass preferred-split storage to are
+described with `option protoorder`'s use guidance. The other kind is the callees
+it tail-calls. For a thunk that is all tail call (`xor esi,esi; jmp target`)
+nothing in the function reads the return register after the call, so the call
+kept no output and the thunk printed `void thunk(a0) { target(a0,0); }`, while
+every caller used the value and `decompile-all` printed `return target(a0,NULL)`.
+A forwarder (`add esi,1; jmp helper`) lost the third argument it passes through
+untouched in `EDX` the same way. Before the pipeline runs, the drive finds each
+CALL the flow made from a tail jump (a CALL with an artificial `RETURN` at its
+own address), decompiles those callees in a nested drive
+(`decompile_drive.rs (bootstrap_tail_callees)`), and states each one's recovered
+prototype as a callee-first run parks it: the types, the arity where it is
+sound, the output and the forwarded inputs. At most four callees are tried, and
+a callee of more than 512 instructions stops while its flow is followed and
+states nothing, which bounds the cost: over 40 tail-calling functions of gawk,
+decompiled one at a time, the bound costs 2.0% more user-mode instructions and
+keeps 261 of the 265 output lines the unbounded bootstrap changes, where no
+bound costs 11.0%. The nested drives do not recurse, and declared or
+already-stated callees are skipped. `protoorder off` decompiles the function
+from its own body alone.
+
+A `decompile-all` that selects part of the binary (`--addr`, `--functions`,
+`--limit` and the triage filters) and `kuna decompile --json` have no
+callee-first order behind them either: `callee_first_decision` takes that order
+only for a whole-program run, and only a callee inside the batch can state
+anything. Their batch drive ran without this bootstrap, so a tail call to a
+callee with no declaration lost every argument it forwards: for an AArch64
+forwarder `ldr x8,[x3]; cbz x8,L; b target` the selected function printed
+`target(); // tail-call` while `kuna decompile` printed
+`target(a0,a1,a2,a3,a4); // tail-call`. Such a batch now runs the same
+bootstrap for each of its functions (`Architecture::kuna_tail_callee_batch`,
+set around the loop by `decompile_entries`), under the same two bounds, and a
+callee stated for one function of the batch is not decompiled again for the
+next. A whole-program run, callee-first or not, does not run it. Over the first
+3000 functions of git 2.54 (x86-64, `decompile-all --limit 3000`) the bootstrap
+changes 133 of the 703 tail-call lines and costs 2.8% more user-mode
+instructions; with no instruction bound it costs 5.0% and changes one line more.
+
 ### (kuna) `passthrough` — the register a function forwards to a callee that reads it
 
 (kuna) `passthrough` (default on,
