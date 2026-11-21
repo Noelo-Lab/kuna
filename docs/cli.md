@@ -2322,6 +2322,12 @@ Behaviors specific to `decompile-all`:
   entry-neutral on that architecture, so it stays the decompiling surfaces'
   default. The interactive console keeps the engine default off; an auto-selected
   `aggressive` preset names all three itself, on either surface.
+
+  A processor that guarantees fixed-width instruction slots from the beginning
+  of every executable section may declare their size in its processor spec,
+  for example `<property key="kuna.aif.sectionInstructionStride" value="6"/>`
+  inside `<properties>`. AIF then probes section-relative slots in the gap
+  walk. Symbol and explicit function entries keep their usual admission rules.
   Omitted `--mode` first resolves the size-based `auto` policy. `--mode fast`
   names and disables the three exhaustive program-wide decode/discovery options
   (`listing`, `funcstart_patterns`, `aif`), suppressing those injections, and

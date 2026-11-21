@@ -5497,6 +5497,20 @@ impl Architecture {
             }
         };
 
+        // A byte-aligned processor can still store instructions on a section-relative grid.
+        if let Some(properties) = find_child(&pspec, "properties") {
+            for property in properties.get_children() {
+                if property.get_name() == "property"
+                    && attr_str(property, "key").as_deref() == Some("kuna.aif.sectionInstructionStride")
+                {
+                    let stride = attr_str(property, "value")
+                        .and_then(|value| value.parse::<core::num::NonZeroU32>().ok())
+                        .ok_or_else(|| KunaError::lowlevel("sectionInstructionStride requires a positive byte count"))?;
+                    self.translate.translate_base_mut().section_instruction_stride = Some(stride);
+                }
+            }
+        }
+
         // C++ parseProcessorConfig dispatch — ELEM_REGISTER_DATA branch
         // (architecture.cc:1202 -> decodeRegisterData).  Seed the lanerecords
         // table before the action build reads getMinimumLanedRegisterSize.  A
